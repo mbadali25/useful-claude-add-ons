@@ -216,6 +216,16 @@ if [ "$FORCE" -ne 1 ]; then
   ( set -o noclobber; : > "$SENT_MARKER" ) 2>/dev/null || exit 0
 fi
 
+# A test suite must never drive the real keyboard. Checked HERE, immediately
+# before the sender is built, and NOT earlier: every decision above is
+# something the suite legitimately exercises, and an early exit made 20 cases
+# assert the inhibit message instead of the refusal they were written for.
+# Only the keystroke is suppressed. See the .ps1 twin.
+if [ -n "${CREW_AUTOCLEAR_INHIBIT:-}" ]; then
+  note "would have sent, but CREW_AUTOCLEAR_INHIBIT is set"
+  exit 0
+fi
+
 send_script=$(mktemp) || { note "refusing - could not create the sender script"; exit 0; }
 {
   echo '#!/usr/bin/env bash'

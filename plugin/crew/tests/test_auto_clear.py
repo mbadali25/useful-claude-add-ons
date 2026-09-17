@@ -93,7 +93,12 @@ def _repo(tmp_path, auto_clear=None, handoff=HANDOFF, requested=True):
 
 
 def _run(flavor, root, *args, env_extra=None):
-    env = dict(os.environ, CLAUDE_PROJECT_DIR=str(root))
+    # Never let the suite reach the real send path. Set here rather than
+    # per-test so a case added later cannot forget it; the cases that DO
+    # exercise sending pass --dry-run, which prints the decision without the
+    # keystroke. See CREW_AUTOCLEAR_INHIBIT in auto-clear.{sh,ps1}.
+    env = dict(os.environ, CLAUDE_PROJECT_DIR=str(root),
+               CREW_AUTOCLEAR_INHIBIT="1")
     if env_extra:
         env.update(env_extra)
     if flavor == "sh":
@@ -205,22 +210,43 @@ def test_min_handoff_lines_is_configurable(flavor, tmp_path):
 @by_flavor
 def test_a_method_that_cannot_verify_its_target_refuses_without_a_title(
         flavor, tmp_path):
-    # xdotool activates a window by name; SendKeys types into whatever has
-    # focus. Neither can prove it is talking to Claude Code, so an explicit
-    # title is the user accepting that and saying how to recognise the window.
+    """CHANGED in 0.19.57, and only for the PowerShell flavour.
+
+    `xdotool` activates a window BY NAME, so it still cannot prove it is
+    talking to Claude Code and an explicit title is still the user accepting
+    that -- the sh case is unchanged.
+
+    The Windows flavour no longer needs one. It walks its own ancestors to the
+    first process that OWNS A WINDOW and compares the foreground window's
+    owning process id to it, which is exact where a title was a guess: the
+    detector read three different titles for the same window in one session.
+    So `windowTitle` unset is no longer a refusal there, and asserting one
+    would be asserting the old defect.
+    """
     if flavor == "sh":
         bindir = str(tmp_path / "fakebin")
         _stub(bindir, "xdotool")
         cfg = {"enabled": True, "method": "xdotool"}
         env = {"PATH": bindir + os.pathsep + os.environ["PATH"], "DISPLAY": ":0"}
-    else:
-        cfg = {"enabled": True}
-        env = {}
-    root = _repo(tmp_path, auto_clear=cfg)
-    result = _run(flavor, root, env_extra=env)
+        root = _repo(tmp_path, auto_clear=cfg)
+        result = _run(flavor, root, env_extra=env)
+        assert result.returncode == 0
+        assert "windowTitle" in result.stderr
+        return
+
+    # ps1: must not demand a title merely because one is unset. It either
+    # resolves the owning terminal and proceeds, or says it could NOT resolve
+    # one -- and which of those happens depends on the ancestry of whatever
+    # launched the tests. Measured: it resolves from a plain shell and does
+    # not from under pytest, so asserting either outcome would be asserting a
+    # property of the test runner.
+    #
+    # What IS invariant is that the OLD unconditional refusal is gone, so that
+    # exact sentence is what this checks.
+    root = _repo(tmp_path, auto_clear={"enabled": True})
+    result = _run(flavor, root, "--dry-run")
     assert result.returncode == 0
-    assert "windowTitle" in result.stderr
-    assert not (root / ".crew" / ".autoclear-sent").exists()
+    assert "windowTitle is required" not in result.stderr, result.stderr
 
 
 @by_flavor

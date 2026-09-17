@@ -230,6 +230,16 @@ $escaped = [regex]::Replace($Text, '[+^%~(){}\[\]]', { param($m) "{$($m.Value)}"
 [System.Windows.Forms.SendKeys]::SendWait("{ENTER}")
 '@
 
+# A test suite must never drive the real keyboard. Checked HERE, immediately
+# before the spawn, and NOT earlier: every decision above is something the
+# suite legitimately exercises, and an early exit made 20 cases assert the
+# inhibit message instead of the refusal they were written for. Only the
+# keystroke is suppressed. See the .sh twin.
+if ($env:CREW_AUTOCLEAR_INHIBIT) {
+  Write-CrewAutoClearNote "would have sent, but CREW_AUTOCLEAR_INHIBIT is set"
+  exit 0
+}
+
 $childPath = Join-Path ([System.IO.Path]::GetTempPath()) ("crew-autoclear-" + [guid]::NewGuid().ToString("N") + ".ps1")
 Set-Content -Path $childPath -Value $child -Encoding utf8
 
