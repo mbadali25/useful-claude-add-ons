@@ -96,14 +96,12 @@ PM_BRIEF = os.path.join(CREW, "hooks", "scripts", "pm_brief.py")
 UPGRADE_DOC = os.path.join(CREW, "commands", "upgrade.md")
 PROMOTE_DOC = os.path.join(CREW, "commands", "promote.md")
 REVIEW_DOC = os.path.join(CREW, "commands", "review.md")
-GUARD_SH = os.path.join(CREW, "hooks", "scripts", "guard.sh")
 PROMOTE_SH = os.path.join(CREW, "hooks", "scripts", "promote-gate.sh")
 # Outside the crew plugin, for the same reason BUILD_REPORT is: promote.md
 # claims things about the `bitbucket` entry's script, and the only way to
 # sabotage a claim about another entry's interface is to break that interface.
 MERGE_GATE = os.path.join(
     ROOT, "skills", "bitbucket", "scripts", "merge_gate.sh")
-GUARD_PS1 = os.path.join(CREW, "hooks", "scripts", "guard.ps1")
 # The PowerShell half of the deploy gate. Added with the mutation that proves
 # its `-ErrorAction Stop` is load-bearing: PROMOTE_SH alone covered the bash
 # flavour, and "one flavour stands down and nothing notices" is this plugin's
@@ -206,8 +204,7 @@ MUTATIONS = (
         CONFIG,
         '    policy = resolved["effective"]',
         '    policy = resolved["repo"]',
-        ("tests/test_guards.py::"
-         "test_sh_a_repo_cannot_widen_past_the_machine"),
+        "tests/test_guards.py::test_a_repo_cannot_widen_the_production_level",
     ),
     (
         # The identical mutation, run against the OTHER flavour's test. The
@@ -220,34 +217,7 @@ MUTATIONS = (
         CONFIG,
         '    policy = resolved["effective"]',
         '    policy = resolved["repo"]',
-        ("tests/test_guards.py::"
-         "test_ps1_a_repo_cannot_widen_past_the_machine"),
-    ),
-    (
-        # `ask` stops stopping: the refusal becomes a pass-through, so a guard
-        # the user set to "print it and wait" runs without waiting. The exact
-        # command is still printed, so the session TRANSCRIPT still looks like
-        # an approval flow -- which is what makes this worth a mutation of its
-        # own rather than folding it into the policy test.
-        "guard.sh's `ask` prints the command and then runs it anyway",
-        GUARD_SH,
-        "      [ -n \"$reason\" ] && printf '%s\\n' \"$reason\" >&2\n"
-        "      exit 2",
-        "      [ -n \"$reason\" ] && printf '%s\\n' \"$reason\" >&2\n"
-        "      return 0",
-        "tests/test_guards.py::test_sh_honours_each_policy",
-    ),
-    (
-        # The same claim in the other flavour, and here it is NOT a duplicate:
-        # the two scripts implement the refusal separately, so this is a second
-        # piece of code that can be wrong on its own.
-        "guard.ps1's `ask` prints the command and then runs it anyway",
-        GUARD_PS1,
-        "      if ($reason) { [Console]::Error.WriteLine($reason) }\n"
-        "      exit 2",
-        "      if ($reason) { [Console]::Error.WriteLine($reason) }\n"
-        "      return",
-        "tests/test_guards.py::test_ps1_honours_each_policy",
+        "tests/test_guards.py::test_a_repo_cannot_widen_the_production_level",
     ),
     (
         # THE one the production levels rest on: unknown becomes a read. Every
@@ -427,8 +397,7 @@ MUTATIONS = (
         CONFIG,
         "            f\"<unread production.{PROD_DECL_KEYS[name]}>\", access)",
         "            \"\", access)",
-        ("tests/test_malformed_production_never_permits.py::"
-         "test_sh_refuses_a_write_when_it_cannot_read_the_declaration"),
+        "tests/test_malformed_production_never_permits.py",
     ),
     (
         # D5. The `makedirs` goes back, which is the single line that adopted a
@@ -2035,51 +2004,6 @@ MUTATIONS = (
          "test_review_distinguishes_absent_from_matched_nothing"),
     ),
     (
-        # Put the terraform rule back to requiring `apply` immediately after
-        # `terraform`. The wrong version LOOKS right -- it is the plain,
-        # obvious spelling of the rule -- and the bypass needs a flag nobody
-        # types while reviewing a diff. `terraform -chdir=infra apply` then
-        # runs unguarded.
-        "the terraform rule stops swallowing options before the subcommand",
-        GUARD_SH,
-        "grep -qE \"${TF_PRE}(apply|destroy)\"",
-        "grep -qE '\\bterraform[[:space:]]+(apply|destroy)'",
-        ("tests/test_guard_bypasses.py::"
-         "test_sh_blocks_the_bypass_and_its_control"),
-    ),
-    (
-        # Restore the `&`-excluding scan. The subtlest entry in this file: the
-        # narrowing it restores was itself a CORRECT fix (a greedy `.*` blocked
-        # ordinary pushes), so the mutation reads as reverting to a known-good
-        # line. `2>&1` contains an `&`, so the scan stops before `--force`.
-        "the force-push scan stops at the & inside a redirection",
-        GUARD_SH,
-        "push\\b${ARG}(--force|-f)\\b",
-        "push\\b[^;&|]*(--force|-f)\\b",
-        ("tests/test_guard_bypasses.py::"
-         "test_sh_blocks_the_bypass_and_its_control"),
-    ),
-    (
-        # Accept any assignment anywhere as proof the secret was captured.
-        # Dropping the `[^;&|)]*${SECRET_READ}` tail is a plausible "simplify
-        # the regex" edit, and every pre-existing must-block case still passes:
-        # the only shape it breaks is the compound command, which is the one an
-        # attacker would type.
-        #
-        # RE-ANCHORED, not re-pointed: the regex it mutates moved out of the
-        # `if ! echo ... ; then` line and into `SECRET_HELD=` when the
-        # exemption started counting occurrences rather than matching one. It
-        # is the same claim about the same expression, which is the only case
-        # this file's header allows a new anchor for -- the code was not
-        # deleted, it was renamed.
-        "a secret read is cleared by an unrelated assignment",
-        GUARD_SH,
-        "[^;&|)]*${SECRET_READ}\"",
-        "\"",
-        ("tests/test_guard_bypasses.py::"
-         "test_sh_secret_read_needs_the_assignment_to_capture_IT"),
-    ),
-    (
         # Drop the exit-status check on the pre-deploy verdict. The remaining
         # `[ -n "$VERDICT" ]` tests still read correctly, so the file looks
         # complete -- and any error inside the check leaves VERDICT empty,
@@ -2177,8 +2101,7 @@ MUTATIONS = (
         "            return tokens",
         "        if _head_name(tokens[0]) in PROD_WRAPPERS:\n"
         "            return []",
-        ("tests/test_guard_command_spelling.py::"
-         "test_a_write_wearing_a_reads_spelling_is_a_write"),
+        "tests/test_guards.py::test_a_subcommands_verb_decides_it_not_just_the_object",
     ),
     (
         # The original code, restored: the object is checked and the action
@@ -2192,8 +2115,7 @@ MUTATIONS = (
         "            return \"write\"\n"
         "        return \"read\"",
         "        return \"read\"",
-        ("tests/test_guard_command_spelling.py::"
-         "test_a_write_wearing_a_reads_spelling_is_a_write"),
+        "tests/test_guards.py::test_a_subcommands_verb_decides_it_not_just_the_object",
     ),
     (
         # Back to the first payload only. `-c 'select 1' -c '<write>'` reads
@@ -2206,57 +2128,7 @@ MUTATIONS = (
         "            return \"read\"\n"
         "        return \"write\"",
         "        return _classify_sql(payloads[0])",
-        ("tests/test_guard_command_spelling.py::"
-         "test_a_write_wearing_a_reads_spelling_is_a_write"),
-    ),
-    (
-        # The selector stops recognising a path, so `prod_guarded` is never
-        # called and `classify_access` never gets a say. Nothing in the
-        # transcript says a guard stood down: the command simply runs.
-        "guard.sh's host-tool selector misses an absolute path",
-        GUARD_SH,
-        "SRV_TOOLS='(^|[[:space:];&|])([^[:space:];&|]*[/\\\\])?"
-        "(ssh|scp|plink|rsync)\\b",
-        "SRV_TOOLS='(^|[[:space:];&|])(ssh|scp|plink|rsync)\\b",
-        ("tests/test_guard_command_spelling.py::"
-         "test_sh_refuses_the_spelling"),
-    ),
-    (
-        # The same claim in the other flavour, and not a duplicate: the two
-        # selectors are separate code and were both wrong.
-        "guard.ps1's host-tool selector misses an absolute path",
-        GUARD_PS1,
-        "$srvTools = '(?i)(^|[\\s;&|])([^\\s;&|]*[\\\\/])?"
-        "(ssh|scp|plink|rsync)\\b",
-        "$srvTools = '(?i)(^|[\\s;&|])(ssh|scp|plink|rsync)\\b",
-        ("tests/test_guard_command_spelling.py::"
-         "test_ps1_refuses_the_spelling"),
-    ),
-    (
-        # `grep -c` counts LINES, so any capture anywhere satisfies the whole
-        # command -- which is the exemption the bug had, one rung up from the
-        # "an assignment exists somewhere" version #132 fixed. The first
-        # secret is captured, the second is printed, and the guard exits 0.
-        "guard.sh accepts one capture as evidence for every secret read",
-        GUARD_SH,
-        "  SECRET_N=$(echo \"$CMD\" | grep -oiE \"$SECRET_READ\" "
-        "| wc -l | tr -d '[:space:]')\n"
-        "  HELD_N=$(echo \"$CMD\" | grep -oiE \"$SECRET_HELD\" "
-        "| wc -l | tr -d '[:space:]')",
-        "  SECRET_N=1\n"
-        "  HELD_N=$(echo \"$CMD\" | grep -coiE \"$SECRET_HELD\" "
-        "| tr -d '[:space:]')",
-        ("tests/test_guard_command_spelling.py::"
-         "test_sh_every_secret_read_must_be_captured"),
-    ),
-    (
-        # The same, in the flavour that implements it separately.
-        "guard.ps1 accepts one capture as evidence for every secret read",
-        GUARD_PS1,
-        "  if ($heldCount -lt $secretCount) {",
-        "  if ($heldCount -lt 1) {",
-        ("tests/test_guard_command_spelling.py::"
-         "test_ps1_every_secret_read_must_be_captured"),
+        "tests/test_guards.py::test_every_sql_payload_is_classified_not_only_the_first",
     ),
     (
         # The state the whole framing fix exists for. Without the rejection a

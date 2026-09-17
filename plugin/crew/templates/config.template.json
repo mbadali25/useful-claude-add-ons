@@ -73,13 +73,13 @@
   "verifyGate": true,
   "context": {
     "enabled": true,
-    "warnAt": 0.8,
+    "warnAt": 0.5,
     "budgetTokens": null,
-    "reserveTokens": 100000,
+    "reserveTokens": 0,
     "handoffPath": ".work/HANDOFF.md",
     "keepTranscripts": 5,
     "autoClear": {
-      "enabled": false,
+      "enabled": true,
       "method": "auto",
       "windowTitle": null,
       "command": "/clear",
@@ -87,8 +87,8 @@
       "minHandoffLines": 5,
       "unsafeFocus": false
     },
-    "autoWrapUp": false,
-    "autoResume": false,
+    "autoWrapUp": true,
+    "autoResume": true,
     "staleHandoff": {
       "maxAgeHours": 72,
       "maxCommitsBehind": 3

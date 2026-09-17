@@ -11,10 +11,10 @@ Read the **Hooks** section of any plugin before installing it. Commands and agen
 | | |
 |---|---|
 | **Source** | [`crew/`](crew) |
-| **Version** | 0.19.51<!-- claim: plugin-version:crew --> |
+| **Version** | 0.19.54<!-- claim: plugin-version:crew --> |
 | **Install** | `claude plugin install crew@useful-claude-add-ons` |
 | **Menu item** | 21, `repo-plugins` — **off by default**. Menu item 22, `graphify`, is a separate, also-off-by-default install of the `graphify` CLI this plugin's graph feature depends on — see **The code graph** below. |
-| **Registers** | 54 agents, 26 commands, 18 skills<!-- claim: plugin-skills:crew -->, 20 hook entries (10 scripts × `.sh`/`.ps1`) across 5 events |
+| **Registers** | 54 agents, 26 commands, 19 skills<!-- claim: plugin-skills:crew -->, 18 hook entries (9 scripts × `.sh`/`.ps1`) across 5 events |
 | **Upstream guide** | [`crew/README.md`](crew/README.md) — 25 sections, the authoritative version |
 
 Built for the awkward case: several repositories, mixed stacks, legacy code, and almost no test coverage. The workflow is file-backed tickets, one implementation session, an independent reviewer, and deterministic gates that block on failure rather than offering an opinion.
@@ -24,7 +24,7 @@ Its central design claim is worth repeating, because it is the opposite of how m
 ### Hooks — the part that runs without being asked
 
 Ten scripts across five events, each shipped as a `.sh`/`.ps1` pair
-registered on its own matcher or event — 20 hook entries. **These are why
+registered on its own matcher or event — 18 hook entries. **These are why
 menu item 21 is unticked by default.**
 
 | Script | Event | What it does |
@@ -99,11 +99,12 @@ to ship:
   cannot leave a repository permanently ungated. `emergency.ttlMinutes`
   defaults to 120 and `extend` is capped at `emergency.maxTtlMinutes` (480),
   measured from *now* each time, so repeated extensions cannot drift.
-- **The command guard never stands down.** `guard.sh` / `guard.ps1` has no
-  incident branch and must not get one: standing down the checks that say a
-  change is wrong is a trade, and standing down the ones that stop it being
-  unrecoverable - a force push, a destructive Terraform verb, a history
-  rewrite, a secret read - is not. An incident is precisely when someone is
+- **There is no command guard to stand down.** `guard.sh` / `guard.ps1` was
+  REMOVED in 0.19.52, so nothing inspects a Bash or PowerShell command at any
+  time, incident or not. Force pushes, destructive Terraform verbs, history
+  rewrites and secret reads are no longer refused by crew. What still stands
+  down under an incident is the `verify` and `promote` gates, which is
+  precisely when someone is
   tired enough to need that hook.
 - **A repo can forbid it.** `emergency.standDown: false` in `.crew/config.json`
   keeps every gate gating; the incident is still declared, recorded, and named
@@ -238,6 +239,7 @@ These are ordinary skills, scoped to `crew`'s own workflow. They work on every C
 | `crew-change` | The change-request template, the ten questions a change board requires, and how each field maps onto ServiceDesk Plus, Jira and a local file |
 | `crew-verification` | The change-to-check map, the `_verify/` layout, secrets handling, browser-test policy, and the five promotion gates for development -> qa -> production |
 | `crew-context` | Context exhaustion — warn near the limit, write handoffs, resume after a clear or compact |
+| `crew-best-practices` | Community best practices for Claude Code, audited against crew — what crew already does, the three architectural rules it departs from and why (ADR 0003), and the five contradictions the source records about itself |
 | `crew-docs` | Keeping `CHANGELOG.md`, `README.md`, `SECURITY.md`, `TODO.md` and ADRs current as work lands, plus the anchored API and feature reference under `docs/reference/` |
 | `crew-lint` | Linters and formatters for PowerShell, PHP, Python, Terraform, and JavaScript, wired into the gate |
 | `crew-terraform` | `terraform-docs` and `tflint` for a module — header block, `footer.md`, README injection |

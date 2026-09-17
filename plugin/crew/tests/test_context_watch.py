@@ -60,13 +60,27 @@ def _transcript(root, num_bytes):
 
 
 def _config(auto_wrap_up=None, budget=100, reserve=0):
-    """`reserve` defaults to 0 (headroom floor OFF) so the cases written
-    against the pure-percentage threshold keep testing exactly that. The
-    shipped default is 100k; the tests that own the floor set it explicitly."""
+    """Two keys are pinned here rather than left to the shipped default, for
+    the same reason and by the same rule: the fixture states what these cases
+    assume, and the tests that own a shipped default set it explicitly.
+
+    `reserve` is 0, the headroom floor OFF, so the cases written against the
+    pure-percentage threshold keep testing exactly that. (As of 0.19.52 that
+    also happens to BE the shipped default, but the pin stays -- these cases
+    depend on it, and a default that moves again must not silently rewrite
+    what they measure.)
+
+    `auto_wrap_up` is False when not given. It selects which MESSAGE the hook
+    emits, and ~24 cases below assert the statistics wording; the shipped
+    default became True in 0.19.52, so leaving it unset would flip every one
+    of them into the other branch and delete the statistics coverage instead
+    of moving it. `test_auto_wrap_up_is_the_shipped_default` owns the default.
+
+    `warnAt` is likewise pinned at 0.8 -- the arithmetic in these cases was
+    written against it, not against the 0.5 that ships now."""
     cfg = {"warnAt": 0.8, "budgetTokens": budget, "handoffPath": ".work/HANDOFF.md",
-           "reserveTokens": reserve}
-    if auto_wrap_up is not None:
-        cfg["autoWrapUp"] = auto_wrap_up
+           "reserveTokens": reserve,
+           "autoWrapUp": False if auto_wrap_up is None else auto_wrap_up}
     return {"context": cfg}
 
 
@@ -306,17 +320,24 @@ def test_reserve_floor_can_never_fire_earlier_than_warn_at(flavor, tmp_path):
 
 
 @by_flavor
-def test_reserve_tokens_defaults_to_100k_when_the_key_is_absent(flavor, tmp_path):
-    # The shipped default. An existing config that predates reserveTokens must
-    # get the floor without being edited -- which is the whole point, since the
-    # complaint came from repos whose config nobody is going to revisit.
+def test_reserve_tokens_defaults_to_zero_when_the_key_is_absent(flavor, tmp_path):
+    # CHANGED in 0.19.52, and the direction matters. The floor used to default
+    # to 100k, which made the threshold `max(warnAt * budget, budget - 100k)`
+    # -- so on a 1M window it fired at 900k NO MATTER what warnAt said, and
+    # lowering warnAt alone would have changed nothing. The floor now defaults
+    # to 0, so warnAt is the rule again and an aggressive setting actually
+    # bites.
+    #
+    # Same fixture as before (1M window, 850k used). Under the old default
+    # that was BELOW the 900k floor and stayed silent; under 0.5 with no floor
+    # the threshold is 500k, so it must fire.
     cfg = _config(budget=None)
     del cfg["context"]["reserveTokens"]
     root = crew_fixtures.make_repo(tmp_path, config=cfg, git=False)
     transcript = _usage_transcript(root, "claude-opus-5", used=850_000)
     result = _run(flavor, root, transcript)
-    assert result.returncode == 0, result.stderr
-    assert result.stderr.strip() == "", result.stderr
+    assert result.returncode == 2, result.stderr
+    assert "context.reserveTokens is off" in result.stderr
 
 
 @by_flavor

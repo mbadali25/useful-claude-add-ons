@@ -6,6 +6,195 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
+- **`crew` 0.19.54: crew detects the terminal window title instead of refusing
+  to guess it.** `crew_state.py --detect-window-title` reads the real window
+  titles from the OS and prints each as JSON with a `stable` flag.
+
+  0.19.53 told the PM not to set `context.autoClear.windowTitle` because
+  "guessing a window title is guessing which window gets typed into". That is
+  right about guessing and wrong about measuring - the title can be read, and a
+  value read is not a value invented.
+
+  **What it does not do is pretend the answer is durable.** A Windows Terminal
+  title follows its ACTIVE TAB, so a detected value can be correct when written
+  and wrong on the next switch - which is worse than refusing, because it looks
+  like it worked. Every candidate therefore carries `stable` and, when false,
+  the reason. `agents/pm.md` now says to show the candidate and that reason,
+  propose a substring that survives a tab change, and leave the setting to the
+  user: a detected title is evidence for the decision, not a substitute for it.
+
+  Measured while building it: the detector read `? SRL` early in the session
+  and `? Remove production guards` an hour later, from the same window. The
+  instability warning is not theoretical.
+
+  Windows only - the posix flavour targets a tmux pane by id and needs no
+  title, so it returns an empty list rather than a fabricated candidate. Four
+  cases cover it, including that a missing PowerShell returns no candidates
+  rather than raising, since this runs from a SessionStart path where an
+  exception would take the whole brief with it.
+
+### Added
+
+- **`crew` 0.19.53: a `crew-best-practices` skill, and ADR 0003 for the three
+  rules crew deliberately breaks.** Integrates
+  <https://rosmur.github.io/claudecode-best-practices/>, a synthesis of roughly
+  twelve practitioner sources.
+
+  The audit found most of it already true of crew and said so rather than
+  re-implementing it: planning (`/crew:plan`), context management (the
+  `context-watch` / `handoff-write` / `handoff-read` hooks are its "Document &
+  Clear" pattern), quality gates (`verify-gate`), multi-instance review with a
+  different model family (`/crew:review`), dev docs, and scripts attached to
+  skills.
+
+  **Three of its rules call crew's architecture an anti-pattern** - 54
+  specialised agents against its clone pattern, 26 slash commands against its
+  "long list ... is an anti-pattern", and being a multi-agent system at all.
+  `docs/adr/0003-crew-departs-from-three-community-best-practices.md` records
+  each departure WITH ITS COST, so the next reader who finds that document does
+  not re-derive the argument or act on it.
+
+  Also recorded: **§4.3.2 says "Don't block at write time - let the agent
+  finish its plan, then check the final result."** That is exactly what 0.19.52
+  did in removing the PreToolUse command guard and keeping the Stop gate,
+  reached independently and before either of us read the source.
+
+  The skill carries the rule set in three reference files (`practices.md`,
+  `claude-md.md`, `contradictions.md`). The last one quotes the FIVE
+  contradictions the document records about itself, because a synthesis of
+  twelve practitioners is routinely cited as consensus when its own §5 says
+  five of its central questions are unsettled.
+
+  Two of its numbers are marked as not transferring: "clear at 60k tokens" was
+  written for a 200k window and is 6% of a 1M one, and its 2000-token CLAUDE.md
+  limit is wrong for this repository, whose length is a landmine list earned by
+  shipped defects.
+
+### Changed
+
+- **`crew` 0.19.53: three `SKILL.md` files split under the 500-line
+  progressive-disclosure limit.** The source document's §4.3.1 measures 40-60%
+  fewer tokens loaded per session from this shape. Nothing was deleted - each
+  span moved whole with a pointer left in its place:
+
+  | Skill | Was | Now | Extracted to |
+  |---|---|---|---|
+  | `crew-setup` | 618 | 442 | `trackers.md`, `claude-md-authoring.md` |
+  | `crew-verification` | 588 | 464 | `credentials-and-playwright.md` |
+  | `crew-providers` | 566 | 468 | `alternative-providers.md` |
+
+  Every bundled `SKILL.md` is now under 500 lines; the largest is 468. The main
+  files keep the path every reader walks, and the references hold what only
+  some readers need.
+
+### Removed
+
+- **`crew` 0.19.52: the PreToolUse command guard is gone.** `guard.sh` and
+  `guard.ps1` are deleted and unregistered from `hooks/hooks.json`. Crew no
+  longer inspects any Bash or PowerShell command before it runs.
+
+  Requested because the guard blocked ordinary development work. The
+  `prod`/`production` whole-word rule was the one that fired most and had **no
+  config key at all** - no value of `guards.prodDatabase` could switch it off,
+  and it matched the word anywhere in a command string, including inside a
+  commit message or a `gh pr comment` body. The two keys that *do* read as the
+  production guards are inert in any repo that has declared no
+  `production.databases` or `production.hosts` patterns, so the setting that
+  looked like the fix was not one.
+
+  **What still blocks, unchanged:** `promote-gate` (dirty tree, missing sha,
+  absent verify evidence), `verify-gate` (the Stop gate over
+  `.crew/verify.json`), `guards.mergeGate` for `/crew:gate`, and the PM's four
+  `AUTONOMOUS_STOPS`. `crew_guards.py` is kept - `mergeGate` and
+  `change.requireForProduction` still resolve through it. Five of the six
+  `guards.*` keys still parse and ratchet but now govern nothing, and
+  `README.md` and `CONFIG.md` say so in the tables rather than leaving them
+  reading as live.
+
+  `hooks.json` drops from 20 entries across 10 scripts to 18 across 9.
+
+  Test surface: `run-tests.sh` loses its five guard sections (the PATH-scrub
+  machinery stays, because promote-gate's own coverage depends on it);
+  `test_guard_bypasses.py`, `test_guard_powershell.py` and
+  `test_guard_command_spelling.py` are deleted, all three existing solely for
+  the removed scripts; `test_guards.py` loses its 16 script-executing tests and
+  keeps its 114 config/ratchet ones; `test_malformed_production_never_permits.py`
+  loses 4 script cases and keeps its module cases;
+  `test_unmanaged_repo_is_left_untouched.py` loses one; `sabotage.py` loses 9
+  of 155 mutations.
+
+### Changed
+
+- **`crew` 0.19.52: context clearing is aggressive by default, and the
+  wrap-up/clear/resume loop is closed.** Five `context.*` defaults moved. All
+  remain configurable and none ratchets, so any can be set back.
+
+  | Key | Was | Now |
+  |---|---|---|
+  | `context.warnAt` | `0.8` | `0.5` |
+  | `context.reserveTokens` | `100000` | `0` |
+  | `context.autoWrapUp` | `false` | `true` |
+  | `context.autoResume` | `false` | `true` |
+  | `context.autoClear.enabled` | `false` | `true` |
+
+  **`warnAt` alone would have changed nothing.** The threshold is the LATER of
+  `warnAt * budget` and `budget - reserveTokens`. At `0.5`/`100000` a 1M window
+  still fired at 900k because the floor won, so the floor had to go to 0 for
+  the percentage to become operative. A 1M window now warns at 500k.
+
+  The five form one loop: `autoWrapUp` makes the threshold message a directive
+  asking for the change in flight to be finished or abandoned and the ticket
+  updated; `autoClear` types `/clear` on the turn AFTER the handoff appears;
+  `autoResume` folds that note plus its next action into the following
+  session's brief.
+
+  **Enabled is not the same as acting.** `autoClear` still refuses unless
+  `.crew/.handoff-requested` exists, the handoff is newer than the request and
+  clears `minHandoffLines`; on Windows it refuses without
+  `context.autoClear.windowTitle`, because SendKeys types into whatever has
+  focus. Both flavours read the RAW config and require `enabled is True`, so
+  the new default reaches a repo only once its config carries the key - a
+  pre-0.19.52 config stays off until `/crew:upgrade`.
+
+  `budgetTokens` auto-detection is unchanged. Not changed because it already
+  worked: `pm_brief` keys its once-per-session claim on session AND source, so
+  `/clear` re-fires the brief and a fresh PM is spawned.
+
+### Added
+
+- **`crew` 0.19.52: an `autoClearInert` trigger, so auto-clear cannot be on and
+  silent.** On Windows with no `windowTitle` the setting reads as ON and can
+  never act, and the refusal only ever reaches `.crew/.autoclear.log`. That is
+  the failure mode this repository's CLAUDE.md names first: an unknown
+  collapsing into the safe-looking value. `crew_state.read_auto_clear` makes it
+  its own value (`inert`), a trigger carries it into the PM brief at every
+  session start, and `agents/pm.md` says to hand the user the one config key
+  rather than dispatch a role or guess a window title.
+
+  **Deliberately not claimed for posix**: that flavour has three methods and
+  real fallbacks, so calling it inert would be a guess wearing the label the
+  key exists to remove. The Windows refusal is measured. Five cases cover it,
+  four asserting silence.
+
+### Fixed
+
+- **`crew` 0.19.52: two tests killed `pwsh` before it could run the script
+  under test.** `test_verify_gate_bash_resolver.py` faked `SystemRoot` in the
+  subprocess environment so tier b's System32 filter would apply. pwsh 7.6.6
+  reads `SystemRoot` during startup - `InitialSessionState`'s static
+  constructor reaches `SecuritySupport.GetSaferPolicy` - and a tree with no
+  real System32 aborts the interpreter with `Win32Exception (126): The
+  specified module could not be found`, rc `2148734499`, before a line of the
+  script runs.
+
+  Isolated to one variable rather than inferred from the stack trace: faking
+  `PATH` alone reproduces nothing, faking `SystemRoot` alone reproduces it
+  exactly. The fix sets `$env:SystemRoot` INSIDE `-Command`, so pwsh boots
+  against the real System32 while the script still sees the fake tree - which
+  is all the filter compares against.
+
+### Added
+
 - **Menu item 25, `perplexity-mcp`: register the Perplexity MCP server.** Off by
   default like every row from 9 on, and added at the END of both catalogs so no
   existing number moves. Registers `npx -y @perplexity-ai/mcp-server` with
@@ -443,7 +632,8 @@ All notable changes to this repository are documented here. Format follows [Keep
   all four refuse any `run` / `always` / `default` entry (plus
   `environments[].{deploy,smoke,regression,verify}` in `resolve-tools.sh`)
   containing `
-`, ``, `` or ``, with an identical named
+`, `
+`, `` or ``, with an identical named
   `PARSE_ERROR` naming the entry, the character and the entry's opening text;
   `verify-gate.sh` then frames its records with `` between and ``
   inside. `verify-gate.ps1` never had the framing bug - it reads objects, not

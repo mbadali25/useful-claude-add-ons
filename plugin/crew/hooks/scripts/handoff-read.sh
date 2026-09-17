@@ -32,7 +32,9 @@ PY=$(crew_py) || exit 0
 # the handoff in this mode: it folds the same text plus the extracted next
 # action into its additionalContext payload. Standing down here keeps the
 # handoff to a single emitter -- printing it here too would inject it twice.
-AUTO_RESUME=$("$PY" -c 'import json;print(json.load(open(".crew/config.json")).get("context",{}).get("autoResume") is True)' 2>/dev/null)
+# Absent means TRUE since 0.19.52. `get(...) is True` would read an unset
+# key as false and leave every pre-0.19.52 config on the old emitter.
+AUTO_RESUME=$("$PY" -c 'import json;print(json.load(open(".crew/config.json")).get("context",{}).get("autoResume", True) is True)' 2>/dev/null)
 [ "$AUTO_RESUME" = "True" ] && exit 0
 
 HANDOFF=$("$PY" -c 'import json;print(json.load(open(".crew/config.json")).get("context",{}).get("handoffPath",".work/HANDOFF.md"))' 2>/dev/null)

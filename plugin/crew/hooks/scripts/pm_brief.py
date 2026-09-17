@@ -143,6 +143,14 @@ FINDINGS = {
         "{endpointSummary}",
         "{endpointAction}",
     ),
+    "autoClearInert": (
+        "context.autoClear is on but cannot act - this is Windows and "
+        "context.autoClear.windowTitle is not set",
+        "run crew_state.py --detect-window-title to read the real window "
+        "titles, then set context.autoClear.windowTitle to a substring "
+        "that survives a tab change - until then every attempt is refused "
+        "to .crew/.autoclear.log and no /clear is ever sent",
+    ),
     "graphStale": (
         "the code graph is missing or older than HEAD",
         "run /crew:onboard, or {graphCommand} to refresh it",

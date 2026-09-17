@@ -355,7 +355,8 @@ def test_declaring_those_keys_costs_no_migration(tmp_path):
     # A repo that has never heard of the new keys still resolves them.
     resolved = crew_config.resolve_config(str(root))
     assert resolved["context"]["autoClear"]["command"] == "/clear"
-    assert resolved["context"]["autoWrapUp"] is False
+    assert resolved["context"]["autoWrapUp"] is True
+    assert resolved["context"]["autoResume"] is True
     assert resolved["jira"]["cloudId"] is None
 
 

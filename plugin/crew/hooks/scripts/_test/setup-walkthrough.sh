@@ -130,9 +130,9 @@ echo "$T" | grep -qE '^ruff ' && ok "resolve-tools extracted ruff from the map" 
 echo "$T" | grep -q "WSL" && ok "resolve-tools reports WSL reachability" || bad "resolve-tools wsl line"
 
 echo "############ PHASE 7 - a real ticket, through the hooks ############"
-# the guard sees an ordinary edit command
-echo '{"tool_name":"Bash","tool_input":{"command":"python3 -m pytest"}}' | bash "$H/guard.sh" >/dev/null 2>&1
-[ "$?" = "0" ] && ok "guard allows an ordinary test command" || bad "guard false positive on pytest"
+# the command guard was removed in 0.19.52 - nothing inspects an ordinary
+# command any more, so there is no false positive left to assert against.
+[ ! -e "$H/guard.sh" ] && ok "command guard is gone - no PreToolUse command inspection" || bad "guard.sh is back on disk but hooks.json does not register it"
 # root-level main.tf equivalent: terraform/main.tf must map
 python3 - <<'PY'
 import json
