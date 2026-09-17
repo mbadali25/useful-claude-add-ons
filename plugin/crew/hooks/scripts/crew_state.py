@@ -482,12 +482,22 @@ def read_auto_clear(cfg):
         "enabled": enabled,
         "windowTitle": title,
         "os": system,
-        # Only claimed for the platform whose refusal is MEASURED
-        # (auto-clear.ps1:128). A posix box with no tmux also cannot act, but
-        # it has three methods and its own fallbacks, so calling that inert
-        # here would be a guess wearing the same label this key exists to
-        # remove.
-        "inert": bool(enabled and system == "windows" and not title),
+        # ALWAYS False since 0.19.57, and kept rather than deleted so a
+        # reader gets an honest answer instead of a KeyError.
+        #
+        # It used to be True for "enabled on Windows with no windowTitle",
+        # because the script refused outright in that state. It no longer
+        # refuses: it walks its own ancestors to the first process that owns a
+        # window and targets that process id, which is exact where a title was
+        # a guess that expired -- the detector read three different titles for
+        # the same window in one session.
+        #
+        # Nothing Python can see at SessionStart distinguishes "will act" from
+        # "cannot act" any more; only the script knows, at send time, and it
+        # writes that to .crew/.autoclear.log. Reporting a healthy state as a
+        # finding is worse than reporting nothing, so this stops claiming to
+        # know.
+        "inert": False,
     }
 
 
@@ -879,11 +889,6 @@ TRIGGERS = (
     # is, rather than describing a standing process condition the way
     # reviewNotWorking/ticketsTooLarge do.
     "endpointUnscanned",
-    # Above the freshness findings and below the actionable ones, for the same
-    # reason endpointUnscanned sits where it does: this is not drift in a map,
-    # it is a capability the user believes they have and does not. It costs
-    # one line to fix and silently costs every clear until they do.
-    "autoClearInert",
     "graphStale",
     # Above `knowledgeBehind` on purpose, and it is the whole point of keeping
     # them separate. A map that cannot be re-verified is a worse finding than
@@ -2755,8 +2760,6 @@ def evaluate_triggers(state):
         # that has to be inert on every machine that never installed it --
         # `unscanned` is [] in that case, and bool([]) is False regardless.
         "endpointUnscanned": bool(dict_or_empty(state.get("endpoints")).get("unscanned")),
-        "autoClearInert": bool(
-            dict_or_empty(state.get("autoClear")).get("inert")),
         # An absent graph is stale by definition -- there is nothing to trust.
         "graphStale": not graph.get("present") or not graph.get("current"),
         "knowledgeBehind": bool(knowledge.get("behind")),

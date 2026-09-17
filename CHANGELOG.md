@@ -4,6 +4,85 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Changed
+
+- **`crew` 0.19.59: the ancestor walk used a cmdlet that does not exist on
+  Linux.** CI runs the PowerShell static check on Linux pwsh, where the CIM
+  cmdlet the walk called is absent, so `every Verb-Noun call resolves` failed
+  for `auto-clear.ps1`. It passed locally on Windows, where that cmdlet does
+  exist -- CI is the stricter environment and therefore the correct one.
+  Replaced with `Get-Process` and its `.Parent` property, a PS6+ member of
+  `System.Diagnostics.Process`. The walk is unchanged in behaviour: verified
+  to reach the same `WindowsTerminal pid=17600` at the same depth, and the
+  static check now reports 40 files all clean.
+
+- **`crew` 0.19.58: `CREW_AUTOCLEAR_INHIBIT`, because the suite could type
+  into a real terminal.** Caught by the Stop gate, and the more serious half of
+  this change. `test_auto_clear.py` runs the REAL script with no `--dry-run`;
+  before 0.19.57 the missing-`windowTitle` refusal was what kept it from
+  dispatching keystrokes -- by accident, not by design. Resolving the terminal
+  automatically removed that refusal and the suite reported `sent`.
+
+  pytest descends from the user's terminal, so the resolved owner IS that
+  terminal, the foreground check passes three seconds later, and `/clear` lands
+  in the session running the tests. The guard is in the SCRIPT, not the
+  fixture, because anyone running crew's suite downstream faces the same thing
+  and does not know to set it.
+
+  Placed at the SEND SITE. Checking it before every other decision made 20
+  cases assert the inhibit message instead of the refusal they were written
+  for; only the keystroke is suppressed.
+
+  The repointed test may NOT assert whether the walk resolves: it does from a
+  plain shell and does not from under pytest, measured both ways, which is why
+  the gate saw `sent` where a local run saw a refusal. It asserts the
+  invariant instead -- the old unconditional `windowTitle is required` refusal
+  is gone.
+
+- **`crew` 0.19.57: auto-clear finds its own terminal. No `windowTitle`
+  needed.** Asked for directly: window detection should be automatic.
+
+  `context.autoClear.windowTitle` was only ever a SAFETY CHECK -- the child
+  process reads the foreground window's title after its delay and refuses to
+  send if it does not match. It was never used to FIND a window. So the check
+  is now exact instead of textual: `auto-clear.ps1` walks its own ancestors to
+  the first process that OWNS A WINDOW, and the child compares the foreground
+  window's owning PROCESS ID to it.
+
+  Better on every axis that matters here. It cannot go stale -- a Windows
+  Terminal title follows the active tab, and the detector read three different
+  titles for the same window in one session (`? SRL`, `? Remove production
+  guards`, `? srl`), so any stored value is wrong within the hour. It cannot
+  match the wrong window -- two windows can share a title substring, they
+  cannot share a process id. And it needs no configuration.
+
+  **`MainWindowHandle` is the test, not a process name**, and the first attempt
+  got this wrong in a way worth recording: a name list containing `pwsh`
+  matched the hook itself at depth 0, because the hook IS pwsh -- it would have
+  compared the foreground window against a process that owns no window at all.
+  Every intermediate shell reports handle 0 and the terminal reports a handle,
+  so the walk lands on the window the user is looking at, whichever terminal
+  they use. Verified here: pwsh -> bash -> bash -> bash -> claude -> powershell
+  -> `WindowsTerminal pid=17600`, at depth 6.
+
+  `windowTitle` is KEPT as an explicit override, for a terminal that is not an
+  ancestor of the hook. Title wins when set; the process id is the default.
+
+### Removed
+
+- **`crew` 0.19.57: the `autoClearInert` trigger, added in 0.19.54.** It fired
+  when auto-clear was enabled on Windows with no `windowTitle`, because the
+  script refused outright in that state. It does not refuse any more, so the
+  trigger now reports a HEALTHY state as a finding -- and a brief that cries
+  wolf is worse than one that says nothing.
+
+  `read_auto_clear` still reports the facts (`enabled`, `windowTitle`, `os`);
+  what goes is the judgement that those facts are a defect. `inert` is kept as
+  a key and is now always `False`, so a reader gets an honest answer rather
+  than a `KeyError`. Nothing Python can see at SessionStart distinguishes "will
+  act" from "cannot act" any more -- only the script knows, at send time, and
+  it writes that to `.crew/.autoclear.log`.
+
 ### Added
 
 - **`crew` 0.19.56: `/crew:split <ISSUE-KEY>`, which splits an oversized Jira

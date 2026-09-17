@@ -668,19 +668,30 @@ def _auto_clear_cfg(system, **auto):
     return {"platform": {"os": system}, "context": {"autoClear": dict(auto)}}
 
 
-def test_auto_clear_on_windows_without_a_window_title_is_inert():
-    """The case the trigger exists for.
+def test_auto_clear_on_windows_without_a_window_title_still_acts():
+    """CHANGED in 0.19.57, and the direction is the point.
 
-    `context.autoClear.enabled` ships true in 0.19.52, and the native-Windows
-    flavour has exactly one method -- SendKeys against a title-matched
-    foreground window -- which `auto-clear.ps1` refuses to use without
-    `windowTitle`. So this combination reads as ON and can never act, and the
-    refusal only ever reaches `.crew/.autoclear.log`.
+    This case used to assert `inert is True`: auto-clear was enabled on
+    Windows with no `windowTitle`, and the script refused outright because
+    SendKeys types into whatever has focus.
+
+    It no longer refuses. `auto-clear.ps1` walks its own ancestors to the
+    first process that OWNS A WINDOW and targets that process id, so the
+    common case needs no configuration at all -- which is exact where a title
+    was a guess that expired. The detector read three different titles for the
+    same window in one session.
+
+    Asserting False here is therefore asserting the feature works. Nothing
+    Python can see at SessionStart distinguishes "will act" from "cannot act"
+    any more; only the script knows, at send time.
     """
     state = crew_state.read_auto_clear(_auto_clear_cfg("windows", enabled=True))
-    assert state["inert"] is True
-    assert "autoClearInert" in crew_state.evaluate_triggers(
+    assert state["inert"] is False
+    assert "autoClearInert" not in crew_state.evaluate_triggers(
         _state(autoClear=state))
+    # The FACTS are still reported even though the judgement is gone.
+    assert state["enabled"] is True
+    assert state["windowTitle"] is None
 
 
 def test_a_window_title_clears_the_inert_finding():

@@ -124,16 +124,50 @@ switch ($method) {
   }
 }
 
+$ownerPid = 0
 if (-not $windowTitle) {
-  Write-CrewAutoClearNote "refusing - SendKeys types into whatever has focus, so context.autoClear.windowTitle is required. Set it to a substring or regex matching the terminal's title"
-  exit 0
+  # No title configured, so resolve the OWNING TERMINAL instead. Walk up the
+  # process tree from here until a known terminal is found; the child then
+  # compares the foreground window's owning process id to it, which is exact
+  # where a title is a guess that expires.
+  $ownerPid = 0
+  try {
+    # Get-Process/.Parent, and deliberately NOT the CIM cmdlet this used to
+    # call. CI runs the PowerShell static check on LINUX pwsh, where that
+    # cmdlet does not exist -- this passed locally on Windows and failed
+    # there, and CI is the stricter and therefore the correct environment.
+    # `.Parent` is a PS6+ property of System.Diagnostics.Process.
+    #
+    # MainWindowHandle is the test, NOT a process name. A name list got this
+    # wrong first: `pwsh` was in it, the hook IS pwsh, so the walk matched
+    # itself at depth 0 and would have targeted a process owning no window.
+    # Every intermediate shell reports 0; the terminal reports a handle.
+    $walk = Get-Process -Id $PID -ErrorAction Stop
+    for ($i = 0; $i -lt 12 -and $walk; $i++) {
+      if ($walk.MainWindowHandle -ne 0) {
+        $ownerPid = [int]$walk.Id
+        break
+      }
+      $walk = try { $walk.Parent } catch { $null }
+    }
+  } catch { $ownerPid = 0 }
+  if (-not $ownerPid) {
+    Write-CrewAutoClearNote "refusing - no context.autoClear.windowTitle is set and the owning terminal could not be resolved by walking this process's ancestors. That happens when the hook does not descend from a terminal at all. Set context.autoClear.windowTitle to a substring of the window's title"
+    exit 0
+  }
 }
 
 if ($DryRun) {
   # Deterministic, and the same shape auto-clear.sh prints. The suite reads it.
   Write-Output "autoclear: would send"
   Write-Output "  method: windows"
-  Write-Output "  target: $windowTitle"
+  if ($ownerPid -gt 0) {
+    $ownerName = try { (Get-Process -Id $ownerPid -ErrorAction Stop).ProcessName }
+                 catch { "unknown" }
+    Write-Output "  target: owning terminal pid $ownerPid ($ownerName) - resolved, not configured"
+  } else {
+    Write-Output "  target: $windowTitle"
+  }
   Write-Output "  command: $command"
   Write-Output "  delay: ${delay}s"
   exit 0
@@ -161,7 +195,7 @@ if (-not $Force) {
 }
 
 $child = @'
-param([string]$Title, [string]$Text, [int]$Delay)
+param([string]$Title, [string]$Text, [int]$Delay, [int]$OwnerPid = 0)
 # Delete self first: every exit below is an early return, and a temp script left
 # in %TEMP% on each of them accumulates one file per session forever. The file
 # is already open and read by the interpreter, so removing it now is safe.
@@ -172,20 +206,39 @@ Add-Type -Namespace CrewAC -Name Win -MemberDefinition @"
 [DllImport("user32.dll")] public static extern System.IntPtr GetForegroundWindow();
 [DllImport("user32.dll", CharSet=System.Runtime.InteropServices.CharSet.Unicode)]
 public static extern int GetWindowText(System.IntPtr hWnd, System.Text.StringBuilder text, int count);
+[DllImport("user32.dll")] public static extern int GetWindowThreadProcessId(System.IntPtr hWnd, out int pid);
 "@
-$sb = New-Object System.Text.StringBuilder 1024
-[void][CrewAC.Win]::GetWindowText([CrewAC.Win]::GetForegroundWindow(), $sb, 1024)
-$front = $sb.ToString()
 # Checked HERE, not in the parent: focus at send time is the only focus that
 # matters. If the user alt-tabbed during the delay, this is what stops "/clear"
 # being typed into their mail client.
-if ($front -notmatch $Title) { exit 0 }
+$hwnd = [CrewAC.Win]::GetForegroundWindow()
+if ($OwnerPid -gt 0) {
+  # Exact: the foreground window must belong to the terminal that owns this
+  # session. A title can drift or collide; a process id cannot.
+  $frontPid = 0
+  [void][CrewAC.Win]::GetWindowThreadProcessId($hwnd, [ref]$frontPid)
+  if ($frontPid -ne $OwnerPid) { exit 0 }
+} else {
+  $sb = New-Object System.Text.StringBuilder 1024
+  [void][CrewAC.Win]::GetWindowText($hwnd, $sb, 1024)
+  if ($sb.ToString() -notmatch $Title) { exit 0 }
+}
 # SendKeys treats + ^ % ~ ( ) { } [ ] as syntax. Escape them so a configured
 # command is sent as itself.
 $escaped = [regex]::Replace($Text, '[+^%~(){}\[\]]', { param($m) "{$($m.Value)}" })
 [System.Windows.Forms.SendKeys]::SendWait($escaped)
 [System.Windows.Forms.SendKeys]::SendWait("{ENTER}")
 '@
+
+# A test suite must never drive the real keyboard. Checked HERE, immediately
+# before the spawn, and NOT earlier: every decision above is something the
+# suite legitimately exercises, and an early exit made 20 cases assert the
+# inhibit message instead of the refusal they were written for. Only the
+# keystroke is suppressed. See the .sh twin.
+if ($env:CREW_AUTOCLEAR_INHIBIT) {
+  Write-CrewAutoClearNote "would have sent, but CREW_AUTOCLEAR_INHIBIT is set"
+  exit 0
+}
 
 $childPath = Join-Path ([System.IO.Path]::GetTempPath()) ("crew-autoclear-" + [guid]::NewGuid().ToString("N") + ".ps1")
 Set-Content -Path $childPath -Value $child -Encoding utf8
@@ -196,7 +249,7 @@ if (-not $exe) { $exe = "pwsh" }
 Start-Process -FilePath $exe -WindowStyle Hidden -ArgumentList @(
   "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
   "-File", $childPath, "-Title", $windowTitle, "-Text", $command,
-  "-Delay", "$delay"
+  "-Delay", "$delay", "-OwnerPid", "$ownerPid"
 ) | Out-Null
 
 Write-CrewAutoClearNote "sent - method windows, target '$windowTitle', command '$command' in ${delay}s (only if that window still has focus)"
