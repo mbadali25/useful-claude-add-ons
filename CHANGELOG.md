@@ -4,7 +4,61 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Added
+
+- **`crew` 0.19.56: `/crew:split <ISSUE-KEY>`, which splits an oversized Jira
+  ticket into sub-tickets.** Jira only, deliberately: a files-mode ticket is a
+  markdown file the user can split in an editor and an Obsidian card is theirs
+  to drag, while Jira is the one tracker where splitting creates issues other
+  people see. That is also why it asks before writing anything -- boards move
+  and an unwanted child has to be deleted by hand in a UI.
+
+  It judges size from evidence and names which it used: `health.rate` from
+  `.crew/metrics.md` (`HEALTHY_HIGH` is 2.0), whether `ticketsTooLarge` is
+  firing, how many subsystems the issue names, and whether its acceptance
+  criteria can be verified together. **`health.rate` is a repo-wide average and
+  is not a measurement of the issue in front of you** -- the command says so
+  rather than presenting it as a verdict, and it will conclude an issue is NOT
+  too large and stop, because a command that always finds work is one nobody
+  can trust to say no.
+
+  Every acceptance criterion must land on a child or stay on the parent; a
+  criterion that lands nowhere is reported as a gap rather than dropped. The
+  parent is never transitioned or closed -- whether a split parent becomes an
+  epic, a tracking issue or is closed is a project convention this command
+  cannot know.
+
+  Wired into `agents/pm.md`'s `ticketsTooLarge` row with the two things a user
+  would otherwise learn the hard way: the rate is repo-wide, and splitting one
+  old ticket does NOT clear the trigger, because the rate falls when future
+  tickets are smaller rather than when one is divided.
+
 ### Fixed
+
+- **`crew` 0.19.56: `docs/diagrams/data-flow-crew-config.mmd` had never
+  rendered, and two diagrams were broken by a format-string escape.**
+
+  The escape first: refreshing the two diagrams rewrote their header through a
+  `%`-formatted Python string, where `%%` means a LITERAL `%`. The generated
+  line therefore opened with `%` instead of `%%`, Mermaid stopped recognising
+  it as a comment, and `mmdc` reported `UnknownDiagramError: No diagram type
+  detected` -- an error that names neither the line nor the character.
+
+  The older one is worse and is not mine: `data-flow-crew-config.mmd` contains
+  `\"report\"` inside a node label, which Mermaid cannot parse. Checked
+  against `origin/main` rather than assumed -- the committed version fails with
+  the identical error at the identical line, and `docs/diagrams/out/` held NO
+  output for it at all. It has been in the repository, anchored and described
+  as generated, without ever having been rendered. Now `#quot;`, and
+  `render.sh` exits 0 with all six diagrams producing both an `.svg` and a
+  `.png`.
+
+- **`crew` 0.19.56: seven stale self-descriptions.** `26 commands` -> 27 for
+  `/crew:split`; `20 hook entries (10 scripts)` -> `18 (9)` in the four places
+  0.19.52 missed; and the README prose promising that hooks block
+  `terraform apply`, force-push and destructive DDL, which has been false since
+  the command guard was removed. A README that promises a guard the code no
+  longer has is worse than one that never claimed it.
 
 - **`crew` 0.19.55: `/crew:upgrade` never added the `context` block's keys, so
   auto-clear could not run on any upgraded repo.** Reported by a user who ran

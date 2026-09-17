@@ -1,4 +1,4 @@
-% Generated from useful-claude-add-ons@ea8a0143 on 2026-09-17. Verify before trusting.
+%% Generated from useful-claude-add-ons@ea8a0143 on 2026-09-17. Verify before trusting.
 %% Anchors: plugin/crew/hooks/scripts/crew_config.py, plugin/crew/hooks/scripts/crew_state.py,
 %% plugin/crew/hooks/scripts/crew_guards.py, plugin/crew/skills/crew-graph/scripts/crew_upgrade.py
 %% How one config value reaches a run, and what may set it where.
@@ -160,7 +160,7 @@ flowchart TB
         E2["The effective value at each key is the <b>lower-ranked<br/>of the two layers</b> - crew_guards.effective_ratcheted<br/>:395, reached through crew_config.resolve_ratcheted<br/>:831 (or resolve_install_policy :891 / resolve_guard<br/>:920, thin wrappers over the same call). Neither<br/>layer can widen what the other allows."]
         E3["Why: crew reads config out of CLONED repositories.<br/>A repo shipping install.policy: auto, or<br/>guards.forcePush: allow, would, under precedence,<br/>override a machine owner who chose manual or block -<br/>and crew would run commands, or destroy history on a<br/>remote, because of a file the user never wrote."]
         E4["Absent counts as the narrowest tier on either side,<br/>so the WIDEST grant requires BOTH layers to agree.<br/>Setting it in a repo alone does nothing, and each<br/>resolver's heldDownBy names the layer holding it down<br/>- a value that quietly does nothing is worse than<br/>one refused out loud."]
-        E5["install.policy: auto is safe only because no<br/>repo-controlled string can become a command -<br/>crew_guards.INSTALLABLE :70 maps a name to a<br/>literal argv tuple, and crew_guards.install_plan<br/>:436 consults that table BEFORE the policy, so an<br/>unknown name gets \"report\" at EVERY policy.<br/>Argv tuples, never shell strings. Asserted in<br/>tests/test_install_policy.py."]
+        E5["install.policy: auto is safe only because no<br/>repo-controlled string can become a command -<br/>crew_guards.INSTALLABLE :70 maps a name to a<br/>literal argv tuple, and crew_guards.install_plan<br/>:436 consults that table BEFORE the policy, so an<br/>unknown name gets #quot;report#quot; at EVERY policy.<br/>Argv tuples, never shell strings. Asserted in<br/>tests/test_install_policy.py."]
         E1 --- E2 --- E3 --- E4 --- E5
     end
 
