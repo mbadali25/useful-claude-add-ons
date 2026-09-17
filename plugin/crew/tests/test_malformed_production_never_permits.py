@@ -308,11 +308,3 @@ def _ps1(root, home, command):
         input=payload, capture_output=True, text=True, check=False, cwd=root,
         env=dict(os.environ, CLAUDE_PROJECT_DIR=root, HOME=home,
                  USERPROFILE=home))
-
-
-
-
-
-
-
-
