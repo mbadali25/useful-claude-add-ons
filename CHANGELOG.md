@@ -6,6 +6,29 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Changed
 
+- **`crew` 0.19.58: `CREW_AUTOCLEAR_INHIBIT`, because the suite could type
+  into a real terminal.** Caught by the Stop gate, and the more serious half of
+  this change. `test_auto_clear.py` runs the REAL script with no `--dry-run`;
+  before 0.19.57 the missing-`windowTitle` refusal was what kept it from
+  dispatching keystrokes -- by accident, not by design. Resolving the terminal
+  automatically removed that refusal and the suite reported `sent`.
+
+  pytest descends from the user's terminal, so the resolved owner IS that
+  terminal, the foreground check passes three seconds later, and `/clear` lands
+  in the session running the tests. The guard is in the SCRIPT, not the
+  fixture, because anyone running crew's suite downstream faces the same thing
+  and does not know to set it.
+
+  Placed at the SEND SITE. Checking it before every other decision made 20
+  cases assert the inhibit message instead of the refusal they were written
+  for; only the keystroke is suppressed.
+
+  The repointed test may NOT assert whether the walk resolves: it does from a
+  plain shell and does not from under pytest, measured both ways, which is why
+  the gate saw `sent` where a local run saw a refusal. It asserts the
+  invariant instead -- the old unconditional `windowTitle is required` refusal
+  is gone.
+
 - **`crew` 0.19.57: auto-clear finds its own terminal. No `windowTitle`
   needed.** Asked for directly: window detection should be automatic.
 
