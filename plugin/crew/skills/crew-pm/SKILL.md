@@ -80,7 +80,8 @@ and a result read in that same turn. Future tense in an `act` report ("I'll
 send", "next I will") means it did not happen. A consumer of a PM report must
 verify it names returned results before relaying it, and send it back once
 rather than relay narration. The same discipline extends to factual claims,
-not just dispatch claims — see "Every claim is labeled" in `agents/pm.md`.
+not just dispatch claims — see "Every claim is labeled, not just dispatch
+claims" in `agents/pm.md`.
 
 ## Reading state
 
