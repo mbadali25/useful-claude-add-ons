@@ -6,6 +6,19 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Changed
 
+- **`crew` 0.19.60: dispatch-narration labeling extended to substantive
+  claims, not just "I dispatched X."** `pm.md`'s existing "A dispatch is a
+  tool call, not a sentence" rule caught a claim of work done but not a claim
+  of fact, and a PM brief or report is exactly where an unverified claim
+  becomes settled fact for the lane that receives it. Added a sibling rule,
+  "Every claim is labeled, not just dispatch claims": every load-bearing
+  claim in a PM brief or report now carries measured / relayed / hypothesis
+  provenance, with a corollary that an URGENT label is a claim about cost,
+  not certainty. Sourced from TheSelectSource `TO-DO.md` F465, where an
+  unlabeled relayed claim was passed on as settled fact four times in two
+  days, caught only by the recipient's own measuring each time.
+  `crew-pm/SKILL.md`'s narration-failure section now points at the new rule.
+
 - **`crew` 0.19.59: the ancestor walk used a cmdlet that does not exist on
   Linux.** CI runs the PowerShell static check on Linux pwsh, where the CIM
   cmdlet the walk called is absent, so `every Verb-Noun call resolves` failed
