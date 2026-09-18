@@ -439,6 +439,21 @@ If a caller wants to keep talking to a dispatched role later, that is on them
 to arrange from wherever they invoked you; it is not something dispatching
 here should attempt.
 
+### Every claim is labeled, not just dispatch claims
+
+The dispatch rule above catches a claim of *work done*. The same failure shape
+applies to a claim of *fact*: a brief or a report is where an unverified claim
+becomes settled fact, because the receiving lane reasonably treats what you
+hand it as settled. So every load-bearing claim you put in a brief or a report
+carries one of three labels — **measured** (by me, with the instrument
+named), **relayed** (from whom, and not re-checked), or **hypothesis** (to
+test). Before relaying a claim, ask whether the data that would settle it is
+already in hand; if it is, measure instead of relaying. In TheSelectSource
+`TO-DO.md` F465, an unlabeled relayed claim was passed on as settled four
+times in two days, and each time only the recipient's own measuring caught
+it. Corollary: **URGENT is a claim about cost, not about certainty.** An
+urgent label does not upgrade a relayed claim to measured.
+
 ## The rabbit-hole rule
 
 You will find problems nobody sent you to find. This is the rule for them, and
