@@ -34,6 +34,11 @@ import crew_state
 _TOUCH = re.compile(r"^\s*[-*]\s*touch\s*:\s*(.+?)\s*$", re.IGNORECASE)
 _SPLIT = re.compile(r"[,\s]+")
 
+# Where a ticket file can live, in the order work.md reads them. `tickets` is
+# files mode; `cache` is what /crew:jira-sync, /crew:sdp-sync and
+# /crew:obsidian-sync write.
+_TICKET_DIRS = ("tickets", "cache")
+
 # Sentinel: the ticket file INDEX.md names does not exist. Not the same answer
 # as "the ticket declared no paths", and folding the two loses which to fix.
 MISSING = object()
@@ -46,8 +51,18 @@ def declared_paths(root, ticket):
     None is "the ticket declared nothing", [] is "it declared an empty list",
     and only the second would justify reporting every changed file.
     """
-    path = os.path.join(root, ".work", "tickets", f"{ticket}.md")
-    text = crew_state.read_text(path)
+    # TWO locations, because the tracker decides which one exists. Files mode
+    # keeps the ticket at .work/tickets/<id>.md; Jira, ServiceDesk Plus and
+    # Obsidian Kanban modes keep it at .work/cache/<id>.md (commands/work.md
+    # step 1). Reading only the first reported "the ticket file is missing"
+    # for tickets that exist -- including on this repository, whose tracker is
+    # obsidian, so the defect was live here on every turn.
+    text = None
+    for folder in _TICKET_DIRS:
+        text = crew_state.read_text(
+            os.path.join(root, ".work", folder, f"{ticket}.md"))
+        if text is not None:
+            break
     if text is None:
         # Distinct from "the ticket declared nothing": the file INDEX.md names
         # is not there. Different cause, different fix, so it gets its own
@@ -72,16 +87,68 @@ def declared_paths(root, ticket):
 # the process working, not scope creep, and reporting it on every turn is how a
 # report becomes noise people stop reading. Excluded before the comparison so
 # the line stays about the CHANGE.
-_BOOKKEEPING = (".work/", ".crew/", "TODO.md")
+# Split by KIND, because the two need different tests. The directories are a
+# prefix match; the file is an EXACT match. They were one tuple behind a single
+# str.startswith, which silently excluded anything merely beginning with the
+# name: measured, both `TODO.mdx` and `TODO.md.py` were dropped from the report
+# as bookkeeping. A real source file vanishing from a scope report is the one
+# failure this file must not have -- the reassuring output and the
+# uninformative output looking identical again.
+_BOOKKEEPING_DIRS = (".work/", ".crew/")
+_BOOKKEEPING_FILES = ("TODO.md",)
+
+
+def bookkeeping(path):
+    return path.startswith(_BOOKKEEPING_DIRS) or path in _BOOKKEEPING_FILES
+
+
+def gate_matches(path, pat):
+    """The matcher verify-gate.sh embeds, character for character.
+
+    KEPT IN LOCKSTEP with verify-gate.sh (the `def matches` inside its python
+    heredoc) and its PowerShell twin in verify-gate.ps1. The report and the
+    gate answer the same question -- does this path fall under this pattern --
+    and a report that answers it differently from the gate that blocks the
+    turn is worse than no report.
+
+    fnmatch's `*` spans `/`, so `**/*.py` demands a literal slash and matches
+    no root-level file at all: measured, fnmatch("main.py", "**/*.py") is
+    False while fnmatch("src/main.py", "**/*.py") is True. A ticket declaring
+    `**/*.py` therefore had its own root-level files reported OUTSIDE scope,
+    which is how a scope line that names in-scope files teaches the reader to
+    ignore the whole report. The gate already stripped the `**/` form; this
+    file did not, and that was the entire defect.
+    """
+    cands = {pat}
+    if pat.startswith("**/"):
+        cands.add(pat[3:])
+    cands.add(pat.replace("/**/", "/"))
+    return any(fnmatch.fnmatch(path, c) for c in cands)
+
+
+def matches(path, glob):
+    """The gate's matcher, plus the bare-directory form a TICKET declares.
+
+    A `- touch:` line is written by a person and routinely names a directory
+    (`plugin/crew/hooks/`) where a verify.json rule would write a glob. Those
+    two extra forms are a deliberate SUPERSET of the gate: every path the gate
+    calls a match, this calls a match too, never the reverse. The direction
+    matters -- a superset can only ever report FEWER files as outside scope,
+    so the divergence cannot invent a scope violation the gate would not also
+    see. Widening it further needs that argument to still hold.
+    """
+    if gate_matches(path, glob):
+        return True
+    stem = glob.rstrip("/")
+    return fnmatch.fnmatch(path, stem + "/*") or path.startswith(stem + "/")
 
 
 def outside(changed, globs):
     out = []
     for path in changed:
-        if path.startswith(_BOOKKEEPING) or path in _BOOKKEEPING:
+        if bookkeeping(path):
             continue
-        if any(fnmatch.fnmatch(path, g) or fnmatch.fnmatch(path, g.rstrip("/") + "/*")
-               or path.startswith(g.rstrip("/") + "/") for g in globs):
+        if any(matches(path, g) for g in globs):
             continue
         out.append(path)
     return out
@@ -105,8 +172,9 @@ def main():
     globs = declared_paths(root, ticket)
     if globs is MISSING:
         sys.stderr.write(
-            f"outside-scope: ({ticket} is open but "
-            f".work/tickets/{ticket}.md is missing)\n")
+            f"outside-scope: ({ticket} is open but its ticket file is "
+            f"missing from both .work/tickets/{ticket}.md and "
+            f".work/cache/{ticket}.md)\n")
         return 0
     if globs is None:
         sys.stderr.write(

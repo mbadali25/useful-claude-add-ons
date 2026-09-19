@@ -28,6 +28,46 @@ All notable changes to this repository are documented here. Format follows [Keep
   hand-built state dict), so they passed against it; fixed to nest under
   `knowledge`, and a new test drives the real `crew_state.collect()` against a
   fixture repo so the fixture shape cannot drift from the emitter's again.
+- **`crew` 0.19.68: the scope report stops calling in-scope files out of
+  scope, and stops losing files to a prefix.** Three defects, each measured
+  before it was touched, all in `scope_report.py` -- the report-only line
+  both gates print.
+  (1) `declared_paths` read the ticket from `.work/tickets/<id>.md` only.
+  Jira, ServiceDesk Plus and Obsidian Kanban modes keep it at
+  `.work/cache/<id>.md` (`commands/work.md` step 1), so the report said
+  "the ticket file is missing" for tickets that exist -- on THIS repo,
+  whose tracker is obsidian, on every turn. Both locations are now read, in
+  work.md's order, and the unknown branch names both rather than sending the
+  reader to check one path and conclude the other was never searched.
+  (2) `_BOOKKEEPING` was one tuple behind a single `str.startswith`, so
+  `TODO.md` in it swallowed `TODO.mdx` and `TODO.md.py` -- both measured
+  True. A real source file dropping out of a scope report as "crew's own
+  bookkeeping" is the exact collapse this file's own docstring forbids. The
+  directories stay a prefix test; the file is now an exact one.
+  (3) **The important one.** `fnmatch` has no real `**`:
+  `fnmatch("main.py", "**/*.py")` is False while
+  `fnmatch("src/main.py", "**/*.py")` is True, so a ticket declaring
+  `**/*.py` had its own root-level files reported OUTSIDE the scope it had
+  just declared. A scope line that names in-scope files is how the whole
+  feature gets ignored. This was also a PARITY defect and the fix is not a
+  second matcher: `verify-gate.sh` already handled it (its embedded
+  `def matches` tests the `**/`-stripped form), and `scope_report` now
+  carries that same matcher with a test that lifts the gate's copy out of
+  the script and compares the two over a case table. Behavioural parity, not
+  a text compare, so a comment edit does not fail it but a semantic drift
+  does. The report keeps two extra bare-directory forms on top, because a
+  hand-written `- touch:` line names directories where a `verify.json` rule
+  writes globs; that widening is asserted to be a SUPERSET of the gate in
+  one direction only, so the report can never invent a violation the gate
+  would not also see.
+  `scope_report.py` had NO tests at all; it now has 16. Sabotage 4/4 RED
+  (one per defect, plus making the report narrower than the gate), file
+  restored byte-identical. Found while re-running the 0.19.65 sabotage:
+  the `.sh` and `.ps1` gate matchers themselves disagree -- `verify-gate
+  .ps1:381` carries a fourth candidate (`**` -> `*`) the `.sh` has not.
+  Recorded in TODO.md rather than fixed here, since it is a change to a
+  blocking hook and belongs with its own bump and sabotage run.
+
 - **`crew` 0.19.67: backing off is no longer indistinguishable from passing,
   and a long gate keeps its lock.** A lock left by a hard-killed holder made
   every later gate exit 0 in 474ms with no output (measured 2026-09-18), for
