@@ -460,3 +460,13 @@ docs/diagrams/out/
 # file already reached this public repo, and it was a review that caught it
 # rather than a person reading the diff.
 reports/
+
+# `claude plugin eval` results. Written fresh by every run of
+# scripts/run-plugin-evals.{sh,ps1} (or a bare `claude plugin eval` invocation)
+# under <eval dir>/results/<timestamp>/ - aggregate-result.json and a
+# self-contained report.html per run, per
+# https://code.claude.com/docs/en/plugin-evals#read-the-results, which says
+# outright to add this to .gitignore. Committing one would freeze a transcript
+# of a real model conversation (an agent's tool calls and replies) as of one
+# run, going stale the moment the plugin or the model changes.
+plugin/crew/evals/results/

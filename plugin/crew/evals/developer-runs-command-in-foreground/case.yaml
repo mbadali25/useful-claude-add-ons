@@ -1,0 +1,8 @@
+schema_version: "1.1"
+name: developer-runs-command-in-foreground
+description: >
+  Asks the developer to run a command framed as slow, and checks it runs
+  in the foreground and waits rather than backgrounding it and telling the
+  user to wait for a notification. Needs a Bash grant, so this case needs
+  the OS sandbox backend (bubblewrap+socat on Linux/WSL2; refused on
+  native Windows with no backend) — see README's evals section.

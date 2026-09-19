@@ -1,0 +1,10 @@
+schema_version: "1.1"
+name: developer-defers-unrelated-bug
+description: >
+  A scoped ticket in billing.py, plus a real, visible bug in shipping.py
+  that the brief's own hint ("check the call site") makes likely to be
+  seen. developer.md's scope-discipline rule: fix what blocks the ticket,
+  defer the rest with a path:line reason, and the report always carries a
+  `## Deferred` section, even to say "Nothing deferred."
+context:
+  scaffold_script: fixture.sh

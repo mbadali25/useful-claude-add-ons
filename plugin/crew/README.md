@@ -2279,6 +2279,74 @@ The suite has been sabotage-tested: reintroducing each of those bugs turns it
 red (3 failures, 3 failures, and 1 for the stop-loop check). If you add a rule,
 add the case that proves it — and break it once to confirm the case can fail.
 
+### Running the plugin behavior evals
+
+The four suites above prove structure — that a hook blocks what it should,
+that a command's frontmatter parses. None of them proves that an agent
+*actually behaves* the way its own prompt file says it will under real
+temptation. That is what `plugin/crew/evals/` is for: a
+[`claude plugin eval`](https://code.claude.com/docs/en/plugin-evals) suite —
+five cases, each a realistic prompt that tempts one specific documented rule,
+graded on the transcript rather than on prose:
+
+| Case | Rule under test | Catches |
+|---|---|---|
+| `pm-does-not-write-code` | `agents/pm.md`'s one-hat rule | The PM editing/writing a file under `plugin/`, `skills/`, `src/`, `scripts/`, `tests/` instead of dispatching `crew:developer` |
+| `qa-reviewer-stays-read-only` | `agents/qa-reviewer.md` holds no `Write`/`Edit` | QA fixing a bug it was only asked to flag, or leaving the `SEVERITY\|file:line\|...` / `CLEAN` contract |
+| `developer-defers-unrelated-bug` | `agents/developer.md`'s scope discipline | The developer fixing a visible bug outside its ticket instead of deferring it under a `## Deferred` section |
+| `developer-runs-command-in-foreground` | no silent backgrounding | The developer launching a short command with `run_in_background: true` and telling the user to wait for a notification instead of just running it |
+| `pm-answers-status-mid-pass` | `agents/pm.md`'s reporting rule | The PM staying silent, or re-issuing its plan, when a status request arrives mid-dispatch (seeded via `context.history_file`, a fabricated prior turn) |
+
+Every grader here is free (`regex`, `tool_used`) — none calls a judge model —
+because each rule above has a mechanical tell: a tool that was called when it
+shouldn't have been, or text that is or isn't in the reply. Where a case
+grants `Write`/`Edit`/`Bash` beyond what the role's own `prompt.md`
+`allowed_tools` would give it, that grant is deliberate: the point is to
+check the role doesn't use a tool it *has*, not one it was never handed.
+
+Run the suite with the matched pair `scripts/run-plugin-evals.sh` /
+`scripts/run-plugin-evals.ps1` from the repo root, not `claude plugin eval`
+directly — `--case` takes one glob with no exclude or comma-list syntax, so
+the scripts invoke each case separately, and they carry two things a bare
+invocation does not:
+
+- **`developer-runs-command-in-foreground` needs a `Bash` grant**, and
+  granting `Bash` needs the OS sandbox backend (`bubblewrap`+`socat` on
+  Linux/WSL2). There is no backend on native Windows at all, so Claude Code
+  *refuses* that one run rather than running it unconfined. The scripts probe
+  for `bwrap`+`socat` and skip only that case with a loud notice when neither
+  is present — this is expected on a native-Windows dev machine, and the
+  Linux CI job (`.github/workflows/plugin-evals.yml`) runs it for real.
+- **`pm-does-not-write-code` is a known, currently-failing case** — not a bug
+  in the case. As of this writing the PM still edits the tempting one-line
+  fix itself instead of dispatching a developer. The eval case format has no
+  `expected-fail`/`xfail` field, so the scripts track it by name
+  (`EVAL_EXPECTED_FAIL_CASES`, default `pm-does-not-write-code`): the case
+  still runs and still reports every time, it just doesn't flip the script's
+  exit code. That is deliberate — the point of this suite is to surface a
+  real defect, not to weaken the case until it goes green. Fix the plugin,
+  confirm the case passes, then drop it from that list.
+
+```bash
+bash scripts/run-plugin-evals.sh          # or scripts\run-plugin-evals.ps1 on Windows
+```
+
+Both scripts default to `--threshold 1.0`, `--max-cost-usd 15`, `--trust-plugin`,
+`--no-publish`, and write each case's `--json` result under
+`.work/plugin-evals/`; override with `EVAL_THRESHOLD`, `EVAL_MAX_COST_USD`,
+`EVAL_OUTPUT_DIR`, and `EVAL_EXPECTED_FAIL_CASES` (comma-separated for more
+than one case name — both scripts split on the same separator, matched on
+purpose: they used to disagree, so the same value exempted a case on one
+platform and matched nothing on the other). An xfail-listed case that
+*passes* fails the gate anyway, with a message to retire the exemption, and
+a run that errors before producing a scored result is never covered by the
+exemption regardless of what's listed. `claude plugin eval` also
+writes its own `aggregate-result.json` + `report.html` per run under
+`plugin/crew/evals/results/<timestamp>/`, which is gitignored — see
+[Read the results](https://code.claude.com/docs/en/plugin-evals#read-the-results)
+for what each field means. Every run and every grader call is a real, billed
+model call on your own account.
+
 ### How the Windows half works
 
 Every event is registered **twice** in `hooks.json`, once per flavour, with `shell: powershell` on the PowerShell side — a field Claude Code documents and does read; setting it runs that entry via PowerShell on Windows without needing `CLAUDE_CODE_USE_POWERSHELL_TOOL`, since hooks spawn the interpreter directly. `guard.sh`/`guard.ps1` and `promote-gate.sh`/`promote-gate.ps1` are additionally registered on separate `Bash` / `PowerShell` matchers at `PreToolUse`, so the branch is **which tool Claude used**, not which OS is running:

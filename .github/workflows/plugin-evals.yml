@@ -1,0 +1,85 @@
+name: crew plugin evals
+
+# Real model calls, billed to whoever's ANTHROPIC_API_KEY runs the job - not
+# a free structural check like the other workflows here, so this does NOT
+# use the repo's usual `on: [push, pull_request]`. It runs only on a PR that
+# actually touches the plugin under test, and only when a repo secret named
+# ANTHROPIC_API_KEY exists; the skip step below prints why rather than
+# failing silently or leaving the check missing.
+#
+# Presence is resolved ONCE, at job level, into env.HAS_KEY - never inside a
+# step's `if:` or a `run:` shell string. Two separate mistakes, corrected in
+# two rounds of review:
+#   - `run: | if [ -n "${{ secrets.X }}" ]; then ...` does a textual
+#     substitution into the script BEFORE bash ever sees it, so a secret
+#     value containing shell metacharacters (quotes, `$()`, backticks) gets
+#     executed as shell syntax rather than compared as a string - and a
+#     value that happens to look like an unset shell variable reference
+#     (e.g. the literal text `$SOME_VAR`) reads back as empty under `-n`, so
+#     a genuinely configured secret can be reported as absent.
+#   - `if: ${{ secrets.X != '' }}` on a step looks like the fix, but GitHub
+#     Actions rejects the secrets context inside a step or job `if:`
+#     conditional outright - the workflow fails to even start, not just this
+#     one check. The secret has to be read into a plain env value FIRST
+#     (`env:` at job level, evaluated once at job start into env.HAS_KEY, a
+#     boolean-as-string with no secret material in it), and every step's
+#     `if:` then compares that plain string instead.
+# `env:` on the eval step further down (ANTHROPIC_API_KEY: ${{ secrets... }})
+# is a different, unrelated, and safe use of secrets - that sets a real
+# process environment variable through the runner for `claude` to read,
+# never text substituted into a script body.
+on:
+  pull_request:
+    paths:
+      - 'plugin/crew/**'
+      - 'scripts/run-plugin-evals.sh'
+      - 'scripts/run-plugin-evals.ps1'
+      - '.github/workflows/plugin-evals.yml'
+  workflow_dispatch: {}
+
+jobs:
+  evals:
+    runs-on: ubuntu-latest
+    env:
+      HAS_KEY: ${{ secrets.ANTHROPIC_API_KEY != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Notice - ANTHROPIC_API_KEY not set, suite SKIPPED
+        if: env.HAS_KEY != 'true'
+        run: echo "::notice::ANTHROPIC_API_KEY is not set as a repository secret, so the plugin eval suite (real, billed model calls) was SKIPPED, not passed. The repo owner must add it under Settings > Secrets and variables > Actions for this job to actually run."
+
+      - name: Set up Node.js
+        if: env.HAS_KEY == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Claude Code CLI
+        if: env.HAS_KEY == 'true'
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Install the Bash sandbox backend (bubblewrap + socat)
+        # developer-runs-command-in-foreground grants Bash, and granting Bash
+        # needs an OS sandbox backend or claude plugin eval refuses that run
+        # outright - see plugin/crew/README.md#running-the-plugin-behavior-evals
+        # and https://code.claude.com/docs/en/sandboxing.
+        if: env.HAS_KEY == 'true'
+        run: sudo apt-get update && sudo apt-get install -y bubblewrap socat
+
+      - name: Run the crew plugin eval suite
+        if: env.HAS_KEY == 'true'
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          EVAL_OUTPUT_DIR: ${{ github.workspace }}/.work/plugin-evals
+        run: bash scripts/run-plugin-evals.sh
+
+      - name: Upload eval results
+        if: env.HAS_KEY == 'true' && always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: plugin-eval-results
+          path: |
+            .work/plugin-evals/
+            plugin/crew/evals/results/
+          if-no-files-found: ignore

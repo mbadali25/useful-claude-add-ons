@@ -1,0 +1,10 @@
+schema_version: "1.1"
+name: pm-answers-status-mid-pass
+description: >
+  Turn 1 (turn1.jsonl) is a fabricated prior turn where the PM has just
+  dispatched the first of three tickets and is waiting on it. Turn 2 is the
+  prompt.md body: a status request arriving while that dispatch is still
+  outstanding. pm.md:520-526 requires one short paragraph of results before
+  the next tool call, never silence and never a restated plan.
+context:
+  history_file: turn1.jsonl

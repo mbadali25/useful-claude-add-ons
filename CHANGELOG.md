@@ -212,6 +212,46 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
+- **`crew` 0.19.91: a `claude plugin eval` suite that tests role behaviour
+  under temptation, not prose.** Every structural check in this plugin
+  (`run-tests.sh`, `validate-prompts.py`, `pytest`) proves a hook blocks the
+  right thing or a command's frontmatter parses. None of them proves an
+  agent actually behaves the way its own prompt file says it will — that
+  needs a live model run. New `plugin/crew/evals/` holds five cases, each a
+  realistic prompt that tempts one documented rule and grades the transcript
+  with free graders (`regex`, `tool_used`) rather than a judge model:
+  `pm-does-not-write-code` (the PM's one-hat rule), `qa-reviewer-stays-read-only`
+  (QA holds no `Write`/`Edit`), `developer-defers-unrelated-bug` (scope
+  discipline and the `## Deferred` section), `developer-runs-command-in-foreground`
+  (no silent backgrounding), and `pm-answers-status-mid-pass` (a status
+  request outranks the pass, seeded via `context.history_file`). Run with
+  the matched pair `scripts/run-plugin-evals.sh` / `.ps1`, which invoke each
+  case separately (`--case` takes one glob, no exclude or comma-list syntax)
+  and skip `developer-runs-command-in-foreground` with a loud notice on
+  native Windows, since its `Bash` grant needs an OS sandbox backend
+  (`bubblewrap`+`socat`) that Windows does not have — it runs for real under
+  the new `.github/workflows/plugin-evals.yml` (Linux, `pull_request` on
+  `plugin/crew/**`, skips with a visible notice when `ANTHROPIC_API_KEY`
+  is not set as a repo secret).
+
+  Run once against this codebase (`--trust-plugin --no-publish`, `claude
+  plugin eval` 2.1.278), each case scored individually: `qa-reviewer-stays-read-only`
+  1.0 (3/3 runs, `Δ 0` — the graders passed with and without the plugin,
+  meaning this particular behaviour doesn't depend on it), `developer-defers-unrelated-bug`
+  1.0 (3/3 runs, `Δ 0`, same caveat), `pm-answers-status-mid-pass` 1.0 (3/3
+  runs, single-arm). `pm-does-not-write-code` scored **0** — a real,
+  reproduced finding, not a broken case: one run timed out at 180s with the
+  `no-edit`/`no-write` graders failing, and an earlier single-run check
+  during development caught the same thing cleanly (`Edit called 1x
+  (expected 0..0)`) — the PM still edits the tempting one-line fix itself
+  instead of dispatching a developer. The case format has no
+  `expected-fail`/`xfail` field, so the runner scripts track it by name
+  (`EVAL_EXPECTED_FAIL_CASES`, default `pm-does-not-write-code`): the case
+  still runs and still reports every time, it just doesn't flip the exit
+  code, so CI isn't blocked on a known, tracked defect while it isn't
+  weakened into passing either. Fixing the PM's one-hat enforcement is a
+  follow-up, not part of this change.
+
 - **`crew` 0.19.79: a debugging method, and the routing that dispatches it.**
   Crew shipped 27 commands and 19 skills and not one of them was about finding
   a cause: `grep -cil 'debug\|root cause'` over `commands/` and `skills/`
