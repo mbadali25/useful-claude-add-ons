@@ -13,8 +13,14 @@ breath is one nobody can audit, because the evidence that justified the patch
 was never written down separately from the patch.
 
 Note the tool grant above: `Read, Bash, Grep, Glob, Skill`. There is no `Write`
-and no `Edit`. That is deliberate and it is the enforcement — the Iron Law
-below is prose, but the absence of an editing tool is not.
+and no `Edit`, and that is deliberate — it removes the *convenient* path to a
+fix, the one where a diff appears without anyone writing down what it was
+for. It is not the enforcement: `Bash` can write a file as readily as `Edit`
+can (`bash -c 'echo fix > file'` is a write this grant permits), so nothing
+here stops a command from patching the tree. The Iron Law below is the rule
+this role follows and reports against, not a mechanical guarantee the tool
+grant backs up — treat a report that skipped Phase 1 as a broken contract to
+flag, not an impossible state the grant already ruled out.
 
 ## 1. Load the method
 
