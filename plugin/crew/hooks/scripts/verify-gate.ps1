@@ -288,7 +288,14 @@ if ($All) {
   # excluded/skipped rule's own files, so a commit-range fallback would
   # silently narrow -All's scope to match Stop's. -All instead sees every
   # tracked file plus every untracked one.
+  #
+  # `git ls-files` alone MISSES a path staged for deletion - the twin of
+  # the same fix in verify-gate.sh, where the long rationale lives. Two
+  # more sources close it: `--diff-filter=D` against the index for a
+  # STAGED deletion, plain `diff --name-only HEAD` for an UNSTAGED one.
   $changed += (git -c core.quotePath=false ls-files 2>$null)
+  $changed += (git -c core.quotePath=false diff --name-only --cached --diff-filter=D 2>$null)
+  $changed += (git -c core.quotePath=false diff --name-only HEAD 2>$null)
   $changed += (git -c core.quotePath=false ls-files --others --exclude-standard 2>$null)
 } else {
   $changed += (git -c core.quotePath=false diff --name-only $base 2>$null)
@@ -638,6 +645,7 @@ function Get-CrewUnrepresentable($Entries, [string]$Where) {
     "`n" = "a newline"; "`r" = "a carriage return"
     [string][char]0x1d = "an ASCII group separator (0x1d)"
     [string][char]0x1e = "an ASCII record separator (0x1e)"
+    [string][char]0x1c = "an ASCII file separator (0x1c)"
   }
   $i = 0
   foreach ($c in @($Entries)) {
@@ -710,11 +718,55 @@ function Test-CrewSeconds($Value) {
 # into "local", which is the safe-looking value TheSelectSource's SSM-over-
 # an-inherited-ENV case proved is not actually safe.
 $stopMode = -not $All
-$reachVerbs = @("ssm", "ssh", "curl ", "aws ", "az ", "gh ", "psql", "mysql")
+# WORD-BOUNDARY, not substring - the twin of the same fix in verify-gate.sh.
+# "ssm" as a bare substring matched inside "echo assessment".
+$reachVerbs = @("ssm", "ssh", "curl", "aws", "az", "gh", "psql", "mysql")
+$reachRegex = [regex]("\b(" + (($reachVerbs | ForEach-Object { [regex]::Escape($_) }) -join "|") + ")\b")
+function Get-CrewLooksRemoteText([string]$Text) {
+  if (-not $Text) { return $null }
+  $m = $reachRegex.Match($Text)
+  if ($m.Success) { return $m.Groups[1].Value }
+  return $null
+}
+# ONE LEVEL of wrapper-script inspection, no recursion beyond it - the twin
+# of the same fix in verify-gate.sh, where the full rationale lives: a rule
+# naming `bash _verify/smoke.sh` with no `reach` was scanned only as that
+# literal string, which contains no reach verb, while smoke.sh's own BODY
+# called ssh/aws ssm freely and ran unattended on Stop.
+$wrapperInterpreters = @("bash", "sh", "python", "python3", "pwsh")
+function Get-CrewWrapperScriptPath([string]$Cmd) {
+  $parts = $Cmd -split '\s+' | Where-Object { $_ }
+  if ($parts.Count -eq 0) { return $null }
+  $head = $parts[0]
+  if ($head.StartsWith("./") -or $head.StartsWith("../")) { return $head }
+  $base = [System.IO.Path]::GetFileName($head).ToLowerInvariant()
+  if ($base.EndsWith(".exe")) { $base = $base.Substring(0, $base.Length - 4) }
+  if ($base -eq "pwsh") {
+    for ($i = 1; $i -lt $parts.Count - 1; $i++) {
+      if ($parts[$i].ToLowerInvariant() -eq "-file") { return $parts[$i + 1] }
+    }
+    return $null
+  }
+  if ($wrapperInterpreters -contains $base) {
+    foreach ($p in $parts[1..($parts.Count - 1)]) {
+      if (-not $p.StartsWith("-")) { return $p }
+    }
+  }
+  return $null
+}
 function Get-CrewLooksRemote($Run) {
   foreach ($c in @($Run)) {
     if ($c -isnot [string]) { continue }
-    foreach ($v in $reachVerbs) { if ($c.Contains($v)) { return $v } }
+    $verb = Get-CrewLooksRemoteText $c
+    if ($verb) { return $verb }
+    $script = Get-CrewWrapperScriptPath $c
+    if ($script -and (Test-Path $script -PathType Leaf)) {
+      try {
+        $text = Get-Content -Raw -ErrorAction Stop $script
+      } catch { $text = "" }
+      $verb = Get-CrewLooksRemoteText $text
+      if ($verb) { return $verb }
+    }
   }
   return $null
 }
@@ -726,17 +778,44 @@ $stopExcluded = @{}   # rule index -> @{kind=...; reason=...}
 # .crew/.verify-gate.timings.json - machine-local, never verify.json. From
 # the second Stop onward this folds the cached number into $ruleSecs as if
 # declared, labelled "(measured, not declared)". No measurement: no change.
-function Get-CrewRuleKey($Rule) {
-  $blob = (ConvertTo-Json -Compress -InputObject ([ordered]@{
-    paths = @($Rule.paths); run = @($Rule.run) }))
-  $sha1 = [System.Security.Cryptography.SHA1]::Create()
-  $bytes = $sha1.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($blob))
-  return -join ($bytes[0..7] | ForEach-Object { $_.ToString("x2") })
+# CANONICAL, shared with verify-gate.sh via verify_record.py's rule_key -
+# never hashed independently here. This used to run ConvertTo-Json
+# -Compress (no spaces) through SHA1 natively, while the .sh matcher's own
+# python heredoc used json.dumps(..., sort_keys=True) (python's default
+# spaced separators) - two different byte strings for the same logical
+# rule, so a key EITHER flavour wrote was invisible to the other: a timing
+# one seeded never priced the other's Stop, and neither could ever clear
+# the other's chronic record entry, because the keys never matched. Shells
+# out to python (this script already does, for the fingerprint) rather
+# than reimplementing json.dumps' separator behaviour in PowerShell, which
+# is exactly the kind of thing that drifts again the next time either side
+# changes independently.
+function Get-CrewRuleKey($Rule, $Py, $Script) {
+  if (-not $Py -or -not (Test-Path $Script)) {
+    # Fail toward a key that will never match anything cached, rather than
+    # toward one that might collide - an empty rule_cmds/cost/mandatory
+    # entry is inert; a WRONG key that happens to match a stale one is not.
+    return [System.Guid]::NewGuid().ToString("N").Substring(0, 16)
+  }
+  $blob = ConvertTo-Json -Compress -InputObject ([ordered]@{
+    paths = @($Rule.paths); run = @($Rule.run) })
+  $out = ($blob | & $Py $Script rule-key) | Out-String
+  $out = $out.Trim()
+  if ($out) { return $out }
+  return [System.Guid]::NewGuid().ToString("N").Substring(0, 16)
 }
 $ruleKeys = @{}
+# Resolved ONCE, before the matching loop, and passed to every
+# Get-CrewRuleKey / verify_record.py call rather than re-resolving per rule.
+$matchPy = Resolve-CrewPython
+$verifyRecordScript = Join-Path $PSScriptRoot 'verify_record.py'
 $timings = @{}
 try {
   if (Test-Path .crew/.verify-gate.timings.json) {
+    # A structurally wrong cache (`[]`) parses fine and `$td.rules` on an
+    # array is simply $null in PowerShell - no crash, unlike the .sh side's
+    # `.get("rules")` on a python list (AttributeError). Confirmed rather
+    # than assumed: this branch is already inert against that shape.
     $td = Get-Content .crew/.verify-gate.timings.json -Raw | ConvertFrom-Json -ErrorAction Stop
     if ($td.rules) {
       foreach ($p in $td.rules.PSObject.Properties) { $timings[$p.Name] = $p.Value }
@@ -745,7 +824,31 @@ try {
 } catch { $timings = @{} }
 $measuredUsed = @{}   # rule index -> $true when cost came from the cache
 $trulyUnknown = @{}   # rule index -> $true when it needs a fresh measurement
-$cmdEnv = @{}          # command -> @{VAR=value} declared by its rule
+# COMMAND IDENTITY includes the rule's declared env - the twin of the same
+# fix in verify-gate.sh, where the full rationale lives. Two rules running
+# the same TEXT under different env used to collapse into one $cmds entry
+# (deduped on bare text via -notcontains), so only the LAST rule's env ever
+# actually ran and BOTH rules were recorded as verified against a command
+# neither was individually shown to pass under its own environment.
+function Get-CrewIdentity([string]$Cmd, [hashtable]$Env) {
+  if (-not $Env -or $Env.Count -eq 0) { return $Cmd }
+  $ordered = [ordered]@{}
+  foreach ($k in ($Env.Keys | Sort-Object)) { $ordered[$k] = $Env[$k] }
+  $envJson = ConvertTo-Json -Compress -InputObject $ordered
+  return $Cmd + "`u{1c}" + $envJson
+}
+function Get-CrewIdentityText([string]$Identity) {
+  # ORDINAL, explicitly. .NET's String.IndexOf(string) defaults to
+  # CURRENT-CULTURE comparison (unlike Contains, which is ordinal by
+  # default), and culture-aware comparison treats some control characters
+  # as ignorable - measured: IndexOf("`u{1c}") on a string containing NO
+  # such character returned 0, not -1, so every identity with no env
+  # suffix at all had its command text truncated to "" right here. Ordinal
+  # is what the .sh side's byte-for-byte str.partition already does.
+  $idx = $Identity.IndexOf("`u{1c}", [System.StringComparison]::Ordinal)
+  if ($idx -ge 0) { return $Identity.Substring(0, $idx) }
+  return $Identity
+}
 
 foreach ($f in $changed) {
   $hit = $false
@@ -758,7 +861,7 @@ foreach ($f in $changed) {
         if (-not $ruleCmds.ContainsKey($ri)) {
           $ruleCmds[$ri] = [System.Collections.ArrayList]@()
           [void]$ruleOrder.Add($ri)
-          $key = Get-CrewRuleKey $r
+          $key = Get-CrewRuleKey $r $matchPy $verifyRecordScript
           $ruleKeys[$ri] = $key
           if (Test-CrewSeconds $r.seconds) {
             $ruleSecs[$ri] = [double]$r.seconds
@@ -793,20 +896,19 @@ foreach ($f in $changed) {
           }
         }
         if ($stopExcluded.ContainsKey($ri)) { continue }
+        $rEnv = @{}
         if ($r.env -and ($r.env -is [System.Management.Automation.PSCustomObject])) {
-          foreach ($c in $r.run) {
-            if (-not $cmdEnv.ContainsKey($c)) { $cmdEnv[$c] = @{} }
-            foreach ($ep in $r.env.PSObject.Properties) {
-              if ($ep.Value -is [string]) { $cmdEnv[$c][$ep.Name] = $ep.Value }
-            }
+          foreach ($ep in $r.env.PSObject.Properties) {
+            if ($ep.Value -is [string]) { $rEnv[$ep.Name] = $ep.Value }
           }
         }
         foreach ($c in $r.run) {
-          if ($cmds -notcontains $c) { [void]$cmds.Add($c) }
-          if ($ruleCmds[$ri] -notcontains $c) { [void]$ruleCmds[$ri].Add($c) }
+          $ident = Get-CrewIdentity $c $rEnv
+          if ($cmds -notcontains $ident) { [void]$cmds.Add($ident) }
+          if ($ruleCmds[$ri] -notcontains $ident) { [void]$ruleCmds[$ri].Add($ident) }
           if ($ruleSecs.ContainsKey($ri)) {
-            if (-not $cost.ContainsKey($c) -or $cost[$c] -lt $ruleSecs[$ri]) {
-              $cost[$c] = $ruleSecs[$ri]
+            if (-not $cost.ContainsKey($ident) -or $cost[$ident] -lt $ruleSecs[$ri]) {
+              $cost[$ident] = $ruleSecs[$ri]
             }
           }
         }
@@ -947,13 +1049,13 @@ if ($null -ne $budget) {
   $cmds = $ordered
 
   foreach ($c in $unknown) {
-    [void]$notices.Add('verify-gate: ' + $c + ' has no `seconds` in verify.json - cost UNSTATED, ran anyway')
+    [void]$notices.Add('verify-gate: ' + (Get-CrewIdentityText $c) + ' has no `seconds` in verify.json - cost UNSTATED, ran anyway')
   }
   foreach ($c in $overrun) {
-    [void]$notices.Add('verify-gate: ' + $c + ' belongs to an unconditional rule (`always`, or no `seconds`) - it RAN past the budget; the cost is charged but cannot defer it')
+    [void]$notices.Add('verify-gate: ' + (Get-CrewIdentityText $c) + ' belongs to an unconditional rule (`always`, or no `seconds`) - it RAN past the budget; the cost is charged but cannot defer it')
   }
   foreach ($c in $deferred) {
-    [void]$notices.Add('deferred to /crew:verify: ' + $c + ' (' + [string][int]$cost[$c] + 's)')
+    [void]$notices.Add('deferred to /crew:verify: ' + (Get-CrewIdentityText $c) + ' (' + [string][int]$cost[$c] + 's)')
   }
   foreach ($ri in $chronicRules) {
     [void]$notices.Add("verify-gate: rules[$ri] is permanently over budget ($([int]$ruleSecs[$ri])s > $([int]$budget)s stop budget) - deferred every Stop; the baseline still advances past it, but this rule stays UNVERIFIED until /crew:verify --all runs it.")
@@ -989,7 +1091,10 @@ foreach ($ri in $ruleOrder) {
     $b = if ($null -ne $budget) { [int]$budget } else { 0 }
     $reason = "permanently over budget ($([int]$ruleSecs[$ri])s > ${b}s) - run /crew:verify --all"
   }
-  $firstCmd = if ($ruleCmds[$ri] -and $ruleCmds[$ri].Count -gt 0) { $ruleCmds[$ri][0] }
+  # rule_cmds[$ri] stays empty for a reach-excluded rule (it never runs), so
+  # fall back to the rule's own `run` list. Either way, strip a possible
+  # identity suffix - the label is for a human, not a lookup key.
+  $firstCmd = if ($ruleCmds[$ri] -and $ruleCmds[$ri].Count -gt 0) { Get-CrewIdentityText $ruleCmds[$ri][0] }
               elseif ($vm.rules[$ri].run -and $vm.rules[$ri].run.Count -gt 0) { $vm.rules[$ri].run[0] }
               else { "" }
   if ($firstCmd.Length -gt 80) { $firstCmd = $firstCmd.Substring(0, 80) }
@@ -999,11 +1104,14 @@ foreach ($ri in $ruleOrder) {
     label = "rules[$ri]: $firstCmd"
     kind = $kind
     reason = $reason
+    # IDENTITIES (text+env), not bare text - see Get-CrewIdentity above.
+    # Kept exactly as $cmds carries them so cmd_log (built from the same
+    # identities in the run loop) matches these one-to-one.
     cmds = @($ruleCmds[$ri])
     unknown = [bool]$trulyUnknown.ContainsKey($ri)
   })
 }
-$extrasObj = [ordered]@{ matched_rules = @($matchedRules); cmd_env = $cmdEnv }
+$extrasObj = [ordered]@{ matched_rules = @($matchedRules) }
 $extrasJson = ConvertTo-Json -InputObject $extrasObj -Depth 10 -Compress
 
 # The largest STATED cost among the commands actually selected. Sizes the
@@ -1053,10 +1161,30 @@ $bashExe = $null
 # here so this function has one lineage rather than two.
 $failed = $false
 $totalElapsed = 0
+# ANY SKIP (rc 77) must block both markers - the twin of the same tracking
+# in verify-gate.sh, where the full rationale lives: a SKIP is neither a
+# pass nor a fail, but it is also not a CHECK, and recording the tree as
+# verified over one would let the fingerprint skip mechanism hide it from
+# ever being attempted again.
+$anySkipped = $false
 # One entry per command actually run this turn - the twin of CMD_LOG in
 # verify-gate.sh, fed to verify_record.py sync after the loop.
 $cmdLog = [System.Collections.ArrayList]@()
-foreach ($c in $cmds) {
+foreach ($ident in $cmds) {
+  # $ident is an IDENTITY (text, or text+`u{1c}+env JSON) - see
+  # Get-CrewIdentity above. Split it in-process (PowerShell strings need no
+  # subprocess round-trip the way bash's read loop does).
+  $c = Get-CrewIdentityText $ident
+  $envJson = if ($ident.Length -gt $c.Length) { $ident.Substring($c.Length + 1) } else { "" }
+  $spec = @{}
+  if ($envJson) {
+    try {
+      $parsed = $envJson | ConvertFrom-Json -ErrorAction Stop
+      foreach ($prop in $parsed.PSObject.Properties) {
+        if ($prop.Value -is [string]) { $spec[$prop.Name] = $prop.Value }
+      }
+    } catch { $spec = @{} }
+  }
   # --- env pinning -------------------------------------------------------
   # ENV, AWS_PROFILE, AWS_DEFAULT_REGION, KUBECONFIG, TF_WORKSPACE are unset
   # for every rule command unless its OWN rule declared "env" for it, in
@@ -1064,7 +1192,6 @@ foreach ($c in $cmds) {
   # block in verify-gate.sh; see that file for why an inherited value must
   # not silently ride along into a check.
   $pinned = @()
-  $spec = if ($cmdEnv.ContainsKey($c)) { $cmdEnv[$c] } else { @{} }
   foreach ($v in @("ENV", "AWS_PROFILE", "AWS_DEFAULT_REGION", "KUBECONFIG", "TF_WORKSPACE")) {
     if ($spec.ContainsKey($v)) {
       Set-Item -Path "env:$v" -Value $spec[$v]
@@ -1096,6 +1223,7 @@ foreach ($c in $cmds) {
   if ($rc -eq 77) {
     [Console]::Error.WriteLine("verify-gate: SKIP (rc 77, environment absent): $c")
     $cmdStatus = "skip77"
+    $anySkipped = $true
   } elseif ($rc -ne 0) {
     [Console]::Error.WriteLine("VERIFY FAILED: $c")
     [Console]::Error.WriteLine("bash: $bashExe")
@@ -1106,7 +1234,11 @@ foreach ($c in $cmds) {
   $ruleElapsed = [int]((Get-Date) - $ruleStart).TotalSeconds
   $totalElapsed += $ruleElapsed
   [Console]::Error.WriteLine("verify-gate: ${ruleElapsed}s  $c")
-  [void]$cmdLog.Add([ordered]@{ cmd = $c; status = $cmdStatus; elapsed = $ruleElapsed })
+  # $ident, not $c: matched_rules[...].cmds carries identities, so the
+  # record-sync classification (matching THIS log against those lists) has
+  # to key on the same thing, or two rules sharing command text under
+  # different env would collide back into one entry.
+  [void]$cmdLog.Add([ordered]@{ cmd = $ident; status = $cmdStatus; elapsed = $ruleElapsed })
   # Heartbeat AFTER the rule, matching verify-gate.sh exactly.
   Update-CrewLock -LockPath $lock -Token $lockToken
   # Re-publish the deadline after each rule, for the same reason the
@@ -1128,8 +1260,12 @@ if ($failed) { exit 2 }
 # Per-rule record sync - the twin of the same call in verify-gate.sh. Only
 # reached on a turn where nothing FAILED (rc 77 is not a failure), so an
 # unreliable run cannot overwrite what a previous clean run recorded.
-# Best-effort: no python, or a script that errors, leaves the record
-# exactly as it was - the fail-safe direction, same as everywhere else here.
+# Best-effort in the sense that a MISSING python or verify_record.py
+# degrades exactly as before; but a sync that WAS attempted and FAILED TO
+# PERSIST is not best-effort any more - verify_record.py now exits
+# non-zero on a write failure (see its _save/_sync) and prints why.
+# $syncStatus carries that through to the decision below.
+$syncStatus = 0
 try {
   $syncPy = Resolve-CrewPython
   $syncScript = Join-Path $PSScriptRoot 'verify_record.py'
@@ -1141,21 +1277,23 @@ try {
       cmd_log = @($cmdLog)
     }
     $payloadJson = ConvertTo-Json -InputObject $payload -Depth 10 -Compress
+    $global:LASTEXITCODE = 0
     $payloadJson | & $syncPy $syncScript sync 2>$null | ForEach-Object { [Console]::Error.WriteLine($_) }
+    $syncStatus = $LASTEXITCODE
   }
 } catch { }
 
-# ONE predicate for BOTH records, matching fully_verified in verify-gate.sh.
-# A run may only be recorded as verified when NOTHING was deferred: a deferred
-# rule was never checked, so recording over it turns "we ran out of budget"
-# into "this tree is verified".
-#
-# This guard used to read $notices.Count, which is prose and is also non-empty
-# for an unstated COST -- so a rule that ran and passed suppressed recording --
-# while Write-CrewVerified, the sha baseline, had no guard at all. That is how
-# a deferred rule still advanced the baseline and dropped a committed file out
-# of $changed for every later run, including -All.
-$fullyVerified = ($deferredCount -eq 0)
+# THREE things must ALL hold before either marker may advance - the twin of
+# the same three-part guard in verify-gate.sh, where the full rationale
+# lives: nothing was ACUTELY deferred ($deferredCount), nothing SKIPPED
+# ($anySkipped - rc 77 is not a check), and the per-rule record actually
+# made it to disk ($syncStatus). This guard used to read $notices.Count,
+# which is prose and is also non-empty for an unstated COST -- so a rule
+# that ran and passed suppressed recording -- while Write-CrewVerified, the
+# sha baseline, had no guard at all. That is how a deferred rule still
+# advanced the baseline and dropped a committed file out of $changed for
+# every later run, including -All.
+$fullyVerified = ($deferredCount -eq 0) -and (-not $anySkipped) -and ($syncStatus -eq 0)
 
 if ($fullyVerified) {
   if ($fingerprint) {
@@ -1167,6 +1305,10 @@ if ($fullyVerified) {
   # Written ONLY on the fully-checked path, so the marker can never claim more
   # than was actually checked. See verify-gate.sh.
   Write-CrewVerified
+} elseif ($syncStatus -ne 0) {
+  # verify_record.py already printed why, on stderr, above.
+} elseif ($anySkipped) {
+  [Console]::Error.WriteLine("verify-gate: the verified baseline was NOT advanced - at least one command exited 77 (SKIP) and was not actually checked this turn.")
 } else {
   [Console]::Error.WriteLine("verify-gate: the verified baseline was NOT advanced - $deferredCount rule command(s) were deferred and have not been checked against this tree.")
 }

@@ -22,6 +22,41 @@ fixture) and confirmed red before this file was written green -- see the
 developer's report for what was reverted and what the suite printed. This
 file is the thing left behind to catch a regression; it does not re-run the
 sabotage itself, the same way the rest of this test directory does not.
+
+## Codex round 1 (12 findings, both flavours)
+
+  1. CRLF from native-Windows python leaves a trailing \r on an env-pin
+     variable name, so `unset "$VAR"` silently fails to unset the REAL
+     variable inherited from the caller's shell.
+  2. Exit 77 (SKIP) used to still let both markers advance if nothing else
+     was deferred -- a SKIP is not a check.
+  3. --all built CHANGED from `ls-files` alone, which omits a path staged
+     for deletion (`git rm`), so a rule mapped to it silently never ran.
+  4. A corrupt .crew/.verify-gate.record.json or .timings.json did not
+     move the fingerprint, so a corrupted cache kept skipping forever and
+     lost whatever it had recorded (a chronic notice, a cached timing).
+  5. An undeclared rule's reach was scanned only in the command STRING, not
+     in a wrapper script file (`bash x.sh`) that script directly invokes.
+  6. Two rules sharing command TEXT but declaring different `env` collapsed
+     into one `cmds` entry; only the last rule's env ever ran, and BOTH
+     were recorded as verified against a command neither actually passed
+     under its own environment.
+  7. A verify_record.py `_save` failure (e.g. a directory where the .tmp
+     file needs to go) was swallowed, and the markers still advanced.
+  8. .sh hashed rule content with json.dumps' default (spaced) separators;
+     .ps1 used ConvertTo-Json -Compress (no spaces) - different byte
+     strings for the same rule, so a key one flavour wrote was invisible
+     to the other.
+  9. Reach-verb matching was substring, not word-boundary: "ssm" matched
+     inside "assessment".
+ 10. A structurally wrong timings cache (`[]`, not `{...}`) crashed the
+     .sh matcher (AttributeError on `.get`, uncaught) instead of being
+     treated as absent.
+ 11. An edited or removed rule's OLD record entry (a different content
+     hash) was never pruned, so it stayed reported forever.
+ 12. A subsecond (0s elapsed) unpriced rule's measurement was discarded
+     outright (`if total > 0`), so it stayed mandatory-forever instead of
+     being priced from the second Stop onward.
 """
 import json
 import os
@@ -271,8 +306,15 @@ def test_f_undeclared_reach_verb_is_stop_deferred_and_price_refused(flavour, tmp
 
 @pytest.mark.parametrize("flavour", _FLAVOURS)
 def test_g_exit_77_is_skip_not_fail_not_verified(flavour, tmp_path):
-    """(g) A fixture rule exiting 77 must not make the gate exit non-zero
-    and must not be recorded as verified."""
+    """(g) A fixture rule exiting 77 must not make the gate exit non-zero,
+    and must not be recorded as verified -- Codex round 1 (BLOCK,
+    verify-gate.sh:1174) sharpened "not recorded as verified" to mean
+    NEITHER marker: a SKIP is not a check, so it must not advance the sha
+    marker OR write the fingerprint either, or the very next Stop on an
+    unchanged tree hits the fingerprint match and never attempts the
+    skipped command again -- "verified" by a run that never actually ran
+    it. This reverses the earlier, narrower contract this test asserted
+    (marker advances, only the fingerprint was withheld)."""
     vmap = {
         "version": 1,
         "rules": [{"paths": ["a.py"], "run": ["exit 77"]}],
@@ -289,10 +331,373 @@ def test_g_exit_77_is_skip_not_fail_not_verified(flavour, tmp_path):
     rec = _record(root)
     assert any(v.get("status") == "skipped" for v in rec.get("rules", {}).values()), rec
     marker = root / ".crew" / ".verify-verified-at"
-    assert marker.exists(), (
-        "a skip must not block the baseline either (it is neither pass nor "
-        "fail). " + result.stderr
+    assert not marker.exists(), (
+        "a SKIP is not a check - it must not advance the sha marker either, "
+        "or the fingerprint-skip mechanism (see the fingerprint assertion "
+        "below) will hide it from ever being attempted again. " + result.stderr
     )
+    fp = root / ".crew" / ".verify-gate.fingerprint"
+    assert not fp.exists(), (
+        "a SKIP must not write the fingerprint either. " + result.stderr
+    )
+
+    second = _run(flavour, root)
+    assert "SKIP (rc 77" in second.stderr, (
+        "an unchanged tree with an outstanding SKIP must attempt the "
+        "command again, not silently skip via the fingerprint. "
+        + second.stderr
+    )
+
+
+def _commit(root, *relpaths):
+    _git(root, "add", *relpaths)
+    _git(root, "commit", "-q", "-m", "add " + " ".join(relpaths))
+
+
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+def test_1_crlf_from_native_python_does_not_leak_an_inherited_credential(
+        flavour, tmp_path):
+    """(1) BLOCK verify-gate.sh:1154. A CRLF-corrupted env-pin line must
+    still result in the REAL variable being unset - the read site strips
+    '\\r' regardless of whether the python source-side fix applied."""
+    stub_dir = tmp_path / "crlfstub"
+    stub_dir.mkdir()
+    real_py = shutil.which("python3") or shutil.which("python") or sys.executable
+    stub = stub_dir / "python3"
+    # A CRLF-emitting python stand-in: runs the REAL interpreter and then
+    # corrupts its own stdout the way native-Windows text-mode stdout does,
+    # simulating the failure mode even on a python that would not normally
+    # produce it in THIS environment.
+    stub.write_text(
+        "#!/bin/bash\n"
+        "out=\"$(\"" + real_py + "\" \"$@\")\"\n"
+        "printf '%s' \"$out\" | sed 's/$/\\r/'\n",
+        encoding="utf-8", newline="\n",
+    )
+    os.chmod(stub, 0o755)
+    vmap = {
+        "version": 1,
+        # Declares an env var (unrelated to AWS_PROFILE) so ENV_JSON is
+        # non-empty and the gate's env-pin lines actually route through a
+        # python subprocess - the vulnerable path. A rule with NO declared
+        # env never invokes python for its pin lines at all (a pure bash
+        # loop), so it would not exercise this bug either way.
+        "rules": [{"paths": ["a.py"], "seconds": 1,
+                   "run": ["test -z \"$AWS_PROFILE\""],
+                   "env": {"SOMEVAR": "x"}}],
+        "default": [], "unmapped": "ignore",
+    }
+    root = _repo(tmp_path, vmap)
+    (root / "a.py").write_text("x", encoding="utf-8")
+    env = dict(os.environ, AWS_PROFILE="prod",
+               PATH=str(stub_dir) + os.pathsep + os.environ.get("PATH", ""),
+               CLAUDE_PROJECT_DIR=str(root))
+    if flavour == "sh":
+        cmd = [_BASH, _SH]
+    else:
+        cmd = [_PWSH, "-NoProfile", "-NonInteractive", "-File", _PS1]
+    result = subprocess.run(cmd, input="{}", cwd=str(root), env=env,
+                            capture_output=True, text=True, check=False)
+    assert result.returncode == 0, (
+        "AWS_PROFILE was not actually unset under a CRLF-corrupted "
+        "env-pin read. " + result.stderr
+    )
+
+
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+def test_2_exit_77_advances_neither_marker_nor_fingerprint(flavour, tmp_path):
+    """(2) BLOCK verify-gate.sh:1174. Already covered in detail by
+    test_g_exit_77_is_skip_not_fail_not_verified; this asserts the second
+    half of the repro directly: Stop again on the unchanged tree must NOT
+    skip via the fingerprint (which would mean the SKIP is never attempted
+    again)."""
+    vmap = {
+        "version": 1,
+        "rules": [{"paths": ["a.py"], "run": ["exit 77"]}],
+        "default": [], "unmapped": "ignore",
+    }
+    root = _repo(tmp_path, vmap)
+    (root / "a.py").write_text("x", encoding="utf-8")
+    first = _run(flavour, root)
+    assert first.returncode == 0, first.stderr
+    second = _run(flavour, root)
+    assert "SKIPPED, not re-run" not in second.stderr, (
+        "a turn with an outstanding SKIP fingerprint-skipped instead of "
+        "retrying the command. " + second.stderr
+    )
+    assert "SKIP (rc 77" in second.stderr, second.stderr
+
+
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+def test_3_all_reaches_a_staged_deletion(flavour, tmp_path):
+    """(3) BLOCK verify-gate.sh:212. `git rm` a path mapped to a failing
+    rule; --all must still select and run that rule."""
+    vmap = {
+        "version": 1,
+        "rules": [{"paths": ["a.py"], "run": ["exit 1"]}],
+        "default": [], "unmapped": "ignore",
+    }
+    root = _repo(tmp_path, vmap)
+    (root / "a.py").write_text("x", encoding="utf-8")
+    (root / ".crew" / "verify.json").write_text(json.dumps(vmap), encoding="utf-8")
+    _commit(root, "a.py", ".crew/verify.json")
+    _git(root, "rm", "-q", "a.py")
+    forced = _run(flavour, root, "--all")
+    assert forced.returncode == 2, (
+        "a staged deletion of a path mapped to a failing rule did not run "
+        "under --all. " + forced.stderr
+    )
+
+
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+def test_4_corrupt_caches_poison_the_fingerprint(flavour, tmp_path):
+    """(4) BLOCK verify-gate.sh:329. Run with one passing and one chronic
+    rule, corrupt both JSON caches, then repeat Stop: it must NOT skip, and
+    the chronic notice must reappear."""
+    vmap = {
+        "version": 1,
+        "rules": [
+            {"paths": ["a.py"], "seconds": 5, "run": ["echo cheap"]},
+            {"paths": ["b.py"], "seconds": 900, "run": ["echo huge"]},
+        ],
+        "default": [], "unmapped": "ignore",
+    }
+    root = _repo(tmp_path, vmap)
+    (root / "a.py").write_text("x", encoding="utf-8")
+    (root / "b.py").write_text("y", encoding="utf-8")
+    first = _run(flavour, root)
+    assert first.returncode == 0, first.stderr
+    (root / ".crew" / ".verify-gate.record.json").write_text("{ not json", encoding="utf-8")
+    (root / ".crew" / ".verify-gate.timings.json").write_text("{ not json", encoding="utf-8")
+    second = _run(flavour, root)
+    assert "SKIPPED, not re-run" not in second.stderr, (
+        "a corrupted cache still skipped via the fingerprint. " + second.stderr
+    )
+    assert "permanently over budget" in second.stderr, (
+        "the chronic notice did not reappear after a corrupted-cache "
+        "re-run. " + second.stderr
+    )
+
+
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+def test_5_wrapper_script_body_is_scanned_for_reach(flavour, tmp_path):
+    """(5) BLOCK verify-gate.sh:841. `bash _verify/smoke.sh` with no
+    `reach`, whose BODY calls ssh, must be deferred on Stop - not just the
+    outer wrapper command string."""
+    vmap = {
+        "version": 1,
+        "rules": [{"paths": ["a.py"], "run": ["bash _verify/smoke.sh"]}],
+        "default": [], "unmapped": "ignore",
+    }
+    root = _repo(tmp_path, vmap)
+    (root / "_verify").mkdir()
+    (root / "_verify" / "smoke.sh").write_text(
+        "#!/bin/sh\nssh remotehost \"echo hi\"\n", encoding="utf-8")
+    (root / "a.py").write_text("x", encoding="utf-8")
+    result = _run(flavour, root)
+    assert result.returncode == 0, result.stderr
+    assert "undeclared reach" in result.stderr, (
+        "a wrapper script whose BODY reaches ssh ran unattended on Stop. "
+        + result.stderr
+    )
+
+
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+def test_6_env_merge_runs_each_rule_under_its_own_environment(flavour, tmp_path):
+    """(6) BLOCK verify-gate.sh:850. Two matched rules run the SAME command
+    text but declare DIFFERENT env; both must actually execute, each under
+    its own env - not collapse into one shared execution."""
+    vmap = {
+        "version": 1,
+        "rules": [
+            {"paths": ["a.py"], "seconds": 1, "run": ["test \"$ENV\" = one"],
+             "env": {"ENV": "one"}},
+            {"paths": ["b.py"], "seconds": 1, "run": ["test \"$ENV\" = one"],
+             "env": {"ENV": "two"}},
+        ],
+        "default": [], "unmapped": "ignore",
+    }
+    root = _repo(tmp_path, vmap)
+    (root / "a.py").write_text("x", encoding="utf-8")
+    (root / "b.py").write_text("y", encoding="utf-8")
+    forced = _run(flavour, root, "--all")
+    assert forced.returncode == 2, (
+        "the rule declaring ENV=two should have FAILED its own copy of the "
+        "check (ENV != one), proving both rules actually ran under their "
+        "own environment rather than collapsing into one shared run. "
+        + forced.stderr
+    )
+    # The RC-2 assertion alone is not discriminating enough: with env
+    # dropped from the command identity entirely, both rules dedupe to ONE
+    # execution with NEITHER env pinned, and an unset $ENV also fails the
+    # check (RC 2) - for the wrong reason. Count executions directly: two
+    # DISTINCT runs of the same text is the actual claim under test.
+    assert "total across 2 rule command(s)" in forced.stderr, (
+        "the two rules did not run as two separate executions - "
+        + forced.stderr
+    )
+
+
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+def test_7_a_save_failure_blocks_both_markers(flavour, tmp_path):
+    """(7) BLOCK verify_record.py:61 (_save). A directory where the record's
+    .tmp file needs to go makes the write fail; neither marker may advance,
+    and the required message must be printed."""
+    vmap = {
+        "version": 1,
+        "rules": [{"paths": ["a.py"], "seconds": 900, "run": ["echo huge"]}],
+        "default": [], "unmapped": "ignore",
+    }
+    root = _repo(tmp_path, vmap)
+    (root / "a.py").write_text("x", encoding="utf-8")
+    (root / ".crew" / ".verify-gate.record.json.tmp").mkdir()
+    result = _run(flavour, root)
+    assert result.returncode == 0, result.stderr
+    assert "could not persist the record" in result.stderr, result.stderr
+    assert "NOT advancing the marker" in result.stderr, result.stderr
+    assert not (root / ".crew" / ".verify-verified-at").exists(), (
+        "the marker advanced despite a failed record write. " + result.stderr
+    )
+
+
+def test_8_hash_parity_sh_writes_a_key_ps1_can_read(tmp_path):
+    """(8) FIX verify-gate.ps1:730. Seed a measurement under .sh, then run
+    .ps1: it must find and use the SAME cache key - proving both flavours
+    hash a rule's content identically.
+
+    Sabotage note: reverting ONLY .ps1's Get-CrewRuleKey back to its native
+    ConvertTo-Json -Compress + SHA1 does NOT turn this red, because
+    verify-gate.sh's canonical json.dumps(..., separators=(",", ":"))
+    happens to produce byte-identical output to -Compress for ordinary
+    ASCII rule content - the two forms only ever differed in the ORIGINAL
+    bug because .sh's OWN inline hash used python's spaced default, not
+    because -Compress itself was wrong. The sabotage that actually reds
+    this test reverts .sh's fallback path to that spaced default (the
+    historical shape of the bug) while leaving .ps1 on its current,
+    correct delegation - see the developer's report for why this test
+    alone cannot distinguish "shares one function" from "two
+    implementations that happen to agree on typical input", and what a
+    stronger test for the delegation itself would need."""
+    if _BASH is None or not sys.platform.startswith("win") or _PWSH is None:
+        pytest.skip("needs both bash and the native-Windows .ps1 flavour")
+    vmap = {
+        "version": 1,
+        "rules": [{"paths": ["a.py"], "run": ["echo fast"]}],
+        "default": [], "unmapped": "ignore",
+    }
+    root = _repo(tmp_path, vmap)
+    (root / "a.py").write_text("x", encoding="utf-8")
+    _run("sh", root)
+    timings_path = root / ".crew" / ".verify-gate.timings.json"
+    timings = json.loads(timings_path.read_text(encoding="utf-8"))
+    assert timings["rules"], "the .sh side did not cache a measurement at all"
+    for k in timings["rules"]:
+        timings["rules"][k] = 999
+    timings_path.write_text(json.dumps(timings), encoding="utf-8")
+    for p in (".verify-verified-at", ".verify-gate.fingerprint", ".verify-gate.record.json"):
+        f = root / ".crew" / p
+        if f.exists():
+            f.unlink()
+    (root / "a.py").write_text("x2", encoding="utf-8")
+    result = _run("ps1", root)
+    assert "measured not declared" in result.stderr, (
+        "PowerShell did not find the key .sh cached - the two flavours "
+        "are hashing rule content differently again. " + result.stderr
+    )
+
+
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+def test_9_reach_verb_is_word_boundary_not_substring(flavour, tmp_path):
+    """(9) FIX verify-gate.sh:767. "assessment" contains "ssm" as a bare
+    substring and must NOT be deferred for reach."""
+    vmap = {
+        "version": 1,
+        "rules": [{"paths": ["a.py"], "seconds": 1, "run": ["echo assessment"]}],
+        "default": [], "unmapped": "ignore",
+    }
+    root = _repo(tmp_path, vmap)
+    (root / "a.py").write_text("x", encoding="utf-8")
+    result = _run(flavour, root)
+    assert result.returncode == 0, result.stderr
+    assert "undeclared reach" not in result.stderr, (
+        "'assessment' was deferred for reach - substring matching is back. "
+        + result.stderr
+    )
+    assert "echo assessment" in result.stderr, result.stderr
+
+
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+def test_10_a_structurally_wrong_timings_cache_does_not_crash(flavour, tmp_path):
+    """(10) FIX verify-gate.sh:787. `[]` (valid JSON, wrong shape) in
+    timings.json must be treated as absent, not crash the matcher."""
+    vmap = {
+        "version": 1,
+        "rules": [{"paths": ["a.py"], "run": ["echo ran"]}],
+        "default": [], "unmapped": "ignore",
+    }
+    root = _repo(tmp_path, vmap)
+    (root / ".crew" / ".verify-gate.timings.json").write_text("[]", encoding="utf-8")
+    (root / "a.py").write_text("x", encoding="utf-8")
+    result = _run(flavour, root)
+    assert result.returncode == 0, (
+        "a structurally wrong (but valid-JSON) timings cache blocked the "
+        "turn instead of being treated as absent. " + result.stderr
+    )
+    assert "echo ran" in result.stderr, result.stderr
+
+
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+def test_11_an_edited_rules_old_record_entry_is_pruned(flavour, tmp_path):
+    """(11) FIX verify_record.py:203. Defer a rule, edit its command (a new
+    content hash), then --all: the OLD key must not remain reported."""
+    vmap = {
+        "version": 1,
+        "rules": [{"paths": ["a.py"], "seconds": 900, "run": ["echo huge"]}],
+        "default": [], "unmapped": "ignore",
+    }
+    root = _repo(tmp_path, vmap)
+    (root / "a.py").write_text("x", encoding="utf-8")
+    first = _run(flavour, root)
+    assert first.returncode == 0, first.stderr
+    rec = _record(root)
+    assert rec.get("rules"), "no chronic entry was recorded to begin with"
+    old_key = next(iter(rec["rules"]))
+
+    vmap2 = {
+        "version": 1,
+        "rules": [{"paths": ["a.py"], "seconds": 900,
+                   "run": ["echo huge different now"]}],
+        "default": [], "unmapped": "ignore",
+    }
+    (root / ".crew" / "verify.json").write_text(json.dumps(vmap2), encoding="utf-8")
+    _run(flavour, root, "--all")
+    rec2 = _record(root)
+    assert old_key not in rec2.get("rules", {}), (
+        "the old rule's record entry was not pruned after the rule was "
+        "edited. " + json.dumps(rec2)
+    )
+
+
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+def test_12_a_subsecond_measurement_is_still_cached(flavour, tmp_path):
+    """(12) FIX verify_record.py:206. A fast unpriced rule (0s elapsed)
+    must still be cached (as 1s, per max(1, ceil(...))), not discarded."""
+    vmap = {
+        "version": 1,
+        "rules": [{"paths": ["a.py"], "run": ["echo fast"]}],
+        "default": [], "unmapped": "ignore",
+    }
+    root = _repo(tmp_path, vmap)
+    (root / "a.py").write_text("x", encoding="utf-8")
+    result = _run(flavour, root)
+    assert result.returncode == 0, result.stderr
+    timings = json.loads(
+        (root / ".crew" / ".verify-gate.timings.json").read_text(encoding="utf-8"))
+    assert timings.get("rules"), (
+        "a subsecond rule's measurement was discarded instead of being "
+        "cached as at least 1s."
+    )
+    assert all(v >= 1 for v in timings["rules"].values()), timings
 
 
 @pytest.mark.parametrize("flavour", _FLAVOURS)

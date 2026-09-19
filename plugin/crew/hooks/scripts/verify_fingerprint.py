@@ -63,9 +63,15 @@ each other, and a gate that skips on one shell and runs on the other is worse
 than either answer.
 """
 import hashlib
+import json
 import os
 import subprocess
 import sys
+
+try:
+    sys.stdout.reconfigure(newline="\n")
+except (AttributeError, ValueError):
+    pass
 
 _VERSION = b"crew-verify-fingerprint-v1"
 
@@ -73,6 +79,41 @@ _VERSION = b"crew-verify-fingerprint-v1"
 # commands run and HOW MANY of them fit in the budget.
 _DECIDERS = (os.path.join(".crew", "verify.json"),
              os.path.join(".crew", "config.json"))
+
+# NOT in _DECIDERS, deliberately, and NOT hashed by content at all - see
+# _corrupt_cache below for why. These are the per-rule record and the
+# measured-timings cache verify_record.py writes on the way OUT of a clean
+# run; _GATE_OWNED_FILES already excludes them from _material's byte-hashing
+# (hashing them there would self-invalidate the fingerprint the run that
+# wrote them just recorded, one turn later, for a self-referential reason
+# rather than a real change).
+_CACHE_FILES = (os.path.join(".crew", ".verify-gate.record.json"),
+                os.path.join(".crew", ".verify-gate.timings.json"))
+
+
+def _corrupt_cache(root):
+    """True when a per-rule record or timings file EXISTS but is not valid
+    JSON. A quiet turn with one of these corrupted used to skip anyway -
+    nothing in the digest depended on their bytes - so a chronic rule's
+    standing notice, or a cached measurement, could be lost by a corrupted
+    cache file and nobody would ever know, because the gate kept reporting
+    "nothing changed" forever after. The fingerprint does not hash these
+    files' CONTENT (that would self-invalidate on every normal write, see
+    above); it only asks whether they PARSE. A present-and-corrupt file
+    means the record cannot be trusted, so the digest is poisoned - main()
+    prints an empty fingerprint, which the gate reads the same way it reads
+    "no python": never skip.
+    """
+    for rel in _CACHE_FILES:
+        full = os.path.join(root, rel)
+        if not os.path.isfile(full):
+            continue
+        try:
+            with open(full, "r", encoding="utf-8") as fh:
+                json.load(fh)
+        except (OSError, ValueError):
+            return True
+    return False
 
 
 def _head(root):
@@ -336,6 +377,13 @@ def main():
     # digest now covers the path string the rules are matched against rather
     # than a trimmed lookalike of it.
     changed = [l for l in sys.stdin.read().split(chr(10)) if l.strip()]
+    if _corrupt_cache(root):
+        # Empty output, not a raised error: the caller's guard is
+        # `[ -n "$FINGERPRINT" ]` (sh) / `if ($fingerprint)` (ps1), the same
+        # "no python -> no fingerprint -> no skip" fail-safe already used
+        # when the interpreter itself is missing.
+        sys.stdout.write("\n")
+        return 0
     sys.stdout.write(fingerprint(root, changed) + "\n")
     return 0
 

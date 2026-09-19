@@ -29,9 +29,26 @@ defaulting to 1 in verify-gate.sh. Losing this file loses only history; it
 never invents a clean rule that never ran.
 """
 import json
+import math
 import os
 import sys
 import hashlib
+
+# Every line this module writes to stdout is read by a shell on the other
+# end (bash `read` or a PowerShell pipe), one record per line. On native
+# Windows Python, stdout defaults to TEXT mode and translates every '\n' to
+# '\r\n' - the read site then gets a trailing \r baked into its last field.
+# Measured: `unset "$VAR"` where $VAR was "AWS_PROFILE\r" (a name nothing
+# ever exports) silently failed to unset the real AWS_PROFILE, so a
+# credential the pin exists to strip rode along into the check anyway.
+# Fixed at the SOURCE - the read site ALSO strips '\r' defensively (see
+# verify-gate.sh/.ps1's `tr -d '\r'` at each call site), but a source that
+# never emits '\r' is the fix that does not depend on every caller
+# remembering the workaround.
+try:
+    sys.stdout.reconfigure(newline="\n")
+except (AttributeError, ValueError):
+    pass
 
 RECORD_PATH = os.path.join(".crew", ".verify-gate.record.json")
 TIMINGS_PATH = os.path.join(".crew", ".verify-gate.timings.json")
@@ -49,23 +66,58 @@ def _load(path):
 
 
 def _save(path, data):
+    """Returns None on success, the exception on failure - never raises.
+
+    Swallowing a write failure here used to mean the CALLER (verify-gate.sh)
+    had no way to know the record was never actually persisted, so it kept
+    advancing the sha marker and fingerprint as though the chronic/skipped
+    obligation just written had actually made it to disk. A `_save` that
+    fails now has to fail LOUDLY enough that the gate can refuse to advance
+    anything - see cmd_sync, which turns a non-None return here into exactly
+    that refusal.
+    """
     try:
         os.makedirs(".crew", exist_ok=True)
         tmp = path + ".tmp"
         with open(tmp, "w", encoding="utf-8") as fh:
             json.dump(data, fh, indent=2, sort_keys=True)
         os.replace(tmp, path)
-    except OSError:
-        pass
+        return None
+    except OSError as e:
+        return e
 
 
+# CANONICAL, and the ONLY place this hash is computed - verify-gate.sh
+# imports this module in-process (it is already a python interpreter) and
+# verify-gate.ps1 shells out to `rule_key` below, rather than either flavour
+# hashing independently. They used to: the .sh matcher's own inline
+# `_rule_key` used `json.dumps(..., sort_keys=True)` (space-separated,
+# python's default), while the .ps1 side used `ConvertTo-Json -Compress`
+# (no spaces) - two different byte strings for the same logical rule, so
+# every content-hash key the two flavours wrote NEVER matched: a timing
+# seeded by one was invisible to the other, and neither could ever clear the
+# other's chronic record entry. `separators=(",", ":")` fixes the byte
+# string; being the one function BOTH flavours call is what keeps it fixed.
 def rule_key(rule):
     """A content hash of a rule's paths+run, so a persisted entry survives
     verify.json being reordered (an index alone would not) and so an edited
     rule starts fresh rather than inheriting a stale clean/deferred status."""
     blob = json.dumps({"paths": rule.get("paths"), "run": rule.get("run")},
-                       sort_keys=True)
+                       sort_keys=True, separators=(",", ":"))
     return hashlib.sha1(blob.encode("utf-8")).hexdigest()[:16]
+
+
+def cmd_rule_key():
+    """CLI entry for verify-gate.ps1: reads {"paths":[...],"run":[...]}
+    from stdin, prints the canonical key. verify-gate.sh never calls this -
+    it imports rule_key directly, since it already runs inside python."""
+    try:
+        rule = json.load(sys.stdin)
+    except (OSError, ValueError):
+        rule = {}
+    if not isinstance(rule, dict):
+        rule = {}
+    print(rule_key(rule))
 
 
 def cmd_time_key(cmd):
@@ -129,6 +181,27 @@ def cmd_sync():
     sha = payload.get("sha") or ""
     matched = payload.get("matched_rules") or []
     cmd_log = payload.get("cmd_log") or []
+    return _sync(sha, matched, cmd_log)
+
+
+def _current_rule_keys():
+    """The set of rule_key() values verify.json currently declares, or None
+    if the map could not be read at all. None (not an empty set) is the
+    unknown case: an unreadable map must not be read as "no rules exist",
+    which would prune every standing obligation on a transient read error.
+    Only a SUCCESSFULLY read map may prune anything."""
+    try:
+        with open(os.path.join(".crew", "verify.json"), encoding="utf-8") as fh:
+            cfg = json.load(fh)
+    except (OSError, ValueError):
+        return None
+    rules = cfg.get("rules") if isinstance(cfg, dict) else None
+    if not isinstance(rules, list):
+        return None
+    return {rule_key(r) for r in rules if isinstance(r, dict)}
+
+
+def _sync(sha, matched, cmd_log):
 
     status_by_cmd = {}
     elapsed_by_cmd = {}
@@ -189,17 +262,45 @@ def cmd_sync():
         # Every command this rule names ran and passed: clean.
         entries.pop(key, None)
         if rule.get("unknown"):
+            # STORE EVEN 0s, as max(1, ceil(...)). `if total > 0` used to
+            # discard a subsecond measurement outright, so a genuinely fast
+            # rule with no declared `seconds` never got cached at all and
+            # stayed "truly unknown" (mandatory, runs every Stop) forever -
+            # the one case measure-and-cache exists for and the one case the
+            # old guard silently excluded from it.
             total = sum(elapsed_by_cmd.get(c, 0) for c in cmds)
-            if total > 0:
-                timings["rules"][key] = max(1, int(total))
+            timings["rules"][key] = max(1, math.ceil(total))
+
+    # STALE OBLIGATIONS. A key here that verify.json no longer declares - the
+    # rule was edited (rule_key is a content hash, so a changed `run` or
+    # `paths` is a NEW key) or deleted outright - would otherwise sit in
+    # `entries` forever, since nothing else ever visits a key absent from
+    # THIS turn's `matched_rules`. Only prune when the current map was
+    # actually readable (see _current_rule_keys) - an unreadable map must
+    # not be read as "no rules exist" and silently clear every obligation.
+    valid_keys = _current_rule_keys()
+    if valid_keys is not None:
+        for stale_key in [k for k in entries if k not in valid_keys]:
+            del entries[stale_key]
 
     record["rules"] = entries
-    _save(RECORD_PATH, record)
-    _save(TIMINGS_PATH, timings)
+    record_err = _save(RECORD_PATH, record)
+    timings_err = _save(TIMINGS_PATH, timings)
+    failure = record_err or timings_err
+    if failure:
+        # NEITHER marker may advance on a record that was never actually
+        # written - the caller (verify-gate.sh/.ps1) checks THIS process's
+        # exit code and skips both record_verified and the fingerprint write
+        # when it is non-zero. Printing "NOT VERIFIED" entries below would be
+        # honest about the STALE state on disk but silent about why nothing
+        # NEW made it there - say that first.
+        print(f"verify-gate: could not persist the record ({failure}); "
+              f"NOT advancing the marker")
 
     for key, info in sorted(entries.items(), key=lambda kv: kv[1].get("label", kv[0])):
         print(f"verify-gate: NOT VERIFIED ON THIS TREE - "
               f"{info.get('label', key)}: {info.get('reason', '')}")
+    return failure is None
 
 
 def cmd_report():
@@ -231,18 +332,24 @@ def cmd_timings_get():
 
 
 def main(argv):
+    usage = "usage: verify_record.py sync|report|timings-get|rule-key"
     if len(argv) < 2:
-        print("usage: verify_record.py sync|report|timings-get", file=sys.stderr)
+        print(usage, file=sys.stderr)
         return 2
     cmd = argv[1]
     if cmd == "sync":
-        cmd_sync()
-    elif cmd == "report":
+        # Non-zero exit is the signal the gate scripts check: a record that
+        # could not be persisted must not let the sha marker or fingerprint
+        # advance either. See _sync's "STALE OBLIGATIONS" / failure handling.
+        return 0 if cmd_sync() else 1
+    if cmd == "report":
         cmd_report()
     elif cmd == "timings-get":
         cmd_timings_get()
+    elif cmd == "rule-key":
+        cmd_rule_key()
     else:
-        print("usage: verify_record.py sync|report|timings-get", file=sys.stderr)
+        print(usage, file=sys.stderr)
         return 2
     return 0
 
