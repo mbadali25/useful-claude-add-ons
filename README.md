@@ -911,4 +911,6 @@ Same four-place rule the skills follow, plus a couple. Full checklist in [`plugi
 
 ## License
 
-See [`LICENSE`](LICENSE).
+GNU GPL v2 (`GPL-2.0-only`) applies to every plugin in this marketplace — see [`LICENSE`](LICENSE). Each plugin's own `plugin.json` declares the same `license` field, and `scripts/check-marketplace.py`'s `check_license_consistency` gate fails the build if any plugin drifts from it.
+
+`plugin/crew/NOTICE.md` records third-party MIT-licensed code copied into that plugin (from [superpowers](https://github.com/obra/superpowers), © 2025 Jesse Vincent). MIT-into-GPL-2 is a lawful direction of copy; that notice discharges the attribution obligation independently of the licence declared above.
