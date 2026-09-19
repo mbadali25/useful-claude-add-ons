@@ -6,6 +6,18 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Changed
 
+- **`crew` 0.19.65: `pm_brief.py`'s graph-refresh recommendation actually
+  reads the graph.** `_graph_fields` read `state.get("graph")`, a key
+  `crew_state.collect()` never sets -- the real value lives at
+  `state["knowledge"]["graph"]`. `graph` was therefore always `{}`,
+  `reportTracked` always falsy, and the brief recommended
+  `graphify . --no-viz --code-only` even in a repo (this one included) that
+  tracks `GRAPH_REPORT.md` and needs `graphify update .`. The bundled test
+  fixtures matched the bug's own shape (`graph={...}` at the top level of a
+  hand-built state dict), so they passed against it; fixed to nest under
+  `knowledge`, and a new test drives the real `crew_state.collect()` against a
+  fixture repo so the fixture shape cannot drift from the emitter's again.
+
 - **`crew` 0.19.64: `scope_report.py` passes the repo's own pylint gate.** No
   behaviour change; all five report branches re-verified identical. Six
   `C0209` findings converted to f-strings. The bump exists because a lint-only
