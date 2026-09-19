@@ -721,29 +721,66 @@ notices = []
 deferred = []
 if budget is not None:
     unknown = [c for c in cmds if c not in cost]
-    # Priced, and carrying an unconditional obligation from somewhere else.
-    # These RUN. Their stated cost is still charged, so the arithmetic below
-    # tells the truth about the turn and the remaining budget shrinks by what
-    # the mandatory work actually costs -- it just cannot buy their deferral.
-    forced = [c for c in cmds if c in cost and c in mandatory]
-    # Ascending cost, first-match order breaking ties: cheapest-first fits the
-    # most RULES into the budget, and a stable sort keeps the run order
-    # reproducible for anyone comparing two turns.
-    priced = sorted((ri for ri in rule_order if ri in rule_secs),
-                    key=lambda ri: (rule_secs[ri], rule_order.index(ri)))
-    spent, keep = 0, []
-    for c in forced:
-        keep.append(c)
-        spent += cost[c]
-    for ri in priced:
+    # MANDATORY-NESS IS A PROPERTY OF THE RULE, NOT OF A COMMAND ON ITS OWN,
+    # and everything below follows from that.
+    #
+    # 0.19.94 hoisted each mandatory COMMAND to the front of the list and
+    # charged it there. Both halves of that were wrong:
+    #
+    #   ORDER. A rule that declares `run: ["prepare", "check"]` has stated a
+    #   dependency, and hoisting `check` ran it FIRST -- measured, in both
+    #   flavours. The check then fails for a reason that is not the user's:
+    #   they see their check red and go debugging their own code while the
+    #   gate is what reordered it. A check that reports the wrong cause is
+    #   worse than no check. A command's position inside its rule is part of
+    #   the rule's meaning; being mandatory changes whether it can be
+    #   DEFERRED, never where it RUNS.
+    #
+    #   CHARGE. The hoisted command was charged its rule's cost, and then the
+    #   rule was charged again for the rest of its commands. Measured: a 40s
+    #   rule running [A, B] with A in `always`, under the 60s default, ran A
+    #   and DEFERRED B -- 40 + 40 against a rule that costs 40 once. That is
+    #   the per-command double-charge 0.19.92 removed, reintroduced from the
+    #   other end. Each command is charged exactly once however many sources
+    #   name it, because each RULE is charged exactly once.
+    #
+    # So the obligation is lifted from the command to the rule that carries
+    # it: a rule is mandatory when it states no cost, or when ANY command it
+    # names is unconditional. Whole-rule is forced by the two invariants
+    # together -- a rule runs whole or defers whole (0.19.92), and a command
+    # keeps its place inside it, so `check` cannot run without the `prepare`
+    # that precedes it.
+    def rule_is_mandatory(ri):
+        return (ri not in rule_secs
+                or any(c in mandatory for c in rule_cmds[ri]))
+
+    priced = [ri for ri in rule_order if ri in rule_secs]
+    # Mandatory rules first, in first-match order -- they are not competing
+    # for the budget, so sorting them by cost would only shuffle the order
+    # the map was written in. Then the deferrable ones, ascending cost with
+    # first-match order breaking ties: cheapest-first fits the most RULES in,
+    # and a stable sort keeps the run order reproducible across two turns.
+    must = [ri for ri in priced if rule_is_mandatory(ri)]
+    may = sorted((ri for ri in priced if not rule_is_mandatory(ri)),
+                 key=lambda ri: (rule_secs[ri], rule_order.index(ri)))
+    spent, keep, overrun = 0, [], []
+    for ri in must + may:
         # Only the commands this rule would ADD. A rule every one of whose
-        # commands an earlier, cheaper rule already scheduled asks for no new
-        # work, so it is charged nothing rather than billed for a second run
-        # of the same commands -- the per-command double-charge one level up.
+        # commands an earlier rule already scheduled asks for no new work, so
+        # it is charged nothing rather than billed for a second run of the
+        # same commands. This is also what keeps each command to one charge.
         fresh = [c for c in rule_cmds[ri] if c in cost and c not in keep]
         if not fresh:
             continue
-        if spent + rule_secs[ri] <= budget:
+        if ri in must:
+            # Charged, so the arithmetic tells the truth about the turn and
+            # the remaining budget shrinks by what the mandatory work costs.
+            # The cost simply cannot buy a deferral.
+            if spent + rule_secs[ri] > budget:
+                overrun.extend(fresh)
+            keep.extend(fresh)
+            spent += rule_secs[ri]
+        elif spent + rule_secs[ri] <= budget:
             # WHOLE, in the rule's own `run` order. Half a rule is not a
             # cheaper rule; it is a rule nobody can say ran.
             keep.extend(fresh)
@@ -759,8 +796,8 @@ if budget is not None:
     cmds = unknown + keep
     for c in unknown:
         notices.append("verify-gate: " + c + " has no `seconds` in verify.json - cost UNSTATED, ran anyway")
-    for c in forced:
-        notices.append("verify-gate: " + c + " is unconditional (`always`, or named by a rule with no `seconds`) - it RAN; its stated " + str(int(cost[c])) + "s is charged but cannot defer it")
+    for c in overrun:
+        notices.append("verify-gate: " + c + " belongs to an unconditional rule (`always`, or no `seconds`) - it RAN past the budget; the cost is charged but cannot defer it")
     for c in deferred:
         notices.append("deferred to /crew:verify: " + c + " (" + str(int(cost[c])) + "s)")
     if deferred:
