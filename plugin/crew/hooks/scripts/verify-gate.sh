@@ -648,7 +648,25 @@ cmds, unmatched = [], []
 #
 #   `rule_cmds` / `rule_secs` are per matched RULE, in first-match order, and
 #   are what the budget actually spends against.
+#
+# AND `mandatory` IS THE OBLIGATION, WHICH DEDUPLICATION MUST NOT WEAKEN.
+# The same command string reaches `cmds` from several sources and is merged
+# into one entry; the merged entry has to carry the STRONGEST obligation of
+# any source, never the weakest. Three levels, strongest first:
+#
+#   `always`                 unconditional. The map says run it every turn.
+#   a rule with no `seconds` unconditional-until-priced: the budget refuses
+#                            to defer on a number nobody wrote down.
+#   a rule with `seconds`    deferrable. This is the ONLY deferrable level.
+#
+# Merging resolves toward RUN. It used to resolve toward DEFER, because the
+# classification asked only "does this command have a cost?" and any one
+# priced rule set one -- so `"always": ["x"]` beside a 90s rule naming `x`
+# DEFERRED the mandatory check and the gate exited 0 without running it.
+# Measured in both flavours. The same reading deferred a command named by an
+# unpriced rule as well, whenever a priced rule happened to name it too.
 cost = {}
+mandatory = set()  # commands no budget may defer, whatever they cost
 rule_cmds = {}     # rule index -> its commands, in `run` order
 rule_secs = {}     # rule index -> its stated cost, only when one is stated
 rule_order = []    # matched rule indices, in the order they were first hit
@@ -674,9 +692,17 @@ for f in changed:
                 if c not in rule_cmds[ri]: rule_cmds[ri].append(c)
                 note_cost(c, r)
     if not hit: unmatched.append(f)
-for c in cfg.get("always",[]):
+# A matched rule that states no cost makes every command it names
+# unconditional -- including commands a priced rule also names.
+for ri in rule_order:
+    if ri not in rule_secs:
+        mandatory.update(rule_cmds[ri])
+for c in cfg.get("always",[]) or []:
     if c not in cmds: cmds.append(c)
-if not cmds: cmds = cfg.get("default",[])
+    mandatory.add(c)
+if not cmds:
+    cmds = cfg.get("default",[])
+    mandatory.update(cmds)
 
 # --- the Stop budget ------------------------------------------------------
 #
@@ -695,12 +721,20 @@ notices = []
 deferred = []
 if budget is not None:
     unknown = [c for c in cmds if c not in cost]
+    # Priced, and carrying an unconditional obligation from somewhere else.
+    # These RUN. Their stated cost is still charged, so the arithmetic below
+    # tells the truth about the turn and the remaining budget shrinks by what
+    # the mandatory work actually costs -- it just cannot buy their deferral.
+    forced = [c for c in cmds if c in cost and c in mandatory]
     # Ascending cost, first-match order breaking ties: cheapest-first fits the
     # most RULES into the budget, and a stable sort keeps the run order
     # reproducible for anyone comparing two turns.
     priced = sorted((ri for ri in rule_order if ri in rule_secs),
                     key=lambda ri: (rule_secs[ri], rule_order.index(ri)))
     spent, keep = 0, []
+    for c in forced:
+        keep.append(c)
+        spent += cost[c]
     for ri in priced:
         # Only the commands this rule would ADD. A rule every one of whose
         # commands an earlier, cheaper rule already scheduled asks for no new
@@ -725,6 +759,8 @@ if budget is not None:
     cmds = unknown + keep
     for c in unknown:
         notices.append("verify-gate: " + c + " has no `seconds` in verify.json - cost UNSTATED, ran anyway")
+    for c in forced:
+        notices.append("verify-gate: " + c + " is unconditional (`always`, or named by a rule with no `seconds`) - it RAN; its stated " + str(int(cost[c])) + "s is charged but cannot defer it")
     for c in deferred:
         notices.append("deferred to /crew:verify: " + c + " (" + str(int(cost[c])) + "s)")
     if deferred:

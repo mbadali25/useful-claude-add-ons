@@ -28,6 +28,49 @@ All notable changes to this repository are documented here. Format follows [Keep
   hand-built state dict), so they passed against it; fixed to nest under
   `knowledge`, and a new test drives the real `crew_state.collect()` against a
   fixture repo so the fixture shape cannot drift from the emitter's again.
+- **`crew` 0.19.77: deduplication can no longer weaken a check's obligation,
+  and a submodule's contents are in the fingerprint.** The version is a
+  PLACEHOLDER -- 0.19.71+ belong to another branch and a renumber pass folds
+  this later. Two FIXes from the whole-range Codex on `dedd1150..75452c67`;
+  the third item is deferred and `TODO.md` says why.
+  **The obligation, stated as a property rather than an exemption.** The same
+  command string reaches the run list from several sources and is merged into
+  one entry, and the merged entry must carry the STRONGEST obligation of any
+  source: `always` is unconditional, a rule with no `seconds` is
+  unconditional-until-priced, and only a rule that states `seconds` is
+  deferrable. It resolved the other way, because the classification asked
+  only "does this command have a cost?" and any one priced rule set one.
+  Measured in BOTH flavours: `"always": ["sh -c \"exit 1\""]` beside a 90s
+  rule naming the same command DEFERRED the mandatory check, so a failing
+  check the map calls unconditional never ran and the gate exited 0. Writing
+  it as a property rather than as "exempt `always`" turned up a second case
+  nobody had reported -- a command named by an unpriced rule AND a priced one
+  was deferred too -- which has its own must-block case. Forced commands are
+  still CHARGED against the budget so the printed arithmetic stays honest;
+  the cost simply cannot buy their deferral.
+  **A submodule hashed as "absent".** A gitlink is a directory, `open()` on a
+  directory raises, and the digest recorded the same constant a DELETED file
+  gets -- so a check reading `sub/a.txt` was skippable by editing
+  `sub/a.txt`, whose gitlink sha does not move. Measured: Stop exit 0 with
+  SKIPPED, `--all` exit 2, gitlink steady at `160000 4a179f05...`. Third
+  instance of one class, after the staged contents and the trimmed path, and
+  it is now a row in the same invariant table. A gitlink is hashed by
+  recursing through `fingerprint` itself -- a submodule needs exactly the
+  coverage its parent needs, and a bespoke walk would be a second
+  implementation to keep in step. Dispatched on the INDEX MODE (`160000`)
+  rather than on `os.path.isdir`, because git also emits a bare directory as
+  its collapsed entry for a wholly untracked one and that is not a repository
+  to recurse into. Depth-bounded, with a distinct marker at the limit so a
+  too-deep submodule can never read as an absent one.
+  Sabotage, six mutations, each RED and each restored byte-identical -- and
+  **one came back GREEN first, which is the entry worth reading.** The
+  property table's submodule row passed with the gitlink fix deleted, and the
+  cause was the FIXTURE, not the gate: writing the committed bytes back left
+  the submodule CLEAN, so `sub` was absent from the changed set, the seeding
+  run checked nothing, and the later edit moved the digest merely by making a
+  path APPEAR. Exactly the shape this module warns about for ordinary files.
+  The fixture now seeds the submodule dirty-but-passing and asserts `sub` is
+  in the changed set, so it cannot go vacuous silently again.
 - **`crew` 0.19.76: a deadline the gate cannot parse now means the lock is
   NOT held, and the test that was supposed to prove cross-flavour agreement
   now needs the feature to pass.** The version is a PLACEHOLDER -- 0.19.71+

@@ -614,7 +614,13 @@ $unmapped = [System.Collections.ArrayList]@()
 # the budget spends against. A bool is NOT a number here -- PowerShell will
 # happily compare $true with -ge, which is how a `"seconds": true` typo would
 # become a cost of 1.
+#
+# $mandatory is the OBLIGATION, which deduplication must not weaken -- see
+# verify-gate.sh for the three levels and for the measured case where
+# `"always": ["x"]` beside a 90s rule naming `x` deferred the mandatory check
+# and this flavour exited 0 without running it, exactly as bash did.
 $cost = @{}
+$mandatory = @{}                                 # command -> $true, a set
 $ruleCmds = @{}                                  # rule index -> its commands
 $ruleSecs = @{}                                  # rule index -> stated cost
 $ruleOrder = [System.Collections.ArrayList]@()   # first-match order
@@ -652,8 +658,20 @@ foreach ($f in $changed) {
   }
   if (-not $hit) { [void]$unmapped.Add($f) }
 }
-foreach ($c in $vm.always) { if ($cmds -notcontains $c) { [void]$cmds.Add($c) } }
-if ($cmds.Count -eq 0) { foreach ($c in $vm.default) { [void]$cmds.Add($c) } }
+# A matched rule that states no cost makes every command it names
+# unconditional -- including commands a priced rule also names.
+foreach ($ri in $ruleOrder) {
+  if (-not $ruleSecs.ContainsKey($ri)) {
+    foreach ($c in $ruleCmds[$ri]) { $mandatory[$c] = $true }
+  }
+}
+foreach ($c in $vm.always) {
+  if ($cmds -notcontains $c) { [void]$cmds.Add($c) }
+  $mandatory[$c] = $true
+}
+if ($cmds.Count -eq 0) {
+  foreach ($c in $vm.default) { [void]$cmds.Add($c); $mandatory[$c] = $true }
+}
 
 # --- the Stop budget ------------------------------------------------------
 #
@@ -693,9 +711,15 @@ if ($null -ne $budget) {
   $priced = @(@($ruleOrder | Where-Object { $ruleSecs.ContainsKey($_) }) |
               Sort-Object @{Expression = { $ruleSecs[$_] }}, @{Expression = { $seq[$_] }})
 
+  # Priced, and carrying an unconditional obligation from somewhere else.
+  # These RUN; their stated cost is charged so the arithmetic stays honest,
+  # but it cannot buy their deferral. Twin of $forced in verify-gate.sh.
+  $forced = @($cmds | Where-Object { $cost.ContainsKey($_) -and $mandatory.ContainsKey($_) })
+
   $spent = 0.0
   $keep = [System.Collections.ArrayList]@()
   $deferred = [System.Collections.ArrayList]@()
+  foreach ($c in $forced) { [void]$keep.Add($c); $spent += $cost[$c] }
   foreach ($ri in $priced) {
     # Only the commands this rule would ADD -- see the .sh for why a rule
     # whose work is already scheduled is charged nothing.
@@ -723,6 +747,9 @@ if ($null -ne $budget) {
 
   foreach ($c in $unknown) {
     [void]$notices.Add('verify-gate: ' + $c + ' has no `seconds` in verify.json - cost UNSTATED, ran anyway')
+  }
+  foreach ($c in $forced) {
+    [void]$notices.Add('verify-gate: ' + $c + ' is unconditional (`always`, or named by a rule with no `seconds`) - it RAN; its stated ' + [string][int]$cost[$c] + 's is charged but cannot defer it')
   }
   foreach ($c in $deferred) {
     [void]$notices.Add('deferred to /crew:verify: ' + $c + ' (' + [string][int]$cost[$c] + 's)')

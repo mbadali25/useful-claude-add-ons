@@ -376,3 +376,114 @@ def test_both_flavours_charge_the_rule_once(tmp_path):
         + "sh : " + repr(_ran(sh_result)) + chr(10)
         + "ps1: " + repr(_ran(ps_result))
     )
+
+
+# ------------------------------------------------------- the obligation
+#
+# The same command string reaches the run list from several sources and is
+# merged into one entry. THE MERGED ENTRY CARRIES THE STRONGEST OBLIGATION OF
+# ANY SOURCE -- merging resolves toward RUN, never toward DEFER.
+#
+#   `always`                 unconditional.
+#   a rule with no `seconds` unconditional-until-priced.
+#   a rule with `seconds`    deferrable, and the only deferrable level.
+#
+# It used to resolve the other way, because the classification asked only
+# "does this command have a cost?" and any one priced rule set one. Measured
+# in BOTH flavours: `"always": ["sh -c \"exit 1\""]` beside a 90s rule naming
+# the same command deferred the mandatory check and the gate exited 0 -- a
+# failing check the map calls unconditional, never run, turn passed.
+
+
+def _shared(always=None, rules=None):
+    m = {"version": 1, "rules": rules or [], "default": [],
+         "unmapped": "ignore"}
+    if always is not None:
+        m["always"] = always
+    return m
+
+
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+def test_an_always_command_is_not_deferred_by_a_priced_rule(flavour, tmp_path):
+    """MUST-BLOCK, and the reported case verbatim. The command fails, so a
+    gate that runs it exits 2 and a gate that defers it exits 0 -- the
+    strongest possible signal that dedup weakened the obligation."""
+    cmd = 'sh -c "exit 1"'
+    root = _repo(tmp_path, verify_map=_shared(
+        always=[cmd],
+        rules=[{"paths": ["a.py"], "seconds": 90, "run": [cmd],
+                "why": "priced well over the 60s budget"}]))
+    result = _run(flavour, root)
+
+    assert result.returncode == 2, (
+        "an `always` command was deferred because a priced rule happened to "
+        "name it too, so a mandatory failing check never ran and the turn "
+        "passed. rc=" + str(result.returncode) + " " + result.stderr
+    )
+    assert "deferred to /crew:verify: " + cmd not in result.stderr, (
+        "`always` is unconditional; it must never appear as deferred. "
+        + result.stderr
+    )
+
+
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+def test_an_unpriced_rule_makes_its_commands_unconditional(flavour, tmp_path):
+    """MUST-BLOCK for the variant nobody reported, which only became visible
+    from stating the property rather than the repair: a command named by BOTH
+    an unpriced rule and a priced one. The unpriced rule is
+    unconditional-until-priced, so the merged entry must run."""
+    root = _repo(tmp_path, verify_map=_shared(rules=[
+        {"paths": ["a.py"], "seconds": 90, "run": ["echo RAN-mixed"],
+         "why": "priced, does not fit"},
+        {"paths": ["a.py"], "run": ["echo RAN-mixed"],
+         "why": "NO seconds -- deferring it acts on a number nobody wrote"},
+    ]))
+    result = _run(flavour, root)
+
+    assert "echo RAN-mixed" in _ran(result), (
+        "a command an unpriced rule names must RUN; deferring it acts on a "
+        "cost that rule never stated. " + result.stderr
+    )
+
+
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+def test_two_priced_rules_keep_the_affordable_instance(flavour, tmp_path):
+    """MUST-ALLOW. Both sources are deferrable, so neither is mandatory -- but
+    dedup must still keep the instance that FITS rather than the one that does
+    not. This came out correct from charging per rule in 0.19.92 (the cheap
+    rule is reached first and claims the command); the case is here so a later
+    change to the merge cannot quietly reverse it."""
+    root = _repo(tmp_path, verify_map=_shared(rules=[
+        {"paths": ["a.py"], "seconds": 5, "run": ["echo RAN-shared"],
+         "why": "affordable"},
+        {"paths": ["a.py"], "seconds": 90, "run": ["echo RAN-shared"],
+         "why": "same command, unaffordable"},
+    ]))
+    result = _run(flavour, root)
+
+    assert "echo RAN-shared" in _ran(result), (
+        "one of the two rules naming this command fits the budget, so the "
+        "command runs. " + result.stderr
+    )
+    assert "deferred to /crew:verify" not in result.stderr, result.stderr
+
+
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+def test_a_command_with_no_unconditional_source_is_still_deferrable(
+        flavour, tmp_path):
+    """The paired MUST-ALLOW for all three above, and the one that stops
+    "resolve toward RUN" degenerating into "never defer anything" -- which
+    would pass every case in this section and delete the budget."""
+    root = _repo(tmp_path, verify_map=_shared(rules=[
+        {"paths": ["a.py"], "seconds": 90, "run": ["echo RAN-big"],
+         "why": "priced, and named by nothing unconditional"},
+    ]))
+    result = _run(flavour, root)
+
+    assert "echo RAN-big" not in _ran(result), (
+        "90s does not fit a 60s budget and nothing makes this command "
+        "unconditional, so it must still defer. " + result.stderr
+    )
+    assert "deferred to /crew:verify: echo RAN-big (90s)" in result.stderr, (
+        result.stderr
+    )

@@ -48,6 +48,14 @@ sentence exists because the unit was left unstated when the budget was
 introduced ("run matched rules in ascending seconds"), and the first
 implementation read it per command and split rules in half.
 
+**A command named by more than one source carries the STRONGEST obligation of
+any of them.** `always` is unconditional; a rule with no `seconds` is
+unconditional-until-priced; only a rule that states `seconds` is deferrable.
+Naming a command in `always` and also in a 90s rule therefore RUNS it -- the
+merge resolves toward running, never toward deferring. Its stated cost is
+still charged against the budget, so the arithmetic in the output stays
+honest; the cost simply cannot buy the deferral.
+
 To run everything with no budget:
 
     bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/verify-gate.sh --all
