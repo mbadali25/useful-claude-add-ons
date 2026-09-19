@@ -60,6 +60,37 @@ PY=$(_resolve_role_write_python) || {
   echo "role-write-guard: no usable python - cannot judge this write, allowing it unjudged." >&2
   exit 0
 }
+
+# Deny-list mirror of role_write_guard.py's `_DENY_ROLES`, plus `pm` (that
+# module's other restricted role) -- used ONLY by the launch-failure
+# fallback below, mirroring role-write-guard.ps1's own
+# `$RestrictedRolesForFallback`. `tests/test_role_write_guard.py`'s parity
+# test re-derives the python side from `agents/*.md` on every run and
+# asserts this list matches it.
+_role_write_is_restricted() {
+  case "$1" in
+    analyst|compliance-auditor|dba|explorer|infrastructure-architect| \
+    kimi-consult|penetration-tester|planner|qa-researcher|qa-reviewer| \
+    researcher|security|pm) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# Best-effort `agent_type` extraction from the raw JSON -- never fails, and
+# a value this cannot find or parse answers empty (unrestricted). Mirrors
+# role-write-guard.ps1's `Get-FallbackRole`: only consulted when python
+# could not run at all, so there is no real decision to defer to and this
+# never needs to be more than "good enough to fail closed for pm/deny".
+_role_write_fallback_role() {
+  role=$(printf '%s' "$1" | grep -o '"agent_type"[[:space:]]*:[[:space:]]*"[^"]*"' \
+         | head -n 1 | sed -E 's/.*:[[:space:]]*"([^"]*)"/\1/')
+  role=$(printf '%s' "$role" | tr '[:upper:]' '[:lower:]')
+  case "$role" in
+    crew:*) role="${role#crew:}" ;;
+  esac
+  printf '%s' "$role"
+}
+
 # PYTHONUTF8=1 / PYTHONIOENCODING=utf-8 in the CHILD's environment only --
 # defense in depth alongside role_write_guard.py's own `sys.stdin.buffer`
 # read (which does not depend on either), and the actual fix for that
@@ -69,4 +100,29 @@ PY=$(_resolve_role_write_python) || {
 # reach python; set here too so neither flavour depends on the CALLER never
 # having touched them.
 printf '%s' "$INPUT" | PYTHONUTF8=1 PYTHONIOENCODING=utf-8 "$PY" "$DIR/role_write_guard.py"
-exit $?
+status=$?
+
+if [ "$status" -ne 0 ] && [ "$status" -ne 2 ]; then
+  # The interpreter did not actually judge this write -- role_write_guard.py
+  # itself only ever exits 0 or 2 (hardened against its own exceptions), so
+  # ANY other status means python never ran to completion: resolved
+  # successfully by the probe above, then deleted, made unexecutable, or
+  # otherwise failed to launch before this line (`bash: $PY: No such file
+  # or directory` is exit 127; "found but not executable" is 126, but this
+  # check does not special-case either -- any status outside {0, 2} is
+  # equally "no real decision was reached"). `PreToolUse` treats any exit
+  # code other than 0 or 2 as NON-BLOCKING, so without this check the write
+  # went through unjudged with only a shell error on stderr -- role-write-
+  # guard.ps1's own header already promised this hook fails closed for a
+  # restricted role; this closes the same gap on the bash side. Reported
+  # and fixed 2026-09-19.
+  fallback_role=$(_role_write_fallback_role "$INPUT")
+  if _role_write_is_restricted "$fallback_role"; then
+    echo "role-write-guard: could not launch the python interpreter ($PY) to judge this write (exit $status); failing closed for role '$fallback_role'." >&2
+    exit 2
+  fi
+  echo "role-write-guard: could not launch the python interpreter ($PY) to judge this write (exit $status); allowing it unjudged." >&2
+  exit 0
+fi
+
+exit "$status"

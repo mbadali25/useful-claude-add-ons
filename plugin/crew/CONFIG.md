@@ -1425,7 +1425,17 @@ this fix had (`.get()` cannot tell an explicit `null` from a key that was
 never mentioned). A DIRECTORY at the config path is also `"corrupt"`, not
 `"absent"` — `load_config`'s own `text is None` collapse could not tell
 those two apart either, and the first draft of this fix inherited that
-same blind spot from it.
+same blind spot from it. A DANGLING SYMLINK at the config path — pointing
+at a target that has been moved or deleted — is `"corrupt"` too, found
+one round later: presence is checked with `os.path.lexists`, not
+`os.path.exists() or os.path.isdir()` (that second draft's own form),
+because both of those FOLLOW a symlink to check its target, so a
+dangling link answered `False` to both — the same "absent" a genuinely
+unset key gets — even though something IS configured at that path and
+cannot be read, which is exactly what `"corrupt"` means. `lexists` checks
+the link itself, which also makes the directory case above redundant to
+special-case separately; one check now covers a plain file, a directory,
+and a dangling symlink alike.
 
 `role_write_guard.py` calls `layer_state` on BOTH layers — the repo's
 `.crew/config.json` and `GLOBAL_CONFIG_PATH` — and if EITHER is
@@ -1484,6 +1494,40 @@ both link kinds actually created on disk — a POSIX symlink and a Windows
 junction via `mklink /J`, the latter needing no elevated privileges — rather
 than simulated, and SKIP-labelled wherever a given machine or user cannot
 create one.
+
+**A second round found the resolver itself had a gap, and it was the most
+serious finding across this whole series.** `_resolve_real_target` started
+by calling `os.path.abspath` on the raw path, and `abspath` collapses a
+literal `..` LEXICALLY — before any symlink in the path is resolved.
+`.crew/link/../app.py`, with `.crew/link` a symlink to `src/subdir`,
+lexically normalised to `.crew/app.py`: a string that fnmatches
+`.crew/**` and classified as in scope. The OS does not resolve that path
+the same way — it follows `.crew/link` to `src/subdir` FIRST and applies
+`..` against the RESOLVED parent afterward, landing in `src/app.py`. The
+classification and the actual write disagreed, and the classification
+was the permissive one: a symlink `pm` itself could stage under a path it
+is trusted to write let it escape to anywhere that symlink's target's
+parent could reach, just by adding `..` after it. Fixed by never calling
+`abspath`/`normpath` on the raw path at all — `_resolve_real_target` now
+walks the path one component at a time, resolving whatever exists on
+disk as it goes, and a `..` pops the RESOLVED parent built up so far,
+never a lexical one, mirroring how the kernel itself walks a path.
+Verified with both a POSIX symlink and a Windows junction, driven end to
+end through the real hook scripts, not simulated.
+
+### A different drive is proven outside the repo, not merely unverifiable
+
+Reported and fixed 2026-09-19. `os.path.relpath` raises `ValueError` when
+the two paths it compares are on different Windows drives, and that
+exception used to reach the SAME catch-all as every other "cannot
+resolve this" case, collapsing to `None` — "cannot classify", which `pm`
+reads as out of scope and refuses. A different drive is not the same
+fact as "cannot tell": it is PROVEN to be outside the repo root, the same
+way a same-drive `../`-prefixed escape is. `_real_repo_relative` now
+returns the sentinel `".."` for this one case specifically — the exact
+string the outside-repo check already treats as a resolved escape — so a
+`D:` target with the repo on `C:` gets `allow`, logged `outside-repo:
+...`, instead of an incorrect refusal.
 
 ### A target outside the repo root entirely is not this guard's business
 

@@ -519,6 +519,22 @@ def test_layer_state_directory_is_corrupt(tmp_path):
     assert crew_config.layer_state(str(path)) == "corrupt"
 
 
+def test_layer_state_dangling_symlink_is_corrupt_not_absent(tmp_path):
+    """A symlink AT the config path whose target does not exist -- PRESENT
+    (something is configured here) but unreadable, not "absent". The
+    first draft of this fix used `os.path.exists(path) or os.path.
+    isdir(path)`, and BOTH follow a symlink to check its TARGET: a
+    dangling link answers False to both, same as a path with nothing at
+    it at all. `os.path.lexists` checks the link itself. Must-block
+    repro: round-3 BLOCK 1 (crew_config.py:905)."""
+    target = tmp_path / "moved-or-deleted-target.json"
+    link = tmp_path / "config.json"
+    if not _make_symlink(target, link):
+        pytest.skip("could not create a symlink on this platform/user")
+    assert not target.exists(), "the fixture must NOT create the target"
+    assert crew_config.layer_state(str(link)) == "corrupt"
+
+
 # --- The unified rule, end to end, over BOTH layers (round-2 BLOCK 1/2/5/6) -
 #
 # `crew_state.GLOBAL_CONFIG_PATH` is computed from `os.path.expanduser("~")`
@@ -560,6 +576,25 @@ def test_directory_at_repo_config_path_forces_block_bash(tmp_path):
     (root / ".crew" / "config.json").mkdir()
     home = _global_home(tmp_path)
     proc = _run_sh_with_home(root, home, "Write",
+                              str(root / "src" / "app.py"), "pm")
+    assert proc.returncode == 2, proc.stdout
+
+
+@needs_bash
+def test_dangling_global_config_symlink_forces_block_bash(tmp_path):
+    """Must-block: round-3 BLOCK 1's own repro. The GLOBAL config path is
+    a symlink pointing at a target that does not exist; repo `roleWrites`
+    is unset."""
+    root = crew_fixtures.make_repo(tmp_path, config={})
+    home = tmp_path / "home"
+    (home / ".claude" / "crew").mkdir(parents=True, exist_ok=True)
+    global_path = home / ".claude" / "crew" / "config.json"
+    missing_target = tmp_path / "moved-or-deleted-global-config.json"
+    if not _make_symlink(missing_target, global_path):
+        pytest.skip("could not create a symlink on this platform/user")
+    assert not missing_target.exists(), "the fixture must NOT create the target"
+
+    proc = _run_sh_with_home(root, str(home), "Write",
                               str(root / "src" / "app.py"), "pm")
     assert proc.returncode == 2, proc.stdout
 
@@ -994,6 +1029,126 @@ def test_resolve_real_target_walks_up_to_the_deepest_existing_ancestor(tmp_path)
     resolved = role_write_guard._resolve_real_target(target)  # pylint: disable=protected-access
     assert os.path.dirname(resolved) == os.path.realpath(str(real_dir))
     assert os.path.basename(resolved) == "brand-new-file.py"
+
+
+# --- Round 3 BLOCK 3: `..` must apply AFTER symlink resolution, never before
+#
+# The most serious finding in this whole series. `os.path.abspath` (the
+# original implementation) collapses a literal `..` LEXICALLY before any
+# symlink is resolved, so `.crew/link/../app.py` -- where `.crew/link` is
+# a symlink to an in-repo, out-of-scope directory -- normalised to
+# `.crew/app.py`, a string that fnmatches `.crew/**` and classified as
+# in-scope, while the OS resolves the SAME path by following the symlink
+# FIRST and applying `..` against the RESOLVED parent, landing outside
+# pm's scope entirely. The classification and the actual write disagreed,
+# and the classification was the permissive one.
+
+def test_resolve_real_target_applies_dotdot_after_symlink_not_before(tmp_path):
+    """Direct unit test of the fix, independent of the hook process."""
+    out_of_scope = tmp_path / "src" / "subdir"
+    out_of_scope.mkdir(parents=True)
+    link = tmp_path / "crewlink"
+    if not _make_symlink(out_of_scope, link):
+        pytest.skip("could not create a symlink on this platform/user")
+
+    target = str(link / ".." / "app.py")
+    resolved = role_write_guard._resolve_real_target(target)  # pylint: disable=protected-access
+    expected_parent = os.path.realpath(str(tmp_path / "src"))
+    assert os.path.dirname(resolved) == expected_parent, (
+        "expected `..` to pop the RESOLVED parent (tmp_path/src), not the "
+        "lexical one (crewlink's own parent). got: " + resolved)
+    assert os.path.basename(resolved) == "app.py"
+
+
+@needs_bash
+def test_dotdot_after_symlink_does_not_escape_scope_bash(tmp_path):
+    """Must-block: the full end-to-end repro. `.crew/link` is a symlink
+    to `src/subdir` (in-repo, out-of-scope); the tool call names
+    `.crew/link/../app.py`."""
+    root = crew_fixtures.make_repo(
+        tmp_path, config={"guards": {"roleWrites": "block"}})
+    out_of_scope_dir = root / "src" / "subdir"
+    out_of_scope_dir.mkdir(parents=True)
+    link = root / ".crew" / "link"
+    if not _make_symlink(out_of_scope_dir, link):
+        pytest.skip("could not create a symlink on this platform/user")
+
+    target = str(link / ".." / "app.py")
+    proc = _run_sh(root, "Write", target, "pm")
+    assert proc.returncode == 2, (
+        "a symlink escape must still be caught when the tool call adds a "
+        "`..` after it -- lexically collapsing .. before symlink "
+        "resolution must not make .crew/link/../app.py look like .crew/"
+        "app.py. stdout: " + proc.stdout)
+
+
+@needs_pwsh_windows
+def test_dotdot_after_junction_does_not_escape_scope_powershell(tmp_path):
+    """PowerShell/junction twin of the symlink case above."""
+    root = crew_fixtures.make_repo(
+        tmp_path, config={"guards": {"roleWrites": "block"}})
+    out_of_scope_dir = root / "src" / "subdir"
+    out_of_scope_dir.mkdir(parents=True)
+    link = root / ".crew" / "link"
+    if not _make_junction(out_of_scope_dir, link):
+        pytest.skip("could not create a junction on this platform/user")
+
+    target = str(link / ".." / "app.py")
+    proc = _run_ps1(root, "Write", target, "pm")
+    assert proc.returncode == 2, proc.stderr
+
+
+@needs_bash
+def test_dotdot_without_a_symlink_still_resolves_normally_bash(tmp_path):
+    """Must-allow: an ordinary `..` with NO symlink anywhere in the path
+    must still resolve exactly as before -- the fix must not become
+    "refuse every path containing .."."""
+    root = crew_fixtures.make_repo(
+        tmp_path, config={"guards": {"roleWrites": "block"}})
+    (root / ".crew" / "subdir").mkdir(parents=True)
+    target = str(root / ".crew" / "subdir" / ".." / "TODO.md")
+    proc = _run_sh(root, "Write", target, "pm")
+    assert proc.returncode == 0, proc.stderr
+
+
+# --- FIX: a different-drive target is PROVEN outside the repo, not -------
+# --- "cannot classify" -----------------------------------------------------
+
+@pytest.mark.skipif(not sys.platform.startswith("win"),
+                     reason="drive letters are a Windows concept")
+def test_real_repo_relative_different_drive_is_outside_repo():
+    """Direct unit test: a target on a different drive than the repo root
+    must resolve to the outside-repo sentinel (`".."`), not `None`
+    ("cannot classify"), even though `os.path.relpath` raises
+    `ValueError` for both cases identically."""
+    rel = role_write_guard._real_repo_relative(  # pylint: disable=protected-access
+        r"C:\some\repo", r"D:\scratch\file.py")
+    assert rel == "..", (
+        "a different-drive target must resolve to the outside-repo "
+        "sentinel, not None (cannot classify). got: " + repr(rel))
+
+
+@needs_bash
+@pytest.mark.skipif(not os.path.exists("D:\\"),
+                     reason="no D: drive on this machine to prove against")
+def test_different_drive_target_is_allowed_as_outside_repo_bash(tmp_path):
+    """Must-allow, end to end: the exact reported repro. Repo on C:
+    (tmp_path is under C: in this session), pm Write to a D: target,
+    guards.roleWrites: block. No directory needs to exist on D: for this
+    -- Write creates a new file, and _resolve_real_target already handles
+    a not-yet-existing target; this session's sandbox has no write
+    permission at D:\\'s root, so the fixture must not depend on it."""
+    root = crew_fixtures.make_repo(
+        tmp_path, config={"guards": {"roleWrites": "block"}})
+    target = "D:\\rwg_test_scratch_plan.md"
+
+    proc = _run_sh(root, "Write", target, "pm")
+    assert proc.returncode == 0, (
+        "a target on a different drive is provably outside the repo and "
+        "must be allowed, not refused as unclassifiable. stdout: "
+        + proc.stdout + " stderr: " + proc.stderr)
+    log = (root / ".crew" / "guard.log").read_text(encoding="utf-8")
+    assert "outside-repo" in log, log
 
 
 @needs_bash
@@ -1493,6 +1648,76 @@ def test_launch_failure_still_allows_unrestricted_role_powershell(tmp_path):
 
     proc = _run_ps1_at(patched, root, "Write", str(root / "src" / "app.py"),
                         "developer")
+    assert proc.returncode == 0, proc.stderr
+
+
+# --- Round 3: role-write-guard.sh gets the SAME launch-failure fallback ---
+#
+# The .ps1 fix above only ever protected PowerShell. Reported 2026-09-19:
+# deleting the resolved interpreter between `_resolve_role_write_python`'s
+# successful probe and the actual invocation made bash's own `"$PY" ...`
+# fail to exec (`No such file or directory`, exit 127) -- a status neither
+# 0 nor 2, which `PreToolUse` treats as NON-BLOCKING, so `pm` writing an
+# out-of-scope path went through unjudged with only a shell error on
+# stderr.
+
+def _patch_py_to_nonexistent_sh(src):
+    """Force `$PY` to an unlaunchable path immediately after
+    `_resolve_role_write_python` would normally set it -- same technique
+    as the .ps1 twin's `_patch_py_to_nonexistent`."""
+    anchor = "\n# Deny-list mirror of role_write_guard.py's"
+    assert anchor in src, "anchor moved; re-point this patch"
+    return src.replace(
+        anchor,
+        '\nPY="/definitely/does/not/exist/python3"' + anchor,
+        1)
+
+
+def _patched_sh_copy(tmp_path, patcher, filename="role-write-guard.sh"):
+    """The bash twin of `_patched_ps1_copy` -- a full copy of
+    hooks/scripts/ under `tmp_path`, with role-write-guard.sh replaced by
+    `patcher(original_source)`. `newline="\\n"` on the write is
+    load-bearing: `pathlib.write_text` is TEXT mode on Windows and would
+    otherwise corrupt the shebang into `#!/usr/bin/env bash\\r\\n`
+    (CLAUDE.md's own named landmine)."""
+    scripts_dir = os.path.join(_ROOT, "hooks", "scripts")
+    dest = tmp_path / "scripts_copy_sh"
+    shutil.copytree(scripts_dir, dest, ignore=shutil.ignore_patterns("_test"))
+    target = dest / filename
+    if patcher is not None:
+        target.write_text(patcher(target.read_text(encoding="utf-8")),
+                           encoding="utf-8", newline="\n")
+    return str(target)
+
+
+@needs_bash
+def test_launch_failure_fails_closed_for_pm_bash(tmp_path):
+    """Must-block: the bash twin of the .ps1 case above."""
+    root = crew_fixtures.make_repo(
+        tmp_path, config={"guards": {"roleWrites": "block"}})
+    patched = _patched_sh_copy(tmp_path, _patch_py_to_nonexistent_sh)
+    proc = subprocess.run(
+        [_BASH, patched],
+        input=_write_payload("Write", str(root / "src" / "app.py"), "pm", str(root)),
+        capture_output=True, text=True, check=False,
+        env=dict(os.environ, CLAUDE_PROJECT_DIR=str(root)), cwd=str(root))
+    assert proc.returncode == 2, (
+        "a restricted role must fail closed when the interpreter cannot "
+        "be launched. stdout: " + proc.stdout + " stderr: " + proc.stderr)
+    assert "pm" in proc.stderr, proc.stderr
+
+
+@needs_bash
+def test_launch_failure_still_allows_unrestricted_role_bash(tmp_path):
+    """Must-allow twin."""
+    root = crew_fixtures.make_repo(
+        tmp_path, config={"guards": {"roleWrites": "block"}})
+    patched = _patched_sh_copy(tmp_path, _patch_py_to_nonexistent_sh)
+    proc = subprocess.run(
+        [_BASH, patched],
+        input=_write_payload("Write", str(root / "src" / "app.py"), "developer", str(root)),
+        capture_output=True, text=True, check=False,
+        env=dict(os.environ, CLAUDE_PROJECT_DIR=str(root)), cwd=str(root))
     assert proc.returncode == 0, proc.stderr
 
 

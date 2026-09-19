@@ -902,14 +902,25 @@ def layer_state(path):
     """
     text = crew_state.read_text(path)
     if text is None:
-        if os.path.exists(path) or os.path.isdir(path):
+        if os.path.lexists(path):
             # Present in some form (a directory, a permissions error, an
-            # embedded NUL Python rejects before touching disk) but
-            # `read_text` could not read it as text at all -- "corrupt",
-            # not "absent". `os.path.isdir` is checked separately because
-            # a directory can satisfy `os.path.exists` in every sane case,
-            # but naming both is cheaper than trusting one to imply the
-            # other on every platform this ever runs on.
+            # embedded NUL Python rejects before touching disk, or a
+            # DANGLING symlink -- see below) but `read_text` could not
+            # read it as text at all -- "corrupt", not "absent".
+            #
+            # `os.path.lexists`, not `os.path.exists() or os.path.isdir()`
+            # (the first draft of this fix): `exists` FOLLOWS a symlink to
+            # check the TARGET, so a symlink at the config path whose
+            # target has been moved or deleted -- a config the operator
+            # once pointed somewhere, now pointing nowhere -- reports
+            # `exists() == False` and `isdir() == False`, both of which
+            # this check already asked, and both answered "absent". A
+            # dangling link is not absent: something IS configured at
+            # this path, and it cannot be read, which is exactly what
+            # "corrupt" means. `lexists` checks the link itself, not what
+            # it points at, so it is true for a dangling link the same as
+            # for a real file or directory -- one check replaces both of
+            # the first draft's. Reported and fixed 2026-09-19.
             return "corrupt"
         return "absent"
     try:

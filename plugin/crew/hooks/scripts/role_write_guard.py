@@ -114,6 +114,19 @@ just outside `pm`'s permitted prefixes), the write actually lands in
 opens the real target regardless of what the lexical path said. Reported
 and fixed 2026-09-19; see `_resolve_real_target`.
 
+`_resolve_real_target` NEVER calls `os.path.abspath`/`os.path.normpath`
+on the raw path, and this is load-bearing, not stylistic: both collapse a
+literal `..` LEXICALLY, before any symlink is resolved. Reported and
+fixed 2026-09-19, the most serious finding in this whole series:
+`.crew/link/../app.py`, with `.crew/link` a symlink to `src/subdir`,
+lexically normalises to `.crew/app.py` -- in scope, on the string alone
+-- while the OS resolves the SAME path by following `.crew/link` to
+`src/subdir` FIRST and applying `..` against the RESOLVED parent
+afterward, landing in `src/app.py`. `_resolve_real_target` now walks the
+path one component at a time, resolving whatever exists on disk as it
+goes, and pops the RESOLVED parent for a `..` -- never a lexical one --
+exactly mirroring how the kernel itself walks a path.
+
 ## A target outside the repo root is not this guard's business
 
 Reported and fixed 2026-09-19, a probe finding on the first commit above.
@@ -132,6 +145,16 @@ write actually lands, not what the string said before the filesystem was
 asked. `_DENY_ROLES` gets none of this: its restriction is "no `Write`/
 `Edit` at all", not "confined to the repo", so an outside-repo write is a
 different, stronger rule that role has no exception from.
+
+A target on a DIFFERENT DRIVE than the repo root (Windows) is provably
+outside the repo the same way -- `os.path.relpath` raises `ValueError`
+for it, same as for an unrelated `TypeError`/`OSError` during resolution,
+but the two are NOT the same fact: a different drive is CONFIRMED
+outside, not merely unverifiable. `_real_repo_relative` returns the
+sentinel `".."` for this one case specifically (the same string a
+same-drive `../`-prefixed escape produces), so it gets the identical
+`outside-repo: allow` answer without `_is_outside_repo` needing a third
+code path. Reported and fixed 2026-09-19.
 
 ## Malformed hook input
 
@@ -340,38 +363,64 @@ def _repo_relative(root, file_path):
 
 
 def _resolve_real_target(file_path):
-    """The REAL, symlink/junction-resolved absolute form of `file_path`.
+    """The REAL, symlink/junction-resolved absolute form of `file_path`,
+    with `..` applied AFTER symlink resolution -- never before.
 
     `file_path` may not exist yet -- `Write` creates new files -- so this
-    cannot just call `os.path.realpath(file_path)` and trust it: this walks
-    UP from `file_path` to the deepest ancestor that actually exists on
-    disk (`os.path.lexists`, which is true for a symlink even when what it
-    points at is missing, so a link itself always counts as "exists" for
-    this walk), `os.path.realpath`s THAT ancestor -- which resolves any
-    symlink or, on Windows from Python 3.8 on, junction earlier in the
-    chain -- and re-appends the not-yet-existing tail lexically, since
-    nothing on disk can have relinked a component that is not there yet.
+    cannot just call `os.path.realpath(file_path)` and trust it, and it
+    must NOT call `os.path.abspath`/`os.path.normpath` on the raw path
+    either: both COLLAPSE a literal `..` LEXICALLY, before any symlink is
+    resolved. Reported 2026-09-19: `.crew/link/../app.py`, where
+    `.crew/link` is a symlink to `src/subdir`, lexically normalises to
+    `.crew/app.py` -- a string that still fnmatches `.crew/**`, so `pm`
+    classified as in-scope -- while the OS resolves the SAME path by
+    walking component by component, following `.crew/link` to `src/
+    subdir` FIRST, and only THEN applying `..` against the RESOLVED
+    parent, landing in `src/app.py`. The classification and the actual
+    write disagreed, and the classification was the wrong one: a symlink
+    staged under a path `pm` is trusted to write let it escape to
+    anywhere the symlink's target's parent reaches.
 
-    Returns `file_path` unchanged (as an absolute path) if nothing on the
-    walk up exists at all, e.g. a bare relative name with no real parent --
-    there is then nothing to resolve against, and the caller's classify
-    step treats an unrelatable path as out of scope regardless.
+    Walks the path one component at a time, keeping only the RESOLVED
+    form built up so far:
+      * a plain name is appended, then that whole prefix is
+        `os.path.realpath`'d if it exists on disk (resolving whatever
+        symlink or junction the newly-added component turned out to be,
+        and everything already ahead of it in the same call, since
+        `realpath` is itself recursive);
+      * `..` pops the last RESOLVED component -- never a lexical one,
+        because by the time `..` is reached every component before it
+        has already gone through the `realpath` step above, exactly
+        mirroring kernel path resolution;
+      * a component that does not exist yet (the common case for a
+        brand-new `Write` target) is kept exactly as given and resolved
+        no further -- nothing on disk can have relinked something that
+        was never there.
     """
-    path = os.path.abspath(file_path)
-    tail = []
-    current = path
-    while current and not os.path.lexists(current):
-        parent, name = os.path.split(current)
-        if not name or parent == current:
-            break
-        tail.append(name)
-        current = parent
-    if not os.path.lexists(current):
-        return path
-    resolved = os.path.realpath(current)
-    for name in reversed(tail):
-        resolved = os.path.join(resolved, name)
-    return resolved
+    if os.path.isabs(file_path):
+        absolute = file_path
+    else:
+        absolute = os.path.join(os.getcwd(), file_path)
+    drive, rest = os.path.splitdrive(absolute)
+    parts = [p for p in rest.split(os.sep) if p and p != "."]
+
+    resolved_parts = []
+    for part in parts:
+        if part == "..":
+            if resolved_parts:
+                resolved_parts.pop()
+            continue
+        resolved_parts.append(part)
+        current = drive + os.sep + os.sep.join(resolved_parts)
+        if os.path.lexists(current):
+            real = os.path.realpath(current)
+            real_drive, real_rest = os.path.splitdrive(real)
+            drive = real_drive
+            resolved_parts = [p for p in real_rest.split(os.sep) if p]
+
+    if resolved_parts:
+        return drive + os.sep + os.sep.join(resolved_parts)
+    return drive + os.sep
 
 
 def _real_repo_relative(root, file_path):
@@ -388,18 +437,34 @@ def _real_repo_relative(root, file_path):
     move the gap rather than close it.
 
     `None` on the same "cannot classify" terms as `_repo_relative`: absent,
-    not a string, or unrelatable to the resolved root (a different drive, or
-    any `OSError` resolving either side -- a permissions failure walking the
-    filesystem is not evidence the write is in scope).
+    not a string, or any `OSError`/`TypeError` resolving either side -- a
+    permissions failure walking the filesystem is not evidence the write
+    is in scope.
+
+    A DIFFERENT DRIVE (Windows) is NOT one of those "cannot classify"
+    cases, even though `os.path.relpath` raises `ValueError` for it the
+    same way it does for other unrelatable paths -- reported and fixed
+    2026-09-19: a target on `D:` with the repo on `C:` was previously
+    caught by the same blanket `except`, returned `None`, and `pm` writing
+    it was refused as "cannot classify" even though a different drive is
+    PROVABLY outside the repo root, not merely unverifiable. This returns
+    the sentinel `".."` for that case instead -- the exact string
+    `_is_outside_repo` already treats as proof of a resolved escape (see
+    that function's own docstring), so the different-drive case gets the
+    SAME `outside-repo: allow` answer a same-drive `../`-prefixed escape
+    does, without `_is_outside_repo` itself needing to know why.
     """
     if not file_path or not isinstance(file_path, str):
         return None
     try:
         real_target = _resolve_real_target(file_path)
         real_root = os.path.realpath(root)
-        rel = os.path.relpath(real_target, real_root)
-    except (ValueError, TypeError, OSError):
+    except (TypeError, OSError):
         return None
+    try:
+        rel = os.path.relpath(real_target, real_root)
+    except ValueError:
+        return ".."
     return rel.replace(os.sep, "/")
 
 

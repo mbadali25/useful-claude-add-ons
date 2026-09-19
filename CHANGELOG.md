@@ -445,6 +445,49 @@ All notable changes to this repository are documented here. Format follows [Keep
   the pytest process itself). All 9 fixes sabotage-tested individually
   and reverted to sha256-verified byte-identical files before committing.
 
+  A sixth round found 3 BLOCK + 1 FIX, one further commit, same version.
+  **BLOCK:** `crew_config.layer_state` checked presence with
+  `os.path.exists(path) or os.path.isdir(path)` — both FOLLOW a symlink
+  to check its target, so a DANGLING symlink at a config path (moved or
+  deleted target) answered `False` to both, the same "absent" a genuinely
+  unset key gets, even though something IS configured there and cannot
+  be read. Fixed with `os.path.lexists`, which checks the link itself —
+  one check now covers a plain file, a directory and a dangling symlink
+  alike. **BLOCK:** `role-write-guard.ps1` got a launch-failure fallback
+  in round 4; `role-write-guard.sh` did not. Deleting the resolved
+  interpreter between its successful probe and the actual invocation
+  made `"$PY" ...` fail to exec (`No such file or directory`, exit 127) —
+  a status neither 0 nor 2, which `PreToolUse` treats as non-blocking, so
+  `pm` writing an out-of-scope path went through unjudged with only a
+  shell error on stderr. Fixed with the bash twin of the .ps1's own
+  fallback: capture the interpreter's exit status, and on anything other
+  than 0 or 2, classify `agent_type` in shell (crude but safe grep/sed
+  extraction, `crew:` prefix stripped, checked against the same deny-list
+  + `pm`) and exit 2 for a restricted role, else exit 0 with "allowing
+  unjudged". **BLOCK, and the most serious finding in this whole series:**
+  `_resolve_real_target` called `os.path.abspath` on the raw path first,
+  and `abspath` collapses a literal `..` LEXICALLY, before any symlink is
+  resolved. `.crew/link/../app.py`, with `.crew/link` a symlink to
+  `src/subdir`, lexically normalised to `.crew/app.py` — in scope, on the
+  string alone — while the OS follows `.crew/link` to `src/subdir` FIRST
+  and applies `..` against the RESOLVED parent afterward, landing in
+  `src/app.py`. A symlink `pm` itself could stage under a trusted path
+  let it escape anywhere that symlink's target's parent reaches, just by
+  adding `..` after it. Fixed by never calling `abspath`/`normpath` on
+  the raw path: `_resolve_real_target` now walks the path one component
+  at a time, resolving whatever exists on disk as it goes, and pops the
+  RESOLVED parent for `..` — never a lexical one — exactly mirroring
+  kernel path resolution. Verified with both a real symlink and a real
+  Windows junction, driven end to end. **FIX:** a target on a different
+  Windows drive than the repo root made `os.path.relpath` raise
+  `ValueError`, which reached the same catch-all as every other "cannot
+  classify" case and refused an otherwise-legitimate write — a different
+  drive is PROVEN outside the repo, not merely unverifiable. Fixed by
+  returning the outside-repo sentinel for this case specifically.
+  `tests/test_role_write_guard.py` grew to 104 cases. All 4 fixes
+  sabotage-tested individually and reverted to sha256-verified
+  byte-identical files before committing.
+
 - **`crew` 0.19.79: a debugging method, and the routing that dispatches it.**
   Crew shipped 27 commands and 19 skills and not one of them was about finding
   a cause: `grep -cil 'debug\|root cause'` over `commands/` and `skills/`
