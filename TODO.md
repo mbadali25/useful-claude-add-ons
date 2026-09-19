@@ -3048,3 +3048,36 @@ one.
 Not fixed because nobody has that layout: the limit is four, the repo has
 zero submodules, and the reachable case needs five levels of nesting. Written
 down with the repro so it is a ticket rather than a rediscovery.
+
+## Mandatory-first scheduling runs shared checks before their prerequisites
+
+Filed from an independent review of the branch that lands crew 0.19.67-0.19.78.
+**Not fixed by decision** -- the honest fix is map-level and the gate cannot
+derive it from the map as it exists. Recorded verbatim as the review wrote it:
+
+```
+FIX|plugin/crew/hooks/scripts/verify-gate.sh:766|Mandatory-first scheduling runs shared checks before their prerequisites; verify-gate.ps1 has the same defect.|Match rules [prepare,check] costing 5s and [check,mandatory] costing 10s, with always=[mandatory] and budget=60. Previously prepare preceded check; now execution is check,mandatory,prepare, causing checks dependent on prepare to fail.
+```
+
+Both flavours carry it: `verify-gate.sh` sorts `must` ahead of `may`
+(`plugin/crew/hooks/scripts/verify-gate.sh:763`) and `verify-gate.ps1` does the
+same thing at its own scheduler. A command shared by two rules is charged once
+and run at the position the FIRST scheduled rule gives it, so promoting a
+mandatory rule can pull a shared command ahead of a command that, in the other
+rule's `run` list, precedes it.
+
+**Why this is not being fixed here.** The reasoning, so the next reader does
+not redo it: the honest fix is at the map level, not the scheduler's. It is
+(a) a command that depends on a sibling is not shared across rules -- it is
+that rule's own command and gets its own charge, and (b) a warning when two
+rules that share a command disagree on its position in their `run` lists.
+Neither is derivable from `.crew/verify.json` as the schema stands: a `run`
+list is an ordered list of commands with no declared dependencies between
+them, so the gate cannot tell "prepare must precede check" from "prepare and
+check happen to be written in that order". Any scheduler-only fix would have
+to assume the second is the first, which would re-serialise rules that do not
+need it and silently spend budget doing so.
+
+So this needs a schema decision before it needs code. Until then the gate is
+correct about what it was told and wrong about what was meant, and that is
+worth having written down rather than half-fixed.
