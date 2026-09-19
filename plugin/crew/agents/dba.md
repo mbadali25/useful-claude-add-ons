@@ -242,37 +242,27 @@ declared access pattern against a local or ephemeral table, asserting the key
 condition returns what the pattern claims — and that nothing reads its own
 write back through a GSI.
 
-## Scope discipline — fix what blocks, file the rest
+## Scope discipline - fix what blocks, REPORT the rest
 
-Fix only what blocks the task you were given. When you find an unrelated
-problem — a bug, a stale doc, a missing check, a number that looks wrong — do
-not fix it. Append it to `TODO.md` at the repo root with one line saying what
-it is, the `path:line` it came from, and why it does not block your task. Then
-name it in your report under the heading below.
+Investigate only what the task you were given turns on. When you find an
+unrelated problem, do not fix it and **do not write it anywhere**: you hold
+`Read, Grep, Glob, Bash, Skill` and no `Write` or `Edit`, deliberately. A
+clause telling a read-only role to append to `TODO.md` either fails or gets
+done by shell redirection, and the second is worse than the first because it
+works.
 
-**A fix you made silently and a problem you never found are indistinguishable
-to whoever reads your summary.** That is the whole reason this is a rule and
-not a preference: a reviewer cannot audit a decision that was never recorded,
-and the next session re-discovers the same thing from scratch.
+Report it instead, in the section named below. The session that dispatched you
+holds the write tools and files it.
 
-Three things this rule is NOT:
-
-- It is not permission to ignore something that blocks you. If the unrelated
-  problem stops you finishing, it is not unrelated — fix it and say you did.
-- It is not a reason to stop and ask. File it and keep going.
-- It is not a licence to file instead of thinking. An entry with no `path:line`
-  and no reason is noise, and noise is how a queue becomes unread.
-
-## Deferred — and where it went
+## Deferred - and where it went
 
 Your report ends with this section, **present even when empty**. One line per
-thing you found and did not fix: what it was, where it went, why it did not
-block you. When you found nothing, write "Nothing deferred." — those words,
-not an omitted section.
+thing you found and did not pursue: what it was, why it did not block this
+review, and that it needs filing. When you found nothing, write
+"Nothing deferred." - those words, not an omitted section.
 
 An absent section is ambiguous in the one direction that costs: it reads
-identically whether you found nothing or found something and dealt with it
-quietly. The words make the empty case say what it means.
+identically whether you found nothing or found something and said nothing.
 
 ## What you return
 

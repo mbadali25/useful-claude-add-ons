@@ -30,10 +30,19 @@ nobody trusts a notification channel.
     /goal <the ticket's "Done when", as one measurable end state>; proven by
     <the .crew/verify.json commands the ticket's paths map to> and <the
     specific new test this ticket adds>; no tracked file outside <the ticket's
-    declared paths> is modified — the turn prints `git status --porcelain` to
-    show it, and anything found outside is appended to TODO.md with its reason,
+    declared paths>, except TODO.md and .crew/ and .work/, is modified — the turn prints the
+    changed-file list to show it, and anything found outside is appended to TODO.md with its reason,
     not fixed
     ```
+
+    **The carve-out is load-bearing, not tidiness.** `TODO.md` is tracked. A
+    constraint reading "no tracked file outside <paths> is modified" next to
+    an instruction to append findings to `TODO.md` tells the turn to do what
+    the same sentence forbids, so a correctly deferred finding reads to the
+    evaluator as a scope violation and the only way to satisfy the goal is to
+    stop deferring. Crew bookkeeping is excluded for the same reason
+    `scope_report.py` excludes it: a ticket edit is the process working. Keep
+    the two exclusion lists saying the same thing.
 
     **Why the third clause needs the second half.** The goal evaluator reads
     only what the turn surfaced in the conversation — it runs no commands and
@@ -82,8 +91,24 @@ nobody trusts a notification channel.
    the config, which describes the *next* run rather than this one, and has to
    say so in its verdict.
 
-   **End the implementation turn by printing `git status --porcelain`,
-   verbatim, including when it is empty.** Then name any path in it that is
+   **End the implementation turn by printing the changed-file list,
+   verbatim, including when it is empty:**
+
+   ```bash
+   # The SAME base verify-gate.sh derives at :118-133. Do not invent a second
+   # one: two derivations disagree, and then the scope claim was about a
+   # different range than the gate checked.
+   git diff --name-only "$BASE"; git ls-files --others --exclude-standard
+   ```
+
+   **Not `git status --porcelain`.** Porcelain compares against the index, so
+   a developer who runs `git commit` mid-ticket vanishes from it while still
+   having changed the tree — and nothing forbade that commit until crew
+   0.19.63 put it on `developer.md`'s never-do list. Porcelain also shows
+   files that were already dirty before the ticket started, which on this
+   repository includes `graphify-out/`, rewritten in the background by a
+   post-commit hook. Both failures point the same way: the constraint reads
+   satisfied when it is not.** Then name any path in it that is
    outside the ticket's declared scope, and say what you did about it — which
    under the scope clause means filed to `TODO.md`, not fixed. An empty result
    is printed as an empty result, not omitted: a turn that shows nothing and a
@@ -144,10 +169,23 @@ nobody trusts a notification channel.
     to know it is reading history.
 
 
-Every role you dispatch carries the same scope clause: fix only what blocks the
-task, file the rest to `TODO.md` with its `path:line` and its reason, and end
-its report with `## Deferred — and where it went`, present even when empty.
-Hold them to it. A role whose report has no Deferred section has not finished,
-and "Nothing deferred." is the empty case written out rather than left off.
+Every role you dispatch carries a scope clause, but **not the same one, and do
+not enforce it as though they did.** The clause follows the role's tools and
+its output contract:
+
+- **Roles that can write** (`developer`, `smoke-author`) file the finding to
+  `TODO.md` themselves and end their report with
+  `## Deferred — and where it went`, present even when empty.
+- **Read-only roles** (`dba`, `qa-reviewer`) hold no `Write` or `Edit`, on
+  purpose. They report the finding and **you** file it. Telling them to write
+  `TODO.md` asks them to do it by shell redirection — which works, which is
+  why it is the worse failure.
+- **`qa-reviewer` has no Deferred section at all.** Its contract is defect
+  lines or exactly `CLEAN`, and a prose heading breaks both. An unrelated
+  defect from a reviewer is a `NIT` finding, not a deferral.
+
+Reject a *writer's* report that omits the section; never expect one from
+`qa-reviewer`. A uniform rule is what produced the contradiction this
+replaced: one clause pasted into four roles whose contracts differ.
 
 Stop there. I open the PR.

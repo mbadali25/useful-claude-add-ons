@@ -6,6 +6,52 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Changed
 
+- **`crew` 0.19.63: the code map reaches the reviewer that actually runs, and
+  the gate reports scope.** 0.19.61 taught `qa-reviewer.md` to read the
+  codemap, but `qa-reviewer` is the FALLBACK reviewer: `/crew:review` tries
+  Codex then Copilot first, and the shared `prompt.txt` all three providers
+  read had no codemap content -- `grep -ci 'codemap|landmine' review.md` was 0.
+  On any machine with Codex installed the wiring reached nobody. The landmine
+  and `## Written by / Read by` sections of intersecting notes are now built
+  into that shared prompt, keeping the byte-identical-across-providers
+  invariant the file exists to protect. The match is a substring test and
+  over-matches (7 of 10 notes on a 13-file diff here); that is stated in the
+  command rather than described as precision, and the output is capped at 200
+  lines with a truncation notice, because a silently cut landmine list reads
+  the same as a short one. `verify-gate.sh` and `.ps1` gained a REPORT-ONLY
+  scope layer: changed files compared against the open ticket's declared
+  `- touch:` paths, printed as `outside-scope:`. It can never change the exit
+  code. Every branch that cannot answer says why -- no open ticket, no declared
+  paths, ticket file missing are three distinct sentences, because an empty
+  report must only ever mean "checked, nothing outside". Crew's own bookkeeping
+  (`.work/`, `.crew/`, `TODO.md`) is excluded: a ticket edit is the process
+  working, not scope creep. Logic lives in one `scope_report.py` called by both
+  flavours, for the reason `pm-pulse.sh` gives. The `/goal` evidence command
+  changed from `git status --porcelain` to `git diff --name-only <base>` plus
+  untracked: porcelain compares against the index, so a mid-ticket `git commit`
+  empties it while the branch still carries the change, and it also shows files
+  dirty before the ticket began. `developer.md` now forbids committing, which
+  nothing did before. Six new gate cases, sabotage-tested: five mutations, all
+  red, both files restored byte-identical.
+  Also folds four findings from a Codex review of 0.19.61-62 (0 BLOCK, 4 FIX).
+  Three were one defect: the 0.19.62 scope clause was pasted identically into
+  four roles whose contracts differ. `dba` and `qa-reviewer` hold
+  `Read, Grep, Glob, Bash, Skill` and no `Write` or `Edit`, so telling them to
+  append to `TODO.md` asked for shell redirection -- which works, which makes
+  it worse than an outright failure; they now report the finding and the
+  dispatching session files it. `qa-reviewer`'s contract is defect lines or
+  exactly `CLEAN`, so its Deferred section is removed entirely and an unrelated
+  defect becomes a `NIT` finding: with the section, no clean review could
+  satisfy both rules. And the `/goal` template forbade modifying tracked files
+  outside the ticket while the same clause required appending to `TODO.md`,
+  which is tracked -- so a correct deferral read to the evaluator as a
+  violation and the only compliant behaviour was to stop deferring. The
+  template now carves out `TODO.md`, `.crew/` and `.work/`, matching what
+  `scope_report.py` already excluded. `test_scope_discipline.py` was rewritten
+  to assert the role-appropriate form for each file, and to check the tool
+  grants the split claims, rather than one identical string across five files:
+  a uniform assertion is precisely what let this through.
+
 - **`crew` 0.19.62: the roles that touch code now carry the scope rule the PM
   already had, and `/crew:work` emits a goal line that can actually be
   checked.** Crew advertises itself in `plugin/README.md` and `README.md` as

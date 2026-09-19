@@ -310,6 +310,66 @@ as though it were a preference.
 # about a different range than the diff the reviewer actually read.
 git diff "$BASE"...HEAD > "$SCRATCH/diff.txt"
 
+# Gather this repo's own failure modes BEFORE writing the prompt, so every
+# provider gets them. crew 0.19.61 taught `qa-reviewer.md` to read the codemap,
+# but `qa-reviewer` is the FALLBACK reviewer -- on any machine with Codex or
+# Copilot installed the reviewer that actually runs is a provider reading
+# `prompt.txt`, and `prompt.txt` had no codemap content at all. The wiring
+# reached the reviewer nobody uses. That is why this block is here and not in
+# an agent file.
+#
+# Byte-identical instructions across providers is a deliberate invariant of
+# this file (see the comment below). So this text goes INTO the shared prompt,
+# never appended for one provider: a landmine list Codex sees and Claude does
+# not makes a differing defect count a fact about the prompt again.
+# The changed-file list this block matches against. It MUST be built here:
+# an earlier draft of this step grepped a $SCRATCH/changed.txt that nothing
+# ever wrote, and because the failure was routed to /dev/null every note
+# failed to match, every review got an empty landmine section, and the step
+# reported itself complete. Build the input before you filter on it.
+git diff --name-only "$BASE"...HEAD > "$SCRATCH/changed.txt"
+git ls-files --others --exclude-standard >> "$SCRATCH/changed.txt"
+sort -u -o "$SCRATCH/changed.txt" "$SCRATCH/changed.txt"
+
+: > "$SCRATCH/context.txt"
+for note in .crew/codemap/*.md; do
+  [ -e "$note" ] || continue
+  case "$note" in */INDEX.md) continue ;; esac
+  # Only notes whose cited paths intersect this diff. A reviewer handed every
+  # landmine in the repo reads none of them. `-F` because a path is a literal,
+  # not a pattern; an empty changed.txt matches nothing, which is correct.
+  if [ -s "$SCRATCH/changed.txt" ] && grep -qFf "$SCRATCH/changed.txt" "$note"; then
+    sed -n '/^## Landmines/,/^## /p' "$note" >> "$SCRATCH/context.txt"
+    sed -n '/^## Written by \/ Read by/,/^## /p' "$note" >> "$SCRATCH/context.txt"
+  fi
+done
+# KNOWN OVER-MATCH, stated rather than hidden: the test is "does any changed
+# path appear anywhere in this note", so a diff touching a short, widely-cited
+# path (`README.md`, `CHANGELOG.md`) matches almost every note. Measured on
+# this repo with a 13-file diff: 7 of 10 notes matched, 333 lines. That errs
+# toward giving the reviewer too much rather than too little, which is the
+# right direction, but it is not precision and must not be described as such.
+# Narrowing it needs the notes' citation grammar parsed, which is a bigger
+# change than this one.
+#
+# So cap it, and make the cap ANNOUNCE itself. A prompt silently truncated
+# mid-landmine is worse than one that says it was cut: the reviewer cannot
+# tell a short landmine list from a truncated one.
+if [ "$(wc -l < "$SCRATCH/context.txt")" -gt 200 ]; then
+  head -200 "$SCRATCH/context.txt" > "$SCRATCH/context.trim" &&
+  printf '
+[TRUNCATED at 200 lines of %s. More landmines exist in .crew/codemap/ than fitted here.]
+'     "$(wc -l < "$SCRATCH/context.txt")" >> "$SCRATCH/context.trim" &&
+  mv "$SCRATCH/context.trim" "$SCRATCH/context.txt"
+fi
+
+# An empty context file is a real answer (no intersecting note, or no codemap)
+# and must SAY so rather than silently producing a prompt that looks complete.
+if [ ! -s "$SCRATCH/context.txt" ]; then
+  printf 'No codemap note intersects this diff, so no repo-specific landmines were supplied.
+' > "$SCRATCH/context.txt"
+fi
+
 # Write the prompt HERE, before any provider block reads it. All three reviewers
 # get byte-identical instructions, so a defect count that differs between them is
 # a fact about the model and not about how you worded it. Unquoted heredoc marker
@@ -322,6 +382,13 @@ SEVERITY is BLOCK, FIX, or NIT. Check: unintended behavior changes, unhandled
 error paths, boundary and empty-collection cases, concurrency, and anything the
 change makes reachable that was not before. Output nothing but those lines.
 If no defects, output exactly: CLEAN
+
+This repository's own recorded failure modes follow. They come from its code
+map, where each line was written because it already cost someone real time
+here. Treat them as leads to check in the diff, not as findings to repeat: a
+landmine this change does not touch is not a defect, and reporting it as one
+trains the reader to skim your output.
+$(cat "$SCRATCH/context.txt")
 EOF
 ```
 
