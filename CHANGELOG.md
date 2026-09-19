@@ -6,6 +6,21 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Fixed
 
+- **`crew` 0.19.82: two defects Codex found in the 0.19.67 fix itself.**
+  `find-polluter.sh`'s `while read` loop over a here-string let the test
+  runner inherit its stdin; a runner that reads stdin to EOF drained the
+  rest of the test list and silently ended the loop after one file, the
+  same landmine `verify-gate.sh` documents for its own here-string loop.
+  Fixed by giving the runner `< /dev/null`. Separately, 0.19.67's blanket
+  "any non-zero exit is a runner failure" misclassified the pollution case
+  itself — a leaked file plus a failed assertion in the same test — as
+  `RUNNER FAILED`, aborting before the pollution check ran. Now only exit
+  126/127 (runner could not execute) aborts as `RUNNER FAILED`; pollution
+  is checked regardless of exit code, and an ordinary failure without
+  pollution is recorded and bisection continues, with the final verdict
+  naming every test that failed without polluting. Three new tests in
+  `test_debugging_method.py`, sabotage-tested.
+
 - **`crew` 0.19.81: test for #3.** Added the behavioural regression test for
   finding #3 of 0.19.67 (whitespace in a test filename splitting into two
   invalid runner invocations) that 0.19.67's report flagged as missing;

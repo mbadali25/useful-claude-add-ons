@@ -34,11 +34,16 @@ test files had their skill path repointed at crew's copy.
 `condition-based-waiting-example.ts`, which was not copied. The method itself —
 the Iron Law, the four phases, the red flags, the rationalisation table — is
 upstream's, reproduced with its wording intact. `find-polluter.sh` also
-carries three behavioural fixes on top of the upstream copy (quoted per-file
-invocation, a checked runner exit status, and a non-zero exit when no test
-actually ran) — see its own header comment for what changed and why; the
-reproduction steps for the underlying upstream defects are recorded in
-`TODO.md` at the repo root.
+carries behavioural fixes on top of the upstream copy — quoted per-file
+invocation, an isolated runner stdin, a runner-failure-vs-test-failure
+distinction (only exit 126/127 aborts as "RUNNER FAILED"; pollution is
+checked regardless of exit code, and an ordinary failure without pollution
+is recorded and bisection continues), and a non-zero exit when no test
+actually ran or when a test failed without producing pollution — see its own
+header comment for the current list and why. The first three fixes'
+upstream reproduction steps are recorded in `TODO.md` at the repo root; the
+stdin-isolation and exit-classification fixes address defects crew's own
+earlier fix introduced, not upstream ones, so they are not filed there.
 
 **What was deliberately not copied:** `CREATION-LOG.md` and
 `condition-based-waiting-example.ts`.
