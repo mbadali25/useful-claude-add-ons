@@ -31,9 +31,13 @@
 #   existed before the first test), report "NO TESTS RAN" and exit
 #   non-zero instead of a false-positive clean verdict.
 # - Refuse a pattern with more than one '**' up front ("UNSUPPORTED
-#   PATTERN") instead of translating it wrong: the find translation only
-#   understands one occurrence, and a second one silently matched a
-#   narrower set than the pattern implied.
+#   PATTERN") instead of translating it wrong. This is a crew-introduced
+#   defect, not an upstream one: the second `-o -path` alternative below
+#   (which crew added, to also match a file directly under the base
+#   directory -- upstream's single form misses those) collapses '**/' to
+#   nothing, so with a SECOND '**' the collapsed form and the uncollapsed
+#   form both fail to match a file nested under it, and it is silently
+#   never discovered.
 # - Capture find's own exit status out of the `find | sort` discovery
 #   pipeline (`sort`'s success otherwise masks a failing `find`, e.g. an
 #   unreadable subtree) and refuse with "DISCOVERY FAILED" instead of
@@ -60,7 +64,8 @@ TEST_PATTERN="${TEST_PATTERN#./}"
 
 # The find translation below understands exactly one '**': it is matched
 # two ways (against '**/x' for arbitrary depth, and with '**/' collapsed
-# for zero depth) to cover both cases from a single occurrence. A SECOND
+# for zero depth -- the second alternative is crew's own addition, not
+# upstream's) to cover both cases from a single occurrence. A SECOND
 # '**' cannot be translated correctly by either variant and would silently
 # match a narrower set than the pattern implies -- the exact false-clean
 # bug class this script exists to prevent. Refuse rather than guess.
