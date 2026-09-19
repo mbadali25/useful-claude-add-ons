@@ -708,8 +708,19 @@ $unmapped = [System.Collections.ArrayList]@()
 # verify-gate.sh for the three levels and for the measured case where
 # `"always": ["x"]` beside a 90s rule naming `x` deferred the mandatory check
 # and this flavour exited 0 without running it, exactly as bash did.
-$cost = @{}
-$mandatory = @{}                                 # command -> $true, a set
+#
+# ORDINAL, not the PowerShell @{} default. `@{}` and `-contains` both compare
+# strings CASE-INSENSITIVELY - Codex round 3 BLOCK: two rules running
+# `test "$ENV" = dev` with env ENV=dev and ENV=DEV are two DIFFERENT
+# commands (different env, different identity text), but `@{}`/`-contains`
+# read their identities as the SAME key, so only the first was ever kept -
+# the second silently vanished from $cmds and never ran, and this flavour
+# exited 0 on a check bash correctly ran twice and failed. Every identity
+# lookup below therefore uses an Ordinal-comparer Dictionary ($cost,
+# $mandatory) or the case-sensitive `-ccontains`/`-cnotcontains` operators
+# ($cmds, $keep, $deferred), never the PowerShell defaults.
+$cost = [System.Collections.Generic.Dictionary[string,object]]::new([System.StringComparer]::Ordinal)
+$mandatory = [System.Collections.Generic.Dictionary[string,object]]::new([System.StringComparer]::Ordinal)  # command -> $true, a set
 $ruleCmds = @{}                                  # rule index -> its commands
 $ruleSecs = @{}                                  # rule index -> stated cost
 $ruleOrder = [System.Collections.ArrayList]@()   # first-match order
@@ -898,8 +909,8 @@ foreach ($f in $changed) {
         }
         foreach ($c in $r.run) {
           $ident = Get-CrewIdentity $c $rEnv
-          if ($cmds -notcontains $ident) { [void]$cmds.Add($ident) }
-          if ($ruleCmds[$ri] -notcontains $ident) { [void]$ruleCmds[$ri].Add($ident) }
+          if ($cmds -cnotcontains $ident) { [void]$cmds.Add($ident) }
+          if ($ruleCmds[$ri] -cnotcontains $ident) { [void]$ruleCmds[$ri].Add($ident) }
           if ($ruleSecs.ContainsKey($ri)) {
             if (-not $cost.ContainsKey($ident) -or $cost[$ident] -lt $ruleSecs[$ri]) {
               $cost[$ident] = $ruleSecs[$ri]
@@ -926,7 +937,7 @@ foreach ($ri in $ruleOrder) {
   }
 }
 foreach ($c in $vm.always) {
-  if ($cmds -notcontains $c) { [void]$cmds.Add($c) }
+  if ($cmds -cnotcontains $c) { [void]$cmds.Add($c) }
   $mandatory[$c] = $true
 }
 if ($cmds.Count -eq 0) {
@@ -1005,7 +1016,7 @@ if ($null -ne $budget) {
     # Only the commands this rule would ADD -- see the .sh for why a rule
     # whose work is already scheduled is charged nothing, and why that is
     # what holds each command to a single charge.
-    $fresh = @($ruleCmds[$ri] | Where-Object { $cost.ContainsKey($_) -and $keep -notcontains $_ })
+    $fresh = @($ruleCmds[$ri] | Where-Object { $cost.ContainsKey($_) -and $keep -cnotcontains $_ })
     if ($fresh.Count -eq 0) { continue }
     if ($mustSet.ContainsKey($ri)) {
       if (($spent + $ruleSecs[$ri]) -gt $budget) {
@@ -1019,7 +1030,7 @@ if ($null -ne $budget) {
       foreach ($c in $fresh) { [void]$keep.Add($c) }
       $spent += $ruleSecs[$ri]
     } else {
-      foreach ($c in $fresh) { if ($deferred -notcontains $c) { [void]$deferred.Add($c) } }
+      foreach ($c in $fresh) { if ($deferred -cnotcontains $c) { [void]$deferred.Add($c) } }
       # CHRONIC vs ACUTE -- the twin split in verify-gate.sh. A rule whose
       # own cost exceeds the whole budget can never fit regardless of
       # ordering (chronic); one that would fit alone but lost to this
@@ -1033,7 +1044,7 @@ if ($null -ne $budget) {
   }
   # A command deferred by one rule and kept by a later, cheaper one is not
   # deferred -- it runs.
-  $deferred = [System.Collections.ArrayList]@(@($deferred | Where-Object { $keep -notcontains $_ }))
+  $deferred = [System.Collections.ArrayList]@(@($deferred | Where-Object { $keep -cnotcontains $_ }))
 
   # Unknown-cost commands run FIRST, so a map with no `seconds` anywhere
   # behaves exactly as it did before this feature existed.
@@ -1298,6 +1309,19 @@ try {
 # sha baseline, had no guard at all. That is how a deferred rule still
 # advanced the baseline and dropped a committed file out of $changed for
 # every later run, including -All.
+# DELETE THE STALE FINGERPRINT FIRST, BEFORE AND INDEPENDENT OF THE SYNC
+# DECISION BELOW - the twin of the same fix in verify-gate.sh, where the
+# full rationale lives. Round 2 placed this delete inside the elseif chain,
+# after the "elseif $syncStatus -ne 0" branch - Codex round 3 FIX: a turn
+# that both SKIPS and fails to persist the record took the sync-failure
+# branch first and never reached this delete, so a fingerprint from an
+# earlier PASS survived a SKIP it should have invalidated. It depends on
+# nothing but $anySkipped, so a sync failure can no longer short-circuit
+# past it.
+if ($anySkipped) {
+  Remove-Item -Path $fpFile -Force -ErrorAction SilentlyContinue
+}
+
 $fullyVerified = ($deferredCount -eq 0) -and (-not $anySkipped) -and ($syncStatus -eq 0)
 
 if ($fullyVerified) {
@@ -1313,13 +1337,6 @@ if ($fullyVerified) {
 } elseif ($syncStatus -ne 0) {
   # verify_record.py already printed why, on stderr, above.
 } elseif ($anySkipped) {
-  # DELETE the existing fingerprint, not just withhold a new one - the twin
-  # of the same fix in verify-gate.sh, where the full rationale lives: the
-  # digest covers only CHANGED paths, verify.json and config.json, never an
-  # out-of-band signal a rule's own command checks, so a rule that passed
-  # once could keep matching its OLD stored fingerprint after it started
-  # returning 77 for a reason the digest cannot see.
-  Remove-Item -Path $fpFile -Force -ErrorAction SilentlyContinue
   [Console]::Error.WriteLine("verify-gate: the verified baseline was NOT advanced - at least one command exited 77 (SKIP) and was not actually checked this turn.")
 } else {
   [Console]::Error.WriteLine("verify-gate: the verified baseline was NOT advanced - $deferredCount rule command(s) were deferred and have not been checked against this tree.")

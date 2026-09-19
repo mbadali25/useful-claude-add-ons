@@ -32,6 +32,7 @@ import json
 import math
 import os
 import re
+import shlex
 import sys
 import hashlib
 
@@ -183,9 +184,64 @@ def pinned_env(rule_env, base=None):
 # same claim as a script proven harmless.
 REACH_VERBS = ("ssm", "ssh", "curl", "aws", "az", "gh", "psql", "mysql")
 _REACH_RE = re.compile(r"\b(" + "|".join(re.escape(v) for v in REACH_VERBS) + r")\b")
-_WRAPPER_INTERPRETERS = ("bash", "sh", "python", "python3", "pwsh")
+_WRAPPER_INTERPRETERS = ("bash", "sh", "dash", "zsh", "python", "python3",
+                         "py", "pwsh", "node")
+# -m's argument is a MODULE NAME (`python -m pytest`), -c/-Command/-e's is
+# INLINE CODE (`bash -c '...'`, `pwsh -Command '...'`, `node -e '...'`) -
+# neither names a script FILE, so an interpreter carrying one of these
+# names NO wrapper at all; the whole invocation stops there rather than
+# treating the next non-flag token as a path to resolve. Applied to every
+# entry in _WRAPPER_INTERPRETERS - safe even for a family where the flag
+# does not exist, since the outcome (treat as no wrapper) is the cautious
+# direction, never the permissive one.
+_NO_WRAPPER_FLAGS = ("-c", "-m", "-e")
+# -n is POSIX-SHELL-SPECIFIC and NOT folded into _NO_WRAPPER_FLAGS above,
+# unlike -c/-m/-e: `bash -n script.sh` / `sh -n` / `dash -n` / `zsh -n`
+# mean "read commands but do not execute them" - the named script is
+# PARSED for syntax only and never actually RUN, so a `curl ... | bash`
+# inside it can never fire under THIS invocation. Codex follow-up: rules[3]
+# in THIS repo's own .crew/verify.json runs `bash -n scripts/
+# install-prerequisites.sh` (a syntax-check step, not an execution), and
+# the scanner followed it anyway, found a real `curl | bash` deep in that
+# script's actual code (not a comment - see the comment-strip fix above,
+# which is why this surfaced instead of an earlier, unrelated false
+# match), and deferred a rule that never runs a single line of it. Unlike
+# -c/-m/-e, -n does NOT mean "this token is safe to apply everywhere
+# regardless of family" - python/node/pwsh have no such "parse but never
+# execute" flag, and treating an unrelated -n there as "no wrapper" could
+# hide a real invocation instead of a syntax check. Scoped to
+# _POSIX_SHELLS for that reason, checked separately from the universal set.
+_POSIX_SHELLS = ("bash", "sh", "dash", "zsh")
+# A WHOLE-LINE comment (bash/PowerShell/python all use `#`) is prose, not
+# code - a wrapper script's own comment describing what it does NOT do
+# (`_verify/smoke.sh`: "there is no service to curl and no ...") used to
+# verb-match on the strength of that sentence alone and deferred two rules
+# in this repo's own .crew/verify.json on every Stop, forever, since
+# smoke.sh is the default gate. Stripped BEFORE verb matching and BEFORE
+# wrapper-path detection, so a comment naming either a verb or a wrapper
+# script is inert in both directions. A TRAILING comment on a code line is
+# left alone - a verb appearing in actual code must still match even if
+# the same line also carries a `# comment` after it - so this only ever
+# drops a line whose first non-blank character is `#`.
+_PS_BLOCK_COMMENT_RE = re.compile(r"<#.*?#>", re.S)
 REACH_SCAN_MAX_DEPTH = 3
 REACH_SCAN_MAX_BYTES = 256 * 1024
+# A token following an interpreter is only a wrapper CANDIDATE if, once it
+# exists under repo_root, it also LOOKS like a script - Codex round 3 FIX:
+# `python -m pytest` used to hand "pytest" (a module name, not a path) to
+# the resolver, which correctly failed to find a file called "pytest" and
+# read that failure as UNINSPECTED ("could not tell") rather than as what
+# it actually was: no wrapper here at all. An extensionless file still
+# counts if it starts with a shebang (`#!`) - checked in _looks_like_script.
+_SCRIPT_EXTENSIONS = (".sh", ".bash", ".py", ".ps1", ".psm1",
+                      ".js", ".mjs", ".cjs")
+# A single LINE can chain several commands - Codex round 3 BLOCK: `true &&
+# bash inner.sh` is one line but two commands, and treating the whole line
+# as one cmd.split() target hid "bash inner.sh" (and anything after `;`,
+# `|` or `||`) from wrapper detection entirely, so a compound wrapper
+# invocation reached ssh unscanned. Every segment is scanned separately,
+# for both the reach-verb text search and the wrapper-path search.
+_SEGMENT_SPLIT_RE = re.compile(r"&&|\|\||[;|]")
 
 
 def _looks_remote_text(text):
@@ -195,12 +251,55 @@ def _looks_remote_text(text):
     return m.group(1) if m else None
 
 
+def _strip_comments(text):
+    """Remove PowerShell `<# ... #>` blocks and every WHOLE-LINE `#`
+    comment from `text`, in that order (a block can span several lines
+    that would otherwise each individually look like code). A TRAILING
+    `# comment` on a line that also carries real code is left untouched -
+    only a line whose first non-blank character is `#` is dropped. See
+    _NO_WRAPPER_FLAGS's neighbouring comment for why this exists."""
+    if not text:
+        return text
+    text = _PS_BLOCK_COMMENT_RE.sub("", text)
+    return "\n".join(line for line in text.splitlines()
+                      if not line.lstrip().startswith("#"))
+
+
+def _command_segments(text):
+    """Every individual command segment in `text`: each line split on &&,
+    ||, ; and | in turn, trimmed, blanks dropped."""
+    segments = []
+    for line in (text or "").splitlines():
+        for seg in _SEGMENT_SPLIT_RE.split(line):
+            seg = seg.strip()
+            if seg:
+                segments.append(seg)
+    return segments
+
+
+def _tokenize(cmd):
+    """Shell-aware tokens for one command segment - Codex round 3 FIX:
+    `cmd.split()` left quote characters IN the token (`bash "local.sh"`
+    split to the literal 4-character string '"local.sh"'), which could
+    never match the real, unquoted file on disk and stayed UNINSPECTED
+    forever. `shlex.split(posix=True)` strips them properly; an unbalanced
+    quote shlex cannot parse falls back to a plain split with surrounding
+    quote characters stripped per token, rather than silently yielding no
+    tokens at all (which would read as "clean")."""
+    try:
+        return shlex.split(cmd, posix=True)
+    except ValueError:
+        return [p.strip("'\"") for p in cmd.split()]
+
+
 def _wrapper_script_path(cmd):
-    """The script FILE a single command line directly invokes - `bash x.sh`,
-    `sh x`, `./x`, `pwsh -File x.ps1`, `python(3) x.py` - or None. One
-    token, the interpreter's own first positional argument (or the bare
-    ./x form), not a subcommand-taking tool like npx or terraform."""
-    parts = cmd.split()
+    """The script FILE a single command segment directly invokes - `bash
+    x.sh`, `sh x`, `./x`, `pwsh -File x.ps1`, `python(3) x.py`, `node x.js`
+    - or None. One token, the interpreter's own first positional argument
+    (or the bare ./x form), not a subcommand-taking tool like npx or
+    terraform, and not a flag whose OWN argument is inline code or a
+    module name rather than a file (see _NO_WRAPPER_FLAGS)."""
+    parts = _tokenize(cmd)
     if not parts:
         return None
     head = parts[0]
@@ -210,23 +309,20 @@ def _wrapper_script_path(cmd):
     if base.endswith(".exe"):
         base = base[:-4]
     if base == "pwsh":
-        for i in range(1, len(parts) - 1):
-            if parts[i].lower() == "-file":
-                return parts[i + 1]
+        for i in range(1, len(parts)):
+            low = parts[i].lower()
+            if low == "-command":
+                return None
+            if low == "-file":
+                return parts[i + 1] if i + 1 < len(parts) else None
         return None
     if base in _WRAPPER_INTERPRETERS:
         for p in parts[1:]:
-            if p == "-c":
-                # bash/sh/python(3) all use -c for INLINE code, not a
-                # script file - `python -c "raise SystemExit(1)"` split()s
-                # to ['python', '-c', '"raise', 'SystemExit(1)"'], and
-                # without this check the first non-flag token ('"raise')
-                # was returned as a "wrapper script", which then failed to
-                # resolve inside the repo and forced the whole rule to
-                # reach_uninspected - silently excluding it from Stop
-                # entirely. There is no file to follow here; the inline
-                # code is already covered by the verb scan over the whole
-                # command string, above this function's caller.
+            if p in _NO_WRAPPER_FLAGS:
+                return None
+            if p == "-n" and base in _POSIX_SHELLS:
+                # Parse-only: the script named after -n is never executed
+                # by THIS invocation, so there is nothing to follow.
                 return None
             if not p.startswith("-"):
                 return p
@@ -234,35 +330,68 @@ def _wrapper_script_path(cmd):
 
 
 def _wrapper_paths_in_text(text):
-    """Every wrapper-script invocation found on any LINE of `text` - used
-    both for a single command string (one line) and for a wrapper script's
-    own full content (many), so a script that itself calls another wrapper
-    is followed."""
+    """Every wrapper-script invocation found in `text` - one command
+    segment at a time (see _command_segments), used both for a single
+    command string and for a wrapper script's own full content (many
+    lines, possibly several segments each), so a script that itself calls
+    another wrapper - directly or after `&&`/`;`/`|`/`||` - is followed."""
     paths = []
-    for line in (text or "").splitlines():
-        p = _wrapper_script_path(line.strip())
+    for seg in _command_segments(text):
+        p = _wrapper_script_path(seg)
         if p:
             paths.append(p)
     return paths
 
 
-def _resolve_within_root(path, repo_root):
-    """Absolute, symlink-resolved path, or None if it is not a real file
-    inside repo_root. `os.path.realpath` on both sides so a symlink cannot
-    be used to point the scan at a file outside the repository."""
-    candidate = path if os.path.isabs(path) else os.path.join(repo_root, path)
+def _looks_like_script(path):
+    """True if `path` (an existing, readable file) has a recognised script
+    extension, or - for an extensionless file - starts with a shebang
+    line. Decides whether a token following an interpreter is genuinely a
+    SCRIPT FILE this scan should follow, or something else (a module name,
+    a test id, ...) that merely happens to also exist under the repo."""
+    ext = os.path.splitext(path)[1].lower()
+    if ext in _SCRIPT_EXTENSIONS:
+        return True
+    if ext:
+        return False
+    try:
+        with open(path, "rb") as fh:
+            head = fh.read(2)
+    except OSError:
+        return False
+    return head == b"#!"
+
+
+def _classify_wrapper_candidate(token, repo_root):
+    """(kind, real_path_or_None) for a token _wrapper_script_path found:
+
+      "candidate" - a real, readable-looking, script-like file under
+                    repo_root - follow it.
+      "outside"   - it resolves to a real file OUTSIDE repo_root - cannot
+                    verify it, and unlike a merely absent name this one
+                    genuinely points somewhere; UNINSPECTED.
+      "none"      - it does not exist under repo_root at all, or exists but
+                    is not script-like (no recognised extension, no
+                    shebang) - Codex round 3 FIX: `python -m pytest`'s
+                    "pytest" resolves to nothing on disk; that is "no
+                    wrapper here", not "could not tell".
+    """
+    candidate = token if os.path.isabs(token) else os.path.join(repo_root, token)
     real = os.path.realpath(candidate)
     root_real = os.path.realpath(repo_root)
-    if real != root_real and not real.startswith(root_real + os.sep):
-        return None
-    return real
+    inside = real == root_real or real.startswith(root_real + os.sep)
+    if not os.path.isfile(real):
+        return ("none", None)
+    if not inside:
+        return ("outside", None)
+    if not _looks_like_script(real):
+        return ("none", None)
+    return ("candidate", real)
 
 
 def _read_bounded(path):
     """(True, text) or (False, reason). Never raises."""
     try:
-        if not os.path.isfile(path):
-            return (False, "missing")
         size = os.path.getsize(path)
         if size > REACH_SCAN_MAX_BYTES:
             return (False, f"too large ({size}B > {REACH_SCAN_MAX_BYTES}B cap)")
@@ -281,37 +410,44 @@ def scan_reach(run, repo_root):
 
       "verb"         - detail is the matched reach verb.
       "uninspected"  - detail is why the scan could not finish (a wrapper
-                        was missing, too large, binary, outside the repo,
-                        or the depth limit was hit while more wrappers were
+                        resolved outside the repo, was too large, binary,
+                        or the depth limit was hit while a real wrapper was
                         still queued). NEVER read as "local".
       "clean"        - detail is None: every command and every wrapper it
                         reaches (within the bound) was actually read and
-                        named nothing.
+                        named nothing - or named a token that turned out
+                        not to be a wrapper at all (see _classify_wrapper_
+                        candidate's "none").
     """
     visited = set()
 
     def scan(text, depth):
+        text = _strip_comments(text)
         verb = _looks_remote_text(text)
         if verb:
             return ("verb", verb)
-        wrapper_paths = _wrapper_paths_in_text(text)
-        if not wrapper_paths:
+        wrapper_tokens = _wrapper_paths_in_text(text)
+        real_candidates = []
+        for tok in wrapper_tokens:
+            kind, real = _classify_wrapper_candidate(tok, repo_root)
+            if kind == "outside":
+                return ("uninspected",
+                        f"wrapper script {tok!r} resolves outside the repository")
+            if kind == "candidate":
+                real_candidates.append((tok, real))
+        if not real_candidates:
             return ("clean", None)
         if depth >= REACH_SCAN_MAX_DEPTH:
             return ("uninspected",
                     f"depth limit ({REACH_SCAN_MAX_DEPTH}) reached following a wrapper script")
-        for wp in wrapper_paths:
-            real = _resolve_within_root(wp, repo_root)
-            if real is None:
-                return ("uninspected",
-                        f"wrapper script {wp!r} resolves outside the repository")
+        for tok, real in real_candidates:
             if real in visited:
                 continue
             visited.add(real)
             ok, payload = _read_bounded(real)
             if not ok:
                 return ("uninspected",
-                        f"wrapper script {wp!r} could not be read ({payload})")
+                        f"wrapper script {tok!r} could not be read ({payload})")
             result = scan(payload, depth + 1)
             if result[0] != "clean":
                 return result

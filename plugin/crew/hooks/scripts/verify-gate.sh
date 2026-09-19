@@ -1389,6 +1389,22 @@ else
   echo "verify-gate: could not sync the record (no python, or the matcher produced no record data); NOT advancing the marker" >&2
 fi
 
+# DELETE THE STALE FINGERPRINT FIRST, BEFORE AND INDEPENDENT OF THE SYNC
+# DECISION BELOW. Round 2 added this delete (see the comment on the
+# elif ANY_SKIPPED branch that used to hold it) but placed it INSIDE the
+# elif chain, ordered after the "elif SYNC_STATUS -ne 0" branch - Codex
+# round 3 FIX: a turn that BOTH skips (rc 77) AND fails to persist the
+# record (e.g. .crew/.verify-gate.record.json.tmp exists as a directory)
+# took the SYNC_STATUS branch first, printed only its own message, and
+# NEVER reached this delete - so the fingerprint from an earlier PASS
+# survived a SKIP it should have invalidated, and the very next Stop could
+# still fingerprint-skip past the outstanding SKIP. The delete depends on
+# nothing but ANY_SKIPPED itself, so it no longer lives inside a chain that
+# a sync failure can short-circuit past.
+if [ "$ANY_SKIPPED" -ne 0 ]; then
+  rm -f "$FP_FILE" 2>/dev/null
+fi
+
 # THREE things must ALL hold before either marker may advance: nothing was
 # ACUTELY deferred (fully_verified), nothing SKIPPED (rc 77 is not a check),
 # and the per-rule record actually made it to disk (SYNC_STATUS). Any one
@@ -1402,16 +1418,6 @@ if fully_verified && [ "$ANY_SKIPPED" -eq 0 ] && [ "$SYNC_STATUS" -eq 0 ]; then
 elif [ "$SYNC_STATUS" -ne 0 ]; then
   : # verify_record.py already printed why, on stderr, above.
 elif [ "$ANY_SKIPPED" -ne 0 ]; then
-  # DELETE the existing fingerprint, not just withhold a new one. Round 1
-  # stopped WRITING a fresh fingerprint on a SKIP turn, but left whatever
-  # was already on disk from an EARLIER clean run untouched - and the
-  # fingerprint's digest covers only CHANGED paths, verify.json and
-  # config.json, never an out-of-band signal like an environment-presence
-  # file a rule's own command checks. So a rule that passed once, then
-  # started returning 77 for a reason invisible to the digest, could still
-  # match its OLD stored fingerprint on the very next Stop and skip -
-  # reusing a "clean" recorded before the SKIP ever happened.
-  rm -f "$FP_FILE" 2>/dev/null
   echo "verify-gate: the verified baseline was NOT advanced - at least one command exited 77 (SKIP) and was not actually checked this turn." >&2
 else
   echo "verify-gate: the verified baseline was NOT advanced - $DEFERRED_COUNT rule command(s) were deferred and have not been checked against this tree." >&2

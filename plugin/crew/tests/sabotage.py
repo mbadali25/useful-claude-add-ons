@@ -2351,6 +2351,12 @@ MUTATIONS = (
         # reason. RE-ANCHORED AGAIN in 0.19.93 (the per-rule record): the
         # `else` branch grew a chronic-vs-acute classification block, so the
         # closing brace this find string ends on moved further down.
+        # RE-ANCHORED AGAIN in round 3 (identity dedup case-sensitivity,
+        # Codex BLOCK verify-gate.ps1:901): `-notcontains` on $deferred
+        # became `-cnotcontains` everywhere in the identity/dedup path, this
+        # line included, so PowerShell's default CASE-INSENSITIVE string
+        # comparison could no longer collapse two commands whose identities
+        # differ only in case (e.g. ENV=dev vs ENV=DEV) into one.
         "the PowerShell Stop budget charges each command the rule's cost",
         VERIFY_PS1,
         "    } elseif (($spent + $ruleSecs[$ri]) -le $budget) {\n"
@@ -2360,7 +2366,7 @@ MUTATIONS = (
         "      foreach ($c in $fresh) { [void]$keep.Add($c) }\n"
         "      $spent += $ruleSecs[$ri]\n"
         "    } else {\n"
-        "      foreach ($c in $fresh) { if ($deferred -notcontains $c) { "
+        "      foreach ($c in $fresh) { if ($deferred -cnotcontains $c) { "
         "[void]$deferred.Add($c) } }\n"
         "      # CHRONIC vs ACUTE -- the twin split in verify-gate.sh. A "
         "rule whose\n"
@@ -2382,7 +2388,7 @@ MUTATIONS = (
         "      foreach ($c in $fresh) {\n"
         "        if (($spent + $cost[$c]) -le $budget) { [void]$keep.Add($c); "
         "$spent += $cost[$c] }\n"
-        "        elseif ($deferred -notcontains $c) { "
+        "        elseif ($deferred -cnotcontains $c) { "
         "[void]$deferred.Add($c) }\n      }\n    }\n",
         ("tests/test_verify_gate_stop_budget.py::"
          "test_both_flavours_charge_the_rule_once"),
