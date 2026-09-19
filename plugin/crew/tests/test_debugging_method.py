@@ -414,6 +414,75 @@ def _run_find_polluter(tmp_path, pollution_check, pattern, npm_exit=0):
     )
 
 
+def _write_logging_fake_npm(bin_dir, log_path):
+    """A stand-in npm that records each invocation's argument count and the
+    exact bytes of every argument, one line per call. The defect this backs
+    (0.19.67, Codex finding #3) is about what gets exec'd, not what gets
+    printed, so `_write_fake_npm`'s plain exit code is not enough here --
+    the log has to distinguish one call with one argument from two calls
+    each with half of it."""
+    npm_path = bin_dir / "npm"
+    log = str(log_path).replace("\\", "/")
+    script = (
+        "#!/usr/bin/env bash\n"
+        '{ printf "argc=%d" "$#"; for a in "$@"; do printf " [%s]" "$a"; '
+        f'done; printf "\\n"; }} >> "{log}"\n'
+        "exit 0\n"
+    )
+    npm_path.write_text(script, encoding="utf-8", newline="\n")
+    npm_path.chmod(0o755)
+    return npm_path
+
+
+@pytest.mark.skipif(_BASH is None, reason="needs bash")
+def test_find_polluter_keeps_a_whitespace_filename_as_one_argument():
+    """0.19.67, Codex finding #3. The original loop was
+    `for TEST_FILE in $TEST_FILES`, which word-splits on IFS -- a test file
+    named `has space.test.ts` became two runner invocations, `./src/has`
+    and `space.test.ts`, neither of which is the real file. Fixed with a
+    `while IFS= read -r` loop, which reads one line (one matched path) per
+    iteration regardless of what it contains."""
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = pathlib.Path(tmp)
+        repo = tmp_path / "repo"
+        (repo / "src").mkdir(parents=True)
+        (repo / "src" / "has space.test.ts").write_text(
+            "// fixture\n", encoding="utf-8")
+
+        bin_dir = tmp_path / "bin"
+        bin_dir.mkdir()
+        log_path = tmp_path / "npm-calls.log"
+        _write_logging_fake_npm(bin_dir, log_path)
+
+        script = str(SKILL_DIR / "find-polluter.sh").replace("\\", "/")
+        env = dict(os.environ)
+        env["PATH"] = str(bin_dir) + os.pathsep + env.get("PATH", "")
+        result = subprocess.run(
+            [_BASH, script, ".nonexistent-pollution-marker", "src/**/*.test.ts"],
+            cwd=str(repo), capture_output=True, text=True, timeout=30,
+            stdin=subprocess.DEVNULL, env=env, check=False,
+            encoding="utf-8", errors="replace",
+        )
+        calls = (log_path.read_text(encoding="utf-8").splitlines()
+                 if log_path.exists() else [])
+
+    assert result.returncode == 0, (
+        "find-polluter.sh did not exit clean against a single passing test "
+        f"whose filename contains a space.\nstdout:\n{result.stdout}\n"
+        f"stderr:\n{result.stderr}"
+    )
+    assert len(calls) == 1, (
+        f"expected exactly one npm invocation, got {len(calls)}: {calls!r}. "
+        "More than one call means the filename was split into fragments and "
+        "run as separate, invalid invocations -- this is the miss a plain "
+        "exit-code check on find-polluter.sh's own stdout would not catch, "
+        "because the sabotaged version still prints 'all tests clean'"
+    )
+    assert calls[0] == "argc=2 [test] [./src/has space.test.ts]", (
+        f"npm was not invoked with the full path as one argument: {calls[0]!r}"
+    )
+
+
 @pytest.mark.skipif(_BASH is None, reason="needs bash")
 def test_find_polluter_reports_runner_failure_instead_of_clean():
     """0.19.67, Codex finding #4. A runner that cannot even execute (exit

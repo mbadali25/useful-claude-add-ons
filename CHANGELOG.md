@@ -6,6 +6,11 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Fixed
 
+- **`crew` 0.19.81: test for #3.** Added the behavioural regression test for
+  finding #3 of 0.19.67 (whitespace in a test filename splitting into two
+  invalid runner invocations) that 0.19.67's report flagged as missing;
+  sabotage-tested against the real fix.
+
 - **`crew` 0.19.80: five review findings on `/crew:debug` (0.19.66).** Codex
   (gpt-6-astra) reviewed the command and its bundled `find-polluter.sh`.
   `commands/debug.md` claimed the missing `Write`/`Edit` grant was "the
