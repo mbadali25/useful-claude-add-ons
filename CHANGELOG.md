@@ -313,6 +313,33 @@ All notable changes to this repository are documented here. Format follows [Keep
   (9 mutations total) and reverted to a sha256-verified byte-identical file
   before committing.
 
+  A second probe on the fix commit found one more: `pm` writing to the
+  harness-sanctioned scratchpad under `AppData/Local/Temp/claude/<session>/
+  scratchpad` — a location every role, `pm` included, is told to use — was
+  refused, because "outside every allowed prefix" and "outside the repo
+  entirely" collapsed to the same "not in scope" answer, and this guard's
+  whole purpose is the REPO's write scope, not the filesystem at large. The
+  first cut of this fix judged it on the LEXICAL path the tool call named,
+  never the symlink-resolved one — and a THIRD probe, on that fix, found
+  that was backwards: a `.crew/escape -> /elsewhere` symlink staged inside a
+  path `pm` is trusted to write, whose target is OUTSIDE the repo entirely,
+  is named lexically inside the repo, so the lexical version still refused
+  it, even though the write touches nothing under the repo at all. New
+  `role_write_guard._is_outside_repo` now checks the same REAL,
+  symlink-resolved path the in-scope match already uses — `allow`, logged
+  `outside-repo: ...`, whenever that path escapes the repo root, symlink or
+  not. The case that stays refused is a DIFFERENT one: `.crew/escape ->
+  src/`, whose target is still INSIDE the repo, just outside `pm`'s
+  permitted prefixes — `_is_outside_repo` is false for it, so the ordinary
+  in-scope pattern match still runs and still refuses it.
+  `test_role_write_guard.py` gained a must-allow (scratchpad write, no
+  symlink), a must-allow (symlink AND Windows junction escaping the repo
+  entirely — confirmed with `os.path.islink` since bash's own `ln -s`
+  silently fell back to a plain directory on the machine this was found on)
+  and a must-block (symlink AND junction to an in-repo, out-of-scope
+  prefix) to keep the two apart. `_DENY_ROLES` gets none of this — its rule
+  is "no `Write`/`Edit` at all", not "confined to the repo".
+
 - **`crew` 0.19.79: a debugging method, and the routing that dispatches it.**
   Crew shipped 27 commands and 19 skills and not one of them was about finding
   a cause: `grep -cil 'debug\|root cause'` over `commands/` and `skills/`

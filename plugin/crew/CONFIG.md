@@ -1466,6 +1466,41 @@ junction via `mklink /J`, the latter needing no elevated privileges — rather
 than simulated, and SKIP-labelled wherever a given machine or user cannot
 create one.
 
+### A target outside the repo root entirely is not this guard's business
+
+Reported and fixed 2026-09-19, a probe finding on the first commit — and
+tightened by a second probe on the first fix, below. This guard's whole
+purpose is the REPO's write scope, so `pm` writing to a harness-sanctioned
+location OUTSIDE the repo — the scratchpad under
+`AppData/Local/Temp/claude/<session>/scratchpad`, which every role including
+`pm` is told to use — is not a scope violation at all; it was refused
+anyway, because "outside every allowed prefix" and "outside the repo
+entirely" collapsed to the same "not in scope" answer. Fixed with
+`role_write_guard._is_outside_repo`, checked on the same REAL,
+symlink/junction-resolved path (`_real_repo_relative`'s output) the in-scope
+pattern match above already uses — a parent-relative escape (`os.path.
+relpath` prefixes a result with `..` when the target lands outside `root`)
+means the write is `allow`, logged `outside-repo: ...`.
+
+**The first fix judged this on the LEXICAL path instead — what the tool
+call SAID it was writing, never where the write actually lands — and a
+second probe found that was the wrong side of the line.** `.crew/escape ->
+/elsewhere`, a symlink STAGED inside `.crew/` (a prefix `pm` is trusted to
+write) whose target is OUTSIDE the repo root entirely, is named lexically
+INSIDE the repo, so the lexical version refused it — but the write itself
+touches nothing under the repo at all, which is exactly the case this
+exception exists for, symlink or not. There is no "but the tool call named
+a path inside the repo" carve-out any more: the guard's business is where
+the write actually lands. **The case that is still refused is a different
+one** — `.crew/escape -> src/`, a symlink staged the same way but whose
+target is ANOTHER IN-REPO directory outside `pm`'s permitted prefixes.
+`_is_outside_repo` is `false` for `src/app.py` (still under the repo root),
+so the ordinary `_pm_in_scope` pattern match above still runs and still
+refuses it. `_DENY_ROLES` gets NONE of this exception either way: its
+restriction is "no `Write`/`Edit` at all", not "confined to the repo", so an
+outside-repo write is a different, stronger rule that role has no exception
+from.
+
 ### What "unknown" means here
 
 Two distinct unknowns reach this hook, and CLAUDE.md's rule applies to both:

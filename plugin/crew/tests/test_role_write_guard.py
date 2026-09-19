@@ -489,14 +489,38 @@ def test_repo_config_is_corrupt_directly(tmp_path):
     assert crew_config.repo_config_is_corrupt(str(root2)) is False
 
 
-# --- Scope is judged on the REAL path, not the lexical one (round-1 BLOCK) --
+# --- Scope is judged on the REAL path, not the lexical one (round-1 BLOCK,
+# redefined round-3 by a probe finding on the round-1 fix) -----------------
 #
 # Reported 2026-09-19: `.crew/link/app.py` fnmatches `.crew/**` on the
 # STRING alone, so if `.crew/link` is a symlink or Windows junction pointing
-# at `src/`, `pm` was classified as writing in-scope while the write
-# actually landed in `src/app.py`. SKIP-labelled wherever this platform or
-# this user cannot create the link kind being tested -- a link that could
-# not be made proves nothing either way.
+# at `src/` (INSIDE the repo, just outside pm's permitted prefixes), `pm`
+# was classified as writing in-scope while the write actually landed in
+# `src/app.py`. That case is STILL refused -- see the "in-repo but
+# out-of-scope" tests below.
+#
+# A SEPARATE probe on the round-1 fix found the real-path check had gone too
+# far the other way for a target that resolves OUTSIDE the repo root
+# entirely: the harness-sanctioned scratchpad under `AppData/Local/Temp/
+# claude/<session>/scratchpad`, which every role including `pm` is told to
+# use, was refused, because this guard's write-scope rule was never written
+# to police anything outside the repo at all -- "outside every allowed
+# prefix" and "outside the repo entirely" collapsed to the same "not in
+# scope" answer. Fixed by judging `_is_outside_repo` on the REAL resolved
+# path: `pm` writing to a target that resolves outside the repo root is
+# `allow`, logged `outside-repo: ...`, WHETHER the tool call named that
+# location directly (the scratchpad) or reached it through a symlink staged
+# inside a path `pm` is trusted to write (`.crew/escape -> /elsewhere`) --
+# see `classify`'s own docstring for why there is no separate "but the tool
+# call NAMED a path inside the repo" carve-out.
+#
+# SKIP-labelled wherever this platform or this user cannot create the link
+# kind being tested -- a link that could not be made proves nothing either
+# way. `_make_symlink` (Python `os.symlink`), never bash `ln -s`: on the
+# machine these were found on, bash's `ln -s` silently fell back to creating
+# a PLAIN DIRECTORY rather than a real symlink, which would have made a
+# must-block case here pass for the wrong reason -- `os.path.islink` guards
+# every fixture that matters for a `block` assertion.
 
 def _make_symlink(target, link):
     try:
@@ -516,7 +540,10 @@ def _make_junction(target, link):
 
 
 @needs_bash
-def test_symlink_escaping_pm_scope_is_still_refused_bash(tmp_path):
+def test_symlink_escaping_the_repo_entirely_is_allowed_bash(tmp_path):
+    """Must-allow: a symlink staged inside pm's own scope, whose target
+    resolves OUTSIDE the repo root entirely, is not this guard's business --
+    the write never touches anything under the repo."""
     root = crew_fixtures.make_repo(
         tmp_path, config={"guards": {"roleWrites": "block"}})
     outside = tmp_path / "outside"
@@ -526,14 +553,15 @@ def test_symlink_escaping_pm_scope_is_still_refused_bash(tmp_path):
         pytest.skip("could not create a symlink on this platform/user")
 
     proc = _run_sh(root, "Write", str(link / "app.py"), "pm")
-    assert proc.returncode == 2, (
-        "a symlink under .crew/ pointing outside the repo must not let pm "
-        "write through it just because the lexical path fnmatches "
-        ".crew/**. stdout: " + proc.stdout)
+    assert proc.returncode == 0, proc.stderr
+    log = (root / ".crew" / "guard.log").read_text(encoding="utf-8")
+    assert "outside-repo" in log, log
 
 
 @needs_pwsh_windows
-def test_junction_escaping_pm_scope_is_still_refused_powershell(tmp_path):
+def test_junction_escaping_the_repo_entirely_is_allowed_powershell(tmp_path):
+    """PowerShell twin of the symlink case above, with a real Windows
+    junction (`mklink /J`, no elevation needed)."""
     root = crew_fixtures.make_repo(
         tmp_path, config={"guards": {"roleWrites": "block"}})
     outside = tmp_path / "outside"
@@ -543,15 +571,13 @@ def test_junction_escaping_pm_scope_is_still_refused_powershell(tmp_path):
         pytest.skip("could not create a junction on this platform/user")
 
     proc = _run_ps1(root, "Write", str(link / "app.py"), "pm")
-    assert proc.returncode == 2, (
-        "a Windows junction under .crew/ pointing outside the repo must not "
-        "let pm write through it. stdout: " + proc.stdout)
+    assert proc.returncode == 0, proc.stderr
 
 
 @needs_bash
 def test_symlink_inside_scope_is_still_allowed_bash(tmp_path):
     """Must-allow twin: a link that stays INSIDE the permitted prefix must
-    not become collateral damage of closing the escape."""
+    not become collateral damage of closing the in-repo escape."""
     root = crew_fixtures.make_repo(
         tmp_path, config={"guards": {"roleWrites": "block"}})
     inside_target = root / ".crew" / "real-subdir"
@@ -562,6 +588,51 @@ def test_symlink_inside_scope_is_still_allowed_bash(tmp_path):
 
     proc = _run_sh(root, "Write", str(link / "app.py"), "pm")
     assert proc.returncode == 0, proc.stderr
+
+
+@needs_bash
+def test_repo_internal_symlink_to_an_out_of_scope_prefix_is_still_refused_bash(tmp_path):
+    """Must-block: the case the outside-repo exception must NOT catch. The
+    resolved target (`src/`) is still INSIDE the repo root, just outside
+    pm's permitted prefixes -- `_is_outside_repo` is false for it, so the
+    ordinary `_pm_in_scope` pattern match still runs and still refuses it."""
+    root = crew_fixtures.make_repo(
+        tmp_path, config={"guards": {"roleWrites": "block"}})
+    out_of_scope_dir = root / "src"
+    out_of_scope_dir.mkdir()
+    link = root / ".crew" / "escape"
+    if not _make_symlink(out_of_scope_dir, link):
+        pytest.skip("could not create a symlink on this platform/user")
+    assert os.path.islink(str(link)), (
+        "the fixture must produce a REAL symlink, not a plain directory -- "
+        "bash's `ln -s` silently falls back to one on this kind of host")
+
+    proc = _run_sh(root, "Write", str(link / "app.py"), "pm")
+    assert proc.returncode == 2, (
+        "a symlink staged INSIDE pm's own scope, pointing at another "
+        "IN-REPO directory outside that scope, must still be refused -- "
+        "it never leaves the repo root, so the outside-repo exception must "
+        "not apply. stdout: " + proc.stdout)
+
+
+@needs_pwsh_windows
+def test_repo_internal_junction_to_an_out_of_scope_prefix_is_still_refused_powershell(tmp_path):
+    """PowerShell/junction twin of the symlink case above -- junction
+    coverage for the still-refused, in-repo-but-out-of-scope escape, kept
+    separate from the now-allowed outside-the-repo junction case above."""
+    root = crew_fixtures.make_repo(
+        tmp_path, config={"guards": {"roleWrites": "block"}})
+    out_of_scope_dir = root / "src"
+    out_of_scope_dir.mkdir()
+    link = root / ".crew" / "escape"
+    if not _make_junction(out_of_scope_dir, link):
+        pytest.skip("could not create a junction on this platform/user")
+
+    proc = _run_ps1(root, "Write", str(link / "app.py"), "pm")
+    assert proc.returncode == 2, (
+        "a junction staged INSIDE pm's own scope, pointing at another "
+        "IN-REPO directory outside that scope, must still be refused. "
+        "stdout: " + proc.stdout)
 
 
 def test_resolve_real_target_walks_up_to_the_deepest_existing_ancestor(tmp_path):
@@ -577,6 +648,61 @@ def test_resolve_real_target_walks_up_to_the_deepest_existing_ancestor(tmp_path)
     resolved = role_write_guard._resolve_real_target(target)  # pylint: disable=protected-access
     assert os.path.dirname(resolved) == os.path.realpath(str(real_dir))
     assert os.path.basename(resolved) == "brand-new-file.py"
+
+
+@needs_bash
+def test_pm_write_outside_the_repo_entirely_is_allowed_bash(tmp_path):
+    """Must-allow, no symlink involved: a scratchpad-style path with
+    nothing under the repo at all in its ancestry -- the plain case the
+    exception exists for."""
+    root = crew_fixtures.make_repo(
+        tmp_path, config={"guards": {"roleWrites": "block"}})
+    outside = tmp_path / "scratchpad"
+    outside.mkdir()
+    target = outside / "plan.md"
+
+    proc = _run_sh(root, "Write", str(target), "crew:pm")
+    assert proc.returncode == 0, proc.stderr
+    log = (root / ".crew" / "guard.log").read_text(encoding="utf-8")
+    assert "outside-repo" in log, log
+
+
+def test_is_outside_repo_directly():
+    fn = role_write_guard._is_outside_repo  # pylint: disable=protected-access
+    assert fn("..") is True
+    assert fn("../elsewhere/plan.md") is True
+    assert fn(".crew/config.json") is False
+    assert fn("TODO.md") is False
+    assert fn("..hidden-but-not-a-traversal.md") is False
+    # None means "cannot resolve at all" (malformed/absent file_path), NOT
+    # "known to be outside the repo" -- see the function's own docstring for
+    # why conflating the two would let a malformed payload buy the same
+    # exception a genuinely-resolved escape earns.
+    assert fn(None) is False
+
+
+def test_classify_pm_outside_repo_allows():
+    """Direct unit test: a real resolved path outside the repo root allows,
+    with the `outside-repo` reason, regardless of how it got there."""
+    in_scope, reason = role_write_guard.classify("pm", "../elsewhere/plan.md")
+    assert in_scope
+    assert reason.startswith("outside-repo")
+
+
+def test_classify_pm_none_path_does_not_get_the_outside_repo_exception():
+    """`rel_path is None` (unresolvable, e.g. a malformed file_path) must
+    stay in the ordinary not-in-scope branch, never the outside-repo one --
+    see `_is_outside_repo`'s docstring."""
+    in_scope, reason = role_write_guard.classify("pm", None)
+    assert not in_scope
+    assert "outside-repo" not in reason
+
+
+def test_classify_deny_role_is_not_given_the_outside_repo_exception():
+    """A deny-role's restriction is "no Write/Edit at all", not "confined to
+    the repo" -- an outside-repo path must not exempt it."""
+    in_scope, _ = role_write_guard.classify("analyst", "../elsewhere/plan.md")
+    assert not in_scope
 
 
 # --- Namespace collision: only `crew:` is a crew role (round-1 FIX) --------

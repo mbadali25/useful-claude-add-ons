@@ -96,10 +96,30 @@ Scope is checked against the REAL, filesystem-resolved path
 (`_real_repo_relative`), never the lexical one a tool call names. A path
 that TEXTUALLY reads `.crew/link/app.py` fnmatches `.crew/**` and would
 classify as in-scope for `pm` on the string alone -- but if `.crew/link` is
-a symlink or a Windows junction pointing at `src/`, the write actually lands
-in `src/app.py`, outside pm's declared scope, and the tool call itself
-still opens the real target regardless of what the lexical path said.
-Reported and fixed 2026-09-19; see `_resolve_real_target`.
+a symlink or a Windows junction pointing at `src/` (still inside the repo,
+just outside `pm`'s permitted prefixes), the write actually lands in
+`src/app.py`, outside pm's declared scope, and the tool call itself still
+opens the real target regardless of what the lexical path said. Reported
+and fixed 2026-09-19; see `_resolve_real_target`.
+
+## A target outside the repo root is not this guard's business
+
+Reported and fixed 2026-09-19, a probe finding on the first commit above.
+This hook's whole purpose is the REPO's write scope: once `pm`'s target is
+resolved (following any symlink/junction as above), if it lands OUTSIDE the
+repo root entirely -- the harness-sanctioned scratchpad under
+`AppData/Local/Temp/claude/<session>/scratchpad`, which every role including
+`pm` is told to use, or a `.crew/escape -> /elsewhere` symlink `pm` itself
+staged under a path it is trusted to write -- refusing it would police a
+location the repo write-scope rule was never written to reach. `pm` writing
+outside the repo is `allow`, logged `outside-repo: ...`
+(`_is_outside_repo`). This is judged on the REAL resolved path ONLY, same as
+the escape case above it -- there is no separate "but the tool call NAMED a
+path inside the repo" carve-out, because the guard's business is where the
+write actually lands, not what the string said before the filesystem was
+asked. `_DENY_ROLES` gets none of this: its restriction is "no `Write`/
+`Edit` at all", not "confined to the repo", so an outside-repo write is a
+different, stronger rule that role has no exception from.
 
 ## Malformed hook input
 
@@ -334,10 +354,50 @@ def _pm_in_scope(rel_path):
                for pattern in _PM_ALLOWED_PATTERNS)
 
 
+def _is_outside_repo(rel_path):
+    """True when `rel_path` -- a `_real_repo_relative` output -- names
+    something outside the repo root: `os.path.relpath` prefixes a result
+    with `..` when the target is not under `root`.
+
+    Deliberately `False` for a bare `rel_path is None`: that is
+    `_real_repo_relative`'s OTHER meaning, "cannot resolve this at all"
+    (an absent or non-string `file_path` -- see the module docstring's
+    "Malformed hook input"), and treating an unverifiable path as "known to
+    be outside the repo" would let a malformed payload buy the exact
+    "outside-repo, allow" exception a genuinely-resolved escape earns. A
+    `..`-prefixed STRING is proof the resolution succeeded and landed
+    outside; a bare `None` is not evidence of anything about location.
+    """
+    return rel_path is not None and (rel_path == ".." or rel_path.startswith("../"))
+
+
 def classify(role, rel_path):
-    """`(in_scope, reason)` for `role` writing to `rel_path`.
+    """`(in_scope, reason)` for `role` writing to `rel_path` -- the REAL,
+    symlink/junction-resolved path relative to the REAL repo root
+    (`_real_repo_relative`'s output), NEVER the lexical one a tool call
+    named (`_repo_relative`'s output is for DISPLAY only -- see `main`).
 
     `role` is already normalised (see `_normalise_role`) and may be `None`.
+
+    This hook's whole purpose is the REPO's write scope, so once `pm`'s
+    target is resolved through any symlink or junction in its path, if it
+    lands OUTSIDE the repo root entirely -- a harness-sanctioned scratchpad
+    path under `AppData/Local/Temp`, for instance, which every role
+    including `pm` is told to use, or a `.crew/escape -> /elsewhere` symlink
+    pm itself staged under a path it is trusted to write -- the write is not
+    touching anything this guard governs at all, and refusing it polices a
+    location the rule was never written to reach. Reported 2026-09-19.
+    `_is_outside_repo` is the ONLY function that may answer this, and it is
+    asked about `rel_path` -- the REAL path -- not the lexical one: judging
+    by what the tool call merely NAMED would have to trust that string
+    before the filesystem confirms it, which is the same class of gap
+    `_real_repo_relative` exists to close for the in-scope case below.
+
+    A target that resolves INSIDE the repo but outside `pm`'s permitted
+    prefixes -- `.crew/escape -> src/`, still under the repo root -- is a
+    DIFFERENT case and stays refused: `_pm_in_scope` below still runs for
+    it, and `src/app.py` does not fnmatch `.crew/**`.
+
     Never raises -- every branch returns, and the fallback at the bottom is
     what makes a role this table has never heard of resolve to "unknown"
     rather than to an `IndexError` reaching the caller as a bare traceback,
@@ -347,8 +407,17 @@ def classify(role, rel_path):
     if role is None:
         return True, "no-agent-type"
     if role in _DENY_ROLES:
+        # Deliberately NOT given the same "outside this guard's jurisdiction"
+        # exception as `pm` below. A deny-role's `tools:` frontmatter grants
+        # neither `Write` nor `Edit` at all -- its restriction is "may not
+        # write ANY file", not "may not write outside the repo" -- so an
+        # outside-repo write is not a narrower case of the same rule, it is
+        # a DIFFERENT, stronger rule this role has no exception from.
         return False, f"role `{role}` has no Write/Edit in its tools: grant"
     if role == _PM_ROLE:
+        if _is_outside_repo(rel_path):
+            return True, ("outside-repo: the resolved target is not under "
+                           "the repo root, outside this guard's jurisdiction")
         if _pm_in_scope(rel_path):
             return True, "pm: path is in the allowed set"
         return False, ("pm may write only under .crew/**, TODO.md, "
@@ -473,11 +542,12 @@ def main(argv=None):  # pylint: disable=unused-argument
         tool_input = data.get("tool_input") or {}
         file_path = (tool_input.get("file_path")
                      if isinstance(tool_input, dict) else None)
-        # `rel_path` is lexical, for display -- what the tool call NAMED.
-        # `scope_path` is filesystem-resolved, for the decision -- what the
-        # write would actually TOUCH once symlinks/junctions are followed.
-        # See `_real_repo_relative`'s docstring; they differ only when a
-        # link sits somewhere in `file_path`'s ancestry.
+        # `rel_path` is lexical, for DISPLAY only -- what the tool call
+        # NAMED. `scope_path` is filesystem-resolved, and is the ONLY one
+        # `classify` ever judges against: what the write would actually
+        # TOUCH once symlinks/junctions are followed, including whether
+        # that lands outside the repo root entirely. See `_real_repo_
+        # relative`'s and `classify`'s own docstrings.
         rel_path = _repo_relative(root, file_path)
         scope_path = _real_repo_relative(root, file_path)
 
