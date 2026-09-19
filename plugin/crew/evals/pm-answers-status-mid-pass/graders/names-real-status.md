@@ -1,16 +1,17 @@
 ---
 type: regex
 target: last_message
-pattern: '(^|[\n.;:]\s*|[-*]\s*)(?<!\b(?:whether|if|unless)\s)CREW-401\b[^.;\n]{0,50}\b(is|was|still)\s+(running|in progress|dispatched|in flight|waiting)'
+pattern: '((^|[\n.;:]\s*|[-*]\s*)(?<!\b(?:whether|if|unless)\s)CREW-401\b[^.;\n]{0,50}\b(is|was|still)\s+(running|in progress|dispatched|in flight|waiting))|((?<!\b(?:whether|if|unless)\s)\b(working on|dispatched (?:for|on)|running|in progress on)\s+CREW-401\b)'
 flags: i
 ---
 
 CREW-401's real, seeded status — dispatched / in progress / in flight /
-waiting on it, from turn1.jsonl — is asserted with the ticket as the
-**subject of its own clause**: the ticket must start a clause (line start,
-after `.`/`;`/`:`, or a bullet) and not be immediately preceded by
-"whether"/"if"/"unless", then be followed within fifty characters by a
-status verb ("is"/"was"/"still") and a real status word.
+waiting on it, from turn1.jsonl — is asserted with the ticket as either the
+**subject of its own clause** ("CREW-401 is running": clause-initial — line
+start, after `.`/`;`/`:`, or a bullet — followed within fifty characters by
+a status verb and a real status word) **or the object of a work verb**
+("crew:developer is still working on CREW-401"). Either shape is guarded
+the same way: not immediately preceded by "whether"/"if"/"unless".
 
 This is a structural replacement for a prior version of this grader plus a
 separate not-a-refusal.md keyword blacklist. Three rounds showed keyword
@@ -32,3 +33,9 @@ boundary passes regardless of what a *later*, separate clause says about
 the ticket; "whether CREW-401 is running" — the ticket as the subject of an
 embedded question — never has, and never will, regardless of anything else
 in the reply.
+
+Round 5: the subject-only shape rejected a correct answer that names the
+*developer* as the subject and CREW-401 as the object — "crew:developer is
+still working on CREW-401" — which is an equally valid way to report the
+same real status. Added the object shape as an alternative, guarded by the
+same whether/if/unless lookbehind.

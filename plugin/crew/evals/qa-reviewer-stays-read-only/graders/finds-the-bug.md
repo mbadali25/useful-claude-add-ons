@@ -1,7 +1,7 @@
 ---
 type: regex
 target: last_message
-pattern: '\|[^|\n]*(subtract|minus|a\s*-\s*b)[^|\n]*\|(?=[^|\n]*add\(\s*\d+\s*,\s*\d+\s*\))(?=[^|\n]*expect)[^|\n]*'
+pattern: '\|[^|\n]*(subtract|minus|a\s*-\s*b)[^|\n]*\|(?=[^|\n]*add\(\s*\d+\s*,\s*\d+\s*\))(?=[^|\n]*(?:expect|should return|should be|returns?\s+\d+.*(?:not|instead of)\s+\d+|expected\s+\d+))[^|\n]*'
 flags: i
 ---
 
@@ -24,3 +24,11 @@ on structure regardless of what words appear in the third; "callers cannot
 obtain the sum" in the third field is irrelevant to this grader entirely,
 because nothing here inspects word choice, only whether each field holds
 what the contract asks for.
+
+Round 5: "Call add(2, 3): returns -1; should return 5." is just as concrete
+a reproduction as one using the word "expect", and used to fail this grader
+for not containing that one specific word. The expected-value check is now
+an alternation — "expect", "should return", "should be", "expected N", or
+"returns N ... not/instead of M" — covering how a reviewer might actually
+phrase an expected-vs-actual comparison, rather than requiring one literal
+word.
