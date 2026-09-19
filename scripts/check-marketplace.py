@@ -19,6 +19,7 @@ anything is wrong.
 
 from __future__ import annotations
 
+import glob
 import json
 import os
 import re
@@ -170,6 +171,58 @@ def check_plugin_manifests(entries, fail):
                 f"{entry['name']}: plugin.json says version {declared}, "
                 f"marketplace.json says {entry['version']}"
             )
+
+
+def check_argument_hint_frontmatter(fail):
+    """Every command's and skill's frontmatter parses as YAML.
+
+    ``argument-hint: [a] [b]`` - two bracket groups, unquoted - reads to PyYAML
+    as a flow sequence for the first ``[...]`` with the second left over as
+    trailing garbage, and it refuses to parse. At runtime that is worse than a
+    rejected field: Claude Code loads the file with *empty* frontmatter, so
+    ``description``, ``allowed-tools`` and everything else silently vanish
+    too, not just ``argument-hint``. ``localgpu`` 0.1.19 and
+    ``obsidian-vault`` 0.3.9 shipped exactly this in four files
+    (``plugin/localgpu/commands/index.md``, ``plugin/obsidian-vault/commands/
+    graph.md``, ``init.md``, ``repair.md``); ``claude plugin validate`` was
+    the first thing to notice, not this script.
+
+    Parsing the whole frontmatter block with the same loader Claude Code
+    uses - rather than grepping for two ``[...]`` groups - catches the class:
+    any frontmatter PyYAML refuses, for any reason, not just this one shape.
+    A checker whose parse is weaker than the loader's cannot fail where the
+    loader fails; it can only agree with itself.
+    """
+    try:
+        import yaml
+    except ImportError as exc:  # pragma: no cover - CI job, not a test
+        fail(
+            "check_argument_hint_frontmatter needs PyYAML to parse frontmatter "
+            "the way the loader does (`pip install pyyaml`) - refusing to "
+            "validate with a weaker parser than the thing being validated: "
+            f"{exc}"
+        )
+        return
+
+    paths = sorted(
+        set(glob.glob(os.path.join(ROOT, "plugin", "**", "commands", "*.md"), recursive=True))
+        | set(glob.glob(os.path.join(ROOT, "skills", "**", "commands", "*.md"), recursive=True))
+        | set(glob.glob(os.path.join(ROOT, "plugin", "**", "SKILL.md"), recursive=True))
+        | set(glob.glob(os.path.join(ROOT, "skills", "*", "SKILL.md")))
+    )
+    for path in paths:
+        text = read(path)
+        if not text.startswith("---\n"):
+            continue
+        end = text.find("\n---\n", 4)
+        if end == -1:
+            continue
+        rel = os.path.relpath(path, ROOT).replace("\\", "/")
+        try:
+            yaml.safe_load(text[4:end])
+        except yaml.YAMLError as exc:
+            detail = str(exc).replace("\n", " ")
+            fail(f"{rel}: frontmatter is not valid YAML, so this file will not load: {detail}")
 
 
 def check_license_consistency(entries, fail):
@@ -1056,6 +1109,7 @@ def main() -> int:
     check_registration(entries, disk, fail)
     check_skill_manifests(entries, fail)
     check_plugin_manifests(entries, fail)
+    check_argument_hint_frontmatter(fail)
     check_license_consistency(entries, fail)
     check_catalogs(entries, fail)
     check_menu_parity(fail)

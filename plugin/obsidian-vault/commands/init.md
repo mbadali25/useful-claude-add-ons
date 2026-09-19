@@ -1,6 +1,6 @@
 ---
 description: Install and configure Obsidian, the Local REST API bridge, and one or more named vaults for this plugin
-argument-hint: [vault-name] [vault-path]
+argument-hint: "[vault-name] [vault-path]"
 allowed-tools: Read, Write, Edit, Bash, PowerShell, Skill
 ---
 

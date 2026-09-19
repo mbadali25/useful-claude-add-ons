@@ -6,6 +6,31 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Fixed
 
+- **`localgpu` 0.1.20, `obsidian-vault` 0.3.10: `argument-hint` with two
+  bracketed groups broke YAML frontmatter parsing.** `claude plugin
+  validate` failed both plugins with `YAML Parse error: Unexpected
+  token` — a value like `[--full] [--root <path>]` is read as a flow
+  sequence for the first `[...]` with the second treated as trailing
+  garbage. At runtime this silently drops all frontmatter for the
+  command, not just `argument-hint`. Fixed in
+  `plugin/localgpu/commands/index.md`, `plugin/obsidian-vault/commands/
+  graph.md`, `init.md`, and `repair.md` by quoting the whole value as a
+  string, which keeps its meaning for the reader. Added
+  `check_argument_hint_frontmatter` to `scripts/check-marketplace.py`,
+  which parses every command's frontmatter with PyYAML and fails by
+  path on any parse error, plus a CI `claude plugin validate --strict`
+  step so this class cannot ship again unnoticed.
+
+- **`notify` 1.1.1: the new frontmatter-parse gate (above) caught a second,
+  unrelated instance of the same bug class.** `skills/notify/SKILL.md`'s
+  `description` held an unquoted `: ` inside a plain scalar ("Telegram is
+  fully two-way: a question event blocks..."), which YAML reads as the
+  start of a new mapping value and refuses with `mapping values are not
+  allowed here` - so this skill's frontmatter also failed to load, for a
+  different reason than the `argument-hint` bracket bug above. Reworded to
+  `Telegram is fully two-way - a question event blocks...`, meaning
+  unchanged.
+
 - **`crew` 0.19.86: find-polluter.sh's `**`-count died under a caller's
   own `bash -o pipefail`.** `STARSTAR_COUNT` was computed with
   `printf '%s' "$TEST_PATTERN" | grep -o '\*\*' | wc -l | tr -d ' '`.
