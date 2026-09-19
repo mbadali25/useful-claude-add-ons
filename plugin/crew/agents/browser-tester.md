@@ -103,6 +103,13 @@ coverage ends up existing but never executing.
 Then prove it: break the page the spec guards, run the mapped command, confirm
 red, revert.
 
+Run it in the foreground and wait for it. Never end a turn waiting on a
+background task — once you have given your final response nothing wakes you, so
+a `playwright test` left running detached produces a result you never read and a
+turn that looks abandoned. A spec run too long for the tool timeout gets split
+instead: per project, per `--grep` tag, or per spec file, each run in the
+foreground with its own output quoted.
+
 ## Flake discipline
 
 A test that fails intermittently is worse than no test: it trains everyone to

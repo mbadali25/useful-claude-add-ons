@@ -79,6 +79,17 @@ If a linter or type checker is configured (`ruff`, `pylint`, `mypy`), run it and
 report its exit code too: `pylint` in particular prints a score line that looks
 like a pass while messages are still failing, so read the status.
 
+**Every one of those runs in the foreground.** Never end a turn waiting on a
+background task: you have already given your final answer by the time the run
+exits, nothing reopens the turn to read it, and an exit code nobody read is not
+a verification. A `pytest` invocation that outlives the tool timeout gets split
+rather than backgrounded — `pytest tests/unit`, then `pytest tests/integration`,
+or one file at a time. Up to five parts, report each one's exit code on its
+own line; beyond five, report totals instead — how many parts, how many
+passed, how many failed, and the worst exit code — the same cap
+`crew:developer`'s report format uses, since yours is that shape plus a few
+fields.
+
 Say plainly when you could not exercise the path you changed — an async race, a
 platform-specific branch, an import-order effect. That sentence is worth more
 than a green tick.

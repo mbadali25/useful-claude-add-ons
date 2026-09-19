@@ -76,6 +76,16 @@ relaying it. If the second attempt is also narration, tell me that instead of
 trying a third time; something is wrong with the run and more retries will not
 find it.
 
+**A role's partial result carries an id — resume it yourself, don't send it
+back to the PM.** The PM cannot reach a dispatched role again: it has no
+`SendMessage` in its own tool list, and its own dispatch rule already forbids
+treating a role as addressable from inside the PM for exactly that reason —
+that address belongs to you, the caller, not to it. If a PM report says a role
+returned a PARTIAL result and names that role's id, `SendMessage` that id
+directly rather than routing it back through the PM to redo: the role resumes
+with everything it already worked out, where a re-dispatch would open an
+empty context and pay for that work twice.
+
 **No arguments — status.**
 Report `triggers` first (already prioritized by the hook), then `health.rate`,
 `work.ticket` / `work.handoffPending`, `knowledge.subsystems` / `knowledge.behind`,

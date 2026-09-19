@@ -95,6 +95,14 @@ So every time you add or change a check, in the same turn:
 4. Report the rule you added alongside the check, and quote the RED line the
    mutation produced. I should see all three in the same summary.
 
+**Run the mapped command in the foreground, and never end a turn waiting on a
+background task.** A subagent that has given its final response is not woken by
+a run that finishes afterwards, so a suite you detached is a suite you never
+watched — and the whole point of step 2 is watching it go red. When a command
+will not fit inside the tool timeout, split it into parts you run one after
+another, quoting each part's result; splitting is the answer, backgrounding
+never is.
+
 Proving the rule fires is not the same as the assertion being able to
 discriminate. Before you call a check done, read your own assertion against the
 table in the `crew-verification` skill under "Every check ships a demonstrated
