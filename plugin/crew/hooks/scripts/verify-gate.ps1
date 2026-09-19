@@ -287,6 +287,38 @@ if (-not $unlocked) {
   }
 }
 
+# MOVED HERE from before the lock, in lockstep with verify-gate.sh.
+# Before the lock it printed on every Stop including the backing-off
+# flavour, so one Stop emitted two scope reports and the lock suite's
+# silence assertions went red in BOTH flavours. The .sh moved first and
+# this file has to move with it: root CLAUDE.md records a .ps1 drifting
+# from its .sh as how crew once shipped a guard that blocked nothing on
+# Windows.
+# --- scope report: REPORT-ONLY, and it must never touch the exit code ------
+# Mirrors verify-gate.sh exactly, and calls the SAME scope_report.py so the
+# pair cannot drift. root CLAUDE.md records that a .ps1 drifting from its .sh
+# is how crew once shipped a guard that stood down on Windows and blocked
+# nothing there. try/catch because this gate can exit 2 and the scope layer
+# must not be able to.
+try {
+  # Same resolver pm-pulse.ps1 uses. verify-gate.ps1 had NO python dependency
+  # before this -- it reads verify.json with ConvertFrom-Json -- so the
+  # resolver is introduced here rather than assumed. An invented
+  # Resolve-CrewPython would have thrown into the catch below and printed
+  # "scope not checked" forever, which is precisely the .sh/.ps1 drift root
+  # CLAUDE.md records as how crew once blocked nothing on Windows.
+  $scopePy = (Get-Command python3, python -ErrorAction SilentlyContinue |
+              Select-Object -First 1).Source
+  if ($scopePy) {
+    $changed -join "`n" | & $scopePy (Join-Path $PSScriptRoot 'scope_report.py') $PWD.Path
+  } else {
+    [Console]::Error.WriteLine('outside-scope: (no python; scope not checked)')
+  }
+} catch {
+  [Console]::Error.WriteLine("outside-scope: (scope not checked: $_)")
+}
+$global:LASTEXITCODE = 0
+
 if (-not (Test-Path .crew/verify.json)) {
   # _verify/ is the canonical home; scripts/smoke.sh is honoured as legacy.
   $smoke = @("_verify/smoke.sh", "scripts/smoke.sh") | Where-Object { Test-Path $_ } | Select-Object -First 1

@@ -247,6 +247,37 @@ if [ "$UNLOCKED" -eq 0 ]; then
   fi
 fi
 
+# MOVED HERE from before the lock in the same change that added it.
+# Placed earlier, it printed on EVERY Stop -- including the flavour that
+# backs off for a lock the other one holds, so a single Stop produced two
+# scope reports and the lock suite's 'the loser is silent' assertions went
+# red. Correctly so: they are asserting that exactly one flavour speaks.
+# Inside the lock, the winner reports and the loser stays quiet.
+# --- scope report: REPORT-ONLY, and it must never touch the exit code ------
+# This gate can exit 2. The scope layer deliberately cannot: report-only was
+# chosen so it would not take on the blocking-hook regression obligation, and
+# an exit code escaping from here would take it on by accident. Hence the
+# `|| true` and the explicit `:` -- a python that dies, is missing, or writes
+# nothing must leave this gate exactly as it found it.
+#
+# The logic lives in scope_report.py, not here, for the reason pm-pulse.sh
+# gives: the bash and PowerShell flavours must not drift, and the ticket is
+# resolved by crew_state.read_work, whose rules (done markers, table status,
+# None rather than a guess) are not worth re-deriving twice in two shells.
+# $DIR is NOT defined in this script -- only `dirname` inline at the top. An
+# earlier draft used "$DIR/scope_report.py", which expanded to "/scope_report.py"
+# and MSYS rewrote that to "C:\Program Files\Git\scope_report.py". The gate then
+# printed a python "No such file" line as its scope report. Resolve it here.
+SCOPE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCOPE_PY=$(crew_py 2>/dev/null) || SCOPE_PY=""
+if [ -n "$SCOPE_PY" ] && [ -f "$SCOPE_DIR/scope_report.py" ]; then
+  printf '%s
+' "$CHANGED" | "$SCOPE_PY" "$SCOPE_DIR/scope_report.py" "$PWD" || true
+else
+  echo "outside-scope: (no python; scope not checked)" >&2
+fi
+: # keep the scope report from ever deciding this script's status
+
 if [ ! -f .crew/verify.json ]; then
   # _verify/ is the canonical home; scripts/smoke.sh is honoured as legacy.
   SMOKE=""

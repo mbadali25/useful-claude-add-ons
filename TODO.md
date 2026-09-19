@@ -2582,3 +2582,75 @@ this is not a blocker for 0.19.63.
 concludes crew is MIT and a consumer reading `LICENSE` concludes GPL-2, and
 those imply different obligations on anyone redistributing the plugin alone.
 Needs an owner decision, not a fix chosen by an agent.
+
+
+## `/crew:work`'s runbook step fires on a judgement call, so it is unobservable
+
+Filed 2026-09-18 by the PM, crew 0.19.63. **Not a wiring gap -- a trigger gap.**
+
+Recorded precisely because the obvious version of this finding is WRONG and was
+stated wrongly in conversation before an independent review caught it:
+`crew-runbooks` IS already reached from `/crew:work`. `plugin/crew/commands/work.md`
+step 11 runs `/crew:runbook --from-ticket $1`, and that predates all of this
+work. `plugin/crew/skills/crew-setup/phases.md:453` reaches it too. Anyone
+re-deriving "crew-runbooks is not wired in" will be re-deriving a fact error.
+
+The real defect is the CONDITION. Step 11 fires when the ticket "involved an
+operational procedure that will be repeated, is destructive, or lived only in
+someone's head" -- three judgement calls, evaluated by the same session that
+wants to finish. Nothing observable decides it, so nothing can check whether it
+was skipped, and a skipped step looks exactly like a step that correctly
+declined. That is the same shape as every other finding in this file: the
+uninformative outcome and the reassuring one are indistinguishable.
+
+**Proposed fix:** an observable field on the ticket -- `destructive: yes|no`
+alongside the existing `risk:` line in `commands/ticket.md:20` -- so step 11
+keys off a recorded answer instead of a re-judgement, and a ticket that never
+answered is its own third state rather than defaulting to "no".
+
+**Cost:** the ticket template, step 11's condition, and whatever writes tickets
+in each tracker mode. Lands in crew, owes a bump.
+
+**Also true and separate:** `crew-lint` has three citations outside its own
+SKILL.md -- `plugin/crew/README.md:1489`, `plugin/PLUGINS.md:245`, and
+`plugin/crew/skills/crew-setup/phases.md:329` -- and an earlier count of two
+here was wrong. What holds is that none of them is a code path: no `TRIGGERS`
+entry, no command or hook invokes it, and `ls plugin/crew/skills/crew-lint/`
+returns `SKILL.md` alone, so it generates nothing. It runs once at setup and is
+unreachable afterwards.
+
+## Sabotage runs mutate the shared worktree while Stop hooks can fire
+
+Filed 2026-09-18 by the PM, crew 0.19.63. **Process defect, not a code defect.**
+
+A sabotage run breaks a file, runs a suite, and restores it. It does this in
+the working tree that every other session on this machine is also using, and
+two Stop hooks (`verify-gate`, `pm-pulse`) fire from those sessions at any turn
+end. On 2026-09-18 the windows overlapped: a peer session's Stop read
+`verify-gate.sh` at `21:26:09.486` while `write_bytes` had truncated it and not
+yet finished writing, and the hook reported
+
+    verify-gate.sh: line 429: syntax error near unexpected token `fi'
+    outside-scope: (no python; scope not checked)
+
+Both were artefacts. The file's mtime and the sabotage log's final write were
+125ms apart, and that mutation was the last of five cases; the restore was
+byte-identical. It took three separate checks to establish that, and one of
+them -- a mid-run integrity check of my own -- compared against a remembered
+sha and reported "intact" about a file that was 21 bytes short, exactly the
+length difference of the live mutation.
+
+**Two distinct lessons, and the second is the expensive one.** First, a
+truncating write is observable by anyone reading the file, so a sabotage
+harness must not run against a shared tree: use a git worktree, or take the
+gate's own `.crew/.verify-gate.lock` for the duration. Second, a remembered
+number is not a measurement -- an integrity check has to compare against the
+value the mutating process itself recorded, not one written down earlier, or
+it will confidently clear a mutated file.
+
+**This is the second cross-session interference case in this repository's
+lineage.** The first is in root `CLAUDE.md`: a background `graphify` rebuild
+launched by `git checkout -b` overwrote a build mid-measurement, and the
+node-set diff that followed compared the hook's output with itself and
+reported a false zero. Same shape -- a concurrent writer nobody accounted for,
+producing a result that looked clean.

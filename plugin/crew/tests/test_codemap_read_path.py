@@ -94,3 +94,54 @@ def test_onboard_writes_the_schema_note_and_refuses_to_invent_one():
         "## Unverified. Collapsing 'confirmed' and 'could not confirm' into "
         "one section is this repo's named recurring defect"
     )
+
+
+def test_review_injects_repo_landmines_into_the_shared_prompt():
+    """0.19.61 wired the FALLBACK reviewer and nobody else.
+
+    /crew:review tries Codex then Copilot before falling back to the in-session
+    qa-reviewer, and all three read one prompt.txt that had no codemap content.
+    So on any machine with Codex installed, the reviewer that actually ran
+    never saw the landmines. Wiring an agent file is not wiring the reviewer.
+    """
+    body = (PLUGIN / "commands" / "review.md").read_text(encoding="utf-8")
+    assert "context.txt" in body, (
+        "review.md no longer gathers repo landmines, so the provider path "
+        "reviews with no knowledge of what breaks in this repository"
+    )
+    assert "## Landmines" in body and "Written by" in body
+    assert 'git diff --name-only "$BASE"...HEAD > "$SCRATCH/changed.txt"' in body, (
+        "review.md must BUILD the changed-file list it filters on. An earlier "
+        "draft grepped a changed.txt nothing wrote; the failure went to "
+        "/dev/null, no note ever matched, and the step reported itself done"
+    )
+
+
+def test_review_keeps_the_byte_identical_prompt_invariant():
+    """All three providers must receive the same bytes.
+
+    review.md states this as its reason for building the prompt in one place:
+    'a defect count that differs between them is a fact about the model and
+    not about how you worded it'. Injecting landmines for one provider would
+    destroy exactly that. So the injection must land INSIDE the single
+    heredoc, and no provider block may append to prompt.txt afterwards.
+    """
+    body = (PLUGIN / "commands" / "review.md").read_text(encoding="utf-8")
+    assert body.count('cat > "$SCRATCH/prompt.txt"') == 1, (
+        "prompt.txt is written in more than one place, so providers can now "
+        "receive different bytes and cross-provider counts stop comparing"
+    )
+    assert '>> "$SCRATCH/prompt.txt"' not in body, (
+        "something appends to prompt.txt after it is built, which is how one "
+        "provider ends up with context another does not have"
+    )
+    _, _, tail = body.partition('cat > "$SCRATCH/prompt.txt"')
+    # Split on the heredoc TERMINATOR (EOF at line start), not on the string
+    # "EOF" -- that also matches the `<<EOF` marker three characters along, so
+    # the body under test comes back as " <<" and the assertion passes or
+    # fails for reasons having nothing to do with the prompt.
+    heredoc = tail.split("\nEOF")[0]
+    assert 'context.txt' in heredoc, (
+        "the landmine injection is not inside the shared heredoc, so it is "
+        "not part of what every provider reads"
+    )

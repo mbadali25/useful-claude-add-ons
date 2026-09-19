@@ -323,6 +323,98 @@ esac
 unset CREW_TEST_PAD
 unset CLAUDE_PROJECT_DIR
 
+
+# --- scope report: must-ALLOW in every branch ------------------------------
+# The scope layer added in crew 0.19.63 is REPORT-ONLY. verify-gate can exit 2,
+# so the one thing that must never regress is the scope branch changing the
+# exit code. These cases assert the gate's status is whatever it would have
+# been, while the report itself is present and specific.
+#
+# The unknown branches are asserted too, and that is the point of the case
+# rather than padding: a scope layer that prints an empty `outside-scope:` when
+# it could not read the ticket is worse than none, because the empty line is
+# also what "checked, nothing outside" looks like.
+SCOPEFX=$(mktemp -d) || exit 1
+(
+  cd "$SCOPEFX" || exit 1
+  git init -q .
+  git config user.email t@t; git config user.name t
+  mkdir -p .crew .work/tickets
+  echo '{}' > .crew/config.json
+  printf '{"version":1,"rules":[],"always":[],"default":[],"unmapped":"skip"}' > .crew/verify.json
+  echo x > tracked.txt
+  git add -A >/dev/null 2>&1; git commit -qm init >/dev/null 2>&1
+  printf 'inside
+' > in-scope.txt
+  printf 'outside
+' > wandered.txt
+)
+
+# (a) an open ticket that declares paths: the wandering file is NAMED, and the
+#     gate's exit code is unchanged by saying so.
+printf '| T-0001 | scope case | in progress |
+' > "$SCOPEFX/.work/INDEX.md"
+printf '## Scope
+- touch: in-scope.txt
+' > "$SCOPEFX/.work/tickets/T-0001.md"
+export CLAUDE_PROJECT_DIR="$SCOPEFX"
+OUT=$(echo '{}' | bash "$SCRIPTS/verify-gate.sh" 2>&1); RC=$?
+[ "$RC" != "2" ] && pass || fail "verify-gate: the scope report must not block the turn (got $RC)"
+case "$OUT" in
+  *"wandered.txt"*)
+    # And crew bookkeeping must NOT appear: a ticket edit is the process
+    # working, not scope creep, and reporting it teaches people to skim.
+    case "$OUT" in
+      *".work/INDEX.md"*) fail "verify-gate: crew bookkeeping must be excluded from the scope report, got: $OUT" ;;
+      *) pass ;;
+    esac ;;
+  *) fail "verify-gate: a file outside the ticket's declared paths must be named, got: $OUT" ;;
+esac
+
+# (b) ticket file missing: a DISTINCT sentence, never an empty report.
+rm -f "$SCOPEFX/.work/tickets/T-0001.md"
+OUT=$(echo '{}' | bash "$SCRIPTS/verify-gate.sh" 2>&1); RC=$?
+[ "$RC" != "2" ] && pass || fail "verify-gate: a missing ticket file must not block (got $RC)"
+case "$OUT" in
+  *"is missing"*) pass ;;
+  *) fail "verify-gate: a missing ticket file must say so, not report an empty scope, got: $OUT" ;;
+esac
+
+# (c) no open ticket at all: also its own sentence.
+rm -f "$SCOPEFX/.work/INDEX.md"
+OUT=$(echo '{}' | bash "$SCRIPTS/verify-gate.sh" 2>&1); RC=$?
+[ "$RC" != "2" ] && pass || fail "verify-gate: no open ticket must not block (got $RC)"
+case "$OUT" in
+  *"no open ticket"*) pass ;;
+  *) fail "verify-gate: with no ticket open the report must say so, got: $OUT" ;;
+esac
+unset CLAUDE_PROJECT_DIR
+
+# (d) BACK-OFF SILENCE. When another flavour holds the lock this gate stands
+#     aside and runs no checks, so any scope-shaped line would assert a check
+#     that did not happen -- the same rule as (b) and (c), one level up. The
+#     scope report lives INSIDE the lock for exactly this reason; an earlier
+#     draft printed it before the lock and turned one Stop into two reports,
+#     which four lock tests caught. This case is the standing guard on that.
+printf '| T-0002 | back-off case | in progress |
+' > "$SCOPEFX/.work/INDEX.md"
+printf '## Scope
+- touch: in-scope.txt
+' > "$SCOPEFX/.work/tickets/T-0002.md"
+mkdir -p "$SCOPEFX/.crew/.verify-gate.lock"
+date +%s > "$SCOPEFX/.crew/.verify-gate.lock/at" 2>/dev/null
+export CLAUDE_PROJECT_DIR="$SCOPEFX"
+OUT=$(echo '{}' | bash "$SCRIPTS/verify-gate.sh" 2>&1); RC=$?
+[ "$RC" = "0" ] && pass || fail "verify-gate: a held lock must back off cleanly (got $RC)"
+case "$OUT" in
+  *outside-scope*) fail "verify-gate: the back-off path must print NOTHING scope-shaped; it ran no checks, so a scope line claims one happened. Got: $OUT" ;;
+  *) pass ;;
+esac
+rm -rf "$SCOPEFX/.crew/.verify-gate.lock"
+unset CLAUDE_PROJECT_DIR
+
+rm -rf "$SCOPEFX"
+
 echo "== promote-gate.sh =="
 PD=$(mktemp -d) || exit 1
 trap 'rm -rf "$D" "$PD"' EXIT

@@ -42,47 +42,103 @@ def _agent(name):
     return _norm((PLUGIN / "agents" / f"{name}.md").read_text(encoding="utf-8"))
 
 
+def _agent_raw(name):
+    """Unnormalised. Frontmatter is line-structured, and _norm collapses it to
+    a single line, so `tools:` can never be found through the normalised
+    reader -- the first version of the grant test raised IndexError rather
+    than failing an assertion, which is a broken test, not a caught defect."""
+    return (PLUGIN / "agents" / f"{name}.md").read_text(encoding="utf-8")
+
+
 def _work():
     return _norm((PLUGIN / "commands" / "work.md").read_text(encoding="utf-8"))
 
 
-def test_every_doing_role_carries_the_scope_clause():
-    for name in DOING_ROLES:
+# Roles that hold Write/Edit. They file their own deferrals.
+WRITER_ROLES = ("developer", "smoke-author")
+# Roles granted Read, Grep, Glob, Bash, Skill and NOTHING that mutates.
+READONLY_ROLES = ("dba", "qa-reviewer")
+
+
+def test_the_split_matches_the_actual_tool_grants():
+    """The lists above are a claim about frontmatter; check it, do not trust it.
+
+    Codex found the original clause telling `dba` and `qa-reviewer` to append
+    to TODO.md when neither has Write or Edit. The clause was right for the
+    two roles it was written against and wrong for the two it was pasted into.
+    If a grant changes later, this test fails before the prose goes stale."""
+    for name in WRITER_ROLES:
+        line = [l for l in _agent_raw(name).splitlines()
+                if l.startswith("tools:")][0]
+        assert "Write" in line and "Edit" in line, f"{name} lost its write tools"
+    for name in READONLY_ROLES:
+        line = [l for l in _agent_raw(name).splitlines()
+                if l.startswith("tools:")][0]
+        assert "Write" not in line and "Edit" not in line, (
+            f"{name} gained write tools; its scope clause says it has none"
+        )
+
+
+def test_writer_roles_file_their_own_deferrals():
+    for name in WRITER_ROLES:
         body = _agent(name)
-        assert "Fix only what blocks the task you were given" in body, (
-            f"{name}.md dropped the scope clause. Without it the role has no "
-            "rule against fixing whatever it notices, which is the veering "
-            "0.19.62 exists to stop"
-        )
-        assert "TODO.md" in body, (
-            f"{name}.md names no destination for a deferred finding. A rule "
-            "to not fix something, with nowhere to put it, loses the finding"
-        )
+        assert "Fix only what blocks the task you were given" in body
+        assert "TODO.md" in body, f"{name} has no destination for a deferral"
+        assert "## Deferred — and where it went" in body
+        assert "present even when empty" in body
+        assert "Nothing deferred." in body
 
 
-def test_every_doing_role_requires_a_deferred_section_even_when_empty():
-    """The empty case is the one that matters. A missing section reads the same
-    whether the role found nothing or found something and quietly fixed it."""
-    for name in DOING_ROLES:
+def test_readonly_roles_are_not_told_to_write():
+    """Asking a read-only role to append to TODO.md does not fail safely -- it
+    gets done by shell redirection, because Bash is granted. That works, which
+    is what makes it worse than an outright failure."""
+    for name in READONLY_ROLES:
         body = _agent(name)
-        assert "## Deferred — and where it went" in body, (
-            f"{name}.md dropped the Deferred report heading"
+        assert "REPORT the rest" in body, (
+            f"{name} carries the writer clause; it cannot write"
         )
-        assert "present even when empty" in body, (
-            f"{name}.md no longer requires the Deferred section when there is "
-            "nothing to defer, so an absent section becomes ambiguous again"
-        )
-        assert "Nothing deferred." in body, (
-            f"{name}.md dropped the explicit empty-case wording, which is what "
-            "makes 'found nothing' distinguishable from 'said nothing'"
+        assert "do not write it anywhere" in body, (
+            f"{name} no longer forbids writing the finding itself"
         )
 
 
-def test_work_command_holds_roles_to_the_clause():
+def test_qa_reviewer_has_no_deferred_section():
+    """Its contract is defect lines or exactly CLEAN (qa-reviewer.md). A
+    mandatory prose heading makes every clean review violate one rule or the
+    other -- there is no output that satisfies both."""
+    body = _agent("qa-reviewer")
+    assert "## Deferred" not in body, (
+        "qa-reviewer regained a Deferred section, so a CLEAN review must now "
+        "either break the output format or break the scope rule"
+    )
+    assert "NIT" in body, (
+        "qa-reviewer must route an unrelated defect through the finding "
+        "format at NIT severity, since it has nowhere else to put it"
+    )
+
+
+def test_work_command_enforces_per_role_not_uniformly():
     body = _work()
-    assert "## Deferred — and where it went" in body, (
-        "work.md must state the Deferred section it expects back, or nothing "
-        "notices when a role omits it"
+    assert "## Deferred — and where it went" in body
+    assert "not the same one" in body, (
+        "work.md enforces one clause across every role again. That is the "
+        "defect Codex found: the rule was applied to roles whose tools and "
+        "output contracts cannot satisfy it"
+    )
+    assert "never expect one from" in body, (
+        "work.md no longer exempts qa-reviewer from the Deferred section"
+    )
+
+
+def test_goal_line_excludes_crew_bookkeeping():
+    """TODO.md is tracked. Without the carve-out the goal forbids the very
+    write the same clause requires, so a correct deferral reads as a scope
+    violation and the only compliant behaviour is to stop deferring."""
+    body = _work()
+    assert "except TODO.md and .crew/ and .work/" in body, (
+        "the goal template no longer carves out crew bookkeeping, so "
+        "deferring a finding now violates the goal it was emitted with"
     )
 
 
@@ -105,9 +161,18 @@ def test_goal_line_ships_with_the_evidence_that_makes_it_checkable():
     because it held. That is this repo's named recurring defect, and it is the
     reason the porcelain print is part of the feature rather than a nicety."""
     body = _work()
-    assert "git status --porcelain" in body, (
-        "work.md dropped the porcelain print, so the goal's scope constraint "
-        "is unverifiable and the evaluator will return Met vacuously"
+    assert "git diff --name-only" in body, (
+        "work.md dropped the changed-file print, so the goal's scope "
+        "constraint is unverifiable and the evaluator returns Met vacuously"
+    )
+    assert "git ls-files --others --exclude-standard" in body, (
+        "work.md prints tracked changes only, so a new untracked file lands "
+        "outside the ticket's paths without ever appearing in the evidence"
+    )
+    assert "Not `git status --porcelain`" in body, (
+        "work.md must say WHY porcelain is the wrong command here. Asserting "
+        "only the right command lets a later edit swap it back for the "
+        "familiar one, which is how this was wrong in 0.19.62"
     )
     assert "including when it is empty" in body, (
         "work.md no longer requires printing an empty porcelain result, so a "
@@ -125,4 +190,18 @@ def test_goal_line_names_the_specific_test_not_only_the_mapped_command():
         "work.md no longer warns that verify.json rules are coarse, so the "
         "emitted goal will cite only the top-level checker -- true of every "
         "change, and therefore discriminating for none"
+    )
+
+
+def test_developer_may_not_commit():
+    """Nothing forbade this before crew 0.19.63, and it defeats the evidence.
+
+    A commit mid-ticket moves work out of the working tree, so the changed-file
+    print the goal constraint relies on comes back short while the branch still
+    carries the change. The turn then reports a clean scope truthfully and
+    wrongly at the same time."""
+    body = _agent("developer")
+    assert "Never `git commit`" in body, (
+        "developer.md no longer forbids committing mid-ticket, so the scope "
+        "evidence can be emptied by an action nothing rules out"
     )

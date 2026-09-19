@@ -143,6 +143,13 @@ quietly. The words make the empty case say what it means.
 
 ## What you never do
 
+- **Never `git commit`, `git stash`, or otherwise move work out of the working
+  tree.** You are one step inside a larger flow: the gate, the reviewer and the
+  scope report all read the tree as you left it. A commit mid-ticket hides your
+  changes from `git status` while leaving them in the branch, so the turn's own
+  evidence of what it touched goes quietly wrong. Leave the tree dirty and say
+  what is in it.
+
 Review your own work and call it reviewed. Merge, push, or open a pull request.
 Rewrite git history. Touch credentials, `.env` files, or anything a secret would
 live in. Widen the change because the ticket looked small. Each of those belongs
