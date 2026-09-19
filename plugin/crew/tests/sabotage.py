@@ -2167,8 +2167,9 @@ MUTATIONS = (
         "the matcher's record separator goes back to a newline",
         VERIFY_SH,
         'sys.stdout.write("\\x1e".join(cmds) + "\\x1d" '
-        '+ "\\x1e".join(unmatched) + "\\n")',
-        'print("\\x1e".join(cmds))\nprint("\\x1e".join(unmatched))',
+        '+ "\\x1e".join(unmatched) + "\\x1d" '
+        '+ "\\x1e".join(notices) + "\\n")',
+        'print("\\x1e".join(cmds))\nprint("\\x1e".join(unmatched))\nprint("\\x1e".join(notices))',
         ("tests/test_verify_gate_rule_framing.py::"
          "test_the_two_halves_of_the_framing_contract_agree"),
     ),

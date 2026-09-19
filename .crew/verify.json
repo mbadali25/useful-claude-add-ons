@@ -25,6 +25,20 @@
     "practice a graphify-out-only or workflow-only turn. It is kept because those",
     "are real turns and 7s of smoke is a better answer there than nothing.",
     "There is deliberately no `always` key: any entry in it would make `cmds`",
+    "non-empty every time and `default` unreachable.",
+    "",
+    "`seconds` is the rule's MEASURED cost, and it is the field verify-gate",
+    "reads for the Stop budget (verify.stopBudgetSeconds, default 60). It",
+    "replaces nothing: `why` keeps the reason, `seconds` carries the number,",
+    "because the costs used to live only as prose inside `why` (\"8s\", \"29s\",",
+    "\"245s\") and nothing could parse them. A rule with NO `seconds` is UNKNOWN",
+    "cost, which is NOT free: it always runs and the gate says its cost is",
+    "unstated. Most rules here are deliberately in that state - only the ones",
+    "actually timed carry a number, and filling the rest in by guesswork would",
+    "be exactly the fiction the field exists to replace. Re-time rather than",
+    "trusting these: measured on a quiet tree 2026-09-18/19, and the whole-suite",
+    "185 is the midpoint of five runs spanning 157-201s, which is itself a",
+    "reason to treat it as approximate.",
     "non-empty every time and `default` unreachable."
   ],
 
@@ -32,12 +46,14 @@
     { "paths": [".claude-plugin/marketplace.json", "**/.claude-plugin/plugin.json",
                 "**/pyproject.toml", "plugin/**", "skills/**", "MARKETPLACE.md",
                 "skills-lock.json"],
+      "seconds": 9,
       "run": ["python3 scripts/check-marketplace.py"],
       "why": "8s (it was 95s until the history walk's blob reads were cached on 2026-09-13; re-time it rather than trusting either figure), and the ONLY check that catches a content change shipped with no version bump - CLAUDE.md's first stop-and-ask, and the defect that had main red from 12e43eee to 5238be3d. _verify/smoke.sh is NOT a substitute: it deliberately omits the version-drift walk (58 revisions of marketplace.json, the slow half) and would have stayed green on exactly that bug." },
 
     { "paths": ["plugin/PLUGINS.md", "plugin/README.md", "plugin/*/README.md",
                 "**/SKILL.md", "scripts/install-prerequisites.sh",
                 "scripts/install-prerequisites.ps1", "plugin/localgpu/**"],
+      "seconds": 5,
       "run": ["bash _verify/smoke.sh"],
       "why": "7s for ten registration invariants, including check 10 (every copy of a plugin's version agrees, pyproject.toml included) and the install-script menu parity both directions. Sabotage-proven here: crew's version set to 9.9.9 in marketplace.json -> exit 1." },
 
@@ -45,6 +61,7 @@
                 "plugin/PLUGINS.md", "plugin/README.md", "plugin/*/README.md",
                 "docs/**", "MARKETPLACE.md", "SECURITY.md",
                 "Skill-Authoring-Standard.md", "Skill-Pipeline.md"],
+      "seconds": 3,
       "run": ["python3 scripts/_test/self-claims.py",
               "python3 scripts/sync-updates.py --check"],
       "why": "2s. These files state numbers about this repo (skill/plugin counts, catalog Version rows) that nothing else re-derives; the marker check added in #139 fails red on a marked wrong number and on an unrecognised marker type. sync-updates --check catches a UPDATE.md mirror drifting from its source." },
@@ -67,6 +84,7 @@
                 "plugin/crew/tests/test_verify_gate*.py",
                 "plugin/crew/tests/test_promote*.py",
                 "plugin/crew/tests/test_gates_powershell.py"],
+      "seconds": 72,
       "run": ["python3 -m pytest plugin/crew/tests/test_verify_gate_baseline.py plugin/crew/tests/test_verify_gate_bash_resolver.py plugin/crew/tests/test_verify_gate_lock.py plugin/crew/tests/test_verify_gate_lock_sh.py plugin/crew/tests/test_verify_gate_lock_concurrent.py plugin/crew/tests/test_promote_gate_fails_closed.py plugin/crew/tests/test_promote_merge_gate.py plugin/crew/tests/test_gates_powershell.py -q"],
       "why": "29s. These hooks can BLOCK a turn, so CLAUDE.md requires must-block and must-allow cases. PROVEN by sabotage on 2026-09-13: reverting the Stop gate's baseline to `git diff --name-only HEAD` (the original bug) turns this rule red." },
 
@@ -110,6 +128,7 @@
 
     { "paths": ["plugin/crew/tests/conftest.py", "plugin/crew/tests/crew_fixtures.py",
                 "plugin/crew/tests/context.py", "plugin/crew/tests/sabotage.py"],
+      "seconds": 185,
       "run": ["python3 -m pytest plugin/crew/tests/ -q"],
       "why": "245s, deliberately over the ~3-minute guidance. These four are imported by every test module, so a change here can make the whole suite vacuous while every module still reports green - the one case where nothing narrower is honest. Rare edit; crew_fixtures.resolve_bash() is why the suite runs at all under PowerShell." },
 
@@ -121,15 +140,18 @@
 
     { "paths": ["plugin/crew/commands/**", "plugin/crew/agents/**",
                 "plugin/crew/skills/**", "plugin/crew/hooks/hooks.json"],
+      "seconds": 1,
       "run": ["(cd plugin/crew && python3 hooks/scripts/_test/validate-prompts.py)"],
       "why": "0s. Frontmatter, tool permissions and every ${CLAUDE_PLUGIN_ROOT} path a command/agent/skill names. Wrapped in a subshell ON PURPOSE: verify-gate.sh runs each command with `eval` in its own shell, so a bare `cd` would move the gate's working directory for every check after it. map-audit.sh reports this rule as 'pointing at a file that does not exist' - that is a FALSE POSITIVE: it resolves the path from the repo root while the subshell resolves it from plugin/crew, which is also the working-directory marketplace.yml sets for the same step. Verified exit 0 with that cwd on 2026-09-13. Do not 'fix' it by rewriting the path from the root; the script itself resolves its inputs relative to cwd." },
 
     { "paths": ["**/*.ps1", "**/*.psm1"],
+      "seconds": 2,
       "run": ["sh -c 'for c in pwsh pwsh.exe \"/c/Program Files/PowerShell/7/pwsh\" \"/c/Program Files/PowerShell/7/pwsh.exe\" \"/mnt/c/Program Files/PowerShell/7/pwsh.exe\" \"/mnt/c/Program Files/PowerShell/7/pwsh\"; do if command -v \"$c\" >/dev/null 2>&1 || [ -x \"$c\" ]; then exec \"$c\" -NoProfile -File ./scripts/check-powershell.ps1; fi; done; echo \"TOOL MISSING: pwsh (PowerShell 7) is on no PATH and at no known Windows location, so the .ps1 checks DID NOT RUN. This is a missing tool, not a failed check. Install PowerShell 7.\" >&2; exit 127'"],
       "agents": ["powershell-security-hardening"],
       "why": "3s. Every .ps1 here is Windows-only end to end, so a call to a cmdlet that does not exist parses cleanly and fails only on the one platform nothing here can run. PROVEN red by appending Invoke-TotallyMadeUpCmdlet to plugin/crew/hooks/scripts/guard.ps1 - a file REMOVED in 0.19.52, so that exact proof can no longer be re-run. The measurement stands as a record of what was done; re-prove it against any registered .ps1 (promote-gate.ps1, verify-gate.ps1) rather than trusting this line, and do not rewrite the file named above, which would falsify what was actually measured. The interpreter is RESOLVED, not named. This file is TRACKED as of 2026-09-14, so it travels to clones that are not this machine, and a hardcoded /c/Program Files/PowerShell/7/pwsh fails on every one of them - verify-gate.sh runs this command and blocks completion on a non-zero exit, so even a Linux clone with pwsh ON PATH was blocked by this rule. Order matters: bare `pwsh` first, then `pwsh.exe` and the Windows locations with AND without the .exe suffix - under WSL the reachable binary is the Windows one and is named pwsh.exe, so omitting the suffix reported TOOL MISSING on a box where PowerShell was installed and usable, because CLAUDE.md records that a bare `pwsh` is not always on Git Bash's PATH. When nothing resolves it exits 127 with TOOL MISSING on stderr rather than 0 - a tool that could not run must never report as a check that passed. NOTE the script's two known limitations (README of _verify): CI mode enumerates via `git ls-files`, so an UNTRACKED .ps1 is invisible to it, and `param([string]$Path)` takes one path, silently dropping the rest of a list." },
 
     { "paths": ["**/*.py", ".pylintrc", "ruff.toml"],
+      "seconds": 38,
       "run": ["python3 -m ruff check .",
               "python3 -m pylint $(git ls-files '*.py')"],
       "why": "0s + 46s. pylint.yml IS a CI gate across 3.11/3.12/3.13 - I claimed otherwise in a commit message on 2026-09-12 having read only marketplace.yml, and it had main red for two commits. Invoked exactly the way CI invokes it, over every tracked file rather than the changed one, because that is the thing that goes red." },
@@ -156,6 +178,7 @@
       "why": "6s. The three skill suites CI runs as separate pytest invocations." },
 
     { "paths": ["_verify/**"],
+      "seconds": 5,
       "run": ["bash _verify/smoke.sh"],
       "why": "7s. Editing the harness means running it. run-all.sh (~6 min) and run-all.sh --with-hooks (which HANGS) are deliberately unreachable from any rule." },
 
