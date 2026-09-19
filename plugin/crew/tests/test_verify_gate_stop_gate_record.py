@@ -57,6 +57,54 @@ sabotage itself, the same way the rest of this test directory does not.
  12. A subsecond (0s elapsed) unpriced rule's measurement was discarded
      outright (`if total > 0`), so it stayed mandatory-forever instead of
      being priced from the second Stop onward.
+
+## Codex round 2 (2 BLOCK, 6 FIX) + the powershell-security-hardening
+## specialist's SYNC_STATUS finding
+
+ 13/14. BLOCK verify-gate.sh:841 / verify_price.py:35. The reach scanner
+     used to check only the outer command STRING; a wrapper script it calls
+     was never followed, so `bash outer.sh` where outer.sh calls inner.sh
+     which calls ssh passed unscanned. Now shared (verify_record.scan_reach)
+     and bounded: it follows a wrapper chain up to depth 3, and anything it
+     cannot fully read (deeper than that, over the 256 KiB per-file cap, or
+     outside the repository) is UNINSPECTED - refused, not read as clean.
+ 15. BLOCK verify_price.py:35. --price used the same unscanned-wrapper
+     heuristic as (13/14) - an undeclared wrapper that itself called ssh
+     was TIMED (i.e. RUN), the exact command Stop would have refused.
+ 16. FIX verify-gate.sh (SKIP leaves a reusable fingerprint). A rule that
+     PASSED once (writing a fingerprint) and later returns 77 on a changed
+     tree left that PASS fingerprint on disk; if the tree was ever reverted
+     to the state the old fingerprint covers, the outstanding SKIP silently
+     fingerprint-skipped instead of being re-attempted.
+ 17. FIX verify-gate.sh (`--all` and a staged rename). `--diff-filter=D`
+     alone misses a path git paired into an R-status instead of reporting a
+     bare delete, so `git mv old.txt new.txt` staged dropped old.txt's rule
+     out of `--all` entirely.
+ 18. FIX verify_fingerprint.py (`_corrupt_cache` non-dict top level). `[]`
+     in record.json/timings.json is valid JSON that parses without raising,
+     but is not the `{...}` shape either file is supposed to hold; the old
+     check only asked "did json.load raise", so this shape read as clean
+     and un-poisoned the digest that this same corruption should have
+     invalidated.
+ 19. FIX verify_price.py (rc 77 pricing). --price used to time a command
+     that returned 77 and write its elapsed seconds anyway - pricing a
+     command that never actually ran, underpricing the real cost for the
+     next environment that has it present.
+ 20. FIX verify_price.py (env pinning). --price ran with no env pinning at
+     all, so an operator's own ENV=prod/AWS_PROFILE rode straight into a
+     `seconds` measurement meant to be reusable by anyone who reads the map
+     afterward.
+ 21. FIX verify_record.py `rule_key()` (env/reach/requiresCleanTree not
+     hashed). Two rules with identical paths/run but different `env` used
+     to hash to the SAME key, so a passing rule's clean result could erase
+     a different rule's chronic/skipped/reach-excluded record entry that
+     happened to share everything but its env.
+ 22. The powershell-security-hardening specialist's finding: `$syncStatus`
+     (bash: `SYNC_STATUS`) started at 0 ("success") and was only reassigned
+     inside the success path, so a sync that never ran at all (python
+     unresolvable, verify_record.py missing, or the invocation throwing)
+     silently read as "succeeded" and let both markers advance on a record
+     that was never actually written.
 """
 import json
 import os
@@ -729,4 +777,317 @@ def test_h_requires_clean_tree_is_stop_excluded_and_all_included(flavour, tmp_pa
     forced = _run(flavour, root, "--all")
     assert ran_pattern.search(forced.stderr), (
         "--all must still run a requiresCleanTree rule. " + forced.stderr
+    )
+
+
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+def test_13_nested_wrapper_reach_is_followed_two_levels(flavour, tmp_path):
+    """(13, round 2 BLOCK) outer.sh calls inner.sh; inner.sh calls ssh.
+    Neither the outer command string nor outer.sh's own body names ssh
+    directly - only inner.sh, one level deeper, does. The scanner must
+    follow the chain (depth 2, well under the 3-deep cap) and defer with
+    the ordinary VERB reason (reach_undeclared) - a chain it can fully
+    read is not "could not tell"."""
+    vmap = {
+        "version": 1,
+        "rules": [{"paths": ["a.py"], "run": ["bash outer.sh"]}],
+        "default": [], "unmapped": "ignore",
+    }
+    root = _repo(tmp_path, vmap)
+    (root / "outer.sh").write_text("#!/bin/sh\nbash inner.sh\n", encoding="utf-8")
+    (root / "inner.sh").write_text("#!/bin/sh\nssh remotehost true\n", encoding="utf-8")
+    (root / "a.py").write_text("x", encoding="utf-8")
+    result = _run(flavour, root)
+    assert result.returncode == 0, result.stderr
+    assert "undeclared reach, looks like it leaves this machine" in result.stderr, (
+        result.stderr
+    )
+    assert "could not be verified" not in result.stderr, (
+        "a fully-readable two-level wrapper chain was reported UNINSPECTED "
+        "instead of the ordinary verb reason. " + result.stderr
+    )
+    rec = _record(root)
+    assert any(v.get("status") == "reach_undeclared"
+               for v in rec.get("rules", {}).values()), rec
+
+
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+def test_14_a_wrapper_chain_past_the_depth_limit_is_uninspected(flavour, tmp_path):
+    """(14, round 2 BLOCK) a.sh -> b.sh -> c.sh -> (names a 4th, unwritten
+    d.sh). The scan hits REACH_SCAN_MAX_DEPTH (3) while still inside c.sh
+    and must refuse as UNINSPECTED - "could not tell" is its own value,
+    never read as clean - and must never run the outer command."""
+    vmap = {
+        "version": 1,
+        "rules": [{"paths": ["a.py"], "run": ["bash a.sh"]}],
+        "default": [], "unmapped": "ignore",
+    }
+    root = _repo(tmp_path, vmap)
+    (root / "a.sh").write_text("#!/bin/sh\nbash b.sh\n", encoding="utf-8")
+    (root / "b.sh").write_text("#!/bin/sh\nbash c.sh\n", encoding="utf-8")
+    (root / "c.sh").write_text("#!/bin/sh\nbash d.sh\n", encoding="utf-8")
+    (root / "a.py").write_text("x", encoding="utf-8")
+    result = _run(flavour, root)
+    assert result.returncode == 0, result.stderr
+    assert "undeclared reach could not be verified" in result.stderr, result.stderr
+    ran_pattern = re.compile(r"verify-gate: \d+s {2}bash a\.sh")
+    assert not ran_pattern.search(result.stderr), (
+        "a wrapper chain past the depth limit ran anyway. " + result.stderr
+    )
+
+
+def test_15_price_refuses_a_wrapper_that_reaches_ssh_and_never_runs_it(tmp_path):
+    """(15, round 2 BLOCK verify_price.py:35) --price on a rule whose
+    command is an undeclared wrapper script that itself calls ssh must
+    REFUSE, using the same shared scanner the gates use, and never execute
+    the wrapper - proven with a side-effect file the wrapper would create
+    if it ran."""
+    (tmp_path / "wrapper.sh").write_text(
+        "#!/bin/sh\ntouch ran.marker\nssh remotehost true\n", encoding="utf-8")
+    marker = tmp_path / "ran.marker"
+    vmap = {
+        "version": 1,
+        "rules": [{"paths": ["a.py"], "run": ["bash wrapper.sh"]}],
+        "default": [], "unmapped": "ignore",
+    }
+    target = tmp_path / "price_wrapper.json"
+    target.write_text(json.dumps(vmap), encoding="utf-8")
+    priced = subprocess.run([_PY, _PRICE_PY, str(target)], cwd=str(tmp_path),
+                            capture_output=True, text=True, check=False)
+    assert priced.returncode == 0, priced.stderr
+    assert "REFUSED" in priced.stdout, priced.stdout
+    assert "undeclared reach" in priced.stdout, priced.stdout
+    assert not marker.exists(), (
+        "the wrapper actually ran under --price despite being refused. "
+        + priced.stdout
+    )
+    assert "seconds" not in json.loads(target.read_text(encoding="utf-8"))["rules"][0]
+
+
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+def test_16_a_skip_after_a_pass_deletes_the_stale_fingerprint(flavour, tmp_path):
+    """(16, round 2 FIX) A rule that PASSES once (writing a fingerprint for
+    that tree state) and later returns 77 on a DIFFERENT tree state must not
+    leave the earlier PASS fingerprint sitting on disk: reverting the tree
+    back to the state the PASS fingerprint covers must not silently
+    fingerprint-skip an outstanding SKIP instead of re-attempting it."""
+    vmap = {
+        "version": 1,
+        "rules": [{"paths": ["a.py"], "run": [
+            "sh -c 'if [ -f ran.counter ]; then exit 77; else touch ran.counter; fi'"
+        ]}],
+        "default": [], "unmapped": "ignore",
+    }
+    root = _repo(tmp_path, vmap)
+    (root / "a.py").write_text("x", encoding="utf-8")
+
+    first = _run(flavour, root)
+    assert first.returncode == 0, first.stderr
+    fp = root / ".crew" / ".verify-gate.fingerprint"
+    assert fp.exists(), "the PASS did not write a fingerprint. " + first.stderr
+
+    (root / "a.py").write_text("y", encoding="utf-8")
+    second = _run(flavour, root)
+    assert "SKIP (rc 77" in second.stderr, second.stderr
+    assert not fp.exists(), (
+        "a SKIP after a PASS left the earlier PASS fingerprint on disk. "
+        + second.stderr
+    )
+
+    (root / "a.py").write_text("x", encoding="utf-8")  # back to the PASS state
+    third = _run(flavour, root)
+    assert "SKIPPED, not re-run" not in third.stderr, (
+        "reverting to the old PASS's tree state fingerprint-skipped an "
+        "outstanding SKIP instead of re-attempting it. " + third.stderr
+    )
+    assert "SKIP (rc 77" in third.stderr, third.stderr
+
+
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+def test_17_all_reaches_a_staged_rename_source(flavour, tmp_path):
+    """(17, round 2 FIX) `git mv old.txt new.txt`, staged: --all must still
+    select and run old.txt's rule (the rename SOURCE), not just the
+    destination - a plain `--diff-filter=D` extraction misses a path git
+    reports as an R-status pair instead of a bare delete."""
+    vmap = {
+        "version": 1,
+        "rules": [{"paths": ["old.txt"], "run": ["exit 1"]}],
+        "default": [], "unmapped": "ignore",
+    }
+    root = _repo(tmp_path, vmap)
+    (root / "old.txt").write_text("content\n", encoding="utf-8")
+    (root / ".crew" / "verify.json").write_text(json.dumps(vmap), encoding="utf-8")
+    _commit(root, "old.txt", ".crew/verify.json")
+    _git(root, "mv", "old.txt", "new.txt")
+    forced = _run(flavour, root, "--all")
+    assert forced.returncode == 2, (
+        "a staged rename's SOURCE path was not selected under --all. "
+        + forced.stderr
+    )
+
+
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+def test_18_a_non_dict_top_level_cache_poisons_the_fingerprint(flavour, tmp_path):
+    """(18, round 2 FIX verify_fingerprint.py `_corrupt_cache`) `[]` (valid
+    JSON, wrong shape) in BOTH record.json and timings.json must poison the
+    fingerprint the same way malformed JSON does (see test_4) - a non-dict
+    top level parses without raising, so the old check ("did json.load
+    raise") read it as clean."""
+    vmap = {
+        "version": 1,
+        "rules": [
+            {"paths": ["a.py"], "seconds": 5, "run": ["echo cheap"]},
+            {"paths": ["b.py"], "seconds": 900, "run": ["echo huge"]},
+        ],
+        "default": [], "unmapped": "ignore",
+    }
+    root = _repo(tmp_path, vmap)
+    (root / "a.py").write_text("x", encoding="utf-8")
+    (root / "b.py").write_text("y", encoding="utf-8")
+    first = _run(flavour, root)
+    assert first.returncode == 0, first.stderr
+    (root / ".crew" / ".verify-gate.record.json").write_text("[]", encoding="utf-8")
+    (root / ".crew" / ".verify-gate.timings.json").write_text("[]", encoding="utf-8")
+    second = _run(flavour, root)
+    assert "SKIPPED, not re-run" not in second.stderr, (
+        "a non-dict-but-valid-JSON cache ([]) still skipped via the "
+        "fingerprint. " + second.stderr
+    )
+    assert "permanently over budget" in second.stderr, (
+        "the chronic notice did not reappear after a []-corrupted cache "
+        "re-run. " + second.stderr
+    )
+
+
+def test_19_price_records_rc77_as_skip_with_no_seconds(tmp_path):
+    """(19, round 2 FIX verify_price.py rc 77) --price on a rule whose
+    command exits 77 must record SKIP and write no `seconds` at all - not
+    price a command that never actually ran, which would underprice the
+    real cost once the environment IS present."""
+    vmap = {
+        "version": 1,
+        "rules": [{"paths": ["a.py"], "run": ["exit 77"]}],
+        "default": [], "unmapped": "ignore",
+    }
+    target = tmp_path / "price_77.json"
+    target.write_text(json.dumps(vmap), encoding="utf-8")
+    priced = subprocess.run([_PY, _PRICE_PY, str(target)],
+                            capture_output=True, text=True, check=False)
+    assert priced.returncode == 0, priced.stderr
+    assert "SKIP" in priced.stdout, priced.stdout
+    assert "77" in priced.stdout, priced.stdout
+    assert "seconds" not in json.loads(target.read_text(encoding="utf-8"))["rules"][0]
+
+
+def test_20_price_pins_declared_env_and_strips_undeclared_pinned_vars(tmp_path):
+    """(20, round 2 FIX verify_price.py env pinning) --price must run under
+    the same env pinning the gates use: the caller's ENV=prod must NOT leak
+    into a rule declaring ENV=test (the command must see "test"), and the
+    caller's AWS_PROFILE (not declared by the rule) must be stripped
+    entirely (the command must see it unset) rather than riding along into
+    a `seconds` measurement meant to be reusable by anyone reading the map
+    later."""
+    vmap = {
+        "version": 1,
+        "rules": [{"paths": ["a.py"], "env": {"ENV": "test"},
+                   "run": ["echo \"ENV=$ENV AWS_PROFILE=${AWS_PROFILE:-UNSET}\" > seen.txt"]}],
+        "default": [], "unmapped": "ignore",
+    }
+    target = tmp_path / "price_env.json"
+    target.write_text(json.dumps(vmap), encoding="utf-8")
+    env = dict(os.environ, ENV="prod", AWS_PROFILE="caller-profile")
+    priced = subprocess.run([_PY, _PRICE_PY, str(target)], cwd=str(tmp_path),
+                            env=env, capture_output=True, text=True, check=False)
+    assert priced.returncode == 0, priced.stderr
+    seen = (tmp_path / "seen.txt").read_text(encoding="utf-8")
+    assert "ENV=test" in seen, seen
+    assert "AWS_PROFILE=UNSET" in seen, seen
+
+
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+def test_21_two_rules_differing_only_in_env_get_separate_record_entries(
+        flavour, tmp_path):
+    """(21, round 2 FIX verify_record.py rule_key()) Two rules with
+    IDENTICAL paths and run text but DIFFERENT declared env (one chronic at
+    999s under ENV=prod, one cheap and passing under ENV=test - the exact
+    example in rule_key()'s own docstring) must hash to two DIFFERENT
+    rule_key()s. paths/run must be identical between the two here, or the
+    test proves nothing: rule_key() already differed on paths/run before
+    this fix, so two rules that merely also happen to declare different env
+    would get different keys anyway, for the wrong reason, and sabotaging
+    env out of the hash would not turn this red."""
+    vmap = {
+        "version": 1,
+        "rules": [
+            {"paths": ["a.py"], "seconds": 999, "env": {"ENV": "prod"},
+             "run": ["echo same"]},
+            {"paths": ["a.py"], "seconds": 1, "env": {"ENV": "test"},
+             "run": ["echo same"]},
+        ],
+        "default": [], "unmapped": "ignore",
+    }
+    root = _repo(tmp_path, vmap)
+    (root / "a.py").write_text("x", encoding="utf-8")
+    result = _run(flavour, root)
+    assert result.returncode == 0, result.stderr
+    rec = _record(root)
+    statuses = {v.get("status") for v in rec.get("rules", {}).values()}
+    assert "chronic" in statuses, (
+        "the chronic ENV=prod rule's record entry is missing - it was "
+        "erased by the passing ENV=test rule sharing its key despite "
+        "identical paths/run. " + json.dumps(rec)
+    )
+    assert len(rec.get("rules", {})) == 1, (
+        "expected exactly one persisted entry (the chronic rule; the "
+        "passing rule clears its own key on success) but got: "
+        + json.dumps(rec)
+    )
+
+
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+def test_22_a_missing_verify_record_refuses_to_sync_and_advances_nothing(
+        flavour, tmp_path):
+    """(22, powershell-security-hardening specialist) $syncStatus / bash's
+    SYNC_STATUS started at 0 ("success") and was only reassigned on the
+    success path, so a sync that never ran at all silently read as
+    succeeded and let both markers advance on a record never written.
+
+    verify_record.py missing (not "python hidden from PATH" literally) is
+    the trigger used here because it is the one both flavours' sync guard
+    exercises the SAME way: on .sh, python is resolved ONCE at the top of
+    the script and reused for the matcher, the env-pin lines and the sync
+    call alike, so hiding python entirely trips a wholly different, much
+    earlier guard before the matcher - or any notice - ever runs; only
+    .ps1 resolves python separately for matching vs. syncing, so "python
+    hidden" only reaches THIS code path on .ps1. Confirmed by hand against
+    both real scripts (python actually hidden from PATH on .ps1; this
+    file's own verify_record.py renamed away on .sh) before writing this
+    in. A DECLARED reach is used so classification itself needs no python
+    call and the notice reliably prints on both flavours regardless."""
+    verify_record_path = os.path.join(_ROOT, "hooks", "scripts", "verify_record.py")
+    hidden_path = verify_record_path + ".hidden-for-test"
+    vmap = {
+        "version": 1,
+        "rules": [{"paths": ["a.py"], "reach": "network", "run": ["echo remote"]}],
+        "default": [], "unmapped": "ignore",
+    }
+    root = _repo(tmp_path, vmap)
+    (root / "a.py").write_text("x", encoding="utf-8")
+    os.replace(verify_record_path, hidden_path)
+    try:
+        result = _run(flavour, root)
+    finally:
+        os.replace(hidden_path, verify_record_path)
+    assert result.returncode == 0, result.stderr
+    assert "declared reach: network" in result.stderr, result.stderr
+    assert "could not sync the record" in result.stderr, (
+        "the sentinel did not refuse when verify_record.py was missing. "
+        + result.stderr
+    )
+    assert not (root / ".crew" / ".verify-verified-at").exists(), (
+        "the marker advanced despite the sync being refused. " + result.stderr
+    )
+    assert not (root / ".crew" / ".verify-gate.fingerprint").exists(), (
+        "the fingerprint was written despite the sync being refused. "
+        + result.stderr
     )

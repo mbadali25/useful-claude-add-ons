@@ -293,9 +293,20 @@ if ($All) {
   # the same fix in verify-gate.sh, where the long rationale lives. Two
   # more sources close it: `--diff-filter=D` against the index for a
   # STAGED deletion, plain `diff --name-only HEAD` for an UNSTAGED one.
+  #
+  # A STAGED RENAME is separate again: default rename detection pairs
+  # `old` into an R status, so --diff-filter=D never reports it either -
+  # the twin of the same fix in verify-gate.sh. `--name-status -M
+  # --diff-filter=R` names both columns per rename (status, old, new);
+  # split each line on tab and take columns 1 and 2.
   $changed += (git -c core.quotePath=false ls-files 2>$null)
   $changed += (git -c core.quotePath=false diff --name-only --cached --diff-filter=D 2>$null)
   $changed += (git -c core.quotePath=false diff --name-only HEAD 2>$null)
+  $renameLines = (git -c core.quotePath=false diff --name-status --cached -M --diff-filter=R 2>$null)
+  foreach ($line in @($renameLines)) {
+    $cols = $line -split "`t"
+    if ($cols.Count -ge 3) { $changed += $cols[1]; $changed += $cols[2] }
+  }
   $changed += (git -c core.quotePath=false ls-files --others --exclude-standard 2>$null)
 } else {
   $changed += (git -c core.quotePath=false diff --name-only $base 2>$null)
@@ -718,57 +729,27 @@ function Test-CrewSeconds($Value) {
 # into "local", which is the safe-looking value TheSelectSource's SSM-over-
 # an-inherited-ENV case proved is not actually safe.
 $stopMode = -not $All
-# WORD-BOUNDARY, not substring - the twin of the same fix in verify-gate.sh.
-# "ssm" as a bare substring matched inside "echo assessment".
-$reachVerbs = @("ssm", "ssh", "curl", "aws", "az", "gh", "psql", "mysql")
-$reachRegex = [regex]("\b(" + (($reachVerbs | ForEach-Object { [regex]::Escape($_) }) -join "|") + ")\b")
-function Get-CrewLooksRemoteText([string]$Text) {
-  if (-not $Text) { return $null }
-  $m = $reachRegex.Match($Text)
-  if ($m.Success) { return $m.Groups[1].Value }
-  return $null
-}
-# ONE LEVEL of wrapper-script inspection, no recursion beyond it - the twin
-# of the same fix in verify-gate.sh, where the full rationale lives: a rule
-# naming `bash _verify/smoke.sh` with no `reach` was scanned only as that
-# literal string, which contains no reach verb, while smoke.sh's own BODY
-# called ssh/aws ssm freely and ran unattended on Stop.
-$wrapperInterpreters = @("bash", "sh", "python", "python3", "pwsh")
-function Get-CrewWrapperScriptPath([string]$Cmd) {
-  $parts = $Cmd -split '\s+' | Where-Object { $_ }
-  if ($parts.Count -eq 0) { return $null }
-  $head = $parts[0]
-  if ($head.StartsWith("./") -or $head.StartsWith("../")) { return $head }
-  $base = [System.IO.Path]::GetFileName($head).ToLowerInvariant()
-  if ($base.EndsWith(".exe")) { $base = $base.Substring(0, $base.Length - 4) }
-  if ($base -eq "pwsh") {
-    for ($i = 1; $i -lt $parts.Count - 1; $i++) {
-      if ($parts[$i].ToLowerInvariant() -eq "-file") { return $parts[$i + 1] }
-    }
-    return $null
+# Reach scanning is verify_record.scan_reach - ONE function, shared with
+# verify-gate.sh (which imports it in-process) and verify_price.py. Round 2
+# deleted the independent native-PowerShell copy that used to live here:
+# it scanned only ONE LEVEL into a wrapper script and, on ANY read failure
+# (`catch { $text = "" }`), silently treated the wrapper as clean - the
+# powershell-security-hardening review named that exact line. The shared
+# scanner instead follows nested wrappers (bounded: depth 3, a visited set,
+# a 256 KiB cap, a binary check, never outside the repo root) and reports
+# "could not tell" as its OWN status, never as local.
+function Get-CrewScanReach($Run, $Py, $Script, $Root) {
+  if (-not $Py -or -not (Test-Path $Script)) {
+    return @{ status = "uninspected"; detail = "the shared scanner (verify_record.py) is not reachable" }
   }
-  if ($wrapperInterpreters -contains $base) {
-    foreach ($p in $parts[1..($parts.Count - 1)]) {
-      if (-not $p.StartsWith("-")) { return $p }
-    }
+  $payload = ConvertTo-Json -Compress -InputObject ([ordered]@{ run = @($Run); root = $Root })
+  $out = ($payload | & $Py $Script scan-reach) | Out-String
+  $out = $out.Trim()
+  if (-not $out) {
+    return @{ status = "uninspected"; detail = "the shared scanner produced no output" }
   }
-  return $null
-}
-function Get-CrewLooksRemote($Run) {
-  foreach ($c in @($Run)) {
-    if ($c -isnot [string]) { continue }
-    $verb = Get-CrewLooksRemoteText $c
-    if ($verb) { return $verb }
-    $script = Get-CrewWrapperScriptPath $c
-    if ($script -and (Test-Path $script -PathType Leaf)) {
-      try {
-        $text = Get-Content -Raw -ErrorAction Stop $script
-      } catch { $text = "" }
-      $verb = Get-CrewLooksRemoteText $text
-      if ($verb) { return $verb }
-    }
-  }
-  return $null
+  $parts = $out -split "`t", 2
+  return @{ status = $parts[0]; detail = $(if ($parts.Count -gt 1) { $parts[1] } else { "" }) }
 }
 $stopExcluded = @{}   # rule index -> @{kind=...; reason=...}
 
@@ -797,8 +778,18 @@ function Get-CrewRuleKey($Rule, $Py, $Script) {
     # entry is inert; a WRONG key that happens to match a stale one is not.
     return [System.Guid]::NewGuid().ToString("N").Substring(0, 16)
   }
+  # MUST mirror every field verify_record.rule_key() hashes (paths, run,
+  # env, reach, requiresCleanTree) - Codex round 2 added env/reach/
+  # requiresCleanTree to the Python side's hash but this call still sent
+  # only paths/run, so a rule declaring any of those three hashed to a
+  # DIFFERENT key here than the one _current_rule_keys() computes reading
+  # verify.json directly in-process. The mismatch is silent: the stale-
+  # obligation prune in verify_record._sync() then deletes the entry this
+  # very turn just wrote, because its key isn't in the "valid" set. Caught
+  # by test_h_requires_clean_tree_...[ps1] going red with `rec == {"rules": {}}`.
   $blob = ConvertTo-Json -Compress -InputObject ([ordered]@{
-    paths = @($Rule.paths); run = @($Rule.run) })
+    paths = @($Rule.paths); run = @($Rule.run); env = $Rule.env
+    reach = $Rule.reach; requiresCleanTree = $Rule.requiresCleanTree })
   $out = ($blob | & $Py $Script rule-key) | Out-String
   $out = $out.Trim()
   if ($out) { return $out }
@@ -886,10 +877,13 @@ foreach ($f in $changed) {
                 $stopExcluded[$ri] = @{ kind = "reach_declared";
                   reason = "declared reach: $reach - not run on Stop, run /crew:verify --all" }
               } elseif ($null -eq $reach) {
-                $verb = Get-CrewLooksRemote $r.run
-                if ($verb) {
+                $scan = Get-CrewScanReach $r.run $matchPy $verifyRecordScript $root
+                if ($scan.status -eq "verb") {
                   $stopExcluded[$ri] = @{ kind = "reach_undeclared";
-                    reason = "undeclared reach, looks like it leaves this machine (matches '$verb') - declare ``reach`` or run /crew:verify --all" }
+                    reason = "undeclared reach, looks like it leaves this machine (matches '$($scan.detail)') - declare ``reach`` or run /crew:verify --all" }
+                } elseif ($scan.status -eq "uninspected") {
+                  $stopExcluded[$ri] = @{ kind = "reach_uninspected";
+                    reason = "undeclared reach could not be verified ($($scan.detail)) - declare ``reach`` or run /crew:verify --all" }
                 }
               }
             }
@@ -1112,7 +1106,6 @@ foreach ($ri in $ruleOrder) {
   })
 }
 $extrasObj = [ordered]@{ matched_rules = @($matchedRules) }
-$extrasJson = ConvertTo-Json -InputObject $extrasObj -Depth 10 -Compress
 
 # The largest STATED cost among the commands actually selected. Sizes the
 # lock deadline; 0 when nothing selected declared a cost, which leaves the
@@ -1259,13 +1252,21 @@ if ($failed) { exit 2 }
 
 # Per-rule record sync - the twin of the same call in verify-gate.sh. Only
 # reached on a turn where nothing FAILED (rc 77 is not a failure), so an
-# unreliable run cannot overwrite what a previous clean run recorded.
-# Best-effort in the sense that a MISSING python or verify_record.py
-# degrades exactly as before; but a sync that WAS attempted and FAILED TO
-# PERSIST is not best-effort any more - verify_record.py now exits
-# non-zero on a write failure (see its _save/_sync) and prints why.
-# $syncStatus carries that through to the decision below.
-$syncStatus = 0
+# unreliable run cannot overwrite what a previous clean run recorded. A
+# sync that WAS attempted and FAILED TO PERSIST is not best-effort -
+# verify_record.py exits non-zero on a write failure (see its _save/_sync)
+# and prints why. $syncStatus carries that through to the decision below.
+#
+# SENTINEL, NOT 0. This used to start at 0 ("success") and only get
+# reassigned inside the `$syncPy -and (Test-Path $syncScript)` guard AND
+# the surrounding try/catch - so with no python resolvable, a missing
+# verify_record.py, OR the invocation throwing, $syncStatus silently
+# stayed 0 and $fullyVerified read "sync succeeded" from a sync that never
+# ran at all. Found by the powershell-security-hardening review: hide
+# python, add a reach-excluded rule, run Stop once - the notice printed,
+# the record was never touched, and both markers advanced anyway. 99 means
+# "not yet confirmed"; only a sync that actually completed sets it to 0.
+$syncStatus = 99
 try {
   $syncPy = Resolve-CrewPython
   $syncScript = Join-Path $PSScriptRoot 'verify_record.py'
@@ -1280,8 +1281,12 @@ try {
     $global:LASTEXITCODE = 0
     $payloadJson | & $syncPy $syncScript sync 2>$null | ForEach-Object { [Console]::Error.WriteLine($_) }
     $syncStatus = $LASTEXITCODE
+  } else {
+    [Console]::Error.WriteLine("verify-gate: could not sync the record (python or verify_record.py not found); NOT advancing the marker")
   }
-} catch { }
+} catch {
+  [Console]::Error.WriteLine("verify-gate: could not sync the record ($_); NOT advancing the marker")
+}
 
 # THREE things must ALL hold before either marker may advance - the twin of
 # the same three-part guard in verify-gate.sh, where the full rationale
@@ -1308,6 +1313,13 @@ if ($fullyVerified) {
 } elseif ($syncStatus -ne 0) {
   # verify_record.py already printed why, on stderr, above.
 } elseif ($anySkipped) {
+  # DELETE the existing fingerprint, not just withhold a new one - the twin
+  # of the same fix in verify-gate.sh, where the full rationale lives: the
+  # digest covers only CHANGED paths, verify.json and config.json, never an
+  # out-of-band signal a rule's own command checks, so a rule that passed
+  # once could keep matching its OLD stored fingerprint after it started
+  # returning 77 for a reason the digest cannot see.
+  Remove-Item -Path $fpFile -Force -ErrorAction SilentlyContinue
   [Console]::Error.WriteLine("verify-gate: the verified baseline was NOT advanced - at least one command exited 77 (SKIP) and was not actually checked this turn.")
 } else {
   [Console]::Error.WriteLine("verify-gate: the verified baseline was NOT advanced - $deferredCount rule command(s) were deferred and have not been checked against this tree.")

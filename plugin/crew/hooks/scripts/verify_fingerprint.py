@@ -110,7 +110,14 @@ def _corrupt_cache(root):
             continue
         try:
             with open(full, "r", encoding="utf-8") as fh:
-                json.load(fh)
+                data = json.load(fh)
+            # STRUCTURALLY wrong is corrupt too, not just invalid JSON.
+            # `[]` parses fine - no exception - so a plain "did json.load
+            # raise" check read it as healthy. verify_record.py's own
+            # `_load` already makes this same isinstance check when READING
+            # these files; this is the reused check, not a new one.
+            if not isinstance(data, dict):
+                return True
         except (OSError, ValueError):
             return True
     return False

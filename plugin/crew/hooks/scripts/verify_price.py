@@ -11,11 +11,31 @@ Stop; this file exists specifically so that can never happen by accident.
 REACH. A rule cannot be timed here unless its reach is `local`:
   - a DECLARED `reach` of anything but `local` is SKIPPED, never run --
     "price it by hand" is the point, not a suggestion.
-  - an UNDECLARED `reach` whose command matches a reach verb (ssm, ssh,
-    `curl `, `aws `, `az `, `gh `, psql, mysql) is REFUSED outright, in both
-    directions (never priced even with --force) -- a hit with no `reach` is
-    a correctness problem in the map, not something this tool works around
-    by running the command anyway.
+  - an UNDECLARED `reach` is scanned by verify_record.scan_reach - the SAME
+    bounded, wrapper-following scanner the Stop gate uses (imported
+    in-process here, not reimplemented). A VERB match, or an UNINSPECTED
+    result (a wrapper this scan could not read), is REFUSED outright, in
+    both directions (never priced even with --force). Round 2: this used to
+    scan only the outer command STRING with a bare substring check, so
+    `bash wrapper.sh` where wrapper.sh itself called ssh passed the scan and
+    was TIMED - which means RUN - exactly the command Stop would have
+    refused. "Could not tell" is its own value here too: refusal, not a
+    warning, the same as the gate.
+
+EXIT 77 IS SKIP, same convention the gate follows (_verify/smoke.sh, GNU
+automake): "skipped, environment absent" is not a measurement of the work,
+it is a measurement of an environment that had nothing to check. Pricing it
+anyway wrote a `seconds` for a command that never actually ran, which then
+UNDERPRICES the real cost the next time the environment IS present and the
+command actually executes.
+
+ENV PINNING, shared with the gates via verify_record.pinned_env: a rule
+declaring `env` is timed under exactly those values; the five variables the
+gate always pins (ENV, AWS_PROFILE, AWS_DEFAULT_REGION, KUBECONFIG,
+TF_WORKSPACE) are otherwise unset. Without this, an operator's own
+AWS_PROFILE=prod rode straight into a `seconds` measurement meant to be
+reusable by everyone who reads the map afterward - not by the person who
+happened to run --price.
 
 NEVER WRITES 0. A rule that ran in under a second still costs 1, because 0
 reads as "free" to the Stop budget's deferral arithmetic, and free is never
@@ -29,17 +49,8 @@ import subprocess
 import sys
 import time
 
-REACH_VERBS = ["ssm", "ssh", "curl ", "aws ", "az ", "gh ", "psql", "mysql"]
-
-
-def _looks_remote(run):
-    for cmd in run or []:
-        if not isinstance(cmd, str):
-            continue
-        for verb in REACH_VERBS:
-            if verb in cmd:
-                return verb
-    return None
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import verify_record  # noqa: E402  pylint: disable=wrong-import-position
 
 
 def _bash():
@@ -54,19 +65,28 @@ def _bash():
     return None
 
 
-def _time_rule(run):
+def _time_rule(run, env):
+    """Returns (seconds_or_None, status) where status is "ok", "failed" or
+    "skip77". seconds is None for skip77 - a SKIP measures nothing."""
     bash = _bash()
     start = time.monotonic()
-    ok = True
+    status = "ok"
     for cmd in run or []:
         if bash:
-            p = subprocess.run([bash, "-c", cmd], capture_output=True, check=False)
+            p = subprocess.run([bash, "-c", cmd], capture_output=True,
+                               check=False, env=env)
         else:
-            p = subprocess.run(cmd, shell=True, capture_output=True, check=False)
-        if p.returncode != 0:
-            ok = False
+            p = subprocess.run(cmd, shell=True, capture_output=True,
+                               check=False, env=env)
+        if p.returncode == 77:
+            # A rule is priced as ONE unit; the first command to report
+            # "environment absent" makes the whole rule a SKIP, the same
+            # whole-rule contract the budget itself uses elsewhere.
+            return (None, "skip77")
+        if p.returncode != 0 and status == "ok":
+            status = "failed"
     elapsed = time.monotonic() - start
-    return max(1, math.ceil(elapsed)), ok
+    return (max(1, math.ceil(elapsed)), status)
 
 
 def main(argv):
@@ -75,6 +95,7 @@ def main(argv):
         return 2
     target = argv[1]
     force = "--force" in argv[2:]
+    repo_root = os.getcwd()
 
     try:
         with open(target, "r", encoding="utf-8") as fh:
@@ -102,10 +123,15 @@ def main(argv):
             continue
 
         if reach is None:
-            verb = _looks_remote(rule.get("run"))
-            if verb:
+            status, detail = verify_record.scan_reach(rule.get("run"), repo_root)
+            if status == "verb":
                 rows.append((i, "REFUSED",
-                             f"undeclared reach, command matches {verb!r} - "
+                             f"undeclared reach, command matches {detail!r} - "
+                             f"declare `reach` or price by hand"))
+                continue
+            if status == "uninspected":
+                rows.append((i, "REFUSED",
+                             f"undeclared reach could not be verified ({detail}) - "
                              f"declare `reach` or price by hand"))
                 continue
 
@@ -115,11 +141,20 @@ def main(argv):
                          f"(use --force to re-time)"))
             continue
 
-        secs, ok = _time_rule(rule.get("run"))
+        rule_env = verify_record.pinned_env(rule.get("env"))
+        secs, status = _time_rule(rule.get("run"), rule_env)
+        if status == "skip77":
+            # No timing written: a SKIP measures nothing, and writing one
+            # anyway would price a command that never actually ran,
+            # underpricing the real cost for the next Stop that hits it
+            # with the environment present.
+            rows.append((i, "SKIP",
+                         "rc 77 (environment absent) - no seconds written"))
+            continue
         rule["seconds"] = secs
         changed = True
-        status = "PRICED" if ok else "PRICED (a command failed - timed anyway)"
-        rows.append((i, status, f"{secs}s"))
+        row_status = "PRICED" if status == "ok" else "PRICED (a command failed - timed anyway)"
+        rows.append((i, row_status, f"{secs}s"))
 
     for i, status, detail in rows:
         print(f"rules[{i}]: {status:<8} {detail}")

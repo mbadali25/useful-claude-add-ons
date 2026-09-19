@@ -31,6 +31,7 @@ never invents a clean rule that never ran.
 import json
 import math
 import os
+import re
 import sys
 import hashlib
 
@@ -99,18 +100,253 @@ def _save(path, data):
 # other's chronic record entry. `separators=(",", ":")` fixes the byte
 # string; being the one function BOTH flavours call is what keeps it fixed.
 def rule_key(rule):
-    """A content hash of a rule's paths+run, so a persisted entry survives
-    verify.json being reordered (an index alone would not) and so an edited
-    rule starts fresh rather than inheriting a stale clean/deferred status."""
-    blob = json.dumps({"paths": rule.get("paths"), "run": rule.get("run")},
-                       sort_keys=True, separators=(",", ":"))
+    """A content hash of everything about a rule that changes what it
+    actually DOES, so a persisted entry survives verify.json being
+    reordered (an index alone would not) and so an edited rule starts fresh
+    rather than inheriting a stale clean/deferred status.
+
+    `env`, `reach` and `requiresCleanTree` are hashed alongside `paths`/
+    `run` - Codex round 2: two rules with identical paths/run but different
+    `env` (ENV=prod, seconds=999 chronic; ENV=test, seconds=1, passes) used
+    to hash to the SAME key (env was not part of it), so the passing test
+    rule's clean result overwrote the chronic prod rule's record entry -
+    the chronic obligation vanished from a run that never actually checked
+    prod at all. `env` is re-serialised with its own keys sorted (a dict is
+    unordered) rather than trusted to arrive pre-sorted.
+    """
+    env = rule.get("env")
+    env_sorted = ({k: env[k] for k in sorted(env)}
+                  if isinstance(env, dict) else None)
+    blob = json.dumps({
+        "paths": rule.get("paths"),
+        "run": rule.get("run"),
+        "env": env_sorted,
+        "reach": rule.get("reach"),
+        "requiresCleanTree": rule.get("requiresCleanTree"),
+    }, sort_keys=True, separators=(",", ":"))
     return hashlib.sha1(blob.encode("utf-8")).hexdigest()[:16]
 
 
+# --- env pinning, shared with --price (Codex round 2, FIX verify_price.py:63) ---
+#
+# The gates already pin these five correctly (bash export/unset, PowerShell
+# Set-Item/Remove-Item); --price ran commands with NO pinning at all, so a
+# caller's inherited ENV=prod rode straight into a `seconds` measurement
+# whose whole point is to be reusable by everyone who later reads the map.
+# ONE list, here, rather than a fourth copy: verify-gate.sh, verify-gate.ps1
+# and verify_price.py all read PINNED_VARS instead of naming the five again.
+PINNED_VARS = ("ENV", "AWS_PROFILE", "AWS_DEFAULT_REGION", "KUBECONFIG",
+               "TF_WORKSPACE")
+
+
+def pinned_env(rule_env, base=None):
+    """The environment `--price` should run a rule's commands under: a copy
+    of `base` (default os.environ) with every PINNED_VARS entry removed,
+    then the rule's own declared `env` (string values only) applied on top.
+    Never touches anything outside PINNED_VARS - this is isolation for the
+    five variables a Stop gate cannot reason about if they leak in, not a
+    general env sandbox."""
+    env = dict(base if base is not None else os.environ)
+    for v in PINNED_VARS:
+        env.pop(v, None)
+    if isinstance(rule_env, dict):
+        for k, v in rule_env.items():
+            if isinstance(k, str) and isinstance(v, str) and k in PINNED_VARS:
+                env[k] = v
+    return env
+
+
+# --- reach scanning, shared by both gates and --price (Codex round 2, BLOCK
+# verify-gate.sh:841 / verify_price.py:35) ---
+#
+# ONE function. It used to be regex logic duplicated three ways - a python
+# heredoc inline in verify-gate.sh, native PowerShell in verify-gate.ps1,
+# and NOTHING at all in verify_price.py (which scanned only the outer
+# command string, so `--price` timed - and thereby RAN - a wrapper script
+# whose body called ssh, on the strength of a scan Stop itself would have
+# refused). All three now call this.
+#
+# NESTED wrappers: `bash outer.sh` where outer.sh itself runs `bash
+# inner.sh` which calls ssh used to bypass the scan entirely - the scan
+# read outer.sh's TEXT for a reach verb, found none, and stopped; it never
+# noticed outer.sh's own body was ANOTHER wrapper invocation to follow.
+# Bounded recursion fixes it: depth 3, a visited set (a script that wraps
+# itself, or two scripts that wrap each other, terminates instead of
+# looping), a 256 KiB per-file size cap, a binary check (NUL in the first
+# 8 KiB), and every resolved path must stay inside the repo root.
+#
+# "COULD NOT TELL" IS ITS OWN VALUE. A wrapper this scan cannot read -
+# missing, too large, binary, outside the repo, or past the depth limit -
+# is UNINSPECTED, not local. Reading it as local would be exactly this
+# repo's named recurring bug (an unknown collapsing into the safe-looking
+# value) wearing a new hat: a script nobody can prove is safe is not the
+# same claim as a script proven harmless.
+REACH_VERBS = ("ssm", "ssh", "curl", "aws", "az", "gh", "psql", "mysql")
+_REACH_RE = re.compile(r"\b(" + "|".join(re.escape(v) for v in REACH_VERBS) + r")\b")
+_WRAPPER_INTERPRETERS = ("bash", "sh", "python", "python3", "pwsh")
+REACH_SCAN_MAX_DEPTH = 3
+REACH_SCAN_MAX_BYTES = 256 * 1024
+
+
+def _looks_remote_text(text):
+    if not text:
+        return None
+    m = _REACH_RE.search(text)
+    return m.group(1) if m else None
+
+
+def _wrapper_script_path(cmd):
+    """The script FILE a single command line directly invokes - `bash x.sh`,
+    `sh x`, `./x`, `pwsh -File x.ps1`, `python(3) x.py` - or None. One
+    token, the interpreter's own first positional argument (or the bare
+    ./x form), not a subcommand-taking tool like npx or terraform."""
+    parts = cmd.split()
+    if not parts:
+        return None
+    head = parts[0]
+    if head.startswith("./") or head.startswith("../"):
+        return head
+    base = os.path.basename(head).lower()
+    if base.endswith(".exe"):
+        base = base[:-4]
+    if base == "pwsh":
+        for i in range(1, len(parts) - 1):
+            if parts[i].lower() == "-file":
+                return parts[i + 1]
+        return None
+    if base in _WRAPPER_INTERPRETERS:
+        for p in parts[1:]:
+            if p == "-c":
+                # bash/sh/python(3) all use -c for INLINE code, not a
+                # script file - `python -c "raise SystemExit(1)"` split()s
+                # to ['python', '-c', '"raise', 'SystemExit(1)"'], and
+                # without this check the first non-flag token ('"raise')
+                # was returned as a "wrapper script", which then failed to
+                # resolve inside the repo and forced the whole rule to
+                # reach_uninspected - silently excluding it from Stop
+                # entirely. There is no file to follow here; the inline
+                # code is already covered by the verb scan over the whole
+                # command string, above this function's caller.
+                return None
+            if not p.startswith("-"):
+                return p
+    return None
+
+
+def _wrapper_paths_in_text(text):
+    """Every wrapper-script invocation found on any LINE of `text` - used
+    both for a single command string (one line) and for a wrapper script's
+    own full content (many), so a script that itself calls another wrapper
+    is followed."""
+    paths = []
+    for line in (text or "").splitlines():
+        p = _wrapper_script_path(line.strip())
+        if p:
+            paths.append(p)
+    return paths
+
+
+def _resolve_within_root(path, repo_root):
+    """Absolute, symlink-resolved path, or None if it is not a real file
+    inside repo_root. `os.path.realpath` on both sides so a symlink cannot
+    be used to point the scan at a file outside the repository."""
+    candidate = path if os.path.isabs(path) else os.path.join(repo_root, path)
+    real = os.path.realpath(candidate)
+    root_real = os.path.realpath(repo_root)
+    if real != root_real and not real.startswith(root_real + os.sep):
+        return None
+    return real
+
+
+def _read_bounded(path):
+    """(True, text) or (False, reason). Never raises."""
+    try:
+        if not os.path.isfile(path):
+            return (False, "missing")
+        size = os.path.getsize(path)
+        if size > REACH_SCAN_MAX_BYTES:
+            return (False, f"too large ({size}B > {REACH_SCAN_MAX_BYTES}B cap)")
+        with open(path, "rb") as fh:
+            raw = fh.read()
+    except OSError as e:
+        return (False, f"unreadable ({e})")
+    if b"\x00" in raw[:8192]:
+        return (False, "binary")
+    return (True, raw.decode("utf-8", errors="replace"))
+
+
+def scan_reach(run, repo_root):
+    """Scan a rule's `run` commands for reach verbs, following wrapper
+    scripts up to REACH_SCAN_MAX_DEPTH. Returns (status, detail):
+
+      "verb"         - detail is the matched reach verb.
+      "uninspected"  - detail is why the scan could not finish (a wrapper
+                        was missing, too large, binary, outside the repo,
+                        or the depth limit was hit while more wrappers were
+                        still queued). NEVER read as "local".
+      "clean"        - detail is None: every command and every wrapper it
+                        reaches (within the bound) was actually read and
+                        named nothing.
+    """
+    visited = set()
+
+    def scan(text, depth):
+        verb = _looks_remote_text(text)
+        if verb:
+            return ("verb", verb)
+        wrapper_paths = _wrapper_paths_in_text(text)
+        if not wrapper_paths:
+            return ("clean", None)
+        if depth >= REACH_SCAN_MAX_DEPTH:
+            return ("uninspected",
+                    f"depth limit ({REACH_SCAN_MAX_DEPTH}) reached following a wrapper script")
+        for wp in wrapper_paths:
+            real = _resolve_within_root(wp, repo_root)
+            if real is None:
+                return ("uninspected",
+                        f"wrapper script {wp!r} resolves outside the repository")
+            if real in visited:
+                continue
+            visited.add(real)
+            ok, payload = _read_bounded(real)
+            if not ok:
+                return ("uninspected",
+                        f"wrapper script {wp!r} could not be read ({payload})")
+            result = scan(payload, depth + 1)
+            if result[0] != "clean":
+                return result
+        return ("clean", None)
+
+    for cmd in run or []:
+        if not isinstance(cmd, str):
+            continue
+        result = scan(cmd, 0)
+        if result[0] != "clean":
+            return result
+    return ("clean", None)
+
+
+def cmd_scan_reach():
+    """CLI entry for verify-gate.ps1: reads {"run": [...], "root": "..."}
+    from stdin, prints `status\\tdetail` (detail empty for "clean").
+    verify-gate.sh and verify_price.py never call this - both already run
+    inside python and import scan_reach directly."""
+    try:
+        payload = json.load(sys.stdin)
+    except (OSError, ValueError):
+        payload = {}
+    run = payload.get("run") if isinstance(payload, dict) else None
+    root = payload.get("root") if isinstance(payload, dict) else None
+    status, detail = scan_reach(run or [], root or os.getcwd())
+    print(f"{status}\t{detail or ''}")
+
+
 def cmd_rule_key():
-    """CLI entry for verify-gate.ps1: reads {"paths":[...],"run":[...]}
-    from stdin, prints the canonical key. verify-gate.sh never calls this -
-    it imports rule_key directly, since it already runs inside python."""
+    """CLI entry for verify-gate.ps1: reads a JSON object from stdin with
+    the same fields rule_key() hashes (paths, run, env, reach,
+    requiresCleanTree - extra keys are ignored), prints the canonical key.
+    verify-gate.sh never calls this - it imports rule_key directly, since
+    it already runs inside python."""
     try:
         rule = json.load(sys.stdin)
     except (OSError, ValueError):
@@ -131,16 +367,18 @@ REASON_TEXT = {
                         "run /crew:verify --all"),
     "reach_undeclared": ("undeclared reach, looks like it leaves this "
                           "machine - declare `reach` or run /crew:verify --all"),
+    "reach_uninspected": ("undeclared reach could not be verified - "
+                           "declare `reach` or run /crew:verify --all"),
     "clean_tree_required": ("requires a clean working tree - not run on "
                              "Stop, run /crew:verify --all"),
 }
 
 # Kinds a matched rule can be classified as that mean "never ran this turn
 # by construction" -- see cmd_sync's docstring. requiresCleanTree shares this
-# set with the two reach kinds and chronic: all four are decided BEFORE the
-# rule ever runs, so all four persist and get reported the same way.
+# set with the two reach kinds and chronic: all five are decided BEFORE the
+# rule ever runs, so all five persist and get reported the same way.
 _NEVER_RAN_KINDS = ("chronic", "reach_declared", "reach_undeclared",
-                    "clean_tree_required")
+                    "reach_uninspected", "clean_tree_required")
 
 
 def cmd_sync():
@@ -332,7 +570,7 @@ def cmd_timings_get():
 
 
 def main(argv):
-    usage = "usage: verify_record.py sync|report|timings-get|rule-key"
+    usage = "usage: verify_record.py sync|report|timings-get|rule-key|scan-reach"
     if len(argv) < 2:
         print(usage, file=sys.stderr)
         return 2
@@ -348,6 +586,8 @@ def main(argv):
         cmd_timings_get()
     elif cmd == "rule-key":
         cmd_rule_key()
+    elif cmd == "scan-reach":
+        cmd_scan_reach()
     else:
         print(usage, file=sys.stderr)
         return 2

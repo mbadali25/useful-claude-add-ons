@@ -221,9 +221,22 @@ if [ "${1:-}" = "--all" ]; then
   # catches an UNSTAGED one (`rm a.py` with no `git add`). `matches()`
   # below does not care whether a changed path still exists on disk - a
   # rule maps a PATH, and a path that used to match still does.
+  #
+  # A STAGED RENAME is a separate hole from a staged delete: `git mv old
+  # new` (or `mv` + `git add`) stages both halves in the index, and
+  # DEFAULT rename detection means `--diff-filter=D` never reports `old` at
+  # all - it is paired into an R status instead, invisible to the D-only
+  # scan above. Measured: `old.txt` mapped to a failing rule, `git mv
+  # old.txt new.txt`, `--diff-filter=D --cached` returned NOTHING even
+  # though old.txt is gone from ls-files. `--name-status -M --diff-filter=R`
+  # names both columns (old path, new path) per rename; `cut -f2-` drops
+  # the leading R### status column and `tr '\t' '\n'` splits the remaining
+  # two paths onto their own lines, matching CHANGED's one-path-per-line
+  # shape.
   CHANGED=$(git -c core.quotePath=false ls-files 2>/dev/null; \
             git -c core.quotePath=false diff --name-only --cached --diff-filter=D 2>/dev/null; \
             git -c core.quotePath=false diff --name-only HEAD 2>/dev/null; \
+            git -c core.quotePath=false diff --name-status --cached -M --diff-filter=R 2>/dev/null | cut -f2- | tr '\t' '\n'; \
             git -c core.quotePath=false ls-files --others --exclude-standard 2>/dev/null)
 else
   CHANGED=$(git -c core.quotePath=false diff --name-only "$BASE" 2>/dev/null; git -c core.quotePath=false ls-files --others --exclude-standard 2>/dev/null)
@@ -790,59 +803,17 @@ def note_cost(cmd, rule):
 # about why. An undeclared rule that matches nothing stays `local`, so an
 # ordinary repo with no remote commands is unaffected.
 STOP_MODE = budget is not None
-# WORD-BOUNDARY, not substring. "ssm" as a bare substring matched inside
-# "echo assessment" -- a rule with nothing to do with SSM was permanently
-# deferred on Stop because its own description happened to contain the
-# letters s-s-m in the middle of an unrelated word.
-REACH_VERBS = ["ssm", "ssh", "curl", "aws", "az", "gh", "psql", "mysql"]
-_REACH_RE = re.compile(r"\b(" + "|".join(re.escape(v) for v in REACH_VERBS) + r")\b")
-def _looks_remote_text(text):
-    m = _REACH_RE.search(text or "")
-    return m.group(1) if m else None
-
-# ONE LEVEL of wrapper-script inspection, no recursion beyond it. A rule
-# naming `bash _verify/smoke.sh` with no `reach` was scanned only as the
-# literal string "bash _verify/smoke.sh" -- which contains no reach verb --
-# while smoke.sh's own BODY called ssh/aws ssm freely. The outer command
-# passed the Stop-time scan and ran unattended every turn. Declaring
-# `"reach": "local"` on the rule skips this scan entirely (the caller never
-# reaches _looks_remote for a rule with a declared, non-null reach).
-_WRAPPER_INTERPRETERS = ("bash", "sh", "python", "python3", "pwsh")
-def _wrapper_script_path(cmd):
-    parts = cmd.split()
-    if not parts:
-        return None
-    head = parts[0]
-    if head.startswith("./") or head.startswith("../"):
-        return head
-    base = os.path.basename(head).lower()
-    if base.endswith(".exe"):
-        base = base[:-4]
-    if base == "pwsh":
-        for i in range(1, len(parts) - 1):
-            if parts[i].lower() == "-file":
-                return parts[i + 1]
-        return None
-    if base in _WRAPPER_INTERPRETERS:
-        for p in parts[1:]:
-            if not p.startswith("-"):
-                return p
-    return None
-
-def _looks_remote(run):
-    for c in run or []:
-        if not isinstance(c, str): continue
-        verb = _looks_remote_text(c)
-        if verb: return verb
-        script = _wrapper_script_path(c)
-        if script and os.path.isfile(script):
-            try:
-                with open(script, "r", encoding="utf-8", errors="replace") as _sf:
-                    verb = _looks_remote_text(_sf.read())
-            except OSError:
-                verb = None
-            if verb: return verb
-    return None
+# Reach scanning is verify_record.scan_reach - ONE function, shared with
+# verify-gate.ps1 (which shells out to it) and verify_price.py (which
+# imports it directly, same as here). Round 2 deleted the THREE independent
+# copies of this logic that used to exist (a python heredoc inline here, a
+# native PowerShell copy over there, and NOTHING at all in --price) and
+# made this the only one: bounded-recursion wrapper following (depth 3, a
+# visited set, a 256 KiB size cap, a binary check, never outside the repo
+# root), and "could not tell" as its own status rather than local. See
+# verify_record.py's own module docs for the nested-wrapper bug this closed
+# (`bash outer.sh` calling `bash inner.sh` calling ssh bypassed the
+# ONE-LEVEL scan this repo shipped in round 1 entirely).
 stop_excluded = {}   # rule index -> (kind, reason) for a rule Stop will not run
 
 # --- measure-and-cache --------------------------------------------------
@@ -941,11 +912,16 @@ for f in changed:
                             stop_excluded[ri] = ("reach_declared",
                                 "declared reach: %s - not run on Stop, run /crew:verify --all" % reach)
                         elif reach is None:
-                            verb = _looks_remote(r.get("run"))
-                            if verb:
+                            _status, _detail = (_vr.scan_reach(r.get("run"), os.getcwd())
+                                                 if _vr is not None else ("uninspected", "the shared scanner (verify_record.py) is not importable"))
+                            if _status == "verb":
                                 stop_excluded[ri] = ("reach_undeclared",
                                     "undeclared reach, looks like it leaves this machine (matches %r) - "
-                                    "declare `reach` or run /crew:verify --all" % verb)
+                                    "declare `reach` or run /crew:verify --all" % _detail)
+                            elif _status == "uninspected":
+                                stop_excluded[ri] = ("reach_uninspected",
+                                    "undeclared reach could not be verified (%s) - "
+                                    "declare `reach` or run /crew:verify --all" % _detail)
             if ri in stop_excluded:
                 continue
             r_env = {}
@@ -1369,14 +1345,20 @@ fi
 
 # Per-rule record sync. Only reached on a turn where nothing FAILED (rc 77
 # is not a failure) -- an unreliable run should not overwrite what a
-# previous clean run recorded. Best-effort in the sense that a MISSING
-# python or a missing verify_record.py degrades exactly as before (record
-# 4's acute-deferred count alone governs advance); but a sync that WAS
-# attempted and FAILED TO PERSIST is not best-effort any more -- see
-# verify_record.py's _save/_sync, which now exits non-zero on a write
-# failure and prints why. SYNC_STATUS carries that through to the decision
-# below; 0 unless the sync actually ran and actually failed.
-SYNC_STATUS=0
+# previous clean run recorded. A sync that WAS attempted and FAILED TO
+# PERSIST is not best-effort -- see verify_record.py's _save/_sync, which
+# exits non-zero on a write failure and prints why. SYNC_STATUS carries
+# that through to the decision below.
+#
+# SENTINEL, NOT 0. This used to start at 0 ("success") and only get
+# reassigned INSIDE the `-n "$PY"` / `-f "$SYNC_PY"` guards -- so with no
+# python on PATH, or verify_record.py missing, SYNC_STATUS silently stayed
+# 0 and the decision below read "sync succeeded" from a sync that never
+# even RAN. Found by the powershell-security-hardening review: hide python,
+# add a reach-excluded rule, run Stop once -- the notice printed, the
+# record was never touched, and both markers advanced anyway. 99 means "not
+# yet confirmed"; only a sync that actually completed may set it to 0.
+SYNC_STATUS=99
 if [ -n "$PY" ] && [ -n "$EXTRAS" ]; then
   SYNC_PY="$FP_DIR/verify_record.py"
   if [ -f "$SYNC_PY" ]; then
@@ -1400,7 +1382,11 @@ for line in sys.stdin.read().split("\n"):
 print(json.dumps({"sha": sys.argv[2], "matched_rules": extras.get("matched_rules", []), "cmd_log": cmd_log}))
 ' "$EXTRAS" "$SYNC_SHA" <<< "$CMD_LOG" | tr -d '\r' | "$PY" "$SYNC_PY" sync >&2
     SYNC_STATUS=$?
+  else
+    echo "verify-gate: could not sync the record (verify_record.py not found at $SYNC_PY); NOT advancing the marker" >&2
   fi
+else
+  echo "verify-gate: could not sync the record (no python, or the matcher produced no record data); NOT advancing the marker" >&2
 fi
 
 # THREE things must ALL hold before either marker may advance: nothing was
@@ -1416,6 +1402,16 @@ if fully_verified && [ "$ANY_SKIPPED" -eq 0 ] && [ "$SYNC_STATUS" -eq 0 ]; then
 elif [ "$SYNC_STATUS" -ne 0 ]; then
   : # verify_record.py already printed why, on stderr, above.
 elif [ "$ANY_SKIPPED" -ne 0 ]; then
+  # DELETE the existing fingerprint, not just withhold a new one. Round 1
+  # stopped WRITING a fresh fingerprint on a SKIP turn, but left whatever
+  # was already on disk from an EARLIER clean run untouched - and the
+  # fingerprint's digest covers only CHANGED paths, verify.json and
+  # config.json, never an out-of-band signal like an environment-presence
+  # file a rule's own command checks. So a rule that passed once, then
+  # started returning 77 for a reason invisible to the digest, could still
+  # match its OLD stored fingerprint on the very next Stop and skip -
+  # reusing a "clean" recorded before the SKIP ever happened.
+  rm -f "$FP_FILE" 2>/dev/null
   echo "verify-gate: the verified baseline was NOT advanced - at least one command exited 77 (SKIP) and was not actually checked this turn." >&2
 else
   echo "verify-gate: the verified baseline was NOT advanced - $DEFERRED_COUNT rule command(s) were deferred and have not been checked against this tree." >&2
