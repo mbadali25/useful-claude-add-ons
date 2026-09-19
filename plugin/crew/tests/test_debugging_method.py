@@ -715,3 +715,156 @@ def test_find_polluter_reports_the_polluter_even_when_the_runner_could_not_execu
         "marker existing, hiding a real polluter behind a runner-failure "
         f"report.\nstdout:\n{result.stdout}"
     )
+
+
+@pytest.mark.skipif(_BASH is None, reason="needs bash")
+def test_find_polluter_refuses_a_pattern_with_more_than_one_globstar():
+    """0.19.71, Codex whole-branch finding #1 (upstream defect,
+    find-polluter.sh:55). The `find` translation understands exactly one
+    '**' -- it is matched two ways (against '**/x' for depth, and with
+    '**/' collapsed for zero depth) to cover both cases from a single
+    occurrence. A pattern with a SECOND '**' is translated wrong by both
+    variants and can silently match a narrower set than the pattern
+    implies. Fixed by refusing the pattern outright rather than guessing
+    -- a refused run is honest, a silently partial one is the bug this
+    whole script exists to catch."""
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = pathlib.Path(tmp)
+        repo = tmp_path / "repo"
+        (repo / "src" / "tests").mkdir(parents=True)
+        (repo / "src" / "tests" / "good.test.ts").write_text(
+            "// fixture\n", encoding="utf-8")
+        (repo / "src" / "pkg" / "tests").mkdir(parents=True)
+        (repo / "src" / "pkg" / "tests" / "bad.test.ts").write_text(
+            "// fixture\n", encoding="utf-8")
+
+        bin_dir = tmp_path / "bin"
+        bin_dir.mkdir()
+        _write_fake_npm(bin_dir, 0)
+
+        script = str(SKILL_DIR / "find-polluter.sh").replace("\\", "/")
+        env = dict(os.environ)
+        env["PATH"] = str(bin_dir) + os.pathsep + env.get("PATH", "")
+        result = subprocess.run(
+            [_BASH, script, ".nonexistent-pollution-marker",
+             "src/**/tests/**/*.test.ts"],
+            cwd=str(repo), capture_output=True, text=True, timeout=30,
+            stdin=subprocess.DEVNULL, env=env, check=False,
+            encoding="utf-8", errors="replace",
+        )
+
+    assert result.returncode != 0, (
+        f"find-polluter.sh exited 0 against a pattern with two '**'.\n"
+        f"stdout:\n{result.stdout}"
+    )
+    assert "UNSUPPORTED PATTERN" in result.stdout, (
+        "the double-globstar pattern was not refused.\n"
+        f"stdout:\n{result.stdout}"
+    )
+
+
+@pytest.mark.skipif(_BASH is None, reason="needs bash")
+def test_find_polluter_still_accepts_a_single_globstar():
+    """Regression companion to the double-globstar refusal above -- the
+    refusal must not widen into rejecting every pattern that merely
+    contains '**' once, which is the normal, supported case every other
+    test in this file already exercises."""
+    with tempfile.TemporaryDirectory() as tmp:
+        result = _run_find_polluter(
+            pathlib.Path(tmp), ".nonexistent-pollution-marker",
+            "src/**/*.test.ts", npm_exit=0,
+        )
+    assert result.returncode == 0, (
+        f"a single-'**' pattern was rejected.\nstdout:\n{result.stdout}"
+    )
+    assert "UNSUPPORTED PATTERN" not in result.stdout, (
+        f"a single-'**' pattern triggered the multi-globstar refusal.\n"
+        f"stdout:\n{result.stdout}"
+    )
+
+
+def _chmod_000_blocks_directory_access():
+    """Whether `chmod 000` on a directory actually stops `find` from
+    descending into it in this environment -- proved rather than assumed,
+    same rule `crew_fixtures.resolve_bash`'s docstring states for bash
+    itself. Measured on this repo's own Windows/Git Bash machine: `find`
+    still lists a file inside a chmod-000 subtree and exits 0, because
+    chmod under MSYS does not change the real NTFS access that `find`'s
+    opendir() gets. A test that assumed chmod 000 blocks access would
+    silently test nothing there rather than failing loudly."""
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = pathlib.Path(tmp)
+        blocked = tmp_path / "blocked"
+        blocked.mkdir()
+        (blocked / "marker.txt").write_text("x", encoding="utf-8")
+        os.chmod(blocked, 0o000)
+        try:
+            probe = str(tmp_path).replace("\\", "/")
+            done = subprocess.run(
+                [_BASH, "-c", f'find "{probe}" 2>/dev/null'],
+                capture_output=True, text=True, timeout=30,
+                stdin=subprocess.DEVNULL, check=False,
+                encoding="utf-8", errors="replace",
+            )
+        finally:
+            os.chmod(blocked, 0o755)
+    return "marker.txt" not in done.stdout
+
+
+@pytest.mark.skipif(_BASH is None, reason="needs bash")
+def test_find_polluter_reports_discovery_failure_instead_of_clean():
+    """0.19.71, Codex whole-branch finding #2 (upstream defect,
+    find-polluter.sh:55) -- the important one, per the review: `find … |
+    sort` inside a bare `VAR=$(...)` assignment discards find's own exit
+    status, because sort's success masks it. An unreadable subtree makes
+    find exit non-zero while still emitting the paths it COULD read, so
+    the script silently proceeded with a partial test list and could
+    report "all tests clean" over an investigation that never looked at
+    the polluter. Fixed by capturing find's status via `pipefail` and
+    refusing with DISCOVERY FAILED instead of proceeding."""
+    if not _chmod_000_blocks_directory_access():
+        pytest.skip(
+            "chmod 000 on a directory is a no-op for real access control "
+            "in this environment (measured: find still lists a file "
+            "inside a chmod-000 subtree and exits 0), so this environment "
+            "cannot reproduce a failing find via chmod. Expected on "
+            "Windows Git Bash; run this test on Linux/macOS for coverage."
+        )
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = pathlib.Path(tmp)
+        repo = tmp_path / "repo"
+        (repo / "src" / "tests").mkdir(parents=True)
+        (repo / "src" / "tests" / "good.test.ts").write_text(
+            "// fixture\n", encoding="utf-8")
+        blocked = repo / "src" / "pkg" / "tests"
+        blocked.mkdir(parents=True)
+        (blocked / "bad.test.ts").write_text("// fixture\n", encoding="utf-8")
+        os.chmod(blocked, 0o000)
+
+        bin_dir = tmp_path / "bin"
+        bin_dir.mkdir()
+        _write_fake_npm(bin_dir, 0)
+
+        script = str(SKILL_DIR / "find-polluter.sh").replace("\\", "/")
+        env = dict(os.environ)
+        env["PATH"] = str(bin_dir) + os.pathsep + env.get("PATH", "")
+        try:
+            result = subprocess.run(
+                [_BASH, script, ".nonexistent-pollution-marker",
+                 "src/**/*.test.ts"],
+                cwd=str(repo), capture_output=True, text=True, timeout=30,
+                stdin=subprocess.DEVNULL, env=env, check=False,
+                encoding="utf-8", errors="replace",
+            )
+        finally:
+            os.chmod(blocked, 0o755)
+
+    assert result.returncode != 0, (
+        f"find-polluter.sh exited 0 with an unreadable subtree in the "
+        f"search path.\nstdout:\n{result.stdout}"
+    )
+    assert "DISCOVERY FAILED" in result.stdout, (
+        "the discovery failure was not reported -- a partial test list "
+        f"from a failing find is being treated as complete.\nstdout:\n"
+        f"{result.stdout}"
+    )

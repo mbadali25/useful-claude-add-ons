@@ -3104,14 +3104,15 @@ nothing currently checks the two against each other, so this will not resurface
 on its own — `check_self_claims` has no `license` claim type, and adding one
 would be a separate change with its own argument to make.
 
-## `find-polluter.sh` has three upstream defects, unfixed there
+## `find-polluter.sh` has five upstream defects, unfixed there
 
-Filed 2026-09-18 during the 0.19.66/0.19.67 debug-command fixes (Codex,
-gpt-6-astra found all three). Crew's copy under
+Filed 2026-09-18 during the 0.19.66/0.19.67 debug-command fixes, extended
+2026-09-19 with two more (Codex, gpt-6-astra found all five, across two
+review rounds). Crew's copy under
 `plugin/crew/skills/crew-debugging/find-polluter.sh` fixed them locally; as
 far as this session checked, upstream `superpowers:systematic-debugging`
 6.3.0's `skills/systematic-debugging/find-polluter.sh` still carries all
-three, so they should be filed there rather than assumed fixed by crew's copy
+five, so they should be filed there rather than assumed fixed by crew's copy
 diverging.
 
 1. **Whitespace in a test filename splits one test into two invalid runner
@@ -3132,6 +3133,25 @@ diverging.
    candidate then hits the "already exists, skipping" branch) — either way
    no test is ever actually run, and the script still exits 0 with "all
    tests clean!".
+4. **A pattern with more than one `**` is translated wrong and can
+   silently match a narrower set than intended.** The `find` translation
+   (`find . -path "./$PATTERN" -o -path "./${PATTERN//\*\*\//}"`) only
+   understands one `**` occurrence. Reproduction: create a clean
+   `src/tests/good.test.ts` and a polluting `src/pkg/tests/bad.test.ts`;
+   run with pattern `src/**/tests/**/*.test.ts`; only `good.test.ts` runs,
+   so a real polluter under the second `**` is never even discovered.
+5. **The discovery pipeline hides `find` failures and reports incomplete
+   coverage as clean.** `find ... | sort -u` inside a bare `VAR=$(...)`
+   assignment discards `find`'s own exit status — `sort`'s success masks
+   it. Reproduction: make `find` emit one passing test path and exit 1 (an
+   unreadable subtree containing the polluter reproduces this on a real
+   filesystem; a stub `find` on PATH reproduces it portably); `sort`
+   succeeds, and the script proceeds with the partial list and exits 0
+   reporting "all tests clean" — the polluter it never looked at is never
+   found. Not reproducible via `chmod 000` on Windows Git Bash: measured,
+   `find` still descends into a chmod-000 directory there and exits 0, so
+   the regression test for this one uses a stub `find` and skips the
+   chmod-000 variant on that platform with a stated reason.
 
 Crew's fixes and their sabotage-tested regression cases are in
 `plugin/crew/skills/crew-debugging/find-polluter.sh`'s header comment and

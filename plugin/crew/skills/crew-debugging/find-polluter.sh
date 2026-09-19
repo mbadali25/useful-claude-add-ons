@@ -30,6 +30,14 @@
 #   or every candidate was skipped because the pollution check already
 #   existed before the first test), report "NO TESTS RAN" and exit
 #   non-zero instead of a false-positive clean verdict.
+# - Refuse a pattern with more than one '**' up front ("UNSUPPORTED
+#   PATTERN") instead of translating it wrong: the find translation only
+#   understands one occurrence, and a second one silently matched a
+#   narrower set than the pattern implied.
+# - Capture find's own exit status out of the `find | sort` discovery
+#   pipeline (`sort`'s success otherwise masks a failing `find`, e.g. an
+#   unreadable subtree) and refuse with "DISCOVERY FAILED" instead of
+#   proceeding with a silently incomplete test list.
 
 set -e
 
@@ -49,10 +57,43 @@ echo ""
 # Get list of test files (find . emits ./-prefixed paths, so accept the
 # pattern written with or without a leading ./)
 TEST_PATTERN="${TEST_PATTERN#./}"
+
+# The find translation below understands exactly one '**': it is matched
+# two ways (against '**/x' for arbitrary depth, and with '**/' collapsed
+# for zero depth) to cover both cases from a single occurrence. A SECOND
+# '**' cannot be translated correctly by either variant and would silently
+# match a narrower set than the pattern implies -- the exact false-clean
+# bug class this script exists to prevent. Refuse rather than guess.
+STARSTAR_COUNT=$(printf '%s' "$TEST_PATTERN" | grep -o '\*\*' | wc -l | tr -d ' ')
+if [ "$STARSTAR_COUNT" -gt 1 ]; then
+  echo "🚫 UNSUPPORTED PATTERN: more than one ** — split the search or use a single ** prefix"
+  echo "   Pattern: $TEST_PATTERN"
+  exit 1
+fi
+
 # find -path can't match '**/' against zero directory levels, so a pattern
 # like src/**/*.test.ts would skip src/top.test.ts; also try the pattern
 # with '**/' collapsed to cover files directly under the base directory.
+#
+# `set -o pipefail` + `set +e`: `find | sort` inside a bare `VAR=$(...)`
+# assignment discards find's own exit status -- sort's success masks it,
+# so an unreadable subtree (find exits 1) silently trims the test list and
+# the script can report "all tests clean" over an incomplete run. pipefail
+# makes the pipeline's exit status the first non-zero of find/sort rather
+# than sort's; `set +e` stops `set -e` from aborting the script here
+# before the custom DISCOVERY FAILED message below can print.
+set +e
+set -o pipefail
 TEST_FILES=$(find . \( -path "./$TEST_PATTERN" -o -path "./${TEST_PATTERN//\*\*\//}" \) | sort -u)
+FIND_STATUS=$?
+set +o pipefail
+set -e
+if [ "$FIND_STATUS" -ne 0 ]; then
+  echo ""
+  echo "🚫 DISCOVERY FAILED (find exit $FIND_STATUS) — test list is incomplete, cannot conclude clean"
+  exit 1
+fi
+
 if [ -z "$TEST_FILES" ]; then
   TOTAL=0
 else
