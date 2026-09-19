@@ -6,6 +6,14 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Changed
 
+- **`crew` 0.19.64: `scope_report.py` passes the repo's own pylint gate.** No
+  behaviour change; all five report branches re-verified identical. Six
+  `C0209` findings converted to f-strings. The bump exists because a lint-only
+  edit is still a content change: `claude plugin update` compares the declared
+  version, so an installed `0.19.63` would never receive it. The gate caught
+  the missing bump on the commit after the fix, which is the drift check doing
+  exactly what root `CLAUDE.md` describes.
+
 - **`crew` 0.19.63: the code map reaches the reviewer that actually runs, and
   the gate reports scope.** 0.19.61 taught `qa-reviewer.md` to read the
   codemap, but `qa-reviewer` is the FALLBACK reviewer: `/crew:review` tries
