@@ -60,5 +60,13 @@ PY=$(_resolve_role_write_python) || {
   echo "role-write-guard: no usable python - cannot judge this write, allowing it unjudged." >&2
   exit 0
 }
-printf '%s' "$INPUT" | "$PY" "$DIR/role_write_guard.py"
+# PYTHONUTF8=1 / PYTHONIOENCODING=utf-8 in the CHILD's environment only --
+# defense in depth alongside role_write_guard.py's own `sys.stdin.buffer`
+# read (which does not depend on either), and the actual fix for that
+# script's stdout/stderr writes of a non-ASCII path, which DO depend on the
+# interpreter's text-mode default. Reported 2026-09-19 against the .ps1
+# twin, where a caller's environment explicitly unsetting these could still
+# reach python; set here too so neither flavour depends on the CALLER never
+# having touched them.
+printf '%s' "$INPUT" | PYTHONUTF8=1 PYTHONIOENCODING=utf-8 "$PY" "$DIR/role_write_guard.py"
 exit $?

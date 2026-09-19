@@ -381,6 +381,70 @@ All notable changes to this repository are documented here. Format follows [Keep
   `tests/test_role_write_guard.py` grew to 70 cases; PSScriptAnalyzer
   1.25.0 reports zero findings both before and after.
 
+  A fourth review round found 7 BLOCK + 2 FIX, all in one further commit,
+  same version. **The five config-corruption findings are one rule**: new
+  `crew_config.layer_state(path)` classifies ONE config file as `"absent"`
+  / `"ok"` / `"corrupt"`, used for BOTH the repo layer and the machine-
+  global one. `"corrupt"` now also covers a DIRECTORY at the config path
+  (previously read as "absent" through `load_config`'s own `text is None`
+  collapse — a `.crew/config.json` directory with no global override
+  silently disabled enforcement) and an EXPLICIT `"guards": null`
+  (previously read as an unset key, because `parsed.get("guards") is not
+  None` cannot tell a missing key from a JSON `null` apart — now
+  `"guards" in parsed`). Both layers are checked and either being
+  `"corrupt"` forces `block` UNCONDITIONALLY — not only when the ratchet's
+  own answer happens to be `off`, which is the gap the round-3 fix left
+  open: a corrupt repo config with a VALID, non-`off` global policy (say
+  `report`) resolved to `report` through the ordinary ratchet, silently
+  downgrading a repo that used to say `block` to a policy that never
+  refuses anything, since the round-3 check only intervened when the
+  ratchet's OWN answer was already `off`. **BLOCK:** `role-write-
+  guard.ps1` forced UTF-8 encoding on the pipe INTO python, but not on
+  python's OWN decoding of it — `PYTHONUTF8=0` in the caller's
+  environment (with `PYTHONIOENCODING` unset) could still make python
+  misdecode a correctly-sent byte stream. Fixed two ways: `role_write_
+  guard.py` now reads stdin as raw bytes (`sys.stdin.buffer`) and decodes
+  UTF-8 itself, independent of either environment variable; and both
+  `role-write-guard.sh`/`.ps1` also force `PYTHONUTF8=1` /
+  `PYTHONIOENCODING=utf-8` in the CHILD's environment regardless of the
+  caller's, which is what actually fixes the script's own stdout/stderr
+  writes of a non-ASCII path (verified via stderr bytes directly, since
+  `.crew/guard.log` is written with an explicit `encoding="utf-8"`
+  regardless of either variable and so cannot distinguish this fix from
+  its absence — an early draft of the regression test checked the log
+  and passed either way). **BLOCK:** the BOM strip that shipped in round 2
+  lived only in `role-write-guard.ps1`, so a BOM-prefixed payload piped
+  into `role-write-guard.sh` still read as unparseable JSON and allowed
+  unjudged — moved into `role_write_guard.py` itself (alongside the raw-
+  bytes stdin read above), shared by both shells. **BLOCK:** the
+  outermost exception handler's OWN `.crew/guard.log` logging call could
+  raise a SECOND, uncaught exception (a malformed `"cwd": [1]` reached
+  `root` unsanitised, and `os.path.join([1], ...)` inside that logging
+  call crashed with a non-blocking exit 1) — fixed by sanitising `root`
+  to a string immediately after computing it AND wrapping the handler's
+  own logging in a further try/except, verified independently: each
+  layer alone was sabotage-confirmed sufficient to prevent the crash, and
+  removing both together reproduced the original crash exactly. **FIX:**
+  a Windows extended-length `\\?\` path prefix made `os.path.relpath`
+  treat `\\?\C:\repo\...` and `C:\repo` as different mounts and raise,
+  which this hook's existing "cannot classify" fallback read as evidence
+  to refuse an otherwise legitimate, in-scope write — fixed by stripping
+  the prefix before any resolution. **FIX:** `role-write-guard.ps1`'s
+  candidate probe checked only whether a wrapper printed output, not its
+  exit status — a wrapper printing a real-looking interpreter path and
+  then exiting nonzero was accepted, while bash's `real=$(...) ||
+  continue` already rejected the same wrapper. Fixed by checking
+  `$LASTEXITCODE` after letting the candidate run to completion (NOT
+  piped through `Select-Object -First 1` first, which can close the pipe
+  before the native process reports its real exit code). `tests/
+  test_role_write_guard.py` grew to 94 cases, including a `{absent, ok
+  ×3, corrupt ×6}` matrix run directly against `layer_state` and, for the
+  global-layer end-to-end cases, `HOME`/`USERPROFILE` redirected per
+  subprocess (the only way to isolate `GLOBAL_CONFIG_PATH` for a
+  subprocess test — `monkeypatch.setattr` only rebinds the attribute in
+  the pytest process itself). All 9 fixes sabotage-tested individually
+  and reverted to sha256-verified byte-identical files before committing.
+
 - **`crew` 0.19.79: a debugging method, and the routing that dispatches it.**
   Crew shipped 27 commands and 19 skills and not one of them was about finding
   a cause: `grep -cil 'debug\|root cause'` over `commands/` and `skills/`

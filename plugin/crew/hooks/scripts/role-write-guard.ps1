@@ -51,9 +51,26 @@ function Resolve-CrewPython {
     if (-not $cmd -or $cmd.CommandType -ne 'Application' -or -not $cmd.Source) { continue }
     if ($cmd.Source -match 'WindowsApps') { continue }
     $real = $null
+    $global:LASTEXITCODE = $null
     try {
-      $real = & $cmd.Source -c 'import sys; print(sys.executable)' 2>$null |
-        Select-Object -First 1
+      # Captured WHOLE, not piped through `Select-Object -First 1` --
+      # that cmdlet can stop reading (and signal the pipeline to close)
+      # as soon as it has one object, which races the native process's
+      # own exit and can leave `$LASTEXITCODE` reflecting an early
+      # termination rather than the candidate's real exit status. Letting
+      # the candidate run to completion first is what makes the exit-code
+      # check below trustworthy.
+      $output = & $cmd.Source -c 'import sys; print(sys.executable)' 2>$null
+      # NOT just "did it print something" -- a wrapper that prints a
+      # plausible interpreter path and then exits nonzero must be
+      # rejected too, matching role-write-guard.sh's own
+      # `real=$(...) || continue`, which checks the candidate's exit
+      # status. Reported 2026-09-19: this check was absent, so a
+      # candidate bash correctly rejected (nonzero exit) was still
+      # ACCEPTED here on output alone.
+      if ($LASTEXITCODE -eq 0 -and $output) {
+        $real = @($output)[0]
+      }
     } catch {
       $real = $null
     }
@@ -156,11 +173,24 @@ function Get-FallbackRole {
 # mangling the read above just avoided.
 $prevConsoleEncoding = [Console]::OutputEncoding
 $prevOutputEncodingVar = $OutputEncoding
+$prevPythonUtf8 = $env:PYTHONUTF8
+$prevPythonIoEncoding = $env:PYTHONIOENCODING
 $exitCode = $null
 $launchFailure = $null
 try {
   [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
   $OutputEncoding = New-Object System.Text.UTF8Encoding($false)
+  # Force these in the CHILD's environment regardless of what the CALLER's
+  # environment already set -- reported 2026-09-19: a caller that
+  # explicitly set PYTHONUTF8=0 and left PYTHONIOENCODING unset could
+  # still reach python with a correctly-UTF8-encoded pipe (the encoding
+  # fix immediately above) and have PYTHON'S OWN decoding of it go wrong
+  # regardless, since `sys.stdin.read()`'s text-mode decoding depends on
+  # these. role_write_guard.py's `sys.stdin.buffer` read no longer
+  # depends on them for INPUT either way, but its stdout/stderr writes of
+  # a non-ASCII path still do, so this stays load-bearing for those.
+  $env:PYTHONUTF8 = '1'
+  $env:PYTHONIOENCODING = 'utf-8'
   $global:LASTEXITCODE = $null
   $raw | & $py $scriptPath
   $exitCode = $LASTEXITCODE
@@ -169,6 +199,8 @@ try {
 } finally {
   [Console]::OutputEncoding = $prevConsoleEncoding
   $OutputEncoding = $prevOutputEncodingVar
+  $env:PYTHONUTF8 = $prevPythonUtf8
+  $env:PYTHONIOENCODING = $prevPythonIoEncoding
 }
 
 if ($null -eq $exitCode) {

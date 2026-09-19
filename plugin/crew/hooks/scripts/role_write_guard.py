@@ -76,19 +76,31 @@ carrying the ORIGINAL prefixed value rather than a stripped one.
   * `off` *(default)* -- this script exits 0 immediately, before reading
     the policy table at all. Nothing is refused, nothing is logged. Every
     repo that has never set the key is here; see `crew_guards.ROLE_WRITE_DEFAULT`
-    for why the default is not the floor. **Exception:** if `.crew/config.json`
-    EXISTS but does not parse into the shape this key needs (see
-    `crew_config.repo_config_is_corrupt`), `off` is NOT trusted -- the
-    policy is forced to `block` instead, because a repo that once armed this
-    guard and now has a corrupted config file is not the same fact as a repo
-    that never armed it, and CLAUDE.md's "unknown collapsing into the
-    safe-looking value" is exactly this case if left alone. Reported and
-    fixed 2026-09-19.
+    for why the default is not the floor.
   * `report` -- every decision (in-scope AND out-of-scope) is allowed, and
     every decision is appended to `.crew/guard.log`.
   * `block` -- an out-of-scope write is refused (exit 2, message on
     stderr naming the role, the path and the permitted set); an in-scope
     write is allowed. Both are logged.
+
+**Exception, over BOTH layers, and UNCONDITIONAL:** if EITHER the repo
+config (`.crew/config.json`) or the machine-global one is present but does
+not parse into the shape this key needs (see `crew_config.layer_state`),
+the effective policy is forced to `block` regardless of what the ratchet
+already computed from the OTHER, surviving layer. A repo or machine that
+once armed this guard and now has a corrupted config file is not the same
+fact as one that never armed it, and CLAUDE.md's "unknown collapsing into
+the safe-looking value" is exactly this case if left alone. Reported in
+three rounds, 2026-09-19: (1) a corrupt repo config with no global override
+resolved to `off`; (2) a `.crew/config.json` that is a DIRECTORY read as
+"absent", and an explicit `"guards": null` read as an unset key, both
+through the first fix's own blind spots; (3) a corrupt repo config with a
+VALID, non-`off` global policy (say `report`) resolved to THAT value
+through the ordinary ratchet, because the first fix only intervened when
+the ratchet's own answer was `off` -- so a repo that used to say `block`
+and got corrupted silently downgraded to `report`, which never blocks
+anything, instead of the floor. `layer_state` and this unconditional check
+close all three the same way.
 
 ## Symlinks and junctions
 
@@ -127,11 +139,33 @@ Never lets an unexpected shape reach `sys.exit` as a bare traceback, which
 `PreToolUse` would show as a non-blocking failure (any exit code other than
 0 or 2 is NOT a block) -- an accident that ALLOWS a write is worse than a
 correct block, for a role this table already knows is restricted. A JSON
-array or scalar at the top level, or a non-string `file_path`, is degraded
-to "cannot classify" rather than crashing; an exception this file did not
-anticipate is caught at the outermost level of `main` and, for `pm` or a
-`_DENY_ROLES` member, still exits 2 rather than falling through to an
-accidental allow.
+array or scalar at the top level, a non-string `file_path`, or a non-string
+`cwd` (which would otherwise reach `root`, and then every filesystem call
+below it, including this file's OWN outermost exception handler's logging
+call) is degraded to "cannot classify" / `"."` rather than crashing; an
+exception this file did not anticipate is caught at the outermost level of
+`main`, whose OWN logging is wrapped in a further try/except so IT cannot
+raise a second time, and for `pm` or a `_DENY_ROLES` member still exits 2
+rather than falling through to an accidental allow. Reported and fixed
+2026-09-19.
+
+Stdin is read as raw bytes (`sys.stdin.buffer`) and decoded as UTF-8
+explicitly, with a leading BOM stripped, rather than via `sys.stdin.read()`
+-- which decodes using `PYTHONIOENCODING` / the interpreter's default text
+encoding, a setting this hook does not control and a caller's environment
+can leave unset or wrong regardless of what bytes role-write-guard.ps1's
+own stdin fix correctly sent. `role-write-guard.sh`/`.ps1` both also set
+`PYTHONUTF8=1` and `PYTHONIOENCODING=utf-8` in the child environment as a
+second, independent layer -- belt and braces for the input path, and the
+actual fix for this script's own stdout/stderr writes of a non-ASCII path,
+which still depend on the interpreter's text-mode default the same way
+stdin used to. Reported and fixed 2026-09-19.
+
+A `file_path` using Windows' `\\\\?\\` extended-length prefix is
+normalised (`_strip_extended_prefix`) before any resolution -- `os.path.
+relpath` otherwise treats `\\\\?\\C:\\repo\\...` and `C:\\repo` as different
+mounts and raises, which reads as "cannot classify" and incorrectly
+refuses a legitimate, in-scope write. Reported and fixed 2026-09-19.
 """
 import fnmatch
 import json
@@ -259,6 +293,28 @@ def _normalise_role(agent_type):
         rest = lowered[len(_CREW_PREFIX):].strip()
         return rest or None
     return lowered
+
+
+def _strip_extended_prefix(path):
+    """Strip Windows' `\\\\?\\` extended-length path prefix (and
+    `\\\\?\\UNC\\` -> `\\\\`) before any resolution.
+
+    `os.path.relpath` treats `\\\\?\\C:\\repo\\...` and `C:\\repo` as
+    different mounts and raises `ValueError` even when they name the SAME
+    location on disk -- and `_repo_relative`/`_real_repo_relative` already
+    turn that raise into "cannot classify", which for `pm` reads as
+    evidence to REFUSE. A tool call using the extended-length form (long
+    paths, or a caller that opts into it deliberately to bypass MAX_PATH)
+    then has a legitimate, in-scope write incorrectly blocked -- a false
+    positive, not a security gap, but still wrong. Reported 2026-09-19.
+    """
+    if not isinstance(path, str):
+        return path
+    if path.startswith("\\\\?\\UNC\\"):
+        return "\\\\" + path[8:]
+    if path.startswith("\\\\?\\"):
+        return path[4:]
+    return path
 
 
 def _repo_relative(root, file_path):
@@ -486,8 +542,42 @@ def _log_row(root, policy, decision, role, path_text, reason):
     _log(root, row)
 
 
+def _read_stdin_text():
+    """Raw stdin, decoded as UTF-8 with a leading BOM stripped, INDEPENDENT
+    of `PYTHONIOENCODING` / `PYTHONUTF8` or the OS locale's codepage.
+    Returns `(text, error)`; `error` is `None` on success, a short
+    description on failure. Never raises.
+
+    `sys.stdin.buffer` is bytes, never text, so no environment setting can
+    make this decode with the wrong codec. Reported 2026-09-19: plain
+    `sys.stdin.read()` decodes using the interpreter's default text
+    encoding, which a caller's environment can set to anything (or leave
+    unset, falling back to the OS locale) -- so even a byte stream
+    role-write-guard.ps1's own stdin fix sent correctly could still be
+    MISDECODED here, on the python side, independent of what PowerShell
+    did. Reading bytes and decoding them explicitly removes that
+    dependency. The BOM strip moves here too (BOTH shells shared one
+    Python implementation now have one, instead of role-write-guard.ps1
+    carrying its own copy the .sh never had).
+    """
+    try:
+        raw_bytes = sys.stdin.buffer.read()
+    except (OSError, ValueError) as exc:
+        return "", f"could not read stdin ({type(exc).__name__})"
+    if raw_bytes[:3] == b"\xef\xbb\xbf":
+        raw_bytes = raw_bytes[3:]
+    try:
+        return raw_bytes.decode("utf-8"), None
+    except UnicodeDecodeError:
+        return "", "stdin is not valid UTF-8"
+
+
 def main(argv=None):  # pylint: disable=unused-argument
-    raw = sys.stdin.read()
+    raw, read_error = _read_stdin_text()
+    if read_error:
+        sys.stderr.write(
+            f"role-write-guard: {read_error}; allowing the call unjudged.\n")
+        return 0
     try:
         data = json.loads(raw) if raw.strip() else {}
     except ValueError:
@@ -517,6 +607,16 @@ def main(argv=None):  # pylint: disable=unused-argument
         return 0
 
     root = os.environ.get("CLAUDE_PROJECT_DIR") or data.get("cwd") or "."
+    if not isinstance(root, str):
+        # A malformed payload (`"cwd": [1]`, `"cwd": 42`, ...) must not
+        # propagate a non-string root into every filesystem call below.
+        # Reported 2026-09-19: an earlier draft let this through, and a
+        # non-string `root` reaching `os.path.join` inside the exception
+        # handler's OWN logging call raised a SECOND, uncaught exception --
+        # see that handler's docstring for the rest of this repro.
+        # `os.environ.get` and the `"."` fallback are always strings, so
+        # only `data.get("cwd")` can be the culprit.
+        root = "."
     role = _normalise_role(data.get("agent_type"))
 
     # Everything from here on touches the filesystem (config, the target
@@ -531,17 +631,36 @@ def main(argv=None):  # pylint: disable=unused-argument
         resolved = crew_config.resolve_guard(root, "roleWrites")
         policy = resolved["effective"]
 
-        forced_by_corruption = False
-        if policy == "off":
-            if crew_config.repo_config_is_corrupt(root):
-                policy = "block"
-                forced_by_corruption = True
-            else:
-                return 0
+        # ONE rule, checked for BOTH layers -- see `crew_config.layer_state`
+        # for the full reasoning. A layer that is CORRUPT (present but
+        # unreadable as this key needs, including a directory at the
+        # config path or an explicit `"guards": null`) forces `block`
+        # UNCONDITIONALLY, regardless of what the ratchet already computed
+        # from the surviving layer. Reported 2026-09-19, as three separate
+        # findings this one rule now closes together: a directory at
+        # `.crew/config.json` read as "absent" through the first fix's
+        # `text is None` check; `{"guards": null}` read as an unset key
+        # through `parsed.get("guards") is not None`; and -- the gap the
+        # first fix's `if policy == "off"` guard could not see -- a
+        # corrupt REPO config with a VALID, non-off global policy (say
+        # `report`) resolved to that global value through the ordinary
+        # ratchet without ever reaching the corruption check at all, so a
+        # repo that used to say `block` and got corrupted read as `report`
+        # -- which never blocks anything -- instead of the floor.
+        repo_config_path = os.path.join(root, ".crew", "config.json")
+        repo_state = crew_config.layer_state(repo_config_path)
+        global_state = crew_config.layer_state(crew_config.GLOBAL_CONFIG_PATH)
+        forced_by_corruption = repo_state == "corrupt" or global_state == "corrupt"
+
+        if forced_by_corruption:
+            policy = "block"
+        elif policy == "off":
+            return 0
 
         tool_input = data.get("tool_input") or {}
         file_path = (tool_input.get("file_path")
                      if isinstance(tool_input, dict) else None)
+        file_path = _strip_extended_prefix(file_path)
         # `rel_path` is lexical, for DISPLAY only -- what the tool call
         # NAMED. `scope_path` is filesystem-resolved, and is the ONLY one
         # `classify` ever judges against: what the write would actually
@@ -553,8 +672,14 @@ def main(argv=None):  # pylint: disable=unused-argument
 
         in_scope, reason = classify(role, scope_path)
         if forced_by_corruption:
-            reason = (".crew/config.json exists but could not be parsed as "
-                       "guards.roleWrites needs; " + reason)
+            corrupt_layers = []
+            if repo_state == "corrupt":
+                corrupt_layers.append(".crew/config.json")
+            if global_state == "corrupt":
+                corrupt_layers.append("the machine-global config")
+            reason = (" and ".join(corrupt_layers)
+                       + " exists but could not be read as guards.roleWrites"
+                         " needs; " + reason)
         # Three decisions, not two. "report" is its own value rather than
         # collapsing into "allow": under `guards.roleWrites: report` an
         # out-of-scope write is let through exactly like an in-scope one,
@@ -572,8 +697,8 @@ def main(argv=None):  # pylint: disable=unused-argument
 
         if decision == "block":
             corruption_note = (
-                "  .crew/config.json exists but did not parse; failing "
-                "closed to block rather than trusting an unreadable file.\n"
+                "  a config layer exists but did not parse; failing closed "
+                "to block rather than trusting an unreadable file.\n"
                 if forced_by_corruption else "")
             sys.stderr.write(
                 f"ROLE WRITE BLOCKED: role `{role}` may not write "
@@ -587,19 +712,40 @@ def main(argv=None):  # pylint: disable=unused-argument
             return 2
         return 0
     except Exception as exc:  # pylint: disable=broad-except
-        restricted = role == _PM_ROLE or role in _DENY_ROLES
-        _log_row(root, "error",
-                  "block" if restricted else "allow",
-                  role, "-", f"internal-error:{type(exc).__name__}")
+        # The outermost safety net must never itself raise. Reported
+        # 2026-09-19: a malformed `cwd` (a JSON array) reached `root`
+        # unsanitised in an earlier draft, and THIS handler's own
+        # `_log_row(root, ...)` call raised a SECOND, uncaught `TypeError`
+        # building `.crew/guard.log`'s path from a non-string `root` --
+        # crashing the process with exit 1, which `PreToolUse` treats as
+        # non-blocking (an accidental allow, for a role -- `pm` -- this
+        # table already knows is restricted). `root` is sanitised to a
+        # string earlier now, closing that specific repro, but this
+        # handler also does not trust that as its only guard: its own
+        # logging is wrapped in its own try/except, and the fail-closed
+        # decision below is computed from `role` via `str()` only, which
+        # cannot raise for any value `_normalise_role` can produce (`None`
+        # or an already-lowercased string).
+        role_text = str(role) if role is not None else None
+        restricted = role_text == _PM_ROLE or role_text in _DENY_ROLES
+        try:
+            _log_row(root, "error",
+                      "block" if restricted else "allow",
+                      role, "-", f"internal-error:{type(exc).__name__}")
+        except Exception:  # pylint: disable=broad-except
+            pass
         if restricted:
-            sys.stderr.write(
-                f"ROLE WRITE BLOCKED: role `{role}`'s write could not be "
-                f"classified ({type(exc).__name__}); failing closed for a "
-                "restricted role rather than allowing an unverifiable "
-                "write.\n"
-                f"  Permitted for this role: {_permitted_text(role)}\n"
-                "  See CONFIG.md Section 18.\n"
-            )
+            try:
+                sys.stderr.write(
+                    f"ROLE WRITE BLOCKED: role `{role}`'s write could not be "
+                    f"classified ({type(exc).__name__}); failing closed for "
+                    "a restricted role rather than allowing an unverifiable "
+                    "write.\n"
+                    f"  Permitted for this role: {_permitted_text(role)}\n"
+                    "  See CONFIG.md Section 18.\n"
+                )
+            except Exception:  # pylint: disable=broad-except
+                pass
             return 2
         return 0
 

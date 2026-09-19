@@ -446,7 +446,7 @@ def test_corrupt_repo_config_forces_block_not_off_bash(tmp_path):
     (root / ".crew" / "config.json").write_text("{not valid json", encoding="utf-8")
     proc = _run_sh(root, "Write", str(root / "src" / "app.py"), "pm")
     assert proc.returncode == 2, proc.stdout
-    assert "could not be parsed" in proc.stderr, proc.stderr
+    assert "could not be read as guards.roleWrites needs" in proc.stderr, proc.stderr
 
 
 @needs_bash
@@ -455,7 +455,7 @@ def test_non_object_guards_block_forces_block_not_off_bash(tmp_path):
     root = crew_fixtures.make_repo(tmp_path, config={"guards": 42})
     proc = _run_sh(root, "Write", str(root / "src" / "app.py"), "pm")
     assert proc.returncode == 2, proc.stdout
-    assert "could not be parsed" in proc.stderr, proc.stderr
+    assert "could not be read as guards.roleWrites needs" in proc.stderr, proc.stderr
 
 
 @needs_bash
@@ -479,24 +479,360 @@ def test_valid_config_with_no_guards_key_is_not_corrupt_stays_off_bash(tmp_path)
     assert proc.returncode == 0, proc.stderr
 
 
-def test_repo_config_is_corrupt_directly(tmp_path):
+# --- crew_config.layer_state: the ONE rule, tested as the matrix Codex's
+# round-2 guidance specified -- {absent, ok (three roleWrites values),
+# corrupt-json, corrupt-not-object, guards-null, guards-list, guards-number,
+# guards-string} -- against a bare path, so the SAME test matrix proves the
+# function is correct for BOTH the repo layer and the global layer, which
+# is the whole point of it taking a path rather than a root.
+
+@pytest.mark.parametrize("label,body,expected", [
+    ("ok-no-guards-key", "{}", "ok"),
+    ("ok-off", json.dumps({"guards": {"roleWrites": "off"}}), "ok"),
+    ("ok-report", json.dumps({"guards": {"roleWrites": "report"}}), "ok"),
+    ("ok-block", json.dumps({"guards": {"roleWrites": "block"}}), "ok"),
+    ("corrupt-json", "{not valid json", "corrupt"),
+    ("corrupt-not-object", json.dumps([1, 2, 3]), "corrupt"),
+    ("guards-null", json.dumps({"guards": None}), "corrupt"),
+    ("guards-list", json.dumps({"guards": [1, 2]}), "corrupt"),
+    ("guards-number", json.dumps({"guards": 42}), "corrupt"),
+    ("guards-string", json.dumps({"guards": "block"}), "corrupt"),
+])
+def test_layer_state_matrix(tmp_path, label, body, expected):
+    path = tmp_path / "config.json"
+    path.write_text(body, encoding="utf-8")
+    assert crew_config.layer_state(str(path)) == expected, label
+
+
+def test_layer_state_absent():
+    """No file at all -- a path that was never written, not even the
+    parent directory."""
+    assert crew_config.layer_state(
+        r"C:\definitely\does\not\exist\config.json") == "absent"
+
+
+def test_layer_state_directory_is_corrupt(tmp_path):
+    """A directory at the config path -- PRESENT but unreadable as this
+    key needs, not "absent". Must-block repro: BLOCK 1 (crew_config.py:886)."""
+    path = tmp_path / "config.json"
+    path.mkdir()
+    assert crew_config.layer_state(str(path)) == "corrupt"
+
+
+# --- The unified rule, end to end, over BOTH layers (round-2 BLOCK 1/2/5/6) -
+#
+# `crew_state.GLOBAL_CONFIG_PATH` is computed from `os.path.expanduser("~")`
+# at IMPORT time, and a subprocess re-imports it fresh -- so isolating the
+# global layer for a subprocess-driven test means pointing HOME/USERPROFILE
+# at a scratch directory for that subprocess, the same technique
+# test_guards.py uses, NOT `monkeypatch.setattr(crew_config,
+# "GLOBAL_CONFIG_PATH", ...)`, which only rebinds the attribute in THIS
+# (pytest's own) process and has no effect on a child process at all.
+
+def _global_home(tmp_path, body_text=None, body_json=None):
+    """A fake HOME/USERPROFILE carrying (or not) a machine-global crew
+    config, for a SUBPROCESS's environment."""
+    home = tmp_path / "home"
+    (home / ".claude" / "crew").mkdir(parents=True, exist_ok=True)
+    path = home / ".claude" / "crew" / "config.json"
+    if body_text is not None:
+        path.write_text(body_text, encoding="utf-8")
+    elif body_json is not None:
+        path.write_text(json.dumps(body_json), encoding="utf-8")
+    return str(home)
+
+
+def _run_sh_with_home(root, home, tool_name, file_path, agent_type):
+    return subprocess.run(
+        [_BASH, _SH],
+        input=_write_payload(tool_name, file_path, agent_type, str(root)),
+        capture_output=True, text=True, check=False, cwd=str(root),
+        env=dict(os.environ, CLAUDE_PROJECT_DIR=str(root),
+                  HOME=home, USERPROFILE=home),
+    )
+
+
+@needs_bash
+def test_directory_at_repo_config_path_forces_block_bash(tmp_path):
+    """Must-block: BLOCK 1. `.crew/config.json` is a DIRECTORY -- present
+    but unreadable -- with no global override at all."""
+    root = crew_fixtures.make_repo(tmp_path, config=None)
+    (root / ".crew" / "config.json").mkdir()
+    home = _global_home(tmp_path)
+    proc = _run_sh_with_home(root, home, "Write",
+                              str(root / "src" / "app.py"), "pm")
+    assert proc.returncode == 2, proc.stdout
+
+
+@needs_bash
+def test_explicit_guards_null_forces_block_bash(tmp_path):
+    """Must-block: BLOCK 2. Explicit `{"guards": null}`, no global
+    override -- distinct from an absent `guards` key, which stays `off`
+    (see test_valid_config_with_no_guards_key_is_not_corrupt_stays_off_bash)."""
+    root = crew_fixtures.make_repo(tmp_path, config=None)
+    (root / ".crew" / "config.json").write_text(
+        json.dumps({"guards": None}), encoding="utf-8")
+    home = _global_home(tmp_path)
+    proc = _run_sh_with_home(root, home, "Write",
+                              str(root / "src" / "app.py"), "pm")
+    assert proc.returncode == 2, proc.stdout
+
+
+@needs_bash
+def test_corrupt_global_config_forces_block_even_with_valid_repo_bash(tmp_path):
+    """Must-block: BLOCK 5. Repo config is valid and empty (`{}`); the
+    machine-global config is present but corrupt."""
     root = crew_fixtures.make_repo(tmp_path, config={})
-    assert crew_config.repo_config_is_corrupt(str(root)) is False
+    home = _global_home(tmp_path, body_text="{not valid json")
+    proc = _run_sh_with_home(root, home, "Write",
+                              str(root / "src" / "app.py"), "pm")
+    assert proc.returncode == 2, proc.stdout
 
-    (root / ".crew" / "config.json").write_text("{broken", encoding="utf-8")
-    assert crew_config.repo_config_is_corrupt(str(root)) is True
 
+@needs_bash
+def test_corrupt_repo_config_forces_block_even_with_valid_global_report_bash(tmp_path):
+    """Must-block: BLOCK 6, the gap the FIRST corruption fix could not
+    see. Global policy is VALID at `report` (never blocks); repo config
+    previously said `block` but is now corrupt. The ordinary ratchet
+    alone would resolve to `report` from the surviving global layer --
+    must NOT: any corrupt layer forces block unconditionally."""
+    root = crew_fixtures.make_repo(
+        tmp_path, config={"guards": {"roleWrites": "block"}})
     (root / ".crew" / "config.json").write_text(
-        json.dumps({"guards": "not-an-object"}), encoding="utf-8")
-    assert crew_config.repo_config_is_corrupt(str(root)) is True
+        "{not valid json", encoding="utf-8")
+    home = _global_home(tmp_path, body_json={"guards": {"roleWrites": "report"}})
+    proc = _run_sh_with_home(root, home, "Write",
+                              str(root / "src" / "app.py"), "pm")
+    assert proc.returncode == 2, proc.stdout
 
-    (root / ".crew" / "config.json").write_text(
-        json.dumps([1, 2, 3]), encoding="utf-8")
-    assert crew_config.repo_config_is_corrupt(str(root)) is True
 
-    root2 = tmp_path / "unmanaged"
-    root2.mkdir()
-    assert crew_config.repo_config_is_corrupt(str(root2)) is False
+@needs_bash
+def test_valid_global_report_with_unset_repo_stays_report_bash(tmp_path):
+    """Must-allow twin of BLOCK 6: BOTH layers VALID (repo unset -> off,
+    global `report`) must resolve to `report` -- allowed, but logged --
+    not swept into the corruption override just because a `report` write
+    is technically "not blocked"."""
+    root = crew_fixtures.make_repo(tmp_path, config={})
+    home = _global_home(tmp_path, body_json={"guards": {"roleWrites": "report"}})
+    proc = _run_sh_with_home(root, home, "Write",
+                              str(root / "src" / "app.py"), "pm")
+    assert proc.returncode == 0, proc.stderr
+    log = (root / ".crew" / "guard.log").read_text(encoding="utf-8")
+    assert "\treport\treport\t" in log, log
+
+
+# --- BLOCK 7: the exception handler must never crash itself ---------------
+
+@needs_bash
+def test_malformed_cwd_array_does_not_crash_the_exception_handler_bash(tmp_path):
+    """Must-not-crash: `CLAUDE_PROJECT_DIR` unset, `cwd` is a JSON array.
+    An earlier draft let `root` become `[1]` unsanitised, and the
+    exception handler's OWN `.crew/guard.log` logging call then raised a
+    SECOND, uncaught `TypeError` building a path from it -- crashing with
+    a non-blocking exit 1. `root="."` now resolves via the subprocess's
+    cwd (the fixture repo), so this reaches a real decision: `pm` writing
+    `app.py` (not under any permitted prefix) must BLOCK, not crash."""
+    root = crew_fixtures.make_repo(
+        tmp_path, config={"guards": {"roleWrites": "block"}})
+    env = os.environ.copy()
+    env.pop("CLAUDE_PROJECT_DIR", None)
+    payload = json.dumps({
+        "tool_name": "Write", "agent_type": "pm", "cwd": [1],
+        "tool_input": {"file_path": "app.py"},
+    })
+    proc = subprocess.run(
+        [_BASH, _SH], input=payload, capture_output=True, text=True,
+        check=False, env=env, cwd=str(root))
+    assert "Traceback" not in proc.stderr, proc.stderr
+    assert proc.returncode == 2, (
+        "root='.' resolves via cwd to the fixture repo; pm writing 'app.py' "
+        "is out of scope and must block, not crash. stdout: " + proc.stdout
+        + " stderr: " + proc.stderr)
+
+
+# --- FIX 2: a Windows extended-length-prefix path must not false-refuse ---
+
+@needs_bash
+@pytest.mark.skipif(not sys.platform.startswith("win"),
+                     reason="\\\\?\\ extended-length paths are a Windows concept")
+def test_extended_length_prefix_path_is_normalised_and_allowed_bash(tmp_path):
+    """Must-allow: `\\\\?\\C:\\repo\\.crew\\new.py` names a target INSIDE
+    pm's scope, but the extended-length prefix made `os.path.relpath`
+    raise (a different "mount" than the plain-form root) and the hook
+    read that as "cannot classify" -- incorrectly refusing a legitimate,
+    in-scope write."""
+    root = crew_fixtures.make_repo(
+        tmp_path, config={"guards": {"roleWrites": "block"}})
+    extended = "\\\\?\\" + str(root) + "\\.crew\\new.py"
+    proc = _run_sh(root, "Write", extended, "pm")
+    assert proc.returncode == 0, proc.stderr
+
+
+# --- BLOCK 4: the BOM strip lives in Python, shared by both flavours ------
+
+@needs_bash
+def test_utf8_bom_on_stdin_does_not_bypass_bash_enforcement(tmp_path):
+    """Must-block: a leading UTF-8 BOM plus an otherwise well-formed `pm`
+    `Write` payload targeting an out-of-scope path must not read as
+    unparseable JSON and allow unjudged. `role-write-guard.sh`'s
+    `INPUT=$(cat)` was already byte-transparent -- the gap was entirely on
+    the PYTHON side, which used to trust `sys.stdin.read()` without
+    stripping a BOM first, so only role-write-guard.ps1 (which had its
+    OWN BOM strip from round 2) was protected."""
+    root = crew_fixtures.make_repo(
+        tmp_path, config={"guards": {"roleWrites": "block"}})
+    payload = json.dumps({"tool_name": "Write",
+                           "tool_input": {"file_path": str(root / "src" / "app.py")},
+                           "agent_type": "pm", "cwd": str(root)})
+    bom = b"\xef\xbb\xbf"
+    proc = subprocess.run(
+        [_BASH, _SH], input=bom + payload.encode("utf-8"),
+        capture_output=True, check=False,
+        env=dict(os.environ, CLAUDE_PROJECT_DIR=str(root)), cwd=str(root))
+    assert proc.returncode == 2, (
+        "stdout: " + proc.stdout.decode("utf-8", "replace")
+        + " stderr: " + proc.stderr.decode("utf-8", "replace"))
+
+
+@needs_bash
+def test_pythonutf8_forced_even_when_caller_env_disables_it_bash(tmp_path):
+    """Must-block, verified via STDERR BYTES -- NOT `.crew/guard.log`,
+    which `_log_row` writes with an explicit `encoding="utf-8"` regardless
+    of PYTHONUTF8/PYTHONIOENCODING and so cannot distinguish this fix from
+    its absence (an earlier draft of this test checked the log and passed
+    whether the sabotage was applied or not, for exactly that reason).
+    role_write_guard.py's stdout/stderr writes of a non-ASCII path DO
+    depend on PYTHONUTF8/PYTHONIOENCODING -- only stdin READING is now
+    environment-independent, via `sys.stdin.buffer` -- so
+    role-write-guard.sh must force both in the CHILD's environment
+    regardless of what the CALLER's environment already set."""
+    root = crew_fixtures.make_repo(
+        tmp_path, config={"guards": {"roleWrites": "block"}})
+    target = str(root / "café" / "app.py")
+    env = dict(os.environ, CLAUDE_PROJECT_DIR=str(root))
+    env["PYTHONUTF8"] = "0"
+    env.pop("PYTHONIOENCODING", None)
+    proc = subprocess.run(
+        [_BASH, _SH],
+        input=_write_payload("Write", target, "pm", str(root)).encode("utf-8"),
+        capture_output=True, check=False, env=env, cwd=str(root))
+    stderr = proc.stderr.decode("utf-8", errors="replace")
+    assert proc.returncode == 2, stderr
+    assert "café" in stderr, (
+        "the accented character in the refusal message was not written as "
+        "UTF-8 -- PYTHONUTF8/PYTHONIOENCODING were not forced in the child "
+        "environment. got: " + repr(stderr))
+
+
+# --- BLOCK 3: PYTHONUTF8/PYTHONIOENCODING forced regardless of caller env -
+
+@needs_pwsh_windows
+def test_pythonutf8_forced_even_when_caller_env_disables_it_powershell(tmp_path):
+    """Must-block: the CALLER's environment sets `PYTHONUTF8=0` and unsets
+    `PYTHONIOENCODING` -- role-write-guard.ps1 must still force both in the
+    CHILD's environment (and role_write_guard.py reads stdin as raw bytes
+    regardless either way), so a junction with an ACCENTED name escaping
+    to an in-repo-but-out-of-scope directory is still correctly resolved
+    and refused, not silently misclassified through mojibake."""
+    root = crew_fixtures.make_repo(
+        tmp_path, config={"guards": {"roleWrites": "block"}})
+    out_of_scope_dir = root / "src"
+    out_of_scope_dir.mkdir()
+    link = root / ".crew" / "caf\u00e9"
+    if not _make_junction(out_of_scope_dir, link):
+        pytest.skip("could not create a junction on this platform/user")
+
+    target = str(link / "app.py")
+    payload = json.dumps({"tool_name": "Write",
+                           "tool_input": {"file_path": target},
+                           "agent_type": "pm", "cwd": str(root)})
+    env = dict(os.environ, CLAUDE_PROJECT_DIR=str(root))
+    env["PYTHONUTF8"] = "0"
+    env.pop("PYTHONIOENCODING", None)
+    proc = subprocess.run(
+        [_PWSH, "-NoProfile", "-NonInteractive", "-File", _PS1],
+        input=payload.encode("utf-8"), capture_output=True, check=False,
+        env=env, cwd=str(root))
+    assert proc.returncode == 2, (
+        "stdout: " + proc.stdout.decode("utf-8", "replace")
+        + " stderr: " + proc.stderr.decode("utf-8", "replace"))
+
+
+@needs_pwsh_windows
+def test_pythonutf8_forced_writes_correct_utf8_stderr_powershell(tmp_path):
+    """The bash twin's exact assertion, on role-write-guard.ps1: the
+    junction-based test above proves the DECISION survives (primarily
+    via role_write_guard.py's own `sys.stdin.buffer` read, which is
+    environment-independent), but that alone does not prove
+    PYTHONUTF8/PYTHONIOENCODING are actually forced -- only the STDERR
+    BYTES prove that, since `.crew/guard.log` is written with an explicit
+    `encoding="utf-8"` regardless of either variable."""
+    root = crew_fixtures.make_repo(
+        tmp_path, config={"guards": {"roleWrites": "block"}})
+    target = str(root / "café" / "app.py")
+    payload = json.dumps({"tool_name": "Write",
+                           "tool_input": {"file_path": target},
+                           "agent_type": "pm", "cwd": str(root)})
+    env = dict(os.environ, CLAUDE_PROJECT_DIR=str(root))
+    env["PYTHONUTF8"] = "0"
+    env.pop("PYTHONIOENCODING", None)
+    proc = subprocess.run(
+        [_PWSH, "-NoProfile", "-NonInteractive", "-File", _PS1],
+        input=payload.encode("utf-8"), capture_output=True, check=False,
+        env=env, cwd=str(root))
+    stderr = proc.stderr.decode("utf-8", errors="replace")
+    assert proc.returncode == 2, stderr
+    assert "café" in stderr, (
+        "the accented character in the refusal message was not written as "
+        "UTF-8 -- PYTHONUTF8/PYTHONIOENCODING were not forced in the child "
+        "environment. got: " + repr(stderr))
+
+
+# --- FIX 1: Resolve-CrewPython must check the candidate's exit status -----
+
+@needs_pwsh_windows
+def test_candidate_nonzero_exit_status_is_rejected_powershell(tmp_path):
+    """Must resolve to NOTHING (matching bash's `|| continue`): a python3
+    wrapper that prints a real-looking interpreter path but exits 1 must
+    be rejected, not accepted just because it produced output."""
+    apps = tmp_path / "wrappers"
+    apps.mkdir()
+    wrapper = apps / "python3.cmd"
+    wrapper.write_text(
+        "@echo off\r\necho C:\\Fake\\python.exe\r\nexit /b 1\r\n",
+        encoding="ascii")
+
+    resolved = _print_python([str(apps)])
+    assert resolved == "", (
+        "a candidate that exits nonzero must be rejected even though it "
+        "printed a plausible interpreter path. got: " + resolved)
+
+
+@needs_bash
+def test_bash_already_rejects_nonzero_exit_candidate(tmp_path):
+    """The bash HALF of FIX 1's parity claim -- bash already gets this
+    right via `real=$(...) || continue`; locked in here so a future change
+    to `_resolve_role_write_python` cannot silently drop it."""
+    apps = tmp_path / "wrappers"
+    apps.mkdir()
+    wrapper = apps / "python3"
+    wrapper.write_text("#!/bin/sh\necho /fake/python\nexit 1\n",
+                        encoding="ascii", newline="\n")
+    os.chmod(wrapper, 0o755)
+
+    root = crew_fixtures.make_repo(
+        tmp_path, config={"guards": {"roleWrites": "block"}})
+    env = os.environ.copy()
+    env["PATH"] = str(apps)
+    env["CLAUDE_PROJECT_DIR"] = str(root)
+    proc = subprocess.run(
+        [_BASH, _SH],
+        input=_write_payload("Write", str(root / "src" / "app.py"), "pm", str(root)),
+        capture_output=True, text=True, check=False, env=env, cwd=str(root))
+    assert proc.returncode == 0, (
+        "no usable python resolved (the only candidate exits nonzero), so "
+        "the write must be allowed unjudged, not blocked as if a real "
+        "decision was reached. stdout: " + proc.stdout)
 
 
 # --- Scope is judged on the REAL path, not the lexical one (round-1 BLOCK,

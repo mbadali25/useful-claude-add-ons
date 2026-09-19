@@ -1413,17 +1413,36 @@ cannot inherit it: with no global override, replacing a repo's
 `pm` write application code straight through, which is CLAUDE.md's own named
 recurring bug landing on the one guard here that can least afford it.
 
-`crew_config.repo_config_is_corrupt(root)` gives `role_write_guard.py` the
-one extra bit `load_config` throws away: `.crew/config.json` ABSENT (every
-off-by-default repo that exists — stays `off`, unchanged) versus PRESENT and
-unreadable (not valid JSON, not a JSON object, or a `guards` key that is
-present and not itself an object — forces the effective policy to `block`).
-It is a narrow, second read of the same file, deliberately NOT wired into
-`load_config`, `resolve_ratcheted` or any of the other eight ratcheted keys:
-widening the collapse-detection to every guard was a bigger change than the
-one guard that needed it, for behaviour the other seven have always had on
-purpose. A malformed VALUE inside an otherwise-valid `guards` object (a
-non-string `roleWrites`, or a string naming no known policy) is still
+`crew_config.layer_state(path)` gives `role_write_guard.py` the one extra
+bit `load_config` throws away, classifying ONE config file as `"absent"`,
+`"ok"` or `"corrupt"`. `"absent"` is every off-by-default repo or machine
+that exists — stays `off`, unchanged. `"corrupt"` is present but
+unreadable as this key needs: not valid JSON, not a JSON object, or a
+`guards` key that IS PRESENT (`"guards" in parsed`, not
+`parsed.get("guards") is not None`) and is not itself an object — which
+covers an explicit `"guards": null` too, closing a gap the first draft of
+this fix had (`.get()` cannot tell an explicit `null` from a key that was
+never mentioned). A DIRECTORY at the config path is also `"corrupt"`, not
+`"absent"` — `load_config`'s own `text is None` collapse could not tell
+those two apart either, and the first draft of this fix inherited that
+same blind spot from it.
+
+`role_write_guard.py` calls `layer_state` on BOTH layers — the repo's
+`.crew/config.json` and `GLOBAL_CONFIG_PATH` — and if EITHER is
+`"corrupt"`, forces the effective policy to `block` UNCONDITIONALLY, not
+only when the ratchet's own answer happens to be `off`. That second part
+is load-bearing on its own: a corrupt repo config with a VALID,
+non-`off` global policy (say `report`) resolves to `report` through the
+ordinary ratchet — `report` never blocks anything — so a repo that used
+to say `block` and got corrupted would silently downgrade to a policy
+that never refuses, unless the corruption check runs regardless of what
+the ratchet already computed. `layer_state` is a narrow, second read of
+the config file(s), deliberately NOT wired into `load_config`,
+`resolve_ratcheted` or any of the other eight ratcheted keys: widening the
+collapse-detection to every guard was a bigger change than the one guard
+that needed it, for behaviour the other seven have always had on purpose.
+A malformed VALUE inside an otherwise-valid `guards` object (a non-string
+`roleWrites`, or a string naming no known policy) is still
 `normalise_role_writes`'s job alone, unchanged — this function's whole
 purpose is the shape `normalise_role_writes` structurally cannot see.
 

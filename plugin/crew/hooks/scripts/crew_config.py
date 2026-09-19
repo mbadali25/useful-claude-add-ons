@@ -843,58 +843,84 @@ def install_plan_for(root, name, path=None):
     return plan
 
 
-def repo_config_is_corrupt(root):
-    """True when `.crew/config.json` EXISTS but cannot be read as the shape
-    `guards.roleWrites` needs to trust an `off` answer: not valid JSON, not
-    a JSON object, or its `guards` key present and not itself an object.
+def layer_state(path):
+    """One config FILE, classified as `"absent"`, `"ok"` or `"corrupt"` --
+    the one rule every caller that needs to distinguish "nobody set this"
+    from "something here is unreadable" derives from, for EITHER config
+    layer (the repo's `.crew/config.json`, or the machine-global file at
+    `GLOBAL_CONFIG_PATH`).
 
-    Deliberately NOT the same collapse `crew_state.load_config` makes for
-    every OTHER ratcheted key. `load_config` returning `{}` for "absent,
-    malformed, or not a dict" is right for `install.policy` and the other
-    six `guards.*` keys, which have always failed OPEN on a bad config file
-    -- see `read_global_config`'s own docstring, "a broken global file must
-    look exactly like no global file at all". `guards.roleWrites` cannot
-    inherit that collapse: unlike those, it can BLOCK a tool call, and an
-    armed role-write guard going silently `off` because the file that armed
-    it got corrupted is CLAUDE.md's own named recurring bug -- "the unknown
-    collapsing into the safe-looking value" -- happening to the one guard in
-    this file that can least afford it. Reported 2026-09-19: with no global
-    override, replacing a repo's `guards.roleWrites: block` config with
-    invalid JSON (or with `{"guards": 42}`) made the effective policy `off`
-    and let `pm` write application code straight through.
+    Deliberately NOT the same collapse `crew_state.load_config` /
+    `read_global_config` make for every ratcheted key's ordinary read path
+    -- `{}` for "absent, malformed, or not a dict" is right there, because
+    those keys have always failed OPEN on a bad config file (see
+    `read_global_config`'s own docstring, "a broken global file must look
+    exactly like no global file at all"). `guards.roleWrites` cannot
+    inherit that collapse: unlike those keys, it can BLOCK a tool call, and
+    an armed role-write guard going silently permissive because the file
+    that armed it got corrupted is CLAUDE.md's own named recurring bug --
+    "the unknown collapsing into the safe-looking value" -- happening to
+    the one guard in this file that can least afford it.
 
-    So this function exists to give `role_write_guard.py` ONE extra bit
-    `load_config` throws away: whether the repo file that collapsed to `{}`
-    was genuinely ABSENT (every off-by-default repo that exists, and
-    CLAUDE.md's new-hook rule requires that to stay `off`) or PRESENT and
-    unreadable (a file that once said something, now saying nothing crew can
-    parse). The caller uses this to force `guards.roleWrites` to `block`
-    only in the second case -- never touching `load_config`,
-    `resolve_ratcheted` or any of the other eight ratcheted keys, which keep
-    their existing fail-open behaviour on a bad file exactly as before.
+    Reported in three rounds, 2026-09-19, and this function is the single
+    rule that now answers all of them instead of one bespoke check per
+    round: (1) with no global override, replacing a repo's
+    `guards.roleWrites: block` config with invalid JSON, or with
+    `{"guards": 42}`, made the effective policy resolve as if the key had
+    never been set; (2) a `.crew/config.json` that is a DIRECTORY (so it
+    cannot even be opened) read the same as "absent" through the first
+    fix's `text is None` check, because that check could not tell "no such
+    file" from "a file that exists but cannot be read at all" apart; (3)
+    `{"guards": null}` -- an EXPLICIT JSON null, not a missing key --
+    reads as `parsed.get("guards") is None` exactly like a config that
+    never mentioned `guards` at all, so the first fix's `guards is not
+    None` test let a corrupt, explicit `null` through as if it were a
+    clean, unset key.
 
-    A malformed VALUE inside an otherwise-valid `guards` object (a non-
-    string `roleWrites`, or a string that names no known policy) is NOT this
-    function's business -- `crew_guards.normalise_role_writes` already fails
-    that case to `block`, the floor, on its own; duplicating it here would
-    only be two mechanisms for one rule. This function's whole job is the
-    case `normalise_role_writes` structurally cannot see: a value it was
-    never handed because the file, or the `guards` block inside it, did not
-    parse into something `_dig` could even reach.
+    Classification, in order:
+      * `"absent"` -- nothing at `path` at all (`read_text` returns `None`
+        AND the path does not exist on disk in any form). Every repo or
+        machine that has never set `guards.roleWrites` is here, and
+        CLAUDE.md's new-hook rule requires that to stay permissive.
+      * `"corrupt"` -- `path` exists in SOME form but is not the shape this
+        key needs to trust: unreadable at all (a directory, a permissions
+        error -- `read_text` returns `None` but the path DOES exist);
+        readable but not valid JSON; valid JSON but not an object; or an
+        object whose `guards` key IS PRESENT (`"guards" in parsed`, not
+        `parsed.get("guards") is not None` -- the distinction that closes
+        the explicit-`null` gap) and is not itself an object.
+      * `"ok"` -- everything else: absent `guards` key, or a `guards`
+        object (whatever VALUE `roleWrites` holds inside it -- a malformed
+        VALUE there is `crew_guards.normalise_role_writes`'s job, not
+        this function's; duplicating it here would be two mechanisms for
+        one rule).
+
+    Never touches `load_config`, `read_global_config`, `resolve_ratcheted`
+    or any of the other eight ratcheted keys, which keep their existing
+    fail-open behaviour on a bad file exactly as before -- this is a
+    second, narrower read of the SAME file, not a change to the shared one.
     """
-    text = crew_state.read_text(os.path.join(root, ".crew", "config.json"))
+    text = crew_state.read_text(path)
     if text is None:
-        return False
+        if os.path.exists(path) or os.path.isdir(path):
+            # Present in some form (a directory, a permissions error, an
+            # embedded NUL Python rejects before touching disk) but
+            # `read_text` could not read it as text at all -- "corrupt",
+            # not "absent". `os.path.isdir` is checked separately because
+            # a directory can satisfy `os.path.exists` in every sane case,
+            # but naming both is cheaper than trusting one to imply the
+            # other on every platform this ever runs on.
+            return "corrupt"
+        return "absent"
     try:
         parsed = json.loads(text)
     except ValueError:
-        return True
+        return "corrupt"
     if not isinstance(parsed, dict):
-        return True
-    guards = parsed.get("guards")
-    if guards is not None and not isinstance(guards, dict):
-        return True
-    return False
+        return "corrupt"
+    if "guards" in parsed and not isinstance(parsed["guards"], dict):
+        return "corrupt"
+    return "ok"
 
 
 def resolve_guard(root, name, path=None):
