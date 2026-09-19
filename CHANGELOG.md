@@ -6,6 +6,15 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Fixed
 
+- **`crew` 0.19.83: the pollution check still ran after the 126/127
+  branch.** 0.19.69 moved the pollution check ahead of the ordinary-failure
+  branch but left it behind the 126/127 "RUNNER FAILED" branch, so a test
+  that touched the pollution marker and then hit a missing or
+  non-executable runner command (exit 127) was still reported as
+  `RUNNER FAILED`, hiding the polluter it had already created. The
+  pollution check in `find-polluter.sh` now runs first, before any
+  exit-code classification at all. One new sabotage-tested test.
+
 - **`crew` 0.19.82: two defects Codex found in the 0.19.67 fix itself.**
   `find-polluter.sh`'s `while read` loop over a here-string let the test
   runner inherit its stdin; a runner that reads stdin to EOF drained the

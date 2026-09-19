@@ -17,7 +17,11 @@
 #   other non-zero exit). Only the former aborts the investigation as
 #   "RUNNER FAILED"; the pollution case IS a test that exits non-zero, so a
 #   blanket "any non-zero is a runner failure" reported FOUND POLLUTER as
-#   RUNNER FAILED and aborted before the pollution check ran.
+#   RUNNER FAILED and aborted before the pollution check ran. The pollution
+#   check itself runs FIRST, before any exit-code classification at all --
+#   a marker on disk is a polluter found regardless of exit code, including
+#   126/127, so a test that pollutes and then hits a missing runner command
+#   must still be reported as FOUND POLLUTER, not RUNNER FAILED.
 # - An ordinary test failure that produced no pollution is recorded and the
 #   bisection continues to the next candidate, instead of the runner's exit
 #   status being swallowed entirely; the final verdict says "N tests failed
@@ -88,19 +92,12 @@ while IFS= read -r TEST_FILE; do
   RUNNER_EXIT=$?
   set -e
   RAN=$((RAN + 1))
-  if [ "$RUNNER_EXIT" -eq 126 ] || [ "$RUNNER_EXIT" -eq 127 ]; then
-    echo ""
-    echo "💥 RUNNER FAILED (exit $RUNNER_EXIT)"
-    echo "   Test: $TEST_FILE"
-    echo "   The runner did not complete, so pollution results for this and"
-    echo "   any remaining files cannot be trusted. Fix the runner and rerun."
-    exit 1
-  fi
 
-  # Check if pollution appeared. This runs regardless of RUNNER_EXIT,
-  # because a test that creates pollution AND exits non-zero is still a
-  # polluter -- a broken assertion in the same test as the leak must not
-  # hide the leak.
+  # Check if pollution appeared FIRST, before any exit-code classification.
+  # A marker on disk is a polluter found, whatever the exit code was --
+  # including 126/127. A test that touches the marker and then hits a
+  # missing or non-executable runner command still polluted; reporting
+  # RUNNER FAILED instead of FOUND POLLUTER here would hide it.
   if [ -e "$POLLUTION_CHECK" ]; then
     echo ""
     echo "🎯 FOUND POLLUTER!"
@@ -113,6 +110,15 @@ while IFS= read -r TEST_FILE; do
     echo "To investigate:"
     echo "  npm test $TEST_FILE    # Run just this test"
     echo "  cat $TEST_FILE         # Review test code"
+    exit 1
+  fi
+
+  if [ "$RUNNER_EXIT" -eq 126 ] || [ "$RUNNER_EXIT" -eq 127 ]; then
+    echo ""
+    echo "💥 RUNNER FAILED (exit $RUNNER_EXIT)"
+    echo "   Test: $TEST_FILE"
+    echo "   The runner did not complete, so pollution results for this and"
+    echo "   any remaining files cannot be trusted. Fix the runner and rerun."
     exit 1
   fi
 

@@ -664,3 +664,54 @@ def test_find_polluter_continues_past_an_ordinary_failure_without_pollution():
         "the summary did not name which file failed.\n"
         f"stdout:\n{result.stdout}"
     )
+
+
+@pytest.mark.skipif(_BASH is None, reason="needs bash")
+def test_find_polluter_reports_the_polluter_even_when_the_runner_could_not_execute():
+    """0.19.70, Codex finding on the 0.19.69 fix. Moving the pollution check
+    ahead of the ordinary-failure branch still left it BEHIND the 126/127
+    "RUNNER FAILED" branch, so a test that touches the pollution marker and
+    then hits a missing or non-executable runner command (exit 127) was
+    still reported as RUNNER FAILED, hiding the polluter it had already
+    created. The pollution check now runs first, before any exit-code
+    classification at all -- a marker on disk is a polluter found
+    regardless of what the runner's exit code was."""
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = pathlib.Path(tmp)
+        repo = tmp_path / "repo"
+        (repo / "src").mkdir(parents=True)
+        (repo / "src" / "a.test.ts").write_text("// fixture\n", encoding="utf-8")
+
+        bin_dir = tmp_path / "bin"
+        bin_dir.mkdir()
+        marker = str(tmp_path / ".pollution-marker").replace("\\", "/")
+        npm_path = bin_dir / "npm"
+        npm_path.write_text(
+            f'#!/usr/bin/env bash\ntouch "{marker}"\nexit 127\n',
+            encoding="utf-8", newline="\n",
+        )
+        npm_path.chmod(0o755)
+
+        script = str(SKILL_DIR / "find-polluter.sh").replace("\\", "/")
+        env = dict(os.environ)
+        env["PATH"] = str(bin_dir) + os.pathsep + env.get("PATH", "")
+        result = subprocess.run(
+            [_BASH, script, marker, "src/**/*.test.ts"],
+            cwd=str(repo), capture_output=True, text=True, timeout=30,
+            stdin=subprocess.DEVNULL, env=env, check=False,
+            encoding="utf-8", errors="replace",
+        )
+
+    assert result.returncode != 0, (
+        f"find-polluter.sh exited 0 against a test that polluted and hit a "
+        f"missing runner command.\nstdout:\n{result.stdout}"
+    )
+    assert "FOUND POLLUTER" in result.stdout, (
+        "the polluter was not reported even though the marker was created "
+        f"before the runner exited 127.\nstdout:\n{result.stdout}"
+    )
+    assert "RUNNER FAILED" not in result.stdout, (
+        "exit 127 was reported as RUNNER FAILED despite the pollution "
+        "marker existing, hiding a real polluter behind a runner-failure "
+        f"report.\nstdout:\n{result.stdout}"
+    )
