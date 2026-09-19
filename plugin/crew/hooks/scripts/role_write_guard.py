@@ -193,6 +193,7 @@ refuses a legitimate, in-scope write. Reported and fixed 2026-09-19.
 import fnmatch
 import json
 import os
+import re
 import sys
 import time
 
@@ -363,30 +364,65 @@ def _repo_relative(root, file_path):
 
 
 def _resolve_real_target(file_path):
-    """The REAL, symlink/junction-resolved absolute form of `file_path`,
-    with `..` applied AFTER symlink resolution -- never before.
+    """The REAL, symlink/junction-resolved absolute form of `file_path`.
+    Dispatches on `os.name`, because Windows and POSIX apply `..` to a
+    symlink/junction chain in OPPOSITE orders -- getting this backwards
+    is a real escape in one direction and a false refusal in the other,
+    both reported 2026-09-19, one round apart.
 
-    `file_path` may not exist yet -- `Write` creates new files -- so this
-    cannot just call `os.path.realpath(file_path)` and trust it, and it
-    must NOT call `os.path.abspath`/`os.path.normpath` on the raw path
-    either: both COLLAPSE a literal `..` LEXICALLY, before any symlink is
-    resolved. Reported 2026-09-19: `.crew/link/../app.py`, where
-    `.crew/link` is a symlink to `src/subdir`, lexically normalises to
-    `.crew/app.py` -- a string that still fnmatches `.crew/**`, so `pm`
-    classified as in-scope -- while the OS resolves the SAME path by
-    walking component by component, following `.crew/link` to `src/
-    subdir` FIRST, and only THEN applying `..` against the RESOLVED
-    parent, landing in `src/app.py`. The classification and the actual
-    write disagreed, and the classification was the wrong one: a symlink
-    staged under a path `pm` is trusted to write let it escape to
-    anywhere the symlink's target's parent reaches.
+    **POSIX** (`_resolve_real_target_posix`): the kernel resolves each
+    path component, including any symlink, DURING the walk itself, and
+    `..` is applied AFTER, against wherever that walk landed.
+    `.crew/link/../app.py`, with `.crew/link` a symlink to `src/subdir`,
+    resolves `.crew/link` to `src/subdir` FIRST and pops `..` against
+    THAT, landing in `src/app.py` -- outside a scope the lexical string
+    alone would have called in-scope. `_resolve_real_target_posix`
+    resolves-then-pops to match.
 
-    Walks the path one component at a time, keeping only the RESOLVED
-    form built up so far:
+    **Windows** (`_resolve_real_target_windows`): the Win32 path
+    canonicaliser collapses a literal `..` LEXICALLY, in the path
+    string, BEFORE the filesystem driver ever sees it -- a reparse point
+    (junction or symlink) at the component `..` just popped is never
+    traversed at all. `.crew\\link\\..\\app.py`, with `.crew\\link` a
+    junction to `src\\subdir`, collapses to `.crew\\app.py` lexically --
+    `link` is popped as a plain path segment, its target never
+    consulted -- and THAT is the path Windows actually opens (in scope
+    for `pm`: allow). The reverse case is what makes resolve-then-pop
+    actively wrong here, not just imprecise: `src\\link\\..\\new.py`,
+    with `src\\link` a junction to `.crew\\subdir`, ALSO collapses `..`
+    first (`src\\link\\..` -> `src`), so Windows writes `src\\new.py`,
+    never touching `.crew` at all -- out of scope, block. Resolving
+    `link` to `.crew/subdir` BEFORE popping `..` (the POSIX answer)
+    would land back inside `.crew` and wrongly ALLOW an out-of-scope
+    write. `_resolve_real_target_windows` collapses `..` lexically
+    first, exactly mirroring the OS, then walks the remaining
+    (`..`-free) path resolving junctions as it goes.
+
+    Both branches split the raw path on `..`-free components before
+    touching the filesystem. Only the WINDOWS branch splits on BOTH `\\`
+    and `/` (`re.split(r"[\\\\/]+", ...)`) -- POSIX keeps `/` alone,
+    since a literal backslash is a legal POSIX filename character and
+    must never be treated as a separator there. Reported 2026-09-19: a
+    Windows target named with forward slashes (`C:/repo/.crew/link/
+    new.py`, which tools commonly send even on Windows) split into ONE
+    component on `os.sep` (`\\`) alone under the earlier, separator-
+    naive version of this function -- the walk below never actually
+    walked anything, so a junction anywhere in the path was never
+    followed at all.
+    """
+    if os.name == "nt":
+        return _resolve_real_target_windows(file_path)
+    return _resolve_real_target_posix(file_path)
+
+
+def _resolve_real_target_posix(file_path):
+    """POSIX half of `_resolve_real_target`: resolve-then-pop. Walks the
+    path one component at a time, keeping only the RESOLVED form built
+    up so far:
       * a plain name is appended, then that whole prefix is
         `os.path.realpath`'d if it exists on disk (resolving whatever
-        symlink or junction the newly-added component turned out to be,
-        and everything already ahead of it in the same call, since
+        symlink the newly-added component turned out to be, and
+        everything already ahead of it in the same call, since
         `realpath` is itself recursive);
       * `..` pops the last RESOLVED component -- never a lexical one,
         because by the time `..` is reached every component before it
@@ -401,8 +437,7 @@ def _resolve_real_target(file_path):
         absolute = file_path
     else:
         absolute = os.path.join(os.getcwd(), file_path)
-    drive, rest = os.path.splitdrive(absolute)
-    parts = [p for p in rest.split(os.sep) if p and p != "."]
+    parts = [p for p in absolute.split("/") if p and p != "."]
 
     resolved_parts = []
     for part in parts:
@@ -411,7 +446,41 @@ def _resolve_real_target(file_path):
                 resolved_parts.pop()
             continue
         resolved_parts.append(part)
-        current = drive + os.sep + os.sep.join(resolved_parts)
+        current = "/" + "/".join(resolved_parts)
+        if os.path.lexists(current):
+            real = os.path.realpath(current)
+            resolved_parts = [p for p in real.split("/") if p]
+
+    return "/" + "/".join(resolved_parts) if resolved_parts else "/"
+
+
+def _resolve_real_target_windows(file_path):
+    """Windows half of `_resolve_real_target`: collapse `..` LEXICALLY
+    first, matching Win32's own path canonicalisation, THEN walk the
+    (now `..`-free) path resolving whatever junction or symlink exists
+    at each step. Doing this POSIX-style (resolve-then-pop) on Windows
+    is backwards in both directions -- see `_resolve_real_target`'s own
+    docstring for the two-sided repro.
+    """
+    if os.path.isabs(file_path):
+        absolute = file_path
+    else:
+        absolute = os.path.join(os.getcwd(), file_path)
+    drive, rest = os.path.splitdrive(absolute)
+    raw_parts = [p for p in re.split(r"[\\/]+", rest) if p and p != "."]
+
+    lexical_parts = []
+    for part in raw_parts:
+        if part == "..":
+            if lexical_parts:
+                lexical_parts.pop()
+            continue
+        lexical_parts.append(part)
+
+    resolved_parts = []
+    for part in lexical_parts:
+        resolved_parts.append(part)
+        current = drive + "\\" + "\\".join(resolved_parts)
         if os.path.lexists(current):
             real = os.path.realpath(current)
             real_drive, real_rest = os.path.splitdrive(real)
@@ -419,8 +488,8 @@ def _resolve_real_target(file_path):
             resolved_parts = [p for p in real_rest.split(os.sep) if p]
 
     if resolved_parts:
-        return drive + os.sep + os.sep.join(resolved_parts)
-    return drive + os.sep
+        return drive + "\\" + "\\".join(resolved_parts)
+    return drive + "\\"
 
 
 def _real_repo_relative(root, file_path):

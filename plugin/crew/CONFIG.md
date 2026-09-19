@@ -1515,6 +1515,55 @@ never a lexical one, mirroring how the kernel itself walks a path.
 Verified with both a POSIX symlink and a Windows junction, driven end to
 end through the real hook scripts, not simulated.
 
+### `..` after a symlink is a platform-specific rule, not one algorithm
+
+Reported and fixed 2026-09-19, one round after the resolve-then-pop fix
+above shipped. That fix is correct on POSIX and **actively wrong on
+Windows** — not merely imprecise. Win32's own path canonicaliser collapses
+a literal `..` LEXICALLY, in the path string, before the filesystem or
+reparse-point layer ever sees it: a junction sitting exactly where `..`
+pops past it is never traversed at all. Resolve-then-pop computed the
+opposite answer from real Windows in both directions:
+
+- `src\link\..\new.py`, with `src\link` a junction to `.crew\subdir` (in
+  scope): Windows collapses `src\link\..` to `src` before the junction is
+  ever consulted, so the write really lands at `src\new.py` — out of
+  scope, must block. Resolve-then-pop followed the junction first, landed
+  in `.crew`, and wrongly allowed it.
+- `.crew\link\..\app.py`, with `.crew\link` a junction to `src` (out of
+  scope): Windows never consults the junction either, so the write really
+  lands at `.crew\app.py` — in scope, must allow. Resolve-then-pop
+  followed the junction to `src` first and wrongly blocked it.
+
+A second, independent gap in the same walk: it split the raw path only on
+`os.sep` (`\`), so a target spelled with forward slashes
+(`C:/repo/.crew/link/new.py`, which tools commonly send even on Windows)
+never broke into more than one component — the walk never walked
+anything, and a junction anywhere in such a path went unresolved
+regardless of the ordering question above.
+
+`_resolve_real_target` now dispatches on `os.name`.
+`_resolve_real_target_windows` splits on both `\` and `/`, collapses `..`
+lexically first into a `..`-free path (mirroring Win32's own
+canonicaliser), then walks that path resolving whatever junction or
+symlink exists at each step. `_resolve_real_target_posix` is the original
+resolve-then-pop walk from the paragraph above, unchanged — that ordering
+is correct on a real POSIX host, where the kernel resolves each component,
+including a symlink, DURING the walk and applies `..` AFTER, against the
+resolved parent. Verified against both directions on a real Windows
+junction, plus a real forward-slash target and a mixed-separator target,
+all driven end to end through both `role-write-guard.sh` and
+`role-write-guard.ps1`. The POSIX ordering has no equivalent always-running
+direct unit test on this machine: `_resolve_real_target_posix`'s path
+arithmetic assumes a POSIX root, a Windows drive letter breaks that
+reconstruction, `os.path.lexists` never fires true against a real Windows
+disk path built that way, and the walk silently degrades to pure lexical
+popping — the very bug this function exists to prevent, reproduced by the
+test harness rather than the code, so a "passing" test built that way
+would prove nothing. Real POSIX coverage is instead an end-to-end test
+correctly skipped when `os.name == "nt"`, live on any actual POSIX crew
+installation.
+
 ### A different drive is proven outside the repo, not merely unverifiable
 
 Reported and fixed 2026-09-19. `os.path.relpath` raises `ValueError` when

@@ -488,6 +488,46 @@ All notable changes to this repository are documented here. Format follows [Keep
   sabotage-tested individually and reverted to sha256-verified
   byte-identical files before committing.
 
+  A follow-up round on the same 0.19.92, still `role-write-guard`: that
+  `..`-after-symlink fix was correct on POSIX and **wrong on Windows**, in a
+  way that is actively dangerous rather than merely imprecise. Win32's own
+  path canonicaliser collapses a literal `..` LEXICALLY, in the path
+  string, before the filesystem/reparse-point layer ever sees it — a
+  junction sitting where `..` pops past it is never traversed at all. The
+  resolve-then-pop fix above computed the opposite answer in both
+  directions on Windows: `src\link\..\new.py`, with `src\link` a junction
+  to `.crew\subdir`, really writes to `src\new.py` (Windows collapses
+  `src\link\..` to `src` before the junction is consulted) — out of scope,
+  must block — but resolve-then-pop followed the junction first and landed
+  in `.crew`, wrongly allowing it. And `.crew\link\..\app.py`, with
+  `.crew\link` a junction to `src`, really writes to `.crew\app.py`
+  (Windows again never consults the junction) — in scope, must allow — but
+  resolve-then-pop followed the junction to `src` first, wrongly blocking
+  it. **BLOCK 1, same round:** the walk that resolves junctions component
+  by component only split the raw path on `os.sep` (`\`), so a target
+  spelled with forward slashes (`C:/repo/.crew/link/new.py`, which tools
+  commonly send even on Windows) never split into more than one component
+  — the walk never walked anything, and a junction anywhere in the path
+  went unresolved. `_resolve_real_target` now dispatches on `os.name`:
+  `_resolve_real_target_windows` splits on both `\` and `/`, collapses
+  `..` lexically first into a `..`-free path, then walks that path
+  resolving junctions/symlinks as it goes, mirroring Win32 exactly;
+  `_resolve_real_target_posix` keeps the original resolve-then-pop walk
+  unchanged, since that ordering is correct there. Verified against both
+  directions on a real Windows junction and against a real forward-slash
+  target and a mixed-separator target; the now-corrected must-allow case
+  and the newly-added must-block case for the reverse repro both covered
+  end to end via bash and PowerShell. `tests/test_role_write_guard.py`
+  grew to 109 cases (one prior direct unit test removed as unwinnable on a
+  Windows dev machine — see its replacement comment for why — and 6 new
+  ones added, including a POSIX end-to-end twin correctly skipped when
+  `os.name == "nt"`). Both fixes sabotage-tested individually — reverting
+  the separator split flips exactly the 2 tests naming it; reverting the
+  platform dispatch (forcing the POSIX algorithm everywhere) flips 3,
+  including one pre-existing test that turned out to depend on the same
+  dispatch for any native Windows-separator path — and both reverted to a
+  sha256-verified byte-identical file before committing.
+
 - **`crew` 0.19.79: a debugging method, and the routing that dispatches it.**
   Crew shipped 27 commands and 19 skills and not one of them was about finding
   a cause: `grep -cil 'debug\|root cause'` over `commands/` and `skills/`

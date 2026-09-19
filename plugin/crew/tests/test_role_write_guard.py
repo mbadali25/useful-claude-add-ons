@@ -1031,40 +1031,143 @@ def test_resolve_real_target_walks_up_to_the_deepest_existing_ancestor(tmp_path)
     assert os.path.basename(resolved) == "brand-new-file.py"
 
 
-# --- Round 3 BLOCK 3: `..` must apply AFTER symlink resolution, never before
+# --- Round 3 BLOCK 3 / Round 4 BLOCK 1+2: `..` vs a symlink/junction is a
+# --- REAL, OPPOSITE-DIRECTION platform difference --------------------------
 #
-# The most serious finding in this whole series. `os.path.abspath` (the
-# original implementation) collapses a literal `..` LEXICALLY before any
-# symlink is resolved, so `.crew/link/../app.py` -- where `.crew/link` is
-# a symlink to an in-repo, out-of-scope directory -- normalised to
-# `.crew/app.py`, a string that fnmatches `.crew/**` and classified as
-# in-scope, while the OS resolves the SAME path by following the symlink
-# FIRST and applying `..` against the RESOLVED parent, landing outside
-# pm's scope entirely. The classification and the actual write disagreed,
-# and the classification was the permissive one.
+# Round 3's fix made `..` apply AFTER symlink resolution everywhere
+# (resolve-then-pop), matching POSIX kernel semantics. Codex round 4 found
+# that this is *wrong on Windows*, not just imprecise: Win32's path
+# canonicaliser collapses a literal `..` LEXICALLY, in the path string,
+# before the filesystem/reparse-point layer ever sees it -- so a junction
+# positioned where `..` pops past it is never traversed at all. The two
+# platforms genuinely disagree, in both directions:
+#   - `.crew/link/../app.py` (link -> src, i.e. IN scope popping OUT):
+#     POSIX follows the symlink first, then pops `..` against the
+#     resolved parent (src) -> lands OUTSIDE .crew -> must block.
+#     Windows collapses `.crew/link/..` to `.crew` lexically, before the
+#     junction is ever consulted -> really writes to `.crew/app.py` ->
+#     must ALLOW. Blocking it, as round 3 did on this platform, refuses a
+#     write Windows itself would have let land in scope.
+#   - `src/link/../new.py` (link -> .crew/subdir, i.e. OUT of scope
+#     popping IN): Windows collapses `src/link/..` to `src` lexically
+#     -> really writes to `src/new.py`, out of scope -> must BLOCK.
+#     Round 3's resolve-then-pop logic followed the junction first,
+#     landed in `.crew`, and wrongly ALLOWED it.
+# `_resolve_real_target` now dispatches on `os.name`: `_resolve_real_target_
+# windows` collapses `..` lexically first (splitting on both `\` and `/`,
+# fixing round 4 BLOCK 1's forward-slash gap in the same pass), then walks
+# the `..`-free path resolving junctions/symlinks component by component;
+# `_resolve_real_target_posix` keeps round 3's resolve-then-pop walk,
+# splitting only on `/` (backslash is a legal POSIX filename character).
 
-def test_resolve_real_target_applies_dotdot_after_symlink_not_before(tmp_path):
-    """Direct unit test of the fix, independent of the hook process."""
-    out_of_scope = tmp_path / "src" / "subdir"
-    out_of_scope.mkdir(parents=True)
-    link = tmp_path / "crewlink"
-    if not _make_symlink(out_of_scope, link):
+# There is deliberately no always-running direct unit test of
+# `_resolve_real_target_posix`'s real symlink-mid-walk behaviour: its path
+# arithmetic reconstructs each probe as `"/" + "/".join(parts)`, which
+# assumes a POSIX root. On this Windows dev machine that reconstruction
+# never matches a real disk path (a Windows drive letter like `C:` is not
+# a valid POSIX root component), so `os.path.lexists` never fires true and
+# the walk silently degrades to pure lexical popping -- the exact bug this
+# function exists to fix, reproduced by the test harness itself rather
+# than the code. Confirmed by hand: probing `_resolve_real_target_posix`
+# directly against a real symlink on this machine returns the LEXICALLY
+# popped answer even though the fix is correct, which would make a
+# "passing" direct unit test here prove nothing. The only test that
+# exercises this function's real symlink resolution is the end-to-end
+# twin below, correctly skipped on Windows and real on a genuine POSIX
+# host, where `tmp_path`, `os.getcwd()` and disk paths are natively
+# forward-slash-rooted and the lexists/realpath checks fire as designed.
+
+
+def test_resolve_real_target_windows_collapses_dotdot_before_symlink(tmp_path):
+    """Direct unit test of `_resolve_real_target_windows` ITSELF, proving
+    the lexical-first algorithm in BOTH directions from Codex round 4's
+    guidance -- runs on any host OS since it calls the platform-specific
+    function directly rather than going through the `os.name` dispatch."""
+    in_scope_target = tmp_path / "src"
+    in_scope_target.mkdir()
+    link_in_scope = tmp_path / ".crew" / "link"
+    link_in_scope.parent.mkdir()
+    if not _make_symlink(in_scope_target, link_in_scope):
         pytest.skip("could not create a symlink on this platform/user")
 
-    target = str(link / ".." / "app.py")
-    resolved = role_write_guard._resolve_real_target(target)  # pylint: disable=protected-access
-    expected_parent = os.path.realpath(str(tmp_path / "src"))
-    assert os.path.dirname(resolved) == expected_parent, (
-        "expected `..` to pop the RESOLVED parent (tmp_path/src), not the "
-        "lexical one (crewlink's own parent). got: " + resolved)
-    assert os.path.basename(resolved) == "app.py"
+    # `.crew/link/../new.py`, link -> src: Windows collapses `link/..` to
+    # `.crew` BEFORE the link/junction is ever consulted, so the link is
+    # never followed and this lands back inside `.crew`.
+    allow_target = str(link_in_scope) + "\\..\\new.py"
+    # pylint: disable-next=protected-access
+    allow_resolved = role_write_guard._resolve_real_target_windows(allow_target)
+    assert os.path.dirname(allow_resolved) == os.path.realpath(
+        str(tmp_path / ".crew")), (
+        "Windows: `.crew/link/../new.py` with link -> src must resolve "
+        "inside .crew (the .. cancels the link lexically before it is "
+        "ever followed). got: " + allow_resolved)
+
+    out_of_scope_target = tmp_path / ".crew" / "subdir"
+    out_of_scope_target.mkdir()
+    link_out_of_scope = tmp_path / "src2"
+    if not _make_symlink(out_of_scope_target, link_out_of_scope):
+        pytest.skip("could not create a symlink on this platform/user")
+
+    # `src2/../new.py`, where `src2` is itself the link (-> an in-scope
+    # directory): the `..` must pop the link's own lexical position
+    # without ever resolving into what it points to. This is the same
+    # shape as round 4 BLOCK 2's `src/link/../new.py` repro, simplified
+    # to a link one level shallower.
+    block_target = str(link_out_of_scope) + "\\..\\new.py"
+    # pylint: disable-next=protected-access
+    block_resolved = role_write_guard._resolve_real_target_windows(block_target)
+    assert os.path.dirname(block_resolved) == os.path.realpath(str(tmp_path)), (
+        "Windows: a `..` right after a link must pop the link's own "
+        "lexical position, never resolve into the link's target first. "
+        "got: " + block_resolved)
+
+
+def test_resolve_real_target_windows_splits_on_forward_slashes(tmp_path):
+    """Direct unit test: round 4 BLOCK 1. A Windows target spelled with
+    forward slashes must still walk and resolve a junction/symlink in
+    it, not degrade to one opaque unresolved component."""
+    real_dir = tmp_path / "real"
+    real_dir.mkdir()
+    link = tmp_path / "fwdlink"
+    if not _make_symlink(real_dir, link):
+        pytest.skip("could not create a symlink on this platform/user")
+
+    forward = str(link).replace("\\", "/") + "/new.py"
+    # pylint: disable-next=protected-access
+    resolved = role_write_guard._resolve_real_target_windows(forward)
+    assert os.path.dirname(resolved) == os.path.realpath(str(real_dir)), (
+        "a forward-slash path must resolve the symlink/junction exactly "
+        "like a backslash one. got: " + resolved)
+    assert os.path.basename(resolved) == "new.py"
+
+
+def test_resolve_real_target_windows_splits_on_mixed_separators(tmp_path):
+    """Direct unit test: a path mixing `\\` and `/` in the same string
+    must still walk component by component and resolve the link."""
+    real_dir = tmp_path / "real"
+    real_dir.mkdir()
+    link = tmp_path / "mixedlink"
+    if not _make_symlink(real_dir, link):
+        pytest.skip("could not create a symlink on this platform/user")
+
+    mixed = str(tmp_path).replace("/", "\\") + "\\mixedlink/sub\\..\\new.py"
+    # pylint: disable-next=protected-access
+    resolved = role_write_guard._resolve_real_target_windows(mixed)
+    assert os.path.dirname(resolved) == os.path.realpath(str(real_dir)), (
+        "a mixed \\/-separator path must resolve identically to an "
+        "all-backslash one. got: " + resolved)
+    assert os.path.basename(resolved) == "new.py"
 
 
 @needs_bash
-def test_dotdot_after_symlink_does_not_escape_scope_bash(tmp_path):
-    """Must-block: the full end-to-end repro. `.crew/link` is a symlink
-    to `src/subdir` (in-repo, out-of-scope); the tool call names
-    `.crew/link/../app.py`."""
+def test_windows_link_pointing_out_of_scope_with_dotdot_still_allows_bash(tmp_path):
+    """Must-allow, end to end (corrects round 3's must-block expectation
+    for this same repro). `.crew/link` is a symlink to `src/subdir`
+    (in-repo, out-of-scope); the tool call names `.crew/link/../app.py`.
+    On this machine the bash shim still resolves through a native Windows
+    Python, so `os.name == "nt"` regardless of which shell launched it --
+    `..` collapses lexically BEFORE the link is ever consulted, so the
+    real write lands at `.crew/app.py`, in scope."""
     root = crew_fixtures.make_repo(
         tmp_path, config={"guards": {"roleWrites": "block"}})
     out_of_scope_dir = root / "src" / "subdir"
@@ -1075,16 +1178,15 @@ def test_dotdot_after_symlink_does_not_escape_scope_bash(tmp_path):
 
     target = str(link / ".." / "app.py")
     proc = _run_sh(root, "Write", target, "pm")
-    assert proc.returncode == 2, (
-        "a symlink escape must still be caught when the tool call adds a "
-        "`..` after it -- lexically collapsing .. before symlink "
-        "resolution must not make .crew/link/../app.py look like .crew/"
-        "app.py. stdout: " + proc.stdout)
+    assert proc.returncode == 0, (
+        "on Windows, `.crew/link/../app.py` really writes to .crew/app.py "
+        "because .. collapses lexically before the link is followed -- "
+        "this must be allowed, not blocked. stdout: " + proc.stdout)
 
 
 @needs_pwsh_windows
-def test_dotdot_after_junction_does_not_escape_scope_powershell(tmp_path):
-    """PowerShell/junction twin of the symlink case above."""
+def test_windows_link_pointing_out_of_scope_with_dotdot_still_allows_powershell(tmp_path):
+    """PowerShell/junction twin of the bash case above."""
     root = crew_fixtures.make_repo(
         tmp_path, config={"guards": {"roleWrites": "block"}})
     out_of_scope_dir = root / "src" / "subdir"
@@ -1094,6 +1196,48 @@ def test_dotdot_after_junction_does_not_escape_scope_powershell(tmp_path):
         pytest.skip("could not create a junction on this platform/user")
 
     target = str(link / ".." / "app.py")
+    proc = _run_ps1(root, "Write", target, "pm")
+    assert proc.returncode == 0, proc.stderr
+
+
+@needs_bash
+def test_windows_link_staged_out_of_scope_escapes_via_dotdot_blocks_bash(tmp_path):
+    """Must-block, end to end: round 4 BLOCK 2's own repro. `src/link` is
+    a symlink to `.crew/subdir` (in scope); the tool call names
+    `src/link/../new.py`. `..` collapses `src/link/..` to `src`
+    lexically, before the link is ever consulted, so the real write
+    lands at `src/new.py` -- out of scope."""
+    root = crew_fixtures.make_repo(
+        tmp_path, config={"guards": {"roleWrites": "block"}})
+    in_scope_dir = root / ".crew" / "subdir"
+    in_scope_dir.mkdir(parents=True)
+    link = root / "src" / "link"
+    link.parent.mkdir(parents=True)
+    if not _make_symlink(in_scope_dir, link):
+        pytest.skip("could not create a symlink on this platform/user")
+
+    target = str(link / ".." / "new.py")
+    proc = _run_sh(root, "Write", target, "pm")
+    assert proc.returncode == 2, (
+        "on Windows, src/link/../new.py really writes to src/new.py "
+        "because .. collapses lexically before the link is followed -- "
+        "resolving into the link's target (.crew) first is wrong and "
+        "must not allow this write. stdout: " + proc.stdout)
+
+
+@needs_pwsh_windows
+def test_windows_link_staged_out_of_scope_escapes_via_dotdot_blocks_powershell(tmp_path):
+    """PowerShell/junction twin of the bash case above."""
+    root = crew_fixtures.make_repo(
+        tmp_path, config={"guards": {"roleWrites": "block"}})
+    in_scope_dir = root / ".crew" / "subdir"
+    in_scope_dir.mkdir(parents=True)
+    link = root / "src" / "link"
+    link.parent.mkdir(parents=True)
+    if not _make_junction(in_scope_dir, link):
+        pytest.skip("could not create a junction on this platform/user")
+
+    target = str(link / ".." / "new.py")
     proc = _run_ps1(root, "Write", target, "pm")
     assert proc.returncode == 2, proc.stderr
 
@@ -1109,6 +1253,38 @@ def test_dotdot_without_a_symlink_still_resolves_normally_bash(tmp_path):
     target = str(root / ".crew" / "subdir" / ".." / "TODO.md")
     proc = _run_sh(root, "Write", target, "pm")
     assert proc.returncode == 0, proc.stderr
+
+
+@pytest.mark.skipif(
+    os.name == "nt",
+    reason="this suite's bash runner still resolves through a native "
+           "Windows python even when launched from Git Bash, so the "
+           "POSIX resolve-then-pop branch of _resolve_real_target is "
+           "never actually dispatched on this machine; this locks in "
+           "the expectation for a real POSIX crew installation and is "
+           "the direct-unit-test POSIX coverage's end-to-end twin")
+@needs_bash
+def test_posix_link_pointing_out_of_scope_with_dotdot_blocks_bash(tmp_path):
+    """The POSIX twin of the two Windows end-to-end tests above. On a
+    real POSIX host, `.crew/link/../app.py` (link -> src/subdir) resolves
+    the symlink FIRST and pops `..` against the RESOLVED parent (src),
+    landing in `src/app.py` -- out of scope, must block. This is the
+    OPPOSITE outcome from the Windows case, which is exactly why
+    `_resolve_real_target` dispatches on `os.name` rather than using one
+    algorithm everywhere."""
+    root = crew_fixtures.make_repo(
+        tmp_path, config={"guards": {"roleWrites": "block"}})
+    out_of_scope_dir = root / "src" / "subdir"
+    out_of_scope_dir.mkdir(parents=True)
+    link = root / ".crew" / "link"
+    if not _make_symlink(out_of_scope_dir, link):
+        pytest.skip("could not create a symlink on this platform/user")
+
+    target = str(link / ".." / "app.py")
+    proc = _run_sh(root, "Write", target, "pm")
+    assert proc.returncode == 2, (
+        "on a real POSIX host this must still block: resolve-then-pop "
+        "lands in src/app.py, out of scope. stdout: " + proc.stdout)
 
 
 # --- FIX: a different-drive target is PROVEN outside the repo, not -------
