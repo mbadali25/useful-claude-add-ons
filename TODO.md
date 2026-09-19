@@ -2807,3 +2807,53 @@ so the character-class forms may differ again.
 Not yet measured: whether any pattern in this repo's `.crew/verify.json`
 actually lands in the gap. Measure that first - if nothing here hits it, the
 fix is still worth making but the urgency is a different number.
+
+## CHANGELOG.md is not CRLF-normalised by git on this machine
+
+Filed 2026-09-19 during the 0.19.65-0.19.70 run. **Did not block the work --
+it was repaired in the working tree each time -- but it will bite the next
+person, silently, and the repair is not obvious.**
+
+Measured. `core.autocrlf` is `true` at SYSTEM scope here. For every other
+file touched in this run -- `.ps1`, `.py`, `.json`, `PLUGINS.md` -- the
+worktree copy was CRLF and git normalised it to LF in the index, so the
+commits are clean. `CHANGELOG.md` is the exception: worktree CRLF **and**
+index CRLF, against a HEAD blob that is pure LF. Staging it therefore
+produced a 13,086-line whole-file diff (6,561 CRLF lines) instead of the
+36-line entry that was actually written.
+
+Byte counts, `git cat-file blob` on each side rather than `git show` (which
+renders CRLF whatever the blob holds under `autocrlf=true`, so it cannot be
+used to check this):
+
+    HEAD:CHANGELOG.md   CR=0     LF=6525   <- stored LF
+    worktree            CR=6562  LF=6561   <- one LONE CR, a stray \r\r\n
+
+    index after add     CR=6562  LF=6561   <- NOT normalised
+
+Why only this file has not been established. It has no `.gitattributes`
+entry, so `autocrlf` alone governs it, and git skips the conversion for a
+blob its own heuristic calls binary -- `file`(1) reports `data` for both the
+worktree copy and the HEAD blob, which is consistent with that but does not
+prove it. **Measure before acting on the guess.**
+
+Repair, each time: rewrite the file LF-only in binary mode, then re-stage.
+A `*.md text eol=lf` line in `.gitattributes` would fix it at the root for
+everyone, which is why it is filed rather than done: that changes what git
+stores for every markdown file in the repo and belongs in its own commit
+with its own before/after byte census, not folded into a hook change.
+
+Two traps worth keeping visible, because both cost time here:
+
+1. **`grep -c $'\r$'` lies.** In Git Bash it reported 3 CRLF lines in a
+   control file written with pure LF. Every count taken that way was wrong
+   and briefly looked like `verify-gate.sh` had been corrupted to CRLF, which
+   it had not. Count raw CR bytes instead: `tr -cd '\r' | wc -c`.
+2. **A `
+` in a heredoc arrives with one backslash stripped.** Writing
+   `printf '%s
+'` through the tool that edits these scripts lands a LITERAL
+   NEWLINE inside the format string. It is harmless there -- the output is
+   identical -- and three such lines are already committed in
+   `verify-gate.sh`. It is NOT harmless in python source, where it produced
+   an unterminated string literal. Build backslashes with `chr(92)`.
