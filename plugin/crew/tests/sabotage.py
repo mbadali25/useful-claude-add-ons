@@ -2170,15 +2170,21 @@ MUTATIONS = (
         # more. Written down rather than dropped -- the separator is what
         # holds if the rejection is ever narrowed, and a defence with no
         # mutation is a defence nobody notices going.
+        # Grew from 5 fields to 6 in crew 0.19.93 (record 6, the JSON EXTRAS
+        # blob the per-rule record and env pinning read) -- re-anchored to
+        # the current statement rather than the pre-0.19.93 one so this
+        # mutation keeps testing the CURRENT writer, not a shape the file no
+        # longer has.
         "the matcher's record separator goes back to a newline",
         VERIFY_SH,
         'sys.stdout.write("\\x1e".join(cmds) + "\\x1d" + "\\x1e"'
         '.join(unmatched) + "\\x1d" + "\\x1e".join(notices)\n   '
-        '              + "\\x1d" + str(len(deferred))\n   '
-        '              + "\\x1d" + str(int(max_cost)) + "\\n")',
+        '              + "\\x1d" + str(acute_count)\n   '
+        '              + "\\x1d" + str(int(max_cost))\n   '
+        '              + "\\x1d" + extras + "\\n")',
         'print("\\x1e".join(cmds))\nprint("\\x1e".join(unmatched'
-        '))\nprint("\\x1e".join(notices))\nprint(str(len(deferre'
-        'd)))\nprint(str(int(max_cost)))',
+        '))\nprint("\\x1e".join(notices))\nprint(str(acute_count'
+        '))\nprint(str(int(max_cost)))\nprint(extras)',
         ("tests/test_verify_gate_rule_framing.py::"
          "test_the_two_halves_of_the_framing_contract_agree"),
     ),
@@ -2342,7 +2348,9 @@ MUTATIONS = (
         # round of this branch left the bash half wrapped in `if false` with
         # every test still green.
         # RE-ANCHORED in 0.19.95, with its bash twin and for the same
-        # reason.
+        # reason. RE-ANCHORED AGAIN in 0.19.93 (the per-rule record): the
+        # `else` branch grew a chronic-vs-acute classification block, so the
+        # closing brace this find string ends on moved further down.
         "the PowerShell Stop budget charges each command the rule's cost",
         VERIFY_PS1,
         "    } elseif (($spent + $ruleSecs[$ri]) -le $budget) {\n"
@@ -2354,6 +2362,21 @@ MUTATIONS = (
         "    } else {\n"
         "      foreach ($c in $fresh) { if ($deferred -notcontains $c) { "
         "[void]$deferred.Add($c) } }\n"
+        "      # CHRONIC vs ACUTE -- the twin split in verify-gate.sh. A "
+        "rule whose\n"
+        "      # own cost exceeds the whole budget can never fit regardless "
+        "of\n"
+        "      # ordering (chronic); one that would fit alone but lost to "
+        "this\n"
+        "      # turn's contention is acute and still blocks the baseline, "
+        "same as\n"
+        "      # before this feature existed.\n"
+        "      if (-not $chronicRules.Contains($ri) -and -not "
+        "$acuteRules.Contains($ri)) {\n"
+        "        if ($ruleSecs[$ri] -gt $budget) { "
+        "[void]$chronicRules.Add($ri) }\n"
+        "        else { [void]$acuteRules.Add($ri) }\n"
+        "      }\n"
         "    }\n",
         "    } else {\n"
         "      foreach ($c in $fresh) {\n"

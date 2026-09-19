@@ -234,6 +234,60 @@ def test_the_graph_refresh_command_matches_how_the_repo_stores_its_graph():
     assert "graphify . --no-viz --code-only" in out
 
 
+def test_verify_marker_stale_finding_renders_missing_and_behind():
+    """_verify_fields must always supply its keys -- a missing one raises
+    KeyError inside .format() and takes out the whole brief, the same
+    contract every other _xxx_fields helper carries."""
+    missing = _with("verifyMarkerStale",
+                    verify={"mapPresent": True, "markerPresent": False,
+                            "markerBehindCommits": None, "totalRules": 5,
+                            "unpricedRules": 0, "undeclaredReachRules": 0})
+    out = chr(10).join(pm_brief.render(missing))
+    assert "never recorded a verified commit" in out
+
+    behind = _with("verifyMarkerStale",
+                   verify={"mapPresent": True, "markerPresent": True,
+                           "markerBehindCommits": 75, "totalRules": 5,
+                           "unpricedRules": 0, "undeclaredReachRules": 0})
+    out = chr(10).join(pm_brief.render(behind))
+    assert "75 commit(s) behind HEAD" in out
+
+    unknown = _with("verifyMarkerStale",
+                    verify={"mapPresent": True, "markerPresent": True,
+                            "markerBehindCommits": None, "totalRules": 5,
+                            "unpricedRules": 0, "undeclaredReachRules": 0})
+    out = chr(10).join(pm_brief.render(unknown))
+    assert "could not be determined" in out
+
+
+def test_verify_unpriced_and_reach_findings_never_render_zero_as_unknown():
+    """UNKNOWN NEVER RESOLVES TO HEALTHY: a None count renders as the word
+    'unknown', never silently as 0 -- see _verify_fields."""
+    unpriced_known = _with("verifyRulesUnpriced",
+                           verify={"mapPresent": True, "markerPresent": True,
+                                   "markerBehindCommits": 0, "totalRules": 21,
+                                   "unpricedRules": 4,
+                                   "undeclaredReachRules": 0})
+    out = chr(10).join(pm_brief.render(unpriced_known))
+    assert "4 of 21" in out
+    assert "unknown of unknown" not in out
+
+    unpriced_unknown = _with("verifyRulesUnpriced",
+                             verify={"mapPresent": True, "markerPresent": True,
+                                     "markerBehindCommits": 0,
+                                     "totalRules": None, "unpricedRules": None,
+                                     "undeclaredReachRules": 0})
+    out = chr(10).join(pm_brief.render(unpriced_unknown))
+    assert "unknown of unknown" in out
+
+    reach = _with("verifyReachUndeclared",
+                  verify={"mapPresent": True, "markerPresent": True,
+                          "markerBehindCommits": 0, "totalRules": 21,
+                          "unpricedRules": 0, "undeclaredReachRules": 6})
+    out = chr(10).join(pm_brief.render(reach))
+    assert "6 of 21" in out
+
+
 def test_real_collect_recommends_graphify_update_when_report_is_tracked(
         tmp_path):
     """Drives the actual collector, not a hand-built dict.

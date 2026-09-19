@@ -2,6 +2,33 @@
 
 . "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 
+# --price is an OPERATOR command only, and is handled here, before ANYTHING
+# else in this file - before the stdin read below, which a terminal
+# invocation of this flag would otherwise block on forever. It is never
+# reachable from the Stop hook: hooks.json invokes this script with no
+# argument or with "--all", never "--price", and the dispatch below is keyed
+# on that exact literal. .crew/verify.json is TRACKED in this repo (git
+# ls-files .crew/ lists it), so a --price that ran unattended would dirty a
+# committed file on every Stop - the one thing this early return exists to
+# make impossible. Build fixtures and point this at a COPY; do not run it
+# against the real map unless you mean to commit the result.
+if [ "${1:-}" = "--price" ]; then
+  cd "${CLAUDE_PROJECT_DIR:-.}" || exit 1
+  PRICE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  PRICE_PY=$(crew_py) || { echo "verify-gate --price: no python available" >&2; exit 1; }
+  shift
+  PRICE_TARGET=".crew/verify.json"
+  PRICE_FORCE=""
+  for a in "$@"; do
+    case "$a" in
+      --force) PRICE_FORCE="--force" ;;
+      *) PRICE_TARGET="$a" ;;
+    esac
+  done
+  "$PRICE_PY" "$PRICE_DIR/verify_price.py" "$PRICE_TARGET" $PRICE_FORCE
+  exit $?
+fi
+
 # End-of-turn gate. Runs the checks that the CHANGED FILES actually require,
 # from .crew/verify.json. Exit 2 = the work is not done.
 #
@@ -90,6 +117,14 @@ record_verified() {
 # the baseline and dropped a committed file out of CHANGED for every
 # later run -- including --all, which correctly ignores the fingerprint
 # and was still diffing against the advanced baseline.
+# DEFERRED_COUNT counts only ACUTE (budget-contention) deferrals as of the
+# per-rule record feature. A rule that is permanently over budget on its own
+# (rules[8] here, 185s vs a 60s default) or excluded for reach no longer
+# counts here -- it cannot fit no matter how the budget is spent, so
+# freezing this baseline forever over it just forces every OTHER rule to
+# re-match and re-run every turn from then on. It stays unverified anyway:
+# verify_record.py persists it by content hash and reports it every run
+# until it is actually checked, via /crew:verify --all.
 fully_verified() { [ "${DEFERRED_COUNT:-1}" -eq 0 ]; }
 
 record_verified_fingerprint() {
@@ -163,9 +198,35 @@ fi
 # a later edit to that file kept the passing digest and verification was
 # skipped. Fixed at the SOURCE rather than by unquoting downstream, because
 # the matcher and the scope report read the same list.
-CHANGED=$(git -c core.quotePath=false diff --name-only "$BASE" 2>/dev/null; git -c core.quotePath=false ls-files --others --exclude-standard 2>/dev/null)
+if [ "${1:-}" = "--all" ]; then
+  # --all does not diff against ANY commit. A commit-range diff, however
+  # wide, is still bounded by SOME ancestor, and on a single-branch repo
+  # (or one sitting ON its own default branch) merge-base(HEAD, main) IS
+  # HEAD -- an empty diff. That is exactly the tree the per-rule record
+  # needs --all to still reach: the sha marker can now advance past the
+  # commit that added a CHRONIC/reach-excluded/skipped rule's own files
+  # (see verify_record.py), so a commit-range fallback would silently
+  # narrow --all's scope to match Stop's, which defeats the whole feature.
+  # --all instead sees EVERY tracked file plus every untracked one -- the
+  # full working tree, matching its own name.
+  CHANGED=$(git -c core.quotePath=false ls-files 2>/dev/null; git -c core.quotePath=false ls-files --others --exclude-standard 2>/dev/null)
+else
+  CHANGED=$(git -c core.quotePath=false diff --name-only "$BASE" 2>/dev/null; git -c core.quotePath=false ls-files --others --exclude-standard 2>/dev/null)
+fi
 CHANGED=$(printf '%s\n' "$CHANGED" | sort -u | sed '/^$/d')
 if [ -z "$CHANGED" ]; then
+  # A turn that changed nothing still owes a reminder for any rule this
+  # tree has never actually been checked against - a chronic over-budget
+  # rule, a reach-excluded one, or one still SKIPping on rc 77. Without
+  # this, the moment the sha marker advances past the commit where that
+  # rule's own files last changed, it goes quiet with nobody told. Best
+  # effort and read-only: no python, no script, or a corrupt record file
+  # all mean "say nothing extra", never "invent a status".
+  REPORT_PY=$(crew_py 2>/dev/null) || REPORT_PY=""
+  REPORT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  if [ -n "$REPORT_PY" ] && [ -f "$REPORT_DIR/verify_record.py" ]; then
+    "$REPORT_PY" "$REPORT_DIR/verify_record.py" report >&2 2>/dev/null || true
+  fi
   record_verified
   exit 0
 fi
@@ -267,6 +328,11 @@ if [ -n "$FP_PY" ] && [ -f "$FP_DIR/verify_fingerprint.py" ] && [ "$BUDGET_FLAG"
   FINGERPRINT=$(printf '%s\n' "$CHANGED" | "$FP_PY" "$FP_DIR/verify_fingerprint.py" "$PWD" 2>/dev/null)
   if [ -n "$FINGERPRINT" ] && [ "$FINGERPRINT" = "$(cat "$FP_FILE" 2>/dev/null)" ]; then
     echo "verify-gate: nothing the gate depends on has changed since the last CLEAN run (fingerprint $FINGERPRINT) - checks were SKIPPED, not re-run. Edit a file, or run the gate with --all, to force them." >&2
+    # The fingerprint only proves nothing changed; it says nothing about a
+    # rule that was chronic/skipped/reach-excluded on a PRIOR run and has
+    # not been touched since. Read-only reminder, same fail-safe direction
+    # as the empty-CHANGED path above.
+    [ -f "$FP_DIR/verify_record.py" ] && "$FP_PY" "$FP_DIR/verify_record.py" report >&2 2>/dev/null
     exit 0
   fi
 fi
@@ -675,6 +741,62 @@ def note_cost(cmd, rule):
     if not isinstance(secs, (int, float)) or isinstance(secs, bool) or secs < 0:
         return
     cost[cmd] = max(cost.get(cmd, 0), secs)
+# --- reach ------------------------------------------------------------
+#
+# `local` | `network` | `host`. The Stop gate runs ONLY `local` rules;
+# `network`/`host` rules run under /crew:verify --all (and the merge gate),
+# never unattended on Stop. STOP_MODE is false exactly when --all was passed
+# (budget is None then), which is the one case reach never excludes anything.
+#
+# UNDECLARED reach is NOT quietly treated as local. That was this brief's
+# first draft and it is this repo's own named failure mode -- an unknown
+# collapsing into the safe-looking value. TheSelectSource is the case that
+# forced the correction: rules with no `reach` ran `bash _verify/smoke.sh`
+# with no --ci, which reached a live dev host over SSM on every Stop, held
+# safe only by an inherited `ENV` default. So an UNDECLARED rule whose
+# command matches a reach verb is DEFERRED and NAMED at Stop time, exactly
+# like a declared non-local rule -- it is not run, and it is not silent
+# about why. An undeclared rule that matches nothing stays `local`, so an
+# ordinary repo with no remote commands is unaffected.
+STOP_MODE = budget is not None
+REACH_VERBS = ["ssm", "ssh", "curl ", "aws ", "az ", "gh ", "psql", "mysql"]
+def _looks_remote(run):
+    for c in run or []:
+        if not isinstance(c, str): continue
+        for v in REACH_VERBS:
+            if v in c: return v
+    return None
+stop_excluded = {}   # rule index -> (kind, reason) for a rule Stop will not run
+
+# --- measure-and-cache --------------------------------------------------
+#
+# An unpriced rule that RUNS gets its wall time recorded (by the caller,
+# after this matcher returns) into .crew/.verify-gate.timings.json --
+# machine-local, never verify.json, which is tracked. From the SECOND Stop
+# onward this matcher folds that cached number into rule_secs as if it were
+# a declared `seconds`, labelled "(measured, not declared)" below, so the
+# rule becomes deferrable instead of mandatory-forever. No measurement means
+# no change from today: the rule stays unknown and runs. verify_record.py
+# owns the file format; this only reads it.
+_rule_keys = {}   # rule index -> content-hash key, shared with verify_record.py
+_timings = {}
+try:
+    import hashlib as _hashlib
+    with open(".crew/.verify-gate.timings.json", encoding="utf-8") as _tf:
+        _td = json.load(_tf)
+    if isinstance(_td.get("rules"), dict):
+        _timings = _td["rules"]
+except (OSError, ValueError):
+    _timings = {}
+def _rule_key(rule):
+    import hashlib
+    blob = json.dumps({"paths": rule.get("paths"), "run": rule.get("run")}, sort_keys=True)
+    return hashlib.sha1(blob.encode("utf-8")).hexdigest()[:16]
+
+measured_used = {}   # rule index -> True when its cost came from the cache
+truly_unknown = {}   # rule index -> True when it needs a fresh measurement
+cmd_env = {}          # command -> {"VAR": "value"} declared by its rule
+
 for f in changed:
     hit=False
     for ri, r in enumerate(cfg.get("rules",[])):
@@ -683,17 +805,62 @@ for f in changed:
             if ri not in rule_cmds:
                 rule_cmds[ri] = []
                 rule_order.append(ri)
+                key = _rule_key(r)
+                _rule_keys[ri] = key
                 secs = r.get("seconds")
                 if (isinstance(secs, (int, float))
                         and not isinstance(secs, bool) and secs >= 0):
                     rule_secs[ri] = secs
+                else:
+                    cached = _timings.get(key)
+                    if isinstance(cached, int) and cached > 0:
+                        rule_secs[ri] = cached
+                        measured_used[ri] = True
+                if STOP_MODE:
+                    # requiresCleanTree shares this exclusion plumbing with
+                    # reach: a rule that refuses on a dirty tree (the SRL
+                    # case: sabotage-test.sh's "REFUSING TO RUN: the working
+                    # tree is not clean") is a permanent red on every Stop
+                    # during ordinary work, where the tree is dirty by
+                    # definition. Stop never runs it at all - not "run it
+                    # and see if it refuses" - and pushes it to --all and
+                    # the merge gate, where a genuinely clean checkout (CI,
+                    # or a deliberate `/crew:verify --all` before a PR) lets
+                    # it actually check something. Checked BEFORE reach so a
+                    # rule naming both gets the clean-tree reason, since that
+                    # is the more specific precondition of the two.
+                    if r.get("requiresCleanTree") is True:
+                        stop_excluded[ri] = ("clean_tree_required",
+                            "requires a clean working tree - not run on Stop, run /crew:verify --all")
+                    else:
+                        reach = r.get("reach")
+                        if isinstance(reach, str) and reach != "local":
+                            stop_excluded[ri] = ("reach_declared",
+                                "declared reach: %s - not run on Stop, run /crew:verify --all" % reach)
+                        elif reach is None:
+                            verb = _looks_remote(r.get("run"))
+                            if verb:
+                                stop_excluded[ri] = ("reach_undeclared",
+                                    "undeclared reach, looks like it leaves this machine (matches %r) - "
+                                    "declare `reach` or run /crew:verify --all" % verb)
+            if ri in stop_excluded:
+                continue
+            if isinstance(r.get("env"), dict):
+                for c in r["run"]:
+                    cmd_env.setdefault(c, {}).update(
+                        {k: v for k, v in r["env"].items() if isinstance(k, str) and isinstance(v, str)})
             for c in r["run"]:
                 if c not in cmds: cmds.append(c)
                 if c not in rule_cmds[ri]: rule_cmds[ri].append(c)
-                note_cost(c, r)
+                note_cost(c, r if r.get("seconds") is not None else {"seconds": rule_secs.get(ri)})
     if not hit: unmatched.append(f)
+for ri in rule_order:
+    if ri not in stop_excluded and ri not in rule_secs:
+        truly_unknown[ri] = True
 # A matched rule that states no cost makes every command it names
-# unconditional -- including commands a priced rule also names.
+# unconditional -- including commands a priced rule also names. A
+# reach-excluded rule contributes no commands at all (its `rule_cmds[ri]`
+# stayed empty above), so it cannot make anything else mandatory.
 for ri in rule_order:
     if ri not in rule_secs:
         mandatory.update(rule_cmds[ri])
@@ -719,6 +886,19 @@ if not cmds:
 # and is labelled, instead of collapsing into a safe-looking value.
 notices = []
 deferred = []
+chronic_rules = []
+acute_rules = []
+
+# Reach exclusions are decided at match time and do not depend on the
+# budget arithmetic below - report them unconditionally.
+for _ri in rule_order:
+    if _ri in stop_excluded:
+        _kind, _reason = stop_excluded[_ri]
+        notices.append("verify-gate: rules[%d] %s" % (_ri, _reason))
+for _ri in sorted(measured_used):
+    notices.append("verify-gate: rules[%d] priced from a cached measurement (%ss, measured not declared) - "
+                    "add `seconds` to verify.json to make this permanent" % (_ri, int(rule_secs[_ri])))
+
 if budget is not None:
     unknown = [c for c in cmds if c not in cost]
     # MANDATORY-NESS IS A PROPERTY OF THE RULE, NOT OF A COMMAND ON ITS OWN,
@@ -788,6 +968,20 @@ if budget is not None:
         else:
             for c in fresh:
                 if c not in deferred: deferred.append(c)
+            # CHRONIC: this one rule alone costs more than the whole Stop
+            # budget, so no reordering ever lets it fit - the OLD behaviour
+            # (block the sha marker forever) turned a single expensive rule
+            # into every rule re-running every turn, because the marker
+            # never advanced and CHANGED kept accumulating from the same old
+            # base. It must not silently block the baseline; it must also
+            # never silently read as verified - see verify_record.py, which
+            # persists it until it actually runs clean under --all.
+            # ACUTE: it would fit alone; the budget was just spent by other
+            # rules this turn. This still blocks the baseline, same as
+            # before this feature existed - a fluke of ordering is not the
+            # same claim as "this can never fit".
+            if ri not in chronic_rules and ri not in acute_rules:
+                (chronic_rules if rule_secs[ri] > budget else acute_rules).append(ri)
     # A command can be deferred by one rule and kept by a later, cheaper one
     # -- keeping wins, because the command does run.
     deferred = [c for c in deferred if c not in keep]
@@ -800,6 +994,10 @@ if budget is not None:
         notices.append("verify-gate: " + c + " belongs to an unconditional rule (`always`, or no `seconds`) - it RAN past the budget; the cost is charged but cannot defer it")
     for c in deferred:
         notices.append("deferred to /crew:verify: " + c + " (" + str(int(cost[c])) + "s)")
+    for _ri in chronic_rules:
+        notices.append("verify-gate: rules[%d] is permanently over budget (%ss > %ss stop budget) - "
+                        "deferred every Stop; the baseline still advances past it, but this rule stays "
+                        "UNVERIFIED until /crew:verify --all runs it." % (_ri, int(rule_secs[_ri]), int(budget)))
     if deferred:
         notices.append(
             "verify-gate: stop budget " + str(int(budget)) + "s; ran " + str(int(spent))
@@ -812,20 +1010,48 @@ if budget is not None:
 # appear in a command, because reject_unrepresentable above refused the map
 # outright if one did. It used to be a bare newline, which a command
 # containing one silently moved.
-# Record 4 is the deferred COUNT, an integer, and it exists because the
-# recording guard used to be `[ -z "$NOTICES" ]` -- a string-emptiness
-# test doing a boolean's job. NOTICES is prose for a human and mixes two
-# different facts: "a rule was deferred" and "a rule had no stated cost".
-# Only the first means "not verified", so the two must not share a signal.
-# Deriving the boolean by grepping the prose would be the same defect one
-# layer along.
+# Record 4 is now the ACUTE-deferred RULE count (budget contention this
+# turn) rather than the deferred COMMAND count. A CHRONIC (permanently over
+# budget) or reach-excluded rule is deliberately NOT counted here - see
+# verify_record.py for why the baseline may advance past one of those while
+# it still stays reported, forever, instead of collapsing into "verified".
+acute_count = len(acute_rules)
 # Record 5: the largest STATED cost among the commands actually selected.
 # The lock uses it to size how long this run may legitimately go quiet
 # for; 0 means nothing selected declared a cost. See lock_window below.
 max_cost = max([cost[c] for c in cmds if c in cost] or [0])
+# Record 6: JSON, everything the caller needs to persist per-rule status
+# (via verify_record.py), pin env per rule, and cache a fresh measurement
+# for a rule that ran with no declared or cached cost. Kept separate from
+# records 1-5, which predate this feature, rather than folded into them.
+matched_rules = []
+for _ri in rule_order:
+    if _ri in stop_excluded:
+        _kind, _reason = stop_excluded[_ri]
+    elif _ri in chronic_rules:
+        _kind = "chronic"
+        _reason = ("permanently over budget (%ss > %ss) - run /crew:verify --all"
+                   % (int(rule_secs.get(_ri, 0)), int(budget) if budget is not None else 0))
+    else:
+        _kind, _reason = "normal", ""
+    # rule_cmds[_ri] stays empty for a reach-excluded rule (it never runs),
+    # so fall back to the rule's own `run` list straight from the map for
+    # the label text.
+    _first_cmd = (rule_cmds.get(_ri) or (cfg["rules"][_ri].get("run") or [""]))[0]
+    matched_rules.append({
+        "key": _rule_keys.get(_ri, str(_ri)),
+        "ri": _ri,
+        "label": "rules[%d]: %s" % (_ri, _first_cmd[:80]),
+        "kind": _kind,
+        "reason": _reason,
+        "cmds": rule_cmds.get(_ri, []),
+        "unknown": bool(truly_unknown.get(_ri)),
+    })
+extras = json.dumps({"matched_rules": matched_rules, "cmd_env": cmd_env})
 sys.stdout.write("\x1e".join(cmds) + "\x1d" + "\x1e".join(unmatched) + "\x1d" + "\x1e".join(notices)
-                 + "\x1d" + str(len(deferred))
-                 + "\x1d" + str(int(max_cost)) + "\n")
+                 + "\x1d" + str(acute_count)
+                 + "\x1d" + str(int(max_cost))
+                 + "\x1d" + extras + "\n")
 PY
 )
 PY_STATUS=$?
@@ -876,29 +1102,94 @@ MAX_COST=$(printf '%s\n' "$MATCHED" | tr '\035' '\n' | sed -n 5p | tr '\036' '\n
 case "$MAX_COST" in
   ""|*[!0-9]*) MAX_COST=0 ;;
 esac
+# Record 6: JSON, everything verify_record.py needs after the run loop to
+# persist per-rule status and update the measured-timings cache. A single
+# line (json.dumps with no indent), so sed -n 6p on the \x1d split is safe.
+EXTRAS=$(printf '%s\n' "$MATCHED" | tr '\035' '\n' | sed -n 6p)
 if [ -n "$NOTICES" ]; then
   printf '%s\n' "$NOTICES" >&2
 fi
 
 FAILED=0
 TOTAL_ELAPSED=0
+# NDJSON accumulator: one line per command actually run this turn, with its
+# outcome and elapsed time, fed to verify_record.py sync below. Built from
+# python's own JSON encoding of $c rather than hand-quoted in bash, so a
+# command carrying an unusual byte cannot corrupt the record the way a
+# hand-built separator could.
+CMD_LOG=""
 # BEFORE the first rule, not only after it: the first rule is as able to
 # exceed the TTL as any later one, and until this ran the lock carried no
 # deadline at all.
 lock_extend
 while IFS= read -r c; do
   [ -z "$c" ] && continue
+  # --- env pinning ---------------------------------------------------
+  # ENV, AWS_PROFILE, AWS_DEFAULT_REGION, KUBECONFIG and TF_WORKSPACE are
+  # unset for every rule command UNLESS the owning rule declares "env" for
+  # it, in which case exactly those declared values are exported instead.
+  # A gate whose target is chosen by whatever the calling shell happened to
+  # have set cannot be reasoned about - this is what stops an inherited
+  # `ENV=prod` (or nothing at all, defaulting some downstream script at a
+  # live host) from silently riding along into a check nobody pointed there.
+  PIN_REPORT=""
+  if [ -n "$PY" ] && [ -n "$EXTRAS" ]; then
+    ENV_LINES=$(printf '%s' "$EXTRAS" | "$PY" -c '
+import json, sys
+extras = json.load(sys.stdin)
+spec = (extras.get("cmd_env") or {}).get(sys.argv[1]) or {}
+for v in ("ENV", "AWS_PROFILE", "AWS_DEFAULT_REGION", "KUBECONFIG", "TF_WORKSPACE"):
+    val = spec.get(v)
+    if isinstance(val, str):
+        print("SET\x1f" + v + "\x1f" + val)
+    else:
+        print("UNSET\x1f" + v)
+' "$c" 2>/dev/null)
+  else
+    ENV_LINES=""
+    for v in ENV AWS_PROFILE AWS_DEFAULT_REGION KUBECONFIG TF_WORKSPACE; do
+      ENV_LINES="${ENV_LINES}UNSET"$'\x1f'"$v"$'\n'
+    done
+  fi
+  while IFS=$'\x1f' read -r ACTION VAR VAL; do
+    [ -z "$ACTION" ] && continue
+    if [ "$ACTION" = "SET" ]; then
+      export "$VAR=$VAL"
+      PIN_REPORT="$PIN_REPORT $VAR=(declared)"
+    else
+      unset "$VAR" 2>/dev/null || true
+      PIN_REPORT="$PIN_REPORT $VAR=unset"
+    fi
+  done <<< "$ENV_LINES"
+  echo "verify-gate: env pinned -$PIN_REPORT" >&2
   # </dev/null: a check that reads stdin (some test runners do) would otherwise
   # consume the rest of $CMDS from the here-string and silently skip those checks.
   RULE_START=$(date +%s)
-  if ! OUT=$(eval "$c" 2>&1 </dev/null); then
+  OUT=$(eval "$c" 2>&1 </dev/null)
+  RC=$?
+  # Exit 77 is SKIP, the _verify/smoke.sh and GNU automake convention for
+  # "skipped, environment absent" -- not a pass, not a fail. It must not
+  # fail the turn, and it must not be recorded as verified either: it is
+  # listed with the deferred/chronic ones below, via CMD_STATUS.
+  if [ "$RC" -eq 77 ]; then
+    echo "verify-gate: SKIP (rc 77, environment absent): $c" >&2
+    CMD_STATUS="skip77"
+  elif [ "$RC" -ne 0 ]; then
     echo "VERIFY FAILED: $c" >&2
     echo "$OUT" | tail -25 >&2
     FAILED=1
+    CMD_STATUS="fail"
+  else
+    CMD_STATUS="pass"
   fi
   RULE_ELAPSED=$(( $(date +%s) - RULE_START ))
   TOTAL_ELAPSED=$(( TOTAL_ELAPSED + RULE_ELAPSED ))
   echo "verify-gate: ${RULE_ELAPSED}s  $c" >&2
+  if [ -n "$PY" ]; then
+    LOG_LINE=$("$PY" -c 'import json,sys; print(json.dumps({"cmd": sys.argv[1], "status": sys.argv[2], "elapsed": int(sys.argv[3])}))' "$c" "$CMD_STATUS" "$RULE_ELAPSED" 2>/dev/null)
+    [ -n "$LOG_LINE" ] && CMD_LOG="$CMD_LOG
+$LOG_LINE"
+  fi
   # Heartbeat AFTER the rule, not before: the lock's age then means "no rule
   # has finished in this long", which is the only reading that distinguishes a
   # slow live run from an abandoned one without asking whether a pid is alive
@@ -921,6 +1212,34 @@ if [ -n "$UNMAPPED" ] && grep -q '"unmapped"[[:space:]]*:[[:space:]]*"fail"' .cr
 fi
 
 [ "$FAILED" -eq 0 ] || exit 2
+
+# Per-rule record sync. Only reached on a turn where nothing FAILED (rc 77
+# is not a failure) -- an unreliable run should not overwrite what a
+# previous clean run recorded. Best-effort: no python, no EXTRAS, or a
+# script that errors leaves the record exactly as it was, same fail-safe
+# direction as everything else here (an unknown never resolves to
+# "verified"). record 4 (acute-deferred count) alone still governs whether
+# the sha marker below may advance.
+if [ -n "$PY" ] && [ -n "$EXTRAS" ]; then
+  SYNC_PY="$FP_DIR/verify_record.py"
+  if [ -f "$SYNC_PY" ]; then
+    SYNC_SHA=$(git rev-parse HEAD 2>/dev/null)
+    "$PY" -c '
+import json, sys
+extras = json.loads(sys.argv[1])
+cmd_log = []
+for line in sys.stdin.read().split("\n"):
+    line = line.strip()
+    if not line:
+        continue
+    try:
+        cmd_log.append(json.loads(line))
+    except ValueError:
+        pass
+print(json.dumps({"sha": sys.argv[2], "matched_rules": extras.get("matched_rules", []), "cmd_log": cmd_log}))
+' "$EXTRAS" "$SYNC_SHA" <<< "$CMD_LOG" | "$PY" "$SYNC_PY" sync >&2
+  fi
+fi
 
 if fully_verified; then
   record_verified

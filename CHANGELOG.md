@@ -6,6 +6,63 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Fixed
 
+- **`crew` 0.19.93: the Stop gate could take 7+ minutes and never recover.**
+  A rule priced over the Stop budget on its own (`rules[8]`, 185s vs a 60s
+  default) was deferred on every Stop, so `.crew/.verify-verified-at` and
+  `.crew/.verify-gate.fingerprint` — both written ONLY on a fully-clean run —
+  never advanced. That froze the baseline every OTHER rule diffs against, so
+  every Stop re-matched and re-ran the whole accumulated changeset from the
+  same old commit, forever. Fixed with a per-rule record
+  (`.crew/.verify-gate.record.json`, machine-local, never tracked): a rule
+  that is PERMANENTLY over budget on its own no longer blocks the baseline —
+  it is named instead, and reported every turn ("NOT VERIFIED ON THIS TREE")
+  until `/crew:verify --all` actually runs it clean. A rule merely crowded
+  out by this turn's contention (acute, not chronic) still blocks the
+  baseline exactly as before, since that case really is unverified for this
+  commit. `--all` no longer diffs against any commit at all — on a
+  single-branch repo `merge-base(HEAD, main)` is `HEAD`, which silently
+  narrowed `--all` to nothing once the baseline could advance past a chronic
+  rule's own files; it now always sees the whole working tree.
+
+  Four more fixes landed in the same change: a `reach` axis (`local` |
+  `network` | `host`) so the Stop gate never runs a rule that leaves the
+  machine, including an UNDECLARED rule whose command matches a reach verb
+  (`ssm`, `ssh`, `curl `, `aws `, `az `, `gh `, `psql`, `mysql`) — an unknown
+  reach is deferred and named, not quietly treated as local; environment
+  pinning (`ENV`, `AWS_PROFILE`, `AWS_DEFAULT_REGION`, `KUBECONFIG`,
+  `TF_WORKSPACE` unset per rule unless it declares `"env"`); exit 77 as SKIP
+  (not a pass, not a fail, never recorded as verified), the `_verify/
+  smoke.sh`/GNU automake convention; and measure-and-cache, so an unpriced
+  rule that runs gets its wall time cached
+  (`.crew/.verify-gate.timings.json`) and priced from the second Stop
+  onward instead of staying mandatory forever. `verify-gate.sh --price` /
+  `verify-gate.ps1 -Price` (operator-only, never reachable from Stop — this
+  repo's own `.crew/verify.json` is tracked, so an unattended `--price`
+  would dirty a committed file every turn) times an unpriced map and writes
+  `seconds`, refusing a rule whose reach is not `local`.
+
+  Extended the same day, on explicit instruction to build the whole brief
+  rather than scope down: a rule may declare `"requiresCleanTree": true`,
+  sharing the reach exclusion plumbing — never run on Stop (the tree is
+  dirty by definition during ordinary work), always run under `--all` and
+  the merge gate, which is where the SRL case this covers
+  (`sabotage-test.sh`'s "REFUSING TO RUN: the working tree is not clean")
+  actually gets checked instead of failing red every Stop. `crew_state.py`
+  gained three pm-pulse findings — `verifyMarkerStale` (the sha marker is
+  missing or its distance from HEAD could not be determined, or it is more
+  than `VERIFY_MARKER_STALE_COMMITS` behind), `verifyRulesUnpriced` and
+  `verifyReachUndeclared` (counts read straight from `.crew/verify.json`,
+  gated on the map existing at all so a repo that never adopted it stays
+  silent) — all three keeping the "unknown never reads healthy" discipline:
+  an unreadable map or an uncomputable marker distance renders as `unknown`
+  in the brief, never as 0. `CONFIG.md` gained §18 documenting the whole
+  per-rule-record/reach/env-pin/SKIP mechanism, since none of it is an
+  actual config key and the brief's named `HOOKS.md` does not exist
+  anywhere in this repo. The crew-setup example map
+  (`skills/crew-setup/examples/verify-terraform.json`) now carries
+  illustrative `seconds`/`reach` on every priced rule, since it is the
+  shipped map the brief's "Template" deliverable actually meant.
+
 
 
 - **`crew` 0.19.92: mechanical enforcement of each role's write scope, via a

@@ -837,6 +837,149 @@ def test_high_rate_fires_tickets_too_large():
     assert "ticketsTooLarge" in got
 
 
+# --- Stop gate health: verifyMarkerStale / verifyRulesUnpriced /
+# verifyReachUndeclared ------------------------------------------------------
+#
+# All three are gated on `mapPresent` (see read_verify_health's docstring),
+# so a repo with no `.crew/verify.json` at all -- the majority of repos --
+# fires none of them. `test_healthy_state_fires_no_triggers` above already
+# covers that: `_state()` supplies no `verify` key, `dict_or_empty(None)` is
+# `{}`, and `mapPresent` reads False.
+
+def test_no_verify_map_fires_none_of_the_three():
+    got = crew_state.evaluate_triggers(
+        _state(verify={"mapPresent": False, "markerPresent": False,
+                       "markerBehindCommits": None, "totalRules": None,
+                       "unpricedRules": None, "undeclaredReachRules": None})
+    )
+    assert "verifyMarkerStale" not in got
+    assert "verifyRulesUnpriced" not in got
+    assert "verifyReachUndeclared" not in got
+
+
+def test_map_present_but_marker_missing_fires_marker_stale():
+    got = crew_state.evaluate_triggers(
+        _state(verify={"mapPresent": True, "markerPresent": False,
+                       "markerBehindCommits": None, "totalRules": 5,
+                       "unpricedRules": 0, "undeclaredReachRules": 0})
+    )
+    assert "verifyMarkerStale" in got
+    assert "verifyRulesUnpriced" not in got
+    assert "verifyReachUndeclared" not in got
+
+
+def test_marker_behind_more_than_the_threshold_fires_marker_stale():
+    got = crew_state.evaluate_triggers(
+        _state(verify={"mapPresent": True, "markerPresent": True,
+                       "markerBehindCommits": crew_state.VERIFY_MARKER_STALE_COMMITS + 1,
+                       "totalRules": 5, "unpricedRules": 0,
+                       "undeclaredReachRules": 0})
+    )
+    assert "verifyMarkerStale" in got
+
+
+def test_marker_just_under_the_threshold_does_not_fire():
+    got = crew_state.evaluate_triggers(
+        _state(verify={"mapPresent": True, "markerPresent": True,
+                       "markerBehindCommits": crew_state.VERIFY_MARKER_STALE_COMMITS,
+                       "totalRules": 5, "unpricedRules": 0,
+                       "undeclaredReachRules": 0})
+    )
+    assert "verifyMarkerStale" not in got
+
+
+def test_marker_distance_unknown_fires_stale_not_healthy():
+    """UNKNOWN NEVER RESOLVES TO HEALTHY: a marker present but whose
+    distance from HEAD could not be computed reads as stale, not as 0."""
+    got = crew_state.evaluate_triggers(
+        _state(verify={"mapPresent": True, "markerPresent": True,
+                       "markerBehindCommits": None, "totalRules": 5,
+                       "unpricedRules": 0, "undeclaredReachRules": 0})
+    )
+    assert "verifyMarkerStale" in got
+
+
+def test_unpriced_rules_fire_the_unpriced_trigger():
+    got = crew_state.evaluate_triggers(
+        _state(verify={"mapPresent": True, "markerPresent": True,
+                       "markerBehindCommits": 0, "totalRules": 10,
+                       "unpricedRules": 3, "undeclaredReachRules": 0})
+    )
+    assert "verifyRulesUnpriced" in got
+
+
+def test_unpriced_count_unknown_fires_not_healthy():
+    got = crew_state.evaluate_triggers(
+        _state(verify={"mapPresent": True, "markerPresent": True,
+                       "markerBehindCommits": 0, "totalRules": None,
+                       "unpricedRules": None, "undeclaredReachRules": 0})
+    )
+    assert "verifyRulesUnpriced" in got
+
+
+def test_undeclared_reach_rules_fire_the_reach_trigger():
+    got = crew_state.evaluate_triggers(
+        _state(verify={"mapPresent": True, "markerPresent": True,
+                       "markerBehindCommits": 0, "totalRules": 10,
+                       "unpricedRules": 0, "undeclaredReachRules": 4})
+    )
+    assert "verifyReachUndeclared" in got
+
+
+def test_fully_priced_and_declared_map_with_fresh_marker_fires_nothing():
+    got = crew_state.evaluate_triggers(
+        _state(verify={"mapPresent": True, "markerPresent": True,
+                       "markerBehindCommits": 0, "totalRules": 21,
+                       "unpricedRules": 0, "undeclaredReachRules": 0})
+    )
+    assert "verifyMarkerStale" not in got
+    assert "verifyRulesUnpriced" not in got
+    assert "verifyReachUndeclared" not in got
+
+
+def test_read_verify_health_against_a_real_fixture(tmp_path):
+    """read_verify_health itself, not evaluate_triggers - reads the actual
+    files the gate reads, the same way --price was sabotage-tested against a
+    fixture rather than this repo's own already-fully-priced map."""
+    root = crew_fixtures.make_repo(tmp_path)
+    (root / ".crew" / "verify.json").write_text(json.dumps({
+        "rules": [
+            {"paths": ["a.py"], "run": ["echo a"], "seconds": 5, "reach": "local"},
+            {"paths": ["b.py"], "run": ["echo b"]},
+            {"paths": ["c.py"], "run": ["echo c"], "reach": "network"},
+        ]
+    }), encoding="utf-8")
+    sha = subprocess.run(["git", "rev-parse", "HEAD"], cwd=root,
+                         capture_output=True, text=True, check=True).stdout.strip()
+    (root / ".crew" / ".verify-verified-at").write_text(sha + "\n", encoding="utf-8")
+
+    health = crew_state.read_verify_health(str(root))
+    assert health["mapPresent"] is True
+    assert health["markerPresent"] is True
+    assert health["markerBehindCommits"] == 0
+    assert health["totalRules"] == 3
+    assert health["unpricedRules"] == 2  # b.py and c.py both lack `seconds`
+    assert health["undeclaredReachRules"] == 1  # only b.py lacks `reach`
+
+
+def test_read_verify_health_unreadable_map_is_unknown_not_zero(tmp_path):
+    root = crew_fixtures.make_repo(tmp_path)
+    (root / ".crew" / "verify.json").write_text("{ not json", encoding="utf-8")
+
+    health = crew_state.read_verify_health(str(root))
+    assert health["mapPresent"] is True
+    assert health["totalRules"] is None
+    assert health["unpricedRules"] is None
+    assert health["undeclaredReachRules"] is None
+
+
+def test_read_verify_health_no_map_at_all(tmp_path):
+    root = crew_fixtures.make_repo(tmp_path)
+    health = crew_state.read_verify_health(str(root))
+    assert health["mapPresent"] is False
+    assert health["totalRules"] is None
+
+
 def test_pending_handoff_fires():
     got = crew_state.evaluate_triggers(
         _state(work={"ticket": "T-1", "handoffPending": True})

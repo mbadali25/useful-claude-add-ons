@@ -1,5 +1,5 @@
 {
-  "_note": "version, anchor and why are notes for humans - nothing executes them. paths/run/always/default/unmapped drive the Stop gate; agents drives /crew:review; environments drives /crew:promote. agents may name ANY installed subagent, not only crew's own - a bare name resolves to crew's role first, then to any other installed agent. One this machine lacks is reported as a gap, never skipped silently.",
+  "_note": "version, anchor and why are notes for humans - nothing executes them. paths/run/always/default/unmapped drive the Stop gate; agents drives /crew:review; environments drives /crew:promote. agents may name ANY installed subagent, not only crew's own - a bare name resolves to crew's role first, then to any other installed agent. One this machine lacks is reported as a gap, never skipped silently. `seconds` and `reach` (crew 0.19.93) are ILLUSTRATIVE here, same as everything else in this file - this is a fictional repo, so nothing below was actually timed. Copy the SHAPE (a number for every rule, a reach on every rule) and re-time/re-declare for real once you have a real map; do not copy the NUMBERS.",
   "version": 1,
   "anchor": "REPO@SHA",
   "rules": [
@@ -8,37 +8,49 @@
               "terraform validate",
               "tflint",
               "terraform-docs markdown table . --output-file README.md --output-check"],
+      "seconds": 25,
+      "reach": "local",
       "agents": ["security"],
-      "why": "fmt/validate catch syntax; tflint catches deprecated syntax and undocumented variables; terraform-docs --output-check FAILS when the README is stale instead of rewriting it - a gate that writes to the tree makes README.md a changed file on the next run, which trips unmapped:fail in a loop" },
+      "why": "fmt/validate catch syntax; tflint catches deprecated syntax and undocumented variables; terraform-docs --output-check FAILS when the README is stale instead of rewriting it - a gate that writes to the tree makes README.md a changed file on the next run, which trips unmapped:fail in a loop. reach: local - `terraform validate` reads cached provider schemas rather than calling out; if this repo's providers require a live `terraform init` first, declare `network` instead." },
 
     { "paths": ["**/*.py"],
       "run": ["ruff check .", "ruff format --check .", "./_verify/smoke.sh"],
-      "why": "Lambda handlers are orchestration; smoke proves the CSV-to-stg round trip still works" },
+      "seconds": 40,
+      "reach": "network",
+      "why": "Lambda handlers are orchestration; smoke proves the CSV-to-stg round trip still works. reach: network - the round trip smoke.sh proves is a real CSV moving through a real staging destination, which is exactly the case CLAUDE.md's reach axis exists for: undeclared, this would have been a Stop-time heuristic miss (no ssm/ssh/curl/aws/az/gh/psql/mysql token in the command line) and run unattended on every Stop anyway." },
 
     { "paths": ["sql/**", "migrations/**"],
       "run": ["./_verify/migrate-fresh.sh",
               "./_verify/migrate-rollback.sh",
               "./_verify/smoke.sh"],
+      "seconds": 90,
+      "reach": "network",
       "agents": ["dba"],
-      "why": "business logic lives in procedures; fresh apply catches ordering, rollback proves the down path, smoke proves data still moves" },
+      "why": "business logic lives in procedures; fresh apply catches ordering, rollback proves the down path, smoke proves data still moves. reach: network - every one of the three commands applies against a real database service." },
 
     { "paths": ["**/*.css", "**/*.scss", "src/components/**", "**/*.html"],
       "run": ["npx playwright test --grep @visual"],
-      "why": "style changes are invisible to API checks; visual baselines are the only thing that sees them" },
+      "seconds": 60,
+      "reach": "network",
+      "why": "style changes are invisible to API checks; visual baselines are the only thing that sees them. reach: network - Playwright drives a browser against a served URL, not a static file." },
 
     { "paths": ["iam/**", "**/policy*.json", "**/*iam*.tf"],
       "run": ["terraform validate", "trivy config ."],
+      "seconds": 15,
+      "reach": "local",
       "agents": ["security", "security-auditor"],
-      "why": "permission changes need a scanner and a second pair of eyes, not just fmt. Two agents on purpose and they are not redundant: crew's security reads THIS diff for what it newly makes reachable, the domain auditor reads the resulting permission model for whether it is defensible at all. Drop the second name if it is not installed here - a rule that asks every time and never gets it is noise in metrics.md" },
+      "why": "permission changes need a scanner and a second pair of eyes, not just fmt. Two agents on purpose and they are not redundant: crew's security reads THIS diff for what it newly makes reachable, the domain auditor reads the resulting permission model for whether it is defensible at all. Drop the second name if it is not installed here - a rule that asks every time and never gets it is noise in metrics.md. reach: local - both commands read configuration on disk; neither calls the cloud provider." },
 
     { "paths": ["**/*.ps1", "**/*.psm1"],
       "run": ["pwsh -NoProfile -Command \"Invoke-ScriptAnalyzer -Path . -Recurse -EnableExit\""],
+      "seconds": 10,
+      "reach": "local",
       "agents": ["powershell-security-hardening"],
-      "why": "these run with real privilege on domain-joined hosts, where a linter sees style and not blast radius. Example of naming a specialist crew does not ship - resolution falls through to any installed agent of that name" },
+      "why": "these run with real privilege on domain-joined hosts, where a linter sees style and not blast radius. Example of naming a specialist crew does not ship - resolution falls through to any installed agent of that name. reach: local - static analysis of the script text, not an execution against a domain-joined host." },
 
     { "paths": ["README.md", "footer.md", "docs/**", "_verify/README.md"],
       "run": [],
-      "why": "documentation. Listed so it does not trip unmapped:fail - deliberately unchecked, not forgotten" }
+      "why": "documentation. Listed so it does not trip unmapped:fail - deliberately unchecked, not forgotten. No `seconds`/`reach`: an empty `run` never executes, so pricing or declaring reach on it would document a property of nothing." }
   ],
 
   "always": [],

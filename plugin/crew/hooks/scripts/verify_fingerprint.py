@@ -117,6 +117,13 @@ def _file_digest(path):
 _GATE_OWNED_FILES = frozenset({
     ".crew/.verify-verified-at",
     ".crew/.verify-gate.fingerprint",
+    # The per-rule record and the measured-timings cache, both written by
+    # verify_record.py on the way out of a clean run, same reason as the
+    # two above: including them means every run invalidates the digest it
+    # just recorded, and the skip never fires. Named, not a `.crew/` prefix
+    # -- see the note above this set for why a blanket exclusion is wrong.
+    ".crew/.verify-gate.record.json",
+    ".crew/.verify-gate.timings.json",
 })
 _GATE_OWNED_DIRS = (".crew/.verify-gate.lock/",)
 

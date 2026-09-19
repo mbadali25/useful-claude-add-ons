@@ -324,14 +324,20 @@ def test_a_rule_that_does_not_fit_defers_WHOLE(flavour, tmp_path):
     """MUST-BLOCK, and the other half of the unit. Charging once must not turn
     into running part of a rule that does not fit: a half-run rule is not a
     cheaper rule, it is a rule nobody can say was checked."""
+    # Both rules fit the 60s budget ALONE (40s each); only together do they
+    # not, which is what makes the second's deferral ACUTE (budget
+    # contention) rather than CHRONIC (permanently over budget on its own).
+    # Kept deliberately out of chronic territory so this stays a pure test
+    # of "defer WHOLE, not half" -- see test_verify_gate_baseline_recording.py
+    # for the chronic case, which has a different baseline contract.
     straddling = {
         "version": 1,
         "rules": [
-            {"paths": ["a.py"], "seconds": 5, "run": ["echo RAN-cheap"],
+            {"paths": ["a.py"], "seconds": 40, "run": ["echo RAN-cheap"],
              "why": "fits"},
-            {"paths": ["a.py"], "seconds": 90,
+            {"paths": ["a.py"], "seconds": 40,
              "run": ["echo RAN-big-a", "echo RAN-big-b"],
-             "why": "does not fit, and must not fit HALF"},
+             "why": "fits alone; not alongside the first; must not fit HALF"},
         ],
         "default": [],
         "unmapped": "ignore",
@@ -341,18 +347,19 @@ def test_a_rule_that_does_not_fit_defers_WHOLE(flavour, tmp_path):
 
     ran = _ran(result)
     assert ran == ["echo RAN-cheap"], (
-        "the 90s rule does not fit a 60s budget and must defer entirely. ran="
+        "the second rule does not fit alongside the first under a 60s "
+        "budget and must defer entirely. ran="
         + repr(ran) + chr(10) + result.stderr
     )
     for cmd in ("echo RAN-big-a", "echo RAN-big-b"):
-        assert "deferred to /crew:verify: " + cmd + " (90s)" in result.stderr, (
+        assert "deferred to /crew:verify: " + cmd + " (40s)" in result.stderr, (
             "every command of a deferred rule must be named, or the reader "
             "cannot tell what went unchecked. " + result.stderr
         )
     assert "deferred 2" in result.stderr, result.stderr
     assert "the verified baseline was NOT advanced" in result.stderr, (
-        "a deferred rule was never checked, so the tree is not verified. "
-        + result.stderr
+        "an ACUTELY deferred rule was never checked, so the tree is not "
+        "verified. " + result.stderr
     )
 
 

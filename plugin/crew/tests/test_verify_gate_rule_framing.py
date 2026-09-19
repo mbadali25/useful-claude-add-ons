@@ -231,8 +231,13 @@ def test_the_two_halves_of_the_framing_contract_agree():
         "the writer emits " + str(records) + " records but " + str(len(readers))
         + " readers split on \\035: " + repr(readers)
     )
+    # Record 6 (EXTRAS) is the one exception: it is a single JSON blob, not
+    # a \x1e-joined list of subfields, so it has nothing to split further --
+    # unlike records 1-5, which predate it and are still \x1e-joined lists.
     for line in readers:
         assert "sed -n" in line, line
+        if "EXTRAS=" in line:
+            continue
         assert "tr '\\036'" in line, line
 
     assert 'print("\\x1e".join(cmds))' not in text, \

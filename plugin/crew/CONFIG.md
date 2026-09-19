@@ -1692,3 +1692,76 @@ layers, ratcheted to the narrower one, read through
 header states — "one mechanism can be wrong; two can disagree, and then only
 one of them gets fixed." Adding `"roleWrites"` to `crew_guards.ALL_GUARD_NAMES`
 and one branch to `crew_guards.guard_tiers` was the whole cost of reusing it.
+
+## 19. `verify.stopBudgetSeconds` and the Stop gate's per-rule record
+
+`verifyGate` and `verify.stopBudgetSeconds` are the only two config keys this
+gate reads (§10/§11 tables above). Everything else about how a Stop turn is
+verified is NOT a config setting — it is per-rule fields inside
+`.crew/verify.json` (`reach`, `env`, `requiresCleanTree`, `seconds`) and a
+machine-local record the gate keeps for itself. Documented here rather than
+invented as new config keys, because that is what it actually is.
+
+**The single marker used to mean "everything passed."** Before crew 0.19.93,
+`.crew/.verify-verified-at` (the sha baseline) and `.crew/.verify-gate.fingerprint`
+(the unchanged-turn skip) were written ONLY when every matched rule ran clean.
+A rule priced over `verify.stopBudgetSeconds` on its own — permanently, not as
+a fluke of this turn's ordering — was deferred on EVERY Stop, so neither ever
+advanced again: the baseline froze, and every OTHER rule re-matched and
+re-ran from that same old commit, forever. That was the actual 7+ minute Stop
+gate defect this section exists to explain the fix for.
+
+**The per-rule record replaces "everything or nothing."**
+`.crew/.verify-gate.record.json` (machine-local, gitignored, never tracked —
+see the `.crew/*` ignore policy in root `CLAUDE.md`) now tracks status per
+rule, keyed by a content hash of that rule's `paths`/`run` so it survives
+`.crew/verify.json` being reordered:
+
+- A rule that is PERMANENTLY over budget on its own no longer blocks the sha
+  marker or the fingerprint. It is recorded as `"chronic"` instead, and the
+  gate prints `NOT VERIFIED ON THIS TREE` for it on every subsequent Stop —
+  whether or not that rule's own files changed this turn — until
+  `/crew:verify --all` actually runs it clean.
+- A rule that would fit `verify.stopBudgetSeconds` alone but lost to this
+  turn's contention (another rule's cost crowded it out) is "acute", not
+  chronic, and still blocks the sha marker exactly as before this feature —
+  that case really is unverified for THIS commit, not permanently
+  unverifiable, and freezing the baseline is the correct answer for it.
+- A rule declaring `"reach"` other than `"local"`, or naming no `"reach"` at
+  all while its command matches a reach verb (`ssm`, `ssh`, `curl `, `aws `,
+  `az `, `gh `, `psql`, `mysql`), is recorded as `"reach_declared"` /
+  `"reach_undeclared"` and is never run on Stop at all — only under
+  `/crew:verify --all` and the merge gate.
+- A rule declaring `"requiresCleanTree": true` is recorded as
+  `"clean_tree_required"` and is never run on Stop either, for the same
+  reason: the working tree is dirty by definition during ordinary work, so a
+  rule that refuses on a dirty tree is a permanent red there and a real
+  check only under `--all` against a clean checkout.
+- A rule whose command exits 77 is recorded as `"skipped"` — the
+  `_verify/smoke.sh` and GNU automake convention for "skipped, environment
+  absent". Not a pass, not a fail: it does not fail the Stop turn and it is
+  not recorded as verified either.
+
+**`--price` writes `seconds` into `.crew/verify.json` itself, so it is an
+operator command, never something a hook runs.** `.crew/verify.json` is
+TRACKED in this repo (`git ls-files .crew/` lists it, per the ignore policy
+in root `CLAUDE.md`), so an automatic `--price` would dirty a committed file
+on every Stop. `verify-gate.sh --price [path] [--force]` /
+`verify-gate.ps1 -Price [-PriceTarget path] [-PriceForce]` is reachable only
+by typing the flag; the Stop hook (`hooks.json`) never passes it.
+
+**Environment pinning is unconditional, not a config key either.** Every rule
+command the gate runs gets `ENV`, `AWS_PROFILE`, `AWS_DEFAULT_REGION`,
+`KUBECONFIG` and `TF_WORKSPACE` unset, unless that rule's own `"env"` object
+declares values for them — in which case exactly those are set instead, and
+the gate prints what it pinned. There is no `verify.envPinning: false` escape
+hatch; a rule that genuinely needs a variable declares it, in the map, next
+to the command that needs it.
+
+**Unknown never resolves to the permissive value, in any of this.** A
+`.crew/.verify-gate.record.json` that cannot be read is treated as empty —
+losing only history, never fabricating a clean rule that never ran (see
+`verify_record.py`'s module docstring). A `.crew/config.json` that cannot be
+read leaves `verify.stopBudgetSeconds` at its compiled default (60) rather
+than removing the budget. See `commands/verify.md` for the full mechanism and
+`hooks/scripts/verify_record.py` / `verify_price.py` for the code.
