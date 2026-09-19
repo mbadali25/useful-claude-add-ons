@@ -280,22 +280,26 @@ def test_the_ratchet_is_one_table_covering_install_policy_and_all_four_guards():
     resolves.
 
     The function name says "all four guards" and predates two of them plus
-    schema 7's `change.requireForProduction`; the SET below is the contract and
-    it is exhaustive. The name is left alone because `sabotage.py` anchors a
-    mutation on it, and an anchor that silently stops matching is the failure
-    that file's own header calls out."""
+    schema 7's `change.requireForProduction` and `guards.roleWrites`; the SET
+    below is the contract and it is exhaustive. The name is left alone because
+    `sabotage.py` anchors a mutation on it, and an anchor that silently stops
+    matching is the failure that file's own header calls out."""
     assert set(crew_state.RATCHETED_KEYS) == {
         "install.policy", "guards.terraformApply", "guards.forcePush",
         "guards.adminMerge", "guards.mergeGate", "guards.prodDatabase",
-        "guards.prodServer", "change.requireForProduction"}
-    # Two vocabularies, one table. The production guards ratchet by
-    # `none` < `read` < `full` and must never be normalised through the policy
-    # tiers -- that would resolve every `read` to `block` and report a level
-    # nobody set.
+        "guards.prodServer", "guards.roleWrites",
+        "change.requireForProduction"}
+    # Three vocabularies, one table. The production guards ratchet by
+    # `none` < `read` < `full`, `roleWrites` by `block` < `report` < `off`,
+    # and neither may ever be normalised through the other's tiers -- that
+    # would resolve every `read` to `block`, or every `report` to `off`, and
+    # report a tier nobody set.
     assert crew_state.RATCHETED_KEYS["guards.prodServer"][0] == (
         crew_state.PROD_LEVELS)
     assert crew_state.RATCHETED_KEYS["guards.forcePush"][0] == (
         crew_state.GUARD_POLICIES)
+    assert crew_state.RATCHETED_KEYS["guards.roleWrites"][0] == (
+        crew_state.ROLE_WRITE_POLICIES)
     assert "pm.authority" not in crew_state.RATCHETED_KEYS
     assert crew_state.ratchet_spec("tracker") is None
 

@@ -323,7 +323,8 @@ def default_config():
         # globally would fail `is_global_path`'s rule that every
         # globally-settable key is a real repo key.
         "install": copy.deepcopy(crew_state.INSTALL_DEFAULTS),
-        # Same rule, same ratchet, six more keys. Both layers, because a repo
+        # Same rule, same ratchet, seven more keys (the six command/production
+        # guards plus `roleWrites`). Both layers, because a repo
         # that may only NARROW still has to be able to say so.
         "guards": copy.deepcopy(crew_state.GUARD_DEFAULTS),
         # REPO ONLY, and the asymmetry is the design. `guards.prodDatabase`
@@ -480,13 +481,15 @@ def default_global_config():
         # the only key whose global value a repo cannot override upward --
         # see `crew_state.effective_ratcheted`.
         "install": copy.deepcopy(crew_state.INSTALL_DEFAULTS),
-        # The six guards, and the strongest case on this list for the ratchet
-        # rather than precedence. `guards.forcePush` decides whether a command
-        # that destroys history on a remote runs without a word, and
+        # The seven guards, and the strongest case on this list for the
+        # ratchet rather than precedence. `guards.forcePush` decides whether a
+        # command that destroys history on a remote runs without a word,
         # `guards.prodDatabase` whether crew may write to a production
-        # database; the repo file asking for either arrived inside a clone
-        # written by someone else. Note what is NOT here: `production.*`, the
-        # patterns those two match against, which is a repo fact.
+        # database, and `guards.roleWrites` whether a dispatched role may
+        # write outside its declared scope; the repo file asking for any of
+        # them arrived inside a clone written by someone else. Note what is
+        # NOT here: `production.*`, the patterns the first two match against,
+        # which is a repo fact.
         "guards": copy.deepcopy(crew_state.GUARD_DEFAULTS),
         # The whole `change` block, and every key in it earns the global layer
         # on its own terms. `requester` and `implementor` are the person:
@@ -838,6 +841,97 @@ def install_plan_for(root, name, path=None):
     plan["repoPolicy"] = resolved["repo"]
     plan["globalPolicy"] = resolved["global"]
     return plan
+
+
+def layer_state(path):
+    """One config FILE, classified as `"absent"`, `"ok"` or `"corrupt"` --
+    the one rule every caller that needs to distinguish "nobody set this"
+    from "something here is unreadable" derives from, for EITHER config
+    layer (the repo's `.crew/config.json`, or the machine-global file at
+    `GLOBAL_CONFIG_PATH`).
+
+    Deliberately NOT the same collapse `crew_state.load_config` /
+    `read_global_config` make for every ratcheted key's ordinary read path
+    -- `{}` for "absent, malformed, or not a dict" is right there, because
+    those keys have always failed OPEN on a bad config file (see
+    `read_global_config`'s own docstring, "a broken global file must look
+    exactly like no global file at all"). `guards.roleWrites` cannot
+    inherit that collapse: unlike those keys, it can BLOCK a tool call, and
+    an armed role-write guard going silently permissive because the file
+    that armed it got corrupted is CLAUDE.md's own named recurring bug --
+    "the unknown collapsing into the safe-looking value" -- happening to
+    the one guard in this file that can least afford it.
+
+    Reported in three rounds, 2026-09-19, and this function is the single
+    rule that now answers all of them instead of one bespoke check per
+    round: (1) with no global override, replacing a repo's
+    `guards.roleWrites: block` config with invalid JSON, or with
+    `{"guards": 42}`, made the effective policy resolve as if the key had
+    never been set; (2) a `.crew/config.json` that is a DIRECTORY (so it
+    cannot even be opened) read the same as "absent" through the first
+    fix's `text is None` check, because that check could not tell "no such
+    file" from "a file that exists but cannot be read at all" apart; (3)
+    `{"guards": null}` -- an EXPLICIT JSON null, not a missing key --
+    reads as `parsed.get("guards") is None` exactly like a config that
+    never mentioned `guards` at all, so the first fix's `guards is not
+    None` test let a corrupt, explicit `null` through as if it were a
+    clean, unset key.
+
+    Classification, in order:
+      * `"absent"` -- nothing at `path` at all (`read_text` returns `None`
+        AND the path does not exist on disk in any form). Every repo or
+        machine that has never set `guards.roleWrites` is here, and
+        CLAUDE.md's new-hook rule requires that to stay permissive.
+      * `"corrupt"` -- `path` exists in SOME form but is not the shape this
+        key needs to trust: unreadable at all (a directory, a permissions
+        error -- `read_text` returns `None` but the path DOES exist);
+        readable but not valid JSON; valid JSON but not an object; or an
+        object whose `guards` key IS PRESENT (`"guards" in parsed`, not
+        `parsed.get("guards") is not None` -- the distinction that closes
+        the explicit-`null` gap) and is not itself an object.
+      * `"ok"` -- everything else: absent `guards` key, or a `guards`
+        object (whatever VALUE `roleWrites` holds inside it -- a malformed
+        VALUE there is `crew_guards.normalise_role_writes`'s job, not
+        this function's; duplicating it here would be two mechanisms for
+        one rule).
+
+    Never touches `load_config`, `read_global_config`, `resolve_ratcheted`
+    or any of the other eight ratcheted keys, which keep their existing
+    fail-open behaviour on a bad file exactly as before -- this is a
+    second, narrower read of the SAME file, not a change to the shared one.
+    """
+    text = crew_state.read_text(path)
+    if text is None:
+        if os.path.lexists(path):
+            # Present in some form (a directory, a permissions error, an
+            # embedded NUL Python rejects before touching disk, or a
+            # DANGLING symlink -- see below) but `read_text` could not
+            # read it as text at all -- "corrupt", not "absent".
+            #
+            # `os.path.lexists`, not `os.path.exists() or os.path.isdir()`
+            # (the first draft of this fix): `exists` FOLLOWS a symlink to
+            # check the TARGET, so a symlink at the config path whose
+            # target has been moved or deleted -- a config the operator
+            # once pointed somewhere, now pointing nowhere -- reports
+            # `exists() == False` and `isdir() == False`, both of which
+            # this check already asked, and both answered "absent". A
+            # dangling link is not absent: something IS configured at
+            # this path, and it cannot be read, which is exactly what
+            # "corrupt" means. `lexists` checks the link itself, not what
+            # it points at, so it is true for a dangling link the same as
+            # for a real file or directory -- one check replaces both of
+            # the first draft's. Reported and fixed 2026-09-19.
+            return "corrupt"
+        return "absent"
+    try:
+        parsed = json.loads(text)
+    except ValueError:
+        return "corrupt"
+    if not isinstance(parsed, dict):
+        return "corrupt"
+    if "guards" in parsed and not isinstance(parsed["guards"], dict):
+        return "corrupt"
+    return "ok"
 
 
 def resolve_guard(root, name, path=None):
@@ -2018,6 +2112,9 @@ _GUARD_ACTIONS = {
                  "back, through /crew:gate",
     "prodDatabase": "a database matching a `production.databases` pattern",
     "prodServer": "a host matching a `production.hosts` pattern",
+    "roleWrites": "a Write or Edit outside the calling role's declared scope, "
+                  "per the policy table in "
+                  "hooks/scripts/role_write_guard.py",
 }
 
 
@@ -2078,6 +2175,42 @@ def _prod_widening_notes(name, what):
     }
 
 
+def _role_write_widening_notes(name, what):
+    """The `! widens to` note for `guards.roleWrites`, total over
+    `crew_state.ROLE_WRITE_POLICIES`.
+
+    Total for the same reason every other note table here is: the CLI does
+    `notes[granted]`, and a missing key is a `KeyError` at the point of use
+    rather than a note describing the wrong tier.
+
+    Unlike `_guard_widening_notes` and `_prod_widening_notes`, the NARROWEST
+    tier (`block`) is not this key's default -- `off` is, per CONFIG.md
+    Sec18 and CLAUDE.md's rule that a hook which can block ships disabled.
+    So the widening direction a reader most needs warned about is the same
+    one every fresh repo already sits at: nothing narrows FROM `off`, because
+    nothing narrower has been chosen yet.
+    """
+    del name
+    return {
+        "block": (
+            f"crew refuses {what}. This is the narrowest policy and nothing "
+            "widens into it."
+        ),
+        "report": (
+            f"crew allows {what}, and appends a row to "
+            f"`{crew_state.GUARD_LOG_PATH}` for every decision, not only "
+            "the ones outside scope -- so the record exists, but nothing "
+            "stops it at the time."
+        ),
+        "off": (
+            f"crew's role-write guard does not run its policy check at all. "
+            f"{what.capitalize()} is not refused and nothing is logged. "
+            "This is the WIDEST tier and it is also the default -- every "
+            "repo that has never set `guards.roleWrites` is already here."
+        ),
+    }
+
+
 _RATCHETED = {
     "pm.authority": (
         crew_state.authority_rank,
@@ -2113,6 +2246,17 @@ _RATCHETED.update({
         _prod_widening_notes(_name, _GUARD_ACTIONS[_name]),
     )
     for _name in crew_state.PROD_GUARD_NAMES
+})
+# The one role-write guard, whose vocabulary is `block`/`report`/`off` and
+# whose DEFAULT (`off`) is not its floor (`block`) -- see
+# `_role_write_widening_notes` for why that is not a bug in this table.
+_RATCHETED.update({
+    f"guards.{_name}": (
+        crew_state.role_writes_rank,
+        crew_state.normalise_role_writes,
+        _role_write_widening_notes(_name, _GUARD_ACTIONS[_name]),
+    )
+    for _name in crew_state.ROLE_WRITE_GUARD_NAMES
 })
 
 

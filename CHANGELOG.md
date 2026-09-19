@@ -7,6 +7,322 @@ All notable changes to this repository are documented here. Format follows [Keep
 ### Fixed
 
 
+
+- **`crew` 0.19.92: mechanical enforcement of each role's write scope, via a
+  new `PreToolUse` guard on `Write`/`Edit`.** `agents/pm.md:49-53` says, in
+  prose, "You do not write application code, tests, docs..." and on
+  2026-09-19 it did exactly that for four hours, because prose is not
+  enforcement and nothing in the harness read that sentence. New
+  `guards.roleWrites` key (`block` | `report` | `off`), read by new
+  `hooks/scripts/role_write_guard.py` through matched shims
+  `role-write-guard.sh` / `.ps1`. The policy table partitions every
+  `agents/*.md` by its own `tools:` frontmatter, not its prose: a role with
+  neither `Write` nor `Edit` granted may not write anywhere; `pm` may write
+  only under `.crew/**`, `TODO.md`, `.work/**` and `docs/diagrams/**`, its
+  own stated scope made mechanical; every other role holding both `Write`
+  and `Edit` is unrestricted by this hook.
+  `tests/test_role_write_guard.py::test_policy_table_matches_the_agent_files`
+  re-derives that partition from the agent files on every run, so a `tools:`
+  grant added or removed with the table left untouched fails a test instead
+  of drifting silently. **Ships `off` by default, following CLAUDE.md's rule
+  that a hook able to block a turn defaults to OFF in the menu** — every repo
+  that has never set `guards.roleWrites` behaves exactly as if this hook were
+  not installed, and turning it on is a deliberate, narrower-of-two-layers
+  ratchet exactly like every other `guards.*` key (CONFIG.md §18). An unknown
+  `agent_type` (absent, or a role this table has no opinion about) always
+  allows — an unknown must not wear the label of a decision — but is still
+  named in `.crew/guard.log` (`no-agent-type` / `unknown-role:<value>`)
+  rather than merged into an unreadable "allow" row. `agent_type`'s exact
+  wire form for a plugin-scoped agent (e.g. whether it arrives as `"pm"` or
+  `"crew:pm"`) was not observed against a real dispatched subagent hook call
+  in this session; `_normalise_role` strips a leading `crew:` prefix so both
+  forms resolve the same, and an unrecognised form still fails to the safe
+  side (allow + log) rather than stranding a role.
+
+  A Codex QA round on the first commit found 2 BLOCK + 4 FIX, all addressed
+  here in a follow-up commit under the same 0.19.92 (no version bump for a
+  same-day fix on an unreleased key). **BLOCK:** a repo's `.crew/config.json`
+  that EXISTS but fails to parse — or whose `guards` key is present and not
+  an object — no longer silently resolves `guards.roleWrites` to `off`; new
+  `crew_config.repo_config_is_corrupt` distinguishes that from "the key was
+  never set" and forces `block` instead (CONFIG.md §18). **BLOCK:** scope is
+  now judged against the REAL, filesystem-resolved path
+  (`role_write_guard._resolve_real_target`), not the lexical one a tool call
+  names, closing a `.crew/link -> src/` symlink/junction escape — verified
+  against an actual Windows junction (`mklink /J`, no elevation needed) and a
+  POSIX symlink, both created for real in the test suite. **FIX:**
+  `_normalise_role` now strips ONLY a leading `crew:`, not the last
+  `:`-segment of anything — the earlier form folded `other-plugin:analyst`
+  onto crew's own `analyst` and refused an unrelated plugin's agent under
+  crew's deny-list. **FIX:** `role-write-guard.sh` no longer shares
+  `_common.sh`'s unfiltered `crew_py()`; it carries its own WindowsApps-stub
+  rejection (the bash twin of `role-write-guard.ps1`'s `Resolve-CrewPython`),
+  because the two shell flavours of one blocking hook enforcing different
+  decisions on the same machine is worse than either enforcing consistently.
+  **FIX:** a non-object JSON payload (`[]`) or a non-string `file_path` no
+  longer reaches an uncaught exception — `PreToolUse` treats any exit code
+  other than 0 or 2 as a non-blocking pass-through, so the crash was
+  silently allowing writes a restricted role should have been refused.
+  **FIX:** `.crew/guard.log` now carries the `reason` column
+  (`no-agent-type` / `unknown-role:<value>`) this section already promised
+  but the row-building code never wrote. `tests/test_role_write_guard.py`
+  grew from 35 to 55 cases; every one of the six fixes was sabotage-tested
+  (9 mutations total) and reverted to a sha256-verified byte-identical file
+  before committing.
+
+  A second probe on the fix commit found one more: `pm` writing to the
+  harness-sanctioned scratchpad under `AppData/Local/Temp/claude/<session>/
+  scratchpad` — a location every role, `pm` included, is told to use — was
+  refused, because "outside every allowed prefix" and "outside the repo
+  entirely" collapsed to the same "not in scope" answer, and this guard's
+  whole purpose is the REPO's write scope, not the filesystem at large. The
+  first cut of this fix judged it on the LEXICAL path the tool call named,
+  never the symlink-resolved one — and a THIRD probe, on that fix, found
+  that was backwards: a `.crew/escape -> /elsewhere` symlink staged inside a
+  path `pm` is trusted to write, whose target is OUTSIDE the repo entirely,
+  is named lexically inside the repo, so the lexical version still refused
+  it, even though the write touches nothing under the repo at all. New
+  `role_write_guard._is_outside_repo` now checks the same REAL,
+  symlink-resolved path the in-scope match already uses — `allow`, logged
+  `outside-repo: ...`, whenever that path escapes the repo root, symlink or
+  not. The case that stays refused is a DIFFERENT one: `.crew/escape ->
+  src/`, whose target is still INSIDE the repo, just outside `pm`'s
+  permitted prefixes — `_is_outside_repo` is false for it, so the ordinary
+  in-scope pattern match still runs and still refuses it.
+  `test_role_write_guard.py` gained a must-allow (scratchpad write, no
+  symlink), a must-allow (symlink AND Windows junction escaping the repo
+  entirely — confirmed with `os.path.islink` since bash's own `ln -s`
+  silently fell back to a plain directory on the machine this was found on)
+  and a must-block (symlink AND junction to an in-repo, out-of-scope
+  prefix) to keep the two apart. `_DENY_ROLES` gets none of this — its rule
+  is "no `Write`/`Edit` at all", not "confined to the repo".
+
+  A PowerShell-security-hardening specialist review of `role-write-
+  guard.ps1` found four more, all fixed in one further commit, same
+  version. **BLOCK:** a launch failure (the resolved interpreter cannot
+  actually be started — deleted, permissions, antivirus) left
+  `$LASTEXITCODE` `$null`, and `exit $LASTEXITCODE` on a `$null` value
+  silently evaluates to 0 — a restricted role's write went through
+  unjudged with only a generic native-command error on stderr, contrary
+  to what the header comment already promised. Fixed with a try/catch
+  plus an explicit null-exit-code check that falls back, ONLY for this
+  one failure mode, to a small PowerShell-side classification (the
+  deny-list plus `pm`) so a restricted role still fails closed.
+  **BLOCK:** stdin was read with `[Console]::In.ReadToEnd()`, which
+  decodes using the OEM codepage (5.1) or a version-dependent default
+  (pwsh 7.x), silently mangling any non-ASCII character and turning a
+  leading UTF-8 BOM into bytes that make the JSON unparseable at position
+  0 — `role-write-guard.sh` (`INPUT=$(cat)`) is byte-transparent, so the
+  two shell flavours diverged on byte-identical input. Fixed by reading
+  raw bytes, stripping a BOM, decoding as UTF-8 explicitly, and forcing
+  `[Console]::OutputEncoding`/`$OutputEncoding` to UTF-8 before piping
+  back out to python, which otherwise re-encodes using the same OEM
+  default on the way out. **FIX:** `Resolve-CrewPython` never executed a
+  candidate to prove it was a real interpreter (role-write-guard.sh's own
+  resolver does), and `Get-Command $name -All` walked past a WindowsApps
+  stub to a SAME-NAMED real python further down PATH, while bash's
+  `command -v` takes only the first match per name and moves to the NEXT
+  name on rejection — so on a PATH with only `python3` present anywhere,
+  one shell flavour enforced and the other silently allowed unjudged.
+  Fixed by executing each candidate and reading back `sys.executable`,
+  and by taking only the first match per name — which means this copy of
+  `Resolve-CrewPython` is now DELIBERATELY no longer byte-identical to
+  verify-gate.ps1's and pm-pulse.ps1's (a two-way parity test between
+  those two, plus a tripwire asserting this one has diverged, replaced
+  the old three-way parity test). **FIX:** a missing/broken
+  `role_write_guard.py` exited 2 with a bare CPython "can't open file"
+  error — indistinguishable, by exit code alone, from a real
+  `guards.roleWrites: block` refusal. Fixed with an explicit existence
+  check and a crew-specific diagnostic, still exiting 2 (still fails
+  closed; a broken install is not evidence a write is safe).
+  `tests/test_role_write_guard.py` grew to 70 cases; PSScriptAnalyzer
+  1.25.0 reports zero findings both before and after.
+
+  A fourth review round found 7 BLOCK + 2 FIX, all in one further commit,
+  same version. **The five config-corruption findings are one rule**: new
+  `crew_config.layer_state(path)` classifies ONE config file as `"absent"`
+  / `"ok"` / `"corrupt"`, used for BOTH the repo layer and the machine-
+  global one. `"corrupt"` now also covers a DIRECTORY at the config path
+  (previously read as "absent" through `load_config`'s own `text is None`
+  collapse — a `.crew/config.json` directory with no global override
+  silently disabled enforcement) and an EXPLICIT `"guards": null`
+  (previously read as an unset key, because `parsed.get("guards") is not
+  None` cannot tell a missing key from a JSON `null` apart — now
+  `"guards" in parsed`). Both layers are checked and either being
+  `"corrupt"` forces `block` UNCONDITIONALLY — not only when the ratchet's
+  own answer happens to be `off`, which is the gap the round-3 fix left
+  open: a corrupt repo config with a VALID, non-`off` global policy (say
+  `report`) resolved to `report` through the ordinary ratchet, silently
+  downgrading a repo that used to say `block` to a policy that never
+  refuses anything, since the round-3 check only intervened when the
+  ratchet's OWN answer was already `off`. **BLOCK:** `role-write-
+  guard.ps1` forced UTF-8 encoding on the pipe INTO python, but not on
+  python's OWN decoding of it — `PYTHONUTF8=0` in the caller's
+  environment (with `PYTHONIOENCODING` unset) could still make python
+  misdecode a correctly-sent byte stream. Fixed two ways: `role_write_
+  guard.py` now reads stdin as raw bytes (`sys.stdin.buffer`) and decodes
+  UTF-8 itself, independent of either environment variable; and both
+  `role-write-guard.sh`/`.ps1` also force `PYTHONUTF8=1` /
+  `PYTHONIOENCODING=utf-8` in the CHILD's environment regardless of the
+  caller's, which is what actually fixes the script's own stdout/stderr
+  writes of a non-ASCII path (verified via stderr bytes directly, since
+  `.crew/guard.log` is written with an explicit `encoding="utf-8"`
+  regardless of either variable and so cannot distinguish this fix from
+  its absence — an early draft of the regression test checked the log
+  and passed either way). **BLOCK:** the BOM strip that shipped in round 2
+  lived only in `role-write-guard.ps1`, so a BOM-prefixed payload piped
+  into `role-write-guard.sh` still read as unparseable JSON and allowed
+  unjudged — moved into `role_write_guard.py` itself (alongside the raw-
+  bytes stdin read above), shared by both shells. **BLOCK:** the
+  outermost exception handler's OWN `.crew/guard.log` logging call could
+  raise a SECOND, uncaught exception (a malformed `"cwd": [1]` reached
+  `root` unsanitised, and `os.path.join([1], ...)` inside that logging
+  call crashed with a non-blocking exit 1) — fixed by sanitising `root`
+  to a string immediately after computing it AND wrapping the handler's
+  own logging in a further try/except, verified independently: each
+  layer alone was sabotage-confirmed sufficient to prevent the crash, and
+  removing both together reproduced the original crash exactly. **FIX:**
+  a Windows extended-length `\\?\` path prefix made `os.path.relpath`
+  treat `\\?\C:\repo\...` and `C:\repo` as different mounts and raise,
+  which this hook's existing "cannot classify" fallback read as evidence
+  to refuse an otherwise legitimate, in-scope write — fixed by stripping
+  the prefix before any resolution. **FIX:** `role-write-guard.ps1`'s
+  candidate probe checked only whether a wrapper printed output, not its
+  exit status — a wrapper printing a real-looking interpreter path and
+  then exiting nonzero was accepted, while bash's `real=$(...) ||
+  continue` already rejected the same wrapper. Fixed by checking
+  `$LASTEXITCODE` after letting the candidate run to completion (NOT
+  piped through `Select-Object -First 1` first, which can close the pipe
+  before the native process reports its real exit code). `tests/
+  test_role_write_guard.py` grew to 94 cases, including a `{absent, ok
+  ×3, corrupt ×6}` matrix run directly against `layer_state` and, for the
+  global-layer end-to-end cases, `HOME`/`USERPROFILE` redirected per
+  subprocess (the only way to isolate `GLOBAL_CONFIG_PATH` for a
+  subprocess test — `monkeypatch.setattr` only rebinds the attribute in
+  the pytest process itself). All 9 fixes sabotage-tested individually
+  and reverted to sha256-verified byte-identical files before committing.
+
+  A sixth round found 3 BLOCK + 1 FIX, one further commit, same version.
+  **BLOCK:** `crew_config.layer_state` checked presence with
+  `os.path.exists(path) or os.path.isdir(path)` — both FOLLOW a symlink
+  to check its target, so a DANGLING symlink at a config path (moved or
+  deleted target) answered `False` to both, the same "absent" a genuinely
+  unset key gets, even though something IS configured there and cannot
+  be read. Fixed with `os.path.lexists`, which checks the link itself —
+  one check now covers a plain file, a directory and a dangling symlink
+  alike. **BLOCK:** `role-write-guard.ps1` got a launch-failure fallback
+  in round 4; `role-write-guard.sh` did not. Deleting the resolved
+  interpreter between its successful probe and the actual invocation
+  made `"$PY" ...` fail to exec (`No such file or directory`, exit 127) —
+  a status neither 0 nor 2, which `PreToolUse` treats as non-blocking, so
+  `pm` writing an out-of-scope path went through unjudged with only a
+  shell error on stderr. Fixed with the bash twin of the .ps1's own
+  fallback: capture the interpreter's exit status, and on anything other
+  than 0 or 2, classify `agent_type` in shell (crude but safe grep/sed
+  extraction, `crew:` prefix stripped, checked against the same deny-list
+  + `pm`) and exit 2 for a restricted role, else exit 0 with "allowing
+  unjudged". **BLOCK, and the most serious finding in this whole series:**
+  `_resolve_real_target` called `os.path.abspath` on the raw path first,
+  and `abspath` collapses a literal `..` LEXICALLY, before any symlink is
+  resolved. `.crew/link/../app.py`, with `.crew/link` a symlink to
+  `src/subdir`, lexically normalised to `.crew/app.py` — in scope, on the
+  string alone — while the OS follows `.crew/link` to `src/subdir` FIRST
+  and applies `..` against the RESOLVED parent afterward, landing in
+  `src/app.py`. A symlink `pm` itself could stage under a trusted path
+  let it escape anywhere that symlink's target's parent reaches, just by
+  adding `..` after it. Fixed by never calling `abspath`/`normpath` on
+  the raw path: `_resolve_real_target` now walks the path one component
+  at a time, resolving whatever exists on disk as it goes, and pops the
+  RESOLVED parent for `..` — never a lexical one — exactly mirroring
+  kernel path resolution. Verified with both a real symlink and a real
+  Windows junction, driven end to end. **FIX:** a target on a different
+  Windows drive than the repo root made `os.path.relpath` raise
+  `ValueError`, which reached the same catch-all as every other "cannot
+  classify" case and refused an otherwise-legitimate write — a different
+  drive is PROVEN outside the repo, not merely unverifiable. Fixed by
+  returning the outside-repo sentinel for this case specifically.
+  `tests/test_role_write_guard.py` grew to 104 cases. All 4 fixes
+  sabotage-tested individually and reverted to sha256-verified
+  byte-identical files before committing.
+
+  A follow-up round on the same 0.19.92, still `role-write-guard`: that
+  `..`-after-symlink fix was correct on POSIX and **wrong on Windows**, in a
+  way that is actively dangerous rather than merely imprecise. Win32's own
+  path canonicaliser collapses a literal `..` LEXICALLY, in the path
+  string, before the filesystem/reparse-point layer ever sees it — a
+  junction sitting where `..` pops past it is never traversed at all. The
+  resolve-then-pop fix above computed the opposite answer in both
+  directions on Windows: `src\link\..\new.py`, with `src\link` a junction
+  to `.crew\subdir`, really writes to `src\new.py` (Windows collapses
+  `src\link\..` to `src` before the junction is consulted) — out of scope,
+  must block — but resolve-then-pop followed the junction first and landed
+  in `.crew`, wrongly allowing it. And `.crew\link\..\app.py`, with
+  `.crew\link` a junction to `src`, really writes to `.crew\app.py`
+  (Windows again never consults the junction) — in scope, must allow — but
+  resolve-then-pop followed the junction to `src` first, wrongly blocking
+  it. **BLOCK 1, same round:** the walk that resolves junctions component
+  by component only split the raw path on `os.sep` (`\`), so a target
+  spelled with forward slashes (`C:/repo/.crew/link/new.py`, which tools
+  commonly send even on Windows) never split into more than one component
+  — the walk never walked anything, and a junction anywhere in the path
+  went unresolved. `_resolve_real_target` now dispatches on `os.name`:
+  `_resolve_real_target_windows` splits on both `\` and `/`, collapses
+  `..` lexically first into a `..`-free path, then walks that path
+  resolving junctions/symlinks as it goes, mirroring Win32 exactly;
+  `_resolve_real_target_posix` keeps the original resolve-then-pop walk
+  unchanged, since that ordering is correct there. Verified against both
+  directions on a real Windows junction and against a real forward-slash
+  target and a mixed-separator target; the now-corrected must-allow case
+  and the newly-added must-block case for the reverse repro both covered
+  end to end via bash and PowerShell. `tests/test_role_write_guard.py`
+  grew to 109 cases (one prior direct unit test removed as unwinnable on a
+  Windows dev machine — see its replacement comment for why — and 6 new
+  ones added, including a POSIX end-to-end twin correctly skipped when
+  `os.name == "nt"`). Both fixes sabotage-tested individually — reverting
+  the separator split flips exactly the 2 tests naming it; reverting the
+  platform dispatch (forcing the POSIX algorithm everywhere) flips 3,
+  including one pre-existing test that turned out to depend on the same
+  dispatch for any native Windows-separator path — and both reverted to a
+  sha256-verified byte-identical file before committing.
+
+  A third round on the same 0.19.92: Codex round 5 found that the earlier
+  extended-length-path fix (the one starting "A `file_path` using
+  Windows' `\?\` extended-length prefix" above) traded one bug for
+  another. It NORMALISED `\?\` away and then classified the bare
+  remainder like any other path — but `\?\` exists specifically so Win32
+  will SKIP its own path normalisation for that one call: trailing dots
+  and spaces are preserved on disk, and a literal `..` is never
+  collapsed. `\?\C:\repo\.crew.\app.py` (note the trailing dot on
+  `.crew.`, a real, distinct, out-of-scope directory) stripped to
+  `C:\repo\.crew.\app.py`, which this module's own path handling then
+  further normalised to `C:\repo\.crew\app.py` — in scope on the string
+  alone — while Windows itself opens a directory literally named
+  `.crew.`, never `.crew`. `pm` could reach any such trailing-dot (or
+  trailing-space) sibling of a permitted directory this way. Fixed by
+  refusing to classify a `\?\` path at all, rather than trying to build a
+  classifier that is simultaneously faithful to ordinary Windows path
+  semantics and to a syntax whose entire purpose is bypassing them:
+  `_is_extended_length_prefix_path` now short-circuits `main` before
+  `_repo_relative`/`_real_repo_relative`/`classify` ever run, and the
+  decision is by role alone — `pm` and every `_DENY_ROLES` member fail
+  CLOSED (block) unconditionally, every other role and a call with no
+  `agent_type` allows, since Claude Code itself never emits this form for
+  a `Write`/`Edit` call. `tests/test_role_write_guard.py` grew to 114
+  cases: the must-block repro creates a real `.crew.` directory on disk
+  (an ordinary, non-extended-length `mkdir` silently strips the trailing
+  dot and collides with the already-existing `.crew`, so the test fixture
+  itself needs the extended-length form to create the directory it is
+  testing against) and confirms `pm` is refused; must-allow twins cover
+  `developer` and a call with no `agent_type` at all, both bash and
+  PowerShell where applicable. Two sabotages, both reverted to a
+  sha256-verified byte-identical file: inverting the restricted-role
+  check flips exactly the 5 new tests; disabling detection entirely so
+  the raw `\?\` path falls through to the ordinary classifier flips only
+  the 2 must-block cases and reproduces the exact original gap (`pm`'s
+  write on the `.crew.` repro resolves to allow again) — the 3 must-allow
+  cases stay green either way, since an unrestricted role's write is not
+  scope-checked regardless, itself useful confirmation the fix is scoped
+  to restricted roles only rather than acting as a blanket refusal.
 - **`crew` 0.19.90: dispatched roles ran gates in the background and ended
   the turn waiting to be woken.** Three subagents did it in one night —
   `crew-pm` at ~00:30, `dev-pm-contract` at 01:01, `dev-stophook-finish` at

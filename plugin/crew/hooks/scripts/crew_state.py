@@ -82,6 +82,9 @@ from crew_guards import (
     PROD_LEVELS,  # noqa: F401
     PROD_LEVEL_DEFAULT,  # noqa: F401
     RATCHETED_KEYS,  # noqa: F401
+    ROLE_WRITE_DEFAULT,  # noqa: F401
+    ROLE_WRITE_GUARD_NAMES,  # noqa: F401
+    ROLE_WRITE_POLICIES,  # noqa: F401
     effective_install_policy,  # noqa: F401
     effective_ratcheted,  # noqa: F401
     guard_policy_rank,  # noqa: F401
@@ -90,7 +93,9 @@ from crew_guards import (
     normalise_guard_policy,  # noqa: F401
     normalise_install_policy,  # noqa: F401
     normalise_require_for_production,  # noqa: F401
+    normalise_role_writes,  # noqa: F401
     require_change_rank,  # noqa: F401
+    role_writes_rank,  # noqa: F401
     classify_access,  # noqa: F401
     guard_tiers,  # noqa: F401
     matches_production,  # noqa: F401

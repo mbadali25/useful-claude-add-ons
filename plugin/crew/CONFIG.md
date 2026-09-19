@@ -72,9 +72,9 @@ structural exceptions, both visible above: the global layer is pruned before it
 is consulted at all (§2), and `schema` is lifted out of the merge entirely
 (§4).
 
-**And seven exceptions that are not visible above, because they do not go
-through this function at all: `install.policy` (§15) and the six `guards.*`
-(§16).**
+**And eight exceptions that are not visible above, because they do not go
+through this function at all: `install.policy` (§15) and the seven
+`guards.*` (§16).**
 Each resolves to the *lower* of the two layers rather than to the repo's, so a
 cloned repo cannot widen what the machine owner allowed. Anything reading one
 through `resolve_config` gets the precedence answer and is wrong;
@@ -127,15 +127,18 @@ both directions:
 `is_global_path` agrees with `filter_global` by construction — both stop
 descending at a template **leaf**.
 
-**Measured, not argued.** `leaf_paths(default_global_config())` yields **59**
-leaves. `leaf_paths(default_config())` yields **102**, so **43** are repo-only.
-For all 102, `filter_global` and `plan_global_write` agree on whether the path is
+**Measured, not argued.** `leaf_paths(default_global_config())` yields **60**
+leaves. `leaf_paths(default_config())` yields **103**, so **43** are repo-only.
+For all 103, `filter_global` and `plan_global_write` agree on whether the path is
 settable. (45 / 86 before schema 6 added the six `guards.*`, the two
 `github.mergeGate` keys and the repo-only `production.databases` /
-`production.hosts`, and 44 / 85 before schema 5 added `install.policy`.
+`production.hosts`; 44 / 85 before schema 5 added `install.policy`; 59 / 102
+before crew 0.19.92 added the seventh guard, `guards.roleWrites`, in both
+layers.
 All six of schema 6's keys are settable in both layers, so they moved the first
-two numbers and not the third — the same shape `install.policy` had. Re-measure
-rather than trusting these: they are a fact about one commit.)
+two numbers and not the third — the same shape `install.policy` and
+`guards.roleWrites` had. Re-measure rather than trusting these: they are a
+fact about one commit.)
 
 ### The one asymmetry, and it matters
 
@@ -615,13 +618,15 @@ them:
 
 ---
 
-## 10. Global-settable keys — all 59
+## 10. Global-settable keys — all 60
 
-Settable in **either** layer; repo wins — **except `install.policy`, the six
-`guards.*` and `change.requireForProduction`, where the narrower of the two
-layers wins instead** (§15, §16, §17). For the first seven "narrower" means a
-smaller capability; for `change.requireForProduction` the narrower value is
-`true`, so a repo may turn that one **on** and never off — §17.
+Settable in **either** layer; repo wins — **except `install.policy`, the
+seven `guards.*` and `change.requireForProduction`, where the narrower of the
+two layers wins instead** (§15, §16, §17). For the first eight "narrower"
+means a smaller capability, with one of the eight (`guards.roleWrites`)
+narrower meaning something slightly different again — see §18; for
+`change.requireForProduction` the narrower value is `true`, so a repo may
+turn that one **on** and never off — §17.
 `production.databases` and `production.hosts` are deliberately **not** here:
 they are repo-only, and §16 says why. Defaults are identical in `default_config()` and
 `default_global_config()` — verified by comparison.
@@ -681,6 +686,7 @@ they are repo-only, and §16 says why. Defaults are identical in `default_config
 | `guards.mergeGate` | `block` \| `ask` \| `allow` (narrower layer wins, §16) | `"block"` |
 | `guards.prodDatabase` | `none` \| `read` \| `full` (narrower layer wins, §16) | `"none"` |
 | `guards.prodServer` | `none` \| `read` \| `full` (narrower layer wins, §16) | `"none"` |
+| `guards.roleWrites` | `block` \| `report` \| `off` (narrower layer wins, §18) | `"off"` |
 | `change.requester` | string or `null`, see §17 | `null` |
 | `change.implementor` | string or `null`, see §17 | `null` |
 | `change.requireForProduction` | boolean (narrower layer wins, and `true` is the narrower one, §17) | `false` |
@@ -983,9 +989,12 @@ never "one key per bump"; it was "no key without a consumer".
 
 ## 16. `guards` — the configurable guardrails
 
-Six keys, one block, one ratchet, **two vocabularies**. What crew's command
-guard does about each dangerous action it recognises, and how much of
-production crew may reach.
+Seven keys, one block, one ratchet, **three vocabularies**. What crew's
+command guard does about each dangerous action it recognises, how much of
+production crew may reach, and — since crew 0.19.92 — whether a dispatched
+role may write outside the scope its own agent file declares. The third
+vocabulary, `guards.roleWrites`, is different enough from the other six to
+earn its own section: see §18, not the tables immediately below.
 
 | Key | Type | Default | Layer | Read by |
 |---|---|---|---|---|
@@ -995,6 +1004,7 @@ production crew may reach.
 | `guards.mergeGate` | `block` \| `ask` \| `allow` | `"block"` | both, **narrower wins** | `commands/gate.md`, `commands/promote.md` |
 | `guards.prodDatabase` | `none` \| `read` \| `full` | `"none"` | both, **narrower wins** | `hooks/scripts/guard.sh`, `guard.ps1` |
 | `guards.prodServer` | `none` \| `read` \| `full` | `"none"` | both, **narrower wins** | `hooks/scripts/guard.sh`, `guard.ps1` |
+| `guards.roleWrites` | `block` \| `report` \| `off` | `"off"` | both, **narrower wins** | `hooks/scripts/role-write-guard.sh`, `.ps1` |
 | `production.databases` | list of globs | `[]` | **repo only** | `crew_config.py::production_patterns` |
 | `production.hosts` | list of globs | `[]` | **repo only** | `crew_config.py::production_patterns` |
 
@@ -1290,8 +1300,12 @@ eighth key would have been an eighth thing that could be wrong on its own.
 
 ### The default is `false` and the floor is `true`, and they are not the same
 
-This is the **only** ratcheted key in crew where "absent" and "unreadable" do
-not resolve to the same value, and both halves are load-bearing:
+This was the only ratcheted key in crew where "absent" and "unreadable" did
+not resolve to the same value; `guards.roleWrites` (§18) is the second, added
+in 0.19.92 for a mirror-image reason — there the FLOOR is the safe value and
+the DEFAULT has to be the permissive one, because CLAUDE.md requires a new
+blocking hook to ship disabled. Both halves below are load-bearing for this
+key:
 
 - **Absent, or an explicit `null`, resolves to `false`.** Schema 7 lands on
   every existing repo, and a mandatory migration that switched a production
@@ -1326,3 +1340,355 @@ is mechanical. `/crew:change new` exits non-zero unless every one of questions
 on purpose: the template's own rule is that missing information results in
 denial, and a switch to turn that off would be a switch to file requests that
 get denied.
+
+---
+
+## 18. `guards.roleWrites` — mechanical enforcement of a role's write scope
+
+Added in crew 0.19.92. `agents/pm.md:49-53` says, in prose, "You do not write
+application code, tests, docs..." — and on 2026-09-19 it did exactly that for
+four hours, because prose is not enforcement and nothing in the harness read
+that sentence. This key and the `PreToolUse` hook it configures are the
+mechanical version: a `Write` or `Edit` from a role outside its declared
+scope is refused before it reaches the filesystem, rather than relied on to
+not happen.
+
+| | |
+|---|---|
+| Key | `guards.roleWrites` |
+| Values | `block` \| `report` \| `off`, least to most permissive |
+| Default | `"off"` |
+| Layer | both, **narrower wins** (same ratchet as every other `guards.*` key) |
+| Read by | `hooks/scripts/role_write_guard.py`, via `hooks/scripts/role-write-guard.sh` / `.ps1` |
+| Hook | `PreToolUse`, matcher `Write\|Edit`, registered once per shell flavour |
+
+### What each value does
+
+| Value | What crew does |
+|---|---|
+| `off` *(default)* | The hook exits before reading the policy table at all. Every write is allowed; nothing is logged. |
+| `report` | Every write is allowed — including one outside the calling role's scope — and every decision is appended to `.crew/guard.log`, so an operator can see what `block` *would* have refused before turning it on. |
+| `block` | A write outside the calling role's declared scope is refused (`PreToolUse` exit 2, with a message on stderr naming the role, the path and what that role may write); a write inside scope is allowed. Both are logged. |
+
+### The default is `off`, and the floor is `block` — the second key in this file where those two differ (§17 was the first)
+
+Every other `guards.*` key's default equals its floor: an absent key and a
+malformed value both collapse to the narrowest tier. This key splits them on
+purpose, and the split runs in the OPPOSITE direction from
+`change.requireForProduction`'s:
+
+- **Absent, or an explicit `null`, resolves to `off`.** CLAUDE.md's own rule
+  for a new hook that can block a turn is that it "defaults to OFF in the
+  menu" until a human turns it on. An absent key is every repo that has never
+  set it — which, the day this shipped, is every repo that exists — and none
+  of them may go from "no such hook" to "blocking Write calls" by upgrading
+  the plugin alone.
+- **A value that does not name `block`, `report` or `off` resolves to
+  `block`, the floor.** A typo in a hand-edited config is not the same fact
+  as "nobody opted in" — CLAUDE.md's own recurring bug is exactly this,
+  an unknown collapsing into the safe-looking (here: permissive) value. So a
+  malformed value fails toward MORE refusal, not less, the same direction
+  every other guard's `normalise_*` function fails in.
+
+`crew_guards.normalise_role_writes` is the one function that knows this
+split; `role_writes_rank` ranks through it first, so `effective_ratcheted`'s
+`min(...)` still means what it means everywhere else in this file: neither
+layer can widen past what the other allows, and a repo cloned with
+`guards.roleWrites: off` cannot override a machine-global `block`.
+
+### A THIRD case, beside absent and malformed-VALUE: the file itself is unreadable
+
+Reported and fixed 2026-09-19, one commit after this key first shipped.
+`normalise_role_writes` above only ever sees a raw VALUE that `_dig` already
+pulled out of a parsed config — it has no way to tell "the repo file never
+set `guards.roleWrites`" apart from "the repo file could not be parsed at
+all", because `crew_state.load_config` collapses BOTH to `{}` before
+`normalise_role_writes` is ever called. That collapse is correct for
+`install.policy` and the other six `guards.*` keys, which have always failed
+OPEN on a bad config file (`read_global_config`'s own docstring: "a broken
+global file must look exactly like no global file at all"). `roleWrites`
+cannot inherit it: with no global override, replacing a repo's
+`guards.roleWrites: block` config with invalid JSON — or with
+`{"guards": 42}` — made `resolve_guard`'s effective answer `off` and let
+`pm` write application code straight through, which is CLAUDE.md's own named
+recurring bug landing on the one guard here that can least afford it.
+
+`crew_config.layer_state(path)` gives `role_write_guard.py` the one extra
+bit `load_config` throws away, classifying ONE config file as `"absent"`,
+`"ok"` or `"corrupt"`. `"absent"` is every off-by-default repo or machine
+that exists — stays `off`, unchanged. `"corrupt"` is present but
+unreadable as this key needs: not valid JSON, not a JSON object, or a
+`guards` key that IS PRESENT (`"guards" in parsed`, not
+`parsed.get("guards") is not None`) and is not itself an object — which
+covers an explicit `"guards": null` too, closing a gap the first draft of
+this fix had (`.get()` cannot tell an explicit `null` from a key that was
+never mentioned). A DIRECTORY at the config path is also `"corrupt"`, not
+`"absent"` — `load_config`'s own `text is None` collapse could not tell
+those two apart either, and the first draft of this fix inherited that
+same blind spot from it. A DANGLING SYMLINK at the config path — pointing
+at a target that has been moved or deleted — is `"corrupt"` too, found
+one round later: presence is checked with `os.path.lexists`, not
+`os.path.exists() or os.path.isdir()` (that second draft's own form),
+because both of those FOLLOW a symlink to check its target, so a
+dangling link answered `False` to both — the same "absent" a genuinely
+unset key gets — even though something IS configured at that path and
+cannot be read, which is exactly what `"corrupt"` means. `lexists` checks
+the link itself, which also makes the directory case above redundant to
+special-case separately; one check now covers a plain file, a directory,
+and a dangling symlink alike.
+
+`role_write_guard.py` calls `layer_state` on BOTH layers — the repo's
+`.crew/config.json` and `GLOBAL_CONFIG_PATH` — and if EITHER is
+`"corrupt"`, forces the effective policy to `block` UNCONDITIONALLY, not
+only when the ratchet's own answer happens to be `off`. That second part
+is load-bearing on its own: a corrupt repo config with a VALID,
+non-`off` global policy (say `report`) resolves to `report` through the
+ordinary ratchet — `report` never blocks anything — so a repo that used
+to say `block` and got corrupted would silently downgrade to a policy
+that never refuses, unless the corruption check runs regardless of what
+the ratchet already computed. `layer_state` is a narrow, second read of
+the config file(s), deliberately NOT wired into `load_config`,
+`resolve_ratcheted` or any of the other eight ratcheted keys: widening the
+collapse-detection to every guard was a bigger change than the one guard
+that needed it, for behaviour the other seven have always had on purpose.
+A malformed VALUE inside an otherwise-valid `guards` object (a non-string
+`roleWrites`, or a string naming no known policy) is still
+`normalise_role_writes`'s job alone, unchanged — this function's whole
+purpose is the shape `normalise_role_writes` structurally cannot see.
+
+### The policy table is in the hook script, not in this file
+
+`hooks/scripts/role_write_guard.py` partitions every `agents/*.md` into three
+buckets, decided by that file's own `tools:` frontmatter — not by its prose,
+which is exactly the gap this hook exists to close:
+
+- a role whose `tools:` line names neither `Write` nor `Edit` may not write
+  anywhere, regardless of path (`analyst`, `compliance-auditor`, `dba`,
+  `explorer`, `infrastructure-architect`, `kimi-consult`,
+  `penetration-tester`, `planner`, `qa-researcher`, `qa-reviewer`,
+  `researcher`, `security` as of 2026-09-19 — re-derive rather than trusting
+  this list, and `tests/test_role_write_guard.py` does exactly that on every
+  run);
+- `pm` may write only under `.crew/**`, `TODO.md`, `.work/**` and
+  `docs/diagrams/**` — `agents/pm.md`'s own stated scope, made mechanical;
+  everyone else whose `tools:` line grants both Write and Edit is
+  unrestricted by this hook.
+
+`tests/test_role_write_guard.py::test_policy_table_matches_the_agent_files`
+parses every agent file's `tools:` line and asserts the script's three sets
+are exactly the partition that produces, so a `tools:` grant added or removed
+with the table left alone fails a test rather than drifting silently.
+
+### Scope is judged on the real path, not the one the tool call named
+
+Reported and fixed 2026-09-19. `pm`'s scope check runs against the REAL,
+filesystem-resolved path, never the lexical string a `Write`/`Edit` call
+names: `.crew/link/app.py` matches `.crew/**` as text, but if `.crew/link`
+is a symlink or a Windows junction pointing at `src/`, the write actually
+lands in `src/app.py` once the tool opens it, regardless of what the
+allowed-looking string said. `role_write_guard._resolve_real_target` walks
+up to the deepest existing ancestor of the target (the file itself may not
+exist yet — `Write` creates it) and resolves THAT, following any symlink or
+junction earlier in the chain, before the scope comparison runs. Tested with
+both link kinds actually created on disk — a POSIX symlink and a Windows
+junction via `mklink /J`, the latter needing no elevated privileges — rather
+than simulated, and SKIP-labelled wherever a given machine or user cannot
+create one.
+
+**A second round found the resolver itself had a gap, and it was the most
+serious finding across this whole series.** `_resolve_real_target` started
+by calling `os.path.abspath` on the raw path, and `abspath` collapses a
+literal `..` LEXICALLY — before any symlink in the path is resolved.
+`.crew/link/../app.py`, with `.crew/link` a symlink to `src/subdir`,
+lexically normalised to `.crew/app.py`: a string that fnmatches
+`.crew/**` and classified as in scope. The OS does not resolve that path
+the same way — it follows `.crew/link` to `src/subdir` FIRST and applies
+`..` against the RESOLVED parent afterward, landing in `src/app.py`. The
+classification and the actual write disagreed, and the classification
+was the permissive one: a symlink `pm` itself could stage under a path it
+is trusted to write let it escape to anywhere that symlink's target's
+parent could reach, just by adding `..` after it. Fixed by never calling
+`abspath`/`normpath` on the raw path at all — `_resolve_real_target` now
+walks the path one component at a time, resolving whatever exists on
+disk as it goes, and a `..` pops the RESOLVED parent built up so far,
+never a lexical one, mirroring how the kernel itself walks a path.
+Verified with both a POSIX symlink and a Windows junction, driven end to
+end through the real hook scripts, not simulated.
+
+### `..` after a symlink is a platform-specific rule, not one algorithm
+
+Reported and fixed 2026-09-19, one round after the resolve-then-pop fix
+above shipped. That fix is correct on POSIX and **actively wrong on
+Windows** — not merely imprecise. Win32's own path canonicaliser collapses
+a literal `..` LEXICALLY, in the path string, before the filesystem or
+reparse-point layer ever sees it: a junction sitting exactly where `..`
+pops past it is never traversed at all. Resolve-then-pop computed the
+opposite answer from real Windows in both directions:
+
+- `src\link\..\new.py`, with `src\link` a junction to `.crew\subdir` (in
+  scope): Windows collapses `src\link\..` to `src` before the junction is
+  ever consulted, so the write really lands at `src\new.py` — out of
+  scope, must block. Resolve-then-pop followed the junction first, landed
+  in `.crew`, and wrongly allowed it.
+- `.crew\link\..\app.py`, with `.crew\link` a junction to `src` (out of
+  scope): Windows never consults the junction either, so the write really
+  lands at `.crew\app.py` — in scope, must allow. Resolve-then-pop
+  followed the junction to `src` first and wrongly blocked it.
+
+A second, independent gap in the same walk: it split the raw path only on
+`os.sep` (`\`), so a target spelled with forward slashes
+(`C:/repo/.crew/link/new.py`, which tools commonly send even on Windows)
+never broke into more than one component — the walk never walked
+anything, and a junction anywhere in such a path went unresolved
+regardless of the ordering question above.
+
+`_resolve_real_target` now dispatches on `os.name`.
+`_resolve_real_target_windows` splits on both `\` and `/`, collapses `..`
+lexically first into a `..`-free path (mirroring Win32's own
+canonicaliser), then walks that path resolving whatever junction or
+symlink exists at each step. `_resolve_real_target_posix` is the original
+resolve-then-pop walk from the paragraph above, unchanged — that ordering
+is correct on a real POSIX host, where the kernel resolves each component,
+including a symlink, DURING the walk and applies `..` AFTER, against the
+resolved parent. Verified against both directions on a real Windows
+junction, plus a real forward-slash target and a mixed-separator target,
+all driven end to end through both `role-write-guard.sh` and
+`role-write-guard.ps1`. The POSIX ordering has no equivalent always-running
+direct unit test on this machine: `_resolve_real_target_posix`'s path
+arithmetic assumes a POSIX root, a Windows drive letter breaks that
+reconstruction, `os.path.lexists` never fires true against a real Windows
+disk path built that way, and the walk silently degrades to pure lexical
+popping — the very bug this function exists to prevent, reproduced by the
+test harness rather than the code, so a "passing" test built that way
+would prove nothing. Real POSIX coverage is instead an end-to-end test
+correctly skipped when `os.name == "nt"`, live on any actual POSIX crew
+installation.
+
+### A different drive is proven outside the repo, not merely unverifiable
+
+Reported and fixed 2026-09-19. `os.path.relpath` raises `ValueError` when
+the two paths it compares are on different Windows drives, and that
+exception used to reach the SAME catch-all as every other "cannot
+resolve this" case, collapsing to `None` — "cannot classify", which `pm`
+reads as out of scope and refuses. A different drive is not the same
+fact as "cannot tell": it is PROVEN to be outside the repo root, the same
+way a same-drive `../`-prefixed escape is. `_real_repo_relative` now
+returns the sentinel `".."` for this one case specifically — the exact
+string the outside-repo check already treats as a resolved escape — so a
+`D:` target with the repo on `C:` gets `allow`, logged `outside-repo:
+...`, instead of an incorrect refusal.
+
+### A `\?\` extended-length path is never classified at all
+
+Reported and fixed 2026-09-19. An earlier fix (not written up as its own
+subsection here, since it shipped bundled with several others in the
+same round — see `.crew/verify.json`'s history for that round) NORMALISED
+Windows' `\?\` extended-length prefix away before classification:
+`os.path.relpath` treats `\?\C:\repo\...` and `C:\repo` as different
+mounts and raises, which read as "cannot classify" and incorrectly
+refused a legitimate, in-scope write, so the fix stripped the prefix and
+classified the bare remainder like any other path.
+
+Codex round 5 found that normalising is itself unsound, not merely the
+raising it replaced. `\?\` exists specifically so Win32 will SKIP its own
+path normalisation for that one call — trailing dots and spaces are
+preserved on disk, and a literal `..` component is never collapsed — so
+stripping the prefix and classifying the remainder with this module's
+ordinary (normalising) path handling answers a question about a
+DIFFERENT path than the one Windows actually opens.
+`\?\C:\repo\.crew.\app.py` (note the trailing dot on `.crew.`, a real,
+distinct directory outside every scope `pm` is granted) stripped to
+`C:\repo\.crew.\app.py`, which this module's own path handling then
+further normalised to `C:\repo\.crew\app.py` — in scope, on the string
+alone — while Windows itself opens a directory literally named `.crew.`,
+never `.crew`. `pm` could reach any trailing-dot or trailing-space
+sibling of a permitted directory this way, with the hook's own log
+showing the innocuous, normalised `.crew/app.py` rather than what was
+actually written.
+
+No classifier built to be faithful to ordinary Windows path semantics
+can also be faithful to a syntax whose entire purpose is bypassing those
+semantics, so this module does not try. `_is_extended_length_prefix_path`
+now short-circuits `main` before `_repo_relative`/`_real_repo_relative`/
+`classify` ever run for such a path, and the decision is by role alone,
+matching the same "scoped role" set the outermost exception handler
+already treats as restricted: `pm` and every `_DENY_ROLES` member fail
+CLOSED (`block`) unconditionally, regardless of `guards.roleWrites`'
+configured policy; every other role, and a call with no `agent_type` at
+all, allows — Claude Code itself never emits an extended-length path for
+a `Write`/`Edit` call, so there is nothing here worth refusing for a role
+this table already trusts with `Write`/`Edit` generally. Verified with a
+real, on-disk `.crew.` directory (an ordinary, non-extended-length
+`mkdir` call silently strips the trailing dot and collides with the
+already-existing `.crew`, so even the test fixture needs the
+extended-length form to create the directory it is testing against),
+driven end to end through both `role-write-guard.sh` and
+`role-write-guard.ps1`.
+
+### A target outside the repo root entirely is not this guard's business
+
+Reported and fixed 2026-09-19, a probe finding on the first commit — and
+tightened by a second probe on the first fix, below. This guard's whole
+purpose is the REPO's write scope, so `pm` writing to a harness-sanctioned
+location OUTSIDE the repo — the scratchpad under
+`AppData/Local/Temp/claude/<session>/scratchpad`, which every role including
+`pm` is told to use — is not a scope violation at all; it was refused
+anyway, because "outside every allowed prefix" and "outside the repo
+entirely" collapsed to the same "not in scope" answer. Fixed with
+`role_write_guard._is_outside_repo`, checked on the same REAL,
+symlink/junction-resolved path (`_real_repo_relative`'s output) the in-scope
+pattern match above already uses — a parent-relative escape (`os.path.
+relpath` prefixes a result with `..` when the target lands outside `root`)
+means the write is `allow`, logged `outside-repo: ...`.
+
+**The first fix judged this on the LEXICAL path instead — what the tool
+call SAID it was writing, never where the write actually lands — and a
+second probe found that was the wrong side of the line.** `.crew/escape ->
+/elsewhere`, a symlink STAGED inside `.crew/` (a prefix `pm` is trusted to
+write) whose target is OUTSIDE the repo root entirely, is named lexically
+INSIDE the repo, so the lexical version refused it — but the write itself
+touches nothing under the repo at all, which is exactly the case this
+exception exists for, symlink or not. There is no "but the tool call named
+a path inside the repo" carve-out any more: the guard's business is where
+the write actually lands. **The case that is still refused is a different
+one** — `.crew/escape -> src/`, a symlink staged the same way but whose
+target is ANOTHER IN-REPO directory outside `pm`'s permitted prefixes.
+`_is_outside_repo` is `false` for `src/app.py` (still under the repo root),
+so the ordinary `_pm_in_scope` pattern match above still runs and still
+refuses it. `_DENY_ROLES` gets NONE of this exception either way: its
+restriction is "no `Write`/`Edit` at all", not "confined to the repo", so an
+outside-repo write is a different, stronger rule that role has no exception
+from.
+
+### What "unknown" means here
+
+Two distinct unknowns reach this hook, and CLAUDE.md's rule applies to both:
+an unknown must not wear the label of a decision, so both **allow**, but each
+is named differently in `.crew/guard.log` rather than merged into one
+unreadable "allow" row — `no-agent-type` (the hook fired with no `agent_type`
+field at all — the main thread, or an older Claude Code build) and
+`unknown-role:<value>` (an `agent_type` this table has no entry for: a
+built-in agent, a different plugin's agent, or a typo).
+
+**`agent_type`'s exact wire form for a plugin-scoped subagent was not
+observed live against a real dispatched subagent in the session that built
+this hook** — see the commit report for what was and was not verified. The
+Claude Code hooks documentation describes the field only as "Agent name (for
+example `"Explore"` or `"security-reviewer"`)"; this repo's own agents were
+observed elsewhere in that session listed as `crew:pm`, `crew:analyst`, etc.
+`role_write_guard._normalise_role` strips everything up to and including the
+LAST `:` before matching, so both `"crew:pm"` and `"pm"` resolve to `"pm"`.
+If the real wire form turns out to be neither, the hook still fails to the
+allowing side: an unmatched value is `unknown-role`, logged and let through,
+never a strand.
+
+### Why this lives beside the other guards rather than as its own block
+
+`install`, the six command/production guards and `change.requireForProduction`
+already established the pattern this key needed: a value settable in both
+layers, ratcheted to the narrower one, read through
+`crew_config.py::resolve_guard` and nothing else. A bespoke
+`resolve_role_writes` would have been a sixth mechanism for the rule §16's own
+header states — "one mechanism can be wrong; two can disagree, and then only
+one of them gets fixed." Adding `"roleWrites"` to `crew_guards.ALL_GUARD_NAMES`
+and one branch to `crew_guards.guard_tiers` was the whole cost of reusing it.

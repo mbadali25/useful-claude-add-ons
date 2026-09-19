@@ -158,7 +158,7 @@ still writes only the repo file.
   "github": { "mergeGate": { "enabled": false, "branch": null } },
   "install": {"policy": "manual"},
   "guards": { "terraformApply": "block", "forcePush": "block", "adminMerge": "block", "mergeGate": "block",
-              "prodDatabase": "none", "prodServer": "none" },
+              "prodDatabase": "none", "prodServer": "none", "roleWrites": "off" },
   "production": { "databases": [], "hosts": [] },
   "change": { "requester": null, "implementor": null, "requireForProduction": false,
               "sdpTemplate": "Change Management Request", "jiraIssueType": "Change", "category": null }
