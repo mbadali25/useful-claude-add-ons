@@ -2505,3 +2505,80 @@ The remaining half of the CLOSED entry above, re-confirmed at `7c5b884b`:
 access to `reportTracked`, so they cannot interpolate the way the pulse text
 does. Whatever fixes them is a different fix from the one-line bug above, and
 should not be bundled with it.
+
+
+## Generated checkers from the defect ledger — sequenced after crew 0.19.62
+
+Filed 2026-09-18 by the PM. **Not deferred indefinitely; blocked on data.**
+
+The ambition is that the crew builds and commits the checkers it needs rather
+than each role re-typing the check by hand. Crew already has the pattern in one
+place: `plugin/crew/agents/smoke-author.md:46-73` writes a check, writes its
+`.crew/verify.json` rule, then mutation-proves the rule goes red. That is
+generate-and-prove, scoped to smoke checks only.
+
+`plugin/crew/skills/crew-lint/` is NOT that mechanism and should not be
+mistaken for it: the directory contains `SKILL.md` and nothing else -- no
+scripts, no templates. An agent reads it and types commands.
+
+**Why it cannot ship before the ledger has run.** The trigger is a defect that
+escaped every mapped command AND matches a class already recorded once; the
+second occurrence generates the checker. Today `/crew:review` records only
+counts -- `<date> | <ticket> | <reviewer> | <n BLOCK> | <n FIX>`
+(`plugin/crew/commands/review.md:409`) -- so no class is ever stored and there
+is nothing to generate from. crew 0.19.62 adds the class row. This work needs
+weeks of those rows before it has input.
+
+**Design constraints already settled**, so they are not re-derived later: a
+generated checker takes its file list as argv so it composes with
+`.crew/verify.json`; it ships with a fixture it must flag and one it must not;
+registration is a second commit after evidence of it going red on the real
+defect; it enters as `provisional` (runs, reports, never fails the build) and
+is promoted only on a real catch. **Every checker prints its inspected count
+and exits non-zero on zero inspected** -- the vacuous-pass class (bad glob,
+inspects nothing, exits 0) is one rule to kill and this repo has already been
+bitten by an "INSPECTED 0" that read as a real result.
+
+## Playbooks as a tracked artifact — scheduled as crew 0.19.64
+
+Filed 2026-09-18 by the PM. **Scheduled, not deferred. Shape informed by
+slices 0.19.61-0.19.63 rather than decided before them.**
+
+A playbook is task-shaped -- "to change X in this repo, do A then B then C, and
+the thing that bites you is D" -- and is a different artifact from a runbook.
+`plugin/crew/skills/crew-runbooks/SKILL.md:8-12` says so itself: "it is 3am,
+this is broken, what do I type? ... **Not** 'how the system works'". Runbooks
+are symptom-indexed incident response.
+
+**What slices 1-3 are expected to tell its design.** 0.19.61 wired the doing
+roles to the codemap for the first time. Whether roles actually consume a
+written-down repo procedure, and in what shape they use it, is unmeasured
+today; that measurement is the design input here. It is no longer the decision
+whether to build -- the user has accepted the cost.
+
+**The cost accepted, enumerated so a partial change cannot happen.** A new
+`.crew/playbooks/` directory needs the un-ignore list changed in every place
+that states it, and `scripts/check-marketplace.py::check_crew_ignore_policy`
+asserts that list is the same set in all of them. Enumerate every site with
+`path:line` BEFORE touching the first: root `CLAUDE.md`, crew-setup's shipped
+template, and every doc stating the list. A partial allowlist change is worse
+than none.
+
+## Repo LICENSE is GPL-2.0 while crew's plugin.json declares MIT
+
+Filed 2026-09-18 by the PM. **Pre-existing, not introduced here, not touched.**
+
+`LICENSE` at the repo root is GNU GPL v2. `plugin/crew/.claude-plugin/plugin.json:12`
+declares `"license": "MIT"`. Both were true before this work.
+
+Surfaced now because crew 0.19.63 copies MIT-licensed material into
+`plugin/crew/skills/crew-debugging/` (superpowers' `systematic-debugging`,
+Copyright (c) 2025 Jesse Vincent). That copy is lawful either way -- MIT is
+GPL-2-compatible -- and the attribution obligation is discharged by the
+`NOTICE.md` that slice ships, independently of how this mismatch resolves. So
+this is not a blocker for 0.19.63.
+
+**It is still worth resolving**, because a consumer reading `plugin.json`
+concludes crew is MIT and a consumer reading `LICENSE` concludes GPL-2, and
+those imply different obligations on anyone redistributing the plugin alone.
+Needs an owner decision, not a fix chosen by an agent.
