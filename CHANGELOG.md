@@ -6,6 +6,33 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Changed
 
+- **`crew` 0.19.62: the roles that touch code now carry the scope rule the PM
+  already had, and `/crew:work` emits a goal line that can actually be
+  checked.** Crew advertises itself in `plugin/README.md` and `README.md` as
+  "bounded so it fixes only what blocks the job and tickets the rest", and
+  before this the rule lived in exactly one place: `pm_pulse.py:188-189` and
+  `:215-217`, the PM's hook text. Measured across the roles that edit and
+  review code, `grep -ci 'defer|out of scope|unrelated'` returned 0 for
+  `developer.md`, `qa-reviewer.md`, `smoke-author.md`, `dba.md` and
+  `work.md`; `smoke-author.md` had no scope language at all. The instruction
+  existed only where it was already being followed. All four roles now carry
+  an identical scope clause -- fix what blocks, file the rest to `TODO.md`
+  with its `path:line` and reason -- and end their reports with
+  `## Deferred — and where it went`, required even when empty, with
+  "Nothing deferred." as the written-out empty case. An absent section read
+  identically whether the role found nothing or found something and fixed it
+  quietly, which is the ambiguity that made veering invisible.
+  `/crew:work` gains step 4b: a ready-to-paste `/goal` line built from the
+  ticket's "Done when", the `.crew/verify.json` commands its paths map to
+  plus the ticket's own new test, and a scope constraint. Crew does not set
+  the goal -- `/goal` is a built-in the user types -- it composes it. The
+  implementation step now ends by printing `git status --porcelain` verbatim
+  including when empty, because the goal evaluator runs no commands and opens
+  no files: a constraint whose evidence is never printed returns Met because
+  nothing contradicted it, not because it held. Regression suite
+  `plugin/crew/tests/test_scope_discipline.py`, sabotage-tested: nine
+  mutations across five files, all red, all files restored byte-identical.
+
 - **`crew` 0.19.61: the roles that touch code now read the code map, and
   onboarding writes a schema note.** Crew has written a per-repo "what breaks
   here" store since the codemap shipped -- each note's `## Landmines` section

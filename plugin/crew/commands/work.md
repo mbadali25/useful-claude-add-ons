@@ -19,6 +19,39 @@ nobody trusts a notification channel.
 2. If Scope is unclear or "Done when" is not observable, stop and ask me.
 3. Use the `crew:explorer` subagent to locate the code. Do not grep yourself.
 4. Plan mode. Show me the plan before editing.
+4b. **Emit the goal line.** After the plan is agreed and before you edit
+    anything, print a ready-to-paste `/goal` line. You cannot set it yourself —
+    `/goal` is a built-in the user types, and crew has no way to invoke it — so
+    print it and say plainly that pasting it is optional and what it buys.
+
+    Three clauses, each from an artifact this repo already has:
+
+    ```
+    /goal <the ticket's "Done when", as one measurable end state>; proven by
+    <the .crew/verify.json commands the ticket's paths map to> and <the
+    specific new test this ticket adds>; no tracked file outside <the ticket's
+    declared paths> is modified — the turn prints `git status --porcelain` to
+    show it, and anything found outside is appended to TODO.md with its reason,
+    not fixed
+    ```
+
+    **Why the third clause needs the second half.** The goal evaluator reads
+    only what the turn surfaced in the conversation — it runs no commands and
+    opens no files. So "no tracked file outside these paths is modified" is
+    checkable only if the turn PRINTS the evidence. A turn that stays silent
+    and a turn that stayed inside its paths look identical to the evaluator,
+    and it returns Met for both. That is the failure this repo names over and
+    over: an unknown collapsing into the safe-looking value.
+
+    **Name the specific test, not only the mapped command.** `.crew/verify.json`
+    rules are coarse globs — in this repository a single rule covers
+    `plugin/**` and `skills/**` — so nearly every change maps to the same
+    top-level checker. True, and not discriminating. The ticket's own new test
+    is what makes the middle clause mean this change rather than any change.
+
+    Skip this step and say why if the ticket has no observable "Done when";
+    step 2 should already have stopped you.
+
 5. Implement the smallest change that satisfies Done. Who types is not assumed:
    read the effective dev table first with
    `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_config.py --root . --models`
@@ -48,6 +81,15 @@ nobody trusts a notification channel.
    reviewed. Unrecorded is not neutral — `/crew:review` then reads `dev` out of
    the config, which describes the *next* run rather than this one, and has to
    say so in its verdict.
+
+   **End the implementation turn by printing `git status --porcelain`,
+   verbatim, including when it is empty.** Then name any path in it that is
+   outside the ticket's declared scope, and say what you did about it — which
+   under the scope clause means filed to `TODO.md`, not fixed. An empty result
+   is printed as an empty result, not omitted: a turn that shows nothing and a
+   turn that touched nothing are the same to every later reader, and only one
+   of them is a claim anybody checked.
+
 6. Verify. If `.crew/verify.json` exists, run the checks your changed paths map
    to (the Stop hook enforces this anyway; running it yourself is faster feedback).
    Otherwise `./_verify/smoke.sh`. On failure, fix and rerun. Never proceed past
@@ -100,5 +142,12 @@ nobody trusts a notification channel.
 14. Delete `.work/HANDOFF.md` if it exists. A stale handoff gets injected into
     every later session as though it were current, and that session has no way
     to know it is reading history.
+
+
+Every role you dispatch carries the same scope clause: fix only what blocks the
+task, file the rest to `TODO.md` with its `path:line` and its reason, and end
+its report with `## Deferred — and where it went`, present even when empty.
+Hold them to it. A role whose report has no Deferred section has not finished,
+and "Nothing deferred." is the empty case written out rather than left off.
 
 Stop there. I open the PR.
