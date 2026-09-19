@@ -297,10 +297,20 @@ LOCK_TTL=180
 # in seconds, never to make a live repo's window LARGER by an env var nobody
 # would think to look for. Unparseable falls back to the compiled default,
 # not to zero, which would make every lock look expired on the next read.
+#
+# READ AS DECIMAL, EXPLICITLY. `08` and `09` are all digits, so they pass the
+# filter below and then die inside `$(( ))`, which reads a leading zero as
+# OCTAL: measured, `CREW_VERIFY_LOCK_TTL=08` printed
+# `line 383: 1789805222 + 08: value too great for base (error token is "08")`
+# twice and published NO deadline at all -- the seam silently disabling the
+# very mechanism it exists to test. PowerShell has no octal literal, so
+# `[int]"08"` is 8 over there and the two flavours disagreed on the same
+# value; `10#` is what makes them agree.
 case "${CREW_VERIFY_LOCK_TTL:-}" in
   ''|*[!0-9]*) ;;
-  *) [ "$CREW_VERIFY_LOCK_TTL" -gt 0 ] && [ "$CREW_VERIFY_LOCK_TTL" -le "$LOCK_TTL" ] 2>/dev/null \
-       && LOCK_TTL=$CREW_VERIFY_LOCK_TTL ;;
+  *) ENV_TTL=$((10#$CREW_VERIFY_LOCK_TTL))
+     [ "$ENV_TTL" -gt 0 ] && [ "$ENV_TTL" -le "$LOCK_TTL" ] 2>/dev/null \
+       && LOCK_TTL=$ENV_TTL ;;
 esac
 RECLAIMED=0
 # Set when the checks run with no lock held. Nothing is cleaned up on that
@@ -416,9 +426,37 @@ if ! mkdir "$LOCK" 2>/dev/null; then
       # saying how long THIS run may take, from the map's own numbers.
       # Absent or unreadable falls back to the age window, so a lock from
       # a version that never wrote one ages exactly as it used to.
-      HOLD_DEADLINE=$(cat "$LOCK/deadline" 2>/dev/null | tr -dc "0-9")
-      if [ -n "$HOLD_DEADLINE" ] && [ "$HOLD_DEADLINE" -gt 0 ] 2>/dev/null && [ "$NOW" -lt "$HOLD_DEADLINE" ] 2>/dev/null; then
-        echo "verify-gate: backed off, lock held by $(cat "$LOCK/token" 2>/dev/null || echo 'an unreadable token') (holder declared it may run for another $((HOLD_DEADLINE - NOW))s); NOTHING WAS VERIFIED this turn." >&2
+      #
+      # AN UNPARSEABLE DEADLINE MEANS NOT HELD. It used to be read with
+      # `tr -dc "0-9"`, which DELETES the characters it does not like instead
+      # of rejecting the value -- so `-9999999999` became `9999999999`, a
+      # deadline in the year 2286, and the gate backed off with
+      # "may run for another 8210194761s" and verified nothing for the rest of
+      # the century. Measured, exactly that, before this line changed.
+      #
+      # That is this repository's named recurring defect wearing its inverse:
+      # not an unknown collapsing into the permissive value, but a MALFORMED
+      # value being repaired into one. Same discipline as DEFERRED_COUNT
+      # defaulting to 1 and the TTL seam falling back to 180 -- when the input
+      # cannot be read, assume UNVERIFIED, which here means "no deadline", and
+      # fall through to the age window below.
+      #
+      # `tr -d '[:space:]' ` removes WHITESPACE ONLY, because the .ps1
+      # flavour writes this file with Set-Content and a native line ending, so
+      # bash reads a trailing CR that is framing rather than content. Anything
+      # left that is not a pure run of digits is refused outright -- a sign, a
+      # decimal point, a second number, a word.
+      #
+      # `10#` for the same reason as the TTL seam above: a leading zero would
+      # otherwise be read as octal inside `$(( ))`. Neither writer can emit
+      # one (an epoch has not started with 0 since 1970), which is exactly why
+      # it is cheap to be sure here rather than to argue about it.
+      HOLD_DEADLINE=$(tr -d '[:space:]' < "$LOCK/deadline" 2>/dev/null)
+      case "$HOLD_DEADLINE" in
+        ''|*[!0-9]*) HOLD_DEADLINE="" ;;
+      esac
+      if [ -n "$HOLD_DEADLINE" ] && [ "$((10#$HOLD_DEADLINE))" -gt 0 ] 2>/dev/null && [ "$NOW" -lt "$((10#$HOLD_DEADLINE))" ] 2>/dev/null; then
+        echo "verify-gate: backed off, lock held by $(cat "$LOCK/token" 2>/dev/null || echo 'an unreadable token') (holder declared it may run for another $((10#$HOLD_DEADLINE - NOW))s); NOTHING WAS VERIFIED this turn." >&2
         exit 0
       fi
       if [ $((NOW - HOLDER_AT)) -le "$LOCK_TTL" ] 2>/dev/null; then

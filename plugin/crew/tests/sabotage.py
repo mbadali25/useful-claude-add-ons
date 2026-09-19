@@ -2354,6 +2354,99 @@ MUTATIONS = (
         ("tests/test_verify_gate_stop_budget.py::"
          "test_both_flavours_charge_the_rule_once"),
     ),
+    (
+        # The deadline read goes back to DELETING what it cannot parse instead
+        # of refusing it. `tr -dc "0-9"` turns -9999999999 into 9999999999 --
+        # a deadline in the year 2286 -- so the gate backed off announcing
+        # "may run for another 8210194761s" and verified nothing for ever.
+        # This repository's recurring defect inverted: a malformed value
+        # REPAIRED into a permissive one rather than an unknown collapsing
+        # into one.
+        "an unparseable deadline is coerced into a number again",
+        VERIFY_SH,
+        "      HOLD_DEADLINE=$(tr -d \'[:space:]\' < \"$LOCK/deadline\" "
+        "2>/dev/null)\n"
+        "      case \"$HOLD_DEADLINE\" in\n"
+        "        \'\'|*[!0-9]*) HOLD_DEADLINE=\"\" ;;\n"
+        "      esac\n",
+        "      HOLD_DEADLINE=$(cat \"$LOCK/deadline\" 2>/dev/null | "
+        "tr -dc \"0-9\")\n",
+        ("tests/test_verify_gate_lock_window.py::"
+         "test_an_unparseable_deadline_is_not_a_held_lock"),
+    ),
+    (
+        # The PowerShell half, and NOT the same defect: this flavour never
+        # coerced a sign, it silently overflowed. `[int]` on a deadline past
+        # Int32 max throws, the catch produces 0, and the lock reads as
+        # unheld -- measured, on an aged token with a deadline of 9999999999
+        # bash backed off while PowerShell RAN. Every legitimate deadline
+        # crosses that boundary on 2038-01-19, so the pair would have
+        # disagreed about every live lock from that date.
+        "the PowerShell deadline read overflows Int32 again",
+        VERIFY_PS1,
+        "      $holdDeadline = 0\n"
+        "      try {\n"
+        "        $raw = (Get-Content -Raw -ErrorAction Stop (Join-Path $lock "
+        "\'deadline\')).Trim()\n"
+        "        if ($raw -match \'^[0-9]+$\') { $holdDeadline = [long]$raw }"
+        "\n      } catch { $holdDeadline = 0 }\n",
+        "      $holdDeadline = try { [int]((Get-Content -Raw -ErrorAction "
+        "Stop (Join-Path $lock \'deadline\')).Trim()) } catch { 0 }\n",
+        ("tests/test_verify_gate_lock_window.py::"
+         "test_both_flavours_read_the_same_deadline_the_same_way"),
+    ),
+    (
+        # DEADLINE PUBLICATION REMOVED ENTIRELY, bash side. This is the
+        # mutation the cross-flavour case could not be made to fail under
+        # before it was rewritten: it fabricated the lock, the token and the
+        # deadline itself, and the token it planted was fresh enough that the
+        # AGE WINDOW forced the back-off it asserted -- so the test passed
+        # with the whole feature deleted from both gates. It now runs a real
+        # holder of the writer flavour and asserts the token is already past
+        # the TTL, which is what makes the back-off attributable to the
+        # deadline.
+        "the bash gate stops publishing a deadline at all",
+        VERIFY_SH,
+        "lock_extend() {\n"
+        "  [ \"$UNLOCKED\" -eq 0 ] || return 0\n"
+        "  [ \"$(cat \"$LOCK/token\" 2>/dev/null)\" = "
+        "\"${LOCK_TOKEN:-}\" ] || return 0\n"
+        "  printf \'%s\\n\' \"$(( $(date +%s) + $(lock_window) ))\" > "
+        "\"$LOCK/deadline\" 2>/dev/null || true\n"
+        "}\n",
+        "lock_extend() {\n  return 0\n}\n",
+        ("tests/test_verify_gate_lock_window.py::"
+         "test_each_flavour_honours_a_deadline_the_other_published"),
+    ),
+    (
+        # The matched pair's half: deadline publication removed on the
+        # PowerShell side. Separate entry because the cross-flavour case runs
+        # BOTH directions, and one flavour still publishing would leave the
+        # other direction green -- which is exactly how a one-flavour fix
+        # reads as done in this plugin.
+        "the PowerShell gate stops publishing a deadline at all",
+        VERIFY_PS1,
+        "      $deadline = $epoch + (Get-CrewLockWindow -Ttl $Ttl -MaxCost "
+        "$MaxCost)\n      Set-Content -Path (Join-Path $LockPath "
+        "\'deadline\') -Value $deadline -Encoding ascii -ErrorAction Stop\n",
+        "      $deadline = $epoch + (Get-CrewLockWindow -Ttl $Ttl -MaxCost "
+        "$MaxCost)\n      $null = $deadline\n",
+        ("tests/test_verify_gate_lock_window.py::"
+         "test_each_flavour_honours_a_deadline_the_other_published"),
+    ),
+    (
+        # The TTL seam read as octal again. `08` is all digits, so it passes
+        # the filter and then dies inside `$(( ))` -- measured, two
+        # `value too great for base` lines and NO deadline published, while
+        # the gate still exited 0. A test seam that silently disables the
+        # mechanism it exists to exercise.
+        "a zero-prefixed TTL is read as octal again",
+        VERIFY_SH,
+        "  *) ENV_TTL=$((10#$CREW_VERIFY_LOCK_TTL))",
+        "  *) ENV_TTL=$CREW_VERIFY_LOCK_TTL",
+        ("tests/test_verify_gate_lock_window.py::"
+         "test_a_zero_prefixed_ttl_is_decimal_and_still_publishes_a_deadline"),
+    ),
 )
 
 

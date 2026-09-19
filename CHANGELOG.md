@@ -28,6 +28,52 @@ All notable changes to this repository are documented here. Format follows [Keep
   hand-built state dict), so they passed against it; fixed to nest under
   `knowledge`, and a new test drives the real `crew_state.collect()` against a
   fixture repo so the fixture shape cannot drift from the emitter's again.
+- **`crew` 0.19.76: a deadline the gate cannot parse now means the lock is
+  NOT held, and the test that was supposed to prove cross-flavour agreement
+  now needs the feature to pass.** The version is a PLACEHOLDER -- 0.19.71+
+  belong to another branch and a renumber pass folds this later.
+  Two FIXes and a NIT from the Codex review of `30eebdd9..0462ddc1`, the
+  lock-window commit.
+  **The deadline read repaired a malformed value into a permissive one.**
+  `verify-gate.sh` parsed `.crew/.verify-gate.lock/deadline` with
+  `tr -dc "0-9"`, which DELETES the characters it does not like rather than
+  refusing the value -- so `-9999999999` became `9999999999`, a deadline in
+  the year 2286. Measured before the fix: the gate backed off announcing
+  "may run for another 8210194761s", exit 0, verification silently off for
+  the rest of the century. That is this repository's recurring defect
+  inverted: not an unknown collapsing into a safe-looking value, but a
+  broken one being mended into it. The value is now REJECTED unless it is a
+  pure run of digits (whitespace stripped first, because the `.ps1` flavour
+  writes this file with a native line ending), and an unparseable deadline
+  falls through to the age window -- the same discipline as `DEFERRED_COUNT`
+  defaulting to 1.
+  **The two flavours also disagreed above Int32 max,** which the finding did
+  not name and which the fix closes: measured on an aged token with a
+  deadline of `9999999999`, bash backed off while PowerShell RAN, because
+  `[int]` overflows and the catch silently produced 0. That is not a
+  synthetic input -- every legitimate deadline crosses Int32 max on
+  2038-01-19. PowerShell now matches `^[0-9]+$` and casts to `[long]`.
+  **The cross-flavour test passed without the feature it was named after.**
+  It fabricated the lock, the token and the deadline itself, and the token it
+  planted was fresh enough that the AGE WINDOW forced the back-off it
+  asserted. Verified rather than taken on the reviewer's word: with deadline
+  publication deleted from BOTH gates the old case passed in 1.67s, and the
+  rewritten one fails. It now starts a real gate of the WRITER flavour as the
+  holder and asserts the token is already PAST the TTL before challenging,
+  so the back-off is attributable to the deadline and to nothing else.
+  **`CREW_VERIFY_LOCK_TTL=08` hit octal arithmetic.** All digits, so it
+  passed the filter and then died inside `$(( ))`: two
+  `value too great for base (error token is "08")` lines and NO deadline
+  published at all, while the gate still exited 0 -- a test seam silently
+  disabling the mechanism it exists to exercise. `10#` reads it as decimal,
+  which is also what makes it agree with PowerShell, where `[int]"08"` was
+  always 8.
+  Sabotage, five mutations, each RED and each restored byte-identical:
+  restoring the `tr -dc` coercion; restoring the `[int]` cast; deleting
+  deadline publication from `verify-gate.sh` and again from
+  `verify-gate.ps1` (separately, because the cross-flavour case runs both
+  directions and one flavour still publishing leaves the other green); and
+  removing `10#` from the TTL seam.
 - **`crew` 0.19.75: the Stop gate's skip can no longer wave through a tree
   `--all` fails on, and a rule is no longer split by its own budget.** The
   version is a PLACEHOLDER -- 0.19.71+ belong to another branch and a
