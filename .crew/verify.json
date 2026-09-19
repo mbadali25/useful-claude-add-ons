@@ -67,6 +67,7 @@
       "why": "2s. These files state numbers about this repo (skill/plugin counts, catalog Version rows) that nothing else re-derives; the marker check added in #139 fails red on a marked wrong number and on an unrecognised marker type. sync-updates --check catches a UPDATE.md mirror drifting from its source." },
 
     { "paths": ["scripts/**"],
+      "seconds": 78,
       "run": ["python3 scripts/check-marketplace.py",
               "python3 scripts/_test/self-claims.py",
               "python3 scripts/_test/version-drift.py",
@@ -90,6 +91,7 @@
 
     { "paths": ["plugin/crew/hooks/scripts/crew_guards.py",
                 "plugin/crew/tests/test_guard*.py"],
+      "seconds": 4,
       "run": ["python3 -m pytest plugin/crew/tests/test_guards.py plugin/crew/tests/test_malformed_production_never_permits.py -q"],
       "why": "The command guard was REMOVED in 0.19.52, and test_guard_bypasses.py, test_guard_powershell.py and test_guard_command_spelling.py went with it. This rule named all three plus guard.sh/.ps1 in its paths, so it failed on files that no longer exist - a gate that errors is a gate nobody can read. crew_guards.py itself is KEPT and still live: guards.mergeGate and change.requireForProduction resolve through it, and crew_config and crew_state both call its classifier. So the rule still earns its place, pointed at the module-level suites that survived." },
 
@@ -100,6 +102,7 @@
                 "plugin/crew/tests/test_provider_table.py",
                 "plugin/crew/tests/test_role_ladder.py",
                 "plugin/crew/tests/test_install_policy.py"],
+      "seconds": 13,
       "run": ["python3 -m pytest plugin/crew/tests/test_crew_config.py plugin/crew/tests/test_provider_table.py plugin/crew/tests/test_role_ladder.py plugin/crew/tests/test_install_policy.py -q"],
       "why": "18s. crew_config is the single resolver for a three-layer config; a wrong answer here silently changes which reviewer runs and whether crew may execute install commands." },
 
@@ -123,6 +126,7 @@
                 "plugin/crew/tests/test_context_watch.py",
                 "plugin/crew/tests/test_auto_clear.py",
                 "plugin/crew/tests/test_verify_absent_and_diagram_kind.py"],
+      "seconds": 52,
       "run": ["python3 -m pytest plugin/crew/tests/test_crew_state.py plugin/crew/tests/test_pm_brief.py plugin/crew/tests/test_module_split.py plugin/crew/tests/test_docs_routing.py plugin/crew/tests/test_endpoints.py plugin/crew/tests/test_incident.py plugin/crew/tests/test_platform_sync.py plugin/crew/tests/test_hook_once.py plugin/crew/tests/test_handoff_staleness.py plugin/crew/tests/test_context_watch.py plugin/crew/tests/test_auto_clear.py plugin/crew/tests/test_verify_absent_and_diagram_kind.py -q"],
       "why": "25s for the four-module core; PROVEN red by regrouping read_metrics on cells[0] instead of cells[1]. TWO MUTATIONS SURVIVED IT on 2026-09-13 and are open coverage holes, recorded here rather than left for someone to rediscover: (1) renaming `reportTracked` in crew_state.py leaves the whole suite green, because test_pm_brief.py hand-builds the graph dict with that literal key and never calls crew_state._read_graph - so producer and consumer are only ever tested against a string the test itself supplies, and a rename degrades the pulse to the `--no-viz` form that this repo's CLAUDE.md forbids; (2) changing the anchor truncation `[:7]` to `[:40]` at all six sites leaves the ENTIRE 965-test crew suite green, so the comparison CLAUDE.md documents as load-bearing is tested nowhere." },
 
@@ -135,6 +139,7 @@
     { "paths": ["plugin/crew/skills/crew-graph/scripts/crew_upgrade.py",
                 "plugin/crew/tests/test_upgrade.py",
                 "plugin/crew/tests/test_sabotage_harness.py"],
+      "seconds": 5,
       "run": ["python3 -m pytest plugin/crew/tests/test_upgrade.py plugin/crew/tests/test_sabotage_harness.py -q"],
       "why": "15s. The schema migration path: a key added to the schema and announced nowhere is how install.policy reached UPGRADE.md and never the terminal." },
 
@@ -157,23 +162,28 @@
       "why": "0s + 46s. pylint.yml IS a CI gate across 3.11/3.12/3.13 - I claimed otherwise in a commit message on 2026-09-12 having read only marketplace.yml, and it had main red for two commits. Invoked exactly the way CI invokes it, over every tracked file rather than the changed one, because that is the thing that goes red." },
 
     { "paths": ["plugin/gizmoduck/**"],
+      "seconds": 30,
       "run": ["python3 -m pytest plugin/gizmoduck/scripts/_test/ -q"],
       "why": "9s. gizmoduck shells out to real scanners; the suite drives them against fixtures under mktemp and installs nothing." },
 
     { "paths": ["mcp-servers/**"],
+      "seconds": 196,
       "run": ["npm --prefix mcp-servers test"],
       "why": "21s. PRECONDITION: `npm --prefix mcp-servers install` must have been run once, or this fails with `'tsc' is not recognized`, which reads as a broken check rather than a missing dependency. Judge it by the EXIT CODE, never the visible tail - this is a workspace script running each package's node --test in turn, and a package that passes prints last even when an earlier one failed." },
 
     { "paths": ["skills/bitbucket/**"],
+      "seconds": 5,
       "run": ["bash skills/bitbucket/scripts/_test/merge_gate.sh"],
       "why": "46s. merge_gate.sh can DELETE branch restrictions on a live repo; its dry-run cases are the only thing standing between a config value and that." },
 
     { "paths": ["skills/doc-builder/**"],
+      "seconds": 1,
       "run": ["bash skills/doc-builder/scripts/_test/checklist.sh"],
       "why": "1s." },
 
     { "paths": ["skills/mermaid-svg-bitbucket/**", "skills/notify/**",
                 "skills/cisco-meraki/**"],
+      "seconds": 12,
       "run": ["python3 -m pytest skills/mermaid-svg-bitbucket/tests/ skills/notify/tests/ skills/cisco-meraki/tests/ -q"],
       "why": "6s. The three skill suites CI runs as separate pytest invocations." },
 
@@ -183,12 +193,14 @@
       "why": "7s. Editing the harness means running it. run-all.sh (~6 min) and run-all.sh --with-hooks (which HANGS) are deliberately unreachable from any rule." },
 
     { "paths": [".github/workflows/**"],
+      "seconds": 0,
       "run": [],
       "why": "DELIBERATELY UNCHECKED, not an oversight. Nothing on this machine validates GitHub workflow YAML; GitHub is the only validator, and a rule pointing at a check that cannot see the file would read as coverage. A workflow edit is verified by watching the run it produces." },
 
     { "paths": ["graphify-out/**", ".crew/codemap/**", ".crew/**", ".serena/**",
                 "work-log/**", "vault-automation/**", "claude-obsidian-setup/**",
                 ".gitignore", ".gitattributes", "LICENSE"],
+      "seconds": 0,
       "run": [],
       "why": "DELIBERATELY UNCHECKED. graphify-out/ is regenerated by a post-commit hook and must never be hand-edited; .crew/codemap/ is prose whose anchors are re-checked by /crew:onboard, not by a gate; the rest are config and notes with no mechanical check. Listed explicitly so that `unmapped: fail` still fires on anything genuinely new." }
   ],
