@@ -28,6 +28,51 @@ All notable changes to this repository are documented here. Format follows [Keep
   hand-built state dict), so they passed against it; fixed to nest under
   `knowledge`, and a new test drives the real `crew_state.collect()` against a
   fixture repo so the fixture shape cannot drift from the emitter's again.
+- **`crew` 0.19.78: a mandatory check no longer jumps its own rule's `run`
+  order, and is no longer charged twice.** The version is a PLACEHOLDER --
+  0.19.71+ belong to another branch and a renumber pass folds this later. Two
+  FIXes from the Codex on `75452c67..9504d6e6`, both in the dedup code
+  0.19.94 introduced.
+  **0.19.94 attached mandatory-ness to a COMMAND**, hoisting each mandatory
+  command to the front of the run list and charging it there. Both halves
+  were wrong, and the first fails in the expensive direction rather than the
+  loud one. A rule declaring `run: ["prepare", "check"]` has stated a
+  dependency; with `check` in `always` the gate ran `check` FIRST -- measured,
+  both flavours -- so the check fails for a reason that is not the user's and
+  they go debugging their own code while the gate is what reordered it. A
+  check that reports the wrong cause is worse than no check. The second half
+  charged the hoisted command its rule's cost and then charged the rule again:
+  a 40s rule running `[A, B]` with `A` in `always` cost 40 + 40 under the 60s
+  default and deferred `B` -- the per-command double-charge 0.19.92 removed,
+  reintroduced from the other end.
+  **The obligation now attaches to the RULE that carries it.** A rule is
+  unconditional when it states no cost or when any command it names is
+  unconditional; it then runs WHOLE, in its own `run` order, charged once.
+  That is forced rather than chosen: a rule runs whole or defers whole
+  (0.19.92) and a command keeps its place inside it, so `check` cannot run
+  without the `prepare` in front of it. `/crew:verify`'s documentation of the
+  field says both consequences, including that marking one command of a rule
+  makes the whole rule unconditional.
+  **The five neighbouring merge shapes were walked deliberately** rather than
+  left for the next review, and each is now a case in a table asserted in both
+  flavours: `always` plus two costed rules; two costed rules and no `always`;
+  an unpriced rule sharing a command with a costed one; an empty `always`; a
+  rule every command of which is mandatory. All five were already correct
+  under the fix; the table is there so a later change to the merge has to keep
+  them correct. A second table re-checks the ordering invariant over the same
+  shapes.
+  Sabotage: eight mutations, each RED and each restored byte-identical --
+  **four of them re-anchored rather than added.** Lifting the obligation to
+  the rule deleted the code four existing mutations pointed at, and a
+  whole-file anchor check caught all four at zero hits; they were re-aimed at
+  the new seam instead of dropped, because the defects they prove are still
+  live. **And two new ones came back GREEN first.** The hoist-and-charge
+  mutation did not fail the charging case, because a mandatory rule now runs
+  whole whatever it is charged -- inflating `spent` stops changing which of
+  ITS commands run and only changes what is left for everything else. The
+  charge invariant needed a second rule to be observable at all: 40s mandatory
+  plus 15s deferrable under a 60s budget, where charging once fits both and
+  charging twice defers a rule there was room for.
 - **`crew` 0.19.77: deduplication can no longer weaken a check's obligation,
   and a submodule's contents are in the fingerprint.** The version is a
   PLACEHOLDER -- 0.19.71+ belong to another branch and a renumber pass folds

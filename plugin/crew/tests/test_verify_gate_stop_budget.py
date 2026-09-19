@@ -487,3 +487,238 @@ def test_a_command_with_no_unconditional_source_is_still_deferrable(
     assert "deferred to /crew:verify: echo RAN-big (90s)" in result.stderr, (
         result.stderr
     )
+
+
+# --------------------------------- where a mandatory command RUNS, and what
+# --------------------------------- it costs
+#
+# 0.19.94 attached mandatory-ness to a COMMAND and hoisted each mandatory
+# command to the front of the list, charging it there. Both halves were wrong,
+# and the first one fails in the expensive direction -- quietly and with the
+# blame in the wrong place.
+#
+# ORDER. A rule that declares `run: ["prepare", "check"]` has stated a
+# dependency. Hoisting `check` ran it FIRST, so the check fails for a reason
+# that is not the user's: they see their own check red and go debugging their
+# own code, while it was the gate that reordered it. A check that reports the
+# wrong cause is worse than no check.
+#
+# CHARGE. The hoisted command was charged its rule's cost and the rule was
+# then charged again for the rest -- the per-command double-charge 0.19.92
+# removed, reintroduced from the other end.
+#
+# Both are fixed by lifting the obligation from the command to the RULE that
+# carries it. That is forced rather than chosen: a rule runs whole or defers
+# whole (0.19.92) and a command keeps its place inside its rule, so `check`
+# cannot run without the `prepare` in front of it.
+
+
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+def test_a_mandatory_command_keeps_its_place_inside_its_rule(flavour, tmp_path):
+    """MUST-BLOCK for the ORDER half, on its own. `echo check` is in `always`
+    and is the SECOND command of its rule; it must still run second."""
+    root = _repo(tmp_path, verify_map={
+        "version": 1,
+        "rules": [{"paths": ["a.py"], "seconds": 10,
+                   "run": ["echo prepare", "echo check"],
+                   "why": "check depends on prepare -- that is what `run` order means"}],
+        "always": ["echo check"],
+        "default": [], "unmapped": "ignore",
+    })
+    result = _run(flavour, root)
+
+    assert _ran(result) == ["echo prepare", "echo check"], (
+        "`echo check` is mandatory, so it was hoisted out of its rule and run "
+        "before the `echo prepare` its own rule puts in front of it. Being "
+        "mandatory decides whether a command can be DEFERRED, never where it "
+        "RUNS. ran=" + repr(_ran(result)) + chr(10) + result.stderr
+    )
+
+
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+def test_a_mandatory_command_does_not_double_charge_its_rule(flavour, tmp_path):
+    """MUST-BLOCK for the CHARGE half. The rule costs 40 ONCE. Charging `A`
+    as mandatory and then the rule again makes it 80, and B -- which the
+    budget has room for -- is deferred."""
+    root = _repo(tmp_path, verify_map={
+        "version": 1,
+        "rules": [{"paths": ["a.py"], "seconds": 40,
+                   "run": ["echo A", "echo B"],
+                   "why": "the whole rule costs 40, under the 60s default"}],
+        "always": ["echo A"],
+        "default": [], "unmapped": "ignore",
+    })
+    result = _run(flavour, root)
+
+    assert _ran(result) == ["echo A", "echo B"], (
+        "a 40s rule fits a 60s budget whole. Charging the mandatory command "
+        "separately makes it 80 and defers the rest of its own rule. ran="
+        + repr(_ran(result)) + chr(10) + result.stderr
+    )
+    assert "deferred to /crew:verify" not in result.stderr, result.stderr
+    assert "the verified baseline was NOT advanced" not in result.stderr, (
+        "nothing was deferred, so the baseline must advance. " + result.stderr
+    )
+
+
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+def test_a_mandatory_rule_is_charged_once_against_the_rest_of_the_budget(
+        flavour, tmp_path):
+    """MUST-BLOCK for the CHARGE invariant, and the shape where it is actually
+    observable.
+
+    The case above no longer detects the double charge on its own, and that is
+    worth writing down rather than quietly replacing: lifting the obligation
+    to the RULE means the mandatory rule runs whole whatever it is charged, so
+    inflating `spent` stops changing which of ITS commands run. It still
+    changes what is left for everything else. Caught by sabotage -- the
+    hoist-and-charge mutation came back GREEN against that case and RED
+    against this one.
+
+    40s mandatory rule plus a 15s deferrable rule, budget 60. Charged once,
+    55 fits and `echo C` runs. Charged twice, `spent` reaches 80 and a rule
+    the budget had room for is deferred.
+    """
+    root = _repo(tmp_path, verify_map={
+        "version": 1,
+        "rules": [
+            {"paths": ["a.py"], "seconds": 40, "run": ["echo A", "echo B"],
+             "why": "mandatory, and costs 40 ONCE"},
+            {"paths": ["a.py"], "seconds": 15, "run": ["echo C"],
+             "why": "deferrable, and fits in what is left of the budget"},
+        ],
+        "always": ["echo A"],
+        "default": [], "unmapped": "ignore",
+    })
+    result = _run(flavour, root)
+
+    assert _ran(result) == ["echo A", "echo B", "echo C"], (
+        "40 + 15 fits a 60s budget. Charging the mandatory command separately "
+        "from its rule makes it 80 and defers a rule there was room for. ran="
+        + repr(_ran(result)) + chr(10) + result.stderr
+    )
+    # NOT asserted on the "ran Ns of stated cost" summary: the gate prints
+    # that line only when something WAS deferred, so on a clean selection it
+    # is absent and an assertion on it fails against correct behaviour. The
+    # observable property is which commands ran -- checked above, and it is
+    # what the mutation flips.
+    assert "deferred to /crew:verify" not in result.stderr, result.stderr
+
+
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+def test_being_mandatory_does_not_change_what_a_rule_costs(flavour, tmp_path):
+    """The mirror of the 0.19.92 unit, checked against it rather than in
+    isolation: the SAME rule, once with a mandatory command in it and once
+    without, must run the same commands for the same charge. A rule's cost is
+    a fact about the rule, not about who else names its commands."""
+    rule = {"paths": ["a.py"], "seconds": 40,
+            "run": ["echo A", "echo B"], "why": "40s, two commands"}
+    plain = _run(flavour, _repo(tmp_path / "plain", verify_map={
+        "version": 1, "rules": [rule], "default": [], "unmapped": "ignore"}))
+    marked = _run(flavour, _repo(tmp_path / "marked", verify_map={
+        "version": 1, "rules": [rule], "always": ["echo A"],
+        "default": [], "unmapped": "ignore"}))
+
+    assert _ran(plain) == _ran(marked) == ["echo A", "echo B"], (
+        "marking one command mandatory changed which commands ran." + chr(10)
+        + "plain : " + repr(_ran(plain)) + chr(10)
+        + "marked: " + repr(_ran(marked))
+    )
+
+
+# ----------------------------------------------------- the named neighbours
+#
+# Every round on this branch has closed two defects in this arithmetic and
+# opened others one rung along, so the cases next to the one being fixed are
+# checked here as a table rather than left to the next review. Each is a
+# MUST-ALLOW: it states what the merge rule implies, so a later change that
+# quietly re-derives the merge has to keep implying it.
+
+_NEIGHBOURS = {
+    # A mandatory command pulls BOTH rules that name it, and `T` rides along
+    # because its rule runs whole. That is not incidental -- running `S` out
+    # of the middle of the 90s rule is exactly the ordering defect above.
+    "always-plus-two-costed-rules": (
+        {"rules": [
+            {"paths": ["a.py"], "seconds": 5, "run": ["echo S"], "why": "a"},
+            {"paths": ["a.py"], "seconds": 90, "run": ["echo S", "echo T"],
+             "why": "b"}],
+         "always": ["echo S"]},
+        ["echo S", "echo T"], []),
+    # Nothing mandatory: the affordable rule claims the shared command and the
+    # unaffordable one defers what is left of it.
+    "two-costed-rules-no-always": (
+        {"rules": [
+            {"paths": ["a.py"], "seconds": 5, "run": ["echo S"], "why": "a"},
+            {"paths": ["a.py"], "seconds": 90, "run": ["echo S", "echo T"],
+             "why": "b"}]},
+        ["echo S"], ["echo T"]),
+    # Unconditional-until-priced reaches the priced rule that shares a
+    # command with it, and that rule runs whole.
+    "unpriced-command-also-in-a-costed-rule": (
+        {"rules": [
+            {"paths": ["a.py"], "seconds": 90, "run": ["echo M", "echo N"],
+             "why": "priced"},
+            {"paths": ["a.py"], "run": ["echo M"], "why": "unpriced"}]},
+        ["echo M", "echo N"], []),
+    # An empty `always` must add no obligation at all -- the ordinary budget
+    # still applies.
+    "empty-always": (
+        {"rules": [
+            {"paths": ["a.py"], "seconds": 5, "run": ["echo P"], "why": "a"},
+            {"paths": ["a.py"], "seconds": 90, "run": ["echo Q"], "why": "b"}],
+         "always": []},
+        ["echo P"], ["echo Q"]),
+    # Every command mandatory: the rule runs whole and is charged once, well
+    # past the budget, because none of it can be deferred.
+    "whole-rule-mandatory": (
+        {"rules": [{"paths": ["a.py"], "seconds": 90,
+                    "run": ["echo X", "echo Y"], "why": "a"}],
+         "always": ["echo X", "echo Y"]},
+        ["echo X", "echo Y"], []),
+}
+
+
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+@pytest.mark.parametrize("case", sorted(_NEIGHBOURS))
+def test_the_neighbouring_merge_shapes(flavour, case, tmp_path):
+    extra, expect_ran, expect_deferred = _NEIGHBOURS[case]
+    verify_map = {"version": 1, "default": [], "unmapped": "ignore"}
+    verify_map.update(extra)
+    result = _run(flavour, _repo(tmp_path, verify_map=verify_map))
+
+    assert _ran(result) == expect_ran, (
+        case + ": ran " + repr(_ran(result)) + ", expected "
+        + repr(expect_ran) + chr(10) + result.stderr
+    )
+    for cmd in expect_deferred:
+        assert "deferred to /crew:verify: " + cmd in result.stderr, (
+            case + ": expected " + cmd + " to be deferred. " + result.stderr
+        )
+    if not expect_deferred:
+        assert "deferred to /crew:verify" not in result.stderr, (
+            case + ": nothing should have deferred. " + result.stderr
+        )
+
+
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+@pytest.mark.parametrize("case", sorted(_NEIGHBOURS))
+def test_the_neighbouring_shapes_do_not_reorder_a_rule(flavour, case,
+                                                       tmp_path):
+    """The ordering invariant over the same table. Whatever the merge selects,
+    two commands of one rule that both run must run in the rule's `run`
+    order -- checked here as well as in its own case, because the merge is
+    where the order was lost."""
+    extra, expect_ran, _ = _NEIGHBOURS[case]
+    verify_map = {"version": 1, "default": [], "unmapped": "ignore"}
+    verify_map.update(extra)
+    result = _run(flavour, _repo(tmp_path, verify_map=verify_map))
+    ran = _ran(result)
+
+    for rule in verify_map["rules"]:
+        positions = [ran.index(c) for c in rule["run"] if c in ran]
+        assert positions == sorted(positions), (
+            case + ": the commands of one rule ran out of their `run` order. "
+            "rule=" + repr(rule["run"]) + " ran=" + repr(ran) + chr(10)
+            + result.stderr
+        )

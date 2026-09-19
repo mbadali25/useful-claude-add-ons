@@ -2307,9 +2307,15 @@ MUTATIONS = (
         # green and is recorded here because a mutation that does not
         # reproduce the defect is a coverage claim nobody has earned. What
         # follows is the per-command selection verbatim as it shipped.
+        # RE-ANCHORED in 0.19.95: the selection loop grew a mandatory
+        # branch, so the old anchor stopped matching. Re-anchored rather than
+        # dropped -- the defect it proves is still live, and an anchor that
+        # silently stops matching is how this suite would stop testing
+        # anything. (Caught by the whole-file anchor check, which is the only
+        # reason it was not.)
         "the Stop budget charges each command the whole rule's cost again",
         VERIFY_SH,
-        "        if spent + rule_secs[ri] <= budget:\n"
+        "        elif spent + rule_secs[ri] <= budget:\n"
         "            # WHOLE, in the rule's own `run` order. Half a rule is "
         "not a\n"
         "            # cheaper rule; it is a rule nobody can say ran.\n"
@@ -2318,12 +2324,13 @@ MUTATIONS = (
         "        else:\n"
         "            for c in fresh:\n"
         "                if c not in deferred: deferred.append(c)\n",
-        "        for c in fresh:\n"
-        "            if spent + cost[c] <= budget:\n"
-        "                keep.append(c)\n"
-        "                spent += cost[c]\n"
-        "            elif c not in deferred:\n"
-        "                deferred.append(c)\n",
+        "        else:\n"
+        "            for c in fresh:\n"
+        "                if spent + cost[c] <= budget:\n"
+        "                    keep.append(c)\n"
+        "                    spent += cost[c]\n"
+        "                elif c not in deferred:\n"
+        "                    deferred.append(c)\n",
         ("tests/test_verify_gate_stop_budget.py::"
          "test_a_rule_that_fits_is_not_split_across_its_commands"),
     ),
@@ -2334,9 +2341,11 @@ MUTATIONS = (
         # splits the rule -- this plugin has shipped exactly that shape, and a
         # round of this branch left the bash half wrapped in `if false` with
         # every test still green.
+        # RE-ANCHORED in 0.19.95, with its bash twin and for the same
+        # reason.
         "the PowerShell Stop budget charges each command the rule's cost",
         VERIFY_PS1,
-        "    if (($spent + $ruleSecs[$ri]) -le $budget) {\n"
+        "    } elseif (($spent + $ruleSecs[$ri]) -le $budget) {\n"
         "      # WHOLE, in the rule's own `run` order. Half a rule is not a "
         "cheaper\n"
         "      # rule; it is a rule nobody can say ran.\n"
@@ -2346,11 +2355,12 @@ MUTATIONS = (
         "      foreach ($c in $fresh) { if ($deferred -notcontains $c) { "
         "[void]$deferred.Add($c) } }\n"
         "    }\n",
-        "    foreach ($c in $fresh) {\n"
-        "      if (($spent + $cost[$c]) -le $budget) { [void]$keep.Add($c); "
+        "    } else {\n"
+        "      foreach ($c in $fresh) {\n"
+        "        if (($spent + $cost[$c]) -le $budget) { [void]$keep.Add($c); "
         "$spent += $cost[$c] }\n"
-        "      elseif ($deferred -notcontains $c) { [void]$deferred.Add($c) }"
-        "\n    }\n",
+        "        elseif ($deferred -notcontains $c) { "
+        "[void]$deferred.Add($c) }\n      }\n    }\n",
         ("tests/test_verify_gate_stop_budget.py::"
          "test_both_flavours_charge_the_rule_once"),
     ),
@@ -2454,11 +2464,17 @@ MUTATIONS = (
         # Measured before the fix in BOTH flavours -- `"always"` beside a 90s
         # rule naming the same command deferred a FAILING mandatory check and
         # the gate exited 0.
+        # RE-ANCHORED in 0.19.95: the obligation moved from the command
+        # to the RULE that carries it, so `forced` no longer exists. The
+        # mutation now drops the "any command of this rule is unconditional"
+        # half of rule_is_mandatory, which is the same defect at the new seam.
         "an `always` command can be deferred by a priced rule naming it",
         VERIFY_SH,
-        "    for c in forced:\n        keep.append(c)\n"
-        "        spent += cost[c]\n",
-        "    for c in forced:\n        pass\n",
+        "    def rule_is_mandatory(ri):\n"
+        "        return (ri not in rule_secs\n"
+        "                or any(c in mandatory for c in rule_cmds[ri]))\n",
+        "    def rule_is_mandatory(ri):\n"
+        "        return ri not in rule_secs\n",
         ("tests/test_verify_gate_stop_budget.py::"
          "test_an_always_command_is_not_deferred_by_a_priced_rule"),
     ),
@@ -2467,11 +2483,12 @@ MUTATIONS = (
         # on one side and PowerShell on the other, and the report confirmed
         # the defect was present in both -- so one flavour fixed reads as
         # done while the other still defers the mandatory check.
+        # RE-ANCHORED in 0.19.95 with its bash twin.
         "the PowerShell budget lets a priced rule defer an `always` command",
         VERIFY_PS1,
-        "  foreach ($c in $forced) { [void]$keep.Add($c); "
-        "$spent += $cost[$c] }\n",
-        "  foreach ($c in $forced) { }\n",
+        "    foreach ($c in $ruleCmds[$ri]) { if ($mandatory.ContainsKey($c))"
+        " { $isMust = $true } }\n",
+        "    foreach ($c in $ruleCmds[$ri]) { }\n",
         ("tests/test_verify_gate_stop_budget.py::"
          "test_an_always_command_is_not_deferred_by_a_priced_rule"),
     ),
@@ -2532,6 +2549,63 @@ MUTATIONS = (
         "        digest.update(_file_digest(full).encode(\"ascii\"))\n",
         ("tests/test_verify_gate_fingerprint.py::"
          "test_a_failing_tree_is_never_skipped_whatever_moved"),
+    ),
+    (
+        # 0.19.94's hoist-and-charge, restored verbatim: each mandatory
+        # COMMAND is pulled to the front of the list and charged there, and
+        # its rule is then charged again for the rest. Measured -- a 40s rule
+        # running [A, B] with A in `always` cost 40 + 40 against a 60s budget
+        # and DEFERRED B, which is the per-command double-charge 0.19.92
+        # removed, reintroduced from the other end.
+        "a mandatory command is charged on its own and again with its rule",
+        VERIFY_SH,
+        "    spent, keep, overrun = 0, [], []\n",
+        "    spent, keep, overrun = 0, [], []\n"
+        "    for _c in [c for c in cmds if c in cost and c in mandatory]:\n"
+        "        keep.append(_c)\n"
+        "        spent += cost[_c]\n",
+        ("tests/test_verify_gate_stop_budget.py::"
+         "test_a_mandatory_rule_is_charged_once_against_the_rest_of_the_budget"),
+    ),
+    (
+        # The ORDER half ALONE -- the hoist without the charge. A separate
+        # entry because it is the half that fails quietly: the charging case
+        # above stays GREEN under it, so a suite carrying only that mutation
+        # would report the ordering defect as covered while nothing tested
+        # it. `run: [prepare, check]` states a dependency, and a hoisted
+        # `check` fails for a reason that is not the user's.
+        "a mandatory command is hoisted out of its rule's `run` order",
+        VERIFY_SH,
+        "    spent, keep, overrun = 0, [], []\n",
+        "    spent, keep, overrun = 0, "
+        "[c for c in cmds if c in cost and c in mandatory], []\n",
+        ("tests/test_verify_gate_stop_budget.py::"
+         "test_a_mandatory_command_keeps_its_place_inside_its_rule"),
+    ),
+    (
+        # The PowerShell half of the charge defect. Separate, because the
+        # arithmetic is a python heredoc on one side and PowerShell on the
+        # other and the report confirmed BOTH flavours carried it.
+        "the PowerShell gate charges a mandatory command twice",
+        VERIFY_PS1,
+        "  $overrun = [System.Collections.ArrayList]@()\n",
+        "  $overrun = [System.Collections.ArrayList]@()\n"
+        "  foreach ($c in @($cmds | Where-Object { $cost.ContainsKey($_) -and "
+        "$mandatory.ContainsKey($_) })) { [void]$keep.Add($c); "
+        "$spent += $cost[$c] }\n",
+        ("tests/test_verify_gate_stop_budget.py::"
+         "test_a_mandatory_rule_is_charged_once_against_the_rest_of_the_budget"),
+    ),
+    (
+        # And the PowerShell half of the ORDER defect, hoist without charge.
+        "the PowerShell gate hoists a mandatory command out of its rule",
+        VERIFY_PS1,
+        "  $overrun = [System.Collections.ArrayList]@()\n",
+        "  $overrun = [System.Collections.ArrayList]@()\n"
+        "  foreach ($c in @($cmds | Where-Object { $cost.ContainsKey($_) -and "
+        "$mandatory.ContainsKey($_) })) { [void]$keep.Add($c) }\n",
+        ("tests/test_verify_gate_stop_budget.py::"
+         "test_a_mandatory_command_keeps_its_place_inside_its_rule"),
     ),
 )
 

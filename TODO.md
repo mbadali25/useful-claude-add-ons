@@ -3020,3 +3020,31 @@ Not measured as exploitable and not obviously a defect: hashing such a
 directory means walking it, and the directory in question is as likely to be
 `node_modules` as anything a rule reads. The safe version is probably to walk
 it only when a rule actually matches it. Recorded rather than guessed at.
+
+### 7. Nested submodules past the depth limit share one marker
+
+`plugin/crew/hooks/scripts/verify_fingerprint.py` bounds submodule recursion
+at `_MAX_SUBMODULE_DEPTH = 4` and hashes the constant
+`"submodule-depth-limit"` beyond it. The marker carries no path, so **every**
+submodule at or past the limit hashes to the same value: with five levels of
+nesting, a change inside the fifth does not move the digest, and neither does
+swapping one too-deep submodule for another.
+
+Repro: build six repositories, `git submodule add` each into the one above it,
+map a rule to the outermost gitlink with a check reading the innermost file,
+let the gate record a fingerprint, then edit the innermost file. Stop skips;
+`--all` fails. Note that `-c protocol.file.allow=always` is required for every
+`submodule add` against a local path, and that the fixture has to leave each
+submodule DIRTY or the gitlink is not in the changed set at all (see the
+0.19.94 note on that, which cost a vacuous test).
+
+**The fix is a per-path marker** -- hash the path alongside the constant, so
+two different too-deep submodules are two different values, e.g.
+`"submodule-depth-limit:" + rel`. That restores "different inputs, different
+digests" at the boundary without recursing further. It does NOT make the
+contents covered; nothing below the limit can be, which is the point of having
+one.
+
+Not fixed because nobody has that layout: the limit is four, the repo has
+zero submodules, and the reachable case needs five levels of nesting. Written
+down with the repro so it is a ticket rather than a rediscovery.

@@ -52,9 +52,20 @@ implementation read it per command and split rules in half.
 any of them.** `always` is unconditional; a rule with no `seconds` is
 unconditional-until-priced; only a rule that states `seconds` is deferrable.
 Naming a command in `always` and also in a 90s rule therefore RUNS it -- the
-merge resolves toward running, never toward deferring. Its stated cost is
-still charged against the budget, so the arithmetic in the output stays
-honest; the cost simply cannot buy the deferral.
+merge resolves toward running, never toward deferring.
+
+**The obligation attaches to the RULE, so `run` order is never disturbed and
+nothing is charged twice.** A rule is unconditional when it states no cost or
+when any command it names is unconditional, and it then runs WHOLE, in its own
+`run` order, charged its `seconds` once. Two consequences worth knowing when
+you write a map:
+
+* `run: ["prepare", "check"]` keeps `prepare` first even when `check` is in
+  `always`. Where a command runs is part of what the rule means; being
+  mandatory only decides whether it can be deferred.
+* putting one command of a rule in `always` makes the WHOLE rule
+  unconditional, because half a rule is not something anyone can say ran. If
+  you want just one check unconditional, give it a rule of its own.
 
 To run everything with no budget:
 

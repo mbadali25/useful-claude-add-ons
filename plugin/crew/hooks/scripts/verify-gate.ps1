@@ -704,28 +704,46 @@ $notices = [System.Collections.ArrayList]@()
 $deferredCount = 0
 if ($null -ne $budget) {
   $unknown = @($cmds | Where-Object { -not $cost.ContainsKey($_) })
-  # Ascending cost, first-match order breaking ties -- same ordering as the
-  # .sh, and over RULES rather than commands for the reason stated up there.
+  # First-match index, so a tie on cost falls back to the order the map was
+  # written in -- same tiebreak as the .sh.
   $seq = @{}
   for ($i = 0; $i -lt $ruleOrder.Count; $i++) { $seq[$ruleOrder[$i]] = $i }
-  $priced = @(@($ruleOrder | Where-Object { $ruleSecs.ContainsKey($_) }) |
-              Sort-Object @{Expression = { $ruleSecs[$_] }}, @{Expression = { $seq[$_] }})
 
-  # Priced, and carrying an unconditional obligation from somewhere else.
-  # These RUN; their stated cost is charged so the arithmetic stays honest,
-  # but it cannot buy their deferral. Twin of $forced in verify-gate.sh.
-  $forced = @($cmds | Where-Object { $cost.ContainsKey($_) -and $mandatory.ContainsKey($_) })
+  # MANDATORY-NESS IS A PROPERTY OF THE RULE -- see verify-gate.sh for the
+  # two measured defects that came of attaching it to a command instead: the
+  # hoisted command ran BEFORE the `prepare` its own rule put ahead of it, and
+  # it was charged once on its own and again as part of its rule.
+  $mustSet = @{}
+  foreach ($ri in $ruleOrder) {
+    if (-not $ruleSecs.ContainsKey($ri)) { continue }
+    $isMust = $false
+    foreach ($c in $ruleCmds[$ri]) { if ($mandatory.ContainsKey($c)) { $isMust = $true } }
+    if ($isMust) { $mustSet[$ri] = $true }
+  }
+  $priced = @($ruleOrder | Where-Object { $ruleSecs.ContainsKey($_) })
+  # Mandatory rules first, in first-match order; then the deferrable ones,
+  # ascending cost with first-match order breaking ties. Same as the .sh.
+  $must = @($priced | Where-Object { $mustSet.ContainsKey($_) })
+  $may  = @(@($priced | Where-Object { -not $mustSet.ContainsKey($_) }) |
+            Sort-Object @{Expression = { $ruleSecs[$_] }}, @{Expression = { $seq[$_] }})
 
   $spent = 0.0
   $keep = [System.Collections.ArrayList]@()
   $deferred = [System.Collections.ArrayList]@()
-  foreach ($c in $forced) { [void]$keep.Add($c); $spent += $cost[$c] }
-  foreach ($ri in $priced) {
+  $overrun = [System.Collections.ArrayList]@()
+  foreach ($ri in (@($must) + @($may))) {
     # Only the commands this rule would ADD -- see the .sh for why a rule
-    # whose work is already scheduled is charged nothing.
+    # whose work is already scheduled is charged nothing, and why that is
+    # what holds each command to a single charge.
     $fresh = @($ruleCmds[$ri] | Where-Object { $cost.ContainsKey($_) -and $keep -notcontains $_ })
     if ($fresh.Count -eq 0) { continue }
-    if (($spent + $ruleSecs[$ri]) -le $budget) {
+    if ($mustSet.ContainsKey($ri)) {
+      if (($spent + $ruleSecs[$ri]) -gt $budget) {
+        foreach ($c in $fresh) { [void]$overrun.Add($c) }
+      }
+      foreach ($c in $fresh) { [void]$keep.Add($c) }
+      $spent += $ruleSecs[$ri]
+    } elseif (($spent + $ruleSecs[$ri]) -le $budget) {
       # WHOLE, in the rule's own `run` order. Half a rule is not a cheaper
       # rule; it is a rule nobody can say ran.
       foreach ($c in $fresh) { [void]$keep.Add($c) }
@@ -748,8 +766,8 @@ if ($null -ne $budget) {
   foreach ($c in $unknown) {
     [void]$notices.Add('verify-gate: ' + $c + ' has no `seconds` in verify.json - cost UNSTATED, ran anyway')
   }
-  foreach ($c in $forced) {
-    [void]$notices.Add('verify-gate: ' + $c + ' is unconditional (`always`, or named by a rule with no `seconds`) - it RAN; its stated ' + [string][int]$cost[$c] + 's is charged but cannot defer it')
+  foreach ($c in $overrun) {
+    [void]$notices.Add('verify-gate: ' + $c + ' belongs to an unconditional rule (`always`, or no `seconds`) - it RAN past the budget; the cost is charged but cannot defer it')
   }
   foreach ($c in $deferred) {
     [void]$notices.Add('deferred to /crew:verify: ' + $c + ' (' + [string][int]$cost[$c] + 's)')
