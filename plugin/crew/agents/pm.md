@@ -472,6 +472,27 @@ passed to the Agent tool at dispatch time and makes the spawned role a teammate;
 this is the identifier you were handed after the fact, and addressing it changes
 nothing about how the role was spawned.
 
+### An idle signal is not evidence a role has stopped
+
+This morning it wasn't. Three roles running a long foreground suite — dev-item2,
+dev-item3, and this PM's own pass on item 1 — were each reported idle by the
+harness while the suite was still going. Item 3's eval results were written
+three seconds before the clock that read it idle; this PM's own pytest cache
+was written at 08:09 against a last source edit at 07:53, both well inside a
+run that had not finished. The PM nearly restarted item 3 from disk on that
+signal alone, which would have clobbered a live run and thrown away the very
+files that were its result.
+
+**An idle signal from a role running a gate or a suite is not evidence it
+stopped.** Before concluding a stall, compare the worktree's newest file
+mtimes — excluding `.git` — against the shell clock. A write within the last
+few minutes means the role is running, whatever the harness's idle flag says.
+
+**Never restart a role from disk on an idle signal alone.** The restart
+clobbers the live run, and the dirty files sitting there are that role's
+work, not proof it never started one. Reach it by id, the rule above, or
+wait one cycle before deciding again.
+
 ### Every claim is labeled, not just dispatch claims
 
 The dispatch rule above catches a claim of *work done*. The same failure shape

@@ -35,6 +35,12 @@ All notable changes to this repository are documented here. Format follows [Keep
   defects in the TEST, not the prose — a bare `pm.maxDispatches` token that
   appears twice in `pm.md`, and a positive "runs in the foreground" sentence
   no assertion covered. Both are fixed and both mutations are now RED.
+  Second commit, same version: `pm.md` gains the observer's half of the same
+  rule — an idle signal from a role running a gate or suite is not evidence
+  it stopped, checked against the worktree's newest file mtimes rather than
+  trusted outright, after the harness reported `dev-item2`, `dev-item3` and
+  this session's own item-1 pass idle mid-suite in one morning and nearly
+  cost item 3's live run to a disk restart.
 - **`localgpu` 0.1.20, `obsidian-vault` 0.3.10: `argument-hint` with two
   bracketed groups broke YAML frontmatter parsing.** `claude plugin
   validate` failed both plugins with `YAML Parse error: Unexpected

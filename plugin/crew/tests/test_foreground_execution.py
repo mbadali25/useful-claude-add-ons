@@ -215,3 +215,43 @@ def test_pm_resume_rule_does_not_contradict_the_no_name_dispatch_rule():
         "pm.md carries both rules with nothing distinguishing them, so the "
         "resume clause now reads as permission to name a dispatch"
     )
+
+
+def test_pm_does_not_treat_an_idle_signal_as_proof_a_role_has_stopped():
+    """The observer's half of the same rule. The actor's half (above) tells a
+    dispatched role never to go idle while a gate is still running; this half
+    tells the PM not to trust the harness's idle signal when a role is doing
+    exactly that. Without it the PM has only one way to read 'idle': stopped
+    -- which is what nearly restarted item 3 from disk over a live run whose
+    eval results had been written three seconds earlier."""
+    body = _agent("pm")
+    assert (
+        "An idle signal from a role running a gate or a suite is not "
+        "evidence it stopped."
+    ) in body, (
+        "pm.md no longer states the observer's rule -- that an idle report "
+        "is not proof a long-running role has stopped"
+    )
+    assert (
+        "compare the worktree's newest file mtimes — excluding `.git` — "
+        "against the shell clock"
+    ) in body, (
+        "pm.md dropped the mechanism for telling a live run from a stalled "
+        "one, so 'idle' has no check left to weigh it against"
+    )
+    assert "A write within the last few minutes means the role is running" in body, (
+        "pm.md states the mtime check without the threshold that makes it "
+        "actionable"
+    )
+    assert "Never restart a role from disk on an idle signal alone." in body, (
+        "pm.md no longer forbids restarting on an idle signal alone, which "
+        "is the exact move that nearly clobbered item 3's live run"
+    )
+    assert "the dirty files sitting there are that role's work" in body, (
+        "pm.md dropped the reason a restart is destructive -- the uncommitted "
+        "files an idle-looking role has on disk are its result, not debris"
+    )
+    assert "Reach it by id, the rule above, or wait one cycle" in body, (
+        "pm.md states what not to do on an idle signal without saying what "
+        "to do instead"
+    )
