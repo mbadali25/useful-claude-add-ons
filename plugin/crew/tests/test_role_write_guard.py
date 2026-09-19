@@ -685,21 +685,93 @@ def test_malformed_cwd_array_does_not_crash_the_exception_handler_bash(tmp_path)
         + " stderr: " + proc.stderr)
 
 
-# --- FIX 2: a Windows extended-length-prefix path must not false-refuse ---
+# --- Round 5 BLOCK: a `\\?\` extended-length path must never be --------
+# --- NORMALISED and classified -- it must not be classified at all -----
+#
+# The FIX-2 test this section used to contain proved the OPPOSITE of what
+# it should have: `\\?\` exists so Win32 will SKIP its own path
+# normalisation for one call -- trailing dots/spaces are kept, `..` is
+# never collapsed -- so stripping the prefix and classifying the bare
+# remainder answers a question about a DIFFERENT path than the one
+# Windows actually opens. Codex round 5's repro: with `.crew.` (a
+# trailing dot) an actual, distinct directory on disk, outside every
+# scope `pm` is granted, `\\?\C:\repo\.crew.\app.py` stripped to
+# `C:\repo\.crew.\app.py`, which this module's own path handling then
+# further normalised to `C:\repo\.crew\app.py` -- in scope -- and
+# allowed a write that really lands in `.crew.`, never `.crew`. Fixed by
+# refusing to classify a `\\?\` path at all: `pm` and every `_DENY_ROLES`
+# member fail CLOSED (block) unconditionally; every other role, and a
+# call with no `agent_type`, allows, since Claude Code itself never
+# emits this form for a `Write`/`Edit` call.
 
 @needs_bash
 @pytest.mark.skipif(not sys.platform.startswith("win"),
                      reason="\\\\?\\ extended-length paths are a Windows concept")
-def test_extended_length_prefix_path_is_normalised_and_allowed_bash(tmp_path):
-    """Must-allow: `\\\\?\\C:\\repo\\.crew\\new.py` names a target INSIDE
-    pm's scope, but the extended-length prefix made `os.path.relpath`
-    raise (a different "mount" than the plain-form root) and the hook
-    read that as "cannot classify" -- incorrectly refusing a legitimate,
-    in-scope write."""
+def test_extended_length_prefix_path_blocks_for_pm_bash(tmp_path):
+    """Must-block: Codex round 5's exact repro. `.crew.` (trailing dot)
+    is a real, distinct, out-of-scope directory; the extended-length
+    form must never be normalised down to the in-scope `.crew`."""
     root = crew_fixtures.make_repo(
         tmp_path, config={"guards": {"roleWrites": "block"}})
-    extended = "\\\\?\\" + str(root) + "\\.crew\\new.py"
+    _make_dotted_dir(root / ".crew.")
+    extended = "\\\\?\\" + str(root) + "\\.crew.\\app.py"
     proc = _run_sh(root, "Write", extended, "pm")
+    assert proc.returncode == 2, (
+        "a \\\\?\\ path must never be normalised and classified -- pm must "
+        "be refused outright, not allowed via a stripped-and-renormalised "
+        "form that silently drops the trailing dot. stdout: " + proc.stdout)
+
+
+@needs_pwsh_windows
+def test_extended_length_prefix_path_blocks_for_pm_powershell(tmp_path):
+    """PowerShell twin of the bash must-block case above."""
+    root = crew_fixtures.make_repo(
+        tmp_path, config={"guards": {"roleWrites": "block"}})
+    _make_dotted_dir(root / ".crew.")
+    extended = "\\\\?\\" + str(root) + "\\.crew.\\app.py"
+    proc = _run_ps1(root, "Write", extended, "pm")
+    assert proc.returncode == 2, proc.stderr
+
+
+@needs_bash
+@pytest.mark.skipif(not sys.platform.startswith("win"),
+                     reason="\\\\?\\ extended-length paths are a Windows concept")
+def test_extended_length_prefix_path_allows_for_unrestricted_role_bash(tmp_path):
+    """Must-allow: the SAME `.crew.` repro, for `developer` -- an
+    unrestricted role. An extended-length `\\\\?\\` path is refused only
+    for a role this
+    table already restricts; it is not a blanket refusal."""
+    root = crew_fixtures.make_repo(
+        tmp_path, config={"guards": {"roleWrites": "block"}})
+    _make_dotted_dir(root / ".crew.")
+    extended = "\\\\?\\" + str(root) + "\\.crew.\\app.py"
+    proc = _run_sh(root, "Write", extended, "developer")
+    assert proc.returncode == 0, proc.stderr
+
+
+@needs_pwsh_windows
+def test_extended_length_prefix_path_allows_for_unrestricted_role_powershell(tmp_path):
+    """PowerShell twin of the bash must-allow case above."""
+    root = crew_fixtures.make_repo(
+        tmp_path, config={"guards": {"roleWrites": "block"}})
+    _make_dotted_dir(root / ".crew.")
+    extended = "\\\\?\\" + str(root) + "\\.crew.\\app.py"
+    proc = _run_ps1(root, "Write", extended, "developer")
+    assert proc.returncode == 0, proc.stderr
+
+
+@needs_bash
+@pytest.mark.skipif(not sys.platform.startswith("win"),
+                     reason="\\\\?\\ extended-length paths are a Windows concept")
+def test_extended_length_prefix_path_allows_with_no_agent_type_bash(tmp_path):
+    """Must-allow: a call with no `agent_type` at all is not `pm` and is
+    not in `_DENY_ROLES` (`None` is neither), so it must allow exactly
+    like an unrestricted role does."""
+    root = crew_fixtures.make_repo(
+        tmp_path, config={"guards": {"roleWrites": "block"}})
+    _make_dotted_dir(root / ".crew.")
+    extended = "\\\\?\\" + str(root) + "\\.crew.\\app.py"
+    proc = _run_sh(root, "Write", extended, None)
     assert proc.returncode == 0, proc.stderr
 
 
@@ -918,6 +990,18 @@ def _make_junction(target, link):
         ["cmd", "/c", "mklink", "/J", str(link), str(target)],
         capture_output=True, text=True, check=False)
     return result.returncode == 0
+
+
+def _make_dotted_dir(path):
+    """Create a directory whose name ends in a literal dot (e.g.
+    `.crew.`) -- for real, on disk. An ORDINARY (non-extended-length)
+    Win32 call strips a trailing dot at creation time, which would
+    silently create `.crew` instead and defeat round 5's whole repro
+    (that trailing dot is exactly what makes `.crew.` a DIFFERENT,
+    genuinely out-of-scope directory from `.crew`). The `\\\\?\\` prefix
+    makes Win32 skip that normalisation here too, the same way it does
+    for the hook's own target path."""
+    os.mkdir("\\\\?\\" + str(path))
 
 
 @needs_bash

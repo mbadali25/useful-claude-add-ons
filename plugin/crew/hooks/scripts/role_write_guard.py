@@ -184,11 +184,27 @@ actual fix for this script's own stdout/stderr writes of a non-ASCII path,
 which still depend on the interpreter's text-mode default the same way
 stdin used to. Reported and fixed 2026-09-19.
 
-A `file_path` using Windows' `\\\\?\\` extended-length prefix is
-normalised (`_strip_extended_prefix`) before any resolution -- `os.path.
-relpath` otherwise treats `\\\\?\\C:\\repo\\...` and `C:\\repo` as different
-mounts and raises, which reads as "cannot classify" and incorrectly
-refuses a legitimate, in-scope write. Reported and fixed 2026-09-19.
+A `file_path` using Windows' `\\\\?\\` extended-length prefix is never
+classified at all -- see `_is_extended_length_prefix_path` for why. An
+earlier version of this file NORMALISED the prefix away
+(`_strip_extended_prefix`) and then classified the result like any other
+path. Codex round 5 on 2026-09-19 found that this is unsound, not just
+imprecise: the `\\\\?\\` prefix exists specifically to make Win32 skip its
+OWN path normalisation -- trailing dots and spaces are preserved, `..` is
+NOT collapsed -- so stripping the prefix and then running this module's
+normal classifier against the bare remainder answers a question about a
+DIFFERENT path than the one Windows will actually open. `\\\\?\\C:\\repo\\
+.crew.\\app.py` and `C:\\repo\\.crew\\app.py` are NOT the same file --
+Windows preserves the trailing dot on `.crew.` under the extended-length
+form -- but the old strip-then-normalise code treated them as
+interchangeable, so a write actually landing in a directory literally
+named `.crew.` (outside every scope `pm` is granted) classified as the
+in-scope `.crew/app.py` and was allowed. `\\\\?\\` paths are now refused to
+classify at all: for `pm` or a `_DENY_ROLES` member this fails CLOSED
+(exit 2), and for every other role (including no `agent_type`) it allows,
+since Claude Code itself never emits an extended-length path for a
+`Write`/`Edit` call and there is nothing here worth blocking a role this
+table already trusts with Write/Edit generally.
 """
 import fnmatch
 import json
@@ -319,26 +335,33 @@ def _normalise_role(agent_type):
     return lowered
 
 
-def _strip_extended_prefix(path):
-    """Strip Windows' `\\\\?\\` extended-length path prefix (and
-    `\\\\?\\UNC\\` -> `\\\\`) before any resolution.
+def _is_extended_length_prefix_path(path):
+    """Is `path` spelled with Windows' `\\\\?\\` extended-length prefix
+    (including the `\\\\?\\UNC\\` form, which also starts with `\\\\?\\`)?
 
-    `os.path.relpath` treats `\\\\?\\C:\\repo\\...` and `C:\\repo` as
-    different mounts and raises `ValueError` even when they name the SAME
-    location on disk -- and `_repo_relative`/`_real_repo_relative` already
-    turn that raise into "cannot classify", which for `pm` reads as
-    evidence to REFUSE. A tool call using the extended-length form (long
-    paths, or a caller that opts into it deliberately to bypass MAX_PATH)
-    then has a legitimate, in-scope write incorrectly blocked -- a false
-    positive, not a security gap, but still wrong. Reported 2026-09-19.
+    Round 3 (2026-09-19) NORMALISED this prefix away and classified the
+    remainder like any other path -- `os.path.relpath` otherwise treats
+    `\\\\?\\C:\\repo\\...` and `C:\\repo` as different mounts and raises,
+    which read as "cannot classify" and incorrectly refused a legitimate,
+    in-scope write. Codex round 5 found that normalising is itself wrong,
+    not just the raising: `\\\\?\\` exists specifically so Win32 will SKIP
+    its own path normalisation for this one call -- trailing dots and
+    spaces are preserved on disk, and a literal `..` component is never
+    collapsed. Stripping the prefix and running this module's ordinary
+    classifier against the bare remainder answers a question about a
+    DIFFERENT path than the one Windows actually opens. Concretely:
+    `\\\\?\\C:\\repo\\.crew.\\app.py` (note the trailing dot on `.crew.`)
+    strips to `C:\\repo\\.crew.\\app.py`, which this module's own path
+    handling then further normalises to `C:\\repo\\.crew\\app.py` --
+    in-scope for `pm` -- while Windows itself opens a directory literally
+    named `.crew.`, distinct from `.crew` and outside every scope `pm` is
+    granted. No classifier built to be faithful to ordinary Windows path
+    semantics can also be faithful to a syntax whose entire purpose is
+    bypassing those semantics, so this file does not try: `main` uses this
+    check to skip classification entirely for such a path, rather than
+    calling `_repo_relative`/`_real_repo_relative` on it at all.
     """
-    if not isinstance(path, str):
-        return path
-    if path.startswith("\\\\?\\UNC\\"):
-        return "\\\\" + path[8:]
-    if path.startswith("\\\\?\\"):
-        return path[4:]
-    return path
+    return isinstance(path, str) and path.startswith("\\\\?\\")
 
 
 def _repo_relative(root, file_path):
@@ -794,7 +817,34 @@ def main(argv=None):  # pylint: disable=unused-argument
         tool_input = data.get("tool_input") or {}
         file_path = (tool_input.get("file_path")
                      if isinstance(tool_input, dict) else None)
-        file_path = _strip_extended_prefix(file_path)
+
+        if _is_extended_length_prefix_path(file_path):
+            # See `_is_extended_length_prefix_path`'s own docstring: this
+            # path is never classified at all -- skip `_repo_relative`/
+            # `_real_repo_relative`/`classify` entirely and decide by role
+            # alone, the same "scoped role" set the outermost exception
+            # handler below already treats as restricted.
+            restricted = role == _PM_ROLE or role in _DENY_ROLES
+            decision = "block" if restricted else "allow"
+            reason = ("extended-length path (\\\\?\\) is not classifiable; "
+                       "refused for a scoped role" if restricted
+                       else "extended-path-unclassified")
+            _log_row(root, policy, decision, role, file_path, reason)
+            if decision == "block":
+                sys.stderr.write(
+                    f"ROLE WRITE BLOCKED: role `{role}` may not write "
+                    f"`{file_path}`.\n"
+                    f"  Reason: {reason}\n"
+                    "  A Windows \\\\?\\ extended-length path bypasses Win32's "
+                    "own path normalisation (trailing dots/spaces kept, `..` "
+                    "not collapsed) and cannot be judged against "
+                    "guards.roleWrites' scope patterns -- refused outright "
+                    "for a role this table restricts. See CONFIG.md "
+                    "Section 18.\n"
+                )
+                return 2
+            return 0
+
         # `rel_path` is lexical, for DISPLAY only -- what the tool call
         # NAMED. `scope_path` is filesystem-resolved, and is the ONLY one
         # `classify` ever judges against: what the write would actually

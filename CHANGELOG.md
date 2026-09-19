@@ -7,210 +7,6 @@ All notable changes to this repository are documented here. Format follows [Keep
 ### Fixed
 
 
-- **`crew` 0.19.90: dispatched roles ran gates in the background and ended
-  the turn waiting to be woken.** Three subagents did it in one night —
-  `crew-pm` at ~00:30, `dev-pm-contract` at 01:01, `dev-stophook-finish` at
-  02:07: three agents, two roles, one behaviour. A subagent that has given
-  its final response is NOT resumed when a background task completes later
-  (`code.claude.com/docs/en/sub-agents`) — the turn simply ends, the result
-  lands where nothing is reading, and the work looks abandoned until a human
-  notices and pokes it. That is a harness property, not a bug to wait out, so
-  the fix is in the prose that tells each role how to run a long command.
-
-  Every dispatched role that runs a gate, a suite or a mutation itself now
-  carries the same three clauses in its own voice: run it in the foreground;
-  never end a turn waiting on a background task, with the reason stated; and
-  split a command that exceeds the tool timeout into foreground parts rather
-  than backgrounding it. How a split part's result gets reported varies by
-  the role's own report contract, not one shared sentence: `developer` and
-  `python-pro` quote only each part's exit code and pass/fail count, one line
-  per part, to stay inside their 200-word return; `pm`, `browser-tester` and
-  `smoke-author` quote each part's output into their free-form report;
-  `qa-reviewer` never appends a split part's output to its verdict at all —
-  that verdict is defect lines or exactly `CLEAN` and nothing else, so for
-  `qa-reviewer` the quoting belongs to the reasoning that reaches a verdict,
-  never to the verdict itself.
-
-  `pm.md` also carries the resume rule for a role that returns a PARTIAL
-  result, and the PM does not do the resuming itself: it has no `SendMessage`
-  in its own tools, and its own dispatch rule already forbids treating a
-  dispatched role as addressable from inside the PM, for the same reason —
-  that address belongs to whoever invoked the PM, not to the PM. The PM's job
-  is to return the identifier the dispatch itself returned and say it can be
-  resumed by that id — a bare role label is not that identifier and cannot
-  resume anything, and if the dispatch returned no id at all the PM says so
-  plainly rather than implying a resume that cannot happen — never to
-  re-dispatch a resumable partial itself, which would open an empty context
-  and spend a `pm.maxDispatches` slot to arrive back where it started. The
-  actual resume, `SendMessage` addressed to that id, happens one level up in
-  `commands/pm.md`'s "Relay what it did" section, where `SendMessage` is
-  genuinely available.
-
-  `pm.md` also carries the observer's half of the idle rule: an idle signal
-  from a role running a gate or suite is not evidence it stopped, after the
-  harness reported three roles idle mid-run in one session — one had written
-  its results three seconds before the clock that read it idle, another had
-  a test-cache write sixteen minutes after its last source edit. A recent
-  worktree write proves only that the tree was active recently, not that
-  anything is running there right now — another role, a process that already
-  finished, or the very role being watched having already exited can all
-  leave the same trail. The decision rule is explicit: a recent write means
-  wait one cycle and re-check; no write across two consecutive cycles means
-  treat the role as stopped; a single reading, write or no write, is never
-  grounds to restart on its own. Never restart a role from disk on an idle
-  signal — the dirty files sitting there are that role's work, not proof it
-  never started one.
-
-  Every clause above is asserted as whitespace-normalised prose in
-  `plugin/crew/tests/test_foreground_execution.py`, and every assertion has
-  been individually sabotage-tested: the phrase deleted, the suite confirmed
-  RED, the file restored, sha256 checked matching before and after. Found and
-  fixed across two rounds of independent review (Codex gpt-6-astra, 0 BLOCK
-  both rounds): round 1 caught the PM being told to resume a role with a
-  tool it does not have, the idle-write rule reading as proof of identity
-  rather than of activity, `qa-reviewer`'s output contract being violated by
-  its own split-parts rule, and two reconciliation assertions that checked
-  only a rule's lead-in sentence rather than the explanation that made it
-  correct; round 2 caught `developer` and `python-pro`'s quoting requirement
-  risking their own 200-word return budget, a bare role label being accepted
-  as a resumable id, the idle-write rule still overclaiming current liveness
-  from a single reading, and two more test assertions with the same
-  lead-in-only gap as round 1's.
-- **`localgpu` 0.1.20, `obsidian-vault` 0.3.10: `argument-hint` with two
-  bracketed groups broke YAML frontmatter parsing.** `claude plugin
-  validate` failed both plugins with `YAML Parse error: Unexpected
-  token` — a value like `[--full] [--root <path>]` is read as a flow
-  sequence for the first `[...]` with the second treated as trailing
-  garbage. At runtime this silently drops all frontmatter for the
-  command, not just `argument-hint`. Fixed in
-  `plugin/localgpu/commands/index.md`, `plugin/obsidian-vault/commands/
-  graph.md`, `init.md`, and `repair.md` by quoting the whole value as a
-  string, which keeps its meaning for the reader. Added
-  `check_argument_hint_frontmatter` to `scripts/check-marketplace.py`,
-  which parses every command's frontmatter with PyYAML and fails by
-  path on any parse error, plus a CI `claude plugin validate --strict`
-  step so this class cannot ship again unnoticed.
-
-- **`notify` 1.1.1: the new frontmatter-parse gate (above) caught a second,
-  unrelated instance of the same bug class.** `skills/notify/SKILL.md`'s
-  `description` held an unquoted `: ` inside a plain scalar ("Telegram is
-  fully two-way: a question event blocks..."), which YAML reads as the
-  start of a new mapping value and refuses with `mapping values are not
-  allowed here` - so this skill's frontmatter also failed to load, for a
-  different reason than the `argument-hint` bracket bug above. Reworded to
-  `Telegram is fully two-way - a question event blocks...`, meaning
-  unchanged.
-
-- **`crew` 0.19.86: find-polluter.sh's `**`-count died under a caller's
-  own `bash -o pipefail`.** `STARSTAR_COUNT` was computed with
-  `printf '%s' "$TEST_PATTERN" | grep -o '\*\*' | wc -l | tr -d ' '`.
-  `grep -o` exits 1 on zero matches — the NORMAL case, since almost
-  every real pattern has exactly one `**` — and under a caller's own
-  `bash -o pipefail` (the script set none of its own at the time), that
-  non-zero pipeline status reached the bare `VAR=$(...)` assignment and
-  `set -e` silently aborted the script before discovery ever ran, with
-  no diagnostic. Reproduced exactly as reported: `bash find-polluter.sh
-  POLL 'src/*.test.ts'` runs clean; `bash -o pipefail find-polluter.sh
-  POLL 'src/*.test.ts'` died with no output and exit 1. Fixed two ways:
-  the count no longer uses a pipeline at all (parameter expansion
-  instead of grep/wc/tr — `${TEST_PATTERN//\*\*/}` length-diffed against
-  the original), and the script now sets `pipefail` itself
-  unconditionally, so its correctness does not depend on flags the
-  caller happened to set. One new sabotage-tested test,
-  `test_find_polluter_survives_a_callers_pipefail`.
-
-- **`crew` 0.19.85: correction to 0.19.71 — the multi-`**` finding is
-  crew's own defect, not upstream's.** 0.19.71's entry below (kept
-  as-written; corrected forward rather than rewritten) says both new
-  findings were "inherited from upstream". That was checked against
-  upstream after the fact and is wrong for finding (1): the second
-  `-o -path` alternative in `find-polluter.sh`'s discovery line (added so
-  a file directly under the base directory also matches, which upstream's
-  single form misses) is crew's own addition, not upstream code, and it is
-  that addition's `**/` -> nothing collapse that breaks on a second `**`.
-  Finding (2), the swallowed `find` exit status, remains correctly
-  attributed to upstream (the `| sort` is theirs). `TODO.md`'s
-  `find-polluter.sh` section is back down to four upstream-reproduction
-  items; the multi-`**` refusal now lives only in `plugin/crew/NOTICE.md`'s
-  modification list, with the corrected reasoning. No test or script
-  behaviour changed — this is a provenance-only correction, so filing the
-  wrong bug upstream doesn't waste a maintainer's time on code that isn't
-  theirs.
-
-- **`crew` 0.19.84: two upstream discovery-pipeline defects in
-  `find-polluter.sh`.** Whole-branch Codex review (`dedd1150..1f1b6a75`)
-  found two more findings, both in the untouched discovery step at line
-  55 and both inherited from upstream `superpowers:systematic-debugging`
-  6.3.0. (1) The `find` → glob translation only understands one `**`; a
-  pattern with a second one is silently mistranslated and can match a
-  narrower set than intended — a real polluter under the second `**` is
-  never even discovered. Fixed by refusing any pattern with more than one
-  `**` up front (`UNSUPPORTED PATTERN`) instead of guessing. (2)
-  `find ... | sort -u` inside a bare `VAR=$(...)` assignment discards
-  `find`'s own exit status — `sort`'s success masks it — so an unreadable
-  subtree made the script proceed with a partial test list and report
-  "all tests clean" without ever looking at the polluter inside it. Fixed
-  by capturing `find`'s status via `pipefail` and refusing with
-  `DISCOVERY FAILED` instead of proceeding. Both are recorded as upstream
-  defects in `TODO.md` and `NOTICE.md`. Four new tests, two sabotage-
-  tested directly; the `DISCOVERY FAILED` chmod-000 regression case skips
-  on Windows Git Bash (measured: chmod 000 on a directory is a no-op for
-  real access there), with a stated reason and a manual reproduction
-  documented in the session record instead.
-
-- **`crew` 0.19.83: the pollution check still ran after the 126/127
-  branch.** 0.19.69 moved the pollution check ahead of the ordinary-failure
-  branch but left it behind the 126/127 "RUNNER FAILED" branch, so a test
-  that touched the pollution marker and then hit a missing or
-  non-executable runner command (exit 127) was still reported as
-  `RUNNER FAILED`, hiding the polluter it had already created. The
-  pollution check in `find-polluter.sh` now runs first, before any
-  exit-code classification at all. One new sabotage-tested test.
-
-- **`crew` 0.19.82: two defects Codex found in the 0.19.67 fix itself.**
-  `find-polluter.sh`'s `while read` loop over a here-string let the test
-  runner inherit its stdin; a runner that reads stdin to EOF drained the
-  rest of the test list and silently ended the loop after one file, the
-  same landmine `verify-gate.sh` documents for its own here-string loop.
-  Fixed by giving the runner `< /dev/null`. Separately, 0.19.67's blanket
-  "any non-zero exit is a runner failure" misclassified the pollution case
-  itself — a leaked file plus a failed assertion in the same test — as
-  `RUNNER FAILED`, aborting before the pollution check ran. Now only exit
-  126/127 (runner could not execute) aborts as `RUNNER FAILED`; pollution
-  is checked regardless of exit code, and an ordinary failure without
-  pollution is recorded and bisection continues, with the final verdict
-  naming every test that failed without polluting. Three new tests in
-  `test_debugging_method.py`, sabotage-tested.
-
-- **`crew` 0.19.81: test for #3.** Added the behavioural regression test for
-  finding #3 of 0.19.67 (whitespace in a test filename splitting into two
-  invalid runner invocations) that 0.19.67's report flagged as missing;
-  sabotage-tested against the real fix.
-
-- **`crew` 0.19.80: five review findings on `/crew:debug` (0.19.66).** Codex
-  (gpt-6-astra) reviewed the command and its bundled `find-polluter.sh`.
-  `commands/debug.md` claimed the missing `Write`/`Edit` grant was "the
-  enforcement" for the Iron Law; it is not — `Bash` can write a file as
-  readily as `Edit` can, so the passage now says plainly that the tool grant
-  removes the convenient path to a fix, not that it makes one impossible,
-  matching the wording `dba.md`/`qa-reviewer.md` already use for this same
-  distinction. `find-polluter.sh` shipped at file mode `100644`, so upstream's
-  documented `./find-polluter.sh ...` invocation fails with "permission
-  denied" on Linux; the index mode is now `100755`. Three more defects are
-  inherited from upstream `superpowers:systematic-debugging` 6.3.0 and are
-  now fixed in crew's copy only (see `plugin/crew/NOTICE.md` and `TODO.md`
-  for the upstream reproduction so they can be filed there too): a test
-  filename containing whitespace was split into two invalid runner
-  arguments by unquoted word-splitting; a non-zero exit from the test
-  runner (e.g. a missing `npm`, exit 127) was discarded by `|| true` and
-  reported as a clean run; and an investigation that executed zero tests
-  — an unmatched pattern, or every candidate skipped because the pollution
-  check already existed — reported "all tests clean" instead of refusing to
-  conclude. Regression cases for all four fixed items (the prose plus the
-  three script behaviours) are in `plugin/crew/tests/test_debugging_method.py`,
-  each sabotage-tested.
-
-### Added
 
 - **`crew` 0.19.92: mechanical enforcement of each role's write scope, via a
   new `PreToolUse` guard on `Write`/`Edit`.** `agents/pm.md:49-53` says, in
@@ -242,45 +38,6 @@ All notable changes to this repository are documented here. Format follows [Keep
   in this session; `_normalise_role` strips a leading `crew:` prefix so both
   forms resolve the same, and an unrecognised form still fails to the safe
   side (allow + log) rather than stranding a role.
-- **`crew` 0.19.91: a `claude plugin eval` suite that tests role behaviour
-  under temptation, not prose.** Every structural check in this plugin
-  (`run-tests.sh`, `validate-prompts.py`, `pytest`) proves a hook blocks the
-  right thing or a command's frontmatter parses. None of them proves an
-  agent actually behaves the way its own prompt file says it will — that
-  needs a live model run. New `plugin/crew/evals/` holds five cases, each a
-  realistic prompt that tempts one documented rule and grades the transcript
-  with free graders (`regex`, `tool_used`) rather than a judge model:
-  `pm-does-not-write-code` (the PM's one-hat rule), `qa-reviewer-stays-read-only`
-  (QA holds no `Write`/`Edit`), `developer-defers-unrelated-bug` (scope
-  discipline and the `## Deferred` section), `developer-runs-command-in-foreground`
-  (no silent backgrounding), and `pm-answers-status-mid-pass` (a status
-  request outranks the pass, seeded via `context.history_file`). Run with
-  the matched pair `scripts/run-plugin-evals.sh` / `.ps1`, which invoke each
-  case separately (`--case` takes one glob, no exclude or comma-list syntax)
-  and skip `developer-runs-command-in-foreground` with a loud notice on
-  native Windows, since its `Bash` grant needs an OS sandbox backend
-  (`bubblewrap`+`socat`) that Windows does not have — it runs for real under
-  the new `.github/workflows/plugin-evals.yml` (Linux, `pull_request` on
-  `plugin/crew/**`, skips with a visible notice when `ANTHROPIC_API_KEY`
-  is not set as a repo secret).
-
-  Run once against this codebase (`--trust-plugin --no-publish`, `claude
-  plugin eval` 2.1.278), each case scored individually: `qa-reviewer-stays-read-only`
-  1.0 (3/3 runs, `Δ 0` — the graders passed with and without the plugin,
-  meaning this particular behaviour doesn't depend on it), `developer-defers-unrelated-bug`
-  1.0 (3/3 runs, `Δ 0`, same caveat), `pm-answers-status-mid-pass` 1.0 (3/3
-  runs, single-arm). `pm-does-not-write-code` scored **0** — a real,
-  reproduced finding, not a broken case: one run timed out at 180s with the
-  `no-edit`/`no-write` graders failing, and an earlier single-run check
-  during development caught the same thing cleanly (`Edit called 1x
-  (expected 0..0)`) — the PM still edits the tempting one-line fix itself
-  instead of dispatching a developer. The case format has no
-  `expected-fail`/`xfail` field, so the runner scripts track it by name
-  (`EVAL_EXPECTED_FAIL_CASES`, default `pm-does-not-write-code`): the case
-  still runs and still reports every time, it just doesn't flip the exit
-  code, so CI isn't blocked on a known, tracked defect while it isn't
-  weakened into passing either. Fixing the PM's one-hat enforcement is a
-  follow-up, not part of this change.
 
   A Codex QA round on the first commit found 2 BLOCK + 4 FIX, all addressed
   here in a follow-up commit under the same 0.19.92 (no version bump for a
@@ -527,6 +284,289 @@ All notable changes to this repository are documented here. Format follows [Keep
   including one pre-existing test that turned out to depend on the same
   dispatch for any native Windows-separator path — and both reverted to a
   sha256-verified byte-identical file before committing.
+
+  A third round on the same 0.19.92: Codex round 5 found that the earlier
+  extended-length-path fix (the one starting "A `file_path` using
+  Windows' `\?\` extended-length prefix" above) traded one bug for
+  another. It NORMALISED `\?\` away and then classified the bare
+  remainder like any other path — but `\?\` exists specifically so Win32
+  will SKIP its own path normalisation for that one call: trailing dots
+  and spaces are preserved on disk, and a literal `..` is never
+  collapsed. `\?\C:\repo\.crew.\app.py` (note the trailing dot on
+  `.crew.`, a real, distinct, out-of-scope directory) stripped to
+  `C:\repo\.crew.\app.py`, which this module's own path handling then
+  further normalised to `C:\repo\.crew\app.py` — in scope on the string
+  alone — while Windows itself opens a directory literally named
+  `.crew.`, never `.crew`. `pm` could reach any such trailing-dot (or
+  trailing-space) sibling of a permitted directory this way. Fixed by
+  refusing to classify a `\?\` path at all, rather than trying to build a
+  classifier that is simultaneously faithful to ordinary Windows path
+  semantics and to a syntax whose entire purpose is bypassing them:
+  `_is_extended_length_prefix_path` now short-circuits `main` before
+  `_repo_relative`/`_real_repo_relative`/`classify` ever run, and the
+  decision is by role alone — `pm` and every `_DENY_ROLES` member fail
+  CLOSED (block) unconditionally, every other role and a call with no
+  `agent_type` allows, since Claude Code itself never emits this form for
+  a `Write`/`Edit` call. `tests/test_role_write_guard.py` grew to 114
+  cases: the must-block repro creates a real `.crew.` directory on disk
+  (an ordinary, non-extended-length `mkdir` silently strips the trailing
+  dot and collides with the already-existing `.crew`, so the test fixture
+  itself needs the extended-length form to create the directory it is
+  testing against) and confirms `pm` is refused; must-allow twins cover
+  `developer` and a call with no `agent_type` at all, both bash and
+  PowerShell where applicable. Two sabotages, both reverted to a
+  sha256-verified byte-identical file: inverting the restricted-role
+  check flips exactly the 5 new tests; disabling detection entirely so
+  the raw `\?\` path falls through to the ordinary classifier flips only
+  the 2 must-block cases and reproduces the exact original gap (`pm`'s
+  write on the `.crew.` repro resolves to allow again) — the 3 must-allow
+  cases stay green either way, since an unrestricted role's write is not
+  scope-checked regardless, itself useful confirmation the fix is scoped
+  to restricted roles only rather than acting as a blanket refusal.
+- **`crew` 0.19.90: dispatched roles ran gates in the background and ended
+  the turn waiting to be woken.** Three subagents did it in one night —
+  `crew-pm` at ~00:30, `dev-pm-contract` at 01:01, `dev-stophook-finish` at
+  02:07: three agents, two roles, one behaviour. A subagent that has given
+  its final response is NOT resumed when a background task completes later
+  (`code.claude.com/docs/en/sub-agents`) — the turn simply ends, the result
+  lands where nothing is reading, and the work looks abandoned until a human
+  notices and pokes it. That is a harness property, not a bug to wait out, so
+  the fix is in the prose that tells each role how to run a long command.
+
+  Every dispatched role that runs a gate, a suite or a mutation itself now
+  carries the same three clauses in its own voice: run it in the foreground;
+  never end a turn waiting on a background task, with the reason stated; and
+  split a command that exceeds the tool timeout into foreground parts rather
+  than backgrounding it. How a split part's result gets reported varies by
+  the role's own report contract, not one shared sentence: `developer` and
+  `python-pro` quote only each part's exit code and pass/fail count, one line
+  per part, to stay inside their 200-word return; `pm`, `browser-tester` and
+  `smoke-author` quote each part's output into their free-form report;
+  `qa-reviewer` never appends a split part's output to its verdict at all —
+  that verdict is defect lines or exactly `CLEAN` and nothing else, so for
+  `qa-reviewer` the quoting belongs to the reasoning that reaches a verdict,
+  never to the verdict itself.
+
+  `pm.md` also carries the resume rule for a role that returns a PARTIAL
+  result, and the PM does not do the resuming itself: it has no `SendMessage`
+  in its own tools, and its own dispatch rule already forbids treating a
+  dispatched role as addressable from inside the PM, for the same reason —
+  that address belongs to whoever invoked the PM, not to the PM. The PM's job
+  is to return the identifier the dispatch itself returned and say it can be
+  resumed by that id — a bare role label is not that identifier and cannot
+  resume anything, and if the dispatch returned no id at all the PM says so
+  plainly rather than implying a resume that cannot happen — never to
+  re-dispatch a resumable partial itself, which would open an empty context
+  and spend a `pm.maxDispatches` slot to arrive back where it started. The
+  actual resume, `SendMessage` addressed to that id, happens one level up in
+  `commands/pm.md`'s "Relay what it did" section, where `SendMessage` is
+  genuinely available.
+
+  `pm.md` also carries the observer's half of the idle rule: an idle signal
+  from a role running a gate or suite is not evidence it stopped, after the
+  harness reported three roles idle mid-run in one session — one had written
+  its results three seconds before the clock that read it idle, another had
+  a test-cache write sixteen minutes after its last source edit. A recent
+  worktree write proves only that the tree was active recently, not that
+  anything is running there right now — another role, a process that already
+  finished, or the very role being watched having already exited can all
+  leave the same trail. The decision rule is explicit: a recent write means
+  wait one cycle and re-check; no write across two consecutive cycles means
+  treat the role as stopped; a single reading, write or no write, is never
+  grounds to restart on its own. Never restart a role from disk on an idle
+  signal — the dirty files sitting there are that role's work, not proof it
+  never started one.
+
+  Every clause above is asserted as whitespace-normalised prose in
+  `plugin/crew/tests/test_foreground_execution.py`, and every assertion has
+  been individually sabotage-tested: the phrase deleted, the suite confirmed
+  RED, the file restored, sha256 checked matching before and after. Found and
+  fixed across two rounds of independent review (Codex gpt-6-astra, 0 BLOCK
+  both rounds): round 1 caught the PM being told to resume a role with a
+  tool it does not have, the idle-write rule reading as proof of identity
+  rather than of activity, `qa-reviewer`'s output contract being violated by
+  its own split-parts rule, and two reconciliation assertions that checked
+  only a rule's lead-in sentence rather than the explanation that made it
+  correct; round 2 caught `developer` and `python-pro`'s quoting requirement
+  risking their own 200-word return budget, a bare role label being accepted
+  as a resumable id, the idle-write rule still overclaiming current liveness
+  from a single reading, and two more test assertions with the same
+  lead-in-only gap as round 1's.
+- **`localgpu` 0.1.20, `obsidian-vault` 0.3.10: `argument-hint` with two
+  bracketed groups broke YAML frontmatter parsing.** `claude plugin
+  validate` failed both plugins with `YAML Parse error: Unexpected
+  token` — a value like `[--full] [--root <path>]` is read as a flow
+  sequence for the first `[...]` with the second treated as trailing
+  garbage. At runtime this silently drops all frontmatter for the
+  command, not just `argument-hint`. Fixed in
+  `plugin/localgpu/commands/index.md`, `plugin/obsidian-vault/commands/
+  graph.md`, `init.md`, and `repair.md` by quoting the whole value as a
+  string, which keeps its meaning for the reader. Added
+  `check_argument_hint_frontmatter` to `scripts/check-marketplace.py`,
+  which parses every command's frontmatter with PyYAML and fails by
+  path on any parse error, plus a CI `claude plugin validate --strict`
+  step so this class cannot ship again unnoticed.
+
+- **`notify` 1.1.1: the new frontmatter-parse gate (above) caught a second,
+  unrelated instance of the same bug class.** `skills/notify/SKILL.md`'s
+  `description` held an unquoted `: ` inside a plain scalar ("Telegram is
+  fully two-way: a question event blocks..."), which YAML reads as the
+  start of a new mapping value and refuses with `mapping values are not
+  allowed here` - so this skill's frontmatter also failed to load, for a
+  different reason than the `argument-hint` bracket bug above. Reworded to
+  `Telegram is fully two-way - a question event blocks...`, meaning
+  unchanged.
+
+- **`crew` 0.19.86: find-polluter.sh's `**`-count died under a caller's
+  own `bash -o pipefail`.** `STARSTAR_COUNT` was computed with
+  `printf '%s' "$TEST_PATTERN" | grep -o '\*\*' | wc -l | tr -d ' '`.
+  `grep -o` exits 1 on zero matches — the NORMAL case, since almost
+  every real pattern has exactly one `**` — and under a caller's own
+  `bash -o pipefail` (the script set none of its own at the time), that
+  non-zero pipeline status reached the bare `VAR=$(...)` assignment and
+  `set -e` silently aborted the script before discovery ever ran, with
+  no diagnostic. Reproduced exactly as reported: `bash find-polluter.sh
+  POLL 'src/*.test.ts'` runs clean; `bash -o pipefail find-polluter.sh
+  POLL 'src/*.test.ts'` died with no output and exit 1. Fixed two ways:
+  the count no longer uses a pipeline at all (parameter expansion
+  instead of grep/wc/tr — `${TEST_PATTERN//\*\*/}` length-diffed against
+  the original), and the script now sets `pipefail` itself
+  unconditionally, so its correctness does not depend on flags the
+  caller happened to set. One new sabotage-tested test,
+  `test_find_polluter_survives_a_callers_pipefail`.
+
+- **`crew` 0.19.85: correction to 0.19.71 — the multi-`**` finding is
+  crew's own defect, not upstream's.** 0.19.71's entry below (kept
+  as-written; corrected forward rather than rewritten) says both new
+  findings were "inherited from upstream". That was checked against
+  upstream after the fact and is wrong for finding (1): the second
+  `-o -path` alternative in `find-polluter.sh`'s discovery line (added so
+  a file directly under the base directory also matches, which upstream's
+  single form misses) is crew's own addition, not upstream code, and it is
+  that addition's `**/` -> nothing collapse that breaks on a second `**`.
+  Finding (2), the swallowed `find` exit status, remains correctly
+  attributed to upstream (the `| sort` is theirs). `TODO.md`'s
+  `find-polluter.sh` section is back down to four upstream-reproduction
+  items; the multi-`**` refusal now lives only in `plugin/crew/NOTICE.md`'s
+  modification list, with the corrected reasoning. No test or script
+  behaviour changed — this is a provenance-only correction, so filing the
+  wrong bug upstream doesn't waste a maintainer's time on code that isn't
+  theirs.
+
+- **`crew` 0.19.84: two upstream discovery-pipeline defects in
+  `find-polluter.sh`.** Whole-branch Codex review (`dedd1150..1f1b6a75`)
+  found two more findings, both in the untouched discovery step at line
+  55 and both inherited from upstream `superpowers:systematic-debugging`
+  6.3.0. (1) The `find` → glob translation only understands one `**`; a
+  pattern with a second one is silently mistranslated and can match a
+  narrower set than intended — a real polluter under the second `**` is
+  never even discovered. Fixed by refusing any pattern with more than one
+  `**` up front (`UNSUPPORTED PATTERN`) instead of guessing. (2)
+  `find ... | sort -u` inside a bare `VAR=$(...)` assignment discards
+  `find`'s own exit status — `sort`'s success masks it — so an unreadable
+  subtree made the script proceed with a partial test list and report
+  "all tests clean" without ever looking at the polluter inside it. Fixed
+  by capturing `find`'s status via `pipefail` and refusing with
+  `DISCOVERY FAILED` instead of proceeding. Both are recorded as upstream
+  defects in `TODO.md` and `NOTICE.md`. Four new tests, two sabotage-
+  tested directly; the `DISCOVERY FAILED` chmod-000 regression case skips
+  on Windows Git Bash (measured: chmod 000 on a directory is a no-op for
+  real access there), with a stated reason and a manual reproduction
+  documented in the session record instead.
+
+- **`crew` 0.19.83: the pollution check still ran after the 126/127
+  branch.** 0.19.69 moved the pollution check ahead of the ordinary-failure
+  branch but left it behind the 126/127 "RUNNER FAILED" branch, so a test
+  that touched the pollution marker and then hit a missing or
+  non-executable runner command (exit 127) was still reported as
+  `RUNNER FAILED`, hiding the polluter it had already created. The
+  pollution check in `find-polluter.sh` now runs first, before any
+  exit-code classification at all. One new sabotage-tested test.
+
+- **`crew` 0.19.82: two defects Codex found in the 0.19.67 fix itself.**
+  `find-polluter.sh`'s `while read` loop over a here-string let the test
+  runner inherit its stdin; a runner that reads stdin to EOF drained the
+  rest of the test list and silently ended the loop after one file, the
+  same landmine `verify-gate.sh` documents for its own here-string loop.
+  Fixed by giving the runner `< /dev/null`. Separately, 0.19.67's blanket
+  "any non-zero exit is a runner failure" misclassified the pollution case
+  itself — a leaked file plus a failed assertion in the same test — as
+  `RUNNER FAILED`, aborting before the pollution check ran. Now only exit
+  126/127 (runner could not execute) aborts as `RUNNER FAILED`; pollution
+  is checked regardless of exit code, and an ordinary failure without
+  pollution is recorded and bisection continues, with the final verdict
+  naming every test that failed without polluting. Three new tests in
+  `test_debugging_method.py`, sabotage-tested.
+
+- **`crew` 0.19.81: test for #3.** Added the behavioural regression test for
+  finding #3 of 0.19.67 (whitespace in a test filename splitting into two
+  invalid runner invocations) that 0.19.67's report flagged as missing;
+  sabotage-tested against the real fix.
+
+- **`crew` 0.19.80: five review findings on `/crew:debug` (0.19.66).** Codex
+  (gpt-6-astra) reviewed the command and its bundled `find-polluter.sh`.
+  `commands/debug.md` claimed the missing `Write`/`Edit` grant was "the
+  enforcement" for the Iron Law; it is not — `Bash` can write a file as
+  readily as `Edit` can, so the passage now says plainly that the tool grant
+  removes the convenient path to a fix, not that it makes one impossible,
+  matching the wording `dba.md`/`qa-reviewer.md` already use for this same
+  distinction. `find-polluter.sh` shipped at file mode `100644`, so upstream's
+  documented `./find-polluter.sh ...` invocation fails with "permission
+  denied" on Linux; the index mode is now `100755`. Three more defects are
+  inherited from upstream `superpowers:systematic-debugging` 6.3.0 and are
+  now fixed in crew's copy only (see `plugin/crew/NOTICE.md` and `TODO.md`
+  for the upstream reproduction so they can be filed there too): a test
+  filename containing whitespace was split into two invalid runner
+  arguments by unquoted word-splitting; a non-zero exit from the test
+  runner (e.g. a missing `npm`, exit 127) was discarded by `|| true` and
+  reported as a clean run; and an investigation that executed zero tests
+  — an unmatched pattern, or every candidate skipped because the pollution
+  check already existed — reported "all tests clean" instead of refusing to
+  conclude. Regression cases for all four fixed items (the prose plus the
+  three script behaviours) are in `plugin/crew/tests/test_debugging_method.py`,
+  each sabotage-tested.
+
+### Added
+
+- **`crew` 0.19.91: a `claude plugin eval` suite that tests role behaviour
+  under temptation, not prose.** Every structural check in this plugin
+  (`run-tests.sh`, `validate-prompts.py`, `pytest`) proves a hook blocks the
+  right thing or a command's frontmatter parses. None of them proves an
+  agent actually behaves the way its own prompt file says it will — that
+  needs a live model run. New `plugin/crew/evals/` holds five cases, each a
+  realistic prompt that tempts one documented rule and grades the transcript
+  with free graders (`regex`, `tool_used`) rather than a judge model:
+  `pm-does-not-write-code` (the PM's one-hat rule), `qa-reviewer-stays-read-only`
+  (QA holds no `Write`/`Edit`), `developer-defers-unrelated-bug` (scope
+  discipline and the `## Deferred` section), `developer-runs-command-in-foreground`
+  (no silent backgrounding), and `pm-answers-status-mid-pass` (a status
+  request outranks the pass, seeded via `context.history_file`). Run with
+  the matched pair `scripts/run-plugin-evals.sh` / `.ps1`, which invoke each
+  case separately (`--case` takes one glob, no exclude or comma-list syntax)
+  and skip `developer-runs-command-in-foreground` with a loud notice on
+  native Windows, since its `Bash` grant needs an OS sandbox backend
+  (`bubblewrap`+`socat`) that Windows does not have — it runs for real under
+  the new `.github/workflows/plugin-evals.yml` (Linux, `pull_request` on
+  `plugin/crew/**`, skips with a visible notice when `ANTHROPIC_API_KEY`
+  is not set as a repo secret).
+
+  Run once against this codebase (`--trust-plugin --no-publish`, `claude
+  plugin eval` 2.1.278), each case scored individually: `qa-reviewer-stays-read-only`
+  1.0 (3/3 runs, `Δ 0` — the graders passed with and without the plugin,
+  meaning this particular behaviour doesn't depend on it), `developer-defers-unrelated-bug`
+  1.0 (3/3 runs, `Δ 0`, same caveat), `pm-answers-status-mid-pass` 1.0 (3/3
+  runs, single-arm). `pm-does-not-write-code` scored **0** — a real,
+  reproduced finding, not a broken case: one run timed out at 180s with the
+  `no-edit`/`no-write` graders failing, and an earlier single-run check
+  during development caught the same thing cleanly (`Edit called 1x
+  (expected 0..0)`) — the PM still edits the tempting one-line fix itself
+  instead of dispatching a developer. The case format has no
+  `expected-fail`/`xfail` field, so the runner scripts track it by name
+  (`EVAL_EXPECTED_FAIL_CASES`, default `pm-does-not-write-code`): the case
+  still runs and still reports every time, it just doesn't flip the exit
+  code, so CI isn't blocked on a known, tracked defect while it isn't
+  weakened into passing either. Fixing the PM's one-hat enforcement is a
+  follow-up, not part of this change.
 
 - **`crew` 0.19.79: a debugging method, and the routing that dispatches it.**
   Crew shipped 27 commands and 19 skills and not one of them was about finding

@@ -1578,6 +1578,53 @@ string the outside-repo check already treats as a resolved escape — so a
 `D:` target with the repo on `C:` gets `allow`, logged `outside-repo:
 ...`, instead of an incorrect refusal.
 
+### A `\?\` extended-length path is never classified at all
+
+Reported and fixed 2026-09-19. An earlier fix (not written up as its own
+subsection here, since it shipped bundled with several others in the
+same round — see `.crew/verify.json`'s history for that round) NORMALISED
+Windows' `\?\` extended-length prefix away before classification:
+`os.path.relpath` treats `\?\C:\repo\...` and `C:\repo` as different
+mounts and raises, which read as "cannot classify" and incorrectly
+refused a legitimate, in-scope write, so the fix stripped the prefix and
+classified the bare remainder like any other path.
+
+Codex round 5 found that normalising is itself unsound, not merely the
+raising it replaced. `\?\` exists specifically so Win32 will SKIP its own
+path normalisation for that one call — trailing dots and spaces are
+preserved on disk, and a literal `..` component is never collapsed — so
+stripping the prefix and classifying the remainder with this module's
+ordinary (normalising) path handling answers a question about a
+DIFFERENT path than the one Windows actually opens.
+`\?\C:\repo\.crew.\app.py` (note the trailing dot on `.crew.`, a real,
+distinct directory outside every scope `pm` is granted) stripped to
+`C:\repo\.crew.\app.py`, which this module's own path handling then
+further normalised to `C:\repo\.crew\app.py` — in scope, on the string
+alone — while Windows itself opens a directory literally named `.crew.`,
+never `.crew`. `pm` could reach any trailing-dot or trailing-space
+sibling of a permitted directory this way, with the hook's own log
+showing the innocuous, normalised `.crew/app.py` rather than what was
+actually written.
+
+No classifier built to be faithful to ordinary Windows path semantics
+can also be faithful to a syntax whose entire purpose is bypassing those
+semantics, so this module does not try. `_is_extended_length_prefix_path`
+now short-circuits `main` before `_repo_relative`/`_real_repo_relative`/
+`classify` ever run for such a path, and the decision is by role alone,
+matching the same "scoped role" set the outermost exception handler
+already treats as restricted: `pm` and every `_DENY_ROLES` member fail
+CLOSED (`block`) unconditionally, regardless of `guards.roleWrites`'
+configured policy; every other role, and a call with no `agent_type` at
+all, allows — Claude Code itself never emits an extended-length path for
+a `Write`/`Edit` call, so there is nothing here worth refusing for a role
+this table already trusts with `Write`/`Edit` generally. Verified with a
+real, on-disk `.crew.` directory (an ordinary, non-extended-length
+`mkdir` call silently strips the trailing dot and collides with the
+already-existing `.crew`, so even the test fixture needs the
+extended-length form to create the directory it is testing against),
+driven end to end through both `role-write-guard.sh` and
+`role-write-guard.ps1`.
+
 ### A target outside the repo root entirely is not this guard's business
 
 Reported and fixed 2026-09-19, a probe finding on the first commit — and
