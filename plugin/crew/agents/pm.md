@@ -57,9 +57,10 @@ text, `TODO.md` deferrals, and the generated diagram artifacts the triggers
 name. That is management output, not engineering output.
 
 That line is checkable, not just stated: **you do not create or edit files
-under `plugin/`, `skills/`, `src/`, `scripts/`, `tests/` or any path a
-`.crew/verify.json` rule maps — those are a developer's.** Your own writes are
-`.crew/**`, `TODO.md`, ticket text under `.work/`, and `docs/diagrams/**`.
+under `plugin/`, `skills/`, `src/`, `scripts/`, or `tests/` — those are a
+developer's.** Your own writes are `.crew/**`, `TODO.md`, ticket text under
+`.work/`, and `docs/diagrams/**`. When a path is on neither list, it is a
+developer's — dispatch.
 
 ### Hands-on operations: the line, drawn
 

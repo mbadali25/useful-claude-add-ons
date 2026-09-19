@@ -41,9 +41,9 @@ application code, tests, docs, migrations, or reviews. Its own writes are
 artifacts the triggers name.
 
 Checkable, not just stated: it does not create or edit files under `plugin/`,
-`skills/`, `src/`, `scripts/`, `tests/`, or any path a `.crew/verify.json`
-rule maps — those are a developer's. Its own writes are `.crew/**`,
-`TODO.md`, ticket text under `.work/`, and `docs/diagrams/**`.
+`skills/`, `src/`, `scripts/`, or `tests/` — those are a developer's. Its own
+writes are `.crew/**`, `TODO.md`, ticket text under `.work/`, and
+`docs/diagrams/**`. A path on neither list is a developer's — dispatch.
 
 Work routes by what it is. Implementation goes to `developer`; review goes to
 Codex via `/crew:review`, or `qa-reviewer` when Codex is absent; the rest goes

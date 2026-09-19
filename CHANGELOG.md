@@ -637,6 +637,7 @@ All notable changes to this repository are documented here. Format follows [Keep
   fix by deleting the assertion. Now uses the same `_norm()` helper
   `test_scope_discipline.py` already had.
 - **`crew` 0.19.87: the PM reports
+- **`crew` 0.19.88: the PM reports
   mid-pass, and a status request outranks the dispatch it interrupts.**
   Diagnosed by an analyst session on 2026-09-19: the standing `crew-pm` agent
   ran roughly three hours, then (a) wrote four version bumps of code itself
@@ -651,18 +652,26 @@ All notable changes to this repository are documented here. Format follows [Keep
   before the next dispatch, and requires an interim status request to be
   answered in one paragraph before the next tool call rather than queued
   behind the rest of the pass. The one-hat rule (`agents/pm.md`, `SKILL.md`)
-  now names checkable paths — `plugin/`, `skills/`, `src/`, `scripts/`,
-  `tests/`, and anything a `.crew/verify.json` rule maps are a developer's;
-  `.crew/**`, `TODO.md`, ticket text under `.work/`, and `docs/diagrams/**`
-  stay the PM's — so the four version bumps the PM wrote itself are now a
-  checkable violation, not just a described one. `Write`/`Edit` stay on the
-  PM's tool list: it still owns those carved-out writes. `SKILL.md` and
-  `commands/pm.md`'s `assign` section carry one-line restatements of both
-  rules so the skill and the command agree with the agent file.
+  now names checkable paths — `plugin/`, `skills/`, `src/`, `scripts/`, and
+  `tests/` are a developer's; `.crew/**`, `TODO.md`, ticket text under
+  `.work/`, and `docs/diagrams/**` stay the PM's; a path on neither list is
+  a developer's, dispatch — so the four version bumps the PM wrote itself
+  are now a checkable violation, not just a described one. The first version
+  of this rule (0.19.82) also routed the forbidden list through "any path a
+  `.crew/verify.json` rule maps", which Codex caught before merge: this
+  repo's own verify map has rules for `TODO.md`, `docs/**` and `.crew/**` —
+  exactly the PM's permitted writes — so that clause forbade and permitted
+  the same paths at once. 0.19.83 drops the verify.json clause and states
+  the two lists as the only source of truth, with an explicit fallback for
+  anything on neither. `Write`/`Edit` stay on the PM's tool list: it still
+  owns those carved-out writes. `SKILL.md` and `commands/pm.md`'s `assign`
+  section carry one-line restatements of both rules so the skill and the
+  command agree with the agent file.
   `plugin/crew/tests/test_pm_reporting_contract.py` asserts all of the above
   as prompt text (a subagent prompt cannot be run) and was sabotage-tested by
-  hand: 12 cases, each one deleting the phrase an assertion checks, run, RED,
-  restored, and reverified byte-identical by sha256. **Unresolved caveat from
+  hand: 16 cases across the 0.19.82 and 0.19.83 passes, each one deleting the
+  phrase an assertion checks, run, RED, restored, and reverified
+  byte-identical by sha256. **Unresolved caveat from
   the diagnosing analyst:** whether the five unanswered status requests were
   ignored or merely queued behind long tool sequences (a subagent drains
   messages at its next tool round) was not settled — this fix covers both
