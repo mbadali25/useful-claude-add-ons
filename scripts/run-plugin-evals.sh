@@ -87,8 +87,13 @@ is_expected_fail() {
 
 has_scored_result() {
   # True only when $1 is a non-empty file holding a real aggregate-result.json
-  # ("cases" present) - i.e. claude plugin eval actually evaluated the case,
-  # as opposed to erroring out before producing anything to score.
+  # ("cases" present, AND no individual run in it recorded an error) - i.e.
+  # claude plugin eval actually evaluated the case cleanly, as opposed to
+  # either erroring out before producing anything to score, or producing a
+  # non-empty "cases" array from a run that itself errored (a rate limit, a
+  # timeout - "a run that started but ended badly is still graded on what it
+  # produced", per the docs, so a non-empty result with an error inside it
+  # is NOT the same thing as a genuine scored failure).
   local f="$1"
   [ -s "$f" ] || return 1
   python3 -c '
@@ -98,7 +103,16 @@ try:
         doc = json.load(fh)
 except Exception:
     sys.exit(1)
-sys.exit(0 if doc.get("cases") else 1)
+cases = doc.get("cases")
+if not cases:
+    sys.exit(1)
+for c in cases:
+    arms = c.get("arms", {}) or {}
+    for arm_name in ("with", "without"):
+        for run in (arms.get(arm_name) or []):
+            if run.get("error"):
+                sys.exit(1)
+sys.exit(0)
 ' "$f" 2>/dev/null
 }
 

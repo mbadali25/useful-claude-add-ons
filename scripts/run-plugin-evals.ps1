@@ -66,9 +66,14 @@ $ResultFiles = @()
 
 function Test-ScoredResult {
     # True only when $Path is a non-empty file holding a real
-    # aggregate-result.json ("cases" present and non-empty) - i.e. claude
-    # plugin eval actually evaluated the case, as opposed to erroring out
-    # before producing anything to score.
+    # aggregate-result.json ("cases" present, AND no individual run in it
+    # recorded an error) - i.e. claude plugin eval actually evaluated the
+    # case cleanly, as opposed to either erroring out before producing
+    # anything to score, or producing a non-empty "cases" array from a run
+    # that itself errored (a rate limit, a timeout - "a run that started but
+    # ended badly is still graded on what it produced", per the docs, so a
+    # non-empty result with an error inside it is NOT the same thing as a
+    # genuine scored failure).
     param([string]$Path)
     if (-not (Test-Path $Path)) { return $false }
     if ((Get-Item $Path).Length -eq 0) { return $false }
@@ -77,7 +82,18 @@ function Test-ScoredResult {
     } catch {
         return $false
     }
-    return [bool]($doc.cases -and $doc.cases.Count -gt 0)
+    if (-not ($doc.cases -and $doc.cases.Count -gt 0)) { return $false }
+    foreach ($c in $doc.cases) {
+        foreach ($armName in @("with", "without")) {
+            $runs = $c.arms.$armName
+            if ($runs) {
+                foreach ($run in $runs) {
+                    if ($run.error) { return $false }
+                }
+            }
+        }
+    }
+    return $true
 }
 
 function Invoke-EvalCase {
