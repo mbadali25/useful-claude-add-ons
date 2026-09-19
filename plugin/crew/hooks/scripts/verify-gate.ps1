@@ -293,6 +293,51 @@ $lock = Join-Path (Get-Location).Path ".crew/.verify-gate.lock"
 # silently for up to $lockTtl seconds; 180 bounds that at three minutes, and
 # the back-off now says so out loud.
 $lockTtl = 180
+# Overridable so the suite can exercise the boundary without burning the real
+# window in wall-clock time. Environment, not config, and matching
+# CREW_VERIFY_LOCK_TTL in verify-gate.sh: this is a TEST SEAM, and a repo
+# setting it in .crew/config would quietly change how long one flavour waits
+# for the other.
+#
+# NARROWS ONLY, matching verify-gate.sh: a value greater than the compiled
+# default (or 0, or anything that fails to parse as a positive integer) is
+# ignored and the default stands. Unparseable falls back to the compiled
+# default, not to zero, which would make every lock look expired.
+if ($env:CREW_VERIFY_LOCK_TTL -match '^[0-9]+$') {
+  $envTtl = [int]$env:CREW_VERIFY_LOCK_TTL
+  if ($envTtl -gt 0 -and $envTtl -le $lockTtl) { $lockTtl = $envTtl }
+}
+
+# HOW LONG THIS RUN MAY LEGITIMATELY GO QUIET. The twin of lock_window /
+# lock_extend in verify-gate.sh, where the full reasoning lives: the heartbeat
+# fires BETWEEN rules, so one rule longer than $lockTtl lets the other flavour
+# reclaim a live lock and run concurrently. This repo's own map declares a
+# 185s rule against a 180s TTL, so it is not hypothetical.
+#
+# max($lockTtl, 2 x the largest stated cost among the selected rules). A
+# background heartbeat during the rule was the reviewer's stated preference
+# and was NOT taken: an orphaned toucher outliving a SIGKILLed holder would
+# refresh the lock forever and disable verification permanently, and bounding
+# that needs machinery that differs between the two shells.
+function Get-CrewLockWindow {
+  param($Ttl, $MaxCost)
+  $w = [int]$Ttl
+  if ($MaxCost -and [int]$MaxCost -gt 0 -and (2 * [int]$MaxCost) -gt $w) { $w = 2 * [int]$MaxCost }
+  return $w
+}
+
+# Publishes the deadline. Only the token holder writes it, as with the token.
+function Write-CrewLockDeadline {
+  param($LockPath, $Token, $Ttl, $MaxCost)
+  if (-not $Token) { return }
+  try {
+    if ((Get-Content -Raw -ErrorAction Stop (Join-Path $LockPath 'token')).Trim() -eq $Token) {
+      $epoch = [int][double]::Parse((Get-Date -UFormat %s))
+      $deadline = $epoch + (Get-CrewLockWindow -Ttl $Ttl -MaxCost $MaxCost)
+      Set-Content -Path (Join-Path $LockPath 'deadline') -Value $deadline -Encoding ascii -ErrorAction Stop
+    }
+  } catch { }
+}
 
 function Update-CrewLock {
   # Heartbeat. Only the token holder touches it, and a failure is ignored: a
@@ -364,6 +409,18 @@ try {
       $unlocked = $true
     } else {
       $age = ([DateTimeOffset]::UtcNow - [DateTimeOffset]::new($holderAt, [TimeSpan]::Zero)).TotalSeconds
+      # A published deadline wins over the age window: it is the holder
+      # saying how long THIS run may take, from the map's own numbers. Absent
+      # or unreadable falls back to the age window, so a lock written by a
+      # version that never published one ages exactly as it used to.
+      $holdDeadline = try { [int]((Get-Content -Raw -ErrorAction Stop (Join-Path $lock 'deadline')).Trim()) } catch { 0 }
+      $nowEpoch = [int][double]::Parse((Get-Date -UFormat %s))
+      if ($holdDeadline -gt 0 -and $nowEpoch -lt $holdDeadline) {
+        $held = try { (Get-Content -Raw -ErrorAction Stop (Join-Path $lock 'token')).Trim() } catch { 'an unreadable token' }
+        [Console]::Error.WriteLine(
+          "verify-gate: backed off, lock held by $held (holder declared it may run for another $($holdDeadline - $nowEpoch)s); NOTHING WAS VERIFIED this turn.")
+        exit 0
+      }
       if ($age -le $lockTtl) {
         # Backing off is not passing. Silent stand-down made the two
         # byte-identical -- see verify-gate.sh for the 2026-09-18 measurement
@@ -641,11 +698,22 @@ if ($null -ne $budget) {
 # never going to check.
 foreach ($n in $notices) { [Console]::Error.WriteLine($n) }
 
+# The largest STATED cost among the commands actually selected. Sizes the
+# lock deadline; 0 when nothing selected declared a cost, which leaves the
+# window at $lockTtl -- the behaviour before the deadline existed.
+$maxCost = 0
+foreach ($c in $cmds) {
+  if ($cost.ContainsKey($c) -and [int]$cost[$c] -gt $maxCost) { $maxCost = [int]$cost[$c] }
+}
+
 # .crew/verify.json rules are bash-flavoured strings - `bash _verify/smoke.sh`,
 # `FDM_MODULE=x bash case.sh`, `cd e2e && npx playwright test --grep @flow`. So
 # RUN them with bash rather than evaluating them as PowerShell. Resolve once;
 # every rule in a repo shares one Windows install, and Resolve-CrewBash already
 # routes around WSL's bash.exe.
+# BEFORE the first rule, not only after it -- the first rule is as able to
+# exceed the TTL as any later one.
+Write-CrewLockDeadline -LockPath $lock -Token $lockToken -Ttl $lockTtl -MaxCost $maxCost
 $bashExe = $null
 
 # verify-gate.sh evals each rule inside `$(...)`, a subshell. This is the
@@ -701,6 +769,9 @@ foreach ($c in $cmds) {
   [Console]::Error.WriteLine("verify-gate: ${ruleElapsed}s  $c")
   # Heartbeat AFTER the rule, matching verify-gate.sh exactly.
   Update-CrewLock -LockPath $lock -Token $lockToken
+  # Re-publish the deadline after each rule, for the same reason the
+  # heartbeat is here: it means 'measured from the last rule that finished'.
+  Write-CrewLockDeadline -LockPath $lock -Token $lockToken -Ttl $lockTtl -MaxCost $maxCost
 }
 [Console]::Error.WriteLine("verify-gate: ${totalElapsed}s total across $($cmds.Count) rule command(s)")
 Set-Location $root
