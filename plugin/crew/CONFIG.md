@@ -1396,6 +1396,37 @@ split; `role_writes_rank` ranks through it first, so `effective_ratcheted`'s
 layer can widen past what the other allows, and a repo cloned with
 `guards.roleWrites: off` cannot override a machine-global `block`.
 
+### A THIRD case, beside absent and malformed-VALUE: the file itself is unreadable
+
+Reported and fixed 2026-09-19, one commit after this key first shipped.
+`normalise_role_writes` above only ever sees a raw VALUE that `_dig` already
+pulled out of a parsed config — it has no way to tell "the repo file never
+set `guards.roleWrites`" apart from "the repo file could not be parsed at
+all", because `crew_state.load_config` collapses BOTH to `{}` before
+`normalise_role_writes` is ever called. That collapse is correct for
+`install.policy` and the other six `guards.*` keys, which have always failed
+OPEN on a bad config file (`read_global_config`'s own docstring: "a broken
+global file must look exactly like no global file at all"). `roleWrites`
+cannot inherit it: with no global override, replacing a repo's
+`guards.roleWrites: block` config with invalid JSON — or with
+`{"guards": 42}` — made `resolve_guard`'s effective answer `off` and let
+`pm` write application code straight through, which is CLAUDE.md's own named
+recurring bug landing on the one guard here that can least afford it.
+
+`crew_config.repo_config_is_corrupt(root)` gives `role_write_guard.py` the
+one extra bit `load_config` throws away: `.crew/config.json` ABSENT (every
+off-by-default repo that exists — stays `off`, unchanged) versus PRESENT and
+unreadable (not valid JSON, not a JSON object, or a `guards` key that is
+present and not itself an object — forces the effective policy to `block`).
+It is a narrow, second read of the same file, deliberately NOT wired into
+`load_config`, `resolve_ratcheted` or any of the other eight ratcheted keys:
+widening the collapse-detection to every guard was a bigger change than the
+one guard that needed it, for behaviour the other seven have always had on
+purpose. A malformed VALUE inside an otherwise-valid `guards` object (a
+non-string `roleWrites`, or a string naming no known policy) is still
+`normalise_role_writes`'s job alone, unchanged — this function's whole
+purpose is the shape `normalise_role_writes` structurally cannot see.
+
 ### The policy table is in the hook script, not in this file
 
 `hooks/scripts/role_write_guard.py` partitions every `agents/*.md` into three
@@ -1418,6 +1449,22 @@ which is exactly the gap this hook exists to close:
 parses every agent file's `tools:` line and asserts the script's three sets
 are exactly the partition that produces, so a `tools:` grant added or removed
 with the table left alone fails a test rather than drifting silently.
+
+### Scope is judged on the real path, not the one the tool call named
+
+Reported and fixed 2026-09-19. `pm`'s scope check runs against the REAL,
+filesystem-resolved path, never the lexical string a `Write`/`Edit` call
+names: `.crew/link/app.py` matches `.crew/**` as text, but if `.crew/link`
+is a symlink or a Windows junction pointing at `src/`, the write actually
+lands in `src/app.py` once the tool opens it, regardless of what the
+allowed-looking string said. `role_write_guard._resolve_real_target` walks
+up to the deepest existing ancestor of the target (the file itself may not
+exist yet — `Write` creates it) and resolves THAT, following any symlink or
+junction earlier in the chain, before the scope comparison runs. Tested with
+both link kinds actually created on disk — a POSIX symlink and a Windows
+junction via `mklink /J`, the latter needing no elevated privileges — rather
+than simulated, and SKIP-labelled wherever a given machine or user cannot
+create one.
 
 ### What "unknown" means here
 

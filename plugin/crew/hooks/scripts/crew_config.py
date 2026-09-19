@@ -843,6 +843,60 @@ def install_plan_for(root, name, path=None):
     return plan
 
 
+def repo_config_is_corrupt(root):
+    """True when `.crew/config.json` EXISTS but cannot be read as the shape
+    `guards.roleWrites` needs to trust an `off` answer: not valid JSON, not
+    a JSON object, or its `guards` key present and not itself an object.
+
+    Deliberately NOT the same collapse `crew_state.load_config` makes for
+    every OTHER ratcheted key. `load_config` returning `{}` for "absent,
+    malformed, or not a dict" is right for `install.policy` and the other
+    six `guards.*` keys, which have always failed OPEN on a bad config file
+    -- see `read_global_config`'s own docstring, "a broken global file must
+    look exactly like no global file at all". `guards.roleWrites` cannot
+    inherit that collapse: unlike those, it can BLOCK a tool call, and an
+    armed role-write guard going silently `off` because the file that armed
+    it got corrupted is CLAUDE.md's own named recurring bug -- "the unknown
+    collapsing into the safe-looking value" -- happening to the one guard in
+    this file that can least afford it. Reported 2026-09-19: with no global
+    override, replacing a repo's `guards.roleWrites: block` config with
+    invalid JSON (or with `{"guards": 42}`) made the effective policy `off`
+    and let `pm` write application code straight through.
+
+    So this function exists to give `role_write_guard.py` ONE extra bit
+    `load_config` throws away: whether the repo file that collapsed to `{}`
+    was genuinely ABSENT (every off-by-default repo that exists, and
+    CLAUDE.md's new-hook rule requires that to stay `off`) or PRESENT and
+    unreadable (a file that once said something, now saying nothing crew can
+    parse). The caller uses this to force `guards.roleWrites` to `block`
+    only in the second case -- never touching `load_config`,
+    `resolve_ratcheted` or any of the other eight ratcheted keys, which keep
+    their existing fail-open behaviour on a bad file exactly as before.
+
+    A malformed VALUE inside an otherwise-valid `guards` object (a non-
+    string `roleWrites`, or a string that names no known policy) is NOT this
+    function's business -- `crew_guards.normalise_role_writes` already fails
+    that case to `block`, the floor, on its own; duplicating it here would
+    only be two mechanisms for one rule. This function's whole job is the
+    case `normalise_role_writes` structurally cannot see: a value it was
+    never handed because the file, or the `guards` block inside it, did not
+    parse into something `_dig` could even reach.
+    """
+    text = crew_state.read_text(os.path.join(root, ".crew", "config.json"))
+    if text is None:
+        return False
+    try:
+        parsed = json.loads(text)
+    except ValueError:
+        return True
+    if not isinstance(parsed, dict):
+        return True
+    guards = parsed.get("guards")
+    if guards is not None and not isinstance(guards, dict):
+        return True
+    return False
+
+
 def resolve_guard(root, name, path=None):
     """`resolve_ratcheted` for one guard. `name` is a bare key, e.g. `forcePush`.
 

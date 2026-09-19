@@ -61,23 +61,57 @@ was not verified) -- the docs describe it only as "Agent name (for example
 `"Explore"` or `"security-reviewer"`)", with no worked example for a
 plugin-scoped agent. `crew`'s own agents are registered as `crew:pm`,
 `crew:analyst`, etc. in at least one tool listing this session observed, so
-`_normalise_role` strips everything up to and including the LAST `:` before
-matching -- `"crew:pm"` and `"pm"` both resolve to `"pm"`. If the real wire
-form turns out to be neither, this hook still fails to the safe side: an
-unmatched value is `unknown-role`, which allows and logs rather than
-stranding the role.
+`_normalise_role` strips a LEADING `crew:` prefix before matching --
+`"crew:pm"` and `"pm"` both resolve to `"pm"`. It strips ONLY that prefix,
+not the last `:`-segment of anything: an earlier draft stripped up to the
+last colon unconditionally, so `"other-plugin:analyst"` collapsed onto this
+table's own `analyst` (a `_DENY_ROLES` member) and a completely unrelated
+plugin's agent was refused under crew's policy for a role it has never heard
+of. A prefix that is not `crew:` is left on the string, so it cannot collide
+with a bare crew role name and falls through to `unknown-role:<value>`,
+carrying the ORIGINAL prefixed value rather than a stripped one.
 
 ## Modes -- `guards.roleWrites`
 
   * `off` *(default)* -- this script exits 0 immediately, before reading
     the policy table at all. Nothing is refused, nothing is logged. Every
     repo that has never set the key is here; see `crew_guards.ROLE_WRITE_DEFAULT`
-    for why the default is not the floor.
+    for why the default is not the floor. **Exception:** if `.crew/config.json`
+    EXISTS but does not parse into the shape this key needs (see
+    `crew_config.repo_config_is_corrupt`), `off` is NOT trusted -- the
+    policy is forced to `block` instead, because a repo that once armed this
+    guard and now has a corrupted config file is not the same fact as a repo
+    that never armed it, and CLAUDE.md's "unknown collapsing into the
+    safe-looking value" is exactly this case if left alone. Reported and
+    fixed 2026-09-19.
   * `report` -- every decision (in-scope AND out-of-scope) is allowed, and
     every decision is appended to `.crew/guard.log`.
   * `block` -- an out-of-scope write is refused (exit 2, message on
     stderr naming the role, the path and the permitted set); an in-scope
     write is allowed. Both are logged.
+
+## Symlinks and junctions
+
+Scope is checked against the REAL, filesystem-resolved path
+(`_real_repo_relative`), never the lexical one a tool call names. A path
+that TEXTUALLY reads `.crew/link/app.py` fnmatches `.crew/**` and would
+classify as in-scope for `pm` on the string alone -- but if `.crew/link` is
+a symlink or a Windows junction pointing at `src/`, the write actually lands
+in `src/app.py`, outside pm's declared scope, and the tool call itself
+still opens the real target regardless of what the lexical path said.
+Reported and fixed 2026-09-19; see `_resolve_real_target`.
+
+## Malformed hook input
+
+Never lets an unexpected shape reach `sys.exit` as a bare traceback, which
+`PreToolUse` would show as a non-blocking failure (any exit code other than
+0 or 2 is NOT a block) -- an accident that ALLOWS a write is worse than a
+correct block, for a role this table already knows is restricted. A JSON
+array or scalar at the top level, or a non-string `file_path`, is degraded
+to "cannot classify" rather than crashing; an exception this file did not
+anticipate is caught at the outermost level of `main` and, for `pm` or a
+`_DENY_ROLES` member, still exits 2 rather than falling through to an
+accidental allow.
 """
 import fnmatch
 import json
@@ -178,39 +212,117 @@ _PM_ALLOWED_PATTERNS = (
 )
 
 
+_CREW_PREFIX = "crew:"
+
+
 def _normalise_role(agent_type):
     """`agent_type` as a bare role name, or `None` if absent/blank.
 
-    Strips up to and including the LAST `:` -- see the module docstring's
-    "What 'unknown' means here" section for why: this repo's own agents are
-    reachable through the Agent tool as `crew:pm`, `crew:analyst`, etc. in at
-    least one listing observed this session, and the field was not confirmed
-    live against a real dispatched subagent. Stripping a prefix that is not
-    there is a no-op, so this is safe either way the wire form turns out to
-    be.
+    Strips ONLY a leading `crew:` -- see the module docstring's "What
+    'unknown' means here" section for the wire-form uncertainty this exists
+    to survive, and its "Malformed hook input" section for why the first
+    draft (strip up to the LAST `:`, unconditionally) was wrong: it folded
+    ANY plugin's `<namespace>:analyst` onto this table's own `analyst`
+    entry, applying crew's deny-list to an agent this table has no business
+    judging. A string that does not start with `crew:` is returned exactly
+    as given (lowercased and stripped) precisely so it CANNOT match a bare
+    crew role name by coincidence -- `classify` below falls through to
+    `unknown-role:<value>` for it, carrying the full original value.
     """
     if not isinstance(agent_type, str):
         return None
     cleaned = agent_type.strip()
     if not cleaned:
         return None
-    return cleaned.rsplit(":", 1)[-1].strip().lower() or None
+    lowered = cleaned.lower()
+    if lowered.startswith(_CREW_PREFIX):
+        rest = lowered[len(_CREW_PREFIX):].strip()
+        return rest or None
+    return lowered
 
 
 def _repo_relative(root, file_path):
-    """`file_path` relative to `root`, forward-slashed, or `None`.
+    """`file_path` relative to `root`, forward-slashed, or `None`. DISPLAY
+    ONLY -- see `_real_repo_relative` for the string classification uses.
 
-    `None` when `file_path` is empty/absent, or when it cannot be related to
-    `root` at all (a different drive on Windows raises `ValueError` from
-    `os.path.relpath` -- treated as "cannot classify", handled by the caller
-    exactly like an out-of-scope path for `pm` and exactly like "not
-    unrestricted" for everyone else, never as "must be fine").
+    `None` when `file_path` is empty/absent/not a string (a hook payload
+    this script did not anticipate -- see the module docstring's "Malformed
+    hook input" -- must degrade to "cannot classify" here rather than raise
+    a `TypeError` out of `os.path.relpath`), or when it cannot be related to
+    `root` at all (a different drive on Windows raises `ValueError` --
+    treated as "cannot classify", handled by the caller exactly like an
+    out-of-scope path for `pm` and exactly like "not unrestricted" for
+    everyone else, never as "must be fine").
     """
-    if not file_path:
+    if not file_path or not isinstance(file_path, str):
         return None
     try:
         rel = os.path.relpath(file_path, root)
-    except ValueError:
+    except (ValueError, TypeError, OSError):
+        return None
+    return rel.replace(os.sep, "/")
+
+
+def _resolve_real_target(file_path):
+    """The REAL, symlink/junction-resolved absolute form of `file_path`.
+
+    `file_path` may not exist yet -- `Write` creates new files -- so this
+    cannot just call `os.path.realpath(file_path)` and trust it: this walks
+    UP from `file_path` to the deepest ancestor that actually exists on
+    disk (`os.path.lexists`, which is true for a symlink even when what it
+    points at is missing, so a link itself always counts as "exists" for
+    this walk), `os.path.realpath`s THAT ancestor -- which resolves any
+    symlink or, on Windows from Python 3.8 on, junction earlier in the
+    chain -- and re-appends the not-yet-existing tail lexically, since
+    nothing on disk can have relinked a component that is not there yet.
+
+    Returns `file_path` unchanged (as an absolute path) if nothing on the
+    walk up exists at all, e.g. a bare relative name with no real parent --
+    there is then nothing to resolve against, and the caller's classify
+    step treats an unrelatable path as out of scope regardless.
+    """
+    path = os.path.abspath(file_path)
+    tail = []
+    current = path
+    while current and not os.path.lexists(current):
+        parent, name = os.path.split(current)
+        if not name or parent == current:
+            break
+        tail.append(name)
+        current = parent
+    if not os.path.lexists(current):
+        return path
+    resolved = os.path.realpath(current)
+    for name in reversed(tail):
+        resolved = os.path.join(resolved, name)
+    return resolved
+
+
+def _real_repo_relative(root, file_path):
+    """`file_path`'s REAL, resolved path relative to the REAL root, or
+    `None`. THIS is the string `classify`/`_pm_in_scope` judge scope
+    against -- never `_repo_relative`'s lexical one.
+
+    A path that textually sits inside an allowed prefix can still, through a
+    symlink or a Windows junction staged under that prefix, write somewhere
+    else entirely once the tool actually opens it -- see the module
+    docstring's "Symlinks and junctions" section. Resolving BOTH sides
+    through the filesystem before comparing is what closes that; comparing
+    a resolved target against a lexical root (or vice versa) would just
+    move the gap rather than close it.
+
+    `None` on the same "cannot classify" terms as `_repo_relative`: absent,
+    not a string, or unrelatable to the resolved root (a different drive, or
+    any `OSError` resolving either side -- a permissions failure walking the
+    filesystem is not evidence the write is in scope).
+    """
+    if not file_path or not isinstance(file_path, str):
+        return None
+    try:
+        real_target = _resolve_real_target(file_path)
+        real_root = os.path.realpath(root)
+        rel = os.path.relpath(real_target, real_root)
+    except (ValueError, TypeError, OSError):
         return None
     return rel.replace(os.sep, "/")
 
@@ -273,6 +385,38 @@ def _flatten(text):
     return flat
 
 
+def _permitted_text(role):
+    return (
+        ".crew/**, TODO.md, .work/**, docs/diagrams/**" if role == _PM_ROLE
+        else "nothing (this role has no Write/Edit grant)"
+    )
+
+
+def _log_row(root, policy, decision, role, path_text, reason):
+    """Build and append the one `.crew/guard.log` row for this decision.
+
+    Six columns, not five: `reason` is its OWN column, appended last.
+    An earlier draft computed `reason` (`no-agent-type`, `unknown-role:...`,
+    "pm: path is in the allowed set", ...) and then never wrote it anywhere
+    -- the module docstring and CONFIG.md Sec18 both promise the two
+    distinct unknowns are "named differently in `.crew/guard.log` rather
+    than merged into one unreadable 'allow' row", and the code did not keep
+    that promise. Reported and fixed 2026-09-19. `_flatten` is applied to
+    `reason` for the same tab/newline-safety reason it already applies to
+    the path.
+    """
+    row = (
+        str(int(time.time())),
+        "roleWrites",
+        policy,
+        decision,
+        role or "-",
+        _flatten(path_text),
+        _flatten(reason),
+    )
+    _log(root, row)
+
+
 def main(argv=None):  # pylint: disable=unused-argument
     raw = sys.stdin.read()
     try:
@@ -289,62 +433,105 @@ def main(argv=None):  # pylint: disable=unused-argument
             "allowing the call unjudged.\n")
         return 0
 
+    # A JSON payload need not be an object -- `[]` and `42` are both valid
+    # JSON and both crash `data.get(...)` with an AttributeError, which
+    # `sys.exit(main(...))` never gets a chance to turn into an exit code:
+    # the exception reaches the interpreter directly and the process exits
+    # 1, a NON-BLOCKING failure `PreToolUse` treats as noisy success. A
+    # shape this script cannot even read a `tool_name` from is handled the
+    # same as one that read no fields at all.
+    if not isinstance(data, dict):
+        data = {}
+
     tool_name = data.get("tool_name")
     if tool_name not in ("Write", "Edit"):
         return 0
 
     root = os.environ.get("CLAUDE_PROJECT_DIR") or data.get("cwd") or "."
-
-    resolved = crew_config.resolve_guard(root, "roleWrites")
-    policy = resolved["effective"]
-
-    if policy == "off":
-        return 0
-
-    tool_input = data.get("tool_input") or {}
-    file_path = tool_input.get("file_path") if isinstance(tool_input, dict) else None
     role = _normalise_role(data.get("agent_type"))
-    rel_path = _repo_relative(root, file_path)
 
-    in_scope, reason = classify(role, rel_path)
-    # Three decisions, not two. "report" is its own value rather than
-    # collapsing into "allow": under `guards.roleWrites: report` an
-    # out-of-scope write is let through exactly like an in-scope one, but the
-    # whole point of `report` is telling the operator which writes WOULD be
-    # refused under `block` -- logging it as bare "allow" would erase the one
-    # fact `report` exists to keep.
-    if in_scope:
-        decision = "allow"
-    elif policy == "block":
-        decision = "block"
-    else:
-        decision = "report"
+    # Everything from here on touches the filesystem (config, the target
+    # path, possibly a symlink chain) and none of it may reach `sys.exit`
+    # as a bare traceback -- see the module docstring's "Malformed hook
+    # input". A role this table already knows is restricted (`pm` or a
+    # `_DENY_ROLES` member) fails CLOSED on an unexpected exception, the
+    # same direction every other unknown in this file fails; anything else
+    # was already going to be allowed, so there is nothing an exception
+    # here could make more permissive.
+    try:
+        resolved = crew_config.resolve_guard(root, "roleWrites")
+        policy = resolved["effective"]
 
-    row = (
-        str(int(time.time())),
-        "roleWrites",
-        policy,
-        decision,
-        role or "-",
-        _flatten(rel_path or file_path),
-    )
-    _log(root, row)
+        forced_by_corruption = False
+        if policy == "off":
+            if crew_config.repo_config_is_corrupt(root):
+                policy = "block"
+                forced_by_corruption = True
+            else:
+                return 0
 
-    if decision == "block":
-        permitted = (
-            ".crew/**, TODO.md, .work/**, docs/diagrams/**" if role == _PM_ROLE
-            else "nothing (this role has no Write/Edit grant)"
-        )
-        sys.stderr.write(
-            f"ROLE WRITE BLOCKED: role `{role}` may not write "
-            f"`{rel_path or file_path}`.\n"
-            f"  Reason: {reason}\n"
-            f"  Permitted for this role: {permitted}\n"
-            "  This is guards.roleWrites: block, in .crew/config.json or "
-            "the machine-global config. See CONFIG.md Section 18.\n"
-        )
-        return 2
-    return 0
+        tool_input = data.get("tool_input") or {}
+        file_path = (tool_input.get("file_path")
+                     if isinstance(tool_input, dict) else None)
+        # `rel_path` is lexical, for display -- what the tool call NAMED.
+        # `scope_path` is filesystem-resolved, for the decision -- what the
+        # write would actually TOUCH once symlinks/junctions are followed.
+        # See `_real_repo_relative`'s docstring; they differ only when a
+        # link sits somewhere in `file_path`'s ancestry.
+        rel_path = _repo_relative(root, file_path)
+        scope_path = _real_repo_relative(root, file_path)
+
+        in_scope, reason = classify(role, scope_path)
+        if forced_by_corruption:
+            reason = (".crew/config.json exists but could not be parsed as "
+                       "guards.roleWrites needs; " + reason)
+        # Three decisions, not two. "report" is its own value rather than
+        # collapsing into "allow": under `guards.roleWrites: report` an
+        # out-of-scope write is let through exactly like an in-scope one,
+        # but the whole point of `report` is telling the operator which
+        # writes WOULD be refused under `block` -- logging it as bare
+        # "allow" would erase the one fact `report` exists to keep.
+        if in_scope:
+            decision = "allow"
+        elif policy == "block":
+            decision = "block"
+        else:
+            decision = "report"
+
+        _log_row(root, policy, decision, role, rel_path or file_path, reason)
+
+        if decision == "block":
+            corruption_note = (
+                "  .crew/config.json exists but did not parse; failing "
+                "closed to block rather than trusting an unreadable file.\n"
+                if forced_by_corruption else "")
+            sys.stderr.write(
+                f"ROLE WRITE BLOCKED: role `{role}` may not write "
+                f"`{rel_path or file_path}`.\n"
+                f"  Reason: {reason}\n"
+                f"  Permitted for this role: {_permitted_text(role)}\n"
+                f"{corruption_note}"
+                "  This is guards.roleWrites: block, in .crew/config.json or "
+                "the machine-global config. See CONFIG.md Section 18.\n"
+            )
+            return 2
+        return 0
+    except Exception as exc:  # pylint: disable=broad-except
+        restricted = role == _PM_ROLE or role in _DENY_ROLES
+        _log_row(root, "error",
+                  "block" if restricted else "allow",
+                  role, "-", f"internal-error:{type(exc).__name__}")
+        if restricted:
+            sys.stderr.write(
+                f"ROLE WRITE BLOCKED: role `{role}`'s write could not be "
+                f"classified ({type(exc).__name__}); failing closed for a "
+                "restricted role rather than allowing an unverifiable "
+                "write.\n"
+                f"  Permitted for this role: {_permitted_text(role)}\n"
+                "  See CONFIG.md Section 18.\n"
+            )
+            return 2
+        return 0
 
 
 if __name__ == "__main__":

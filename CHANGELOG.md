@@ -239,7 +239,7 @@ All notable changes to this repository are documented here. Format follows [Keep
   rather than merged into an unreadable "allow" row. `agent_type`'s exact
   wire form for a plugin-scoped agent (e.g. whether it arrives as `"pm"` or
   `"crew:pm"`) was not observed against a real dispatched subagent hook call
-  in this session; `_normalise_role` strips a trailing `:`-prefix so both
+  in this session; `_normalise_role` strips a leading `crew:` prefix so both
   forms resolve the same, and an unrecognised form still fails to the safe
   side (allow + log) rather than stranding a role.
 - **`crew` 0.19.91: a `claude plugin eval` suite that tests role behaviour
@@ -281,6 +281,37 @@ All notable changes to this repository are documented here. Format follows [Keep
   code, so CI isn't blocked on a known, tracked defect while it isn't
   weakened into passing either. Fixing the PM's one-hat enforcement is a
   follow-up, not part of this change.
+
+  A Codex QA round on the first commit found 2 BLOCK + 4 FIX, all addressed
+  here in a follow-up commit under the same 0.19.91 (no version bump for a
+  same-day fix on an unreleased key). **BLOCK:** a repo's `.crew/config.json`
+  that EXISTS but fails to parse — or whose `guards` key is present and not
+  an object — no longer silently resolves `guards.roleWrites` to `off`; new
+  `crew_config.repo_config_is_corrupt` distinguishes that from "the key was
+  never set" and forces `block` instead (CONFIG.md §18). **BLOCK:** scope is
+  now judged against the REAL, filesystem-resolved path
+  (`role_write_guard._resolve_real_target`), not the lexical one a tool call
+  names, closing a `.crew/link -> src/` symlink/junction escape — verified
+  against an actual Windows junction (`mklink /J`, no elevation needed) and a
+  POSIX symlink, both created for real in the test suite. **FIX:**
+  `_normalise_role` now strips ONLY a leading `crew:`, not the last
+  `:`-segment of anything — the earlier form folded `other-plugin:analyst`
+  onto crew's own `analyst` and refused an unrelated plugin's agent under
+  crew's deny-list. **FIX:** `role-write-guard.sh` no longer shares
+  `_common.sh`'s unfiltered `crew_py()`; it carries its own WindowsApps-stub
+  rejection (the bash twin of `role-write-guard.ps1`'s `Resolve-CrewPython`),
+  because the two shell flavours of one blocking hook enforcing different
+  decisions on the same machine is worse than either enforcing consistently.
+  **FIX:** a non-object JSON payload (`[]`) or a non-string `file_path` no
+  longer reaches an uncaught exception — `PreToolUse` treats any exit code
+  other than 0 or 2 as a non-blocking pass-through, so the crash was
+  silently allowing writes a restricted role should have been refused.
+  **FIX:** `.crew/guard.log` now carries the `reason` column
+  (`no-agent-type` / `unknown-role:<value>`) this section already promised
+  but the row-building code never wrote. `tests/test_role_write_guard.py`
+  grew from 35 to 55 cases; every one of the six fixes was sabotage-tested
+  (9 mutations total) and reverted to a sha256-verified byte-identical file
+  before committing.
 
 - **`crew` 0.19.79: a debugging method, and the routing that dispatches it.**
   Crew shipped 27 commands and 19 skills and not one of them was about finding

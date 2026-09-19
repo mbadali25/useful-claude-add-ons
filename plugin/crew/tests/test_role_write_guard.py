@@ -26,6 +26,7 @@ import json
 import os
 import pathlib
 import re
+import shutil
 import subprocess
 import sys
 
@@ -35,7 +36,6 @@ import context  # noqa: F401  pylint: disable=unused-import
 import crew_fixtures
 
 import crew_config  # noqa: E402  pylint: disable=wrong-import-position
-import crew_state  # noqa: E402  pylint: disable=wrong-import-position
 import role_write_guard  # noqa: E402  pylint: disable=wrong-import-position
 
 _ROOT = context._ROOT  # pylint: disable=protected-access
@@ -184,10 +184,31 @@ def test_classify_unrecognised_role_allows_as_unknown():
 @pytest.mark.parametrize("raw,expected", [
     ("crew:analyst", "analyst"), ("analyst", "analyst"),
     ("CREW:PM", "pm"), ("  pm  ", "pm"), ("", None), (None, None),
-    ("a:b:c", "c"),
+    # NOT "c". The first draft stripped up to the LAST colon unconditionally,
+    # so "other-plugin:analyst" collapsed onto this table's own `analyst`
+    # (a _DENY_ROLES member) and a totally unrelated plugin's agent was
+    # refused under crew's policy. Only a LEADING `crew:` is stripped now;
+    # anything else is returned whole (lowercased) so it cannot collide with
+    # a bare crew role name and falls through to classify()'s unknown-role
+    # branch instead. Reported and fixed 2026-09-19.
+    ("a:b:c", "a:b:c"),
+    ("other-plugin:analyst", "other-plugin:analyst"),
+    ("CREW:Analyst", "analyst"),
 ])
-def test_normalise_role_strips_the_last_colon_prefix(raw, expected):
+def test_normalise_role_strips_only_a_leading_crew_prefix(raw, expected):
     assert role_write_guard._normalise_role(raw) == expected  # pylint: disable=protected-access
+
+
+def test_classify_other_plugin_namespaced_role_is_unknown_not_deny():
+    """Must-allow: the exact regression case. `other-plugin:analyst`
+    normalises to the WHOLE string (see the parametrized test above), which
+    is not `_DENY_ROLES`' bare `analyst`, so it falls through to
+    unknown-role -- allowed and logged, never refused under a policy this
+    table has no business applying to a different plugin's agent."""
+    role = role_write_guard._normalise_role("other-plugin:analyst")  # pylint: disable=protected-access
+    in_scope, reason = role_write_guard.classify(role, "TODO.md")
+    assert in_scope
+    assert reason == "unknown-role:other-plugin:analyst"
 
 
 # --- guards.roleWrites resolves through the same ratchet as every guard ----
@@ -351,6 +372,324 @@ def test_no_crew_directory_never_crashes_and_never_creates_one_bash(tmp_path):
     proc = _run_sh(root, "Write", str(root / "x.py"), "analyst")
     assert proc.returncode == 0, proc.stderr  # off by default: no .crew/config.json at all
     assert not (root / ".crew").exists()
+
+
+# --- bash's own python resolver must reject a WindowsApps stub (round-1 FIX)
+#
+# Reported 2026-09-19: `role-write-guard.sh` originally called `_common.sh`'s
+# shared `crew_py()`, a bare `command -v python3 || python || py` with no
+# WindowsApps filtering at all -- unlike `role-write-guard.ps1`'s hardened
+# `Resolve-CrewPython`. With a WindowsApps python3 alias ahead of a real
+# interpreter on PATH, the two shell flavours of the SAME hook enforced
+# DIFFERENT decisions on the same machine. `_resolve_role_write_python` in
+# the .sh is the fix; this drives it through the actual script, not just the
+# function in isolation, per `promote-gate.sh`'s own test suite reasoning
+# that a correct resolver behind an unwired call site is not a fix.
+
+@needs_bash
+def test_windowsapps_python_stub_does_not_silence_bash_enforcement(tmp_path):
+    """Must-block: a WindowsApps python3 stub ahead of a real interpreter on
+    PATH must not make bash silently skip enforcement."""
+    apps = tmp_path / "fakepath" / "WindowsApps"
+    apps.mkdir(parents=True)
+    stub = apps / "python3"
+    stub.write_text("#!/bin/sh\nexit 0\n", encoding="ascii")  # no output at all
+    os.chmod(stub, 0o755)
+
+    real = shutil.which("python3") or shutil.which("python")
+    assert real, "this test needs a real python3/python on PATH to prove against"
+    real_dir = os.path.dirname(real)
+
+    root = crew_fixtures.make_repo(
+        tmp_path, config={"guards": {"roleWrites": "block"}})
+
+    env = os.environ.copy()
+    env["PATH"] = os.pathsep.join([str(apps), real_dir, env.get("PATH", "")])
+    env["CLAUDE_PROJECT_DIR"] = str(root)
+    proc = subprocess.run(
+        [_BASH, _SH],
+        input=_write_payload("Write", str(root / "src" / "app.py"), "pm", str(root)),
+        capture_output=True, text=True, check=False, env=env, cwd=str(root))
+    assert proc.returncode == 2, (
+        "the WindowsApps stub must be rejected and the real interpreter "
+        "used, so block mode still enforces. stdout: " + proc.stdout
+        + " stderr: " + proc.stderr)
+
+
+# --- Corrupt config must not silently disarm an armed guard (round-1 BLOCK) -
+#
+# Reported 2026-09-19: with no global override, replacing a repo's
+# `guards.roleWrites: block` config with invalid JSON (or with
+# `{"guards": 42}`) made `crew_config.resolve_guard` fall back through
+# `crew_state.load_config`'s "absent, malformed, or not a dict all become
+# {}" collapse to the DEFAULT (`off`), not the FLOOR (`block`) -- exactly
+# CLAUDE.md's "unknown collapsing into the safe-looking value", on the one
+# guard here that can least afford it. `crew_config.repo_config_is_corrupt`
+# now distinguishes "file absent" (stays `off`, unchanged) from "file
+# present but unreadable" (forced to `block`) and role_write_guard.py acts
+# on it.
+
+@needs_bash
+def test_corrupt_repo_config_forces_block_not_off_bash(tmp_path):
+    """Must-block. `.crew/config.json` exists but is not valid JSON."""
+    root = crew_fixtures.make_repo(tmp_path, config={"guards": {"roleWrites": "block"}})
+    (root / ".crew" / "config.json").write_text("{not valid json", encoding="utf-8")
+    proc = _run_sh(root, "Write", str(root / "src" / "app.py"), "pm")
+    assert proc.returncode == 2, proc.stdout
+    assert "could not be parsed" in proc.stderr, proc.stderr
+
+
+@needs_bash
+def test_non_object_guards_block_forces_block_not_off_bash(tmp_path):
+    """Must-block, the second shape: valid JSON, `guards` is not an object."""
+    root = crew_fixtures.make_repo(tmp_path, config={"guards": 42})
+    proc = _run_sh(root, "Write", str(root / "src" / "app.py"), "pm")
+    assert proc.returncode == 2, proc.stdout
+    assert "could not be parsed" in proc.stderr, proc.stderr
+
+
+@needs_bash
+def test_absent_config_file_is_not_corrupt_stays_off_bash(tmp_path):
+    """Must-allow: the twin case. No `.crew/config.json` at all is every
+    off-by-default repo that exists, not a corrupt one -- must stay `off`."""
+    root = tmp_path / "plain"
+    root.mkdir()
+    subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+    proc = _run_sh(root, "Write", str(root / "src" / "app.py"), "pm")
+    assert proc.returncode == 0, proc.stderr
+
+
+@needs_bash
+def test_valid_config_with_no_guards_key_is_not_corrupt_stays_off_bash(tmp_path):
+    """Must-allow: a well-formed config that simply never set `guards` at
+    all is not corrupt either -- `off` is the honest answer, not a forced
+    `block`."""
+    root = crew_fixtures.make_repo(tmp_path, config={"change": {"requester": "x"}})
+    proc = _run_sh(root, "Write", str(root / "src" / "app.py"), "pm")
+    assert proc.returncode == 0, proc.stderr
+
+
+def test_repo_config_is_corrupt_directly(tmp_path):
+    root = crew_fixtures.make_repo(tmp_path, config={})
+    assert crew_config.repo_config_is_corrupt(str(root)) is False
+
+    (root / ".crew" / "config.json").write_text("{broken", encoding="utf-8")
+    assert crew_config.repo_config_is_corrupt(str(root)) is True
+
+    (root / ".crew" / "config.json").write_text(
+        json.dumps({"guards": "not-an-object"}), encoding="utf-8")
+    assert crew_config.repo_config_is_corrupt(str(root)) is True
+
+    (root / ".crew" / "config.json").write_text(
+        json.dumps([1, 2, 3]), encoding="utf-8")
+    assert crew_config.repo_config_is_corrupt(str(root)) is True
+
+    root2 = tmp_path / "unmanaged"
+    root2.mkdir()
+    assert crew_config.repo_config_is_corrupt(str(root2)) is False
+
+
+# --- Scope is judged on the REAL path, not the lexical one (round-1 BLOCK) --
+#
+# Reported 2026-09-19: `.crew/link/app.py` fnmatches `.crew/**` on the
+# STRING alone, so if `.crew/link` is a symlink or Windows junction pointing
+# at `src/`, `pm` was classified as writing in-scope while the write
+# actually landed in `src/app.py`. SKIP-labelled wherever this platform or
+# this user cannot create the link kind being tested -- a link that could
+# not be made proves nothing either way.
+
+def _make_symlink(target, link):
+    try:
+        os.symlink(str(target), str(link), target_is_directory=True)
+        return True
+    except (OSError, NotImplementedError):
+        return False
+
+
+def _make_junction(target, link):
+    if not sys.platform.startswith("win"):
+        return False
+    result = subprocess.run(
+        ["cmd", "/c", "mklink", "/J", str(link), str(target)],
+        capture_output=True, text=True, check=False)
+    return result.returncode == 0
+
+
+@needs_bash
+def test_symlink_escaping_pm_scope_is_still_refused_bash(tmp_path):
+    root = crew_fixtures.make_repo(
+        tmp_path, config={"guards": {"roleWrites": "block"}})
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    link = root / ".crew" / "link"
+    if not _make_symlink(outside, link):
+        pytest.skip("could not create a symlink on this platform/user")
+
+    proc = _run_sh(root, "Write", str(link / "app.py"), "pm")
+    assert proc.returncode == 2, (
+        "a symlink under .crew/ pointing outside the repo must not let pm "
+        "write through it just because the lexical path fnmatches "
+        ".crew/**. stdout: " + proc.stdout)
+
+
+@needs_pwsh_windows
+def test_junction_escaping_pm_scope_is_still_refused_powershell(tmp_path):
+    root = crew_fixtures.make_repo(
+        tmp_path, config={"guards": {"roleWrites": "block"}})
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    link = root / ".crew" / "link"
+    if not _make_junction(outside, link):
+        pytest.skip("could not create a junction on this platform/user")
+
+    proc = _run_ps1(root, "Write", str(link / "app.py"), "pm")
+    assert proc.returncode == 2, (
+        "a Windows junction under .crew/ pointing outside the repo must not "
+        "let pm write through it. stdout: " + proc.stdout)
+
+
+@needs_bash
+def test_symlink_inside_scope_is_still_allowed_bash(tmp_path):
+    """Must-allow twin: a link that stays INSIDE the permitted prefix must
+    not become collateral damage of closing the escape."""
+    root = crew_fixtures.make_repo(
+        tmp_path, config={"guards": {"roleWrites": "block"}})
+    inside_target = root / ".crew" / "real-subdir"
+    inside_target.mkdir()
+    link = root / ".crew" / "link"
+    if not _make_symlink(inside_target, link):
+        pytest.skip("could not create a symlink on this platform/user")
+
+    proc = _run_sh(root, "Write", str(link / "app.py"), "pm")
+    assert proc.returncode == 0, proc.stderr
+
+
+def test_resolve_real_target_walks_up_to_the_deepest_existing_ancestor(tmp_path):
+    """Direct unit test of the walk-up, independent of the hook process --
+    including the case that matters most: the FILE does not exist yet."""
+    real_dir = tmp_path / "real"
+    real_dir.mkdir()
+    link = tmp_path / "link"
+    if not _make_symlink(real_dir, link):
+        pytest.skip("could not create a symlink on this platform/user")
+
+    target = str(link / "brand-new-file.py")  # does not exist
+    resolved = role_write_guard._resolve_real_target(target)  # pylint: disable=protected-access
+    assert os.path.dirname(resolved) == os.path.realpath(str(real_dir))
+    assert os.path.basename(resolved) == "brand-new-file.py"
+
+
+# --- Namespace collision: only `crew:` is a crew role (round-1 FIX) --------
+
+@needs_bash
+def test_other_plugin_namespaced_role_is_allowed_not_denied_bash(tmp_path):
+    """Must-allow, the exact reported repro: `other-plugin:analyst` is not
+    crew's own `analyst`, so it must be allowed (and logged unknown), never
+    refused under crew's deny-list."""
+    root = crew_fixtures.make_repo(
+        tmp_path, config={"guards": {"roleWrites": "block"}})
+    proc = _run_sh(root, "Write", str(root / "TODO.md"), "other-plugin:analyst")
+    assert proc.returncode == 0, proc.stderr
+    log = (root / ".crew" / "guard.log").read_text(encoding="utf-8")
+    assert "unknown-role:other-plugin:analyst" in log, log
+
+
+@needs_bash
+def test_crew_prefixed_deny_role_is_still_refused_bash(tmp_path):
+    """Must-block twin: `crew:analyst` must still be judged as crew's own
+    `analyst` -- narrowing the strip must not also stop matching the real
+    prefix."""
+    root = crew_fixtures.make_repo(
+        tmp_path, config={"guards": {"roleWrites": "block"}})
+    proc = _run_sh(root, "Write", str(root / "TODO.md"), "crew:analyst")
+    assert proc.returncode == 2, proc.stdout
+
+
+# --- Malformed hook input must never crash (round-1 FIX) --------------------
+#
+# Reported 2026-09-19: a JSON array (`[]`) at the top level, or a non-string
+# `file_path` (`42`) inside an otherwise well-formed payload, reached an
+# uncaught exception -- `data.get(...)` on a list, or `os.path.relpath` on
+# an int. The process then exited 1 from Python's default traceback
+# handling, and `PreToolUse` treats any exit code other than 0 or 2 as a
+# NON-BLOCKING failure: the write went through anyway, noisily, for a role
+# (`pm`) that block mode should have refused.
+
+@needs_bash
+def test_json_array_top_level_does_not_crash_bash(tmp_path):
+    root = crew_fixtures.make_repo(
+        tmp_path, config={"guards": {"roleWrites": "block"}})
+    proc = subprocess.run(
+        [_BASH, _SH], input="[]", capture_output=True, text=True, check=False,
+        env=dict(os.environ, CLAUDE_PROJECT_DIR=str(root)), cwd=str(root))
+    assert proc.returncode == 0, (
+        "a non-object JSON payload has no tool_name to read, so there is "
+        "nothing to judge -- must allow cleanly, not crash. stderr: "
+        + proc.stderr)
+    assert "Traceback" not in proc.stderr, proc.stderr
+
+
+@needs_bash
+def test_non_string_file_path_for_pm_fails_closed_not_crashed_bash(tmp_path):
+    """Must-block: `pm` with a malformed `file_path` cannot be VERIFIED as
+    in scope, so it must fail toward block, not toward a crash that exits
+    1 (non-blocking) and lets the write through unjudged."""
+    root = crew_fixtures.make_repo(
+        tmp_path, config={"guards": {"roleWrites": "block"}})
+    proc = subprocess.run(
+        [_BASH, _SH],
+        input=json.dumps({"tool_name": "Write", "tool_input": {"file_path": 42},
+                           "agent_type": "pm", "cwd": str(root)}),
+        capture_output=True, text=True, check=False,
+        env=dict(os.environ, CLAUDE_PROJECT_DIR=str(root)), cwd=str(root))
+    assert proc.returncode == 2, (
+        "a malformed file_path for a scope-restricted role must fail "
+        "closed, not crash with a non-blocking exit. stdout: " + proc.stdout
+        + " stderr: " + proc.stderr)
+    assert "Traceback" not in proc.stderr, proc.stderr
+
+
+@needs_bash
+def test_non_string_file_path_for_unrestricted_role_still_allows_bash(tmp_path):
+    """Must-allow twin: an unrestricted role's malformed file_path was
+    always going to be allowed, so it must still exit 0, not crash."""
+    root = crew_fixtures.make_repo(
+        tmp_path, config={"guards": {"roleWrites": "block"}})
+    proc = subprocess.run(
+        [_BASH, _SH],
+        input=json.dumps({"tool_name": "Write", "tool_input": {"file_path": 42},
+                           "agent_type": "developer", "cwd": str(root)}),
+        capture_output=True, text=True, check=False,
+        env=dict(os.environ, CLAUDE_PROJECT_DIR=str(root)), cwd=str(root))
+    assert proc.returncode == 0, proc.stderr
+    assert "Traceback" not in proc.stderr, proc.stderr
+
+
+# --- guard.log must carry the promised reason column (round-1 FIX) ---------
+#
+# Reported 2026-09-19: the module docstring and CONFIG.md Sec18 both promise
+# `no-agent-type` and `unknown-role:<value>` are "named differently in
+# .crew/guard.log rather than merged into one unreadable 'allow' row" --
+# but the row-building code computed `reason` and never wrote it anywhere.
+
+@needs_bash
+def test_guard_log_carries_no_agent_type_reason_bash(tmp_path):
+    root = crew_fixtures.make_repo(
+        tmp_path, config={"guards": {"roleWrites": "block"}})
+    proc = _run_sh(root, "Write", str(root / "src" / "app.py"), None)
+    assert proc.returncode == 0, proc.stderr
+    log = (root / ".crew" / "guard.log").read_text(encoding="utf-8")
+    assert "no-agent-type" in log, log
+
+
+@needs_bash
+def test_guard_log_carries_unknown_role_reason_bash(tmp_path):
+    root = crew_fixtures.make_repo(
+        tmp_path, config={"guards": {"roleWrites": "block"}})
+    proc = _run_sh(root, "Write", str(root / "src" / "app.py"), "Explore")
+    assert proc.returncode == 0, proc.stderr
+    log = (root / ".crew" / "guard.log").read_text(encoding="utf-8")
+    assert "unknown-role:explore" in log, log
 
 
 # --- PowerShell twin, Windows + pwsh only -----------------------------------
