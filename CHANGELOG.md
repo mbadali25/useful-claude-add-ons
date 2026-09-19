@@ -344,7 +344,7 @@ All notable changes to this repository are documented here. Format follows [Keep
   `sabotage.py` beside the real one.
 - **`crew` 0.19.74: a rule longer than the lock TTL no longer loses its lock
   mid-run.**
-  This is the fourth FIX from the Codex review of 0.19.65-0.19.70, the last
+  This is the fourth FIX from the Codex review of 0.19.67-0.19.72, the last
   of the six review items. Cutting `LOCK_TTL` to 180s in 0.19.65 was
   justified by a heartbeat, but the heartbeat fires only BETWEEN rules, so a
   SINGLE rule longer than the TTL still let the other gate flavour reclaim a
@@ -377,7 +377,7 @@ All notable changes to this repository are documented here. Format follows [Keep
   reclaim a live lock"); restored byte-identical by sha256 in both.
 
 - **`crew` 0.19.73: a deferred rule no longer removes a file from
-  verification for good.** Codex review of 0.19.65-0.19.70 found one BLOCK
+  verification for good.** Codex review of 0.19.67-0.19.72 found one BLOCK
   and four FIX; this is all of them but the lock heartbeat.
   **The BLOCK.** The gate keeps two records of a clean run:
   `.crew/.verify-verified-at`, the commit SHA later runs diff against, and
