@@ -591,13 +591,20 @@ if ($null -ne $bad) {
 
 $cmds = [System.Collections.ArrayList]@()
 $unmapped = [System.Collections.ArrayList]@()
-# Cost per COMMAND, not per rule, and the MAX where several rules contribute
-# the same command. Matches verify-gate.sh's note_cost exactly: under-running
-# the budget costs a deferral, over-running it costs the thing the budget
-# exists to bound. A bool is NOT a number here -- PowerShell will happily
-# compare $true with -ge, which is how a `"seconds": true` typo would become
-# a cost of 1.
+# THE UNIT OF THE BUDGET IS THE RULE, AND `seconds` IS CHARGED ONCE. The twin
+# of verify-gate.sh's note; that file carries the long form of why, including
+# the two-command 40s rule that used to split under a 60s budget.
+#
+# $cost stays per COMMAND, and the MAX where several rules contribute the same
+# command: it prices the deferral notices and sizes the lock window, both of
+# which ask about a command rather than a rule. $ruleCmds / $ruleSecs are what
+# the budget spends against. A bool is NOT a number here -- PowerShell will
+# happily compare $true with -ge, which is how a `"seconds": true` typo would
+# become a cost of 1.
 $cost = @{}
+$ruleCmds = @{}                                  # rule index -> its commands
+$ruleSecs = @{}                                  # rule index -> stated cost
+$ruleOrder = [System.Collections.ArrayList]@()   # first-match order
 function Test-CrewSeconds($Value) {
   if ($null -eq $Value) { return $false }
   if ($Value -is [bool]) { return $false }
@@ -607,12 +614,20 @@ function Test-CrewSeconds($Value) {
 
 foreach ($f in $changed) {
   $hit = $false
+  $ri = -1
   foreach ($r in $vm.rules) {
+    $ri++
     foreach ($p in $r.paths) {
       if (Test-CrewPath $f $p) {
         $hit = $true
+        if (-not $ruleCmds.ContainsKey($ri)) {
+          $ruleCmds[$ri] = [System.Collections.ArrayList]@()
+          [void]$ruleOrder.Add($ri)
+          if (Test-CrewSeconds $r.seconds) { $ruleSecs[$ri] = [double]$r.seconds }
+        }
         foreach ($c in $r.run) {
           if ($cmds -notcontains $c) { [void]$cmds.Add($c) }
+          if ($ruleCmds[$ri] -notcontains $c) { [void]$ruleCmds[$ri].Add($c) }
           if (Test-CrewSeconds $r.seconds) {
             if (-not $cost.ContainsKey($c) -or $cost[$c] -lt [double]$r.seconds) {
               $cost[$c] = [double]$r.seconds
@@ -657,20 +672,34 @@ $notices = [System.Collections.ArrayList]@()
 # not read it. Starts at 0 because the no-budget path defers nothing.
 $deferredCount = 0
 if ($null -ne $budget) {
-  $order = @{}
-  for ($i = 0; $i -lt $cmds.Count; $i++) { $order[$cmds[$i]] = $i }
-  $known   = @($cmds | Where-Object { $cost.ContainsKey($_) })
   $unknown = @($cmds | Where-Object { -not $cost.ContainsKey($_) })
-  # Ascending cost, original order breaking ties -- same ordering as the .sh.
-  $known = @($known | Sort-Object @{Expression = { $cost[$_] }}, @{Expression = { $order[$_] }})
+  # Ascending cost, first-match order breaking ties -- same ordering as the
+  # .sh, and over RULES rather than commands for the reason stated up there.
+  $seq = @{}
+  for ($i = 0; $i -lt $ruleOrder.Count; $i++) { $seq[$ruleOrder[$i]] = $i }
+  $priced = @(@($ruleOrder | Where-Object { $ruleSecs.ContainsKey($_) }) |
+              Sort-Object @{Expression = { $ruleSecs[$_] }}, @{Expression = { $seq[$_] }})
 
   $spent = 0.0
   $keep = [System.Collections.ArrayList]@()
   $deferred = [System.Collections.ArrayList]@()
-  foreach ($c in $known) {
-    if (($spent + $cost[$c]) -le $budget) { [void]$keep.Add($c); $spent += $cost[$c] }
-    else { [void]$deferred.Add($c) }
+  foreach ($ri in $priced) {
+    # Only the commands this rule would ADD -- see the .sh for why a rule
+    # whose work is already scheduled is charged nothing.
+    $fresh = @($ruleCmds[$ri] | Where-Object { $cost.ContainsKey($_) -and $keep -notcontains $_ })
+    if ($fresh.Count -eq 0) { continue }
+    if (($spent + $ruleSecs[$ri]) -le $budget) {
+      # WHOLE, in the rule's own `run` order. Half a rule is not a cheaper
+      # rule; it is a rule nobody can say ran.
+      foreach ($c in $fresh) { [void]$keep.Add($c) }
+      $spent += $ruleSecs[$ri]
+    } else {
+      foreach ($c in $fresh) { if ($deferred -notcontains $c) { [void]$deferred.Add($c) } }
+    }
   }
+  # A command deferred by one rule and kept by a later, cheaper one is not
+  # deferred -- it runs.
+  $deferred = [System.Collections.ArrayList]@(@($deferred | Where-Object { $keep -notcontains $_ }))
 
   # Unknown-cost commands run FIRST, so a map with no `seconds` anywhere
   # behaves exactly as it did before this feature existed.

@@ -114,6 +114,12 @@ PROMOTE_PS1 = os.path.join(CREW, "hooks", "scripts", "promote-gate.ps1")
 # exists to remove -- so each reader is sabotaged separately.
 VERIFY_SH = os.path.join(CREW, "hooks", "scripts", "verify-gate.sh")
 VERIFY_PS1 = os.path.join(CREW, "hooks", "scripts", "verify-gate.ps1")
+# The digest BOTH gates skip on, in one file so the two flavours cannot
+# disagree about whether a turn changed anything. Sabotaged here rather than
+# through either gate because it is the WRITER of the digest: a test that
+# pre-computes a hash and asserts on the comparison stays green against a
+# function that hashes nothing, and that vacuous shape is this file's subject.
+FINGERPRINT = os.path.join(CREW, "hooks", "scripts", "verify_fingerprint.py")
 RESOLVE_TOOLS = os.path.join(
     CREW, "skills", "crew-setup", "scripts", "resolve-tools.sh")
 MAP_AUDIT = os.path.join(
@@ -2237,6 +2243,116 @@ MUTATIONS = (
         "if false; then",
         ("tests/test_verify_gate_rule_framing.py::"
          "test_map_audit_refuses_the_same_map_by_name"),
+    ),
+    (
+        # The digest stops covering the INDEX. `git ls-files -s` is still
+        # called and the mode is still hashed, so every earlier fingerprint
+        # case -- including the staged chmod one -- stays green; only the
+        # staged CONTENTS go uncovered. That narrowness is the point: the mode
+        # and the blob id arrive in the same record, and reverting to the
+        # mode alone is exactly the state the gate shipped in, where staging
+        # failing contents behind a passing working tree made Stop exit 0 with
+        # SKIPPED while --all exited 2.
+        "the fingerprint goes back to hashing the mode but not the staged "
+        "contents",
+        FINGERPRINT,
+        'entries.setdefault(path, []).append(" ".join(fields[:3]))',
+        'entries.setdefault(path, []).append(" ".join(fields[:1]))',
+        ("tests/test_verify_gate_fingerprint.py::"
+         "test_staged_contents_move_the_digest"),
+    ),
+    (
+        # The same defect through the GATE rather than the digest, and the
+        # reason both entries are here: the one above proves the hash moved,
+        # this one proves the skip did. A digest that changes while the gate
+        # skips anyway would leave the first green and this red.
+        "the gate skips a tree whose staged contents fail",
+        FINGERPRINT,
+        'entries.setdefault(path, []).append(" ".join(fields[:3]))',
+        'entries.setdefault(path, []).append(" ".join(fields[:1]))',
+        ("tests/test_verify_gate_fingerprint.py::"
+         "test_a_failing_tree_is_never_skipped_whatever_moved"),
+    ),
+    (
+        # Whitespace stripped back off each path, which hashed a DIFFERENT
+        # file: a rule on " leading.txt" was verified against the digest of
+        # "leading.txt", which does not exist and hashes as the absent
+        # constant, so every later edit kept the passing fingerprint.
+        #
+        # Mutating main() and not fingerprint() deliberately. main() is the
+        # seam both flavours pipe into, and it is the WRITER of the path list
+        # -- a mutation of the reader would leave the parsing defect untested,
+        # which is how this one survived review in the first place.
+        "the fingerprint trims whitespace off the paths it is handed",
+        FINGERPRINT,
+        "changed = [l for l in sys.stdin.read().split(chr(10)) if l.strip()]",
+        "changed = [l.strip() for l in sys.stdin.read().split(chr(10)) "
+        "if l.strip()]",
+        ("tests/test_verify_gate_fingerprint.py::"
+         "test_the_path_list_is_not_trimmed"),
+    ),
+    (
+        # The budget's UNIT, in the bash flavour. `seconds` prices the rule
+        # and is charged once; this mutation charges it per command again, so
+        # a 40s rule with two commands costs 80 under a 60s budget and is
+        # split in half.
+        #
+        # Every stop-budget case that predates the fix stays green under it:
+        # each of their rules has ONE command, so the two readings agree. That
+        # is how the unit went unstated for a release, and it is why the
+        # paired test maps a rule with two.
+        #
+        # The first attempt at this mutation only inflated `spent` AFTER the
+        # decision, which changes nothing on a one-rule map -- it came back
+        # green and is recorded here because a mutation that does not
+        # reproduce the defect is a coverage claim nobody has earned. What
+        # follows is the per-command selection verbatim as it shipped.
+        "the Stop budget charges each command the whole rule's cost again",
+        VERIFY_SH,
+        "        if spent + rule_secs[ri] <= budget:\n"
+        "            # WHOLE, in the rule's own `run` order. Half a rule is "
+        "not a\n"
+        "            # cheaper rule; it is a rule nobody can say ran.\n"
+        "            keep.extend(fresh)\n"
+        "            spent += rule_secs[ri]\n"
+        "        else:\n"
+        "            for c in fresh:\n"
+        "                if c not in deferred: deferred.append(c)\n",
+        "        for c in fresh:\n"
+        "            if spent + cost[c] <= budget:\n"
+        "                keep.append(c)\n"
+        "                spent += cost[c]\n"
+        "            elif c not in deferred:\n"
+        "                deferred.append(c)\n",
+        ("tests/test_verify_gate_stop_budget.py::"
+         "test_a_rule_that_fits_is_not_split_across_its_commands"),
+    ),
+    (
+        # The matched pair's half, and not a duplicate. The arithmetic lives
+        # in a python heredoc on one side and in PowerShell on the other, so a
+        # fix applied to one flavour reads as done while the other still
+        # splits the rule -- this plugin has shipped exactly that shape, and a
+        # round of this branch left the bash half wrapped in `if false` with
+        # every test still green.
+        "the PowerShell Stop budget charges each command the rule's cost",
+        VERIFY_PS1,
+        "    if (($spent + $ruleSecs[$ri]) -le $budget) {\n"
+        "      # WHOLE, in the rule's own `run` order. Half a rule is not a "
+        "cheaper\n"
+        "      # rule; it is a rule nobody can say ran.\n"
+        "      foreach ($c in $fresh) { [void]$keep.Add($c) }\n"
+        "      $spent += $ruleSecs[$ri]\n"
+        "    } else {\n"
+        "      foreach ($c in $fresh) { if ($deferred -notcontains $c) { "
+        "[void]$deferred.Add($c) } }\n"
+        "    }\n",
+        "    foreach ($c in $fresh) {\n"
+        "      if (($spent + $cost[$c]) -le $budget) { [void]$keep.Add($c); "
+        "$spent += $cost[$c] }\n"
+        "      elseif ($deferred -notcontains $c) { [void]$deferred.Add($c) }"
+        "\n    }\n",
+        ("tests/test_verify_gate_stop_budget.py::"
+         "test_both_flavours_charge_the_rule_once"),
     ),
 )
 

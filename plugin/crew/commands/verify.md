@@ -39,7 +39,16 @@ no map, because the gate turns green and everyone relaxes.
 **Running the whole map, unbudgeted.** The Stop gate spends a budget
 (`verify.stopBudgetSeconds`, default 60) cheapest-first and DEFERS what does
 not fit, printing `deferred to /crew:verify: <cmd> (<n>s)` for each one. Those
-were not checked. To run everything with no budget:
+were not checked.
+
+**`seconds` prices the RULE, and is charged ONCE.** A rule runs whole or
+defers whole, however many commands its `run` holds -- so a rule with
+`"seconds": 40` and three commands costs 40 against the budget, not 120. This
+sentence exists because the unit was left unstated when the budget was
+introduced ("run matched rules in ascending seconds"), and the first
+implementation read it per command and split rules in half.
+
+To run everything with no budget:
 
     bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/verify-gate.sh --all
 

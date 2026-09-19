@@ -590,12 +590,30 @@ def matches(path, pat):
     return any(fnmatch.fnmatch(path, c) for c in cands)
 
 cmds, unmatched = [], []
-# Cost per COMMAND, not per rule: the same command reaches this list from
-# several rules and is de-duplicated, so a rule's `seconds` has to be folded
-# onto the command. The MAX of the contributing rules is taken deliberately --
-# under-running the budget costs a deferral, over-running it costs the thing
-# the budget exists to bound.
+# THE UNIT OF THE BUDGET IS THE RULE, AND `seconds` IS CHARGED ONCE.
+#
+# Say it here because the spec never did: it said "run matched rules in
+# ascending seconds" and left the unit unstated, so the first implementation
+# charged every COMMAND in a rule the whole rule's cost. A rule with
+# `"seconds": 40` and two commands under the default 60s budget then ran its
+# first command, priced the second at another 40, and deferred it -- the rule
+# split in half, with the half that did not run reported as unverified. A
+# rule's `seconds` is what the rule costs in total; a rule runs WHOLE or
+# defers WHOLE.
+#
+# Two structures come out of the match, and they are not the same shape:
+#
+#   `cost` is per COMMAND and stays. It prices the deferral notices and sizes
+#   the lock window (max_cost, below), both of which ask about a command. The
+#   MAX is taken where several rules contribute the same command, because
+#   under-stating there costs a too-short lock window.
+#
+#   `rule_cmds` / `rule_secs` are per matched RULE, in first-match order, and
+#   are what the budget actually spends against.
 cost = {}
+rule_cmds = {}     # rule index -> its commands, in `run` order
+rule_secs = {}     # rule index -> its stated cost, only when one is stated
+rule_order = []    # matched rule indices, in the order they were first hit
 def note_cost(cmd, rule):
     secs = rule.get("seconds")
     if not isinstance(secs, (int, float)) or isinstance(secs, bool) or secs < 0:
@@ -603,11 +621,19 @@ def note_cost(cmd, rule):
     cost[cmd] = max(cost.get(cmd, 0), secs)
 for f in changed:
     hit=False
-    for r in cfg.get("rules",[]):
+    for ri, r in enumerate(cfg.get("rules",[])):
         if any(matches(f,p) for p in r["paths"]):
             hit=True
+            if ri not in rule_cmds:
+                rule_cmds[ri] = []
+                rule_order.append(ri)
+                secs = r.get("seconds")
+                if (isinstance(secs, (int, float))
+                        and not isinstance(secs, bool) and secs >= 0):
+                    rule_secs[ri] = secs
             for c in r["run"]:
                 if c not in cmds: cmds.append(c)
+                if c not in rule_cmds[ri]: rule_cmds[ri].append(c)
                 note_cost(c, r)
     if not hit: unmatched.append(f)
 for c in cfg.get("always",[]):
@@ -630,19 +656,32 @@ if not cmds: cmds = cfg.get("default",[])
 notices = []
 deferred = []
 if budget is not None:
-    known = [c for c in cmds if c in cost]
     unknown = [c for c in cmds if c not in cost]
-    # Ascending cost, original order breaking ties: cheapest-first fits the
-    # most checks into the budget, and a stable sort keeps the run order
+    # Ascending cost, first-match order breaking ties: cheapest-first fits the
+    # most RULES into the budget, and a stable sort keeps the run order
     # reproducible for anyone comparing two turns.
-    known.sort(key=lambda c: (cost[c], cmds.index(c)))
+    priced = sorted((ri for ri in rule_order if ri in rule_secs),
+                    key=lambda ri: (rule_secs[ri], rule_order.index(ri)))
     spent, keep = 0, []
-    for c in known:
-        if spent + cost[c] <= budget:
-            keep.append(c)
-            spent += cost[c]
+    for ri in priced:
+        # Only the commands this rule would ADD. A rule every one of whose
+        # commands an earlier, cheaper rule already scheduled asks for no new
+        # work, so it is charged nothing rather than billed for a second run
+        # of the same commands -- the per-command double-charge one level up.
+        fresh = [c for c in rule_cmds[ri] if c in cost and c not in keep]
+        if not fresh:
+            continue
+        if spent + rule_secs[ri] <= budget:
+            # WHOLE, in the rule's own `run` order. Half a rule is not a
+            # cheaper rule; it is a rule nobody can say ran.
+            keep.extend(fresh)
+            spent += rule_secs[ri]
         else:
-            deferred.append(c)
+            for c in fresh:
+                if c not in deferred: deferred.append(c)
+    # A command can be deferred by one rule and kept by a later, cheaper one
+    # -- keeping wins, because the command does run.
+    deferred = [c for c in deferred if c not in keep]
     # Unknown-cost commands run FIRST, so a map with no `seconds` anywhere
     # behaves exactly as it did before this feature existed.
     cmds = unknown + keep

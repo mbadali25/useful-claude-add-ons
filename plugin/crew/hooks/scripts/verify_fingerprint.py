@@ -15,6 +15,21 @@ its own header, and this is the same mechanism pointed at a different verdict.
   that matters -- same size and a same-granularity write reads as unchanged,
   and the gate would skip a real edit. A file's absence is itself recorded, so
   deleting one moves the digest.
+* **Each changed path's INDEX entry -- mode, blob id and stage.** The working
+  tree is not the only thing a check reads. `git show :a.txt`, `git diff
+  --cached` and every lint that runs off the index read the STAGED copy, and
+  a mode is not in the bytes at all. See _index_entries for the two measured
+  skips that each of those halves cost.
+
+THE INVARIANT ALL OF THAT SERVES, stated once because it is the thing to test
+against rather than the list above: **if `--all` would FAIL on a tree, a Stop
+on that same tree must not skip on a recorded fingerprint.** Every defect
+found here so far has had the identical signature -- the digest hashed
+something other than what the check would actually read, so Stop exited 0
+while `--all` exited 2 on one unchanged tree. test_verify_gate_fingerprint.py
+asserts the invariant directly, over a table of tree states, rather than only
+the individual causes; a new way to move what a check reads without moving the
+digest fails there even when nobody thought to add a case for it.
 * **`.crew/verify.json`.** It decides which commands run at all.
 * **`.crew/config.json`.** It carries `verify.stopBudgetSeconds`, so it
   decides which of them fit.
@@ -129,16 +144,35 @@ def _material(changed):
     return out
 
 
-def _modes(root):
-    """Every tracked path's staged file mode, as one `git ls-files` call.
+def _index_entries(root):
+    """Every tracked path's INDEX entry -- mode, blob id and stage -- as one
+    `git ls-files -s` call.
 
-    In the digest because BYTES ALONE MISS A MODE FLIP. A committed one is
-    caught already -- it moves HEAD, which is hashed -- but a staged,
-    uncommitted `git update-index --chmod=+x` is not: measured, the digest was
-    byte-identical across one. A check that depends on `+x` would then be
-    skipped on a tree whose executable bit had just changed, which is not
-    hypothetical -- a script shipped 100644 in this marketplace and failed
-    with permission denied on Linux.
+    The working tree is not the only thing a check reads, and each half of
+    this entry covers a measured skip of a tree that `--all` fails:
+
+    * **The staged CONTENTS, as the blob id.** A check that reads the index --
+      `git show :a.txt`, `git diff --cached`, a lint run off the staged copy
+      -- sees something the file on disk does not have to match. Measured:
+      with a rule on `git show :a.txt`, staging failing contents and then
+      restoring the passing contents in the working tree left the digest
+      byte-identical, so Stop skipped with exit 0 while `--all` exited 2 on
+      that same tree. The blob id IS the staged contents, so hashing it covers
+      the index exactly -- and for free, since this call was already being
+      made for the mode.
+
+    * **The MODE.** Bytes alone miss a mode flip. A committed one is caught
+      already -- it moves HEAD, which is hashed -- but a staged, uncommitted
+      `git update-index --chmod=+x` is not: measured, the digest was
+      byte-identical across one. A check that depends on `+x` would then be
+      skipped on a tree whose executable bit had just changed, which is not
+      hypothetical -- a script shipped 100644 in this marketplace and failed
+      with permission denied on Linux.
+
+    EVERY stage is kept and joined, not just the last one read. A path in a
+    merge conflict has three entries (stages 1, 2 and 3) and `ls-files -s`
+    prints all of them; keeping only the last would let a resolution that
+    rewrote the other two leave the digest where it was.
 
     No pathspec, so this cannot hit the argument-length limit the gate works
     around elsewhere; the repo is walked once and the result looked up.
@@ -159,15 +193,21 @@ def _modes(root):
             stdin=subprocess.DEVNULL)
     except OSError:
         return {}
-    modes = {}
+    entries = {}
     for record in (out.stdout or "").split(chr(0)):
         if not record:
             continue
         meta, _, path = record.partition(chr(9))
         fields = meta.split()
-        if path and fields:
-            modes[path] = fields[0]
-    return modes
+        # `<mode> <blob id> <stage>`. Anything shorter is a git printing a
+        # shape this does not understand, and recording a partial entry would
+        # be a digest that looks covered and is not -- the collapse this file
+        # exists to avoid. Dropped, so the path falls back to "untracked".
+        if path and len(fields) >= 3:
+            entries.setdefault(path, []).append(" ".join(fields[:3]))
+    # Sorted so the stage order git happened to print cannot move the answer.
+    return dict((path, ",".join(sorted(vals)))
+                for path, vals in entries.items())
 
 
 def fingerprint(root, changed):
@@ -185,16 +225,19 @@ def fingerprint(root, changed):
         digest.update(_file_digest(os.path.join(root, rel)).encode("ascii"))
 
     # Sorted so the shell's ordering cannot move the answer on its own.
-    modes = _modes(root)
+    index = _index_entries(root)
     for rel in sorted(set(p for p in changed if p)):
         digest.update(b"\0path=")
         digest.update(rel.encode("utf-8", "replace"))
         digest.update(b":")
         digest.update(_file_digest(os.path.join(root, rel)).encode("ascii"))
-        digest.update(b":mode=")
-        # "untracked" is its own value rather than an empty string, so a
-        # file becoming tracked moves the digest too.
-        digest.update(modes.get(rel.replace(os.sep, "/"), "untracked")
+        digest.update(b":index=")
+        # The WORKING-TREE bytes above and the INDEX entry here, both, and
+        # deliberately both: where the two differ they are two different
+        # things a check can read, and hashing one leaves the other free to
+        # move. "untracked" is its own value rather than an empty string, so
+        # a file becoming tracked moves the digest too.
+        digest.update(index.get(rel.replace(os.sep, "/"), "untracked")
                       .encode("ascii", "replace"))
 
     return digest.hexdigest()[:16]
@@ -202,7 +245,15 @@ def fingerprint(root, changed):
 
 def main():
     root = sys.argv[1] if len(sys.argv) > 1 else os.getcwd()
-    changed = [l.strip() for l in sys.stdin.read().splitlines() if l.strip()]
+    # NOT stripped. Leading and trailing whitespace is part of a filename, and
+    # stripping it hashed a DIFFERENT path -- measured: a rule mapped to
+    # " leading.txt" passed, the file's contents were then edited to fail, and
+    # the next Stop skipped with exit 0 while --all exited 2 on that tree. The
+    # matcher inside verify-gate.sh splits its own copy of this same list the
+    # same way -- on the newline alone, keeping the line verbatim -- so the
+    # digest now covers the path string the rules are matched against rather
+    # than a trimmed lookalike of it.
+    changed = [l for l in sys.stdin.read().split(chr(10)) if l.strip()]
     sys.stdout.write(fingerprint(root, changed) + "\n")
     return 0
 

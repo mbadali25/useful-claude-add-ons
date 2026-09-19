@@ -5,8 +5,17 @@
 minutes had no way to spend that time cheapest-first. `seconds` is that number
 in a field; `verify.stopBudgetSeconds` (default 60) is the bound.
 
-Four properties are load-bearing and each has a case here, in BOTH flavours:
+Five properties are load-bearing and each has a case here, in BOTH flavours:
 
+0. **`seconds` is PER RULE and is charged ONCE.** A rule runs whole or defers
+   whole. The spec that introduced the budget said "run matched rules in
+   ascending seconds" and never said what the unit was, so the first
+   implementation charged every COMMAND in a rule the whole rule's cost: a
+   rule with `"seconds": 40` and two commands ran the first, priced the second
+   at another 40, and deferred it under the 60s default -- splitting the rule
+   and reporting the half that did not run as unverified. That is a
+   specification error rather than an implementation one, which is why the
+   unit is now stated in the code beside the arithmetic.
 1. **Cheapest-first, up to the budget.** What fits runs; what does not is
    deferred and NAMED with its cost.
 2. **Unknown cost is not free.** A rule with no `seconds` RUNS -- it is never
@@ -263,4 +272,107 @@ def test_both_flavours_select_and_report_the_same_thing(tmp_path):
         "the two flavours reported the budget differently." + chr(10)
         + "sh : " + repr(budget_lines(sh_result)) + chr(10)
         + "ps1: " + repr(budget_lines(ps_result))
+    )
+
+
+# ------------------------------------------------------------ the unit
+#
+# `seconds` prices the RULE, not each command in it. Every map above happens
+# to have one command per rule, so every case above passes under either
+# reading -- which is exactly how the unit went unstated for a release.
+
+
+_TWO_COMMAND_RULE = {
+    "version": 1,
+    "rules": [
+        {"paths": ["a.py"], "seconds": 40,
+         "run": ["echo RAN-one", "echo RAN-two"],
+         "why": "ONE rule costing 40s in total, under the 60s default"},
+    ],
+    "default": [],
+    "unmapped": "ignore",
+}
+
+
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+def test_a_rule_that_fits_is_not_split_across_its_commands(flavour, tmp_path):
+    """MUST-ALLOW, and the reported defect. The whole rule costs 40s and the
+    budget is 60, so both of its commands run -- charging the second another
+    40 defers a check the budget has room for and splits a rule in half."""
+    root = _repo(tmp_path, verify_map=_TWO_COMMAND_RULE)
+    result = _run(flavour, root)
+
+    assert result.returncode == 0, result.stderr
+    ran = _ran(result)
+    assert ran == ["echo RAN-one", "echo RAN-two"], (
+        "a 40s rule with two commands fits a 60s budget WHOLE. Charging each "
+        "command the rule's cost makes it 80 and defers the second. ran="
+        + repr(ran) + chr(10) + result.stderr
+    )
+    assert "deferred to /crew:verify" not in result.stderr, (
+        "nothing should have been deferred: the rule costs 40 of 60. "
+        + result.stderr
+    )
+    assert "the verified baseline was NOT advanced" not in result.stderr, (
+        "a rule that ran whole leaves nothing unchecked, so the baseline must "
+        "advance. " + result.stderr
+    )
+
+
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+def test_a_rule_that_does_not_fit_defers_WHOLE(flavour, tmp_path):
+    """MUST-BLOCK, and the other half of the unit. Charging once must not turn
+    into running part of a rule that does not fit: a half-run rule is not a
+    cheaper rule, it is a rule nobody can say was checked."""
+    straddling = {
+        "version": 1,
+        "rules": [
+            {"paths": ["a.py"], "seconds": 5, "run": ["echo RAN-cheap"],
+             "why": "fits"},
+            {"paths": ["a.py"], "seconds": 90,
+             "run": ["echo RAN-big-a", "echo RAN-big-b"],
+             "why": "does not fit, and must not fit HALF"},
+        ],
+        "default": [],
+        "unmapped": "ignore",
+    }
+    root = _repo(tmp_path, verify_map=straddling)
+    result = _run(flavour, root)
+
+    ran = _ran(result)
+    assert ran == ["echo RAN-cheap"], (
+        "the 90s rule does not fit a 60s budget and must defer entirely. ran="
+        + repr(ran) + chr(10) + result.stderr
+    )
+    for cmd in ("echo RAN-big-a", "echo RAN-big-b"):
+        assert "deferred to /crew:verify: " + cmd + " (90s)" in result.stderr, (
+            "every command of a deferred rule must be named, or the reader "
+            "cannot tell what went unchecked. " + result.stderr
+        )
+    assert "deferred 2" in result.stderr, result.stderr
+    assert "the verified baseline was NOT advanced" in result.stderr, (
+        "a deferred rule was never checked, so the tree is not verified. "
+        + result.stderr
+    )
+
+
+@pytest.mark.skipif(
+    _BASH is None or not sys.platform.startswith("win") or _PWSH is None,
+    reason="parity needs both flavours on the same machine",
+)
+def test_both_flavours_charge_the_rule_once(tmp_path):
+    """The unit is a place the two implementations can drift silently: the
+    arithmetic lives in a python heredoc on one side and in PowerShell on the
+    other, and a fix applied to one reads as done. Same map, same selection.
+    """
+    sh_result = _run("sh", _repo(tmp_path / "sh",
+                                 verify_map=_TWO_COMMAND_RULE))
+    ps_result = _run("ps1", _repo(tmp_path / "ps",
+                                  verify_map=_TWO_COMMAND_RULE))
+
+    assert _ran(sh_result) == _ran(ps_result) == ["echo RAN-one",
+                                                  "echo RAN-two"], (
+        "the two flavours priced the same rule differently." + chr(10)
+        + "sh : " + repr(_ran(sh_result)) + chr(10)
+        + "ps1: " + repr(_ran(ps_result))
     )

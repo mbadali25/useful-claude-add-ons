@@ -26,6 +26,25 @@ Three properties carry the safety of this, and each has a case:
 `.crew/` is excluded from the digest and that is load-bearing rather than
 tidy: the gate writes its own markers there, so including it made every run
 invalidate the digest it had just recorded and the skip never fired once.
+
+## The invariant, and why it is tested as one
+
+Every defect found in this digest so far has had the SAME signature: it hashed
+something other than what a check would actually read, so Stop exited 0 with
+SKIPPED while `--all` exited 2 on one unchanged tree. Two arrived together in
+the 0.19.91 review -- the index was not hashed at all, and a path's leading
+whitespace was stripped so a different file was hashed -- and they are one
+defect wearing two faces rather than two bugs.
+
+So the invariant is asserted directly, over a TABLE of tree states:
+
+> if `--all` FAILS on a tree, a Stop on that same tree must not skip.
+
+`test_a_failing_tree_is_never_skipped_whatever_moved` is that test. It exists
+because fixing the two known causes one at a time would leave a third way to
+move what a check reads without moving the digest, and nothing would say so.
+Each known cause keeps its own named case below as well, so a regression
+reports WHICH one came back rather than only that the invariant broke.
 """
 import json
 import os
@@ -494,4 +513,219 @@ def test_the_deferred_count_fails_closed_when_the_matcher_cannot_say():
         "an unreadable deferred count must fail CLOSED (assume a deferral and "
         "hold the baseline). This line resolves it to the permissive value: "
         + fallback[0]
+    )
+
+
+# --------------------------------------------- the invariant, as a property
+#
+# "If --all FAILS on a tree, a Stop on that same tree must not skip." One
+# table, one assertion, every state that has ever broken it plus room for the
+# next. See this module's docstring for why it is a property rather than three
+# independent regression cases.
+
+
+def _invariant_repo(tmp_path, name, rule_path, command):
+    """A repo whose single rule PASSES, ready to be seeded with a clean run."""
+    root = tmp_path / name
+    (root / ".crew").mkdir(parents=True)
+    for args in (("init", "-q"), ("config", "user.email", "t@example.invalid"),
+                 ("config", "user.name", "t")):
+        subprocess.run(("git",) + args, cwd=root, check=True,
+                       capture_output=True, text=True)
+    (root / "README.md").write_text("committed", encoding="utf-8")
+    subprocess.run(("git", "add", "-A"), cwd=root, check=True,
+                   capture_output=True, text=True)
+    subprocess.run(("git", "commit", "-q", "-m", "fixture"), cwd=root,
+                   check=True, capture_output=True, text=True)
+    (root / ".crew" / "verify.json").write_text(json.dumps({
+        "version": 1,
+        "rules": [{"paths": [rule_path], "seconds": 1, "run": [command],
+                   "why": name}],
+        "default": [], "unmapped": "ignore",
+    }), encoding="utf-8")
+    return root
+
+
+def _state_worktree_edit(tmp_path):
+    """The state the digest has always covered. In the table so it proves the
+    harness tests the invariant, and not only the two causes found in 0.19.91.
+    """
+    root = _invariant_repo(tmp_path, "worktree", "a.txt",
+                           "grep -q GOOD a.txt")
+    (root / "a.txt").write_text("GOOD", encoding="utf-8")
+
+    def break_it():
+        (root / "a.txt").write_text("BAD", encoding="utf-8")
+    return root, break_it
+
+
+def _state_staged_contents(tmp_path):
+    """MUST-BLOCK. A check that reads the INDEX -- `git show :a.txt`, and
+    every lint that runs off the staged copy -- sees something the working
+    tree is free to disagree with. Measured before the fix: Stop exited 0 with
+    SKIPPED while --all exited 2 on this exact tree."""
+    root = _invariant_repo(tmp_path, "staged", "a.txt",
+                           "git show :a.txt | grep -q GOOD")
+    (root / "a.txt").write_text("GOOD", encoding="utf-8")
+    subprocess.run(("git", "add", "a.txt"), cwd=root, check=True,
+                   capture_output=True, text=True)
+
+    def break_it():
+        # Stage FAILING contents, then put the PASSING contents back on disk.
+        # Every byte the digest used to look at ends up where it was.
+        (root / "a.txt").write_text("BAD", encoding="utf-8")
+        subprocess.run(("git", "add", "a.txt"), cwd=root, check=True,
+                       capture_output=True, text=True)
+        (root / "a.txt").write_text("GOOD", encoding="utf-8")
+    return root, break_it
+
+
+_LEADING = " leading.txt"
+
+
+def _state_leading_space_path(tmp_path):
+    """MUST-BLOCK. The digest stripped whitespace off every path handed to it,
+    so it hashed `leading.txt` -- which does not exist, and hashes as absent --
+    while the rule matched and the check read ` leading.txt`."""
+    root = _invariant_repo(tmp_path, "leading", _LEADING,
+                           'grep -q GOOD "' + _LEADING + '"')
+    target = root / _LEADING
+    try:
+        target.write_text("GOOD", encoding="utf-8")
+        listed = os.listdir(str(root))
+    except OSError as exc:
+        pytest.skip("MEASURED: this filesystem refused to create a file named "
+                    + repr(_LEADING) + " -- " + str(exc))
+    if _LEADING not in listed:
+        pytest.skip("MEASURED: created " + repr(_LEADING) + " and os.listdir "
+                    "returned " + repr(sorted(listed)) + ", so this filesystem "
+                    "renames a leading-space filename and the case cannot be "
+                    "set up here")
+
+    def break_it():
+        target.write_text("BAD", encoding="utf-8")
+    return root, break_it
+
+
+_STATES = {
+    "worktree-edit": _state_worktree_edit,
+    "staged-contents": _state_staged_contents,
+    "leading-space-path": _state_leading_space_path,
+}
+
+
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+@pytest.mark.parametrize("state", sorted(_STATES))
+def test_a_failing_tree_is_never_skipped_whatever_moved(flavour, state,
+                                                        tmp_path):
+    root, break_it = _STATES[state](tmp_path)
+
+    seed = _run(flavour, root)
+    assert seed.returncode == 0, (
+        "the fixture must PASS first, or there is no recorded fingerprint for "
+        "the rest of this case to be about. " + seed.stderr
+    )
+    marker = root / ".crew" / ".verify-gate.fingerprint"
+    assert marker.exists(), (
+        "a clean run must record a fingerprint, or this case proves nothing "
+        "about the skip. " + seed.stderr
+    )
+    recorded = marker.read_text(encoding="utf-8").strip()
+
+    break_it()
+
+    forced = _run(flavour, root, "--all")
+    assert forced.returncode == 2, (
+        "the invariant's premise: --all must FAIL on this tree, or the case "
+        "is not set up. " + forced.stderr
+    )
+
+    stopped = _run(flavour, root)
+    assert not _skipped(stopped), (
+        "--all fails on this tree and Stop skipped it on fingerprint "
+        + recorded + ". The digest is hashing something other than what the "
+        "check reads, which is the one defect this module is about. "
+        + stopped.stderr
+    )
+    assert stopped.returncode == 2, (
+        "having not skipped, Stop must reach the verdict --all reached. "
+        + stopped.stderr
+    )
+
+
+# ------------------------------------------- the two causes, at digest level
+
+
+def test_staged_contents_move_the_digest(tmp_path):
+    """The index half of the invariant, without the gate around it.
+
+    HEAD is asserted not to have moved and the working-tree bytes are asserted
+    to be back where they were, so this is testing the STAGED copy rather than
+    catching a commit or an edit by accident.
+    """
+    root = tmp_path / "repo"
+    (root / ".crew").mkdir(parents=True)
+    for args in (("init", "-q"), ("config", "user.email", "t@example.invalid"),
+                 ("config", "user.name", "t")):
+        subprocess.run(("git",) + args, cwd=root, check=True,
+                       capture_output=True, text=True)
+    target = root / "a.txt"
+    target.write_text("GOOD", encoding="utf-8")
+    subprocess.run(("git", "add", "a.txt"), cwd=root, check=True,
+                   capture_output=True, text=True)
+    subprocess.run(("git", "commit", "-q", "-m", "fixture"), cwd=root,
+                   check=True, capture_output=True, text=True)
+    head_before = _head(root)
+    before = verify_fingerprint.fingerprint(str(root), ["a.txt"])
+
+    target.write_text("BAD", encoding="utf-8")
+    subprocess.run(("git", "add", "a.txt"), cwd=root, check=True,
+                   capture_output=True, text=True)
+    target.write_text("GOOD", encoding="utf-8")
+
+    assert _head(root) == head_before, (
+        "this case is about the INDEX; if HEAD moved, the digest would change "
+        "for the wrong reason and prove nothing"
+    )
+    assert target.read_text(encoding="utf-8") == "GOOD", (
+        "and about the index ALONE -- the working-tree bytes have to be back "
+        "exactly where the passing run left them"
+    )
+    after = verify_fingerprint.fingerprint(str(root), ["a.txt"])
+    assert before != after, (
+        "failing contents were staged and the digest did not move, so a check "
+        "reading `git show :a.txt` would be skipped on a tree it fails"
+    )
+
+
+def test_the_path_list_is_not_trimmed(tmp_path):
+    """The filename half, asserted at main()'s stdin -- which is where the
+    trimming was. The digest for ` leading.txt` must not be the digest for
+    `leading.txt`; they name different files.
+
+    Run as a SUBPROCESS on purpose. main() is the seam both flavours pipe
+    into, and calling fingerprint() directly would skip the parsing that WAS
+    the defect -- a test that proves only the reader and never the writer.
+    """
+    root = tmp_path / "repo"
+    (root / ".crew").mkdir(parents=True)
+    (root / "leading.txt").write_text("BARE", encoding="utf-8")
+    script = os.path.join(_ROOT, "hooks", "scripts", "verify_fingerprint.py")
+
+    def digest_for(stdin_text):
+        out = subprocess.run((sys.executable, script, str(root)),
+                             input=stdin_text, capture_output=True, text=True,
+                             check=True)
+        return out.stdout.strip()
+
+    spaced = digest_for(_LEADING + chr(10))
+    bare = digest_for("leading.txt" + chr(10))
+    assert spaced != bare, (
+        "the leading space was stripped, so a rule on " + repr(_LEADING)
+        + " was checked against the digest of `leading.txt` -- a different "
+        "file, and one that hashes as absent when it does not exist"
+    )
+    assert spaced == verify_fingerprint.fingerprint(str(root), [_LEADING]), (
+        "main() and fingerprint() must agree on what the path was, or the "
+        "gate and every other case in this module test different things"
     )
