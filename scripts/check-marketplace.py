@@ -33,6 +33,14 @@ PS1 = os.path.join(ROOT, "scripts", "install-prerequisites.ps1")
 
 REQUIRED_FIELDS = ("name", "source", "description", "version")
 
+# Hard-coded, not parsed out of LICENSE - the file's own first line, "GNU
+# GENERAL PUBLIC LICENSE" / "Version 2, June 1991", is the source of this
+# identifier. Re-deriving it from license text is the kind of parsing that
+# breaks quietly on a wording change nobody meant to be load-bearing; a
+# licence change is rare and deliberate enough to warrant editing this
+# constant by hand instead.
+EXPECTED_LICENSE = "GPL-2.0-only"
+
 
 def git(*args: str) -> str:
     """Run git in the repo and return stdout, or '' if it failed."""
@@ -161,6 +169,39 @@ def check_plugin_manifests(entries, fail):
             fail(
                 f"{entry['name']}: plugin.json says version {declared}, "
                 f"marketplace.json says {entry['version']}"
+            )
+
+
+def check_license_consistency(entries, fail):
+    """Every plugin's declared licence matches the repository's own LICENSE.
+
+    Root `LICENSE` is GNU GPL v2; two plugins shipped `"license": "MIT"` and
+    three shipped no `license` key at all, so a consumer reading `plugin.json`
+    and a consumer reading `LICENSE` reached different conclusions about the
+    same code - MIT into GPL-2 is a lawful direction of copy, so nothing
+    upstream was broken, but the plugin's own claim about itself was wrong
+    either way: silently permissive where the repo is copyleft, or silently
+    unstated where the repo picked a licence on purpose.
+
+    `EXPECTED_LICENSE` is hard-coded rather than parsed out of LICENSE's text -
+    licence text is not the kind of thing a checker should be inferring an
+    SPDX id from, and a wording change in the file (a typo fix, added boilerplate)
+    is not a signal that the project's declared licence changed. Both sides
+    only ever move on a human editing them.
+    """
+    for entry in entries:
+        if not entry["source"].startswith("./plugin/"):
+            continue
+        manifest = os.path.join(
+            ROOT, entry["source"].lstrip("./"), ".claude-plugin", "plugin.json"
+        )
+        if not os.path.isfile(manifest):
+            continue
+        declared = json.loads(read(manifest)).get("license")
+        if declared != EXPECTED_LICENSE:
+            fail(
+                f"{entry['name']}: plugin.json license is {declared!r}, "
+                f"repository LICENSE requires {EXPECTED_LICENSE!r}"
             )
 
 
@@ -1015,6 +1056,7 @@ def main() -> int:
     check_registration(entries, disk, fail)
     check_skill_manifests(entries, fail)
     check_plugin_manifests(entries, fail)
+    check_license_consistency(entries, fail)
     check_catalogs(entries, fail)
     check_menu_parity(fail)
     check_group_parity(fail)

@@ -2578,9 +2578,19 @@ asserts that list is the same set in all of them. Enumerate every site with
 template, and every doc stating the list. A partial allowlist change is worse
 than none.
 
-## Repo LICENSE is GPL-2.0 while crew's plugin.json declares MIT
+## ~~Repo LICENSE is GPL-2.0 while crew's plugin.json declares MIT~~ — CLOSED 2026-09-19
 
 Filed 2026-09-18 by the PM. **Pre-existing, not introduced here, not touched.**
+
+**CLOSED.** All five `plugin/*/.claude-plugin/plugin.json` now declare
+`"license": "GPL-2.0-only"` (crew and localgpu corrected from `MIT`;
+gizmoduck, obsidian-vault and rule-of-two, which had no `license` key,
+gained one). `scripts/check-marketplace.py` gained `check_license_consistency`
+so this cannot drift back silently — see `scripts/_test/license-consistency.py`
+for the sabotage-tested regression suite. Root `README.md`'s License section
+now states GPL-2.0 applies to every plugin and points at
+`plugin/crew/NOTICE.md` for the third-party MIT attribution named below, which
+this resolution does not touch. Commit sha: TODO-FILL-AFTER-COMMIT.
 
 `LICENSE` at the repo root is GNU GPL v2. `plugin/crew/.claude-plugin/plugin.json:12`
 declares `"license": "MIT"`. Both were true before this work.
