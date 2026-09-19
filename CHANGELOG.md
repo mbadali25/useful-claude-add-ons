@@ -28,6 +28,38 @@ All notable changes to this repository are documented here. Format follows [Keep
   hand-built state dict), so they passed against it; fixed to nest under
   `knowledge`, and a new test drives the real `crew_state.collect()` against a
   fixture repo so the fixture shape cannot drift from the emitter's again.
+- **`crew` 0.19.72: the gate stops re-proving a tree it just proved.** Stop
+  fires once per TURN, so a turn that changed nothing the gate depends on ran
+  the whole map again to reach the answer it reached a minute ago. The event
+  is not the gate; the STATE is -- the same argument `pm_pulse.py` makes in
+  its own header, pointed at a different verdict.
+  New `hooks/scripts/verify_fingerprint.py` digests HEAD, the changed paths
+  AND THE BYTES of each, plus `verify.json` and `config.json` (which decide
+  which commands run and how many fit). Contents, not `stat()`: an mtime
+  comparison is wrong in the direction that matters, since a same-size write
+  at the same granularity reads as unchanged and the gate would skip a real
+  edit. It lives in ONE .py used by both flavours, for the reason
+  `scope_report.py` gives -- a hash reimplemented in bash and again in
+  PowerShell is two implementations that drift, and a gate that skips on one
+  shell and runs on the other is worse than either answer. A case asserts
+  directly that a marker written by one flavour is honoured by the other.
+  **The marker is only ever written after a CLEAN, COMPLETE run.** Not after
+  a failure, and -- the subtler half -- not after the Stop budget deferred a
+  rule. That run exits 0, but a deferred rule was never checked, so recording
+  it would turn "we ran out of budget" into "this tree is verified" and the
+  deferred check would never run again on an unchanged tree. Both halves have
+  their own must-block case in both flavours.
+  **The skip is never silent.** 0.19.65 existed because a silent `exit 0` was
+  byte-identical to a pass; the gate names the digest it matched and says the
+  checks were SKIPPED, not re-run. `--all` / `-All` ignores the marker as
+  well as the budget. No python means no fingerprint and no skip.
+  `.crew/` is excluded from the digest, and that is load-bearing rather than
+  tidy: the gate writes its own markers there, so with it included every run
+  invalidated the digest it had just recorded and the skip NEVER FIRED ONCE.
+  Measured during this change, and it now has a case of its own.
+  Sabotage 9/9 RED across both flavours and the shared module, all three
+  files restored byte-identical.
+
 - **`crew` 0.19.71: the Stop gate spends a budget instead of the whole
   afternoon.** `.crew/verify.json` carried each rule's cost as PROSE inside
   its `why` -- "8s", "29s", "245s" -- and nothing could read it, so the

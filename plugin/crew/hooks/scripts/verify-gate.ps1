@@ -304,6 +304,38 @@ function Update-CrewLock {
     }
   } catch { }
 }
+# --- the unchanged-turn skip ---------------------------------------------
+#
+# The twin of the block in verify-gate.sh, using the SAME
+# verify_fingerprint.py so the two flavours cannot disagree about whether a
+# turn changed anything. Stop fires once per TURN; the event is not the gate,
+# the state is. See that script's header for what the digest covers and what
+# it deliberately does not.
+#
+# The marker is written ONLY after a clean, complete run (see the bottom of
+# this file), so a skip can only mean "this exact tree was fully checked and
+# passed". And it SAYS it skipped: 0.19.65 had to fix a silent exit 0 that was
+# byte-identical to a pass, and a silent skip would reintroduce exactly that.
+# No python means no fingerprint and no skip -- the safe direction.
+$fpFile = ".crew/.verify-gate.fingerprint"
+$fingerprint = ""
+if (-not $All) {
+  try {
+    $fpPy = Resolve-CrewPython
+    $fpScript = Join-Path $PSScriptRoot 'verify_fingerprint.py'
+    if ($fpPy -and (Test-Path $fpScript)) {
+      $fingerprint = ($changed -join "`n" | & $fpPy $fpScript $PWD.Path) | Out-String
+      $fingerprint = $fingerprint.Trim()
+      if ($fingerprint -and (Test-Path $fpFile) -and
+          ((Get-Content -Raw $fpFile).Trim() -eq $fingerprint)) {
+        [Console]::Error.WriteLine("verify-gate: nothing the gate depends on has changed since the last CLEAN run (fingerprint $fingerprint) - checks were SKIPPED, not re-run. Edit a file, or run the gate with -All, to force them.")
+        exit 0
+      }
+    }
+  } catch { $fingerprint = "" }
+}
+$global:LASTEXITCODE = 0
+
 $reclaimed = $false
 # Set when the checks run with no lock held. Nothing is cleaned up on that
 # path -- no token is written, so the exit handler has nothing to match and
@@ -674,6 +706,19 @@ if ($unmapped.Count -gt 0 -and $vm.unmapped -eq "fail") {
 }
 
 if ($failed) { exit 2 }
+
+# The fingerprint, written ONLY where everything ran and everything passed.
+# Deliberately NOT written when the Stop budget deferred a rule: a deferred
+# rule was never checked, so recording it would turn "we ran out of budget"
+# into "this tree is verified" and the deferred checks would never run again
+# on an unchanged tree. $notices is non-empty exactly when the budget had
+# something to say, which is the signal being tested. Matches verify-gate.sh.
+if ($fingerprint -and $notices.Count -eq 0) {
+  try {
+    if (-not (Test-Path ".crew")) { New-Item -ItemType Directory -Path ".crew" -Force -ErrorAction SilentlyContinue | Out-Null }
+    Set-Content -Path $fpFile -Value $fingerprint -Encoding utf8 -ErrorAction Stop
+  } catch { }
+}
 
 # Record what was just proven clean. Written ONLY on the pass path, so the
 # marker can never claim more than was actually checked. See verify-gate.sh.
