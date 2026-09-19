@@ -6,6 +6,24 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Fixed
 
+- **`crew` 0.19.85: correction to 0.19.71 — the multi-`**` finding is
+  crew's own defect, not upstream's.** 0.19.71's entry below (kept
+  as-written; corrected forward rather than rewritten) says both new
+  findings were "inherited from upstream". That was checked against
+  upstream after the fact and is wrong for finding (1): the second
+  `-o -path` alternative in `find-polluter.sh`'s discovery line (added so
+  a file directly under the base directory also matches, which upstream's
+  single form misses) is crew's own addition, not upstream code, and it is
+  that addition's `**/` -> nothing collapse that breaks on a second `**`.
+  Finding (2), the swallowed `find` exit status, remains correctly
+  attributed to upstream (the `| sort` is theirs). `TODO.md`'s
+  `find-polluter.sh` section is back down to four upstream-reproduction
+  items; the multi-`**` refusal now lives only in `plugin/crew/NOTICE.md`'s
+  modification list, with the corrected reasoning. No test or script
+  behaviour changed — this is a provenance-only correction, so filing the
+  wrong bug upstream doesn't waste a maintainer's time on code that isn't
+  theirs.
+
 - **`crew` 0.19.84: two upstream discovery-pipeline defects in
   `find-polluter.sh`.** Whole-branch Codex review (`dedd1150..1f1b6a75`)
   found two more findings, both in the untouched discovery step at line

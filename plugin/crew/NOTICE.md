@@ -41,17 +41,30 @@ after the pollution check itself; pollution is checked first and
 unconditionally, regardless of exit code, and an ordinary failure without
 pollution is recorded and bisection continues), a non-zero exit when no
 test actually ran or when a test failed without producing pollution, a
-refusal of any test pattern containing more than one `**` (the `find`
-translation only understands one), and a checked `find` exit status out of
-the discovery pipeline (`DISCOVERY FAILED` on an unreadable subtree,
-instead of silently proceeding with a partial list) — see its own header
-comment for the current list and why. Five of these fixes' upstream
-reproduction steps are recorded in `TODO.md` at the repo root (whitespace
-splitting, the swallowed runner exit, the zero-tests-ran false clean, the
-multi-`**` mistranslation, and the discovery-pipeline exit status); the
-stdin-isolation and exit-classification-ordering fixes address defects
-crew's own earlier fixes introduced, not upstream ones, so they are not
-filed there.
+refusal of any test pattern containing more than one `**`, and a checked
+`find` exit status out of the discovery pipeline (`DISCOVERY FAILED` on an
+unreadable subtree, instead of silently proceeding with a partial list) —
+see its own header comment for the current list and why. Four of these
+fixes' upstream reproduction steps are recorded in `TODO.md` at the repo
+root (whitespace splitting, the swallowed runner exit, the zero-tests-ran
+false clean, and the discovery-pipeline exit status); the stdin-isolation
+and exit-classification-ordering fixes address defects crew's own earlier
+fixes introduced, not upstream ones, so they are not filed there.
+
+**The multi-`**` refusal fixes a crew-introduced defect, not an upstream
+one — corrected 2026-09-19 after first (wrongly) filing it in `TODO.md`'s
+upstream list.** Upstream's `find` translation handles a `**/x` pattern one
+way, with no fallback. Crew added a second alternative,
+`-o -path "./${TEST_PATTERN//\*\*\//}"`, to also match a file directly
+under the base directory (upstream's version misses `src/top.test.ts` for
+a `src/**/*.test.ts` pattern). That addition is what breaks on a SECOND
+`**`: with `src/**/tests/**/*.test.ts`, the collapsed alternative reduces
+to `src/tests/*.test.ts` while the uncollapsed one requires at least one
+directory at every `**`, so a file like `src/pkg/tests/bad.test.ts`
+matches neither and is silently never discovered. Since the bug is in
+code this plugin added, refusing the pattern outright (`UNSUPPORTED
+PATTERN`) is a crew fix to a crew defect, and belongs here rather than
+in the upstream-reproduction list.
 
 **What was deliberately not copied:** `CREATION-LOG.md` and
 `condition-based-waiting-example.ts`.
