@@ -28,6 +28,35 @@ All notable changes to this repository are documented here. Format follows [Keep
   hand-built state dict), so they passed against it; fixed to nest under
   `knowledge`, and a new test drives the real `crew_state.collect()` against a
   fixture repo so the fixture shape cannot drift from the emitter's again.
+- **`crew` 0.19.70: pm-pulse.ps1 stops dropping the PM's blocking findings
+  to a shadowed python.** The same resolver defect as 0.19.67, in a
+  DIFFERENT blocking hook, and deliberately its own commit and its own bump
+  so reverting one cannot silently take the other.
+  `pm-pulse.ps1:12-13` was byte-identical to the line 0.19.67 replaced:
+  `(Get-Command python3, python | Select-Object -First 1).Source`, with
+  neither the CommandType guard nor the WindowsApps filter. **What it cost
+  here is worse.** The next line is `if (-not $py) { exit 0 }`, and this hook
+  exits 2 to block the stop and hand the PM's findings back to the model.
+  `hooks.json` registers it with no `-NoProfile`, so a `function python { }`
+  in a user profile is returned ahead of any python.exe with an EMPTY
+  `.Source` -- which then failed that test and exited 0. Every PM finding,
+  including the blocking ones, dropped in silence on a machine with python
+  installed: a hook wearing the exit code of a pass, which is this repo's
+  named recurring defect. The Store alias fails the other way, resolving and
+  being invoked.
+  The resolver is duplicated inline rather than dot-sourced, following the
+  decision `verify-gate.ps1`'s own header records: a function arriving by
+  dot-source is invisible to `scripts/check-powershell.ps1`'s static check.
+  That decision is defensible; leaving the copies unguarded would not be, so
+  a parity case compares the two executable bodies (comments excluded -- the
+  two files explain different costs and SHOULD differ there).
+  Sabotage 5/5 RED, both .ps1 files restored byte-identical. One of the five
+  is again the call site rather than the resolver: reverting it left the
+  first five cases green, the SECOND time that gap appeared in two commits,
+  so the case that catches it uses an OBSERVABLE stub -- a .cmd that writes a
+  marker when run. An exit code cannot tell "skipped the stub" from "ran it
+  and it failed"; the marker can only exist if it was executed.
+
 - **`crew` 0.19.69: verify-gate.ps1 resolves python the way it already
   resolved bash, and both flavours name a missing scope script.** Two
   findings from a security review of the 0.19.63 scope layer.
