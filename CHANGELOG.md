@@ -28,6 +28,39 @@ All notable changes to this repository are documented here. Format follows [Keep
   hand-built state dict), so they passed against it; fixed to nest under
   `knowledge`, and a new test drives the real `crew_state.collect()` against a
   fixture repo so the fixture shape cannot drift from the emitter's again.
+- **`crew` 0.19.71: the Stop gate spends a budget instead of the whole
+  afternoon.** `.crew/verify.json` carried each rule's cost as PROSE inside
+  its `why` -- "8s", "29s", "245s" -- and nothing could read it, so the
+  gate had no way to spend a turn's time cheapest-first. Rules now take a
+  real `"seconds": N` field (`why` keeps the reason), and both flavours read
+  it against `verify.stopBudgetSeconds`, default 60.
+  Matched rules run in ascending cost while the total fits; what does not is
+  deferred and NAMED with its price -- `deferred to /crew:verify: <cmd>
+  (<n>s)` -- so a skipped check is visible rather than merely absent. `--all`
+  (`-All` on PowerShell) removes the budget, which is what /crew:verify uses
+  to run the whole map.
+  **Unknown cost is not free.** A rule with no `seconds` RUNS -- deferring it
+  would mean acting on a number nobody wrote down -- the output says its cost
+  is UNSTATED, and it is left OUT of the budget arithmetic rather than given
+  a guessed value, so the stated total is never a fiction. Most of this
+  repo's own rules are deliberately left in that state: only the ones
+  actually timed carry a number, because filling the rest in by guesswork is
+  exactly what the field replaces. A malformed `.crew/config.json` falls back
+  to the 60s DEFAULT and never to unbounded -- "could not read the config"
+  must not quietly become "no limit".
+  A deferral can never change the exit code, and a rule that RUNS and fails
+  still exits 2 beside one that was deferred; both have their own case.
+  Measured on a quiet tree: pytest gate set 72s, whole crew suite ~185s (the
+  midpoint of five runs spanning 157-201s, which is itself a reason to treat
+  it as approximate), ruff+pylint 38s, check-marketplace 9s, smoke 5s,
+  self-claims 3s, pwsh 2s, validate-prompts 1s.
+  Sabotage 8/8 RED across both flavours -- budget ignored, deferrals
+  unreported, unstated cost treated as free or dropped from the run set, bad
+  config falling back to unbounded, and `--all` still budgeting -- both gate
+  files restored byte-identical. The two flavours are also asserted to select
+  and report identically: a budget that picks different checks per shell
+  would make the verdict depend on which hook fired first.
+
 - **`crew` 0.19.70: pm-pulse.ps1 stops dropping the PM's blocking findings
   to a shadowed python.** The same resolver defect as 0.19.67, in a
   DIFFERENT blocking hook, and deliberately its own commit and its own bump

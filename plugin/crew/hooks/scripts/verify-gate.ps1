@@ -26,7 +26,12 @@ param(
   # (a profile function shadowing the real thing, a WindowsApps stub), and
   # an unprobeable resolver is one whose regression suite has to run the
   # whole gate to see it.
-  [switch]$PrintPython
+  [switch]$PrintPython,
+
+  # Runs the WHOLE map with no Stop budget. /crew:verify is the caller that
+  # wants it; the Stop hook never passes it. The twin of verify-gate.sh's
+  # --all.
+  [switch]$All
 )
 
 # Resolve a real bash.exe, not WSL's launcher. With WSL installed, unqualified
@@ -496,6 +501,19 @@ if ($null -ne $bad) {
 
 $cmds = [System.Collections.ArrayList]@()
 $unmapped = [System.Collections.ArrayList]@()
+# Cost per COMMAND, not per rule, and the MAX where several rules contribute
+# the same command. Matches verify-gate.sh's note_cost exactly: under-running
+# the budget costs a deferral, over-running it costs the thing the budget
+# exists to bound. A bool is NOT a number here -- PowerShell will happily
+# compare $true with -ge, which is how a `"seconds": true` typo would become
+# a cost of 1.
+$cost = @{}
+function Test-CrewSeconds($Value) {
+  if ($null -eq $Value) { return $false }
+  if ($Value -is [bool]) { return $false }
+  if (-not ($Value -is [int] -or $Value -is [long] -or $Value -is [double] -or $Value -is [decimal])) { return $false }
+  return ($Value -ge 0)
+}
 
 foreach ($f in $changed) {
   $hit = $false
@@ -503,7 +521,14 @@ foreach ($f in $changed) {
     foreach ($p in $r.paths) {
       if (Test-CrewPath $f $p) {
         $hit = $true
-        foreach ($c in $r.run) { if ($cmds -notcontains $c) { [void]$cmds.Add($c) } }
+        foreach ($c in $r.run) {
+          if ($cmds -notcontains $c) { [void]$cmds.Add($c) }
+          if (Test-CrewSeconds $r.seconds) {
+            if (-not $cost.ContainsKey($c) -or $cost[$c] -lt [double]$r.seconds) {
+              $cost[$c] = [double]$r.seconds
+            }
+          }
+        }
       }
     }
   }
@@ -511,6 +536,71 @@ foreach ($f in $changed) {
 }
 foreach ($c in $vm.always) { if ($cmds -notcontains $c) { [void]$cmds.Add($c) } }
 if ($cmds.Count -eq 0) { foreach ($c in $vm.default) { [void]$cmds.Add($c) } }
+
+# --- the Stop budget ------------------------------------------------------
+#
+# The twin of the block in verify-gate.sh, and the two are asserted to select
+# the same commands over the same map by the parity case in the suite. See
+# that file for why the field exists at all; the rule here is the same one:
+# UNKNOWN COST IS NOT FREE. A rule with no `seconds` RUNS, is never deferred
+# on the strength of a number nobody wrote down, is left OUT of the budget
+# arithmetic rather than given a guessed value, and is named in the output.
+$budget = 60.0
+if ($All) {
+  $budget = $null
+} else {
+  # A config that cannot be read falls back to the DEFAULT, never to "no
+  # limit": "could not read the config" must not quietly become unbounded.
+  try {
+    if (Test-Path .crew/config.json) {
+      $cc = Get-Content .crew/config.json -Raw | ConvertFrom-Json -ErrorAction Stop
+      $v = $cc.verify.stopBudgetSeconds
+      if (Test-CrewSeconds $v) { $budget = [double]$v }
+    }
+  } catch { }
+}
+
+$notices = [System.Collections.ArrayList]@()
+if ($null -ne $budget) {
+  $order = @{}
+  for ($i = 0; $i -lt $cmds.Count; $i++) { $order[$cmds[$i]] = $i }
+  $known   = @($cmds | Where-Object { $cost.ContainsKey($_) })
+  $unknown = @($cmds | Where-Object { -not $cost.ContainsKey($_) })
+  # Ascending cost, original order breaking ties -- same ordering as the .sh.
+  $known = @($known | Sort-Object @{Expression = { $cost[$_] }}, @{Expression = { $order[$_] }})
+
+  $spent = 0.0
+  $keep = [System.Collections.ArrayList]@()
+  $deferred = [System.Collections.ArrayList]@()
+  foreach ($c in $known) {
+    if (($spent + $cost[$c]) -le $budget) { [void]$keep.Add($c); $spent += $cost[$c] }
+    else { [void]$deferred.Add($c) }
+  }
+
+  # Unknown-cost commands run FIRST, so a map with no `seconds` anywhere
+  # behaves exactly as it did before this feature existed.
+  $ordered = [System.Collections.ArrayList]@()
+  foreach ($c in $unknown) { [void]$ordered.Add($c) }
+  foreach ($c in $keep)    { [void]$ordered.Add($c) }
+  $cmds = $ordered
+
+  foreach ($c in $unknown) {
+    [void]$notices.Add('verify-gate: ' + $c + ' has no `seconds` in verify.json - cost UNSTATED, ran anyway')
+  }
+  foreach ($c in $deferred) {
+    [void]$notices.Add('deferred to /crew:verify: ' + $c + ' (' + [string][int]$cost[$c] + 's)')
+  }
+  if ($deferred.Count -gt 0) {
+    $extra = ''
+    if ($unknown.Count -gt 0) { $extra = ' plus ' + [string]$unknown.Count + ' of unstated cost' }
+    [void]$notices.Add('verify-gate: stop budget ' + [string][int]$budget + 's; ran ' +
+      [string][int]$spent + 's of stated cost' + $extra + ', deferred ' +
+      [string]$deferred.Count + '. The deferred ones were NOT checked - run /crew:verify.')
+  }
+}
+# Printed BEFORE the run, so a turn killed part-way still says what it was
+# never going to check.
+foreach ($n in $notices) { [Console]::Error.WriteLine($n) }
 
 # .crew/verify.json rules are bash-flavoured strings - `bash _verify/smoke.sh`,
 # `FDM_MODULE=x bash case.sh`, `cd e2e && npx playwright test --grep @flow`. So

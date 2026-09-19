@@ -201,6 +201,12 @@ fi
 # corpse as a live holder -- it would never reclaim, and the one time it fired
 # it would be on evidence that does not hold. The age window stays the only
 # answer for a lock directory that can be dated.
+# --all runs the WHOLE map with no Stop budget. /crew:verify is the caller
+# that wants it; the Stop hook never passes it. Anything else leaves the flag
+# empty so the matcher always sees the same argv shape.
+BUDGET_FLAG=""
+[ "${1:-}" = "--all" ] && BUDGET_FLAG="--all"
+
 LOCK=".crew/.verify-gate.lock"
 # 700 until crew 0.19.65, sized to exceed the hook's own 600s timeout because
 # a held lock was only ever dated at acquisition. It now has a HEARTBEAT (see
@@ -365,7 +371,7 @@ CHANGED_FILE=$(mktemp 2>/dev/null) || { echo "VERIFY GATE: cannot create temp fi
 printf '%s
 ' "$CHANGED" > "$CHANGED_FILE"
 
-MATCHED=$("$PY" - "$CHANGED_FILE" << 'PY'
+MATCHED=$("$PY" - "$CHANGED_FILE" "$BUDGET_FLAG" << 'PY'
 import json,sys,fnmatch,io
 changed=[l for l in io.open(sys.argv[1],encoding="utf-8").read().split("\n") if l.strip()]
 try:
@@ -373,6 +379,22 @@ try:
 except (OSError, ValueError) as e:
     print(f"PARSE_ERROR: {e}", file=sys.stderr)
     sys.exit(3)
+
+# `verify.stopBudgetSeconds`, default 60. None means NO budget -- what
+# `--all` asks for, and what /crew:verify uses to run the whole map. An
+# unreadable or malformed config falls back to the DEFAULT rather than to no
+# limit: "could not read the config" must not quietly become "no limit".
+budget = 60
+if len(sys.argv) > 2 and sys.argv[2] == "--all":
+    budget = None
+else:
+    try:
+        _cc = json.load(open(".crew/config.json"))
+        _v = (_cc.get("verify") or {}).get("stopBudgetSeconds")
+        if isinstance(_v, (int, float)) and not isinstance(_v, bool) and _v >= 0:
+            budget = _v
+    except (OSError, ValueError, AttributeError):
+        pass
 
 # A command is ONE LINE, and a command that is not is REJECTED rather than
 # split or quietly accepted. Two separate places assume it:
@@ -431,6 +453,17 @@ def matches(path, pat):
     return any(fnmatch.fnmatch(path, c) for c in cands)
 
 cmds, unmatched = [], []
+# Cost per COMMAND, not per rule: the same command reaches this list from
+# several rules and is de-duplicated, so a rule's `seconds` has to be folded
+# onto the command. The MAX of the contributing rules is taken deliberately --
+# under-running the budget costs a deferral, over-running it costs the thing
+# the budget exists to bound.
+cost = {}
+def note_cost(cmd, rule):
+    secs = rule.get("seconds")
+    if not isinstance(secs, (int, float)) or isinstance(secs, bool) or secs < 0:
+        return
+    cost[cmd] = max(cost.get(cmd, 0), secs)
 for f in changed:
     hit=False
     for r in cfg.get("rules",[]):
@@ -438,16 +471,61 @@ for f in changed:
             hit=True
             for c in r["run"]:
                 if c not in cmds: cmds.append(c)
+                note_cost(c, r)
     if not hit: unmatched.append(f)
 for c in cfg.get("always",[]):
     if c not in cmds: cmds.append(c)
 if not cmds: cmds = cfg.get("default",[])
+
+# --- the Stop budget ------------------------------------------------------
+#
+# A Stop gate that takes two minutes is a Stop gate people turn off, and
+# .crew/verify.json carried its costs as PROSE in each `why` ("8s", "29s",
+# "245s") which nothing could read. `seconds` is that number in a field.
+#
+# UNKNOWN COST IS NOT FREE. A rule with no `seconds` RUNS -- it is never
+# deferred on the strength of a number nobody wrote down -- and the output
+# says its cost is unstated. It is also left OUT of the budget arithmetic,
+# because adding a guess would make the total a fiction; the summary says so
+# rather than printing a number it cannot stand behind. Same rule this repo
+# applies everywhere else: an unknown that cannot be measured stays an unknown
+# and is labelled, instead of collapsing into a safe-looking value.
+notices = []
+deferred = []
+if budget is not None:
+    known = [c for c in cmds if c in cost]
+    unknown = [c for c in cmds if c not in cost]
+    # Ascending cost, original order breaking ties: cheapest-first fits the
+    # most checks into the budget, and a stable sort keeps the run order
+    # reproducible for anyone comparing two turns.
+    known.sort(key=lambda c: (cost[c], cmds.index(c)))
+    spent, keep = 0, []
+    for c in known:
+        if spent + cost[c] <= budget:
+            keep.append(c)
+            spent += cost[c]
+        else:
+            deferred.append(c)
+    # Unknown-cost commands run FIRST, so a map with no `seconds` anywhere
+    # behaves exactly as it did before this feature existed.
+    cmds = unknown + keep
+    for c in unknown:
+        notices.append("verify-gate: " + c + " has no `seconds` in verify.json - cost UNSTATED, ran anyway")
+    for c in deferred:
+        notices.append("deferred to /crew:verify: " + c + " (" + str(int(cost[c])) + "s)")
+    if deferred:
+        notices.append(
+            "verify-gate: stop budget " + str(int(budget)) + "s; ran " + str(int(spent))
+            + "s of stated cost"
+            + (" plus " + str(len(unknown)) + " of unstated cost" if unknown else "")
+            + ", deferred " + str(len(deferred))
+            + ". The deferred ones were NOT checked - run /crew:verify.")
 # Two records down one channel. The RECORD separator is \x1d (ASCII group
 # separator) and the FIELD separator inside each record is \x1e; neither can
 # appear in a command, because reject_unrepresentable above refused the map
 # outright if one did. It used to be a bare newline, which a command
 # containing one silently moved.
-sys.stdout.write("\x1e".join(cmds) + "\x1d" + "\x1e".join(unmatched) + "\n")
+sys.stdout.write("\x1e".join(cmds) + "\x1d" + "\x1e".join(unmatched) + "\x1d" + "\x1e".join(notices) + "\n")
 PY
 )
 PY_STATUS=$?
@@ -477,6 +555,14 @@ fi
 # NEWLINE-delimited line, which is what a command containing a newline moved.
 CMDS=$(printf '%s\n' "$MATCHED" | tr '\035' '\n' | sed -n 1p | tr '\036' '\n')
 UNMAPPED=$(printf '%s\n' "$MATCHED" | tr '\035' '\n' | sed -n 2p | tr '\036' '\n')
+# Record 3: the budget's own account of itself -- which commands were
+# deferred and what they cost, and which ran with no stated cost at all.
+# Printed BEFORE the run, so a turn that is killed part-way still says what
+# it was never going to check.
+NOTICES=$(printf '%s\n' "$MATCHED" | tr '\035' '\n' | sed -n 3p | tr '\036' '\n')
+if [ -n "$NOTICES" ]; then
+  printf '%s\n' "$NOTICES" >&2
+fi
 
 FAILED=0
 TOTAL_ELAPSED=0

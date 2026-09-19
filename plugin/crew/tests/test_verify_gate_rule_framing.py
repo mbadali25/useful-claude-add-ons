@@ -210,7 +210,16 @@ def test_the_two_halves_of_the_framing_contract_agree():
     assert r'"\x1e".join(cmds)' in emit[0], emit[0]
 
     readers = [l for l in text.splitlines() if "tr '\\035'" in l]
-    assert len(readers) == 2, readers
+    # DERIVED from the writer, not hardcoded. This said `== 2` until the Stop
+    # budget added a third record (the deferral notices) in 0.19.69, and a
+    # hardcoded count fails on a correct change while proving nothing about
+    # the contract -- which is that every record the writer emits has a reader
+    # splitting on the same separator. One separator joins two records.
+    records = emit[0].count(r'"\x1d"') + 1
+    assert len(readers) == records, (
+        "the writer emits " + str(records) + " records but " + str(len(readers))
+        + " readers split on \\035: " + repr(readers)
+    )
     for line in readers:
         assert "sed -n" in line, line
         assert "tr '\\036'" in line, line

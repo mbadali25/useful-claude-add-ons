@@ -36,6 +36,18 @@ If the repo has no meaningful tests, do not fabricate a map. Say so, and hand of
 to `crew:smoke-author` — a map pointing at checks that cannot fail is worse than
 no map, because the gate turns green and everyone relaxes.
 
+**Running the whole map, unbudgeted.** The Stop gate spends a budget
+(`verify.stopBudgetSeconds`, default 60) cheapest-first and DEFERS what does
+not fit, printing `deferred to /crew:verify: <cmd> (<n>s)` for each one. Those
+were not checked. To run everything with no budget:
+
+    bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/verify-gate.sh --all
+
+(or `-All` on the PowerShell flavour). Give every rule a measured `seconds`
+when you write the map -- step 6 already times them. A rule with no `seconds`
+is UNKNOWN cost, not free: it always runs and the gate says its cost is
+unstated, which is the honest default but a poor one to leave in place.
+
 With `--sync`: run
 `bash ${CLAUDE_PLUGIN_ROOT}/skills/crew-setup/scripts/map-audit.sh` and reconcile.
 

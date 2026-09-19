@@ -735,6 +735,7 @@ repository or one checkout.
 | `obsidian.columns.review` | string | `"Review"` | prose, §9 |
 | `obsidian.columns.done` | string | `"Done"` | prose, §9 |
 | `verifyGate` | boolean | `true` | `hooks/scripts/verify-gate.sh` |
+| `verify.stopBudgetSeconds` | integer | `60` | `hooks/scripts/verify-gate.sh`, `verify-gate.ps1` |
 | `context.enabled` | boolean | `true` | `hooks/scripts/context-watch.ps1` |
 | `context.warnAt` | float | `0.5` | `context-watch.ps1` |
 | `context.budgetTokens` | integer or `null` | `null` | `context-watch.ps1` |
