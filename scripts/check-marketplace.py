@@ -174,7 +174,7 @@ def check_plugin_manifests(entries, fail):
 
 
 def check_argument_hint_frontmatter(fail):
-    """Every command's and skill's frontmatter parses as YAML.
+    """Every command's, skill's, and agent's frontmatter parses as YAML.
 
     ``argument-hint: [a] [b]`` - two bracket groups, unquoted - reads to PyYAML
     as a flow sequence for the first ``[...]`` with the second left over as
@@ -192,6 +192,39 @@ def check_argument_hint_frontmatter(fail):
     any frontmatter PyYAML refuses, for any reason, not just this one shape.
     A checker whose parse is weaker than the loader's cannot fail where the
     loader fails; it can only agree with itself.
+
+    Agent files (``plugin/**/agents/**/*.md``, ``skills/**/agents/**/*.md``)
+    carry the same risk through a different shape: the ``<example>``
+    convention documented by ``plugin-dev``'s own ``plugin-validator.md``
+    puts a bare trailing ``Examples:`` in an unquoted plain scalar
+    ``description``, which YAML reads as the start of a new mapping key and
+    refuses with "mapping values are not allowed here" - dropping ``tools``
+    and ``model`` right alongside it. Agents were missing from this check's
+    globs entirely until that gap was found while `plugin/crew/agents/*.md`
+    (54 files) was about to be touched wholesale; a block scalar
+    (``description: |``) carries the identical text without tripping the
+    parser, so the fix belongs in each agent file's frontmatter, not in
+    loosening this check.
+
+    Two more gaps Codex found in review of the same function, both the same
+    class as the one above - a file the check should have scanned, silently
+    was not:
+
+    - The globs ended in a literal ``*.md``, matching only files directly
+      inside ``commands/`` or ``agents/``. Claude Code namespaces a command
+      by its subdirectory (``commands/group/x.md`` -> ``/plugin:group:x``),
+      so a nested command file was never scanned at all - not "scanned and
+      passed", just skipped. Widened every ``commands`` and ``agents`` glob
+      to ``**/*.md`` so any depth matches, mirroring how the ``SKILL.md``
+      globs already used ``**`` for the same reason.
+    - The closing-delimiter search, ``text.find("\\n---\\n", 4)``, required a
+      newline *after* the closing ``---``. A file whose content ends exactly
+      at the closing delimiter - no trailing newline, e.g. because it was
+      truncated or has no body - has no ``\\n---\\n`` substring anywhere, so
+      ``end`` came back ``-1`` and the whole file was skipped rather than
+      parsed, regardless of what the frontmatter said. Replaced the fixed
+      string search with a regex that also accepts the closing ``---`` at
+      end of file.
     """
     try:
         import yaml
@@ -205,18 +238,25 @@ def check_argument_hint_frontmatter(fail):
         return
 
     paths = sorted(
-        set(glob.glob(os.path.join(ROOT, "plugin", "**", "commands", "*.md"), recursive=True))
-        | set(glob.glob(os.path.join(ROOT, "skills", "**", "commands", "*.md"), recursive=True))
+        set(glob.glob(os.path.join(ROOT, "plugin", "**", "commands", "**", "*.md"), recursive=True))
+        | set(glob.glob(os.path.join(ROOT, "skills", "**", "commands", "**", "*.md"), recursive=True))
         | set(glob.glob(os.path.join(ROOT, "plugin", "**", "SKILL.md"), recursive=True))
         | set(glob.glob(os.path.join(ROOT, "skills", "*", "SKILL.md")))
+        | set(glob.glob(os.path.join(ROOT, "plugin", "**", "agents", "**", "*.md"), recursive=True))
+        | set(glob.glob(os.path.join(ROOT, "skills", "**", "agents", "**", "*.md"), recursive=True))
     )
+    # The closing delimiter is normally followed by a blank line and body, but
+    # a file can legitimately end right at the closing "---" with no trailing
+    # newline - accept both rather than silently skipping the ones that do.
+    closing_delim = re.compile(r"\n---(?:\n|\Z)")
     for path in paths:
         text = read(path)
         if not text.startswith("---\n"):
             continue
-        end = text.find("\n---\n", 4)
-        if end == -1:
+        match = closing_delim.search(text, 4)
+        if not match:
             continue
+        end = match.start()
         rel = os.path.relpath(path, ROOT).replace("\\", "/")
         try:
             yaml.safe_load(text[4:end])

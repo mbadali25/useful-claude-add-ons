@@ -18,6 +18,33 @@ below include one, and it is the same bug class that turned up separately in
 `notify` 1.1.0's SKILL.md (an unquoted `: ` inside a plain scalar), fixed
 alongside this suite.
 
+The checker's globs originally covered commands and SKILL.md files only -
+agent files (`plugin/**/agents/*.md`, `skills/**/agents/*.md`) were missing
+entirely, so `plugin/crew/agents/*.md` (54 files) had no frontmatter parse at
+all. The gap surfaced the same bug class in a third shape: the `<example>`
+convention documented in the `plugin-dev` plugin's own `plugin-validator.md`
+puts a bare trailing `Examples:` in an unquoted plain `description` scalar,
+which YAML reads as the start of a new mapping key and refuses with "mapping
+values are not allowed here" - silently dropping `tools` and `model` right
+alongside it. The must-block cases below cover both `plugin/**/agents/*.md`
+and `skills/**/agents/*.md`; the matching must-allow case shows the fix is a
+block scalar (`description: |`), which carries the identical text without
+tripping the parser.
+
+Codex review of that same function found two more files the checker was
+silently not scanning, rather than scanning and passing:
+
+- The `commands`/`agents` globs ended in a literal `*.md`, matching only
+  files directly inside those directories. Claude Code namespaces a command
+  by its subdirectory (`commands/group/x.md` -> `/plugin:group:x`), so a
+  file at that depth was skipped outright. Widened to `**/*.md` under both
+  `commands` and `agents`, for both `plugin` and `skills`.
+- The closing-delimiter search required a newline after the closing `---`.
+  A file whose content ends exactly at that delimiter - no trailing
+  newline - has no `\n---\n` substring anywhere in it, so it was skipped
+  regardless of what its frontmatter said. The delimiter search now also
+  accepts the closing `---` at end of file.
+
 Run: python3 scripts/_test/argument-hint-frontmatter.py
 """
 
@@ -133,6 +160,84 @@ CASES: list[tuple[str, dict, int, str]] = [
         1,
         "not valid YAML",
     ),
+    (
+        "an agent's own <example> convention breaks the same way - a bare "
+        "trailing 'Examples:' in a plain scalar description",
+        {
+            "plugin/widget/agents/reviewer.md": (
+                "---\n"
+                "name: widget-reviewer\n"
+                "description: Use this agent when reviewing widget code for "
+                "defects. Examples:\n\n<example>\n"
+                'Context: A PR touches widget rendering.\n'
+                'user: "review this widget change"\n'
+                'assistant: "I will use the widget-reviewer agent to check it."\n'
+                "</example>\n"
+                "tools: Read, Grep, Glob\n"
+                "model: sonnet\n"
+                "---\n\nbody\n"
+            )
+        },
+        1,
+        "not valid YAML",
+    ),
+    (
+        "a skill's own agents/ directory is covered too, same shape",
+        {
+            "skills/widget/agents/reviewer.md": (
+                "---\n"
+                "name: widget-reviewer\n"
+                "description: Use this agent when reviewing widget code for "
+                "defects. Examples:\n\n<example>\ndone\n</example>\n"
+                "tools: Read\n"
+                "---\n\nbody\n"
+            )
+        },
+        1,
+        "not valid YAML",
+    ),
+    (
+        "a command in a namespaced subdirectory is not exempt - Claude Code "
+        "reads commands/group/x.md as /plugin:group:x, same as commands/x.md",
+        {
+            "plugin/widget/commands/group/test.md": (
+                "---\n"
+                "description: does a thing\n"
+                "argument-hint: [a] [b]\n"
+                "---\n\nbody\n"
+            )
+        },
+        1,
+        "not valid YAML",
+    ),
+    (
+        "the same nesting rule applies under a skill's commands/, and under "
+        "agents/ for both plugins and skills",
+        {
+            "skills/widget/commands/group/setup.md": (
+                "---\ndescription: set up\nargument-hint: [a] [b]\n---\n\nbody\n"
+            ),
+            "plugin/widget/agents/team/reviewer.md": (
+                "---\nname: r\nargument-hint: [a] [b]\n---\n\nbody\n"
+            ),
+            "skills/widget/agents/team/reviewer.md": (
+                "---\nname: r\nargument-hint: [a] [b]\n---\n\nbody\n"
+            ),
+        },
+        3,
+        "not valid YAML",
+    ),
+    (
+        "malformed frontmatter is not exempt just because the file ends "
+        "exactly at the closing '---' with no trailing newline",
+        {
+            "plugin/widget/commands/truncated.md": (
+                "---\nargument-hint: [a] [b]\n---"
+            )
+        },
+        1,
+        "not valid YAML",
+    ),
     # --- must allow ----------------------------------------------------------
     (
         "a single-bracket argument-hint parses fine (a 1-item list)",
@@ -173,6 +278,30 @@ CASES: list[tuple[str, dict, int, str]] = [
         {
             "skills/widget/SKILL.md": (
                 "---\nname: widget\ndescription: does a thing\n---\n\nbody\n"
+            )
+        },
+        0,
+        "",
+    ),
+    (
+        "the same 'Examples:' text as a block scalar (description: |) is the "
+        "agent-file fix - it carries the identical text without tripping the "
+        "parser",
+        {
+            "plugin/widget/agents/reviewer.md": (
+                "---\n"
+                "name: widget-reviewer\n"
+                "description: |\n"
+                "  Use this agent when reviewing widget code for defects. "
+                "Examples:\n\n"
+                "  <example>\n"
+                "  Context: A PR touches widget rendering.\n"
+                '  user: "review this widget change"\n'
+                '  assistant: "I will use the widget-reviewer agent to check it."\n'
+                "  </example>\n"
+                "tools: Read, Grep, Glob\n"
+                "model: sonnet\n"
+                "---\n\nbody\n"
             )
         },
         0,
