@@ -868,3 +868,58 @@ def test_find_polluter_reports_discovery_failure_instead_of_clean():
         f"from a failing find is being treated as complete.\nstdout:\n"
         f"{result.stdout}"
     )
+
+
+@pytest.mark.skipif(_BASH is None, reason="needs bash")
+def test_find_polluter_survives_a_callers_pipefail():
+    """0.19.73, Codex finding on the 0.19.71 fix. `STARSTAR_COUNT` was
+    computed as `printf '%s' "$TEST_PATTERN" | grep -o '\\*\\*' | wc -l |
+    tr -d ' '`. `grep -o` exits 1 on zero matches -- the NORMAL case for
+    almost every real pattern, which has exactly one '**' -- and under a
+    CALLER's `bash -o pipefail` (this script sets none of its own at the
+    time), that non-zero pipeline status reached the bare `VAR=$(...)`
+    assignment and `set -e` aborted the whole script silently, before
+    discovery even ran, with no diagnostic. Reproduced here exactly as
+    Codex described: `bash find-polluter.sh POLL 'src/*.test.ts'` runs
+    clean, `bash -o pipefail find-polluter.sh POLL 'src/*.test.ts'` dies
+    with no output and exit 1. Fixed two ways: the count no longer uses a
+    pipeline at all (parameter expansion instead of grep/wc/tr), and the
+    script now sets `pipefail` itself unconditionally, so its behaviour
+    does not depend on flags the caller happened to set."""
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = pathlib.Path(tmp)
+        repo = tmp_path / "repo"
+        (repo / "src").mkdir(parents=True)
+        (repo / "src" / "good.test.ts").write_text(
+            "// fixture\n", encoding="utf-8")
+
+        bin_dir = tmp_path / "bin"
+        bin_dir.mkdir()
+        _write_fake_npm(bin_dir, 0)
+
+        script = str(SKILL_DIR / "find-polluter.sh").replace("\\", "/")
+        env = dict(os.environ)
+        env["PATH"] = str(bin_dir) + os.pathsep + env.get("PATH", "")
+        # The pattern has NO '**' -- the normal, most common case, and the
+        # one that made `grep -o` exit 1 (no match) under the old code.
+        result = subprocess.run(
+            [_BASH, "-o", "pipefail", script,
+             ".nonexistent-pollution-marker", "src/*.test.ts"],
+            cwd=str(repo), capture_output=True, text=True, timeout=30,
+            stdin=subprocess.DEVNULL, env=env, check=False,
+            encoding="utf-8", errors="replace",
+        )
+
+    assert result.returncode == 0, (
+        f"find-polluter.sh died under the caller's `bash -o pipefail` on a "
+        f"pattern with no '**'.\nstdout:\n{result.stdout}\n"
+        f"stderr:\n{result.stderr}"
+    )
+    assert "good.test.ts" in result.stdout, (
+        "the script produced no diagnostic output before dying -- exactly "
+        f"the silent-death shape this fix addresses.\nstdout:\n"
+        f"{result.stdout}"
+    )
+    assert "No polluter found" in result.stdout, (
+        f"the script did not reach a clean verdict.\nstdout:\n{result.stdout}"
+    )

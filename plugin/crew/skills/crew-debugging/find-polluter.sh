@@ -42,8 +42,16 @@
 #   pipeline (`sort`'s success otherwise masks a failing `find`, e.g. an
 #   unreadable subtree) and refuse with "DISCOVERY FAILED" instead of
 #   proceeding with a silently incomplete test list.
+# - Set `pipefail` unconditionally rather than relying on the caller's
+#   shell options. Without it, a caller who runs this script under their
+#   own `bash -o pipefail` changes ITS behaviour too: `grep -o` exits 1 on
+#   no match, and under a caller's pipefail that non-zero pipeline status
+#   reaches the bare `VAR=$(...)` assignment and `set -e` aborts the
+#   script silently, before discovery even runs, with no diagnostic. A
+#   script's correctness must not depend on flags it did not itself set.
 
 set -e
+set -o pipefail
 
 if [ $# -ne 2 ]; then
   echo "Usage: $0 <file_to_check> <test_pattern>"
@@ -69,7 +77,15 @@ TEST_PATTERN="${TEST_PATTERN#./}"
 # '**' cannot be translated correctly by either variant and would silently
 # match a narrower set than the pattern implies -- the exact false-clean
 # bug class this script exists to prevent. Refuse rather than guess.
-STARSTAR_COUNT=$(printf '%s' "$TEST_PATTERN" | grep -o '\*\*' | wc -l | tr -d ' ')
+#
+# Counted via parameter expansion rather than `grep -o | wc -l`: `grep`
+# exits 1 on zero matches (a normal, expected pattern -- most test
+# patterns have exactly one '**' and NEVER take this branch), and that
+# non-zero status, on a bare `VAR=$(...)` assignment under `set -e`,
+# aborted the script here with no output at all. The expansion form has
+# no pipeline and nothing in it can signal "no match" as failure.
+_STARSTAR_STRIPPED="${TEST_PATTERN//\*\*/}"
+STARSTAR_COUNT=$(( (${#TEST_PATTERN} - ${#_STARSTAR_STRIPPED}) / 2 ))
 if [ "$STARSTAR_COUNT" -gt 1 ]; then
   echo "🚫 UNSUPPORTED PATTERN: more than one ** — split the search or use a single ** prefix"
   echo "   Pattern: $TEST_PATTERN"
@@ -80,18 +96,17 @@ fi
 # like src/**/*.test.ts would skip src/top.test.ts; also try the pattern
 # with '**/' collapsed to cover files directly under the base directory.
 #
-# `set -o pipefail` + `set +e`: `find | sort` inside a bare `VAR=$(...)`
-# assignment discards find's own exit status -- sort's success masks it,
-# so an unreadable subtree (find exits 1) silently trims the test list and
-# the script can report "all tests clean" over an incomplete run. pipefail
-# makes the pipeline's exit status the first non-zero of find/sort rather
-# than sort's; `set +e` stops `set -e` from aborting the script here
-# before the custom DISCOVERY FAILED message below can print.
+# `find | sort` inside a bare `VAR=$(...)` assignment would otherwise
+# discard find's own exit status -- sort's success masks it, so an
+# unreadable subtree (find exits 1) silently trims the test list and the
+# script could report "all tests clean" over an incomplete run. `pipefail`
+# (set unconditionally above) makes the pipeline's exit status the first
+# non-zero of find/sort rather than sort's; `set +e` here stops `set -e`
+# from aborting the script before the custom DISCOVERY FAILED message
+# below can print.
 set +e
-set -o pipefail
 TEST_FILES=$(find . \( -path "./$TEST_PATTERN" -o -path "./${TEST_PATTERN//\*\*\//}" \) | sort -u)
 FIND_STATUS=$?
-set +o pipefail
 set -e
 if [ "$FIND_STATUS" -ne 0 ]; then
   echo ""
