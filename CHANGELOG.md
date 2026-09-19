@@ -6,6 +6,17 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Changed
 
+- **`crew` 0.19.66:** declared licence corrected to GPL-2.0-only to match the
+  repository LICENSE; no code change.
+- **`gizmoduck` 0.5.3:** declared licence corrected to GPL-2.0-only to match
+  the repository LICENSE; no code change.
+- **`localgpu` 0.1.19:** declared licence corrected to GPL-2.0-only to match
+  the repository LICENSE; no code change.
+- **`obsidian-vault` 0.3.9:** declared licence corrected to GPL-2.0-only to
+  match the repository LICENSE; no code change.
+- **`rule-of-two` 0.1.3:** declared licence corrected to GPL-2.0-only to match
+  the repository LICENSE; no code change.
+
 - **`crew` 0.19.65: `pm_brief.py`'s graph-refresh recommendation actually
   reads the graph.** `_graph_fields` read `state.get("graph")`, a key
   `crew_state.collect()` never sets -- the real value lives at
