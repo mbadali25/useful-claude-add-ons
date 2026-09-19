@@ -2654,3 +2654,101 @@ launched by `git checkout -b` overwrote a build mid-measurement, and the
 node-set diff that followed compared the hook's output with itself and
 reported a false zero. Same shape -- a concurrent writer nobody accounted for,
 producing a result that looked clean.
+
+
+## This checkout IS every session's plugin install - uncommitted hook edits run machine-wide
+
+Filed 2026-09-18. **Third cross-session interference case. Standing hazard,
+not an incident.**
+
+`~/.claude/plugins/known_marketplaces.json` registers `useful-claude-add-ons`
+with `"source": "directory"` pointing at this repository's path. So
+`CLAUDE_PLUGIN_ROOT` resolves to this working tree, and **every uncommitted
+edit under `plugin/crew/hooks/` executes as every session's hooks on this
+machine, on the next turn end.** Not on next install. Not on restart.
+
+Observed 2026-09-18: a peer session's Stop hook died with
+`verify-gate.sh: syntax error line 398` from a slice-3 edit that was mid-write
+in this checkout. The peer's hook command named this repo's live path, and the
+peer was working in a *different repository*.
+
+In that session's words, sharper than ours: "Tonight that was a syntax error,
+which is the benign version: it failed loudly. The bad version is an edit that
+is syntactically valid and semantically half-done, which would run silently."
+
+That session also **deliberately did not revert the 20 lines**, because
+discarding another session's uncommitted work is not its call. So neither side
+could safely fix it. That is why the rule below is worktree-only rather than
+"be careful".
+
+**RULE, effective immediately: do not edit `plugin/crew/hooks/` in this
+checkout.** Use a worktree:
+
+    git -c core.hooksPath=/dev/null worktree add ../crew-wt-<slice> <branch>
+
+The `hooksPath` override stops `post-checkout` launching a background graphify
+rebuild. Merge back only committed, gate-green work.
+
+**The three interference cases are one finding.** The graphify clobber (root
+`CLAUDE.md`), the sabotage-window truncation (above), and this. This checkout
+is shared infrastructure for every session on the box; the sabotage harness,
+the hook scripts, and every tracked artifact a hook rebuilds all have to treat
+it that way.
+
+## `installed_plugins.json` records 0.19.56 while 0.19.63 executes
+
+Filed 2026-09-18. **Record only - do not fix in the Stop-hook slice.**
+
+The plugin cache records crew at `0.19.56`; the tree that actually runs is at
+`0.19.63`. On a `directory`-source install the declared version describes
+nothing that executes. Root `CLAUDE.md`'s first stop-and-ask is built on
+`claude plugin update` comparing the *declared version*, so on this install
+shape that comparison is against a number with no relationship to the running
+code. Belongs with `scripts/_test/drift-detection.sh`, the check root
+`CLAUDE.md` already says CI cannot run.
+
+## `tests/sabotage.py` must not be killable into a silent half-restore
+
+Filed 2026-09-18. Generalised from a peer repo that restored a leftover stub
+five times in one night.
+
+A harness that mutates files and restores them in a `finally` leaves the tree
+mutated when the process is killed. A leftover stub, or a one-word sabotage in
+a real check file, makes the next gate pass in milliseconds against nothing.
+
+**Design, from the repo where it bit:**
+1. Before the first write, record every file the run will touch AND its
+   pre-mutation hash into a marker file.
+2. The harness refuses to start, and the gate refuses to run, while that
+   marker exists with hashes that do not match the tree.
+3. **Check every artefact the harness touches, not the easiest to detect.** A
+   guard that checks only the stub passes a tree with a sabotaged check still
+   in it.
+4. **A refusal stops the whole gate.** The observed failure was a gate that
+   proceeded to `smoke.sh` after the self-test refused: fake passes stacked on
+   a failure reported for the wrong reason. This is a block, so it needs the
+   must-block case.
+
+A killed run then leaves a marker naming exactly what to restore, instead of a
+tree that looks fine.
+
+## `scope_report.py`: three defects found by Codex on c7e3a91b..cc433e6a
+
+Filed 2026-09-18. **Fold into the Stop-hook slice; all three verified here.**
+
+1. **Synced trackers are invisible.** `declared_paths` reads
+   `.work/tickets/<id>.md` only. Jira, ServiceDesk Plus and Obsidian Kanban
+   modes keep the ticket at `.work/cache/<id>.md` (`commands/work.md:16`), so
+   on every synced-tracker repo the report says "ticket file is missing" for a
+   ticket that exists. **This repo's `tracker` is `obsidian`, so it is wrong
+   here, not only in the jira repo.**
+2. **The bookkeeping exclusion is a prefix test.** `_BOOKKEEPING` holds
+   `TODO.md` and the check is `str.startswith`, so `TODO.md.py` and `TODO.mdx`
+   are silently excluded. Measured: both return True.
+3. **`fnmatch` has no real `**`.** Measured: `fnmatch("main.py", "**/*.py")`
+   is False while `fnmatch("src/main.py", "**/*.py")` is True, so a ticket
+   declaring `**/*.py` has its root-level files reported as OUT of scope. This
+   is the worst of the three - a report that names in-scope files is how the
+   line gets ignored, which is the exact failure the slice exists to prevent -
+   and it is a parity defect: the gate's own bash matcher treats the pattern
+   differently from the report that describes it.
