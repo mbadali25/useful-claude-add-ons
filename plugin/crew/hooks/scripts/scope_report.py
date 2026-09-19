@@ -46,7 +46,7 @@ def declared_paths(root, ticket):
     None is "the ticket declared nothing", [] is "it declared an empty list",
     and only the second would justify reporting every changed file.
     """
-    path = os.path.join(root, ".work", "tickets", "%s.md" % ticket)
+    path = os.path.join(root, ".work", "tickets", f"{ticket}.md")
     text = crew_state.read_text(path)
     if text is None:
         # Distinct from "the ticket declared nothing": the file INDEX.md names
@@ -94,7 +94,8 @@ def main():
     try:
         ticket = crew_state.read_work(root).get("ticket")
     except Exception as exc:  # pylint: disable=broad-except
-        sys.stderr.write("outside-scope: (could not read the ticket: %s)\n" % exc)
+        sys.stderr.write(
+            f"outside-scope: (could not read the ticket: {exc})\n")
         return 0
 
     if not ticket:
@@ -104,20 +105,21 @@ def main():
     globs = declared_paths(root, ticket)
     if globs is MISSING:
         sys.stderr.write(
-            "outside-scope: (%s is open but .work/tickets/%s.md is missing)\n"
-            % (ticket, ticket))
+            f"outside-scope: ({ticket} is open but "
+            f".work/tickets/{ticket}.md is missing)\n")
         return 0
     if globs is None:
-        sys.stderr.write("outside-scope: (cannot check - no declared paths in %s)\n" % ticket)
+        sys.stderr.write(
+            f"outside-scope: (cannot check - no declared paths in {ticket})\n")
         return 0
 
     extra = outside(changed, globs)
     if extra:
-        sys.stderr.write("outside-scope: %s\n" % " ".join(sorted(extra)))
+        sys.stderr.write(f"outside-scope: {chr(32).join(sorted(extra))}\n")
         sys.stderr.write(
-            "  %s declares: %s\n"
-            "  Report-only. Under the scope clause these belong in TODO.md with "
-            "a reason, not fixed here.\n" % (ticket, " ".join(globs)))
+            f"  {ticket} declares: {chr(32).join(globs)}\n"
+            "  Report-only. Under the scope clause these belong in TODO.md "
+            "with a reason, not fixed here.\n")
     else:
         sys.stderr.write("outside-scope:\n")
     return 0
