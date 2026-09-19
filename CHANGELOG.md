@@ -6,6 +6,24 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Fixed
 
+- **`crew` 0.19.86: find-polluter.sh's `**`-count died under a caller's
+  own `bash -o pipefail`.** `STARSTAR_COUNT` was computed with
+  `printf '%s' "$TEST_PATTERN" | grep -o '\*\*' | wc -l | tr -d ' '`.
+  `grep -o` exits 1 on zero matches — the NORMAL case, since almost
+  every real pattern has exactly one `**` — and under a caller's own
+  `bash -o pipefail` (the script set none of its own at the time), that
+  non-zero pipeline status reached the bare `VAR=$(...)` assignment and
+  `set -e` silently aborted the script before discovery ever ran, with
+  no diagnostic. Reproduced exactly as reported: `bash find-polluter.sh
+  POLL 'src/*.test.ts'` runs clean; `bash -o pipefail find-polluter.sh
+  POLL 'src/*.test.ts'` died with no output and exit 1. Fixed two ways:
+  the count no longer uses a pipeline at all (parameter expansion
+  instead of grep/wc/tr — `${TEST_PATTERN//\*\*/}` length-diffed against
+  the original), and the script now sets `pipefail` itself
+  unconditionally, so its correctness does not depend on flags the
+  caller happened to set. One new sabotage-tested test,
+  `test_find_polluter_survives_a_callers_pipefail`.
+
 - **`crew` 0.19.85: correction to 0.19.71 — the multi-`**` finding is
   crew's own defect, not upstream's.** 0.19.71's entry below (kept
   as-written; corrected forward rather than rewritten) says both new
