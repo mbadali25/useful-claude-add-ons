@@ -124,14 +124,55 @@ PROD_LEVEL_DEFAULT = "none"
 
 PROD_GUARD_NAMES = ("prodDatabase", "prodServer")
 
-# Every guard, in declaration order: the four policy guards then the two
-# production ones. `GUARD_DEFAULTS` is keyed off this, so a name that exists in
-# neither tuple cannot reach the config block at all.
-ALL_GUARD_NAMES = GUARD_NAMES + PROD_GUARD_NAMES
+# The third vocabulary in this block, and the second key (after
+# `change.requireForProduction`) whose DEFAULT is deliberately not its FLOOR.
+# See `ROLE_WRITE_DEFAULT` below for why, and CONFIG.md Sec18 for the full
+# reasoning -- the short version is CLAUDE.md's own rule for a new hook:
+# "a plugin registering one defaults to OFF in the menu". `off` here is what
+# makes that true for `guards.roleWrites` without a second mechanism: the
+# ratchet's existing "absent means default" already does the arming, the same
+# way it does for every other guard.
+#
+#   off     the PreToolUse hook does not run its policy check at all -- every
+#           Write/Edit is allowed, unconditionally
+#   report  every write is allowed, and one goes to a row in
+#           `.crew/guard.log` for every decision, not only the refusals
+#   block   a write outside the calling role's declared scope is refused
+#           (exit 2); a write inside scope is allowed and logged the same
+#           way `report` logs it
+#
+# Ordered least to most permissive for the same reason every tier tuple in
+# this module is: `block` is the narrowest, `off` the widest, and
+# `role_writes_rank` is the one function permitted to know the order.
+ROLE_WRITE_POLICIES = ("block", "report", "off")
+ROLE_WRITE_GUARD_NAMES = ("roleWrites",)
+
+# `off`, not `block`. Every OTHER guard's default equals its floor -- an
+# absent key and an unknown value collapse to the same, narrowest tier. This
+# one splits them on purpose, exactly as `CHANGE_REQUIREMENT_DEFAULT` does for
+# `change.requireForProduction`, and for a mirror-image reason: that key's
+# floor is the SAFEST value because requiring a change request only takes a
+# capability away, so the default (permissive) and the floor (strict) differ
+# in the direction of "a repo may not silently grant more caution than
+# ordered". Here the floor being `block` and the default being `off` is
+# required by CLAUDE.md itself: a hook that can block ships disabled until a
+# human turns it on. An ABSENT key (or an explicit `null`) means nobody has
+# opted in, and must resolve to `off`; a value that is not one of the three
+# known strings is a typo in a hand-edited config, and "could not tell" must
+# not wear the label of "opted out" -- so a malformed value collapses to
+# `block`, the floor, same as every other guard's `normalise_*` function.
+ROLE_WRITE_DEFAULT = "off"
+
+# Every guard, in declaration order: the four policy guards, the two
+# production ones, then the one role-write guard. `GUARD_DEFAULTS` is keyed
+# off this, so a name that exists in none of the three tuples cannot reach the
+# config block at all.
+ALL_GUARD_NAMES = GUARD_NAMES + PROD_GUARD_NAMES + ROLE_WRITE_GUARD_NAMES
 
 GUARD_DEFAULTS = dict(
     [(name, GUARD_POLICY_DEFAULT) for name in GUARD_NAMES]
-    + [(name, PROD_LEVEL_DEFAULT) for name in PROD_GUARD_NAMES])
+    + [(name, PROD_LEVEL_DEFAULT) for name in PROD_GUARD_NAMES]
+    + [(name, ROLE_WRITE_DEFAULT) for name in ROLE_WRITE_GUARD_NAMES])
 
 # What counts as production, and it is a REPO-ONLY block on purpose.
 #
@@ -330,17 +371,60 @@ def prod_level_rank(value):
     return PROD_LEVELS.index(normalise_prod_level(value))
 
 
+def normalise_role_writes(value):
+    """`value` as a known role-write policy, else the restrictive default.
+
+    NOT the same collapse as `normalise_guard_policy` and
+    `normalise_prod_level`, and the difference is the whole point of
+    `ROLE_WRITE_DEFAULT` being distinct from the floor:
+
+      * absent (`value is None`) is not a typo -- it is every repo that has
+        never set this key, which by CLAUDE.md's rule must behave as if the
+        hook were not installed. It resolves to `ROLE_WRITE_DEFAULT`
+        (`"off"`), NOT to the floor.
+      * anything else that fails to name one of `ROLE_WRITE_POLICIES` --
+        a non-string, or a string that is not `block`/`report`/`off` -- IS a
+        typo or a malformed write, and "could not tell what was meant" must
+        not wear the label of "opted out". That collapses to `"block"`, the
+        floor, same direction every other guard here fails in.
+    """
+    if value is None:
+        return ROLE_WRITE_DEFAULT
+    if isinstance(value, str):
+        cleaned = value.strip().lower()
+        if cleaned in ROLE_WRITE_POLICIES:
+            return cleaned
+    return ROLE_WRITE_POLICIES[0]
+
+
+def role_writes_rank(value):
+    """`value`'s position in `ROLE_WRITE_POLICIES`. Higher is more permissive.
+
+    Routed through `normalise_role_writes` first -- same contract as
+    `guard_policy_rank` and `prod_level_rank` -- so a malformed value ranks 0
+    (the floor) and an absent one ranks at `ROLE_WRITE_DEFAULT`'s position,
+    not necessarily 0. `effective_ratcheted`'s `min` still means what it says
+    for this key: neither layer can widen past what the other allows, and a
+    repo cloned with `guards.roleWrites: off` cannot override a machine-global
+    `block`.
+    """
+    return ROLE_WRITE_POLICIES.index(normalise_role_writes(value))
+
+
 def guard_tiers(name):
     """The `(tiers, normalise, rank)` triple a guard's VALUES obey.
 
-    Two vocabularies in one block, so the vocabulary is looked up by name
-    rather than assumed: `guards.forcePush` is `block`/`ask`/`allow` and
-    `guards.prodServer` is `none`/`read`/`full`. A caller that assumed one of
-    them would normalise every value of the other to that vocabulary's floor
-    and then report a level nobody set.
+    Three vocabularies in one block, so the vocabulary is looked up by name
+    rather than assumed: `guards.forcePush` is `block`/`ask`/`allow`,
+    `guards.prodServer` is `none`/`read`/`full`, and `guards.roleWrites` is
+    `block`/`report`/`off`. A caller that assumed one of them would normalise
+    every value of the others to that vocabulary's floor and then report a
+    tier nobody set.
     """
     if name in PROD_GUARD_NAMES:
         return (PROD_LEVELS, normalise_prod_level, prod_level_rank)
+    if name in ROLE_WRITE_GUARD_NAMES:
+        return (ROLE_WRITE_POLICIES, normalise_role_writes, role_writes_rank)
     return (GUARD_POLICIES, normalise_guard_policy, guard_policy_rank)
 
 
@@ -367,12 +451,14 @@ RATCHETED_KEYS = {
 RATCHETED_KEYS.update({
     f"guards.{_name}": guard_tiers(_name) for _name in ALL_GUARD_NAMES
 })
-# The eighth key, and the first whose tiers are not strings. Registering it here
-# is the WHOLE cost of ratcheting it: `effective_ratcheted`'s `min` already
-# means "a repo may turn the requirement on and never off", and `sabotage.py`'s
-# `min` -> `max` mutation already covers this key along with the other seven.
-# A bespoke `effective_change_requirement` would have been the fifth mechanism
-# for one rule -- see this table's own comment.
+# The ninth key (`RATCHETED_KEYS` now holds `install.policy`, the seven
+# `guards.*` from `ALL_GUARD_NAMES`, and this one), and the first whose tiers
+# are not strings. Registering it here is the WHOLE cost of ratcheting it:
+# `effective_ratcheted`'s `min` already means "a repo may turn the requirement
+# on and never off", and `sabotage.py`'s `min` -> `max` mutation already covers
+# this key along with the other eight. A bespoke `effective_change_requirement`
+# would have been the fifth mechanism for one rule -- see this table's own
+# comment.
 RATCHETED_KEYS["change.requireForProduction"] = (
     CHANGE_REQUIREMENTS,
     normalise_require_for_production,

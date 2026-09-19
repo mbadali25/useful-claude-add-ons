@@ -72,9 +72,9 @@ structural exceptions, both visible above: the global layer is pruned before it
 is consulted at all (§2), and `schema` is lifted out of the merge entirely
 (§4).
 
-**And seven exceptions that are not visible above, because they do not go
-through this function at all: `install.policy` (§15) and the six `guards.*`
-(§16).**
+**And eight exceptions that are not visible above, because they do not go
+through this function at all: `install.policy` (§15) and the seven
+`guards.*` (§16).**
 Each resolves to the *lower* of the two layers rather than to the repo's, so a
 cloned repo cannot widen what the machine owner allowed. Anything reading one
 through `resolve_config` gets the precedence answer and is wrong;
@@ -127,15 +127,18 @@ both directions:
 `is_global_path` agrees with `filter_global` by construction — both stop
 descending at a template **leaf**.
 
-**Measured, not argued.** `leaf_paths(default_global_config())` yields **59**
-leaves. `leaf_paths(default_config())` yields **102**, so **43** are repo-only.
-For all 102, `filter_global` and `plan_global_write` agree on whether the path is
+**Measured, not argued.** `leaf_paths(default_global_config())` yields **60**
+leaves. `leaf_paths(default_config())` yields **103**, so **43** are repo-only.
+For all 103, `filter_global` and `plan_global_write` agree on whether the path is
 settable. (45 / 86 before schema 6 added the six `guards.*`, the two
 `github.mergeGate` keys and the repo-only `production.databases` /
-`production.hosts`, and 44 / 85 before schema 5 added `install.policy`.
+`production.hosts`; 44 / 85 before schema 5 added `install.policy`; 59 / 102
+before crew 0.19.91 added the seventh guard, `guards.roleWrites`, in both
+layers.
 All six of schema 6's keys are settable in both layers, so they moved the first
-two numbers and not the third — the same shape `install.policy` had. Re-measure
-rather than trusting these: they are a fact about one commit.)
+two numbers and not the third — the same shape `install.policy` and
+`guards.roleWrites` had. Re-measure rather than trusting these: they are a
+fact about one commit.)
 
 ### The one asymmetry, and it matters
 
@@ -615,13 +618,15 @@ them:
 
 ---
 
-## 10. Global-settable keys — all 59
+## 10. Global-settable keys — all 60
 
-Settable in **either** layer; repo wins — **except `install.policy`, the six
-`guards.*` and `change.requireForProduction`, where the narrower of the two
-layers wins instead** (§15, §16, §17). For the first seven "narrower" means a
-smaller capability; for `change.requireForProduction` the narrower value is
-`true`, so a repo may turn that one **on** and never off — §17.
+Settable in **either** layer; repo wins — **except `install.policy`, the
+seven `guards.*` and `change.requireForProduction`, where the narrower of the
+two layers wins instead** (§15, §16, §17). For the first eight "narrower"
+means a smaller capability, with one of the eight (`guards.roleWrites`)
+narrower meaning something slightly different again — see §18; for
+`change.requireForProduction` the narrower value is `true`, so a repo may
+turn that one **on** and never off — §17.
 `production.databases` and `production.hosts` are deliberately **not** here:
 they are repo-only, and §16 says why. Defaults are identical in `default_config()` and
 `default_global_config()` — verified by comparison.
@@ -681,6 +686,7 @@ they are repo-only, and §16 says why. Defaults are identical in `default_config
 | `guards.mergeGate` | `block` \| `ask` \| `allow` (narrower layer wins, §16) | `"block"` |
 | `guards.prodDatabase` | `none` \| `read` \| `full` (narrower layer wins, §16) | `"none"` |
 | `guards.prodServer` | `none` \| `read` \| `full` (narrower layer wins, §16) | `"none"` |
+| `guards.roleWrites` | `block` \| `report` \| `off` (narrower layer wins, §18) | `"off"` |
 | `change.requester` | string or `null`, see §17 | `null` |
 | `change.implementor` | string or `null`, see §17 | `null` |
 | `change.requireForProduction` | boolean (narrower layer wins, and `true` is the narrower one, §17) | `false` |
@@ -983,9 +989,12 @@ never "one key per bump"; it was "no key without a consumer".
 
 ## 16. `guards` — the configurable guardrails
 
-Six keys, one block, one ratchet, **two vocabularies**. What crew's command
-guard does about each dangerous action it recognises, and how much of
-production crew may reach.
+Seven keys, one block, one ratchet, **three vocabularies**. What crew's
+command guard does about each dangerous action it recognises, how much of
+production crew may reach, and — since crew 0.19.91 — whether a dispatched
+role may write outside the scope its own agent file declares. The third
+vocabulary, `guards.roleWrites`, is different enough from the other six to
+earn its own section: see §18, not the tables immediately below.
 
 | Key | Type | Default | Layer | Read by |
 |---|---|---|---|---|
@@ -995,6 +1004,7 @@ production crew may reach.
 | `guards.mergeGate` | `block` \| `ask` \| `allow` | `"block"` | both, **narrower wins** | `commands/gate.md`, `commands/promote.md` |
 | `guards.prodDatabase` | `none` \| `read` \| `full` | `"none"` | both, **narrower wins** | `hooks/scripts/guard.sh`, `guard.ps1` |
 | `guards.prodServer` | `none` \| `read` \| `full` | `"none"` | both, **narrower wins** | `hooks/scripts/guard.sh`, `guard.ps1` |
+| `guards.roleWrites` | `block` \| `report` \| `off` | `"off"` | both, **narrower wins** | `hooks/scripts/role-write-guard.sh`, `.ps1` |
 | `production.databases` | list of globs | `[]` | **repo only** | `crew_config.py::production_patterns` |
 | `production.hosts` | list of globs | `[]` | **repo only** | `crew_config.py::production_patterns` |
 
@@ -1290,8 +1300,12 @@ eighth key would have been an eighth thing that could be wrong on its own.
 
 ### The default is `false` and the floor is `true`, and they are not the same
 
-This is the **only** ratcheted key in crew where "absent" and "unreadable" do
-not resolve to the same value, and both halves are load-bearing:
+This was the only ratcheted key in crew where "absent" and "unreadable" did
+not resolve to the same value; `guards.roleWrites` (§18) is the second, added
+in 0.19.91 for a mirror-image reason — there the FLOOR is the safe value and
+the DEFAULT has to be the permissive one, because CLAUDE.md requires a new
+blocking hook to ship disabled. Both halves below are load-bearing for this
+key:
 
 - **Absent, or an explicit `null`, resolves to `false`.** Schema 7 lands on
   every existing repo, and a mandatory migration that switched a production
@@ -1326,3 +1340,114 @@ is mechanical. `/crew:change new` exits non-zero unless every one of questions
 on purpose: the template's own rule is that missing information results in
 denial, and a switch to turn that off would be a switch to file requests that
 get denied.
+
+---
+
+## 18. `guards.roleWrites` — mechanical enforcement of a role's write scope
+
+Added in crew 0.19.91. `agents/pm.md:49-53` says, in prose, "You do not write
+application code, tests, docs..." — and on 2026-09-19 it did exactly that for
+four hours, because prose is not enforcement and nothing in the harness read
+that sentence. This key and the `PreToolUse` hook it configures are the
+mechanical version: a `Write` or `Edit` from a role outside its declared
+scope is refused before it reaches the filesystem, rather than relied on to
+not happen.
+
+| | |
+|---|---|
+| Key | `guards.roleWrites` |
+| Values | `block` \| `report` \| `off`, least to most permissive |
+| Default | `"off"` |
+| Layer | both, **narrower wins** (same ratchet as every other `guards.*` key) |
+| Read by | `hooks/scripts/role_write_guard.py`, via `hooks/scripts/role-write-guard.sh` / `.ps1` |
+| Hook | `PreToolUse`, matcher `Write\|Edit`, registered once per shell flavour |
+
+### What each value does
+
+| Value | What crew does |
+|---|---|
+| `off` *(default)* | The hook exits before reading the policy table at all. Every write is allowed; nothing is logged. |
+| `report` | Every write is allowed — including one outside the calling role's scope — and every decision is appended to `.crew/guard.log`, so an operator can see what `block` *would* have refused before turning it on. |
+| `block` | A write outside the calling role's declared scope is refused (`PreToolUse` exit 2, with a message on stderr naming the role, the path and what that role may write); a write inside scope is allowed. Both are logged. |
+
+### The default is `off`, and the floor is `block` — the second key in this file where those two differ (§17 was the first)
+
+Every other `guards.*` key's default equals its floor: an absent key and a
+malformed value both collapse to the narrowest tier. This key splits them on
+purpose, and the split runs in the OPPOSITE direction from
+`change.requireForProduction`'s:
+
+- **Absent, or an explicit `null`, resolves to `off`.** CLAUDE.md's own rule
+  for a new hook that can block a turn is that it "defaults to OFF in the
+  menu" until a human turns it on. An absent key is every repo that has never
+  set it — which, the day this shipped, is every repo that exists — and none
+  of them may go from "no such hook" to "blocking Write calls" by upgrading
+  the plugin alone.
+- **A value that does not name `block`, `report` or `off` resolves to
+  `block`, the floor.** A typo in a hand-edited config is not the same fact
+  as "nobody opted in" — CLAUDE.md's own recurring bug is exactly this,
+  an unknown collapsing into the safe-looking (here: permissive) value. So a
+  malformed value fails toward MORE refusal, not less, the same direction
+  every other guard's `normalise_*` function fails in.
+
+`crew_guards.normalise_role_writes` is the one function that knows this
+split; `role_writes_rank` ranks through it first, so `effective_ratcheted`'s
+`min(...)` still means what it means everywhere else in this file: neither
+layer can widen past what the other allows, and a repo cloned with
+`guards.roleWrites: off` cannot override a machine-global `block`.
+
+### The policy table is in the hook script, not in this file
+
+`hooks/scripts/role_write_guard.py` partitions every `agents/*.md` into three
+buckets, decided by that file's own `tools:` frontmatter — not by its prose,
+which is exactly the gap this hook exists to close:
+
+- a role whose `tools:` line names neither `Write` nor `Edit` may not write
+  anywhere, regardless of path (`analyst`, `compliance-auditor`, `dba`,
+  `explorer`, `infrastructure-architect`, `kimi-consult`,
+  `penetration-tester`, `planner`, `qa-researcher`, `qa-reviewer`,
+  `researcher`, `security` as of 2026-09-19 — re-derive rather than trusting
+  this list, and `tests/test_role_write_guard.py` does exactly that on every
+  run);
+- `pm` may write only under `.crew/**`, `TODO.md`, `.work/**` and
+  `docs/diagrams/**` — `agents/pm.md`'s own stated scope, made mechanical;
+  everyone else whose `tools:` line grants both Write and Edit is
+  unrestricted by this hook.
+
+`tests/test_role_write_guard.py::test_policy_table_matches_the_agent_files`
+parses every agent file's `tools:` line and asserts the script's three sets
+are exactly the partition that produces, so a `tools:` grant added or removed
+with the table left alone fails a test rather than drifting silently.
+
+### What "unknown" means here
+
+Two distinct unknowns reach this hook, and CLAUDE.md's rule applies to both:
+an unknown must not wear the label of a decision, so both **allow**, but each
+is named differently in `.crew/guard.log` rather than merged into one
+unreadable "allow" row — `no-agent-type` (the hook fired with no `agent_type`
+field at all — the main thread, or an older Claude Code build) and
+`unknown-role:<value>` (an `agent_type` this table has no entry for: a
+built-in agent, a different plugin's agent, or a typo).
+
+**`agent_type`'s exact wire form for a plugin-scoped subagent was not
+observed live against a real dispatched subagent in the session that built
+this hook** — see the commit report for what was and was not verified. The
+Claude Code hooks documentation describes the field only as "Agent name (for
+example `"Explore"` or `"security-reviewer"`)"; this repo's own agents were
+observed elsewhere in that session listed as `crew:pm`, `crew:analyst`, etc.
+`role_write_guard._normalise_role` strips everything up to and including the
+LAST `:` before matching, so both `"crew:pm"` and `"pm"` resolve to `"pm"`.
+If the real wire form turns out to be neither, the hook still fails to the
+allowing side: an unmatched value is `unknown-role`, logged and let through,
+never a strand.
+
+### Why this lives beside the other guards rather than as its own block
+
+`install`, the six command/production guards and `change.requireForProduction`
+already established the pattern this key needed: a value settable in both
+layers, ratcheted to the narrower one, read through
+`crew_config.py::resolve_guard` and nothing else. A bespoke
+`resolve_role_writes` would have been a sixth mechanism for the rule §16's own
+header states — "one mechanism can be wrong; two can disagree, and then only
+one of them gets fixed." Adding `"roleWrites"` to `crew_guards.ALL_GUARD_NAMES`
+and one branch to `crew_guards.guard_tiers` was the whole cost of reusing it.

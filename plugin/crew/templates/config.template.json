@@ -158,7 +158,8 @@
     "adminMerge": "block",
     "mergeGate": "block",
     "prodDatabase": "none",
-    "prodServer": "none"
+    "prodServer": "none",
+    "roleWrites": "off"
   },
   "production": {
     "databases": [],

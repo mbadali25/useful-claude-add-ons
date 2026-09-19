@@ -323,7 +323,8 @@ def default_config():
         # globally would fail `is_global_path`'s rule that every
         # globally-settable key is a real repo key.
         "install": copy.deepcopy(crew_state.INSTALL_DEFAULTS),
-        # Same rule, same ratchet, six more keys. Both layers, because a repo
+        # Same rule, same ratchet, seven more keys (the six command/production
+        # guards plus `roleWrites`). Both layers, because a repo
         # that may only NARROW still has to be able to say so.
         "guards": copy.deepcopy(crew_state.GUARD_DEFAULTS),
         # REPO ONLY, and the asymmetry is the design. `guards.prodDatabase`
@@ -480,13 +481,15 @@ def default_global_config():
         # the only key whose global value a repo cannot override upward --
         # see `crew_state.effective_ratcheted`.
         "install": copy.deepcopy(crew_state.INSTALL_DEFAULTS),
-        # The six guards, and the strongest case on this list for the ratchet
-        # rather than precedence. `guards.forcePush` decides whether a command
-        # that destroys history on a remote runs without a word, and
+        # The seven guards, and the strongest case on this list for the
+        # ratchet rather than precedence. `guards.forcePush` decides whether a
+        # command that destroys history on a remote runs without a word,
         # `guards.prodDatabase` whether crew may write to a production
-        # database; the repo file asking for either arrived inside a clone
-        # written by someone else. Note what is NOT here: `production.*`, the
-        # patterns those two match against, which is a repo fact.
+        # database, and `guards.roleWrites` whether a dispatched role may
+        # write outside its declared scope; the repo file asking for any of
+        # them arrived inside a clone written by someone else. Note what is
+        # NOT here: `production.*`, the patterns the first two match against,
+        # which is a repo fact.
         "guards": copy.deepcopy(crew_state.GUARD_DEFAULTS),
         # The whole `change` block, and every key in it earns the global layer
         # on its own terms. `requester` and `implementor` are the person:
@@ -2018,6 +2021,9 @@ _GUARD_ACTIONS = {
                  "back, through /crew:gate",
     "prodDatabase": "a database matching a `production.databases` pattern",
     "prodServer": "a host matching a `production.hosts` pattern",
+    "roleWrites": "a Write or Edit outside the calling role's declared scope, "
+                  "per the policy table in "
+                  "hooks/scripts/role_write_guard.py",
 }
 
 
@@ -2078,6 +2084,42 @@ def _prod_widening_notes(name, what):
     }
 
 
+def _role_write_widening_notes(name, what):
+    """The `! widens to` note for `guards.roleWrites`, total over
+    `crew_state.ROLE_WRITE_POLICIES`.
+
+    Total for the same reason every other note table here is: the CLI does
+    `notes[granted]`, and a missing key is a `KeyError` at the point of use
+    rather than a note describing the wrong tier.
+
+    Unlike `_guard_widening_notes` and `_prod_widening_notes`, the NARROWEST
+    tier (`block`) is not this key's default -- `off` is, per CONFIG.md
+    Sec18 and CLAUDE.md's rule that a hook which can block ships disabled.
+    So the widening direction a reader most needs warned about is the same
+    one every fresh repo already sits at: nothing narrows FROM `off`, because
+    nothing narrower has been chosen yet.
+    """
+    del name
+    return {
+        "block": (
+            f"crew refuses {what}. This is the narrowest policy and nothing "
+            "widens into it."
+        ),
+        "report": (
+            f"crew allows {what}, and appends a row to "
+            f"`{crew_state.GUARD_LOG_PATH}` for every decision, not only "
+            "the ones outside scope -- so the record exists, but nothing "
+            "stops it at the time."
+        ),
+        "off": (
+            f"crew's role-write guard does not run its policy check at all. "
+            f"{what.capitalize()} is not refused and nothing is logged. "
+            "This is the WIDEST tier and it is also the default -- every "
+            "repo that has never set `guards.roleWrites` is already here."
+        ),
+    }
+
+
 _RATCHETED = {
     "pm.authority": (
         crew_state.authority_rank,
@@ -2113,6 +2155,17 @@ _RATCHETED.update({
         _prod_widening_notes(_name, _GUARD_ACTIONS[_name]),
     )
     for _name in crew_state.PROD_GUARD_NAMES
+})
+# The one role-write guard, whose vocabulary is `block`/`report`/`off` and
+# whose DEFAULT (`off`) is not its floor (`block`) -- see
+# `_role_write_widening_notes` for why that is not a bug in this table.
+_RATCHETED.update({
+    f"guards.{_name}": (
+        crew_state.role_writes_rank,
+        crew_state.normalise_role_writes,
+        _role_write_widening_notes(_name, _GUARD_ACTIONS[_name]),
+    )
+    for _name in crew_state.ROLE_WRITE_GUARD_NAMES
 })
 
 

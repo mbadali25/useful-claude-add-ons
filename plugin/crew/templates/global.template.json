@@ -98,7 +98,8 @@
     "adminMerge": "block",
     "mergeGate": "block",
     "prodDatabase": "none",
-    "prodServer": "none"
+    "prodServer": "none",
+    "roleWrites": "off"
   },
   "change": {
     "requester": null,

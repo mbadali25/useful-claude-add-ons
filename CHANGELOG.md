@@ -212,6 +212,36 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
+- **`crew` 0.19.91: mechanical enforcement of each role's write scope, via a
+  new `PreToolUse` guard on `Write`/`Edit`.** `agents/pm.md:49-53` says, in
+  prose, "You do not write application code, tests, docs..." and on
+  2026-09-19 it did exactly that for four hours, because prose is not
+  enforcement and nothing in the harness read that sentence. New
+  `guards.roleWrites` key (`block` | `report` | `off`), read by new
+  `hooks/scripts/role_write_guard.py` through matched shims
+  `role-write-guard.sh` / `.ps1`. The policy table partitions every
+  `agents/*.md` by its own `tools:` frontmatter, not its prose: a role with
+  neither `Write` nor `Edit` granted may not write anywhere; `pm` may write
+  only under `.crew/**`, `TODO.md`, `.work/**` and `docs/diagrams/**`, its
+  own stated scope made mechanical; every other role holding both `Write`
+  and `Edit` is unrestricted by this hook.
+  `tests/test_role_write_guard.py::test_policy_table_matches_the_agent_files`
+  re-derives that partition from the agent files on every run, so a `tools:`
+  grant added or removed with the table left untouched fails a test instead
+  of drifting silently. **Ships `off` by default, following CLAUDE.md's rule
+  that a hook able to block a turn defaults to OFF in the menu** — every repo
+  that has never set `guards.roleWrites` behaves exactly as if this hook were
+  not installed, and turning it on is a deliberate, narrower-of-two-layers
+  ratchet exactly like every other `guards.*` key (CONFIG.md §18). An unknown
+  `agent_type` (absent, or a role this table has no opinion about) always
+  allows — an unknown must not wear the label of a decision — but is still
+  named in `.crew/guard.log` (`no-agent-type` / `unknown-role:<value>`)
+  rather than merged into an unreadable "allow" row. `agent_type`'s exact
+  wire form for a plugin-scoped agent (e.g. whether it arrives as `"pm"` or
+  `"crew:pm"`) was not observed against a real dispatched subagent hook call
+  in this session; `_normalise_role` strips a trailing `:`-prefix so both
+  forms resolve the same, and an unrecognised form still fails to the safe
+  side (allow + log) rather than stranding a role.
 - **`crew` 0.19.91: a `claude plugin eval` suite that tests role behaviour
   under temptation, not prose.** Every structural check in this plugin
   (`run-tests.sh`, `validate-prompts.py`, `pytest`) proves a hook blocks the
