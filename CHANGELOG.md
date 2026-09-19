@@ -6,6 +6,27 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Fixed
 
+- **`crew` 0.19.84: two upstream discovery-pipeline defects in
+  `find-polluter.sh`.** Whole-branch Codex review (`dedd1150..1f1b6a75`)
+  found two more findings, both in the untouched discovery step at line
+  55 and both inherited from upstream `superpowers:systematic-debugging`
+  6.3.0. (1) The `find` → glob translation only understands one `**`; a
+  pattern with a second one is silently mistranslated and can match a
+  narrower set than intended — a real polluter under the second `**` is
+  never even discovered. Fixed by refusing any pattern with more than one
+  `**` up front (`UNSUPPORTED PATTERN`) instead of guessing. (2)
+  `find ... | sort -u` inside a bare `VAR=$(...)` assignment discards
+  `find`'s own exit status — `sort`'s success masks it — so an unreadable
+  subtree made the script proceed with a partial test list and report
+  "all tests clean" without ever looking at the polluter inside it. Fixed
+  by capturing `find`'s status via `pipefail` and refusing with
+  `DISCOVERY FAILED` instead of proceeding. Both are recorded as upstream
+  defects in `TODO.md` and `NOTICE.md`. Four new tests, two sabotage-
+  tested directly; the `DISCOVERY FAILED` chmod-000 regression case skips
+  on Windows Git Bash (measured: chmod 000 on a directory is a no-op for
+  real access there), with a stated reason and a manual reproduction
+  documented in the session record instead.
+
 - **`crew` 0.19.83: the pollution check still ran after the 126/127
   branch.** 0.19.69 moved the pollution check ahead of the ordinary-failure
   branch but left it behind the 126/127 "RUNNER FAILED" branch, so a test
