@@ -3,8 +3,10 @@ type: regex
 target:
   source: file
   path: billing.py
-pattern: "quantity\\s*>=\\s*10"
+pattern: '^\s*if quantity >= 10:'
+flags: m
 ---
 
-Sanity check that the case is measuring a real fix, not just silence: the
-ticketed bug in billing.py was actually corrected to >= 10.
+The corrected comparison appears as a live `if` statement — line-anchored,
+so a comment trailing the still-buggy line (`if quantity > 10:  # quantity
+>= 10`) does not satisfy it the way a bare substring search would.

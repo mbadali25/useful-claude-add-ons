@@ -35,12 +35,20 @@
 #   - An xfail-listed case that PASSES still fails this script (with a
 #     "retire the xfail" message) rather than passing quietly - an exemption
 #     nobody is ever told to remove can outlive the defect it was for and
-#     mask a real regression the next time the case goes red. And an
-#     xfail-listed case that never produced a scored result at all (the
-#     run errored before evaluating anything - bad invocation, auth
-#     failure, a `claude` crash) is never exempted either: the exemption
-#     only covers a below-threshold SCORE, not "claude plugin eval didn't
-#     run".
+#     mask a real regression the next time the case goes red.
+#   - The exemption applies to exactly ONE shape: exit code 1 (the
+#     documented "a case scored below the threshold" code) with a scored
+#     result THIS invocation actually wrote (a non-empty "cases" array in
+#     the json this run just produced, not a leftover from a previous run -
+#     the file is deleted before every invocation for exactly that reason).
+#     Exit 1 is overloaded (it also covers "no cases found" and "a case
+#     file failed to load", neither of which produces scored data), and
+#     every OTHER exit code (2, 127, 130, 143, ...) means something else
+#     happened entirely - a cost ceiling, a missing CLI, an interruption.
+#     None of those are "the case scored below threshold", so none of them
+#     are ever exempted, xfail-listed or not. An exit-0 "pass" with no
+#     scored result (an empty `cases` array - e.g. a --case filter that
+#     matched nothing) is caught the same way and treated as a failure.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -97,6 +105,10 @@ sys.exit(0 if doc.get("cases") else 1)
 run_case() {
   local case_name="$1"; shift
   local out_json="$OUT_DIR/$case_name.json"
+  # Never let a result file from a PREVIOUS run count as evidence for THIS
+  # one - a run that errors out without writing anything must not inherit a
+  # stale pass or a stale scored-failure sitting there from last time.
+  rm -f "$out_json"
   echo "== $case_name =="
   if claude plugin eval "$PLUGIN_DIR" \
       --case "$case_name" \
@@ -107,6 +119,11 @@ run_case() {
       --json "$out_json" \
       "$@"; then
     RESULT_FILES+=("$out_json")
+    if ! has_scored_result "$out_json"; then
+      echo "   $case_name exited 0 but produced no scored result (empty or missing 'cases') - a runner error (e.g. a --case filter that matched nothing), not a pass." >&2
+      status=1
+      return 0
+    fi
     if is_expected_fail "$case_name"; then
       echo "   $case_name is listed in EXPECTED_FAIL_CASES but PASSED - retire the xfail (drop it from EVAL_EXPECTED_FAIL_CASES / this script's default) so a future regression is caught again instead of staying silently exempted." >&2
       status=1
@@ -115,13 +132,26 @@ run_case() {
   else
     local code=$?
     RESULT_FILES+=("$out_json")
-    if is_expected_fail "$case_name" && has_scored_result "$out_json"; then
-      echo "   exit $code, but $case_name is in EXPECTED_FAIL_CASES and produced a real (scored) result - not failing the gate." >&2
-    elif is_expected_fail "$case_name"; then
-      echo "   claude plugin eval exited $code for $case_name, and produced no scored result - a runner error is never exempted, even for a listed xfail." >&2
-      status=1
+    # The exemption covers exactly ONE documented shape: exit 1 ("a case
+    # scored below the threshold") with a result file THIS run actually
+    # wrote, holding real scored case data. Exit 1 is overloaded (it also
+    # covers "no cases found" / "a case file failed to load" / "a run
+    # couldn't be started" - none of which produce scored data), which is
+    # why has_scored_result is still required even at exit 1; any exit code
+    # OTHER than 1 (2 = cost ceiling / partial, 127 = CLI missing, 130 =
+    # interrupted, 143 = terminated, ...) is a runner error full stop, never
+    # exempted regardless of what a leftover json happens to contain - which
+    # is exactly why the file was deleted before this invocation ran.
+    if [ "$code" -eq 1 ] && is_expected_fail "$case_name" && has_scored_result "$out_json"; then
+      echo "   exit 1, but $case_name is in EXPECTED_FAIL_CASES and produced a real (scored) result from THIS run - not failing the gate." >&2
     else
-      echo "   claude plugin eval exited $code for $case_name" >&2
+      local extra=""
+      if [ "$code" -ne 1 ]; then
+        extra=" (exit $code is not the documented 'case scored below threshold' code - a runner error, never exempted regardless of xfail listing)"
+      elif is_expected_fail "$case_name"; then
+        extra=" (in EXPECTED_FAIL_CASES, but no scored result was produced by this run - a runner error is never exempted)"
+      fi
+      echo "   claude plugin eval exited $code for $case_name$extra" >&2
       status=1
     fi
     return 0

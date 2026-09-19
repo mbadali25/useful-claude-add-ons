@@ -24,10 +24,21 @@
 #     so the same env var value matched here and matched nothing at all
 #     under bash, silently dropping the exemption on one platform only.
 #   - An xfail-listed case that PASSES still fails this script (with a
-#     "retire the xfail" warning) rather than passing quietly, and an
-#     xfail-listed case that never produced a scored result at all (the run
-#     errored before evaluating anything) is never exempted either - see
-#     Test-ScoredResult below.
+#     "retire the xfail" warning) rather than passing quietly.
+#   - The exemption applies to exactly ONE shape: exit code 1 (the
+#     documented "a case scored below the threshold" code) with a scored
+#     result THIS invocation actually wrote (a non-empty "cases" array in
+#     the json this run just produced, not a leftover from a previous run -
+#     the file is removed before every invocation for exactly that reason).
+#     Every OTHER exit code means something else happened entirely and is
+#     never exempted, xfail-listed or not; an exit-0 "pass" with no scored
+#     result is caught the same way (Test-ScoredResult) and treated as a
+#     failure.
+#   - Xfail name matching is CASE-SENSITIVE here (-ccontains), matching the
+#     .sh twin's plain `=` string comparison - PowerShell's default
+#     `-contains` is case-INSENSITIVE, so EVAL_EXPECTED_FAIL_CASES=
+#     "PM-DOES-NOT-WRITE-CODE" used to exempt the case here while the .sh
+#     twin's case-sensitive match rejected the same value outright.
 
 $ErrorActionPreference = "Stop"
 
@@ -72,6 +83,10 @@ function Test-ScoredResult {
 function Invoke-EvalCase {
     param([string]$CaseName, [string[]]$ExtraArgs)
     $outJson = Join-Path $OutDir "$CaseName.json"
+    # Never let a result file from a PREVIOUS run count as evidence for THIS
+    # one - a run that errors out without writing anything must not inherit
+    # a stale pass or a stale scored-failure sitting there from last time.
+    if (Test-Path $outJson) { Remove-Item -Force $outJson }
     Write-Host "== $CaseName =="
     $claudeArgs = @($PluginDir, "--case", $CaseName, "--trust-plugin",
         "--threshold", $Threshold, "--max-cost-usd", $MaxCostUsd,
@@ -79,9 +94,14 @@ function Invoke-EvalCase {
     & claude plugin eval @claudeArgs
     $code = $LASTEXITCODE
     $script:ResultFiles += $outJson
-    $isXfail = $ExpectedFailCases -contains $CaseName
+    $isXfail = $ExpectedFailCases -ccontains $CaseName
 
     if ($code -eq 0) {
+        if (-not (Test-ScoredResult $outJson)) {
+            Write-Warning "$CaseName exited 0 but produced no scored result (empty or missing 'cases') - a runner error (e.g. a --case filter that matched nothing), not a pass."
+            $script:ExitStatus = 1
+            return
+        }
         if ($isXfail) {
             Write-Warning "$CaseName is listed in EVAL_EXPECTED_FAIL_CASES but PASSED - retire the xfail (drop it from EVAL_EXPECTED_FAIL_CASES / this script's default) so a future regression is caught again instead of staying silently exempted."
             $script:ExitStatus = 1
@@ -89,13 +109,22 @@ function Invoke-EvalCase {
         return
     }
 
-    if ($isXfail -and (Test-ScoredResult $outJson)) {
-        Write-Warning "exit $code, but $CaseName is in EVAL_EXPECTED_FAIL_CASES and produced a real (scored) result - not failing the gate."
-    } elseif ($isXfail) {
-        Write-Warning "claude plugin eval exited $code for $CaseName, and produced no scored result - a runner error is never exempted, even for a listed xfail."
-        $script:ExitStatus = 1
+    # The exemption covers exactly ONE documented shape: exit 1 ("a case
+    # scored below the threshold") with a result THIS run actually wrote,
+    # holding real scored case data. Every other exit code (2 = cost
+    # ceiling/partial, 127 = CLI missing, 130 = interrupted, 143 =
+    # terminated, ...) is a runner error, never exempted regardless of xfail
+    # listing or what a leftover json happens to contain.
+    if ($code -eq 1 -and $isXfail -and (Test-ScoredResult $outJson)) {
+        Write-Warning "exit 1, but $CaseName is in EVAL_EXPECTED_FAIL_CASES and produced a real (scored) result from THIS run - not failing the gate."
     } else {
-        Write-Warning "claude plugin eval exited $code for $CaseName"
+        $extra = ""
+        if ($code -ne 1) {
+            $extra = " (exit $code is not the documented 'case scored below threshold' code - a runner error, never exempted regardless of xfail listing)"
+        } elseif ($isXfail) {
+            $extra = " (in EVAL_EXPECTED_FAIL_CASES, but no scored result was produced by this run - a runner error is never exempted)"
+        }
+        Write-Warning "claude plugin eval exited $code for $CaseName$extra"
         $script:ExitStatus = 1
     }
 }

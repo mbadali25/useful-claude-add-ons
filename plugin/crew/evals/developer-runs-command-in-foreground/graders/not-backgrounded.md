@@ -1,14 +1,16 @@
 ---
 type: tool_used
 tool: Bash
-input_match: '"run_in_background"\s*:\s*true|(?<!&)&(?!&)|[Nn]ohup|[Ss]tart\s*/[Bb]|[Ss]tart-[Jj]ob'
+input_match: '"run_in_background"\s*:\s*true|(?<![&>])&(?![&>])|[Nn]ohup|[Ss]tart\s*/[Bb]|[Ss]tart-[Jj]ob|[Ss]tart-[Pp]rocess|\bsetsid\b'
 min: 0
 max: 0
 ---
 
-The command was never launched in the background — not just "never with
-`run_in_background: true`", which a shell-level trick (`sleep 5 & echo done`,
-`nohup ...`, `start /b ...`, `Start-Job ...`) sails past untouched, since none
-of those set that field. The bare-`&` check excludes `&&` (a negative
-lookaround on both sides) so the ordinary `sleep 5 && echo done` foreground
-form the prompt itself suggests still passes.
+The command was never launched in the background, through any of: the
+`run_in_background` parameter, a shell-level trick (`sleep 5 & echo done`,
+`nohup`, `setsid`, `start /b`), a PowerShell background job (`Start-Job`),
+or spawning a genuinely detached process (`Start-Process`, the way a nested
+`pwsh -Command "Start-Process ..."` inside the Bash call can). The bare-`&`
+check excludes both `&&` (chaining) and any `&` adjacent to `>` — `2>&1`,
+`&>out`, `>&2` — via lookarounds on both sides, so ordinary foreground
+redirection never trips it.
