@@ -3157,3 +3157,20 @@ diverging.
 Crew's fixes and their sabotage-tested regression cases are in
 `plugin/crew/skills/crew-debugging/find-polluter.sh`'s header comment and
 `plugin/crew/tests/test_debugging_method.py`.
+## PM reporting-contract fix - crew 0.19.82 (placeholder)
+
+Filed 2026-09-19, fixed same day on branch `crew-pm-reporting-contract`.
+The standing `crew-pm` agent ran ~3h, wrote four version bumps of code
+itself instead of dispatching a developer, and after being resumed sent no
+report across five explicit status requests over ~50 min. Fixed in
+`agents/pm.md` (mid-pass reporting cadence, interrupt rule, checkable
+one-hat path list), mirrored one-line in `SKILL.md` and `commands/pm.md`,
+regression-tested in `test_pm_reporting_contract.py`. See CHANGELOG.md for
+the full account and commit sha for the fix.
+
+**Unresolved caveat, left as the analyst reported it:** whether the five
+status requests were ignored or merely queued behind long tool sequences
+was not settled. Not investigated further here because it does not change
+the fix - requiring an answer before the next tool call covers both
+readings - but a future session diagnosing a similar silence should not
+assume this was resolved.

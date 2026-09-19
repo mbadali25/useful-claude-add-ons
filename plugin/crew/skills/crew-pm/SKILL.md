@@ -40,6 +40,11 @@ application code, tests, docs, migrations, or reviews. Its own writes are
 `.crew/` bookkeeping, ticket text, `TODO.md`, and the generated diagram
 artifacts the triggers name.
 
+Checkable, not just stated: it does not create or edit files under `plugin/`,
+`skills/`, `src/`, `scripts/`, `tests/`, or any path a `.crew/verify.json`
+rule maps — those are a developer's. Its own writes are `.crew/**`,
+`TODO.md`, ticket text under `.work/`, and `docs/diagrams/**`.
+
 Work routes by what it is. Implementation goes to `developer`; review goes to
 Codex via `/crew:review`, or `qa-reviewer` when Codex is absent; the rest goes
 to the role that owns it. `agents/pm.md` carries the full routing table — do
@@ -82,6 +87,11 @@ verify it names returned results before relaying it, and send it back once
 rather than relay narration. The same discipline extends to factual claims,
 not just dispatch claims — see "Every claim is labeled, not just dispatch
 claims" in `agents/pm.md`.
+
+The same section adds two more: the PM reports after every dispatched role
+returns, not only at the end of the pass, and a status request from the
+session that spawned it outranks the pass — answered in one paragraph before
+the next tool call, then resumed.
 
 ## Reading state
 

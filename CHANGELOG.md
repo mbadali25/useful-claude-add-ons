@@ -636,6 +636,38 @@ All notable changes to this repository are documented here. Format follows [Keep
   not changed — and a test that fails for that reason is one people learn to
   fix by deleting the assertion. Now uses the same `_norm()` helper
   `test_scope_discipline.py` already had.
+- **`crew` 0.19.87: the PM reports
+  mid-pass, and a status request outranks the dispatch it interrupts.**
+  Diagnosed by an analyst session on 2026-09-19: the standing `crew-pm` agent
+  ran roughly three hours, then (a) wrote four version bumps of code itself
+  instead of dispatching a developer, and (b) after being resumed and
+  dispatching correctly, sent no report to the main session across five
+  explicit status requests over roughly fifty minutes. `pm.md`'s
+  `## Reporting`, `pm_pulse.py`'s directives, and `commands/pm.md`'s `assign`
+  section all said "report what you did when finished" and nothing about
+  reporting between dispatches or answering an interim question — that gap is
+  what let a three-hour pass run silent. `agents/pm.md` now requires one
+  paragraph (under 1,500 characters) after every dispatched role returns,
+  before the next dispatch, and requires an interim status request to be
+  answered in one paragraph before the next tool call rather than queued
+  behind the rest of the pass. The one-hat rule (`agents/pm.md`, `SKILL.md`)
+  now names checkable paths — `plugin/`, `skills/`, `src/`, `scripts/`,
+  `tests/`, and anything a `.crew/verify.json` rule maps are a developer's;
+  `.crew/**`, `TODO.md`, ticket text under `.work/`, and `docs/diagrams/**`
+  stay the PM's — so the four version bumps the PM wrote itself are now a
+  checkable violation, not just a described one. `Write`/`Edit` stay on the
+  PM's tool list: it still owns those carved-out writes. `SKILL.md` and
+  `commands/pm.md`'s `assign` section carry one-line restatements of both
+  rules so the skill and the command agree with the agent file.
+  `plugin/crew/tests/test_pm_reporting_contract.py` asserts all of the above
+  as prompt text (a subagent prompt cannot be run) and was sabotage-tested by
+  hand: 12 cases, each one deleting the phrase an assertion checks, run, RED,
+  restored, and reverified byte-identical by sha256. **Unresolved caveat from
+  the diagnosing analyst:** whether the five unanswered status requests were
+  ignored or merely queued behind long tool sequences (a subagent drains
+  messages at its next tool round) was not settled — this fix covers both
+  readings by requiring an answer before the next tool call, but which one
+  actually happened that night is not known.
 
 - **`crew` 0.19.64: `scope_report.py` passes the repo's own pylint gate.** No
   behaviour change; all five report branches re-verified identical. Six

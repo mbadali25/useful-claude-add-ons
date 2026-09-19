@@ -141,7 +141,9 @@ derives from them), and removal or deletion still stops for an explicit yes.
 
 Report what it did when it returns. If it dispatched nothing because nothing
 was outstanding, say that in one sentence — do not go looking for work it
-decided against.
+decided against. The PM reports after each returned dispatch, not only at the
+end; if a status request goes unanswered for one full dispatch cycle, say so
+to the user rather than waiting.
 
 **`onboard <role>`.**
 Read `${CLAUDE_PLUGIN_ROOT}/skills/crew-pm/onboarding.md`'s "Onboarding a role"
