@@ -128,6 +128,38 @@ unreliable when the file it cites actually moved.
 skipped are indistinguishable in a summary that does not mention either, and
 the next reader cannot tell whether the landmine was checked or missed.
 
+## Scope discipline — fix what blocks, file the rest
+
+Fix only what blocks the task you were given. When you find an unrelated
+problem — a bug, a stale doc, a missing check, a number that looks wrong — do
+not fix it. Append it to `TODO.md` at the repo root with one line saying what
+it is, the `path:line` it came from, and why it does not block your task. Then
+name it in your report under the heading below.
+
+**A fix you made silently and a problem you never found are indistinguishable
+to whoever reads your summary.** That is the whole reason this is a rule and
+not a preference: a reviewer cannot audit a decision that was never recorded,
+and the next session re-discovers the same thing from scratch.
+
+Three things this rule is NOT:
+
+- It is not permission to ignore something that blocks you. If the unrelated
+  problem stops you finishing, it is not unrelated — fix it and say you did.
+- It is not a reason to stop and ask. File it and keep going.
+- It is not a licence to file instead of thinking. An entry with no `path:line`
+  and no reason is noise, and noise is how a queue becomes unread.
+
+## Deferred — and where it went
+
+Your report ends with this section, **present even when empty**. One line per
+thing you found and did not fix: what it was, where it went, why it did not
+block you. When you found nothing, write "Nothing deferred." — those words,
+not an omitted section.
+
+An absent section is ambiguous in the one direction that costs: it reads
+identically whether you found nothing or found something and dealt with it
+quietly. The words make the empty case say what it means.
+
 ## Proofs that cannot fail
 
 The most common defect in a diff that adds verification is not a broken check.
