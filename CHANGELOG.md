@@ -29,8 +29,7 @@ All notable changes to this repository are documented here. Format follows [Keep
   `knowledge`, and a new test drives the real `crew_state.collect()` against a
   fixture repo so the fixture shape cannot drift from the emitter's again.
 - **`crew` 0.19.78: a mandatory check no longer jumps its own rule's `run`
-  order, and is no longer charged twice.** The version is a PLACEHOLDER --
-  0.19.71+ belong to another branch and a renumber pass folds this later. Two
+  order, and is no longer charged twice.** Two
   FIXes from the Codex on `75452c67..9504d6e6`, both in the dedup code
   0.19.94 introduced.
   **0.19.94 attached mandatory-ness to a COMMAND**, hoisting each mandatory
@@ -74,9 +73,7 @@ All notable changes to this repository are documented here. Format follows [Keep
   plus 15s deferrable under a 60s budget, where charging once fits both and
   charging twice defers a rule there was room for.
 - **`crew` 0.19.77: deduplication can no longer weaken a check's obligation,
-  and a submodule's contents are in the fingerprint.** The version is a
-  PLACEHOLDER -- 0.19.71+ belong to another branch and a renumber pass folds
-  this later. Two FIXes from the whole-range Codex on `dedd1150..75452c67`;
+  and a submodule's contents are in the fingerprint.** Two FIXes from the whole-range Codex on `dedd1150..75452c67`;
   the third item is deferred and `TODO.md` says why.
   **The obligation, stated as a property rather than an exemption.** The same
   command string reaches the run list from several sources and is merged into
@@ -118,8 +115,7 @@ All notable changes to this repository are documented here. Format follows [Keep
   in the changed set, so it cannot go vacuous silently again.
 - **`crew` 0.19.76: a deadline the gate cannot parse now means the lock is
   NOT held, and the test that was supposed to prove cross-flavour agreement
-  now needs the feature to pass.** The version is a PLACEHOLDER -- 0.19.71+
-  belong to another branch and a renumber pass folds this later.
+  now needs the feature to pass.**
   Two FIXes and a NIT from the Codex review of `30eebdd9..0462ddc1`, the
   lock-window commit.
   **The deadline read repaired a malformed value into a permissive one.**
@@ -163,9 +159,7 @@ All notable changes to this repository are documented here. Format follows [Keep
   directions and one flavour still publishing leaves the other green); and
   removing `10#` from the TTL seam.
 - **`crew` 0.19.75: the Stop gate's skip can no longer wave through a tree
-  `--all` fails on, and a rule is no longer split by its own budget.** The
-  version is a PLACEHOLDER -- 0.19.71+ belong to another branch and a
-  renumber pass folds this later.
+  `--all` fails on, and a rule is no longer split by its own budget.**
   Three findings from the Codex review of `dedd1150..30eebdd9`, two of them
   one defect.
   **The two BLOCKs are a single class, and are fixed as one.** Both were
@@ -203,8 +197,7 @@ All notable changes to this repository are documented here. Format follows [Keep
   rather than in it, came back GREEN on a one-rule map, and is recorded in
   `sabotage.py` beside the real one.
 - **`crew` 0.19.74: a rule longer than the lock TTL no longer loses its lock
-  mid-run.** The version is a PLACEHOLDER -- 0.19.71+ belong to another
-  branch and a renumber pass folds this later.
+  mid-run.**
   This is the fourth FIX from the Codex review of 0.19.65-0.19.70, the last
   of the six review items. Cutting `LOCK_TTL` to 180s in 0.19.65 was
   justified by a heartbeat, but the heartbeat fires only BETWEEN rules, so a
@@ -239,9 +232,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 - **`crew` 0.19.73: a deferred rule no longer removes a file from
   verification for good.** Codex review of 0.19.65-0.19.70 found one BLOCK
-  and four FIX; this is all of them but the lock heartbeat. The version is a
-  PLACEHOLDER -- 0.19.71+ belong to another branch and a renumber pass folds
-  this later.
+  and four FIX; this is all of them but the lock heartbeat.
   **The BLOCK.** The gate keeps two records of a clean run:
   `.crew/.verify-verified-at`, the commit SHA later runs diff against, and
   the fingerprint. The fingerprint had a guard; **the SHA baseline had none**,
