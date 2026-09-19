@@ -4,6 +4,39 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Added
+
+- **`crew` 0.19.79: a debugging method, and the routing that dispatches it.**
+  Crew shipped 27 commands and 19 skills and not one of them was about finding
+  a cause: `grep -cil 'debug\|root cause'` over `commands/` and `skills/`
+  returned nothing that described a method, and no role's job was diagnosis.
+  The gap showed up as the thing everyone does instead — fix where the error
+  surfaced, ship, watch it return under another symptom. New skill
+  `crew-debugging` and new command `/crew:debug`, adapted from
+  `superpowers:systematic-debugging` (Jesse Vincent, MIT; full notice now in
+  the new `plugin/crew/NOTICE.md`, which is this plugin's first). The method is
+  upstream's, wording intact — the Iron Law, the four phases, the red flags and
+  the rationalisation table. What crew changed is where Phase 1 gets its
+  evidence: the intersecting `.crew/codemap/<subsystem>.md` `## Landmines`
+  sections, `.crew/codemap/schema-<datasource>.md` when the defect touches
+  data, `graphify-out/graph.json` for a cross-file backward trace, and
+  `.crew/verify.json` for the command the gate will actually run. Upstream's
+  four adversarial pressure tests ship too, deliberately: the method without
+  them is a document everyone agrees with and nobody follows at the moment it
+  matters, which is the moment it was written for. `/crew:debug` holds no
+  `Write` and no `Edit`, so "diagnosis does not patch" is a tool grant rather
+  than a request. `commands/work.md` routes a defect ticket to it before
+  planning, and `agents/developer.md` runs it before proposing a fix — a copy
+  nobody dispatches is a file, not an integration. Where
+  `superpowers:systematic-debugging` is installed it is preferred and the
+  bundled copy stands down, following `crew-house-style`'s existing
+  availability idiom: condition only on installed-or-not, and report that a
+  failed `Skill` invocation proves the skill is absent from **this session**,
+  not from the machine. Regression test:
+  `plugin/crew/tests/test_debugging_method.py`.
+
+  0.19.65 is skipped here; it is in flight on another branch.
+
 ### Changed
 
 - **`crew` 0.19.66:** declared licence corrected to GPL-2.0-only to match the
@@ -486,6 +519,12 @@ All notable changes to this repository are documented here. Format follows [Keep
   read the token's mtime from inside the run. Sabotage is 7/7 RED across
   both flavours (announcement, TTL, heartbeat write, and dating by the
   directory again), both gate files restored byte-identical.
+- **`crew` 0.19.79: `test_codemap_read_path.py` survives a rewrap.** Its
+  assertions matched prose exactly with no whitespace normalisation, so any
+  edit that reflowed a line in an agent file failed a test whose subject had
+  not changed — and a test that fails for that reason is one people learn to
+  fix by deleting the assertion. Now uses the same `_norm()` helper
+  `test_scope_discipline.py` already had.
 
 - **`crew` 0.19.64: `scope_report.py` passes the repo's own pylint gate.** No
   behaviour change; all five report branches re-verified identical. Six

@@ -202,8 +202,16 @@ unchanged position despite the file's other changes.)
   using a new claim type `check_self_claims` gained specifically to check a
   plugin's own bundled-skill count (`skills-count` only ever checked the
   marketplace-wide total, which is why crew's bundle count had drifted
-  uncaught in the first place). The line now reads "54 agents, 26 commands,
-  19 skills<!-- claim: plugin-skills:crew -->, 20 hook entries" verbatim.
+  uncaught in the first place). The line now reads "54 agents, 28 commands,
+  20 skills<!-- claim: plugin-skills:crew -->, 18 hook entries" verbatim.
+  **That quotation tracks the live figures rather than freezing at this
+  note's anchor**, and it has to: the marker inside it is a real claim, so
+  `check_self_claims` binds it to `plugin/crew/skills/`'s actual count and
+  fails the gate when the two diverge. It did exactly that on crew 0.19.66,
+  which is a sixth site nobody had listed alongside the five in
+  `verification-harness.md` - a codemap note quoting a doc is indistinguishable
+  from the doc, to a checker that scans every tracked `*.md`. Update the
+  numbers here whenever the five move.
   **Not re-verified this pass:**
   whether `7 of 4
   marketplaces` (community count) and `Seven MCP servers`

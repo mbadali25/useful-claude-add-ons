@@ -16,10 +16,25 @@ it is the only kind available -- but it is also why this file asserts the
 SPECIFIC strings a reader needs rather than merely that the word appears.
 """
 import pathlib
+import re
 
 import context  # noqa: F401  pylint: disable=unused-import
 
 PLUGIN = pathlib.Path(__file__).resolve().parents[1]
+
+
+def _norm(text):
+    """Collapse runs of whitespace so an assertion survives a rewrap.
+
+    Same helper, same reason, as test_scope_discipline.py. These files are
+    hand-wrapped prose: a phrase on one line today can straddle two after any
+    edit, and a test that fails on that is one people learn to "fix" by
+    deleting the assertion. Collapsing whitespace keeps the test sensitive to
+    the sentence being REMOVED -- the actual regression -- while blind to
+    where the line breaks fall.
+    """
+    return re.sub(r"\s+", " ", text)
+
 
 # The roles that read or write code, and therefore need this repo's landmines.
 # `explorer` and `analyst` are NOT here: both already read the codemap, and
@@ -28,7 +43,19 @@ DOING_ROLES = ("developer", "dba", "qa-reviewer", "smoke-author")
 
 
 def _agent(name):
-    return (PLUGIN / "agents" / f"{name}.md").read_text(encoding="utf-8")
+    return _norm((PLUGIN / "agents" / f"{name}.md").read_text(encoding="utf-8"))
+
+
+def _command(name):
+    return _norm((PLUGIN / "commands" / f"{name}.md").read_text(encoding="utf-8"))
+
+
+def _command_raw(name):
+    """Unnormalised. The prompt.txt invariant below is about heredoc
+    STRUCTURE -- it splits on a newline-anchored terminator -- so _norm, which
+    removes every newline, would make that test split on nothing and assert
+    against the wrong slice of the file."""
+    return (PLUGIN / "commands" / f"{name}.md").read_text(encoding="utf-8")
 
 
 def test_every_doing_role_is_told_to_read_the_codemap():
@@ -81,7 +108,7 @@ def test_data_touching_roles_are_pointed_at_the_schema_note():
 
 
 def test_onboard_writes_the_schema_note_and_refuses_to_invent_one():
-    body = (PLUGIN / "commands" / "onboard.md").read_text(encoding="utf-8")
+    body = _command("onboard")
     assert ".crew/codemap/schema-<datasource>.md" in body
     assert "no datasource found" in body, (
         "onboard.md must tell the writer to report an absent datasource "
@@ -104,7 +131,7 @@ def test_review_injects_repo_landmines_into_the_shared_prompt():
     So on any machine with Codex installed, the reviewer that actually ran
     never saw the landmines. Wiring an agent file is not wiring the reviewer.
     """
-    body = (PLUGIN / "commands" / "review.md").read_text(encoding="utf-8")
+    body = _command("review")
     assert "context.txt" in body, (
         "review.md no longer gathers repo landmines, so the provider path "
         "reviews with no knowledge of what breaks in this repository"
@@ -126,7 +153,7 @@ def test_review_keeps_the_byte_identical_prompt_invariant():
     destroy exactly that. So the injection must land INSIDE the single
     heredoc, and no provider block may append to prompt.txt afterwards.
     """
-    body = (PLUGIN / "commands" / "review.md").read_text(encoding="utf-8")
+    body = _command_raw("review")
     assert body.count('cat > "$SCRATCH/prompt.txt"') == 1, (
         "prompt.txt is written in more than one place, so providers can now "
         "receive different bytes and cross-provider counts stop comparing"
