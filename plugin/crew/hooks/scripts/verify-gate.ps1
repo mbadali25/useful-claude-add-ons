@@ -19,7 +19,14 @@ param(
   # consumer is Claude Code's Stop hook, which pipes JSON on stdin and has
   # no interactive path to probe resolution -- this switch is that probe,
   # for the test suite (ANEWINF-756) and for a human confirming the fix.
-  [switch]$PrintBash
+  [switch]$PrintBash,
+
+  # The same probe for the python interpreter the scope report runs on.
+  # Resolve-CrewPython has the identical failure modes to Resolve-CrewBash
+  # (a profile function shadowing the real thing, a WindowsApps stub), and
+  # an unprobeable resolver is one whose regression suite has to run the
+  # whole gate to see it.
+  [switch]$PrintPython
 )
 
 # Resolve a real bash.exe, not WSL's launcher. With WSL installed, unqualified
@@ -79,8 +86,47 @@ function Resolve-CrewBash {
   return 'bash'
 }
 
+function Resolve-CrewPython {
+  # THE SAME GUARD AS Resolve-CrewBash ABOVE, and it is here because this
+  # file already contained that guard and the scope report's resolver did
+  # not -- one file, two resolvers, one of them hardened.
+  #
+  # Two live failure modes, both of which `Get-Command python3, python |
+  # Select-Object -First 1` walks straight into:
+  #
+  #   1. A `function python { ... }` in a PowerShell profile is returned
+  #      AHEAD of any python.exe and its .Source is empty. hooks.json passes
+  #      no -NoProfile, so the profile is loaded and this is a live vector
+  #      rather than a theoretical one. The empty .Source then failed the
+  #      `if ($scopePy)` test and the gate reported "no python" on a machine
+  #      with python installed -- an unknown wearing the label of a check.
+  #   2. The Store's python.exe App Execution Alias in WindowsApps is a real
+  #      Application with a real .Source, so it resolves and is INVOKED; the
+  #      stub opens the Store instead of running the script.
+  #
+  # Only real executables, never the WindowsApps shim. Unlike the bash
+  # resolver there is no System32 shim to exclude -- WSL ships a bash
+  # launcher there, nothing ships a python one -- so that filter is
+  # deliberately absent rather than forgotten.
+  $names = @('python3', 'python')
+  foreach ($name in $names) {
+    $candidates = Get-Command $name -All -ErrorAction SilentlyContinue
+    foreach ($cmd in $candidates) {
+      if ($cmd.CommandType -ne 'Application' -or -not $cmd.Source) { continue }
+      if ($cmd.Source -match 'WindowsApps') { continue }
+      return $cmd.Source
+    }
+  }
+  return ''
+}
+
 if ($PrintBash) {
   Write-Output (Resolve-CrewBash)
+  exit 0
+}
+
+if ($PrintPython) {
+  Write-Output (Resolve-CrewPython)
   exit 0
 }
 
@@ -343,12 +389,20 @@ try {
   # Resolve-CrewPython would have thrown into the catch below and printed
   # "scope not checked" forever, which is precisely the .sh/.ps1 drift root
   # CLAUDE.md records as how crew once blocked nothing on Windows.
-  $scopePy = (Get-Command python3, python -ErrorAction SilentlyContinue |
-              Select-Object -First 1).Source
-  if ($scopePy) {
-    $changed -join "`n" | & $scopePy (Join-Path $PSScriptRoot 'scope_report.py') $PWD.Path
-  } else {
+  $scopePy = Resolve-CrewPython
+  # BOTH preconditions, and they are reported apart. verify-gate.sh tests
+  # `-n "$SCOPE_PY"` AND `-f "$SCOPE_DIR/scope_report.py"`; this flavour
+  # tested only the interpreter, so a missing scope_report.py reached python
+  # and the gate printed a raw "can't open file" traceback line as its scope
+  # report. Two different causes with two different fixes must not arrive as
+  # one sentence -- and neither may be silent.
+  $scopeScript = Join-Path $PSScriptRoot 'scope_report.py'
+  if (-not $scopePy) {
     [Console]::Error.WriteLine('outside-scope: (no python; scope not checked)')
+  } elseif (-not (Test-Path $scopeScript)) {
+    [Console]::Error.WriteLine("outside-scope: (scope_report.py not found at $scopeScript; scope not checked)")
+  } else {
+    $changed -join "`n" | & $scopePy $scopeScript $PWD.Path
   }
 } catch {
   [Console]::Error.WriteLine("outside-scope: (scope not checked: $_)")

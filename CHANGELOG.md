@@ -28,6 +28,39 @@ All notable changes to this repository are documented here. Format follows [Keep
   hand-built state dict), so they passed against it; fixed to nest under
   `knowledge`, and a new test drives the real `crew_state.collect()` against a
   fixture repo so the fixture shape cannot drift from the emitter's again.
+- **`crew` 0.19.69: verify-gate.ps1 resolves python the way it already
+  resolved bash, and both flavours name a missing scope script.** Two
+  findings from a security review of the 0.19.63 scope layer.
+  The interpreter for the scope report was
+  `(Get-Command python3, python | Select-Object -First 1).Source` -- four
+  lines away from `Resolve-CrewBash` in the SAME file, which filters on
+  `CommandType -eq 'Application'` and excludes the WindowsApps App Execution
+  Alias for exactly these reasons. One file, two resolvers, one hardened.
+  Both vectors are live rather than theoretical: `hooks.json` passes no
+  `-NoProfile`, so a `function python { }` in a user profile is loaded and
+  returned AHEAD of any python.exe with an empty `.Source`, which then failed
+  the truth test and made the gate report "no python" on a machine that has
+  python -- the unknown collapsing into a safe-looking value again. And the
+  Store's `python.exe` alias is a real Application with a real `.Source`, so
+  it resolved and was INVOKED. Now `Resolve-CrewPython`, carrying the same
+  guard, with `-PrintPython` as its probe seam beside `-PrintBash`. The
+  System32 filter the bash resolver has is deliberately absent: WSL ships a
+  bash launcher there, nothing ships a python one.
+  Second, the `.ps1` invoked `scope_report.py` with no `Test-Path`, while the
+  `.sh` tests both `-n "$SCOPE_PY"` and `-f`, so a missing script reached
+  python and a raw "can't open file" line was printed as the scope report.
+  Both flavours now check both preconditions AND report them apart: the `.sh`
+  previously answered "(no python; scope not checked)" for a missing script
+  too, so fixing only the `.ps1` would have introduced the drift the pair
+  exists to prevent.
+  Sabotage 5/5 RED, both gate files restored byte-identical. Two of those
+  five came from re-running it rather than trusting the first tally: the
+  original four all probed `Resolve-CrewPython` through `-PrintPython`, so
+  reverting the CALL SITE to the old one-liner left them green -- a guard
+  that is correct and unreached -- and collapsing the `.sh` branches again
+  left them green too, because none of them execute the bash flavour. The
+  suite now drives the real gate for both.
+
 - **`crew` 0.19.68: the scope report stops calling in-scope files out of
   scope, and stops losing files to a prefix.** Three defects, each measured
   before it was touched, all in `scope_report.py` -- the report-only line

@@ -327,11 +327,17 @@ fi
 # printed a python "No such file" line as its scope report. Resolve it here.
 SCOPE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SCOPE_PY=$(crew_py 2>/dev/null) || SCOPE_PY=""
-if [ -n "$SCOPE_PY" ] && [ -f "$SCOPE_DIR/scope_report.py" ]; then
+# The two preconditions are reported APART. Both used to fall into one
+# "(no python)" sentence, so a missing scope_report.py -- a different
+# cause with a different fix -- was announced as an absent interpreter.
+# verify-gate.ps1 says the same two things in the same two cases.
+if [ -z "$SCOPE_PY" ]; then
+  echo "outside-scope: (no python; scope not checked)" >&2
+elif [ ! -f "$SCOPE_DIR/scope_report.py" ]; then
+  echo "outside-scope: (scope_report.py not found at $SCOPE_DIR/scope_report.py; scope not checked)" >&2
+else
   printf '%s
 ' "$CHANGED" | "$SCOPE_PY" "$SCOPE_DIR/scope_report.py" "$PWD" || true
-else
-  echo "outside-scope: (no python; scope not checked)" >&2
 fi
 : # keep the scope report from ever deciding this script's status
 
