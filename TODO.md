@@ -2424,6 +2424,20 @@ commit and changes the next time a skill is registered.
 
 ## `pm_brief._graph_fields` reads a key `crew_state` never sets, so the graph command is always the fallback
 
+**Resolved 2026-09-19** at `642be34a09d0668b144c25e9fe003930ba30b445` on branch
+`crew-pmbrief-graphkey`. `pm_brief.py:298` now reads
+`state.get("knowledge", {}).get("graph", {})` (via `dict_or_empty`, matching the
+idiom already at `:313`), and the three fixtures below that put `graph` at the top
+level are rebuilt to nest it under `knowledge`. A new test,
+`test_real_collect_recommends_graphify_update_when_report_is_tracked`, drives the
+real `crew_state.collect()` against a fixture repo rather than a hand-built dict, so
+the fixture cannot drift from the emitter's shape again -- the exact gap this entry
+names below. Sabotage-verified: reverting `:298` to `state.get("graph")` turns both
+the rebuilt fixture test and the new collect()-driven test red, and the ORIGINAL
+top-level-graph fixture (recovered from `dedd1150`) passes silently against that
+same revert, confirming the finding below. Left the rest of this entry in place
+rather than deleting it -- it is the record of how the bug was found.
+
 Filed 2026-09-18 by the PM, on branch `crew-0.19.61-schema-readpath`, against
 `main` at `7c5b884b`. **Does not block crew 0.19.61; not fixed here.**
 
