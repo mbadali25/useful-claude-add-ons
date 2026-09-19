@@ -2,6 +2,18 @@
 # Bisection script to find which test creates unwanted files/state
 # Usage: ./find-polluter.sh <file_or_dir_to_check> <test_pattern>
 # Example: ./find-polluter.sh '.git' 'src/**/*.test.ts'
+#
+# Modified from upstream superpowers 6.3.0 find-polluter.sh:
+# - Iterate test files through a `while read` loop instead of unquoted word
+#   splitting, so a filename containing whitespace is one argument to
+#   `npm test`, not several.
+# - Do not swallow the runner's exit status: a non-zero exit from `npm test`
+#   is reported as "RUNNER FAILED (exit N)" and the script exits non-zero,
+#   instead of being silently treated as a clean run.
+# - Track how many tests actually ran; if none did (pattern matched nothing,
+#   or every candidate was skipped because the pollution check already
+#   existed before the first test), report "NO TESTS RAN" and exit
+#   non-zero instead of a false-positive clean verdict.
 
 set -e
 
@@ -35,7 +47,9 @@ echo "Found $TOTAL test files"
 echo ""
 
 COUNT=0
-for TEST_FILE in $TEST_FILES; do
+RAN=0
+while IFS= read -r TEST_FILE; do
+  [ -z "$TEST_FILE" ] && continue
   COUNT=$((COUNT + 1))
 
   # Skip if pollution already exists
@@ -47,8 +61,24 @@ for TEST_FILE in $TEST_FILES; do
 
   echo "[$COUNT/$TOTAL] Testing: $TEST_FILE"
 
-  # Run the test
-  npm test "$TEST_FILE" > /dev/null 2>&1 || true
+  # Run the test. A failing assertion inside the test is not a runner
+  # failure and must not be conflated with one -- but a runner that could
+  # not even complete (missing binary, bad interpreter, crash) must not be
+  # read as "ran clean" either, so capture and check its exit status rather
+  # than discarding it with `|| true`.
+  set +e
+  npm test "$TEST_FILE" > /dev/null 2>&1
+  RUNNER_EXIT=$?
+  set -e
+  RAN=$((RAN + 1))
+  if [ "$RUNNER_EXIT" -ne 0 ]; then
+    echo ""
+    echo "💥 RUNNER FAILED (exit $RUNNER_EXIT)"
+    echo "   Test: $TEST_FILE"
+    echo "   The runner did not complete, so pollution results for this and"
+    echo "   any remaining files cannot be trusted. Fix the runner and rerun."
+    exit 1
+  fi
 
   # Check if pollution appeared
   if [ -e "$POLLUTION_CHECK" ]; then
@@ -65,7 +95,16 @@ for TEST_FILE in $TEST_FILES; do
     echo "  cat $TEST_FILE         # Review test code"
     exit 1
   fi
-done
+done <<< "$TEST_FILES"
+
+if [ "$RAN" -eq 0 ]; then
+  echo ""
+  echo "🚫 NO TESTS RAN — cannot conclude clean"
+  echo "   $TOTAL file(s) matched but none were exercised: either the"
+  echo "   pattern matched nothing, or every candidate was skipped because"
+  echo "   the pollution check already existed before the first test."
+  exit 1
+fi
 
 echo ""
 echo "✅ No polluter found - all tests clean!"

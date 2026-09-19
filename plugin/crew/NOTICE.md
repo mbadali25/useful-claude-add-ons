@@ -33,7 +33,12 @@ test files had their skill path repointed at crew's copy.
 `condition-based-waiting.md` lost its pointer to
 `condition-based-waiting-example.ts`, which was not copied. The method itself —
 the Iron Law, the four phases, the red flags, the rationalisation table — is
-upstream's, reproduced with its wording intact.
+upstream's, reproduced with its wording intact. `find-polluter.sh` also
+carries three behavioural fixes on top of the upstream copy (quoted per-file
+invocation, a checked runner exit status, and a non-zero exit when no test
+actually ran) — see its own header comment for what changed and why; the
+reproduction steps for the underlying upstream defects are recorded in
+`TODO.md` at the repo root.
 
 **What was deliberately not copied:** `CREATION-LOG.md` and
 `condition-based-waiting-example.ts`.

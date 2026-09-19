@@ -3103,3 +3103,36 @@ That is an owner's decision and an ADR, not a drive-by edit. Note also that
 nothing currently checks the two against each other, so this will not resurface
 on its own — `check_self_claims` has no `license` claim type, and adding one
 would be a separate change with its own argument to make.
+
+## `find-polluter.sh` has three upstream defects, unfixed there
+
+Filed 2026-09-18 during the 0.19.66/0.19.67 debug-command fixes (Codex,
+gpt-6-astra found all three). Crew's copy under
+`plugin/crew/skills/crew-debugging/find-polluter.sh` fixed them locally; as
+far as this session checked, upstream `superpowers:systematic-debugging`
+6.3.0's `skills/systematic-debugging/find-polluter.sh` still carries all
+three, so they should be filed there rather than assumed fixed by crew's copy
+diverging.
+
+1. **Whitespace in a test filename splits one test into two invalid runner
+   arguments.** The original loop was `for TEST_FILE in $TEST_FILES`, which
+   word-splits on IFS. Reproduction: create `src/has space.test.ts`, run
+   with pattern `src/**/*.test.ts`; the script invokes `npm test ./src/has`
+   and `npm test space.test.ts` as two separate calls, neither of which is
+   the real file.
+2. **A runner that cannot even execute is reported as a clean run.** The
+   original line was `npm test "$TEST_FILE" > /dev/null 2>&1 || true`, which
+   discards the exit status unconditionally. Reproduction: put an `npm` on
+   PATH that exits 127 (command not found), run against any matching test
+   file; the script prints "No polluter found - all tests clean!" and exits
+   0.
+3. **An investigation that executed zero tests reports a clean verdict
+   anyway.** Reproduction: an unmatched test pattern, or a pollution-check
+   path that already exists before the first candidate runs (every
+   candidate then hits the "already exists, skipping" branch) — either way
+   no test is ever actually run, and the script still exits 0 with "all
+   tests clean!".
+
+Crew's fixes and their sabotage-tested regression cases are in
+`plugin/crew/skills/crew-debugging/find-polluter.sh`'s header comment and
+`plugin/crew/tests/test_debugging_method.py`.

@@ -26,14 +26,39 @@ things that regress differently:
 
 Assertions run through `_norm`, so they survive a rewrap and fail only on the
 sentence actually being removed.
+
+**0.19.67 adds a fourth thing**, five Codex (gpt-6-astra) findings against
+0.19.66: `commands/debug.md` overclaimed what the missing `Write`/`Edit` grant
+enforces (`Bash` can write a file as readily as `Edit` can), `find-polluter.sh`
+shipped at file mode `100644` so upstream's documented invocation fails with
+"permission denied" on Linux, and the script inherited three upstream
+defects -- unquoted word-splitting on a test filename containing whitespace,
+a discarded runner exit status, and a false-clean verdict when zero tests
+actually ran. The four behavioural tests below run the real script against a
+fake `npm` on `PATH` rather than asserting on its source text, because these
+are exactly the shape of bug a source-text assertion cannot catch: the code
+can *look* like it checks something while still discarding the result.
 """
+import os
 import pathlib
 import re
+import subprocess
+import tempfile
+
+import pytest
+
+import crew_fixtures
 
 import context  # noqa: F401  pylint: disable=unused-import
 
 PLUGIN = pathlib.Path(__file__).resolve().parents[1]
 SKILL_DIR = PLUGIN / "skills" / "crew-debugging"
+
+# For the two behavioural find-polluter.sh tests below. Resolved once at
+# import time and proved by actually running a probe script, the same
+# safeguard test_verify_gate_lock_sh.py uses -- a plausible-looking bash on
+# PATH that cannot open a Windows path is a documented failure mode here.
+_BASH = crew_fixtures.resolve_bash()
 
 # Upstream's adversarial scenarios plus the no-pressure control. The control
 # matters: a model that answers test-academic correctly and then folds under
@@ -298,4 +323,136 @@ def test_developer_debugs_before_proposing_a_fix():
         "so it reaches the command but not the method behind it. Asserting "
         "the bare skill name passes on the mention in the reporting "
         "requirement below, which is about provenance rather than method"
+    )
+
+
+def test_debug_md_no_longer_overclaims_tool_grant_as_enforcement():
+    """0.19.67, Codex finding #1. The absence of Write/Edit does not stop a
+    fix landing -- `Bash` can write a file as readily as `Edit` can -- so
+    claiming it "is the enforcement" is false, and false in the direction
+    that matters: it tells a reader the Iron Law is mechanically guaranteed
+    when it is a rule the role has to actually follow."""
+    body = _command("debug")
+    assert "the absence of an editing tool is not" not in body, (
+        "debug.md still claims the missing Write/Edit grant is the "
+        "enforcement for the Iron Law. Bash can write a file, so nothing in "
+        "the tool grant actually prevents a patch landing without root-cause "
+        "investigation first -- the passage overclaims a guarantee the grant "
+        "does not provide"
+    )
+    assert "removes the" in body and "convenient" in body and "path to a fix" in body, (
+        "debug.md dropped the corrected framing -- the tool grant removes "
+        "the convenient path to a fix, not the possibility of one -- so the "
+        "distinction this fix exists to draw is gone along with the "
+        "overclaim it replaced"
+    )
+
+
+def test_find_polluter_is_executable_in_the_index():
+    """0.19.67, Codex finding #2. `find-polluter.sh` shipped at file mode
+    `100644`, so upstream's own documented invocation
+    (`./find-polluter.sh ...`) fails with "permission denied" on Linux and
+    every Windows checkout that respects the index bit. The worktree bit on
+    Windows is meaningless -- this has to check the INDEX mode, which is
+    what a Linux checkout actually gets, via `git ls-files -s` rather than
+    `os.access` or `pathlib.Path.stat()` on the local file."""
+    done = subprocess.run(
+        ["git", "ls-files", "-s", "skills/crew-debugging/find-polluter.sh"],
+        cwd=str(PLUGIN), capture_output=True, text=True, timeout=30,
+        stdin=subprocess.DEVNULL, check=False,
+    )
+    assert done.returncode == 0, (
+        f"git ls-files -s failed (exit {done.returncode}): {done.stderr}"
+    )
+    mode = done.stdout.split()[0] if done.stdout.split() else ""
+    assert mode == "100755", (
+        f"find-polluter.sh is tracked at mode {mode!r}, not 100755. Fix with "
+        "`git update-index --chmod=+x "
+        "plugin/crew/skills/crew-debugging/find-polluter.sh` -- a worktree "
+        "chmod alone does not change what a fresh Linux clone gets, only the "
+        "index bit does"
+    )
+
+
+def _write_fake_npm(bin_dir, exit_code):
+    """A stand-in test runner on PATH, minimal enough that its only job is to
+    exit with a chosen code -- never mistaken for a real npm.
+    `newline='\\n'`: this repo's own landmine list warns that `write_text`'s
+    default text mode turns a `.sh` into CRLF on Windows, which dies on the
+    shebang as `bad interpreter: ...^M`."""
+    npm_path = bin_dir / "npm"
+    npm_path.write_text(f"#!/usr/bin/env bash\nexit {exit_code}\n",
+                         encoding="utf-8", newline="\n")
+    npm_path.chmod(0o755)
+    return npm_path
+
+
+def _run_find_polluter(tmp_path, pollution_check, pattern, npm_exit=0):
+    """Runs the real (fixed) find-polluter.sh against a throwaway repo with
+    one matching test file and a fake `npm` standing in for the real runner,
+    and returns the CompletedProcess."""
+    repo = tmp_path / "repo"
+    (repo / "src").mkdir(parents=True)
+    (repo / "src" / "sample.test.ts").write_text("// fixture\n", encoding="utf-8")
+
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    _write_fake_npm(bin_dir, npm_exit)
+
+    script = str(SKILL_DIR / "find-polluter.sh").replace("\\", "/")
+    env = dict(os.environ)
+    env["PATH"] = str(bin_dir) + os.pathsep + env.get("PATH", "")
+    # encoding="utf-8": the script's own output has emoji in it, and
+    # subprocess.run's text-mode default on Windows is the console codepage
+    # (cp1252 here), which raises UnicodeDecodeError on those bytes rather
+    # than on anything this fix touches.
+    return subprocess.run(
+        [_BASH, script, pollution_check, pattern],
+        cwd=str(repo), capture_output=True, text=True, timeout=30,
+        stdin=subprocess.DEVNULL, env=env, check=False,
+        encoding="utf-8", errors="replace",
+    )
+
+
+@pytest.mark.skipif(_BASH is None, reason="needs bash")
+def test_find_polluter_reports_runner_failure_instead_of_clean():
+    """0.19.67, Codex finding #4. A runner that cannot even execute (exit
+    127, command not found) was previously discarded by `|| true` and read
+    as "ran clean". A runner failure and a passing test are different
+    findings and must not collapse into the same exit code."""
+    with tempfile.TemporaryDirectory() as tmp:
+        result = _run_find_polluter(
+            pathlib.Path(tmp), ".nonexistent-pollution-marker",
+            "src/**/*.test.ts", npm_exit=127,
+        )
+    assert result.returncode != 0, (
+        "find-polluter.sh exited 0 against a runner that exits 127 -- a "
+        "broken runner is being reported as a clean investigation.\n"
+        f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+    )
+    assert "RUNNER FAILED" in result.stdout, (
+        "find-polluter.sh did not name the runner failure in its output.\n"
+        f"stdout:\n{result.stdout}"
+    )
+
+
+@pytest.mark.skipif(_BASH is None, reason="needs bash")
+def test_find_polluter_reports_no_tests_ran_instead_of_clean():
+    """0.19.67, Codex finding #5. An unmatched pattern executes zero tests,
+    and zero tests run is not evidence of a clean investigation -- it is no
+    evidence at all. Runs against a real fixture repo with an unmatched
+    pattern, so no test file is ever found or executed."""
+    with tempfile.TemporaryDirectory() as tmp:
+        result = _run_find_polluter(
+            pathlib.Path(tmp), ".nonexistent-pollution-marker",
+            "nomatch/**/*.spec.ts", npm_exit=0,
+        )
+    assert result.returncode != 0, (
+        "find-polluter.sh exited 0 with an unmatched pattern -- zero tests "
+        "executed is being reported as a clean investigation.\n"
+        f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+    )
+    assert "NO TESTS RAN" in result.stdout, (
+        "find-polluter.sh did not report that no tests ran.\n"
+        f"stdout:\n{result.stdout}"
     )

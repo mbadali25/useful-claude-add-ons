@@ -4,6 +4,31 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Fixed
+
+- **`crew` 0.19.80: five review findings on `/crew:debug` (0.19.66).** Codex
+  (gpt-6-astra) reviewed the command and its bundled `find-polluter.sh`.
+  `commands/debug.md` claimed the missing `Write`/`Edit` grant was "the
+  enforcement" for the Iron Law; it is not — `Bash` can write a file as
+  readily as `Edit` can, so the passage now says plainly that the tool grant
+  removes the convenient path to a fix, not that it makes one impossible,
+  matching the wording `dba.md`/`qa-reviewer.md` already use for this same
+  distinction. `find-polluter.sh` shipped at file mode `100644`, so upstream's
+  documented `./find-polluter.sh ...` invocation fails with "permission
+  denied" on Linux; the index mode is now `100755`. Three more defects are
+  inherited from upstream `superpowers:systematic-debugging` 6.3.0 and are
+  now fixed in crew's copy only (see `plugin/crew/NOTICE.md` and `TODO.md`
+  for the upstream reproduction so they can be filed there too): a test
+  filename containing whitespace was split into two invalid runner
+  arguments by unquoted word-splitting; a non-zero exit from the test
+  runner (e.g. a missing `npm`, exit 127) was discarded by `|| true` and
+  reported as a clean run; and an investigation that executed zero tests
+  — an unmatched pattern, or every candidate skipped because the pollution
+  check already existed — reported "all tests clean" instead of refusing to
+  conclude. Regression cases for all four fixed items (the prose plus the
+  three script behaviours) are in `plugin/crew/tests/test_debugging_method.py`,
+  each sabotage-tested.
+
 ### Added
 
 - **`crew` 0.19.79: a debugging method, and the routing that dispatches it.**
