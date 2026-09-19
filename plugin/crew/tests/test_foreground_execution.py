@@ -179,8 +179,8 @@ def test_split_parts_must_be_reported_individually():
     meant approving a violation of its own output contract."""
     free_form_roles = tuple(r for r in FOREGROUND_ROLES if r != "qa-reviewer")
     quotes = {
-        "developer": "each part in the foreground, with each part's result "
-                     "quoted in your report",
+        "developer": "Quote each part's exit code and pass/fail count, one "
+                     "line per part",
         "pm": "each part run in the foreground and each part's output quoted",
         "python-pro": "with each part's exit code reported separately",
         "browser-tester": "each run in the foreground with its own output "
@@ -196,6 +196,23 @@ def test_split_parts_must_be_reported_individually():
             f"{name}.md dropped the requirement to quote each split part, so "
             "a part that never ran now reports the same as one that passed"
         )
+
+
+def test_developer_quotes_stay_inside_its_own_word_budget():
+    """Codex found this on round 2: developer.md's original 'quote each
+    part's result in your report' had no ceiling, and 'What you return' two
+    sections down is capped at 200 words. Enough split parts and the two
+    instructions cannot both be followed. The fix scopes what gets quoted --
+    exit code and pass/fail count, not full output -- and says why."""
+    body = _agent("developer")
+    assert (
+        "not its full output, which would blow past the 200-word return "
+        "below on a suite split into enough parts"
+    ) in body, (
+        "developer.md quotes a bounded summary per split part without "
+        "saying why it is bounded, so a later edit could reasonably widen "
+        "it back to full output and blow the 200-word return again"
+    )
 
 
 def test_qa_reviewer_verifies_every_split_part_without_polluting_its_verdict():
@@ -254,15 +271,36 @@ def test_pm_does_not_resume_a_partial_result_itself():
         "limit reconciled against the dispatch rule above"
     )
     assert (
-        "Return the partial result with the role's id or name, and say "
-        "plainly that it can be resumed by that id."
+        "Return the partial result with the identifier the dispatch "
+        "itself returned, and say plainly that it can be resumed by "
+        "that id."
     ) in body, (
         "pm.md dropped the instruction to hand the partial result's id "
         "upward, so the caller has nothing to resume it with"
     )
-    assert "Do not re-dispatch it yourself" in body, (
-        "pm.md no longer forbids the PM from re-dispatching a partial "
-        "result itself"
+    assert (
+        'A role label such as "developer" is not that identifier and '
+        "cannot resume anything with it"
+    ) in body, (
+        "pm.md no longer rules out a bare role label as the returned "
+        "identifier -- this is the FIX Codex found on round 2: a report of "
+        'PARTIAL with only the label "developer" gives the caller nothing '
+        "commands/pm.md's SendMessage-by-id handoff can use"
+    )
+    assert (
+        'if the dispatch returned no id at all, say plainly "not '
+        'resumable: no id was returned" so the caller knows a fresh '
+        "dispatch is the only option left, not a resume"
+    ) in body, (
+        "pm.md no longer covers the case where the dispatch returned no id "
+        "at all -- an unknown collapsing into a wrong assumed value is the "
+        "recurring failure shape this repo's CLAUDE.md warns about, and "
+        "here it would silently tell the caller to resume something that "
+        "cannot be resumed"
+    )
+    assert "Do not re-dispatch a resumable partial yourself" in body, (
+        "pm.md no longer forbids the PM from re-dispatching a resumable "
+        "partial result itself"
     )
     assert ("spends one of your `pm.maxDispatches` slots to arrive back where "
             "you already were") in body, (
@@ -356,22 +394,46 @@ def test_pm_does_not_treat_an_idle_signal_as_proof_a_role_has_stopped():
         "one, so 'idle' has no check left to weigh it against"
     )
     assert (
-        "A recent write means something is running there, not that the "
-        "specific role you are watching is"
+        "A recent write means the tree was active recently, not that "
+        "anything is running there right now"
     ) in body, (
-        "pm.md no longer distinguishes 'something is running' from 'the "
-        "role I am watching is running' -- which is the gap Codex found on "
-        "round 1: another role, or a process that already finished, can "
-        "leave the same mtime trail as the one being watched"
+        "pm.md no longer distinguishes 'the tree was active recently' from "
+        "'something is running right now' -- which is the honest strength "
+        "Codex asked for on round 2: even a single matching write cannot "
+        "establish current liveness, only recent activity"
     )
-    assert "Confirm which role by the files themselves" in body, (
-        "pm.md dropped the instruction to confirm identity by the specific "
-        "files a ticket touches, so the mtime check has no way left to tell "
-        "roles apart"
+    assert (
+        "the same trail is left by another role, by a process that "
+        "already finished, or by the very role you are watching having "
+        "already exited"
+    ) in body, (
+        "pm.md dropped the list of things besides a live role that can "
+        "leave the same mtime trail. This is the FIX Codex found on round "
+        "2: round 1's fix asserted only the sentence's lead-in, so deleting "
+        "this clause on its own left every test in this file green"
     )
-    assert "treat any ambiguity as a reason to wait, not to restart" in body, (
-        "pm.md dropped the fallback for when the mtime evidence is "
-        "ambiguous, so an unclear signal has no documented safe default"
+    assert (
+        "Confirm which role by the files themselves — the paths its "
+        "ticket touches"
+    ) in body, (
+        "pm.md dropped the ticket-path attribution mechanism itself, not "
+        "just its lead-in. This is the other half of the FIX Codex found "
+        "on round 2: round 1's assertion covered only 'Confirm which role "
+        "by the files themselves' and stopped before naming HOW, so "
+        "deleting '— the paths its ticket touches —' on its own also left "
+        "every test in this file green"
+    )
+    assert (
+        "The decision rule is a recent write means wait one cycle and "
+        "re-check; no write across two consecutive cycles means treat "
+        "the role as stopped."
+    ) in body, (
+        "pm.md dropped the explicit two-reading decision rule, so 'wait, "
+        "don't restart' has no stated threshold for when waiting ends"
+    )
+    assert "Never restart on a single reading either way." in body, (
+        "pm.md dropped the rule that a single reading -- write or no write "
+        "-- is never grounds to restart on its own"
     )
     assert "Never restart a role from disk on an idle signal alone." in body, (
         "pm.md no longer forbids restarting on an idle signal alone, which "

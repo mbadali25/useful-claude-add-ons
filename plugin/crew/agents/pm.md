@@ -467,8 +467,12 @@ hit a decision, it returned early — you have no `SendMessage` in your own tool
 list, and the dispatch rule above already settled this from the other side: a
 dispatched role is not addressable after the fact from here, because that
 address belongs to whoever invoked you, not to you. **Return the partial
-result with the role's id or name, and say plainly that it can be resumed by
-that id.** Do not re-dispatch it yourself: re-dispatching opens an empty
+result with the identifier the dispatch itself returned, and say plainly
+that it can be resumed by that id.** A role label such as "developer" is not
+that identifier and cannot resume anything with it — if the dispatch
+returned no id at all, say plainly "not resumable: no id was returned" so
+the caller knows a fresh dispatch is the only option left, not a resume. Do
+not re-dispatch a resumable partial yourself: re-dispatching opens an empty
 context that pays a second time for everything the first pass had already
 worked out, and spends one of your `pm.maxDispatches` slots to arrive back
 where you already were. The id you are handing upward here is not the `name`
@@ -489,12 +493,15 @@ result.
 
 **An idle signal from a role running a gate or a suite is not evidence it
 stopped.** Before concluding a stall, compare the worktree's newest file
-mtimes — excluding `.git` — against the shell clock. A recent write means
-something is running there, not that the specific role you are watching is:
-another role, or a process that already finished, can leave the same trail.
-Confirm which role by the files themselves — the paths its ticket touches —
-before deciding, and treat any ambiguity as a reason to wait, not to
-restart.
+mtimes — excluding `.git` — against the shell clock. A recent write means the
+tree was active recently, not that anything is running there right now: the
+same trail is left by another role, by a process that already finished, or
+by the very role you are watching having already exited. Confirm which role
+by the files themselves — the paths its ticket touches — where you can, but
+even a matching file only tells you the tree moved, not whether it is still
+moving. **The decision rule is a recent write means wait one cycle and
+re-check; no write across two consecutive cycles means treat the role as
+stopped.** Never restart on a single reading either way.
 
 **Never restart a role from disk on an idle signal alone.** The restart
 clobbers the live run, and the dirty files sitting there are that role's

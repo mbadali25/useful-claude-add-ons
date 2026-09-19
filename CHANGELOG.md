@@ -15,6 +15,66 @@ All notable changes to this repository are documented here. Format follows [Keep
   lands where nothing is reading, and the work looks abandoned until a human
   notices and pokes it. That is a harness property, not a bug to wait out, so
   the fix is in the prose that tells each role how to run a long command.
+
+  Every dispatched role that runs a gate, a suite or a mutation itself now
+  carries the same three clauses in its own voice: run it in the foreground;
+  never end a turn waiting on a background task, with the reason stated; and
+  split a command that exceeds the tool timeout into foreground parts rather
+  than backgrounding it. How a split part's result gets reported varies by
+  the role's own report contract, not one shared sentence: `developer` and
+  `python-pro` quote only each part's exit code and pass/fail count, one line
+  per part, to stay inside their 200-word return; `pm`, `browser-tester` and
+  `smoke-author` quote each part's output into their free-form report;
+  `qa-reviewer` never appends a split part's output to its verdict at all —
+  that verdict is defect lines or exactly `CLEAN` and nothing else, so for
+  `qa-reviewer` the quoting belongs to the reasoning that reaches a verdict,
+  never to the verdict itself.
+
+  `pm.md` also carries the resume rule for a role that returns a PARTIAL
+  result, and the PM does not do the resuming itself: it has no `SendMessage`
+  in its own tools, and its own dispatch rule already forbids treating a
+  dispatched role as addressable from inside the PM, for the same reason —
+  that address belongs to whoever invoked the PM, not to the PM. The PM's job
+  is to return the identifier the dispatch itself returned and say it can be
+  resumed by that id — a bare role label is not that identifier and cannot
+  resume anything, and if the dispatch returned no id at all the PM says so
+  plainly rather than implying a resume that cannot happen — never to
+  re-dispatch a resumable partial itself, which would open an empty context
+  and spend a `pm.maxDispatches` slot to arrive back where it started. The
+  actual resume, `SendMessage` addressed to that id, happens one level up in
+  `commands/pm.md`'s "Relay what it did" section, where `SendMessage` is
+  genuinely available.
+
+  `pm.md` also carries the observer's half of the idle rule: an idle signal
+  from a role running a gate or suite is not evidence it stopped, after the
+  harness reported three roles idle mid-run in one session — one had written
+  its results three seconds before the clock that read it idle, another had
+  a test-cache write sixteen minutes after its last source edit. A recent
+  worktree write proves only that the tree was active recently, not that
+  anything is running there right now — another role, a process that already
+  finished, or the very role being watched having already exited can all
+  leave the same trail. The decision rule is explicit: a recent write means
+  wait one cycle and re-check; no write across two consecutive cycles means
+  treat the role as stopped; a single reading, write or no write, is never
+  grounds to restart on its own. Never restart a role from disk on an idle
+  signal — the dirty files sitting there are that role's work, not proof it
+  never started one.
+
+  Every clause above is asserted as whitespace-normalised prose in
+  `plugin/crew/tests/test_foreground_execution.py`, and every assertion has
+  been individually sabotage-tested: the phrase deleted, the suite confirmed
+  RED, the file restored, sha256 checked matching before and after. Found and
+  fixed across two rounds of independent review (Codex gpt-6-astra, 0 BLOCK
+  both rounds): round 1 caught the PM being told to resume a role with a
+  tool it does not have, the idle-write rule reading as proof of identity
+  rather than of activity, `qa-reviewer`'s output contract being violated by
+  its own split-parts rule, and two reconciliation assertions that checked
+  only a rule's lead-in sentence rather than the explanation that made it
+  correct; round 2 caught `developer` and `python-pro`'s quoting requirement
+  risking their own 200-word return budget, a bare role label being accepted
+  as a resumable id, the idle-write rule still overclaiming current liveness
+  from a single reading, and two more test assertions with the same
+  lead-in-only gap as round 1's.
   Every dispatched role file that runs a gate, a suite or a mutation itself
   now carries three clauses in its own voice: run it in the foreground; never
   end a turn waiting on a background task, with the reason stated; and split a
