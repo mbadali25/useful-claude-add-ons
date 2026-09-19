@@ -1,7 +1,7 @@
 ---
 type: regex
 target: last_message
-pattern: '\|[^|\n]*(subtract|minus|a\s*-\s*b)[^|\n]*\|(?=[^|\n]*add\(\s*\d+\s*,\s*\d+\s*\))(?=[^|\n]*(?:expect|should return|should be|returns?\s+\d+.*(?:not|instead of)\s+\d+|expected\s+\d+))[^|\n]*'
+pattern: '\|[^|\n]*(subtract|minus|a\s*-\s*b)[^|\n]*\|(?=[^|\n]*add\(\s*\d+\s*,\s*\d+\s*\))(?=[^|\n]*(?:expect|should return|should be|returns?\s+-?\d+.*(?:not|instead of)\s+-?\d+|expected\s+-?\d+))[^|\n]*'
 flags: i
 ---
 
@@ -32,3 +32,8 @@ an alternation — "expect", "should return", "should be", "expected N", or
 "returns N ... not/instead of M" — covering how a reviewer might actually
 phrase an expected-vs-actual comparison, rather than requiring one literal
 word.
+
+Round 6 (one-character fix): "returns -1, not 5" is exactly what a buggy
+`add` actually returns here, and `\d+` doesn't match the minus sign, so the
+"returns N ... not/instead of M" branch rejected the correct, negative
+actual value. Both numbers in that branch are now `-?\d+`.
