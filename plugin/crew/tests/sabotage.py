@@ -2168,10 +2168,11 @@ MUTATIONS = (
         VERIFY_SH,
         'sys.stdout.write("\\x1e".join(cmds) + "\\x1d" + "\\x1e"'
         '.join(unmatched) + "\\x1d" + "\\x1e".join(notices)\n   '
-        '              + "\\x1d" + str(len(deferred)) + "\\n")',
+        '              + "\\x1d" + str(len(deferred))\n   '
+        '              + "\\x1d" + str(int(max_cost)) + "\\n")',
         'print("\\x1e".join(cmds))\nprint("\\x1e".join(unmatched'
         '))\nprint("\\x1e".join(notices))\nprint(str(len(deferre'
-        'd)))',
+        'd)))\nprint(str(int(max_cost)))',
         ("tests/test_verify_gate_rule_framing.py::"
          "test_the_two_halves_of_the_framing_contract_agree"),
     ),

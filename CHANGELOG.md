@@ -28,6 +28,41 @@ All notable changes to this repository are documented here. Format follows [Keep
   hand-built state dict), so they passed against it; fixed to nest under
   `knowledge`, and a new test drives the real `crew_state.collect()` against a
   fixture repo so the fixture shape cannot drift from the emitter's again.
+- **`crew` 0.19.74: a rule longer than the lock TTL no longer loses its lock
+  mid-run.** The version is a PLACEHOLDER -- 0.19.71+ belong to another
+  branch and a renumber pass folds this later.
+  This is the fourth FIX from the Codex review of 0.19.65-0.19.70, the last
+  of the six review items. Cutting `LOCK_TTL` to 180s in 0.19.65 was
+  justified by a heartbeat, but the heartbeat fires only BETWEEN rules, so a
+  SINGLE rule longer than the TTL still let the other gate flavour reclaim a
+  live lock and run concurrently -- two gates, two verdicts, one turn. Not
+  hypothetical: this repo's own `.crew/verify.json` declares a 185s rule
+  against a 180s TTL.
+  The reviewer's stated preference was a background heartbeat running DURING
+  the rule; that was not taken, because a backgrounded toucher is ORPHANED
+  when the holder is SIGKILLed, and an orphan that keeps refreshing the token
+  disables verification permanently. Bounding that needs either pid
+  liveness -- measured unreliable on this platform, a hard-killed Git Bash
+  pid reported ALIVE at +0.5s, +5s and +15s -- or a pipe-EOF trick whose
+  PowerShell equivalent is different machinery, which is exactly the
+  `.sh`/`.ps1` drift this pair exists to avoid.
+  Instead the holder now publishes a DEADLINE, sized from the map's own
+  measured numbers: `max(LOCK_TTL, 2 x the largest stated cost among the
+  selected rules)`, same arithmetic in both shells, no background process,
+  bounded by construction. A challenger honours the deadline when one exists
+  and falls back to the age window when it does not, so a lock written by an
+  older version ages exactly as before. `CREW_VERIFY_LOCK_TTL` is an
+  environment-only test seam so the regression suite exercises the boundary
+  in seconds rather than minutes; it is deliberately not read from config.
+  The cost, stated rather than hidden: a hard-killed holder now holds the
+  lock for up to that window instead of `LOCK_TTL` -- 370s rather than 180s
+  on this repo. The residual gap, not closed: a rule with no stated `seconds`
+  contributes 0 to the window and keeps today's behaviour.
+  Sabotage: removing the in-rule deadline republish (both before the first
+  rule and after each one) in both flavours turned the must-allow case RED
+  in both, naming the reclaim ("the holder published no deadline... will
+  reclaim a live lock"); restored byte-identical by sha256 in both.
+
 - **`crew` 0.19.73: a deferred rule no longer removes a file from
   verification for good.** Codex review of 0.19.65-0.19.70 found one BLOCK
   and four FIX; this is all of them but the lock heartbeat. The version is a

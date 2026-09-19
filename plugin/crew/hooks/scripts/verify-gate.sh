@@ -286,6 +286,22 @@ LOCK=".crew/.verify-gate.lock"
 # keeping a live run from ever looking stale, a false "held" costs one skipped
 # turn and that turn now says so out loud.
 LOCK_TTL=180
+# Overridable so the regression suite can exercise the boundary without
+# burning the real window in wall-clock time. Read from the environment, not
+# from config: this is a TEST SEAM, and a repo that sets it in .crew/config
+# would be quietly changing how long one flavour waits for the other.
+#
+# NARROWS ONLY. A value greater than the compiled default (or 0, or anything
+# that fails to parse as a positive integer) is ignored and the default
+# stands -- the seam exists so a test can make the window SMALLER and finish
+# in seconds, never to make a live repo's window LARGER by an env var nobody
+# would think to look for. Unparseable falls back to the compiled default,
+# not to zero, which would make every lock look expired on the next read.
+case "${CREW_VERIFY_LOCK_TTL:-}" in
+  ''|*[!0-9]*) ;;
+  *) [ "$CREW_VERIFY_LOCK_TTL" -gt 0 ] && [ "$CREW_VERIFY_LOCK_TTL" -le "$LOCK_TTL" ] 2>/dev/null \
+       && LOCK_TTL=$CREW_VERIFY_LOCK_TTL ;;
+esac
 RECLAIMED=0
 # Set when the checks run with no lock held. Nothing is cleaned up on that
 # path -- no token is written, so the trap has nothing to match and another
@@ -319,6 +335,54 @@ lock_age_source() {
 # double-report the lock exists to prevent. Only the token holder touches it:
 # `mkdir -p` on an existing directory updates nothing on some filesystems, so
 # write through the token file, which we own and which the trap already keys on.
+# HOW LONG THIS RUN MAY LEGITIMATELY GO QUIET.
+#
+# The heartbeat fires BETWEEN rules, so a SINGLE rule longer than LOCK_TTL
+# still lets the other flavour reclaim a live lock and run concurrently --
+# two gates, two verdicts, one turn. That is not hypothetical here: this
+# repo's own map declares a 185s rule against a 180s TTL.
+#
+# So the holder publishes a DEADLINE sized from the map's own measured
+# numbers: max(LOCK_TTL, 2 x the largest stated cost among the rules actually
+# selected). The challenger honours the deadline when it finds one and falls
+# back to the token-mtime window when it does not, so a lock written by an
+# older version still ages exactly as before.
+#
+# WHY NOT A BACKGROUND HEARTBEAT DURING THE RULE, which was the reviewer's
+# stated preference: a backgrounded toucher is ORPHANED when the holder is
+# SIGKILLed, and an orphan keeps refreshing the token forever -- the lock
+# never goes stale and verification is disabled permanently. Bounding that
+# needs either pid liveness, measured unreliable on this platform (see the
+# 2026-09-13 note above), or a pipe-EOF trick whose PowerShell equivalent is
+# different machinery, which is the .sh/.ps1 drift this pair exists to avoid.
+# The deadline is bounded BY CONSTRUCTION and is the same arithmetic in both
+# shells.
+#
+# THE COST, stated plainly: a hard-killed holder now holds the lock for up to
+# max(LOCK_TTL, 2 x max stated cost) rather than LOCK_TTL. On this repo that
+# is 370s instead of 180s. It is bounded, proportionate to what the map says
+# the work takes, and the back-off announces itself (0.19.65), so the window
+# is visible rather than silent.
+#
+# RESIDUAL GAP, not closed: a rule with NO stated cost contributes 0, so a map
+# with no `seconds` keeps exactly today's behaviour and an unstated rule
+# longer than LOCK_TTL can still lose its lock. Giving that rule a `seconds`
+# closes it, which is the same incentive 0.19.69 set up.
+lock_window() {
+  W=$LOCK_TTL
+  if [ -n "${MAX_COST:-}" ] && [ "$MAX_COST" -gt 0 ] 2>/dev/null; then
+    [ $((MAX_COST * 2)) -gt "$W" ] && W=$((MAX_COST * 2))
+  fi
+  echo "$W"
+}
+
+# Publishes the deadline. Only the token holder writes it, same as lock_touch.
+lock_extend() {
+  [ "$UNLOCKED" -eq 0 ] || return 0
+  [ "$(cat "$LOCK/token" 2>/dev/null)" = "${LOCK_TOKEN:-}" ] || return 0
+  printf '%s\n' "$(( $(date +%s) + $(lock_window) ))" > "$LOCK/deadline" 2>/dev/null || true
+}
+
 lock_touch() {
   [ "$UNLOCKED" -eq 0 ] || return 0
   [ "$(cat "$LOCK/token" 2>/dev/null)" = "${LOCK_TOKEN:-}" ] || return 0
@@ -348,6 +412,15 @@ if ! mkdir "$LOCK" 2>/dev/null; then
       # 2026-09-13 note above, where a hard-killed Git Bash pid reported ALIVE
       # at +0.5s, +5s and +15s. The heartbeat is what makes the age window
       # honest without needing liveness at all.
+      # A published deadline wins over the age window: it is the holder
+      # saying how long THIS run may take, from the map's own numbers.
+      # Absent or unreadable falls back to the age window, so a lock from
+      # a version that never wrote one ages exactly as it used to.
+      HOLD_DEADLINE=$(cat "$LOCK/deadline" 2>/dev/null | tr -dc "0-9")
+      if [ -n "$HOLD_DEADLINE" ] && [ "$HOLD_DEADLINE" -gt 0 ] 2>/dev/null && [ "$NOW" -lt "$HOLD_DEADLINE" ] 2>/dev/null; then
+        echo "verify-gate: backed off, lock held by $(cat "$LOCK/token" 2>/dev/null || echo 'an unreadable token') (holder declared it may run for another $((HOLD_DEADLINE - NOW))s); NOTHING WAS VERIFIED this turn." >&2
+        exit 0
+      fi
       if [ $((NOW - HOLDER_AT)) -le "$LOCK_TTL" ] 2>/dev/null; then
         echo "verify-gate: backed off, lock held by $(cat "$LOCK/token" 2>/dev/null || echo 'an unreadable token') ($((NOW - HOLDER_AT))s old, ttl ${LOCK_TTL}s); NOTHING WAS VERIFIED this turn." >&2
         exit 0
@@ -596,8 +669,13 @@ if budget is not None:
 # Only the first means "not verified", so the two must not share a signal.
 # Deriving the boolean by grepping the prose would be the same defect one
 # layer along.
+# Record 5: the largest STATED cost among the commands actually selected.
+# The lock uses it to size how long this run may legitimately go quiet
+# for; 0 means nothing selected declared a cost. See lock_window below.
+max_cost = max([cost[c] for c in cmds if c in cost] or [0])
 sys.stdout.write("\x1e".join(cmds) + "\x1d" + "\x1e".join(unmatched) + "\x1d" + "\x1e".join(notices)
-                 + "\x1d" + str(len(deferred)) + "\n")
+                 + "\x1d" + str(len(deferred))
+                 + "\x1d" + str(int(max_cost)) + "\n")
 PY
 )
 PY_STATUS=$?
@@ -641,12 +719,23 @@ DEFERRED_COUNT=$(printf '%s\n' "$MATCHED" | tr '\035' '\n' | sed -n 4p | tr '\03
 case "$DEFERRED_COUNT" in
   ""|*[!0-9]*) DEFERRED_COUNT=1 ;;
 esac
+# Record 5: the largest stated cost among the selected commands. Sizes the
+# lock deadline (lock_window). Missing or unreadable means 0, which leaves
+# the window at LOCK_TTL -- the behaviour before the deadline existed.
+MAX_COST=$(printf '%s\n' "$MATCHED" | tr '\035' '\n' | sed -n 5p | tr '\036' '\n')
+case "$MAX_COST" in
+  ""|*[!0-9]*) MAX_COST=0 ;;
+esac
 if [ -n "$NOTICES" ]; then
   printf '%s\n' "$NOTICES" >&2
 fi
 
 FAILED=0
 TOTAL_ELAPSED=0
+# BEFORE the first rule, not only after it: the first rule is as able to
+# exceed the TTL as any later one, and until this ran the lock carried no
+# deadline at all.
+lock_extend
 while IFS= read -r c; do
   [ -z "$c" ] && continue
   # </dev/null: a check that reads stdin (some test runners do) would otherwise
@@ -665,6 +754,10 @@ while IFS= read -r c; do
   # slow live run from an abandoned one without asking whether a pid is alive
   # -- a question this platform answers wrongly (see the 2026-09-13 note).
   lock_touch
+  # Re-publish the deadline after each rule for the same reason the
+  # heartbeat is here: it means 'measured from the last rule that
+  # finished', so a long run keeps extending while it makes progress.
+  lock_extend
 done <<< "$CMDS"
 
 echo "verify-gate: ${TOTAL_ELAPSED}s total across $(printf '%s
