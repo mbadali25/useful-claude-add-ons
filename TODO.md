@@ -2590,7 +2590,7 @@ so this cannot drift back silently — see `scripts/_test/license-consistency.py
 for the sabotage-tested regression suite. Root `README.md`'s License section
 now states GPL-2.0 applies to every plugin and points at
 `plugin/crew/NOTICE.md` for the third-party MIT attribution named below, which
-this resolution does not touch. Commit sha: TODO-FILL-AFTER-COMMIT.
+this resolution does not touch. Commit sha: `910cbc2e`.
 
 `LICENSE` at the repo root is GNU GPL v2. `plugin/crew/.claude-plugin/plugin.json:12`
 declares `"license": "MIT"`. Both were true before this work.
