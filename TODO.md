@@ -2887,3 +2887,51 @@ not infer it from what is on `PATH`; the harness may resolve it differently.
 
 Until then, treat "the .ps1 hooks run under PowerShell 7" as an **assumption
 this repo has not verified**, not as a fact.
+
+---
+
+## Found while fixing the 0.19.92 fingerprint/budget review items, NOT fixed
+
+Three things noticed inside `verify-gate.{sh,ps1}` and `verify_fingerprint.py`
+while closing the two BLOCKs and the budget FIX. None of them blocked that
+work, so none of them was widened into it.
+
+### 1. A filename containing a NEWLINE still breaks the whole gate, not only the digest
+
+`plugin/crew/hooks/scripts/verify-gate.sh:166` and
+`plugin/crew/hooks/scripts/verify-gate.ps1:247` produce one newline-delimited
+`CHANGED` list, and THREE readers consume it: the matcher heredoc, the scope
+report, and `verify_fingerprint.py`. 0.19.92 fixed the digest's half by
+keeping each line verbatim instead of stripping it, which closes the measured
+case (` leading.txt`). A path with an embedded newline is still split into two
+by every one of those three readers, so it matches no rule, is reported as two
+unmapped paths and hashes as two absent files.
+
+The review suggested `-z` and splitting on NUL. That was **not** taken here
+and the reason is the reason it is written down rather than done quietly: the
+fix has to move the SHARED channel, not just the fingerprint's feed. Giving
+`verify_fingerprint.py` its own `-z` listing would mean two listings of the
+same tree that can disagree, and the one the rules are matched against would
+still be the newline one — the digest would then cover a path set the checks
+never saw, which is the same class of defect 0.19.92 exists to fix. Doing it
+properly means `-z` in both flavours plus NUL framing through the matcher,
+`scope_report.py` and the `eval` read loop, which is its own change with its
+own must-block cases.
+
+### 2. An `always` command can still be deferred by the budget
+
+`plugin/crew/hooks/scripts/verify-gate.sh:639` appends `always` commands to
+the list after the rule loop. If the same command string also appears in a
+priced rule, it carries that rule's cost and can be deferred with it — so a
+command declared "always" does not always run. Pre-existing and untouched by
+0.19.92 (the per-rule change preserves the old classification exactly). The
+fix is probably to exempt `always` from the budget entirely, but that is a
+policy decision about what `always` means, not a bug fix.
+
+### 3. `sabotage.py` needs its budget mutations re-checked if the arithmetic moves
+
+`plugin/crew/tests/sabotage.py` now anchors on the whole budget decision block
+in each flavour, because a one-line mutation of `spent` did NOT reproduce the
+defect and came back green. Anchors that large drift easily; the cheap check
+is the loop in the sabotage suite's own header contract — every anchor must
+match exactly once — and it is worth running before trusting the pair.

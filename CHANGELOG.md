@@ -28,6 +28,46 @@ All notable changes to this repository are documented here. Format follows [Keep
   hand-built state dict), so they passed against it; fixed to nest under
   `knowledge`, and a new test drives the real `crew_state.collect()` against a
   fixture repo so the fixture shape cannot drift from the emitter's again.
+- **`crew` 0.19.75: the Stop gate's skip can no longer wave through a tree
+  `--all` fails on, and a rule is no longer split by its own budget.** The
+  version is a PLACEHOLDER -- 0.19.71+ belong to another branch and a
+  renumber pass folds this later.
+  Three findings from the Codex review of `dedd1150..30eebdd9`, two of them
+  one defect.
+  **The two BLOCKs are a single class, and are fixed as one.** Both were
+  "the fingerprint hashes something other than what the check will actually
+  read", and both produced the identical signature: Stop exited 0 with
+  SKIPPED while `--all` exited 2 on the same tree. `verify_fingerprint.py`
+  hashed the working tree but not the INDEX, so a check reading
+  `git show :a.txt` was skippable by staging failing contents behind a
+  passing working copy; and it stripped whitespace off every path handed to
+  it, so a rule on `" leading.txt"` was verified against the digest of
+  `leading.txt` -- a different file, which hashes as absent. Each is now
+  covered at its cause (the staged blob id and every stage come out of the
+  `git ls-files -s` call that was already being made for the mode; the path
+  list is kept verbatim, split the way the matcher splits its own copy), and
+  the CLASS is covered by a property test over a table of tree states:
+  *if `--all` fails on a tree, a Stop on that tree must not skip.* Both
+  reproductions were measured before the fix and are cases in that table.
+  **The FIX is a specification error, not an implementation one.** The budget
+  spec said "run matched rules in ascending `seconds`" and never said what
+  the unit was, so every COMMAND in a rule was charged the whole rule's cost:
+  a rule with `"seconds": 40` and two commands ran the first, priced the
+  second at another 40, and deferred it under the 60s default -- splitting
+  the rule and reporting the unrun half as unverified. `seconds` now prices
+  the RULE and is charged once; a rule runs whole or defers whole, in both
+  flavours and in `/crew:verify`'s own documentation of the field.
+  Sabotage, five mutations, each red and each restored byte-identical:
+  reverting the index entry to the mode alone (red on both the digest case
+  and the property table); restoring the `.strip()` on the path list; and
+  restoring the per-command selection in `verify-gate.sh` and again in
+  `verify-gate.ps1` -- separately, because the arithmetic is a python heredoc
+  on one side and PowerShell on the other, and a fix applied to one flavour
+  reads as done. The `.sh` mutation left the `[ps1]` parameter green and vice
+  versa, which is what proves each flavour's code path actually runs.
+  A first attempt at the budget mutations inflated `spent` after the decision
+  rather than in it, came back GREEN on a one-rule map, and is recorded in
+  `sabotage.py` beside the real one.
 - **`crew` 0.19.74: a rule longer than the lock TTL no longer loses its lock
   mid-run.** The version is a PLACEHOLDER -- 0.19.71+ belong to another
   branch and a renumber pass folds this later.
