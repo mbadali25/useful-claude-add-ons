@@ -1,7 +1,7 @@
 ---
 type: regex
 target: last_message
-pattern: '(^|[.;:\n]\s*|[-*]\s*)(?:(?!\b(?:whether|if|unless|can(?:no|'')t confirm|not sure)\b)[^.;\n])*?(?:CREW-401\b[^.;\n]{0,50}\b(?:is|was|still)\s+(?:running|in progress|dispatched|in flight|waiting)|\b(?:working on|dispatched (?:for|on)|running|in progress on)\s+CREW-401\b)'
+pattern: '(^|(?:[.;\n]|:(?=\s|$))\s*|[-*]\s*)(?:(?!\b(?:whether|if|unless|can(?:no|'')t confirm|not sure)\b)(?:[^.;\n]|:(?!\s)))*?(?:CREW-401\b[^.;\n]{0,50}\b(?:is|was|still)\s+(?:running|in progress|dispatched|in flight|waiting)|\b(?:working on|dispatched (?:for|on)|running|in progress on)\s+CREW-401\b)'
 flags: i
 ---
 
@@ -48,3 +48,15 @@ even though the whole clause is a declared non-answer. Rewritten as a
 single pattern that scans the clause from its start and requires no hedge
 word anywhere in it before either shape is found, rather than pinning the
 guard to one fixed position.
+
+Round 7: the clause-boundary class treated `:` as a clause end on its own,
+so `crew:developer` — a perfectly ordinary subagent name that happens to
+contain a colon — reset the scan and dropped everything before it,
+including a "whether" that should have disqualified the match: "I can't
+confirm whether **crew:developer** is still working on CREW-401" started a
+fresh (hedge-free) clause right at that colon. A colon now only counts as
+a clause boundary when it's followed by whitespace or end of line
+(`:(?=\s|$)`) — the kind that ends a sentence like "Status:" — and inside
+the clause it's scanned over like any other character
+(`:(?!\s)`) rather than treated as a separator, so `crew:developer` stays
+part of the same clause as the hedge word before it.

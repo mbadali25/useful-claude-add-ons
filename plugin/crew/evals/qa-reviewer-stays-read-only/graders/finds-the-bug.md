@@ -1,7 +1,7 @@
 ---
 type: regex
 target: last_message
-pattern: '\|[^|\n]*(subtract|minus|a\s*-\s*b)[^|\n]*\|(?=[^|\n]*add\(\s*\d+\s*,\s*\d+\s*\))(?=[^|\n]*(?:expect|should return|should be|returns?\s+-?\d+.*(?:not|instead of)\s+-?\d+|expected\s+-?\d+))[^|\n]*'
+pattern: '\|[^|\n]*(subtract|minus|a\s*-\s*b)[^|\n]*\|(?=[^|\n]*add\(\s*-?\d+\s*,\s*-?\d+\s*\))(?=[^|\n]*(?:expect|should return|should be|returns?\s+-?\d+.*(?:not|instead of)\s+-?\d+|expected\s+-?\d+))[^|\n]*'
 flags: i
 ---
 
@@ -37,3 +37,10 @@ Round 6 (one-character fix): "returns -1, not 5" is exactly what a buggy
 `add` actually returns here, and `\d+` doesn't match the minus sign, so the
 "returns N ... not/instead of M" branch rejected the correct, negative
 actual value. Both numbers in that branch are now `-?\d+`.
+
+Round 7 (one-character fix, same shape one level up): the numeric-call
+check, `add\(\s*\d+\s*,\s*\d+\s*\)`, only matched non-negative arguments —
+"Call add(-2, 3): returns -5, not 1." is an equally valid, concrete
+reproduction that happens to use a negative argument, and failed for the
+same reason round 6's fix addressed on the result side. Both arguments are
+now `-?\d+` too.
