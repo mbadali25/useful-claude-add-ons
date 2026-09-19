@@ -24,7 +24,23 @@
 # xfail field (checked against every prompt.md and case.yaml field this
 # script's own doc-reading pass found), so this script tracks it by name in
 # EXPECTED_FAIL_CASES instead: it always runs and always reports, but never
-# flips this script's exit code. Fix the plugin, then remove it from that list.
+# flips this script's exit code for the ONE way it is meant to fail. Two
+# things it does NOT swallow, both review-found:
+#   - EXPECTED_FAIL_CASES is comma-separated (EVAL_EXPECTED_FAIL_CASES=
+#     "case-one,case-two"), matching the .ps1 twin's `-split ","` exactly -
+#     it used to be space-separated here, which meant the same env var value
+#     matched on Windows and matched nothing at all under bash, silently
+#     dropping the exemption (and the KNOWN failure then failed the gate for
+#     real, on this platform only).
+#   - An xfail-listed case that PASSES still fails this script (with a
+#     "retire the xfail" message) rather than passing quietly - an exemption
+#     nobody is ever told to remove can outlive the defect it was for and
+#     mask a real regression the next time the case goes red. And an
+#     xfail-listed case that never produced a scored result at all (the
+#     run errored before evaluating anything - bad invocation, auth
+#     failure, a `claude` crash) is never exempted either: the exemption
+#     only covers a below-threshold SCORE, not "claude plugin eval didn't
+#     run".
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -49,7 +65,33 @@ status=0
 declare -a RESULT_FILES=()
 
 is_expected_fail() {
-  case " $EXPECTED_FAIL_CASES " in *" $1 "*) return 0 ;; *) return 1 ;; esac
+  # Comma-separated, matching the .ps1 twin's `-split ","` - see the header
+  # comment for why a mismatched separator here silently drops the exemption.
+  local target="$1" name
+  local IFS=','
+  local -a fails
+  read -ra fails <<< "$EXPECTED_FAIL_CASES"
+  for name in "${fails[@]}"; do
+    [ "$name" = "$target" ] && return 0
+  done
+  return 1
+}
+
+has_scored_result() {
+  # True only when $1 is a non-empty file holding a real aggregate-result.json
+  # ("cases" present) - i.e. claude plugin eval actually evaluated the case,
+  # as opposed to erroring out before producing anything to score.
+  local f="$1"
+  [ -s "$f" ] || return 1
+  python3 -c '
+import json, sys
+try:
+    with open(sys.argv[1], encoding="utf-8") as fh:
+        doc = json.load(fh)
+except Exception:
+    sys.exit(1)
+sys.exit(0 if doc.get("cases") else 1)
+' "$f" 2>/dev/null
 }
 
 run_case() {
@@ -65,12 +107,19 @@ run_case() {
       --json "$out_json" \
       "$@"; then
     RESULT_FILES+=("$out_json")
+    if is_expected_fail "$case_name"; then
+      echo "   $case_name is listed in EXPECTED_FAIL_CASES but PASSED - retire the xfail (drop it from EVAL_EXPECTED_FAIL_CASES / this script's default) so a future regression is caught again instead of staying silently exempted." >&2
+      status=1
+    fi
     return 0
   else
     local code=$?
     RESULT_FILES+=("$out_json")
-    if is_expected_fail "$case_name"; then
-      echo "   exit $code, but $case_name is in EXPECTED_FAIL_CASES - not failing the gate." >&2
+    if is_expected_fail "$case_name" && has_scored_result "$out_json"; then
+      echo "   exit $code, but $case_name is in EXPECTED_FAIL_CASES and produced a real (scored) result - not failing the gate." >&2
+    elif is_expected_fail "$case_name"; then
+      echo "   claude plugin eval exited $code for $case_name, and produced no scored result - a runner error is never exempted, even for a listed xfail." >&2
+      status=1
     else
       echo "   claude plugin eval exited $code for $case_name" >&2
       status=1

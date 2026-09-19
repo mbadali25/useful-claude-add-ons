@@ -2334,7 +2334,13 @@ bash scripts/run-plugin-evals.sh          # or scripts\run-plugin-evals.ps1 on W
 Both scripts default to `--threshold 1.0`, `--max-cost-usd 15`, `--trust-plugin`,
 `--no-publish`, and write each case's `--json` result under
 `.work/plugin-evals/`; override with `EVAL_THRESHOLD`, `EVAL_MAX_COST_USD`,
-`EVAL_OUTPUT_DIR`, and `EVAL_EXPECTED_FAIL_CASES`. `claude plugin eval` also
+`EVAL_OUTPUT_DIR`, and `EVAL_EXPECTED_FAIL_CASES` (comma-separated for more
+than one case name — both scripts split on the same separator, matched on
+purpose: they used to disagree, so the same value exempted a case on one
+platform and matched nothing on the other). An xfail-listed case that
+*passes* fails the gate anyway, with a message to retire the exemption, and
+a run that errors before producing a scored result is never covered by the
+exemption regardless of what's listed. `claude plugin eval` also
 writes its own `aggregate-result.json` + `report.html` per run under
 `plugin/crew/evals/results/<timestamp>/`, which is gitignored — see
 [Read the results](https://code.claude.com/docs/en/plugin-evals#read-the-results)

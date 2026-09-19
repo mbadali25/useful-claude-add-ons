@@ -17,7 +17,17 @@
 # dispatching a developer (see plugin/crew/README.md#evals and the
 # CHANGELOG entry for this suite). The case format has no expected-fail /
 # xfail field, so it is tracked by name below: it always runs and always
-# reports, but never flips this script's exit code.
+# reports, but never flips this script's exit code for the ONE way it is
+# meant to fail. Two things it does NOT swallow, both review-found:
+#   - EVAL_EXPECTED_FAIL_CASES is comma-separated here (-split ","),
+#     matching the .sh twin exactly - the .sh side used to split on spaces,
+#     so the same env var value matched here and matched nothing at all
+#     under bash, silently dropping the exemption on one platform only.
+#   - An xfail-listed case that PASSES still fails this script (with a
+#     "retire the xfail" warning) rather than passing quietly, and an
+#     xfail-listed case that never produced a scored result at all (the run
+#     errored before evaluating anything) is never exempted either - see
+#     Test-ScoredResult below.
 
 $ErrorActionPreference = "Stop"
 
@@ -29,13 +39,35 @@ $OutDir = if ($env:EVAL_OUTPUT_DIR) { $env:EVAL_OUTPUT_DIR } else { Join-Path $R
 $ExpectedFailCases = if ($env:EVAL_EXPECTED_FAIL_CASES) { $env:EVAL_EXPECTED_FAIL_CASES -split "," } else { @("pm-does-not-write-code") }
 
 if (-not (Get-Command claude -ErrorAction SilentlyContinue)) {
-    Write-Error "claude CLI not found on PATH"
+    # Write-Error is a non-terminating error by default, but
+    # $ErrorActionPreference = "Stop" above promotes EVERY Write-Error call
+    # to terminating - including this one - so without -ErrorAction Continue
+    # the script throws right here and the `exit 127` below is never reached.
+    # PowerShell then reports its own uncaught-error exit code (1), not 127,
+    # so a missing CLI was indistinguishable from every other failure mode.
+    Write-Error "claude CLI not found on PATH" -ErrorAction Continue
     exit 127
 }
 
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 $script:ExitStatus = 0
 $ResultFiles = @()
+
+function Test-ScoredResult {
+    # True only when $Path is a non-empty file holding a real
+    # aggregate-result.json ("cases" present and non-empty) - i.e. claude
+    # plugin eval actually evaluated the case, as opposed to erroring out
+    # before producing anything to score.
+    param([string]$Path)
+    if (-not (Test-Path $Path)) { return $false }
+    if ((Get-Item $Path).Length -eq 0) { return $false }
+    try {
+        $doc = Get-Content $Path -Raw | ConvertFrom-Json
+    } catch {
+        return $false
+    }
+    return [bool]($doc.cases -and $doc.cases.Count -gt 0)
+}
 
 function Invoke-EvalCase {
     param([string]$CaseName, [string[]]$ExtraArgs)
@@ -47,13 +79,24 @@ function Invoke-EvalCase {
     & claude plugin eval @claudeArgs
     $code = $LASTEXITCODE
     $script:ResultFiles += $outJson
-    if ($code -ne 0) {
-        if ($ExpectedFailCases -contains $CaseName) {
-            Write-Warning "exit $code, but $CaseName is in EVAL_EXPECTED_FAIL_CASES - not failing the gate."
-        } else {
-            Write-Warning "claude plugin eval exited $code for $CaseName"
+    $isXfail = $ExpectedFailCases -contains $CaseName
+
+    if ($code -eq 0) {
+        if ($isXfail) {
+            Write-Warning "$CaseName is listed in EVAL_EXPECTED_FAIL_CASES but PASSED - retire the xfail (drop it from EVAL_EXPECTED_FAIL_CASES / this script's default) so a future regression is caught again instead of staying silently exempted."
             $script:ExitStatus = 1
         }
+        return
+    }
+
+    if ($isXfail -and (Test-ScoredResult $outJson)) {
+        Write-Warning "exit $code, but $CaseName is in EVAL_EXPECTED_FAIL_CASES and produced a real (scored) result - not failing the gate."
+    } elseif ($isXfail) {
+        Write-Warning "claude plugin eval exited $code for $CaseName, and produced no scored result - a runner error is never exempted, even for a listed xfail."
+        $script:ExitStatus = 1
+    } else {
+        Write-Warning "claude plugin eval exited $code for $CaseName"
+        $script:ExitStatus = 1
     }
 }
 
