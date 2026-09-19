@@ -2776,3 +2776,34 @@ Filed 2026-09-18. **Fold into the Stop-hook slice; all three verified here.**
    line gets ignored, which is the exact failure the slice exists to prevent -
    and it is a parity defect: the gate's own bash matcher treats the pattern
    differently from the report that describes it.
+
+**Resolved in `crew` 0.19.66** (commit on `crew-0.19.65-stophook`). All
+three fixed in `plugin/crew/hooks/scripts/scope_report.py`, with the file's
+first test suite (`plugin/crew/tests/test_scope_report.py`, 16 cases) and a
+4/4 RED sabotage run. Defect 3 was fixed by REUSING the gate's matcher rather
+than writing a second one: `verify-gate.sh` already stripped the `**/` form
+correctly, so the report was the only copy that was wrong.
+
+## The two gate matchers disagree with each other
+
+Filed 2026-09-18, found while fixing the above. **Not blocking that work, so
+not folded into it:** this is a change to a hook that can `exit 2`, so under
+CLAUDE.md it needs its own bump, its own must-block/must-allow cases and its
+own sabotage run, and it must not ride along in a commit about a report-only
+script -- a revert of one would silently take the other.
+
+`verify-gate.ps1:381` builds a fourth match candidate that
+`verify-gate.sh:418-425` does not:
+
+    .ps1:  $cands.Add(($Pattern -replace '[*][*]', '*'))
+
+So for a pattern like `a/**/b` the PowerShell gate also tries `a/*/b` while
+the bash gate does not. The two flavours can therefore select DIFFERENT rule
+sets for the same changed file on the same repo, which is the same class of
+defect as a `.ps1` guard that stands down on Windows: the gate that runs
+depends on which shell the hook fired in. `-like` is also not `fnmatch`,
+so the character-class forms may differ again.
+
+Not yet measured: whether any pattern in this repo's `.crew/verify.json`
+actually lands in the gap. Measure that first - if nothing here hits it, the
+fix is still worth making but the urgency is a different number.
