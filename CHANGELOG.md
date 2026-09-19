@@ -28,6 +28,48 @@ All notable changes to this repository are documented here. Format follows [Keep
   hand-built state dict), so they passed against it; fixed to nest under
   `knowledge`, and a new test drives the real `crew_state.collect()` against a
   fixture repo so the fixture shape cannot drift from the emitter's again.
+- **`crew` 0.19.73: a deferred rule no longer removes a file from
+  verification for good.** Codex review of 0.19.65-0.19.70 found one BLOCK
+  and four FIX; this is all of them but the lock heartbeat. The version is a
+  PLACEHOLDER -- 0.19.71+ belong to another branch and a renumber pass folds
+  this later.
+  **The BLOCK.** The gate keeps two records of a clean run:
+  `.crew/.verify-verified-at`, the commit SHA later runs diff against, and
+  the fingerprint. The fingerprint had a guard; **the SHA baseline had none**,
+  and it is the one that decides what lands in the changed set at all. So a
+  Stop that DEFERRED a rule still advanced the baseline, the deferred file
+  dropped out of `CHANGED` for every later run, and `--all` -- which
+  correctly ignores the fingerprint -- was still diffing against the advanced
+  marker. Reproduced: commit a file mapped to a failing 90s rule, Stop
+  (deferred, exit 0), then `--all` -> exit 0 with the failing check executed
+  ZERO times. It survived review because the guard a reader looks for is
+  present and correct on the twin, so its absence reads as deliberate.
+  **The mirror.** The fingerprint's guard was `[ -z "$NOTICES" ]` -- a
+  string-emptiness test doing a boolean's job. `NOTICES` is prose and is
+  non-empty for two different facts, "a rule was deferred" and "a rule had
+  no stated cost", and only the first means "not verified". A rule that ran
+  and PASSED therefore suppressed recording, disabling the unchanged-turn
+  skip for every map that is not fully costed -- which is most of them,
+  including this repo's. The matcher now emits the deferred COUNT as its own
+  machine-readable record and both records share one predicate,
+  `fully_verified` / `$fullyVerified`. An unreadable count resolves to
+  "assume a deferral", never to the permissive value.
+  **Three more.** The fingerprint excluded all of `.crew/`, so a repo that
+  MAPS a `.crew/` path could change its contents, keep the passing digest and
+  skip verification -- now only the files this gate itself writes are
+  excluded, by name. Non-ASCII paths came back from git escaped and
+  double-quoted under the default `core.quotePath`, naming no real file, so
+  they hashed as absent and later edits kept a passing digest; both flavours
+  now force it off at every path-listing call. And the digest hashed bytes
+  but not the git file MODE: a committed chmod was caught via HEAD, a STAGED
+  one was not, so a check depending on `+x` could be skipped on the tree that
+  had just changed it.
+  Sabotage 10/10 RED, all three files restored byte-identical. Four of those
+  ten came from re-running it: two were invalid mutations of mine, and two
+  were genuine test weaknesses -- the quotePath check was line-granular while
+  the bash flavour puts BOTH git calls on one line, so dropping the flag from
+  one half stayed green; and nothing covered the fail-closed default at all.
+
 - **`crew` 0.19.72: the gate stops re-proving a tree it just proved.** Stop
   fires once per TURN, so a turn that changed nothing the gate depends on ran
   the whole map again to reach the answer it reached a minute ago. The event

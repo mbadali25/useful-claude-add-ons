@@ -204,8 +204,8 @@ if (Test-Path .crew/config.json) {
 # instead, and /crew:emergency end reports the debt.
 if (Test-CrewIncidentActive) {
   $n = @(
-    (git diff --name-only HEAD 2>$null)
-    (git ls-files --others --exclude-standard 2>$null)
+    (git -c core.quotePath=false diff --name-only HEAD 2>$null)
+    (git -c core.quotePath=false ls-files --others --exclude-standard 2>$null)
   ) | Where-Object { $_ -and $_.Trim() }
   Write-CrewIncidentSkip "verify" "stop gate stood down with $($n.Count) changed file(s) unverified"
   exit 0
@@ -243,8 +243,9 @@ if (-not $base) {
 if (-not $base) { $base = "HEAD" }
 
 $changed = @()
-$changed += (git diff --name-only $base 2>$null)
-$changed += (git ls-files --others --exclude-standard 2>$null)
+# See verify-gate.sh for why core.quotePath is forced off here.
+$changed += (git -c core.quotePath=false diff --name-only $base 2>$null)
+$changed += (git -c core.quotePath=false ls-files --others --exclude-standard 2>$null)
 $changed = $changed | Where-Object { $_ -and $_.Trim() } | Sort-Object -Unique
 if (-not $changed) { Write-CrewVerified; exit 0 }
 
@@ -593,6 +594,11 @@ if ($All) {
 }
 
 $notices = [System.Collections.ArrayList]@()
+# The deferred COUNT, kept apart from the notice TEXT. $notices mixes two
+# different facts -- 'a rule was deferred' and 'a rule had no stated cost'
+# -- and only the first means 'not verified', so the recording guard must
+# not read it. Starts at 0 because the no-budget path defers nothing.
+$deferredCount = 0
 if ($null -ne $budget) {
   $order = @{}
   for ($i = 0; $i -lt $cmds.Count; $i++) { $order[$cmds[$i]] = $i }
@@ -622,6 +628,7 @@ if ($null -ne $budget) {
   foreach ($c in $deferred) {
     [void]$notices.Add('deferred to /crew:verify: ' + $c + ' (' + [string][int]$cost[$c] + 's)')
   }
+  $deferredCount = $deferred.Count
   if ($deferred.Count -gt 0) {
     $extra = ''
     if ($unknown.Count -gt 0) { $extra = ' plus ' + [string]$unknown.Count + ' of unstated cost' }
@@ -707,20 +714,29 @@ if ($unmapped.Count -gt 0 -and $vm.unmapped -eq "fail") {
 
 if ($failed) { exit 2 }
 
-# The fingerprint, written ONLY where everything ran and everything passed.
-# Deliberately NOT written when the Stop budget deferred a rule: a deferred
-# rule was never checked, so recording it would turn "we ran out of budget"
-# into "this tree is verified" and the deferred checks would never run again
-# on an unchanged tree. $notices is non-empty exactly when the budget had
-# something to say, which is the signal being tested. Matches verify-gate.sh.
-if ($fingerprint -and $notices.Count -eq 0) {
-  try {
-    if (-not (Test-Path ".crew")) { New-Item -ItemType Directory -Path ".crew" -Force -ErrorAction SilentlyContinue | Out-Null }
-    Set-Content -Path $fpFile -Value $fingerprint -Encoding utf8 -ErrorAction Stop
-  } catch { }
-}
+# ONE predicate for BOTH records, matching fully_verified in verify-gate.sh.
+# A run may only be recorded as verified when NOTHING was deferred: a deferred
+# rule was never checked, so recording over it turns "we ran out of budget"
+# into "this tree is verified".
+#
+# This guard used to read $notices.Count, which is prose and is also non-empty
+# for an unstated COST -- so a rule that ran and passed suppressed recording --
+# while Write-CrewVerified, the sha baseline, had no guard at all. That is how
+# a deferred rule still advanced the baseline and dropped a committed file out
+# of $changed for every later run, including -All.
+$fullyVerified = ($deferredCount -eq 0)
 
-# Record what was just proven clean. Written ONLY on the pass path, so the
-# marker can never claim more than was actually checked. See verify-gate.sh.
-Write-CrewVerified
+if ($fullyVerified) {
+  if ($fingerprint) {
+    try {
+      if (-not (Test-Path ".crew")) { New-Item -ItemType Directory -Path ".crew" -Force -ErrorAction SilentlyContinue | Out-Null }
+      Set-Content -Path $fpFile -Value $fingerprint -Encoding utf8 -ErrorAction Stop
+    } catch { }
+  }
+  # Written ONLY on the fully-checked path, so the marker can never claim more
+  # than was actually checked. See verify-gate.sh.
+  Write-CrewVerified
+} else {
+  [Console]::Error.WriteLine("verify-gate: the verified baseline was NOT advanced - $deferredCount rule command(s) were deferred and have not been checked against this tree.")
+}
 exit 0

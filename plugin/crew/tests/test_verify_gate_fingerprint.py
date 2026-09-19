@@ -29,6 +29,8 @@ invalidate the digest it had just recorded and the skip never fired once.
 """
 import json
 import os
+import pathlib
+import re
 import shutil
 import subprocess
 import sys
@@ -318,3 +320,178 @@ def test_content_not_just_paths(tmp_path):
     target.write_text("x = 2", encoding="utf-8")
     after = verify_fingerprint.fingerprint(str(root), ["a.py"])
     assert before != after, "an in-place edit must move the digest"
+
+# ------------------------------------- what the digest must and must not see
+#
+# Added for the Codex review of 0.19.90. The blanket `.crew/` exclusion, the
+# missing file mode, and non-ASCII paths hashing as absent.
+
+
+def test_the_gates_own_markers_are_still_excluded(tmp_path):
+    """MUST-ALLOW for narrowing the exclusion by NAME. The files the gate
+    itself writes have to stay out, or every run invalidates the digest it
+    just recorded -- measured: the skip never fired once before they were."""
+    root = tmp_path / "repo"
+    (root / ".crew").mkdir(parents=True)
+    (root / "a.py").write_text("x = 1", encoding="utf-8")
+
+    bare = verify_fingerprint.fingerprint(str(root), ["a.py"])
+    with_markers = verify_fingerprint.fingerprint(str(root), [
+        "a.py", ".crew/.verify-verified-at", ".crew/.verify-gate.fingerprint",
+        ".crew/.verify-gate.lock", ".crew/.verify-gate.lock/token"])
+    assert bare == with_markers, (
+        "the gate's own markers moved the digest, so it would invalidate its "
+        "own skip on every run"
+    )
+
+
+def test_a_mapped_crew_file_is_not_excluded_from_the_digest(tmp_path):
+    """MUST-BLOCK for the blanket exclusion. Only the gate's own markers come
+    out; any other `.crew/` path a repo maps must be hashed by content."""
+    root = tmp_path / "repo"
+    (root / ".crew").mkdir(parents=True)
+    mapped = root / ".crew" / "check.txt"
+
+    mapped.write_text("GOOD", encoding="utf-8")
+    before = verify_fingerprint.fingerprint(str(root), [".crew/check.txt"])
+    mapped.write_text("BAD", encoding="utf-8")
+    after = verify_fingerprint.fingerprint(str(root), [".crew/check.txt"])
+    assert before != after, (
+        "a mapped .crew/ file changed contents without moving the digest, so "
+        "the gate would skip verification of it entirely"
+    )
+
+
+def _staged_mode_repo(tmp_path):
+    root = tmp_path / "repo"
+    (root / ".crew").mkdir(parents=True)
+    for args in (("init", "-q"), ("config", "user.email", "t@example.invalid"),
+                 ("config", "user.name", "t")):
+        subprocess.run(("git",) + args, cwd=root, check=True,
+                       capture_output=True, text=True)
+    script = root / "s.sh"
+    script.write_text("#!/bin/sh" + chr(10) + "echo hi" + chr(10),
+                      encoding="utf-8")
+    subprocess.run(("git", "add", "s.sh"), cwd=root, check=True,
+                   capture_output=True, text=True)
+    subprocess.run(("git", "commit", "-q", "-m", "add"), cwd=root, check=True,
+                   capture_output=True, text=True)
+    return root
+
+
+def _head(root):
+    return subprocess.run(("git", "rev-parse", "HEAD"), cwd=root,
+                          capture_output=True, text=True,
+                          check=True).stdout.strip()
+
+
+def test_a_staged_mode_change_moves_the_digest(tmp_path):
+    """Bytes alone miss a mode flip.
+
+    A COMMITTED chmod is already caught -- it moves HEAD, which is hashed --
+    and this case asserts HEAD did NOT move, so it is testing the staged case
+    and not that one by accident. Measured byte-identical before the mode went
+    into the digest. Not hypothetical: a script shipped 100644 in this
+    marketplace and failed with permission denied on Linux, and a mode-only
+    edit is exactly what the skip would wave through.
+    """
+    root = _staged_mode_repo(tmp_path)
+    head_before = _head(root)
+    before = verify_fingerprint.fingerprint(str(root), ["s.sh"])
+
+    subprocess.run(("git", "update-index", "--chmod=+x", "s.sh"), cwd=root,
+                   check=True, capture_output=True, text=True)
+
+    assert _head(root) == head_before, (
+        "this case is about an UNCOMMITTED mode change; if HEAD moved, the "
+        "digest would change for the wrong reason and prove nothing"
+    )
+    after = verify_fingerprint.fingerprint(str(root), ["s.sh"])
+    assert before != after, (
+        "a staged chmod +x left the digest unchanged, so a check that depends "
+        "on the executable bit would be skipped on a tree that just moved it"
+    )
+
+
+def test_a_non_ascii_path_hashes_by_content(tmp_path):
+    """Under the default `core.quotePath`, git renders a non-ASCII path as an
+    escaped double-quoted string -- measured here, `cafe.txt` with an acute
+    comes back as a quoted, octal-escaped name. That string names no real
+    file, so it hashed as absent and a later edit kept the passing digest."""
+    root = tmp_path / "repo"
+    (root / ".crew").mkdir(parents=True)
+    target = root / "café.txt"
+    try:
+        target.write_text("GOOD", encoding="utf-8")
+        target.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
+        pytest.skip("this filesystem cannot hold a non-ASCII filename: "
+                    + str(exc))
+
+    before = verify_fingerprint.fingerprint(str(root), ["café.txt"])
+    target.write_text("BAD", encoding="utf-8")
+    after = verify_fingerprint.fingerprint(str(root), ["café.txt"])
+    assert before != after, (
+        "editing a non-ASCII path did not move the digest, so it is being "
+        "hashed as absent rather than read"
+    )
+
+
+def test_both_gates_list_paths_with_quotepath_disabled():
+    """The other half of that fix, asserted at the SOURCE. The quoted form
+    reaches the matcher and the scope report too, so it is fixed where the
+    paths are produced rather than unquoted downstream.
+
+    Per INVOCATION, not per line, and that distinction is not pedantic: the
+    bash flavour puts BOTH git calls on one line, so a line-granular check
+    passed while the `diff --name-only` half had lost its flag and only the
+    `ls-files` half still carried it. Caught by sabotage -- removing the flag
+    from one of the two calls left this green.
+    """
+    invocation = re.compile(
+        r"git\s+((?:-c\s+\S+\s+)*)(diff --name-only|ls-files --others)")
+    for name in ("verify-gate.sh", "verify-gate.ps1"):
+        path = os.path.join(_ROOT, "hooks", "scripts", name)
+        text = pathlib.Path(path).read_text(encoding="utf-8")
+        found = 0
+        for match in invocation.finditer(text):
+            found += 1
+            assert "core.quotePath=false" in match.group(1), (
+                name + " lists paths without disabling core.quotePath, so a "
+                "non-ASCII path arrives quoted and matches no rule: "
+                + match.group(0)
+            )
+        assert found >= 2, (
+            "expected both the diff and the ls-files listing in " + name
+            + ", found " + str(found)
+        )
+
+
+def test_the_deferred_count_fails_closed_when_the_matcher_cannot_say():
+    """The recording predicate's fail-safe, asserted at the source.
+
+    Source-level for the same reason test_verify_gate_rule_framing gives about
+    the record separator: no INPUT can produce a matcher that emits a
+    malformed fourth record, so a behavioural test cannot reach this branch
+    and would pass against a flipped default. Caught by sabotage -- changing
+    the fallback from 1 to 0 left every behavioural case green.
+
+    The direction is the whole point. If the count cannot be read, the run
+    must be treated as "something was deferred" and the baseline held, never
+    as "nothing was deferred" -- an unknown resolving to the permissive value
+    is the defect this repository keeps re-finding.
+    """
+    text = pathlib.Path(
+        os.path.join(_ROOT, "hooks", "scripts", "verify-gate.sh")
+    ).read_text(encoding="utf-8")
+    fallback = [l for l in text.splitlines() if "DEFERRED_COUNT=" in l
+                and "*[!0-9]*" in l]
+    assert len(fallback) == 1, (
+        "expected exactly one non-numeric fallback for DEFERRED_COUNT, got: "
+        + repr(fallback)
+    )
+    assert "DEFERRED_COUNT=1" in fallback[0], (
+        "an unreadable deferred count must fail CLOSED (assume a deferral and "
+        "hold the baseline). This line resolves it to the permissive value: "
+        + fallback[0]
+    )

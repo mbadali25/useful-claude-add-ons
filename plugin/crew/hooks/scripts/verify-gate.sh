@@ -32,7 +32,7 @@ grep -q '"verifyGate"[[:space:]]*:[[:space:]]*false' .crew/config.json 2>/dev/nu
 # exactly when a deploy goes out ahead of its paperwork. It is recorded as
 # owed rather than enforced now.
 if crew_incident_active; then
-  CHANGED_N=$( { git diff --name-only HEAD 2>/dev/null; git ls-files --others --exclude-standard 2>/dev/null; } | grep -c . )
+  CHANGED_N=$( { git -c core.quotePath=false diff --name-only HEAD 2>/dev/null; git -c core.quotePath=false ls-files --others --exclude-standard 2>/dev/null; } | grep -c . )
   crew_incident_log verify "stop gate stood down with $CHANGED_N changed file(s) unverified"
   if [ -f .crew/.deploy-in-flight ]; then
     read -r DENV DSHA < .crew/.deploy-in-flight
@@ -79,9 +79,22 @@ record_verified() {
 # budget" into "this tree is verified" and the deferred checks would never
 # run again on an unchanged tree. $NOTICES is non-empty exactly when the
 # budget had something to say, which is the signal being tested.
+# ONE predicate for BOTH records. A run may only be recorded as verified
+# when nothing was deferred: a deferred rule was never checked, so
+# recording over it turns "we ran out of budget" into "this tree is
+# verified". FAILED is not tested here because every caller is already
+# past `[ "$FAILED" -eq 0 ] || exit 2`; the count is the whole question.
+#
+# This used to be `[ -z "$NOTICES" ]` on the fingerprint and NOTHING at
+# all on the sha baseline, which is how a deferred rule still advanced
+# the baseline and dropped a committed file out of CHANGED for every
+# later run -- including --all, which correctly ignores the fingerprint
+# and was still diffing against the advanced baseline.
+fully_verified() { [ "${DEFERRED_COUNT:-1}" -eq 0 ]; }
+
 record_verified_fingerprint() {
   [ -n "$FINGERPRINT" ] || return 0
-  [ -z "$NOTICES" ] || return 0
+  fully_verified || return 0
   mkdir -p .crew 2>/dev/null && printf '%s\n' "$FINGERPRINT" > "$FP_FILE"
 }
 
@@ -143,7 +156,14 @@ if [ -z "$BASE" ]; then
   BASE=$(git merge-base HEAD "$DEF" 2>/dev/null) || BASE=""
 fi
 [ -z "$BASE" ] && BASE=HEAD
-CHANGED=$(git diff --name-only "$BASE" 2>/dev/null; git ls-files --others --exclude-standard 2>/dev/null)
+# `-c core.quotePath=false` on every path-listing git call. With the default
+# (true) git renders a non-ASCII path as an escaped, DOUBLE-QUOTED string --
+# measured here: `cafÃ©.txt` comes back as `"caf\\303\\251.txt"`. That string
+# then matches no rule, and the fingerprint hashes it as an absent file, so
+# a later edit to that file kept the passing digest and verification was
+# skipped. Fixed at the SOURCE rather than by unquoting downstream, because
+# the matcher and the scope report read the same list.
+CHANGED=$(git -c core.quotePath=false diff --name-only "$BASE" 2>/dev/null; git -c core.quotePath=false ls-files --others --exclude-standard 2>/dev/null)
 CHANGED=$(printf '%s\n' "$CHANGED" | sort -u | sed '/^$/d')
 if [ -z "$CHANGED" ]; then
   record_verified
@@ -569,7 +589,15 @@ if budget is not None:
 # appear in a command, because reject_unrepresentable above refused the map
 # outright if one did. It used to be a bare newline, which a command
 # containing one silently moved.
-sys.stdout.write("\x1e".join(cmds) + "\x1d" + "\x1e".join(unmatched) + "\x1d" + "\x1e".join(notices) + "\n")
+# Record 4 is the deferred COUNT, an integer, and it exists because the
+# recording guard used to be `[ -z "$NOTICES" ]` -- a string-emptiness
+# test doing a boolean's job. NOTICES is prose for a human and mixes two
+# different facts: "a rule was deferred" and "a rule had no stated cost".
+# Only the first means "not verified", so the two must not share a signal.
+# Deriving the boolean by grepping the prose would be the same defect one
+# layer along.
+sys.stdout.write("\x1e".join(cmds) + "\x1d" + "\x1e".join(unmatched) + "\x1d" + "\x1e".join(notices)
+                 + "\x1d" + str(len(deferred)) + "\n")
 PY
 )
 PY_STATUS=$?
@@ -604,6 +632,15 @@ UNMAPPED=$(printf '%s\n' "$MATCHED" | tr '\035' '\n' | sed -n 2p | tr '\036' '\n
 # Printed BEFORE the run, so a turn that is killed part-way still says what
 # it was never going to check.
 NOTICES=$(printf '%s\n' "$MATCHED" | tr '\035' '\n' | sed -n 3p | tr '\036' '\n')
+# The deferred COUNT, kept apart from the notice text on purpose -- see the
+# matcher. This is what decides whether this run may be recorded as verified.
+# Defaults to 1 ("assume something was deferred") if the record is missing or
+# not a number, so a matcher that cannot say leaves the baseline where it is.
+# An unknown must never resolve to the permissive answer here.
+DEFERRED_COUNT=$(printf '%s\n' "$MATCHED" | tr '\035' '\n' | sed -n 4p | tr '\036' '\n')
+case "$DEFERRED_COUNT" in
+  ""|*[!0-9]*) DEFERRED_COUNT=1 ;;
+esac
 if [ -n "$NOTICES" ]; then
   printf '%s\n' "$NOTICES" >&2
 fi
@@ -642,6 +679,10 @@ fi
 
 [ "$FAILED" -eq 0 ] || exit 2
 
-record_verified
-record_verified_fingerprint
+if fully_verified; then
+  record_verified
+  record_verified_fingerprint
+else
+  echo "verify-gate: the verified baseline was NOT advanced - $DEFERRED_COUNT rule command(s) were deferred and have not been checked against this tree." >&2
+fi
 exit 0

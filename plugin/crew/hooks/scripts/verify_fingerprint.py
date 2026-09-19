@@ -80,29 +80,94 @@ def _file_digest(path):
         return "absent"
 
 
+# The files THIS GATE writes, and only those. They have to come out of the
+# digest because the gate updates them on the way out of a clean run, so
+# including them means every run invalidates the digest it just recorded --
+# measured: the skip never fired once until they were excluded.
+#
+# NAMED, not a `.crew/` prefix. Excluding the whole directory was wrong and
+# was caught in review: a repo can legitimately MAP a path under `.crew/` to a
+# check, and a blanket exclusion let a mapped `.crew/` file change its
+# contents, keep the old fingerprint and skip verification entirely.
+# Reproduced before the fix: a rule on `.crew/check.txt` passed, the file was
+# then edited to fail, and the next Stop skipped and exited 0.
+#
+# Anything else under `.crew/` -- including another hook's markers -- stays IN
+# the digest. That can only cause an extra run, which is the safe direction.
+_GATE_OWNED_FILES = frozenset({
+    ".crew/.verify-verified-at",
+    ".crew/.verify-gate.fingerprint",
+})
+_GATE_OWNED_DIRS = (".crew/.verify-gate.lock/",)
+
+
+def _gate_owned(norm):
+    # Bare `.crew` / `.crew/` is the COLLAPSED DIRECTORY entry git emits when
+    # the whole directory is untracked. It is not a file -- it hashes to the
+    # same "absent" constant whatever is inside it -- so it can neither carry
+    # content coverage nor self-invalidate, and it stands for a directory
+    # dominated by this gate's own markers. Excluded so it cannot imply
+    # coverage it does not provide. A repo that maps a real FILE under
+    # `.crew/` still gets that file hashed individually.
+    if norm.endswith("/"):
+        norm = norm[:-1]
+    return (norm in _GATE_OWNED_FILES
+            or norm in (".crew", ".crew/.verify-gate.lock")
+            or norm.startswith(_GATE_OWNED_DIRS))
+
+
 def _material(changed):
-    """The changed paths that can move the verdict.
-
-    `.crew/` is EXCLUDED, and it has to be: the gate writes its own markers
-    there -- `.verify-verified-at`, `.verify-gate.fingerprint`, the lock --
-    so every run changes that directory and the next fingerprint would never
-    match the last. Measured: with `.crew/` included the skip never fired
-    once, because the run that recorded the digest invalidated it on the way
-    out.
-
-    Nothing is lost by dropping it. The only two files under `.crew/` that
-    decide anything -- verify.json and config.json -- are hashed explicitly
-    as deciders above, by content, whether or not git calls them changed.
-    """
+    """The changed paths that can move the verdict, minus this gate's own
+    markers. See _GATE_OWNED_FILES for why the exclusion is by name."""
     out = []
     for path in changed:
         if not path:
             continue
-        norm = path.replace(os.sep, "/")
-        if norm == ".crew" or norm.startswith(".crew/"):
+        if _gate_owned(path.replace(os.sep, "/")):
             continue
         out.append(path)
     return out
+
+
+def _modes(root):
+    """Every tracked path's staged file mode, as one `git ls-files` call.
+
+    In the digest because BYTES ALONE MISS A MODE FLIP. A committed one is
+    caught already -- it moves HEAD, which is hashed -- but a staged,
+    uncommitted `git update-index --chmod=+x` is not: measured, the digest was
+    byte-identical across one. A check that depends on `+x` would then be
+    skipped on a tree whose executable bit had just changed, which is not
+    hypothetical -- a script shipped 100644 in this marketplace and failed
+    with permission denied on Linux.
+
+    No pathspec, so this cannot hit the argument-length limit the gate works
+    around elsewhere; the repo is walked once and the result looked up.
+
+    `-z` is what guarantees unquoted paths here -- measured: with `-z`, git
+    prints the raw name whatever `core.quotePath` says, and without it the
+    same call returns the escaped, double-quoted form. The explicit
+    `core.quotePath=false` is therefore REDUNDANT on this call and is kept
+    only to state the intent beside the gate's own listings, which are not
+    `-z` and genuinely need it. Sabotage confirmed the redundancy: removing
+    the flag here changes nothing, so do not read its presence as the thing
+    doing the work.
+    """
+    try:
+        out = subprocess.run(
+            ("git", "-c", "core.quotePath=false", "ls-files", "-s", "-z"),
+            cwd=root, capture_output=True, text=True, check=False,
+            stdin=subprocess.DEVNULL)
+    except OSError:
+        return {}
+    modes = {}
+    for record in (out.stdout or "").split(chr(0)):
+        if not record:
+            continue
+        meta, _, path = record.partition(chr(9))
+        fields = meta.split()
+        if path and fields:
+            modes[path] = fields[0]
+    return modes
 
 
 def fingerprint(root, changed):
@@ -120,11 +185,17 @@ def fingerprint(root, changed):
         digest.update(_file_digest(os.path.join(root, rel)).encode("ascii"))
 
     # Sorted so the shell's ordering cannot move the answer on its own.
+    modes = _modes(root)
     for rel in sorted(set(p for p in changed if p)):
         digest.update(b"\0path=")
         digest.update(rel.encode("utf-8", "replace"))
         digest.update(b":")
         digest.update(_file_digest(os.path.join(root, rel)).encode("ascii"))
+        digest.update(b":mode=")
+        # "untracked" is its own value rather than an empty string, so a
+        # file becoming tracked moves the digest too.
+        digest.update(modes.get(rel.replace(os.sep, "/"), "untracked")
+                      .encode("ascii", "replace"))
 
     return digest.hexdigest()[:16]
 
