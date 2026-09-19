@@ -212,7 +212,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
-- **`crew` 0.19.91: mechanical enforcement of each role's write scope, via a
+- **`crew` 0.19.92: mechanical enforcement of each role's write scope, via a
   new `PreToolUse` guard on `Write`/`Edit`.** `agents/pm.md:49-53` says, in
   prose, "You do not write application code, tests, docs..." and on
   2026-09-19 it did exactly that for four hours, because prose is not
@@ -283,7 +283,7 @@ All notable changes to this repository are documented here. Format follows [Keep
   follow-up, not part of this change.
 
   A Codex QA round on the first commit found 2 BLOCK + 4 FIX, all addressed
-  here in a follow-up commit under the same 0.19.91 (no version bump for a
+  here in a follow-up commit under the same 0.19.92 (no version bump for a
   same-day fix on an unreleased key). **BLOCK:** a repo's `.crew/config.json`
   that EXISTS but fails to parse — or whose `guards` key is present and not
   an object — no longer silently resolves `guards.roleWrites` to `off`; new

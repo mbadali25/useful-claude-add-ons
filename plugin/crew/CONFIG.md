@@ -133,7 +133,7 @@ For all 103, `filter_global` and `plan_global_write` agree on whether the path i
 settable. (45 / 86 before schema 6 added the six `guards.*`, the two
 `github.mergeGate` keys and the repo-only `production.databases` /
 `production.hosts`; 44 / 85 before schema 5 added `install.policy`; 59 / 102
-before crew 0.19.91 added the seventh guard, `guards.roleWrites`, in both
+before crew 0.19.92 added the seventh guard, `guards.roleWrites`, in both
 layers.
 All six of schema 6's keys are settable in both layers, so they moved the first
 two numbers and not the third — the same shape `install.policy` and
@@ -991,7 +991,7 @@ never "one key per bump"; it was "no key without a consumer".
 
 Seven keys, one block, one ratchet, **three vocabularies**. What crew's
 command guard does about each dangerous action it recognises, how much of
-production crew may reach, and — since crew 0.19.91 — whether a dispatched
+production crew may reach, and — since crew 0.19.92 — whether a dispatched
 role may write outside the scope its own agent file declares. The third
 vocabulary, `guards.roleWrites`, is different enough from the other six to
 earn its own section: see §18, not the tables immediately below.
@@ -1302,7 +1302,7 @@ eighth key would have been an eighth thing that could be wrong on its own.
 
 This was the only ratcheted key in crew where "absent" and "unreadable" did
 not resolve to the same value; `guards.roleWrites` (§18) is the second, added
-in 0.19.91 for a mirror-image reason — there the FLOOR is the safe value and
+in 0.19.92 for a mirror-image reason — there the FLOOR is the safe value and
 the DEFAULT has to be the permissive one, because CLAUDE.md requires a new
 blocking hook to ship disabled. Both halves below are load-bearing for this
 key:
@@ -1345,7 +1345,7 @@ get denied.
 
 ## 18. `guards.roleWrites` — mechanical enforcement of a role's write scope
 
-Added in crew 0.19.91. `agents/pm.md:49-53` says, in prose, "You do not write
+Added in crew 0.19.92. `agents/pm.md:49-53` says, in prose, "You do not write
 application code, tests, docs..." — and on 2026-09-19 it did exactly that for
 four hours, because prose is not enforcement and nothing in the harness read
 that sentence. This key and the `PreToolUse` hook it configures are the

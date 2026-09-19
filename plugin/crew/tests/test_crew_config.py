@@ -256,7 +256,7 @@ def test_the_ten_keys_crew_read_but_never_declared_are_declared():
     # of schema 5's `install.policy`. An empty list is a LEAF here -- see
     # `leaf_paths` -- so the two `production` keys count as two, not zero.
     # 102 at schema 7: the six `change` keys.
-    # 103 since crew 0.19.91: `guards.roleWrites`, the role-write PreToolUse
+    # 103 since crew 0.19.92: `guards.roleWrites`, the role-write PreToolUse
     # guard's config key.
     assert len(declared) == 103
 
