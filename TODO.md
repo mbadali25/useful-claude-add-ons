@@ -2420,3 +2420,88 @@ count check.
 
 **Re-measure rather than trusting this entry.** `34` is a fact about this
 commit and changes the next time a skill is registered.
+
+
+## `pm_brief._graph_fields` reads a key `crew_state` never sets, so the graph command is always the fallback
+
+Filed 2026-09-18 by the PM, on branch `crew-0.19.61-schema-readpath`, against
+`main` at `7c5b884b`. **Does not block crew 0.19.61; not fixed here.**
+
+`plugin/crew/hooks/scripts/pm_brief.py:298` reads `state.get("graph")`. The
+state dict does not have `graph` at the top level -- `crew_state.collect()`
+puts it at `state["knowledge"]["graph"]`. So `dict_or_empty` returns `{}`,
+`tracked` is `None`, and `:301-302` always takes the `else` branch.
+
+Measured in this repo, which tracks the pair:
+
+    reportTracked: True
+    graphCommand: {'graphCommand': 'graphify . --no-viz --code-only'}
+
+The two lines disagree in one call. `reportTracked` is read correctly by
+`crew_state`, and thrown away by the consumer.
+
+**This is the entry above (`Crew's graph-refresh string contradicts this
+repo's CLAUDE.md since #121`, CLOSED 2026-09-13) being wrong.** The fix
+shipped, the detection works, and the interpolation has never once produced
+`graphify update .` in a real repo. Do not re-close that entry on the strength
+of the code reading the way it is meant to; run the two-line probe above.
+
+**The test encodes the bug rather than catching it.**
+`plugin/crew/tests/test_pm_brief.py:212-216` builds its state with
+`_with("graphStale", graph={...})` -- `graph` at the TOP level, which is the
+shape the buggy line reads and not the shape `crew_state.collect()` emits. So
+the assertion `"graphify update ." in out` passes against a state no hook ever
+sees. Fixing `pm_brief.py` alone will turn that test red; the test is half the
+fix, and it is the half that decides whether this recurs.
+
+**Cost:** one line in `pm_brief.py`, plus rebuilding the three cases in
+`test_pm_brief.py` from `crew_state.collect()` output rather than a hand-built
+dict. Lands in crew, so it owes a bump and a CHANGELOG entry.
+
+**Why it is worth more than its size.** This is the repo's named recurring
+defect exactly -- an unknown collapsing into the safe-looking value. The
+fallback branch is documented at `:292-295` as the safe majority case, so a
+reader who finds it taken concludes it was chosen, not that the probe came back
+empty. A "could not tell" that renders as a confident recommendation.
+
+**Not verified:** whether the same top-level-vs-nested mistake appears in the
+other `_*_fields` helpers in `pm_brief.py`. `_incident_fields` shares the
+contract and was not checked.
+
+## `work.ticket` is an input to the pulse fingerprint, never a suppressor
+
+Filed 2026-09-18 by the PM. **Does not block crew 0.19.61; not fixed here.**
+
+`plugin/crew/hooks/scripts/pm_pulse.py:107` puts the open ticket into the state
+fingerprint. Nothing anywhere suppresses the pulse while a ticket is open. The
+fingerprint gate (`:93-112`) means the pulse does NOT fire every Stop -- the
+common claim that it does is wrong, and `:12` says so: "the event is not the
+gate; a STATE FINGERPRINT is." But `triggers` is also in the digest, so a graph
+going stale or a diagram falling behind DURING a ticket changes the digest and
+the pulse speaks the full finding list mid-task. That is a real vector for
+work veering off the task in hand.
+
+**Why it was not taken in the focus slice (crew 0.19.62).** `pm-pulse.sh` can
+`exit 2` to block -- its own header says so, and says `exec` matters because a
+swallowed 2 reads as a non-blocking error. Root `CLAUDE.md` requires any hook
+that can block to carry a committed regression suite with must-block and
+must-allow cases, sabotage-tested. Cheap in code, not cheap in verification,
+and strictly more expensive than the role-prompt scope clause that addresses
+the same complaint.
+
+**Note the pulse already carries the focus instruction** at `:188-189` (`act`)
+and `:215-217` (`autonomous`): "fix an unrelated problem only when it BLOCKS
+one of them, and ticket or TODO the rest". The PM is told; the roles that
+touch code are not. That asymmetry, not the pulse, is the main finding.
+
+## Three prose sites still name `graphify . --no-viz --code-only` unconditionally
+
+Filed 2026-09-18 by the PM. **Does not block crew 0.19.61; not fixed here.**
+
+The remaining half of the CLOSED entry above, re-confirmed at `7c5b884b`:
+`plugin/crew/commands/onboard.md:14` and `plugin/crew/commands/upgrade.md:56`
+(both saying "both flags required"), and
+`plugin/crew/skills/crew-graph/SKILL.md:44`. These are fixed prose with no
+access to `reportTracked`, so they cannot interpolate the way the pulse text
+does. Whatever fixes them is a different fix from the one-line bug above, and
+should not be bundled with it.

@@ -109,6 +109,64 @@ codemap note, check whether its anchor files changed since the recorded sha:
 `git diff --name-only <anchor-sha>..HEAD -- <paths>`. If they did, re-verify that
 section before using it. Code always wins over notes.
 
+## 5. Map the data layer, if there is one
+
+`## Owns data` in a subsystem note is one line per table. That is enough to say
+*which* subsystem owns a table and nothing else — not its columns, not its
+keys, not which code writes it. A reviewer asked whether a migration is safe,
+or a DBA asked whether an index change is sound, gets nothing from it.
+
+**Find the datasource first, and say so when there is none.** Look for
+migrations, DDL, an ORM's model definitions, or a schema dump. If the repo has
+no database, write no schema file and **report "no datasource found"**. Do not
+write an empty one and do not infer a schema from variable names — a schema
+file nobody can trace to a migration is the failure this whole command exists
+to avoid.
+
+**Write `.crew/codemap/schema-<datasource>.md`** — one per database, not per
+table. It lives under `codemap/` on purpose: the anchor machinery, the
+`knowledgeBehind` trigger and the per-path freshness check already walk that
+directory, so a schema note goes stale as loudly as a subsystem note and costs
+no new plumbing to do it.
+
+```
+# schema — <datasource>
+anchor: <repo>@<short-sha>
+verified: <date>
+migration-head: <newest migration filename applied>
+
+## Tables
+### <table> — created `db/migrations/0042_x.sql:12`
+- <column> <type> <null?> — `db/migrations/0042_x.sql:14`
+- PK (<cols>) · FK <col> -> <table>.<col> — `...:19`
+- INDEX <name> (<cols>) — serves `src/reports/query.py:88`
+
+## Written by / Read by
+- <table> — written `src/orders/repo.py:210`, read `src/api/list.py:44`
+
+## Landmines
+- <the column that looks nullable and is not; the table where a scan is fatal>
+
+## Unverified
+- <schema you can see in the live database with no migration to cite>
+```
+
+**Every row cites the migration or DDL line that creates it.** That is what
+makes this DERIVED rather than a description, and it is the same contract the
+subsystem notes carry. Use the same merge-base sha as above.
+
+**Schema you cannot trace to a file goes in `## Unverified`, not in
+`## Tables`.** A table created by hand in production, or by a migration that
+was squashed away, is real and undocumented — those are different from a table
+you confirmed, and collapsing the two is how a map starts getting trusted for
+things it never checked. If you could not connect to anything and read only the
+migrations, say that in `## Unverified` as one line.
+
+**`## Written by / Read by` is the part reviewers actually use.** It is the
+join between the schema and the code map: it answers "if I change this column,
+what breaks", which is the question a migration review turns on. Derive it from
+the graph where the graph can see it, and from grep where it cannot.
+
 ## Then make the knowledge executable
 
 A code map describes; it does not verify. Onboarding is not finished until the
