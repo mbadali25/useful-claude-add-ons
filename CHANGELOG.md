@@ -212,7 +212,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
-- **`crew` 0.19.92: a `claude plugin eval` suite that tests role behaviour
+- **`crew` 0.19.91: a `claude plugin eval` suite that tests role behaviour
   under temptation, not prose.** Every structural check in this plugin
   (`run-tests.sh`, `validate-prompts.py`, `pytest`) proves a hook blocks the
   right thing or a command's frontmatter parses. None of them proves an
