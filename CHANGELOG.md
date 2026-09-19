@@ -6,6 +6,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Fixed
 
+
 - **`crew` 0.19.90: dispatched roles ran gates in the background and ended
   the turn waiting to be woken.** Three subagents did it in one night —
   `crew-pm` at ~00:30, `dev-pm-contract` at 01:01, `dev-stophook-finish` at
@@ -75,32 +76,6 @@ All notable changes to this repository are documented here. Format follows [Keep
   as a resumable id, the idle-write rule still overclaiming current liveness
   from a single reading, and two more test assertions with the same
   lead-in-only gap as round 1's.
-  Every dispatched role file that runs a gate, a suite or a mutation itself
-  now carries three clauses in its own voice: run it in the foreground; never
-  end a turn waiting on a background task, with the reason stated; and split a
-  command that exceeds the tool timeout into foreground parts, quoting each
-  part's result. Touched `agents/developer.md`, `agents/pm.md`,
-  `agents/python-pro.md`, `agents/browser-tester.md`, `agents/smoke-author.md`
-  and `agents/qa-reviewer.md`. `pm.md` gains a second rule: a role that
-  returns a PARTIAL result is resumed with `SendMessage` addressed to its
-  agent id, never re-dispatched — a re-dispatch opens an empty context that
-  re-derives what the first pass already knew and spends a `pm.maxDispatches`
-  slot to arrive back where it started. That clause says explicitly that it is
-  not the `name`-at-dispatch-time the file already forbids, because the two
-  sit three paragraphs apart and reconciling them the wrong way produces
-  "Teammates cannot spawn other teammates" at dispatch. New sabotage-tested
-  suite `plugin/crew/tests/test_foreground_execution.py`: 33 mutations, each
-  deleting one asserted sentence, all 33 RED, every file restored
-  byte-identical by sha256. Two came back GREEN on the first pass and were
-  defects in the TEST, not the prose — a bare `pm.maxDispatches` token that
-  appears twice in `pm.md`, and a positive "runs in the foreground" sentence
-  no assertion covered. Both are fixed and both mutations are now RED.
-  Second commit, same version: `pm.md` gains the observer's half of the same
-  rule — an idle signal from a role running a gate or suite is not evidence
-  it stopped, checked against the worktree's newest file mtimes rather than
-  trusted outright, after the harness reported `dev-item2`, `dev-item3` and
-  this session's own item-1 pass idle mid-suite in one morning and nearly
-  cost item 3's live run to a disk restart.
 - **`localgpu` 0.1.20, `obsidian-vault` 0.3.10: `argument-hint` with two
   bracketed groups broke YAML frontmatter parsing.** `claude plugin
   validate` failed both plugins with `YAML Parse error: Unexpected

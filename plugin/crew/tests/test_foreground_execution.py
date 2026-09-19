@@ -179,10 +179,11 @@ def test_split_parts_must_be_reported_individually():
     meant approving a violation of its own output contract."""
     free_form_roles = tuple(r for r in FOREGROUND_ROLES if r != "qa-reviewer")
     quotes = {
-        "developer": "Quote each part's exit code and pass/fail count, one "
-                     "line per part",
+        "developer": "Up to five parts, quote each one's exit code and "
+                     "pass/fail count on its own line",
         "pm": "each part run in the foreground and each part's output quoted",
-        "python-pro": "with each part's exit code reported separately",
+        "python-pro": "Up to five parts, report each one's exit code on its "
+                      "own line",
         "browser-tester": "each run in the foreground with its own output "
                           "quoted",
         "smoke-author": "quoting each part's result",
@@ -200,18 +201,60 @@ def test_split_parts_must_be_reported_individually():
 
 def test_developer_quotes_stay_inside_its_own_word_budget():
     """Codex found this on round 2: developer.md's original 'quote each
-    part's result in your report' had no ceiling, and 'What you return' two
-    sections down is capped at 200 words. Enough split parts and the two
-    instructions cannot both be followed. The fix scopes what gets quoted --
-    exit code and pass/fail count, not full output -- and says why."""
+    part's exit code and pass/fail count, one line per part' has no ceiling
+    either -- split a suite into 100 parts and 100 one-line quotes still
+    blows the 200-word 'What you return' contract two sections down, even
+    though each individual line is short. Round 3 found the actual fix:
+    cap the per-part lines and fall back to totals plus a written table
+    beyond that cap."""
     body = _agent("developer")
     assert (
-        "not its full output, which would blow past the 200-word return "
-        "below on a suite split into enough parts"
+        "Up to five parts, quote each one's exit code and pass/fail count "
+        "on its own line"
     ) in body, (
-        "developer.md quotes a bounded summary per split part without "
-        "saying why it is bounded, so a later edit could reasonably widen "
-        "it back to full output and blow the 200-word return again"
+        "developer.md dropped the cap on how many parts get an individual "
+        "quoted line, so enough split parts can still blow the 200-word "
+        "return even with short one-line quotes"
+    )
+    assert (
+        "Beyond five, the return carries totals instead — how many parts "
+        "ran, how many passed, how many failed, and the worst exit code "
+        "among them"
+    ) in body, (
+        "developer.md no longer says what replaces per-part quoting past "
+        "the five-part cap, so a large split run has nowhere to go except "
+        "back to quoting every part"
+    )
+    assert (
+        "the full per-part table goes to a file under `.work/`, named in "
+        "your report so the reviewer can open it"
+    ) in body, (
+        "developer.md drops the per-part detail entirely past five parts "
+        "instead of writing it somewhere the reviewer can still reach"
+    )
+
+
+def test_python_pro_inherits_developer_word_budget_cap():
+    """python-pro's own wording ('each part's exit code reported
+    separately') looked safe because it never promised full output -- but
+    Codex found the same conflict anyway: enough split parts and even
+    bare exit-code lines blow the 200-word return python-pro inherits from
+    developer's report shape. The fix mirrors developer's five-part cap
+    rather than duplicating its own scheme."""
+    body = _agent("python-pro")
+    assert (
+        "Up to five parts, report each one's exit code on its own line"
+    ) in body, (
+        "python-pro.md dropped the cap on per-part exit-code lines, so a "
+        "large split run can still blow the 200-word return it inherits "
+        "from crew:developer's report shape"
+    )
+    assert (
+        "beyond five, report totals instead — how many parts, how many "
+        "passed, how many failed, and the worst exit code"
+    ) in body, (
+        "python-pro.md no longer says what replaces per-part exit codes "
+        "past the five-part cap"
     )
 
 
@@ -242,6 +285,60 @@ def test_qa_reviewer_verifies_every_split_part_without_polluting_its_verdict():
     ) in body, (
         "qa-reviewer.md no longer protects its own output contract from the "
         "split-parts rule, so a clean split run could add text after CLEAN"
+    )
+
+
+def test_qa_reviewer_never_narrates_outside_its_strict_output_contract():
+    """Codex found this on round 3: three separate instructions in this file
+    told qa-reviewer to SAY something in its own return -- which model
+    reviewed, whether the routing guard was skipped, what it could not
+    verify -- and all three directly contradict 'output one line per
+    defect, nothing else' / 'if you find nothing, output exactly: CLEAN'.
+    The fix doesn't drop the underlying concerns, it moves the reporting
+    responsibility to whoever dispatches qa-reviewer, which already has the
+    information (the routing decision) or a place to record it
+    (.crew/metrics.md's own <reviewer> column, written by /crew:review)."""
+    body = _agent("qa-reviewer")
+    assert (
+        "your own return has no room to say so — it stays defect lines or "
+        "exactly `CLEAN` either way, so this is not something you report"
+    ) in body, (
+        "qa-reviewer.md still implies the direct-dispatch disclosure "
+        "belongs in its own output, contradicting the strict output "
+        "contract lower in the file"
+    )
+    assert (
+        "Which model is reviewing, and which of the three routes put it "
+        "there — the pin, the family refusal, or the fallback — is not "
+        "something your own return states"
+    ) in body, (
+        "qa-reviewer.md no longer says the model/route disclosure is out "
+        "of scope for its return -- this is the exact contradiction Codex "
+        "found on round 3, since the output contract leaves no room for it"
+    )
+    assert (
+        "the `<reviewer>` column it writes to `.crew/metrics.md` on every "
+        "run"
+    ) in body, (
+        "qa-reviewer.md dropped where the model/route information actually "
+        "belongs, so the disclosure it can no longer make in its own "
+        "output has nowhere documented to go instead"
+    )
+    assert (
+        "none of it belongs in your output, which is always defect lines "
+        "or exactly `CLEAN` and never anything else"
+    ) in body, (
+        "qa-reviewer.md no longer states the unifying rule that reconciles "
+        "all three narration conflicts Codex found on round 3"
+    )
+    assert (
+        "the fix for that risk is reading the diff as hard on a clean pass "
+        "as a dirty one, not writing a caveat your own contract has no "
+        "room for"
+    ) in body, (
+        "qa-reviewer.md dropped the reframe of the 'three clean reviews in "
+        "a row' concern -- it still needs addressing, just not by writing "
+        "text the strict output contract forbids"
     )
 
 
@@ -342,13 +439,100 @@ def test_pm_resume_rule_does_not_contradict_the_no_name_dispatch_rule():
     )
 
 
+def test_pm_write_scope_matches_the_write_guard_exactly():
+    """Codex found this on round 3: pm.md stated its write scope TWICE, and
+    the two statements disagreed. Higher up, 'Your own writes are
+    `.crew/**`, `TODO.md`, ticket text under `.work/`, and
+    `docs/diagrams/**`' matches the four prefixes
+    `role_write_guard.py`'s `_PM_ALLOWED_PATTERNS` actually enforces. Lower
+    down, a second sentence said only `.crew/` and `docs/diagrams/` --
+    dropping TODO.md and .work/ entirely, which contradicts the rabbit-hole
+    rule (a non-blocking finding with no tracker MUST go to TODO.md) and the
+    ticket-writing table earlier in this same file. A role that followed
+    the narrower sentence could not do what its own rabbit-hole rule
+    requires."""
+    body = _agent("pm")
+    assert (
+        "Your own writes are `.crew/**`, `TODO.md`, ticket text under "
+        "`.work/`, and `docs/diagrams/**`"
+    ) in body, (
+        "pm.md dropped its first, correct statement of write scope -- the "
+        "one that matches role_write_guard.py's four prefixes"
+    )
+    assert (
+        "Everything you write is scoped to `.crew/**`, `TODO.md`, "
+        "`.work/**` and `docs/diagrams/**`"
+    ) in body, (
+        "pm.md's second write-scope sentence no longer matches its first: "
+        "this is the exact contradiction Codex found on round 3, where the "
+        "second sentence dropped TODO.md and .work/, making the "
+        "rabbit-hole rule's mandatory TODO.md write impossible under the "
+        "scope this sentence states"
+    )
+    assert (
+        "the same four prefixes the write-scope guard enforces "
+        "mechanically, not a wider or narrower promise made only in prose"
+    ) in body, (
+        "pm.md's second write-scope sentence no longer ties itself back to "
+        "the mechanically-enforced guard, so a future edit could drift the "
+        "two apart again with nothing here to catch it"
+    )
+
+
+def test_pm_reaps_idle_roles_by_reporting_not_reengaging():
+    """Codex found this on round 3: 'Reap what is idle' told the PM to
+    're-engage a role that is still on the same subject' -- but the PM has
+    no SendMessage, the same tool gap that made the resume-by-id rule need
+    rewriting earlier in this file. 'Re-engage' is unfollowable for exactly
+    the same reason 'resume it yourself' was. The fix is the same shape:
+    report the role's existence and its id to the caller, never act on it
+    directly."""
+    body = _agent("pm")
+    assert (
+        "if a role is still on the same subject, report it as existing "
+        "and hand its id to the caller rather than dispatching a "
+        "duplicate"
+    ) in body, (
+        "pm.md no longer tells the PM to report an already-alive role to "
+        "the caller instead of re-engaging it directly"
+    )
+    assert (
+        "you have no `SendMessage` to re-engage it yourself, only the "
+        "means to name it"
+    ) in body, (
+        "pm.md dropped the reason re-engaging is unfollowable -- the same "
+        "tool gap (no SendMessage) that already forced the resume-by-id "
+        "rule to move to commands/pm.md"
+    )
+
+
 def test_pm_command_resumes_a_partial_result_with_sendmessage():
     """The PM itself cannot resume a role -- it has no SendMessage. The
     mechanism that actually does the resuming lives one level up, in
     commands/pm.md, which DOES carry SendMessage in its allowed-tools.
     Without this half the PM's 'return the id upward' instruction goes
-    nowhere: nothing downstream ever acts on it."""
+    nowhere: nothing downstream ever acts on it.
+
+    Codex found two more gaps here on round 3: the resume instruction's own
+    PRECONDITION ('a PM report says a role returned a PARTIAL result and
+    names that role's id') was never asserted, only the SendMessage clause
+    that follows it -- so deleting the precondition alone left every test
+    green, since nothing then required a report to actually say PARTIAL
+    before the caller acts. And nothing asserted that SendMessage is
+    actually IN commands/pm.md's own allowed-tools frontmatter, as opposed
+    to merely being named in prose -- removing it from the frontmatter left
+    every test green too, verified independently."""
     body = _command("pm")
+    assert (
+        "If a PM report says a role returned a PARTIAL result and names "
+        "that role's id, `SendMessage` that id directly"
+    ) in body, (
+        "commands/pm.md dropped the precondition for this resume "
+        "instruction -- 'a PM report says PARTIAL and names the id' -- so "
+        "the SendMessage clause below has nothing gating when it applies. "
+        "This is the FIX Codex found on round 3: the old assertion here "
+        "checked only the SendMessage clause, not this precondition"
+    )
     assert (
         "A role's partial result carries an id — resume it yourself, "
         "don't send it back to the PM."
@@ -368,6 +552,16 @@ def test_pm_command_resumes_a_partial_result_with_sendmessage():
         "commands/pm.md dropped the reason the PM cannot do this itself, so "
         "the split between 'PM returns the id' and 'caller resumes it' "
         "reads as arbitrary"
+    )
+    assert (
+        "allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, "
+        "ListAgents, SendMessage, AskUserQuestion"
+    ) in body, (
+        "commands/pm.md's frontmatter no longer actually grants "
+        "SendMessage -- the prose above can still NAME the mechanism while "
+        "the tool itself is unavailable, which is the FIX Codex found on "
+        "round 3: the old assertions checked only prose, never the "
+        "frontmatter that makes the prose followable"
     )
 
 
@@ -425,15 +619,38 @@ def test_pm_does_not_treat_an_idle_signal_as_proof_a_role_has_stopped():
     )
     assert (
         "The decision rule is a recent write means wait one cycle and "
-        "re-check; no write across two consecutive cycles means treat "
-        "the role as stopped."
+        "re-check; no write across two consecutive cycles means report "
+        "it, not restart it."
     ) in body, (
         "pm.md dropped the explicit two-reading decision rule, so 'wait, "
         "don't restart' has no stated threshold for when waiting ends"
     )
-    assert "Never restart on a single reading either way." in body, (
-        "pm.md dropped the rule that a single reading -- write or no write "
-        "-- is never grounds to restart on its own"
+    assert (
+        "You never classify a role as stopped on your own — a live "
+        "read-only suite writes nothing at all and would satisfy "
+        '"no write" while still running'
+    ) in body, (
+        "pm.md no longer says WHY two quiet cycles cannot be treated as "
+        "confirmed-stopped -- this is the FIX Codex found on round 3: a "
+        "live read-only suite writes nothing across any number of cycles "
+        "and would be misclassified as stopped under the old wording"
+    )
+    assert (
+        'say plainly "no writes across two cycles; not confirmed '
+        'stopped" and hand the caller the role\'s id so it can confirm '
+        "directly"
+    ) in body, (
+        "pm.md no longer says what the PM does after two quiet cycles -- "
+        "escalate to the caller with the role's id -- so the only "
+        "remaining move reads as silently giving up or restarting"
+    )
+    assert (
+        "Never restart on a single reading, and never restart on two "
+        "quiet cycles either — that call belongs to the caller, not to "
+        "you"
+    ) in body, (
+        "pm.md dropped the rule that neither a single reading nor two "
+        "quiet cycles is ever grounds for the PM itself to restart"
     )
     assert "Never restart a role from disk on an idle signal alone." in body, (
         "pm.md no longer forbids restarting on an idle signal alone, which "

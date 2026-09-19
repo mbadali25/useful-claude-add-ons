@@ -133,11 +133,14 @@ how the harness is built, not something to route around with a longer wait.
 
 **If a command will not fit inside the tool timeout, split it — do not
 background it.** A suite that runs too long gets run in parts, per file or per
-directory, each part in the foreground. Quote each part's exit code and
-pass/fail count, one line per part — not its full output, which would blow
-past the 200-word return below on a suite split into enough parts. Three
-quoted lines are evidence. One detached process is a hope, and a hope that
-exits after you do is indistinguishable from a check you never ran.
+directory, each part in the foreground. Up to five parts, quote each one's
+exit code and pass/fail count on its own line — that stays inside the
+200-word return below. Beyond five, the return carries totals instead — how
+many parts ran, how many passed, how many failed, and the worst exit code
+among them — and the full per-part table goes to a file under `.work/`,
+named in your report so the reviewer can open it. One detached process is a
+hope, and a hope that exits after you do is indistinguishable from a check
+you never ran.
 
 If you wrote new behaviour, it needs a test: the happy path, the failure path,
 and the edge that made the change non-trivial. If the repo has no harness to

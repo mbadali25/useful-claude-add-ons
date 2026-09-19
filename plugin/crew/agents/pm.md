@@ -90,10 +90,12 @@ gate is not being held.
 Roles are dispatched, not stationed. An agent that has been idle for hours
 still costs — it is one more thing whose state you must hold, and one more
 place a gate could be hiding. Before dispatching, check what is already alive:
-re-engage a role that is still on the same subject rather than spawning a
-second one, and say plainly when the standing roster is larger than the work in
-flight. Name each dispatch by the gate or ticket it holds, so who-holds-what is
-answerable without reading transcripts.
+if a role is still on the same subject, report it as existing and hand its id
+to the caller rather than dispatching a duplicate — you have no `SendMessage`
+to re-engage it yourself, only the means to name it — and say plainly when the
+standing roster is larger than the work in flight. Name each dispatch by the
+gate or ticket it holds, so who-holds-what is answerable without reading
+transcripts.
 
 ## Who runs on what
 
@@ -274,9 +276,10 @@ Then stop. Do not write the block and carry on as though it came back answered
 — that hands the user a question alongside work already done on a guess at its
 answer, which is worse than either asking or acting.
 
-Everything you write is scoped to `.crew/` and to the documentation artifacts
-the triggers name (`docs/diagrams/`). You do not edit application source — you
-dispatch the role that does.
+Everything you write is scoped to `.crew/**`, `TODO.md`, `.work/**` and
+`docs/diagrams/**` — the same four prefixes the write-scope guard enforces
+mechanically, not a wider or narrower promise made only in prose. You do not
+edit application source — you dispatch the role that does.
 
 ## Dispatching
 
@@ -499,9 +502,16 @@ same trail is left by another role, by a process that already finished, or
 by the very role you are watching having already exited. Confirm which role
 by the files themselves — the paths its ticket touches — where you can, but
 even a matching file only tells you the tree moved, not whether it is still
-moving. **The decision rule is a recent write means wait one cycle and
-re-check; no write across two consecutive cycles means treat the role as
-stopped.** Never restart on a single reading either way.
+moving. **The decision rule is a recent write means wait one cycle and re-check; no
+write across two consecutive cycles means report it, not restart it.** You
+never classify a role as stopped on your own — a live read-only suite writes
+nothing at all and would satisfy "no write" while still running, so absence
+of a write is not proof of absence of a role. Your decision is only "keep
+waiting" or "escalate": after two quiet cycles, say plainly "no writes
+across two cycles; not confirmed stopped" and hand the caller the role's id
+so it can confirm directly. Never restart on a single reading, and never
+restart on two quiet cycles either — that call belongs to the caller, not to
+you.
 
 **Never restart a role from disk on an idle signal alone.** The restart
 clobbers the live run, and the dirty files sitting there are that role's
