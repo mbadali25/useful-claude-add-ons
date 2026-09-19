@@ -2857,3 +2857,33 @@ Two traps worth keeping visible, because both cost time here:
    identical -- and three such lines are already committed in
    `verify-gate.sh`. It is NOT harmless in python source, where it produced
    an unterminated string literal. Build backslashes with `chr(92)`.
+
+## Which PowerShell does `"shell": "powershell"` launch?
+
+Filed 2026-09-19 from the `powershell-security-hardening` pass on
+`verify-gate.ps1` and `pm-pulse.ps1`. **Recorded rather than chased:** it was
+not resolved, and it decides whether one of that pass's round-1 notes applies
+at all, so leaving it unstated would let the next reader assume either answer.
+
+`plugin/crew/hooks/hooks.json` registers the PowerShell flavour of each hook
+with `"shell": "powershell"`. Whether Claude Code resolves that to **Windows
+PowerShell 5.1** (`powershell.exe`) or **PowerShell 7** (`pwsh.exe`) has not
+been established here.
+
+It matters for at least one concrete thing: `$PSNativeCommandUseErrorActionPreference`
+exists only in PowerShell 7.3+, so a note about it is either load-bearing or
+inert depending on the answer — and nothing in this repo currently records
+which. The gates' own test suites all invoke `pwsh` explicitly
+(`shutil.which("pwsh")`), so **the suites prove behaviour under 7 and say
+nothing about 5.1**, which is the gap: if the harness actually launches 5.1,
+every `.ps1` regression case in this repo is testing an interpreter the hook
+never runs on.
+
+How to settle it, cheaply and without guessing: have the hook record its own
+interpreter once — `$PSVersionTable.PSVersion` and
+`$PSVersionTable.PSEdition` written to a scratch file from inside a real
+hook invocation — rather than reasoning from the string `"powershell"`. Do
+not infer it from what is on `PATH`; the harness may resolve it differently.
+
+Until then, treat "the .ps1 hooks run under PowerShell 7" as an **assumption
+this repo has not verified**, not as a fact.

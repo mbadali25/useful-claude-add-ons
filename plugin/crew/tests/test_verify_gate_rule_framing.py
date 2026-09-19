@@ -204,8 +204,19 @@ def test_the_two_halves_of_the_framing_contract_agree():
     """
     text = open(_VERIFY_SH, encoding="utf-8").read()  # pylint: disable=consider-using-with
 
-    emit = [l for l in text.splitlines() if "sys.stdout.write(" in l]
-    assert len(emit) == 1, emit
+    # The WHOLE statement, not its first line. It has wrapped since 0.19.90
+    # added the deferred-count record, and reading one line silently undercounted
+    # the separators -- which made the derived record count disagree with the
+    # readers and failed a correct change.
+    lines = text.splitlines()
+    starts = [i for i, l in enumerate(lines) if "sys.stdout.write(" in l]
+    assert len(starts) == 1, starts
+    statement = lines[starts[0]]
+    for follow in lines[starts[0] + 1:]:
+        if statement.count("(") <= statement.count(")"):
+            break
+        statement += " " + follow.strip()
+    emit = [statement]
     assert r'"\x1d"' in emit[0], emit[0]
     assert r'"\x1e".join(cmds)' in emit[0], emit[0]
 
