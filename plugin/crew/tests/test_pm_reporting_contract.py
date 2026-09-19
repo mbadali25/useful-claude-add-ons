@@ -91,13 +91,18 @@ def test_pm_one_hat_rule_names_paths():
     body = _pm_agent()
     assert (
         "you do not create or edit files under `plugin/`, `skills/`, `src/`, "
-        "`scripts/`, `tests/` or any path a `.crew/verify.json` rule maps"
-        in body
+        "`scripts/`, or `tests/` — those are a" in body
     ), "pm.md's one-hat rule no longer names checkable paths, only categories"
     assert (
         "Your own writes are `.crew/**`, `TODO.md`, ticket text under "
         "`.work/`, and `docs/diagrams/**`." in body
     ), "pm.md dropped the explicit list of what the PM itself may write"
+    assert "When a path is on neither list, it is a developer's — dispatch." in body, (
+        "pm.md no longer resolves a path that is on neither the forbidden "
+        "nor the permitted list — Codex found the earlier wording forbade "
+        "and permitted TODO.md and .crew/** at once by routing both lists "
+        "through .crew/verify.json, which maps exactly those paths"
+    )
 
 
 def test_pm_still_holds_write_and_edit():
@@ -119,9 +124,12 @@ def test_skill_one_hat_names_paths():
     body = _skill()
     assert (
         "it does not create or edit files under `plugin/`, `skills/`, `src/`, "
-        "`scripts/`, `tests/`, or any path a `.crew/verify.json` rule maps"
-        in body
+        "`scripts/`, or `tests/` — those are a developer's" in body
     ), "SKILL.md's one-hat section no longer agrees with pm.md's path list"
+    assert "A path on neither list is a developer's — dispatch." in body, (
+        "SKILL.md no longer resolves a path that is on neither list, so it "
+        "has fallen out of agreement with pm.md's fixed wording again"
+    )
 
 
 def test_skill_states_the_reporting_cadence_and_interrupt_rule():

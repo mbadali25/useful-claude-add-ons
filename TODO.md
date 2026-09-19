@@ -3158,6 +3158,7 @@ Crew's fixes and their sabotage-tested regression cases are in
 `plugin/crew/skills/crew-debugging/find-polluter.sh`'s header comment and
 `plugin/crew/tests/test_debugging_method.py`.
 ## PM reporting-contract fix - crew 0.19.82 (placeholder)
+## PM reporting-contract fix - crew 0.19.83 (placeholder)
 
 Filed 2026-09-19, fixed same day on branch `crew-pm-reporting-contract`.
 The standing `crew-pm` agent ran ~3h, wrote four version bumps of code
