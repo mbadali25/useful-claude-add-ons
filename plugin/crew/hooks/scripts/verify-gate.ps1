@@ -413,7 +413,20 @@ try {
       # saying how long THIS run may take, from the map's own numbers. Absent
       # or unreadable falls back to the age window, so a lock written by a
       # version that never published one ages exactly as it used to.
-      $holdDeadline = try { [int]((Get-Content -Raw -ErrorAction Stop (Join-Path $lock 'deadline')).Trim()) } catch { 0 }
+      # Matched to verify-gate.sh: an unparseable deadline means NOT HELD, and
+      # the value is REJECTED rather than repaired. The regex is the whole
+      # guard -- a cast alone is not, and the two flavours disagreed because
+      # of it. Measured on an aged token with a deadline of 9999999999: bash
+      # backed off and PowerShell ran, because [int] overflows Int32 and the
+      # catch silently produced 0. That is a real date, not a fabricated one:
+      # every legitimate deadline crosses Int32 max on 2038-01-19, after which
+      # this pair would have disagreed about every live lock. [long] removes
+      # the cliff; the regex removes the coercion.
+      $holdDeadline = 0
+      try {
+        $raw = (Get-Content -Raw -ErrorAction Stop (Join-Path $lock 'deadline')).Trim()
+        if ($raw -match '^[0-9]+$') { $holdDeadline = [long]$raw }
+      } catch { $holdDeadline = 0 }
       $nowEpoch = [int][double]::Parse((Get-Date -UFormat %s))
       if ($holdDeadline -gt 0 -and $nowEpoch -lt $holdDeadline) {
         $held = try { (Get-Content -Raw -ErrorAction Stop (Join-Path $lock 'token')).Trim() } catch { 'an unreadable token' }

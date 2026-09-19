@@ -225,6 +225,17 @@ def test_a_fresh_lock_with_no_deadline_still_backs_off(flavour, tmp_path):
     )
 
 
+# A rule long enough that the holder is demonstrably still inside it when the
+# challenger arrives: states 8s (so the window is max(3, 2*8) = 16s) and sleeps
+# 10, against the 3s TTL. The gap between 3 and 16 is the whole subject.
+_CROSS_RULE = {
+    "version": 1,
+    "rules": [{"paths": ["a.py"], "seconds": 8, "run": ["sleep 10"],
+               "why": "states 8s, sleeps 10s, against a 3s TTL"}],
+    "default": [], "unmapped": "ignore",
+}
+
+
 @pytest.mark.skipif(
     _BASH is None or not sys.platform.startswith("win") or _PWSH is None,
     reason="cross-flavour agreement needs both on the same machine",
@@ -232,21 +243,68 @@ def test_a_fresh_lock_with_no_deadline_still_backs_off(flavour, tmp_path):
 def test_each_flavour_honours_a_deadline_the_other_published(tmp_path):
     """The whole point of the lock. A deadline one flavour writes has to mean
     the same thing to the other, or the pair reclaims each other's live locks
-    and both run."""
-    for writer, reader in (("ps1", "sh"), ("sh", "ps1")):
-        root = _repo(tmp_path / (writer + "-to-" + reader))
-        lock = _lock(root)
-        lock.mkdir(parents=True)
-        (lock / "token").write_text(writer + "-holder", encoding="utf-8")
-        (lock / "deadline").write_text(str(int(time.time()) + 30),
-                                       encoding="utf-8")
+    and both run.
 
-        result = _run(reader, root)
-        assert "backed off" in result.stderr, (
-            "the " + reader + " flavour ignored a deadline the " + writer
-            + " flavour published, so it would reclaim a live lock. "
-            + result.stderr
-        )
+    THE WRITER ACTUALLY WRITES IT. This case used to fabricate both halves --
+    it created the lock directory itself, wrote a token, wrote a deadline, and
+    named the flavours only in the failure message. Nothing in it ran the
+    writer, so removing deadline publication from both gates left it green:
+    the token it planted was FRESH, so the age window alone forced the
+    back-off it asserted. It was a test that passed without the feature it is
+    named after, which is the vacuous shape sabotage.py exists to find and
+    which sabotage.py could not find here, because no mutation of the source
+    could reach it.
+
+    So the holder is a real gate process of the WRITER flavour, the deadline
+    on disk is the one that gate published, and the token's age is asserted to
+    be PAST the TTL before the challenger runs -- which is what makes the
+    back-off attributable to the deadline and to nothing else.
+    """
+    for writer, reader in (("ps1", "sh"), ("sh", "ps1")):
+        root = _repo(tmp_path / (writer + "-to-" + reader), _CROSS_RULE)
+        holder = subprocess.Popen(  # pylint: disable=consider-using-with
+            _cmd(writer), stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL, cwd=str(root), env=_env(root),
+            text=True)
+        try:
+            holder.stdin.write("{}")
+            holder.stdin.close()
+            time.sleep(6)
+            assert holder.poll() is None, (
+                writer + " finished before the challenger could arrive, so "
+                "nothing was held and this case proves nothing"
+            )
+
+            token = _lock(root) / "token"
+            deadline = _lock(root) / "deadline"
+            assert deadline.exists(), (
+                "the " + writer + " flavour published no deadline, so the "
+                "challenger has only the age window"
+            )
+            age = time.time() - token.stat().st_mtime
+            assert age > float(_TTL), (
+                "the premise: the token has to be OLDER than the " + _TTL
+                + "s TTL, or the age window would force the back-off on its "
+                "own and the deadline would never be consulted. age="
+                + str(age)
+            )
+
+            result = _run(reader, root)
+            assert "backed off" in result.stderr, (
+                "the " + reader + " flavour ignored a deadline the " + writer
+                + " flavour published, so it would reclaim a live lock. "
+                + result.stderr
+            )
+            assert "may run for another" in result.stderr, (
+                "and it has to back off on the DEADLINE, not on the age "
+                "window -- the token is already past the TTL. "
+                + result.stderr
+            )
+        finally:
+            try:
+                holder.wait(timeout=40)
+            except subprocess.TimeoutExpired:
+                holder.kill()
 
 
 # --- the in-rule refresh, proven from inside a running rule -----------------
@@ -380,4 +438,172 @@ def test_lock_ttl_env_var_unparseable_falls_back_to_the_default_not_zero(
         "an unparseable CREW_VERIFY_LOCK_TTL published a "
         f"{window}s window instead of falling back to the 180s compiled "
         "default."
+    )
+
+
+# ---------------------------------------- a deadline that cannot be parsed
+#
+# MEANS NOT HELD. The gate used to read this file with `tr -dc "0-9"`, which
+# DELETES what it does not like rather than refusing it, so `-9999999999`
+# became `9999999999` -- a deadline in the year 2286 -- and the gate backed
+# off with "may run for another 8210194761s", verifying nothing, for ever.
+#
+# That is this repository's recurring defect inverted: not an unknown
+# collapsing into the permissive value, but a malformed value being REPAIRED
+# into one. Same answer either way -- when the input cannot be read, assume
+# the lock is NOT held and fall through to the age window.
+
+_MALFORMED_DEADLINES = {
+    # The reported case, verbatim, and the only one that ever reached
+    # production behaviour: measured at 8210194761s of declared runway.
+    "negative-huge": "-9999999999",
+    # The same defect at the smallest size, so a fix that special-cases the
+    # big number rather than the sign is caught.
+    "negative-one": "-1",
+    "not-a-number": "abc",
+    "two-numbers": "12 34",
+    "scientific": "1e10",
+    "empty": "",
+}
+
+
+def _abandoned_lock(root, deadline_text):
+    """A lock whose token is 600s old -- far past the 3s TTL -- carrying the
+    given deadline. The age window alone would reclaim this lock, so a
+    back-off can only have come from the deadline."""
+    lock = _lock(root)
+    lock.mkdir(parents=True)
+    (lock / "token").write_text("abandoned-holder", encoding="utf-8")
+    (lock / "deadline").write_text(deadline_text, encoding="utf-8")
+    old = time.time() - 600
+    os.utime(lock / "token", (old, old))
+    os.utime(lock, (old, old))
+    return lock
+
+
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+@pytest.mark.parametrize("case", sorted(_MALFORMED_DEADLINES))
+def test_an_unparseable_deadline_is_not_a_held_lock(flavour, case, tmp_path):
+    """MUST-BLOCK. Every one of these must reclaim and RUN."""
+    root = _repo(tmp_path)
+    _abandoned_lock(root, _MALFORMED_DEADLINES[case])
+
+    result = _run(flavour, root)
+    assert "backed off" not in result.stderr, (
+        "a deadline of " + repr(_MALFORMED_DEADLINES[case]) + " was read as a "
+        "live holder on a token 600s past the TTL. An unparseable value must "
+        "mean NOT HELD; coercing it into a number is how -9999999999 became a "
+        "deadline in 2286. " + result.stderr
+    )
+    assert "echo RAN" in result.stderr or "sleep" in result.stderr, (
+        "having reclaimed the lock the gate must actually RUN the rule. "
+        + result.stderr
+    )
+
+
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+def test_a_parseable_future_deadline_still_holds_the_lock(flavour, tmp_path):
+    """MUST-ALLOW, and the pair to every case above -- same aged token, same
+    fixture, the ONLY difference being that the deadline parses. Without this
+    a fix that simply stopped reading the file would pass all six."""
+    root = _repo(tmp_path)
+    _abandoned_lock(root, str(int(time.time()) + 30))
+
+    result = _run(flavour, root)
+    assert "backed off" in result.stderr, (
+        "a well-formed deadline 30s in the future is a lock that IS held, "
+        "even on a token past the TTL -- that is the entire mechanism. "
+        + result.stderr
+    )
+    assert "may run for another" in result.stderr, result.stderr
+
+
+@pytest.mark.skipif(
+    _BASH is None or not sys.platform.startswith("win") or _PWSH is None,
+    reason="parity needs both flavours on the same machine",
+)
+@pytest.mark.parametrize("value", ["9999999999", "0012", "2147483647"])
+def test_both_flavours_read_the_same_deadline_the_same_way(value, tmp_path):
+    """The values where the two implementations used to part company, and the
+    reason the PowerShell half now casts to [long] rather than [int].
+
+    Measured before the fix, on an aged token with a deadline of 9999999999:
+    bash backed off and PowerShell RAN, because [int] overflows Int32 and the
+    catch silently produced 0. That is not a synthetic input -- every
+    legitimate deadline crosses Int32 max on 2038-01-19, after which the pair
+    would have disagreed about every live lock on every machine.
+
+    `0012` is the other side of it: pure digits, so both accept it, and both
+    have to read it as twelve rather than as octal ten.
+    """
+    verdicts = {}
+    for flavour in ("sh", "ps1"):
+        root = _repo(tmp_path / (flavour + "-" + value))
+        _abandoned_lock(root, value)
+        result = _run(flavour, root)
+        verdicts[flavour] = "backed off" in result.stderr
+
+    assert verdicts["sh"] == verdicts["ps1"], (
+        "the two flavours disagreed about a deadline of " + value
+        + ": sh backed off=" + str(verdicts["sh"]) + ", ps1 backed off="
+        + str(verdicts["ps1"]) + ". A lock one flavour honours and the other "
+        "reclaims is two gates running the same turn."
+    )
+
+
+# ------------------------------------------- the TTL seam is read as DECIMAL
+#
+# `08` and `09` are all digits, so they pass the gate's filter and then die
+# inside `$(( ))`, which reads a leading zero as octal. Measured before the
+# fix: two `value too great for base (error token is "08")` lines and NO
+# deadline published -- the test seam silently disabling the mechanism it
+# exists to exercise, while the gate still exited 0.
+#
+# Probed from INSIDE a running rule, not after the run: the deadline file
+# lives in the lock directory, which the holder's own trap removes on the way
+# out, so a check made afterwards reads "absent" on a healthy gate too.
+
+_TTL_PROBE_RULE = {
+    "version": 1,
+    "rules": [{"paths": ["a.py"], "run": [
+        "cat .crew/.verify-gate.lock/deadline > seen.txt 2>&1 "
+        "|| echo ABSENT > seen.txt",
+    ], "why": "reads the published deadline from inside the run"}],
+    "default": [], "unmapped": "ignore",
+}
+
+
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+def test_a_zero_prefixed_ttl_is_decimal_and_still_publishes_a_deadline(
+        flavour, tmp_path):
+    root = _repo(tmp_path, _TTL_PROBE_RULE)
+    before = int(time.time())
+    result = subprocess.run(
+        _cmd(flavour), input="{}", cwd=str(root),
+        env=dict(os.environ, CLAUDE_PROJECT_DIR=str(root),
+                 CREW_VERIFY_LOCK_TTL="08"),
+        capture_output=True, text=True, check=False)
+
+    assert "value too great for base" not in result.stderr, (
+        "`08` reached shell arithmetic as an octal literal. " + result.stderr
+    )
+    seen = (root / "seen.txt").read_text(encoding="utf-8").strip()
+    assert seen != "ABSENT", (
+        "no deadline was published at all, so a rule longer than the TTL "
+        "would lose its lock -- and the gate still exited "
+        + str(result.returncode) + " without saying so. " + result.stderr
+    )
+    assert seen.isdigit(), (
+        "the deadline file should hold an epoch: " + repr(seen) + " "
+        + result.stderr
+    )
+    # 08 read as decimal is EIGHT. Read as anything else -- or silently
+    # dropped back to the compiled 180s default -- the window moves, so the
+    # published deadline is what pins the value rather than the absence of an
+    # error message.
+    window = int(seen) - before
+    assert 0 < window <= 10, (
+        "`CREW_VERIFY_LOCK_TTL=08` must narrow the window to EIGHT seconds; "
+        "the published deadline is " + str(window) + "s out, which is neither "
+        "8 nor a rounding of it. " + result.stderr
     )

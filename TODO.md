@@ -2935,3 +2935,24 @@ in each flavour, because a one-line mutation of `spent` did NOT reproduce the
 defect and came back green. Anchors that large drift easily; the cheap check
 is the loop in the sabotage suite's own header contract — every anchor must
 match exactly once — and it is worth running before trusting the pair.
+
+### 4. `HOLDER_AT` uses the same `tr -dc` coercion the deadline just lost
+
+`plugin/crew/hooks/scripts/verify-gate.sh:408` reads the lock's age with
+`lock_mtime ... | tr -dc '0-9'` -- the identical idiom that made
+`-9999999999` into a deadline in 2286, four lines above the line 0.19.93
+fixed. It was checked rather than assumed, and it is being left alone on
+measurement rather than on taste:
+
+* `lock_mtime` is `stat -c %Y` (`plugin/crew/hooks/scripts/verify-gate.sh:323`),
+  which returns a non-negative epoch, so there is no sign for the coercion to
+  eat. It is inert on every input either `stat` can produce.
+* Its failure DIRECTION is the opposite of the deadline's. A mangled
+  `HOLDER_AT` reads as a very old lock, so the gate RECLAIMS and runs the
+  checks. The deadline's coercion made the gate stand down; this one would
+  make it work.
+
+Making it strict is two characters and would send a garbage mtime down the
+existing "age cannot be read" branch, which is more honest than reclaiming on
+a repaired number. It did not block 0.19.93 and it is not a defect today, so
+it is written down instead of folded in.
