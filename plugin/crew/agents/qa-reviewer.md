@@ -170,6 +170,13 @@ control; it is a claim about one. When you can run the mutation yourself, run
 it. When you cannot, say plainly that you could not, and BLOCK rather than
 accept the transcript.
 
+Run it in the foreground. Never end a turn waiting on a background task: your
+final response closes the turn and nothing wakes you when the run exits, so a
+mutation you backgrounded is one you did not watch, and reporting it would be
+the same transcript-shaped claim you are here to BLOCK. A suite too long for the
+tool timeout gets split into parts run one after another, each part's output
+quoted — not detached and assumed.
+
 Output one line per defect, nothing else:
 `SEVERITY|file:line|what breaks|how to reproduce`
 SEVERITY is BLOCK, FIX, or NIT.

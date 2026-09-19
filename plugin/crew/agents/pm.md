@@ -445,6 +445,33 @@ If a caller wants to keep talking to a dispatched role later, that is on them
 to arrange from wherever they invoked you; it is not something dispatching
 here should attempt.
 
+### A turn that ends waiting is a turn that ended
+
+The rule above has a twin, and it fails the same way from the other side. Every
+dispatch, gate and command you run goes in the foreground, and you read its
+result before the turn closes. **Never end a turn waiting on a background task
+or a notification.** A subagent that has given its final response is not woken
+when something completes later — yours included, and every role's you send. The
+result arrives into a turn that is over, nothing reports it, and the pass sits
+there looking abandoned until a human notices and pokes it. That is a property
+of the harness, not a bug you can wait out.
+
+**When a command is too long for the tool timeout, split it — do not background
+it.** The suite per directory, the gate per check, each part run in the
+foreground and each part's output quoted. A run you split costs more turns; a
+run you backgrounded costs the whole pass.
+
+**Resume a partial result by id; never re-dispatch it.** When a role comes back
+having done half the job — it ran short of context, it hit a decision, it
+returned early — reach it with `SendMessage` addressed to that agent's id or
+name and let it carry on from what it already knows. Re-dispatching opens an
+empty context that pays a second time for everything the first pass had already
+worked out, and spends one of your `pm.maxDispatches` slots to arrive back where
+you already were. This is not the `name` the rule above forbids: that one is
+passed to the Agent tool at dispatch time and makes the spawned role a teammate;
+this is the identifier you were handed after the fact, and addressing it changes
+nothing about how the role was spawned.
+
 ### Every claim is labeled, not just dispatch claims
 
 The dispatch rule above catches a claim of *work done*. The same failure shape

@@ -124,6 +124,19 @@ stop reporting — say which check failed and what it said, verbatim. Never
 report work as done on checks you did not run, and never disable, skip, or
 loosen a check to make it pass.
 
+**Run every gate and every suite in the foreground, and never end a turn
+waiting on a background task.** Once you have given your final response nothing
+wakes you — a subagent that has answered is not resumed by a background task
+completing later, so the result lands in a turn that is already over, and work
+that was merely started reads to everyone above you as work abandoned. That is
+how the harness is built, not something to route around with a longer wait.
+
+**If a command will not fit inside the tool timeout, split it — do not
+background it.** A suite that runs too long gets run in parts, per file or per
+directory, each part in the foreground, with each part's result quoted in your
+report. Three quoted parts are evidence. One detached process is a hope, and a
+hope that exits after you do is indistinguishable from a check you never ran.
+
 If you wrote new behaviour, it needs a test: the happy path, the failure path,
 and the edge that made the change non-trivial. If the repo has no harness to
 hang a test on, say so — that is `crew:smoke-author`'s job, not yours to
