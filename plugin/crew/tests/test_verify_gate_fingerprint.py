@@ -607,10 +607,87 @@ def _state_leading_space_path(tmp_path):
     return root, break_it
 
 
+def _submodule_repo(root):
+    """An outer repo with a real submodule, or a MEASURED skip.
+
+    `-c protocol.file.allow=always` is not optional: git refuses a `file://`
+    submodule by default since the CVE-2022-39253 mitigation, and without it
+    `submodule add` fails with "transport \'file\' not allowed" -- which
+    reads like the filesystem refusing rather than git\'s own policy.
+    """
+    inner = root.parent / (root.name + "-inner")
+    inner.mkdir(parents=True)
+    for args in (("init", "-q"), ("config", "user.email", "t@example.invalid"),
+                 ("config", "user.name", "t")):
+        subprocess.run(("git",) + args, cwd=inner, check=True,
+                       capture_output=True, text=True)
+    (inner / "a.txt").write_text("good", encoding="utf-8")
+    for args in (("add", "-A"), ("commit", "-q", "-m", "inner")):
+        subprocess.run(("git",) + args, cwd=inner, check=True,
+                       capture_output=True, text=True)
+
+    added = subprocess.run(
+        ("git", "-c", "protocol.file.allow=always", "submodule", "add", "-q",
+         "../" + inner.name, "sub"),
+        cwd=root, capture_output=True, text=True, check=False)
+    if added.returncode != 0 or not (root / "sub" / "a.txt").exists():
+        pytest.skip("MEASURED: `git submodule add` exited "
+                    + str(added.returncode) + " here -- stderr: "
+                    + repr(added.stderr.strip()) + "; sub/a.txt present: "
+                    + str((root / "sub" / "a.txt").exists()))
+    subprocess.run(("git", "commit", "-q", "-m", "add submodule"), cwd=root,
+                   check=True, capture_output=True, text=True)
+    # DIRTY, and still passing. Writing back the committed bytes leaves the
+    # submodule CLEAN, and a clean submodule is not in `git diff --name-only`
+    # at all -- so the rule on `sub` would never match, the seeding run would
+    # check nothing, and the later edit would move the digest merely by making
+    # a path APPEAR in the changed set. That is the shape this whole module
+    # warns about for ordinary files ("editing in place leaves the changed SET
+    # identical"), and the submodule fixture walked straight into it: the
+    # sabotage entry for the gitlink caught the property-table row STILL GREEN
+    # with the fix deleted, and the cause was here, not in the gate.
+    #
+    # `good and dirty` differs from the committed `good`, so the submodule is
+    # dirty from the start, AND it still satisfies `grep -q good` so the
+    # seeding run genuinely passes.
+    (root / "sub" / "a.txt").write_text("good and dirty", encoding="utf-8")
+    changed = subprocess.run(("git", "diff", "--name-only", "HEAD"), cwd=root,
+                             capture_output=True, text=True,
+                             check=True).stdout.split()
+    assert "sub" in changed, (
+        "the fixture must leave the submodule DIRTY, or `sub` is not in the "
+        "changed set and every case built on it is vacuous. git reported: "
+        + repr(changed)
+    )
+    return root / "sub" / "a.txt"
+
+
+def _gitlink(root):
+    return subprocess.run(("git", "ls-files", "-s", "sub"), cwd=root,
+                          capture_output=True, text=True,
+                          check=True).stdout.strip()
+
+
+def _state_submodule_contents(tmp_path):
+    """MUST-BLOCK. A gitlink is a DIRECTORY, and `open()` on a directory
+    raises -- so the path hashed to the same "absent" constant a deleted file
+    gets, and a check reading `sub/a.txt` was skippable by editing
+    `sub/a.txt`. The gitlink sha does not move for a dirty submodule, which is
+    why nothing looked wrong."""
+    root = _invariant_repo(tmp_path, "submodule", "sub",
+                           "grep -q good sub/a.txt")
+    target = _submodule_repo(root)
+
+    def break_it():
+        target.write_text("bad", encoding="utf-8")
+    return root, break_it
+
+
 _STATES = {
     "worktree-edit": _state_worktree_edit,
     "staged-contents": _state_staged_contents,
     "leading-space-path": _state_leading_space_path,
+    "submodule-contents": _state_submodule_contents,
 }
 
 
@@ -728,4 +805,68 @@ def test_the_path_list_is_not_trimmed(tmp_path):
     assert spaced == verify_fingerprint.fingerprint(str(root), [_LEADING]), (
         "main() and fingerprint() must agree on what the path was, or the "
         "gate and every other case in this module test different things"
+    )
+
+
+# ------------------------------------------------- the submodule, at digest
+# level
+
+
+def test_a_dirty_submodule_moves_the_digest(tmp_path):
+    """The gitlink sha is asserted NOT to move, so this is testing the
+    submodule's CONTENTS and not catching a `git add` by accident."""
+    root = tmp_path / "repo"
+    (root / ".crew").mkdir(parents=True)
+    for args in (("init", "-q"), ("config", "user.email", "t@example.invalid"),
+                 ("config", "user.name", "t")):
+        subprocess.run(("git",) + args, cwd=root, check=True,
+                       capture_output=True, text=True)
+    (root / "README.md").write_text("committed", encoding="utf-8")
+    for args in (("add", "-A"), ("commit", "-q", "-m", "fixture")):
+        subprocess.run(("git",) + args, cwd=root, check=True,
+                       capture_output=True, text=True)
+    target = _submodule_repo(root)
+
+    link_before = _gitlink(root)
+    before = verify_fingerprint.fingerprint(str(root), ["sub"])
+    # Dirty BEFORE and dirty after, so what moves is the submodule's contents
+    # and not its clean/dirty state -- the stronger property, and the one the
+    # gate actually depends on.
+    target.write_text("bad", encoding="utf-8")
+
+    assert _gitlink(root) == link_before, (
+        "this case is about a DIRTY submodule; if the gitlink moved, the "
+        "digest would change for the wrong reason and prove nothing"
+    )
+    after = verify_fingerprint.fingerprint(str(root), ["sub"])
+    assert before != after, (
+        "the submodule's contents changed and the digest did not, so a check "
+        "reading inside it would be skipped on a tree it fails. gitlink="
+        + link_before
+    )
+
+
+def test_a_clean_submodule_hashes_the_same_twice(tmp_path):
+    """MUST-ALLOW, and load-bearing rather than tidy. Recursing into a
+    submodule adds git calls whose output has to be STABLE; if any of it moved
+    on its own the digest would differ between two identical turns and the
+    skip would never fire again for any repo with a submodule -- which is the
+    failure the `.crew/` exclusion had to be written to avoid."""
+    root = tmp_path / "repo"
+    (root / ".crew").mkdir(parents=True)
+    for args in (("init", "-q"), ("config", "user.email", "t@example.invalid"),
+                 ("config", "user.name", "t")):
+        subprocess.run(("git",) + args, cwd=root, check=True,
+                       capture_output=True, text=True)
+    (root / "README.md").write_text("committed", encoding="utf-8")
+    for args in (("add", "-A"), ("commit", "-q", "-m", "fixture")):
+        subprocess.run(("git",) + args, cwd=root, check=True,
+                       capture_output=True, text=True)
+    _submodule_repo(root)
+
+    first = verify_fingerprint.fingerprint(str(root), ["sub"])
+    second = verify_fingerprint.fingerprint(str(root), ["sub"])
+    assert first == second, (
+        "an untouched submodule hashed differently on two consecutive reads, "
+        "so the unchanged-turn skip can never fire in a repo that has one"
     )

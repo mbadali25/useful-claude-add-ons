@@ -20,6 +20,11 @@ its own header, and this is the same mechanism pointed at a different verdict.
   --cached` and every lint that runs off the index read the STAGED copy, and
   a mode is not in the bytes at all. See _index_entries for the two measured
   skips that each of those halves cost.
+* **A SUBMODULE's own contents, hashed the way this module hashes any
+  repository.** A gitlink is a DIRECTORY, and reading a directory as a file
+  produced the "absent" marker -- so a check reading `sub/a.txt` was
+  skippable by editing `sub/a.txt`, whose gitlink sha does not move. See
+  _submodule_digest.
 
 THE INVARIANT ALL OF THAT SERVES, stated once because it is the thing to test
 against rather than the list above: **if `--all` would FAIL on a tree, a Stop
@@ -210,7 +215,66 @@ def _index_entries(root):
                 for path, vals in entries.items())
 
 
-def fingerprint(root, changed):
+# A gitlink nested inside a gitlink is legal, and git alone cannot build a
+# cycle -- but a symlink can, and an unbounded recursion inside a Stop hook is
+# a hung turn rather than a wrong answer. The limit is a BOUND, not a
+# judgement about how deep a real tree goes. Exceeding it hashes a DISTINCT
+# marker rather than the "absent" constant, so a too-deep submodule can never
+# be mistaken for one that is not there.
+_MAX_SUBMODULE_DEPTH = 4
+
+
+def _sub_changed(root):
+    """What git says has changed inside a repository -- the same two listings
+    verify-gate takes for the top level, so a submodule is measured by the
+    same rule as its parent."""
+    out = []
+    for args in (("diff", "--name-only", "HEAD"),
+                 ("ls-files", "--others", "--exclude-standard")):
+        try:
+            done = subprocess.run(
+                ("git", "-c", "core.quotePath=false") + args, cwd=root,
+                capture_output=True, text=True, check=False,
+                stdin=subprocess.DEVNULL)
+        except OSError:
+            continue
+        out.extend(line for line in (done.stdout or "").split(chr(10))
+                   if line.strip())
+    return out
+
+
+def _submodule_digest(full, depth):
+    """A submodule is a repository, so hash it as one -- recursively, through
+    this same function.
+
+    WHY THE GITLINK SHA IS NOT ENOUGH, given it is in the digest already
+    through _index_entries: a submodule whose working tree is dirty carries
+    contents that recorded sha does not describe. Measured -- a rule on `sub`
+    running `grep -q good sub/a.txt` passed, `sub/a.txt` was then edited from
+    `good` to `bad` with the gitlink left at `160000 4a179f05...`, and the
+    next Stop skipped with exit 0 while --all exited 2. Third instance of one
+    class: the digest hashing something other than what the check reads.
+
+    `open()` on a directory raises, so before this a gitlink hashed to the
+    "absent" constant -- the same value a DELETED file gets, which is why
+    nothing about it looked wrong.
+
+    Recursion rather than a bespoke walk, deliberately: a submodule needs
+    exactly the coverage its parent needs -- HEAD, the changed paths, their
+    bytes AND their index entries -- and a second implementation of that is a
+    second thing to keep in step. Nested submodules fall out for free.
+
+    The two `_DECIDERS` are hashed inside the submodule too, and will almost
+    always be absent there. That is a constant: a few bytes of hash input and
+    no answer changed. Not worth a special case that would stop this being
+    the same function.
+    """
+    if depth >= _MAX_SUBMODULE_DEPTH:
+        return "submodule-depth-limit"
+    return "submodule:" + fingerprint(full, _sub_changed(full), depth + 1)
+
+
+def fingerprint(root, changed, _depth=0):
     """A stable digest of the material verify-gate's verdict depends on."""
     changed = _material(changed)
     digest = hashlib.sha1()
@@ -227,18 +291,29 @@ def fingerprint(root, changed):
     # Sorted so the shell's ordering cannot move the answer on its own.
     index = _index_entries(root)
     for rel in sorted(set(p for p in changed if p)):
+        full = os.path.join(root, rel)
+        # "untracked" is its own value rather than an empty string, so a file
+        # becoming tracked moves the digest too.
+        entry = index.get(rel.replace(os.sep, "/"), "untracked")
         digest.update(b"\0path=")
         digest.update(rel.encode("utf-8", "replace"))
         digest.update(b":")
-        digest.update(_file_digest(os.path.join(root, rel)).encode("ascii"))
+        # Mode 160000 is a GITLINK, and a gitlink is a directory: `open()` on
+        # it raises, so it used to hash as "absent". Dispatched on the INDEX
+        # MODE rather than on os.path.isdir, because a directory also reaches
+        # this list as git's collapsed entry for a wholly untracked one, and
+        # that is not a repository to recurse into. Any stage counts -- a
+        # conflicted gitlink is still a gitlink.
+        if any(e.startswith("160000") for e in entry.split(",")):
+            digest.update(_submodule_digest(full, _depth).encode("ascii"))
+        else:
+            digest.update(_file_digest(full).encode("ascii"))
         digest.update(b":index=")
-        # The WORKING-TREE bytes above and the INDEX entry here, both, and
+        # The WORKING-TREE side above and the INDEX entry here, both, and
         # deliberately both: where the two differ they are two different
         # things a check can read, and hashing one leaves the other free to
-        # move. "untracked" is its own value rather than an empty string, so
-        # a file becoming tracked moves the digest too.
-        digest.update(index.get(rel.replace(os.sep, "/"), "untracked")
-                      .encode("ascii", "replace"))
+        # move.
+        digest.update(entry.encode("ascii", "replace"))
 
     return digest.hexdigest()[:16]
 

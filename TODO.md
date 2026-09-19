@@ -2956,3 +2956,67 @@ Making it strict is two characters and would send a garbage mtime down the
 existing "age cannot be read" branch, which is more honest than reclaiming on
 a repaired number. It did not block 0.19.93 and it is not a defect today, so
 it is written down instead of folded in.
+
+### 5. The lock deadline is derived from PREDICTED cost, and an unpriced rule predicts nothing
+
+Reproduced, on the 0.19.94 tree. TTL forced to 3s, a map whose only rule is
+unpriced and runs `sleep 12`. At t=6 the holder was still inside the rule, the
+published deadline read `start + 3` (window = `max(TTL, 2 x max stated cost)`
+and the stated cost is zero), the token was 6s old against the 3s TTL, and a
+second gate **ran `sleep 12` concurrently**. Two gates, one turn -- the exact
+thing the lock exists to prevent, and the same defect the deadline was added
+to fix, surviving for every rule that states no `seconds`.
+
+Prediction is wrong in both directions: it under-protects the unpriced rule
+and over-protects a priced rule that finishes early.
+
+**Why this is not fixed here, and it is a construction problem rather than an
+arithmetic one.** "Still working" is a liveness fact, and no value published
+BEFORE a rule starts can carry it -- every such value is a prediction. The
+holder cannot refresh the deadline during its own rule because it is blocked
+in `eval`, and the two ways out were both already closed:
+
+* **pid liveness** is measured unreliable on this platform
+  (`plugin/crew/hooks/scripts/verify-gate.sh`, the 2026-09-13 note: a
+  hard-killed Git Bash pid reported ALIVE at +0.5s, +5s and +15s);
+* **a background toucher** is ORPHANED when the holder is SIGKILLed, and an
+  orphan that keeps refreshing disables verification permanently -- which is
+  strictly worse than the bug.
+
+**The construction that does work, written down so the next session does not
+re-derive it.** Invert which process is backgrounded. Run the RULE in the
+background and keep the toucher in the FOREGROUND:
+
+    { eval "$c" > "$out" 2>&1 </dev/null; echo $? > "$done"; } &
+    while [ ! -f "$done" ]; do sleep 5; lock_extend; done
+
+The holder polls for a sentinel instead of asking whether a pid is alive, so
+the measured-unreliable check is not needed. If the holder is SIGKILLed the
+FOREGROUND loop dies with it, so **nothing is left behind that can refresh the
+deadline** -- the orphaned process is the rule, which touches no lock. That
+closes the objection that killed the background toucher, and it extends the
+deadline by wall-clock exactly while a rule is actually running, priced or
+not.
+
+**Why it is not in 0.19.94.** It rewrites the rule-execution path in BOTH
+flavours -- output capture and exit-status handling are load-bearing there
+(the gate prints `tail -25` of the captured output on failure), and the `.ps1`
+runs each rule through bash with its own capture machinery. That is its own
+commit with its own must-block cases, and bundling it with a digest change and
+a budget change on the closing commit of a branch is how a scoped change
+becomes an incident. The repro above is the starting point; the in-rule probe
+in `plugin/crew/tests/test_verify_gate_lock_window.py` is the shape of the
+test (an UNPRICED rule, asserting the deadline mtime advances mid-run).
+
+### 6. An untracked COLLAPSED directory still hashes as absent
+
+Noticed while fixing the gitlink case and deliberately not folded in. Git
+emits a bare directory name for a wholly untracked directory, and
+`verify_fingerprint.py` hashes that as "absent" -- the same constant a
+deleted file gets. The submodule fix dispatches on the index mode `160000`,
+so it does not touch this: an untracked directory has no index entry at all.
+
+Not measured as exploitable and not obviously a defect: hashing such a
+directory means walking it, and the directory in question is as likely to be
+`node_modules` as anything a rule reads. The safe version is probably to walk
+it only when a rule actually matches it. Recorded rather than guessed at.

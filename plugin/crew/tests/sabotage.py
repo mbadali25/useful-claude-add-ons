@@ -2447,6 +2447,92 @@ MUTATIONS = (
         ("tests/test_verify_gate_lock_window.py::"
          "test_a_zero_prefixed_ttl_is_decimal_and_still_publishes_a_deadline"),
     ),
+    (
+        # Deduplication weakens the obligation again: the commands that carry
+        # an unconditional obligation stop being scheduled ahead of the
+        # budget, so a priced rule naming the same command can defer them.
+        # Measured before the fix in BOTH flavours -- `"always"` beside a 90s
+        # rule naming the same command deferred a FAILING mandatory check and
+        # the gate exited 0.
+        "an `always` command can be deferred by a priced rule naming it",
+        VERIFY_SH,
+        "    for c in forced:\n        keep.append(c)\n"
+        "        spent += cost[c]\n",
+        "    for c in forced:\n        pass\n",
+        ("tests/test_verify_gate_stop_budget.py::"
+         "test_an_always_command_is_not_deferred_by_a_priced_rule"),
+    ),
+    (
+        # The matched pair's half. The budget arithmetic is a python heredoc
+        # on one side and PowerShell on the other, and the report confirmed
+        # the defect was present in both -- so one flavour fixed reads as
+        # done while the other still defers the mandatory check.
+        "the PowerShell budget lets a priced rule defer an `always` command",
+        VERIFY_PS1,
+        "  foreach ($c in $forced) { [void]$keep.Add($c); "
+        "$spent += $cost[$c] }\n",
+        "  foreach ($c in $forced) { }\n",
+        ("tests/test_verify_gate_stop_budget.py::"
+         "test_an_always_command_is_not_deferred_by_a_priced_rule"),
+    ),
+    (
+        # The FINER half, and a separate entry because `always` still works
+        # under it: only the "unconditional-until-priced" level is deleted, so
+        # a command named by an unpriced rule AND a priced one goes back to
+        # being deferrable. That variant was in no report -- it came out of
+        # writing the rule as a property over obligation levels instead of as
+        # "exempt always", which is the whole argument for doing it that way.
+        "a rule with no `seconds` stops making its commands unconditional",
+        VERIFY_SH,
+        "for ri in rule_order:\n    if ri not in rule_secs:\n"
+        "        mandatory.update(rule_cmds[ri])\n",
+        "for ri in rule_order:\n    pass\n",
+        ("tests/test_verify_gate_stop_budget.py::"
+         "test_an_unpriced_rule_makes_its_commands_unconditional"),
+    ),
+    (
+        # Its PowerShell twin.
+        "the PowerShell gate stops making an unpriced rule unconditional",
+        VERIFY_PS1,
+        "foreach ($ri in $ruleOrder) {\n"
+        "  if (-not $ruleSecs.ContainsKey($ri)) {\n"
+        "    foreach ($c in $ruleCmds[$ri]) { $mandatory[$c] = $true }\n"
+        "  }\n}\n",
+        "foreach ($ri in $ruleOrder) { }\n",
+        ("tests/test_verify_gate_stop_budget.py::"
+         "test_an_unpriced_rule_makes_its_commands_unconditional"),
+    ),
+    (
+        # A gitlink goes back to being read as a file. `open()` on a directory
+        # raises, so the submodule hashes to the same "absent" constant a
+        # DELETED file gets -- which is why nothing about it looked wrong. A
+        # check reading `sub/a.txt` was then skippable by editing
+        # `sub/a.txt`, whose gitlink sha does not move.
+        "a submodule hashes as absent again",
+        FINGERPRINT,
+        "        if any(e.startswith(\"160000\") for e in entry.split(\",\")):"
+        "\n            digest.update(_submodule_digest(full, _depth)"
+        ".encode(\"ascii\"))\n        else:\n            digest.update("
+        "_file_digest(full).encode(\"ascii\"))\n",
+        "        digest.update(_file_digest(full).encode(\"ascii\"))\n",
+        ("tests/test_verify_gate_fingerprint.py::"
+         "test_a_dirty_submodule_moves_the_digest"),
+    ),
+    (
+        # The same mutation through the GATE rather than the digest, for the
+        # reason the staged-contents pair gives: one proves the hash moved,
+        # this proves the SKIP did. It is the submodule row of the invariant
+        # table, so it also asserts --all and Stop agree on that tree.
+        "the gate skips a tree whose submodule contents fail",
+        FINGERPRINT,
+        "        if any(e.startswith(\"160000\") for e in entry.split(\",\")):"
+        "\n            digest.update(_submodule_digest(full, _depth)"
+        ".encode(\"ascii\"))\n        else:\n            digest.update("
+        "_file_digest(full).encode(\"ascii\"))\n",
+        "        digest.update(_file_digest(full).encode(\"ascii\"))\n",
+        ("tests/test_verify_gate_fingerprint.py::"
+         "test_a_failing_tree_is_never_skipped_whatever_moved"),
+    ),
 )
 
 
