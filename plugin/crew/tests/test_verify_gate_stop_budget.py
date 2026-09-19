@@ -709,7 +709,7 @@ def test_the_neighbouring_shapes_do_not_reorder_a_rule(flavour, case,
     two commands of one rule that both run must run in the rule's `run`
     order -- checked here as well as in its own case, because the merge is
     where the order was lost."""
-    extra, expect_ran, _ = _NEIGHBOURS[case]
+    extra = _NEIGHBOURS[case][0]  # only the shape matters here; the ran-set is the other table's job
     verify_map = {"version": 1, "default": [], "unmapped": "ignore"}
     verify_map.update(extra)
     result = _run(flavour, _repo(tmp_path, verify_map=verify_map))
