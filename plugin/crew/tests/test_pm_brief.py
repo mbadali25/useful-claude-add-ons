@@ -209,15 +209,17 @@ def test_the_graph_refresh_command_matches_how_the_repo_stores_its_graph():
     dropping `fields.update(_graph_fields(state))` has to break something.
     """
     tracked = _with("graphStale",
-                    graph={"present": True, "current": False, "builtAt": "a",
-                           "path": "x", "reportTracked": True})
+                    knowledge={"graph": {
+                        "present": True, "current": False, "builtAt": "a",
+                        "path": "x", "reportTracked": True}})
     out = chr(10).join(pm_brief.render(tracked))
     assert "graphify update ." in out
     assert "--no-viz" not in out
 
     untracked = _with("graphStale",
-                      graph={"present": True, "current": False, "builtAt": "a",
-                             "path": "x", "reportTracked": False})
+                      knowledge={"graph": {
+                          "present": True, "current": False, "builtAt": "a",
+                          "path": "x", "reportTracked": False}})
     out = chr(10).join(pm_brief.render(untracked))
     assert "graphify . --no-viz --code-only" in out
 
@@ -225,10 +227,50 @@ def test_the_graph_refresh_command_matches_how_the_repo_stores_its_graph():
     # state dict, or a graph block this version did not write, must not take
     # out a brief that runs from SessionStart.
     absent = _with("graphStale",
-                   graph={"present": True, "current": False, "builtAt": "a",
-                          "path": "x"})
+                   knowledge={"graph": {
+                       "present": True, "current": False, "builtAt": "a",
+                       "path": "x"}})
     out = chr(10).join(pm_brief.render(absent))
     assert "graphify . --no-viz --code-only" in out
+
+
+def test_real_collect_recommends_graphify_update_when_report_is_tracked(
+        tmp_path):
+    """Drives the actual collector, not a hand-built dict.
+
+    This is the test that would have caught the original bug: every
+    hand-built fixture above (including the three just above this one, before
+    they were fixed) put `graph` at the top level of the state dict, which is
+    exactly the shape `pm_brief._graph_fields` read before the fix -- and
+    exactly the shape `crew_state.collect()` never produces. `collect()` only
+    ever nests it at `state["knowledge"]["graph"]` (see `read_knowledge` in
+    `crew_freshness.py`, called from `collect()` in `crew_state.py`). A
+    fixture that cannot know that shape changed is worthless as a regression
+    guard; driving the real collector is what makes this one honest.
+    """
+    root = crew_fixtures.make_repo(
+        tmp_path, config={"schema": 2, "tier": 0, "roles": [],
+                          "tracker": "files"}, graph=True)
+    # `graph=True` writes graphify-out/graph.json but does not track
+    # GRAPH_REPORT.md -- reportTracked asks git, not the filesystem, so the
+    # report has to be committed for this repo to look like one that TRACKS
+    # the pair (see `_read_graph` in crew_freshness.py).
+    (root / "graphify-out" / "GRAPH_REPORT.md").write_text(
+        "# Report\n", encoding="utf-8")
+    crew_fixtures.commit_file(root, "graphify-out/GRAPH_REPORT.md")
+
+    state = crew_state.collect(root)
+    # The load-bearing assertion: collect() never sets a top-level "graph"
+    # key. If this ever starts failing, `_graph_fields`'s old
+    # `state.get("graph")` read would stop being a bug -- and this whole test
+    # would need reconsidering, not silently going green either way.
+    assert "graph" not in state
+    assert state["knowledge"]["graph"]["reportTracked"] is True
+
+    state["triggers"] = ["graphStale"]
+    out = "\n".join(pm_brief.render(state))
+    assert "graphify update ." in out
+    assert "--no-viz" not in out
 
 
 def test_the_brief_renders_the_unverifiable_names_and_count():

@@ -295,7 +295,8 @@ def _graph_fields(state):
     it is the older default and it is safe on a repo with no tracked report,
     which is the majority case and the one a wrong guess costs least in.
     """
-    graph = crew_state.dict_or_empty(state.get("graph"))
+    knowledge = crew_state.dict_or_empty(state.get("knowledge"))
+    graph = crew_state.dict_or_empty(knowledge.get("graph"))
     tracked = graph.get("reportTracked")
     return {
         "graphCommand": ("graphify update ."
