@@ -7,9 +7,21 @@
 # - Iterate test files through a `while read` loop instead of unquoted word
 #   splitting, so a filename containing whitespace is one argument to
 #   `npm test`, not several.
-# - Do not swallow the runner's exit status: a non-zero exit from `npm test`
-#   is reported as "RUNNER FAILED (exit N)" and the script exits non-zero,
-#   instead of being silently treated as a clean run.
+# - Give the runner its own stdin (`< /dev/null`) instead of letting it
+#   inherit the loop's, which is the here-string driving `read` below. A
+#   runner that reads stdin to EOF would otherwise drain the remaining test
+#   list and silently end the loop early -- the same landmine verify-gate.sh
+#   documents for its own `while read` loop over a here-string.
+# - Distinguish a runner that could not even complete (exit 126 or 127 --
+#   missing binary, bad interpreter) from an ordinary failing test (any
+#   other non-zero exit). Only the former aborts the investigation as
+#   "RUNNER FAILED"; the pollution case IS a test that exits non-zero, so a
+#   blanket "any non-zero is a runner failure" reported FOUND POLLUTER as
+#   RUNNER FAILED and aborted before the pollution check ran.
+# - An ordinary test failure that produced no pollution is recorded and the
+#   bisection continues to the next candidate, instead of the runner's exit
+#   status being swallowed entirely; the final verdict says "N tests failed
+#   without pollution" and is not reported as clean.
 # - Track how many tests actually ran; if none did (pattern matched nothing,
 #   or every candidate was skipped because the pollution check already
 #   existed before the first test), report "NO TESTS RAN" and exit
@@ -48,6 +60,8 @@ echo ""
 
 COUNT=0
 RAN=0
+FAILED=0
+FAILED_FILES=""
 while IFS= read -r TEST_FILE; do
   [ -z "$TEST_FILE" ] && continue
   COUNT=$((COUNT + 1))
@@ -61,17 +75,20 @@ while IFS= read -r TEST_FILE; do
 
   echo "[$COUNT/$TOTAL] Testing: $TEST_FILE"
 
-  # Run the test. A failing assertion inside the test is not a runner
+  # Run the test. `< /dev/null`: the runner must not inherit this loop's
+  # stdin (the here-string driving `read` above) -- a runner that reads
+  # stdin to EOF would otherwise drain the remaining test list and end the
+  # loop early. A failing assertion inside the test is not a runner
   # failure and must not be conflated with one -- but a runner that could
-  # not even complete (missing binary, bad interpreter, crash) must not be
-  # read as "ran clean" either, so capture and check its exit status rather
-  # than discarding it with `|| true`.
+  # not even complete (missing binary, bad interpreter: exit 126 or 127)
+  # must not be read as "ran clean" either, so capture and check its exit
+  # status rather than discarding it with `|| true`.
   set +e
-  npm test "$TEST_FILE" > /dev/null 2>&1
+  npm test "$TEST_FILE" > /dev/null 2>&1 < /dev/null
   RUNNER_EXIT=$?
   set -e
   RAN=$((RAN + 1))
-  if [ "$RUNNER_EXIT" -ne 0 ]; then
+  if [ "$RUNNER_EXIT" -eq 126 ] || [ "$RUNNER_EXIT" -eq 127 ]; then
     echo ""
     echo "💥 RUNNER FAILED (exit $RUNNER_EXIT)"
     echo "   Test: $TEST_FILE"
@@ -80,7 +97,10 @@ while IFS= read -r TEST_FILE; do
     exit 1
   fi
 
-  # Check if pollution appeared
+  # Check if pollution appeared. This runs regardless of RUNNER_EXIT,
+  # because a test that creates pollution AND exits non-zero is still a
+  # polluter -- a broken assertion in the same test as the leak must not
+  # hide the leak.
   if [ -e "$POLLUTION_CHECK" ]; then
     echo ""
     echo "🎯 FOUND POLLUTER!"
@@ -95,6 +115,16 @@ while IFS= read -r TEST_FILE; do
     echo "  cat $TEST_FILE         # Review test code"
     exit 1
   fi
+
+  # No pollution, but the test itself failed. That is not a runner
+  # failure and not a polluter -- record it and keep bisecting the
+  # remaining candidates rather than aborting on an unrelated failure.
+  if [ "$RUNNER_EXIT" -ne 0 ]; then
+    echo "   (exit $RUNNER_EXIT, no pollution -- continuing)"
+    FAILED=$((FAILED + 1))
+    FAILED_FILES="${FAILED_FILES}${TEST_FILE} (exit ${RUNNER_EXIT})
+"
+  fi
 done <<< "$TEST_FILES"
 
 if [ "$RAN" -eq 0 ]; then
@@ -103,6 +133,13 @@ if [ "$RAN" -eq 0 ]; then
   echo "   $TOTAL file(s) matched but none were exercised: either the"
   echo "   pattern matched nothing, or every candidate was skipped because"
   echo "   the pollution check already existed before the first test."
+  exit 1
+fi
+
+if [ "$FAILED" -gt 0 ]; then
+  echo ""
+  echo "⚠️  $FAILED test(s) failed without producing pollution — investigation inconclusive"
+  printf '%s' "$FAILED_FILES"
   exit 1
 fi
 

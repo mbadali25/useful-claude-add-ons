@@ -525,3 +525,142 @@ def test_find_polluter_reports_no_tests_ran_instead_of_clean():
         "find-polluter.sh did not report that no tests ran.\n"
         f"stdout:\n{result.stdout}"
     )
+
+
+@pytest.mark.skipif(_BASH is None, reason="needs bash")
+def test_find_polluter_runner_does_not_drain_the_test_list_stdin():
+    """0.19.69, Codex finding #1 on the 0.19.67 fix. The `while IFS= read
+    -r TEST_FILE; do ... done <<< "$TEST_FILES"` loop drives `read` off
+    the here-string on fd 0. Without its own stdin the runner inherits
+    that fd, and a runner that reads stdin to EOF (some do) drains the
+    rest of the test list before the next `read` can see it -- the loop
+    silently ends after one file. This is the same landmine
+    `verify-gate.sh` documents for its own `while read` loop over a
+    here-string. Fixed by giving the runner `< /dev/null`.
+
+    Reproduction: two fixture files. The fake npm drains stdin for the
+    first (`a`) and would create pollution for the second (`b`) -- so a
+    clean verdict here means `b` was never run, not that it is clean."""
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = pathlib.Path(tmp)
+        repo = tmp_path / "repo"
+        (repo / "src").mkdir(parents=True)
+        (repo / "src" / "a.test.ts").write_text("// fixture a\n", encoding="utf-8")
+        (repo / "src" / "b.test.ts").write_text("// fixture b\n", encoding="utf-8")
+
+        bin_dir = tmp_path / "bin"
+        bin_dir.mkdir()
+        marker = str(tmp_path / ".pollution-marker").replace("\\", "/")
+        npm_path = bin_dir / "npm"
+        npm_path.write_text(
+            "#!/usr/bin/env bash\n"
+            'case "$2" in\n'
+            "  *a.test.ts) cat > /dev/null; exit 0 ;;\n"
+            f'  *b.test.ts) touch "{marker}"; exit 0 ;;\n'
+            "esac\n"
+            "exit 0\n",
+            encoding="utf-8", newline="\n",
+        )
+        npm_path.chmod(0o755)
+
+        script = str(SKILL_DIR / "find-polluter.sh").replace("\\", "/")
+        env = dict(os.environ)
+        env["PATH"] = str(bin_dir) + os.pathsep + env.get("PATH", "")
+        result = subprocess.run(
+            [_BASH, script, marker, "src/**/*.test.ts"],
+            cwd=str(repo), capture_output=True, text=True, timeout=30,
+            stdin=subprocess.DEVNULL, env=env, check=False,
+            encoding="utf-8", errors="replace",
+        )
+
+    assert "[2/2]" in result.stdout, (
+        "the second test file never ran. A runner that drains the loop's "
+        "stdin consumes the rest of the test list before `read` sees it, "
+        f"which reads identically to 'only one test matched'.\nstdout:\n"
+        f"{result.stdout}"
+    )
+    assert result.returncode != 0 and "FOUND POLLUTER" in result.stdout, (
+        "b.test.ts's pollution was not reported -- a drained stdin ends "
+        "the loop after the first file and reports a false clean verdict "
+        f"instead.\nstdout:\n{result.stdout}"
+    )
+
+
+@pytest.mark.skipif(_BASH is None, reason="needs bash")
+def test_find_polluter_reports_the_polluter_even_when_it_also_exits_nonzero():
+    """0.19.69, Codex finding #2 on the 0.19.67 fix. Finding pollution IS a
+    test exiting non-zero in the common case -- a leaked file plus a failed
+    assertion in the same test. Treating every non-zero exit as a runner
+    failure reported FOUND POLLUTER as RUNNER FAILED and aborted before the
+    pollution check ever ran. Fixed by checking pollution unconditionally
+    and reserving RUNNER FAILED for exit 126/127 (runner could not
+    execute), not for the test's own exit code."""
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = pathlib.Path(tmp)
+        repo = tmp_path / "repo"
+        (repo / "src").mkdir(parents=True)
+        (repo / "src" / "a.test.ts").write_text("// fixture\n", encoding="utf-8")
+
+        bin_dir = tmp_path / "bin"
+        bin_dir.mkdir()
+        marker = str(tmp_path / ".pollution-marker").replace("\\", "/")
+        npm_path = bin_dir / "npm"
+        npm_path.write_text(
+            f'#!/usr/bin/env bash\ntouch "{marker}"\nexit 1\n',
+            encoding="utf-8", newline="\n",
+        )
+        npm_path.chmod(0o755)
+
+        script = str(SKILL_DIR / "find-polluter.sh").replace("\\", "/")
+        env = dict(os.environ)
+        env["PATH"] = str(bin_dir) + os.pathsep + env.get("PATH", "")
+        result = subprocess.run(
+            [_BASH, script, marker, "src/**/*.test.ts"],
+            cwd=str(repo), capture_output=True, text=True, timeout=30,
+            stdin=subprocess.DEVNULL, env=env, check=False,
+            encoding="utf-8", errors="replace",
+        )
+
+    assert result.returncode != 0, (
+        f"find-polluter.sh exited 0 against a test that polluted and "
+        f"failed.\nstdout:\n{result.stdout}"
+    )
+    assert "FOUND POLLUTER" in result.stdout, (
+        "the polluter was not reported.\n"
+        f"stdout:\n{result.stdout}"
+    )
+    assert "RUNNER FAILED" not in result.stdout, (
+        "an ordinary non-zero test exit (1) was reported as RUNNER FAILED, "
+        "which means the pollution check never ran for a test that "
+        f"actually polluted.\nstdout:\n{result.stdout}"
+    )
+
+
+@pytest.mark.skipif(_BASH is None, reason="needs bash")
+def test_find_polluter_continues_past_an_ordinary_failure_without_pollution():
+    """0.19.69, Codex finding #2 on the 0.19.67 fix, second half. A test
+    that fails on its own (no pollution, no runner crash) is not evidence
+    the investigation is broken -- it should be recorded and bisection
+    should continue, not abort the whole run."""
+    with tempfile.TemporaryDirectory() as tmp:
+        result = _run_find_polluter(
+            pathlib.Path(tmp), ".nonexistent-pollution-marker",
+            "src/**/*.test.ts", npm_exit=1,
+        )
+    assert result.returncode != 0, (
+        "find-polluter.sh exited 0 with a failing test and no pollution -- "
+        "a clean verdict requires every test that ran to have passed.\n"
+        f"stdout:\n{result.stdout}"
+    )
+    assert "RUNNER FAILED" not in result.stdout, (
+        "an ordinary exit-1 test failure was reported as RUNNER FAILED "
+        f"instead of continuing the bisection.\nstdout:\n{result.stdout}"
+    )
+    assert "failed without producing pollution" in result.stdout, (
+        "the summary did not name the failed-without-pollution test.\n"
+        f"stdout:\n{result.stdout}"
+    )
+    assert "sample.test.ts" in result.stdout, (
+        "the summary did not name which file failed.\n"
+        f"stdout:\n{result.stdout}"
+    )
