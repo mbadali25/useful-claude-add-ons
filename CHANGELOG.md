@@ -340,6 +340,47 @@ All notable changes to this repository are documented here. Format follows [Keep
   prefix) to keep the two apart. `_DENY_ROLES` gets none of this — its rule
   is "no `Write`/`Edit` at all", not "confined to the repo".
 
+  A PowerShell-security-hardening specialist review of `role-write-
+  guard.ps1` found four more, all fixed in one further commit, same
+  version. **BLOCK:** a launch failure (the resolved interpreter cannot
+  actually be started — deleted, permissions, antivirus) left
+  `$LASTEXITCODE` `$null`, and `exit $LASTEXITCODE` on a `$null` value
+  silently evaluates to 0 — a restricted role's write went through
+  unjudged with only a generic native-command error on stderr, contrary
+  to what the header comment already promised. Fixed with a try/catch
+  plus an explicit null-exit-code check that falls back, ONLY for this
+  one failure mode, to a small PowerShell-side classification (the
+  deny-list plus `pm`) so a restricted role still fails closed.
+  **BLOCK:** stdin was read with `[Console]::In.ReadToEnd()`, which
+  decodes using the OEM codepage (5.1) or a version-dependent default
+  (pwsh 7.x), silently mangling any non-ASCII character and turning a
+  leading UTF-8 BOM into bytes that make the JSON unparseable at position
+  0 — `role-write-guard.sh` (`INPUT=$(cat)`) is byte-transparent, so the
+  two shell flavours diverged on byte-identical input. Fixed by reading
+  raw bytes, stripping a BOM, decoding as UTF-8 explicitly, and forcing
+  `[Console]::OutputEncoding`/`$OutputEncoding` to UTF-8 before piping
+  back out to python, which otherwise re-encodes using the same OEM
+  default on the way out. **FIX:** `Resolve-CrewPython` never executed a
+  candidate to prove it was a real interpreter (role-write-guard.sh's own
+  resolver does), and `Get-Command $name -All` walked past a WindowsApps
+  stub to a SAME-NAMED real python further down PATH, while bash's
+  `command -v` takes only the first match per name and moves to the NEXT
+  name on rejection — so on a PATH with only `python3` present anywhere,
+  one shell flavour enforced and the other silently allowed unjudged.
+  Fixed by executing each candidate and reading back `sys.executable`,
+  and by taking only the first match per name — which means this copy of
+  `Resolve-CrewPython` is now DELIBERATELY no longer byte-identical to
+  verify-gate.ps1's and pm-pulse.ps1's (a two-way parity test between
+  those two, plus a tripwire asserting this one has diverged, replaced
+  the old three-way parity test). **FIX:** a missing/broken
+  `role_write_guard.py` exited 2 with a bare CPython "can't open file"
+  error — indistinguishable, by exit code alone, from a real
+  `guards.roleWrites: block` refusal. Fixed with an explicit existence
+  check and a crew-specific diagnostic, still exiting 2 (still fails
+  closed; a broken install is not evidence a write is safe).
+  `tests/test_role_write_guard.py` grew to 70 cases; PSScriptAnalyzer
+  1.25.0 reports zero findings both before and after.
+
 - **`crew` 0.19.79: a debugging method, and the routing that dispatches it.**
   Crew shipped 27 commands and 19 skills and not one of them was about finding
   a cause: `grep -cil 'debug\|root cause'` over `commands/` and `skills/`
