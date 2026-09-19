@@ -150,6 +150,8 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Changed
 
+- **`crew` 0.19.89: a test no longer unpacks a value it never reads.** `test_verify_gate_stop_budget.py:712` bound `expect_ran` and never used it; pylint reported `W0612` and exited 4 while printing `10.00/10` -- the bitmask case root `CLAUDE.md` names -- and CI on `main` went red after #191 while every local report had read the score. No behaviour change.
+
 - **`crew` 0.19.66:** declared licence corrected to GPL-2.0-only to match the
   repository LICENSE; no code change.
 - **`gizmoduck` 0.5.3:** declared licence corrected to GPL-2.0-only to match
