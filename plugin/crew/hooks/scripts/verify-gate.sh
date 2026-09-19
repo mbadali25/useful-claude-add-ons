@@ -73,6 +73,18 @@ record_verified() {
   mkdir -p .crew 2>/dev/null && printf '%s\n' "$VERIFIED" > .crew/.verify-verified-at
 }
 
+# The fingerprint twin, written ONLY where everything ran and everything
+# passed. Deliberately NOT written when the Stop budget deferred a rule: a
+# deferred rule was never checked, so recording it would turn "we ran out of
+# budget" into "this tree is verified" and the deferred checks would never
+# run again on an unchanged tree. $NOTICES is non-empty exactly when the
+# budget had something to say, which is the signal being tested.
+record_verified_fingerprint() {
+  [ -n "$FINGERPRINT" ] || return 0
+  [ -z "$NOTICES" ] || return 0
+  mkdir -p .crew 2>/dev/null && printf '%s\n' "$FINGERPRINT" > "$FP_FILE"
+}
+
 # SCOPE. This used to diff the WORKING TREE against HEAD, which meant a change
 # that had been committed was invisible and COMMITTING WAS ENOUGH TO END A TURN
 # the gate would otherwise have blocked. Measured, not theorised: with a rule
@@ -206,6 +218,38 @@ fi
 # empty so the matcher always sees the same argv shape.
 BUDGET_FLAG=""
 [ "${1:-}" = "--all" ] && BUDGET_FLAG="--all"
+
+# --- the unchanged-turn skip ---------------------------------------------
+#
+# Stop fires once per TURN, so a turn that changed nothing the gate cares
+# about re-runs the whole map to reach the answer it reached a minute ago.
+# The event is not the gate; the STATE is -- pm_pulse.py makes the same
+# argument in its own header for the same reason.
+#
+# The digest comes from verify_fingerprint.py, shared with the .ps1 so the
+# two cannot drift, and covers HEAD, the changed paths AND their bytes,
+# verify.json and config.json. NOT a stat() comparison: an mtime is wrong in
+# the direction that matters here.
+#
+# THE MARKER IS ONLY EVER WRITTEN AFTER A CLEAN, COMPLETE RUN (see
+# record_verified_fingerprint below), so a skip can only mean "this exact
+# tree was fully checked and passed". A failure or a budget-deferred rule
+# leaves no marker and the next turn runs again.
+#
+# It also SAYS it skipped. 0.19.65 had to fix a silent exit 0 that was
+# byte-identical to a pass; a silent skip would reintroduce exactly that.
+# No python means no fingerprint and no skip -- the safe direction.
+FP_PY=$(crew_py 2>/dev/null) || FP_PY=""
+FP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+FP_FILE=".crew/.verify-gate.fingerprint"
+FINGERPRINT=""
+if [ -n "$FP_PY" ] && [ -f "$FP_DIR/verify_fingerprint.py" ] && [ "$BUDGET_FLAG" != "--all" ]; then
+  FINGERPRINT=$(printf '%s\n' "$CHANGED" | "$FP_PY" "$FP_DIR/verify_fingerprint.py" "$PWD" 2>/dev/null)
+  if [ -n "$FINGERPRINT" ] && [ "$FINGERPRINT" = "$(cat "$FP_FILE" 2>/dev/null)" ]; then
+    echo "verify-gate: nothing the gate depends on has changed since the last CLEAN run (fingerprint $FINGERPRINT) - checks were SKIPPED, not re-run. Edit a file, or run the gate with --all, to force them." >&2
+    exit 0
+  fi
+fi
 
 LOCK=".crew/.verify-gate.lock"
 # 700 until crew 0.19.65, sized to exceed the hook's own 600s timeout because
@@ -599,4 +643,5 @@ fi
 [ "$FAILED" -eq 0 ] || exit 2
 
 record_verified
+record_verified_fingerprint
 exit 0
