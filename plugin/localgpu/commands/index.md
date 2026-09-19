@@ -1,6 +1,6 @@
 ---
 description: Build or refresh the local semantic index of this repo
-argument-hint: [--full] [--root <path>]
+argument-hint: "[--full] [--root <path>]"
 allowed-tools: Read, Bash, Glob, mcp__localgpu__index_refresh, mcp__localgpu__search_code
 ---
 

@@ -25,6 +25,15 @@ jobs:
         run: python -m pip install --upgrade pip pyyaml
       - name: Check the marketplace is internally consistent
         run: python3 scripts/check-marketplace.py
+      # check_argument_hint_frontmatter parses every command's and skill's
+      # frontmatter with the same PyYAML loader Claude Code uses, so a value
+      # like `argument-hint: [a] [b]` - two unquoted bracket groups, read as
+      # a flow sequence plus trailing garbage - fails here instead of
+      # shipping a file that loads with silently empty frontmatter.
+      # `localgpu` 0.1.19 and `obsidian-vault` 0.3.9 shipped exactly that;
+      # `claude plugin validate` found it, this repo's own gate did not.
+      - name: argument-hint frontmatter suite
+        run: python3 scripts/_test/argument-hint-frontmatter.py
       # check_self_claims is mostly valuable for what it stays quiet about, and
       # a check that has gone silent looks exactly like a clean repo. This suite
       # asserts the silence as well as the failures, so a future edit that makes
@@ -98,3 +107,22 @@ jobs:
       - name: PowerShell static checks
         shell: pwsh
         run: ./scripts/check-powershell.ps1
+      # claude plugin validate loads each manifest with the CLI's own parser,
+      # which is a different (and stricter) code path than check-marketplace.py's
+      # regex/YAML checks above - it is what caught the argument-hint bug this
+      # step guards against. Installed via npm per the documented CI-friendly
+      # method (https://code.claude.com/docs/en/setup#install-with-npm); pinned
+      # to the version this fix was verified against so a CLI regression shows
+      # up as a version bump here, not a silent behaviour change.
+      - name: Install the Claude Code CLI
+        run: npm install -g @anthropic-ai/claude-code@2.1.278
+      - name: claude plugin validate --strict
+        run: |
+          claude plugin validate --strict .
+          claude plugin validate --strict plugin/crew
+          claude plugin validate --strict plugin/gizmoduck
+          claude plugin validate --strict plugin/rule-of-two
+          claude plugin validate --strict plugin/localgpu
+          claude plugin validate --strict plugin/obsidian-vault
+          # skills/* have no per-directory manifest to validate; the
+          # marketplace-root call above covers them.

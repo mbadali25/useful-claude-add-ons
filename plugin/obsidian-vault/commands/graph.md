@@ -1,6 +1,6 @@
 ---
 description: Build or update a graphify code graph for a repo, exported into the configured codegraphs vault
-argument-hint: [repo-path, default cwd] [codegraphs-vault-name, default "codegraphs"]
+argument-hint: "[repo-path, default cwd] [codegraphs-vault-name, default codegraphs]"
 allowed-tools: Read, Write, Bash, PowerShell
 ---
 

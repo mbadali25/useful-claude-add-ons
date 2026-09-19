@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # _verify/smoke.sh - fast and shallow. Exit 0 = safe to merge/promote, 1 = stop.
-# 9 checks, target is under 90 seconds. Depth belongs in run-all.sh.
+# 11 checks, target is under 90 seconds. Depth belongs in run-all.sh.
 #
 # This repo is a Claude Code marketplace: there is no service to curl and no
 # environment to deploy to. "Smoke" here means the registration invariants hold
@@ -24,10 +24,28 @@ DIRTY="$(git status --porcelain 2>/dev/null | wc -l | tr -d ' ')"
 echo "SMOKE target: $(pwd) @ ${SHA} (${DIRTY} uncommitted change(s))"
 echo
 
-PASS=0; FAIL=0
+PASS=0; FAIL=0; SKIP=0
 check() {
   local n="$1"; shift
   if "$@" >/tmp/_smoke.$$ 2>&1; then
+    echo "PASS $n"; PASS=$((PASS+1))
+  else
+    echo "FAIL $n"; sed 's/^/       /' /tmp/_smoke.$$ | head -12; FAIL=$((FAIL+1))
+  fi
+  rm -f /tmp/_smoke.$$
+}
+
+# Like check(), but a helper that returns 2 means "could not run this, not
+# broken" - reported as SKIP, counted separately, and never silently dropped.
+# A check that just isn't there when a dependency is missing is how a real
+# regression hides behind "well it never ran here".
+check_optional() {
+  local n="$1"; shift
+  local rc=0
+  "$@" >/tmp/_smoke.$$ 2>&1 || rc=$?
+  if [ "$rc" -eq 2 ]; then
+    echo "SKIP $n"; sed 's/^/       /' /tmp/_smoke.$$; SKIP=$((SKIP+1))
+  elif [ "$rc" -eq 0 ]; then
     echo "PASS $n"; PASS=$((PASS+1))
   else
     echo "FAIL $n"; sed 's/^/       /' /tmp/_smoke.$$ | head -12; FAIL=$((FAIL+1))
@@ -356,7 +374,36 @@ PY
 check "versions: pyproject.toml, plugin.json, marketplace.json and every Python-source copy agree" \
       version_agreement_check
 
+# --- check 11: claude plugin validate --strict, only if the CLI is here -----
+# This loads each manifest through the CLI's own parser - a different, stricter
+# code path than check-marketplace.py's checks above, and the one that actually
+# caught the argument-hint bug this suite's check 2/3 (skills/plugins) did not.
+# smoke.sh must not require an interactive `claude` login to run at all, so this
+# is opt-in on the binary being present rather than a hard dependency; CI's own
+# job (marketplace.yml) installs the CLI and always runs it.
+claude_validate_check() {
+  if ! command -v claude >/dev/null 2>&1; then
+    echo "claude CLI not found on PATH"
+    return 2
+  fi
+  local rc=0 target out
+  for target in . plugin/crew plugin/gizmoduck plugin/rule-of-two plugin/localgpu plugin/obsidian-vault; do
+    if out="$(claude plugin validate --strict "$target" 2>&1)"; then
+      echo "  ok: $target"
+    else
+      echo "  FAIL: $target"
+      echo "$out" | sed 's/^/    /'
+      rc=1
+    fi
+  done
+  # skills/* have no per-directory manifest to validate; the marketplace-root
+  # call above covers them.
+  return $rc
+}
+check_optional "claude plugin validate --strict on the marketplace root and every plugin/* (SKIP: claude CLI absent)" \
+      claude_validate_check
+
 echo
-echo "smoke: $PASS passed, $FAIL failed"
+echo "smoke: $PASS passed, $FAIL failed, $SKIP skipped"
 [ "$FAIL" -eq 0 ] || exit 1
 exit 0

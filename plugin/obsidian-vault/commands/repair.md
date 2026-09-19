@@ -1,6 +1,6 @@
 ---
 description: Repair a vault's REST bridge - resolve port collisions, reload stale Obsidian windows, re-register MCP servers - showing the plan before applying it
-argument-hint: [fix-ports | reload | register | all] [vault-name]
+argument-hint: "[fix-ports | reload | register | all] [vault-name]"
 allowed-tools: Read, Bash, PowerShell
 ---
 
