@@ -6,6 +6,29 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Changed
 
+- **`crew` 0.19.61: the roles that touch code now read the code map, and
+  onboarding writes a schema note.** Crew has written a per-repo "what breaks
+  here" store since the codemap shipped -- each note's `## Landmines` section
+  -- and never told the doing-and-reviewing roles to open it. Measured before
+  this change: `grep -ci codemap` returned 0 for `commands/review.md`,
+  `commands/work.md`, `agents/developer.md`, `agents/dba.md`,
+  `agents/qa-reviewer.md` and `agents/smoke-author.md`. Every reviewer
+  re-derived the repo's failure modes from the diff plus `CLAUDE.md` in an
+  empty context, every time. The four doing roles now open the intersecting
+  notes, read `## Landmines` by name, run the per-path
+  `git diff --name-only <anchor>..HEAD` re-check rather than treating a lagging
+  anchor as a wrong note, and report which notes they read -- because a note
+  skipped and a note checked are indistinguishable in a summary that mentions
+  neither. `/crew:onboard` gains a step 5 that writes
+  `.crew/codemap/schema-<datasource>.md`: columns, keys, indexes and a
+  `## Written by / Read by` block, every row citing the migration line that
+  creates it. It lives under `codemap/` deliberately, so it inherits the anchor
+  machinery and the `knowledgeBehind` trigger instead of needing new plumbing.
+  Schema that cannot be traced to a file goes in `## Unverified`, and a repo
+  with no database gets "no datasource found" rather than an invented file.
+  Regression suite `plugin/crew/tests/test_codemap_read_path.py`,
+  sabotage-tested: four mutations, all red, restore byte-identical.
+
 - **`crew` 0.19.60: dispatch-narration labeling extended to substantive
   claims, not just "I dispatched X."** `pm.md`'s existing "A dispatch is a
   tool call, not a sentence" rule caught a claim of work done but not a claim

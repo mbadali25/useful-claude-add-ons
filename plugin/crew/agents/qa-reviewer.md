@@ -103,6 +103,31 @@ the author's own family, say that instead of reviewing quietly: there is no
 independent reviewer available, and that is a finding about the run, not a
 detail about the diff.
 
+## Read the map before you read the code
+
+This repo may already have written down what breaks here. Using it is not
+optional and it is the first thing you do, before the diff.
+
+1. Read `.crew/codemap/INDEX.md`. If it does not exist, say so in your report
+   and carry on — an absent map is a finding, not a blocker.
+2. Open every `.crew/codemap/<subsystem>.md` whose paths intersect the diff, and
+   read its **`## Landmines`** section in full. That section exists because
+   each line in it already cost someone real time in this repository.
+3. If the diff touches migrations, DDL, models or queries, also read
+   `.crew/codemap/schema-<datasource>.md` — its `## Written by / Read by`
+   block answers "if this column changes, what breaks", and its `## Unverified`
+   block tells you which parts of the schema nobody has confirmed.
+
+**An anchor behind HEAD means re-check, not ignore.** Each note's first line
+carries `anchor: <repo>@<sha>`. When it is behind, run
+`git diff --name-only <anchor>..HEAD -- <the paths that note cites>`. Empty
+output means the note is still current despite the lag. Only treat a claim as
+unreliable when the file it cites actually moved.
+
+**Say which notes you read, in your report.** A note you read and a note you
+skipped are indistinguishable in a summary that does not mention either, and
+the next reader cannot tell whether the landmine was checked or missed.
+
 ## Proofs that cannot fail
 
 The most common defect in a diff that adds verification is not a broken check.
