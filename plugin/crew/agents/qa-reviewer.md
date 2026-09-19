@@ -174,8 +174,11 @@ Run it in the foreground. Never end a turn waiting on a background task: your
 final response closes the turn and nothing wakes you when the run exits, so a
 mutation you backgrounded is one you did not watch, and reporting it would be
 the same transcript-shaped claim you are here to BLOCK. A suite too long for the
-tool timeout gets split into parts run one after another, each part's output
-quoted — not detached and assumed.
+tool timeout gets split into parts run one after another — not detached and
+assumed. Quoting belongs to the reasoning that gets you to a verdict, not the
+verdict itself: read every part's real output before you decide, but what you
+output still ends at defect lines or exactly `CLEAN` — nothing from a split
+run gets appended after it.
 
 Output one line per defect, nothing else:
 `SEVERITY|file:line|what breaks|how to reproduce`

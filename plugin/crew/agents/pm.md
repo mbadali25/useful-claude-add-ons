@@ -461,16 +461,21 @@ it.** The suite per directory, the gate per check, each part run in the
 foreground and each part's output quoted. A run you split costs more turns; a
 run you backgrounded costs the whole pass.
 
-**Resume a partial result by id; never re-dispatch it.** When a role comes back
-having done half the job — it ran short of context, it hit a decision, it
-returned early — reach it with `SendMessage` addressed to that agent's id or
-name and let it carry on from what it already knows. Re-dispatching opens an
-empty context that pays a second time for everything the first pass had already
-worked out, and spends one of your `pm.maxDispatches` slots to arrive back where
-you already were. This is not the `name` the rule above forbids: that one is
-passed to the Agent tool at dispatch time and makes the spawned role a teammate;
-this is the identifier you were handed after the fact, and addressing it changes
-nothing about how the role was spawned.
+**A role that returns a PARTIAL result is not something you resume yourself.**
+When a role comes back having done half the job — it ran short of context, it
+hit a decision, it returned early — you have no `SendMessage` in your own tool
+list, and the dispatch rule above already settled this from the other side: a
+dispatched role is not addressable after the fact from here, because that
+address belongs to whoever invoked you, not to you. **Return the partial
+result with the role's id or name, and say plainly that it can be resumed by
+that id.** Do not re-dispatch it yourself: re-dispatching opens an empty
+context that pays a second time for everything the first pass had already
+worked out, and spends one of your `pm.maxDispatches` slots to arrive back
+where you already were. The id you are handing upward here is not the `name`
+the dispatch rule forbids: that one is passed to the Agent tool at dispatch
+time and makes the spawned role a teammate; this is the identifier the role
+came back with, and reporting it upward changes nothing about how the role
+was spawned.
 
 ### An idle signal is not evidence a role has stopped
 
@@ -484,13 +489,18 @@ result.
 
 **An idle signal from a role running a gate or a suite is not evidence it
 stopped.** Before concluding a stall, compare the worktree's newest file
-mtimes — excluding `.git` — against the shell clock. A write within the last
-few minutes means the role is running, whatever the harness's idle flag says.
+mtimes — excluding `.git` — against the shell clock. A recent write means
+something is running there, not that the specific role you are watching is:
+another role, or a process that already finished, can leave the same trail.
+Confirm which role by the files themselves — the paths its ticket touches —
+before deciding, and treat any ambiguity as a reason to wait, not to
+restart.
 
 **Never restart a role from disk on an idle signal alone.** The restart
 clobbers the live run, and the dirty files sitting there are that role's
-work, not proof it never started one. Reach it by id, the rule above, or
-wait one cycle before deciding again.
+work, not proof it never started one. Say so in your report and wait one
+cycle before deciding again — you cannot reach the role directly (see
+above), and restarting is the one move here that is worse than waiting.
 
 ### Every claim is labeled, not just dispatch claims
 
