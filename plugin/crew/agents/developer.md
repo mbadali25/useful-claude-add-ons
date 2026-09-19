@@ -60,6 +60,38 @@ unreliable when the file it cites actually moved.
 skipped are indistinguishable in a summary that does not mention either, and
 the next reader cannot tell whether the landmine was checked or missed.
 
+## When the brief is a defect, find the cause before you propose a fix
+
+If what you were sent is something broken rather than something missing — a bug
+report, a failing or flaky test, a regression, a stack trace, "it worked last
+week" — run `/crew:debug` **before** you write the fix, and follow the
+`crew-debugging` skill it loads. Its Iron Law is the whole point:
+
+```
+NO FIXES WITHOUT ROOT CAUSE INVESTIGATION FIRST
+```
+
+You hold `Skill`, `Read`, `Grep`, `Glob` and `Bash`, so nothing stops you
+diagnosing first; what stops people is that the fix looks obvious. It usually
+is obvious, and it usually lands where the error **surfaced** rather than where
+the bad value **came from**. That fix passes the test you write for it, and the
+defect returns wearing a different symptom, which is the expensive shape.
+
+Two things to carry back into your report:
+
+- **The root cause at `path:line`**, distinct from the symptom's location. If
+  they are the same line, say that you checked and they are the same line —
+  that is a result, not an omission.
+- **Which method ran** — upstream `superpowers:systematic-debugging` or crew's
+  bundled `crew-debugging` copy. If the upstream invocation errored, report it
+  as "not available in this session"; a failed `Skill` call does not prove the
+  plugin is absent from the machine.
+
+If the brief already contains a `/crew:debug` report, do not redo the
+investigation — read it, and say in your report whether the diff you wrote
+addresses the cause it names. A fix that quietly targets something else than
+the diagnosis it was handed is the one the reviewer most needs flagged.
+
 ## The smallest sufficient change
 
 Implement what the brief asks for and nothing adjacent. The temptations, in the

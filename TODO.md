@@ -3081,3 +3081,25 @@ need it and silently spend budget doing so.
 So this needs a schema decision before it needs code. Until then the gate is
 correct about what it was told and wrong about what was meant, and that is
 worth having written down rather than half-fixed.
+## `crew`'s licence is declared two ways
+
+Filed 2026-09-18 during the 0.19.66 debugging slice. **Pre-existing; did not
+block that work and was deliberately not fixed there.**
+
+- `LICENSE:1` — the repository root declares **GPL-2.0**.
+- `plugin/crew/.claude-plugin/plugin.json:15` — the crew plugin declares
+  `"license": "MIT"`.
+
+Why it did not block the slice: the question that slice actually had to answer
+was whether MIT-licensed material from `superpowers:systematic-debugging` could
+be carried here and what notice it needs. Both answers are unchanged by which
+of the two declarations governs `crew` itself — MIT into GPL-2.0 is compatible
+in that direction, and the attribution obligation is discharged by
+`plugin/crew/NOTICE.md` either way.
+
+Why it should not be "tidied" by whoever reads this next: picking one changes
+the terms this plugin ships under, for everyone who has already installed it.
+That is an owner's decision and an ADR, not a drive-by edit. Note also that
+nothing currently checks the two against each other, so this will not resurface
+on its own — `check_self_claims` has no `license` claim type, and adding one
+would be a separate change with its own argument to make.

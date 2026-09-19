@@ -18,6 +18,27 @@ nobody trusts a notification channel.
    Do NOT read INDEX.md or any other ticket.
 2. If Scope is unclear or "Done when" is not observable, stop and ask me.
 3. Use the `crew:explorer` subagent to locate the code. Do not grep yourself.
+3b. **If the ticket is a defect rather than a feature, run `/crew:debug` before
+    you plan.** A defect is a ticket describing something that is broken,
+    wrong, flaky, slow, or behaving other than it used to: a bug report, a
+    failing or intermittent test, a regression, a stack trace, an incident, "it
+    worked last week". A feature is a ticket describing something that does not
+    exist yet. When it is genuinely both — a feature whose absence is showing
+    up as a defect — treat it as a defect and debug first.
+
+    `/crew:debug` ends with a cause and its evidence, and cannot edit the tree:
+    its tool grant has no `Write` and no `Edit`. Feed its report into the plan
+    at step 4, so the plan fixes the cause rather than the symptom, and carry
+    its root-cause line into the brief you hand the developer at step 5.
+
+    **Do not skip this because the fix looks obvious.** The ticket that most
+    looks like it needs no diagnosis is the one where the obvious fix addresses
+    the place the error surfaced rather than where the bad value came from, and
+    that fix passes its test, ships, and brings the defect back under a
+    different symptom. If you skip it deliberately, say so in the turn and say
+    why — a diagnosis skipped and a diagnosis that found nothing are
+    indistinguishable in a plan that mentions neither.
+
 4. Plan mode. Show me the plan before editing.
 4b. **Emit the goal line.** After the plan is agreed and before you edit
     anything, print a ready-to-paste `/goal` line. You cannot set it yourself —
