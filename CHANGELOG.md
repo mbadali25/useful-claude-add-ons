@@ -28,6 +28,55 @@ All notable changes to this repository are documented here. Format follows [Keep
   hand-built state dict), so they passed against it; fixed to nest under
   `knowledge`, and a new test drives the real `crew_state.collect()` against a
   fixture repo so the fixture shape cannot drift from the emitter's again.
+- **`crew` 0.19.67: backing off is no longer indistinguishable from passing,
+  and a long gate keeps its lock.** A lock left by a hard-killed holder made
+  every later gate exit 0 in 474ms with no output (measured 2026-09-18), for
+  up to the 700s TTL. `verify-gate.sh:189` had already recorded that symptom
+  as a known unfixed limitation and `verify-gate.ps1:216` had seen it in
+  another repo, so this is not a new discovery -- what was missing was saying
+  it out loud. Back-off now prints
+  `verify-gate: backed off, lock held by <token> (<age>s, ttl <n>s); NOTHING
+  WAS VERIFIED this turn.` The four must-allow lock cases now assert that line
+  instead of `stderr == ""`: asserting silence is what let the ambiguity
+  stand. **No pid liveness check** -- measured dead on this platform in the
+  script's own 2026-09-13 note, where a hard-killed Git Bash pid reported
+  ALIVE at +0.5s, +5s and +15s. Instead the lock gained a HEARTBEAT, touched
+  after each rule, so its age means "no rule has finished in this long" and
+  the TTL only has to exceed the slowest single rule. That allowed 700 -> 180.
+  The first heartbeat was a no-op and every existing test passed anyway: it
+  touched the token while the age was read from the directory, and a directory
+  mtime does not move when a file inside it is rewritten (measured: dir
+  unchanged across a token rewrite two seconds later). Both flavours now date
+  the lock by its token. The gate also prints elapsed per rule and a total, so
+  `verify.json`'s stated costs can be re-timed from output rather than memory:
+  measured here, pytest gate set 72s, pylint 37s, whole run 125s.
+  Two catches worth keeping visible, because both are about tests rather than
+  code. The broken heartbeat passed every existing test, since none of them
+  asserted that a long run KEEPS its lock -- the suite covered the lock going
+  stale and never the opposite. And the first test written for it recomputed
+  the age in Python instead of running the gate, so it passed against a
+  sabotaged script: it reported ALL RED while three mutations went green. That
+  is the trap this suite's own docstring names, "mocking that would test the
+  mock", committed by the person who had just read the warning. The tests now
+  run the real gate in both flavours. `_TTL` was also hand-copied into two
+  test files and went stale at the cut; a stale copy does not fail, it moves
+  the boundary under test away from the real one and keeps passing, so it now
+  carries a guard asserting it matches both scripts -- the same defect and the
+  same fix as the five hand-copied skill-count sites.
+  A THIRD catch, found by re-running the sabotage rather than trusting the
+  previous run's tally. The two heartbeat cases pre-age the token with
+  `os.utime` and then assert on what the gate READS -- which proves the lock
+  is dated by its token rather than by the directory, and is a different
+  property from the heartbeat actually firing. Every fixture in both lock
+  files writes deliberately-broken `verify.json` to force the early exit, so
+  no rule had ever run and `lock_touch` / `Update-CrewLock` could be deleted
+  outright with all 23 cases still green. Measured: making `lock_touch` a
+  no-op left the suite passing. Both flavours now carry
+  `test_the_heartbeat_actually_rewrites_the_token_during_a_run`, which runs
+  the real gate over a parsing `verify.json` and has the rules themselves
+  read the token's mtime from inside the run. Sabotage is 7/7 RED across
+  both flavours (announcement, TTL, heartbeat write, and dating by the
+  directory again), both gate files restored byte-identical.
 
 - **`crew` 0.19.64: `scope_report.py` passes the repo's own pylint gate.** No
   behaviour change; all five report branches re-verified identical. Six

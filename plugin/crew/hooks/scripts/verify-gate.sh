@@ -202,7 +202,20 @@ fi
 # it would be on evidence that does not hold. The age window stays the only
 # answer for a lock directory that can be dated.
 LOCK=".crew/.verify-gate.lock"
-LOCK_TTL=700
+# 700 until crew 0.19.65, sized to exceed the hook's own 600s timeout because
+# a held lock was only ever dated at acquisition. It now has a HEARTBEAT (see
+# lock_touch below), so the mtime tracks the last rule that FINISHED rather
+# than when the run began, and the TTL only has to exceed the longest single
+# rule instead of the longest whole run. Measured on a quiet tree: the slowest
+# rule is the gate pytest set at 57.6s, the whole run 115.7s.
+#
+# The cut matters because of what the window costs when it is wrong. A lock
+# left by a hard-killed holder backs every later gate off for the REST of the
+# window -- see "WHAT THIS DOES NOT FIX" above -- so at 700s a cancelled gate
+# disabled verification for up to twelve minutes. At 180s, with the heartbeat
+# keeping a live run from ever looking stale, a false "held" costs one skipped
+# turn and that turn now says so out loud.
+LOCK_TTL=180
 RECLAIMED=0
 # Set when the checks run with no lock held. Nothing is cleaned up on that
 # path -- no token is written, so the trap has nothing to match and another
@@ -212,19 +225,63 @@ UNLOCKED=0
 # other's flag; `date -r` is not portable here either, since BSD `date -r`
 # reads its argument as epoch seconds rather than as a file.
 lock_mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1" 2>/dev/null; }
+# Date the lock by its TOKEN FILE, falling back to the directory.
+#
+# MEASURED, and it is why the heartbeat needed a second pass: rewriting a file
+# inside a directory does NOT update that directory's mtime. Checked here on
+# 2026-09-18 -- dir mtime 1789788907 before and after a token rewrite two
+# seconds later, while the token itself moved to 1789788909. So a heartbeat
+# that touches the token while the age is read off the directory refreshes
+# nothing, and with the TTL cut to 180s the other flavour would have reclaimed
+# a lock from a still-running gate: two gates, two verdicts, one turn. The
+# no-op version passed every existing test, because nothing tested that a long
+# run keeps its lock.
+#
+# The directory fallback covers a lock written by a version with no heartbeat.
+lock_age_source() {
+  [ -f "$LOCK/token" ] && { echo "$LOCK/token"; return; }
+  echo "$LOCK"
+}
+# HEARTBEAT. Called after each rule finishes, so a run that legitimately takes
+# longer than the TTL never looks abandoned to the other flavour. Without it,
+# cutting the TTL would let the .ps1 reclaim a lock the .sh is still using and
+# two gates would run the same turn -- two verdicts, doubled load, and the
+# double-report the lock exists to prevent. Only the token holder touches it:
+# `mkdir -p` on an existing directory updates nothing on some filesystems, so
+# write through the token file, which we own and which the trap already keys on.
+lock_touch() {
+  [ "$UNLOCKED" -eq 0 ] || return 0
+  [ "$(cat "$LOCK/token" 2>/dev/null)" = "${LOCK_TOKEN:-}" ] || return 0
+  printf '%s
+' "$LOCK_TOKEN" > "$LOCK/token" 2>/dev/null || true
+}
 mkdir -p .crew 2>/dev/null
 if ! mkdir "$LOCK" 2>/dev/null; then
   if [ ! -d "$LOCK" ]; then
     echo "VERIFY GATE: could not create the lock at $LOCK and nothing is holding it (is .crew a file, read-only, or is the lock path not a directory?). No other gate can be waited for, so the checks are running WITHOUT the lock - at worst they run twice this turn." >&2
     UNLOCKED=1
   else
-    HOLDER_AT=$(lock_mtime "$LOCK" | tr -dc '0-9')
+    HOLDER_AT=$(lock_mtime "$(lock_age_source)" | tr -dc '0-9')
     if [ -z "$HOLDER_AT" ]; then
       echo "VERIFY GATE: a lock directory is present at $LOCK but its age cannot be read, so a live holder cannot be told from one that was killed. The checks are running WITHOUT the lock rather than standing down for a holder that may not exist." >&2
       UNLOCKED=1
     else
       NOW=$(date +%s)
-      [ $((NOW - HOLDER_AT)) -le "$LOCK_TTL" ] 2>/dev/null && exit 0
+      # BACKING OFF IS NOT PASSING, and until crew 0.19.65 the two were
+      # byte-identical: exit 0, no output, in under half a second. Measured
+      # 2026-09-18 against a real abandoned lock -- 474ms, rc=0, empty. A
+      # reader, a metrics file and the next session all read that as a gate
+      # that ran and found nothing wrong. Say it instead.
+      #
+      # NOT a liveness check. Reading the pid out of the token and asking
+      # whether it is alive is measured dead on this platform: see the
+      # 2026-09-13 note above, where a hard-killed Git Bash pid reported ALIVE
+      # at +0.5s, +5s and +15s. The heartbeat is what makes the age window
+      # honest without needing liveness at all.
+      if [ $((NOW - HOLDER_AT)) -le "$LOCK_TTL" ] 2>/dev/null; then
+        echo "verify-gate: backed off, lock held by $(cat "$LOCK/token" 2>/dev/null || echo 'an unreadable token') ($((NOW - HOLDER_AT))s old, ttl ${LOCK_TTL}s); NOTHING WAS VERIFIED this turn." >&2
+        exit 0
+      fi
       rm -rf "$LOCK" 2>/dev/null
       mkdir "$LOCK" 2>/dev/null || exit 0
       RECLAIMED=1
@@ -416,16 +473,29 @@ CMDS=$(printf '%s\n' "$MATCHED" | tr '\035' '\n' | sed -n 1p | tr '\036' '\n')
 UNMAPPED=$(printf '%s\n' "$MATCHED" | tr '\035' '\n' | sed -n 2p | tr '\036' '\n')
 
 FAILED=0
+TOTAL_ELAPSED=0
 while IFS= read -r c; do
   [ -z "$c" ] && continue
   # </dev/null: a check that reads stdin (some test runners do) would otherwise
   # consume the rest of $CMDS from the here-string and silently skip those checks.
+  RULE_START=$(date +%s)
   if ! OUT=$(eval "$c" 2>&1 </dev/null); then
     echo "VERIFY FAILED: $c" >&2
     echo "$OUT" | tail -25 >&2
     FAILED=1
   fi
+  RULE_ELAPSED=$(( $(date +%s) - RULE_START ))
+  TOTAL_ELAPSED=$(( TOTAL_ELAPSED + RULE_ELAPSED ))
+  echo "verify-gate: ${RULE_ELAPSED}s  $c" >&2
+  # Heartbeat AFTER the rule, not before: the lock's age then means "no rule
+  # has finished in this long", which is the only reading that distinguishes a
+  # slow live run from an abandoned one without asking whether a pid is alive
+  # -- a question this platform answers wrongly (see the 2026-09-13 note).
+  lock_touch
 done <<< "$CMDS"
+
+echo "verify-gate: ${TOTAL_ELAPSED}s total across $(printf '%s
+' "$CMDS" | grep -c .) rule command(s)" >&2
 
 if [ -n "$UNMAPPED" ] && grep -q '"unmapped"[[:space:]]*:[[:space:]]*"fail"' .crew/verify.json; then
   echo "UNMAPPED CHANGES - .crew/verify.json has no rule for:" >&2

@@ -60,7 +60,7 @@ _VERIFY_PS1 = os.path.join(_ROOT, "hooks", "scripts", "verify-gate.ps1")
 _PWSH = shutil.which("pwsh")
 
 # Matches $lockTtl in verify-gate.ps1.
-_TTL = 700
+_TTL = 180
 
 pytestmark = pytest.mark.skipif(
     not sys.platform.startswith("win") or _PWSH is None,
@@ -129,7 +129,18 @@ def test_backs_off_when_a_fresh_lock_is_held(tmp_path):
 
     assert result.returncode == 0, f"stdout: {result.stdout} stderr: {result.stderr}"
     assert result.stdout == ""
-    assert result.stderr == ""
+    # NOT `stderr == ""`. Until crew 0.19.65 the back-off path was silent, so a
+    # gate that stood aside and a gate that ran everything and found nothing
+    # were byte-identical: exit 0, no output. Measured against a real
+    # abandoned lock on 2026-09-18: 474ms, rc=0, empty. Every reader -- a
+    # person, .crew/metrics.md, the next session -- took that for a pass.
+    # verify-gate.sh:189 had already recorded the symptom as a known unfixed
+    # limitation; what was missing was saying it out loud.
+    #
+    # So the must-allow contract is no longer "silent", it is "says it did
+    # nothing". Asserting silence here is what let the ambiguity stand.
+    assert "backed off" in result.stderr, result.stderr
+    assert "NOTHING WAS VERIFIED" in result.stderr, result.stderr
 
 
 def test_backs_off_for_a_lock_it_did_not_write_and_cannot_attribute(tmp_path):
@@ -143,7 +154,18 @@ def test_backs_off_for_a_lock_it_did_not_write_and_cannot_attribute(tmp_path):
     result = _run_verify(root)
 
     assert result.returncode == 0, f"stdout: {result.stdout} stderr: {result.stderr}"
-    assert result.stderr == ""
+    # NOT `stderr == ""`. Until crew 0.19.65 the back-off path was silent, so a
+    # gate that stood aside and a gate that ran everything and found nothing
+    # were byte-identical: exit 0, no output. Measured against a real
+    # abandoned lock on 2026-09-18: 474ms, rc=0, empty. Every reader -- a
+    # person, .crew/metrics.md, the next session -- took that for a pass.
+    # verify-gate.sh:189 had already recorded the symptom as a known unfixed
+    # limitation; what was missing was saying it out loud.
+    #
+    # So the must-allow contract is no longer "silent", it is "says it did
+    # nothing". Asserting silence here is what let the ambiguity stand.
+    assert "backed off" in result.stderr, result.stderr
+    assert "NOTHING WAS VERIFIED" in result.stderr, result.stderr
 
 
 def test_reclaims_a_lock_older_than_the_ttl(tmp_path):
@@ -268,3 +290,121 @@ def test_an_open_incident_stands_down_without_claiming_the_lock(tmp_path):
 
     assert result.returncode == 0, f"stdout: {result.stdout} stderr: {result.stderr}"
     assert not _lock(root).exists()
+
+
+def _age_path(path, seconds):
+    stamp = time.time() - seconds
+    os.utime(path, (stamp, stamp))
+
+
+def test_a_heartbeat_keeps_a_long_run_holding_its_lock(tmp_path):
+    """PowerShell twin of the .sh case. Both flavours must date the lock by
+    its TOKEN, or one reclaims a lock the other is still holding.
+
+    This mirror exists because the .sh test alone left a measured blind spot:
+    a sabotage run that pointed verify-gate.ps1 at the directory mtime stayed
+    GREEN while the same mutation in the .sh went red. A pair where only one
+    side is tested is a pair that drifts on the untested side -- which is the
+    failure root CLAUDE.md records as crew shipping a guard that stood down on
+    Windows and blocked nothing there.
+    """
+    root = _repo(tmp_path)
+    lock = _lock(root)
+    lock.mkdir(parents=True)
+    token = lock / "token"
+    token.write_text("ps1-1-1-1", encoding="utf-8")
+    _age_path(lock, 600)
+    _age_path(token, 1)
+
+    result = _run_verify(root)
+    assert result.returncode == 0, f"stdout: {result.stdout} stderr: {result.stderr}"
+    assert "backed off" in result.stderr, (
+        "verify-gate.ps1 reclaimed a lock whose heartbeat is 1s old, so it is "
+        "dating by the directory. A directory mtime does not move when a file "
+        "inside it is rewritten, so the heartbeat refreshes nothing. "
+        f"stderr: {result.stderr}"
+    )
+
+
+def test_a_lock_whose_heartbeat_has_stopped_is_reclaimed(tmp_path):
+    """And the lock must still be able to go stale, or a killed holder wedges
+    the gate permanently instead of for a bounded window."""
+    root = _repo(tmp_path)
+    lock = _lock(root)
+    lock.mkdir(parents=True)
+    token = lock / "token"
+    token.write_text("ps1-1-1-1", encoding="utf-8")
+    _age_path(lock, 600)
+    _age_path(token, 600)
+
+    result = _run_verify(root)
+    assert "backed off" not in result.stderr, (
+        "a lock with no heartbeat for 600s is abandoned and must be reclaimed. "
+        f"stderr: {result.stderr}"
+    )
+
+
+def _repo_that_runs_rules(tmp_path, probe_rule):
+    """A repo whose verify.json PARSES, so the gate reaches the rule loop.
+
+    The twin of the fixture in test_verify_gate_lock_sh.py, and added for the
+    same reason: every other fixture here forces the early exit on broken
+    JSON, so no rule ever ran and the heartbeat WRITE was never exercised.
+    """
+    root = tmp_path / "repo"
+    (root / ".crew").mkdir(parents=True)
+    _git(root, "init", "-q")
+    _git(root, "config", "user.email", "t@example.invalid")
+    _git(root, "config", "user.name", "t")
+    (root / "README.md").write_text("committed", encoding="utf-8")
+    _git(root, "add", "-A")
+    _git(root, "commit", "-q", "-m", "fixture")
+    (root / "unverified.py").write_text("x = 1", encoding="utf-8")
+    (root / ".crew" / "verify.json").write_text(json.dumps({
+        "version": 1,
+        "rules": [{"paths": ["unverified.py"], "run": probe_rule,
+                   "why": "heartbeat probe"}],
+        "default": [],
+        "unmapped": "ignore",
+    }), encoding="utf-8")
+    return root
+
+
+# verify-gate.ps1 runs each rule through bash (Resolve-CrewBash), so the probe
+# is the same one the .sh flavour uses.
+_HEARTBEAT_PROBE = [
+    "stat -c %Y .crew/.verify-gate.lock/token > t0.txt",
+    "sleep 3",
+    "stat -c %Y .crew/.verify-gate.lock/token > t1.txt",
+]
+
+
+def test_the_heartbeat_actually_rewrites_the_token_during_a_run(tmp_path):
+    """Must-allow for cutting $lockTtl to 180, and the case that was missing.
+
+    The two heartbeat cases above pre-age the token and assert on the gate
+    READING it. Neither runs a rule, so Update-CrewLock could be deleted and
+    both stay green. This one runs the real gate and watches the token move
+    while it holds the lock. Kept in lockstep with the .sh case of the same
+    name: a .ps1 that drifts from its .sh is how this repo once shipped a
+    guard that blocked nothing on Windows.
+    """
+    root = _repo_that_runs_rules(tmp_path, _HEARTBEAT_PROBE)
+
+    result = _run_verify(root)
+    assert result.returncode == 0, (
+        f"the probe rule should pass. stdout: {result.stdout} "
+        f"stderr: {result.stderr}"
+    )
+
+    t0 = (root / "t0.txt").read_text(encoding="utf-8").strip()
+    t1 = (root / "t1.txt").read_text(encoding="utf-8").strip()
+    assert t0 and t1, f"the probe did not record the token mtime: {t0!r} {t1!r}"
+    drift = int(t1) - int(t0)
+    assert drift >= 2, (
+        "the lock token was not refreshed while the gate was running: its "
+        f"mtime moved {drift}s across a 3s rule. Update-CrewLock is not "
+        "writing, so the lock ages from the moment it was ACQUIRED and any "
+        f"run longer than the TTL ({_TTL}s) loses it mid-run to the .sh "
+        f"flavour. stderr: {result.stderr}"
+    )

@@ -232,7 +232,27 @@ if (-not $changed) { Write-CrewVerified; exit 0 }
 # window. See verify-gate.sh for the measurement that rules out a pid-based
 # narrowing.
 $lock = Join-Path (Get-Location).Path ".crew/.verify-gate.lock"
-$lockTtl = 700
+# 700 until crew 0.19.65. Cut in lockstep with verify-gate.sh, and for the
+# same reason: the lock now has a heartbeat (Update-CrewLock, called after each
+# rule), so its age means "no rule has finished in this long" rather than "this
+# is when the run began". The TTL therefore only has to exceed the slowest
+# single rule (72s measured here) instead of the slowest whole run (125s).
+# Line 216 above already recorded that a killed holder makes this gate exit 0
+# silently for up to $lockTtl seconds; 180 bounds that at three minutes, and
+# the back-off now says so out loud.
+$lockTtl = 180
+
+function Update-CrewLock {
+  # Heartbeat. Only the token holder touches it, and a failure is ignored: a
+  # lock we cannot refresh is not worth failing a gate over, it just ages.
+  param($LockPath, $Token)
+  if (-not $Token) { return }
+  try {
+    if ((Get-Content -Raw -ErrorAction Stop (Join-Path $LockPath 'token')).Trim() -eq $Token) {
+      Set-Content -Path (Join-Path $LockPath 'token') -Value $Token -Encoding utf8 -ErrorAction Stop
+    }
+  } catch { }
+}
 $reclaimed = $false
 # Set when the checks run with no lock held. Nothing is cleaned up on that
 # path -- no token is written, so the exit handler has nothing to match and
@@ -247,13 +267,29 @@ try {
     $unlocked = $true
   } else {
     $holderAt = $null
-    try { $holderAt = (Get-Item $lock -Force -ErrorAction Stop).LastWriteTimeUtc } catch { }
+    # Date by the TOKEN, not the directory -- rewriting a file inside a
+    # directory does not move that directory's mtime (measured 2026-09-18),
+    # so reading the directory makes the heartbeat a no-op. Same fix as
+    # verify-gate.sh's lock_age_source; the pair must agree or one flavour
+    # reclaims a lock the other is still holding.
+    $ageSrc = Join-Path $lock 'token'
+    if (-not (Test-Path $ageSrc)) { $ageSrc = $lock }
+    try { $holderAt = (Get-Item $ageSrc -Force -ErrorAction Stop).LastWriteTimeUtc } catch { }
     if ($null -eq $holderAt) {
       [Console]::Error.WriteLine("VERIFY GATE: a lock directory is present at $lock but its age cannot be read, so a live holder cannot be told from one that was killed. The checks are running WITHOUT the lock rather than standing down for a holder that may not exist.")
       $unlocked = $true
     } else {
       $age = ([DateTimeOffset]::UtcNow - [DateTimeOffset]::new($holderAt, [TimeSpan]::Zero)).TotalSeconds
-      if ($age -le $lockTtl) { exit 0 }
+      if ($age -le $lockTtl) {
+        # Backing off is not passing. Silent stand-down made the two
+        # byte-identical -- see verify-gate.sh for the 2026-09-18 measurement
+        # (474ms, rc=0, no output) and line 216 above for the 2026-09-13
+        # observation of the same thing in another repo.
+        $held = try { (Get-Content -Raw -ErrorAction Stop (Join-Path $lock 'token')).Trim() } catch { 'an unreadable token' }
+        [Console]::Error.WriteLine(
+          "verify-gate: backed off, lock held by $held ($([int]$age)s old, ttl ${lockTtl}s); NOTHING WAS VERIFIED this turn.")
+        exit 0
+      }
       Remove-Item -Recurse -Force $lock -ErrorAction SilentlyContinue
       try {
         New-Item -ItemType Directory -Path $lock -ErrorAction Stop | Out-Null
@@ -457,7 +493,9 @@ $bashExe = $null
 # TheSelectSource); Resolve-CrewBash and findings 1-3 are from #153. Folded
 # here so this function has one lineage rather than two.
 $failed = $false
+$totalElapsed = 0
 foreach ($c in $cmds) {
+  $ruleStart = Get-Date
   if (-not $bashExe) { $bashExe = Resolve-CrewBash }
   # A native command leaves $LASTEXITCODE at its previous value when it fails
   # to start, so a stale 0 would read as a pass. Reset it first.
@@ -475,7 +513,13 @@ foreach ($c in $cmds) {
     $out | Select-Object -Last 25 | ForEach-Object { [Console]::Error.WriteLine($_) }
     $failed = $true
   }
+  $ruleElapsed = [int]((Get-Date) - $ruleStart).TotalSeconds
+  $totalElapsed += $ruleElapsed
+  [Console]::Error.WriteLine("verify-gate: ${ruleElapsed}s  $c")
+  # Heartbeat AFTER the rule, matching verify-gate.sh exactly.
+  Update-CrewLock -LockPath $lock -Token $lockToken
 }
+[Console]::Error.WriteLine("verify-gate: ${totalElapsed}s total across $($cmds.Count) rule command(s)")
 Set-Location $root
 
 if ($unmapped.Count -gt 0 -and $vm.unmapped -eq "fail") {

@@ -43,6 +43,7 @@ that can be dated. Recorded rather than left to be rediscovered.
 """
 import json
 import os
+import pathlib
 import shutil
 import subprocess
 import time
@@ -57,7 +58,7 @@ _ROOT = context._ROOT  # pylint: disable=protected-access
 _VERIFY_SH = os.path.join(_ROOT, "hooks", "scripts", "verify-gate.sh")
 
 # Matches LOCK_TTL in verify-gate.sh.
-_TTL = 700
+_TTL = 180
 
 _BASH = crew_fixtures.resolve_bash()
 
@@ -125,7 +126,18 @@ def test_backs_off_when_a_fresh_lock_is_held(tmp_path):
 
     assert result.returncode == 0, f"stdout: {result.stdout} stderr: {result.stderr}"
     assert result.stdout == ""
-    assert result.stderr == ""
+    # NOT `stderr == ""`. Until crew 0.19.65 the back-off path was silent, so a
+    # gate that stood aside and a gate that ran everything and found nothing
+    # were byte-identical: exit 0, no output. Measured against a real
+    # abandoned lock on 2026-09-18: 474ms, rc=0, empty. Every reader -- a
+    # person, .crew/metrics.md, the next session -- took that for a pass.
+    # verify-gate.sh:189 had already recorded the symptom as a known unfixed
+    # limitation; what was missing was saying it out loud.
+    #
+    # So the must-allow contract is no longer "silent", it is "says it did
+    # nothing". Asserting silence here is what let the ambiguity stand.
+    assert "backed off" in result.stderr, result.stderr
+    assert "NOTHING WAS VERIFIED" in result.stderr, result.stderr
 
 
 def test_backs_off_for_a_lock_it_did_not_write_and_cannot_attribute(tmp_path):
@@ -139,7 +151,18 @@ def test_backs_off_for_a_lock_it_did_not_write_and_cannot_attribute(tmp_path):
     result = _run_verify(root)
 
     assert result.returncode == 0, f"stdout: {result.stdout} stderr: {result.stderr}"
-    assert result.stderr == ""
+    # NOT `stderr == ""`. Until crew 0.19.65 the back-off path was silent, so a
+    # gate that stood aside and a gate that ran everything and found nothing
+    # were byte-identical: exit 0, no output. Measured against a real
+    # abandoned lock on 2026-09-18: 474ms, rc=0, empty. Every reader -- a
+    # person, .crew/metrics.md, the next session -- took that for a pass.
+    # verify-gate.sh:189 had already recorded the symptom as a known unfixed
+    # limitation; what was missing was saying it out loud.
+    #
+    # So the must-allow contract is no longer "silent", it is "says it did
+    # nothing". Asserting silence here is what let the ambiguity stand.
+    assert "backed off" in result.stderr, result.stderr
+    assert "NOTHING WAS VERIFIED" in result.stderr, result.stderr
 
 
 def test_reclaims_a_lock_older_than_the_ttl(tmp_path):
@@ -268,3 +291,175 @@ def test_an_open_incident_stands_down_without_claiming_the_lock(tmp_path):
 
     assert result.returncode == 0, f"stdout: {result.stdout} stderr: {result.stderr}"
     assert not _lock(root).exists()
+
+
+def _age(path, seconds):
+    stamp = time.time() - seconds
+    os.utime(path, (stamp, stamp))
+
+
+def test_a_heartbeat_keeps_a_long_run_holding_its_lock(tmp_path):
+    """Must-allow for cutting LOCK_TTL 700 -> 180.
+
+    The TTL is also what stops the second flavour starting while the first is
+    still going. Cut it without a working heartbeat and any run over 180s has
+    its lock reclaimed mid-flight: two gates, two verdicts, one turn.
+
+    This asserts the GATE's behaviour, not the filesystem's. The first version
+    of this test recomputed the age in Python and passed against a sabotaged
+    script -- it tested its own reimplementation, which is the "mocking that
+    would test the mock" trap this suite's docstring already warns about. It
+    reported ALL RED while three mutations went green.
+    """
+    root = _repo(tmp_path)
+    lock = _lock(root)
+    lock.mkdir(parents=True)
+    token = lock / "token"
+    token.write_text("sh-1-1-1", encoding="utf-8")
+
+    # Directory old enough to look abandoned; token fresh, as a live run's
+    # heartbeat leaves it. Dating by the directory reclaims and runs the
+    # checks; dating by the token backs off, which is correct.
+    _age(lock, 600)
+    _age(token, 1)
+
+    result = _run_verify(root)
+    assert result.returncode == 0, f"stdout: {result.stdout} stderr: {result.stderr}"
+    assert "backed off" in result.stderr, (
+        "the gate reclaimed a lock whose heartbeat is 1s old. It is dating the "
+        "lock by the DIRECTORY, and a directory mtime does not move when a "
+        "file inside it is rewritten -- so the heartbeat refreshes nothing and "
+        "a long run loses its lock to the other flavour mid-run. "
+        f"stderr: {result.stderr}"
+    )
+
+
+def test_a_lock_whose_heartbeat_has_stopped_is_reclaimed(tmp_path):
+    """The other half, and what stops the fix above becoming a lock that can
+    never go stale: token AND directory both old means abandoned, so the gate
+    must take the lock and actually run rather than backing off forever."""
+    root = _repo(tmp_path)
+    lock = _lock(root)
+    lock.mkdir(parents=True)
+    token = lock / "token"
+    token.write_text("sh-1-1-1", encoding="utf-8")
+    _age(lock, 600)
+    _age(token, 600)
+
+    result = _run_verify(root)
+    assert "backed off" not in result.stderr, (
+        "a lock with no heartbeat for 600s is abandoned and must be reclaimed; "
+        "backing off here is the twelve-minute silent stand-down 0.19.65 fixed. "
+        f"stderr: {result.stderr}"
+    )
+    assert result.returncode == 2, (
+        "having reclaimed the lock the gate must actually RUN -- this fixture's "
+        "verify.json is deliberately broken, so a real run exits 2. "
+        f"rc={result.returncode} stderr: {result.stderr}"
+    )
+
+
+def test_the_tests_ttl_matches_both_scripts():
+    """_TTL is a hand-copied duplicate of the scripts' own constant, in two
+    test files, and it silently went stale when 0.19.65 cut 700 to 180.
+
+    The boundary cases build their fixtures from _TTL, so a stale copy does
+    not fail -- it moves the boundary being tested away from the real one and
+    keeps passing. That is the shape this repo keeps finding: not a wrong
+    answer, an answer about the wrong question, wearing the label of a check
+    that happened. Read both scripts rather than trusting either copy.
+    """
+    import re
+    scripts = pathlib.Path(__file__).resolve().parents[1] / "hooks" / "scripts"
+    sh = (scripts / "verify-gate.sh").read_text(encoding="utf-8")
+    ps = (scripts / "verify-gate.ps1").read_text(encoding="utf-8")
+
+    sh_ttl = re.search(r"^LOCK_TTL=(\d+)", sh, re.M)
+    ps_ttl = re.search(r"^\$lockTtl = (\d+)", ps, re.M)
+    assert sh_ttl and ps_ttl, "could not find the TTL in one of the flavours"
+    assert int(sh_ttl.group(1)) == int(ps_ttl.group(1)), (
+        f"the pair disagree: .sh={sh_ttl.group(1)} .ps1={ps_ttl.group(1)}. "
+        "One flavour would reclaim a lock the other still holds."
+    )
+    assert _TTL == int(sh_ttl.group(1)), (
+        f"this file's _TTL is {_TTL} but the scripts use {sh_ttl.group(1)}, so "
+        "every boundary case here is testing a threshold that does not exist"
+    )
+
+
+def _repo_that_runs_rules(tmp_path, probe_rule):
+    """A repo whose verify.json PARSES, so the gate reaches the rule loop.
+
+    Every other fixture here writes deliberately-broken JSON to force the
+    early exit, which is why nothing in this file ever executed a rule -- and
+    therefore why the heartbeat WRITE went uncovered. The rule path is the
+    literal filename rather than a glob, so this case does not also depend on
+    whatever the matcher does with a leading star-star.
+    """
+    root = tmp_path / "repo"
+    (root / ".crew").mkdir(parents=True)
+    _git(root, "init", "-q")
+    _git(root, "config", "user.email", "t@example.invalid")
+    _git(root, "config", "user.name", "t")
+    (root / "README.md").write_text("committed", encoding="utf-8")
+    _git(root, "add", "-A")
+    _git(root, "commit", "-q", "-m", "fixture")
+    (root / "unverified.py").write_text("x = 1", encoding="utf-8")
+    (root / ".crew" / "verify.json").write_text(json.dumps({
+        "version": 1,
+        "rules": [{"paths": ["unverified.py"], "run": probe_rule,
+                   "why": "heartbeat probe"}],
+        "default": [],
+        "unmapped": "ignore",
+    }), encoding="utf-8")
+    return root
+
+
+# The probe: read the token mtime, spend real time, read it again. The gate
+# touches the lock after EVERY command, so a working heartbeat puts the second
+# reading a full sleep later than the first. A no-op heartbeat leaves both at
+# the moment the lock was acquired.
+_HEARTBEAT_PROBE = [
+    "stat -c %Y .crew/.verify-gate.lock/token > t0.txt",
+    "sleep 3",
+    "stat -c %Y .crew/.verify-gate.lock/token > t1.txt",
+]
+
+
+def test_the_heartbeat_actually_rewrites_the_token_during_a_run(tmp_path):
+    """Must-allow for LOCK_TTL 700 -> 180, and the case that was missing.
+
+    The two heartbeat cases above pre-age the token with os.utime and then
+    assert on the gate READING it -- they prove the lock is dated by the token
+    rather than by the directory, which is a different property. Neither ever
+    runs a rule, so lock_touch could be deleted outright and both stay green.
+    Measured 2026-09-18: making lock_touch a no-op left all 23 cases in the
+    two lock files passing.
+
+    That matters because the heartbeat is the whole justification for cutting
+    the TTL. Without it a run longer than the TTL has its lock reclaimed by
+    the other flavour mid-flight -- two gates, two verdicts, one turn -- which
+    is precisely what the lock exists to prevent.
+
+    This asserts the gate's own behaviour: the token mtime is read by the
+    rules themselves, from inside the run, while the gate holds the lock.
+    """
+    root = _repo_that_runs_rules(tmp_path, _HEARTBEAT_PROBE)
+
+    result = _run_verify(root)
+    assert result.returncode == 0, (
+        f"the probe rule should pass. stdout: {result.stdout} "
+        f"stderr: {result.stderr}"
+    )
+
+    t0 = (root / "t0.txt").read_text(encoding="utf-8").strip()
+    t1 = (root / "t1.txt").read_text(encoding="utf-8").strip()
+    assert t0 and t1, f"the probe did not record the token mtime: {t0!r} {t1!r}"
+    drift = int(t1) - int(t0)
+    assert drift >= 2, (
+        "the lock token was not refreshed while the gate was running: its "
+        f"mtime moved {drift}s across a 3s rule. lock_touch is not writing, "
+        "so the lock ages from the moment it was ACQUIRED and any run longer "
+        f"than LOCK_TTL ({_TTL}s) loses it mid-run to the other flavour. "
+        f"stderr: {result.stderr}"
+    )
