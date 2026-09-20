@@ -528,7 +528,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
-- **`crew` 0.19.94: `<example>` blocks in every agent's frontmatter
+- **`crew` 0.19.93: `<example>` blocks in every agent's frontmatter
   description, as a `description: |` block scalar - never the unquoted
   form.** All 54 `plugin/crew/agents/*.md` descriptions now end in
   ` Examples:` followed by one or two `<example>` blocks (Context / user /
