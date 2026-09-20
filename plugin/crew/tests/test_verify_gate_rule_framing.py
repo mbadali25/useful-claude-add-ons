@@ -178,7 +178,10 @@ def test_a_single_line_command_full_of_shell_syntax_still_runs(tmp_path):
     redirections are ordinary content in a one-line command and a rejection
     that caught them would break every real map."""
     root = _repo(tmp_path, {
-        "rules": [{"paths": ["**/*.py"],
+        # reach: local - this rule's `cd .` is a deliberate no-op used to
+        # exercise shell-operator framing, not an undeclared reach; the
+        # round-4 scanner defers ANY `cd` on its own terms.
+        "rules": [{"paths": ["**/*.py"], "reach": "local",
                    "run": ["cd . && echo 'a; b && c' > shell.txt || true"]}],
     })
 

@@ -1727,11 +1727,50 @@ rule, keyed by a content hash of that rule's `paths`/`run` so it survives
   chronic, and still blocks the sha marker exactly as before this feature —
   that case really is unverified for THIS commit, not permanently
   unverifiable, and freezing the baseline is the correct answer for it.
-- A rule declaring `"reach"` other than `"local"`, or naming no `"reach"` at
-  all while its command matches a reach verb (`ssm`, `ssh`, `curl `, `aws `,
-  `az `, `gh `, `psql`, `mysql`), is recorded as `"reach_declared"` /
-  `"reach_undeclared"` and is never run on Stop at all — only under
-  `/crew:verify --all` and the merge gate.
+- A rule declaring `"reach"` other than `"local"` is recorded as
+  `"reach_declared"` and never runs on Stop — only under `/crew:verify --all`
+  and the merge gate. Declaring `"reach": "local"` runs on Stop with NO
+  inspection at all; that is the human saying so, and the gate takes the word
+  for it.
+- A rule naming no `"reach"` is classified by `verify_record.scan_reach`,
+  which as of crew 0.19.9x (Codex round 4) is REJECT-ONLY: it can defer a
+  command, never approve one. Earlier rounds tried to prove a wrapper SAFE by
+  reading it — following the script it named, following what THAT named,
+  checking the target looked like a script — and each round of review found
+  a new way to make that approval wrong (a compound `a && bash inner.sh` the
+  splitter missed, an inline `bash -c 'bash inner.sh'` hiding a wrapper
+  inside a string instead of a file, a preceding `cd` resolving the wrapper
+  against the wrong directory, an extensionless script with no shebang
+  slipping past the "looks like a script" check). Three of those were the
+  same shape of bug in two rounds, which is what "an arms race static
+  inspection cannot win" means concretely. So the scan no longer tries to
+  approve — it can only reject, on two grounds:
+  - the command text, or a directly-named wrapper file's content if it can
+    be read, contains a reach verb (`ssm`, `ssh`, `curl`, `aws`, `az`, `gh`,
+    `psql`, `mysql`) → `"reach_undeclared"`, reason `remote verb <v>`.
+  - the command invokes ANY script or interpreter-with-an-argument at all —
+    any token that resolves to an existing file under the repo (any
+    extension or none), any recognised interpreter
+    (`bash`/`sh`/`dash`/`zsh`/`pwsh`/`powershell`/`python`/`python3`/`py`/
+    `node`/`ruby`/`perl`) followed by a non-flag argument anywhere after it,
+    or a `cd` anywhere in the command → `"reach_wrapper"`, reason `wrapper
+    or inline shell — declare "reach": "local" (or network/host) to run it
+    on Stop`.
+  - `bash -n X` / `sh -n X` / `dash -n X` / `zsh -n X` is the one exception:
+    `-n` means "read commands but do not execute them", so X's content
+    never runs under this invocation and this stays local unconditionally.
+  - Neither of the above: runs undeclared. This is narrower than earlier
+    rounds on purpose — `python3 -m pytest ...` now classifies as
+    `"reach_wrapper"` (an interpreter followed by an argument, `-m`'s module
+    name included), where a previous round specifically carved that case
+    out. That carve-out was exactly the kind of case-by-case cleverness this
+    redesign stops doing; declaring `"reach": "local"` on the rule is the
+    fix, not teaching the scanner one more exception.
+  - `default`/`always` commands in `.crew/verify.json` go through this SAME
+    classification on Stop — they have no `"reach"` field of their own to
+    declare, so a wrapper or verb-matching command named there is excluded
+    from the fallback exactly like an undeclared rule would be, never
+    reintroduced through it.
 - A rule declaring `"requiresCleanTree": true` is recorded as
   `"clean_tree_required"` and is never run on Stop either, for the same
   reason: the working tree is dirty by definition during ordinary work, so a

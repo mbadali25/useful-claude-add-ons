@@ -224,7 +224,9 @@ def test_a_rule_that_runs_and_fails_still_exits_2_beside_a_deferral(
     failing = {
         "version": 1,
         "rules": [
-            {"paths": ["a.py"], "seconds": 5,
+            # reach: local - testing budget/failure interaction, not reach
+            # classification; `sh -c` is a wrapper trigger on its own terms.
+            {"paths": ["a.py"], "seconds": 5, "reach": "local",
              "run": ["sh -c 'echo BOOM; exit 1'"], "why": "fails"},
             {"paths": ["a.py"], "seconds": 90, "run": ["echo RAN-big-90"],
              "why": "deferred"},
@@ -414,8 +416,17 @@ def _shared(always=None, rules=None):
 def test_an_always_command_is_not_deferred_by_a_priced_rule(flavour, tmp_path):
     """MUST-BLOCK, and the reported case verbatim. The command fails, so a
     gate that runs it exits 2 and a gate that defers it exits 0 -- the
-    strongest possible signal that dedup weakened the obligation."""
-    cmd = 'sh -c "exit 1"'
+    strongest possible signal that dedup weakened the obligation.
+
+    `sh -c "exit 1"` (the originally reported command) is now itself a
+    wrapper/inline-shell trigger under round 4's reject-only scanner, and
+    `always` has no `reach` field to declare - it goes through the SAME
+    classification a rule's `run` does (see test_30), with no override.
+    That is a DIFFERENT property from the one this test checks (dedup
+    weakening `always`'s obligation), so the fixture uses a plain `exit 1`
+    - no interpreter, no file argument, no `cd` - which still fails and
+    still exercises the dedup path without also being deferred for reach."""
+    cmd = "exit 1"
     root = _repo(tmp_path, verify_map=_shared(
         always=[cmd],
         rules=[{"paths": ["a.py"], "seconds": 90, "run": [cmd],

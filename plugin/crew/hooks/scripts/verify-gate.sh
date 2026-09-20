@@ -657,6 +657,29 @@ try:
     import verify_record as _vr
 except ImportError:
     _vr = None
+
+# Shared by per-rule classification AND the default/always fallback below -
+# Codex round 4 BLOCK verify-gate.sh:950: `default`/`always` used to run
+# with NO reach check at all, so a command a matching RULE had just been
+# excluded from Stop for could still execute via the fallback, reintroducing
+# exactly what reach exclusion exists to stop. One function, called from
+# both places, so neither can drift from the other again.
+def _classify_run_reach(run):
+    """(kind, reason) if `run` should be excluded from Stop for reach, else
+    None. `run` is a list of command strings - a rule's `.run`, or a single
+    default/always command wrapped in a one-item list."""
+    _status, _detail = (_vr.scan_reach(run, os.getcwd())
+                         if _vr is not None else
+                         ("wrapper", "the shared scanner (verify_record.py) is not importable"))
+    if _status == "verb":
+        return ("reach_undeclared",
+                "remote verb %r - declare `reach` or run /crew:verify --all" % _detail)
+    if _status == "wrapper":
+        return ("reach_wrapper",
+                'wrapper or inline shell (%s) - declare `"reach": "local"` '
+                "(or network/host) to run it on Stop" % _detail)
+    return None
+
 changed=[l for l in io.open(sys.argv[1],encoding="utf-8").read().split("\n") if l.strip()]
 try:
     cfg=json.load(open(".crew/verify.json"))
@@ -808,12 +831,13 @@ STOP_MODE = budget is not None
 # imports it directly, same as here). Round 2 deleted the THREE independent
 # copies of this logic that used to exist (a python heredoc inline here, a
 # native PowerShell copy over there, and NOTHING at all in --price) and
-# made this the only one: bounded-recursion wrapper following (depth 3, a
-# visited set, a 256 KiB size cap, a binary check, never outside the repo
-# root), and "could not tell" as its own status rather than local. See
-# verify_record.py's own module docs for the nested-wrapper bug this closed
-# (`bash outer.sh` calling `bash inner.sh` calling ssh bypassed the
-# ONE-LEVEL scan this repo shipped in round 1 entirely).
+# made this the only one.
+#
+# REJECT-ONLY as of round 4 - see scan_reach's module docstring in
+# verify_record.py for the full rationale. Status is now "verb" | "wrapper"
+# | "local"; there is no more "could not tell" middle ground - a wrapper
+# this scan cannot fully read is classified "wrapper" the same as one it
+# reads and finds nothing in, never a softer category.
 stop_excluded = {}   # rule index -> (kind, reason) for a rule Stop will not run
 
 # --- measure-and-cache --------------------------------------------------
@@ -912,16 +936,9 @@ for f in changed:
                             stop_excluded[ri] = ("reach_declared",
                                 "declared reach: %s - not run on Stop, run /crew:verify --all" % reach)
                         elif reach is None:
-                            _status, _detail = (_vr.scan_reach(r.get("run"), os.getcwd())
-                                                 if _vr is not None else ("uninspected", "the shared scanner (verify_record.py) is not importable"))
-                            if _status == "verb":
-                                stop_excluded[ri] = ("reach_undeclared",
-                                    "undeclared reach, looks like it leaves this machine (matches %r) - "
-                                    "declare `reach` or run /crew:verify --all" % _detail)
-                            elif _status == "uninspected":
-                                stop_excluded[ri] = ("reach_uninspected",
-                                    "undeclared reach could not be verified (%s) - "
-                                    "declare `reach` or run /crew:verify --all" % _detail)
+                            _cls = _classify_run_reach(r.get("run"))
+                            if _cls is not None:
+                                stop_excluded[ri] = _cls
             if ri in stop_excluded:
                 continue
             r_env = {}
@@ -944,11 +961,30 @@ for ri in rule_order:
 for ri in rule_order:
     if ri not in rule_secs:
         mandatory.update(rule_cmds[ri])
+# `default`/`always` commands go through the SAME reach classification as
+# a rule's `run` - Codex round 4 BLOCK: they used to skip it entirely, so a
+# command a matching RULE had just been excluded from Stop for could still
+# reach Stop unattended through the fallback (default/always have no
+# `reach` field of their own to declare, so every command here is treated
+# as an undeclared rule would be). fallback_notices holds the reasons;
+# `notices` itself is not defined yet at this point in the file.
+fallback_notices = []
 for c in cfg.get("always",[]) or []:
+    _cls = _classify_run_reach([c]) if STOP_MODE else None
+    if _cls is not None:
+        fallback_notices.append("`always` command %r %s" % (c, _cls[1]))
+        continue
     if c not in cmds: cmds.append(c)
     mandatory.add(c)
 if not cmds:
-    cmds = cfg.get("default",[])
+    _default_kept = []
+    for c in cfg.get("default",[]) or []:
+        _cls = _classify_run_reach([c]) if STOP_MODE else None
+        if _cls is not None:
+            fallback_notices.append("`default` command %r %s" % (c, _cls[1]))
+            continue
+        _default_kept.append(c)
+    cmds = _default_kept
     mandatory.update(cmds)
 
 # --- the Stop budget ------------------------------------------------------
@@ -975,6 +1011,8 @@ for _ri in rule_order:
     if _ri in stop_excluded:
         _kind, _reason = stop_excluded[_ri]
         notices.append("verify-gate: rules[%d] %s" % (_ri, _reason))
+for _fn in fallback_notices:
+    notices.append("verify-gate: %s" % _fn)
 for _ri in sorted(measured_used):
     notices.append("verify-gate: rules[%d] priced from a cached measurement (%ss, measured not declared) - "
                     "add `seconds` to verify.json to make this permanent" % (_ri, int(rule_secs[_ri])))
@@ -1341,6 +1379,19 @@ if [ -n "$UNMAPPED" ] && grep -q '"unmapped"[[:space:]]*:[[:space:]]*"fail"' .cr
   FAILED=1
 fi
 
+# DELETE THE STALE FINGERPRINT BEFORE ANY EARLY EXIT, including the
+# FAILED check immediately below - Codex round 4 FIX: this delete used to
+# sit AFTER `[ "$FAILED" -eq 0 ] || exit 2`, so a turn where ONE command
+# returned 77 (SKIP) and a DIFFERENT command failed outright never reached
+# it at all - `exit 2` fired first. The earlier PASS fingerprint then
+# survived a SKIP it should have invalidated, and the very next Stop could
+# fingerprint-skip past the outstanding SKIP once the failing command was
+# reverted. Depends on nothing but ANY_SKIPPED, so it runs before every
+# other way this script can leave early.
+if [ "$ANY_SKIPPED" -ne 0 ]; then
+  rm -f "$FP_FILE" 2>/dev/null
+fi
+
 [ "$FAILED" -eq 0 ] || exit 2
 
 # Per-rule record sync. Only reached on a turn where nothing FAILED (rc 77
@@ -1389,21 +1440,10 @@ else
   echo "verify-gate: could not sync the record (no python, or the matcher produced no record data); NOT advancing the marker" >&2
 fi
 
-# DELETE THE STALE FINGERPRINT FIRST, BEFORE AND INDEPENDENT OF THE SYNC
-# DECISION BELOW. Round 2 added this delete (see the comment on the
-# elif ANY_SKIPPED branch that used to hold it) but placed it INSIDE the
-# elif chain, ordered after the "elif SYNC_STATUS -ne 0" branch - Codex
-# round 3 FIX: a turn that BOTH skips (rc 77) AND fails to persist the
-# record (e.g. .crew/.verify-gate.record.json.tmp exists as a directory)
-# took the SYNC_STATUS branch first, printed only its own message, and
-# NEVER reached this delete - so the fingerprint from an earlier PASS
-# survived a SKIP it should have invalidated, and the very next Stop could
-# still fingerprint-skip past the outstanding SKIP. The delete depends on
-# nothing but ANY_SKIPPED itself, so it no longer lives inside a chain that
-# a sync failure can short-circuit past.
-if [ "$ANY_SKIPPED" -ne 0 ]; then
-  rm -f "$FP_FILE" 2>/dev/null
-fi
+# The stale-fingerprint delete now happens BEFORE the FAILED early exit,
+# above - see that comment for the full history (round 2 put it in the
+# elif chain below, round 3 moved it above the elif chain but still after
+# `exit 2`, round 4 moved it again to before that exit too).
 
 # THREE things must ALL hold before either marker may advance: nothing was
 # ACUTELY deferred (fully_verified), nothing SKIPPED (rc 77 is not a check),

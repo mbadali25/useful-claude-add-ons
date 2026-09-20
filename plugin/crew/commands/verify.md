@@ -126,17 +126,48 @@ the diff, and commit the pricing separately.
 
 ## reach: `local` | `network` | `host`
 
-The Stop gate runs ONLY `local` rules (the default, when a rule's command
-matches no reach verb). `network`/`host` rules run under `--all` and the
-merge gate, never unattended on Stop. Declare `"reach"` on any rule whose
-command leaves this machine.
+The Stop gate runs ONLY `local` rules. `network`/`host` rules run under
+`--all` and the merge gate, never unattended on Stop. Declaring
+`"reach": "local"` runs the rule on Stop with NO inspection at all — that is
+the human saying so, and the gate takes the word for it.
 
-An UNDECLARED rule is not quietly assumed local: if its command contains a
-reach verb (`ssm`, `ssh`, `curl `, `aws `, `az `, `gh `, `psql`, `mysql`), the
-Stop gate defers it and names it — "undeclared reach, looks like it leaves
-this machine" — rather than running it unattended. Declare `reach` (or
-`"reach": "local"` if it genuinely never leaves the machine) to silence the
-notice. `--price` refuses to time such a rule outright, in both directions.
+**An UNDECLARED rule is not quietly assumed local, and the bar for "assumed
+local" is narrower than it looks.** The scanner (`verify_record.scan_reach`)
+is REJECT-ONLY: it can defer a command, never approve one. Two things defer
+it:
+- the command text, or a directly-named wrapper file's content if it can be
+  read, contains a reach verb (`ssm`, `ssh`, `curl`, `aws`, `az`, `gh`,
+  `psql`, `mysql`) — notice: `remote verb <v>`.
+- the command invokes ANY script or interpreter-with-an-argument — any token
+  resolving to an existing file under the repo (any extension or none), any
+  recognised interpreter (`bash`/`sh`/`dash`/`zsh`/`pwsh`/`powershell`/
+  `python`/`python3`/`py`/`node`/`ruby`/`perl`) followed by a non-flag
+  argument, or a `cd` anywhere in it — notice: `wrapper or inline shell:
+  declare "reach": "local" (or network/host)`.
+
+This is deliberately conservative: `python3 -m pytest ...` now defers too (an
+interpreter followed by an argument), where an earlier round specifically
+exempted it. Declare `"reach": "local"` on the rule — that is the fix, not a
+smarter scanner; static inspection can only ever be asked to REJECT a
+command, never to prove one safe (see `verify_record.py`'s module docstring
+for why: three rounds of review each found a new way to hide a wrapper from
+whatever the scanner was trying to read through, and inspecting harder loses
+that race every time).
+
+The one exception: `bash -n X` / `sh -n X` / `dash -n X` / `zsh -n X` parses
+X for syntax only and never executes it, so this stays local regardless of
+what X contains.
+
+`default`/`always` entries in `.crew/verify.json` get the SAME
+classification on Stop — they have no `"reach"` field of their own, so a
+wrapper or verb-matching command named there is excluded from the fallback
+exactly like an undeclared rule would be, never silently reintroduced
+through it.
+
+`--price` refuses to time a verb- or wrapper-classified rule outright, in
+both directions, same as the gate. The pm-pulse `verifyReachUndeclared`
+trigger separately nudges toward declaring `reach` on any rule that has none
+at all — see `CONFIG.md` §18 for the full classification.
 
 ## Environment pinning
 

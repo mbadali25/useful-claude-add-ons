@@ -745,24 +745,45 @@ $stopMode = -not $All
 # deleted the independent native-PowerShell copy that used to live here:
 # it scanned only ONE LEVEL into a wrapper script and, on ANY read failure
 # (`catch { $text = "" }`), silently treated the wrapper as clean - the
-# powershell-security-hardening review named that exact line. The shared
-# scanner instead follows nested wrappers (bounded: depth 3, a visited set,
-# a 256 KiB cap, a binary check, never outside the repo root) and reports
-# "could not tell" as its OWN status, never as local.
+# powershell-security-hardening review named that exact line.
+#
+# REJECT-ONLY as of round 4 - see scan_reach's own module docstring in
+# verify_record.py for the full rationale. Status is now "verb" | "wrapper"
+# | "local"; there is no more "uninspected" middle ground, and a wrapper
+# this scan cannot read is classified "wrapper" the same as one it reads
+# and finds nothing in - it is never a softer, safer category.
 function Get-CrewScanReach($Run, $Py, $Script, $Root) {
   if (-not $Py -or -not (Test-Path $Script)) {
-    return @{ status = "uninspected"; detail = "the shared scanner (verify_record.py) is not reachable" }
+    return @{ status = "wrapper"; detail = "the shared scanner (verify_record.py) is not reachable" }
   }
   $payload = ConvertTo-Json -Compress -InputObject ([ordered]@{ run = @($Run); root = $Root })
   $out = ($payload | & $Py $Script scan-reach) | Out-String
   $out = $out.Trim()
   if (-not $out) {
-    return @{ status = "uninspected"; detail = "the shared scanner produced no output" }
+    return @{ status = "wrapper"; detail = "the shared scanner produced no output" }
   }
   $parts = $out -split "`t", 2
   return @{ status = $parts[0]; detail = $(if ($parts.Count -gt 1) { $parts[1] } else { "" }) }
 }
 $stopExcluded = @{}   # rule index -> @{kind=...; reason=...}
+
+# Shared by per-rule classification AND the default/always fallback below -
+# Codex round 4 BLOCK verify-gate.sh:950 (same bug, both flavours):
+# default/always used to run with NO reach check at all, so a command a
+# matching RULE had just been excluded from Stop for could still execute
+# via the fallback. One function, called from both places.
+function Get-CrewClassifyReach($Run, $Py, $Script, $Root) {
+  $scan = Get-CrewScanReach $Run $Py $Script $Root
+  if ($scan.status -eq "verb") {
+    return @{ kind = "reach_undeclared";
+      reason = "remote verb '$($scan.detail)' - declare ``reach`` or run /crew:verify --all" }
+  }
+  if ($scan.status -eq "wrapper") {
+    return @{ kind = "reach_wrapper";
+      reason = "wrapper or inline shell ($($scan.detail)) - declare ``""reach"": ""local""`` (or network/host) to run it on Stop" }
+  }
+  return $null
+}
 
 # --- measure-and-cache ----------------------------------------------------
 # The twin of the same block in verify-gate.sh. An unpriced rule that RUNS
@@ -888,14 +909,8 @@ foreach ($f in $changed) {
                 $stopExcluded[$ri] = @{ kind = "reach_declared";
                   reason = "declared reach: $reach - not run on Stop, run /crew:verify --all" }
               } elseif ($null -eq $reach) {
-                $scan = Get-CrewScanReach $r.run $matchPy $verifyRecordScript $root
-                if ($scan.status -eq "verb") {
-                  $stopExcluded[$ri] = @{ kind = "reach_undeclared";
-                    reason = "undeclared reach, looks like it leaves this machine (matches '$($scan.detail)') - declare ``reach`` or run /crew:verify --all" }
-                } elseif ($scan.status -eq "uninspected") {
-                  $stopExcluded[$ri] = @{ kind = "reach_uninspected";
-                    reason = "undeclared reach could not be verified ($($scan.detail)) - declare ``reach`` or run /crew:verify --all" }
-                }
+                $cls = Get-CrewClassifyReach $r.run $matchPy $verifyRecordScript $root
+                if ($null -ne $cls) { $stopExcluded[$ri] = $cls }
               }
             }
           }
@@ -936,12 +951,31 @@ foreach ($ri in $ruleOrder) {
     foreach ($c in $ruleCmds[$ri]) { $mandatory[$c] = $true }
   }
 }
+# `default`/`always` commands go through the SAME reach classification as
+# a rule's `run` - the twin of the same fix in verify-gate.sh, where the
+# full rationale lives: they used to run with no reach check at all, so a
+# command a matching RULE had just been excluded from Stop for could still
+# execute via the fallback. $fallbackNotices holds the reasons; $notices
+# itself is not defined yet at this point in the file.
+$fallbackNotices = [System.Collections.ArrayList]@()
 foreach ($c in $vm.always) {
+  $cls = if ($stopMode) { Get-CrewClassifyReach @($c) $matchPy $verifyRecordScript $root } else { $null }
+  if ($null -ne $cls) {
+    [void]$fallbackNotices.Add("``always`` command '$c' " + $cls.reason)
+    continue
+  }
   if ($cmds -cnotcontains $c) { [void]$cmds.Add($c) }
   $mandatory[$c] = $true
 }
 if ($cmds.Count -eq 0) {
-  foreach ($c in $vm.default) { [void]$cmds.Add($c); $mandatory[$c] = $true }
+  foreach ($c in $vm.default) {
+    $cls = if ($stopMode) { Get-CrewClassifyReach @($c) $matchPy $verifyRecordScript $root } else { $null }
+    if ($null -ne $cls) {
+      [void]$fallbackNotices.Add("``default`` command '$c' " + $cls.reason)
+      continue
+    }
+    [void]$cmds.Add($c); $mandatory[$c] = $true
+  }
 }
 
 # --- the Stop budget ------------------------------------------------------
@@ -972,6 +1006,9 @@ foreach ($ri in $ruleOrder) {
   if ($stopExcluded.ContainsKey($ri)) {
     [void]$notices.Add("verify-gate: rules[$ri] " + $stopExcluded[$ri].reason)
   }
+}
+foreach ($fn in $fallbackNotices) {
+  [void]$notices.Add("verify-gate: $fn")
 }
 foreach ($ri in ($measuredUsed.Keys | Sort-Object)) {
   [void]$notices.Add("verify-gate: rules[$ri] priced from a cached measurement ($([int]$ruleSecs[$ri])s, measured not declared) - add ``seconds`` to verify.json to make this permanent")
@@ -1259,6 +1296,16 @@ if ($unmapped.Count -gt 0 -and $vm.unmapped -eq "fail") {
   $failed = $true
 }
 
+# DELETE THE STALE FINGERPRINT BEFORE ANY EARLY EXIT, including the
+# $failed check immediately below - the twin of the same fix in
+# verify-gate.sh, where the full history lives: a turn where one command
+# returned 77 (SKIP) and a DIFFERENT command failed outright used to exit
+# before this delete ever ran, so a PASS fingerprint from an earlier turn
+# survived a SKIP it should have invalidated.
+if ($anySkipped) {
+  Remove-Item -Path $fpFile -Force -ErrorAction SilentlyContinue
+}
+
 if ($failed) { exit 2 }
 
 # Per-rule record sync - the twin of the same call in verify-gate.sh. Only
@@ -1309,18 +1356,10 @@ try {
 # sha baseline, had no guard at all. That is how a deferred rule still
 # advanced the baseline and dropped a committed file out of $changed for
 # every later run, including -All.
-# DELETE THE STALE FINGERPRINT FIRST, BEFORE AND INDEPENDENT OF THE SYNC
-# DECISION BELOW - the twin of the same fix in verify-gate.sh, where the
-# full rationale lives. Round 2 placed this delete inside the elseif chain,
-# after the "elseif $syncStatus -ne 0" branch - Codex round 3 FIX: a turn
-# that both SKIPS and fails to persist the record took the sync-failure
-# branch first and never reached this delete, so a fingerprint from an
-# earlier PASS survived a SKIP it should have invalidated. It depends on
-# nothing but $anySkipped, so a sync failure can no longer short-circuit
-# past it.
-if ($anySkipped) {
-  Remove-Item -Path $fpFile -Force -ErrorAction SilentlyContinue
-}
+# The stale-fingerprint delete now happens BEFORE the $failed early exit,
+# above - see that comment for the full history (round 2 put it in the
+# elseif chain below, round 3 moved it above the elseif chain but still
+# after `exit 2`, round 4 moved it again to before that exit too).
 
 $fullyVerified = ($deferredCount -eq 0) -and (-not $anySkipped) -and ($syncStatus -eq 0)
 

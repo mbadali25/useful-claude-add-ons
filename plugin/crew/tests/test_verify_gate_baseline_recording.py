@@ -62,12 +62,17 @@ _FLAVOURS = [
 # not permanently over budget) -- the case that must still block the
 # baseline. It FAILS when it finally runs, so a full run that reaches it is
 # unmistakable.
+# reach: local on the second rule of each map below - these fixtures test
+# BUDGET deferral (acute/chronic), not reach classification; `sh -c '...'`
+# is a wrapper/inline-shell trigger on its own terms under the round-4
+# scanner, and an undeclared rule is excluded for REACH before budget logic
+# is ever reached, which would test the wrong mechanism entirely.
 _DEFERRING_AND_FAILING = {
     "version": 1,
     "rules": [
         {"paths": ["a.py"], "seconds": 50, "run": ["echo fits-alone"],
          "why": "fits alone, crowds out the second"},
-        {"paths": ["a.py"], "seconds": 50,
+        {"paths": ["a.py"], "seconds": 50, "reach": "local",
          "run": ["sh -c 'echo SHOULD-HAVE-RUN; exit 1'"],
          "why": "fits alone, but not alongside the first under a 60s budget"},
     ],
@@ -79,7 +84,7 @@ _DEFERRING_AND_FAILING = {
 # baseline must advance PAST it while it stays named and reported.
 _CHRONICALLY_OVER_BUDGET = {
     "version": 1,
-    "rules": [{"paths": ["a.py"], "seconds": 900,
+    "rules": [{"paths": ["a.py"], "seconds": 900, "reach": "local",
                "run": ["sh -c 'echo SHOULD-HAVE-RUN; exit 1'"],
                "why": "permanently over the 60s budget alone"}],
     "default": [], "unmapped": "ignore",
@@ -275,7 +280,10 @@ def test_a_mapped_crew_path_is_verified_not_excluded(flavour, tmp_path):
     """
     mapped = {
         "version": 1,
-        "rules": [{"paths": [".crew/check.txt"], "seconds": 1,
+        # reach: local - testing the .crew/ path-exclusion fingerprint bug,
+        # not reach classification; `sh -c` plus an existing `.crew/check.txt`
+        # argument are BOTH wrapper triggers under the round-4 scanner.
+        "rules": [{"paths": [".crew/check.txt"], "seconds": 1, "reach": "local",
                    "run": ["sh -c 'grep -q GOOD .crew/check.txt'"],
                    "why": "a content check on a .crew path"}],
         "default": [], "unmapped": "ignore",

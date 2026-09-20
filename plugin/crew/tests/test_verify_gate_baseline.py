@@ -28,9 +28,16 @@ pytestmark = pytest.mark.skipif(
 # A rule that maps every .py file to a command that always fails. Any file in
 # scope therefore blocks, which makes "did the gate see this file" observable
 # as an exit code instead of by reading its stdout.
+#
+# reach: local - this suite is testing baseline/marker behaviour, not reach
+# classification; `python -c "..."` is an interpreter followed by inline
+# code, a wrapper/inline-shell trigger on its own terms under the round-4
+# scanner (the same shape as `bash -c '...'`, deliberately - see
+# verify_record.py's module docstring).
 _VERIFY = """{
   "unmapped": "ignore",
-  "rules": [{"paths": ["**/*.py"], "run": ["python -c \\"raise SystemExit(1)\\""]}]
+  "rules": [{"paths": ["**/*.py"], "reach": "local",
+             "run": ["python -c \\"raise SystemExit(1)\\""]}]
 }"""
 
 

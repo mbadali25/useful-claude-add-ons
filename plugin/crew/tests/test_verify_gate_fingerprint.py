@@ -179,7 +179,10 @@ def test_a_failing_run_records_nothing_and_runs_again(flavour, tmp_path):
     for every later turn."""
     failing = {
         "version": 1,
-        "rules": [{"paths": ["a.py"], "seconds": 5,
+        # reach: local - testing that a FAILURE records nothing, not reach
+        # classification; `sh -c` is a wrapper/inline-shell trigger on its
+        # own terms under the round-4 scanner.
+        "rules": [{"paths": ["a.py"], "seconds": 5, "reach": "local",
                    "run": ["sh -c 'exit 1'"], "why": "fails"}],
         "default": [], "unmapped": "ignore",
     }
@@ -584,8 +587,13 @@ def _invariant_repo(tmp_path, name, rule_path, command):
                    check=True, capture_output=True, text=True)
     (root / ".crew" / "verify.json").write_text(json.dumps({
         "version": 1,
-        "rules": [{"paths": [rule_path], "seconds": 1, "run": [command],
-                   "why": name}],
+        # reach: local - these fixtures test fingerprint-digest coverage,
+        # not reach classification; their `grep ... <file>` commands name
+        # a file that genuinely exists under the repo, which the round-4
+        # scanner treats as a wrapper trigger on its own (existence alone,
+        # regardless of `grep` not being a recognised interpreter).
+        "rules": [{"paths": [rule_path], "seconds": 1, "reach": "local",
+                   "run": [command], "why": name}],
         "default": [], "unmapped": "ignore",
     }), encoding="utf-8")
     return root

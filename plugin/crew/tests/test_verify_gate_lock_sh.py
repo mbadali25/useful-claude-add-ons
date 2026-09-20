@@ -407,7 +407,8 @@ def _repo_that_runs_rules(tmp_path, probe_rule):
     (root / "unverified.py").write_text("x = 1", encoding="utf-8")
     (root / ".crew" / "verify.json").write_text(json.dumps({
         "version": 1,
-        "rules": [{"paths": ["unverified.py"], "run": probe_rule,
+        # reach: local - the twin of the same note in test_verify_gate_lock.py.
+        "rules": [{"paths": ["unverified.py"], "reach": "local", "run": probe_rule,
                    "why": "heartbeat probe"}],
         "default": [],
         "unmapped": "ignore",

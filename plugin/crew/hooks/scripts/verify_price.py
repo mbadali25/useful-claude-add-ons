@@ -12,15 +12,15 @@ REACH. A rule cannot be timed here unless its reach is `local`:
   - a DECLARED `reach` of anything but `local` is SKIPPED, never run --
     "price it by hand" is the point, not a suggestion.
   - an UNDECLARED `reach` is scanned by verify_record.scan_reach - the SAME
-    bounded, wrapper-following scanner the Stop gate uses (imported
-    in-process here, not reimplemented). A VERB match, or an UNINSPECTED
-    result (a wrapper this scan could not read), is REFUSED outright, in
-    both directions (never priced even with --force). Round 2: this used to
-    scan only the outer command STRING with a bare substring check, so
-    `bash wrapper.sh` where wrapper.sh itself called ssh passed the scan and
-    was TIMED - which means RUN - exactly the command Stop would have
-    refused. "Could not tell" is its own value here too: refusal, not a
-    warning, the same as the gate.
+    reject-only scanner the Stop gate uses (imported in-process here, not
+    reimplemented; see its module docstring for the round-4 redesign). A
+    VERB match, or a WRAPPER match (any script/interpreter/inline-shell/cd
+    invocation - inspection can only REJECT here, never approve), is
+    REFUSED outright, in both directions (never priced even with --force).
+    Round 2: this used to scan only the outer command STRING with a bare
+    substring check, so `bash wrapper.sh` where wrapper.sh itself called
+    ssh passed the scan and was TIMED - which means RUN - exactly the
+    command Stop would have refused.
 
 EXIT 77 IS SKIP, same convention the gate follows (_verify/smoke.sh, GNU
 automake): "skipped, environment absent" is not a measurement of the work,
@@ -126,13 +126,13 @@ def main(argv):
             status, detail = verify_record.scan_reach(rule.get("run"), repo_root)
             if status == "verb":
                 rows.append((i, "REFUSED",
-                             f"undeclared reach, command matches {detail!r} - "
+                             f"remote verb {detail!r} - "
                              f"declare `reach` or price by hand"))
                 continue
-            if status == "uninspected":
+            if status == "wrapper":
                 rows.append((i, "REFUSED",
-                             f"undeclared reach could not be verified ({detail}) - "
-                             f"declare `reach` or price by hand"))
+                             f"wrapper or inline shell ({detail}) - "
+                             f'declare "reach": "local" (or network/host) or price by hand'))
                 continue
 
         if has_seconds and not force:

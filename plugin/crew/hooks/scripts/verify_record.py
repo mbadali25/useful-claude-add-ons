@@ -160,88 +160,95 @@ def pinned_env(rule_env, base=None):
 # --- reach scanning, shared by both gates and --price (Codex round 2, BLOCK
 # verify-gate.sh:841 / verify_price.py:35) ---
 #
-# ONE function. It used to be regex logic duplicated three ways - a python
-# heredoc inline in verify-gate.sh, native PowerShell in verify-gate.ps1,
-# and NOTHING at all in verify_price.py (which scanned only the outer
-# command string, so `--price` timed - and thereby RAN - a wrapper script
-# whose body called ssh, on the strength of a scan Stop itself would have
-# refused). All three now call this.
+# ONE function, called by all three (verify-gate.sh in-process, .ps1 via the
+# `scan-reach` CLI, verify_price.py in-process).
 #
-# NESTED wrappers: `bash outer.sh` where outer.sh itself runs `bash
-# inner.sh` which calls ssh used to bypass the scan entirely - the scan
-# read outer.sh's TEXT for a reach verb, found none, and stopped; it never
-# noticed outer.sh's own body was ANOTHER wrapper invocation to follow.
-# Bounded recursion fixes it: depth 3, a visited set (a script that wraps
-# itself, or two scripts that wrap each other, terminates instead of
-# looping), a 256 KiB per-file size cap, a binary check (NUL in the first
-# 8 KiB), and every resolved path must stay inside the repo root.
+# REJECT-ONLY, as of Codex round 4. Rounds 2-3 tried to APPROVE a command as
+# safe by reading it: follow the wrapper it names, follow what THAT wrapper
+# names, check the target looks like a script, and call it clean if nothing
+# turned up. Every round of review found a new way to make that approval
+# wrong - a compound `true && bash inner.sh` the segmenter did not split, an
+# inline `bash -c 'bash inner.sh'` hiding a nested wrapper inside a STRING
+# rather than a FILE, a `cd tools && bash inner.sh` resolving against the
+# wrong base, an extensionless `check` with no shebang the heuristic waved
+# through - four BLOCKs in two rounds, three of them the SAME shape: a new
+# way to make a wrapper invisible to whatever this scan was trying to READ
+# THROUGH. That is an arms race, and static inspection does not win it -
+# nothing that only reads text can enumerate every way a command can end up
+# running something else.
 #
-# "COULD NOT TELL" IS ITS OWN VALUE. A wrapper this scan cannot read -
-# missing, too large, binary, outside the repo, or past the depth limit -
-# is UNINSPECTED, not local. Reading it as local would be exactly this
-# repo's named recurring bug (an unknown collapsing into the safe-looking
-# value) wearing a new hat: a script nobody can prove is safe is not the
-# same claim as a script proven harmless.
+# So this scan no longer tries to approve anything. It can only REJECT:
+#   (a) a reach verb appears anywhere in the command text, or in a directly-
+#       named wrapper file's content, if that file can be read - "verb".
+#   (b) the command invokes ANY script or interpreter-with-an-argument at
+#       all (any token that resolves to an existing repo file, any
+#       recognised interpreter followed by a non-flag argument anywhere
+#       after it, or a `cd`) - "wrapper". Existence is enough; there is no
+#       more extension/shebang test, because the arms race was never about
+#       whether the scan could prove a target harmful, only whether it
+#       could prove one harmless, and it never reliably could.
+#   (c) neither: "local" - safe to run undeclared.
+# There is no more "uninspected". A wrapper this scan cannot read is not a
+# separate, softer category - it is still "wrapper", the same as one it
+# reads and finds nothing verb-shaped in. Static inspection is USED only to
+# defer; it is never the reason something is allowed to run.
+#
+# What this buys back: BLOCK verify_record.py:383 (a preceding `cd` changing
+# the base a wrapper path resolves against) stops being reachable at all,
+# because `cd` ANYWHERE in the command is itself grounds for (b) - the scan
+# never needs to know where a `cd` would land, since it never tries to
+# resolve anything past it. BLOCK verify_record.py:387 (an extensionless,
+# shebang-less script) stops being reachable because existence alone is
+# enough to trigger (b) - there is no "does it look like a script" gate left
+# to route around. BLOCK verify_record.py:321 (`bash -c 'bash inner.sh'`,
+# a wrapper invocation hidden inside an INLINE STRING rather than a file)
+# stops being reachable because "any interpreter followed by a non-flag
+# argument anywhere after it" catches the outer `bash -c '...'` on its own
+# terms - it does not need to parse what is inside the string, because an
+# interpreter invoked with an argument is ALREADY enough for (b), whatever
+# that argument turns out to contain.
+#
+# What is deliberately NOT covered any more: (c)'s promise that "no verb, no
+# wrapper" commands run undeclared is now much narrower than round 3's, and
+# on purpose - `python3 -m pytest ...` (an INTERPRETER followed by a
+# non-flag argument, `-m`'s module name included) now classifies as (b),
+# where round 3's FIX specifically carved it out. That carve-out was
+# exactly the kind of case-by-case cleverness this redesign stops doing:
+# distinguishing "this token is a module name, not a file" from "this token
+# is a file" is one more thing an attacker's command shape can get wrong on
+# purpose, and the map is the place to say a command is safe, not the
+# scanner. See THIS repo's own .crew/verify.json, which now declares
+# `"reach": "local"` on every rule this reclassifies - test_28 checks it.
+#
+# Parse-only is the one narrow exception kept from round 3, unrelated to any
+# of this: `bash -n X` / `sh -n X` / `dash -n X` / `zsh -n X` read X for
+# SYNTAX ONLY and never execute a line of it, so whatever X contains cannot
+# run under this specific invocation - (c), unconditionally, regardless of
+# X's content. Nothing else about -n's target is inspected, because nothing
+# needs to be: it never runs.
 REACH_VERBS = ("ssm", "ssh", "curl", "aws", "az", "gh", "psql", "mysql")
 _REACH_RE = re.compile(r"\b(" + "|".join(re.escape(v) for v in REACH_VERBS) + r")\b")
-_WRAPPER_INTERPRETERS = ("bash", "sh", "dash", "zsh", "python", "python3",
-                         "py", "pwsh", "node")
-# -m's argument is a MODULE NAME (`python -m pytest`), -c/-Command/-e's is
-# INLINE CODE (`bash -c '...'`, `pwsh -Command '...'`, `node -e '...'`) -
-# neither names a script FILE, so an interpreter carrying one of these
-# names NO wrapper at all; the whole invocation stops there rather than
-# treating the next non-flag token as a path to resolve. Applied to every
-# entry in _WRAPPER_INTERPRETERS - safe even for a family where the flag
-# does not exist, since the outcome (treat as no wrapper) is the cautious
-# direction, never the permissive one.
-_NO_WRAPPER_FLAGS = ("-c", "-m", "-e")
-# -n is POSIX-SHELL-SPECIFIC and NOT folded into _NO_WRAPPER_FLAGS above,
-# unlike -c/-m/-e: `bash -n script.sh` / `sh -n` / `dash -n` / `zsh -n`
-# mean "read commands but do not execute them" - the named script is
-# PARSED for syntax only and never actually RUN, so a `curl ... | bash`
-# inside it can never fire under THIS invocation. Codex follow-up: rules[3]
-# in THIS repo's own .crew/verify.json runs `bash -n scripts/
-# install-prerequisites.sh` (a syntax-check step, not an execution), and
-# the scanner followed it anyway, found a real `curl | bash` deep in that
-# script's actual code (not a comment - see the comment-strip fix above,
-# which is why this surfaced instead of an earlier, unrelated false
-# match), and deferred a rule that never runs a single line of it. Unlike
-# -c/-m/-e, -n does NOT mean "this token is safe to apply everywhere
-# regardless of family" - python/node/pwsh have no such "parse but never
-# execute" flag, and treating an unrelated -n there as "no wrapper" could
-# hide a real invocation instead of a syntax check. Scoped to
-# _POSIX_SHELLS for that reason, checked separately from the universal set.
+# Recognised interpreters AND recognised script-running tools - anything
+# that can be handed a file and made to execute it. `powershell` (Windows'
+# built-in, distinct from `pwsh`) and `ruby`/`perl` were never in earlier
+# rounds' list; added here since (b) now depends on this list being
+# complete rather than merely "complete enough for the cases seen so far".
+_INTERPRETERS = ("bash", "sh", "dash", "zsh", "pwsh", "powershell",
+                 "python", "python3", "py", "node", "ruby", "perl")
 _POSIX_SHELLS = ("bash", "sh", "dash", "zsh")
 # A WHOLE-LINE comment (bash/PowerShell/python all use `#`) is prose, not
 # code - a wrapper script's own comment describing what it does NOT do
 # (`_verify/smoke.sh`: "there is no service to curl and no ...") used to
 # verb-match on the strength of that sentence alone and deferred two rules
 # in this repo's own .crew/verify.json on every Stop, forever, since
-# smoke.sh is the default gate. Stripped BEFORE verb matching and BEFORE
-# wrapper-path detection, so a comment naming either a verb or a wrapper
-# script is inert in both directions. A TRAILING comment on a code line is
-# left alone - a verb appearing in actual code must still match even if
-# the same line also carries a `# comment` after it - so this only ever
-# drops a line whose first non-blank character is `#`.
+# smoke.sh is the default gate. Stripped BEFORE verb matching. A TRAILING
+# comment on a code line is left alone - a verb appearing in actual code
+# must still match even if the same line also carries a `# comment` after
+# it - so this only ever drops a line whose first non-blank character is
+# `#`. Still needed under the reject-only design: it changes whether (a)
+# fires (a verb in a comment must not), not whether (b) does (comment text
+# was never a wrapper-detection signal).
 _PS_BLOCK_COMMENT_RE = re.compile(r"<#.*?#>", re.S)
-REACH_SCAN_MAX_DEPTH = 3
-REACH_SCAN_MAX_BYTES = 256 * 1024
-# A token following an interpreter is only a wrapper CANDIDATE if, once it
-# exists under repo_root, it also LOOKS like a script - Codex round 3 FIX:
-# `python -m pytest` used to hand "pytest" (a module name, not a path) to
-# the resolver, which correctly failed to find a file called "pytest" and
-# read that failure as UNINSPECTED ("could not tell") rather than as what
-# it actually was: no wrapper here at all. An extensionless file still
-# counts if it starts with a shebang (`#!`) - checked in _looks_like_script.
-_SCRIPT_EXTENSIONS = (".sh", ".bash", ".py", ".ps1", ".psm1",
-                      ".js", ".mjs", ".cjs")
-# A single LINE can chain several commands - Codex round 3 BLOCK: `true &&
-# bash inner.sh` is one line but two commands, and treating the whole line
-# as one cmd.split() target hid "bash inner.sh" (and anything after `;`,
-# `|` or `||`) from wrapper detection entirely, so a compound wrapper
-# invocation reached ssh unscanned. Every segment is scanned separately,
-# for both the reach-verb text search and the wrapper-path search.
-_SEGMENT_SPLIT_RE = re.compile(r"&&|\|\||[;|]")
 
 
 def _looks_remote_text(text):
@@ -256,8 +263,7 @@ def _strip_comments(text):
     comment from `text`, in that order (a block can span several lines
     that would otherwise each individually look like code). A TRAILING
     `# comment` on a line that also carries real code is left untouched -
-    only a line whose first non-blank character is `#` is dropped. See
-    _NO_WRAPPER_FLAGS's neighbouring comment for why this exists."""
+    only a line whose first non-blank character is `#` is dropped."""
     if not text:
         return text
     text = _PS_BLOCK_COMMENT_RE.sub("", text)
@@ -265,206 +271,145 @@ def _strip_comments(text):
                       if not line.lstrip().startswith("#"))
 
 
-def _command_segments(text):
-    """Every individual command segment in `text`: each line split on &&,
-    ||, ; and | in turn, trimmed, blanks dropped."""
-    segments = []
-    for line in (text or "").splitlines():
-        for seg in _SEGMENT_SPLIT_RE.split(line):
-            seg = seg.strip()
-            if seg:
-                segments.append(seg)
-    return segments
-
-
 def _tokenize(cmd):
-    """Shell-aware tokens for one command segment - Codex round 3 FIX:
-    `cmd.split()` left quote characters IN the token (`bash "local.sh"`
-    split to the literal 4-character string '"local.sh"'), which could
-    never match the real, unquoted file on disk and stayed UNINSPECTED
-    forever. `shlex.split(posix=True)` strips them properly; an unbalanced
-    quote shlex cannot parse falls back to a plain split with surrounding
-    quote characters stripped per token, rather than silently yielding no
-    tokens at all (which would read as "clean")."""
+    """Shell-aware tokens for one command string. `shlex.split(posix=True)`
+    strips quote characters properly (`bash "local.sh"` -> ['bash',
+    'local.sh'], not the literal '"local.sh"'); an unbalanced quote shlex
+    cannot parse falls back to a plain split with surrounding quote
+    characters stripped per token, rather than silently yielding no tokens
+    at all (which would read as safe)."""
     try:
         return shlex.split(cmd, posix=True)
     except ValueError:
         return [p.strip("'\"") for p in cmd.split()]
 
 
-def _wrapper_script_path(cmd):
-    """The script FILE a single command segment directly invokes - `bash
-    x.sh`, `sh x`, `./x`, `pwsh -File x.ps1`, `python(3) x.py`, `node x.js`
-    - or None. One token, the interpreter's own first positional argument
-    (or the bare ./x form), not a subcommand-taking tool like npx or
-    terraform, and not a flag whose OWN argument is inline code or a
-    module name rather than a file (see _NO_WRAPPER_FLAGS)."""
-    parts = _tokenize(cmd)
-    if not parts:
-        return None
-    head = parts[0]
-    if head.startswith("./") or head.startswith("../"):
-        return head
-    base = os.path.basename(head).lower()
+def _base_name(token):
+    """The interpreter/executable name a token would resolve to on PATH,
+    lower-cased and with a trailing .exe dropped - `Bash`, `BASH.EXE` and
+    `bash` are all the same interpreter for this check's purposes."""
+    base = os.path.basename(token).lower()
     if base.endswith(".exe"):
         base = base[:-4]
-    if base == "pwsh":
-        for i in range(1, len(parts)):
-            low = parts[i].lower()
-            if low == "-command":
-                return None
-            if low == "-file":
-                return parts[i + 1] if i + 1 < len(parts) else None
-        return None
-    if base in _WRAPPER_INTERPRETERS:
-        for p in parts[1:]:
-            if p in _NO_WRAPPER_FLAGS:
-                return None
-            if p == "-n" and base in _POSIX_SHELLS:
-                # Parse-only: the script named after -n is never executed
-                # by THIS invocation, so there is nothing to follow.
-                return None
-            if not p.startswith("-"):
-                return p
-    return None
+    return base
 
 
-def _wrapper_paths_in_text(text):
-    """Every wrapper-script invocation found in `text` - one command
-    segment at a time (see _command_segments), used both for a single
-    command string and for a wrapper script's own full content (many
-    lines, possibly several segments each), so a script that itself calls
-    another wrapper - directly or after `&&`/`;`/`|`/`||` - is followed."""
-    paths = []
-    for seg in _command_segments(text):
-        p = _wrapper_script_path(seg)
-        if p:
-            paths.append(p)
-    return paths
-
-
-def _looks_like_script(path):
-    """True if `path` (an existing, readable file) has a recognised script
-    extension, or - for an extensionless file - starts with a shebang
-    line. Decides whether a token following an interpreter is genuinely a
-    SCRIPT FILE this scan should follow, or something else (a module name,
-    a test id, ...) that merely happens to also exist under the repo."""
-    ext = os.path.splitext(path)[1].lower()
-    if ext in _SCRIPT_EXTENSIONS:
-        return True
-    if ext:
-        return False
-    try:
-        with open(path, "rb") as fh:
-            head = fh.read(2)
-    except OSError:
-        return False
-    return head == b"#!"
-
-
-def _classify_wrapper_candidate(token, repo_root):
-    """(kind, real_path_or_None) for a token _wrapper_script_path found:
-
-      "candidate" - a real, readable-looking, script-like file under
-                    repo_root - follow it.
-      "outside"   - it resolves to a real file OUTSIDE repo_root - cannot
-                    verify it, and unlike a merely absent name this one
-                    genuinely points somewhere; UNINSPECTED.
-      "none"      - it does not exist under repo_root at all, or exists but
-                    is not script-like (no recognised extension, no
-                    shebang) - Codex round 3 FIX: `python -m pytest`'s
-                    "pytest" resolves to nothing on disk; that is "no
-                    wrapper here", not "could not tell".
-    """
+def _resolves_to_repo_file(token, repo_root):
+    """The real, symlink-resolved path if `token` names an existing FILE
+    under repo_root (any extension or none - existence is the only test;
+    see the module docstring for why the extension/shebang heuristic was
+    removed), else None. A file that exists but resolves OUTSIDE repo_root
+    (an absolute path, or a symlink escaping it) does not count as "under
+    the repo" and returns None here - it can still trigger (b) through the
+    interpreter-token check below if it was invoked via a recognised
+    interpreter, which covers every case actually seen; a bare invocation
+    of something outside the repo with no interpreter prefix is not one
+    this scan is asked to catch."""
     candidate = token if os.path.isabs(token) else os.path.join(repo_root, token)
     real = os.path.realpath(candidate)
     root_real = os.path.realpath(repo_root)
     inside = real == root_real or real.startswith(root_real + os.sep)
-    if not os.path.isfile(real):
-        return ("none", None)
-    if not inside:
-        return ("outside", None)
-    if not _looks_like_script(real):
-        return ("none", None)
-    return ("candidate", real)
+    if inside and os.path.isfile(real):
+        return real
+    return None
 
 
-def _read_bounded(path):
-    """(True, text) or (False, reason). Never raises."""
+def _read_best_effort(path):
+    """The file's text, or None. Never raises, never bounds size (the 256
+    KiB cap was a round-2/3 approval-path artefact - see the module
+    docstring; this read is used only to possibly UPGRADE a "wrapper"
+    verdict to the more specific "verb" one, never to downgrade it, so a
+    read that fails just means the generic wrapper reason is kept)."""
     try:
-        size = os.path.getsize(path)
-        if size > REACH_SCAN_MAX_BYTES:
-            return (False, f"too large ({size}B > {REACH_SCAN_MAX_BYTES}B cap)")
         with open(path, "rb") as fh:
             raw = fh.read()
-    except OSError as e:
-        return (False, f"unreadable ({e})")
-    if b"\x00" in raw[:8192]:
-        return (False, "binary")
-    return (True, raw.decode("utf-8", errors="replace"))
+    except OSError:
+        return None
+    return raw.decode("utf-8", errors="replace")
+
+
+def _classify_command(cmd, repo_root):
+    """Classify ONE command string under the reject-only reach model.
+    Returns (status, detail):
+
+      "verb"    - detail is the matched reach verb - found in the command
+                  text itself, or in a directly-named wrapper file's
+                  content if that file could be read.
+      "wrapper" - detail is a short human-readable reason. The command
+                  invokes something (a script, an interpreter with an
+                  argument, a `cd`) that could run anything; inspection
+                  can reject this, never approve it.
+      "local"   - detail is None. No verb, no wrapper, no inline shell,
+                  no `cd`.
+    """
+    stripped = _strip_comments(cmd)
+    verb = _looks_remote_text(stripped)
+    if verb:
+        return ("verb", verb)
+
+    parts = _tokenize(cmd)
+    if not parts:
+        return ("local", None)
+    lowered = [p.lower() for p in parts]
+
+    if "cd" in lowered:
+        return ("wrapper", "a `cd` appears in the command")
+
+    head_base = _base_name(parts[0])
+    if head_base in _POSIX_SHELLS and "-n" in parts[1:]:
+        # Parse-only: nothing after -n is ever executed by THIS
+        # invocation, so nothing about its target needs inspecting.
+        return ("local", None)
+
+    interpreter_reason = None
+    for i, p in enumerate(parts):
+        if _base_name(p) in _INTERPRETERS:
+            for later in parts[i + 1:]:
+                if not later.startswith("-"):
+                    interpreter_reason = interpreter_reason or (
+                        f"`{p}` is followed by an argument")
+                    break
+
+    verb_from_file = None
+    file_reason = None
+    for p in parts:
+        real = _resolves_to_repo_file(p, repo_root)
+        if real is None:
+            continue
+        file_reason = file_reason or f"invokes an existing repo file {p!r}"
+        text = _read_best_effort(real)
+        if text is None:
+            continue
+        v = _looks_remote_text(_strip_comments(text))
+        if v:
+            verb_from_file = v
+            break
+
+    if verb_from_file:
+        return ("verb", verb_from_file)
+    if interpreter_reason or file_reason:
+        return ("wrapper", interpreter_reason or file_reason)
+    return ("local", None)
 
 
 def scan_reach(run, repo_root):
-    """Scan a rule's `run` commands for reach verbs, following wrapper
-    scripts up to REACH_SCAN_MAX_DEPTH. Returns (status, detail):
-
-      "verb"         - detail is the matched reach verb.
-      "uninspected"  - detail is why the scan could not finish (a wrapper
-                        resolved outside the repo, was too large, binary,
-                        or the depth limit was hit while a real wrapper was
-                        still queued). NEVER read as "local".
-      "clean"        - detail is None: every command and every wrapper it
-                        reaches (within the bound) was actually read and
-                        named nothing - or named a token that turned out
-                        not to be a wrapper at all (see _classify_wrapper_
-                        candidate's "none").
-    """
-    visited = set()
-
-    def scan(text, depth):
-        text = _strip_comments(text)
-        verb = _looks_remote_text(text)
-        if verb:
-            return ("verb", verb)
-        wrapper_tokens = _wrapper_paths_in_text(text)
-        real_candidates = []
-        for tok in wrapper_tokens:
-            kind, real = _classify_wrapper_candidate(tok, repo_root)
-            if kind == "outside":
-                return ("uninspected",
-                        f"wrapper script {tok!r} resolves outside the repository")
-            if kind == "candidate":
-                real_candidates.append((tok, real))
-        if not real_candidates:
-            return ("clean", None)
-        if depth >= REACH_SCAN_MAX_DEPTH:
-            return ("uninspected",
-                    f"depth limit ({REACH_SCAN_MAX_DEPTH}) reached following a wrapper script")
-        for tok, real in real_candidates:
-            if real in visited:
-                continue
-            visited.add(real)
-            ok, payload = _read_bounded(real)
-            if not ok:
-                return ("uninspected",
-                        f"wrapper script {tok!r} could not be read ({payload})")
-            result = scan(payload, depth + 1)
-            if result[0] != "clean":
-                return result
-        return ("clean", None)
-
+    """Classify every command in a rule's `run` under the reject-only
+    model (see _classify_command). Returns (status, detail) for the FIRST
+    command that is not "local" - "verb" takes priority over "wrapper" for
+    the SAME command, but between commands this is simply run order.
+    "local" (detail None) only when every command in `run` is local."""
     for cmd in run or []:
         if not isinstance(cmd, str):
             continue
-        result = scan(cmd, 0)
-        if result[0] != "clean":
+        result = _classify_command(cmd, repo_root)
+        if result[0] != "local":
             return result
-    return ("clean", None)
+    return ("local", None)
 
 
 def cmd_scan_reach():
     """CLI entry for verify-gate.ps1: reads {"run": [...], "root": "..."}
-    from stdin, prints `status\\tdetail` (detail empty for "clean").
+    from stdin, prints `status\\tdetail` (detail empty for "local").
     verify-gate.sh and verify_price.py never call this - both already run
     inside python and import scan_reach directly."""
     try:
@@ -501,10 +446,17 @@ REASON_TEXT = {
     "skipped": "SKIP (rc 77, environment absent) - not verified",
     "reach_declared": ("declared reach is not local - not run on Stop, "
                         "run /crew:verify --all"),
-    "reach_undeclared": ("undeclared reach, looks like it leaves this "
-                          "machine - declare `reach` or run /crew:verify --all"),
-    "reach_uninspected": ("undeclared reach could not be verified - "
-                           "declare `reach` or run /crew:verify --all"),
+    "reach_undeclared": ("remote verb detected - declare `reach` or run "
+                          "/crew:verify --all"),
+    # Renamed from "reach_uninspected" in Codex round 4: the reject-only
+    # redesign (see scan_reach's module docstring) means a wrapper the
+    # scanner cannot fully verify is not a SOFTER, "could not tell" bucket
+    # any more - it is classified the exact same way as any other wrapper
+    # invocation, verified or not. "Wrapper" names what actually happened
+    # (an unattended script or interpreter invocation was found), not an
+    # epistemic state about how well it was read.
+    "reach_wrapper": ("wrapper or inline shell invocation - declare "
+                       '`"reach": "local"` (or network/host) to run it on Stop'),
     "clean_tree_required": ("requires a clean working tree - not run on "
                              "Stop, run /crew:verify --all"),
 }
@@ -514,7 +466,7 @@ REASON_TEXT = {
 # set with the two reach kinds and chronic: all five are decided BEFORE the
 # rule ever runs, so all five persist and get reported the same way.
 _NEVER_RAN_KINDS = ("chronic", "reach_declared", "reach_undeclared",
-                    "reach_uninspected", "clean_tree_required")
+                    "reach_wrapper", "clean_tree_required")
 
 
 def cmd_sync():
@@ -522,7 +474,7 @@ def cmd_sync():
 
         {"sha": "<HEAD>",
          "matched_rules": [{"key":..., "label":..., "kind": "normal"|
-             "chronic"|"reach_declared"|"reach_undeclared"|
+             "chronic"|"reach_declared"|"reach_undeclared"|"reach_wrapper"|
              "clean_tree_required", "reason":..., "cmds": [...],
              "unknown": bool}, ...],
          "cmd_log": [{"cmd":..., "status": "pass"|"skip77", "elapsed": N}, ...]}
@@ -533,10 +485,11 @@ def cmd_sync():
     rule's commands are simply absent from it).
 
     Classification, per matched rule:
-      - chronic / reach_declared / reach_undeclared / clean_tree_required
-        (see _NEVER_RAN_KINDS): never ran this turn by construction. Persist
-        it, named, so it cannot go quiet once the sha marker advances past
-        the commit where its own files last changed.
+      - chronic / reach_declared / reach_undeclared / reach_wrapper /
+        clean_tree_required (see _NEVER_RAN_KINDS): never ran this turn by
+        construction. Persist it, named, so it cannot go quiet once the
+        sha marker advances past the commit where its own files last
+        changed.
       - normal, but one of its commands is missing from cmd_log (an acute
         budget deferral this turn): leave any prior record entry untouched.
         The sha marker already refuses to advance while this is outstanding,

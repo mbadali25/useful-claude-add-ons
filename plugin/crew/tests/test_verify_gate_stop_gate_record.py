@@ -370,8 +370,8 @@ def test_f_undeclared_reach_verb_is_stop_deferred_and_price_refused(flavour, tmp
 
     stop = _run(flavour, root)
     assert stop.returncode == 0, stop.stderr
-    assert "undeclared reach" in stop.stderr, stop.stderr
-    assert "ssm-run.sh" not in stop.stderr.split("undeclared reach")[0], (
+    assert "remote verb 'ssm'" in stop.stderr, stop.stderr
+    assert "ssm-run.sh" not in stop.stderr.split("remote verb")[0], (
         "the command ran on Stop despite the undeclared-reach heuristic. "
         + stop.stderr
     )
@@ -576,7 +576,7 @@ def test_5_wrapper_script_body_is_scanned_for_reach(flavour, tmp_path):
     (root / "a.py").write_text("x", encoding="utf-8")
     result = _run(flavour, root)
     assert result.returncode == 0, result.stderr
-    assert "undeclared reach" in result.stderr, (
+    assert "remote verb 'ssh'" in result.stderr, (
         "a wrapper script whose BODY reaches ssh ran unattended on Stop. "
         + result.stderr
     )
@@ -813,64 +813,40 @@ def test_h_requires_clean_tree_is_stop_excluded_and_all_included(flavour, tmp_pa
 
 
 @pytest.mark.parametrize("flavour", _FLAVOURS)
-def test_13_nested_wrapper_reach_is_followed_two_levels(flavour, tmp_path):
-    """(13, round 2 BLOCK) outer.sh calls inner.sh; inner.sh calls ssh.
-    Neither the outer command string nor outer.sh's own body names ssh
-    directly - only inner.sh, one level deeper, does. The scanner must
-    follow the chain (depth 2, well under the 3-deep cap) and defer with
-    the ordinary VERB reason (reach_undeclared) - a chain it can fully
-    read is not "could not tell"."""
+def test_13_a_wrapper_naming_another_wrapper_is_deferred_generically(
+        flavour, tmp_path):
+    """(13, updated for round 4) outer.sh calls inner.sh; inner.sh calls
+    ssh. Round 2/3 followed this chain recursively and reported the more
+    specific "remote verb ssh" reason; round 4 DELETED that recursion (see
+    verify_record.py's module docstring - it was itself part of the arms
+    race BLOCK verify_record.py:321/383/387 exploited). outer.sh is still
+    read ONE level for a verb (finds none - "bash inner.sh" names no verb
+    itself) and is still classified "wrapper" via the interpreter+argument
+    rule regardless, so the OUTCOME (deferred, never executed) is
+    unchanged even though the REASON is now the generic one rather than
+    the specific "remote verb". Proven with a side-effect marker inner.sh
+    would create if it ever actually ran."""
     vmap = {
         "version": 1,
         "rules": [{"paths": ["a.py"], "run": ["bash outer.sh"]}],
         "default": [], "unmapped": "ignore",
     }
     root = _repo(tmp_path, vmap)
+    marker = root / "ran.marker"
     (root / "outer.sh").write_text("#!/bin/sh\nbash inner.sh\n", encoding="utf-8")
-    (root / "inner.sh").write_text("#!/bin/sh\nssh remotehost true\n", encoding="utf-8")
+    (root / "inner.sh").write_text(
+        "#!/bin/sh\ntouch ran.marker\nssh remotehost true\n", encoding="utf-8")
     (root / "a.py").write_text("x", encoding="utf-8")
     result = _run(flavour, root)
     assert result.returncode == 0, result.stderr
-    assert "undeclared reach, looks like it leaves this machine" in result.stderr, (
-        result.stderr
-    )
-    assert "could not be verified" not in result.stderr, (
-        "a fully-readable two-level wrapper chain was reported UNINSPECTED "
-        "instead of the ordinary verb reason. " + result.stderr
+    assert "wrapper or inline shell" in result.stderr, result.stderr
+    assert not marker.exists(), (
+        "the nested wrapper actually ran on Stop despite being deferred. "
+        + result.stderr
     )
     rec = _record(root)
-    assert any(v.get("status") == "reach_undeclared"
+    assert any(v.get("status") == "reach_wrapper"
                for v in rec.get("rules", {}).values()), rec
-
-
-@pytest.mark.parametrize("flavour", _FLAVOURS)
-def test_14_a_wrapper_chain_past_the_depth_limit_is_uninspected(flavour, tmp_path):
-    """(14, round 2 BLOCK) a.sh -> b.sh -> c.sh -> d.sh, a REAL fourth
-    wrapper one level past the cap. The scan hits REACH_SCAN_MAX_DEPTH (3)
-    while still inside c.sh and must refuse as UNINSPECTED - "could not
-    tell" is its own value, never read as clean - and must never run the
-    outer command. d.sh must actually EXIST (round 3 FIX narrowed an
-    absent target to "no wrapper here", not UNINSPECTED - see test_fix3 -
-    so this depth-limit case needs a genuine wrapper sitting at the
-    boundary, not a phantom name that would now just read as clean)."""
-    vmap = {
-        "version": 1,
-        "rules": [{"paths": ["a.py"], "run": ["bash a.sh"]}],
-        "default": [], "unmapped": "ignore",
-    }
-    root = _repo(tmp_path, vmap)
-    (root / "a.sh").write_text("#!/bin/sh\nbash b.sh\n", encoding="utf-8")
-    (root / "b.sh").write_text("#!/bin/sh\nbash c.sh\n", encoding="utf-8")
-    (root / "c.sh").write_text("#!/bin/sh\nbash d.sh\n", encoding="utf-8")
-    (root / "d.sh").write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
-    (root / "a.py").write_text("x", encoding="utf-8")
-    result = _run(flavour, root)
-    assert result.returncode == 0, result.stderr
-    assert "undeclared reach could not be verified" in result.stderr, result.stderr
-    ran_pattern = re.compile(r"verify-gate: \d+s {2}bash a\.sh")
-    assert not ran_pattern.search(result.stderr), (
-        "a wrapper chain past the depth limit ran anyway. " + result.stderr
-    )
 
 
 def test_15_price_refuses_a_wrapper_that_reaches_ssh_and_never_runs_it(tmp_path):
@@ -893,7 +869,7 @@ def test_15_price_refuses_a_wrapper_that_reaches_ssh_and_never_runs_it(tmp_path)
                             capture_output=True, text=True, check=False)
     assert priced.returncode == 0, priced.stderr
     assert "REFUSED" in priced.stdout, priced.stdout
-    assert "undeclared reach" in priced.stdout, priced.stdout
+    assert "remote verb 'ssh'" in priced.stdout, priced.stdout
     assert not marker.exists(), (
         "the wrapper actually ran under --price despite being refused. "
         + priced.stdout
@@ -910,7 +886,13 @@ def test_16_a_skip_after_a_pass_deletes_the_stale_fingerprint(flavour, tmp_path)
     fingerprint-skip an outstanding SKIP instead of re-attempting it."""
     vmap = {
         "version": 1,
-        "rules": [{"paths": ["a.py"], "run": [
+        # reach: local - this fixture is testing SKIP/fingerprint
+        # behaviour, not reach classification. Round 4's redesign defers
+        # any `sh -c '...'` as a wrapper/inline-shell invocation on its
+        # own terms (an interpreter followed by an argument), which would
+        # exclude this rule from Stop before it ever ran and break what
+        # this test actually checks.
+        "rules": [{"paths": ["a.py"], "reach": "local", "run": [
             "sh -c 'if [ -f ran.counter ]; then exit 77; else touch ran.counter; fi'"
         ]}],
         "default": [], "unmapped": "ignore",
@@ -1168,29 +1150,31 @@ def test_23_identity_dedup_is_case_sensitive(flavour, tmp_path):
 
 @pytest.mark.parametrize("flavour", _FLAVOURS)
 def test_24_a_compound_wrapper_invocation_is_scanned(flavour, tmp_path):
-    """(24, round 3 BLOCK verify_record.py:243) outer.sh's body is `true &&
-    bash inner.sh` - one LINE, two commands. Wrapper detection used to
-    treat the whole line as a single cmd.split() target ('true' is not a
-    wrapper interpreter, so nothing after `&&` was ever looked at), hiding
-    inner.sh's ssh call from the scan entirely on both flavours."""
+    """(24, round 3 BLOCK verify_record.py:243, updated for round 4)
+    outer.sh's body is `true && bash inner.sh` - one LINE, two commands.
+    Round 3 fixed this by splitting on &&/;/|/|| before wrapper detection;
+    round 4 deleted that splitter entirely (see verify_record.py's module
+    docstring) because the holistic, whole-token-list scan ("does an
+    interpreter appear ANYWHERE, followed by a non-flag argument
+    anywhere after it") already catches `bash` regardless of what
+    precedes it on the line - no segmenting needed. Proven with a
+    side-effect marker inner.sh would create if it ever actually ran."""
     vmap = {
         "version": 1,
         "rules": [{"paths": ["a.py"], "run": ["bash outer.sh"]}],
         "default": [], "unmapped": "ignore",
     }
     root = _repo(tmp_path, vmap)
+    marker = root / "ran.marker"
     (root / "outer.sh").write_text("#!/bin/sh\ntrue && bash inner.sh\n",
                                     encoding="utf-8")
-    (root / "inner.sh").write_text("#!/bin/sh\nssh dev-host true\n",
+    (root / "inner.sh").write_text("#!/bin/sh\ntouch ran.marker\nssh dev-host true\n",
                                     encoding="utf-8")
     (root / "a.py").write_text("x", encoding="utf-8")
     result = _run(flavour, root)
     assert result.returncode == 0, result.stderr
-    assert "undeclared reach, looks like it leaves this machine" in result.stderr, (
-        result.stderr
-    )
-    ran_pattern = re.compile(r"verify-gate: \d+s {2}bash outer\.sh")
-    assert not ran_pattern.search(result.stderr), (
+    assert "wrapper or inline shell" in result.stderr, result.stderr
+    assert not marker.exists(), (
         "a compound wrapper invocation reaching ssh ran on Stop. " + result.stderr
     )
 
@@ -1208,7 +1192,9 @@ def test_25_a_skip_that_also_fails_to_sync_still_deletes_the_fingerprint(
     the very next ordinary Stop past the outstanding SKIP."""
     vmap = {
         "version": 1,
-        "rules": [{"paths": ["a.py"], "run": [
+        # reach: local - see test_16's identical note; this fixture tests
+        # the SKIP-fingerprint-delete ordering, not reach classification.
+        "rules": [{"paths": ["a.py"], "reach": "local", "run": [
             "sh -c 'if [ -f signal.flag ]; then exit 77; else exit 0; fi'"
         ]}],
         "default": [], "unmapped": "ignore",
@@ -1273,9 +1259,9 @@ def test_26_a_quoted_wrapper_path_is_still_resolved(flavour, tmp_path):
     (root / "a.py").write_text("x", encoding="utf-8")
     result = _run(flavour, root)
     assert result.returncode == 0, result.stderr
-    assert "undeclared reach, looks like it leaves this machine" in result.stderr, (
+    assert "remote verb 'ssh'" in result.stderr, (
         "the quoted wrapper's real content (ssh) was never actually read - "
-        "either it was left UNINSPECTED (the original bug) or, worse, "
+        "either it was left as a generic wrapper deferral or, worse, "
         "silently treated as no-wrapper-here and never scanned at all. "
         + result.stderr
     )
@@ -1287,37 +1273,37 @@ def test_26_a_quoted_wrapper_path_is_still_resolved(flavour, tmp_path):
 
 
 @pytest.mark.parametrize("flavour", _FLAVOURS)
-def test_27_python_dash_m_is_not_mistaken_for_a_wrapper_file(flavour, tmp_path):
-    """(27, round 3 FIX verify_record.py:218) `python3 -m pytest` - `-m`'s
-    argument is a MODULE NAME, not a file, ALWAYS - a repo file named
-    "pytest" creates a wrapper CANDIDATE with an ssh call inside, right
-    next to the rule. Two independent things in this scanner could make a
-    rule like this run clean: the `-m` exclusion itself (the fix this
-    finding names), or - separately - the existence+extension/shebang
-    check FIX 3 also added, which alone would already refuse to follow a
-    module name that happens not to exist as a file (see test_27's
-    sibling, the bare json.tool version this replaced). Creating a REAL,
-    script-like "pytest" file makes the second defense irrelevant, so only
-    the `-m` exclusion itself can be what keeps this rule from being
-    (wrongly) deferred as reach_undeclared with "pytest" followed as a
-    genuine wrapper and its ssh call found. THIS repo's own .crew/
-    verify.json runs `python3 -m pytest ...` in eight rules with no
-    coincidentally-named local file (see test_28's self-check), but this
-    is the sharper, adversarial version of the same claim."""
+def test_27_python_dash_m_is_now_deferred_deliberately(flavour, tmp_path):
+    """(27, round 3 FIX verify_record.py:218, REVERSED by round 4's DESIGN
+    CHANGE) Round 3 carved `python -m X` out as "no wrapper here" - `-m`'s
+    argument is a MODULE NAME, not a file, so a bare `python3 -m pytest`
+    with no coincidentally-named local file used to run undeclared. Round
+    4's reject-only redesign deliberately UNDOES that carve-out: telling
+    a module name apart from a file path is exactly the kind of
+    case-by-case cleverness the redesign stops doing (see
+    verify_record.py's module docstring), so `python3` followed by ANY
+    non-flag argument - `-m`'s module name included - now defers as
+    "wrapper", full stop, with no file needed to trigger it. THIS repo's
+    own .crew/verify.json declares `"reach": "local"` on every one of the
+    eight rules this affects (see test_28's self-check, strict)."""
     vmap = {
         "version": 1,
         "rules": [{"paths": ["a.py"], "run": ["python3 -m pytest --version"]}],
         "default": [], "unmapped": "ignore",
     }
     root = _repo(tmp_path, vmap)
-    (root / "pytest").write_text("#!/bin/sh\nssh dev-host true\n",
-                                  encoding="utf-8")
     (root / "a.py").write_text("x", encoding="utf-8")
     result = _run(flavour, root)
     assert result.returncode == 0, result.stderr
-    assert "undeclared reach" not in result.stderr, (
-        "`python3 -m pytest` was mistaken for a wrapper invoking the local "
-        "'pytest' file, whose content (ssh) then deferred the rule. "
+    assert "wrapper or inline shell" in result.stderr, (
+        "`python3 -m pytest` ran undeclared instead of being deferred - "
+        "round 4's design change (an interpreter followed by ANY "
+        "argument defers, module names included) is not in effect. "
+        + result.stderr
+    )
+    ran_pattern = re.compile(r"verify-gate: \d+s {2}python3 -m pytest --version")
+    assert not ran_pattern.search(result.stderr), (
+        "`python3 -m pytest` ran on Stop despite being reported deferred. "
         + result.stderr
     )
 
@@ -1360,42 +1346,215 @@ def test_29_bash_dash_n_parses_but_never_executes_the_named_script(
         "`bash -n remote.sh` was deferred instead of run - -n's parse-"
         "only meaning was not honoured. " + result.stderr
     )
-    assert "undeclared reach, looks like it leaves this machine" in result.stderr, (
+    assert "remote verb 'ssh'" in result.stderr, (
         "`bash remote.sh` (no -n) was NOT deferred - the fix broke "
         "ordinary wrapper-following rather than just scoping it to -n. "
         + result.stderr
     )
 
 
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+def test_30_the_default_fallback_never_reintroduces_an_excluded_command(
+        flavour, tmp_path):
+    """(30, round 4 BLOCK verify-gate.sh:950) A matching rule declares
+    `reach: network`, is excluded from Stop, and contributes NO commands
+    to `cmds` - so `cmds` stays empty and the `default` fallback fires.
+    `default`/`always` used to run with NO reach check of their own at
+    all, so the fallback could execute the EXACT command reach had just
+    excluded a moment earlier. `default`/`always` now go through the SAME
+    classification a rule's `run` does (they have no `reach` field to
+    declare, so every command there is treated as an undeclared rule
+    would be). Proven via a side-effect marker the default command would
+    create if it ran."""
+    vmap = {
+        "version": 1,
+        "rules": [{"paths": ["a.py"], "reach": "network", "run": ["exit 1"]}],
+        "default": ["bash inner.sh"], "unmapped": "ignore",
+    }
+    root = _repo(tmp_path, vmap)
+    marker = root / "ran.marker"
+    (root / "inner.sh").write_text(
+        "#!/bin/sh\ntouch ran.marker\nssh example.invalid true\n",
+        encoding="utf-8")
+    (root / "a.py").write_text("x", encoding="utf-8")
+    result = _run(flavour, root)
+    assert result.returncode == 0, result.stderr
+    assert "`default` command" in result.stderr, result.stderr
+    assert "remote verb 'ssh'" in result.stderr, result.stderr
+    assert not marker.exists(), (
+        "the `default` fallback executed a command reach had just "
+        "excluded. " + result.stderr
+    )
+
+
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+def test_31_inline_shell_hides_no_nested_wrapper(flavour, tmp_path):
+    """(31, round 4 BLOCK verify_record.py:321) `bash -c 'bash inner.sh'`
+    - inner.sh is named INSIDE an inline code STRING, not as a file
+    argument any wrapper-following scanner ever directly saw; a scanner
+    that only followed a DIRECTLY-named wrapper file could miss it
+    entirely. The reject-only design does not need to parse the inline
+    string at all: `bash` followed by ANY argument (here, the whole `-c`
+    payload) is already grounds for deferral on its own terms, whatever
+    that argument turns out to contain. Proven via a side-effect marker
+    inner.sh would create if it ran."""
+    vmap = {
+        "version": 1,
+        "rules": [{"paths": ["a.py"], "run": ["bash -c 'bash inner.sh'"]}],
+        "default": [], "unmapped": "ignore",
+    }
+    root = _repo(tmp_path, vmap)
+    marker = root / "ran.marker"
+    (root / "inner.sh").write_text(
+        "#!/bin/sh\ntouch ran.marker\nssh example.invalid true\n",
+        encoding="utf-8")
+    (root / "a.py").write_text("x", encoding="utf-8")
+    result = _run(flavour, root)
+    assert result.returncode == 0, result.stderr
+    assert "wrapper or inline shell" in result.stderr, result.stderr
+    assert not marker.exists(), (
+        "an inline `bash -c` invocation hiding a nested wrapper ran on "
+        "Stop. " + result.stderr
+    )
+
+
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+def test_32_a_preceding_cd_defers_unconditionally(flavour, tmp_path):
+    """(32, round 4 BLOCK verify_record.py:383) `cd tools && bash
+    inner.sh` - a scanner that resolves a wrapper path against the repo
+    ROOT regardless of a preceding `cd` would look for inner.sh in the
+    wrong place (or not at all) when it only exists under tools/. The
+    reject-only design sidesteps path resolution for this case entirely:
+    a `cd` ANYWHERE in the command is itself grounds for deferral, before
+    any path math is attempted - it never needs to know where the `cd`
+    would actually land. Proven via a side-effect marker inner.sh would
+    create if it ran."""
+    vmap = {
+        "version": 1,
+        "rules": [{"paths": ["a.py"], "run": ["cd tools && bash inner.sh"]}],
+        "default": [], "unmapped": "ignore",
+    }
+    root = _repo(tmp_path, vmap)
+    (root / "tools").mkdir()
+    marker = root / "ran.marker"
+    (root / "tools" / "inner.sh").write_text(
+        "#!/bin/sh\ntouch ../ran.marker\nssh example.invalid true\n",
+        encoding="utf-8")
+    (root / "a.py").write_text("x", encoding="utf-8")
+    result = _run(flavour, root)
+    assert result.returncode == 0, result.stderr
+    assert "cd` appears in the command" in result.stderr, result.stderr
+    assert not marker.exists(), (
+        "a `cd`-prefixed wrapper invocation ran on Stop. " + result.stderr
+    )
+
+
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+def test_33_an_extensionless_shebangless_script_still_defers(flavour, tmp_path):
+    """(33, round 4 BLOCK verify_record.py:387) `bash check` - "check" has
+    no extension and no shebang line, so an extension-or-shebang "looks
+    like a script" heuristic would wave it through as "not really a
+    wrapper" even though bash executes it exactly the same regardless of
+    either. The reject-only design needs neither: existence under the
+    repo alone is enough to classify ANY token following an interpreter
+    as wrapper/inline-shell (and, since this one IS readable, its content
+    upgrades the reason to the more specific "remote verb"). Proven via a
+    side-effect marker check would create if it ran."""
+    vmap = {
+        "version": 1,
+        "rules": [{"paths": ["a.py"], "run": ["bash check"]}],
+        "default": [], "unmapped": "ignore",
+    }
+    root = _repo(tmp_path, vmap)
+    marker = root / "ran.marker"
+    (root / "check").write_text(
+        "touch ran.marker\nssh example.invalid true\n", encoding="utf-8")
+    (root / "a.py").write_text("x", encoding="utf-8")
+    result = _run(flavour, root)
+    assert result.returncode == 0, result.stderr
+    assert "remote verb 'ssh'" in result.stderr, result.stderr
+    assert not marker.exists(), (
+        "an extensionless, shebang-less wrapper ran on Stop. " + result.stderr
+    )
+
+
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+def test_34_a_skip_beside_a_failure_still_deletes_the_fingerprint(
+        flavour, tmp_path):
+    """(34, round 4 FIX verify-gate.sh:1344) `[ "$FAILED" -eq 0 ] || exit 2`
+    used to run BEFORE the SKIP-fingerprint-delete code was even reached -
+    a different early exit from the one test_25 covers (there, the delete
+    itself runs but the SYNC afterward fails; here, the delete never runs
+    at all). First pass: two commands PASS, fingerprint written. Then:
+    edit the tree so ONE command returns 77 (SKIP) and the OTHER fails
+    outright (rc 1) - `exit 2` used to fire on the FAILED command before
+    the SKIP's fingerprint delete ever ran. Restore the tree to the exact
+    state the fingerprint covers: if it survived, this turn
+    fingerprint-skips the still-outstanding SKIP instead of re-attempting
+    it."""
+    vmap = {
+        "version": 1,
+        "rules": [
+            {"paths": ["a.py"], "reach": "local", "run": [
+                "sh -c 'if [ -f skip.flag ]; then exit 77; else exit 0; fi'"
+            ]},
+            {"paths": ["b.py"], "reach": "local", "run": [
+                "sh -c 'if [ -f fail.flag ]; then exit 1; else exit 0; fi'"
+            ]},
+        ],
+        "default": [], "unmapped": "ignore",
+    }
+    root = _repo(tmp_path, vmap)
+    (root / "a.py").write_text("x", encoding="utf-8")
+    (root / "b.py").write_text("y", encoding="utf-8")
+
+    first = _run(flavour, root)
+    assert first.returncode == 0, first.stderr
+    fp = root / ".crew" / ".verify-gate.fingerprint"
+    assert fp.exists(), "the PASS did not write a fingerprint. " + first.stderr
+
+    (root / "skip.flag").write_text("x", encoding="utf-8")
+    (root / "fail.flag").write_text("x", encoding="utf-8")
+    forced = _run(flavour, root, "--all")
+    assert forced.returncode == 2, forced.stderr
+    assert "SKIP (rc 77" in forced.stderr, forced.stderr
+    assert "VERIFY FAILED" in forced.stderr, forced.stderr
+    assert not fp.exists(), (
+        "a SKIP beside an outright FAILURE left the earlier PASS "
+        "fingerprint on disk - the FAILED early exit ran before the "
+        "SKIP delete. " + forced.stderr
+    )
+
+    (root / "skip.flag").unlink()
+    (root / "fail.flag").unlink()
+    third = _run(flavour, root)
+    assert "SKIPPED, not re-run" not in third.stderr, (
+        "the stale fingerprint (left behind by the FAILED early exit) "
+        "skipped the next ordinary Stop instead of re-attempting the "
+        "outstanding SKIP. " + third.stderr
+    )
+
+
 def test_28_the_real_verify_json_scans_clean_for_every_rule():
     """The self-check Codex's round-3 report asked for directly, STRICT per
-    the coordinator's follow-up: THIS repo's OWN .crew/verify.json runs
-    `python3 -m pytest ...` in eight rules (see test_27) - unfixed, the
-    merged gate would defer every one of them, on every Stop, forever.
-    Load the real map (relative to this test file, not a fixture) and
-    assert scan_reach classifies EVERY rule with an undeclared reach as
-    clean - zero UNINSPECTED and zero VERB matches, both asserted, both
-    failing the test rather than only printing.
+    the round-3 follow-up and unchanged in intent by round 4's redesign:
+    every rule in THIS repo's OWN .crew/verify.json with an undeclared
+    reach must classify as "local" - zero verb matches, zero wrapper
+    matches, both asserted, both failing the test rather than only
+    printing.
 
-    Two follow-up fixes were needed before this went green, both found BY
-    running this exact test against the real map rather than by guessing:
-
-    - rules[1]/[18] (`bash _verify/smoke.sh`) matched "curl" from
-      smoke.sh's own comment text ("there is no service to curl and no
-      ..."), a prose sentence, not an invocation. Fixed by
-      _strip_comments: a whole-line `#` comment (and a PowerShell
-      `<# ... #>` block) is dropped BEFORE verb matching and BEFORE
-      wrapper-path detection - a verb in actual CODE, even on a line
-      that also carries a trailing comment, still matches.
-    - rules[3] (`bash -n scripts/install-prerequisites.sh`) then
-      surfaced a SEPARATE, genuine match once the comment noise was
-      gone: a real `curl | bash` inside that script. `-n` is "read
-      commands but do not execute them" - the script is parsed for
-      syntax only, never run, so that `curl | bash` can never fire under
-      THIS invocation. Fixed by scoping `-n` to POSIX shells
-      (bash/sh/dash/zsh) as a no-wrapper flag - see test_29 for the
-      unit case and why it is NOT folded into the universal -c/-m/-e
-      set."""
+    Round 4's DESIGN CHANGE (see verify_record.py's module docstring)
+    narrowed what "local" means considerably: an interpreter followed by
+    ANY argument - `-m`'s module name included - now defers as "wrapper".
+    `python3 -m pytest ...` (eight rules), `bash _verify/smoke.sh` (two),
+    `python3 scripts/...` and friends (the rest) all moved from local to
+    wrapper under that change, and this repo's own map now declares
+    `"reach": "local"` explicitly on every one of them (18 total, each
+    with a one-line addition to its existing `why` explaining what makes
+    it safe) rather than relying on the scanner to work it out - which is
+    the whole point: static inspection rejects, the map's author
+    approves, and this test is what would have caught shipping the
+    redesign without also updating the map it changes the rules for."""
     repo_root = os.path.abspath(os.path.join(_ROOT, os.pardir, os.pardir))
     real_map = os.path.join(repo_root, ".crew", "verify.json")
     with open(real_map, encoding="utf-8") as fh:
@@ -1410,7 +1569,7 @@ def test_28_the_real_verify_json_scans_clean_for_every_rule():
         if not isinstance(rule, dict) or rule.get("reach") is not None:
             continue  # declared reach is a different code path entirely
         status, detail = verify_record.scan_reach(rule.get("run"), repo_root)
-        if status != "clean":
+        if status != "local":
             non_local.append((i, status, detail, rule.get("run")))
     assert not non_local, (
         "rule(s) with an undeclared reach did not scan as local against "
