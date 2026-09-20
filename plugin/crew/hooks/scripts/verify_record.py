@@ -328,26 +328,141 @@ def _read_best_effort(path):
     return raw.decode("utf-8", errors="replace")
 
 
-def _classify_command(cmd, repo_root):
-    """Classify ONE command string under the reject-only reach model.
-    Returns (status, detail):
+# Codex round 5, two BLOCKs, one root cause: _classify_command used to
+# tokenise the WHOLE rule command string as a single unit. Two shapes
+# defeated that:
+#   verify_record.py:282 - `./check.sh; true`. shlex has no idea `;` is a
+#     shell operator; it is an ordinary character to it, so the token came
+#     back as './check.sh;' (semicolon glued on) and _resolves_to_repo_file
+#     found no file by that literal name - classified "local".
+#   verify_record.py:359 - `bash -n check.sh && bash check.sh`. Tokenised
+#     as ONE command, `parts[0]` is `bash` and `-n` IS in the rest of the
+#     token list, so the parse-only exemption fired for the ENTIRE string
+#     - including the second, executable `bash check.sh` half it never
+#     separately looked at.
+#
+# Both are the same defect the module docstring already names: reading
+# through one more layer of shell syntax to find what a command ACTUALLY
+# runs. The fix is not another special case - it is splitting the command
+# into the pieces the shell itself would run separately, and classifying
+# each one. `;`/`&&`/`||`/`|`/`&`/newlines all end one command and start
+# another; `$( ... )` and `` ` ` `` run their contents as a SEPARATE
+# command regardless of what encloses them. -n and -c apply to the
+# segment they are IN, never to a whole multi-segment string.
+_SEGMENT_BREAK_RE = re.compile(r"&&|\|\||;|\n|(?<!>)&(?!&)(?!>)|\|")
 
-      "verb"    - detail is the matched reach verb - found in the command
-                  text itself, or in a directly-named wrapper file's
-                  content if that file could be read.
-      "wrapper" - detail is a short human-readable reason. The command
-                  invokes something (a script, an interpreter with an
-                  argument, a `cd`) that could run anything; inspection
-                  can reject this, never approve it.
-      "local"   - detail is None. No verb, no wrapper, no inline shell,
-                  no `cd`.
-    """
-    stripped = _strip_comments(cmd)
-    verb = _looks_remote_text(stripped)
+
+def _split_shell_segments(cmd):
+    """Every segment of `cmd` the shell would run as a SEPARATE command:
+    split on `;`, `&&`, `||`, `|`, `&` (not `2>&1`/`>&`-style redirection,
+    where `&` is glued to `>`) and newlines - but NOT inside a quoted
+    string ('a; b' in `echo 'a; b'` is literal text, not two commands;
+    see test_a_single_line_command_full_of_shell_syntax_still_runs) and
+    NOT inside a `$( ... )` substitution's own parens (its OPERATORS are
+    internal to that one command; _extract_command_substitutions pulls
+    its contents out separately). Quote and paren state is tracked
+    char-by-char rather than with a single regex, because a bare regex
+    cannot tell "outside a string" from "inside one"."""
+    segments = []
+    current = []
+    quote = None
+    backtick = False
+    paren_depth = 0
+    i, n = 0, len(cmd)
+    while i < n:
+        c = cmd[i]
+        if quote:
+            current.append(c)
+            if c == quote:
+                quote = None
+            i += 1
+            continue
+        if backtick:
+            current.append(c)
+            if c == "`":
+                backtick = False
+            i += 1
+            continue
+        if paren_depth > 0:
+            current.append(c)
+            if c == "(":
+                paren_depth += 1
+            elif c == ")":
+                paren_depth -= 1
+            i += 1
+            continue
+        if c in ("'", '"'):
+            quote = c
+            current.append(c)
+            i += 1
+            continue
+        if c == "`":
+            backtick = True
+            current.append(c)
+            i += 1
+            continue
+        if c == "$" and i + 1 < n and cmd[i + 1] == "(":
+            paren_depth = 1
+            current.append("$(")
+            i += 2
+            continue
+        m = _SEGMENT_BREAK_RE.match(cmd, i)
+        if m:
+            segments.append("".join(current))
+            current = []
+            i = m.end()
+            continue
+        current.append(c)
+        i += 1
+    segments.append("".join(current))
+    return [s.strip() for s in segments if s.strip()]
+
+
+def _extract_command_substitutions(cmd):
+    """Every `$( ... )` and `` ` ... ` ``span's INNER text, as additional
+    segments to classify in their own right - a host call reachable only
+    through a substitution must not evade classification just because it
+    is not one of the top-level segments. Extracted from the raw text
+    regardless of surrounding quotes: command substitution still runs
+    inside double quotes in a real shell, and treating it as inert even
+    inside single quotes (where it genuinely would not run) only makes
+    this MORE cautious, never less. `$( ... )` is paren-balance aware so
+    a nested `$(a $(b) c)` extracts the whole outer span; backticks pair
+    with the next backtick, matching real shell syntax (no nesting)."""
+    spans = []
+    i, n = 0, len(cmd)
+    while i < n:
+        if cmd[i] == "$" and i + 1 < n and cmd[i + 1] == "(":
+            depth = 1
+            j = i + 2
+            while j < n and depth > 0:
+                if cmd[j] == "(":
+                    depth += 1
+                elif cmd[j] == ")":
+                    depth -= 1
+                j += 1
+            spans.append(cmd[i + 2:j - 1 if depth == 0 else j])
+            i = j
+            continue
+        if cmd[i] == "`":
+            j = cmd.find("`", i + 1)
+            if j == -1:
+                break
+            spans.append(cmd[i + 1:j])
+            i = j + 1
+            continue
+        i += 1
+    return spans
+
+
+def _classify_segment(seg, repo_root):
+    """Classify ONE shell segment - a command with no unescaped shell
+    operator of its own. Same three-way result as _classify_command."""
+    verb = _looks_remote_text(seg)
     if verb:
         return ("verb", verb)
 
-    parts = _tokenize(cmd)
+    parts = _tokenize(seg)
     if not parts:
         return ("local", None)
     lowered = [p.lower() for p in parts]
@@ -358,7 +473,11 @@ def _classify_command(cmd, repo_root):
     head_base = _base_name(parts[0])
     if head_base in _POSIX_SHELLS and "-n" in parts[1:]:
         # Parse-only: nothing after -n is ever executed by THIS
-        # invocation, so nothing about its target needs inspecting.
+        # invocation, so nothing about its target needs inspecting. Scoped
+        # to THIS segment only - round 5 BLOCK verify_record.py:359: under
+        # the old whole-string tokenisation, `-n` anywhere in a compound
+        # command exempted the entire thing, including a LATER, unrelated,
+        # executable segment.
         return ("local", None)
 
     interpreter_reason = None
@@ -373,10 +492,18 @@ def _classify_command(cmd, repo_root):
     verb_from_file = None
     file_reason = None
     for p in parts:
-        real = _resolves_to_repo_file(p, repo_root)
+        # Belt and braces: a trailing operator character glued to a token
+        # should never reach here once _split_shell_segments has already
+        # run (that is precisely what it exists to prevent - round 5
+        # BLOCK verify_record.py:282), but stripping it again here costs
+        # nothing and means a future caller of _classify_segment that
+        # skips segmentation fails safe rather than silently missing a
+        # file that genuinely exists.
+        p_stripped = p.rstrip(";&")
+        real = _resolves_to_repo_file(p_stripped, repo_root)
         if real is None:
             continue
-        file_reason = file_reason or f"invokes an existing repo file {p!r}"
+        file_reason = file_reason or f"invokes an existing repo file {p_stripped!r}"
         text = _read_best_effort(real)
         if text is None:
             continue
@@ -390,6 +517,41 @@ def _classify_command(cmd, repo_root):
     if interpreter_reason or file_reason:
         return ("wrapper", interpreter_reason or file_reason)
     return ("local", None)
+
+
+def _classify_command(cmd, repo_root):
+    """Classify ONE command string under the reject-only reach model.
+    Splits into every shell segment (_split_shell_segments) plus every
+    command-substitution span (_extract_command_substitutions), and
+    classifies each (_classify_segment). Returns (status, detail):
+
+      "verb"    - detail is the matched reach verb, from whichever
+                  segment named it first - the command text itself, or a
+                  directly-named wrapper file's content if it could be
+                  read.
+      "wrapper" - detail is a short human-readable reason from whichever
+                  segment triggered it first. The command invokes
+                  something (a script, an interpreter with an argument,
+                  a `cd`) that could run anything; inspection can reject
+                  this, never approve it.
+      "local"   - detail is None. EVERY segment was local - no verb, no
+                  wrapper, no inline shell, no `cd`, anywhere in the
+                  command.
+    """
+    stripped = _strip_comments(cmd)
+    segments = _split_shell_segments(stripped)
+    segments += _extract_command_substitutions(stripped)
+    if not segments:
+        return ("local", None)
+
+    wrapper_result = None
+    for seg in segments:
+        status, detail = _classify_segment(seg, repo_root)
+        if status == "verb":
+            return (status, detail)
+        if status == "wrapper" and wrapper_result is None:
+            wrapper_result = (status, detail)
+    return wrapper_result if wrapper_result else ("local", None)
 
 
 def scan_reach(run, repo_root):

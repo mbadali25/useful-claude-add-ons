@@ -1535,6 +1535,120 @@ def test_34_a_skip_beside_a_failure_still_deletes_the_fingerprint(
     )
 
 
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+def test_35_a_trailing_semicolon_does_not_hide_the_wrapper(flavour, tmp_path):
+    """(35, round 5 BLOCK verify_record.py:282) `./check.sh; true` - shlex
+    has no idea `;` is a shell operator; tokenised as one string it came
+    back as './check.sh;' (semicolon glued on), which resolved to no real
+    file and classified local. Splitting into shell segments FIRST means
+    the token handed to file resolution is the clean './check.sh', with
+    no operator glued to it. Proven via a side-effect marker check.sh
+    would create if it ever actually ran."""
+    vmap = {
+        "version": 1,
+        "rules": [{"paths": ["a.py"], "run": ["./check.sh; true"]}],
+        "default": [], "unmapped": "ignore",
+    }
+    root = _repo(tmp_path, vmap)
+    marker = root / "ran.marker"
+    (root / "check.sh").write_text(
+        "#!/bin/sh\ntouch ran.marker\nssh example.invalid true\n",
+        encoding="utf-8")
+    os.chmod(root / "check.sh", 0o755)
+    (root / "a.py").write_text("x", encoding="utf-8")
+    result = _run(flavour, root)
+    assert result.returncode == 0, result.stderr
+    assert "remote verb 'ssh'" in result.stderr, result.stderr
+    assert not marker.exists(), (
+        "`./check.sh; true` ran on Stop instead of being deferred. "
+        + result.stderr
+    )
+
+
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+def test_36_the_parse_only_exemption_does_not_cover_a_later_segment(
+        flavour, tmp_path):
+    """(36, round 5 BLOCK verify_record.py:359) `bash -n check.sh && bash
+    check.sh` - tokenised as ONE command, `-n` anywhere in the token list
+    exempted the WHOLE string, including the second, executable `bash
+    check.sh` half that was never separately inspected. -n now applies
+    only to the segment it appears in. Proven via a side-effect marker
+    check.sh would create if it ever actually ran."""
+    vmap = {
+        "version": 1,
+        "rules": [{"paths": ["a.py"],
+                   "run": ["bash -n check.sh && bash check.sh"]}],
+        "default": [], "unmapped": "ignore",
+    }
+    root = _repo(tmp_path, vmap)
+    marker = root / "ran.marker"
+    (root / "check.sh").write_text(
+        "#!/bin/sh\ntouch ran.marker\nssh example.invalid true\n",
+        encoding="utf-8")
+    (root / "a.py").write_text("x", encoding="utf-8")
+    result = _run(flavour, root)
+    assert result.returncode == 0, result.stderr
+    assert "remote verb 'ssh'" in result.stderr, result.stderr
+    assert not marker.exists(), (
+        "`bash -n check.sh && bash check.sh` ran on Stop - the parse-only "
+        "exemption approved the whole compound command instead of just "
+        "its first segment. " + result.stderr
+    )
+
+
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+def test_37_two_parse_only_segments_stay_local(flavour, tmp_path):
+    """(37, round 5 control) `bash -n a.sh && bash -n b.sh` - both halves
+    are parse-only; neither should defer. The must-allow twin of test_36,
+    since a fix that makes -n stop applying per-segment entirely (rather
+    than correctly scoping it) would show up here as an unwanted
+    deferral, not as an unwanted execution."""
+    vmap = {
+        "version": 1,
+        "rules": [{"paths": ["a.py"],
+                   "run": ["bash -n a.sh && bash -n b.sh"]}],
+        "default": [], "unmapped": "ignore",
+    }
+    root = _repo(tmp_path, vmap)
+    (root / "a.sh").write_text("#!/bin/sh\nssh example.invalid true\n",
+                                encoding="utf-8")
+    (root / "b.sh").write_text("#!/bin/sh\nssh example.invalid true\n",
+                                encoding="utf-8")
+    (root / "a.py").write_text("x", encoding="utf-8")
+    result = _run(flavour, root)
+    assert result.returncode == 0, result.stderr
+    assert "wrapper or inline shell" not in result.stderr, result.stderr
+    assert "remote verb" not in result.stderr, result.stderr
+    ran_pattern = re.compile(
+        r"verify-gate: \d+s {2}bash -n a\.sh && bash -n b\.sh")
+    assert ran_pattern.search(result.stderr), (
+        "`bash -n a.sh && bash -n b.sh` was deferred instead of run - "
+        "both segments are parse-only. " + result.stderr
+    )
+
+
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+def test_38_a_semicolon_separated_pair_of_plain_commands_stays_local(
+        flavour, tmp_path):
+    """(38, round 5 control) `echo ok; true` - two plain, harmless
+    segments; neither should defer. The must-allow twin of test_35."""
+    vmap = {
+        "version": 1,
+        "rules": [{"paths": ["a.py"], "run": ["echo ok; true"]}],
+        "default": [], "unmapped": "ignore",
+    }
+    root = _repo(tmp_path, vmap)
+    (root / "a.py").write_text("x", encoding="utf-8")
+    result = _run(flavour, root)
+    assert result.returncode == 0, result.stderr
+    assert "wrapper or inline shell" not in result.stderr, result.stderr
+    assert "remote verb" not in result.stderr, result.stderr
+    ran_pattern = re.compile(r"verify-gate: \d+s {2}echo ok; true")
+    assert ran_pattern.search(result.stderr), (
+        "`echo ok; true` was deferred instead of run. " + result.stderr
+    )
+
+
 def test_28_the_real_verify_json_scans_clean_for_every_rule():
     """The self-check Codex's round-3 report asked for directly, STRICT per
     the round-3 follow-up and unchanged in intent by round 4's redesign:
