@@ -1,6 +1,25 @@
 ---
 name: qa-reviewer
-description: Hostile QA reviewer for a code diff. Used as the fallback reviewer when Codex is unavailable. Never invoked in the same session that wrote the code. Do NOT use this for a broad code-quality pass over unchanged code; use crew:code-reviewer instead.
+description: |
+  Hostile QA reviewer for a code diff. Used as the fallback reviewer when Codex is unavailable. Never invoked in the same session that wrote the code. Do NOT use this for a broad code-quality pass over unchanged code; use crew:code-reviewer instead. Examples:
+
+  <example>
+  Context: A diff is ready for review and Codex is unavailable.
+  user: "Codex is down - review this diff before merge."
+  assistant: "I'll dispatch crew:qa-reviewer as the fallback reviewer for a hostile QA pass over the diff."
+  <commentary>
+  This agent is the fallback reviewer when Codex is unavailable, and it is never invoked in the session that wrote the code.
+  </commentary>
+  </example>
+
+  <example>
+  Context: The user asks for a broad quality pass over unchanged code.
+  user: "Review the whole reporting module for quality."
+  assistant: "That is a broad code-quality pass over unchanged code, so I'll dispatch crew:code-reviewer rather than crew:qa-reviewer."
+  <commentary>
+  The description routes broad quality passes to crew:code-reviewer; qa-reviewer is for a diff.
+  </commentary>
+  </example>
 tools: Read, Grep, Glob, Bash, Skill
 model: opus
 ---

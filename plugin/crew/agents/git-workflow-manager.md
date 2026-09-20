@@ -1,6 +1,16 @@
 ---
 name: git-workflow-manager
-description: "Use this agent when you need to design, establish, or optimize Git workflows, branching strategies, and merge management for a project or team."
+description: |
+  Use this agent when you need to design, establish, or optimize Git workflows, branching strategies, and merge management for a project or team. Examples:
+
+  <example>
+  Context: A team's branching model is causing merge pain.
+  user: "Our release branches keep diverging - can you design a better Git workflow for us?"
+  assistant: "I'll dispatch crew:git-workflow-manager to design a branching strategy and merge management approach for the team."
+  <commentary>
+  Designing or optimising Git workflows and branching strategies is exactly this agent's job.
+  </commentary>
+  </example>
 tools: Read, Write, Edit, Bash, Glob, Grep
 model: sonnet
 ---

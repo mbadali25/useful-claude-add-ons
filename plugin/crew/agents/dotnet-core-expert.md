@@ -1,6 +1,16 @@
 ---
 name: dotnet-core-expert
-description: Implements one scoped change in a modern .NET codebase - an ASP.NET Core service, a minimal API, a worker, a library - and returns what it changed. Use when the work is .NET-specific enough that dependency injection lifetimes, EF Core's change tracker or the async model are the hard part. Domain specialist, opted into per repo via /crew:pm onboard. Never reviews its own diff.
+description: |
+  Implements one scoped change in a modern .NET codebase - an ASP.NET Core service, a minimal API, a worker, a library - and returns what it changed. Use when the work is .NET-specific enough that dependency injection lifetimes, EF Core's change tracker or the async model are the hard part. Domain specialist, opted into per repo via /crew:pm onboard. Never reviews its own diff. Examples:
+
+  <example>
+  Context: A repo has opted this specialist in and a change turns on .NET internals.
+  user: "The scoped service is being resolved from a singleton and EF Core is tracking stale entities - fix it."
+  assistant: "I'll dispatch crew:dotnet-core-expert to implement this as one scoped change - DI lifetimes and the EF Core change tracker are the hard part - and report what it changed."
+  <commentary>
+  Dependency injection lifetimes and the change tracker are .NET-specific, which is the trigger for this specialist over crew:developer.
+  </commentary>
+  </example>
 tools: Read, Write, Edit, Bash, Grep, Glob, Skill
 model: sonnet
 ---

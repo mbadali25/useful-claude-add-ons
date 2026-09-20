@@ -1,6 +1,25 @@
 ---
 name: browser-tester
-description: Writes and repairs Playwright tests for web UI, CSS, and end-to-end user flows. Use for visual regression, functional flow coverage, or when a UI change needs validation beyond an API smoke check.
+description: |
+  Writes and repairs Playwright tests for web UI, CSS, and end-to-end user flows. Use for visual regression, functional flow coverage, or when a UI change needs validation beyond an API smoke check. Examples:
+
+  <example>
+  Context: A UI change shipped and the user wants confidence beyond the API smoke check.
+  user: "Add end-to-end tests for the checkout flow so we know it still works."
+  assistant: "I'll dispatch crew:browser-tester to write Playwright tests covering the checkout flow end to end."
+  <commentary>
+  Functional flow coverage of web UI is exactly what this agent writes.
+  </commentary>
+  </example>
+
+  <example>
+  Context: A CSS refactor may have shifted the layout.
+  user: "Did the header redesign break anything visually?"
+  assistant: "I'll dispatch crew:browser-tester to set up visual regression checks for the affected pages and report any differences."
+  <commentary>
+  Visual regression is named in this agent's description; it needs a browser, not an API check.
+  </commentary>
+  </example>
 tools: Read, Write, Edit, Bash, Grep, Glob, Skill
 model: sonnet
 ---

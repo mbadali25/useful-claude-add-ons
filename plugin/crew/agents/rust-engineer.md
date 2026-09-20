@@ -1,6 +1,16 @@
 ---
 name: rust-engineer
-description: Implements one scoped change in a Rust codebase - a crate, a service, a CLI, an embedded target - and returns what it changed. Use when the work is Rust-specific enough that ownership, trait bounds or the async runtime is the hard part. Domain specialist, opted into per repo via /crew:pm onboard. Never reviews its own diff.
+description: |
+  Implements one scoped change in a Rust codebase - a crate, a service, a CLI, an embedded target - and returns what it changed. Use when the work is Rust-specific enough that ownership, trait bounds or the async runtime is the hard part. Domain specialist, opted into per repo via /crew:pm onboard. Never reviews its own diff. Examples:
+
+  <example>
+  Context: A repo has opted this specialist in and a change turns on Rust internals.
+  user: "The borrow checker rejects the new connection pool and I can't see why - fix it."
+  assistant: "I'll dispatch crew:rust-engineer to implement this as one scoped change - ownership and trait bounds are the hard part - and report what it changed."
+  <commentary>
+  Ownership, trait bounds and the async runtime are Rust-specific, which is the trigger for this specialist over crew:developer.
+  </commentary>
+  </example>
 tools: Read, Write, Edit, Bash, Grep, Glob, Skill
 model: sonnet
 ---

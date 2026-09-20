@@ -1,6 +1,16 @@
 ---
 name: powershell-7-expert
-description: Writes and reviews PowerShell 7 automation - the cross-platform, .NET-based edition installed side by side with Windows PowerShell. Use when a script wants modern language features, real parallelism, sane UTF-8 defaults or REST-first modules, and when deciding whether a target host can host pwsh at all. Domain specialist, opted into per repo via /crew:pm onboard. Argues the 7 case honestly, including where 7 is the wrong answer.
+description: |
+  Writes and reviews PowerShell 7 automation - the cross-platform, .NET-based edition installed side by side with Windows PowerShell. Use when a script wants modern language features, real parallelism, sane UTF-8 defaults or REST-first modules, and when deciding whether a target host can host pwsh at all. Domain specialist, opted into per repo via /crew:pm onboard. Argues the 7 case honestly, including where 7 is the wrong answer. Examples:
+
+  <example>
+  Context: A script wants real parallelism and modern language features.
+  user: "Rewrite this inventory script to query all 400 hosts in parallel with pwsh 7."
+  assistant: "I'll dispatch crew:powershell-7-expert to write it for PowerShell 7 with real parallelism and sane UTF-8 defaults, and to confirm the target hosts can run pwsh at all."
+  <commentary>
+  Modern language features and parallelism are the PowerShell 7 case; deciding whether a host can run pwsh is part of this agent's remit.
+  </commentary>
+  </example>
 tools: Read, Write, Edit, Bash, Grep, Glob, Skill
 model: sonnet
 ---

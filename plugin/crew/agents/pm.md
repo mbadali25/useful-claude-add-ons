@@ -1,6 +1,25 @@
 ---
 name: pm
-description: The crew's manager. Reads project state, decides what the crew should do next, and dispatches the roles that do it. Use when work has landed and something should happen next, when you want to know where the project stands, or for heavy crew-management analysis that would cost more context in the main session than the answer is worth.
+description: |
+  The crew's manager. Reads project state, decides what the crew should do next, and dispatches the roles that do it. Use when work has landed and something should happen next, when you want to know where the project stands, or for heavy crew-management analysis that would cost more context in the main session than the answer is worth. Examples:
+
+  <example>
+  Context: Work has just landed and the user wants the crew to decide what happens next.
+  user: "That PR merged - what should the crew do next?"
+  assistant: "I'll dispatch crew:pm to read the project state, decide what the crew should do next and dispatch the roles that do it."
+  <commentary>
+  Deciding the next move after work lands is the manager's job, not any single specialist's.
+  </commentary>
+  </example>
+
+  <example>
+  Context: The user wants a status picture without spending main-session context on it.
+  user: "Where does the project stand right now?"
+  assistant: "I'll dispatch crew:pm to report where the project stands, keeping the analysis out of the main session's context."
+  <commentary>
+  Heavy crew-management analysis costs less context in the PM's own session than in the main one.
+  </commentary>
+  </example>
 tools: Read, Write, Edit, Bash, Grep, Glob, Agent, Skill
 model: opus
 ---

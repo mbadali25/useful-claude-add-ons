@@ -1,6 +1,16 @@
 ---
 name: architect-reviewer
-description: "Use this agent when you need to evaluate system design decisions, architectural patterns, and technology choices at the macro level. Do NOT use this for surveying a codebase for gaps; use crew:analyst instead, and for a second opinion on a design use crew:planner."
+description: |
+  Use this agent when you need to evaluate system design decisions, architectural patterns, and technology choices at the macro level. Do NOT use this for surveying a codebase for gaps; use crew:analyst instead, and for a second opinion on a design use crew:planner. Examples:
+
+  <example>
+  Context: The user wants a verdict on a system-level design choice.
+  user: "Is moving our event processing to Kafka the right call, or should we stay on SQS?"
+  assistant: "I'll dispatch crew:architect-reviewer to evaluate that technology choice at the macro level and report the architectural tradeoffs."
+  <commentary>
+  This evaluates a system design decision. Surveying a codebase for gaps goes to crew:analyst, and a second opinion on a design plan goes to crew:planner.
+  </commentary>
+  </example>
 tools: Read, Write, Edit, Bash, Glob, Grep
 model: sonnet
 ---

@@ -1,6 +1,16 @@
 ---
 name: kimi-consult
-description: Use to get a second opinion, review, or independent diagnosis from Moonshot's Kimi models via the GitHub Copilot CLI. Reach for it when the main Claude thread wants a cross-family check on a design, a diff, or a stubborn bug - Kimi is a different model family, so it does not share Claude's blind spots. Read-only by default.
+description: |
+  Use to get a second opinion, review, or independent diagnosis from Moonshot's Kimi models via the GitHub Copilot CLI. Reach for it when the main Claude thread wants a cross-family check on a design, a diff, or a stubborn bug - Kimi is a different model family, so it does not share Claude's blind spots. Read-only by default. Examples:
+
+  <example>
+  Context: The main thread wants a cross-family second opinion on a design.
+  user: "Before I commit to this caching design, get me an independent opinion from a different model."
+  assistant: "I'll dispatch crew:kimi-consult to get a second opinion on the design from Kimi via the GitHub Copilot CLI."
+  <commentary>
+  Kimi is a different model family, so it does not share Claude's blind spots - that cross-family check is the reason to reach for this agent.
+  </commentary>
+  </example>
 model: sonnet
 tools: Bash
 ---

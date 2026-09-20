@@ -1,6 +1,16 @@
 ---
 name: api-designer
-description: "Use this agent when designing new APIs, creating API specifications, or refactoring existing API architecture for scalability and developer experience. Invoke when you need REST/GraphQL endpoint design, OpenAPI documentation, authentication patterns, or API versioning strategies."
+description: |
+  Use this agent when designing new APIs, creating API specifications, or refactoring existing API architecture for scalability and developer experience. Invoke when you need REST/GraphQL endpoint design, OpenAPI documentation, authentication patterns, or API versioning strategies. Examples:
+
+  <example>
+  Context: A team is about to expose a new resource and wants the contract designed before coding.
+  user: "Design the REST API for our orders service, with an OpenAPI spec and versioning."
+  assistant: "I'll dispatch crew:api-designer to design the endpoints, write the OpenAPI specification and propose the versioning and authentication patterns."
+  <commentary>
+  The work is API design and specification, not implementing an existing contract.
+  </commentary>
+  </example>
 tools: Read, Write, Edit, Bash, Glob, Grep
 model: sonnet
 ---

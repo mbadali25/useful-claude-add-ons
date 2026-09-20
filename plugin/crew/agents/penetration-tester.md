@@ -1,6 +1,16 @@
 ---
 name: penetration-tester
-description: "Use this agent when you need to conduct authorized security penetration tests to identify real vulnerabilities through active exploitation and validation. Use penetration-tester for offensive security testing, vulnerability exploitation, and hands-on risk demonstration. Do NOT use this for reviewing changed code before merge; use crew:security instead."
+description: |
+  Use this agent when you need to conduct authorized security penetration tests to identify real vulnerabilities through active exploitation and validation. Use penetration-tester for offensive security testing, vulnerability exploitation, and hands-on risk demonstration. Do NOT use this for reviewing changed code before merge; use crew:security instead. Examples:
+
+  <example>
+  Context: An authorised penetration test against a staging environment has been approved.
+  user: "We have authorisation to pentest staging - find and demonstrate real vulnerabilities."
+  assistant: "I'll dispatch crew:penetration-tester to conduct the authorised test, exploit what it finds and demonstrate the risk."
+  <commentary>
+  Offensive testing with active exploitation is this agent's remit. Reviewing changed code before merge goes to crew:security.
+  </commentary>
+  </example>
 tools: Read, Grep, Glob, Bash
 model: sonnet
 ---

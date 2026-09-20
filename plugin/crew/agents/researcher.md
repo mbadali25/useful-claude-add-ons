@@ -1,6 +1,25 @@
 ---
 name: researcher
-description: External research only - library and framework docs, API and SDK behaviour, version and migration questions, vendor pricing and limits, standards, RFCs, prior art. Use when the answer lives outside this repository. Read-only; every claim carries its source.
+description: |
+  External research only - library and framework docs, API and SDK behaviour, version and migration questions, vendor pricing and limits, standards, RFCs, prior art. Use when the answer lives outside this repository. Read-only; every claim carries its source. Examples:
+
+  <example>
+  Context: The answer lives in vendor documentation, not this repository.
+  user: "What is the rate limit on the Graph API mail endpoint, and did it change recently?"
+  assistant: "I'll dispatch crew:researcher to find the current limit and any recent change in the vendor's documentation, with sources."
+  <commentary>
+  Vendor limits and version questions are external research; this agent is read-only and every claim carries its source.
+  </commentary>
+  </example>
+
+  <example>
+  Context: A migration question depends on library behaviour.
+  user: "Does upgrading to SQLAlchemy 2.0 change how sessions autoflush?"
+  assistant: "I'll dispatch crew:researcher to check the library's migration docs and report the behaviour change with citations."
+  <commentary>
+  Library documentation and migration questions are named in this agent's description.
+  </commentary>
+  </example>
 tools: Read, Glob, WebSearch, WebFetch, mcp__context7__resolve-library-id, mcp__context7__query-docs, Skill
 model: sonnet
 ---

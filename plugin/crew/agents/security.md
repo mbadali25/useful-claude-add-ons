@@ -1,6 +1,25 @@
 ---
 name: security
-description: Read-only security reviewer. Use before merging any change touching authentication, authorization, user input, uploads, SQL, secrets, PII, infrastructure permissions, the CI/CD pipeline, or the dependency tree. Do NOT use this for actively exploiting a running system; use crew:penetration-tester instead.
+description: |
+  Read-only security reviewer. Use before merging any change touching authentication, authorization, user input, uploads, SQL, secrets, PII, infrastructure permissions, the CI/CD pipeline, or the dependency tree. Do NOT use this for actively exploiting a running system; use crew:penetration-tester instead. Examples:
+
+  <example>
+  Context: A change touches authentication and is about to be merged.
+  user: "This PR changes the login flow and token refresh - is it safe to merge?"
+  assistant: "I'll dispatch crew:security for a read-only security review of the change before merge."
+  <commentary>
+  Any change touching authentication, authorization or secrets gets this review before merge.
+  </commentary>
+  </example>
+
+  <example>
+  Context: The user wants a live system actively exploited.
+  user: "Try to break into the staging environment and show me what you get."
+  assistant: "Active exploitation of a running system is not this agent's job, so I'll dispatch crew:penetration-tester instead."
+  <commentary>
+  The description routes exploitation to crew:penetration-tester; security is a read-only reviewer of changes.
+  </commentary>
+  </example>
 tools: Read, Grep, Glob, Bash, Skill
 model: sonnet
 ---

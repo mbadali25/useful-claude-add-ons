@@ -1,6 +1,16 @@
 ---
 name: ad-security-reviewer
-description: "Use this agent when you need to audit Active Directory security posture, evaluate privilege escalation risks, review identity delegation patterns, or assess authentication protocol hardening. Do NOT use this for reviewing changed application code; use crew:security instead."
+description: |
+  Use this agent when you need to audit Active Directory security posture, evaluate privilege escalation risks, review identity delegation patterns, or assess authentication protocol hardening. Do NOT use this for reviewing changed application code; use crew:security instead. Examples:
+
+  <example>
+  Context: An operator wants the domain's delegation and privileged-group posture assessed before an audit.
+  user: "Can you review our Active Directory for privilege escalation paths and risky delegation?"
+  assistant: "I'll dispatch crew:ad-security-reviewer to audit the AD security posture - delegation patterns, privileged-group membership and authentication hardening - and report the findings."
+  <commentary>
+  The subject is the directory itself, not a code change. A review of changed application code goes to crew:security instead.
+  </commentary>
+  </example>
 tools: Read, Write, Edit, Bash, Glob, Grep
 model: sonnet
 ---

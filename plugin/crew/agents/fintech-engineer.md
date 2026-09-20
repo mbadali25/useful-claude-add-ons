@@ -1,6 +1,16 @@
 ---
 name: fintech-engineer
-description: "Use when building payment systems, financial integrations, or compliance-heavy financial applications that require secure transaction processing, regulatory adherence, and high transaction accuracy."
+description: |
+  Use when building payment systems, financial integrations, or compliance-heavy financial applications that require secure transaction processing, regulatory adherence, and high transaction accuracy. Examples:
+
+  <example>
+  Context: A product needs a payment system built with regulatory and accuracy constraints.
+  user: "Build the ledger and settlement service for our lending product."
+  assistant: "I'll dispatch crew:fintech-engineer to build the service with secure transaction processing, regulatory adherence and transaction accuracy in mind."
+  <commentary>
+  Compliance-heavy financial applications requiring high transaction accuracy are this agent's remit.
+  </commentary>
+  </example>
 tools: Read, Write, Edit, Bash, Glob, Grep
 model: sonnet
 ---

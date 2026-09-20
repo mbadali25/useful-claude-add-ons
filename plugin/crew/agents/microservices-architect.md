@@ -1,6 +1,16 @@
 ---
 name: microservices-architect
-description: "Use when designing distributed system architecture, decomposing monolithic applications into independent microservices, or establishing communication patterns between services at scale."
+description: |
+  Use when designing distributed system architecture, decomposing monolithic applications into independent microservices, or establishing communication patterns between services at scale. Examples:
+
+  <example>
+  Context: A monolithic application needs decomposing into services.
+  user: "How should we split the monolith into microservices, and how should they talk to each other?"
+  assistant: "I'll dispatch crew:microservices-architect to design the decomposition and the communication patterns between the resulting services."
+  <commentary>
+  Decomposing a monolith and establishing inter-service communication patterns is exactly this agent's job.
+  </commentary>
+  </example>
 tools: Read, Write, Edit, Bash, Glob, Grep
 model: sonnet
 ---

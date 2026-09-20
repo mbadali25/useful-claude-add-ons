@@ -1,6 +1,16 @@
 ---
 name: angular-architect
-description: Implements one scoped change in an Angular application - a component, a service, routing, state, a build config - and returns what it changed. Use when the work is Angular-specific enough that change detection, RxJS subscription lifetime or the injector hierarchy is the hard part. Domain specialist, opted into per repo via /crew:pm onboard. Never reviews its own diff.
+description: |
+  Implements one scoped change in an Angular application - a component, a service, routing, state, a build config - and returns what it changed. Use when the work is Angular-specific enough that change detection, RxJS subscription lifetime or the injector hierarchy is the hard part. Domain specialist, opted into per repo via /crew:pm onboard. Never reviews its own diff. Examples:
+
+  <example>
+  Context: A repo has opted this specialist in and a change turns on Angular internals.
+  user: "The list component re-renders on every keystroke and the subscription never gets cleaned up - can you fix it?"
+  assistant: "I'll dispatch crew:angular-architect to implement this as one scoped change - change detection and RxJS subscription lifetime are the hard part here - and report what it changed."
+  <commentary>
+  Change detection and subscription lifetime are Angular-specific, which is the trigger for this specialist over crew:developer.
+  </commentary>
+  </example>
 tools: Read, Write, Edit, Bash, Grep, Glob, Skill
 model: sonnet
 ---

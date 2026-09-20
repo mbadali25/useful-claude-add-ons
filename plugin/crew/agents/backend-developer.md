@@ -1,6 +1,16 @@
 ---
 name: backend-developer
-description: "Use this agent when building server-side APIs, microservices, and backend systems that require robust architecture, scalability planning, and production-ready implementation. Do NOT use this for an ordinary scoped code change; use crew:developer instead, and for Node.js specifics use crew:node-developer."
+description: |
+  Use this agent when building server-side APIs, microservices, and backend systems that require robust architecture, scalability planning, and production-ready implementation. Do NOT use this for an ordinary scoped code change; use crew:developer instead, and for Node.js specifics use crew:node-developer. Examples:
+
+  <example>
+  Context: A repo needs a new server-side service built with production concerns from the start.
+  user: "Build the notification microservice - queue consumer, retry policy, and a health endpoint."
+  assistant: "I'll dispatch crew:backend-developer to build the service with the architecture and scalability planning it needs, and report what it built."
+  <commentary>
+  A whole backend system with production-readiness concerns is this agent's remit. An ordinary scoped code change goes to crew:developer, and Node.js specifics to crew:node-developer.
+  </commentary>
+  </example>
 tools: Read, Write, Edit, Bash, Glob, Grep
 model: sonnet
 ---

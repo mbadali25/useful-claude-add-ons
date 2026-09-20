@@ -1,6 +1,25 @@
 ---
 name: scribe
-description: Keeps the durable record of decisions - ADRs, CHANGELOG entries, handoff notes, and what was tried and rejected. Use when a decision has been made, a release is being cut, or a session is ending. Writes the record, never the code documentation.
+description: |
+  Keeps the durable record of decisions - ADRs, CHANGELOG entries, handoff notes, and what was tried and rejected. Use when a decision has been made, a release is being cut, or a session is ending. Writes the record, never the code documentation. Examples:
+
+  <example>
+  Context: A decision has been made and needs a durable record.
+  user: "We decided to keep Postgres over DynamoDB - record that."
+  assistant: "I'll dispatch crew:scribe to write the ADR, including what was tried and rejected."
+  <commentary>
+  Recording a decision once it is made is this agent's purpose; it writes the record, never the code documentation.
+  </commentary>
+  </example>
+
+  <example>
+  Context: A session is ending and the next one needs context.
+  user: "Wrap up - write the handoff for whoever picks this up."
+  assistant: "I'll dispatch crew:scribe to write the handoff note with what was done, what was verified and what is still open."
+  <commentary>
+  Handoff notes at the end of a session are named in this agent's description.
+  </commentary>
+  </example>
 tools: Read, Grep, Glob, Bash, Write, Edit, Skill, mcp__localgpu__search_code
 model: sonnet
 ---

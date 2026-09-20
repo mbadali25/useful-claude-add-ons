@@ -1,6 +1,16 @@
 ---
 name: workflow-orchestrator
-description: "Use this agent when you need to design, implement, or optimize complex business process workflows with multiple states, error handling, and transaction management."
+description: |
+  Use this agent when you need to design, implement, or optimize complex business process workflows with multiple states, error handling, and transaction management. Examples:
+
+  <example>
+  Context: A business process spans many states and needs robust error handling.
+  user: "Design the order-fulfilment workflow - reservations, payment, shipping, and what happens when any step fails."
+  assistant: "I'll dispatch crew:workflow-orchestrator to design the multi-state workflow with its error handling and transaction management."
+  <commentary>
+  Complex business process workflows with multiple states and transaction management are this agent's remit.
+  </commentary>
+  </example>
 tools: Read, Write, Edit, Glob, Grep
 model: sonnet
 ---

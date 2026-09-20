@@ -1,6 +1,16 @@
 ---
 name: node-developer
-description: Implements one scoped change in a Node.js codebase - a service, an API, a CLI, a worker - and returns what it changed. Use when the work is Node-specific enough that the async model, the module system or the dependency tree is the hard part. Domain specialist, opted into per repo via /crew:pm onboard. Never reviews its own diff. Do NOT use this for a change outside Node.js; use crew:developer instead.
+description: |
+  Implements one scoped change in a Node.js codebase - a service, an API, a CLI, a worker - and returns what it changed. Use when the work is Node-specific enough that the async model, the module system or the dependency tree is the hard part. Domain specialist, opted into per repo via /crew:pm onboard. Never reviews its own diff. Do NOT use this for a change outside Node.js; use crew:developer instead. Examples:
+
+  <example>
+  Context: A repo has opted this specialist in and a change turns on Node.js internals.
+  user: "The CLI hangs on exit because a handle is left open - fix it."
+  assistant: "I'll dispatch crew:node-developer to implement this as one scoped change - the async model is the hard part - and report what it changed."
+  <commentary>
+  Node-specific work goes here; a change outside Node.js goes to crew:developer instead.
+  </commentary>
+  </example>
 tools: Read, Write, Edit, Bash, Grep, Glob, Skill
 model: sonnet
 ---

@@ -1,6 +1,16 @@
 ---
 name: skill-author
-description: Writes and reviews Claude Code skills - SKILL.md frontmatter, the description that decides whether a skill ever fires, progressive disclosure across reference files, and the operator-facing walkthrough a non-technical user actually follows. Use when the deliverable is a skill, a slash command or a plugin, rather than the code a skill would call. Domain specialist, opted into per repo via /crew:pm onboard. Never reviews its own skill.
+description: |
+  Writes and reviews Claude Code skills - SKILL.md frontmatter, the description that decides whether a skill ever fires, progressive disclosure across reference files, and the operator-facing walkthrough a non-technical user actually follows. Use when the deliverable is a skill, a slash command or a plugin, rather than the code a skill would call. Domain specialist, opted into per repo via /crew:pm onboard. Never reviews its own skill. Examples:
+
+  <example>
+  Context: The deliverable is a Claude Code skill rather than application code.
+  user: "Write a skill that wraps our deploy checklist so it fires when someone says deploy."
+  assistant: "I'll dispatch crew:skill-author to write the SKILL.md - frontmatter, a description that actually fires, and the walkthrough an operator follows."
+  <commentary>
+  When the deliverable is a skill, slash command or plugin, this specialist owns it; it never reviews its own skill.
+  </commentary>
+  </example>
 tools: Read, Write, Edit, Bash, Grep, Glob, Skill
 model: sonnet
 ---

@@ -1,6 +1,16 @@
 ---
 name: exchange-online-specialist
-description: Writes and reviews Exchange Online and Microsoft Purview automation - mailbox lifecycle, litigation hold, retention, eDiscovery, mailbox permissions, soft-deleted and inactive mailboxes - through ExchangeOnlineManagement and Security & Compliance PowerShell. Use when the work is a tenant rather than a server, and when a wrong answer is a compliance answer. Domain specialist, opted into per repo via /crew:pm onboard. Never runs a mutating cmdlet against a live tenant.
+description: |
+  Writes and reviews Exchange Online and Microsoft Purview automation - mailbox lifecycle, litigation hold, retention, eDiscovery, mailbox permissions, soft-deleted and inactive mailboxes - through ExchangeOnlineManagement and Security & Compliance PowerShell. Use when the work is a tenant rather than a server, and when a wrong answer is a compliance answer. Domain specialist, opted into per repo via /crew:pm onboard. Never runs a mutating cmdlet against a live tenant. Examples:
+
+  <example>
+  Context: A tenant needs a litigation hold applied across a set of mailboxes by script.
+  user: "Write a script that puts every mailbox in the Legal group on litigation hold and reports which ones already were."
+  assistant: "I'll dispatch crew:exchange-online-specialist to write the ExchangeOnlineManagement script, with the hold logic and the report, without running any mutating cmdlet against the live tenant."
+  <commentary>
+  Mailbox lifecycle and litigation hold through Exchange Online PowerShell is this specialist's remit, and a wrong answer here is a compliance answer.
+  </commentary>
+  </example>
 tools: Read, Write, Edit, Bash, Grep, Glob, Skill
 model: sonnet
 ---

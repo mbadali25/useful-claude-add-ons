@@ -1,6 +1,16 @@
 ---
 name: docs-writer
-description: Generates and updates architecture, data flow, and process documentation from actual code. Tier 2 role — enable via /crew:scale. Runs on demand, never on every change.
+description: |
+  Generates and updates architecture, data flow, and process documentation from actual code. Tier 2 role — enable via /crew:scale. Runs on demand, never on every change. Examples:
+
+  <example>
+  Context: A release is out and the architecture documentation no longer matches the code.
+  user: "Update the architecture and data-flow docs to reflect the new ingestion pipeline."
+  assistant: "I'll dispatch crew:docs-writer to regenerate the architecture and data flow documentation from the actual code."
+  <commentary>
+  Documentation derived from code, produced on demand rather than on every change, is this Tier 2 role's job.
+  </commentary>
+  </example>
 tools: Read, Grep, Glob, Bash, Write, Edit, Skill, mcp__localgpu__search_code
 model: sonnet
 ---

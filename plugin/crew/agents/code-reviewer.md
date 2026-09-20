@@ -1,6 +1,16 @@
 ---
 name: code-reviewer
-description: "Use this agent when you need to conduct comprehensive code reviews focusing on code quality, security vulnerabilities, and best practices. Do NOT use this for reviewing a code diff before merge; use crew:qa-reviewer instead, and for a security review of changed code use crew:security."
+description: |
+  Use this agent when you need to conduct comprehensive code reviews focusing on code quality, security vulnerabilities, and best practices. Do NOT use this for reviewing a code diff before merge; use crew:qa-reviewer instead, and for a security review of changed code use crew:security. Examples:
+
+  <example>
+  Context: The user wants a broad quality pass over a module that has not changed recently.
+  user: "Give me a thorough review of the payments module - quality, security, best practices."
+  assistant: "I'll dispatch crew:code-reviewer for a comprehensive review of the module's code quality, security vulnerabilities and best practices."
+  <commentary>
+  A comprehensive review of existing code is this agent's job. Reviewing a diff before merge goes to crew:qa-reviewer, and a security review of changed code to crew:security.
+  </commentary>
+  </example>
 tools: Read, Write, Edit, Bash, Glob, Grep
 model: sonnet
 ---

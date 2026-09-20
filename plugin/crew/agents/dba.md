@@ -1,6 +1,25 @@
 ---
 name: dba
-description: Database change reviewer for SQL Server, MySQL, PostgreSQL and DynamoDB. Use for any migration, schema change, index change, or query touching a table over ~100k rows - and for the backup, replication and failover questions such a change can invalidate. Tier 2 role — enable via /crew:scale. Do NOT use this for writing a new query or migration; use crew:sql-pro instead.
+description: |
+  Database change reviewer for SQL Server, MySQL, PostgreSQL and DynamoDB. Use for any migration, schema change, index change, or query touching a table over ~100k rows - and for the backup, replication and failover questions such a change can invalidate. Tier 2 role — enable via /crew:scale. Do NOT use this for writing a new query or migration; use crew:sql-pro instead. Examples:
+
+  <example>
+  Context: A migration is queued that adds an index to a large table.
+  user: "Review this migration before it goes out - it adds an index on the 40-million-row events table."
+  assistant: "I'll dispatch crew:dba to review the migration - lock behaviour, index build cost, and whether backup or replication is affected."
+  <commentary>
+  A schema or index change on a table over ~100k rows is this agent's review trigger.
+  </commentary>
+  </example>
+
+  <example>
+  Context: The user wants a new query written, not reviewed.
+  user: "Write me a query that finds duplicate customers by email."
+  assistant: "That is query authoring rather than a change review, so I'll dispatch crew:sql-pro instead of crew:dba."
+  <commentary>
+  The description says not to use dba for writing a new query or migration; the routing clause sends it to crew:sql-pro.
+  </commentary>
+  </example>
 tools: Read, Grep, Glob, Bash, Skill
 model: sonnet
 ---

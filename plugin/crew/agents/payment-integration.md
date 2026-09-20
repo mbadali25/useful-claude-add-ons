@@ -1,6 +1,16 @@
 ---
 name: payment-integration
-description: "Use this agent when implementing payment systems, integrating payment gateways, or handling financial transactions that require PCI compliance, fraud prevention, and secure transaction processing."
+description: |
+  Use this agent when implementing payment systems, integrating payment gateways, or handling financial transactions that require PCI compliance, fraud prevention, and secure transaction processing. Examples:
+
+  <example>
+  Context: A product needs a payment gateway wired in with PCI compliance.
+  user: "Integrate Stripe for card payments, with fraud checks and PCI-compliant handling."
+  assistant: "I'll dispatch crew:payment-integration to implement the gateway integration with PCI compliance, fraud prevention and secure transaction processing."
+  <commentary>
+  Integrating a payment gateway under PCI constraints is exactly this agent's job.
+  </commentary>
+  </example>
 tools: Read, Write, Edit, Bash, Glob, Grep
 model: sonnet
 ---
