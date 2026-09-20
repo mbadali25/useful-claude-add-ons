@@ -133,40 +133,43 @@ the human saying so, and the gate takes the word for it.
 
 **An UNDECLARED rule is not quietly assumed local, and the bar for "assumed
 local" is narrower than it looks.** The scanner (`verify_record.scan_reach`)
-is REJECT-ONLY: it can defer a command, never approve one. Two things defer
-it:
-- the command text, or a directly-named wrapper file's content if it can be
-  read, contains a reach verb (`ssm`, `ssh`, `curl`, `aws`, `az`, `gh`,
-  `psql`, `mysql`) — notice: `remote verb <v>`.
-- the command invokes ANY script or interpreter-with-an-argument — any token
-  resolving to an existing file under the repo (any extension or none), any
-  recognised interpreter (`bash`/`sh`/`dash`/`zsh`/`pwsh`/`powershell`/
-  `python`/`python3`/`py`/`node`/`ruby`/`perl`) followed by a non-flag
-  argument, or a `cd` anywhere in it — notice: `wrapper or inline shell:
-  declare "reach": "local" (or network/host)`.
+STOPS MODELLING SHELL (Codex round 6) — five rounds of "read one layer
+deeper into the shell syntax" each found a new shape that defeated the last
+one, so it no longer tries to parse shell at all:
+- **any shell metacharacter present, anywhere, defers unconditionally** —
+  `( ) $ ; & | < > `` " ' \ { } * ? [ ] ~ # !`, a newline, or a tab. No
+  exception, not even `2>&1` or a trailing `#` comment. Notice: `shell
+  syntax in an undeclared rule: declare "reach": "local" (or network/host)`.
+- only once nothing on that list is present does whitespace-only splitting
+  become safe. A reach verb (`ssm`, `ssh`, `curl`, `aws`, `az`, `gh`,
+  `psql`, `mysql`) anywhere — notice: `remote verb <v>`.
+- otherwise, if the first token is a recognised interpreter (`bash`/`sh`/
+  `dash`/`zsh`/`pwsh`/`powershell`/`python`/`python3`/`py`/`node`/`ruby`/
+  `perl`): `-n` is parse-only ONLY as the exact second token with EXACTLY
+  one token after it (`bash -n a.sh` local; `bash a.sh -n` and
+  `bash -n a.sh b.sh` are NOT); `-m` as the second token is always local
+  (a module name, never a file — `python3 -m pytest x -q` is local);
+  `-c`/`-Command`/`-File` as the second token always defer; any other
+  token from the second position on that resolves to an existing repo
+  file defers too.
+- otherwise: any token at all resolving to an existing repo file defers.
+- none of the above: runs undeclared.
 
-This is deliberately conservative: `python3 -m pytest ...` now defers too (an
-interpreter followed by an argument), where an earlier round specifically
-exempted it. Declare `"reach": "local"` on the rule — that is the fix, not a
-smarter scanner; static inspection can only ever be asked to REJECT a
-command, never to prove one safe (see `verify_record.py`'s module docstring
-for why: three rounds of review each found a new way to hide a wrapper from
-whatever the scanner was trying to read through, and inspecting harder loses
-that race every time).
-
-The one exception: `bash -n X` / `sh -n X` / `dash -n X` / `zsh -n X` parses
-X for syntax only and never executes it, so this stays local regardless of
-what X contains.
+This is deliberately conservative and, on purpose, no longer tries to be
+precise about WHY a command might be safe — `verify_record.py`'s module
+docstring has the full history of why "model shell more completely" turned
+out not to be a fixable bug. Declare `"reach": "local"` on the rule; that is
+the fix, not a smarter scanner.
 
 `default`/`always` entries in `.crew/verify.json` get the SAME
 classification on Stop — they have no `"reach"` field of their own, so a
-wrapper or verb-matching command named there is excluded from the fallback
-exactly like an undeclared rule would be, never silently reintroduced
-through it.
+deferred command named there is excluded from the fallback exactly like an
+undeclared rule would be, never silently reintroduced through it.
 
-`--price` refuses to time a verb- or wrapper-classified rule outright, in
-both directions, same as the gate. The pm-pulse `verifyReachUndeclared`
-trigger separately nudges toward declaring `reach` on any rule that has none
+`--price` refuses to time a verb-, syntax-, or wrapper-classified rule
+outright, in both directions, same as the gate. The pm-pulse
+`verifyReachUndeclared` trigger separately nudges toward declaring `reach`
+on any rule that has none
 at all — see `CONFIG.md` §18 for the full classification.
 
 ## Environment pinning

@@ -674,6 +674,14 @@ def _classify_run_reach(run):
     if _status == "verb":
         return ("reach_undeclared",
                 "remote verb %r - declare `reach` or run /crew:verify --all" % _detail)
+    # Codex round 6: a command containing ANY shell metacharacter is
+    # deferred unconditionally, before anything else about it is read -
+    # see verify_record.py's module docstring for why this scan stopped
+    # trying to model shell at all.
+    if _status == "syntax":
+        return ("reach_syntax",
+                'shell syntax in an undeclared rule - declare `"reach": "local"` '
+                "(or network/host) to run it on Stop")
     if _status == "wrapper":
         return ("reach_wrapper",
                 'wrapper or inline shell (%s) - declare `"reach": "local"` '

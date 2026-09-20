@@ -12,15 +12,16 @@ REACH. A rule cannot be timed here unless its reach is `local`:
   - a DECLARED `reach` of anything but `local` is SKIPPED, never run --
     "price it by hand" is the point, not a suggestion.
   - an UNDECLARED `reach` is scanned by verify_record.scan_reach - the SAME
-    reject-only scanner the Stop gate uses (imported in-process here, not
-    reimplemented; see its module docstring for the round-4 redesign). A
-    VERB match, or a WRAPPER match (any script/interpreter/inline-shell/cd
-    invocation - inspection can only REJECT here, never approve), is
-    REFUSED outright, in both directions (never priced even with --force).
-    Round 2: this used to scan only the outer command STRING with a bare
-    substring check, so `bash wrapper.sh` where wrapper.sh itself called
-    ssh passed the scan and was TIMED - which means RUN - exactly the
-    command Stop would have refused.
+    scanner the Stop gate uses (imported in-process here, not reimplemented;
+    see its module docstring for the round-6 redesign, which stopped trying
+    to model shell at all). A VERB match, a SYNTAX match (any shell
+    metacharacter present, unconditionally), or a WRAPPER match (an
+    interpreter's inline-code/script flag, or a token resolving to an
+    existing repo file) is REFUSED outright, in all three cases, never
+    priced even with --force. Round 2: this used to scan only the outer
+    command STRING with a bare substring check, so `bash wrapper.sh` where
+    wrapper.sh itself called ssh passed the scan and was TIMED - which
+    means RUN - exactly the command Stop would have refused.
 
 EXIT 77 IS SKIP, same convention the gate follows (_verify/smoke.sh, GNU
 automake): "skipped, environment absent" is not a measurement of the work,
@@ -128,6 +129,14 @@ def main(argv):
                 rows.append((i, "REFUSED",
                              f"remote verb {detail!r} - "
                              f"declare `reach` or price by hand"))
+                continue
+            # Codex round 6: a command containing ANY shell metacharacter is
+            # refused unconditionally, same as the gate - see
+            # verify_record.py's module docstring.
+            if status == "syntax":
+                rows.append((i, "REFUSED",
+                             "shell syntax in an undeclared rule - "
+                             'declare "reach": "local" (or network/host) or price by hand'))
                 continue
             if status == "wrapper":
                 rows.append((i, "REFUSED",

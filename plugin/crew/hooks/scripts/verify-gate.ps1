@@ -778,6 +778,14 @@ function Get-CrewClassifyReach($Run, $Py, $Script, $Root) {
     return @{ kind = "reach_undeclared";
       reason = "remote verb '$($scan.detail)' - declare ``reach`` or run /crew:verify --all" }
   }
+  # Codex round 6: a command containing ANY shell metacharacter is deferred
+  # unconditionally, before anything else about it is read - see
+  # verify_record.py's module docstring for why this scan stopped trying
+  # to model shell at all.
+  if ($scan.status -eq "syntax") {
+    return @{ kind = "reach_syntax";
+      reason = "shell syntax in an undeclared rule - declare ``""reach"": ""local""`` (or network/host) to run it on Stop" }
+  }
   if ($scan.status -eq "wrapper") {
     return @{ kind = "reach_wrapper";
       reason = "wrapper or inline shell ($($scan.detail)) - declare ``""reach"": ""local""`` (or network/host) to run it on Stop" }

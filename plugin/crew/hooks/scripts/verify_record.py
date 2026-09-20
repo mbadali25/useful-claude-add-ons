@@ -32,7 +32,6 @@ import json
 import math
 import os
 import re
-import shlex
 import sys
 import hashlib
 
@@ -163,92 +162,60 @@ def pinned_env(rule_env, base=None):
 # ONE function, called by all three (verify-gate.sh in-process, .ps1 via the
 # `scan-reach` CLI, verify_price.py in-process).
 #
-# REJECT-ONLY, as of Codex round 4. Rounds 2-3 tried to APPROVE a command as
-# safe by reading it: follow the wrapper it names, follow what THAT wrapper
-# names, check the target looks like a script, and call it clean if nothing
-# turned up. Every round of review found a new way to make that approval
-# wrong - a compound `true && bash inner.sh` the segmenter did not split, an
-# inline `bash -c 'bash inner.sh'` hiding a nested wrapper inside a STRING
-# rather than a FILE, a `cd tools && bash inner.sh` resolving against the
-# wrong base, an extensionless `check` with no shebang the heuristic waved
-# through - four BLOCKs in two rounds, three of them the SAME shape: a new
-# way to make a wrapper invisible to whatever this scan was trying to READ
-# THROUGH. That is an arms race, and static inspection does not win it -
-# nothing that only reads text can enumerate every way a command can end up
-# running something else.
+# WE STOP MODELLING SHELL, as of Codex round 6. Rounds 2-5 each tried to
+# read THROUGH one more layer of shell syntax to find what a command
+# actually runs - follow the wrapper it names, split it into the segments a
+# shell would run separately, follow a `$( ... )` substitution's own
+# contents - and every round of review found a new shape that defeated
+# whatever the previous round had just added: subshell parentheses glued to
+# a path, `-n` granted by mere PRESENCE anywhere in the token list rather
+# than its actual position, a compound hidden inside a substitution the
+# segmenter had not been told to open. Five rounds, the same lesson each
+# time: a hand-rolled shell grammar is never finished, because "model shell
+# more completely" is not a fixable bug, it is the wrong approach.
 #
-# So this scan no longer tries to approve anything. It can only REJECT:
-#   (a) a reach verb appears anywhere in the command text, or in a directly-
-#       named wrapper file's content, if that file can be read - "verb".
-#   (b) the command invokes ANY script or interpreter-with-an-argument at
-#       all (any token that resolves to an existing repo file, any
-#       recognised interpreter followed by a non-flag argument anywhere
-#       after it, or a `cd`) - "wrapper". Existence is enough; there is no
-#       more extension/shebang test, because the arms race was never about
-#       whether the scan could prove a target harmful, only whether it
-#       could prove one harmless, and it never reliably could.
-#   (c) neither: "local" - safe to run undeclared.
-# There is no more "uninspected". A wrapper this scan cannot read is not a
-# separate, softer category - it is still "wrapper", the same as one it
-# reads and finds nothing verb-shaped in. Static inspection is USED only to
-# defer; it is never the reason something is allowed to run.
-#
-# What this buys back: BLOCK verify_record.py:383 (a preceding `cd` changing
-# the base a wrapper path resolves against) stops being reachable at all,
-# because `cd` ANYWHERE in the command is itself grounds for (b) - the scan
-# never needs to know where a `cd` would land, since it never tries to
-# resolve anything past it. BLOCK verify_record.py:387 (an extensionless,
-# shebang-less script) stops being reachable because existence alone is
-# enough to trigger (b) - there is no "does it look like a script" gate left
-# to route around. BLOCK verify_record.py:321 (`bash -c 'bash inner.sh'`,
-# a wrapper invocation hidden inside an INLINE STRING rather than a file)
-# stops being reachable because "any interpreter followed by a non-flag
-# argument anywhere after it" catches the outer `bash -c '...'` on its own
-# terms - it does not need to parse what is inside the string, because an
-# interpreter invoked with an argument is ALREADY enough for (b), whatever
-# that argument turns out to contain.
-#
-# What is deliberately NOT covered any more: (c)'s promise that "no verb, no
-# wrapper" commands run undeclared is now much narrower than round 3's, and
-# on purpose - `python3 -m pytest ...` (an INTERPRETER followed by a
-# non-flag argument, `-m`'s module name included) now classifies as (b),
-# where round 3's FIX specifically carved it out. That carve-out was
-# exactly the kind of case-by-case cleverness this redesign stops doing:
-# distinguishing "this token is a module name, not a file" from "this token
-# is a file" is one more thing an attacker's command shape can get wrong on
-# purpose, and the map is the place to say a command is safe, not the
-# scanner. See THIS repo's own .crew/verify.json, which now declares
-# `"reach": "local"` on every rule this reclassifies - test_28 checks it.
-#
-# Parse-only is the one narrow exception kept from round 3, unrelated to any
-# of this: `bash -n X` / `sh -n X` / `dash -n X` / `zsh -n X` read X for
-# SYNTAX ONLY and never execute a line of it, so whatever X contains cannot
-# run under this specific invocation - (c), unconditionally, regardless of
-# X's content. Nothing else about -n's target is inspected, because nothing
-# needs to be: it never runs.
+# So this scan does not parse shell at all any more. It is two rules:
+#   (1) If the command string contains ANY shell metacharacter - anything
+#       that could combine, substitute, quote, glob, redirect or comment -
+#       the map author has written something this scan will not try to
+#       read. Defer, unconditionally. No exception for `2>&1`, none for a
+#       trailing `#` comment: a character on the list means "declare
+#       reach", full stop, not "declare reach unless the shape is one we
+#       recognise as probably fine" - recognising shapes is exactly the
+#       modelling this round stops doing.
+#   (2) Only once NOTHING on that list is present does whitespace-only
+#       splitting become safe (there is no quoting left to get wrong), and
+#       classification proceeds token by token: a reach verb anywhere,
+#       then a short, closed set of interpreter-flag rules (see
+#       _classify_command's docstring), then plain existing-file
+#       resolution for anything else.
+# There is no more file-content reading anywhere in this module - not even
+# one level. A wrapper is "wrapper", full stop, whether or not this scan
+# could have read what is inside it; reading it was always in service of
+# possibly finding a MORE SPECIFIC reason ("verb" instead of generic
+# "wrapper"), never of approving anything, so removing it changes no
+# decision, only how precisely a few notices are worded.
 REACH_VERBS = ("ssm", "ssh", "curl", "aws", "az", "gh", "psql", "mysql")
 _REACH_RE = re.compile(r"\b(" + "|".join(re.escape(v) for v in REACH_VERBS) + r")\b")
 # Recognised interpreters AND recognised script-running tools - anything
 # that can be handed a file and made to execute it. `powershell` (Windows'
-# built-in, distinct from `pwsh`) and `ruby`/`perl` were never in earlier
-# rounds' list; added here since (b) now depends on this list being
-# complete rather than merely "complete enough for the cases seen so far".
+# built-in, distinct from `pwsh`) and `ruby`/`perl` were added in round 4.
 _INTERPRETERS = ("bash", "sh", "dash", "zsh", "pwsh", "powershell",
                  "python", "python3", "py", "node", "ruby", "perl")
-_POSIX_SHELLS = ("bash", "sh", "dash", "zsh")
-# A WHOLE-LINE comment (bash/PowerShell/python all use `#`) is prose, not
-# code - a wrapper script's own comment describing what it does NOT do
-# (`_verify/smoke.sh`: "there is no service to curl and no ...") used to
-# verb-match on the strength of that sentence alone and deferred two rules
-# in this repo's own .crew/verify.json on every Stop, forever, since
-# smoke.sh is the default gate. Stripped BEFORE verb matching. A TRAILING
-# comment on a code line is left alone - a verb appearing in actual code
-# must still match even if the same line also carries a `# comment` after
-# it - so this only ever drops a line whose first non-blank character is
-# `#`. Still needed under the reject-only design: it changes whether (a)
-# fires (a verb in a comment must not), not whether (b) does (comment text
-# was never a wrapper-detection signal).
-_PS_BLOCK_COMMENT_RE = re.compile(r"<#.*?#>", re.S)
+# Codex round 6 BLOCKs 352/474/543 were three different ways a hand-rolled
+# shell grammar missed something it was reading through: subshell parens
+# glued to a path (`(./check.sh)`), `-n` granted by mere presence anywhere
+# in the token list rather than its actual position (`bash check.sh -n`),
+# and a command substitution's contents bypassing segmentation entirely
+# (`echo "$(true;./check.sh)"`). Every one of these characters, present
+# ANYWHERE in the command, means "this scan will not try to read this" -
+# not "unless the shape looks like a redirection we know about" (round 5's
+# `2>&1` exception is GONE: no exceptions this round, by design).
+_SHELL_METACHARS = frozenset('()$;&|<>`"\'\\{}*?[]~#!' + "\n\t")
+
+
+def _has_shell_metachar(cmd):
+    return any(c in _SHELL_METACHARS for c in cmd)
 
 
 def _looks_remote_text(text):
@@ -256,32 +223,6 @@ def _looks_remote_text(text):
         return None
     m = _REACH_RE.search(text)
     return m.group(1) if m else None
-
-
-def _strip_comments(text):
-    """Remove PowerShell `<# ... #>` blocks and every WHOLE-LINE `#`
-    comment from `text`, in that order (a block can span several lines
-    that would otherwise each individually look like code). A TRAILING
-    `# comment` on a line that also carries real code is left untouched -
-    only a line whose first non-blank character is `#` is dropped."""
-    if not text:
-        return text
-    text = _PS_BLOCK_COMMENT_RE.sub("", text)
-    return "\n".join(line for line in text.splitlines()
-                      if not line.lstrip().startswith("#"))
-
-
-def _tokenize(cmd):
-    """Shell-aware tokens for one command string. `shlex.split(posix=True)`
-    strips quote characters properly (`bash "local.sh"` -> ['bash',
-    'local.sh'], not the literal '"local.sh"'); an unbalanced quote shlex
-    cannot parse falls back to a plain split with surrounding quote
-    characters stripped per token, rather than silently yielding no tokens
-    at all (which would read as safe)."""
-    try:
-        return shlex.split(cmd, posix=True)
-    except ValueError:
-        return [p.strip("'\"") for p in cmd.split()]
 
 
 def _base_name(token):
@@ -296,15 +237,10 @@ def _base_name(token):
 
 def _resolves_to_repo_file(token, repo_root):
     """The real, symlink-resolved path if `token` names an existing FILE
-    under repo_root (any extension or none - existence is the only test;
-    see the module docstring for why the extension/shebang heuristic was
-    removed), else None. A file that exists but resolves OUTSIDE repo_root
-    (an absolute path, or a symlink escaping it) does not count as "under
-    the repo" and returns None here - it can still trigger (b) through the
-    interpreter-token check below if it was invoked via a recognised
-    interpreter, which covers every case actually seen; a bare invocation
-    of something outside the repo with no interpreter prefix is not one
-    this scan is asked to catch."""
+    under repo_root (any extension or none - existence is the only test),
+    else None. A file that exists but resolves OUTSIDE repo_root (an
+    absolute path, or a symlink escaping it) does not count as "under the
+    repo" and returns None here."""
     candidate = token if os.path.isabs(token) else os.path.join(repo_root, token)
     real = os.path.realpath(candidate)
     root_real = os.path.realpath(repo_root)
@@ -314,251 +250,79 @@ def _resolves_to_repo_file(token, repo_root):
     return None
 
 
-def _read_best_effort(path):
-    """The file's text, or None. Never raises, never bounds size (the 256
-    KiB cap was a round-2/3 approval-path artefact - see the module
-    docstring; this read is used only to possibly UPGRADE a "wrapper"
-    verdict to the more specific "verb" one, never to downgrade it, so a
-    read that fails just means the generic wrapper reason is kept)."""
-    try:
-        with open(path, "rb") as fh:
-            raw = fh.read()
-    except OSError:
-        return None
-    return raw.decode("utf-8", errors="replace")
+def _classify_command(cmd, repo_root):
+    """Classify ONE command string. Returns (status, detail):
 
+      "verb"    - detail is the matched reach verb, found as a whole word
+                  in the command text.
+      "syntax"  - detail is None. The command contains a shell
+                  metacharacter (see _SHELL_METACHARS) this scan will not
+                  try to read through; it is deferred unconditionally,
+                  before anything else about it is examined.
+      "wrapper" - detail is a short human-readable reason: the command
+                  invokes something (an interpreter's inline-code/script
+                  flag, or a token that resolves to an existing repo
+                  file) that could run anything.
+      "local"   - detail is None. No metacharacter, no verb, no wrapper.
 
-# Codex round 5, two BLOCKs, one root cause: _classify_command used to
-# tokenise the WHOLE rule command string as a single unit. Two shapes
-# defeated that:
-#   verify_record.py:282 - `./check.sh; true`. shlex has no idea `;` is a
-#     shell operator; it is an ordinary character to it, so the token came
-#     back as './check.sh;' (semicolon glued on) and _resolves_to_repo_file
-#     found no file by that literal name - classified "local".
-#   verify_record.py:359 - `bash -n check.sh && bash check.sh`. Tokenised
-#     as ONE command, `parts[0]` is `bash` and `-n` IS in the rest of the
-#     token list, so the parse-only exemption fired for the ENTIRE string
-#     - including the second, executable `bash check.sh` half it never
-#     separately looked at.
-#
-# Both are the same defect the module docstring already names: reading
-# through one more layer of shell syntax to find what a command ACTUALLY
-# runs. The fix is not another special case - it is splitting the command
-# into the pieces the shell itself would run separately, and classifying
-# each one. `;`/`&&`/`||`/`|`/`&`/newlines all end one command and start
-# another; `$( ... )` and `` ` ` `` run their contents as a SEPARATE
-# command regardless of what encloses them. -n and -c apply to the
-# segment they are IN, never to a whole multi-segment string.
-_SEGMENT_BREAK_RE = re.compile(r"&&|\|\||;|\n|(?<!>)&(?!&)(?!>)|\|")
+    Once (1) `_has_shell_metachar` has cleared the command, whitespace is
+    the only remaining delimiter that could possibly mean anything (no
+    quoting survives to make a whitespace-split wrong), so tokenising is
+    `cmd.split()` - nothing shell-aware needed, or wanted.
 
+    Interpreter-flag rules, checked only when token[0] is a recognised
+    interpreter, in this order:
+      - `-n` grants the parse-only exemption ONLY when it is EXACTLY
+        token[1] and there is EXACTLY ONE further token - `bash -n a.sh`
+        is parse-only; `bash a.sh -n` is not (that argument order never
+        makes bash treat -n as a parse-only flag at all), and neither is
+        `bash -n a.sh b.sh` (round 6 BLOCK verify_record.py:474: -n used
+        to be granted by mere PRESENCE in the token list, not its actual
+        position and arity).
+      - `-m` as token[1] names a MODULE, never a file - local,
+        unconditionally, regardless of what follows (`python3 -m pytest
+        x -q` is local).
+      - `-c` / `-Command` / `-File` as token[1] name inline code or a
+        script argument - wrapper, unconditionally.
+      - any other token from token[1] onward that resolves to an existing
+        repo file - wrapper.
+      - otherwise: local.
+    Otherwise (token[0] is not a recognised interpreter): any token at all
+    that resolves to an existing repo file - wrapper; otherwise local.
+    """
+    if _has_shell_metachar(cmd):
+        return ("syntax", None)
 
-def _split_shell_segments(cmd):
-    """Every segment of `cmd` the shell would run as a SEPARATE command:
-    split on `;`, `&&`, `||`, `|`, `&` (not `2>&1`/`>&`-style redirection,
-    where `&` is glued to `>`) and newlines - but NOT inside a quoted
-    string ('a; b' in `echo 'a; b'` is literal text, not two commands;
-    see test_a_single_line_command_full_of_shell_syntax_still_runs) and
-    NOT inside a `$( ... )` substitution's own parens (its OPERATORS are
-    internal to that one command; _extract_command_substitutions pulls
-    its contents out separately). Quote and paren state is tracked
-    char-by-char rather than with a single regex, because a bare regex
-    cannot tell "outside a string" from "inside one"."""
-    segments = []
-    current = []
-    quote = None
-    backtick = False
-    paren_depth = 0
-    i, n = 0, len(cmd)
-    while i < n:
-        c = cmd[i]
-        if quote:
-            current.append(c)
-            if c == quote:
-                quote = None
-            i += 1
-            continue
-        if backtick:
-            current.append(c)
-            if c == "`":
-                backtick = False
-            i += 1
-            continue
-        if paren_depth > 0:
-            current.append(c)
-            if c == "(":
-                paren_depth += 1
-            elif c == ")":
-                paren_depth -= 1
-            i += 1
-            continue
-        if c in ("'", '"'):
-            quote = c
-            current.append(c)
-            i += 1
-            continue
-        if c == "`":
-            backtick = True
-            current.append(c)
-            i += 1
-            continue
-        if c == "$" and i + 1 < n and cmd[i + 1] == "(":
-            paren_depth = 1
-            current.append("$(")
-            i += 2
-            continue
-        m = _SEGMENT_BREAK_RE.match(cmd, i)
-        if m:
-            segments.append("".join(current))
-            current = []
-            i = m.end()
-            continue
-        current.append(c)
-        i += 1
-    segments.append("".join(current))
-    return [s.strip() for s in segments if s.strip()]
+    parts = cmd.split()
+    if not parts:
+        return ("local", None)
 
-
-def _extract_command_substitutions(cmd):
-    """Every `$( ... )` and `` ` ... ` ``span's INNER text, as additional
-    segments to classify in their own right - a host call reachable only
-    through a substitution must not evade classification just because it
-    is not one of the top-level segments. Extracted from the raw text
-    regardless of surrounding quotes: command substitution still runs
-    inside double quotes in a real shell, and treating it as inert even
-    inside single quotes (where it genuinely would not run) only makes
-    this MORE cautious, never less. `$( ... )` is paren-balance aware so
-    a nested `$(a $(b) c)` extracts the whole outer span; backticks pair
-    with the next backtick, matching real shell syntax (no nesting)."""
-    spans = []
-    i, n = 0, len(cmd)
-    while i < n:
-        if cmd[i] == "$" and i + 1 < n and cmd[i + 1] == "(":
-            depth = 1
-            j = i + 2
-            while j < n and depth > 0:
-                if cmd[j] == "(":
-                    depth += 1
-                elif cmd[j] == ")":
-                    depth -= 1
-                j += 1
-            spans.append(cmd[i + 2:j - 1 if depth == 0 else j])
-            i = j
-            continue
-        if cmd[i] == "`":
-            j = cmd.find("`", i + 1)
-            if j == -1:
-                break
-            spans.append(cmd[i + 1:j])
-            i = j + 1
-            continue
-        i += 1
-    return spans
-
-
-def _classify_segment(seg, repo_root):
-    """Classify ONE shell segment - a command with no unescaped shell
-    operator of its own. Same three-way result as _classify_command."""
-    verb = _looks_remote_text(seg)
+    verb = _looks_remote_text(cmd)
     if verb:
         return ("verb", verb)
 
-    parts = _tokenize(seg)
-    if not parts:
-        return ("local", None)
-    lowered = [p.lower() for p in parts]
-
-    if "cd" in lowered:
-        return ("wrapper", "a `cd` appears in the command")
-
     head_base = _base_name(parts[0])
-    if head_base in _POSIX_SHELLS and "-n" in parts[1:]:
-        # Parse-only: nothing after -n is ever executed by THIS
-        # invocation, so nothing about its target needs inspecting. Scoped
-        # to THIS segment only - round 5 BLOCK verify_record.py:359: under
-        # the old whole-string tokenisation, `-n` anywhere in a compound
-        # command exempted the entire thing, including a LATER, unrelated,
-        # executable segment.
+    if head_base in _INTERPRETERS:
+        if len(parts) == 3 and parts[1] == "-n":
+            return ("local", None)
+        if len(parts) >= 2 and parts[1] == "-m":
+            return ("local", None)
+        if len(parts) >= 2 and parts[1] in ("-c", "-Command", "-File"):
+            return ("wrapper", f"`{parts[1]}` names inline code or a script argument")
+        for p in parts[1:]:
+            if _resolves_to_repo_file(p, repo_root) is not None:
+                return ("wrapper", f"invokes an existing repo file {p!r}")
         return ("local", None)
 
-    interpreter_reason = None
-    for i, p in enumerate(parts):
-        if _base_name(p) in _INTERPRETERS:
-            for later in parts[i + 1:]:
-                if not later.startswith("-"):
-                    interpreter_reason = interpreter_reason or (
-                        f"`{p}` is followed by an argument")
-                    break
-
-    verb_from_file = None
-    file_reason = None
     for p in parts:
-        # Belt and braces: a trailing operator character glued to a token
-        # should never reach here once _split_shell_segments has already
-        # run (that is precisely what it exists to prevent - round 5
-        # BLOCK verify_record.py:282), but stripping it again here costs
-        # nothing and means a future caller of _classify_segment that
-        # skips segmentation fails safe rather than silently missing a
-        # file that genuinely exists.
-        p_stripped = p.rstrip(";&")
-        real = _resolves_to_repo_file(p_stripped, repo_root)
-        if real is None:
-            continue
-        file_reason = file_reason or f"invokes an existing repo file {p_stripped!r}"
-        text = _read_best_effort(real)
-        if text is None:
-            continue
-        v = _looks_remote_text(_strip_comments(text))
-        if v:
-            verb_from_file = v
-            break
-
-    if verb_from_file:
-        return ("verb", verb_from_file)
-    if interpreter_reason or file_reason:
-        return ("wrapper", interpreter_reason or file_reason)
+        if _resolves_to_repo_file(p, repo_root) is not None:
+            return ("wrapper", f"invokes an existing repo file {p!r}")
     return ("local", None)
 
 
-def _classify_command(cmd, repo_root):
-    """Classify ONE command string under the reject-only reach model.
-    Splits into every shell segment (_split_shell_segments) plus every
-    command-substitution span (_extract_command_substitutions), and
-    classifies each (_classify_segment). Returns (status, detail):
-
-      "verb"    - detail is the matched reach verb, from whichever
-                  segment named it first - the command text itself, or a
-                  directly-named wrapper file's content if it could be
-                  read.
-      "wrapper" - detail is a short human-readable reason from whichever
-                  segment triggered it first. The command invokes
-                  something (a script, an interpreter with an argument,
-                  a `cd`) that could run anything; inspection can reject
-                  this, never approve it.
-      "local"   - detail is None. EVERY segment was local - no verb, no
-                  wrapper, no inline shell, no `cd`, anywhere in the
-                  command.
-    """
-    stripped = _strip_comments(cmd)
-    segments = _split_shell_segments(stripped)
-    segments += _extract_command_substitutions(stripped)
-    if not segments:
-        return ("local", None)
-
-    wrapper_result = None
-    for seg in segments:
-        status, detail = _classify_segment(seg, repo_root)
-        if status == "verb":
-            return (status, detail)
-        if status == "wrapper" and wrapper_result is None:
-            wrapper_result = (status, detail)
-    return wrapper_result if wrapper_result else ("local", None)
-
-
 def scan_reach(run, repo_root):
-    """Classify every command in a rule's `run` under the reject-only
-    model (see _classify_command). Returns (status, detail) for the FIRST
-    command that is not "local" - "verb" takes priority over "wrapper" for
-    the SAME command, but between commands this is simply run order.
+    """Classify every command in a rule's `run` (see _classify_command).
+    Returns (status, detail) for the FIRST command that is not "local" -
     "local" (detail None) only when every command in `run` is local."""
     for cmd in run or []:
         if not isinstance(cmd, str):
@@ -619,16 +383,25 @@ REASON_TEXT = {
     # epistemic state about how well it was read.
     "reach_wrapper": ("wrapper or inline shell invocation - declare "
                        '`"reach": "local"` (or network/host) to run it on Stop'),
+    # Codex round 6: a command containing ANY shell metacharacter is a
+    # SEPARATE kind from "reach_wrapper" - not because it is handled any
+    # differently (both defer, both persist, both need `reach` declared),
+    # but because the reason a map author reads should name the actual
+    # trigger (shell syntax this scan will not try to read through) rather
+    # than the generic wrapper phrasing, which used to say "invokes an
+    # existing repo file" for a command that may not even name one.
+    "reach_syntax": ('shell syntax in an undeclared rule - declare '
+                      '`"reach": "local"` (or network/host) to run it on Stop'),
     "clean_tree_required": ("requires a clean working tree - not run on "
                              "Stop, run /crew:verify --all"),
 }
 
 # Kinds a matched rule can be classified as that mean "never ran this turn
 # by construction" -- see cmd_sync's docstring. requiresCleanTree shares this
-# set with the two reach kinds and chronic: all five are decided BEFORE the
-# rule ever runs, so all five persist and get reported the same way.
+# set with the reach kinds and chronic: all six are decided BEFORE the rule
+# ever runs, so all six persist and get reported the same way.
 _NEVER_RAN_KINDS = ("chronic", "reach_declared", "reach_undeclared",
-                    "reach_wrapper", "clean_tree_required")
+                    "reach_wrapper", "reach_syntax", "clean_tree_required")
 
 
 def cmd_sync():
@@ -637,7 +410,7 @@ def cmd_sync():
         {"sha": "<HEAD>",
          "matched_rules": [{"key":..., "label":..., "kind": "normal"|
              "chronic"|"reach_declared"|"reach_undeclared"|"reach_wrapper"|
-             "clean_tree_required", "reason":..., "cmds": [...],
+             "reach_syntax"|"clean_tree_required", "reason":..., "cmds": [...],
              "unknown": bool}, ...],
          "cmd_log": [{"cmd":..., "status": "pass"|"skip77", "elapsed": N}, ...]}
 
@@ -648,10 +421,10 @@ def cmd_sync():
 
     Classification, per matched rule:
       - chronic / reach_declared / reach_undeclared / reach_wrapper /
-        clean_tree_required (see _NEVER_RAN_KINDS): never ran this turn by
-        construction. Persist it, named, so it cannot go quiet once the
-        sha marker advances past the commit where its own files last
-        changed.
+        reach_syntax / clean_tree_required (see _NEVER_RAN_KINDS): never
+        ran this turn by construction. Persist it, named, so it cannot go
+        quiet once the sha marker advances past the commit where its own
+        files last changed.
       - normal, but one of its commands is missing from cmd_log (an acute
         budget deferral this turn): leave any prior record entry untouched.
         The sha marker already refuses to advance while this is outstanding,
