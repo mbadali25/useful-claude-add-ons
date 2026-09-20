@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>The crew plugin: what it does and why</title>
+<style>
+body { font-family: Calibri, Arial, sans-serif; font-size: 11pt; color: #1A1A1A; margin: 2cm; line-height: 1.4; }
+h1 { font-size: 22pt; color: #1F4E79; margin-bottom: 4pt; }
+h2 { font-size: 16pt; color: #1F4E79; margin-top: 24pt; border-bottom: 1px solid #5C6670; padding-bottom: 3pt; }
+h3 { font-size: 13pt; color: #1F4E79; margin-top: 16pt; }
+p { margin: 6pt 0; }
+table { border-collapse: collapse; width: 100%; margin: 8pt 0 12pt 0; }
+th { background: #1F4E79; color: #FFFFFF; text-align: left; padding: 5pt 6pt; font-size: 10pt; }
+td { border-bottom: 1px solid #C8CDD2; padding: 5pt 6pt; vertical-align: top; font-size: 10pt; }
+.muted { color: #5C6670; font-size: 9.5pt; }
+.warn { color: #B45309; }
+.fail { color: #B02A1E; }
+.box { border: 1px solid #1F4E79; padding: 8pt 10pt; margin: 10pt 0; background: #F3F6FA; }
+.plain { border-left: 4px solid #1F4E79; padding: 4pt 10pt; margin: 8pt 0; background: #F7F9FB; }
+code { font-family: Consolas, "Courier New", monospace; font-size: 9.5pt; }
+ul { margin: 4pt 0 8pt 18pt; }
+li { margin: 3pt 0; }
+</style>
+</head>
+<body>
+
+<h1>The crew plugin: what it does and why</h1>
+<p class="muted">The combined guide: high-level and technical in one document. Two companion documents split it: <i>crew-overview</i> for readers without technical depth and <i>crew-technical-reference</i> for the people who run it. Written 20 September 2026 against crew 0.19.92 on <code>main</code> (commit 621d50dc), with the Stop-gate fix (0.19.93) described as it stands in review.</p>
+
+<div class="box">
+<p><b>In one paragraph.</b> Crew turns Claude Code from a single assistant into a small, disciplined software team. One agent manages, one investigates, one implements, an independent one from a different AI vendor reviews, and automatic gates stop anything that fails from being merged or released. Everything it knows about a codebase is written down in files that live with the code, so nothing depends on one person's memory or one chat session. It exists because an AI that writes code, reviews its own work, and never loses focus is a fiction; crew makes each of those a separate, checkable step.</p>
+</div>
+
+<h2>1. The problem it solves</h2>
+<p>Left to itself, an AI coding assistant has four habits that cost real money:</p>
+<ul>
+<li><b>It marks its own homework.</b> The same model that wrote a change is the one saying it is fine.</li>
+<li><b>It loses the picture.</b> Each session starts from nothing. It does not know how the database is shaped, which service calls which, or what broke last month.</li>
+<li><b>It wanders.</b> Asked to fix one thing, it notices five others and fixes those too, and the ticket you asked for arrives with strangers attached.</li>
+<li><b>Nothing stops it.</b> A wrong command against a production database, or a merge with a failing test, goes through unless a human happens to be watching.</li>
+</ul>
+<p>Crew answers each habit with a mechanism rather than an instruction: a separate reviewer, a written code map, a scope rule with an enforced write boundary, and gates that block.</p>
+
+<h2>2. How it works, in plain terms</h2>
+<div class="plain">
+<p><b>Think of it as a very small consultancy inside your editor.</b> You write a ticket. A manager (the PM) decides who should do what and keeps the overall picture. A developer takes the ticket into a private workspace and does only that job. When it is done, a reviewer from a different company reads the change looking for defects, and reports them in a fixed format. A set of automatic checks runs before anything is merged or promoted, and if one fails, the release stops. Every decision and every lesson is written into files in the repository, so the next session, or the next person, starts where this one left off.</p>
+</div>
+<p>The technical version of the same sentence: file-backed tickets; one implementation session in its own context; an independent QA pass by Codex, Copilot or a fresh Claude context, whichever probes clean; deterministic gates wired into Claude Code's hook system; and a code map, code graph and diagrams kept in version control.</p>
+
+<h3>The people, so to speak</h3>
+<table>
+<tr><th>Role</th><th>What it does</th><th>Why it is a separate agent</th></tr>
+<tr><td>PM</td><td>Reads project state, decides what the crew should do next, dispatches the roles that do it, reports back. Never writes application code itself.</td><td>Keeps the whole picture in one place. From 0.19.92 it is mechanically prevented from writing code by the write guard.</td></tr>
+<tr><td>Explorer</td><td>Answers "where does this live, how does this flow work" and returns a short map, never file contents.</td><td>Holds no write or shell tools, so it can be trusted with any question.</td></tr>
+<tr><td>Developer</td><td>Implements one scoped change and returns a summary. Runs its gates in the foreground. Never reviews its own diff.</td><td>Its own context window means the main session's history does not leak into the change.</td></tr>
+<tr><td>QA reviewer</td><td>A hostile review of a code diff: defect lines or the single word CLEAN.</td><td>Independent eyes. Codex (OpenAI) is tried first so the reviewer is a different AI family from the author.</td></tr>
+<tr><td>Security</td><td>Read-only review before anything touching authentication, secrets, SQL, uploads, infrastructure permissions or CI is merged.</td><td>Restricted tools and a separate context.</td></tr>
+<tr><td>Smoke author</td><td>Writes and repairs the quick regression checks a repository runs on every change.</td><td>Repositories with no tests get a harness first, so the gates have something to stand on.</td></tr>
+<tr><td>Planner, analyst, researcher</td><td>Second opinion on a design; survey of real gaps in an application; answers from outside the repository with sources.</td><td>Each works from a brief rather than from the code, so it cannot be led by the implementation.</td></tr>
+<tr><td>DBA, docs writer, browser tester, scribe, infrastructure architect</td><td>Migration review; documentation from code; Playwright UI tests; the durable record of decisions; cloud topology review before it is built.</td><td>Added as a repository grows (the "tiers" below), never by default.</td></tr>
+</table>
+
+<h3>Tiers: the crew grows only when there is evidence it should</h3>
+<table>
+<tr><th>Tier</th><th>Roles</th><th>Added when</th></tr>
+<tr><td>0</td><td>explorer, qa-reviewer</td><td>Always. This is the starting crew.</td></tr>
+<tr><td>1</td><td>+ security, smoke-author, developer</td><td>Security findings reach review; coverage gaps cause regressions; the PM is running work end to end.</td></tr>
+<tr><td>2</td><td>+ dba, docs-writer, browser-tester, analyst, planner, infrastructure-architect, scribe, researcher</td><td>Migrations are routine; a UI regression reached users; designs get reworked after starting; decisions are lost six weeks later; answers are invented instead of looked up.</td></tr>
+<tr><td>3</td><td>parallel sessions, worktrees, agent teams</td><td>Every involved repository has a green smoke harness.</td></tr>
+</table>
+<p>A role earns its place only if it buys an isolated context, a restricted tool set, or genuinely independent eyes. A persona in a prompt buys none of those, so crew does not ship "a business analyst agent" for its own sake. The command <code>/crew:scale</code> reads the review metrics and recommends growing, shrinking or staying.</p>
+
+<h3>Specialists: 40 more roles you switch on per repository</h3>
+<p>These are real agent definitions with no tier, because "this repository does SharePoint" is a fact about one checkout, not a stage every project reaches. You onboard one with <code>/crew:pm onboard &lt;role&gt;</code> and it justifies itself by the stack, not by metrics.</p>
+<table>
+<tr><th>Group</th><th>Specialists</th></tr>
+<tr><td>Languages and frameworks</td><td>python-pro, node-developer, php-pro, rust-engineer, react-specialist, angular-architect, dotnet-core-expert, dotnet-framework-4.8-expert, sql-pro, graphql-architect, backend-developer, api-designer</td></tr>
+<tr><td>Cloud and infrastructure</td><td>terraform-engineer, network-engineer, platform-engineer, microservices-architect, legacy-modernizer, database-administrator, git-workflow-manager, workflow-orchestrator, multi-agent-coordinator</td></tr>
+<tr><td>Microsoft platform</td><td>windows-infra-admin, exchange-online-specialist, sharepoint-developer, power-automate-specialist, powershell-5.1-expert, powershell-7-expert, powershell-security-hardening, ad-security-reviewer</td></tr>
+<tr><td>Security and compliance</td><td>penetration-tester, compliance-auditor, code-reviewer, architect-reviewer, fintech-engineer, payment-integration</td></tr>
+<tr><td>Review and writing</td><td>qa-researcher (checks a change's claims about the outside world against live sources), kimi-consult (a second opinion from a third AI family), ai-writing-auditor, skill-author, design-bridge</td></tr>
+</table>
+
+<h2>3. Commands: what you can ask for</h2>
+<p>Every command is typed as <code>/crew:&lt;name&gt;</code> in Claude Code. The right-hand column says what it means for someone who does not read code.</p>
+<table>
+<tr><th>Command</th><th>What it does</th><th>In plain terms</th></tr>
+<tr><td>init</td><td>Guided, resumable, phased setup of a repository for crew.</td><td>The onboarding wizard. Run once per repository.</td></tr>
+<tr><td>onboard</td><td>Learns the codebase once and writes a durable, verifiable code map.</td><td>Builds the "how this system works" notes so nobody has to re-explain it.</td></tr>
+<tr><td>ticket</td><td>Scopes a request into a ticket.</td><td>Turns "can we make X faster" into a bounded piece of work with acceptance criteria.</td></tr>
+<tr><td>work</td><td>Picks up a ticket and works it end to end: implement, review, gate.</td><td>The daily loop. One ticket in, one reviewed change out.</td></tr>
+<tr><td>review</td><td>Independent QA review of the current diff by Codex, Copilot or Claude, whichever probes clean first.</td><td>A second pair of eyes from a different vendor before anything merges.</td></tr>
+<tr><td>verify</td><td>Builds or refreshes the verification map from evidence; can run the whole map.</td><td>Decides which checks run for which files, and proves they run.</td></tr>
+<tr><td>gate</td><td>Takes a repository's merge gate down and puts it back, from an export.</td><td>The controlled way to bypass protection for an emergency, with a record.</td></tr>
+<tr><td>promote</td><td>Promotes a build to the next environment with the full post-deploy proof.</td><td>Development to QA to production, with evidence at each step.</td></tr>
+<tr><td>change</td><td>Files, checks and closes a change request in ServiceDesk Plus, Jira or locally.</td><td>The change-board paperwork, filled from the ticket and refused while questions are unanswered.</td></tr>
+<tr><td>emergency</td><td>Declares an incident: stands gates down, opens parallel investigation lanes, records what was skipped.</td><td>The break-glass path, with an audit trail of what was bypassed.</td></tr>
+<tr><td>debug</td><td>Finds the cause of a defect before anyone proposes a fix.</td><td>Systematic debugging: reproduce, isolate, prove the cause, then fix.</td></tr>
+<tr><td>pm</td><td>Talks to the crew's manager: status, assign work, set authority, onboard or offboard roles.</td><td>Ask "where are we", or hand it the queue.</td></tr>
+<tr><td>plan</td><td>An independent design opinion before building.</td><td>A second architect who has not seen the code.</td></tr>
+<tr><td>survey</td><td>Researches the application for real gaps and proposes options with trade-offs.</td><td>"What should we improve next, and what does each option cost."</td></tr>
+<tr><td>split</td><td>Splits an oversized Jira ticket into sub-tickets, with evidence and confirmation.</td><td>Breaks a too-big request into deliverable pieces.</td></tr>
+<tr><td>docs</td><td>Updates the documents a change should touch, and only those.</td><td>Keeps the changelog, README and decision records honest.</td></tr>
+<tr><td>reference</td><td>Generates the API and feature reference from the code, with anchors.</td><td>The living reference manual, regenerated rather than hand-maintained.</td></tr>
+<tr><td>diagram</td><td>Creates or refreshes architecture, process and data-flow diagrams from the actual code.</td><td>Pictures that are checked against the code they describe.</td></tr>
+<tr><td>runbook</td><td>Writes, updates or audits operational runbooks.</td><td>The "what to do at 3 a.m." documents, kept current.</td></tr>
+<tr><td>roster, model, scale</td><td>Lists every role and its backing model; changes and probes the model per role; reviews whether the crew should grow or shrink.</td><td>Who is on the team, what powers them, and whether the team is the right size.</td></tr>
+<tr><td>config, upgrade</td><td>Shows where every setting comes from and guides the machine-wide config; migrates an older crew setup forward.</td><td>Settings and upgrades, with nothing changed silently.</td></tr>
+<tr><td>jira-sync, sdp-sync, obsidian-sync</td><td>Sync a ticket between the local cache and Jira, ServiceDesk Plus or an Obsidian Kanban board.</td><td>Your tracker stays the source of truth; crew mirrors it.</td></tr>
+<tr><td>handoff</td><td>Writes the handoff note for the next session.</td><td>Nothing is lost when a session ends or is cleared.</td></tr>
+</table>
+
+<h2>4. Skills: the know-how behind the commands</h2>
+<p>A skill is a written procedure the agents load when a task matches it. Twenty ship with crew.</p>
+<table>
+<tr><th>Skill</th><th>What it covers</th></tr>
+<tr><td>crew-setup, crew-pm, crew-scaling</td><td>Bootstrapping a repository; managing the crew itself; when to add or remove roles.</td></tr>
+<tr><td>crew-verification, crew-lint, crew-terraform</td><td>The verification map, test credentials and Playwright; linters and formatters for PowerShell, PHP, Python, Terraform and JavaScript; terraform-docs and tflint.</td></tr>
+<tr><td>crew-debugging</td><td>Read the error, reproduce it, check recent changes, gather evidence, then propose a fix. Adapted under MIT licence from the superpowers project.</td></tr>
+<tr><td>crew-graph, crew-diagrams, crew-docs, crew-runbooks</td><td>The code graph; Mermaid diagrams rendered to PNG or SVG; changelog, README, ADRs and generated docs; operational runbooks.</td></tr>
+<tr><td>crew-context, crew-memory</td><td>Warning near the context limit, handoff notes, resuming after a clear; durable project memory including Obsidian.</td></tr>
+<tr><td>crew-providers, crew-cloud, crew-notify</td><td>Codex, Copilot and Gemini as external providers; the official AWS and Azure MCP servers; Teams and Telegram notifications.</td></tr>
+<tr><td>crew-change, crew-house-style, crew-best-practices, find-skills</td><td>The change-request template; document style for anything handed to a human; community practices for Claude Code; discovering skills from the open ecosystem.</td></tr>
+</table>
+
+<h2>5. Safety: the gates and guards</h2>
+<p>Claude Code lets a plugin register "hooks": scripts that run automatically at fixed moments, whether or not the model agrees. Crew uses them for the checks that must not depend on anyone remembering. A hook that can block a turn ships <b>off</b> and is switched on deliberately.</p>
+<table>
+<tr><th>When it runs</th><th>What crew does there</th><th>What that means</th></tr>
+<tr><td>Session start</td><td>Briefs the PM with project state and any handoff note; syncs the platform config.</td><td>Every session begins knowing where the last one stopped.</td></tr>
+<tr><td>Before a shell command</td><td>Guards: refuse <code>terraform apply</code> and <code>tofu apply</code>, force-push, admin merge; production database and host patterns once declared.</td><td>A wrong command against production is refused, not regretted.</td></tr>
+<tr><td>Before a file write (new in 0.19.92)</td><td>The role write guard: each role may write only where its own definition allows. The PM's scope is notes, tickets and diagrams.</td><td>The manager cannot quietly become the developer.</td></tr>
+<tr><td>Before context compaction</td><td>Writes the handoff note.</td><td>Nothing is lost when the conversation is summarised.</td></tr>
+<tr><td>On a notification</td><td>Pulses the PM with what changed.</td><td>Work landing elsewhere is noticed.</td></tr>
+<tr><td>At the end of every turn (the Stop gate)</td><td>Runs the verification map for the files that changed; blocks the turn on failure.</td><td>The safety net under every change. Section 8 is about fixing it.</td></tr>
+</table>
+<p>Two further gates sit outside hooks: the <b>merge gate</b> (Bitbucket or GitHub branch protection, driven by the same map) and the <b>promotion gate</b>, which refuses to promote without a row in the promotions log and, when configured, without a change request.</p>
+<p>Every guard resolves to the <b>narrower</b> of the repository and machine-wide settings, so a cloned repository cannot loosen a machine's policy, and an unreadable setting resolves to the strict value, never to "off".</p>
+
+<h2>6. Knowledge: what crew remembers, and where</h2>
+<ul>
+<li><b>The code map</b> (<code>.crew/codemap/</code>): one prose file per subsystem, every claim marked as derived from a specific line of code or as judgement, each anchored to a commit so staleness is detectable, not guessed.</li>
+<li><b>The code graph</b> (<code>graphify-out/</code>): a mechanical graph of every symbol and call, rebuilt by a hook after each commit, queried by the explorer.</li>
+<li><b>Diagrams</b> (<code>docs/diagrams/</code>): Mermaid sources with anchors, refreshed only when the code they cite moved.</li>
+<li><b>Runbooks, ADRs, changelog, handoff notes</b>: the durable record, kept by the scribe and the docs commands.</li>
+<li><b>Review metrics</b> (<code>.crew/metrics.md</code>): one row per review, which is how <code>/crew:scale</code> and the PM's health signal know whether tickets are too large or a role is earning its place.</li>
+</ul>
+<p>Everything above lives in the repository. Crew deliberately keeps nothing that only one machine or one chat can see.</p>
+
+<h2>7. What changed this week, and what it means</h2>
+<p>Between 19 and 20 September, crew moved from 0.19.89 to 0.19.92 on <code>main</code>, with 0.19.93 in review. Each change is the result of a root-cause finding, and each was reviewed by Codex across several rounds before merging.</p>
+<table>
+<tr><th>Version</th><th>Change</th><th>What it means for you</th></tr>
+<tr><td>0.19.90</td><td><b>The idle rule, in both directions.</b> Every role that runs a check runs it in the foreground and never ends its turn waiting on a background task, because a finished agent is never woken. The PM learns the other half: an idle signal is not proof a role stopped; check the workspace's file times against the clock and escalate rather than restart.</td><td>Three agents in one night had stalled forever "waiting for a notification". That cannot happen now, and the manager will not throw away live work by restarting it.</td></tr>
+<tr><td>0.19.91</td><td><b>A behaviour eval suite.</b> Five live tests, each tempting one documented rule, graded by structure rather than by a judge model. A matched pair of runner scripts and a CI workflow that skips visibly without an API key.</td><td>The rules are tested against a real model, not just read. The first run caught the PM writing code itself.</td></tr>
+<tr><td>0.19.92</td><td><b>The role write guard.</b> A hook that enforces each role's write scope from its own definition. Off by default; the strictest setting is the floor once enabled. Corrupt configuration forces the strict setting. Paths are resolved through symlinks and junctions with each operating system's own ordering.</td><td>Prose said the PM must not write code, and it did anyway for four hours. Now the tool refuses. Enable it per repository with <code>guards.roleWrites: block</code>.</td></tr>
+<tr><td>also merged</td><td>Frontmatter across all 54 agents and every command is parsed as YAML by the marketplace check, after four command files were found to load with no frontmatter at all. All 21 verification rules in this repository are priced.</td><td>Silent breakage in the definitions is now a failing check, and the Stop budget can defer instead of running everything.</td></tr>
+</table>
+
+<h2>8. The Stop-gate fix (0.19.93, in review)</h2>
+<div class="plain">
+<p><b>The problem in one sentence.</b> The safety net at the end of every turn was taking seven minutes, every turn, on this machine, and people were cancelling it, which is worse than not having it.</p>
+</div>
+<h3>What was wrong</h3>
+<p>The gate decides what to check by comparing the current files against the last commit it fully verified, recorded in a marker file. That marker only advanced when nothing had been deferred. One rule in this repository costs 185 seconds against a 60-second budget, so it was deferred on every turn, the marker never moved, and every turn re-checked 59 files across 13 rules. Separately, a rule with no declared cost could never be deferred at all, so ten of them ran whole every turn regardless of budget. Two other repositories on the same machine were worse: one had no marker at all and no priced rules, with a 499-second Stop; the other had ten rules that ran a smoke script which, without a flag, fired commands at a live development web server over SSM on every turn, with the target chosen by an ambient environment variable.</p>
+<h3>What the fix does</h3>
+<table>
+<tr><th>Component</th><th>Technical</th><th>Plain terms</th></tr>
+<tr><td>Per-rule verified record</td><td>Each rule that ran and passed on the current tree is recorded by content hash; the record advances rule by rule. A chronically over-budget rule, one excluded for reach, one needing a clean tree, or one that skipped is listed as unverified until <code>/crew:verify --all</code> runs it, and reported every turn.</td><td>One slow check no longer freezes all the others. Nothing is forgotten; it is listed.</td></tr>
+<tr><td>Measure and cache</td><td>An unpriced rule is timed on its first run and the measurement cached locally, so it is deferrable next turn. <code>--price</code> writes <code>seconds</code> into the map for the author; it is never reachable from the hook.</td><td>Checks price themselves. Unknown cost means "mandatory once", not "mandatory forever".</td></tr>
+<tr><td>Reach declarations</td><td>Rules declare <code>local</code>, <code>network</code> or <code>host</code>. Only local rules run on Stop. Inspection may only reject: an undeclared rule that runs any script, inline shell or <code>cd</code> is deferred until the map declares it. A parse-only <code>bash -n</code> stays local.</td><td>Nothing reaches a live server unattended. Each repository declares its wrapper scripts once; the PM tells it which.</td></tr>
+<tr><td>Environment pinning</td><td><code>ENV</code>, <code>AWS_PROFILE</code>, <code>AWS_DEFAULT_REGION</code>, <code>KUBECONFIG</code> and <code>TF_WORKSPACE</code> are unset for every rule unless the map declares them; the gate prints what it pinned.</td><td>A leftover variable in a terminal cannot point a check at production.</td></tr>
+<tr><td>Exit 77 as SKIP</td><td>The standard "environment absent" code is neither pass nor fail, never advances the marker, and deletes any earlier clean fingerprint.</td><td>A check that could not run is not counted as passed.</td></tr>
+<tr><td>Three PM triggers</td><td>Marker missing or stale by N commits; N rules unpriced; N rules with undeclared reach. An unreadable value renders as "unknown" and fires.</td><td>The manager tells you what to declare or price instead of you discovering it from a slow hook.</td></tr>
+</table>
+<h3>Review so far</h3>
+<p>Five Codex rounds plus a PowerShell security specialist have reviewed the branch; 31 findings were fixed with a test for each, and a self-check test now runs this repository's real rule map through the classifier. That self-check caught, in turn, <code>python -m pytest</code> being read as a wrapper script, the word "curl" in a comment, and the parse-only case. Four rounds of the wrapper scanner each found a new way shell syntax could hide a script, which is why the design was inverted to reject-only in round four. <span class="warn">One fix pass (splitting compound commands on shell operators) is in progress; then one more review round, then merge.</span> Its effect on live sessions is not yet measured.</p>
+<h3>What a repository has to do after upgrading</h3>
+<ul>
+<li>Declare <code>reach: local</code> on rules that run a script, or the PM pulse will name them and they will be deferred until declared.</li>
+<li>Run <code>/crew:verify --price</code> once, or let the cache price rules as they run.</li>
+<li>Create the marker on a verified commit only. Marking an unverified commit as verified means the gate will not look at it again.</li>
+</ul>
+
+<h2>9. Integrations</h2>
+<table>
+<tr><th>Area</th><th>What crew connects to</th></tr>
+<tr><td>Trackers</td><td>Jira and ServiceDesk Plus through MCP; an Obsidian Kanban board; a local file cache always.</td></tr>
+<tr><td>Reviewers and models</td><td>Codex (OpenAI) as the first-choice reviewer; GitHub Copilot models including Kimi as an alternative family; Gemini as a design partner; per-role model pins with a probe that confirms the model answers before it is trusted.</td></tr>
+<tr><td>Cloud</td><td>The official AWS and Azure MCP servers, configured per repository with guardrails.</td></tr>
+<tr><td>Notifications</td><td>Microsoft Teams and Telegram, outbound; two-way options documented.</td></tr>
+<tr><td>Memory</td><td>Optional Obsidian vault for cross-repository notes; never written to without explicit consent in the session.</td></tr>
+</table>
+
+<h2>10. Getting started</h2>
+<ol>
+<li>Install the marketplace and the crew plugin in Claude Code, then <code>/reload-plugins</code> in any open session.</li>
+<li>In a repository, run <code>/crew:init</code>. It is phased and resumable; nothing is written without saying so.</li>
+<li>Build the smoke harness when init asks. Everything downstream stands on it.</li>
+<li>Run <code>/crew:onboard</code> so the crew learns the codebase once and writes it down.</li>
+<li>Write a ticket with <code>/crew:ticket</code>, then <code>/crew:work</code>. Read the review. Merge when the gate is green.</li>
+</ol>
+
+<h2>11. Glossary</h2>
+<table>
+<tr><th>Term</th><th>Meaning</th></tr>
+<tr><td>Agent, role</td><td>A separately-prompted instance of the model with its own tools and context window.</td></tr>
+<tr><td>Hook</td><td>A script Claude Code runs automatically at a fixed moment, whether or not the model wants it to.</td></tr>
+<tr><td>Gate</td><td>A check that blocks progress on failure rather than offering advice.</td></tr>
+<tr><td>Guard</td><td>A hook that refuses a specific dangerous command or write.</td></tr>
+<tr><td>Verification map</td><td>The tracked file that says which checks run when which files change, and what each costs.</td></tr>
+<tr><td>Marker, fingerprint, record</td><td>Machine-local files that remember what the Stop gate has already verified, so it does not repeat work.</td></tr>
+<tr><td>Reach</td><td>Whether a check stays on this machine (local), touches the network, or touches a host.</td></tr>
+<tr><td>Code map, code graph</td><td>The prose and the mechanical descriptions of a codebase, both kept in the repository.</td></tr>
+<tr><td>Sabotage test</td><td>Reintroducing a bug on purpose to prove the test that guards against it goes red.</td></tr>
+<tr><td>Squash merge</td><td>Landing a branch as one commit, so a version bump and its content arrive together.</td></tr>
+</table>
+
+<p class="muted">Provenance: figures are read from the repository at commit 621d50dc (main) and branch crew-stop-gate-record at b6e8c4bb; counts are 28 commands, 54 agents, 20 skills, 20 hook registrations, 51 test modules. Review counts are from <code>.crew/metrics.md</code>. Not verified: the Stop-gate fix's effect on live sessions, pending merge.</p>
+</body>
+</html>
