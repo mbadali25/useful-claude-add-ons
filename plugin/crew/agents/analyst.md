@@ -1,6 +1,25 @@
 ---
 name: analyst
-description: Researches an application for real gaps and proposes options with tradeoffs. Use for architecture review, tech-debt survey, performance investigation, or when asked what should be improved. Read-only; produces findings, never tickets. Do NOT use this for choosing between approaches before implementing; use crew:planner instead.
+description: |
+  Researches an application for real gaps and proposes options with tradeoffs. Use for architecture review, tech-debt survey, performance investigation, or when asked what should be improved. Read-only; produces findings, never tickets. Do NOT use this for choosing between approaches before implementing; use crew:planner instead. Examples:
+
+  <example>
+  Context: The user wants to know what in the codebase is most worth improving next.
+  user: "What should we improve in this app? Where is the tech debt?"
+  assistant: "I'll dispatch crew:analyst to survey the application for real gaps and come back with options and their tradeoffs."
+  <commentary>
+  A read-only survey producing findings, never tickets, is this agent's job. Choosing between approaches before implementing goes to crew:planner instead.
+  </commentary>
+  </example>
+
+  <example>
+  Context: A page is slow and nobody knows why.
+  user: "Can you investigate why the dashboard takes eight seconds to load?"
+  assistant: "I'll dispatch crew:analyst for a performance investigation - it will trace the request path and report where the time goes, with options for fixing it."
+  <commentary>
+  Performance investigation is named in this agent's remit, and it returns findings rather than a diff.
+  </commentary>
+  </example>
 tools: Read, Grep, Glob, Bash, WebSearch, WebFetch, Skill
 model: sonnet
 ---

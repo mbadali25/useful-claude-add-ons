@@ -1,6 +1,16 @@
 ---
 name: python-pro
-description: Implements one scoped change in a Python codebase - a service, a package, a CLI, a data pipeline - and returns what it changed. Use when the work is Python-specific enough that the type system, the async model or the packaging story is the hard part. Domain specialist, opted into per repo via /crew:pm onboard. Never reviews its own diff.
+description: |
+  Implements one scoped change in a Python codebase - a service, a package, a CLI, a data pipeline - and returns what it changed. Use when the work is Python-specific enough that the type system, the async model or the packaging story is the hard part. Domain specialist, opted into per repo via /crew:pm onboard. Never reviews its own diff. Examples:
+
+  <example>
+  Context: A repo has opted this specialist in and a change turns on Python internals.
+  user: "The async pipeline blocks the event loop in the parser stage - fix it."
+  assistant: "I'll dispatch crew:python-pro to implement this as one scoped change - the async model is the hard part - and report what it changed."
+  <commentary>
+  Python-specific work where the type system, async model or packaging is the hard part is the trigger for this specialist over crew:developer.
+  </commentary>
+  </example>
 tools: Read, Write, Edit, Bash, Grep, Glob, Skill
 model: sonnet
 ---

@@ -1,6 +1,25 @@
 ---
 name: developer
-description: Implements one scoped change - a ticket, a fix, a refactor - in its own context and returns a summary of what it changed. Use when the PM has work that needs code written rather than reviewed, mapped, or planned. Never reviews its own diff. Do NOT use this when the change turns on Node.js specifics; use crew:node-developer instead.
+description: |
+  Implements one scoped change - a ticket, a fix, a refactor - in its own context and returns a summary of what it changed. Use when the PM has work that needs code written rather than reviewed, mapped, or planned. Never reviews its own diff. Do NOT use this when the change turns on Node.js specifics; use crew:node-developer instead. Examples:
+
+  <example>
+  Context: The PM has a scoped ticket that needs code written.
+  user: "Implement ticket 42 - add a retry to the webhook sender."
+  assistant: "I'll dispatch crew:developer to implement that as one scoped change in its own context and return a summary of what it changed."
+  <commentary>
+  Work that needs code written rather than reviewed, mapped or planned is this agent's job. It never reviews its own diff.
+  </commentary>
+  </example>
+
+  <example>
+  Context: The fix turns on Node.js specifics.
+  user: "The Node worker leaks event listeners under load - fix it."
+  assistant: "Because the change turns on Node.js specifics, I'll dispatch crew:node-developer rather than crew:developer."
+  <commentary>
+  The description routes Node-specific work to crew:node-developer; the general developer is for everything else.
+  </commentary>
+  </example>
 tools: Read, Write, Edit, Bash, Grep, Glob, Skill
 model: sonnet
 ---

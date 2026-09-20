@@ -1,6 +1,16 @@
 ---
 name: network-engineer
-description: "Use this agent when designing, optimizing, or troubleshooting cloud and hybrid network infrastructures, or when addressing network security, performance, or reliability challenges."
+description: |
+  Use this agent when designing, optimizing, or troubleshooting cloud and hybrid network infrastructures, or when addressing network security, performance, or reliability challenges. Examples:
+
+  <example>
+  Context: A hybrid network has an intermittent reliability problem.
+  user: "Traffic between our on-prem site and the cloud VPC drops every few hours - troubleshoot it."
+  assistant: "I'll dispatch crew:network-engineer to troubleshoot the hybrid network path and address the reliability problem."
+  <commentary>
+  Troubleshooting cloud and hybrid network infrastructure is named in this agent's description.
+  </commentary>
+  </example>
 tools: Read, Write, Edit, Bash, Glob, Grep
 model: sonnet
 ---

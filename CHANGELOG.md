@@ -528,6 +528,35 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
+- **`crew` 0.19.93: `<example>` blocks in every agent's frontmatter
+  description, as a `description: |` block scalar - never the unquoted
+  form.** All 54 `plugin/crew/agents/*.md` descriptions now end in
+  ` Examples:` followed by one or two `<example>` blocks (Context / user /
+  assistant / `<commentary>`), each drawn from that agent's own description
+  and when-to-use text, so the main session has a worked case to match a
+  request against before dispatching. Every existing description sentence is
+  kept word for word, including the "Do NOT use this for X; use crew:Y
+  instead" routing clauses; `tools:` and `model:` are untouched on every
+  file; `color` is deliberately not added, since crew has no consumer for
+  it. The shape matters more than the content: the convention as written in
+  `plugin-dev`'s own `plugin-validator.md` puts a bare trailing `Examples:`
+  inside an unquoted plain scalar, which YAML reads as a mapping-value
+  indicator, and `claude plugin validate --strict` rejects it with
+  "frontmatter: YAML frontmatter failed to parse: YAML Parse error:
+  Unexpected token. At runtime this agent loads with its name taken from the
+  filename and every other frontmatter field silently dropped" - which
+  would strip every agent's `tools:` allowlist and `model:` tier while the
+  diff looked correct. A block scalar carries the identical text and parses.
+  Two tests in `tests/test_agent_examples.py`: every agent carries at least
+  one `<example>` (the request), and the backstop - every agent's
+  frontmatter still loads as a YAML mapping with `name`, `description`,
+  `model` and a `tools` value byte-identical to the pre-change value
+  recorded in `tests/agent_frontmatter_snapshot.json` (captured from
+  `621d50dc`, not from the rewritten files). The presence test alone passes
+  on 54 destroyed files; the backstop is what goes red. Sabotage-checked:
+  one agent converted to the unquoted form turns the backstop and
+  `check-marketplace.py` red while the presence test stays green.
+
 - **`crew` 0.19.91: a `claude plugin eval` suite that tests role behaviour
   under temptation, not prose.** Every structural check in this plugin
   (`run-tests.sh`, `validate-prompts.py`, `pytest`) proves a hook blocks the

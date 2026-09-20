@@ -1,6 +1,16 @@
 ---
 name: legacy-modernizer
-description: "Use this agent when modernizing legacy systems that need incremental migration strategies, technical debt reduction, and risk mitigation while maintaining business continuity."
+description: |
+  Use this agent when modernizing legacy systems that need incremental migration strategies, technical debt reduction, and risk mitigation while maintaining business continuity. Examples:
+
+  <example>
+  Context: A monolith must be modernised without stopping the business.
+  user: "Plan an incremental migration of our legacy billing system off the mainframe."
+  assistant: "I'll dispatch crew:legacy-modernizer to produce an incremental migration strategy with risk mitigation that maintains business continuity."
+  <commentary>
+  Incremental migration of a legacy system with continuity constraints is this agent's remit.
+  </commentary>
+  </example>
 tools: Read, Write, Edit, Bash, Glob, Grep
 model: sonnet
 ---

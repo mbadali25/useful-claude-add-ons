@@ -1,6 +1,16 @@
 ---
 name: ai-writing-auditor
-description: "Use this agent when you need to audit content for AI writing patterns and rewrite text to remove them."
+description: |
+  Use this agent when you need to audit content for AI writing patterns and rewrite text to remove them. Examples:
+
+  <example>
+  Context: A draft README reads like machine-generated prose and the user wants it to sound human.
+  user: "This doc sounds like it was written by an AI - can you clean it up?"
+  assistant: "I'll dispatch crew:ai-writing-auditor to audit the text for AI writing patterns and rewrite the passages that carry them."
+  <commentary>
+  The deliverable is rewritten prose, not code or documentation structure, which is exactly what this agent does.
+  </commentary>
+  </example>
 tools: Read, Write, Edit, Bash, Glob, Grep
 model: sonnet
 ---

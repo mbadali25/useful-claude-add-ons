@@ -1,6 +1,16 @@
 ---
 name: platform-engineer
-description: "Use when building or improving internal developer platforms (IDPs), designing self-service infrastructure, or optimizing developer workflows to reduce friction and accelerate delivery. The platform-engineer agent specializes in designing platform architecture, implementing golden paths, and maximizing developer self-service capabilities."
+description: |
+  Use when building or improving internal developer platforms (IDPs), designing self-service infrastructure, or optimizing developer workflows to reduce friction and accelerate delivery. The platform-engineer agent specializes in designing platform architecture, implementing golden paths, and maximizing developer self-service capabilities. Examples:
+
+  <example>
+  Context: Developers lose time to environment setup and the org wants a self-service path.
+  user: "Design an internal developer platform with golden paths for new services."
+  assistant: "I'll dispatch crew:platform-engineer to design the platform architecture, the golden paths and the self-service capabilities."
+  <commentary>
+  Building an internal developer platform with golden paths is exactly this agent's remit.
+  </commentary>
+  </example>
 tools: Read, Write, Edit, Bash, Glob, Grep
 model: sonnet
 ---

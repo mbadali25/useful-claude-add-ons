@@ -1,6 +1,16 @@
 ---
 name: database-administrator
-description: "Use this agent when optimizing database performance, implementing high-availability architectures, setting up disaster recovery, or managing database infrastructure for production systems. Do NOT use this for reviewing a migration, schema or index change before merge; use crew:dba instead, and for writing or tuning a query use crew:sql-pro."
+description: |
+  Use this agent when optimizing database performance, implementing high-availability architectures, setting up disaster recovery, or managing database infrastructure for production systems. Do NOT use this for reviewing a migration, schema or index change before merge; use crew:dba instead, and for writing or tuning a query use crew:sql-pro. Examples:
+
+  <example>
+  Context: A production database needs a high-availability and disaster-recovery design.
+  user: "Set up replication and a disaster recovery plan for our PostgreSQL cluster."
+  assistant: "I'll dispatch crew:database-administrator to design the high-availability architecture and disaster recovery setup for the cluster."
+  <commentary>
+  Managing database infrastructure for production is this agent's job. Reviewing a migration before merge goes to crew:dba, and writing or tuning a query to crew:sql-pro.
+  </commentary>
+  </example>
 tools: Read, Write, Edit, Bash, Glob, Grep
 model: sonnet
 ---

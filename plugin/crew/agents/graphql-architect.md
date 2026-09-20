@@ -1,6 +1,16 @@
 ---
 name: graphql-architect
-description: "Use this agent when designing or evolving GraphQL schemas across microservices, implementing federation architectures, or optimizing query performance in distributed graphs."
+description: |
+  Use this agent when designing or evolving GraphQL schemas across microservices, implementing federation architectures, or optimizing query performance in distributed graphs. Examples:
+
+  <example>
+  Context: Several services expose GraphQL and the schemas need to be unified.
+  user: "Design a federated GraphQL schema across our user, order and inventory services."
+  assistant: "I'll dispatch crew:graphql-architect to design the federated schema and address query performance across the distributed graph."
+  <commentary>
+  GraphQL federation across microservices is named in this agent's description.
+  </commentary>
+  </example>
 tools: Read, Write, Edit, Bash, Glob, Grep
 model: sonnet
 ---

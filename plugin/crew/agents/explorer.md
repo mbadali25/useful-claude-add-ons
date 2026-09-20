@@ -1,6 +1,25 @@
 ---
 name: explorer
-description: Read-only codebase investigator. Use proactively for any question about where code lives, how a flow works, or what depends on what. Returns a short map, never file contents.
+description: |
+  Read-only codebase investigator. Use proactively for any question about where code lives, how a flow works, or what depends on what. Returns a short map, never file contents. Examples:
+
+  <example>
+  Context: The user needs to know where something lives before changing it.
+  user: "Where is the rate limiting implemented, and what calls it?"
+  assistant: "I'll dispatch crew:explorer to map where the rate limiting lives and what depends on it, and return a short map."
+  <commentary>
+  A read-only question about where code lives and what depends on what is this agent's purpose; it returns a map, never file contents.
+  </commentary>
+  </example>
+
+  <example>
+  Context: The user asks how a request flows through the system.
+  user: "How does a login request get from the API gateway to the session store?"
+  assistant: "I'll dispatch crew:explorer to trace that flow and come back with a short map of the path."
+  <commentary>
+  Explaining how a flow works, read-only, is the proactive use this agent is meant for.
+  </commentary>
+  </example>
 tools: Read, Grep, Glob, Skill, mcp__localgpu__search_code, mcp__localgpu__index_status
 model: sonnet
 ---

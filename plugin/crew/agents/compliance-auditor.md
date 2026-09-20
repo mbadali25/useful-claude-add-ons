@@ -1,6 +1,16 @@
 ---
 name: compliance-auditor
-description: "Use this agent when you need to achieve regulatory compliance, implement compliance controls, or prepare for audits across frameworks like GDPR, HIPAA, PCI DSS, SOC 2, and ISO standards. Do NOT use this for finding exploitable defects in changed code; use crew:security instead."
+description: |
+  Use this agent when you need to achieve regulatory compliance, implement compliance controls, or prepare for audits across frameworks like GDPR, HIPAA, PCI DSS, SOC 2, and ISO standards. Do NOT use this for finding exploitable defects in changed code; use crew:security instead. Examples:
+
+  <example>
+  Context: An organisation is preparing for a SOC 2 audit.
+  user: "We have a SOC 2 audit in two months - what controls are we missing?"
+  assistant: "I'll dispatch crew:compliance-auditor to map our current controls against SOC 2 and report the gaps and what implementing each control involves."
+  <commentary>
+  Audit preparation across a regulatory framework is this agent's remit. Finding exploitable defects in changed code goes to crew:security.
+  </commentary>
+  </example>
 tools: Read, Grep, Glob
 model: sonnet
 ---

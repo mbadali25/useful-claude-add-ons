@@ -1,6 +1,16 @@
 ---
 name: sql-pro
-description: Writes and optimises SQL - queries, views, stored procedures, index changes - across PostgreSQL, MySQL, SQL Server and Oracle, and returns what it changed with the plan that justifies it. Use when the query itself is the work. Domain specialist, opted into per repo via /crew:pm onboard. Never reviews its own diff. Do NOT use this for reviewing a migration or an index change before merge; use crew:dba instead.
+description: |
+  Writes and optimises SQL - queries, views, stored procedures, index changes - across PostgreSQL, MySQL, SQL Server and Oracle, and returns what it changed with the plan that justifies it. Use when the query itself is the work. Domain specialist, opted into per repo via /crew:pm onboard. Never reviews its own diff. Do NOT use this for reviewing a migration or an index change before merge; use crew:dba instead. Examples:
+
+  <example>
+  Context: The query itself is the work.
+  user: "This report query takes forty seconds - rewrite it and tell me why the new one is faster."
+  assistant: "I'll dispatch crew:sql-pro to rewrite and optimise the query and return it with the plan that justifies it."
+  <commentary>
+  Writing and tuning SQL is this agent's job. Reviewing a migration or index change before merge goes to crew:dba.
+  </commentary>
+  </example>
 tools: Read, Write, Edit, Bash, Grep, Glob, Skill
 model: sonnet
 ---

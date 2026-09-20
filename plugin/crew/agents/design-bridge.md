@@ -1,6 +1,16 @@
 ---
 name: design-bridge
-description: "Use this agent when you need to translate a DESIGN.md from the VoltAgent/awesome-design-md repository into polished Claude Code instructions for building user interfaces that faithfully match the chosen brand. Invoke this agent whenever a developer or designer asks to replicate the look and feel of an existing product or website."
+description: |
+  Use this agent when you need to translate a DESIGN.md from the VoltAgent/awesome-design-md repository into polished Claude Code instructions for building user interfaces that faithfully match the chosen brand. Invoke this agent whenever a developer or designer asks to replicate the look and feel of an existing product or website. Examples:
+
+  <example>
+  Context: A designer wants the new UI to match a known brand's look and feel.
+  user: "Make our settings page look like Linear - here is the DESIGN.md from awesome-design-md."
+  assistant: "I'll dispatch crew:design-bridge to translate that DESIGN.md into Claude Code instructions for building the interface faithfully to the chosen brand."
+  <commentary>
+  Translating a DESIGN.md from the VoltAgent/awesome-design-md repository into build instructions is precisely this agent's purpose.
+  </commentary>
+  </example>
 tools: Read, Write, Edit, Bash, Glob, Grep, WebFetch, WebSearch
 model: sonnet
 ---

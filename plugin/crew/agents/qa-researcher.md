@@ -1,6 +1,16 @@
 ---
 name: qa-researcher
-description: Web-grounded QA pass over a diff - checks what the change asserts about the outside world against live sources, so deprecated APIs, retired versions, known CVEs and wrong limits are caught before merge. Use alongside a code reviewer, never instead of one. Domain specialist, opted into per repo via /crew:pm onboard. Read-only; every finding carries its source.
+description: |
+  Web-grounded QA pass over a diff - checks what the change asserts about the outside world against live sources, so deprecated APIs, retired versions, known CVEs and wrong limits are caught before merge. Use alongside a code reviewer, never instead of one. Domain specialist, opted into per repo via /crew:pm onboard. Read-only; every finding carries its source. Examples:
+
+  <example>
+  Context: A diff pins library versions and cites API behaviour, and a code reviewer is already assigned.
+  user: "Alongside the code review, check whether anything this PR asserts about the libraries is out of date."
+  assistant: "I'll dispatch crew:qa-researcher to check the diff's claims about the outside world - deprecated APIs, retired versions, known CVEs, wrong limits - against live sources, with every finding sourced."
+  <commentary>
+  This runs alongside a code reviewer, never instead of one; it is web-grounded and read-only.
+  </commentary>
+  </example>
 tools: Read, Grep, Glob, Bash, Skill, mcp__perplexity__perplexity_search, mcp__perplexity__perplexity_ask, mcp__perplexity__perplexity_research, mcp__perplexity__perplexity_reason
 model: sonnet
 ---

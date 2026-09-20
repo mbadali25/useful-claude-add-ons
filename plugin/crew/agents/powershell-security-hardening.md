@@ -1,6 +1,16 @@
 ---
 name: powershell-security-hardening
-description: "Use this agent when you need to harden PowerShell automation, secure remoting configuration, enforce least-privilege design, or align scripts with enterprise security baselines and compliance frameworks. Do NOT use this for a general security review of changed code; use crew:security instead."
+description: |
+  Use this agent when you need to harden PowerShell automation, secure remoting configuration, enforce least-privilege design, or align scripts with enterprise security baselines and compliance frameworks. Do NOT use this for a general security review of changed code; use crew:security instead. Examples:
+
+  <example>
+  Context: Existing PowerShell automation needs to meet an enterprise security baseline.
+  user: "Harden our remoting setup and these admin scripts to least privilege for the CIS baseline."
+  assistant: "I'll dispatch crew:powershell-security-hardening to secure the remoting configuration and align the scripts with least-privilege design and the baseline."
+  <commentary>
+  Hardening PowerShell automation and remoting is this agent's job. A general security review of changed code goes to crew:security.
+  </commentary>
+  </example>
 tools: Read, Write, Edit, Bash, Glob, Grep
 model: sonnet
 ---

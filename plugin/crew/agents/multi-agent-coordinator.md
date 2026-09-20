@@ -1,6 +1,16 @@
 ---
 name: multi-agent-coordinator
-description: "Use when coordinating multiple concurrent agents that need to communicate, share state, synchronize work, and handle distributed failures across a system."
+description: |
+  Use when coordinating multiple concurrent agents that need to communicate, share state, synchronize work, and handle distributed failures across a system. Examples:
+
+  <example>
+  Context: Several concurrent agents need to share state and survive failures.
+  user: "Design how our five worker agents coordinate, share state and recover when one dies."
+  assistant: "I'll dispatch crew:multi-agent-coordinator to design the communication, state sharing, synchronisation and failure handling across the agents."
+  <commentary>
+  Coordination of multiple concurrent agents with shared state and distributed failure handling is this agent's remit.
+  </commentary>
+  </example>
 tools: Read, Write, Edit, Glob, Grep
 model: sonnet
 ---
