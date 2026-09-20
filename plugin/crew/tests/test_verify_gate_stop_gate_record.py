@@ -1567,8 +1567,7 @@ def test_46_an_interpreter_script_outside_the_repo_still_defers(flavour, tmp_pat
     (root / "a.py").write_text("x", encoding="utf-8")
     marker = root / "marker"
     (root.parent / "outside.py").write_text(
-        f"open({str(marker)!r}, 'w').write('ran')
-", encoding="utf-8")
+        f"open({str(marker)!r}, 'w').write('ran')\n", encoding="utf-8")
     result = _run(flavour, root)
     assert not marker.exists(), "../outside.py EXECUTED. " + result.stderr
     assert "wrapper or inline shell" in result.stderr, result.stderr
