@@ -156,7 +156,7 @@ def test_an_ordinary_map_still_runs_every_command_and_reports_unmapped(
     for a map with several commands AND an unmapped path: every command runs,
     and the unmapped report names the file and nothing else."""
     root = _repo(tmp_path, {
-        "rules": [{"paths": ["**/*.py"],
+        "rules": [{"paths": ["**/*.py"], "reach": "local",
                    "run": ["true", "echo ran >> ran.txt", "exit 1"]}],
         "unmapped": "fail",
     })

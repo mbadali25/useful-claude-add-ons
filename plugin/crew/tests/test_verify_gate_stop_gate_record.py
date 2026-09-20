@@ -813,7 +813,7 @@ def test_15_price_refuses_a_wrapper_that_reaches_ssh_and_never_runs_it(tmp_path)
                             capture_output=True, text=True, check=False)
     assert priced.returncode == 0, priced.stderr
     assert "REFUSED" in priced.stdout, priced.stdout
-    assert "invokes an existing repo file 'wrapper.sh'" in priced.stdout, priced.stdout
+    assert "interpreter given a script argument 'wrapper.sh'" in priced.stdout, priced.stdout
     assert not marker.exists(), (
         "the wrapper actually ran under --price despite being refused. "
         + priced.stdout
@@ -1213,7 +1213,7 @@ def test_29_bash_dash_n_grants_parse_only_by_exact_position(
         "`bash -n remote.sh` was deferred instead of run - -n's parse-"
         "only meaning was not honoured. " + result.stderr
     )
-    assert "invokes an existing repo file 'remote.sh'" in result.stderr, (
+    assert "interpreter given a script argument 'remote.sh'" in result.stderr, (
         "`bash remote.sh` (no -n) was NOT deferred - the fix broke "
         "ordinary wrapper detection rather than just scoping -n. "
         + result.stderr
@@ -1247,7 +1247,7 @@ def test_30_the_default_fallback_never_reintroduces_an_excluded_command(
     result = _run(flavour, root)
     assert result.returncode == 0, result.stderr
     assert "`default` command" in result.stderr, result.stderr
-    assert "invokes an existing repo file 'inner.sh'" in result.stderr, result.stderr
+    assert "interpreter given a script argument 'inner.sh'" in result.stderr, result.stderr
     assert not marker.exists(), (
         "the `default` fallback executed a command reach had just "
         "excluded. " + result.stderr
@@ -1309,7 +1309,7 @@ def test_33_an_extensionless_shebangless_script_still_defers(flavour, tmp_path):
     (root / "a.py").write_text("x", encoding="utf-8")
     result = _run(flavour, root)
     assert result.returncode == 0, result.stderr
-    assert "invokes an existing repo file 'check'" in result.stderr, result.stderr
+    assert "interpreter given a script argument 'check'" in result.stderr, result.stderr
     assert not marker.exists(), (
         "an extensionless, shebang-less wrapper ran on Stop. " + result.stderr
     )
@@ -1424,7 +1424,7 @@ def test_40_dash_n_as_a_trailing_argument_is_not_parse_only(flavour, tmp_path):
     (root / "a.py").write_text("x", encoding="utf-8")
     result = _run(flavour, root)
     assert result.returncode == 0, result.stderr
-    assert "invokes an existing repo file 'check.sh'" in result.stderr, result.stderr
+    assert "interpreter given a script argument 'check.sh'" in result.stderr, result.stderr
     assert not marker.exists(), (
         "`bash check.sh -n` ran on Stop instead of being deferred - -n "
         "was granted the parse-only exemption from the wrong position. "
@@ -1513,6 +1513,85 @@ def test_43_a_redirection_metachar_defers_with_no_exception(flavour, tmp_path):
         + result.stderr
     )
 
+
+
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+def test_44_bash_dash_m_is_not_a_module_and_defers(flavour, tmp_path):
+    """(44, round 7 BLOCK verify_record.py:306) `-m` names a module for
+    Python ONLY. For bash it enables job control and the next argument is
+    a script that EXECUTES - so `bash -m check.sh` on an undeclared rule
+    must defer and must not run check.sh."""
+    vmap = {
+        "version": 1,
+        "rules": [{"paths": ["a.py"], "run": ["bash -m check.sh"]}],
+        "default": [], "unmapped": "ignore",
+    }
+    root = _repo(tmp_path, vmap)
+    (root / "a.py").write_text("x", encoding="utf-8")
+    (root / "check.sh").write_text("echo ran > marker\n", encoding="utf-8")
+    result = _run(flavour, root)
+    assert not (root / "marker").exists(), "check.sh EXECUTED. " + result.stderr
+    assert "wrapper or inline shell" in result.stderr, result.stderr
+
+
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+def test_45_perl_dash_n_is_not_parse_only_and_defers(flavour, tmp_path):
+    """(45, round 7 BLOCK verify_record.py:306) `-n` is parse-only for
+    POSIX shells ONLY. `perl -n check.pl` runs check.pl once per input
+    line - it EXECUTES - so it must defer and must not run."""
+    vmap = {
+        "version": 1,
+        "rules": [{"paths": ["a.py"], "run": ["perl -n check.pl"]}],
+        "default": [], "unmapped": "ignore",
+    }
+    root = _repo(tmp_path, vmap)
+    (root / "a.py").write_text("x", encoding="utf-8")
+    (root / "check.pl").write_text("open(F, '>marker'); close(F);\n", encoding="utf-8")
+    result = _run(flavour, root)
+    assert not (root / "marker").exists(), "check.pl EXECUTED. " + result.stderr
+    assert "wrapper or inline shell" in result.stderr, result.stderr
+
+
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+def test_46_an_interpreter_script_outside_the_repo_still_defers(flavour, tmp_path):
+    """(46, round 7 BLOCK verify_record.py:313) `python ../outside.py`
+    executes a script that does not resolve INSIDE the repo. An
+    interpreter given any non-flag argument is running a script wherever
+    it lives, so the classification must not consult the filesystem."""
+    vmap = {
+        "version": 1,
+        "rules": [{"paths": ["a.py"], "run": ["python ../outside.py"]}],
+        "default": [], "unmapped": "ignore",
+    }
+    root = _repo(tmp_path, vmap)
+    (root / "a.py").write_text("x", encoding="utf-8")
+    marker = root / "marker"
+    (root.parent / "outside.py").write_text(
+        f"open({str(marker)!r}, 'w').write('ran')
+", encoding="utf-8")
+    result = _run(flavour, root)
+    assert not marker.exists(), "../outside.py EXECUTED. " + result.stderr
+    assert "wrapper or inline shell" in result.stderr, result.stderr
+
+
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+def test_47_an_interpreter_with_flags_only_stays_local(flavour, tmp_path):
+    """(47, round 7 control) `python --version` names no script: flags
+    only, so it is plainly local and must run undeclared."""
+    vmap = {
+        "version": 1,
+        "rules": [{"paths": ["a.py"], "run": ["python --version"]}],
+        "default": [], "unmapped": "ignore",
+    }
+    root = _repo(tmp_path, vmap)
+    (root / "a.py").write_text("x", encoding="utf-8")
+    result = _run(flavour, root)
+    assert result.returncode == 0, result.stderr
+    assert "wrapper or inline shell" not in result.stderr, result.stderr
+    ran_pattern = re.compile(r"verify-gate: \d+s {2}python --version$", re.M)
+    assert ran_pattern.search(result.stderr), (
+        "`python --version` was deferred instead of run. " + result.stderr
+    )
 
 def test_28_the_real_verify_json_scans_clean_for_every_rule():
     """The self-check Codex's round-3 report asked for directly, STRICT and

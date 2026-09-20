@@ -202,6 +202,10 @@ _REACH_RE = re.compile(r"\b(" + "|".join(re.escape(v) for v in REACH_VERBS) + r"
 # built-in, distinct from `pwsh`) and `ruby`/`perl` were added in round 4.
 _INTERPRETERS = ("bash", "sh", "dash", "zsh", "pwsh", "powershell",
                  "python", "python3", "py", "node", "ruby", "perl")
+# Per-interpreter flag semantics (round 7): only these shells treat -n as
+# parse-only, and only these Pythons treat -m as a module name.
+_POSIX_SHELLS = frozenset({"bash", "sh", "dash", "zsh"})
+_PYTHONS = frozenset({"python", "python3", "py"})
 # Codex round 6 BLOCKs 352/474/543 were three different ways a hand-rolled
 # shell grammar missed something it was reading through: subshell parens
 # glued to a path (`(./check.sh)`), `-n` granted by mere presence anywhere
@@ -303,15 +307,23 @@ def _classify_command(cmd, repo_root):
 
     head_base = _base_name(parts[0])
     if head_base in _INTERPRETERS:
-        if len(parts) == 3 and parts[1] == "-n":
+        # Round 7 (verify_record.py:306, :313): the flag exemptions are
+        # PER INTERPRETER, not interpreter-wide - `-n` is parse-only for
+        # POSIX shells alone (`perl -n x.pl` EXECUTES x.pl), `-m` names a
+        # module for Python alone (`bash -m x.sh` enables job control and
+        # EXECUTES x.sh). And an interpreter given ANY non-flag argument is
+        # running a script whether or not that path resolves inside the
+        # repo (`python ../outside.py` executes) - so the decision no
+        # longer consults the filesystem at all.
+        if head_base in _POSIX_SHELLS and len(parts) == 3 and parts[1] == "-n":
             return ("local", None)
-        if len(parts) >= 2 and parts[1] == "-m":
+        if head_base in _PYTHONS and len(parts) >= 2 and parts[1] == "-m":
             return ("local", None)
         if len(parts) >= 2 and parts[1] in ("-c", "-Command", "-File"):
             return ("wrapper", f"`{parts[1]}` names inline code or a script argument")
         for p in parts[1:]:
-            if _resolves_to_repo_file(p, repo_root) is not None:
-                return ("wrapper", f"invokes an existing repo file {p!r}")
+            if not p.startswith("-"):
+                return ("wrapper", f"interpreter given a script argument {p!r}")
         return ("local", None)
 
     for p in parts:
