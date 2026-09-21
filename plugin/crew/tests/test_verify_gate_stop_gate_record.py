@@ -1592,6 +1592,87 @@ def test_47_an_interpreter_with_flags_only_stays_local(flavour, tmp_path):
         "`python --version` was deferred instead of run. " + result.stderr
     )
 
+
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+def test_48_a_corrupt_record_holds_the_marker_until_all_rebuilds_it(flavour, tmp_path):
+    """(48, round 8 BLOCK verify_record.py:54) A record that is present but
+    unreadable means the obligations it held are UNKNOWN. A Stop must not
+    advance the sha marker over it (an unknown never collapses into "nothing
+    owed"); a --all run rebuilds the record and the marker moves again."""
+    vmap = {
+        "version": 1,
+        "rules": [
+            {"paths": ["a.py"], "seconds": 5, "run": ["echo cheap"]},
+            {"paths": ["b.py"], "seconds": 900, "run": ["echo huge"]},
+        ],
+        "default": [], "unmapped": "ignore",
+    }
+    root = _repo(tmp_path, vmap)
+    (root / "a.py").write_text("x", encoding="utf-8")
+    (root / "b.py").write_text("y", encoding="utf-8")
+    first = _run(flavour, root)
+    assert first.returncode == 0, first.stderr
+    marker = root / ".crew" / ".verify-verified-at"
+    assert marker.exists(), first.stderr
+    before = marker.read_text(encoding="utf-8").strip()
+    # a new commit, then corrupt the record, then an unrelated change
+    subprocess.run(["git", "add", "-A"], cwd=str(root), check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-qm", "advance"], cwd=str(root), check=True, capture_output=True)
+    (root / ".crew" / ".verify-gate.record.json").write_text("not json", encoding="utf-8")
+    (root / "a.py").write_text("x2", encoding="utf-8")
+    second = _run(flavour, root)
+    assert "obligations it held are UNKNOWN" in second.stderr, second.stderr
+    assert marker.read_text(encoding="utf-8").strip() == before, (
+        "the sha marker advanced over a corrupt record. " + second.stderr)
+    third = _run(flavour, root, "--all")
+    assert third.returncode == 0, third.stderr
+    rec = _record(root)
+    assert isinstance(rec.get("rules"), dict), "--all did not rebuild the record"
+    assert marker.read_text(encoding="utf-8").strip() != before, (
+        "--all rebuilt the record but the marker did not move. " + third.stderr)
+
+
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+def test_49_editing_a_deferred_rules_paths_keeps_its_obligation(flavour, tmp_path):
+    """(49, round 8 BLOCK verify_record.py:558) A chronic rule's record key
+    is a content hash of the rule, so editing the rule's paths makes a NEW
+    key and the old entry looks stale. It must not be pruned as if verified:
+    it stays, marked orphaned and reported, and holds the marker until a
+    --all run clears it."""
+    vmap = {
+        "version": 1,
+        "rules": [{"paths": ["a.txt"], "seconds": 999, "run": ["echo huge"]}],
+        "default": [], "unmapped": "ignore",
+    }
+    root = _repo(tmp_path, vmap)
+    (root / "a.txt").write_text("x", encoding="utf-8")
+    first = _run(flavour, root)
+    assert first.returncode == 0, first.stderr
+    assert "permanently over budget" in first.stderr, first.stderr
+    # commit a.txt on its own and let one Stop persist the chronic entry and
+    # advance the marker past it - so the NEXT turn's changed set is only
+    # verify.json, which the widened rule does not match (Codex's repro:
+    # "Next Stop runs zero commands").
+    subprocess.run(["git", "add", "-A"], cwd=str(root), check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-qm", "a.txt"], cwd=str(root), check=True, capture_output=True)
+    mid = _run(flavour, root)
+    assert mid.returncode == 0, mid.stderr
+    marker = root / ".crew" / ".verify-verified-at"
+    before = marker.read_text(encoding="utf-8").strip()
+    # commit ONLY an expansion of the rule's paths list
+    vmap["rules"][0]["paths"] = ["a.txt", "b.txt"]
+    (root / ".crew" / "verify.json").write_text(json.dumps(vmap), encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=str(root), check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-qm", "widen the rule"], cwd=str(root), check=True, capture_output=True)
+    second = _run(flavour, root)
+    assert "NOT VERIFIED ON THIS TREE" in second.stderr, second.stderr
+    assert "rule edited or removed since" in second.stderr, second.stderr
+    assert marker.read_text(encoding="utf-8").strip() == before, (
+        "the sha marker advanced past an orphaned obligation. " + second.stderr)
+    third = _run(flavour, root, "--all")
+    assert third.returncode == 0, third.stderr
+    assert "rule edited or removed since" not in third.stderr, third.stderr
+
 def test_28_the_real_verify_json_scans_clean_for_every_rule():
     """The self-check Codex's round-3 report asked for directly, STRICT and
     unchanged in intent across every redesign since: every rule in THIS

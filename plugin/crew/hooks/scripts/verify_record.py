@@ -55,15 +55,28 @@ RECORD_PATH = os.path.join(".crew", ".verify-gate.record.json")
 TIMINGS_PATH = os.path.join(".crew", ".verify-gate.timings.json")
 
 
-def _load(path):
+def _load_state(path):
+    """(data, state): state is "absent" (no file), "ok", or "corrupt" (a
+    file is there but is not a JSON object). Round 8 (verify_record.py:54):
+    a corrupt record used to load as {} and the standing obligations in it
+    were simply gone - the next successful sync then wrote an empty record
+    and the marker advanced past work nothing had verified. Absent and
+    corrupt must be told apart, because only one of them means "we have
+    lost track of what is owed"."""
+    if not os.path.lexists(path):
+        return {}, "absent"
     try:
         with open(path, "r", encoding="utf-8") as fh:
             data = json.load(fh)
-        if not isinstance(data, dict):
-            return {}
-        return data
     except (OSError, ValueError):
-        return {}
+        return {}, "corrupt"
+    if not isinstance(data, dict):
+        return {}, "corrupt"
+    return data, "ok"
+
+
+def _load(path):
+    return _load_state(path)[0]
 
 
 def _save(path, data):
@@ -455,7 +468,8 @@ def cmd_sync():
     sha = payload.get("sha") or ""
     matched = payload.get("matched_rules") or []
     cmd_log = payload.get("cmd_log") or []
-    return _sync(sha, matched, cmd_log)
+    all_run = bool(payload.get("all")) if isinstance(payload, dict) else False
+    return _sync(sha, matched, cmd_log, all_run)
 
 
 def _current_rule_keys():
@@ -475,7 +489,7 @@ def _current_rule_keys():
     return {rule_key(r) for r in rules if isinstance(r, dict)}
 
 
-def _sync(sha, matched, cmd_log):
+def _sync(sha, matched, cmd_log, all_run=False):
 
     status_by_cmd = {}
     elapsed_by_cmd = {}
@@ -491,10 +505,16 @@ def _sync(sha, matched, cmd_log):
         except (TypeError, ValueError):
             elapsed_by_cmd[c] = 0
 
-    record = _load(RECORD_PATH)
+    record, record_state = _load_state(RECORD_PATH)
     entries = record.get("rules")
     if not isinstance(entries, dict):
         entries = {}
+    # Round 8 (verify_record.py:54): a corrupt record means the obligations
+    # it held are UNKNOWN, and unknown never collapses into "none". Until a
+    # --all run rebuilds the record from a full pass, the sync refuses (the
+    # gate then withholds both markers) and says why, every turn. On --all
+    # every rule ran, so the rebuild below is the recovery.
+    record_lost = record_state == "corrupt" and not all_run
 
     timings = _load(TIMINGS_PATH)
     if not isinstance(timings.get("rules"), dict):
@@ -553,9 +573,29 @@ def _sync(sha, matched, cmd_log):
     # actually readable (see _current_rule_keys) - an unreadable map must
     # not be read as "no rules exist" and silently clear every obligation.
     valid_keys = _current_rule_keys()
+    orphaned = 0
     if valid_keys is not None:
         for stale_key in [k for k in entries if k not in valid_keys]:
-            del entries[stale_key]
+            info = entries[stale_key]
+            # Round 8 (verify_record.py:558): an entry whose rule was edited
+            # (its content hash changed) or removed is NOT thereby verified.
+            # A resolved entry can go; an unresolved one stays, marked
+            # orphaned, reported every turn, and holds the marker until a
+            # --all run (where every rule ran) clears it. Deleting it used
+            # to let one edit to a rule's `paths` erase the obligation and
+            # advance the marker with zero commands run.
+            # Every entry here IS an unresolved obligation - a rule that
+            # passed is removed from `entries`, never stored - so a stale
+            # key is orphaned, not resolved, unless this is an --all run.
+            if all_run or not isinstance(info, dict):
+                del entries[stale_key]
+            else:
+                if not info.get("orphaned"):
+                    info["orphaned"] = True
+                    info["reason"] = (info.get("reason", "") +
+                                      " [rule edited or removed since - still unverified; "
+                                      "run /crew:verify --all]")
+                orphaned += 1
 
     record["rules"] = entries
     record_err = _save(RECORD_PATH, record)
@@ -574,6 +614,14 @@ def _sync(sha, matched, cmd_log):
     for key, info in sorted(entries.items(), key=lambda kv: kv[1].get("label", kv[0])):
         print(f"verify-gate: NOT VERIFIED ON THIS TREE - "
               f"{info.get('label', key)}: {info.get('reason', '')}")
+    if record_lost:
+        print("verify-gate: the verified record was unreadable, so the obligations it "
+              "held are UNKNOWN; NOT advancing the marker - run /crew:verify --all to rebuild it")
+        return False
+    if orphaned:
+        print(f"verify-gate: {orphaned} unverified obligation(s) belong to a rule that was "
+              "edited or removed; NOT advancing the marker - run /crew:verify --all")
+        return False
     return failure is None
 
 

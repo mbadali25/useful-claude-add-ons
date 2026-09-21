@@ -1340,6 +1340,7 @@ try {
     $syncSha = (git rev-parse HEAD 2>$null)
     $payload = [ordered]@{
       sha = $syncSha
+      all = [bool]$All
       matched_rules = $extrasObj.matched_rules
       cmd_log = @($cmdLog)
     }
