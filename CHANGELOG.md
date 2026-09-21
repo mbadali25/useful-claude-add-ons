@@ -6,7 +6,10 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Fixed
 
-- **`crew` 0.19.93: the Stop gate could take 7+ minutes and never recover.**
+
+
+
+- **`crew` 0.19.94: the Stop gate could take 7+ minutes and never recover.**
   A rule priced over the Stop budget on its own (`rules[8]`, 185s vs a 60s
   default) was deferred on every Stop, so `.crew/.verify-verified-at` and
   `.crew/.verify-gate.fingerprint` — both written ONLY on a fully-clean run —
@@ -62,9 +65,6 @@ All notable changes to this repository are documented here. Format follows [Keep
   (`skills/crew-setup/examples/verify-terraform.json`) now carries
   illustrative `seconds`/`reach` on every priced rule, since it is the
   shipped map the brief's "Template" deliverable actually meant.
-
-
-
 - **`crew` 0.19.92: mechanical enforcement of each role's write scope, via a
   new `PreToolUse` guard on `Write`/`Edit`.** `agents/pm.md:49-53` says, in
   prose, "You do not write application code, tests, docs..." and on
