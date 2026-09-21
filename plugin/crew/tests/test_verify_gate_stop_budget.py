@@ -224,7 +224,9 @@ def test_a_rule_that_runs_and_fails_still_exits_2_beside_a_deferral(
     failing = {
         "version": 1,
         "rules": [
-            {"paths": ["a.py"], "seconds": 5,
+            # reach: local - testing budget/failure interaction, not reach
+            # classification; `sh -c` is a wrapper trigger on its own terms.
+            {"paths": ["a.py"], "seconds": 5, "reach": "local",
              "run": ["sh -c 'echo BOOM; exit 1'"], "why": "fails"},
             {"paths": ["a.py"], "seconds": 90, "run": ["echo RAN-big-90"],
              "why": "deferred"},
@@ -324,14 +326,20 @@ def test_a_rule_that_does_not_fit_defers_WHOLE(flavour, tmp_path):
     """MUST-BLOCK, and the other half of the unit. Charging once must not turn
     into running part of a rule that does not fit: a half-run rule is not a
     cheaper rule, it is a rule nobody can say was checked."""
+    # Both rules fit the 60s budget ALONE (40s each); only together do they
+    # not, which is what makes the second's deferral ACUTE (budget
+    # contention) rather than CHRONIC (permanently over budget on its own).
+    # Kept deliberately out of chronic territory so this stays a pure test
+    # of "defer WHOLE, not half" -- see test_verify_gate_baseline_recording.py
+    # for the chronic case, which has a different baseline contract.
     straddling = {
         "version": 1,
         "rules": [
-            {"paths": ["a.py"], "seconds": 5, "run": ["echo RAN-cheap"],
+            {"paths": ["a.py"], "seconds": 40, "run": ["echo RAN-cheap"],
              "why": "fits"},
-            {"paths": ["a.py"], "seconds": 90,
+            {"paths": ["a.py"], "seconds": 40,
              "run": ["echo RAN-big-a", "echo RAN-big-b"],
-             "why": "does not fit, and must not fit HALF"},
+             "why": "fits alone; not alongside the first; must not fit HALF"},
         ],
         "default": [],
         "unmapped": "ignore",
@@ -341,18 +349,19 @@ def test_a_rule_that_does_not_fit_defers_WHOLE(flavour, tmp_path):
 
     ran = _ran(result)
     assert ran == ["echo RAN-cheap"], (
-        "the 90s rule does not fit a 60s budget and must defer entirely. ran="
+        "the second rule does not fit alongside the first under a 60s "
+        "budget and must defer entirely. ran="
         + repr(ran) + chr(10) + result.stderr
     )
     for cmd in ("echo RAN-big-a", "echo RAN-big-b"):
-        assert "deferred to /crew:verify: " + cmd + " (90s)" in result.stderr, (
+        assert "deferred to /crew:verify: " + cmd + " (40s)" in result.stderr, (
             "every command of a deferred rule must be named, or the reader "
             "cannot tell what went unchecked. " + result.stderr
         )
     assert "deferred 2" in result.stderr, result.stderr
     assert "the verified baseline was NOT advanced" in result.stderr, (
-        "a deferred rule was never checked, so the tree is not verified. "
-        + result.stderr
+        "an ACUTELY deferred rule was never checked, so the tree is not "
+        "verified. " + result.stderr
     )
 
 
@@ -407,8 +416,17 @@ def _shared(always=None, rules=None):
 def test_an_always_command_is_not_deferred_by_a_priced_rule(flavour, tmp_path):
     """MUST-BLOCK, and the reported case verbatim. The command fails, so a
     gate that runs it exits 2 and a gate that defers it exits 0 -- the
-    strongest possible signal that dedup weakened the obligation."""
-    cmd = 'sh -c "exit 1"'
+    strongest possible signal that dedup weakened the obligation.
+
+    `sh -c "exit 1"` (the originally reported command) is now itself a
+    wrapper/inline-shell trigger under round 4's reject-only scanner, and
+    `always` has no `reach` field to declare - it goes through the SAME
+    classification a rule's `run` does (see test_30), with no override.
+    That is a DIFFERENT property from the one this test checks (dedup
+    weakening `always`'s obligation), so the fixture uses a plain `exit 1`
+    - no interpreter, no file argument, no `cd` - which still fails and
+    still exercises the dedup path without also being deferred for reach."""
+    cmd = "exit 1"
     root = _repo(tmp_path, verify_map=_shared(
         always=[cmd],
         rules=[{"paths": ["a.py"], "seconds": 90, "run": [cmd],

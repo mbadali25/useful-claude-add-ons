@@ -3175,3 +3175,28 @@ was not settled. Not investigated further here because it does not change
 the fix - requiring an answer before the next tool call covers both
 readings - but a future session diagnosing a similar silence should not
 assume this was resolved.
+
+## Stop gate per-rule record (crew 0.19.93, branch `crew-stop-gate-record`) - deferred items
+
+Filed 2026-09-19 alongside the fix for the 7+ minute Stop gate
+(`plugin/crew/hooks/scripts/verify-gate.sh`, `.ps1`, `verify_record.py`,
+`verify_price.py`). These do not block that fix; they are follow-ups the
+brief named or that surfaced while building it.
+
+Four items previously listed here — `requiresCleanTree`, the "Template"
+deliverable, the pm-pulse triggers, and the `HOOKS.md` doc update — were
+reversed by the PM the same day, on the user's explicit instruction to build
+the whole brief rather than scope down, and are now built rather than
+deferred: `requiresCleanTree` shares the reach exclusion plumbing in
+`verify-gate.sh`/`.ps1`; `plugin/crew/skills/crew-setup/examples/
+verify-terraform.json` (the actual shipped map the brief meant) now carries
+illustrative `seconds`/`reach` on every priced rule; the three pm-pulse
+triggers (`verifyMarkerStale`, `verifyRulesUnpriced`, `verifyReachUndeclared`)
+are in `crew_state.py`/`pm_brief.py`, sabotage-tested against a fixture; and
+`CONFIG.md` gained §18 describing the per-rule record, since `HOOKS.md`
+still does not exist anywhere in this repo.
+
+- **`scripts/_test/drift-detection.sh` was not run.** Root `CLAUDE.md`
+  requires it by hand before a change to the plugin update path, and it
+  drives the real `claude` CLI so CI cannot run it either. Not run in this
+  session; say so rather than implying it passed.

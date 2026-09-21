@@ -506,6 +506,81 @@ def read_auto_clear(cfg):
     }
 
 
+# --- Stop gate health --------------------------------------------------------
+#
+# What the per-rule record and the map itself say about the Stop gate's own
+# coverage -- three questions the crew 0.19.93 fix introduced no config key
+# for, because none of this is a setting; it is a fact about what is in
+# `.crew/verify.json` and what the last Stop actually verified. See
+# `hooks/scripts/verify-gate.sh`/`.ps1`, `verify_record.py` and CONFIG.md §18.
+#
+# UNKNOWN NEVER RESOLVES TO HEALTHY, matching every other reader in this
+# module. A value here is `None` exactly when it could not be determined --
+# `.crew/verify.json` unreadable, not a git repository, `rev-list` failing --
+# and `evaluate_triggers` below reads `None` as "fire the trigger", the same
+# direction `graphStale`/`knowledgeUnverifiable` already take: an absent or
+# unreadable fact is worse than a bad one, not better, because a bad one at
+# least says what is wrong.
+VERIFY_MARKER_STALE_COMMITS = 50
+
+
+def read_verify_health(root):
+    """Marker staleness, unpriced rules, undeclared reach -- all read
+    straight from the files the gate itself reads, never from a cache.
+
+    `mapPresent` is kept apart from the three counts on purpose: a repo that
+    never adopted `.crew/verify.json` (the gate falls back to
+    `_verify/smoke.sh`) has nothing to price or declare reach on, and that is
+    a normal, healthy state -- not an unknown. A repo whose map EXISTS but
+    could not be parsed is a genuine unknown, and `mapPresent=True` with the
+    three counts still `None` is how the caller tells the two apart.
+    """
+    result = {
+        "markerPresent": False,
+        "markerBehindCommits": None,
+        "mapPresent": False,
+        "totalRules": None,
+        "unpricedRules": None,
+        "undeclaredReachRules": None,
+    }
+    marker_path = os.path.join(root, ".crew", ".verify-verified-at")
+    if os.path.isfile(marker_path):
+        sha = (read_text(marker_path) or "").splitlines()
+        sha = sha[0].strip() if sha else ""
+        if sha:
+            result["markerPresent"] = True
+            # None on ANY failure -- git absent, root not a repo, sha not
+            # found (a squash merge, same as the gate's own BASE fallback).
+            # A behind-count of None must not read as "0 behind"; see the
+            # module note above.
+            count = git_out(root, "rev-list", "--count", f"{sha}..HEAD")
+            if count is not None:
+                parsed = int_or(count, None)
+                result["markerBehindCommits"] = parsed
+
+    vpath = os.path.join(root, ".crew", "verify.json")
+    if os.path.isfile(vpath):
+        result["mapPresent"] = True
+        try:
+            with open(vpath, encoding="utf-8") as fh:
+                vmap = json.load(fh)
+        except (OSError, ValueError):
+            vmap = None
+        rules = vmap.get("rules") if isinstance(vmap, dict) else None
+        if isinstance(rules, list):
+            dict_rules = [r for r in rules if isinstance(r, dict)]
+            result["totalRules"] = len(dict_rules)
+            result["unpricedRules"] = sum(
+                1 for r in dict_rules
+                if not isinstance(r.get("seconds"), (int, float))
+                or isinstance(r.get("seconds"), bool)
+            )
+            result["undeclaredReachRules"] = sum(
+                1 for r in dict_rules if "reach" not in r
+            )
+    return result
+
+
 # --- Handoff staleness ------------------------------------------------------
 #
 # read_work() above only asks whether a handoff exists -- enough to warn once
@@ -895,6 +970,13 @@ TRIGGERS = (
     # reviewNotWorking/ticketsTooLarge do.
     "endpointUnscanned",
     "graphStale",
+    # Same rank as graphStale and for the same reason: a Stop gate whose
+    # baseline is stale, or whose map has unpriced/undeclared-reach rules,
+    # is a live coverage gap in what gets checked before code ships, not
+    # documentation drift the way the codemap/diagram findings below are.
+    "verifyMarkerStale",
+    "verifyRulesUnpriced",
+    "verifyReachUndeclared",
     # Above `knowledgeBehind` on purpose, and it is the whole point of keeping
     # them separate. A map that cannot be re-verified is a worse finding than
     # one that merely needs re-checking, and it has a different fix. Sorting
@@ -2751,6 +2833,14 @@ def evaluate_triggers(state):
     # that would break every session opened in the repo.
     schema = int_or(state.get("schema", 1), 1)
     incident = dict_or_empty(state.get("incident"))
+    verify = dict_or_empty(state.get("verify"))
+    # All three gated on `mapPresent`: a repo that never adopted
+    # `.crew/verify.json` (the gate falls back to `_verify/smoke.sh`) has
+    # nothing to price, declare reach on, or hold a per-rule record for --
+    # firing here on every such repo would be noise on the majority case,
+    # the same reason `diagramsMissing` waits for a codemap to exist.
+    verify_map_present = bool(verify.get("mapPresent"))
+    verify_marker_behind = verify.get("markerBehindCommits")
     fired = {
         "incidentActive": bool(incident.get("active")),
         # Present but past its expiry. The gates are already back on -- that
@@ -2767,6 +2857,24 @@ def evaluate_triggers(state):
         "endpointUnscanned": bool(dict_or_empty(state.get("endpoints")).get("unscanned")),
         # An absent graph is stale by definition -- there is nothing to trust.
         "graphStale": not graph.get("present") or not graph.get("current"),
+        # UNKNOWN NEVER RESOLVES TO HEALTHY: a marker present but whose
+        # distance from HEAD could not be computed (git failed, or the sha
+        # names a commit this repo no longer has) fires exactly like one
+        # that is genuinely stale, and an absent marker on a repo that HAS
+        # adopted the map fires too -- "never verified" is not "verified".
+        "verifyMarkerStale": verify_map_present and (
+            not verify.get("markerPresent")
+            or verify_marker_behind is None
+            or verify_marker_behind > VERIFY_MARKER_STALE_COMMITS
+        ),
+        "verifyRulesUnpriced": verify_map_present and (
+            verify.get("unpricedRules") is None
+            or (verify.get("unpricedRules") or 0) > 0
+        ),
+        "verifyReachUndeclared": verify_map_present and (
+            verify.get("undeclaredReachRules") is None
+            or (verify.get("undeclaredReachRules") or 0) > 0
+        ),
         "knowledgeBehind": bool(knowledge.get("behind")),
         "knowledgeUnverifiable": bool(knowledge.get("unresolvable")),
         "diagramsStale": bool(diagrams.get("behind")),
@@ -2886,6 +2994,7 @@ def collect(root, cfg_override=None):
                     else {"installed": False, "unscanned": []},
         "incident": crew_incident.read_state(root, cfg),
         "autoClear": read_auto_clear(cfg),
+        "verify": read_verify_health(root),
     }
     # A directory with no crew has no findings. evaluate_triggers would
     # otherwise report graphStale for every plain git repo on the machine,

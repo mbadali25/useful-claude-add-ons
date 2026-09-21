@@ -156,7 +156,7 @@ def test_an_ordinary_map_still_runs_every_command_and_reports_unmapped(
     for a map with several commands AND an unmapped path: every command runs,
     and the unmapped report names the file and nothing else."""
     root = _repo(tmp_path, {
-        "rules": [{"paths": ["**/*.py"],
+        "rules": [{"paths": ["**/*.py"], "reach": "local",
                    "run": ["true", "echo ran >> ran.txt", "exit 1"]}],
         "unmapped": "fail",
     })
@@ -178,7 +178,10 @@ def test_a_single_line_command_full_of_shell_syntax_still_runs(tmp_path):
     redirections are ordinary content in a one-line command and a rejection
     that caught them would break every real map."""
     root = _repo(tmp_path, {
-        "rules": [{"paths": ["**/*.py"],
+        # reach: local - this rule's `cd .` is a deliberate no-op used to
+        # exercise shell-operator framing, not an undeclared reach; the
+        # round-4 scanner defers ANY `cd` on its own terms.
+        "rules": [{"paths": ["**/*.py"], "reach": "local",
                    "run": ["cd . && echo 'a; b && c' > shell.txt || true"]}],
     })
 
@@ -231,8 +234,13 @@ def test_the_two_halves_of_the_framing_contract_agree():
         "the writer emits " + str(records) + " records but " + str(len(readers))
         + " readers split on \\035: " + repr(readers)
     )
+    # Record 6 (EXTRAS) is the one exception: it is a single JSON blob, not
+    # a \x1e-joined list of subfields, so it has nothing to split further --
+    # unlike records 1-5, which predate it and are still \x1e-joined lists.
     for line in readers:
         assert "sed -n" in line, line
+        if "EXTRAS=" in line:
+            continue
         assert "tr '\\036'" in line, line
 
     assert 'print("\\x1e".join(cmds))' not in text, \

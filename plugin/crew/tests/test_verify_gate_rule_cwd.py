@@ -84,7 +84,13 @@ def _repo(tmp_path, rules):
     verify = {"version": 1, "rules": [], "always": [], "default": [], "unmapped": "warn"}
     for n, run in enumerate(rules, 1):
         (root / f"r{n}.py").write_text("x = 1\n", encoding="utf-8")
-        verify["rules"].append({"paths": [f"r{n}.py"], "run": [run]})
+        # reach: local - this whole file tests `cd`/cwd mechanics, which the
+        # Stop gate's reach scanner (Codex round 4) now defers unconditionally
+        # on its own terms (a `cd` anywhere in the command). These fixtures
+        # are exercising a real, supported rule shape deliberately, not an
+        # undeclared reach - declaring it here is the same thing a real
+        # verify.json author would do for a genuine cd-prefixed rule.
+        verify["rules"].append({"paths": [f"r{n}.py"], "reach": "local", "run": [run]})
     (root / ".crew" / "verify.json").write_text(json.dumps(verify), encoding="utf-8")
     return root
 

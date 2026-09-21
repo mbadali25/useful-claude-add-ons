@@ -320,9 +320,13 @@ def test_each_flavour_honours_a_deadline_the_other_published(tmp_path):
 # deadline: read the deadline file's mtime, spend real time INSIDE the run,
 # read it again.
 
+# reach: local - this probe reads the lock's own deadline file, which may
+# or may not exist yet at reach-scan time depending on lock-acquisition
+# timing; declaring it avoids that race turning an unrelated probe flaky
+# under the round-4 scanner's existing-repo-file check.
 _DEADLINE_PROBE_RULE = {
     "version": 1,
-    "rules": [{"paths": ["a.py"], "seconds": 8, "run": [
+    "rules": [{"paths": ["a.py"], "seconds": 8, "reach": "local", "run": [
         "stat -c %Y .crew/.verify-gate.lock/deadline > d0.txt",
         "sleep 3",
         "stat -c %Y .crew/.verify-gate.lock/deadline > d1.txt",
@@ -376,9 +380,10 @@ def test_the_deadline_is_republished_during_a_run_not_only_once(flavour, tmp_pat
 # the run, so no real waiting) isolates LOCK_TTL without burning wall-clock
 # time on the 180s default case.
 
+# reach: local - the twin of _DEADLINE_PROBE_RULE's note above.
 _NO_COST_RULE = {
     "version": 1,
-    "rules": [{"paths": ["a.py"], "run": [
+    "rules": [{"paths": ["a.py"], "reach": "local", "run": [
         "date +%s > now.txt",
         "cat .crew/.verify-gate.lock/deadline > deadline.txt",
     ], "why": "no stated cost, isolates LOCK_TTL in the published window"}],
@@ -563,9 +568,12 @@ def test_both_flavours_read_the_same_deadline_the_same_way(value, tmp_path):
 # lives in the lock directory, which the holder's own trap removes on the way
 # out, so a check made afterwards reads "absent" on a healthy gate too.
 
+# reach: local - the twin of _DEADLINE_PROBE_RULE's note above; this is
+# the one that actually surfaced the race (intermittent, since it depends
+# on whether the lock's deadline file exists yet at scan time).
 _TTL_PROBE_RULE = {
     "version": 1,
-    "rules": [{"paths": ["a.py"], "run": [
+    "rules": [{"paths": ["a.py"], "reach": "local", "run": [
         "cat .crew/.verify-gate.lock/deadline > seen.txt 2>&1 "
         "|| echo ABSENT > seen.txt",
     ], "why": "reads the published deadline from inside the run"}],

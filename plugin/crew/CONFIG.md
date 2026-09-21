@@ -1692,3 +1692,118 @@ layers, ratcheted to the narrower one, read through
 header states — "one mechanism can be wrong; two can disagree, and then only
 one of them gets fixed." Adding `"roleWrites"` to `crew_guards.ALL_GUARD_NAMES`
 and one branch to `crew_guards.guard_tiers` was the whole cost of reusing it.
+
+## 19. `verify.stopBudgetSeconds` and the Stop gate's per-rule record
+
+`verifyGate` and `verify.stopBudgetSeconds` are the only two config keys this
+gate reads (§10/§11 tables above). Everything else about how a Stop turn is
+verified is NOT a config setting — it is per-rule fields inside
+`.crew/verify.json` (`reach`, `env`, `requiresCleanTree`, `seconds`) and a
+machine-local record the gate keeps for itself. Documented here rather than
+invented as new config keys, because that is what it actually is.
+
+**The single marker used to mean "everything passed."** Before crew 0.19.93,
+`.crew/.verify-verified-at` (the sha baseline) and `.crew/.verify-gate.fingerprint`
+(the unchanged-turn skip) were written ONLY when every matched rule ran clean.
+A rule priced over `verify.stopBudgetSeconds` on its own — permanently, not as
+a fluke of this turn's ordering — was deferred on EVERY Stop, so neither ever
+advanced again: the baseline froze, and every OTHER rule re-matched and
+re-ran from that same old commit, forever. That was the actual 7+ minute Stop
+gate defect this section exists to explain the fix for.
+
+**The per-rule record replaces "everything or nothing."**
+`.crew/.verify-gate.record.json` (machine-local, gitignored, never tracked —
+see the `.crew/*` ignore policy in root `CLAUDE.md`) now tracks status per
+rule, keyed by a content hash of that rule's `paths`/`run` so it survives
+`.crew/verify.json` being reordered:
+
+- A rule that is PERMANENTLY over budget on its own no longer blocks the sha
+  marker or the fingerprint. It is recorded as `"chronic"` instead, and the
+  gate prints `NOT VERIFIED ON THIS TREE` for it on every subsequent Stop —
+  whether or not that rule's own files changed this turn — until
+  `/crew:verify --all` actually runs it clean.
+- A rule that would fit `verify.stopBudgetSeconds` alone but lost to this
+  turn's contention (another rule's cost crowded it out) is "acute", not
+  chronic, and still blocks the sha marker exactly as before this feature —
+  that case really is unverified for THIS commit, not permanently
+  unverifiable, and freezing the baseline is the correct answer for it.
+- A rule declaring `"reach"` other than `"local"` is recorded as
+  `"reach_declared"` and never runs on Stop — only under `/crew:verify --all`
+  and the merge gate. Declaring `"reach": "local"` runs on Stop with NO
+  inspection at all; that is the human saying so, and the gate takes the word
+  for it.
+- A rule naming no `"reach"` is classified by `verify_record.scan_reach`,
+  which as of crew 0.19.9x (Codex round 6) STOPS MODELLING SHELL. Rounds 4-5
+  each read further INTO a command's shell syntax to decide whether a
+  wrapper it named was safe — follow the script, split it into the segments
+  a shell would run separately, open a `$( ... )` substitution's own
+  contents — and each round of review found a shape that defeated whatever
+  the previous round had just taught the scanner to read: subshell
+  parentheses glued to a path, `-n` granted by mere PRESENCE anywhere in the
+  token list rather than its actual position, a command hidden inside a
+  substitution the segmenter never knew to open. Five rounds of "read one
+  layer deeper" is not a fixable bug; it is the wrong approach. So this scan
+  no longer parses shell at all:
+  - if the command string contains ANY shell metacharacter — anything that
+    could combine, substitute, quote, glob, redirect or comment:
+    `( ) $ ; & | < > `` " ' \ { } * ? [ ] ~ # !`, a newline, or a tab — it is
+    deferred unconditionally as `"reach_syntax"`, reason `shell syntax in an
+    undeclared rule — declare "reach": "local" (or network/host) to run it
+    on Stop`. No exception, not even `2>&1` or a trailing `#` comment: a
+    character on the list means "declare reach", full stop.
+  - only once nothing on that list is present does whitespace-only
+    splitting become safe (there is no quoting left to get wrong). A reach
+    verb (`ssm`, `ssh`, `curl`, `aws`, `az`, `gh`, `psql`, `mysql`) anywhere
+    → `"reach_undeclared"`, reason `remote verb <v>`.
+  - otherwise, if the first token is a recognised interpreter
+    (`bash`/`sh`/`dash`/`zsh`/`pwsh`/`powershell`/`python`/`python3`/`py`/
+    `node`/`ruby`/`perl`): `-n` grants the parse-only exemption ONLY when it
+    is EXACTLY the second token and there is EXACTLY ONE token after it
+    (`bash -n a.sh` is parse-only; `bash a.sh -n` and `bash -n a.sh b.sh`
+    are not); `-m` as the second token names a MODULE, never a file, and is
+    always local (`python3 -m pytest x -q` is local); `-c`/`-Command`/
+    `-File` as the second token name inline code or a script argument and
+    always defer as `"reach_wrapper"`; any other token from the second
+    position onward that resolves to an existing file under the repo also
+    defers as `"reach_wrapper"`.
+  - otherwise (not a recognised interpreter): any token at all that
+    resolves to an existing file under the repo defers as `"reach_wrapper"`.
+  - none of the above: runs undeclared.
+  - `default`/`always` commands in `.crew/verify.json` go through this SAME
+    classification on Stop — they have no `"reach"` field of their own to
+    declare, so a deferred command named there is excluded from the
+    fallback exactly like an undeclared rule would be, never reintroduced
+    through it.
+- A rule declaring `"requiresCleanTree": true` is recorded as
+  `"clean_tree_required"` and is never run on Stop either, for the same
+  reason: the working tree is dirty by definition during ordinary work, so a
+  rule that refuses on a dirty tree is a permanent red there and a real
+  check only under `--all` against a clean checkout.
+- A rule whose command exits 77 is recorded as `"skipped"` — the
+  `_verify/smoke.sh` and GNU automake convention for "skipped, environment
+  absent". Not a pass, not a fail: it does not fail the Stop turn and it is
+  not recorded as verified either.
+
+**`--price` writes `seconds` into `.crew/verify.json` itself, so it is an
+operator command, never something a hook runs.** `.crew/verify.json` is
+TRACKED in this repo (`git ls-files .crew/` lists it, per the ignore policy
+in root `CLAUDE.md`), so an automatic `--price` would dirty a committed file
+on every Stop. `verify-gate.sh --price [path] [--force]` /
+`verify-gate.ps1 -Price [-PriceTarget path] [-PriceForce]` is reachable only
+by typing the flag; the Stop hook (`hooks.json`) never passes it.
+
+**Environment pinning is unconditional, not a config key either.** Every rule
+command the gate runs gets `ENV`, `AWS_PROFILE`, `AWS_DEFAULT_REGION`,
+`KUBECONFIG` and `TF_WORKSPACE` unset, unless that rule's own `"env"` object
+declares values for them — in which case exactly those are set instead, and
+the gate prints what it pinned. There is no `verify.envPinning: false` escape
+hatch; a rule that genuinely needs a variable declares it, in the map, next
+to the command that needs it.
+
+**Unknown never resolves to the permissive value, in any of this.** A
+`.crew/.verify-gate.record.json` that cannot be read is treated as empty —
+losing only history, never fabricating a clean rule that never ran (see
+`verify_record.py`'s module docstring). A `.crew/config.json` that cannot be
+read leaves `verify.stopBudgetSeconds` at its compiled default (60) rather
+than removing the budget. See `commands/verify.md` for the full mechanism and
+`hooks/scripts/verify_record.py` / `verify_price.py` for the code.

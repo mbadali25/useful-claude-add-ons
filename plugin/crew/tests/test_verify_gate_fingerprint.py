@@ -179,7 +179,10 @@ def test_a_failing_run_records_nothing_and_runs_again(flavour, tmp_path):
     for every later turn."""
     failing = {
         "version": 1,
-        "rules": [{"paths": ["a.py"], "seconds": 5,
+        # reach: local - testing that a FAILURE records nothing, not reach
+        # classification; `sh -c` is a wrapper/inline-shell trigger on its
+        # own terms under the round-4 scanner.
+        "rules": [{"paths": ["a.py"], "seconds": 5, "reach": "local",
                    "run": ["sh -c 'exit 1'"], "why": "fails"}],
         "default": [], "unmapped": "ignore",
     }
@@ -198,21 +201,27 @@ def test_a_failing_run_records_nothing_and_runs_again(flavour, tmp_path):
 
 
 @pytest.mark.parametrize("flavour", _FLAVOURS)
-def test_a_budget_deferred_run_records_nothing_and_runs_again(flavour, tmp_path):
+def test_an_acutely_deferred_run_records_nothing_and_runs_again(flavour, tmp_path):
     """Must-block, and the subtler half.
 
-    The run PASSED -- exit 0 -- but a rule was deferred by the Stop budget and
+    The run PASSED -- exit 0 -- but a rule was ACUTELY deferred (it would fit
+    the Stop budget alone; another rule's spend crowded it out this turn) and
     therefore never checked. Recording that as a verified tree would mean the
     deferred rule never runs again on an unchanged tree, so "we ran out of
-    budget" would quietly become "this is verified".
+    budget this turn" would quietly become "this is verified".
+
+    A rule that is CHRONICALLY over budget (its own `seconds` alone exceeds
+    the whole budget) is a different case with a different contract as of the
+    per-rule record feature -- see test_a_chronically_deferred_run_still_
+    advances_and_stays_reported below.
     """
     deferring = {
         "version": 1,
         "rules": [
-            {"paths": ["a.py"], "seconds": 5, "run": ["echo RAN-ok"],
-             "why": "fits"},
-            {"paths": ["a.py"], "seconds": 900, "run": ["echo RAN-huge"],
-             "why": "cannot fit"},
+            {"paths": ["a.py"], "seconds": 50, "run": ["echo RAN-first"],
+             "why": "fits alone"},
+            {"paths": ["a.py"], "seconds": 50, "run": ["echo RAN-second"],
+             "why": "also fits alone, but not alongside the first under a 60s budget"},
         ],
         "default": [], "unmapped": "ignore",
     }
@@ -221,13 +230,52 @@ def test_a_budget_deferred_run_records_nothing_and_runs_again(flavour, tmp_path)
     assert first.returncode == 0, first.stderr
     assert "deferred to /crew:verify" in first.stderr, first.stderr
     assert not (root / ".crew" / ".verify-gate.fingerprint").exists(), (
-        "a run with a deferred rule checked less than everything and must "
-        "not be recorded as clean"
+        "a run with an ACUTELY deferred rule checked less than everything "
+        "and must not be recorded as clean"
     )
 
     second = _run(flavour, root)
     assert not _skipped(second), (
-        "a tree with an unchecked rule must not be skipped. " + second.stderr
+        "a tree with an acutely unchecked rule must not be skipped. " + second.stderr
+    )
+
+
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+def test_a_chronically_deferred_run_still_advances_and_stays_reported(flavour, tmp_path):
+    """The other half of the per-rule record feature: a rule that is
+    PERMANENTLY over budget on its own (its `seconds` alone exceeds the
+    whole Stop budget, so no reordering ever lets it fit) must NOT block the
+    baseline/fingerprint from advancing -- freezing them over one chronic
+    rule used to force every OTHER rule to re-match and re-run forever. It
+    must still be named every turn until it actually runs clean."""
+    deferring = {
+        "version": 1,
+        "rules": [
+            {"paths": ["a.py"], "seconds": 5, "run": ["echo RAN-ok"],
+             "why": "fits"},
+            {"paths": ["a.py"], "seconds": 900, "run": ["echo RAN-huge"],
+             "why": "cannot fit, ever, under the 60s default"},
+        ],
+        "default": [], "unmapped": "ignore",
+    }
+    root = _repo(tmp_path, verify_map=deferring)
+    first = _run(flavour, root)
+    assert first.returncode == 0, first.stderr
+    assert "permanently over budget" in first.stderr, first.stderr
+    assert (root / ".crew" / ".verify-gate.fingerprint").exists(), (
+        "the only deferral was chronic, so the fingerprint must still "
+        "record -- otherwise every OTHER rule re-runs forever over one "
+        "rule that can never fit. " + first.stderr
+    )
+
+    second = _run(flavour, root)
+    assert _skipped(second), (
+        "nothing changed and the only outstanding rule is chronic, not "
+        "acute, so the unchanged-turn skip must still fire. " + second.stderr
+    )
+    assert "NOT VERIFIED ON THIS TREE" in second.stderr, (
+        "the chronic rule must stay named even while the tree is skipped, "
+        "so it cannot collapse into 'verified'. " + second.stderr
     )
 
 
@@ -539,8 +587,13 @@ def _invariant_repo(tmp_path, name, rule_path, command):
                    check=True, capture_output=True, text=True)
     (root / ".crew" / "verify.json").write_text(json.dumps({
         "version": 1,
-        "rules": [{"paths": [rule_path], "seconds": 1, "run": [command],
-                   "why": name}],
+        # reach: local - these fixtures test fingerprint-digest coverage,
+        # not reach classification; their `grep ... <file>` commands name
+        # a file that genuinely exists under the repo, which the round-4
+        # scanner treats as a wrapper trigger on its own (existence alone,
+        # regardless of `grep` not being a recognised interpreter).
+        "rules": [{"paths": [rule_path], "seconds": 1, "reach": "local",
+                   "run": [command], "why": name}],
         "default": [], "unmapped": "ignore",
     }), encoding="utf-8")
     return root

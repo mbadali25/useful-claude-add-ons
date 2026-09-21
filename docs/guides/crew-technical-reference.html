@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>The crew plugin: technical reference</title>
+<style>
+body { font-family: Calibri, Arial, sans-serif; font-size: 11pt; color: #1A1A1A; margin: 2cm; line-height: 1.4; }
+h1 { font-size: 22pt; color: #1F4E79; margin-bottom: 4pt; }
+h2 { font-size: 16pt; color: #1F4E79; margin-top: 24pt; border-bottom: 1px solid #5C6670; padding-bottom: 3pt; }
+h3 { font-size: 13pt; color: #1F4E79; margin-top: 16pt; }
+p { margin: 6pt 0; }
+table { border-collapse: collapse; width: 100%; margin: 8pt 0 12pt 0; }
+th { background: #1F4E79; color: #FFFFFF; text-align: left; padding: 5pt 6pt; font-size: 10pt; }
+td { border-bottom: 1px solid #C8CDD2; padding: 5pt 6pt; vertical-align: top; font-size: 10pt; }
+.muted { color: #5C6670; font-size: 9.5pt; }
+.warn { color: #B45309; }
+.box { border: 1px solid #1F4E79; padding: 8pt 10pt; margin: 10pt 0; background: #F3F6FA; }
+code { font-family: Consolas, "Courier New", monospace; font-size: 9.5pt; }
+ul { margin: 4pt 0 8pt 18pt; }
+li { margin: 3pt 0; }
+</style>
+</head>
+<body>
+
+<h1>The crew plugin: technical reference</h1>
+<p class="muted">The low-level guide, for the people who install, configure and extend crew. A companion overview covers the same ground in plain language. Written 20 September 2026 against crew 0.19.92 on <code>main</code> (commit 621d50dc); the Stop-gate fix (0.19.93) is described as it stands on branch <code>crew-stop-gate-record</code> at b6e8c4bb, in review.</p>
+
+<div class="box">
+<p><b>Design constraint.</b> A role earns its place only if it buys one of three things: an isolated context window, a restricted tool set, or genuinely independent eyes. Everything else is a file, a command, or the user. Every custom subagent loads the entire <code>CLAUDE.md</code> hierarchy at startup, so the roster is kept small and the knowledge is kept in files.</p>
+</div>
+
+<h2>1. Layout</h2>
+<table>
+<tr><th>Path</th><th>Contents</th><th>Count at 0.19.92</th></tr>
+<tr><td><code>plugin/crew/commands/</code></td><td>Slash commands, one Markdown file each with YAML frontmatter.</td><td>28</td></tr>
+<tr><td><code>plugin/crew/agents/</code></td><td>Role definitions: <code>tools:</code>, <code>model:</code>, description, procedure.</td><td>54</td></tr>
+<tr><td><code>plugin/crew/skills/</code></td><td>Procedures loaded on match; each a directory with <code>SKILL.md</code> and references.</td><td>20</td></tr>
+<tr><td><code>plugin/crew/hooks/hooks.json</code> and <code>hooks/scripts/</code></td><td>Hook registrations, each event once per shell flavour, and the scripts they run.</td><td>20 registrations</td></tr>
+<tr><td><code>plugin/crew/tests/</code></td><td>pytest suites, fixtures, and <code>sabotage.py</code>, which reintroduces known bugs and asserts the suite goes red.</td><td>51 modules</td></tr>
+<tr><td><code>plugin/crew/evals/</code></td><td><code>claude plugin eval</code> cases with free graders; runners in <code>scripts/run-plugin-evals.{sh,ps1}</code>.</td><td>5 cases</td></tr>
+<tr><td><code>plugin/crew/CONFIG.md</code></td><td>Every configuration key, its layers and its ratchet rule.</td><td>18 sections</td></tr>
+</table>
+
+<h2>2. Roles</h2>
+<h3>The ladder</h3>
+<table>
+<tr><th>Tier</th><th>Roles</th><th>Tools of note</th><th>Add when</th></tr>
+<tr><td>0</td><td>explorer, qa-reviewer</td><td>explorer: Read, Grep, Glob only. qa-reviewer: read-only plus Bash.</td><td>Always.</td></tr>
+<tr><td>1</td><td>security, smoke-author, developer</td><td>security: no Write or Edit, has Bash. developer: full write, own context, never reviews its own diff.</td><td>Security findings reach review; coverage gaps regress; the PM runs work end to end.</td></tr>
+<tr><td>2</td><td>dba, docs-writer, browser-tester, analyst, planner, infrastructure-architect, scribe, researcher</td><td>planner works from an abstracted brief; <code>secondOpinion.sendsCode</code> is false by design.</td><td>Per the table in <code>skills/crew-scaling/SKILL.md</code>; <code>/crew:scale</code> reads <code>.crew/metrics.md</code> and recommends.</td></tr>
+<tr><td>3</td><td>parallel sessions, worktrees, agent teams</td><td></td><td>Every involved repository has green smoke.</td></tr>
+</table>
+<h3>The PM</h3>
+<p>Standing teammate named <code>crew-pm</code>, reached by <code>SendMessage</code> so it keeps its transcript. Tools: Read, Write, Edit, Bash, Grep, Glob, Agent, Skill. No SendMessage, no ListAgents, so resume-by-id belongs to the caller (<code>commands/pm.md</code>). Authority is <code>report-only | act | autonomous</code>; the stops in <code>crew_state.AUTONOMOUS_STOPS</code> hold at every tier: offboarding a role, deleting a codemap or diagram, rewriting <code>.crew/metrics.md</code>, destroying git history. Dispatch cap 3 per pass. Write scope: <code>.crew/**</code>, <code>TODO.md</code>, <code>.work/**</code>, <code>docs/diagrams/**</code>, enforced by the write guard from 0.19.92.</p>
+<h3>Specialists</h3>
+<p><code>crew_state.SPECIALIST_ROLES</code> lists 40 roles with no tier, onboarded per repository with <code>/crew:pm onboard &lt;role&gt;</code> and justified by the stack (the agent file names the file that proves it). Onboarding a specialist never moves the tier. Groups: languages and frameworks (python-pro, node-developer, php-pro, rust-engineer, react-specialist, angular-architect, dotnet-core-expert, dotnet-framework-4.8-expert, sql-pro, graphql-architect, backend-developer, api-designer); cloud and infrastructure (terraform-engineer, network-engineer, platform-engineer, microservices-architect, legacy-modernizer, database-administrator, git-workflow-manager, workflow-orchestrator, multi-agent-coordinator); Microsoft platform (windows-infra-admin, exchange-online-specialist, sharepoint-developer, power-automate-specialist, powershell-5.1-expert, powershell-7-expert, powershell-security-hardening, ad-security-reviewer); security and compliance (penetration-tester, compliance-auditor, code-reviewer, architect-reviewer, fintech-engineer, payment-integration); review and writing (qa-researcher, kimi-consult, ai-writing-auditor, skill-author, design-bridge).</p>
+<h3>Model routing</h3>
+<p><code>crew_config.py --models</code> prints the effective provider, model and family per role, which fallbacks are armed, and whether the self-review guard bars anything. The QA order tries Codex (gpt-6-astra) first, then Copilot (Kimi), then Claude; a reviewer of the same family as the diff's author is struck. Config keys <code>dev.roles.*</code>, <code>qa.roles.*</code>, <code>dev.fallback</code>, <code>qa.fallback</code>. The Agent tool's <code>model</code> override applies per dispatch.</p>
+
+<h2>3. Commands</h2>
+<table>
+<tr><th>Command</th><th>Function</th><th>Reads / writes</th></tr>
+<tr><td>init</td><td>Phased, resumable setup; each phase asks before writing.</td><td><code>.crew/config.json</code>, <code>.crew/verify.json</code>, <code>_verify/</code>, CLAUDE.md template.</td></tr>
+<tr><td>onboard</td><td>Writes the code map; <code>--refresh &lt;subsystem&gt;</code> re-derives one file against the graph.</td><td><code>.crew/codemap/*.md</code> with DERIVED/JUDGEMENT markers and <code>anchor:</code> commits.</td></tr>
+<tr><td>ticket, work, split</td><td>Scope; implement, review, gate end to end; split an oversized Jira ticket.</td><td><code>.work/tickets/</code>, tracker via MCP.</td></tr>
+<tr><td>review</td><td>Hostile QA on the diff: Codex, Copilot or a fresh Claude context, first that probes clean; specialist reviewers by path rule.</td><td><code>.work/review/&lt;name&gt;/{diff,prompt,out}.txt</code>; a row in <code>.crew/metrics.md</code>.</td></tr>
+<tr><td>verify</td><td>Builds the verification map from evidence; <code>--all</code> runs the whole map with no budget; <code>--price</code> (0.19.93) measures and writes <code>seconds</code>.</td><td><code>.crew/verify.json</code> (tracked).</td></tr>
+<tr><td>gate</td><td>Exports, removes and restores branch protection.</td><td>Bitbucket or GitHub API; export file.</td></tr>
+<tr><td>promote</td><td>Promotes to the next environment; refuses without a <code>.work/PROMOTIONS.md</code> row and, if <code>change.requireForProduction</code>, without a change request.</td><td><code>.work/PROMOTIONS.md</code>.</td></tr>
+<tr><td>change</td><td>Files a change request in SDP, Jira or <code>.work/changes/</code>; refuses while any of the ten template questions is unanswered.</td><td>Tracker via MCP.</td></tr>
+<tr><td>emergency</td><td>Stands gates down, opens parallel lanes, records what was skipped.</td><td><code>.crew/incidents/</code>.</td></tr>
+<tr><td>debug</td><td>Systematic debugging: read, reproduce, isolate, prove, then fix. Adapted from superpowers (MIT).</td><td></td></tr>
+<tr><td>pm, roster, model, scale, config, upgrade</td><td>Manager conversation; role listing; per-role model set and probe; grow or shrink recommendation; config provenance; schema migration (currently to schema 7).</td><td><code>.crew/config.json</code>, <code>~/.claude/crew/config.json</code>.</td></tr>
+<tr><td>plan, survey, docs, reference, diagram, runbook, handoff</td><td>Second-opinion design; gap survey; docs touched by a change; API/feature reference with anchors; Mermaid diagrams with <code>%% Anchors:</code>; runbooks; the handoff note.</td><td><code>docs/</code>, <code>docs/diagrams/</code>, <code>.work/HANDOFF.md</code>.</td></tr>
+<tr><td>jira-sync, sdp-sync, obsidian-sync</td><td>Two-way ticket sync with the local cache.</td><td>MCP servers; Obsidian Kanban file.</td></tr>
+</table>
+
+<h2>4. Hooks and guards</h2>
+<table>
+<tr><th>Event</th><th>Matcher</th><th>Script</th><th>Behaviour</th></tr>
+<tr><td>SessionStart</td><td>*</td><td>pm-brief, platform sync, context resume</td><td>Injects crew state and any handoff note; corrects <code>platform.os/shell</code>.</td></tr>
+<tr><td>PreToolUse</td><td>Bash, PowerShell</td><td><code>crew_guards.py</code> via shell shims</td><td><code>guards.terraformApply</code>, <code>guards.forcePush</code>, <code>guards.adminMerge</code> (block | ask | allow); <code>guards.prodDatabase</code>, <code>guards.prodServer</code> (none | read | full) against <code>production.databases/hosts</code>.</td></tr>
+<tr><td>PreToolUse</td><td>Write|Edit</td><td><code>role_write_guard.py</code> via <code>role-write-guard.{sh,ps1}</code></td><td><code>guards.roleWrites</code> (off by default; block is the floor). See section 6.</td></tr>
+<tr><td>PreCompact</td><td>*</td><td>handoff writer</td><td>Writes <code>.work/HANDOFF.md</code> before summarisation.</td></tr>
+<tr><td>Notification</td><td>*</td><td><code>pm_pulse.py</code></td><td>Re-briefs the PM with triggers.</td></tr>
+<tr><td>Stop</td><td>*</td><td><code>verify-gate.{sh,ps1}</code>, <code>context-watch</code></td><td>Runs the matched rules within <code>verify.stopBudgetSeconds</code> (default 60); blocks on failure. See section 7.</td></tr>
+</table>
+<p>Registration rules: each event registered once per flavour with <code>shell: "powershell"</code> on the Windows entry, because a bare hook command goes to Git Bash on Windows. Every ratcheted key resolves to the narrower of the repository and machine-global layers; a corrupt layer resolves to the strict value; <code>change.requireForProduction</code> ratchets the other way (on wins). A guard that can block ships off and needs a committed must-block/must-allow suite, sabotage-tested.</p>
+
+<h2>5. Knowledge files</h2>
+<table>
+<tr><th>Artefact</th><th>Location</th><th>Freshness rule</th></tr>
+<tr><td>Code map</td><td><code>.crew/codemap/</code>, un-ignored by name</td><td>An <code>anchor:</code> behind HEAD means re-check with <code>git diff --name-only &lt;anchor&gt;..HEAD -- &lt;paths&gt;</code>; empty output means current. Comparison is <code>sha[:7] == head[:7]</code>.</td></tr>
+<tr><td>Code graph</td><td><code>graphify-out/graph.json</code> and <code>GRAPH_REPORT.md</code>, tracked</td><td>Rebuilt by post-commit and post-checkout hooks via <code>graphify update .</code>; a hand build with <code>--no-viz --code-only</code> writes only one of the pair.</td></tr>
+<tr><td>Diagrams</td><td><code>docs/diagrams/*.mmd</code> with <code>%% Anchors:</code></td><td><code>/crew:diagram refresh</code> rewrites only diagrams whose cited files moved.</td></tr>
+<tr><td>Metrics</td><td><code>.crew/metrics.md</code></td><td>One row per review; grouped by ticket column for the BLOCK+FIX rate.</td></tr>
+<tr><td>Handoff</td><td><code>.work/HANDOFF.md</code></td><td>Injected at session start until finished or deleted.</td></tr>
+</table>
+
+<h2>6. Changes 0.19.90 to 0.19.92</h2>
+<table>
+<tr><th>Version</th><th>Change</th><th>Files and tests</th></tr>
+<tr><td>0.19.90</td><td>Foreground execution rule in six role files; PM returns the real dispatch id or "not resumable"; idle signal is recency not liveness, two-cycle escalate rule; write-scope sentences aligned with the guard; qa-reviewer's return stays defect-lines-or-CLEAN.</td><td><code>agents/{developer,pm,python-pro,browser-tester,smoke-author,qa-reviewer}.md</code>, <code>commands/pm.md</code>; <code>tests/test_foreground_execution.py</code> (15 tests). Codex: 5, 4+1, 6, CLEAN.</td></tr>
+<tr><td>0.19.91</td><td>Eval suite: pm-does-not-write-code, qa-reviewer-stays-read-only, developer-defers-unrelated-bug, developer-runs-command-in-foreground, pm-answers-status-mid-pass. Structural graders (ticket as clause subject/object with a whole-clause hedge guard; four-field verdict with a numeric reproduction). Runners: comma xfail list, case-sensitive, exit 127 without CLI, zero cases fails, xfail only for a scored failure from this run with no per-run error, passing xfail fails the gate. Workflow tests the secret via a job-level env flag.</td><td><code>evals/</code>, <code>scripts/run-plugin-evals.{sh,ps1}</code>, <code>.github/workflows/plugin-evals.yml</code>. Live finding: PM case scored 0. Codex: 10; 1+11; 4; 2; 3; 1+1; 1+1.</td></tr>
+<tr><td>0.19.92</td><td>Role write guard. Policy partition derived from each agent's <code>tools:</code>; <code>test_policy_table_matches_the_agent_files</code> re-derives it. <code>crew_config.layer_state(path)</code> classifies each config layer as absent, ok or corrupt (directory, empty, non-object, <code>guards</code> null/list, dangling symlink); any corrupt layer forces block. Targets resolved component-wise: Windows collapses <code>..</code> lexically before junctions, POSIX resolves symlinks first; outside-repo and other-drive targets are out of scope and allowed with reason; <code>\\?\</code> paths refused for scoped roles; stdin read as bytes with BOM stripped; both shims set PYTHONUTF8 and fail closed on launch failure; outer handler cannot raise; foreign namespaces and unknown roles allowed and logged.</td><td><code>hooks/scripts/role_write_guard.py</code>, <code>role-write-guard.{sh,ps1}</code>, <code>crew_config.py</code>, <code>crew_guards.py</code>, CONFIG.md §18; <code>tests/test_role_write_guard.py</code> (114 cases). Codex: 2+4, 7+2, 3+1, 2, 1, CLEAN; PowerShell specialist 2+2.</td></tr>
+</table>
+
+<h2>7. The Stop gate: 0.19.93 in review</h2>
+<h3>Root causes, measured 19 September</h3>
+<ul>
+<li><code>verify-gate.sh</code> diffs against <code>.crew/.verify-verified-at</code>, written by <code>record_verified</code> only when <code>DEFERRED_COUNT == 0</code>. <code>rules[8]</code> (185 s) against <code>verify.stopBudgetSeconds</code> 60 deferred every turn; the marker sat at dedd1150, 41 commits behind, so 59 files matched 13 rules per Stop. Hot fix applied locally: marker := gated HEAD.</li>
+<li>A rule without <code>seconds</code> is never deferrable. Ten of 21 here (PR #197 priced them); 28 of 28 in TheSelectSource; 43 of 43 in SRL, which also had no marker file and a 499 s Stop.</li>
+<li>In TheSelectSource, rules 0–9 run <code>_verify/smoke.sh</code> without <code>--ci</code>, whose else-branch runs about 18 checks over SSM against the dev web host on every Stop, with <code>ENV="${ENV:-dev}"</code> selecting the target from the ambient environment.</li>
+<li>Exit 77 (SKIP under <code>smoke.sh</code>) was a hard FAIL under the gate runner.</li>
+</ul>
+<h3>Components on the branch</h3>
+<table>
+<tr><th>Component</th><th>Implementation</th></tr>
+<tr><td>Per-rule record</td><td><code>verify_record.py</code>: <code>.crew/.verify-gate.record.json</code>, keyed by <code>rule_key()</code> (canonical JSON of paths, run, env, reach, requiresCleanTree; one function for both flavours via the <code>rule-key</code> subcommand). Written atomically; a corrupt or non-dict file poisons the fingerprint so nothing skips; a failed persist withholds both markers; entries whose rule no longer exists are pruned on sync. Sync status starts at 99 and reaches 0 only on a confirmed sync. <code>DEFERRED_COUNT</code> counts acute deferrals only; chronic, reach-excluded, clean-tree and skipped rules stay unverified in the record and are reported every run.</td></tr>
+<tr><td>Timings</td><td><code>.crew/.verify-gate.timings.json</code>: <code>max(1, ceil(elapsed))</code> per unpriced command, labelled measured-not-declared; never written to the tracked map by the hook.</td></tr>
+<tr><td><code>--price</code></td><td><code>verify_price.py</code>, dispatched only on the literal argument; <code>hooks.json</code> passes none or <code>--all</code>. Applies the gate's env pinning and declared env; refuses any rule the Stop path would defer; records 77 as SKIP with no timing.</td></tr>
+<tr><td>Reach</td><td><code>verify_record.scan_reach</code>, reject-only: a verb (<code>\bssm\b</code>, <code>\bssh\b</code>, <code>\baws\b</code>, <code>\baz\b</code>, <code>\bgh\b</code>, <code>\bpsql\b</code>, <code>\bmysql\b</code>, <code>\bcurl\b</code> and others, word-bounded) anywhere in the command defers; any script, interpreter with a file argument, inline shell (<code>-c</code>, <code>-Command</code>) or <code>cd</code> defers with "declare reach: local on rules[N]"; <code>bash -n</code> is parse-only and local; comment-only lines and <code>&lt;# #&gt;</code> blocks are ignored; <code>python -m X</code> names no file. <code>default</code> and <code>always</code> go through the same classification. <span class="warn">In progress: split the command on <code>; && || | &amp;</code> and newlines and classify each segment.</span> The wrapper-following recursion from earlier rounds is deleted.</td></tr>
+<tr><td>Env pinning</td><td>ENV, AWS_PROFILE, AWS_DEFAULT_REGION, KUBECONFIG, TF_WORKSPACE unset per rule unless <code>env</code> is declared; identity includes the declared env so two rules with the same text and different env run separately; every Python-to-shell channel writes LF and every bash read site strips CR.</td></tr>
+<tr><td>Exit 77, clean tree</td><td>SKIP is neither pass nor fail, withholds both markers, and deletes the previous fingerprint before any early exit. <code>requiresCleanTree: true</code> defers to <code>--all</code> with a named reason.</td></tr>
+<tr><td><code>--all</code></td><td>Whole working tree: <code>git ls-files</code> plus staged deletions, rename sources, HEAD diff and untracked.</td></tr>
+<tr><td>Triggers</td><td><code>crew_state.read_verify_health</code>: <code>verifyMarkerStale</code>, <code>verifyRulesUnpriced</code>, <code>verifyReachUndeclared</code>; <code>None</code> on a read failure renders as "unknown" and fires. <code>pm_brief.py</code> gains the three findings.</td></tr>
+<tr><td>Map and docs</td><td>This repository's <code>.crew/verify.json</code> declares <code>reach: local</code> on 18 wrapper rules; <code>test_28</code> loads the real map and asserts every rule is declared or plainly local. <code>skills/crew-setup/examples/verify-terraform.json</code> carries <code>seconds</code> and <code>reach</code>. CONFIG.md §18 and <code>commands/verify.md</code> describe the record.</td></tr>
+</table>
+<h3>Review record</h3>
+<table>
+<tr><th>Round</th><th>Findings</th><th>Notable</th></tr>
+<tr><td>1</td><td>7 BLOCK, 5 FIX</td><td>CRLF from native Python broke env unset in bash; exit 77 advanced markers; <code>--all</code> missed staged deletions; corrupt caches did not poison the fingerprint.</td></tr>
+<tr><td>Specialist</td><td>1 BLOCK, 1 FIX, 1 NIT</td><td>Sync status defaulting to 0 advanced markers with no Python present.</td></tr>
+<tr><td>2</td><td>2 BLOCK, 6 FIX</td><td>Nested wrappers; <code>--price</code> ran wrappers Stop deferred; rule hash omitted env.</td></tr>
+<tr><td>3</td><td>2 BLOCK, 3 FIX</td><td><code>python -m pytest</code> parsed as a wrapper named <code>pytest</code>, which would have deferred eight rules here every Stop; caught by the new self-check.</td></tr>
+<tr><td>4</td><td>4 BLOCK, 1 FIX</td><td>Three new ways to hide a wrapper from inspection; design inverted to reject-only.</td></tr>
+<tr><td>5</td><td>2 BLOCK</td><td>Compound commands classified whole; fix in progress.</td></tr>
+</table>
+<h3>Operational notes</h3>
+<ul>
+<li>Hot fix for an existing repository: <code>git rev-parse HEAD &gt; .crew/.verify-verified-at</code>, only if HEAD is a verified state. If it is not, this marks unverified commits as verified and the gate will not look at them again.</li>
+<li>After upgrading, declare <code>reach</code> on wrapper rules, run <code>/crew:verify --price</code> once, and run <code>/crew:verify --all</code> before a PR because a deferred rule is unverified until it runs.</li>
+<li>Open sessions load hooks at start; run <code>/reload-plugins</code> to pick up a new version.</li>
+</ul>
+
+<h2>8. Known items on the fix list</h2>
+<ul>
+<li><code>agents/developer.md:178</code> forbids the commit that every brief asks for; decide once in the role file.</li>
+<li>Developer roles resolve to Claude here although the machine-global config pins Codex; the routing failed silently.</li>
+<li>Every hook's Python writes stderr with the OEM code page when piped on Windows; reconfigure to UTF-8 at each entry point.</li>
+<li><code>scripts/check-marketplace.py</code> crashes on a tracked file deleted but not staged.</li>
+<li><code>test_verify_gate_lock_window.py</code> has a load-sensitive timing assertion that fails under concurrent suites.</li>
+<li>The PM cannot name a subagent, so a PM-dispatched developer is not resumable by id.</li>
+<li>Install scripts skip <code>plugin/*</code> on reinstall; CLAUDE.md's <code>git show</code>/autocrlf sentence is backwards.</li>
+</ul>
+
+<p class="muted">Provenance: counts read from the repository at commit 621d50dc; review figures from <code>.crew/metrics.md</code>; Stop-gate details from branch crew-stop-gate-record at b6e8c4bb plus the in-progress round-5 fix. Not verified: the Stop-gate fix's effect on live sessions; <code>drift-detection.sh</code> was not run for any of this week's merges.</p>
+</body>
+</html>

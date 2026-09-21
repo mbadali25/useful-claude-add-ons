@@ -57,13 +57,36 @@ _FLAVOURS = [
         reason="the .ps1 gate is the native-Windows flavour")),
 ]
 
-# 90s against the 60s default budget, so it is always deferred on Stop -- and
-# it FAILS when it finally runs, so a full run that reaches it is unmistakable.
+# TWO rules on the same path, each fitting the 60s default ALONE but not
+# together, so the second is ACUTELY deferred (budget contention this turn,
+# not permanently over budget) -- the case that must still block the
+# baseline. It FAILS when it finally runs, so a full run that reaches it is
+# unmistakable.
+# reach: local on the second rule of each map below - these fixtures test
+# BUDGET deferral (acute/chronic), not reach classification; `sh -c '...'`
+# is a wrapper/inline-shell trigger on its own terms under the round-4
+# scanner, and an undeclared rule is excluded for REACH before budget logic
+# is ever reached, which would test the wrong mechanism entirely.
 _DEFERRING_AND_FAILING = {
     "version": 1,
-    "rules": [{"paths": ["a.py"], "seconds": 90,
+    "rules": [
+        {"paths": ["a.py"], "seconds": 50, "run": ["echo fits-alone"],
+         "why": "fits alone, crowds out the second"},
+        {"paths": ["a.py"], "seconds": 50, "reach": "local",
+         "run": ["sh -c 'echo SHOULD-HAVE-RUN; exit 1'"],
+         "why": "fits alone, but not alongside the first under a 60s budget"},
+    ],
+    "default": [], "unmapped": "ignore",
+}
+
+# A single rule priced ABOVE the whole budget on its own: chronic, never
+# acute. This is the case the per-rule record feature exists for -- the
+# baseline must advance PAST it while it stays named and reported.
+_CHRONICALLY_OVER_BUDGET = {
+    "version": 1,
+    "rules": [{"paths": ["a.py"], "seconds": 900, "reach": "local",
                "run": ["sh -c 'echo SHOULD-HAVE-RUN; exit 1'"],
-               "why": "over the 60s budget, and fails when it does run"}],
+               "why": "permanently over the 60s budget alone"}],
     "default": [], "unmapped": "ignore",
 }
 
@@ -169,6 +192,37 @@ def test_a_full_run_still_sees_a_file_whose_check_was_deferred(flavour, tmp_path
 
 
 @pytest.mark.parametrize("flavour", _FLAVOURS)
+def test_a_chronic_rule_advances_the_baseline_but_all_still_finds_it(flavour, tmp_path):
+    """The per-rule record feature's whole point: a rule permanently over
+    budget on its own must not freeze the baseline forever -- but the
+    baseline advancing must not put the file that triggered it out of
+    --all's reach either, or "deferred" quietly becomes "never checked
+    again", just moved one step over."""
+    root = _repo(tmp_path, _CHRONICALLY_OVER_BUDGET)
+    settle = _run(flavour, root)
+    assert settle.returncode == 0, settle.stderr
+    before = _baseline(root)
+    assert before
+
+    _commit_mapped_file(root)
+    deferred = _run(flavour, root)
+    assert deferred.returncode == 0, deferred.stderr
+    assert "permanently over budget" in deferred.stderr, deferred.stderr
+    assert _baseline(root) != before, (
+        "a CHRONIC deferral must not block the baseline -- see "
+        "verify_record.py. " + deferred.stderr
+    )
+
+    forced = _run(flavour, root, "--all")
+    assert "SHOULD-HAVE-RUN" in forced.stderr, (
+        "--all must still reach the file that triggered the chronic rule, "
+        "even though the sha marker has advanced past the commit that "
+        "added it. " + forced.stderr
+    )
+    assert forced.returncode == 2, forced.stderr
+
+
+@pytest.mark.parametrize("flavour", _FLAVOURS)
 def test_a_fully_checked_run_does_advance_the_baseline(flavour, tmp_path):
     """MUST-ALLOW, and what stops the fix becoming "never record again"."""
     root = _repo(tmp_path, _GREEN)
@@ -226,7 +280,10 @@ def test_a_mapped_crew_path_is_verified_not_excluded(flavour, tmp_path):
     """
     mapped = {
         "version": 1,
-        "rules": [{"paths": [".crew/check.txt"], "seconds": 1,
+        # reach: local - testing the .crew/ path-exclusion fingerprint bug,
+        # not reach classification; `sh -c` plus an existing `.crew/check.txt`
+        # argument are BOTH wrapper triggers under the round-4 scanner.
+        "rules": [{"paths": [".crew/check.txt"], "seconds": 1, "reach": "local",
                    "run": ["sh -c 'grep -q GOOD .crew/check.txt'"],
                    "why": "a content check on a .crew path"}],
         "default": [], "unmapped": "ignore",

@@ -147,6 +147,27 @@ FINDINGS = {
         "the code graph is missing or older than HEAD",
         "run /crew:onboard, or {graphCommand} to refresh it",
     ),
+    # See _verify_fields. `{verifyMarkerSummary}` covers both "missing" and
+    # "stale by N commits (or unknown)" in one sentence -- the two read the
+    # same to the person deciding whether to act, and a brief with two
+    # near-identical findings for one underlying gap is the kind of thing
+    # this file's own truncation logic then has to cut one of.
+    "verifyMarkerStale": (
+        "{verifyMarkerSummary}",
+        "run /crew:verify --all, which does not depend on the stale marker",
+    ),
+    "verifyRulesUnpriced": (
+        "{verifyUnpricedSummary}",
+        "run /crew:verify --price to time them and write `seconds` "
+        "(operator-only; never run from a hook)",
+    ),
+    "verifyReachUndeclared": (
+        "{verifyReachSummary}",
+        "declare `reach` (`local`, `network` or `host`) on each - an "
+        "undeclared rule whose command looks remote is already deferred "
+        "on Stop, but an undeclared one that looks local is not, and "
+        "cannot be told apart from one that was just never considered",
+    ),
     "knowledgeUnverifiable": (
         "{unverifiableCount} codemap anchor(s) name a commit this repo does "
         "not contain ({unverifiableNames}), so those maps cannot be checked "
@@ -301,6 +322,52 @@ def _graph_fields(state):
     return {
         "graphCommand": ("graphify update ."
                          if tracked else "graphify . --no-viz --code-only"),
+    }
+
+
+def _verify_fields(state):
+    """Values the three verifyMarker*/verifyRules*/verifyReach* findings
+    interpolate. Same contract as _incident_fields: always every key.
+
+    Unknown counts render as the word "unknown", never as 0 -- a brief that
+    said "0 rules unpriced" on a map it could not actually read would be
+    exactly the collapse-into-the-permissive-value bug this whole feature
+    exists to avoid, one layer further along in the pipeline that reports it.
+    """
+    verify = crew_state.dict_or_empty(state.get("verify"))
+
+    if not verify.get("markerPresent"):
+        marker_summary = "the Stop gate has never recorded a verified commit here"
+    else:
+        behind = verify.get("markerBehindCommits")
+        marker_summary = (
+            f"the verified marker is {behind} commit(s) behind HEAD"
+            if behind is not None
+            else "the verified marker's distance from HEAD could not be "
+                 "determined (a squash merge, or git failed)"
+        )
+
+    def _count_or_unknown(value):
+        return "unknown" if value is None else value
+
+    unpriced = verify.get("unpricedRules")
+    total = verify.get("totalRules")
+    unpriced_summary = (
+        f"{_count_or_unknown(unpriced)} of {_count_or_unknown(total)} "
+        f"verify.json rule(s) have no `seconds` - unknown cost is never "
+        f"free, so each one runs on every Stop that matches it"
+    )
+
+    undeclared = verify.get("undeclaredReachRules")
+    reach_summary = (
+        f"{_count_or_unknown(undeclared)} of {_count_or_unknown(total)} "
+        f"verify.json rule(s) declare no `reach`"
+    )
+
+    return {
+        "verifyMarkerSummary": marker_summary,
+        "verifyUnpricedSummary": unpriced_summary,
+        "verifyReachSummary": reach_summary,
     }
 
 
@@ -512,6 +579,7 @@ def render(state):
     fields = dict(_incident_fields(state))
     fields.update(_diagram_fields(state))
     fields.update(_graph_fields(state))
+    fields.update(_verify_fields(state))
     fields.update(_knowledge_fields(state))
     fields.update(_endpoint_fields(state))
     fields.update(_schema_fields(state))

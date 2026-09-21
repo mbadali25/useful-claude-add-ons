@@ -1,6 +1,6 @@
 ---
 description: Build or refresh the verification map from evidence
-argument-hint: [--refresh]
+argument-hint: "[--refresh] [--price]"
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent
 ---
 
@@ -89,3 +89,102 @@ Report the counts before and after.
 
 With `--refresh`: keep existing rules, add rules for paths that have appeared
 since the recorded anchor, and flag rules whose target files no longer exist.
+
+## The per-rule record replaces the single marker
+
+Stop used to keep exactly one baseline (`.crew/.verify-verified-at`) and one
+fingerprint (`.crew/.verify-gate.fingerprint`), both written ONLY when every
+matched rule ran clean. A rule priced over the Stop budget on its own — this
+repo's own `rules[8]` at 185s against a 60s default — was deferred on EVERY
+Stop, so neither ever advanced again: the baseline froze, and every OTHER
+rule re-matched and re-ran from that same old commit, forever.
+
+`.crew/.verify-gate.record.json` (machine-local, never tracked) now carries
+per-rule status alongside the two markers. A rule that is PERMANENTLY over
+budget on its own — chronic, not a fluke of this turn's ordering — no longer
+blocks the baseline; it is named in the record instead, and reported EVERY
+turn ("NOT VERIFIED ON THIS TREE") until it actually runs clean, which only
+`--all` can do. A rule that fits alone but lost to this turn's contention
+(acute) still blocks the baseline exactly as before — that case is genuinely
+unverified for THIS commit, not permanently unverifiable.
+
+## `--price` (operator only, never from Stop)
+
+    bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/verify-gate.sh --price [path] [--force]
+    pwsh ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/verify-gate.ps1 -Price [-PriceTarget path] [-PriceForce]
+
+Times every rule in a verify.json-shaped map with no budget and writes
+`seconds` (ceil, min 1) for the ones that have none. Defaults to
+`.crew/verify.json`; pass a path to price a different file. Never overwrites
+an existing `seconds` unless `--force`/`-PriceForce` is given, and never
+writes 0 — a rule that ran in under a second still costs 1.
+
+**`.crew/verify.json` in this repo is TRACKED**, so `--price` against it
+dirties a committed file. It is never reachable from the Stop hook and is
+never invoked automatically by this command either — run it by hand, review
+the diff, and commit the pricing separately.
+
+## reach: `local` | `network` | `host`
+
+The Stop gate runs ONLY `local` rules. `network`/`host` rules run under
+`--all` and the merge gate, never unattended on Stop. Declaring
+`"reach": "local"` runs the rule on Stop with NO inspection at all — that is
+the human saying so, and the gate takes the word for it.
+
+**An UNDECLARED rule is not quietly assumed local, and the bar for "assumed
+local" is narrower than it looks.** The scanner (`verify_record.scan_reach`)
+STOPS MODELLING SHELL (Codex round 6) — five rounds of "read one layer
+deeper into the shell syntax" each found a new shape that defeated the last
+one, so it no longer tries to parse shell at all:
+- **any shell metacharacter present, anywhere, defers unconditionally** —
+  `( ) $ ; & | < > `` " ' \ { } * ? [ ] ~ # !`, a newline, or a tab. No
+  exception, not even `2>&1` or a trailing `#` comment. Notice: `shell
+  syntax in an undeclared rule: declare "reach": "local" (or network/host)`.
+- only once nothing on that list is present does whitespace-only splitting
+  become safe. A reach verb (`ssm`, `ssh`, `curl`, `aws`, `az`, `gh`,
+  `psql`, `mysql`) anywhere — notice: `remote verb <v>`.
+- otherwise, if the first token is a recognised interpreter (`bash`/`sh`/
+  `dash`/`zsh`/`pwsh`/`powershell`/`python`/`python3`/`py`/`node`/`ruby`/
+  `perl`): `-n` is parse-only ONLY as the exact second token with EXACTLY
+  one token after it (`bash -n a.sh` local; `bash a.sh -n` and
+  `bash -n a.sh b.sh` are NOT); `-m` as the second token is always local
+  (a module name, never a file — `python3 -m pytest x -q` is local);
+  `-c`/`-Command`/`-File` as the second token always defer; any other
+  token from the second position on that resolves to an existing repo
+  file defers too.
+- otherwise: any token at all resolving to an existing repo file defers.
+- none of the above: runs undeclared.
+
+This is deliberately conservative and, on purpose, no longer tries to be
+precise about WHY a command might be safe — `verify_record.py`'s module
+docstring has the full history of why "model shell more completely" turned
+out not to be a fixable bug. Declare `"reach": "local"` on the rule; that is
+the fix, not a smarter scanner.
+
+`default`/`always` entries in `.crew/verify.json` get the SAME
+classification on Stop — they have no `"reach"` field of their own, so a
+deferred command named there is excluded from the fallback exactly like an
+undeclared rule would be, never silently reintroduced through it.
+
+`--price` refuses to time a verb-, syntax-, or wrapper-classified rule
+outright, in both directions, same as the gate. The pm-pulse
+`verifyReachUndeclared` trigger separately nudges toward declaring `reach`
+on any rule that has none
+at all — see `CONFIG.md` §18 for the full classification.
+
+## Environment pinning
+
+Every rule the gate runs gets `ENV`, `AWS_PROFILE`, `AWS_DEFAULT_REGION`,
+`KUBECONFIG` and `TF_WORKSPACE` unset, unless the rule declares
+`"env": {"VAR": "value"}` — in which case exactly those values are set
+instead. The gate prints what it pinned for every command. A rule whose
+target is chosen by whatever the calling shell happened to have set cannot be
+reasoned about.
+
+## Exit 77 is SKIP
+
+Following `_verify/smoke.sh` and GNU automake's convention, a command exiting
+77 means "skipped, environment absent" — not a pass, not a fail. The gate
+reports it (`SKIP (rc 77, environment absent)`), never fails the turn on it,
+and never records it as verified: it is listed with the deferred/chronic
+rules until it actually runs and exits 0.
