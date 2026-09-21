@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Crew progress report: 19 to 20 September 2026</title>
+<style>
+body { font-family: Calibri, Arial, sans-serif; font-size: 11pt; color: #1A1A1A; margin: 2cm; line-height: 1.4; }
+h1 { font-size: 22pt; color: #1F4E79; margin-bottom: 4pt; }
+h2 { font-size: 16pt; color: #1F4E79; margin-top: 24pt; border-bottom: 1px solid #5C6670; padding-bottom: 3pt; }
+h3 { font-size: 13pt; color: #1F4E79; margin-top: 16pt; }
+p { margin: 6pt 0; }
+table { border-collapse: collapse; width: 100%; margin: 8pt 0 12pt 0; }
+th { background: #1F4E79; color: #FFFFFF; text-align: left; padding: 5pt 6pt; font-size: 10pt; }
+td { border-bottom: 1px solid #C8CDD2; padding: 5pt 6pt; vertical-align: top; font-size: 10pt; }
+.muted { color: #5C6670; font-size: 9.5pt; }
+.warn { color: #B45309; }
+.box { border: 1px solid #1F4E79; padding: 8pt 10pt; margin: 10pt 0; background: #F3F6FA; }
+code { font-family: Consolas, "Courier New", monospace; font-size: 9.5pt; }
+ul { margin: 4pt 0 8pt 18pt; }
+li { margin: 3pt 0; }
+</style>
+</head>
+<body>
+
+<h1>Crew progress report: 19 to 20 September 2026</h1>
+<p class="muted">What improved in this session, and how the repository compares with one month ago. Figures read from <code>origin/main</code> at ff48c381 (20 September) against fdcee1d3 (19 August). Review counts from <code>.crew/metrics.md</code>.</p>
+
+<div class="box">
+<p><b>In one paragraph.</b> Eight of the ten research findings are merged and the ninth is landing. The Stop hook that took seven minutes per turn is fixed at its root and shipped as crew 0.19.94. The plugin gained a mechanical write guard, a live behaviour eval suite, an idle rule that closes a stall that had cost whole nights, and YAML-safe frontmatter on every one of its 54 agents. A month ago the plugin directory did not exist.</p>
+</div>
+
+<h2>1. What was asked for, and what landed</h2>
+<table>
+<tr><th>Ask</th><th>Result</th><th>Where</th></tr>
+<tr><td>Stop hooks take forever; I cancel them</td><td>Root cause found (a marker that only advanced when nothing was deferred, and unpriced rules that could never be deferred), hot-fixed on this machine the same morning, and fixed durably: per-rule verified record, measure-and-cache pricing, reach declarations, env pinning, exit 77 as SKIP.</td><td>PR #197, PR #202, crew 0.19.94</td></tr>
+<tr><td>The crew loses the picture and wanders</td><td>Scope evidence now diffs against the ticket's own start commit rather than the verification marker, and the developer may commit on its own branch, which every brief assumed and the role file forbade.</td><td>Ticket T-0003, crew 0.19.95, merging</td></tr>
+<tr><td>Roles veer off and idle</td><td>Every role that runs a gate runs it in the foreground and never ends a turn waiting on a background task; the PM checks worktree file times before calling a role stalled and escalates instead of restarting it.</td><td>PR #198, crew 0.19.90</td></tr>
+<tr><td>The PM should not write code</td><td>A PreToolUse write guard enforces each role's scope from its own tools frontmatter; off by default, block as the floor, corrupt config forces the strict setting.</td><td>PR #200, crew 0.19.92</td></tr>
+<tr><td>Test that the rules work, not that they are written</td><td>Five live eval cases against a real model; the first run caught the PM editing code itself.</td><td>PR #199, crew 0.19.91</td></tr>
+<tr><td>Adopt the agent example convention</td><td>All 54 agents carry their example inside a block scalar; the official convention breaks YAML and silently drops tools and model.</td><td>PR #201, crew 0.19.93</td></tr>
+<tr><td>Frontmatter that silently fails to load</td><td>Four command files fixed; the marketplace check now parses every command, skill and agent file as YAML.</td><td>PR #196</td></tr>
+<tr><td>Human-readable documentation</td><td>Three capability guides (overview, technical reference, combined) as HTML, DOCX and PDF, mirrored to the Obsidian vault with the code map and diagrams.</td><td><code>docs/guides/</code>, vault <code>wiki/crew-plugin/</code></td></tr>
+</table>
+
+<h2>2. The Stop hook, before and after</h2>
+<table>
+<tr><th>Measure</th><th>Before (19 September, morning)</th><th>After</th></tr>
+<tr><td>Stop hook in this repository</td><td>About 7 minutes per turn; 13 rules over 59 files, marker 41 commits behind</td><td>Seconds after the hot fix; bounded by the 60 s budget with announced deferrals after 0.19.94</td></tr>
+<tr><td>Rules priced here</td><td>11 of 21</td><td>21 of 21</td></tr>
+<tr><td>Rules with a reach declaration here</td><td>0 of 21</td><td>18 of 21 declared local; the other 3 are plainly local</td></tr>
+<tr><td>Other repositories on this machine</td><td>TheSelectSource 0 of 28 priced, 10 rules hitting a live dev host over SSM every turn; SRL 0 of 43 priced, no marker, 499 s per Stop</td><td>Both told what to declare and price after reloading; a rule that reaches a host can no longer run on Stop undeclared</td></tr>
+</table>
+<p>The durable fix went through eight independent review rounds and a PowerShell security specialist. Rounds 4 to 7 each found a new piece of shell syntax that hid a script from the reach classifier; the answer was to stop modelling shell entirely, so an undeclared rule containing any metacharacter is deferred until declared. Round 8 asked one question, whether the new record could let the marker pass unverified work, and found two ways; both are closed and tested.</p>
+
+<h2>3. Review effort this session</h2>
+<table>
+<tr><th>Branch</th><th>Rounds</th><th>Findings fixed</th></tr>
+<tr><td>Item 4, frontmatter YAML</td><td>1</td><td>2 FIX</td></tr>
+<tr><td>Item 1, idle rule</td><td>4</td><td>15 FIX, 1 NIT</td></tr>
+<tr><td>Item 3, plugin evals</td><td>7</td><td>1 BLOCK, 33 FIX, 2 NIT</td></tr>
+<tr><td>Item 2, write guard</td><td>6 + specialist</td><td>14 BLOCK, 9 FIX</td></tr>
+<tr><td>Item 7, agent examples</td><td>2</td><td>4 FIX</td></tr>
+<tr><td>Stop gate</td><td>8 + specialist</td><td>23 BLOCK, 16 FIX, 1 NIT</td></tr>
+<tr><td>T-0003, scope base</td><td>2</td><td>7 FIX</td></tr>
+</table>
+<p>51 review rows were written in two days: 48 BLOCK and 112 FIX findings, every one fixed with a test and sabotage-checked before merge. Two rules earned their keep: an unknown never collapses into the safe-looking value, and a check must fail on the null response. Items 2 and 3 spent most of their rounds on exactly those.</p>
+
+<h2>4. One month ago versus now</h2>
+<table>
+<tr><th>Measure</th><th>19 August 2026</th><th>20 September 2026</th></tr>
+<tr><td>Commits on main since</td><td colspan="2">615, across 164 merged pull requests</td></tr>
+<tr><td>Marketplace entries</td><td>25</td><td>41</td></tr>
+<tr><td>Skills directories</td><td>25</td><td>36</td></tr>
+<tr><td>Plugins under <code>plugin/</code></td><td>none (directory did not exist)</td><td>5: crew, gizmoduck, localgpu, obsidian-vault, rule-of-two</td></tr>
+<tr><td>Crew agents</td><td>0</td><td>54</td></tr>
+<tr><td>Crew commands</td><td>0</td><td>28</td></tr>
+<tr><td>Crew skills</td><td>0</td><td>20</td></tr>
+<tr><td>Crew test modules</td><td>0</td><td>53</td></tr>
+<tr><td>Crew hook scripts</td><td>0</td><td>43</td></tr>
+<tr><td>Crew version</td><td>none</td><td>0.19.94</td></tr>
+<tr><td>Tracked content</td><td>1.9 MB</td><td>24.7 MB (the code graph accounts for most of it)</td></tr>
+</table>
+
+<h2>5. What is still open</h2>
+<ul>
+<li>T-0003 (crew 0.19.95) is rebased and gated; it merges right after this report.</li>
+<li>Item 11, the fix list: the developer role's commit rule (resolved by T-0003), silent model routing for developer roles, UTF-8 stderr in the hook scripts, the marketplace checker crashing on an unstaged deletion, a load-sensitive timing test, PM-dispatched developers not being resumable by id, the install script skipping <code>plugin/*</code>, and one backwards sentence in CLAUDE.md.</li>
+<li>Local <code>main</code> in this checkout carries four unpushed commits from another session, one of which fails pylint; that session moves them to their own worktree.</li>
+<li>The Stop gate's effect on live sessions is not yet measured; TheSelectSource's rules 0 to 9 still need an owner's decision on <code>--ci</code>.</li>
+</ul>
+
+<h2>6. Lessons recorded in the repository</h2>
+<ul>
+<li>Static analysis of shell is an arms race; inspection may only reject.</li>
+<li>A watcher keyed on a completion marker can spin forever after a process reap; key it on the output going quiet as well.</li>
+<li>Git Bash's <code>timeout</code> reports 124 and leaves the native Python running; kill by PID.</li>
+<li>Any multi-commit plugin branch fails the version-set check by construction; squash-merge it.</li>
+<li>A CHANGELOG union across commits that rewrite one entry keeps stale text; rebuild from main plus the branch's net block.</li>
+<li>A second session committing to local main while a merge sequence runs means every rebase must target <code>origin/main</code>.</li>
+</ul>
+
+<p class="muted">Provenance: PR numbers from GitHub; counts from <code>git ls-tree</code> at the two commits named above; review rows from <code>.crew/metrics.md</code>. Not verified: live Stop timings on other machines.</p>
+</body>
+</html>
