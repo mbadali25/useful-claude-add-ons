@@ -122,7 +122,10 @@ def test_a_todo_lookalike_reaches_the_report(tmp_path):
     # Assert on the LIST line only. The advisory paragraph underneath names
     # TODO.md itself ("these belong in TODO.md with a reason"), so a substring
     # test over the whole of stderr matches the wrong thing.
-    listed = result.stderr.splitlines()[0]
+    # The fixture is not a git repository, so since 0.19.95 the line also
+    # carries the "(this turn only: ...)" marker; that marker is
+    # test_scope_base.py's to assert, the list is this test's.
+    listed = result.stderr.splitlines()[0].split(" (this turn only:")[0]
     assert listed == "outside-scope: TODO.mdx", (
         "TODO.mdx must reach the report and the real TODO.md must not. "
         + result.stderr
@@ -146,8 +149,13 @@ def test_a_root_level_file_is_not_reported_outside_its_declared_scope(tmp_path):
     root = _repo(tmp_path, touch="- touch: **/*.py")
     result = _run(root, ["main.py", "src/deep.py"])
     assert result.returncode == 0
-    assert result.stderr.strip() == "outside-scope:", (
-        "both files are inside `**/*.py`. " + result.stderr
+    # The LIST line. Since 0.19.95 a `scope-base:` line follows it (here
+    # saying the ticket-wide diff was unavailable: the fixture is not a git
+    # repository), and that line is test_scope_base.py's to assert.
+    assert result.stderr.splitlines()[0].startswith("outside-scope: (this turn only:"), (
+        "both files are inside `**/*.py`, and the fixture is not a git "
+        "repository so the line must say the list is this turn's only. "
+        + result.stderr
     )
 
 

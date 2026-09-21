@@ -16,6 +16,18 @@ nobody trusts a notification channel.
    and Obsidian Kanban mode: `.work/cache/$1.md`, and if it is missing run
    `/crew:jira-sync $1`, `/crew:sdp-sync $1` or `/crew:obsidian-sync $1` first.
    Do NOT read INDEX.md or any other ticket.
+
+   Then record where this ticket starts, once:
+
+   ```bash
+   python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/scope_base.py --root . --record $1
+   ```
+
+   It writes HEAD to `.crew/.scope-base` keyed by the ticket, keeps an
+   existing record for the same ticket (a re-run after `/clear` must not move
+   the base to wherever HEAD has reached by then), and is machine-local like
+   the gate's own marker. The scope evidence at step 5 diffs from this
+   commit, not from what the gate last verified.
 2. If Scope is unclear or "Done when" is not observable, stop and ask me.
 3. Use the `crew:explorer` subagent to locate the code. Do not grep yourself.
 3b. **If the ticket is a defect rather than a feature, run `/crew:debug` before
@@ -87,7 +99,11 @@ nobody trusts a notification channel.
    `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_config.py --root . --models`
    and dispatch whatever `dev.roles.developer` names, else `dev.provider`.
    `claude` means the `crew:developer` subagent; `codex` or `copilot` means that
-   CLI writes the change. In Obsidian Kanban mode,
+   CLI writes the change. The brief names the branch the work is on and says
+   whether it is this ticket's own. The developer may commit on the ticket's
+   own branch and nowhere else — never a shared branch, never `git stash`.
+   So a brief asking for a commit on the default branch contradicts
+   `developer.md`, and the developer is right to refuse it. In Obsidian Kanban mode,
    set `status: in-progress` in `.work/cache/$1.md` and run
    `/crew:obsidian-sync $1 --push` first — that command reads the status from
    the cache and moves the card, and a board nobody moves is a board nobody
@@ -116,16 +132,23 @@ nobody trusts a notification channel.
    verbatim, including when it is empty:**
 
    ```bash
-   # The SAME base verify-gate.sh derives at :118-133. Do not invent a second
-   # one: two derivations disagree, and then the scope claim was about a
-   # different range than the gate checked.
+   # The ticket's START, recorded at step 1 -- NOT the base verify-gate.sh
+   # derives from `.crew/.verify-verified-at`. The gate's base answers "what
+   # has not been verified yet" and advances on every clean pass; this one
+   # answers "what has this ticket changed" and does not move until the
+   # ticket closes. One marker used to answer both, and a commit verified on
+   # one turn had left the evidence by the next while still on the branch.
+   # A missing or stale record falls back to the merge-base with the default
+   # branch, which shows MORE, never less -- and never the verified marker.
+   BASE=$(python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/scope_base.py --root . --base $1)
    git diff --name-only "$BASE"; git ls-files --others --exclude-standard
    ```
 
    **Not `git status --porcelain`.** Porcelain compares against the index, so
-   a developer who runs `git commit` mid-ticket vanishes from it while still
-   having changed the tree — and nothing forbade that commit until crew
-   0.19.63 put it on `developer.md`'s never-do list. Porcelain also shows
+   a developer who commits on the ticket's own branch mid-ticket — which
+   `developer.md` permits, and only there — vanishes from it while still
+   having changed the tree. Diffing from the ticket's start keeps that commit
+   in the evidence for the whole ticket. Porcelain also shows
    files that were already dirty before the ticket started, which on this
    repository includes `graphify-out/`, rewritten in the background by a
    post-commit hook. Both failures point the same way: the constraint reads

@@ -29,6 +29,7 @@ import re
 import sys
 
 import crew_state
+import scope_base
 
 # `- touch: path, path` under `## Scope`, per commands/ticket.md's template.
 _TOUCH = re.compile(r"^\s*[-*]\s*touch\s*:\s*(.+?)\s*$", re.IGNORECASE)
@@ -181,15 +182,51 @@ def main():
             f"outside-scope: (cannot check - no declared paths in {ticket})\n")
         return 0
 
+    # The list on stdin is what the GATE saw this turn, diffed from the commit
+    # it last verified. That base advances on every clean pass, so a commit
+    # verified on one turn has left the gate's list by the next while still
+    # on the branch -- and since crew 0.19.95 a developer may commit on the
+    # ticket's own branch. The ticket's own base (scope_base.py) does not
+    # move. Union the two rather than replace: this report may name MORE
+    # than the gate saw, never less, and when the base cannot be resolved the
+    # gate's list still stands and the line below says the union did not.
+    base_note = None
+    try:
+        base, source, reason = scope_base.resolve(root, ticket)
+        ticket_wide = scope_base.changed(root, base) if base else None
+    except Exception as exc:  # pylint: disable=broad-except
+        base, source, ticket_wide = None, None, None
+        reason = f"could not resolve: {exc}"
+    # The marker goes ON the outside-scope line, not only on the scope-base
+    # line under it. A reader (or a grep) takes the first line; a bare
+    # `outside-scope:` produced from a fallback, or from this turn's list
+    # alone because git could not answer, reads as "checked, nothing
+    # outside" -- an unknown wearing the label of a check that happened. The
+    # unknown has to survive into every line derived from it.
+    if ticket_wide is None:
+        suffix = f" (this turn only: {reason})"
+        base_note = (f"scope-base: ({reason}; ticket-wide diff unavailable, "
+                     "this turn's list only)")
+    else:
+        # A recorded-fallback reason already opens with "(fallback)"; one
+        # marker per line, not two.
+        note = reason.removeprefix("(fallback) ")
+        suffix = "" if source == scope_base.RECORDED else f" (fallback: {note})"
+        base_note = f"scope-base: {base[:12]} ({reason})"
+        changed = sorted(set(changed) | set(ticket_wide))
+
     extra = outside(changed, globs)
     if extra:
-        sys.stderr.write(f"outside-scope: {chr(32).join(sorted(extra))}\n")
+        sys.stderr.write(f"outside-scope: {chr(32).join(sorted(extra))}{suffix}\n")
         sys.stderr.write(
             f"  {ticket} declares: {chr(32).join(globs)}\n"
             "  Report-only. Under the scope clause these belong in TODO.md "
             "with a reason, not fixed here.\n")
     else:
-        sys.stderr.write("outside-scope:\n")
+        sys.stderr.write(f"outside-scope:{suffix}\n")
+    # After the list, not before: the first line of this report is the list,
+    # and its readers -- human and test alike -- take it from there.
+    sys.stderr.write(base_note + "\n")
     return 0
 
 

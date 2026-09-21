@@ -142,6 +142,15 @@ GATE_DOC = os.path.join(CREW, "commands", "gate.md")
 # is prose, which is why two of its three mutations below patch a `.md`.
 CHANGE_PY = os.path.join(CREW, "hooks", "scripts", "crew_change.py")
 
+# The ticket's scope base (T-0003, crew 0.19.95) and the three prose files
+# that must state the narrowed commit rule in one form. Two of the five
+# mutations below patch `.md`: the rule IS prose, and the only mechanical
+# regression is the sentence changing under the developer.
+SCOPE_BASE = os.path.join(CREW, "hooks", "scripts", "scope_base.py")
+SCOPE_REPORT = os.path.join(CREW, "hooks", "scripts", "scope_report.py")
+DEVELOPER_MD = os.path.join(CREW, "agents", "developer.md")
+WORK_MD = os.path.join(CREW, "commands", "work.md")
+
 GUARD = '    if out["family"] is not None and out["family"] in authors:'
 ROLE_PIN = '    decided = resolve_role(cfg, "dev", "developer")'
 BLOCK_ONLY = (
@@ -2635,6 +2644,175 @@ MUTATIONS = (
         "$mandatory.ContainsKey($_) })) { [void]$keep.Add($c) }\n",
         ("tests/test_verify_gate_stop_budget.py::"
          "test_a_mandatory_command_keeps_its_place_inside_its_rule"),
+    ),
+    (
+        # The blanket ban comes back onto developer.md while every brief
+        # still says "commit on your branch" -- the exact contradiction
+        # T-0003 closed. The heading AND the narrowed sentence go together,
+        # since a real re-widening would rewrite both.
+        "the blanket commit ban returns to developer.md",
+        DEVELOPER_MD,
+        "- **Commit anywhere but the ticket's own branch, or `git stash` at "
+        "all.** The\n  developer may commit on the ticket's own branch and "
+        "nowhere else — never a\n  shared branch, never `git stash`. That "
+        "developer is you,",
+        "- **Never `git commit`, `git stash`, or otherwise move work out of "
+        "the working\n  tree.** The developer does not commit. That "
+        "developer is you,",
+        ("tests/test_scope_discipline.py::"
+         "test_developer_commits_only_on_the_tickets_own_branch"),
+    ),
+    (
+        # Only the LIMITS drift, in one file: the permission stays, so the
+        # single-file rule test above is still satisfied, and only the
+        # three-way agreement test can catch that developer.md now says less
+        # than work.md and pm.md.
+        "developer.md drops the stash half of the limits the briefs keep",
+        DEVELOPER_MD,
+        "never a\n  shared branch, never `git stash`. That developer is you,",
+        "never a\n  shared branch. That developer is you,",
+        ("tests/test_scope_discipline.py::"
+         "test_every_file_that_briefs_a_developer_states_the_same_commit_rule"),
+    ),
+    (
+        # work.md stops recording where the ticket starts. Everything else
+        # still reads fine -- the evidence command still names scope_base.py
+        # -- so every run falls back to the merge-base and the record that
+        # makes the narrowed rule safe is never written.
+        "work.md no longer records the ticket's start",
+        WORK_MD,
+        "   python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/scope_base.py --root . "
+        "--record $1\n",
+        "   true\n",
+        ("tests/test_scope_discipline.py::"
+         "test_work_records_the_ticket_base_before_printing_the_evidence"),
+    ),
+    (
+        # The record advances on every call. A /crew:work re-run after a
+        # /clear then moves the base to the current HEAD and every commit
+        # before it leaves the evidence -- the original defect, one file
+        # over.
+        "the scope base moves on a re-record for the same ticket",
+        SCOPE_BASE,
+        "    if entry:\n"
+        "        # NEVER overwritten, whatever state the commit is in -- and never\n",
+        "    if entry and False:\n"
+        "        # NEVER overwritten, whatever state the commit is in -- and never\n",
+        ("tests/test_scope_base.py::"
+         "test_recording_the_same_ticket_again_does_not_move_the_base"),
+    ),
+    (
+        # Codex round 1, finding 1: a record whose commit is missing from
+        # this clone is re-recorded at HEAD. The same-ticket re-record case
+        # above stays green (its commit exists), so only the missing-commit
+        # case can catch it.
+        "a record whose commit is missing is silently replaced with HEAD",
+        SCOPE_BASE,
+        "    if entry:\n"
+        "        # NEVER overwritten, whatever state the commit is in -- and never\n",
+        '    if entry and _is_commit(root, entry["base"]):\n'
+        "        # NEVER overwritten, whatever state the commit is in -- and never\n",
+        ("tests/test_scope_base.py::"
+         "test_a_record_whose_commit_is_missing_is_kept_not_replaced"),
+    ),
+    (
+        # Codex round 1, finding 2: the mapping is rebuilt from scratch on
+        # every write, so starting T-2 drops T-1's entry -- the single-value
+        # record in a mapping's clothes.
+        "starting a second ticket loses the first ticket's base",
+        SCOPE_BASE,
+        "    updated = dict(rec)\n",
+        "    updated = {}\n",
+        ("tests/test_scope_base.py::"
+         "test_a_second_ticket_does_not_lose_the_firsts_base"),
+    ),
+    (
+        # Codex round 2, finding 1: round 1's exemption comes back in its
+        # widest form -- any prior entry at all suppresses the fallback, so
+        # T-1 recorded on main makes T-2's start resolve to HEAD, unlabelled.
+        "any earlier ticket's entry suppresses the merge-base fallback",
+        SCOPE_BASE,
+        "    if merge_base and merge_base != head:\n",
+        "    if merge_base and merge_base != head and not rec:\n",
+        ("tests/test_scope_base.py::"
+         "test_another_tickets_entry_never_stands_in_for_this_tickets_start"),
+    ),
+    (
+        # Codex round 2, finding 2: a fallback entry is re-read as a known
+        # start. The base is still right, so every base assertion stays
+        # green; only the provenance case sees "kept" without its caveat.
+        "a re-record upgrades a fallback entry to a known start",
+        SCOPE_BASE,
+        '        if _is_fallback_entry(entry):\n'
+        '            return entry["base"], "kept-fallback"\n',
+        '        if _is_fallback_entry(entry):\n'
+        '            return entry["base"], "kept"\n',
+        ("tests/test_scope_base.py::"
+         "test_re_recording_a_fallback_entry_keeps_saying_fallback"),
+    ),
+    (
+        # Codex round 1, finding 3: the remote default is skipped, so a clone
+        # with no local `main` falls through to HEAD -- the narrowest answer.
+        # The fixture deletes origin/HEAD so only this candidate can answer.
+        "the fallback never tries origin/main",
+        SCOPE_BASE,
+        '    candidates = [sym, "origin/main", "main"]\n',
+        '    candidates = [sym, "main"]\n',
+        ("tests/test_scope_base.py::"
+         "test_the_fallback_uses_the_remote_default_when_there_is_no_local_main"),
+    ),
+    (
+        # resolve() hands back the gate's verified marker whenever one
+        # exists -- the conflation this module replaces, reintroduced at the
+        # one line where the recorded base is returned. Every fallback case
+        # still passes (no marker is read there), so only the bug's own
+        # reproduction goes red.
+        "the scope base collapses to the verified marker",
+        SCOPE_BASE,
+        '        return entry["base"], RECORDED, '
+        '_REASON_RECORDED.format(ticket=ticket)\n',
+        '        marker = crew_common.read_text(os.path.join(\n'
+        '            root, ".crew", ".verify-verified-at"))\n'
+        '        return ((marker or entry["base"]).strip(), RECORDED,\n'
+        '                _REASON_RECORDED.format(ticket=ticket))\n',
+        ("tests/test_scope_base.py::"
+         "test_a_commit_the_gate_verified_stays_in_the_ticket_evidence"),
+    ),
+    (
+        # Codex round 1, finding 4: the fallback marker is dropped from the
+        # outside-scope line and lives only on the scope-base line under it.
+        # The union still happens, so the "names a committed file" case
+        # stays green; only the line-marker case catches it.
+        "scope_report's outside-scope line hides that it came from a fallback",
+        SCOPE_REPORT,
+        '        suffix = "" if source == scope_base.RECORDED else '
+        'f" (fallback: {note})"\n',
+        '        suffix = ""\n',
+        ("tests/test_scope_base.py::"
+         "test_scope_report_marks_the_outside_scope_line_itself_on_a_fallback"),
+    ),
+    (
+        # Codex round 1, finding 5: one word reversed in ONE file. The two
+        # substrings the first agreement test looked for both survive
+        # ("commit on the ticket's own branch and nowhere else" is still
+        # there), so only a full-sentence comparison can catch it.
+        "pm.md reverses the commit permission by one word",
+        os.path.join(CREW, "agents", "pm.md"),
+        "The developer may commit on the ticket's own branch and nowhere",
+        "The developer never commit on the ticket's own branch and nowhere",
+        ("tests/test_scope_discipline.py::"
+         "test_every_file_that_briefs_a_developer_states_the_same_commit_rule"),
+    ),
+    (
+        # scope_report resolves the base, prints its line, and then reports
+        # only the gate's list anyway. The scope-base line still appears, so
+        # a reader sees a ticket-wide report that is not one.
+        "scope_report prints the ticket base and ignores it",
+        SCOPE_REPORT,
+        "        changed = sorted(set(changed) | set(ticket_wide))\n",
+        "        changed = sorted(set(changed))\n",
+        ("tests/test_scope_base.py::"
+         "test_scope_report_names_a_committed_file_the_gate_no_longer_sees"),
     ),
 )
 
