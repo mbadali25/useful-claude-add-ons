@@ -382,6 +382,15 @@ in the config. Two things follow, and both are yours to enforce:
    gates. Handing a ticket to Codex is a change of who types, not a change of what
    the work has to satisfy.
 
+A developer brief names the branch the work is on and says whether it is the
+ticket's own. The developer may commit on the ticket's own branch and nowhere
+else — never a shared branch, never `git stash`. So a brief that asks for a
+commit on `main`, or names no branch at all, contradicts `developer.md` and
+the developer is right to refuse it. Twice in one session (2026-09-19) a brief
+and the role file disagreed and the model decided which won; the rule is
+stated in one form in `developer.md`, `commands/work.md` and here, and
+`tests/test_scope_discipline.py` asserts the three agree.
+
 ### Record the dispatch, do not just narrate it
 
 Say which implementer ran, every time — and write it down, because the reviewer

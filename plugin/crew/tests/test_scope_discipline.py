@@ -193,15 +193,104 @@ def test_goal_line_names_the_specific_test_not_only_the_mapped_command():
     )
 
 
-def test_developer_may_not_commit():
-    """Nothing forbade this before crew 0.19.63, and it defeats the evidence.
+# The commit rule, in ONE form wherever a developer is briefed. A paraphrase
+# per file is how the role file and the briefs came to disagree (T-0003: two
+# developers refused to commit, three committed, and the model decided which
+# sentence won). Every file below must carry both halves verbatim.
+COMMIT_RULE = "commit on the ticket's own branch and nowhere else"
+COMMIT_RULE_LIMITS = "never a shared branch, never `git stash`"
+BRIEFING_FILES = ("agents/developer.md", "commands/work.md", "agents/pm.md")
 
-    A commit mid-ticket moves work out of the working tree, so the changed-file
-    print the goal constraint relies on comes back short while the branch still
-    carries the change. The turn then reports a clean scope truthfully and
-    wrongly at the same time."""
+
+def _prose(rel):
+    return _norm((PLUGIN / rel).read_text(encoding="utf-8"))
+
+
+def test_developer_commits_only_on_the_tickets_own_branch():
+    """Narrowed in crew 0.19.95, not deleted. Before that, `developer.md`
+    forbade committing at all, because the scope evidence diffed from the
+    gate's verified marker and a verified commit left it after one turn. The
+    evidence now diffs from the ticket's own start (scope_base.py), so the
+    ban keeps only the part that still holds."""
     body = _agent("developer")
-    assert "Never `git commit`" in body, (
-        "developer.md no longer forbids committing mid-ticket, so the scope "
-        "evidence can be emptied by an action nothing rules out"
+    assert COMMIT_RULE in body, (
+        "developer.md no longer states the narrowed rule; a developer reading "
+        "it cannot tell whether committing on its own branch is allowed"
+    )
+    assert COMMIT_RULE_LIMITS in body, (
+        "developer.md lost the limits: a shared branch and a stash are the "
+        "two moves that still hide work from the people who read the tree"
+    )
+    assert "**Never `git commit`" not in body, (
+        "the blanket ban is back on developer.md while every brief in this "
+        "repository tells the developer to commit on its branch -- the "
+        "contradiction T-0003 closed"
+    )
+    # The reason the ban was ever blanket must stay visible, or the next
+    # reader re-widens it for the same reason the first writer had.
+    assert ".verify-verified-at" in body and "scope_base.py" in body, (
+        "developer.md no longer explains why the ban was blanket and what "
+        "replaced it, so the narrowing reads as an accident"
+    )
+
+
+# The whole rule is ONE sentence, and it is extracted rather than matched:
+# `The developer <verb> commit...` up to the full stop. Matching on the verb
+# would let a file that says "never commit" slip past a test looking for
+# "commit on the ticket's own branch" (Codex, round 1: a one-word reversal in
+# pm.md left the agreement test green). Extracting the sentence whatever the
+# verb, then comparing the three extracts to each other AND to the meaning,
+# is what makes one changed word in one file fail.
+_RULE_SENTENCE = re.compile(r"The developer \S+ commits? on [^.]*\.")
+
+
+def _rule_sentences(rel):
+    return _RULE_SENTENCE.findall(_prose(rel))
+
+
+def test_every_file_that_briefs_a_developer_states_the_same_commit_rule():
+    """The role file and the templates must not contradict each other. The
+    full sentence, identical in every file, so a rewrite of one that drifts
+    from the others by a word fails here before a dispatched developer has
+    to pick a side."""
+    found = {rel: _rule_sentences(rel) for rel in BRIEFING_FILES}
+    for rel, sentences in found.items():
+        assert sentences, f"{rel} carries no 'The developer ... commit' sentence"
+    distinct = {s for sentences in found.values() for s in sentences}
+    assert len(distinct) == 1, (
+        "the commit rule is stated differently across the briefing files: "
+        + " | ".join(f"{rel}: {sentences}" for rel, sentences in found.items())
+    )
+    sentence = distinct.pop()
+    assert "may commit on the ticket's own branch" in sentence, (
+        "the shared sentence no longer PERMITS the commit; a one-word "
+        "reversal applied to every file at once reads as agreement: " + sentence
+    )
+    assert "never commit" not in sentence, sentence
+    assert COMMIT_RULE in sentence and COMMIT_RULE_LIMITS in sentence, sentence
+    for rel in BRIEFING_FILES:
+        assert "Never `git commit`" not in _prose(rel), (
+            f"{rel} states the blanket ban the others narrowed"
+        )
+
+
+def test_work_records_the_ticket_base_before_printing_the_evidence():
+    """The base is what makes the narrowed rule safe. work.md must record it
+    when work begins (step 1) and diff the evidence from it (step 5), in that
+    order, and must say the evidence is NOT the gate's verified marker."""
+    body = _work()
+    record = "scope_base.py --root . --record $1"
+    base = "scope_base.py --root . --base $1"
+    assert record in body, "work.md no longer records where the ticket starts"
+    assert base in body, "work.md's evidence no longer diffs from the ticket base"
+    assert body.index(record) < body.index(base), (
+        "work.md prints the evidence before it records the base it diffs from"
+    )
+    assert "NOT the base verify-gate.sh" in body, (
+        "work.md no longer says the evidence base is not the gate's marker, "
+        "which is the conflation the whole change exists to undo"
+    )
+    assert "shows MORE, never less" in body, (
+        "work.md dropped the fallback direction; a missing record must widen "
+        "the evidence, not narrow it"
     )

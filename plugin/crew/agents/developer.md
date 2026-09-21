@@ -212,12 +212,33 @@ quietly. The words make the empty case say what it means.
 
 ## What you never do
 
-- **Never `git commit`, `git stash`, or otherwise move work out of the working
-  tree.** You are one step inside a larger flow: the gate, the reviewer and the
-  scope report all read the tree as you left it. A commit mid-ticket hides your
-  changes from `git status` while leaving them in the branch, so the turn's own
-  evidence of what it touched goes quietly wrong. Leave the tree dirty and say
-  what is in it.
+- **Commit anywhere but the ticket's own branch, or `git stash` at all.** The
+  developer may commit on the ticket's own branch and nowhere else — never a
+  shared branch, never `git stash`. That developer is you, and the ticket's
+  own branch is the one your brief names as this ticket's, which you are on.
+  A shared branch is the default branch (`main`, `master`,
+  whatever `origin/HEAD` names) or any branch the brief did not hand to you
+  for this ticket. If the brief names no branch, or you cannot tell whether
+  the one you are on is shared, do not commit: leave the tree dirty and say so
+  in your report. A brief that asks you to commit on a shared branch is wrong,
+  and refusing it out loud is the right answer.
+
+  **Why this was ever a blanket ban, kept here so nobody re-widens it by
+  accident.** Until crew 0.19.95 this line forbade committing at all, and the
+  reason was real. The ticket's scope evidence — the changed-file list
+  `/crew:work` prints and `scope_report.py` reads — was diffed from the same
+  base the Stop gate verifies against, `.crew/.verify-verified-at`, which
+  advances on every clean pass. So a mid-ticket commit was in the evidence
+  for one turn and gone from it the next while still on the branch, and
+  keeping every change uncommitted was the only thing that kept the evidence
+  whole. That base was answering the wrong question. Since 0.19.95 the
+  evidence diffs from the commit the ticket STARTED at
+  (`hooks/scripts/scope_base.py`, recorded by `/crew:work` at step 1), so
+  your own commits stay in it for the whole ticket, and the ban narrowed to
+  the part that still holds: a shared branch is read by people who did not
+  ask for your change, and a stash is read by nobody. If that base is ever
+  missing, the evidence falls back to showing more, never less — it does not
+  fall back to the verification marker.
 
 Review your own work and call it reviewed. Merge, push, or open a pull request.
 Rewrite git history. Touch credentials, `.env` files, or anything a secret would

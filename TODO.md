@@ -3200,3 +3200,22 @@ still does not exist anywhere in this repo.
   requires it by hand before a change to the plugin update path, and it
   drives the real `claude` CLI so CI cannot run it either. Not run in this
   session; say so rather than implying it passed.
+## Filed 2026-09-20 by the T-0003 developer (crew 0.19.95), not fixed there
+
+- `.crew/codemap/crew.md` has no `## Landmines` section at all (its headings
+  run Inventory / Hooks / ... / Unverified), and it does not mention the Stop
+  gate's baseline (`.crew/.verify-verified-at`, `verify-gate.sh:70-74`),
+  `scope_report.py`, or the new `scope_base.py`. `developer.md` step 2 sends
+  every developer to that section first; on this subsystem there is nothing
+  to read. Not blocking T-0003: the landmine it would have named is the one
+  T-0003 fixed. Refresh with `/crew:onboard --refresh crew`.
+- `.crew/verify.json` has no pytest rule naming
+  `plugin/crew/tests/test_scope_report.py`, `test_scope_discipline.py` or the
+  new `test_scope_base.py`, and none whose paths cover
+  `plugin/crew/hooks/scripts/scope_report.py` or `scope_base.py` beyond the
+  catch-all check-marketplace + pylint rules. Those three suites run from the
+  gate only through the 185s whole-suite rule, i.e. when `conftest.py`,
+  `crew_fixtures.py`, `context.py` or `sabotage.py` change. A behavioural
+  regression in the scope layer alone is not caught at Stop. Not fixed under
+  T-0003 because its scope says "do not touch: the verify map"; add a rule
+  (`/crew:verify`) mapping the two scripts and three suites.

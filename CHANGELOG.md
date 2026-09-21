@@ -6,6 +6,74 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Fixed
 
+- **`crew` 0.19.95: the ticket's scope evidence diffs from the commit the
+  ticket started at, and the developer may commit on the ticket's own branch
+  (T-0003).** `agents/developer.md` said "Never `git commit`" while every
+  brief in this repository told the developer to commit on its branch; on
+  2026-09-19 two dispatched developers refused and three committed, and a
+  different model changed nothing. The sentence was a workaround, not the
+  defect. `commands/work.md` printed the ticket's changed-file list from the
+  SAME base the Stop gate verifies against, `.crew/.verify-verified-at`,
+  which `verify-gate.sh` writes at HEAD on every clean pass — so one marker
+  answered two questions ("what has not been verified yet" and "what has
+  this ticket changed"), correctly for the first and wrongly for the second.
+  Measured with the real gate in a scratch repository: one commit on the
+  ticket's branch, one clean Stop, and the next turn's
+  `git diff --name-only <marker>` lists none of the ticket's files while the
+  branch carries all of them. Keeping every change uncommitted was the only
+  thing that kept the evidence whole, hence the ban. New
+  `hooks/scripts/scope_base.py`: `/crew:work` step 1 records HEAD to
+  `.crew/.scope-base` keyed by the ticket (machine-local, on no un-ignore
+  list, for the reason the gate's marker is not tracked), idempotent per
+  ticket so a re-run after `/clear` cannot move it; step 5's evidence diffs
+  from that base; `scope_report.py` unions the gate's per-turn list with the
+  ticket-wide one, so its `outside-scope:` line is never shorter than before
+  and now carries a `scope-base:` line naming the base and why. A record that
+  is missing, unreadable, another ticket's, no longer in the repository or no
+  longer an ancestor of HEAD falls back to the merge-base with the default
+  branch — MORE, never less, and never the verification marker. The gate
+  scripts are untouched, deliberately: the in-flight per-rule verified record
+  makes the marker advance in more situations, and this change does not
+  depend on how often it advances. `developer.md`'s ban narrowed to "commit
+  on the ticket's own branch and nowhere else — never a shared branch, never
+  `git stash`", with the original reasoning kept in the file; `work.md` and
+  `pm.md` state the same two phrases verbatim, and
+  `tests/test_scope_discipline.py` asserts all three agree and that the
+  blanket form is absent. `tests/test_scope_base.py` (22 cases, real git
+  fixtures) includes the defect's own reproduction, asserting both that the
+  marker-based diff loses the commit and the ticket-based one keeps it. Six
+  sabotage mutations added to `tests/sabotage.py`, each seen red: the
+  blanket ban returning, the limits drifting in one file, `work.md` no longer
+  recording the start, the record advancing on re-record, the base collapsing
+  to the verified marker, and the report printing the base while ignoring it.
+  Codex round 1 (0 BLOCK, 5 FIX), all fixed on the same version: a record
+  whose commit was missing from this clone was silently re-recorded at HEAD —
+  now never overwritten, and `--record` prints "start commit <sha> not in
+  this clone; evidence is against merge-base <sha> (fallback)"; the record
+  was a single value, so starting T-2 lost T-1's base — now a mapping keyed
+  by ticket; the fallback tried only a local `main`, which `git clone -b`
+  does not create, and fell through to HEAD — now `origin/HEAD` →
+  `origin/main` → `main`, naming which answered; a first record on a branch
+  already past the fork (a fresh clone) recorded HEAD and hid the ticket's
+  commits — now records the merge-base marked `from: merge-base`, a
+  fallback in every derived line; the `outside-scope:` line was bare when
+  its base was a fallback or unavailable, the caveat on the next line only
+  — now carries `(fallback: ...)` or `(this turn only: ...)` on the line
+  itself; and the agreement test matched two substrings, so
+  "may commit" → "never commit" in one file passed — now extracts the full
+  `The developer ... commit ...` sentence from all three files and requires
+  one identical sentence containing "may commit on the ticket's own branch".
+  Six more sabotage mutations, each seen red. Codex round 2 (0 BLOCK,
+  2 FIX), both provenance: round 1 had exempted the merge-base fallback
+  when any earlier entry was an ancestor of HEAD, and T-1 recorded on
+  `main` is an ancestor of every branch, so T-2 checked out with commits
+  made elsewhere recorded HEAD unlabelled and hid them — the exemption is
+  gone, another ticket's entry is never evidence about this one's start;
+  and a second `--record` over a `from: merge-base` entry said "kept … as
+  the start" with no caveat — now `kept-fallback`, "(fallback) kept …",
+  provenance never upgraded by a re-read. Two more mutations, each seen
+  red.
+
 
 
 

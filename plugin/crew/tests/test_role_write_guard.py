@@ -46,6 +46,10 @@ _PS1 = os.path.join(_ROOT, "hooks", "scripts", "role-write-guard.ps1")
 _BASH = crew_fixtures.resolve_bash()
 _PWSH = crew_fixtures.resolve_pwsh()
 needs_bash = pytest.mark.skipif(_BASH is None, reason="no MSYS/POSIX bash")
+needs_windows = pytest.mark.skipif(
+    os.name != "nt",
+    reason="asserts Windows path semantics (lexical .. collapse, backslash output); "
+           "CI ran these on Ubuntu from 621d50dc and the workflow stayed red")
 needs_pwsh_windows = pytest.mark.skipif(
     not sys.platform.startswith("win") or _PWSH is None,
     reason="the .ps1 hook is the native-Windows flavour; needs Windows + pwsh",
@@ -1162,6 +1166,7 @@ def test_resolve_real_target_walks_up_to_the_deepest_existing_ancestor(tmp_path)
 # forward-slash-rooted and the lexists/realpath checks fire as designed.
 
 
+@needs_windows
 def test_resolve_real_target_windows_collapses_dotdot_before_symlink(tmp_path):
     """Direct unit test of `_resolve_real_target_windows` ITSELF, proving
     the lexical-first algorithm in BOTH directions from Codex round 4's
@@ -1206,6 +1211,7 @@ def test_resolve_real_target_windows_collapses_dotdot_before_symlink(tmp_path):
         "got: " + block_resolved)
 
 
+@needs_windows
 def test_resolve_real_target_windows_splits_on_forward_slashes(tmp_path):
     """Direct unit test: round 4 BLOCK 1. A Windows target spelled with
     forward slashes must still walk and resolve a junction/symlink in
@@ -1225,6 +1231,7 @@ def test_resolve_real_target_windows_splits_on_forward_slashes(tmp_path):
     assert os.path.basename(resolved) == "new.py"
 
 
+@needs_windows
 def test_resolve_real_target_windows_splits_on_mixed_separators(tmp_path):
     """Direct unit test: a path mixing `\\` and `/` in the same string
     must still walk component by component and resolve the link."""
@@ -1243,6 +1250,7 @@ def test_resolve_real_target_windows_splits_on_mixed_separators(tmp_path):
     assert os.path.basename(resolved) == "new.py"
 
 
+@needs_windows
 @needs_bash
 def test_windows_link_pointing_out_of_scope_with_dotdot_still_allows_bash(tmp_path):
     """Must-allow, end to end (corrects round 3's must-block expectation
@@ -1284,6 +1292,7 @@ def test_windows_link_pointing_out_of_scope_with_dotdot_still_allows_powershell(
     assert proc.returncode == 0, proc.stderr
 
 
+@needs_windows
 @needs_bash
 def test_windows_link_staged_out_of_scope_escapes_via_dotdot_blocks_bash(tmp_path):
     """Must-block, end to end: round 4 BLOCK 2's own repro. `src/link` is
