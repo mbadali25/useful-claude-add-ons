@@ -89,6 +89,13 @@ HOUSE_STYLE = os.path.join(
 # claim is to break the interface it names.
 BUILD_REPORT = os.path.join(
     ROOT, "skills", "doc-builder", "scripts", "build_report.py")
+# Same reasoning, one file over: doc-builder's stylesheet was extracted out of
+# build_report.py into house_style.py, and the print rules crew's HTML route
+# cites now live here. The heading selector is a PARAMETER of `print_css`, so
+# it cannot be sabotaged by editing a CSS literal -- the mutation below changes
+# what `stylesheet()` passes, which is the only way that rule can break.
+HOUSE_STYLE_PY = os.path.join(
+    ROOT, "skills", "doc-builder", "scripts", "house_style.py")
 # A shipped artefact of crew's HTML route, outside the plugin for a third
 # reason again: the route is the one entry on the routing table with NO
 # generator behind it, so the only place its rule can be observed holding is a
@@ -665,8 +672,8 @@ MUTATIONS = (
         # crew names.
         "the print-block citation points at the wrong lines",
         HOUSE_STYLE,
-        "`skills/doc-builder/scripts/build_report.py:165-167`, widened by one",
-        "`skills/doc-builder/scripts/build_report.py:155-157`, widened by one",
+        "`skills/doc-builder/scripts/house_style.py:246-248` \u2014 the body of",
+        "`skills/doc-builder/scripts/house_style.py:245-247` \u2014 the body of",
         "tests/test_docs_routing.py::"
         "test_the_cited_lines_of_the_generator_hold_what_crew_says_they_hold",
     ),
@@ -681,10 +688,10 @@ MUTATIONS = (
         # range against the declarations it spans, a single line against the
         # text crew quotes from it -- and a mutation going red proves the TEST
         # failed, never which assertion did.
-        "the table-comment citation points at the wrong line",
+        "the report profile's table-comment citation points at the wrong line",
         HOUSE_STYLE,
-        '(`skills/doc-builder/scripts/build_report.py:133`, "Every table: real',
-        '(`skills/doc-builder/scripts/build_report.py:123`, "Every table: real',
+        '`skills/doc-builder/scripts/house_style.py:342`, "Every table: real',
+        '`skills/doc-builder/scripts/house_style.py:332`, "Every table: real',
         "tests/test_docs_routing.py::"
         "test_the_cited_lines_of_the_generator_hold_what_crew_says_they_hold",
     ),
@@ -696,10 +703,46 @@ MUTATIONS = (
         # cannot be pasted into `git diff --name-only <anchor>..HEAD -- <path>`.
         "the citation drops its repo-relative path",
         HOUSE_STYLE,
-        "(`skills/doc-builder/scripts/build_report.py:133`,",
-        "(`build_report.py:133`,",
+        "at\n`skills/doc-builder/scripts/house_style.py:352`,",
+        "at\n`house_style.py:352`,",
         "tests/test_docs_routing.py::"
         "test_the_cited_lines_of_the_generator_hold_what_crew_says_they_hold",
+    ),
+    (
+        # The comment crew quotes occurs TWICE in house_style.py, once in each
+        # profile branch of `stylesheet()`, so the route cites both lines. This
+        # collapses the guide profile's citation onto the report profile's
+        # line. Every character of it still resolves -- that line really does
+        # hold that comment -- and the guide profile's copy is now pinned by
+        # nothing at all, while the section reads as though both were checked.
+        #
+        # This is the mutation the duplicate comment made necessary. Before the
+        # extraction there was one occurrence and this state could not exist.
+        "both table-comment citations collapse onto one line",
+        HOUSE_STYLE,
+        '`skills/doc-builder/scripts/house_style.py:352`, "Every table: real',
+        '`skills/doc-builder/scripts/house_style.py:342`, "Every table: real',
+        "tests/test_docs_routing.py::"
+        "test_the_cited_lines_of_the_generator_hold_what_crew_says_they_hold",
+    ),
+    (
+        # The generated output, which is the only place a PARAMETERISED
+        # selector can be checked. `print_css` takes `headings`; the report
+        # profile passes "h2" and the guide profile "h2, h3". Nothing in
+        # house_style.py's source text contains the rule crew cites, so every
+        # source-reading assertion in the suite stays GREEN through this
+        # mutation -- verified by running it, and only the generated-output
+        # test goes red.
+        #
+        # That is the point of the mutation: it is the one defect in this
+        # cluster that no amount of reading the file can catch, and without a
+        # generated-output check it would ship.
+        "the report profile stops emitting the heading page-break rule",
+        HOUSE_STYLE_PY,
+        'print_css("h2")',
+        'print_css("h4")',
+        "tests/test_docs_routing.py::"
+        "test_the_generated_stylesheet_emits_the_print_rules",
     ),
     (
         # The shipped document loses a print declaration. The `thead` one
