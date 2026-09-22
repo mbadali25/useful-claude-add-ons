@@ -43,7 +43,15 @@ param(
 # attempt, reports "sent", and delivers nothing. auto-clear.sh is the flavour
 # for those platforms - it is registered too, and tmux there is strictly better
 # than anything this file could do.
-if (-not $IsWindows) { exit 0 }
+#
+# The TEST is `$env:OS`, not `$IsWindows`, and that is the whole point of this
+# line. `$IsWindows` does not exist in Windows PowerShell 5.1, so it is $null
+# there, `-not $null` is $true, and this script would stand down on the one
+# platform it exists for. `$env:OS` is 'Windows_NT' on BOTH 5.1 and PowerShell
+# 7, and unset on Linux/macOS. This file is not registered in hooks.json, but
+# it is the nearest thing to a template in this directory -- the registered
+# hooks carry the same test for the same reason.
+if ($env:OS -ne 'Windows_NT') { exit 0 }
 
 $root = if ($env:CLAUDE_PROJECT_DIR) { $env:CLAUDE_PROJECT_DIR } else { "." }
 Set-Location $root -ErrorAction SilentlyContinue

@@ -7,6 +7,7 @@ Code. These tests run both flavours the same way Claude Code does: JSON on
 stdin, exit code and stderr as the contract.
 """
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -43,12 +44,23 @@ def _run(flavor, root, transcript_path, stop_hook_active=False):
         "cwd": str(root),
         "stop_hook_active": stop_hook_active,
     })
+    env = dict(os.environ)
     if flavor == "sh":
         cmd = [_BASH, _SH]
     else:
         cmd = ["pwsh", "-NoProfile", "-NonInteractive", "-File", _PS1]
+        # The .ps1 flavour now stands down unless $env:OS says Windows -- both
+        # flavours are registered for every event, so on a host with BOTH
+        # interpreters (this Linux box, since pwsh was installed) both would
+        # otherwise run the Stop hook twice. These tests are about the
+        # THRESHOLD ARITHMETIC inside the script, not about which flavour a
+        # host picks, so they tell it it is on Windows and get the real work.
+        # Without this every [ps1] case here reads as a silent pass-by-exit-0.
+        # The flavour arbitration itself is covered by
+        # hooks/scripts/_test/test_flavour_guard.py.
+        env["OS"] = "Windows_NT"
     return subprocess.run(
-        cmd, input=payload, cwd=str(root),
+        cmd, input=payload, cwd=str(root), env=env,
         capture_output=True, text=True, check=False,
     )
 

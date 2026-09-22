@@ -9,13 +9,28 @@ param(
   [switch]$PrintPython
 )
 
+# Flavour guard. Both flavours are registered for every event, so on a host
+# that has BOTH interpreters both would otherwise run. Stand down only when
+# we can positively prove this is not Windows.
+#
+# $env:OS is 'Windows_NT' on BOTH Windows PowerShell 5.1 and PowerShell 7,
+# and unset on Linux/macOS. A bare `if (-not $IsWindows)` is WRONG: $IsWindows
+# does not exist in 5.1, so it is $null there, `-not $null` is $true, and the
+# hook stands down on the one platform it exists for. crew has already shipped
+# that bug once - the guard stood down on Windows and blocked nothing there.
+if ($env:OS -ne 'Windows_NT') { exit 0 }
+
 $ErrorActionPreference = 'SilentlyContinue'
 
-# No platform check here on purpose, for the same reason as pm-brief.ps1: Stop
-# has no matcher, so this and pm-pulse.sh both fire wherever both interpreters
-# exist, and deciding by interpreter is unsound. pm_pulse.py de-duplicates on
-# the state fingerprint, so exactly one of us speaks per changed state
-# regardless of which arrives first or how many of us there are.
+# pm_pulse.py's state-fingerprint de-duplication STAYS, and is not made
+# redundant by the flavour guard above. The guard decides which FLAVOUR runs;
+# the fingerprint decides which TURN speaks, and Stop fires once per turn, so
+# without it every turn would get a pulse whether the state changed or not.
+#
+# Note what the guard does NOT do: decide by interpreter. That would be unsound
+# (on Windows, `bash` on PATH is normally the WSL launcher), which is why it
+# tests the OS instead. pm-pulse.sh carries a hook_once claim; this file does
+# not, and that asymmetry is now harmless because the two never both run.
 $dir = Split-Path -Parent $MyInvocation.MyCommand.Path
 
 function Resolve-CrewPython {

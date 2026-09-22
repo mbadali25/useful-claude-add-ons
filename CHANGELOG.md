@@ -6,6 +6,55 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Fixed
 
+- **`crew` 0.20.2 and `obsidian-vault` 0.3.11: every registered `.ps1` hook
+  now stands down off Windows, so a host with both interpreters stops running
+  each hook twice.** `hooks.json` registers every event in both flavours -- a
+  bash `command` and a `shell: "powershell"` twin -- which is correct, because
+  a single-shell machine then always gets exactly one. On a host with BOTH it
+  is not. Until PowerShell was installed on this repository's Linux host the
+  second registration merely printed a red `SessionStart:clear hook error` per
+  event; installing pwsh converted that loud noise into SILENT DOUBLE
+  EXECUTION: two Stop gates on one turn, two PostToolUse guards on one write,
+  two captures per session end, two SessionStart briefs. Only 5 of the 13
+  registered `.ps1` files carried a `hook_once.py` claim that happened to pick
+  a winner; three of the eight without one are blocking guards
+  (`promote-gate`, `role-write-guard`, `vault-guard`).
+
+  The fix is one line, first executable statement, in all 13:
+  `if ($env:OS -ne 'Windows_NT') { exit 0 }`. The test is `$env:OS` and not
+  `$IsWindows` deliberately: `$IsWindows` does not exist in Windows PowerShell
+  5.1, so it is `$null` there, `-not $null` is `$true`, and the bare form
+  stands down on the one platform the file exists for -- the shape of bug crew
+  has already shipped once, where the guard stood down on Windows and blocked
+  nothing there. `auto-clear.ps1` carried exactly that bare form; it is not
+  registered, so it was inert, but it was the wrong precedent sitting next to
+  twelve files that would be copied from it, and it is fixed too.
+
+  The existing `hook_once.py` claims stay. They solve a different problem
+  (SessionStart fires once per SOURCE EVENT, not once per session) and the
+  three comments asserting "no platform check here on purpose" are rewritten
+  rather than deleted, so the reasoning that is still true stays readable.
+
+  Covered by `hooks/scripts/_test/test_flavour_guard.py`, byte-identical in
+  both plugins and wired into each one's `run-tests.sh`. It derives its file
+  list from `hooks.json`, so a newly registered hook with no guard turns it
+  red without anyone remembering a count; it asserts through PowerShell's own
+  parser that the guard is the FIRST executable statement, not merely present,
+  because several of these hooks `Remove-Item` a `.crew/` marker within two
+  lines of the top; and in the stand-down direction it asserts the fixture
+  tree is byte-identical afterwards rather than only that the exit code was 0.
+  The PowerShell 5.1 case is exercised by removing `$IsWindows` from the
+  session with `OS=Windows_NT` set, which is the case the bare form fails.
+
+  One existing suite had to be told about the guard: `tests/test_context_watch.py`
+  runs the `.ps1` flavour on this Linux host to check its threshold arithmetic
+  and its warning text against the `.sh` flavour's, and every `[ps1]` case
+  there would otherwise have become a silent pass-by-exit-0. Its runner now
+  sets `OS=Windows_NT` for the PowerShell flavour, which is the honest thing:
+  those tests are about what the script computes, not about which flavour a
+  host picks. Nothing else in `plugin/crew/tests/` runs a guarded `.ps1` off
+  Windows - the rest are already `sys.platform.startswith("win")`-gated.
+
 - **`crew` 0.19.96: the metacharacter list in `commands/verify.md` no longer
   executes itself, so `/crew:verify` runs at all.** The line documenting which
   shell metacharacters force a deferral ended with a bang immediately followed
