@@ -1,23 +1,26 @@
 ---
 name: doc-builder
 description: >
-  Build finished, human-facing documents as DOCX and PDF, rendered by Microsoft Word on
+  Build finished, human-facing documents as HTML, DOCX and PDF, rendered by Microsoft Word on
   Windows or by LibreOffice on Linux and macOS - always named on the output, never
   substituted silently - in the installed brand pack's house style or a neutral one. Two
   pipelines behind one skill:
   findings-style reports (assessment, audit write-up, findings document, executive summary,
   posture or security report - masthead, plain-language lede, summary cards, severity chips,
-  provenance footer) rendered from HTML through Word COM or LibreOffice; and step-by-step procedures (SOP,
+  provenance footer) built as branded HTML - a finished deliverable on its own for a page
+  that opens in a browser or a wiki, not only a rendering intermediate - and optionally
+  converted through Word COM or LibreOffice to DOCX/PDF; and step-by-step procedures (SOP,
   standard operating procedure, runbook, work instruction, how-to, quick reference guide,
   training guide, onboarding guide for a new hire, user guide, walkthrough - anything that
   tells someone how to set up, install, configure or sign in to something, step by step,
   with screenshots) rendered with python-docx so every screenshot carries a border Word does
   not clip. Use this skill whenever the user asks for a report, an SOP, a runbook, a how-to,
-  a guide, instructions with screenshots, documentation of a process, or says "write this
-  up", "make it look professional", "send this to the client", "document this process",
-  "make a PDF", "turn this into a Word doc", "add a screenshot to the guide", "update the
-  VPN guide", "does this SOP match the template", or when a generated DOCX or PDF came out
-  unstyled black-on-white. Also use it
+  a guide, instructions with screenshots, documentation of a process, a branded HTML report
+  or page, or says "write this up", "make it look professional", "send this to the client",
+  "document this process", "make a PDF", "turn this into a Word doc", "add a screenshot to
+  the guide", "update the VPN guide", "does this SOP match the template", "put this on the
+  wiki", or when a generated DOCX, PDF or HTML page came out unstyled black-on-white, missing
+  its print rules, or in the wrong brand's colours. Also use it
   to pick between one report and a summary plus a detail report, and to choose severity
   colours. Brand is resolved automatically from any installed brand pack (for example
   solomon-doc-builder) - the user never has to ask for branding. Do NOT use it to edit an
@@ -31,7 +34,7 @@ because neither can do the other's job:
 
 | Content | Pipeline | Script |
 |---|---|---|
-| Findings, tables, severity, executive summary, audit or assessment write-up | HTML -> renderer | `scripts/build_report.py` |
+| Findings, tables, severity, executive summary, audit or assessment write-up | HTML, optionally -> DOCX/PDF via renderer | `scripts/build_report.py` |
 | Step-by-step procedure with screenshots (SOP, runbook, how-to, guide) | python-docx OOXML | `scripts/build_sop.py` |
 
 Why two: Word's HTML parser is the constraint on the report side, and every rule in
@@ -45,7 +48,8 @@ SOP path - it is the house template for procedures.
 
 | The user wants | Use |
 |---|---|
-| A report, SOP, runbook, guide or write-up produced as DOCX/PDF | this skill |
+| A report, SOP, runbook, guide or write-up produced as HTML, DOCX or PDF | this skill |
+| A branded HTML report or page, not converted to DOCX/PDF | this skill - run `build_report.py` and stop before `--to-docx`/`--to-pdf`; its HTML output is already the deliverable |
 | Solomon styling on any of those | this skill, with `solomon-doc-builder` also installed - see "Brand resolution" below for the install command, the opt-out, and choosing between packs |
 | To edit, extract from or find-and-replace in a `.docx` they already have | the `docx` skill (`anthropic-office-skills:docx`) |
 | A slide deck or spreadsheet | `pptx` / `xlsx` skills |
