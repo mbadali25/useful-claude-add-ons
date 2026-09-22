@@ -322,6 +322,42 @@ class Brand:
     def report_output_dir(self) -> str:
         return self.report.get("output_dir") or "reports"
 
+    @property
+    def logo(self) -> dict:
+        return self.data.get("logo") or {}
+
+    def logo_path(self, variant: str):
+        """Absolute path for one logo variant key (`on_light`, `on_dark`,
+        `icon_on_light` or `icon_on_dark`), or None when the pack does not
+        supply it - the neutral pack supplies none, and every caller must
+        render correctly with None. Resolved through `_rel()`, so a pack's
+        logo path is subject to the exact same relative/absolute rules as
+        `template`, `masters_dir` and `assets_dir` - including the Windows
+        drive-path fix, since a logo path is authored and committed the same
+        way those are."""
+        return self._rel(self.logo.get(variant))
+
+    def logo_for(self, background: str):
+        """The wordmark logo that reads correctly on `background`, or None.
+
+        `background` is `"light"` (a white or pale page) or `"dark"` (a navy
+        or otherwise dark band) - never the logo's own colour, which is the
+        opposite of the page it sits on: the `-on-dark` file is the wordmark
+        recoloured to read on a DARK background, so a caller rendering a navy
+        band must ask for `logo_for("dark")` to get it. Getting this backwards
+        is invisible in the way a broken image reference is not - the logo is
+        simply the same colour as the page it sits on.
+        """
+        if background not in ("light", "dark"):
+            raise ValueError(f"background must be 'light' or 'dark', got {background!r}")
+        return self.logo_path(f"on_{background}")
+
+    def icon_for(self, background: str):
+        """The mark-alone icon for `background` - see `logo_for`."""
+        if background not in ("light", "dark"):
+            raise ValueError(f"background must be 'light' or 'dark', got {background!r}")
+        return self.logo_path(f"icon_on_{background}")
+
     def describe(self) -> str:
         return f"brand: {self.name} -- {self.reason} ({self.path})"
 
@@ -440,6 +476,12 @@ def main(argv=None) -> int:
         print(f"assets_dir  : {assets or '(none)'}{astate}")
         print(f"specs_dir   : {(brand.specs_dir or '(none)')}")
         print(f"reports     : {brand.report_output_dir}/")
+        logo_dark = brand.logo_for("dark")
+        lstate = "" if not logo_dark else ("" if os.path.isfile(logo_dark) else "  (NOT FOUND on this machine)")
+        print(f"logo (dark) : {logo_dark or '(none)'}{lstate}")
+        logo_light = brand.logo_for("light")
+        lstate = "" if not logo_light else ("" if os.path.isfile(logo_light) else "  (NOT FOUND on this machine)")
+        print(f"logo (light): {logo_light or '(none)'}{lstate}")
     return 0
 
 

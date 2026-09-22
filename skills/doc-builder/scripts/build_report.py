@@ -45,6 +45,7 @@ import uuid as _uuid
 import html
 import json
 import os
+import pathlib
 import sys
 
 import render_engine
@@ -75,11 +76,36 @@ class Palette:
         # severity on purpose: a check that could not run is not a check that
         # passed, and rendering the two alike is lying by omission.
         self.severities = {k: tuple(v) for k, v in r["severity"].items()}
+        # The masthead band (`.mast-band`) is filled NAVY, so the wordmark
+        # that belongs there is the one measured to read on a dark background
+        # - `logo_for("dark")`, never `"light"`. Getting this backwards is
+        # invisible in the way a broken <img> is not: the logo would be the
+        # same colour as the band it sits on. See `resolve_brand.Brand.logo_for`.
+        self.logo_src = _logo_uri(brand.logo_for("dark"))
 
 
 def esc(value) -> str:
     """HTML-escape any cell value, including None and numbers."""
     return html.escape("" if value is None else str(value), quote=True)
+
+
+def _logo_uri(path):
+    """`path` (from resolve_brand, already absolute) as a `file://` URI for an
+    `<img src>`, or None.
+
+    None either way a pack has no logo configured (`path` is falsy) or the
+    configured file is not actually on THIS machine - `os.path.isfile` is the
+    same "NOT FOUND on this machine" check `resolve_brand.py --list` already
+    applies to `masters_dir`/`assets_dir`. A document renders fine with no
+    logo; it must not render with a broken image reference instead.
+    """
+    if not path:
+        return None
+    if not os.path.isfile(path):
+        print(f"brand: note: logo configured but not found on this machine: {path} "
+              "-- rendering without one", file=sys.stderr)
+        return None
+    return pathlib.Path(path).resolve().as_uri()
 
 
 def _chip_css(pal: Palette) -> str:
@@ -129,6 +155,10 @@ table.mast {{ border-collapse:collapse; width:100%; margin-bottom:14px; }}
               letter-spacing:1.8px; }}
 .mast-title {{ color:#FFFFFF; font-size:26px; font-weight:600; }}
 .mast-subtitle {{ color:{ORG_INK}; font-size:12px; }}
+/* Bare class, per word-traps.md rule 3/4 - the only selector shape both
+   renderers apply. Height only: no width, so the source PNG's own aspect
+   ratio (290x70 for the wordmark) is preserved rather than guessed at here. */
+.mast-logo {{ height:28px; margin-bottom:6px; }}
 
 /* Every table: real grid, real thead. Both required. */
 table.data {{ border-collapse:collapse; width:100%; table-layout:fixed;
@@ -227,11 +257,18 @@ def column_widths(labels, rows):
     return pcts
 
 
-def masthead(org, title, subtitle, classification):
+def masthead(org, title, subtitle, classification, logo_src=None):
+    """`logo_src`, when given, is the `-on-dark` wordmark - `.mast-band` is
+    filled navy, so anything else placed there is the wrong variant. None
+    renders the masthead exactly as it did before a brand pack ever carried
+    a logo."""
+    logo_html = (f'    <img class="mast-logo" src="{esc(logo_src)}" alt="{esc(org)}">\n'
+                 if logo_src else "")
     return (
         '<table class="mast">\n'
         '  <tr><td class="mast-strip"></td></tr>\n'
         '  <tr><td class="mast-band">\n'
+        f'{logo_html}'
         f'    <div class="mast-org">{esc(org)}</div>\n'
         f'    <div class="mast-title">{esc(title)}</div>\n'
         f'    <div class="mast-subtitle">{esc(subtitle)}</div>\n'
@@ -330,7 +367,7 @@ def build(doc, brand):
         "</head><body>",
         '<div class="wrap">',
         masthead(org, title, doc.get("subtitle", ""),
-                 doc.get("classification", "INTERNAL USE ONLY")),
+                 doc.get("classification", "INTERNAL USE ONLY"), pal.logo_src),
     ]
     if doc.get("meta"):
         parts.append(meta_table(doc["meta"]))
