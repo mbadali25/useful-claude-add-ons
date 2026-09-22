@@ -76,6 +76,14 @@ CACHE_CLIMB = 4
 # reported as simply "not found".
 _WINDOWS_DRIVE_ABS_RE = re.compile(r"^[A-Za-z]:[\\/]")
 
+# A rooted, drive-RELATIVE Windows path: `\\bare\\path`, one leading
+# backslash, no drive. Matched by its own regex and NOT by `ntpath.isabs()`,
+# because Python 3.13 changed `ntpath.isabs()` to return False for exactly
+# this shape (gh-44626), so a predicate built on it gives one answer on 3.11
+# and 3.12 and the opposite on 3.13+. Same input, same result on every
+# version is the whole point of the helper.
+_WINDOWS_ROOTED_RE = re.compile(r"^\\")
+
 
 def abs_or_join(value, base):
     """Resolve `value` against `base` treating "absolute" as OS-independent.
@@ -106,9 +114,9 @@ def abs_or_join(value, base):
         if os.name == "nt":
             return os.path.normpath(value)
         return posixpath.normpath("/" + ntpath.splitdrive(value)[1].replace("\\", "/").lstrip("/"))
-    if os.name != "nt" and ntpath.isabs(value) and not os.path.isabs(value):
-        # A bare `\like\this` (or `/like/this` written with backslashes
-        # elsewhere) - still absolute, not relative to `base`.
+    if os.name != "nt" and _WINDOWS_ROOTED_RE.match(value):
+        # A bare `\like\this` (rooted, no drive) - still absolute, not
+        # relative to `base`. Covers the `\\server\share` UNC form too.
         return posixpath.normpath(value.replace("\\", "/"))
     return value if os.path.isabs(value) else os.path.normpath(os.path.join(base, value))
 

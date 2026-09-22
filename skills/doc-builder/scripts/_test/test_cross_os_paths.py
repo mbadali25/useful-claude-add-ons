@@ -100,33 +100,14 @@ def _windows_spelling(path) -> str:
     ("c:/repos/mixed/Demo.docx", "/repos/mixed/Demo.docx"),
     ("Z:\\other\\drive.docx", "/other/drive.docx"),
     ("\\\\server\\share\\Demo.docx", "//server/share/Demo.docx"),
+    # Rooted, drive-relative. Was a documented gap: the helper used
+    # `ntpath.isabs()`, which returns True for this on 3.11/3.12 and False on
+    # 3.13+, so the same call joined on one version and resolved on another.
+    ("\\bare\\path\\Demo.docx", "/bare/path/Demo.docx"),
     ("/already/posix.docx", "/already/posix.docx"),
 ])
 def test_abs_or_join_treats_any_os_absolute_as_absolute(value, expected):
     assert resolve_brand.abs_or_join(value, "/base/dir") == expected
-
-
-@posix_only
-def test_a_drive_relative_path_is_a_KNOWN_GAP_not_a_silent_pass():
-    """`\\bare\\path` (rooted, but no drive) is NOT handled, and this test
-    exists so that is a recorded fact rather than a hole someone rediscovers.
-
-    `_rel()`'s second branch was written to catch it via `ntpath.isabs()`, but
-    Python 3.13 changed `ntpath.isabs()` to return False for a rooted
-    drive-RELATIVE path, so on 3.13+ that branch never fires for this input and
-    the value falls through to the join. Measured on 3.14.4.
-
-    This is pre-existing - it predates the helper, which preserved `_rel()`'s
-    behaviour deliberately and exactly - and it does NOT affect the defect this
-    file is about: a drive path is matched by `_WINDOWS_DRIVE_ABS_RE` before
-    `ntpath.isabs()` is ever consulted. Filed in TODO.md.
-
-    If someone fixes the gap, this test goes red. That is the intended signal:
-    delete it and move the case into the parametrised list above.
-    """
-    got = resolve_brand.abs_or_join("\\bare\\path\\Demo.docx", "/base/dir")
-
-    assert got == "/base/dir/\\bare\\path\\Demo.docx"
 
 
 def test_abs_or_join_still_joins_a_genuinely_relative_path():

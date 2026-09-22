@@ -6,6 +6,16 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Fixed
 
+- **`doc-builder` 1.5.3: `abs_or_join` gave a different answer for a rooted
+  drive-relative path (`\\bare\\path`) depending on the Python version.** The
+  second branch of the predicate was `ntpath.isabs()`, and Python 3.13 changed
+  that function to return False for exactly this shape, so 3.11 and 3.12
+  resolved the value to `/bare/path` while 3.13+ joined it onto `base`. The
+  test that recorded the gap pinned the 3.13 behaviour and went red on the
+  older two in CI, which is how it surfaced. The branch now matches a leading
+  backslash with its own regex, so every version resolves it, and the case
+  moved from a standalone known-gap test into the parametrised list.
+
 - **`crew` 0.20.2 and `obsidian-vault` 0.3.11: every registered `.ps1` hook
   now stands down off Windows, so a host with both interpreters stops running
   each hook twice.** `hooks.json` registers every event in both flavours -- a
