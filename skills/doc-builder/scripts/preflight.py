@@ -75,6 +75,27 @@ PACKAGES = [
     ("numpy", "numpy", "verify_borders.py - the red-pixel edge measurement is array maths"),
 ]
 
+# Packages that exist on Windows and nowhere else. pywin32 publishes Windows
+# wheels and no sdist, so pip cannot even RESOLVE it elsewhere - and because
+# `pip_install` sends every missing package in ONE invocation, and pip resolves
+# an invocation all-or-nothing, listing it off Windows failed the whole install
+# and left python-docx, PyMuPDF, Pillow and numpy uninstalled too. None of those
+# four are Windows-specific, so `--install` could not succeed on any Linux or
+# macOS machine. requirements.txt carries the same exclusion as a PEP 508
+# marker; keep the two in step.
+#
+# These are reported `n/a`, never `MISSING`. MISSING states a fixable condition,
+# and this one is not fixable on this platform by any action the operator can
+# take - Word COM does not exist here. Printing MISSING sends someone looking
+# for an install command that cannot exist, which is the more expensive failure.
+WINDOWS_ONLY = frozenset({"pywin32"})
+
+
+def applicable(pip_name):
+    """Whether this package can exist on the platform we are running on."""
+    return os.name == "nt" or pip_name not in WINDOWS_ONLY
+
+
 # What Gate 2 needs on top of Word, by pip name. PyMuPDF, Pillow and numpy are
 # top-level imports in verify_borders.py, so without any one of them it dies at
 # its own import line and exits 1 - which its exit table defines as "at least one
@@ -205,10 +226,16 @@ def main(argv=None):
         # then be absent from the venv the scripts are told to run with.
         print("  (virtual environment not created yet - every package will be installed into it)")
         for pip_name, _, used_by in PACKAGES:
+            if not applicable(pip_name):
+                print(f"  {'n/a'!s:<5} {pip_name!s:<12} -> Windows only; not installable here")
+                continue
             print(f"  {'MISSING'!s:<5} {pip_name!s:<12} -> needed by {used_by}")
-        missing = [p[0] for p in PACKAGES]
+        missing = [p[0] for p in PACKAGES if applicable(p[0])]
     else:
         for pip_name, import_name, used_by in PACKAGES:
+            if not applicable(pip_name):
+                print(f"  {'n/a'!s:<5} {pip_name!s:<12} -> Windows only; not installable here")
+                continue
             ok, info = probe(python, import_name, pip_name)
             print(f"  {'ok' if ok else 'MISSING'!s:<5} {pip_name!s:<12} {info if ok else '-> needed by ' + used_by}")
             if ok:
