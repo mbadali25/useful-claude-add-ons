@@ -142,16 +142,25 @@ one, so it no longer tries to parse shell at all:
   "reach": "local" (or network/host)`.
 
   ```text
-  ( ) $ ; & | < > ` " ' \ { } * ? [ ] ~ # !
+  ( ) $ ; & | < > " ' \ { } * ? [ ] ~ # !
   ```
 
-  That set is in a fenced block, not an inline span, and it has to stay that
-  way. It contains a backtick, and Claude Code pairs SINGLE backticks when it
-  scans a command file — so a ``double-backtick`` span holding one re-pairs
-  into spans nobody wrote, and the text between them is handed to bash. This
-  exact line did that: the fragment starting `, a newline, or a tab` became a
-  command, and `/crew:verify` died with `/bin/bash: line 1: ,: command not
-  found` before it ran anything. A fenced block is never scanned that way.
+  ...and U+0060, the backtick, which is deliberately NOT printed above.
+
+  **Never write a literal backtick anywhere in this file.** Claude Code pairs
+  SINGLE backticks when it scans a command file — it does not honour the
+  double-backtick form, and it does not exempt fenced blocks. So one unpaired
+  backtick leaves the whole file's spans off by one, and the prose between two
+  of them is handed to bash before the command runs.
+
+  This line did exactly that, twice. First as an inline span, where the
+  fragment beginning `, a newline, or a tab` became a command and
+  `/crew:verify` died with `/bin/bash: line 1: ,: command not found`. Then
+  again after the list was moved into this fenced block, which looked like the
+  fix and was not: a fence is three backticks, the literal one inside the list
+  paired with one of them, and the file was left with an odd count — 251 — and
+  an unterminated span. The rule that actually holds is parity, not container.
+  `check_command_backtick_spans` enforces it.
 - only once nothing on that list is present does whitespace-only splitting
   become safe. A reach verb (`ssm`, `ssh`, `curl`, `aws`, `az`, `gh`,
   `psql`, `mysql`) anywhere — notice: `remote verb <v>`.

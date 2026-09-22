@@ -1116,16 +1116,31 @@ def check_command_backtick_spans(fail):
     supposed to catch it. The bang was never the mechanism; an unbalanced
     backtick count is.
 
-    Put such a list in a fenced block, which is never scanned this way.
+    The container is not the rule; PARITY is. Moving the list into a fenced
+    block looked like the fix and was not - a fence is three backticks, the
+    literal one inside the list paired with one of them, and the file was left
+    with an ODD count (251) and an unterminated span. So this checks both: no
+    re-pairing span, and an even backtick count per file.
     """
     hits = []
-    for path in sorted(glob.glob("plugin/*/commands/*.md")
-                       + glob.glob("skills/*/commands/*.md")):
+    for path in sorted(glob.glob(os.path.join(ROOT, "plugin/*/commands/*.md"))
+                       + glob.glob(os.path.join(ROOT, "skills/*/commands/*.md"))):
+        rel = os.path.relpath(path, ROOT)
         with open(path, encoding="utf-8") as fh:
             text = fh.read()
+
+        total = text.count("`")
+        if total % 2:
+            hits.append(
+                f"{rel}: {total} backticks - an ODD count leaves an "
+                f"unterminated span, so every span after the stray one is "
+                f"paired wrongly and the prose between two of them is handed "
+                f"to bash. Never write a literal backtick in a command file; "
+                f"name it (U+0060) instead.")
+
         for m in re.finditer(r"``[^`\n]*`[^`\n]*``", text):
             line = text[:m.start()].count("\n") + 1
-            hits.append(f"{path}:{line}: double-backtick span contains a "
+            hits.append(f"{rel}:{line}: double-backtick span contains a "
                         f"backtick, so it re-pairs and the text after it is "
                         f"executed: {m.group(0)[:60]!r}")
     for h in hits:
