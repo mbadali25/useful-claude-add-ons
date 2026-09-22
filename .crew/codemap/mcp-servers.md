@@ -1,6 +1,6 @@
 # mcp-servers
-anchor: useful-claude-add-ons@34a333f0
-verified: 2026-09-14
+anchor: useful-claude-add-ons@089a04b9
+verified: 2026-09-22
 
 ## Does
 An npm workspace monorepo shipping four thin stdio MCP servers for Microsoft Graph, Intune and
@@ -123,3 +123,23 @@ rather than rewritten. Spot-checked at this pass:
 test count (`grep -c '^test(' mcp-servers/scripts/_test/check-dist-fresh.test.mjs` still returns
 14). The `1f97e51c` dates inside the Landmines section (2026-09-06 "re-verified unchanged") are
 historical records of that earlier pass and are left as written; this pass did not repeat them.
+
+**Re-anchored `34a333f0` -> `089a04b9` on 2026-09-22, re-anchor-only.** `git diff --name-only
+34a333f0..HEAD -- mcp-servers/` returns nothing across 91 commits, so not one of the ~25
+`mcp-servers/**` citations above could have moved. Nothing under `mcp-servers/` was re-read at this
+pass and no claim about it is re-asserted as freshly checked - the empty diff is the whole evidence.
+
+**Two cited paths outside `mcp-servers/` did move, and were checked line by line.** This note also
+cites `TODO.md` (at `:51`, `:62`, `:113`, `:143-150`) and `.claude-plugin/marketplace.json` (the
+`grep -c` claim in `## Does`); 64 of those 91 commits touched one of the two, and `TODO.md` grew
+from 2346 lines to 3558. A path diff scoped to `mcp-servers/` alone would have missed that
+entirely, which is the trap: a note's cited-path set is not the same thing as its subsystem
+directory. Every one of the six citations was re-resolved against HEAD and is byte-identical to the
+same line at `34a333f0` - `TODO.md:51` and `:62` are still the item 2 and item 3 headings, `:113` is
+still item 5's `CLOSED 2026-09-06` heading, `:143-150` is still the unreadable-directory and
+equal-timestamps reasoning, and `grep -c mcp-servers .claude-plugin/marketplace.json` still returns
+0. TODO.md's 1212 new lines are all appended below `:150`.
+
+Not re-verified at this pass: nothing was built, installed, executed or imported. The
+`## Unverified` section above stands unchanged and its "this worktree's `dist/` is stale right now"
+measurement is still a 2026-09-06 fact about one machine, not a fact re-taken here.
