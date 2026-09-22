@@ -3261,11 +3261,11 @@ still does not exist anywhere in this repo.
 
 - LibreOffice's HTML importer applies **only simple selectors**, so on the report
   path it silently drops the table grid
-  (`skills/doc-builder/scripts/build_report.py:136`), the navy header shading
-  (`skills/doc-builder/scripts/build_report.py:138`), the zebra rows
-  (`skills/doc-builder/scripts/build_report.py:140`), the meta-table key shading
-  (`skills/doc-builder/scripts/build_report.py:144`) and the summary-card panels
-  (`skills/doc-builder/scripts/build_report.py:155`). Measured 2026-09-22, LibreOffice 26.2.5.2 on
+  (`skills/doc-builder/scripts/build_report.py:166`), the navy header shading
+  (`skills/doc-builder/scripts/build_report.py:168`), the zebra rows
+  (`skills/doc-builder/scripts/build_report.py:170`), the meta-table key shading
+  (`skills/doc-builder/scripts/build_report.py:174`) and the summary-card panels
+  (`skills/doc-builder/scripts/build_report.py:185`). Measured 2026-09-22, LibreOffice 26.2.5.2 on
   Ubuntu 26.04; the selector-by-selector table is in
   `skills/doc-builder/references/word-traps.md`, "What LibreOffice silently
   drops". Not fixed here: the stylesheet's current shape was measured against
@@ -3524,3 +3524,35 @@ context clear, so the open items live here where they are tracked.
 - **The 81-entry gardener backlog** can only be worked on `dadeush-lenovo` or
   `dadeush-desktop`. 15 are deliberately deferred as too large (9.3MB-66MB); 10
   belong to LENOVO; ~66 untriaged, ~9 likely empty-shell.
+- **Per-rule `seconds` never gets re-measured per host, so a rule declared over budget
+  on one machine is chronic on every machine.** `.crew/verify.json:73` declares 81s for
+  rules[3] and `:99` 96s for rules[4]; measured on the Linux host 2026-09-22 they are
+  16s and 15s, both far inside the 60s Stop budget. The timings cache exists
+  (`plugin/crew/hooks/scripts/verify_record.py:560`, `if rule.get("unknown")`) but only
+  fills for a rule with NO declared `seconds`, so a stale declared number can never be
+  corrected by measurement - only by `--price --force`, which dirties a tracked file.
+  Did not block: `/crew:verify --all` now clears both rules regardless of the price.
+- **`map-audit.sh` false-positives on a `run` command that `cd`s first.** It reports
+  `hooks/scripts/_test/validate-prompts.py` as "a rule pointing at a file that does not
+  exist"; the command is `(cd plugin/crew && python3 hooks/scripts/_test/validate-prompts.py)`
+  and the file is really at `plugin/crew/hooks/scripts/_test/validate-prompts.py`
+  (`.crew/verify.json:167`). A false "missing check" in an audit whose whole job is
+  finding missing checks trains its reader to skim it. Did not block: 0 orphaned, which
+  is the line that mattered for this task.
+- **`.crew/verify.json:3` still reads `"anchor": "repo@5238be3d"`**, ~40 commits behind
+  HEAD, so nothing in the file's `_note` can be re-checked by the path-diff method
+  CLAUDE.md prescribes. Did not block: my task changed rules, not the anchor contract,
+  and re-anchoring is a judgement about when the whole map was last re-derived.
+- **`.crew/codemap/verification-harness.md` (anchor `ea8a014`) has a NON-empty path
+  diff** on its own five cited paths - `.crew/verify.json`, `_verify/smoke.sh`,
+  `verify-gate.sh`, `verify_record.py` and more all moved since. Per INDEX.md that is
+  `knowledge.behind` with the cheap test already run and failed, so the note needs
+  re-verification, not just a re-anchor. Did not block: I read it and used only the
+  claims I re-derived from the code myself.
+- **17 tests in `plugin/crew/tests/test_context_watch.py` go red under the in-flight
+  flavour-guard work** (the uncommitted `if ($env:OS -ne 'Windows_NT') { exit 0 }` block
+  in 14 `.ps1` files plus the two new `_test/test_flavour_guard.py`). The `[ps1]`
+  parametrisations drive `context-watch.ps1` on Linux, where the new guard makes it
+  exit 0 silently. Measured 2026-09-22: pristine HEAD `31393918` is 52/0 green; with the
+  guard applied, 17 failed / 1667 passed. Not mine and not blocking - filed so whoever
+  owns that change sees it before committing.

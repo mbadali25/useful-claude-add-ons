@@ -106,7 +106,7 @@ reader can see.
    `<tbody>` around the rest. A bare `<tr>` of `<th>` is styled like a header
    and is not one to anything that paginates.
 2. **Every page carries this block**, from
-   `skills/doc-builder/scripts/build_report.py:165-167`, widened by one
+   `skills/doc-builder/scripts/build_report.py:195-197`, widened by one
    selector:
 
    ```css
@@ -126,7 +126,7 @@ reader can see.
 `<thead>`, so rule 2 without rule 1 still drops a table's header at every page
 break; rule 1 without rule 2 does nothing at all. `doc-builder` already
 enforces both together
-(`skills/doc-builder/scripts/build_report.py:133`, "Every table: real grid,
+(`skills/doc-builder/scripts/build_report.py:163`, "Every table: real grid,
 real thead. Both required.") — which is why routing to it removes the whole
 class of gap instead of adding a third remembered rule to this list.
 
@@ -137,7 +137,7 @@ generally** — `anthropic-office-skills` keeps both and stays the fallback. The
 reason is no longer a rendering-engine gap, and this tree is what falsifies
 the old one: `skills/doc-builder/scripts/render_engine.py` defines both a
 `WORD` and a `LIBREOFFICE` engine, with `soffice_exe()` resolving LibreOffice
-on Windows and macOS as well as Linux, and `build_report.py:416-418` calls
+on Windows and macOS as well as Linux, and `build_report.py:453` calls
 `render_engine.choose_engine()` and branches to LibreOffice automatically off
 Windows. **`pywin32` is required only for the explicit `--renderer word`
 opt-in** (`build_report.py:29`), never for the default path — measured here:
