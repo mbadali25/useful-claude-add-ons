@@ -161,6 +161,30 @@ def test_classify_pm_out_of_scope_paths():
         assert not in_scope, rel
 
 
+# The exact five paths `crew-pm` wrote to in this repo's own working tree,
+# reported by the PM itself: "I wrote four files, all outside my write
+# scope. role_write_guard.py did not stop me." (a fifth site,
+# README.md:836, is the same file as the README.md:664 site below -- one
+# path, two edits). `classify()` was never the problem -- see
+# `test_the_incident_paths_were_never_reachable_because_the_repo_had_the_
+# guard_off` below for the actual cause -- but these are the best possible
+# regression fixture there is: a guard proven correct on invented paths and
+# never checked against the paths that actually got past it is exactly the
+# gap CLAUDE.md's "re-review the fix as hard as the guard" lesson is about.
+_INCIDENT_PATHS = (
+    ".claude-plugin/marketplace.json",
+    "README.md",
+    "scripts/install-prerequisites.sh",
+    "scripts/install-prerequisites.ps1",
+)
+
+
+def test_classify_the_incident_paths_are_all_out_of_scope_for_pm():
+    for rel in _INCIDENT_PATHS:
+        in_scope, reason = role_write_guard.classify("pm", rel)
+        assert not in_scope, f"{rel} classified in-scope: {reason}"
+
+
 def test_classify_deny_role_is_always_out_of_scope():
     in_scope, reason = role_write_guard.classify("analyst", "TODO.md")
     assert not in_scope
@@ -294,6 +318,59 @@ def test_block_mode_pm_outside_scope_is_refused_bash(tmp_path):
     assert "pm" in proc.stderr and "may not write" in proc.stderr
     log = (root / ".crew" / "guard.log").read_text(encoding="utf-8")
     assert "\tblock\tpm\t" in log
+
+
+@needs_bash
+@pytest.mark.parametrize("rel", _INCIDENT_PATHS)
+def test_the_incident_paths_are_refused_once_the_guard_is_armed_bash(
+    tmp_path, rel
+):
+    """Must-block, end to end, on the real paths from the real incident --
+    not invented stand-ins. With `guards.roleWrites: block` armed, each of
+    these is refused for `pm` exactly as `test_block_mode_pm_outside_scope_
+    is_refused_bash` proves for a generic path."""
+    root = crew_fixtures.make_repo(
+        tmp_path, config={"guards": {"roleWrites": "block"}})
+    target = str(root / rel)
+    os.makedirs(os.path.dirname(target), exist_ok=True)
+    proc = _run_sh(root, "Write", target, "pm")
+    assert proc.returncode == 2, (
+        f"{rel} was NOT refused under guards.roleWrites: block. "
+        f"stdout={proc.stdout!r} stderr={proc.stderr!r}")
+    assert "pm" in proc.stderr and "may not write" in proc.stderr
+
+
+@needs_bash
+@pytest.mark.parametrize("rel", _INCIDENT_PATHS)
+def test_the_incident_paths_are_the_off_default_gap_not_a_classify_bug_bash(
+    tmp_path, rel
+):
+    """Must-allow, and this is the actual incident, reproduced exactly: a
+    repo with NO `guards` key at all -- what a repo that has never armed
+    the guard looks like, and what THIS repo's own `.crew/config.json`
+    carried (`"roleWrites": "off"`, the documented default) when `crew-pm`
+    wrote these same five paths. The hook exits 0 before `classify()` ever
+    runs -- see `role_write_guard.py`'s `main`, `elif policy == "off":
+    return 0`, which is above the `classify()` call, not a branch of it.
+
+    This is the must-allow half of the incident's own fixture, on purpose:
+    the guard is CORRECT to let these through while off, exactly as
+    CLAUDE.md requires ("a plugin registering a hook defaults to OFF in the
+    menu"). Pairing it with the must-block case above is what proves the
+    incident was a configuration gap, not a code defect -- flip only the
+    config and the same path goes from allowed to refused with no code
+    change, which `test_the_incident_paths_are_refused_once_the_guard_is_
+    armed_bash` already demonstrated.
+    """
+    root = crew_fixtures.make_repo(tmp_path, config={})
+    target = str(root / rel)
+    os.makedirs(os.path.dirname(target), exist_ok=True)
+    proc = _run_sh(root, "Write", target, "pm")
+    assert proc.returncode == 0, (
+        f"{rel}: expected the documented off-by-default allow, got "
+        f"stdout={proc.stdout!r} stderr={proc.stderr!r}")
+    assert not (root / ".crew" / "guard.log").exists(), (
+        "off must not log either -- the hook does not run its check at all")
 
 
 @needs_bash

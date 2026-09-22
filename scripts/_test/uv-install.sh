@@ -81,6 +81,50 @@ SHIPPED_UV_SHA256="$UV_INSTALLER_SHA256"
 # explicitly, so "the host happened to have it" can never make a case pass.
 BASH_ABS="$(command -v bash)"
 
+# --- the real tools a fixture may need, COPIED into $TMP first ----------------
+# Fixtures used to symlink straight at /usr/bin/<tool>. That put a link to a HOST
+# BINARY inside the very directory stub() writes into, so the only thing standing
+# between this suite and the host's coreutils was stub() remembering to rm -f first.
+# On 2026-09-22 that was proven the hard way TWICE: once when the rm was missing, and
+# again when someone removed it deliberately to sabotage-test the fix and ran the
+# whole suite - 116 hardlinks into one uutils multicall binary, overwritten with a
+# three-line shell stub, and every case after it failing for unrelated-looking
+# reasons.
+#
+# So the hazard is removed rather than guarded: every fixture link now points at a
+# COPY inside $TMP. A write-through can now only ever reach that copy, whether or not
+# stub()'s rm -f is present, which is what makes the guard safe to sabotage-test at
+# all. The rm -f stays - it is still correct, and case 26 still pins it - but it is no
+# longer the only thing preventing damage.
+#
+# One copy per distinct INODE, not per name: on this host those nine names are
+# hardlinks into one 11 MB multicall binary, so copying each would cost ~100 MB per
+# run. uutils dispatches on argv[0], and a hardlink inside $TMP keeps the name, so
+# the copies behave exactly as the originals do.
+REALBIN="$TMP/realbin"
+mkrealbin() {
+  mkdir -p "$REALBIN"
+  local t src key rep seen=""
+  for t in mktemp rm sh mkdir chmod cp id stat sha256sum; do
+    src="$(command -v "$t" 2>/dev/null)" || continue
+    [ -n "$src" ] || continue
+    src="$(readlink -f "$src")"
+    key="$(stat -c '%d:%i' "$src" 2>/dev/null || printf 'x%s' "$src")"
+    rep=""
+    case " $seen " in
+      *" $key="*) rep="${seen##*"$key="}"; rep="${rep%% *}" ;;
+    esac
+    if [ -n "$rep" ] && [ -e "$REALBIN/$rep" ]; then
+      ln "$REALBIN/$rep" "$REALBIN/$t" 2>/dev/null || cp "$src" "$REALBIN/$t"
+    else
+      cp "$src" "$REALBIN/$t"
+      seen="$seen $key=$t"
+    fi
+    chmod +x "$REALBIN/$t"
+  done
+}
+mkrealbin
+
 mkfixture() {
   local fx="$TMP/$1" t
   rm -rf "$fx"
@@ -92,7 +136,11 @@ mkfixture() {
   # so "the host happened to have it" can never make a case pass.
   # id/stat back uv_home_is_safe and sha256sum backs the installer pin check; a case
   # that wants a different answer from any of them stubs it over the top.
-  for t in mktemp rm sh mkdir chmod cp id stat sha256sum; do ln -s "$(command -v "$t")" "$fx/bin/$t"; done
+  # $REALBIN, never /usr/bin: see mkrealbin above. Nothing in a fixture may resolve
+  # to a host binary, and case 0 asserts that as a standing invariant.
+  for t in mktemp rm sh mkdir chmod cp id stat sha256sum; do
+    [ -e "$REALBIN/$t" ] && ln -s "$REALBIN/$t" "$fx/bin/$t"
+  done
   # as_root prefers sudo when not uid 0; stub it so the case behaves the same
   # whether the suite runs as root or not.
   stub "$1" sudo 'exec "$@"'
@@ -163,6 +211,32 @@ memo_field() { sed -n "s/^$1=//p" "$TMP/memo"; }
 on_out()  { grep -qF -e "$1" "$TMP/out" && echo yes || echo no; }
 on_err()  { grep -qF -e "$1" "$TMP/err" && echo yes || echo no; }
 called()  { grep -q "^$1 " "$TMP/${FX}/calls" && echo yes || echo no; }
+
+echo "0. no fixture can reach a host binary - the invariant, checked before anything runs"
+# This case is first because it is the one that would have made 2026-09-22's two
+# incidents impossible rather than merely survivable. It asserts a PROPERTY OF THE
+# HARNESS, not of the install script: nothing reachable from a fixture's bin dir may
+# resolve outside $TMP. Without it, "stub() has an rm -f" is a fact about one function
+# that someone will eventually edit, and the blast radius is the host.
+FX=invariant; mkfixture "$FX" >/dev/null
+escapes=0; entries=0
+for _e in "$TMP/$FX/bin"/*; do
+  [ -e "$_e" ] || continue
+  entries=$((entries+1))
+  _r="$(readlink -f "$_e" 2>/dev/null || printf '')"
+  case "$_r" in
+    "$TMP"/*) ;;
+    *) escapes=$((escapes+1)); red "        escapes: $_e -> ${_r:-<unresolvable>}" ;;
+  esac
+done
+check "the fixture has entries to check"      yes "$([ "$entries" -gt 0 ] && echo yes || echo no)"
+check "and NONE of them resolves outside \$TMP" 0  "$escapes"
+check "the real tools were copied, not linked to /usr" yes \
+  "$([ -f "$REALBIN/mktemp" ] && [ ! -L "$REALBIN/mktemp" ] && echo yes || echo no)"
+# The copies must still WORK - a copy of a multicall binary that cannot dispatch on
+# its own name would make every later case fail for a reason nothing here explains.
+check "and a copied multicall applet still runs" 0 \
+  "$( "$REALBIN/mktemp" --help >/dev/null 2>&1; echo $? )"
 
 echo "1. idempotence: uv already present is detected and nothing is done"
 FX=have-uv; mkfixture "$FX" >/dev/null
@@ -682,27 +756,35 @@ echo "26. stub() writes a NEW file, never through a symlink"
 # `rm -f` before the write, and until now nothing would have gone red if it were
 # removed again - which is the shape that lets a fix silently rot.
 #
-# This case CANNOT damage anything, and that is arranged rather than hoped for:
-# the symlink it stubs over points at a canary file INSIDE $TMP, so even with the
-# guard removed the only thing a write-through can reach is the canary. The
-# containment is asserted below before the write happens, and the case refuses to
+# This case CANNOT damage anything, and that is now true twice over rather than
+# hoped for. Case 0 has already established that no fixture entry resolves outside
+# $TMP, so even a whole-suite run with the rm removed can only reach copies. On top
+# of that, the symlink this case stubs over points at a canary file INSIDE $TMP, and
+# the containment is asserted immediately before the write, with the case refusing to
 # run if it does not hold.
+#
+# The second layer exists because the first one was learned late: sabotage-testing
+# this guard by removing the rm and running the suite is what destroyed the host
+# coreutils the second time, on the same day, in the same repository. A guard whose
+# regression test is itself destructive does not get re-tested, and then it rots.
 echo
 FX=stub-symlink; mkfixture "$FX" >/dev/null
 CANARY="$TMP/$FX/canary"
 printf 'ORIGINAL CONTENT - MUST SURVIVE\n' > "$CANARY"
 
-# (a) The hazard is real, not hypothetical: mkfixture genuinely leaves symlinks to
-#     host binaries in the directory stub() writes into. Read-only - nothing here
-#     writes to the host, it only proves the case is testing something.
+# (a) The shape is real, not hypothetical: mkfixture genuinely leaves SYMLINKS in the
+#     directory stub() writes into, which is what makes a write-through possible at
+#     all. Read-only. This used to assert that the link pointed at a host binary -
+#     which it did, and which was the design flaw; case 0 now forbids that, so what
+#     is asserted here is the link-ness, and that its target is a copy inside $TMP.
 check "mkfixture leaves a symlink in the stub directory" yes \
   "$([ -L "$TMP/$FX/bin/mktemp" ] && echo yes || echo no)"
-host_target="$(readlink -f "$TMP/$FX/bin/mktemp" 2>/dev/null || printf '')"
-case "$host_target" in
-  ""|"$TMP"/*) got=no ;;
-  *) got=yes ;;
+prior_target="$(readlink -f "$TMP/$FX/bin/mktemp" 2>/dev/null || printf '')"
+case "$prior_target" in
+  "$TMP"/*) got=yes ;;
+  *) got=no ;;
 esac
-check "and it points at a real host binary outside \$TMP" yes "$got"
+check "and it points at a COPY inside \$TMP, not the host" yes "$got"
 
 # (b) Now the containment: re-point one fixture bin entry at the canary. rm on a
 #     symlink removes the link and never follows it, so this cannot touch the host
@@ -728,11 +810,16 @@ if [ -n "$canary_target" ]; then
     "$([ -L "$TMP/$FX/bin/mktemp" ] && echo yes || echo no)"
   check "and the stub is executable and runs"           0 \
     "$( "$TMP/$FX/bin/mktemp" >/dev/null 2>&1; echo $? )"
-  # The host binary the link USED to name is still there - stated as a result
-  # rather than assumed, because "nothing was damaged" is the claim this whole
-  # case exists to be able to make.
-  check "the host binary it formerly named still runs"  0 \
-    "$( "$host_target" --help >/dev/null 2>&1; echo $? )"
+  # The copy the link USED to name is still there and still works - stated as a
+  # result rather than assumed, because "nothing else was damaged" is the claim this
+  # whole case exists to be able to make.
+  check "the copy it formerly named still runs"         0 \
+    "$( "$prior_target" --help >/dev/null 2>&1; echo $? )"
+  # And the host's own binary of that name is untouched. This is the assertion that
+  # actually speaks to the incident: it is read-only, it names /usr explicitly, and
+  # it fails if anything in this suite has reached outside $TMP.
+  check "the HOST's mktemp is untouched and still runs" 0 \
+    "$( "$(readlink -f "$(command -v mktemp)")" --help >/dev/null 2>&1; echo $? )"
 fi
 
 echo

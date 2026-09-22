@@ -3411,3 +3411,39 @@ than naming the uv install that produced a half-usable toolchain. The narrow fix
 for `ensure_uv` to require `uvx` specifically when its caller is going to register a
 `uvx` command. Not fixed here: it changes `ensure_uv`'s contract for all three of its
 callers and belongs with `scripts/_test/uv-install.sh`, not with the MCP ticket.
+
+## Sabotage-testing in a SHARED worktree put a sabotage into a commit - OPEN 2026-09-22
+
+Two incidents in one turn, one cause: a sabotage driver that edits the live working
+tree, restores it, and verifies the restore byte-identically. Byte-identical restore
+is not enough when other agents read or commit that tree in between.
+
+1. **A commit captured the sabotage window.** `3cca6482` ("crew 0.19.98") contains
+   `scripts/install-prerequisites.ps1` with `Invoke-SkillPreflights` *called* at
+   `:2124` and *defined nowhere* - because another agent committed the whole tree
+   during the ~20s the Defect-1 sabotage was applied. HEAD therefore ships a `.ps1`
+   that dies at runtime on every Windows run. The working tree is correct and the
+   restore was verified byte-identical; the damage is entirely in the recorded
+   history. Fixed by whoever commits next - nothing needs re-writing, the correct
+   text is already in the tree.
+2. **The host's coreutils were destroyed a second time.** Sabotage-testing
+   `scripts/_test/uv-install.sh`'s `stub()` guard by removing its `rm -f` and running
+   the WHOLE suite reproduced the original defect exactly: `mkfixture` symlinked
+   `$fx/bin/<tool>` at `/usr/bin/<tool>`, and the stub writes followed those links
+   into the uutils multicall binary - 116 hardlinks, one 101-byte shell stub.
+   Repaired in place from `/var/cache/apt/archives/rust-coreutils_0.10.0-1ubuntu2~26.04.1_amd64.deb`
+   (already cached; nothing installed, no network), preserving the hardlink set.
+   `dpkg -V rust-coreutils` and `dpkg -V dash` are both clean.
+
+The harness half is FIXED, not deferred: both suites now copy the real tools into
+`$TMP` (`mkrealbin`, `scripts/_test/uv-install.sh:105` and
+`scripts/_test/mcp-preflight-catalog.sh:80`) and symlink only at those copies, so a
+write-through can no longer reach anything outside `$TMP` whether or not `rm -f` is
+present. Case 0 in each suite asserts that invariant, and both the invariant and the
+`rm -f` are sabotage-proven with `dpkg -V` clean throughout.
+
+What is NOT fixed, and is the entry here: the sabotage driver itself still edits the
+live tree. It should run against a throwaway copy or a `git worktree`, so no window
+exists in which a concurrent committer can snapshot a deliberately broken file. That
+needs a shared helper under `scripts/_test/` and agreement on where sabotage runs
+live; it was out of scope for the ticket that discovered it.

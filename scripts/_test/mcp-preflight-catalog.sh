@@ -64,6 +64,42 @@ trap 'rm -rf "$TMP"' EXIT
 
 BASH_ABS="$(command -v bash)"
 
+# --- the real tools a fixture may need, COPIED into $TMP first ----------------
+# Fixtures must never hold a link to a HOST BINARY in the directory stub() writes
+# into. On 2026-09-22 that shape cost this host its coreutils twice - once from a
+# missing rm -f in a sibling harness, and once from someone removing that rm
+# deliberately to sabotage-test it and running the whole suite. 116 hardlinks into
+# one uutils multicall binary, overwritten by a three-line shell stub.
+#
+# So the hazard is removed rather than guarded: every fixture link points at a COPY
+# inside $TMP, and a write-through can only ever reach that copy. One copy per
+# distinct INODE, not per name - those names are hardlinks into one 11 MB binary
+# here, and uutils dispatches on argv[0], so a hardlink inside $TMP keeps the name.
+# Case 0 asserts the invariant rather than trusting this comment.
+REALBIN="$TMP/realbin"
+mkrealbin() {
+  mkdir -p "$REALBIN"
+  local t src key rep seen=""
+  for t in mktemp rm find sed tail dirname cat mkdir chmod sh sort wc; do
+    src="$(command -v "$t" 2>/dev/null)" || continue
+    [ -n "$src" ] || continue
+    src="$(readlink -f "$src")"
+    key="$(stat -c '%d:%i' "$src" 2>/dev/null || printf 'x%s' "$src")"
+    rep=""
+    case " $seen " in
+      *" $key="*) rep="${seen##*"$key="}"; rep="${rep%% *}" ;;
+    esac
+    if [ -n "$rep" ] && [ -e "$REALBIN/$rep" ]; then
+      ln "$REALBIN/$rep" "$REALBIN/$t" 2>/dev/null || cp "$src" "$REALBIN/$t"
+    else
+      cp "$src" "$REALBIN/$t"
+      seen="$seen $key=$t"
+    fi
+    chmod +x "$REALBIN/$t"
+  done
+}
+mkrealbin
+
 mkfixture() {
   local fx="$TMP/$1" t
   rm -rf "$fx"
@@ -72,8 +108,10 @@ mkfixture() {
   # Only the plumbing the functions under test call directly. Everything they PROBE
   # for - claude, npx, uvx, python3, python, py, pip - is absent unless a case stubs
   # it, so "the host happened to have it" can never make a case pass.
-  for t in mktemp rm find sed tail dirname cat mkdir chmod sh; do
-    ln -s "$(command -v "$t")" "$fx/bin/$t"
+  # $REALBIN, never /usr/bin: see mkrealbin above. Nothing in a fixture may resolve
+  # to a host binary, and case 0 asserts that as a standing invariant.
+  for t in mktemp rm find sed tail dirname cat mkdir chmod sh sort wc; do
+    [ -e "$REALBIN/$t" ] && ln -s "$REALBIN/$t" "$fx/bin/$t"
   done
   printf '%s' "$fx"
 }
@@ -138,6 +176,32 @@ run_mcp() {
     >"$TMP/out" 2>"$TMP/err"
   RC=$?
 }
+
+echo "0. no fixture can reach a host binary - the invariant, checked before anything runs"
+# First, because it is the one that makes 2026-09-22's two incidents impossible
+# rather than merely survivable. It asserts a PROPERTY OF THE HARNESS: nothing
+# reachable from a fixture's bin dir may resolve outside $TMP. Without it, "stub()
+# has an rm -f" is a fact about one function that someone will eventually edit, and
+# the blast radius is the host's coreutils.
+FX=invariant; mkfixture "$FX" >/dev/null
+escapes=0; entries=0
+for _e in "$TMP/$FX/bin"/*; do
+  [ -e "$_e" ] || continue
+  entries=$((entries+1))
+  _r="$(readlink -f "$_e" 2>/dev/null || printf '')"
+  case "$_r" in
+    "$TMP"/*) ;;
+    *) escapes=$((escapes+1)); red "        escapes: $_e -> ${_r:-<unresolvable>}" ;;
+  esac
+done
+check "the fixture has entries to check"      yes "$([ "$entries" -gt 0 ] && echo yes || echo no)"
+check "and NONE of them resolves outside \$TMP" 0  "$escapes"
+check "the real tools were copied, not linked to /usr" yes \
+  "$([ -f "$REALBIN/mktemp" ] && [ ! -L "$REALBIN/mktemp" ] && echo yes || echo no)"
+check "and a copied multicall applet still runs" 0 \
+  "$( "$REALBIN/mktemp" --help >/dev/null 2>&1; echo $? )"
+check "the HOST's mktemp is untouched and still runs" 0 \
+  "$( "$(readlink -f "$(command -v mktemp)")" --help >/dev/null 2>&1; echo $? )"
 
 echo "A. MCP registration verifies the launch command before it registers"
 
