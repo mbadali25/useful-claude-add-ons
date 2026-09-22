@@ -173,7 +173,7 @@
       "name": "solomon-doc-builder",
       "source": "./skills/solomon-doc-builder",
       "description": "Brand pack only: the Solomon Associates house style for doc-builder. Palette, template and footer, no logic of its own. Install alongside doc-builder for automatic Solomon branding; doc-builder's --brand neutral always opts back out.",
-      "version": "1.1.0"
+      "version": "1.2.0"
     },
     {
       "name": "solomon-sop-maker",
