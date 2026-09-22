@@ -125,12 +125,18 @@ KNOWN_TOOLS = {
 MCP_TOOL = re.compile(r"^mcp__[A-Za-z0-9_-]+__[A-Za-z0-9_-]+$")
 
 
-# A SCOPED grant: `Bash(python3 *)` narrows a known tool to matching commands.
-# Claude Code accepts this in an agent's own `tools:` line -- dotnet-pilot ships
-# `Bash(dotnet:*)` that way. This validator did not parse it at all, so crew
-# could not express a narrowed tool without its own gate calling the form
-# unknown. The BASE name is still checked, so `Grep(...)` on an agent barred
-# from Grep, or a typo like `Bsh(...)`, is still caught.
+# A SCOPED grant -- `Bash(python3 *)` -- is REFUSED, and the refusal is the
+# point. The form parses, and other plugins ship it: dotnet-pilot's
+# dnp-architect carries `Bash(dotnet:*)`. It is NOT ENFORCED. Measured
+# 2026-09-22 by dispatching that agent and running `ls /` and `whoami`, neither
+# of which is a dotnet command: both ran, no denial, no prompt. Whole-tool
+# grants ARE enforced -- an agent with no `Bash` in its list reports having no
+# shell tool at all -- so removing a NAME works and narrowing one does not.
+#
+# Accepting the scoped form would let a crew agent declare a restriction that
+# does nothing while reading, in review, as though it restricted something.
+# That is this repo's named recurring bug: an unknown collapsing into the
+# safe-looking value. So it is rejected with the reason attached.
 SCOPED_TOOL = re.compile(r"^([A-Za-z][A-Za-z0-9_]*)\((.+)\)$")
 
 
@@ -143,9 +149,11 @@ def unknown_tools(tools):
             continue
         scoped = SCOPED_TOOL.match(name)
         if scoped:
-            # Judge the base tool; the spec inside the parens is the runtime's
-            # to interpret, not this checker's to second-guess.
-            name = scoped.group(1)
+            unknown.append(
+                f"{name} (scoped tool specifiers are NOT enforced by the "
+                f"runtime - use plain '{scoped.group(1)}' and say in the file "
+                f"that it is not narrowed)")
+            continue
         if name in KNOWN_TOOLS or MCP_TOOL.match(name):
             continue
         unknown.append(raw.strip())
