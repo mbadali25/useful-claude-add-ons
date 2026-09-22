@@ -173,7 +173,7 @@
     "pm.md": {
       "model": "opus",
       "name": "pm",
-      "tools": "Read, Write, Edit, Bash, Grep, Glob, Agent, Skill"
+      "tools": "Read, Write, Edit, Bash(python3 *), Bash(git diff *), Bash(command -v *), Agent, Skill"
     },
     "power-automate-specialist.md": {
       "model": "sonnet",

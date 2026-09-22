@@ -2494,6 +2494,154 @@ def _prune_dispatch_dir(root):
             pass
 
 
+# --- The dispatch LOG, not the dev-slot record above -----------------------
+#
+# `DISPATCH_DIR`/`DISPATCH_PATH` above exist for exactly one question -- which
+# FAMILY wrote the diff in front of the reviewer -- and every property of that
+# store (one slot per kind, last-write-wins, adoption, family-keyed pruning)
+# is tuned to answer it safely under concurrent writers. Widening
+# `DISPATCH_KINDS` past `("dev",)` to log every role would put a later
+# `docs-writer` or `smoke-author` pass through the SAME slot machinery, and
+# `record_dispatch`'s own docstring already states why that must not happen:
+# "the file holds one `dev` slot and the last write wins, so letting a later
+# ... pass overwrite a codex record would clear codex to review the change it
+# wrote". So this is a second, additive store, not a wider `dev`.
+#
+# The question this one answers is different and much cheaper: did the PM
+# dispatch ANYONE this pass, for ANY role -- `security`, `scribe`, `dba`,
+# `analyst`, `docs-writer`, `researcher`, all of it, not only `dev`. Nothing
+# here feeds the same-family interlock; `author_families` never reads this
+# directory. `pm_pulse.py` is the reader -- see its `_dispatch_gap_note` --
+# which is what keeps this from being the exact flag CLAUDE.md warns against:
+# "a `--record-dispatch qa` flag whose output no code ever consults is state
+# written to nowhere".
+#
+# One immutable file per event, same reasoning as `DISPATCH_DIR`: a directory
+# of write-once files cannot lose one writer's entry to another's, where one
+# shared, rewritten file can. `.work/`, not `.crew/`, for the same reason
+# `DISPATCH_PATH` is: ephemeral state about this checkout, not configuration
+# a committed copy should carry to another machine.
+DISPATCH_LOG_DIR = (".work", "dispatch-log.d")
+
+# Far above what one PM pass produces. This log is skimmed by `pm_pulse`, not
+# read for security provenance, so pruning the oldest entries once the
+# directory grows past this is safe -- unlike `DISPATCH_FILES_MAX`, nothing
+# here needs to protect a specific entry from deletion.
+DISPATCH_LOG_MAX = 200
+
+# `pending` is for a dispatch that is genuinely still running when the PM's
+# own turn has to end -- rare, but "no result yet" has to be a value this log
+# can hold rather than a call the PM skips and reports later, or the log
+# under-counts real dispatches the same way a missing `--record-dispatch`
+# call does.
+DISPATCH_LOG_RESULTS = ("ok", "fail", "pending")
+
+
+def log_dispatch(root, role, brief, result, branch=None):
+    """Append one dispatch-log entry. Returns the entry written, or `None` if
+    the write failed. Never raises.
+
+    Called once per dispatch, the moment the Agent tool call returns --
+    mirroring exactly when `record_dispatch` is called for `dev` (see its
+    docstring: "Run it the moment the implementing dispatch returns"). `role`
+    is the dispatched agent, `brief` a short human summary of what was sent
+    (truncated -- this is a log line, not the ticket text), and `result` is
+    `ok`, `fail`, or `pending` per `DISPATCH_LOG_RESULTS`.
+
+    A failed write is reported to the caller (`None`) rather than silently
+    dropped, the same asymmetry `record_dispatch` draws for the dev slot: a
+    dispatch this store could not take is not a dispatch `pm_pulse` can ever
+    see, so the caller has to know while it can still say so.
+    """
+    if result not in DISPATCH_LOG_RESULTS:
+        raise ValueError(
+            f"--dispatch-result must be one of {DISPATCH_LOG_RESULTS!r}, "
+            f"got {result!r}")
+    if branch is None:
+        branch = current_branch(root)
+    at = time.time()
+    entry = {
+        "role": role,
+        "brief": (brief or "").strip()[:200],
+        "result": result,
+        "branch": branch,
+        "at": at,
+    }
+    directory = os.path.join(root, *DISPATCH_LOG_DIR)
+    stamp = f"{at:.6f}".replace(".", "")
+    base = os.path.join(directory, f"{stamp}-{uuid.uuid4().hex[:12]}")
+    tmp_path = f"{base}.tmp"
+    try:
+        os.makedirs(directory, exist_ok=True)
+        with open(tmp_path, "w", encoding="utf-8") as handle:
+            json.dump(entry, handle, indent=2, sort_keys=True)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp_path, f"{base}.json")
+    except OSError:
+        try:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+        except OSError:
+            pass
+        return None
+    _prune_dispatch_log(root)
+    return entry
+
+
+def _prune_dispatch_log(root):
+    """Drop the oldest entries past `DISPATCH_LOG_MAX`. Never raises."""
+    directory = os.path.join(root, *DISPATCH_LOG_DIR)
+    try:
+        names = sorted(n for n in os.listdir(directory) if n.endswith(".json"))
+    except OSError:
+        return
+    excess = len(names) - DISPATCH_LOG_MAX
+    for name in names[:max(0, excess)]:
+        try:
+            os.remove(os.path.join(directory, name))
+        except OSError:
+            pass
+
+
+def read_dispatch_log(root, since=None):
+    """Every dispatch-log entry with `at > since` (epoch seconds), oldest
+    first. `since=None` returns everything the store has. Never raises: a
+    file that cannot be read or parsed is skipped rather than aborting the
+    whole read, the same "a bad neighbour costs only itself" property
+    `_dispatch_entries` gives the dev-slot store, and for the same reason --
+    one hand-edited or half-written entry must not blind `pm_pulse` to every
+    OTHER dispatch that happened this pass.
+    """
+    directory = os.path.join(root, *DISPATCH_LOG_DIR)
+    try:
+        names = os.listdir(directory)
+    except OSError:
+        return []
+    out = []
+    for name in names:
+        if not name.endswith(".json"):
+            continue
+        text = read_text(os.path.join(directory, name))
+        if text is None:
+            continue
+        try:
+            entry = json.loads(text)
+        except ValueError:
+            continue
+        if not isinstance(entry, dict):
+            continue
+        at = float_or(entry.get("at"), None)
+        if at is None:
+            continue
+        if since is not None and at <= since:
+            continue
+        out.append((at, entry))
+    out.sort(key=lambda pair: pair[0])
+    return [entry for _at, entry in out]
+
+
 def author_families(root, cfg, stale=False):
     """`(families, source)` -- who wrote the code here, and how we know.
 
@@ -3026,6 +3174,19 @@ def main(argv=None):
     parser.add_argument("--branch", default=None,
                         help="branch the work was done on; defaults to the "
                              "checkout's current branch")
+    parser.add_argument("--log-dispatch", metavar="ROLE", default=None,
+                        help="append a dispatch-LOG entry for ROLE -- every "
+                             "dispatch, not only dev; requires --brief and "
+                             "--dispatch-result. Separate from "
+                             "--record-dispatch, which this does not "
+                             "replace: a `dev` dispatch still needs BOTH "
+                             "calls")
+    parser.add_argument("--brief", default=None,
+                        help="one-line summary of what was sent, for "
+                             "--log-dispatch (truncated to 200 chars)")
+    parser.add_argument("--dispatch-result", choices=DISPATCH_LOG_RESULTS,
+                        default=None,
+                        help="ok/fail/pending, for --log-dispatch")
     parser.add_argument("--declare-endpoint", metavar="ENDPOINT", default=None,
                         help="record an AUTHORITATIVE endpoint ledger entry "
                              "(a ticket or dispatch stated it exists); "
@@ -3139,6 +3300,24 @@ def main(argv=None):
                   "Provenance for this branch is now incomplete.",
                   file=sys.stderr)
             return 3
+        return 0
+    if args.log_dispatch:
+        if not args.brief or not args.dispatch_result:
+            print("--log-dispatch needs --brief and --dispatch-result",
+                  file=sys.stderr)
+            return 2
+        entry = log_dispatch(root, args.log_dispatch, args.brief,
+                             args.dispatch_result, args.branch)
+        if entry is None:
+            # Loud, non-zero, same reasoning as --record-dispatch's failure
+            # path: a dispatch this store could not take is one pm_pulse can
+            # never report on, so the caller has to know while it can still
+            # say so.
+            print(f"dispatch-log entry for {args.log_dispatch!r} was NOT "
+                  f"recorded: {os.path.join(*DISPATCH_LOG_DIR)} could not "
+                  "be written.", file=sys.stderr)
+            return 3
+        print(json.dumps(entry, indent=2, sort_keys=True))
         return 0
     if args.declare_endpoint is not None:
         # `is not None`, not truthiness (nit 15): `--declare-endpoint ""`

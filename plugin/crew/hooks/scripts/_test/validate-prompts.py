@@ -125,11 +125,31 @@ KNOWN_TOOLS = {
 MCP_TOOL = re.compile(r"^mcp__[A-Za-z0-9_-]+__[A-Za-z0-9_-]+$")
 
 
+# A SCOPED grant: `Bash(python3 *)` narrows a known tool to matching commands.
+# Claude Code accepts this in an agent's own `tools:` line -- dotnet-pilot ships
+# `Bash(dotnet:*)` that way. This validator did not parse it at all, so crew
+# could not express a narrowed tool without its own gate calling the form
+# unknown. The BASE name is still checked, so `Grep(...)` on an agent barred
+# from Grep, or a typo like `Bsh(...)`, is still caught.
+SCOPED_TOOL = re.compile(r"^([A-Za-z][A-Za-z0-9_]*)\((.+)\)$")
+
+
 def unknown_tools(tools):
     """The names in a comma-separated `tools:` value that nothing recognises."""
-    return [t.strip() for t in tools.split(",")
-            if t.strip() and t.strip() not in KNOWN_TOOLS
-            and not MCP_TOOL.match(t.strip())]
+    unknown = []
+    for raw in tools.split(","):
+        name = raw.strip()
+        if not name:
+            continue
+        scoped = SCOPED_TOOL.match(name)
+        if scoped:
+            # Judge the base tool; the spec inside the parens is the runtime's
+            # to interpret, not this checker's to second-guess.
+            name = scoped.group(1)
+        if name in KNOWN_TOOLS or MCP_TOOL.match(name):
+            continue
+        unknown.append(raw.strip())
+    return unknown
 
 
 SPAWNABLE = "|".join(sorted(AGENTS)) or "$^"

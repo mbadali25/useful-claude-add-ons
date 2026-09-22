@@ -106,6 +106,13 @@ stub() {
   # everything, so every stub silently exited 127 and the suite reported 19 green
   # 'the tool was not called' assertions that proved nothing.
   local fx="$TMP/$1" name="$2"; shift 2
+  # Refuse outright to write anywhere but the temp tree. This is SEPARATE from the
+  # rm below and neither replaces the other: this one bounds the PATH, the rm bounds
+  # what a symlink at that path can redirect the write to. Case 26 tests the second.
+  case "$fx/bin/$name" in
+    "$TMP"/*) ;;
+    *) red "REFUSING to write a stub outside \$TMP: $fx/bin/$name"; exit 2 ;;
+  esac
   # rm FIRST, and this is not tidiness. mkfixture symlinks the handful of real
   # coreutils a fixture needs into $fx/bin; a case that stubs one of those names
   # (mktemp, id, stat, sha256sum) would otherwise have its '>' redirect FOLLOW the
@@ -663,6 +670,69 @@ exit 0"
   check "installed via pipx"             yes "$(on_out 'uv installed via pipx')"
   check "winget was never reached"       no  "$(called winget)"
   check "pip was never reached"          no  "$(called pip)"
+fi
+
+echo "26. stub() writes a NEW file, never through a symlink"
+# The defect this case exists for, and it is this harness's own, not the install
+# script's: stub() used to redirect straight onto $fx/bin/<name>. mkfixture symlinks
+# real coreutils into that directory, so stubbing one of those names sent the '>'
+# THROUGH the link and truncated the host's binary. On this repo's reference host
+# those names are hardlinks into one uutils multicall binary, so stubbing `mktemp`
+# took out 114 coreutils in a single redirect on 2026-09-22. The fix was one line,
+# `rm -f` before the write, and until now nothing would have gone red if it were
+# removed again - which is the shape that lets a fix silently rot.
+#
+# This case CANNOT damage anything, and that is arranged rather than hoped for:
+# the symlink it stubs over points at a canary file INSIDE $TMP, so even with the
+# guard removed the only thing a write-through can reach is the canary. The
+# containment is asserted below before the write happens, and the case refuses to
+# run if it does not hold.
+echo
+FX=stub-symlink; mkfixture "$FX" >/dev/null
+CANARY="$TMP/$FX/canary"
+printf 'ORIGINAL CONTENT - MUST SURVIVE\n' > "$CANARY"
+
+# (a) The hazard is real, not hypothetical: mkfixture genuinely leaves symlinks to
+#     host binaries in the directory stub() writes into. Read-only - nothing here
+#     writes to the host, it only proves the case is testing something.
+check "mkfixture leaves a symlink in the stub directory" yes \
+  "$([ -L "$TMP/$FX/bin/mktemp" ] && echo yes || echo no)"
+host_target="$(readlink -f "$TMP/$FX/bin/mktemp" 2>/dev/null || printf '')"
+case "$host_target" in
+  ""|"$TMP"/*) got=no ;;
+  *) got=yes ;;
+esac
+check "and it points at a real host binary outside \$TMP" yes "$got"
+
+# (b) Now the containment: re-point one fixture bin entry at the canary. rm on a
+#     symlink removes the link and never follows it, so this cannot touch the host
+#     binary it currently names.
+rm -f "$TMP/$FX/bin/mktemp"
+ln -s "$CANARY" "$TMP/$FX/bin/mktemp"
+canary_target="$(readlink -f "$TMP/$FX/bin/mktemp" 2>/dev/null || printf '')"
+case "$canary_target" in
+  "$TMP"/*) ;;
+  *)
+    red "  ABORT  case 26 would write outside \$TMP ($canary_target) - not running it"
+    FAIL=$((FAIL+1))
+    canary_target=""
+    ;;
+esac
+if [ -n "$canary_target" ]; then
+  check "the link under test resolves inside \$TMP" yes \
+    "$([ "$canary_target" = "$CANARY" ] && echo yes || echo no)"
+  stub "$FX" mktemp 'exit 0'
+  check "the symlink target is byte-for-byte untouched" \
+    "ORIGINAL CONTENT - MUST SURVIVE" "$(cat "$CANARY")"
+  check "the stub replaced the link with a real file"   no \
+    "$([ -L "$TMP/$FX/bin/mktemp" ] && echo yes || echo no)"
+  check "and the stub is executable and runs"           0 \
+    "$( "$TMP/$FX/bin/mktemp" >/dev/null 2>&1; echo $? )"
+  # The host binary the link USED to name is still there - stated as a result
+  # rather than assumed, because "nothing was damaged" is the claim this whole
+  # case exists to be able to make.
+  check "the host binary it formerly named still runs"  0 \
+    "$( "$host_target" --help >/dev/null 2>&1; echo $? )"
 fi
 
 echo
