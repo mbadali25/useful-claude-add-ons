@@ -36,6 +36,7 @@ because neither can do the other's job:
 |---|---|---|
 | Findings, tables, severity, executive summary, audit or assessment write-up | HTML, optionally -> DOCX/PDF via renderer | `scripts/build_report.py` |
 | Step-by-step procedure with screenshots (SOP, runbook, how-to, guide) | python-docx OOXML | `scripts/build_sop.py` |
+| A hand-authored HTML page that only needs the house style (narrative guide, reference, write-up with H3 sections) | HTML, styled in place | `scripts/house_style.py --apply` |
 
 Why two: Word's HTML parser is the constraint on the report side, and every rule in
 `references/word-traps.md` was measured against it. On the SOP side, `add_picture()` writes
@@ -50,6 +51,7 @@ SOP path - it is the house template for procedures.
 |---|---|
 | A report, SOP, runbook, guide or write-up produced as HTML, DOCX or PDF | this skill |
 | A branded HTML report or page, not converted to DOCX/PDF | this skill - run `build_report.py` and stop before `--to-docx`/`--to-pdf`; its HTML output is already the deliverable |
+| A hand-authored HTML page branded to the house style | this skill - `house_style.py --apply <file>`. Never copy a hex literal out of a stylesheet: that is how `docs/guides/*.html` ended up neutral while the installed pack was Solomon |
 | Solomon styling on any of those | this skill, with `solomon-doc-builder` also installed - see "Brand resolution" below for the install command, the opt-out, and choosing between packs |
 | To edit, extract from or find-and-replace in a `.docx` they already have | the `docx` skill (`anthropic-office-skills:docx`) |
 | A slide deck or spreadsheet | `pptx` / `xlsx` skills |
@@ -115,7 +117,8 @@ survives far better - the self-test renders correctly, borders included - but no
 render is evidence about how Word lays the same document out. Full detail, and the mirror-image
 list of what *Word* drops, in `references/word-traps.md`.
 
-`build_report.py`, `render_engine.py`, `resolve_brand.py` and `preflight.py` are stdlib.
+`build_report.py`, `house_style.py`, `render_engine.py`, `resolve_brand.py` and `preflight.py`
+are stdlib.
 
 ## Brand resolution - configuration, not a trigger
 
@@ -172,6 +175,27 @@ python build_report.py --data report.json --to-docx --to-pdf
 python build_report.py --data report.json --to-pdf --renderer libreoffice   # say it out loud
 bash _test/checklist.sh                                 # greppable half of the pre-ship checklist
 ```
+
+**Hand-authored HTML page** - the house style without the report's structure. The stylesheet
+is the SAME one `build_report.py` emits, from the same module, so there is nothing to copy
+and nothing that can drift:
+
+```powershell
+python house_style.py --profile guide                   # the CSS on stdout, for a new page
+python house_style.py --brand solomon --profile guide   # the same, in a named brand
+python house_style.py --apply page.html --out page.html --profile guide
+python house_style.py --title-case "the powershell SOP"   # -> The PowerShell SOP
+```
+
+`--apply` replaces the page's `<style>` block and puts its `<title>` and every H1/H2/H3 into
+house title case. It is idempotent, so re-running it after an edit is the way to keep a page
+current - and re-running it under a different `--brand` is how one source page produces a
+neutral and a branded variant. It is a restyle, not a rewrite: body copy is untouched.
+
+`title_case` preserves any token that already carries its own capitalisation - PowerShell,
+SOP, macOS, EF Core, `0.19.93` - which `str.title()` destroys. A name that is all lower case
+with no interior capital, no digit and no dot (`doc-builder`) cannot be told from prose by
+any rule and needs an entry in `house_style.PRESERVE_TOKENS`.
 
 **SOP:**
 

@@ -45,158 +45,30 @@ import uuid as _uuid
 import html
 import json
 import os
-import pathlib
 import sys
 
+import house_style
 import render_engine
 import resolve_brand
 
+# The stylesheet and the palette it interpolates live in house_style.py, so
+# that a hand-authored page can ask for the SAME defaults instead of copying
+# a hex literal out of this file. Re-exported under their old names because
+# they are this module's public surface and the suite asserts on both.
+Palette = house_style.Palette
+title_case = house_style.title_case
 
-class Palette:
-    """The report colours of one brand pack, as attributes the stylesheet
-    interpolates. Literal hex, never var(). See word-traps.md rule 1: `var()`
-    does not degrade, it drops the whole declaration, so
-    `background:var(--x); color:#fff` renders white on white."""
 
-    def __init__(self, brand):
-        r = brand.report
-        self.navy = r["navy"]
-        self.navy_dark = r["navy_dark"]
-        self.accent = r["accent"]
-        self.org_ink = r["org_ink"]
-        self.classification = r["classification"]
-        self.ink = r["ink"]
-        self.muted = r["muted"]
-        self.grid = r["grid"]
-        self.zebra = r["zebra"]
-        self.panel = r["panel"]
-        self.rule = r["rule"]
-        self.font_stack = brand.fonts["report_stack"]
-        # (chip background, chip text) per severity. `unverified` is its own
-        # severity on purpose: a check that could not run is not a check that
-        # passed, and rendering the two alike is lying by omission.
-        self.severities = {k: tuple(v) for k, v in r["severity"].items()}
-        # The masthead band (`.mast-band`) is filled NAVY, so the wordmark
-        # that belongs there is the one measured to read on a dark background
-        # - `logo_for("dark")`, never `"light"`. Getting this backwards is
-        # invisible in the way a broken <img> is not: the logo would be the
-        # same colour as the band it sits on. See `resolve_brand.Brand.logo_for`.
-        self.logo_src = _logo_uri(brand.logo_for("dark"))
+def stylesheet(pal):
+    """The report profile of the house stylesheet. One call, never a copy:
+    a second copy here is exactly the fork the shared module exists to
+    prevent, and the suite asserts this equals house_style's own output."""
+    return house_style.stylesheet(pal, "report")
 
 
 def esc(value) -> str:
     """HTML-escape any cell value, including None and numbers."""
     return html.escape("" if value is None else str(value), quote=True)
-
-
-def _logo_uri(path):
-    """`path` (from resolve_brand, already absolute) as a `file://` URI for an
-    `<img src>`, or None.
-
-    None either way a pack has no logo configured (`path` is falsy) or the
-    configured file is not actually on THIS machine - `os.path.isfile` is the
-    same "NOT FOUND on this machine" check `resolve_brand.py --list` already
-    applies to `masters_dir`/`assets_dir`. A document renders fine with no
-    logo; it must not render with a broken image reference instead.
-    """
-    if not path:
-        return None
-    if not os.path.isfile(path):
-        print(f"brand: note: logo configured but not found on this machine: {path} "
-              "-- rendering without one", file=sys.stderr)
-        return None
-    return pathlib.Path(path).resolve().as_uri()
-
-
-def _chip_css(pal: Palette) -> str:
-    """Severity chips.
-
-    The shared declarations sit in a GROUPED SELECTOR, not in a base class the
-    element also carries. `class="chip chip-high"` applies NEITHER rule in Word
-    -- measured, both the shading and the font colour come back as
-    wdColorAutomatic. Grouped selectors are fine; two classes on the element
-    are not. See word-traps.md rule 4.
-    """
-    names = ", ".join(f".chip-{s}" for s in pal.severities)
-    out = [
-        f"{names} {{ display:inline-block; padding:2px 8px; font-weight:700; "
-        "font-size:11px; white-space:nowrap; }"
-    ]
-    for sev, (bg, fg) in pal.severities.items():
-        out.append(f".chip-{sev} {{ background:{bg}; color:{fg}; }}")
-    return "\n".join(out)
-
-
-def stylesheet(pal: Palette) -> str:
-    NAVY, NAVY_DARK, ACCENT = pal.navy, pal.navy_dark, pal.accent
-    ORG_INK, CLASSIFICATION, INK = pal.org_ink, pal.classification, pal.ink
-    MUTED, GRID, ZEBRA, PANEL, RULE = pal.muted, pal.grid, pal.zebra, pal.panel, pal.rule
-    return f"""
-body {{ font-family:{pal.font_stack}; font-size:13px;
-       color:{INK}; margin:0; }}
-.wrap {{ max-width:1000px; margin:0 auto; padding:18px 22px 40px; }}
-
-h1 {{ font-size:20px; margin:18px 0 2px; color:{NAVY}; }}
-h2 {{ font-size:15px; margin:22px 0 8px; padding-bottom:4px;
-     border-bottom:1px solid {RULE}; color:{NAVY}; }}
-p  {{ margin:6px 0; }}
-.sub    {{ color:{MUTED}; font-size:12px; margin:0 0 10px; }}
-.footer {{ color:{MUTED}; font-size:11px; margin-top:26px;
-          border-top:1px solid {RULE}; padding-top:8px; }}
-
-/* Masthead: tables with cell shading, never coloured divs. */
-table.mast {{ border-collapse:collapse; width:100%; margin-bottom:14px; }}
-.mast-strip {{ background:{ACCENT}; height:4px; line-height:4px; font-size:1px; }}
-.mast-band  {{ background:{NAVY}; padding:14px 18px; }}
-.mast-rule  {{ background:{NAVY_DARK}; height:3px; line-height:3px; font-size:1px; }}
-.mast-cls   {{ background:{CLASSIFICATION}; color:#FFFFFF; padding:5px 18px;
-              font-size:11px; font-weight:700; letter-spacing:1.6px; }}
-.mast-org   {{ color:{ORG_INK}; font-size:11px; font-weight:600;
-              letter-spacing:1.8px; }}
-.mast-title {{ color:#FFFFFF; font-size:26px; font-weight:600; }}
-.mast-subtitle {{ color:{ORG_INK}; font-size:12px; }}
-/* Bare class, per word-traps.md rule 3/4 - the only selector shape both
-   renderers apply. Height only: no width, so the source PNG's own aspect
-   ratio (290x70 for the wordmark) is preserved rather than guessed at here. */
-.mast-logo {{ height:28px; margin-bottom:6px; }}
-
-/* Every table: real grid, real thead. Both required. */
-table.data {{ border-collapse:collapse; width:100%; table-layout:fixed;
-             margin:8px 0 4px; }}
-table.data th, table.data td {{ border:1px solid {GRID}; padding:7px 10px;
-             text-align:left; vertical-align:top; overflow-wrap:break-word; }}
-table.data th {{ background:{NAVY}; color:#FFFFFF; font-weight:600; }}
-/* Zebra is an explicit class, written per row by the builder. */
-table.data tr.alt td {{ background:{ZEBRA}; }}
-
-table.meta {{ border-collapse:collapse; width:100%; margin:0 0 14px; }}
-table.meta td {{ border:1px solid {GRID}; padding:6px 10px; font-size:12px; }}
-table.meta td.k {{ background:{ZEBRA}; font-weight:600; width:17%; }}
-
-.lede {{ background:{PANEL}; border-left:4px solid {NAVY};
-        padding:10px 14px; margin:10px 0 4px; }}
-.handling {{ background:#FDE8E6; border-left:4px solid {CLASSIFICATION};
-            padding:8px 14px; margin:10px 0; font-size:12px; color:#A01B12; }}
-
-/* Cards are a table on purpose; the number and label are real block
-   elements rather than styled spans. */
-table.cards {{ border-collapse:separate; border-spacing:8px 0; width:100%;
-              margin:6px 0 2px; }}
-td.card {{ background:{PANEL}; border:1px solid {GRID}; padding:10px 12px;
-          text-align:center; }}
-div.n {{ font-size:22px; font-weight:700; color:{NAVY}; }}
-div.l {{ font-size:11px; color:{MUTED}; }}
-
-{_chip_css(pal)}
-
-@media print {{
-  body {{ font-size:11pt; }}
-  .wrap {{ padding:0; max-width:none; }}
-  h2 {{ page-break-after:avoid; }}
-  tr {{ page-break-inside:avoid; }}
-  thead {{ display:table-header-group; }}
-}}
-"""
 
 
 def column_widths(labels, rows):
@@ -348,7 +220,11 @@ def build(doc, brand):
     # subject. The brand pack's organisation is only a fallback for documents
     # that have no assessed subject (an internal write-up, a memo).
     org = doc.get("organisation") or brand.organisation
-    title = doc.get("title", "Report")
+    # Headings are cased HERE, mechanically, not by whoever typed the JSON.
+    # `house_style.title_case` preserves anything already carrying its own
+    # capitalisation - PowerShell, SOP, macOS, 0.19.93 - which `str.title()`
+    # would destroy. See its docstring.
+    title = house_style.title_case(doc.get("title", "Report"))
     findings = doc.get("findings") or {}
     labels = findings.get("columns") or []
     rows = findings.get("rows") or []
@@ -376,10 +252,10 @@ def build(doc, brand):
     if doc.get("handling"):
         parts.append(f'<div class="handling">{esc(doc["handling"])}</div>')
     if doc.get("cards"):
-        parts.append("<h2>Summary</h2>")
+        parts.append(f"<h2>{esc(house_style.title_case('Summary'))}</h2>")
         parts.append(cards(doc["cards"]))
     if rows:
-        heading = esc(findings.get("heading", "Findings"))
+        heading = esc(house_style.title_case(findings.get("heading", "Findings")))
         parts.append(f"<h2>{heading}</h2>")
         parts.append(data_table(labels, rows, chip_col, pal.severities))
     if doc.get("collected_at"):

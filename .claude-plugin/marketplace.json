@@ -65,7 +65,7 @@
       "name": "doc-builder",
       "source": "./skills/doc-builder",
       "description": "Finished documents as DOCX and PDF through Word, or LibreOffice where Word is absent - findings reports via HTML, screenshot SOPs via OOXML - with the house style supplied by whichever brand pack is installed. Also install solomon-doc-builder for automatic Solomon house style; --brand neutral (or DOC_BUILDER_BRAND=neutral) always turns branding off.",
-      "version": "1.4.1"
+      "version": "1.5.0"
     },
     {
       "name": "drata",
@@ -227,7 +227,7 @@
       "name": "crew",
       "source": "./plugin/crew",
       "description": "Virtual dev team for multi-repo legacy work - 54 context-isolated agents (13 tiered, 40 domain specialists opted into per repo, and the standing manager), 27 slash commands, 19 bundled skills, and deterministic hooks that gate unverified turns, brief the PM at session start, re-engage it to assign work when project state changes, carry a handoff across compaction (archiving one it judges stale rather than injecting it as current), recreate a missing or broken .crew/config.json from a single-source template, and layer a guided, walkthrough-written machine-global config under the per-repo one.",
-      "version": "0.20.6"
+      "version": "0.20.7"
     },
     {
       "name": "gizmoduck",

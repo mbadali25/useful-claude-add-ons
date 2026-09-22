@@ -29,6 +29,7 @@ if str(_SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS_DIR))
 
 import build_report  # noqa: E402  pylint: disable=wrong-import-position
+import house_style  # noqa: E402  pylint: disable=wrong-import-position
 import resolve_brand  # noqa: E402  pylint: disable=wrong-import-position
 
 pytestmark = pytest.mark.skipif(
@@ -96,17 +97,18 @@ def test_full_build_with_neutral_brand_embeds_no_img():
 
 def test_logo_configured_but_missing_on_this_machine_degrades_to_none(tmp_path, capsys):
     """A pack can be installed on a machine that is missing the logo file it
-    points at (a partial checkout, a stripped-down deploy). `_logo_uri` must
+    points at (a partial checkout, a stripped-down deploy). `house_style.logo_uri`
+    must
     treat that the same as no logo configured at all - never emit a src the
     browser or Word cannot load - and say so on stderr rather than staying
     silent about it."""
     missing = tmp_path / "does-not-exist.png"
-    assert build_report._logo_uri(str(missing)) is None
+    assert house_style.logo_uri(str(missing)) is None
     assert "not found on this machine" in capsys.readouterr().err
 
 
 def test_logo_uri_is_a_file_uri_for_a_real_file(tmp_path):
     real = tmp_path / "logo.png"
     real.write_bytes(b"\x89PNG\r\n\x1a\n")
-    uri = build_report._logo_uri(str(real))
+    uri = house_style.logo_uri(str(real))
     assert uri == real.resolve().as_uri()

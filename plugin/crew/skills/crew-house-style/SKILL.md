@@ -91,23 +91,44 @@ columns — and it already carries both rules below on every table it writes.
 `build_report.py`'s `build()` only assembles a masthead, a lede, summary
 cards and one findings table, and emits no `<h3>` at all, so a narrative
 architecture write-up, runbook or handoff with prose sections past H2 does
-not fit it. For that content, HTML is still written by hand — apply the
-palette above, but resolve it through `python3 resolve_brand.py` (run from
-doc-builder's `scripts/`) rather than lifting it from the table directly: that
-table is the neutral default, not a brand, and `docs/guides/*.html`, rebuilt
-2026-09-22, already carry both rules below in every one of them while every
-one still shows `#1F4E79` with neither of Solomon's colours anywhere — the
-rules below landed and the brand still didn't, because a hand-written path
-never calls `resolve_brand.py`. Carry **both** print rules below regardless
-of path. They are one fix in two places; either one alone changes nothing a
-reader can see.
+not fit it. For that content the page is still hand-authored — but **do not
+hand-write the stylesheet any more, and do not lift the palette from the table
+above.** Ask doc-builder for it:
+
+```
+python3 house_style.py --profile guide --brand solomon          # emit the CSS
+python3 house_style.py --profile guide --brand solomon --apply FILE.html
+```
+
+run from doc-builder's `scripts/`. `--apply` restyles an existing page in
+place and is idempotent. `--brand neutral` gives the unbranded palette.
+
+This replaced a copy-the-hex instruction, and the reason is worth keeping
+because the failure was invisible for a while. Until 2026-09-22 every one of
+`docs/guides/*.html` carried both print rules below AND `#1F4E79` with none of
+Solomon's colours anywhere: the rules had landed and the brand had not, because
+a hand-written path never called `resolve_brand.py` and nothing made it. Asking
+for the stylesheet is what closes that, not remembering to.
+
+One trap the extraction surfaced, which matters to anyone writing a selector
+here: the guides used a bare `th { ... }`, and rewriting it as `table th { ... }`
+made the navy header shading vanish from the LibreOffice-rendered PDF while the
+HTML still contained the declaration. That is the documented behaviour two
+paragraphs down — LibreOffice applies a bare element or a bare `.class` and
+silently drops every compound or descendant selector — and it was caught only by
+rasterising the PDF and looking at it. The guide profile therefore uses bare
+cell selectors; the report profile keeps its scope, because a bare `td` there
+would border the masthead's own cells.
+
+Carry **both** print rules below regardless of path. They are one fix in two
+places; either one alone changes nothing a reader can see.
 
 1. **Every table gets a real `<thead>`** around its header row, and a
    `<tbody>` around the rest. A bare `<tr>` of `<th>` is styled like a header
    and is not one to anything that paginates.
 2. **Every page carries this block**, from
-   `skills/doc-builder/scripts/build_report.py:195-197`, widened by one
-   selector:
+   `skills/doc-builder/scripts/house_style.py:246-248` — the body of
+   `print_css`:
 
    ```css
    @media print {
@@ -117,18 +138,28 @@ reader can see.
    }
    ```
 
-   `h3` is the widening, and it is not optional here: doc-builder's block
-   names `h2` alone because its report generator emits no `h3` at all, while
-   *Headings* above allows one. Measured on the first re-render with `h2`
-   only — `h3`s still ended a page with their table stranded on the next.
+   The heading selector is a **parameter** there, not a literal: `print_css`
+   takes `headings`, and `stylesheet()` passes `h2` for the report profile and
+   `h2, h3` for the guide profile. So the block above is doc-builder's guide
+   profile exactly, and `h3` is no longer crew widening someone else's rule —
+   ask for the guide CSS and you are handed it. It is still written out here
+   because a page authored without asking has to carry it: *Headings* above
+   allows an H3, the report profile names `h2` alone because its generator
+   emits no `<h3>` at all, and measured on the first re-render with `h2` only,
+   `h3`s still ended a page with their table stranded on the next.
 
 `display:table-header-group` has nothing to bind to when the markup has no
 `<thead>`, so rule 2 without rule 1 still drops a table's header at every page
 break; rule 1 without rule 2 does nothing at all. `doc-builder` already
-enforces both together
-(`skills/doc-builder/scripts/build_report.py:163`, "Every table: real grid,
-real thead. Both required.") — which is why routing to it removes the whole
-class of gap instead of adding a third remembered rule to this list.
+enforces both together, and says so once per profile — the report profile at
+`skills/doc-builder/scripts/house_style.py:342`, "Every table: real grid, real
+thead. Both required.", and the guide profile at
+`skills/doc-builder/scripts/house_style.py:352`, "Every table: real grid, real
+thead. Both required." Both are cited rather than one, because the comment is
+duplicated and naming one line would leave the other profile's copy pinned by
+nothing while reading as though the pair were covered. That is why routing to
+doc-builder removes the whole class of gap instead of adding a third remembered
+rule to this list.
 
 ### doc-builder's reach, and its degraded paths
 
