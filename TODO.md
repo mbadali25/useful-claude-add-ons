@@ -1133,6 +1133,17 @@ than being discovered halfway:
 
 Do not raise `max-module-lines` a third time.
 
+**It was raised a third time, on 2026-09-22, to 3400.** Recorded here rather
+than left contradicting `.pylintrc`, because two files stating opposite rules is
+how the next reader "reconciles" them into whichever one they found first. The
+raise was taken under a CI deadline and it did not close this item -- it
+reopened it. `crew_state.py` is 3376 lines again, nine days after the
+`crew_guards` split was supposed to have settled it, and `plugin/crew/tests/
+sabotage.py` (3342) crossed the old ceiling at the same time, so there are now
+TWO modules owed a split rather than one. `.pylintrc` carries the full reason
+alongside the number. The hazards this entry names are unchanged and still
+apply to whoever does the split.
+
 ## Perplexity is an agent, not a `qa.provider` — the routing half is not done
 
 Opened 2026-09-06 with crew 0.16.23, which added `crew:qa-researcher`

@@ -90,8 +90,8 @@ def _stub(directory, exit_code=9009, stdout="", names=("python3", "python", "py"
     directory.mkdir(parents=True, exist_ok=True)
     body = "#!/bin/sh\n"
     if stdout:
-        body += "echo '%s'\n" % stdout
-    body += "exit %d\n" % exit_code
+        body += f"echo '{stdout}'\n"
+    body += f"exit {exit_code}\n"
     for name in names:
         path = directory / name
         path.write_text(body, encoding="ascii", newline="\n")
@@ -135,8 +135,8 @@ def test_windowsapps_stub_alone_says_so_instead_of_failing_silently(tmp_path):
     proc = _run(_SH, root, [str(apps)])
 
     assert _NO_PYTHON in proc.stderr, (
-        "the hook must NAME the missing interpreter. Empty stderr is the "
-        "defect itself: got %r (exit %d)" % (proc.stderr, proc.returncode))
+        f"the hook must NAME the missing interpreter. Empty stderr is the "
+        f"defect itself: got {proc.stderr!r} (exit {proc.returncode})")
     assert proc.stderr.strip(), "stderr must not be empty"
     assert proc.returncode == 0, (
         "a Stop hook that cannot run must not return a status Claude Code "
@@ -158,9 +158,8 @@ def test_stub_outside_a_windowsapps_directory_is_also_rejected(tmp_path):
     proc = _run(_SH, root, [str(apps)])
 
     assert _NO_PYTHON in proc.stderr, (
-        "a non-interpreter that is not in a WindowsApps directory must "
-        "still be rejected. got %r (exit %d)"
-        % (proc.stderr, proc.returncode))
+        f"a non-interpreter that is not in a WindowsApps directory must "
+        f"still be rejected. got {proc.stderr!r} (exit {proc.returncode})")
     assert proc.returncode == 0, proc.stderr
 
 
@@ -177,9 +176,9 @@ def test_candidate_printing_a_plausible_path_but_exiting_nonzero(tmp_path):
     proc = _run(_SH, root, [str(apps)])
 
     assert _NO_PYTHON in proc.stderr, (
-        "a candidate that exits nonzero must be rejected even though it "
-        "printed a plausible interpreter path. got %r (exit %d)"
-        % (proc.stderr, proc.returncode))
+        f"a candidate that exits nonzero must be rejected even though it "
+        f"printed a plausible interpreter path. got {proc.stderr!r} "
+        f"(exit {proc.returncode})")
 
 
 # --- MUST ALLOW: the fix must not become "the pulse never speaks" ---------
@@ -201,9 +200,8 @@ def test_real_python_behind_a_stub_still_delivers_the_findings(tmp_path):
     proc = _run(_SH, root, [str(apps), _real_python_dir()])
 
     assert _PULSE_MARKER in proc.stderr, (
-        "the real python must win over the stub and the PM's findings must "
-        "reach the model. got %r (exit %d)"
-        % (proc.stderr[:200], proc.returncode))
+        f"the real python must win over the stub and the PM's findings must "
+        f"reach the model. got {proc.stderr[:200]!r} (exit {proc.returncode})")
     assert proc.returncode == 2, (
         "exit 2 is what hands the findings back to the model; anything else "
         "drops them. stderr: " + proc.stderr[:200])

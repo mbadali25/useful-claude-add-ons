@@ -96,7 +96,11 @@ FAIL = 0
 
 
 def check(ok, desc, detail=""):
-    global PASS, FAIL
+    # This file is a standalone harness run by run-tests.sh, not a pytest
+    # module: `main()` returns the exit code and the pass/fail tally has to
+    # outlive every call. A module-level counter is the honest shape for that,
+    # so the global is declared rather than refactored away.
+    global PASS, FAIL  # pylint: disable=global-statement
     if ok:
         PASS += 1
     else:
@@ -168,6 +172,10 @@ def pwsh(command, env=None, cwd=None, stdin=""):
     proc = subprocess.run(
         [PWSH, "-NoProfile", "-NonInteractive", "-Command", command],
         input=stdin, capture_output=True, text=True, env=env, cwd=cwd, timeout=120,
+        # check=False: every caller ASSERTS on proc.returncode -- a guard that
+        # stands down exits 0 and a guard that runs may exit non-zero, and both
+        # are results here. Raising would turn a measurement into a crash.
+        check=False,
     )
     return proc
 
@@ -206,6 +214,10 @@ $out | ConvertTo-Json -Depth 6 -Compress
         [PWSH, "-NoProfile", "-NonInteractive", "-Command",
          script.replace("__PATHS__", literal)],
         capture_output=True, text=True, timeout=180,
+        # check=False: the next line inspects returncode itself and raises
+        # SystemExit carrying BOTH streams. CalledProcessError would print the
+        # argv and swallow the parser output that says what actually failed.
+        check=False,
     )
     if proc.returncode != 0:
         raise SystemExit(f"AST probe failed:\n{proc.stdout}\n{proc.stderr}")
@@ -301,7 +313,7 @@ def snapshot(path):
 
 
 def run_hook(script, args, os_value, drop_iswindows, fixture):
-    repo, home, shims, calls = fixture
+    repo, home, shims, _calls = fixture
     env = dict(os.environ)
     env["PATH"] = f"{shims}{os.pathsep}{env.get('PATH', '')}"
     env["HOME"] = str(home)

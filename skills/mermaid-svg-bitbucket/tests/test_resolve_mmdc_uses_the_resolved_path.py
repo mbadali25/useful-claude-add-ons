@@ -192,10 +192,18 @@ def test_the_bare_name_is_unrunnable_when_only_a_cmd_is_on_path(tmp_path):
     cmd_file = fake_bin(tmp_path, "mmdc.cmd")
 
     with pytest.raises(FileNotFoundError) as excinfo:
-        subprocess.run(["mmdc"], capture_output=True, env={"PATH": str(cmd_file.parent)})
+        # check=False: this call is asserted to raise FileNotFoundError at
+        # SPAWN, before any exit status exists. check=True would add a second
+        # way to fail -- CalledProcessError on a successful spawn -- and blur
+        # the one thing the test is measuring.
+        subprocess.run(["mmdc"], capture_output=True,
+                       env={"PATH": str(cmd_file.parent)}, check=False)
     assert excinfo.value.errno == 2
 
-    assert subprocess.run([str(cmd_file)], capture_output=True).returncode == 0
+    # check=False: the assertion reads returncode itself, so raising would
+    # replace the measurement with a traceback.
+    assert subprocess.run([str(cmd_file)], capture_output=True,
+                          check=False).returncode == 0
 
 
 # --------------------------------------------------------------------------- #

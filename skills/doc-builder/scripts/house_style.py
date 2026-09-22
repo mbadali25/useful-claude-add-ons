@@ -543,7 +543,7 @@ def title_case(text: str) -> str:
         lead, core, trail = _split_edges(token)
         if core:
             name, poss = _split_possessive(core)
-            lead, trail = lead, poss + trail
+            trail = poss + trail
             canonical = PRESERVE_TOKENS.get(name.lower())
             if canonical is not None:
                 out[i] = lead + canonical + trail

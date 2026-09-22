@@ -88,8 +88,8 @@ def test_python_without_python3_still_audits(tmp_path):
     proc = _run(root, _pathdir_with(tmp_path, ("python",)))
 
     assert _REPORT_MARKER in proc.stdout, (
-        "the audit must run with only `python` on PATH. exit %d stdout %r "
-        "stderr %r" % (proc.returncode, proc.stdout[:200], proc.stderr[:200]))
+        f"the audit must run with only `python` on PATH. exit {proc.returncode} "
+        f"stdout {proc.stdout[:200]!r} stderr {proc.stderr[:200]!r}")
     assert proc.returncode == 0, proc.stderr[:200]
 
 
@@ -112,8 +112,8 @@ def test_no_python_at_all_names_itself_instead_of_exiting_127(tmp_path):
     proc = _run(root, empty)
 
     assert "map-audit: no python found" in proc.stderr, (
-        "the script must name the failure itself. exit %d stderr %r"
-        % (proc.returncode, proc.stderr[:200]))
+        f"the script must name the failure itself. exit {proc.returncode} "
+        f"stderr {proc.stderr[:200]!r}")
     assert proc.returncode != 0, (
         "and must not exit 0 -- an audit that printed no report did not "
         "find nothing, it did not run. stdout: " + proc.stdout[:200])

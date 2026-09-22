@@ -305,6 +305,22 @@ def _sibling_docx(pdf_path, bordered=0, plain=0):
 
 @pytest.fixture(name="verify_borders")
 def _verify_borders(monkeypatch):
+    # pymupdf is STUBBED below, so it is not required. numpy and Pillow are
+    # not stubbed and must not be: `_StubDoc.get_pixmap` builds a real array
+    # and `verify_borders._ink_mask` runs `Image.frombytes` over it, which is
+    # the whole point -- the pixel sweep is measured against the installed
+    # libraries rather than modelled. `verify_borders` imports both at module
+    # top, so without them the 12 tests using this fixture raised
+    # ModuleNotFoundError as fixture ERRORS.
+    #
+    # Those errors were INVISIBLE on CI until 2026-09-22, and not because they
+    # were passing: test_cross_os_paths.py aborted collection, and a collection
+    # interrupt means no test in the job runs at all. Fixing that one import
+    # is what surfaced these. The pytest workflow installs numpy and pillow so
+    # they run; this skip is what keeps a machine without them honest instead
+    # of red.
+    pytest.importorskip("numpy")
+    pytest.importorskip("PIL")
     stub = types.ModuleType("pymupdf")
     stub.open = _StubDoc
     monkeypatch.setitem(sys.modules, "pymupdf", stub)
@@ -603,7 +619,11 @@ def test_word_leaving_yesterdays_file_in_place_is_a_failed_conversion(
 
 def test_word_that_really_writes_reports_success_and_names_the_engine(
         build_report, monkeypatch, capsys, tmp_path):
-    _with_fake_word(monkeypatch, lambda path, fmt: open(path, "wb").write(b"%PDF-1.4\n"))
+    def _really_write(path, _fmt):
+        with open(path, "wb") as fh:
+            fh.write(b"%PDF-1.4\n")
+
+    _with_fake_word(monkeypatch, _really_write)
     src = tmp_path / "doc.html"
     src.write_text("<html><body>x</body></html>", encoding="utf-8")
     rc = build_report.to_word(str(src), want_docx=False, want_pdf=True)
@@ -651,13 +671,15 @@ def test_render_engine_cli_with_no_pdfs_is_a_capability_report(capsys):
 def test_the_soffice_profile_is_seeded_with_the_restrictions(tmp_path):
     written = render_engine.harden_profile(str(tmp_path))
     assert written.endswith(os.path.join("user", "registrymodifications.xcu"))
-    text = open(written, encoding="utf-8").read()
+    with open(written, encoding="utf-8") as fh:
+        text = fh.read()
     assert os.path.getsize(written) > 0
     for _, name, _ in render_engine._HARDENING:  # pylint: disable=protected-access
         assert f'oor:name="{name}"' in text
     assert "BlockUntrustedRefererLinks" in text
     assert "<value>3</value>" in text          # macro security: Very High
-    assert "\r\n" not in open(written, newline="", encoding="utf-8").read()
+    with open(written, newline="", encoding="utf-8") as fh:
+        assert "\r\n" not in fh.read()
 
 
 @pytest.mark.skipif(render_engine.soffice_exe() is None, reason="LibreOffice is not installed")

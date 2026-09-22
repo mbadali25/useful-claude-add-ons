@@ -57,6 +57,19 @@ _SCRIPTS_DIR = _DOC_BUILDER_ROOT / "scripts"
 if str(_SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS_DIR))
 
+# `build_sop` and `check_conformance` both `import docx` at module top, so
+# without python-docx this import ERRORS collection -- and a pytest collection
+# error is not one red test, it interrupts the run and takes every other test
+# in the job down with it. importorskip turns that into a SKIP naming the
+# missing module.
+#
+# A skip is the honest representation of "this was not checked", and it is
+# deliberately NOT the end state: the pytest workflow installs python-docx
+# (.github/workflows/pytest-crew.yml) so these three regressions actually RUN
+# on CI. If this line ever starts skipping there, that install step is gone and
+# the cross-OS coverage went with it silently.
+pytest.importorskip("docx")
+
 import build_sop  # noqa: E402  pylint: disable=wrong-import-position
 import check_conformance  # noqa: E402  pylint: disable=wrong-import-position
 import resolve_brand  # noqa: E402  pylint: disable=wrong-import-position

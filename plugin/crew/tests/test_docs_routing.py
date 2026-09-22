@@ -508,7 +508,7 @@ def _html_rule(number):
     mode and the reason the rule text is what gets read here.
     """
     route = _html_route()
-    start = route.index("\n%d. " % number)
+    start = route.index(f"\n{number}. ")
     rest = route[start + 1:]
     end = re.search(r"\n\d+\. ", rest)
     return rest[:end.start()] if end else rest

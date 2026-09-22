@@ -31,6 +31,9 @@ import crew_incident
 # `crew_guards` was split off on 2026-09-13 because the `guards` block took
 # this file to 3341 lines against `.pylintrc`'s 3300, and that file's own
 # comment says the third raise must be a split instead. See its docstring.
+# That held for nine days: this file is 3376 lines again and on 2026-09-22 the
+# ceiling was raised to 3400 rather than split a third time under a CI
+# deadline. `.pylintrc` records why; the split is still owed.
 from crew_common import GIT_TIMEOUT, dict_or_empty, git_out, read_text
 from crew_endpoints import (
     declare_endpoint,
