@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@84976536
+anchor: useful-claude-add-ons@2b337296
 verified: 2026-09-22
 Full per-path re-verification, the first this note has had since `a573ca24`:
 the path diff was run, every one of its thirteen changed files was re-read for
@@ -690,3 +690,78 @@ checks landed in this range and the insertions are not evenly spaced.
 ## Calls out to
 
 - Nothing at runtime. Registration is a set of files that must agree; `_verify/smoke.sh` runs the checker as its first gate.
+
+## Re-anchor provenance — 84976536 -> 2b337296, 2026-09-22
+
+Re-anchor only. Per-path check over the 17 tracked paths this note cites:
+
+```
+git diff --name-only 84976536..HEAD -- .claude-plugin/marketplace.json .crew/verify.json \
+  .github/workflows/marketplace.yml INSTALLATION.md README.md TODO.md _verify/smoke.sh \
+  plugin/PLUGINS.md plugin/README.md scripts/check-marketplace.py \
+  scripts/install-prerequisites.ps1 scripts/install-prerequisites.sh skills/README.md CLAUDE.md \
+  scripts/_test/crew-ignore-policy.py scripts/_test/self-claims.py skills/power-automate-api/.gitignore
+```
+```
+.claude-plugin/marketplace.json
+README.md
+```
+
+**A separate, wider diff was also run**, because this note's group name `skills`
+(in "the group in `plugin/crew/skills/`," around the "descriptive text is
+unchecked" section) is parsed by `_CITED_PATH_RE`
+(`plugin/crew/hooks/scripts/crew_freshness.py`) as the bare directory
+`skills/`, not as prose:
+
+```
+git diff --name-only 84976536..HEAD -- skills/
+```
+```
+skills/doc-builder/scripts/resolve_brand.py
+skills/doc-builder/scripts/_test/test_cross_os_paths.py
+```
+
+**Recorded as a known false-positive, not reworded away.** Per the assigned
+task, the backticked group name `skills` is left as-is — it is prose in this
+note, not a citation into `skills/doc-builder/`, and this note makes no claim
+about `resolve_brand.py`. But because `_CITED_PATH_RE` cannot distinguish a
+prose mention of the word `skills` from a real citation, **any future change
+anywhere under `skills/` will flag this note's per-path check as changed**,
+even when nothing this note actually cites moved. That is a standing false-positive
+in this note's freshness check, not a defect in the doc-builder change. A
+future pass seeing `skills/` in the diff output should check whether the
+touched file is one this note actually names (it is not, for either file
+above) before assuming a re-read is needed.
+
+**Both real hits confirmed genuinely two-file, no add/remove.** `git diff
+--name-status 84976536..HEAD -- skills/` shows `M` for both
+`skills/doc-builder/scripts/resolve_brand.py` and its `_test` file — modified,
+not added or removed, so the doc-builder skill's registration shape (one
+`SKILL.md`, one marketplace entry) is unaffected regardless.
+
+**The two real path-diff hits, checked against this note's actual claims:**
+
+- `.claude-plugin/marketplace.json` — `git diff 84976536..HEAD --
+  .claude-plugin/marketplace.json` shows exactly one hunk, `doc-builder`'s
+  `version` field `1.5.2` -> `1.5.3`. The `crew` entry this note's count table
+  cites (`.claude-plugin/marketplace.json:229`, "27 slash commands, 19 bundled
+  skills") is untouched — re-diffed specifically to confirm. No claim in this
+  note rests on `doc-builder`'s version.
+- `README.md` — the change is the install-URL re-pin (`2cc73a1e`, PR #206),
+  touching only lines 12 and 18 in place. **A previous version of this bullet
+  undercounted this note's own `README.md:<n>` citations** (it listed five,
+  omitting `:168` and `:918`); re-run with
+  `grep -noE '(^|[^/A-Za-z])README\.md:[0-9]+' .crew/codemap/marketplace-registration.md`
+  and corrected here. Seven distinct lines are cited: `README.md:157`
+  (the community-plugin-count finding, cited twice in the body — `:85` and
+  `:649`; a raw grep also matches this paragraph's own citation of it,
+  which is self-reference, not a third body occurrence), `:166`, `:168`,
+  `:774`, `:885`, `:591` and `:918` (the sabotage-test error message quoted
+  verbatim). None is at 12 or 18, and the edit changed no line count, so none
+  of these citations shifted or needed re-reading.
+  `CHANGELOG.md` (which gained 10 lines at line 9 in this range per
+  `repo-docs.md`) is not in this note's cited-path list and is not cited by
+  line number anywhere in this note.
+
+Nothing else in this note was re-read. `python3 scripts/check-marketplace.py`
+was not re-run at this pass.

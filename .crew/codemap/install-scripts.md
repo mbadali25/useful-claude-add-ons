@@ -1,5 +1,5 @@
 # install-scripts
-anchor: useful-claude-add-ons@84976536
+anchor: useful-claude-add-ons@2b337296
 verified: 2026-09-22
 
 **Re-derived, not re-pointed, on 2026-09-22.** The two scripts grew by roughly
@@ -159,16 +159,22 @@ standalone tools through their own package managers (see **Calls out to**). DERI
   character right in the rendered picker. **Still true at this anchor**, still identical in both
   scripts, still invisible to every check. DERIVED by measuring the padding of all five rows.
 
-- **The README's install URLs are pinned to a commit that predates this anchor's script changes.**
-  `README.md:12` and `:18` fetch both installers from
-  `raw.githubusercontent.com/mbadali25/useful-claude-add-ons/0a2d49b069bd178092e75a8cfd1a1c9df6690cd3/...`,
-  and `git diff --name-only 0a2d49b0..HEAD -- scripts/install-prerequisites.sh scripts/install-prerequisites.ps1`
-  returns **both files**. DERIVED. So a `curl | bash` taken from the README today runs a version
-  with none of the four subsystems below it - no `ensure_uv` chain, no `mcp_launcher_resolves`, no
-  skill preflight, and neither the `github` nor the `eli5` catalog row. CLAUDE.md names the re-pin
-  as a promotion step no script enforces; this is what "not enforced" looks like from the outside.
-  Not fixed here - `README.md` is outside this note's scope and the re-pin is a promotion action,
-  not a documentation one.
+- **The README's install URLs are now CURRENT — re-pinned since this note's own anchor, and this
+  bullet previously said the opposite.** Previously: "pinned to a commit that predates this anchor's
+  script changes," citing `0a2d49b069bd178092e75a8cfd1a1c9df6690cd3` and a non-empty
+  `git diff --name-only` over both scripts. Re-verified at this anchor: `README.md:12` and `:18` now
+  pin `d541ee5708481fbf18c3a5fda050c9e40a40a2d9` (re-pinned by `2cc73a1e`, "README: re-pin install
+  URLs to d541ee57 after PR #205 changed both install scripts (#206)"), and
+  `git diff --name-only d541ee57..HEAD -- scripts/install-prerequisites.sh scripts/install-prerequisites.ps1`
+  is **empty** — both re-verified directly at this pass. DERIVED. So a `curl | bash` taken from the
+  README today runs the same script this note describes, including the four subsystems below it.
+  The reversal is the interesting fact, not the current state alone: the previous anchor's finding
+  was accurate on its own day and rotted within the same PR cycle that produced this note, which is
+  the ordinary lifespan of a pin claim, not a special failure.
+  **Not the same as "every pin in the repo is current."** `repo-docs.md` (2026-09-22 pass) found
+  `docs/guides/Running-a-Mailbox-Job.json:18` still pins the *older* `0a2d49b0` SHA, one commit
+  behind `d541ee57` — that file was not part of the `2cc73a1e` re-pin. Not fixed here; that file is
+  outside this note's write scope.
 
 - **`claude mcp add` writes config and never invokes the command, so six rows reported success for
   servers that could not start.** This is the defect `mcp_launcher_resolves`
@@ -467,3 +473,32 @@ Not done at this pass: nothing was installed, executed or run. No suite under `s
 invoked, `drift-detection.sh` least of all - it drives the real `claude` CLI. Neither install
 script was run in any form, on either platform. `python3 scripts/check-marketplace.py` was run and
 passes, but that is a check on the repository, not on this note.
+
+## Re-anchor provenance - 84976536 -> 2b337296, 2026-09-22
+
+Per-path check, run rather than skipped:
+
+```
+git diff --name-only 84976536..HEAD -- .claude-plugin/marketplace.json INSTALLATION.md \
+  plugin/PLUGINS.md plugin/README.md README.md scripts/check-marketplace.py \
+  scripts/install-prerequisites.ps1 scripts/install-prerequisites.sh \
+  scripts/_test/drift-detection.sh scripts/_test/self-claims.py TODO.md
+```
+```
+.claude-plugin/marketplace.json
+README.md
+```
+
+Two changed. `.claude-plugin/marketplace.json`'s only change in this range is `doc-builder`'s
+version bump `1.5.2` -> `1.5.3`; the `crew` entry this note cites (the three-way command/skill-count
+disagreement) is untouched, confirmed by re-diffing the `crew` block specifically. `README.md`'s
+change is exactly the install-URL re-pin (`2cc73a1e`, PR #206) this pass re-verified and rewrote the
+note's pin bullet for - see that bullet, above, for the corrected claim and the previous wording it
+replaces. Both re-verified directly rather than assumed from the diff: `README.md:12` and `:18` now
+read `d541ee5708481fbf18c3a5fda050c9e40a40a2d9`, and
+`git diff --name-only d541ee57..HEAD -- scripts/install-prerequisites.sh scripts/install-prerequisites.ps1`
+is empty.
+
+Nothing else in this note was re-read at this pass; every other citation is closed by the per-path
+check returning empty for its file. `python3 scripts/check-marketplace.py` was not re-run at this
+pass.

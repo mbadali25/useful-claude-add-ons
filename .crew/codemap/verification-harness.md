@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@84976536
+anchor: useful-claude-add-ons@2b337296
 verified: 2026-09-22
 **Full re-derivation of every DERIVED claim below, not a re-anchor.** The
 per-path diff from the previous anchor was not empty, so nothing carried
@@ -776,3 +776,40 @@ described: `.crew/verify.json` is tracked as of crew 0.19.46 (`0a9d8937`), "the 
 by design" is no longer true of it, and every `.crew/verify.json` citation elsewhere in this note was
 rewritten from a direct read at that anchor rather than carried forward. This section is left in
 place as a record of what the constraint used to be, not as a current statement of it.
+
+## Re-anchor provenance — 84976536 -> 2b337296, 2026-09-22
+
+Re-anchor only. The whole-repo diff between the two commits
+(`git diff --name-only 84976536..2b337296`) touches
+`.claude-plugin/marketplace.json` (doc-builder's version only — this note's
+`marketplace.json` citations are all about `check_versions`/`check_self_claims`
+mechanism, or the sabotage-proof version bump to `9.9.9`/`999 skills`, none of
+which rest on doc-builder's actual version), `CHANGELOG.md`, `README.md`,
+three `docs/diagrams/*.mmd` files, `graphify-out/*`, two
+`skills/doc-builder/*` files, and eight `.crew/codemap/*.md` files (concurrent
+re-anchor edits by this and other sessions, not code, and not cited by this
+note). **`README.md` is one exception — it IS one of this note's own tracked
+paths** (listed by name in the `ea8a014 -> 84976536` per-path check's
+`git diff` command, above) and it IS in the
+`84976536..2b337296` diff; the next paragraph gives it the re-check that
+requires. `.claude-plugin/marketplace.json` is likewise tracked and present in
+the diff, but only doc-builder's version changed — none of this note's
+`marketplace.json` claims rest on that. Every other cited path is absent from
+the diff.
+
+Grepped with `grep -noE '(^|[^/A-Za-z])README\.md:[0-9]+'` and for
+`CHANGELOG.md:<n>`: **`CHANGELOG.md:<n>` does not appear in this note.**
+**`README.md:<n>` DOES appear, three times, and a previous version of this
+paragraph wrongly said neither did** — corrected here. `:407` cites
+`README.md:168` (moved from `:166`) and `README.md:889` (moved from `:885`)
+**inside a prose paragraph** (re-checked with `sed -n 403,409p`: it continues
+"Five sites carry `<!-- claim: plugin-skills:crew -->` ... re-derived with
+`grep -rn ...`", not a table — a previous version of this correction wrongly
+called it a "quoted table cell", which describes `marketplace-registration.md`'s
+history table, not this citation); `:521` cites `README.md:918` inside a
+quoted sabotage-test error message ("`README.md:918: claims 999 skills, but
+marketplace.json registers 36`"). The conclusion drawn from the earlier, wrong
+count still holds: `README.md`'s only change in this range (the install-URL
+re-pin, `2cc73a1e`) touched lines 12 and 18 in place with no line count
+change, so none of these three citations shifted or needed re-reading.
+Nothing else was re-read.

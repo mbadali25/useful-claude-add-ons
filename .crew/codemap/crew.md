@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@84976536
+anchor: useful-claude-add-ons@2b337296
 verified: 2026-09-22
 Full re-derivation, not a re-anchor. 96 unique `path:line` citations were
 re-read against the files they name at this anchor; 35 were byte-identical to
@@ -778,3 +778,44 @@ cover their own areas; `INDEX.md` is the table of contents.
   skill-count table unread for eight days.** This pass re-derived all of it, but
   no claim is made that the intervening `verified:` dates were meaningful for
   any section other than that table.
+
+## Re-anchor provenance — 84976536 -> 2b337296, 2026-09-22
+
+Re-anchor only. This note's own per-path check names 44 cited paths (see
+"Re-derivation provenance" above, which itself excludes `README.md` from the
+44-path diff's output as "pure version-bump churn" rather than saying it is
+absent — `README.md` **is** one of the 44 cited paths). `git diff --name-only
+84976536..2b337296` over the whole tree lists `.claude-plugin/marketplace.json`,
+`CHANGELOG.md`, `README.md`, three `docs/diagrams/*.mmd` files,
+`graphify-out/*`, two `skills/doc-builder/*` files, and eight
+`.crew/codemap/*.md` files (concurrent re-anchor edits, not code). Of those,
+`README.md` **is** one of this note's 44 cited paths and does need the
+re-check the next paragraph gives it (the install-URL re-pin, discussed
+below); `.claude-plugin/marketplace.json` is also cited (only doc-builder's
+version changed, unrelated to the `crew` entry this note tracks — confirmed
+below); the rest — `CHANGELOG.md`, the diagrams, `graphify-out/`,
+`skills/doc-builder/` and the codemap files — are not cited by this note.
+
+Grepped this note with `grep -noE '(^|[^/A-Za-z])README\.md:[0-9]+'` and for
+`CHANGELOG.md:<n>`: **`CHANGELOG.md:<n>` citations do not exist** —
+`CHANGELOG.md` appears once, in prose, at what is now `:616` ("`CHANGELOG.md`,
+and **this file**" — about a grep match, not a line citation). **`README.md:<n>`
+citations DO exist, and a previous version of this section wrongly said
+"none exist" while citing two of them in the same sentence** — corrected here.
+Three in the body text: `README.md:168` and `README.md:889` (both table cells,
+in the count-disagreement table), `README.md:591` (prose, the "changelog
+entry, not a current-state claim" bullet) — plus this provenance paragraph's
+own re-quoting of all three (`:168`, `:889`, `:591`), which the same grep also
+matches as three further hits; those are this correction citing the body,
+not additional sites. The conclusion still
+holds despite the earlier count being wrong: `README.md`'s only change in this
+range (the install-URL re-pin, `2cc73a1e`) touched lines 12 and 18 in place
+with no line count change, so none of these citations shifted.
+
+`.claude-plugin/marketplace.json:229` (the crew description this note's count
+table tracks — "27 slash commands, 19 bundled skills") is unaffected: the
+only change to `marketplace.json` in this range is `doc-builder`'s `version`
+field, `1.5.2` -> `1.5.3` — re-diffed specifically to confirm the `crew` block
+is untouched.
+
+Nothing else was re-read at this pass.

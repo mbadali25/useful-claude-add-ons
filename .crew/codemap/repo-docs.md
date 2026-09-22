@@ -1,5 +1,5 @@
 # repo-docs
-anchor: useful-claude-add-ons@84976536
+anchor: useful-claude-add-ons@03b19262
 verified: 2026-09-22
 Full per-path re-verification of every claim resting on a file the path diff
 named as changed; claims resting on unchanged files are closed by that result
@@ -39,18 +39,20 @@ byte-identical is closed by that result: `CLAUDE.md`, `docs/HANDOFF.md`,
 **Read this before the diff-by-diff detail — three findings, one of which is
 live and actionable:**
 
-1. **The install-URL pin is STALE, and this note's own re-pin command says so.**
-   `git log --oneline 0a2d49b069bd178092e75a8cfd1a1c9df6690cd3..HEAD --
-   scripts/install-prerequisites.sh scripts/install-prerequisites.ps1` returns
-   **four commits** (`91669bf1`, `77279034`, `3cca6482`, `f5ddb7dc`), where at
-   the previous anchor it returned nothing. So all three sites carrying that
-   SHA — `README.md:12`, `README.md:18` and
-   `docs/guides/Running-a-Mailbox-Job.json:18` — are serving a script that no
-   longer matches the repo. **Not fixed here**: re-pinning is a change to
-   `README.md` and a tracked guide, outside this note's write scope, and
-   `CLAUDE.md`'s promotion section already assigns the re-pin to whoever merges
-   an install-script change. Recorded as a finding, with the measurement, so it
-   is not rediscovered from scratch.
+1. **The install-URL pin finding below is RESOLVED for `README.md`, and still
+   open for the guide — corrected at the 2026-09-22 re-anchor to `2b337296`.**
+   This bullet previously read "The install-URL pin is STALE," citing
+   `0a2d49b069bd178092e75a8cfd1a1c9df6690cd3` and four commits ahead of it on
+   both install scripts. Re-verified at `2b337296`: `README.md:12` and `:18`
+   now pin `d541ee5708481fbf18c3a5fda050c9e40a40a2d9` (re-pinned by `2cc73a1e`,
+   PR #206), and `git diff --name-only d541ee57..HEAD -- scripts/install-prerequisites.sh
+   scripts/install-prerequisites.ps1` is empty — both re-verified directly.
+   **`docs/guides/Running-a-Mailbox-Job.json:18` was NOT part of that re-pin**
+   and still reads the older `0a2d49b069bd178092e75a8cfd1a1c9df6690cd3`, one
+   commit (`d541ee57`) behind both install scripts — re-verified by grep at
+   this pass. Not fixed here; that file is outside this note's write scope.
+   `install-scripts.md` carries the corresponding correction to its own pin
+   bullet.
 2. **The open `.mmd`-count question from the previous pass is RESOLVED, and the
    answer is "stale", not "scoped to a subset".** The previous pass found six
    `.mmd` files against this note's "three" and explicitly declined to decide
@@ -176,19 +178,34 @@ unchanged position despite the file's other changes.)
   paste into the path diff). Line 1 is
   `%% anchor: useful-claude-add-ons@<sha>`, line 2 is
   `%% Anchors: <paths>`. Those three still read `1f97e51c`, **behind** this
-  anchor — re-measured at HEAD, not carried forward.
+  anchor — confirmed by direct read, at the `2b337296 -> 03b19262` provenance
+  section below (this bullet's own line 1 claim was carried forward unread at
+  the `84976536 -> 2b337296` pass, and is only closed by that later read).
 
   **The directory now holds two provenance shapes, and this entry only ever
-  described one.** Re-measured by reading line 1 of all six: the three above
-  use `%% anchor: <sha>`, while `docs/diagrams/data-flow-crew-config.mmd`,
+  described one.** At the `84976536 -> 2b337296` pass, only the three
+  `%% Generated from...`-style diagrams were freshly re-read (the other three,
+  `%% anchor:`-style, were carried forward and only confirmed later — see
+  above): `docs/diagrams/data-flow-crew-config.mmd`,
   `docs/diagrams/process-crew-brief.mmd` and
   `docs/diagrams/process-bitbucket-svg.mmd` use the
-  `%% Generated from <repo>@<sha> on <date>.` form instead — at `ea8a0143`,
-  `ea8a0143` and `a573ca24` respectively. Both forms are accepted by
-  `_DIAGRAM_ANCHOR_RE` (see `INDEX.md`, which owns the contract), so this is
-  two supported spellings rather than three broken files. Recorded because the
-  previous wording said "all three" of a directory that has held six for two
-  anchors, which reads as a complete inventory and is not one.
+  `%% Generated from <repo>@<sha> on <date>. Verify before trusting.` form,
+  and **all three were re-derived in commit `2b337296`** ("diagrams:
+  re-derive data-flow-crew-config, process-bitbucket-svg, process-crew-brief"):
+  at that pass all three read line 1 `%% Generated from
+  useful-claude-add-ons@84976536 on 2026-09-22. Verify before trusting.` and
+  carry a `%% Anchors:` line 2 naming the source files each diagram covers — a
+  correction from the previous version of this entry, which cited these three
+  at `ea8a0143`, `ea8a0143` and `a573ca24` respectively. Those three sha
+  citations were stale by **one** re-derivation (`ea8a0143`/`a573ca24` ->
+  `84976536`), corrected from a previous version of this bullet that
+  miscounted it as two. `03b19262` (the commit immediately after `2b337296`)
+  changed only bare `%%` comment lines in the body of these three diagrams to
+  fix a Mermaid parse failure — line 1 and line 2 of all three are
+  byte-identical across that commit, confirmed at the `2b337296 -> 03b19262`
+  section below, so it does not add a further re-derivation.
+  Both forms are accepted by `_DIAGRAM_ANCHOR_RE` (see `INDEX.md`, which owns
+  the contract), so this is two supported spellings rather than broken files.
 - DERIVED `docs/adr/` — **three** ADRs at this anchor, not the one the
   previous pass recorded: `0001-promote-stays-unarmed.md` (unchanged file,
   closed by the per-path check), plus `0002-no-chatgpt-mcp-server.md` and
@@ -213,36 +230,55 @@ unchanged position despite the file's other changes.)
   re-measurement logic as `HANDOFF.md`, and this note cannot refresh that date
   since it is not the runbook's owner.
 - DERIVED `CHANGELOG.md:5` — the `## [Unreleased]` heading. Position unchanged
-  again, despite the file reaching **7875 lines** (it was "over 5800" at the
-  previous anchor). Re-read directly; `:5` is the heading.
-- `README.md:12` and `:18` — the bootstrap one-liners, **re-pinned
-  `9ea10e21` -> `1b19e5d8` -> `0a2d49b069bd178092e75a8cfd1a1c9df6690cd3`,
-  both moves on 2026-09-14** — first because `1b19e5d8` registered the
-  `web-research` skill, then because `0a2d49b0` added menu item 25, the
-  Perplexity MCP server. Re-pin by running the same check the old pin passed:
-  `git log --oneline <pinned-sha>..HEAD -- scripts/install-prerequisites.sh
-  scripts/install-prerequisites.ps1`. Empty output means the pin is current;
-  any commit listed means both URLs are serving a script that no longer
-  matches the repo, and the pin must move. That command now returns nothing
-  at `0a2d49b0`.
-  **Two pin moves in one day is the rate to expect, not an anomaly.** Any
-  change registering a marketplace entry edits both install scripts, because
-  registration means touching both in the same commit. So the pin goes stale
-  on essentially every entry that ships. Treat the re-pin as part of merging
-  such a change rather than as periodic maintenance, and do not read a recent
-  move as evidence the pin is fresh.
-  **A third site carries the same SHA and the runbook does not mention it.**
-  `docs/guides/Running-a-Mailbox-Job.json:18` embeds the PowerShell one-liner
-  inside a JSON step string, so `docs/runbooks/rollback.md:55` — which says to
-  replace the SHA in "BOTH raw.githubusercontent.com URLs in README.md" — is
-  an undercount, and following it literally leaves that guide installing an
-  older script with no error anywhere. It was re-pinned here too. Re-measure
-  with `grep -rn <old-sha> --include='*.md' --include='*.json' .` rather than
+  again, despite the file reaching **7885 lines** (`wc -l`, re-measured this
+  pass; it was 7875 at the previous anchor — a doc-builder 1.5.3 entry added 10
+  lines at line 9, below the heading). Re-read directly; `:5` is still the
+  heading.
+- `README.md:12` and `:18` — the bootstrap one-liners, **re-pinned again since
+  the previous anchor: `9ea10e21` -> `1b19e5d8` -> `0a2d49b069bd178092e75a8cfd1a1c9df6690cd3`
+  (both moves 2026-09-14) -> `d541ee5708481fbf18c3a5fda050c9e40a40a2d9`
+  (`2cc73a1e`, "README: re-pin install URLs to d541ee57 after PR #205 changed
+  both install scripts (#206)", 2026-09-22)** — the **third** move in that
+  chain (`9ea10e21`->`1b19e5d8`, `1b19e5d8`->`0a2d49b0`, `0a2d49b0`->`d541ee57`:
+  three arrows, corrected from "the fourth move" in a previous version of this
+  bullet, which miscounted), because PR #205 (`d541ee57`) changed the Linux
+  install path, the community marketplace and the `uv` install chain in both
+  install scripts, which left `0a2d49b0` serving a version with none of that.
+  Re-verified directly at this pass, not carried: `README.md:12` and `:18` now
+  read `d541ee57...`, and
+  `git log --oneline d541ee57..HEAD -- scripts/install-prerequisites.sh
+  scripts/install-prerequisites.ps1` is empty — the pin is current.
+  **This 2026-09-22 move was one commit, not two — but "two moves in one day"
+  is common in this file's history, not a single instance, and a previous
+  version of this bullet was wrong in that direction too.** Verified with
+  `git log --format='%h %ad %s' --date=short -L12,12:README.md`, the full
+  commit history of the pinned-URL line: 2026-09-22 shows exactly one commit
+  (`2cc73a1e`). But 2026-09-14 shows **two** (`d13ea445`, `8c8353f5`) and
+  2026-09-13 shows **four** (`819bf382`, `91a7aab1`, `2ce6b4e8`, `a4a48456`) —
+  and multi-commit days recur throughout the file's history back to 2026-07-28
+  (2026-08-28, 2026-08-11 and 2026-08-04 each show four; 2026-08-23 shows
+  three). So the pattern is not "observed once, on 2026-09-14" as a previous
+  version of this bullet said — it is the ordinary rate this file re-pins at
+  whenever several install-script-touching changes land close together. What
+  still holds: any change registering a marketplace entry or touching either
+  install script edits both scripts in one commit, so the pin goes stale on
+  essentially every such entry, and a recent re-pin is no evidence the pin
+  will still be fresh next week.
+  **A third site carries an install-URL SHA and was NOT part of this
+  re-pin.** `docs/guides/Running-a-Mailbox-Job.json:18` embeds the PowerShell
+  one-liner inside a JSON step string; re-checked at this pass, it still reads
+  `0a2d49b069bd178092e75a8cfd1a1c9df6690cd3` — one commit (`d541ee57`) behind
+  both install scripts. `docs/runbooks/rollback.md:55`, which says to replace
+  the SHA in "BOTH raw.githubusercontent.com URLs in README.md," is still an
+  undercount by this same site, and following it literally now leaves that
+  guide installing a script older than the one shipped by PR #205. Not fixed
+  here — outside this note's write scope. Re-measure with
+  `grep -rn <old-sha> --include='*.md' --include='*.json' .` rather than
   trusting this list; `.claude/worktrees/` copies are agent worktrees and are
   not tracked sites.
-  Both re-pinned URLs were fetched at this pass: each returns HTTP 200 and the
-  served bodies contain the `web-research` entry (2 occurrences in the `.sh`,
-  1 in the `.ps1`), so the pin is known good rather than merely plausible.
+  **The re-pinned URL was not fetched live at this pass** (the previous
+  anchor's HTTP-200 fetch check was not repeated) — flagged as unverified
+  rather than carried forward as still true.
 - `TODO.md` — re-resolved rather than trusted at its old line numbers, per
   this note's own standing rule that `TODO.md` is edited often. The render.sh
   entry moved from `:870-899` to `:1061-1091`; see "TODO.md's render.sh entry"
@@ -364,8 +400,10 @@ visible:**
 
 - `CLAUDE.md:147` — "Decisions in `docs/adr/`." — is now TRUE. (Previously
   cited as a false claim alongside two others.)
-- `CHANGELOG.md:5402` (moved from `:3429-3430`, and from `:2057-2058` before
-  that; re-located by grepping the string, not by offset) — "It also stops
+- `CHANGELOG.md:5412` (moved from `:5402`, from `:3429-3430`, and from
+  `:2057-2058` before that; re-located by grepping the string at this pass,
+  confirming the +10 shift from the doc-builder 1.5.3 entry inserted at line 9
+  — not assumed from the offset) — "It also stops
   claiming `docs/adr/`, which is now `scribe`'s" — was always true of *authorship*
   (crew:scribe owns ADRs, not this note) and remains true; what changed is
   only that the directory it discusses now has content.
@@ -504,7 +542,7 @@ not be trusted without a fresh read if they are needed again.
   marketplaces; only the repo-local catalog it is supposed to mirror was read.
 - Whether `CHANGELOG.md` entries are strictly one per plugin-version bump
   throughout. Only the opening `[Unreleased]` region was read this pass; the
-  now much larger history (**7875 lines**) was not read back. The rule
+  now much larger history (**7885 lines**) was not read back. The rule
   actually written down remains `plugin/crew/skills/crew-docs/SKILL.md:26`
   (position unchanged, re-confirmed), gating an entry on "Behaviour users or
   callers can observe changed," not on a version bump.
@@ -537,3 +575,128 @@ is known to have grown, and this note is mixed-base by nature — its citations
 into files that changed in this range are re-derived, and its citations into
 files that did not are closed by the per-path check, and the two are not
 interchangeable evidence.
+
+## Re-anchor provenance — 84976536 -> 2b337296, 2026-09-22
+
+**Corrected at the 2b337296 -> 03b19262 pass, below: this section previously
+said "30 tracked paths" and "Five changed," neither of which matched what was
+actually run.** The 32-path list this note's own `ea8a014 -> 84976536` section
+enumerates (16 changed + 16 unchanged, listed above) is the pathspec actually
+usable here, run verbatim:
+
+```
+git diff --name-only 84976536..HEAD -- .crew/verify.json CHANGELOG.md \
+  INSTALLATION.md README.md TODO.md docs/diagrams/data-flow-crew-config.mmd \
+  docs/diagrams/process-crew-brief.mmd docs/remaining-setup.md plugin/PLUGINS.md \
+  plugin/README.md plugin/crew/README.md plugin/crew/agents/scribe.md \
+  plugin/crew/hooks/scripts/_test/run-tests.sh plugin/crew/hooks/scripts/crew_state.py \
+  scripts/check-marketplace.py skills/README.md CLAUDE.md docs/HANDOFF.md \
+  docs/adr/0001-promote-stays-unarmed.md docs/diagrams/architecture.mmd \
+  docs/guides/Running-a-Mailbox-Job.json docs/runbooks/rollback.md \
+  plugin/crew/commands/handoff.md plugin/crew/hooks/scripts/crew_freshness.py \
+  plugin/crew/skills/crew-context/SKILL.md plugin/crew/skills/crew-diagrams/SKILL.md \
+  plugin/crew/skills/crew-diagrams/scripts/_test/render.sh \
+  plugin/crew/skills/crew-diagrams/scripts/render.sh plugin/crew/skills/crew-docs/SKILL.md \
+  plugin/crew/skills/crew-runbooks/SKILL.md scripts/_test/self-claims.py scripts/sync-updates.py
+```
+
+Output, verbatim:
+
+```
+CHANGELOG.md
+README.md
+docs/diagrams/data-flow-crew-config.mmd
+docs/diagrams/process-crew-brief.mmd
+```
+
+**Four changed, not five.** `docs/diagrams/process-bitbucket-svg.mmd` is
+**not** in this 32-path list at all — confirmed by grep over the `ea8a014 ->
+84976536` section's own two file lists above, neither of which names it. That
+is itself a gap worth recording: the "Entry points" section below discusses
+all six `.mmd` files by name, including `process-bitbucket-svg.mmd`, but this
+note's tracked-path list only ever covered two of the three
+`%% Generated from...`-style diagrams. It was still re-read at this pass
+(confirmed changed by a separate, wider check —
+`git diff --name-only 84976536..2b337296` over the whole repo lists it), so
+the claim made about its contents below is not wrong, but citing it as part of
+"the 30 tracked paths" was.
+
+All four files actually returned by the pathspec above (`CHANGELOG.md`,
+`README.md`, `data-flow-crew-config.mmd`, `process-crew-brief.mmd`), plus
+`docs/diagrams/process-bitbucket-svg.mmd` (checked separately, as just
+explained, since the pathspec cannot return it), re-read directly, not
+offset:
+
+- `CHANGELOG.md` gained 10 lines at line 9 (a doc-builder 1.5.3 entry), now
+  **7885** lines (`wc -l`, was 7875). `CHANGELOG.md:5` — the `## [Unreleased]`
+  heading — is unaffected (the insertion is below it). `CHANGELOG.md:5402`
+  moved to `:5412`, re-located by grepping the string and confirming the +10
+  shift rather than assuming it.
+- `README.md:12` and `:18` re-pinned `0a2d49b069bd178092e75a8cfd1a1c9df6690cd3`
+  -> `d541ee5708481fbf18c3a5fda050c9e40a40a2d9` (`2cc73a1e`, PR #206). Both
+  re-verified directly; `git log --oneline d541ee57..HEAD -- scripts/install-prerequisites.sh
+  scripts/install-prerequisites.ps1` is empty, so the pin is current. This
+  resolves finding 1 from the previous pass ("the install-URL pin is STALE")
+  for `README.md` specifically — `docs/guides/Running-a-Mailbox-Job.json:18`
+  was checked separately (it is a cited path, unchanged in this diff) and
+  still reads the older `0a2d49b0` SHA, now one commit further behind.
+- The three `%% Generated from ...` diagrams were re-derived by `2b337296`
+  ("diagrams: re-derive data-flow-crew-config, process-bitbucket-svg,
+  process-crew-brief"). All three now read line 1 `%% Generated from
+  useful-claude-add-ons@84976536 on 2026-09-22. Verify before trusting.` and
+  carry a `%% Anchors:` line 2. This note's previous citation of them at
+  `ea8a0143`/`ea8a0143`/`a573ca24` is corrected in place, above.
+
+**Not re-read at this specific pass**: everything else in this note. The
+three `%% anchor:` diagrams (`architecture.mmd`, `data-flow.mmd`, `process.mmd`)
+were not re-opened here. `docs/diagrams/architecture.mmd` IS in the 32-path
+pathspec (it is named in the verbatim command above), and the diff returned
+nothing for it, so it is unchanged in this range; `data-flow.mmd` and
+`process.mmd` are not in that pathspec, so for those two the diff says
+nothing either way. All three were carried forward, stated to still read
+`1f97e51c` on the strength of the previous pass's reading rather than a fresh
+one at this point. **They were
+subsequently re-opened and confirmed** at the `2b337296 -> 03b19262` section
+immediately below, which is a later pass, not this one; that confirmation
+does not retroactively make this section's own claim about them a fresh read.
+`docs/adr/`'s three-file inventory, `HANDOFF.md`'s staleness count and every
+other DERIVED claim not listed above are carried forward on the per-path
+check alone.
+
+## Re-anchor provenance — 2b337296 -> 03b19262, 2026-09-22
+
+HEAD advanced while the pass above was in flight: `03b19262` ("diagrams: no
+bare %% lines") landed on this branch. **This section previously said the
+check below ran over "the tracked paths this note cites" — it did not; that
+pathspec is the 32-path list above, which (per the gap already recorded in
+the `84976536 -> 2b337296` section) omits `process-bitbucket-svg.mmd`,
+`data-flow.mmd` and `process.mmd` entirely, so it cannot return
+`process-bitbucket-svg.mmd` the way the output below does.** The command
+actually run, and its actual output:
+
+```
+git diff --name-only 2b337296..03b19262
+```
+```
+docs/diagrams/data-flow-crew-config.mmd
+docs/diagrams/process-bitbucket-svg.mmd
+docs/diagrams/process-crew-brief.mmd
+```
+
+No pathspec — the whole-repo diff between these two commits, which happens to
+return exactly the three diagrams `03b19262`'s commit message says it touched.
+Re-read the diff itself: every changed line is a bare `%%` comment line
+replaced by `%% -` (mermaid does not strip an empty `%%`, so they piled onto
+the `flowchart` keyword and failed to parse). Lines 1-2 of all three are
+byte-identical before and after, and no claim in this note rests on the
+body lines that changed. Re-anchor only.
+
+Also re-read at this anchor, correcting the "not re-opened" caveat in the
+entry above: line 1 of `docs/diagrams/architecture.mmd`,
+`docs/diagrams/data-flow.mmd` and `docs/diagrams/process.mmd` each reads
+`%% anchor: useful-claude-add-ons@1f97e51c`. DERIVED.
+
+The render gate, which earlier entries record as never run for want of
+`mmdc`, was run by the commit author for `03b19262` with mmdc 11.17.0
+(`render.sh --force`: 3 FAIL before the fix, 12 ok after). That is the
+commit message's claim; this note did not re-run it.

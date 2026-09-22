@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@84976536
+anchor: useful-claude-add-ons@2b337296
 verified: 2026-09-22
 
 # localgpu
@@ -10,6 +10,33 @@ Plugin version at this anchor: **0.1.20** — **DERIVED**,
 `plugin/localgpu/.claude-plugin/plugin.json:3` and
 `plugin/localgpu/pyproject.toml:7`, which agree. (Was `0.1.18`; both places
 moved together and both were re-read at the 2026-09-22 pass below.)
+
+**DERIVED, added at this pass, corrected after QA.** The two files agreeing is
+not enforced by any code path in this plugin — nothing here reads `plugin.json`
+at runtime. `localgpu_cli.py` and `server.py` both get their version string
+from `_version.py` (`plugin/localgpu/mcp/_version.py`), which regexes
+`version = "..."` out of `pyproject.toml` alone (`_PYPROJECT`/`_VERSION_RE`,
+`plugin/localgpu/mcp/_version.py:31-32`) and is deliberately **not**
+`importlib.metadata.version("localgpu")` — its own docstring says why: an
+editable install's dist-info is a snapshot taken at `pip install -e` time and
+does not refresh when `pyproject.toml` is edited, which this file's author says
+was confirmed on their own machine (`plugin/localgpu/mcp/_version.py:10-13`).
+
+**This pass first wrote that `plugin/localgpu/.claude-plugin/plugin.json:3` and
+`plugin/localgpu/pyproject.toml:7` agreeing "is a marketplace registration
+convention checked by `scripts/check-marketplace.py`" — that is false, caught
+by QA, and worth recording exactly how.** `grep -rn pyproject scripts/` is
+empty: nothing under `scripts/` reads `pyproject.toml` at all.
+`check_plugin_manifests` (`scripts/check-marketplace.py:160-170`) does check a
+`plugin.json` version, but against `marketplace.json`'s declared version for
+that entry (`declared != entry["version"]` at
+`scripts/check-marketplace.py:169`), not against `pyproject.toml`. So
+`plugin/localgpu/.claude-plugin/plugin.json:3` agreeing with
+`plugin/localgpu/pyproject.toml:7` specifically is checked by **nothing** —
+not by `localgpu`'s own code (see above) and not by this repo's marketplace
+gate either. It is an unenforced convention maintained by whoever edits the
+version, full stop; the gate only catches `plugin.json` drifting from
+`marketplace.json`, a different pair.
 
 ## Re-anchor provenance - 3167721f -> 1f97e51c, 2026-09-06
 
@@ -137,8 +164,15 @@ level removed via `_check_embed_model`.
 ## `ignore` / `unignore` / `.gitignore` — three layers
 
 `plugin/localgpu/mcp/config.py` last changed at commit `c7d7f8aa` (localgpu
-0.1.10). The plugin is now at 0.1.18; the file has been stable across those
-eight bumps.
+0.1.10) — confirmed at this pass: `git log -- plugin/localgpu/mcp/config.py`
+still lists `c7d7f8aa` as the most recent commit touching this file. The
+plugin is now at 0.1.20; **measured, not the version-number subtraction**, via
+`git log --follow -p -- plugin/localgpu/.claude-plugin/plugin.json`, which
+version-bump commit changed the `"version"` field after `c7d7f8aa`: six did —
+`84e36829` (`0.1.11`), `b7b7101d` (`0.1.14`), `9338e89d` (`0.1.16`), `ac93221d`
+(`0.1.18`), `76d10447` (`0.1.19`), `dade775e` (`0.1.20`) — several of them
+skipping intermediate patch numbers, so `20 - 10 = 10` is not the right count
+and was not used. The file has been stable across those six bump commits.
 
 **DERIVED.** `DEFAULT_IGNORE` (`plugin/localgpu/mcp/config.py:30-87`) carries a
 block of credential patterns appended after the original binary/vendor list:
@@ -157,16 +191,18 @@ the effective `ignore` list. Confirmed **pattern removal, not path exemption** �
 `load_config`'s own docstring says so explicitly
 (`plugin/localgpu/mcp/config.py:203-207`) and
 `test_unignoring_a_liftable_default_lets_the_file_through`
-(`plugin/localgpu/mcp/_test/test_unignore.py:28-49`) proves it end to end:
+(`plugin/localgpu/mcp/_test/test_unignore.py:30-51` — was cited as `:28-49`, off by
+2 lines at both ends; re-found by grepping the `def`, not by offset) proves it end
+to end:
 `"unignore": ["*.key"]` lets a `.strings.key` file's *content* reach the embedder
 while a `.env` in the same repo, not covered by the lifted pattern, stays
 excluded. `unignore` layers as a union exactly like `ignore` does
 (`plugin/localgpu/mcp/config.py:228-229`, and
 `test_unignore_accumulates_across_layers_like_ignore` in
 `plugin/localgpu/mcp/_test/test_config.py`) and is type-checked the same way — a
-bare string raises `ConfigError` at `plugin/localgpu/mcp/config.py:180` rather
-than being shredded into single-character globs
-(`test_unignore_as_a_bare_string_is_rejected_not_shredded`).
+bare string fails the `_LIST_KEYS` shape check at `plugin/localgpu/mcp/config.py:180`
+and raises `ConfigError` at `:181-184` rather than being shredded into
+single-character globs (`test_unignore_as_a_bare_string_is_rejected_not_shredded`).
 
 `.git`, `.localgpu`, and `node_modules` are an unliftable floor —
 `UNLIFTABLE_IGNORE = frozenset({".git", ".localgpu", "node_modules"})`, defined
@@ -175,9 +211,11 @@ immediately above (`plugin/localgpu/mcp/config.py:89-93`). Confirmed by
 `test_unignore_cannot_lift_the_hard_floor`
 (`plugin/localgpu/mcp/_test/test_config.py`) and by
 `test_hard_floor_survives_an_unignore_attempt`
-(`plugin/localgpu/mcp/_test/test_unignore.py:52-71`), which additionally proves
-it at the content level: a `node_modules/pkg/index.js` file's text never reaches
-the embedder even when a repo config explicitly asks to lift `node_modules`.
+(`plugin/localgpu/mcp/_test/test_unignore.py:54-82` — was cited as `:52-71`, which
+undercounted the function by 11 lines and cut off before its content-level
+assertions), which additionally proves it at the content level: a
+`node_modules/pkg/index.js` file's text never reaches the embedder even when a
+repo config explicitly asks to lift `node_modules`.
 
 ### The floor refuses out loud — correcting this note's own JUDGEMENT
 
@@ -295,15 +333,30 @@ fact about today rather than something the next editor must re-derive — becaus
 (`plugin/localgpu/cli/_test/test_cli.py:925`) pins the order by making the
 serialisation raise and checking the file survives.
 
-**DERIVED, corrected.** The old claim "No `.mcp.json` exists anywhere in this
-repo. Confirmed: a repo-wide search finds none" is now wrong in two ways. No
-`.mcp.json` is **tracked** — `git ls-files` finds only the two templates
+**DERIVED, re-checked at this anchor and changed.** No `.mcp.json` is **tracked**
+— `git ls-files | grep mcp.json` still finds only the two templates
 (`plugin/crew/skills/crew-setup/templates/mcp.json`,
-`plugin/localgpu/skills/localgpu/templates/mcp.json`) — but one **exists in this
-working tree**, untracked and ignored by `.gitignore:369`, written by
-`mcp-init`. Its `args` path is pinned to plugin version `0.1.11` while the
-plugin is at `0.1.18`, which is exactly the stale-pin case item 4 above exists
-for; `mcp-init --force` re-pins it.
+`plugin/localgpu/skills/localgpu/templates/mcp.json`) — and the repo's
+`.gitignore` still carries the `.mcp.json` line `mcp-init` writes
+(`_IGNORE_NOTE`, `plugin/localgpu/cli/localgpu_cli.py:435-443`), but it moved to
+`.gitignore:421` (was cited as `:369`; the file grew — it is 482 lines now).
+
+**Correction, not just a re-point.** The pass that set the previous anchor
+(`84976536`) reported an untracked `.mcp.json` actually present in the working
+tree at that time, pinned to plugin version `0.1.11`. At this pass that file
+**does not exist** — `ls .mcp.json` fails with "No such file or directory".
+(`git check-ignore -v .mcp.json` was checked too, in this absent-file state,
+and printed `.gitignore:421:.mcp.json	.mcp.json` — a pattern match against the
+path, not a check against the filesystem. It was dropped as evidence for that
+reason: it says nothing about whether the file is present, since it reasons
+about `.gitignore` patterns, not about what's on disk. The present-file case
+was not separately run here, only reasoned about from how the tool works.)
+This is expected to be volatile: `.mcp.json` is per-machine, written only
+after someone runs `mcp-init` in this exact working tree, and gitignored by
+design (that is the whole point of the mechanism above) — so whether one exists
+here is a fact about this checkout's history, not about the repo, and it is not
+safe to assert as a standing claim. Treat any future observation of it the same
+way: as a snapshot of this working tree at read time, not a repo fact.
 
 **JUDGEMENT, unchanged and still true.** "Per repo, never plugin-level"
 (`plugin/localgpu/commands/setup.md:157-160`) remains prose, not a rule any code
@@ -411,6 +464,70 @@ All re-resolved at this anchor; every `localgpu_cli.py` line below moved.
 - `plugin/localgpu/bootstrap.sh` and `plugin/localgpu/bootstrap.ps1` — the
   install entry point, a matched pair
 
+## Six slash commands — new section, added at this pass
+
+**DERIVED, from `git ls-files` under `plugin/localgpu/commands/` and each
+file's frontmatter, not previously listed in this note.** `plugin.json`'s
+`description` field claims "Six commands"
+(`plugin/localgpu/.claude-plugin/plugin.json:4`) and `ls` confirms six files:
+
+- `setup.md` (176 lines) — `allowed-tools: Read, Write, Edit, Bash, Glob`. The
+  only command whose *own* `allowed-tools` include `Write`/`Edit`: venv,
+  models, `.localgpu/config.json`, and (Step 6) `<repo>/.mcp.json` via
+  `localgpu mcp-init` — see `.mcp.json` gap section above. **Corrected after
+  QA:** it is not the only command that writes to disk — `index.md` below
+  runs `index_refresh`, and the writes there (`vectors.f16`, `meta.sqlite`,
+  `manifest.json`) happen inside the MCP server process the tool call reaches,
+  not through this command's own `allowed-tools`.
+- `index.md` (129 lines) — `allowed-tools: Read, Bash, Glob,
+  mcp__localgpu__index_refresh, mcp__localgpu__search_code`. Drives the
+  `index_refresh` MCP tool, which is a write path — the `vectors.f16`,
+  `meta.sqlite` and `manifest.json` bullets under "Owns data" below, not the
+  `.mcp.json`-writing paragraph further down that section (that one is about
+  `cmd_mcp_init`, a different write). `setup.md` is not the only command that
+  writes. Argument-hint is the quoted string `"[--full] [--root <path>]"`;
+  corrected below — that quoting is commit `dade775e`, an ancestor of the
+  *previous* anchor `84976536`, not a change made between `84976536` and this
+  one. The `84976536..2b337296` diff over `plugin/localgpu/` is empty (see
+  the full re-derivation provenance below), so nothing in `index.md` changed
+  during this pass; the quoting was already in place and already documented
+  in the `1f97e51c -> 84976536` provenance section further down.
+- `search.md` (83 lines) and `ask.md` (81 lines) — both
+  `allowed-tools: Read, Bash, Grep, mcp__localgpu__search_code`; `ask.md`'s
+  description is explicit that its answer is "grounded in indexed excerpts",
+  the opposite of `localgpu prompt`.
+- `doctor.md` (184 lines) — `allowed-tools: Read, Bash, Glob,
+  mcp__localgpu__search_code, mcp__localgpu__index_status`. Report-only, no
+  `Write`/`Edit`. `WARN`s rather than `FAIL`s a missing `localgpu_cli` package
+  because `mcp/server.py` never imports it
+  (`plugin/localgpu/commands/doctor.md:79-82`), and separately `WARN`s when
+  `OLLAMA_MAX_LOADED_MODELS` is unset or above 1 (`:158`).
+- `crew.md` (229 lines) — `allowed-tools: Read, Bash, Grep`, report-only. States
+  the boundary this whole plugin operates inside: `localgpu` is not one of
+  crew's dev/QA providers. `crew.md` itself attributes the provider tuples to
+  `plugin/crew/hooks/scripts/crew_config.py` (prose at
+  `plugin/localgpu/commands/crew.md:29-30`), with the literal tuples
+  `DEV_PROVIDERS = ("claude", "codex", "copilot")` /
+  `QA_PROVIDERS = ("claude", "codex", "copilot")` quoted at `:33-34`.
+  **Checked against the code, corrected after QA:**
+  `plugin/crew/hooks/scripts/crew_config.py:126-127` only re-exports
+  (`DEV_PROVIDERS = crew_state.DEV_PROVIDERS`); the tuples are actually
+  *defined* at `plugin/crew/hooks/scripts/crew_state.py:1503-1504`.
+  So `crew.md`'s own attribution to `crew_config.py` names the re-export, not
+  the definition — true as far as it goes (that file does hold those names),
+  but not where the literals live. This command also states it "writes
+  nothing — not `.crew/config.json`, not an environment variable, not a shim
+  on `PATH`" (`plugin/localgpu/commands/crew.md:9-10`).
+  **Narrowed after QA, not "Unknown":** this note read `crew.md` through line
+  40 (Step 0 and the opening of Step 1, including the provider-tuple block).
+  The rest of its 229 lines — its account of which specific crew roles a 7B
+  can and cannot take over — was not read at this pass.
+
+`plugin.json`'s own description also states "No hooks and no agents; nothing
+leaves 127.0.0.1" (`plugin/localgpu/.claude-plugin/plugin.json:4`); confirmed
+by directory listing — `plugin/localgpu/` has no `hooks/` or `agents/`
+directory.
+
 ## Owns data
 
 - `vectors.f16` — rows x dim little-endian float16, memmapped, via
@@ -425,6 +542,27 @@ All re-resolved at this anchor; every `localgpu_cli.py` line below moved.
   (`plugin/localgpu/mcp/indexer.py:401`)
 - all four live under `$LOCALGPU_HOME/index/`, resolved by
   `plugin/localgpu/mcp/config.py`
+
+**DERIVED, added at this pass — the `open(p, "w")` landmine, and this file is
+immune to it, not by accident.** `VectorStore.compact()`
+(`plugin/localgpu/mcp/store.py:620-674`) rewrites `vectors.f16` by writing to a
+sibling temp file first — `temp = self.vectors_path.with_suffix(".f16.compacting")`
+(`:637`), opened and written inside `with open(temp, "wb") as handle:` (`:639-648`)
+— and only afterward calls `self._replace_vectors_file(temp)` (`:651`), which
+`os.replace`s it into place with retries for a lingering Windows reader
+(`_replace_vectors_file`, `:676` onward; its docstring names the Windows
+`PermissionError` case explicitly). Because the write target is the *temp* file
+and the live `vectors.f16` is only ever replaced atomically after that write
+succeeds, a raising argument to `handle.write(...)` (line `:646`, inside the
+`with`) costs the temp file, never the live one — this is the one write site
+in the plugin the repo `CLAUDE.md`'s `open(p, "w")` landmine section names as
+already immune, and reading the code confirms it: `compact()` never opens
+`self.vectors_path` itself for writing.
+
+`cmd_mcp_init`'s `.mcp.json` write (`plugin/localgpu/cli/localgpu_cli.py:421-422`,
+documented above) is the opposite pattern — it opens the real target directly —
+and is made safe a different way: by computing the full payload into `body`
+*before* the `open()` call, not by writing through a temp file.
 
 ## Calls out to
 
@@ -498,3 +636,267 @@ No Ollama server was contacted, no index was built, neither bootstrap script was
 run, and no test suite was executed. The `Not re-verified at this anchor` note
 in the 2026-09-06 section above still stands - `cli/anthropic_proxy.py` has
 still never been read end to end.
+
+## Full re-derivation, 84976536 -> 2b337296, 2026-09-22
+
+**This is the pass the section above said this note needed, and "the previous
+pass" here means the narrow one directly above, not 2026-09-06 — those two are
+not the same kind of pass and the note's own history says so.** The
+2026-09-06 re-anchor (`3167721f -> 1f97e51c`, top of this note) did open every
+cited file — that is the pass that caught the "floor refuses out loud" error
+by re-reading `config.py` even though it had not changed. The narrow pass
+immediately above (`1f97e51c -> 84976536`) is the one that advanced the anchor
+on a per-path diff without opening the cited files, and says so itself ("no
+file was re-read at this pass"). This pass opened every cited file, closing
+the gap the narrow pass left open and bringing the claims themselves current
+for the first time since 2026-09-06.
+
+`git diff --name-only 84976536..2b337296 -- plugin/localgpu/` is empty — no
+file this note cites changed in the underlying repo between the two commits.
+That made this a pure re-read: every citation was checked against HEAD by
+opening the file and either grepping for the cited symbol/string or reading
+the surrounding lines directly, not by trusting the line number carried over
+from the last pass.
+
+**Counts, measured by diffing two greps of this file's own citations** — one
+run against `git show 84976536:.crew/codemap/localgpu.md`, one against the
+version on disk now, both with a single regex that matches any repo-relative
+`path:line` citation regardless of which top-level directory it starts
+under (requires at least one `/`, so it catches `plugin/localgpu/...`,
+`plugin/crew/...` and `scripts/...` alike, in one pass rather than one regex
+per prefix plus a manual add-on for whatever the regex missed — the
+add-on approach is what produced the wrong count QA caught below):
+
+```
+grep -oE '[A-Za-z0-9_.-]+(/[A-Za-z0-9_.-]+)+\.(py|md|sh|ps1|json|toml):[0-9]+(-[0-9]+)?' .crew/codemap/localgpu.md | sort -u | wc -l
+```
+
+plus `\.gitignore:[0-9]+` handled the same way separately (it is a single
+path segment with an extension this regex's list does not include, so it
+never matches and has to be counted on its own):
+
+- **84 distinct `path:line` citations existed before this pass** (83 from the
+  command above run against `git show 84976536:.crew/codemap/localgpu.md`,
+  plus one `.gitignore:NNN`). All 84 were re-read against HEAD.
+- **81 confirmed unchanged** — same file, same line(s), same claim, verified by
+  opening the file (not by the empty `git diff` alone — see the `test_unignore.py`
+  case below for why that distinction matters).
+- **2 corrected** — both in `plugin/localgpu/mcp/_test/test_unignore.py`, both
+  wrong by an amount too large to be a copy-paste slip and too small to be a
+  different function: `test_unignoring_a_liftable_default_lets_the_file_through`
+  was cited at `:28-49`, its `def` is at line 30 (off by 2 at the start, and the
+  same 2 at the end since the function is exactly the length cited); and
+  `test_hard_floor_survives_an_unignore_attempt` was cited at `:52-71`, its `def`
+  is at line 54 and it runs to line 82, not 71 — the old citation cut off before
+  the function's own content-level assertions, which are the specific thing the
+  note's prose claims the test proves. **Neither error was catchable by the
+  `1f97e51c -> 84976536` pass's "byte-for-byte identical at both commits" check**
+  (see that section above): the file genuinely is byte-identical across that
+  range, so the same wrong line numbers were wrong at both commits equally, and
+  a diff of identical-but-wrong text against itself reports no problem. Byte
+  comparison across commits proves nothing about whether a citation was right
+  to begin with — only re-reading the cited content against its own prose claim
+  does, which is what this pass did differently.
+- **1 re-pointed** — `.gitignore:369` -> `.gitignore:421`. The claim (that
+  `mcp-init`'s `.gitignore` entry for `.mcp.json` is still present) still
+  holds; `.gitignore` itself grew to 482 lines and the line moved.
+- **1 claim invalidated by working-tree state, not by a code or repo change** —
+  the previous pass reported an actual untracked `.mcp.json` present in this
+  checkout, pinned to plugin version `0.1.11`. At this pass no such file exists
+  in the working tree. Corrected in place rather than re-pointed, with a note
+  that this specific fact is inherently checkout-local and should not be
+  re-asserted as a standing claim about the repo (see the "Correction, not
+  just a re-point" paragraph above).
+- **1 refined for precision, not corrected** —
+  `plugin/localgpu/mcp/config.py:180` is the `if` guard that leads to the
+  bare-string `ConfigError`; the `raise` itself is at `:181-184`. The original
+  claim was not false, just anchored to the condition rather than the
+  statement it guards; both are now cited.
+- **13 new distinct citations added**, for material this note did not
+  previously cover at all (see "Six slash commands", the `store.py`
+  write-safety paragraph, and the `_version.py`/`plugin.json` version
+  paragraph at the top) — **corrected twice by QA, this is the version the
+  command above actually produces.** The command run against the current
+  file returns 96; against the pre-pass version it returns 83; 81 of those
+  are common to both (the "confirmed unchanged" count above), so
+  `96 - 81 = 15` raw new lines, minus the 2 that are the corrected
+  `test_unignore.py` replacements already counted above (not new content,
+  a re-pointed citation for existing content) leaves **13**. Listed in full:
+  `plugin/localgpu/.claude-plugin/plugin.json:4`,
+  `plugin/localgpu/cli/anthropic_proxy.py:947`,
+  `plugin/localgpu/cli/localgpu_cli.py:435-443`,
+  `plugin/localgpu/commands/crew.md:9-10`, `:29-30`,
+  `plugin/localgpu/commands/doctor.md:79-82` (and `:158`, cited in shorthand),
+  `plugin/localgpu/mcp/store.py:620-674` (and its internal `:637`, `:639-648`,
+  `:646`, `:651`, `:676`, cited in shorthand),
+  `plugin/localgpu/mcp/_version.py:10-13`, `:31-32`,
+  `plugin/crew/hooks/scripts/crew_config.py:126-127`,
+  `plugin/crew/hooks/scripts/crew_state.py:1503-1504`, and, both written out
+  in full rather than one of them in shorthand,
+  `scripts/check-marketplace.py:160-170` and `scripts/check-marketplace.py:169`.
+  The first version of this bullet said 9 and listed 7 (both wrong, an
+  earlier miscount); the QA round after that said 12 and described the
+  `crew_state.py` citation above as falling outside the `plugin/` regex used
+  above, when it in fact matches that regex (it starts with `plugin/crew/`)
+  and was already in that regex's output — the "outside the regex, tallied
+  separately" split was the error, not the citation. Unifying the regex to
+  match any repo-relative path in one pass, as done above, removes the need
+  for that kind of manual add-on and the place it went wrong.
+
+**What this closes.** The task instruction for `plugin/localgpu/mcp/store.py`
+around line 646 and `plugin/localgpu/cli/localgpu_cli.py`'s write ordering is
+now recorded in the note itself (the "Owns data" section and the existing
+`cmd_mcp_init` write-safety paragraph respectively) rather than only in this
+repo's `CLAUDE.md`; both were verified by reading the code, not assumed from
+that document's description.
+
+### QA block, fixed in place, same day
+
+QA blocked the first version of this pass with ten findings (4 BLOCK, 4 FIX,
+2 NIT), all against content this pass itself had added or changed — not
+against anything carried over from an earlier anchor. All ten were re-checked
+by opening the named files and fixed in place; the counts above and every
+section they reference already reflect the fixes, not the original mistakes.
+For the record, what was wrong and how it was found:
+
+1. **False tool-coverage claim.** This note first said the plugin manifest's
+   version field and the Python project file's version field
+   (`plugin/localgpu/.claude-plugin/plugin.json:3` and
+   `plugin/localgpu/pyproject.toml:7`) agreeing "is a marketplace registration
+   convention checked by `scripts/check-marketplace.py`".
+   `grep -rn pyproject scripts/` is empty; `check_plugin_manifests` checks
+   `plugin.json` against `marketplace.json`, not against `pyproject.toml`.
+   Nothing checks that specific pair. Fixed in the version paragraph at the
+   top of this note.
+2. **Wrong attribution of an unrelated commit's timing.** The new "Six slash
+   commands" section called `index.md`'s argument-hint quoting "the one
+   substantive text change between the previous anchor and this one" — but
+   that quoting is commit `dade775e`, an ancestor of the *previous* anchor
+   (`84976536`), already documented in the `1f97e51c -> 84976536` section
+   further down. Fixed to say so and point at the existing section instead of
+   re-claiming the change for this pass.
+3. **Self-contradiction about the note's own history.** The new provenance
+   section said "the previous two re-anchors ... advanced the anchor on a
+   per-path diff without opening the cited files" — true of the narrow pass
+   directly above, false of the 2026-09-06 pass, which this note's own top
+   section says re-read every cited file. Fixed to name only the narrow pass.
+4. **Wrong line numbers plus an overstated read.** `crew.md`'s provider
+   tuples were cited at `plugin/localgpu/commands/crew.md:29-30` (that is the
+   prose sentence introducing them); the literal tuples are at `:33-34`.
+   Re-read `crew_config.py`: `DEV_PROVIDERS`/`QA_PROVIDERS` there are a
+   re-export (`plugin/crew/hooks/scripts/crew_config.py:126-127`,
+   `DEV_PROVIDERS = crew_state.DEV_PROVIDERS`), not the definition — that is
+   `plugin/crew/hooks/scripts/crew_state.py:1503-1504`. Also narrowed the
+   "read only past the opening constraint (lines 1-32)" claim: this pass
+   read through line 40, which is where the code block with the tuples ends.
+5. **Version-number subtraction presented as a count.** "Stable across those
+   eight bumps" (from an older pass, comparing `0.1.10` to `0.1.18`) was left
+   unfixed while the version paragraph above it had already moved to
+   `0.1.20`. Measured properly with
+   `git log --follow -p -- plugin/localgpu/.claude-plugin/plugin.json`: six
+   commits changed the version field after `c7d7f8aa` (`0.1.10`), several
+   skipping patch numbers, so neither the old "eight" nor a naive `20-10=10`
+   is the right count. Fixed to "six bump commits", named.
+6. **Count and list did not match.** "9 new distinct citations added" was
+   followed by a list of 7, and omitted two citations this pass had actually
+   added (`plugin/localgpu/cli/anthropic_proxy.py:947` and
+   `plugin/localgpu/cli/localgpu_cli.py:435-443`) because the list was
+   written before the last few edits and never re-measured. Re-ran the same
+   `comm`-based measurement used for the rest of this section against the
+   fully-fixed file and corrected the count and list to match — see the
+   "new distinct citations added" bullet above, in the "Counts" block, for
+   the number and method (that bullet went through a second correction on
+   the next QA round; see below).
+7. **Overclaimed exclusivity.** "The only command that writes" (`setup.md`)
+   ignored that `index.md` runs `index_refresh`, which writes `vectors.f16`,
+   `meta.sqlite` and `manifest.json`. Narrowed to "the only command whose own
+   `allowed-tools` include `Write`/`Edit`" and cross-referenced `index.md`.
+8. **Bare-basename anchors.** The plugin manifest and project-file version
+   citations in the new version paragraph, and the `config.py` citation in
+   the counts section, were not repo-relative. Made all of them fully
+   repo-relative wherever restated — including, on the next QA round, the
+   ones this very QA block had introduced by restating the bad form instead
+   of describing it (this repo's own `CLAUDE.md` says to describe the bad
+   form, never show it, because a checker cannot tell a quoted
+   counter-example from a broken citation — this list did the latter and
+   was fixed).
+9. **Evidence that doesn't discriminate, and an overclaim about how that was
+   checked.** `git check-ignore -v .mcp.json` was offered as evidence the
+   file does not exist. Only the absent case was actually run (the file was
+   absent in this working tree at the time); the claim that it "prints the
+   same pattern match regardless of whether the file is present" asserted
+   the present case too, without running it. `git check-ignore` matches a
+   path against `.gitignore` patterns lexically — it does not stat the
+   path — so the present case is expected to behave the same way, but that
+   is reasoning about the tool, not a second observed run, and the note
+   should not have implied otherwise. Dropped `check-ignore` as evidence
+   either way; `ls .mcp.json` failing is what the claim now rests on, and is
+   itself a direct observation of presence/absence.
+10. **Miscased quote.** `plugin.json`'s description says "Six commands"
+    (capital S); this note quoted it lowercase. Fixed to match the source
+    exactly.
+
+### Second QA round, same day — each finding right about its target, wrong one line over
+
+Re-review of the fixes above found four more, every one a new claim the *fix
+itself* introduced rather than anything carried over. Consistent with this
+repo's own lesson about re-reviewing a guard fix as hard as the guard: a fix
+being correct about the specific thing it targeted is not the same as the
+sentence around it staying correct.
+
+1. **BLOCK — bare-basename anchors, reintroduced by the fix meant to remove
+   them.** Item 8 above (and item 4's `crew_config.py`/`crew_state.py`
+   citations, and item 6's `anthropic_proxy.py`/`localgpu_cli.py` citations)
+   restated the bad bare-`name.py:N` form to describe what had been wrong,
+   instead of using the repo-relative form or prose without the token shape —
+   this repo's own `CLAUDE.md` says a checker cannot tell a quoted
+   counter-example from a broken citation, so showing the bad form at all
+   defeats the check regardless of intent. A new bare basename-form citation
+   of the `crew_config.py` re-export line had also been added in the body
+   text, at the "Six slash commands" `crew.md` bullet. Fixed all nine
+   occurrences (checked
+   with `grep -noE '`[A-Za-z0-9_.-]+\.(py|json|toml):[0-9]+(-[0-9]+)?'
+   .crew/codemap/localgpu.md`, which now returns nothing) to either full
+   repo-relative paths or prose describing the shape without reproducing it.
+2. **FIX — the "12 new citations" method did not reproduce 12.** The bullet
+   said `plugin/crew/hooks/scripts/crew_state.py:1503-1504` fell outside the
+   `plugin/` regex the rest of the section used and was "tallied separately"
+   — it does not; that path starts with `plugin/crew/`, which the regex
+   already matches, and the citation was already in that regex's output. And
+   `scripts/check-marketplace.py:169` was described as "cited in shorthand"
+   when it is written out in full. Replaced the two-regex-plus-manual-add-on
+   method with one regex that matches any repo-relative citation regardless
+   of top-level directory, so the count is whatever running that one command
+   produces rather than a hand-added total: 13, not 12, not 9. See the
+   "Counts" block above for the exact command and arithmetic.
+3. **NIT — wrong cross-reference.** The `index.md` bullet pointed
+   `index_refresh`'s writes at "the `.mcp.json` writes note under 'Owns
+   data'", but that paragraph is about `cmd_mcp_init`, a different write
+   entirely. `index_refresh` writes `vectors.f16`, `meta.sqlite` and
+   `manifest.json` — the bullets directly under the "Owns data" heading, not
+   the paragraph further down it. Fixed to point at those bullets and name
+   the `cmd_mcp_init` paragraph as the thing it is *not* pointing at, so a
+   reader who checked the old reference and found it about the wrong thing
+   does not repeat the same wrong turn.
+4. **NIT — overclaim about what was tested.** The `.gitignore`/`.mcp.json`
+   correction said `git check-ignore -v .mcp.json` was "tested ... against
+   the actual (absent) file and confirmed it prints the same match regardless
+   of whether the file is present" — only the absent case was run; the
+   present case was never executed, so "confirmed ... regardless" overstated
+   what happened. Narrowed to say only the absent case was observed, and that
+   the present case is expected (not confirmed) to behave the same way
+   because `check-ignore` matches a pattern against a path string, not
+   against the filesystem.
+
+**Not re-verified at this pass, same as every pass before it:** nothing was
+executed. No Ollama server was contacted, no index was built, neither
+bootstrap script was run, and no test suite was executed — every claim above
+is a reading of source and of `git`/`grep`/`wc` output, not a run. `crew.md`
+(229 lines) was read through line 40 (Step 0 and the opening of Step 1,
+including the provider-tuple block at `:33-34`); its account of which
+specific crew roles a 7B can and cannot take over (the rest of the file) was
+not checked. `cli/anthropic_proxy.py` was read at every cited line (module
+docstring, the `/api/show` context-length lookup, `_post_ollama`) but still not
+end to end — `ProxyHandler` (`plugin/localgpu/cli/anthropic_proxy.py:947`,
+including `_resolved_num_ctx` at `:975`) and the tool-call translation code
+were located by grep only, not read.

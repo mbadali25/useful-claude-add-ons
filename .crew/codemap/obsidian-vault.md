@@ -1,5 +1,5 @@
 # obsidian-vault
-anchor: useful-claude-add-ons@84976536
+anchor: useful-claude-add-ons@2b337296
 verified: 2026-09-22
 
 ## Does
@@ -331,3 +331,20 @@ command files are still unopened, as the `## Unverified` section above says; `va
 internals are still inferred from its tests; nothing touched a live vault, a live bridge port or
 `~/.claude/obsidian/config.json`. No `.md` or `SKILL.md` prose was read, so whether any of it
 contradicts the code remains unknown.
+
+## Re-anchor provenance — 84976536 -> 2b337296, 2026-09-22
+
+Re-anchor only. The per-path check over this note's cited paths (listed in
+the `ea8a014 -> 84976536` provenance section above) returns empty against
+`2b337296` for every `plugin/obsidian-vault/` path. Outside this note's own
+cited paths, the whole-repo diff (`git diff --name-only 84976536..2b337296`)
+also lists `.claude-plugin/marketplace.json` (doc-builder's version only —
+re-diffed to confirm the `obsidian-vault` block this note cites at `:248` is
+untouched), `CHANGELOG.md`, `README.md`, three `docs/diagrams/*.mmd` files,
+`graphify-out/*`, two `skills/doc-builder/*` files, and eight
+`.crew/codemap/*.md` files (concurrent re-anchor edits by this and other
+sessions — not code, and not cited by this note). None of the above is a
+`plugin/obsidian-vault/` path or otherwise cited here.
+
+Grepped for `CHANGELOG.md:<n>` and `README.md:<n>`: **neither appears in this
+note.** Nothing was re-read.
