@@ -3512,13 +3512,32 @@ context clear, so the open items live here where they are tracked.
   Note the limit: `build_report.py`'s `build()` emits no `<h3>`, so a narrative
   document past H2 does not fit that pipeline - it stays hand-written but must call
   `resolve_brand.py` instead of copying the palette hex.
-- **Wire `uv-install.sh` (162 cases) and `mcp-preflight-catalog.sh` (114) into CI and
+- **Wire `uv-install.sh` (162 cases) and `mcp-preflight-catalog.sh` (122) into CI and
   `.crew/verify.json`.** Neither is run by anything today. A regression suite nobody
   runs is worse than none, because its presence reads as coverage.
-- **Regression case for the write-through-symlink harness defect.** The fix is in
-  (`scripts/_test/uv-install.sh:102`, `mkrealbin` at `:105`); nothing asserts it. It
-  destroyed this host's coreutils twice - the second time because a guard whose own
-  regression test is destructive does not get re-tested.
+- **DONE 2026-09-22: regression case for the write-through-symlink harness defect.**
+  `uv-install.sh` already had it (case 0 + case 26); `mcp-preflight-catalog.sh` did
+  not - only case 0's structural invariant, no canary write-through proof. Added
+  case 26 there too, mirroring `uv-install.sh`'s. Both sabotage-tested (mkrealbin's
+  `cp` reverted to `ln -s`; both suites go red) and restored byte-identical.
+  A follow-up independent review then found the sabotage-testing METHOD itself
+  unsafe: `mkrealbin`'s `chmod +x "$REALBIN/$t"` had no guard, so a sabotaged
+  entry that was a symlink got `chmod`'d anyway, following the link - it touched
+  the host's real `/usr/bin/find` ctime during that review's own sabotage run
+  (mode stayed 755, `dpkg -V` stayed clean, but a real file was written to).
+  Fixed in both suites: `chmod` now requires `[ -f ] && [ ! -L ]` first and exits 2
+  otherwise, so a reverted `mkrealbin` aborts on its FIRST sabotaged entry, before
+  any `chmod` call - re-sabotaged and reproduced safely by a decoy-only harness
+  (every name mkrealbin copies gets a wrapper under its own `mktemp -d` that execs
+  the real tool by absolute path, so even `command -v find` cannot resolve to a
+  host path during the test) and by re-sabotaging the shipped files directly
+  (exit 2 immediately, host `find`/`mktemp` ctime and mode unchanged, `dpkg -V`
+  clean). Also closed in the same pass: an unguarded empty-`$TMP` would have made
+  every `"$TMP"/*` bound match the literal pattern `/*` (any absolute path), so
+  `mktemp -d` failing now refuses with exit 2 rather than continuing; the "HOST's
+  mktemp is untouched" checks compared `--help`'s exit code, which a replacement
+  stub exiting 0 would pass just as well as the real binary, so they now compare a
+  sha256 taken at run start against one taken at the check site.
 - **The sabotage driver edits the live tree**, so a concurrent committer can snapshot
   a deliberately broken file. It did: `3cca6482` shipped a call to an undefined
   function. Should use `git worktree`.

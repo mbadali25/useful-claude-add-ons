@@ -57,8 +57,86 @@ check() {
   fi
 }
 
-TMP="$(mktemp -d)"
+TMP="$(mktemp -d)" && [ -n "$TMP" ] && [ -d "$TMP" ] || {
+  echo "FATAL: mktemp -d failed to produce a directory - refusing to run" >&2
+  exit 2
+}
+# Trapped IMMEDIATELY, before the pin check below can also exit 2. A TMP that
+# mktemp DID create but that then fails the pin would otherwise leak forever -
+# nothing would ever rm -rf it, since the trap that does that wasn't set yet.
 trap 'rm -rf "$TMP"' EXIT
+# Every guard below that bounds a write to "$TMP"/* becomes a no-op check against
+# the literal pattern '/*' if $TMP is ever empty - it would match ANY absolute
+# path, including the filesystem root, and a case's 'rm -rf "$fx"' or 'chmod' could
+# then land outside this suite entirely, as root if the suite runs as root. The
+# check above already refuses that specific case.
+# The pin below is a SEPARATE hazard, and not "mktemp can succeed somewhere
+# unexpected" - mktemp always succeeds wherever TMPDIR points, precisely as
+# documented. The real reason: this suite does 'rm -rf' under $TMP (this trap,
+# and every mkfixture's own 'rm -rf "$fx"'), and TMPDIR is caller-controlled -
+# it could validly name this repo's own working tree, a parent of it, or
+# (running as root) the filesystem root, all of which mktemp would honour
+# without complaint. None of that requires $TMP to be empty; a plain
+# ordinary-looking TMPDIR is enough on its own. So $TMP is pinned under a
+# known-safe root explicitly, rather than trusted to have landed somewhere a
+# runaway 'rm -rf' or glob cannot reach the repo or /.
+_tmpdir="${TMPDIR:-/tmp}"
+while [ "$_tmpdir" != "/" ] && [ "${_tmpdir: -1}" = "/" ]; do _tmpdir="${_tmpdir%/}"; done
+case "$TMP" in
+  "$_tmpdir"/*) ;;
+  *)
+    echo "FATAL: \$TMP ($TMP) is not under \${TMPDIR:-/tmp} ($_tmpdir) - refusing to run" >&2
+    exit 2
+    ;;
+esac
+
+# The exact list of tools mkrealbin copies and mkfixture links to - ONE variable,
+# used by both plus the host baseline below, so a tool added to one can never
+# drift out of sync with the others.
+REALBIN_TOOLS="mktemp rm sh mkdir chmod cp id stat sha256sum"
+
+# The pristine identity of every HOST tool in $REALBIN_TOOLS, captured before
+# mkrealbin or anything else touches PATH. The "HOST tools are untouched" check
+# near the end of this file compares against this per-tool baseline - path,
+# content hash, mode, owner, group and ctime - rather than re-running a
+# stubbable command like '--help', and rather than content alone: a chmod
+# (exactly the incident this baseline exists for - mkrealbin's own guard chmod
+# followed a sabotaged symlink and touched /usr/bin/find's mode and ctime)
+# changes mode and ctime without touching content, and a hash-only check
+# cannot see that. Every name in $REALBIN_TOOLS is covered, not just mktemp.
+HOST_BASELINE="$TMP/host-baseline"
+: > "$HOST_BASELINE"
+for _t in $REALBIN_TOOLS; do
+  _p="$(command -v "$_t" 2>/dev/null)" || continue
+  [ -n "$_p" ] || continue
+  _p="$(readlink -f "$_p")"
+  _h="$(sha256sum "$_p" 2>/dev/null | awk '{print $1}')"
+  _s="$(stat -c '%a %u %g %Z' "$_p" 2>/dev/null)"
+  printf '%s\t%s\t%s\t%s\n' "$_t" "$_p" "$_h" "$_s" >> "$HOST_BASELINE"
+done
+unset _t _p _h _s _tmpdir
+
+# Re-measures every tool in the baseline and reports EXACTLY what changed - which
+# tool and which field (content, mode, owner, group or ctime) - rather than a
+# bare yes/no, so a FAIL names the incident instead of merely flagging one.
+host_tools_intact() {
+  local t p h s h2 s2 old_mode old_uid old_gid old_ctime new_mode new_uid new_gid new_ctime bad=""
+  while IFS=$'\t' read -r t p h s; do
+    if [ ! -e "$p" ]; then bad="$bad tool=$t field=missing($p)"; continue; fi
+    h2="$(sha256sum "$p" 2>/dev/null | awk '{print $1}')"
+    s2="$(stat -c '%a %u %g %Z' "$p" 2>/dev/null)"
+    [ "$h2" = "$h" ] || bad="$bad tool=$t field=content"
+    if [ "$s2" != "$s" ]; then
+      set -- $s;  old_mode=$1 old_uid=$2 old_gid=$3 old_ctime=$4
+      set -- $s2; new_mode=$1 new_uid=$2 new_gid=$3 new_ctime=$4
+      [ "$old_mode"  = "$new_mode"  ] || bad="$bad tool=$t field=mode(was=$old_mode now=$new_mode)"
+      [ "$old_uid"   = "$new_uid"   ] || bad="$bad tool=$t field=owner(was=$old_uid now=$new_uid)"
+      [ "$old_gid"   = "$new_gid"   ] || bad="$bad tool=$t field=group(was=$old_gid now=$new_gid)"
+      [ "$old_ctime" = "$new_ctime" ] || bad="$bad tool=$t field=ctime(was=$old_ctime now=$new_ctime)"
+    fi
+  done < "$HOST_BASELINE"
+  if [ -z "$bad" ]; then echo yes; else echo "CHANGED:$bad"; fi
+}
 
 # --- load the helper layer and the uv layer out of the real script ------------
 # Same idiom as menu-groups.sh: the suite tests the shipped code, never a copy.
@@ -105,7 +183,7 @@ REALBIN="$TMP/realbin"
 mkrealbin() {
   mkdir -p "$REALBIN"
   local t src key rep seen=""
-  for t in mktemp rm sh mkdir chmod cp id stat sha256sum; do
+  for t in $REALBIN_TOOLS; do
     src="$(command -v "$t" 2>/dev/null)" || continue
     [ -n "$src" ] || continue
     src="$(readlink -f "$src")"
@@ -120,7 +198,23 @@ mkrealbin() {
       cp "$src" "$REALBIN/$t"
       seen="$seen $key=$t"
     fi
-    chmod +x "$REALBIN/$t"
+    # Never chmod through a symlink: chmod follows one to its target, and a $REALBIN
+    # entry that is a symlink (mkrealbin reverted to 'ln -s', or 'ln' above fell
+    # through to something unexpected) would silently set +x on whatever it points
+    # at - which could be a host binary. This is what actually happened in review:
+    # the 'else' branch was sabotaged back to 'ln -s' and this chmod touched the
+    # host's /usr/bin/find. Refuse outright rather than rely on case 0 to catch it
+    # after the fact.
+    case "$REALBIN/$t" in
+      "$TMP"/*) ;;
+      *) red "REFUSING to chmod outside \$TMP: $REALBIN/$t"; exit 2 ;;
+    esac
+    if [ -f "$REALBIN/$t" ] && [ ! -L "$REALBIN/$t" ]; then
+      chmod +x "$REALBIN/$t"
+    else
+      red "REFUSING to chmod $REALBIN/$t: not a plain regular file (mkrealbin may be symlinking again)"
+      exit 2
+    fi
   done
 }
 mkrealbin
@@ -138,7 +232,7 @@ mkfixture() {
   # that wants a different answer from any of them stubs it over the top.
   # $REALBIN, never /usr/bin: see mkrealbin above. Nothing in a fixture may resolve
   # to a host binary, and case 0 asserts that as a standing invariant.
-  for t in mktemp rm sh mkdir chmod cp id stat sha256sum; do
+  for t in $REALBIN_TOOLS; do
     [ -e "$REALBIN/$t" ] && ln -s "$REALBIN/$t" "$fx/bin/$t"
   done
   # as_root prefers sudo when not uid 0; stub it so the case behaves the same
@@ -161,10 +255,12 @@ stub() {
     "$TMP"/*) ;;
     *) red "REFUSING to write a stub outside \$TMP: $fx/bin/$name"; exit 2 ;;
   esac
-  # rm FIRST, and this is not tidiness. mkfixture symlinks the handful of real
-  # coreutils a fixture needs into $fx/bin; a case that stubs one of those names
-  # (mktemp, id, stat, sha256sum) would otherwise have its '>' redirect FOLLOW the
-  # symlink and truncate the host's own binary. On this repo's reference host those
+  # rm FIRST, and this is not tidiness. mkfixture symlinks the handful of coreutils
+  # a fixture needs to their REALBIN COPIES in $fx/bin (never to the host directly -
+  # see mkrealbin above); a case that stubs one of those names (mktemp, id, stat,
+  # sha256sum) would otherwise have its '>' redirect FOLLOW the symlink and truncate
+  # the copy it names. Before mkrealbin copied rather than linked, those links
+  # pointed at the host's own binaries directly: on this repo's reference host those
   # names are hardlinks into one uutils multicall binary, so stubbing `mktemp` took
   # out ls, cat, cp, stat and 110 others in one redirect. Measured, not theorised -
   # it happened while this case was being written, on 2026-09-22.
@@ -749,8 +845,10 @@ fi
 echo "26. stub() writes a NEW file, never through a symlink"
 # The defect this case exists for, and it is this harness's own, not the install
 # script's: stub() used to redirect straight onto $fx/bin/<name>. mkfixture symlinks
-# real coreutils into that directory, so stubbing one of those names sent the '>'
-# THROUGH the link and truncated the host's binary. On this repo's reference host
+# that directory's entries to the REALBIN copies (never to the host directly - see
+# mkrealbin above), so stubbing one of those names sent the '>' THROUGH the link and
+# truncated the copy it named. Before mkrealbin copied rather than linked, those
+# links pointed at the host's own binaries directly: on this repo's reference host
 # those names are hardlinks into one uutils multicall binary, so stubbing `mktemp`
 # took out 114 coreutils in a single redirect on 2026-09-22. The fix was one line,
 # `rm -f` before the write, and until now nothing would have gone red if it were
@@ -815,11 +913,18 @@ if [ -n "$canary_target" ]; then
   # whole case exists to be able to make.
   check "the copy it formerly named still runs"         0 \
     "$( "$prior_target" --help >/dev/null 2>&1; echo $? )"
-  # And the host's own binary of that name is untouched. This is the assertion that
-  # actually speaks to the incident: it is read-only, it names /usr explicitly, and
-  # it fails if anything in this suite has reached outside $TMP.
-  check "the HOST's mktemp is untouched and still runs" 0 \
-    "$( "$(readlink -f "$(command -v mktemp)")" --help >/dev/null 2>&1; echo $? )"
+  # And every HOST tool $REALBIN_TOOLS names is untouched - not just mktemp, and
+  # not just its content. host_tools_intact() compares content hash, mode, owner,
+  # group and ctime against the baseline taken at suite start, and names the
+  # tool and the specific field on a mismatch. Content hash ALONE would miss a
+  # chmod (mode/ctime change, content unchanged) - which is exactly what the
+  # incident this case exists for was: mkrealbin's own guard chmod followed a
+  # sabotaged symlink and set +x on /usr/bin/find, leaving its content untouched
+  # and its mode unchanged too (it was already 755), so only ctime moved. A bare
+  # '--help' re-run (the previous form of this check) cannot see that at all - a
+  # stub that replaced the host binary and exited 0 would satisfy it just as well
+  # as the real thing.
+  check "every HOST tool mkrealbin copies is untouched" yes "$(host_tools_intact)"
 fi
 
 echo
