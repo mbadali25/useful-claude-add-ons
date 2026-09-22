@@ -477,6 +477,28 @@ py_suite "ports, collisions, identity, vault_ops CLI" test_vault_ops.py
 py_suite "profiles: the three sets, detection, the 50k line, split breakage" test_vault_profiles.py
 py_suite "the four bridge states, told apart" test_bridge_states.py
 
+echo "== the guard WRAPPERS: python resolution (own PATH, own HOME) =="
+
+# Everything above drives vault_guard.py with THIS suite's own interpreter, so
+# none of it touches how vault-guard.sh/.ps1 find one -- which is where the
+# 2026-09-22 defect was (a WindowsApps stub resolved, was exec'd, and the hook
+# exited 49 with zero bytes on stderr). Counted as one case here, with its own
+# output shown only when it fails; run it directly for the per-case list.
+sh_suite() {
+  local desc="$1" script="$2" out rc
+  out="$(bash "$DIR/_test/$script" 2>&1)"
+  rc=$?
+  if [ "$rc" -eq 0 ]; then
+    PASS=$((PASS+1))
+  else
+    FAIL=$((FAIL+1))
+    echo "FAIL: $desc (exit $rc)"
+    echo "$out"
+  fi
+}
+
+sh_suite "vault-guard.sh/.ps1: stubs, absence, launch failure" test_vault_guard_sh.sh
+
 # --- the PowerShell flavour guard ------------------------------------------
 # hooks.json registers every event TWICE, once per flavour. On a host with
 # BOTH interpreters both would run unless each .ps1 stands down off Windows.
