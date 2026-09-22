@@ -18,6 +18,11 @@ td { border-bottom: 1px solid #C8CDD2; padding: 5pt 6pt; vertical-align: top; fo
 code { font-family: Consolas, "Courier New", monospace; font-size: 9.5pt; }
 ul { margin: 4pt 0 8pt 18pt; }
 li { margin: 3pt 0; }
+@media print {
+  h2, h3 { page-break-after:avoid; }
+  tr { page-break-inside:avoid; }
+  thead { display:table-header-group; }
+}
 </style>
 </head>
 <body>
@@ -31,7 +36,8 @@ li { margin: 3pt 0; }
 
 <h2>1. Layout</h2>
 <table>
-<tr><th>Path</th><th>Contents</th><th>Count at 0.19.92</th></tr>
+<thead><tr><th>Path</th><th>Contents</th><th>Count at 0.19.92</th></tr></thead>
+<tbody>
 <tr><td><code>plugin/crew/commands/</code></td><td>Slash commands, one Markdown file each with YAML frontmatter.</td><td>28</td></tr>
 <tr><td><code>plugin/crew/agents/</code></td><td>Role definitions: <code>tools:</code>, <code>model:</code>, description, procedure.</td><td>54</td></tr>
 <tr><td><code>plugin/crew/skills/</code></td><td>Procedures loaded on match; each a directory with <code>SKILL.md</code> and references.</td><td>20</td></tr>
@@ -39,16 +45,19 @@ li { margin: 3pt 0; }
 <tr><td><code>plugin/crew/tests/</code></td><td>pytest suites, fixtures, and <code>sabotage.py</code>, which reintroduces known bugs and asserts the suite goes red.</td><td>51 modules</td></tr>
 <tr><td><code>plugin/crew/evals/</code></td><td><code>claude plugin eval</code> cases with free graders; runners in <code>scripts/run-plugin-evals.{sh,ps1}</code>.</td><td>5 cases</td></tr>
 <tr><td><code>plugin/crew/CONFIG.md</code></td><td>Every configuration key, its layers and its ratchet rule.</td><td>18 sections</td></tr>
+</tbody>
 </table>
 
 <h2>2. Roles</h2>
 <h3>The ladder</h3>
 <table>
-<tr><th>Tier</th><th>Roles</th><th>Tools of note</th><th>Add when</th></tr>
+<thead><tr><th>Tier</th><th>Roles</th><th>Tools of note</th><th>Add when</th></tr></thead>
+<tbody>
 <tr><td>0</td><td>explorer, qa-reviewer</td><td>explorer: Read, Grep, Glob only. qa-reviewer: read-only plus Bash.</td><td>Always.</td></tr>
 <tr><td>1</td><td>security, smoke-author, developer</td><td>security: no Write or Edit, has Bash. developer: full write, own context, never reviews its own diff.</td><td>Security findings reach review; coverage gaps regress; the PM runs work end to end.</td></tr>
 <tr><td>2</td><td>dba, docs-writer, browser-tester, analyst, planner, infrastructure-architect, scribe, researcher</td><td>planner works from an abstracted brief; <code>secondOpinion.sendsCode</code> is false by design.</td><td>Per the table in <code>skills/crew-scaling/SKILL.md</code>; <code>/crew:scale</code> reads <code>.crew/metrics.md</code> and recommends.</td></tr>
 <tr><td>3</td><td>parallel sessions, worktrees, agent teams</td><td></td><td>Every involved repository has green smoke.</td></tr>
+</tbody>
 </table>
 <h3>The PM</h3>
 <p>Standing teammate named <code>crew-pm</code>, reached by <code>SendMessage</code> so it keeps its transcript. Tools: Read, Write, Edit, Bash, Grep, Glob, Agent, Skill. No SendMessage, no ListAgents, so resume-by-id belongs to the caller (<code>commands/pm.md</code>). Authority is <code>report-only | act | autonomous</code>; the stops in <code>crew_state.AUTONOMOUS_STOPS</code> hold at every tier: offboarding a role, deleting a codemap or diagram, rewriting <code>.crew/metrics.md</code>, destroying git history. Dispatch cap 3 per pass. Write scope: <code>.crew/**</code>, <code>TODO.md</code>, <code>.work/**</code>, <code>docs/diagrams/**</code>, enforced by the write guard from 0.19.92.</p>
@@ -59,7 +68,8 @@ li { margin: 3pt 0; }
 
 <h2>3. Commands</h2>
 <table>
-<tr><th>Command</th><th>Function</th><th>Reads / writes</th></tr>
+<thead><tr><th>Command</th><th>Function</th><th>Reads / writes</th></tr></thead>
+<tbody>
 <tr><td>init</td><td>Phased, resumable setup; each phase asks before writing.</td><td><code>.crew/config.json</code>, <code>.crew/verify.json</code>, <code>_verify/</code>, CLAUDE.md template.</td></tr>
 <tr><td>onboard</td><td>Writes the code map; <code>--refresh &lt;subsystem&gt;</code> re-derives one file against the graph.</td><td><code>.crew/codemap/*.md</code> with DERIVED/JUDGEMENT markers and <code>anchor:</code> commits.</td></tr>
 <tr><td>ticket, work, split</td><td>Scope; implement, review, gate end to end; split an oversized Jira ticket.</td><td><code>.work/tickets/</code>, tracker via MCP.</td></tr>
@@ -73,36 +83,43 @@ li { margin: 3pt 0; }
 <tr><td>pm, roster, model, scale, config, upgrade</td><td>Manager conversation; role listing; per-role model set and probe; grow or shrink recommendation; config provenance; schema migration (currently to schema 7).</td><td><code>.crew/config.json</code>, <code>~/.claude/crew/config.json</code>.</td></tr>
 <tr><td>plan, survey, docs, reference, diagram, runbook, handoff</td><td>Second-opinion design; gap survey; docs touched by a change; API/feature reference with anchors; Mermaid diagrams with <code>%% Anchors:</code>; runbooks; the handoff note.</td><td><code>docs/</code>, <code>docs/diagrams/</code>, <code>.work/HANDOFF.md</code>.</td></tr>
 <tr><td>jira-sync, sdp-sync, obsidian-sync</td><td>Two-way ticket sync with the local cache.</td><td>MCP servers; Obsidian Kanban file.</td></tr>
+</tbody>
 </table>
 
 <h2>4. Hooks and guards</h2>
 <table>
-<tr><th>Event</th><th>Matcher</th><th>Script</th><th>Behaviour</th></tr>
+<thead><tr><th>Event</th><th>Matcher</th><th>Script</th><th>Behaviour</th></tr></thead>
+<tbody>
 <tr><td>SessionStart</td><td>*</td><td>pm-brief, platform sync, context resume</td><td>Injects crew state and any handoff note; corrects <code>platform.os/shell</code>.</td></tr>
 <tr><td>PreToolUse</td><td>Bash, PowerShell</td><td><code>crew_guards.py</code> via shell shims</td><td><code>guards.terraformApply</code>, <code>guards.forcePush</code>, <code>guards.adminMerge</code> (block | ask | allow); <code>guards.prodDatabase</code>, <code>guards.prodServer</code> (none | read | full) against <code>production.databases/hosts</code>.</td></tr>
 <tr><td>PreToolUse</td><td>Write|Edit</td><td><code>role_write_guard.py</code> via <code>role-write-guard.{sh,ps1}</code></td><td><code>guards.roleWrites</code> (off by default; block is the floor). See section 6.</td></tr>
 <tr><td>PreCompact</td><td>*</td><td>handoff writer</td><td>Writes <code>.work/HANDOFF.md</code> before summarisation.</td></tr>
 <tr><td>Notification</td><td>*</td><td><code>pm_pulse.py</code></td><td>Re-briefs the PM with triggers.</td></tr>
 <tr><td>Stop</td><td>*</td><td><code>verify-gate.{sh,ps1}</code>, <code>context-watch</code></td><td>Runs the matched rules within <code>verify.stopBudgetSeconds</code> (default 60); blocks on failure. See section 7.</td></tr>
+</tbody>
 </table>
 <p>Registration rules: each event registered once per flavour with <code>shell: "powershell"</code> on the Windows entry, because a bare hook command goes to Git Bash on Windows. Every ratcheted key resolves to the narrower of the repository and machine-global layers; a corrupt layer resolves to the strict value; <code>change.requireForProduction</code> ratchets the other way (on wins). A guard that can block ships off and needs a committed must-block/must-allow suite, sabotage-tested.</p>
 
 <h2>5. Knowledge files</h2>
 <table>
-<tr><th>Artefact</th><th>Location</th><th>Freshness rule</th></tr>
+<thead><tr><th>Artefact</th><th>Location</th><th>Freshness rule</th></tr></thead>
+<tbody>
 <tr><td>Code map</td><td><code>.crew/codemap/</code>, un-ignored by name</td><td>An <code>anchor:</code> behind HEAD means re-check with <code>git diff --name-only &lt;anchor&gt;..HEAD -- &lt;paths&gt;</code>; empty output means current. Comparison is <code>sha[:7] == head[:7]</code>.</td></tr>
 <tr><td>Code graph</td><td><code>graphify-out/graph.json</code> and <code>GRAPH_REPORT.md</code>, tracked</td><td>Rebuilt by post-commit and post-checkout hooks via <code>graphify update .</code>; a hand build with <code>--no-viz --code-only</code> writes only one of the pair.</td></tr>
 <tr><td>Diagrams</td><td><code>docs/diagrams/*.mmd</code> with <code>%% Anchors:</code></td><td><code>/crew:diagram refresh</code> rewrites only diagrams whose cited files moved.</td></tr>
 <tr><td>Metrics</td><td><code>.crew/metrics.md</code></td><td>One row per review; grouped by ticket column for the BLOCK+FIX rate.</td></tr>
 <tr><td>Handoff</td><td><code>.work/HANDOFF.md</code></td><td>Injected at session start until finished or deleted.</td></tr>
+</tbody>
 </table>
 
 <h2>6. Changes 0.19.90 to 0.19.92</h2>
 <table>
-<tr><th>Version</th><th>Change</th><th>Files and tests</th></tr>
+<thead><tr><th>Version</th><th>Change</th><th>Files and tests</th></tr></thead>
+<tbody>
 <tr><td>0.19.90</td><td>Foreground execution rule in six role files; PM returns the real dispatch id or "not resumable"; idle signal is recency not liveness, two-cycle escalate rule; write-scope sentences aligned with the guard; qa-reviewer's return stays defect-lines-or-CLEAN.</td><td><code>agents/{developer,pm,python-pro,browser-tester,smoke-author,qa-reviewer}.md</code>, <code>commands/pm.md</code>; <code>tests/test_foreground_execution.py</code> (15 tests). Codex: 5, 4+1, 6, CLEAN.</td></tr>
 <tr><td>0.19.91</td><td>Eval suite: pm-does-not-write-code, qa-reviewer-stays-read-only, developer-defers-unrelated-bug, developer-runs-command-in-foreground, pm-answers-status-mid-pass. Structural graders (ticket as clause subject/object with a whole-clause hedge guard; four-field verdict with a numeric reproduction). Runners: comma xfail list, case-sensitive, exit 127 without CLI, zero cases fails, xfail only for a scored failure from this run with no per-run error, passing xfail fails the gate. Workflow tests the secret via a job-level env flag.</td><td><code>evals/</code>, <code>scripts/run-plugin-evals.{sh,ps1}</code>, <code>.github/workflows/plugin-evals.yml</code>. Live finding: PM case scored 0. Codex: 10; 1+11; 4; 2; 3; 1+1; 1+1.</td></tr>
 <tr><td>0.19.92</td><td>Role write guard. Policy partition derived from each agent's <code>tools:</code>; <code>test_policy_table_matches_the_agent_files</code> re-derives it. <code>crew_config.layer_state(path)</code> classifies each config layer as absent, ok or corrupt (directory, empty, non-object, <code>guards</code> null/list, dangling symlink); any corrupt layer forces block. Targets resolved component-wise: Windows collapses <code>..</code> lexically before junctions, POSIX resolves symlinks first; outside-repo and other-drive targets are out of scope and allowed with reason; <code>\\?\</code> paths refused for scoped roles; stdin read as bytes with BOM stripped; both shims set PYTHONUTF8 and fail closed on launch failure; outer handler cannot raise; foreign namespaces and unknown roles allowed and logged.</td><td><code>hooks/scripts/role_write_guard.py</code>, <code>role-write-guard.{sh,ps1}</code>, <code>crew_config.py</code>, <code>crew_guards.py</code>, CONFIG.md §18; <code>tests/test_role_write_guard.py</code> (114 cases). Codex: 2+4, 7+2, 3+1, 2, 1, CLEAN; PowerShell specialist 2+2.</td></tr>
+</tbody>
 </table>
 
 <h2>7. The Stop gate: 0.19.93 in review</h2>
@@ -115,7 +132,8 @@ li { margin: 3pt 0; }
 </ul>
 <h3>Components on the branch</h3>
 <table>
-<tr><th>Component</th><th>Implementation</th></tr>
+<thead><tr><th>Component</th><th>Implementation</th></tr></thead>
+<tbody>
 <tr><td>Per-rule record</td><td><code>verify_record.py</code>: <code>.crew/.verify-gate.record.json</code>, keyed by <code>rule_key()</code> (canonical JSON of paths, run, env, reach, requiresCleanTree; one function for both flavours via the <code>rule-key</code> subcommand). Written atomically; a corrupt or non-dict file poisons the fingerprint so nothing skips; a failed persist withholds both markers; entries whose rule no longer exists are pruned on sync. Sync status starts at 99 and reaches 0 only on a confirmed sync. <code>DEFERRED_COUNT</code> counts acute deferrals only; chronic, reach-excluded, clean-tree and skipped rules stay unverified in the record and are reported every run.</td></tr>
 <tr><td>Timings</td><td><code>.crew/.verify-gate.timings.json</code>: <code>max(1, ceil(elapsed))</code> per unpriced command, labelled measured-not-declared; never written to the tracked map by the hook.</td></tr>
 <tr><td><code>--price</code></td><td><code>verify_price.py</code>, dispatched only on the literal argument; <code>hooks.json</code> passes none or <code>--all</code>. Applies the gate's env pinning and declared env; refuses any rule the Stop path would defer; records 77 as SKIP with no timing.</td></tr>
@@ -125,16 +143,19 @@ li { margin: 3pt 0; }
 <tr><td><code>--all</code></td><td>Whole working tree: <code>git ls-files</code> plus staged deletions, rename sources, HEAD diff and untracked.</td></tr>
 <tr><td>Triggers</td><td><code>crew_state.read_verify_health</code>: <code>verifyMarkerStale</code>, <code>verifyRulesUnpriced</code>, <code>verifyReachUndeclared</code>; <code>None</code> on a read failure renders as "unknown" and fires. <code>pm_brief.py</code> gains the three findings.</td></tr>
 <tr><td>Map and docs</td><td>This repository's <code>.crew/verify.json</code> declares <code>reach: local</code> on 18 wrapper rules; <code>test_28</code> loads the real map and asserts every rule is declared or plainly local. <code>skills/crew-setup/examples/verify-terraform.json</code> carries <code>seconds</code> and <code>reach</code>. CONFIG.md §18 and <code>commands/verify.md</code> describe the record.</td></tr>
+</tbody>
 </table>
 <h3>Review record</h3>
 <table>
-<tr><th>Round</th><th>Findings</th><th>Notable</th></tr>
+<thead><tr><th>Round</th><th>Findings</th><th>Notable</th></tr></thead>
+<tbody>
 <tr><td>1</td><td>7 BLOCK, 5 FIX</td><td>CRLF from native Python broke env unset in bash; exit 77 advanced markers; <code>--all</code> missed staged deletions; corrupt caches did not poison the fingerprint.</td></tr>
 <tr><td>Specialist</td><td>1 BLOCK, 1 FIX, 1 NIT</td><td>Sync status defaulting to 0 advanced markers with no Python present.</td></tr>
 <tr><td>2</td><td>2 BLOCK, 6 FIX</td><td>Nested wrappers; <code>--price</code> ran wrappers Stop deferred; rule hash omitted env.</td></tr>
 <tr><td>3</td><td>2 BLOCK, 3 FIX</td><td><code>python -m pytest</code> parsed as a wrapper named <code>pytest</code>, which would have deferred eight rules here every Stop; caught by the new self-check.</td></tr>
 <tr><td>4</td><td>4 BLOCK, 1 FIX</td><td>Three new ways to hide a wrapper from inspection; design inverted to reject-only.</td></tr>
 <tr><td>5</td><td>2 BLOCK</td><td>Compound commands classified whole; fix in progress.</td></tr>
+</tbody>
 </table>
 <h3>Operational notes</h3>
 <ul>

@@ -177,6 +177,317 @@ as_root() {
 
 have() { command -v "$1" >/dev/null 2>&1; }
 
+# --- uv, under PEP 668 --------------------------------------------------------
+# Three steps below need uv/uvx: the AWS API MCP server, the AWS Pricing MCP server
+# and graphify. All three used to reach straight for `pip3 install --user uv`, and on
+# any distribution that enforces PEP 668 - Debian 12+, Ubuntu 23.04+, Fedora 38+,
+# recent Arch and openSUSE - that command cannot succeed:
+#     error: externally-managed-environment
+# pip exits 1 because the interpreter carries an EXTERNALLY-MANAGED marker beside its
+# stdlib, declaring it the distribution's to manage. That marker is the fact, so it is
+# what gets tested here - there is deliberately NO OS-version gate, the same way
+# install_packages branches on the package manager rather than on the distro.
+#
+# `--break-system-packages` is used nowhere in this script: overriding a distribution's
+# own guard to install a build tool is not this script's call to make on someone else's
+# system Python. It is named in the failure message for the user to choose themselves.
+#
+# Everything this path reports goes to stderr. The defect being replaced was a failed
+# install scrolling past on stdout while the run carried on as though uv were present.
+uv_warn() { printf '    \033[33mWARN:\033[0m %s\n' "$1" >&2; }
+
+# ~/.local/bin is where pipx, uv's own installer and `pip --user` all land, and the
+# invoking user can write it. Prepending it to PATH is therefore only safe while this
+# script IS that user. Run as root with HOME still pointing at an unprivileged account
+# - `sudo -E`, an env_keep carrying HOME, or `su` without `-` - and every later step
+# here (claude, npm, node, python3, and pep668_enforced's own interpreter probe)
+# resolves against a directory that other user can write, ahead of /usr/bin.
+#
+# That invocation is not supported: this script runs unprivileged and elevates the
+# individual commands that need it through as_root/sudo. So it is refused outright and
+# loudly rather than half-handled. "Could not tell who owns HOME" is refused too - an
+# ownership check that did not run is not an ownership check that passed.
+uv_home_is_safe() {
+  local uid_shell="${EUID:-}" uid_cmd owner
+  uid_cmd="$(id -u 2>/dev/null || true)"
+  # Root if EITHER source says so. $EUID is the shell's own and cannot be forged by a
+  # PATH this script does not control; `id` is the one a test fixture can drive, and
+  # covers a shell that somehow does not set EUID. If NEITHER answers, fall through to
+  # the owner check rather than returning safe - "could not tell" must not collapse
+  # into the permissive value.
+  if [ -n "$uid_shell" ] || [ -n "$uid_cmd" ]; then
+    [ "$uid_shell" = "0" ] || [ "$uid_cmd" = "0" ] || return 0
+  fi
+  owner="$(stat -c %u "$HOME" 2>/dev/null || stat -f %u "$HOME" 2>/dev/null || true)"
+  [ "$owner" = "0" ]
+}
+
+uv_on_path() {
+  # pipx, uv's own installer and `pip --user` all put uv in ~/.local/bin, and none of
+  # them put that directory on the PATH of the shell that just ran them - so the probe
+  # has to look there. Two rules, both of which the first version of this got wrong:
+  # prepend ONLY when the probe then succeeds (it prepended before probing, so a FAILED
+  # attempt still moved PATH for the whole rest of the run), and never prepend twice
+  # (three callers x up to three rungs stacked duplicates up).
+  local bin="$HOME/.local/bin" saved="$PATH" added=1
+  case ":$PATH:" in
+    *":$bin:"*) : ;;
+    *) if uv_home_is_safe; then PATH="$bin:$PATH"; added=0; fi ;;
+  esac
+  hash -r 2>/dev/null || true
+  if have uv || have uvx; then
+    export PATH
+    return 0
+  fi
+  if [ "$added" -eq 0 ]; then
+    PATH="$saved"
+    hash -r 2>/dev/null || true
+  fi
+  return 1
+}
+
+pep668_enforced() {
+  # 0 = marker present (pip --user will be refused), 1 = absent, 2 = could not tell.
+  # "Could not tell" is a third value on purpose rather than folding into "absent": the
+  # pip attempt below still runs, but its message then says the check never ran instead
+  # of implying pip failed for some other reason.
+  local py out
+  for py in python3 python py; do
+    have "$py" || continue
+    out="$("$py" -c 'import os, sysconfig; print("MANAGED" if os.path.exists(os.path.join(sysconfig.get_path("stdlib"), "EXTERNALLY-MANAGED")) else "FREE")' 2>/dev/null)"
+    case "$out" in
+      MANAGED) return 0 ;;
+      FREE)    return 1 ;;
+    esac
+  done
+  return 2
+}
+
+# --- the astral.sh standalone installer, pinned -------------------------------
+# https://astral.sh/uv/install.sh is a *latest* pointer: no version, no digest, no
+# signature. Fetching it and running it grants whatever that URL serves at the moment
+# of the run, and the script that was reviewed and the script that ran are then not
+# the same file, with nothing in between able to notice. This repo already argues the
+# opposite case about itself - README.md pins both of ITS install URLs to a commit SHA
+# "so the exact script you're running is fixed and auditable" - so the same standard
+# applies to what this script fetches.
+#
+# Recording the pin is a deliberate human step, and it is two values, not one:
+#   1. read https://astral.sh/uv/<version>/install.sh and satisfy yourself about it
+#   2. sha256sum the exact file you read
+#   3. put <version> in UV_INSTALLER_VERSION and that digest in UV_INSTALLER_SHA256
+# While either is empty this rung is SKIPPED and reported as skipped - never fetched,
+# never run unverified. An unrecorded digest is not a matching digest, and collapsing
+# the two is how a supply-chain check ends up reporting that it ran. The other rungs
+# (pipx, the package manager's pipx, pip where PEP 668 permits) are unaffected.
+#
+# The failure guidance at the bottom of ensure_uv_once still names astral's own
+# documented `curl ... | sh` command, for the same reason `--break-system-packages` is
+# named there: a choice this script will not make on someone else's machine is still
+# theirs to make deliberately.
+UV_INSTALLER_VERSION=""
+UV_INSTALLER_SHA256=""
+
+uv_installer_url() { printf 'https://astral.sh/uv/%s/install.sh' "$UV_INSTALLER_VERSION"; }
+uv_installer_pinned() { [ -n "$UV_INSTALLER_VERSION" ] && [ -n "$UV_INSTALLER_SHA256" ]; }
+
+uv_sha256_of() {
+  # Prints the lowercase sha256 of $1. Returns 1 when no digest tool is present at all,
+  # which is "could not tell" - the caller refuses on that, it is never a match.
+  local out=""
+  if   have sha256sum; then out="$(sha256sum "$1" 2>/dev/null)";        out="${out%% *}"
+  elif have shasum;    then out="$(shasum -a 256 "$1" 2>/dev/null)";    out="${out%% *}"
+  elif have openssl;   then out="$(openssl dgst -sha256 "$1" 2>/dev/null)"; out="${out##* }"
+  else return 1
+  fi
+  [ -n "$out" ] || return 1
+  printf '%s' "${out,,}"
+}
+
+uv_installer_verified() {
+  # 0 only when the downloaded file's digest was computed AND equals the pinned one.
+  local got want="${UV_INSTALLER_SHA256,,}"
+  if ! got="$(uv_sha256_of "$1")"; then
+    uv_warn "cannot verify the astral.sh installer: none of sha256sum, shasum or openssl is on PATH. Refusing to run an installer whose digest could not be checked."
+    return 1
+  fi
+  [ "$got" = "$want" ] && return 0
+  uv_warn "sha256 MISMATCH on the installer for uv $UV_INSTALLER_VERSION - refusing to run it. Expected $want, got $got. Either the pin in this script is stale or what $(uv_installer_url) served is not what was pinned; read the file by hand before changing the pin."
+  return 1
+}
+
+install_pipx_package() {
+  # Idempotent: pipx already present is the whole job done.
+  have pipx && return 0
+  local mgr=""
+  if   have apt-get; then mgr=apt
+  elif have dnf;     then mgr=dnf
+  elif have yum;     then mgr=yum
+  elif have pacman;  then mgr=pacman
+  elif have zypper;  then mgr=zypper
+  elif have apk;     then mgr=apk
+  else
+    return 1
+  fi
+  case "$mgr" in
+    apt)    as_root apt-get update -y >&2 && as_root apt-get install -y pipx >&2 ;;
+    dnf)    as_root dnf install -y pipx >&2 ;;
+    yum)    as_root yum install -y pipx >&2 ;;
+    # `-Sy` without `-u` is a partial upgrade: it refreshes the package databases and
+    # then installs one package built against libraries the rest of the system has not
+    # been upgraded to, which is the documented way to break an Arch install. The two
+    # safe forms are `-Syu python-pipx` and no refresh at all; this takes the second,
+    # because full-system-upgrading a machine that asked for pipx is a bigger surprise
+    # than failing over to the next rung. `--needed` keeps it idempotent.
+    # install_packages below still uses `-Sy` for the prerequisites row - a wider
+    # change than this one, filed in TODO.md rather than made here.
+    pacman) as_root pacman -S --needed --noconfirm python-pipx >&2 ;;
+    zypper) as_root zypper install -y python3-pipx >&2 ;;
+    apk)    as_root apk add --no-cache pipx >&2 ;;
+  esac || return 1
+  hash -r 2>/dev/null || true
+  have pipx
+}
+
+# Memoised across the whole run. ensure_uv is called by three separately selectable
+# rows - aws-mcp, aws-pricing-mcp and graphify - and the chain below is expensive and
+# touches root: `apt-get update`, a pipx install, a download, a pip attempt. On a host
+# where uv will not install, running it per row repeated all of that three times and
+# printed the six-line failure block three times; where uv is already present, skip()
+# fired three times and moved COUNT_SKIPPED by 3 for one tool. The chain runs once and
+# every caller still reports its own row.
+UV_ENSURED=""
+
+ensure_uv() {
+  if [ -n "$UV_ENSURED" ]; then
+    [ "$UV_ENSURED" -eq 0 ] || uv_warn "uv is still unavailable - the install chain above already ran and failed in this run, and is not being repeated."
+    return "$UV_ENSURED"
+  fi
+  ensure_uv_once
+  UV_ENSURED=$?
+  return "$UV_ENSURED"
+}
+
+ensure_uv_once() {
+  # Refuse the root-with-someone-else's-HOME invocation before doing anything at all:
+  # every rung below installs into $HOME/.local/bin and then puts that on PATH.
+  if ! uv_home_is_safe; then
+    uv_warn "not installing uv: this is running as root with HOME=$HOME, which root does not own (or whose owner could not be read). Every method below installs into \$HOME/.local/bin and then puts that directory on PATH, which would leave root resolving binaries out of a directory another user can write."
+    uv_warn "Run this script as your own user - it elevates the individual commands that need it with sudo - or re-run it with HOME set to root's own home directory."
+    return 1
+  fi
+
+  # Idempotent, the same shape as every other tool step here: detect, say "already
+  # installed", do no work.
+  if have uv || have uvx; then
+    skip "uv already installed ($(command -v uv 2>/dev/null || command -v uvx 2>/dev/null))"
+    return 0
+  fi
+
+  local attempted="" installer="" fetched=1 pip_cmd="" managed=2
+
+  # 1. pipx - preferred. It puts each tool in its own virtualenv, so the distribution's
+  #    interpreter is never written to and PEP 668 does not apply. Installing pipx from
+  #    the package manager is exactly what the externally-managed-environment message
+  #    tells you to do.
+  if have pipx || install_pipx_package; then
+    attempted="$attempted pipx"
+    if pipx install uv >&2 && uv_on_path; then
+      COUNT_INSTALLED=$((COUNT_INSTALLED+1))
+      ok "uv installed via pipx ($(command -v uv 2>/dev/null || command -v uvx 2>/dev/null))"
+      return 0
+    fi
+    uv_warn "'pipx install uv' did not produce a usable uv - trying the next method."
+  else
+    attempted="$attempted pipx(no package manager, or the pipx package would not install)"
+  fi
+
+  # 2. Astral's own standalone installer (https://docs.astral.sh/uv/#installation). It
+  #    fetches a self-contained binary into ~/.local/bin and uses no Python at all, so
+  #    it works where neither pipx nor pip can. It needs curl or wget plus network
+  #    access to astral.sh; with neither present it is reported as unavailable rather
+  #    than as a failure of uv. Fetched to a file, checked against the pin above, and
+  #    only then run - never piped into sh, so neither a failed download nor a file
+  #    that is not what was pinned can be mistaken for a successful install.
+  #
+  #    Every label appended to $attempted below is distinct, because that string is the
+  #    whole of what the final failure tells the operator. "astral.sh-installer" bare
+  #    used to be appended BEFORE the download, so a run in which curl was never
+  #    invoked still reported the installer as tried.
+  if ! uv_installer_pinned; then
+    attempted="$attempted astral.sh-installer(skipped: no pinned version+sha256 in this script)"
+    uv_warn "not fetching astral.sh's uv installer: this script pins that installer by version and sha256, and neither is recorded (UV_INSTALLER_VERSION / UV_INSTALLER_SHA256). It will not run an unpinned, unverified installer. See the comment above ensure_uv for how to record the pin."
+  elif have curl || have wget; then
+    installer="$(mktemp 2>/dev/null)" || installer=""
+    if [ -z "$installer" ]; then
+      attempted="$attempted astral.sh-installer(skipped: could not create a temporary file)"
+      uv_warn "could not create a temporary file to download astral.sh's uv installer into - skipping that method. Check that TMPDIR exists and is writable."
+    else
+      # --proto '=https' / --proto-redir '=https' and --https-only are not belt and
+      # braces: -L follows redirects, and without them one redirect to http:// is
+      # enough to serve this file in the clear. -nv rather than -q on wget because a
+      # download that fails has to say why; -q suppresses wget's own error text.
+      if have curl; then
+        curl --proto '=https' --proto-redir '=https' -LsSf "$(uv_installer_url)" -o "$installer" && fetched=0
+      else
+        wget --https-only -nv -O "$installer" "$(uv_installer_url)" && fetched=0
+      fi
+      if [ "$fetched" -ne 0 ]; then
+        attempted="$attempted astral.sh-installer(download failed)"
+        uv_warn "could not download $(uv_installer_url) - trying the next method."
+      elif ! uv_installer_verified "$installer"; then
+        attempted="$attempted astral.sh-installer(rejected: sha256 did not match the pin)"
+      else
+        attempted="$attempted astral.sh-installer"
+        if sh "$installer" >&2 && uv_on_path; then
+          rm -f "$installer"
+          COUNT_INSTALLED=$((COUNT_INSTALLED+1))
+          ok "uv installed via the standalone installer from astral.sh ($(command -v uv 2>/dev/null || command -v uvx 2>/dev/null))"
+          return 0
+        fi
+        uv_warn "the standalone installer for uv $UV_INSTALLER_VERSION did not produce a usable uv - trying the next method."
+      fi
+      rm -f "$installer"
+    fi
+  else
+    attempted="$attempted astral.sh-installer(neither curl nor wget present)"
+  fi
+
+  # 3. pip, last. Only reachable where PEP 668 is NOT in force; where it is, the
+  #    command is skipped rather than run to a guaranteed failure, and said so.
+  if have pip3; then pip_cmd=pip3; elif have pip; then pip_cmd=pip; fi
+  if [ -n "$pip_cmd" ]; then
+    pep668_enforced
+    managed=$?
+    if [ "$managed" -eq 0 ]; then
+      attempted="$attempted $pip_cmd(refused by PEP 668)"
+      uv_warn "not running '$pip_cmd install --user uv': this interpreter is marked externally managed (PEP 668) and pip refuses that install with 'error: externally-managed-environment'."
+    else
+      if [ "$managed" -eq 2 ]; then
+        uv_warn "could not determine whether this interpreter enforces PEP 668 - no python3/python/py to ask. Attempting '$pip_cmd install --user uv' and checking the result rather than assuming either answer."
+      fi
+      attempted="$attempted $pip_cmd"
+      if $pip_cmd install --user uv >&2 && uv_on_path; then
+        COUNT_INSTALLED=$((COUNT_INSTALLED+1))
+        ok "uv installed via '$pip_cmd install --user uv' ($(command -v uv 2>/dev/null || command -v uvx 2>/dev/null))"
+        return 0
+      fi
+      uv_warn "'$pip_cmd install --user uv' did not produce a usable uv."
+    fi
+  else
+    attempted="$attempted pip(absent)"
+  fi
+
+  uv_warn "could not install uv by any available method. Tried:$attempted"
+  uv_warn "uv is needed by the AWS MCP servers and by graphify. Install it yourself with either:"
+  uv_warn "    sudo apt-get install -y pipx   (or your distro's pipx package), then: pipx install uv"
+  uv_warn "    curl -LsSf https://astral.sh/uv/install.sh | sh"
+  uv_warn "Then re-run this script. If you would rather override your distribution's PEP 668"
+  uv_warn "guard yourself, 'pip3 install --user --break-system-packages uv' does that; this"
+  uv_warn "script will not do it to your system Python for you."
+  return 1
+}
+
 # --- JSON helper -------------------------------------------------------------
 # Prefer jq; fall back to python3 (which this script installs). Reads stdin.
 json_query() {
@@ -871,7 +1182,7 @@ SKILL_NAME=(
   "claude-memories-canvas  - claude-memories vault: wiki/maps .canvas conventions"
   "claude-memories-vault   - claude-memories vault: layout, frontmatter, write lock"
   "cloudflare              - Cloudflare v4: DNS, WAF, cache, Workers, Zero Trust"
-  "doc-builder             - Reports + SOPs -> DOCX/PDF via Word, brand pack sets the style"
+  "doc-builder             - Reports + SOPs -> DOCX/PDF via Word or LibreOffice, brand pack sets the style"
   "drata                   - Drata: controls, monitors, evidence, audit prep"
   "exchange-mailbox-cleanup - M365 offboarding walkthrough: hold, preserve, delete, export"
   "exchange-mailbox-restore - M365 restore walkthrough: triage, then one of five paths"
@@ -2048,17 +2359,14 @@ fi
 load_mcp_servers
 
 install_aws_mcp() {
-  if ! have uv && ! have uvx; then
-    if have pip3; then
-      pip3 install --user uv
-    elif have pip; then
-      pip install --user uv
-    else
-      warn "pip not found - install python3-pip first, then re-run to install uv."
-      return 1
-    fi
-    export PATH="$HOME/.local/bin:$PATH"
-  fi
+  # Was an unchecked `pip3 install --user uv` whose failure this function ignored:
+  # `claude mcp add` records a command without running it, so the run continued and
+  # registered a server whose uvx does not exist. ensure_uv reports its own failure
+  # on stderr; the caller's only job is to stop.
+  ensure_uv || {
+    uv_warn "not registering aws-api - 'uvx awslabs.aws-api-mcp-server@latest' needs uv."
+    return 1
+  }
   if ! have claude; then
     warn "claude not found on PATH in this shell - run 'source ~/.bashrc' and re-run this script."
     return 1
@@ -2100,29 +2408,17 @@ fi
 # themselves are free of charge, which is worth saying because "pricing API" reads
 # like something that bills.
 install_aws_pricing_mcp() {
-  if ! have uv && ! have uvx; then
-    # The install must be CHECKED, not merely attempted. `claude mcp add`
-    # records a command without running it, so a failed `pip install uv`
-    # followed by an unconditional add registers a server whose executable is
-    # absent -- and the failure then surfaces later, inside a session, as an
-    # MCP server that will not start, with nothing pointing back at this step.
-    # The existing `aws-mcp` row has the same shape and the same bug; this one
-    # is the row being added, so it is the one fixed here.
-    if have pip3; then
-      pip3 install --user uv || { warn "pip3 install uv failed - not registering aws-pricing."; return 1; }
-    elif have pip; then
-      pip install --user uv || { warn "pip install uv failed - not registering aws-pricing."; return 1; }
-    else
-      warn "pip not found - install python3-pip first, then re-run to install uv."
-      return 1
-    fi
-    export PATH="$HOME/.local/bin:$PATH"
-    if ! have uv && ! have uvx; then
-      warn "uv installed but neither 'uv' nor 'uvx' is on PATH - not registering aws-pricing."
-      warn "Open a new shell (or add ~/.local/bin to PATH) and re-run this item."
-      return 1
-    fi
-  fi
+  # The install must be CHECKED, not merely attempted. `claude mcp add` records a
+  # command without running it, so an install that failed followed by an
+  # unconditional add registers a server whose executable is absent -- and the
+  # failure then surfaces later, inside a session, as an MCP server that will not
+  # start, with nothing pointing back at this step. ensure_uv checks its own result
+  # and only returns 0 once uv or uvx actually resolves on PATH; `aws-mcp` above now
+  # goes through the same function.
+  ensure_uv || {
+    uv_warn "not registering aws-pricing - 'uvx awslabs.aws-pricing-mcp-server@latest' needs uv."
+    return 1
+  }
   add_mcp_server "aws-pricing" "-" uvx awslabs.aws-pricing-mcp-server@latest || return 1
   ok "Needs AWS credentials whose role allows pricing:*. The Price List calls are free."
 }
@@ -2462,19 +2758,13 @@ install_graphify() {
   if have graphify; then
     skip "graphify already installed ($(command -v graphify))"
   else
-    if ! have uv && ! have uvx; then
-      if have pip3; then
-        pip3 install --user uv
-      elif have pip; then
-        pip install --user uv
-      else
-        warn "pip not found - install python3-pip first, then re-run to install graphify."
-        return 1
-      fi
-      export PATH="$HOME/.local/bin:$PATH"
-    fi
+    ensure_uv || {
+      uv_warn "not installing graphify - 'uv tool install graphifyy' needs uv."
+      return 1
+    }
+    # graphify needs `uv` itself, not just `uvx`: ensure_uv is satisfied by either.
     if ! have uv; then
-      warn "uv still not found after attempting to install it - install it manually (https://docs.astral.sh/uv) and re-run."
+      uv_warn "uv still not found after attempting to install it - install it manually (https://docs.astral.sh/uv) and re-run."
       return 1
     fi
     uv tool install graphifyy || return 1

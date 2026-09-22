@@ -18,6 +18,7 @@ Two directions are checked here, and the second is the one that matters:
     MENTIONS `--brand` would have "confirmed" it either way.
 """
 import os
+import re
 import subprocess
 import sys
 
@@ -254,11 +255,20 @@ def test_the_routed_scripts_are_the_ones_the_table_names():
     """The mapping in `_ROUTED_SCRIPTS` is only worth testing if it is the
     mapping the table actually publishes. Renaming a script in the table
     without renaming it here would leave this file happily checking two
-    scripts nobody is routed to."""
-    generating = _read(_HOUSE_STYLE).split("## Generating it", 1)[1]
+    scripts nobody is routed to.
+
+    Scoped to the routing bullet, not to the whole `## Generating it` section,
+    and the sabotage suite measured why. The section-wide form was red until
+    the HTML route was added below it; that route CITES
+    `build_report.py:<line>` twice as the generator proving its print block,
+    so `"build_report.py" in generating` stayed true with the routing bullet
+    renamed to a script that does not exist, and the mutation came back STILL
+    GREEN. A citation is not a route. The bullet is the thing an agent reads
+    as "run this", which is the claim under test."""
+    bullet = "\n".join(_doc_builder_bullet())
 
     for genre, (script, _needs) in _ROUTED_SCRIPTS.items():
-        assert script in generating, genre
+        assert script in bullet, (genre, bullet)
 
 
 def test_the_two_degraded_paths_are_stated_separately():
@@ -389,3 +399,391 @@ def test_anthropic_office_skills_keeps_docx_and_pdf():
     assert "- `anthropic-office-skills:docx` — DOCX" in generating
     assert "- `anthropic-office-skills:pdf` — PDF" in generating
     assert "fallback" in generating
+
+
+# The HTML route's two print rules, as (selector, declaration) pairs rather
+# than as one literal block. The same three declarations have to be found in
+# two files written in different dialects -- crew's prose has them in plain
+# CSS, `build_report.py` has them inside an f-string where every brace is
+# doubled -- so a literal-substring assertion can only ever check one of them,
+# and checking only crew's copy is how the prose comes loose from the
+# generator that proves it works.
+# The three doc-builder's generator emits, which are the three crew cites it
+# for. Kept separate from the route's own set below: crew widens `h2` to
+# `h2, h3` and asserting the widened set against build_report.py would fail on
+# a generator that is not wrong -- it emits no `h3` at all.
+_GENERATOR_RULES = (
+    ("h2", "page-break-after:avoid"),
+    ("tr", "page-break-inside:avoid"),
+    ("thead", "display:table-header-group"),
+)
+
+_PRINT_RULES = _GENERATOR_RULES + (("h3", "page-break-after:avoid"),)
+
+# One CSS rule: a selector list, a brace, a body, a brace. The repeated `{`
+# and `}` accept the doubled braces of `build_report.py`'s f-string as well as
+# plain CSS, which is the whole reason these are matched as rules rather than
+# compared as one literal block.
+_CSS_RULE_RE = re.compile(r"([^{}]+?)\{+([^{}]*?)\}+")
+
+
+def _declares(source, selector, declaration):
+    """Whether `source` binds `declaration` to `selector`, in either dialect.
+
+    The selector is looked for inside a comma-separated LIST, not as the whole
+    left-hand side. crew's HTML route widens doc-builder's `h2` to `h2, h3` --
+    the house style allows an H3 and doc-builder's report generator emits none
+    -- and a match anchored on the entire selector would read that widening as
+    the rule having been deleted.
+    """
+    flat = " ".join(source.split())
+    for rule in _CSS_RULE_RE.finditer(flat):
+        selectors = [part.strip() for part in rule.group(1).split(",")]
+        if selector in selectors and declaration in rule.group(2):
+            return True
+    return False
+
+
+def _html_route():
+    """The `### HTML` subsection alone, up to the next `###`.
+
+    Scoped for the same reason `_doc_builder_bullet` is. `<thead>` and
+    `page-break` could be mentioned anywhere in a file this long -- in the
+    palette, in a future section about decks -- and a whole-file search would
+    call the route documented while the route itself said "HTML needs no
+    skill; write the file and apply the palette above", which is the sentence
+    that shipped four broken exports.
+    """
+    house = _read(_HOUSE_STYLE)
+    after = house.split("\n### HTML\n", 1)
+    assert len(after) == 2, (
+        "crew-house-style has no `### HTML` subsection; the HTML route is "
+        "where the print discipline lives and nothing else carries it")
+    return after[1].split("\n### ", 1)[0]
+
+
+def _html_rule(number):
+    """One numbered rule out of the HTML route, on its own.
+
+    Scoped to the rule rather than to the section, and the sabotage suite is
+    why. The first version asserted `"<thead>" in route`, which the route
+    satisfies from the PROSE UNDER the rules -- "has nothing to bind to when
+    the markup has no `<thead>`" -- so rewriting rule 1 into "style the header
+    row" left the test green with the requirement deleted. It came back STILL
+    GREEN on the first sabotage run, which is this suite's documented failure
+    mode and the reason the rule text is what gets read here.
+    """
+    route = _html_route()
+    start = route.index("\n%d. " % number)
+    rest = route[start + 1:]
+    end = re.search(r"\n\d+\. ", rest)
+    return rest[:end.start()] if end else rest
+
+
+def test_the_html_route_carries_the_print_rules():
+    """The defect this section exists for, and it is prose again.
+
+    Four guides in `docs/guides/` were hand-written HTML off this route while
+    it read "HTML needs no skill; write the file and apply the palette above".
+    The palette is colours. Nothing on that route said anything about a page
+    boundary, so all four shipped with headings stranded at the foot of a page
+    and tables whose continuation carried no header row.
+
+    Asserted per declaration, not on the block as one string, so reformatting
+    the CSS does not fail the test and deleting one of the three does."""
+    css = _html_rule(2)
+
+    assert "@media print" in css, css
+
+    for selector, declaration in _PRINT_RULES:
+        assert _declares(css, selector, declaration), (selector, declaration)
+
+
+def test_the_html_route_requires_a_real_thead():
+    """The half that is markup, not CSS, and the half that was invisible.
+
+    `display:table-header-group` has nothing to bind to when a table's header
+    row is a bare `<tr>` of `<th>`. Measured: adding the CSS alone to these
+    four files fixed the stranded headings and did NOT repeat a single table
+    header, because not one of their tables had a `<thead>` element. So a route
+    that carries the print block and not the markup rule reads as fixed and
+    repeats nothing.
+
+    The dependency between the two is asserted as well as the rule itself. A
+    bare "use `<thead>`" gets dropped by the next person tightening the file,
+    who cannot see what it was holding up."""
+    # The RULE, not the section. See `_html_rule`.
+    markup = _html_rule(1)
+    assert "<thead>" in markup, markup
+    assert "<tbody>" in markup, markup
+
+    # And it is an instruction about every table, not an aside about one.
+    assert "Every table" in markup, markup
+
+    # The dependency, in the route's own words. Both directions: neither rule
+    # is sufficient, which is why neither may be deleted as redundant.
+    route = _html_route()
+    assert "nothing to bind to" in route, route
+    assert "does nothing at all" in route, route
+
+
+def test_the_print_rules_match_the_generator_that_proves_them():
+    """The cross-entry direction, the same one `--brand` is checked in.
+
+    crew's prose cites `build_report.py` by path and line for these three
+    declarations. doc-builder is a separate marketplace entry, so that
+    citation can go stale without anything in crew changing -- and a print
+    block crew invented for itself, with no working generator behind it,
+    is a recommendation rather than a proven fix.
+
+    Read out of the source rather than out of the docstring or the reference
+    note: `references/word-traps.md` carries the same block in prose and would
+    "confirm" it whether or not the generator still emits it."""
+    _requires_doc_builder()
+    src = _read(os.path.join(_DOC_BUILDER_SCRIPTS, "build_report.py"))
+
+    assert "@media print" in src
+
+    for selector, declaration in _GENERATOR_RULES:
+        assert _declares(src, selector, declaration), (selector, declaration)
+
+    # The stated reason crew's copy carries `h3` and doc-builder's does not.
+    # Asserted so the justification is checkable rather than remembered: if
+    # this generator ever emits an `h3`, its own block stops covering its own
+    # output and crew's prose about why it differs stops being true.
+    assert "<h3" not in src, "build_report.py now emits h3; its print block does not cover it"
+
+    # And the markup half, from the table emitter itself -- the rule is only
+    # true because something produces the element it needs.
+    assert "<thead><tr>" in src
+    assert "</tr></thead>" in src
+
+
+# The two `build_report.py:<line>` citations the HTML route makes, as a regex
+# over the citation rather than a pair of hardcoded numbers. The test reads
+# the number CREW WROTE and checks the source at it; it never derives what the
+# number should have been. Inferring the right line is the "checker that
+# guesses" this repo's CLAUDE.md warns against -- it would rewrite a citation
+# that was deliberately pointing somewhere else and call that a pass.
+#
+# The repo-relative prefix is optional in the pattern and mandatory in the
+# prose (asserted below). Both forms resolve by eye; only the prefixed one can
+# be pasted into `git diff --name-only <anchor>..HEAD -- <path>`, which is the
+# whole mechanism by which a citation gets re-checked.
+_CITE_RE = re.compile(
+    r"`(skills/doc-builder/scripts/)?build_report\.py:(\d+)(?:-(\d+))?`")
+
+
+def _build_report_lines(start, end):
+    """Lines `start`..`end` of build_report.py, 1-based and inclusive."""
+    lines = _read(os.path.join(
+        _DOC_BUILDER_SCRIPTS, "build_report.py")).split("\n")
+    assert 1 <= start <= end <= len(lines), (
+        f"build_report.py:{start}-{end} is out of range; the file has "
+        f"{len(lines)} lines")
+    return lines[start - 1:end]
+
+
+def test_the_cited_lines_of_the_generator_hold_what_crew_says_they_hold():
+    """The citation itself, not just the claim it supports.
+
+    `test_the_print_rules_match_the_generator_that_proves_them` searches the
+    whole of `build_report.py` for the three declarations, so it is green
+    whatever line numbers crew's prose names -- and both of them were wrong in
+    the tree that test passed in: a doc-builder change inserted ten lines and
+    moved `155-157` to `165-167` and `123` to `133`, with nothing going red.
+    `123` had landed in the middle of the masthead CSS.
+
+    WHAT THIS BINDS, and why it is not the same as pinning the numbers. The
+    assertion is "the lines crew names contain what crew says they contain",
+    read out of doc-builder at the numbers found in crew's own prose. So an
+    edit anywhere in doc-builder that does not move these lines leaves this
+    green, and one that does move them goes red -- which is correct, because
+    at that moment the citation IS stale. There is no separate list of
+    expected line numbers to keep in step with the prose.
+
+    WHAT IT CANNOT CATCH, stated so nobody reads it as more than it is:
+      * A stale citation whose new occupant happens to match -- duplicate the
+        print block lower in the file and the old numbers keep "resolving".
+      * Anything at all when doc-builder is not in the checkout, where the
+        whole cross-entry direction skips.
+      * The cost is real and is the price of citing by line: an unrelated
+        doc-builder edit that inserts a line above these needs a matching edit
+        here, in a separate marketplace entry, with its own version bump.
+    """
+    _requires_doc_builder()
+    route = _html_route()
+
+    cites = _CITE_RE.findall(route)
+    assert len(cites) == 2, (
+        "the HTML route should cite build_report.py exactly twice -- the "
+        "print block and the table comment. A third citation needs a rule "
+        "here, or it is unchecked: " + repr(cites))
+
+    # Repo-relative, both of them. A bare `build_report.py:133` resolves by eye
+    # and cannot be pasted into the re-verification command, which is the one
+    # thing that makes a line citation worth writing down.
+    for prefix, start, _end in cites:
+        assert prefix == "skills/doc-builder/scripts/", (
+            f"build_report.py:{start} is cited without its repo-relative "
+            "path, so it cannot be re-checked with git diff")
+
+    ranges = [c for c in cites if c[2]]
+    singles = [c for c in cites if not c[2]]
+    assert len(ranges) == 1 and len(singles) == 1, cites
+
+    # 1. The range citation: the three declarations crew copies, and NOTHING
+    #    else inside the span. Every cited line has to carry one of them, so
+    #    widening the citation to `:1-400` -- which would "contain" all three
+    #    and pass a naive search -- fails here instead.
+    _prefix, start, end = ranges[0]
+    span = _build_report_lines(int(start), int(end))
+    for selector, declaration in _GENERATOR_RULES:
+        assert _declares("\n".join(span), selector, declaration), (
+            f"build_report.py:{start}-{end} does not declare "
+            f"`{selector} {{ {declaration} }}`; the citation has rotted",
+            span)
+    for offset, line in enumerate(span):
+        assert any(declaration in line
+                   for _sel, declaration in _GENERATOR_RULES), (
+            f"build_report.py:{int(start) + offset} carries none of the three "
+            "declarations it is cited for, so the citation is wider than the "
+            "thing it names: " + repr(line))
+
+    # 2. The single-line citation, checked against the text crew QUOTES beside
+    #    it rather than against a copy kept here. Quoting the comment and
+    #    naming a line that holds something else is the failure; taking the
+    #    expected text from the prose is what makes the two provably the same
+    #    claim.
+    flat = " ".join(route.split())
+    quoted = re.search(
+        r"build_report\.py:(\d+)`, \"([^\"]+)\"", flat)
+    assert quoted, (
+        "the single-line citation no longer quotes the text it cites; "
+        "without the quote there is nothing to check the line against")
+    line_no = int(quoted.group(1))
+    assert line_no == int(singles[0][1]), (line_no, singles)
+    cited_line = " ".join(_build_report_lines(line_no, line_no)[0].split())
+    assert quoted.group(2) in cited_line, (
+        f"build_report.py:{line_no} does not contain the text crew quotes "
+        f"from it.\n  quoted: {quoted.group(2)!r}\n  line:   {cited_line!r}")
+
+
+# The four documents the defect was reported against. Named one by one rather
+# than globbed: a glob asserts a rule about whatever happens to be in the
+# directory, so deleting the file that shipped broken would turn the test
+# green by removing its subject.
+#
+# Reaching out of the plugin and into the repo for the same reason
+# `_DOC_BUILDER_SCRIPTS` does, and the reason is stronger here, not weaker.
+# The `### HTML` route is the one route on the list with NO generator behind
+# it -- every other format is produced by a tool with its own tests -- so the
+# artefacts are the only place the rule can be observed holding. The previous
+# author deferred this to TODO.md as "coupling crew's suite to repo docs";
+# that is true of this whole file by design (see the module docstring), and
+# three tests asserting crew's PROSE while the four files the user complained
+# about went unchecked is the exact shape this suite exists to refuse. They
+# skip when the repo is not in the checkout, like every other cross-entry
+# check here.
+_GUIDES_DIR = os.path.join(_REPO, "docs", "guides")
+_GUIDES = (
+    "crew-overview.html",
+    "crew-capabilities.html",
+    "crew-technical-reference.html",
+    "crew-progress-report-2026-09-20.html",
+)
+
+
+def _requires_guides():
+    if not os.path.isdir(_GUIDES_DIR):
+        pytest.skip(
+            "docs/guides is not in this checkout at "
+            f"{os.path.normpath(_GUIDES_DIR)} -- crew's tests are running "
+            "outside the marketplace repo, so the artefacts the HTML route "
+            "produced cannot be checked here")
+
+
+def _print_block(html, name):
+    """The body of the document's `@media print { ... }` rule, brace-matched.
+
+    Scoped rather than handed the whole file, because `_declares` reads every
+    CSS rule in whatever it is given. A whole-file search accepts
+    `thead { display:table-header-group; }` sitting in the SCREEN stylesheet,
+    where it does nothing a printer can see -- and "the declaration is present
+    somewhere" was already the shape of the assertion that let this ship.
+    """
+    start = html.find("@media print")
+    assert start != -1, f"{name} has no `@media print` block at all"
+    opened = html.find("{", start)
+    assert opened != -1, name
+    depth = 0
+    for index in range(opened, len(html)):
+        if html[index] == "{":
+            depth += 1
+        elif html[index] == "}":
+            depth -= 1
+            if depth == 0:
+                return html[opened + 1:index]
+    raise AssertionError(f"{name}: unterminated `@media print` block")
+
+
+@pytest.mark.parametrize("name", _GUIDES)
+def test_every_shipped_guide_carries_the_print_block(name):
+    """The artefact, not the prose that describes it.
+
+    Nothing else in this suite looks at a produced document. Regenerate or
+    hand-edit these four without the block and every other test here stays
+    green, which is how the defect reached a reader in the first place.
+
+    Asserted per declaration and inside the print block, so reformatting the
+    CSS passes, moving a declaration out to the screen stylesheet fails, and
+    dropping one of the four fails."""
+    _requires_guides()
+    path = os.path.join(_GUIDES_DIR, name)
+    assert os.path.isfile(path), path
+
+    block = _print_block(_read(path), name)
+
+    # The WIDENED set -- these files are written off crew's route, not
+    # doc-builder's, and `h3` is the widening the route calls not optional.
+    # Two of them carry `<h3>`s.
+    for selector, declaration in _PRINT_RULES:
+        assert _declares(block, selector, declaration), (
+            name, selector, declaration, block)
+
+
+@pytest.mark.parametrize("name", _GUIDES)
+def test_every_table_in_every_shipped_guide_has_a_real_thead(name):
+    """The markup half, per table rather than per file.
+
+    Counting `<table>` against `<thead>` is not this assertion: one table with
+    two theads and another with none balances, and the one with none is the
+    table whose header vanishes at the page break. Each `<table>` element is
+    checked on its own.
+
+    `display:table-header-group` has nothing to bind to without this, so a
+    file passing the test above and failing this one is a file where the print
+    block reads as fixed and repeats nothing."""
+    _requires_guides()
+    html = _read(os.path.join(_GUIDES_DIR, name))
+
+    tables = re.findall(r"<table\b.*?</table>", html, re.S | re.I)
+
+    # The floor, not a count. "Every table has a thead" is vacuously true of a
+    # document with no tables, so deleting the tables would pass a test whose
+    # whole subject is what those tables do at a page boundary.
+    assert tables, f"{name} contains no <table>; this test would be vacuous"
+
+    for table in tables:
+        head = re.search(r"<thead\b.*?</thead>", table, re.S | re.I)
+        assert head, (
+            f"{name}: a <table> has no <thead>, so its header row does not "
+            "repeat at a page break: " + " ".join(table.split())[:160])
+        # A `<thead>` wrapped around nothing is the same defect with the
+        # element added, and it is what a careless fix produces.
+        assert re.search(r"<th\b", head.group(0), re.I), (
+            f"{name}: a <thead> contains no <th>: "
+            + " ".join(head.group(0).split())[:160])
+        assert re.search(r"<tbody\b", table, re.I), (
+            f"{name}: a <table> has a <thead> but no <tbody>; rule 1 of the "
+            "HTML route requires both: " + " ".join(table.split())[:160])

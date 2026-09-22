@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Emit a report as HTML that survives Word's HTML parser, and optionally
-convert it to .docx / .pdf through Word COM on Windows.
+convert it to .docx / .pdf through Microsoft Word (COM, Windows) or LibreOffice.
 
 The stylesheet this writes is deliberately repetitive and deliberately old
 fashioned: no custom properties, no `:nth-child`, no flex, no element carrying
@@ -18,12 +18,21 @@ single installed pack by default, `--brand neutral` for the unbranded palette.
 The stylesheet still receives LITERAL hex -- the brand is substituted at build
 time, never shipped as `var()`.
 
-Third-party requirement: `pywin32`, and only for `--to-docx` / `--to-pdf`.
-Emitting the HTML is stdlib.
+Two renderers, never one silently standing in for the other. Word over COM is
+the reference -- every rule in `references/word-traps.md` was measured against
+it -- and LibreOffice (`soffice --headless`) is the only renderer that exists on
+Linux and macOS, at reduced and measured fidelity. The engine is chosen by
+`--renderer` or by an explicit platform branch, is printed to stderr with its
+reason before any conversion, and is NAMED on the line announcing every file it
+wrote. See render_engine.py.
+
+Third-party requirement: `pywin32`, and only for `--renderer word`. Emitting the
+HTML is stdlib, and the LibreOffice path needs no Python package at all.
 
 Usage:
     build_report.py --data report.json --out reports/
     build_report.py --data report.json --out reports/ --to-docx --to-pdf
+    build_report.py --data report.json --to-pdf --renderer libreoffice
     build_report.py --data report.json --brand neutral
     build_report.py --example > report.json
 """
@@ -38,6 +47,7 @@ import json
 import os
 import sys
 
+import render_engine
 import resolve_brand
 
 
@@ -393,12 +403,44 @@ EXAMPLE = {
 }
 
 
+def convert(src, want_docx=False, want_pdf=False, renderer=None):
+    """Convert `src` with a DELIBERATELY chosen engine. Returns an exit code.
+
+    This is the only entry point either pipeline should call. It exists so that
+    the choice of engine is made once, announced once, and can never happen by
+    accident: if the chosen engine cannot run, this stops and names the flag
+    that selects the other one. It does NOT try the other one. A substitution
+    the operator did not ask for is the failure this skill spent its whole life
+    refusing, and labelling is what makes the substitution acceptable at all.
+    """
+    engine, why = render_engine.choose_engine(renderer)
+    print(f"renderer : {engine} -- {why}", file=sys.stderr)
+    if engine == render_engine.LIBREOFFICE:
+        return render_engine.to_soffice(src, want_docx=want_docx, want_pdf=want_pdf)
+    if sys.platform != "win32":
+        print(f"cannot convert: --renderer word needs Microsoft Word over COM, and this is "
+              f"{sys.platform}. Microsoft ships no Word desktop app for Linux, so Word is not "
+              "installable here. The source file was still written. Use "
+              "--renderer libreoffice, or convert on a Windows machine with Word.",
+              file=sys.stderr)
+        return 1
+    return to_word(src, want_docx, want_pdf)
+
+
 def to_word(html_path, want_docx, want_pdf):
     """Convert through Word COM. Windows with Word installed only.
 
     Opens whatever Word can open - the HTML this script emits, or a .docx from
-    build_sop.py, which imports this function for its own --to-pdf step so the
-    process-hygiene rules below live in exactly one place."""
+    build_sop.py. Prefer convert() over calling this directly: convert() is what
+    names the engine on stderr before the first file is written.
+
+    Every target is confirmed to exist, be non-empty, and be NEWER than the
+    moment its SaveAs2 started - the same three checks `render_engine.to_soffice`
+    applies, through the same function. SKILL.md's rule "a conversion that exits
+    0 produced a file" was enforced on the LibreOffice side only until
+    2026-09-22; a rule that holds on one engine is not a rule, and Word has its
+    own way of returning without writing (a SaveAs2 that DisplayAlerts=0
+    suppressed, an add-in that cancels the save)."""
     # ONE import, bound to the name actually used. An earlier version imported
     # `win32com.client` as an availability probe and then imported it again as
     # `win32`, which made the first genuinely unused -- pylint W0611 on a line
@@ -429,17 +471,30 @@ def to_word(html_path, want_docx, want_pdf):
     # reports on a schedule those accumulate until Word refuses to start.
     word = win32.Dispatch("Word.Application")
     doc = None
+    rc = 0
     try:
         word.Visible = False
         word.DisplayAlerts = 0
         base = os.path.splitext(os.path.abspath(html_path))[0]
         doc = word.Documents.Open(os.path.abspath(html_path), False, True)
-        if want_docx:
-            doc.SaveAs2(base + ".docx", 16)   # wdFormatDocumentDefault
-            print(f"wrote {base}.docx")
-        if want_pdf:
-            doc.SaveAs2(base + ".pdf", 17)    # wdFormatPDF
-            print(f"wrote {base}.pdf")
+        # Every converted file names its engine. A reader must never have to
+        # guess whether a .docx came from Word or from LibreOffice.
+        label = render_engine.engine_label(render_engine.WORD)
+        # wdFormatDocumentDefault / wdFormatPDF. .docx first: SaveAs2 rebinds the
+        # document to its new path, and that is the order the soffice side uses.
+        saves = ([(base + ".docx", 16)] if want_docx else []) + \
+                ([(base + ".pdf", 17)] if want_pdf else [])
+        for target, fmt in saves:
+            before = os.path.getmtime(target) if os.path.exists(target) else -1.0
+            doc.SaveAs2(target, fmt)
+            problem = render_engine.conversion_problem(target, before)
+            if problem:
+                print(f"Word reported no error saving {os.path.basename(target)}, but "
+                      f"{problem}. Treating that as a failed conversion, not a success.",
+                      file=sys.stderr)
+                rc = 1
+                break
+            print(f"wrote {target}  [renderer: {label}]")
     finally:
         # Both closes are individually guarded: if Close raises, Quit must still
         # run, or the failure that broke the save also leaks the process.
@@ -452,7 +507,7 @@ def to_word(html_path, want_docx, want_pdf):
             word.Quit()
         except Exception:  # pylint: disable=broad-except
             pass
-    return 0
+    return rc
 
 
 def main(argv=None):
@@ -467,6 +522,7 @@ def main(argv=None):
     ap.add_argument("--name", help="basename; default is the title, slugified")
     ap.add_argument("--to-docx", action="store_true")
     ap.add_argument("--to-pdf", action="store_true")
+    render_engine.add_renderer_argument(ap)
     ap.add_argument("--example", action="store_true",
                     help="print an example JSON document and exit")
     args = ap.parse_args(argv)
@@ -502,7 +558,7 @@ def main(argv=None):
     print(f"wrote {path}")
 
     if args.to_docx or args.to_pdf:
-        return to_word(path, args.to_docx, args.to_pdf)
+        return convert(path, args.to_docx, args.to_pdf, renderer=args.renderer)
     return 0
 
 

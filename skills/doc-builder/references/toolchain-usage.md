@@ -7,17 +7,19 @@ outside it should be absolute.
 
 | File | What it is | Needs |
 |---|---|---|
-| `preflight.py` | Detects missing packages, installs them `--user` (or into `../.venv`) after one confirmation, verifies by re-import in a fresh interpreter; reports Word presence and locked output files. **Run first on any new machine.** | stdlib |
+| `preflight.py` | Detects missing packages, installs them `--user` (or into `../.venv`) after one confirmation, verifies by re-import in a fresh interpreter; reports which RENDERERS exist, which one this machine will use, whether Gate 2 is available, and locked output files. **Run first on any new machine.** | stdlib |
 | `../requirements.txt` | The same package set, declared. `python -m pip install --user -r requirements.txt` | |
 | `resolve_brand.py` | Decides the brand pack and every path derived from it. Everything else imports it. | stdlib |
-| `build_report.py` | Report path: JSON → HTML that survives Word's parser → `.docx`/`.pdf` via Word COM. | stdlib; `pywin32` for conversion |
-| `build_sop.py` | SOP path: JSON spec (or `SopBuilder` API) → house-template `.docx`, optional `.pdf`. | `python-docx`; `pywin32` for `--to-pdf` |
+| `render_engine.py` | Which program converts, and the words that say so. `--renderer`, the platform branch, the LibreOffice conversion, and the PDF-`Producer` read that gives Gate 2 its third value. | stdlib |
+| `build_report.py` | Report path: JSON → HTML that survives Word's parser → `.docx`/`.pdf` via Word COM **or** LibreOffice. | stdlib; `pywin32` only for `--renderer word` |
+| `build_sop.py` | SOP path: JSON spec (or `SopBuilder` API) → house-template `.docx`, optional `.pdf`. | `python-docx`; a renderer for `--to-pdf` (`pywin32`+Word, or `soffice`) |
 | `check_conformance.py` | **Gate 1** — structural validator, the executable form of `template-spec.md`, against the active brand. Non-zero exit on failure. | `python-docx` |
-| `verify_borders.py` | **Gate 2** — renders each PDF at 300 dpi and measures whether every screenshot border actually painted. | `PyMuPDF`, `numpy`, `Pillow`, `python-docx` |
+| `verify_borders.py` | **Gate 2** — renders each PDF at 300 dpi and measures whether every screenshot border actually painted. Three outcomes: PASS / FAIL / **UNAVAILABLE** when Word did not render the PDF. | `PyMuPDF`, `numpy`, `Pillow`, `python-docx` |
 | `fix_effect_extent.py` | Repair: patches `wp:effectExtent` into masters that predate the generator. Backs up first; `--dry-run`. | `python-docx` |
 | `extract_spec.py` | Reverse-engineers a JSON spec (and pulls the screenshots) from an existing master so it can be rebuilt. Logs everything it cannot express. | `python-docx` |
 | `make_template.py` | Regenerates a brand pack's `sop_template.docx` from a conforming master. Rarely. | `python-docx` |
 | `_test/checklist.sh` | Runs the greppable half of `word-traps.md`'s checklist against a report the builder actually emitted. | bash, python |
+| `_test/test_render_engine.py` | The renderer is chosen, never fallen back into; Gate 2 reports UNAVAILABLE rather than PASS on a PDF Word did not render. Stubs `pymupdf`, so it runs on a host with no PDF library. | pytest |
 | `../assets/brands/neutral/brand.json` | The neutral pack and the full schema. | |
 | `../assets/fixtures/selftest.json` + `.png` | One-page spec exercising every SOP block type, portable to any brand. | |
 
@@ -30,11 +32,76 @@ python preflight.py --venv               # ...into <skill>\.venv; then run scrip
 python preflight.py --target "C:\masters\My SOP.pdf" --target "C:\masters\My SOP.docx"
 ```
 
-Exit 0 = ready. 3 = packages missing and not installed (the exact `pip install --user`
-command is printed). 2 = an install or post-install import failed (pip's own output is
-above it, verbatim; nothing is retried). 1 = Word absent or a target locked. Word absent
-means `--to-docx`/`--to-pdf` and Gate 2 are unavailable on that machine; the HTML and
-`.docx` still build and can be converted elsewhere.
+Exit 0 = **the toolchain is provisioned**. 3 = packages missing and not installed (the exact
+`pip install --user` command is printed). 2 = an install or post-install import failed (pip's
+own output is above it, verbatim; nothing is retried). 1 = the chosen renderer is
+unavailable, or a target is locked.
+
+**Exit 0 does not mean Gate 2 passed, and on Linux and macOS it never can.** Word over COM
+exists only on Windows, so `word_installed()` is permanently False elsewhere; a fully
+provisioned Linux host with LibreOffice and every package installed exits 0 and prints a
+closing line that says Gate 2 is UNAVAILABLE in words the exit code cannot carry. Until
+2026-09-22 that host exited **1** and printed "Not ready", which made exit 0 unreachable on
+the platform this skill's LibreOffice path was written for — an exit code no run can produce
+carries no information. Word absent on *Windows* is a different thing: it is fixable, so it
+is still exit 1.
+
+Gate 2 needs **Word and the packages `verify_borders.py` imports** — PyMuPDF, numpy and
+Pillow, without any one of which it dies at its own import line, and python-docx, without
+which its `.docx` cross-check cannot run. The preflight reports `AVAILABLE` only when all of
+them are present; it used to report it on the strength of Word alone, while the section six
+lines above printed `MISSING PyMuPDF`.
+
+## Renderer resolution - chosen, never fallen back into
+
+Two programs can turn a source document into `.docx`/`.pdf`:
+
+| Engine | What it is | Where |
+|---|---|---|
+| `word` | Microsoft Word over COM (`pywin32`). The **reference** renderer; every rule in `word-traps.md` was measured against it. | Windows, with Word installed |
+| `libreoffice` | `soffice --headless --convert-to`, no Python package needed. | Anywhere LibreOffice is installed - and the **only** engine on Linux or macOS, because Microsoft ships no Word desktop app for Linux |
+
+Order, on `build_report.py` and `build_sop.py` alike:
+
+1. `--renderer word|libreoffice` always wins.
+2. Otherwise an **explicit platform branch**: Word on Windows, LibreOffice elsewhere.
+
+Both scripts print `renderer : <engine> -- <why>` to stderr before converting anything, and
+append `  [renderer: ...]` to the line announcing every file written. If the chosen engine
+cannot run, the script **stops and names the flag that selects the other one**. It does not
+try the other one. The earlier rule - "never fall back to pandoc or LibreOffice" - was about
+the *silent, unlabelled* substitution, and that part still holds exactly as written: a
+document the reader believes Word made, which Word did not make, is the failure. Labelling
+is what makes the other engine usable at all.
+
+```bash
+python3 render_engine.py                     # which engine this machine would use, and why
+python3 render_engine.py some.pdf            # what actually rendered an existing PDF
+python3 build_report.py --data r.json --to-pdf --renderer libreoffice
+```
+
+The second form's exit code is an answer, not a formality: **0** every named PDF was read and
+its producer determined, **2** a named PDF could not be read, **3** a named PDF was read and
+its producer could not be determined. It returned 0 unconditionally until 2026-09-22, so
+`render_engine.py /nonexistent.pdf && something` ran `something`.
+
+**LibreOffice is run restricted.** `to_soffice` seeds its throwaway user profile before
+soffice starts — macro execution off, macro security Very High, active content off, untrusted
+referer links blocked — because the HTML and OOXML importers resolve external references by
+design. Measured 2026-09-22 on LibreOffice 26.2.5.2: an HTML carrying
+`<img src="http://127.0.0.1:PORT/beacon.png">` hits that server on an unseeded profile and
+does not on a seeded one. `--safe-mode` is deliberately not passed; it discards the profile
+the settings live in. This restricts the network, not the local filesystem.
+
+`render_engine.pdf_producer` reads a PDF's `/Producer` with the stdlib alone (literal and
+UTF-16 hex strings both), so the question "what rendered this?" can be answered on a machine
+with no PDF library. When it cannot be read the answer is `unknown`, which is **not** `word`
+- see Gate 2's third outcome below. A `.docx` cannot answer it at all: `python-docx` writes
+`<Application>Microsoft Office Word</Application>` into `docProps/app.xml` whatever built the
+file.
+
+Fidelity through LibreOffice is reduced and measured - see "What LibreOffice silently drops"
+in `word-traps.md`.
 
 ## Brand resolution
 
@@ -131,6 +198,26 @@ the rendered PDF and catches what the eye misses. A SOP that passes only one is 
 finished. Check a whole set at once with no arguments: both gates default to every file in
 the brand's `masters_dir`.
 
+**Gate 2 has a third outcome.** It asks whether *Word* clips the screenshot border, so it
+can only answer on a Word-rendered PDF. Given anything else — a LibreOffice render, or a PDF
+whose `Producer` cannot be read — it prints `UNAVL`, a one-line explanation, an `ADVISORY`
+measurement of the render it was handed, and `Gate 2 result: UNAVAILABLE`, then exits 3.
+That advisory number is about the renderer that made the file; it is not a Gate 2 result and
+must not be reported as one. **The second way it can fail to run** is the `.docx` cross-check:
+without the matching `.docx` — absent, corrupt, or python-docx not installed — nothing can
+tell a screenshot that lost all four edges from a decorative image that never had a border,
+so that is `UNAVAILABLE` too, not `PASS`.
+
+Every outcome a run produced prints its own `Gate 2 result:` line, and the exit code carries
+the sharpest: **1** FAIL, then **2** a PDF that could not be read, then **3** at least one
+UNAVAILABLE, else **0**. A genuine border failure alongside one unreadable PDF exits 1, not 2
+— it was 2 briefly, and any run that errored at all used to suppress the UNAVAILABLE line
+entirely.
+
+**What Gate 2 does not enforce:** which program rendered the PDF is read from the PDF's own
+`/Producer`, one byte from saying anything. The check defeats *accident*, not an operator
+routing around their own gate.
+
 ### Self-test
 
 ```powershell
@@ -139,9 +226,19 @@ python check_conformance.py $env:TEMP\selftest.docx -v
 python verify_borders.py $env:TEMP\selftest.pdf -v
 ```
 
+```bash
+python3 build_sop.py ../assets/fixtures/selftest.json --out /tmp/selftest.docx --to-pdf
+python3 check_conformance.py /tmp/selftest.docx -v
+python3 verify_borders.py /tmp/selftest.pdf -v
+```
+
 One page, every block type, should PASS both gates under any brand
 (`--brand neutral` on all three to test the synthesised template). Run it after changing
 the generator, the checker or a brand pack.
+
+On a machine with no Word the expected result is **Gate 1 PASS, Gate 2 UNAVAILABLE (exit
+3)** — that is the self-test passing as far as it can here, not a failure to investigate
+and not a pass to report.
 
 ### Spec format
 

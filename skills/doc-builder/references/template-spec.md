@@ -117,6 +117,11 @@ measures the coverage of all four edges of every screenshot. A 0.75 pt line is s
 100 dpi — a casual render will not show this defect. Full-set result after the fix: 0 clipped
 edges of 51 bordered screenshots.
 
+**And verify on a PDF *Word* rendered.** The defect is Word stroking the outline outside
+`wp:extent`; LibreOffice lays the picture out itself and does not reproduce it, so a
+LibreOffice render showing four clean edges says nothing about Word. `verify_borders.py`
+reports such a PDF as `UNAVAILABLE` (exit 3) rather than as a pass.
+
 ## Measurement history
 
 - **Captions are italic — added 2026-09-08, after a defect.** The spec previously recorded

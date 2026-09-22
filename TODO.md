@@ -3219,3 +3219,165 @@ still does not exist anywhere in this repo.
   regression in the scope layer alone is not caught at Stop. Not fixed under
   T-0003 because its scope says "do not touch: the verify map"; add a rule
   (`/crew:verify`) mapping the two scripts and three suites.
+
+## Filed 2026-09-22 by the crew-house-style HTML print-rules developer, not fixed here
+
+- **The four `docs/guides/crew-*.html` guides have no generator and nothing
+  binds them to the house style.** `plugin/crew/tests/test_docs_routing.py`
+  now goes red if the HTML route loses the print rules or the `<thead>`
+  requirement, but nothing asserts the four shipped files still carry them --
+  a hand edit can drop the `@media print` block from
+  `docs/guides/crew-overview.html:20-24` (and its three siblings) and every
+  check stays green. Not fixed here: the brief scoped the regression test to
+  the house style, and a crew test asserting things about repo docs outside
+  `plugin/crew/` couples crew's suite to files that may be deleted.
+
+- **The `.docx` half of the print discipline is inherited, not asserted, and
+  was verified only through LibreOffice.** In the regenerated
+  `docs/guides/crew-*.docx`, `word/document.xml` contains zero `w:keepNext`
+  elements: LibreOffice's HTML import drops `page-break-after:avoid`
+  outright (measured -- adding the same rule outside `@media print` changed
+  nothing). Headings keep with the next paragraph only because
+  `word/styles.xml` defines `Heading1/2/3` as `w:basedOn="Heading"` and
+  `Heading` carries `<w:keepNext/>`. A soffice round-trip to PDF shows no
+  stranded heading, so the inheritance does hold in LibreOffice's layout
+  engine; Microsoft Word was not available here and was not checked. Not
+  blocking: the PDFs are rendered from the HTML by chromium and carry the
+  rules directly.
+
+- **Regenerating those `.docx` files needs a post-processing step that lives
+  in no committed script.** LibreOffice's Writer/Web HTML import resolves
+  `table { width:100% }` against the page width rather than the text column,
+  so every table came out ~3 cm past the right margin (measured:
+  `w:tblW w:w="11339" w:type="dxa"` against a text column of 9638 twips).
+  The fix applied by hand was to restate the section as Letter with 1-inch
+  margins and every `w:tblW` as `5000 pct`, which is what Microsoft Word had
+  emitted for the same CSS in the committed originals. Anyone re-running the
+  conversion without it ships tables running off the paper. Not fixed here:
+  these guides have no build script to put it in, which is the same gap as
+  the first entry.
+
+## Filed 2026-09-22 by the doc-builder LibreOffice-renderer developer, not fixed there
+
+- LibreOffice's HTML importer applies **only simple selectors**, so on the report
+  path it silently drops the table grid
+  (`skills/doc-builder/scripts/build_report.py:136`), the navy header shading
+  (`skills/doc-builder/scripts/build_report.py:138`), the zebra rows
+  (`skills/doc-builder/scripts/build_report.py:140`), the meta-table key shading
+  (`skills/doc-builder/scripts/build_report.py:144`) and the summary-card panels
+  (`skills/doc-builder/scripts/build_report.py:155`). Measured 2026-09-22, LibreOffice 26.2.5.2 on
+  Ubuntu 26.04; the selector-by-selector table is in
+  `skills/doc-builder/references/word-traps.md`, "What LibreOffice silently
+  drops". Not fixed here: the stylesheet's current shape was measured against
+  Word, which stays the reference renderer, and rewriting it into bare classes
+  for LibreOffice would need its own re-measurement on BOTH engines or it trades
+  a flat report on Linux for an unstyled one on Windows. The ticket asked for the
+  reduced fidelity to be stated, and it is, in four places a user reads.
+- `.claude-plugin/marketplace.json`'s `doc-builder` description still reads
+  "through Word", and both install-script catalog rows still read
+  "DOCX/PDF via Word" (`scripts/install-prerequisites.sh:1032`,
+  `scripts/install-prerequisites.ps1:918`). All three are now inaccurate.
+  Not fixed here: the ticket forbids touching `marketplace.json` (another
+  session owns it and the PM applies bumps centrally), and both install scripts
+  are dirty with another session's work. `check-marketplace.py` passes either
+  way, so this blocks nothing - but the three must change together when they do.
+
+## Filed 2026-09-22 by the crew QA-fix developer, not fixed there
+
+- `crew-house-style`'s four `resolve_brand.py` citations are correct today and
+  bound by nothing: `plugin/crew/skills/crew-house-style/SKILL.md:168`
+  (`resolve_brand.py:78-82`, and `:317` on the next line),
+  `plugin/crew/skills/crew-house-style/SKILL.md:170` (`:66-67`) and
+  `plugin/crew/skills/crew-house-style/SKILL.md:185`
+  (`resolve_brand.py:298-317`, and `:301` two lines below). Verified by hand at
+  this commit - all five resolve to what the prose says. The new
+  `test_the_cited_lines_of_the_generator_hold_what_crew_says_they_hold` covers
+  only the two `build_report.py` citations in the `### HTML` route, so the same
+  rot that moved `155-157` to `165-167` would go unnoticed here. Not fixed:
+  binding them needs the three continuation citations (`:317`, `:66-67`,
+  `:301`) rewritten repo-relative first - a bare `:317` cannot be parsed
+  without guessing which file it continues, and CLAUDE.md forbids the bare form
+  for exactly that reason - which is a prose change to a section this ticket's
+  defects do not touch, and it carries its own version bump.
+- The sabotage suite reports 11 STILL GREEN mutations on Linux, all
+  pre-existing and none in `test_docs_routing.py`. Measured at this tree with
+  `plugin/crew/tests/sabotage.py` run in five index slices. Ten of them report
+  `1 skipped` under the mutation, so the named test never executed: nine name
+  PowerShell in their label and one is `the bash gate stops publishing a
+  deadline at all`. **The eleventh is different and is a real hole**: `the
+  frozen artifact path is stored with native separators` reports `1 passed`
+  with the mutation applied, so the test ran and did not notice. Not fixed:
+  the skipping ten need the suite run where those tests execute, which this
+  Linux box is not - `pwsh` IS on PATH here (`/snap/bin/pwsh`) and they skip
+  anyway, so the skip condition has NOT been identified and must not be
+  assumed to be a missing interpreter. The vacuous one is in the frozen-
+  artifact path, nowhere near this ticket's files.
+
+## Filed 2026-09-22 by the doc-builder QA/security-fix developer, not fixed there
+
+- **Requested during the ticket, out of its scope: add the
+  `anthropics/claude-plugins-community` marketplace and install `eli5` from it
+  in both install scripts.** `eli5` is not in this repository (no `skills/eli5`,
+  no `plugin/eli5`), so it can only come from that marketplace. The pattern to
+  copy already exists twice: `scripts/install-prerequisites.sh:2302-2304`
+  (`add_marketplace "anthropics/claude-plugins-official" ...` then
+  `install_plugin "claude-code-setup@claude-plugins-official"`) and
+  `:2673-2676`; the PowerShell halves are `Add-Marketplace`/`Install-Plugin`
+  around `scripts/install-prerequisites.ps1:537` and `:899`. The second half of
+  the request, the **`github` skill, is already installed** - it is in the skill
+  list at `scripts/install-prerequisites.sh:1144` with its menu description at
+  `:1182`, so nothing is needed for it. Not fixed here for two reasons, both
+  hard: this ticket's scope is `skills/doc-builder/**` only, and both install
+  scripts are already dirty with a concurrent session's uncommitted edits -
+  CLAUDE.md requires a registration to land in ONE commit across the
+  marketplace entry, the catalog row, `plugin/PLUGINS.md` and both install
+  scripts in the same order with the same text, and a half-landed one fails the
+  checker with no way to tell which half was intended.
+
+## Filed 2026-09-22 by the install-script uv security/QA fix developer, not fixed there
+
+- **`install_packages` still uses `pacman -Sy` without `-u`**, at
+  `scripts/install-prerequisites.sh:2086`
+  (`pacman) as_root pacman -Sy --noconfirm "${missing[@]}" ;;`). That is the
+  partial-upgrade idiom Arch documents as the way to break an install: refresh
+  the databases, then install packages built against libraries the rest of the
+  system has not been upgraded to. The same idiom was fixed in
+  `install_pipx_package` at `scripts/install-prerequisites.sh:337`, which now
+  runs `pacman -S --needed --noconfirm python-pipx` - no refresh, so no partial
+  upgrade, and it falls through to the next rung if the local database is too
+  stale. Not fixed here because `install_packages` serves the whole
+  prerequisites row (git, nodejs, npm, python3, pip3) rather than the uv chain
+  that ticket covered, so changing it changes a row nobody asked about; and
+  because the two safe forms differ in blast radius (`-Syu <pkg>` full-upgrades
+  a stranger's machine, no-refresh can fail on a stale database) and picking
+  between them for the prerequisites row is its own decision.
+
+- **The astral.sh installer pin is recorded as EMPTY, so that rung is skipped**,
+  at `scripts/install-prerequisites.sh:281-282` (`UV_INSTALLER_VERSION=""` /
+  `UV_INSTALLER_SHA256=""`). The mechanism that fetches by pinned version over
+  https-only and verifies a sha256 before running anything is in place and
+  tested; the two values are not, because the ticket that added them forbade
+  downloading the installer, and inventing a version/digest pair would have
+  been worse than leaving them empty - a wrong digest fails closed but lies
+  about having been measured. Until an operator reads
+  `https://astral.sh/uv/<version>/install.sh`, runs `sha256sum` on it and fills
+  both in, a host with no pipx and no pip-able Python loses that rung and gets
+  the loud failure block instead. `scripts/_test/uv-install.sh` case 7d pins
+  the skipped-when-unpinned behaviour and cases 7, 7a, 7b, 7c and 7f pin the
+  fetch-and-verify path against a fixture digest, so filling the values in is a
+  two-line change with the checks already written.
+
+- **Two more unconditional `export PATH="$HOME/.local/bin:$PATH"` prepends**, at
+  `scripts/install-prerequisites.sh:2631` (strix) and
+  `scripts/install-prerequisites.sh:2764` (graphify). Same shape as the defect
+  fixed in `uv_on_path` at `scripts/install-prerequisites.sh:219-240`: a
+  user-writable directory goes ahead of `/usr/bin` for every later step in the
+  run, whether or not the thing it was added for is actually there, and with no
+  guard against the run being root with an unprivileged `HOME` (`sudo -E`, an
+  `env_keep` carrying HOME, `su` without `-`). They are milder than the uv one
+  was - each is reached at most once, where `uv_on_path` was called up to nine
+  times and stacked duplicates - but they are the same class, and `uv_home_is_safe`
+  (`scripts/install-prerequisites.sh:205`) is already there to gate them. Not
+  fixed here: both belong to rows (strix, graphify) outside the uv chain that
+  ticket covered, and each needs its own fixture case in
+  `scripts/_test/uv-install.sh` or a suite of its own before being touched.

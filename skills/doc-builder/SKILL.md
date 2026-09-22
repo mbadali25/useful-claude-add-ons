@@ -1,11 +1,13 @@
 ---
 name: doc-builder
 description: >
-  Build finished, human-facing documents as DOCX and PDF through Microsoft Word, in the
-  installed brand pack's house style or a neutral one. Two pipelines behind one skill:
+  Build finished, human-facing documents as DOCX and PDF, rendered by Microsoft Word on
+  Windows or by LibreOffice on Linux and macOS - always named on the output, never
+  substituted silently - in the installed brand pack's house style or a neutral one. Two
+  pipelines behind one skill:
   findings-style reports (assessment, audit write-up, findings document, executive summary,
   posture or security report - masthead, plain-language lede, summary cards, severity chips,
-  provenance footer) rendered from HTML through Word COM; and step-by-step procedures (SOP,
+  provenance footer) rendered from HTML through Word COM or LibreOffice; and step-by-step procedures (SOP,
   standard operating procedure, runbook, work instruction, how-to, quick reference guide,
   training guide, onboarding guide for a new hire, user guide, walkthrough - anything that
   tells someone how to set up, install, configure or sign in to something, step by step,
@@ -29,7 +31,7 @@ because neither can do the other's job:
 
 | Content | Pipeline | Script |
 |---|---|---|
-| Findings, tables, severity, executive summary, audit or assessment write-up | HTML -> Word COM | `scripts/build_report.py` |
+| Findings, tables, severity, executive summary, audit or assessment write-up | HTML -> renderer | `scripts/build_report.py` |
 | Step-by-step procedure with screenshots (SOP, runbook, how-to, guide) | python-docx OOXML | `scripts/build_sop.py` |
 
 Why two: Word's HTML parser is the constraint on the report side, and every rule in
@@ -53,12 +55,14 @@ SOP path - it is the house template for procedures.
 
 ## Requirements - run the preflight first, on every new machine
 
-```powershell
-cd <skill>\scripts
-python preflight.py                     # reports; asks once before installing anything
-python preflight.py --install           # same, without the prompt
-python preflight.py --venv              # install into <skill>\.venv instead of --user
+```bash
+cd <skill>/scripts
+python3 preflight.py                    # reports; asks once before installing anything
+python3 preflight.py --install          # same, without the prompt
+python3 preflight.py --venv             # install into <skill>/.venv instead of --user
 ```
+
+On Windows the same commands are `python preflight.py ...` from `<skill>\scripts`.
 
 It detects each package below by importing it in a fresh interpreter, installs what is
 missing with **`python -m pip install --user`** (or into a virtual environment this skill
@@ -70,19 +74,44 @@ no retry, no machine-wide fallback. `requirements.txt` declares the same set.
 | Package | For |
 |---|---|
 | `python-docx` | `build_sop.py`, `check_conformance.py`, `fix_effect_extent.py`, `extract_spec.py`, `make_template.py` |
-| `pywin32` | `--to-docx` / `--to-pdf` through Word COM |
+| `pywin32` | `--renderer word` (Word COM). Windows only; the LibreOffice path needs no package |
 | `PyMuPDF`, `numpy`, `Pillow` | `verify_borders.py` (Gate 2); Pillow also for screenshot anonymisation |
 
-Two things the preflight can only **report**, because pip cannot fix them:
+Three things the preflight can only **report**, because pip cannot fix them:
 
-- **Microsoft Word** (Windows, COM). Absent means no `--to-docx`/`--to-pdf` and therefore
-  no Gate 2. HTML and `.docx` are still produced. **Say which pipeline is unavailable;
-  never fall back** to pandoc or LibreOffice, which are not assumed to exist.
+- **Which renderer this machine has**, and which one it will therefore use. Two exist:
+  **Microsoft Word** over COM (Windows) and **LibreOffice** (`soffice --headless`).
+  Word is the reference - every rule in `references/word-traps.md` was measured against
+  it - and Microsoft ships no Word desktop app for Linux, so on Linux and macOS
+  LibreOffice is not a fallback, it is the only renderer there is.
+
+  **Never fall back silently or unlabelled.** That, not LibreOffice itself, is what this
+  skill has always refused: a document the reader believes Word rendered, which Word did
+  not render, is worse than no document, because every difference below is invisible to
+  them. So the engine is chosen by `--renderer word|libreoffice` or by an explicit
+  platform branch, it is printed to stderr with the reason it was reached, and it is
+  **named on the line announcing every file it writes**. If the chosen engine cannot run,
+  the script stops and names the flag that selects the other one. It never tries the other
+  one on its own.
+
+- **Gate 2, which is its own third value.** See "Both gates" below. Without Word it is
+  `UNAVAILABLE` - not passed, not skipped.
+
 - **A locked output file.** A PDF open in a viewer or a DOCX open in Word makes Word fail
   "read-only". `preflight.py --target <file>` and the converter itself name the file to
   close.
 
-`build_report.py`, `resolve_brand.py` and `preflight.py` are stdlib.
+**Fidelity through LibreOffice is reduced, and specifically so.** Measured 2026-09-22
+against LibreOffice 26.2.5.2: its HTML importer applies only **simple** selectors - a bare
+`.class` or a bare element - and silently drops every compound or descendant one. On the
+report path that costs the table grid, the navy header shading, the zebra rows, the
+summary-card panels and the meta-table key shading; the masthead, lede, handling banner and
+every severity chip still render. The SOP path feeds it real OOXML rather than HTML and
+survives far better - the self-test renders correctly, borders included - but no LibreOffice
+render is evidence about how Word lays the same document out. Full detail, and the mirror-image
+list of what *Word* drops, in `references/word-traps.md`.
+
+`build_report.py`, `render_engine.py`, `resolve_brand.py` and `preflight.py` are stdlib.
 
 ## Brand resolution - configuration, not a trigger
 
@@ -136,6 +165,7 @@ anything outside it.
 python build_report.py --example > report.json          # the JSON shape, filled in
 python build_report.py --data report.json               # HTML into reports/ (gitignored)
 python build_report.py --data report.json --to-docx --to-pdf
+python build_report.py --data report.json --to-pdf --renderer libreoffice   # say it out loud
 bash _test/checklist.sh                                 # greppable half of the pre-ship checklist
 ```
 
@@ -156,12 +186,44 @@ python check_conformance.py $env:TEMP\selftest.docx -v
 python verify_borders.py $env:TEMP\selftest.pdf -v
 ```
 
+```bash
+python3 build_sop.py ../assets/fixtures/selftest.json --out /tmp/selftest.docx --to-pdf
+python3 check_conformance.py /tmp/selftest.docx -v     # Gate 1 - needs no renderer
+python3 verify_borders.py /tmp/selftest.pdf -v         # reports UNAVAILABLE off Windows; see below
+```
+
 ## Both gates, every SOP change, however small
 
 Gate 1 reads the `.docx` and cannot see layout. Gate 2 renders the PDF at 300 dpi and
 measures red-pixel coverage on all four edges of every screenshot. **Looking at a render is
 not Gate 2** - a 0.75 pt border is sub-pixel at 100 dpi. A clipped border shipped for four
-months because it was eyeballed instead of measured. Then open the PDF and check
+months because it was eyeballed instead of measured.
+
+**Gate 2 has three outcomes, and the third one is why it can be trusted.** The question it
+asks is *does Word clip this border* - the defect is Word stroking the outline outside
+`wp:extent`. A PDF that Word did not render cannot answer it in either direction, so
+`verify_borders.py` reports such a PDF as **UNAVAILABLE** and exits 3:
+
+| Outcome | Means | Exit |
+|---|---|---|
+| `PASS` | Word rendered it, every border painted | 0 |
+| `FAIL` | Word rendered it, at least one edge missing | 1 |
+| `UNAVAILABLE` | **Gate 2 did not run** - Word did not render this PDF, what did could not be determined, or the matching `.docx` cross-check could not be read | 3 |
+| `ERROR` | a PDF could not be read at all | 2 |
+
+Every outcome a run produced prints its own `Gate 2 result:` line; the exit code carries the
+sharpest one, FAIL first. A run with a genuine border failure *and* an unreadable PDF exits 1.
+
+An `UNAVAILABLE` run still prints the pixel measurement, labelled **ADVISORY**. That number
+describes how *this* renderer laid the picture out. It is not a Gate 2 result and must never
+be recorded, summarised or reported onward as a pass. On a machine with no Word - any Linux
+or macOS machine, permanently - `UNAVAILABLE` is the *only* answer Gate 2 can give, and the
+honest thing to say is "Gate 1 passed, Gate 2 could not run here", never "both gates passed".
+The renderer is read from the PDF's own `Producer`; a `.docx` cannot be used for this, because
+`python-docx` writes `<Application>Microsoft Office Word</Application>` into `docProps/app.xml`
+whatever built it.
+
+Then open the PDF and check
 pagination: an orphaned heading or a stranded closing section is invisible to both gates;
 fix it by adjusting `width_in` and tightening wording.
 
@@ -172,7 +234,7 @@ what clips a border. Run the gates anyway.
 
 | For | Read |
 |---|---|
-| CSS Word silently drops, column sizing, print rules, the Word-object-model verification snippet, pre-ship checklist | `references/word-traps.md` - **before writing any report CSS** |
+| CSS Word silently drops, what LibreOffice drops instead, column sizing, print rules, the Word-object-model verification snippet, pre-ship checklist | `references/word-traps.md` - **before writing any report CSS** |
 | Report palette tokens, severity colours, how a brand pack overrides them | `references/palette.md` |
 | SOP house template: page setup, per-block formatting, the border clipping defect and its real fix | `references/template-spec.md` |
 | Every script, spec JSON format, `SopBuilder` API, brand.json schema | `references/toolchain-usage.md` |
@@ -225,6 +287,10 @@ the brand pack's organisation is only a fallback. A report identifies its own su
   `unverified` is its own severity - a check that could not run is not a check that passed.
 - Word COM: the converter closes the document and quits Word in a `finally`; if a
   conversion fails, check `tasklist` for a stray `WINWORD` before retrying.
+- LibreOffice: each conversion runs headless against a throwaway user profile, so it cannot
+  block on (or corrupt) a desktop LibreOffice session the user has open. `soffice` exits 0
+  on failures it does not consider fatal, so the exit code is not the check - every target
+  is confirmed to exist, be non-empty and be newer than the moment the conversion started.
 
 ## Traps
 
@@ -237,3 +303,9 @@ the brand pack's organisation is only a fallback. A report identifies its own su
 | A browser preview proves the report CSS | Only the Word object model does - see the snippet in `word-traps.md`. |
 | Bash heredocs handle Windows paths | They collapse backslashes; use the Write tool or forward slashes. |
 | Word overwrites a locked PDF | If the target `.pdf` is open in a viewer, `--to-pdf` fails read-only. Close it. |
+| A LibreOffice render proves the document | It proves the document renders *in LibreOffice*. Gate 2 says `UNAVAILABLE` on it, and that is the honest answer, not a formality to work around. |
+| `docProps/app.xml` says who built a `.docx` | Not on the SOP path. `python-docx` writes `<Application>Microsoft Office Word</Application>` into every file it makes. Read the PDF's `Producer`, or the `[renderer: ...]` doc-builder printed. |
+| A conversion that exits 0 produced a file | `soffice` exits 0 with a locked profile and writes nothing. **Both** engines re-check existence, size and mtime through `render_engine.conversion_problem` — `to_soffice` after each convert, `build_report.to_word` after each `SaveAs2`. Do not bypass either by shelling out to `soffice` or driving Word COM directly. |
+| Gate 2 cannot skip itself | It cannot skip itself **by accident**. Whether Word rendered the PDF is read from the PDF's own `/Producer`, which a text editor changes in one byte. The check catches converting with the wrong engine and forgetting; it does not stop an operator routing around their own gate. |
+| A PDF with no matching `.docx` can still pass Gate 2 | No. The `.docx` count is what catches a screenshot that lost **all four** edges — with no ink it reads as an unbordered decorative image. No `.docx`, a corrupt one, or no python-docx means `UNAVAILABLE`, exit 3. |
+| LibreOffice just reformats the file you hand it | Its HTML and OOXML importers resolve external references — a remote `<img>` is fetched during conversion. `to_soffice` seeds its throwaway profile to block that (measured: a loopback beacon is hit without it and not with it). It restricts the network, not the local filesystem. |

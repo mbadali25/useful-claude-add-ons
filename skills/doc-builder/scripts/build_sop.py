@@ -16,7 +16,8 @@ Usage
 -----
     python build_sop.py spec.json --dry-run          # say what would be written, write nothing
     python build_sop.py spec.json                    # build; an existing master is backed up first
-    python build_sop.py spec.json --to-pdf           # also render the PDF through Word COM
+    python build_sop.py spec.json --to-pdf           # also render the PDF (Word on Windows, else LibreOffice)
+    python build_sop.py spec.json --to-pdf --renderer libreoffice   # say which engine, explicitly
     python build_sop.py spec.json --out "C:\path\My SOP.docx" --brand neutral
 
     # Programmatically:
@@ -42,7 +43,15 @@ Output location, in order: --out; the spec's "output" (relative to the spec
 file); else "<title>.docx" in the brand pack's masters directory. The neutral
 pack has no masters directory, so one of the first two is then required.
 
-Third-party requirement: python-docx. Microsoft Word (pywin32) only for --to-pdf.
+Third-party requirement: python-docx. --to-pdf additionally needs a renderer:
+Microsoft Word over COM (pywin32, Windows) or LibreOffice (`soffice`, and no
+Python package at all). Which one ran is printed with the file it wrote, and is
+never chosen by falling back - see render_engine.py.
+
+A LibreOffice-rendered PDF does NOT satisfy Gate 2. Gate 2 asks whether WORD
+clips a screenshot border; a PDF Word did not render cannot answer that in
+either direction, and verify_borders.py reports it as UNAVAILABLE rather than
+as a pass.
 """
 from __future__ import annotations
 
@@ -63,6 +72,7 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Emu, Inches, Pt, RGBColor
 
+import render_engine
 import resolve_brand
 
 # --------------------------------------------------------------------------
@@ -698,7 +708,9 @@ def main(argv=None):
     ap.add_argument("--dry-run", action="store_true",
                     help="validate the spec and report the output path; write nothing")
     ap.add_argument("--to-pdf", action="store_true",
-                    help="also render a PDF next to the .docx through Word COM (Windows, pywin32)")
+                    help="also render a PDF next to the .docx (Word COM on Windows, "
+                         "LibreOffice elsewhere; see --renderer)")
+    render_engine.add_renderer_argument(ap)
     resolve_brand.add_brand_argument(ap)
     args = ap.parse_args(argv)
 
@@ -712,13 +724,16 @@ def main(argv=None):
         return 0
     print(f"Built: {out}")
     if args.to_pdf:
-        from build_report import to_word  # pylint: disable=import-outside-toplevel
-        rc = to_word(out, want_docx=False, want_pdf=True)
+        from build_report import convert  # pylint: disable=import-outside-toplevel
+        rc = convert(out, want_docx=False, want_pdf=True, renderer=args.renderer)
         if rc:
             return rc
     print(f'Next: python check_conformance.py "{out}" -v   (Gate 1)')
     if args.to_pdf:
         print(f'      python verify_borders.py "{(os.path.splitext(out)[0] + ".pdf")}" -v   (Gate 2)')
+        if render_engine.choose_engine(args.renderer)[0] != render_engine.WORD:
+            print("      ...which will report UNAVAILABLE, not PASS: Gate 2 asks whether WORD "
+                  "clips\n          the border, and this PDF was not rendered by Word.")
     else:
         print("      then render the PDF (--to-pdf) and run verify_borders.py on it (Gate 2)")
     return 0

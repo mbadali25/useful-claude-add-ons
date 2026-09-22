@@ -17,6 +17,11 @@ td { border-bottom: 1px solid #C8CDD2; padding: 5pt 6pt; vertical-align: top; fo
 .box { border: 1px solid #1F4E79; padding: 8pt 10pt; margin: 10pt 0; background: #F3F6FA; }
 ul { margin: 4pt 0 8pt 18pt; }
 li { margin: 3pt 0; }
+@media print {
+  h2, h3 { page-break-after:avoid; }
+  tr { page-break-inside:avoid; }
+  thead { display:table-header-group; }
+}
 </style>
 </head>
 <body>
@@ -31,11 +36,13 @@ li { margin: 3pt 0; }
 <h2>1. The problem</h2>
 <p>An AI assistant that writes software has four expensive habits when it works alone.</p>
 <table>
-<tr><th>Habit</th><th>What it costs</th><th>What crew does about it</th></tr>
+<thead><tr><th>Habit</th><th>What it costs</th><th>What crew does about it</th></tr></thead>
+<tbody>
 <tr><td>It marks its own homework.</td><td>The same model that wrote a change is the one saying the change is fine.</td><td>A reviewer from a different AI company reads every change, looking for defects, before anything merges.</td></tr>
 <tr><td>It forgets everything between conversations.</td><td>Each session starts from zero. It does not know how the database is laid out or what broke last month.</td><td>The team writes a map of the system, kept with the code, and reads it at the start of every session.</td></tr>
 <tr><td>It wanders.</td><td>Asked to fix one thing, it fixes five, and the one you asked for arrives with strangers attached.</td><td>One ticket, one job. Anything else it notices is written down as a follow-up, not done.</td></tr>
 <tr><td>Nothing stops it.</td><td>A wrong command against a live system, or a release with a failing test, goes through unless a person is watching.</td><td>Automatic gates block the merge or the release. Dangerous commands are refused outright.</td></tr>
+</tbody>
 </table>
 
 <h2>2. How it works</h2>
@@ -52,7 +59,8 @@ li { margin: 3pt 0; }
 <h2>3. Who is on the team</h2>
 <p>Crew starts small and grows only when there is evidence it should. A role is added when something has gone wrong that the role would have caught; it is not added because it sounds useful.</p>
 <table>
-<tr><th>Member</th><th>Job</th></tr>
+<thead><tr><th>Member</th><th>Job</th></tr></thead>
+<tbody>
 <tr><td>Manager</td><td>Keeps the picture, assigns work, reports status. Since this week it is mechanically prevented from writing code.</td></tr>
 <tr><td>Explorer</td><td>Answers "where does this live and how does it work". It can read but never change anything.</td></tr>
 <tr><td>Builder</td><td>Implements one ticket at a time. Never reviews its own work.</td></tr>
@@ -61,12 +69,14 @@ li { margin: 3pt 0; }
 <tr><td>Test writer</td><td>Builds the quick checks a project runs on every change, so the gates have something to stand on.</td></tr>
 <tr><td>Planner, analyst, researcher</td><td>A second opinion on a design; a survey of what should improve next; answers from outside sources with references.</td></tr>
 <tr><td>Database reviewer, documentation writer, browser tester, scribe, cloud architect</td><td>Added as a project grows: migration review, documents generated from code, user-interface tests, the record of decisions, and a check on cloud designs before they are built.</td></tr>
+</tbody>
 </table>
 <p>Beyond these, forty specialists can be switched on for a particular project: experts in specific languages, cloud platforms, Microsoft products, security testing, compliance, and writing. They are switched on because a project uses that technology, not because the team has grown.</p>
 
 <h2>4. What you can ask for</h2>
 <table>
-<tr><th>You want to...</th><th>What crew does</th></tr>
+<thead><tr><th>You want to...</th><th>What crew does</th></tr></thead>
+<tbody>
 <tr><td>Set up a project</td><td>A guided, step-by-step setup you can pause and resume. Then it learns the codebase once and writes down what it found.</td></tr>
 <tr><td>Get a piece of work done</td><td>Turn the request into a ticket, build it, have it reviewed, and run the gates. One ticket in, one reviewed change out.</td></tr>
 <tr><td>Know where things stand</td><td>Ask the manager. It reports what is open, what is healthy, what is stale, and what it recommends.</td></tr>
@@ -77,6 +87,7 @@ li { margin: 3pt 0; }
 <tr><td>Handle an emergency</td><td>A break-glass path that stands the gates down, investigates in parallel, and records exactly what was skipped.</td></tr>
 <tr><td>Keep documents honest</td><td>The changelog, the reference manual, diagrams and runbooks are updated from the code, not by hand.</td></tr>
 <tr><td>Connect your tools</td><td>Jira, ServiceDesk Plus or an Obsidian board for tickets; Teams or Telegram for notifications; AWS and Azure with guardrails.</td></tr>
+</tbody>
 </table>
 
 <h2>5. Safety</h2>
@@ -91,11 +102,13 @@ li { margin: 3pt 0; }
 
 <h2>6. What changed this week</h2>
 <table>
-<tr><th>Change</th><th>What it means for you</th></tr>
+<thead><tr><th>Change</th><th>What it means for you</th></tr></thead>
+<tbody>
 <tr><td>Team members no longer stall waiting for a task that will never wake them, and the manager no longer restarts a member that is still working.</td><td>Three agents in one night had frozen forever "waiting for a notification". That cannot happen now, and live work is not thrown away.</td></tr>
 <tr><td>The rules are now tested against a real AI model, not just written down.</td><td>The very first run caught the manager writing code itself, which the rules forbid.</td></tr>
 <tr><td>The manager, and every other member, is mechanically limited to the files its job allows.</td><td>The rule that the manager must not write code had been broken for four hours in one session. Now the tool refuses. It is switched on per project.</td></tr>
 <tr><td>Four command definitions that had silently failed to load were fixed, and a check now catches that class of breakage.</td><td>Silent breakage in the team's own definitions is now a failing check.</td></tr>
+</tbody>
 </table>
 
 <h2>7. The Stop-gate fix</h2>
@@ -125,7 +138,8 @@ li { margin: 3pt 0; }
 
 <h2>9. Glossary</h2>
 <table>
-<tr><th>Term</th><th>Meaning</th></tr>
+<thead><tr><th>Term</th><th>Meaning</th></tr></thead>
+<tbody>
 <tr><td>Agent, role, member</td><td>A separately-instructed copy of the AI with its own job, tools and memory.</td></tr>
 <tr><td>Hook</td><td>A check the editor runs by itself at a fixed moment, whether or not the AI wants it to.</td></tr>
 <tr><td>Gate</td><td>A check that blocks progress when it fails, rather than giving advice.</td></tr>
@@ -134,6 +148,7 @@ li { margin: 3pt 0; }
 <tr><td>Code map</td><td>The written description of how a system works, kept with the code.</td></tr>
 <tr><td>Stop gate</td><td>The safety net that runs at the end of every turn.</td></tr>
 <tr><td>Reach</td><td>Whether a check stays on this machine, touches the network, or touches a server.</td></tr>
+</tbody>
 </table>
 
 <p class="muted">Provenance: written from the repository at commit 621d50dc and the Stop-gate branch at b6e8c4bb. Not verified: the Stop-gate fix's effect on live sessions, pending merge.</p>

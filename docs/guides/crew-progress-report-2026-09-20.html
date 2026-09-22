@@ -18,6 +18,11 @@ td { border-bottom: 1px solid #C8CDD2; padding: 5pt 6pt; vertical-align: top; fo
 code { font-family: Consolas, "Courier New", monospace; font-size: 9.5pt; }
 ul { margin: 4pt 0 8pt 18pt; }
 li { margin: 3pt 0; }
+@media print {
+  h2, h3 { page-break-after:avoid; }
+  tr { page-break-inside:avoid; }
+  thead { display:table-header-group; }
+}
 </style>
 </head>
 <body>
@@ -31,7 +36,8 @@ li { margin: 3pt 0; }
 
 <h2>1. What was asked for, and what landed</h2>
 <table>
-<tr><th>Ask</th><th>Result</th><th>Where</th></tr>
+<thead><tr><th>Ask</th><th>Result</th><th>Where</th></tr></thead>
+<tbody>
 <tr><td>Stop hooks take forever; I cancel them</td><td>Root cause found (a marker that only advanced when nothing was deferred, and unpriced rules that could never be deferred), hot-fixed on this machine the same morning, and fixed durably: per-rule verified record, measure-and-cache pricing, reach declarations, env pinning, exit 77 as SKIP.</td><td>PR #197, PR #202, crew 0.19.94</td></tr>
 <tr><td>The crew loses the picture and wanders</td><td>Scope evidence now diffs against the ticket's own start commit rather than the verification marker, and the developer may commit on its own branch, which every brief assumed and the role file forbade.</td><td>Ticket T-0003, crew 0.19.95, merging</td></tr>
 <tr><td>Roles veer off and idle</td><td>Every role that runs a gate runs it in the foreground and never ends a turn waiting on a background task; the PM checks worktree file times before calling a role stalled and escalates instead of restarting it.</td><td>PR #198, crew 0.19.90</td></tr>
@@ -40,21 +46,25 @@ li { margin: 3pt 0; }
 <tr><td>Adopt the agent example convention</td><td>All 54 agents carry their example inside a block scalar; the official convention breaks YAML and silently drops tools and model.</td><td>PR #201, crew 0.19.93</td></tr>
 <tr><td>Frontmatter that silently fails to load</td><td>Four command files fixed; the marketplace check now parses every command, skill and agent file as YAML.</td><td>PR #196</td></tr>
 <tr><td>Human-readable documentation</td><td>Three capability guides (overview, technical reference, combined) as HTML, DOCX and PDF, mirrored to the Obsidian vault with the code map and diagrams.</td><td><code>docs/guides/</code>, vault <code>wiki/crew-plugin/</code></td></tr>
+</tbody>
 </table>
 
 <h2>2. The Stop hook, before and after</h2>
 <table>
-<tr><th>Measure</th><th>Before (19 September, morning)</th><th>After</th></tr>
+<thead><tr><th>Measure</th><th>Before (19 September, morning)</th><th>After</th></tr></thead>
+<tbody>
 <tr><td>Stop hook in this repository</td><td>About 7 minutes per turn; 13 rules over 59 files, marker 41 commits behind</td><td>Seconds after the hot fix; bounded by the 60 s budget with announced deferrals after 0.19.94</td></tr>
 <tr><td>Rules priced here</td><td>11 of 21</td><td>21 of 21</td></tr>
 <tr><td>Rules with a reach declaration here</td><td>0 of 21</td><td>18 of 21 declared local; the other 3 are plainly local</td></tr>
 <tr><td>Other repositories on this machine</td><td>TheSelectSource 0 of 28 priced, 10 rules hitting a live dev host over SSM every turn; SRL 0 of 43 priced, no marker, 499 s per Stop</td><td>Both told what to declare and price after reloading; a rule that reaches a host can no longer run on Stop undeclared</td></tr>
+</tbody>
 </table>
 <p>The durable fix went through eight independent review rounds and a PowerShell security specialist. Rounds 4 to 7 each found a new piece of shell syntax that hid a script from the reach classifier; the answer was to stop modelling shell entirely, so an undeclared rule containing any metacharacter is deferred until declared. Round 8 asked one question, whether the new record could let the marker pass unverified work, and found two ways; both are closed and tested.</p>
 
 <h2>3. Review effort this session</h2>
 <table>
-<tr><th>Branch</th><th>Rounds</th><th>Findings fixed</th></tr>
+<thead><tr><th>Branch</th><th>Rounds</th><th>Findings fixed</th></tr></thead>
+<tbody>
 <tr><td>Item 4, frontmatter YAML</td><td>1</td><td>2 FIX</td></tr>
 <tr><td>Item 1, idle rule</td><td>4</td><td>15 FIX, 1 NIT</td></tr>
 <tr><td>Item 3, plugin evals</td><td>7</td><td>1 BLOCK, 33 FIX, 2 NIT</td></tr>
@@ -62,12 +72,14 @@ li { margin: 3pt 0; }
 <tr><td>Item 7, agent examples</td><td>2</td><td>4 FIX</td></tr>
 <tr><td>Stop gate</td><td>8 + specialist</td><td>23 BLOCK, 16 FIX, 1 NIT</td></tr>
 <tr><td>T-0003, scope base</td><td>2</td><td>7 FIX</td></tr>
+</tbody>
 </table>
 <p>51 review rows were written in two days: 48 BLOCK and 112 FIX findings, every one fixed with a test and sabotage-checked before merge. Two rules earned their keep: an unknown never collapses into the safe-looking value, and a check must fail on the null response. Items 2 and 3 spent most of their rounds on exactly those.</p>
 
 <h2>4. One month ago versus now</h2>
 <table>
-<tr><th>Measure</th><th>19 August 2026</th><th>20 September 2026</th></tr>
+<thead><tr><th>Measure</th><th>19 August 2026</th><th>20 September 2026</th></tr></thead>
+<tbody>
 <tr><td>Commits on main since</td><td colspan="2">615, across 164 merged pull requests</td></tr>
 <tr><td>Marketplace entries</td><td>25</td><td>41</td></tr>
 <tr><td>Skills directories</td><td>25</td><td>36</td></tr>
@@ -79,6 +91,7 @@ li { margin: 3pt 0; }
 <tr><td>Crew hook scripts</td><td>0</td><td>43</td></tr>
 <tr><td>Crew version</td><td>none</td><td>0.19.94</td></tr>
 <tr><td>Tracked content</td><td>1.9 MB</td><td>24.7 MB (the code graph accounts for most of it)</td></tr>
+</tbody>
 </table>
 
 <h2>5. What is still open</h2>

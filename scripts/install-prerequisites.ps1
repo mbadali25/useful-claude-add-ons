@@ -185,6 +185,139 @@ function Invoke-Step {
     }
 }
 
+# --- uv -----------------------------------------------------------------------
+# The Linux counterpart of this function (ensure_uv in install-prerequisites.sh)
+# carries a PEP 668 chain: Debian 12+, Ubuntu 23.04+ and Fedora 38+ mark their
+# interpreter EXTERNALLY-MANAGED, pip refuses `install --user` outright with
+# "error: externally-managed-environment", and that script therefore prefers pipx
+# and Astral's standalone installer. The two scripts are a matched pair, so the
+# whole of the divergence is written down here, not just the half that is obvious:
+#
+# 1. The PEP 668 guard is NOT ported, deliberately. The EXTERNALLY-MANAGED marker is
+#    written by distribution packagers; the Windows builds this script installs
+#    (Chocolatey, python.org, the Store) ship no such marker, so `pip install --user
+#    uv` is a supported install on this side and a Windows PEP 668 guard would be
+#    guarding against nothing.
+#
+# 2. The standalone-installer rung IS ported, as winget. It is the rung that matters
+#    on a machine with no Python at all: without it this function's only two rungs
+#    both need pip, so a fresh Windows box got "pip not found; install Python first"
+#    for aws-api, aws-pricing and graphify - three rows failing on a dependency uv
+#    itself does not have. (That gap shipped once, with this comment covering only
+#    point 1 above, which is why point 2 is spelled out.)
+#
+# 3. What is NOT ported is the .sh's pin-and-verify block, because nothing here
+#    downloads a script and runs it. The .sh fetches astral.sh's install.sh, so it
+#    has to pin that file by version and sha256 and refuse anything else; winget
+#    resolves a package whose manifest carries the installer's own hash and verifies
+#    it before running it, so the integrity check is winget's, and duplicating it
+#    here would mean re-implementing it. Astral's install.ps1 is deliberately NOT
+#    fetched: it would need the same pin the .sh has, against a different artifact.
+#
+# What ports across unchanged is the other half of the same defect, which was never
+# Linux-specific: two of the three callers ran pip and never looked at the result,
+# so a failed install let the run carry on and register an MCP server whose uvx
+# does not exist. The checked result, the idempotent "already installed" branch, the
+# pipx-first preference and the once-per-run memo are all mirrored here.
+
+# Memoised for the same reason ensure_uv is: three separately selectable rows
+# (aws-mcp, aws-pricing-mcp, graphify) call this, and without a memo a box where uv
+# will not install ran the whole chain three times and threw the same message three
+# times, while a box that already has uv called Write-Skip three times and moved
+# $script:Summary.Skipped by 3 for one tool.
+# $null = not yet attempted; 'ok' = succeeded; anything else = the remembered failure.
+$script:UvEnsured = $null
+
+function Install-Uv {
+    if ($script:UvEnsured -eq 'ok') { return }
+    if ($null -ne $script:UvEnsured) { throw $script:UvEnsured }
+    try {
+        Install-UvOnce
+        $script:UvEnsured = 'ok'
+    } catch {
+        $script:UvEnsured = $_.Exception.Message
+        throw
+    }
+}
+
+function Get-UvCommand {
+    $cmd = Get-Command uv -ErrorAction SilentlyContinue
+    if (-not $cmd) { $cmd = Get-Command uvx -ErrorAction SilentlyContinue }
+    return $cmd
+}
+
+function Install-UvOnce {
+    $existing = Get-UvCommand
+    if ($existing) {
+        Write-Skip "uv already installed ($($existing.Source))"
+        return
+    }
+
+    $attempted = @()
+
+    # 1. pipx gives uv its own virtualenv, which is the tidier install on any platform;
+    #    it is preferred here for that reason, not for PEP 668.
+    if (Get-Command pipx -ErrorAction SilentlyContinue) {
+        $attempted += 'pipx'
+        pipx install uv
+        if ($LASTEXITCODE -eq 0) {
+            Sync-SessionEnvironment
+            $cmd = Get-UvCommand
+            if ($cmd) {
+                $script:Summary.Installed++
+                Write-Ok "uv installed via pipx ($($cmd.Source))"
+                return
+            }
+        }
+        Write-Warn2 "'pipx install uv' did not produce a usable uv - trying the next method."
+    } else {
+        $attempted += 'pipx (absent)'
+    }
+
+    # 2. winget - Astral publishes uv there, and it needs no Python at all, so it is
+    #    the rung that works on a machine where pip does not exist. The result is
+    #    checked rather than the exit code trusted: winget reports several non-zero
+    #    statuses ("already installed", "no applicable upgrade") that are not failures,
+    #    and the only question that matters is whether uv resolves afterwards.
+    if (Get-Command winget -ErrorAction SilentlyContinue) {
+        $attempted += 'winget'
+        winget install --id astral-sh.uv --exact --source winget --silent `
+            --accept-package-agreements --accept-source-agreements
+        $wingetExit = $LASTEXITCODE
+        Sync-SessionEnvironment
+        $cmd = Get-UvCommand
+        if ($cmd) {
+            $script:Summary.Installed++
+            Write-Ok "uv installed via winget ($($cmd.Source))"
+            return
+        }
+        Write-Warn2 "'winget install --id astral-sh.uv' (exit $wingetExit) did not produce a usable uv - trying the next method."
+    } else {
+        $attempted += 'winget (absent)'
+    }
+
+    # 3. pip, last, and only reachable where Python is installed at all.
+    if (-not (Get-Command pip -ErrorAction SilentlyContinue)) {
+        $attempted += 'pip (absent)'
+        throw "could not install uv - tried: $($attempted -join ', '). Install uv yourself from https://docs.astral.sh/uv/#installation (winget install --id astral-sh.uv needs no Python), or install Python first (choco install python) and re-run."
+    }
+
+    # $LASTEXITCODE is the only signal pip gives - it is a native command, so a
+    # non-zero exit is not a PS error and does not throw on its own.
+    $attempted += 'pip'
+    pip install --user uv
+    if ($LASTEXITCODE -ne 0) {
+        throw "'pip install --user uv' failed (exit $LASTEXITCODE) - tried: $($attempted -join ', '). Install uv yourself from https://docs.astral.sh/uv/#installation and re-run."
+    }
+    Sync-SessionEnvironment
+    $cmd = Get-UvCommand
+    if (-not $cmd) {
+        throw "uv installed but neither 'uv' nor 'uvx' is on PATH - tried: $($attempted -join ', '). Open a new shell and re-run this item."
+    }
+    $script:Summary.Installed++
+    Write-Ok "uv installed via 'pip install --user uv' ($($cmd.Source))"
+}
+
 # --- Detection helpers -------------------------------------------------------
 
 function Test-ClaudeAvailable {
@@ -849,7 +982,7 @@ $script:SkillCatalog = @(
     [pscustomobject]@{ Key = 'claude-memories-canvas';  Selected = $true; Name = 'claude-memories-canvas  - claude-memories vault: wiki/maps .canvas conventions' }
     [pscustomobject]@{ Key = 'claude-memories-vault';   Selected = $true; Name = 'claude-memories-vault   - claude-memories vault: layout, frontmatter, write lock' }
     [pscustomobject]@{ Key = 'cloudflare';              Selected = $true; Name = 'cloudflare              - Cloudflare v4: DNS, WAF, cache, Workers, Zero Trust' }
-    [pscustomobject]@{ Key = 'doc-builder';             Selected = $true; Name = 'doc-builder             - Reports + SOPs -> DOCX/PDF via Word, brand pack sets the style' }
+    [pscustomobject]@{ Key = 'doc-builder';             Selected = $true; Name = 'doc-builder             - Reports + SOPs -> DOCX/PDF via Word or LibreOffice, brand pack sets the style' }
     [pscustomobject]@{ Key = 'drata';                   Selected = $true; Name = 'drata                   - Drata: controls, monitors, evidence, audit prep' }
     [pscustomobject]@{ Key = 'exchange-mailbox-cleanup';Selected = $true; Name = 'exchange-mailbox-cleanup - M365 offboarding walkthrough: hold, preserve, delete, export' }
     [pscustomobject]@{ Key = 'exchange-mailbox-restore';Selected = $true; Name = 'exchange-mailbox-restore - M365 restore walkthrough: triage, then one of five paths' }
@@ -1879,12 +2012,11 @@ if (Test-Selected 'task-observer') {
 # --- 9-12. Optional MCP servers ----------------------------------------------
 if (Test-Selected 'aws-mcp') {
     Invoke-Step "Install AWS MCP server" {
-        if (-not (Get-Command uv -ErrorAction SilentlyContinue) -and -not (Get-Command uvx -ErrorAction SilentlyContinue)) {
-            if (-not (Get-Command pip -ErrorAction SilentlyContinue)) {
-                throw "pip not found - install Python first (choco install python), then re-run to install uv."
-            }
-            pip install --user uv
-            Sync-SessionEnvironment
+        # Was an unchecked `pip install --user uv` whose result this step ignored:
+        # Add-McpServer records a command without running it, so the run continued and
+        # registered a server whose uvx does not exist.
+        try { Install-Uv } catch {
+            throw "not registering aws-api - 'uvx awslabs.aws-api-mcp-server@latest' needs uv. $($_.Exception.Message)"
         }
         if (-not (Test-ClaudeAvailable)) {
             throw "claude not found on PATH in this session - open a new shell and re-run this script."
@@ -1922,25 +2054,14 @@ if (Test-Selected 'aws-docs-mcp') {
 # like something that bills.
 if (Test-Selected 'aws-pricing-mcp') {
     Invoke-Step "Install AWS Pricing MCP server" {
-        if (-not (Get-Command uv -ErrorAction SilentlyContinue) -and -not (Get-Command uvx -ErrorAction SilentlyContinue)) {
-            if (-not (Get-Command pip -ErrorAction SilentlyContinue)) {
-                throw "pip not found - install Python first (choco install python), then re-run to install uv."
-            }
-            # Checked, not merely attempted. 'claude mcp add' records a command
-            # without running it, so a failed pip install followed by an
-            # unconditional add registers a server whose executable is absent,
-            # and the failure surfaces later inside a session with nothing
-            # pointing back here. $LASTEXITCODE is the only signal pip gives -
-            # it is a native command, so a non-zero exit is not a PS error and
-            # does not throw on its own.
-            pip install --user uv
-            if ($LASTEXITCODE -ne 0) {
-                throw "'pip install --user uv' failed (exit $LASTEXITCODE) - not registering aws-pricing."
-            }
-            Sync-SessionEnvironment
-            if (-not (Get-Command uv -ErrorAction SilentlyContinue) -and -not (Get-Command uvx -ErrorAction SilentlyContinue)) {
-                throw "uv installed but neither 'uv' nor 'uvx' is on PATH - not registering aws-pricing. Open a new shell and re-run this item."
-            }
+        # Checked, not merely attempted. Add-McpServer records a command without
+        # running it, so an install that failed followed by an unconditional add
+        # registers a server whose executable is absent, and the failure surfaces
+        # later inside a session with nothing pointing back here. Install-Uv checks
+        # its own result and only returns once uv or uvx actually resolves; the
+        # aws-api row above now goes through the same function.
+        try { Install-Uv } catch {
+            throw "not registering aws-pricing - 'uvx awslabs.aws-pricing-mcp-server@latest' needs uv. $($_.Exception.Message)"
         }
         Add-McpServer -Name 'aws-pricing' -CommandArgs @('uvx', 'awslabs.aws-pricing-mcp-server@latest') `
             -Note "Needs AWS credentials whose role allows pricing:*. The Price List calls are free."
@@ -2310,13 +2431,10 @@ if (Test-Selected 'graphify') {
         if ($existing) {
             Write-Skip "graphify already installed ($($existing.Source))"
         } else {
-            if (-not (Get-Command uv -ErrorAction SilentlyContinue) -and -not (Get-Command uvx -ErrorAction SilentlyContinue)) {
-                if (-not (Get-Command pip -ErrorAction SilentlyContinue)) {
-                    throw "pip not found - install Python first (choco install python), then re-run to install graphify."
-                }
-                pip install --user uv
-                Sync-SessionEnvironment
+            try { Install-Uv } catch {
+                throw "not installing graphify - 'uv tool install graphifyy' needs uv. $($_.Exception.Message)"
             }
+            # graphify needs uv itself, not just uvx: Install-Uv is satisfied by either.
             if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
                 throw "uv still not found after attempting to install it - install it manually (https://docs.astral.sh/uv) and re-run."
             }

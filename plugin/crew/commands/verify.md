@@ -137,7 +137,7 @@ STOPS MODELLING SHELL (Codex round 6) — five rounds of "read one layer
 deeper into the shell syntax" each found a new shape that defeated the last
 one, so it no longer tries to parse shell at all:
 - **any shell metacharacter present, anywhere, defers unconditionally** —
-  `( ) $ ; & | < > `` " ' \ { } * ? [ ] ~ # !`, a newline, or a tab. No
+  `` ( ) $ ; & | < > ` " ' \ { } * ? [ ] ~ # ! ``, a newline, or a tab. No
   exception, not even `2>&1` or a trailing `#` comment. Notice: `shell
   syntax in an undeclared rule: declare "reach": "local" (or network/host)`.
 - only once nothing on that list is present does whitespace-only splitting

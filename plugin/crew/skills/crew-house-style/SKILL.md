@@ -74,7 +74,44 @@ Route to the skill that owns the format. Do not reimplement any of them:
   Authoring diagrams and detecting an installed Visio stay with `crew-diagrams`;
   this is only the route to an editable file for someone outside the repo.
 
-HTML needs no skill; write the file and apply the palette above.
+### HTML
+
+No skill owns HTML — write the file yourself, apply the palette above, and
+carry **both** print rules below. They are one fix in two places; either one
+alone changes nothing a reader can see.
+
+1. **Every table gets a real `<thead>`** around its header row, and a
+   `<tbody>` around the rest. A bare `<tr>` of `<th>` is styled like a header
+   and is not one to anything that paginates.
+2. **Every page carries this block**, from
+   `skills/doc-builder/scripts/build_report.py:165-167`, widened by one
+   selector:
+
+   ```css
+   @media print {
+     h2, h3 { page-break-after:avoid; }
+     tr { page-break-inside:avoid; }
+     thead { display:table-header-group; }
+   }
+   ```
+
+   `h3` is the widening, and it is not optional here: doc-builder's block
+   names `h2` alone because its report generator emits no `h3` at all, while
+   *Headings* above allows one. Measured on the first re-render with `h2`
+   only — `h3`s still ended a page with their table stranded on the next.
+
+`display:table-header-group` has nothing to bind to when the markup has no
+`<thead>`, so rule 2 without rule 1 still drops a table's header at every page
+break; rule 1 without rule 2 does nothing at all. Measured on
+`docs/guides/*.html` on 2026-09-22: no `@media print` block and no `<thead>`
+anywhere in them, and every export stranded headings at a page foot and
+continued tables onto the next page bare. This is the one route on this list
+with no generator enforcing it — `doc-builder` already does
+(`skills/doc-builder/scripts/build_report.py:133`, "Every table: real
+grid, real thead. Both required."), which is why only hand-written HTML
+shipped broken.
+
+### doc-builder's reach, and its degraded paths
 
 **`doc-builder` is additive and narrow. It does not take DOCX and PDF over
 generally** — `anthropic-office-skills` keeps both and stays the fallback. The

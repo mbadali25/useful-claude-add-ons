@@ -6,6 +6,28 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Fixed
 
+- **`crew` 0.19.96: the metacharacter list in `commands/verify.md` no longer
+  executes itself, so `/crew:verify` runs at all.** The line documenting which
+  shell metacharacters force a deferral ended with a bang immediately followed
+  by the closing code-span delimiter. Claude Code reads that pair as its
+  bash-execution syntax and ran the prose after it, so every invocation --
+  `--all` and bare alike -- died with `/bin/bash: line 1: ,: command not found`
+  and `line 2: exception,: command not found`, which is the sentence itself
+  being executed. The command never loaded, so nothing ran and no subagents
+  were dispatched; the failure looked like a shell problem in the user's
+  environment rather than a parse of the command file. The span was also
+  malformed markdown independently: single-backtick delimiters around a
+  doubled backtick, which renders wrong wherever it appears. Both are fixed by
+  the correct construction -- double-backtick delimiters with padding spaces
+  around the literal backtick -- which removes the adjacency as a side effect
+  of being right. The identical span in `CONFIG.md` is fixed too; it is
+  documentation rather than a command, so it rendered wrong without executing,
+  and leaving the twin is how this returns. A scan of all 54 tracked command
+  files finds no other instance. This blocked `/crew:verify --all`, which is
+  the only way to run the four rules permanently over the 60s Stop budget --
+  so those rules had been reported UNVERIFIED with no reachable way to verify
+  them.
+
 - **`crew` 0.19.95: the ticket's scope evidence diffs from the commit the
   ticket started at, and the developer may commit on the ticket's own branch
   (T-0003).** `agents/developer.md` said "Never `git commit`" while every
