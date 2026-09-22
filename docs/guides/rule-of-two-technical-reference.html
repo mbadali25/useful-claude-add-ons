@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>The Rule-of-Two Plugin: Technical Reference</title>
+<style>
+body { font-family:'Segoe UI',Calibri,Arial,sans-serif; font-size:11pt;
+       color:#1B1B1F; margin:2cm; line-height:1.45; }
+.wrap { max-width:none; margin:0; padding:0; }
+
+h1 { font-size:22pt; margin:0 0 4pt; color:#1F4E79; }
+h2 { font-size:16pt; margin:24pt 0 8pt; padding-bottom:3pt;
+     border-bottom:1px solid #DCDEE5; color:#1F4E79; }
+h3 { font-size:13pt; margin:16pt 0 6pt; color:#1F4E79; }
+p  { margin:6pt 0; }
+ul, ol { margin:4pt 0 8pt 18pt; }
+li { margin:3pt 0; }
+code { font-family:Consolas,'Courier New',monospace; font-size:9.5pt; }
+.sub    { color:#5C5F6B; font-size:10pt; margin:0 0 10pt; }
+.muted  { color:#5C5F6B; font-size:9.5pt; }
+.warn { color:#8A6100; }
+.fail { color:#A01B12; }
+.footer { color:#5C5F6B; font-size:9.5pt; margin-top:26pt;
+          border-top:1px solid #DCDEE5; padding-top:8pt; }
+.box { background:#F6F7F9; border:1px solid #1F4E79;
+        padding:8pt 10pt; margin:10pt 0; }
+.plain { background:#F6F7F9; border-left:4px solid #1F4E79;
+          padding:4pt 10pt; margin:8pt 0; }
+
+/* Every table: real grid, real thead. Both required. */
+table { border-collapse:collapse; width:100%; table-layout:auto;
+             margin:8px 0 4px; }
+th, td { border:1px solid #B8BCC6; padding:7px 10px;
+             text-align:left; vertical-align:top; overflow-wrap:break-word; }
+th { background:#1F4E79; color:#FFFFFF; font-weight:600; }
+/* Zebra is an explicit class, written per row by the builder. */
+tr.alt td { background:#EEF3F8; }
+
+table.meta { border-collapse:collapse; width:100%; margin:0 0 14px; }
+table.meta td { border:1px solid #B8BCC6; padding:6px 10px; font-size:12px; }
+table.meta td.k { background:#EEF3F8; font-weight:600; width:17%; }
+
+.lede { background:#F6F7F9; border-left:4px solid #1F4E79;
+        padding:10px 14px; margin:10px 0 4px; }
+.handling { background:#FDE8E6; border-left:4px solid #8B1A13;
+            padding:8px 14px; margin:10px 0; font-size:12px; color:#A01B12; }
+
+/* Cards are a table on purpose; the number and label are real block
+   elements rather than styled spans. */
+table.cards { border-collapse:separate; border-spacing:8px 0; width:100%;
+              margin:6px 0 2px; }
+td.card { background:#F6F7F9; border:1px solid #B8BCC6; padding:10px 12px;
+          text-align:center; }
+div.n { font-size:22px; font-weight:700; color:#1F4E79; }
+div.l { font-size:11px; color:#5C5F6B; }
+
+.chip-critical, .chip-high, .chip-medium, .chip-low, .chip-info, .chip-unverified { display:inline-block; padding:2px 8px; font-weight:700; font-size:11px; white-space:nowrap; }
+.chip-critical { background:#FDE8E6; color:#A01B12; }
+.chip-high { background:#FFEDD5; color:#9A3412; }
+.chip-medium { background:#FDF3D7; color:#8A6100; }
+.chip-low { background:#E3F4EA; color:#1C6B3F; }
+.chip-info { background:#E8EFF8; color:#2F4B7C; }
+.chip-unverified { background:#EDEEF1; color:#5C5F6B; }
+
+@media print {
+  body { font-size:11pt; }
+  .wrap { padding:0; max-width:none; }
+  h2, h3 { page-break-after:avoid; }
+  tr { page-break-inside:avoid; }
+  thead { display:table-header-group; }
+}
+</style>
+</head>
+<body>
+
+<h1>The Rule-of-Two Plugin: Technical Reference</h1>
+<p class="muted">Generated from useful-claude-add-ons@541b2b70 on 2026-09-22. Verify before trusting.<br>
+The low-level guide, for the people who install, configure and extend rule-of-two. A companion overview covers the same ground in plain language. Written against rule-of-two 0.1.3, commit 541b2b70.</p>
+
+<div class="box">
+<p><b>Design constraint.</b> "Only one reviewer ran" is its own reported outcome, never folded into a passing report. Coverage is computed by <code>scripts/rule_of_two.py</code>, never left to a model mid-report, and every coverage assertion in the test suite is made against the rendered report text rather than against the coverage function alone — a value computed correctly can still be dropped on the way to the page.</p>
+</div>
+
+<h2>1. Layout</h2>
+<table>
+<thead><tr><th>Path</th><th>Contents</th></tr></thead>
+<tbody>
+<tr><td><code>.claude-plugin/plugin.json</code></td><td>Name, version (0.1.3), description, licence (GPL-2.0-only). No hooks registered.</td></tr>
+<tr><td><code>agents/reviewer-claude.md</code></td><td>The Claude-side reviewer. <code>model: fable</code> — a dispatch alias, not a full model id.</td></tr>
+<tr><td><code>commands/review.md</code></td><td><code>/rule-of-two:review &lt;path&gt;</code>.</td></tr>
+<tr><td><code>commands/config.md</code></td><td><code>/rule-of-two:config</code>.</td></tr>
+<tr><td><code>scripts/rule_of_two.py</code></td><td>Config resolution, family detection, the Codex subprocess wrapper, coverage computation, and report rendering. Single file, no package.</td></tr>
+<tr><td><code>scripts/_test/test_rule_of_two.py</code></td><td>The invariant suite plus a <code>--sabotage</code> mode. One test module.</td></tr>
+<tr><td><code>templates/rubric.md</code></td><td>The one written contract both reviewers work from: how to read the artifact, what to run, which failure shapes to hunt, the verdict shape, section order.</td></tr>
+</tbody>
+</table>
+<p>Deliberately no <code>agents/reviewer-codex.md</code>: an agent file can only carry <code>model: sonnet|opus|fable</code>, which would be a Claude wrapper wearing an independence label. The Codex review text comes from the <code>codex</code> CLI, invoked directly by <code>rule_of_two.py</code>.</p>
+
+<h2>2. The CLI Subcommands</h2>
+<table>
+<thead><tr><th>Subcommand</th><th>Key arguments</th><th>Does</th></tr></thead>
+<tbody>
+<tr><td><code>config</code></td><td>none</td><td>Prints the resolved config: the two models, their families, the config source, and <code>codex_found</code>.</td></tr>
+<tr><td><code>record-claude</code></td><td><code>--model</code>, <code>--model-id</code>, <code>--text-file</code>, <code>--log-file</code>, <code>--out</code>, one of <code>--ran</code>/<code>--failed</code> (required, mutually exclusive)</td><td>Records the Claude reviewer's outcome. The caller must state success or failure explicitly — it is never inferred from whether the output file is non-empty.</td></tr>
+<tr><td><code>build-prompt</code></td><td><code>--artifact</code>, <code>--out</code></td><td>Builds the prompt handed to Codex, from the same <code>templates/rubric.md</code> the Claude agent uses.</td></tr>
+<tr><td><code>codex</code></td><td><code>--prompt-file</code>, <code>--model</code>, <code>--out</code></td><td>Runs <code>run_codex</code>: stdin redirected from <code>/dev/null</code>, an explicit timeout, <code>-s read-only</code> so Codex cannot write anything, not even a scratch directory.</td></tr>
+<tr><td><code>render</code></td><td><code>--state</code>, <code>--out</code></td><td>Renders a report from a previously assembled state file.</td></tr>
+<tr><td><code>assemble</code></td><td><code>--artifact</code>, <code>--claude-result</code>, <code>--codex-result</code>, <code>--out</code>, <code>--state-out</code></td><td>Combines both results, computes coverage, and writes the finished report plus its state.</td></tr>
+</tbody>
+</table>
+
+<h2>3. Coverage</h2>
+<table>
+<thead><tr><th>Value</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td><code>TWO_CROSS_FAMILY</code></td><td>Both ran, families resolved, families differ. The only outcome where the report uses the word "independent".</td></tr>
+<tr><td><code>TWO_SAME_FAMILY</code></td><td>Both ran, same family — one perspective wearing two names.</td></tr>
+<tr><td><code>TWO_FAMILY_UNVERIFIED</code></td><td>Both ran, but a reviewer's recorded model id does not corroborate the alias beside it — the contradiction is quoted, and the family is not established.</td></tr>
+<tr><td><code>TWO_FAMILY_UNKNOWN</code></td><td>Both ran, but a family would not resolve at all — "could not tell", not a pass.</td></tr>
+<tr><td><code>ONE_REVIEW</code></td><td>One ran. The banner says plainly this is one review, not two, and why the other did not run.</td></tr>
+<tr><td><code>NO_REVIEW</code></td><td>Neither ran.</td></tr>
+</tbody>
+</table>
+<p><code>compute_coverage(claude_ran, codex_ran, ...)</code> (<code>rule_of_two.py:450</code>) derives the value; <code>render_title</code> and the report banner both derive from coverage the same way, rather than one being hand-written prose that could drift from the other.</p>
+
+<h2>4. What Counts as a Review That Ran</h2>
+<ul>
+<li><code>ran</code> must be the literal boolean <code>True</code> — not a truthy string. <code>"false"</code>, <code>"true"</code>, <code>1</code> and <code>"yes"</code> are all rejected as the type they are.</li>
+<li>Success is stated by the caller, never inferred from output being non-empty — <code>record-claude</code> requires <code>--ran</code> or <code>--failed</code>, mutually exclusive, both required.</li>
+<li>A successful run must carry review text. Codex's review is read from <code>--output-last-message</code>, not stdout, because stdout carries a startup banner naming the model and sandbox that an earlier version mistook for findings.</li>
+<li>A review that ran but answers none of the rubric's three verdicts is not silently downgraded to "did not run" — it is flagged as having failed to answer the question, matched as a whole line near the top rather than a substring (a substring match let "This is unviable." satisfy a check for the word VIABLE).</li>
+</ul>
+
+<h2>5. Model Identity and Family Resolution</h2>
+<p>Two separate tables, matched differently on purpose: dispatch aliases (<code>fable</code>, <code>opus</code>, <code>sonnet</code>, <code>haiku</code>, <code>gpt</code>, <code>codex</code>) match as whole words, exactly; model ids match on a prefix that carries its own separator (<code>o3-</code>, never a bare <code>o3</code>), so a loose prefix cannot resolve <code>sonnetting</code> or <code>opus-not-a-real-model</code> to a family. Anything else resolves to <code>UNKNOWN</code>, which is a real value that survives into every line derived from it — never folded into a pass.</p>
+<p><code>verify_model_id</code> checks the alias that was dispatched against the model id the caller separately recorded as having been requested; a mismatch is a contradiction, not silently corroborated, and still produces a full report with the disagreement named in the banner and the offending id left visible rather than dropped.</p>
+
+<h2>6. Invoking Codex</h2>
+<p><code>run_codex</code> redirects stdin from <code>/dev/null</code> and applies an explicit timeout, mapping a <code>TimeoutExpired</code> to "did not run" rather than "ran and found nothing". The default timeout is 480 seconds; <code>CALLER_TIMEOUT_CEILING_SECONDS</code> (600) states the ceiling it must stay under, because a single Bash call from Claude Code is killed at 600s and a longer configured value could never fire — the caller would kill the command first and the run would be recorded as a tool failure, not as the script's own honest "did not run".</p>
+<p>Codex runs with <code>-s read-only</code>, which cannot write even a temporary directory, so it cannot follow the rubric step that needs one, while the Claude reviewer has a Bash tool and can. This asymmetry is reported directly under the coverage banner (<code>render_method_note</code>) rather than equalised, because equalising it (a writable copy of the tree) would still leave the two methods unequal and would cost a full tree copy to buy an asymmetry that survives it anyway.</p>
+
+<h2>7. Configuration</h2>
+<p>Standalone: never reads crew's <code>qa.order</code>, <code>author_families</code>, or provider list. Resolution order, nearest first: <code>.rule-of-two.json</code> at the repo root, then <code>~/.claude/rule-of-two/config.json</code>, then built-in defaults; only the keys present in a layer override the one beneath it. Valid JSON that is not an object falls back to defaults and says so in <code>config_source</code> rather than raising three frames down.</p>
+<pre><code>{
+  "claude": {
+    "pin": "fable",
+    "fallback": "opus",
+    "pin_model_id": "claude-fable-5-1",
+    "fallback_model_id": "claude-opus-5"
+  },
+  "codex": { "pin": "gpt-6-astra", "timeout_seconds": 480 }
+}</code></pre>
+<p><code>pin</code>/<code>fallback</code> are dispatch aliases; <code>pin_model_id</code>/<code>fallback_model_id</code> are the full ids a CLI <code>--model</code> flag takes. The fallback is driven by <code>/rule-of-two:review</code> step 3, which retries on <code>dispatch_order_claude[1]</code> only when the pinned model was unavailable — never because a review came back thin, which would quietly swap the model the report names without saying so.</p>
+
+<h2>8. Running from a Checkout Versus an Install</h2>
+<p><code>${CLAUDE_PLUGIN_ROOT}</code> is set only when the plugin is installed. Both command files default it and, when empty, walk up from <code>$PWD</code> looking for <code>plugin/rule-of-two/scripts/rule_of_two.py</code> or a directory that is the plugin itself, failing loudly with "cannot find rule-of-two" if neither resolves. From a plain checkout, <code>config</code>, <code>build-prompt</code>, <code>codex</code>, <code>record-claude</code>, <code>assemble</code> and <code>render</code> all work; the Claude half does not, because the subagent type <code>rule-of-two:reviewer-claude</code> is registered by the plugin and does not exist outside an install — that failure is recorded with <code>--failed</code> and the report states it as a one-reviewer outcome, the same as any other missing reviewer.</p>
+
+<h2>9. The Self-Review Record</h2>
+<p>The first artifact this plugin reviewed was itself, three times, before shipping. Round one: the two reviewers disagreed on the verdict outright and each found blockers the other missed. Round two — reviewing the fix as hard as the first defect — found that a fix applied to one side of a symmetric pair (the loose-prefix match, and a hardened <code>ran</code> check) had not been applied to its neighbour. Round three found a fix that had made the verdict-matching check <i>worse</i> — a bulleted list of options now satisfied a check meant to catch "declined to answer" — and a degraded-input fix installed in the wrong function, one caller over from where it was needed. By round three both reviewers converged on the same verdict, which the README treats as the practical argument for the whole design.</p>
+
+<h2>10. What Is Not Established</h2>
+<ul>
+<li><b>Which model actually served the request.</b> The recorded model is what was configured and asked for, not what a provider is independently attested to have run.</li>
+<li><b>Whether Codex will actually work.</b> <code>codex_found</code> is <code>shutil.which</code> and nothing else; authentication and model availability fail at dispatch, not at discovery.</li>
+<li><b>The fallback retry path.</b> It is prose instruction to a model (<code>/rule-of-two:review</code> step 3), with no code path and therefore no test — a Fable dispatch could not be made to fail on demand to observe it.</li>
+</ul>
+
+<p class="muted">Provenance: read from <code>plugin/rule-of-two/README.md</code>, <code>scripts/rule_of_two.py</code>, <code>commands/review.md</code> and <code>commands/config.md</code> at commit 541b2b70 (rule-of-two 0.1.3, confirmed in both <code>.claude-plugin/plugin.json</code> and <code>CHANGELOG.md</code>). Not verified: a live two-reviewer run in this session; exact line numbers for functions cited by name only (<code>compute_coverage</code>, <code>run_codex</code>, <code>verify_model_id</code>) beyond the one explicitly anchored above.</p>
+
+</body>
+</html>
