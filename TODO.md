@@ -3567,3 +3567,39 @@ context clear, so the open items live here where they are tracked.
   exit 0 silently. Measured 2026-09-22: pristine HEAD `31393918` is 52/0 green; with the
   guard applied, 17 failed / 1667 passed. Not mine and not blocking - filed so whoever
   owns that change sees it before committing.
+- **`_verify/smoke.sh` still calls only eight of `main()`'s checks and now misses
+  eight** (`main()` at `scripts/check-marketplace.py:1588`, `check_description_claims` at
+  `:867`, `check_catalog_claims` at `:1030` - all three re-measured with `grep -n` as the
+  LAST step, after every edit in this change including the two NIT docstring expansions
+  that moved them further than the previous pass's citations said; `run_marketplace_check`
+  at `_verify/smoke.sh:72-98`) - `check_description_claims` and `check_catalog_claims`,
+  both added in this change, are absent from its list the same way `check_self_claims` already was
+  (`.crew/codemap/marketplace-registration.md`, finding 3). Did not block: this change's own
+  edits ended up touching `.claude-plugin/marketplace.json`, `scripts/check-marketplace.py`,
+  `scripts/_test/self-claims.py`, `scripts/install-prerequisites.sh` and
+  `scripts/install-prerequisites.ps1` (the "26 commands" defect the new `check_catalog_claims`
+  was written to catch), and, once QA found two more sites carrying the same wrong number,
+  `plugin/crew/README.md`, `plugin/crew/skills/crew-best-practices/SKILL.md`, and
+  `.crew/codemap/install-scripts.md` (updated to describe the fix, its own anchor unmoved) -
+  but never `_verify/smoke.sh`, which this is a pre-existing, already-documented drift against
+  (finding 3, cited above) that I only added two more names to, not a file this task had reason
+  to touch.
+- **`check_self_claims`'s own file-discovery has the same "git failure collapses to a
+  safe-looking value" shape this round's FIX just removed from `count_plugin_commands`
+  and `count_plugin_agents` - and the `plugin-commands:` marker branch this same round
+  added is itself one of the markers this makes unreachable, not merely "affected along
+  with every other marker."** `scripts/check-marketplace.py:700` -
+  `for path in sorted(git("ls-files", "*.md").split()):` - uses the shared `git()`
+  helper, which still returns `''` on any git failure rather than raising or returning
+  `None`. In a ROOT that is not a git working tree, this reads as "zero markdown files
+  to scan", so `check_self_claims` silently checks NOTHING - every `<!-- claim: ... -->`
+  marker in the repo, `plugin-commands:` included, passes unchecked, EVEN THOUGH
+  `count_plugin_commands` itself now correctly reports "could not verify" rather than a
+  false zero (this round's FIX): that correct behaviour is never reached, because the
+  outer discovery loop never gets as far as reading the file the marker lives in. Found
+  while sabotage-testing this round's FIX (a `plugin-commands:` marker propagation test
+  built against a non-git ROOT returned 0 problems for this reason, not because the
+  marker logic itself was wrong - see the comment in `scripts/_test/self-claims.py`
+  right before the `no_git_description_problems` case). Did not block: this round's QA
+  named `count_plugin_commands`/`count_plugin_agents` (`:601`) specifically, not this
+  earlier call, and `check_self_claims` predates this ticket entirely.

@@ -555,6 +555,7 @@ CLAIM_RE = re.compile(r"<!--\s*claim:\s*([a-z0-9-]+(?::[a-z0-9._-]+)?)\s*-->")
 CODE_SPAN_RE = re.compile(r"`[^`]*`")
 SKILLS_RE = re.compile(r"(\d+)(?:\s+of\s+(\d+))?\s+skills\b")
 PLUGIN_SKILLS_RE = re.compile(r"(\d+)\s+(?:bundled\s+)?skills?\b")
+PLUGIN_COMMANDS_RE = re.compile(r"(\d+)\s+(?:slash\s+)?commands?\b")
 VERSION_ROW_RE = re.compile(r"^\|\s*\*\*Version\*\*\s*\|\s*([0-9][0-9.]*)")
 BIND_WINDOW = 12
 
@@ -574,6 +575,75 @@ def count_plugin_skills(name: str) -> int:
         for entry in os.listdir(skills_dir)
         if os.path.isfile(os.path.join(skills_dir, entry, "SKILL.md"))
     )
+
+
+def _tracked_files(pathspec: str) -> list[str] | None:
+    """List tracked files under ``pathspec``, or None if git could not answer.
+
+    Deliberately reads git's INDEX, not the working tree - a command or agent
+    only counts once it is what actually ships, and ``tracked`` is the
+    cheapest available proxy for "shipped" this checker has. That choice is
+    kept; what changes here is what a FAILURE to read the index looks like.
+
+    Run with ``-z`` (NUL-separated) and ``core.quotepath=off``: git quotes a
+    non-ASCII filename by default (``"caf\\303\\251.md"``, octal-escaped,
+    inside literal quote characters) when writing newline-separated output,
+    and ``str.endswith(".md")`` on that quoted form is false - a real command
+    with a non-ASCII name would silently not count. ``-z`` sidesteps the
+    quoting entirely and NUL cannot appear in a filename, so splitting on it
+    is unambiguous.
+
+    Returns None - not ``[]`` - when git itself failed to run: no git binary
+    on PATH, or ROOT is not inside a git working tree. ``[]`` means git ran
+    and truthfully reported zero tracked files; None means "could not tell",
+    and the two must never collapse into each other. They did, once: with
+    the previous shape (the shared ``git()`` helper, which returns ``''`` on
+    any failure) a machine with no git read every plugin's commands/agents
+    as zero, and a catalog line claiming "0 commands" would have passed
+    unchecked instead of failing loudly - this repo's own named recurring
+    bug, an unknown collapsing into the safe-looking value. Every caller of
+    this function must treat None as its own outcome and fail, never compare
+    it as though it were a real count.
+    """
+    done = subprocess.run(
+        ["git", "-C", ROOT, "-c", "core.quotepath=off", "ls-files", "-z", pathspec],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if done.returncode != 0:
+        return None
+    return [p for p in done.stdout.split("\0") if p]
+
+
+def count_plugin_commands(name: str) -> int | None:
+    """How many slash commands ``plugin/<name>/commands/`` actually holds.
+
+    Counted from git's index via `_tracked_files`, filtered to ``.md`` files,
+    NOT a working-tree directory listing. This is deliberately not the same
+    shape as ``ls plugin/<name>/commands | wc -l`` at a prompt: that counts a
+    dotfile, an untracked scratch draft, or anything else left lying around
+    that never shipped, and a plain ``os.listdir`` also only sees the top
+    level. Counted recursively for that second reason - Claude Code loads a
+    command in a namespaced subdirectory (``commands/group/x.md``) as
+    ``/plugin:group:x``, the exact same as a top-level one (see
+    ``check_argument_hint_frontmatter``'s own namespaced-command fixture), so
+    it is a real command and must count as one. `git ls-files` walks
+    subdirectories without being told to. No plugin in this repo has a
+    namespaced command today (checked 2026-09-22: every ``commands/`` here is
+    flat), but the count must not silently drop one if that changes.
+
+    Returns None, not 0, if git could not answer - see `_tracked_files`. A
+    missing ``commands/`` directory on disk is still a real, countable zero
+    and returns 0 as before; only "git could not tell" returns None.
+    """
+    commands_dir = f"plugin/{name}/commands"
+    if not os.path.isdir(os.path.join(ROOT, commands_dir)):
+        return 0
+    listed = _tracked_files(f"{commands_dir}/")
+    if listed is None:
+        return None
+    return sum(1 for entry in listed if entry.endswith(".md"))
 
 
 def check_self_claims(entries, fail):
@@ -597,7 +667,9 @@ def check_self_claims(entries, fail):
     correction passes with nothing catching it -- there was no marker for "a
     plugin's own skills/ count" until `plugin-skills:<name>` was added
     alongside it. Mark a plugin's own figure with that type; `skills-count`
-    still means the marketplace total and nothing else.
+    still means the marketplace total and nothing else. `plugin-commands:<name>`
+    is the same idea for a plugin's own commands/ count, added alongside
+    `plugin-skills:<name>` for symmetry.
 
     So: an unmarked number is deliberately not checked, and that silence is the
     design rather than a gap. Marking a claim is how an author opts it in.
@@ -690,6 +762,43 @@ def check_self_claims(entries, fail):
                             f"'{name}', but plugin/{name}/skills/ has {actual}"
                         )
 
+                elif kind.startswith("plugin-commands:"):
+                    name = kind.split(":", 1)[1]
+                    plugin_names = {
+                        e["name"] for e in entries if e["source"].startswith("./plugin/")
+                    }
+                    if name not in plugin_names:
+                        fail(
+                            f"{path}:{index + 1}: claim names plugin '{name}', which has "
+                            "no entry with source ./plugin/ in marketplace.json"
+                        )
+                        continue
+                    found = next(
+                        (m for m in (PLUGIN_COMMANDS_RE.search(w) for w in window) if m),
+                        None,
+                    )
+                    if not found:
+                        fail(
+                            f"{path}:{index + 1}: claim 'plugin-commands:{name}' binds to "
+                            f"nothing within {BIND_WINDOW} lines - the number it marked is "
+                            "gone, so either restore it or delete the marker"
+                        )
+                        continue
+                    actual = count_plugin_commands(name)
+                    if actual is None:
+                        fail(
+                            f"{path}:{index + 1}: could not verify plugin '{name}' "
+                            f"commands count - git could not answer for "
+                            f"plugin/{name}/commands/ (no git binary, or ROOT is not "
+                            "a git working tree)"
+                        )
+                        continue
+                    if int(found.group(1)) != actual:
+                        fail(
+                            f"{path}:{index + 1}: claims {found.group(1)} commands for "
+                            f"plugin '{name}', but plugin/{name}/commands/ has {actual}"
+                        )
+
                 elif kind.startswith("plugin-version:"):
                     name = kind.split(":", 1)[1]
                     if name not in versions:
@@ -720,6 +829,289 @@ def check_self_claims(entries, fail):
                         "checker does not implement would otherwise read as verified "
                         "while nothing checked it. Implement it or remove the marker."
                     )
+
+
+# Which marketplace entry's own JSON `description` states which counts.
+#
+# A JSON string cannot carry an invisible `<!-- claim: ... -->` comment the
+# way a .md file can - it would render as literal text in the menu. So this
+# table is the opt-in mechanism for `description` prose instead of a marker:
+# adding a plugin here is how an author says "check this entry's description",
+# and the silence rule is unchanged - an entry not listed here is deliberately
+# not checked, the same as an unmarked number in a .md file.
+#
+# Each value names which phrases to look for, by kind. "commands" means a
+# single "N slash commands" phrase, checked with `count_plugin_commands` -
+# git's tracked-file index under plugin/<name>/commands/, recursively, not a
+# directory listing; see that function's docstring. "skills" means a single
+# "N bundled skills" phrase, checked with the same `count_plugin_skills` the
+# plugin-skills: .md marker uses. An entry must be a ./plugin/ one - a skill
+# has no commands/ or skills/ directory of its own, only a plugin bundles
+# other things - and a kind this table does not implement fails loudly
+# rather than being silently skipped, the same "unknown claim type" rule
+# check_self_claims applies to a .md marker.
+DESCRIPTION_CLAIMS: dict[str, tuple[str, ...]] = {
+    "crew": ("commands", "skills"),
+}
+
+DESCRIPTION_COMMANDS_RE = re.compile(r"(\d+)\s+slash commands\b")
+DESCRIPTION_SKILLS_RE = re.compile(r"(\d+)\s+bundled skills\b")
+
+# kind -> (phrase regex, human phrase for messages, disk counter)
+DESCRIPTION_CLAIM_KINDS = {
+    "commands": (DESCRIPTION_COMMANDS_RE, "slash commands", count_plugin_commands),
+    "skills": (DESCRIPTION_SKILLS_RE, "bundled skills", count_plugin_skills),
+}
+
+
+def check_description_claims(entries, fail):
+    """Verify the counts DESCRIPTION_CLAIMS opts in, embedded in a plugin's own
+    marketplace `description` string.
+
+    `check_self_claims` cannot reach this text - it scans tracked *.md files
+    for an HTML comment, and `.claude-plugin/marketplace.json:229` is neither
+    markdown nor commentable. Left unchecked, that description drifted twice
+    in the same direction ("27 slash commands, 19 bundled skills" against 28
+    and 20 on disk) while every marker-checked .md site stayed correct, because
+    nothing was pointed at it. This function is that opt-in, kept explicit
+    rather than inferred: it only ever looks at an entry named in
+    DESCRIPTION_CLAIMS, for exactly the kinds listed there.
+    """
+    by_name = {entry["name"]: entry for entry in entries}
+    for name, kinds in DESCRIPTION_CLAIMS.items():
+        entry = by_name.get(name)
+        if entry is None:
+            fail(
+                f"DESCRIPTION_CLAIMS names plugin '{name}', which has no entry "
+                "in marketplace.json"
+            )
+            continue
+        if not entry["source"].startswith("./plugin/"):
+            fail(
+                f"DESCRIPTION_CLAIMS names '{name}', whose source is "
+                f"'{entry['source']}', not ./plugin/ - description claims only "
+                "apply to plugin entries"
+            )
+            continue
+        description = entry.get("description", "")
+        for kind in kinds:
+            if kind not in DESCRIPTION_CLAIM_KINDS:
+                fail(
+                    f"DESCRIPTION_CLAIMS lists unknown kind '{kind}' for plugin "
+                    f"'{name}'. A kind this checker does not implement would "
+                    "otherwise read as verified while nothing checked it. "
+                    "Implement it or remove it from the table."
+                )
+                continue
+            pattern, phrase, counter = DESCRIPTION_CLAIM_KINDS[kind]
+            matches = list(pattern.finditer(description))
+            if not matches:
+                fail(
+                    f"marketplace.json: plugin '{name}' description has no "
+                    f"'{phrase}' phrase, but DESCRIPTION_CLAIMS expects one"
+                )
+                continue
+            if len(matches) > 1:
+                fail(
+                    f"marketplace.json: plugin '{name}' description has "
+                    f"{len(matches)} '{phrase}' phrases, expected exactly one"
+                )
+                continue
+            stated = int(matches[0].group(1))
+            actual = counter(name)
+            if actual is None:
+                fail(
+                    f"marketplace.json: could not verify plugin '{name}' {kind} "
+                    f"count - git could not answer for plugin/{name}/{kind}/ (no "
+                    "git binary, or ROOT is not a git working tree)"
+                )
+                continue
+            if stated != actual:
+                fail(
+                    f"marketplace.json: plugin '{name}' description claims "
+                    f"{stated} {phrase}, but plugin/{name}/{kind}/ has {actual}"
+                )
+
+
+def count_plugin_agents(name: str) -> int | None:
+    """How many agents ``plugin/<name>/agents/`` actually holds.
+
+    Same rule as ``count_plugin_commands``: git's index via `_tracked_files`,
+    filtered to ``.md``, counted recursively - not a working-tree
+    ``os.listdir``. Returns None, not 0, if git could not answer.
+    """
+    agents_dir = f"plugin/{name}/agents"
+    if not os.path.isdir(os.path.join(ROOT, agents_dir)):
+        return 0
+    listed = _tracked_files(f"{agents_dir}/")
+    if listed is None:
+        return None
+    return sum(1 for entry in listed if entry.endswith(".md"))
+
+
+# The two install scripts' own catalog labels - PLUGIN_NAME in the .sh,
+# `Name = '...'` in the .ps1 - are bash/PowerShell string literals, not
+# markdown or JSON, so neither can carry a `<!-- claim: ... -->` marker any
+# more than marketplace.json's `description` can. CATALOG_CLAIM_KINDS reuses
+# the flexible md-marker regexes (PLUGIN_COMMANDS_RE, PLUGIN_SKILLS_RE) -
+# these catalog lines have always read "26 commands", never "26 slash
+# commands", so the phrase DESCRIPTION_COMMANDS_RE pins to would never match
+# here and must not be reused for this file.
+PLUGIN_AGENTS_RE = re.compile(r"(\d+)\s+agents?\b")
+
+CATALOG_CLAIM_KINDS = {
+    "agents": (PLUGIN_AGENTS_RE, "agents", count_plugin_agents),
+    "commands": (PLUGIN_COMMANDS_RE, "commands", count_plugin_commands),
+    "skills": (PLUGIN_SKILLS_RE, "skills", count_plugin_skills),
+}
+
+# (file, plugin name, kinds to check) - the same opt-in contract as
+# DESCRIPTION_CLAIMS: a triple listed here is checked, and a count in
+# scripts/install-prerequisites.{sh,ps1} that is not named here is
+# deliberately not checked, same as an unmarked number anywhere else. Both
+# files carry the identical label text for crew (CLAUDE.md: the two install
+# scripts are a matched pair), so both are listed and must agree with the
+# same disk counts.
+CATALOG_CLAIMS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
+    (SH, "crew", ("agents", "commands")),
+    (PS1, "crew", ("agents", "commands")),
+)
+
+
+def _catalog_name_text(text: str, name: str) -> list[str]:
+    """Pull every catalog label out of an install script's text whose row
+    key is exactly ``name`` - plural, and the caller decides what zero or
+    more than one of them means.
+
+    Every ``PLUGIN_NAME``/``Name`` entry is written ``<key>    - <label>`` -
+    the key, padding spaces, a dash - whether quoted with ``"`` in the .sh or
+    ``'`` in the .ps1, and in both files the key starts immediately after the
+    opening quote character. That is what is anchored on
+    (``(?<=['\"])<name>\\b``), not a bare substring search for ``name``
+    anywhere in the file: a bare search over-matches two different ways, both
+    reproduced against this repo's real ``install-prerequisites.sh``.
+    ``name="widget"`` searched against a file that also has a
+    ``"superwidget    - ..."`` row matches PARTWAY THROUGH that row - the
+    substring ``widget`` inside ``superwidget``, immediately followed by the
+    same padding-and-dash shape, reads as if it were widget's own row.
+    ``name="vault"`` matches partway through ``obsidian-vault``'s OWN row for
+    the same reason - a hyphen is a non-word character, so a bare `\\b`
+    boundary alone does not save it - and separately matches the unrelated
+    ``claude-memories-vault`` skill's row. Anchoring on "immediately after an
+    opening quote" rules out all three: neither ``widget`` inside
+    ``superwidget`` nor ``vault`` inside ``obsidian-vault`` or
+    ``claude-memories-vault`` sits right after an opening quote - only each
+    key's own, real opening quote does.
+
+    The quote-lookbehind is used rather than a line-start anchor
+    (``^\\s*"<name>``) because it is the shape both files actually share: the
+    .sh array element opens ITS LINE with the quote, but the .ps1 ``Name =
+    '...'`` field does not - "the character right before the key is the
+    opening quote" is true in both, "the key starts the line" is only true
+    in the .sh.
+
+    The captured text excludes three characters, not one: both quote
+    characters (``'`` and ``"``) - already excluded before this fix, since
+    the row's own closing quote is what normally ends the capture - and now
+    also ``\\n`` (``[^'\"\\n]*``, was ``[^'\"]*``). The newline exclusion
+    only matters when a row's closing quote is missing or malformed: without
+    it, the capture would run forward past the current line looking for the
+    next quote character ANYWHERE later in the file, potentially swallowing
+    a different row's key and label whole. This is what "fails closed" means
+    here - with the newline excluded, a malformed row simply stops matching
+    at its own line ending (producing no match, or a truncated one the
+    0-matches / ambiguous-match checks in `check_catalog_claims` then catch),
+    rather than silently matching past it into unrelated text.
+    """
+    pattern = re.compile(rf"(?<=['\"]){re.escape(name)}\b\s+-\s[^'\"\n]*")
+    return pattern.findall(text)
+
+
+def check_catalog_claims(entries, fail):
+    """Verify the counts CATALOG_CLAIMS opts in, embedded in each install
+    script's own catalog label for a plugin.
+
+    Scoped to the one plugin's own label text (`_catalog_name_text`), not the
+    whole file: matching against the whole script would let a count phrase
+    on some OTHER plugin's row satisfy or corrupt this one's check as the
+    catalog grows, defeating "exactly one match required". `_catalog_name_text`
+    can itself find zero, one, or more than one row for a given key - a
+    duplicate or accidentally-merged row is exactly the ambiguity "exactly
+    one match required" exists to catch - so that count is checked here the
+    same way a phrase count is checked further down.
+    """
+    by_name = {entry["name"]: entry for entry in entries}
+    for path, name, kinds in CATALOG_CLAIMS:
+        rel = os.path.relpath(path, ROOT)
+        entry = by_name.get(name)
+        if entry is None:
+            fail(
+                f"CATALOG_CLAIMS names plugin '{name}' for {rel}, which has "
+                "no entry in marketplace.json"
+            )
+            continue
+        if not entry["source"].startswith("./plugin/"):
+            fail(
+                f"CATALOG_CLAIMS names '{name}' for {rel}, whose source is "
+                f"'{entry['source']}', not ./plugin/ - catalog claims only "
+                "apply to plugin entries"
+            )
+            continue
+        if not os.path.isfile(path):
+            fail(f"CATALOG_CLAIMS names {rel}, which does not exist")
+            continue
+        labels = _catalog_name_text(read(path), name)
+        if not labels:
+            fail(
+                f"{rel}: no catalog label found for plugin '{name}' - "
+                f"expected \"{name}    - ...\" (or the .ps1 single-quoted form)"
+            )
+            continue
+        if len(labels) > 1:
+            fail(
+                f"{rel}: plugin '{name}' matches {len(labels)} catalog rows, "
+                "expected exactly one - a duplicate or accidentally merged row"
+            )
+            continue
+        label = labels[0]
+        for kind in kinds:
+            if kind not in CATALOG_CLAIM_KINDS:
+                fail(
+                    f"CATALOG_CLAIMS lists unknown kind '{kind}' for plugin "
+                    f"'{name}' in {rel}. A kind this checker does not "
+                    "implement would otherwise read as verified while "
+                    "nothing checked it. Implement it or remove it from the "
+                    "table."
+                )
+                continue
+            pattern, phrase, counter = CATALOG_CLAIM_KINDS[kind]
+            matches = list(pattern.finditer(label))
+            if not matches:
+                fail(
+                    f"{rel}: plugin '{name}' catalog label has no '{phrase}' "
+                    f"phrase, but CATALOG_CLAIMS expects one"
+                )
+                continue
+            if len(matches) > 1:
+                fail(
+                    f"{rel}: plugin '{name}' catalog label has "
+                    f"{len(matches)} '{phrase}' phrases, expected exactly one"
+                )
+                continue
+            stated = int(matches[0].group(1))
+            actual = counter(name)
+            if actual is None:
+                fail(
+                    f"{rel}: could not verify plugin '{name}' {kind} count - "
+                    f"git could not answer for plugin/{name}/{kind}/ (no git "
+                    "binary, or ROOT is not a git working tree)"
+                )
+                continue
+            if stated != actual:
+                fail(
+                    f"{rel}: plugin '{name}' catalog label claims {stated} "
+                    f"{phrase}, but plugin/{name}/{kind}/ has {actual}"
+                )
 
 
 POLICY_MARKER = "crew-ignore-policy:list"
@@ -1215,6 +1607,8 @@ def main() -> int:
     check_command_backtick_spans(fail)
     check_versions(entries, fail)
     check_self_claims(entries, fail)
+    check_description_claims(entries, fail)
+    check_catalog_claims(entries, fail)
     check_crew_ignore_policy(fail)
 
     skills = sum(1 for e in entries if e["source"].startswith("./skills/"))

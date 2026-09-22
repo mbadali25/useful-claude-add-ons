@@ -132,28 +132,50 @@ standalone tools through their own package managers (see **Calls out to**). DERI
   `check_license_consistency` at `:268`, `check_command_backtick_spans` at `:1094`), but neither of
   these two functions' bodies changed - only their position, and not by a uniform amount.
 
-  **The example this bullet carries is live again, measured here, and it is now a three-way
-  disagreement.** `plugin/crew/commands/` holds **28** `.md` files, `plugin/crew/agents/` holds
-  **54**, and `plugin/crew/skills/` holds **20** subdirectories (DERIVED, directory counts at this
-  anchor). Against that:
+  **The example this bullet carries was live at this anchor, and is now fixed - uncommitted,
+  on branch `post-207-checklist`, not yet part of this file's own `2b337296` history.**
+  `plugin/crew/commands/` holds **28** `.md` files, `plugin/crew/agents/` holds **54**, and
+  `plugin/crew/skills/` holds **20** subdirectories (DERIVED, directory counts at this anchor,
+  unchanged since - only the prose describing them moved). At `2b337296` it was a three-way
+  disagreement:
   - both install scripts read `crew                    - Virtual dev team: 54 agents, 26 commands, safety hooks`
     (`scripts/install-prerequisites.sh:1322`, `scripts/install-prerequisites.ps1:1089`) - agents
-    right, **commands wrong by two**;
-  - `.claude-plugin/marketplace.json`'s `crew` description says `27 slash commands, 19 bundled
-    skills` - **wrong by one in each direction, and wrong differently from the scripts**;
-  - `README.md` says `54 subagents, 28 slash commands, 20 bundled skills` - correct.
+    right, commands wrong by two;
+  - `.claude-plugin/marketplace.json`'s `crew` description said `27 slash commands, 19 bundled
+    skills` - wrong by one in each direction, and wrong differently from the scripts;
+  - `README.md` said `54 subagents, 28 slash commands, 20 bundled skills` - correct;
+  - two more sites carried the SAME wrong number, in files no version of this note previously
+    named: `plugin/crew/skills/crew-best-practices/SKILL.md:29` said `26 commands` and
+    `plugin/crew/README.md:2097` said `27 commands`, both against 28 on disk.
 
-  So the two scripts agree with each other and are wrong, the marketplace is wrong in a third way,
-  and the only correct statement is in the one file that carries a `<!-- claim: -->` marker.
-  `check_group_parity` passes on keys, a `.sh`-vs-`.ps1` description diff passes on equality, and
-  nothing compares either to `plugin/crew/commands/`. **Not fixed here**: this note's scope is the
-  map, an edit to a shipped install script requires the README install URLs to be re-pinned (see
-  the next landmine), and `.claude-plugin/marketplace.json` is owned by
-  `marketplace-registration.md`.
+  **All five are now fixed in the uncommitted diff**, and the mechanism changed along with the
+  numbers: `scripts/check-marketplace.py` gained `check_description_claims` (an explicit
+  `DESCRIPTION_CLAIMS` table naming `.claude-plugin/marketplace.json`'s own JSON `description`
+  string, which cannot carry an HTML comment) and `check_catalog_claims` (the same idea, an
+  explicit `CATALOG_CLAIMS` table, for the two install scripts' own catalog labels - scoped to
+  each plugin's own row via `_catalog_name_text`, not a whole-file scan). The two newly-found
+  `.md` sites are ordinary `<!-- claim: plugin-commands:crew -->` markers, the same mechanism
+  `plugin-skills:crew` already used - `check_self_claims` gained a `plugin-commands:` branch
+  alongside `plugin-skills:` for exactly this. So the two scripts now agree with each other, the
+  marketplace, `README.md`, and both newly-marked sites, and `python3 scripts/check-marketplace.py`
+  now fails loudly if any one of the five drifts again - confirmed by sabotage (setting either
+  `.md` site back to 26 reproduces the failure, restored). None of this is committed as of this
+  anchor: `git diff --name-only 2b337296..HEAD` for these paths still returns empty until it is,
+  so re-derive this passage rather than trusting it once that lands. **Not fixed here**: this
+  note's scope is the map, and an edit to a shipped install script still requires the README
+  install URLs to be re-pinned (see the next landmine) once committed.
 
-  JUDGEMENT, unchanged and now three-times-evidenced: "the pair is in sync" is a weaker statement
-  than it reads. Sync is enforced; correctness of the description text is enforced by nothing, and
-  a wrong description survives every gate this repo has. The previous pass recorded a cosmetic
+  JUDGEMENT, unchanged and now three-times-evidenced at this anchor, **narrower since the
+  uncommitted fix above**: "the pair is in sync" is a weaker statement than it reads. Sync is
+  enforced; correctness of the description text was enforced by nothing at `2b337296`, and a wrong
+  description survived every gate this repo had. `check_description_claims` and
+  `check_catalog_claims` now enforce correctness too, but only for the exact (file, plugin, kind)
+  triples explicitly listed in `DESCRIPTION_CLAIMS`/`CATALOG_CLAIMS` - crew's commands and agents
+  counts in these two scripts and in `marketplace.json`'s description, and nothing else. Any other
+  plugin's catalog label, or any other stated number, is still unenforced prose - the opt-in design
+  this repo insists on (CLAUDE.md: "a checker that guesses which number describes what" is
+  rejected) means coverage grows one explicit table row at a time, not by inference. The previous
+  pass recorded a cosmetic
   instance of the same class - `rule-of-two`'s `PLUGIN_NAME` row pads its key to 25 characters
   before the ` - ` separator where the other four pad to 24, so its description column sits one
   character right in the rendered picker. **Still true at this anchor**, still identical in both
