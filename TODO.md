@@ -3567,3 +3567,13 @@ context clear, so the open items live here where they are tracked.
   exit 0 silently. Measured 2026-09-22: pristine HEAD `31393918` is 52/0 green; with the
   guard applied, 17 failed / 1667 passed. Not mine and not blocking - filed so whoever
   owns that change sees it before committing.
+- **`verify_price.py` (`plugin/crew/hooks/scripts/verify_price.py:69-89`, `_time_rule`)
+  shares the same "Git Bash has no python3" landmine `verify-gate.sh`/`.ps1` were just
+  fixed for.** `--price` runs a rule's own `run` commands (most of which hardcode
+  `python3`) through `bash -c cmd` with no shim on PATH, so an operator who runs
+  `verify-gate.sh --price` on a Windows machine where only `python`/`py` resolves would
+  hit the same false "command not found" the Stop-gate fix (T-item-10) just resolved for
+  ordinary rule execution. Did not block/fix here: the ticket named `verify-gate.sh` and
+  `verify-gate.ps1` specifically as the surfaces to fix; `--price` is a separate,
+  operator-only entry point with its own bash resolution (`_bash()`,
+  `verify_price.py:57-66`) that would need the identical shim built a second time.
