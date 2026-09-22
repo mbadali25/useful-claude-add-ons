@@ -161,15 +161,30 @@ Canvas links include the extension: `[[exec-insights.canvas]]`.
 
 1. **Search before writing.** Extending an existing concept beats creating a
    near-duplicate every time; duplicates dilute search for everyone afterwards.
-2. **Take the lock.** The nightly gardener and other agents write this same tree, and
-   they have collided before — one agent committed another's staged-but-uncommitted
-   edits inside its own 68-file commit:
+2. **Take the lock — after establishing that this host has one.** The nightly gardener
+   and other agents write this same tree, and they have collided before — one agent
+   committed another's staged-but-uncommitted edits inside its own 68-file commit.
+
+   **The lock is a host-local artifact and it does not travel.** It lives at
+   `<vault>\.claude\vault-lock.ps1`, and `.claude/` is outside the Obsidian Sync payload
+   *and* absent from the vault's git history, so it reaches a machine only when that
+   machine installs it. The vault's own `CLAUDE.md` states both halves: `.claude/` is
+   "host-local only: gardener logs, lock, config guard, one-shot miners", and "the lock
+   file cannot serialize across machines. It serializes agents on this box only." Two
+   hosts writing `wiki/` at once is therefore **not** a case this lock covers and never
+   was — it serializes the agents on one box, which is the case that produced the 68-file
+   commit.
+
+   So run `-Status` first and read its result as the first step of the write, not a
+   formality:
    ```
    # Windows
+   pwsh -NoProfile -File C:\repos\claude-memories\.claude\vault-lock.ps1 -Status
    pwsh -NoProfile -File C:\repos\claude-memories\.claude\vault-lock.ps1 -Acquire -Owner <who>
    pwsh -NoProfile -File C:\repos\claude-memories\.claude\vault-lock.ps1 -Release
 
    # Linux (pwsh is cross-platform; same script, same vault, different root)
+   pwsh -NoProfile -File /repos/claude-memories/.claude/vault-lock.ps1 -Status
    pwsh -NoProfile -File /repos/claude-memories/.claude/vault-lock.ps1 -Acquire -Owner <who>
    pwsh -NoProfile -File /repos/claude-memories/.claude/vault-lock.ps1 -Release
    ```
@@ -197,6 +212,32 @@ Canvas links include the extension: `[[exec-insights.canvas]]`.
    past a lock to resolve this** — on a genuinely foreign lock that is exactly the
    collision the lock exists to prevent, and the two cases are indistinguishable without
    the check.
+
+   **No lock on this host — a named outcome, not a dead end.** The lock is PowerShell and
+   it is the only lock there is: no POSIX equivalent exists in the vault or anywhere in
+   this marketplace. On a Linux or macOS host — where the vault root is
+   `/repos/claude-memories`, not `C:\repos\claude-memories`, and `.claude/` is simply
+   absent — there is nothing to acquire, and **both reflexes are wrong**. *Stopping*
+   leaves the vault unwritable on that host, over a hazard the lock would not have covered
+   between hosts anyway. *Writing as though you had taken it* reinstates exactly the
+   collision the lock exists to prevent. Do this instead:
+
+   1. **Say so in your first reply** — "this host has no vault lock; writes here are
+      unserialized". A silent degradation is how the operator stops finding out that the
+      lock is uninstalled.
+   2. **Stage by path, never by sweep.** Commits here are not normally yours at all (see
+      the top of this file), but when you were explicitly asked to commit:
+      `git add -- <the exact files you wrote>`. Never `git add -A`, never `git add .`,
+      never `git commit -a`. A sweep is precisely what turned one agent's write into the
+      68-file commit above; a path-scoped add cannot reach another writer's staged work.
+   3. **Bracket the write with `git status --porcelain`.** If a path you did not write
+      changed while you worked, another writer is live: stop, commit nothing, and report
+      what moved.
+
+   **None of that is a lock and it must not be recorded as one.** It serializes nothing —
+   two agents can still write the same note and the last write wins. It only bounds the
+   blast radius to the files you touched. A cross-platform lock is unwritten work, not an
+   undocumented feature.
 3. **One idea per page.** Set `updated` when you touch a page. Populate `sources:`.
 4. **Facts in notes, shape on canvases.** Anything load-bearing must exist as text in
    a note even if it also appears on a canvas — a canvas-only fact is invisible to

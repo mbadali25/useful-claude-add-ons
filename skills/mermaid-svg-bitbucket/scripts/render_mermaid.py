@@ -197,16 +197,32 @@ def find_puppeteer_config(explicit: str, root: Path) -> Path | None:
     return None
 
 
+MMDC_MISSING = (
+    "error: mmdc not found. Install it with:\n"
+    "  npm install -g @mermaid-js/mermaid-cli\n"
+    "(or make `npx` available so it can be fetched on demand)"
+)
+
+
 def resolve_mmdc() -> list[str]:
-    if shutil.which("mmdc"):
-        return ["mmdc"]
-    if shutil.which("npx"):
-        return ["npx", "--yes", "@mermaid-js/mermaid-cli"]
-    sys.exit(
-        "error: mmdc not found. Install it with:\n"
-        "  npm install -g @mermaid-js/mermaid-cli\n"
-        "(or make `npx` available so it can be fetched on demand)"
-    )
+    """Return the launcher argv, using the path `which` resolved.
+
+    The return value is the point, not its truthiness. This used to test
+    `if shutil.which("mmdc")` and then pass the bare name "mmdc" to subprocess.
+    On Windows mermaid-cli installs as `mmdc.cmd`, and `shutil.which` finds it
+    because it consults PATHEXT; `subprocess` without a shell does not, so the
+    bare name raised an uncaught WinError 2 on a machine where mermaid-cli was
+    installed - and the message below, written for exactly that moment, never
+    printed, because `which` had succeeded. A resolved absolute path to the
+    .cmd runs. Both branches did it, so both are fixed.
+    """
+    mmdc = shutil.which("mmdc")
+    if mmdc:
+        return [mmdc]
+    npx = shutil.which("npx")
+    if npx:
+        return [npx, "--yes", "@mermaid-js/mermaid-cli"]
+    sys.exit(MMDC_MISSING)
 
 
 def render(mmd_path: Path, svg_path: Path, config: Path, puppeteer: Path | None,
@@ -223,7 +239,18 @@ def render(mmd_path: Path, svg_path: Path, config: Path, puppeteer: Path | None,
     if puppeteer and puppeteer.exists():
         cmd += ["--puppeteerConfigFile", str(puppeteer)]
 
-    proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    except OSError as exc:
+        # The launcher resolved on PATH and still could not be spawned - a shim
+        # pointing at a deleted install, a wrong-architecture binary, a file
+        # mode that lost its execute bit. From the user's side that is a
+        # missing tool, so it has to end in the install message; an OSError
+        # escaping here is an uncaught traceback that loses it entirely, which
+        # is the defect this whole function was fixed for. sys.exit rather than
+        # RuntimeError on purpose: the tool is unusable for every diagram, not
+        # just this one, so retrying the rest only buries the message.
+        sys.exit(f"{MMDC_MISSING}\n\n(resolved `{cmd[0]}` but could not run it: {exc})")
     if proc.returncode != 0 or not svg_path.exists():
         detail = (proc.stderr or proc.stdout or "").strip()
         raise RuntimeError(f"mmdc failed for {mmd_path}:\n{detail}")

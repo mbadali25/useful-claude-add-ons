@@ -53,7 +53,7 @@
       "name": "claude-memories-vault",
       "source": "./skills/claude-memories-vault",
       "description": "Note conventions for the claude-memories Obsidian vault - folder layout, the six frontmatter fields, wikilink resolution, the write lock, and vault vs auto-memory.",
-      "version": "1.1.2"
+      "version": "1.2.0"
     },
     {
       "name": "cloudflare",
@@ -113,7 +113,7 @@
       "name": "jira-manager",
       "source": "./skills/jira-manager",
       "description": "Jira Cloud over the REST API with email + API token - JQL search, create, update, assign, transition, comment, log work. No MCP connector.",
-      "version": "1.0.1"
+      "version": "1.0.2"
     },
     {
       "name": "knowbe4-admin",
@@ -125,7 +125,7 @@
       "name": "mermaid-svg-bitbucket",
       "source": "./skills/mermaid-svg-bitbucket",
       "description": "Pre-render Mermaid diagrams to committed SVG so they display correctly in Bitbucket Cloud.",
-      "version": "1.2.2"
+      "version": "1.2.3"
     },
     {
       "name": "notify",

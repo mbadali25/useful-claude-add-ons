@@ -7,6 +7,8 @@ description: Full read/write access to Jira Cloud via direct REST API calls, aut
 
 Full CRUD-style workflow for Jira Cloud using the Jira REST API v3 directly over `curl` — no MCP connector, no OAuth flow. Works anywhere with `curl` **7.76+** (March 2021) and `jq` available (Claude Code, Cowork, a terminal, this sandbox). The version floor is `--fail-with-body`, which is what makes a 4xx return non-zero **and** still hand you Jira's `errorMessages` — the only thing that says whether it was a bad field, a stale transition id or a missing token scope. On an older curl (RHEL 8 ships 7.61, Ubuntu 20.04 7.68, Debian 11 7.74) every call aborts with `curl: option --fail-with-body: is unknown` before making a request: loud and precisely named, so it diagnoses itself.
 
+`jq` gets the same treatment, and did not always. It is **not bundled with Git for Windows**, so on a Windows box it is routinely absent — and absent, it used to be *silent*: the helpers sent a POST with no payload and no `Content-Type` to a URL with an empty path segment (`/issue//transitions`, the issue key having failed to build), then printed `(no content on success = 204)` and exited 0. It is now resolved across the names and locations jq actually installs under, and when nothing resolves the call prints `TOOL MISSING: jq is on no PATH ... This is a missing tool, not a failed check` on stderr and exits 127 **without sending a request**. If you see that line, install jq — nothing was written to Jira.
+
 ## Required environment variables
 
 Works with either kind of Atlassian API token — classic (unscoped) or the newer scoped tokens — but they need different variables:
