@@ -3381,3 +3381,33 @@ still does not exist anywhere in this repo.
   fixed here: both belong to rows (strix, graphify) outside the uv chain that
   ticket covered, and each needs its own fixture case in
   `scripts/_test/uv-install.sh` or a suite of its own before being touched.
+
+## Two shell suites under `scripts/_test/` are run by nothing - OPEN 2026-09-22
+
+`.github/workflows/marketplace.yml` names each shell suite explicitly (`:74`
+menu-groups, `:84` check-powershell, `:90` ps-install-keys) rather than globbing
+`scripts/_test/*.sh`, and `.crew/verify.json`'s rule for
+`scripts/install-prerequisites.{sh,ps1}` runs only `bash _verify/smoke.sh`. So
+`scripts/_test/uv-install.sh` (150 cases) and `scripts/_test/mcp-preflight-catalog.sh`
+(109 cases) are green locally and are executed by neither CI nor the local Stop gate.
+Both were sabotage-proven when written, which is exactly the property an unwired suite
+stops carrying forward. Wiring them needs two lines in
+`.github/workflows/marketplace.yml` beside `:90` and one `run` entry in
+`.crew/verify.json`'s install-script rule. Not done in the ticket that wrote the second
+suite: its scope was `scripts/install-prerequisites.{sh,ps1}` and `scripts/_test/**`
+only, and both target files were being edited concurrently by other agents.
+
+## `ensure_uv` can succeed on a host where `uvx` does not resolve - OPEN 2026-09-22
+
+`uv_on_path` (`scripts/install-prerequisites.sh:225`) is satisfied by EITHER `uv` or
+`uvx`, but the two rows that call `ensure_uv` register a command whose literal first
+word is `uvx` (`scripts/install-prerequisites.sh:2602` aws-api,
+`scripts/install-prerequisites.sh:2650` aws-pricing). Since the launcher check added
+on 2026-09-22 (`mcp_launcher_resolves`, `scripts/install-prerequisites.sh:923`) those
+two rows now FAIL on a host that has `uv` and not `uvx`, where they previously
+registered a server that could not start. The new behaviour is the correct one and is
+not a regression to undo - but the message the operator gets blames the MCP row rather
+than naming the uv install that produced a half-usable toolchain. The narrow fix is
+for `ensure_uv` to require `uvx` specifically when its caller is going to register a
+`uvx` command. Not fixed here: it changes `ensure_uv`'s contract for all three of its
+callers and belongs with `scripts/_test/uv-install.sh`, not with the MCP ticket.
