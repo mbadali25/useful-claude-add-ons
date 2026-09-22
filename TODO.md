@@ -3447,3 +3447,80 @@ live tree. It should run against a throwaway copy or a `git worktree`, so no win
 exists in which a concurrent committer can snapshot a deliberately broken file. That
 needs a shared helper under `scripts/_test/` and agreement on where sabotage runs
 live; it was out of scope for the ticket that discovered it.
+
+## Open items handed off 2026-09-22
+
+`.work/HANDOFF.md` is gitignored and the session task list does not survive a
+context clear, so the open items live here where they are tracked.
+
+**Needs the operator, not an agent**
+
+- **Launch Obsidian once** and open `/repos/claude-memories`. The Local REST API
+  plugin writes its `apiKey` on first run; nothing exists on disk until then, and
+  the MCP registration cannot proceed without it. Fully quit from the tray and
+  relaunch - closing the window only minimises, and Obsidian reads its plugin list
+  at launch. Then `vault_ops.py fix-ports`, `register --apply`, `diagnose`. Point
+  the MCP server at the HTTP port (`insecurePort`), never HTTPS - Node rejects the
+  self-signed cert and a green `curl -k` proves nothing.
+- **Vault host contract.** `/repos/claude-memories/CLAUDE.md:8` names only
+  `dadeush-lenovo` and `dadeush-desktop`; `:211` retires `/root` and `/home` paths
+  as "other host" at once. This Linux box is neither, so every session run here is
+  destined to be discarded by the gardener. Four live transcripts on this host are
+  in no queue. Three proposed edits are in the session scratchpad; the file is
+  **CRLF on all 275 lines** and rewriting it as LF turns a three-line change into a
+  275-line diff replicated by Sync. Decided: permanent host, so the edits apply.
+- **Solomon logo.** It IS committed - the wordmark is at `word/media/image4.png`
+  inside `skills/solomon-doc-builder/assets/sop_template.docx`. `build_sop.py`
+  reaches it via the template; `build_report.py` does not, so branded HTML and
+  reports get colours and fonts but no masthead. Extract it to a standalone
+  `assets/logo.png`, reference it from `brand.json`, bump `solomon-doc-builder`
+  (1.1.0). Separately, `sop.assets_dir` points at `/repos/OnboardingSOPs/assets`,
+  which is genuinely absent here - that holds SOP screenshots, not the logo.
+- **Outlook on Linux.** No native client exists or is planned. Outlook PWA via Edge
+  is installed. Alternatives: `outlook-ew` snap (unofficial) or Evolution +
+  `evolution-ews` (native GNOME). Verify EWS is still available for Exchange Online
+  before configuring Evolution - do not assert it from memory.
+- **Splashtop is attended-only** as installed. The session is Wayland, so the first
+  connection needs someone to click Approve here, there is no sharing at the GDM
+  login screen, and the lock screen revokes the restore token. Unattended needs
+  automatic login plus the "Allow Locked Remote Desktop" GNOME extension - both
+  real security trade-offs.
+- **`/crew:verify --all` has never run green.** Three rules are permanently over the
+  60s Stop budget (81s, 96s, 185s) and stay UNVERIFIED. The repair of that command
+  is the headline fix in PR #205 and is undemonstrated.
+
+**Engineering, unassigned**
+
+- **Windows-compatibility audit across 36 skills and 5 plugins. NEVER DISPATCHED.**
+  crew-pm confirmed this directly: "It has never been dispatched. Do not let my
+  earlier silence read as in-progress." Wants 3-4 agents by skill group, not one.
+  Checklist is CLAUDE.md's Landmines section. Report findings before fixing - each
+  fix lands per marketplace entry with its own bump.
+- **Re-render the guides so brand resolution applies.** All four `crew-*` guides and
+  `obsidian-claude-guide` carry `#1F4E79`, the neutral navy, and no Solomon colour.
+  Note the limit: `build_report.py`'s `build()` emits no `<h3>`, so a narrative
+  document past H2 does not fit that pipeline - it stays hand-written but must call
+  `resolve_brand.py` instead of copying the palette hex.
+- **Wire `uv-install.sh` (162 cases) and `mcp-preflight-catalog.sh` (114) into CI and
+  `.crew/verify.json`.** Neither is run by anything today. A regression suite nobody
+  runs is worse than none, because its presence reads as coverage.
+- **Regression case for the write-through-symlink harness defect.** The fix is in
+  (`scripts/_test/uv-install.sh:102`, `mkrealbin` at `:105`); nothing asserts it. It
+  destroyed this host's coreutils twice - the second time because a guard whose own
+  regression test is destructive does not get re-tested.
+- **The sabotage driver edits the live tree**, so a concurrent committer can snapshot
+  a deliberately broken file. It did: `3cca6482` shipped a call to an undefined
+  function. Should use `git worktree`.
+- **`ensure_uv` is satisfied by `uv` alone** while the aws-api and aws-pricing rows
+  register `uvx` - those rows fail correctly but name the wrong step.
+- **`check_group_parity` compares catalog KEYS only, never Spec strings**, so passing
+  a repo name where the marketplace local name belongs stays GREEN.
+  `mcp-preflight-catalog.sh` case 22 catches it; the main gate cannot see the class.
+- **Refresh the code graph** after merge: `graphify update .`, never
+  `graphify . --no-viz --code-only`. Graph is at `8c8353f5`.
+- **Session capture on this host.** The `obsidian-vault` plugin's SessionEnd hook is
+  active but nothing reached the queue, because no vault was configured until this
+  session. Confirm it now appends - do not infer "no hook" from "no lines".
+- **The 81-entry gardener backlog** can only be worked on `dadeush-lenovo` or
+  `dadeush-desktop`. 15 are deliberately deferred as too large (9.3MB-66MB); 10
+  belong to LENOVO; ~66 untriaged, ~9 likely empty-shell.
