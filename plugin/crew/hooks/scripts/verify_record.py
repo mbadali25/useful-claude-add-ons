@@ -437,12 +437,16 @@ def cmd_sync():
              "chronic"|"reach_declared"|"reach_undeclared"|"reach_wrapper"|
              "reach_syntax"|"clean_tree_required", "reason":..., "cmds": [...],
              "unknown": bool}, ...],
-         "cmd_log": [{"cmd":..., "status": "pass"|"skip77", "elapsed": N}, ...]}
+         "cmd_log": [{"cmd":..., "status": "pass"|"fail"|"skip77",
+             "elapsed": N}, ...]}
 
     `matched_rules` is every rule that matched a changed path this turn,
     from the SAME matcher run that decided what to execute; `cmd_log` is
     only the commands that were ACTUALLY RUN (so an acutely budget-deferred
-    rule's commands are simply absent from it).
+    rule's commands are simply absent from it). The caller now invokes this
+    on EVERY turn, including one where a rule FAILED -- see verify-gate.sh/
+    .ps1: discarding a turn's whole record because one rule among many
+    failed threw away every OTHER rule's passing evidence too.
 
     Classification, per matched rule:
       - chronic / reach_declared / reach_undeclared / reach_wrapper /
@@ -454,12 +458,24 @@ def cmd_sync():
         budget deferral this turn): leave any prior record entry untouched.
         The sha marker already refuses to advance while this is outstanding,
         so nothing here needs to say so a second time.
-      - normal, and one of its commands came back rc=77: record "skipped".
-        Not a pass, not a fail -- see verify-gate.sh/.ps1's SKIP handling.
-      - normal, and every command passed: the rule is CLEAN. Any previous
-        entry for it is cleared, and if it had no declared or cached cost
-        (`unknown`), its measured elapsed time is written to the timings
-        cache so the NEXT Stop can price it instead of running it forever.
+      - normal, and one of its commands came back rc not in (0, 77): the
+        rule DID run and did not pass, but this is deliberately NOT
+        persisted (see the long comment at the "fail" branch in `_sync`) --
+        a FAILED turn never advances either marker on its own (verify-
+        gate.sh/.ps1 still exit 2 right after calling this), so nothing here
+        needs to survive to the next turn, and persisting it under this
+        rule's CURRENT content hash would orphan the moment the rule is
+        edited to fix the failure. Any PRIOR entry for this key (from an
+        earlier, different turn) is left exactly as it was.
+      - normal, and one of its commands came back rc=77 (and none failed):
+        record "skipped". Not a pass, not a fail -- see verify-gate.sh/.ps1's
+        SKIP handling.
+      - normal, and every command reports "pass" (not merely "neither fail
+        nor skip77" -- see the explicit `all(... == "pass")` check in
+        `_sync`): the rule is CLEAN. Any previous entry for it is cleared,
+        and if it had no declared or cached cost (`unknown`), its measured
+        elapsed time is written to the timings cache so the NEXT Stop can
+        price it instead of running it forever.
     """
     try:
         payload = json.load(sys.stdin)
@@ -545,6 +561,32 @@ def _sync(sha, matched, cmd_log, all_run=False):
             # an acute budget deferral. Leave whatever was recorded before
             # exactly as it was; the sha marker already will not advance.
             continue
+        if any(s == "fail" for s in statuses):
+            # The rule ran this turn and did NOT pass. Deliberately NOT
+            # persisted here - reviewed and reverted from an earlier version
+            # of this fix that DID write a "failed" entry keyed on this
+            # rule's CURRENT content hash. That entry then became an ORPHAN
+            # the moment someone fixed the rule (rule_key hashes `run`, so
+            # editing the command to fix it is, by design, a new key): the
+            # OLD "failed" key would no longer be in _current_rule_keys(),
+            # so the STALE OBLIGATIONS prune below marks it orphaned rather
+            # than resolved, and _sync keeps returning False - freezing the
+            # sha marker behind a rule that was ALREADY fixed, forever,
+            # until someone ran --all. Reproduced: rule `exit 1` -> Stop
+            # (rc 2, "failed" persisted under key K1) -> edit to `echo
+            # fixed` (new key K2) -> Stop -> still blocked, because K1 is
+            # now orphaned.
+            #
+            # The exit code (2) already carries "this rule failed" for the
+            # turn that just ran; nothing needs to survive to the NEXT turn,
+            # because a FAILED turn never advances either marker (see
+            # verify-gate.sh/.ps1: the exit-2 check runs right after this
+            # sync and before both). So the very next Stop simply re-diffs
+            # against the SAME, un-advanced baseline and re-matches this
+            # same rule again - nothing is lost by leaving any prior record
+            # entry (if any) exactly as it was, the same discipline the
+            # acute-deferral branch above already uses.
+            continue
         if any(s == "skip77" for s in statuses):
             entries[key] = {
                 "status": "skipped",
@@ -552,6 +594,15 @@ def _sync(sha, matched, cmd_log, all_run=False):
                 "label": label,
                 "sha": sha,
             }
+            continue
+        if not all(s == "pass" for s in statuses):
+            # Defensive: today "pass"/"fail"/"skip77" are the only three
+            # values a cmd_log status can carry, and both other values are
+            # handled above, so this is unreachable in practice. Kept
+            # explicit rather than falling through to "clean" by default -
+            # an unrecognised status must not silently read as a pass, the
+            # same fail-safe direction this module's docstring already
+            # states for a corrupt record.
             continue
         # Every command this rule names ran and passed: clean.
         entries.pop(key, None)

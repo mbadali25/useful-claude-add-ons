@@ -3622,3 +3622,13 @@ context clear, so the open items live here where they are tracked.
   right before the `no_git_description_problems` case). Did not block: this round's QA
   named `count_plugin_commands`/`count_plugin_agents` (`:601`) specifically, not this
   earlier call, and `check_self_claims` predates this ticket entirely.
+- **`verify_price.py` (`plugin/crew/hooks/scripts/verify_price.py:69-89`, `_time_rule`)
+  shares the same "Git Bash has no python3" landmine `verify-gate.sh`/`.ps1` were just
+  fixed for.** `--price` runs a rule's own `run` commands (most of which hardcode
+  `python3`) through `bash -c cmd` with no shim on PATH, so an operator who runs
+  `verify-gate.sh --price` on a Windows machine where only `python`/`py` resolves would
+  hit the same false "command not found" the Stop-gate fix (T-item-10) just resolved for
+  ordinary rule execution. Did not block/fix here: the ticket named `verify-gate.sh` and
+  `verify-gate.ps1` specifically as the surfaces to fix; `--price` is a separate,
+  operator-only entry point with its own bash resolution (`_bash()`,
+  `verify_price.py:57-66`) that would need the identical shim built a second time.
