@@ -19,7 +19,7 @@
 %% returned ALL FOUR changed, so nothing below was carried forward on trust and
 %% every line number was re-taken by direct grep at this anchor. This was not a
 %% line-shift redraw: the SHAPE changed in three places.
-%%
+%% -
 %% ONE. A SEVENTH GUARD, and it is the first one whose DEFAULT is not its FLOOR.
 %%   crew_guards.ROLE_WRITE_POLICIES :147 is (block, report, off) and
 %%   ROLE_WRITE_DEFAULT :164 is "off" -- the WIDEST tier, not the narrowest.
@@ -34,7 +34,7 @@
 %%   That is the same recurring bug this repo keeps naming -- an unknown
 %%   collapsing into the safe-looking value -- refused in the one guard that can
 %%   least afford it.
-%%
+%% -
 %% TWO. A CORRUPT CONFIG FILE IS NOW ITS OWN STATE, and it OVERRIDES the ratchet.
 %%   crew_config.layer_state() :846 is NEW and classifies one config FILE as
 %%   absent / ok / corrupt. It is deliberately NOT the {} collapse that
@@ -44,7 +44,7 @@
 %%   either is corrupt, BEFORE the "off" early return at :814. That is the fix:
 %%   ratchet had already resolved a corrupt repo layer against a valid global
 %%   "report" and returned "report", which blocks nothing.
-%%
+%% -
 %% THREE. THE TWO RATCHET TABLES BOTH GREW BY THE SAME KEY, so the asymmetry
 %%   that made them worth drawing separately is unchanged in kind and moved by
 %%   one in size: 8 -> 9 read side, 9 -> 10 write side, still differing only by

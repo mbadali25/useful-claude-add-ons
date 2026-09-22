@@ -26,7 +26,7 @@
 %%     never offset.
 %% --
 %% WHAT CHANGED, and none of it is a line shift.
-%%
+%% -
 %% ONE. THE TRIGGER SET GAINED THREE AND LOST ONE -- 13 -> 15.
 %%   REMOVED: autoClearInert (deleted from FINDINGS and from TRIGGERS).
 %%   ADDED: verifyMarkerStale, verifyRulesUnpriced, verifyReachUndeclared,
@@ -50,13 +50,13 @@
 %%   So EVAL's 13 was right and PAIRS' "12 keys" was simply wrong at the time --
 %%   a hand-typed count beside an asserted equality that nothing recomputed.
 %%   Both are now the one executed number, 15.
-%%
+%% -
 %% TWO. THE GRAPH STATE MOVED UNDER A LEVEL OF NESTING.
 %%   graph is no longer a top-level state key: evaluate_triggers reads
 %%   knowledge.get("graph") (crew_state.py:2974-2975), and pm_brief._graph_fields
 %%   :301 was changed to follow it. A reader of the old diagram looking for
 %%   state["graph"] finds nothing.
-%%
+%% -
 %% THREE. hooks.json CHANGED, BUT NOT ON THIS DIAGRAM'S PATH -- and saying so is
 %%   the point of a partial redraw. The diff is non-empty because PreToolUse
 %%   gained two Write|Edit entries (role-write-guard.sh and role-write-guard.ps1,
@@ -65,7 +65,7 @@
 %%   re-counted by parsing the file at this anchor, still 3 scripts x 2 flavours
 %%   = 6 entries at :3. The HOOK node below is therefore unchanged, and the
 %%   non-empty diff for this file is NOT evidence that it was stale.
-%%
+%% -
 %% FOUR. crew_endpoints.py's change is a DOCSTRING EDIT, and it still moved a
 %%   citation by exactly one line. The only hunk is the module docstring noting
 %%   pylint's max-module-lines went 3300 -> 3400 on 2026-09-22; read_endpoints

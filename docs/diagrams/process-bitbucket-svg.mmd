@@ -13,7 +13,7 @@
 %% returned TWO of four changed -- SKILL.md and render_mermaid.py -- with both
 %% assets/ files absent from the output. And the change landed on PRECISELY this
 %% diagram's declared subject: a gate, and what it could not see.
-%%
+%% -
 %% THE FIX, which is a THIRD failure mode in the same family as the other two.
 %%   resolve_mmdc() called shutil.which("mmdc") for its TRUTHINESS and then
 %%   passed the bare string "mmdc" to subprocess. On Windows mermaid-cli
@@ -26,7 +26,7 @@
 %%   the npx branch as well; both branches had it and both are fixed.
 %%   Fixed in 1.2.4, and SKILL.md gained the same explanation in prose (its only
 %%   hunk in this range) so whichever one a reader hits first is enough.
-%%
+%% -
 %%   SECOND HALF OF THE SAME FIX, and it is the part that keeps the message:
 %%   subprocess.run is now wrapped :241-252, and an OSError -- a shim pointing
 %%   at a deleted install, a wrong-architecture binary, a lost execute bit --
@@ -34,7 +34,7 @@
 %%   a traceback that loses it. sys.exit and not RuntimeError on purpose: an
 %%   unusable launcher is unusable for every diagram, so retrying the rest only
 %%   buries the message.
-%%
+%% -
 %%   Why this belongs on THIS diagram rather than in a footnote: every other
 %%   gate drawn here is about whether the ARTIFACT is trustworthy. This one is
 %%   about whether the TOOL can run, and it failed the same way the --check
