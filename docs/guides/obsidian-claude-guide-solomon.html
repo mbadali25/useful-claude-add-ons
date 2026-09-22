@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Obsidian with Claude Code: A Starting Guide</title>
+<style>
+body { font-family:'Franklin Gothic Book','Segoe UI',Calibri,Arial,sans-serif; font-size:11pt;
+       color:#1B1B1F; margin:2cm; line-height:1.45; }
+.wrap { max-width:none; margin:0; padding:0; }
+
+h1 { font-size:22pt; margin:0 0 4pt; color:#0E2841; }
+h2 { font-size:16pt; margin:24pt 0 8pt; padding-bottom:3pt;
+     border-bottom:1px solid #DCDEE5; color:#0E2841; }
+h3 { font-size:13pt; margin:16pt 0 6pt; color:#0E2841; }
+p  { margin:6pt 0; }
+ul, ol { margin:4pt 0 8pt 18pt; }
+li { margin:3pt 0; }
+code { font-family:Consolas,'Courier New',monospace; font-size:9.5pt; }
+.sub    { color:#5C5F6B; font-size:10pt; margin:0 0 10pt; }
+.muted  { color:#5C5F6B; font-size:9.5pt; }
+.warn { color:#8A6100; }
+.fail { color:#A01B12; }
+.footer { color:#5C5F6B; font-size:9.5pt; margin-top:26pt;
+          border-top:1px solid #DCDEE5; padding-top:8pt; }
+.box { background:#F6F7F9; border:1px solid #0E2841;
+        padding:8pt 10pt; margin:10pt 0; }
+.plain { background:#F6F7F9; border-left:4px solid #0E2841;
+          padding:4pt 10pt; margin:8pt 0; }
+
+/* Every table: real grid, real thead. Both required. */
+table { border-collapse:collapse; width:100%; table-layout:auto;
+             margin:8px 0 4px; }
+th, td { border:1px solid #B8BCC6; padding:7px 10px;
+             text-align:left; vertical-align:top; overflow-wrap:break-word; }
+th { background:#0E2841; color:#FFFFFF; font-weight:600; }
+/* Zebra is an explicit class, written per row by the builder. */
+tr.alt td { background:#EEF3F8; }
+
+table.meta { border-collapse:collapse; width:100%; margin:0 0 14px; }
+table.meta td { border:1px solid #B8BCC6; padding:6px 10px; font-size:12px; }
+table.meta td.k { background:#EEF3F8; font-weight:600; width:17%; }
+
+.lede { background:#F6F7F9; border-left:4px solid #0E2841;
+        padding:10px 14px; margin:10px 0 4px; }
+.handling { background:#FDE8E6; border-left:4px solid #8B1A13;
+            padding:8px 14px; margin:10px 0; font-size:12px; color:#A01B12; }
+
+/* Cards are a table on purpose; the number and label are real block
+   elements rather than styled spans. */
+table.cards { border-collapse:separate; border-spacing:8px 0; width:100%;
+              margin:6px 0 2px; }
+td.card { background:#F6F7F9; border:1px solid #B8BCC6; padding:10px 12px;
+          text-align:center; }
+div.n { font-size:22px; font-weight:700; color:#0E2841; }
+div.l { font-size:11px; color:#5C5F6B; }
+
+.chip-critical, .chip-high, .chip-medium, .chip-low, .chip-info, .chip-unverified { display:inline-block; padding:2px 8px; font-weight:700; font-size:11px; white-space:nowrap; }
+.chip-critical { background:#FDE8E6; color:#A01B12; }
+.chip-high { background:#FFEDD5; color:#9A3412; }
+.chip-medium { background:#FDF3D7; color:#8A6100; }
+.chip-low { background:#E3F4EA; color:#1C6B3F; }
+.chip-info { background:#E8EFF8; color:#2F4B7C; }
+.chip-unverified { background:#EDEEF1; color:#5C5F6B; }
+
+@media print {
+  body { font-size:11pt; }
+  .wrap { padding:0; max-width:none; }
+  h2, h3 { page-break-after:avoid; }
+  tr { page-break-inside:avoid; }
+  thead { display:table-header-group; }
+}
+</style>
+</head>
+<body>
+
+<h1>Obsidian with Claude Code: A Starting Guide</h1>
+<p class="muted">Written for someone who has never connected the two. It teaches what good
+looks like and why, grounded in one real vault — <code>claude-memories</code>, 2996 notes,
+synced with Obsidian Sync, not a git repository until this week. It does not tour plugin
+menus. Generated from useful-claude-add-ons@91669bf1 on 22 September 2026. Verify before
+trusting.</p>
+
+<div class="box">
+<p><b>In one paragraph.</b> An Obsidian vault is a folder of plain Markdown files, and Claude
+Code can read and write that folder like any other. Everything that follows is about the
+gap between "Claude touched a file" and "the change is actually safe" — how it got there,
+whether anyone can undo it, and whether it belongs in the vault at all.</p>
+</div>
+
+<h2>1. Two Sync Mechanisms, and Why Running Both by Habit Is a Risk</h2>
+
+<p>Obsidian Sync (the paid, official service) and git are not the same kind of protection,
+and treating them as interchangeable is the first mistake.</p>
+
+<table>
+<thead><tr><th>Question</th><th>Obsidian Sync</th><th>git (e.g. obsidian-git)</th></tr></thead>
+<tbody>
+<tr><td>What it actually gives you</td><td>End-to-end encrypted sync between devices, with a rolling version history per file.</td><td>A full, inspectable history of every commit, and a remote copy wherever you push it.</td></tr>
+<tr><td>How long history survives</td><td>Note versions: 1 month on the Standard plan, 12 months on Plus. Attachment versions: 2 weeks, on either plan.</td><td>Forever, or until someone rewrites history — nothing auto-expires.</td></tr>
+<tr><td>What happens on conflict</td><td>Merges automatically; non-trivial conflicts can surface as a notice, not a guaranteed manual review.</td><td>A real merge conflict, marked in the file with <code>&lt;&lt;&lt;&lt;&lt;&lt;&lt;</code> markers, that blocks until a person resolves it.</td></tr>
+</tbody>
+</table>
+
+<p>Obsidian Sync's own retention numbers matter because they set a real deadline: a note
+edited badly and not caught within the plan's window cannot be recovered from Sync's
+history after that window closes. Git has no such clock.</p>
+
+<h3>obsidian-git's Fire-into-the-Void Failure</h3>
+
+<p class="warn">The plugin's own name for its main action is "commit-and-sync," and that
+name is the trap. A commit is a purely local operation — it always succeeds, instantly,
+with nothing to fail on. The push to a remote is a separate network operation, and it is
+the one that can fail: no remote configured, an expired credential, an offline laptop, a
+rejected non-fast-forward push. Multiple issues against the plugin describe exactly this —
+commits that succeed while the push silently does not, sometimes with the failure notice
+itself suppressed by the very setting meant to reduce noise. The result: a vault whose
+owner believes it is "backed up by git," has a `.git` folder full of real commits to prove
+it, and has no copy anywhere off that one machine, because every one of those commits fired
+into a void with no remote catching it.</p>
+
+<p>What to actually check, not just set up once: that <code>git remote -v</code> names a
+real remote, that the last few commits show up on that remote (not just in the local log),
+and that a failed push produces a notification you will actually see rather than one a
+"reduce notifications" setting has quietly turned off. A 10-15 minute auto-commit interval
+is the plugin's own recommended default and is a reasonable choice for the commit half of
+the job — it says nothing about whether the push half is working.</p>
+
+<h3>Running Sync and Git Together</h3>
+
+<p>The two can coexist — many vaults do — but not carelessly. The concrete failure mode is
+in the <code>.obsidian</code> configuration folder: if both mechanisms are watching and
+writing to files like <code>workspace.json</code> or the git plugin's own
+<code>data.json</code>, they can fight over the same file. The accepted mitigation, from
+the plugin's own users, is to gitignore those files so only Sync manages them, and let git
+own the notes themselves.</p>
+
+<h2>2. How Claude Actually Reaches a Vault</h2>
+
+<p>There are three ways to connect Claude Code to a vault, and they are not interchangeable
+in what they require to be running.</p>
+
+<table>
+<thead><tr><th>Route</th><th>What it needs</th><th>Watch for</th></tr></thead>
+<tbody>
+<tr><td>Direct filesystem access</td><td>Nothing but a path. Claude reads and writes Markdown files exactly like it edits code.</td><td>No awareness of Obsidian's own state — a note open and unsaved in the app can be overwritten from underneath it.</td></tr>
+<tr><td>Local REST API plugin</td><td>Obsidian itself running, with the plugin enabled. The bridge is an HTTP(S) server <b>inside the running app</b>, not a background daemon.</td><td>Close Obsidian, the bridge is gone — no error, just nothing listening on the port.</td></tr>
+<tr><td>MCP server on top of the REST API</td><td>Everything the REST API needs, plus an MCP client (Claude Code) configured to trust its certificate.</td><td>The certificate trap below.</td></tr>
+</tbody>
+</table>
+
+<p class="warn">The certificate trap is real and it is documented by the plugin itself, not
+folklore: the Local REST API plugin generates its own certificate authority on first run
+and serves HTTPS from it. Testing that endpoint with <code>curl -k</code> proves nothing
+about whether an MCP client can connect — <code>-k</code> tells curl to skip certificate
+verification entirely, which is exactly the check an MCP client does not skip. A green
+<code>curl -k</code> result and a Node-based MCP client refusing to connect are both
+consistent with the same broken setup. The plugin's own fix is one of two things: trust its
+certificate authority (fetchable from the plugin's own HTTPS endpoint, then imported into
+the OS or the client's trust store), or fall back to its separate plain-HTTP endpoint if the
+client supports it. Confirm a connection by running the actual MCP tool call, not by curling
+the port.</p>
+
+<p>Because the bridge lives inside the running application, "is the vault reachable" is
+really "is Obsidian open right now" — worth checking first whenever a vault tool call fails
+for no obvious reason.</p>
+
+<h2>3. What Belongs in a Vault, and What Belongs in a Repository</h2>
+
+<p>The instinct to put everything durable into the vault — including things generated from
+code — has a specific, dated counter-example worth citing, because it is a real decision
+this project made and then reversed.</p>
+
+<div class="box">
+<p><b>The worked example.</b> This repository's own <code>CLAUDE.md</code> records that a
+mechanical code graph was once exported into an Obsidian vault, and the decision was
+reversed. The stated reason: <i>"the map lived on one machine and reached nobody who
+cloned."</i> A vault is one person's local application state — even synced, it is not
+something a teammate who clones the repository can open. Anything that has to reach every
+clone belongs in the repository as a tracked file, not in a vault, however convenient the
+vault's linking and search are.</p>
+</div>
+
+<p>The general shape of the boundary that example implies:</p>
+
+<table>
+<thead><tr><th>Belongs in the vault</th><th>Belongs in the repository</th></tr></thead>
+<tbody>
+<tr><td>Notes about the work — decisions made, questions raised, what a session learned</td><td>Artefacts the work produces — code, generated diagrams, data files another clone needs to read</td></tr>
+<tr><td>Personal synthesis, second-order thinking, links between ideas</td><td>Anything a CI job, a teammate's clone, or a different machine has to see without asking one specific person</td></tr>
+<tr><td>Material that is fine living on one synced set of devices</td><td>Material whose absence from git means "nobody but me has this"</td></tr>
+</tbody>
+</table>
+
+<h2>4. Keeping a Gardener Queue from Reaching 81</h2>
+
+<p>A "gardener" or inbox pattern — write everything into one place during a session, then
+distill it into real notes later — is a standard and sound practice. The failure is not the
+pattern; it is treating "later" as open-ended. There is no Obsidian-specific published
+cadence for this — the closest grounded guidance is the general inbox-processing practice
+from task management: process toward empty frequently (daily is the common recommendation)
+rather than batching, with a fixed weekly review as the backstop for whatever the daily pass
+missed. An inbox that goes unprocessed for 18 days does not fail gracefully — it grows,
+and every day added makes each entry harder to distill because the session context behind
+it fades.</p>
+
+<p>Two practical anchors for a queue that has already grown large: don't try to clear it in
+one sitting by writing careful notes for all 81 entries — time-box a catch-up pass and treat
+anything not distilled in that window as a conscious decision to skip, logged as skipped
+rather than left silently unprocessed. And separate "capture" from "distill" as two
+different pieces of work with two different urgencies: capture (writing into the inbox) is
+cheap and can happen every session; distillation (turning that into a linked, dated note)
+is the part that should be scheduled, not squeezed in.</p>
+
+<h2>5. Maps of Content</h2>
+
+<p>A map of content is a single curated note that links out to the notes on one topic — it
+is a navigation layer sitting above the notes, not a replacement for links inside them.
+The distinction that matters against the two mechanisms Obsidian already gives you for free:</p>
+
+<table>
+<thead><tr><th>Mechanism</th><th>How it groups notes</th><th>Limit</th></tr></thead>
+<tbody>
+<tr><td>Folders</td><td>One folder per note, chosen at save time</td><td>A note can live in exactly one place, decided before you know how it will be used</td></tr>
+<tr><td>Tags</td><td>Automatic membership by label</td><td>Flat — a tag says a note belongs to a topic, not how it relates to the other notes carrying the same tag</td></tr>
+<tr><td>Maps of content</td><td>A hand-curated note, edited deliberately</td><td>Only exists where someone chose to write one, and goes stale if nobody maintains it</td></tr>
+</tbody>
+</table>
+
+<p>The reason a map earns the maintenance cost folders and tags don't ask for: a note can
+appear on more than one map, or none, and a map can impose real structure — sub-headings,
+an order, a deliberate omission — that a folder or a tag cannot express. Treat a map as
+itself a kind of gardener output: it is worth building for an area of the vault once that
+area has enough notes that finding your way through search alone stops working, and it
+needs the same periodic revisit as any other note, or it quietly stops matching the vault
+it describes.</p>
+
+<p class="muted">Sources for the claims above are listed in the research this guide was built
+from; ask for them if a specific figure needs to be re-verified. Two items are explicitly
+unconfirmed and were not made to look settled: whether Obsidian Sync and git-based sync
+running together is a documented incompatibility (found only as forum consensus, not
+official policy), and the exact note count at which Omnisearch's index turns slow (its own
+docs say "several thousand files," with no single published number).</p>
+
+</body>
+</html>

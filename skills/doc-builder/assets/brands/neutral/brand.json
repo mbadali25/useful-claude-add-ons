@@ -57,5 +57,11 @@
   "screenshots": {
     "stand_in_email": "firstname.lastname@example.com",
     "stand_in_user": "user"
+  },
+  "logo": {
+    "on_light": null,
+    "on_dark": null,
+    "icon_on_light": null,
+    "icon_on_dark": null
   }
 }

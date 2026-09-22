@@ -1746,7 +1746,7 @@ rule, keyed by a content hash of that rule's `paths`/`run` so it survives
   no longer parses shell at all:
   - if the command string contains ANY shell metacharacter — anything that
     could combine, substitute, quote, glob, redirect or comment:
-    `( ) $ ; & | < > `` " ' \ { } * ? [ ] ~ # !`, a newline, or a tab — it is
+    `` ( ) $ ; & | < > ` " ' \ { } * ? [ ] ~ # ! ``, a newline, or a tab — it is
     deferred unconditionally as `"reach_syntax"`, reason `shell syntax in an
     undeclared rule — declare "reach": "local" (or network/host) to run it
     on Stop`. No exception, not even `2>&1` or a trailing `#` comment: a

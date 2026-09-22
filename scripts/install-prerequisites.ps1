@@ -131,6 +131,12 @@ $script:Summary = [ordered]@{ Installed = 0; Updated = 0; Skipped = 0 }
 function Write-Step { param([string]$Message) Write-Host "`n==> $Message" -ForegroundColor Cyan }
 function Write-Ok   { param([string]$Message) Write-Host "    OK: $Message" -ForegroundColor Green }
 function Write-Warn2 { param([string]$Message) Write-Host "    WARN: $Message" -ForegroundColor Yellow }
+# The .sh half's mcp_warn, and used for the same class of message: a failure that is
+# invisible where it is made and surfaces much later, inside a session. Write-Host
+# cannot be redirected and Write-Warning is swallowed by $WarningPreference, so this
+# goes at the console's error stream directly - which is what a caller piping this
+# script's stdout to a log is actually reading.
+function Write-WarnErr { param([string]$Message) [Console]::Error.WriteLine("    WARN: $Message") }
 function Write-Skip { param([string]$Message) Write-Host "    SKIP: $Message" -ForegroundColor DarkGray; $script:Summary.Skipped++ }
 
 function Test-Admin {
@@ -183,6 +189,139 @@ function Invoke-Step {
         Write-Warn2 "$Name failed: $($_.Exception.Message)"
         $script:FailedSteps += $Name
     }
+}
+
+# --- uv -----------------------------------------------------------------------
+# The Linux counterpart of this function (ensure_uv in install-prerequisites.sh)
+# carries a PEP 668 chain: Debian 12+, Ubuntu 23.04+ and Fedora 38+ mark their
+# interpreter EXTERNALLY-MANAGED, pip refuses `install --user` outright with
+# "error: externally-managed-environment", and that script therefore prefers pipx
+# and Astral's standalone installer. The two scripts are a matched pair, so the
+# whole of the divergence is written down here, not just the half that is obvious:
+#
+# 1. The PEP 668 guard is NOT ported, deliberately. The EXTERNALLY-MANAGED marker is
+#    written by distribution packagers; the Windows builds this script installs
+#    (Chocolatey, python.org, the Store) ship no such marker, so `pip install --user
+#    uv` is a supported install on this side and a Windows PEP 668 guard would be
+#    guarding against nothing.
+#
+# 2. The standalone-installer rung IS ported, as winget. It is the rung that matters
+#    on a machine with no Python at all: without it this function's only two rungs
+#    both need pip, so a fresh Windows box got "pip not found; install Python first"
+#    for aws-api, aws-pricing and graphify - three rows failing on a dependency uv
+#    itself does not have. (That gap shipped once, with this comment covering only
+#    point 1 above, which is why point 2 is spelled out.)
+#
+# 3. What is NOT ported is the .sh's pin-and-verify block, because nothing here
+#    downloads a script and runs it. The .sh fetches astral.sh's install.sh, so it
+#    has to pin that file by version and sha256 and refuse anything else; winget
+#    resolves a package whose manifest carries the installer's own hash and verifies
+#    it before running it, so the integrity check is winget's, and duplicating it
+#    here would mean re-implementing it. Astral's install.ps1 is deliberately NOT
+#    fetched: it would need the same pin the .sh has, against a different artifact.
+#
+# What ports across unchanged is the other half of the same defect, which was never
+# Linux-specific: two of the three callers ran pip and never looked at the result,
+# so a failed install let the run carry on and register an MCP server whose uvx
+# does not exist. The checked result, the idempotent "already installed" branch, the
+# pipx-first preference and the once-per-run memo are all mirrored here.
+
+# Memoised for the same reason ensure_uv is: three separately selectable rows
+# (aws-mcp, aws-pricing-mcp, graphify) call this, and without a memo a box where uv
+# will not install ran the whole chain three times and threw the same message three
+# times, while a box that already has uv called Write-Skip three times and moved
+# $script:Summary.Skipped by 3 for one tool.
+# $null = not yet attempted; 'ok' = succeeded; anything else = the remembered failure.
+$script:UvEnsured = $null
+
+function Install-Uv {
+    if ($script:UvEnsured -eq 'ok') { return }
+    if ($null -ne $script:UvEnsured) { throw $script:UvEnsured }
+    try {
+        Install-UvOnce
+        $script:UvEnsured = 'ok'
+    } catch {
+        $script:UvEnsured = $_.Exception.Message
+        throw
+    }
+}
+
+function Get-UvCommand {
+    $cmd = Get-Command uv -ErrorAction SilentlyContinue
+    if (-not $cmd) { $cmd = Get-Command uvx -ErrorAction SilentlyContinue }
+    return $cmd
+}
+
+function Install-UvOnce {
+    $existing = Get-UvCommand
+    if ($existing) {
+        Write-Skip "uv already installed ($($existing.Source))"
+        return
+    }
+
+    $attempted = @()
+
+    # 1. pipx gives uv its own virtualenv, which is the tidier install on any platform;
+    #    it is preferred here for that reason, not for PEP 668.
+    if (Get-Command pipx -ErrorAction SilentlyContinue) {
+        $attempted += 'pipx'
+        pipx install uv
+        if ($LASTEXITCODE -eq 0) {
+            Sync-SessionEnvironment
+            $cmd = Get-UvCommand
+            if ($cmd) {
+                $script:Summary.Installed++
+                Write-Ok "uv installed via pipx ($($cmd.Source))"
+                return
+            }
+        }
+        Write-Warn2 "'pipx install uv' did not produce a usable uv - trying the next method."
+    } else {
+        $attempted += 'pipx (absent)'
+    }
+
+    # 2. winget - Astral publishes uv there, and it needs no Python at all, so it is
+    #    the rung that works on a machine where pip does not exist. The result is
+    #    checked rather than the exit code trusted: winget reports several non-zero
+    #    statuses ("already installed", "no applicable upgrade") that are not failures,
+    #    and the only question that matters is whether uv resolves afterwards.
+    if (Get-Command winget -ErrorAction SilentlyContinue) {
+        $attempted += 'winget'
+        winget install --id astral-sh.uv --exact --source winget --silent `
+            --accept-package-agreements --accept-source-agreements
+        $wingetExit = $LASTEXITCODE
+        Sync-SessionEnvironment
+        $cmd = Get-UvCommand
+        if ($cmd) {
+            $script:Summary.Installed++
+            Write-Ok "uv installed via winget ($($cmd.Source))"
+            return
+        }
+        Write-Warn2 "'winget install --id astral-sh.uv' (exit $wingetExit) did not produce a usable uv - trying the next method."
+    } else {
+        $attempted += 'winget (absent)'
+    }
+
+    # 3. pip, last, and only reachable where Python is installed at all.
+    if (-not (Get-Command pip -ErrorAction SilentlyContinue)) {
+        $attempted += 'pip (absent)'
+        throw "could not install uv - tried: $($attempted -join ', '). Install uv yourself from https://docs.astral.sh/uv/#installation (winget install --id astral-sh.uv needs no Python), or install Python first (choco install python) and re-run."
+    }
+
+    # $LASTEXITCODE is the only signal pip gives - it is a native command, so a
+    # non-zero exit is not a PS error and does not throw on its own.
+    $attempted += 'pip'
+    pip install --user uv
+    if ($LASTEXITCODE -ne 0) {
+        throw "'pip install --user uv' failed (exit $LASTEXITCODE) - tried: $($attempted -join ', '). Install uv yourself from https://docs.astral.sh/uv/#installation and re-run."
+    }
+    Sync-SessionEnvironment
+    $cmd = Get-UvCommand
+    if (-not $cmd) {
+        throw "uv installed but neither 'uv' nor 'uvx' is on PATH - tried: $($attempted -join ', '). Open a new shell and re-run this item."
+    }
+    $script:Summary.Installed++
+    Write-Ok "uv installed via 'pip install --user uv' ($($cmd.Source))"
 }
 
 # --- Detection helpers -------------------------------------------------------
@@ -292,8 +431,26 @@ function Get-ClaudePlugins {
                     # on the bare name. Let an enabled copy win over a disabled one -
                     # plain last-write-wins would report 'superpowers' as disabled just
                     # because the disabled duplicate sorts later by id.
-                    if ($map.ContainsKey($name) -and $map[$name].Enabled -and -not $p.enabled) { continue }
-                    $map[$name] = [pscustomobject]@{ Id = $p.id; Version = $p.version; Enabled = $p.enabled }
+                    $bits = "$($p.id)".Split('@')
+                    $mkt = if ($bits.Count -gt 1) { $bits[1] } else { '' }
+                    # Every marketplace this bare name is installed from, accumulated
+                    # across the duplicates the map itself collapses. The bare name is
+                    # not a unique key: 'github' is published BOTH by this repo (a
+                    # gh-CLI skill for branch protection) and by
+                    # anthropics/claude-plugins-official (the GitHub MCP server), and
+                    # Claude Code holds both at once keyed on 'name@marketplace'.
+                    # Without this list Install-ClaudePlugin read one as proof the
+                    # other was present and skipped it while printing "already
+                    # installed" - the SKIP line IS the success path, so nothing
+                    # downstream could catch it.
+                    $seen = @()
+                    if ($map.ContainsKey($name)) { $seen = @($map[$name].Marketplaces) }
+                    if ($mkt -and ($seen -notcontains $mkt)) { $seen += $mkt }
+                    if ($map.ContainsKey($name) -and $map[$name].Enabled -and -not $p.enabled) {
+                        $map[$name].Marketplaces = $seen
+                        continue
+                    }
+                    $map[$name] = [pscustomobject]@{ Id = $p.id; Version = $p.version; Enabled = $p.enabled; Marketplaces = $seen }
                 }
             }
         } catch {
@@ -344,6 +501,31 @@ function Add-McpServer {
     )
     if (-not (Test-ClaudeAvailable)) {
         throw "claude not found on PATH in this session - open a new shell and re-run this script."
+    }
+    # `claude mcp add <name> -- <cmd> <args...>` WRITES CONFIG AND NEVER INVOKES <cmd>.
+    # So without this check every registration below reported "added MCP server 'x'"
+    # whether or not <cmd> exists, and the run succeeded for a server that can never
+    # start. Nothing in this script reads Connected/Failed back out of
+    # `claude mcp list` - Get-ClaudeMcpServers takes the NAME off each line and
+    # nothing else - so there was no second chance to notice.
+    #
+    # Checked BEFORE the already-registered skip, not after: a registration made
+    # blind on an earlier run is exactly as broken as one made blind now, and
+    # skipping it would print "already registered" over a server that cannot start.
+    #
+    # Only the launcher is checked, never the package behind it: `npx -y @scope/pkg`
+    # resolves its package at first launch and asking here would mean a network call.
+    #
+    # The -Url form gets no such check, and that is deliberate rather than an
+    # omission: those rows register an endpoint, so there is no executable whose
+    # absence could be detected, and the equivalent check would make this installer's
+    # success depend on the network being up at install time.
+    if (-not $Url) {
+        $launcher = @($CommandArgs) | Select-Object -First 1
+        if ($launcher -and -not (Get-Command $launcher -ErrorAction SilentlyContinue)) {
+            Write-WarnErr "not registering MCP server '$Name': its launch command '$launcher' does not resolve on PATH in this session. 'claude mcp add' records a command without running it, so registering now would report success for a server that cannot start. Install '$launcher' (the prerequisites item installs Node.js, which provides npx) and re-run."
+            throw "MCP server '$Name' not registered - '$launcher' is not on PATH."
+        }
     }
     if (Test-McpServerRegistered $Name) {
         Write-Skip "MCP server '$Name' already registered"
@@ -621,7 +803,11 @@ function Add-PluginToCache {
     param([string]$Spec, [string]$Version)
     $name = $Spec.Split('@')[0]
     $cache = Get-ClaudePlugins
-    $cache[$name] = [pscustomobject]@{ Id = $Spec; Version = $Version; Enabled = $true }
+    $bits = $Spec.Split('@')
+    $seen = @()
+    if ($cache.ContainsKey($name)) { $seen = @($cache[$name].Marketplaces) }
+    if ($bits.Count -gt 1 -and ($seen -notcontains $bits[1])) { $seen += $bits[1] }
+    $cache[$name] = [pscustomobject]@{ Id = $Spec; Version = $Version; Enabled = $true; Marketplaces = $seen }
 }
 
 function Enable-ClaudePlugin {
@@ -665,7 +851,9 @@ function Enable-ClaudePlugin {
 
 function Install-ClaudePlugin {
     # $Spec is 'name@marketplace'. Detection is on the bare name, so a plugin already
-    # installed from a *different* marketplace counts as present and is not duplicated.
+    # installed from the SAME marketplace counts as present and is not duplicated -
+    # but one installed from a DIFFERENT marketplace no longer does, because the same
+    # bare name can belong to two unrelated plugins. See Get-ClaudePlugins.
     #
     # Both preference variables are shadowed function-locally, as everywhere else on
     # this path: this function reads $LASTEXITCODE to decide whether an update failed
@@ -675,7 +863,17 @@ function Install-ClaudePlugin {
     $ErrorActionPreference = 'Continue'
     $PSNativeCommandUseErrorActionPreference = $false
     $name = $Spec.Split('@')[0]
+    $wantMkt = if ($Spec -match '@') { $Spec.Substring($Spec.IndexOf('@') + 1) } else { '' }
     $existing = (Get-ClaudePlugins)[$name]
+    # A spec naming one marketplace used to be satisfied by a plugin installed from a
+    # different one - so adding 'github@claude-plugins-official' to a machine that
+    # already has this repo's own 'github' skill printed "plugin 'github' already
+    # installed" and installed nothing. An empty $wantMkt keeps the old bare-name
+    # behaviour, which is what every spec without an '@' relies on.
+    if ($existing -and $wantMkt -and (@($existing.Marketplaces) -notcontains $wantMkt)) {
+        Write-Warn2 "plugin '$name' is installed from $((@($existing.Marketplaces) | Where-Object { $_ }) -join ', '), not from '$wantMkt' - two marketplaces publish different plugins under this one bare name. Installing '$Spec' alongside it."
+        $existing = $null
+    }
     if ($existing) {
         if ($NoUpdate) {
             Write-Skip "plugin '$name' already installed ($($existing.Id), version $($existing.Version))"
@@ -784,7 +982,7 @@ $script:Catalog = @(
     [pscustomobject]@{ Key = 'prereqs';           Default = $true;  Name = 'Prerequisites: Chocolatey + git, awscli, nodejs, python (needs Administrator)' }
     [pscustomobject]@{ Key = 'cli';               Default = $true;  Name = 'Claude Code CLI (@anthropic-ai/claude-code) + PATH export + update check' }
     [pscustomobject]@{ Key = 'own-skills';        Default = $true;  Name = "This repo's marketplace + its skills" }
-    [pscustomobject]@{ Key = 'team';              Default = $true;  Name = 'Team plugins: superpowers, frontend-design, excalidraw-generator' }
+    [pscustomobject]@{ Key = 'team';              Default = $true;  Name = 'Team plugins: superpowers, frontend-design, excalidraw-generator, github' }
     [pscustomobject]@{ Key = 'find-skills';       Default = $true;  Name = 'find-skills skill (vercel-labs/skills)' }
     [pscustomobject]@{ Key = 'community';         Default = $true;  Name = 'Community marketplaces + plugins (adhd-output-style, azure-tools, voltagent, ...)' }
     [pscustomobject]@{ Key = 'claude-code-setup'; Default = $true;  Name = 'claude-code-setup plugin (anthropics/claude-plugins-official)' }
@@ -849,7 +1047,7 @@ $script:SkillCatalog = @(
     [pscustomobject]@{ Key = 'claude-memories-canvas';  Selected = $true; Name = 'claude-memories-canvas  - claude-memories vault: wiki/maps .canvas conventions' }
     [pscustomobject]@{ Key = 'claude-memories-vault';   Selected = $true; Name = 'claude-memories-vault   - claude-memories vault: layout, frontmatter, write lock' }
     [pscustomobject]@{ Key = 'cloudflare';              Selected = $true; Name = 'cloudflare              - Cloudflare v4: DNS, WAF, cache, Workers, Zero Trust' }
-    [pscustomobject]@{ Key = 'doc-builder';             Selected = $true; Name = 'doc-builder             - Reports + SOPs -> DOCX/PDF via Word, brand pack sets the style' }
+    [pscustomobject]@{ Key = 'doc-builder';             Selected = $true; Name = 'doc-builder             - Reports + SOPs -> DOCX/PDF via Word or LibreOffice, brand pack sets the style' }
     [pscustomobject]@{ Key = 'drata';                   Selected = $true; Name = 'drata                   - Drata: controls, monitors, evidence, audit prep' }
     [pscustomobject]@{ Key = 'exchange-mailbox-cleanup';Selected = $true; Name = 'exchange-mailbox-cleanup - M365 offboarding walkthrough: hold, preserve, delete, export' }
     [pscustomobject]@{ Key = 'exchange-mailbox-restore';Selected = $true; Name = 'exchange-mailbox-restore - M365 restore walkthrough: triage, then one of five paths' }
@@ -906,6 +1104,13 @@ $script:TeamCatalog = @(
     [pscustomobject]@{ Key = 'superpowers';          Selected = $true; Name = 'superpowers             - Workflow skills: brainstorm, plans, TDD, code review'; Spec = 'superpowers@claude-plugins-official|anthropics/claude-plugins-official|claude-plugins-official' }
     [pscustomobject]@{ Key = 'frontend-design';      Selected = $true; Name = "frontend-design         - Anthropic's frontend design skill";                   Spec = 'frontend-design@claude-plugins-official|anthropics/claude-plugins-official|claude-plugins-official' }
     [pscustomobject]@{ Key = 'excalidraw-generator'; Selected = $true; Name = 'excalidraw-generator    - Excalidraw diagrams from a description';              Spec = 'excalidraw-generator@excalidraw-generator|lexiaoyao20/excalidraw-generator|excalidraw-generator' }
+    # ANTHROPIC'S GitHub plugin (the official GitHub MCP server: issues, pull
+    # requests, reviews), NOT this repo's own 'github' skill. This repo's one is
+    # already installed by the own-skills row - it is in $script:SkillCatalog - so
+    # adding that here would be a second registration of something already installed,
+    # which is a no-op that reads like a fix. Same bare name, different plugins; see
+    # Install-ClaudePlugin for what that used to cost.
+    [pscustomobject]@{ Key = 'github';               Selected = $true; Name = "github                  - Anthropic's GitHub MCP server: issues, PRs, reviews";  Spec = 'github@claude-plugins-official|anthropics/claude-plugins-official|claude-plugins-official' }
 )
 
 # --- Community plugins (menu item 6) ------------------------------------------
@@ -920,6 +1125,13 @@ $script:CommunityCatalog = @(
     [pscustomobject]@{ Key = 'ppt-master';              Selected = $true; Name = 'ppt-master              - PowerPoint deck generation';                Spec = 'ppt-master@ppt-master|hugohe3/ppt-master|ppt-master' }
     [pscustomobject]@{ Key = 'voltagent-infra';   Selected = $true; Name = 'voltagent-infra         - VoltAgent DevOps/cloud subagents: k8s, Terraform, AWS/Azure, SRE'; Spec = 'voltagent-infra@voltagent-subagents|VoltAgent/awesome-claude-code-subagents|voltagent-subagents' }
     [pscustomobject]@{ Key = 'voltagent-qa-sec';  Selected = $true; Name = 'voltagent-qa-sec        - VoltAgent testing/security subagents: review, pentest, QA';      Spec = 'voltagent-qa-sec@voltagent-subagents|VoltAgent/awesome-claude-code-subagents|voltagent-subagents' }
+    # The LOCAL NAME of anthropics/claude-plugins-community is 'claude-community', NOT
+    # 'claude-plugins-community'. That is what the repo publishes itself as, it is the
+    # key under ~/.claude/plugins/known_marketplaces.json, and it is what
+    # 'plugin@marketplace' has to match. Writing the repo name in the last field
+    # instead would make Test-MarketplaceInstalled look for a name that never exists,
+    # so this row would re-add the marketplace on EVERY run while reporting success.
+    [pscustomobject]@{ Key = 'eli5';              Selected = $true; Name = "eli5                    - Explain any topic like I'm 5: big visuals, few words";           Spec = 'eli5@claude-community|anthropics/claude-plugins-community|claude-community' }
 )
 
 # --- Sub-picker groups --------------------------------------------------------
@@ -928,7 +1140,7 @@ $script:CommunityCatalog = @(
 # taking selected and total.
 $script:Groups = @(
     [pscustomobject]@{ MenuKey = 'own-skills'; Single = 'skill';   Catalog = { $script:SkillCatalog };     Flag = '-Skills';    Noun = 'skills';            Title = 'Pick individual skills from this repo'; Label = "This repo's marketplace + {0} of {1} skills  >" }
-    [pscustomobject]@{ MenuKey = 'team'; Single = 'team plugin';         Catalog = { $script:TeamCatalog };      Flag = '-Team';      Noun = 'team plugins';      Title = 'Pick team plugins';                     Label = 'Team plugins: {0} of {1} (superpowers, frontend-design, excalidraw)  >' }
+    [pscustomobject]@{ MenuKey = 'team'; Single = 'team plugin';         Catalog = { $script:TeamCatalog };      Flag = '-Team';      Noun = 'team plugins';      Title = 'Pick team plugins';                     Label = 'Team plugins: {0} of {1} (superpowers, frontend-design, excalidraw, github)  >' }
     [pscustomobject]@{ MenuKey = 'community'; Single = 'community plugin';    Catalog = { $script:CommunityCatalog }; Flag = '-Community'; Noun = 'community plugins'; Title = 'Pick community plugins';                Label = 'Community marketplaces + {0} of {1} plugins  >' }
     [pscustomobject]@{ MenuKey = 'repo-plugins'; Single = 'plugin'; Catalog = { $script:PluginCatalog };    Flag = '-Plugins';   Noun = 'plugins';           Title = "Pick plugins from this repo";           Label = "This repo's plugins: {0} of {1} (crew, gizmoduck, localgpu, obsidian-vault, rule-of-two)  >" }
 )
@@ -1743,6 +1955,138 @@ if (Test-Selected 'cli') {
     }
 }
 
+# --- Skill-level Python dependencies -----------------------------------------
+# The .sh half's run_skill_preflights, same behaviour and the same user-facing text.
+# `claude plugin install` copies a skill's files and nothing else, so a skill whose
+# scripts import third-party packages - doc-builder needs python-docx, PyMuPDF,
+# Pillow, numpy and, here, pywin32 - installed "successfully" and then failed on the
+# first document with ModuleNotFoundError. Neither half of this pair had ever run a
+# skill's requirements.txt or its preflight: grep for either name returned zero hits
+# outside comments, on every OS.
+#
+# This RUNS each selected skill's own scripts\preflight.py in that script's
+# REPORT-ONLY mode - no --install, and stdin redirected from an empty file so its
+# confirm() prompt cannot fire and cannot hang this installer - then reprints what is
+# missing on STDERR with the exact command to fix it. It installs nothing, for two
+# reasons that are separate and both sufficient:
+#
+#   1. PEP 668. On a managed interpreter `pip install --user` exits 1 with
+#      externally-managed-environment. This pair already refuses to pass
+#      --break-system-packages for uv; overriding a distribution's own guard to
+#      install a document library is no more this script's call to make than it was
+#      there. Windows is not usually the PEP 668 case, and the two halves still say
+#      the same thing here on purpose - a user reading the Linux docs and running the
+#      Windows script must not get a different promise.
+#   2. `preflight.py --venv` WOULD succeed under PEP 668, and is still the wrong
+#      thing: it installs into <skill>\.venv and prints "run the scripts with this
+#      interpreter". Nothing makes that happen - the skill names the venv as an
+#      option, not as its default - so the packages would be installed, unused, and
+#      the skill would still fail while this step reported success. That is this
+#      repo's named recurring bug, and it is why this step reports rather than
+#      installs.
+#
+# It never fails the run.
+function Resolve-PythonCommand {
+    # python3, then python, then py. The caller WARNS on a failure here rather than
+    # carrying on with an empty string - a silently absent interpreter is how a check
+    # ends up reporting that it ran. 'py' is the Windows launcher and is last because
+    # it can resolve to an interpreter the skill's scripts were not installed under.
+    foreach ($name in @('python3', 'python', 'py')) {
+        $cmd = Get-Command $name -ErrorAction SilentlyContinue
+        if ($cmd) { return $cmd.Source }
+    }
+    return $null
+}
+
+function Get-SkillPreflightPath {
+    # The INSTALLED copy, wherever `claude plugin install` put it - the cache path
+    # carries the version ("<mkt>\<skill>\1.2.1\scripts\preflight.py") and is not
+    # worth reconstructing, so it is searched for, the same way Install-NotifyConfig
+    # searches for notify's config.example.json. The cache is preferred over the
+    # marketplace clone because the cache is the copy Claude actually runs.
+    param([string]$Skill)
+    $root = Join-Path (Get-ClaudeConfigRoot) 'plugins'
+    foreach ($base in @((Join-Path $root 'cache'), $root)) {
+        if (-not (Test-Path $base)) { continue }
+        $hit = Get-ChildItem -Path $base -Filter 'preflight.py' -Recurse -File -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -match "[\\/]$([regex]::Escape($Skill))[\\/]" } | Select-Object -First 1
+        if ($hit) { return $hit.FullName }
+    }
+    return $null
+}
+
+function Invoke-SkillPreflights {
+    $py = $null
+    $checked = 0
+    foreach ($sk in $script:SkillCatalog) {
+        if (-not $sk.Selected) { continue }
+        $pf = Get-SkillPreflightPath $sk.Key
+        if (-not $pf) { continue }
+        $checked++
+        if (-not $py) {
+            $py = Resolve-PythonCommand
+            if (-not $py) {
+                Write-WarnErr "none of python3, python or py is on PATH, so '$($sk.Key)' and every other skill's Python dependencies are UNCHECKED - not absent, unchecked. Install Python 3 and re-run this script, or run '$pf' by hand."
+                return
+            }
+        }
+        $tmp = [IO.Path]::GetTempPath()
+        $inFile  = Join-Path $tmp ([IO.Path]::GetRandomFileName())
+        $outFile = Join-Path $tmp ([IO.Path]::GetRandomFileName())
+        $errFile = Join-Path $tmp ([IO.Path]::GetRandomFileName())
+        # An EMPTY file as stdin, not an inherited console: preflight.py offers to
+        # install what is missing and its confirm() reads stdin. A tty there would
+        # stop this installer dead on a prompt nobody is watching for.
+        New-Item -ItemType File -Path $inFile -Force | Out-Null
+        try {
+            $proc = Start-Process -FilePath $py -ArgumentList @("`"$pf`"") -NoNewWindow -Wait -PassThru `
+                -RedirectStandardInput $inFile -RedirectStandardOutput $outFile -RedirectStandardError $errFile
+            $rc = $proc.ExitCode
+            $text = @()
+            foreach ($f in @($outFile, $errFile)) {
+                if (Test-Path $f) { $text += @(Get-Content -Path $f -ErrorAction SilentlyContinue) }
+            }
+            switch ($rc) {
+                0 {
+                    # The "already installed" branch. Idempotent by construction: this
+                    # step reads the machine and writes nothing, so a second run says
+                    # the same thing.
+                    Write-Skip "$($sk.Key): Python dependencies already satisfied"
+                }
+                3 {
+                    # preflight.py's own exit code for "packages are missing and I did
+                    # not install them".
+                    Write-WarnErr "$($sk.Key): Python dependencies are MISSING. This script does not install them; see reason 1 and 2 in the comment above Invoke-SkillPreflights."
+                    foreach ($line in $text) {
+                        if ("$line" -match '^\s\sMISSING\s+(\S+)') {
+                            [Console]::Error.WriteLine("        missing: $($Matches[1])")
+                        }
+                    }
+                    $req = Join-Path (Split-Path -Parent (Split-Path -Parent $pf)) 'requirements.txt'
+                    # The .sh half's list starts at (a) with the distribution's own
+                    # packages ('sudo apt install python3-docx ...'). There is no
+                    # counterpart to that here, so this list starts at (b) and the
+                    # letters still line up between the two halves.
+                    Write-WarnErr "$($sk.Key): fix it with ONE of - (b) a virtual environment the skill owns: '$py `"$pf`" --venv', then run its scripts with the interpreter it names; or (c) '$py -m pip install --user -r `"$req`"', which fails on a PEP 668 host unless you add --break-system-packages, which this script will not do for you."
+                }
+                default {
+                    Write-WarnErr "$($sk.Key): its preflight exited $rc, so its Python dependencies are UNCHECKED - not absent, unchecked. Its last lines were:"
+                    foreach ($line in ($text | Select-Object -Last 5)) {
+                        [Console]::Error.WriteLine("        $line")
+                    }
+                }
+            }
+        } finally {
+            foreach ($f in @($inFile, $outFile, $errFile)) {
+                Remove-Item -Path $f -Force -ErrorAction SilentlyContinue
+            }
+        }
+    }
+    if ($checked -eq 0) {
+        Write-Skip "no selected skill ships a scripts/preflight.py - nothing to check"
+    }
+}
+
 # Everything from here to the MCP servers needs the claude CLI on PATH.
 $claudeItems = @('own-skills', 'team', 'find-skills', 'community', 'claude-code-setup', 'supabase', 'repo-plugins')
 $needsClaude = @($claudeItems | Where-Object { Test-Selected $_ }).Count -gt 0
@@ -1773,6 +2117,11 @@ if (Test-Selected 'own-skills') {
     # so it gets a post-install step when the user asked for it up front.
     if ($script:NotifySetupChoice -and (Test-SkillSelected 'notify')) {
         Invoke-Step "Set up the notify skill" { Install-NotifyConfig }
+    }
+
+    # After the install, never before: a preflight reads the copy that landed.
+    Invoke-Step "Check skill Python dependencies (report only - installs nothing)" {
+        Invoke-SkillPreflights
     }
 }
 
@@ -1879,12 +2228,11 @@ if (Test-Selected 'task-observer') {
 # --- 9-12. Optional MCP servers ----------------------------------------------
 if (Test-Selected 'aws-mcp') {
     Invoke-Step "Install AWS MCP server" {
-        if (-not (Get-Command uv -ErrorAction SilentlyContinue) -and -not (Get-Command uvx -ErrorAction SilentlyContinue)) {
-            if (-not (Get-Command pip -ErrorAction SilentlyContinue)) {
-                throw "pip not found - install Python first (choco install python), then re-run to install uv."
-            }
-            pip install --user uv
-            Sync-SessionEnvironment
+        # Was an unchecked `pip install --user uv` whose result this step ignored:
+        # Add-McpServer records a command without running it, so the run continued and
+        # registered a server whose uvx does not exist.
+        try { Install-Uv } catch {
+            throw "not registering aws-api - 'uvx awslabs.aws-api-mcp-server@latest' needs uv. $($_.Exception.Message)"
         }
         if (-not (Test-ClaudeAvailable)) {
             throw "claude not found on PATH in this session - open a new shell and re-run this script."
@@ -1922,25 +2270,14 @@ if (Test-Selected 'aws-docs-mcp') {
 # like something that bills.
 if (Test-Selected 'aws-pricing-mcp') {
     Invoke-Step "Install AWS Pricing MCP server" {
-        if (-not (Get-Command uv -ErrorAction SilentlyContinue) -and -not (Get-Command uvx -ErrorAction SilentlyContinue)) {
-            if (-not (Get-Command pip -ErrorAction SilentlyContinue)) {
-                throw "pip not found - install Python first (choco install python), then re-run to install uv."
-            }
-            # Checked, not merely attempted. 'claude mcp add' records a command
-            # without running it, so a failed pip install followed by an
-            # unconditional add registers a server whose executable is absent,
-            # and the failure surfaces later inside a session with nothing
-            # pointing back here. $LASTEXITCODE is the only signal pip gives -
-            # it is a native command, so a non-zero exit is not a PS error and
-            # does not throw on its own.
-            pip install --user uv
-            if ($LASTEXITCODE -ne 0) {
-                throw "'pip install --user uv' failed (exit $LASTEXITCODE) - not registering aws-pricing."
-            }
-            Sync-SessionEnvironment
-            if (-not (Get-Command uv -ErrorAction SilentlyContinue) -and -not (Get-Command uvx -ErrorAction SilentlyContinue)) {
-                throw "uv installed but neither 'uv' nor 'uvx' is on PATH - not registering aws-pricing. Open a new shell and re-run this item."
-            }
+        # Checked, not merely attempted. Add-McpServer records a command without
+        # running it, so an install that failed followed by an unconditional add
+        # registers a server whose executable is absent, and the failure surfaces
+        # later inside a session with nothing pointing back here. Install-Uv checks
+        # its own result and only returns once uv or uvx actually resolves; the
+        # aws-api row above now goes through the same function.
+        try { Install-Uv } catch {
+            throw "not registering aws-pricing - 'uvx awslabs.aws-pricing-mcp-server@latest' needs uv. $($_.Exception.Message)"
         }
         Add-McpServer -Name 'aws-pricing' -CommandArgs @('uvx', 'awslabs.aws-pricing-mcp-server@latest') `
             -Note "Needs AWS credentials whose role allows pricing:*. The Price List calls are free."
@@ -2310,13 +2647,10 @@ if (Test-Selected 'graphify') {
         if ($existing) {
             Write-Skip "graphify already installed ($($existing.Source))"
         } else {
-            if (-not (Get-Command uv -ErrorAction SilentlyContinue) -and -not (Get-Command uvx -ErrorAction SilentlyContinue)) {
-                if (-not (Get-Command pip -ErrorAction SilentlyContinue)) {
-                    throw "pip not found - install Python first (choco install python), then re-run to install graphify."
-                }
-                pip install --user uv
-                Sync-SessionEnvironment
+            try { Install-Uv } catch {
+                throw "not installing graphify - 'uv tool install graphifyy' needs uv. $($_.Exception.Message)"
             }
+            # graphify needs uv itself, not just uvx: Install-Uv is satisfied by either.
             if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
                 throw "uv still not found after attempting to install it - install it manually (https://docs.astral.sh/uv) and re-run."
             }
@@ -2408,10 +2742,21 @@ if (Test-Selected 'ms-mcp') {
         $writesEnabled = $env:MCP_MS_ALLOW_WRITES -eq '1'
         if ($writesEnabled) { $envVars = @{ MCP_MS_ALLOW_WRITES = '1' } }
 
+        # Counted rather than left to propagate, the same shape the .sh half uses:
+        # one server failing still lets the other three be attempted AND still fails
+        # the step. The bare calls this replaces threw out of the whole block on the
+        # first failure, so the trailing guidance never printed and the operator was
+        # told about one broken server when four were.
+        $mcpFailures = 0
         if ($haveAdmin) {
-            Add-McpServer -Name 'mcp-msgraph' -CommandArgs @('npx', '-y', '@badali404/mcp-msgraph@latest') -EnvVars $envVars
-            Add-McpServer -Name 'mcp-intune' -CommandArgs @('npx', '-y', '@badali404/mcp-intune@latest') -EnvVars $envVars
-            Add-McpServer -Name 'mcp-o365-admin' -CommandArgs @('npx', '-y', '@badali404/mcp-o365-admin@latest') -EnvVars $envVars
+            foreach ($srv in @('mcp-msgraph', 'mcp-intune', 'mcp-o365-admin')) {
+                try {
+                    Add-McpServer -Name $srv -CommandArgs @('npx', '-y', "@badali404/$srv@latest") -EnvVars $envVars
+                } catch {
+                    Write-WarnErr $_.Exception.Message
+                    $mcpFailures++
+                }
+            }
             if (-not $haveAdminSecret) {
                 Write-Host "        Registered via the Azure CLI fallback (no MS_ADMIN_* set) - each server will"
                 Write-Host "        authenticate as whoever is signed in with 'az login' wherever it actually runs."
@@ -2420,7 +2765,12 @@ if (Test-Selected 'ms-mcp') {
             Write-Skip "mcp-msgraph/mcp-intune/mcp-o365-admin: no MS_ADMIN_* credentials and no 'az login' session"
         }
         if ($haveUser) {
-            Add-McpServer -Name 'mcp-o365-user' -CommandArgs @('npx', '-y', '@badali404/mcp-o365-user@latest') -EnvVars $envVars
+            try {
+                Add-McpServer -Name 'mcp-o365-user' -CommandArgs @('npx', '-y', '@badali404/mcp-o365-user@latest') -EnvVars $envVars
+            } catch {
+                Write-WarnErr $_.Exception.Message
+                $mcpFailures++
+            }
         } else {
             Write-Skip "mcp-o365-user: no MS_USER_CLIENT_ID given"
         }
@@ -2434,6 +2784,9 @@ if (Test-Selected 'ms-mcp') {
             Write-Host "        or per-server by hand: claude mcp remove <name>; claude mcp add <name> -e MCP_MS_ALLOW_WRITES=1 -- npx -y @badali404/<pkg>@latest"
         }
         Write-Ok "Registered via 'npx -y @badali404/<pkg>@latest' - no secrets were written to ~/.claude.json. If not relying on 'az login', set MS_ADMIN_TENANT_ID/MS_ADMIN_CLIENT_ID/MS_ADMIN_CLIENT_SECRET and/or MS_USER_CLIENT_ID (+ optional MS_USER_TENANT_ID) in `$PROFILE or wherever 'claude' itself gets launched, or the servers relying on them will fail to authenticate. Verify auth with 'npx -y @badali404/mcp-msgraph@latest doctor' (same pattern per server) - it reports which auth chain link actually authenticated and whether writes are enabled."
+        if ($mcpFailures -gt 0) {
+            throw "$mcpFailures Microsoft MCP server(s) were not registered - see the WARN lines above."
+        }
     }
 }
 

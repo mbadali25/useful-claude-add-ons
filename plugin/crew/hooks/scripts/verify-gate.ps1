@@ -5,14 +5,19 @@
 # stable session id, so a session-scoped claim taken on turn 1 would suppress
 # every later turn's gate -- a 600-second gate that silently never runs again
 # reads as "the work passed", which is worse than the double-run a claim
-# would prevent. Both flavours are registered for every Stop so a
-# single-shell machine always gets exactly one; on a machine with both
-# shells they race for the same turn's gate. Rather than statically deferring
-# to one flavour (which would leave this script permanently unreachable on
-# any Windows box with Git Bash installed - nearly all of them - and its
-# incident/config lane untestable), a short-lived per-turn lock lets
-# whichever process gets there first do the real work while the other backs
-# off; see the lock right before the expensive part below.
+# would prevent. Both flavours are registered for every Stop; which one runs
+# is decided by the flavour guard below, on the OS, so a Windows box with Git
+# Bash installed - nearly all of them - still reaches THIS file and its
+# incident/config lane stays testable.
+#
+# The short-lived per-turn lock right before the expensive part below STAYS.
+# The cross-flavour race it was written for cannot happen any more, but the
+# same-flavour one can: a hand-run `pwsh verify-gate.ps1 -All` against a repo
+# whose Stop hook is already running the map, or a settings file that
+# registers this hook twice, both put two pwsh processes on one turn. Neither
+# is addressed by the flavour guard. (`/crew:verify --all` runs the BASH
+# flavour - commands/verify.md:72 - so it is not one of these cases; only
+# -Price names the .ps1, at commands/verify.md:114.)
 param(
   # Prints the bash path Resolve-CrewBash would use and exits 0 without
   # touching stdin, .crew/, or running any check. This script's only
@@ -44,6 +49,17 @@ param(
   [string]$PriceTarget = ".crew/verify.json",
   [switch]$PriceForce
 )
+
+# Flavour guard. Both flavours are registered for every event, so on a host
+# that has BOTH interpreters both would otherwise run. Stand down only when
+# we can positively prove this is not Windows.
+#
+# $env:OS is 'Windows_NT' on BOTH Windows PowerShell 5.1 and PowerShell 7,
+# and unset on Linux/macOS. A bare `if (-not $IsWindows)` is WRONG: $IsWindows
+# does not exist in 5.1, so it is $null there, `-not $null` is $true, and the
+# hook stands down on the one platform it exists for. crew has already shipped
+# that bug once - the guard stood down on Windows and blocked nothing there.
+if ($env:OS -ne 'Windows_NT') { exit 0 }
 
 if ($Price) {
   $root0 = if ($env:CLAUDE_PROJECT_DIR) { $env:CLAUDE_PROJECT_DIR } else { "." }

@@ -44,7 +44,10 @@ import argparse
 import copy
 import glob
 import json
+import ntpath
 import os
+import posixpath
+import re
 import sys
 
 SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -61,6 +64,61 @@ MASTERS_DIR_ENV = "DOC_BUILDER_MASTERS_DIR"
 # climbs. Four reaches `cache/` from `cache/<marketplace>/doc-builder/<version>/`
 # with one to spare; a drive root is never searched.
 CACHE_CLIMB = 4
+
+# A brand pack is authored on whoever's machine measured the values (see
+# solomon-doc-builder/assets/brand.json's own _comment) and then committed, so
+# a Windows contributor's `C:\repos\...` has to resolve correctly when the
+# same pack is read on Linux, and vice versa. `os.path.isabs()` only
+# recognises the CURRENT OS's own absolute form, so without this a
+# Windows-authored drive path read on POSIX is neither absolute nor relative
+# to anything sensible - `_rel()` used to join it onto `assets/` and produce
+# a nonsense path that `os.path.isdir()` then correctly, but misleadingly,
+# reported as simply "not found".
+_WINDOWS_DRIVE_ABS_RE = re.compile(r"^[A-Za-z]:[\\/]")
+
+# A rooted, drive-RELATIVE Windows path: `\\bare\\path`, one leading
+# backslash, no drive. Matched by its own regex and NOT by `ntpath.isabs()`,
+# because Python 3.13 changed `ntpath.isabs()` to return False for exactly
+# this shape (gh-44626), so a predicate built on it gives one answer on 3.11
+# and 3.12 and the opposite on 3.13+. Same input, same result on every
+# version is the whole point of the helper.
+_WINDOWS_ROOTED_RE = re.compile(r"^\\")
+
+
+def abs_or_join(value, base):
+    """Resolve `value` against `base` treating "absolute" as OS-independent.
+
+    `os.path.isabs()` only recognises the CURRENT OS's own absolute form, so on
+    POSIX a Windows-authored `C:\\repos\\x` is neither absolute nor meaningfully
+    relative: `os.path.join(base, value)` appends it as a single path SEGMENT
+    and yields `<base>/C:\\repos\\x` - one filename containing a drive letter, a
+    colon and backslashes. Nothing raises, so every caller that only stats or
+    writes the result reports success on a path nobody will ever look at.
+
+    Per this repo's convention (CLAUDE.md), a Windows drive root and the Linux
+    root are the same machine, different OS, so the drive letter is dropped and
+    the rest read as POSIX-absolute: `C:\\repos\\x` -> `/repos/x`.
+
+    This is the predicate `Brand._rel()` was fixed with at `67f6fdb5`. It lives
+    here, at module level, because three sibling call sites
+    (`build_sop.resolve_output`, `build_sop.build_from_spec`'s image branch, and
+    `check_conformance._load_spec_map`) were still using the bare
+    `os.path.isabs()` form the fix replaced. A fourth copy of the predicate is
+    how a fifth call site gets written; there is one copy, and it is this one.
+
+    `value` is assumed non-empty and already expanded - `_rel()` does its own
+    `expandvars`/`expanduser` first, and a spec's paths are deliberately NOT
+    expanded, so that step stays with the caller that wants it.
+    """
+    if _WINDOWS_DRIVE_ABS_RE.match(value):
+        if os.name == "nt":
+            return os.path.normpath(value)
+        return posixpath.normpath("/" + ntpath.splitdrive(value)[1].replace("\\", "/").lstrip("/"))
+    if os.name != "nt" and _WINDOWS_ROOTED_RE.match(value):
+        # A bare `\like\this` (rooted, no drive) - still absolute, not
+        # relative to `base`. Covers the `\\server\share` UNC form too.
+        return posixpath.normpath(value.replace("\\", "/"))
+    return value if os.path.isabs(value) else os.path.normpath(os.path.join(base, value))
 
 
 class BrandError(SystemExit):
@@ -233,11 +291,23 @@ class Brand:
         return self.data["sop"]
 
     def _rel(self, value):
-        """A relative path in brand.json is relative to the assets/ directory."""
+        """A relative path in brand.json is relative to the assets/ directory.
+
+        An absolute path is absolute on whichever OS authored it, not just the
+        one resolve_brand.py happens to be running on. A Windows drive path
+        (`C:\\repos\\...`) is absolute even when read on Linux; treating it as
+        relative here - which `os.path.isabs()` alone would do, since it only
+        knows POSIX absolute paths - silently joined it onto `assets/` and
+        produced a path that looked plausible but pointed nowhere real.
+        Per this repo's own convention (CLAUDE.md), a Windows drive root and
+        the Linux root are the same machine, different OS, so the drive
+        letter is dropped and the rest read as POSIX-absolute:
+        `C:\\repos\\x` -> `/repos/x`.
+        """
         if not value:
             return None
         value = os.path.expandvars(os.path.expanduser(str(value)))
-        return value if os.path.isabs(value) else os.path.normpath(os.path.join(self.root, value))
+        return abs_or_join(value, self.root)
 
     @property
     def template(self):
@@ -287,6 +357,42 @@ class Brand:
     @property
     def report_output_dir(self) -> str:
         return self.report.get("output_dir") or "reports"
+
+    @property
+    def logo(self) -> dict:
+        return self.data.get("logo") or {}
+
+    def logo_path(self, variant: str):
+        """Absolute path for one logo variant key (`on_light`, `on_dark`,
+        `icon_on_light` or `icon_on_dark`), or None when the pack does not
+        supply it - the neutral pack supplies none, and every caller must
+        render correctly with None. Resolved through `_rel()`, so a pack's
+        logo path is subject to the exact same relative/absolute rules as
+        `template`, `masters_dir` and `assets_dir` - including the Windows
+        drive-path fix, since a logo path is authored and committed the same
+        way those are."""
+        return self._rel(self.logo.get(variant))
+
+    def logo_for(self, background: str):
+        """The wordmark logo that reads correctly on `background`, or None.
+
+        `background` is `"light"` (a white or pale page) or `"dark"` (a navy
+        or otherwise dark band) - never the logo's own colour, which is the
+        opposite of the page it sits on: the `-on-dark` file is the wordmark
+        recoloured to read on a DARK background, so a caller rendering a navy
+        band must ask for `logo_for("dark")` to get it. Getting this backwards
+        is invisible in the way a broken image reference is not - the logo is
+        simply the same colour as the page it sits on.
+        """
+        if background not in ("light", "dark"):
+            raise ValueError(f"background must be 'light' or 'dark', got {background!r}")
+        return self.logo_path(f"on_{background}")
+
+    def icon_for(self, background: str):
+        """The mark-alone icon for `background` - see `logo_for`."""
+        if background not in ("light", "dark"):
+            raise ValueError(f"background must be 'light' or 'dark', got {background!r}")
+        return self.logo_path(f"icon_on_{background}")
 
     def describe(self) -> str:
         return f"brand: {self.name} -- {self.reason} ({self.path})"
@@ -401,9 +507,17 @@ def main(argv=None) -> int:
         masters = brand.masters_dir
         state = "" if not masters else ("" if os.path.isdir(masters) else "  (NOT FOUND on this machine)")
         print(f"masters_dir : {masters or '(none - pass an output path)'}{state}")
-        print(f"assets_dir  : {(brand.assets_dir or '(none)')}")
+        assets = brand.assets_dir
+        astate = "" if not assets else ("" if os.path.isdir(assets) else "  (NOT FOUND on this machine)")
+        print(f"assets_dir  : {assets or '(none)'}{astate}")
         print(f"specs_dir   : {(brand.specs_dir or '(none)')}")
         print(f"reports     : {brand.report_output_dir}/")
+        logo_dark = brand.logo_for("dark")
+        lstate = "" if not logo_dark else ("" if os.path.isfile(logo_dark) else "  (NOT FOUND on this machine)")
+        print(f"logo (dark) : {logo_dark or '(none)'}{lstate}")
+        logo_light = brand.logo_for("light")
+        lstate = "" if not logo_light else ("" if os.path.isfile(logo_light) else "  (NOT FOUND on this machine)")
+        print(f"logo (light): {logo_light or '(none)'}{lstate}")
     return 0
 
 

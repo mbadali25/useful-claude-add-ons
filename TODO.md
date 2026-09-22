@@ -1133,6 +1133,17 @@ than being discovered halfway:
 
 Do not raise `max-module-lines` a third time.
 
+**It was raised a third time, on 2026-09-22, to 3400.** Recorded here rather
+than left contradicting `.pylintrc`, because two files stating opposite rules is
+how the next reader "reconciles" them into whichever one they found first. The
+raise was taken under a CI deadline and it did not close this item -- it
+reopened it. `crew_state.py` is 3376 lines again, nine days after the
+`crew_guards` split was supposed to have settled it, and `plugin/crew/tests/
+sabotage.py` (3342) crossed the old ceiling at the same time, so there are now
+TWO modules owed a split rather than one. `.pylintrc` carries the full reason
+alongside the number. The hazards this entry names are unchanged and still
+apply to whoever does the split.
+
 ## Perplexity is an agent, not a `qa.provider` — the routing half is not done
 
 Opened 2026-09-06 with crew 0.16.23, which added `crew:qa-researcher`
@@ -3219,3 +3230,340 @@ still does not exist anywhere in this repo.
   regression in the scope layer alone is not caught at Stop. Not fixed under
   T-0003 because its scope says "do not touch: the verify map"; add a rule
   (`/crew:verify`) mapping the two scripts and three suites.
+
+## Filed 2026-09-22 by the crew-house-style HTML print-rules developer, not fixed here
+
+- **The four `docs/guides/crew-*.html` guides have no generator and nothing
+  binds them to the house style.** `plugin/crew/tests/test_docs_routing.py`
+  now goes red if the HTML route loses the print rules or the `<thead>`
+  requirement, but nothing asserts the four shipped files still carry them --
+  a hand edit can drop the `@media print` block from
+  `docs/guides/crew-overview.html:20-24` (and its three siblings) and every
+  check stays green. Not fixed here: the brief scoped the regression test to
+  the house style, and a crew test asserting things about repo docs outside
+  `plugin/crew/` couples crew's suite to files that may be deleted.
+
+- **The `.docx` half of the print discipline is inherited, not asserted, and
+  was verified only through LibreOffice.** In the regenerated
+  `docs/guides/crew-*.docx`, `word/document.xml` contains zero `w:keepNext`
+  elements: LibreOffice's HTML import drops `page-break-after:avoid`
+  outright (measured -- adding the same rule outside `@media print` changed
+  nothing). Headings keep with the next paragraph only because
+  `word/styles.xml` defines `Heading1/2/3` as `w:basedOn="Heading"` and
+  `Heading` carries `<w:keepNext/>`. A soffice round-trip to PDF shows no
+  stranded heading, so the inheritance does hold in LibreOffice's layout
+  engine; Microsoft Word was not available here and was not checked. Not
+  blocking: the PDFs are rendered from the HTML by chromium and carry the
+  rules directly.
+
+- **Regenerating those `.docx` files needs a post-processing step that lives
+  in no committed script.** LibreOffice's Writer/Web HTML import resolves
+  `table { width:100% }` against the page width rather than the text column,
+  so every table came out ~3 cm past the right margin (measured:
+  `w:tblW w:w="11339" w:type="dxa"` against a text column of 9638 twips).
+  The fix applied by hand was to restate the section as Letter with 1-inch
+  margins and every `w:tblW` as `5000 pct`, which is what Microsoft Word had
+  emitted for the same CSS in the committed originals. Anyone re-running the
+  conversion without it ships tables running off the paper. Not fixed here:
+  these guides have no build script to put it in, which is the same gap as
+  the first entry.
+
+## Filed 2026-09-22 by the doc-builder LibreOffice-renderer developer, not fixed there
+
+- LibreOffice's HTML importer applies **only simple selectors**, so on the report
+  path it silently drops the table grid
+  (`skills/doc-builder/scripts/build_report.py:166`), the navy header shading
+  (`skills/doc-builder/scripts/build_report.py:168`), the zebra rows
+  (`skills/doc-builder/scripts/build_report.py:170`), the meta-table key shading
+  (`skills/doc-builder/scripts/build_report.py:174`) and the summary-card panels
+  (`skills/doc-builder/scripts/build_report.py:185`). Measured 2026-09-22, LibreOffice 26.2.5.2 on
+  Ubuntu 26.04; the selector-by-selector table is in
+  `skills/doc-builder/references/word-traps.md`, "What LibreOffice silently
+  drops". Not fixed here: the stylesheet's current shape was measured against
+  Word, which stays the reference renderer, and rewriting it into bare classes
+  for LibreOffice would need its own re-measurement on BOTH engines or it trades
+  a flat report on Linux for an unstyled one on Windows. The ticket asked for the
+  reduced fidelity to be stated, and it is, in four places a user reads.
+- `.claude-plugin/marketplace.json`'s `doc-builder` description still reads
+  "through Word", and both install-script catalog rows still read
+  "DOCX/PDF via Word" (`scripts/install-prerequisites.sh:1032`,
+  `scripts/install-prerequisites.ps1:918`). All three are now inaccurate.
+  Not fixed here: the ticket forbids touching `marketplace.json` (another
+  session owns it and the PM applies bumps centrally), and both install scripts
+  are dirty with another session's work. `check-marketplace.py` passes either
+  way, so this blocks nothing - but the three must change together when they do.
+
+## Filed 2026-09-22 by the crew QA-fix developer, not fixed there
+
+- `crew-house-style`'s four `resolve_brand.py` citations are correct today and
+  bound by nothing: `plugin/crew/skills/crew-house-style/SKILL.md:168`
+  (`resolve_brand.py:78-82`, and `:317` on the next line),
+  `plugin/crew/skills/crew-house-style/SKILL.md:170` (`:66-67`) and
+  `plugin/crew/skills/crew-house-style/SKILL.md:185`
+  (`resolve_brand.py:298-317`, and `:301` two lines below). Verified by hand at
+  this commit - all five resolve to what the prose says. The new
+  `test_the_cited_lines_of_the_generator_hold_what_crew_says_they_hold` covers
+  only the two `build_report.py` citations in the `### HTML` route, so the same
+  rot that moved `155-157` to `165-167` would go unnoticed here. Not fixed:
+  binding them needs the three continuation citations (`:317`, `:66-67`,
+  `:301`) rewritten repo-relative first - a bare `:317` cannot be parsed
+  without guessing which file it continues, and CLAUDE.md forbids the bare form
+  for exactly that reason - which is a prose change to a section this ticket's
+  defects do not touch, and it carries its own version bump.
+- The sabotage suite reports 11 STILL GREEN mutations on Linux, all
+  pre-existing and none in `test_docs_routing.py`. Measured at this tree with
+  `plugin/crew/tests/sabotage.py` run in five index slices. Ten of them report
+  `1 skipped` under the mutation, so the named test never executed: nine name
+  PowerShell in their label and one is `the bash gate stops publishing a
+  deadline at all`. **The eleventh is different and is a real hole**: `the
+  frozen artifact path is stored with native separators` reports `1 passed`
+  with the mutation applied, so the test ran and did not notice. Not fixed:
+  the skipping ten need the suite run where those tests execute, which this
+  Linux box is not - `pwsh` IS on PATH here (`/snap/bin/pwsh`) and they skip
+  anyway, so the skip condition has NOT been identified and must not be
+  assumed to be a missing interpreter. The vacuous one is in the frozen-
+  artifact path, nowhere near this ticket's files.
+
+## Filed 2026-09-22 by the doc-builder QA/security-fix developer, not fixed there
+
+- **Requested during the ticket, out of its scope: add the
+  `anthropics/claude-plugins-community` marketplace and install `eli5` from it
+  in both install scripts.** `eli5` is not in this repository (no `skills/eli5`,
+  no `plugin/eli5`), so it can only come from that marketplace. The pattern to
+  copy already exists twice: `scripts/install-prerequisites.sh:2302-2304`
+  (`add_marketplace "anthropics/claude-plugins-official" ...` then
+  `install_plugin "claude-code-setup@claude-plugins-official"`) and
+  `:2673-2676`; the PowerShell halves are `Add-Marketplace`/`Install-Plugin`
+  around `scripts/install-prerequisites.ps1:537` and `:899`. The second half of
+  the request, the **`github` skill, is already installed** - it is in the skill
+  list at `scripts/install-prerequisites.sh:1144` with its menu description at
+  `:1182`, so nothing is needed for it. Not fixed here for two reasons, both
+  hard: this ticket's scope is `skills/doc-builder/**` only, and both install
+  scripts are already dirty with a concurrent session's uncommitted edits -
+  CLAUDE.md requires a registration to land in ONE commit across the
+  marketplace entry, the catalog row, `plugin/PLUGINS.md` and both install
+  scripts in the same order with the same text, and a half-landed one fails the
+  checker with no way to tell which half was intended.
+
+## Filed 2026-09-22 by the install-script uv security/QA fix developer, not fixed there
+
+- **`install_packages` still uses `pacman -Sy` without `-u`**, at
+  `scripts/install-prerequisites.sh:2086`
+  (`pacman) as_root pacman -Sy --noconfirm "${missing[@]}" ;;`). That is the
+  partial-upgrade idiom Arch documents as the way to break an install: refresh
+  the databases, then install packages built against libraries the rest of the
+  system has not been upgraded to. The same idiom was fixed in
+  `install_pipx_package` at `scripts/install-prerequisites.sh:337`, which now
+  runs `pacman -S --needed --noconfirm python-pipx` - no refresh, so no partial
+  upgrade, and it falls through to the next rung if the local database is too
+  stale. Not fixed here because `install_packages` serves the whole
+  prerequisites row (git, nodejs, npm, python3, pip3) rather than the uv chain
+  that ticket covered, so changing it changes a row nobody asked about; and
+  because the two safe forms differ in blast radius (`-Syu <pkg>` full-upgrades
+  a stranger's machine, no-refresh can fail on a stale database) and picking
+  between them for the prerequisites row is its own decision.
+
+- **The astral.sh installer pin is recorded as EMPTY, so that rung is skipped**,
+  at `scripts/install-prerequisites.sh:281-282` (`UV_INSTALLER_VERSION=""` /
+  `UV_INSTALLER_SHA256=""`). The mechanism that fetches by pinned version over
+  https-only and verifies a sha256 before running anything is in place and
+  tested; the two values are not, because the ticket that added them forbade
+  downloading the installer, and inventing a version/digest pair would have
+  been worse than leaving them empty - a wrong digest fails closed but lies
+  about having been measured. Until an operator reads
+  `https://astral.sh/uv/<version>/install.sh`, runs `sha256sum` on it and fills
+  both in, a host with no pipx and no pip-able Python loses that rung and gets
+  the loud failure block instead. `scripts/_test/uv-install.sh` case 7d pins
+  the skipped-when-unpinned behaviour and cases 7, 7a, 7b, 7c and 7f pin the
+  fetch-and-verify path against a fixture digest, so filling the values in is a
+  two-line change with the checks already written.
+
+- **Two more unconditional `export PATH="$HOME/.local/bin:$PATH"` prepends**, at
+  `scripts/install-prerequisites.sh:2631` (strix) and
+  `scripts/install-prerequisites.sh:2764` (graphify). Same shape as the defect
+  fixed in `uv_on_path` at `scripts/install-prerequisites.sh:219-240`: a
+  user-writable directory goes ahead of `/usr/bin` for every later step in the
+  run, whether or not the thing it was added for is actually there, and with no
+  guard against the run being root with an unprivileged `HOME` (`sudo -E`, an
+  `env_keep` carrying HOME, `su` without `-`). They are milder than the uv one
+  was - each is reached at most once, where `uv_on_path` was called up to nine
+  times and stacked duplicates - but they are the same class, and `uv_home_is_safe`
+  (`scripts/install-prerequisites.sh:205`) is already there to gate them. Not
+  fixed here: both belong to rows (strix, graphify) outside the uv chain that
+  ticket covered, and each needs its own fixture case in
+  `scripts/_test/uv-install.sh` or a suite of its own before being touched.
+
+## Two shell suites under `scripts/_test/` are run by nothing - OPEN 2026-09-22
+
+`.github/workflows/marketplace.yml` names each shell suite explicitly (`:74`
+menu-groups, `:84` check-powershell, `:90` ps-install-keys) rather than globbing
+`scripts/_test/*.sh`, and `.crew/verify.json`'s rule for
+`scripts/install-prerequisites.{sh,ps1}` runs only `bash _verify/smoke.sh`. So
+`scripts/_test/uv-install.sh` (150 cases) and `scripts/_test/mcp-preflight-catalog.sh`
+(109 cases) are green locally and are executed by neither CI nor the local Stop gate.
+Both were sabotage-proven when written, which is exactly the property an unwired suite
+stops carrying forward. Wiring them needs two lines in
+`.github/workflows/marketplace.yml` beside `:90` and one `run` entry in
+`.crew/verify.json`'s install-script rule. Not done in the ticket that wrote the second
+suite: its scope was `scripts/install-prerequisites.{sh,ps1}` and `scripts/_test/**`
+only, and both target files were being edited concurrently by other agents.
+
+## `ensure_uv` can succeed on a host where `uvx` does not resolve - OPEN 2026-09-22
+
+`uv_on_path` (`scripts/install-prerequisites.sh:225`) is satisfied by EITHER `uv` or
+`uvx`, but the two rows that call `ensure_uv` register a command whose literal first
+word is `uvx` (`scripts/install-prerequisites.sh:2602` aws-api,
+`scripts/install-prerequisites.sh:2650` aws-pricing). Since the launcher check added
+on 2026-09-22 (`mcp_launcher_resolves`, `scripts/install-prerequisites.sh:923`) those
+two rows now FAIL on a host that has `uv` and not `uvx`, where they previously
+registered a server that could not start. The new behaviour is the correct one and is
+not a regression to undo - but the message the operator gets blames the MCP row rather
+than naming the uv install that produced a half-usable toolchain. The narrow fix is
+for `ensure_uv` to require `uvx` specifically when its caller is going to register a
+`uvx` command. Not fixed here: it changes `ensure_uv`'s contract for all three of its
+callers and belongs with `scripts/_test/uv-install.sh`, not with the MCP ticket.
+
+## Sabotage-testing in a SHARED worktree put a sabotage into a commit - OPEN 2026-09-22
+
+Two incidents in one turn, one cause: a sabotage driver that edits the live working
+tree, restores it, and verifies the restore byte-identically. Byte-identical restore
+is not enough when other agents read or commit that tree in between.
+
+1. **A commit captured the sabotage window.** `3cca6482` ("crew 0.19.98") contains
+   `scripts/install-prerequisites.ps1` with `Invoke-SkillPreflights` *called* at
+   `:2124` and *defined nowhere* - because another agent committed the whole tree
+   during the ~20s the Defect-1 sabotage was applied. HEAD therefore ships a `.ps1`
+   that dies at runtime on every Windows run. The working tree is correct and the
+   restore was verified byte-identical; the damage is entirely in the recorded
+   history. Fixed by whoever commits next - nothing needs re-writing, the correct
+   text is already in the tree.
+2. **The host's coreutils were destroyed a second time.** Sabotage-testing
+   `scripts/_test/uv-install.sh`'s `stub()` guard by removing its `rm -f` and running
+   the WHOLE suite reproduced the original defect exactly: `mkfixture` symlinked
+   `$fx/bin/<tool>` at `/usr/bin/<tool>`, and the stub writes followed those links
+   into the uutils multicall binary - 116 hardlinks, one 101-byte shell stub.
+   Repaired in place from `/var/cache/apt/archives/rust-coreutils_0.10.0-1ubuntu2~26.04.1_amd64.deb`
+   (already cached; nothing installed, no network), preserving the hardlink set.
+   `dpkg -V rust-coreutils` and `dpkg -V dash` are both clean.
+
+The harness half is FIXED, not deferred: both suites now copy the real tools into
+`$TMP` (`mkrealbin`, `scripts/_test/uv-install.sh:105` and
+`scripts/_test/mcp-preflight-catalog.sh:80`) and symlink only at those copies, so a
+write-through can no longer reach anything outside `$TMP` whether or not `rm -f` is
+present. Case 0 in each suite asserts that invariant, and both the invariant and the
+`rm -f` are sabotage-proven with `dpkg -V` clean throughout.
+
+What is NOT fixed, and is the entry here: the sabotage driver itself still edits the
+live tree. It should run against a throwaway copy or a `git worktree`, so no window
+exists in which a concurrent committer can snapshot a deliberately broken file. That
+needs a shared helper under `scripts/_test/` and agreement on where sabotage runs
+live; it was out of scope for the ticket that discovered it.
+
+## Open items handed off 2026-09-22
+
+`.work/HANDOFF.md` is gitignored and the session task list does not survive a
+context clear, so the open items live here where they are tracked.
+
+**Needs the operator, not an agent**
+
+- **Launch Obsidian once** and open `/repos/claude-memories`. The Local REST API
+  plugin writes its `apiKey` on first run; nothing exists on disk until then, and
+  the MCP registration cannot proceed without it. Fully quit from the tray and
+  relaunch - closing the window only minimises, and Obsidian reads its plugin list
+  at launch. Then `vault_ops.py fix-ports`, `register --apply`, `diagnose`. Point
+  the MCP server at the HTTP port (`insecurePort`), never HTTPS - Node rejects the
+  self-signed cert and a green `curl -k` proves nothing.
+- **Vault host contract.** `/repos/claude-memories/CLAUDE.md:8` names only
+  `dadeush-lenovo` and `dadeush-desktop`; `:211` retires `/root` and `/home` paths
+  as "other host" at once. This Linux box is neither, so every session run here is
+  destined to be discarded by the gardener. Four live transcripts on this host are
+  in no queue. Three proposed edits are in the session scratchpad; the file is
+  **CRLF on all 275 lines** and rewriting it as LF turns a three-line change into a
+  275-line diff replicated by Sync. Decided: permanent host, so the edits apply.
+- **Solomon logo.** It IS committed - the wordmark is at `word/media/image4.png`
+  inside `skills/solomon-doc-builder/assets/sop_template.docx`. `build_sop.py`
+  reaches it via the template; `build_report.py` does not, so branded HTML and
+  reports get colours and fonts but no masthead. Extract it to a standalone
+  `assets/logo.png`, reference it from `brand.json`, bump `solomon-doc-builder`
+  (1.1.0). Separately, `sop.assets_dir` points at `/repos/OnboardingSOPs/assets`,
+  which is genuinely absent here - that holds SOP screenshots, not the logo.
+- **Outlook on Linux.** No native client exists or is planned. Outlook PWA via Edge
+  is installed. Alternatives: `outlook-ew` snap (unofficial) or Evolution +
+  `evolution-ews` (native GNOME). Verify EWS is still available for Exchange Online
+  before configuring Evolution - do not assert it from memory.
+- **Splashtop is attended-only** as installed. The session is Wayland, so the first
+  connection needs someone to click Approve here, there is no sharing at the GDM
+  login screen, and the lock screen revokes the restore token. Unattended needs
+  automatic login plus the "Allow Locked Remote Desktop" GNOME extension - both
+  real security trade-offs.
+- **`/crew:verify --all` has never run green.** Three rules are permanently over the
+  60s Stop budget (81s, 96s, 185s) and stay UNVERIFIED. The repair of that command
+  is the headline fix in PR #205 and is undemonstrated.
+
+**Engineering, unassigned**
+
+- **Windows-compatibility audit across 36 skills and 5 plugins. NEVER DISPATCHED.**
+  crew-pm confirmed this directly: "It has never been dispatched. Do not let my
+  earlier silence read as in-progress." Wants 3-4 agents by skill group, not one.
+  Checklist is CLAUDE.md's Landmines section. Report findings before fixing - each
+  fix lands per marketplace entry with its own bump.
+- **Re-render the guides so brand resolution applies.** All four `crew-*` guides and
+  `obsidian-claude-guide` carry `#1F4E79`, the neutral navy, and no Solomon colour.
+  Note the limit: `build_report.py`'s `build()` emits no `<h3>`, so a narrative
+  document past H2 does not fit that pipeline - it stays hand-written but must call
+  `resolve_brand.py` instead of copying the palette hex.
+- **Wire `uv-install.sh` (162 cases) and `mcp-preflight-catalog.sh` (114) into CI and
+  `.crew/verify.json`.** Neither is run by anything today. A regression suite nobody
+  runs is worse than none, because its presence reads as coverage.
+- **Regression case for the write-through-symlink harness defect.** The fix is in
+  (`scripts/_test/uv-install.sh:102`, `mkrealbin` at `:105`); nothing asserts it. It
+  destroyed this host's coreutils twice - the second time because a guard whose own
+  regression test is destructive does not get re-tested.
+- **The sabotage driver edits the live tree**, so a concurrent committer can snapshot
+  a deliberately broken file. It did: `3cca6482` shipped a call to an undefined
+  function. Should use `git worktree`.
+- **`ensure_uv` is satisfied by `uv` alone** while the aws-api and aws-pricing rows
+  register `uvx` - those rows fail correctly but name the wrong step.
+- **`check_group_parity` compares catalog KEYS only, never Spec strings**, so passing
+  a repo name where the marketplace local name belongs stays GREEN.
+  `mcp-preflight-catalog.sh` case 22 catches it; the main gate cannot see the class.
+- **Refresh the code graph** after merge: `graphify update .`, never
+  `graphify . --no-viz --code-only`. Graph is at `8c8353f5`.
+- **Session capture on this host.** The `obsidian-vault` plugin's SessionEnd hook is
+  active but nothing reached the queue, because no vault was configured until this
+  session. Confirm it now appends - do not infer "no hook" from "no lines".
+- **The 81-entry gardener backlog** can only be worked on `dadeush-lenovo` or
+  `dadeush-desktop`. 15 are deliberately deferred as too large (9.3MB-66MB); 10
+  belong to LENOVO; ~66 untriaged, ~9 likely empty-shell.
+- **Per-rule `seconds` never gets re-measured per host, so a rule declared over budget
+  on one machine is chronic on every machine.** `.crew/verify.json:73` declares 81s for
+  rules[3] and `:99` 96s for rules[4]; measured on the Linux host 2026-09-22 they are
+  16s and 15s, both far inside the 60s Stop budget. The timings cache exists
+  (`plugin/crew/hooks/scripts/verify_record.py:560`, `if rule.get("unknown")`) but only
+  fills for a rule with NO declared `seconds`, so a stale declared number can never be
+  corrected by measurement - only by `--price --force`, which dirties a tracked file.
+  Did not block: `/crew:verify --all` now clears both rules regardless of the price.
+- **`map-audit.sh` false-positives on a `run` command that `cd`s first.** It reports
+  `hooks/scripts/_test/validate-prompts.py` as "a rule pointing at a file that does not
+  exist"; the command is `(cd plugin/crew && python3 hooks/scripts/_test/validate-prompts.py)`
+  and the file is really at `plugin/crew/hooks/scripts/_test/validate-prompts.py`
+  (`.crew/verify.json:167`). A false "missing check" in an audit whose whole job is
+  finding missing checks trains its reader to skim it. Did not block: 0 orphaned, which
+  is the line that mattered for this task.
+- **`.crew/verify.json:3` still reads `"anchor": "repo@5238be3d"`**, ~40 commits behind
+  HEAD, so nothing in the file's `_note` can be re-checked by the path-diff method
+  CLAUDE.md prescribes. Did not block: my task changed rules, not the anchor contract,
+  and re-anchoring is a judgement about when the whole map was last re-derived.
+- **`.crew/codemap/verification-harness.md` (anchor `ea8a014`) has a NON-empty path
+  diff** on its own five cited paths - `.crew/verify.json`, `_verify/smoke.sh`,
+  `verify-gate.sh`, `verify_record.py` and more all moved since. Per INDEX.md that is
+  `knowledge.behind` with the cheap test already run and failed, so the note needs
+  re-verification, not just a re-anchor. Did not block: I read it and used only the
+  claims I re-derived from the code myself.
+- **17 tests in `plugin/crew/tests/test_context_watch.py` go red under the in-flight
+  flavour-guard work** (the uncommitted `if ($env:OS -ne 'Windows_NT') { exit 0 }` block
+  in 14 `.ps1` files plus the two new `_test/test_flavour_guard.py`). The `[ps1]`
+  parametrisations drive `context-watch.ps1` on Linux, where the new guard makes it
+  exit 0 silently. Measured 2026-09-22: pristine HEAD `31393918` is 52/0 green; with the
+  guard applied, 17 failed / 1667 passed. Not mine and not blocking - filed so whoever
+  owns that change sees it before committing.

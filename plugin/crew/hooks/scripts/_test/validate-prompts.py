@@ -125,11 +125,39 @@ KNOWN_TOOLS = {
 MCP_TOOL = re.compile(r"^mcp__[A-Za-z0-9_-]+__[A-Za-z0-9_-]+$")
 
 
+# A SCOPED grant -- `Bash(python3 *)` -- is REFUSED, and the refusal is the
+# point. The form parses, and other plugins ship it: dotnet-pilot's
+# dnp-architect carries `Bash(dotnet:*)`. It is NOT ENFORCED. Measured
+# 2026-09-22 by dispatching that agent and running `ls /` and `whoami`, neither
+# of which is a dotnet command: both ran, no denial, no prompt. Whole-tool
+# grants ARE enforced -- an agent with no `Bash` in its list reports having no
+# shell tool at all -- so removing a NAME works and narrowing one does not.
+#
+# Accepting the scoped form would let a crew agent declare a restriction that
+# does nothing while reading, in review, as though it restricted something.
+# That is this repo's named recurring bug: an unknown collapsing into the
+# safe-looking value. So it is rejected with the reason attached.
+SCOPED_TOOL = re.compile(r"^([A-Za-z][A-Za-z0-9_]*)\((.+)\)$")
+
+
 def unknown_tools(tools):
     """The names in a comma-separated `tools:` value that nothing recognises."""
-    return [t.strip() for t in tools.split(",")
-            if t.strip() and t.strip() not in KNOWN_TOOLS
-            and not MCP_TOOL.match(t.strip())]
+    unknown = []
+    for raw in tools.split(","):
+        name = raw.strip()
+        if not name:
+            continue
+        scoped = SCOPED_TOOL.match(name)
+        if scoped:
+            unknown.append(
+                f"{name} (scoped tool specifiers are NOT enforced by the "
+                f"runtime - use plain '{scoped.group(1)}' and say in the file "
+                f"that it is not narrowed)")
+            continue
+        if name in KNOWN_TOOLS or MCP_TOOL.match(name):
+            continue
+        unknown.append(raw.strip())
+    return unknown
 
 
 SPAWNABLE = "|".join(sorted(AGENTS)) or "$^"

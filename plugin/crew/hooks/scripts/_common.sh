@@ -41,10 +41,58 @@ crew_tool_dispatch() {
 crew_strip_cr() { printf '%s' "$1" | tr -d '\r'; }
 
 # Resolve a usable Python. Echoes nothing when there is none.
+#
+# DELIBERATELY NOT hardened against a WindowsApps App Execution Alias. Most
+# callers of this are mitigated downstream -- they check the status of the
+# python they invoked and fail closed with a named message (verify-gate.sh,
+# promote-gate.sh) -- and widening this one would change the behaviour of
+# every hook that calls it for a bug that only matters where the caller
+# `exec`s the interpreter and has nothing left to check afterwards. Those
+# callers use `crew_py_strict` below instead.
 crew_py() {
   command -v python3 2>/dev/null && return 0
   command -v python  2>/dev/null && return 0
   command -v py      2>/dev/null && return 0
+  return 1
+}
+
+# Resolve a python that has been PROVED to be an interpreter. Echoes nothing
+# when there is none.
+#
+# `crew_py` above asks `command -v` and stops there. On Windows that is not
+# enough: the Store App Execution Alias at
+# %LOCALAPPDATA%\Microsoft\WindowsApps\python3.exe IS a real, executable
+# file, so `command -v python3` resolves it, the non-empty test passes, and
+# the stub gets run -- producing no output and a nonzero status that a caller
+# which already `exec`ed has no way left to report. Reported 2026-09-19
+# against role-write-guard.sh and again 2026-09-22 against pm-pulse.sh, where
+# it cost the PM's findings, blocking ones included, in total silence.
+#
+# The probe, not the path, is what decides: a candidate is only accepted once
+# it has run `print(sys.executable)` and handed back a path. `sys.executable`
+# rather than the PATH hit because the name found may be a shim that re-execs
+# elsewhere, and the probe already paid for asking.
+#
+# BYTE-FOR-BYTE the body of `_resolve_role_write_python` in
+# role-write-guard.sh, which keeps its own copy for the reason its header
+# records (that hook is the one that can BLOCK a tool call, and its test
+# suite patches that file textually). `tests/test_pm_pulse_bash_resolver.py`
+# asserts the two copies still agree -- a hand-copy with no guard is this
+# repository's most repeated defect.
+crew_py_strict() {
+  for name in python3 python py; do
+    candidate=$(command -v "$name" 2>/dev/null) || continue
+    case "$candidate" in
+      */WindowsApps/*|*\\WindowsApps\\*) continue ;;
+    esac
+    real=$("$candidate" -c 'import sys; print(sys.executable)' 2>/dev/null) || continue
+    [ -n "$real" ] || continue
+    case "$real" in
+      */WindowsApps/*|*\\WindowsApps\\*) continue ;;
+    esac
+    printf '%s\n' "$real"
+    return 0
+  done
   return 1
 }
 

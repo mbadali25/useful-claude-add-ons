@@ -3,7 +3,14 @@
 # or let scripts/preflight.py do it after one confirmation. Keep in step with
 # PACKAGES in scripts/preflight.py.
 python-docx>=1.1      # OOXML SOP path: build_sop, check_conformance, fix_effect_extent, extract_spec, make_template
-pywin32>=306          # Word COM: --to-docx / --to-pdf (Windows only; Word itself must be installed)
+pywin32>=306; sys_platform == "win32"
+#                       Word COM: --renderer word (Windows only; Word itself must be installed).
+#                       The marker is load-bearing, not tidiness: pywin32 publishes Windows
+#                       wheels and no sdist, so without it `pip install -r` fails to RESOLVE on
+#                       Linux and macOS and installs NOTHING - not python-docx, not PyMuPDF,
+#                       not Pillow, not numpy, none of which are Windows-specific.
+#                       The other renderer, LibreOffice, is not a pip package - install soffice
+#                       from the OS (apt/brew/winget). See scripts/render_engine.py.
 PyMuPDF>=1.24         # verify_borders (Gate 2) renders the PDF at 300 dpi
 Pillow>=10            # verify_borders pixel buffer; screenshot anonymisation
 numpy>=1.26           # verify_borders edge-coverage measurement

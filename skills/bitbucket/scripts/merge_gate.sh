@@ -19,13 +19,23 @@
 # and no network are involved). Auth is deliberately NOT re-checked here - bb.sh
 # already does it.
 #
+# The default transport is run as `bash <path>` rather than exec'd. bb.sh is a
+# file this repo ships, and a shipped file's executable bit is not something to
+# depend on: it was committed 100644 and every POSIX clone failed here with
+# "Permission denied" (126). A caller-supplied BB_CMD is exec'd as given - it is
+# whatever the caller chose and may not be a bash script at all.
+#
 # Requires: jq. Needs the `repository:admin` scope for reads as well as writes;
 # there is no read-only scope for branch restrictions.
 set -uo pipefail
 
 API_BASE="https://api.bitbucket.org/2.0"
 HERE="$(cd "$(dirname "$0")" && pwd)"
-BB="${BB_CMD:-$HERE/bb.sh}"
+if [ -n "${BB_CMD:-}" ]; then
+  BB=("$BB_CMD")
+else
+  BB=(bash "$HERE/bb.sh")
+fi
 
 # Exit codes: 1 API/IO failure, 2 usage, 3 scope undetermined (nothing deleted),
 # 4 one or more writes failed.
@@ -100,9 +110,9 @@ bb_call() { # METHOD path [json-body] -> BB_STATUS, BB_BODY, BB_ERR; rc 0 on 2xx
   # Assignment and status are split on purpose: `local x=$(...)` returns local's
   # status, not the command's, and would swallow every failure here.
   if [ -n "$body" ]; then
-    BB_BODY="$("$BB" "$method" "$path" "$body" 2>"$err")" || rc=$?
+    BB_BODY="$("${BB[@]}" "$method" "$path" "$body" 2>"$err")" || rc=$?
   else
-    BB_BODY="$("$BB" "$method" "$path" 2>"$err")" || rc=$?
+    BB_BODY="$("${BB[@]}" "$method" "$path" 2>"$err")" || rc=$?
   fi
   BB_ERR="$(cat "$err")"
   # bb.sh writes `HTTP <code>` plus free-text hints to stderr; anchor the parse.

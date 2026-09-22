@@ -1,7 +1,8 @@
 """The endpoint ledger: `.crew/endpoints.json` and its scan artifacts.
 
 Split out of `crew_state.py` in 0.16.21, which had reached pylint's
-`max-module-lines=3300` with five lines to spare. This block is the one place
+`max-module-lines` -- 3300 at the time, raised to 3400 on 2026-09-22 -- with
+five lines to spare. This block is the one place
 the module divides cleanly: it reads and writes one file nothing else there
 touches, and `crew_state` needs only five names back from it --
 `declare_endpoint`, `load_endpoints`, `read_endpoints`, `record_scan_artifact`

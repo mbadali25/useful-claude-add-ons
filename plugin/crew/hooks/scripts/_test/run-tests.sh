@@ -1009,6 +1009,21 @@ check(crew_state.read_diagrams(root, {"docs": "nonsense"})["total"] == 3,
 sys.exit(0 if ok else 1)
 PYEOF
 
+# --- the PowerShell flavour guard ------------------------------------------
+# hooks.json registers every event TWICE, once per flavour. On a host with
+# BOTH interpreters both would run unless each .ps1 stands down off Windows.
+# The suite derives its file list from hooks.json, so a newly registered hook
+# with no guard turns this red on its own. Exit 77 means no pwsh here, so the
+# guard could only have been checked statically -- reported as a SKIP and
+# never folded into the pass count, because a static pass is not the same
+# evidence as a behavioural one.
+fg_out="$("$PY" "$HERE/test_flavour_guard.py" 2>&1)"; fg_rc=$?
+case "$fg_rc" in
+  0)  PASS=$((PASS+1)) ;;
+  77) echo "SKIP: PowerShell flavour guard -- $fg_out" ;;
+  *)  FAIL=$((FAIL+1)); echo "FAIL: PowerShell flavour guard (exit $fg_rc)"; echo "$fg_out" ;;
+esac
+
 echo
 echo "RESULT: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ] || exit 1

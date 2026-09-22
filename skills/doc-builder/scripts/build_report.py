@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Emit a report as HTML that survives Word's HTML parser, and optionally
-convert it to .docx / .pdf through Word COM on Windows.
+convert it to .docx / .pdf through Microsoft Word (COM, Windows) or LibreOffice.
 
 The stylesheet this writes is deliberately repetitive and deliberately old
 fashioned: no custom properties, no `:nth-child`, no flex, no element carrying
@@ -18,12 +18,21 @@ single installed pack by default, `--brand neutral` for the unbranded palette.
 The stylesheet still receives LITERAL hex -- the brand is substituted at build
 time, never shipped as `var()`.
 
-Third-party requirement: `pywin32`, and only for `--to-docx` / `--to-pdf`.
-Emitting the HTML is stdlib.
+Two renderers, never one silently standing in for the other. Word over COM is
+the reference -- every rule in `references/word-traps.md` was measured against
+it -- and LibreOffice (`soffice --headless`) is the only renderer that exists on
+Linux and macOS, at reduced and measured fidelity. The engine is chosen by
+`--renderer` or by an explicit platform branch, is printed to stderr with its
+reason before any conversion, and is NAMED on the line announcing every file it
+wrote. See render_engine.py.
+
+Third-party requirement: `pywin32`, and only for `--renderer word`. Emitting the
+HTML is stdlib, and the LibreOffice path needs no Python package at all.
 
 Usage:
     build_report.py --data report.json --out reports/
     build_report.py --data report.json --out reports/ --to-docx --to-pdf
+    build_report.py --data report.json --to-pdf --renderer libreoffice
     build_report.py --data report.json --brand neutral
     build_report.py --example > report.json
 """
@@ -38,125 +47,28 @@ import json
 import os
 import sys
 
+import house_style
+import render_engine
 import resolve_brand
 
+# The stylesheet and the palette it interpolates live in house_style.py, so
+# that a hand-authored page can ask for the SAME defaults instead of copying
+# a hex literal out of this file. Re-exported under their old names because
+# they are this module's public surface and the suite asserts on both.
+Palette = house_style.Palette
+title_case = house_style.title_case
 
-class Palette:
-    """The report colours of one brand pack, as attributes the stylesheet
-    interpolates. Literal hex, never var(). See word-traps.md rule 1: `var()`
-    does not degrade, it drops the whole declaration, so
-    `background:var(--x); color:#fff` renders white on white."""
 
-    def __init__(self, brand):
-        r = brand.report
-        self.navy = r["navy"]
-        self.navy_dark = r["navy_dark"]
-        self.accent = r["accent"]
-        self.org_ink = r["org_ink"]
-        self.classification = r["classification"]
-        self.ink = r["ink"]
-        self.muted = r["muted"]
-        self.grid = r["grid"]
-        self.zebra = r["zebra"]
-        self.panel = r["panel"]
-        self.rule = r["rule"]
-        self.font_stack = brand.fonts["report_stack"]
-        # (chip background, chip text) per severity. `unverified` is its own
-        # severity on purpose: a check that could not run is not a check that
-        # passed, and rendering the two alike is lying by omission.
-        self.severities = {k: tuple(v) for k, v in r["severity"].items()}
+def stylesheet(pal):
+    """The report profile of the house stylesheet. One call, never a copy:
+    a second copy here is exactly the fork the shared module exists to
+    prevent, and the suite asserts this equals house_style's own output."""
+    return house_style.stylesheet(pal, "report")
 
 
 def esc(value) -> str:
     """HTML-escape any cell value, including None and numbers."""
     return html.escape("" if value is None else str(value), quote=True)
-
-
-def _chip_css(pal: Palette) -> str:
-    """Severity chips.
-
-    The shared declarations sit in a GROUPED SELECTOR, not in a base class the
-    element also carries. `class="chip chip-high"` applies NEITHER rule in Word
-    -- measured, both the shading and the font colour come back as
-    wdColorAutomatic. Grouped selectors are fine; two classes on the element
-    are not. See word-traps.md rule 4.
-    """
-    names = ", ".join(f".chip-{s}" for s in pal.severities)
-    out = [
-        f"{names} {{ display:inline-block; padding:2px 8px; font-weight:700; "
-        "font-size:11px; white-space:nowrap; }"
-    ]
-    for sev, (bg, fg) in pal.severities.items():
-        out.append(f".chip-{sev} {{ background:{bg}; color:{fg}; }}")
-    return "\n".join(out)
-
-
-def stylesheet(pal: Palette) -> str:
-    NAVY, NAVY_DARK, ACCENT = pal.navy, pal.navy_dark, pal.accent
-    ORG_INK, CLASSIFICATION, INK = pal.org_ink, pal.classification, pal.ink
-    MUTED, GRID, ZEBRA, PANEL, RULE = pal.muted, pal.grid, pal.zebra, pal.panel, pal.rule
-    return f"""
-body {{ font-family:{pal.font_stack}; font-size:13px;
-       color:{INK}; margin:0; }}
-.wrap {{ max-width:1000px; margin:0 auto; padding:18px 22px 40px; }}
-
-h1 {{ font-size:20px; margin:18px 0 2px; color:{NAVY}; }}
-h2 {{ font-size:15px; margin:22px 0 8px; padding-bottom:4px;
-     border-bottom:1px solid {RULE}; color:{NAVY}; }}
-p  {{ margin:6px 0; }}
-.sub    {{ color:{MUTED}; font-size:12px; margin:0 0 10px; }}
-.footer {{ color:{MUTED}; font-size:11px; margin-top:26px;
-          border-top:1px solid {RULE}; padding-top:8px; }}
-
-/* Masthead: tables with cell shading, never coloured divs. */
-table.mast {{ border-collapse:collapse; width:100%; margin-bottom:14px; }}
-.mast-strip {{ background:{ACCENT}; height:4px; line-height:4px; font-size:1px; }}
-.mast-band  {{ background:{NAVY}; padding:14px 18px; }}
-.mast-rule  {{ background:{NAVY_DARK}; height:3px; line-height:3px; font-size:1px; }}
-.mast-cls   {{ background:{CLASSIFICATION}; color:#FFFFFF; padding:5px 18px;
-              font-size:11px; font-weight:700; letter-spacing:1.6px; }}
-.mast-org   {{ color:{ORG_INK}; font-size:11px; font-weight:600;
-              letter-spacing:1.8px; }}
-.mast-title {{ color:#FFFFFF; font-size:26px; font-weight:600; }}
-.mast-subtitle {{ color:{ORG_INK}; font-size:12px; }}
-
-/* Every table: real grid, real thead. Both required. */
-table.data {{ border-collapse:collapse; width:100%; table-layout:fixed;
-             margin:8px 0 4px; }}
-table.data th, table.data td {{ border:1px solid {GRID}; padding:7px 10px;
-             text-align:left; vertical-align:top; overflow-wrap:break-word; }}
-table.data th {{ background:{NAVY}; color:#FFFFFF; font-weight:600; }}
-/* Zebra is an explicit class, written per row by the builder. */
-table.data tr.alt td {{ background:{ZEBRA}; }}
-
-table.meta {{ border-collapse:collapse; width:100%; margin:0 0 14px; }}
-table.meta td {{ border:1px solid {GRID}; padding:6px 10px; font-size:12px; }}
-table.meta td.k {{ background:{ZEBRA}; font-weight:600; width:17%; }}
-
-.lede {{ background:{PANEL}; border-left:4px solid {NAVY};
-        padding:10px 14px; margin:10px 0 4px; }}
-.handling {{ background:#FDE8E6; border-left:4px solid {CLASSIFICATION};
-            padding:8px 14px; margin:10px 0; font-size:12px; color:#A01B12; }}
-
-/* Cards are a table on purpose; the number and label are real block
-   elements rather than styled spans. */
-table.cards {{ border-collapse:separate; border-spacing:8px 0; width:100%;
-              margin:6px 0 2px; }}
-td.card {{ background:{PANEL}; border:1px solid {GRID}; padding:10px 12px;
-          text-align:center; }}
-div.n {{ font-size:22px; font-weight:700; color:{NAVY}; }}
-div.l {{ font-size:11px; color:{MUTED}; }}
-
-{_chip_css(pal)}
-
-@media print {{
-  body {{ font-size:11pt; }}
-  .wrap {{ padding:0; max-width:none; }}
-  h2 {{ page-break-after:avoid; }}
-  tr {{ page-break-inside:avoid; }}
-  thead {{ display:table-header-group; }}
-}}
-"""
 
 
 def column_widths(labels, rows):
@@ -217,11 +129,18 @@ def column_widths(labels, rows):
     return pcts
 
 
-def masthead(org, title, subtitle, classification):
+def masthead(org, title, subtitle, classification, logo_src=None):
+    """`logo_src`, when given, is the `-on-dark` wordmark - `.mast-band` is
+    filled navy, so anything else placed there is the wrong variant. None
+    renders the masthead exactly as it did before a brand pack ever carried
+    a logo."""
+    logo_html = (f'    <img class="mast-logo" src="{esc(logo_src)}" alt="{esc(org)}">\n'
+                 if logo_src else "")
     return (
         '<table class="mast">\n'
         '  <tr><td class="mast-strip"></td></tr>\n'
         '  <tr><td class="mast-band">\n'
+        f'{logo_html}'
         f'    <div class="mast-org">{esc(org)}</div>\n'
         f'    <div class="mast-title">{esc(title)}</div>\n'
         f'    <div class="mast-subtitle">{esc(subtitle)}</div>\n'
@@ -301,7 +220,11 @@ def build(doc, brand):
     # subject. The brand pack's organisation is only a fallback for documents
     # that have no assessed subject (an internal write-up, a memo).
     org = doc.get("organisation") or brand.organisation
-    title = doc.get("title", "Report")
+    # Headings are cased HERE, mechanically, not by whoever typed the JSON.
+    # `house_style.title_case` preserves anything already carrying its own
+    # capitalisation - PowerShell, SOP, macOS, 0.19.93 - which `str.title()`
+    # would destroy. See its docstring.
+    title = house_style.title_case(doc.get("title", "Report"))
     findings = doc.get("findings") or {}
     labels = findings.get("columns") or []
     rows = findings.get("rows") or []
@@ -320,7 +243,7 @@ def build(doc, brand):
         "</head><body>",
         '<div class="wrap">',
         masthead(org, title, doc.get("subtitle", ""),
-                 doc.get("classification", "INTERNAL USE ONLY")),
+                 doc.get("classification", "INTERNAL USE ONLY"), pal.logo_src),
     ]
     if doc.get("meta"):
         parts.append(meta_table(doc["meta"]))
@@ -329,10 +252,10 @@ def build(doc, brand):
     if doc.get("handling"):
         parts.append(f'<div class="handling">{esc(doc["handling"])}</div>')
     if doc.get("cards"):
-        parts.append("<h2>Summary</h2>")
+        parts.append(f"<h2>{esc(house_style.title_case('Summary'))}</h2>")
         parts.append(cards(doc["cards"]))
     if rows:
-        heading = esc(findings.get("heading", "Findings"))
+        heading = esc(house_style.title_case(findings.get("heading", "Findings")))
         parts.append(f"<h2>{heading}</h2>")
         parts.append(data_table(labels, rows, chip_col, pal.severities))
     if doc.get("collected_at"):
@@ -393,12 +316,44 @@ EXAMPLE = {
 }
 
 
+def convert(src, want_docx=False, want_pdf=False, renderer=None):
+    """Convert `src` with a DELIBERATELY chosen engine. Returns an exit code.
+
+    This is the only entry point either pipeline should call. It exists so that
+    the choice of engine is made once, announced once, and can never happen by
+    accident: if the chosen engine cannot run, this stops and names the flag
+    that selects the other one. It does NOT try the other one. A substitution
+    the operator did not ask for is the failure this skill spent its whole life
+    refusing, and labelling is what makes the substitution acceptable at all.
+    """
+    engine, why = render_engine.choose_engine(renderer)
+    print(f"renderer : {engine} -- {why}", file=sys.stderr)
+    if engine == render_engine.LIBREOFFICE:
+        return render_engine.to_soffice(src, want_docx=want_docx, want_pdf=want_pdf)
+    if sys.platform != "win32":
+        print(f"cannot convert: --renderer word needs Microsoft Word over COM, and this is "
+              f"{sys.platform}. Microsoft ships no Word desktop app for Linux, so Word is not "
+              "installable here. The source file was still written. Use "
+              "--renderer libreoffice, or convert on a Windows machine with Word.",
+              file=sys.stderr)
+        return 1
+    return to_word(src, want_docx, want_pdf)
+
+
 def to_word(html_path, want_docx, want_pdf):
     """Convert through Word COM. Windows with Word installed only.
 
     Opens whatever Word can open - the HTML this script emits, or a .docx from
-    build_sop.py, which imports this function for its own --to-pdf step so the
-    process-hygiene rules below live in exactly one place."""
+    build_sop.py. Prefer convert() over calling this directly: convert() is what
+    names the engine on stderr before the first file is written.
+
+    Every target is confirmed to exist, be non-empty, and be NEWER than the
+    moment its SaveAs2 started - the same three checks `render_engine.to_soffice`
+    applies, through the same function. SKILL.md's rule "a conversion that exits
+    0 produced a file" was enforced on the LibreOffice side only until
+    2026-09-22; a rule that holds on one engine is not a rule, and Word has its
+    own way of returning without writing (a SaveAs2 that DisplayAlerts=0
+    suppressed, an add-in that cancels the save)."""
     # ONE import, bound to the name actually used. An earlier version imported
     # `win32com.client` as an availability probe and then imported it again as
     # `win32`, which made the first genuinely unused -- pylint W0611 on a line
@@ -429,17 +384,30 @@ def to_word(html_path, want_docx, want_pdf):
     # reports on a schedule those accumulate until Word refuses to start.
     word = win32.Dispatch("Word.Application")
     doc = None
+    rc = 0
     try:
         word.Visible = False
         word.DisplayAlerts = 0
         base = os.path.splitext(os.path.abspath(html_path))[0]
         doc = word.Documents.Open(os.path.abspath(html_path), False, True)
-        if want_docx:
-            doc.SaveAs2(base + ".docx", 16)   # wdFormatDocumentDefault
-            print(f"wrote {base}.docx")
-        if want_pdf:
-            doc.SaveAs2(base + ".pdf", 17)    # wdFormatPDF
-            print(f"wrote {base}.pdf")
+        # Every converted file names its engine. A reader must never have to
+        # guess whether a .docx came from Word or from LibreOffice.
+        label = render_engine.engine_label(render_engine.WORD)
+        # wdFormatDocumentDefault / wdFormatPDF. .docx first: SaveAs2 rebinds the
+        # document to its new path, and that is the order the soffice side uses.
+        saves = ([(base + ".docx", 16)] if want_docx else []) + \
+                ([(base + ".pdf", 17)] if want_pdf else [])
+        for target, fmt in saves:
+            before = os.path.getmtime(target) if os.path.exists(target) else -1.0
+            doc.SaveAs2(target, fmt)
+            problem = render_engine.conversion_problem(target, before)
+            if problem:
+                print(f"Word reported no error saving {os.path.basename(target)}, but "
+                      f"{problem}. Treating that as a failed conversion, not a success.",
+                      file=sys.stderr)
+                rc = 1
+                break
+            print(f"wrote {target}  [renderer: {label}]")
     finally:
         # Both closes are individually guarded: if Close raises, Quit must still
         # run, or the failure that broke the save also leaks the process.
@@ -452,7 +420,7 @@ def to_word(html_path, want_docx, want_pdf):
             word.Quit()
         except Exception:  # pylint: disable=broad-except
             pass
-    return 0
+    return rc
 
 
 def main(argv=None):
@@ -467,6 +435,7 @@ def main(argv=None):
     ap.add_argument("--name", help="basename; default is the title, slugified")
     ap.add_argument("--to-docx", action="store_true")
     ap.add_argument("--to-pdf", action="store_true")
+    render_engine.add_renderer_argument(ap)
     ap.add_argument("--example", action="store_true",
                     help="print an example JSON document and exit")
     args = ap.parse_args(argv)
@@ -502,7 +471,7 @@ def main(argv=None):
     print(f"wrote {path}")
 
     if args.to_docx or args.to_pdf:
-        return to_word(path, args.to_docx, args.to_pdf)
+        return convert(path, args.to_docx, args.to_pdf, renderer=args.renderer)
     return 0
 
 

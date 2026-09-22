@@ -477,6 +477,43 @@ py_suite "ports, collisions, identity, vault_ops CLI" test_vault_ops.py
 py_suite "profiles: the three sets, detection, the 50k line, split breakage" test_vault_profiles.py
 py_suite "the four bridge states, told apart" test_bridge_states.py
 
+echo "== the guard WRAPPERS: python resolution (own PATH, own HOME) =="
+
+# Everything above drives vault_guard.py with THIS suite's own interpreter, so
+# none of it touches how vault-guard.sh/.ps1 find one -- which is where the
+# 2026-09-22 defect was (a WindowsApps stub resolved, was exec'd, and the hook
+# exited 49 with zero bytes on stderr). Counted as one case here, with its own
+# output shown only when it fails; run it directly for the per-case list.
+sh_suite() {
+  local desc="$1" script="$2" out rc
+  out="$(bash "$DIR/_test/$script" 2>&1)"
+  rc=$?
+  if [ "$rc" -eq 0 ]; then
+    PASS=$((PASS+1))
+  else
+    FAIL=$((FAIL+1))
+    echo "FAIL: $desc (exit $rc)"
+    echo "$out"
+  fi
+}
+
+sh_suite "vault-guard.sh/.ps1: stubs, absence, launch failure" test_vault_guard_sh.sh
+
+# --- the PowerShell flavour guard ------------------------------------------
+# hooks.json registers every event TWICE, once per flavour. On a host with
+# BOTH interpreters both would run unless each .ps1 stands down off Windows.
+# The suite derives its file list from hooks.json, so a newly registered hook
+# with no guard turns this red on its own. Exit 77 means no pwsh here, so the
+# guard could only have been checked statically -- reported as a SKIP and
+# never folded into the pass count, because a static pass is not the same
+# evidence as a behavioural one.
+fg_out="$("$PY" "$DIR/_test/test_flavour_guard.py" 2>&1)"; fg_rc=$?
+case "$fg_rc" in
+  0)  PASS=$((PASS+1)) ;;
+  77) echo "SKIP: PowerShell flavour guard -- $fg_out" ;;
+  *)  FAIL=$((FAIL+1)); echo "FAIL: PowerShell flavour guard (exit $fg_rc)"; echo "$fg_out" ;;
+esac
+
 echo
 echo "RESULT: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

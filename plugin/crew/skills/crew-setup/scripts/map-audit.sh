@@ -4,7 +4,17 @@
 cd "${CLAUDE_PROJECT_DIR:-.}" || exit 1
 [ -f .crew/verify.json ] || { echo "no .crew/verify.json - run /crew:verify"; exit 0; }
 
-python3 - << 'PY'
+# Resolve the python FAMILY, the same way resolve-tools.sh:20 does over the
+# same map. A bare `python3` is not portable to Git Bash, which ships without
+# it: on a machine that has `python` but not `python3` this audit died at 127
+# for no reason, and 127 from a shell is not a sentence anyone can act on.
+PY=$(command -v python3 2>/dev/null || command -v python 2>/dev/null || command -v py 2>/dev/null) || PY=""
+if [ -z "$PY" ]; then
+  echo "map-audit: no python found (tried python3, python, py) - cannot audit .crew/verify.json. Install one, or run the audit from a shell that has it." >&2
+  exit 1
+fi
+
+"$PY" - << 'PY'
 import json, os, glob, re, sys
 
 vm = json.load(open(".crew/verify.json"))

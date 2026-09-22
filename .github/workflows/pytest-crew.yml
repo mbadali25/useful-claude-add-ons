@@ -22,7 +22,24 @@ jobs:
     - name: Install pytest
       run: |
         python -m pip install --upgrade pip
-        pip install 'pytest~=8.0' pyyaml
+        # python-docx is NOT optional either, for the same reason pyyaml is
+        # not. skills/doc-builder/scripts/_test/test_cross_os_paths.py imports
+        # build_sop and check_conformance, both of which `import docx` at
+        # module top. Without it that module raises at COLLECTION, and a
+        # collection error interrupts the whole pytest run -- crew's 1686 tests
+        # included -- rather than failing one test. The module carries a
+        # matching `pytest.importorskip("docx")` so an environment without it
+        # skips instead of erroring; this line is what stops that skip becoming
+        # permanent and the three os.path.isabs regressions never running here.
+        #
+        # numpy and pillow are required by the SAME suite, for
+        # test_render_engine.py's `verify_borders` fixture: it stubs pymupdf
+        # (so that one is genuinely not needed) but deliberately does not stub
+        # numpy or Pillow, because the border sweep is measured against the
+        # real libraries rather than modelled. Those 12 tests were erroring
+        # unseen behind the collection interrupt above; with it fixed they are
+        # the difference between 149 passed / 12 errors and 161 passed.
+        pip install 'pytest~=8.0' pyyaml python-docx numpy pillow
     - name: Run crew + gizmoduck plugin tests and the collision-free skill suites
       # Scoped to named directories on purpose, and NOT because of
       # skills/cisco-meraki/tests/test_live_smoke.py -- which is what this

@@ -89,6 +89,20 @@ HOUSE_STYLE = os.path.join(
 # claim is to break the interface it names.
 BUILD_REPORT = os.path.join(
     ROOT, "skills", "doc-builder", "scripts", "build_report.py")
+# Same reasoning, one file over: doc-builder's stylesheet was extracted out of
+# build_report.py into house_style.py, and the print rules crew's HTML route
+# cites now live here. The heading selector is a PARAMETER of `print_css`, so
+# it cannot be sabotaged by editing a CSS literal -- the mutation below changes
+# what `stylesheet()` passes, which is the only way that rule can break.
+HOUSE_STYLE_PY = os.path.join(
+    ROOT, "skills", "doc-builder", "scripts", "house_style.py")
+# A shipped artefact of crew's HTML route, outside the plugin for a third
+# reason again: the route is the one entry on the routing table with NO
+# generator behind it, so the only place its rule can be observed holding is a
+# document it produced. One guide is sabotaged rather than all four -- the
+# assertion is parametrized per file, so breaking any one of them is what the
+# suite has to catch, and mutating four would prove the same thing four times.
+GUIDE_HTML = os.path.join(ROOT, "docs", "guides", "crew-overview.html")
 PM_BRIEF = os.path.join(CREW, "hooks", "scripts", "pm_brief.py")
 # The other half of the upgrade message. The brief NAMES the migration and
 # this file SAYS WHAT IT DOES, deliberately one copy each -- so the only
@@ -499,10 +513,17 @@ MUTATIONS = (
         # opened for: `docs.theme` configuring a tool crew's own documented
         # generation path never mentions, so there is no call site for a
         # `--brand` to attach to and the setting quietly does nothing.
+        #
+        # Re-anchored 2026-09-22: the routing bullet grew an "as HTML, DOCX
+        # or PDF" clause when the HTML route was added (commit 1741f233),
+        # which split the old one-line anchor across two lines. Same bullet,
+        # same key rename.
         "doc-builder is dropped from the routing table",
         HOUSE_STYLE,
-        "- `doc-builder` — branded findings reports and screenshot SOPs. Pass",
-        "- `doc-builder-removed` — branded findings reports and SOPs. Pass",
+        "- `doc-builder` — branded findings reports and screenshot SOPs, as HTML,\n"
+        "  DOCX or PDF. Pass `--brand <docs.theme>`;",
+        "- `doc-builder-removed` — branded findings reports and screenshot SOPs, as HTML,\n"
+        "  DOCX or PDF. Pass `--brand <docs.theme>`;",
         "tests/test_docs_routing.py::"
         "test_the_routing_table_routes_doc_builder_and_names_both_keys",
     ),
@@ -512,10 +533,14 @@ MUTATIONS = (
         # the client-deliverable case the second key exists for silently
         # stops being expressible. Nothing else in the suite notices, because
         # the key still merges and still resolves.
+        #
+        # Re-anchored 2026-09-22: the routing bullet's genre-binding sentence
+        # moved onto its own line when the bullet was rewritten for the HTML
+        # route (commit 1741f233); the anchor below is that line, verbatim.
         "reportTheme is no longer bound to the report genre",
         HOUSE_STYLE,
-        "`--brand <docs.theme>`; for a findings report prefer `docs.reportTheme` when",
-        "`--brand <docs.theme>`; the brand applies to every generated document, when",
+        "  for a findings report prefer `docs.reportTheme` when it is set.",
+        "  the brand applies to every generated document when it is set.",
         "tests/test_docs_routing.py::"
         "test_the_two_config_keys_are_bound_to_different_genres",
     ),
@@ -527,10 +552,13 @@ MUTATIONS = (
         # catch it. The original assertion here was `"report" in line`, which
         # `docs.reportTheme` satisfies by its own name; it went red on this
         # entry's sibling above for the WRONG assert and so read as covered.
+        #
+        # Re-anchored 2026-09-22 alongside its sibling above, same line, same
+        # reason.
         "reportTheme widens to every document, not just the findings report",
         HOUSE_STYLE,
-        "`--brand <docs.theme>`; for a findings report prefer `docs.reportTheme` when",
-        "`--brand <docs.theme>`; for every document prefer `docs.reportTheme` when",
+        "  for a findings report prefer `docs.reportTheme` when it is set.",
+        "  for every document prefer `docs.reportTheme` when it is set.",
         "tests/test_docs_routing.py::"
         "test_the_two_config_keys_are_bound_to_different_genres",
     ),
@@ -577,6 +605,174 @@ MUTATIONS = (
         "is therefore a reasonable belt-and-braces check, which is the safe",
         "tests/test_docs_routing.py::"
         "test_crew_is_not_told_to_allowlist_theme_names",
+    ),
+    (
+        # The sentence that actually shipped. "HTML needs no skill; write the
+        # file and apply the palette above" sent four hand-written guides out
+        # with no print discipline at all -- the palette is colours, and the
+        # route said nothing about a page boundary. The mutation puts the
+        # markup half back the way it was: the header row is still there and
+        # still styled, it is simply not a `<thead>`, which is precisely the
+        # state a reader cannot see in a browser and only meets in a PDF.
+        "the HTML route stops requiring a real thead element",
+        HOUSE_STYLE,
+        "1. **Every table gets a real `<thead>`** around its header row, and a",
+        "1. **Style the header row** with the `th` rule in the palette, and a",
+        "tests/test_docs_routing.py::"
+        "test_the_html_route_requires_a_real_thead",
+    ),
+    (
+        # The CSS half, deleted one declaration at a time rather than as a
+        # block -- deleting the whole `@media print` rule trips the
+        # `"@media print" in route` assertion first and would leave the
+        # per-declaration assertions unproven, which is this file's documented
+        # blind spot. `thead` is the declaration to take: it is the one that
+        # looks redundant beside the markup rule and is not.
+        "the print block loses the repeated-table-header declaration",
+        HOUSE_STYLE,
+        "     thead { display:table-header-group; }",
+        "     /* header repeat is the browser's default */",
+        "tests/test_docs_routing.py::"
+        "test_the_html_route_carries_the_print_rules",
+    ),
+    (
+        # The widening, taken back out. This is the mutation that looks like
+        # tidying: doc-builder's block names `h2` alone, so narrowing crew's
+        # copy to match reads as removing a divergence. It is not -- that
+        # generator emits no `h3` and the house style allows one, so `h2` only
+        # is exactly the state the first re-render was measured in, with `h3`
+        # headings still ending a page ahead of their table.
+        "the print block narrows back to h2, dropping h3",
+        HOUSE_STYLE,
+        "     h2, h3 { page-break-after:avoid; }",
+        "     h2 { page-break-after:avoid; }",
+        "tests/test_docs_routing.py::"
+        "test_the_html_route_carries_the_print_rules",
+    ),
+    (
+        # The cross-entry claim, sabotaged the only way a claim about another
+        # marketplace entry can be: by breaking the interface it names. crew's
+        # prose cites build_report.py by path and line for these three
+        # declarations, and a citation into a separate entry goes stale with
+        # nothing in crew changing.
+        "the generator crew cites stops emitting a thead",
+        BUILD_REPORT,
+        '    out += ["  </tr></thead>", "  <tbody>"]',
+        '    out += ["  </tr>", "  <tbody>"]',
+        "tests/test_docs_routing.py::"
+        "test_the_print_rules_match_the_generator_that_proves_them",
+    ),
+    (
+        # The citation rots while every claim it supports stays true. This is
+        # not hypothetical and not a mutation invented for the suite: it is
+        # the exact state the tree was in. A doc-builder change inserted ten
+        # lines, `155-157` became `165-167`, and every test in
+        # test_docs_routing.py stayed green because all of them search the
+        # whole file for the declarations and none of them read the lines
+        # crew names.
+        "the print-block citation points at the wrong lines",
+        HOUSE_STYLE,
+        "`skills/doc-builder/scripts/house_style.py:246-248` \u2014 the body of",
+        "`skills/doc-builder/scripts/house_style.py:245-247` \u2014 the body of",
+        "tests/test_docs_routing.py::"
+        "test_the_cited_lines_of_the_generator_hold_what_crew_says_they_hold",
+    ),
+    (
+        # The other half of the same rot, and the worse-looking one: `123` is
+        # not merely off, it lands in the middle of the masthead CSS, so a
+        # reader following the citation finds a rule about a coloured strip
+        # and concludes the comment was deleted.
+        #
+        # Kept as its own mutation rather than folded into the one above
+        # because the two citations are checked by different assertions -- a
+        # range against the declarations it spans, a single line against the
+        # text crew quotes from it -- and a mutation going red proves the TEST
+        # failed, never which assertion did.
+        "the report profile's table-comment citation points at the wrong line",
+        HOUSE_STYLE,
+        '`skills/doc-builder/scripts/house_style.py:342`, "Every table: real',
+        '`skills/doc-builder/scripts/house_style.py:332`, "Every table: real',
+        "tests/test_docs_routing.py::"
+        "test_the_cited_lines_of_the_generator_hold_what_crew_says_they_hold",
+    ),
+    (
+        # The citation goes back to the bare-filename form. It still resolves
+        # by eye and still names the right line, so nothing a reader sees is
+        # wrong -- which is why this needs a mutation of its own. What it
+        # loses is the only mechanism that re-checks it: `build_report.py:133`
+        # cannot be pasted into `git diff --name-only <anchor>..HEAD -- <path>`.
+        "the citation drops its repo-relative path",
+        HOUSE_STYLE,
+        "at\n`skills/doc-builder/scripts/house_style.py:352`,",
+        "at\n`house_style.py:352`,",
+        "tests/test_docs_routing.py::"
+        "test_the_cited_lines_of_the_generator_hold_what_crew_says_they_hold",
+    ),
+    (
+        # The comment crew quotes occurs TWICE in house_style.py, once in each
+        # profile branch of `stylesheet()`, so the route cites both lines. This
+        # collapses the guide profile's citation onto the report profile's
+        # line. Every character of it still resolves -- that line really does
+        # hold that comment -- and the guide profile's copy is now pinned by
+        # nothing at all, while the section reads as though both were checked.
+        #
+        # This is the mutation the duplicate comment made necessary. Before the
+        # extraction there was one occurrence and this state could not exist.
+        "both table-comment citations collapse onto one line",
+        HOUSE_STYLE,
+        '`skills/doc-builder/scripts/house_style.py:352`, "Every table: real',
+        '`skills/doc-builder/scripts/house_style.py:342`, "Every table: real',
+        "tests/test_docs_routing.py::"
+        "test_the_cited_lines_of_the_generator_hold_what_crew_says_they_hold",
+    ),
+    (
+        # The generated output, which is the only place a PARAMETERISED
+        # selector can be checked. `print_css` takes `headings`; the report
+        # profile passes "h2" and the guide profile "h2, h3". Nothing in
+        # house_style.py's source text contains the rule crew cites, so every
+        # source-reading assertion in the suite stays GREEN through this
+        # mutation -- verified by running it, and only the generated-output
+        # test goes red.
+        #
+        # That is the point of the mutation: it is the one defect in this
+        # cluster that no amount of reading the file can catch, and without a
+        # generated-output check it would ship.
+        "the report profile stops emitting the heading page-break rule",
+        HOUSE_STYLE_PY,
+        'print_css("h2")',
+        'print_css("h4")',
+        "tests/test_docs_routing.py::"
+        "test_the_generated_stylesheet_emits_the_print_rules",
+    ),
+    (
+        # The shipped document loses a print declaration. The `thead` one
+        # again, and for the same reason it was chosen in the route's own
+        # mutation above: deleting the whole block trips the "no @media print
+        # at all" assertion first and leaves the per-declaration check
+        # unproven, which is this file's documented blind spot.
+        "a shipped guide loses the repeated-table-header declaration",
+        GUIDE_HTML,
+        "  thead { display:table-header-group; }",
+        "  thead { display:table-cell; }",
+        "tests/test_docs_routing.py::"
+        "test_every_shipped_guide_carries_the_print_block",
+    ),
+    (
+        # And the markup half, in the artefact rather than in the prose: one
+        # table goes back to a bare `<tr>` of `<th>`, which is what all
+        # twenty-seven of them were. The other four tables in the file keep
+        # their thead, so a count-based assertion -- 5 tables, 4 theads -- and
+        # a per-table one both fail here; a count assertion would NOT fail if
+        # some other table grew a second thead, which is why the test walks
+        # each table on its own.
+        "a table in a shipped guide goes back to a bare header row",
+        GUIDE_HTML,
+        "<thead><tr><th>Habit</th><th>What it costs</th>"
+        "<th>What crew does about it</th></tr></thead>",
+        "<tr><th>Habit</th><th>What it costs</th>"
+        "<th>What crew does about it</th></tr>",
+        "tests/test_docs_routing.py::"
+        "test_every_table_in_every_shipped_guide_has_a_real_thead",
     ),
     (
         # The false sentence itself. `upgradeNeeded` shipped ONE fixed string
@@ -716,10 +912,15 @@ MUTATIONS = (
         # ran. The check that catches it invokes the script's own argparse, so
         # a renamed or removed script fails here rather than at handoff time
         # in front of whoever the document was for.
+        #
+        # Re-anchored 2026-09-22: the sentence naming `build_report.py` now
+        # ends in an em dash rather than a comma (the HTML route rewrite,
+        # commit 1741f233, added "— its HTML is a finished deliverable..."
+        # after it). Same script name, same bullet.
         "the routing table names a script that does not exist",
         HOUSE_STYLE,
-        "`scripts/build_report.py` is the findings report,",
-        "`scripts/build_findings.py` is the findings report,",
+        "`scripts/build_report.py` is the findings report —",
+        "`scripts/build_findings.py` is the findings report —",
         "tests/test_docs_routing.py::"
         "test_the_routed_scripts_are_the_ones_the_table_names",
     ),

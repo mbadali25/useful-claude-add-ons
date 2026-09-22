@@ -177,6 +177,317 @@ as_root() {
 
 have() { command -v "$1" >/dev/null 2>&1; }
 
+# --- uv, under PEP 668 --------------------------------------------------------
+# Three steps below need uv/uvx: the AWS API MCP server, the AWS Pricing MCP server
+# and graphify. All three used to reach straight for `pip3 install --user uv`, and on
+# any distribution that enforces PEP 668 - Debian 12+, Ubuntu 23.04+, Fedora 38+,
+# recent Arch and openSUSE - that command cannot succeed:
+#     error: externally-managed-environment
+# pip exits 1 because the interpreter carries an EXTERNALLY-MANAGED marker beside its
+# stdlib, declaring it the distribution's to manage. That marker is the fact, so it is
+# what gets tested here - there is deliberately NO OS-version gate, the same way
+# install_packages branches on the package manager rather than on the distro.
+#
+# `--break-system-packages` is used nowhere in this script: overriding a distribution's
+# own guard to install a build tool is not this script's call to make on someone else's
+# system Python. It is named in the failure message for the user to choose themselves.
+#
+# Everything this path reports goes to stderr. The defect being replaced was a failed
+# install scrolling past on stdout while the run carried on as though uv were present.
+uv_warn() { printf '    \033[33mWARN:\033[0m %s\n' "$1" >&2; }
+
+# ~/.local/bin is where pipx, uv's own installer and `pip --user` all land, and the
+# invoking user can write it. Prepending it to PATH is therefore only safe while this
+# script IS that user. Run as root with HOME still pointing at an unprivileged account
+# - `sudo -E`, an env_keep carrying HOME, or `su` without `-` - and every later step
+# here (claude, npm, node, python3, and pep668_enforced's own interpreter probe)
+# resolves against a directory that other user can write, ahead of /usr/bin.
+#
+# That invocation is not supported: this script runs unprivileged and elevates the
+# individual commands that need it through as_root/sudo. So it is refused outright and
+# loudly rather than half-handled. "Could not tell who owns HOME" is refused too - an
+# ownership check that did not run is not an ownership check that passed.
+uv_home_is_safe() {
+  local uid_shell="${EUID:-}" uid_cmd owner
+  uid_cmd="$(id -u 2>/dev/null || true)"
+  # Root if EITHER source says so. $EUID is the shell's own and cannot be forged by a
+  # PATH this script does not control; `id` is the one a test fixture can drive, and
+  # covers a shell that somehow does not set EUID. If NEITHER answers, fall through to
+  # the owner check rather than returning safe - "could not tell" must not collapse
+  # into the permissive value.
+  if [ -n "$uid_shell" ] || [ -n "$uid_cmd" ]; then
+    [ "$uid_shell" = "0" ] || [ "$uid_cmd" = "0" ] || return 0
+  fi
+  owner="$(stat -c %u "$HOME" 2>/dev/null || stat -f %u "$HOME" 2>/dev/null || true)"
+  [ "$owner" = "0" ]
+}
+
+uv_on_path() {
+  # pipx, uv's own installer and `pip --user` all put uv in ~/.local/bin, and none of
+  # them put that directory on the PATH of the shell that just ran them - so the probe
+  # has to look there. Two rules, both of which the first version of this got wrong:
+  # prepend ONLY when the probe then succeeds (it prepended before probing, so a FAILED
+  # attempt still moved PATH for the whole rest of the run), and never prepend twice
+  # (three callers x up to three rungs stacked duplicates up).
+  local bin="$HOME/.local/bin" saved="$PATH" added=1
+  case ":$PATH:" in
+    *":$bin:"*) : ;;
+    *) if uv_home_is_safe; then PATH="$bin:$PATH"; added=0; fi ;;
+  esac
+  hash -r 2>/dev/null || true
+  if have uv || have uvx; then
+    export PATH
+    return 0
+  fi
+  if [ "$added" -eq 0 ]; then
+    PATH="$saved"
+    hash -r 2>/dev/null || true
+  fi
+  return 1
+}
+
+pep668_enforced() {
+  # 0 = marker present (pip --user will be refused), 1 = absent, 2 = could not tell.
+  # "Could not tell" is a third value on purpose rather than folding into "absent": the
+  # pip attempt below still runs, but its message then says the check never ran instead
+  # of implying pip failed for some other reason.
+  local py out
+  for py in python3 python py; do
+    have "$py" || continue
+    out="$("$py" -c 'import os, sysconfig; print("MANAGED" if os.path.exists(os.path.join(sysconfig.get_path("stdlib"), "EXTERNALLY-MANAGED")) else "FREE")' 2>/dev/null)"
+    case "$out" in
+      MANAGED) return 0 ;;
+      FREE)    return 1 ;;
+    esac
+  done
+  return 2
+}
+
+# --- the astral.sh standalone installer, pinned -------------------------------
+# https://astral.sh/uv/install.sh is a *latest* pointer: no version, no digest, no
+# signature. Fetching it and running it grants whatever that URL serves at the moment
+# of the run, and the script that was reviewed and the script that ran are then not
+# the same file, with nothing in between able to notice. This repo already argues the
+# opposite case about itself - README.md pins both of ITS install URLs to a commit SHA
+# "so the exact script you're running is fixed and auditable" - so the same standard
+# applies to what this script fetches.
+#
+# Recording the pin is a deliberate human step, and it is two values, not one:
+#   1. read https://astral.sh/uv/<version>/install.sh and satisfy yourself about it
+#   2. sha256sum the exact file you read
+#   3. put <version> in UV_INSTALLER_VERSION and that digest in UV_INSTALLER_SHA256
+# While either is empty this rung is SKIPPED and reported as skipped - never fetched,
+# never run unverified. An unrecorded digest is not a matching digest, and collapsing
+# the two is how a supply-chain check ends up reporting that it ran. The other rungs
+# (pipx, the package manager's pipx, pip where PEP 668 permits) are unaffected.
+#
+# The failure guidance at the bottom of ensure_uv_once still names astral's own
+# documented `curl ... | sh` command, for the same reason `--break-system-packages` is
+# named there: a choice this script will not make on someone else's machine is still
+# theirs to make deliberately.
+UV_INSTALLER_VERSION=""
+UV_INSTALLER_SHA256=""
+
+uv_installer_url() { printf 'https://astral.sh/uv/%s/install.sh' "$UV_INSTALLER_VERSION"; }
+uv_installer_pinned() { [ -n "$UV_INSTALLER_VERSION" ] && [ -n "$UV_INSTALLER_SHA256" ]; }
+
+uv_sha256_of() {
+  # Prints the lowercase sha256 of $1. Returns 1 when no digest tool is present at all,
+  # which is "could not tell" - the caller refuses on that, it is never a match.
+  local out=""
+  if   have sha256sum; then out="$(sha256sum "$1" 2>/dev/null)";        out="${out%% *}"
+  elif have shasum;    then out="$(shasum -a 256 "$1" 2>/dev/null)";    out="${out%% *}"
+  elif have openssl;   then out="$(openssl dgst -sha256 "$1" 2>/dev/null)"; out="${out##* }"
+  else return 1
+  fi
+  [ -n "$out" ] || return 1
+  printf '%s' "${out,,}"
+}
+
+uv_installer_verified() {
+  # 0 only when the downloaded file's digest was computed AND equals the pinned one.
+  local got want="${UV_INSTALLER_SHA256,,}"
+  if ! got="$(uv_sha256_of "$1")"; then
+    uv_warn "cannot verify the astral.sh installer: none of sha256sum, shasum or openssl is on PATH. Refusing to run an installer whose digest could not be checked."
+    return 1
+  fi
+  [ "$got" = "$want" ] && return 0
+  uv_warn "sha256 MISMATCH on the installer for uv $UV_INSTALLER_VERSION - refusing to run it. Expected $want, got $got. Either the pin in this script is stale or what $(uv_installer_url) served is not what was pinned; read the file by hand before changing the pin."
+  return 1
+}
+
+install_pipx_package() {
+  # Idempotent: pipx already present is the whole job done.
+  have pipx && return 0
+  local mgr=""
+  if   have apt-get; then mgr=apt
+  elif have dnf;     then mgr=dnf
+  elif have yum;     then mgr=yum
+  elif have pacman;  then mgr=pacman
+  elif have zypper;  then mgr=zypper
+  elif have apk;     then mgr=apk
+  else
+    return 1
+  fi
+  case "$mgr" in
+    apt)    as_root apt-get update -y >&2 && as_root apt-get install -y pipx >&2 ;;
+    dnf)    as_root dnf install -y pipx >&2 ;;
+    yum)    as_root yum install -y pipx >&2 ;;
+    # `-Sy` without `-u` is a partial upgrade: it refreshes the package databases and
+    # then installs one package built against libraries the rest of the system has not
+    # been upgraded to, which is the documented way to break an Arch install. The two
+    # safe forms are `-Syu python-pipx` and no refresh at all; this takes the second,
+    # because full-system-upgrading a machine that asked for pipx is a bigger surprise
+    # than failing over to the next rung. `--needed` keeps it idempotent.
+    # install_packages below still uses `-Sy` for the prerequisites row - a wider
+    # change than this one, filed in TODO.md rather than made here.
+    pacman) as_root pacman -S --needed --noconfirm python-pipx >&2 ;;
+    zypper) as_root zypper install -y python3-pipx >&2 ;;
+    apk)    as_root apk add --no-cache pipx >&2 ;;
+  esac || return 1
+  hash -r 2>/dev/null || true
+  have pipx
+}
+
+# Memoised across the whole run. ensure_uv is called by three separately selectable
+# rows - aws-mcp, aws-pricing-mcp and graphify - and the chain below is expensive and
+# touches root: `apt-get update`, a pipx install, a download, a pip attempt. On a host
+# where uv will not install, running it per row repeated all of that three times and
+# printed the six-line failure block three times; where uv is already present, skip()
+# fired three times and moved COUNT_SKIPPED by 3 for one tool. The chain runs once and
+# every caller still reports its own row.
+UV_ENSURED=""
+
+ensure_uv() {
+  if [ -n "$UV_ENSURED" ]; then
+    [ "$UV_ENSURED" -eq 0 ] || uv_warn "uv is still unavailable - the install chain above already ran and failed in this run, and is not being repeated."
+    return "$UV_ENSURED"
+  fi
+  ensure_uv_once
+  UV_ENSURED=$?
+  return "$UV_ENSURED"
+}
+
+ensure_uv_once() {
+  # Refuse the root-with-someone-else's-HOME invocation before doing anything at all:
+  # every rung below installs into $HOME/.local/bin and then puts that on PATH.
+  if ! uv_home_is_safe; then
+    uv_warn "not installing uv: this is running as root with HOME=$HOME, which root does not own (or whose owner could not be read). Every method below installs into \$HOME/.local/bin and then puts that directory on PATH, which would leave root resolving binaries out of a directory another user can write."
+    uv_warn "Run this script as your own user - it elevates the individual commands that need it with sudo - or re-run it with HOME set to root's own home directory."
+    return 1
+  fi
+
+  # Idempotent, the same shape as every other tool step here: detect, say "already
+  # installed", do no work.
+  if have uv || have uvx; then
+    skip "uv already installed ($(command -v uv 2>/dev/null || command -v uvx 2>/dev/null))"
+    return 0
+  fi
+
+  local attempted="" installer="" fetched=1 pip_cmd="" managed=2
+
+  # 1. pipx - preferred. It puts each tool in its own virtualenv, so the distribution's
+  #    interpreter is never written to and PEP 668 does not apply. Installing pipx from
+  #    the package manager is exactly what the externally-managed-environment message
+  #    tells you to do.
+  if have pipx || install_pipx_package; then
+    attempted="$attempted pipx"
+    if pipx install uv >&2 && uv_on_path; then
+      COUNT_INSTALLED=$((COUNT_INSTALLED+1))
+      ok "uv installed via pipx ($(command -v uv 2>/dev/null || command -v uvx 2>/dev/null))"
+      return 0
+    fi
+    uv_warn "'pipx install uv' did not produce a usable uv - trying the next method."
+  else
+    attempted="$attempted pipx(no package manager, or the pipx package would not install)"
+  fi
+
+  # 2. Astral's own standalone installer (https://docs.astral.sh/uv/#installation). It
+  #    fetches a self-contained binary into ~/.local/bin and uses no Python at all, so
+  #    it works where neither pipx nor pip can. It needs curl or wget plus network
+  #    access to astral.sh; with neither present it is reported as unavailable rather
+  #    than as a failure of uv. Fetched to a file, checked against the pin above, and
+  #    only then run - never piped into sh, so neither a failed download nor a file
+  #    that is not what was pinned can be mistaken for a successful install.
+  #
+  #    Every label appended to $attempted below is distinct, because that string is the
+  #    whole of what the final failure tells the operator. "astral.sh-installer" bare
+  #    used to be appended BEFORE the download, so a run in which curl was never
+  #    invoked still reported the installer as tried.
+  if ! uv_installer_pinned; then
+    attempted="$attempted astral.sh-installer(skipped: no pinned version+sha256 in this script)"
+    uv_warn "not fetching astral.sh's uv installer: this script pins that installer by version and sha256, and neither is recorded (UV_INSTALLER_VERSION / UV_INSTALLER_SHA256). It will not run an unpinned, unverified installer. See the comment above ensure_uv for how to record the pin."
+  elif have curl || have wget; then
+    installer="$(mktemp 2>/dev/null)" || installer=""
+    if [ -z "$installer" ]; then
+      attempted="$attempted astral.sh-installer(skipped: could not create a temporary file)"
+      uv_warn "could not create a temporary file to download astral.sh's uv installer into - skipping that method. Check that TMPDIR exists and is writable."
+    else
+      # --proto '=https' / --proto-redir '=https' and --https-only are not belt and
+      # braces: -L follows redirects, and without them one redirect to http:// is
+      # enough to serve this file in the clear. -nv rather than -q on wget because a
+      # download that fails has to say why; -q suppresses wget's own error text.
+      if have curl; then
+        curl --proto '=https' --proto-redir '=https' -LsSf "$(uv_installer_url)" -o "$installer" && fetched=0
+      else
+        wget --https-only -nv -O "$installer" "$(uv_installer_url)" && fetched=0
+      fi
+      if [ "$fetched" -ne 0 ]; then
+        attempted="$attempted astral.sh-installer(download failed)"
+        uv_warn "could not download $(uv_installer_url) - trying the next method."
+      elif ! uv_installer_verified "$installer"; then
+        attempted="$attempted astral.sh-installer(rejected: sha256 did not match the pin)"
+      else
+        attempted="$attempted astral.sh-installer"
+        if sh "$installer" >&2 && uv_on_path; then
+          rm -f "$installer"
+          COUNT_INSTALLED=$((COUNT_INSTALLED+1))
+          ok "uv installed via the standalone installer from astral.sh ($(command -v uv 2>/dev/null || command -v uvx 2>/dev/null))"
+          return 0
+        fi
+        uv_warn "the standalone installer for uv $UV_INSTALLER_VERSION did not produce a usable uv - trying the next method."
+      fi
+      rm -f "$installer"
+    fi
+  else
+    attempted="$attempted astral.sh-installer(neither curl nor wget present)"
+  fi
+
+  # 3. pip, last. Only reachable where PEP 668 is NOT in force; where it is, the
+  #    command is skipped rather than run to a guaranteed failure, and said so.
+  if have pip3; then pip_cmd=pip3; elif have pip; then pip_cmd=pip; fi
+  if [ -n "$pip_cmd" ]; then
+    pep668_enforced
+    managed=$?
+    if [ "$managed" -eq 0 ]; then
+      attempted="$attempted $pip_cmd(refused by PEP 668)"
+      uv_warn "not running '$pip_cmd install --user uv': this interpreter is marked externally managed (PEP 668) and pip refuses that install with 'error: externally-managed-environment'."
+    else
+      if [ "$managed" -eq 2 ]; then
+        uv_warn "could not determine whether this interpreter enforces PEP 668 - no python3/python/py to ask. Attempting '$pip_cmd install --user uv' and checking the result rather than assuming either answer."
+      fi
+      attempted="$attempted $pip_cmd"
+      if $pip_cmd install --user uv >&2 && uv_on_path; then
+        COUNT_INSTALLED=$((COUNT_INSTALLED+1))
+        ok "uv installed via '$pip_cmd install --user uv' ($(command -v uv 2>/dev/null || command -v uvx 2>/dev/null))"
+        return 0
+      fi
+      uv_warn "'$pip_cmd install --user uv' did not produce a usable uv."
+    fi
+  else
+    attempted="$attempted pip(absent)"
+  fi
+
+  uv_warn "could not install uv by any available method. Tried:$attempted"
+  uv_warn "uv is needed by the AWS MCP servers and by graphify. Install it yourself with either:"
+  uv_warn "    sudo apt-get install -y pipx   (or your distro's pipx package), then: pipx install uv"
+  uv_warn "    curl -LsSf https://astral.sh/uv/install.sh | sh"
+  uv_warn "Then re-run this script. If you would rather override your distribution's PEP 668"
+  uv_warn "guard yourself, 'pip3 install --user --break-system-packages uv' does that; this"
+  uv_warn "script will not do it to your system Python for you."
+  return 1
+}
+
 # --- JSON helper -------------------------------------------------------------
 # Prefer jq; fall back to python3 (which this script installs). Reads stdin.
 json_query() {
@@ -259,36 +570,81 @@ load_plugins() {
   local raw
   raw="$(claude plugin list --json 2>/dev/null)" || return 0
   [ -z "$raw" ] && return 0
-  # Emit one "name<TAB>version<TAB>enabled" line per plugin; ids are 'name@marketplace'.
-  # 'enabled' is tracked because installing a plugin and having it actually load are
-  # two different things: a plugin switched off in settings.json is installed, at the
-  # right scope, and completely inert - none of its skills or hooks are visible.
+  # Emit one "name<TAB>version<TAB>enabled<TAB>marketplace" line per plugin; ids are
+  # 'name@marketplace'. 'enabled' is tracked because installing a plugin and having it
+  # actually load are two different things: a plugin switched off in settings.json is
+  # installed, at the right scope, and completely inert - none of its skills or hooks
+  # are visible.
+  #
+  # The MARKETPLACE column is new, and it is here because the bare name is not a
+  # unique key: 'github' is published BOTH by this repo (a gh-CLI skill for branch
+  # protection) and by anthropics/claude-plugins-official (the GitHub MCP server).
+  # They are different plugins, Claude Code keys its own installed set by
+  # 'name@marketplace' and holds both at once, and this cache used to throw the
+  # marketplace away - so install_plugin read one as proof the other was present and
+  # skipped it while printing "already installed". See plugin_installed_from.
   PLUGINS_CACHE="$(printf '%s' "$raw" | json_query \
-    '.[] | "\(.id | split("@")[0])\t\(.version // "unknown")\t\(if .enabled then "1" else "0" end)"' \
+    '.[] | "\(.id | split("@")[0])\t\(.version // "unknown")\t\(if .enabled then "1" else "0" end)\t\(.id | split("@")[1] // "")"' \
     'import json,sys
 for p in json.load(sys.stdin):
     pid = p.get("id") or ""
     if pid:
-        print("%s\t%s\t%s" % (pid.split("@")[0], p.get("version") or "unknown",
-                              "1" if p.get("enabled") else "0"))')"
+        bits = pid.split("@")
+        print("%s\t%s\t%s\t%s" % (bits[0], p.get("version") or "unknown",
+                              "1" if p.get("enabled") else "0",
+                              bits[1] if len(bits) > 1 else ""))')"
 }
 
 plugin_version() {
-  local want="$1" name ver enabled
+  local want="$1" name ver enabled mkt
   [ -z "$PLUGINS_CACHE" ] && return 1
-  while IFS=$'\t' read -r name ver enabled; do
+  while IFS=$'\t' read -r name ver enabled mkt; do
     [ "$name" = "$want" ] && { printf '%s' "$ver"; return 0; }
   done <<< "$PLUGINS_CACHE"
   return 1
+}
+
+plugin_installed_from() {
+  # Is the bare name $1 installed FROM marketplace $2?
+  #
+  # $2 empty means the caller has no marketplace to compare against, and the answer
+  # is the old bare-name one - true if the name is installed at all. That keeps every
+  # spec without an '@' behaving exactly as it did.
+  #
+  # When $2 IS given this is deliberately NOT "is any copy installed": two
+  # marketplaces can publish unrelated plugins under one bare name, and treating one
+  # as evidence of the other is how a requested install turns into a SKIP line
+  # reading "already installed". Same name is not same plugin.
+  local want="$1" mkt_want="$2" name ver enabled mkt
+  [ -z "$PLUGINS_CACHE" ] && return 1
+  while IFS=$'\t' read -r name ver enabled mkt; do
+    [ "$name" = "$want" ] || continue
+    [ -z "$mkt_want" ] && return 0
+    [ "$mkt" = "$mkt_want" ] && return 0
+  done <<< "$PLUGINS_CACHE"
+  return 1
+}
+
+plugin_marketplaces() {
+  # Comma-separated list of the marketplaces the bare name $1 is installed from, for
+  # the message that explains why a second copy is being installed.
+  local want="$1" name ver enabled mkt out=""
+  [ -z "$PLUGINS_CACHE" ] && return 1
+  while IFS=$'\t' read -r name ver enabled mkt; do
+    [ "$name" = "$want" ] || continue
+    out="${out}${out:+, }${mkt:-unknown}"
+  done <<< "$PLUGINS_CACHE"
+  [ -n "$out" ] || return 1
+  printf '%s' "$out"
 }
 
 plugin_enabled() {
   # True when *any* installed copy of the bare name is enabled. Two marketplaces can
   # publish the same plugin, and one live copy is all that is needed - this keeps the
   # enablement check from fighting a plugin already loaded from another marketplace.
-  local want="$1" name ver enabled
+  local want="$1" name ver enabled mkt
   [ -z "$PLUGINS_CACHE" ] && return 1
-  while IFS=$'\t' read -r name ver enabled; do
+  while IFS=$'\t' read -r name ver enabled mkt; do
     [ "$name" = "$want" ] && [ "$enabled" = "1" ] && return 0
   done <<< "$PLUGINS_CACHE"
   return 1
@@ -500,8 +856,8 @@ plugin_cache_add() {
   # whole list. 'claude plugin install' enables what it installs, so it is live - and
   # trusting that is more accurate than re-reading, since a freshly installed plugin
   # can still read as disabled in 'claude plugin list --json' (see ensure_plugin_enabled).
-  local name="$1" ver="${2:-unknown}"
-  PLUGINS_CACHE="${PLUGINS_CACHE}${PLUGINS_CACHE:+$'\n'}${name}"$'\t'"${ver}"$'\t1'
+  local name="$1" ver="${2:-unknown}" mkt="${3:-}"
+  PLUGINS_CACHE="${PLUGINS_CACHE}${PLUGINS_CACHE:+$'\n'}${name}"$'\t'"${ver}"$'\t1\t'"${mkt}"
 }
 
 ensure_plugin_enabled() {
@@ -559,6 +915,30 @@ mcp_server_registered() {
   return 1
 }
 
+# Everything this path reports goes to stderr, for the same reason uv_warn does: the
+# failure it describes is invisible at the point it is made and surfaces much later,
+# inside a session, as a server that will not start.
+mcp_warn() { printf '    \033[33mWARN:\033[0m %s\n' "$1" >&2; }
+
+mcp_launcher_resolves() {
+  # `claude mcp add <name> -- <cmd> <args...>` WRITES CONFIG AND NEVER INVOKES <cmd>.
+  # So without this check every registration below printed "added MCP server 'x'"
+  # whether or not <cmd> exists, and the run reported success for a server that can
+  # never start. Nothing in this script reads Connected/Failed back out of
+  # `claude mcp list` - load_mcp_servers takes the NAME off each line and nothing
+  # else - so the installer had no second chance to notice. This repo's named
+  # recurring bug: an unknown collapsing into the safe-looking value.
+  #
+  # Only the launcher is checked, never the package behind it: `npx -y @scope/pkg`
+  # resolves its package at first launch and asking here would mean a network call.
+  # "npx is absent" is knowable now; "the package publishes" is not.
+  local name="$1" cmd="$2"
+  [ -n "$cmd" ] || return 0
+  have "$cmd" && return 0
+  mcp_warn "not registering MCP server '$name': its launch command '$cmd' does not resolve on PATH in this shell. 'claude mcp add' records a command without running it, so registering now would report success for a server that cannot start. Install '$cmd' (the prerequisites item installs Node.js, which provides npx) and re-run."
+  return 1
+}
+
 add_mcp_server() {
   # add_mcp_server <name> <env-spec> <command...>
   # <env-spec> is "KEY=value" or "-" for none. Detect-then-act, same contract as
@@ -568,6 +948,11 @@ add_mcp_server() {
     warn "claude not found on PATH in this shell - run 'source ~/.bashrc' and re-run this script."
     return 1
   fi
+  # Deliberately BEFORE the already-registered skip, not after it. A registration
+  # made blind on an earlier run is exactly as broken as one made blind now, and
+  # skipping it would print "already registered" over a server that cannot start -
+  # the same false reassurance in the idempotent path.
+  mcp_launcher_resolves "$name" "$1" || return 1
   if mcp_server_registered "$name"; then
     skip "MCP server '$name' already registered"
     return 0
@@ -587,6 +972,12 @@ add_mcp_http_server() {
   # For a server that is ALREADY listening over HTTP: there is no command to
   # launch, claude takes the endpoint as a positional argument, and each header
   # is passed whole ("Authorization: Bearer x"). Same detect-then-act contract.
+  #
+  # There is deliberately NO mcp_launcher_resolves call here, and that is not an
+  # oversight: these rows register a URL, so there is no executable whose absence
+  # could be detected. The equivalent check would be fetching the endpoint, which
+  # would make this installer's success depend on the network being up at install
+  # time for a server whose whole point is that it is reached later.
   local name="$1" url="$2"; shift 2
   if ! have claude; then
     warn "claude not found on PATH in this shell - run 'source ~/.bashrc' and re-run this script."
@@ -639,7 +1030,15 @@ install_plugin() {
   # Warmed here, before either branch: every reader below runs inside "$(...)", and an
   # assignment in a subshell is discarded. Both paths need the marketplace catalog.
   ensure_marketplace_caches "$mkt"
-  if before="$(plugin_version "$name")"; then
+  # '&& plugin_installed_from' is the whole of the same-bare-name fix. Without it a
+  # spec naming one marketplace was satisfied by a plugin installed from a different
+  # one - so adding 'github@claude-plugins-official' to a machine that already has
+  # this repo's own 'github' skill printed "plugin 'github' already installed" and
+  # installed nothing. Nothing downstream could catch that: the SKIP line is the
+  # success path.
+  if [ -n "$mkt" ] && plugin_version "$name" >/dev/null && ! plugin_installed_from "$name" "$mkt"; then
+    warn "plugin '$name' is installed from $(plugin_marketplaces "$name"), not from '$mkt' - two marketplaces publish different plugins under this one bare name. Installing '$spec' alongside it."
+  elif before="$(plugin_version "$name")"; then
     if [ "$NO_UPDATE" -eq 1 ]; then
       skip "plugin '$name' already installed (version $before)"
       ensure_plugin_enabled "$spec"
@@ -723,7 +1122,7 @@ install_plugin() {
   # Add the new plugin to the in-memory cache rather than reloading the whole list:
   # a fresh run installs 25+ plugins, and 'claude plugin list --json' after each one
   # was a second CLI spawn per plugin that nothing in this run reads differently.
-  plugin_cache_add "$name" "$(marketplace_plugin_version "$mkt" "$name" || printf 'unknown')"
+  plugin_cache_add "$name" "$(marketplace_plugin_version "$mkt" "$name" || printf 'unknown')" "$mkt"
   COUNT_INSTALLED=$((COUNT_INSTALLED+1))
   ok "installed plugin '$spec'"
   # No ensure_plugin_enabled here: 'claude plugin install' already enabled it. See the
@@ -748,7 +1147,7 @@ MENU_NAME=(
   "Prerequisites: git, nodejs, npm, python3, pip3 (needs root or sudo)"
   "Claude Code CLI (@anthropic-ai/claude-code) + PATH export + update check"
   "This repo's marketplace + its skills"
-  "Team plugins: superpowers, frontend-design, excalidraw-generator"
+  "Team plugins: superpowers, frontend-design, excalidraw-generator, github"
   "find-skills skill (vercel-labs/skills)"
   "Community marketplaces + plugins (adhd-output-style, azure-tools, voltagent, ...)"
   "claude-code-setup plugin (anthropics/claude-plugins-official)"
@@ -871,7 +1270,7 @@ SKILL_NAME=(
   "claude-memories-canvas  - claude-memories vault: wiki/maps .canvas conventions"
   "claude-memories-vault   - claude-memories vault: layout, frontmatter, write lock"
   "cloudflare              - Cloudflare v4: DNS, WAF, cache, Workers, Zero Trust"
-  "doc-builder             - Reports + SOPs -> DOCX/PDF via Word, brand pack sets the style"
+  "doc-builder             - Reports + SOPs -> DOCX/PDF via Word or LibreOffice, brand pack sets the style"
   "drata                   - Drata: controls, monitors, evidence, audit prep"
   "exchange-mailbox-cleanup - M365 offboarding walkthrough: hold, preserve, delete, export"
   "exchange-mailbox-restore - M365 restore walkthrough: triage, then one of five paths"
@@ -941,25 +1340,45 @@ unset _i
 # <PREFIX>_SPEC entries are "plugin@marketplace|marketplace-source|marketplace-name":
 # unlike the skills, these come from three different marketplaces, and only the ones
 # behind a ticked plugin need registering.
-TEAM_KEYS=("superpowers" "frontend-design" "excalidraw-generator")
+# 'github' here is ANTHROPIC'S GitHub plugin (the official GitHub MCP server:
+# issues, pull requests, reviews), NOT this repo's own 'github' skill. This repo's
+# one is already installed by the own-skills row above - it is in SKILL_KEYS, and
+# SKILL_SPEC builds 'github@useful-claude-add-ons' for it - so adding that here would
+# be a second registration of something already installed, which is a no-op that
+# reads like a fix. The two are different things with the same bare name:
+# claude-plugins-official's is an MCP server for the GitHub API, and this repo's is a
+# skill for branch protection and rulesets over the gh CLI. install_plugin detects on
+# the BARE NAME, so a machine that has one will skip the other - see the landmine
+# below.
+TEAM_KEYS=("superpowers" "frontend-design" "excalidraw-generator" "github")
 TEAM_NAME=(
   "superpowers             - Workflow skills: brainstorm, plans, TDD, code review"
   "frontend-design         - Anthropic's frontend design skill"
   "excalidraw-generator    - Excalidraw diagrams from a description"
+  "github                  - Anthropic's GitHub MCP server: issues, PRs, reviews"
 )
 TEAM_SPEC=(
   "superpowers@claude-plugins-official|anthropics/claude-plugins-official|claude-plugins-official"
   "frontend-design@claude-plugins-official|anthropics/claude-plugins-official|claude-plugins-official"
   "excalidraw-generator@excalidraw-generator|lexiaoyao20/excalidraw-generator|excalidraw-generator"
+  "github@claude-plugins-official|anthropics/claude-plugins-official|claude-plugins-official"
 )
 TEAM_STATE=()
 for _i in "${!TEAM_KEYS[@]}"; do TEAM_STATE+=(1); done
 unset _i
 
 # --- Community plugins (menu item 6) ------------------------------------------
+# The LOCAL NAME of anthropics/claude-plugins-community is 'claude-community', not
+# 'claude-plugins-community'. That is what the repo publishes itself as in its own
+# .claude-plugin/marketplace.json, it is the key under
+# ~/.claude/plugins/known_marketplaces.json, and it is what 'plugin@marketplace' has
+# to match. Writing the repo name in the last field instead would make
+# marketplace_installed look for a name that never exists, so the row would re-add
+# the marketplace on EVERY run while reporting success - the same class of silent
+# re-do the fcakyon/claude-settings note above exists to prevent.
 COMMUNITY_KEYS=(
   "adhd-output-style" "azure-tools" "anthropic-office-skills" "agent-browser" "ppt-master"
-  "voltagent-infra" "voltagent-qa-sec"
+  "voltagent-infra" "voltagent-qa-sec" "eli5"
 )
 COMMUNITY_NAME=(
   "adhd-output-style       - ADHD-friendly output style"
@@ -969,6 +1388,7 @@ COMMUNITY_NAME=(
   "ppt-master              - PowerPoint deck generation"
   "voltagent-infra         - VoltAgent DevOps/cloud subagents: k8s, Terraform, AWS/Azure, SRE"
   "voltagent-qa-sec        - VoltAgent testing/security subagents: review, pentest, QA"
+  "eli5                    - Explain any topic like I'm 5: big visuals, few words"
 )
 COMMUNITY_SPEC=(
   "adhd-output-style@claude-settings|fcakyon/claude-codex-settings|claude-settings"
@@ -978,6 +1398,7 @@ COMMUNITY_SPEC=(
   "ppt-master@ppt-master|hugohe3/ppt-master|ppt-master"
   "voltagent-infra@voltagent-subagents|VoltAgent/awesome-claude-code-subagents|voltagent-subagents"
   "voltagent-qa-sec@voltagent-subagents|VoltAgent/awesome-claude-code-subagents|voltagent-subagents"
+  "eli5@claude-community|anthropics/claude-plugins-community|claude-community"
 )
 COMMUNITY_STATE=()
 for _i in "${!COMMUNITY_KEYS[@]}"; do COMMUNITY_STATE+=(1); done
@@ -998,7 +1419,7 @@ GROUP_NOUN1=(    "skill"      "team plugin"  "community plugin"  "plugin")
 # printf template for the menu row: selected, total.
 GROUP_LABEL=(
   "This repo's marketplace + %s of %s skills  >"
-  "Team plugins: %s of %s (superpowers, frontend-design, excalidraw)  >"
+  "Team plugins: %s of %s (superpowers, frontend-design, excalidraw, github)  >"
   "Community marketplaces + %s of %s plugins  >"
   "This repo's plugins: %s of %s (crew, gizmoduck, localgpu, obsidian-vault, rule-of-two)  >"
 )
@@ -1913,6 +2334,120 @@ fi
 load_marketplaces
 load_plugins
 
+# --- Skill-level Python dependencies -----------------------------------------
+# `claude plugin install` copies a skill's files and nothing else. So a skill whose
+# scripts import third-party packages - doc-builder needs python-docx, PyMuPDF,
+# Pillow, numpy and (on Windows) pywin32 - installed "successfully" and then failed
+# on the first document with ModuleNotFoundError. Neither this script nor its
+# PowerShell half had ever run a skill's requirements.txt or its preflight: grep for
+# either name returned zero hits outside comments, on every OS.
+#
+# What this does, and what it deliberately does NOT do. It RUNS each selected skill's
+# own scripts/preflight.py in that script's REPORT-ONLY mode - no --install, and
+# stdin closed so its confirm() prompt cannot fire - then reprints what is missing on
+# STDERR with the exact command to fix it. It installs nothing, for two reasons that
+# are separate and both sufficient:
+#
+#   1. PEP 668. On Debian 12+, Ubuntu 23.04+, Fedora 38+ and friends the interpreter
+#      carries an EXTERNALLY-MANAGED marker and `pip install --user` exits 1. This
+#      script already refuses to pass --break-system-packages for uv (see the long
+#      comment above ensure_uv); overriding a distribution's own guard to install a
+#      document library is no more this script's call to make than it was there.
+#   2. `preflight.py --venv` WOULD succeed under PEP 668, and is still the wrong
+#      thing here: it installs into <skill>/.venv and prints "run the scripts with
+#      this interpreter". Nothing makes that happen - the skill names the venv as an
+#      option, not as its default - so the packages would be installed, unused, and
+#      the skill would still fail while this step reported success. That is this
+#      repo's named recurring bug, an unknown collapsing into the safe-looking value,
+#      and it is exactly why this step reports instead of installing.
+#
+# It never fails the run. A dependency the operator has to choose how to install is
+# not a failure of the skill install, and burying the report in a failed step would
+# make it harder to read, not easier.
+# Same stream and same shape as mcp_warn, and separate from it only so a reader
+# grepping for one is not shown the other's call sites.
+preflight_warn() { printf '    \033[33mWARN:\033[0m %s\n' "$1" >&2; }
+
+resolve_python() {
+  # python3, then python, then py. Git Bash on Windows ships without python3, and
+  # the caller WARNS on a failure here rather than carrying on with an empty string -
+  # a silently absent interpreter is how a check ends up reporting that it ran.
+  local p
+  for p in python3 python py; do
+    have "$p" && { printf '%s' "$p"; return 0; }
+  done
+  return 1
+}
+
+skill_preflight_path() {
+  # The INSTALLED copy, wherever `claude plugin install` put it - the cache path
+  # carries the version ("<mkt>/<skill>/1.2.1/scripts/preflight.py") and is not worth
+  # reconstructing, so it is searched for, the same way setup_notify searches for
+  # notify's config.example.json. The cache is preferred over the marketplace clone
+  # because the cache is the copy Claude actually runs.
+  local skill="$1" root hit
+  root="$(claude_config_root)/plugins"
+  for hit in "$root/cache" "$root"; do
+    [ -d "$hit" ] || continue
+    hit="$(find "$hit" -name preflight.py -path "*/$skill/*" -print -quit 2>/dev/null || true)"
+    [ -n "$hit" ] && { printf '%s' "$hit"; return 0; }
+  done
+  return 1
+}
+
+run_skill_preflights() {
+  local py="" i key pf rc n=0 out
+  out="$(mktemp 2>/dev/null)" || out=""
+  if [ -z "$out" ]; then
+    preflight_warn "could not create a temporary file - skipping the skill dependency preflights. Check that TMPDIR exists and is writable."
+    return 0
+  fi
+  for (( i=0; i<${#SKILL_KEYS[@]}; i++ )); do
+    [ "${SKILL_STATE[$i]}" -eq 1 ] || continue
+    key="${SKILL_KEYS[$i]}"
+    pf="$(skill_preflight_path "$key")" || continue
+    n=$((n+1))
+    if [ -z "$py" ]; then
+      py="$(resolve_python)" || {
+        preflight_warn "none of python3, python or py is on PATH, so '$key' and every other skill's Python dependencies are UNCHECKED - not absent, unchecked. Install Python 3 and re-run this script, or run '$pf' by hand."
+        rm -f "$out"
+        return 0
+      }
+    fi
+    # </dev/null is load-bearing: preflight.py offers to install what is missing and
+    # its confirm() reads stdin. With no tty it returns false, but under `curl | bash`
+    # fd 0 is the rest of THIS SCRIPT, and the prompt would eat the next line of it.
+    "$py" "$pf" </dev/null >"$out" 2>&1
+    rc=$?
+    case "$rc" in
+      0)
+        # The "already installed" branch. Idempotent by construction: this step reads
+        # the machine and writes nothing, so a second run says the same thing.
+        skip "$key: Python dependencies already satisfied"
+        ;;
+      3)
+        # preflight.py's own exit code for "packages are missing and I did not
+        # install them". Its report goes to stderr with the skill named, because the
+        # alternative - a line on stdout in the middle of a 36-skill install - is the
+        # silence this step exists to end.
+        preflight_warn "$key: Python dependencies are MISSING. This script does not install them; see reason 1 and 2 in the comment above run_skill_preflights."
+        sed -n 's/^  MISSING */        missing: /p' "$out" >&2
+        # Option (a) has no PowerShell counterpart and the .ps1 half's list starts at
+        # (b) for that reason - there is no distribution package manager there to
+        # name. The other two options are worded identically in both halves.
+        preflight_warn "$key: fix it with ONE of - (a) your distribution's own packages, e.g. 'sudo apt install python3-docx python3-numpy python3-pil python3-fitz'; (b) a virtual environment the skill owns: '$py \"$pf\" --venv', then run its scripts with the interpreter it names; or (c) '$py -m pip install --user -r \"$(dirname "$(dirname "$pf")")/requirements.txt\"', which fails on a PEP 668 host unless you add --break-system-packages, which this script will not do for you."
+        ;;
+      *)
+        preflight_warn "$key: its preflight exited $rc, so its Python dependencies are UNCHECKED - not absent, unchecked. Its last lines were:"
+        tail -n 5 "$out" | sed 's/^/        /' >&2
+        ;;
+    esac
+  done
+  rm -f "$out"
+  [ "$n" -gt 0 ] || skip "no selected skill ships a scripts/preflight.py - nothing to check"
+  return 0
+}
+
 # --- 3. This repo's own marketplace and skills -------------------------------
 if is_selected "own-skills"; then
   # Registered up front rather than left to install_group, so ticking zero skills still
@@ -1933,6 +2468,10 @@ if is_selected "own-skills"; then
   if [ "$NOTIFY_SETUP" = "1" ] && skill_selected "notify"; then
     run_step "Set up the notify skill" setup_notify
   fi
+
+  # After the install, never before: a preflight reads the copy that landed.
+  run_step "Check skill Python dependencies (report only - installs nothing)" \
+    run_skill_preflights
 fi
 
 # --- 4. Team marketplaces and plugins ----------------------------------------
@@ -2048,17 +2587,14 @@ fi
 load_mcp_servers
 
 install_aws_mcp() {
-  if ! have uv && ! have uvx; then
-    if have pip3; then
-      pip3 install --user uv
-    elif have pip; then
-      pip install --user uv
-    else
-      warn "pip not found - install python3-pip first, then re-run to install uv."
-      return 1
-    fi
-    export PATH="$HOME/.local/bin:$PATH"
-  fi
+  # Was an unchecked `pip3 install --user uv` whose failure this function ignored:
+  # `claude mcp add` records a command without running it, so the run continued and
+  # registered a server whose uvx does not exist. ensure_uv reports its own failure
+  # on stderr; the caller's only job is to stop.
+  ensure_uv || {
+    uv_warn "not registering aws-api - 'uvx awslabs.aws-api-mcp-server@latest' needs uv."
+    return 1
+  }
   if ! have claude; then
     warn "claude not found on PATH in this shell - run 'source ~/.bashrc' and re-run this script."
     return 1
@@ -2100,29 +2636,17 @@ fi
 # themselves are free of charge, which is worth saying because "pricing API" reads
 # like something that bills.
 install_aws_pricing_mcp() {
-  if ! have uv && ! have uvx; then
-    # The install must be CHECKED, not merely attempted. `claude mcp add`
-    # records a command without running it, so a failed `pip install uv`
-    # followed by an unconditional add registers a server whose executable is
-    # absent -- and the failure then surfaces later, inside a session, as an
-    # MCP server that will not start, with nothing pointing back at this step.
-    # The existing `aws-mcp` row has the same shape and the same bug; this one
-    # is the row being added, so it is the one fixed here.
-    if have pip3; then
-      pip3 install --user uv || { warn "pip3 install uv failed - not registering aws-pricing."; return 1; }
-    elif have pip; then
-      pip install --user uv || { warn "pip install uv failed - not registering aws-pricing."; return 1; }
-    else
-      warn "pip not found - install python3-pip first, then re-run to install uv."
-      return 1
-    fi
-    export PATH="$HOME/.local/bin:$PATH"
-    if ! have uv && ! have uvx; then
-      warn "uv installed but neither 'uv' nor 'uvx' is on PATH - not registering aws-pricing."
-      warn "Open a new shell (or add ~/.local/bin to PATH) and re-run this item."
-      return 1
-    fi
-  fi
+  # The install must be CHECKED, not merely attempted. `claude mcp add` records a
+  # command without running it, so an install that failed followed by an
+  # unconditional add registers a server whose executable is absent -- and the
+  # failure then surfaces later, inside a session, as an MCP server that will not
+  # start, with nothing pointing back at this step. ensure_uv checks its own result
+  # and only returns 0 once uv or uvx actually resolves on PATH; `aws-mcp` above now
+  # goes through the same function.
+  ensure_uv || {
+    uv_warn "not registering aws-pricing - 'uvx awslabs.aws-pricing-mcp-server@latest' needs uv."
+    return 1
+  }
   add_mcp_server "aws-pricing" "-" uvx awslabs.aws-pricing-mcp-server@latest || return 1
   ok "Needs AWS credentials whose role allows pricing:*. The Price List calls are free."
 }
@@ -2462,19 +2986,13 @@ install_graphify() {
   if have graphify; then
     skip "graphify already installed ($(command -v graphify))"
   else
-    if ! have uv && ! have uvx; then
-      if have pip3; then
-        pip3 install --user uv
-      elif have pip; then
-        pip install --user uv
-      else
-        warn "pip not found - install python3-pip first, then re-run to install graphify."
-        return 1
-      fi
-      export PATH="$HOME/.local/bin:$PATH"
-    fi
+    ensure_uv || {
+      uv_warn "not installing graphify - 'uv tool install graphifyy' needs uv."
+      return 1
+    }
+    # graphify needs `uv` itself, not just `uvx`: ensure_uv is satisfied by either.
     if ! have uv; then
-      warn "uv still not found after attempting to install it - install it manually (https://docs.astral.sh/uv) and re-run."
+      uv_warn "uv still not found after attempting to install it - install it manually (https://docs.astral.sh/uv) and re-run."
       return 1
     fi
     uv tool install graphifyy || return 1
@@ -2566,10 +3084,15 @@ install_ms_mcp() {
   # Published on npm under @badali404 since 2026-08-28, so registration is the
   # npx form and needs no clone, no build, and no global install. npx resolves
   # and caches the package on the server's first launch.
+  # Counted rather than `|| return 1`, so one server failing still lets the other
+  # three be attempted AND still fails the step. Before this the four calls were bare:
+  # each returned non-zero into nothing, the trailing guidance printed, and run_step
+  # recorded the row as successful.
+  local mcp_failures=0
   if [ "$have_admin" -eq 1 ]; then
-    add_mcp_server "mcp-msgraph" "$env_spec" npx -y "@badali404/mcp-msgraph@latest"
-    add_mcp_server "mcp-intune" "$env_spec" npx -y "@badali404/mcp-intune@latest"
-    add_mcp_server "mcp-o365-admin" "$env_spec" npx -y "@badali404/mcp-o365-admin@latest"
+    add_mcp_server "mcp-msgraph" "$env_spec" npx -y "@badali404/mcp-msgraph@latest" || mcp_failures=$((mcp_failures+1))
+    add_mcp_server "mcp-intune" "$env_spec" npx -y "@badali404/mcp-intune@latest" || mcp_failures=$((mcp_failures+1))
+    add_mcp_server "mcp-o365-admin" "$env_spec" npx -y "@badali404/mcp-o365-admin@latest" || mcp_failures=$((mcp_failures+1))
     if [ "$have_admin_secret" -eq 0 ]; then
       printf '        Registered via the Azure CLI fallback (no MS_ADMIN_* set) - each server will\n'
       printf '        authenticate as whoever is signed in with "az login" wherever it actually runs.\n'
@@ -2578,7 +3101,7 @@ install_ms_mcp() {
     skip "mcp-msgraph/mcp-intune/mcp-o365-admin: no MS_ADMIN_* credentials and no 'az login' session"
   fi
   if [ "$have_user" -eq 1 ]; then
-    add_mcp_server "mcp-o365-user" "$env_spec" npx -y "@badali404/mcp-o365-user@latest"
+    add_mcp_server "mcp-o365-user" "$env_spec" npx -y "@badali404/mcp-o365-user@latest" || mcp_failures=$((mcp_failures+1))
   else
     skip "mcp-o365-user: no MS_USER_CLIENT_ID given"
   fi
@@ -2592,6 +3115,7 @@ install_ms_mcp() {
     printf '        requires confirm: true; the flag alone never lets a tool write.\n'
   fi
   ok "Registered via 'npx -y @badali404/<pkg>@latest' - no secrets were written to ~/.claude.json. If not relying on 'az login', export MS_ADMIN_TENANT_ID/MS_ADMIN_CLIENT_ID/MS_ADMIN_CLIENT_SECRET and/or MS_USER_CLIENT_ID (+ optional MS_USER_TENANT_ID) in the shell/profile that launches 'claude' itself, or the servers relying on them will fail to authenticate. Verify auth with 'npx -y @badali404/mcp-msgraph@latest doctor' (same pattern per server) - it reports which auth chain link actually authenticated and whether writes are enabled."
+  [ "$mcp_failures" -eq 0 ] || return 1
 }
 if is_selected "ms-mcp"; then
   run_step "Register Microsoft MCP servers (mcp-servers/)" install_ms_mcp

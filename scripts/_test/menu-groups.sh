@@ -83,7 +83,11 @@ check "a range"             "4" "$(group_selected_count SKILL)"
 expand_group_spec COMMUNITY 'none'
 check "none"                "0" "$(group_selected_count COMMUNITY)"
 expand_group_spec COMMUNITY 'all'
-check "all"                 "7" "$(group_selected_count COMMUNITY)"
+# Read from COMMUNITY_KEYS, not written out, for the reason case 6 records below: a
+# hardcoded count turns every newly registered community plugin into a failure in this
+# file, which is the one place a reader would not think to look for it. What this case
+# checks is that 'all' means the whole catalog, whatever size the catalog is.
+check "all"                 "$(group_count COMMUNITY)" "$(group_selected_count COMMUNITY)"
 warned "ignoring unknown team plugin 'not-a-plugin'" \
   expand_group_spec TEAM 'superpowers,not-a-plugin' && got=yes || got=no
 check "unknown name warns, in the singular"    yes "$got"
@@ -151,25 +155,41 @@ out="$(run_summary --plugins none --non-interactive)"
 case "$out" in *"This repo's plugins"*) got=yes ;; *) got=no ;; esac
 check "--plugins none leaves it out"                         no  "$got"
 out="$(run_summary --team superpowers --non-interactive)"
-case "$out" in *"Team plugins: 1 of 3"*) got=yes ;; *) got=no ;; esac
+# Same reason as the repo-plugins line above: the total comes from TEAM_KEYS so that
+# adding a team plugin is not a failure here. 'github' was added to that catalog on
+# 2026-09-22 and this line read "1 of 3" until then.
+case "$out" in *"Team plugins: 1 of $(group_count TEAM)"*) got=yes ;; *) got=no ;; esac
 check "--team narrows the row label"         yes "$got"
 
 echo "7. a marketplace behind several plugins is registered once, not once per plugin"
-# Three of the community row's seven plugins come from claude-settings, and two
-# more share voltagent-subagents. Before
-# install_group that was three separate "Marketplace:" steps, and a marketplace refresh
-# re-clones the repo. A stub 'claude' makes this observable without installing anything.
+# Three of the community row's plugins come from claude-settings, and two more share
+# voltagent-subagents. Before install_group that was three separate "Marketplace:"
+# steps, and a marketplace refresh re-clones the repo. A stub 'claude' makes this
+# observable without installing anything.
+#
+# Both expected numbers are DERIVED from COMMUNITY_SPEC rather than written out, for
+# the reason case 6 records: adding eli5 on 2026-09-22 turned the hardcoded 7 and 4
+# into two failures in a file nobody would look in for them. The property under test
+# is "one marketplace step per DISTINCT marketplace, one plugin step per plugin",
+# which is what the two counts below express.
 mkdir -p "$TMP/bin"
 printf '#!/bin/sh\nexit 0\n' > "$TMP/bin/claude"
 chmod +x "$TMP/bin/claude"
 steps="$(CLAUDE_CONFIG_DIR="$TMP/cfg" PATH="$TMP/bin:$PATH" \
   bash "$SCRIPT" --select community --community all 2>&1 \
   | sed 's/\x1b\[[0-9;]*m//g' | grep -c '^==> Marketplace:')"
-check "7 community plugins -> 4 marketplace steps" "4" "$steps"
+community_plugin_count="$(group_count COMMUNITY)"
+community_marketplace_count="$(
+  for _i in $(seq 0 $((community_plugin_count - 1))); do
+    spec="$(group_spec COMMUNITY "$_i")"; spec="${spec#*|}"; printf '%s\n' "${spec#*|}"
+  done | sort -u | wc -l | tr -d ' '
+)"
+check "$community_plugin_count community plugins -> $community_marketplace_count marketplace steps" \
+  "$community_marketplace_count" "$steps"
 plugins="$(CLAUDE_CONFIG_DIR="$TMP/cfg" PATH="$TMP/bin:$PATH" \
   bash "$SCRIPT" --select community --community all 2>&1 \
   | sed 's/\x1b\[[0-9;]*m//g' | grep -c '^==> Plugin:')"
-check "and 7 plugin steps"                         "7" "$plugins"
+check "and $community_plugin_count plugin steps"    "$community_plugin_count" "$plugins"
 one="$(CLAUDE_CONFIG_DIR="$TMP/cfg" PATH="$TMP/bin:$PATH" \
   bash "$SCRIPT" --select community --community ppt-master 2>&1 \
   | sed 's/\x1b\[[0-9;]*m//g' | grep -c '^==> Marketplace:')"

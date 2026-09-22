@@ -3,6 +3,11 @@
 Every rule here was measured against the Word object model on a real estate, not
 assumed. The test method is at the bottom — re-verify after any Office update.
 
+Word is the **reference** renderer, and these are its rules. The other renderer,
+LibreOffice, drops a *different* and largely disjoint set — see "What LibreOffice
+silently drops" at the end of this file before assuming a Word-safe stylesheet is
+safe anywhere else.
+
 The common property of all five: they fail **silently and completely**. No
 error, no console message, just a document that reads as though nobody styled
 it. Two of them are worse than unstyled — they produce invisible text.
@@ -167,7 +172,16 @@ Three rules that go with it, each of which caused a visible defect:
 
 ## Verifying a change
 
-**Do not trust a browser preview.** Convert and inspect the Word object model:
+**Do not trust a browser preview.** Convert and inspect the Word object model.
+
+**This verification needs Word, and where Word cannot exist the answer is UNAVAILABLE —
+not "skipped", and never "passed".** The snippet below drives `Word.Application` over COM.
+Microsoft ships no Word desktop app for Linux, so on Linux (and on a macOS machine without
+Office) it cannot run at all, and neither can Gate 2, which asks the same kind of question
+about the SOP path. A LibreOffice render does **not** substitute: it answers a question
+about LibreOffice. `verify_borders.py` reports that state explicitly and exits 3; say the
+same thing in prose — "Gate 1 passed, Gate 2 UNAVAILABLE on this host" — rather than
+reporting a green run. A check that could not run is not a check that passed.
 
 ```powershell
 $w = New-Object -ComObject Word.Application
@@ -205,3 +219,51 @@ builder actually emitted (16 checks, exit 0 = pass). Items 8 and 9 need a person
 7. Every severity colour is accompanied by its word.
 8. Converted to PDF and **opened** — not previewed in a browser.
 9. Report written to `reports/` at the repo root, and `reports/` is gitignored.
+
+---
+
+## What LibreOffice silently drops (the other renderer)
+
+LibreOffice (`soffice --headless`) is the only renderer that exists on Linux and macOS, so
+on those machines a report is converted by it or not at all. **It fails the opposite way
+from Word**, and the overlap between the two rule sets is smaller than it looks — a
+stylesheet written to survive Word does not automatically survive LibreOffice.
+
+Measured 2026-09-22 with LibreOffice 26.2.5.2 on Ubuntu 26.04, by converting a
+one-table HTML file carrying six selector shapes and rasterising the PDF at 120 dpi:
+
+| Selector | Word | LibreOffice HTML import |
+|---|---|---|
+| `.a { background }` — bare class | applies | **applies** |
+| `td.b { background }` — element.class | applies | **dropped** |
+| `table.c td { background }` — descendant | applies | **dropped** |
+| `table.d th { background }` — descendant | applies | **dropped** |
+| `table.e th, table.e td { border }` — grouped descendant | applies | **dropped** |
+| `tr.f td { background }` — descendant | applies | **dropped** |
+| `class="a b"` — two classes on one element | **dropped** (rule 4) | not measured |
+
+So LibreOffice honours **simple selectors only**. In a doc-builder report that costs, all
+silently:
+
+- the table grid — `table.data th, table.data td { border:1px solid ... }`
+- the navy header row — `table.data th { background:NAVY; color:#FFFFFF }`
+- the zebra rows — `table.data tr.alt td { background:ZEBRA }`
+- the summary-card panels — `td.card { background:PANEL; border:... }`
+- the meta-table key shading — `table.meta td.k { background:ZEBRA }`
+
+What **does** survive, because each is a bare class: the masthead strip, band, rule and
+classification bar; the lede panel; the handling banner; every severity chip, with its word.
+The document still reads as branded — it is simply flatter, and a reader cannot tell from
+the file which of the two rendered it unless doc-builder's `[renderer: ...]` line is carried
+with it.
+
+**Do not "fix" this by rewriting the stylesheet into bare classes.** Every rule above it in
+this file was measured against Word, which is the reference renderer, and a change made for
+LibreOffice that breaks Word trades a legible report for an unstyled one on the platform
+most of these documents are read on. If parity is wanted, it is its own piece of work with
+its own measurement on both engines.
+
+The SOP path is much less affected: `build_sop.py` emits real OOXML, so LibreOffice is
+importing a Word document rather than parsing HTML. The self-test fixture renders correctly
+through it, screenshot border on all four edges included. That is still not evidence about
+Word — see the UNAVAILABLE rule above.

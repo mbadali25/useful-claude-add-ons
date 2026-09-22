@@ -2,9 +2,14 @@
 # Dry-run checks for scripts/merge_gate.sh.
 #
 # No network, no credentials, no real config: merge_gate.sh resolves its
-# transport through BB_CMD, so every test points that at _test/stub_bb.sh and
-# feeds it canned responses. bb.sh is never executed, which is also why
-# BITBUCKET_EMAIL / BITBUCKET_API_TOKEN are not needed and must not be read.
+# transport through BB_CMD, so every test up to the last section points that at
+# _test/stub_bb.sh and feeds it canned responses.
+#
+# The final section is the exception and is deliberate: it runs the real bb.sh,
+# because a fixture stub can never show whether the shipped file is invocable at
+# all. It strips BITBUCKET_EMAIL and BITBUCKET_API_TOKEN from bb.sh's
+# environment, so bb.sh stops at its own auth guard before curl. Still no
+# network and still no credential read - see that section's own comment.
 #
 # What is under test is the part that cannot be checked by reading the code:
 # which objects the scope resolver decides cover a branch under BOTH
@@ -343,6 +348,60 @@ ERR="$(cat "$CASE_DIR/err")"
 want_nonzero_rc "exits non-zero once the page cap is exceeded"
 want_count "stopped after MAX_PAGES fetches, not before and not after" "$(calls_of GET)" "5"
 want_contains "names the page cap as the cause" "$ERR" "exceeded 5 page"
+
+echo "== transport: the shipped bb.sh is invocable the way it is actually invoked =="
+# Everything above stubs the transport with a 755 fixture, so none of it can see
+# a defect in the real bb.sh. It was shipped 100644 and exec'd as a program at
+# both SKILL.md's documented smoke test and merge_gate.sh's default transport,
+# so every POSIX clone got "Permission denied" / rc 126 - for the whole life of
+# the file, invisibly, because the fixture stub stood in for it.
+#
+# bb.sh IS run below, unlike everywhere else in this file. Both credential
+# variables are stripped from its environment, so it stops at its own auth guard
+# (bb.sh:12-16) before curl is ever reached: no network, no credential read.
+BB_REAL="$HERE/../bb.sh"
+BB_DIR="$(cd "$(dirname "$BB_REAL")" && pwd)"
+NOCRED="env -u BITBUCKET_EMAIL -u BITBUCKET_API_TOKEN"
+GUARD_TEXT="set BITBUCKET_EMAIL and BITBUCKET_API_TOKEN"
+
+# 1. The committed mode. Asserted against the git index, not the filesystem: a
+#    sandbox or a mount that reports every file rwxrwxrwx makes an `-x` test
+#    vacuous while the index - which is what a clone gets - still says 644. An
+#    index that cannot be read is its own failure, never a silent pass.
+#    Same defect and same check as crew 0.19.80's find-polluter.sh
+#    (plugin/crew/tests/test_debugging_method.py:352-375, CHANGELOG.md:637-639).
+new_case
+INDEX_MODE="$(git -C "$BB_DIR" ls-files -s -- bb.sh 2>/dev/null | awk '{print $1}')"
+if [ -z "$INDEX_MODE" ]; then
+  fail "could not read bb.sh's mode from the git index - the committed mode is unverified, not assumed fine"
+elif [ "$INDEX_MODE" = "100755" ]; then
+  pass "bb.sh is committed executable (100755)"
+else
+  fail "bb.sh is tracked at mode $INDEX_MODE, not 100755. Fix with \`git update-index --chmod=+x skills/bitbucket/scripts/bb.sh\` - a worktree chmod alone does not change what a fresh clone gets, only the index bit does"
+fi
+
+# 2. bb.sh runs as a bash program and reaches its own auth guard. Asserts the
+#    guard's text, not just a non-126 exit code: a script that died for some
+#    other reason would also exit non-126.
+new_case
+RC=0
+$NOCRED bash "$BB_REAL" GET user >"$CASE_DIR/out" 2>"$CASE_DIR/err" || RC=$?
+OUT="$(cat "$CASE_DIR/out")"; ERR="$(cat "$CASE_DIR/err")"
+want_count "bash scripts/bb.sh reaches the auth guard, not a shell error" "$RC" "1"
+want_contains "the auth guard is what stopped it" "$ERR" "$GUARD_TEXT"
+want_missing "not a permission failure" "$ERR" "Permission denied"
+
+# 3. merge_gate.sh's default transport - BB_CMD unset, so $HERE/bb.sh, the real
+#    file - gets far enough to be stopped by bb.sh's auth guard rather than by
+#    the shell refusing to exec it. This is the call path at merge_gate.sh:105.
+new_case
+RC=0
+$NOCRED bash "$GATE" export ws repo "$CASE_DIR/out.json" \
+  >"$CASE_DIR/out" 2>"$CASE_DIR/err" || RC=$?
+OUT="$(cat "$CASE_DIR/out")"; ERR="$(cat "$CASE_DIR/err")"
+want_nonzero_rc "the default transport still fails without credentials"
+want_missing "the default transport is not blocked by the executable bit" "$ERR" "Permission denied"
+want_contains "it failed on bb.sh's auth guard instead" "$ERR" "$GUARD_TEXT"
 
 printf '\n%s passed, %s failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ] || exit 1

@@ -160,8 +160,13 @@ def _load_spec_map(specs_dir):
         out = spec.get("output")
         if not out:
             continue
-        if not os.path.isabs(out):
-            out = os.path.join(os.path.dirname(spec_path), out)
+        # abs_or_join, not os.path.isabs. This key is what Gate 1 looks a master
+        # up by, and a Windows-authored `output` read on Linux used to build a
+        # key ending `<specs_dir>/C:\repos\...`, which no real master can match.
+        # The lookup then missed, `info["spec"]` read "none", and a master whose
+        # spec DISAGREES with it was reported PASS / exit 0 - the drift check
+        # silently not running, rather than running and passing.
+        out = resolve_brand.abs_or_join(out, os.path.dirname(spec_path))
         key = os.path.normcase(os.path.normpath(os.path.abspath(out)))
         mapping[key] = spec_path
     return mapping

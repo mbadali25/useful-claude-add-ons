@@ -136,10 +136,31 @@ local" is narrower than it looks.** The scanner (`verify_record.scan_reach`)
 STOPS MODELLING SHELL (Codex round 6) — five rounds of "read one layer
 deeper into the shell syntax" each found a new shape that defeated the last
 one, so it no longer tries to parse shell at all:
-- **any shell metacharacter present, anywhere, defers unconditionally** —
-  `( ) $ ; & | < > `` " ' \ { } * ? [ ] ~ # !`, a newline, or a tab. No
-  exception, not even `2>&1` or a trailing `#` comment. Notice: `shell
-  syntax in an undeclared rule: declare "reach": "local" (or network/host)`.
+- **any shell metacharacter present, anywhere, defers unconditionally** — the
+  set below, plus a newline or a tab. No exception, not even a `2>&1` or a
+  trailing comment. Notice: `shell syntax in an undeclared rule: declare
+  "reach": "local" (or network/host)`.
+
+  ```text
+  ( ) $ ; & | < > " ' \ { } * ? [ ] ~ # !
+  ```
+
+  ...and U+0060, the backtick, which is deliberately NOT printed above.
+
+  **Never write a literal backtick anywhere in this file.** Claude Code pairs
+  SINGLE backticks when it scans a command file — it does not honour the
+  double-backtick form, and it does not exempt fenced blocks. So one unpaired
+  backtick leaves the whole file's spans off by one, and the prose between two
+  of them is handed to bash before the command runs.
+
+  This line did exactly that, twice. First as an inline span, where the
+  fragment beginning `, a newline, or a tab` became a command and
+  `/crew:verify` died with `/bin/bash: line 1: ,: command not found`. Then
+  again after the list was moved into this fenced block, which looked like the
+  fix and was not: a fence is three backticks, the literal one inside the list
+  paired with one of them, and the file was left with an odd count — 251 — and
+  an unterminated span. The rule that actually holds is parity, not container.
+  `check_command_backtick_spans` enforces it.
 - only once nothing on that list is present does whitespace-only splitting
   become safe. A reach verb (`ssm`, `ssh`, `curl`, `aws`, `az`, `gh`,
   `psql`, `mysql`) anywhere — notice: `remote verb <v>`.

@@ -92,6 +92,16 @@ The script falls back to `npx --yes @mermaid-js/mermaid-cli` if `mmdc` isn't on 
 Only rendering needs it — `--check` runs on bare Python: it compares hashes and
 reads the committed SVGs, but never invokes mermaid.
 
+**On Windows the launcher is `mmdc.cmd`, and the script invokes it by absolute path.**
+That is not cosmetic. `shutil.which` finds `mmdc.cmd` because it consults `PATHEXT`;
+`subprocess` without a shell does not, because CreateProcess searches PATH for the
+literal name and name + `.exe` only. Passing the bare string `mmdc` therefore died
+with `WinError 2` on machines where mermaid-cli **was** installed — and the install
+message above never printed, because `which` had already succeeded. `resolve_mmdc()`
+now returns the path `which` resolved, for the `npx` fallback as well, and a launcher
+that resolves but cannot be spawned reports as a missing tool with that message rather
+than as a traceback.
+
 ### 2. Vendor the script into the repo
 
 Copy these into the target repo and commit them, so the pipeline and every developer

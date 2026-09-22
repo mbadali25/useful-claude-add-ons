@@ -21,12 +21,46 @@
 #                      Scopes needed on the token: read:jira-work, write:jira-work,
 #                      read:jira-user, read:me.
 #
-# Dependencies: curl, jq
+# Dependencies: curl, jq. jq is RESOLVED, not assumed — see _jira_jq below.
 #
 # Usage: source this file, then call the functions, e.g.:
 #   source jira-api.sh
 #   jira_get_issue PROJ-123
 #   jira_search 'assignee = currentUser() AND resolution = Unresolved'
+
+### jq resolution — a missing jq is a missing tool, not a silent wrong request ###
+
+# jq is a hard dependency of this file, and it is NOT bundled with Git for
+# Windows, so on a Windows box it is routinely absent. Absent, it used to be
+# SILENT: `$(jq ...)` inside a larger string swallowed the 127, the caller sent
+# a payload-less POST to a URL with an empty path segment, and printed
+# "(no content on success = 204)". Every jq invocation in this file therefore
+# goes through _jira_jq, which resolves an interpreter across the names and
+# locations jq is actually installed under and, when nothing resolves, says so
+# on stderr and returns 127. Same contract as this repo's pwsh rule in
+# .crew/verify.json: a tool that could not run must never report as a check —
+# or here, a request — that passed.
+#
+# Order matters, and mirrors that rule: bare name first, then the .exe suffix
+# (under WSL the reachable binary is the Windows one and is named jq.exe, so
+# omitting the suffix reports TOOL MISSING on a box where jq is installed and
+# usable), then absolute locations with and without the /mnt prefix.
+_jira_jq() {
+  local c
+  for c in jq jq.exe \
+           "${HOME:-/nonexistent}/scoop/shims/jq.exe" \
+           "/c/ProgramData/chocolatey/bin/jq.exe" \
+           "/mnt/c/ProgramData/chocolatey/bin/jq.exe" \
+           "/c/Program Files/jq/jq.exe" \
+           "/mnt/c/Program Files/jq/jq.exe"; do
+    if command -v "$c" >/dev/null 2>&1 || [[ -x "$c" ]]; then
+      "$c" "$@"
+      return $?
+    fi
+  done
+  printf '%s\n' "TOOL MISSING: jq is on no PATH and at no known install location, so this Jira request WAS NOT MADE. This is a missing tool, not a failed check. Install jq (https://jqlang.github.io/jq/download/) — it does not ship with Git for Windows." >&2
+  return 127
+}
 
 # Look up a site's Cloud ID with no auth required — useful when the user only has
 # JIRA_WORKSPACE and needs JIRA_CLOUD_ID to use a scoped token.
@@ -40,7 +74,7 @@ jira_get_cloud_id() (
   # exits 0 printing nothing, the pipeline is 0, and this returns EMPTY WITH
   # SUCCESS - from the documented onboarding step for scoped tokens.
   set -o pipefail
-  curl -sS --fail-with-body --connect-timeout 10 "https://${workspace}.atlassian.net/_edge/tenant_info" | jq -r '.cloudId'
+  curl -sS --fail-with-body --connect-timeout 10 "https://${workspace}.atlassian.net/_edge/tenant_info" | _jira_jq -r '.cloudId'
 )
 
 # Percent-encode one value for a URL path or query. jq's @uri, because jq is
@@ -48,7 +82,7 @@ jira_get_cloud_id() (
 # loops) adds one. A key is usually alnum-plus-hyphen and looks safe to
 # interpolate raw - right up to the caller who passes `PROJ-1?expand=changelog`
 # and silently changes the request.
-_jira_uri() { jq -rn --arg v "$1" '$v | @uri'; }
+_jira_uri() { _jira_jq -rn --arg v "$1" '$v | @uri'; }
 
 _jira_curl() (
   # _jira_curl METHOD PATH [JSON_BODY]
@@ -63,6 +97,27 @@ _jira_curl() (
     # Classic-token mode: direct site domain.
     : "${JIRA_WORKSPACE:?Set JIRA_WORKSPACE (e.g. 'acme' for acme.atlassian.net), or JIRA_BASE_URL, or JIRA_CLOUD_ID for a scoped token}"
     JIRA_BASE_URL="https://${JIRA_WORKSPACE}.atlassian.net"
+  fi
+
+  # Backstop, and the reason it lives HERE rather than only at the call sites:
+  # three separate rounds of fixes to this file each repaired the jq call sites
+  # known at the time and each missed some. This is the one point every request
+  # passes through, so it is the only place a guard cannot be missed by the
+  # next unguarded interpolation somebody adds.
+  #
+  # An empty path segment ("/issue//transitions") or a trailing slash
+  # ("/issue/") can only mean a value that belongs there — usually the issue
+  # key — failed to build upstream. No endpoint in this file legitimately has
+  # either shape. Likewise every POST and PUT here carries a body; an empty one
+  # means the payload failed to build. Both used to reach the network and come
+  # back looking like success.
+  if [[ "$path" == *"//"* || "$path" == */ ]]; then
+    printf '%s\n' "jira-api: REQUEST NOT SENT — refusing ${method} to malformed path '${path}'. An empty path segment means a value (usually the issue key) failed to build upstream; check stderr above for the cause." >&2
+    return 2
+  fi
+  if [[ "$method" == "POST" || "$method" == "PUT" ]] && [[ -z "$body" ]]; then
+    printf '%s\n' "jira-api: REQUEST NOT SENT — refusing ${method} ${path} with an empty body. The JSON payload failed to build upstream; check stderr above for the cause." >&2
+    return 2
   fi
 
   local _JIRA_API="${JIRA_BASE_URL}/rest/api/3"
@@ -80,7 +135,7 @@ _jira_curl() (
 # Wrap plain text into the minimal Atlassian Document Format (ADF) required
 # by API v3 for descriptions and comments.
 _adf() {
-  jq -Rn --arg text "$1" '{type:"doc", version:1, content:[{type:"paragraph", content:[{type:"text", text:$text}]}]}'
+  _jira_jq -Rn --arg text "$1" '{type:"doc", version:1, content:[{type:"paragraph", content:[{type:"text", text:$text}]}]}'
 }
 
 ### Projects ###
@@ -114,8 +169,8 @@ jira_search() {
   # jira_search 'JQL STRING' [maxResults]
   local jql="$1" max="${2:-50}"
   local body
-  body=$(jq -n --arg jql "$jql" --argjson max "$max" \
-    '{jql: $jql, maxResults: $max, fields: ["summary","status","assignee","priority","updated"]}')
+  body=$(_jira_jq -n --arg jql "$jql" --argjson max "$max" \
+    '{jql: $jql, maxResults: $max, fields: ["summary","status","assignee","priority","updated"]}') || return $?
   _jira_curl POST "/search/jql" "$body"
 }
 
@@ -125,12 +180,14 @@ jira_create_issue() {
   # jira_create_issue PROJECTKEY ISSUETYPE "Summary text" ["Description text"]
   local project="$1" issuetype="$2" summary="$3" desc="${4:-}"
   local desc_json="null"
-  [[ -n "$desc" ]] && desc_json=$(_adf "$desc")
+  if [[ -n "$desc" ]]; then
+    desc_json=$(_adf "$desc") || return $?
+  fi
   local body
-  body=$(jq -n \
+  body=$(_jira_jq -n \
     --arg project "$project" --arg issuetype "$issuetype" --arg summary "$summary" \
     --argjson desc "$desc_json" \
-    '{fields: {project: {key: $project}, issuetype: {name: $issuetype}, summary: $summary, description: $desc}}')
+    '{fields: {project: {key: $project}, issuetype: {name: $issuetype}, summary: $summary, description: $desc}}') || return $?
   _jira_curl POST "/issue" "$body"
 }
 
@@ -139,9 +196,10 @@ jira_create_issue() {
 jira_edit_issue() {
   # jira_edit_issue ISSUEKEY '{"summary": "New title", "priority": {"name": "High"}}'
   local key="$1" fields_json="$2"
-  local body
-  body=$(jq -n --argjson fields "$fields_json" '{fields: $fields}')
-  _jira_curl PUT "/issue/$(_jira_uri "$key")" "$body" || return $?
+  local body enc
+  enc=$(_jira_uri "$key") || return $?
+  body=$(_jira_jq -n --argjson fields "$fields_json" '{fields: $fields}') || return $?
+  _jira_curl PUT "/issue/${enc}" "$body" || return $?
   echo "(no content on success = 204)"
 }
 
@@ -161,13 +219,14 @@ jira_whoami() {
 jira_assign() {
   # jira_assign ISSUEKEY ACCOUNT_ID   (use "null" to unassign)
   local key="$1" account_id="$2"
-  local body
+  local body enc
+  enc=$(_jira_uri "$key") || return $?
   if [[ "$account_id" == "null" ]]; then
     body='{"fields": {"assignee": null}}'
   else
-    body=$(jq -n --arg id "$account_id" '{fields: {assignee: {accountId: $id}}}')
+    body=$(_jira_jq -n --arg id "$account_id" '{fields: {assignee: {accountId: $id}}}') || return $?
   fi
-  _jira_curl PUT "/issue/$(_jira_uri "$key")" "$body" || return $?
+  _jira_curl PUT "/issue/${enc}" "$body" || return $?
   echo "(no content on success = 204)"
 }
 
@@ -175,15 +234,18 @@ jira_assign() {
 
 jira_get_transitions() {
   # jira_get_transitions ISSUEKEY
-  _jira_curl GET "/issue/$(_jira_uri "$1")/transitions"
+  local enc
+  enc=$(_jira_uri "$1") || return $?
+  _jira_curl GET "/issue/${enc}/transitions"
 }
 
 jira_transition() {
   # jira_transition ISSUEKEY TRANSITION_ID
   local key="$1" transition_id="$2"
-  local body
-  body=$(jq -n --arg id "$transition_id" '{transition: {id: $id}}')
-  _jira_curl POST "/issue/$(_jira_uri "$key")/transitions" "$body" || return $?
+  local body enc
+  enc=$(_jira_uri "$key") || return $?
+  body=$(_jira_jq -n --arg id "$transition_id" '{transition: {id: $id}}') || return $?
+  _jira_curl POST "/issue/${enc}/transitions" "$body" || return $?
   echo "(no content on success = 204)"
 }
 
@@ -197,22 +259,26 @@ jira_clear_resolution() {
 jira_add_comment() {
   # jira_add_comment ISSUEKEY "Comment text"
   local key="$1" text="$2"
-  local body
-  body=$(jq -n --argjson body "$(_adf "$text")" '{body: $body}')
-  _jira_curl POST "/issue/$(_jira_uri "$key")/comment" "$body"
+  local body enc adf
+  enc=$(_jira_uri "$key") || return $?
+  adf=$(_adf "$text") || return $?
+  body=$(_jira_jq -n --argjson body "$adf" '{body: $body}') || return $?
+  _jira_curl POST "/issue/${enc}/comment" "$body"
 }
 
 jira_add_worklog() {
   # jira_add_worklog ISSUEKEY "2h 30m" ["Optional comment"]
   local key="$1" time_spent="$2" comment="${3:-}"
-  local body
+  local body enc adf
+  enc=$(_jira_uri "$key") || return $?
   if [[ -n "$comment" ]]; then
-    body=$(jq -n --arg t "$time_spent" --argjson c "$(_adf "$comment")" \
-      '{timeSpent: $t, comment: $c}')
+    adf=$(_adf "$comment") || return $?
+    body=$(_jira_jq -n --arg t "$time_spent" --argjson c "$adf" \
+      '{timeSpent: $t, comment: $c}') || return $?
   else
-    body=$(jq -n --arg t "$time_spent" '{timeSpent: $t}')
+    body=$(_jira_jq -n --arg t "$time_spent" '{timeSpent: $t}') || return $?
   fi
-  _jira_curl POST "/issue/$(_jira_uri "$key")/worklog" "$body"
+  _jira_curl POST "/issue/${enc}/worklog" "$body"
 }
 
 ### Issue links ###
@@ -225,8 +291,8 @@ jira_link_issues() {
   # jira_link_issues INWARD_KEY OUTWARD_KEY "Link Type Name"
   local inward="$1" outward="$2" link_type="$3"
   local body
-  body=$(jq -n --arg t "$link_type" --arg in "$inward" --arg out "$outward" \
-    '{type: {name: $t}, inwardIssue: {key: $in}, outwardIssue: {key: $out}}')
+  body=$(_jira_jq -n --arg t "$link_type" --arg in "$inward" --arg out "$outward" \
+    '{type: {name: $t}, inwardIssue: {key: $in}, outwardIssue: {key: $out}}') || return $?
   _jira_curl POST "/issueLink" "$body"
 }
 
@@ -235,7 +301,8 @@ jira_link_issues() {
 jira_delete_issue() {
   # DESTRUCTIVE AND IRREVERSIBLE. jira_delete_issue ISSUEKEY
   # Only call this after explicit, unambiguous user confirmation (see SKILL.md).
-  local key="$1"
-  _jira_curl DELETE "/issue/$(_jira_uri "$key")" || return $?
+  local key="$1" enc
+  enc=$(_jira_uri "$key") || return $?
+  _jira_curl DELETE "/issue/${enc}" || return $?
   echo "(no content on success = 204 — issue is permanently gone)"
 }

@@ -2,36 +2,85 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>The crew plugin: what it does and why</title>
+<title>The Crew Plugin: What It Does and Why</title>
 <style>
-body { font-family: Calibri, Arial, sans-serif; font-size: 11pt; color: #1A1A1A; margin: 2cm; line-height: 1.4; }
-h1 { font-size: 22pt; color: #1F4E79; margin-bottom: 4pt; }
-h2 { font-size: 16pt; color: #1F4E79; margin-top: 24pt; border-bottom: 1px solid #5C6670; padding-bottom: 3pt; }
-h3 { font-size: 13pt; color: #1F4E79; margin-top: 16pt; }
-p { margin: 6pt 0; }
-table { border-collapse: collapse; width: 100%; margin: 8pt 0 12pt 0; }
-th { background: #1F4E79; color: #FFFFFF; text-align: left; padding: 5pt 6pt; font-size: 10pt; }
-td { border-bottom: 1px solid #C8CDD2; padding: 5pt 6pt; vertical-align: top; font-size: 10pt; }
-.muted { color: #5C6670; font-size: 9.5pt; }
-.warn { color: #B45309; }
-.fail { color: #B02A1E; }
-.box { border: 1px solid #1F4E79; padding: 8pt 10pt; margin: 10pt 0; background: #F3F6FA; }
-.plain { border-left: 4px solid #1F4E79; padding: 4pt 10pt; margin: 8pt 0; background: #F7F9FB; }
-code { font-family: Consolas, "Courier New", monospace; font-size: 9.5pt; }
-ul { margin: 4pt 0 8pt 18pt; }
-li { margin: 3pt 0; }
+body { font-family:'Segoe UI',Calibri,Arial,sans-serif; font-size:11pt;
+       color:#1B1B1F; margin:2cm; line-height:1.45; }
+.wrap { max-width:none; margin:0; padding:0; }
+
+h1 { font-size:22pt; margin:0 0 4pt; color:#1F4E79; }
+h2 { font-size:16pt; margin:24pt 0 8pt; padding-bottom:3pt;
+     border-bottom:1px solid #DCDEE5; color:#1F4E79; }
+h3 { font-size:13pt; margin:16pt 0 6pt; color:#1F4E79; }
+p  { margin:6pt 0; }
+ul, ol { margin:4pt 0 8pt 18pt; }
+li { margin:3pt 0; }
+code { font-family:Consolas,'Courier New',monospace; font-size:9.5pt; }
+.sub    { color:#5C5F6B; font-size:10pt; margin:0 0 10pt; }
+.muted  { color:#5C5F6B; font-size:9.5pt; }
+.warn { color:#8A6100; }
+.fail { color:#A01B12; }
+.footer { color:#5C5F6B; font-size:9.5pt; margin-top:26pt;
+          border-top:1px solid #DCDEE5; padding-top:8pt; }
+.box { background:#F6F7F9; border:1px solid #1F4E79;
+        padding:8pt 10pt; margin:10pt 0; }
+.plain { background:#F6F7F9; border-left:4px solid #1F4E79;
+          padding:4pt 10pt; margin:8pt 0; }
+
+/* Every table: real grid, real thead. Both required. */
+table { border-collapse:collapse; width:100%; table-layout:auto;
+             margin:8px 0 4px; }
+th, td { border:1px solid #B8BCC6; padding:7px 10px;
+             text-align:left; vertical-align:top; overflow-wrap:break-word; }
+th { background:#1F4E79; color:#FFFFFF; font-weight:600; }
+/* Zebra is an explicit class, written per row by the builder. */
+tr.alt td { background:#EEF3F8; }
+
+table.meta { border-collapse:collapse; width:100%; margin:0 0 14px; }
+table.meta td { border:1px solid #B8BCC6; padding:6px 10px; font-size:12px; }
+table.meta td.k { background:#EEF3F8; font-weight:600; width:17%; }
+
+.lede { background:#F6F7F9; border-left:4px solid #1F4E79;
+        padding:10px 14px; margin:10px 0 4px; }
+.handling { background:#FDE8E6; border-left:4px solid #8B1A13;
+            padding:8px 14px; margin:10px 0; font-size:12px; color:#A01B12; }
+
+/* Cards are a table on purpose; the number and label are real block
+   elements rather than styled spans. */
+table.cards { border-collapse:separate; border-spacing:8px 0; width:100%;
+              margin:6px 0 2px; }
+td.card { background:#F6F7F9; border:1px solid #B8BCC6; padding:10px 12px;
+          text-align:center; }
+div.n { font-size:22px; font-weight:700; color:#1F4E79; }
+div.l { font-size:11px; color:#5C5F6B; }
+
+.chip-critical, .chip-high, .chip-medium, .chip-low, .chip-info, .chip-unverified { display:inline-block; padding:2px 8px; font-weight:700; font-size:11px; white-space:nowrap; }
+.chip-critical { background:#FDE8E6; color:#A01B12; }
+.chip-high { background:#FFEDD5; color:#9A3412; }
+.chip-medium { background:#FDF3D7; color:#8A6100; }
+.chip-low { background:#E3F4EA; color:#1C6B3F; }
+.chip-info { background:#E8EFF8; color:#2F4B7C; }
+.chip-unverified { background:#EDEEF1; color:#5C5F6B; }
+
+@media print {
+  body { font-size:11pt; }
+  .wrap { padding:0; max-width:none; }
+  h2, h3 { page-break-after:avoid; }
+  tr { page-break-inside:avoid; }
+  thead { display:table-header-group; }
+}
 </style>
 </head>
 <body>
 
-<h1>The crew plugin: what it does and why</h1>
+<h1>The Crew Plugin: What It Does and Why</h1>
 <p class="muted">The combined guide: high-level and technical in one document. Two companion documents split it: <i>crew-overview</i> for readers without technical depth and <i>crew-technical-reference</i> for the people who run it. Written 20 September 2026 against crew 0.19.92 on <code>main</code> (commit 621d50dc), with the Stop-gate fix (0.19.93) described as it stands in review.</p>
 
 <div class="box">
 <p><b>In one paragraph.</b> Crew turns Claude Code from a single assistant into a small, disciplined software team. One agent manages, one investigates, one implements, an independent one from a different AI vendor reviews, and automatic gates stop anything that fails from being merged or released. Everything it knows about a codebase is written down in files that live with the code, so nothing depends on one person's memory or one chat session. It exists because an AI that writes code, reviews its own work, and never loses focus is a fiction; crew makes each of those a separate, checkable step.</p>
 </div>
 
-<h2>1. The problem it solves</h2>
+<h2>1. The Problem It Solves</h2>
 <p>Left to itself, an AI coding assistant has four habits that cost real money:</p>
 <ul>
 <li><b>It marks its own homework.</b> The same model that wrote a change is the one saying it is fine.</li>
@@ -41,15 +90,16 @@ li { margin: 3pt 0; }
 </ul>
 <p>Crew answers each habit with a mechanism rather than an instruction: a separate reviewer, a written code map, a scope rule with an enforced write boundary, and gates that block.</p>
 
-<h2>2. How it works, in plain terms</h2>
+<h2>2. How It Works, in Plain Terms</h2>
 <div class="plain">
 <p><b>Think of it as a very small consultancy inside your editor.</b> You write a ticket. A manager (the PM) decides who should do what and keeps the overall picture. A developer takes the ticket into a private workspace and does only that job. When it is done, a reviewer from a different company reads the change looking for defects, and reports them in a fixed format. A set of automatic checks runs before anything is merged or promoted, and if one fails, the release stops. Every decision and every lesson is written into files in the repository, so the next session, or the next person, starts where this one left off.</p>
 </div>
 <p>The technical version of the same sentence: file-backed tickets; one implementation session in its own context; an independent QA pass by Codex, Copilot or a fresh Claude context, whichever probes clean; deterministic gates wired into Claude Code's hook system; and a code map, code graph and diagrams kept in version control.</p>
 
-<h3>The people, so to speak</h3>
+<h3>The People, So to Speak</h3>
 <table>
-<tr><th>Role</th><th>What it does</th><th>Why it is a separate agent</th></tr>
+<thead><tr><th>Role</th><th>What it does</th><th>Why it is a separate agent</th></tr></thead>
+<tbody>
 <tr><td>PM</td><td>Reads project state, decides what the crew should do next, dispatches the roles that do it, reports back. Never writes application code itself.</td><td>Keeps the whole picture in one place. From 0.19.92 it is mechanically prevented from writing code by the write guard.</td></tr>
 <tr><td>Explorer</td><td>Answers "where does this live, how does this flow work" and returns a short map, never file contents.</td><td>Holds no write or shell tools, so it can be trusted with any question.</td></tr>
 <tr><td>Developer</td><td>Implements one scoped change and returns a summary. Runs its gates in the foreground. Never reviews its own diff.</td><td>Its own context window means the main session's history does not leak into the change.</td></tr>
@@ -58,33 +108,39 @@ li { margin: 3pt 0; }
 <tr><td>Smoke author</td><td>Writes and repairs the quick regression checks a repository runs on every change.</td><td>Repositories with no tests get a harness first, so the gates have something to stand on.</td></tr>
 <tr><td>Planner, analyst, researcher</td><td>Second opinion on a design; survey of real gaps in an application; answers from outside the repository with sources.</td><td>Each works from a brief rather than from the code, so it cannot be led by the implementation.</td></tr>
 <tr><td>DBA, docs writer, browser tester, scribe, infrastructure architect</td><td>Migration review; documentation from code; Playwright UI tests; the durable record of decisions; cloud topology review before it is built.</td><td>Added as a repository grows (the "tiers" below), never by default.</td></tr>
+</tbody>
 </table>
 
-<h3>Tiers: the crew grows only when there is evidence it should</h3>
+<h3>Tiers: The Crew Grows Only When There Is Evidence It Should</h3>
 <table>
-<tr><th>Tier</th><th>Roles</th><th>Added when</th></tr>
+<thead><tr><th>Tier</th><th>Roles</th><th>Added when</th></tr></thead>
+<tbody>
 <tr><td>0</td><td>explorer, qa-reviewer</td><td>Always. This is the starting crew.</td></tr>
 <tr><td>1</td><td>+ security, smoke-author, developer</td><td>Security findings reach review; coverage gaps cause regressions; the PM is running work end to end.</td></tr>
 <tr><td>2</td><td>+ dba, docs-writer, browser-tester, analyst, planner, infrastructure-architect, scribe, researcher</td><td>Migrations are routine; a UI regression reached users; designs get reworked after starting; decisions are lost six weeks later; answers are invented instead of looked up.</td></tr>
 <tr><td>3</td><td>parallel sessions, worktrees, agent teams</td><td>Every involved repository has a green smoke harness.</td></tr>
+</tbody>
 </table>
 <p>A role earns its place only if it buys an isolated context, a restricted tool set, or genuinely independent eyes. A persona in a prompt buys none of those, so crew does not ship "a business analyst agent" for its own sake. The command <code>/crew:scale</code> reads the review metrics and recommends growing, shrinking or staying.</p>
 
-<h3>Specialists: 40 more roles you switch on per repository</h3>
+<h3>Specialists: 40 More Roles You Switch on per Repository</h3>
 <p>These are real agent definitions with no tier, because "this repository does SharePoint" is a fact about one checkout, not a stage every project reaches. You onboard one with <code>/crew:pm onboard &lt;role&gt;</code> and it justifies itself by the stack, not by metrics.</p>
 <table>
-<tr><th>Group</th><th>Specialists</th></tr>
+<thead><tr><th>Group</th><th>Specialists</th></tr></thead>
+<tbody>
 <tr><td>Languages and frameworks</td><td>python-pro, node-developer, php-pro, rust-engineer, react-specialist, angular-architect, dotnet-core-expert, dotnet-framework-4.8-expert, sql-pro, graphql-architect, backend-developer, api-designer</td></tr>
 <tr><td>Cloud and infrastructure</td><td>terraform-engineer, network-engineer, platform-engineer, microservices-architect, legacy-modernizer, database-administrator, git-workflow-manager, workflow-orchestrator, multi-agent-coordinator</td></tr>
 <tr><td>Microsoft platform</td><td>windows-infra-admin, exchange-online-specialist, sharepoint-developer, power-automate-specialist, powershell-5.1-expert, powershell-7-expert, powershell-security-hardening, ad-security-reviewer</td></tr>
 <tr><td>Security and compliance</td><td>penetration-tester, compliance-auditor, code-reviewer, architect-reviewer, fintech-engineer, payment-integration</td></tr>
 <tr><td>Review and writing</td><td>qa-researcher (checks a change's claims about the outside world against live sources), kimi-consult (a second opinion from a third AI family), ai-writing-auditor, skill-author, design-bridge</td></tr>
+</tbody>
 </table>
 
-<h2>3. Commands: what you can ask for</h2>
+<h2>3. Commands: What You Can Ask For</h2>
 <p>Every command is typed as <code>/crew:&lt;name&gt;</code> in Claude Code. The right-hand column says what it means for someone who does not read code.</p>
 <table>
-<tr><th>Command</th><th>What it does</th><th>In plain terms</th></tr>
+<thead><tr><th>Command</th><th>What it does</th><th>In plain terms</th></tr></thead>
+<tbody>
 <tr><td>init</td><td>Guided, resumable, phased setup of a repository for crew.</td><td>The onboarding wizard. Run once per repository.</td></tr>
 <tr><td>onboard</td><td>Learns the codebase once and writes a durable, verifiable code map.</td><td>Builds the "how this system works" notes so nobody has to re-explain it.</td></tr>
 <tr><td>ticket</td><td>Scopes a request into a ticket.</td><td>Turns "can we make X faster" into a bounded piece of work with acceptance criteria.</td></tr>
@@ -108,12 +164,14 @@ li { margin: 3pt 0; }
 <tr><td>config, upgrade</td><td>Shows where every setting comes from and guides the machine-wide config; migrates an older crew setup forward.</td><td>Settings and upgrades, with nothing changed silently.</td></tr>
 <tr><td>jira-sync, sdp-sync, obsidian-sync</td><td>Sync a ticket between the local cache and Jira, ServiceDesk Plus or an Obsidian Kanban board.</td><td>Your tracker stays the source of truth; crew mirrors it.</td></tr>
 <tr><td>handoff</td><td>Writes the handoff note for the next session.</td><td>Nothing is lost when a session ends or is cleared.</td></tr>
+</tbody>
 </table>
 
-<h2>4. Skills: the know-how behind the commands</h2>
+<h2>4. Skills: The Know-How Behind the Commands</h2>
 <p>A skill is a written procedure the agents load when a task matches it. Twenty ship with crew.</p>
 <table>
-<tr><th>Skill</th><th>What it covers</th></tr>
+<thead><tr><th>Skill</th><th>What it covers</th></tr></thead>
+<tbody>
 <tr><td>crew-setup, crew-pm, crew-scaling</td><td>Bootstrapping a repository; managing the crew itself; when to add or remove roles.</td></tr>
 <tr><td>crew-verification, crew-lint, crew-terraform</td><td>The verification map, test credentials and Playwright; linters and formatters for PowerShell, PHP, Python, Terraform and JavaScript; terraform-docs and tflint.</td></tr>
 <tr><td>crew-debugging</td><td>Read the error, reproduce it, check recent changes, gather evidence, then propose a fix. Adapted under MIT licence from the superpowers project.</td></tr>
@@ -121,23 +179,26 @@ li { margin: 3pt 0; }
 <tr><td>crew-context, crew-memory</td><td>Warning near the context limit, handoff notes, resuming after a clear; durable project memory including Obsidian.</td></tr>
 <tr><td>crew-providers, crew-cloud, crew-notify</td><td>Codex, Copilot and Gemini as external providers; the official AWS and Azure MCP servers; Teams and Telegram notifications.</td></tr>
 <tr><td>crew-change, crew-house-style, crew-best-practices, find-skills</td><td>The change-request template; document style for anything handed to a human; community practices for Claude Code; discovering skills from the open ecosystem.</td></tr>
+</tbody>
 </table>
 
-<h2>5. Safety: the gates and guards</h2>
+<h2>5. Safety: The Gates and Guards</h2>
 <p>Claude Code lets a plugin register "hooks": scripts that run automatically at fixed moments, whether or not the model agrees. Crew uses them for the checks that must not depend on anyone remembering. A hook that can block a turn ships <b>off</b> and is switched on deliberately.</p>
 <table>
-<tr><th>When it runs</th><th>What crew does there</th><th>What that means</th></tr>
+<thead><tr><th>When it runs</th><th>What crew does there</th><th>What that means</th></tr></thead>
+<tbody>
 <tr><td>Session start</td><td>Briefs the PM with project state and any handoff note; syncs the platform config.</td><td>Every session begins knowing where the last one stopped.</td></tr>
 <tr><td>Before a shell command</td><td>Guards: refuse <code>terraform apply</code> and <code>tofu apply</code>, force-push, admin merge; production database and host patterns once declared.</td><td>A wrong command against production is refused, not regretted.</td></tr>
 <tr><td>Before a file write (new in 0.19.92)</td><td>The role write guard: each role may write only where its own definition allows. The PM's scope is notes, tickets and diagrams.</td><td>The manager cannot quietly become the developer.</td></tr>
 <tr><td>Before context compaction</td><td>Writes the handoff note.</td><td>Nothing is lost when the conversation is summarised.</td></tr>
 <tr><td>On a notification</td><td>Pulses the PM with what changed.</td><td>Work landing elsewhere is noticed.</td></tr>
 <tr><td>At the end of every turn (the Stop gate)</td><td>Runs the verification map for the files that changed; blocks the turn on failure.</td><td>The safety net under every change. Section 8 is about fixing it.</td></tr>
+</tbody>
 </table>
 <p>Two further gates sit outside hooks: the <b>merge gate</b> (Bitbucket or GitHub branch protection, driven by the same map) and the <b>promotion gate</b>, which refuses to promote without a row in the promotions log and, when configured, without a change request.</p>
 <p>Every guard resolves to the <b>narrower</b> of the repository and machine-wide settings, so a cloned repository cannot loosen a machine's policy, and an unreadable setting resolves to the strict value, never to "off".</p>
 
-<h2>6. Knowledge: what crew remembers, and where</h2>
+<h2>6. Knowledge: What Crew Remembers, and Where</h2>
 <ul>
 <li><b>The code map</b> (<code>.crew/codemap/</code>): one prose file per subsystem, every claim marked as derived from a specific line of code or as judgement, each anchored to a commit so staleness is detectable, not guessed.</li>
 <li><b>The code graph</b> (<code>graphify-out/</code>): a mechanical graph of every symbol and call, rebuilt by a hook after each commit, queried by the explorer.</li>
@@ -147,35 +208,39 @@ li { margin: 3pt 0; }
 </ul>
 <p>Everything above lives in the repository. Crew deliberately keeps nothing that only one machine or one chat can see.</p>
 
-<h2>7. What changed this week, and what it means</h2>
+<h2>7. What Changed This Week, and What It Means</h2>
 <p>Between 19 and 20 September, crew moved from 0.19.89 to 0.19.92 on <code>main</code>, with 0.19.93 in review. Each change is the result of a root-cause finding, and each was reviewed by Codex across several rounds before merging.</p>
 <table>
-<tr><th>Version</th><th>Change</th><th>What it means for you</th></tr>
+<thead><tr><th>Version</th><th>Change</th><th>What it means for you</th></tr></thead>
+<tbody>
 <tr><td>0.19.90</td><td><b>The idle rule, in both directions.</b> Every role that runs a check runs it in the foreground and never ends its turn waiting on a background task, because a finished agent is never woken. The PM learns the other half: an idle signal is not proof a role stopped; check the workspace's file times against the clock and escalate rather than restart.</td><td>Three agents in one night had stalled forever "waiting for a notification". That cannot happen now, and the manager will not throw away live work by restarting it.</td></tr>
 <tr><td>0.19.91</td><td><b>A behaviour eval suite.</b> Five live tests, each tempting one documented rule, graded by structure rather than by a judge model. A matched pair of runner scripts and a CI workflow that skips visibly without an API key.</td><td>The rules are tested against a real model, not just read. The first run caught the PM writing code itself.</td></tr>
 <tr><td>0.19.92</td><td><b>The role write guard.</b> A hook that enforces each role's write scope from its own definition. Off by default; the strictest setting is the floor once enabled. Corrupt configuration forces the strict setting. Paths are resolved through symlinks and junctions with each operating system's own ordering.</td><td>Prose said the PM must not write code, and it did anyway for four hours. Now the tool refuses. Enable it per repository with <code>guards.roleWrites: block</code>.</td></tr>
 <tr><td>also merged</td><td>Frontmatter across all 54 agents and every command is parsed as YAML by the marketplace check, after four command files were found to load with no frontmatter at all. All 21 verification rules in this repository are priced.</td><td>Silent breakage in the definitions is now a failing check, and the Stop budget can defer instead of running everything.</td></tr>
+</tbody>
 </table>
 
-<h2>8. The Stop-gate fix (0.19.93, in review)</h2>
+<h2>8. The Stop-Gate Fix (0.19.93, in Review)</h2>
 <div class="plain">
 <p><b>The problem in one sentence.</b> The safety net at the end of every turn was taking seven minutes, every turn, on this machine, and people were cancelling it, which is worse than not having it.</p>
 </div>
-<h3>What was wrong</h3>
+<h3>What Was Wrong</h3>
 <p>The gate decides what to check by comparing the current files against the last commit it fully verified, recorded in a marker file. That marker only advanced when nothing had been deferred. One rule in this repository costs 185 seconds against a 60-second budget, so it was deferred on every turn, the marker never moved, and every turn re-checked 59 files across 13 rules. Separately, a rule with no declared cost could never be deferred at all, so ten of them ran whole every turn regardless of budget. Two other repositories on the same machine were worse: one had no marker at all and no priced rules, with a 499-second Stop; the other had ten rules that ran a smoke script which, without a flag, fired commands at a live development web server over SSM on every turn, with the target chosen by an ambient environment variable.</p>
-<h3>What the fix does</h3>
+<h3>What the Fix Does</h3>
 <table>
-<tr><th>Component</th><th>Technical</th><th>Plain terms</th></tr>
+<thead><tr><th>Component</th><th>Technical</th><th>Plain terms</th></tr></thead>
+<tbody>
 <tr><td>Per-rule verified record</td><td>Each rule that ran and passed on the current tree is recorded by content hash; the record advances rule by rule. A chronically over-budget rule, one excluded for reach, one needing a clean tree, or one that skipped is listed as unverified until <code>/crew:verify --all</code> runs it, and reported every turn.</td><td>One slow check no longer freezes all the others. Nothing is forgotten; it is listed.</td></tr>
 <tr><td>Measure and cache</td><td>An unpriced rule is timed on its first run and the measurement cached locally, so it is deferrable next turn. <code>--price</code> writes <code>seconds</code> into the map for the author; it is never reachable from the hook.</td><td>Checks price themselves. Unknown cost means "mandatory once", not "mandatory forever".</td></tr>
 <tr><td>Reach declarations</td><td>Rules declare <code>local</code>, <code>network</code> or <code>host</code>. Only local rules run on Stop. Inspection may only reject: an undeclared rule that runs any script, inline shell or <code>cd</code> is deferred until the map declares it. A parse-only <code>bash -n</code> stays local.</td><td>Nothing reaches a live server unattended. Each repository declares its wrapper scripts once; the PM tells it which.</td></tr>
 <tr><td>Environment pinning</td><td><code>ENV</code>, <code>AWS_PROFILE</code>, <code>AWS_DEFAULT_REGION</code>, <code>KUBECONFIG</code> and <code>TF_WORKSPACE</code> are unset for every rule unless the map declares them; the gate prints what it pinned.</td><td>A leftover variable in a terminal cannot point a check at production.</td></tr>
 <tr><td>Exit 77 as SKIP</td><td>The standard "environment absent" code is neither pass nor fail, never advances the marker, and deletes any earlier clean fingerprint.</td><td>A check that could not run is not counted as passed.</td></tr>
 <tr><td>Three PM triggers</td><td>Marker missing or stale by N commits; N rules unpriced; N rules with undeclared reach. An unreadable value renders as "unknown" and fires.</td><td>The manager tells you what to declare or price instead of you discovering it from a slow hook.</td></tr>
+</tbody>
 </table>
-<h3>Review so far</h3>
+<h3>Review So Far</h3>
 <p>Five Codex rounds plus a PowerShell security specialist have reviewed the branch; 31 findings were fixed with a test for each, and a self-check test now runs this repository's real rule map through the classifier. That self-check caught, in turn, <code>python -m pytest</code> being read as a wrapper script, the word "curl" in a comment, and the parse-only case. Four rounds of the wrapper scanner each found a new way shell syntax could hide a script, which is why the design was inverted to reject-only in round four. <span class="warn">One fix pass (splitting compound commands on shell operators) is in progress; then one more review round, then merge.</span> Its effect on live sessions is not yet measured.</p>
-<h3>What a repository has to do after upgrading</h3>
+<h3>What a Repository Has to Do After Upgrading</h3>
 <ul>
 <li>Declare <code>reach: local</code> on rules that run a script, or the PM pulse will name them and they will be deferred until declared.</li>
 <li>Run <code>/crew:verify --price</code> once, or let the cache price rules as they run.</li>
@@ -184,15 +249,17 @@ li { margin: 3pt 0; }
 
 <h2>9. Integrations</h2>
 <table>
-<tr><th>Area</th><th>What crew connects to</th></tr>
+<thead><tr><th>Area</th><th>What crew connects to</th></tr></thead>
+<tbody>
 <tr><td>Trackers</td><td>Jira and ServiceDesk Plus through MCP; an Obsidian Kanban board; a local file cache always.</td></tr>
 <tr><td>Reviewers and models</td><td>Codex (OpenAI) as the first-choice reviewer; GitHub Copilot models including Kimi as an alternative family; Gemini as a design partner; per-role model pins with a probe that confirms the model answers before it is trusted.</td></tr>
 <tr><td>Cloud</td><td>The official AWS and Azure MCP servers, configured per repository with guardrails.</td></tr>
 <tr><td>Notifications</td><td>Microsoft Teams and Telegram, outbound; two-way options documented.</td></tr>
 <tr><td>Memory</td><td>Optional Obsidian vault for cross-repository notes; never written to without explicit consent in the session.</td></tr>
+</tbody>
 </table>
 
-<h2>10. Getting started</h2>
+<h2>10. Getting Started</h2>
 <ol>
 <li>Install the marketplace and the crew plugin in Claude Code, then <code>/reload-plugins</code> in any open session.</li>
 <li>In a repository, run <code>/crew:init</code>. It is phased and resumable; nothing is written without saying so.</li>
@@ -203,7 +270,8 @@ li { margin: 3pt 0; }
 
 <h2>11. Glossary</h2>
 <table>
-<tr><th>Term</th><th>Meaning</th></tr>
+<thead><tr><th>Term</th><th>Meaning</th></tr></thead>
+<tbody>
 <tr><td>Agent, role</td><td>A separately-prompted instance of the model with its own tools and context window.</td></tr>
 <tr><td>Hook</td><td>A script Claude Code runs automatically at a fixed moment, whether or not the model wants it to.</td></tr>
 <tr><td>Gate</td><td>A check that blocks progress on failure rather than offering advice.</td></tr>
@@ -214,6 +282,7 @@ li { margin: 3pt 0; }
 <tr><td>Code map, code graph</td><td>The prose and the mechanical descriptions of a codebase, both kept in the repository.</td></tr>
 <tr><td>Sabotage test</td><td>Reintroducing a bug on purpose to prove the test that guards against it goes red.</td></tr>
 <tr><td>Squash merge</td><td>Landing a branch as one commit, so a version bump and its content arrive together.</td></tr>
+</tbody>
 </table>
 
 <p class="muted">Provenance: figures are read from the repository at commit 621d50dc (main) and branch crew-stop-gate-record at b6e8c4bb; counts are 28 commands, 54 agents, 20 skills, 20 hook registrations, 51 test modules. Review counts are from <code>.crew/metrics.md</code>. Not verified: the Stop-gate fix's effect on live sessions, pending merge.</p>

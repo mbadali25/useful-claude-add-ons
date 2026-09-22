@@ -1,6 +1,6 @@
 # skills-itsm
-anchor: useful-claude-add-ons@ea8a014
-verified: 2026-09-14
+anchor: useful-claude-add-ons@089a04b9
+verified: 2026-09-22
 
 ## Does
 `infra-work-ticketing` gets infrastructure work logged to ServiceDesk Plus or Jira through an MCP
@@ -142,3 +142,38 @@ because the carve-out's meaning depends on it; the gizmoduck subsystem is docume
 `_records_digest` from `:122-141` to `:184-203` and the stale/mismatched-digest refusal from
 `:475-479` to `:974-980`. Both were re-read at their new locations and still say what this note
 claims. No other claim in this note cites gizmoduck.py, so nothing else needed correcting.
+
+**Re-anchored `ea8a014` -> `089a04b9` on 2026-09-22. One cited path moved; nothing drifted.**
+`git diff --name-only ea8a014..HEAD -- <every path this note cites>` returns exactly one file,
+`skills/notify/SKILL.md`. Its entire delta is one character on line 3, in commit `dade775e`
+("fix: quote argument-hint bracket pairs so command frontmatter parses as YAML"): inside the YAML
+frontmatter `description`, "fully two-way: a question event" became "fully two-way - a question
+event", so the colon stops breaking the YAML parse. One insertion, one deletion, on the same line -
+**no line numbers shifted anywhere in the file**, and no citation in this note points at line 3.
+
+Three DERIVED claims cite `skills/notify/SKILL.md`; all three were re-read at HEAD and compared
+against the same line at `ea8a014`. **Zero changed.** `:38-41` is still the four
+`python scripts/notify.py -e <event> -m <msg>` invocation examples; `:113` still states the offset
+is persisted to `<spool>/state/offset.json` and inbound messages to `<spool>/inbox.jsonl`; `:161`
+is still `python scripts/notifyd.py &`, the by-hand dispatcher start. No claim needed correcting,
+which is a result and not a gap in the check.
+
+**What the broader diff turned up and why it is not in the body.** Scoped to the whole subsystem
+rather than the cited files, `git diff --name-only ea8a014..HEAD -- plugin/gizmoduck/
+skills/infra-work-ticketing/ skills/notify/` returns a second file,
+`plugin/gizmoduck/.claude-plugin/plugin.json` - a `0.5.2` -> `0.5.3` bump plus a `license` key.
+This note cites no line of that file, and the two `plugin/gizmoduck/scripts/**` paths it does cite
+are unchanged, so the bump invalidates nothing here. It is recorded because "the note's subsystem
+moved" and "the note's citations moved" are different questions and only the second one matters.
+
+**A header/provenance disagreement inherited from the previous pass, left as found.** The entry
+above records a re-anchor to `34a333f0` on 2026-09-14, but the header this pass replaced carried
+`ea8a014` (2026-09-17) with `verified: 2026-09-14` - so a later pass advanced the sha without
+writing a provenance line for it, and the `verified:` date was three days behind its own anchor.
+The earlier entry is left exactly as written rather than corrected: it is the record of what that
+pass believed, and rewriting it would hide the gap instead of showing it. This pass diffed from
+`ea8a014`, the sha the file actually carried.
+
+Not re-verified at this pass: everything cited under `skills/infra-work-ticketing/`,
+`skills/notify/scripts/` and `plugin/gizmoduck/scripts/` - the path diff shows none of those files
+changed, and none was re-opened. The `## Unverified` section above stands unchanged.

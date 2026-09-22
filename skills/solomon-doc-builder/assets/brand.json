@@ -36,5 +36,11 @@
   "screenshots": {
     "stand_in_email": "firstname.lastname@solomoninsight.com",
     "stand_in_user": "user"
+  },
+  "logo": {
+    "on_light": "logo/solomon-logo-on-light.png",
+    "on_dark": "logo/solomon-logo-on-dark.png",
+    "icon_on_light": "logo/solomon-icon-on-light.png",
+    "icon_on_dark": "logo/solomon-icon-on-dark.png"
   }
 }

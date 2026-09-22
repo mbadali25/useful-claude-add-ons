@@ -152,6 +152,87 @@ def pulses_taken(root, session):
         return 0
 
 
+def _last_pulse_time(root, session):
+    """mtime of this session's most recent pulse marker, or `None` if this is
+    the first pulse of the session.
+
+    Deliberately not session START -- this hook has no record of that, only
+    of when it last spoke. Used as the start of "this pass" for
+    `_dispatch_gap_note`: a dispatch logged before the last pulse belongs to
+    whatever the PM was doing then, not to the triggers being reported now.
+    The `stood-down` marker (see `main`) is excluded -- it records that the
+    hook gave up speaking, not that anything happened at that moment.
+    """
+    if not session:
+        return None
+    prefix = f".pm-pulse-{session}-"
+    stood_down = f"{prefix}stood-down"
+    dirpath = _pulse_dir(root)
+    best = None
+    try:
+        names = os.listdir(dirpath)
+    except OSError:
+        return None
+    for name in names:
+        if not name.startswith(prefix) or name == stood_down:
+            continue
+        try:
+            mtime = os.path.getmtime(os.path.join(dirpath, name))
+        except OSError:
+            continue
+        if best is None or mtime > best:
+            best = mtime
+    return best
+
+
+# Appended to the rendered pulse -- never what DECIDES whether one fires. See
+# `render`: this is computed only once `should_pulse` has already said yes for
+# other reasons, so a bug in the dispatch-log read can make this note wrong or
+# absent but can never by itself turn a quiet turn into a blocked one. That is
+# what keeps this an enrichment of an existing, already-gated hook rather than
+# a second blocking condition that would need its own `guards.*` toggle
+# defaulting off per CLAUDE.md's rule for a new hook.
+def _dispatch_gap_note(root, session):
+    """`None`, or a note that no dispatch has been logged since the last
+    pulse (or, on this session's first pulse, ever in this checkout).
+
+    Reads `crew_state.read_dispatch_log` -- the consumer `--log-dispatch`
+    needs to not be the flag `crew_state.py` itself warns against, one whose
+    output no code ever reads (see `DISPATCH_LOG_DIR`'s comment). This is
+    evidence, not narration-parsing: it says nothing about what the PM wrote
+    in its own report, only whether the mechanical log the PM is supposed to
+    write to actually holds an entry for this pass.
+    """
+    since = _last_pulse_time(root, session)
+    try:
+        entries = crew_state.read_dispatch_log(root, since=since)
+    except Exception:  # pylint: disable=broad-except
+        # Never lets a broken read turn an informational note into a broken
+        # pulse -- see the module docstring's "every failure path returns 0"
+        # for `main`; the same rule applies one layer up, to a helper `main`
+        # calls before it even gets to its own try/except.
+        return None
+    if entries:
+        return None
+    if since is None:
+        return (
+            "No dispatch has ever been logged in this checkout's dispatch "
+            "log (.work/dispatch-log.d/), and the triggers below are "
+            "outstanding. Log every dispatch with `--log-dispatch` the "
+            "moment it returns -- see agents/pm.md's \"Log every dispatch, "
+            "not just dev\" section. If you handled any of this yourself "
+            "instead of dispatching a role, that is the defect this check "
+            "exists to catch."
+        )
+    return (
+        "No dispatch has been logged since the last check-in, and the "
+        "triggers below are outstanding. If you handled any of this "
+        "yourself instead of dispatching a role, that is the defect this "
+        "check exists to catch -- log the dispatch or say why none was "
+        "needed."
+    )
+
+
 def should_pulse(state):
     """True when this state is worth interrupting the end of a turn for.
 
@@ -234,14 +315,25 @@ _STOOD_DOWN = (
 )
 
 
-def render(state):
-    """The pulse text, or None when there is nothing worth saying."""
+def render(state, root=None, session=None):
+    """The pulse text, or None when there is nothing worth saying.
+
+    `root`/`session` are optional and additive: they gate only
+    `_dispatch_gap_note`, appended after the ordinary findings when both are
+    given. Every existing single-argument caller (the test suite included)
+    keeps working exactly as before and simply never sees that note.
+    """
     if not should_pulse(state):
         return None
     lines = pm_brief.render(state)
     if not lines:
         return None
-    return directive(state) + "\n\n" + "\n".join(lines)
+    text = directive(state) + "\n\n" + "\n".join(lines)
+    if root is not None:
+        note = _dispatch_gap_note(root, session)
+        if note:
+            text += "\n\n" + note
+    return text
 
 
 def main(argv=None):
@@ -282,7 +374,7 @@ def main(argv=None):
 
     try:
         state = crew_state.collect(root)
-        text = render(state)
+        text = render(state, root, session)
         if text is None:
             return 0
         digest = fingerprint(state)

@@ -470,3 +470,13 @@ reports/
 # of a real model conversation (an agent's tool calls and replies) as of one
 # run, going stale the moment the plugin or the model changes.
 plugin/crew/evals/results/
+
+# Runtime state written by the `thumbgate` MCP server into whatever repo it is
+# pointed at - a pid lock (`.mcp-server.lock`), a watcher byte-offset, and an
+# `agent-registry.jsonl` of per-session ids and timestamps. None of it is this
+# repo's content: it is regenerated on every server start and is specific to
+# one machine and one session. Untracked, it still reaches verify-gate, which
+# reports it every Stop as "UNMAPPED CHANGES - .crew/verify.json has no rule
+# for ...". A verify rule would be the wrong answer - there is nothing to
+# check - so the honest fix is to stop treating it as a repo change at all.
+.thumbgate/

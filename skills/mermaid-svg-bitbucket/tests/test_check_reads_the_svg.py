@@ -7,12 +7,17 @@ truncated, corrupt or zero-byte SVG passed --check as up to date - a guard
 reporting a clean result while measuring nothing.
 
 `fixtures/sample.svg` is a real mmdc render of `fixtures/sample.mmd`, committed
-so these tests never need mermaid-cli. That matters twice: CI has no mmdc, and
-`resolve_mmdc()` returns the bare name "mmdc", which on Windows resolves to a
-.CMD that subprocess.run cannot execute without shell=True. Damaging a genuine
+so these tests never need mermaid-cli: CI has no mmdc. Damaging a genuine
 render is the point - a hand-written stub would not prove the check looks at
 real SVG bytes. The manifests below are built with the script's own
 Manifest.put/save so they are byte-identical to what a render would write.
+
+This docstring used to give a second reason - that `resolve_mmdc()` returned
+the bare name "mmdc", unrunnable on Windows where mermaid-cli installs as a
+.cmd. That was true, and it was a bug rather than a constraint; it is fixed in
+1.2.3 and covered by test_resolve_mmdc_uses_the_resolved_path.py. Keeping the
+sentence would have left this file asserting something false about the script
+it tests.
 """
 
 import hashlib
@@ -145,12 +150,10 @@ def test_legacy_manifest_is_unverified_and_fails(tmp_path):
 def test_recording_the_hash_turns_the_red_green(tmp_path):
     """The same intact SVG passes once its svgHash is on record.
 
-    render() cannot run here: CI has no mmdc, and resolve_mmdc() returns the
-    bare name "mmdc", which on Windows resolves to a .CMD that subprocess.run
-    cannot execute without shell=True. So the post-render state is built with
-    the script's own Manifest and svg_digest - the same call render() makes, at
-    the same point - rather than a hand-computed digest that could drift from
-    the function under test.
+    render() cannot run here: CI has no mmdc. So the post-render state is built
+    with the script's own Manifest and svg_digest - the same call render()
+    makes, at the same point - rather than a hand-computed digest that could
+    drift from the function under test.
     """
     root = build(tmp_path, GOOD_SVG, manifest_version=1)
     assert check(root)[0] == 1, "fixture is not red before the hash is recorded"
