@@ -11,7 +11,11 @@
 # so both flavours share one implementation of it. This matters more here than
 # elsewhere: a hook that WRITES config must not have two implementations that
 # disagree about what it writes.
+#
+# `crew_py_strict`, NOT `crew_py`. Same defect as pm-pulse.sh/pm-brief.sh: a
+# WindowsApps stub resolves under `command -v`, `exec` launches it, and it
+# produces no output -- nothing left behind to notice or report the failure.
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$DIR/_common.sh"
-PY=$(crew_py) || { echo "crew platform-sync: no usable python - the platform config will not be repaired" >&2; exit 0; }
+PY=$(crew_py_strict) || { echo "crew platform-sync: no usable python (stub or unusable interpreter) - the platform config will not be repaired" >&2; exit 0; }
 exec "$PY" "$DIR/crew_platform.py"

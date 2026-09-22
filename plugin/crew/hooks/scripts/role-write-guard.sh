@@ -43,10 +43,45 @@ _resolve_role_write_python() {
     # cannot happen in this non-interactive pipe) rather than a real
     # interpreter path.
     real=$("$candidate" -c 'import sys; print(sys.executable)' 2>/dev/null) || continue
+    # A trailing CR must not survive into the `-x` test below: a real native
+    # Windows interpreter run under Git Bash can leave one on its stdout, and
+    # `-x "$real"` on a path with a stray \r appended never matches an actual
+    # file, rejecting every real interpreter on that combination.
+    real=$(printf '%s' "$real" | tr -d '\r')
     [ -n "$real" ] || continue
     case "$real" in
       */WindowsApps/*|*\\WindowsApps\\*) continue ;;
     esac
+    # A native Windows `sys.executable` (e.g. `C:\fakepy\python.exe`) must be
+    # normalised into a form THIS shell can actually stat before `-x` runs on
+    # it -- the raw backslash-drive-letter form never matches a real file
+    # under Git Bash, WSL, or plain Linux. `cygpath -u`, when present, is the
+    # accurate conversion (`C:\fakepy\...` -> `/c/fakepy/...`); its absence
+    # (no Windows compat layer at all) falls back to a bare backslash ->
+    # forward-slash swap, which keeps the string usable as a RELATIVE path
+    # under `-x` -- the shape `tests/test_context_watch_python_resolver.py`'s
+    # native-Windows-path case drives, since a real Windows drive letter
+    # cannot be fabricated as an actual path on a non-Windows test host.
+    case "$real" in
+      [A-Za-z]:\\*|[A-Za-z]:/*)
+        if command -v cygpath >/dev/null 2>&1; then
+          real=$(cygpath -u "$real")
+        else
+          real=$(printf '%s' "$real" | tr '\\\\' '/')
+        fi
+        ;;
+    esac
+    # Non-empty stdout is not proof: a wrapper could print a plausible-looking
+    # path to something that is not there, or not runnable, and the printed
+    # string is never executed to confirm it. `-x` requires the path to both
+    # EXIST and be executable, which `sys.executable` from a real interpreter
+    # always is. This line is BEHAVIOURALLY load-bearing, not decorative --
+    # `tests/test_context_watch_python_resolver.py`'s
+    # `test_resolver_rejects_a_real_but_non_executable_target` runs this function
+    # end-to-end against a candidate that prints a real, existing, but
+    # non-executable file and fails if the check is missing OR merely present
+    # after the `return 0` below where it can never run.
+    [ -x "$real" ] || continue
     # `sys.executable`, not `$candidate`: the PATH-found name may be a shim
     # that re-execs elsewhere, and the probe already paid the cost of
     # asking python where it actually lives.

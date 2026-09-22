@@ -87,6 +87,13 @@ function Resolve-CrewPython {
     }
     if ($real) { $real = $real.ToString().Trim() }
     if (-not $real -or $real -match 'WindowsApps') { continue }
+    # Exit 0 and non-empty output is still not proof: a wrapper could print a
+    # plausible-looking path to something that is not actually there. Confirm
+    # the path EXISTS as a file before trusting it -- the bash-side parity
+    # check is `[ -x "$real" ]`; Test-Path has no executable-bit concept on
+    # Windows (an .exe's "executability" is its extension, not a mode bit),
+    # so -PathType Leaf is the equivalent proof here.
+    if (-not (Test-Path -LiteralPath $real -PathType Leaf)) { continue }
     return $real
   }
   return ''
