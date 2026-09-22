@@ -570,36 +570,81 @@ load_plugins() {
   local raw
   raw="$(claude plugin list --json 2>/dev/null)" || return 0
   [ -z "$raw" ] && return 0
-  # Emit one "name<TAB>version<TAB>enabled" line per plugin; ids are 'name@marketplace'.
-  # 'enabled' is tracked because installing a plugin and having it actually load are
-  # two different things: a plugin switched off in settings.json is installed, at the
-  # right scope, and completely inert - none of its skills or hooks are visible.
+  # Emit one "name<TAB>version<TAB>enabled<TAB>marketplace" line per plugin; ids are
+  # 'name@marketplace'. 'enabled' is tracked because installing a plugin and having it
+  # actually load are two different things: a plugin switched off in settings.json is
+  # installed, at the right scope, and completely inert - none of its skills or hooks
+  # are visible.
+  #
+  # The MARKETPLACE column is new, and it is here because the bare name is not a
+  # unique key: 'github' is published BOTH by this repo (a gh-CLI skill for branch
+  # protection) and by anthropics/claude-plugins-official (the GitHub MCP server).
+  # They are different plugins, Claude Code keys its own installed set by
+  # 'name@marketplace' and holds both at once, and this cache used to throw the
+  # marketplace away - so install_plugin read one as proof the other was present and
+  # skipped it while printing "already installed". See plugin_installed_from.
   PLUGINS_CACHE="$(printf '%s' "$raw" | json_query \
-    '.[] | "\(.id | split("@")[0])\t\(.version // "unknown")\t\(if .enabled then "1" else "0" end)"' \
+    '.[] | "\(.id | split("@")[0])\t\(.version // "unknown")\t\(if .enabled then "1" else "0" end)\t\(.id | split("@")[1] // "")"' \
     'import json,sys
 for p in json.load(sys.stdin):
     pid = p.get("id") or ""
     if pid:
-        print("%s\t%s\t%s" % (pid.split("@")[0], p.get("version") or "unknown",
-                              "1" if p.get("enabled") else "0"))')"
+        bits = pid.split("@")
+        print("%s\t%s\t%s\t%s" % (bits[0], p.get("version") or "unknown",
+                              "1" if p.get("enabled") else "0",
+                              bits[1] if len(bits) > 1 else ""))')"
 }
 
 plugin_version() {
-  local want="$1" name ver enabled
+  local want="$1" name ver enabled mkt
   [ -z "$PLUGINS_CACHE" ] && return 1
-  while IFS=$'\t' read -r name ver enabled; do
+  while IFS=$'\t' read -r name ver enabled mkt; do
     [ "$name" = "$want" ] && { printf '%s' "$ver"; return 0; }
   done <<< "$PLUGINS_CACHE"
   return 1
+}
+
+plugin_installed_from() {
+  # Is the bare name $1 installed FROM marketplace $2?
+  #
+  # $2 empty means the caller has no marketplace to compare against, and the answer
+  # is the old bare-name one - true if the name is installed at all. That keeps every
+  # spec without an '@' behaving exactly as it did.
+  #
+  # When $2 IS given this is deliberately NOT "is any copy installed": two
+  # marketplaces can publish unrelated plugins under one bare name, and treating one
+  # as evidence of the other is how a requested install turns into a SKIP line
+  # reading "already installed". Same name is not same plugin.
+  local want="$1" mkt_want="$2" name ver enabled mkt
+  [ -z "$PLUGINS_CACHE" ] && return 1
+  while IFS=$'\t' read -r name ver enabled mkt; do
+    [ "$name" = "$want" ] || continue
+    [ -z "$mkt_want" ] && return 0
+    [ "$mkt" = "$mkt_want" ] && return 0
+  done <<< "$PLUGINS_CACHE"
+  return 1
+}
+
+plugin_marketplaces() {
+  # Comma-separated list of the marketplaces the bare name $1 is installed from, for
+  # the message that explains why a second copy is being installed.
+  local want="$1" name ver enabled mkt out=""
+  [ -z "$PLUGINS_CACHE" ] && return 1
+  while IFS=$'\t' read -r name ver enabled mkt; do
+    [ "$name" = "$want" ] || continue
+    out="${out}${out:+, }${mkt:-unknown}"
+  done <<< "$PLUGINS_CACHE"
+  [ -n "$out" ] || return 1
+  printf '%s' "$out"
 }
 
 plugin_enabled() {
   # True when *any* installed copy of the bare name is enabled. Two marketplaces can
   # publish the same plugin, and one live copy is all that is needed - this keeps the
   # enablement check from fighting a plugin already loaded from another marketplace.
-  local want="$1" name ver enabled
+  local want="$1" name ver enabled mkt
   [ -z "$PLUGINS_CACHE" ] && return 1
-  while IFS=$'\t' read -r name ver enabled; do
+  while IFS=$'\t' read -r name ver enabled mkt; do
     [ "$name" = "$want" ] && [ "$enabled" = "1" ] && return 0
   done <<< "$PLUGINS_CACHE"
   return 1
@@ -811,8 +856,8 @@ plugin_cache_add() {
   # whole list. 'claude plugin install' enables what it installs, so it is live - and
   # trusting that is more accurate than re-reading, since a freshly installed plugin
   # can still read as disabled in 'claude plugin list --json' (see ensure_plugin_enabled).
-  local name="$1" ver="${2:-unknown}"
-  PLUGINS_CACHE="${PLUGINS_CACHE}${PLUGINS_CACHE:+$'\n'}${name}"$'\t'"${ver}"$'\t1'
+  local name="$1" ver="${2:-unknown}" mkt="${3:-}"
+  PLUGINS_CACHE="${PLUGINS_CACHE}${PLUGINS_CACHE:+$'\n'}${name}"$'\t'"${ver}"$'\t1\t'"${mkt}"
 }
 
 ensure_plugin_enabled() {
@@ -870,6 +915,30 @@ mcp_server_registered() {
   return 1
 }
 
+# Everything this path reports goes to stderr, for the same reason uv_warn does: the
+# failure it describes is invisible at the point it is made and surfaces much later,
+# inside a session, as a server that will not start.
+mcp_warn() { printf '    \033[33mWARN:\033[0m %s\n' "$1" >&2; }
+
+mcp_launcher_resolves() {
+  # `claude mcp add <name> -- <cmd> <args...>` WRITES CONFIG AND NEVER INVOKES <cmd>.
+  # So without this check every registration below printed "added MCP server 'x'"
+  # whether or not <cmd> exists, and the run reported success for a server that can
+  # never start. Nothing in this script reads Connected/Failed back out of
+  # `claude mcp list` - load_mcp_servers takes the NAME off each line and nothing
+  # else - so the installer had no second chance to notice. This repo's named
+  # recurring bug: an unknown collapsing into the safe-looking value.
+  #
+  # Only the launcher is checked, never the package behind it: `npx -y @scope/pkg`
+  # resolves its package at first launch and asking here would mean a network call.
+  # "npx is absent" is knowable now; "the package publishes" is not.
+  local name="$1" cmd="$2"
+  [ -n "$cmd" ] || return 0
+  have "$cmd" && return 0
+  mcp_warn "not registering MCP server '$name': its launch command '$cmd' does not resolve on PATH in this shell. 'claude mcp add' records a command without running it, so registering now would report success for a server that cannot start. Install '$cmd' (the prerequisites item installs Node.js, which provides npx) and re-run."
+  return 1
+}
+
 add_mcp_server() {
   # add_mcp_server <name> <env-spec> <command...>
   # <env-spec> is "KEY=value" or "-" for none. Detect-then-act, same contract as
@@ -879,6 +948,11 @@ add_mcp_server() {
     warn "claude not found on PATH in this shell - run 'source ~/.bashrc' and re-run this script."
     return 1
   fi
+  # Deliberately BEFORE the already-registered skip, not after it. A registration
+  # made blind on an earlier run is exactly as broken as one made blind now, and
+  # skipping it would print "already registered" over a server that cannot start -
+  # the same false reassurance in the idempotent path.
+  mcp_launcher_resolves "$name" "$1" || return 1
   if mcp_server_registered "$name"; then
     skip "MCP server '$name' already registered"
     return 0
@@ -898,6 +972,12 @@ add_mcp_http_server() {
   # For a server that is ALREADY listening over HTTP: there is no command to
   # launch, claude takes the endpoint as a positional argument, and each header
   # is passed whole ("Authorization: Bearer x"). Same detect-then-act contract.
+  #
+  # There is deliberately NO mcp_launcher_resolves call here, and that is not an
+  # oversight: these rows register a URL, so there is no executable whose absence
+  # could be detected. The equivalent check would be fetching the endpoint, which
+  # would make this installer's success depend on the network being up at install
+  # time for a server whose whole point is that it is reached later.
   local name="$1" url="$2"; shift 2
   if ! have claude; then
     warn "claude not found on PATH in this shell - run 'source ~/.bashrc' and re-run this script."
@@ -950,7 +1030,15 @@ install_plugin() {
   # Warmed here, before either branch: every reader below runs inside "$(...)", and an
   # assignment in a subshell is discarded. Both paths need the marketplace catalog.
   ensure_marketplace_caches "$mkt"
-  if before="$(plugin_version "$name")"; then
+  # '&& plugin_installed_from' is the whole of the same-bare-name fix. Without it a
+  # spec naming one marketplace was satisfied by a plugin installed from a different
+  # one - so adding 'github@claude-plugins-official' to a machine that already has
+  # this repo's own 'github' skill printed "plugin 'github' already installed" and
+  # installed nothing. Nothing downstream could catch that: the SKIP line is the
+  # success path.
+  if [ -n "$mkt" ] && plugin_version "$name" >/dev/null && ! plugin_installed_from "$name" "$mkt"; then
+    warn "plugin '$name' is installed from $(plugin_marketplaces "$name"), not from '$mkt' - two marketplaces publish different plugins under this one bare name. Installing '$spec' alongside it."
+  elif before="$(plugin_version "$name")"; then
     if [ "$NO_UPDATE" -eq 1 ]; then
       skip "plugin '$name' already installed (version $before)"
       ensure_plugin_enabled "$spec"
@@ -1034,7 +1122,7 @@ install_plugin() {
   # Add the new plugin to the in-memory cache rather than reloading the whole list:
   # a fresh run installs 25+ plugins, and 'claude plugin list --json' after each one
   # was a second CLI spawn per plugin that nothing in this run reads differently.
-  plugin_cache_add "$name" "$(marketplace_plugin_version "$mkt" "$name" || printf 'unknown')"
+  plugin_cache_add "$name" "$(marketplace_plugin_version "$mkt" "$name" || printf 'unknown')" "$mkt"
   COUNT_INSTALLED=$((COUNT_INSTALLED+1))
   ok "installed plugin '$spec'"
   # No ensure_plugin_enabled here: 'claude plugin install' already enabled it. See the
@@ -1059,7 +1147,7 @@ MENU_NAME=(
   "Prerequisites: git, nodejs, npm, python3, pip3 (needs root or sudo)"
   "Claude Code CLI (@anthropic-ai/claude-code) + PATH export + update check"
   "This repo's marketplace + its skills"
-  "Team plugins: superpowers, frontend-design, excalidraw-generator"
+  "Team plugins: superpowers, frontend-design, excalidraw-generator, github"
   "find-skills skill (vercel-labs/skills)"
   "Community marketplaces + plugins (adhd-output-style, azure-tools, voltagent, ...)"
   "claude-code-setup plugin (anthropics/claude-plugins-official)"
@@ -1252,25 +1340,45 @@ unset _i
 # <PREFIX>_SPEC entries are "plugin@marketplace|marketplace-source|marketplace-name":
 # unlike the skills, these come from three different marketplaces, and only the ones
 # behind a ticked plugin need registering.
-TEAM_KEYS=("superpowers" "frontend-design" "excalidraw-generator")
+# 'github' here is ANTHROPIC'S GitHub plugin (the official GitHub MCP server:
+# issues, pull requests, reviews), NOT this repo's own 'github' skill. This repo's
+# one is already installed by the own-skills row above - it is in SKILL_KEYS, and
+# SKILL_SPEC builds 'github@useful-claude-add-ons' for it - so adding that here would
+# be a second registration of something already installed, which is a no-op that
+# reads like a fix. The two are different things with the same bare name:
+# claude-plugins-official's is an MCP server for the GitHub API, and this repo's is a
+# skill for branch protection and rulesets over the gh CLI. install_plugin detects on
+# the BARE NAME, so a machine that has one will skip the other - see the landmine
+# below.
+TEAM_KEYS=("superpowers" "frontend-design" "excalidraw-generator" "github")
 TEAM_NAME=(
   "superpowers             - Workflow skills: brainstorm, plans, TDD, code review"
   "frontend-design         - Anthropic's frontend design skill"
   "excalidraw-generator    - Excalidraw diagrams from a description"
+  "github                  - Anthropic's GitHub MCP server: issues, PRs, reviews"
 )
 TEAM_SPEC=(
   "superpowers@claude-plugins-official|anthropics/claude-plugins-official|claude-plugins-official"
   "frontend-design@claude-plugins-official|anthropics/claude-plugins-official|claude-plugins-official"
   "excalidraw-generator@excalidraw-generator|lexiaoyao20/excalidraw-generator|excalidraw-generator"
+  "github@claude-plugins-official|anthropics/claude-plugins-official|claude-plugins-official"
 )
 TEAM_STATE=()
 for _i in "${!TEAM_KEYS[@]}"; do TEAM_STATE+=(1); done
 unset _i
 
 # --- Community plugins (menu item 6) ------------------------------------------
+# The LOCAL NAME of anthropics/claude-plugins-community is 'claude-community', not
+# 'claude-plugins-community'. That is what the repo publishes itself as in its own
+# .claude-plugin/marketplace.json, it is the key under
+# ~/.claude/plugins/known_marketplaces.json, and it is what 'plugin@marketplace' has
+# to match. Writing the repo name in the last field instead would make
+# marketplace_installed look for a name that never exists, so the row would re-add
+# the marketplace on EVERY run while reporting success - the same class of silent
+# re-do the fcakyon/claude-settings note above exists to prevent.
 COMMUNITY_KEYS=(
   "adhd-output-style" "azure-tools" "anthropic-office-skills" "agent-browser" "ppt-master"
-  "voltagent-infra" "voltagent-qa-sec"
+  "voltagent-infra" "voltagent-qa-sec" "eli5"
 )
 COMMUNITY_NAME=(
   "adhd-output-style       - ADHD-friendly output style"
@@ -1280,6 +1388,7 @@ COMMUNITY_NAME=(
   "ppt-master              - PowerPoint deck generation"
   "voltagent-infra         - VoltAgent DevOps/cloud subagents: k8s, Terraform, AWS/Azure, SRE"
   "voltagent-qa-sec        - VoltAgent testing/security subagents: review, pentest, QA"
+  "eli5                    - Explain any topic like I'm 5: big visuals, few words"
 )
 COMMUNITY_SPEC=(
   "adhd-output-style@claude-settings|fcakyon/claude-codex-settings|claude-settings"
@@ -1289,6 +1398,7 @@ COMMUNITY_SPEC=(
   "ppt-master@ppt-master|hugohe3/ppt-master|ppt-master"
   "voltagent-infra@voltagent-subagents|VoltAgent/awesome-claude-code-subagents|voltagent-subagents"
   "voltagent-qa-sec@voltagent-subagents|VoltAgent/awesome-claude-code-subagents|voltagent-subagents"
+  "eli5@claude-community|anthropics/claude-plugins-community|claude-community"
 )
 COMMUNITY_STATE=()
 for _i in "${!COMMUNITY_KEYS[@]}"; do COMMUNITY_STATE+=(1); done
@@ -1309,7 +1419,7 @@ GROUP_NOUN1=(    "skill"      "team plugin"  "community plugin"  "plugin")
 # printf template for the menu row: selected, total.
 GROUP_LABEL=(
   "This repo's marketplace + %s of %s skills  >"
-  "Team plugins: %s of %s (superpowers, frontend-design, excalidraw)  >"
+  "Team plugins: %s of %s (superpowers, frontend-design, excalidraw, github)  >"
   "Community marketplaces + %s of %s plugins  >"
   "This repo's plugins: %s of %s (crew, gizmoduck, localgpu, obsidian-vault, rule-of-two)  >"
 )
@@ -2224,6 +2334,120 @@ fi
 load_marketplaces
 load_plugins
 
+# --- Skill-level Python dependencies -----------------------------------------
+# `claude plugin install` copies a skill's files and nothing else. So a skill whose
+# scripts import third-party packages - doc-builder needs python-docx, PyMuPDF,
+# Pillow, numpy and (on Windows) pywin32 - installed "successfully" and then failed
+# on the first document with ModuleNotFoundError. Neither this script nor its
+# PowerShell half had ever run a skill's requirements.txt or its preflight: grep for
+# either name returned zero hits outside comments, on every OS.
+#
+# What this does, and what it deliberately does NOT do. It RUNS each selected skill's
+# own scripts/preflight.py in that script's REPORT-ONLY mode - no --install, and
+# stdin closed so its confirm() prompt cannot fire - then reprints what is missing on
+# STDERR with the exact command to fix it. It installs nothing, for two reasons that
+# are separate and both sufficient:
+#
+#   1. PEP 668. On Debian 12+, Ubuntu 23.04+, Fedora 38+ and friends the interpreter
+#      carries an EXTERNALLY-MANAGED marker and `pip install --user` exits 1. This
+#      script already refuses to pass --break-system-packages for uv (see the long
+#      comment above ensure_uv); overriding a distribution's own guard to install a
+#      document library is no more this script's call to make than it was there.
+#   2. `preflight.py --venv` WOULD succeed under PEP 668, and is still the wrong
+#      thing here: it installs into <skill>/.venv and prints "run the scripts with
+#      this interpreter". Nothing makes that happen - the skill names the venv as an
+#      option, not as its default - so the packages would be installed, unused, and
+#      the skill would still fail while this step reported success. That is this
+#      repo's named recurring bug, an unknown collapsing into the safe-looking value,
+#      and it is exactly why this step reports instead of installing.
+#
+# It never fails the run. A dependency the operator has to choose how to install is
+# not a failure of the skill install, and burying the report in a failed step would
+# make it harder to read, not easier.
+# Same stream and same shape as mcp_warn, and separate from it only so a reader
+# grepping for one is not shown the other's call sites.
+preflight_warn() { printf '    \033[33mWARN:\033[0m %s\n' "$1" >&2; }
+
+resolve_python() {
+  # python3, then python, then py. Git Bash on Windows ships without python3, and
+  # the caller WARNS on a failure here rather than carrying on with an empty string -
+  # a silently absent interpreter is how a check ends up reporting that it ran.
+  local p
+  for p in python3 python py; do
+    have "$p" && { printf '%s' "$p"; return 0; }
+  done
+  return 1
+}
+
+skill_preflight_path() {
+  # The INSTALLED copy, wherever `claude plugin install` put it - the cache path
+  # carries the version ("<mkt>/<skill>/1.2.1/scripts/preflight.py") and is not worth
+  # reconstructing, so it is searched for, the same way setup_notify searches for
+  # notify's config.example.json. The cache is preferred over the marketplace clone
+  # because the cache is the copy Claude actually runs.
+  local skill="$1" root hit
+  root="$(claude_config_root)/plugins"
+  for hit in "$root/cache" "$root"; do
+    [ -d "$hit" ] || continue
+    hit="$(find "$hit" -name preflight.py -path "*/$skill/*" -print -quit 2>/dev/null || true)"
+    [ -n "$hit" ] && { printf '%s' "$hit"; return 0; }
+  done
+  return 1
+}
+
+run_skill_preflights() {
+  local py="" i key pf rc n=0 out
+  out="$(mktemp 2>/dev/null)" || out=""
+  if [ -z "$out" ]; then
+    preflight_warn "could not create a temporary file - skipping the skill dependency preflights. Check that TMPDIR exists and is writable."
+    return 0
+  fi
+  for (( i=0; i<${#SKILL_KEYS[@]}; i++ )); do
+    [ "${SKILL_STATE[$i]}" -eq 1 ] || continue
+    key="${SKILL_KEYS[$i]}"
+    pf="$(skill_preflight_path "$key")" || continue
+    n=$((n+1))
+    if [ -z "$py" ]; then
+      py="$(resolve_python)" || {
+        preflight_warn "none of python3, python or py is on PATH, so '$key' and every other skill's Python dependencies are UNCHECKED - not absent, unchecked. Install Python 3 and re-run this script, or run '$pf' by hand."
+        rm -f "$out"
+        return 0
+      }
+    fi
+    # </dev/null is load-bearing: preflight.py offers to install what is missing and
+    # its confirm() reads stdin. With no tty it returns false, but under `curl | bash`
+    # fd 0 is the rest of THIS SCRIPT, and the prompt would eat the next line of it.
+    "$py" "$pf" </dev/null >"$out" 2>&1
+    rc=$?
+    case "$rc" in
+      0)
+        # The "already installed" branch. Idempotent by construction: this step reads
+        # the machine and writes nothing, so a second run says the same thing.
+        skip "$key: Python dependencies already satisfied"
+        ;;
+      3)
+        # preflight.py's own exit code for "packages are missing and I did not
+        # install them". Its report goes to stderr with the skill named, because the
+        # alternative - a line on stdout in the middle of a 36-skill install - is the
+        # silence this step exists to end.
+        preflight_warn "$key: Python dependencies are MISSING. This script does not install them; see reason 1 and 2 in the comment above run_skill_preflights."
+        sed -n 's/^  MISSING */        missing: /p' "$out" >&2
+        # Option (a) has no PowerShell counterpart and the .ps1 half's list starts at
+        # (b) for that reason - there is no distribution package manager there to
+        # name. The other two options are worded identically in both halves.
+        preflight_warn "$key: fix it with ONE of - (a) your distribution's own packages, e.g. 'sudo apt install python3-docx python3-numpy python3-pil python3-fitz'; (b) a virtual environment the skill owns: '$py \"$pf\" --venv', then run its scripts with the interpreter it names; or (c) '$py -m pip install --user -r \"$(dirname "$(dirname "$pf")")/requirements.txt\"', which fails on a PEP 668 host unless you add --break-system-packages, which this script will not do for you."
+        ;;
+      *)
+        preflight_warn "$key: its preflight exited $rc, so its Python dependencies are UNCHECKED - not absent, unchecked. Its last lines were:"
+        tail -n 5 "$out" | sed 's/^/        /' >&2
+        ;;
+    esac
+  done
+  rm -f "$out"
+  [ "$n" -gt 0 ] || skip "no selected skill ships a scripts/preflight.py - nothing to check"
+  return 0
+}
+
 # --- 3. This repo's own marketplace and skills -------------------------------
 if is_selected "own-skills"; then
   # Registered up front rather than left to install_group, so ticking zero skills still
@@ -2244,6 +2468,10 @@ if is_selected "own-skills"; then
   if [ "$NOTIFY_SETUP" = "1" ] && skill_selected "notify"; then
     run_step "Set up the notify skill" setup_notify
   fi
+
+  # After the install, never before: a preflight reads the copy that landed.
+  run_step "Check skill Python dependencies (report only - installs nothing)" \
+    run_skill_preflights
 fi
 
 # --- 4. Team marketplaces and plugins ----------------------------------------
@@ -2856,10 +3084,15 @@ install_ms_mcp() {
   # Published on npm under @badali404 since 2026-08-28, so registration is the
   # npx form and needs no clone, no build, and no global install. npx resolves
   # and caches the package on the server's first launch.
+  # Counted rather than `|| return 1`, so one server failing still lets the other
+  # three be attempted AND still fails the step. Before this the four calls were bare:
+  # each returned non-zero into nothing, the trailing guidance printed, and run_step
+  # recorded the row as successful.
+  local mcp_failures=0
   if [ "$have_admin" -eq 1 ]; then
-    add_mcp_server "mcp-msgraph" "$env_spec" npx -y "@badali404/mcp-msgraph@latest"
-    add_mcp_server "mcp-intune" "$env_spec" npx -y "@badali404/mcp-intune@latest"
-    add_mcp_server "mcp-o365-admin" "$env_spec" npx -y "@badali404/mcp-o365-admin@latest"
+    add_mcp_server "mcp-msgraph" "$env_spec" npx -y "@badali404/mcp-msgraph@latest" || mcp_failures=$((mcp_failures+1))
+    add_mcp_server "mcp-intune" "$env_spec" npx -y "@badali404/mcp-intune@latest" || mcp_failures=$((mcp_failures+1))
+    add_mcp_server "mcp-o365-admin" "$env_spec" npx -y "@badali404/mcp-o365-admin@latest" || mcp_failures=$((mcp_failures+1))
     if [ "$have_admin_secret" -eq 0 ]; then
       printf '        Registered via the Azure CLI fallback (no MS_ADMIN_* set) - each server will\n'
       printf '        authenticate as whoever is signed in with "az login" wherever it actually runs.\n'
@@ -2868,7 +3101,7 @@ install_ms_mcp() {
     skip "mcp-msgraph/mcp-intune/mcp-o365-admin: no MS_ADMIN_* credentials and no 'az login' session"
   fi
   if [ "$have_user" -eq 1 ]; then
-    add_mcp_server "mcp-o365-user" "$env_spec" npx -y "@badali404/mcp-o365-user@latest"
+    add_mcp_server "mcp-o365-user" "$env_spec" npx -y "@badali404/mcp-o365-user@latest" || mcp_failures=$((mcp_failures+1))
   else
     skip "mcp-o365-user: no MS_USER_CLIENT_ID given"
   fi
@@ -2882,6 +3115,7 @@ install_ms_mcp() {
     printf '        requires confirm: true; the flag alone never lets a tool write.\n'
   fi
   ok "Registered via 'npx -y @badali404/<pkg>@latest' - no secrets were written to ~/.claude.json. If not relying on 'az login', export MS_ADMIN_TENANT_ID/MS_ADMIN_CLIENT_ID/MS_ADMIN_CLIENT_SECRET and/or MS_USER_CLIENT_ID (+ optional MS_USER_TENANT_ID) in the shell/profile that launches 'claude' itself, or the servers relying on them will fail to authenticate. Verify auth with 'npx -y @badali404/mcp-msgraph@latest doctor' (same pattern per server) - it reports which auth chain link actually authenticated and whether writes are enabled."
+  [ "$mcp_failures" -eq 0 ] || return 1
 }
 if is_selected "ms-mcp"; then
   run_step "Register Microsoft MCP servers (mcp-servers/)" install_ms_mcp
