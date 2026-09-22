@@ -3632,3 +3632,14 @@ context clear, so the open items live here where they are tracked.
   `verify-gate.ps1` specifically as the surfaces to fix; `--price` is a separate,
   operator-only entry point with its own bash resolution (`_bash()`,
   `verify_price.py:57-66`) that would need the identical shim built a second time.
+- **`pm-pulse.ps1`'s `Resolve-CrewPython` (`plugin/crew/hooks/scripts/pm-pulse.ps1:36-63`)
+  is the weaker, metadata-only resolver (WindowsApps path filter, no execute-to-verify
+  probe) while its bash twin `pm-pulse.sh` calls `crew_py_strict`, the execute-verify
+  version. Windows audit wave 3 hardened `context-watch.sh`, `pm-brief.sh` and
+  `platform-sync.sh` (and their `.ps1` twins) to match `crew_py_strict`'s strength on
+  both flavours, and role-write-guard.ps1 already carries the strict pattern, but
+  pm-pulse.ps1 was left as-is: it is a pre-existing mismatch, not introduced by this
+  change, and pm-pulse.{sh,ps1} were not in this ticket's named file list. A candidate
+  that prints a plausible path via shell metadata alone (not proven by execution) would
+  still be accepted by pm-pulse.ps1 where pm-pulse.sh would reject it. Did not block:
+  fixing it means widening a file this ticket did not name.

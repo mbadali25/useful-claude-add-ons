@@ -10,43 +10,173 @@
 # installing the plugin is not enough on its own.
 INPUT=$(cat)
 
-PY=$(crew_py) || { echo "crew context-watch: no usable python - context warnings are OFF" >&2; exit 0; }
+# `.crew/config.json`'s existence decides whether this hook does ANYTHING,
+# so it is checked BEFORE resolving python, not after -- a non-crew
+# repository must not pay for spinning up an interpreter (or, before the
+# WindowsApps fix below, for launching a stub) to run a hook that was always
+# going to exit 0.
+#
+# The JSON payload's own "cwd" -- NOT $CLAUDE_PROJECT_DIR -- is still the
+# PRIMARY source, restoring the priority order this hook always used: a crew
+# repo nested under the project root (input cwd=outer/inner,
+# CLAUDE_PROJECT_DIR=outer) must be checked and nagged at outer/inner, not
+# silently missed by looking only at outer. Extracted here with a bash-only
+# grep/sed rather than python, because python is not resolved yet and must
+# not be a prerequisite for finding out whether this is even a crew repo.
+# This is an approximation of real JSON parsing -- an escaped `\"` or a
+# backslash inside the path is not unescaped correctly -- matching the same
+# cheap-extraction convention verify-gate.sh already uses for booleans
+# (`case "$INPUT" in *'"stop_hook_active": true'*...`): accurate enough for
+# what Claude Code actually sends, and python is not guaranteed available to
+# do better at this point in the script.
+CWD_RAW=$(printf '%s' "$INPUT" | grep -o '"cwd"[[:space:]]*:[[:space:]]*"[^"]*"' | sed -E 's/.*:[[:space:]]*"([^"]*)"/\1/')
+cd "${CWD_RAW:-${CLAUDE_PROJECT_DIR:-.}}" 2>/dev/null || exit 0
+[ -f .crew/config.json ] || exit 0
+
+# Loop safety, layer 2 (see layer 1's own comment lower down): once-per-
+# session, cleared by handoff-read.sh at the next SessionStart. Defined here,
+# before python resolution, because a resolver failure below claims it too.
+MARKER=".crew/.handoff-requested"
+
+# `crew_py_strict`, NOT `crew_py`. `crew_py`'s bare `command -v` accepts the
+# Windows Store App Execution Alias stub (a real, executable file that
+# produces no output), which is what let this hook silently never fire on a
+# machine where the stub sat ahead of a real interpreter on PATH.
+#
+# PM ruling 2026-09-22 (Windows audit wave 3 re-review): a resolver failure
+# now FAILS CLOSED, once, rather than failing open. The original fail-open
+# design reasoned that a stderr-only warning on exit 0 was still "loud"; it
+# is not -- `auto-clear.sh:26` states the same fact about this exact hook's
+# own stderr ("a Stop hook's stderr is invisible on exit 0"), and a message
+# nobody reads is not a check that ran, it is CLAUDE.md's "unknown
+# collapsing into the safe-looking value" wearing a slightly longer disguise.
+# And "blocks forever" was never true: $MARKER already makes every nag this
+# hook can raise, interpreter failure included, a ONE-TIME event per
+# session. So: unknown context usage is now treated as the worst case
+# exactly once (exit 2, same as a real over-budget turn), and the very same
+# marker that suppresses a repeated real nag suppresses a repeated
+# interpreter-failure one -- no separate loop-safety logic needed for it.
+PY=$(crew_py_strict)
+if [ -z "$PY" ]; then
+  if [ -f "$MARKER" ]; then
+    exit 0
+  fi
+  # context.enabled must still be honoured even without python -- a repo
+  # that has explicitly turned this hook off must not be nagged just
+  # because the interpreter that would normally have read that setting is
+  # broken. That would be the same "unknown collapsing into the wrong
+  # value" mistake pointed the other way: treating a KNOWN "off" as unknown.
+  #
+  # Scoped to the "context" block specifically, not a blind whole-file
+  # grep -- .crew/config.json has OTHER "enabled" keys (pm.enabled, for
+  # one) that must not be mistaken for this one. The awk pass below extracts
+  # just the brace-balanced value of the "context" key; grep then runs only
+  # against that substring.
+  CTX_BLOCK=$(awk '
+    { buf = buf $0 "\n" }
+    END {
+      i = index(buf, "\"context\"")
+      if (!i) { exit }
+      rest = substr(buf, i)
+      b = index(rest, "{")
+      if (!b) { exit }
+      depth = 0
+      for (j = b; j <= length(rest); j++) {
+        c = substr(rest, j, 1)
+        if (c == "{") depth++
+        if (c == "}") depth--
+        out = out c
+        if (depth == 0) break
+      }
+      print out
+    }
+  ' .crew/config.json 2>/dev/null)
+  if printf '%s' "$CTX_BLOCK" | grep -q '"enabled"[[:space:]]*:[[:space:]]*false'; then
+    exit 0
+  fi
+  # handoffPath cannot be read precisely without python (see CTX_BLOCK's own
+  # approximation above), so the message names WHERE to look rather than
+  # hard-coding the shipped default as if it were certainly correct.
+  HANDOFF_NOTE="the configured handoff path (context.handoffPath in .crew/config.json; .work/HANDOFF.md if unset)"
+  ( set -o noclobber; : > "$MARKER" ) 2>/dev/null || exit 0
+  cat >&2 << MSG
+crew context-watch: no usable python (stub or unusable interpreter) - context
+usage could not be measured this turn. This hook cannot tell you how full
+the context window actually is right now, so treat it as if it might be
+full: before ending this turn, write the handoff note to ${HANDOFF_NOTE}
+per the crew-context skill, as a one-time precaution. This will not repeat
+until the next session.
+MSG
+  exit 2
+fi
+
 read_json() { "$PY" -c 'import sys,json;d=json.load(sys.stdin);print(d.get(sys.argv[1],""))' "$1" <<< "$INPUT" 2>/dev/null; }
 TRANSCRIPT=$(read_json transcript_path)
-CWD=$(read_json cwd)
 STOP_HOOK_ACTIVE=$(read_json stop_hook_active)
-cd "${CWD:-${CLAUDE_PROJECT_DIR:-.}}" 2>/dev/null || exit 0
 [ -f "$TRANSCRIPT" ] || exit 0
-[ -f .crew/config.json ] || exit 0
 
 # Loop safety, layer 1: Claude Code is already continuing because of a stop
 # hook -- do not pile on more feedback. Layer 2 is the once-per-session
-# marker below. Layer 3 is Claude Code's own 8-consecutive-block backstop.
+# marker above. Layer 3 is Claude Code's own 8-consecutive-block backstop.
 { [ "$STOP_HOOK_ACTIVE" = "True" ] || [ "$STOP_HOOK_ACTIVE" = "true" ]; } && exit 0
 
 # No hook_once claim here on purpose: Stop fires once per TURN against a
 # stable session id, so a session-scoped claim taken on turn 1 would suppress
-# the context nag for the rest of the session. The existing
-# .crew/.handoff-requested marker below is the real once-per-session gate for
-# this hook, reset by handoff-read.sh at the next SessionStart -- that stays.
+# the context nag for the rest of the session. $MARKER above is the real
+# once-per-session gate for this hook, reset by handoff-read.sh at the next
+# SessionStart -- that stays.
 
 CFG=$("$PY" - << 'PY' 2>/dev/null
 import json
-try: c=json.load(open(".crew/config.json")).get("context",{})
-except Exception: c={}
-# reserveTokens: absolute headroom floor, in tokens. Absent -> 100k. null or
-# <=0 -> off, i.e. the old pure-percentage behaviour. See the threshold below.
-try: reserve = max(0, int(c.get("reserveTokens", 0) or 0))
-except (TypeError, ValueError): reserve = 100_000
-print(c.get("warnAt",0.5), c.get("budgetTokens") or 0, c.get("handoffPath",".work/HANDOFF.md"), str(c.get("enabled",True)).lower(), str(c.get("autoWrapUp",True)).lower(), reserve)
+# An unparseable file (json.load raises) is treated as "no context settings",
+# same as always -- the file's presence is already proven by bash above, and
+# a fully broken file is caught by the outer try/except exactly as before.
+# What that outer except did NOT cover, and what MALFORMED reports
+# separately: a "context" VALUE that parses fine but is not an object at all
+# (e.g. `"context": null` or `"context": "off"`) -- a config problem, not an
+# interpreter one, so it must not be reported as "python is broken".
+MALFORMED = "MALFORMED_CONFIG_CONTEXT_BLOCK"
+try:
+    raw = json.load(open(".crew/config.json"))
+except Exception:
+    raw = {}
+c = raw.get("context", {}) if isinstance(raw, dict) else {}
+if not isinstance(c, dict):
+    # The actual reported bug: `"context": null` (or any non-object value)
+    # makes `c` something other than a dict, and every `c.get(...)` call
+    # below would raise AttributeError -- which the OLD single-line
+    # `try: ... except Exception: c={}` did not cover, because that try only
+    # wrapped the line that PRODUCES `c`, not the lines that USE it. Caught
+    # here, explicitly, before any `.get()` call runs against it.
+    print(MALFORMED)
+else:
+    # reserveTokens: absolute headroom floor, in tokens. Absent -> 100k. null
+    # or <=0 -> off, i.e. the old pure-percentage behaviour. See the
+    # threshold below.
+    try: reserve = max(0, int(c.get("reserveTokens", 0) or 0))
+    except (TypeError, ValueError): reserve = 100_000
+    print(c.get("warnAt",0.5), c.get("budgetTokens") or 0, c.get("handoffPath",".work/HANDOFF.md"), str(c.get("enabled",True)).lower(), str(c.get("autoWrapUp",True)).lower(), reserve)
 PY
 )
-[ -z "$CFG" ] && exit 0
+if [ "$CFG" = "MALFORMED_CONFIG_CONTEXT_BLOCK" ]; then
+  echo "crew context-watch: .crew/config.json's \"context\" value is malformed (not an object, e.g. null) - context warnings are OFF until it is fixed" >&2
+  exit 0
+fi
+# By this point `.crew/config.json` is KNOWN to exist and parse as an object
+# (checked in bash and in the heredoc above), and PY is a python
+# `crew_py_strict` proved runs. The heredoc always prints either a config
+# line or the MALFORMED sentinel on success, so an empty CFG here is neither
+# of those -- it means the python PROCESS itself died or could not be
+# reached after having already proved runnable (e.g. killed mid-write); name
+# that distinctly from a malformed config rather than folding the two
+# together.
+if [ -z "$CFG" ]; then
+  echo "crew context-watch: python resolved but produced no config read (an unexpected interpreter failure, not a malformed config) - context warnings are OFF this turn" >&2
+  exit 0
+fi
 read -r WARN_AT BUDGET HANDOFF ENABLED AUTO_WRAP_UP RESERVE <<< "$CFG"
 [ "$ENABLED" = "false" ] && exit 0
 
-# Loop safety: fire once per session until SessionStart clears the marker.
-MARKER=".crew/.handoff-requested"
 if [ -f "$MARKER" ]; then
   # The nag already happened. This is the turn on which the handoff may have
   # just been written, which is the only moment auto-clear is interested in.
