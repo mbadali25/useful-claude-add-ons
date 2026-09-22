@@ -286,6 +286,11 @@ case "$OUT" in
   *"could not be parsed"*)
     fail "verify-gate: a matcher that could not RUN was misreported as a parse failure: $OUT" ;;
   *"could not RUN the matcher"*) pass ;;
+  # Since the matcher's interpreter goes through crew_py_strict, a python that
+  # exits before it can be proved is reported as "no PROVED working
+  # interpreter" ahead of any matcher attempt. Still exit 2, still not a parse
+  # failure - a third honest shape, not the misreport this case guards against.
+  *"PROVED working interpreter"*) pass ;;
   *) fail "verify-gate: unrecognised message for an unrunnable matcher: $OUT" ;;
 esac
 export PATH="$SAVED_PATH"
