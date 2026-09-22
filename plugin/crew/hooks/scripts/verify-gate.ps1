@@ -1195,7 +1195,116 @@ foreach ($c in $cmds) {
 # BEFORE the first rule, not only after it -- the first rule is as able to
 # exceed the TTL as any later one.
 Write-CrewLockDeadline -LockPath $lock -Token $lockToken -Ttl $lockTtl -MaxCost $maxCost
-$bashExe = $null
+$bashExe = Resolve-CrewBash
+
+# A rule's `run` string is bash-flavoured and most of .crew/verify.json's
+# rules hardcode `python3` - but the bash EVERY rule command below runs
+# under (Git for Windows' own bash, just resolved above) ships with no
+# python3 at all, the same CLAUDE.md landmine the .sh gate carries. Twin fix
+# to verify-gate.sh's, corrected after review:
+#
+#   - ONLY python3 is ever shimmed, and ONLY when python3 does not already
+#     resolve under the SAME bash rule commands run in. `python` and `py`
+#     are NEVER shadowed - review's reproduction: Windows' `py` launcher
+#     accepts a `-3`/`-2` version-select flag, and the first version of
+#     this fix shimmed python/py too, as a naive `exec $REAL "$@"` wrapper
+#     that forwarded `-3` straight into a plain interpreter that does not
+#     understand it ("Unknown option: -3"). Shimming a name that already
+#     resolves to a real, working interpreter can only break something
+#     that already worked.
+#   - Built from Resolve-CrewPython, the PROVED resolver (it actually RUNS
+#     the candidate and checks `sys.executable`, rejecting a WindowsApps
+#     stub `Get-Command` alone cannot tell from a real interpreter - see
+#     its own header comment above).
+#   - The written shim is PROBED once (`python3 -c "import sys"`), through
+#     the SAME bash rule commands run under, before it ever reaches PATH -
+#     its stderr is surfaced, not discarded, so a shim that was built but
+#     does not actually run is reported, not silently installed.
+#
+# NOT rewriting .crew/verify.json's `run` arrays to reference a $CREW_PY
+# variable instead - see the twin comment in verify-gate.sh for why (other
+# readers of `run`, enumerated in verification-harness.md, would see bash
+# syntax naming a variable only this gate exports).
+$shimDir = $null
+if ($bashExe) {
+  $global:LASTEXITCODE = 0
+  & $bashExe -c 'command -v python3' 1>$null 2>$null
+  $python3Already = ($LASTEXITCODE -eq 0)
+  if (-not $python3Already) {
+    $shimPy = Resolve-CrewPython
+    if (-not $shimPy) {
+      [Console]::Error.WriteLine("verify-gate: no python - python3, python and py all fail to resolve to a PROVED working interpreter; a rule hardcoding python3 will fail with 'command not found'")
+    } elseif ($shimPy -notmatch '^([A-Za-z]:[\\/]|[\\/][\\/]?)') {
+      # Defensive: Resolve-CrewPython is documented to return an absolute
+      # path (sys.executable); refuse to shim from anything else rather
+      # than trust a relative path into a single-quoted exec line.
+      [Console]::Error.WriteLine("verify-gate: the resolved python ($shimPy) is not an absolute path - refusing to build a shim from it")
+    } else {
+      try {
+        $candidateDir = Join-Path ([System.IO.Path]::GetTempPath()) ("crew-py-shim-" + [System.Guid]::NewGuid().ToString("N"))
+        New-Item -ItemType Directory -Path $candidateDir -Force -ErrorAction Stop | Out-Null
+        # Single-quoted in the WRITTEN shim's own exec line, so it cannot
+        # be tricked into expanding a `$` or backtick if the resolved path
+        # ever contained one. Any embedded single quote in $shimPy is
+        # itself escaped the standard POSIX way (close quote, backslash-
+        # escaped quote, reopen quote) before being placed inside that
+        # pair - the "quote it safely" guarantee, not an assumption that
+        # Resolve-CrewPython never returns one.
+        $shimPyEscaped = $shimPy -replace "'", "'\''"
+        $shimBody = "#!/bin/sh`nexec '$shimPyEscaped' `"`$@`"`n"
+        $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+        [System.IO.File]::WriteAllText((Join-Path $candidateDir "python3"), $shimBody, $utf8NoBom)
+        # chmod through bash, not guessed from PowerShell - MSYS bash's
+        # notion of "executable" on an NTFS mount is its own, and writing
+        # the FILE from .NET while asking bash to set the bit (rather than
+        # having bash write the content too) avoids the PowerShell/bash
+        # path-quoting hazard CLAUDE.md's cygpath landmine warns about,
+        # confined here to a single, simple command.
+        $candidateForward = $candidateDir -replace '\\', '/'
+        $global:LASTEXITCODE = 0
+        $chmodOut = & $bashExe -c "chmod +x '$candidateForward/python3'" 2>&1
+        if ($LASTEXITCODE -ne 0) {
+          [Console]::Error.WriteLine("verify-gate: could not make the python3 shim executable: $chmodOut")
+        } else {
+          # PROBE before PATH - run it once and check it actually behaves
+          # like python, through the same bash rule commands use.
+          $global:LASTEXITCODE = 0
+          $probeOut = & $bashExe -c "'$candidateForward/python3' -c 'import sys'" 2>&1
+          if ($LASTEXITCODE -eq 0) {
+            $shimDir = $candidateDir
+          } else {
+            [Console]::Error.WriteLine("verify-gate: the python3 shim did not pass its own probe (python3 -c 'import sys') - not installing it on PATH: $probeOut")
+          }
+        }
+      } catch {
+        [Console]::Error.WriteLine("verify-gate: could not build the python3 shim: $_")
+      }
+    }
+  }
+}
+if ($shimDir) {
+  $env:PATH = "$shimDir;$env:PATH"
+  # Cleaned up on every exit path. Register-EngineEvent is ADDITIVE -
+  # unlike bash's `trap`, a second registration does not replace the
+  # first, so the lock's own PowerShell.Exiting handler (just above, when
+  # locking succeeded) keeps firing alongside this one rather than being
+  # silently dropped the way a naive re-`trap` would clobber it on the .sh
+  # side (see that file's own comment on this same point).
+  $shimDirForCleanup = $shimDir
+  $null = Register-EngineEvent PowerShell.Exiting -Action ([scriptblock]::Create(@"
+  Remove-Item -Recurse -Force '$shimDirForCleanup' -ErrorAction SilentlyContinue
+"@))
+}
+# $shimPy being unresolvable (no python at all) is deliberately not a
+# reason to stop here: unlike the .sh gate, this one parses .crew/verify.json
+# with native ConvertFrom-Json and needs no python to reach this point. With
+# no shim built, a rule that genuinely hardcodes `python3` on a machine with
+# NO python anywhere fails loudly through the ordinary path below - bash
+# reports "python3: command not found", that is a real (non-77) exit code,
+# and the rule is recorded FAILED like any other failing command. That is
+# the correct outcome for that case: there is no interpreter to substitute.
+# Not changed here, deliberately, and for the same reason verify-gate.sh:630
+# stays 0 rather than 2 for the analogous top-level case: see that comment.
 
 # verify-gate.sh evals each rule inside `$(...)`, a subshell. This is the
 # matched twin of that contract, and the only way to honour it is to hand the
@@ -1320,8 +1429,8 @@ if ($unmapped.Count -gt 0 -and $vm.unmapped -eq "fail") {
   $failed = $true
 }
 
-# DELETE THE STALE FINGERPRINT BEFORE ANY EARLY EXIT, including the
-# $failed check immediately below - the twin of the same fix in
+# DELETE THE STALE FINGERPRINT BEFORE ANY EARLY EXIT, including the sync
+# and the $failed check below it - the twin of the same fix in
 # verify-gate.sh, where the full history lives: a turn where one command
 # returned 77 (SKIP) and a DIFFERENT command failed outright used to exit
 # before this delete ever ran, so a PASS fingerprint from an earlier turn
@@ -1330,14 +1439,36 @@ if ($anySkipped) {
   Remove-Item -Path $fpFile -Force -ErrorAction SilentlyContinue
 }
 
-if ($failed) { exit 2 }
-
-# Per-rule record sync - the twin of the same call in verify-gate.sh. Only
-# reached on a turn where nothing FAILED (rc 77 is not a failure), so an
-# unreliable run cannot overwrite what a previous clean run recorded. A
-# sync that WAS attempted and FAILED TO PERSIST is not best-effort -
-# verify_record.py exits non-zero on a write failure (see its _save/_sync)
-# and prints why. $syncStatus carries that through to the decision below.
+# Per-rule record sync now runs BEFORE the $failed early exit below, on
+# EVERY turn - the twin of the same reordering in verify-gate.sh, where the
+# full rationale lives. It used to sit AFTER `if ($failed) { exit 2 }`,
+# reached "only on a turn where nothing FAILED", on the reasoning that "an
+# unreliable run should not overwrite what a previous clean run recorded".
+# That reasoning is right at the sha-marker/fingerprint granularity (a
+# failed turn must never look fully verified) and wrong at the PER-RULE
+# granularity the sync actually writes at: one failing rule among many
+# discarded every OTHER rule's passing evidence too, because the whole sync
+# call was skipped.
+#
+# What may now be written on a FAILED turn: per-rule PASS/SKIP/chronic/
+# reach-excluded entries exactly as before. The FAILING rule's own outcome
+# is deliberately NOT persisted - an earlier version of this fix DID write
+# a "failed" entry, shared by both flavours, and was itself reviewed BLOCK:
+# that entry orphaned the moment the rule was EDITED to fix the failure,
+# because rule_key() hashes `run`, so the old "failed" key stopped matching
+# _current_rule_keys() and the stale-obligation prune held the marker
+# hostage behind a rule that was already fixed. See verify_record.py's
+# `_sync`, the "fail" branch (the twin of this comment lives in
+# verify-gate.sh) - the exit code (2) already carries the failure for THIS
+# turn, and nothing needs to survive to the next one, because a FAILED turn
+# never advances either marker anyway. What still may NOT happen on a
+# FAILED turn: either whole-tree marker advancing. That guarantee does not
+# come from anything in the sync call
+# itself - it comes from `if ($failed) { exit 2 }` still running AFTER the
+# sync, unconditionally on $failed, and BEFORE the marker-advance block
+# further down. A sync write failure changes nothing about that:
+# $syncStatus is not consulted by the exit-2 check, only by the
+# marker-advance block a FAILED turn never reaches.
 #
 # SENTINEL, NOT 0. This used to start at 0 ("success") and only get
 # reassigned inside the `$syncPy -and (Test-Path $syncScript)` guard AND
@@ -1370,6 +1501,12 @@ try {
 } catch {
   [Console]::Error.WriteLine("verify-gate: could not sync the record ($_); NOT advancing the marker")
 }
+
+# A FAILED turn stops here, after its own evidence (and every passing
+# rule's) has just been synced above - never before. $syncStatus plays no
+# part in this decision on purpose: whether the record write succeeded or
+# not, a turn with a real failure exits 2 either way.
+if ($failed) { exit 2 }
 
 # THREE things must ALL hold before either marker may advance - the twin of
 # the same three-part guard in verify-gate.sh, where the full rationale

@@ -58,9 +58,13 @@ live and actionable:**
    `.mmd` files against this note's "three" and explicitly declined to decide
    which reading was right, saying it needed a read of `render.sh`'s actual
    invocation site. That read is done:
-   `plugin/crew/skills/crew-diagrams/scripts/render.sh:56` is
+   `plugin/crew/skills/crew-diagrams/scripts/render.sh:75` is
    `FILES=("$DIR"/*.mmd)` — a glob over the whole directory, under
-   `shopt -s nullglob` at `:55`, with no hardcoded list anywhere in the file.
+   `shopt -s nullglob` at `:74`, with no hardcoded list anywhere in the file.
+   (Re-pointed 2026-09-22 against the working tree of a flag-parsing and
+   artifact-check rework not yet reflected in this file's `03b19262` anchor —
+   that rework moved the glob down without changing what it does. Re-verify
+   this pair when the anchor next moves past whatever commit lands it.)
    So `render.sh` renders **all six**, and both "three `.mmd` sources" and
    "six files, three names x two formats" were simply out of date. Corrected in
    place below.
@@ -291,9 +295,12 @@ unchanged position despite the file's other changes.)
   two formats**, corrected this pass from the "six files, three names" this
   note carried for five anchors. Produced by
   `plugin/crew/skills/crew-diagrams/scripts/render.sh` — output dir created at
-  `:20`, `mmdc` invoked at `:45` and again at `:49` on the failure path (file
-  unchanged in this range, closed by the per-path check; all three line numbers
-  re-read and identical). `docs/diagrams/out/` itself is gitignored at
+  `:88`, `mmdc` invoked at `:126` and again at `:133` on the failure path.
+  Re-pointed 2026-09-22 against the working tree of a flag-parsing and
+  artifact-check rework not yet reflected in this file's `03b19262` anchor —
+  re-verify these three when the anchor next moves past whatever commit
+  lands it; see "Calls out to" below for the same caveat.
+  `docs/diagrams/out/` itself is gitignored at
   `.gitignore:409` — unchanged, and `.gitignore` is not in this range's changed
   set. `git ls-files docs/diagrams/` returns **six** `.mmd` sources:
   `architecture.mmd`, `data-flow-crew-config.mmd`, `data-flow.mmd`,
@@ -305,7 +312,8 @@ unchanged position despite the file's other changes.)
   whether "three" had always been correctly scoped to a subset `render.sh`
   targets — deferring it as needing a read of `render.sh`'s invocation site.
   That read is done. DERIVED
-  `plugin/crew/skills/crew-diagrams/scripts/render.sh:55-56`:
+  `plugin/crew/skills/crew-diagrams/scripts/render.sh:74-75` (same
+  not-yet-anchored rework caveat as above):
   `shopt -s nullglob` then `FILES=("$DIR"/*.mmd)`. It is a glob over the whole
   directory; there is no hardcoded source list anywhere in the file. So
   `render.sh` renders every `.mmd` present, the count was **stale**, and the
@@ -368,10 +376,13 @@ unchanged position despite the file's other changes.)
 ## Calls out to
 
 - DERIVED `mmdc` (mermaid-cli), at
-  `plugin/crew/skills/crew-diagrams/scripts/render.sh:45` (`-s 2`, silenced)
-  and `:49` (the retry that prints the last five lines of stderr on FAIL).
-  File unchanged in this range; both line numbers re-read and confirmed
-  identical to the previous anchor.
+  `plugin/crew/skills/crew-diagrams/scripts/render.sh:126` (`-s 2`, silenced)
+  and `:133` (the retry that prints the last five lines of stderr on FAIL).
+  Re-pointed 2026-09-22, same not-yet-anchored rework caveat as the citations
+  above. The `-s 2` call renders to a temp file (`$tmp`, checked with
+  `[ -s "$tmp" ]`) and only `mv`s it onto the real output path on success, so
+  a failed re-render can no longer delete the last good render — different
+  in substance from the previous anchor, not just moved.
 - `raw.githubusercontent.com` at the pinned sha — unchanged and re-verified
   above under "Entry points."
 
@@ -490,23 +501,34 @@ not be trusted without a fresh read if they are needed again.
   failures for six on 2026-09-05, the same three sources rendering cleanly
   when `mmdc` is invoked directly, and the same proposed fix
   (`cygpath -w`), which has since landed —
-  `plugin/crew/skills/crew-diagrams/scripts/render.sh:32-35` sets `PCFG_ARG`
-  from `cygpath -w "$PCFG"` when `cygpath` exists, re-read this pass and
-  unchanged from the previous anchor.
-  `plugin/crew/skills/crew-diagrams/scripts/render.sh:27-31` still names the
-  real trigger: `MSYS_NO_PATHCONV=1` set in the caller's environment, not a
-  Mermaid problem.
+  `plugin/crew/skills/crew-diagrams/scripts/render.sh:100-104` sets
+  `PCFG_ARG` from `cygpath -w "$PCFG"` when `cygpath` exists, re-read this
+  pass. `plugin/crew/skills/crew-diagrams/scripts/render.sh:93-99` still
+  names the real trigger: `MSYS_NO_PATHCONV=1` set in the caller's
+  environment, not a Mermaid problem. (Re-pointed 2026-09-22: a flag-parsing
+  and artifact-check rework on this branch, not yet reflected in this file's
+  `03b19262` anchor, added lines ahead of this block without touching its
+  content, which was re-read verbatim and is byte-identical to the previous
+  anchor. Re-verify these two ranges when the anchor next moves past
+  whatever commit lands that rework.)
 
 - **The regression test for that fix is no longer misdocumented — this
   landmine is resolved, not carried forward.** Four previous versions of this
   note recorded that `CLAUDE.md` cited the wrong path for the `render.sh`
   regression test (`scripts/_test/render.sh`, which does not exist, instead
   of `plugin/crew/skills/crew-diagrams/scripts/_test/render.sh`, which does).
-  At this anchor, `CLAUDE.md:280-281` correctly names
-  `plugin/crew/skills/crew-diagrams/scripts/_test/render.sh` and its
-  `MSYS_NO_PATHCONV=1` case at `:74` — verified directly: the file is 79
-  lines, case 2 (`MSYS_NO_PATHCONV=1`) runs at line 74, and it asserts a
-  non-zero output file rather than exit 0, exactly as `CLAUDE.md` now says.
+  At this anchor, `CLAUDE.md:280-282` (case citation at `:282`) correctly names
+  `plugin/crew/skills/crew-diagrams/scripts/_test/render.sh` and its case 2
+  (`MSYS_NO_PATHCONV=1`), which asserts a non-zero-sized output file rather
+  than exit 0, exactly as `CLAUDE.md` now says.
+  **Neither this note nor `CLAUDE.md` states the file's total line count
+  any more** — a self-referential count changes itself every time this note
+  or that file is next edited, per this note's own "A self-referential count
+  changes itself" landmine below. Cite the case by name and its own line
+  instead: `nonzero_svg "MSYS_NO_PATHCONV=1"` is invoked at
+  `plugin/crew/skills/crew-diagrams/scripts/_test/render.sh:104` at this
+  pass (re-pointed 2026-09-22 against the same not-yet-anchored rework as
+  the render.sh citations above — re-verify when the anchor next moves).
   `CLAUDE.md` itself records the correction date as 2026-09-12. Kept as an
   entry here, rather than silently dropped, because a landmine repeated four
   times and then fixed is worth one line saying so — the next reader who

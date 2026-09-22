@@ -586,32 +586,45 @@ Notable rules, relevant to subsystems covered elsewhere in this codemap:
   genuinely new. **This is the rule that covers this note**, which is why
   editing it requires no version bump and triggers no command.
 
-### Two defects in the gate this map feeds, both open at this anchor
+### Two defects in the gate this map feeds
 
 **DERIVED, read from the gate's own source, and recorded here because they
-decide what a green `.crew/.verify-verified-at` is worth.** Neither is fixed at
-`84976536`.
+decide what a green `.crew/.verify-verified-at` is worth.**
 
-1. **One failing command discards the evidence for every rule that passed.**
-   `plugin/crew/hooks/scripts/verify-gate.sh:1403` is
-   `[ "$FAILED" -eq 0 ] || exit 2`, and it sits **above** the per-rule record
-   sync, whose own comment (`:1405-1410`) says it is "only reached on a turn
-   where nothing FAILED". The intent is defensible — an unreliable run should
-   not overwrite what a clean one recorded — but the granularity is wrong: the
-   abort is global while the evidence is per-rule. `.crew/verify.json:193`
-   records the measured consequence: one absent `node_modules` kept
-   `rules[3]`, `rules[4]` and `rules[8]` recorded UNVERIFIED and
-   `.crew/.verify-verified-at` frozen 14 commits behind HEAD. The exit-77
-   routing added across this file is a **workaround at the call sites**, not a
-   fix — rc 77 is not a failure
-   (`plugin/crew/hooks/scripts/verify-gate.sh:1345`), so a skipped rule no
-   longer trips `:1403`. A genuinely failing rule still does, and still takes
-   every other rule's record with it.
+1. **FIXED, not yet committed as of this note.** *(Was: "One failing command
+   discards the evidence for every rule that passed", open at the previous
+   anchor `84976536` and every one before it. Kept below, marked stale,
+   rather than deleted — a reader who saw the old finding should see it was
+   actually addressed, not wonder whether this note simply dropped it.)*
+   `plugin/crew/hooks/scripts/verify-gate.sh:1563` (moved; was `:1403`) is
+   still `[ "$FAILED" -eq 0 ] || exit 2`, but the per-rule record sync now
+   runs BEFORE it, on every turn, not only when nothing FAILED — see the
+   comment immediately above that line for the reasoning, and
+   `plugin/crew/hooks/scripts/verify-gate.ps1`'s twin (`if ($failed) { exit
+   2 }`, also moved after its own sync call). `verify_record.py` gained a
+   `"fail"` branch in `_sync` that deliberately does **not** persist the
+   failing rule's own outcome (a first version of this fix that DID persist
+   it was itself reviewed BLOCK: the entry orphaned the moment the failing
+   rule was edited to fix it, since `rule_key()` hashes `run` — see
+   `plugin/crew/tests/test_verify_gate_partial_failure_recording.py`, whose
+   docstring and
+   `test_editing_a_failing_rule_to_pass_does_not_orphan_the_marker`
+   reproduce and guard both shapes of this fix). This map's own anchor is
+   **not** advanced by this note — no commit exists yet for this change —
+   so treat this paragraph as ahead of the anchor below it until the next
+   full pass reconciles them; the per-path diff check
+   (`git diff --name-only 2b337296..HEAD -- plugin/crew/hooks/scripts/verify-gate.sh
+   plugin/crew/hooks/scripts/verify-gate.ps1
+   plugin/crew/hooks/scripts/verify_record.py`) will show these three files
+   once that commit lands.
+   `.crew/verify.json:193`'s `why` field described the OLD, still-broken
+   shape and has been corrected in the same change.
 2. **A declared `seconds` can never be corrected by measurement.**
-   `plugin/crew/hooks/scripts/verify_record.py:558` gates the measured-cost
+   `plugin/crew/hooks/scripts/verify_record.py:609` (moved from `:558` by
+   this same uncommitted change — see item 1 above) gates the measured-cost
    cache on `if rule.get("unknown"):` — only a rule with **no** declared
-   `seconds` gets its elapsed time stored (`:565-566`; the comment at
-   `:559-564` explains a different, already-fixed bug about discarding
+   `seconds` gets its elapsed time stored (`:616-617`; the comment at
+   `:610-615` explains a different, already-fixed bug about discarding
    sub-second measurements). So a stale declared figure is permanent until
    someone edits the JSON by hand. Three rules are reported wrong in that
    direction: `rules[3]` declares 81s, `rules[4]` 96s and `rules[8]` 185s,

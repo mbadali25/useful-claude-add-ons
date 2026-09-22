@@ -6,6 +6,50 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Fixed
 
+- **`crew` 0.20.11: the Stop gate kept no evidence when one rule failed, the
+  Git Bash python3 landmine reached the gate and three hooks, and the PM read
+  state once per pass.** `verify-gate.sh:1403` exited 2 above the per-rule
+  record sync, so one failing command discarded every rule that had passed;
+  the sync now runs first, and a failing rule's own outcome is deliberately
+  not recorded, because recording it under the rule's key orphaned the marker
+  the moment the user edited the rule to fix it. The gate builds a `python3`
+  shim from the proved resolver only when `python3` itself is absent (never
+  shadowing `python` or `py`), accepts a native `C:\...\python.exe`
+  interpreter path, and fails closed with a remediation hint when nothing
+  resolves. `context-watch.sh`, `pm-brief.sh` and `platform-sync.sh` go through
+  `crew_py_strict`, which now requires the probed path to be executable, strips
+  a CR, and normalises drive-letter paths; `context-watch.sh` honours
+  `stop_hook_active` before anything else, fails closed on a stub interpreter
+  without claiming the shared handoff marker (so the PowerShell twin's real
+  budget warning is never suppressed by a false alarm), honours
+  `context.enabled: false` without python, and keeps the input's `cwd` ahead
+  of `CLAUDE_PROJECT_DIR`. `agents/pm.md` re-reads full `crew_state.py`
+  output plus HEAD, branch and `git status --porcelain` before every dispatch,
+  and on every return runs `rev-parse`, `merge-base --is-ancestor`,
+  `log <pre>..HEAD` and `branch --show-current` on its own checkout so a
+  backward, sideways or foreign-forward HEAD is reported. `render.sh` handles flags in any position, exits 1
+  on an empty directory and 2 on contradictory flags, renders to a temp file so
+  a failed re-render never overwrites the last good output, and prints
+  separate ok / skipped / failed counts; both render scripts are now tracked
+  executable. Every hook and script change carries a must-block/must-allow
+  case that was sabotage-tested on Linux; the `agents/pm.md` prose has no
+  test, and the `.ps1` resolver cases skip where no PowerShell host exists.
+
+- **`check-marketplace.py` now verifies the command and skill counts stated in
+  plugin descriptions and in both install-script catalogs.** crew's entry said
+  27 commands / 19 skills against 28 / 20 on disk, and the install scripts said
+  26; none of those sites could carry a claim marker. An explicit table names
+  which description and catalog counts to check, scoped to the plugin's own row
+  with a loud failure on a missing or duplicate label; a `plugin-commands:<name>`
+  claim type covers markdown sites. Counting reads git's index, and a git
+  failure is reported as "could not verify" rather than 0. Still open, recorded
+  in `TODO.md`: `check_self_claims` discovers its markdown files through the
+  same `git()` call, so in a non-git tree it scans nothing. The two
+  `scripts/_test` harnesses that copy host tools (`uv-install.sh`,
+  `mcp-preflight-catalog.sh`) now guard an empty temp directory, refuse to
+  `chmod` through a symlink into the host, and check every copied tool's
+  content, mode, owner and ctime before and after.
+
 - **`doc-builder` 1.5.3: `abs_or_join` gave a different answer for a rooted
   drive-relative path (`\\bare\\path`) depending on the Python version.** The
   second branch of the predicate was `ntpath.isabs()`, and Python 3.13 changed

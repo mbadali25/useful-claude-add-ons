@@ -3512,13 +3512,32 @@ context clear, so the open items live here where they are tracked.
   Note the limit: `build_report.py`'s `build()` emits no `<h3>`, so a narrative
   document past H2 does not fit that pipeline - it stays hand-written but must call
   `resolve_brand.py` instead of copying the palette hex.
-- **Wire `uv-install.sh` (162 cases) and `mcp-preflight-catalog.sh` (114) into CI and
+- **Wire `uv-install.sh` (162 cases) and `mcp-preflight-catalog.sh` (122) into CI and
   `.crew/verify.json`.** Neither is run by anything today. A regression suite nobody
   runs is worse than none, because its presence reads as coverage.
-- **Regression case for the write-through-symlink harness defect.** The fix is in
-  (`scripts/_test/uv-install.sh:102`, `mkrealbin` at `:105`); nothing asserts it. It
-  destroyed this host's coreutils twice - the second time because a guard whose own
-  regression test is destructive does not get re-tested.
+- **DONE 2026-09-22: regression case for the write-through-symlink harness defect.**
+  `uv-install.sh` already had it (case 0 + case 26); `mcp-preflight-catalog.sh` did
+  not - only case 0's structural invariant, no canary write-through proof. Added
+  case 26 there too, mirroring `uv-install.sh`'s. Both sabotage-tested (mkrealbin's
+  `cp` reverted to `ln -s`; both suites go red) and restored byte-identical.
+  A follow-up independent review then found the sabotage-testing METHOD itself
+  unsafe: `mkrealbin`'s `chmod +x "$REALBIN/$t"` had no guard, so a sabotaged
+  entry that was a symlink got `chmod`'d anyway, following the link - it touched
+  the host's real `/usr/bin/find` ctime during that review's own sabotage run
+  (mode stayed 755, `dpkg -V` stayed clean, but a real file was written to).
+  Fixed in both suites: `chmod` now requires `[ -f ] && [ ! -L ]` first and exits 2
+  otherwise, so a reverted `mkrealbin` aborts on its FIRST sabotaged entry, before
+  any `chmod` call - re-sabotaged and reproduced safely by a decoy-only harness
+  (every name mkrealbin copies gets a wrapper under its own `mktemp -d` that execs
+  the real tool by absolute path, so even `command -v find` cannot resolve to a
+  host path during the test) and by re-sabotaging the shipped files directly
+  (exit 2 immediately, host `find`/`mktemp` ctime and mode unchanged, `dpkg -V`
+  clean). Also closed in the same pass: an unguarded empty-`$TMP` would have made
+  every `"$TMP"/*` bound match the literal pattern `/*` (any absolute path), so
+  `mktemp -d` failing now refuses with exit 2 rather than continuing; the "HOST's
+  mktemp is untouched" checks compared `--help`'s exit code, which a replacement
+  stub exiting 0 would pass just as well as the real binary, so they now compare a
+  sha256 taken at run start against one taken at the check site.
 - **The sabotage driver edits the live tree**, so a concurrent committer can snapshot
   a deliberately broken file. It did: `3cca6482` shipped a call to an undefined
   function. Should use `git worktree`.
@@ -3567,3 +3586,60 @@ context clear, so the open items live here where they are tracked.
   exit 0 silently. Measured 2026-09-22: pristine HEAD `31393918` is 52/0 green; with the
   guard applied, 17 failed / 1667 passed. Not mine and not blocking - filed so whoever
   owns that change sees it before committing.
+- **`_verify/smoke.sh` still calls only eight of `main()`'s checks and now misses
+  eight** (`main()` at `scripts/check-marketplace.py:1588`, `check_description_claims` at
+  `:867`, `check_catalog_claims` at `:1030` - all three re-measured with `grep -n` as the
+  LAST step, after every edit in this change including the two NIT docstring expansions
+  that moved them further than the previous pass's citations said; `run_marketplace_check`
+  at `_verify/smoke.sh:72-98`) - `check_description_claims` and `check_catalog_claims`,
+  both added in this change, are absent from its list the same way `check_self_claims` already was
+  (`.crew/codemap/marketplace-registration.md`, finding 3). Did not block: this change's own
+  edits ended up touching `.claude-plugin/marketplace.json`, `scripts/check-marketplace.py`,
+  `scripts/_test/self-claims.py`, `scripts/install-prerequisites.sh` and
+  `scripts/install-prerequisites.ps1` (the "26 commands" defect the new `check_catalog_claims`
+  was written to catch), and, once QA found two more sites carrying the same wrong number,
+  `plugin/crew/README.md`, `plugin/crew/skills/crew-best-practices/SKILL.md`, and
+  `.crew/codemap/install-scripts.md` (updated to describe the fix, its own anchor unmoved) -
+  but never `_verify/smoke.sh`, which this is a pre-existing, already-documented drift against
+  (finding 3, cited above) that I only added two more names to, not a file this task had reason
+  to touch.
+- **`check_self_claims`'s own file-discovery has the same "git failure collapses to a
+  safe-looking value" shape this round's FIX just removed from `count_plugin_commands`
+  and `count_plugin_agents` - and the `plugin-commands:` marker branch this same round
+  added is itself one of the markers this makes unreachable, not merely "affected along
+  with every other marker."** `scripts/check-marketplace.py:700` -
+  `for path in sorted(git("ls-files", "*.md").split()):` - uses the shared `git()`
+  helper, which still returns `''` on any git failure rather than raising or returning
+  `None`. In a ROOT that is not a git working tree, this reads as "zero markdown files
+  to scan", so `check_self_claims` silently checks NOTHING - every `<!-- claim: ... -->`
+  marker in the repo, `plugin-commands:` included, passes unchecked, EVEN THOUGH
+  `count_plugin_commands` itself now correctly reports "could not verify" rather than a
+  false zero (this round's FIX): that correct behaviour is never reached, because the
+  outer discovery loop never gets as far as reading the file the marker lives in. Found
+  while sabotage-testing this round's FIX (a `plugin-commands:` marker propagation test
+  built against a non-git ROOT returned 0 problems for this reason, not because the
+  marker logic itself was wrong - see the comment in `scripts/_test/self-claims.py`
+  right before the `no_git_description_problems` case). Did not block: this round's QA
+  named `count_plugin_commands`/`count_plugin_agents` (`:601`) specifically, not this
+  earlier call, and `check_self_claims` predates this ticket entirely.
+- **`verify_price.py` (`plugin/crew/hooks/scripts/verify_price.py:69-89`, `_time_rule`)
+  shares the same "Git Bash has no python3" landmine `verify-gate.sh`/`.ps1` were just
+  fixed for.** `--price` runs a rule's own `run` commands (most of which hardcode
+  `python3`) through `bash -c cmd` with no shim on PATH, so an operator who runs
+  `verify-gate.sh --price` on a Windows machine where only `python`/`py` resolves would
+  hit the same false "command not found" the Stop-gate fix (T-item-10) just resolved for
+  ordinary rule execution. Did not block/fix here: the ticket named `verify-gate.sh` and
+  `verify-gate.ps1` specifically as the surfaces to fix; `--price` is a separate,
+  operator-only entry point with its own bash resolution (`_bash()`,
+  `verify_price.py:57-66`) that would need the identical shim built a second time.
+- **`pm-pulse.ps1`'s `Resolve-CrewPython` (`plugin/crew/hooks/scripts/pm-pulse.ps1:36-63`)
+  is the weaker, metadata-only resolver (WindowsApps path filter, no execute-to-verify
+  probe) while its bash twin `pm-pulse.sh` calls `crew_py_strict`, the execute-verify
+  version. Windows audit wave 3 hardened `context-watch.sh`, `pm-brief.sh` and
+  `platform-sync.sh` (and their `.ps1` twins) to match `crew_py_strict`'s strength on
+  both flavours, and role-write-guard.ps1 already carries the strict pattern, but
+  pm-pulse.ps1 was left as-is: it is a pre-existing mismatch, not introduced by this
+  change, and pm-pulse.{sh,ps1} were not in this ticket's named file list. A candidate
+  that prints a plausible path via shell metadata alone (not proven by execution) would
+  still be accepted by pm-pulse.ps1 where pm-pulse.sh would reject it. Did not block:
+  fixing it means widening a file this ticket did not name.

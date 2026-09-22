@@ -627,7 +627,37 @@ if [ ! -f .crew/verify.json ]; then
   exit 0
 fi
 
-PY=$(crew_py) || { echo "crew verify-gate: no python - cannot read .crew/verify.json" >&2; exit 0; }
+# PM ruling, 2026-09-22 (superseding the exit-0 this line used to have):
+# no python resolving at all must NOT exit 0. An exit-0 Stop hook does not
+# block the turn - so on a python-less host this was reaching the calling
+# agent as an unblocked, silently-unverified turn, indistinguishable from a
+# turn that actually passed. That is this repo's own named recurring
+# defect (CLAUDE.md: "the recurring bug is an unknown collapsing into the
+# safe-looking value") and the exact shape CLAUDE.md's Git-Bash-python3
+# landmine already warns against ("fail loudly ... rather than
+# suppressing the error and exiting 0"). Fails closed instead, using the
+# SAME pattern this file already uses when .crew/verify.json itself fails
+# to parse (see the PY_STATUS -eq 3 / -eq 4 branches below): a single
+# named `VERIFY GATE: ... exit 2` line, re-evaluated fresh every turn - no
+# separate one-shot suppression exists or is needed, because the failure
+# clears itself the moment python is actually installed, the same way a
+# parse error clears itself the moment the JSON is fixed.
+#
+# crew_py_strict, NOT plain crew_py, resolves the interpreter that runs the
+# MATCHER below - review round 6 finding: plain crew_py (`command -v`
+# alone) happily resolves a WindowsApps App Execution Alias stub, which is
+# a real, executable file that does nothing when actually run. With plain
+# crew_py, that stub became $PY, the matcher invocation "succeeded" (exit
+# 0, zero output), and the fall-through below treated empty output as
+# "nothing matched" rather than "nothing ran" - the gate exited 0 having
+# checked precisely nothing, the DEFAULT state on a Windows host with no
+# real python. crew_py_strict actually RUNS each candidate and rejects a
+# WindowsApps path outright (see its own header in _common.sh), so that
+# stub can no longer become $PY at all; see the `elif [ -z "$MATCHED" ]`
+# branch below the matcher invocation for the second, independent check
+# that exists in case some OTHER broken-but-`command -v`-resolvable
+# interpreter ever slips past crew_py_strict the same way.
+PY=$(crew_py_strict) || { echo "VERIFY GATE: no python (python3, python or py) resolves to a PROVED working interpreter anywhere on PATH - .crew/verify.json cannot be read and nothing can be verified. Work is not complete. Install python (3.10+) on this machine, or set \"verifyGate\": false in .crew/config.json to stand this gate down deliberately (honoured at the top of this file)." >&2; exit 2; }
 
 # The changed-file list goes through a temp FILE, never argv. E2BIG counts argv
 # PLUS the environment, so a hook invoked with a large environment fails to exec
@@ -1215,6 +1245,32 @@ elif [ "$PY_STATUS" -eq 4 ]; then
 elif [ "$PY_STATUS" -ne 0 ]; then
   echo "VERIFY GATE: could not RUN the matcher - python exited $PY_STATUS before parsing. .crew/verify.json was NOT shown to be invalid; do not go looking for corruption there. Verification did NOT run. Work is not complete." >&2
   exit 2
+elif [ -z "$MATCHED" ]; then
+  # PY_STATUS is 0 here (every nonzero case above already exited), yet the
+  # matcher wrote NOTHING - not even the empty-but-structured six-field
+  # record it always emits (`"\x1e".join(cmds) + "\x1d" + ...`) when
+  # genuinely nothing matched. That is the signature of an interpreter that
+  # "succeeded" without actually running any python at all - a WindowsApps
+  # App Execution Alias stub is the concrete case: it is a real, executable
+  # file, so plain `command -v` (and even this script's OLD `crew_py`-based
+  # $PY) happily resolved it, invoked it, and it exited 0 having printed
+  # nothing and evaluated no code. Before this check, that meant PY_STATUS
+  # stayed 0, $MATCHED stayed empty, every field derived from it (CMDS,
+  # NOTICES, ...) was empty too, ZERO rules ever ran, and the gate reached
+  # the "everything passed" branch by default - a python-less Windows host's
+  # DEFAULT state, exiting 0 having verified nothing. `$PY` is now resolved
+  # via crew_py_strict (below the top-level `.crew/verify.json` read),
+  # which already refuses a WindowsApps stub outright - see its own header
+  # in _common.sh - so this specific reproduction should not reach here at
+  # all any more. Kept as a second, independent line of defence rather than
+  # trusting crew_py_strict alone to never have a gap: "the matcher produced
+  # nothing" is treated as UNKNOWN, and unknown must never collapse into the
+  # safe-looking (exit 0, zero rules) value - see CLAUDE.md's own named
+  # recurring defect. `.crew/verify.json` is already known to exist here
+  # (the `[ ! -f .crew/verify.json ]` check above returned long before this
+  # point), so its absence is not the explanation either.
+  echo "VERIFY GATE: the matcher produced no output at all, even though it exited 0 and .crew/verify.json exists. This is the signature of a broken interpreter (for example a WindowsApps stub) succeeding without actually running any python code. Work is not complete. Install python (3.10+) on this machine, or set \"verifyGate\": false in .crew/config.json to stand this gate down deliberately (honoured at the top of this file)." >&2
+  exit 2
 fi
 # \035 is the record separator the matcher wrote between the two records, and
 # \036 the field separator inside each. `sed -n 1p` used to take the first
@@ -1249,6 +1305,104 @@ EXTRAS=$(printf '%s\n' "$MATCHED" | tr '\035' '\n' | sed -n 6p)
 if [ -n "$NOTICES" ]; then
   printf '%s\n' "$NOTICES" >&2
 fi
+
+# A rule's `run` string is bash-flavoured and most of .crew/verify.json's
+# rules hardcode `python3` - but CLAUDE.md's own landmine holds here too:
+# Git Bash ships with no python3 at all, so a rule that is otherwise
+# perfectly satisfiable (this machine DOES have a working python, just as
+# `python` or `py`) fails with "command not found", a false failure that has
+# nothing to do with what the rule actually checks.
+#
+# Review round 1 correction: the FIRST version of this fix shimmed python3
+# AND python AND py, unconditionally. That broke `py -3 -c ...` rules on a
+# machine where `py` already worked: Windows' `py` launcher accepts a
+# `-3`/`-2` version-select flag, and the naive `exec "$REAL" "$@"` wrapper
+# forwarded `-3` straight into a plain CPython binary, which does not
+# understand it ("Unknown option: -3"). Shimming a name that ALREADY
+# resolves to a real, working interpreter can only break something that
+# already worked - so this shims ONLY `python3`, and ONLY when `python3`
+# itself does not already resolve. `python` and `py` are never touched.
+#
+# Built from crew_py_strict, NOT the plain crew_py $PY already resolved
+# above - crew_py_strict is the PROVED resolver (it actually RUNS the
+# candidate and checks `sys.executable`, rejecting a WindowsApps stub that
+# `command -v` alone cannot tell from a real interpreter; see its header in
+# _common.sh), so the shim wraps a genuinely working, absolute path rather
+# than whatever `command -v` merely found on PATH.
+#
+# NOT rewriting every rule's `run` array to reference a $CREW_PY variable
+# instead - .crew/verify.json is read by more than this gate (see
+# verification-harness.md's "What .crew/verify.json actually maps" and any
+# /crew:verify tooling that reads `run` directly), and a command string is
+# only portable to those OTHER readers if it still says `python3`, not a
+# variable this gate alone exports. The shim is invisible to anything that
+# does not go through this loop's PATH, and every rule command keeps
+# reading exactly as written.
+if ! command -v python3 >/dev/null 2>&1; then
+  # crew_py_strict (in _common.sh) now OWNS the native-Windows-path
+  # normalisation - cygpath -u when present, or (its own absence) lower-
+  # casing the drive letter, dropping the `:`, and prepending a leading
+  # `/` by hand, so EITHER way the result is the SAME absolute `/c/...`
+  # shape, never a bare relative `C:/...` backslash->forward-slash swap
+  # (that shape depends on the resolver's own cwd under `-x`, which the
+  # absolute form does not - see crew_py_strict's own comment on this
+  # exact point) - AND proves the result with `-x` before ever returning
+  # it - see that function's own header comment. This file used to repeat
+  # that exact conversion on crew_py_strict's OUTPUT, from when the two
+  # were fixed independently in different review lanes; once crew_py_strict
+  # started normalising internally, the copy here became DEAD CODE (never
+  # reached - crew_py_strict either returns an already-POSIX, already-`-x`-
+  # proved path, or nothing at all) and a second place the exact same bug
+  # could silently regress back into. Removed rather than left "harmless" -
+  # trust the one function that owns this, not a second copy of its logic.
+  SHIM_PY=$(crew_py_strict) || SHIM_PY=""
+  if [ -n "$SHIM_PY" ]; then
+    SHIM_DIR=$(mktemp -d 2>/dev/null) || SHIM_DIR=""
+    if [ -n "$SHIM_DIR" ]; then
+      # Single-quoted in the WRITTEN shim's own exec line, so it cannot be
+      # tricked into expanding a `$` or backtick if the resolved path ever
+      # contained one - any embedded single quote in $SHIM_PY is itself
+      # escaped the standard POSIX way (close quote, backslash-escaped
+      # quote, reopen quote) before being placed inside that pair.
+      SHIM_PY_ESCAPED=$(printf '%s' "$SHIM_PY" | sed "s/'/'\\\\''/g")
+      if printf '#!/bin/sh\nexec '\''%s'\'' "$@"\n' "$SHIM_PY_ESCAPED" > "$SHIM_DIR/python3" 2>/dev/null \
+         && chmod +x "$SHIM_DIR/python3" 2>/dev/null; then
+        PATH="$SHIM_DIR:$PATH"
+        export PATH
+        # Cleaned up on EVERY exit path (EXIT INT TERM), CHAINED onto
+        # whatever is already trapped for those signals rather than
+        # replacing it - a bare `trap ... EXIT` here would silently drop
+        # the lock's own release trap (see the lock's trap comment above,
+        # and its own note at :637 about a second `trap ... EXIT`
+        # replacing rather than adding). `trap -p SIG` reproduces a full,
+        # valid `trap -- '...' SIG` statement for whatever is currently
+        # registered, or nothing at all if nothing is - both are handled.
+        for _crew_shim_sig in EXIT INT TERM; do
+          _crew_shim_prior=$(trap -p "$_crew_shim_sig" 2>/dev/null \
+            | sed -e "s/^trap -- '//" -e "s/' $_crew_shim_sig\$//")
+          if [ -n "$_crew_shim_prior" ]; then
+            trap "rm -rf '$SHIM_DIR' 2>/dev/null
+$_crew_shim_prior" "$_crew_shim_sig"
+          else
+            trap "rm -rf '$SHIM_DIR' 2>/dev/null" "$_crew_shim_sig"
+          fi
+        done
+      else
+        rm -rf "$SHIM_DIR" 2>/dev/null
+        echo "verify-gate: could not build the python3 shim (temp dir not writable) - a rule hardcoding python3 may fail where python3 itself is absent" >&2
+      fi
+    else
+      echo "verify-gate: could not build the python3 shim (no writable temp dir) - a rule hardcoding python3 may fail where python3 itself is absent" >&2
+    fi
+  else
+    echo "verify-gate: no python3, python or py resolves to a PROVED working interpreter - a rule hardcoding python3 will fail with 'command not found'" >&2
+  fi
+fi
+# $PY itself being empty (no python resolvable AT ALL via plain crew_py) is
+# not handled here - the script already exited loudly ABOVE (`VERIFY GATE:
+# no python ... exit 2`, at the top of this file) long before any rule
+# could run, because reading the map at all requires it. See that comment
+# for the PM ruling and why exit 2 - not 0 - is correct there.
 
 FAILED=0
 TOTAL_ELAPSED=0
@@ -1387,8 +1541,8 @@ if [ -n "$UNMAPPED" ] && grep -q '"unmapped"[[:space:]]*:[[:space:]]*"fail"' .cr
   FAILED=1
 fi
 
-# DELETE THE STALE FINGERPRINT BEFORE ANY EARLY EXIT, including the
-# FAILED check immediately below - Codex round 4 FIX: this delete used to
+# DELETE THE STALE FINGERPRINT BEFORE ANY EARLY EXIT, including the sync
+# and the FAILED check below it - Codex round 4 FIX: this delete used to
 # sit AFTER `[ "$FAILED" -eq 0 ] || exit 2`, so a turn where ONE command
 # returned 77 (SKIP) and a DIFFERENT command failed outright never reached
 # it at all - `exit 2` fired first. The earlier PASS fingerprint then
@@ -1400,14 +1554,38 @@ if [ "$ANY_SKIPPED" -ne 0 ]; then
   rm -f "$FP_FILE" 2>/dev/null
 fi
 
-[ "$FAILED" -eq 0 ] || exit 2
-
-# Per-rule record sync. Only reached on a turn where nothing FAILED (rc 77
-# is not a failure) -- an unreliable run should not overwrite what a
-# previous clean run recorded. A sync that WAS attempted and FAILED TO
-# PERSIST is not best-effort -- see verify_record.py's _save/_sync, which
-# exits non-zero on a write failure and prints why. SYNC_STATUS carries
-# that through to the decision below.
+# Per-rule record sync now runs BEFORE the FAILED early exit below, on
+# EVERY turn -- round 5 FIX (verify-gate.sh:1403, this comment's own former
+# home). It used to sit AFTER `[ "$FAILED" -eq 0 ] || exit 2`, reached "only
+# on a turn where nothing FAILED", on the reasoning that "an unreliable run
+# should not overwrite what a previous clean run recorded". That reasoning
+# is right at the SHA-marker/fingerprint granularity (a failed turn must
+# never look fully verified) and wrong at the PER-RULE granularity the sync
+# actually writes at: one failing rule among many discarded every OTHER
+# rule's passing evidence too, because the whole sync call was skipped.
+# `.crew/verify.json:193` recorded the measured cost of that: one absent
+# `node_modules` kept three unrelated rules UNVERIFIED and the sha marker
+# frozen 14 commits behind HEAD.
+#
+# What may now be written on a FAILED turn: per-rule PASS/SKIP/chronic/
+# reach-excluded entries exactly as before. The FAILING rule's own outcome
+# is deliberately NOT persisted -- an earlier version of this fix DID write
+# a "failed" entry, and was itself reviewed BLOCK: that entry orphaned the
+# moment the rule was EDITED to fix the failure, because rule_key() hashes
+# `run`, so the old "failed" key stopped matching _current_rule_keys() and
+# the stale-obligation prune held the marker hostage behind a rule that was
+# already fixed. See verify_record.py's `_sync`, the "fail" branch, for the
+# full reasoning -- the exit code (2) already carries the failure for THIS
+# turn, and nothing needs to survive to the next one, because a FAILED turn
+# never advances either marker anyway (see the next paragraph). What still
+# may NOT happen on a FAILED turn: either whole-tree marker advancing. That
+# guarantee does
+# not come from anything in the sync call itself -- it comes from the
+# `exit 2` immediately below still running AFTER the sync, unconditionally
+# on $FAILED, and BEFORE the marker-advance block further down. A sync
+# write failure changes nothing about that: SYNC_STATUS is not consulted by
+# the exit-2 check, only by the marker-advance block a FAILED turn never
+# reaches.
 #
 # SENTINEL, NOT 0. This used to start at 0 ("success") and only get
 # reassigned INSIDE the `-n "$PY"` / `-f "$SYNC_PY"` guards -- so with no
@@ -1448,10 +1626,11 @@ else
   echo "verify-gate: could not sync the record (no python, or the matcher produced no record data); NOT advancing the marker" >&2
 fi
 
-# The stale-fingerprint delete now happens BEFORE the FAILED early exit,
-# above - see that comment for the full history (round 2 put it in the
-# elif chain below, round 3 moved it above the elif chain but still after
-# `exit 2`, round 4 moved it again to before that exit too).
+# A FAILED turn stops here, after its own evidence (and every passing
+# rule's) has just been synced above -- never before. SYNC_STATUS plays no
+# part in this decision on purpose: whether the record write succeeded or
+# not, a turn with a real failure exits 2 either way.
+[ "$FAILED" -eq 0 ] || exit 2
 
 # THREE things must ALL hold before either marker may advance: nothing was
 # ACUTELY deferred (fully_verified), nothing SKIPPED (rc 77 is not a check),
