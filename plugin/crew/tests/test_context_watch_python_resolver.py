@@ -524,7 +524,7 @@ def test_resolver_accepts_a_native_windows_drive_letter_path(tmp_path, path, hea
 
     stub_dir = tmp_path / "stubs"
     stub_dir.mkdir()
-    body = "#!/bin/sh\n" "printf '%s\\n' 'C:\\fakepy\\python.exe'\n" "exit 0\n"
+    body = "#!/bin/sh\nprintf '%s\\n' 'C:\\fakepy\\python.exe'\nexit 0\n"
     for name in ("python3", "python", "py"):
         stub = stub_dir / name
         stub.write_text(body, encoding="ascii", newline="\n")
@@ -571,7 +571,7 @@ def test_resolver_rejects_a_native_windows_drive_letter_path_to_a_non_executable
 
     stub_dir = tmp_path / "stubs"
     stub_dir.mkdir()
-    body = "#!/bin/sh\n" "printf '%s\\n' 'C:\\fakepy\\python.exe'\n" "exit 0\n"
+    body = "#!/bin/sh\nprintf '%s\\n' 'C:\\fakepy\\python.exe'\nexit 0\n"
     for name in ("python3", "python", "py"):
         stub = stub_dir / name
         stub.write_text(body, encoding="ascii", newline="\n")
