@@ -10,6 +10,21 @@
 # installing the plugin is not enough on its own.
 INPUT=$(cat)
 
+# Loop safety, layer 1, checked FIRST -- before the config check, before
+# python, before anything. Merged-branch review, 2026-09-22: the old
+# ordering ran the no-python fail-closed branch (below) BEFORE this check,
+# so a forced-continuation retry (stop_hook_active:true) could still hit the
+# interpreter-failure branch and claim $MARKER with nothing measured. On
+# Windows, where both hook flavours run, context-watch.ps1 (pure PowerShell,
+# no python, so it never hits this failure mode itself) then saw that
+# marker, stood down for the rest of the session, and auto-clear.ps1 could
+# /clear once the model wrote the handoff the false alarm asked for -- a
+# session cleared at LOW context, the opposite of what this hook exists to
+# prevent. Same idiom verify-gate.sh:48 uses for the same reason, deliberately
+# NOT a python-based read: it must work even when the interpreter that would
+# parse the JSON properly is the very thing that is broken.
+case "$INPUT" in *'"stop_hook_active": true'*|*'"stop_hook_active":true'*) exit 0 ;; esac
+
 # `.crew/config.json`'s existence decides whether this hook does ANYTHING,
 # so it is checked BEFORE resolving python, not after -- a non-crew
 # repository must not pay for spinning up an interpreter (or, before the
@@ -33,9 +48,10 @@ CWD_RAW=$(printf '%s' "$INPUT" | grep -o '"cwd"[[:space:]]*:[[:space:]]*"[^"]*"'
 cd "${CWD_RAW:-${CLAUDE_PROJECT_DIR:-.}}" 2>/dev/null || exit 0
 [ -f .crew/config.json ] || exit 0
 
-# Loop safety, layer 2 (see layer 1's own comment lower down): once-per-
-# session, cleared by handoff-read.sh at the next SessionStart. Defined here,
-# before python resolution, because a resolver failure below claims it too.
+# Loop safety, layer 2: once-per-session, cleared by handoff-read.sh at the
+# next SessionStart. Owned entirely by the REAL over-threshold nag further
+# down this file -- the no-python branch immediately below does NOT read or
+# write this, on purpose; see its own header comment for why.
 MARKER=".crew/.handoff-requested"
 
 # `crew_py_strict`, NOT `crew_py`. `crew_py`'s bare `command -v` accepts the
@@ -44,23 +60,38 @@ MARKER=".crew/.handoff-requested"
 # machine where the stub sat ahead of a real interpreter on PATH.
 #
 # PM ruling 2026-09-22 (Windows audit wave 3 re-review): a resolver failure
-# now FAILS CLOSED, once, rather than failing open. The original fail-open
-# design reasoned that a stderr-only warning on exit 0 was still "loud"; it
-# is not -- `auto-clear.sh:26` states the same fact about this exact hook's
-# own stderr ("a Stop hook's stderr is invisible on exit 0"), and a message
+# FAILS CLOSED rather than failing open. The original fail-open design
+# reasoned that a stderr-only warning on exit 0 was still "loud"; it is not
+# -- `auto-clear.sh:26` states the same fact about this exact hook's own
+# stderr ("a Stop hook's stderr is invisible on exit 0"), and a message
 # nobody reads is not a check that ran, it is CLAUDE.md's "unknown
 # collapsing into the safe-looking value" wearing a slightly longer disguise.
-# And "blocks forever" was never true: $MARKER already makes every nag this
-# hook can raise, interpreter failure included, a ONE-TIME event per
-# session. So: unknown context usage is now treated as the worst case
-# exactly once (exit 2, same as a real over-budget turn), and the very same
-# marker that suppresses a repeated real nag suppresses a repeated
-# interpreter-failure one -- no separate loop-safety logic needed for it.
+#
+# Merged-branch review, 2026-09-22 (second round): this branch used to ALSO
+# read and claim $MARKER -- the SAME file the real over-threshold nag below
+# uses, and the same file context-watch.ps1 and auto-clear.ps1 both read on
+# Windows. That conflated "an interpreter error happened" with "the context
+# window was actually measured and is over budget", and a zero-byte marker
+# claimed here with nothing measured made the .ps1 flavour (which never
+# touches python, so it never fails this way itself) stand down for the rest
+# of the session and let auto-clear /clear on the strength of a handoff the
+# false alarm itself asked for.
+#
+# Fixed by NOT touching $MARKER at all in this branch, in either direction.
+# Two ways existed to bound the repeat: a SEPARATE marker file this branch
+# owns alone, or relying on stop_hook_active (now checked first, above) to
+# bound the retry Claude Code itself triggers after an exit-2 block to ONE
+# forced continuation. Chose the latter -- verify-gate.sh:48 already applies
+# the identical rule for the identical reason -- because a separate marker
+# would need a THIRD place (handoff-read.sh, at SessionStart) taught to
+# clear it or it would silence this branch forever, on every future session,
+# the first time python ever glitched once; that is out of this file's
+# scope and worse than the cost it avoids. The accepted cost: a session
+# whose interpreter STAYS broken is asked for a precautionary handoff once
+# per TURN, not once per session, until it is fixed -- correctly bounded,
+# not silent, and no marker to falsely believe as a real measurement.
 PY=$(crew_py_strict)
 if [ -z "$PY" ]; then
-  if [ -f "$MARKER" ]; then
-    exit 0
-  fi
   # context.enabled must still be honoured even without python -- a repo
   # that has explicitly turned this hook off must not be nagged just
   # because the interpreter that would normally have read that setting is
@@ -98,14 +129,18 @@ if [ -z "$PY" ]; then
   # approximation above), so the message names WHERE to look rather than
   # hard-coding the shipped default as if it were certainly correct.
   HANDOFF_NOTE="the configured handoff path (context.handoffPath in .crew/config.json; .work/HANDOFF.md if unset)"
-  ( set -o noclobber; : > "$MARKER" ) 2>/dev/null || exit 0
+  # NOT `$MARKER` -- see the header comment above this branch. Nothing is
+  # claimed here; `stop_hook_active`, checked first at the top of this
+  # script, is what bounds the retry Claude Code triggers after this exit 2.
   cat >&2 << MSG
 crew context-watch: no usable python (stub or unusable interpreter) - context
 usage could not be measured this turn. This hook cannot tell you how full
 the context window actually is right now, so treat it as if it might be
 full: before ending this turn, write the handoff note to ${HANDOFF_NOTE}
-per the crew-context skill, as a one-time precaution. This will not repeat
-until the next session.
+per the crew-context skill, as a precaution. This is bounded to one forced
+continuation for THIS turn, not suppressed for the rest of the session --
+it will ask again on the next turn if the interpreter is still unusable
+then.
 MSG
   exit 2
 fi
@@ -115,9 +150,13 @@ TRANSCRIPT=$(read_json transcript_path)
 STOP_HOOK_ACTIVE=$(read_json stop_hook_active)
 [ -f "$TRANSCRIPT" ] || exit 0
 
-# Loop safety, layer 1: Claude Code is already continuing because of a stop
-# hook -- do not pile on more feedback. Layer 2 is the once-per-session
-# marker above. Layer 3 is Claude Code's own 8-consecutive-block backstop.
+# Loop safety, layer 1, re-checked here with python's own parsed value: the
+# cheap string match at the top of this file already caught the common exact
+# shapes Claude Code sends and is what protects the no-python branch above,
+# which cannot reach this line at all; this is defense in depth for whatever
+# that string match might not, now that python is proven available to parse
+# it properly. Layer 2 is the once-per-session marker above. Layer 3 is
+# Claude Code's own 8-consecutive-block backstop.
 { [ "$STOP_HOOK_ACTIVE" = "True" ] || [ "$STOP_HOOK_ACTIVE" = "true" ]; } && exit 0
 
 # No hook_once claim here on purpose: Stop fires once per TURN against a

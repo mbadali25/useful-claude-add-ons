@@ -40,6 +40,7 @@ revert touched nothing else before restoring it.
 """
 import json
 import os
+import pathlib
 import shutil
 import subprocess
 import sys
@@ -242,17 +243,32 @@ def test_python3_already_present_is_never_shadowed(tmp_path):
 
 
 def test_a_command_v_hit_that_fails_the_proved_check_fails_loudly(tmp_path):
-    """The failure mode the shim CODE ITSELF is responsible for: `command -v
-    py` finds a real, executable file, and it is real enough to run the
-    MATCHER script (invoked as `py - args << script`, so the plain
-    top-level $PY / crew_py check that only gates reading .crew/verify.json
-    at all is satisfied, and the gate reaches this rule) - but it rejects
-    `-c` specifically (a narrow but real shape: a policy-wrapped launcher
-    that permits running a script but not inline code), which is exactly
-    what crew_py_strict's proof (`py -c "import sys; print(sys.executable)"`)
-    needs. So no python3 shim can be built. Distinct from
-    `test_nothing_resolves_via_command_v_at_all` below, which never reaches
-    this code at all - there, the top-level check ITSELF fails first."""
+    """A `command -v` hit that is not a PROVED interpreter, caught at the
+    TOP-LEVEL check now, not by the shim's own code.
+
+    `command -v py` finds a real, executable file - real enough to run the
+    MATCHER script (`py - args << script`), but it rejects `-c`
+    specifically (a narrow but real shape: a policy-wrapped launcher that
+    permits running a script but not inline code), which is exactly what
+    crew_py_strict's proof (`py -c "import sys; print(sys.executable)"`)
+    needs.
+
+    **Architecture note, round 6.** This test used to reach the SHIM's own
+    "no python3, python or py resolves to a PROVED working interpreter"
+    message, because the top-level $PY (used only to run the matcher) was
+    resolved via plain `crew_py` (`command -v` alone), which this broken
+    "py" satisfies. Review round 6 moved the top-level resolution to
+    crew_py_strict too (a WindowsApps stub passing plain crew_py let the
+    gate run zero rules and exit 0 - see verify-gate.sh's own comment above
+    `PY=$(crew_py_strict)`), so THIS exact scenario is now caught at the
+    top level, before the matcher or the shim ever run - the SAME
+    crew_py_strict call, with the SAME PATH, cannot then turn around and
+    resolve something DIFFERENT for the shim a few lines later. The shim's
+    own "no PROVED interpreter" message is kept as a defensive branch (not
+    deleted - unlike the Windows-path case, it is not STRUCTURALLY
+    unreachable, only unreachable under the common case), but this test no
+    longer exercises it; asserting the top-level message is what is
+    actually true now."""
     marker = tmp_path / "repo" / "ran.marker"
     real_py = shutil.which("python3") or shutil.which("python") or sys.executable
     vmap = {
@@ -264,9 +280,9 @@ def test_a_command_v_hit_that_fails_the_proved_check_fails_loudly(tmp_path):
     }
     root = _repo(tmp_path, vmap)
     (root / "a.py").write_text("x", encoding="utf-8")
-    # A "py" that WORKS for the matcher's own `py - <<script` invocation
-    # (crew_py accepts it as $PY) but refuses `-c` specifically, which is
-    # the only thing crew_py_strict's proof ever asks of it.
+    # A "py" that WORKS for a plain `-` invocation but refuses `-c`
+    # specifically, which is the only thing crew_py_strict's proof ever
+    # asks of it - so it fails crew_py_strict at the TOP LEVEL now.
     tools_dir = _scoped_tools_dir(tmp_path, [])
     launcher = os.path.join(tools_dir, "py")
     with open(launcher, "w", encoding="utf-8", newline="\n") as fh:
@@ -278,8 +294,12 @@ def test_a_command_v_hit_that_fails_the_proved_check_fails_loudly(tmp_path):
     os.chmod(launcher, 0o755)
 
     result = _run(root, tools_dir)
-    assert "no python3, python or py resolves to a PROVED working interpreter" in result.stderr, (
-        "the shim's own no-proved-interpreter message did not fire. "
+    assert result.returncode == 2, (
+        "a command -v hit with no PROVED interpreter must fail closed at "
+        "the top level. rc=" + str(result.returncode) + " " + result.stderr
+    )
+    assert "no python (python3, python or py) resolves to a PROVED working interpreter" in result.stderr, (
+        "the top-level no-proved-interpreter message did not fire. "
         "stderr: " + result.stderr
     )
     assert not marker.exists(), (
@@ -301,7 +321,7 @@ def test_nothing_resolves_via_command_v_at_all(tmp_path):
     this case used to reach the calling agent as an unblocked, silently
     UNVERIFIED turn - indistinguishable from one that actually passed, and
     exactly the "unknown collapsing into the safe-looking value" shape
-    CLAUDE.md names as this repo's own recurring defect. verify-gate.sh:630
+    CLAUDE.md names as this repo's own recurring defect. verify-gate.sh:660
     now fails CLOSED instead - a single named `VERIFY GATE: ... exit 2`
     line, the SAME pattern this file already uses when .crew/verify.json
     itself fails to parse (re-evaluated fresh every turn; no separate
@@ -347,7 +367,7 @@ def test_nothing_resolves_via_command_v_at_all(tmp_path):
     assert result.returncode == 2, (
         "no python resolving at all must fail CLOSED (exit 2), not exit 0 "
         "and let the turn read as unblocked/verified - see "
-        "verify-gate.sh:630's comment for the PM ruling. rc="
+        "verify-gate.sh:660's comment for the PM ruling. rc="
         + str(result.returncode) + " " + result.stderr
     )
 
@@ -391,17 +411,23 @@ def test_shim_cleanup_does_not_clobber_the_lock_release_trap(tmp_path):
 
 
 def test_a_native_windows_sys_executable_path_is_accepted_and_works(tmp_path):
-    """FIX from review round 3. `sys.executable` for a NATIVE Windows python
-    (as opposed to an MSYS-built one) prints a drive-letter path like
-    `C:\\fakepy\\python.exe`, not a POSIX `/...` one - a bare `case ... /*)`
-    test rejected that shape outright, so a Git Bash host with only
-    `python`/`py` (never `python3`) reported "no python3, python or py
-    resolves" and every rule hardcoding python3 failed "command not found",
-    reviewer-reproduced with rc=2. `.ps1`'s own resolver already accepted
-    both shapes (`^[A-Za-z]:[\\\\/]`) - the two flavours disagreed on the
-    exact case the shim exists for. The shim must now accept EITHER
-    absolute shape and convert the Windows one before writing it into its
-    own exec line."""
+    """FIX from review round 3, architecture updated in round 5.
+    `sys.executable` for a NATIVE Windows python (as opposed to an
+    MSYS-built one) prints a drive-letter path like `C:\\fakepy\\
+    python.exe`, not a POSIX `/...` one - a bare `case ... /*)` test
+    rejected that shape outright, so a Git Bash host with only `python`/
+    `py` (never `python3`) reported "no python3, python or py resolves"
+    and every rule hardcoding python3 failed "command not found",
+    reviewer-reproduced with rc=2.
+
+    Round 3's fix converted the Windows shape INSIDE verify-gate.sh, on
+    crew_py_strict's raw output. Round 5: `crew_py_strict` itself (in
+    _common.sh) now does that exact conversion internally and proves the
+    result with `-x` before returning it, so verify-gate.sh's own copy of
+    the same logic became dead code and was deleted - this test still
+    proves the end-to-end behaviour (a rule hardcoding python3 works when
+    the only resolvable python reports a native Windows path), it is just
+    crew_py_strict, not verify-gate.sh, doing the conversion now."""
     marker = tmp_path / "repo" / "ran.marker"
     vmap = {
         "version": 1,
@@ -443,22 +469,29 @@ def test_a_native_windows_sys_executable_path_is_accepted_and_works(tmp_path):
         )
     os.chmod(stub, 0o755)
 
-    # The REAL target the shim's exec line names after conversion: no
-    # cygpath on this host (confirmed absent - the fallback branch is what
-    # this test exercises), so "C:\fakepy\python.exe" becomes
-    # "C:/fakepy/python.exe" via a bare backslash->forward-slash swap - a
-    # RELATIVE-looking path (no leading "/"), resolved against the gate's
-    # own cwd (the repo root), exactly as a native Windows path handed to a
-    # POSIX exec on real Git Bash resolves against its process's cwd.
-    windows_target_dir = root / "C:" / "fakepy"
-    windows_target_dir.mkdir(parents=True)
+    # The REAL target the shim's exec line names after conversion. With no
+    # cygpath on PATH (the tools dir above carries none, so the fallback
+    # branch is what this test exercises), crew_py_strict turns
+    # "C:\fakepy\python.exe" into the ABSOLUTE "/c/fakepy/python.exe" -
+    # the same shape `cygpath -u` yields on Git Bash - so this end-to-end
+    # case can only run where /c is a real, writable mount (Git Bash, WSL
+    # with drvfs). Elsewhere it skips loudly; the cygpath-branch test below
+    # covers the conversion on Linux, and test_context_watch_python_resolver
+    # unit-tests the string transform itself.
+    if not (os.path.isdir("/c") and os.access("/c", os.W_OK)):
+        pytest.skip("tr fallback resolves to /c/fakepy/python.exe; needs a writable /c mount")
+    windows_target_dir = pathlib.Path("/c") / "fakepy"
+    windows_target_dir.mkdir(parents=True, exist_ok=True)
     windows_target = windows_target_dir / "python.exe"
     windows_target.write_text(
         "#!/bin/sh\nexec \"" + real_py + "\" \"$@\"\n",
         encoding="utf-8", newline="\n")
     os.chmod(windows_target, 0o755)
 
-    result = _run(root, tools_dir)
+    try:
+        result = _run(root, tools_dir)
+    finally:
+        shutil.rmtree(windows_target_dir, ignore_errors=True)
     assert result.returncode == 0, (
         "a rule invoking python3 must still pass when the only resolvable "
         "python reports a native Windows sys.executable path. stderr: "
@@ -471,17 +504,39 @@ def test_a_native_windows_sys_executable_path_is_accepted_and_works(tmp_path):
 
 
 def test_the_cygpath_branch_is_taken_when_cygpath_is_present(tmp_path):
-    """NIT from review round 4. This host has no real `cygpath`, so
-    `test_a_native_windows_sys_executable_path_is_accepted_and_works` above
-    only ever exercises the `tr '\\\\' '/'` fallback - the cygpath branch
-    itself was never actually run by anything in this suite. Puts a FAKE
-    `cygpath` on PATH that answers ONLY for the exact `C:\\fakepy\\
-    python.exe` argument the gate is expected to hand it (anything else
-    exits 1), and points its answer at an interpreter that lives somewhere
-    the tr fallback's own conversion ("C:\\fakepy\\python.exe" ->
-    "C:/fakepy/python.exe", repo-cwd-relative) would NEVER find - so this
-    only passes if the gate actually called `cygpath -u` and used ITS
-    output, not the fallback."""
+    """NIT from review round 4, corrected in round 5. This host has no real
+    `cygpath`, so `test_a_native_windows_sys_executable_path_is_accepted_
+    and_works` above only ever exercised the `tr '\\\\' '/'` fallback.
+
+    **This test used to (wrongly) claim it proved verify-gate.sh's OWN
+    cygpath call.** It did not, and review round 5 caught why: `crew_py_
+    strict` (in _common.sh) now does the SAME native-Windows-path
+    normalisation internally - cygpath when present, the same tr fallback
+    otherwise - and PROVES the result with `-x` before ever returning it.
+    So by the time verify-gate.sh saw `$SHIM_PY`, it was already a plain
+    POSIX path; verify-gate.sh's own `case ... [A-Za-z]:\\\\*|...)` branch
+    could never match anything real again and was deleted as dead code
+    (see verify-gate.sh's own comment at the top of the shim block). This
+    test's fake `cygpath` was always being called from INSIDE crew_py_
+    strict, never from verify-gate.sh - proven by review's own sabotage:
+    replacing verify-gate.sh's (now-deleted) conversion arm with `SHIM_PY=
+    ""` left this test green, because that arm was never reached either
+    way. What this test actually proves, correctly named now: `crew_py_
+    strict` calls `cygpath -u` and uses ITS output, not the tr fallback,
+    when cygpath is present.
+
+    Puts a FAKE `cygpath` on PATH that answers ONLY for the exact `C:\\
+    fakepy\\python.exe` argument crew_py_strict is expected to hand it
+    (anything else exits 1), and points its answer at an interpreter that
+    lives somewhere the tr fallback's own conversion ("C:\\fakepy\\
+    python.exe" -> "C:/fakepy/python.exe", repo-cwd-relative) would NEVER
+    find - so this only passes if crew_py_strict actually called
+    `cygpath -u` and used ITS output.
+
+    Sabotage for THIS test lives in _common.sh (crew_py_strict), not in
+    this repo's edit scope for the shipped fix - see the developer's report
+    for what was temporarily changed there (`command -v cygpath` forced to
+    fail, restored from a `cp` backup) and that this test went red."""
     marker = tmp_path / "repo" / "ran.marker"
     vmap = {
         "version": 1,
@@ -547,5 +602,135 @@ def test_the_cygpath_branch_is_taken_when_cygpath_is_present(tmp_path):
     assert marker.exists(), (
         "the cygpath branch was not taken (or did not work) - the shim did "
         "not exec the interpreter cygpath -u pointed at. stderr: "
+        + result.stderr
+    )
+
+
+def test_a_windowsapps_stub_fails_closed_with_zero_rules_run(tmp_path):
+    """FIX from review round 6. A WindowsApps App Execution Alias stub -
+    `%LOCALAPPDATA%\\Microsoft\\WindowsApps\\python3.exe` on a real Windows
+    host - is a REAL, EXECUTABLE file. Plain `command -v python3` (the OLD
+    top-level resolver, before this fix) happily found it, invoked it as
+    the MATCHER's own interpreter, and the stub "succeeded" (exit 0, no
+    output) without running any python at all. Every field the matcher's
+    output normally populates (CMDS, NOTICES, ...) was then empty, ZERO
+    rules ever matched or ran, and the gate reached the "everything
+    passed" branch by default - the DEFAULT no-python state on a fresh
+    Windows host, exiting 0 having verified nothing. `_common.sh`'s own
+    header comment claimed this file "fails closed" there; it did not,
+    until this fix.
+
+    crew_py_strict already rejects any candidate whose resolved path
+    contains WindowsApps (`*/WindowsApps/*` - see _common.sh), so the
+    top-level $PY resolution (now via crew_py_strict, not plain crew_py)
+    skips this stub outright and, with nothing else on PATH, fails closed
+    before the matcher ever runs."""
+    marker = tmp_path / "repo" / "ran.marker"
+    vmap = {
+        "version": 1,
+        "rules": [{"paths": ["a.py"], "seconds": 5,
+                   "run": ["python3 -c \"open('ran.marker', 'w').close()\""],
+                   "reach": "local"}],
+        "default": [], "unmapped": "ignore",
+    }
+    root = _repo(tmp_path, vmap)
+    (root / "a.py").write_text("x", encoding="utf-8")
+
+    tools_dir = os.path.join(str(tmp_path), "tools")
+    os.makedirs(tools_dir, exist_ok=True)
+    for name in _NEEDED_TOOLS:
+        real = shutil.which(name)
+        if real:
+            os.symlink(real, os.path.join(tools_dir, name))
+    # The real shape: a WindowsApps App Execution Alias, in a directory
+    # whose path literally contains "WindowsApps" - crew_py_strict's own
+    # rejection pattern - that prints nothing and exits 0 for ANY
+    # invocation, exactly the observed stub behaviour.
+    windows_apps_dir = os.path.join(tools_dir, "WindowsApps")
+    os.makedirs(windows_apps_dir, exist_ok=True)
+    stub = os.path.join(windows_apps_dir, "python3")
+    with open(stub, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write("#!/bin/sh\nexit 0\n")
+    os.chmod(stub, 0o755)
+    # WindowsApps stubs are typically encountered ahead of a user's real
+    # tools on a fresh PATH - putting it first here proves the REJECTION
+    # PATTERN is what saves this, not merely a favourable PATH order.
+    combined_path = windows_apps_dir + os.pathsep + tools_dir
+
+    env = dict(os.environ, PATH=combined_path, CLAUDE_PROJECT_DIR=str(root))
+    result = subprocess.run(
+        [_BASH, _SH], input="{}", cwd=str(root), env=env,
+        capture_output=True, text=True, check=False,
+    )
+    assert result.returncode == 2, (
+        "a WindowsApps-only environment must fail closed (exit 2), not run "
+        "zero rules and exit 0. rc=" + str(result.returncode) + " "
+        + result.stderr
+    )
+    assert not marker.exists(), (
+        "a rule ran despite only a WindowsApps stub being resolvable. "
+        + result.stderr
+    )
+
+
+def test_matcher_producing_no_output_fails_closed_even_past_crew_py_strict(tmp_path):
+    """The SECOND, independent line of defence added alongside the fix
+    above: even a python that PASSES crew_py_strict's own proof (a real,
+    working `-c "import sys; print(sys.executable)"` response, `-x` and
+    all) can still behave differently when invoked the OTHER way this gate
+    needs it - as the MATCHER's own interpreter, reading a script from
+    stdin with `-` as the first argument. This stub deliberately has that
+    split personality, so crew_py_strict succeeds (nothing here is a
+    WindowsApps path, so that specific rejection is not what saves this
+    test - see the WindowsApps test above for that case) and the MATCHER
+    invocation is what has to fail closed on its own: the
+    `elif [ -z "$MATCHED" ]` branch in verify-gate.sh, immediately below
+    the matcher invocation, treating a python that "succeeded" while
+    producing no data at all as UNKNOWN rather than "nothing matched"."""
+    marker = tmp_path / "repo" / "ran.marker"
+    vmap = {
+        "version": 1,
+        "rules": [{"paths": ["a.py"], "seconds": 5,
+                   "run": ["python3 -c \"open('ran.marker', 'w').close()\""],
+                   "reach": "local"}],
+        "default": [], "unmapped": "ignore",
+    }
+    root = _repo(tmp_path, vmap)
+    (root / "a.py").write_text("x", encoding="utf-8")
+
+    tools_dir = os.path.join(str(tmp_path), "tools")
+    os.makedirs(tools_dir, exist_ok=True)
+    for name in _NEEDED_TOOLS:
+        real = shutil.which(name)
+        if real:
+            os.symlink(real, os.path.join(tools_dir, name))
+    stub = os.path.join(tools_dir, "python3")
+    with open(stub, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write(
+            "#!/bin/sh\n"
+            "if [ \"$1\" = \"-c\" ]; then\n"
+            "  printf '%s\\n' \"" + stub + "\"\n"
+            "  exit 0\n"
+            "fi\n"
+            "exit 0\n"
+        )
+    os.chmod(stub, 0o755)
+
+    env = dict(os.environ, PATH=tools_dir, CLAUDE_PROJECT_DIR=str(root))
+    result = subprocess.run(
+        [_BASH, _SH], input="{}", cwd=str(root), env=env,
+        capture_output=True, text=True, check=False,
+    )
+    assert result.returncode == 2, (
+        "an interpreter that PASSES crew_py_strict but prints nothing when "
+        "run as the matcher must still fail closed. rc="
+        + str(result.returncode) + " " + result.stderr
+    )
+    assert "the matcher produced no output" in result.stderr, (
+        "the specific defensive message did not fire. stderr: "
+        + result.stderr
+    )
+    assert not marker.exists(), (
+        "a rule ran despite the matcher producing no output at all. "
         + result.stderr
     )

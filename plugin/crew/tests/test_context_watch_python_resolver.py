@@ -93,17 +93,25 @@ def _repo(tmp_path, **cfg_kwargs):
         tmp_path, config=_config(**cfg_kwargs), git=False)
 
 
-def _run(root, path_entries, transcript_bytes, isolate_path=False):
+def _run(root, path_entries, transcript_bytes, isolate_path=False,
+         stop_hook_active=False):
     """`isolate_path` does NOT append the real environment's PATH behind the
     given entries. The default (append) is what every other stub case here
     wants -- the stub is on PATH ahead of a real interpreter that later
     entries would otherwise find, exactly like a live machine -- but "no
     python anywhere" needs the real system python genuinely absent, not
-    merely shadowed, or this test's own PATH would silently supply one."""
+    merely shadowed, or this test's own PATH would silently supply one.
+
+    `stop_hook_active` mirrors what Claude Code sets to `true` on the
+    FORCED-CONTINUATION retry it fires automatically after an exit-2 block --
+    round-4 review: this must now be honoured BEFORE any resolver work, so a
+    broken interpreter's retry stands down instead of blocking (and
+    marker-claiming) a second time."""
     transcript = root / "transcript.jsonl"
     transcript.write_bytes(b"x" * transcript_bytes)
     payload = json.dumps({
         "transcript_path": str(transcript), "cwd": str(root),
+        "stop_hook_active": stop_hook_active,
     })
     env = os.environ.copy()
     entries = list(path_entries)
@@ -159,35 +167,59 @@ def test_must_allow_under_threshold_with_real_python(tmp_path):
     assert proc.stderr.strip() == "", proc.stderr
 
 
-# --- MUST BLOCK ONCE, MUST ALLOW AFTER: a broken interpreter ---------------
+# --- MUST BLOCK on a real Stop, MUST ALLOW on the forced-continuation retry,
+#     NEVER claim $MARKER: a broken interpreter ----------------------------
 #
-# PM ruling: fail CLOSED once, not open. Each stub case below is a must-block
-# on the FIRST Stop event of the session and a must-allow on the second --
-# the marker is what turns "once" into "not a permanent block".
+# PM ruling: fail CLOSED, not open. Round-4 review (merged-branch,
+# BLOCK-adjacent): the marker-based "must-allow on the SECOND same-session
+# call" shape these tests had was itself the bug -- this branch is no longer
+# allowed to touch `.crew/.handoff-requested` at all, in either direction
+# (see context-watch.sh's own header comment on that branch for the full
+# reasoning: a zero-byte marker claimed here, with nothing measured, is what
+# let context-watch.ps1 and auto-clear.ps1 stand down and /clear a session
+# at low context on Windows). What now bounds the repeat is
+# `stop_hook_active`, checked FIRST, before any resolver work -- so every
+# case below is must-block on a REAL Stop event and must-allow on the
+# FORCED-CONTINUATION retry Claude Code fires after that block, and every
+# must-block case also asserts the marker was never written.
 
 @needs_bash
-def test_stub_python_blocks_once_then_stands_down(tmp_path):
-    """The reported defect, re-shaped by the PM ruling. The stub is the only
-    python on PATH."""
+def test_stub_python_blocks_on_a_real_stop_without_claiming_the_marker(tmp_path):
+    """The reported defect, re-shaped by the round-4 review. The stub is the
+    only python on PATH."""
     root = _repo(tmp_path, budget=100)
     apps = _stub(tmp_path / "fakepath" / "WindowsApps")
 
-    first = _run(root, [str(apps)], transcript_bytes=500)
-    assert first.returncode == 2, (
-        "a broken interpreter must block ONCE, not fail open: " + first.stderr)
-    assert _NO_PYTHON in first.stderr, (
-        f"the hook must NAME the missing interpreter. got {first.stderr!r}")
-    assert _HANDOFF_MARKER in first.stderr, first.stderr
-    assert (root / _MARKER_REL).exists()
-
-    second = _run(root, [str(apps)], transcript_bytes=500)
-    assert second.returncode == 0, (
-        "the marker must suppress the SECOND Stop event in the same "
-        "session, interpreter still broken or not: " + second.stderr)
+    proc = _run(root, [str(apps)], transcript_bytes=500)
+    assert proc.returncode == 2, (
+        "a broken interpreter must block on a real Stop event: " + proc.stderr)
+    assert _NO_PYTHON in proc.stderr, (
+        f"the hook must NAME the missing interpreter. got {proc.stderr!r}")
+    assert not (root / _MARKER_REL).exists(), (
+        "an interpreter error must NEVER claim .crew/.handoff-requested -- "
+        "that marker means 'the context window was measured and is over "
+        "budget', which did not happen here")
 
 
 @needs_bash
-def test_stub_outside_a_windowsapps_directory_also_blocks_once(tmp_path):
+def test_stub_python_stands_down_on_the_forced_continuation_retry(tmp_path):
+    """Must-allow: the SAME broken stub, but `stop_hook_active: true` --
+    Claude Code's own retry after the block above. Checked FIRST, before the
+    resolver ever runs, so this must be silent (exit 0, no message) even
+    though the interpreter is exactly as broken as the must-block case."""
+    root = _repo(tmp_path, budget=100)
+    apps = _stub(tmp_path / "fakepath" / "WindowsApps")
+
+    proc = _run(root, [str(apps)], transcript_bytes=500, stop_hook_active=True)
+    assert proc.returncode == 0, (
+        "stop_hook_active must stand this down before the resolver runs: "
+        + proc.stderr)
+    assert proc.stderr.strip() == "", proc.stderr
+    assert not (root / _MARKER_REL).exists()
+
+
+@needs_bash
+def test_stub_outside_a_windowsapps_directory_also_blocks_without_a_marker(tmp_path):
     """Only the EXECUTE probe catches this: the directory name gives no clue,
     so nothing but running the candidate and reading back `sys.executable`
     distinguishes it from a real interpreter."""
@@ -198,10 +230,11 @@ def test_stub_outside_a_windowsapps_directory_also_blocks_once(tmp_path):
 
     assert proc.returncode == 2, proc.stderr
     assert _NO_PYTHON in proc.stderr, proc.stderr
+    assert not (root / _MARKER_REL).exists()
 
 
 @needs_bash
-def test_candidate_printing_a_plausible_path_but_exiting_nonzero_blocks_once(tmp_path):
+def test_candidate_printing_a_plausible_path_but_exiting_nonzero_blocks_without_a_marker(tmp_path):
     """A wrapper that LOOKS like an answer: prints a plausible interpreter
     path and then exits non-zero. The exit-status check rejects it even
     though a path was printed."""
@@ -212,10 +245,11 @@ def test_candidate_printing_a_plausible_path_but_exiting_nonzero_blocks_once(tmp
 
     assert proc.returncode == 2, proc.stderr
     assert _NO_PYTHON in proc.stderr, proc.stderr
+    assert not (root / _MARKER_REL).exists()
 
 
 @needs_bash
-def test_no_python_at_all_blocks_once(tmp_path):
+def test_no_python_at_all_blocks_without_a_marker(tmp_path):
     """The plainer case: PATH genuinely has nothing named python3/python/py
     anywhere -- not shadowed, absent."""
     root = _repo(tmp_path, budget=100)
@@ -225,6 +259,19 @@ def test_no_python_at_all_blocks_once(tmp_path):
 
     assert proc.returncode == 2, proc.stderr
     assert _NO_PYTHON in proc.stderr, proc.stderr
+    assert not (root / _MARKER_REL).exists()
+
+
+@needs_bash
+def test_no_python_at_all_stands_down_on_the_forced_continuation_retry(tmp_path):
+    root = _repo(tmp_path, budget=100)
+    bindir = _coreutils_only(tmp_path)
+
+    proc = _run(root, [str(bindir)], transcript_bytes=500, isolate_path=True,
+                stop_hook_active=True)
+    assert proc.returncode == 0, proc.stderr
+    assert proc.stderr.strip() == "", proc.stderr
+    assert not (root / _MARKER_REL).exists()
 
 
 @needs_bash
@@ -491,18 +538,77 @@ def test_resolver_accepts_a_crlf_terminated_real_interpreter(tmp_path, path, hea
         f"got {printed!r}")
 
 
-# --- FIX (round-3 review, integration): a native Windows `sys.executable`
-#     (e.g. `C:\fakepy\python.exe`) must be normalised into a form THIS
-#     shell can stat before `-x` runs on it. `cygpath` is absent on a plain
-#     Linux test host, so the resolver's fallback path (backslash ->
-#     forward-slash) is what these fixtures exercise -- the same shape a
-#     merging lane's own fixture uses (a real file at a RELATIVE path
-#     literally named `C:/fakepy/python.exe` under the driver's cwd).
+# --- FIX (round-3 review, integration; round-4 NIT on the fallback shape):
+#     a native Windows `sys.executable` (e.g. `C:\fakepy\python.exe`) must be
+#     normalised into a form THIS shell can stat before `-x` runs on it.
+#     `cygpath` is absent on a plain Linux test host, so the resolver's
+#     fallback path is what these fixtures exercise. That fallback was
+#     ROUND-4-FIXED to produce an ABSOLUTE path (`/c/fakepy/python.exe`, the
+#     same shape `cygpath -u` would give), not the earlier relative
+#     `C:/fakepy/python.exe` -- a relative result depends on the RESOLVER'S
+#     OWN cwd at the moment `-x` runs, and any `cd` between here and the
+#     caller (there are several, in both context-watch.sh and
+#     role-write-guard.sh) silently breaks it.
+#
+#     That absoluteness is also why these fixtures changed shape entirely:
+#     the OLD tests proved the transform by fabricating a directory literally
+#     named `C:` UNDER `tmp_path` and relying on the RELATIVE interpretation
+#     to land there. The NEW output is absolute (`/c/...`), so nothing under
+#     `tmp_path` can ever satisfy it -- and creating a real `/c/fakepy/...`
+#     at the actual filesystem root to make `-x` succeed would touch the
+#     real machine outside any throwaway fixture, which CLAUDE.md's test
+#     suites are never allowed to do. Split into three narrower claims
+#     instead, none of which needs that: the STRING the transform produces
+#     (`test_drive_letter_fallback_produces_an_absolute_path`, no filesystem
+#     involved at all), that the full resolver genuinely evaluates `-x`
+#     against that absolute string rather than skipping it
+#     (`test_resolver_rejects_a_native_windows_path_with_no_real_target`,
+#     must-block against a target that provably does not exist on ANY
+#     non-Windows host), and a real must-allow behavioural case gated on a
+#     `/c` mount already existing (true on WSL and on Git Bash's own view of
+#     the filesystem, false and therefore skipped everywhere else, including
+#     in this container).
 
 _HAS_CYGPATH = shutil.which("cygpath") is not None
 _cygpath_absent = pytest.mark.skipif(
     _HAS_CYGPATH, reason="cygpath present -- these fixtures assume the tr fallback")
 
+# True on a real Windows/WSL host where /c IS the C: drive; false (and
+# therefore these specific must-allow cases skip) everywhere else, including
+# this container. Never created if absent -- see the header comment above.
+_HAS_C_MOUNT = os.path.isdir("/c") and os.access("/c", os.W_OK)
+
+
+def _drive_letter_normaliser_source(path):
+    """Just the `case "$real" in [A-Za-z]:...) ... esac` block, NOT the whole
+    resolver function -- lets the transform's OUTPUT STRING be asserted on
+    directly, without also needing `-x` to pass against a real file."""
+    src = pathlib.Path(path).read_text(encoding="utf-8")
+    marker = 'case "$real" in\n      [A-Za-z]:\\\\*|[A-Za-z]:/*)'
+    start = src.find(marker)
+    assert start != -1, "drive-letter case block not found in " + path
+    end = src.find("\n    esac\n", start)
+    assert end != -1, "could not find the end of the drive-letter case block in " + path
+    return src[start:end + len("\n    esac")]
+
+
+@needs_bash
+@_cygpath_absent
+@pytest.mark.parametrize("path", [_COMMON_SH, _GUARD_SH])
+def test_drive_letter_fallback_produces_an_absolute_path(tmp_path, path):
+    driver = tmp_path / "driver.sh"
+    driver.write_text(
+        "real='C:\\fakepy\\python.exe'\n"
+        + _drive_letter_normaliser_source(path) + "\n"
+        'printf \'%s\\n\' "$real"\n',
+        encoding="utf-8", newline="\n")
+    proc = subprocess.run(
+        [_BASH, str(driver)], capture_output=True, text=True, check=False)
+    assert proc.stdout.strip() == "/c/fakepy/python.exe", (
+        f"the no-cygpath fallback must yield an ABSOLUTE /c/... path, not a "
+        f"relative C:/... one that depends on the caller's cwd. "
+        f"got {proc.stdout!r} stderr={proc.stderr!r}")
+
 
 @needs_bash
 @_cygpath_absent
@@ -510,25 +616,23 @@ _cygpath_absent = pytest.mark.skipif(
     (_COMMON_SH, "crew_py_strict() {", "crew_py_strict"),
     (_GUARD_SH, "_resolve_role_write_python() {", "_resolve_role_write_python"),
 ])
-def test_resolver_accepts_a_native_windows_drive_letter_path(tmp_path, path, header, fn):
-    """Must-allow. Without `cygpath`, `-x` cannot see an ABSOLUTE Windows
-    drive as a real path on Linux at all -- so this fabricates the only
-    thing that CAN prove the normalisation ran: a directory literally named
-    `C:`, holding `fakepy/python.exe`, resolved as a path RELATIVE to the
-    driver's cwd once backslashes become forward slashes."""
-    target_dir = tmp_path / "C:" / "fakepy"
-    target_dir.mkdir(parents=True)
-    target = target_dir / "python.exe"
-    target.write_text("#!/bin/sh\nexit 0\n", encoding="ascii", newline="\n")
-    os.chmod(target, 0o755)
-
+def test_resolver_rejects_a_native_windows_path_with_no_real_target(tmp_path, path, header, fn):
+    """Must-block: proves the FULL resolver actually runs `-x` against the
+    normalised absolute path rather than skipping the check once a drive
+    letter is seen. `/c/<unique token>/python.exe` cannot exist on any
+    non-Windows host -- the token is derived from `tmp_path` so two
+    parallel test workers can never collide on the same absolute path."""
+    token = os.path.basename(str(tmp_path))
     stub_dir = tmp_path / "stubs"
     stub_dir.mkdir()
-    body = "#!/bin/sh\nprintf '%s\\n' 'C:\\fakepy\\python.exe'\nexit 0\n"
+    body = f"#!/bin/sh\nprintf '%s\\n' 'C:\\{token}\\python.exe'\nexit 0\n"
     for name in ("python3", "python", "py"):
         stub = stub_dir / name
         stub.write_text(body, encoding="ascii", newline="\n")
         os.chmod(stub, 0o755)
+
+    assert not os.path.exists(f"/c/{token}/python.exe"), (
+        "fixture assumption violated: this path must not exist")
 
     driver = tmp_path / "driver.sh"
     driver.write_text(
@@ -541,61 +645,67 @@ def test_resolver_accepts_a_native_windows_drive_letter_path(tmp_path, path, hea
     env["PATH"] = os.pathsep.join([str(stub_dir), env.get("PATH", "")])
     proc = subprocess.run(
         [_BASH, str(driver)], capture_output=True, text=True,
-        check=False, env=env, cwd=str(tmp_path))
-    lines = proc.stdout.splitlines()
-    exit_line = next((l for l in lines if l.startswith("EXIT:")), "EXIT:?")
-    printed = [l for l in lines if not l.startswith("EXIT:")]
-    assert exit_line == "EXIT:0", (
-        f"a native Windows drive-letter path to a real, executable target "
-        f"must be ACCEPTED. stdout={proc.stdout!r} stderr={proc.stderr!r}")
-    assert printed == ["C:/fakepy/python.exe"], (
-        f"must return the backslash-normalised path. got {printed!r}")
-
-
-@needs_bash
-@_cygpath_absent
-@pytest.mark.parametrize("path,header,fn", [
-    (_COMMON_SH, "crew_py_strict() {", "crew_py_strict"),
-    (_GUARD_SH, "_resolve_role_write_python() {", "_resolve_role_write_python"),
-])
-def test_resolver_rejects_a_native_windows_drive_letter_path_to_a_non_executable_target(
-        tmp_path, path, header, fn):
-    """Must-block: normalisation is not a bypass of the executability check
-    -- a native-Windows-shaped path to a real but non-executable file must
-    still be rejected."""
-    target_dir = tmp_path / "C:" / "fakepy"
-    target_dir.mkdir(parents=True)
-    target = target_dir / "python.exe"
-    target.write_text("not a real interpreter\n", encoding="utf-8")
-    os.chmod(target, 0o644)
-
-    stub_dir = tmp_path / "stubs"
-    stub_dir.mkdir()
-    body = "#!/bin/sh\nprintf '%s\\n' 'C:\\fakepy\\python.exe'\nexit 0\n"
-    for name in ("python3", "python", "py"):
-        stub = stub_dir / name
-        stub.write_text(body, encoding="ascii", newline="\n")
-        os.chmod(stub, 0o755)
-
-    driver = tmp_path / "driver.sh"
-    driver.write_text(
-        _function_raw_source(path, header) + "\n"
-        f"{fn}\n"
-        'printf "EXIT:%s\\n" "$?"\n',
-        encoding="utf-8", newline="\n")
-
-    env = os.environ.copy()
-    env["PATH"] = os.pathsep.join([str(stub_dir), env.get("PATH", "")])
-    proc = subprocess.run(
-        [_BASH, str(driver)], capture_output=True, text=True,
-        check=False, env=env, cwd=str(tmp_path))
+        check=False, env=env)
     lines = proc.stdout.splitlines()
     exit_line = next((l for l in lines if l.startswith("EXIT:")), "EXIT:?")
     printed = [l for l in lines if not l.startswith("EXIT:")]
     assert exit_line == "EXIT:1", (
-        f"a non-executable target must still be REJECTED after drive-letter "
-        f"normalisation. stdout={proc.stdout!r} stderr={proc.stderr!r}")
+        f"a native Windows path with no corresponding real file must be "
+        f"REJECTED. stdout={proc.stdout!r} stderr={proc.stderr!r}")
     assert not printed, "must print nothing when rejecting: " + repr(printed)
+
+
+@needs_bash
+@_cygpath_absent
+@pytest.mark.skipif(not _HAS_C_MOUNT, reason="no /c mount on this host (expected off Windows/WSL)")
+@pytest.mark.parametrize("path,header,fn", [
+    (_COMMON_SH, "crew_py_strict() {", "crew_py_strict"),
+    (_GUARD_SH, "_resolve_role_write_python() {", "_resolve_role_write_python"),
+])
+def test_resolver_accepts_a_native_windows_path_to_a_real_target_under_c(tmp_path, path, header, fn):
+    """Must-allow, real end-to-end: only runs where `/c` is ALREADY a real
+    mount (WSL, or Git Bash's own view of the C: drive) -- never created,
+    only used, and only a throwaway subdirectory under it, cleaned up after
+    like any other tmp fixture."""
+    token = os.path.basename(str(tmp_path))
+    target_dir = pathlib.Path(f"/c/{token}")
+    target_dir.mkdir(parents=True)
+    try:
+        target = target_dir / "python.exe"
+        target.write_text("#!/bin/sh\nexit 0\n", encoding="ascii", newline="\n")
+        os.chmod(target, 0o755)
+
+        stub_dir = tmp_path / "stubs"
+        stub_dir.mkdir()
+        body = "#!/bin/sh\n" f"printf '%s\\n' 'C:\\{token}\\python.exe'\n" "exit 0\n"
+        for name in ("python3", "python", "py"):
+            stub = stub_dir / name
+            stub.write_text(body, encoding="ascii", newline="\n")
+            os.chmod(stub, 0o755)
+
+        driver = tmp_path / "driver.sh"
+        driver.write_text(
+            _function_raw_source(path, header) + "\n"
+            f"{fn}\n"
+            'printf "EXIT:%s\\n" "$?"\n',
+            encoding="utf-8", newline="\n")
+
+        env = os.environ.copy()
+        env["PATH"] = os.pathsep.join([str(stub_dir), env.get("PATH", "")])
+        proc = subprocess.run(
+            [_BASH, str(driver)], capture_output=True, text=True,
+            check=False, env=env)
+        lines = proc.stdout.splitlines()
+        exit_line = next((l for l in lines if l.startswith("EXIT:")), "EXIT:?")
+        printed = [l for l in lines if not l.startswith("EXIT:")]
+        assert exit_line == "EXIT:0", (
+            f"a native Windows path to a real, executable target under a "
+            f"real /c mount must be ACCEPTED. stdout={proc.stdout!r} "
+            f"stderr={proc.stderr!r}")
+        assert printed == [f"/c/{token}/python.exe"], (
+            f"must return the normalised absolute path. got {printed!r}")
+    finally:
+        shutil.rmtree(target_dir, ignore_errors=True)
 
 
 # --- FIX (round-3 review): context.enabled must be honoured even when
@@ -614,6 +724,7 @@ def test_context_disabled_with_broken_python_stands_down_silently(tmp_path):
     bindir = _coreutils_only(tmp_path)
     proc = _run(root, [str(bindir)], transcript_bytes=500, isolate_path=True)
     assert proc.returncode == 0, proc.stderr
+    assert not (root / _MARKER_REL).exists()
 
 
 # --- FIX (round-3 review): the JSON payload's "cwd" must win over

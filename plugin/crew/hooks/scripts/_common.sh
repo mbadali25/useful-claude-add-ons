@@ -100,17 +100,21 @@ crew_py_strict() {
     # it -- the raw backslash-drive-letter form never matches a real file
     # under Git Bash, WSL, or plain Linux. `cygpath -u`, when present, is the
     # accurate conversion (`C:\fakepy\...` -> `/c/fakepy/...`); its absence
-    # (no Windows compat layer at all) falls back to a bare backslash ->
-    # forward-slash swap, which keeps the string usable as a RELATIVE path
-    # under `-x` -- the shape `tests/test_context_watch_python_resolver.py`'s
-    # native-Windows-path case drives, since a real Windows drive letter
-    # cannot be fabricated as an actual path on a non-Windows test host.
+    # (no Windows compat layer at all) falls back to the SAME shape by hand:
+    # lower-case the drive letter, drop the `:`, and put it under a leading
+    # `/` -- `C:\fakepy\python.exe` -> `/c/fakepy/python.exe`. NOT a bare
+    # backslash->forward-slash swap (`C:/fakepy/python.exe`, no leading `/`):
+    # that string is RELATIVE, so `-x` on it silently depends on the
+    # resolver's own cwd, and any `cd` between here and the caller breaks it
+    # -- `-x` on the absolute `/c/...` form does not.
     case "$real" in
       [A-Za-z]:\\*|[A-Za-z]:/*)
         if command -v cygpath >/dev/null 2>&1; then
           real=$(cygpath -u "$real")
         else
-          real=$(printf '%s' "$real" | tr '\\\\' '/')
+          drive=$(printf '%s' "$real" | cut -c1 | tr '[:upper:]' '[:lower:]')
+          rest=$(printf '%s' "$real" | cut -c3- | tr '\\\\' '/')
+          real="/$drive$rest"
         fi
         ;;
     esac

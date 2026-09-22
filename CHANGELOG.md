@@ -18,18 +18,22 @@ All notable changes to this repository are documented here. Format follows [Keep
   interpreter path, and fails closed with a remediation hint when nothing
   resolves. `context-watch.sh`, `pm-brief.sh` and `platform-sync.sh` go through
   `crew_py_strict`, which now requires the probed path to be executable, strips
-  a CR, and normalises drive-letter paths; `context-watch.sh` blocks once per
-  session on a stub interpreter using the existing handoff marker, honours
-  `context.enabled: false` without python, and checks the input's `cwd` before
-  `CLAUDE_PROJECT_DIR` again. `agents/pm.md` re-reads full `crew_state.py`
-  output plus HEAD, branch and `git status --porcelain` before every dispatch
-  and on every return, with `merge-base --is-ancestor` so a backward or
-  sideways HEAD is reported. `render.sh` handles flags in any position, exits 1
+  a CR, and normalises drive-letter paths; `context-watch.sh` honours
+  `stop_hook_active` before anything else, fails closed on a stub interpreter
+  without claiming the shared handoff marker (so the PowerShell twin's real
+  budget warning is never suppressed by a false alarm), honours
+  `context.enabled: false` without python, and keeps the input's `cwd` ahead
+  of `CLAUDE_PROJECT_DIR`. `agents/pm.md` re-reads full `crew_state.py`
+  output plus HEAD, branch and `git status --porcelain` before every dispatch,
+  and on every return runs `rev-parse`, `merge-base --is-ancestor`,
+  `log <pre>..HEAD` and `branch --show-current` on its own checkout so a
+  backward, sideways or foreign-forward HEAD is reported. `render.sh` handles flags in any position, exits 1
   on an empty directory and 2 on contradictory flags, renders to a temp file so
   a failed re-render never overwrites the last good output, and prints
   separate ok / skipped / failed counts; both render scripts are now tracked
-  executable. Every change carries a must-block/must-allow case and was
-  sabotage-tested.
+  executable. Every hook and script change carries a must-block/must-allow
+  case that was sabotage-tested on Linux; the `agents/pm.md` prose has no
+  test, and the `.ps1` resolver cases skip where no PowerShell host exists.
 
 - **`check-marketplace.py` now verifies the command and skill counts stated in
   plugin descriptions and in both install-script catalogs.** crew's entry said
@@ -38,10 +42,13 @@ All notable changes to this repository are documented here. Format follows [Keep
   which description and catalog counts to check, scoped to the plugin's own row
   with a loud failure on a missing or duplicate label; a `plugin-commands:<name>`
   claim type covers markdown sites. Counting reads git's index, and a git
-  failure is reported as "could not verify" rather than 0. The three
-  `scripts/_test` harnesses that copy host tools now guard an empty temp
-  directory, refuse to `chmod` through a symlink into the host, and check every
-  copied tool's content, mode, owner and ctime before and after.
+  failure is reported as "could not verify" rather than 0. Still open, recorded
+  in `TODO.md`: `check_self_claims` discovers its markdown files through the
+  same `git()` call, so in a non-git tree it scans nothing. The two
+  `scripts/_test` harnesses that copy host tools (`uv-install.sh`,
+  `mcp-preflight-catalog.sh`) now guard an empty temp directory, refuse to
+  `chmod` through a symlink into the host, and check every copied tool's
+  content, mode, owner and ctime before and after.
 
 - **`doc-builder` 1.5.3: `abs_or_join` gave a different answer for a rooted
   drive-relative path (`\\bare\\path`) depending on the Python version.** The

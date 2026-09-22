@@ -642,7 +642,22 @@ fi
 # separate one-shot suppression exists or is needed, because the failure
 # clears itself the moment python is actually installed, the same way a
 # parse error clears itself the moment the JSON is fixed.
-PY=$(crew_py) || { echo "VERIFY GATE: no python (python3, python or py) resolves anywhere on PATH - .crew/verify.json cannot be read and nothing can be verified. Work is not complete. Install python (3.10+) on this machine, or set \"verifyGate\": false in .crew/config.json to stand this gate down deliberately (honoured at the top of this file)." >&2; exit 2; }
+#
+# crew_py_strict, NOT plain crew_py, resolves the interpreter that runs the
+# MATCHER below - review round 6 finding: plain crew_py (`command -v`
+# alone) happily resolves a WindowsApps App Execution Alias stub, which is
+# a real, executable file that does nothing when actually run. With plain
+# crew_py, that stub became $PY, the matcher invocation "succeeded" (exit
+# 0, zero output), and the fall-through below treated empty output as
+# "nothing matched" rather than "nothing ran" - the gate exited 0 having
+# checked precisely nothing, the DEFAULT state on a Windows host with no
+# real python. crew_py_strict actually RUNS each candidate and rejects a
+# WindowsApps path outright (see its own header in _common.sh), so that
+# stub can no longer become $PY at all; see the `elif [ -z "$MATCHED" ]`
+# branch below the matcher invocation for the second, independent check
+# that exists in case some OTHER broken-but-`command -v`-resolvable
+# interpreter ever slips past crew_py_strict the same way.
+PY=$(crew_py_strict) || { echo "VERIFY GATE: no python (python3, python or py) resolves to a PROVED working interpreter anywhere on PATH - .crew/verify.json cannot be read and nothing can be verified. Work is not complete. Install python (3.10+) on this machine, or set \"verifyGate\": false in .crew/config.json to stand this gate down deliberately (honoured at the top of this file)." >&2; exit 2; }
 
 # The changed-file list goes through a temp FILE, never argv. E2BIG counts argv
 # PLUS the environment, so a hook invoked with a large environment fails to exec
@@ -1230,6 +1245,32 @@ elif [ "$PY_STATUS" -eq 4 ]; then
 elif [ "$PY_STATUS" -ne 0 ]; then
   echo "VERIFY GATE: could not RUN the matcher - python exited $PY_STATUS before parsing. .crew/verify.json was NOT shown to be invalid; do not go looking for corruption there. Verification did NOT run. Work is not complete." >&2
   exit 2
+elif [ -z "$MATCHED" ]; then
+  # PY_STATUS is 0 here (every nonzero case above already exited), yet the
+  # matcher wrote NOTHING - not even the empty-but-structured six-field
+  # record it always emits (`"\x1e".join(cmds) + "\x1d" + ...`) when
+  # genuinely nothing matched. That is the signature of an interpreter that
+  # "succeeded" without actually running any python at all - a WindowsApps
+  # App Execution Alias stub is the concrete case: it is a real, executable
+  # file, so plain `command -v` (and even this script's OLD `crew_py`-based
+  # $PY) happily resolved it, invoked it, and it exited 0 having printed
+  # nothing and evaluated no code. Before this check, that meant PY_STATUS
+  # stayed 0, $MATCHED stayed empty, every field derived from it (CMDS,
+  # NOTICES, ...) was empty too, ZERO rules ever ran, and the gate reached
+  # the "everything passed" branch by default - a python-less Windows host's
+  # DEFAULT state, exiting 0 having verified nothing. `$PY` is now resolved
+  # via crew_py_strict (below the top-level `.crew/verify.json` read),
+  # which already refuses a WindowsApps stub outright - see its own header
+  # in _common.sh - so this specific reproduction should not reach here at
+  # all any more. Kept as a second, independent line of defence rather than
+  # trusting crew_py_strict alone to never have a gap: "the matcher produced
+  # nothing" is treated as UNKNOWN, and unknown must never collapse into the
+  # safe-looking (exit 0, zero rules) value - see CLAUDE.md's own named
+  # recurring defect. `.crew/verify.json` is already known to exist here
+  # (the `[ ! -f .crew/verify.json ]` check above returned long before this
+  # point), so its absence is not the explanation either.
+  echo "VERIFY GATE: the matcher produced no output at all, even though it exited 0 and .crew/verify.json exists. This is the signature of a broken interpreter (for example a WindowsApps stub) succeeding without actually running any python code. Work is not complete. Install python (3.10+) on this machine, or set \"verifyGate\": false in .crew/config.json to stand this gate down deliberately (honoured at the top of this file)." >&2
+  exit 2
 fi
 # \035 is the record separator the matcher wrote between the two records, and
 # \036 the field separator inside each. `sed -n 1p` used to take the first
@@ -1298,39 +1339,18 @@ fi
 # does not go through this loop's PATH, and every rule command keeps
 # reading exactly as written.
 if ! command -v python3 >/dev/null 2>&1; then
+  # crew_py_strict (in _common.sh) now OWNS the native-Windows-path
+  # normalisation (cygpath -u when present, a bare backslash->forward-slash
+  # swap otherwise) AND proves the result with `-x` before ever returning
+  # it - see that function's own header comment. This file used to repeat
+  # that exact conversion on crew_py_strict's OUTPUT, from when the two
+  # were fixed independently in different review lanes; once crew_py_strict
+  # started normalising internally, the copy here became DEAD CODE (never
+  # reached - crew_py_strict either returns an already-POSIX, already-`-x`-
+  # proved path, or nothing at all) and a second place the exact same bug
+  # could silently regress back into. Removed rather than left "harmless" -
+  # trust the one function that owns this, not a second copy of its logic.
   SHIM_PY=$(crew_py_strict) || SHIM_PY=""
-  # `sys.executable` is absolute, but "absolute" has TWO shapes here, not
-  # one. On Git Bash with only `python`/`py` resolving to a NATIVE Windows
-  # python.exe (as opposed to an MSYS-built one), sys.executable prints
-  # `C:\...\python.exe` - a `case ... /*)` test alone rejects that outright
-  # (it does not start with `/`), so SHIM_PY silently went empty and this
-  # block reported "no python3, python or py resolves" on a machine that
-  # very much had one - reviewer-reproduced, rc=2, "python3: command not
-  # found" on the rule. `.ps1`'s own resolver already accepted both shapes
-  # (`^[A-Za-z]:[\\/]`); this was the two flavours disagreeing on the exact
-  # case the shim exists for.
-  case "$SHIM_PY" in
-    /*) ;;  # POSIX absolute (an MSYS-built python, or a Linux/macOS host)
-    [A-Za-z]:\\*|[A-Za-z]:/*)
-      # A native Windows path - convert to a form MSYS's own exec() layer
-      # is GUARANTEED to resolve, rather than handing a raw drive-letter
-      # path straight into a POSIX shell's `exec`. cygpath (Git Bash always
-      # ships it) is preferred, the same tool render.sh already relies on
-      # for the reverse conversion - see CLAUDE.md's cygpath landmine, filed
-      # after a raw path crossing this exact PowerShell/bash-adjacent
-      # boundary broke silently. A bare backslash->forward-slash swap is
-      # the fallback when cygpath is somehow absent; MSYS's exec() accepts
-      # a drive-letter path with either slash direction, so this still
-      # resolves, just without cygpath's own mount-table awareness (a
-      # non-default drive mapping, for instance).
-      if command -v cygpath >/dev/null 2>&1; then
-        SHIM_PY=$(cygpath -u "$SHIM_PY" 2>/dev/null) || SHIM_PY=""
-      else
-        SHIM_PY=$(printf '%s' "$SHIM_PY" | tr '\\' '/')
-      fi
-      ;;
-    *) SHIM_PY="" ;;  # refuse anything else rather than trust it blindly
-  esac
   if [ -n "$SHIM_PY" ]; then
     SHIM_DIR=$(mktemp -d 2>/dev/null) || SHIM_DIR=""
     if [ -n "$SHIM_DIR" ]; then
