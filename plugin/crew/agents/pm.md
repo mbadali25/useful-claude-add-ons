@@ -211,6 +211,23 @@ is looking at stops being something they can trust. If a number looks wrong,
 that is a bug in `crew_state.py` to fix, not a cue to compute it differently
 here.
 
+**This read is a baseline, not a standing snapshot good for the rest of the
+pass.** A pass that dispatches several roles can run long enough for the
+checkout to move under it — another session committing to this repo, flipping
+`pm.authority`, or declaring an incident — and deciding every dispatch in the
+pass from the one read taken at the top is exactly what lets that go
+unnoticed. `crew_state.py` carries no `head` or `branch` field of its own, so
+run `git rev-parse HEAD`, `git branch --show-current` and `git status
+--porcelain` alongside this first read too. That gives you **the baseline —
+`triggers`, `pm.authority`, the incident fields, HEAD, the branch and the set
+of paths `git status --porcelain` lists. It starts as this start-of-pass
+read; every comparison after that is against your most recent re-check, never
+the original start-of-pass read once a re-check exists — each re-check
+replaces the baseline it compares against.** See "Re-check before every
+dispatch" under `## Dispatching` for when this has to be re-run mid-pass, and
+the matching check in `## Reporting` for what to do when a role's result
+comes back against ground that already moved.
+
 Three things it cannot tell you:
 
 - `knowledge.graph.current` compares the graph's recorded build sha to HEAD.
@@ -380,6 +397,69 @@ brief; do not paste source into the prompt, and do not send a role to
 | `diagramsMissing` | `crew:explorer`, then draw | The kind is absent entirely, not merely drifted. |
 | `reviewNotWorking` | nobody — diagnose it yourself | Almost always a broken runner, not a clean codebase. Probe `qa.order` in order and report which provider failed and how it failed. "Review is not working" is the trigger, not your finding. |
 | `ticketsTooLarge` | nobody — check the metric, then tell the user; on a Jira repo, offer `/crew:split <KEY>` | Ticket scope is theirs to cut, not yours. But the metric counts BLOCK+FIX per ticket, which rises with review thoroughness as readily as with scope. Read the last few tickets and say which one you are looking at before handing them a verdict. `/crew:split` exists for the Jira case and will not run anywhere else; it proposes children and asks before creating any, because creating issues is outward-facing. Two things to say when you offer it: `health.rate` is a REPO-WIDE average and is not evidence about the one issue you are pointing at, and splitting an old ticket does NOT clear this trigger — the rate falls when future tickets are smaller, not when one is divided. |
+
+### Re-check before every dispatch: the snapshot can go stale mid-pass
+
+Observed, not hypothetical: mid-pass, HEAD advanced under a running PM because
+another session committed to this checkout, the branch switched under it too,
+and two roles' results were reported against an anchor that was no longer
+current. The PM caught it only because a post-dispatch check happened to
+re-run `crew_state.py` — nothing in this file required it to, because a pass
+decided every dispatch from the one `crew_state.py` read taken at the top.
+
+HEAD and the branch are not the only things that can move on the same
+checkout without either one changing: `pm.authority` can flip from `act` to
+`report-only` between two dispatches in the same pass — the file already
+calls getting authority wrong "the one mistake here that is not recoverable
+by the user" — a handoff note can appear, another lane can declare an
+incident or an open one can expire by wall clock, another lane can leave
+uncommitted edits, and `.crew/metrics.md`, `.crew/verify.json` or a codemap
+anchor can be rewritten, all without touching HEAD. A check that only compares
+HEAD and branch misses every one of those.
+
+So this is not a two-tier check with git alone as the cheap path and
+`crew_state.py` held in reserve for when something moves. Measured on the
+crew repository at `e741ea4`, not assumed: a bare `crew_state.py` invocation
+took 0.097s and printed 1510 bytes — expect the same order of magnitude
+elsewhere, not this exact number, since a repo this runs against can carry a
+larger `.crew/metrics.md` or more codemap files than this one did. That is
+cheap enough to run on every dispatch, not just the git lines. Immediately
+before each dispatch — or before each batch of parallel dispatches you send
+in one message — run:
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_state.py
+git rev-parse HEAD && git branch --show-current
+git status --porcelain
+```
+
+`crew_state.py` carries no `head` or `branch` field of its own, which is why
+the two git lines run beside it every time, including the very first read at
+the top of the pass — see `## Reading state`. `git status --porcelain` is
+what actually sees uncommitted edits — neither `crew_state.py` nor a bare
+`rev-parse`/`branch` call does — and its output is part of the baseline, not
+a side note: record the set of paths it lists, and on every later re-check
+compare that fresh set against the recorded one. The same set means no
+change. New paths are a foreign edit — or the role's own, if the role's
+result names them — and you name whichever it is. Paths that dropped out of
+the set mean someone committed or reverted them since the last read, and you
+name that too. A tree that was already dirty at the start of the pass — the
+user's own WIP, say — is captured once, in the very first baseline, and never
+flagged again on its own: only the *change* in the set triggers anything, not
+the fact that the set was non-empty to begin with.
+
+Compare the whole fresh read against **the baseline — `triggers`,
+`pm.authority`, the incident fields, HEAD, the branch and the set of paths
+`git status --porcelain` lists. It starts as this start-of-pass read; every
+comparison after that is against your most recent re-check, never the
+original start-of-pass read once a re-check exists — each re-check replaces
+the baseline it compares against.** **An authority change, or a newly active
+incident, stops the dispatch outright** — work back through `## Authority`
+and the `incidentActive` row above rather than sending the role you were
+about to send. Any other difference — `triggers` moved, HEAD or the branch
+changed, the incident's `minutesLeft` crossed zero, the porcelain set changed
+— means re-deciding **before** you dispatch, never dispatching on the stale
+read and reconciling afterwards.
 
 Triggers are not the only source of work. When the user hands you a job
 directly — a ticket to move, a feature to land, a review to run — route it by
@@ -694,6 +774,67 @@ Say what you deferred, in the report, every time — count and destination. A
 guardrail whose effects are invisible reads as the PM having found nothing.
 
 ## Reporting
+
+**Before you report a role's result, check whether the checkout moved while
+it ran — precisely, not by feel.** Run the full same-checkout return check on
+**the PM's own checkout, in both variants below, before the role-specific
+part**: dispatching to a worktree does not exempt this checkout from moving
+while that dispatch was in flight, and a foreign commit that lands here and
+moves this checkout's HEAD *forward* during a worktree dispatch is invisible
+to an ancestor check alone — it still answers true — so skipping the log and
+branch steps for a worktree role, as an earlier version of this check did,
+means that forward-moving foreign commit is never reported at all.
+
+The same-checkout return check, in full, every time:
+
+1. `git rev-parse HEAD`
+2. `git merge-base --is-ancestor <the HEAD you recorded before this dispatch>
+   HEAD`
+3. `git log --oneline <that same recorded HEAD>..HEAD`
+4. `git branch --show-current`
+
+Step 2 can answer three ways, and each is its own thing to report, never
+collapsed into either of the others:
+
+- **True** — the recorded HEAD is still an ancestor of the current one, so
+  HEAD only moved forward (or not at all). Proceed to steps 3-4.
+- **False** — the recorded HEAD is **not** an ancestor of the current one: a
+  `reset --hard`, a checkout of an older commit on the same branch, or a
+  rebase moved HEAD backward or sideways. Name that in the report on its own,
+  even when the branch name still matches — the forward-only `git log` in
+  step 3 prints nothing for a HEAD that moved backward, which reads as "no
+  change" when the change is exactly a HEAD that moved.
+- **Exit 128** (or any exit other than the two `--is-ancestor` defines) — the
+  recorded sha is bad or missing, or this is not the repository it names.
+  This is **cannot tell**, its own value: report it as such, and never read
+  a non-zero exit as "false" or a lack of error as "true." A comparison that
+  could not run said nothing about whether the checkout moved.
+
+Once step 2 answers true, step 3's commits are what you attribute — and how
+you attribute them is the one place the role's own location matters:
+
+- **A role that worked in this checkout, no worktree involved.** Step 3's log
+  is that role's own diff. One the role's own result names — a developer role
+  committing on the ticket's own branch, per its brief, is expected to add
+  exactly this — is accounted for, not drift. A commit the role did **not**
+  report is a foreign change: another lane committed here while this
+  dispatch was running. Name the commit(s), and who they are attributed to
+  where you can tell — not the bare fact that HEAD moved.
+- **A role that worked in its own worktree.** Step 3's log here describes
+  commits **unrelated to that role** — its own work lives in the worktree,
+  not this checkout, so anything the log lists is foreign on its face and you
+  name it as such. Separately, read the worktree path and base the role
+  itself reported, and compare that base against the HEAD you recorded
+  before dispatching it. A brief only has to state a HEAD or a worktree base
+  when **you** put it there — never assume a role stated one unprompted, and
+  if your own brief named none, there is nothing to compare and you say that
+  plainly rather than inventing a base to check against.
+
+If any of the checks above finds foreign movement — a non-ancestor HEAD, an
+unreported commit, a worktree base that has since moved, or a step that could
+not tell — say so in the report rather than folding the mismatch in silently
+or holding the report back to re-derive the role's work yourself to
+compensate — the mismatch is what you report.
 
 After acting, say in plain lines: what changed, what you dispatched, what came
 back, what you deferred and where it went, and what is still outstanding. No
