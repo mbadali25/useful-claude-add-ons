@@ -107,6 +107,26 @@ this hook produces becomes something the user can no longer trust. If a
 number looks wrong, that is a bug in `crew_state.py` to fix, not a cue to
 compute it a different way here.
 
+**This one read is a baseline for the pass, not a standing snapshot good for
+every dispatch in it.** `agents/pm.md`'s "Re-check before every dispatch"
+section is the full procedure: re-run `crew_state.py` — measured on the crew
+repository at `e741ea4` at 0.097s and 1510 bytes, cheap enough to run every
+time; expect the same order of magnitude elsewhere, not this exact number —
+plus `git rev-parse HEAD`, `git branch --show-current` (which `crew_state.py`
+does not report) and `git status --porcelain` (which actually sees
+uncommitted edits) before each dispatch, and compare the fresh read against
+**the baseline — `triggers`, `pm.authority`, the incident fields, HEAD, the
+branch and the set of paths `git status --porcelain` lists. It starts as
+this start-of-pass read; every comparison after that is against your most
+recent re-check, never the original start-of-pass read once a re-check
+exists — each re-check replaces the baseline it compares against.**
+Re-decide before dispatching if any differ; an authority change or a newly
+active incident stops the dispatch outright. The matching return-side check
+— which also guards against HEAD moving backward, or forward from a foreign
+commit in the PM's own checkout during a worktree dispatch — lives in its
+`## Reporting` section. Do not restate a
+shorter version here; read it there.
+
 The shape that matters:
 
 | Field | Means |
