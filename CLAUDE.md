@@ -277,9 +277,14 @@ did not write it.
   requires the variable, and a report of "render.sh is broken" that does not name the environment
   it ran in is not yet a bug report. `render.sh` now converts that path with `cygpath` itself and
   carries a regression check for it in
-  `plugin/crew/skills/crew-diagrams/scripts/_test/render.sh` (79 lines; the
-  `MSYS_NO_PATHCONV=1` case is `:74`, asserting the render produces a non-empty
-  SVG with that variable set). Until 2026-09-12 this line named a repo-root
+  `plugin/crew/skills/crew-diagrams/scripts/_test/render.sh`, which has grown
+  since to cover exit-code and flag-parsing regressions too; its case 2
+  (`MSYS_NO_PATHCONV=1`) is at `:104` as of 2026-09-22, asserting the render
+  produces a non-empty SVG with that variable set. (Cited by case, not by the
+  file's total line count, which changes on every edit to the file and would
+  make this citation state a number that drifts out from under it — see this
+  file's own "A self-referential count changes itself" lesson, below.) Until
+  2026-09-12 this line named a repo-root
   path under `scripts/` that does not exist and never has - written out here it
   would be indistinguishable, to any checker walking these citations, from a
   citation that broke. The claim was true and the path was wrong, which is the
