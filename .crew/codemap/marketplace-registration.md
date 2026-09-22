@@ -1,24 +1,117 @@
-anchor: useful-claude-add-ons@f9bb78a6
-verified: 2026-09-14
-Narrow pass, not a full re-verification: this pass corrects the previous
-anchor's own report, which had described `README.md:166`, `README.md:885`
-and `INSTALLATION.md:251` as still stating 17 skills. `f9bb78a6` (#169,
-"Finish the crew skill-count sweep: fix the last three 17s, add
-plugin-skills marker") fixed all three the same day, plus added a
-`plugin-skills:<name>` marker type to `check_self_claims` and marked the
-count at all five live sites. Only the skill-count table below and the
-`check_self_claims`/`main()` citations it touches were re-read against
-`f9bb78a6`. Everything else in this note carries forward from `975480b7`
-unread.
+anchor: useful-claude-add-ons@84976536
+verified: 2026-09-22
+Full per-path re-verification, the first this note has had since `a573ca24`:
+the path diff was run, every one of its thirteen changed files was re-read for
+the citations this note makes into it, and every line number was re-taken from
+the file rather than offset. Four of this note's headline findings changed
+value. See the provenance section immediately below for the command, its
+output, how churn files were treated, and what was NOT re-read.
 
 # Marketplace and registration
 
 **DERIVED.** The root `.claude-plugin/marketplace.json` is the **only** marketplace
 file in this repo. Stated as policy at `CLAUDE.md:5` and `CLAUDE.md:38`, and
-enforced at `scripts/check-marketplace.py:95-120` (moved from `:94-119`), where
-`check_registration` walks every on-disk entry directory and fails if
-`<dir>/.claude-plugin/marketplace.json` exists — *"makes this directory look like
-a second marketplace - the repo root's is the only one"* (`:118-120`).
+enforced at `scripts/check-marketplace.py:104-129` (moved from `:95-120`; range
+re-taken with `ast`, not offset), where `check_registration` walks every on-disk
+entry directory and fails if `<dir>/.claude-plugin/marketplace.json` exists —
+*"makes this directory look like a second marketplace - the repo root's is the
+only one"* (`:125-129`, re-read verbatim at this anchor).
+
+## Re-anchor provenance - f9bb78a6 -> 84976536, 2026-09-22
+
+Per-path check, run rather than skipped. The command, verbatim:
+
+```
+git diff --name-only f9bb78a6..HEAD -- <the 17 tracked paths this note cites>
+```
+
+**Thirteen changed**: `.claude-plugin/marketplace.json`, `.crew/verify.json`,
+`.github/workflows/marketplace.yml`, `INSTALLATION.md`, `README.md`, `TODO.md`,
+`_verify/smoke.sh`, `plugin/PLUGINS.md`, `plugin/README.md`,
+`scripts/check-marketplace.py`, `scripts/install-prerequisites.ps1`,
+`scripts/install-prerequisites.sh`, `skills/README.md`.
+
+**Four did not**: `CLAUDE.md`, `scripts/_test/crew-ignore-policy.py`,
+`scripts/_test/self-claims.py`, `skills/power-automate-api/.gitignore`.
+Citations into those are closed by that result and were not re-read.
+
+**On version-bump churn, because for this note it is not churn.** The usual
+rule — discount `plugin/PLUGINS.md`, `*/README.md`, `plugin.json` and
+`marketplace.json` as version-bump noise — was **not** applied here, and
+applying it would have hidden three of this pass's four findings. Those files
+are this note's actual subject: a catalog row moving is the event the note
+exists to track, and "the version field changed" and "the description beside it
+now states a wrong count" are the same diff hunk. Every one of them was
+therefore read in full rather than skipped. The one thing genuinely treated as
+noise is the `version` **value** itself, which is restated below as a measured
+list rather than reasoned about.
+
+**Four findings, in descending order of how much they cost to rediscover:**
+
+1. **The count section has inverted a fifth time, and the site that is wrong is
+   the one site with no marker.** `.claude-plugin/marketplace.json:229` (moved
+   from `:223`) — crew's `description` — reads "27 slash commands, 19 bundled
+   skills". On disk: **28 commands, 20 skills**. Both are off by one, in the
+   same direction, and `python3 scripts/check-marketplace.py` passes. The five
+   sites `f9bb78a6` marked with `<!-- claim: plugin-skills:crew -->` are all
+   correct at 20, because the marker forces them to be. This one carries no
+   marker — `check_self_claims` reads markers, and a number in a `description`
+   string that nobody marked is invisible to it. **This is the note's standing
+   JUDGEMENT arriving on schedule**: the previous pass wrote that a finding
+   recording which places are RIGHT acquires an expiry date the moment it is
+   written. It expired in eight days.
+2. **A second, different count is wrong in three of four catalog docs.**
+   Measured from `plugin/crew/hooks/hooks.json` by `json.load`: **20 hook
+   entries, 10 scripts x `.sh`/`.ps1`, across 5 events.**
+   `plugin/PLUGINS.md:17` states exactly that and is right. `README.md:168`
+   ("18 hook entries (9 scripts x `.sh`/`.ps1`)"), `plugin/README.md:414` and
+   `INSTALLATION.md:252` all say 18. Same mechanism as finding 1: the
+   `plugin-skills:crew` marker sitting on those very lines covers the *skills*
+   number only, so three wrong figures sit inside marked lines and the gate is
+   green. A marker on a line is not a marker on the line's other numbers.
+3. **`_verify/smoke.sh` now misses six of `main()`'s checks, not three.**
+   `main()` (`scripts/check-marketplace.py:1196-1229`) calls **fourteen** check
+   functions at `:1205-1218` — up from eleven. The four added in this range are
+   `check_argument_hint_frontmatter`, `check_license_consistency`,
+   `check_hook_commands` and `check_command_backtick_spans`. `run_marketplace_check`
+   (`_verify/smoke.sh:72-98`) still exposes the same six groups calling the
+   same **eight** functions. Missing: `check_versions`, `check_self_claims`,
+   `check_crew_ignore_policy`, `check_argument_hint_frontmatter`,
+   `check_license_consistency`, `check_command_backtick_spans`. Its in-function
+   comment (`_verify/smoke.sh:82`) still claims "Same calls main() makes, in the
+   same order, minus check_versions" — false by six, where it was false by one
+   when written and false by three at the previous anchor. The drift is
+   monotonic and nothing in the repo compares the two lists.
+4. **`README.md:157`'s community row undercounts both its plugins and its
+   marketplaces.** It lists seven community plugins and says "4 marketplaces".
+   `COMMUNITY_KEYS` (`scripts/install-prerequisites.sh:1379-1382`) holds
+   **eight**: the seven listed plus `eli5`, whose spec
+   (`scripts/install-prerequisites.sh:1401`) resolves through a **fifth**
+   marketplace, `claude-community`. `$script:CommunityCatalog`
+   (`scripts/install-prerequisites.ps1:1120`) agrees with the `.sh`, so the
+   matched pair holds and `check_group_parity` passes — which is precisely this
+   note's "matched to each other, matched to no source of truth" finding, now
+   with a live instance. **The local marketplace name is `claude-community`,
+   not `claude-plugins-community`**, called out in a comment the scripts carry
+   themselves (`scripts/install-prerequisites.sh:1371-1372`); passing the wrong
+   one defeats the idempotency check silently.
+
+**Not fixed, only recorded.** All four findings are defects in
+`marketplace.json`, `README.md`, `INSTALLATION.md`, `plugin/README.md` or
+`_verify/smoke.sh` — files this note reads and does not write. Fixing 1 or 2
+also needs a crew version bump, which is a decision for whoever makes the fix,
+not a side effect of re-anchoring a codemap note.
+
+**Not re-read at this anchor**, and not claimed as fresh: the bodies of
+`check_skill_manifests` (`scripts/check-marketplace.py:132-157`) and
+`check_plugin_manifests` (`:160-173`) — listed from `main()` and range-checked
+with `ast`, but not traced line by line; the four checks new in this range
+beyond confirming their names and call order; `TODO.md`'s CLOSED agent-count
+entry beyond confirming the file changed; the worked example's historical `git
+diff --stat` ranges, which carry their own older anchor and were not re-run;
+and the external community marketplaces themselves. `verification-harness.md`
+owns `_verify/smoke.sh` and `check-marketplace.py` and should be read alongside
+finding 3.
 
 ## Re-anchor provenance - 975480b7 -> f9bb78a6, 2026-09-14
 
@@ -106,26 +199,29 @@ places. Confirmed by reading each file.
 | Marketplace entry | `.claude-plugin/marketplace.json` (one flat `plugins` array — the file does not distinguish skills from plugins by field, only by `source` prefix) | same file |
 | Catalog doc | `skills/README.md` — table header at `skills/README.md:87`, first entry row at `skills/README.md:89` | `plugin/PLUGINS.md` (a `## \`name\`` section) **and** `plugin/README.md` (a table row) |
 | Root README | linked via `README.md` under `skills/{name}` | linked via `README.md` under `plugin/{name}` |
-| `.sh` install script | `SKILL_KEYS`/`SKILL_NAME`/`SKILL_SPEC` arrays, `scripts/install-prerequisites.sh:807` (`SKILL_KEYS=(`) through `scripts/install-prerequisites.sh:887` (`unset _i` after `SKILL_STATE` at `:885`) | `PLUGIN_KEYS`/`PLUGIN_NAME`/`PLUGIN_SPEC`, `scripts/install-prerequisites.sh:894` (`PLUGIN_KEYS=(`) through `scripts/install-prerequisites.sh:917` |
-| `.ps1` install script | `$script:SkillCatalog`, `scripts/install-prerequisites.ps1:808` | `$script:PluginCatalog`, `scripts/install-prerequisites.ps1:855` |
+| `.sh` install script | `SKILL_KEYS`/`SKILL_NAME`/`SKILL_SPEC` arrays, `scripts/install-prerequisites.sh:1225` (`SKILL_KEYS=(`) through `scripts/install-prerequisites.sh:1307` (`unset _i` after `SKILL_STATE` at `:1305`) | `PLUGIN_KEYS`/`PLUGIN_NAME`/`PLUGIN_SPEC`, `scripts/install-prerequisites.sh:1314` (`PLUGIN_KEYS=(`) through `scripts/install-prerequisites.sh:1337` |
+| `.ps1` install script | `$script:SkillCatalog`, `scripts/install-prerequisites.ps1:1040` | `$script:PluginCatalog`, `scripts/install-prerequisites.ps1:1088` |
 | Own manifest version | none (skills have no `plugin.json`) | `plugin/<name>/.claude-plugin/plugin.json`, bumped in lockstep with the marketplace entry |
 
-**Every `.sh` line in this row moved at this anchor**, because `github` was
-inserted as a new skill mid-array in `SKILL_KEYS`/`SKILL_NAME` - a +2-line shift
-that carries through the rest of the file below it (see `install-scripts.md`,
-which validated the offset at five separate constructs before applying it). The
-skill block's *start* (`:807`) did not move; everything from `SKILL_NAME` on did.
-`TEAM_KEYS` and `COMMUNITY_KEYS` moved with it — see "Two catalogs the
-marketplace does not govern".
+**Every install-script line in this row moved again at this anchor, and by far
+more than last time — over 400 lines, not two.** Both scripts grew substantially
+in this range (a skill-preflight step, an `mcp_launcher_resolves` check, a
+community-marketplace row and two new catalog entries), so the previous anchor's
+"+2 uniform offset" technique does **not** apply here and was not used: every
+line above was re-taken by grepping for the array opening itself. A reader
+carrying forward any `install-prerequisites` line number from an earlier version
+of this note will be wrong by roughly 418 lines in the `.sh` and 232 in the
+`.ps1`. `TEAM_KEYS` and `COMMUNITY_KEYS` moved with everything else — see "Two
+catalogs the marketplace does not govern", re-measured there.
 
 ### Counts: measure, do not read them here
 
 **DERIVED, and stated as a method rather than a number that rots.** The split is
 by `source` prefix and nothing else, so the invariant is: *every entry's `source`
 starts with `./skills/` or `./plugin/`, and the two sets partition the array.*
-`scripts/check-marketplace.py:1012-1013` (moved from `:959-960`, then from
-`:396-397` — `f9bb78a6` #169 inserted 53 lines inside/after `check_versions`
-and `check_self_claims`, above this point) derives `plugins` as
+`scripts/check-marketplace.py:1220-1221` (moved from `:1012-1013`, and from
+`:959-960` and `:396-397` before that — four new checks landed above this point
+in this range) derives `plugins` as
 `len(entries) - skills` — so an entry
 whose `source` matched neither prefix would be silently
 counted as a plugin, and no check catches that. DERIVED at this anchor by
@@ -141,14 +237,23 @@ print(len(p),sum(s.startswith('./skills/') for s in (e['source'] for e in p)))"
 
 or just run the gate, which prints `marketplace: N skills, M plugins`.
 
-At this anchor that is **40 entries — 35 skills, 5 plugins**. One skill,
-`github`, was added since the previous anchor (`0.19.46`'s range; the skill
-itself ships branch-protection export/restore, unrelated to the ignore-policy
-work in the same release). The plugin set did not change at this anchor - it is
-still `crew`, `gizmoduck`, `localgpu`, `obsidian-vault` and `rule-of-two`, five
-total, with `rule-of-two` still the most recent addition (registered at
-`9fde7d82`, #128). Plugin versions at this anchor: `crew` 0.19.50, `gizmoduck`
-0.5.2, `localgpu` 0.1.18, `obsidian-vault` 0.3.8, `rule-of-two` 0.1.2.
+At this anchor that is **41 entries — 36 skills, 5 plugins**, confirmed both
+ways: by the snippet above and by running the gate, which prints
+`marketplace: 36 skills, 5 plugins`. The "neither prefix" set is still empty, so
+the partition holds and the latent hole stays latent. One skill, `web-research`,
+was added since the previous anchor — measured as a set difference over the
+`plugins` array between `f9bb78a6` and HEAD (one added, none removed), not read
+off a changelog. The plugin set did not change: still `crew`, `gizmoduck`,
+`localgpu`, `obsidian-vault` and `rule-of-two`, five total, with `rule-of-two`
+still the most recent addition (registered at `9fde7d82`, #128).
+
+**Every plugin version moved in this range** — this is the churn the per-path
+rule would normally discount, restated as a measured list because the note's
+readers use it to date other claims: `crew` 0.20.10 (was 0.19.50), `gizmoduck`
+0.5.3 (was 0.5.2), `localgpu` 0.1.20 (was 0.1.18), `obsidian-vault` 0.3.14 (was
+0.3.8), `rule-of-two` 0.1.3 (was 0.1.2). Read from `marketplace.json` via
+`json.load`. Five bumps across eight days is the rate this repo actually runs
+at; treat any version number quoted elsewhere in this note as history.
 
 ### A worked example: adding an agent is not a registration
 
@@ -194,7 +299,7 @@ naive read of "did I add a doc row" while failing the actual check.
 
 **DERIVED; re-read at this anchor because `check-marketplace.py` changed, though
 this function's body did not.** `check_docs`
-(`scripts/check-marketplace.py:264-278`) reads exactly three files —
+(`scripts/check-marketplace.py:413-427`, moved from `:264-278`) reads exactly three files —
 `skills/README.md`, `plugin/README.md`, and root `README.md` — testing each entry
 for the literal substring `` [`name`](link) ``. It **never opens
 `plugin/PLUGINS.md`**: the string `PLUGINS.md` appears nowhere in
@@ -204,21 +309,34 @@ fails no automated check.
 
 ### Descriptive text is unchecked — and the drift it allowed has been repaired
 
-**DERIVED.** `check_catalogs` (`scripts/check-marketplace.py:167-192`) compares
+**DERIVED.** `check_catalogs` (`scripts/check-marketplace.py:301-326`, moved
+from `:167-192`) compares
 *keys* — `SKILL_KEYS`, `PLUGIN_KEYS`, `SkillCatalog`, `PluginCatalog` — against
 the marketplace name lists, for equality including order. It never looks at
 `SKILL_NAME` / `PLUGIN_NAME` or the `Name` property, which hold the human-readable
 menu text. `check_docs` likewise tests only for the presence of a link substring,
 not the surrounding cell. **Nothing in the gate reads descriptive prose anywhere.**
 
-On disk at this anchor: `plugin/crew/agents/` holds **54** `.md` files,
-`plugin/crew/commands/` holds **26** (was 24), `plugin/crew/skills/` holds **18**
-directories, every one of them shipping a `SKILL.md` (was 17 - `crew-cloud` was
-added since the previous anchor).
+On disk at this anchor, re-counted this pass: `plugin/crew/agents/` holds
+**54** `.md` files (unchanged), `plugin/crew/commands/` holds **28** (was 26),
+`plugin/crew/skills/` holds **20** directories (was 18). The marked sites all
+track those figures; `.claude-plugin/marketplace.json:229` does not — see
+finding 1 in this pass's provenance.
 
-**This section inverted four times across five anchors and is now FIXED, as
-of `f9bb78a6` (#169, "Finish the crew skill-count sweep: fix the last three
-17s, add plugin-skills marker") — read this row before the history below it.**
+**It inverted a FIFTH time, eight days after being declared FIXED. Read this
+paragraph before the table and before the history below it.** The "now FIXED"
+verdict recorded at `f9bb78a6` was true of the five *marked* sites and remains
+true of them — all five track 20 skills today because `check_self_claims`
+forces them to. It was never true of the sixth site, which carries no marker:
+`.claude-plugin/marketplace.json:229` (moved from `:223`) now reads "27 slash
+commands, 19 bundled skills" against 28 and 20 on disk. So the correct reading
+of this section's history is not "wrong four times, then fixed" but **"the
+marked sites became self-correcting and the unmarked one carried on drifting"**
+— which is a much more useful shape, because it says exactly what to do about
+the next one: mark it, or expect it to rot. The `f9bb78a6` table below is
+retained unedited as the record of what was believed then.
+
+**The four-inversion history, as recorded at `f9bb78a6`:**
 The third inversion (recorded below as "at 0a9d8937") was partly repaired by
 `f12003e2` (#166): it fixed the skill count in `marketplace.json` and
 `plugin/PLUGINS.md` but left `README.md:166`, `README.md:885` and
@@ -241,7 +359,7 @@ count remains correct everywhere checked (24 -> 26, following `5d2e2950`
 
 | Location | Two anchors ago said | At 0a9d8937 | At 975480b7 | At f9bb78a6 |
 |---|---|---|---|---|
-| `.claude-plugin/marketplace.json:223` | `29 context-isolated agents` | `54 ... 26 slash commands, 17 bundled skills` — skills still wrong (18 on disk) | `54 ... 26 slash commands, 18 bundled skills` — fixed by `f12003e2` | unchanged; not touched by `f9bb78a6` |
+| `.claude-plugin/marketplace.json:223` (now `:229`) | `29 context-isolated agents` | `54 ... 26 slash commands, 17 bundled skills` — skills still wrong (18 on disk) | `54 ... 26 slash commands, 18 bundled skills` — fixed by `f12003e2` | unchanged; not touched by `f9bb78a6`. **At `84976536`: `27 slash commands, 19 bundled skills`, both wrong against 28/20 on disk — the fifth inversion, and the only site here with no `claim:` marker** |
 | `plugin/PLUGINS.md:17` | `29 agents, 24 commands, 17 skills` | `54 agents, 26 commands, 17 skills, 20 hook entries` — same defect | `54 agents, 26 commands, 18 skills, 20 hook entries` — fixed by `f12003e2` | same figure, now `<!-- claim: plugin-skills:crew -->`-marked by `f9bb78a6` |
 | `plugin/PLUGINS.md:153` | `Agents — 14, tiered plus the manager` | `### Agents — one per agents/*.md` — no number, `:157` names `crew_state.SPECIALIST_ROLES` as the register | not re-read this pass; out of scope for this correction | not re-read this pass |
 | `README.md:166` (root, was `:165`) | `50 subagents, ...` | `54 subagents, 26 slash commands, 17 bundled skills` | `54 subagents, 26 slash commands, 17 bundled skills` — unchanged; `f12003e2` did not touch this file | **18 bundled skills, marker-checked — fixed by `f9bb78a6`** |
@@ -311,9 +429,10 @@ the *commands* figure (24 -> 26) drifted again, or the *skills* figure (17 ->
 those is tracked anywhere. TODO.md itself is outside this note's scope and was
 not re-read this pass to confirm whether it carries a skills-count entry now.
 
-`check_menu_parity` (`scripts/check-marketplace.py:195-231`) and
-`check_group_parity` (`:234-261`) compare the same way: menu **keys** in order,
-plus the default-ticked booleans (`MENU_DEFAULT`, `scripts/install-prerequisites.sh:728`,
+`check_menu_parity` (`scripts/check-marketplace.py:329-380`, moved from
+`:195-231`) and `check_group_parity` (`:383-410`, moved from `:234-261`) compare
+the same way: menu **keys** in order, plus the default-ticked booleans
+(`MENU_DEFAULT`, `scripts/install-prerequisites.sh:1145`, moved from `:728`,
 against each `Default = $true/$false`). No descriptive string is compared
 anywhere in either. So when the two install-script lines were *consistently*
 wrong, the matched-pair rule passed cleanly — the pair agreed, it was simply
@@ -329,38 +448,45 @@ construction, and re-measuring it from the filesystem is the only way to know.
 
 **DERIVED. `_verify/smoke.sh` is unchanged since the previous anchor, so its own
 citations are current by the per-path check. `scripts/check-marketplace.py`
-changed substantially (+584/-21 lines, three commits - see the re-anchor
-provenance above), and `main()`'s check count moved as a direct result: this
-section's headline finding at the previous anchor ("nine, not eight") is now
-itself out of date - it is eleven.**
+**SUPERSEDED at this anchor.** `_verify/smoke.sh` is no longer unchanged — it is
+in this range's changed set — and `main()`'s check count moved again. This
+section's headline has now been wrong at three consecutive anchors: "nine, not
+eight", then "it is eleven", and now **fourteen**. The bullets below are
+rewritten from a fresh read of both files.**
 
 - `scripts/check-marketplace.py`'s own `main()`
-  (`scripts/check-marketplace.py:991-1021`, moved from `:938-968`) calls
-  **eleven** check functions in order at `:1000-1010` (moved from `:947-957`)
-  — unchanged in count and order at `f9bb78a6` #169: that release only added a
-  new marker type (`plugin-skills:<name>`) inside `check_self_claims`'s
-  existing body, not a twelfth call. The same nine as at the anchor before
-  that, plus two added earlier: `check_self_claims` (added by `3374e8e0` #139)
-  and `check_crew_ignore_policy` (added by `0a9d8937` #161). `check_versions`
-  is still among them, at `:1008` (moved from `:955`). Running
-  `python3 scripts/check-marketplace.py` — the exact command `CLAUDE.md` names as
-  the gate — executes all eleven.
-- `_verify/smoke.sh` was **not** updated when either function was added. Its
-  `run_marketplace_check()` (`_verify/smoke.sh:54-80`) still re-imports
-  `check-marketplace.py` as a Python module and exposes the same **six named
-  groups** (`registration`, `skills`, `plugins`, `catalogs`, `menus`, `hooks`,
-  `_verify/smoke.sh:65-72`) it always did, calling the same **eight** functions.
-  Eight of eleven is a different fraction than eight of nine, and the header
-  comment's claim - *"Same calls main() makes, in the same order, minus
-  check_versions"* (`_verify/smoke.sh:64`) - is now false in a way it was not at
-  the previous anchor: `_verify/smoke.sh` misses **three** functions
-  `main()` runs, not one. `check_self_claims` and `check_crew_ignore_policy` are
-  both absent from every one of the six groups, so `bash _verify/smoke.sh`
-  passing says nothing about either - not "self-claims" numeric drift, and not
-  the `.crew/` ignore-policy invariant `check_crew_ignore_policy` exists to
-  guard. Two groups call two functions each: `catalogs` runs `check_catalogs`
-  *and* `check_docs` (`:69`), `menus` runs `check_menu_parity` *and*
-  `check_group_parity` (`:70`).
+  (`scripts/check-marketplace.py:1196-1229`, moved from `:991-1021`) calls
+  **fourteen** check functions in order at `:1205-1218` (moved from
+  `:1000-1010`). The eleven from the previous anchor plus four new in this
+  range: `check_argument_hint_frontmatter` (`:176`),
+  `check_license_consistency` (`:268`), `check_hook_commands` (`:1150`) and
+  `check_command_backtick_spans` (`:1094`). `check_versions` is still among
+  them, at `:1216`. Running `python3 scripts/check-marketplace.py` — the exact
+  command `CLAUDE.md` names as the gate — executes all fourteen, and it passed
+  at this anchor.
+- `_verify/smoke.sh` changed in this range but **not in this respect** — it was
+  still not updated when any of the six functions it now misses were added. Its
+  `run_marketplace_check()` (`_verify/smoke.sh:72-98`, moved from `:54-80`)
+  still re-imports `check-marketplace.py` as a Python module and exposes the
+  same **six named groups** (`registration`, `skills`, `plugins`, `catalogs`,
+  `menus`, `hooks`, `_verify/smoke.sh:83-90`) it always did, calling the same
+  **eight** functions. So the gap is **eight of fourteen**, and the in-function
+  comment - *"Same calls main() makes, in the same order, minus
+  check_versions"* (`_verify/smoke.sh:82`, moved from `:64`) - is now false by
+  six. Absent from every one of the six groups: `check_versions`,
+  `check_self_claims`, `check_crew_ignore_policy`,
+  `check_argument_hint_frontmatter`, `check_license_consistency`,
+  `check_command_backtick_spans`. `bash _verify/smoke.sh` passing says nothing
+  about any of them - not numeric self-claim drift, not the `.crew/`
+  ignore-policy invariant, and not the four new checks. Two groups call two
+  functions each: `catalogs` runs `check_catalogs` *and* `check_docs` (`:87`),
+  `menus` runs `check_menu_parity` *and* `check_group_parity` (`:88`).
+
+  **JUDGEMENT, and the reason this keeps happening:** adding a check to
+  `main()` requires no corresponding edit anywhere, so the fast subset silently
+  falls further behind on every addition. The divergence has gone 1 -> 3 -> 6
+  across three anchors without anyone introducing a bug; it is the default
+  behaviour of the arrangement, not an oversight by any one author.
 - **The header's cost figures (both stale as of the previous anchor) were not
   re-measured this pass** - `_verify/smoke.sh` did not change, so its
   `58 revisions` / `~160s` claim is carried forward as still-stale rather than
@@ -375,21 +501,21 @@ itself out of date - it is eleven.**
   Whether smoke.sh should still skip `check_versions` is a question for the
   verification-harness note, which owns that file; recorded here because this is
   where the claim was being repeated.
-- `_verify/smoke.sh`'s check 10 (`version_agreement_check`, body at
-  `_verify/smoke.sh:261-355`, registered at `:356-357`) is **a different check
-  entirely**, not a stand-in for the one it skips. It confirms that
+- `_verify/smoke.sh`'s last check (`version_agreement_check`, body at
+  `_verify/smoke.sh:279-373`, moved from `:261-355`; registered at `:374-375`)
+  is **a different check entirely**, not a stand-in for the one it skips. It confirms that
   `pyproject.toml`, `plugin.json`, `marketplace.json`, and every hardcoded
   `VERSION`/`__version__` literal in a plugin's Python source all name the *same*
   version number right now. `check_versions`
-  (`scripts/check-marketplace.py:369-402`, moved from `:298-328` now that
-  `main()` sits at `:938` instead of `:377`) instead asks whether a plugin's
+  (`scripts/check-marketplace.py:518-551`, moved from `:369-402`) instead asks
+  whether a plugin's
   `source/` directory changed *since* the commit where its current version was
   first declared — it walks `git log` over `marketplace.json` (via
-  `version_set_at`, now `:323-331`) and runs `git diff --quiet <bump> HEAD --
-  <source>` per entry. Also new since the previous anchor: `check_versions` now
-  walks the history two ways, first-parent and full (`:379`, `:385`), because
-  `357338cb` (#144) found the single-parent walk goes blind across a merge -
-  `bump_candidates` (`:334-368`, new) tries candidates from both. That is a
+  `version_set_at`, now `:472-480`, moved from `:323-331`) and runs `git diff
+  --quiet <bump> HEAD -- <source>` per entry. It walks the history two ways,
+  first-parent and full, because `357338cb` (#144) found the single-parent walk
+  goes blind across a merge - `bump_candidates` (`:483-515`, moved from
+  `:334-368`) tries candidates from both. That is a
   temporal / git-history question the point-in-time consistency check cannot
   answer and does not try to.
 
@@ -409,13 +535,15 @@ last set a version against the commit that last touched the plugin directory, an
 neither exists yet while the change is uncommitted. CI is the first place it can
 fail, and it has.
 
-**Noted while reading, not this note's subject:** `_verify/smoke.sh:3` says
-`# 9 checks`, and the file has ten lines beginning `check "` (`:82`, `:84`,
-`:86`, `:88`, `:90`, `:92`, `:124`, `:127`, `:239`, `:356`). Re-confirmed at this
-anchor. The verification-harness note owns that file; recorded here only so the
-next reader does not derive a count from the header comment — which, together
-with the stale `58 revisions` and `~160s` on line 12, makes three wrong numbers
-in that one header block.
+**Noted while reading, not this note's subject — and the header is still wrong,
+now in the opposite direction.** `_verify/smoke.sh:3` now says `# 11 checks`
+(it said `# 9 checks` at the previous anchor), while the file has **ten** lines
+beginning `check "` (`:100`, `:102`, `:104`, `:106`, `:108`, `:110`, `:142`,
+`:145`, `:257`, `:374`). So the header overcounts by one where it used to
+undercount by one; somebody corrected it past the right answer. The stale
+`58 revisions` and `~160s` on `:12` are unchanged, so that header block still
+carries three wrong numbers. The verification-harness note owns that file;
+recorded here only so the next reader does not derive a count from the header.
 
 ## The gate's own invocation is now inside git's reach
 
@@ -426,51 +554,68 @@ alongside `!.crew/codemap/` and `!.crew/endpoints.json`. It is tracked and
 **present in this checkout** - read in full at this anchor, not carried forward
 as UNVERIFIABLE.
 
-**DERIVED, from an actual read.** `.crew/verify.json` is 176 lines and carries
-**21** `rules` (counted via `json.load`, not `grep -c '"paths"'`) - not 15, and
-not the 13 an even earlier codemap pass recorded; both older figures describe a
-file-shape this one has moved past. Its own `_note` array
-(`.crew/verify.json:4-29`) states, at `:7-8`, that the file "is TRACKED as of
-2026-09-14" and travels with the repo - the file documents its own tracking
-status inline. Its own `anchor` field (`.crew/verify.json:3`) reads
-`"repo@5238be3d"`, which is **22 commits behind** this note's anchor as of
-the previous pass (`0a9d8937`) - `git merge-base --is-ancestor 5238be3d HEAD` confirms it is an
-ancestor, so the file is stale relative to the code it maps, not wrong about a
-divergent branch. Concretely: it predates both `check_self_claims` and
-`check_crew_ignore_policy` being added to `check-marketplace.py`'s `main()`, so
-none of its `why` fields mention either — but the gate invocation itself is
-`python3 scripts/check-marketplace.py` wholesale (`.crew/verify.json:35` and
-again at `:53`), so both new checks still run wherever those two rules fire,
-regardless of whether verify.json's author knew about them.
+**DERIVED, from an actual read, re-done at this anchor because the file changed.**
+`.crew/verify.json` is now **237 lines** (was 176) and still carries **21**
+`rules` (counted via `json.load`, not `grep -c '"paths"'`) — the rule *count* is
+unchanged while the file grew by a third, so the growth is in `why` prose and
+`run` lists, not in new rules. Its own `_note` array (`.crew/verify.json:4-29`)
+still states, at `:7`, that the file "is TRACKED as of 2026-09-14". Its own
+`anchor` field (`.crew/verify.json:3`) **still reads `"repo@5238be3d"`** — it
+did not move in this range, so the file is now further behind the code it maps
+than at any previous pass. `git merge-base --is-ancestor 5238be3d HEAD` confirms
+it is an ancestor, so it is stale, not divergent. The gate invocation is
+`python3 scripts/check-marketplace.py` wholesale and now appears **three** times
+(`.crew/verify.json:50`, `:67`, `:75`, up from two), so every check `main()`
+gained in this range runs wherever those rules fire regardless of whether
+verify.json's author knew about them — which is the property that has kept this
+file useful while its own anchor rots.
 
-**A real coverage gap, found by reading the file rather than assuming it:** the
-`scripts/**` rule (`.crew/verify.json:52-60`) matches
-`scripts/_test/crew-ignore-policy.py` by path, but its `run` list
-(`check-marketplace.py`, `self-claims.py`, `version-drift.py`,
-`sync-updates.py --check`, `menu-groups.sh`, `check-powershell.sh`,
-`bash -n install-prerequisites.sh`) does **not** include running
-`crew-ignore-policy.py` itself. A local edit to that 34-case sabotage suite
-matches a rule, and the rule runs seven other things, but not the suite that
-was just edited. `.github/workflows/marketplace.yml:41-42` does run it in CI, so
-the gap is local-only - but `.crew/verify.json`'s own `_note`
+**That coverage gap is STILL OPEN at this anchor — re-checked, not assumed.**
+The `scripts/**` rule (`.crew/verify.json:73`) matches
+`scripts/_test/crew-ignore-policy.py` by path, and its `run` list has *grown* in
+this range to nine commands (`check-marketplace.py`, `self-claims.py`,
+`version-drift.py`, `sync-updates.py --check`, `menu-groups.sh`,
+`check-powershell.sh`, `ps-install-keys.sh`, `uv-install.sh`,
+`bash -n install-prerequisites.sh`) — and still does **not** include
+`crew-ignore-policy.py` itself. Editing that sabotage suite matches a rule that
+then runs nine other things but not the suite just edited.
+`.github/workflows/marketplace.yml:51` (moved from `:41-42`) does run it in CI,
+so the gap stays local-only, with the same qualifier as before: `_note`
 (`.crew/verify.json:9-11`) says this map "only makes the LOCAL Stop gate
-selective" and that CI is "the gate everyone else gets", which is exactly the
-qualifier that makes this gap survive review: the local gate goes green on a
-change CI would still catch, and nothing here claims otherwise.
+selective" and CI is "the gate everyone else gets".
+
+**A different coverage hole in this file was closed in this range, and its own
+`why` field is the best writeup of it.** `.crew/verify.json:71` records, at
+length and dated 2026-09-22, that the **docs rule** (`rules[2]`, the one
+matching `README.md`, `CLAUDE.md`, `TODO.md`, `CHANGELOG.md`, `INSTALLATION.md`,
+`plugin/PLUGINS.md`, `plugin/README.md`, `docs/**` and others) had credited
+itself with the marked-claim check while never running the program that
+performs it: `check_self_claims` lives in `check-marketplace.py`, but the rule
+ran only `scripts/_test/self-claims.py`, which tests that checker against
+synthetic fixtures and never reads this repo's own docs. Demonstrated by
+sabotage rather than argued — a marked `999 skills` claim appended to
+`README.md` left both original commands at rc=0 while `check-marketplace.py`
+reported `README.md:918: claims 999 skills, but marketplace.json registers 36`
+and exited 1. `python3 scripts/check-marketplace.py` is now that rule's first
+command. **This is directly load-bearing for this note**: for the entire period
+the previous anchors were written, a marked-count drift in any of the thirteen
+docs paths could not turn the local gate red — which is part of why this note's
+count table kept inverting.
 
 **The "only rule carrying an `agents` key" claim from an earlier pass is wrong,
 and it is wrong about which rule.** An earlier version of `verification-harness.md`
 (this note's neighbour) said the hooks rule required a `security` review agent.
-Reading the current file: exactly one rule carries an `"agents"` key
-(`.crew/verify.json:130`), and it is the `**/*.ps1`/`**/*.psm1` rule, naming
-`powershell-security-hardening` — not `security`, and not the hooks rule. The
-hooks-related rules (`.crew/verify.json:62-70` for the gate scripts, `:72-77`
-for `guard.sh`) carry no `agents` key at all in the current file. Flagged here
+Re-checked at this anchor by walking the parsed rules rather than grepping:
+still exactly one rule carries an `"agents"` key
+(`.crew/verify.json:172`, moved from `:130`), and it is still the
+`**/*.ps1`/`**/*.psm1` rule, naming `powershell-security-hardening` — not
+`security`, and not the hooks rule. The hooks-related rules carry no `agents`
+key at all. Flagged here
 because this note found it while reading `.crew/verify.json` for its own
 purposes; `verification-harness.md` owns the correction.
 
 `default` is `["bash _verify/smoke.sh"]` and `unmapped` is `"fail"`
-(`.crew/verify.json:174-175`) - a change matching no rule's `paths` fails the
+(`.crew/verify.json:235-236`, moved from `:174-175`) - a change matching no rule's `paths` fails the
 gate rather than passing silently, which is the file's own stated purpose for
 `unmapped` (`_note`, `:12-20`, which also concedes the catch-all `plugin/**` /
 `skills/**` rule means `unmapped` rarely fires - "0 of 790 tracked files are
@@ -481,17 +626,29 @@ turn.
 
 ## Two catalogs the marketplace does not govern
 
-**DERIVED.** `check_group_parity` (`scripts/check-marketplace.py:234-261`)
-enumerates **four** sub-picker groups, not two: `own-skills`
+**DERIVED.** `check_group_parity` (`scripts/check-marketplace.py:383-410`, moved
+from `:234-261`) enumerates **four** sub-picker groups, not two: `own-skills`
 (`SKILL_KEYS`/`SkillCatalog`), `repo-plugins` (`PLUGIN_KEYS`/`PluginCatalog`),
-and also `team` (`TEAM_KEYS`/`TeamCatalog`, `scripts/install-prerequisites.sh:923`
-and `scripts/install-prerequisites.ps1:870`) and `community`
-(`COMMUNITY_KEYS`/`CommunityCatalog`, `scripts/install-prerequisites.sh:939` and
-`scripts/install-prerequisites.ps1:880`). All four install-script citations moved
-by one to two lines at this anchor too, from the `github` skill insertion (see
-`install-scripts.md`'s uniform-offset note); the `check_group_parity` range moved
-by one line, because `check-marketplace.py` gained a line somewhere above it even
-though this function's own body did not change.
+and also `team` (`TEAM_KEYS`/`TeamCatalog`,
+`scripts/install-prerequisites.sh:1353` and
+`scripts/install-prerequisites.ps1:1103`) and `community`
+(`COMMUNITY_KEYS`/`CommunityCatalog`, `scripts/install-prerequisites.sh:1379`
+and `scripts/install-prerequisites.ps1:1120`). **All four install-script
+citations were re-grepped rather than offset** — the previous anchor's
+one-to-two-line shift is not what happened here; both files grew by hundreds of
+lines (see "The registration web" above).
+
+**Both catalogs gained an entry in this range, and the marketplace still
+governs neither.** `TEAM_KEYS` is now four keys — `superpowers`,
+`frontend-design`, `excalidraw-generator` and the new `github`, which resolves
+via `claude-plugins-official` (`scripts/install-prerequisites.sh:1364`).
+`COMMUNITY_KEYS` is now eight, gaining `eli5` through a fifth marketplace whose
+**local name is `claude-community`, not `claude-plugins-community`** — the
+scripts say so themselves in a comment at
+`scripts/install-prerequisites.sh:1371-1372`, and using the wrong name defeats
+the idempotency check silently rather than erroring. `README.md:157` still
+describes seven community plugins across four marketplaces and is now wrong on
+both counts; nothing checks it, which is this section's whole point.
 
 The last two hold plugins from *other people's* marketplaces. They are checked
 for `.sh`/`.ps1` agreement, and for being non-empty — but `check_catalogs`
@@ -512,13 +669,19 @@ this pass, for the first time — it is no longer in the "not re-verified" list.
 
 ## Entry points
 
-- `.claude-plugin/marketplace.json` — **35 skills and 5 plugins**, 40 entries. `github` was added this release; `rule-of-two` (added `9fde7d82`, #128) is still the newest plugin; `crew` is 0.19.50.
-- `scripts/check-marketplace.py:167` — `check_catalogs`, which requires `SKILL_KEYS` (.sh) and `$script:SkillCatalog` (.ps1) to match marketplace.json in the same ORDER, not merely as sets.
-- `scripts/check-marketplace.py:234` — `check_group_parity`, which hardcodes exactly four sub-picker groups. Reusing `COMMUNITY` for VoltAgent rather than adding a fifth group is why this file needed no change.
-- `scripts/check-marketplace.py:323` — `version_set_at`, the git walk that makes the version rule history-based, and therefore un-runnable against an uncommitted change. Moved from `:280`; as of `357338cb` (#144) it is one of two history walks `check_versions` tries (`bump_candidates`, `:334`, is the other), added to fix the walk going blind across a merge.
-- `scripts/check-marketplace.py:780` (moved from `:727`) — `check_crew_ignore_policy`, added by `0a9d8937` #161: asserts the `.crew/` ignore un-ignore list is one set stated consistently across `.gitignore` and five other marker-carrying files. `.crew/codemap/` is explicitly out of scope for it (`:803-806`, moved from `:750-753`) — a generated map that fails this gate would be fixed by regenerating it, not editing it.
-- `scripts/check-marketplace.py:430` (moved from `:412`) — `check_self_claims`, unchanged in scope at `f9bb78a6` beyond gaining the `plugin-skills:<name>` marker type described below; `count_plugin_skills` (`:413-427`, new) is its counting helper.
-- `.crew/verify.json:35` and `:53` — both invocations of `python3 scripts/check-marketplace.py` from the now-tracked verification map; see "The gate's own invocation" above.
+All line numbers below were re-taken at `84976536` by parsing
+`scripts/check-marketplace.py` with `ast` rather than by offsetting — four new
+checks landed in this range and the insertions are not evenly spaced.
+
+- `.claude-plugin/marketplace.json` — **36 skills and 5 plugins**, 41 entries. `web-research` was added in this range; `rule-of-two` (added `9fde7d82`, #128) is still the newest plugin; `crew` is 0.20.10. **Its crew `description` at `:229` states counts that are wrong** — see the fifth inversion above.
+- `scripts/check-marketplace.py:301` (moved from `:167`) — `check_catalogs`, which requires `SKILL_KEYS` (.sh) and `$script:SkillCatalog` (.ps1) to match marketplace.json in the same ORDER, not merely as sets.
+- `scripts/check-marketplace.py:383` (moved from `:234`) — `check_group_parity`, which hardcodes exactly four sub-picker groups. Both the `team` and `community` catalogs gained an entry in this range (`github`, `eli5`) **without** needing a fifth group, so the function again needed no change — the same reason as the VoltAgent case.
+- `scripts/check-marketplace.py:472` (moved from `:323`) — `version_set_at`, the git walk that makes the version rule history-based, and therefore un-runnable against an uncommitted change. One of two history walks `check_versions` tries (`bump_candidates`, `:483`, is the other), added by `357338cb` (#144) to fix the walk going blind across a merge.
+- `scripts/check-marketplace.py:929` (moved from `:780`) — `check_crew_ignore_policy`, added by `0a9d8937` #161: asserts the `.crew/` ignore un-ignore list is one set stated consistently across `.gitignore` and five other marker-carrying files. It runs to `:1091`.
+- `scripts/check-marketplace.py:579` (moved from `:430`) — `check_self_claims`, body `:579-722`; `count_plugin_skills` (`:562-576`, moved from `:413-427`) is its counting helper.
+- **Four checks are new in this range** and had no entry here before: `check_argument_hint_frontmatter` (`:176`), `check_license_consistency` (`:268`), `check_command_backtick_spans` (`:1094`) and `check_hook_commands` (`:1150`). Listed from `main()`'s call order and range-checked; their bodies were **not** traced this pass.
+- `scripts/check-marketplace.py:1196` — `main()`, body `:1196-1229`, calling all fourteen checks at `:1205-1218`.
+- `.crew/verify.json:50`, `:67` and `:75` — now **three** invocations of `python3 scripts/check-marketplace.py` from the tracked verification map (was two, at `:35` and `:53`); see "The gate's own invocation" above for why the third was added.
 
 ## Owns data
 

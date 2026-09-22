@@ -1,13 +1,15 @@
-anchor: useful-claude-add-ons@1f97e51c
+anchor: useful-claude-add-ons@84976536
+verified: 2026-09-22
 
 # localgpu
 
 Local models on the user's own GPU via Ollama. Two halves that never call
 each other directly, both reaching the same Ollama server on loopback.
 
-Plugin version at this anchor: **0.1.18** — **DERIVED**,
+Plugin version at this anchor: **0.1.20** — **DERIVED**,
 `plugin/localgpu/.claude-plugin/plugin.json:3` and
-`plugin/localgpu/pyproject.toml:7`, which agree.
+`plugin/localgpu/pyproject.toml:7`, which agree. (Was `0.1.18`; both places
+moved together and both were re-read at the 2026-09-22 pass below.)
 
 ## Re-anchor provenance - 3167721f -> 1f97e51c, 2026-09-06
 
@@ -440,3 +442,59 @@ All re-resolved at this anchor; every `localgpu_cli.py` line below moved.
 - the real `claude` binary as a child process at
   `plugin/localgpu/cli/localgpu_cli.py:141`, with `ANTHROPIC_BASE_URL` pointed at
   the loopback proxy (was `:129`)
+
+## Re-anchor provenance - 1f97e51c -> 84976536, 2026-09-22
+
+**Narrow pass, and weaker evidence than the numbers below make it look.** Read
+the caveat before the result.
+
+The per-path check over this note's cited paths:
+
+```
+git diff --name-only 1f97e51c..HEAD -- \
+  plugin/crew/skills/crew-setup/templates/mcp.json plugin/localgpu/ skills/localgpu/SKILL.md
+```
+```
+plugin/localgpu/.claude-plugin/plugin.json
+plugin/localgpu/commands/index.md
+plugin/localgpu/pyproject.toml
+```
+
+Three files over a range of many commits. Every `path:line` citation in this
+note was then re-resolved mechanically against HEAD and against `1f97e51c` and
+compared byte-for-byte. **Two moved, and both are the same version string**:
+`plugin/localgpu/.claude-plugin/plugin.json:3` and
+`plugin/localgpu/pyproject.toml:7`, `0.1.18` -> `0.1.20`, corrected at the top
+of this note. The third changed file, `plugin/localgpu/commands/index.md`,
+changed only at its frontmatter `argument-hint`, which was quoted so the YAML
+parses (`[--full] [--root <path>]` -> `"[--full] [--root <path>]"`); this note
+cites that file only at `:28-30`, which is byte-identical.
+
+Every other citation - across `bootstrap.sh`, `bootstrap.ps1`,
+`cli/localgpu_cli.py`, `cli/anthropic_proxy.py`, `mcp/config.py`,
+`mcp/indexer.py`, `mcp/ollama.py`, `mcp/server.py`, `mcp/store.py`, the four
+`_test/` files, `commands/setup.md` and `skills/localgpu/SKILL.md` - resolves to
+byte-identical text at both commits.
+
+**Why that is a floor and not a measurement.** `1f97e51c` is one of the five
+anchors `INDEX.md` records as *not* touched in the 2026-09-12 re-anchor pass and
+*not* claimed fresh. So this pass proves exactly one thing: nothing this note
+cites has changed since `1f97e51c`. It proves nothing at all about whether the
+claims were true when they were written, and this note's own history is the
+reason that distinction matters - the `unignore` JUDGEMENT recorded above was
+already false at its anchor, was carried across a correctly-empty per-path
+check, and was caught only by re-reading a file that had not changed. The same
+blind spot is open here and has not been closed: **no file was re-read at this
+pass.** A "1 of 83 citations moved" ratio reads like a strong freshness result
+and is not one.
+
+What that means for a reader: treat the line numbers as reliable and the
+*claims* as last independently checked on 2026-09-06, sixteen days ago, by the
+pass recorded above. This note is the least-verified of the four re-anchored
+today and should be the first re-derived when someone has the budget for it.
+
+Not re-verified at this pass: nothing was read, executed, imported or run.
+No Ollama server was contacted, no index was built, neither bootstrap script was
+run, and no test suite was executed. The `Not re-verified at this anchor` note
+in the 2026-09-06 section above still stands - `cli/anthropic_proxy.py` has
+still never been read end to end.
