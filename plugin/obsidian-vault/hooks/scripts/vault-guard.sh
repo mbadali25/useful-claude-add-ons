@@ -129,6 +129,27 @@ if ! _vault_guard_resolve_python; then
   exit 0
 fi
 
+# Backstop, not the fix: vault_guard.py reads stdin as raw bytes and decodes
+# them as UTF-8 explicitly, which never consults this variable at all - so it
+# is correct with or without it. What this protects is everything else python
+# does under the process's DEFAULT encoding when nothing more specific names
+# one - stdout/stderr text writes included, e.g. a non-ASCII note title
+# echoed back in a violation message. On Windows, absent this, that default
+# is the console's ANSI code page, not UTF-8.
+#
+# Measured, and narrower than the first version of this comment claimed: an
+# explicit `PYTHONIOENCODING` in the calling environment overrides
+# PYTHONUTF8's encoding choice for every stream, stdin included, so this line
+# is not a rescue for "some other override already picked the wrong
+# encoding" - only for "nothing else picked one, so python fell back to the
+# process's default locale". _test/test_vault_guard_sh.sh's non-ASCII
+# round-trip section measured this directly (PYTHONUTF8=1 did NOT recover
+# stdin decoded under a forced `PYTHONIOENCODING=cp1252`) before this comment
+# was corrected to say so - a version of this comment that promised more was
+# read here first and disproved by the sabotage test built to confirm it.
+# Mirrored in vault-guard.ps1.
+export PYTHONUTF8=1
+
 # Not `exec`. vault_guard.py exits 0 or 2 and nothing else, so any other
 # status means it never reached a verdict - resolved by the probe above and
 # then deleted, made unexecutable, or killed part way - and PostToolUse treats

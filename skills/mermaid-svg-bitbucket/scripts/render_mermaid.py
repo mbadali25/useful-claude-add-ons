@@ -75,10 +75,26 @@ def digest(src: str, config_fingerprint: str) -> str:
 
 
 def svg_digest(path: Path) -> str:
-    """Hash the SVG's own bytes, so --check can tell whether the file on disk is
+    """Hash the SVG's content, so --check can tell whether the file on disk is
     still the file that was rendered. Taken AFTER postprocess(), which rewrites
-    the SVG - hashing before it would record a digest the file never has."""
-    return hashlib.sha256(path.read_bytes()).hexdigest()[:16]
+    the SVG - hashing before it would record a digest the file never has.
+
+    Line endings are normalized (CRLF/CR -> LF) before hashing, not just at
+    write time. postprocess()'s write is pinned to newline="\\n", which makes
+    what THIS script writes host-independent, but it does not reach a file
+    that gets its line endings rewritten afterward - by git itself, on
+    checkout, if a Windows clone has core.autocrlf=true and no .gitattributes
+    entry marks *.svg as binary/-text (none exists in this repo as of the fix
+    that added this comment). A --check run there reads back CRLF bytes for
+    an SVG whose recorded svgHash was computed from the LF bytes this script
+    wrote and committed, and reports DAMAGED for a diagram that has not
+    changed. Normalizing here closes that: the digest is computed from the
+    same logical content regardless of which line-ending convention the bytes
+    on disk happen to carry when read. It does not make the committed SVG's
+    raw bytes reproducible across platforms - see TODO.md - only the digest
+    comparison, which is what --check actually judges."""
+    raw = path.read_bytes().replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+    return hashlib.sha256(raw).hexdigest()[:16]
 
 
 def svg_structure_ok(path: Path) -> tuple[bool, str]:
@@ -150,7 +166,11 @@ class Manifest:
     def save(self) -> None:
         ordered = dict(sorted(self.data["diagrams"].items()))
         self.data["diagrams"] = ordered
-        self.path.write_text(json.dumps(self.data, indent=2) + "\n", encoding="utf-8")
+        # newline="\n": without it, write_text translates '\n' to os.linesep at
+        # write time - CRLF on Windows - so a manifest rendered there differs
+        # byte-for-byte from one rendered on Linux for identical JSON content.
+        self.path.write_text(json.dumps(self.data, indent=2) + "\n", encoding="utf-8",
+                              newline="\n")
 
 
 # --------------------------------------------------------------------------- #
@@ -285,7 +305,20 @@ def postprocess(svg_path: Path) -> None:
         svg = svg.replace("<svg ", f'<svg width="{w:.0f}" height="{h:.0f}" ', 1)
 
     svg = re.sub(r'(<svg[^>]*?)\sstyle="max-width:[^"]*"', r"\1", svg, count=1)
-    svg_path.write_text(svg, encoding="utf-8")
+    # newline="\n": write_text's default (newline=None) translates '\n' in
+    # `svg` to os.linesep at write time - CRLF on Windows. This pin only
+    # guarantees that a render done by THIS script writes the same bytes
+    # regardless of which host runs it - i.e. render() on Linux and render()
+    # on Windows produce byte-identical SVGs for the same source. It does NOT,
+    # by itself, guarantee that --check later reads those same bytes back: a
+    # file this pin wrote as LF and committed can still be checked out as CRLF
+    # elsewhere (git core.autocrlf, no .gitattributes entry for *.svg here),
+    # and reading that back through a naive byte-hash would report DAMAGED for
+    # an unchanged diagram. svg_digest() normalizes line endings before
+    # hashing for exactly that reason - see its docstring - so the two fixes
+    # together, not this pin alone, are what make --check content-stable
+    # across hosts.
+    svg_path.write_text(svg, encoding="utf-8", newline="\n")
 
 
 # --------------------------------------------------------------------------- #
@@ -299,14 +332,59 @@ def heading_before(text: str, pos: int) -> str | None:
     return last
 
 
+def _normalize_with_offsets(raw_text: str) -> tuple[str, list[int]]:
+    """Collapse every line ending in `raw_text` to '\\n' - the same
+    transformation `read_text()` performs on read - while recording, for
+    every character of the result, the index in `raw_text` it came from.
+
+    `offsets[i]` is where `normalized[i]` originated; `offsets[len(normalized)]`
+    is a sentinel equal to `len(raw_text)`, so `raw_text[offsets[a]:offsets[b]]`
+    always slices out exactly the original bytes - CRLF, LF, CR or a missing
+    trailing newline - that a span `[a, b)` of the normalized text stands for.
+
+    process_markdown() needs both forms: `normalized` for FENCE_RE/HEADING_RE
+    matching, unchanged from before; `offsets` so it can slice pass-through
+    Markdown out of `raw_text` instead of `normalized` and so preserve every
+    untouched line's own original terminator - rather than collapsing the
+    whole file to one convention, which is the bug this replaced (a single
+    CRLF line used to convert every OTHER line in the file to CRLF too).
+    """
+    out: list[str] = []
+    offsets: list[int] = []
+    i, n = 0, len(raw_text)
+    while i < n:
+        c = raw_text[i]
+        if c == "\r":
+            offsets.append(i)
+            out.append("\n")
+            i += 2 if (i + 1 < n and raw_text[i + 1] == "\n") else 1
+        else:
+            offsets.append(i)
+            out.append(c)
+            i += 1
+    offsets.append(n)
+    return "".join(out), offsets
+
+
 def process_markdown(md_path: Path, root: Path, out_dir: Path) -> list[tuple[Path, str, str]]:
     """Extract fenced mermaid blocks to sidecar .mmd files and rewrite the block
     into an image link. Returns (mmd_path, source, alt) for each block found.
 
     Idempotent: once a block has been replaced by an image link there is no
     fenced block left to match, so re-runs are no-ops for this file.
+
+    Every line this function does not touch keeps its own original line
+    ending exactly - CRLF, LF, bare CR, or no trailing newline at all on the
+    file's last line - because pass-through spans are sliced out of the raw
+    bytes via `_normalize_with_offsets`'s offset map, not out of the
+    LF-collapsed text used for matching. The one line this function DOES
+    write - the inserted `![alt](path)` image link replacing each fenced
+    block - takes the terminator that already ended the fence's closing line,
+    so it blends into its immediate neighbours instead of imposing a
+    file-wide convention on lines nobody asked to change.
     """
-    text = md_path.read_text(encoding="utf-8")
+    raw_text = md_path.read_bytes().decode("utf-8")
+    text, offsets = _normalize_with_offsets(raw_text)
     matches = list(FENCE_RE.finditer(text))
     if not matches:
         return []
@@ -326,15 +404,35 @@ def process_markdown(md_path: Path, root: Path, out_dir: Path) -> list[tuple[Pat
         svg_path = mmd_path.with_suffix(".svg")
 
         mmd_path.parent.mkdir(parents=True, exist_ok=True)
-        mmd_path.write_text(normalize(source), encoding="utf-8")
+        # newline="\n": normalize() already strips \r out of `source`, but an
+        # unpinned write_text would just put CRLF back on Windows at write
+        # time, undoing that work.
+        mmd_path.write_text(normalize(source), encoding="utf-8", newline="\n")
 
-        pieces.append(text[cursor:m.start()])
-        pieces.append(f"{m.group('indent')}![{alt}]({rel(md_path, svg_path)})\n")
+        pieces.append(raw_text[offsets[cursor]:offsets[m.start()]])
+        if m.end() > 0 and text[m.end() - 1] == "\n":
+            # The regex's trailing `\n?` consumed the closing fence line's own
+            # terminator; recover its exact original bytes so the inserted
+            # line matches it instead of forcing "\n".
+            local_terminator = raw_text[offsets[m.end() - 1]:offsets[m.end()]]
+        else:
+            # The fence is the last content in the file, with no trailing
+            # newline in the original - match that too, rather than gaining
+            # one the file never had.
+            local_terminator = ""
+        pieces.append(f"{m.group('indent')}![{alt}]({rel(md_path, svg_path)})" + local_terminator)
         cursor = m.end()
         extracted.append((mmd_path, source, alt))
 
-    pieces.append(text[cursor:])
-    md_path.write_text("".join(pieces), encoding="utf-8")
+    pieces.append(raw_text[offsets[cursor]:])
+    result = "".join(pieces)
+    # newline="": `result` is assembled entirely from raw_text slices (each
+    # carrying its own original terminator verbatim) plus the one
+    # locally-terminator-matched line above - it is already exactly the bytes
+    # this function wants on disk. Any translation here, including
+    # write_text's own newline=None default, would overwrite line endings
+    # this function went out of its way to preserve.
+    md_path.write_text(result, encoding="utf-8", newline="")
     print(f"  rewrote {md_path.relative_to(root)} ({len(extracted)} block(s) extracted)")
     return extracted
 

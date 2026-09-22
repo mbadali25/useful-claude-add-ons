@@ -37,14 +37,18 @@ Usage:
 import argparse
 import difflib
 import os
+import posixpath
 import tempfile
 import uuid
 import subprocess
 import sys
 import time
 
-def _scratch_path(kind):
-    """A per-run scratch path, local and remote.
+def _local_scratch_path(kind):
+    """A per-run scratch path on the LOCAL machine (the one running this
+    script) - safe to build from tempfile.gettempdir(), because this path is
+    only ever opened by local open()/read()/write() calls, never sent to the
+    manager.
 
     These were hardcoded as /tmp/_wazuh_<kind>_ossec.conf. Two apply or diff
     runs at once - two operators, or one operator running a second config
@@ -56,6 +60,48 @@ def _scratch_path(kind):
         tempfile.gettempdir(),
         f"_wazuh_{kind}_{os.getpid()}_{uuid.uuid4().hex[:8]}_ossec.conf",
     ).replace("\\", "/")
+
+
+def _remote_scratch_path(kind):
+    """A per-run scratch path on the REMOTE (manager) host.
+
+    Must NEVER be built from tempfile.gettempdir() - that reports the LOCAL
+    machine's temp directory, and when this script runs from a Windows
+    workstation that is something like
+    "C:/Users/<you>/AppData/Local/Temp/...". scp'd to the manager and passed
+    to `xmllint`/`sudo cp` there, that path is not valid: the manager is
+    always a Linux host (systemctl, sudo cp, wazuh-analysisd and
+    /var/ossec/... appear throughout this script), so its scratch path must
+    always be POSIX, regardless of what OS is running this script. Built
+    with posixpath, not os.path, for the same reason - os.path.join would
+    still follow the LOCAL platform's rules.
+    """
+    return posixpath.join(
+        "/tmp", f"_wazuh_{kind}_{os.getpid()}_{uuid.uuid4().hex[:8]}_ossec.conf"
+    )
+
+
+def _create_local_scratch_file(path):
+    """Create an empty scratch file at `path`, mode 0600, before anything
+    writes to it.
+
+    Two reasons this has to happen BEFORE any write, not as a chmod after:
+    - Our own `open(path, "w")` writes are masked by the process umask
+      (typically 022 -> 0644), so the merged candidate - a full ossec.conf,
+      integration API keys included - sat world-readable in the shared
+      local /tmp for the life of the run.
+    - `tmp_current` is filled by the external `scp` binary, not by this
+      script's own open() calls, so this script cannot chmod it after scp
+      writes without a race; scp itself preserves the mode of an already
+      -existing destination file rather than reapplying the umask, so
+      creating it 0600 first is what keeps it 0600 once scp writes into it.
+
+    O_EXCL refuses to reuse an existing path outright - the per-run uuid in
+    the scratch path already means two runs must never share one file, and
+    this makes that a hard guarantee rather than an assumption.
+    """
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    os.close(fd)
 
 
 DEFAULT_CONF_PATH = "/var/ossec/etc/ossec.conf"
@@ -75,8 +121,10 @@ def cfg():
     return host, user, key, port, conf_path
 
 
-def _ssh_base(host, user, key, port):
+def _ssh_base(host, user, key, port, connect_timeout=None):
     cmd = ["ssh", "-p", port, "-o", "StrictHostKeyChecking=accept-new"]
+    if connect_timeout is not None:
+        cmd += ["-o", f"ConnectTimeout={connect_timeout}"]
     if key:
         cmd += ["-i", key]
     cmd.append(f"{user}@{host}")
@@ -90,11 +138,39 @@ def _scp_base(key, port):
     return cmd
 
 
-def run_remote(host, user, key, port, remote_cmd, check=True):
+class SSHTimeout(RuntimeError):
+    """An SSH/scp call exceeded its timeout.
+
+    Deliberately a DIFFERENT type from the plain RuntimeError run_remote
+    raises for a completed-but-failing command: a timeout means the
+    remote-side OUTCOME is genuinely unknown (the command may have finished
+    right after the deadline, or mid-write, or never started) - it is not
+    simply "unsuccessful". Callers that need to say something honest about
+    that unknown (cleanup's own warning, below) catch this specifically
+    rather than folding it into the ordinary failure message.
+    """
+
+
+def run_remote(host, user, key, port, remote_cmd, check=True, timeout=None):
     """Run a command on the manager over SSH. remote_cmd is a shell string
-    (built carefully by callers - no untrusted interpolation)."""
-    full = _ssh_base(host, user, key, port) + [remote_cmd]
-    result = subprocess.run(full, capture_output=True, text=True, check=False)
+    (built carefully by callers - no untrusted interpolation).
+
+    `timeout`, when given, bounds the call TWO ways: `ssh -o
+    ConnectTimeout=<timeout>` (so a manager that never answers the TCP
+    handshake doesn't hang) and subprocess.run's own `timeout=` (so a
+    manager that accepts the connection but then never responds - or a
+    wedged local ssh process - doesn't hang either; ConnectTimeout alone
+    would not catch that). A timeout raises SSHTimeout (a RuntimeError
+    subclass, so existing `except RuntimeError` callers still catch it)."""
+    full = _ssh_base(host, user, key, port, connect_timeout=timeout) + [remote_cmd]
+    try:
+        result = subprocess.run(full, capture_output=True, text=True, check=False,
+                                 timeout=timeout)
+    except subprocess.TimeoutExpired as e:
+        raise SSHTimeout(
+            f"SSH command timed out after {timeout}s: {remote_cmd}\n"
+            f"stdout: {e.stdout}\nstderr: {e.stderr}"
+        ) from e
     if check and result.returncode != 0:
         raise RuntimeError(
             f"SSH command failed ({result.returncode}): {remote_cmd}\n"
@@ -151,76 +227,244 @@ def cmd_fetch(args):
 
 def cmd_diff(args):
     host, user, key, port, conf_path = cfg()
-    tmp_current = _scratch_path("current")
-    scp_down(host, user, key, port, conf_path, tmp_current)
-    with open(tmp_current, encoding="utf-8") as f:
-        current = f.read()
-    with open(args.block, encoding="utf-8") as f:
-        block = f.read()
-    candidate = insert_block(current, block, anchor=args.anchor)
-    diff = difflib.unified_diff(
-        current.splitlines(keepends=True),
-        candidate.splitlines(keepends=True),
-        fromfile="current ossec.conf",
-        tofile="candidate ossec.conf",
-    )
-    sys.stdout.writelines(diff)
+    tmp_current = _local_scratch_path("current")
+    _create_local_scratch_file(tmp_current)
+    try:
+        scp_down(host, user, key, port, conf_path, tmp_current)
+        with open(tmp_current, encoding="utf-8") as f:
+            current = f.read()
+        with open(args.block, encoding="utf-8") as f:
+            block = f.read()
+        candidate = insert_block(current, block, anchor=args.anchor)
+        diff = difflib.unified_diff(
+            current.splitlines(keepends=True),
+            candidate.splitlines(keepends=True),
+            fromfile="current ossec.conf",
+            tofile="candidate ossec.conf",
+        )
+        sys.stdout.writelines(diff)
+    finally:
+        # tmp_current is a full copy of the live ossec.conf, secrets and
+        # all - `diff` never installs anything, but it must not leave that
+        # copy behind in shared local /tmp any more than `apply` does.
+        try:
+            os.unlink(tmp_current)
+        except OSError:
+            pass
 
 
 def cmd_apply(args):
     host, user, key, port, conf_path = cfg()
-    ts = time.strftime("%Y%m%d-%H%M%S")
-    backup_path = f"{conf_path}.bak.{ts}"
 
-    print(f"1/6 Backing up remote {conf_path} -> {backup_path}", file=sys.stderr)
-    run_remote(host, user, key, port, f"sudo cp {conf_path} {backup_path}")
-
-    print("2/6 Fetching current config", file=sys.stderr)
-    tmp_current = _scratch_path("current")
-    scp_down(host, user, key, port, conf_path, tmp_current)
-    with open(tmp_current, encoding="utf-8") as f:
-        current = f.read()
-
-    print("3/6 Building candidate config", file=sys.stderr)
+    # Every LOCAL resource is prepared BEFORE anything touches the manager:
+    # --block is read and validated, and BOTH local scratch files are
+    # reserved (0600, empty, via _create_local_scratch_file's O_EXCL) up
+    # front - before the remote backup even runs. An O_EXCL collision
+    # (astronomically unlikely given the per-run uuid, but not impossible
+    # under PID reuse) then fails here, with nothing remote yet touched and
+    # no backup yet to explain. `created_locals` records only the paths
+    # THIS run actually created - cleanup below iterates that list, not
+    # (tmp_current, tmp_candidate) directly, so it can never delete a file
+    # that collided with (and therefore belongs to) something else.
     with open(args.block, encoding="utf-8") as f:
         block = f.read()
-    candidate = insert_block(current, block, anchor=args.anchor)
-    tmp_candidate = _scratch_path("candidate")
-    with open(tmp_candidate, "w", encoding="utf-8") as f:
-        f.write(candidate)
 
-    print("4/6 Uploading candidate and checking XML well-formedness", file=sys.stderr)
-    remote_candidate = _scratch_path("candidate")
-    scp_up(host, user, key, port, tmp_candidate, remote_candidate)
-    xml_check = run_remote(host, user, key, port, f"xmllint --noout {remote_candidate}", check=False)
-    if xml_check.returncode != 0:
-        sys.exit(f"ABORTED - candidate is not well-formed XML, nothing was touched:\n{xml_check.stderr}")
+    tmp_current = _local_scratch_path("current")
+    tmp_candidate = _local_scratch_path("candidate")
+    created_locals = []
+    remote_candidate = None
+    backup_path = None
 
-    print("5/6 Installing candidate and running Wazuh config test", file=sys.stderr)
-    run_remote(host, user, key, port, f"sudo cp {remote_candidate} {conf_path}")
-    test = run_remote(
-        host, user, key, port,
-        "sudo /var/ossec/bin/wazuh-analysisd -t 2>&1 || sudo /var/ossec/bin/ossec-analysisd -t 2>&1",
-        check=False,
-    )
-    if test.returncode != 0:
-        print(f"Config test FAILED, rolling back:\n{test.stdout}{test.stderr}", file=sys.stderr)
-        run_remote(host, user, key, port, f"sudo cp {backup_path} {conf_path}")
-        sys.exit("ROLLED BACK - the candidate config failed wazuh-analysisd -t. Backup restored.")
+    def _cleanup_scratch():
+        # Best-effort on every exit path from the block below - local temp
+        # files THIS RUN created, and the remote candidate (a full
+        # ossec.conf, integration API keys and all) that step 4/6 left on
+        # the manager whether or not the apply went on to succeed. Must
+        # never itself raise over whatever exception or exit is already in
+        # flight, and must never itself hang or go quiet: a failed remote
+        # cleanup means a secret-bearing file is still sitting on the
+        # manager, and the operator has to be told that, by name, not left
+        # to wonder why `list-backups` or a later `apply` behaves oddly.
+        for p in created_locals:
+            try:
+                os.unlink(p)
+            except OSError:
+                pass
+        if remote_candidate:
+            try:
+                # 10s: bounds BOTH the TCP handshake (ConnectTimeout) and a
+                # manager that accepts the connection but never answers
+                # (subprocess timeout) - a hung ssh here must not delay
+                # whatever abort message already printed above.
+                result = run_remote(host, user, key, port,
+                                     f"rm -f {remote_candidate}",
+                                     check=False, timeout=10)
+                if result.returncode != 0:
+                    print(
+                        f"WARNING: could not remove the candidate scratch file "
+                        f"left on the manager at {remote_candidate} (it holds "
+                        f"a full ossec.conf, including any integration API "
+                        f"keys) - remove it by hand.\n{result.stderr}",
+                        file=sys.stderr,
+                    )
+            except KeyboardInterrupt:
+                # A SECOND Ctrl-C, landing during cleanup itself. Do not let
+                # it escape uncaught: a `finally` block that raises REPLACES
+                # whatever exception was already propagating (the one whose
+                # "nothing was installed" message already printed above),
+                # so an unhandled interrupt here would mask that with a bare
+                # KeyboardInterrupt carrying no explanation at all.
+                print(
+                    f"WARNING: cleanup was interrupted before confirming "
+                    f"removal of {remote_candidate} on the manager - it may "
+                    "still be there; check and remove it by hand.",
+                    file=sys.stderr,
+                )
+            except SSHTimeout:
+                # A timeout means the outcome is genuinely UNKNOWN - the
+                # remote `rm -f` may have completed right after the
+                # deadline. "could not remove" would claim a certainty this
+                # does not have.
+                print(
+                    f"WARNING: removal not confirmed (timed out) for the "
+                    f"candidate scratch file at {remote_candidate} on the "
+                    "manager - it may or may not still be there; check and "
+                    "remove it by hand.",
+                    file=sys.stderr,
+                )
+            except (RuntimeError, OSError) as e:
+                # RuntimeError: run_remote's own failure reporting (a
+                # completed command that failed - a KNOWN outcome, unlike
+                # SSHTimeout above). OSError: subprocess.run can raise this
+                # directly (not via run_remote's own check) if the local
+                # `ssh` binary itself is missing or unusable mid-run.
+                print(
+                    f"WARNING: could not remove the candidate scratch file "
+                    f"left on the manager at {remote_candidate}: {e}",
+                    file=sys.stderr,
+                )
 
-    print("6/6 Config test passed.", file=sys.stderr)
-    if args.restart:
-        print("Restarting wazuh-manager as requested...", file=sys.stderr)
-        run_remote(host, user, key, port,
-                   "sudo systemctl restart wazuh-manager"
-                   " || sudo /var/ossec/bin/wazuh-control restart")
-        print("Restarted.", file=sys.stderr)
-    else:
-        print(
-            "Config is live but the manager was NOT restarted (pass --restart to apply it). "
-            f"Backup of the prior config: {backup_path}",
-            file=sys.stderr,
+    try:
+        _create_local_scratch_file(tmp_current)
+        created_locals.append(tmp_current)
+        _create_local_scratch_file(tmp_candidate)
+        created_locals.append(tmp_candidate)
+
+        ts = time.strftime("%Y%m%d-%H%M%S")
+        backup_path = f"{conf_path}.bak.{ts}"
+
+        print(f"1/6 Backing up remote {conf_path} -> {backup_path}", file=sys.stderr)
+        run_remote(host, user, key, port, f"sudo cp {conf_path} {backup_path}")
+
+        def _nothing_installed(reason):
+            return (
+                f"{reason} Nothing was installed; the live config at {conf_path} "
+                f"was NOT touched. The pre-apply backup taken in step 1/6 remains "
+                f"at {backup_path} on the manager (harmless - safe to leave, or "
+                "remove it yourself)."
+            )
+
+        # This inner try/except is scoped to steps 2/6-4/6 ONLY - everything
+        # that can fail before the live config has been touched. Do not
+        # widen it to cover the install below: a failure AFTER the
+        # `sudo cp {remote_candidate} {conf_path}` in step 5/6 means the
+        # live config MAY already have changed, so "nothing was installed"
+        # would be a lie at that point. That includes the install cp ITSELF
+        # - a sabotage that wraps just that one line back into this handler
+        # is exactly what test_apply_install_cp_failure_never_claims_
+        # nothing_was_installed below exists to catch. Post-install
+        # failures have their own handling (the wazuh-analysisd -t check
+        # and auto-rollback, and the install-cp-failure rollback below).
+        try:
+            print("2/6 Fetching current config", file=sys.stderr)
+            scp_down(host, user, key, port, conf_path, tmp_current)
+            with open(tmp_current, encoding="utf-8") as f:
+                current = f.read()
+
+            print("3/6 Building candidate config", file=sys.stderr)
+            candidate = insert_block(current, block, anchor=args.anchor)
+            with open(tmp_candidate, "w", encoding="utf-8") as f:
+                f.write(candidate)
+
+            print("4/6 Uploading candidate and checking XML well-formedness", file=sys.stderr)
+            remote_candidate = _remote_scratch_path("candidate")
+            scp_up(host, user, key, port, tmp_candidate, remote_candidate)
+            # The candidate is a full ossec.conf, including any integration
+            # API keys (office365, ms-graph, aws-s3, ...) - lock it down
+            # explicitly rather than trust the remote session's umask, which
+            # this local `scp` invocation never controls anyway (the remote
+            # write happens inside the manager's own ssh session, not a
+            # command line this script constructs).
+            run_remote(host, user, key, port, f"chmod 600 {remote_candidate}")
+            xml_check = run_remote(host, user, key, port, f"xmllint --noout {remote_candidate}", check=False)
+            if xml_check.returncode != 0:
+                sys.exit(_nothing_installed(
+                    f"ABORTED - candidate is not well-formed XML.\n{xml_check.stderr}"))
+        except KeyboardInterrupt:
+            print(_nothing_installed("INTERRUPTED."), file=sys.stderr)
+            raise
+        except (RuntimeError, ValueError, OSError) as e:
+            sys.exit(_nothing_installed(f"ABORTED - {e}"))
+
+        print("5/6 Installing candidate and running Wazuh config test", file=sys.stderr)
+        try:
+            run_remote(host, user, key, port, f"sudo cp {remote_candidate} {conf_path}")
+        except RuntimeError as install_error:
+            # A failed `cp` can leave its DESTINATION truncated - cp opens
+            # the destination for writing (and may truncate it) before it
+            # is done reading the source, so a connection drop or a full
+            # disk mid-copy can leave conf_path shorter than either the old
+            # or the new config, not simply "unchanged". This must never
+            # say "nothing was installed" - it attempts the same recovery
+            # the wazuh-analysisd -t failure path below does, and names the
+            # backup path either way.
+            print(
+                f"INSTALL FAILED - {install_error}\n"
+                f"The live config at {conf_path} may be partially written "
+                f"(a failed remote cp can truncate its destination). "
+                f"Attempting rollback from the backup at {backup_path}...",
+                file=sys.stderr,
+            )
+            try:
+                run_remote(host, user, key, port, f"sudo cp {backup_path} {conf_path}")
+            except RuntimeError as rollback_error:
+                sys.exit(
+                    f"INSTALL FAILED AND ROLLBACK FAILED - the live config at "
+                    f"{conf_path} is in an UNKNOWN state (it may be partially "
+                    f"written by the failed install). The backup is at "
+                    f"{backup_path} on the manager - restore it by hand.\n"
+                    f"Install error: {install_error}\nRollback error: {rollback_error}"
+                )
+            sys.exit(
+                f"INSTALL FAILED, ROLLED BACK - {install_error}\n"
+                f"The backup at {backup_path} was restored to {conf_path}."
+            )
+
+        test = run_remote(
+            host, user, key, port,
+            "sudo /var/ossec/bin/wazuh-analysisd -t 2>&1 || sudo /var/ossec/bin/ossec-analysisd -t 2>&1",
+            check=False,
         )
+        if test.returncode != 0:
+            print(f"Config test FAILED, rolling back:\n{test.stdout}{test.stderr}", file=sys.stderr)
+            run_remote(host, user, key, port, f"sudo cp {backup_path} {conf_path}")
+            sys.exit("ROLLED BACK - the candidate config failed wazuh-analysisd -t. Backup restored.")
+
+        print("6/6 Config test passed.", file=sys.stderr)
+        if args.restart:
+            print("Restarting wazuh-manager as requested...", file=sys.stderr)
+            run_remote(host, user, key, port,
+                       "sudo systemctl restart wazuh-manager"
+                       " || sudo /var/ossec/bin/wazuh-control restart")
+            print("Restarted.", file=sys.stderr)
+        else:
+            print(
+                "Config is live but the manager was NOT restarted (pass --restart to apply it). "
+                f"Backup of the prior config: {backup_path}",
+                file=sys.stderr,
+            )
+    finally:
+        _cleanup_scratch()
 
 
 def cmd_rollback(args):
@@ -270,6 +514,12 @@ def main():
     except RuntimeError as e:
         sys.exit(f"ERROR: {e}")
     except ValueError as e:
+        sys.exit(f"ERROR: {e}")
+    except OSError as e:
+        # A bad local path (--block, --out, ...) on any subcommand - not
+        # just cmd_apply's own post-backup span, which additionally catches
+        # this itself with backup-path messaging before it would ever reach
+        # here.
         sys.exit(f"ERROR: {e}")
 
 

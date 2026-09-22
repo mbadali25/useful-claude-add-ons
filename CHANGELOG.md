@@ -6,6 +6,27 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Fixed
 
+- **Windows audit wave 3: `claude-code-defaults` 1.0.1, `intune-graph` 1.1.1,
+  `mermaid-svg-bitbucket` 1.2.5, `wazuh-onprem` 1.1.1, `obsidian-vault` 0.3.15.**
+  Each lane went through four review rounds with sabotage evidence.
+  `claude-code-defaults`: the settings.json validators now distinguish no
+  interpreter, missing, empty and invalid with separate exit codes (a missing
+  python used to look identical to invalid JSON); the PowerShell validator is a
+  pasteable function plus a `-File` script form whose exit status carries the
+  code, verified on pwsh 7.6.5; hook templates document the `shell` key and a
+  flavour guard. `intune-graph`: exports are staged to temp files and replaced
+  only after every member reads and writes cleanly, with modes preserved, a
+  symlinked destination refused, and a partial commit (for example a CSV open in
+  Excel) reported file by file instead of a traceback. `mermaid-svg-bitbucket`:
+  every generated-file write pins its newline, `--check` compares SVGs by logical
+  content, and the Markdown rewrite keeps each line's own terminator.
+  `wazuh-onprem`: the remote scratch path is POSIX on every OS, scratch copies of
+  ossec.conf are created 0600 and cleaned up, and a failed install rolls back and
+  says so instead of claiming nothing was installed. `obsidian-vault`: the
+  PowerShell probes work under Windows PowerShell 5.1's legacy argument passing,
+  and an invalid UTF-8 byte in a note is blocked rather than let through. No
+  Windows host ran any of this; Windows behaviour was simulated on Linux.
+
 - **`crew` 0.20.11: the Stop gate kept no evidence when one rule failed, the
   Git Bash python3 landmine reached the gate and three hooks, and the PM read
   state once per pass.** `verify-gate.sh:1403` exited 2 above the per-rule

@@ -39,7 +39,14 @@ jobs:
         # real libraries rather than modelled. Those 12 tests were erroring
         # unseen behind the collection interrupt above; with it fixed they are
         # the difference between 149 passed / 12 errors and 161 passed.
-        pip install 'pytest~=8.0' pyyaml python-docx numpy pillow
+        #
+        # requests is required by skills/intune-graph/scripts/_test/, whose
+        # test_export_report.py imports export_report.py, which does `import
+        # requests` at module top (it's the real dependency the script calls
+        # requests.get with in production - the test monkeypatches
+        # requests.get itself, not the import). Without it collection dies
+        # the same way the yaml one below does, taking the whole job with it.
+        pip install 'pytest~=8.0' pyyaml python-docx numpy pillow requests
     - name: Run crew + gizmoduck plugin tests and the collision-free skill suites
       # Scoped to named directories on purpose, and NOT because of
       # skills/cisco-meraki/tests/test_live_smoke.py -- which is what this
@@ -68,7 +75,7 @@ jobs:
       # no test by name and looked like a plain failure. Verified by blocking
       # the yaml import locally, which reproduces the same 12 collection
       # errors the runner logs.
-      run: pytest plugin/crew/tests/ plugin/gizmoduck/scripts/_test/ skills/mermaid-svg-bitbucket/tests/ skills/notify/tests/ skills/doc-builder/scripts/_test/ -v
+      run: pytest plugin/crew/tests/ plugin/gizmoduck/scripts/_test/ skills/mermaid-svg-bitbucket/tests/ skills/notify/tests/ skills/doc-builder/scripts/_test/ skills/intune-graph/scripts/_test/ -v
     - name: Run the cisco-meraki skill tests
       # A SEPARATE pytest process, and it has to be. plugin/crew/tests/ and
       # skills/cisco-meraki/tests/ each contain a file named `context.py`
@@ -88,3 +95,16 @@ jobs:
       # to both) edits suites that are green, in two marketplace entries, to
       # work around a runner detail.
       run: pytest skills/cisco-meraki/tests/ -v
+    - name: Run the wazuh-onprem skill tests
+      # skills/wazuh-onprem/scripts/_test/test_manager_config_remote_paths.py
+      # puts scripts/ on sys.path itself (no separate context.py file, so it
+      # does not hit the context.py collision the step above works around)
+      # and imports only manager_config, which is stdlib-only (argparse,
+      # difflib, os, posixpath, tempfile, uuid, subprocess, sys, time) - no
+      # extra pip install needed. Kept as its own step anyway, not folded
+      # into the combined run above: manager_config is a name unique to this
+      # skill today, but a second skill importing something also named
+      # manager_config into the same collection would hit the exact
+      # sys.modules collision documented above, and a separate step is what
+      # keeps that always false rather than merely false today.
+      run: pytest skills/wazuh-onprem/scripts/_test/ -v

@@ -22,6 +22,7 @@ it tests.
 
 import hashlib
 import json
+import pathlib
 import subprocess
 import sys
 from pathlib import Path
@@ -225,6 +226,452 @@ def test_render_records_the_hash_of_the_postprocessed_file(tmp_path):
     assert R.svg_digest(svg) == after
     if before != after:
         pytest.skip("postprocess is a no-op on this fixture; ordering untested here")
+
+
+# A synthetic mmdc-shaped SVG, not GOOD_SVG: GOOD_SVG is one line with no
+# embedded '\n' at all (a real mmdc render), so it cannot exercise a newline
+# translation bug - there is nothing in it for write_text's default
+# `newline=None` to translate. This one has embedded newlines, a viewBox and
+# no width= attribute, and the max-width style postprocess() strips, so
+# postprocess() actually rewrites it the way a real multi-line render would.
+NEWLINE_SVG = (
+    '<svg viewBox="0 0 100.5 50.25" xmlns="http://www.w3.org/2000/svg" '
+    'style="max-width: 100%;">\n'
+    '  <rect width="10" height="10"/>\n'
+    '  <text>label</text>\n'
+    '</svg>\n'
+).encode("utf-8")
+
+
+def _repo_with_checked_out_svg(tmp_path: Path, rendered_bytes: bytes,
+                                checked_out_bytes: bytes) -> Path:
+    """A repo whose manifest svgHash was recorded, via R.svg_digest, from
+    `rendered_bytes` - what render() actually wrote and hashed - but whose
+    committed .svg is `checked_out_bytes` on disk: the same diagram after a
+    checkout that changed nothing but line endings (git core.autocrlf on a
+    host other than the one that rendered it). Nothing about the diagram
+    changed; only the disk bytes did.
+    """
+    root = tmp_path / "repo"
+    (root / "diagrams").mkdir(parents=True)
+    mmd = root / "diagrams" / "flow.mmd"
+    mmd.write_text(SOURCE, encoding="utf-8", newline="\n")
+    svg = root / "diagrams" / "flow.svg"
+
+    svg.write_bytes(rendered_bytes)
+    svg_hash = R.svg_digest(svg)  # exactly what render() would have recorded
+
+    config = SKILL / "assets" / "mermaid-config.json"
+    fingerprint = hashlib.sha256(config.read_bytes()).hexdigest()[:16] + ":#ffffff"
+    entry = {"hash": R.digest(SOURCE, fingerprint), "svg": "diagrams/flow.svg",
+              "svgHash": svg_hash}
+    (root / R.MANIFEST_NAME).write_text(
+        json.dumps({"version": 2, "diagrams": {"diagrams/flow.mmd": entry}}, indent=2) + "\n",
+        encoding="utf-8")
+
+    svg.write_bytes(checked_out_bytes)  # the checkout, after recording
+    return root
+
+
+def test_check_tolerates_a_crlf_checkout_of_a_committed_svg(tmp_path):
+    """--check must not report DAMAGED for an SVG whose only difference from
+    what was recorded is CRLF instead of LF line endings - the shape a
+    Windows clone with core.autocrlf=true produces on checkout with no
+    .gitattributes entry for *.svg.
+
+    This is the control FIX 2's normalization needed and did not have: with
+    no failing test, removing the normalization entirely, or dropping either
+    half of it, left the full suite at 28 passed.
+    """
+    crlf = NEWLINE_SVG.replace(b"\n", b"\r\n")
+    root = _repo_with_checked_out_svg(tmp_path, NEWLINE_SVG, crlf)
+    code, out = check(root)
+    assert code == 0, out
+    assert "All 1 diagram(s) up to date." in out, out
+
+
+def test_check_tolerates_a_lone_cr_checkout_of_a_committed_svg(tmp_path):
+    """Same as above, for the old-Mac lone-CR convention - the other half of
+    svg_digest()'s normalization.
+    """
+    lone_cr = NEWLINE_SVG.replace(b"\n", b"\r")
+    root = _repo_with_checked_out_svg(tmp_path, NEWLINE_SVG, lone_cr)
+    code, out = check(root)
+    assert code == 0, out
+    assert "All 1 diagram(s) up to date." in out, out
+
+# Multi-line so every write site under test (Manifest.save's JSON, the
+# extracted .mmd sidecar, the rewritten .md) has an actual '\n' for write_text
+# to mistranslate; a one-line fixture like GOOD_SVG would exercise nothing.
+MULTI_LINE_MERMAID_MD = (
+    "# Title\n"
+    "\n"
+    "```mermaid\n"
+    "graph TD\n"
+    "  A --> B\n"
+    "  B --> C\n"
+    "```\n"
+)
+
+
+def _simulate_windows_write_text(monkeypatch):
+    """Make every unpinned `Path.write_text` call in the code under test
+    reproduce, byte for byte, what it would write on a real Windows host.
+
+    Monkeypatching `os.linesep` does NOT do this on a non-Windows CI box:
+    measured directly, CPython's io layer does not re-read the mutable
+    `os.linesep` module attribute at write time, so a test built that way
+    passes whether or not a given call pins `newline="\\n"` - a guard that
+    looks like it checks the bug and checks nothing. What write_text's
+    `newline=None` branch *does* do, on every platform, is translate every
+    '\\n' in the data it is given; that is the part this helper drives
+    directly, by wrapping the real `Path.write_text` and forcing the "no
+    newline argument supplied" branch to translate to "\\r\\n". A call that
+    explicitly pins `newline="\\n"` (or any other explicit value) is left
+    untouched, exactly as the real method leaves it untouched on every
+    platform - so this isolates precisely the calls that forgot to pin it.
+    """
+    real_write_text = pathlib.Path.write_text
+
+    def write_text_as_windows_would(self, data, encoding=None, errors=None, newline=None):
+        if newline is None:
+            data = data.replace("\n", "\r\n")
+            newline = ""  # already translated; tell the real call not to touch it again
+        return real_write_text(self, data, encoding=encoding, errors=errors, newline=newline)
+
+    monkeypatch.setattr(pathlib.Path, "write_text", write_text_as_windows_would)
+
+
+def test_postprocess_pins_newline_so_the_digest_is_host_independent(tmp_path, monkeypatch):
+    """postprocess()'s write (render_mermaid.py, the `svg_path.write_text`
+    call inside `postprocess`) must not let the host's line-ending convention
+    leak into the SVG it writes.
+
+    svg_digest() now normalizes line endings before hashing (the FIX 2 fix),
+    so a missing pin here no longer breaks the recorded hash by itself - the
+    two fixes overlap on that axis. What a missing pin still breaks is the
+    file this script commits: an unpinned write on an actual Windows host
+    would put CRLF into a diagram meant to render identically everywhere, so
+    this test asserts directly on the written bytes, not just the digest.
+    """
+    host = tmp_path / "host.svg"
+    host.write_bytes(NEWLINE_SVG)
+    R.postprocess(host)
+    host_bytes = host.read_bytes()
+    host_hash = R.svg_digest(host)
+
+    simulated = tmp_path / "simulated_windows.svg"
+    simulated.write_bytes(NEWLINE_SVG)
+    _simulate_windows_write_text(monkeypatch)
+    R.postprocess(simulated)
+    simulated_bytes = simulated.read_bytes()
+    simulated_hash = R.svg_digest(simulated)
+
+    assert b"\r" not in host_bytes, "unexpected CR on this host's own render"
+    assert b"\r" not in simulated_bytes, (
+        "postprocess() let the host's line-ending convention leak into the "
+        "written SVG - the write must pin newline=\"\\n\""
+    )
+    assert host_hash == simulated_hash, (
+        f"the same logical SVG hashed differently depending on host "
+        f"line-ending convention: {host_hash} != {simulated_hash}"
+    )
+
+
+def test_manifest_save_pins_newline_so_the_manifest_is_host_independent(tmp_path, monkeypatch):
+    """Manifest.save()'s write (`Manifest.save`, the `self.path.write_text`
+    call) must not let the host translate the JSON's '\\n' either.
+
+    Unlike the SVG, `.mermaid-svg.json` is never digest-compared against
+    itself - nothing reads it expecting particular bytes. The failure mode
+    here is not DAMAGED, it's noise: a manifest saved from a Windows checkout
+    would rewrite every line of the file to CRLF, so a change to one
+    diagram's entry shows as a diff touching the entire file.
+    """
+    manifest_path = tmp_path / R.MANIFEST_NAME
+    m = R.Manifest(manifest_path)
+    m.put("diagrams/a.mmd", hash="sha256:aaa", svg="diagrams/a.svg", svgHash="deadbeef")
+    m.put("diagrams/b.mmd", hash="sha256:bbb", svg="diagrams/b.svg", svgHash="cafef00d")
+
+    _simulate_windows_write_text(monkeypatch)
+    m.save()
+
+    written = manifest_path.read_bytes()
+    assert b"\r" not in written, (
+        "Manifest.save() let the host's line-ending convention leak into "
+        f"{R.MANIFEST_NAME} - the write must pin newline=\"\\n\""
+    )
+
+
+def test_sidecar_mmd_write_pins_newline_so_it_is_host_independent(tmp_path, monkeypatch):
+    """The extracted .mmd sidecar write (`process_markdown`, the
+    `mmd_path.write_text` call) must not let the host translate it either.
+
+    `normalize()` already strips \\r out of the source before this write, so
+    an unpinned write_text would put CRLF straight back in on Windows,
+    undoing that normalization for the file on disk (though not for the
+    digest, since `digest()` re-normalizes on read - the same overlap noted
+    on the SVG test above).
+    """
+    root = tmp_path / "repo"
+    root.mkdir()
+    md = root / "doc.md"
+    md.write_text(MULTI_LINE_MERMAID_MD, encoding="utf-8", newline="\n")
+    out_dir = root / "docs" / "diagrams"
+
+    _simulate_windows_write_text(monkeypatch)
+    extracted = R.process_markdown(md, root, out_dir)
+
+    assert len(extracted) == 1, extracted
+    mmd_path = extracted[0][0]
+    written = mmd_path.read_bytes()
+    assert b"\r" not in written, (
+        "the sidecar .mmd write let the host's line-ending convention leak "
+        "in - the write must pin newline=\"\\n\""
+    )
+
+
+def test_markdown_rewrite_pins_newline_for_an_lf_original(tmp_path, monkeypatch):
+    """The rewritten-Markdown write (`process_markdown`, the
+    `md_path.write_text` call) must not let the host translate an
+    LF-original file either.
+
+    This is the LF-original case only; the CRLF-original case is a separate
+    concern (preserve the file's own convention rather than always forcing
+    LF - see test_markdown_rewrite_preserves_crlf_convention) and is not
+    what this test is checking.
+    """
+    root = tmp_path / "repo"
+    root.mkdir()
+    md = root / "doc.md"
+    md.write_text(MULTI_LINE_MERMAID_MD, encoding="utf-8", newline="\n")  # LF original
+    out_dir = root / "docs" / "diagrams"
+
+    _simulate_windows_write_text(monkeypatch)
+    R.process_markdown(md, root, out_dir)
+
+    written = md.read_bytes()
+    assert b"\r" not in written, (
+        "the rewritten Markdown write let the host's line-ending convention "
+        "leak in for an LF-original file - the write must pin newline=\"\\n\""
+    )
+
+
+def test_markdown_rewrite_preserves_crlf_convention(tmp_path):
+    """A CRLF-original Markdown file must come back CRLF, not forced to LF.
+
+    The .md file is never digest-compared, so pinning newline="\\n"
+    unconditionally has no correctness benefit here and one real cost: for a
+    CRLF-original file it flips every line ending in the WHOLE file, not just
+    the fenced block that got replaced, turning a one-block edit into a
+    file-wide diff. The fix is to preserve each line's own original ending.
+
+    `written.count(b"\\r\\n") == written.count(b"\\n")` alone would also be
+    true of a file corrupted to "\\r\\r\\n" throughout (every "\\r\\n" still
+    contains exactly one "\\n"), so this also asserts directly that no "\\r\\r"
+    exists - see test_markdown_rewrite_never_doubles_cr_under_windows for the
+    dedicated, sabotage-tested version of that check.
+    """
+    root = tmp_path / "repo"
+    root.mkdir()
+    md = root / "doc.md"
+    md.write_bytes(MULTI_LINE_MERMAID_MD.replace("\n", "\r\n").encode("utf-8"))
+    out_dir = root / "docs" / "diagrams"
+
+    R.process_markdown(md, root, out_dir)
+
+    written = md.read_bytes()
+    assert b"\r\r" not in written, f"doubled CR in the output: {written!r}"
+    assert written.count(b"\r\n") == written.count(b"\n"), (
+        "expected every line ending in the rewritten file to be CRLF "
+        f"(original was CRLF throughout): {written!r}"
+    )
+    assert b"\r\n" in written, "the file lost its CRLF convention entirely"
+
+
+def test_markdown_rewrite_never_doubles_cr_under_windows(tmp_path, monkeypatch):
+    """The single write in process_markdown() (`md_path.write_text(result,
+    encoding="utf-8", newline="")`) must keep `newline=""` - dropping it back
+    to the default lets an already-CRLF `result` (built by hand from the
+    original bytes, for a CRLF-original file) get translated a SECOND time.
+
+    On an actual Windows host, write_text's `newline=None` branch finds every
+    '\\n' in `result` - including the '\\n' half of every '\\r\\n' already
+    there - and replaces each with os.linesep ("\\r\\n"), turning each
+    original "\\r\\n" into "\\r" + "\\r\\n" = "\\r\\r\\n". A same-count
+    assertion like `count(b"\\r\\n") == count(b"\\n")` does not catch this: it
+    is equally true of a file doubled throughout. Only a direct check for
+    "\\r\\r" catches it, and only `_simulate_windows_write_text` can produce
+    the corruption on a non-Windows CI box in the first place.
+    """
+    root = tmp_path / "repo"
+    root.mkdir()
+    md = root / "doc.md"
+    md.write_bytes(MULTI_LINE_MERMAID_MD.replace("\n", "\r\n").encode("utf-8"))
+    out_dir = root / "docs" / "diagrams"
+
+    _simulate_windows_write_text(monkeypatch)
+    R.process_markdown(md, root, out_dir)
+
+    written = md.read_bytes()
+    assert b"\r\r" not in written, (
+        f"the rewritten Markdown write let write_text translate an "
+        f"already-CRLF string a second time - the write must pin "
+        f'newline="" so it is never translated at all: {written!r}'
+    )
+
+
+def test_markdown_rewrite_preserves_mixed_line_endings(tmp_path):
+    """A file that mixes CRLF and LF must keep each line's own ending -
+    only the fenced block that gets replaced may change, and the inserted
+    image-link line must match whichever ending closed the fence it
+    replaces, not a file-wide convention.
+
+    This is the exact bug named in review: a single CRLF line used to
+    convert every OTHER line in the file to CRLF too, so a mostly-LF file
+    got a full-file diff for touching one block.
+    """
+    root = tmp_path / "repo"
+    root.mkdir()
+    md = root / "doc.md"
+    mixed = (
+        "# Title\r\n"            # CRLF, untouched - must stay CRLF
+        "\n"                     # LF, untouched - must stay LF
+        "```mermaid\n"           # fence open, LF
+        "graph TD\n"
+        "  A --> B\n"
+        "```\r\n"                # fence close ends CRLF - the inserted line matches this
+        "Trailing paragraph.\n"  # LF, untouched - must stay LF
+    )
+    md.write_bytes(mixed.encode("utf-8"))
+    out_dir = root / "docs" / "diagrams"
+
+    extracted = R.process_markdown(md, root, out_dir)
+
+    assert len(extracted) == 1, extracted
+    svg_path = extracted[0][0].with_suffix(".svg")
+    link = f"![Title]({R.rel(md, svg_path)})"
+    expected = (
+        "# Title\r\n"
+        "\n"
+        f"{link}\r\n"
+        "Trailing paragraph.\n"
+    ).encode("utf-8")
+    written = md.read_bytes()
+    assert written == expected, f"\n  got:      {written!r}\n  expected: {expected!r}"
+
+
+def test_markdown_rewrite_preserves_lone_cr_lines(tmp_path):
+    """A file using the old-Mac bare-CR convention throughout must come back
+    bare-CR throughout, with no LF introduced anywhere - the second half of
+    the same per-line-preservation fix, for the other non-LF convention.
+    """
+    root = tmp_path / "repo"
+    root.mkdir()
+    md = root / "doc.md"
+    md.write_bytes(MULTI_LINE_MERMAID_MD.replace("\n", "\r").encode("utf-8"))
+    out_dir = root / "docs" / "diagrams"
+
+    R.process_markdown(md, root, out_dir)
+
+    written = md.read_bytes()
+    assert b"\n" not in written, f"an LF leaked into a bare-CR file: {written!r}"
+    assert b"\r" in written, "the file lost its CR convention entirely"
+
+
+def test_markdown_rewrite_does_not_add_a_trailing_newline(tmp_path):
+    """A file whose last line has no trailing newline must not gain one,
+    even when that last line IS the fence being replaced.
+    """
+    root = tmp_path / "repo"
+    root.mkdir()
+    md = root / "doc.md"
+    # MULTI_LINE_MERMAID_MD's fenced block is the file's last content; strip
+    # its one trailing '\n' so the closing "```" itself has no terminator.
+    md.write_bytes(MULTI_LINE_MERMAID_MD.rstrip("\n").encode("utf-8"))
+    out_dir = root / "docs" / "diagrams"
+
+    R.process_markdown(md, root, out_dir)
+
+    written = md.read_bytes()
+    assert not written.endswith((b"\n", b"\r")), (
+        f"gained a trailing newline the original file did not have: {written!r}"
+    )
+
+
+def test_markdown_rewrite_preserves_crlf_after_the_last_fence(tmp_path):
+    """The tail slice after the LAST match - `pieces.append(raw_text[offsets[cursor]:])`,
+    appended once after the loop rather than inside it - is a separate code
+    path from the per-match pass-through slice appended inside the loop, and
+    every existing fixture puts the fence at (or effectively at) the end of
+    the file, so nothing exercised it: MULTI_LINE_MERMAID_MD's fence IS the
+    last content, and the mixed-EOL test's one line of trailing text is LF,
+    not CRLF. A mutant that runs this specific tail through
+    `.replace("\\r\\n", "\\n")` - turning trailing CRLF content back to LF -
+    left the full suite passing.
+    """
+    root = tmp_path / "repo"
+    root.mkdir()
+    md = root / "doc.md"
+    content = (
+        "```mermaid\r\n"
+        "graph TD\r\n"
+        "  A --> B\r\n"
+        "```\r\n"
+        "Trailing paragraph one.\r\n"
+        "Trailing paragraph two.\r\n"
+    )
+    md.write_bytes(content.encode("utf-8"))
+    out_dir = root / "docs" / "diagrams"
+
+    extracted = R.process_markdown(md, root, out_dir)
+
+    assert len(extracted) == 1, extracted
+    expected_tail = b"Trailing paragraph one.\r\nTrailing paragraph two.\r\n"
+    written = md.read_bytes()
+    assert written.endswith(expected_tail), (
+        f"the tail after the last fence lost its CRLF convention:\n"
+        f"  got:      {written!r}\n  expected suffix: {expected_tail!r}"
+    )
+
+
+def test_sidecar_mmd_content_is_correct_for_a_crlf_source(tmp_path):
+    """The extracted .mmd sidecar's CONTENT - not just its line endings, which
+    test_sidecar_mmd_write_pins_newline_so_it_is_host_independent already
+    covers - must be a faithful line-for-line translation of a CRLF source.
+
+    `_normalize_with_offsets` advances `i` by 2 for a "\\r\\n" pair and by 1
+    for a bare "\\r", so it consumes the pair as a single unit. A mutant that
+    always advances by 1 leaves the '\\n' half of every "\\r\\n" unconsumed:
+    the next loop iteration sees that '\\n' as an ordinary character and
+    appends a SECOND '\\n' for it, so every original CRLF becomes "\\n\\n" in
+    the normalized text FENCE_RE matches against - a spurious blank line
+    between every pair of lines inside the fenced body. That body becomes
+    `m.group("body")`, written to the sidecar via `normalize()`, which only
+    trims leading/trailing blank lines, not internal ones - so the corruption
+    survives into the .mmd file untouched, while none of the .md-side tests
+    (which check line ENDINGS, not internal CONTENT) can see it.
+    """
+    root = tmp_path / "repo"
+    root.mkdir()
+    md = root / "doc.md"
+    content = (
+        "```mermaid\r\n"
+        "graph TD\r\n"
+        "  A --> B\r\n"
+        "  B --> C\r\n"
+        "```\r\n"
+    )
+    md.write_bytes(content.encode("utf-8"))
+    out_dir = root / "docs" / "diagrams"
+
+    extracted = R.process_markdown(md, root, out_dir)
+
+    assert len(extracted) == 1, extracted
+    mmd_path = extracted[0][0]
+    written = mmd_path.read_text(encoding="utf-8")
+    expected = "graph TD\n  A --> B\n  B --> C\n"
+    assert written == expected, f"\n  got:      {written!r}\n  expected: {expected!r}"
 
 
 # --------------------------------------------------------------------------- #

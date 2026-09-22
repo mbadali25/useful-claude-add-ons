@@ -94,7 +94,19 @@ function Resolve-VaultGuardPython {
       # cmdlet can close the pipeline as soon as it has one object, racing
       # the native process's exit and leaving $LASTEXITCODE reflecting an
       # early termination rather than the candidate's real status.
-      $output = & $cmd.Source -c 'import sys; sys.stdout.write("vault-guard-python:" + sys.executable)' 2>$null
+      # Single-quoted python string literal, escaped for PowerShell's outer
+      # single-quoted argument as `''...''` - NOT the double-quoted form this
+      # line carried until this fix. Windows PowerShell 5.1 and pwsh <=7.2
+      # (also pwsh 7.6 under `$PSNativeCommandArgumentPassing = 'Legacy'`,
+      # which is how this was reproduced without a Windows machine) pass
+      # native arguments the legacy way and STRIP embedded double quotes
+      # before python ever sees them - `sys.stdout.write("vault-guard-python:"
+      # + sys.executable)` arrived as `sys.stdout.write(vault-guard-python: +
+      # sys.executable)`, a SyntaxError, exit 1, and every real interpreter
+      # was rejected as "did not answer the interpreter probe". Single quotes
+      # are not special to that legacy reconstruction, so this form has none
+      # left to strip. See _test/test_ps1_legacy_args.sh.
+      $output = & $cmd.Source -c 'import sys; sys.stdout.write(''vault-guard-python:'' + sys.executable)' 2>$null
       if ($LASTEXITCODE -ne 0) {
         $reason = "$($cmd.Source) (ran, but exited $LASTEXITCODE instead of answering the interpreter probe)"
       } elseif ($output) {
@@ -148,6 +160,20 @@ if (-not $py) {
     }
     exit 0
 }
+
+# Backstop, not the fix: vault_guard.py reads stdin as raw bytes and decodes
+# them as UTF-8 explicitly, which never consults this variable - so it is
+# correct with or without it. What this protects is everything else python
+# does under the process's DEFAULT encoding when nothing more specific names
+# one - stdout/stderr text writes included. On Windows, absent this, that
+# default is the console's ANSI code page rather than UTF-8.
+#
+# Measured, and narrower than a first version of this comment claimed: an
+# explicit PYTHONIOENCODING in the calling environment overrides PYTHONUTF8's
+# encoding choice for every stream, stdin included - see vault-guard.sh's
+# twin of this comment for how the .sh suite's sabotage test caught that
+# overclaim directly. Mirrored in vault-guard.sh.
+$env:PYTHONUTF8 = "1"
 
 $global:LASTEXITCODE = $null
 try {

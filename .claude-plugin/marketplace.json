@@ -35,7 +35,7 @@
       "name": "claude-code-defaults",
       "source": "./skills/claude-code-defaults",
       "description": "Configure how Claude Code behaves by default - CLAUDE.md instructions, settings.json, permission allow/deny/ask rules and modes, hooks, default model, and which scope (user/project/local/managed) each belongs in.",
-      "version": "1.0.0"
+      "version": "1.0.1"
     },
     {
       "name": "claude-code-tuneup",
@@ -107,7 +107,7 @@
       "name": "intune-graph",
       "source": "./skills/intune-graph",
       "description": "Microsoft Intune via Microsoft Graph - device troubleshooting, compliance/config profiles, app deployment, report exports.",
-      "version": "1.1.0"
+      "version": "1.1.1"
     },
     {
       "name": "jira-manager",
@@ -125,7 +125,7 @@
       "name": "mermaid-svg-bitbucket",
       "source": "./skills/mermaid-svg-bitbucket",
       "description": "Pre-render Mermaid diagrams to committed SVG so they display correctly in Bitbucket Cloud.",
-      "version": "1.2.4"
+      "version": "1.2.5"
     },
     {
       "name": "notify",
@@ -203,7 +203,7 @@
       "name": "wazuh-onprem",
       "source": "./skills/wazuh-onprem",
       "description": "Self-hosted Wazuh across Server API, Indexer API, Dashboard saved-objects API, and ossec.conf over SSH.",
-      "version": "1.1.0"
+      "version": "1.1.1"
     },
     {
       "name": "web-research",
@@ -245,7 +245,7 @@
       "name": "obsidian-vault",
       "source": "./plugin/obsidian-vault",
       "description": "Make one or more Obsidian vaults Claude Code's durable, token-efficient memory - cross-platform, multi-vault setup and health checks for the Local REST API bridge (one MCP server per vault), a vault contract guard whose frontmatter and ASCII rules ship off and whose canvas shape check ships on, gardening and reflection agents, canvas and map-of-content generation, and graphify wiring into a separate codegraphs vault.",
-      "version": "0.3.14"
+      "version": "0.3.15"
     },
     {
       "name": "rule-of-two",
