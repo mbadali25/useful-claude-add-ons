@@ -74,7 +74,9 @@ div.l { font-size:11px; color:#5C5F6B; }
 <body>
 
 <h1>The Crew Plugin: An Overview for Everyone</h1>
-<p class="muted">The high-level guide. No code knowledge needed. A companion technical reference covers the same ground in depth. Written 20 September 2026 against crew 0.19.92, with the Stop-gate fix (0.19.93) described as it stands in review.</p>
+<p><img src="assets/solomon-logo-on-light.png" alt="Solomon" style="height:32px;margin:0 0 6pt;"></p>
+<p class="muted">Generated from useful-claude-add-ons@541b2b70 on 2026-09-22. Verify before trusting.<br>
+The high-level guide. No code knowledge needed. A companion technical reference covers the same ground in depth. Written against crew 0.20.11.</p>
 
 <div class="box">
 <p><b>In one paragraph.</b> Crew turns an AI coding assistant into a small, disciplined software team. One member manages, one investigates, one builds, an independent one from a different AI company reviews, and automatic checks stop anything that fails from being merged or released. Everything the team learns about a system is written down next to the code, so nothing depends on one person's memory or one chat window.</p>
@@ -104,16 +106,16 @@ div.l { font-size:11px; color:#5C5F6B; }
 </ul>
 
 <h2>3. Who Is on the Team</h2>
-<p>Crew starts small and grows only when there is evidence it should. A role is added when something has gone wrong that the role would have caught; it is not added because it sounds useful.</p>
+<p>Crew starts small and grows only when there is evidence it should. A role is added when something has gone wrong that the role would have caught; it is not added because it sounds useful. 54 role definitions ship with crew today: a manager, thirteen roles on the growth ladder, and forty specialists switched on per project.</p>
 <table>
 <thead><tr><th>Member</th><th>Job</th></tr></thead>
 <tbody>
-<tr><td>Manager</td><td>Keeps the picture, assigns work, reports status. Since this week it is mechanically prevented from writing code.</td></tr>
+<tr><td>Manager (PM)</td><td>Keeps the picture, assigns work, reports status. Mechanically prevented from writing application code by the role write guard.</td></tr>
 <tr><td>Explorer</td><td>Answers "where does this live and how does it work". It can read but never change anything.</td></tr>
-<tr><td>Builder</td><td>Implements one ticket at a time. Never reviews its own work.</td></tr>
+<tr><td>Builder (developer)</td><td>Implements one ticket at a time. Never reviews its own work.</td></tr>
 <tr><td>Reviewer</td><td>Hostile, independent review of every change, from a different AI company where possible.</td></tr>
 <tr><td>Security reviewer</td><td>Reads anything touching logins, secrets, databases, uploads or cloud permissions before it merges.</td></tr>
-<tr><td>Test writer</td><td>Builds the quick checks a project runs on every change, so the gates have something to stand on.</td></tr>
+<tr><td>Test writer (smoke-author)</td><td>Builds the quick checks a project runs on every change, so the gates have something to stand on.</td></tr>
 <tr><td>Planner, analyst, researcher</td><td>A second opinion on a design; a survey of what should improve next; answers from outside sources with references.</td></tr>
 <tr><td>Database reviewer, documentation writer, browser tester, scribe, cloud architect</td><td>Added as a project grows: migration review, documents generated from code, user-interface tests, the record of decisions, and a check on cloud designs before they are built.</td></tr>
 </tbody>
@@ -121,6 +123,7 @@ div.l { font-size:11px; color:#5C5F6B; }
 <p>Beyond these, forty specialists can be switched on for a particular project: experts in specific languages, cloud platforms, Microsoft products, security testing, compliance, and writing. They are switched on because a project uses that technology, not because the team has grown.</p>
 
 <h2>4. What You Can Ask For</h2>
+<p>28 slash commands ship with crew, each typed as <code>/crew:&lt;name&gt;</code>.</p>
 <table>
 <thead><tr><th>You want to...</th><th>What crew does</th></tr></thead>
 <tbody>
@@ -141,40 +144,16 @@ div.l { font-size:11px; color:#5C5F6B; }
 <p>Some checks must not depend on anyone remembering. Crew wires those into the editor so they run by themselves at fixed moments, whether or not the AI agrees.</p>
 <ul>
 <li><b>Before a command runs</b>, dangerous ones are refused: applying infrastructure changes, force-pushing, bypassing a merge protection, or touching anything you have declared as production.</li>
-<li><b>Before a file is written</b> (new this week), each team member may only write where its job allows. The manager cannot quietly become the builder.</li>
-<li><b>At the end of every turn</b>, the checks for the files that changed run, and a failure blocks the turn. This is the safety net under every change, and the subject of section 7.</li>
+<li><b>Before a file is written</b>, each team member may only write where its job allows. The manager cannot quietly become the builder.</li>
+<li><b>At the end of every turn</b> (the Stop gate), the checks for the files that changed run, and a failure blocks the turn. This is the safety net under every change.</li>
 <li><b>Before a merge or a release</b>, the same checks must be green, and a release without its evidence or its change request is refused.</li>
 </ul>
 <p>Two rules govern all of this. A check that can block ships switched off and is turned on deliberately. And when two settings disagree, or a setting cannot be read, the stricter one wins. Nothing ever quietly becomes "off".</p>
 
-<h2>6. What Changed This Week</h2>
-<table>
-<thead><tr><th>Change</th><th>What it means for you</th></tr></thead>
-<tbody>
-<tr><td>Team members no longer stall waiting for a task that will never wake them, and the manager no longer restarts a member that is still working.</td><td>Three agents in one night had frozen forever "waiting for a notification". That cannot happen now, and live work is not thrown away.</td></tr>
-<tr><td>The rules are now tested against a real AI model, not just written down.</td><td>The very first run caught the manager writing code itself, which the rules forbid.</td></tr>
-<tr><td>The manager, and every other member, is mechanically limited to the files its job allows.</td><td>The rule that the manager must not write code had been broken for four hours in one session. Now the tool refuses. It is switched on per project.</td></tr>
-<tr><td>Four command definitions that had silently failed to load were fixed, and a check now catches that class of breakage.</td><td>Silent breakage in the team's own definitions is now a failing check.</td></tr>
-</tbody>
-</table>
+<h2>6. What Changed Recently</h2>
+<p>The Stop gate — the safety net at the end of every turn — used to lose all its work when a single check failed: one bad rule threw away the record of every rule that had already passed, so the next turn re-checked everything again. Crew 0.20.11 fixes that: a rule's own passing record is kept even when a sibling rule fails, and only the rule that actually failed is left unrecorded. The same release closes a Git Bash landmine where the gate's own Python fallback could be shadowed by the wrong interpreter, makes the manager re-read the project's real state (not a cached copy) before every piece of work it hands out, and hardens the diagram-rendering script against a bad combination of flags. None of this changes what you type; it changes how much you can trust the gate that already runs on every turn.</p>
 
-<h2>7. The Stop-Gate Fix</h2>
-<div class="box">
-<p><b>The problem.</b> The safety net at the end of every turn was taking seven minutes, every turn, and people were cancelling it. A safety net that people switch off protects nobody.</p>
-</div>
-<p><b>Why.</b> The net remembers the last point it fully checked, and only checks what changed since. But it only moved that point forward when every check had run. One check took longer than the time allowed, so it was always postponed, the point never moved, and every turn re-checked everything since a commit from days ago. Separately, a check with no stated cost could never be postponed at all, so those ran every turn regardless. Two other projects on the same machine were worse: one had never recorded a checkpoint and had no costs stated, and another had ten checks that, on every turn, sent commands to a live development server.</p>
-<p><b>The fix.</b></p>
-<ul>
-<li>Each check is remembered on its own. One slow check no longer freezes progress for all the others. A postponed check is listed every turn until it is run, so nothing is forgotten.</li>
-<li>Checks measure their own cost the first time they run, so they can be scheduled sensibly afterwards.</li>
-<li>Each check declares whether it stays on this machine or reaches a server. Only local checks run automatically. A check that runs a script but has not declared itself is held until someone declares it, and the manager tells you which ones.</li>
-<li>Leftover settings in a terminal can no longer point a check at a production system.</li>
-<li>A check that could not run because its environment was absent is not counted as passed.</li>
-</ul>
-<p><b>Where it stands.</b> The fix is built and has been through five independent review rounds plus a specialist review, with 31 findings fixed and a test written for each. One of those tests runs this project's own real checks through the new logic and caught three mistakes that would have hurt this project directly. <span class="warn">One last fix is in progress, then one more review round, then it merges.</span> The quick fix already applied to this machine took the net here from seven minutes to a few seconds.</p>
-<p><b>What a project has to do once it arrives.</b> Declare which of its checks run scripts, price its checks once or let them price themselves, and record its checkpoint only on a commit that has actually been verified.</p>
-
-<h2>8. Getting Started</h2>
+<h2>7. Getting Started</h2>
 <ol>
 <li>Install crew in Claude Code.</li>
 <li>In a project, run the guided setup. It asks before it writes anything.</li>
@@ -183,7 +162,7 @@ div.l { font-size:11px; color:#5C5F6B; }
 <li>Write a ticket, let the team work it, read the review, merge when the gate is green.</li>
 </ol>
 
-<h2>9. Glossary</h2>
+<h2>8. Glossary</h2>
 <table>
 <thead><tr><th>Term</th><th>Meaning</th></tr></thead>
 <tbody>
@@ -198,6 +177,6 @@ div.l { font-size:11px; color:#5C5F6B; }
 </tbody>
 </table>
 
-<p class="muted">Provenance: written from the repository at commit 621d50dc and the Stop-gate branch at b6e8c4bb. Not verified: the Stop-gate fix's effect on live sessions, pending merge.</p>
+<p class="muted">Provenance: figures read from the repository at commit 541b2b70 (crew 0.20.11): 28 commands, 54 role definitions, 20 skills. The "what changed recently" section is drawn from CHANGELOG.md's [Unreleased] entry for crew 0.20.11. Not verified: this document's factual counts against any release after 541b2b70.</p>
 </body>
 </html>
