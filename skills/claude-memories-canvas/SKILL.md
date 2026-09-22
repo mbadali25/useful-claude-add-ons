@@ -2,7 +2,8 @@
 name: claude-memories-canvas
 description: >
   Read, edit and create Obsidian Canvas (`.canvas`) files in the `claude-memories` vault at
-  `C:\repos\claude-memories\wiki\maps` — this vault's node/edge schema, its colour and id
+  `C:\repos\claude-memories\wiki\maps` (Windows) / `/repos/claude-memories/wiki/maps` (Linux)
+  — this vault's node/edge schema, its colour and id
   conventions, its column-and-group geometry, and the two rules that make a canvas findable
   (facts live in notes; every canvas is linked from its `Project - *.md`). Use this skill
   whenever a task involves a canvas, a visual map, an architecture or topology diagram, or a
@@ -16,7 +17,7 @@ description: >
 
 # Obsidian Canvas in the claude-memories vault
 
-Canvases live in **`C:\repos\claude-memories\wiki\maps\`** — 20 of them today.
+Canvases live in **`C:\repos\claude-memories\wiki\maps\`** (Windows) / **`/repos/claude-memories/wiki/maps/`** (Linux) — 20 of them today.
 
 `.canvas` files are plain JSON on the open **JSON Canvas** spec. There is no MCP
 server and no special tool: Read, Write and Edit are sufficient and correct. Do not
@@ -160,9 +161,15 @@ The vault's canvases follow a consistent geometry — copy it rather than invent
    only *reports* the holder — it does not take anything, so a run that stops there has
    no lock at all:
    ```
+   # Windows
    pwsh -NoProfile -File C:\repos\claude-memories\.claude\vault-lock.ps1 -Status
    pwsh -NoProfile -File C:\repos\claude-memories\.claude\vault-lock.ps1 -Acquire -Owner <who>
    pwsh -NoProfile -File C:\repos\claude-memories\.claude\vault-lock.ps1 -Release
+
+   # Linux (pwsh is cross-platform; same script, same vault, different root)
+   pwsh -NoProfile -File /repos/claude-memories/.claude/vault-lock.ps1 -Status
+   pwsh -NoProfile -File /repos/claude-memories/.claude/vault-lock.ps1 -Acquire -Owner <who>
+   pwsh -NoProfile -File /repos/claude-memories/.claude/vault-lock.ps1 -Release
    ```
    Non-zero from `-Acquire` means someone else holds it: stop, do not write anyway.
    Always `-Release`, including on the path where the write failed.

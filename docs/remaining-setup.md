@@ -27,7 +27,7 @@ Restart Claude Code (hooks are cached at load), then in a session:
 /obsidian-vault:init
 ```
 
-It detects `C:\repos\claude-memories` from Obsidian's own registry, configures
+It detects `C:\repos\claude-memories` (Windows) / `/repos/claude-memories` (Linux) from Obsidian's own registry, configures
 the Local REST API bridge, registers the `obsidian-memory` MCP server, and
 writes `~/.claude/obsidian/config.json`. Answer the companion-plugin
 recommendations as you like — each install asks its own yes.
@@ -35,7 +35,8 @@ recommendations as you like — each install asks its own yes.
 Then add the codegraphs vault as a second named vault:
 
 ```
-/obsidian-vault:init codegraphs C:\repos\claude-memories-codegraphs
+/obsidian-vault:init codegraphs C:\repos\claude-memories-codegraphs   # Windows
+/obsidian-vault:init codegraphs /repos/claude-memories-codegraphs    # Linux
 ```
 
 That registers `obsidian-codegraphs` on port 27125 with `layout: org/repo`.
@@ -282,7 +283,8 @@ granted. A server that starts is not a server that authenticates.
   question in `/crew:init`. Board and ticket notes live in
   `<vault>/Boards/<repo>/`.
 - **Graph export into the codegraphs vault**: in a crew repo, set
-  `graph.obsidian.dir` to `C:\repos\claude-memories-codegraphs\<org>` and
+  `graph.obsidian.dir` to `C:\repos\claude-memories-codegraphs\<org>` (Windows) /
+  `/repos/claude-memories-codegraphs/<org>` (Linux) and
   `graph.obsidian.layout` to `"org/repo"`. Export still asks for in-session
   consent (`graph.obsidian.confirmed`) every setup.
 

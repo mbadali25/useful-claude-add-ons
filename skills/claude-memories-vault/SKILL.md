@@ -1,7 +1,8 @@
 ---
 name: claude-memories-vault
 description: >
-  Conventions for the `claude-memories` Obsidian vault at `C:\repos\claude-memories` —
+  Conventions for the `claude-memories` Obsidian vault at `C:\repos\claude-memories`
+  (Windows) / `/repos/claude-memories` (Linux) —
   folder layout, the six required frontmatter fields, the `type`/`status` value sets, the
   templates in `wiki/templates`, how wikilinks resolve on Windows, the write lock, and the
   rule for choosing between this vault and Claude Code auto-memory. Use this skill whenever
@@ -16,7 +17,7 @@ description: >
 
 # The claude-memories vault
 
-Root: **`C:\repos\claude-memories`** — a git repo, synced by Obsidian Sync and
+Root: **`C:\repos\claude-memories`** (Windows) / **`/repos/claude-memories`** (Linux) — a git repo, synced by Obsidian Sync and
 committed by Obsidian Git every 15 minutes. **Another process owns commits here.**
 Write notes; do not commit unless you were explicitly asked to.
 
@@ -38,7 +39,7 @@ conventions are still a workable template, but the paths will not resolve.
 
 | | Auto-memory | This vault |
 |---|---|---|
-| Where | `C:\Users\mbadali\.claude\projects\<slug>\memory\` | `C:\repos\claude-memories` |
+| Where | `C:\Users\mbadali\.claude\projects\<slug>\memory\` | `C:\repos\claude-memories` (Windows) / `/repos/claude-memories` (Linux) |
 | Size | small | 291 concepts, 500+ session pages |
 | Loaded | every session, automatically | on demand, via `/recall` |
 | Holds | operational state: what is in flight, this box's quirks | distilled concepts, provenance, visual maps |
@@ -164,8 +165,13 @@ Canvas links include the extension: `[[exec-insights.canvas]]`.
    they have collided before — one agent committed another's staged-but-uncommitted
    edits inside its own 68-file commit:
    ```
+   # Windows
    pwsh -NoProfile -File C:\repos\claude-memories\.claude\vault-lock.ps1 -Acquire -Owner <who>
    pwsh -NoProfile -File C:\repos\claude-memories\.claude\vault-lock.ps1 -Release
+
+   # Linux (pwsh is cross-platform; same script, same vault, different root)
+   pwsh -NoProfile -File /repos/claude-memories/.claude/vault-lock.ps1 -Acquire -Owner <who>
+   pwsh -NoProfile -File /repos/claude-memories/.claude/vault-lock.ps1 -Release
    ```
    Non-zero from `-Acquire` means someone else holds it. Stop; do not write anyway.
    `-Owner` is a short string naming who took it, so the next agent can see who to

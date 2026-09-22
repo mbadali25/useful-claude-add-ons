@@ -40,6 +40,7 @@ cache location by name. Restored afterward.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -166,3 +167,51 @@ def test_no_pack_installed_falls_back_to_neutral_loudly(tmp_path):
     plain = _run(script, fake_home)
     assert "no brand pack found" in plain.stderr
     assert "Searched:" in plain.stderr
+
+
+def test_windows_drive_path_resolves_absolute_on_linux(tmp_path):
+    """A brand pack's masters_dir/assets_dir can be authored on Windows
+    (`C:\\repos\\...`) and read on Linux - that is exactly what
+    solomon-doc-builder/assets/brand.json does. Before this fix, `_rel()`
+    only recognised the CURRENT OS's own absolute form (`os.path.isabs()`),
+    so on Linux a `C:\\...` value read as relative and got silently joined
+    onto `assets/`, producing something like
+    `.../solomon-doc-builder/assets/C:\\repos\\OnboardingSOPs\\sops_new` -
+    which `--json` printed with no indication anything was wrong.
+
+    SABOTAGE-TESTED: reverting `_rel()` to `return value if os.path.isabs(value)
+    else os.path.normpath(os.path.join(self.root, value))` makes this go RED
+    on Linux - `masters_dir` comes back containing the literal string
+    `assets/C:` instead of `/repos/OnboardingSOPs/sops_new`.
+    """
+    script, fake_home = _make_plugin_cache(tmp_path)
+    marketplace_dir = script.parent.parent.parent.parent  # .../<marketplace>/
+    pack = marketplace_dir / "acme-doc-builder" / "1.0.0" / "assets"
+    pack.mkdir(parents=True)
+    (pack / "brand.json").write_text(json.dumps({
+        "name": "acme",
+        "sop": {
+            "masters_dir": "C:\\repos\\OnboardingSOPs\\sops_new",
+            "assets_dir": "C:\\repos\\OnboardingSOPs\\assets",
+        },
+    }), encoding="utf-8")
+    # Remove the sibling solomon pack so acme is the only one found, rather
+    # than an ambiguous two-pack case this test is not about.
+    shutil.rmtree(marketplace_dir / "solomon-doc-builder")
+
+    result = _run(script, fake_home, "--json")
+    assert result.returncode == 0, result.stderr
+    data = json.loads(result.stdout)
+    # --json prints the merged SOURCE dict, before _rel() resolves anything -
+    # this should be the untouched Windows string.
+    assert data["sop"]["masters_dir"] == "C:\\repos\\OnboardingSOPs\\sops_new"
+
+    if os.name != "nt":
+        # The resolved (made-absolute) paths only show up in the plain,
+        # non-JSON run.
+        plain = _run(script, fake_home)
+        assert plain.returncode == 0, plain.stderr
+        assert "/repos/OnboardingSOPs/sops_new" in plain.stdout
+        assert "/repos/OnboardingSOPs/assets" in plain.stdout
+        assert "assets/C:" not in plain.stdout
+        assert "NOT FOUND" in plain.stdout  # honestly reported, not silently swallowed

@@ -44,7 +44,10 @@ import argparse
 import copy
 import glob
 import json
+import ntpath
 import os
+import posixpath
+import re
 import sys
 
 SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -61,6 +64,17 @@ MASTERS_DIR_ENV = "DOC_BUILDER_MASTERS_DIR"
 # climbs. Four reaches `cache/` from `cache/<marketplace>/doc-builder/<version>/`
 # with one to spare; a drive root is never searched.
 CACHE_CLIMB = 4
+
+# A brand pack is authored on whoever's machine measured the values (see
+# solomon-doc-builder/assets/brand.json's own _comment) and then committed, so
+# a Windows contributor's `C:\repos\...` has to resolve correctly when the
+# same pack is read on Linux, and vice versa. `os.path.isabs()` only
+# recognises the CURRENT OS's own absolute form, so without this a
+# Windows-authored drive path read on POSIX is neither absolute nor relative
+# to anything sensible - `_rel()` used to join it onto `assets/` and produce
+# a nonsense path that `os.path.isdir()` then correctly, but misleadingly,
+# reported as simply "not found".
+_WINDOWS_DRIVE_ABS_RE = re.compile(r"^[A-Za-z]:[\\/]")
 
 
 class BrandError(SystemExit):
@@ -233,10 +247,30 @@ class Brand:
         return self.data["sop"]
 
     def _rel(self, value):
-        """A relative path in brand.json is relative to the assets/ directory."""
+        """A relative path in brand.json is relative to the assets/ directory.
+
+        An absolute path is absolute on whichever OS authored it, not just the
+        one resolve_brand.py happens to be running on. A Windows drive path
+        (`C:\\repos\\...`) is absolute even when read on Linux; treating it as
+        relative here - which `os.path.isabs()` alone would do, since it only
+        knows POSIX absolute paths - silently joined it onto `assets/` and
+        produced a path that looked plausible but pointed nowhere real.
+        Per this repo's own convention (CLAUDE.md), a Windows drive root and
+        the Linux root are the same machine, different OS, so the drive
+        letter is dropped and the rest read as POSIX-absolute:
+        `C:\\repos\\x` -> `/repos/x`.
+        """
         if not value:
             return None
         value = os.path.expandvars(os.path.expanduser(str(value)))
+        if _WINDOWS_DRIVE_ABS_RE.match(value):
+            if os.name == "nt":
+                return os.path.normpath(value)
+            return posixpath.normpath("/" + ntpath.splitdrive(value)[1].replace("\\", "/").lstrip("/"))
+        if os.name != "nt" and ntpath.isabs(value) and not os.path.isabs(value):
+            # A bare `\like\this` (or `/like/this` written with backslashes
+            # elsewhere in the pack) - still absolute, not relative to assets/.
+            return posixpath.normpath(value.replace("\\", "/"))
         return value if os.path.isabs(value) else os.path.normpath(os.path.join(self.root, value))
 
     @property
@@ -401,7 +435,9 @@ def main(argv=None) -> int:
         masters = brand.masters_dir
         state = "" if not masters else ("" if os.path.isdir(masters) else "  (NOT FOUND on this machine)")
         print(f"masters_dir : {masters or '(none - pass an output path)'}{state}")
-        print(f"assets_dir  : {(brand.assets_dir or '(none)')}")
+        assets = brand.assets_dir
+        astate = "" if not assets else ("" if os.path.isdir(assets) else "  (NOT FOUND on this machine)")
+        print(f"assets_dir  : {assets or '(none)'}{astate}")
         print(f"specs_dir   : {(brand.specs_dir or '(none)')}")
         print(f"reports     : {brand.report_output_dir}/")
     return 0
