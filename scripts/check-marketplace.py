@@ -1091,6 +1091,47 @@ def check_crew_ignore_policy(fail):
             )
 
 
+def check_command_backtick_spans(fail):
+    """No command file holds a ``double-backtick`` span containing a backtick.
+
+    Claude Code pairs SINGLE backticks when it scans a command file, so a
+    double-backtick span with a literal backtick inside re-pairs into spans
+    nobody wrote, and the text between them is handed to bash before the
+    command runs.
+
+    Measured, not theorised. `plugin/crew/commands/verify.md:140` documented
+    the shell metacharacters with the backtick among them:
+
+        `` ( ) $ ; & | < > ` " ' \\ { } * ? [ ] ~ # ! ``, a newline, or a tab.
+        No exception, not even `2>&1` ...
+
+    Re-pairing made `, a newline, or a tab. No exception, not even ` a span of
+    its own, and `/crew:verify` died with
+
+        /bin/bash: line 1: ,: command not found
+
+    before it ran a single rule. An earlier repair of the same file looked for
+    a BANG adjacent to a closing delimiter and reported 0 of 54 files carrying
+    it - true, and the wrong pattern, so this survived the fix that was
+    supposed to catch it. The bang was never the mechanism; an unbalanced
+    backtick count is.
+
+    Put such a list in a fenced block, which is never scanned this way.
+    """
+    hits = []
+    for path in sorted(glob.glob("plugin/*/commands/*.md")
+                       + glob.glob("skills/*/commands/*.md")):
+        with open(path, encoding="utf-8") as fh:
+            text = fh.read()
+        for m in re.finditer(r"``[^`\n]*`[^`\n]*``", text):
+            line = text[:m.start()].count("\n") + 1
+            hits.append(f"{path}:{line}: double-backtick span contains a "
+                        f"backtick, so it re-pairs and the text after it is "
+                        f"executed: {m.group(0)[:60]!r}")
+    for h in hits:
+        fail(h)
+
+
 def check_hook_commands(entries, fail):
     r"""Every shell-form hook command survives the shell that will actually run it.
 
@@ -1156,6 +1197,7 @@ def main() -> int:
     check_group_parity(fail)
     check_docs(entries, fail)
     check_hook_commands(entries, fail)
+    check_command_backtick_spans(fail)
     check_versions(entries, fail)
     check_self_claims(entries, fail)
     check_crew_ignore_policy(fail)

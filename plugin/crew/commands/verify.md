@@ -136,10 +136,22 @@ local" is narrower than it looks.** The scanner (`verify_record.scan_reach`)
 STOPS MODELLING SHELL (Codex round 6) — five rounds of "read one layer
 deeper into the shell syntax" each found a new shape that defeated the last
 one, so it no longer tries to parse shell at all:
-- **any shell metacharacter present, anywhere, defers unconditionally** —
-  `` ( ) $ ; & | < > ` " ' \ { } * ? [ ] ~ # ! ``, a newline, or a tab. No
-  exception, not even `2>&1` or a trailing `#` comment. Notice: `shell
-  syntax in an undeclared rule: declare "reach": "local" (or network/host)`.
+- **any shell metacharacter present, anywhere, defers unconditionally** — the
+  set below, plus a newline or a tab. No exception, not even a `2>&1` or a
+  trailing comment. Notice: `shell syntax in an undeclared rule: declare
+  "reach": "local" (or network/host)`.
+
+  ```text
+  ( ) $ ; & | < > ` " ' \ { } * ? [ ] ~ # !
+  ```
+
+  That set is in a fenced block, not an inline span, and it has to stay that
+  way. It contains a backtick, and Claude Code pairs SINGLE backticks when it
+  scans a command file — so a ``double-backtick`` span holding one re-pairs
+  into spans nobody wrote, and the text between them is handed to bash. This
+  exact line did that: the fragment starting `, a newline, or a tab` became a
+  command, and `/crew:verify` died with `/bin/bash: line 1: ,: command not
+  found` before it ran anything. A fenced block is never scanned that way.
 - only once nothing on that list is present does whitespace-only splitting
   become safe. A reach verb (`ssm`, `ssh`, `curl`, `aws`, `az`, `gh`,
   `psql`, `mysql`) anywhere — notice: `remote verb <v>`.
