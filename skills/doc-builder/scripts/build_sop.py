@@ -631,8 +631,11 @@ def resolve_output(spec, base_dir, out=None, brand=None):
     if out:
         return os.path.abspath(out)
     if spec.get("output"):
-        o = spec["output"]
-        return o if os.path.isabs(o) else os.path.normpath(os.path.join(base_dir, o))
+        # abs_or_join, not os.path.isabs: a spec authored on Windows carries
+        # `C:\repos\...\X.docx`, which on Linux joined onto base_dir as a single
+        # SEGMENT and wrote one file literally named `C:\repos\...\X.docx` into
+        # the spec's own folder - exit 0, "Built:" printed, nothing amiss.
+        return resolve_brand.abs_or_join(spec["output"], base_dir)
     if brand is None or not brand.masters_dir:
         raise SystemExit(
             "No output path: the spec has no \"output\", --out was not given, and "
@@ -660,8 +663,12 @@ def build_from_spec(spec, base_dir=".", out=None, brand=None, dry_run=False):
         if kind not in _DISPATCH:
             raise ValueError(f"Unknown block type: {kind!r}")
         if kind == "image":
-            if not os.path.isabs(blk["path"]):
-                blk = dict(blk, path=os.path.normpath(os.path.join(base_dir, blk["path"])))
+            # Same cross-OS absolute rule as the output path. This branch
+            # already failed LOUDLY on a Windows-authored path (the joined
+            # result is stat'd and missing), and it still does - what changes
+            # is that the path in the message is now the real one being looked
+            # for, and that a drive path whose POSIX twin exists now resolves.
+            blk = dict(blk, path=resolve_brand.abs_or_join(blk["path"], base_dir))
             if not os.path.isfile(blk["path"]):
                 raise FileNotFoundError(f"image not found: {blk['path']}")
             images += 1

@@ -77,6 +77,42 @@ CACHE_CLIMB = 4
 _WINDOWS_DRIVE_ABS_RE = re.compile(r"^[A-Za-z]:[\\/]")
 
 
+def abs_or_join(value, base):
+    """Resolve `value` against `base` treating "absolute" as OS-independent.
+
+    `os.path.isabs()` only recognises the CURRENT OS's own absolute form, so on
+    POSIX a Windows-authored `C:\\repos\\x` is neither absolute nor meaningfully
+    relative: `os.path.join(base, value)` appends it as a single path SEGMENT
+    and yields `<base>/C:\\repos\\x` - one filename containing a drive letter, a
+    colon and backslashes. Nothing raises, so every caller that only stats or
+    writes the result reports success on a path nobody will ever look at.
+
+    Per this repo's convention (CLAUDE.md), a Windows drive root and the Linux
+    root are the same machine, different OS, so the drive letter is dropped and
+    the rest read as POSIX-absolute: `C:\\repos\\x` -> `/repos/x`.
+
+    This is the predicate `Brand._rel()` was fixed with at `67f6fdb5`. It lives
+    here, at module level, because three sibling call sites
+    (`build_sop.resolve_output`, `build_sop.build_from_spec`'s image branch, and
+    `check_conformance._load_spec_map`) were still using the bare
+    `os.path.isabs()` form the fix replaced. A fourth copy of the predicate is
+    how a fifth call site gets written; there is one copy, and it is this one.
+
+    `value` is assumed non-empty and already expanded - `_rel()` does its own
+    `expandvars`/`expanduser` first, and a spec's paths are deliberately NOT
+    expanded, so that step stays with the caller that wants it.
+    """
+    if _WINDOWS_DRIVE_ABS_RE.match(value):
+        if os.name == "nt":
+            return os.path.normpath(value)
+        return posixpath.normpath("/" + ntpath.splitdrive(value)[1].replace("\\", "/").lstrip("/"))
+    if os.name != "nt" and ntpath.isabs(value) and not os.path.isabs(value):
+        # A bare `\like\this` (or `/like/this` written with backslashes
+        # elsewhere) - still absolute, not relative to `base`.
+        return posixpath.normpath(value.replace("\\", "/"))
+    return value if os.path.isabs(value) else os.path.normpath(os.path.join(base, value))
+
+
 class BrandError(SystemExit):
     """Raised as SystemExit so a CLI caller exits non-zero with the message."""
 
@@ -263,15 +299,7 @@ class Brand:
         if not value:
             return None
         value = os.path.expandvars(os.path.expanduser(str(value)))
-        if _WINDOWS_DRIVE_ABS_RE.match(value):
-            if os.name == "nt":
-                return os.path.normpath(value)
-            return posixpath.normpath("/" + ntpath.splitdrive(value)[1].replace("\\", "/").lstrip("/"))
-        if os.name != "nt" and ntpath.isabs(value) and not os.path.isabs(value):
-            # A bare `\like\this` (or `/like/this` written with backslashes
-            # elsewhere in the pack) - still absolute, not relative to assets/.
-            return posixpath.normpath(value.replace("\\", "/"))
-        return value if os.path.isabs(value) else os.path.normpath(os.path.join(self.root, value))
+        return abs_or_join(value, self.root)
 
     @property
     def template(self):

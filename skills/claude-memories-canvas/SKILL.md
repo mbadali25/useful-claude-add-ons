@@ -157,22 +157,57 @@ The vault's canvases follow a consistent geometry — copy it rather than invent
    every `file` node points at a file that exists.
 5. **Write the facts into a note** in `wiki\concepts\` and cite it, per rule 1.
 6. **Add or update the row in the matching `Project - *.md`**, per rule 2.
-7. **Take the vault lock** before writing if the gardener might be running. `-Status`
-   only *reports* the holder — it does not take anything, so a run that stops there has
-   no lock at all:
-   ```
-   # Windows
-   pwsh -NoProfile -File C:\repos\claude-memories\.claude\vault-lock.ps1 -Status
-   pwsh -NoProfile -File C:\repos\claude-memories\.claude\vault-lock.ps1 -Acquire -Owner <who>
-   pwsh -NoProfile -File C:\repos\claude-memories\.claude\vault-lock.ps1 -Release
+7. **Take the vault lock — if this host has one.** `-Status` only *reports* the holder
+   — it does not take anything, so a run that stops there has no lock at all.
+   **Resolve the interpreter and the vault root; never name either bare.** A bare
+   `pwsh` is not on Git Bash's PATH on Windows, and its "command not found" is
+   indistinguishable, from the exit code alone, from a lock that refused you:
+   ```bash
+   # Interpreter order is ported from .crew/verify.json:170 - under WSL the
+   # reachable binary is the Windows one and is named pwsh.exe, so the .exe
+   # suffix must be tried as well as omitted, at both known locations.
+   PWSH=""
+   for c in pwsh pwsh.exe \
+            "/c/Program Files/PowerShell/7/pwsh" "/c/Program Files/PowerShell/7/pwsh.exe" \
+            "/mnt/c/Program Files/PowerShell/7/pwsh.exe" "/mnt/c/Program Files/PowerShell/7/pwsh"; do
+     if command -v "$c" >/dev/null 2>&1 || [ -x "$c" ]; then PWSH="$c"; break; fi
+   done
 
-   # Linux (pwsh is cross-platform; same script, same vault, different root)
-   pwsh -NoProfile -File /repos/claude-memories/.claude/vault-lock.ps1 -Status
-   pwsh -NoProfile -File /repos/claude-memories/.claude/vault-lock.ps1 -Acquire -Owner <who>
-   pwsh -NoProfile -File /repos/claude-memories/.claude/vault-lock.ps1 -Release
+   VAULT="/repos/claude-memories"                        # Linux / macOS
+   [ -d "$VAULT" ] || VAULT="C:/repos/claude-memories"   # Windows
+   LOCK="$VAULT/.claude/vault-lock.ps1"
+
+   if [ -z "$PWSH" ] || [ ! -f "$LOCK" ]; then
+     # THIRD OUTCOME, not a failure and not contention - see below.
+     echo "NO VAULT LOCK: pwsh=${PWSH:-unresolved} lock=$LOCK" >&2
+   else
+     "$PWSH" -NoProfile -File "$LOCK" -Status
+     "$PWSH" -NoProfile -File "$LOCK" -Acquire -Owner <who>
+     "$PWSH" -NoProfile -File "$LOCK" -Release
+   fi
    ```
    Non-zero from `-Acquire` means someone else holds it: stop, do not write anyway.
    Always `-Release`, including on the path where the write failed.
+
+   **No lock on this host is a third outcome, not a refusal.** The lock is a
+   host-local artifact: it lives in the vault's `.claude/`, which is outside the
+   Obsidian Sync payload and absent from the vault's git history, so it reaches a
+   machine only when that machine installs it. Measured 2026-09-22 on the Linux
+   host: `/repos/claude-memories/.claude/` does not exist and there is no
+   `vault-lock.ps1` anywhere in the vault. Both reflexes are wrong there —
+   *stopping* leaves the vault unwritable over a hazard the lock never covered
+   between hosts, and *writing as though you had taken it* reinstates the collision
+   the lock exists to prevent.
+
+   **The full branch, including what to do instead, is in the
+   `claude-memories-vault` skill's "Writing into the vault" step 2.** Read it rather
+   than improvising; it is the same vault and the same lock, and the two documents
+   drifting apart is how one of them starts giving the unsafe answer. The short
+   version, so an agent that loaded only this skill is not stranded: say out loud
+   that this host has no vault lock, stage canvases by exact path (never `git add -A`),
+   and bracket the write with `git status --porcelain` to catch another live writer.
+   That is not a lock and must not be recorded as one — it bounds the blast radius
+   and serializes nothing.
 
 ## When a canvas is the wrong answer
 

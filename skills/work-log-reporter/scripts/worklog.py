@@ -221,7 +221,7 @@ def cmd_init(args) -> int:
     cfg_path = config_path(root)
     created = False
     if not cfg_path.exists() or args.force:
-        template = json.loads((ASSETS / "worklog.config.example.json").read_text())
+        template = json.loads((ASSETS / "worklog.config.example.json").read_text(encoding="utf-8"))
         template["project"]["name"] = args.project or root.name
         cfg_path.write_text(json.dumps(template, indent=2) + "\n", encoding="utf-8")
         created = True
@@ -242,7 +242,10 @@ def cmd_init(args) -> int:
 
     readme = base / "README.md"
     if not readme.exists() and (ASSETS / "worklog-readme.md").exists():
-        readme.write_text((ASSETS / "worklog-readme.md").read_text(), encoding="utf-8")
+        readme.write_text(
+            (ASSETS / "worklog-readme.md").read_text(encoding="utf-8"),
+            encoding="utf-8",
+        )
 
     print(f"work-log ready at {base}")
     print(f"  config   {cfg_path} {'(created)' if created else '(already existed)'}")

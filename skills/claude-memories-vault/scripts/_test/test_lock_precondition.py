@@ -101,6 +101,19 @@ def test_the_fallback_is_not_described_as_a_lock():
     assert "It serializes nothing" in step
 
 
+def _invocations(step):
+    """Lines that actually run the lock script.
+
+    Matches on `-File "$LOCK"` rather than on the literal script name: the
+    interpreter and the vault root are both resolved into variables now, so no
+    single line carries the interpreter and the script name together any more.
+    An earlier version of this helper looked for a line containing both
+    `vault-lock.ps1` and `pwsh`, and it went red on a correct document for
+    exactly that reason.
+    """
+    return [line for line in step.splitlines() if '-File "$LOCK"' in line]
+
+
 def test_status_is_offered_before_acquire():
     """`-Status` is the check that tells an agent which branch it is on.
 
@@ -108,13 +121,62 @@ def test_status_is_offered_before_acquire():
     `-Status` line printed after `-Acquire` is read only by someone who has
     already run the command whose failure mode this whole section is about.
     """
-    step = _lock_step(_read())
-    invocations = [
-        line for line in step.splitlines() if _LOCK_SCRIPT in line and "pwsh" in line
-    ]
+    invocations = _invocations(_lock_step(_read()))
 
     assert invocations, f"no {_LOCK_SCRIPT} invocation found in the lock step"
     assert "-Status" in invocations[0]
+
+
+def test_the_interpreter_is_never_named_bare():
+    """A bare `pwsh` is not on Git Bash's PATH on Windows.
+
+    Its "command not found" is indistinguishable, from the exit code alone,
+    from a lock that refused you -- the unknown collapsing into a value that
+    looks like a check happened, which is the failure this whole step exists
+    to prevent. So every invocation must go through the resolved variable.
+    """
+    text = _read()
+
+    for line in _invocations(_lock_step(text)):
+        assert line.lstrip().startswith('"$PWSH"'), f"unresolved interpreter: {line!r}"
+
+    assert not re.search(r"^\s*pwsh\s+-NoProfile", text, re.MULTILINE), (
+        "a bare `pwsh -NoProfile` invocation is back in the document"
+    )
+
+
+def test_the_resolver_tries_every_candidate_verify_json_tries():
+    """Ported from `.crew/verify.json:170`, and the order is load-bearing.
+
+    Under WSL the reachable binary is the Windows one and is named `pwsh.exe`,
+    so omitting the suffix reported TOOL MISSING on a box where PowerShell was
+    installed and usable. Both locations are therefore tried with AND without
+    the suffix.
+    """
+    step = _flat(_lock_step(_read()))
+
+    for candidate in (
+        "pwsh pwsh.exe",
+        '"/c/Program Files/PowerShell/7/pwsh"',
+        '"/c/Program Files/PowerShell/7/pwsh.exe"',
+        '"/mnt/c/Program Files/PowerShell/7/pwsh.exe"',
+        '"/mnt/c/Program Files/PowerShell/7/pwsh"',
+    ):
+        assert candidate in step, f"resolver does not try {candidate}"
+
+
+def test_unavailable_never_collapses_into_held():
+    """The two outcomes must stay distinguishable inside the runnable block.
+
+    Prose elsewhere in the step already says so; this pins that the code an
+    agent copies branches on it, because the code is what actually runs.
+    """
+    step = _lock_step(_read())
+
+    assert '[ -z "$PWSH" ] || [ ! -f "$LOCK" ]' in step
+    assert "NO VAULT LOCK" in step
+    assert "Never read this as contention." in step
+    assert "An absent lock is not a held lock." in step
 
 
 def test_every_lock_invocation_sits_inside_the_lock_step():
@@ -123,6 +185,80 @@ def test_every_lock_invocation_sits_inside_the_lock_step():
     step = _lock_step(text)
 
     assert text.count(_LOCK_SCRIPT) == step.count(_LOCK_SCRIPT)
+
+
+def test_no_user_profile_path_is_pinned_to_a_username():
+    """`C:\\Users\\<name>\\...` is wrong on Linux and fragile on Windows.
+
+    The vault root maps `C:\\repos\\X` <-> `/repos/X` between the two hosts. The
+    user profile does NOT: the accounts are unrelated and need not share a
+    name. Every remaining mention of a literal `C:\\Users\\` must therefore be
+    the prose explaining why not to write one -- never an instruction.
+    """
+    for line in _read().splitlines():
+        if "C:\\Users\\" not in line:
+            continue
+        assert "<someone>" in line, f"a username is pinned in an instruction: {line!r}"
+
+
+def test_the_queue_writer_resolves_its_interpreter():
+    """`C:\\Python314\\python.exe` names one build directory.
+
+    It stops being true at the next Python upgrade on that same Windows box,
+    never mind on a host that is not Windows.
+    """
+    text = _read()
+    flat = _flat(text)
+
+    assert "for c in python3 python py" in flat, "the queue writer pins an interpreter"
+    assert '"$PY" "$QUEUE" checkoff' in flat
+    assert "NO QUEUE WRITER" in flat, "no named outcome when the writer is absent"
+
+    for line in text.splitlines():
+        if "C:\\Python314" not in line:
+            continue
+        assert "names one build directory" in line, f"pinned interpreter: {line!r}"
+
+
+def test_case_sensitivity_is_named_as_a_wikilink_consequence():
+    """The difference that actually separates NTFS from ext4.
+
+    The section used to list two consequences, both about the forbidden `:`
+    and prefix-boundary counting -- neither of which differs by host. The one
+    that does was absent, so a link correct on Windows dead-links on Linux and
+    is reported broken on neither.
+    """
+    flat = _flat(_read())
+
+    assert "Match the filename's CASE exactly" in flat
+    assert "Three consequences" in flat
+    assert "[[Project - Scripts]]" in flat and "Project - scripts.md" in flat
+    assert "10 link occurrences resolve case-insensitively only" in flat
+
+
+def test_the_case_finding_is_tied_to_the_promotion_count():
+    """A reference count that differs by host cannot gate promotion silently.
+
+    The 10 occurrences count toward `Project - scripts` on Windows and toward
+    nothing on Linux, so the exact-boundary recount that disqualified 2 of 12
+    candidates returns a different answer per host.
+    """
+    flat = _flat(_read())
+
+    assert "host-dependent" in flat
+    assert "say which host you counted on" in flat
+
+
+def test_the_untested_part_is_marked_untested():
+    """Whether Obsidian's own resolver papers over the 10 is not known.
+
+    An unknown has to survive as its own value into everything derived from
+    it, or the document reads as though it were checked.
+    """
+    flat = _flat(_read())
+
+    assert "**Unverified:**" in flat
+    assert "Nobody has tested it" in flat
 
 
 def _main():

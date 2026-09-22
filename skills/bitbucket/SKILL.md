@@ -89,11 +89,13 @@ Standard git; only the auth is Bitbucket-specific.
 
 ## REST API operations
 
-Use `scripts/bb.sh` — a thin curl wrapper that handles auth and JSON:
+Use `scripts/bb.sh` — a thin curl wrapper that handles auth and JSON. Invoke it
+through `bash`, never as a bare path: its executable bit is not something to
+rely on across clones or platforms.
 
 ```bash
-scripts/bb.sh GET  "repositories/$BITBUCKET_WORKSPACE/my-repo/pullrequests?state=OPEN"
-scripts/bb.sh POST "repositories/$BITBUCKET_WORKSPACE/my-repo/pullrequests" '{
+bash scripts/bb.sh GET  "repositories/$BITBUCKET_WORKSPACE/my-repo/pullrequests?state=OPEN"
+bash scripts/bb.sh POST "repositories/$BITBUCKET_WORKSPACE/my-repo/pullrequests" '{
   "title": "Fix NPS timeout",
   "source": {"branch": {"name": "feature/nps-fix"}},
   "destination": {"branch": {"name": "main"}},
@@ -160,7 +162,7 @@ Offline checks for the script: `scripts/_test/merge_gate.sh`.
 ## Common tasks, end to end
 
 **"Push my changes and open a PR"**
-1. Verify remote is bitbucket.org; confirm auth works (`scripts/bb.sh GET user`).
+1. Verify remote is bitbucket.org; confirm auth works (`bash scripts/bb.sh GET user`).
 2. Commit + push the branch.
 3. `POST .../pullrequests` with source/destination branches; return the PR URL
    from the response's `links.html.href`.
