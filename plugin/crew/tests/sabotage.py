@@ -506,10 +506,17 @@ MUTATIONS = (
         # opened for: `docs.theme` configuring a tool crew's own documented
         # generation path never mentions, so there is no call site for a
         # `--brand` to attach to and the setting quietly does nothing.
+        #
+        # Re-anchored 2026-09-22: the routing bullet grew an "as HTML, DOCX
+        # or PDF" clause when the HTML route was added (commit 1741f233),
+        # which split the old one-line anchor across two lines. Same bullet,
+        # same key rename.
         "doc-builder is dropped from the routing table",
         HOUSE_STYLE,
-        "- `doc-builder` — branded findings reports and screenshot SOPs. Pass",
-        "- `doc-builder-removed` — branded findings reports and SOPs. Pass",
+        "- `doc-builder` — branded findings reports and screenshot SOPs, as HTML,\n"
+        "  DOCX or PDF. Pass `--brand <docs.theme>`;",
+        "- `doc-builder-removed` — branded findings reports and screenshot SOPs, as HTML,\n"
+        "  DOCX or PDF. Pass `--brand <docs.theme>`;",
         "tests/test_docs_routing.py::"
         "test_the_routing_table_routes_doc_builder_and_names_both_keys",
     ),
@@ -519,10 +526,14 @@ MUTATIONS = (
         # the client-deliverable case the second key exists for silently
         # stops being expressible. Nothing else in the suite notices, because
         # the key still merges and still resolves.
+        #
+        # Re-anchored 2026-09-22: the routing bullet's genre-binding sentence
+        # moved onto its own line when the bullet was rewritten for the HTML
+        # route (commit 1741f233); the anchor below is that line, verbatim.
         "reportTheme is no longer bound to the report genre",
         HOUSE_STYLE,
-        "`--brand <docs.theme>`; for a findings report prefer `docs.reportTheme` when",
-        "`--brand <docs.theme>`; the brand applies to every generated document, when",
+        "  for a findings report prefer `docs.reportTheme` when it is set.",
+        "  the brand applies to every generated document when it is set.",
         "tests/test_docs_routing.py::"
         "test_the_two_config_keys_are_bound_to_different_genres",
     ),
@@ -534,10 +545,13 @@ MUTATIONS = (
         # catch it. The original assertion here was `"report" in line`, which
         # `docs.reportTheme` satisfies by its own name; it went red on this
         # entry's sibling above for the WRONG assert and so read as covered.
+        #
+        # Re-anchored 2026-09-22 alongside its sibling above, same line, same
+        # reason.
         "reportTheme widens to every document, not just the findings report",
         HOUSE_STYLE,
-        "`--brand <docs.theme>`; for a findings report prefer `docs.reportTheme` when",
-        "`--brand <docs.theme>`; for every document prefer `docs.reportTheme` when",
+        "  for a findings report prefer `docs.reportTheme` when it is set.",
+        "  for every document prefer `docs.reportTheme` when it is set.",
         "tests/test_docs_routing.py::"
         "test_the_two_config_keys_are_bound_to_different_genres",
     ),
@@ -855,10 +869,15 @@ MUTATIONS = (
         # ran. The check that catches it invokes the script's own argparse, so
         # a renamed or removed script fails here rather than at handoff time
         # in front of whoever the document was for.
+        #
+        # Re-anchored 2026-09-22: the sentence naming `build_report.py` now
+        # ends in an em dash rather than a comma (the HTML route rewrite,
+        # commit 1741f233, added "— its HTML is a finished deliverable..."
+        # after it). Same script name, same bullet.
         "the routing table names a script that does not exist",
         HOUSE_STYLE,
-        "`scripts/build_report.py` is the findings report,",
-        "`scripts/build_findings.py` is the findings report,",
+        "`scripts/build_report.py` is the findings report —",
+        "`scripts/build_findings.py` is the findings report —",
         "tests/test_docs_routing.py::"
         "test_the_routed_scripts_are_the_ones_the_table_names",
     ),
