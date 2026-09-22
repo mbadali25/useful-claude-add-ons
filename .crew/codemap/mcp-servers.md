@@ -1,5 +1,5 @@
 # mcp-servers
-anchor: useful-claude-add-ons@089a04b9
+anchor: useful-claude-add-ons@84976536
 verified: 2026-09-22
 
 ## Does
@@ -143,3 +143,47 @@ equal-timestamps reasoning, and `grep -c mcp-servers .claude-plugin/marketplace.
 Not re-verified at this pass: nothing was built, installed, executed or imported. The
 `## Unverified` section above stands unchanged and its "this worktree's `dist/` is stale right now"
 measurement is still a 2026-09-06 fact about one machine, not a fact re-taken here.
+
+**Re-anchored `089a04b9` -> `84976536` on 2026-09-22, re-anchor-only, second pass
+that day.** Two path diffs were run rather than one, because the previous entry
+above records that a note's cited-path set is not the same thing as its
+subsystem directory.
+
+```
+git diff --name-only 089a04b9..HEAD -- mcp-servers/
+```
+returns nothing. The whole TypeScript monorepo is untouched, so not one of the
+`mcp-servers/**` citations in this note could have moved. Nothing under
+`mcp-servers/` was read at this pass and no claim about it is re-asserted as
+freshly checked - the empty diff is the whole evidence, exactly as at the
+previous anchor.
+
+```
+git diff --name-only 089a04b9..HEAD -- <the paths this note cites>
+```
+returns two, `.claude-plugin/marketplace.json` and `TODO.md`. Both were
+re-resolved and both citations still hold:
+
+- `grep -c mcp-servers .claude-plugin/marketplace.json` still returns **0**, so
+  the `## Does` claim that nothing in the marketplace registers this tree is
+  re-measured, not carried. The file's only change is version fields on
+  unrelated entries.
+- `TODO.md:1-150` is **byte-identical** to the same range at `089a04b9`
+  (`diff` over both renderings of that range, empty). So `:51` is still item 2's
+  heading, `:62` item 3's, `:113` item 5's `CLOSED 2026-09-06` heading, and
+  `:143-150` still the unreadable-directory and equal-timestamps reasoning. The
+  eleven lines this commit range added to `TODO.md` land at `:1136` and after,
+  below every citation here.
+
+Spot-checked despite the empty subsystem diff, because a sha test that says
+"nothing moved" is the cheap finding and this note's own history records a
+claim that was false before its anchor was set:
+`grep -c '^test(' mcp-servers/scripts/_test/check-dist-fresh.test.mjs` still
+returns **14**, matching the count in the Landmines section.
+
+Not re-verified at this pass: nothing was built, installed, executed or
+imported. The `## Unverified` section stands unchanged, and its "this worktree's
+`dist/` is stale right now" line is still a 2026-09-06 measurement of one
+untracked working tree on one machine. It has now gone sixteen days without
+being re-taken and should be read as a record of what was once true there, not
+as a fact about this checkout.

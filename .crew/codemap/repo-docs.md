@@ -1,15 +1,91 @@
 # repo-docs
-anchor: useful-claude-add-ons@ea8a014
-verified: 2026-09-14
-Narrow pass, not a full re-verification: only the "self-stated counts on the
-front page" claim below (the one quoting `plugin/README.md:414`) was re-read
-against its cited file at this anchor, because `f9bb78a6` (#169, "Finish the
-crew skill-count sweep") landed since `975480b7` and added a
-`<!-- claim: plugin-skills:crew -->` marker beside that line's number
-(the number itself, 18, was already correct as of `f12003e2` and did not
-change again). Everything else in this note carries forward from `975480b7`
-unread. Claims resting on machine-local files absent from this checkout are
-marked UNVERIFIABLE HERE at the claim, not in a preamble.
+anchor: useful-claude-add-ons@03b19262
+verified: 2026-09-22
+Full per-path re-verification of every claim resting on a file the path diff
+named as changed; claims resting on unchanged files are closed by that result
+and were not re-read. See the provenance section immediately below for the
+command, its output, and the explicit list of what was NOT re-read. Claims
+resting on machine-local files absent from this checkout are marked
+UNVERIFIABLE HERE at the claim, not in a preamble.
+
+## Re-anchor provenance — ea8a014 -> 84976536, 2026-09-22
+
+Per-path check, run rather than skipped. The command, verbatim:
+
+```
+git diff --name-only ea8a014..HEAD -- <the 30 tracked paths this note cites>
+```
+
+**Sixteen changed**: `.crew/verify.json`, `CHANGELOG.md`, `INSTALLATION.md`,
+`README.md`, `TODO.md`, `docs/diagrams/data-flow-crew-config.mmd`,
+`docs/diagrams/process-crew-brief.mmd`, `docs/remaining-setup.md`,
+`plugin/PLUGINS.md`, `plugin/README.md`, `plugin/crew/README.md`,
+`plugin/crew/agents/scribe.md`, `plugin/crew/hooks/scripts/_test/run-tests.sh`,
+`plugin/crew/hooks/scripts/crew_state.py`, `scripts/check-marketplace.py`,
+`skills/README.md`.
+
+**Sixteen did not**, and every citation into them that survives
+byte-identical is closed by that result: `CLAUDE.md`, `docs/HANDOFF.md`,
+`docs/adr/0001-promote-stays-unarmed.md`, `docs/diagrams/architecture.mmd`,
+`docs/guides/Running-a-Mailbox-Job.json`, `docs/runbooks/rollback.md`,
+`plugin/crew/commands/handoff.md`, `plugin/crew/hooks/scripts/crew_freshness.py`,
+`plugin/crew/skills/crew-context/SKILL.md`,
+`plugin/crew/skills/crew-diagrams/SKILL.md`,
+`plugin/crew/skills/crew-diagrams/scripts/_test/render.sh`,
+`plugin/crew/skills/crew-diagrams/scripts/render.sh`,
+`plugin/crew/skills/crew-docs/SKILL.md`, `plugin/crew/skills/crew-runbooks/SKILL.md`,
+`scripts/_test/self-claims.py`, `scripts/sync-updates.py`.
+
+**Read this before the diff-by-diff detail — three findings, one of which is
+live and actionable:**
+
+1. **The install-URL pin finding below is RESOLVED for `README.md`, and still
+   open for the guide — corrected at the 2026-09-22 re-anchor to `2b337296`.**
+   This bullet previously read "The install-URL pin is STALE," citing
+   `0a2d49b069bd178092e75a8cfd1a1c9df6690cd3` and four commits ahead of it on
+   both install scripts. Re-verified at `2b337296`: `README.md:12` and `:18`
+   now pin `d541ee5708481fbf18c3a5fda050c9e40a40a2d9` (re-pinned by `2cc73a1e`,
+   PR #206), and `git diff --name-only d541ee57..HEAD -- scripts/install-prerequisites.sh
+   scripts/install-prerequisites.ps1` is empty — both re-verified directly.
+   **`docs/guides/Running-a-Mailbox-Job.json:18` was NOT part of that re-pin**
+   and still reads the older `0a2d49b069bd178092e75a8cfd1a1c9df6690cd3`, one
+   commit (`d541ee57`) behind both install scripts — re-verified by grep at
+   this pass. Not fixed here; that file is outside this note's write scope.
+   `install-scripts.md` carries the corresponding correction to its own pin
+   bullet.
+2. **The open `.mmd`-count question from the previous pass is RESOLVED, and the
+   answer is "stale", not "scoped to a subset".** The previous pass found six
+   `.mmd` files against this note's "three" and explicitly declined to decide
+   which reading was right, saying it needed a read of `render.sh`'s actual
+   invocation site. That read is done:
+   `plugin/crew/skills/crew-diagrams/scripts/render.sh:56` is
+   `FILES=("$DIR"/*.mmd)` — a glob over the whole directory, under
+   `shopt -s nullglob` at `:55`, with no hardcoded list anywhere in the file.
+   So `render.sh` renders **all six**, and both "three `.mmd` sources" and
+   "six files, three names x two formats" were simply out of date. Corrected in
+   place below.
+3. **A count is wrong in three of the four catalog docs that state it, the gate
+   is green, and it is not the skills count this time.** Measured from
+   `plugin/crew/hooks/hooks.json` via `json.load`: **20 hook entries, 10
+   scripts x `.sh`/`.ps1`, across 5 events.** `plugin/PLUGINS.md:17` says
+   exactly that and is correct. `README.md:168`, `plugin/README.md:414` and
+   `INSTALLATION.md:252` all say **18** (and `README.md:168` adds "9 scripts").
+   None of the four carries a `claim:` marker for the hook figure — the
+   `plugin-skills:crew` marker on the same lines covers only the skills number —
+   so `check_self_claims` cannot see this and `python3
+   scripts/check-marketplace.py` passes. Reported, not fixed; those four files
+   are outside this note's write scope. `marketplace-registration.md` owns the
+   catalog-count table and carries the same finding.
+
+**Not re-read this pass**, and not claimed as fresh: the bodies of
+`plugin/crew/hooks/scripts/crew_state.py` and `scripts/check-marketplace.py`
+beyond the specific citations this note makes into them (both files changed
+substantially; `crew.md` and `verification-harness.md` own them), the contents
+of `docs/superpowers/plans/` and `specs/` beyond their filenames, the two
+`.mmd` files the diff named as changed beyond confirming they exist and are
+globbed by `render.sh`, and `CHANGELOG.md`'s history below the `[Unreleased]`
+region. The older provenance sections below are retained as history and were
+not re-checked.
 
 ## Re-anchor provenance — 975480b7 -> f9bb78a6, 2026-09-14
 
@@ -96,21 +172,53 @@ unchanged position despite the file's other changes.)
 
 ## Entry points
 
-- DERIVED `docs/diagrams/architecture.mmd:1-2` — and `data-flow.mmd:1-2`,
-  `process.mmd:1-2` alongside it. Line 1 is
+- DERIVED `docs/diagrams/architecture.mmd:1-2` — and
+  `docs/diagrams/data-flow.mmd:1-2`, `docs/diagrams/process.mmd:1-2` alongside
+  it (written repo-relative here rather than as bare basenames, so all three
+  paste into the path diff). Line 1 is
   `%% anchor: useful-claude-add-ons@<sha>`, line 2 is
-  `%% Anchors: <paths>`. All three currently read `1f97e51c`, which is
-  **behind** this anchor (`0a9d8937`) — re-measured, not carried forward from
-  a previous "currently HEAD" claim that would now be false.
-- DERIVED `docs/adr/0001-promote-stays-unarmed.md` — the one ADR in the repo,
-  "accepted, 2026-09-13," recording that `/crew:promote production` stays
-  unconfigured here rather than being wired to a real environment. New this
-  pass; see "docs/adr/ now exists" below.
+  `%% Anchors: <paths>`. Those three still read `1f97e51c`, **behind** this
+  anchor — confirmed by direct read, at the `2b337296 -> 03b19262` provenance
+  section below (this bullet's own line 1 claim was carried forward unread at
+  the `84976536 -> 2b337296` pass, and is only closed by that later read).
+
+  **The directory now holds two provenance shapes, and this entry only ever
+  described one.** At the `84976536 -> 2b337296` pass, only the three
+  `%% Generated from...`-style diagrams were freshly re-read (the other three,
+  `%% anchor:`-style, were carried forward and only confirmed later — see
+  above): `docs/diagrams/data-flow-crew-config.mmd`,
+  `docs/diagrams/process-crew-brief.mmd` and
+  `docs/diagrams/process-bitbucket-svg.mmd` use the
+  `%% Generated from <repo>@<sha> on <date>. Verify before trusting.` form,
+  and **all three were re-derived in commit `2b337296`** ("diagrams:
+  re-derive data-flow-crew-config, process-bitbucket-svg, process-crew-brief"):
+  at that pass all three read line 1 `%% Generated from
+  useful-claude-add-ons@84976536 on 2026-09-22. Verify before trusting.` and
+  carry a `%% Anchors:` line 2 naming the source files each diagram covers — a
+  correction from the previous version of this entry, which cited these three
+  at `ea8a0143`, `ea8a0143` and `a573ca24` respectively. Those three sha
+  citations were stale by **one** re-derivation (`ea8a0143`/`a573ca24` ->
+  `84976536`), corrected from a previous version of this bullet that
+  miscounted it as two. `03b19262` (the commit immediately after `2b337296`)
+  changed only bare `%%` comment lines in the body of these three diagrams to
+  fix a Mermaid parse failure — line 1 and line 2 of all three are
+  byte-identical across that commit, confirmed at the `2b337296 -> 03b19262`
+  section below, so it does not add a further re-derivation.
+  Both forms are accepted by `_DIAGRAM_ANCHOR_RE` (see `INDEX.md`, which owns
+  the contract), so this is two supported spellings rather than broken files.
+- DERIVED `docs/adr/` — **three** ADRs at this anchor, not the one the
+  previous pass recorded: `0001-promote-stays-unarmed.md` (unchanged file,
+  closed by the per-path check), plus `0002-no-chatgpt-mcp-server.md` and
+  `0003-crew-departs-from-three-community-best-practices.md`, both added since
+  `ea8a014`. Re-measured with `ls docs/adr/` rather than carried forward. The
+  series the previous pass described as just-started is now being kept; see
+  "docs/adr/ now exists" below, whose account of `0001` still stands.
 - DERIVED `docs/HANDOFF.md:1-9` — rolling handoff notes, newest first.
   Maintained by hand; see the landmine below, it is **not** what
   `/crew:handoff` writes. File unchanged in this range (closed by the
-  per-path check); its newest entry is still dated 2026-08-23 — **22 days**
-  behind this anchor, up from 20 at the previous anchor and 14 before that.
+  per-path check); its newest entry is still dated 2026-08-23 — **30 days**
+  behind this anchor, up from 22 at the previous anchor, 20 before that and 14
+  before that.
   Re-measured each pass because a "days behind" figure is stale the day after
   it is written.
 - DERIVED `docs/remaining-setup.md:1-6` — the ordered manual checklist for the
@@ -118,39 +226,59 @@ unchanged position despite the file's other changes.)
   make. Unchanged file, not re-read beyond confirming it still exists.
 - DERIVED `docs/runbooks/rollback.md:9-14` — the "When to use this" list.
   Unchanged file (closed by the per-path check); still carries
-  `last verified: 2026-09-05` at `:3`, now nine days stale by the same
+  `last verified: 2026-09-05` at `:3`, now **17 days** stale by the same
   re-measurement logic as `HANDOFF.md`, and this note cannot refresh that date
   since it is not the runbook's owner.
 - DERIVED `CHANGELOG.md:5` — the `## [Unreleased]` heading. Position unchanged
-  despite the file growing by roughly 1400 lines since the previous anchor.
-- `README.md:12` and `:18` — the bootstrap one-liners, **re-pinned
-  `9ea10e21` -> `1b19e5d8` -> `0a2d49b069bd178092e75a8cfd1a1c9df6690cd3`,
-  both moves on 2026-09-14** — first because `1b19e5d8` registered the
-  `web-research` skill, then because `0a2d49b0` added menu item 25, the
-  Perplexity MCP server. Re-pin by running the same check the old pin passed:
-  `git log --oneline <pinned-sha>..HEAD -- scripts/install-prerequisites.sh
-  scripts/install-prerequisites.ps1`. Empty output means the pin is current;
-  any commit listed means both URLs are serving a script that no longer
-  matches the repo, and the pin must move. That command now returns nothing
-  at `0a2d49b0`.
-  **Two pin moves in one day is the rate to expect, not an anomaly.** Any
-  change registering a marketplace entry edits both install scripts, because
-  registration means touching both in the same commit. So the pin goes stale
-  on essentially every entry that ships. Treat the re-pin as part of merging
-  such a change rather than as periodic maintenance, and do not read a recent
-  move as evidence the pin is fresh.
-  **A third site carries the same SHA and the runbook does not mention it.**
-  `docs/guides/Running-a-Mailbox-Job.json:18` embeds the PowerShell one-liner
-  inside a JSON step string, so `docs/runbooks/rollback.md:55` — which says to
-  replace the SHA in "BOTH raw.githubusercontent.com URLs in README.md" — is
-  an undercount, and following it literally leaves that guide installing an
-  older script with no error anywhere. It was re-pinned here too. Re-measure
-  with `grep -rn <old-sha> --include='*.md' --include='*.json' .` rather than
+  again, despite the file reaching **7885 lines** (`wc -l`, re-measured this
+  pass; it was 7875 at the previous anchor — a doc-builder 1.5.3 entry added 10
+  lines at line 9, below the heading). Re-read directly; `:5` is still the
+  heading.
+- `README.md:12` and `:18` — the bootstrap one-liners, **re-pinned again since
+  the previous anchor: `9ea10e21` -> `1b19e5d8` -> `0a2d49b069bd178092e75a8cfd1a1c9df6690cd3`
+  (both moves 2026-09-14) -> `d541ee5708481fbf18c3a5fda050c9e40a40a2d9`
+  (`2cc73a1e`, "README: re-pin install URLs to d541ee57 after PR #205 changed
+  both install scripts (#206)", 2026-09-22)** — the **third** move in that
+  chain (`9ea10e21`->`1b19e5d8`, `1b19e5d8`->`0a2d49b0`, `0a2d49b0`->`d541ee57`:
+  three arrows, corrected from "the fourth move" in a previous version of this
+  bullet, which miscounted), because PR #205 (`d541ee57`) changed the Linux
+  install path, the community marketplace and the `uv` install chain in both
+  install scripts, which left `0a2d49b0` serving a version with none of that.
+  Re-verified directly at this pass, not carried: `README.md:12` and `:18` now
+  read `d541ee57...`, and
+  `git log --oneline d541ee57..HEAD -- scripts/install-prerequisites.sh
+  scripts/install-prerequisites.ps1` is empty — the pin is current.
+  **This 2026-09-22 move was one commit, not two — but "two moves in one day"
+  is common in this file's history, not a single instance, and a previous
+  version of this bullet was wrong in that direction too.** Verified with
+  `git log --format='%h %ad %s' --date=short -L12,12:README.md`, the full
+  commit history of the pinned-URL line: 2026-09-22 shows exactly one commit
+  (`2cc73a1e`). But 2026-09-14 shows **two** (`d13ea445`, `8c8353f5`) and
+  2026-09-13 shows **four** (`819bf382`, `91a7aab1`, `2ce6b4e8`, `a4a48456`) —
+  and multi-commit days recur throughout the file's history back to 2026-07-28
+  (2026-08-28, 2026-08-11 and 2026-08-04 each show four; 2026-08-23 shows
+  three). So the pattern is not "observed once, on 2026-09-14" as a previous
+  version of this bullet said — it is the ordinary rate this file re-pins at
+  whenever several install-script-touching changes land close together. What
+  still holds: any change registering a marketplace entry or touching either
+  install script edits both scripts in one commit, so the pin goes stale on
+  essentially every such entry, and a recent re-pin is no evidence the pin
+  will still be fresh next week.
+  **A third site carries an install-URL SHA and was NOT part of this
+  re-pin.** `docs/guides/Running-a-Mailbox-Job.json:18` embeds the PowerShell
+  one-liner inside a JSON step string; re-checked at this pass, it still reads
+  `0a2d49b069bd178092e75a8cfd1a1c9df6690cd3` — one commit (`d541ee57`) behind
+  both install scripts. `docs/runbooks/rollback.md:55`, which says to replace
+  the SHA in "BOTH raw.githubusercontent.com URLs in README.md," is still an
+  undercount by this same site, and following it literally now leaves that
+  guide installing a script older than the one shipped by PR #205. Not fixed
+  here — outside this note's write scope. Re-measure with
+  `grep -rn <old-sha> --include='*.md' --include='*.json' .` rather than
   trusting this list; `.claude/worktrees/` copies are agent worktrees and are
   not tracked sites.
-  Both re-pinned URLs were fetched at this pass: each returns HTTP 200 and the
-  served bodies contain the `web-research` entry (2 occurrences in the `.sh`,
-  1 in the `.ps1`), so the pin is known good rather than merely plausible.
+  **The re-pinned URL was not fetched live at this pass** (the previous
+  anchor's HTTP-200 fetch check was not repeated) — flagged as unverified
+  rather than carried forward as still true.
 - `TODO.md` — re-resolved rather than trusted at its old line numbers, per
   this note's own standing rule that `TODO.md` is edited often. The render.sh
   entry moved from `:870-899` to `:1061-1091`; see "TODO.md's render.sh entry"
@@ -159,51 +287,68 @@ unchanged position despite the file's other changes.)
 
 ## Owns data
 
-- DERIVED `docs/diagrams/out/*.svg` and `*.png` (six files, three names x two
-  formats), produced by
+- DERIVED `docs/diagrams/out/*.svg` and `*.png` — **twelve files, six names x
+  two formats**, corrected this pass from the "six files, three names" this
+  note carried for five anchors. Produced by
   `plugin/crew/skills/crew-diagrams/scripts/render.sh` — output dir created at
-  `:20`, `mmdc` invoked at `:45` and again at `:49` on the failure path.
-  Re-read this pass (the file is not in the 5 changed paths, and both line
-  numbers are unchanged). `docs/diagrams/out/` itself is gitignored at
-  `.gitignore:409` (moved from `:357` — `.gitignore` grew by 66 lines in this
-  range, mostly the `.crew/` ignore-policy rewrite, and this unrelated entry
-  shifted along with everything below it). `git ls-files docs/diagrams/`
-  returns only the three `.mmd` sources.
+  `:20`, `mmdc` invoked at `:45` and again at `:49` on the failure path (file
+  unchanged in this range, closed by the per-path check; all three line numbers
+  re-read and identical). `docs/diagrams/out/` itself is gitignored at
+  `.gitignore:409` — unchanged, and `.gitignore` is not in this range's changed
+  set. `git ls-files docs/diagrams/` returns **six** `.mmd` sources:
+  `architecture.mmd`, `data-flow-crew-config.mmd`, `data-flow.mmd`,
+  `process-bitbucket-svg.mmd`, `process-crew-brief.mmd`, `process.mmd`.
 
-  **Found, not fixed, while touching this file for the skills-count
-  correction (2026-09-14):** `git ls-files docs/diagrams/` at 975480b7 returns
-  **six** `.mmd` files (`architecture.mmd`, `data-flow-crew-config.mmd`,
-  `data-flow.mmd`, `process-bitbucket-svg.mmd`, `process-crew-brief.mmd`,
-  `process.mmd`), not three, and two of them changed since `0a9d8937`. Whether
-  "three .mmd sources" and "six files, three names x two formats" above are
-  stale, or were always scoped to a subset `render.sh` targets rather than the
-  whole directory, was not determined this pass — that requires reading
-  `render.sh`'s actual invocation site(s) and is a separate piece of work from
-  the skill-count correction this pass made. Reported here rather than
-  silently carried forward or silently re-derived.
+  **The previous pass's open question is now answered, and the answer is the
+  less flattering of the two it offered.** That pass found six `.mmd` files
+  against this note's "three", and left open whether the note was stale or
+  whether "three" had always been correctly scoped to a subset `render.sh`
+  targets — deferring it as needing a read of `render.sh`'s invocation site.
+  That read is done. DERIVED
+  `plugin/crew/skills/crew-diagrams/scripts/render.sh:55-56`:
+  `shopt -s nullglob` then `FILES=("$DIR"/*.mmd)`. It is a glob over the whole
+  directory; there is no hardcoded source list anywhere in the file. So
+  `render.sh` renders every `.mmd` present, the count was **stale**, and the
+  "scoped to a subset" reading — the one that would have made the old number
+  correct — is refuted rather than merely unconfirmed. Recorded this way
+  because the previous pass was right to refuse to guess, and the value of that
+  refusal is only realised if the next pass actually does the read.
 - DERIVED `docs/superpowers/` is hand-written: `plans/` and `specs/`.
   Unchanged; not re-counted file-by-file this pass, only confirmed present.
 - **The self-stated counts on the front page have moved and are now partly
-  machine-checked; the previous version of this line was wrong on three
-  counts at once.** `README.md:52` and `:152` state **35 skills**, not 28 —
-  `python3 scripts/check-marketplace.py` reports "marketplace: 35 skills, 5
-  plugins" at this anchor, so 35 is current. `README.md:152` carries
+  machine-checked.** `README.md:46` and `:154` (moved from `:52` and `:152`)
+  state **36 skills** — `python3 scripts/check-marketplace.py`, run at this
+  anchor, reports "marketplace: 36 skills, 5 plugins", so 36 is current. The
+  one entry added since `ea8a014` is `web-research` (set difference over
+  `marketplace.json`'s `plugins` array between `f9bb78a6` and HEAD: one added,
+  none removed). `README.md:154` carries
   `<!-- claim: skills-count -->`, so this number is no longer "checked by
   nothing": `check_self_claims`
-  (`scripts/check-marketplace.py:430-...`, moved from `:412-...` —
-  `f9bb78a6` #169 inserted 53 lines earlier in the file) verifies marked
-  numbers against `marketplace.json`, and this repo's own `CLAUDE.md`
-  documents the convention. `plugin/README.md:414`'s agent count is also no
+  (`scripts/check-marketplace.py:579-722`, moved from `:430`, and from `:412`
+  before that — re-taken by parsing the function definitions out of the file
+  with `ast` rather than by offsetting, because `check-marketplace.py` gained
+  four whole checks in this range and the insertions are not evenly spaced)
+  verifies marked numbers against `marketplace.json`, and this repo's own
+  `CLAUDE.md` documents the convention (`CLAUDE.md:29`; that file is unchanged
+  in this range). `plugin/README.md:414`'s agent count is also no
   longer stale — as of `f12003e2` (#166, "fix three stale self-describing
-  counts") it reads "54 agents, 26 commands, 18 skills, 20 hook entries,"
-  matching `crew.md`'s inventory exactly (54 / 26 / 18). **Re-read at this
+  counts") it read "54 agents, 26 commands, 18 skills, 20 hook entries."
+  **That quotation is superseded at this anchor**: the live line now reads 54 /
+  28 / 20, re-measured from disk this pass (`ls plugin/crew/agents/*.md`,
+  `commands/*.md`, `skills/*/`) and agreeing. **Re-read at this
   anchor:** `f9bb78a6` (#169) did not change that number again — it added a
   `<!-- claim: plugin-skills:crew -->` marker to the same line instead,
   using a new claim type `check_self_claims` gained specifically to check a
   plugin's own bundled-skill count (`skills-count` only ever checked the
   marketplace-wide total, which is why crew's bundle count had drifted
-  uncaught in the first place). The line now reads "54 agents, 28 commands,
-  20 skills<!-- claim: plugin-skills:crew -->, 18 hook entries" verbatim.
+  uncaught in the first place); its counting helper is `count_plugin_skills`
+  (`scripts/check-marketplace.py:562-576`, moved from `:413-427`). The line
+  still reads "54 agents, 28 commands, 20 skills<!-- claim:
+  plugin-skills:crew -->, 18 hook entries" verbatim — re-read at this anchor,
+  and `plugin/README.md:414` has not moved. On-disk inventory re-measured this
+  pass and the marked figures agree: 54 agents, 28 commands, 20 skills.
+  **The unmarked figure on that same line does not**: 18 hook entries is
+  wrong, the real count is 20 — see finding 3 in this pass's provenance.
   **That quotation tracks the live figures rather than freezing at this
   note's anchor**, and it has to: the marker inside it is a real claim, so
   `check_self_claims` binds it to `plugin/crew/skills/`'s actual count and
@@ -255,17 +400,26 @@ visible:**
 
 - `CLAUDE.md:147` — "Decisions in `docs/adr/`." — is now TRUE. (Previously
   cited as a false claim alongside two others.)
-- `CHANGELOG.md:3429-3430` (moved from `:2057-2058`) — "It also stops claiming
-  `docs/adr/`, which is now `scribe`'s" — was always true of *authorship*
+- `CHANGELOG.md:5412` (moved from `:5402`, from `:3429-3430`, and from
+  `:2057-2058` before that; re-located by grepping the string at this pass,
+  confirming the +10 shift from the doc-builder 1.5.3 entry inserted at line 9
+  — not assumed from the offset) — "It also stops
+  claiming `docs/adr/`, which is now `scribe`'s" — was always true of *authorship*
   (crew:scribe owns ADRs, not this note) and remains true; what changed is
   only that the directory it discusses now has content.
-- `.crew/STATUS.md:39`'s claim that `docs/adr/` was "scaffolded" —
-  **UNVERIFIABLE HERE** as before: `STATUS.md` is machine-local and absent
-  from this checkout (`ls .crew/` returns only `codemap/` and `verify.json`
-  at this anchor). If that file still exists on the machine that wrote it, its
-  claim would now read as true rather than as the premature "scaffolded"
-  label the earlier version of this note flagged as a trap. Cannot confirm
-  either way from a clone.
+- `.crew/STATUS.md:39`'s claim that `docs/adr/` was "scaffolded" — **the
+  citation is now dangling, and the previous "absent from this checkout"
+  wording is also wrong.** At this anchor `ls .crew/` returns `STATUS.md`,
+  `codemap/`, `config.json`, `guard.log`, `handoffs/` and `verify.json`:
+  `STATUS.md` *is* present on this machine. It is 15 lines long, so there is no
+  `:39` to read, and `grep -n adr .crew/STATUS.md` returns nothing — the file
+  was rewritten (its own `updated:` field reads 2026-09-22) and no longer says
+  anything about `docs/adr/`. **It remains UNVERIFIABLE HERE in the sense that
+  matters**: `git ls-files .crew/` does not list it, so it is machine-local and
+  no cloner can check any claim about it, including this one. Recorded rather
+  than deleted because "absent" and "present but rewritten" are different
+  facts, and the earlier wording would send a reader looking for a missing
+  file instead of a changed one.
 
 JUDGEMENT: the many `docs/adr/` references under `plugin/crew/` —
 `plugin/crew/agents/scribe.md`, `plugin/crew/skills/crew-docs/SKILL.md`,
@@ -321,8 +475,10 @@ not be trusted without a fresh read if they are needed again.
   `README.md` is outside this note's five changed files and finding where the
   link went would mean reading the whole diff rather than the cited line.
 
-- **`TODO.md`'s `render.sh` entry moved to `TODO.md:1061-1091`.** Re-resolved
-  this pass by reading the file directly (not carried from the old
+- **`TODO.md`'s `render.sh` entry is still at `TODO.md:1061`** — re-located by
+  grepping the heading at this anchor and found not to have moved, even though
+  `TODO.md` is in this range's changed set; the edits landed elsewhere in the
+  file. It is still **not** marked CLOSED. (Previously re-resolved from the old
   `:870-899`, which no longer points at this section — `TODO.md` grew by
   roughly 1400 lines in this range even though it is not in the 5-file
   changed set the per-path check names, which means it changed in ways that
@@ -372,20 +528,36 @@ not be trusted without a fresh read if they are needed again.
 - Whether `render.sh` succeeds end to end on this machine. Not run this pass
   either. The committed regression test (above) is evidence the `cygpath`
   path is covered in principle; that it *passes* here is still unmeasured.
-- `7 of 4 marketplaces` and `Seven MCP servers` (`INSTALLATION.md:213`) — see
-  "Owns data" above. Neither is marker-checked and neither was independently
-  recounted this pass.
+- The two unmarked self-counts both **moved** in this range, which is itself
+  the finding — an unmarked number that changes is exactly what no check sees.
+  `INSTALLATION.md:213` now reads "**Eight** MCP servers are menu rows, all off
+  by default" (it said *Seven* at the previous anchor). `README.md:157` now
+  reads "4 marketplaces" beside a seven-plugin community list. **That one is
+  wrong**: `COMMUNITY_KEYS` (`scripts/install-prerequisites.sh:1379-1382`) holds
+  **eight** keys — the seven listed plus `eli5` — and `eli5` comes from a fifth
+  marketplace, `claude-community`, so the row undercounts both the plugins and
+  the marketplaces. Neither line carries a `claim:` marker, so
+  `check_self_claims` covers neither and the gate is green over both. The row
+  count itself was not independently re-derived against the live external
+  marketplaces; only the repo-local catalog it is supposed to mirror was read.
 - Whether `CHANGELOG.md` entries are strictly one per plugin-version bump
   throughout. Only the opening `[Unreleased]` region was read this pass; the
-  now much larger history (over 5800 lines) was not read back. The rule
+  now much larger history (**7885 lines**) was not read back. The rule
   actually written down remains `plugin/crew/skills/crew-docs/SKILL.md:26`
   (position unchanged, re-confirmed), gating an entry on "Behaviour users or
   callers can observe changed," not on a version bump.
 - The contents of `docs/superpowers/plans/` and `specs/` beyond their
   filenames.
 - Whether the community counts this note has never independently verified
-  (`7 of 4 marketplaces`) reflect the current state of that external list at
-  all — out of scope for a repo-local codemap regardless.
+  reflect the current state of those external marketplaces at all — out of
+  scope for a repo-local codemap regardless. What *was* checked this pass is
+  narrower and stated above: the repo-local catalog arrays the README row is
+  supposed to mirror.
+- The bodies of the two `.mmd` files the path diff named as changed
+  (`data-flow-crew-config.mmd`, `process-crew-brief.mmd`). Confirmed present and
+  confirmed to be globbed by `render.sh`; their contents and their own
+  `%% anchor:` lines were not re-read. The diagrams carry their own provenance
+  contract and `INDEX.md` owns it.
 
 ## Older provenance, kept as an account of process rather than a current claim
 
@@ -403,3 +575,128 @@ is known to have grown, and this note is mixed-base by nature — its citations
 into files that changed in this range are re-derived, and its citations into
 files that did not are closed by the per-path check, and the two are not
 interchangeable evidence.
+
+## Re-anchor provenance — 84976536 -> 2b337296, 2026-09-22
+
+**Corrected at the 2b337296 -> 03b19262 pass, below: this section previously
+said "30 tracked paths" and "Five changed," neither of which matched what was
+actually run.** The 32-path list this note's own `ea8a014 -> 84976536` section
+enumerates (16 changed + 16 unchanged, listed above) is the pathspec actually
+usable here, run verbatim:
+
+```
+git diff --name-only 84976536..HEAD -- .crew/verify.json CHANGELOG.md \
+  INSTALLATION.md README.md TODO.md docs/diagrams/data-flow-crew-config.mmd \
+  docs/diagrams/process-crew-brief.mmd docs/remaining-setup.md plugin/PLUGINS.md \
+  plugin/README.md plugin/crew/README.md plugin/crew/agents/scribe.md \
+  plugin/crew/hooks/scripts/_test/run-tests.sh plugin/crew/hooks/scripts/crew_state.py \
+  scripts/check-marketplace.py skills/README.md CLAUDE.md docs/HANDOFF.md \
+  docs/adr/0001-promote-stays-unarmed.md docs/diagrams/architecture.mmd \
+  docs/guides/Running-a-Mailbox-Job.json docs/runbooks/rollback.md \
+  plugin/crew/commands/handoff.md plugin/crew/hooks/scripts/crew_freshness.py \
+  plugin/crew/skills/crew-context/SKILL.md plugin/crew/skills/crew-diagrams/SKILL.md \
+  plugin/crew/skills/crew-diagrams/scripts/_test/render.sh \
+  plugin/crew/skills/crew-diagrams/scripts/render.sh plugin/crew/skills/crew-docs/SKILL.md \
+  plugin/crew/skills/crew-runbooks/SKILL.md scripts/_test/self-claims.py scripts/sync-updates.py
+```
+
+Output, verbatim:
+
+```
+CHANGELOG.md
+README.md
+docs/diagrams/data-flow-crew-config.mmd
+docs/diagrams/process-crew-brief.mmd
+```
+
+**Four changed, not five.** `docs/diagrams/process-bitbucket-svg.mmd` is
+**not** in this 32-path list at all — confirmed by grep over the `ea8a014 ->
+84976536` section's own two file lists above, neither of which names it. That
+is itself a gap worth recording: the "Entry points" section below discusses
+all six `.mmd` files by name, including `process-bitbucket-svg.mmd`, but this
+note's tracked-path list only ever covered two of the three
+`%% Generated from...`-style diagrams. It was still re-read at this pass
+(confirmed changed by a separate, wider check —
+`git diff --name-only 84976536..2b337296` over the whole repo lists it), so
+the claim made about its contents below is not wrong, but citing it as part of
+"the 30 tracked paths" was.
+
+All four files actually returned by the pathspec above (`CHANGELOG.md`,
+`README.md`, `data-flow-crew-config.mmd`, `process-crew-brief.mmd`), plus
+`docs/diagrams/process-bitbucket-svg.mmd` (checked separately, as just
+explained, since the pathspec cannot return it), re-read directly, not
+offset:
+
+- `CHANGELOG.md` gained 10 lines at line 9 (a doc-builder 1.5.3 entry), now
+  **7885** lines (`wc -l`, was 7875). `CHANGELOG.md:5` — the `## [Unreleased]`
+  heading — is unaffected (the insertion is below it). `CHANGELOG.md:5402`
+  moved to `:5412`, re-located by grepping the string and confirming the +10
+  shift rather than assuming it.
+- `README.md:12` and `:18` re-pinned `0a2d49b069bd178092e75a8cfd1a1c9df6690cd3`
+  -> `d541ee5708481fbf18c3a5fda050c9e40a40a2d9` (`2cc73a1e`, PR #206). Both
+  re-verified directly; `git log --oneline d541ee57..HEAD -- scripts/install-prerequisites.sh
+  scripts/install-prerequisites.ps1` is empty, so the pin is current. This
+  resolves finding 1 from the previous pass ("the install-URL pin is STALE")
+  for `README.md` specifically — `docs/guides/Running-a-Mailbox-Job.json:18`
+  was checked separately (it is a cited path, unchanged in this diff) and
+  still reads the older `0a2d49b0` SHA, now one commit further behind.
+- The three `%% Generated from ...` diagrams were re-derived by `2b337296`
+  ("diagrams: re-derive data-flow-crew-config, process-bitbucket-svg,
+  process-crew-brief"). All three now read line 1 `%% Generated from
+  useful-claude-add-ons@84976536 on 2026-09-22. Verify before trusting.` and
+  carry a `%% Anchors:` line 2. This note's previous citation of them at
+  `ea8a0143`/`ea8a0143`/`a573ca24` is corrected in place, above.
+
+**Not re-read at this specific pass**: everything else in this note. The
+three `%% anchor:` diagrams (`architecture.mmd`, `data-flow.mmd`, `process.mmd`)
+were not re-opened here. `docs/diagrams/architecture.mmd` IS in the 32-path
+pathspec (it is named in the verbatim command above), and the diff returned
+nothing for it, so it is unchanged in this range; `data-flow.mmd` and
+`process.mmd` are not in that pathspec, so for those two the diff says
+nothing either way. All three were carried forward, stated to still read
+`1f97e51c` on the strength of the previous pass's reading rather than a fresh
+one at this point. **They were
+subsequently re-opened and confirmed** at the `2b337296 -> 03b19262` section
+immediately below, which is a later pass, not this one; that confirmation
+does not retroactively make this section's own claim about them a fresh read.
+`docs/adr/`'s three-file inventory, `HANDOFF.md`'s staleness count and every
+other DERIVED claim not listed above are carried forward on the per-path
+check alone.
+
+## Re-anchor provenance — 2b337296 -> 03b19262, 2026-09-22
+
+HEAD advanced while the pass above was in flight: `03b19262` ("diagrams: no
+bare %% lines") landed on this branch. **This section previously said the
+check below ran over "the tracked paths this note cites" — it did not; that
+pathspec is the 32-path list above, which (per the gap already recorded in
+the `84976536 -> 2b337296` section) omits `process-bitbucket-svg.mmd`,
+`data-flow.mmd` and `process.mmd` entirely, so it cannot return
+`process-bitbucket-svg.mmd` the way the output below does.** The command
+actually run, and its actual output:
+
+```
+git diff --name-only 2b337296..03b19262
+```
+```
+docs/diagrams/data-flow-crew-config.mmd
+docs/diagrams/process-bitbucket-svg.mmd
+docs/diagrams/process-crew-brief.mmd
+```
+
+No pathspec — the whole-repo diff between these two commits, which happens to
+return exactly the three diagrams `03b19262`'s commit message says it touched.
+Re-read the diff itself: every changed line is a bare `%%` comment line
+replaced by `%% -` (mermaid does not strip an empty `%%`, so they piled onto
+the `flowchart` keyword and failed to parse). Lines 1-2 of all three are
+byte-identical before and after, and no claim in this note rests on the
+body lines that changed. Re-anchor only.
+
+Also re-read at this anchor, correcting the "not re-opened" caveat in the
+entry above: line 1 of `docs/diagrams/architecture.mmd`,
+`docs/diagrams/data-flow.mmd` and `docs/diagrams/process.mmd` each reads
+`%% anchor: useful-claude-add-ons@1f97e51c`. DERIVED.
+
+The render gate, which earlier entries record as never run for want of
+`mmdc`, was run by the commit author for `03b19262` with mmdc 11.17.0
+(`render.sh --force`: 3 FAIL before the fix, 12 ok after). That is the
+commit message's claim; this note did not re-run it.
