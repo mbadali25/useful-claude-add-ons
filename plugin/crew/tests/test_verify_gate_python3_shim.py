@@ -446,6 +446,19 @@ def test_a_native_windows_sys_executable_path_is_accepted_and_works(tmp_path):
         real = shutil.which(name)
         if real:
             os.symlink(real, os.path.join(tools_dir, name))
+    # A per-test UNIQUE token, not a fixed name - the same convention
+    # test_resolver_accepts_a_native_windows_path_to_a_real_target_under_c
+    # in test_context_watch_python_resolver.py uses. FIX from review round
+    # 7: this used to hardcode "C:\fakepy\python.exe" / "/c/fakepy", so on
+    # a host where /c is the REAL, writable C:\ drive (Git Bash), a
+    # pre-existing C:\fakepy directory of the user's own was silently
+    # reused (`exist_ok=True`) and then DELETED (`shutil.rmtree`) in the
+    # `finally` block below - a real, destructive side effect on a real
+    # user's filesystem, not a throwaway fixture. `tmp_path`'s own basename
+    # is already unique per test (pytest guarantees it), so reusing it as
+    # the token needs no extra uniqueness machinery.
+    token = os.path.basename(str(tmp_path))
+
     # A "python" whose sys.executable reports a NATIVE WINDOWS path -
     # otherwise a real, working interpreter, so the MATCHER's own
     # `python - args << script` invocation (which crew_py, not
@@ -459,10 +472,11 @@ def test_a_native_windows_sys_executable_path_is_accepted_and_works(tmp_path):
             "if [ \"$1\" = \"-c\" ] && [ \"$2\" = \"import sys; print(sys.executable)\" ]; then\n"
             # printf, not echo - some /bin/sh implementations (dash's
             # builtin echo among them) interpret XSI backslash escapes by
-            # default, so `echo 'C:\fakepy\...'` silently eats the `\f` as
-            # a form-feed escape instead of emitting it literally. Caught
-            # by running this exact stub by hand before trusting the test.
-            "  printf '%s\\n' 'C:\\fakepy\\python.exe'\n"
+            # default, so `echo 'C:\<token>\...'` silently eats the `\<`
+            # (or whatever follows the backslash) as an escape instead of
+            # emitting it literally. Caught by running this exact stub by
+            # hand before trusting the test.
+            "  printf '%s\\n' 'C:\\" + token + "\\python.exe'\n"
             "  exit 0\n"
             "fi\n"
             "exec \"" + real_py + "\" \"$@\"\n"
@@ -472,16 +486,20 @@ def test_a_native_windows_sys_executable_path_is_accepted_and_works(tmp_path):
     # The REAL target the shim's exec line names after conversion. With no
     # cygpath on PATH (the tools dir above carries none, so the fallback
     # branch is what this test exercises), crew_py_strict turns
-    # "C:\fakepy\python.exe" into the ABSOLUTE "/c/fakepy/python.exe" -
+    # "C:\<token>\python.exe" into the ABSOLUTE "/c/<token>/python.exe" -
     # the same shape `cygpath -u` yields on Git Bash - so this end-to-end
     # case can only run where /c is a real, writable mount (Git Bash, WSL
     # with drvfs). Elsewhere it skips loudly; the cygpath-branch test below
     # covers the conversion on Linux, and test_context_watch_python_resolver
     # unit-tests the string transform itself.
     if not (os.path.isdir("/c") and os.access("/c", os.W_OK)):
-        pytest.skip("tr fallback resolves to /c/fakepy/python.exe; needs a writable /c mount")
-    windows_target_dir = pathlib.Path("/c") / "fakepy"
-    windows_target_dir.mkdir(parents=True, exist_ok=True)
+        pytest.skip("tr fallback resolves to /c/<token>/python.exe; needs a writable /c mount")
+    windows_target_dir = pathlib.Path("/c") / token
+    # NO exist_ok - the token is unique to this test run, so an existing
+    # directory of the same name means something is already wrong (a
+    # collision, or a previous run's leftover) and must not be silently
+    # reused, let alone later deleted.
+    windows_target_dir.mkdir(parents=True)
     windows_target = windows_target_dir / "python.exe"
     windows_target.write_text(
         "#!/bin/sh\nexec \"" + real_py + "\" \"$@\"\n",
@@ -491,6 +509,8 @@ def test_a_native_windows_sys_executable_path_is_accepted_and_works(tmp_path):
     try:
         result = _run(root, tools_dir)
     finally:
+        # Removes only the unique directory THIS test just created above -
+        # never a name a real user could also be using.
         shutil.rmtree(windows_target_dir, ignore_errors=True)
     assert result.returncode == 0, (
         "a rule invoking python3 must still pass when the only resolvable "
@@ -529,8 +549,8 @@ def test_the_cygpath_branch_is_taken_when_cygpath_is_present(tmp_path):
     fakepy\\python.exe` argument crew_py_strict is expected to hand it
     (anything else exits 1), and points its answer at an interpreter that
     lives somewhere the tr fallback's own conversion ("C:\\fakepy\\
-    python.exe" -> "C:/fakepy/python.exe", repo-cwd-relative) would NEVER
-    find - so this only passes if crew_py_strict actually called
+    python.exe" -> the ABSOLUTE "/c/fakepy/python.exe") would NEVER find -
+    so this only passes if crew_py_strict actually called
     `cygpath -u` and used ITS output.
 
     Sabotage for THIS test lives in _common.sh (crew_py_strict), not in
@@ -570,9 +590,10 @@ def test_the_cygpath_branch_is_taken_when_cygpath_is_present(tmp_path):
     os.chmod(stub, 0o755)
 
     # An ABSOLUTE target, deliberately OUTSIDE the repo entirely - the tr
-    # fallback's own output ("C:/fakepy/python.exe", a relative path
-    # resolved against the repo root) can never land here by coincidence,
-    # so finding it proves cygpath's output was actually used.
+    # fallback's own output is ALSO absolute now ("/c/fakepy/python.exe",
+    # not the repo-cwd-relative "C:/fakepy/python.exe" an earlier version
+    # of crew_py_strict produced), so this cannot land here by coincidence
+    # either - finding it proves cygpath's output was actually used.
     cygpath_target_dir = tmp_path / "cygpath_target"
     cygpath_target_dir.mkdir()
     cygpath_target = cygpath_target_dir / "python.exe"

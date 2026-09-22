@@ -538,6 +538,112 @@ def test_resolver_accepts_a_crlf_terminated_real_interpreter(tmp_path, path, hea
         f"got {printed!r}")
 
 
+# --- FIX (round-6 review): crew_py_strict must not reject any path
+#     containing "WindowsApps" -- a genuine Microsoft Store Python install
+#     runs from EXACTLY that shape (the alias itself, AND the real
+#     interpreter it relays to, both live under a WindowsApps-rooted
+#     directory), so the old blanket substring check rejected a machine
+#     where python plainly works, on every turn, forever. The stub check
+#     must reject the ALIAS STUB specifically (no output / non-zero exit),
+#     not the path.
+
+@needs_bash
+@pytest.mark.parametrize("path,header,fn", [
+    (_COMMON_SH, "crew_py_strict() {", "crew_py_strict"),
+    (_GUARD_SH, "_resolve_role_write_python() {", "_resolve_role_write_python"),
+])
+def test_resolver_accepts_a_store_python_alias_relaying_to_a_real_interpreter(
+        tmp_path, path, header, fn):
+    """Must-allow: the reviewer's reported shape. `command -v python3`
+    resolves the alias under `.../Microsoft/WindowsApps/python3`; the alias
+    `exec`s a real interpreter one level further down, itself ALSO under a
+    WindowsApps-rooted path (`.../WindowsApps/PythonSoftwareFoundation.
+    Python.3.x_<hash>/python.exe`, the real shape a Store install uses).
+    Both paths contain "WindowsApps" -- proving this is no longer rejected
+    on that substring alone."""
+    apps_dir = tmp_path / "Microsoft" / "WindowsApps"
+    apps_dir.mkdir(parents=True)
+    pkg_dir = apps_dir / "PythonSoftwareFoundation.Python.3.12_qbz5n2kfra8p0"
+    pkg_dir.mkdir()
+    target = pkg_dir / "python.exe"
+    # Prints its OWN invocation path (`$0`) rather than a value hard-coded in
+    # the test -- what `exec` from the alias hands it is the real proof this
+    # relay actually ran, not an assumption about path formatting.
+    target.write_text("#!/bin/sh\nprintf '%s\\n' \"$0\"\nexit 0\n",
+                       encoding="ascii", newline="\n")
+    os.chmod(target, 0o755)
+
+    alias = apps_dir / "python3"
+    alias.write_text(
+        '#!/bin/sh\nexec "$(dirname "$0")/'
+        'PythonSoftwareFoundation.Python.3.12_qbz5n2kfra8p0/python.exe" "$@"\n',
+        encoding="ascii", newline="\n")
+    os.chmod(alias, 0o755)
+
+    driver = tmp_path / "driver.sh"
+    driver.write_text(
+        _function_raw_source(path, header) + "\n"
+        f"{fn}\n"
+        'printf "EXIT:%s\\n" "$?"\n',
+        encoding="utf-8", newline="\n")
+
+    env = os.environ.copy()
+    env["PATH"] = os.pathsep.join([str(apps_dir), env.get("PATH", "")])
+    proc = subprocess.run(
+        [_BASH, str(driver)], capture_output=True, text=True,
+        check=False, env=env)
+    lines = proc.stdout.splitlines()
+    exit_line = next((l for l in lines if l.startswith("EXIT:")), "EXIT:?")
+    printed = [l for l in lines if not l.startswith("EXIT:")]
+    assert exit_line == "EXIT:0", (
+        f"a Store-Python alias relaying to a real interpreter under "
+        f"WindowsApps must be ACCEPTED. stdout={proc.stdout!r} "
+        f"stderr={proc.stderr!r}")
+    assert printed == [str(target)], (
+        f"must return the real interpreter's own path. got {printed!r}")
+
+
+@needs_bash
+@pytest.mark.parametrize("path,header,fn", [
+    (_COMMON_SH, "crew_py_strict() {", "crew_py_strict"),
+    (_GUARD_SH, "_resolve_role_write_python() {", "_resolve_role_write_python"),
+])
+def test_resolver_rejects_a_windowsapps_alias_stub_with_no_real_python(
+        tmp_path, path, header, fn):
+    """Must-block: the SAME WindowsApps-rooted location, but no real
+    interpreter behind it -- the placeholder alias, which produces no usable
+    output and exits non-zero (9009, matching crew's own 2026-09-19 report of
+    the real Store alias's behaviour) rather than relaying anywhere. What
+    must reject this is the exec-and-probe, NOT a path check -- there is no
+    WindowsApps substring check left to reject it on location alone."""
+    apps_dir = tmp_path / "Microsoft" / "WindowsApps"
+    apps_dir.mkdir(parents=True)
+    for name in ("python3", "python", "py"):
+        stub = apps_dir / name
+        stub.write_text("#!/bin/sh\nexit 9009\n", encoding="ascii", newline="\n")
+        os.chmod(stub, 0o755)
+
+    driver = tmp_path / "driver.sh"
+    driver.write_text(
+        _function_raw_source(path, header) + "\n"
+        f"{fn}\n"
+        'printf "EXIT:%s\\n" "$?"\n',
+        encoding="utf-8", newline="\n")
+
+    env = os.environ.copy()
+    env["PATH"] = os.pathsep.join([str(apps_dir), env.get("PATH", "")])
+    proc = subprocess.run(
+        [_BASH, str(driver)], capture_output=True, text=True,
+        check=False, env=env)
+    lines = proc.stdout.splitlines()
+    exit_line = next((l for l in lines if l.startswith("EXIT:")), "EXIT:?")
+    printed = [l for l in lines if not l.startswith("EXIT:")]
+    assert exit_line == "EXIT:1", (
+        f"a WindowsApps alias stub with no real interpreter behind it must "
+        f"be REJECTED. stdout={proc.stdout!r} stderr={proc.stderr!r}")
+    assert not printed, "must print nothing when rejecting: " + repr(printed)
+
+
 # --- FIX (round-3 review, integration; round-4 NIT on the fallback shape):
 #     a native Windows `sys.executable` (e.g. `C:\fakepy\python.exe`) must be
 #     normalised into a form THIS shell can stat before `-x` runs on it.

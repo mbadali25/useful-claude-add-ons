@@ -32,9 +32,6 @@ INPUT=$(cat)
 _resolve_role_write_python() {
   for name in python3 python py; do
     candidate=$(command -v "$name" 2>/dev/null) || continue
-    case "$candidate" in
-      */WindowsApps/*|*\\WindowsApps\\*) continue ;;
-    esac
     # `command -v` finding a name on PATH is not enough -- the WindowsApps
     # alias IS a real, executable file, so `command -v python3` resolves it
     # cleanly. Running it and reading back `sys.executable` is what
@@ -49,9 +46,29 @@ _resolve_role_write_python() {
     # file, rejecting every real interpreter on that combination.
     real=$(printf '%s' "$real" | tr -d '\r')
     [ -n "$real" ] || continue
-    case "$real" in
-      */WindowsApps/*|*\\WindowsApps\\*) continue ;;
-    esac
+    # NOT a blanket "reject anything containing WindowsApps" -- that used to
+    # sit here (on both $candidate above and $real here) and rejected a
+    # genuine Microsoft Store Python install, which runs from EXACTLY that
+    # shape: `command -v python3` resolves the alias at
+    # `...\Microsoft\WindowsApps\python3.exe`, and that alias, when Python IS
+    # actually installed through the Store, relays to a REAL working
+    # interpreter whose own `sys.executable` is
+    # `...\WindowsApps\PythonSoftwareFoundation.Python.3.x_<hash>\python.exe`
+    # -- also under a WindowsApps-rooted path, so the substring match caught
+    # it too. Reported 2026-09-22: on a Store-Python machine this made
+    # this resolver report "no usable python" every turn, on a machine
+    # where python plainly works.
+    #
+    # The substring check was defense in depth against the NON-Store-install
+    # case: a placeholder alias with no real Python behind it, which the
+    # OS reroutes to opening the Store GUI. But the exec-and-probe below
+    # already proves the difference without needing to know WHERE the
+    # interpreter lives -- a placeholder alias run non-interactively via
+    # `-c` produces no usable stdout (rejected by `-n` above) or a status
+    # this loop never reaches success on either way, and `-x "$real"`
+    # further down still requires whatever path IS printed to be a real,
+    # executable file. Removing the substring check trusts that proof
+    # instead of a location guess that happened to reject the working case.
     # A native Windows `sys.executable` (e.g. `C:\fakepy\python.exe`) must be
     # normalised into a form THIS shell can actually stat before `-x` runs on
     # it -- the raw backslash-drive-letter form never matches a real file
