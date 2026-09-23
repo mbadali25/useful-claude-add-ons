@@ -3883,3 +3883,29 @@ Two-round budget spent. Raw: scratchpad revD2-YOncm9/out.txt.
 
 ### crew-1.0 T4: `docs/guides/crew/src/README.md:11-12` rows say "(not yet written)" for guides that exist - OPEN (filed 2026-09-23)
 - Also: `plugin/crew/commands/review.md` is 552 lines against the 120-line command budget; T8 enforces budgets.
+
+### crew-1.0 T5 cloud guard: residual risk after two review rounds - OPEN (filed 2026-09-23)
+
+The guard parses shell text; two Codex rounds found 8 then 6 parser bypasses. A third pass (lane C fix2) closes
+round 2's six without a further review round. Expect more: a text parser cannot model every shell/PowerShell
+evaluation path. Posture: ships OFF (`guards.cloudGuard: off`); it is a drift/accident stop, not a security
+boundary — cloud IAM and Terraform workspace policy remain the real control. Before recommending `block` mode
+widely, run one more independent review round of `cloud_guard.py` on its own.
+
+### crew-1.0 T3 round-2 findings (filed 2026-09-23) - OPEN
+
+Budget spent. Raw: scratchpad revT3b-IQIPVp/out.txt.
+Queued for an unreviewed final pass after the T3/T4 integration:
+- BLOCK `completion-audit.sh:30` and `scope-guard.sh:33` (and ps1 twins): no-python fallback treats syntactically invalid JSON (`{"scope":{"mode":"off"},}`) as provably off -> fail open. Only a JSON that parses AND says off may be off.
+- BLOCK `review_ledger.py:403` successor-plan continuation uses `status()` not `accepted()`, so a `cli` receipt resets NEEDS_REPLAN with allowCliApproval false.
+- FIX `approval_hook.py:95` malformed payload containing `crew:approve` exits 0 silently; report the failure.
+Accepted risk (stated threat model: guards stop drift and accidents, not a session deliberately forging local state with shell access; Stop audit + review are the backstop):
+- BLOCK `scope_guard.py:87` nested `claude -p "/crew:approve T-1"` triggers the user-prompt hook.
+- BLOCK `scope_guard.py:87` direct Python API call `crew_ticket.approve(..., via=USER_PROMPT)`.
+- BLOCK `scope_guard.py:93` PowerShell `[IO.File]::WriteAllText` into the approval dir.
+- FIX `review_ledger.py:430` approval writes don't take the ledger lock (race).
+Stronger option if the owner wants approval to be a boundary: sign receipts with a key the session cannot read (e.g. an OS keyring entry written at install), verified by the guard.
+
+### crew-1.0 T3 fix deferrals (filed 2026-09-23) - OPEN
+- `scope_report.gate_matches` (verify-gate) still lets `*` cross `/`.
+- Every Bash/PowerShell call now starts Python even with `scope.mode: off` when a config exists; add a shell fast path.
