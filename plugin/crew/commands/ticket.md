@@ -4,6 +4,10 @@ argument-hint: <what needs doing>
 allowed-tools: Read, Write, Edit, Bash, Agent
 ---
 
+**Superseded by `/crew:spec` in 1.0** (preceded by `/crew:brainstorm`, which
+now mints the ticket id). This file is kept for repos still on the 0.20
+lifecycle.
+
 Turn this into a ticket: $ARGUMENTS
 
 Scope it first. Use `crew:explorer` to check what it touches and whether it
