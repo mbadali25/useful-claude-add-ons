@@ -423,6 +423,18 @@ def _handoff(root, cfg):
     return os.path.relpath(path, base).replace("\\", "/"), read_text(path)
 
 
+def _archived_as_stale(root, cfg):
+    """Carry handoff-read's staleness rule forward: a note describing a state
+    the repo has moved past is archived (never deleted) by
+    crew_state.archive_stale_handoff before anything could inject it. Any
+    failure leaves the note where it was, as that function promises."""
+    try:
+        import crew_state
+        return bool(crew_state.archive_stale_handoff(root, cfg).get("archived"))
+    except Exception:  # pylint: disable=broad-except
+        return False
+
+
 def next_action(text):
     lines = (text or "").splitlines()
     for i, line in enumerate(lines):
@@ -559,6 +571,8 @@ def build(root, payload, cfg, state, harness):
             if behind:
                 line += f" Anchors to re-check: {', '.join(behind[:6])}."
             items.append({"id": "", "text": line, "source": {"kind": "codemap-index"}})
+        if _archived_as_stale(root, cfg):
+            extra["handoff"] = "archived-stale"
         rel, handoff = _handoff(root, cfg)
         budget, max_lines = STARTUP_CHARS, STARTUP_LINES
         if handoff and handoff.strip():

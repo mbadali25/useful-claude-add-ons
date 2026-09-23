@@ -74,6 +74,22 @@ def test_resume_with_a_handoff_carries_it_within_3000_chars(tmp_path):
     assert len(text) <= crew_context.RESUME_CHARS == 3000
 
 
+def test_a_stale_handoff_is_archived_rather_than_injected(tmp_path, monkeypatch):
+    import crew_state  # pylint: disable=import-outside-toplevel
+    root = make_repo(tmp_path, handoff="# Handoff\nSTALE-HANDOFF-TOKEN\n")
+
+    def archive(root_arg, _cfg):
+        os.replace(os.path.join(root_arg, ".work", "HANDOFF.md"), os.path.join(root_arg, ".work", "old.md"))
+        return {"archived": True}
+
+    monkeypatch.setattr(crew_state, "archive_stale_handoff", archive)
+
+    text = _run(payload("SessionStart", root, source="clear"))
+
+    assert "STALE-HANDOFF-TOKEN" not in text
+    assert log_records(root)[-1]["handoff"] == "archived-stale"
+
+
 def test_per_turn_slices_share_one_2000_char_budget(tmp_path):
     many = {f"sub{i:02d}": ([f"s{i}/a.py", f"s{i}/b.py", f"s{i}/c.py"],
                             [f"landmine {i} " + "q" * 150 for _ in range(4)]) for i in range(12)}
