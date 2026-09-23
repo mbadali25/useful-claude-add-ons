@@ -183,21 +183,24 @@ nobody trusts a notification channel.
    candidate while its diff line is still uncommitted against HEAD; a ticket
    that merges without declaring the endpoint it just created loses the scan
    obligation entirely, silently, the moment the diff lands.
-9. `/crew:review`.
-10. If this added behaviour with no coverage, add a check: `crew:smoke-author` for
-    API and data paths, `crew:browser-tester` for UI, CSS, or user flows. Those
-    agents write the `.crew/verify.json` rule as part of writing the check and
-    prove it fires — confirm both happened. A check nobody mapped never runs, and
-    it reads as coverage while it does not.
-    If the change touched migrations, schema, or procedures, the rule must cover
-    fresh apply, rollback apply, and a round trip.
-11. If this ticket involved an operational procedure that will be repeated, is
+9. If this added behaviour with no coverage, add a check: `crew:smoke-author` for
+   API and data paths, `crew:browser-tester` for UI, CSS, or user flows. Those
+   agents write the `.crew/verify.json` rule as part of writing the check and
+   prove it fires — confirm both happened. A check nobody mapped never runs, and
+   it reads as coverage while it does not.
+   If the change touched migrations, schema, or procedures, the rule must cover
+   fresh apply, rollback apply, and a round trip.
+10. If this ticket involved an operational procedure that will be repeated, is
     destructive, or lived only in someone's head, run `/crew:runbook
     --from-ticket $1`. Build it from the commands actually run, not from memory.
-12. Run `/crew:docs` — decide which documents this change should touch, per the
+11. Run `/crew:docs` — decide which documents this change should touch, per the
     `crew-docs` trigger table. "None" is the common and correct answer. If this
     is a Terraform module, run `terraform-docs .` rather than editing inside the
     `BEGIN_TF_DOCS` markers, which would be overwritten.
+12. `/crew:review` for ticket `$1` — last, after the tests and docs above, so
+    the reviewer reads the finished change and not a draft that coverage and
+    docs edits then move out from under it. It has two rounds per ticket in total; a refused
+    third round means replan, not retry.
 13. Update ticket status and a one-line Result. Files mode: edit the ticket and
     its INDEX line. Jira mode: `/crew:jira-sync $1 --push`. ServiceDesk Plus mode:
     `/crew:sdp-sync $1 --push` - which writes one note and transitions the

@@ -3791,3 +3791,10 @@ Raw: `.work/review/main-B1-B3-W6CLul/out.txt`. B2 drew no finding.
 - FIX `crew_upgrade.py:1321` - report-only (already-current) path prints migration claims ("roles added", "schema 7 -> 7 ... added") for changes it never writes.
 - FIX `tests/test_pm_journal.py:216` - no test covers `O_NOFOLLOW`; removing it leaves the suite green.
 - FIX `tests/test_upgrade.py:428` - B1 tests call `run()` only; deleting `main()`'s new print path leaves them green.
+
+### crew 0.20.16 (T1) review adapter: deferred, not fixed (filed 2026-09-23) - OPEN
+
+- `plugin/crew/commands/review.md:124` - the bundle base is `git merge-base HEAD <default branch>`, not the ticket's recorded start commit (`hooks/scripts/scope_base.py`). The 04 spec says "committed changes since the ticket base"; they differ when a ticket starts mid-branch. Not in T1's list (0.20.15 owns the base), so left for the lifecycle rebuild.
+- `plugin/crew/hooks/scripts/review_ledger.py:238` - `--accept --by <who>` records who and when but authenticates nothing; any session can accept FINDINGS. Owner identity belongs with T3/T4 approval, not the ledger.
+- `plugin/crew/hooks/scripts/review_verdict.py:46` - `READ|<part>` acknowledgements are the reviewer's own claim, not an observation of its file reads. They catch "answered after part 1"; they do not prove reading. A Codex event-stream check of actual reads would be stronger.
+- `plugin/crew/tests/review_fixtures.py` - the fake reviewer's Windows `.cmd` shim and the crash test's SIGTERM fallback are UNVERIFIED on Windows (Linux host only).

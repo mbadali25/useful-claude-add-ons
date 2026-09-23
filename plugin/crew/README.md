@@ -705,9 +705,9 @@ Work spanning repositories gets one ticket per repository, cross-referenced by I
 /crew:work T-0042
 ```
 
-The session reads exactly one ticket file, delegates the search to `explorer`, plans before editing, implements the smallest sufficient change, runs smoke, escalates to `security` or `dba` when the change warrants it, and runs review.
+The session reads exactly one ticket file, delegates the search to `explorer`, plans before editing, implements the smallest sufficient change, runs smoke, escalates to `security` or `dba` when the change warrants it, adds any missing checks and docs, and runs review last.
 
-If the change added behavior with no smoke coverage, `smoke-author` adds a check. A feature without a check is how the next change breaks it silently.
+If the change added behavior with no smoke coverage, `smoke-author` adds a check. A feature without a check is how the next change breaks it silently. Review comes after the tests and the docs (since 0.20.16), so the reviewer reads the finished change rather than a draft that later edits move out from under it.
 
 ### Review it
 
@@ -715,9 +715,31 @@ If the change added behavior with no smoke coverage, `smoke-author` adds a check
 /crew:review
 ```
 
-Codex if available, the `qa-reviewer` agent if not — and it always tells you which ran. Findings are reported verbatim before any argument about them. `BLOCK` items get fixed, smoke reruns, review runs once more.
+Codex if available, the `qa-reviewer` agent if not — and it always tells you which ran. Findings are reported verbatim before any argument about them. `BLOCK` items get fixed, smoke reruns, review runs once more — and that second round is the last one.
+
+The reviewer reads a **bundle**, not a `git diff` of the committed range: `hooks/scripts/review_patch.py` stages committed, staged, unstaged and untracked changes into a temporary index (your own index is never written) and diffs the ticket base against it. Renames, file-mode changes, binary files (git's marker plus both blob ids and sizes) and submodules are listed in the manifest. A large bundle is split into ordered parts — never truncated — and the manifest records a sha256 over them.
 
 Then it appends a line to `.crew/metrics.md`. That line is not bookkeeping; `/crew:scale` reads it to determine whether any of this is catching anything.
+
+### Review: verdicts and the two-round budget
+
+(This section lives here because the 1.0 guide sources under `docs/guides/crew/src/` do not exist yet; the HTML guides in `docs/guides/crew/` have no generator.)
+
+**The verdict is computed by a script**, `hooks/scripts/review_verdict.py`, from the reviewer's output and exit status:
+
+| Verdict | When |
+|---|---|
+| `CLEAN` | exactly one `CLEAN` line, exit 0, and a `READ|<part>` line for every bundle part |
+| `FINDINGS` | at least one `BLOCK`, `FIX` or `NIT` line, and nothing below applies |
+| `INCOMPLETE` | non-zero exit, unknown exit, timeout, empty output, any line outside the contract, a part not acknowledged, or `CLEAN` beside findings |
+
+`INCOMPLETE` is never `CLEAN`. Codex runs as `codex exec --json --sandbox read-only` with stdin closed, and a turn that failed in its event stream is `INCOMPLETE` even when the process exited 0. Each round writes `.work/tickets/<id>/review.json` (verdict, counts, provider, model, model family, bundle hash, base/head, round).
+
+**Two rounds per ticket, in total.** `hooks/scripts/review_ledger.py` keeps the ledger at `<git-common-dir>/crew/review/<id>.json`, so every worktree of the repo shares it. `review_run.py` reserves the round *before* it launches the reviewer, so a reviewer that crashes or hangs has still spent it. A third reservation is refused and the ticket becomes `NEEDS_REPLAN`. No environment variable, flag or config key raises or resets the budget; deleting the ledger file by hand is outside that promise, and is what a reviewer of your repo's history would see. In 0.20.16 `NEEDS_REPLAN` is terminal — the continuation through an approved successor plan is a seam (`continue_with_successor_plan`) that always refuses until plan approval ships.
+
+**The receipt is bound to the bundle.** A `CLEAN` round writes an acceptance receipt carrying the bundle sha256. `FINDINGS` you decide to accept become one only through `review_ledger.py --ticket <id> --accept --by <who>`, which records who and when and refuses if the tree changed since that round. `review_ledger.py --ticket <id> --check-receipt` rebuilds the bundle from the receipt's base and exits non-zero when there is no receipt or the hash differs — any edit after review invalidates it; committing the reviewed change does not. `/crew:done` will gate on it; for now, run it yourself before you open the pull request.
+
+The prompt every reviewer reads also carries the ticket's spec sections (Intent, Exclusions, Evidence, Unknowns, Acceptance checks) from `.work/tickets/<id>/spec.md`, the plan from `plan.md`, the codemap landmines, and the verify gate's latest receipts. A missing piece is written into the prompt as `MISSING`, never left out.
 
 You open the pull request. The crew stops at the boundary of your judgment.
 

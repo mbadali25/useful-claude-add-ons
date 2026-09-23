@@ -228,6 +228,10 @@ Output one line per defect, nothing else:
 `SEVERITY|file:line|what breaks|how to reproduce`
 SEVERITY is BLOCK, FIX, or NIT.
 
+When the handed prompt lists bundle parts, read every one and lead with one
+`READ|<part file name>` line per part: `review_verdict.py` marks a round with an
+unacknowledged part INCOMPLETE. Those lines are the only addition allowed.
+
 If you find nothing, output exactly: CLEAN — except on the self-derived
 fallback above, where the `NIT|self-derived|...` line always leads, so
 "nothing else found" is that line followed by `CLEAN`, never `CLEAN` alone.

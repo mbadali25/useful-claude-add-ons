@@ -110,6 +110,9 @@ PM_BRIEF = os.path.join(CREW, "hooks", "scripts", "pm_brief.py")
 UPGRADE_DOC = os.path.join(CREW, "commands", "upgrade.md")
 PROMOTE_DOC = os.path.join(CREW, "commands", "promote.md")
 REVIEW_DOC = os.path.join(CREW, "commands", "review.md")
+REVIEW_VERDICT = os.path.join(CREW, "hooks", "scripts", "review_verdict.py")
+REVIEW_LEDGER = os.path.join(CREW, "hooks", "scripts", "review_ledger.py")
+REVIEW_RUN = os.path.join(CREW, "hooks", "scripts", "review_run.py")
 PROMOTE_SH = os.path.join(CREW, "hooks", "scripts", "promote-gate.sh")
 # Outside the crew plugin, for the same reason BUILD_REPORT is: promote.md
 # claims things about the `bitbucket` entry's script, and the only way to
@@ -3014,6 +3017,53 @@ MUTATIONS = (
         "        changed = sorted(set(changed))\n",
         ("tests/test_scope_base.py::"
          "test_scope_report_names_a_committed_file_the_gate_no_longer_sees"),
+    ),
+    # The 0.20.16 review adapter (T1). Each of these was also run by hand
+    # against the tracked file, restored with `cp` and confirmed with `diff`.
+    (
+        # A reviewer that exited non-zero but printed CLEAN reads as CLEAN --
+        # the "auth succeeded, the call failed, nothing looks wrong" case.
+        "the verdict maps a non-zero reviewer exit to CLEAN",
+        REVIEW_VERDICT,
+        "    elif exit_code != 0:\n"
+        "        reasons.append(f\"the reviewer exited {exit_code}\")\n",
+        "",
+        ("tests/test_review_verdict.py::"
+         "test_parse_clean_text_with_a_failed_exit_is_incomplete"),
+    ),
+    (
+        # One character buys a third round, the loop the ledger exists to end.
+        "the review budget is raised to three rounds",
+        REVIEW_LEDGER,
+        "BUDGET = 2\n",
+        "BUDGET = 3\n",
+        ("tests/test_review_ledger.py::"
+         "test_reserve_third_round_is_refused_and_state_is_needs_replan"),
+    ),
+    (
+        # The receipt check still runs and still finds a receipt, and passes
+        # a tree edited after the review.
+        "the receipt check ignores the bundle hash",
+        REVIEW_LEDGER,
+        "    if current != receipt[\"bundle_sha256\"]:\n",
+        "    if False:\n",
+        ("tests/test_review_receipt.py::"
+         "test_check_receipt_fails_after_the_tree_is_edited"),
+    ),    (
+        # Launch first, reserve after: a reviewer that takes review_run.py
+        # down with it leaves no round on the ledger, so crashes are free.
+        "the review round is reserved after launch instead of before",
+        REVIEW_RUN,
+        "    ok, number, message = review_ledger.reserve(args.root, args.ticket, "
+        "args.provider,\n",
+        "    if args.provider in LAUNCHED:\n"
+        "        stdout, stderr, code, timed_out = launch(command_for(\n"
+        "            args.provider, exe, args.root, prompt, args.model, args.effort),\n"
+        "            args.root, args.timeout)\n"
+        "    ok, number, message = review_ledger.reserve(args.root, args.ticket, "
+        "args.provider,\n",
+        ("tests/test_review_ledger.py::"
+         "test_run_reserves_before_launch_so_a_crash_still_spends_the_round"),
     ),
 )
 

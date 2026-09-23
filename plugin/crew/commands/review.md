@@ -17,7 +17,16 @@ scoped to both:
 mkdir -p .work/review
 SCRATCH=$(mktemp -d ".work/review/$(git rev-parse --abbrev-ref HEAD 2>/dev/null | tr -c 'A-Za-z0-9._-' '-')-XXXXXX")
 echo "SCRATCH=$SCRATCH"
+# REQUIRED. The two-round budget, review.json and the receipt are per ticket.
+# If you do not know the id, stop and ask - never derive or invent one.
+TICKET="<ticket id>"
 ```
+
+**Review runs after tests and docs**, and has **two rounds per ticket in
+total** (`review_ledger.py`, in `<git-common-dir>/crew/review/<id>.json`,
+shared by every worktree). A round is reserved before the reviewer launches,
+so a crashed one still counts; a third is refused and the ticket becomes
+`NEEDS_REPLAN`. No flag, variable or config key raises or resets it.
 
 `mktemp`'s branch-prefixed, randomly-suffixed directory is ticket-scoped (the
 branch name) and session-scoped (no other process can be handed the same
@@ -75,15 +84,10 @@ reaches machines whose agent roster nobody checked. That is the same class of fa
 provider that authenticates and then returns nothing, and it gets the same
 treatment: say it out loud.
 
-(The reason here has now been wrong in both directions, which is worth leaving
-visible. It first said the map "is committed and travels between machines" when
-`.crew/*` ignored it and the file was in no tree. That was corrected. Then, on
-2026-09-14, the policy itself changed — `!.crew/verify.json` joined the named
-un-ignore list and this repo started tracking its own map — so the correction
-became the stale claim. The conclusion survived both: name what you could not
-look at. Cite the gitignore **stanza**, never a line number; the two citations
-that used to live here were `.gitignore:282` and `.gitignore:340-341`, and both
-moved the moment a negation was added above them.)
+(The reason here has been wrong in both directions — "the map travels" when it
+was ignored, then "it is ignored" after 2026-09-14 un-ignored it. The
+conclusion survived both: name what you could not look at. Cite the gitignore
+**stanza**, never a line number; line citations here moved when negations did.)
 
 **Step 1 — who wrote this diff, and how do we know?** Ask the thing that
 recorded the dispatch, rather than re-deriving the answer from config:
@@ -309,15 +313,11 @@ as though it were a preference.
 # derivation can disagree with the first, and then the staleness verdict was
 # about a different range than the diff the reviewer actually read.
 #
-# review_patch.py builds ONE patch: the committed range $BASE...HEAD PLUS
-# staged, unstaged and untracked changes against HEAD. The line this
-# replaced -- `git diff "$BASE"...HEAD` alone -- is committed-range only, so
-# on a dirty tree with nothing committed yet it produced a 0-byte patch while
-# `git diff HEAD` showed real, uncommitted change, and untracked files never
-# entered the patch at all. A reviewer handed that empty file reported CLEAN
-# on nothing it had read (found by Codex, `docs/review/03-codex-review.md`).
-# It never writes to the real index -- see the script's own docstring --
-# so anything YOU staged there for your own next commit is untouched.
+# review_patch.py builds ONE bundle: committed range PLUS staged, unstaged and
+# untracked changes, with renames, modes, binaries and submodules in the
+# manifest, split into parts (never truncated) and hashed. `git diff
+# "$BASE"...HEAD` alone gave a 0-byte patch on a dirty tree (found by Codex,
+# `docs/review/03-codex-review.md`). The real index is never written.
 MANIFEST="$SCRATCH/manifest.json"
 python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/review_patch.py \
   --root . --base "$BASE" --out "$SCRATCH/diff.txt" --manifest "$MANIFEST"
@@ -330,28 +330,20 @@ elif [ "$PATCH_STATUS" -ne 0 ]; then
   exit "$PATCH_STATUS"
 fi
 
-# Gather this repo's own failure modes BEFORE writing the prompt, so every
-# provider gets them. crew 0.19.61 taught `qa-reviewer.md` to read the codemap,
-# but `qa-reviewer` is the FALLBACK reviewer -- on any machine with Codex or
-# Copilot installed the reviewer that actually runs is a provider reading
-# `prompt.txt`, and `prompt.txt` had no codemap content at all. The wiring
-# reached the reviewer nobody uses. That is why this block is here and not in
-# an agent file.
-#
-# Byte-identical instructions across providers is a deliberate invariant of
-# this file (see the comment below). So this text goes INTO the shared prompt,
-# never appended for one provider: a landmine list Codex sees and Claude does
-# not makes a differing defect count a fact about the prompt again.
-# The changed-file list this block matches against. It MUST be built here:
-# an earlier draft of this step grepped a $SCRATCH/changed.txt that nothing
-# ever wrote, and because the failure was routed to /dev/null every note
-# failed to match, every review got an empty landmine section, and the step
-# reported itself complete. Build the input before you filter on it.
-#
-# Derived from $MANIFEST, not re-derived with a second `git diff` -- a second
-# derivation here could disagree with what review_patch.py actually diffed
-# into $SCRATCH/diff.txt, the same bug class as the two independent $BASE
-# computations warned about above.
+# The ticket contract: bundle parts + READ acks, spec sections (Intent,
+# Exclusions, Evidence, Unknowns, Acceptance checks), plan, test receipts.
+# Anything absent is written as MISSING, never left out.
+python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/review_prompt.py --root . \
+  --ticket "$TICKET" --manifest "$MANIFEST" --out "$SCRATCH/contract.txt"
+
+# Gather this repo's own failure modes INTO the shared prompt, so every
+# provider gets them -- wiring them into qa-reviewer.md alone reached only the
+# fallback. Byte-identical instructions across providers is this file's
+# invariant: never append for one provider.
+# The changed-file list MUST be built here, before the loop greps it (an
+# earlier draft grepped a changed.txt nothing wrote, and every review got an
+# empty landmine section), and from $MANIFEST, not a second `git diff` that
+# could disagree with what review_patch.py actually bundled.
 python3 -c '
 import json, sys
 m = json.load(open(sys.argv[1]))
@@ -373,14 +365,9 @@ for note in .crew/codemap/*.md; do
     sed -n '/^## Written by \/ Read by/,/^## /p' "$note" >> "$SCRATCH/context.txt"
   fi
 done
-# KNOWN OVER-MATCH, stated rather than hidden: the test is "does any changed
-# path appear anywhere in this note", so a diff touching a short, widely-cited
-# path (`README.md`, `CHANGELOG.md`) matches almost every note. Measured on
-# this repo with a 13-file diff: 7 of 10 notes matched, 333 lines. That errs
-# toward giving the reviewer too much rather than too little, which is the
-# right direction, but it is not precision and must not be described as such.
-# Narrowing it needs the notes' citation grammar parsed, which is a bigger
-# change than this one.
+# KNOWN OVER-MATCH, stated rather than hidden: a widely-cited path
+# (`README.md`) matches almost every note (measured: 7 of 10 notes, 333 lines,
+# on a 13-file diff). Too much rather than too little, but not precision.
 #
 # So cap it, and make the cap ANNOUNCE itself. A prompt silently truncated
 # mid-landmine is worse than one that says it was cut: the reviewer cannot
@@ -406,12 +393,16 @@ fi
 # so $SCRATCH becomes the real path - a reviewer handed the literal string
 # "$SCRATCH/diff.txt" opens nothing and reports CLEAN on a file it never read.
 cat > "$SCRATCH/prompt.txt" <<EOF
-Review $SCRATCH/diff.txt as a hostile QA engineer.
+Review the change in $SCRATCH/diff.txt, read as the parts listed below, as a
+hostile QA engineer, against the ticket's spec and plan below.
 Output one line per defect: SEVERITY|file:line|what breaks|how to reproduce.
 SEVERITY is BLOCK, FIX, or NIT. Check: unintended behavior changes, unhandled
-error paths, boundary and empty-collection cases, concurrency, and anything the
-change makes reachable that was not before. Output nothing but those lines.
-If no defects, output exactly: CLEAN
+error paths, boundary and empty-collection cases, concurrency, anything the
+change makes reachable that was not before, and every acceptance check.
+Output nothing but the READ lines and those lines.
+If no defects, after the READ lines output exactly: CLEAN
+
+$(cat "$SCRATCH/contract.txt")
 
 This repository's own recorded failure modes follow. They come from its code
 map, where each line was written because it already cost someone real time
@@ -422,39 +413,26 @@ $(cat "$SCRATCH/context.txt")
 EOF
 ```
 
-**Step 2a — Codex.** Empty means "pass no flag", so an unconfigured repo invokes
-exactly the command it always did.
+**Step 2a — Codex, 2b — Copilot.** `review_run.py` reserves the round, then
+launches the reviewer with stdin closed (a real run hung on stdin), then
+computes the verdict and writes `.work/tickets/$TICKET/review.json`. Codex runs
+as `codex exec --json --sandbox read-only`, read from its event stream, so a
+failed turn is INCOMPLETE even at exit 0. Copilot keeps `--deny-tool write
+--deny-tool shell`: a reviewer that can edit the code can "fix" a defect instead
+of reporting it. Empty model/effort pass no flag.
 
 ```bash
-codex exec --skip-git-repo-check \
-  ${QA_MODEL:+--model "$QA_MODEL"} \
-  ${QA_EFFORT:+-c model_reasoning_effort="$QA_EFFORT"} \
-  "$(cat "$SCRATCH/prompt.txt")" > "$SCRATCH/out.txt" 2>&1
+python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/review_run.py --root . --ticket "$TICKET" \
+  --scratch "$SCRATCH" --provider codex --model "$QA_MODEL" --effort "$QA_EFFORT"
+# or: --provider copilot --model "$QA_COPILOT_MODEL"
+REVIEW_STATUS=$?   # 0 CLEAN, 1 FINDINGS, 3 INCOMPLETE, 4 NEEDS_REPLAN, 2 not run
 ```
 
-`reasoningEffort` accepts `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`.
-A wrong value is safe to get wrong: Codex rejects it with an HTTP 400 naming the
-supported set, rather than silently ignoring it and returning a shallow review.
-
-**Step 2b — Copilot.** Same prompt, different family. Denying `write` and `shell` is
-not optional: a reviewer that can edit the code under review can "fix" a defect
-instead of reporting it, and you would never see the finding. Copilot's permission
-patterns are `kind(argument)` with the argument optional — a bare kind matches all
-of it. File reads need no grant; path access already defaults to the working
-directory and its subdirectories, which is where `$SCRATCH` lives.
-
-```bash
-copilot -p "$(cat "$SCRATCH/prompt.txt")" \
-  --model "$QA_COPILOT_MODEL" \
-  --deny-tool write --deny-tool shell \
-  -s > "$SCRATCH/out.txt" 2>&1
-```
-
-If this exits non-zero with `Access denied by policy settings`, Copilot CLI is
-disabled by org or enterprise policy — report that exact cause. It is the dangerous
-failure: auth succeeds, the call returns nothing, and an empty findings file is
-indistinguishable from a clean diff. Never record a CLEAN verdict from a run that
-exited non-zero.
+`reasoningEffort` accepts `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`;
+Codex rejects a wrong one with an HTTP 400. Copilot exiting non-zero with `Access
+denied by policy settings` is org or enterprise policy — report that exact
+cause. Exit 2 means nothing launched (not on PATH) and no round was spent; walk
+to the next eligible provider.
 
 **Step 2c — Claude fallback.** Invoke the `crew:qa-reviewer` subagent with the
 SAME bundle 2a and 2b just read: the exact `$SCRATCH/prompt.txt` content —
@@ -465,19 +443,33 @@ same committed-range-only mistake `review_patch.py` exists to fix (found by
 Codex, `docs/review/03-codex-review.md`), and a subagent computing its own
 `git diff` fresh can miss the staged, unstaged and untracked content the
 manifest already captured. It reviews in its own context so it has not seen
-your reasoning for writing the code. Write its output to `$SCRATCH/out.txt` in
-the same format.
+your reasoning for writing the code. Reserve the round BEFORE dispatching it,
+then hand its output to the same verdict parser:
+
+```bash
+ROUND=$(python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/review_run.py --root . --ticket "$TICKET" \
+  --scratch "$SCRATCH" --provider claude --reserve-only | sed -n 's/^ROUND=//p')
+# ... dispatch crew:qa-reviewer; write its output to $SCRATCH/out.txt ...
+python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/review_run.py --root . --ticket "$TICKET" \
+  --scratch "$SCRATCH" --provider claude --round "$ROUND" \
+  --output "$SCRATCH/out.txt" --exit-code 0
+```
+
+An empty `ROUND` is a refusal (budget spent): do not dispatch.
 
 The fallback is genuinely weaker than a different family: the same model family
 reviewing itself finds fewer defects. Tell me when it is what ran, so I review
 harder myself.
 
-**The shared prompt is written in step 2**, before any provider block runs, because
-2a and 2b both `cat` it. Do not re-word it per provider: identical instructions are
-what make a differing defect count a fact about the model rather than about the
-prompt.
+**The shared prompt is written in step 2**, before any provider runs. Do not
+re-word it per provider: identical instructions are what make a differing
+defect count a fact about the model rather than about the prompt.
 
-Read ONLY `$SCRATCH/out.txt`. Never load the diff back into your context.
+Read ONLY `$SCRATCH/out.txt` and the `review:` lines. Never load the diff back
+into your context. **The verdict is the script's, not yours**: CLEAN only for
+exactly `CLEAN` at exit 0 with every part acknowledged; any BLOCK/FIX/NIT is
+FINDINGS; a non-zero exit, empty or unparseable output, a skipped part or a
+timeout is INCOMPLETE — never report INCOMPLETE as clean.
 
 **Step 2d — re-run the failing control, do not read about it.** If the diff
 adds or edits a test, guard, assertion or smoke step, the author is expected to
@@ -496,8 +488,14 @@ to.
    by re-deriving it: base, head, branch, whether the tree was dirty, and
    which category (committed / staged / unstaged / untracked) each changed
    file fell into is the one record of what was actually reviewed.
-2. Fix all BLOCK items. Rerun `./_verify/smoke.sh`. Rerun this review once.
-3. If you disagree with a finding, say so explicitly and let me decide.
+2. Fix all BLOCK items. Rerun `./_verify/smoke.sh`. Rerun this review once —
+   round 2 is the last. A refusal (exit 4, `NEEDS_REPLAN`) is terminal in this
+   release: stop, say so, and replan the ticket; there is no third round.
+3. If you disagree with a finding, say so explicitly and let me decide. If I
+   accept FINDINGS as they stand, record it — the receipt names who and when:
+   `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/review_ledger.py --ticket "$TICKET" --accept --by "<who>"`.
+   A CLEAN round writes its receipt itself. `review_ledger.py --ticket "$TICKET"
+   --check-receipt` rebuilds the bundle and fails if anything changed since.
 4. **Land the verdict as a review, not a comment.** If the change is on a
    GitHub PR, post the outcome with `gh pr review` so it exists as an artifact
    that tooling and branch protection can see:
@@ -516,6 +514,7 @@ to.
    `bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/notify.sh review "<n> BLOCK, <n> FIX (<reviewer>)"`
    Counts only. Never the findings themselves — those stay in the repo.
 6. Append the result to `.crew/metrics.md`: `<date> | <ticket> | <reviewer> | <n BLOCK> | <n FIX>`
+   (counts from `review.json`; an INCOMPLETE round is recorded as INCOMPLETE, not as 0/0)
 7. Name every specialist from step 0 that ran, every one that a matched rule
    asked for but you skipped, and every one that a matched rule named but that
    **is not installed on this machine**. A review that quietly dropped the `dba`

@@ -1,0 +1,271 @@
+"""The two-round review budget: reserved before launch, shared across
+worktrees, not resettable from the environment or the command line.
+
+Five review rounds on one ticket is the measured failure this exists for
+(`docs/review/03-codex-review.md`). Every case runs against a throwaway repo
+under tmp_path; the ledger lands in THAT repo's git-common-dir.
+"""
+import json
+import multiprocessing
+import os
+import subprocess
+import sys
+
+import pytest
+
+import context  # noqa: F401  pylint: disable=unused-import
+import review_ledger as rl
+from review_fixtures import env_with_path, fake_reviewer_bin, git, init_repo
+
+_SCRIPTS = os.path.join(context._ROOT, "hooks", "scripts")  # pylint: disable=protected-access
+_LEDGER = os.path.join(_SCRIPTS, "review_ledger.py")
+_RUN = os.path.join(_SCRIPTS, "review_run.py")
+_PATCH = os.path.join(_SCRIPTS, "review_patch.py")
+
+
+@pytest.fixture(name="repo")
+def _repo(tmp_path):
+    return init_repo(tmp_path / "r")
+
+
+def _cli(repo, *args, env=None):
+    return subprocess.run([sys.executable, _LEDGER, "--root", str(repo)] + list(args),
+                          capture_output=True, text=True, stdin=subprocess.DEVNULL,
+                          env=env, check=False)
+
+
+def test_reserve_grants_rounds_one_and_two(repo):
+    first = rl.reserve(str(repo), "T1", "codex")
+    second = rl.reserve(str(repo), "T1", "codex")
+
+    assert (first[:2], second[:2]) == ((True, 1), (True, 2))
+
+
+def test_reserve_third_round_is_refused_and_state_is_needs_replan(repo):
+    rl.reserve(str(repo), "T1", "codex")
+    rl.reserve(str(repo), "T1", "codex")
+
+    ok, number, _ = rl.reserve(str(repo), "T1", "codex")
+
+    assert (ok, number, rl.status(str(repo), "T1")["state"]) == (False, None, rl.NEEDS_REPLAN)
+
+
+def test_reserve_counts_a_crashed_round_with_no_result(repo):
+    rl.reserve(str(repo), "T1", "codex")
+    rl.reserve(str(repo), "T1", "codex")
+
+    ok, _, _ = rl.reserve(str(repo), "T1", "codex")
+
+    assert ok is False
+    assert [r["status"] for r in rl.status(str(repo), "T1")["rounds"]] == ["reserved"] * 2
+
+
+def test_reserve_budget_cannot_be_reset_or_raised_by_env_or_flag(repo):
+    rl.reserve(str(repo), "T1", "codex")
+    rl.reserve(str(repo), "T1", "codex")
+    env = dict(os.environ, CREW_REVIEW_BUDGET="9", CREW_REVIEW_RESET="1",
+               CREW_REVIEW_ROUNDS="9")
+
+    flag_budget = _cli(repo, "--ticket", "T1", "--reserve", "--budget", "3", env=env)
+    flag_reset = _cli(repo, "--ticket", "T1", "--reserve", "--reset", env=env)
+    plain = _cli(repo, "--ticket", "T1", "--reserve", env=env)
+
+    assert (flag_budget.returncode, flag_reset.returncode) == (2, 2)
+    assert plain.returncode == 1 and "budget exhausted" in plain.stderr
+
+
+def test_ledger_path_is_under_git_common_dir(repo):
+    common = git(repo, "rev-parse", "--git-common-dir")
+    expected = os.path.normpath(os.path.join(str(repo), common, "crew", "review", "T1.json"))
+
+    rl.reserve(str(repo), "T1", "codex")
+
+    assert rl.ledger_path(str(repo), "T1") == expected and os.path.exists(expected)
+
+
+def test_ledger_is_shared_by_a_second_worktree(repo, tmp_path):
+    other = tmp_path / "second-worktree"
+    git(repo, "worktree", "add", "-q", "-b", "side", str(other))
+    rl.reserve(str(repo), "T1", "codex")
+    rl.reserve(str(other), "T1", "codex")
+
+    ok, _, _ = rl.reserve(str(repo), "T1", "codex")
+
+    assert rl.ledger_path(str(other), "T1") == rl.ledger_path(str(repo), "T1")
+    assert ok is False
+
+
+def test_reserve_refuses_an_unreadable_ledger(repo):
+    path = rl.ledger_path(str(repo), "T1")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write("{not json")
+
+    ok, _, message = rl.reserve(str(repo), "T1", "codex")
+
+    assert ok is False and "UNKNOWN" in message
+
+
+@pytest.mark.parametrize("ticket", ["../x", "a/b", "", ".hidden", "a\\b"])
+def test_check_ticket_refuses_path_like_ids(ticket):
+    with pytest.raises(rl.LedgerError):
+        rl.check_ticket(ticket)
+
+
+def _race(root, start, results):
+    start.wait()
+    ok, _, _ = rl.reserve(root, "T1", "codex")
+    results.put(ok)
+
+
+def test_reserve_two_concurrent_claims_on_the_last_round_exactly_one_wins(repo):
+    rl.reserve(str(repo), "T1", "codex")
+    ctx = multiprocessing.get_context("spawn")
+    start, results = ctx.Event(), ctx.Queue()
+    procs = [ctx.Process(target=_race, args=(str(repo), start, results)) for _ in range(6)]
+    for proc in procs:
+        proc.start()
+
+    start.set()
+    for proc in procs:
+        proc.join(60)
+    wins = [results.get(timeout=10) for _ in procs]
+
+    assert wins.count(True) == 1
+    assert rl.status(str(repo), "T1")["rounds_used"] == 2
+
+
+def test_successor_plan_seam_refuses_and_says_why(repo):
+    rl.reserve(str(repo), "T1", "codex")
+    rl.reserve(str(repo), "T1", "codex")
+    rl.reserve(str(repo), "T1", "codex")
+
+    ok, reason = rl.continue_with_successor_plan(str(repo), "T1", "a" * 64)
+
+    assert ok is False and "T3" in reason
+
+
+def test_successor_plan_cli_refuses(repo):
+    result = _cli(repo, "--ticket", "T1", "--successor-plan", "b" * 64)
+
+    assert result.returncode == 1 and "refused" in result.stdout
+
+
+def _bundle(repo, scratch):
+    base = git(repo, "rev-parse", "HEAD")
+    scratch.mkdir(parents=True, exist_ok=True)
+    subprocess.run([sys.executable, _PATCH, "--root", str(repo), "--base", base,
+                    "--out", str(scratch / "diff.txt"),
+                    "--manifest", str(scratch / "manifest.json")],
+                   check=True, capture_output=True, stdin=subprocess.DEVNULL)
+    (scratch / "prompt.txt").write_text(
+        "Review. " + " ".join(p["name"] for p in json.loads(
+            (scratch / "manifest.json").read_text(encoding="utf-8"))["parts"]),
+        encoding="utf-8")
+
+
+def _run(repo, scratch, fakes, mode, *extra):
+    return subprocess.run(
+        [sys.executable, _RUN, "--root", str(repo), "--ticket", "T1",
+         "--scratch", str(scratch), "--provider", "codex"] + list(extra),
+        capture_output=True, text=True, stdin=subprocess.DEVNULL, check=False,
+        env=env_with_path(fakes, FAKE_REVIEWER_MODE=mode), timeout=120)
+
+
+def test_run_reserves_before_launch_so_a_crash_still_spends_the_round(repo, tmp_path):
+    (repo / "change.txt").write_text("change\n", encoding="utf-8")
+    scratch = tmp_path / "scratch"
+    _bundle(repo, scratch)
+    fakes = fake_reviewer_bin(tmp_path / "bin")
+
+    _run(repo, scratch, fakes, "crash")
+
+    rounds = rl.status(str(repo), "T1")["rounds"]
+    assert [r["status"] for r in rounds] == ["reserved"]
+
+
+def test_run_clean_writes_review_json_and_a_receipt(repo, tmp_path):
+    (repo / "change.txt").write_text("change\n", encoding="utf-8")
+    scratch, work = tmp_path / "scratch", tmp_path / "work"
+    _bundle(repo, scratch)
+    fakes = fake_reviewer_bin(tmp_path / "bin")
+
+    result = _run(repo, scratch, fakes, "clean", "--work-dir", str(work))
+
+    review = json.loads((work / "review.json").read_text(encoding="utf-8"))
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert (review["verdict"], review["round"], review["model_family"]) == ("CLEAN", 1, "gpt")
+    assert rl.status(str(repo), "T1")["receipt"]["bundle_sha256"] == review["bundle_sha256"]
+
+
+@pytest.mark.parametrize("mode,code", [("fail", 3), ("turnfail", 3), ("findings", 1)])
+def test_run_maps_reviewer_failures_to_incomplete(repo, tmp_path, mode, code):
+    (repo / "change.txt").write_text("change\n", encoding="utf-8")
+    scratch, work = tmp_path / "scratch", tmp_path / "work"
+    _bundle(repo, scratch)
+    fakes = fake_reviewer_bin(tmp_path / "bin")
+
+    result = _run(repo, scratch, fakes, mode, "--work-dir", str(work))
+
+    review = json.loads((work / "review.json").read_text(encoding="utf-8"))
+    assert result.returncode == code, result.stdout + result.stderr
+    assert review["verdict"] == ("FINDINGS" if code == 1 else "INCOMPLETE")
+
+
+def test_run_timeout_is_incomplete(repo, tmp_path):
+    (repo / "change.txt").write_text("change\n", encoding="utf-8")
+    scratch, work = tmp_path / "scratch", tmp_path / "work"
+    _bundle(repo, scratch)
+    fakes = fake_reviewer_bin(tmp_path / "bin")
+
+    result = _run(repo, scratch, fakes, "hang", "--timeout", "2", "--work-dir", str(work))
+
+    review = json.loads((work / "review.json").read_text(encoding="utf-8"))
+    assert (result.returncode, review["verdict"], review["timed_out"]) == (3, "INCOMPLETE", True)
+
+
+def test_run_missing_provider_spends_no_round(repo, tmp_path):
+    (repo / "change.txt").write_text("change\n", encoding="utf-8")
+    scratch = tmp_path / "scratch"
+    _bundle(repo, scratch)
+    empty = tmp_path / "nothing-here"
+    empty.mkdir()
+
+    result = subprocess.run(
+        [sys.executable, _RUN, "--root", str(repo), "--ticket", "T1",
+         "--scratch", str(scratch), "--provider", "codex"],
+        capture_output=True, text=True, stdin=subprocess.DEVNULL, check=False,
+        env=dict(os.environ, PATH=str(empty)))
+
+    assert result.returncode == 2
+    assert rl.status(str(repo), "T1")["rounds_used"] == 0
+
+
+def test_run_third_round_is_refused_without_launching(repo, tmp_path):
+    (repo / "change.txt").write_text("change\n", encoding="utf-8")
+    scratch, work = tmp_path / "scratch", tmp_path / "work"
+    _bundle(repo, scratch)
+    fakes = fake_reviewer_bin(tmp_path / "bin")
+    _run(repo, scratch, fakes, "findings", "--work-dir", str(work))
+    _run(repo, scratch, fakes, "findings", "--work-dir", str(work))
+
+    third = _run(repo, scratch, fakes, "clean", "--work-dir", str(work))
+
+    assert third.returncode == 4
+    assert rl.status(str(repo), "T1")["state"] == rl.NEEDS_REPLAN
+
+
+def test_claude_verdict_refuses_an_unreserved_round(repo, tmp_path):
+    (repo / "change.txt").write_text("change\n", encoding="utf-8")
+    scratch = tmp_path / "scratch"
+    _bundle(repo, scratch)
+    (scratch / "out.txt").write_text("CLEAN\n", encoding="utf-8")
+
+    result = subprocess.run(
+        [sys.executable, _RUN, "--root", str(repo), "--ticket", "T1", "--scratch",
+         str(scratch), "--provider", "claude", "--round", "1", "--output",
+         str(scratch / "out.txt"), "--exit-code", "0", "--work-dir", str(tmp_path / "w")],
+        capture_output=True, text=True, stdin=subprocess.DEVNULL, check=False)
+
+    assert result.returncode == 2 and "never reserved" in result.stderr
+    assert not (tmp_path / "w" / "review.json").exists()

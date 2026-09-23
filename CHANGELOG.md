@@ -6,6 +6,28 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Changed
 
+- **`crew` 0.20.16 (T1): the review adapter - a computed verdict, a two-round
+  ledger, and a receipt bound to the bundle.** `review_patch.py` now records
+  renames, mode changes, binary files (git's marker plus both blob ids and
+  sizes) and submodules in the manifest, splits an oversized bundle into
+  ordered parts instead of truncating it, hashes the parts (sha256), reads the
+  patch as bytes rather than decoding it lossily, and leaves `.work/` out of
+  the bundle (recorded as `excluded`). New `review_verdict.py` turns reviewer
+  output into CLEAN / FINDINGS / INCOMPLETE: a non-zero exit, timeout, empty
+  or unparseable output, or an unacknowledged part is INCOMPLETE, never CLEAN.
+  New `review_ledger.py` keeps two rounds per ticket at
+  `<git-common-dir>/crew/review/<id>.json` (shared across worktrees), reserved
+  under an O_EXCL lock before launch so a crashed round still counts; a third
+  is refused and the ticket is `NEEDS_REPLAN`, with nothing that raises or
+  resets the budget. A CLEAN round, or FINDINGS accepted with `--accept --by`,
+  writes a receipt carrying the bundle hash, and `--check-receipt` fails once
+  the tree changes. New `review_run.py` runs Codex as `codex exec --json
+  --sandbox read-only` with stdin closed and writes
+  `.work/tickets/<id>/review.json`; new `review_prompt.py` adds the ticket's
+  spec sections, plan and verify receipts to the shared prompt, writing
+  `MISSING` for what is absent. `/crew:work` now reviews after tests and docs.
+  `/crew:review` needs a ticket id.
+
 - **`doc-builder` 1.6.2: black-grid tables and a logo-left masthead.** Data and
   meta tables now draw a solid black border on every cell, data-table headers
   are black with white bold text, and the zebra fill is a stronger `#E8ECF1` so
