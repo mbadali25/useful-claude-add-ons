@@ -11,10 +11,10 @@ Read the **Hooks** section of any plugin before installing it. Commands and agen
 | | |
 |---|---|
 | **Source** | [`crew/`](crew) |
-| **Version** | 0.20.21<!-- claim: plugin-version:crew --> |
+| **Version** | 0.20.22<!-- claim: plugin-version:crew --> |
 | **Install** | `claude plugin install crew@useful-claude-add-ons` |
 | **Menu item** | 21, `repo-plugins` — **off by default**. Menu item 22, `graphify`, is a separate, also-off-by-default install of the `graphify` CLI this plugin's graph feature depends on — see **The code graph** below. |
-| **Registers** | 55 agents, 30 commands, 27 skills<!-- claim: plugin-skills:crew -->, 30 hook entries (11 scripts × `.sh`/`.ps1`) across 8 events |
+| **Registers** | 55 agents, 30 commands, 27 skills<!-- claim: plugin-skills:crew -->, 32 hook entries (12 scripts × `.sh`/`.ps1`) across 8 events |
 | **Upstream guide** | [`crew/README.md`](crew/README.md) — 25 sections, the authoritative version |
 
 Built for the awkward case: several repositories, mixed stacks, legacy code, and almost no test coverage. The workflow is file-backed tickets, one implementation session, an independent reviewer, and deterministic gates that block on failure rather than offering an opinion.
@@ -23,13 +23,13 @@ Its central design claim is worth repeating, because it is the opposite of how m
 
 ### Hooks — the part that runs without being asked
 
-Eleven scripts across eight events, each shipped as a `.sh`/`.ps1` pair
-registered on its own matcher or event — 30 hook entries. **These are why
+Twelve scripts across eight events, each shipped as a `.sh`/`.ps1` pair
+registered on its own matcher or event — 32 hook entries. **These are why
 menu item 21 is unticked by default.**
 
 | Script | Event | What it does |
 |---|---|---|
-| `guard.sh` / `.ps1` | `PreToolUse` on the Bash / PowerShell tool | Blocks `terraform apply`/`destroy`, destructive DDL, force push, hard reset, prod-targeted commands, and any command that would print a secret value into the transcript |
+| `cloud-guard.sh` / `.ps1` | `PreToolUse` on the Bash / PowerShell tool | **Off by default** (`guards.cloudGuard`: `off`/`report`/`block`). Judges `terraform`/`tofu` apply/destroy, `aws` delete/terminate/`rm --recursive`, `az` delete/purge, SQL `DROP`/`TRUNCATE` and force push, and checks the effective AWS profile/region and Azure subscription against the pinned `cloud.*` values; an unknown identity is never allowed unattended, and it never emits an allow |
 | `promote-gate.sh` / `.ps1` | `PreToolUse` on the Bash / PowerShell tool | Refuses a declared `deploy` command unless the `requires` environment has an all-pass row for this sha, the rollback runbook is verified inside 90 days, `requireHuman` is approved, and the tree is clean |
 | `handoff-read.sh` / `.ps1` | `SessionStart` | Injects the prior handoff back after a clear, compact, or resume |
 | `platform-sync.sh` / `.ps1` | `SessionStart` | Detects this machine and repairs the `platform` block in `.crew/config.json` - machine-local (`.crew/*` is ignored; the un-ignore list is `codemap/`, `endpoints.json`, `verify.json`), so the block goes wrong in place rather than in transit: one checkout opened from Windows and from WSL, or WSL2's `windowsHostIp` after a reboot. **Writes config**, and is the only hook that does: the seven derived facts (`os`, `wsl`, `wslVersion`, `distro`, `shell`, `repoFilesystem`, `windowsHostIp`) and nothing a human chose. Also recreates `config.json` itself when `.crew/` exists but the file is missing or unreadable - backing up a malformed one to `config.json.broken` first - and never when `.crew/` does not exist. Reports, without changing, a preference this OS cannot honour |

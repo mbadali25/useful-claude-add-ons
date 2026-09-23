@@ -6,6 +6,15 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Changed
 
+- **`crew` 0.20.22: Cloud/destructive guard (PreToolUse Bash|PowerShell, off by
+  default via guards.cloudGuard: off|report|block): terraform/tofu
+  apply/destroy, aws delete/terminate/rm --recursive, az delete/purge, SQL
+  DROP/TRUNCATE, force push; effective AWS profile/region and Azure
+  subscription checked against pinned values, unknown identity never allowed
+  unattended; never emits allow. Verify-gate env pinning extended (AWS_REGION,
+  AWS_DEFAULT_PROFILE, AZURE_SUBSCRIPTION_ID, ARM_SUBSCRIPTION_ID,
+  TF_VAR_environment).**
+
 - **`crew` 0.20.21: `/crew:migrate` refuses symlinked/junction targets and
   paths outside the repo, never clobbers temp files, re-verifies each target
   before replacing (stale plan aborts and rolls back), and rollback validates
