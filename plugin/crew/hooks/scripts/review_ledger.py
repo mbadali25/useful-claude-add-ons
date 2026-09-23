@@ -54,11 +54,15 @@ latest recorded round, that round is CLEAN or owner-accepted, and the state
 is not NEEDS_REPLAN, so an older round's receipt never outlives a later
 verdict. `/crew:done` (T4) gates on it.
 
-SUCCESSOR PLANS (the T3 seam). After NEEDS_REPLAN the only continuation is an
-approved successor plan. Plan approval belongs to T3, which does not exist
-yet, so `continue_with_successor_plan` always refuses until T3 lands, and says
-why.
-T3 implements `_plan_approval_receipt` and the continuation behind it.
+SUCCESSOR PLANS (T3). After NEEDS_REPLAN the only continuation is an
+approved successor plan: `crew_ticket.py approve` on a NEEDS_REPLAN ticket
+calls `continue_with_successor_plan`, which allows it only when the ticket's
+approval receipt (`<git-common-dir>/crew/tickets/<id>/approval.json`, written
+by `crew_ticket.py`, refused to Write/Edit by `scope_guard.py`) is current for
+exactly that plan hash AND no earlier approval of the ticket carried the same
+plan. It appends a `successors` row and opens a fresh budget of `BUDGET`
+rounds counted from there; the rounds already spent stay in the ledger, the
+old receipt is cleared, and nothing else resets the count.
 
 Exit codes: 0 ok; 1 refused / receipt invalid / error; 2 usage.
 """
@@ -189,6 +193,13 @@ def _mutate(root, ticket, change):
     return result
 
 
+def _spent(data):
+    """Rounds reserved since the latest successor plan (or ever, without one)."""
+    successors = data.get("successors") or []
+    after = successors[-1].get("after_round", 0) if successors else 0
+    return len(data.get("rounds", [])) - (after if isinstance(after, int) else 0)
+
+
 def _fresh(ticket):
     return {"ticket": ticket, "budget": BUDGET, "state": None, "rounds": [],
             "refused": [], "receipt": None}
@@ -207,11 +218,11 @@ def reserve(root, ticket, provider, model=None):
             data = _fresh(ticket)
         rounds = data.setdefault("rounds", [])
         exhausted = (False, None,
-                     f"review budget exhausted: {len(rounds)} of {BUDGET} rounds used. "
+                     f"review budget exhausted: {_spent(data)} of {BUDGET} rounds used. "
                      f"State is {NEEDS_REPLAN}; only an approved successor plan continues")
         if data.get("state") == NEEDS_REPLAN:
             return None, exhausted
-        if len(rounds) >= BUDGET:
+        if _spent(data) >= BUDGET:
             data["state"] = NEEDS_REPLAN
             data.setdefault("refused", []).append({"at": _now(), "provider": provider})
             return data, exhausted
@@ -245,6 +256,9 @@ def record(root, ticket, number, review):
                               "cannot be recorded")
         if row.get("status") != "reserved":
             raise LedgerError(f"round {number} already has a result ({row.get('verdict')})")
+        if len(rounds) - _spent(data) >= number:
+            raise LedgerError(f"round {number} was reserved under the plan a successor "
+                              "replaced; its result cannot be recorded")
         reserved_for = (row.get("provider"), row.get("model") or None)
         recording = (review.get("provider"), review.get("model") or None)
         if recording != reserved_for:
@@ -292,6 +306,9 @@ def accept(root, ticket, by):
             raise LedgerError(f"round {row.get('round')}, the most recent, has no result "
                               "yet; only the most recent round can be accepted, once it "
                               "has completed")
+        if len(rounds) - _spent(data) >= row.get("round", 0):
+            raise LedgerError(f"round {row.get('round')} reviewed the plan a successor "
+                              "replaced; only a round under the current plan can be accepted")
         if row.get("verdict") != "FINDINGS":
             raise LedgerError(f"round {row['round']} is {row.get('verdict')}; only FINDINGS "
                               "can be owner-accepted (CLEAN writes its own receipt, and "
@@ -379,25 +396,57 @@ def check_receipt(root, ticket):
                   f"bundle {(current or '')[:12]}")
 
 
-def _plan_approval_receipt(root, ticket, plan_hash):  # pylint: disable=unused-argument
-    """T3 SEAM. Returns T3's approval receipt for `plan_hash` as a successor
-    plan of `ticket`, or None. Plan approval does not exist until T3 lands,
-    so there is never a receipt."""
-    return None
+def _plan_approval_receipt(root, ticket, plan_hash):
+    """(receipt, None) when `ticket`'s approval receipt is current AND is for
+    `plan_hash` AND no earlier approval carried that plan, else (None, why)."""
+    import crew_ticket  # pylint: disable=import-outside-toplevel
+    result = crew_ticket.status(root, ticket)
+    receipt = result.get("receipt") or {}
+    if result["status"] != "approved":
+        return None, f"no current approval for {ticket}: {result['why']}"
+    if receipt.get("plan_sha256") != plan_hash:
+        return None, (f"the approved plan is {str(receipt.get('plan_sha256'))[:12]}, "
+                      f"not {plan_hash[:12]}")
+    if plan_hash in crew_ticket.earlier_plan_hashes(root, ticket):
+        return None, (f"plan {plan_hash[:12]} was approved before; a successor plan must "
+                      "be a different plan")
+    return receipt, None
 
 
 def continue_with_successor_plan(root, ticket, plan_hash):
     """(allowed, reason). The only way past NEEDS_REPLAN: an approved
-    successor plan. Always refuses until T3 lands -- T3 owns plan approval."""
+    successor plan (see the module docstring). Changes nothing on refusal."""
     check_ticket(ticket)
     if not isinstance(plan_hash, str) or not _PLAN_HASH_RE.match(plan_hash):
         return False, "refused: the plan hash must be a 64-character lowercase sha256"
-    if _plan_approval_receipt(root, ticket, plan_hash) is None:
-        return False, ("refused: no approval receipt exists for successor plan "
-                       f"{plan_hash[:12]}. Plan approval is built in T3 and does not exist "
-                       f"in this release, so {NEEDS_REPLAN} is terminal: replan as a new "
-                       "ticket")
-    return False, "refused: successor continuation is not implemented until T3"
+    receipt, why = _plan_approval_receipt(root, ticket, plan_hash)
+    if receipt is None:
+        return False, f"refused: {why}; {NEEDS_REPLAN} stands"
+
+    def change(data, state):
+        # Re-checked UNDER the ledger lock: the check above is a cheap early
+        # refusal, and the approval can go stale (or be replaced) between it
+        # and the lock. The receipt acted on is the one read here.
+        receipt, why = _plan_approval_receipt(root, ticket, plan_hash)
+        if receipt is None:
+            return None, (False, f"refused: {why}; {NEEDS_REPLAN} stands")
+        if state != "ok" or data.get("state") != NEEDS_REPLAN:
+            return None, (False, f"refused: {ticket} is "
+                                 f"{data.get('state') if state == 'ok' else state}, not "
+                                 f"{NEEDS_REPLAN}; there is nothing to continue")
+        if plan_hash in {s.get("plan_sha256") for s in data.get("successors") or []}:
+            return None, (False, f"refused: plan {plan_hash[:12]} already continued "
+                                 f"{ticket} once")
+        data.setdefault("successors", []).append({
+            "plan_sha256": plan_hash, "approved_at": receipt.get("approved_at"),
+            "approved_by": receipt.get("approved_by"), "at": _now(),
+            "after_round": len(data.get("rounds", []))})
+        data["receipt"] = None
+        data["state"] = IN_REVIEW
+        return data, (True, f"successor plan {plan_hash[:12]} approved by "
+                            f"{receipt.get('approved_by')}; {BUDGET} review rounds available")
+
+    return _mutate(root, ticket, change)
 
 
 def status(root, ticket):
@@ -408,7 +457,8 @@ def status(root, ticket):
     rounds = data.get("rounds", [])
     return {"ticket": ticket, "path": path, "state": data.get("state") or "EMPTY",
             "rounds_used": len(rounds), "budget": BUDGET,
-            "rounds_left": max(0, BUDGET - len(rounds)), "rounds": rounds,
+            "rounds_left": max(0, BUDGET - _spent(data)), "rounds": rounds,
+            "successors": data.get("successors") or [],
             "receipt": data.get("receipt")}
 
 

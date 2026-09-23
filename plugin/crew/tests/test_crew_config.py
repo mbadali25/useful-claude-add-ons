@@ -263,7 +263,9 @@ def test_the_ten_keys_crew_read_but_never_declared_are_declared():
     # 112 with the cloud guard: `guards.cloudDestructive`,
     # `guards.sqlDestructive`, the `guards.cloudGuard` switch, and the three
     # repo-only `cloud.*` identity-pin lists.
-    assert len(declared) == 112
+    # 114 with crew 1.0 T3: `scope.mode`, the scope guard's key, and
+    # `scope.allowCliApproval` from the T3 fix round.
+    assert len(declared) == 114
 
 
 def test_autoclear_is_global_and_its_siblings_are_not():

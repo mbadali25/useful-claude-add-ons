@@ -163,7 +163,8 @@ still writes only the repo file.
   "production": { "databases": [], "hosts": [] },
   "cloud": { "awsProfiles": [], "awsRegions": [], "azureSubscriptions": [] },
   "change": { "requester": null, "implementor": null, "requireForProduction": false,
-              "sdpTemplate": "Change Management Request", "jiraIssueType": "Change", "category": null }
+              "sdpTemplate": "Change Management Request", "jiraIssueType": "Change", "category": null },
+  "scope": { "mode": "off", "allowCliApproval": false }
 }
 ```
 

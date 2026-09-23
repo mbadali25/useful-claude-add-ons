@@ -185,5 +185,9 @@
     "sdpTemplate": "Change Management Request",
     "jiraIssueType": "Change",
     "category": null
+  },
+  "scope": {
+    "mode": "off",
+    "allowCliApproval": false
   }
 }

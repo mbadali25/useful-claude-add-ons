@@ -135,14 +135,15 @@ def test_reserve_two_concurrent_claims_on_the_last_round_exactly_one_wins(repo):
     assert rl.status(str(repo), "T1")["rounds_used"] == 2
 
 
-def test_successor_plan_seam_refuses_and_says_why(repo):
+def test_successor_plan_without_an_approval_receipt_is_refused_and_says_why(repo):
     rl.reserve(str(repo), "T1", "codex")
     rl.reserve(str(repo), "T1", "codex")
     rl.reserve(str(repo), "T1", "codex")
 
     ok, reason = rl.continue_with_successor_plan(str(repo), "T1", "a" * 64)
 
-    assert ok is False and "T3" in reason
+    assert ok is False and "no approved plan" in reason
+    assert rl.status(str(repo), "T1")["state"] == rl.NEEDS_REPLAN
 
 
 def test_successor_plan_cli_refuses(repo):
