@@ -11,7 +11,7 @@ Read the **Hooks** section of any plugin before installing it. Commands and agen
 | | |
 |---|---|
 | **Source** | [`crew/`](crew) |
-| **Version** | 0.20.22<!-- claim: plugin-version:crew --> |
+| **Version** | 0.20.23<!-- claim: plugin-version:crew --> |
 | **Install** | `claude plugin install crew@useful-claude-add-ons` |
 | **Menu item** | 21, `repo-plugins` — **off by default**. Menu item 22, `graphify`, is a separate, also-off-by-default install of the `graphify` CLI this plugin's graph feature depends on — see **The code graph** below. |
 | **Registers** | 55 agents, 30 commands, 27 skills<!-- claim: plugin-skills:crew -->, 32 hook entries (12 scripts × `.sh`/`.ps1`) across 8 events |

@@ -6,6 +6,15 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Changed
 
+- **`crew` 0.20.23: registration.** Context hook: recalled vault text wrapped
+  as labelled reference data, not instructions; vault allow-list and
+  single-line vault/note names; memory.inject honoured by
+  --slice-for-subagent, and pm-brief/handoff-read stand down when it is on;
+  per-session lock and fail-closed budgets; 1 MB log rotation; SubagentStart
+  attribution by tool_use_id else generic slice only; generators refuse to
+  overwrite hand-written files, --check fails on them, source hash covers
+  paths/anchor, rules capped at 30 lines.
+
 - **`crew` 0.20.22: Cloud/destructive guard (PreToolUse Bash|PowerShell, off by
   default via guards.cloudGuard: off|report|block): terraform/tofu
   apply/destroy, aws delete/terminate/rm --recursive, az delete/purge, SQL
