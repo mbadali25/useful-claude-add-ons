@@ -765,7 +765,7 @@ A crew 1.0 ticket is a directory, `.work/tickets/<id>/`, holding `direction.md`,
 
 | Value | Behaviour |
 |---|---|
-| `off` (default) | Both hooks do nothing. A repo that never set the key is here. |
+| `off` (default) | Both hooks do nothing. A repo that never set the key is here. `/crew:init` writes `auto` instead for a repo it creates `.crew/config.json` in (crew 0.20.25); an existing config is left alone. |
 | `report` | Everything is allowed; each would-be refusal is logged to `.crew/guard.log` and shown as a system message. Approval/ledger state is still refused. |
 | `block` | Refusals block (the edit guard exits 2; the audit blocks the Stop once, in at most six lines, and never re-blocks a `stop_hook_active` continuation). |
 | `auto` | `report` for the first ten tickets approved in this repository, then `block`. The count lives in `<git-common-dir>/crew/scope-tickets.json`. |
@@ -2182,12 +2182,18 @@ CONFIG.md §17 has the table and the reasoning.
 | Command | Purpose |
 |---|---|
 | `/crew:ticket <description>` | Scope a request into a ticket |
-| `/crew:work <id>` | Work one ticket end to end |
+| `/crew:work <id>` | Work one ticket end to end. Superseded by the lifecycle commands below; remains until 1.0 |
+| `/crew:brainstorm <what needs doing>` | crew 1.0 lifecycle: brainstorm a request into an approved direction, before it becomes a spec |
+| `/crew:spec <id>` | Fill the ticket contract — Intent, Exclusions, Evidence, Unknowns, Touch, Acceptance |
+| `/crew:approve <id>` | **Typed by you only** (`disable-model-invocation`): the UserPromptSubmit hook records the plan approval from your own prompt — see "Scope and approval" |
+| `/crew:implement <id>` | Implement an approved plan, then tests, docs and review; refuses without a current approval |
+| `/crew:done <id>` | Close a ticket: accepted review receipt, clean verify gate and passing completion audit, or no close |
+| `/crew:fix <one sentence>` | The light path — every lifecycle phase present, each compressed to one step |
 | `/crew:review` | Independent QA — Codex, then Copilot, then Claude: the first that probes clean |
 | `/crew:onboard [--refresh <area>]` | Build or refresh the code map |
 | `/crew:reference [--api\|--features\|--audit]` | Enumerate the API and features into `docs/reference/`, anchored to `file:line` |
 | `/crew:init` | Guided phased setup, resumable |
-| `/crew:plan <decision>` | Independent design opinion before building |
+| `/crew:plan <id> [--approve]` | Turn an approved spec into a step-by-step plan and ask you to `/crew:approve` it; the independent design opinion is now its optional step 3 |
 | `/crew:runbook <name\|--audit\|--verify>` | Write, verify, or audit operational runbooks |
 | `/crew:docs [--audit]` | Update the documents this change should touch |
 | `/crew:handoff` | Write the handoff note before clearing |
@@ -2210,7 +2216,7 @@ CONFIG.md §17 has the table and the reasoning.
 | `/crew:gate <disable\|enable\|status> <github\|bitbucket>` | Take a repository's merge gate down and put it back **from the export**. Gated by `guards.mergeGate`, which ships as `block` |
 | `/crew:change <new\|status <id>\|close <id>\|list>` | File a change request into SDP, Jira or `.work/changes/`, one process either way. `new` refuses to file while any of the template's questions 1–9 is unanswered or a placeholder and names which; `close` refuses without the post-change validation results — see §24b |
 
-30 commands.<!-- claim: plugin-commands:crew -->
+36 commands.<!-- claim: plugin-commands:crew -->
 
 ### Agents
 
@@ -2286,20 +2292,28 @@ CONFIG.md §17 has the table and the reasoning.
 
 ### Hooks
 
-Eleven scripts across eight events, each with a `.sh` and a `.ps1` twin
-registered on its own matcher or event — 30 entries total. The sentence said
+Fifteen scripts across eight events, each with a `.sh` and a `.ps1` twin
+registered on its own matcher or event — 38 entries total. The sentence said
 eight and sixteen until 0.16.7 while the table below it already listed all
-ten; the prose was the half that went stale.
+ten; the prose was the half that went stale. Until 0.20.25 it was the table's
+turn: it said eleven and thirty with `cloud-guard`, `role-write-guard` and
+`pm-pulse` registered and unlisted.
 
 | Script | Event | Behavior |
 |---|---|---|
 | `promote-gate.sh` / `.ps1` | `PreToolUse` on Bash / PowerShell | Refuses a declared `deploy` command unless the upstream environment has an all-pass row for **this sha**, the rollback runbook is verified inside 90 days, `requireHuman` is approved, and the tree is clean. During an emergency lane it records each unmet precondition and allows the deploy (§24) |
+| `cloud-guard.sh` / `.ps1` | `PreToolUse` on Bash / PowerShell | **Off by default** (`guards.cloudGuard`). Judges destructive cloud, Terraform and SQL commands and force push against the pinned `cloud.*` identity — see [Cloud guard](#cloud-guard) |
+| `role-write-guard.sh` / `.ps1` | `PreToolUse` on Write / Edit | **Off by default** (`guards.roleWrites`: `block`/`report`/`off`). Keyed on the calling subagent's `agent_type`; enforces a role's write scope mechanically — CONFIG.md §18 |
+| `approval-hook.sh` / `.ps1` | `UserPromptSubmit` | Records a ticket's plan approval only when the prompt *you* typed is `/crew:approve <id>`: validates `spec.md` and `plan.md` and writes the receipt bound to both hashes, or blocks the prompt and says why. Any other prompt: no output, exit 0 |
+| `scope-guard.sh` / `.ps1` | `PreToolUse` on Write/Edit/MultiEdit/NotebookEdit/Bash/PowerShell | **Off by default** (`scope.mode`: `off`/`report`/`block`/`auto`; `/crew:init` writes `auto` for a new repo). Refuses an edit with no current approval or outside the spec's Touch, and a shell command that runs `crew_ticket.py approve` or writes crew state — see "Scope and approval" |
+| `completion-audit.sh` / `.ps1` | `Stop` | **Off by default**, same `scope.mode`. Diffs the whole tree against the ticket's start commit and blocks the stop once if any changed path is outside Touch, shell-made writes included |
 | `handoff-read.sh` / `.ps1` | `SessionStart` | Injects the handoff after clear, compact, or resume — first archiving it instead, under `.crew/handoffs/`, if age or reality drift (its `head`/`branch` no longer describing the checkout) says it is stale |
 | `crew-context.sh` / `.ps1` | `SessionStart`, `UserPromptSubmit`, `PostToolUse` on Read/Edit/Write/MultiEdit and vault MCP tools, `SubagentStart` | **Off until 1.0: emits and logs nothing unless `.crew/config.json` sets `memory.inject: true`.** When on, injects budgeted code-map slices and vault-labelled recall, and is the only channel that reaches a dispatched subagent (`SubagentStart`). Never blocks. The default flips at the 1.0.0 cut together with unregistering `pm-brief` and `handoff-read`, so the two never inject the same state twice |
 | `pm-brief.sh` / `.ps1` | `SessionStart` | Runs `crew_state.py`, prints the prioritized PM brief (triggers, health, knowledge, graph freshness) — report-only, changes nothing |
 | `platform-sync.sh` / `.ps1` | `SessionStart` | Detects this machine and repairs the `platform` block in `.crew/config.json` — see §3b. The only hook that writes config: the seven derived facts, plus recreating the whole file from defaults when it is missing or malformed (backing up a malformed one first) — never when `.crew/` itself does not exist. See "The config heals itself" in §3 |
 | `verify-gate.sh` / `.ps1` | `Stop` | Runs the checks the changed paths map to; fails the turn on red, on a changed path with no rule, or on a deploy that recorded no promotion row. Stands down while an emergency lane is open (§24), recording what did not run |
 | `context-watch.sh` / `.ps1` | `Stop` | Measures window occupancy from the transcript; asks for a handoff once per session at the later of `warnAt` and `reserveTokens` remaining, or instructs a wrap-up if `context.autoWrapUp` is on |
+| `pm-pulse.sh` / `.ps1` | `Stop` | Re-engages the PM when project state actually changed (a ticket closed, a gate broke, diagrams fell behind); fails the turn to hand its findings back, and what that means depends on `pm.authority` |
 | `handoff-write.sh` / `.ps1` | `PreCompact` | Snapshots the transcript, writes a skeleton handoff |
 | `notify.sh` / `.ps1` | `Notification`, plus called by commands | Outbound one-line message to Teams or Telegram. Never reads. |
 

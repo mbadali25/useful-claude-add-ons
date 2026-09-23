@@ -168,6 +168,10 @@ still writes only the repo file.
 }
 ```
 
+`scope.mode` above is the shipped default, `off`; `/crew:init` changes it to `auto`
+(report for ten tickets, then block) in a **new** repo's file only — see Phase 1 in
+`phases.md`. An existing `config.json` is never given a `scope` it did not have.
+
 `schema: 7` — this repo is born current. It never trips `upgradeNeeded`, which fires on
 any config predating the `pm` and `graph` blocks, the per-role provider table, the
 `docs.theme` default moving to null, `install.policy`, the `guards` block, or the

@@ -47,13 +47,9 @@ Touch's line as a comment rather than adding a section back.
 ## 3. Plan — one step
 
 Write `.work/tickets/<id>/plan.md` with exactly one step: Files, Test, Risk.
-Show it. **Approval is still a receipt, not a nod**:
-
-```bash
-python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_ticket.py approve --ticket <id>
-```
-
-I run this, or confirm you running it — same rule as the full `/crew:plan`.
+Show it. **Approval is still a receipt, not a nod**: ask me to type
+`/crew:approve <id>`. Never run `crew_ticket.py approve` yourself — same rule
+as the full `/crew:plan`.
 
 ## 4. Implement, tests, docs
 

@@ -154,6 +154,14 @@ the answers above — do not hand-write the JSON; that file (and the heal path
 that recreates it if it ever goes missing) both come from the same
 `crew_config.py`, and a hand-typed copy is a fourth place for it to drift.
 
+**Then set `scope.mode` to `"auto"` in that new file** — the one value you
+change from the template unasked. A new crew repo gets the ticket contract:
+the scope guard and the completion audit *report* for the first ten tickets,
+then *block*. The template and the shipped default stay `off`, so a repo whose
+`.crew/config.json` already exists keeps whatever `scope` it has (none means
+`off`); never add or change `scope` on an existing file. Tell the user in one
+line, and that `"off"` turns it back off.
+
 **The CLAUDE.md, whether or not one already exists.** Run:
 
 ```

@@ -25,7 +25,7 @@ SKILLS = os.path.join(CREW, "skills")
 MAX_LINES = 120
 
 NEW_COMMANDS = ("brainstorm.md", "spec.md", "plan.md", "implement.md",
-                "done.md", "fix.md")
+                "done.md", "fix.md", "approve.md")
 NEW_SKILLS = ("crew-brainstorm", "crew-plan", "crew-execute")
 
 
@@ -71,16 +71,18 @@ def test_skill_frontmatter_and_budget(name):
 
 
 # Each command names the T3 contract scripts with the exact CLI the brief
-# gives: `crew_ticket.py validate|approve|status --ticket <id>`,
+# gives: `crew_ticket.py validate|status --ticket <id>`, approval as the
+# user-typed `/crew:approve <id>` (never the CLI, since crew 0.20.25),
 # `completion_audit.py --check --ticket <id>`, and the review receipt check
 # that already exists in review.md (`--ticket "$TICKET" --check-receipt`).
 EXPECTED_CLI = {
-    "plan.md": ("crew_ticket.py approve --ticket $1",),
+    "plan.md": ("`/crew:approve $1`",),
     "implement.md": ("crew_ticket.py validate --ticket $1",
                       "scope_base.py --root . --record $1"),
     "done.md": ('review_ledger.py --ticket "$1" --check-receipt',
                 'completion_audit.py --check --ticket "$1"'),
-    "fix.md": ("crew_ticket.py approve --ticket <id>",),
+    "fix.md": ("`/crew:approve <id>`",),
+    "approve.md": ("Never run `crew_ticket.py approve` yourself",),
 }
 
 

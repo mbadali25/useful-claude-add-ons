@@ -51,23 +51,20 @@ Risk: what breaks if this step is wrong, or "low"
 
 ## On approval
 
-Approval is a receipt, not a nod in chat. Once I say yes:
-
-```bash
-python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_ticket.py approve --ticket $1
-```
-
-**I run this, or you print it and ask me to confirm running it — never run it
-unattended.** It writes `<git-common-dir>/crew/tickets/$1/approval.json`,
+Approval is a receipt, not a nod in chat. Once I say yes, ask me to type
+`/crew:approve $1`. **Never run `crew_ticket.py approve` yourself** — the
+UserPromptSubmit hook records the approval only from my own prompt. It writes
+`<git-common-dir>/crew/tickets/$1/approval.json`,
 bound to this plan's hash; editing `plan.md` afterward invalidates it, which
 is what makes `/crew:implement`'s refusal mean something. Then set
 `plan.md`'s header `status: planned` and `.work/INDEX.md`'s row to match.
 
 ## `--approve`
 
-Re-run this file with `--approve` after editing an already-approved plan to
-regenerate the receipt against the new hash, rather than leaving a stale one
-that `crew_ticket.py validate` would still call approved.
+Re-run this file with `--approve` after editing an already-approved plan:
+re-check the plan against the spec, then ask me to type `/crew:approve $1`
+again so the receipt is regenerated against the new hash, rather than leaving
+a stale one.
 
 If `secondOpinion.provider` is `none` or unreachable at step 3 and you chose
 not to skip it, say plainly this is a single opinion, not a reviewed one, and

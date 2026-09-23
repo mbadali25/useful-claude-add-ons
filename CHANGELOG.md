@@ -6,6 +6,18 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Changed
 
+- **`crew` 0.20.25: register approval, scope guard, completion audit;
+  `/crew:approve`.** Ticket contract enforcement (off by default; `/crew:init`
+  sets scope.mode auto = report for 10 tickets then block): `crew_ticket.py`
+  validate/status/activate; approval recorded only from the user's own
+  `/crew:approve <id>` prompt (UserPromptSubmit), bound to the plan and spec
+  hashes; scope guard on Write/Edit/MultiEdit/NotebookEdit and on shell
+  attempts to approve or write crew state; Stop-time completion audit over the
+  whole tree. Lifecycle commands /crew:brainstorm, /crew:spec, /crew:plan
+  (redefined), /crew:implement, /crew:done, /crew:fix, /crew:approve; vendored
+  crew-brainstorm/plan/execute skills (MIT, credited in NOTICE.md);
+  daily-workflow guide. Old /crew:work and /crew:ticket remain until 1.0.
+
 - **`crew` 0.20.24: registration.** Stack skills corrected against tool docs:
   eslint/prettier probes fail closed and prettier is scoped to Angular files;
   git ls-files -z for shell files; .NET 4.8 LangVersion and EF6 AsNoTracking

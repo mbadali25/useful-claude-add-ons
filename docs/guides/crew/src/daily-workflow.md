@@ -43,14 +43,9 @@ uses `crew:explorer` to pin down `path:line` evidence, and writes
 **3. Plan.** You type `/crew:plan T-0091`. The session reads `spec.md`, writes
 one step per unit of work in `plan.md` (Files/Test/Risk each), checks every
 Files: entry against the spec's Touch globs, and enters **plan mode** to show
-you the whole thing. You review it. On your yes, it prints:
-
-```bash
-python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_ticket.py approve --ticket T-0091
-```
-
-and asks you to run it (or confirm it running it). This writes the approval
-receipt, bound to this plan's exact contents — edit `plan.md` after this and
+you the whole thing. You review it. On your yes, it asks you to type
+`/crew:approve T-0091`. crew's prompt hook sees that you typed it and writes
+the approval receipt, bound to this plan's exact contents — edit `plan.md` after this and
 the receipt no longer matches.
 
 **4. Implement.** You type `/crew:implement T-0091`. First thing it does:
@@ -117,7 +112,7 @@ forcing the rest of the ticket through a path that no longer fits it.
 
 | Refusal | Means | Do |
 |---|---|---|
-| `/crew:implement` says no approved plan | step 3 was skipped, or `plan.md` changed after approval | `/crew:plan <id>` (or `--approve` again) |
+| `/crew:implement` says no approved plan | step 3 was skipped, or `plan.md` changed after approval | `/crew:plan <id>`, then type `/crew:approve <id>` |
 | a write is blocked outside Touch | the file isn't in the spec's declared scope | amend `spec.md`'s Touch and re-approve the plan, or don't make the edit |
 | `/crew:done` reports `NEEDS_REPLAN` | the review budget (two rounds) is spent | `/crew:plan <id>` for a successor plan; no third round |
 | `/crew:done` fails the completion audit | a path outside scope changed, including one a shell command wrote | file it to `TODO.md`, not to this ticket, then rerun |

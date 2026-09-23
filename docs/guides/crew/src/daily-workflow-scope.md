@@ -40,17 +40,18 @@ A plan path outside Touch is reported as `INVALID: plan Files entry '...' is out
 
 ## Approval
 
-When the plan is ready, the session asks you to approve it. Run this yourself:
+When the plan is ready, the session asks you to approve it. Type this yourself:
 
-```bash
-python3 <crew>/hooks/scripts/crew_ticket.py approve --ticket T-0042
+```
+/crew:approve T-0042
 ```
 
-This validates the contract, then records the sha256 of `spec.md` and `plan.md` in
-`<git-common-dir>/crew/tickets/T-0042/approval.json`. That file is outside the worktree, and the
-scope guard refuses any Write or Edit to it, so the session cannot write its own approval with an
-editing tool. Nothing can tell whether you or the session's shell ran the command, though. The
-approval is a step you take, not a lock.
+crew's UserPromptSubmit hook sees the prompt you typed, validates the contract, then records the
+sha256 of `spec.md` and `plan.md` in `<git-common-dir>/crew/tickets/T-0042/approval.json`, marked
+`approved_via: "user-prompt"`. If the contract does not validate, the hook blocks the prompt and
+says why. That file is outside the worktree, and the scope guard refuses any Write or Edit to it
+and any shell command that runs `crew_ticket.py approve`, so the session cannot approve its own
+plan. The approval is a step you take, not a lock.
 
 `crew_ticket.py status --ticket T-0042` prints one of three states:
 
@@ -76,8 +77,8 @@ Refusals look like this:
 ```
 SCOPE GUARD: refused Edit on other/keep.py.
   Reason: other/keep.py is outside T-0042's spec ## Touch.
-  To widen scope: amend .work/tickets/T-0042/spec.md ## Touch (and plan.md), then ask the user to run
-  `crew_ticket.py approve --ticket T-0042`. (scope.mode is block)
+  To widen scope: amend .work/tickets/T-0042/spec.md ## Touch (and plan.md), then ask the user to type
+  `/crew:approve T-0042`. (scope.mode is block)
 ```
 
 ## At the end of a turn: the completion audit
@@ -100,7 +101,7 @@ are outside it.
 
 1. Edit `spec.md` `## Touch` to add the path. Update `plan.md` if a step now changes it.
 2. Run `crew_ticket.py validate --ticket <id>`.
-3. Run `crew_ticket.py approve --ticket <id>` yourself.
+3. Type `/crew:approve <id>` yourself.
 
 Between steps 1 and 3 the approval is stale. The guard refuses edits outside the ticket directory
 until you approve again.
