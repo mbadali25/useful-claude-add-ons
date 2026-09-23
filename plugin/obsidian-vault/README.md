@@ -178,8 +178,18 @@ vault, is refused as `outside-vault`.
 
 Gardening runs on **one designated host**, daily, through
 `vault_ops.py garden-run`: at most 5 items or 10 minutes per run, each item
-acknowledged (in `inbox/reflected.<host>.md`) only after the note it produced
-exists and was written by that item's run - new, or changed since just before it. `drain` works a backlog in the same bounded batches, dry run first.
+acknowledged (in `inbox/reflected.<host>.md`) only after its processor exited 0
+and a before/after snapshot of the vault shows a file it created or changed -
+wherever that file ended up, not the path the processor reported, since
+Obsidian's auto-note-mover can move a note before the processor exits. A
+failure keeps the processor's bounded stdout and stderr in the reason and the
+log. An item whose session page (`session_id:` under `wiki/sessions/`) already
+exists is acknowledged without being distilled again, and
+`vault_ops.py reconcile` (dry run until `--apply`) does the same for the whole
+queue. The processor runs `claude -p --settings '{"disableAllHooks":true}'`
+with `CREW_HOOKS=off` and `OBSIDIAN_VAULT_GARDENER=1` in its environment, so no
+hook - crew's, or this plugin's own capture - runs inside the vault. `drain`
+works a backlog in the same bounded batches, dry run first.
 `schedule --os cron|systemd|windows` prints the unit; nothing here installs
 one. See the `obsidian-scheduling` skill.
 
