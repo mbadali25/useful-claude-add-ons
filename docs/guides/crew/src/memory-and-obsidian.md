@@ -48,6 +48,11 @@ same file. One line per session, whichever trigger fires first. The capture
 hook cannot block or slow a session; if it fails it says so on stderr and moves
 on.
 
+Capture, import and the gardener write to the primary vault only. If the
+primary is not available (an unmounted drive, say), they write nothing and say
+why; capture reports it on stderr and the session carries on. They never fall
+back to a recall vault.
+
 An older version wrote a single `inbox/pending-reflect.md`. That file is no
 longer written, but it is still read, so an existing backlog drains rather than
 being stranded.
@@ -61,9 +66,10 @@ to the day's daily note.
 It runs **on one host, once a day, in bounded passes**:
 
 - at most **5 items or 10 minutes** per run, whichever comes first;
-- an item is acknowledged only after the note it produced exists and is
-  non-empty. If the model fails, times out, or claims a file it did not write,
-  the item stays queued for the next run;
+- an item is acknowledged only after the note it produced exists, is
+  non-empty, and was written during that item's run. If the model fails, times
+  out, or names a file it did not write (including one that was already
+  there), the item stays queued for the next run;
 - acknowledgements go to `inbox/reflected.<host>.md`, so the queue files keep
   one writer each;
 - a session whose transcript lives on another machine is left for that machine
@@ -72,7 +78,9 @@ It runs **on one host, once a day, in bounded passes**:
   run at a time;
 - with `--commit`, it commits only the files that run wrote plus its own
   acknowledgement file. It never sweeps in anything else you had staged.
-  Leave `--commit` off if Obsidian Git already commits the vault.
+  git, including the vault's own git hooks, runs inside the same 10-minute
+  bound: a hook still running then is stopped and the commit is reported as
+  not made. Leave `--commit` off if Obsidian Git already commits the vault.
 
 Run a pass by hand with `/obsidian-vault:garden`, or:
 
@@ -187,8 +195,9 @@ $VO adopt --role memory=primary --role work-notes=recall --role journal=ignore
 $VO adopt --role memory=primary --role work-notes=recall --role journal=ignore --apply
 ```
 
-The command refuses any result with no primary or with two, and writes nothing
-when it does. To move the primary later, demote the old one in the same call:
+The command refuses any result with no primary, with two, or with any listed
+vault left without a role, and writes nothing when it does. That is why every
+answer goes in one call. To move the primary later, demote the old one in the same call:
 `--role memory=recall --role new-memory=primary`.
 
 **Success looks like:** `$VO adopt` lists each vault with its role and no
@@ -211,7 +220,9 @@ gets two frontmatter keys: `imported_from` (the absolute source path) and
 `imported_at` (the UTC date). Line endings become LF. The import never
 overwrites a file. If a file already exists at the destination, the import
 skips it and reports it as a `COLLISION`. With `--suffix-collisions` it writes
-the new file beside it as `<name> (imported).md`. Files that are not Markdown
+the new file beside it as `<name> (imported).md`; run again, it recognises
+that copy and writes nothing. A destination that passes through a symlinked
+folder, or lands outside the vault, is refused as `outside-vault`. Files that are not Markdown
 are counted and left behind. Use `--dest-subdir <folder>` to choose another
 destination inside the vault.
 
@@ -232,7 +243,9 @@ vo schedule --os windows --designate
 ```
 
 Each command prints the unit, the install commands, a verify command and a
-remove command. It installs nothing. Add `--apply` to make this machine the
+remove command. It installs nothing. Paths are quoted for the shell that
+reads them, so a folder name with a quote, a space or `$` is safe to paste.
+Add `--apply` to make this machine the
 designated gardener, then run the printed install commands yourself. The
 default time is 02:23; change it with `--time HH:MM`.
 

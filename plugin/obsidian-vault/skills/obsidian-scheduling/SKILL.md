@@ -24,14 +24,18 @@ The bounds are enforced in code, not asked of a model:
 - **Acknowledge only after a successful write.** The processor (by default
   `claude -p` limited to Read/Write/Edit/Grep/Glob in the vault) must exit 0
   and print `GARDENER-WROTE: <path>` for each note; the item is acknowledged
-  only if every such file exists inside the vault and is non-empty. Anything
-  else leaves it queued for the next run.
+  only if every such file exists inside the vault, is non-empty, and is new or
+  changed against a snapshot taken just before that item ran - naming a note
+  that was already there proves nothing. Anything else leaves it queued for
+  the next run.
 - **One designated host.** `garden-run` refuses on any host other than config
   `gardener.host`. Two schedules on two machines syncing one vault would
   distil the same sessions twice.
 - **One run at a time** (`inbox/.garden.lock`, treated as stale after 15 minutes).
 - **Only owned files committed**, and only with `--commit`: the notes this run
   wrote plus its own `inbox/reflected.<host>.md`, via `git commit -- <paths>`.
+  git and the repository's own hooks run inside the same 10-minute bound; a
+  hook still running then is stopped and the commit reported as not made.
   Leave `--commit` off when something else (Obsidian Git) owns commits.
 - A queued session whose transcript is not on this host is left queued as
   "unresolved here" and does not use up a slot.

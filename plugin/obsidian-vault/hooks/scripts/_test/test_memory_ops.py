@@ -15,15 +15,24 @@ The guards pinned here, each sabotage-tested (reintroduce the bug -> red):
   * ack only after a write: a processor that claims a file it did not write,
     or that fails, leaves its item queued
   * recall budget: sum(len(line)+1) <= --max-chars, and vault priority holds
+  * writers use the primary only: an unmounted primary is refused, never
+    replaced by a recall vault
+  * ack needs a write: naming a file that existed, untouched, acks nothing
+  * git under --commit is bounded: a hanging pre-commit hook is cut off
+  * schedule quoting: ' space $(...) ` % in paths are text, never executed
+  * import containment (no symlinked dirs) and suffix-collision idempotence
+  * adopt refuses while any discovered vault has no role
 """
 import contextlib
 import io
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
 import tempfile
+import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SCRIPTS = os.path.join(HERE, "..")
@@ -355,6 +364,8 @@ PROCESSOR = r'''
 import os, sys
 vault, ident, mode = sys.argv[1], sys.argv[2], sys.argv[3]
 rel = "wiki/daily/" + ident + ".md"
+if mode == "existing":
+    rel = "wiki/existing.md"   # names a file that is already there, touches nothing
 if mode in ("ok", "fail"):
     os.makedirs(os.path.join(vault, "wiki", "daily"), exist_ok=True)
     with open(os.path.join(vault, rel), "w") as fh:
@@ -545,12 +556,12 @@ def _t_schedule():
         check_in("cron line at 03:15", "15 3 * * * ", out)
         check_in("cron line runs garden-run", "garden-run", out)
         check_in("cron install is printed, not run", "crontab -", out)
-        check_in("cron line carries a PATH (cron's own PATH lacks claude)", "* * * PATH='", out)
+        check_in("cron line carries a PATH (cron's own PATH lacks claude)", "* * * PATH=", out)
         code, out = run_cli(["schedule", "--os", "systemd"])
         check_in("systemd service", "obsidian-gardener.service", out)
         check_in("systemd timer", "OnCalendar=*-*-* 02:23:00", out)
         check_in("systemd persistent", "Persistent=true", out)
-        check_in("systemd unit carries a PATH", "Environment=PATH=", out)
+        check_in("systemd unit carries a PATH", 'Environment="PATH=', out)
         check_in("systemd enable printed", "systemctl --user enable --now", out)
         code, out = run_cli(["schedule", "--os", "windows"])
         check_in("windows task", "Register-ScheduledTask -TaskName 'Obsidian Gardener'", out)
@@ -695,9 +706,272 @@ def _t_create_vault_and_config_override():
             os.environ.pop("OBSIDIAN_VAULT_CONFIG", None)
 
 
+# --- review round 1 regressions ----------------------------------------------------------
+
+def _t_writers_primary_only():
+    """An unmounted primary is refused, never replaced by a recall vault."""
+    with Sandbox() as sb:
+        recall = sb.vault("aaa-recall", {"note.md": "recall only\n"})
+        missing = os.path.join(sb.tmp, "unmounted-primary")
+        src = os.path.join(sb.tmp, "notes")
+        os.makedirs(src)
+        with open(os.path.join(src, "n.md"), "w", encoding="utf-8") as fh:
+            fh.write("incoming\n")
+        sb.write_config({"vaults": {"aaa-recall": {"path": recall, "role": "recall"},
+                                    "zzz": {"path": missing, "role": "primary",
+                                            "default": True}},
+                         "gardener": {"host": "hosta"}})
+        before = tree_snapshot(recall)
+        check("writer_vault names the primary and no path",
+              obsidian_common.writer_vault()[:2], ("zzz", None))
+
+        proc = subprocess.run([sys.executable, os.path.join(SCRIPTS, "vault_capture.py"),
+                               "SessionEnd"],
+                              input=json.dumps({"session_id": "x1", "cwd": "/w",
+                                                "transcript_path": "/t.jsonl"}),
+                              capture_output=True, text=True, env=dict(os.environ), check=False)
+        check("capture with an unmounted primary still exits 0", proc.returncode, 0)
+        check_in("capture says why it wrote nothing", "not available", proc.stderr)
+        code, out = run_cli(["import", "--source", src, "--apply"])
+        check("import with an unmounted primary is refused", code, 2)
+        check_in("import names the unavailable primary", "zzz", out)
+        code, _ = run_cli(["garden-run", "--force-host", "--processor", '["true"]'])
+        check("garden-run with an unmounted primary is refused", code, 2)
+        code, _ = run_cli(["drain", "--apply", "--force-host"])
+        check("drain with an unmounted primary is refused", code, 2)
+        code, _ = run_cli(["ack", "--id", "x1", "--wrote", "note.md"])
+        check("ack with an unmounted primary is refused", code, 2)
+        check("the recall vault was not written by any writer", tree_snapshot(recall), before)
+
+        sb.write_config({"vaults": {"aaa": {"path": recall},
+                                    "zzz": {"path": missing, "default": True}}})
+        check("pre-roles config: an unmounted default is not replaced either",
+              obsidian_common.writer_vault()[:2], ("zzz", None))
+
+
+def _t_garden_ack_needs_a_write():
+    """Naming a file that already existed, untouched, proves nothing."""
+    with Sandbox() as sb:
+        vault, _, proc = _garden_fixture(sb, 1)
+        existing = os.path.join(vault, "wiki", "existing.md")
+        os.makedirs(os.path.dirname(existing), exist_ok=True)
+        with open(existing, "w", encoding="utf-8") as fh:
+            fh.write("was already here\n")
+        code, out = run_cli(["garden-run", "--processor", _proc(proc, "existing"), "--json"])
+        summary = json.loads(out[out.index("{"):])
+        check("a no-op processor naming an existing file acks nothing", summary["acked"], [])
+        check("and exits 1", code, 1)
+        check("the item stays queued", len(vault_garden.read_queue(vault)), 1)
+        check_in("the reason says unchanged", "unchanged", json.dumps(summary["failed"]))
+
+        old = 1_600_000_000  # 2020 - before the fixture's 2026-09-20 capture stamp
+        os.utime(existing, (old, old))
+        code, out = run_cli(["ack", "--id", "s0", "--wrote", "wiki/existing.md"])
+        check("manual ack of a file older than the capture is refused", code, 1)
+        check_in("and says why", "before this session was captured", out)
+
+        code, out = run_cli(["garden-run", "--processor", _proc(proc, "ok"), "--json"])
+        summary = json.loads(out[out.index("{"):])
+        check("a processor that really writes is still acked", summary["acked"], ["s0"])
+
+
+HANG_HOOK = "#!/bin/sh\nsleep 900\n"
+
+
+def _t_garden_commit_bounded():
+    if not shutil.which("git") or os.name != "posix":
+        print("SKIP: git or a POSIX shell missing - bounded-commit case not run")
+        return
+    with Sandbox() as sb:
+        vault, _, proc = _garden_fixture(sb, 1)
+        env = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
+               "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
+        old = {k: os.environ.get(k) for k in env}
+        os.environ.update(env)
+        try:
+            for args in (["init", "-q"], ["add", "-A"], ["commit", "-q", "-m", "base"]):
+                subprocess.run(["git", "-C", vault] + args, capture_output=True, check=False)
+            hook = os.path.join(vault, ".git", "hooks", "pre-commit")
+            with open(hook, "w", encoding="utf-8", newline="\n") as fh:
+                fh.write(HANG_HOOK)
+            os.chmod(hook, 0o755)
+            started = time.monotonic()
+            summary = vault_garden.garden_run(vault, processor=json.loads(_proc(proc, "ok")),
+                                              seconds=4, commit=True)
+            elapsed = time.monotonic() - started
+        finally:
+            for k, v in old.items():
+                if v is None:
+                    os.environ.pop(k, None)
+                else:
+                    os.environ[k] = v
+        check_true(f"a hanging pre-commit hook is cut off inside the bound ({elapsed:.1f}s)",
+                   elapsed < 30)
+        check("the commit is reported as not made", (summary["commit"] or (None,))[0], False)
+        check_in("and says it timed out", "timed out", (summary["commit"] or ("", ""))[1])
+        check_true("git's index.lock is not left behind",
+                   not os.path.exists(os.path.join(vault, ".git", "index.lock")))
+
+
+def _read_or_none(path):
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            return fh.read()
+    except OSError:
+        return None
+
+
+def _t_schedule_quoting():
+    """Paths with ' space $(...) ` and % are passed as text, never executed."""
+    if os.name != "posix":
+        print("SKIP: POSIX shell missing - cron quoting case not run")
+        return
+    tmp = tempfile.mkdtemp(prefix="obsidian-quote-test-")
+    try:
+        weird = os.path.join(tmp, "it's a $(touch PWNED1) `touch PWNED2` 50% dir")
+        os.makedirs(weird)
+        fake_py = os.path.join(weird, "py thon")
+        with open(fake_py, "w", encoding="utf-8", newline="\n") as fh:
+            fh.write('#!/bin/sh\nprintf \'%s\\n\' "$@" > "$(dirname "$0")/argv.txt"\n')
+        os.chmod(fake_py, 0o755)
+        script = os.path.join(weird, "vault_ops.py")
+        log = os.path.join(weird, "garden log.txt")
+        shim = os.path.join(tmp, "shim")
+        os.makedirs(shim)
+        with open(os.path.join(shim, "crontab"), "w", encoding="utf-8", newline="\n") as fh:
+            fh.write('#!/bin/sh\n[ "$1" = "-l" ] && exit 1\ncat > "$CRONTAB_OUT"\n')
+        os.chmod(os.path.join(shim, "crontab"), 0o755)
+
+        unit = vault_garden.unit_text("cron", fake_py, script, "03:15", log,
+                                      path_env="/usr/bin:/bin")
+        command = unit["line"].split(" ", 5)[5].replace("\\%", "%")
+        subprocess.run(["sh", "-c", command], cwd=tmp, check=False)
+        check("cron line passes each path as one argument",
+              (_read_or_none(os.path.join(weird, "argv.txt")) or "").splitlines(),
+              [script, "garden-run"])
+        check_true("cron line appends to the quoted log path", os.path.isfile(log))
+
+        installed = os.path.join(tmp, "installed-crontab")
+        subprocess.run(["sh", "-c", unit["install"][0]], cwd=tmp, check=False,
+                       env=dict(os.environ, PATH=shim + os.pathsep + os.environ["PATH"],
+                                CRONTAB_OUT=installed))
+        check("install writes the line verbatim", _read_or_none(installed), unit["line"] + "\n")
+        check_true("nothing in a path was executed at run or install time",
+                   not any(n.startswith("PWNED") for n in os.listdir(tmp) + os.listdir(weird)))
+
+        service = vault_garden.unit_text("systemd", fake_py, script, "03:15", log,
+                                         path_env="/usr/bin:/bin")["files"]
+        text = next(v for k, v in service.items() if k.endswith(".service"))
+        check_in("systemd: $ is doubled, so no variable expansion", "$$(touch PWNED1)", text)
+        check_in("systemd: % is doubled, so no specifier expansion", "50%% dir", text)
+
+        win = vault_garden.unit_text("windows", fake_py, script, "03:15", log)
+        pwsh = shutil.which("pwsh")
+        if not pwsh:
+            print("SKIP: pwsh not on PATH - PowerShell literal case not run")
+            return
+        match = re.search(r"-Execute ('(?:[^']|'')*') -Argument ('(?:[^']|'')*')",
+                          win["install"][0])
+        check_true("windows install carries two PowerShell literals", match is not None)
+        if match:
+            probe = (f"[Console]::Out.Write({match.group(1)} + [char]10 + "
+                     f"{match.group(2)})")
+            got = subprocess.run([pwsh, "-NoProfile", "-NonInteractive", "-Command", probe],
+                                 cwd=tmp, capture_output=True, text=True, check=False).stdout
+            check("PowerShell reads -Execute and -Argument back as the exact text",
+                  got.split("\n"), [fake_py, subprocess.list2cmdline([script, "garden-run"])])
+            check_true("and executed nothing", not any(n.startswith("PWNED")
+                                                        for n in os.listdir(tmp)))
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def _t_import_containment_and_suffix_idempotence():
+    with Sandbox() as sb:
+        primary = sb.vault("mem", {"imported/notes/clash.md": "ORIGINAL\n"})
+        src = os.path.join(sb.tmp, "notes")
+        os.makedirs(src)
+        with open(os.path.join(src, "clash.md"), "w", encoding="utf-8") as fh:
+            fh.write("incoming clash\n")
+        sb.write_config({"vaults": {"mem": {"path": primary, "role": "primary",
+                                            "default": True}}})
+
+        code, _ = run_cli(["import", "--source", src, "--apply", "--suffix-collisions"])
+        check("first suffixed import writes", code, 0)
+        snap = tree_snapshot(primary)
+        code, out = run_cli(["import", "--source", src, "--apply", "--suffix-collisions",
+                             "--json"])
+        report = json.loads(out[:out.rindex("}") + 1])
+        check("second suffixed import is a no-op", report["counts"], {"already-imported": 1})
+        check("...and writes nothing", tree_snapshot(primary), snap)
+        check_true("no (imported 2) copy",
+                   not os.path.exists(os.path.join(primary, "imported", "notes",
+                                                   "clash (imported 2).md")))
+
+        with open(os.path.join(src, "clash.md"), "w", encoding="utf-8") as fh:
+            fh.write("incoming clash, edited since\n")
+        code, out = run_cli(["import", "--source", src, "--apply", "--suffix-collisions",
+                             "--json"])
+        report = json.loads(out[:out.rindex("}") + 1])
+        check("a changed source is imported again beside the old copy",
+              report["counts"], {"write-suffixed": 1})
+
+    if not hasattr(os, "symlink"):
+        return
+    with Sandbox() as sb:
+        primary = sb.vault("mem")
+        outside = os.path.join(sb.tmp, "outside")
+        os.makedirs(outside)
+        os.makedirs(os.path.join(primary, "imported"))
+        try:
+            os.symlink(outside, os.path.join(primary, "imported", "notes"))
+        except OSError:
+            print("SKIP: cannot create a symlink here - containment case not run")
+            return
+        src = os.path.join(sb.tmp, "notes")
+        os.makedirs(os.path.join(src, "sub"))
+        for rel in ("a.md", os.path.join("sub", "b.md")):
+            with open(os.path.join(src, rel), "w", encoding="utf-8") as fh:
+                fh.write("x\n")
+        sb.write_config({"vaults": {"mem": {"path": primary, "role": "primary",
+                                            "default": True}}})
+        code, out = run_cli(["import", "--source", src, "--apply", "--json"])
+        report = json.loads(out[:out.rindex("}") + 1])
+        check("an import through a symlinked dir exits 1", code, 1)
+        check("every file is refused as outside-vault", report["counts"], {"outside-vault": 2})
+        check("nothing was created outside the vault", os.listdir(outside), [])
+
+
+def _t_adopt_every_vault_gets_a_role():
+    with Sandbox() as sb:
+        a = sb.vault("alpha")
+        b = sb.vault("beta")
+        c = sb.vault("gamma")
+        sb.write_config({"vaults": {"alpha": {"path": a}, "beta": {"path": b}}})
+        with open(obsidian_common.obsidian_app_json_path(), "w", encoding="utf-8") as fh:
+            json.dump({"vaults": {"id-gamma": {"path": c}}}, fh)
+        before = sb.config_bytes()
+        code, out = run_cli(["adopt", "--role", "alpha=primary", "--apply"])
+        check("a primary with other vaults unassigned is refused", code, 2)
+        check_in("the unassigned vaults are listed", "beta, gamma", out)
+        check("...and nothing is written", sb.config_bytes(), before)
+        code, out = run_cli(["adopt", "--role", "alpha=primary", "--role", "beta=recall",
+                             "--apply"])
+        check("a discovered-only vault left unassigned is refused too", code, 2)
+        check_in("and named", "gamma", out)
+        sb.write_config({"vaults": {"alpha": {"path": a, "role": "primary", "default": True},
+                                    "beta": {"path": b}}})
+        code, out = run_cli(["adopt"])
+        check("listing a partly assigned config fails", code, 1)
+        check_in("and names the gap", "no role", out)
+
+
 for case in (_t_adopt, _t_import, _t_recall, _t_garden_bound, _t_garden_ack_after_write,
              _t_garden_hosts_and_legacy, _t_garden_owned_commit, _t_schedule, _t_capture,
-             _t_detect_install, _t_create_vault_and_config_override):
+             _t_detect_install, _t_create_vault_and_config_override,
+             _t_writers_primary_only, _t_garden_ack_needs_a_write, _t_garden_commit_bounded,
+             _t_schedule_quoting, _t_import_containment_and_suffix_idempotence,
+             _t_adopt_every_vault_gets_a_role):
     try:
         case()
     except Exception as exc:  # pylint: disable=broad-except

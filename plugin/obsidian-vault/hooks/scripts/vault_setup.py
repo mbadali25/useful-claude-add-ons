@@ -17,8 +17,9 @@ Roles are stored per vault in config as "role":
     ignore   answered "no" - kept in config so a re-run does not ask again;
              never recalled, written, or included in --all
 
-A write that would leave zero or two primaries is refused before anything is
-written, whichever order the roles were asked in.
+A write that would leave zero or two primaries, or any discovered or
+configured vault without a role, is refused before anything is written,
+whichever order the roles were asked in.
 """
 import glob
 import json
@@ -245,8 +246,14 @@ def primaries(vaults):
     return sorted(n for n, e in vaults.items() if isinstance(e, dict) and e.get("role") == "primary")
 
 
-def validate_roles(vaults):
-    """None when the role set is acceptable, else the reason it is refused."""
+def validate_roles(vaults, discovered=()):
+    """None when the role set is acceptable, else the reason it is refused.
+
+    Once roles are in use, EVERY vault - configured or only discovered - must
+    hold one of primary/recall/ignore. An unassigned vault is a question the
+    adoption never asked, and leaving it open is how a vault nobody decided on
+    ends up recalled, or listed as a candidate for writes, later.
+    """
     if not any(isinstance(e, dict) and e.get("role") for e in vaults.values()):
         return None  # roles never assigned: the pre-roles config shape, still valid
     found = primaries(vaults)
@@ -254,22 +261,22 @@ def validate_roles(vaults):
         return "no vault has role primary - captures and imports would have nowhere to go"
     if len(found) > 1:
         return f"{len(found)} vaults have role primary ({', '.join(found)}) - exactly one may"
+    unassigned = sorted(n for n in set(vaults) | set(discovered)
+                        if not (isinstance(vaults.get(n), dict) and vaults[n].get("role")))
+    if unassigned:
+        return (f"{len(unassigned)} vault(s) have no role: {', '.join(unassigned)} - give "
+                "each one primary, recall or ignore in the same call")
     return None
 
 
 def primary_vault():
-    """(name, path) of the vault captures and imports go to, or (None, None).
+    """(name, path, problem) of the one vault captures, imports and the gardener write.
 
-    The role-primary vault when roles are in use, else the default vault - the
-    same one the capture hook has always written to.
+    Delegates to obsidian_common.writer_vault(): the role-primary vault when
+    roles are in use, never a recall or ignore vault, and never a substitute
+    for a primary that is not on disk - `path` is None and `problem` says why.
     """
-    vaults = obsidian_common.list_vaults()
-    for name, entry in vaults.items():
-        if entry.get("role") == "primary":
-            return name, entry["path"]
-    name = obsidian_common.default_vault_name()
-    path = obsidian_common.resolve_vault_path()
-    return (name, path) if path else (None, None)
+    return obsidian_common.writer_vault()
 
 
 # --- create-vault ----------------------------------------------------------------
@@ -379,7 +386,7 @@ def cmd_adopt(args, prober):  # pylint: disable=unused-argument
             rows.append({"vault": name, "path": path, "role": entry.get("role"),
                          "configured": name in current,
                          "on_disk": bool(path and os.path.isdir(path))})
-        problem = validate_roles(current)
+        problem = validate_roles(current, discovered)
         if args.json:
             print(json.dumps({"vaults": rows, "problem": problem}, indent=2))
         else:
@@ -399,7 +406,7 @@ def cmd_adopt(args, prober):  # pylint: disable=unused-argument
               file=sys.stderr)
         return EXIT_USAGE
     vaults, changes = plan_roles(discovered, config, wanted)
-    problem = validate_roles(vaults)
+    problem = validate_roles(vaults, discovered)
     if problem:
         print(f"refused, nothing written: {problem}", file=sys.stderr)
         return EXIT_USAGE

@@ -329,6 +329,65 @@ def resolve_vault_path(name=None):
     return entry["path"] if entry else None
 
 
+def writer_vault():
+    """(name, path, problem) for the ONE vault writers may touch.
+
+    Capture, import, ack and the gardener write here and nowhere else. This is
+    deliberately not resolve_vault_path(): list_vaults() drops a vault that is
+    not on disk and promotes the first survivor to default, which is right for
+    a reader and wrong for a writer - an unmounted primary would silently turn
+    a read-only recall vault into the capture target.
+
+    With roles in config, the target is the single role-`primary` entry, read
+    from the raw config so an unmounted primary is reported rather than
+    replaced. Without roles (the pre-roles shape), it is the vault config
+    declares default (explicit `default: true`, else the first declared), or
+    the legacy `vaultPath`. OBSIDIAN_VAULT_PATH still relocates that vault, as
+    everywhere else. Only when config names no vault at all does detection
+    from Obsidian's registry apply, exactly as before.
+
+    `path` is None whenever the target is not available; `problem` then says
+    why, or is None when nothing is configured at all (stay silent).
+    """
+    cfg = read_config()
+    raw = cfg.get("vaults")
+    env = os.environ.get("OBSIDIAN_VAULT_PATH")
+    env = env if env and os.path.isdir(env) else None
+
+    if isinstance(raw, dict) and raw:
+        entries = {n: e for n, e in raw.items() if isinstance(e, dict)}
+        if any(e.get("role") for e in entries.values()):
+            found = [n for n, e in entries.items() if e.get("role") == "primary"]
+            if not found:
+                return None, None, ("no vault has role primary - nothing is written to a "
+                                    "recall or ignore vault; run `adopt` to name one")
+            if len(found) > 1:
+                return None, None, (f"{len(found)} vaults have role primary "
+                                    f"({', '.join(sorted(found))}) - refusing to guess")
+            name = found[0]
+        else:
+            name = next((n for n, e in entries.items() if e.get("default") is True),
+                        next(iter(entries), None))
+            if name is None:
+                return None, None, None
+        path = env or entries[name].get("path")
+        if path and os.path.isdir(path):
+            return name, path, None
+        return name, None, (f"primary vault {name!r} is not available at {path!r} (not "
+                            "mounted?) - nothing written; no other vault is used instead")
+
+    legacy = cfg.get("vaultPath")
+    if legacy:
+        path = env or legacy
+        if os.path.isdir(path):
+            return "memory", path, None
+        return "memory", None, (f"vault {path!r} is not available (not mounted?) - "
+                                "nothing written")
+
+    path = resolve_vault_path()
+    return (default_vault_name() or "memory", path, None) if path else (None, None, None)
+
+
 def rest_api_data_path(vault_path):
     return os.path.join(vault_path, ".obsidian", "plugins",
                          "obsidian-local-rest-api", "data.json")

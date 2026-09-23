@@ -18,12 +18,15 @@ Bounds, enforced here rather than asked of a model:
   * at most RUN_SECONDS (600) per run - each item's processor gets only what is
     left, and no item starts once it is spent;
   * an item is acknowledged only after its processor exited 0 AND every file it
-    reported writing exists inside the vault and is non-empty. Anything else
-    leaves it queued for the next run;
+    reported writing exists inside the vault, is non-empty, and is new or
+    changed against a snapshot taken just before that item ran (a manual `ack`
+    instead needs the file modified after the session was captured). Anything
+    else leaves it queued for the next run;
   * one run at a time per vault (inbox/.garden.lock, stale after LOCK_STALE);
   * only on the designated host (config gardener.host), unless --force-host;
   * with --commit, only the files the run wrote and its own ack ledger are
-    committed - `git commit -- <paths>`, never `git add -A`.
+    committed - `git commit -- <paths>`, never `git add -A` - and git, with
+    the repository's own hooks, runs inside the same deadline.
 
 An item whose transcript is not readable on this host is left queued and
 reported as unresolved-here; it does not use up one of the five slots, or a
@@ -35,7 +38,9 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import shutil
+import signal
 import subprocess
 import sys
 import time
@@ -139,10 +144,59 @@ def transcript_readable(item):
 
 # --- ack --------------------------------------------------------------------------
 
-def verify_writes(vault, wrote):
-    """(ok, reason). Every path must be inside the vault, exist, and be non-empty."""
+def _stat_key(full):
+    try:
+        st = os.stat(full)
+    except OSError:
+        return None
+    return (st.st_mtime_ns, st.st_size)
+
+
+def snapshot(vault):
+    """{realpath: (mtime_ns, size)} for every file in the vault outside .git.
+
+    Taken just before an item's processor runs, so that afterwards a file it
+    reports can be checked against its own state from before - existing is not
+    the same as having been written.
+    """
+    snap = {}
+    for root, dirs, files in os.walk(vault):
+        dirs[:] = [d for d in dirs if d != ".git"]
+        for name in files:
+            full = os.path.realpath(os.path.join(root, name))
+            key = _stat_key(full)
+            if key is not None:
+                snap[full] = key
+    return snap
+
+
+def captured_at(item):
+    """Epoch seconds of the item's capture stamp (local time, minute resolution), or None."""
+    match = TS_RE.match(item.get("text") or "")
+    if not match:
+        return None
+    try:
+        return time.mktime(time.strptime(match.group(1), "%Y-%m-%d %H:%M"))
+    except (ValueError, OverflowError):
+        return None
+
+
+def verify_writes(vault, wrote, before=None, since=None):
+    """(ok, reason). Every path must be inside the vault, exist, be non-empty,
+    and have been WRITTEN for this item.
+
+    `before` (a snapshot() taken before the processor ran) proves a write: the
+    file must be new, or its mtime/size must differ from the snapshot. Without
+    a snapshot - a manual `ack` - `since` (the item's capture time) is the
+    proof: a file last modified before the session was even captured cannot
+    have been distilled from it. With neither, nothing proves the write and
+    the ack is refused rather than assumed.
+    """
     if not wrote:
         return False, "no written file reported - nothing proves the item was distilled"
+    if before is None and since is None:
+        return False, ("no before-state and no capture time - cannot tell whether "
+                       "anything was written")
     root = os.path.normcase(os.path.realpath(vault))
     for rel in wrote:
         full = os.path.realpath(os.path.join(vault, rel))
@@ -152,17 +206,24 @@ def verify_writes(vault, wrote):
             return False, f"{rel} does not exist"
         if os.path.getsize(full) == 0:
             return False, f"{rel} is empty"
+        if before is not None:
+            if full in before and before[full] == _stat_key(full):
+                return False, f"{rel} is unchanged since before this item ran - not written by it"
+        elif os.path.getmtime(full) < since:
+            return False, (f"{rel} was last modified before this session was captured - "
+                           "nothing proves it was written for this item")
     return True, None
 
 
-def ack(vault, ident, wrote, today=None):
+def ack(vault, ident, wrote, today=None, before=None):
     """Append one ledger line for `ident`, but only when verify_writes passes."""
-    ok, reason = verify_writes(vault, wrote)
+    item = next((i for i in read_queue(vault) if i["id"] == ident), None)
+    if item is None:
+        return False, f"{ident} is not a pending item"
+    ok, reason = verify_writes(vault, wrote, before=before,
+                               since=None if before is not None else captured_at(item))
     if not ok:
         return False, reason
-    pending = {i["id"] for i in read_queue(vault)}
-    if ident not in pending:
-        return False, f"{ident} is not a pending item"
     today = today or datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M")
     line = f"- {ident} | {today} | notes={', '.join(wrote)}\n"
     path = ledger_path(vault)
@@ -293,21 +354,68 @@ def designated_host():
     return gardener.get("host") if isinstance(gardener, dict) else None
 
 
-def commit_owned(vault, paths):
-    """git add + commit ONLY `paths`. (ok, detail). No-op without a .git."""
+def _run_bounded(argv, timeout):
+    """(returncode, stdout, stderr), or (None, "", reason) when it could not finish.
+
+    git runs the repository's own hooks, and a hook can take any time at all.
+    The child gets its own process group so a timeout stops the hook's
+    children too, not just git; SIGTERM first, so git can remove its
+    index.lock on the way out, then SIGKILL.
+    """
+    if timeout <= 0:
+        return None, "", "the run's time budget was already spent"
+    posix = os.name == "posix"
+    try:
+        proc = subprocess.Popen(argv, stdout=subprocess.PIPE,  # pylint: disable=consider-using-with
+                                stderr=subprocess.PIPE, text=True, start_new_session=posix)
+    except OSError as exc:
+        return None, "", f"could not start: {exc}"
+    try:
+        out, err = proc.communicate(timeout=timeout)
+        return proc.returncode, out or "", err or ""
+    except subprocess.TimeoutExpired:
+        for sig in ((signal.SIGTERM, signal.SIGKILL) if posix else (None,)):
+            try:
+                if posix:
+                    os.killpg(proc.pid, sig)
+                else:
+                    proc.kill()
+            except OSError:
+                pass
+            try:
+                proc.communicate(timeout=5)
+                break
+            except subprocess.TimeoutExpired:
+                continue
+        return None, "", f"timed out after {int(timeout)}s (the run's time bound)"
+
+
+def commit_owned(vault, paths, deadline=None, clock=time.monotonic):
+    """git add + commit ONLY `paths`, inside the run's deadline. (ok, detail).
+
+    No-op without a .git. Repository hooks are not skipped (no --no-verify);
+    they are bounded - a hook still running at the deadline is stopped and the
+    commit reported as not made.
+    """
     if not os.path.isdir(os.path.join(vault, ".git")):
         return True, "no .git in the vault - nothing committed"
     if not paths:
         return True, "nothing written - nothing committed"
-    add = subprocess.run(["git", "-C", vault, "add", "--"] + paths,
-                         capture_output=True, text=True, check=False)
-    if add.returncode != 0:
-        return False, f"git add failed: {add.stderr.strip()}"
-    commit = subprocess.run(["git", "-C", vault, "commit", "-q", "-m",
-                             f"gardener: {len(paths)} file(s)", "--"] + paths,
-                            capture_output=True, text=True, check=False)
-    if commit.returncode != 0:
-        return False, f"git commit failed: {(commit.stderr or commit.stdout).strip()}"
+    if deadline is None:
+        deadline = clock() + RUN_SECONDS
+
+    rc, _, err = _run_bounded(["git", "-C", vault, "add", "--"] + paths, deadline - clock())
+    if rc is None:
+        return False, f"git add not completed: {err} - nothing committed"
+    if rc != 0:
+        return False, f"git add failed: {err.strip()}"
+    rc, out, err = _run_bounded(["git", "-C", vault, "commit", "-q", "-m",
+                                 f"gardener: {len(paths)} file(s)", "--"] + paths,
+                                deadline - clock())
+    if rc is None:
+        return False, f"git commit not completed: {err} - files are staged, not committed"
+    if rc != 0:
+        return False, f"git commit failed: {(err or out).strip()}"
     return True, f"committed {len(paths)} path(s)"
 
 
@@ -336,10 +444,11 @@ def garden_run(vault, max_items=MAX_ITEMS, processor=None, seconds=RUN_SECONDS,
             if remaining <= 0:
                 summary["not_started"] += len(batch) - index
                 break
+            before = snapshot(vault)
             ok, wrote, detail = run_processor(processor_argv(processor, vault, item),
                                               vault, remaining)
             if ok:
-                ok, detail = ack(vault, item["id"], wrote)
+                ok, detail = ack(vault, item["id"], wrote, before=before)
             if ok:
                 summary["acked"].append(item["id"])
                 summary["written"].extend(w for w in wrote if w not in summary["written"])
@@ -349,16 +458,16 @@ def garden_run(vault, max_items=MAX_ITEMS, processor=None, seconds=RUN_SECONDS,
                 _log(f"left queued {item['id']}: {detail}")
         if commit and summary["acked"]:
             owned = summary["written"] + [os.path.relpath(ledger_path(vault), vault)]
-            summary["commit"] = commit_owned(vault, owned)
+            summary["commit"] = commit_owned(vault, owned, deadline, clock)
     finally:
         release_lock(vault)
     return summary
 
 
 def _primary_or_fail():
-    name, vault = vault_setup.primary_vault()
+    name, vault, problem = vault_setup.primary_vault()
     if not vault:
-        print("no primary vault configured - run `adopt --role NAME=primary` first",
+        print(problem or "no primary vault configured - run `adopt --role NAME=primary` first",
               file=sys.stderr)
     return name, vault
 
@@ -503,22 +612,44 @@ def scheduler_path():
     return f"{os.path.dirname(found)}:{base}" if found else base
 
 
+def systemd_quote(value):
+    """One systemd unit-file word: double-quoted, with `\\` `"` escaped, `$`
+    doubled (no variable expansion) and `%` doubled (no specifier expansion)."""
+    value = value.replace("\\", "\\\\").replace('"', '\\"')
+    return '"' + value.replace("$", "$$").replace("%", "%%") + '"'
+
+
+def ps_quote(value):
+    """A PowerShell single-quoted literal: nothing inside is expanded; `'` doubles."""
+    return "'" + value.replace("'", "''") + "'"
+
+
 def unit_text(os_name, python, script, hhmm, log, path_env=None):
+    """The unit, and the commands to install/verify/remove it, for one OS.
+
+    Every path is quoted for the shell that will read it - shlex for cron's
+    /bin/sh, systemd's own rules for a unit file, PowerShell literals (and
+    Windows argv quoting inside -Argument) for Task Scheduler - so a path
+    holding a quote, a space, `$(...)` or a backtick is passed through as
+    text and never executed, neither at install time nor when the unit runs.
+    """
     hour, minute = (int(x) for x in hhmm.split(":"))
     argv = run_command(python, script)
     path_env = path_env or scheduler_path()
     if os_name == "cron":
-        quoted = " ".join(f"'{a}'" for a in argv)
-        line = f"{minute} {hour} * * * PATH='{path_env}' {quoted} >> '{log}' 2>&1"
+        command = (f"PATH={shlex.quote(path_env)} {shlex.join(argv)} "
+                   f">> {shlex.quote(log)} 2>&1")
+        # cron turns an unescaped % into a newline before the shell sees it.
+        line = f"{minute} {hour} * * * " + command.replace("%", "\\%")
         return {"files": {}, "line": line,
                 "install": [f"( crontab -l 2>/dev/null | grep -v 'vault_ops.py.*garden-run'; "
-                            f"echo \"{line}\" ) | crontab -"],
-                "verify": ["crontab -l | grep garden-run", f"tail -n 20 '{log}'"],
+                            f"printf '%s\\n' {shlex.quote(line)} ) | crontab -"],
+                "verify": ["crontab -l | grep garden-run", f"tail -n 20 {shlex.quote(log)}"],
                 "remove": ["crontab -l | grep -v 'vault_ops.py.*garden-run' | crontab -"]}
     if os_name == "systemd":
-        exec_start = " ".join(f'"{a}"' for a in argv)
+        exec_start = " ".join(systemd_quote(a) for a in argv)
         service = ("[Unit]\nDescription=obsidian-vault gardener (bounded: 5 items / 10 min)\n\n"
-                   f"[Service]\nType=oneshot\nEnvironment=PATH={path_env}\n"
+                   f"[Service]\nType=oneshot\nEnvironment={systemd_quote('PATH=' + path_env)}\n"
                    f"ExecStart={exec_start}\n"
                    f"TimeoutStartSec={RUN_SECONDS + 120}\n")
         timer = ("[Unit]\nDescription=Daily obsidian-vault gardener\n\n"
@@ -533,17 +664,18 @@ def unit_text(os_name, python, script, hhmm, log, path_env=None):
                            "journalctl --user -u obsidian-gardener.service -n 50"],
                 "remove": ["systemctl --user disable --now obsidian-gardener.timer"]}
     exe, rest = argv[0], argv[1:]
-    arg_text = " ".join(f'"{a}"' for a in rest)
+    arg_text = subprocess.list2cmdline(rest)
     return {"files": {},
             "install": [
-                f"$action = New-ScheduledTaskAction -Execute '{exe}' -Argument '{arg_text}'",
+                f"$action = New-ScheduledTaskAction -Execute {ps_quote(exe)} "
+                f"-Argument {ps_quote(arg_text)}",
                 f"$trigger = New-ScheduledTaskTrigger -Daily -At '{hour:02d}:{minute:02d}'",
                 "$settings = New-ScheduledTaskSettingsSet -StartWhenAvailable "
                 f"-ExecutionTimeLimit (New-TimeSpan -Minutes {RUN_SECONDS // 60 + 5})",
                 "Register-ScheduledTask -TaskName 'Obsidian Gardener' -Action $action "
                 "-Trigger $trigger -Settings $settings"],
             "verify": ["Get-ScheduledTask 'Obsidian Gardener' | Get-ScheduledTaskInfo",
-                       f"Get-Content -Tail 20 '{log}'"],
+                       f"Get-Content -Tail 20 {ps_quote(log)}"],
             "remove": ["Unregister-ScheduledTask -TaskName 'Obsidian Gardener' -Confirm:$false"]}
 
 
