@@ -4,7 +4,8 @@
     ack         --id ID --wrote PATH [...]             acknowledge ONE item, only after proof of a write
     garden-run  [--max N] [--processor JSON] [--commit] [--force-host]
     drain       [--batches K] [--apply]                the backlog in bounded batches; dry run first
-    schedule    --os cron|systemd|windows [--time HH:MM] [--designate] [--apply]
+    reconcile   [--apply]                              ack items whose session page already exists
+    schedule   --os cron|systemd|windows [--time HH:MM] [--designate] [--apply]
 
 Queue files. Capture writes `inbox/pending-reflect.<host>.md`, one per host,
 so no two machines append to one synced file. The legacy single queue
@@ -17,11 +18,18 @@ Bounds, enforced here rather than asked of a model:
   * at most MAX_ITEMS (5) items per run - --max may lower it, never raise it;
   * at most RUN_SECONDS (600) per run - each item's processor gets only what is
     left, and no item starts once it is spent;
-  * an item is acknowledged only after its processor exited 0 AND every file it
-    reported writing exists inside the vault, is non-empty, and is new or
-    changed against a snapshot taken just before that item ran (a manual `ack`
-    instead needs the file modified after the session was captured). Anything
-    else leaves it queued for the next run;
+  * an item is acknowledged only after its processor exited 0 AND at least one
+    file in the vault (outside dot-directories and inbox/) is new or changed in
+    content between snapshots taken just before and just after it ran. What
+    the processor REPORTS writing is logged as a hint and never decides the
+    ack: a note can be moved by Obsidian before the processor exits. (A manual
+    `ack` instead needs each named file modified after the session was
+    captured.) Anything else leaves it queued, with the processor's bounded
+    stdout and stderr in the reason;
+  * an item whose session page already exists (`session_id:` in a page under
+    wiki/sessions/) is acknowledged without running the processor again;
+  * the processor runs with every hook off (`--settings {"disableAllHooks":
+    true}`) and CREW_HOOKS=off / OBSIDIAN_VAULT_GARDENER=1 in its environment;
   * one run at a time per vault (inbox/.garden.lock, stale after LOCK_STALE);
   * only on the designated host (config gardener.host), unless --force-host;
   * with --commit, only the files the run wrote and its own ack ledger are
@@ -144,30 +152,126 @@ def transcript_readable(item):
 
 # --- ack --------------------------------------------------------------------------
 
-def _stat_key(full):
-    try:
-        st = os.stat(full)
-    except OSError:
-        return None
-    return (st.st_mtime_ns, st.st_size)
+# Top-level directories a snapshot never enters, besides every dot-directory
+# (.obsidian, .git, .trash, a stray .crew): `inbox/` is the queue and the ledger,
+# which the runner writes itself.
+SNAPSHOT_SKIP_TOP = ("inbox",)
+# Bounds on one snapshot. A vault past MAX_SNAPSHOT_FILES is reported as
+# incomplete and nothing is acknowledged on that partial picture. A file past
+# HASH_MAX_BYTES is compared on mtime and size alone.
+MAX_SNAPSHOT_FILES = 50000
+HASH_MAX_BYTES = 4 * 1024 * 1024
+# Where the vault contract files one page per session, carrying `session_id:`
+# in its frontmatter. The dedupe guard and `reconcile` read these.
+SESSIONS_DIR = "wiki/sessions"
+SESSION_ID_RE = re.compile(r"""^session_id:\s*["']?([^"'\s]+)["']?\s*$""")
 
 
-def snapshot(vault):
-    """{realpath: (mtime_ns, size)} for every file in the vault outside .git.
+def _hash_file(full):
+    digest = hashlib.sha1()
+    with open(full, "rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 16), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
-    Taken just before an item's processor runs, so that afterwards a file it
-    reports can be checked against its own state from before - existing is not
-    the same as having been written.
+
+def snapshot(vault, previous=None):
+    """{"files": {relpath: (mtime_ns, size, sha1|None)}, "complete": bool, "detail": str|None}.
+
+    Every file under the vault outside dot-directories and `inbox/`. Taken
+    before and after an item's processor runs: what differs between the two is
+    what that item wrote, whatever path the processor reported - a note it
+    wrote may have been moved by Obsidian (auto-note-mover) before it exited.
+    `previous` lets the second snapshot reuse a hash whose mtime and size did
+    not move. Past MAX_SNAPSHOT_FILES the snapshot says it is incomplete rather
+    than truncating quietly: an unknown must not read as "nothing changed".
     """
-    snap = {}
-    for root, dirs, files in os.walk(vault):
-        dirs[:] = [d for d in dirs if d != ".git"]
-        for name in files:
-            full = os.path.realpath(os.path.join(root, name))
-            key = _stat_key(full)
-            if key is not None:
-                snap[full] = key
-    return snap
+    files, prev = {}, (previous or {}).get("files", {})
+    for root, dirs, names in os.walk(vault):
+        rel_root = os.path.relpath(root, vault)
+        dirs[:] = sorted(d for d in dirs if not d.startswith(".")
+                         and not (rel_root == "." and d in SNAPSHOT_SKIP_TOP))
+        for name in sorted(names):
+            if len(files) >= MAX_SNAPSHOT_FILES:
+                return {"files": files, "complete": False,
+                        "detail": f"the vault holds more than {MAX_SNAPSHOT_FILES} files - "
+                                  "too many to snapshot, so no write can be proven"}
+            full = os.path.join(root, name)
+            rel = os.path.normpath(os.path.join(rel_root, name)).replace(os.sep, "/")
+            try:
+                st = os.stat(full)
+            except OSError:
+                continue
+            old = prev.get(rel)
+            if old and old[0] == st.st_mtime_ns and old[1] == st.st_size:
+                files[rel] = old
+                continue
+            digest = None
+            if st.st_size <= HASH_MAX_BYTES:
+                try:
+                    digest = _hash_file(full)
+                except OSError:
+                    continue
+            files[rel] = (st.st_mtime_ns, st.st_size, digest)
+    return {"files": files, "complete": True, "detail": None}
+
+
+def changed_files(before, after):
+    """Vault-relative paths created, or whose content changed, between two snapshots.
+
+    Touched-but-identical (same hash) is not a write, and neither is an empty
+    file. A new path carrying exactly the content of a path that vanished is
+    an existing note moved by someone else - not a write.
+    """
+    old, new = before["files"], after["files"]
+    vanished = {key[2] for rel, key in old.items() if rel not in new and key[2]}
+    out = []
+    for rel, key in sorted(new.items()):
+        if key[1] == 0:
+            continue
+        prior = old.get(rel)
+        if prior is None:
+            if key[2] is None or key[2] not in vanished:
+                out.append(rel)
+        elif prior[2] is not None and key[2] is not None:
+            if prior[2] != key[2]:
+                out.append(rel)
+        elif prior[:2] != key[:2]:
+            out.append(rel)
+    return out
+
+
+def session_notes(vault):
+    """{session_id: [vault-relative session page, ...]} from wiki/sessions/, recursively.
+
+    Reads frontmatter only. The gardener writes one session page per item it
+    distils, so a page already carrying an item's id means the item was
+    distilled - running the processor again would duplicate it.
+    """
+    index = {}
+    base = os.path.join(vault, *SESSIONS_DIR.split("/"))
+    for root, dirs, names in os.walk(base):
+        dirs[:] = sorted(d for d in dirs if not d.startswith("."))
+        for name in sorted(names):
+            if not name.endswith(".md"):
+                continue
+            full = os.path.join(root, name)
+            try:
+                with open(full, "r", encoding="utf-8", errors="replace") as fh:
+                    head = [fh.readline() for _ in range(80)]
+            except OSError:
+                continue
+            if not head or head[0].strip() != "---":
+                continue
+            for line in head[1:]:
+                if not line or line.strip() == "---":
+                    break
+                match = SESSION_ID_RE.match(line.rstrip("\r\n"))
+                if match:
+                    rel = os.path.relpath(full, vault).replace(os.sep, "/")
+                    index.setdefault(match.group(1), []).append(rel)
+                    break
+    return index
 
 
 def captured_at(item):
@@ -181,22 +285,20 @@ def captured_at(item):
         return None
 
 
-def verify_writes(vault, wrote, before=None, since=None):
-    """(ok, reason). Every path must be inside the vault, exist, be non-empty,
-    and have been WRITTEN for this item.
+def verify_writes(vault, wrote, since=None):
+    """(ok, reason) for a MANUAL `ack`. Every path must be inside the vault,
+    exist, be non-empty, and have been modified after `since` - the item's
+    capture time: a file last modified before the session was even captured
+    cannot have been distilled from it. Without `since` nothing proves the
+    write, and the ack is refused rather than assumed.
 
-    `before` (a snapshot() taken before the processor ran) proves a write: the
-    file must be new, or its mtime/size must differ from the snapshot. Without
-    a snapshot - a manual `ack` - `since` (the item's capture time) is the
-    proof: a file last modified before the session was even captured cannot
-    have been distilled from it. With neither, nothing proves the write and
-    the ack is refused rather than assumed.
+    The runner does not use this. It acknowledges on a before/after snapshot
+    of the vault (changed_files), never on the paths a processor reports.
     """
     if not wrote:
         return False, "no written file reported - nothing proves the item was distilled"
-    if before is None and since is None:
-        return False, ("no before-state and no capture time - cannot tell whether "
-                       "anything was written")
+    if since is None:
+        return False, "no capture time on the item - cannot tell whether anything was written"
     root = os.path.normcase(os.path.realpath(vault))
     for rel in wrote:
         full = os.path.realpath(os.path.join(vault, rel))
@@ -206,34 +308,36 @@ def verify_writes(vault, wrote, before=None, since=None):
             return False, f"{rel} does not exist"
         if os.path.getsize(full) == 0:
             return False, f"{rel} is empty"
-        if before is not None:
-            if full in before and before[full] == _stat_key(full):
-                return False, f"{rel} is unchanged since before this item ran - not written by it"
-        elif os.path.getmtime(full) < since:
+        if os.path.getmtime(full) < since:
             return False, (f"{rel} was last modified before this session was captured - "
                            "nothing proves it was written for this item")
     return True, None
 
 
-def ack(vault, ident, wrote, today=None, before=None):
-    """Append one ledger line for `ident`, but only when verify_writes passes."""
-    item = next((i for i in read_queue(vault) if i["id"] == ident), None)
-    if item is None:
-        return False, f"{ident} is not a pending item"
-    ok, reason = verify_writes(vault, wrote, before=before,
-                               since=None if before is not None else captured_at(item))
-    if not ok:
-        return False, reason
+def write_ledger(vault, ident, notes, how=None, today=None):
+    """Append one ledger line for `ident`. The caller has already proven the write."""
     today = today or datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M")
-    line = f"- {ident} | {today} | notes={', '.join(wrote)}\n"
+    line = f"- {ident} | {today} | notes={', '.join(notes)}"
+    line += f" | by={how}\n" if how else "\n"
     path = ledger_path(vault)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     if not os.path.exists(path):
         line = ("# Reflected - gardener acknowledgements from this host\n\n"
-                "One line per queue item distilled. Written only by vault_ops.py ack.\n\n"
+                "One line per queue item distilled. Written only by vault_ops.py.\n\n"
                 + line)
     with open(path, "a", encoding="utf-8", newline="\n") as fh:
         fh.write(line)
+
+
+def ack(vault, ident, wrote, today=None):
+    """Manual ack: one ledger line for `ident`, but only when verify_writes passes."""
+    item = next((i for i in read_queue(vault) if i["id"] == ident), None)
+    if item is None:
+        return False, f"{ident} is not a pending item"
+    ok, reason = verify_writes(vault, wrote, since=captured_at(item))
+    if not ok:
+        return False, reason
+    write_ledger(vault, ident, wrote, today=today)
     return True, None
 
 
@@ -284,16 +388,36 @@ Follow the obsidian-vault:gardener agent's distillation rules and the vault's ow
 CLAUDE.md. Distil durable knowledge only; never invent a source, date or quote.
 Always append a one-line digest for this session to today's daily note, so the
 run leaves a written trace even when nothing else is worth keeping.
+The session page you write carries `session_id: {ident}` in its frontmatter.
 Do NOT edit anything under inbox/, and do NOT run git - the runner does both.
 When done, print one line per file you created or modified, vault-relative:
 {prefix} <path>
 """
 
+# Every hook off for the processor's own session, by the documented mechanism:
+# `--settings` JSON sits above user, project and local settings, and
+# `disableAllHooks` there turns off user, project, local AND plugin hooks
+# (managed hooks excepted). Without it, crew's SessionStart/Stop hooks ran
+# inside the vault - one created `.crew/` there, the next session's
+# platform-sync wrote a default `.crew/config.json` into it, a Stop hook
+# injected a PM brief that replaced the processor's final GARDENER-WROTE lines
+# and pushed another run past --max-turns - and this plugin's own capture hook
+# queued each gardener session as new work.
+HOOKS_OFF_SETTINGS = json.dumps({"disableAllHooks": True}, separators=(",", ":"))
+# Set in the processor's environment whatever the processor is, so a hook that
+# does run (a managed one, or a custom --processor) can recognise the
+# gardener and stand down. `CREW_HOOKS=off` is for crew to honour; crew does
+# not read it yet.
+PROCESSOR_ENV = {"CREW_HOOKS": "off", "OBSIDIAN_VAULT_GARDENER": "1"}
+# How much of each stream a failure reason and the run log keep.
+STREAM_TAIL = 1500
+
 
 def default_processor(vault, item):
     claude = shutil.which("claude") or "claude"
-    argv = [claude, "-p", PROMPT.format(vault=vault, text=item["text"],
+    argv = [claude, "-p", PROMPT.format(vault=vault, text=item["text"], ident=item["id"],
                                         transcript=item.get("transcript"), prefix=WROTE_PREFIX),
+            "--settings", HOOKS_OFF_SETTINGS,
             "--permission-mode", "acceptEdits",
             "--allowedTools", "Read,Write,Edit,Grep,Glob",
             "--max-turns", "40"]
@@ -310,25 +434,50 @@ def processor_argv(template, vault, item):
             for part in template]
 
 
+def processor_env():
+    return dict(os.environ, **PROCESSOR_ENV)
+
+
+def _tail(text):
+    if isinstance(text, bytes):
+        text = text.decode("utf-8", errors="replace")
+    text = (text or "").strip()
+    return text if len(text) <= STREAM_TAIL else "..." + text[-STREAM_TAIL:]
+
+
+def _streams(stdout, stderr):
+    """Both streams, bounded, for a reason or a log line. `claude -p` prints its
+    own errors (max turns, for one) on STDOUT, so stderr alone can be empty."""
+    parts = []
+    for name, text in (("stderr", stderr), ("stdout", stdout)):
+        tail = _tail(text)
+        parts.append(f"{name}: {tail}" if tail else f"{name}: (empty)")
+    return " | ".join(parts)
+
+
 def run_processor(argv, vault, timeout):
-    """(ok, wrote, detail)."""
+    """(ok, reported, detail). `reported` is what the processor SAID it wrote -
+    a hint for the log only; the ack decision is made on a vault snapshot."""
     try:
         proc = subprocess.run(argv, cwd=vault, capture_output=True, text=True,
+                              encoding="utf-8", errors="replace", env=processor_env(),
                               timeout=max(1, timeout), check=False)
-    except subprocess.TimeoutExpired:
-        return False, [], f"timed out after {int(timeout)}s"
+    except subprocess.TimeoutExpired as exc:
+        return False, [], (f"timed out after {int(timeout)}s; "
+                           + _streams(exc.stdout, exc.stderr))
     except OSError as exc:
         return False, [], f"could not start: {exc}"
-    wrote = []
+    reported = []
     for line in (proc.stdout or "").splitlines():
         line = line.strip()
         if line.startswith(WROTE_PREFIX):
             rel = line[len(WROTE_PREFIX):].strip().strip("`")
-            if rel and rel not in wrote:
-                wrote.append(rel)
+            if rel and rel not in reported:
+                reported.append(rel)
     if proc.returncode != 0:
-        return False, wrote, f"processor exited {proc.returncode}: {(proc.stderr or '').strip()[:300]}"
-    return True, wrote, None
+        return False, reported, (f"processor exited {proc.returncode}; "
+                                 + _streams(proc.stdout, proc.stderr))
+    return True, reported, None
 
 
 # --- run -------------------------------------------------------------------------------
@@ -419,20 +568,66 @@ def commit_owned(vault, paths, deadline=None, clock=time.monotonic):
     return True, f"committed {len(paths)} path(s)"
 
 
+def already_distilled(pending, index):
+    """[(item, [session pages])] for pending items whose session page already exists."""
+    return [(item, index[item["id"]]) for item in pending if item["id"] in index]
+
+
+def _process_item(vault, item, processor, remaining):
+    """(acked, written, detail) for one item, decided on a before/after snapshot."""
+    before = snapshot(vault)
+    if not before["complete"]:
+        return False, [], before["detail"]
+    ok, reported, detail = run_processor(processor_argv(processor, vault, item),
+                                         vault, remaining)
+    after = snapshot(vault, previous=before)
+    if not after["complete"]:
+        return False, [], after["detail"]
+    written = changed_files(before, after)
+    unseen = [r for r in reported if r.replace("\\", "/") not in written]
+    if unseen:
+        _log(f"note {item['id']}: reported but not found changed: {', '.join(unseen)}")
+    if not ok:
+        if written:
+            detail += f" (it changed {len(written)} file(s): {', '.join(written)})"
+        return False, written, detail
+    if not written:
+        said = (f"; it reported {', '.join(reported)}, which is unchanged or absent"
+                if reported else "; it reported nothing either")
+        return False, [], ("no file in the vault was created or changed while it ran - "
+                           "nothing proves the item was distilled" + said)
+    write_ledger(vault, item["id"], written)
+    return True, written, None
+
+
 def garden_run(vault, max_items=MAX_ITEMS, processor=None, seconds=RUN_SECONDS,
                commit=False, clock=time.monotonic):
-    """One bounded run. Returns a summary dict; never processes more than MAX_ITEMS."""
+    """One bounded run. Returns a summary dict; never processes more than MAX_ITEMS.
+
+    Before any processor starts, every pending item whose session page already
+    exists is acknowledged instead of distilled again (`deduped`) - that costs
+    no slot, since nothing runs for it.
+    """
     max_items = max(0, min(int(max_items), MAX_ITEMS))
     deadline = clock() + min(seconds, RUN_SECONDS)
-    summary = {"acked": [], "failed": [], "unresolved_here": [], "not_started": 0,
-               "written": [], "commit": None}
+    summary = {"acked": [], "deduped": [], "failed": [], "unresolved_here": [],
+               "not_started": 0, "written": [], "commit": None}
     if not take_lock(vault):
         summary["locked"] = True
         return summary
     try:
         pending = read_queue(vault)
+        done = set()
+        for item, pages in already_distilled(pending, session_notes(vault)):
+            write_ledger(vault, item["id"], pages, how="dedupe")
+            summary["deduped"].append(item["id"])
+            done.add(item["id"])
+            _log(f"acked {item['id']} without re-distilling: session page exists "
+                 f"({', '.join(pages)})")
         runnable = []
         for item in pending:
+            if item["id"] in done:
+                continue
             if transcript_readable(item):
                 runnable.append(item)
             else:
@@ -444,19 +639,15 @@ def garden_run(vault, max_items=MAX_ITEMS, processor=None, seconds=RUN_SECONDS,
             if remaining <= 0:
                 summary["not_started"] += len(batch) - index
                 break
-            before = snapshot(vault)
-            ok, wrote, detail = run_processor(processor_argv(processor, vault, item),
-                                              vault, remaining)
-            if ok:
-                ok, detail = ack(vault, item["id"], wrote, before=before)
+            ok, written, detail = _process_item(vault, item, processor, remaining)
             if ok:
                 summary["acked"].append(item["id"])
-                summary["written"].extend(w for w in wrote if w not in summary["written"])
-                _log(f"acked {item['id']}: {', '.join(wrote)}")
+                summary["written"].extend(w for w in written if w not in summary["written"])
+                _log(f"acked {item['id']}: {', '.join(written)}")
             else:
                 summary["failed"].append({"id": item["id"], "reason": detail})
                 _log(f"left queued {item['id']}: {detail}")
-        if commit and summary["acked"]:
+        if commit and (summary["acked"] or summary["deduped"]):
             owned = summary["written"] + [os.path.relpath(ledger_path(vault), vault)]
             summary["commit"] = commit_owned(vault, owned, deadline, clock)
     finally:
@@ -521,7 +712,9 @@ def _print_summary(summary):
     if summary.get("locked"):
         print("another gardener run holds the lock - nothing done")
         return
-    print(f"acked {len(summary['acked'])}, left queued {len(summary['failed'])}, "
+    print(f"acked {len(summary['acked'])}, "
+          f"acked without re-distilling {len(summary.get('deduped', []))}, "
+          f"left queued {len(summary['failed'])}, "
           f"not started {summary['not_started']}, "
           f"unresolved on this host {len(summary['unresolved_here'])}")
     for fail in summary["failed"]:
@@ -563,18 +756,23 @@ def cmd_drain(args, prober):  # pylint: disable=unused-argument
     if not vault:
         return EXIT_USAGE
     items = read_queue(vault)
-    runnable = [i for i in items if transcript_readable(i)]
+    distilled = {item["id"] for item, _ in already_distilled(items, session_notes(vault))}
+    runnable = [i for i in items if transcript_readable(i) and i["id"] not in distilled]
     batches_needed = -(-len(runnable) // MAX_ITEMS)
     print(f"backlog: {len(items)} pending, {len(runnable)} with a transcript readable here, "
-          f"{len(items) - len(runnable)} unresolved on this host")
+          f"{len(distilled)} already distilled (session page exists), "
+          f"{len(items) - len(runnable) - len(distilled)} unresolved on this host")
     print(f"at {MAX_ITEMS} per batch that is {batches_needed} batch(es); this run would "
           f"do {min(args.batches, batches_needed)}, each bounded to {MAX_ITEMS} items and "
           f"{RUN_SECONDS // 60} minutes")
+    if distilled:
+        print(f"  the {len(distilled)} already distilled are acknowledged without "
+              "re-distilling at the start of the first batch (`reconcile` lists them)")
     for item in runnable[:MAX_ITEMS]:
         print(f"  first batch: {item['id']}  {item['text'][:80]}")
     if not args.apply:
         print("\nDry run - nothing processed. Re-run with --apply.")
-        return EXIT_PROBLEMS if runnable else EXIT_OK
+        return EXIT_PROBLEMS if runnable or distilled else EXIT_OK
     if not _host_ok(args.force_host):
         return EXIT_PROBLEMS
     try:
@@ -591,6 +789,44 @@ def cmd_drain(args, prober):  # pylint: disable=unused-argument
         if not summary["acked"]:
             break
     return EXIT_PROBLEMS if failed else EXIT_OK
+
+
+def cmd_reconcile(args, prober):  # pylint: disable=unused-argument
+    """Acknowledge queued items whose session page already exists. Dry run by default.
+
+    For items a processor distilled that were never acknowledged - the runner
+    checked a path the note no longer had, or the processor's final output lost
+    its GARDENER-WROTE lines. The dry run reads and prints, and writes nothing.
+    """
+    _, vault = _primary_or_fail()
+    if not vault:
+        return EXIT_USAGE
+    items = read_queue(vault)
+    found = already_distilled(items, session_notes(vault))
+    print(f"reconcile: {len(items)} pending in {vault}; {len(found)} already have a "
+          f"session page in {SESSIONS_DIR}/")
+    for item, pages in found:
+        verb = "acking" if args.apply else "would ack"
+        print(f"  {verb} {item['id']}  <- {', '.join(pages)}")
+    if not found:
+        print("Nothing to reconcile.")
+        return EXIT_OK
+    if not args.apply:
+        print("\nDry run - nothing written. Re-run with --apply to append these to "
+              f"{os.path.relpath(ledger_path(vault), vault)}.")
+        return EXIT_PROBLEMS
+    if not take_lock(vault):
+        print("another gardener run holds the lock - nothing written", file=sys.stderr)
+        return EXIT_PROBLEMS
+    try:
+        still = {i["id"] for i in read_queue(vault)}
+        for item, pages in found:
+            if item["id"] in still:
+                write_ledger(vault, item["id"], pages, how="reconcile")
+                _log(f"acked {item['id']} by reconcile: {', '.join(pages)}")
+    finally:
+        release_lock(vault)
+    return EXIT_OK
 
 
 # --- schedule ---------------------------------------------------------------------------
@@ -756,6 +992,11 @@ def add_parsers(sub):
                        help="commit only the files this run wrote, plus its ack ledger")
         s.add_argument("--force-host", action="store_true",
                        help="run even on a host that is not gardener.host (attended use)")
+
+    s = sub.add_parser("reconcile", help="acknowledge queued items whose session page already "
+                                         "exists (dry run until --apply)")
+    s.add_argument("--apply", action="store_true")
+    s.set_defaults(func=cmd_reconcile)
 
     s = sub.add_parser("schedule", help="print (never install) a daily gardener unit")
     s.add_argument("--os", required=True, choices=("cron", "systemd", "windows"))

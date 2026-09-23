@@ -22,7 +22,7 @@ registered here, so there is still one CLI:
     detect-obsidian / install-obsidian / create-vault / adopt   vault_setup.py
     import                                                      vault_import.py
     recall                                                      vault_recall.py
-    queue / ack / garden-run / drain / schedule                 vault_garden.py
+    queue / ack / garden-run / drain / reconcile / schedule     vault_garden.py
 
 Exit codes: 0 healthy or applied, 1 problems found, 2 usage or structural error.
 

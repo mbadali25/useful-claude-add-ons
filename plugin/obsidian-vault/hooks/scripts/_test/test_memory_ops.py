@@ -22,6 +22,14 @@ The guards pinned here, each sabotage-tested (reintroduce the bug -> red):
   * schedule quoting: ' space $(...) ` % in paths are text, never executed
   * import containment (no symlinked dirs) and suffix-collision idempotence
   * adopt refuses while any discovered vault has no role
+  * the runner acks on what a before/after vault snapshot shows changed, not on
+    the path the processor reported (a misreport, or a note Obsidian moved)
+  * a processor that writes nothing, or exits 1, is not acked, and its bounded
+    stdout+stderr land in the reason and the run log
+  * an item whose session page exists is acked without running the processor;
+    `reconcile` without --apply writes nothing
+  * the default processor runs with --settings disableAllHooks, CREW_HOOKS=off
+    and OBSIDIAN_VAULT_GARDENER=1, and leaves no .crew/ in the vault
 """
 import contextlib
 import io
@@ -366,12 +374,57 @@ vault, ident, mode = sys.argv[1], sys.argv[2], sys.argv[3]
 rel = "wiki/daily/" + ident + ".md"
 if mode == "existing":
     rel = "wiki/existing.md"   # names a file that is already there, touches nothing
-if mode in ("ok", "fail"):
+if mode in ("ok", "fail", "misreport", "crash"):
     os.makedirs(os.path.join(vault, "wiki", "daily"), exist_ok=True)
     with open(os.path.join(vault, rel), "w") as fh:
         fh.write("digest for " + ident + "\n")
-print("GARDENER-WROTE: " + rel)
+if mode == "misreport":
+    rel = "wiki/concepts/somewhere-else.md"   # wrote the daily note, reports another path
+if mode == "moved":
+    # What happened on 2026-09-23: the note was written under the vault's own
+    # <org>/<project> folder (anew/anew), reported there, and Obsidian's
+    # auto-note-mover moved it to wiki/concepts/ (first tag #concept) before
+    # the processor exited.
+    rel = "wiki/concepts/anew/anew/AWS VPN Client checksums its script.md"
+    os.makedirs(os.path.join(vault, os.path.dirname(rel)), exist_ok=True)
+    with open(os.path.join(vault, rel), "w") as fh:
+        fh.write("---\ntags:\n  - concept\n---\nnote for " + ident + "\n")
+    os.replace(os.path.join(vault, rel),
+               os.path.join(vault, "wiki", "concepts", os.path.basename(rel)))
+if mode == "counted":
+    with open(os.path.join(os.path.dirname(vault), "processor-ran"), "a") as fh:
+        fh.write(ident + "\n")
+if mode == "crash":
+    print("Error: Reached max turns (40)")
+    sys.stderr.write("boom on stderr\n")
+    sys.exit(1)
+if mode != "nothing":
+    print("GARDENER-WROTE: " + rel)
 sys.exit(1 if mode == "fail" else 0)
+'''
+
+# Stands in for the `claude` CLI on PATH, so the DEFAULT processor argv is what
+# runs. It behaves like crew's hooks did inside the vault unless the argv turns
+# every hook off: SessionStart creates `.crew/config.json` in its cwd, and the
+# capture hook queues the processor's own session.
+FAKE_CLAUDE = r'''
+import json, os, sys
+argv = sys.argv[1:]
+settings = {}
+if "--settings" in argv:
+    settings = json.loads(argv[argv.index("--settings") + 1])
+out = os.environ["FAKE_CLAUDE_RECORD"]
+with open(out, "w") as fh:
+    json.dump({"argv": argv, "CREW_HOOKS": os.environ.get("CREW_HOOKS"),
+               "OBSIDIAN_VAULT_GARDENER": os.environ.get("OBSIDIAN_VAULT_GARDENER")}, fh)
+if settings.get("disableAllHooks") is not True:
+    os.makedirs(".crew", exist_ok=True)
+    with open(os.path.join(".crew", "config.json"), "w") as fh:
+        fh.write("{}\n")
+os.makedirs(os.path.join("wiki", "daily"), exist_ok=True)
+with open(os.path.join("wiki", "daily", "fake.md"), "a") as fh:
+    fh.write("digest\n")
+print("GARDENER-WROTE: wiki/daily/fake.md")
 '''
 
 
@@ -966,12 +1019,180 @@ def _t_adopt_every_vault_gets_a_role():
         check_in("and names the gap", "no role", out)
 
 
+# --- T7: ack by vault snapshot, stderr, dedupe, reconcile, hooks off ------------------
+
+def _ledger_text(vault):
+    return _read_or_none(vault_garden.ledger_path(vault)) or ""
+
+
+def _session_page(vault, sid, name="Session - already distilled 2026-09-23.md"):
+    path = os.path.join(vault, "wiki", "sessions", name)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write(f'---\ntype: session\ntitle: "x"\nsession_id: "{sid}"\n---\n\n# x\n')
+    return "wiki/sessions/" + name
+
+
+def _t_garden_acks_on_what_changed_not_what_was_reported():
+    with Sandbox() as sb:
+        vault, _, proc = _garden_fixture(sb, 1)
+        summary = vault_garden.garden_run(vault, processor=json.loads(_proc(proc, "misreport")))
+        check("a processor that reports a different path than it wrote is acked",
+              summary["acked"], ["s0"])
+        check("the run's written list is what changed, not what was reported",
+              summary["written"], ["wiki/daily/s0.md"])
+        check_in("the ledger records the file that really changed",
+                 "notes=wiki/daily/s0.md", _ledger_text(vault))
+
+
+def _t_garden_note_moved_by_obsidian_is_acked():
+    """The 2026-09-23 item 1 regression: reported wiki/concepts/anew/anew/..., found
+    at wiki/concepts/... . No code here builds that path - the anew/anew folder is
+    the vault's own <org>/<project> convention - so the fix is to stop trusting it."""
+    with Sandbox() as sb:
+        vault, _, proc = _garden_fixture(sb, 1)
+        os.makedirs(os.path.join(vault, "wiki", "concepts", "anew", "anew"))
+        summary = vault_garden.garden_run(vault, processor=json.loads(_proc(proc, "moved")))
+        check("a note moved after it was written still acks its item", summary["acked"], ["s0"])
+        check("the moved note is what the ledger names",
+              summary["written"], ["wiki/concepts/AWS VPN Client checksums its script.md"])
+        log = _read_or_none(vault_garden.log_path()) or ""
+        check_in("the stale reported path is logged as a hint, verbatim (not doubled)",
+                 "reported but not found changed: wiki/concepts/anew/anew/AWS VPN", log)
+        check_true("and never with the domain folder doubled again",
+                   "anew/anew/anew" not in log + _ledger_text(vault))
+
+
+def _t_garden_nothing_written_is_not_acked():
+    with Sandbox() as sb:
+        vault, _, proc = _garden_fixture(sb, 1)
+        summary = vault_garden.garden_run(vault, processor=json.loads(_proc(proc, "nothing")))
+        check("a processor that writes nothing is not acked", summary["acked"], [])
+        reason = json.dumps(summary["failed"])
+        check_in("the reason says nothing changed", "no file in the vault was created or changed",
+                 reason)
+        check_in("and the reason is in the run log",
+                 "left queued s0: no file in the vault was created or changed",
+                 _read_or_none(vault_garden.log_path()) or "")
+        check("the item stays queued", len(vault_garden.read_queue(vault)), 1)
+
+
+def _t_garden_failed_processor_output_is_captured():
+    with Sandbox() as sb:
+        vault, _, proc = _garden_fixture(sb, 1)
+        summary = vault_garden.garden_run(vault, processor=json.loads(_proc(proc, "crash")))
+        check("an exit-1 processor is not acked even though it wrote", summary["acked"], [])
+        reason = (summary["failed"] or [{"reason": ""}])[0]["reason"]
+        check_in("the exit status is in the reason", "processor exited 1", reason)
+        check_in("stderr is in the reason", "stderr: boom on stderr", reason)
+        check_in("stdout too - claude -p prints its own errors there",
+                 "stdout: Error: Reached max turns (40)", reason)
+        check_in("and the log has it", "boom on stderr",
+                 _read_or_none(vault_garden.log_path()) or "")
+
+
+def _t_garden_dedupe_acks_without_processing():
+    with Sandbox() as sb:
+        vault, _, proc = _garden_fixture(sb, 2)
+        page = _session_page(vault, "s0")
+        summary = vault_garden.garden_run(vault, processor=json.loads(_proc(proc, "counted")))
+        check("the item whose session page exists is acked without the processor",
+              summary["deduped"], ["s0"])
+        ran = (_read_or_none(os.path.join(sb.tmp, "processor-ran")) or "").split()
+        check("the processor ran only for the other item", ran, ["s1"])
+        check_in("the ledger names the session page and how", f"notes={page} | by=dedupe",
+                 _ledger_text(vault))
+        check("s0 left the queue; s1 wrote nothing and stays",
+              [i["id"] for i in vault_garden.read_queue(vault)], ["s1"])
+
+
+def _t_reconcile_dry_run_writes_nothing():
+    with Sandbox() as sb:
+        vault, _, _ = _garden_fixture(sb, 2)
+        page = _session_page(vault, "s1")
+        before = tree_snapshot(sb.tmp)
+        code, out = run_cli(["reconcile"])
+        check("reconcile dry run exits 1 when something is reconcilable", code, 1)
+        check_in("and names what it would ack", f"would ack s1  <- {page}", out)
+        check("the dry run wrote nothing anywhere under the sandbox", tree_snapshot(sb.tmp),
+              before)
+        code, out = run_cli(["reconcile", "--apply"])
+        check("reconcile --apply exits 0", code, 0)
+        check("s1 acked, s0 left", [i["id"] for i in vault_garden.read_queue(vault)], ["s0"])
+        check_in("by=reconcile in the ledger", "| by=reconcile", _ledger_text(vault))
+
+
+def _t_processor_runs_with_hooks_off():
+    argv = vault_garden.default_processor("/v", {"id": "abc", "text": "t", "transcript": "?"})
+    settings = argv[argv.index("--settings") + 1] if "--settings" in argv else "{}"
+    check("the default processor passes --settings with disableAllHooks true",
+          json.loads(settings).get("disableAllHooks"), True)
+    if os.name != "posix":
+        print("SKIP: no POSIX shebang - fake-claude end-to-end case not run")
+        return
+    with Sandbox() as sb:
+        vault, _, _ = _garden_fixture(sb, 1)
+        bindir = os.path.join(sb.tmp, "bin")
+        os.makedirs(bindir)
+        fake = os.path.join(bindir, "claude")
+        with open(fake, "w", encoding="utf-8", newline="\n") as fh:
+            fh.write(f"#!{sys.executable}\n" + FAKE_CLAUDE)
+        os.chmod(fake, 0o755)
+        record = os.path.join(sb.tmp, "fake-claude.json")
+        saved = {k: os.environ.get(k) for k in ("PATH", "FAKE_CLAUDE_RECORD")}
+        os.environ["PATH"] = bindir + os.pathsep + os.environ.get("PATH", "")
+        os.environ["FAKE_CLAUDE_RECORD"] = record
+        try:
+            summary = vault_garden.garden_run(vault)
+        finally:
+            for k, v in saved.items():
+                if v is None:
+                    os.environ.pop(k, None)
+                else:
+                    os.environ[k] = v
+        seen = json.loads(_read_or_none(record) or "{}")
+        check("the real default argv reached the fake claude", seen.get("argv", [])[:1], ["-p"])
+        check("CREW_HOOKS=off in the processor's environment", seen.get("CREW_HOOKS"), "off")
+        check("OBSIDIAN_VAULT_GARDENER=1 in the processor's environment",
+              seen.get("OBSIDIAN_VAULT_GARDENER"), "1")
+        check_true("no .crew/ is created in the vault",
+                   not os.path.exists(os.path.join(vault, ".crew")))
+        check("and the item is acked on what it wrote", summary["acked"], ["s0"])
+
+
+def _t_snapshot_bounds_and_touch():
+    with Sandbox() as sb:
+        vault = sb.vault("snap", {"wiki/a.md": "a\n", "inbox/q.md": "q\n",
+                                  ".obsidian/app.json": "{}", "wiki/b.md": "b\n"})
+        before = vault_garden.snapshot(vault)
+        check("inbox/ and dot-directories are outside the snapshot",
+              sorted(before["files"]), ["wiki/a.md", "wiki/b.md"])
+        future = time.time() + 5
+        os.utime(os.path.join(vault, "wiki", "a.md"), (future, future))
+        after = vault_garden.snapshot(vault, previous=before)
+        check("a touch with identical content is not a write",
+              vault_garden.changed_files(before, after), [])
+        old = vault_garden.MAX_SNAPSHOT_FILES
+        vault_garden.MAX_SNAPSHOT_FILES = 1
+        try:
+            capped = vault_garden.snapshot(vault)
+        finally:
+            vault_garden.MAX_SNAPSHOT_FILES = old
+        check("an over-size vault is reported incomplete, not truncated quietly",
+              capped["complete"], False)
+
+
 for case in (_t_adopt, _t_import, _t_recall, _t_garden_bound, _t_garden_ack_after_write,
              _t_garden_hosts_and_legacy, _t_garden_owned_commit, _t_schedule, _t_capture,
              _t_detect_install, _t_create_vault_and_config_override,
              _t_writers_primary_only, _t_garden_ack_needs_a_write, _t_garden_commit_bounded,
              _t_schedule_quoting, _t_import_containment_and_suffix_idempotence,
-             _t_adopt_every_vault_gets_a_role):
+             _t_adopt_every_vault_gets_a_role,
+             _t_garden_acks_on_what_changed_not_what_was_reported,
+             _t_garden_note_moved_by_obsidian_is_acked, _t_garden_nothing_written_is_not_acked,
+             _t_garden_failed_processor_output_is_captured,
+             _t_garden_dedupe_acks_without_processing, _t_reconcile_dry_run_writes_nothing,
+             _t_processor_runs_with_hooks_off, _t_snapshot_bounds_and_touch):
     try:
         case()
     except Exception as exc:  # pylint: disable=broad-except
