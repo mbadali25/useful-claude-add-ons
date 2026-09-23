@@ -6,6 +6,14 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Changed
 
+- **`crew` 0.20.27: registration.** Cloud guard: fails closed on nesting depth
+  and malformed input/config; every pipeline stage and xargs/parallel heads
+  are judged; az verbs found in any position; bash -c -- parsed; SQL scanned
+  under every server-mode reading per client (backslash literals may now be
+  refused); --dry-run/--no-dry-run last wins; -help and -WhatIf exempt only
+  when they own their position; report mode never emits allow; bash judges
+  Bash calls and the .ps1 judges PowerShell calls. forcePush applies to every
+  branch (docs corrected). Troubleshooting guide source.
 - **`crew` 0.20.26: T3 fail-closed fixes.** Scope guard and completion audit
   fail closed when python is unavailable and the config is not provably off;
   successor-plan continuation requires an accepted (user-prompt) approval; a

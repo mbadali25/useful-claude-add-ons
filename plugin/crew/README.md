@@ -979,9 +979,11 @@ subscription is read from `azureProfile.json`. Details and examples:
 **It fails closed only when it knows it is armed.** A config file that exists
 and will not parse forces `block`; so does a malformed `cloud` block under an
 armed guard. With no usable python, each wrapper greps both config files for
-`cloudGuard` and refuses (exit 2) if either arms it. On Windows the bash
-wrapper stands down for its PowerShell twin — only when `OS=Windows_NT`, the
-`.ps1` exists and a PowerShell is on `PATH` — so the guard runs once, not twice.
+`cloudGuard` and refuses (exit 2) if either arms it. The bash wrapper judges
+every Bash call and the `.ps1` wrapper judges every PowerShell call — the
+split is by tool, not by OS, decided in `cloud_guard.py`'s `stands_down` from
+which flavour set `CREW_CLOUD_GUARD_FLAVOUR`, so the guard runs once per call
+on any platform, never twice and never zero times.
 
 **What it cannot see:** a command named through a variable, a script file it
 runs, SQL built at runtime, Terraform's provider credentials, and MCP tool
