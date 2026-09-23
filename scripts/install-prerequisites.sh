@@ -1141,8 +1141,9 @@ MENU_KEYS=(
   "supabase" "context7" "playwright-cli" "skillui" "strix" "obsidian"
   "repo-plugins" "graphify" "ms-mcp"
   "aws-docs-mcp" "aws-pricing-mcp" "ms-learn-mcp" "perplexity-mcp"
+  "lsp-plugins" "stack-tools"
 )
-MENU_DEFAULT=(1 1 1 1 1 1 1 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+MENU_DEFAULT=(1 1 1 1 1 1 1 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
 MENU_NAME=(
   "Prerequisites: git, nodejs, npm, python3, pip3 (needs root or sudo)"
   "Claude Code CLI (@anthropic-ai/claude-code) + PATH export + update check"
@@ -1169,6 +1170,8 @@ MENU_NAME=(
   "MCP server: AWS Pricing (Price List API - needs AWS creds with pricing:*)"
   "MCP server: Microsoft Learn (Azure, SharePoint and Power Automate docs, no credentials)"
   "MCP server: Perplexity (web-grounded search for the web-research skill - needs an API key)"
+  "LSP plugins: csharp-lsp, pyright-lsp, typescript-lsp (claude-plugins-official) + Angular language server (npm) - needs dotnet/npm"
+  "Stack tooling: tflint, ruff, sqlfluff (uv), shellcheck, PSScriptAnalyzer (pwsh if present)"
 )
 
 SELECTED=""
@@ -3119,6 +3122,207 @@ install_ms_mcp() {
 }
 if is_selected "ms-mcp"; then
   run_step "Register Microsoft MCP servers (mcp-servers/)" install_ms_mcp
+fi
+
+# --- 22. LSP plugins (C#, Python, TypeScript) + Angular language server ------
+# Anthropic's official language-server plugins register an LSP client entry each,
+# but Claude Code's native LSP support only starts whatever binary the plugin's
+# 'command' names - it does not vendor the language server itself. This step
+# installs both halves: the plugin (via 'claude plugin install', same as every
+# other plugin row here) and the binary Claude Code will actually launch. There
+# is no official Angular plugin to install - checked directly against
+# anthropics/claude-plugins-official's own marketplace.json on 2026-09-23, which
+# lists csharp-lsp/pyright-lsp/typescript-lsp (and eleven other languages) but no
+# 'angular' entry - so Angular's language server goes in as a plain npm package
+# instead, the same way playwright-cli and skillui are above.
+install_lsp_binary() {
+  # $1 label (for messages), $2 the command Claude Code will actually run, the
+  # rest is the install command's own argv - run directly, never eval'd.
+  local label="$1" probe="$2"; shift 2
+  if have "$probe"; then
+    skip "$label already installed ($(command -v "$probe"))"
+    return 0
+  fi
+  step "Installing $label"
+  if ! "$@"; then
+    warn "$label install command failed - install it by hand, then re-run."
+    return 1
+  fi
+  if ! have "$probe"; then
+    warn "$label installed but '$probe' is not resolvable in this shell - open a new shell (or 'source ~/.bashrc') and re-run."
+    return 1
+  fi
+  COUNT_INSTALLED=$((COUNT_INSTALLED+1))
+  ok "$label installed at $(command -v "$probe")"
+}
+install_csharp_ls_binary() {
+  if ! have dotnet; then
+    warn "dotnet not found on PATH - csharp-ls (a dotnet tool) needs the .NET SDK; install it (https://dotnet.microsoft.com) and re-run."
+    return 1
+  fi
+  install_lsp_binary "csharp-ls" "csharp-ls" dotnet tool install --global csharp-ls
+}
+install_pyright_binary() {
+  if ! have npm; then
+    warn "npm not found on PATH - select the prerequisites item (or install Node.js) and re-run. ('pip install pyright' also works if Python is on PATH instead.)"
+    return 1
+  fi
+  install_lsp_binary "pyright-langserver" "pyright-langserver" npm install -g pyright
+}
+install_typescript_lsp_binary() {
+  if ! have npm; then
+    warn "npm not found on PATH - select the prerequisites item (or install Node.js) and re-run."
+    return 1
+  fi
+  install_lsp_binary "typescript-language-server" "typescript-language-server" npm install -g typescript-language-server typescript
+}
+install_angular_language_server() {
+  if ! have npm; then
+    warn "npm not found on PATH - select the prerequisites item (or install Node.js) and re-run."
+    return 1
+  fi
+  install_lsp_binary "Angular language server (ngserver)" "ngserver" npm install -g @angular/language-server
+}
+if is_selected "lsp-plugins"; then
+  run_step "Marketplace: anthropics/claude-plugins-official" \
+    add_marketplace "anthropics/claude-plugins-official" "claude-plugins-official"
+  run_step "Plugin: csharp-lsp@claude-plugins-official" install_plugin "csharp-lsp@claude-plugins-official"
+  run_step "csharp-ls (dotnet tool)" install_csharp_ls_binary
+  run_step "Plugin: pyright-lsp@claude-plugins-official" install_plugin "pyright-lsp@claude-plugins-official"
+  run_step "pyright-langserver (npm)" install_pyright_binary
+  run_step "Plugin: typescript-lsp@claude-plugins-official" install_plugin "typescript-lsp@claude-plugins-official"
+  run_step "typescript-language-server (npm)" install_typescript_lsp_binary
+  run_step "Angular language server (npm; no official Claude plugin)" install_angular_language_server
+fi
+
+# --- 23. Stack tooling: tflint, ruff, sqlfluff, shellcheck, PSScriptAnalyzer --
+# The lint/format tools the stack-* skills write into verify.json's rules, per
+# docs/review/04-redesign.md - installed here, never inside a skill, so a missing
+# tool is a bounded warning at install time rather than a silent UNVERIFIED result
+# the first time a ticket touches that stack. dotnet format, eslint and prettier
+# are deliberately NOT here: dotnet/node are prerequisites this script already
+# tells the user to install by hand rather than installing itself, and
+# eslint/prettier are project-local (npm devDependencies), not a global tool this
+# script would own.
+install_tflint() {
+  if have tflint; then
+    skip "tflint already installed ($(command -v tflint))"
+    return 0
+  fi
+  if have brew; then
+    brew install terraform-linters/tap/tflint || return 1
+  else
+    warn "tflint has no unpinned auto-install path here (no brew on PATH) - install from https://github.com/terraform-linters/tflint#installation (download the release archive, verify it, and put the binary on PATH), then re-run."
+    return 1
+  fi
+  if ! have tflint; then
+    warn "tflint installed but not resolvable in this shell - open a new shell and try again."
+    return 1
+  fi
+  COUNT_INSTALLED=$((COUNT_INSTALLED+1))
+  ok "tflint installed at $(command -v tflint)"
+}
+install_ruff() {
+  if have ruff; then
+    skip "ruff already installed ($(command -v ruff))"
+    return 0
+  fi
+  ensure_uv || {
+    uv_warn "not installing ruff - 'uv tool install ruff' needs uv."
+    return 1
+  }
+  uv tool install ruff || return 1
+  export PATH="$HOME/.local/bin:$PATH"
+  if ! have ruff; then
+    warn "ruff installed but not resolvable in this shell - uv tool installs land in ~/.local/bin; run 'source ~/.bashrc' and re-run."
+    return 1
+  fi
+  COUNT_INSTALLED=$((COUNT_INSTALLED+1))
+  ok "ruff installed at $(command -v ruff)"
+}
+install_sqlfluff() {
+  if have sqlfluff; then
+    skip "sqlfluff already installed ($(command -v sqlfluff))"
+    return 0
+  fi
+  ensure_uv || {
+    uv_warn "not installing sqlfluff - 'uv tool install sqlfluff' needs uv."
+    return 1
+  }
+  uv tool install sqlfluff || return 1
+  export PATH="$HOME/.local/bin:$PATH"
+  if ! have sqlfluff; then
+    warn "sqlfluff installed but not resolvable in this shell - uv tool installs land in ~/.local/bin; run 'source ~/.bashrc' and re-run."
+    return 1
+  fi
+  COUNT_INSTALLED=$((COUNT_INSTALLED+1))
+  ok "sqlfluff installed at $(command -v sqlfluff)"
+}
+install_shellcheck() {
+  if have shellcheck; then
+    skip "shellcheck already installed ($(command -v shellcheck))"
+    return 0
+  fi
+  local mgr=""
+  if   have apt-get; then mgr=apt
+  elif have dnf;     then mgr=dnf
+  elif have yum;     then mgr=yum
+  elif have pacman;  then mgr=pacman
+  elif have zypper;  then mgr=zypper
+  elif have apk;     then mgr=apk
+  elif have brew;    then mgr=brew
+  else
+    warn "No supported package manager found (apt-get/dnf/yum/pacman/zypper/apk/brew) - install shellcheck manually (https://github.com/koalaman/shellcheck#installing) and re-run."
+    return 1
+  fi
+  case "$mgr" in
+    apt)    as_root apt-get update -y && as_root apt-get install -y shellcheck ;;
+    dnf)    as_root dnf install -y shellcheck ;;
+    yum)    as_root yum install -y shellcheck ;;
+    pacman) as_root pacman -Sy --noconfirm shellcheck ;;
+    zypper) as_root zypper install -y shellcheck ;;
+    apk)    as_root apk add --no-cache shellcheck ;;
+    brew)   brew install shellcheck ;;
+  esac
+  local rc=$?
+  if [ "$rc" -ne 0 ]; then
+    warn "shellcheck install via $mgr failed (exit $rc)."
+    return 1
+  fi
+  if ! have shellcheck; then
+    warn "shellcheck installed but not resolvable in this shell - open a new shell and try again."
+    return 1
+  fi
+  COUNT_INSTALLED=$((COUNT_INSTALLED+1))
+  ok "shellcheck installed at $(command -v shellcheck)"
+}
+install_psscriptanalyzer() {
+  # PSScriptAnalyzer is a PowerShell module, not a shell tool - it needs a
+  # PowerShell host to install into. pwsh (PowerShell 7) runs cross-platform;
+  # Windows PowerShell 5.1 does not exist on this side of the matched pair, so
+  # there is only one rung here, unlike the .ps1 side which covers both.
+  if ! have pwsh; then
+    warn "pwsh (PowerShell 7) not found on PATH - PSScriptAnalyzer needs a PowerShell host to install into. Install PowerShell (https://aka.ms/powershell) and re-run, or run the .ps1 script on Windows, which covers both 5.1 and 7."
+    return 1
+  fi
+  if pwsh -NoProfile -Command "Get-Module -ListAvailable -Name PSScriptAnalyzer" 2>/dev/null | grep -q PSScriptAnalyzer; then
+    skip "PSScriptAnalyzer already installed for pwsh"
+    return 0
+  fi
+  pwsh -NoProfile -Command "Install-Module -Name PSScriptAnalyzer -Scope CurrentUser -Force -ErrorAction Stop" || return 1
+  if ! pwsh -NoProfile -Command "Get-Module -ListAvailable -Name PSScriptAnalyzer" 2>/dev/null | grep -q PSScriptAnalyzer; then
+    warn "Install-Module reported success but PSScriptAnalyzer is not resolvable under pwsh - check the pwsh output above."
+    return 1
+  fi
+  COUNT_INSTALLED=$((COUNT_INSTALLED+1))
+  ok "PSScriptAnalyzer installed for pwsh (PowerShell 7)"
+}
+if is_selected "stack-tools"; then
+  run_step "tflint (Terraform linter)" install_tflint
+  run_step "ruff (uv tool install ruff)" install_ruff
+  run_step "sqlfluff (uv tool install sqlfluff)" install_sqlfluff
+  run_step "shellcheck" install_shellcheck
+  run_step "PSScriptAnalyzer (pwsh, if present)" install_psscriptanalyzer
 fi
 
 # --- Summary -----------------------------------------------------------------
