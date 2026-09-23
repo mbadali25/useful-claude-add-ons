@@ -219,20 +219,24 @@ def test_crash_mid_apply_leaves_the_old_tree(repo, monkeypatch, fail_at):
     total = len(crew_migrate.build_plan(repo)["writes"])
     stop = total if fail_at == "last" else fail_at
     real = os.replace
-    calls = {"target": 0}
+    backups = os.path.join(repo, ".crew", "backups") + os.sep
+    calls = {"target": 0, "crashed_on": None}
 
     def flaky(src, dst):
-        if src.endswith(crew_migrate.TMP_SUFFIX) and not dst.endswith("manifest.json"):
+        if src.endswith(crew_migrate.TMP_SUFFIX) and not dst.startswith(backups):
             calls["target"] += 1
             if calls["target"] == stop:
+                calls["crashed_on"] = os.path.relpath(dst, repo).replace(os.sep, "/")
                 raise OSError("injected crash")
         return real(src, dst)
     monkeypatch.setattr(crew_migrate.os, "replace", flaky)
+    plan = crew_migrate.build_plan(repo)
 
     with pytest.raises(OSError, match="injected crash"):
-        crew_migrate.apply_plan(crew_migrate.build_plan(repo))
+        crew_migrate.apply_plan(plan)
 
-    assert _bytes_only(_snapshot(repo)) == before
+    assert (calls["crashed_on"], _bytes_only(_snapshot(repo))) == (
+        plan["writes"][stop - 1]["path"], before)
 
 
 def test_hard_kill_mid_apply_is_reported_then_rolled_back(repo, capsys):
@@ -306,3 +310,103 @@ def test_mapping_table_in_docstring_matches_code():
     rows = re.findall(r"^\| `(\w+)`\s+\| `([\w.]+)`", crew_migrate.__doc__, re.M)
 
     assert tuple(rows) == crew_migrate.MAPPING
+
+
+def test_symlinked_ticket_dir_is_a_conflict_and_nothing_is_written_through_it(repo, tmp_path):
+    """Codex BLOCK: T-0002.md plus `.work/tickets/T-0002` symlinked to a
+    directory outside the repo -- apply wrote ticket.md there."""
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    tickets = os.path.join(repo, ".work", "tickets")
+    with open(os.path.join(tickets, "T-0002.md"), "w", encoding="utf-8") as fh:
+        fh.write(TICKET)
+    os.symlink(str(outside), os.path.join(tickets, "T-0002"), target_is_directory=True)
+
+    code = crew_migrate.main(["--root", repo, "--apply"])
+
+    assert (code, os.listdir(outside)) == (1, [])
+
+
+def test_existing_staging_name_is_a_conflict_and_is_left_intact(repo):
+    """Codex BLOCK: a sibling `.crew/crew.json.crew-migrate.tmp` was
+    truncated by staging and then deleted by the cleanup."""
+    sentinel = os.path.join(repo, ".crew", "crew.json" + crew_migrate.TMP_SUFFIX)
+    with open(sentinel, "wb") as fh:
+        fh.write(b"sentinel bytes\n")
+    before = _snapshot(repo, skip_backups=False)
+
+    code = crew_migrate.main(["--root", repo, "--apply"])
+
+    assert (code, _snapshot(repo, skip_backups=False)) == (1, before)
+
+
+def test_staging_name_created_after_the_plan_is_never_truncated(repo):
+    plan = crew_migrate.build_plan(repo)
+    before = _bytes_only(_snapshot(repo))
+    sentinel = os.path.join(repo, ".crew", "crew.json" + crew_migrate.TMP_SUFFIX)
+    with open(sentinel, "wb") as fh:
+        fh.write(b"sentinel bytes\n")
+
+    with pytest.raises(crew_migrate.MigrateError, match="appeared since the plan"):
+        crew_migrate.apply_plan(plan)
+
+    assert _bytes_only(_snapshot(repo)) == dict(
+        before, **{".crew/crew.json" + crew_migrate.TMP_SUFFIX:
+                   hashlib.sha256(b"sentinel bytes\n").hexdigest()})
+
+
+def test_target_created_after_the_plan_is_not_overwritten_and_apply_is_undone(repo):
+    """Codex BLOCK: build_plan, then a different .crew/crew.json appears,
+    then apply_plan -- the new file was overwritten."""
+    plan = crew_migrate.build_plan(repo)
+    before = _bytes_only(_snapshot(repo))
+    with open(os.path.join(repo, ".crew", "crew.json"), "wb") as fh:
+        fh.write(b"{\"mine\": true}\n")
+
+    with pytest.raises(crew_migrate.MigrateError, match="changed since the plan"):
+        crew_migrate.apply_plan(plan)
+
+    assert _bytes_only(_snapshot(repo)) == dict(
+        before, **{".crew/crew.json": hashlib.sha256(b"{\"mine\": true}\n").hexdigest()})
+
+
+def _applied_backup(repo, capsys):
+    crew_migrate.main(["--root", repo, "--apply"])
+    return re.search(r"--rollback (\S+)\)", capsys.readouterr().out).group(1)
+
+
+def _rewrite_manifest(repo, backup, edit):
+    path = os.path.join(repo, backup, "manifest.json")
+    manifest = json.loads(_load(repo, path))
+    edit(manifest)
+    text = json.dumps(manifest)
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(text)
+
+
+def test_rollback_refuses_a_manifest_path_outside_the_repo(repo, tmp_path, capsys):
+    """Codex BLOCK: a manifest naming ../victim with the victim's sha256 made
+    --rollback delete it."""
+    victim = tmp_path / "victim"
+    victim.write_bytes(b"not yours\n")
+    backup = _applied_backup(repo, capsys)
+    _rewrite_manifest(repo, backup, lambda m: m["targets"].extend([
+        {"path": "../victim", "existed": False,
+         "sha256": hashlib.sha256(b"not yours\n").hexdigest()}]))
+    applied = _bytes_only(_snapshot(repo))
+
+    code = crew_migrate.main(["--root", repo, "--rollback", backup])
+
+    assert (code, victim.exists(), _bytes_only(_snapshot(repo))) == (1, True, applied)
+
+
+def test_rollback_refuses_to_remove_through_a_symlinked_dir(repo, tmp_path, capsys):
+    backup = _applied_backup(repo, capsys)
+    ticket_dir = os.path.join(repo, ".work", "tickets", "T-0001")
+    outside = tmp_path / "outside"
+    shutil.move(ticket_dir, str(outside))
+    os.symlink(str(outside), ticket_dir, target_is_directory=True)
+
+    code = crew_migrate.main(["--root", repo, "--rollback", backup])
+
+    assert (code, sorted(os.listdir(outside))) == (1, ["provenance.json", "ticket.md"])

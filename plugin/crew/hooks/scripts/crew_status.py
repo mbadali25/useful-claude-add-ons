@@ -13,7 +13,8 @@ without it `crew_context.py` resolves `CLAUDE_PROJECT_DIR` first, so a status
 run for one repo from a session in another read the other repo's log.
 
 Read-only is a property, not a promise: git runs with `GIT_OPTIONAL_LOCKS=0`
-so `git status` cannot refresh the index, and bytecode writing is off so even
+so `git status` cannot refresh the index and with `core.fsmonitor=false` so a
+configured fsmonitor hook never runs, and bytecode writing is off so even
 the import of the sibling modules leaves no `__pycache__` behind. The test
 suite snapshots every mtime in a fixture repo around a run.
 """
@@ -40,7 +41,7 @@ _GIT_ENV = dict(os.environ, GIT_OPTIONAL_LOCKS="0")
 
 def _git(root, *args):
     try:
-        done = subprocess.run(("git",) + args, cwd=root, capture_output=True, text=True,
+        done = subprocess.run(("git", "-c", "core.fsmonitor=false") + args, cwd=root, capture_output=True, text=True,
                               encoding="utf-8", errors="replace", timeout=10, check=False,
                               stdin=subprocess.DEVNULL, env=_GIT_ENV)
     except (OSError, subprocess.SubprocessError):
@@ -61,6 +62,8 @@ def _json(path):
 def _config_lines(root):
     crew = _json(os.path.join(root, ".crew", "crew.json"))
     legacy = _json(os.path.join(root, ".crew", "config.json"))
+    if crew is not None and not isinstance(crew, dict):
+        return ["config   .crew/crew.json unreadable - status cannot tell the setup"], {}
     if isinstance(crew, dict):
         agents = crew.get("agents") or []
         tracker = (crew.get("tracker") or {}).get("kind", "?") if isinstance(crew.get("tracker"), dict) else "?"
@@ -89,7 +92,7 @@ def _ticket_lines(root):
     files = [n for n in names if n.endswith(".md")]
     open_ids = []
     for line in (read_text(os.path.join(root, ".work", "INDEX.md")) or "").splitlines():
-        cells = [c.strip() for c in line.split("|")]
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
         if len(cells) > 1 and cells[1].lower() in ("open", "in-progress", "in progress", "review"):
             open_ids.append(cells[0])
     lines = [f"tickets  {len(dirs)} ticket dir(s), {len(files)} legacy file(s)"]
@@ -164,9 +167,10 @@ def _memory_lines(root, budget):
                               cwd=root,
                               capture_output=True, text=True, encoding="utf-8",
                               errors="replace", timeout=20, check=False,
-                              stdin=subprocess.DEVNULL, env=_GIT_ENV)
+                              stdin=subprocess.DEVNULL,
+                              env=dict(_GIT_ENV, CLAUDE_PROJECT_DIR=root))
     except (OSError, subprocess.SubprocessError) as exc:
-        return [f"memory   crew_context.py --stats could not run: {exc}"]
+        return [f"memory  crew_context.py --stats could not run: {exc}"]
     if done.returncode != 0:
         first = (done.stderr.strip().splitlines() or ["no stderr"])[0]
         return [f"memory   crew_context.py --stats failed (exit {done.returncode}): {first[:80]}"]
