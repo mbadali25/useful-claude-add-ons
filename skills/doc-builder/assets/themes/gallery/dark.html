@@ -29,12 +29,12 @@ table.mast { border-collapse:collapse; width:100%; margin-bottom:14px; }
    renderers apply. Height only: no width, so the source PNG's own aspect
    ratio (290x70 for the wordmark) is preserved rather than guessed at here. */
 .mast-logo { height:44px; }
-/* Logo left, heading text right: a nested table, because Word drops
-   float and flex. Bare classes only, so LibreOffice applies them too. */
-.mast-row { border-collapse:collapse; width:100%; }
-.mast-logo-cell { width:1%; white-space:nowrap; vertical-align:middle;
-              padding:0 18px 0 0; border-right:1px solid #CBD5E1; }
-.mast-text { vertical-align:middle; padding:0 0 0 18px; }
+/* Logo left, heading text right: two SIBLING cells in the band row, never
+   a nested table (LibreOffice lifts a nested table into the row above).
+   The logo cell carries the band fill itself. Bare classes only. */
+.mast-logo-cell { background:#0F172A; width:1%; white-space:nowrap;
+              vertical-align:middle; padding:14px 18px;
+              border-right:1px solid #CBD5E1; }
 
 /* Every table: real grid, real thead. Both required. */
 table.data { border-collapse:collapse; width:100%; table-layout:fixed;
@@ -88,7 +88,8 @@ div.l { font-size:11px; color:#475569; }
 <div class="wrap">
 <table class="mast">
   <tr><td class="mast-strip"></td></tr>
-  <tr><td class="mast-band">
+  <tr>
+  <td class="mast-band">
     <div class="mast-org">CONTOSO</div>
     <div class="mast-title">Entra Password Posture</div>
     <div class="mast-subtitle">Tenant-wide assessment of password strength and policy</div>

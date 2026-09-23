@@ -132,34 +132,31 @@ def column_widths(labels, rows):
 
 def masthead(org, title, subtitle, classification, logo_src=None):
     """`logo_src`, when given, is the `-on-dark` wordmark - `.mast-band` is
-    filled navy, so anything else placed there is the wrong variant. With a
-    logo the band holds a nested two-cell table: the logo on the left, the
-    heading text on the right. A nested table rather than a float or flex,
-    because Word's HTML import drops both (word-traps.md). None renders the
-    masthead exactly as it did before a brand pack ever carried a logo."""
+    filled navy, so anything else placed there is the wrong variant.
+
+    With a logo the band row has TWO sibling cells, logo left and heading text
+    right, and the strip, rule and classification rows span both. Siblings,
+    not a table nested inside the band cell: LibreOffice's HTML import moved a
+    nested table's content up into the accent-strip row, so the band rendered
+    in the accent colour and the logo vanished (measured, soffice 26.2.5.2).
+    Word drops float and flex, so a table row is the only layout both apply.
+    None renders the masthead exactly as it did before a pack carried a logo."""
     text = (f'    <div class="mast-org">{esc(org)}</div>\n'
             f'    <div class="mast-title">{esc(title)}</div>\n'
             f'    <div class="mast-subtitle">{esc(subtitle)}</div>\n')
-    if logo_src:
-        band = (
-            '    <table class="mast-row"><tr>\n'
-            '      <td class="mast-logo-cell">'
-            f'<img class="mast-logo" src="{esc(logo_src)}" alt="{esc(org)}"></td>\n'
-            '      <td class="mast-text">\n'
-            f'{text}'
-            '      </td>\n'
-            '    </tr></table>\n'
-        )
-    else:
-        band = text
+    span = ' colspan="2"' if logo_src else ""
+    logo_cell = (f'  <td class="mast-logo-cell"><img class="mast-logo" src="{esc(logo_src)}" '
+                 f'alt="{esc(org)}"></td>\n' if logo_src else "")
     return (
         '<table class="mast">\n'
-        '  <tr><td class="mast-strip"></td></tr>\n'
-        '  <tr><td class="mast-band">\n'
-        f'{band}'
+        f'  <tr><td class="mast-strip"{span}></td></tr>\n'
+        '  <tr>\n'
+        f'{logo_cell}'
+        '  <td class="mast-band">\n'
+        f'{text}'
         '  </td></tr>\n'
-        '  <tr><td class="mast-rule"></td></tr>\n'
-        f'  <tr><td class="mast-cls">{esc(classification)}</td></tr>\n'
+        f'  <tr><td class="mast-rule"{span}></td></tr>\n'
+        f'  <tr><td class="mast-cls"{span}>{esc(classification)}</td></tr>\n'
         '</table>\n'
     )
 

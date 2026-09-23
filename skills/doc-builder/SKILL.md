@@ -114,7 +114,8 @@ against LibreOffice 26.2.5.2: its HTML importer applies only **simple** selector
 `.class` or a bare element - and silently drops every compound or descendant one. On the
 report path that costs the table grid, the header shading, the zebra rows, the
 summary-card panels and the meta-table key shading; the masthead, lede, handling banner and
-every severity chip still render. The SOP path feeds it real OOXML rather than HTML and
+every severity chip still render, except that its HTML->PDF drops a brand logo (its DOCX keeps
+it - convert to DOCX first when the PDF must carry the logo). The SOP path feeds it real OOXML rather than HTML and
 survives far better - the self-test renders correctly, borders included - but no LibreOffice
 render is evidence about how Word lays the same document out. Full detail, and the mirror-image
 list of what *Word* drops, in `references/word-traps.md`.

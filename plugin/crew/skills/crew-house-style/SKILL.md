@@ -127,7 +127,7 @@ places; either one alone changes nothing a reader can see.
    `<tbody>` around the rest. A bare `<tr>` of `<th>` is styled like a header
    and is not one to anything that paginates.
 2. **Every page carries this block**, from
-   `skills/doc-builder/scripts/house_style.py:246-248` — the body of
+   `skills/doc-builder/scripts/house_style.py:270-272` — the body of
    `print_css`:
 
    ```css
@@ -152,9 +152,9 @@ places; either one alone changes nothing a reader can see.
 `<thead>`, so rule 2 without rule 1 still drops a table's header at every page
 break; rule 1 without rule 2 does nothing at all. `doc-builder` already
 enforces both together, and says so once per profile — the report profile at
-`skills/doc-builder/scripts/house_style.py:342`, "Every table: real grid, real
+`skills/doc-builder/scripts/house_style.py:373`, "Every table: real grid, real
 thead. Both required.", and the guide profile at
-`skills/doc-builder/scripts/house_style.py:352`, "Every table: real grid, real
+`skills/doc-builder/scripts/house_style.py:383`, "Every table: real grid, real
 thead. Both required." Both are cited rather than one, because the comment is
 duplicated and naming one line would leave the other profile's copy pinned by
 nothing while reading as though the pair were covered. That is why routing to

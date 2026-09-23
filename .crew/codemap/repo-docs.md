@@ -1,6 +1,14 @@
 # repo-docs
 anchor: useful-claude-add-ons@5d1fc5fd
 verified: 2026-09-22
+> **Path moved 2026-09-22 (PR #215):** `docs/guides/Running-a-Mailbox-Job.json` is now
+> `docs/guides/exchange-mailbox/Running-a-Mailbox-Job.json`, content unchanged (a `git mv`).
+> Citations and commands below keep the OLD path on purpose - they record what was run
+> and what was true at this note's anchor, where only the old path exists. On a range that
+> crosses the move, pass BOTH paths: `git diff -M --stat <anchor>..HEAD --
+> docs/guides/Running-a-Mailbox-Job.json docs/guides/exchange-mailbox/Running-a-Mailbox-Job.json`
+> and read the `| 0` - rename detection only pairs the two when both are in the
+> pathspec; either path alone reports an add or a delete, a false "changed".
 **This pass (`03b19262` -> `5d1fc5fd`) is a per-path diff and a re-read of
 every citation into a changed file — see the bottom-most provenance section
 for the command and output. Its headline is `## Corrected at 5d1fc5fd`

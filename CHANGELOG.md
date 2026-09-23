@@ -6,7 +6,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Changed
 
-- **`doc-builder` 1.7.0: built-in themes, a compact density, and a theme gallery.**
+- **`doc-builder` 1.7.1: built-in themes, a compact density, and a theme gallery.**
   Eight themes (`professional`, `corporate`, `blue`, `red`, `modern`, `dark`, `midnight`,
   `high-contrast`) in `assets/themes/`, chosen with `--theme` or `DOC_BUILDER_THEME` on
   `build_report.py`, `build_sop.py`, `house_style.py` and `check_conformance.py`. A theme
@@ -19,18 +19,35 @@ All notable changes to this repository are documented here. Format follows [Keep
   `scripts/_test/test_themes.py`. `assets/themes/gallery/` ships a sample report, PNG and
   index per theme, built by `scripts/build_gallery.py`, and a test fails when the gallery
   goes stale. When someone asks for documentation without naming a look, `SKILL.md` now
-  says to show the gallery first. Word COM dark-page handling is untested (no Windows host).
+  says to show the gallery first. Word COM dark-page handling is untested (no Windows host). `crew` 0.20.15
+  re-points `crew-house-style`'s `house_style.py` citations once more, since the
+  themes moved those lines.
 
-- **`doc-builder` 1.6.0: black-grid tables and a logo-left masthead.** Data and
+- **`doc-builder` 1.6.2: black-grid tables and a logo-left masthead.** Data and
   meta tables now draw a solid black border on every cell, data-table headers
   are black with white bold text, and the zebra fill is a stronger `#E8ECF1` so
   alternate rows survive greyscale printing. Three new brand keys carry this
   (`report.table_border`, `report.table_head`, `report.table_head_ink`), set in
   the neutral pack and inherited by every pack that does not override them, so
   Solomon reports get them too. When a brand pack has a logo, the masthead band
-  is now a nested two-cell table with the logo on the left and the organisation,
-  title and subtitle on the right, split by a thin divider. It used to stack the
-  logo above the text.
+  row holds two sibling cells, the logo on the left and the organisation, title
+  and subtitle on the right, split by a thin divider. They are siblings rather
+  than a nested table because LibreOffice lifted a nested table into the accent
+  strip. It used to stack the logo above the text. LibreOffice's HTML->PDF
+  leaves the logo out, on `main` too; its DOCX keeps it (documented in
+  `word-traps.md`).
+  `crew` 0.20.14: `crew-house-style` re-points its three `house_style.py` line
+  citations to the lines doc-builder 1.6.2 moved them to.
+
+- **`docs/guides/` is organised by subject.** The guides now live in `crew/`,
+  `gizmoduck/`, `obsidian/`, `rule-of-two/` and `exchange-mailbox/`, and the
+  shared Solomon logo stays in `docs/guides/assets/`. The `-solomon.html`
+  variants point at `../assets/`. Every live reference moved with them: crew's
+  `test_docs_routing.py` and `sabotage.py`, `docs/runbooks/rollback.md` and
+  `TODO.md`. Two codemap notes keep the old path in their historical commands,
+  which is what was true at their anchor, and get a dated note recording the
+  move. crew's shipped-guide checks now fail rather than skip if the guides
+  folder moves again. `crew` goes to 0.20.13 because its test files changed.
 
 ### Fixed
 

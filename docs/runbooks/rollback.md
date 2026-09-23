@@ -54,7 +54,7 @@ version bump is not a rollback.**
    git rev-parse HEAD
    # Find every tracked site first - do NOT assume it is only README.md.
    # Three carry the SHA today: README.md twice, and the one-liner embedded in
-   # docs/guides/Running-a-Mailbox-Job.json, which this step used to omit.
+   # docs/guides/exchange-mailbox/Running-a-Mailbox-Job.json, which this step used to omit.
    grep -rn '<old-sha>' --include='*.md' --include='*.json' . \
      | grep -v node_modules | grep -v graphify-out | grep -v '.claude/worktrees'
    ```
