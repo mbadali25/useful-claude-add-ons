@@ -517,7 +517,7 @@ def _html_rule(number):
 def test_the_html_route_carries_the_print_rules():
     """The defect this section exists for, and it is prose again.
 
-    Four guides in `docs/guides/` were hand-written HTML off this route while
+    Four guides now in `docs/guides/crew/` were hand-written HTML off this route while
     it read "HTML needs no skill; write the file and apply the palette above".
     The palette is colours. Nothing on that route said anything about a page
     boundary, so all four shipped with headings stranded at the foot of a page
@@ -880,7 +880,7 @@ def test_the_cited_lines_of_the_generator_hold_what_crew_says_they_hold():
 # about went unchecked is the exact shape this suite exists to refuse. They
 # skip when the repo is not in the checkout, like every other cross-entry
 # check here.
-_GUIDES_DIR = os.path.join(_REPO, "docs", "guides")
+_GUIDES_DIR = os.path.join(_REPO, "docs", "guides", "crew")
 _GUIDES = (
     "crew-overview.html",
     "crew-capabilities.html",

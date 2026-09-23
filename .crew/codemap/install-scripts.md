@@ -239,7 +239,7 @@ standalone tools through their own package managers (see **Calls out to**). DERI
   fix exists past this anchor; a pin claim's lifespan here has twice now been shorter than one
   commit range, and "a fix merged" is not the same claim as "this anchor's pin is current."
   **Not the same as "every pin in the repo is current" either way.** `repo-docs.md` records
-  `docs/guides/Running-a-Mailbox-Job.json:18` still pinning the *older* `0a2d49b0` SHA — **59
+  `docs/guides/exchange-mailbox/Running-a-Mailbox-Job.json:18` still pinning the *older* `0a2d49b0` SHA — **59
   commits** behind `d541ee57` in raw git history (`git log --oneline 0a2d49b0..d541ee57 | wc -l` =
   59; a previous version of this bullet said "one commit behind," which conflated the single
   re-pin event with git-history distance) - that file was not part of the `2cc73a1e`

@@ -4,6 +4,16 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Changed
+
+- **`docs/guides/` is organised by subject.** The guides now live in `crew/`,
+  `gizmoduck/`, `obsidian/`, `rule-of-two/` and `exchange-mailbox/`, and the
+  shared Solomon logo stays in `docs/guides/assets/`. The `-solomon.html`
+  variants point at `../assets/`. Every tracked reference moved with them: crew's
+  `test_docs_routing.py` and `sabotage.py`, `docs/runbooks/rollback.md`, two
+  codemap notes and `TODO.md`. `crew` goes to 0.20.12 because its test files
+  changed.
+
 ### Fixed
 
 - **Windows audit wave 3: `claude-code-defaults` 1.0.1, `intune-graph` 1.1.3,
