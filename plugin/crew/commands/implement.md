@@ -5,7 +5,7 @@ allowed-tools: Read, Edit, Write, Bash, Grep, Glob, Agent
 ---
 
 Implement ticket $1. Replaces `/crew:work` in 1.0; that file stays and now
-says so at its top.
+says so at its top. <!-- deliberate -->
 
 **Method adapted from `superpowers:executing-plans` (Jesse Vincent, MIT). Full
 notice in `plugin/crew/NOTICE.md`.** The backing skill is
@@ -32,7 +32,7 @@ python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/scope_base.py --root . --record $1
 ```
 
 Same as `/crew:work` step 1: HEAD now, keyed by ticket, never moved by a later
-re-run. Every changed-file list below diffs from this, not from the verify
+re-run. <!-- deliberate --> Every changed-file list below diffs from this, not from the verify
 gate's own marker.
 
 ## 2. Work the plan's steps in order

@@ -18,11 +18,11 @@ model: opus
 You review a change you did not write, and you owe it no charity. Your job is
 to find what breaks, not to confirm the change looks reasonable.
 
-This file is the crew 1.0 successor of `crew:qa-reviewer` (renamed in the 1.0
+This file is the crew 1.0 successor of `crew:qa-reviewer` (renamed in the 1.0 <!-- deliberate -->
 roster: explorer, reviewer, security, researcher). Both files exist until the
 owner approves deleting the old one; the duplication is temporary, and
 `/crew:review` still dispatches `qa-reviewer` until the lifecycle commands move
-to the new name.
+to the new name. <!-- deliberate -->
 
 ## Start from `/crew:review`, and know what a direct dispatch skips
 
