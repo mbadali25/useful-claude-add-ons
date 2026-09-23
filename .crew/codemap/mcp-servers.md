@@ -1,5 +1,5 @@
 # mcp-servers
-anchor: useful-claude-add-ons@84976536
+anchor: useful-claude-add-ons@5d1fc5fd
 verified: 2026-09-22
 
 ## Does
@@ -187,3 +187,52 @@ imported. The `## Unverified` section stands unchanged, and its "this worktree's
 untracked working tree on one machine. It has now gone sixteen days without
 being re-taken and should be read as a record of what was once true there, not
 as a fact about this checkout.
+
+**Re-anchored `84976536` -> `5d1fc5fd` on 2026-09-22, re-anchor-only.** Per-path
+check over this note's cited paths (extracted the same way `_cited_paths` in
+`plugin/crew/hooks/scripts/crew_freshness.py` would):
+
+```
+git diff --name-only 84976536..5d1fc5fd -- \
+  mcp-servers/packages/graph/src/cli.ts mcp-servers/packages/core/src/writeGate.ts \
+  mcp-servers/scripts/check-dist-fresh.mjs mcp-servers/packages/core/package.json \
+  mcp-servers/packages/core/src/graphClient.ts mcp-servers/packages/core/src/adminAuth.ts \
+  mcp-servers/packages/core/src/auth.ts TODO.md \
+  mcp-servers/scripts/_test/check-dist-fresh.test.mjs mcp-servers/packages/o365-user/src/cli.ts \
+  mcp-servers/packages/core/src/jwt.ts mcp-servers/packages/core/test/adminAuth.test.ts \
+  mcp-servers/package.json mcp-servers/README.md
+```
+```
+TODO.md
+```
+
+One file moved. `git diff --name-only 84976536..5d1fc5fd -- mcp-servers/`
+returns nothing - the whole monorepo is untouched, exactly as at the previous
+anchor - so no `mcp-servers/**` citation could have moved.
+
+This note also cites `.claude-plugin/marketplace.json` in prose (the `grep -c`
+claim in `## Does`), a leading-dot path the regex above does not extract, so it
+was diffed by hand: `git diff --name-only 84976536..5d1fc5fd --
+.claude-plugin/marketplace.json` returns the file. Re-checked:
+`grep -c mcp-servers .claude-plugin/marketplace.json` still returns **0** -
+`git diff 84976536..5d1fc5fd -- .claude-plugin/marketplace.json` is two hunks:
+`doc-builder` (version string only, `1.5.2`→`1.5.3`) and `crew` (a
+description rewrite - 27→28 slash commands, 19→20 skills - plus version
+`0.20.10`→`0.20.11`). Neither hunk is near an `mcp-servers` entry, so the
+conclusion is unaffected. Claim holds.
+
+`TODO.md` was re-checked line by line. `:51`, `:62` and `:113` are still the
+item 2, item 3 and item 5 headings, and `:143-150` is still the
+unreadable-directory/equal-timestamps reasoning, byte-identical at both
+commits (`sed -n` over both, diffed by eye - no change). `TODO.md` grew from
+3569 to 3645 lines in this range; the new lines land after every citation this
+note makes. The `check-dist-fresh.test.mjs` test count was re-run:
+`grep -c '^test(' mcp-servers/scripts/_test/check-dist-fresh.test.mjs` still
+returns **14**.
+
+No content correction was needed. Not re-verified at this pass: nothing was
+built, installed, executed or imported. The `## Unverified` section's
+"this worktree's `dist/` is stale right now" line is now a 2026-09-06
+measurement, unrefreshed for sixteen further days, and should still be read
+as a record of what was once true on one machine, not a fact about this
+checkout.
