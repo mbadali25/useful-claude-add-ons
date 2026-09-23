@@ -65,6 +65,7 @@ import subprocess
 import sys
 
 from sabotage_review import REVIEW_FIX_MUTATIONS
+from sabotage_context import CONTEXT_MUTATIONS
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(
     os.path.dirname(os.path.abspath(__file__)))))
@@ -3072,7 +3073,7 @@ MUTATIONS = (
 # `.pylintrc`'s max-module-lines, and raising that limit again is the move its
 # own comment warns against. Content-anchored, so where they are defined
 # changes nothing about what they match.
-MUTATIONS += REVIEW_FIX_MUTATIONS
+MUTATIONS += REVIEW_FIX_MUTATIONS + CONTEXT_MUTATIONS
 
 
 # pytest's own exit codes (documented, not this file's invention): 0 all
