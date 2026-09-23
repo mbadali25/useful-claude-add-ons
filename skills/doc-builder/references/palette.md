@@ -15,22 +15,30 @@ greyscale, which is where most of these documents end up.
 
 | `brand.json` key | Neutral | Used for |
 |---|---|---|
-| `report.navy` | `#1F4E79` | Table header fill, `h1`/`h2` colour, masthead band, card numbers |
+| `report.navy` | `#1F4E79` | `h1`/`h2` colour, masthead band, card numbers |
 | `report.navy_dark` | `#143A5A` | 3px rule under the masthead band |
 | `report.accent` | `#4A90C2` | 4px strip above the masthead |
 | `report.org_ink` | `#A8C8E4` | Organisation name and subtitle on the masthead band |
 | `report.classification` | `#8B1A13` | Classification bar; border of the handling notice |
 | `report.ink` | `#1B1B1F` | Body text |
 | `report.muted` | `#5C5F6B` | Subtitles, captions, footer |
-| `report.grid` | `#B8BCC6` | All table borders |
-| `report.zebra` | `#EEF3F8` | `tr.alt` rows, meta-table labels |
+| `report.grid` | `#B8BCC6` | Summary-card borders |
+| `report.table_border` | `#000000` | Every data- and meta-table cell border |
+| `report.table_head` | `#000000` | Data-table header fill |
+| `report.table_head_ink` | `#FFFFFF` | Data-table header text |
+| `report.zebra` | `#E8ECF1` | `tr.alt` rows, meta-table labels |
 | `report.panel` | `#F6F7F9` | Lede panel and card background |
 | `report.rule` | `#DCDEE5` | `h2` underline, footer rule |
 | `fonts.report_stack` | `'Segoe UI',Calibri,Arial,sans-serif` | `body` font-family |
 
-Header text on `navy` is always `#FFFFFF`; the classification bar text is white
-letterspaced caps. Those two are fixed in the stylesheet because every sensible
-brand's header fill is dark.
+Data-table headers are `table_head` / `table_head_ink` (black / white in neutral, inherited
+by every pack that does not override them). Masthead title text on `navy` and the
+classification bar text are fixed `#FFFFFF`, because every sensible brand's band is dark.
+
+When the pack carries a logo, the masthead band row holds two sibling cells (never a nested table - LibreOffice lifts one
+into the accent strip): the `-on-dark`
+wordmark on the left (44px high, divided by a 1px `org_ink` rule), and the organisation,
+title and subtitle on the right.
 
 ## Masthead
 

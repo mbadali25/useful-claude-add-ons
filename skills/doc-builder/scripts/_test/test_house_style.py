@@ -113,18 +113,25 @@ def _css(brand_name, profile):
     return house_style.stylesheet(_pal(brand_name), profile)
 
 
-def test_tables_carry_the_brand_grid(brand_name, profile):
+def test_every_table_cell_carries_the_table_border(brand_name, profile):
     css = _css(brand_name, profile)
-    grid = _brand(brand_name).report["grid"]
+    border = _brand(brand_name).report["table_border"]
     pre = CELL_PRE[profile]
-    assert f"{pre}th, {pre}td {{ border:1px solid {grid};" in css
+    assert f"{pre}th, {pre}td {{ border:1px solid {border};" in css
 
 
-def test_table_headers_carry_the_brand_navy(brand_name, profile):
+def test_table_headers_carry_the_table_head_colours(brand_name, profile):
     css = _css(brand_name, profile)
-    navy = _brand(brand_name).report["navy"]
+    r = _brand(brand_name).report
     pre = CELL_PRE[profile]
-    assert f"{pre}th {{ background:{navy}; color:#FFFFFF; font-weight:600; }}" in css
+    assert (f"{pre}th {{ background:{r['table_head']}; color:{r['table_head_ink']}; "
+            "font-weight:700;") in css
+
+
+def test_neutral_tables_are_black_grid_black_header_white_text():
+    r = _brand("neutral").report
+    assert (r["table_border"], r["table_head"], r["table_head_ink"]) == (
+        "#000000", "#000000", "#FFFFFF")
 
 
 def test_zebra_rows_carry_the_brand_zebra(brand_name, profile):
@@ -140,7 +147,7 @@ def test_zebra_rows_carry_the_brand_zebra(brand_name, profile):
 def test_meta_table_key_column_is_shaded(brand_name, profile):
     css = _css(brand_name, profile)
     r = _brand(brand_name).report
-    assert f"table.meta td {{ border:1px solid {r['grid']};" in css
+    assert f"table.meta td {{ border:1px solid {r['table_border']};" in css
     assert f"table.meta td.k {{ background:{r['zebra']}; font-weight:600; width:17%; }}" in css
 
 
@@ -370,8 +377,8 @@ def test_the_guide_profile_selects_cells_bare_and_the_report_profile_scopes_them
     """
     guide = _css("neutral", "guide")
     report = _css("neutral", "report")
-    navy = _brand("neutral").report["navy"]
-    assert f"\nth {{ background:{navy};" in guide
+    head = _brand("neutral").report["table_head"]
+    assert f"\nth {{ background:{head};" in guide
     assert "table th {" not in guide
-    assert f"table.data th {{ background:{navy};" in report
+    assert f"table.data th {{ background:{head};" in report
     assert "\nth {" not in report

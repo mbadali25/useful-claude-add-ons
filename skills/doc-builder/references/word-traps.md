@@ -246,13 +246,19 @@ So LibreOffice honours **simple selectors only**. In a doc-builder report that c
 silently:
 
 - the table grid — `table.data th, table.data td { border:1px solid ... }`
-- the navy header row — `table.data th { background:NAVY; color:#FFFFFF }`
+- the header row — `table.data th { background:TABLE_HEAD; color:TABLE_HEAD_INK }`
 - the zebra rows — `table.data tr.alt td { background:ZEBRA }`
 - the summary-card panels — `td.card { background:PANEL; border:... }`
 - the meta-table key shading — `table.meta td.k { background:ZEBRA }`
 
 What **does** survive, because each is a bare class: the masthead strip, band, rule and
 classification bar; the lede panel; the handling banner; every severity chip, with its word.
+
+**Except the brand logo, on the PDF.** LibreOffice's HTML -> PDF export leaves the masthead
+`<img>` (a `file://` URI) out of the PDF, while its HTML -> DOCX export embeds it. Measured on
+`main` before the logo moved beside the heading, so the logo layout did not cause it; since
+then the gap shows as an empty band-coloured cell, with its divider, left of the title. A
+LibreOffice PDF that must carry the logo: convert to DOCX first, then DOCX -> PDF.
 The document still reads as branded — it is simply flatter, and a reader cannot tell from
 the file which of the two rendered it unless doc-builder's `[renderer: ...]` line is carried
 with it.
