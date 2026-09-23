@@ -1,20 +1,28 @@
 %% Generated from useful-claude-add-ons@60c79407 on 2026-09-22. Verify before trusting.
-%% Re-anchored from 84976536, a commit on PR #207's branch that is not on main;
-%% #207 squash-merged it as e741ea42 (NOT d541ee57, which an earlier pass named).
-%% Every cited file is identical at those two shas. Between e741ea42 and 60c79407
-%% FIVE cited files changed, each checked: pm-brief.sh (SH re-taken: exec :22,
-%% no-python exit :21 via crew_py_strict); _common.sh (where crew_py_strict lives,
-%% now cited); role-write-guard.sh/.ps1 (resolver hardening only - this diagram
-%% cites them solely as hooks.json PreToolUse entries, and hooks.json is unchanged);
-%% .crew/verify.json (two `why` strings reworded, nothing drawn here reads them).
-%% Anchors now lists every cited file, on one physical line.
+%% Re-anchored from 84976536, a commit on PR #205's branch
+%% (crew-0.19.96-docbuilder-install-fixes) that is not on main; #205 squash-merged it
+%% as d541ee57. Every cited SOURCE file is identical at those two shas. (A round-2
+%% note here wrongly said #207 / e741ea42; `git branch -r --contains 84976536` names
+%% only #205's branch.) Between d541ee57 and 60c79407, SIX cited files changed, each
+%% checked: pm-brief.sh (SH re-taken: exec :22, no-python exit :21 via
+%% crew_py_strict); _common.sh (where crew_py_strict lives, now cited);
+%% role-write-guard.sh/.ps1 (resolver hardening only - cited here solely as
+%% hooks.json PreToolUse entries, and hooks.json is unchanged); .crew/verify.json
+%% (two `why` strings reworded, nothing drawn here reads them); and the sibling
+%% diagram docs/diagrams/data-flow-crew-config.mmd (re-derived in PR #207 and again
+%% in this PR; the two pointers to it, :14 and :101, were re-read and hold).
+%% Anchors lists every cited SOURCE file, on one physical line. The sibling diagram
+%% is deliberately NOT anchored: it is a cross-reference, not a source, and it is
+%% re-anchored on its own schedule - anchoring it would mark this diagram behind
+%% every time that one is redrawn, whether or not anything here moved.
 %% Anchors: plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/crew_state.py, plugin/crew/hooks/scripts/crew_freshness.py, plugin/crew/hooks/scripts/pm_brief.py, plugin/crew/hooks/scripts/crew_endpoints.py, plugin/crew/hooks/scripts/crew_incident.py, plugin/crew/hooks/scripts/pm-brief.sh, plugin/crew/hooks/scripts/_common.sh, plugin/crew/hooks/scripts/role-write-guard.sh, plugin/crew/hooks/scripts/role-write-guard.ps1, .crew/verify.json
 %% How a fact about the repo becomes the finding a session opens with - and what can drop it.
 %% --
 %% Drawn because nothing diagrammed crew's own control flow. data-flow-crew-config.mmd
 %% draws how a config VALUE reaches a run; this draws how a repo FACT reaches the
-%% human. They meet at pm.mode / pm.quietLines / pm.maxLines, which that diagram
-%% resolves and this one consumes (pm_brief.py:573, :574, :594).
+%% human. They meet at pm.mode / pm.quietLines / pm.maxLines - config keys resolved by
+%% the mechanism that diagram draws (it names none of the three itself) and consumed
+%% here (pm_brief.py:573, :574, :594).
 %% --
 %% RE-DERIVED at 84976536 against ea8a0143, and this was a PARTIAL redraw on
 %% purpose: the parts that did not move were not touched. The path diff

@@ -1,7 +1,7 @@
 %% Generated from useful-claude-add-ons@60c79407 on 2026-09-22. Verify before trusting.
 %% Anchors: skills/mermaid-svg-bitbucket/scripts/render_mermaid.py, skills/mermaid-svg-bitbucket/assets/mermaid-config.json, skills/mermaid-svg-bitbucket/assets/bitbucket-pipelines.snippet.yml, skills/mermaid-svg-bitbucket/SKILL.md, skills/mermaid-svg-bitbucket/tests/test_check_reads_the_svg.py
 %% mermaid-svg-bitbucket: how a fenced block becomes a committed SVG, and what each gate can and cannot see.
-%% Re-check: git diff --name-only 60c79407..HEAD -- skills/mermaid-svg-bitbucket/scripts/render_mermaid.py skills/mermaid-svg-bitbucket/assets/mermaid-config.json skills/mermaid-svg-bitbucket/assets/bitbucket-pipelines.snippet.yml skills/mermaid-svg-bitbucket/SKILL.md
+%% Re-check: git diff --name-only 60c79407..HEAD -- skills/mermaid-svg-bitbucket/scripts/render_mermaid.py skills/mermaid-svg-bitbucket/assets/mermaid-config.json skills/mermaid-svg-bitbucket/assets/bitbucket-pipelines.snippet.yml skills/mermaid-svg-bitbucket/SKILL.md skills/mermaid-svg-bitbucket/tests/test_check_reads_the_svg.py
 %% --
 %% RE-DERIVED at 60c79407 (PR #210, "Windows audit wave 3 ... mermaid-svg-bitbucket")
 %% against a573ca24, per `git diff --name-only a573ca24..HEAD -- <the four anchors>`,
@@ -89,8 +89,11 @@
 %% out in full, repo-relative - including the regression-test file for the
 %% 1.2.5 fix, skills/mermaid-svg-bitbucket/tests/test_check_reads_the_svg.py,
 %% which is cited a few times below by its own test-function line number
-%% even though it is not one of the four declared anchors (it did not exist
-%% at a573ca24, and is evidence for a claim, not the claim's subject).
+%% It did not exist at a573ca24 and is evidence for a claim rather than its
+%% subject, but since it IS cited by line number it is now on the Anchors and
+%% Re-check lines too, so a change to it marks this diagram behind. TODO.md is
+%% cited too but by bullet heading, not line, and is deliberately NOT anchored:
+%% it changes on most commits and would mark this diagram behind constantly.
 %% --
 %% Derived by reading render_mermaid.py at this anchor and by MEASURING the
 %% foreignObject claim rather than repeating it. Same source file, two configs:
@@ -220,7 +223,7 @@ flowchart TB
         R2{"returncode != 0<br/><b>or</b> not svg.exists() :274<br/><i>both</i> checked - a tool that exits 0<br/>and writes nothing is caught here"}
         R3["postprocess() :281-321<br/>the only gate that opens the output"]
         R4{"'&lt;foreignObject' in svg :295"}
-        R5["set intrinsic width/height from the viewBox<br/>:302-305, strip mermaid's max-width style :307,<br/>then write the file back with newline=#quot;\n#quot; :321<br/>pinned (<b>NEW in 1.2.5</b>) - the write no longer turns<br/>LF into CRLF on Windows. It does NOT make raw<br/>SVG bytes reproducible across platforms<br/>(render_mermaid.py:93-94; TODO.md:3685-3692). Regression:<br/>tests/test_check_reads_the_svg.py:345"]
+        R5["set intrinsic width/height from the viewBox<br/>:302-305, strip mermaid's max-width style :307,<br/>then write the file back with newline=#quot;\n#quot; :321<br/>pinned (<b>NEW in 1.2.5</b>) - the write no longer turns<br/>LF into CRLF on Windows. It does NOT make raw<br/>SVG bytes reproducible across platforms<br/>(render_mermaid.py:93-94, and the TODO.md<br/>bullet #quot;Real mmdc output has nothing for a<br/>line-ending translation to act on#quot;). Regression:<br/>tests/test_check_reads_the_svg.py:345"]
         R1 --> R0
         R0 -->|spawned| R2
         R2 -->|ok| R3
