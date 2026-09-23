@@ -28,7 +28,8 @@ argument tells the reviewer to read `prompt.txt`, and says so on stderr.
 
 Before the verdict, every bundle part is re-read and checked against the
 manifest's size and sha256 for it, and the parts together against
-`bundle_sha256`. A part that is missing, truncated or altered makes the round
+`bundle_sha256`, and their byte total against `patch_bytes`. A manifest
+with no parts, or a part that is missing, truncated or altered, makes the round
 INCOMPLETE: the receipt binds the manifest's hash, so without this check a
 reviewer could have read an emptied part while the receipt still vouched for
 the untouched tree.
@@ -114,9 +115,14 @@ def bundle_problems(manifest):
     """Reasons the part files on disk are not the bundle the manifest
     describes; empty when every part matches its recorded size and sha256
     and the parts together hash to `bundle_sha256`."""
+    rows = manifest.get("parts")
+    if not isinstance(rows, list) or not rows:
+        return ["the manifest lists no bundle parts, so there is nothing the reviewer "
+                "can be shown to have read"]
     problems = []
     whole = hashlib.sha256()
-    for row in manifest.get("parts") or []:
+    total = 0
+    for row in rows:
         try:
             with open(row["path"], "rb") as fh:
                 data = fh.read()
@@ -124,13 +130,16 @@ def bundle_problems(manifest):
             problems.append(f"bundle part {row.get('name')} could not be read: {exc}")
             continue
         whole.update(data)
+        total += len(data)
         if len(data) != row.get("bytes") or hashlib.sha256(data).hexdigest() != row.get(
                 "sha256"):
             problems.append(f"bundle part {row.get('name')} is {len(data)} bytes and does "
                             f"not match its manifest entry ({row.get('bytes')} bytes)")
-    if not problems and manifest.get("parts") and \
-            whole.hexdigest() != manifest.get("bundle_sha256"):
+    if not problems and whole.hexdigest() != manifest.get("bundle_sha256"):
         problems.append("the bundle parts do not hash to the manifest's bundle_sha256")
+    if not problems and total != manifest.get("patch_bytes"):
+        problems.append(f"the bundle parts total {total} bytes, not the patch's "
+                        f"{manifest.get('patch_bytes')}")
     return problems
 
 

@@ -5,6 +5,7 @@ and fails unless its sha256 still matches, so an edit after review invalidates
 the receipt. `/crew:done` (T4) gates on this; in 0.20.17 it is exposed and
 documented.
 """
+import hashlib
 import json
 import os
 import pathlib
@@ -157,3 +158,93 @@ def test_truncated_bundle_parts_are_incomplete_and_mint_no_receipt(repo, tmp_pat
 
     assert verdict.returncode == 3, verdict.stdout + verdict.stderr
     assert _check(repo).returncode == 1
+
+
+def test_accept_an_older_round_after_needs_replan_is_refused(repo):
+    """Codex BLOCK: complete round 1 with FINDINGS, reserve round 2, attempt a
+    third reservation to enter NEEDS_REPLAN, then run --accept. Round 1 was
+    accepted and the state moved back from NEEDS_REPLAN to ACCEPTED."""
+    _review(repo, "FINDINGS")
+    rl.reserve(str(repo), "T1", "codex")
+    rl.reserve(str(repo), "T1", "codex")
+
+    result = subprocess.run([sys.executable, _LEDGER, "--root", str(repo), "--ticket", "T1",
+                             "--accept", "--by", "the owner"], capture_output=True,
+                            text=True, stdin=subprocess.DEVNULL, check=False)
+
+    assert (result.returncode, rl.status(str(repo), "T1")["state"],
+            rl.status(str(repo), "T1")["receipt"]) == (1, rl.NEEDS_REPLAN, None)
+
+
+def test_accept_the_latest_findings_round_once_it_is_needs_replan_is_refused(repo):
+    _review(repo, "FINDINGS")
+    _review(repo, "FINDINGS")
+
+    with pytest.raises(rl.LedgerError, match=rl.NEEDS_REPLAN):
+        rl.accept(str(repo), "T1", "the owner")
+
+
+def test_accept_an_older_round_while_a_later_one_is_reserved_is_refused(repo):
+    _review(repo, "FINDINGS")
+    rl.reserve(str(repo), "T1", "codex")
+
+    with pytest.raises(rl.LedgerError, match="most recent"):
+        rl.accept(str(repo), "T1", "the owner")
+
+
+def _claude_round(repo, tmp_path, edit_manifest, max_part_bytes=None):
+    """Build a bundle, let `edit_manifest` rewrite the manifest, answer CLEAN
+    for every part it still lists, and finish a reserved claude round."""
+    base = git(repo, "rev-parse", "HEAD")
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    extra = {"max_part_bytes": max_part_bytes} if max_part_bytes else {}
+    review_patch.build(str(repo), base, str(scratch / "diff.txt"),
+                       str(scratch / "manifest.json"), **extra)
+    manifest = json.loads((scratch / "manifest.json").read_text(encoding="utf-8"))
+    edit_manifest(manifest)
+    (scratch / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    (scratch / "out.txt").write_text(
+        "".join(f"READ|{p['name']}\n" for p in manifest["parts"]) + "CLEAN\n",
+        encoding="utf-8")
+    common = [sys.executable, _RUN, "--root", str(repo), "--ticket", "T1",
+              "--scratch", str(scratch), "--provider", "claude"]
+    subprocess.run(common + ["--reserve-only"], capture_output=True,
+                   stdin=subprocess.DEVNULL, check=True)
+    return subprocess.run(common + ["--round", "1", "--output", str(scratch / "out.txt"),
+                                    "--exit-code", "0", "--work-dir", str(tmp_path / "w")],
+                          capture_output=True, text=True, stdin=subprocess.DEVNULL,
+                          check=False)
+
+
+def test_empty_parts_manifest_is_incomplete_and_mints_no_receipt(repo, tmp_path):
+    """Codex BLOCK: build a valid manifest, replace parts with [], return
+    CLEAN, and finish the reserved round. With no parts nothing was size- or
+    hash-checked, and CLEAN minted a receipt for a bundle nobody read."""
+
+    def empty(manifest):
+        manifest["parts"] = []
+
+    verdict = _claude_round(repo, tmp_path, empty)
+
+    assert (verdict.returncode, _check(repo).returncode) == (3, 1), \
+        verdict.stdout + verdict.stderr
+
+
+def test_dropped_part_with_a_rewritten_bundle_hash_is_incomplete(repo, tmp_path):
+    """The neighbour: drop the last part and rewrite bundle_sha256 over what
+    is left. Every remaining part and the whole-bundle hash then agree with
+    the manifest; only the byte total against patch_bytes does not."""
+    (repo / "second.txt").write_text("second file\n" * 20, encoding="utf-8")
+
+    def drop_last(manifest):
+        assert len(manifest["parts"]) > 1
+        manifest["parts"] = manifest["parts"][:-1]
+        whole = hashlib.sha256()
+        for row in manifest["parts"]:
+            whole.update(pathlib.Path(row["path"]).read_bytes())
+        manifest["bundle_sha256"] = whole.hexdigest()
+
+    verdict = _claude_round(repo, tmp_path, drop_last, max_part_bytes=200)
+
+    assert verdict.returncode == 3, verdict.stdout + verdict.stderr

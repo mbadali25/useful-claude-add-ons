@@ -48,8 +48,10 @@ REVIEW_FIX_MUTATIONS = (
         # A result moves the ledger off NEEDS_REPLAN.
         "the ledger lets a result change NEEDS_REPLAN",
         REVIEW_LEDGER,
-        "        if data.get(\"state\") == NEEDS_REPLAN:\n",
-        "        if False:\n",
+        "        if data.get(\"state\") == NEEDS_REPLAN:\n"
+        "            raise LedgerError(f\"{ticket} is {NEEDS_REPLAN}; no review result",
+        "        if False:\n"
+        "            raise LedgerError(f\"{ticket} is {NEEDS_REPLAN}; no review result",
         ("tests/test_review_ledger.py::"
          "test_record_after_needs_replan_is_refused_even_for_the_latest_round"),
     ),
@@ -111,5 +113,69 @@ REVIEW_FIX_MUTATIONS = (
         "BASE=$(git merge-base HEAD main)\n",
         ("tests/test_review_base.py::"
          "test_review_base_comes_from_scope_base_first"),
+    ),
+    (
+        # Codex round-2 BLOCK, the whole pre-fix acceptance restored: the
+        # latest COMPLETED round is accepted, whatever the state.
+        "--accept takes an older round and leaves NEEDS_REPLAN",
+        REVIEW_LEDGER,
+        "        if data.get(\"state\") == NEEDS_REPLAN:\n"
+        "            raise LedgerError(f\"{ticket} is {NEEDS_REPLAN}; no acceptance changes that \"\n"
+        "                              \"state, only an approved successor plan continues\")\n"
+        "        rounds = data.get(\"rounds\", [])\n"
+        "        if not rounds:\n"
+        "            raise LedgerError(\"no review round to accept\")\n"
+        "        row = rounds[-1]\n"
+        "        if row.get(\"status\") != \"completed\":\n",
+        "        rounds = [r for r in data.get(\"rounds\", []) if r.get(\"status\") == "
+        "\"completed\"]\n"
+        "        row = rounds[-1]\n"
+        "        if False:\n",
+        ("tests/test_review_receipt.py::"
+         "test_accept_an_older_round_after_needs_replan_is_refused"),
+    ),
+    (
+        # Only the NEEDS_REPLAN refusal gone: round 2's FINDINGS is the most
+        # recent completed round, so nothing else stops it.
+        "--accept ignores NEEDS_REPLAN",
+        REVIEW_LEDGER,
+        "        if data.get(\"state\") == NEEDS_REPLAN:\n"
+        "            raise LedgerError(f\"{ticket} is {NEEDS_REPLAN}; no acceptance",
+        "        if False:\n"
+        "            raise LedgerError(f\"{ticket} is {NEEDS_REPLAN}; no acceptance",
+        ("tests/test_review_receipt.py::"
+         "test_accept_the_latest_findings_round_once_it_is_needs_replan_is_refused"),
+    ),
+    (
+        # Only the most-recent rule gone: round 1 accepted under a reserved
+        # round 2, with the state still IN_REVIEW.
+        "--accept takes the latest completed round, not the latest round",
+        REVIEW_LEDGER,
+        "        row = rounds[-1]\n        if row.get(\"status\") != \"completed\":\n",
+        "        row = [r for r in rounds if r.get(\"status\") == \"completed\"][-1]\n"
+        "        if False:\n",
+        ("tests/test_review_receipt.py::"
+         "test_accept_an_older_round_while_a_later_one_is_reserved_is_refused"),
+    ),
+    (
+        # Codex round-2 BLOCK, the pre-fix result restored: a manifest with
+        # no parts reports no problems. (Disabling the guard alone stays
+        # green -- the whole-bundle hash then catches it -- so the mutation
+        # returns the empty list the pre-fix loop did.)
+        "a manifest with no parts is checked by nothing",
+        REVIEW_RUN,
+        "        return [\"the manifest lists no bundle parts",
+        "        return [] and [\"the manifest lists no bundle parts",
+        ("tests/test_review_receipt.py::"
+         "test_empty_parts_manifest_is_incomplete_and_mints_no_receipt"),
+    ),
+    (
+        # A dropped part with bundle_sha256 rewritten to match what is left.
+        "the part byte total is not compared with patch_bytes",
+        REVIEW_RUN,
+        "    if not problems and total != manifest.get(\"patch_bytes\"):\n",
+        "    if False:\n",
+        ("tests/test_review_receipt.py::"
+         "test_dropped_part_with_a_rewritten_bundle_hash_is_incomplete"),
     ),
 )

@@ -506,7 +506,8 @@ to.
 3. If you disagree with a finding, say so explicitly and let me decide. If I
    accept FINDINGS as they stand, record it — the receipt names who and when:
    `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/review_ledger.py --ticket "$TICKET" --accept --by "<who>"`.
-   A CLEAN round writes its receipt itself. `review_ledger.py --ticket "$TICKET"
+   Only the most recent round can be accepted, and not once the ticket is
+   `NEEDS_REPLAN`. A CLEAN round writes its receipt itself. `review_ledger.py --ticket "$TICKET"
    --check-receipt` rebuilds the bundle and fails if anything changed since.
 4. **Land the verdict as a review, not a comment.** If the change is on a
    GitHub PR, post the outcome with `gh pr review` so it exists as an artifact

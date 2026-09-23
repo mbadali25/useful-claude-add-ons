@@ -36,6 +36,9 @@ an unreserved Claude run, erasing the provider that was actually launched.
 
 RECEIPT. A CLEAN verdict writes `receipt` automatically; FINDINGS become a
 receipt only through `--accept --by <who>`, which records who and when.
+`--accept` takes only the most recent round, only once it completed with
+FINDINGS, and never once the state is NEEDS_REPLAN: accepting an older
+completed round used to move NEEDS_REPLAN back to ACCEPTED.
 Either way the receipt carries the bundle sha256 the reviewer read, and
 `--check-receipt` rebuilds the bundle from the receipt's base and exits
 non-zero unless the hash still matches. `/crew:done` (T4) gates on it.
@@ -265,10 +268,17 @@ def accept(root, ticket, by):
     def change(data, state):
         if state != "ok":
             raise LedgerError(f"ledger is {state}; there is no review to accept")
-        done = [r for r in data.get("rounds", []) if r.get("status") == "completed"]
-        if not done:
-            raise LedgerError("no completed review round to accept")
-        row = done[-1]
+        if data.get("state") == NEEDS_REPLAN:
+            raise LedgerError(f"{ticket} is {NEEDS_REPLAN}; no acceptance changes that "
+                              "state, only an approved successor plan continues")
+        rounds = data.get("rounds", [])
+        if not rounds:
+            raise LedgerError("no review round to accept")
+        row = rounds[-1]
+        if row.get("status") != "completed":
+            raise LedgerError(f"round {row.get('round')}, the most recent, has no result "
+                              "yet; only the most recent round can be accepted, once it "
+                              "has completed")
         if row.get("verdict") != "FINDINGS":
             raise LedgerError(f"round {row['round']} is {row.get('verdict')}; only FINDINGS "
                               "can be owner-accepted (CLEAN writes its own receipt, and "
