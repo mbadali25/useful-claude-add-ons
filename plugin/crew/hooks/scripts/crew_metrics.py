@@ -103,6 +103,11 @@ UNKNOWN = "UNKNOWN"
 SCHEMA_1_0 = "1.0"
 DEFAULT_IDLE_SECONDS = 300
 MIN_COMPARE_TICKETS = 10
+# The 30% criterion compares medians; a median over fewer than this many
+# KNOWN values (on either the prospective or the baseline side) is not
+# trustworthy enough to PASS on -- a comparison may PASS only on sufficient
+# KNOWN data.
+MIN_BASELINE_KNOWN = 10
 
 METRIC_FIELDS = (
     "phases", "activeTime", "tokens", "cost", "reviewRounds",
@@ -205,8 +210,13 @@ def append_row(root, row):
                 before = handle.read()
         except FileNotFoundError:
             before = b""
+        # A prior writer's final record can lack a trailing newline (a crash
+        # mid-write, or a hand-edited file) -- appending straight onto that
+        # would concatenate our JSON object onto the end of theirs on the
+        # same physical line. Insert the missing separator first.
+        prefix = "\n" if before and not before.endswith(b"\n") else ""
         with open(path, "a", encoding="utf-8", newline="\n") as handle:
-            handle.write(line)
+            handle.write(prefix + line)
         with open(path, "rb") as handle:
             after = handle.read()
         if after[:len(before)] != before:
@@ -251,8 +261,15 @@ def _review_rounds(root, ticket):
     return rounds, path
 
 
+_GUARD_LOG_FIELDS = 7  # scope_guard._log: time, "scope", mode, decision, ticket, path, reason
+
+
 def _scope_blocks(root, ticket):
-    """(count_or_UNKNOWN, source_note)."""
+    """(count_or_UNKNOWN, source_note). A row that does not split into the
+    shape `scope_guard._log` writes (truncated by a crash mid-write, or hand-
+    edited) is not silently skipped -- it makes the whole count unreliable,
+    since a block row for this ticket could be hiding inside it, so the
+    result is UNKNOWN rather than a count that quietly excludes it."""
     path = os.path.join(root, _GUARD_LOG)
     try:
         with open(path, encoding="utf-8") as handle:
@@ -260,10 +277,18 @@ def _scope_blocks(root, ticket):
     except FileNotFoundError:
         return UNKNOWN, f"{path}: does not exist; the scope guard may never have run"
     count = 0
+    malformed = 0
     for line in text.splitlines():
+        if not line.strip():
+            continue
         cells = line.split("\t")
-        if len(cells) >= 5 and cells[1] == "scope" and cells[3] == "block" and cells[4] == ticket:
+        if len(cells) != _GUARD_LOG_FIELDS:
+            malformed += 1
+            continue
+        if cells[1] == "scope" and cells[3] == "block" and cells[4] == ticket:
             count += 1
+    if malformed:
+        return UNKNOWN, f"{path}: {malformed} malformed/truncated row(s), count not trustworthy"
     return count, path
 
 
@@ -280,13 +305,27 @@ def _injected_chars(root, ticket, session):
     if not text and not os.path.exists(path):
         return UNKNOWN, f"{path}: does not exist"
     total = 0
+    matched = 0
+    unmeasured = 0
     for line in text.splitlines():
         try:
             rec = json.loads(line)
         except ValueError:
             continue
-        if isinstance(rec, dict) and rec.get("session") == session:
-            total += int(rec.get("chars") or 0)
+        if not isinstance(rec, dict) or rec.get("session") != session:
+            continue
+        matched += 1
+        chars = rec.get("chars")
+        if isinstance(chars, bool) or not isinstance(chars, int):
+            # A matching record with no (or non-numeric) `chars` is not a
+            # real 0 -- it is a record this source could not measure, and
+            # folding it into the sum would under-report a real total.
+            unmeasured += 1
+            continue
+        total += chars
+    if unmeasured:
+        return UNKNOWN, (f"{path} (session {session}): {unmeasured} of {matched} matching "
+                         "record(s) carry no `chars` value")
     return total, f"{path} (session {session})"
 
 
@@ -307,16 +346,52 @@ def _unapproved_scope_changes(root, ticket):
     return UNKNOWN, f"completion_audit.audit: {lines[0] if lines else 'failed'}"
 
 
+def _parse_iso(ts):
+    """An aware UTC datetime, or None -- never raises. A non-string `ts`, a
+    string that does not parse, or a string that parses to a NAIVE datetime
+    (no offset) all yield None: this module's timestamps are always UTC-
+    offset ISO strings, and a naive result mixed into a sort or a subtraction
+    against an aware one raises, so it is treated the same as unparseable
+    rather than guessed at."""
+    import datetime  # pylint: disable=import-outside-toplevel
+    if not isinstance(ts, str):
+        return None
+    try:
+        parsed = datetime.datetime.fromisoformat(ts.replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return None
+    if parsed.tzinfo is None:
+        return None
+    return parsed.astimezone(datetime.timezone.utc)
+
+
+def _sort_key(pair):
+    """(unparseable, instant): groups events whose timestamp does not parse
+    after every parseable one, stably, instead of comparing raw strings --
+    two equal instants in different textual forms (a `Z` suffix vs an
+    explicit `+00:00`, different sub-second precision) must sort as equal,
+    not by the accident of which spelling sorts first lexicographically."""
+    import datetime  # pylint: disable=import-outside-toplevel
+    ts, _ = pair
+    parsed = _parse_iso(ts)
+    return (parsed is None, parsed or datetime.datetime.min.replace(tzinfo=datetime.timezone.utc))
+
+
 def _transcript_events(transcript):
-    """[(timestamp_str, record)] for every main-chain (non-sidechain) line
-    that carries a "timestamp", sorted. Never raises: an unreadable or
-    missing transcript yields an empty list."""
+    """(events, had_unparseable_line). `events` is
+    [(timestamp_str, record)] for every main-chain (non-sidechain) line that
+    carries a "timestamp", sorted by parsed instant. `had_unparseable_line`
+    is True when at least one non-blank line in the file could not be parsed
+    as JSON at all -- a corrupt or truncated line, not merely one lacking a
+    timestamp. Never raises: an unreadable or missing transcript yields
+    ([], False)."""
     events = []
+    had_unparseable = False
     try:
         with open(transcript, encoding="utf-8", errors="replace") as handle:
             text = handle.read()
     except (OSError, TypeError):
-        return events
+        return events, False
     for line in text.splitlines():
         line = line.strip()
         if not line:
@@ -324,30 +399,29 @@ def _transcript_events(transcript):
         try:
             rec = json.loads(line)
         except ValueError:
+            had_unparseable = True
             continue
         if not isinstance(rec, dict) or not rec.get("timestamp"):
             continue
         if rec.get("isSidechain") is True:
             continue
         events.append((rec["timestamp"], rec))
-    events.sort(key=lambda pair: pair[0])
-    return events
-
-
-def _parse_iso(ts):
-    import datetime  # pylint: disable=import-outside-toplevel
-    try:
-        return datetime.datetime.fromisoformat(ts.replace("Z", "+00:00"))
-    except ValueError:
-        return None
+    events.sort(key=_sort_key)
+    return events, had_unparseable
 
 
 def active_time_seconds(transcript, idle_threshold=DEFAULT_IDLE_SECONDS):
     """Sum of gaps between consecutive main-chain transcript events, each
     capped at `idle_threshold` seconds. UNKNOWN with fewer than two usable
     timestamps -- there is no gap to measure, which is not the same as a
-    measured 0."""
-    events = _transcript_events(transcript)
+    measured 0 -- and UNKNOWN if any line in the transcript failed to parse:
+    a fragment of a corrupt file is not a trustworthy measurement of it."""
+    if idle_threshold <= 0:
+        raise MetricsError(f"idle threshold must be a positive number of seconds, "
+                           f"got {idle_threshold!r}")
+    events, had_unparseable = _transcript_events(transcript)
+    if had_unparseable:
+        return UNKNOWN
     times = [t for t in (_parse_iso(ts) for ts, _ in events) if t is not None]
     if len(times) < 2:
         return UNKNOWN
@@ -361,8 +435,14 @@ def active_time_seconds(transcript, idle_threshold=DEFAULT_IDLE_SECONDS):
 
 def transcript_tokens(transcript):
     """Sum of every main-chain assistant message's usage fields. UNKNOWN when
-    no assistant message with usage was found."""
-    events = _transcript_events(transcript)
+    no assistant message carries a `usage` object with at least one
+    recognized token field, or when any line in the transcript failed to
+    parse."""
+    events, had_unparseable = _transcript_events(transcript)
+    if had_unparseable:
+        return UNKNOWN
+    token_fields = ("input_tokens", "output_tokens", "cache_read_input_tokens",
+                    "cache_creation_input_tokens")
     found = False
     total = 0
     for _, rec in events:
@@ -372,10 +452,13 @@ def transcript_tokens(transcript):
         usage = message.get("usage") if isinstance(message, dict) else None
         if not isinstance(usage, dict):
             continue
+        if not any(k in usage for k in token_fields):
+            # A `usage` object present but carrying none of the fields this
+            # module recognizes is not a measurement -- do not let it mark
+            # tokens as "found" (and thus 0) instead of UNKNOWN.
+            continue
         found = True
-        total += sum(int(usage.get(k) or 0) for k in (
-            "input_tokens", "output_tokens", "cache_read_input_tokens",
-            "cache_creation_input_tokens"))
+        total += sum(int(usage.get(k) or 0) for k in token_fields)
     return total if found else UNKNOWN
 
 
@@ -486,20 +569,27 @@ def _median(values):
 
 def baseline(root):
     """Median activeTime/cost over every 0.20/migrated ticket in
-    metrics.jsonl, with n and UNKNOWN counts. Historical rows almost always
-    have UNKNOWN activeTime/cost (`/crew:migrate` marks them so) -- a
-    hand-reconstructed one can be added with `record --schema 0.20
-    --transcript <old-transcript>`."""
+    metrics.jsonl, with n and UNKNOWN counts, plus the same known/unknown
+    split for escapedDefects (used by `compare`'s escaped-defect criterion --
+    it is a real measurement, not just "the baseline file exists"). Historical
+    rows almost always have UNKNOWN activeTime/cost (`/crew:migrate` marks
+    them so) -- a hand-reconstructed one can be added with `record --schema
+    0.20 --transcript <old-transcript>`."""
     rows, _bad = read_rows(root)
     legacy = [r for r in rows if _is_legacy(r)]
     by_ticket = effective_ticket_metrics(legacy)
     active_med, active_n, active_unknown = _median([v.get("activeTime") for v in by_ticket.values()])
     cost_med, cost_n, cost_unknown = _median([v.get("cost") for v in by_ticket.values()])
+    escaped_values = [v.get("escapedDefects") for v in by_ticket.values()]
+    escaped_known = [v for v in escaped_values if isinstance(v, int) and not isinstance(v, bool)]
     return {
         "n": len(by_ticket),
         "medianActiveTime": active_med, "activeTimeKnown": active_n,
         "activeTimeUnknown": active_unknown,
         "medianCost": cost_med, "costKnown": cost_n, "costUnknown": cost_unknown,
+        "escapedDefectsKnown": len(escaped_known),
+        "escapedDefectsUnknown": len(escaped_values) - len(escaped_known),
+        "escapedDefectsSum": sum(escaped_known),
     }
 
 
@@ -515,9 +605,12 @@ def _select_prospective(rows, since):
         n = int(since)
         chosen = order[-n:] if n > 0 else []
     except (TypeError, ValueError):
+        # Select by the ticket's `record` row timestamp, never any row --
+        # an `escaped` correction appended after the cutoff must not pull a
+        # ticket that was actually recorded before it into the window.
         chosen = [t for t in order
                  if any(r.get("recordedAt", "") >= since for r in prospective
-                        if _row_ticket(r) == t)]
+                        if _row_ticket(r) == t and r.get("kind") == "record")]
     return {t: by_ticket[t] for t in chosen if t in by_ticket}
 
 
@@ -525,17 +618,30 @@ def compare(root, since):
     """Prospective 1.0 tickets (selected by `since`, a count or an ISO date)
     against the 0.20 baseline. Prints medians, % change, review-budget
     enforcement, unapproved scope changes and escaped defects, with a
-    PASS/FAIL per success criterion, or INSUFFICIENT DATA below
-    MIN_COMPARE_TICKETS."""
-    rows, _bad = read_rows(root)
+    PASS/FAIL/INSUFFICIENT DATA per success criterion.
+
+    A corrupted metrics.jsonl (any row `read_rows` could not parse) or too
+    few KNOWN values feeding a criterion (below MIN_COMPARE_TICKETS on the
+    prospective side, or MIN_BASELINE_KNOWN on the baseline side, for the
+    median-based criterion) can never let the OVERALL verdict read PASS --
+    per this module's governing rule, a comparison may PASS only on
+    sufficient KNOWN data. Combining the per-criterion results: any FAIL ->
+    overall FAIL (a definite failure does not get erased by unrelated
+    insufficiency elsewhere); else any INSUFFICIENT DATA -> overall
+    INSUFFICIENT DATA; else PASS."""
+    rows, bad = read_rows(root)
     base = baseline(root)
     prospective = _select_prospective(rows, since)
-    result = {"n": len(prospective), "baseline": base, "tickets": sorted(prospective)}
-    if len(prospective) < MIN_COMPARE_TICKETS:
+    result = {"n": len(prospective), "baseline": base, "tickets": sorted(prospective),
+              "unparseableRows": bad}
+    if not prospective:
+        result["criteria"] = {name: "INSUFFICIENT DATA" for name in (
+            "30pctLowerActiveTimeOrCost", "reviewBudgetEnforcement100pct",
+            "zeroUnapprovedScopeChanges", "noRiseInEscapedDefects")}
         result["verdict"] = "INSUFFICIENT DATA"
-        result["why"] = (f"{len(prospective)} prospective ticket(s), need at least "
-                         f"{MIN_COMPARE_TICKETS}")
+        result["why"] = "no prospective 1.0 ticket(s) selected"
         return result
+
     active_med, active_n, active_unknown = _median([v.get("activeTime") for v in prospective.values()])
     cost_med, cost_n, cost_unknown = _median([v.get("cost") for v in prospective.values()])
     result["medianActiveTime"] = active_med
@@ -554,45 +660,80 @@ def compare(root, since):
     cost_pct = pct_change(cost_med, base["medianCost"])
     result["activeTimePctChange"] = active_pct
     result["costPctChange"] = cost_pct
-    time_or_cost_pass = ((active_pct is not None and active_pct <= -30)
-                         or (cost_pct is not None and cost_pct <= -30))
+
+    # A median drawn from a single known value on either side (or on the
+    # baseline side) is not a criterion this comparison may PASS on -- both
+    # the prospective sample and the baseline sample need at least
+    # MIN_COMPARE_TICKETS / MIN_BASELINE_KNOWN known values before their
+    # median means anything.
+    active_side_ok = active_n >= MIN_COMPARE_TICKETS and base["activeTimeKnown"] >= MIN_BASELINE_KNOWN
+    cost_side_ok = cost_n >= MIN_COMPARE_TICKETS and base["costKnown"] >= MIN_BASELINE_KNOWN
+    active_drop = active_side_ok and active_pct is not None and active_pct <= -30
+    cost_drop = cost_side_ok and cost_pct is not None and cost_pct <= -30
     result["criteria"] = {}
-    result["criteria"]["30pctLowerActiveTimeOrCost"] = (
-        "PASS" if time_or_cost_pass else
-        ("INSUFFICIENT DATA" if active_pct is None and cost_pct is None else "FAIL"))
+    if active_drop or cost_drop:
+        result["criteria"]["30pctLowerActiveTimeOrCost"] = "PASS"
+    elif active_side_ok or cost_side_ok:
+        result["criteria"]["30pctLowerActiveTimeOrCost"] = "FAIL"
+    else:
+        result["criteria"]["30pctLowerActiveTimeOrCost"] = "INSUFFICIENT DATA"
 
     # The ledger itself refuses a reservation past BUDGET unless an approved
     # successor plan reopened it (review_ledger.reserve), so "enforced" here
     # means "confirmable from the ledger", not "counted <= BUDGET" -- a
     # ticket with an approved successor legitimately carries more rounds.
-    known_rounds = [v for v in prospective.values() if v.get("reviewRounds") != UNKNOWN]
-    enforcement_rate = len(known_rounds) / len(prospective) if prospective else 0
+    # A ticket missing the field entirely (`v.get(...)` -> None) is not
+    # "known" just because None != UNKNOWN.
+    known_rounds = [v for v in prospective.values()
+                   if "reviewRounds" in v and v.get("reviewRounds") not in (UNKNOWN, None)]
+    enforcement_rate = len(known_rounds) / len(prospective)
     result["reviewBudgetEnforcementRate"] = enforcement_rate
     result["criteria"]["reviewBudgetEnforcement100pct"] = (
         "PASS" if enforcement_rate == 1.0 else "FAIL")
 
+    # Only a genuine int counts as a known value -- a missing field (None)
+    # or a non-integer must land in "unknown", never silently vanish from
+    # both the known count and the sum the way `isinstance(v, int)` filtering
+    # the SUM alone (while `!= UNKNOWN` filtering the known-count) allowed.
     scope_values = [v.get("unapprovedScopeChanges") for v in prospective.values()]
-    known_scope = [v for v in scope_values if v != UNKNOWN]
-    total_unapproved = sum(v for v in known_scope if isinstance(v, int))
+    known_scope = [v for v in scope_values if isinstance(v, int) and not isinstance(v, bool)]
+    total_unapproved = sum(known_scope)
     result["unapprovedScopeChanges"] = total_unapproved
     result["unapprovedScopeChangesUnknown"] = len(scope_values) - len(known_scope)
     result["criteria"]["zeroUnapprovedScopeChanges"] = (
-        "INSUFFICIENT DATA" if len(known_scope) < len(scope_values) and total_unapproved == 0
-        else ("PASS" if total_unapproved == 0 else "FAIL"))
+        "FAIL" if total_unapproved > 0 else
+        ("INSUFFICIENT DATA" if len(known_scope) < len(scope_values) else "PASS"))
 
+    # PASS requires the baseline to actually have measured escaped defects
+    # (not merely "the baseline file has rows") AND every prospective
+    # ticket's value to be known -- an unknown prospective ticket could be
+    # hiding a rise. A measured rise is a definite FAIL regardless of either.
     escaped_values = [v.get("escapedDefects") for v in prospective.values()]
-    known_escaped = [v for v in escaped_values if isinstance(v, int)]
+    known_escaped = [v for v in escaped_values if isinstance(v, int) and not isinstance(v, bool)]
     total_escaped = sum(known_escaped)
     result["escapedDefects"] = total_escaped
     result["escapedDefectsUnknown"] = len(escaped_values) - len(known_escaped)
-    baseline_escaped_known = base.get("n", 0) > 0  # baseline rarely carries this field either
-    result["criteria"]["noRiseInEscapedDefects"] = (
-        "INSUFFICIENT DATA" if not baseline_escaped_known else
-        ("PASS" if total_escaped == 0 else "FAIL"))
-    result["verdict"] = ("PASS" if all(v == "PASS" for v in result["criteria"].values())
-                         else ("INSUFFICIENT DATA"
-                               if any(v == "INSUFFICIENT DATA" for v in result["criteria"].values())
-                               else "FAIL"))
+    baseline_escaped_known = base.get("escapedDefectsKnown", 0) >= MIN_BASELINE_KNOWN
+    if total_escaped > 0:
+        result["criteria"]["noRiseInEscapedDefects"] = "FAIL"
+    elif baseline_escaped_known and len(known_escaped) == len(escaped_values):
+        result["criteria"]["noRiseInEscapedDefects"] = "PASS"
+    else:
+        result["criteria"]["noRiseInEscapedDefects"] = "INSUFFICIENT DATA"
+
+    criteria_values = result["criteria"].values()
+    if any(v == "FAIL" for v in criteria_values):
+        verdict = "FAIL"
+    elif any(v == "INSUFFICIENT DATA" for v in criteria_values):
+        verdict = "INSUFFICIENT DATA"
+    else:
+        verdict = "PASS"
+    if bad and verdict == "PASS":
+        # A corrupted dataset must never let the verdict read PASS, even
+        # when every row that DID parse looks clean.
+        verdict = "INSUFFICIENT DATA"
+        result["why"] = f"{bad} unparseable row(s) in metrics.jsonl; cannot confirm a clean PASS"
+    result["verdict"] = verdict
     return result
 
 
