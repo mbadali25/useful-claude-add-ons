@@ -358,3 +358,19 @@ def test_claude_result_cannot_complete_a_codex_reservation(repo, tmp_path):
     row = rl.status(str(repo), "T1")["rounds"][0]
     assert result.returncode == 2, result.stdout + result.stderr
     assert (row["status"], row["provider"]) == ("reserved", "codex")
+
+
+def test_reserve_after_needs_replan_is_refused_without_writing(repo):
+    """Codex BLOCK: every reservation attempt after NEEDS_REPLAN appended
+    another `refused` entry, so a terminal state kept changing."""
+    rl.reserve(str(repo), "T1", "codex")
+    rl.reserve(str(repo), "T1", "codex")
+    rl.reserve(str(repo), "T1", "codex")
+    with open(rl.ledger_path(str(repo), "T1"), "rb") as fh:
+        before = fh.read()
+
+    ok, number, message = rl.reserve(str(repo), "T1", "claude")
+
+    with open(rl.ledger_path(str(repo), "T1"), "rb") as fh:
+        after = fh.read()
+    assert (ok, number, rl.NEEDS_REPLAN in message, after) == (False, None, True, before)

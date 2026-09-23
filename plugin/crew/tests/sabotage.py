@@ -64,6 +64,7 @@ import signal
 import subprocess
 import sys
 
+from sabotage_migrate import MIGRATE_FIX_MUTATIONS
 from sabotage_review import REVIEW_FIX_MUTATIONS
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(
@@ -3072,7 +3073,7 @@ MUTATIONS = (
 # `.pylintrc`'s max-module-lines, and raising that limit again is the move its
 # own comment warns against. Content-anchored, so where they are defined
 # changes nothing about what they match.
-MUTATIONS += REVIEW_FIX_MUTATIONS
+MUTATIONS += REVIEW_FIX_MUTATIONS + MIGRATE_FIX_MUTATIONS
 
 
 # pytest's own exit codes (documented, not this file's invention): 0 all

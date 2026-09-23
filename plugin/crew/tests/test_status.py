@@ -121,3 +121,52 @@ def test_config_line_names_the_layout(tmp_path, files, expected):
     lines = crew_status.collect(str(root))
 
     assert lines[1] == expected
+
+
+def test_memory_reports_the_requested_root_not_the_session_project(tmp_path, monkeypatch):
+    """Codex FIX: CLAUDE_PROJECT_DIR=repo A, `--root` repo B -- the context
+    script was left to find repo A."""
+    root = make_repo(tmp_path)
+    stub = tmp_path / "crew_context.py"
+    stub.write_text("import os\nprint(os.environ.get('CLAUDE_PROJECT_DIR'))\n", encoding="utf-8")
+    monkeypatch.setattr(crew_status, "CONTEXT_SCRIPT", str(stub))
+    monkeypatch.setattr(crew_status, "_GIT_ENV",
+                        dict(crew_status._GIT_ENV,  # pylint: disable=protected-access
+                             CLAUDE_PROJECT_DIR=str(tmp_path / "repo-a")))
+
+    lines = crew_status.collect(str(root), memory=True)
+
+    assert lines[-1] == f"memory   {os.path.abspath(str(root))}"
+
+
+def test_status_never_runs_a_configured_fsmonitor_hook(tmp_path):
+    root = make_repo(tmp_path)
+    marker = tmp_path / "fsmonitor-ran"
+    hook = tmp_path / "fsmonitor.sh"
+    hook.write_text(f"#!/bin/sh\ntouch '{marker}'\nexit 1\n", encoding="utf-8", newline="\n")
+    hook.chmod(0o755)
+    subprocess.run(["git", "-C", str(root), "config", "core.fsmonitor", str(hook)], check=True)
+
+    done = _run(root)
+
+    assert (done.returncode, marker.exists()) == (0, False)
+
+
+def test_corrupt_crew_json_is_reported_even_beside_a_valid_legacy_config(tmp_path):
+    root = make_repo(tmp_path, config={"schema": 7, "roles": ["qa-reviewer"]})
+    (root / ".crew" / "crew.json").write_text("{not json", encoding="utf-8")
+
+    lines = crew_status.collect(str(root))
+
+    assert lines[1] == "config   .crew/crew.json unreadable - status cannot tell the setup"
+
+
+def test_index_rows_with_a_leading_pipe_are_reported_open(tmp_path):
+    root = make_repo(tmp_path)
+    (root / ".work" / "tickets").mkdir()
+    (root / ".work" / "INDEX.md").write_text(
+        "| id | status | size |\n|---|---|---|\n| T-0007 | open | low |\n", encoding="utf-8")
+
+    lines = crew_status.collect(str(root))
+
+    assert "open     T-0007" in lines

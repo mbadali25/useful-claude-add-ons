@@ -73,6 +73,7 @@ import json
 import os
 import re
 import sys
+import tempfile
 import time
 
 CREW_SCHEMA = 1
@@ -128,6 +129,13 @@ JOURNAL_FILES = ("pm-journal.md", "pm-standing.md")
 BACKUP_DIR = os.path.join(".crew", "backups")
 TMP_SUFFIX = ".crew-migrate.tmp"
 
+# Every path apply may write, and so every path rollback may remove. A
+# manifest naming anything else was not written by this tool.
+_TARGET_RE = re.compile(
+    r"^(?:\.crew/crew\.json|\.crew/metrics\.jsonl"
+    r"|\.crew/archive/(?:pm-journal|pm-standing)\.md"
+    r"|\.work/tickets/[A-Z][A-Z0-9]*-\d+/(?:ticket(?:\.[a-z-]+)?\.md|provenance\.json))$")
+
 _MISSING = object()
 
 
@@ -156,6 +164,47 @@ def _rel(root, path):
     return os.path.relpath(path, root).replace(os.sep, "/")
 
 
+def _is_link(path):
+    """A symlink, or a Windows directory junction (which `islink` misses)."""
+    isjunction = getattr(os.path, "isjunction", None)
+    return os.path.islink(path) or bool(isjunction and isjunction(path))
+
+
+def _within(path, real_root):
+    try:
+        return (os.path.commonpath([os.path.normcase(path), os.path.normcase(real_root)])
+                == os.path.normcase(real_root))
+    except ValueError:
+        return False
+
+
+def contained(root, rel):
+    """Absolute path for repo-relative `rel`, or MigrateError.
+
+    Refused: an absolute path, an empty, `.` or `..` component, any existing
+    component that is a symlink or junction, and a deepest existing ancestor
+    whose realpath is not inside the root's realpath.
+    """
+    parts = rel.replace("\\", "/").split("/")
+    if os.path.isabs(rel) or any(p in ("", ".", "..") for p in parts):
+        raise MigrateError(f"{rel}: not a plain path inside the repository; refused")
+    path = os.path.join(root, *parts)
+    probe = root
+    for part in parts:
+        probe = os.path.join(probe, part)
+        if _is_link(probe):
+            raise MigrateError(f"{_rel(root, probe)} is a symlink or junction; refusing to "
+                               "write or remove through it")
+        if not os.path.lexists(probe):
+            break
+    existing = path
+    while not os.path.lexists(existing):
+        existing = os.path.dirname(existing)
+    if not _within(os.path.realpath(existing), os.path.realpath(root)):
+        raise MigrateError(f"{rel} resolves outside {root}; refused")
+    return path
+
+
 def _get(tree, dotted):
     node = tree
     for part in dotted.split("."):
@@ -182,15 +231,22 @@ def atomic_write(path, data):
 
     The payload is fully built before anything is opened, and the target is
     only ever replaced whole -- never truncated in place (CLAUDE.md, the
-    `open(p, "w")` landmine).
+    `open(p, "w")` landmine). The temp file is created exclusively under a
+    unique name, so no file already beside the target is truncated or removed.
     """
-    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-    tmp = path + TMP_SUFFIX
-    with open(tmp, "wb") as fh:
-        fh.write(data)
-        fh.flush()
-        os.fsync(fh.fileno())
-    os.replace(tmp, path)
+    parent = os.path.dirname(path) or "."
+    os.makedirs(parent, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=parent, prefix=os.path.basename(path) + ".",
+                               suffix=TMP_SUFFIX)
+    try:
+        with os.fdopen(fd, "wb") as fh:
+            fh.write(data)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp, path)
+    except BaseException:
+        _remove(tmp)
+        raise
 
 
 # ---------------------------------------------------------------- config
@@ -358,10 +414,19 @@ def build_plan(root):
             "retireable": [], "unmapped": [], "skipped": [], "untouched": []}
 
     def want(rel, data, why):
-        path = os.path.join(root, rel)
+        try:
+            path = contained(root, rel.replace(os.sep, "/"))
+        except MigrateError as exc:
+            plan["conflicts"].append(str(exc))
+            return
+        if os.path.lexists(path + TMP_SUFFIX):
+            plan["conflicts"].append(f"{_rel(root, path + TMP_SUFFIX)}: exists - migrate "
+                                     "stages through that name and will not overwrite it")
+            return
         current = _read_bytes(path)
         if current is None:
-            plan["writes"].append({"path": rel.replace(os.sep, "/"), "data": data, "why": why})
+            plan["writes"].append({"path": rel.replace(os.sep, "/"), "data": data, "why": why,
+                                   "pre_sha256": None})
         elif current == data:
             plan["notes"].append(f"{rel.replace(os.sep, '/')}: already migrated (identical)")
         else:
@@ -512,6 +577,12 @@ def apply_plan(plan):
     undoes whatever landed and removes the temps before re-raising, so the tree
     is the old one. A hard kill in (4) leaves the manifest at `committing`,
     which every later run reports, and `--rollback` finishes the undo.
+
+    Every target is resolved inside the repository before it is touched, its
+    temp is created with O_EXCL (an existing file of that name is an error,
+    never truncated), and immediately before each replace the target is
+    re-read and compared with the pre-state the plan recorded: a file that
+    appeared since the plan was built aborts the apply and undoes it.
     """
     if plan["conflicts"]:
         raise MigrateError("refusing to apply with conflicts:\n  " + "\n  ".join(plan["conflicts"]))
@@ -519,6 +590,7 @@ def apply_plan(plan):
     if not plan["writes"]:
         return None
     backup = _new_backup_dir(root)
+    contained(root, _rel(root, backup))
     os.makedirs(backup)
     sources = [".crew/config.json", ".crew/metrics.md"] + [f".crew/{n}" for n in JOURNAL_FILES]
     for rel in sources:
@@ -538,16 +610,23 @@ def apply_plan(plan):
     staged, landed = [], []
     try:
         for item in plan["writes"]:
-            path = os.path.join(root, item["path"])
-            os.makedirs(os.path.dirname(path), exist_ok=True)
-            with open(path + TMP_SUFFIX, "wb") as fh:
+            os.makedirs(os.path.dirname(contained(root, item["path"])), exist_ok=True)
+            path = contained(root, item["path"])
+            try:
+                fd = os.open(path + TMP_SUFFIX,
+                             os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0))
+            except FileExistsError as exc:
+                raise MigrateError(f"{item['path']}{TMP_SUFFIX} appeared since the plan was "
+                                   "built; not overwritten, and this apply is undone") from exc
+            staged.append((item, path))
+            with os.fdopen(fd, "wb") as fh:
                 fh.write(item["data"])
                 fh.flush()
                 os.fsync(fh.fileno())
-            staged.append(path)
         manifest["state"] = "committing"
         atomic_write(_manifest_path(backup), _json_bytes(manifest))
-        for path in staged:
+        for item, path in staged:
+            _check_pre_state(root, item)
             os.replace(path + TMP_SUFFIX, path)
             landed.append(path)
         manifest["state"] = "applied"
@@ -555,7 +634,7 @@ def apply_plan(plan):
     except BaseException:
         for path in landed:
             _remove(path)
-        for path in staged:
+        for _, path in staged:
             _remove(path + TMP_SUFFIX)
         _prune_dirs(root, manifest["createdDirs"])
         manifest["state"] = "rolled-back"
@@ -563,6 +642,14 @@ def apply_plan(plan):
         atomic_write(_manifest_path(backup), _json_bytes(manifest))
         raise
     return backup
+
+
+def _check_pre_state(root, item):
+    current = _read_bytes(contained(root, item["path"]))
+    now = None if current is None else _sha(current)
+    if now != item.get("pre_sha256"):
+        raise MigrateError(f"{item['path']} changed since the plan was built; not "
+                           "overwritten, and this apply is undone")
 
 
 def _remove(path):
@@ -580,33 +667,71 @@ def _prune_dirs(root, rels):
             pass
 
 
+def _manifest_entries(root, manifest):
+    """([(target, abs path)], [dir rel]) from a manifest, or MigrateError
+    before anything is removed. A target must be a path apply writes, resolve
+    inside the repository and pass through no symlink; a created directory
+    must be an ancestor of one of those targets."""
+    targets = manifest.get("targets")
+    if not isinstance(targets, list):
+        raise MigrateError("manifest has no targets list; refused")
+    out = []
+    for target in targets:
+        rel = target.get("path") if isinstance(target, dict) else None
+        if (not isinstance(rel, str) or not _TARGET_RE.match(rel)
+                or not isinstance(target.get("sha256"), str)):
+            raise MigrateError(f"manifest names {rel!r}, which migrate never writes; "
+                               "refusing the whole rollback")
+        out.append((target, contained(root, rel)))
+    dirs = manifest.get("createdDirs", [])
+    rels = [t["path"] for t, _ in out]
+    for rel in dirs if isinstance(dirs, list) else [None]:
+        if not isinstance(rel, str) or not any(r.startswith(rel + "/") for r in rels):
+            raise MigrateError(f"manifest createdDirs names {rel!r}, which no target is in; "
+                               "refusing the whole rollback")
+        contained(root, rel)
+    return out, dirs
+
+
 def rollback(root, backup):
     """Undo one apply. Refuses, changing nothing, if any file apply wrote has
     been edited since -- removing a file someone changed is data loss."""
     root = os.path.abspath(root)
     backup = backup if os.path.isabs(backup) else os.path.join(root, backup)
+    backups = os.path.realpath(os.path.join(root, BACKUP_DIR))
+    real_backup = os.path.realpath(backup)
+    if real_backup == backups or not _within(real_backup, backups):
+        raise MigrateError(f"{backup} is not a backup under {BACKUP_DIR}; refused")
+    contained(root, _rel(root, backup))
     data = _read_bytes(_manifest_path(backup))
     if data is None:
         raise MigrateError(f"no manifest.json in {backup}")
-    manifest = json.loads(data)
+    try:
+        manifest = json.loads(data)
+    except ValueError as exc:
+        raise MigrateError(f"{_manifest_path(backup)} is not valid JSON: {exc}") from exc
+    if not isinstance(manifest, dict):
+        raise MigrateError(f"{_manifest_path(backup)} is not a manifest")
     if manifest.get("state") == "rolled-back":
         return []
+    targets, dirs = _manifest_entries(root, manifest)
     edited = []
-    for target in manifest["targets"]:
-        current = _read_bytes(os.path.join(root, target["path"]))
+    for target, path in targets:
+        current = _read_bytes(path)
         if current is not None and _sha(current) != target["sha256"]:
             edited.append(target["path"])
     if edited:
         raise MigrateError("edited since apply, not removed; resolve by hand:\n  "
                            + "\n  ".join(edited))
     removed = []
-    for target in manifest["targets"]:
-        path = os.path.join(root, target["path"])
-        _remove(path + TMP_SUFFIX)
+    for target, path in targets:
+        staged = _read_bytes(path + TMP_SUFFIX)
+        if staged is not None and _sha(staged) == target["sha256"]:
+            os.remove(path + TMP_SUFFIX)
         if os.path.exists(path):
             os.remove(path)
             removed.append(target["path"])
-    _prune_dirs(root, manifest.get("createdDirs", []))
+    _prune_dirs(root, dirs)
     manifest["state"] = "rolled-back"
     atomic_write(_manifest_path(backup), _json_bytes(manifest))
     return removed

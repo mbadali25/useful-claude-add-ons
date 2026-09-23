@@ -310,3 +310,45 @@ def test_dropped_part_with_a_rewritten_bundle_hash_is_incomplete(repo, tmp_path)
     verdict = _claude_round(repo, tmp_path, drop_last, max_part_bytes=200)
 
     assert verdict.returncode == 3, verdict.stdout + verdict.stderr
+
+
+@pytest.mark.parametrize("later", ["INCOMPLETE", "FINDINGS", "reserved"])
+def test_check_receipt_fails_when_a_later_round_exists(repo, later):
+    """Codex BLOCK: round 1 CLEAN, then round 2 INCOMPLETE -- --check-receipt
+    exited 0 because only round 1's bundle hash was checked."""
+    _review(repo, "CLEAN")
+    if later == "reserved":
+        rl.reserve(str(repo), "T1", "codex")
+    else:
+        _review(repo, later)
+
+    result = _check(repo)
+
+    assert (result.returncode, "latest" in result.stdout) == (1, True), result.stdout
+
+
+def test_check_receipt_fails_once_needs_replan_even_on_the_latest_clean_round(repo):
+    rl.reserve(str(repo), "T1", "codex")
+    _review(repo, "CLEAN")
+    rl.reserve(str(repo), "T1", "codex")
+
+    result = _check(repo)
+
+    assert (rl.status(str(repo), "T1")["state"], result.returncode,
+            rl.NEEDS_REPLAN in result.stdout) == (rl.NEEDS_REPLAN, 1, True), result.stdout
+
+
+def test_check_receipt_fails_when_the_latest_round_is_not_clean_or_accepted(repo):
+    _review(repo, "CLEAN")
+    path = rl.ledger_path(str(repo), "T1")
+    with open(path, encoding="utf-8") as fh:
+        data = json.load(fh)
+    data["rounds"][-1]["verdict"] = "FINDINGS"
+    text = json.dumps(data)
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(text)
+
+    result = _check(repo)
+
+    assert (result.returncode, "CLEAN or owner-accepted" in result.stdout) == (1, True), \
+        result.stdout

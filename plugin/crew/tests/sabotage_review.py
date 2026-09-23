@@ -207,4 +207,41 @@ REVIEW_FIX_MUTATIONS = (
         ("tests/test_review_receipt.py::"
          "test_reject_is_refused_and_changes_nothing"),
     ),
+    (
+        # T2 fix round: every refused reservation after NEEDS_REPLAN writes
+        # another `refused` entry again.
+        "a reservation after NEEDS_REPLAN writes the ledger",
+        REVIEW_LEDGER,
+        "        if data.get(\"state\") == NEEDS_REPLAN:\n            return None, exhausted\n",
+        "",
+        ("tests/test_review_ledger.py::"
+         "test_reserve_after_needs_replan_is_refused_without_writing"),
+    ),
+    (
+        # An older round's receipt outlives a later round's verdict.
+        "--check-receipt ignores rounds after the receipt's",
+        REVIEW_LEDGER,
+        "    if not isinstance(latest, dict) or latest.get(\"round\") != receipt.get(\"round\"):\n",
+        "    if False:\n",
+        ("tests/test_review_receipt.py::"
+         "test_check_receipt_fails_when_a_later_round_exists"),
+    ),
+    (
+        # A receipt stands on a NEEDS_REPLAN ticket.
+        "--check-receipt ignores NEEDS_REPLAN",
+        REVIEW_LEDGER,
+        "        return False, f\"{ticket} is {NEEDS_REPLAN}; no receipt stands\"\n",
+        "        pass\n",
+        ("tests/test_review_receipt.py::"
+         "test_check_receipt_fails_once_needs_replan_even_on_the_latest_clean_round"),
+    ),
+    (
+        # The latest round's verdict is not read.
+        "--check-receipt does not read the latest round's verdict",
+        REVIEW_LEDGER,
+        "    if latest.get(\"status\") != \"completed\" or not accepted:\n",
+        "    if False:\n",
+        ("tests/test_review_receipt.py::"
+         "test_check_receipt_fails_when_the_latest_round_is_not_clean_or_accepted"),
+    ),
 )

@@ -14,7 +14,9 @@ exists for (`docs/review/03-codex-review.md`).
 RESERVATION BEFORE LAUNCH. `reserve` appends a round with status `reserved`
 and writes the ledger before any reviewer process exists. A reviewer that
 crashes, hangs or is killed leaves that round `reserved` forever, and it
-counts. A third reservation is refused and the state becomes `NEEDS_REPLAN`.
+counts. A third reservation is refused and the state becomes `NEEDS_REPLAN`;
+that refusal is written once, and every reservation attempt after it is
+refused without writing anything.
 That refusal, and an explicit `--reject --by <who>`, are the only ways into
 NEEDS_REPLAN: a completed round 2 -- FINDINGS or INCOMPLETE -- leaves the
 ticket REVIEWED, so the owner can still accept round 2's FINDINGS.
@@ -47,7 +49,10 @@ when it is spent with nothing accepted, which is the refused third
 reservation.
 Either way the receipt carries the bundle sha256 the reviewer read, and
 `--check-receipt` rebuilds the bundle from the receipt's base and exits
-non-zero unless the hash still matches. `/crew:done` (T4) gates on it.
+non-zero unless the hash still matches -- and unless the receipt is for the
+latest recorded round, that round is CLEAN or owner-accepted, and the state
+is not NEEDS_REPLAN, so an older round's receipt never outlives a later
+verdict. `/crew:done` (T4) gates on it.
 
 SUCCESSOR PLANS (the T3 seam). After NEEDS_REPLAN the only continuation is an
 approved successor plan. Plan approval belongs to T3, which does not exist
@@ -200,12 +205,15 @@ def reserve(root, ticket, provider, model=None):
         if state == "absent":
             data = _fresh(ticket)
         rounds = data.setdefault("rounds", [])
-        if len(rounds) >= BUDGET or data.get("state") == NEEDS_REPLAN:
+        exhausted = (False, None,
+                     f"review budget exhausted: {len(rounds)} of {BUDGET} rounds used. "
+                     f"State is {NEEDS_REPLAN}; only an approved successor plan continues")
+        if data.get("state") == NEEDS_REPLAN:
+            return None, exhausted
+        if len(rounds) >= BUDGET:
             data["state"] = NEEDS_REPLAN
             data.setdefault("refused", []).append({"at": _now(), "provider": provider})
-            return data, (False, None,
-                          f"review budget exhausted: {len(rounds)} of {BUDGET} rounds used. "
-                          f"State is {NEEDS_REPLAN}; only an approved successor plan continues")
+            return data, exhausted
         number = len(rounds) + 1
         rounds.append({"round": number, "status": "reserved", "reserved_at": _now(),
                        "provider": provider, "model": model or None, "pid": os.getpid()})
@@ -346,6 +354,18 @@ def check_receipt(root, ticket):
     receipt = data.get("receipt")
     if not isinstance(receipt, dict) or not receipt.get("bundle_sha256"):
         return False, f"no accepted review receipt for {ticket}"
+    if data.get("state") == NEEDS_REPLAN:
+        return False, f"{ticket} is {NEEDS_REPLAN}; no receipt stands"
+    latest = (data.get("rounds") or [{}])[-1]
+    if not isinstance(latest, dict) or latest.get("round") != receipt.get("round"):
+        return False, (f"receipt is for round {receipt.get('round')}, not the latest recorded "
+                       "round; only the latest round's verdict counts")
+    accepted = (latest.get("verdict") == "CLEAN"
+                or (latest.get("verdict") == "FINDINGS"
+                    and receipt.get("kind") == "owner-accepted"))
+    if latest.get("status") != "completed" or not accepted:
+        return False, (f"round {latest.get('round')} is {latest.get('verdict') or 'not completed'}"
+                       "; a receipt stands only on a CLEAN or owner-accepted round")
     try:
         current = _current_hash(root, receipt.get("base"))
     except LedgerError as exc:
