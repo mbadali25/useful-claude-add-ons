@@ -19,7 +19,8 @@ $ErrorActionPreference = 'SilentlyContinue'
 
 $dir = Split-Path -Parent $MyInvocation.MyCommand.Path
 
-# BYTE-FOR-BYTE the resolver in role-write-guard.ps1, asserted by
+# The resolver in role-write-guard.ps1 byte for byte EXCEPT its probe, which
+# is time-bounded here (see the probe comment), asserted by
 # tests/test_crew_context_wrappers.py.
 function Resolve-CrewPython {
   # NOT byte-for-byte with verify-gate.ps1's/pm-pulse.ps1's copies any more
@@ -61,14 +62,27 @@ function Resolve-CrewPython {
     $real = $null
     $global:LASTEXITCODE = $null
     try {
-      # Captured WHOLE, not piped through `Select-Object -First 1` --
-      # that cmdlet can stop reading (and signal the pipeline to close)
-      # as soon as it has one object, which races the native process's
-      # own exit and can leave `$LASTEXITCODE` reflecting an early
-      # termination rather than the candidate's real exit status. Letting
-      # the candidate run to completion first is what makes the exit-code
-      # check below trustworthy.
-      $output = & $cmd.Source -c 'import sys; print(sys.executable)' 2>$null
+      # BOUNDED probe -- the one deliberate difference from
+      # role-write-guard.ps1's copy (tests/test_crew_context_wrappers.py
+      # asserts it is the only one). `& $cmd.Source` waits forever, so a
+      # shim that hangs stalled this hook until the harness killed it.
+      # Run to completion or killed at 3s; stdout and stderr are both read
+      # asynchronously so a chatty candidate cannot deadlock on a full pipe.
+      $psi = New-Object System.Diagnostics.ProcessStartInfo
+      $psi.FileName = $cmd.Source
+      $psi.Arguments = '-c "import sys; print(sys.executable)"'
+      $psi.UseShellExecute = $false
+      $psi.RedirectStandardOutput = $true
+      $psi.RedirectStandardError = $true
+      $psi.CreateNoWindow = $true
+      $proc = [System.Diagnostics.Process]::Start($psi)
+      $outTask = $proc.StandardOutput.ReadToEndAsync()
+      $null = $proc.StandardError.ReadToEndAsync()
+      if (-not $proc.WaitForExit(3000)) {
+        try { $proc.Kill() } catch { }
+        continue
+      }
+      $output = ($outTask.Result -split "`r?`n") | Where-Object { $_ }
       # NOT just "did it print something" -- a wrapper that prints a
       # plausible interpreter path and then exits nonzero must be
       # rejected too, matching role-write-guard.sh's own
@@ -76,7 +90,7 @@ function Resolve-CrewPython {
       # status. Reported 2026-09-19: this check was absent, so a
       # candidate bash correctly rejected (nonzero exit) was still
       # ACCEPTED here on output alone.
-      if ($LASTEXITCODE -eq 0 -and $output) {
+      if ($proc.ExitCode -eq 0 -and $output) {
         $real = @($output)[0]
       }
     } catch {
@@ -106,20 +120,14 @@ if ($Harness -ne 'codex') { $Harness = 'claude' }
 # Raw BYTES, not [Console]::In.ReadToEnd(), which decodes with the OEM
 # codepage on 5.1 -- the reason role-write-guard.ps1 reads this way. The
 # python side hashes these bytes for the one-flavour claim, so the .sh and
-# .ps1 flavours must hand it the same payload.
+# .ps1 flavours must hand it the SAME bytes: they go to python's stdin
+# untouched below (no BOM strip -- crew_context.py decodes utf-8-sig -- and
+# no PowerShell pipe, which re-encodes a string and appends a newline, so
+# the two flavours hashed different keys and both emitted).
 $stdinStream = [Console]::OpenStandardInput()
 $memStream = New-Object System.IO.MemoryStream
 $stdinStream.CopyTo($memStream)
 $stdinBytes = $memStream.ToArray()
-if ($stdinBytes.Length -ge 3 -and $stdinBytes[0] -eq 0xEF -and
-    $stdinBytes[1] -eq 0xBB -and $stdinBytes[2] -eq 0xBF) {
-  if ($stdinBytes.Length -gt 3) {
-    $stdinBytes = $stdinBytes[3..($stdinBytes.Length - 1)]
-  } else {
-    $stdinBytes = [byte[]]@()
-  }
-}
-$raw = [System.Text.Encoding]::UTF8.GetString($stdinBytes)
 
 $py = Resolve-CrewPython
 if (-not $py) {
@@ -136,7 +144,19 @@ try {
   $OutputEncoding = New-Object System.Text.UTF8Encoding($false)
   $env:PYTHONUTF8 = '1'
   $env:PYTHONIOENCODING = 'utf-8'
-  $raw | & $py (Join-Path $dir 'crew_context.py') --harness $Harness
+  # A Process, not `$bytes | & $py`: only a stream write hands python the
+  # bytes as received. stdout is not redirected, so python's payload goes
+  # straight to the hook's own stdout.
+  $psi = New-Object System.Diagnostics.ProcessStartInfo
+  $psi.FileName = $py
+  $psi.Arguments = '"' + (Join-Path $dir 'crew_context.py') + '" --harness ' + $Harness
+  $psi.UseShellExecute = $false
+  $psi.RedirectStandardInput = $true
+  $proc = [System.Diagnostics.Process]::Start($psi)
+  $proc.StandardInput.BaseStream.Write($stdinBytes, 0, $stdinBytes.Length)
+  $proc.StandardInput.BaseStream.Flush()
+  $proc.StandardInput.Close()
+  $proc.WaitForExit()
 } catch {
   [Console]::Error.WriteLine("crew context: python could not be launched - no context this event")
 } finally {

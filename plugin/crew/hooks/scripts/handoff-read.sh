@@ -22,6 +22,11 @@ rm -f .crew/.deploy-in-flight    # a deploy from a dead session cannot be record
 case "$SOURCE" in clear|compact|resume|fork) ;; *) exit 0 ;; esac
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PY=$(crew_py) || { echo "crew handoff-read: no usable python - the handoff note will not print" >&2; exit 0; }
+# `memory.inject: true` hands the handoff to crew-context.sh, which injects it
+# inside its own SessionStart budget -- printing it here too would put it in
+# the session twice. Same reader as that hook (crew_context.inject_enabled).
+# After the resets above, which other hooks' once-per-session gates rely on.
+"$PY" -c 'import sys; sys.path.insert(0, sys.argv[1]); import crew_context as c; sys.exit(0 if c.inject_enabled(c.find_root(sys.argv[2])) else 1)' "$DIR" "$PWD" 2>/dev/null && exit 0
 "$PY" "$DIR/hook_once.py" handoff-read "${SESSION}-${SOURCE}" || exit 0
 
 [ -f .crew/config.json ] || exit 0

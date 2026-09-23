@@ -10,6 +10,8 @@ import os
 import pathlib
 import shutil
 import subprocess
+import sys
+import time
 
 import pytest
 
@@ -145,8 +147,68 @@ def _resolver(path):
     return src[start:src.index("\n}\n", start) + 3]
 
 
-def test_the_powershell_resolver_is_byte_for_byte_role_write_guards():
-    assert _resolver(SCRIPTS / "crew-context.ps1") == _resolver(SCRIPTS / "role-write-guard.ps1")
+def _without_probe(resolver):
+    start = resolver.index("    try {")
+    return resolver[:start] + resolver[resolver.index("    } catch {", start):]
+
+
+def test_the_powershell_resolver_is_role_write_guards_except_the_bounded_probe():
+    """Byte for byte outside the probe's try block; inside it this copy runs
+    the candidate as a Process with a timeout (T6 review: an unbounded probe
+    let a hung shim stall the hook)."""
+    ours = _resolver(SCRIPTS / "crew-context.ps1")
+
+    assert _without_probe(ours) == _without_probe(_resolver(SCRIPTS / "role-write-guard.ps1"))
+    assert "WaitForExit(3000)" in ours
+
+
+@pytest.mark.skipif(PWSH is None, reason="pwsh not installed - the .ps1 flavour was NOT run")
+def test_a_hung_python_candidate_is_abandoned_not_waited_on(tmp_path):
+    fake = tmp_path / "bin"
+    fake.mkdir()
+    (fake / "python3").write_text("#!/bin/sh\nexec sleep 60\n", encoding="utf-8")
+    (fake / "python").write_text(f"#!/bin/sh\nexec {sys.executable} \"$@\"\n", encoding="utf-8")
+    for name in ("python3", "python"):
+        (fake / name).chmod(0o755)
+    env = _env(tmp_path, OS="Windows_NT", PATH=f"{fake}{os.pathsep}{os.environ['PATH']}")
+    began = time.monotonic()
+
+    done = subprocess.run([PWSH, "-NoProfile", "-File", str(SCRIPTS / "crew-context.ps1"), "-PrintPython"],
+                          capture_output=True, env=env, check=False, timeout=40)
+
+    assert (done.stdout.decode().strip() != "", time.monotonic() - began < 30) == (True, True)
+
+
+@pytest.mark.skipif(PWSH is None, reason="pwsh not installed - the .ps1 flavour was NOT run")
+def test_both_flavours_claim_the_same_event_so_only_one_emits(tmp_path):
+    root = make_repo(tmp_path)
+    raw = json.dumps(payload("SessionStart", root, source="startup")).encode()
+
+    ps = subprocess.run([PWSH, "-NoProfile", "-File", str(SCRIPTS / "crew-context.ps1")], input=raw,
+                        cwd=root, capture_output=True, env=_env(tmp_path, OS="Windows_NT"),
+                        check=False, timeout=60)
+    sh = subprocess.run(["bash", str(SCRIPTS / "crew-context.sh")], input=raw, cwd=root,
+                        capture_output=True, env=_env(tmp_path), check=False, timeout=60)
+
+    assert (bool(ps.stdout.strip()), sh.stdout) == (True, b"")
+
+
+@pytest.mark.skipif(PWSH is None, reason="pwsh not installed - the .ps1 flavour was NOT run")
+@pytest.mark.parametrize("inject, speaks", [(True, False), (False, True)])
+def test_handoff_read_ps1_stands_down_exactly_when_memory_inject_is_true(tmp_path, inject, speaks):
+    root = tmp_path / "repo"
+    (root / ".crew").mkdir(parents=True)
+    (root / ".work").mkdir()
+    (root / ".crew" / "config.json").write_text(json.dumps(
+        {"context": {"autoResume": False}, "memory": {"inject": inject}}), encoding="utf-8")
+    (root / ".work" / "HANDOFF.md").write_text("# Handoff\nHANDOFF-BODY-TOKEN\n", encoding="utf-8")
+    raw = json.dumps({"source": "resume", "cwd": str(root), "session_id": f"s-{inject}"}).encode()
+
+    done = subprocess.run([PWSH, "-NoProfile", "-File", str(SCRIPTS / "handoff-read.ps1")], input=raw,
+                          cwd=root, capture_output=True, env=_env(tmp_path, OS="Windows_NT"),
+                          check=False, timeout=60)
+
+    assert (done.returncode, b"HANDOFF-BODY-TOKEN" in done.stdout) == (0, speaks)
 
 
 def test_the_flavour_guard_is_the_first_executable_statement():

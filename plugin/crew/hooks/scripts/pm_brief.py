@@ -13,6 +13,7 @@ import re
 import sys
 
 import crew_config
+import crew_context
 import crew_incident
 import crew_state
 import hook_once
@@ -732,6 +733,18 @@ def main(argv=None):
     root = payload.get("cwd") or os.environ.get(
         "CLAUDE_PROJECT_DIR"
     ) or os.getcwd()
+
+    # `memory.inject: true` hands SessionStart to the context hook
+    # (crew-context.sh), which injects the same handoff and code-map state
+    # inside its own 1,500/3,000-char budget. Printing a brief here as well
+    # would put both in one session, outside that budget. Same flag, same
+    # reader (crew_context.inject_enabled), so the two cannot disagree.
+    # Before the claim, so standing down burns nothing.
+    try:
+        if crew_context.inject_enabled(crew_context.find_root(root)):
+            return 0
+    except Exception:  # pylint: disable=broad-except
+        pass
 
     # Both the .sh and .ps1 wrapper call this module, and SessionStart has no
     # matcher to pick one -- so whichever arrives second must print nothing.

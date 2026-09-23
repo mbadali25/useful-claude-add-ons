@@ -8,7 +8,7 @@ calls that plugin's read-only contract and nothing else:
     python3 <obsidian-vault root>/scripts/vault_ops.py recall \
         --query <text> --vaults <a,b,c> --max-chars N --json
 
-Three rules hold everywhere below, and each has a test:
+Four rules hold everywhere below, and each has a test:
 
 - **Never block, never raise.** A missing plugin, a CLI that exits non-zero,
   times out, or prints something that is not JSON is a MISS with a named
@@ -17,6 +17,9 @@ Three rules hold everywhere below, and each has a test:
 - **Every snippet names its vault.** An item the CLI returns without a vault
   label is dropped, not injected unlabelled -- a recall line nobody can trace
   to a source is a line nobody can check or correct.
+- **Only the vaults asked for.** A snippet naming a vault outside the list
+  this module passed to `--vaults` is dropped, as is one whose vault or note
+  name carries a control character or line break.
 - **Priority is the repo's.** `memory.recall.vaults` in the crew config is an
   ordered list; snippets are ordered by that list first and the CLI's own rank
   second. With no list, vaults come from `~/.claude/obsidian/config.json`:
@@ -28,6 +31,7 @@ Standard library only. Read-only: this module writes nothing anywhere.
 import glob
 import json
 import os
+import re
 import subprocess
 import sys
 
@@ -164,9 +168,17 @@ def _field(item, *names):
     return ""
 
 
+# C0/C1 controls and the Unicode line/paragraph separators: any of them in a
+# vault or note name could start a new injected line with no vault label.
+_CONTROL_RE = re.compile("[\x00-\x1f\x7f-\x9f\u2028\u2029]")
+
+
 def parse(stdout, order):
     """(snippets, dropped) from the CLI's JSON. Each snippet is a dict with
-    vault, note, text, rank. Unlabelled items are counted in `dropped`."""
+    vault, note, text, rank. Counted in `dropped`, never injected: an item
+    with no vault label, a vault or note name carrying a control character
+    or line break, and an item from a vault the repo did not ask for -- the
+    CLI's answer does not get to widen `memory.recall.vaults`."""
     try:
         parsed = json.loads(stdout)
     except ValueError:
@@ -186,8 +198,14 @@ def parse(stdout, order):
         if not vault or not note or not text:
             dropped += 1
             continue
-        snippets.append({"vault": vault, "note": note, "text": " ".join(text.split()),
-                         "rank": rank})
+        if _CONTROL_RE.search(vault) or _CONTROL_RE.search(note) or vault not in priority:
+            dropped += 1
+            continue
+        text = " ".join(_CONTROL_RE.sub(" ", text).split())
+        if not text:
+            dropped += 1
+            continue
+        snippets.append({"vault": vault, "note": note, "text": text, "rank": rank})
     snippets.sort(key=lambda s: (priority.get(s["vault"], len(priority)), s["rank"]))
     return snippets, dropped
 
