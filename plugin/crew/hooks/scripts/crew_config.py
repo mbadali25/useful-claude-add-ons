@@ -861,7 +861,7 @@ def install_plan_for(root, name, path=None):
     return plan
 
 
-def layer_state(path):
+def layer_state(path, cloud=False):
     """One config FILE, classified as `"absent"`, `"ok"` or `"corrupt"` --
     the one rule every caller that needs to distinguish "nobody set this"
     from "something here is unreadable" derives from, for EITHER config
@@ -913,6 +913,11 @@ def layer_state(path):
         this function's; duplicating it here would be two mechanisms for
         one rule).
 
+    `cloud=True` -- the cloud guard's read, and only its -- also classifies
+    a present `cloud` block that `cloud_block_problem` rejects as
+    `"corrupt"`. Off by default so a malformed `cloud` block cannot arm
+    `roleWrites`, which never reads it.
+
     Never touches `load_config`, `read_global_config`, `resolve_ratcheted`
     or any of the other eight ratcheted keys, which keep their existing
     fail-open behaviour on a bad file exactly as before -- this is a
@@ -949,7 +954,28 @@ def layer_state(path):
         return "corrupt"
     if "guards" in parsed and not isinstance(parsed["guards"], dict):
         return "corrupt"
+    if cloud and "cloud" in parsed and cloud_block_problem(parsed["cloud"]):
+        return "corrupt"
     return "ok"
+
+
+def cloud_block_problem(block):
+    """Why a PRESENT `cloud` block cannot be read as identity pins, or `""`.
+
+    The one rule for "is this a `cloud` block", shared by `layer_state(...,
+    cloud=True)` and `cloud_guard.cloud_pins`. `"cloud": null`, a string, or
+    any of the three keys holding something other than a list of non-blank
+    strings is a malformed block -- never "nothing pinned", which would let a
+    read-only command through in the one repo whose owner tried to pin it.
+    """
+    if not isinstance(block, dict):
+        return "`cloud` is not an object"
+    for key in crew_state.CLOUD_DEFAULTS:
+        value = block.get(key, [])
+        if not isinstance(value, list) or not all(
+                isinstance(v, str) and v.strip() for v in value):
+            return f"`cloud.{key}` is not a list of glob strings"
+    return ""
 
 
 def resolve_guard(root, name, path=None):

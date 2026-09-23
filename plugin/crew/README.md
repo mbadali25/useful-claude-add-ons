@@ -954,8 +954,13 @@ command guard removed in 0.19.52, which matched words anywhere.
 
 `block` answers `permissionDecision: "deny"`, `ask` answers `"ask"`, and `allow`
 prints nothing — the guard never answers `"allow"`, which would skip your own
-permission prompt. Every refusal names its rule, e.g.
-`[terraformApply] terraform destroy: guards.terraformApply is block`.
+permission prompt. `report` mode answers with no decision at all and a
+`systemMessage` saying what `block` would have done. Every refusal names its
+rule, e.g. `[terraformApply] terraform destroy: guards.terraformApply is block`.
+A command it could not read — nested more than six shells deep, or hook input
+that is not a readable Bash/PowerShell call — is refused as `[cloudGuard]`; a
+destructive-capable tool behind `xargs`/`parallel` is judged as destructive
+under its own rule. `--dry-run`, `-WhatIf` and `-help` are not destructive.
 
 **Identity.** The repo-only `cloud` block pins which AWS profiles/regions and
 Azure subscriptions this checkout may act as. A command resolving to anything
@@ -965,13 +970,18 @@ command in a repo that pinned nothing — is **unknown**, and unknown is never
 allowed unattended: it asks when a person is there, and is denied under
 `CREW_UNATTENDED=1`, `CI`, or a `bypassPermissions`/`dontAsk` session, with the
 one-shot approval file (`.crew/.approved-guard-<rule>-<hash>`, 15 minutes, that
-command only) named in the refusal. `az account show` is never run; the default
+command only) named in the refusal. Once **any** pin is set, a read-only call
+with an unnamed identity is unknown too; only a repo that pins nothing lets it
+through, reported once. `az account show` is never run; the default
 subscription is read from `azureProfile.json`. Details and examples:
 `skills/crew-cloud/SKILL.md`.
 
 **It fails closed only when it knows it is armed.** A config file that exists
-and will not parse forces `block`. With no usable python, each wrapper greps
-both config files for `cloudGuard` and refuses (exit 2) if either arms it.
+and will not parse forces `block`; so does a malformed `cloud` block under an
+armed guard. With no usable python, each wrapper greps both config files for
+`cloudGuard` and refuses (exit 2) if either arms it. On Windows the bash
+wrapper stands down for its PowerShell twin — only when `OS=Windows_NT`, the
+`.ps1` exists and a PowerShell is on `PATH` — so the guard runs once, not twice.
 
 **What it cannot see:** a command named through a variable, a script file it
 runs, SQL built at runtime, Terraform's provider credentials, and MCP tool

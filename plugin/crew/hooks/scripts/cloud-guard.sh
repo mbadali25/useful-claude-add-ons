@@ -14,6 +14,16 @@
 # here is the fallback below: python could not judge, and a config file says
 # the guard is armed.
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Flavour stand-down: by the TOOL, never by the OS. Both flavours are
+# registered and on Windows both run, so each call must be judged by exactly
+# one. This flavour judges EVERY Bash call -- nothing about the host (an `OS`
+# value, a same-named executable on PATH) can stand it down for one -- and
+# stands down for a PowerShell call only when the .ps1 twin will judge it.
+# That decision needs `tool_name`, so it is made in cloud_guard.py
+# (`stands_down`), told which flavour is asking through
+# CREW_CLOUD_GUARD_FLAVOUR below. Without python, both flavours fail closed.
+
 . "$DIR/_common.sh"
 
 INPUT=$(cat)
@@ -43,7 +53,8 @@ if [ -z "$PY" ]; then
   exit 0
 fi
 
-printf '%s' "$INPUT" | PYTHONUTF8=1 PYTHONIOENCODING=utf-8 "$PY" "$DIR/cloud_guard.py"
+printf '%s' "$INPUT" | CREW_CLOUD_GUARD_FLAVOUR=bash PYTHONUTF8=1 \
+  PYTHONIOENCODING=utf-8 "$PY" "$DIR/cloud_guard.py"
 status=$?
 
 if [ "$status" -ne 0 ]; then
