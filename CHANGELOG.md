@@ -6,7 +6,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Changed
 
-- **`doc-builder` 1.6.0: black-grid tables and a logo-left masthead.** Data and
+- **`doc-builder` 1.6.1: black-grid tables and a logo-left masthead.** Data and
   meta tables now draw a solid black border on every cell, data-table headers
   are black with white bold text, and the zebra fill is a stronger `#E8ECF1` so
   alternate rows survive greyscale printing. Three new brand keys carry this
