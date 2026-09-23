@@ -35,7 +35,8 @@ Data-table headers are `table_head` / `table_head_ink` (black / white in neutral
 by every pack that does not override them). Masthead title text on `navy` and the
 classification bar text are fixed `#FFFFFF`, because every sensible brand's band is dark.
 
-When the pack carries a logo, the masthead band is a nested two-cell table: the `-on-dark`
+When the pack carries a logo, the masthead band row holds two sibling cells (never a nested table - LibreOffice lifts one
+into the accent strip): the `-on-dark`
 wordmark on the left (44px high, divided by a 1px `org_ink` rule), and the organisation,
 title and subtitle on the right.
 
