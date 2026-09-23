@@ -46,8 +46,10 @@ questions no one is there to answer.
      previously believed.
 5. **Acknowledge each item only after its notes are written**:
    `vault_ops.py ack --id <id> --wrote <vault-relative path> [--wrote ...]`.
-   The script refuses unless every named file exists, is inside the vault and
-   is non-empty - if it refuses, the item stays queued and you report why.
+   The script refuses unless every named file exists, is inside the vault, is
+   non-empty and was modified after the session was captured - naming a note
+   that was already there proves nothing. If it refuses, the item stays queued
+   and you report why.
    Never edit a queue file or `inbox/reflected.*.md` yourself.
 6. **Structural pass.** If distilled work changed something a canvas or map
    depicts, update it via the same rules `/obsidian-vault:canvas` and `/obsidian-vault:map`

@@ -156,22 +156,30 @@ Every vault `scan` finds gets one role, stored per vault in config as `"role"`:
 | `ignore` | Answered "no". Kept so a re-run does not ask again; never recalled, written, or included in `--all`. SessionStart's bridge report still lists it. |
 
 `vault_ops.py adopt` lists them; `adopt --role NAME=ROLE ... --apply` writes
-them, and refuses any result with zero or two primaries before writing a byte.
-A re-run with the same roles changes nothing. A config with no roles at all
-still works exactly as before: the default vault is the primary.
+them, and refuses any result with zero or two primaries, or with any
+discovered vault still unassigned, before writing a byte. A re-run with the
+same roles changes nothing. A config with no roles at all still works exactly
+as before: the default vault is the primary.
+
+Writers - capture, import, `ack`, `garden-run`, `drain` - target the primary
+and nothing else. If the primary is not on disk (an unmounted drive), they
+refuse and say so; capture logs that on stderr and exits 0. No other vault,
+recall or otherwise, is ever written in its place.
 
 `vault_ops.py import --source <dir|vault>` copies Markdown notes into the
 primary vault under `imported/<source name>/`, adding `imported_from` (absolute
 source path) and `imported_at` (UTC date) to each note's frontmatter. Dry run
 by default. It never overwrites: an existing destination is skipped and
 reported as a collision, or written beside it as `<name> (imported).md` only
-with `--suffix-collisions`. A re-run recognises its own earlier imports and
-writes nothing.
+with `--suffix-collisions`. A re-run recognises its own earlier imports -
+including suffixed ones with the same source and content - and writes nothing.
+A destination reached through a symlinked folder, or resolving outside the
+vault, is refused as `outside-vault`.
 
 Gardening runs on **one designated host**, daily, through
 `vault_ops.py garden-run`: at most 5 items or 10 minutes per run, each item
 acknowledged (in `inbox/reflected.<host>.md`) only after the note it produced
-exists. `drain` works a backlog in the same bounded batches, dry run first.
+exists and was written by that item's run - new, or changed since just before it. `drain` works a backlog in the same bounded batches, dry run first.
 `schedule --os cron|systemd|windows` prints the unit; nothing here installs
 one. See the `obsidian-scheduling` skill.
 

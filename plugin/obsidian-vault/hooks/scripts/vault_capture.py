@@ -3,8 +3,8 @@
 
 Generalized from a personal ~/.claude/hooks/vault-capture.py that had the vault
 path baked in by an installer. This version resolves it via
-obsidian_common.resolve_vault_path() at run time instead, so one script works
-for every vault on every machine. Wired to SessionEnd and PreCompact.
+obsidian_common.writer_vault() at run time instead - the role-primary vault
+and nothing else - so one script works for every vault on every machine. Wired to SessionEnd and PreCompact.
 
 Reads the hook JSON from stdin, appends one markdown task line to
 inbox/pending-reflect.<host>.md - one queue file PER HOST, so two machines
@@ -58,12 +58,15 @@ def already_queued(vault, sid):
 
 def main():
     trigger = sys.argv[1] if len(sys.argv) > 1 else "unknown"
-    vault = obsidian_common.resolve_vault_path()
+    # The primary vault only - never a recall/ignore vault standing in for an
+    # unmounted primary (obsidian_common.writer_vault explains why).
+    _, vault, problem = obsidian_common.writer_vault()
 
     if trigger == "--selftest":
         if not vault:
-            print("selftest FAIL: no vault resolved (env, config, and Obsidian's own "
-                  "registry all came up empty)", file=sys.stderr)
+            print("selftest FAIL: " + (problem or "no vault resolved (env, config, and "
+                                       "Obsidian's own registry all came up empty)"),
+                  file=sys.stderr)
             sys.exit(1)
         inbox = inbox_path(vault)
         inbox.parent.mkdir(parents=True, exist_ok=True)
@@ -80,6 +83,11 @@ def main():
         return
 
     if not vault:
+        if problem:
+            # Configured but unavailable: say so on stderr and still exit 0 -
+            # a capture miss must not break the session, and must not be
+            # silent either.
+            print(f"obsidian-vault vault-capture.py: not captured: {problem}", file=sys.stderr)
         return  # nothing configured yet; stay silent rather than guess a path
 
     try:
