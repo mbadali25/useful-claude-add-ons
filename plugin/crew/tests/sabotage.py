@@ -3076,7 +3076,6 @@ MUTATIONS = (
 # changes nothing about what they match.
 MUTATIONS += REVIEW_FIX_MUTATIONS + CONTEXT_MUTATIONS + MIGRATE_FIX_MUTATIONS
 
-
 # pytest's own exit codes (documented, not this file's invention): 0 all
 # passed; 1 at least one test FAILED (a real assertion, or an error raised
 # during a test); 2 execution interrupted; 3 an internal pytest error; 4 a
