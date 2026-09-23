@@ -3020,7 +3020,7 @@ MUTATIONS = (
         ("tests/test_scope_base.py::"
          "test_scope_report_names_a_committed_file_the_gate_no_longer_sees"),
     ),
-    # The 0.20.16 review adapter (T1). Each of these was also run by hand
+    # The 0.20.17 review adapter (T1). Each of these was also run by hand
     # against the tracked file, restored with `cp` and confirmed with `diff`.
     (
         # A reviewer that exited non-zero but printed CLEAN reads as CLEAN --

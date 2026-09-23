@@ -6,7 +6,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Changed
 
-- **`crew` 0.20.16 (T1): the review adapter - a computed verdict, a two-round
+- **`crew` 0.20.17 (T1): the review adapter - a computed verdict, a two-round
   ledger, and a receipt bound to the bundle.** `review_patch.py` now records
   renames, mode changes, binary files (git's marker plus both blob ids and
   sizes) and submodules in the manifest, splits an oversized bundle into
@@ -63,6 +63,10 @@ All notable changes to this repository are documented here. Format follows [Keep
   folder moves again. `crew` goes to 0.20.13 because its test files changed.
 
 ### Fixed
+
+- **`crew` 0.20.16: test-only.** `test_review_patch.py` passes `check=False` to
+  `subprocess.run` explicitly (pylint W1510, which failed CI's `build` jobs). crew
+  moves from 0.20.15 because its test files changed.
 
 - **`crew` 0.20.15: the PM is always spawned unnamed, so it can dispatch
   again.** Per [agent teams](https://code.claude.com/docs/en/agent-teams.md),

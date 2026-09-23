@@ -211,7 +211,7 @@ def test_bad_base_fails_loudly(repo, tmp_path):
     assert not manifest_path.exists()
 
 
-# ---- 0.20.16 (T1): completeness, splitting, bundle hash --------------------
+# ---- 0.20.17 (T1): completeness, splitting, bundle hash --------------------
 
 def _manifest(tmp_path):
     return json.loads((tmp_path / "manifest.json").read_text(encoding="utf-8"))

@@ -42,7 +42,7 @@ non-zero unless the hash still matches. `/crew:done` (T4) gates on it.
 
 SUCCESSOR PLANS (the T3 seam). After NEEDS_REPLAN the only continuation is an
 approved successor plan. Plan approval belongs to T3, which does not exist
-yet, so `continue_with_successor_plan` always refuses in 0.20.16 and says why.
+yet, so `continue_with_successor_plan` always refuses in 0.20.17 and says why.
 T3 implements `_plan_approval_receipt` and the continuation behind it.
 
 Exit codes: 0 ok; 1 refused / receipt invalid / error; 2 usage.
@@ -321,14 +321,14 @@ def check_receipt(root, ticket):
 
 def _plan_approval_receipt(root, ticket, plan_hash):  # pylint: disable=unused-argument
     """T3 SEAM. Returns T3's approval receipt for `plan_hash` as a successor
-    plan of `ticket`, or None. Plan approval does not exist in 0.20.16, so
+    plan of `ticket`, or None. Plan approval does not exist in 0.20.17, so
     there is never a receipt."""
     return None
 
 
 def continue_with_successor_plan(root, ticket, plan_hash):
     """(allowed, reason). The only way past NEEDS_REPLAN: an approved
-    successor plan. Always refuses in 0.20.16 -- T3 owns plan approval."""
+    successor plan. Always refuses in 0.20.17 -- T3 owns plan approval."""
     check_ticket(ticket)
     if not isinstance(plan_hash, str) or not _PLAN_HASH_RE.match(plan_hash):
         return False, "refused: the plan hash must be a 64-character lowercase sha256"

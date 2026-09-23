@@ -3792,7 +3792,7 @@ Raw: `.work/review/main-B1-B3-W6CLul/out.txt`. B2 drew no finding.
 - FIX `tests/test_pm_journal.py:216` - no test covers `O_NOFOLLOW`; removing it leaves the suite green.
 - FIX `tests/test_upgrade.py:428` - B1 tests call `run()` only; deleting `main()`'s new print path leaves them green.
 
-### crew 0.20.16 (T1) review adapter: deferred, not fixed (filed 2026-09-23) - OPEN
+### crew 0.20.17 (T1) review adapter: deferred, not fixed (filed 2026-09-23) - OPEN
 
 - `plugin/crew/commands/review.md:124` - the bundle base is `git merge-base HEAD <default branch>`, not the ticket's recorded start commit (`hooks/scripts/scope_base.py`). The 04 spec says "committed changes since the ticket base"; they differ when a ticket starts mid-branch. Not in T1's list (0.20.15 owns the base), so left for the lifecycle rebuild. RESOLVED in the T1 review-fix commit: step 1a now takes `scope_base.py --base "$TICKET"`, merge-base only as a named fallback.
 - `plugin/crew/hooks/scripts/review_ledger.py:238` - `--accept --by <who>` records who and when but authenticates nothing; any session can accept FINDINGS. Owner identity belongs with T3/T4 approval, not the ledger.

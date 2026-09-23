@@ -2,7 +2,7 @@
 
 `review_ledger.py --check-receipt` rebuilds the bundle from the receipt's base
 and fails unless its sha256 still matches, so an edit after review invalidates
-the receipt. `/crew:done` (T4) gates on this; in 0.20.16 it is exposed and
+the receipt. `/crew:done` (T4) gates on this; in 0.20.17 it is exposed and
 documented.
 """
 import json

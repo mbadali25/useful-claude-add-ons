@@ -27,7 +27,7 @@ CLAUDE.md landmine, with a real casualty
 manifest JSON are built into local variables before either `open(..., "w")`
 call runs.
 
-COMPLETENESS (0.20.16, T1). The manifest also carries one `entries` row per
+COMPLETENESS (0.20.17, T1). The manifest also carries one `entries` row per
 changed path, from `git diff --raw -z -M`: its status (A/M/D/R/C/T), both
 paths of a rename, both file modes (so a mode-only change is visible), and
 flags for binary files (with both blob ids and sizes -- the patch itself only
