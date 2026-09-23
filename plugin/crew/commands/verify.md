@@ -195,8 +195,9 @@ at all — see `CONFIG.md` §18 for the full classification.
 
 ## Environment pinning
 
-Every rule the gate runs gets `ENV`, `AWS_PROFILE`, `AWS_DEFAULT_REGION`,
-`KUBECONFIG` and `TF_WORKSPACE` unset, unless the rule declares
+Every rule the gate runs gets `ENV`, `AWS_PROFILE`, `AWS_DEFAULT_PROFILE`, `AWS_DEFAULT_REGION`,
+`AWS_REGION`, `AZURE_SUBSCRIPTION_ID`, `ARM_SUBSCRIPTION_ID`, `KUBECONFIG`,
+`TF_WORKSPACE` and `TF_VAR_environment` unset, unless the rule declares
 `"env": {"VAR": "value"}` — in which case exactly those values are set
 instead. The gate prints what it pinned for every command. A rule whose
 target is chosen by whatever the calling shell happened to have set cannot be

@@ -1360,13 +1360,15 @@ foreach ($ident in $cmds) {
     } catch { $spec = @{} }
   }
   # --- env pinning -------------------------------------------------------
-  # ENV, AWS_PROFILE, AWS_DEFAULT_REGION, KUBECONFIG, TF_WORKSPACE are unset
+  # Every PINNED_VARS name (verify_record.py) is unset
   # for every rule command unless its OWN rule declared "env" for it, in
   # which case exactly those values are set instead. The twin of the same
   # block in verify-gate.sh; see that file for why an inherited value must
   # not silently ride along into a check.
   $pinned = @()
-  foreach ($v in @("ENV", "AWS_PROFILE", "AWS_DEFAULT_REGION", "KUBECONFIG", "TF_WORKSPACE")) {
+  foreach ($v in @("ENV", "AWS_PROFILE", "AWS_DEFAULT_REGION", "KUBECONFIG", "TF_WORKSPACE",
+                   "AWS_REGION", "AWS_DEFAULT_PROFILE", "AZURE_SUBSCRIPTION_ID",
+                   "ARM_SUBSCRIPTION_ID", "TF_VAR_environment")) {
     if ($spec.ContainsKey($v)) {
       Set-Item -Path "env:$v" -Value $spec[$v]
       $pinned += "$v=(declared)"

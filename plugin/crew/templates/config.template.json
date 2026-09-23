@@ -162,13 +162,21 @@
     "forcePush": "block",
     "adminMerge": "block",
     "mergeGate": "block",
+    "cloudDestructive": "block",
+    "sqlDestructive": "block",
     "prodDatabase": "none",
     "prodServer": "none",
-    "roleWrites": "off"
+    "roleWrites": "off",
+    "cloudGuard": "off"
   },
   "production": {
     "databases": [],
     "hosts": []
+  },
+  "cloud": {
+    "awsProfiles": [],
+    "awsRegions": [],
+    "azureSubscriptions": []
   },
   "change": {
     "requester": null,

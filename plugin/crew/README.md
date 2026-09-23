@@ -838,18 +838,25 @@ to defaults rather than breaking every session on the machine.
 
 ### §11b. `guards` — the guardrails you can turn down, per machine
 
-Six keys, added by schema 6, in **two vocabularies**. Four are
+Six keys added by schema 6, in **two vocabularies**: four are
 `block` | `ask` | `allow`, shipping as `block`; the two production-access keys
-are `none` | `read` | `full`, shipping as `none`.
+are `none` | `read` | `full`, shipping as `none`. Since then `guards.roleWrites`
+(see §18 of CONFIG.md) and, with the cloud guard, `guards.cloudDestructive`,
+`guards.sqlDestructive` and the `guards.cloudGuard` switch. The command keys
+below govern something **only while `guards.cloudGuard` is `report` or
+`block`** — it ships `off`; see [Cloud guard](#cloud-guard).
 
 | Key | Governs | Read by |
 |---|---|---|
-| `guards.terraformApply` | nothing, since 0.19.52 | **nothing** - the command guard was removed |
-| `guards.forcePush` | nothing, since 0.19.52 | **nothing** - the command guard was removed |
-| `guards.adminMerge` | nothing, since 0.19.52 | **nothing** - the command guard was removed |
+| `guards.terraformApply` | `terraform`/`tofu`/`terragrunt` `apply` and `destroy` | `hooks/scripts/cloud_guard.py`, when `cloudGuard` is on |
+| `guards.forcePush` | `git push --force` / `-f` / `--force-with-lease` / a `+ref` | `hooks/scripts/cloud_guard.py`, when `cloudGuard` is on |
+| `guards.adminMerge` | `gh pr merge --admin` | `hooks/scripts/cloud_guard.py`, when `cloudGuard` is on |
 | `guards.mergeGate` | whether `/crew:gate` may take a live repo's merge gate down | `commands/gate.md`, `commands/promote.md` |
-| `guards.prodDatabase` | nothing, since 0.19.52 | **nothing** - the command guard was removed |
-| `guards.prodServer` | nothing, since 0.19.52 | **nothing** - the command guard was removed |
+| `guards.prodDatabase` | a SQL client aimed at a `production.databases` pattern | `hooks/scripts/cloud_guard.py`, when `cloudGuard` is on |
+| `guards.prodServer` | `ssh`/`plink`/`scp` aimed at a `production.hosts` pattern | `hooks/scripts/cloud_guard.py`, when `cloudGuard` is on |
+| `guards.cloudDestructive` | `aws … delete-*/terminate-*/purge-*`, `s3 rm/rb`, `s3 sync --delete`, `az … delete/purge`, `Remove-Az*` | `hooks/scripts/cloud_guard.py`, when `cloudGuard` is on |
+| `guards.sqlDestructive` | `DROP`/`TRUNCATE` sent to `psql`, `mysql`, `mariadb`, `sqlcmd`, `sqlite3`, `Invoke-Sqlcmd` | `hooks/scripts/cloud_guard.py`, when `cloudGuard` is on |
+| `guards.cloudGuard` | whether the cloud guard judges commands at all: `off` (default) / `report` / `block` | `hooks/scripts/cloud_guard.py` |
 
 - **`block`** refuses, exactly as the guard did before these keys existed.
 - **`ask`** refuses, prints the **exact** command, and names the one file that
@@ -879,12 +886,64 @@ would describe the wrong estate everywhere else. **With no patterns declared
 the guard matches nothing**, which is how the strictest level can be the
 default and still change nobody's behaviour on upgrade.
 
-**A repo may only narrow.** These six and `install.policy` resolve to the
+**A repo may only narrow.** Every `guards.*` key and `install.policy` resolve to the
 **narrower** of the repo and machine-global layers, not by precedence. crew
 reads config out of cloned repositories: under precedence, a repo shipping
 `guards.forcePush: allow` would grant itself force-push rights on the machine
 of anyone who cloned it. So `allow` needs **both** layers to say `allow`, and
 `--explain` names the layer holding a key down when they disagree.
+
+### Cloud guard
+
+A `PreToolUse` hook on the **Bash and PowerShell** tools
+(`hooks/scripts/cloud-guard.sh` / `cloud-guard.ps1`, both delegating to
+`cloud_guard.py`). **It ships off** — `guards.cloudGuard: "off"` — because a
+hook that can block defaults off. Set it to `report` first: every decision it
+*would* make goes to `.crew/guard.log` and nothing is refused. `block` enforces.
+A repo cannot turn off a machine-global `block`.
+
+When on, it reads each command into the simple commands it actually runs —
+through `&&`, `;`, `|`, `sudo`, `env X=Y`, `bash -c`, `pwsh -Command`, `$( )`,
+heredocs and PowerShell script blocks — and judges only those. A word inside an
+argument is never a finding: `git commit -m "terraform destroy"` and
+`psql -c "SELECT 'DROP TABLE x'"` both pass. That is the difference from the
+command guard removed in 0.19.52, which matched words anywhere.
+
+| It recognises | Decided by |
+|---|---|
+| `terraform`/`tofu` `apply`, `destroy` (`-auto-approve`, `-chdir=` included) | `guards.terraformApply` |
+| `git push --force`, `-f`, `--force-with-lease`, `+ref` | `guards.forcePush` |
+| `gh pr merge --admin` | `guards.adminMerge` |
+| `aws … delete-*/terminate-*/purge-*`, `aws s3 rm/rb`, `az … delete/purge`, `Remove-Az*` | `guards.cloudDestructive` |
+| `DROP`/`TRUNCATE` via `-c`/`-e`/`-Q`, heredoc, pipe or `Invoke-Sqlcmd -Query` | `guards.sqlDestructive` |
+| a SQL client or `ssh` aimed at a declared `production.*` pattern | `guards.prodDatabase` / `guards.prodServer` |
+| the AWS profile/region or Azure subscription of every `aws`/`az` command | `cloud.awsProfiles`, `cloud.awsRegions`, `cloud.azureSubscriptions` |
+
+`block` answers `permissionDecision: "deny"`, `ask` answers `"ask"`, and `allow`
+prints nothing — the guard never answers `"allow"`, which would skip your own
+permission prompt. Every refusal names its rule, e.g.
+`[terraformApply] terraform destroy: guards.terraformApply is block`.
+
+**Identity.** The repo-only `cloud` block pins which AWS profiles/regions and
+Azure subscriptions this checkout may act as. A command resolving to anything
+else is denied. One whose identity the guard cannot name — no profile set,
+static `AWS_ACCESS_KEY_ID` keys, an Az PowerShell context, or any destructive
+command in a repo that pinned nothing — is **unknown**, and unknown is never
+allowed unattended: it asks when a person is there, and is denied under
+`CREW_UNATTENDED=1`, `CI`, or a `bypassPermissions`/`dontAsk` session, with the
+one-shot approval file (`.crew/.approved-guard-<rule>-<hash>`, 15 minutes, that
+command only) named in the refusal. `az account show` is never run; the default
+subscription is read from `azureProfile.json`. Details and examples:
+`skills/crew-cloud/SKILL.md`.
+
+**It fails closed only when it knows it is armed.** A config file that exists
+and will not parse forces `block`. With no usable python, each wrapper greps
+both config files for `cloudGuard` and refuses (exit 2) if either arms it.
+
+**What it cannot see:** a command named through a variable, a script file it
+runs, SQL built at runtime, Terraform's provider credentials, and MCP tool
+calls. Tests: `tests/test_cloud_guard.py` (every case through python, bash and
+pwsh) and the `cloud-guard.sh` section of `hooks/scripts/_test/run-tests.sh`.
 
 ### §11c. `change` — change requests, added by schema 7
 
@@ -1701,8 +1760,8 @@ IaC server; the AngularJS front end does not.
 **The credential is the boundary, not a flag.** These servers authenticate as
 you, with whatever your credential chain grants. If your default profile is
 admin, so is the agent. There is no read-only mode that substitutes for scoping
-the profile, and `guard.sh` blocking `aws` shell commands does not cover an MCP
-tool call.
+the profile, and the cloud guard judging `aws` shell commands does not cover an
+MCP tool call.
 
 So: a dedicated read-only profile against a non-production account, never
 `AWS_PROFILE=production` in a repo where an agent runs unattended, and start with

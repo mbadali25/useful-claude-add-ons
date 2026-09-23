@@ -1448,7 +1448,7 @@ print(text + "\x1e" + (envjson if sep else ""), end="")
   c="${SPLIT%%$'\x1e'*}"
   ENV_JSON="${SPLIT#*$'\x1e'}"
   # --- env pinning ---------------------------------------------------
-  # ENV, AWS_PROFILE, AWS_DEFAULT_REGION, KUBECONFIG and TF_WORKSPACE are
+  # Every PINNED_VARS name (verify_record.py: ENV, AWS_PROFILE, ... TF_VAR_environment) is
   # unset for every rule command UNLESS the owning rule declares "env" for
   # it, in which case exactly those declared values are exported instead.
   # A gate whose target is chosen by whatever the calling shell happened to
@@ -1463,7 +1463,9 @@ try:
     spec = json.loads(sys.stdin.read() or "{}")
 except ValueError:
     spec = {}
-for v in ("ENV", "AWS_PROFILE", "AWS_DEFAULT_REGION", "KUBECONFIG", "TF_WORKSPACE"):
+for v in ("ENV", "AWS_PROFILE", "AWS_DEFAULT_REGION", "KUBECONFIG", "TF_WORKSPACE",
+          "AWS_REGION", "AWS_DEFAULT_PROFILE", "AZURE_SUBSCRIPTION_ID",
+          "ARM_SUBSCRIPTION_ID", "TF_VAR_environment"):
     val = spec.get(v)
     if isinstance(val, str):
         print("SET\x1f" + v + "\x1f" + val)
@@ -1472,7 +1474,9 @@ for v in ("ENV", "AWS_PROFILE", "AWS_DEFAULT_REGION", "KUBECONFIG", "TF_WORKSPAC
 ' 2>/dev/null | tr -d '\r')
   else
     ENV_LINES=""
-    for v in ENV AWS_PROFILE AWS_DEFAULT_REGION KUBECONFIG TF_WORKSPACE; do
+    for v in ENV AWS_PROFILE AWS_DEFAULT_REGION KUBECONFIG TF_WORKSPACE \
+             AWS_REGION AWS_DEFAULT_PROFILE AZURE_SUBSCRIPTION_ID \
+             ARM_SUBSCRIPTION_ID TF_VAR_environment; do
       ENV_LINES="${ENV_LINES}UNSET"$'\x1f'"$v"$'\n'
     done
   fi

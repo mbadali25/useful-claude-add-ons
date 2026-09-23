@@ -101,7 +101,8 @@ GUARD_POLICY_DEFAULT = "block"
 # shape a regex over a command line can recognise. It lives here anyway so
 # there is one guard block with one ratchet, rather than a fifth key somewhere
 # else with its own layering rule.
-GUARD_NAMES = ("terraformApply", "forcePush", "adminMerge", "mergeGate")
+GUARD_NAMES = ("terraformApply", "forcePush", "adminMerge", "mergeGate",
+               "cloudDestructive", "sqlDestructive")
 
 # The production-access guards, which live in the same `guards` block and
 # ratchet by the same table, but have their OWN three-value vocabulary:
@@ -163,16 +164,41 @@ ROLE_WRITE_GUARD_NAMES = ("roleWrites",)
 # `block`, the floor, same as every other guard's `normalise_*` function.
 ROLE_WRITE_DEFAULT = "off"
 
-# Every guard, in declaration order: the four policy guards, the two
-# production ones, then the one role-write guard. `GUARD_DEFAULTS` is keyed
-# off this, so a name that exists in none of the three tuples cannot reach the
-# config block at all.
-ALL_GUARD_NAMES = GUARD_NAMES + PROD_GUARD_NAMES + ROLE_WRITE_GUARD_NAMES
+# The cloud guard's own switch: whether the PreToolUse Bash/PowerShell hook
+# (`cloud_guard.py`) judges commands at all. It is a SWITCH, not a policy --
+# what each recognised command gets is still decided by `terraformApply`,
+# `forcePush`, `adminMerge`, `cloudDestructive`, `sqlDestructive` and the two
+# production guards. The first three existed, ratcheted and governed nothing
+# from 0.19.52 (when the old command guard was removed for blocking ordinary
+# work) until this hook; turning this on is what makes them mean something.
+#
+# Same vocabulary, same order and the same split default as `roleWrites`, for
+# the same CLAUDE.md reason: a hook that can block ships disabled.
+#
+#   off     the hook reads nothing but this key and lets every command through
+#   report  every decision the hook WOULD make goes to `.crew/guard.log`, and
+#           nothing is refused or prompted -- the way to find out what `block`
+#           would cost before paying it
+#   block   the per-rule policies are enforced: `block` denies, `ask` prompts
+#           (or denies, unattended), `allow` lets through and logs
+#
+# Absent means `off`; a malformed value means `block`, the floor, exactly as
+# `normalise_role_writes` already does -- this key reuses that function rather
+# than growing a second copy of it.
+CLOUD_GUARD_NAMES = ("cloudGuard",)
+
+# Every guard, in declaration order: the six policy guards, the two
+# production ones, the role-write guard, then the cloud guard's switch.
+# `GUARD_DEFAULTS` is keyed off this, so a name that exists in none of the
+# four tuples cannot reach the config block at all.
+ALL_GUARD_NAMES = (GUARD_NAMES + PROD_GUARD_NAMES + ROLE_WRITE_GUARD_NAMES
+                   + CLOUD_GUARD_NAMES)
 
 GUARD_DEFAULTS = dict(
     [(name, GUARD_POLICY_DEFAULT) for name in GUARD_NAMES]
     + [(name, PROD_LEVEL_DEFAULT) for name in PROD_GUARD_NAMES]
-    + [(name, ROLE_WRITE_DEFAULT) for name in ROLE_WRITE_GUARD_NAMES])
+    + [(name, ROLE_WRITE_DEFAULT) for name in ROLE_WRITE_GUARD_NAMES]
+    + [(name, ROLE_WRITE_DEFAULT) for name in CLOUD_GUARD_NAMES])
 
 # What counts as production, and it is a REPO-ONLY block on purpose.
 #
@@ -193,6 +219,23 @@ GUARD_DEFAULTS = dict(
 # existing repo gains two keys whose combined effect is "refuse access to the
 # empty set". Declaring a pattern is the act that turns them on.
 PRODUCTION_DEFAULTS = {"databases": [], "hosts": []}
+
+# Which cloud identities this checkout's commands are pinned to. REPO ONLY, for
+# the reason `production` is: "this repo deploys as profile `acme-dev` in
+# `eu-west-1`" is a fact about the checkout, and a machine-global pin would
+# carry one repo's account into every other repo on the machine.
+#
+# Each list holds globs. An `aws` command is checked against the first two
+# (profile from `--profile`, `AWS_PROFILE`, `AWS_DEFAULT_PROFILE`; region from
+# `--region`, `AWS_REGION`, `AWS_DEFAULT_REGION`), an `az` command against the
+# third (`--subscription`, `AZURE_SUBSCRIPTION_ID`, then the az CLI's own
+# default in `azureProfile.json`, matched by id or by name).
+#
+# EMPTY MEANS UNPINNED, NOT "ANY". With nothing pinned a read-only cloud
+# command runs unchecked, but a DESTRUCTIVE one has an identity nobody vouched
+# for -- `cloud_guard.py` treats that as unknown, and an unknown identity is
+# never allowed unattended.
+CLOUD_DEFAULTS = {"awsProfiles": [], "awsRegions": [], "azureSubscriptions": []}
 
 # Whether promoting to production needs an APPROVED change request for the sha
 # being promoted. `change.requireForProduction`, and it ratchets by the same
@@ -423,7 +466,7 @@ def guard_tiers(name):
     """
     if name in PROD_GUARD_NAMES:
         return (PROD_LEVELS, normalise_prod_level, prod_level_rank)
-    if name in ROLE_WRITE_GUARD_NAMES:
+    if name in ROLE_WRITE_GUARD_NAMES or name in CLOUD_GUARD_NAMES:
         return (ROLE_WRITE_POLICIES, normalise_role_writes, role_writes_rank)
     return (GUARD_POLICIES, normalise_guard_policy, guard_policy_rank)
 
@@ -451,12 +494,12 @@ RATCHETED_KEYS = {
 RATCHETED_KEYS.update({
     f"guards.{_name}": guard_tiers(_name) for _name in ALL_GUARD_NAMES
 })
-# The ninth key (`RATCHETED_KEYS` now holds `install.policy`, the seven
-# `guards.*` from `ALL_GUARD_NAMES`, and this one), and the first whose tiers
+# The last key (`RATCHETED_KEYS` holds `install.policy`, every `guards.*`
+# from `ALL_GUARD_NAMES`, and this one), and the first whose tiers
 # are not strings. Registering it here is the WHOLE cost of ratcheting it:
 # `effective_ratcheted`'s `min` already means "a repo may turn the requirement
 # on and never off", and `sabotage.py`'s `min` -> `max` mutation already covers
-# this key along with the other eight. A bespoke `effective_change_requirement`
+# this key along with every other one. A bespoke `effective_change_requirement`
 # would have been the fifth mechanism for one rule -- see this table's own
 # comment.
 RATCHETED_KEYS["change.requireForProduction"] = (
