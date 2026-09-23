@@ -5,8 +5,10 @@ verified: 2026-09-22
 > `docs/guides/exchange-mailbox/Running-a-Mailbox-Job.json`, content unchanged (a `git mv`).
 > Citations and commands below keep the OLD path on purpose - they record what was run
 > and what was true at this note's anchor, where only the old path exists. On a range that
-> crosses the move, use `git diff -M --stat` (or `git log --follow`): the new path alone
-> reports the file as ADDED, a false "changed" for a pure rename.
+> crosses the move, pass BOTH paths: `git diff -M --stat <anchor>..HEAD --
+> docs/guides/Running-a-Mailbox-Job.json docs/guides/exchange-mailbox/Running-a-Mailbox-Job.json`
+> and read the `| 0` - rename detection only pairs the two when both are in the
+> pathspec; either path alone reports an add or a delete, a false "changed".
 
 **Re-derived, not re-pointed, at `84976536`.** The two scripts grew by roughly
 880 lines between `ea8a014` and that anchor and no uniform offset existed, so
