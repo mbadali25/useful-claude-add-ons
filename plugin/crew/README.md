@@ -2112,11 +2112,13 @@ CONFIG.md §17 has the table and the reasoning.
 | `/crew:emergency <what is broken>` | Declare a time-boxed incident: gates stand down and record what they skipped, lanes investigate in parallel — see §24. `status`, `extend [min]`, `end` |
 | `/crew:model` | Report the resolved provider and model for every role, and which family would be reviewing which — see §12 |
 | `/crew:roster` | Print the crew as configured: roles, tier, and what each one is for |
+| `/crew:status [--memory]` | crew 1.0: read-only status in at most 40 lines - config, roster, tickets, review budget, gate, codemap, handoff; `--memory` adds the context hook's stats. Will replace `/crew:pm`, `/crew:roster` and `/crew:scale` |
+| `/crew:migrate [--preview\|--apply\|--rollback <dir>]` | crew 1.0: one-time move of `.crew/config.json` to `.crew/crew.json`, tickets and tracker caches to `.work/tickets/<id>/`, `metrics.md` to `metrics.jsonl`; previews first, backs up, applies atomically, rolls back |
 | `/crew:config [--show]` | Show where every setting comes from, and walk the machine-global config — see §11 |
 | `/crew:gate <disable\|enable\|status> <github\|bitbucket>` | Take a repository's merge gate down and put it back **from the export**. Gated by `guards.mergeGate`, which ships as `block` |
 | `/crew:change <new\|status <id>\|close <id>\|list>` | File a change request into SDP, Jira or `.work/changes/`, one process either way. `new` refuses to file while any of the template's questions 1–9 is unanswered or a placeholder and names which; `close` refuses without the post-change validation results — see §24b |
 
-28 commands.<!-- claim: plugin-commands:crew -->
+30 commands.<!-- claim: plugin-commands:crew -->
 
 ### Agents
 
@@ -2124,6 +2126,7 @@ CONFIG.md §17 has the table and the reasoning.
 |---|---|---|---|---|
 | `explorer` | read-only | `sonnet` | 0 | Maps code, returns summaries not contents |
 | `qa-reviewer` | read-only + Bash | `opus` | 0 | Hostile review; the last rung of `qa.order`, reached when neither Codex nor Copilot probes clean |
+| `reviewer` | read-only + Bash | `opus` | — | crew 1.0 name for `qa-reviewer`. Both files exist until the old one is retired; off the ladder so no tier grants the same reviewer twice |
 | `security` | read-only + Bash | `sonnet` | 1 | Exploitable defects in the diff |
 | `smoke-author` | read/write | `sonnet` | 1 | Builds and repairs the safety net |
 | `developer` | read/write | `sonnet` | 1 | Implements one scoped change; never reviews it |
@@ -2177,7 +2180,7 @@ CONFIG.md §17 has the table and the reasoning.
 | `workflow-orchestrator` | read/write, no Bash | `sonnet` | — | Multi-state business processes, with error handling and transaction management |
 | `pm` | read/write, scoped to `.crew/` and generated diagrams | `opus` | — | The manager, spawned unnamed and resumed by id or journal: scope, onboarding, communication, ticket hygiene, and dispatch |
 
-54 agents — 13 on the tier ladder (`crew_state.ROLE_TIERS`), 40 domain specialists off it (`crew_state.SPECIALIST_ROLES`), and `pm`. Re-measure with `ls plugin/crew/agents/*.md`, which is one file per agent; the table above is now one row per agent too, but it repeated four names until 2026-09-14, so the file count is still the authority. **"read-only" in the Tools column means no `Write` and no `Edit`** — it does not mean no `Bash`, which is why the rows that hold `Bash` say so. `validate-prompts.py` enforces exactly that: a description saying read-only may not carry `Write` or `Edit`, and `Bash` is not part of that check. `pm` sits outside the tier ladder — it is not sized in or out by `/crew:scale`, it is the thing doing the sizing. The specialist rows above are a readable copy of `crew_state.SPECIALIST_ROLES`; `tests/test_role_ladder.py` checks that copy against the code in both directions, so a row here with no registration behind it, or an `agents/<name>.md` nobody registered, fails the suite rather than shipping as a role `/crew:pm onboard` calls unrecognised.
+55 agents — 13 on the tier ladder (`crew_state.ROLE_TIERS`), 41 off it (`crew_state.SPECIALIST_ROLES`: 40 domain specialists plus `reviewer`, the 1.0 name for `qa-reviewer` while both files exist), and `pm`. Re-measure with `ls plugin/crew/agents/*.md`, which is one file per agent; the table above is now one row per agent too, but it repeated four names until 2026-09-14, so the file count is still the authority. **"read-only" in the Tools column means no `Write` and no `Edit`** — it does not mean no `Bash`, which is why the rows that hold `Bash` say so. `validate-prompts.py` enforces exactly that: a description saying read-only may not carry `Write` or `Edit`, and `Bash` is not part of that check. `pm` sits outside the tier ladder — it is not sized in or out by `/crew:scale`, it is the thing doing the sizing. The specialist rows above are a readable copy of `crew_state.SPECIALIST_ROLES`; `tests/test_role_ladder.py` checks that copy against the code in both directions, so a row here with no registration behind it, or an `agents/<name>.md` nobody registered, fails the suite rather than shipping as a role `/crew:pm onboard` calls unrecognised.
 
 **No tier grants a specialist, and that is deliberate.** Every ladder role closes a defect class any repo can have, so `roles_for_tier` hands out every rung up to the declared tier — which is exactly how a repo with no database ends up with `dba`. "This repo does SharePoint" is not a defect class; it is a fact about one checkout, and it is knowable on day one. Put these on the ladder and every tier-2 repo on the machine gets a SharePoint developer it will never dispatch. So they are opted into per repo with `/crew:pm onboard <role>`, justified by what is actually in the repo — a `package.json` with a server entry point, an SPFx `config/package-solution.json`, an exported flow definition — rather than by a pattern in `.crew/metrics.md`, and onboarding one leaves `tier` where it was: the crew has specialised, not grown.
 

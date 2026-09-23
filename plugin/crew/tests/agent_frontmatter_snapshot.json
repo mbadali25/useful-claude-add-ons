@@ -215,6 +215,11 @@
       "name": "react-specialist",
       "tools": "Read, Write, Edit, Bash, Grep, Glob, Skill"
     },
+    "reviewer.md": {
+      "model": "opus",
+      "name": "reviewer",
+      "tools": "Read, Grep, Glob, Bash, Skill"
+    },
     "researcher.md": {
       "model": "sonnet",
       "name": "researcher",
