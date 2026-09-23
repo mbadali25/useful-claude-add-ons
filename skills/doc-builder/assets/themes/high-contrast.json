@@ -1,0 +1,44 @@
+{
+  "_comment": "Built-in doc-builder theme: colours only; the brand keeps logo, fonts, footer. Literal hex (word-traps.md rule 1). Contrast is asserted by scripts/_test/test_themes.py.",
+  "name": "high-contrast",
+  "label": "High Contrast",
+  "description": "Black page, white text, white grid, yellow accents - maximum contrast (WCAG AAA 7:1), modelled on Windows 'Night sky'.",
+  "sources": [
+    "https://learn.microsoft.com/en-us/windows/apps/design/accessibility/high-contrast-themes",
+    "https://webaim.org/articles/contrast/"
+  ],
+  "report": {
+    "navy": "#000000",
+    "navy_dark": "#FFFFFF",
+    "accent": "#FFEE32",
+    "org_ink": "#FFEE32",
+    "classification": "#8B0000",
+    "ink": "#FFFFFF",
+    "muted": "#E0E0E0",
+    "grid": "#FFFFFF",
+    "zebra": "#1F1F1F",
+    "panel": "#1A1A1A",
+    "rule": "#FFFFFF",
+    "table_head": "#1A1A1A",
+    "table_head_ink": "#FFEE32",
+    "table_border": "#FFFFFF",
+    "row": "#000000",
+    "page": "#000000",
+    "heading": "#FFEE32",
+    "title_ink": "#FFFFFF",
+    "handling_bg": "#330000",
+    "handling_ink": "#FFD7D7",
+    "warn_ink": "#FFEE32",
+    "fail_ink": "#FF9E9E",
+    "link": "#99CCFF"
+  },
+  "sop": {
+    "accent": "FFEE32",
+    "heading": "FFEE32",
+    "title": "FFFFFF",
+    "caption": "E0E0E0",
+    "body": "FFFFFF",
+    "link": "99CCFF",
+    "page": "000000"
+  }
+}

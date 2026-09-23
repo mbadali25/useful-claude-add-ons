@@ -1,0 +1,43 @@
+{
+  "_comment": "Built-in doc-builder theme: colours only; the brand keeps logo, fonts, footer. Literal hex (word-traps.md rule 1). Contrast is asserted by scripts/_test/test_themes.py.",
+  "name": "midnight",
+  "label": "Midnight",
+  "description": "True dark page, soft Nord palette: slate background, frost-blue accents, gentle zebra. For on-screen reading.",
+  "sources": [
+    "https://www.nordtheme.com/docs/colors-and-palettes"
+  ],
+  "report": {
+    "navy": "#3B4252",
+    "navy_dark": "#4C566A",
+    "accent": "#88C0D0",
+    "org_ink": "#D8DEE9",
+    "classification": "#A3303A",
+    "ink": "#ECEFF4",
+    "muted": "#D8DEE9",
+    "grid": "#6B7A94",
+    "zebra": "#3B4252",
+    "panel": "#3B4252",
+    "rule": "#4C566A",
+    "table_head": "#434C5E",
+    "table_head_ink": "#ECEFF4",
+    "table_border": "#6B7A94",
+    "row": "#2E3440",
+    "page": "#2E3440",
+    "heading": "#88C0D0",
+    "title_ink": "#ECEFF4",
+    "handling_bg": "#4A2C33",
+    "handling_ink": "#FFD7DB",
+    "warn_ink": "#EBCB8B",
+    "fail_ink": "#FFB3B8",
+    "link": "#88C0D0"
+  },
+  "sop": {
+    "accent": "88C0D0",
+    "heading": "88C0D0",
+    "title": "ECEFF4",
+    "caption": "D8DEE9",
+    "body": "ECEFF4",
+    "link": "88C0D0",
+    "page": "2E3440"
+  }
+}

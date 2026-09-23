@@ -1,0 +1,35 @@
+{
+  "_comment": "Tighter spacing for dense tables and long appendices. Sizes only - colours come from the brand and theme. Modelled on Word's compact table styles and Carbon's 'compact' row height (see references/themes.md).",
+  "description": "Dense: 11.5px report body, 3x6px cells, smaller masthead, 10pt guides, narrower SOP margins.",
+  "report": {
+    "density": {
+      "base_px": 11.5,
+      "cell_pad": "3px 6px",
+      "head_pad": "4px 6px",
+      "band_pad": "8px 12px",
+      "title_px": 20,
+      "logo_px": 32,
+      "h1_px": 17,
+      "h2_px": 13,
+      "h2_margin": "14px 0 5px",
+      "card_pad": "6px 8px",
+      "card_n_px": 18,
+      "meta_px": 11,
+      "guide_pt": 10,
+      "guide_margin": "1.5cm",
+      "line_height": 1.3
+    }
+  },
+  "sop": {
+    "title_pt": 17.0,
+    "subtitle_pt": 10.5,
+    "heading_pt": 12.0,
+    "caption_pt": 8.5,
+    "margins_in": {
+      "top": 0.6,
+      "bottom": 0.5,
+      "left": 0.5,
+      "right": 0.5
+    }
+  }
+}

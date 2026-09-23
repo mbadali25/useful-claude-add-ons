@@ -1,0 +1,40 @@
+{
+  "_comment": "Built-in doc-builder theme: colours only; the brand keeps logo, fonts, footer. Literal hex (word-traps.md rule 1). Contrast is asserted by scripts/_test/test_themes.py.",
+  "name": "professional",
+  "label": "Professional",
+  "description": "Charcoal masthead, black grid, black table headers with white text, grey zebra rows. The default house look.",
+  "sources": [
+    "https://tailwindcss.com/docs/colors (slate)"
+  ],
+  "report": {
+    "navy": "#1E293B",
+    "navy_dark": "#0F172A",
+    "accent": "#64748B",
+    "org_ink": "#CBD5E1",
+    "classification": "#8B1A13",
+    "ink": "#0F172A",
+    "muted": "#475569",
+    "grid": "#000000",
+    "zebra": "#E8ECF1",
+    "panel": "#F1F5F9",
+    "rule": "#CBD5E1",
+    "table_head": "#000000",
+    "table_head_ink": "#FFFFFF",
+    "table_border": "#000000",
+    "row": "#FFFFFF",
+    "page": "#FFFFFF",
+    "heading": "#0F172A",
+    "title_ink": "#FFFFFF",
+    "handling_bg": "#FDE8E6",
+    "handling_ink": "#A01B12"
+  },
+  "sop": {
+    "accent": "64748B",
+    "heading": "0F172A",
+    "title": "404040",
+    "caption": "6B7280",
+    "body": "0F172A",
+    "link": "1D4ED8",
+    "page": null
+  }
+}

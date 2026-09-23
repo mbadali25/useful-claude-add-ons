@@ -1,0 +1,40 @@
+{
+  "_comment": "Built-in doc-builder theme: colours only; the brand keeps logo, fonts, footer. Literal hex (word-traps.md rule 1). Contrast is asserted by scripts/_test/test_themes.py.",
+  "name": "blue",
+  "label": "Blue",
+  "description": "Bright blue masthead and headers, pale-blue zebra rows. Friendly and readable for guides and runbooks.",
+  "sources": [
+    "https://tailwindcss.com/docs/colors (blue)"
+  ],
+  "report": {
+    "navy": "#1D4ED8",
+    "navy_dark": "#1E3A8A",
+    "accent": "#60A5FA",
+    "org_ink": "#DBEAFE",
+    "classification": "#8B1A13",
+    "ink": "#0F172A",
+    "muted": "#475569",
+    "grid": "#3B5998",
+    "zebra": "#EFF6FF",
+    "panel": "#EFF6FF",
+    "rule": "#BFDBFE",
+    "table_head": "#1E40AF",
+    "table_head_ink": "#FFFFFF",
+    "table_border": "#3B5998",
+    "row": "#FFFFFF",
+    "page": "#FFFFFF",
+    "heading": "#1E3A8A",
+    "title_ink": "#FFFFFF",
+    "handling_bg": "#FDE8E6",
+    "handling_ink": "#A01B12"
+  },
+  "sop": {
+    "accent": "60A5FA",
+    "heading": "1E3A8A",
+    "title": "404040",
+    "caption": "6B7280",
+    "body": "0F172A",
+    "link": "1D4ED8",
+    "page": null
+  }
+}

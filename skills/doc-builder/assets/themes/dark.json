@@ -1,0 +1,40 @@
+{
+  "_comment": "Built-in doc-builder theme: colours only; the brand keeps logo, fonts, footer. Literal hex (word-traps.md rule 1). Contrast is asserted by scripts/_test/test_themes.py.",
+  "name": "dark",
+  "label": "Dark",
+  "description": "Dark accents on a white page: near-black masthead and table headers, slate zebra. Prints cleanly; dark feel without a dark page.",
+  "sources": [
+    "https://tailwindcss.com/docs/colors (slate 900/950)"
+  ],
+  "report": {
+    "navy": "#0F172A",
+    "navy_dark": "#020617",
+    "accent": "#334155",
+    "org_ink": "#CBD5E1",
+    "classification": "#8B1A13",
+    "ink": "#0F172A",
+    "muted": "#475569",
+    "grid": "#1E293B",
+    "zebra": "#E2E8F0",
+    "panel": "#F1F5F9",
+    "rule": "#CBD5E1",
+    "table_head": "#0F172A",
+    "table_head_ink": "#FFFFFF",
+    "table_border": "#1E293B",
+    "row": "#FFFFFF",
+    "page": "#FFFFFF",
+    "heading": "#0F172A",
+    "title_ink": "#FFFFFF",
+    "handling_bg": "#FDE8E6",
+    "handling_ink": "#A01B12"
+  },
+  "sop": {
+    "accent": "0F172A",
+    "heading": "0F172A",
+    "title": "404040",
+    "caption": "6B7280",
+    "body": "0F172A",
+    "link": "1D4ED8",
+    "page": null
+  }
+}

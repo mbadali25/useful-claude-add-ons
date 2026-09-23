@@ -1,0 +1,40 @@
+{
+  "_comment": "Built-in doc-builder theme: colours only; the brand keeps logo, fonts, footer. Literal hex (word-traps.md rule 1). Contrast is asserted by scripts/_test/test_themes.py.",
+  "name": "red",
+  "label": "Red",
+  "description": "Crimson masthead and headers, rose zebra rows. For incident, audit and risk reports that must read as urgent.",
+  "sources": [
+    "https://tailwindcss.com/docs/colors (red)"
+  ],
+  "report": {
+    "navy": "#991B1B",
+    "navy_dark": "#7F1D1D",
+    "accent": "#EF4444",
+    "org_ink": "#FECACA",
+    "classification": "#450A0A",
+    "ink": "#0F172A",
+    "muted": "#475569",
+    "grid": "#9B4545",
+    "zebra": "#FEF2F2",
+    "panel": "#FEF2F2",
+    "rule": "#FECACA",
+    "table_head": "#B91C1C",
+    "table_head_ink": "#FFFFFF",
+    "table_border": "#9B4545",
+    "row": "#FFFFFF",
+    "page": "#FFFFFF",
+    "heading": "#7F1D1D",
+    "title_ink": "#FFFFFF",
+    "handling_bg": "#FDE8E6",
+    "handling_ink": "#A01B12"
+  },
+  "sop": {
+    "accent": "EF4444",
+    "heading": "7F1D1D",
+    "title": "404040",
+    "caption": "6B7280",
+    "body": "0F172A",
+    "link": "B91C1C",
+    "page": null
+  }
+}
