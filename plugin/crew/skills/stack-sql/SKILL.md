@@ -36,14 +36,20 @@ isolation in ways that make a rule true on one and wrong on another.
 
 - **PostgreSQL**: `ACCESS EXCLUSIVE` on most `ALTER TABLE` forms - the danger is the queue
   behind a long `SELECT`, not the duration. `ADD COLUMN` with a non-volatile default is
-  metadata-only; `CREATE INDEX CONCURRENTLY` avoids the write lock but cannot run in a
-  transaction and leaves an invalid index behind on failure. Default isolation `READ
-  COMMITTED`; readers never block writers.
+  metadata-only **on PostgreSQL 11+ only** - before 11 it rewrites the whole table under that
+  same `ACCESS EXCLUSIVE` lock, so confirm the major version before calling it cheap.
+  `CREATE INDEX CONCURRENTLY` avoids the write lock but cannot run in a transaction and leaves
+  an invalid index behind on failure. Default isolation `READ COMMITTED`; plain readers never
+  block writers, but `SELECT ... FOR UPDATE`/`FOR SHARE` is a reader that takes row locks and
+  can block a concurrent writer (or another locking `SELECT`) on the same rows.
 - **MySQL/InnoDB**: no transactional DDL - a multi-statement migration that fails partway
-  leaves the earlier statements committed. State the algorithm (`ALGORITHM=INSTANT,
-  LOCK=NONE`) so a non-qualifying statement fails loudly instead of silently copying the
-  table. Default isolation `REPEATABLE READ`; a read-modify-write in a long transaction acts
-  on a stale snapshot.
+  leaves the earlier statements committed. State the algorithm and let it fail loudly if the
+  statement does not qualify rather than silently copying the table - `ALGORITHM=INSTANT`
+  takes no `LOCK` clause of its own (only `LOCK=DEFAULT` is accepted; pairing it with
+  `LOCK=NONE` is rejected before the statement runs), so ask for `LOCK=NONE` via
+  `ALGORITHM=INPLACE, LOCK=NONE` when the change needs it spelled out explicitly. Default
+  isolation `REPEATABLE READ`; a read-modify-write in a long transaction acts on a stale
+  snapshot.
 - **SQL Server**: DDL is transactional. `ONLINE = ON` index rebuilds are Enterprise-only - a
   migration proven online on a Developer-edition box is a blocking rebuild on Standard.
   `ALTER COLUMN` on a fixed-width type takes a schema modification lock that blocks readers

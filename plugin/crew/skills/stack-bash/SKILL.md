@@ -38,11 +38,12 @@ script.sh` silently runs under the stricter dialect.
 - **A trap set once is replaced, not added to.** `trap cleanup EXIT` followed later by another
   `trap ... EXIT` silently drops the first handler - chain them explicitly if both must run.
 - **Cross-platform (Git Bash on Windows) surprises that have already cost real time in this
-  repo**: `MSYS_NO_PATHCONV` rewrites a POSIX-looking path (`/c/repos/...`) into a Windows one
-  before a tool ever sees it, so the same command behaves differently depending on who set
-  that variable in the calling environment; a `pathlib`/text-mode write of a `.sh` file
-  converts `\n` to `\r\n` on Windows, which then dies on the shebang as `bad interpreter:
-  ...^M` - write shell scripts with `newline="\n"` and confirm with `od -c`, not by eye.
+  repo**: MSYS rewrites a POSIX-looking path (`/c/repos/...`) into a Windows one before a tool
+  ever sees it *by default* - `MSYS_NO_PATHCONV=1` disables that rewrite, it does not cause
+  it, so the same command behaves differently depending on who set (or unset) that variable in
+  the calling environment; a `pathlib`/text-mode write of a `.sh` file converts `\n` to `\r\n`
+  on Windows, which then dies on the shebang as `bad interpreter: ...^M` - write shell scripts
+  with `newline="\n"` and confirm with `od -c`, not by eye.
 
 ## Verification
 
@@ -55,12 +56,18 @@ parse errors only, never a runtime path. Report exit codes, never the tail of th
 {
   "paths": ["**/*.sh"],
   "run": [
-    "sh -c 'command -v shellcheck >/dev/null 2>&1 || { echo \"TOOL MISSING: shellcheck is not on PATH, so the lint pass DID NOT RUN. This is a missing tool, not a passing or failing check. Install shellcheck to check locally.\" >&2; exit 77; }; shellcheck $(git ls-files \"*.sh\")'"
+    "sh -c 'command -v shellcheck >/dev/null 2>&1 || { echo \"TOOL MISSING: shellcheck is not on PATH, so the lint pass DID NOT RUN. This is a missing tool, not a passing or failing check. Install shellcheck to check locally.\" >&2; exit 77; }; git ls-files -z --cached --others --exclude-standard -- \"*.sh\" | xargs -0 -r shellcheck'"
   ],
   "reach": "local",
   "why": "shellcheck catches the quoting and pipeline-exit-code defects above before review"
 }
 ```
+
+`git ls-files -z ... | xargs -0` rather than `shellcheck $(git ls-files "*.sh")`: the unquoted
+command substitution word-splits any filename containing a space, and plain `git ls-files` lists
+only tracked paths, so a newly-added untracked script silently gets no lint at all. `--others
+--exclude-standard` adds it back; `-z`/`xargs -0`/`-r` keep the list NUL-delimited (safe for any
+filename) and no-op instead of erroring when nothing matches.
 
 Nothing in this repo writes rules into `verify.json` on a skill's behalf (see
 `crew-verification`) - add by hand.

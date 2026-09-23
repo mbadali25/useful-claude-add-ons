@@ -61,12 +61,20 @@ component proves nothing about a leak.
 {
   "paths": ["**/*.ts", "**/*.js", "**/*.html"],
   "run": [
-    "sh -c 'command -v npx >/dev/null 2>&1 || { echo \"TOOL MISSING: npx is not on PATH, so eslint/prettier DID NOT RUN. This is a missing tool, not a passing or failing check. Install Node.js to check locally.\" >&2; exit 77; }; npx eslint . && npx prettier --check .'"
+    "sh -c 'E=node_modules/.bin/eslint; P=node_modules/.bin/prettier; [ -x \"$E\" ] || E=$(command -v eslint 2>/dev/null); [ -x \"$P\" ] || P=$(command -v prettier 2>/dev/null); if [ -z \"$E\" ] || [ -z \"$P\" ]; then echo \"TOOL MISSING: eslint and/or prettier is not installed locally (checked node_modules/.bin and PATH) - npx would try to download it rather than reporting UNVERIFIED. This is a missing tool, not a passing or failing check. Run npm install to check locally.\" >&2; exit 77; fi; F=$(git ls-files \"*.ts\" \"*.js\" \"*.html\"); \"$E\" . && { [ -z \"$F\" ] || \"$P\" --check $F; }'"
   ],
   "reach": "local",
   "why": "eslint/prettier catch drift and deprecated patterns before a human reviews the diff"
 }
 ```
+
+The probe checks for an already-installed `eslint`/`prettier` (local `node_modules/.bin` first,
+then `PATH`) rather than a bare `command -v npx` - on a modern npm (7+), `npx <missing-pkg>` does
+not fail closed on a missing package the way older npx's `--no-install` did; it reaches the registry
+and either downloads it or fails with a network/404 error, neither of which is this repo's
+tool-missing convention. `prettier --check` is scoped to the same `**/*.ts`/`**/*.js`/`**/*.html`
+globs this rule triggers on via `git ls-files`, not the whole repo - prettier also formats
+Markdown/JSON/YAML, and an Angular edit should not fail on unrelated drift in those.
 
 Nothing in this repo writes rules into `verify.json` on a skill's behalf (see the
 `crew-verification` skill) - add this by hand.
