@@ -114,19 +114,19 @@ SCOPE_MUTATIONS = (
      "scope.mode off.\" >&2\n  exit 2\n",
      "(exit $status); failing closed because .crew/config.json does not provably set "
      "scope.mode off.\" >&2\n  exit 0\n",
-     _CA + "test_a_crashed_python_fails_closed_only_where_scope_is_armed[block-2-sh-scope-guard]"),
+     _CA + "test_a_crashed_python_fails_closed_only_where_scope_is_armed[block-2-2-sh-scope-guard]"),
     ("the PowerShell guard fails open when python crashes", GUARD_PS1,
      "(exit $exitCode); failing closed because .crew/config.json does not provably set "
      "scope.mode off.\")\n  exit 2\n",
      "(exit $exitCode); failing closed because .crew/config.json does not provably set "
      "scope.mode off.\")\n  exit 0\n",
-     _CA + "test_a_crashed_python_fails_closed_only_where_scope_is_armed[block-2-ps1-scope-guard]"),
+     _CA + "test_a_crashed_python_fails_closed_only_where_scope_is_armed[block-2-2-ps1-scope-guard]"),
     ("the bash audit fails open when python crashes", AUDIT_SH,
      '  _block_once "completion_audit.py did not run to a verdict (exit $status); nothing was '
      'audited."\n',
      "  exit 0\n",
      _CA + "test_a_crashed_python_fails_closed_only_where_scope_is_armed"
-     "[block-2-sh-completion-audit]"),
+     "[block-2-2-sh-completion-audit]"),
     ("the same plan re-approved counts as a successor", LEDGER,
      "    if plan_hash in crew_ticket.earlier_plan_hashes(root, ticket):\n",
      "    if False:\n",
@@ -172,13 +172,9 @@ SCOPE_MUTATIONS = (
      "    if names_state and _WRITES_RE.search(command):\n",
      "    if False:\n",
      _SG + "test_a_shell_write_to_the_absolute_state_path_is_refused[module]"),
-    ("the bash no-python reader accepts any mode as off", GUARD_SH,
-     "grep -Eq '\"mode\"[[:space:]]*:[[:space:]]*\"off\"'",
-     "grep -Eq '\"mode\"[[:space:]]*:[[:space:]]*\"[a-z]*\"'",
-     _CA + "test_a_crashed_python_fails_closed_unless_scope_is_provably_off[bogus-sh-scope-guard]"),
     ("the PowerShell no-python reader accepts any mode as off", GUARD_PS1,
-     "return [bool]($obj -match '\"mode\"\\s*:\\s*\"off\"')",
-     "return [bool]($obj -match '\"mode\"\\s*:\\s*\"[a-z]*\"')",
+     "      return ($mode.GetString() -ceq 'off')\n",
+     "      return $true\n",
      _CA + "test_a_crashed_python_fails_closed_unless_scope_is_provably_off"
      "[bogus-ps1-scope-guard]"),
     ("the bash audit misses stop_hook_active across a newline", AUDIT_SH,
@@ -230,6 +226,42 @@ SCOPE_MUTATIONS = (
      "            root, ticket, via=crew_ticket.USER_PROMPT,",
      "            root, ticket, via=crew_ticket.CLI,",
      _AH + "test_the_users_prompt_records_a_user_prompt_receipt[module]"),
+    # --- the T3 fail-closed round (0.20.26) --------------------------------------
+    ("the bash guard reads a present config as off without python", GUARD_SH,
+     '  [ -e "$cfg" ] || [ -L "$cfg" ] || return 0\n  return 1\n',
+     '  [ -e "$cfg" ] || [ -L "$cfg" ] || return 0\n  return 0\n',
+     _CA + "test_no_python_fails_closed_unless_scope_is_provably_off"
+     "[trailing-comma-sh-scope-guard]"),
+    ("the bash audit reads a present config as off without python", AUDIT_SH,
+     '  [ -e "$cfg" ] || [ -L "$cfg" ] || return 0\n  return 1\n',
+     '  [ -e "$cfg" ] || [ -L "$cfg" ] || return 0\n  return 0\n',
+     _CA + "test_no_python_fails_closed_unless_scope_is_provably_off"
+     "[trailing-comma-sh-completion-audit]"),
+    ("the PowerShell guard parses the config leniently", GUARD_PS1,
+     "    $doc = [System.Text.Json.JsonDocument]::Parse($text)\n",
+     "    $doc = [System.Text.Json.JsonDocument]::Parse($text, "
+     "[System.Text.Json.JsonDocumentOptions]@{ AllowTrailingCommas = $true })\n",
+     _CA + "test_no_python_fails_closed_unless_scope_is_provably_off"
+     "[trailing-comma-ps1-scope-guard]"),
+    ("the PowerShell audit parses the config leniently", AUDIT_PS1,
+     "    $doc = [System.Text.Json.JsonDocument]::Parse($text)\n",
+     "    $doc = [System.Text.Json.JsonDocument]::Parse($text, "
+     "[System.Text.Json.JsonDocumentOptions]@{ AllowTrailingCommas = $true })\n",
+     _CA + "test_no_python_fails_closed_unless_scope_is_provably_off"
+     "[trailing-comma-ps1-completion-audit]"),
+    ("the PowerShell reader takes the first of two scope keys", GUARD_PS1,
+     "      if ($scopes.Count -ne 1) { return $false }\n",
+     "      if ($scopes.Count -lt 1) { return $false }\n",
+     _CA + "test_no_python_fails_closed_unless_scope_is_provably_off"
+     "[escaped-duplicate-scope-ps1-scope-guard]"),
+    ("a cli receipt continues a NEEDS_REPLAN ledger", LEDGER,
+     "    result = crew_ticket.accepted(root, ticket)\n",
+     "    result = crew_ticket.status(root, ticket)\n",
+     _CT + "test_a_cli_approval_does_not_continue_needs_replan_without_allow_cli"),
+    ("a malformed /crew:approve payload passes as an unrelated prompt", HOOK,
+     "        if data is None and COMMAND.encode() in raw:\n",
+     "        if False:\n",
+     _AH + "test_a_malformed_payload_naming_the_command_is_refused[truncated-module]"),
     ("the bash approval hook lets an unrecorded approval through", HOOK_SH,
      "no usable python to validate the plan.\" >&2\n  exit 2\n",
      "no usable python to validate the plan.\" >&2\n  exit 0\n",

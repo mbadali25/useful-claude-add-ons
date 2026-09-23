@@ -8,36 +8,25 @@
 # Exit 0 allows, exit 2 refuses (stderr is the reason). scope_guard.py itself
 # only ever exits 0 or 2. Any other status, or no python at all, means nothing
 # was judged; that fails CLOSED unless .crew/config.json PROVABLY sets
-# `scope.mode` to off -- python resolves a corrupt config or an unknown mode
-# to block, so a wrapper that recognised only literal block/auto would be the
-# one place those shapes failed open.
+# `scope.mode` to off (from bash: only an absent file is) -- python resolves a
+# corrupt config or an unknown mode to block, so a wrapper that recognised only
+# literal block/auto would be the one place those shapes failed open.
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$DIR/_common.sh"
 
 INPUT=$(cat)
 
 # BYTE-FOR-BYTE the copy in completion-audit.sh (asserted by the tests).
-# True only when `.crew/config.json` PROVABLY leaves the scope hooks off: the
-# file is absent, or it is one JSON object (crudely: starts `{`, ends `}`,
-# braces balance) with exactly one "scope" key, whose object has exactly one
-# "mode", and that mode is "off". Crude on purpose -- it runs only when python
-# could not, so it cannot parse JSON -- and every shape it cannot prove is NOT
-# off: corrupt, an unknown mode, report, auto, block, or no scope key at all.
+# True only when `.crew/config.json` PROVABLY leaves the scope hooks off, and
+# without python the only proof bash has is that the file is ABSENT. bash has
+# no JSON parser: a crude reader here once passed `{"scope":{"mode":"off"},}`,
+# which python reads as corrupt and therefore block. So a config that exists
+# is never provably off from bash, whatever it says -- with no usable python,
+# a present config blocks writes and the Stop until python is available.
 _scope_provably_off() {
-  local cfg="${CLAUDE_PROJECT_DIR:-$PWD}/.crew/config.json" text obj
+  local cfg="${CLAUDE_PROJECT_DIR:-$PWD}/.crew/config.json"
   [ -e "$cfg" ] || [ -L "$cfg" ] || return 0
-  { [ -f "$cfg" ] && [ -r "$cfg" ]; } || return 1
-  text=$(tr -d '\r\n' < "$cfg") || return 1
-  text=${text#$'\xef\xbb\xbf'}
-  text=$(printf '%s' "$text" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
-  case "$text" in '{'*'}') ;; *) return 1 ;; esac
-  [ "$(printf '%s' "$text" | tr -cd '{' | wc -c)" -eq \
-    "$(printf '%s' "$text" | tr -cd '}' | wc -c)" ] || return 1
-  [ "$(printf '%s' "$text" | grep -o '"scope"' | wc -l)" -eq 1 ] || return 1
-  obj=$(printf '%s' "$text" | sed -n 's/.*"scope"[[:space:]]*:[[:space:]]*\({[^{}]*}\).*/\1/p')
-  [ -n "$obj" ] || return 1
-  [ "$(printf '%s' "$obj" | grep -o '"mode"' | wc -l)" -eq 1 ] || return 1
-  printf '%s' "$obj" | grep -Eq '"mode"[[:space:]]*:[[:space:]]*"off"'
+  return 1
 }
 
 PY=$(crew_py_strict) || {

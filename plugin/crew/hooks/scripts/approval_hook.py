@@ -25,6 +25,8 @@ or carries more than one id -- is not an approval.
 
 ## Outcomes
 
+- A payload that is not one JSON object but contains `crew:approve`: exit 2,
+  the same as a refusal -- an approval was asked for and could not be read.
 - Not an approve prompt: exit 0, no output. The common case, and cheap: the
   wrappers skip python entirely unless the text contains `crew:approve`.
 - Approved: exit 0 with `additionalContext` naming the ticket and hashes, so
@@ -72,17 +74,20 @@ def _one_token(text):
 
 
 def _payload():
+    """(data_or_None, raw_bytes). `data` is None when stdin is not one JSON
+    object; the raw bytes are kept so `main` can tell a malformed approval
+    from an unrelated prompt."""
     try:
         raw = sys.stdin.buffer.read()
     except (OSError, ValueError):
-        return None
+        return None, b""
     if raw[:3] == b"\xef\xbb\xbf":
         raw = raw[3:]
     try:
         data = json.loads(raw.decode("utf-8"))
     except (UnicodeDecodeError, ValueError):
-        return None
-    return data if isinstance(data, dict) else None
+        return None, raw
+    return (data if isinstance(data, dict) else None), raw
 
 
 def _refuse(text):
@@ -121,7 +126,13 @@ def handle(data):
 
 def main():
     try:
-        return handle(_payload())
+        data, raw = _payload()
+        # A payload that mentions the command but does not parse is an
+        # approval the user asked for and nobody can read: say so, never
+        # pass it as an unrelated prompt.
+        if data is None and COMMAND.encode() in raw:
+            return _refuse("the hook payload mentions it but is not a JSON object")
+        return handle(data)
     except Exception as exc:  # pylint: disable=broad-except
         return _refuse(f"the approval hook failed ({type(exc).__name__}: {exc})")
 

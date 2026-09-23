@@ -115,11 +115,14 @@ $raw = [System.Text.Encoding]::UTF8.GetString($stdinBytes)
 # BYTE-FOR-BYTE the copy in the other scope wrapper (asserted by the tests);
 # the twin of the .sh `_scope_provably_off`. True only when
 # `.crew/config.json` PROVABLY leaves the scope hooks off: the file is absent,
-# or it is one JSON object (crudely: starts `{`, ends `}`, braces balance)
-# with exactly one "scope" key, whose object has exactly one "mode", and that
-# mode is "off". Crude on purpose -- it runs only when python could not -- and
-# every shape it cannot prove is NOT off: corrupt, an unknown mode, report,
-# auto, block, or no scope key at all.
+# or System.Text.Json (strict: no trailing commas, comments, single quotes or
+# bare keys) parses it as one object with exactly one "scope" property, whose
+# object has exactly one "mode" property, and that mode is the string "off".
+# NOT ConvertFrom-Json: on PowerShell 7 it accepts `{"scope":{"mode":"off"},}`,
+# which python reads as corrupt and therefore block. Where System.Text.Json is
+# not loadable (Windows PowerShell 5.1) nothing is provable, so a present
+# config fails closed until python is available. Every shape it cannot prove
+# is NOT off: corrupt, an unknown mode, report, auto, block, or no scope key.
 function Test-ScopeProvablyOff {
   $projectDir = $env:CLAUDE_PROJECT_DIR
   if (-not $projectDir) { $projectDir = (Get-Location).Path }
@@ -128,18 +131,27 @@ function Test-ScopeProvablyOff {
   if (-not $item -and -not (Test-Path -LiteralPath $configPath)) { return $true }
   if (-not (Test-Path -LiteralPath $configPath -PathType Leaf)) { return $false }
   try {
-    $text = ([System.IO.File]::ReadAllText($configPath) -replace '[\r\n]', '').Trim()
+    $text = [System.IO.File]::ReadAllText($configPath)
+    if (([regex]::Matches($text, '"scope"')).Count -ne 1) { return $false }
+    $doc = [System.Text.Json.JsonDocument]::Parse($text)
+    try {
+      $root = $doc.RootElement
+      if ($root.ValueKind -ne [System.Text.Json.JsonValueKind]::Object) { return $false }
+      $scopes = @($root.EnumerateObject() | Where-Object { $_.Name -ceq 'scope' })
+      if ($scopes.Count -ne 1) { return $false }
+      $scope = $scopes[0].Value
+      if ($scope.ValueKind -ne [System.Text.Json.JsonValueKind]::Object) { return $false }
+      $modes = @($scope.EnumerateObject() | Where-Object { $_.Name -ceq 'mode' })
+      if ($modes.Count -ne 1) { return $false }
+      $mode = $modes[0].Value
+      if ($mode.ValueKind -ne [System.Text.Json.JsonValueKind]::String) { return $false }
+      return ($mode.GetString() -ceq 'off')
+    } finally {
+      $doc.Dispose()
+    }
   } catch {
     return $false
   }
-  if (-not ($text.StartsWith('{') -and $text.EndsWith('}'))) { return $false }
-  if (([regex]::Matches($text, '\{')).Count -ne ([regex]::Matches($text, '\}')).Count) { return $false }
-  if (([regex]::Matches($text, '"scope"')).Count -ne 1) { return $false }
-  $m = [regex]::Match($text, '"scope"\s*:\s*(\{[^{}]*\})')
-  if (-not $m.Success) { return $false }
-  $obj = $m.Groups[1].Value
-  if (([regex]::Matches($obj, '"mode"')).Count -ne 1) { return $false }
-  return [bool]($obj -match '"mode"\s*:\s*"off"')
 }
 
 $py = Resolve-CrewPython

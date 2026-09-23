@@ -364,46 +364,67 @@ def _broken_python(tmp_path):
     return folder
 
 
-def _wrapper(tmp_path, root, stem, shell, raw):
-    """Run one wrapper with a `python3` that passes the probe and crashes."""
-    fake = tmp_path / "fakebin"
-    folder = fake if fake.is_dir() else _broken_python(tmp_path)
-    env = dict(os.environ, CLAUDE_PROJECT_DIR=str(root), OS="Windows_NT",
-               PATH=os.pathsep.join([str(folder), "/usr/bin", "/bin"]))
+def _no_python(tmp_path):
+    """A PATH folder with the tools the bash wrappers use and no python at all,
+    so `crew_py_strict` finds nothing."""
+    folder = tmp_path / "nopy"
+    folder.mkdir()
+    for tool in ("cat", "dirname", "tr", "sed", "grep", "wc", "cut", "cksum", "rm", "date"):
+        for base in ("/usr/bin", "/bin"):
+            if os.path.exists(os.path.join(base, tool)):
+                os.symlink(os.path.join(base, tool), folder / tool)
+                break
+    return folder
+
+
+def _wrapper(tmp_path, root, stem, shell, raw, python="crashed"):
+    """Run one wrapper with a `python3` that passes the probe and crashes, or
+    (`python="missing"`) with no python on PATH at all."""
+    if python == "missing":
+        path = str(_no_python(tmp_path))
+    else:
+        fake = tmp_path / "fakebin"
+        folder = fake if fake.is_dir() else _broken_python(tmp_path)
+        path = os.pathsep.join([str(folder), "/usr/bin", "/bin"])
+    env = dict(os.environ, CLAUDE_PROJECT_DIR=str(root), OS="Windows_NT", PATH=path)
     cmd = ([PWSH, "-NoProfile", "-File", os.path.join(SCRIPTS, stem + ".ps1")]
-           if shell == "ps1" else ["bash", os.path.join(SCRIPTS, stem + ".sh")])
+           if shell == "ps1" else ["/bin/bash", os.path.join(SCRIPTS, stem + ".sh")])
     return subprocess.run(cmd, input=raw, cwd=str(root), capture_output=True, env=env,
                           check=False, timeout=120)
 
 
-# Every shape the crude no-python reader cannot PROVE is off must fail closed;
-# python itself reads a corrupt config or an unknown mode as block.
+# Every shape the no-python readers cannot PROVE is off must fail closed;
+# python itself reads a corrupt config or an unknown mode as block. bash has no
+# JSON parser, so from bash ANY present config is unprovable (expected 2);
+# PowerShell proves "off" with System.Text.Json. Columns: config, bash, pwsh.
 _CONFIGS = [
-    pytest.param('{"scope": {"mode": "block"}}', 2, id="block"),
-    pytest.param('{"scope": {"mode": "auto"}}', 2, id="auto"),
-    pytest.param('{"scope": {"mode": "report"}}', 2, id="report"),
-    pytest.param('{"scope": {"mode": "bogus"}}', 2, id="bogus"),
-    pytest.param('{"scope": {"mode": "off"}', 2, id="unbalanced"),
-    pytest.param('{"scope": {"mode": "off"}} trailing', 2, id="trailing"),
-    pytest.param('{"scope": {"mode": "off"}, "x": {"scope": 1}}', 2, id="two-scopes"),
-    pytest.param('{"scope": {"mode": "off", "mode": "block"}}', 2, id="two-modes"),
-    pytest.param('{"scope": "off"}', 2, id="scope-not-object"),
-    pytest.param('{"install": {}}', 2, id="no-scope-key"),
-    pytest.param('{', 2, id="corrupt"),
-    pytest.param('{"scope": {"mode": "off"}}', 0, id="off"),
+    pytest.param('{"scope": {"mode": "block"}}', 2, 2, id="block"),
+    pytest.param('{"scope": {"mode": "auto"}}', 2, 2, id="auto"),
+    pytest.param('{"scope": {"mode": "report"}}', 2, 2, id="report"),
+    pytest.param('{"scope": {"mode": "bogus"}}', 2, 2, id="bogus"),
+    pytest.param('{"scope": {"mode": "off"}', 2, 2, id="unbalanced"),
+    pytest.param('{"scope": {"mode": "off"}} trailing', 2, 2, id="trailing"),
+    pytest.param('{"scope": {"mode": "off"}, "x": {"scope": 1}}', 2, 2, id="two-scopes"),
+    pytest.param('{"scope": {"mode": "off", "mode": "block"}}', 2, 2, id="two-modes"),
+    pytest.param('{"scope": "off"}', 2, 2, id="scope-not-object"),
+    pytest.param('{"install": {}}', 2, 2, id="no-scope-key"),
+    pytest.param('{', 2, 2, id="corrupt"),
+    pytest.param('{"scope":{"mode":"off"},}', 2, 2, id="trailing-comma"),
+    pytest.param('{"scope":{"mode":"off",}}', 2, 2, id="inner-trailing-comma"),
+    pytest.param('{/* c */"scope":{"mode":"off"}}', 2, 2, id="comment"),
+    pytest.param("{'scope':{'mode':'off'}}", 2, 2, id="single-quotes"),
+    pytest.param('{scope:{mode:"off"}}', 2, 2, id="bare-keys"),
+    pytest.param('{"scope":{"mode":"off"},"sc\\u006fpe":{"mode":"block"}}', 2, 2,
+                 id="escaped-duplicate-scope"),
+    pytest.param('{"scope":{"mode":["off"]}}', 2, 2, id="mode-not-string"),
+    pytest.param('{"scope": {"mode": "off"}}', 2, 0, id="off"),
     pytest.param('\ufeff{\n  "scope": {\n    "mode": "off",\n    "allowCliApproval": false\n'
-                 '  }\n}\n', 0, id="off-template-bom"),
-    pytest.param(None, 0, id="absent"),
+                 '  }\n}\n', 2, 0, id="off-template-bom"),
+    pytest.param(None, 0, 0, id="absent"),
 ]
 
 
-@pytest.mark.parametrize("stem", _WRAPPERS)
-@pytest.mark.parametrize("shell", ["sh", "ps1"])
-@pytest.mark.parametrize("config,expected", _CONFIGS)
-def test_a_crashed_python_fails_closed_unless_scope_is_provably_off(tmp_path, stem, shell,
-                                                                    config, expected):
-    if shell == "ps1" and PWSH is None:
-        pytest.skip("pwsh not installed - the .ps1 flavour was NOT run")
+def _run_config(tmp_path, stem, shell, config, python):
     root = make_repo(tmp_path, mode=None)
     config_path = root / ".crew" / "config.json"
     if config is None:
@@ -413,17 +434,43 @@ def test_a_crashed_python_fails_closed_unless_scope_is_provably_off(tmp_path, st
     payload = stop(root) if stem == "completion-audit" else {
         "tool_name": "Write", "tool_input": {"file_path": str(root / "src" / "app.py")},
         "cwd": str(root)}
-
-    done = _wrapper(tmp_path, root, stem, shell, json.dumps(payload).encode())
-
-    assert done.returncode == expected, done.stderr
+    return _wrapper(tmp_path, root, stem, shell, json.dumps(payload).encode(), python)
 
 
 @pytest.mark.parametrize("stem", _WRAPPERS)
 @pytest.mark.parametrize("shell", ["sh", "ps1"])
-@pytest.mark.parametrize("mode,expected", [("block", 2), ("auto", 2), ("off", 0)])
+@pytest.mark.parametrize("config,sh_expected,ps1_expected", _CONFIGS)
+def test_a_crashed_python_fails_closed_unless_scope_is_provably_off(tmp_path, stem, shell,
+                                                                    config, sh_expected,
+                                                                    ps1_expected):
+    if shell == "ps1" and PWSH is None:
+        pytest.skip("pwsh not installed - the .ps1 flavour was NOT run")
+
+    done = _run_config(tmp_path, stem, shell, config, "crashed")
+
+    assert done.returncode == (sh_expected if shell == "sh" else ps1_expected), done.stderr
+
+
+@pytest.mark.parametrize("stem", _WRAPPERS)
+@pytest.mark.parametrize("shell", ["sh", "ps1"])
+@pytest.mark.parametrize("config,sh_expected,ps1_expected", _CONFIGS)
+def test_no_python_fails_closed_unless_scope_is_provably_off(tmp_path, stem, shell, config,
+                                                             sh_expected, ps1_expected):
+    if shell == "ps1" and PWSH is None:
+        pytest.skip("pwsh not installed - the .ps1 flavour was NOT run")
+
+    done = _run_config(tmp_path, stem, shell, config, "missing")
+
+    assert done.returncode == (sh_expected if shell == "sh" else ps1_expected), done.stderr
+
+
+@pytest.mark.parametrize("stem", _WRAPPERS)
+@pytest.mark.parametrize("shell", ["sh", "ps1"])
+@pytest.mark.parametrize("mode,sh_expected,ps1_expected",
+                         [("block", 2, 2), ("auto", 2, 2), ("off", 2, 0)])
 def test_a_crashed_python_fails_closed_only_where_scope_is_armed(tmp_path, stem, shell,
-                                                                 mode, expected):
+                                                                 mode, sh_expected,
+                                                                 ps1_expected):
     if shell == "ps1" and PWSH is None:
         pytest.skip("pwsh not installed - the .ps1 flavour was NOT run")
     root = make_repo(tmp_path, mode=mode)
@@ -434,7 +481,7 @@ def test_a_crashed_python_fails_closed_only_where_scope_is_armed(tmp_path, stem,
 
     done = _wrapper(tmp_path, root, stem, shell, json.dumps(payload).encode())
 
-    assert done.returncode == expected, done.stderr
+    assert done.returncode == (sh_expected if shell == "sh" else ps1_expected), done.stderr
 
 
 def _sh_function(stem, name):

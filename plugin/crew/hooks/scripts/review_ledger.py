@@ -400,7 +400,10 @@ def _plan_approval_receipt(root, ticket, plan_hash):
     """(receipt, None) when `ticket`'s approval receipt is current AND is for
     `plan_hash` AND no earlier approval carried that plan, else (None, why)."""
     import crew_ticket  # pylint: disable=import-outside-toplevel
-    result = crew_ticket.status(root, ticket)
+    # `accepted`, not `status`: the same rule the scope guard acts on, so a
+    # cli receipt continues a NEEDS_REPLAN ledger only where
+    # `scope.allowCliApproval` is true.
+    result = crew_ticket.accepted(root, ticket)
     receipt = result.get("receipt") or {}
     if result["status"] != "approved":
         return None, f"no current approval for {ticket}: {result['why']}"

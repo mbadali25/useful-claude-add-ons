@@ -109,6 +109,28 @@ def test_a_prompt_that_is_not_the_command_passes_untouched(flavour, repo, text):
     assert (code, out, err, _receipt(repo)) == (0, "", "", None)
 
 
+@pytest.mark.parametrize("flavour", FLAVOURS)
+@pytest.mark.parametrize("raw", [b'{"prompt": "/crew:approve T-1",',
+                                 b'["/crew:approve T-1"]',
+                                 b'\xff{"prompt": "/crew:approve T-1"}'],
+                         ids=["truncated", "array", "bad-utf8"])
+def test_a_malformed_payload_naming_the_command_is_refused(flavour, repo, raw):
+    make_ticket(repo)
+
+    code, _, err = _hook(flavour, repo, raw)
+
+    assert (code, "NOT recorded" in err, _receipt(repo)) == (2, True, None)
+
+
+@pytest.mark.parametrize("flavour", FLAVOURS)
+def test_a_malformed_payload_not_naming_the_command_passes(flavour, repo):
+    make_ticket(repo)
+
+    code, out, err = _hook(flavour, repo, b'{"prompt": "hello",')
+
+    assert (code, out, err) == (0, "", "")
+
+
 def test_another_event_is_not_an_approval(repo):
     make_ticket(repo)
     payload = dict(prompt(repo, "/crew:approve T-1"), hook_event_name="PreToolUse")

@@ -401,8 +401,18 @@ def _exhaust(repo):
     assert rl.status(str(repo), "T-1")["state"] == rl.NEEDS_REPLAN
 
 
+def _allow_cli(repo):
+    (repo / ".crew" / "config.json").write_text(
+        json.dumps({"scope": {"mode": "block", "allowCliApproval": True}}), encoding="utf-8")
+
+
+def _approve_from_prompt(repo):
+    return crew_ticket.approve(str(repo), "T-1", by="owner", via=crew_ticket.USER_PROMPT)
+
+
 def test_an_approved_new_plan_continues_review_after_needs_replan(repo):
     ready(repo)
+    _allow_cli(repo)
     _exhaust(repo)
     _plan(repo, "## Step 1\nFiles: src/app.py\nTest: new\nRisk: new\n")
 
@@ -412,8 +422,29 @@ def test_an_approved_new_plan_continues_review_after_needs_replan(repo):
     assert (done.returncode, "may continue" in done.stdout, again[:2]) == (0, True, (True, 3))
 
 
+def test_a_cli_approval_does_not_continue_needs_replan_without_allow_cli(repo):
+    ready(repo)
+    _exhaust(repo)
+    _plan(repo, "## Step 1\nFiles: src/app.py\nTest: new\nRisk: new\n")
+
+    done = _cli(repo, "approve", "--ticket", "T-1", "--by", "owner")
+
+    assert (done.returncode, rl.status(str(repo), "T-1")["state"]) == (3, rl.NEEDS_REPLAN)
+
+
+def test_a_prompt_approval_continues_needs_replan_without_allow_cli(repo):
+    ready(repo)
+    _exhaust(repo)
+    _plan(repo, "## Step 1\nFiles: src/app.py\nTest: new\nRisk: new\n")
+
+    _, successor = _approve_from_prompt(repo)
+
+    assert (successor[0], rl.status(str(repo), "T-1")["state"] != rl.NEEDS_REPLAN) == (True, True)
+
+
 def test_reapproving_the_same_plan_is_not_a_successor(repo):
     ready(repo)
+    _allow_cli(repo)
     _exhaust(repo)
 
     done = _cli(repo, "approve", "--ticket", "T-1", "--by", "owner")
@@ -425,7 +456,7 @@ def test_a_successor_gets_two_rounds_and_no_more(repo):
     ready(repo)
     _exhaust(repo)
     _plan(repo, "## Step 1\nFiles: src/app.py\nTest: new\nRisk: new\n")
-    crew_ticket.approve(str(repo), "T-1", by="owner")
+    _approve_from_prompt(repo)
 
     grants = [rl.reserve(str(repo), "T-1", "codex")[0] for _ in range(3)]
 
@@ -452,7 +483,7 @@ def test_findings_from_before_the_successor_cannot_be_accepted(repo):
                                              "bundle_sha256": bundle, "base": head})
     _exhaust_after_two(repo)
     _plan(repo, "## Step 1\nFiles: src/app.py\nTest: new\nRisk: new\n")
-    crew_ticket.approve(str(repo), "T-1", by="owner")
+    _approve_from_prompt(repo)
 
     with pytest.raises(rl.LedgerError, match="successor replaced"):
         rl.accept(str(repo), "T-1", "owner")
@@ -469,7 +500,7 @@ def test_the_successor_approval_is_rechecked_under_the_ledger_lock(repo, monkeyp
     _plan(repo, "## Step 1\nFiles: src/app.py\nTest: new\nRisk: new\n")
     seam = rl.continue_with_successor_plan
     monkeypatch.setattr(rl, "continue_with_successor_plan", lambda *_: (False, "later"))
-    crew_ticket.approve(str(repo), "T-1", by="owner")
+    _approve_from_prompt(repo)
     monkeypatch.setattr(rl, "continue_with_successor_plan", seam)
     plan_hash = crew_ticket.status(str(repo), "T-1")["receipt"]["plan_sha256"]
     real_enter = rl._Lock.__enter__  # pylint: disable=protected-access
@@ -489,7 +520,7 @@ def test_a_round_from_before_the_successor_cannot_be_recorded(repo):
     ready(repo)
     _exhaust(repo)
     _plan(repo, "## Step 1\nFiles: src/app.py\nTest: new\nRisk: new\n")
-    crew_ticket.approve(str(repo), "T-1", by="owner")
+    _approve_from_prompt(repo)
 
     with pytest.raises(rl.LedgerError):
         rl.record(str(repo), "T-1", 2, {"verdict": "CLEAN", "provider": "codex",

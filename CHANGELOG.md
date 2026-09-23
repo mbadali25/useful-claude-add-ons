@@ -6,6 +6,10 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Changed
 
+- **`crew` 0.20.26: T3 fail-closed fixes.** Scope guard and completion audit
+  fail closed when python is unavailable and the config is not provably off;
+  successor-plan continuation requires an accepted (user-prompt) approval; a
+  malformed /crew:approve payload is reported, not ignored.
 - **`crew` 0.20.25: register approval, scope guard, completion audit;
   `/crew:approve`.** Ticket contract enforcement (off by default; `/crew:init`
   sets scope.mode auto = report for 10 tickets then block): `crew_ticket.py`
