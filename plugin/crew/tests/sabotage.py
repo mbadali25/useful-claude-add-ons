@@ -102,7 +102,7 @@ HOUSE_STYLE_PY = os.path.join(
 # document it produced. One guide is sabotaged rather than all four -- the
 # assertion is parametrized per file, so breaking any one of them is what the
 # suite has to catch, and mutating four would prove the same thing four times.
-GUIDE_HTML = os.path.join(ROOT, "docs", "guides", "crew-overview.html")
+GUIDE_HTML = os.path.join(ROOT, "docs", "guides", "crew", "crew-overview.html")
 PM_BRIEF = os.path.join(CREW, "hooks", "scripts", "pm_brief.py")
 # The other half of the upgrade message. The brief NAMES the migration and
 # this file SAYS WHAT IT DOES, deliberately one copy each -- so the only
