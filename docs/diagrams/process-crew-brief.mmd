@@ -1,10 +1,13 @@
-%% Generated from useful-claude-add-ons@d541ee57 on 2026-09-22. Verify before trusting.
+%% Generated from useful-claude-add-ons@60c79407 on 2026-09-22. Verify before trusting.
 %% Re-anchored from 84976536, which is not on main: PR #205 squash-merged it as
-%% d541ee57. `git diff --name-only 84976536 d541ee57` over the anchored files is
-%% empty and so is d541ee57..60c79407, so no claim below moved; only the sha did.
-%% Anchors: plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/crew_state.py,
-%% plugin/crew/hooks/scripts/crew_freshness.py, plugin/crew/hooks/scripts/pm_brief.py,
-%% plugin/crew/hooks/scripts/crew_endpoints.py, plugin/crew/hooks/scripts/crew_incident.py
+%% d541ee57. Over every file this diagram cites, `git diff --name-only d541ee57
+%% 60c79407` returns ONE: plugin/crew/hooks/scripts/pm-brief.sh (PR #208), which
+%% was cited in the SH node but missing from the Anchors line, so the anchored-path
+%% check hid it. SH's citations are re-taken at 60c79407 (exec :22, no-python
+%% exit :21, now via crew_py_strict); nothing else moved. pm-brief.sh is now on the
+%% Anchors line, and that line is one physical line because crew_freshness's
+%% _DIAGRAM_ANCHORS_RE reads only the first - wrapped, it watched 2 of 6 paths.
+%% Anchors: plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/crew_state.py, plugin/crew/hooks/scripts/crew_freshness.py, plugin/crew/hooks/scripts/pm_brief.py, plugin/crew/hooks/scripts/crew_endpoints.py, plugin/crew/hooks/scripts/crew_incident.py, plugin/crew/hooks/scripts/pm-brief.sh
 %% How a fact about the repo becomes the finding a session opens with - and what can drop it.
 %% --
 %% Drawn because nothing diagrammed crew's own control flow. data-flow-crew-config.mmd
@@ -101,7 +104,7 @@ flowchart TB
     subgraph Entry["SessionStart - registered once per shell flavour - UNCHANGED at this anchor"]
         direction TB
         HOOK["plugin/crew/hooks/hooks.json :3<br/>3 SessionStart scripts, each registered<br/><b>twice</b>: bash and <i>shell: powershell</i>,<br/>so the event carries 6 entries - re-counted<br/>by parsing the file here, not carried forward.<br/>A bare command goes to Git Bash on Windows,<br/>so a single registration stands down silently<br/>on half the machines it ships to.<br/><i>PreToolUse gained role-write-guard at :15-18<br/>in the same window; different event, not this<br/>diagram's path.</i>"]
-        SH["plugin/crew/hooks/scripts/pm-brief.sh :14<br/><i>exec</i>s pm_brief.py - a thin wrapper on<br/>purpose, so both flavours share one<br/>implementation rather than two that drift.<br/>:13 is the other half of that: no usable<br/>python exits <b>0</b> with a message on stderr,<br/>never silently - a brief that cannot run must<br/>not look like a brief with nothing to say"]
+        SH["plugin/crew/hooks/scripts/pm-brief.sh :22<br/><i>exec</i>s pm_brief.py - a thin wrapper on<br/>purpose, so both flavours share one<br/>implementation rather than two that drift.<br/>:21 is the other half of that: no usable<br/>python (crew_py_strict, so a Store stub<br/>counts as none) exits <b>0</b> with a message on stderr,<br/>never silently - a brief that cannot run must<br/>not look like a brief with nothing to say"]
     end
 
     subgraph Collect["crew_state.collect() - plugin/crew/hooks/scripts/crew_state.py:3049 - one reader per state key, assembled :3126-3149"]

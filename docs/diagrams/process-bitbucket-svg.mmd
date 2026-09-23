@@ -36,8 +36,8 @@
 %%     the path `which` resolved instead of the bare string "mmdc" - the
 %%     WinError-2 fix, already documented below in the Resolve subgraph and
 %%     the TOOLGONE node, and unchanged in substance by this pass (only its
-%%     line numbers moved, because 125 lines were added after it, not before
-%%     it - see next point).
+%%     line numbers moved: 27 lines were added above it across 1.2.4 and
+%%     1.2.5, :200 at a573ca24 -> :227 now).
 %%   1.2.4 -> 1.2.5 (PR #210 / 60c79407, THIS pass's actual new material):
 %%     CHANGELOG.md's own line for it: "every generated-file write pins its
 %%     newline, --check compares SVGs by logical content, and the Markdown
@@ -184,7 +184,7 @@ flowchart TB
     CURRENT{"have['hash'] == want<br/><b>and</b> svg.exists() :515<br/>source unchanged, artifact present"}
     POOL --> CURRENT
     Hash -.->|"want"| CURRENT
-    MANIFEST[(".mermaid-svg.json :37<br/>Manifest :143-173. An unreadable manifest is a<br/><i>warning</i>, not an error - it degrades to<br/>'nothing is current', which re-renders rather<br/>than silently skipping. save() :166-173 now pins<br/>newline=#quot;\n#quot; :172-173 - a Windows-rendered manifest<br/>is byte-identical to a Linux one for the same JSON.<br/>Regression: tests/test_check_reads_the_svg.py:381"]
+    MANIFEST[(".mermaid-svg.json :37<br/>Manifest :143-173. An unreadable manifest is a<br/><i>warning</i>, not an error - it degrades to<br/>'nothing is current', which re-renders rather<br/>than silently skipping. save() :166-173 now pins<br/>newline=#quot;\n#quot; :172-173 - a Windows-rendered manifest<br/>is byte-identical to a Linux one for the same JSON.<br/>Regression: tests/test_check_reads_the_svg.py:381")]
     MANIFEST -.->|"have"| CURRENT
 
     MODE{"--check ?<br/>:517"}
@@ -219,7 +219,7 @@ flowchart TB
         R2{"returncode != 0<br/><b>or</b> not svg.exists() :274<br/><i>both</i> checked - a tool that exits 0<br/>and writes nothing is caught here"}
         R3["postprocess() :281-321<br/>the only gate that opens the output"]
         R4{"'&lt;foreignObject' in svg :295"}
-        R5["set intrinsic width/height from the viewBox<br/>:302-305, strip mermaid's max-width style :307,<br/>then write the file back with newline=#quot;\n#quot; :321<br/>pinned (<b>NEW in 1.2.5</b>) - render() on Linux and on<br/>Windows now produce byte-identical SVGs for the<br/>same source. Regression:<br/>tests/test_check_reads_the_svg.py:345"]
+        R5["set intrinsic width/height from the viewBox<br/>:302-305, strip mermaid's max-width style :307,<br/>then write the file back with newline=#quot;\n#quot; :321<br/>pinned (<b>NEW in 1.2.5</b>) - the write no longer turns<br/>LF into CRLF on Windows. It does NOT make raw<br/>SVG bytes reproducible across platforms - layout<br/>depends on installed fonts (render_mermaid.py:93-94). Regression:<br/>tests/test_check_reads_the_svg.py:345"]
         R1 --> R0
         R0 -->|spawned| R2
         R2 -->|ok| R3
