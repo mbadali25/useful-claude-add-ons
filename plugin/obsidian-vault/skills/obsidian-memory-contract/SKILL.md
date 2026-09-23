@@ -10,6 +10,14 @@ If this marketplace already has a vault-specific skill installed (this repo
 ships `claude-memories-vault` and `claude-memories-canvas` for one particular
 vault), **that skill wins** - it is tuned to the actual vault's real
 conventions, where this one is a starting shape for a vault that has none yet.
+
+Two portable profiles carry those vault-specific conventions without the one
+vault's paths, so any primary vault can adopt them:
+[`profiles/memory-vault.md`](profiles/memory-vault.md) (folder layout,
+frontmatter, filenames, wikilink resolution including the Linux case trap,
+commit-by-path) and [`profiles/canvas-maps.md`](profiles/canvas-maps.md)
+(facts in notes, canvas linking, schema and layout). Read the matching profile
+before writing a note or a canvas in a vault that follows it.
 **A specific vault's own `CLAUDE.md` always wins where it differs from this
 skill** - this teaches the shape; the vault states its own vocabulary and
 thresholds. Read the vault's `CLAUDE.md` before writing a note. If it has none

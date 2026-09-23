@@ -7,7 +7,12 @@ obsidian_common.resolve_vault_path() at run time instead, so one script works
 for every vault on every machine. Wired to SessionEnd and PreCompact.
 
 Reads the hook JSON from stdin, appends one markdown task line to
-inbox/pending-reflect.md. Never raises: a capture failure must not break a
+inbox/pending-reflect.<host>.md - one queue file PER HOST, so two machines
+syncing the same vault never append to the same file. The legacy single queue,
+inbox/pending-reflect.md, is no longer written here; it is still read (for
+de-duplication here, and as a queue by the gardener) so a backlog captured by
+an older version of this plugin is drained rather than stranded. This script
+is the only capture owner. Never raises: a capture failure must not break a
 session - this is a nice-to-have, not a gate.
 
 Invoke with --selftest to validate that a vault resolves and its inbox is
@@ -28,8 +33,27 @@ HEADER = (
 )
 
 
-def inbox_path(vault):
+def legacy_inbox_path(vault):
     return pathlib.Path(vault) / "inbox" / "pending-reflect.md"
+
+
+def inbox_path(vault):
+    return pathlib.Path(vault) / "inbox" / f"pending-reflect.{obsidian_common.host_id()}.md"
+
+
+def already_queued(vault, sid):
+    """True when this session id is in this host's queue or the legacy queue."""
+    if sid == "?":
+        return False
+    needle = f"session={sid} "
+    for path in (inbox_path(vault), legacy_inbox_path(vault)):
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        if needle in text or text.rstrip().endswith(f"session={sid}"):
+            return True
+    return False
 
 
 def main():
@@ -45,7 +69,7 @@ def main():
         inbox.parent.mkdir(parents=True, exist_ok=True)
         try:
             if not inbox.exists():
-                inbox.write_text(HEADER, encoding="utf-8")
+                inbox.write_text(HEADER, encoding="utf-8", newline="\n")
             else:
                 with inbox.open("a", encoding="utf-8"):
                     pass
@@ -72,12 +96,12 @@ def main():
         line = f"- [ ] {ts} | {trigger} | session={sid} | cwd={cwd} | transcript={transcript}\n"
         inbox = inbox_path(vault)
         inbox.parent.mkdir(parents=True, exist_ok=True)
-        if not inbox.exists():
-            inbox.write_text(HEADER + "\n" + line, encoding="utf-8")
-            return
-        if sid != "?" and f"session={sid}" in inbox.read_text(encoding="utf-8"):
+        if already_queued(vault, sid):
             return  # one queue entry per session, whichever trigger fires first
-        with inbox.open("a", encoding="utf-8") as f:
+        if not inbox.exists():
+            inbox.write_text(HEADER + "\n" + line, encoding="utf-8", newline="\n")
+            return
+        with inbox.open("a", encoding="utf-8", newline="\n") as f:
             f.write(line)
     except Exception as e:
         # Never break the session over a capture miss - but say what broke
