@@ -672,8 +672,8 @@ MUTATIONS = (
         # crew names.
         "the print-block citation points at the wrong lines",
         HOUSE_STYLE,
-        "`skills/doc-builder/scripts/house_style.py:270-272` \u2014 the body of",
-        "`skills/doc-builder/scripts/house_style.py:269-271` \u2014 the body of",
+        "`skills/doc-builder/scripts/house_style.py:276-278` \u2014 the body of",
+        "`skills/doc-builder/scripts/house_style.py:275-277` \u2014 the body of",
         "tests/test_docs_routing.py::"
         "test_the_cited_lines_of_the_generator_hold_what_crew_says_they_hold",
     ),
@@ -690,8 +690,8 @@ MUTATIONS = (
         # failed, never which assertion did.
         "the report profile's table-comment citation points at the wrong line",
         HOUSE_STYLE,
-        '`skills/doc-builder/scripts/house_style.py:373`, "Every table: real',
-        '`skills/doc-builder/scripts/house_style.py:363`, "Every table: real',
+        '`skills/doc-builder/scripts/house_style.py:381`, "Every table: real',
+        '`skills/doc-builder/scripts/house_style.py:371`, "Every table: real',
         "tests/test_docs_routing.py::"
         "test_the_cited_lines_of_the_generator_hold_what_crew_says_they_hold",
     ),
@@ -703,8 +703,8 @@ MUTATIONS = (
         # cannot be pasted into `git diff --name-only <anchor>..HEAD -- <path>`.
         "the citation drops its repo-relative path",
         HOUSE_STYLE,
-        "at\n`skills/doc-builder/scripts/house_style.py:383`,",
-        "at\n`house_style.py:383`,",
+        "at\n`skills/doc-builder/scripts/house_style.py:391`,",
+        "at\n`house_style.py:391`,",
         "tests/test_docs_routing.py::"
         "test_the_cited_lines_of_the_generator_hold_what_crew_says_they_hold",
     ),
@@ -720,8 +720,8 @@ MUTATIONS = (
         # extraction there was one occurrence and this state could not exist.
         "both table-comment citations collapse onto one line",
         HOUSE_STYLE,
-        '`skills/doc-builder/scripts/house_style.py:383`, "Every table: real',
-        '`skills/doc-builder/scripts/house_style.py:373`, "Every table: real',
+        '`skills/doc-builder/scripts/house_style.py:391`, "Every table: real',
+        '`skills/doc-builder/scripts/house_style.py:381`, "Every table: real',
         "tests/test_docs_routing.py::"
         "test_the_cited_lines_of_the_generator_hold_what_crew_says_they_hold",
     ),

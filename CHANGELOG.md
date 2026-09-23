@@ -6,7 +6,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Changed
 
-- **`doc-builder` 1.7.1: built-in themes, a compact density, and a theme gallery.**
+- **`doc-builder` 1.7.2: built-in themes, a compact density, and a theme gallery.**
   Eight themes (`professional`, `corporate`, `blue`, `red`, `modern`, `dark`, `midnight`,
   `high-contrast`) in `assets/themes/`, chosen with `--theme` or `DOC_BUILDER_THEME` on
   `build_report.py`, `build_sop.py`, `house_style.py` and `check_conformance.py`. A theme
@@ -19,7 +19,9 @@ All notable changes to this repository are documented here. Format follows [Keep
   `scripts/_test/test_themes.py`. `assets/themes/gallery/` ships a sample report, PNG and
   index per theme, built by `scripts/build_gallery.py`, and a test fails when the gallery
   goes stale. When someone asks for documentation without naming a look, `SKILL.md` now
-  says to show the gallery first. Word COM dark-page handling is untested (no Windows host). `crew` 0.20.15
+  says to show the gallery first. Word COM dark-page handling is untested (no Windows host). The theme and
+  density environment variables reach only the scripts that build a document, and a malformed
+  theme file is skipped with a warning instead of breaking every build. `crew` 0.20.16
   re-points `crew-house-style`'s `house_style.py` citations once more, since the
   themes moved those lines.
 

@@ -29,6 +29,7 @@ greyscale, which is where most of these documents end up.
 | `report.zebra` | `#E8ECF1` | `tr.alt` rows, meta-table labels |
 | `report.row` / `report.page` | `#FFFFFF` | Body-cell fill / page colour (a dark-page theme sets both) |
 | `report.heading` | `null` (= `navy`) | `h1`-`h3`, lede rule, card numbers |
+| `report.warn_ink` / `fail_ink` / `link` | `#8A6100` / `#A01B12` / `#0563C1` | Guide `.warn` / `.fail` notes and links (dark themes override all three) |
 | `report.density` | see `themes.md` | Sizes and padding; `--density` overrides |
 | `report.panel` | `#F6F7F9` | Lede panel and card background |
 | `report.rule` | `#DCDEE5` | `h2` underline, footer rule |

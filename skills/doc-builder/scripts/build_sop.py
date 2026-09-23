@@ -629,9 +629,33 @@ class SopBuilder:
             else:
                 settings.insert(0, flag)
 
+    def _recolour_headers_footers(self):
+        """On a dark page, the brand TEMPLATE's own header/footer runs keep the
+        colour the template gave them (Solomon's footer is 7F7F7F - 3.1:1 on
+        midnight). Repaint every run there in the theme's caption colour."""
+        colour = RGBColor.from_string(self.style.CAPTION_GREY)
+        for section in self.doc.sections:
+            for part in (section.header, section.footer, section.first_page_header,
+                         section.first_page_footer, section.even_page_header,
+                         section.even_page_footer):
+                # Linked means "this section defines none". Reading .paragraphs
+                # on such a part would CREATE an empty definition and add a
+                # header/footer the document never had.
+                if part.is_linked_to_previous:
+                    continue
+                paragraphs = list(part.paragraphs)
+                for table in part.tables:
+                    for row in table.rows:
+                        for cell in row.cells:
+                            paragraphs.extend(cell.paragraphs)
+                for para in paragraphs:
+                    for run in para.runs:
+                        run.font.color.rgb = colour
+
     def save(self, path):
         if self.style.PAGE:
             self._apply_page_colour()
+            self._recolour_headers_footers()
         self.doc.save(path)
         return path
 

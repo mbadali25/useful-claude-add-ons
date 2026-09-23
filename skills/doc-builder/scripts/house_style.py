@@ -106,6 +106,11 @@ class Palette:
         self.title_ink = r["title_ink"]
         self.handling_bg = r["handling_bg"]
         self.handling_ink = r["handling_ink"]
+        # Text-on-page colours a dark theme must override: the guide's .warn and
+        # .fail notes and links. Word's default link blue is 2.1:1 on midnight.
+        self.warn_ink = r["warn_ink"]
+        self.fail_ink = r["fail_ink"]
+        self.link = r["link"]
         self.d = dict(r["density"])
         self.panel = r["panel"]
         self.rule = r["rule"]
@@ -194,8 +199,9 @@ def table_css(pal: Palette, sel: str = "table.data", layout: str = "fixed",
         f"             text-align:left; vertical-align:top; overflow-wrap:break-word; }}\n"
         f"{pre}th {{ background:{pal.table_head}; color:{pal.table_head_ink}; font-weight:700;\n"
         f"             letter-spacing:0.02em; padding:{pal.d['head_pad']}; }}\n"
-        "/* Every body cell carries its own fill, so a dark-page theme's tables stay\n"
-        "   readable even where a renderer drops the page colour. */\n"
+        "/* Every body cell carries its own fill. Word keeps it when a print drops the\n"
+        "   page colour; LibreOffice keeps it only in the guide profile's bare `td`\n"
+        "   (it drops the report's scoped selector - word-traps.md). */\n"
         f"{pre}td {{ background:{pal.row}; color:{pal.ink}; }}\n"
         "/* Zebra is an explicit class, written per row by the builder. */\n"
         f"{pre}tr.alt td {{ background:{pal.zebra}; }}\n"
@@ -288,6 +294,7 @@ def _report_base_css(pal: Palette) -> str:
         f"h2 {{ font-size:{pal.d['h2_px']}px; margin:{pal.d['h2_margin']}; padding-bottom:4px;\n"
         f"     border-bottom:1px solid {pal.rule}; color:{pal.heading}; }}\n"
         "p  { margin:6px 0; }\n"
+        f"a  {{ color:{pal.link}; }}\n"
         f".sub    {{ color:{pal.muted}; font-size:12px; margin:0 0 10px; }}\n"
         f".footer {{ color:{pal.muted}; font-size:11px; margin-top:26px;\n"
         f"          border-top:1px solid {pal.rule}; padding-top:8px; }}\n"
@@ -344,8 +351,9 @@ def _guide_base_css(pal: Palette) -> str:
         "code { font-family:Consolas,'Courier New',monospace; font-size:9.5pt; }\n"
         f".sub    {{ color:{pal.muted}; font-size:10pt; margin:0 0 10pt; }}\n"
         f".muted  {{ color:{pal.muted}; font-size:9.5pt; }}\n"
-        ".warn { color:#8A6100; }\n"
-        ".fail { color:#A01B12; }\n"
+        f".warn {{ color:{pal.warn_ink}; }}\n"
+        f".fail {{ color:{pal.fail_ink}; }}\n"
+        f"a {{ color:{pal.link}; }}\n"
         f".footer {{ color:{pal.muted}; font-size:9.5pt; margin-top:26pt;\n"
         f"          border-top:1px solid {pal.rule}; padding-top:8pt; }}\n"
         f".box {{ background:{pal.panel}; border:1px solid {pal.heading};\n"
@@ -637,6 +645,8 @@ def _title_case_markup(inner: str) -> str:
 
 PAGE_META = "doc-builder-page"
 _BODY_RE = re.compile(r"<body(\s[^>]*)?>", re.IGNORECASE)
+_BGCOLOR_RE = re.compile(r"""\s+bgcolor\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)""", re.IGNORECASE)
+_OLD_META_RE = re.compile(r'<meta name="' + PAGE_META + r'"[^>]*>\n?', re.IGNORECASE)
 
 
 def mark_page(html: str, pal: Palette) -> str:
@@ -647,14 +657,21 @@ def mark_page(html: str, pal: Palette) -> str:
     So a dark-page theme is stated three ways: the CSS, the legacy `bgcolor`
     attribute (the form Word itself writes when it saves a coloured page as
     HTML), and a `<meta name="doc-builder-page">` that `build_report.to_word`
-    reads to set the page colour explicitly over COM. A white page is left
-    exactly as it was -- no attribute, no meta."""
+    reads to set the page colour explicitly over COM. A white page carries
+    neither attribute nor meta.
+
+    Any marking from an EARLIER run is removed first, so a restyle in place
+    (`--apply page.html --out page.html`) from `midnight` to `professional`
+    does not leave a dark `bgcolor` and meta behind for LibreOffice and Word
+    to paint under a light theme's dark ink."""
+    html = _OLD_META_RE.sub("", html)
+    html = _BODY_RE.sub(lambda m: "<body" + _BGCOLOR_RE.sub("", m.group(1) or "") + ">", html, count=1)
     if pal.page.upper() == "#FFFFFF":
         return html
     html = _BODY_RE.sub(lambda m: f'<body bgcolor="{pal.page}"{m.group(1) or ""}>', html, count=1)
     meta = f'<meta name="{PAGE_META}" content="{pal.page}">'
     m = re.search(r"</head>", html, re.IGNORECASE)
-    if m and PAGE_META not in html:
+    if m:
         html = html[:m.start()] + meta + "\n" + html[m.start():]
     return html
 

@@ -46,6 +46,7 @@ import html
 import json
 import os
 import re
+import shutil
 import sys
 
 import house_style
@@ -369,13 +370,19 @@ def page_colour(path):
         import zipfile  # pylint: disable=import-outside-toplevel
         try:
             with zipfile.ZipFile(path) as z:
-                xml = z.read("word/document.xml")[:4096].decode("utf-8", "replace")
+                xml = z.read("word/document.xml").decode("utf-8", "replace")
         except (OSError, KeyError, zipfile.BadZipFile):
             return None
         m = re.search(r'<w:background w:color="([0-9A-Fa-f]{6})"', xml)
     elif low.endswith((".html", ".htm")):
+        # The whole <head>, not a fixed prefix: the meta sits just before
+        # </head>, after the stylesheet, so any extra head content (an inline
+        # script, a second style block) pushed it past an 8 KB window and a
+        # dark page read as white.
         with open(path, encoding="utf-8", errors="replace") as fh:
-            head = fh.read(8192)
+            text = fh.read()
+        end = re.search(r"</head>", text, re.IGNORECASE)
+        head = text[:end.end()] if end else text
         m = re.search(r'<meta name="' + house_style.PAGE_META + r'" content="#([0-9A-Fa-f]{6})"', head)
     else:
         return None
@@ -431,6 +438,8 @@ def stamp_page_colour(docx_path, hex6):
         with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as z:
             for info, data in out:
                 z.writestr(info, data)
+        # mkstemp creates 0600; keep the mode the converter gave the original.
+        shutil.copymode(docx_path, tmp)
         os.replace(tmp, docx_path)
     finally:
         if os.path.exists(tmp):

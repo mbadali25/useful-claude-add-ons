@@ -26,7 +26,10 @@
     "heading": "#88C0D0",
     "title_ink": "#ECEFF4",
     "handling_bg": "#4A2C33",
-    "handling_ink": "#FFD7DB"
+    "handling_ink": "#FFD7DB",
+    "warn_ink": "#EBCB8B",
+    "fail_ink": "#FFB3B8",
+    "link": "#88C0D0"
   },
   "sop": {
     "accent": "88C0D0",

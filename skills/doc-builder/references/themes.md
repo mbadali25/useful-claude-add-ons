@@ -64,8 +64,11 @@ it survives conversion, so it is carried every way each renderer can read it:
 | HTML -> LibreOffice DOCX | **dropped by LibreOffice** (measured), so `build_report.stamp_page_colour` writes `<w:background>` and `<w:displayBackgroundShape/>` back in; re-opening that DOCX renders dark again |
 | SOP (python-docx) | `SopBuilder.save` writes `<w:background>` + `<w:displayBackgroundShape/>` itself |
 
-Every body cell also carries its own fill (`report.row`), so a dark theme's tables stay
-readable even where a renderer drops the page colour. **Not verified here:** the Word COM
+Every body cell also carries its own fill (`report.row`). Word keeps that fill when a print
+drops the page colour; LibreOffice keeps it only in the guide profile, whose cell selectors
+are bare (it drops the report profile's scoped ones - see word-traps.md). Body paragraphs have
+no fill at all, so **a dark-page document printed from Word with "Print background colors"
+off comes out as light text on white paper** - hand over the PDF, which carries the page. **Not verified here:** the Word COM
 branch (no Windows host in the session that wrote it) - the first Word run of a dark theme
 should be checked by eye.
 

@@ -13,6 +13,7 @@ SABOTAGE CHECKS (each was run; each turned this suite red):
 
 import json
 import os
+import shutil
 import sys
 import zipfile
 
@@ -59,7 +60,9 @@ def contrast(a, b):
 
 
 def test_the_expected_themes_ship():
-    assert set(THEMES) == EXPECTED_THEMES
+    """A superset check: adding a theme file must not fail the suite (SKILL.md
+    says to add one by copying a JSON file); removing a shipped one must."""
+    assert EXPECTED_THEMES <= set(THEMES)
 
 
 def test_densities_ship():
@@ -76,14 +79,51 @@ def test_unknown_theme_names_the_available_ones():
         _resolve(theme="sparkly")
 
 
-def test_theme_from_environment(monkeypatch):
+def _parse(argv):
+    import argparse  # pylint: disable=import-outside-toplevel
+    ap = argparse.ArgumentParser()
+    resolve_brand.add_theme_arguments(ap)
+    return ap.parse_args(argv)
+
+
+def test_theme_from_environment_reaches_build_scripts(monkeypatch):
     monkeypatch.setenv(resolve_brand.THEME_ENV, "red")
-    assert _resolve().theme == "red"
+    args = _parse([])
+    assert _resolve(theme=args.theme).theme == "red"
 
 
 def test_explicit_theme_beats_environment(monkeypatch):
     monkeypatch.setenv(resolve_brand.THEME_ENV, "red")
-    assert _resolve(theme="blue").theme == "blue"
+    assert _parse(["--theme", "blue"]).theme == "blue"
+
+
+@pytest.mark.parametrize("var", ["THEME_ENV", "DENSITY_ENV"])
+def test_resolve_itself_ignores_the_environment(monkeypatch, var):
+    """extract_spec, the checkers and the gallery call resolve() without a
+    theme; an overlay env var must not reach them."""
+    monkeypatch.setenv(getattr(resolve_brand, var), "compact" if var == "DENSITY_ENV" else "red")
+    b = _resolve()
+    assert b.theme is None and b.density is None
+
+
+def test_gallery_check_ignores_density_env(monkeypatch):
+    monkeypatch.setenv(resolve_brand.DENSITY_ENV, "compact")
+    assert build_gallery.main(["--check"]) == 0
+
+
+def test_a_broken_theme_file_does_not_stop_builds_that_ignore_themes(tmp_path, monkeypatch, capsys):
+    bad = tmp_path / "themes"
+    bad.mkdir()
+    for f in os.listdir(resolve_brand.THEMES_DIR):
+        if f.endswith(".json"):
+            shutil.copyfile(os.path.join(resolve_brand.THEMES_DIR, f), bad / f)
+    (bad / "mine.json").write_text('{"report": {')
+    monkeypatch.setattr(resolve_brand, "THEMES_DIR", str(bad))
+    names = [n for n, _, _ in resolve_brand.list_themes()]
+    assert "mine" not in names and "midnight" in names
+    assert "mine.json" in capsys.readouterr().err
+    with pytest.raises(resolve_brand.OverlayInvalid, match="mine.json"):
+        _resolve(theme="mine")
 
 
 def test_no_theme_keeps_the_brand_colours():
@@ -147,6 +187,11 @@ def test_every_theme_meets_contrast(theme):
         "muted on page": (pal.muted, pal.page),
         "classification bar": ("#FFFFFF", pal.classification),
         "handling notice": (pal.handling_ink, pal.handling_bg),
+        "card label (muted) on panel": (pal.muted, pal.panel),
+        "card number (heading) on panel": (pal.heading, pal.panel),
+        "guide .warn on page": (pal.warn_ink, pal.page),
+        "guide .fail on page": (pal.fail_ink, pal.page),
+        "link on page": (pal.link, pal.page),
     }
     bad = {k: round(contrast(*v), 2) for k, v in pairs.items() if contrast(*v) < floor}
     assert not bad, f"{theme} below {floor}:1 -> {bad}"
@@ -165,7 +210,7 @@ def test_every_theme_keeps_the_table_grid_visible(theme):
 def test_sop_colours_meet_contrast(theme):
     b = _resolve(theme=theme)
     page = "#" + (b.sop.get("page") or "FFFFFF").lstrip("#")
-    for key in ("body", "heading", "title", "link"):
+    for key in ("body", "heading", "title", "link", "caption"):
         assert contrast("#" + b.sop[key].lstrip("#"), page) >= 4.5, f"{theme} sop.{key}"
 
 
@@ -235,6 +280,11 @@ def test_sop_page_colour(theme, dark, tmp_path):
     assert ("<w:background" in doc) is dark
     assert ("displayBackgroundShape" in settings) is dark
     if dark:
+        order = _settings_order(settings)
+        for before in build_report.SETTINGS_BEFORE_BG:
+            if before in order:
+                assert order.index("displayBackgroundShape") > order.index(before), before
+    if dark:
         assert build_report.page_colour(out) is not None
 
 
@@ -258,3 +308,113 @@ def test_every_theme_file_is_self_describing():
         assert set(data) <= {"_comment", "name", "label", "description", "sources",
                              "report", "sop"}, name
         json.dumps(data)
+
+
+@pytest.mark.parametrize("brand", ["neutral", "solomon"])
+@pytest.mark.parametrize("theme", ["midnight", "high-contrast"])
+def test_sop_header_footer_text_is_readable_on_a_dark_page(brand, theme, tmp_path):
+    """A brand TEMPLATE brings its own footer runs (Solomon: 7F7F7F, 3.1:1 on
+    midnight); on a dark page every header/footer run must meet the floor."""
+    pytest.importorskip("docx")
+    import re as _re  # pylint: disable=import-outside-toplevel
+    import build_sop  # pylint: disable=import-outside-toplevel
+    b = _resolve(brand, theme=theme)
+    sop = build_sop.SopBuilder("Title", "Sub", brand=b)
+    sop.para("Body")
+    out = sop.save(str(tmp_path / "s.docx"))
+    page = "#" + b.sop["page"].lstrip("#")
+    floor = 7.0 if theme == "high-contrast" else 4.5
+    with zipfile.ZipFile(out) as z:
+        parts = [n for n in z.namelist() if _re.match(r"word/(header|footer)\d*\.xml$", n)]
+        colours = set()
+        for n in parts:
+            colours |= set(_re.findall(r'<w:color w:val="([0-9A-Fa-f]{6})"', z.read(n).decode()))
+    assert parts
+    bad = {c: round(contrast("#" + c, page), 2) for c in colours if contrast("#" + c, page) < floor}
+    assert not bad, bad
+
+
+# --------------------------------------------------------------------------
+# The LibreOffice DOCX page-colour stamp, and CT_Settings ordering
+# --------------------------------------------------------------------------
+
+def _settings_order(xml):
+    import re as _re  # pylint: disable=import-outside-toplevel
+    return _re.findall(r"<w:([A-Za-z]+)\b", xml.split("<w:settings", 1)[1])[0:]
+
+
+def test_insert_display_bg_follows_every_child_the_schema_puts_first():
+    xml = ('<w:settings xmlns:w="x"><w:view w:val="web"/><w:zoom w:percent="100"/>'
+           '<w:removePersonalInformation/><w:defaultTabStop w:val="720"/></w:settings>')
+    out = build_report._insert_display_bg(xml)
+    order = _settings_order(out)
+    assert order.index("displayBackgroundShape") > order.index("removePersonalInformation")
+    assert order.index("displayBackgroundShape") < order.index("defaultTabStop")
+    assert build_report._insert_display_bg(out) == out  # idempotent
+
+
+def test_stamp_page_colour_writes_background_and_keeps_the_package(tmp_path):
+    pytest.importorskip("docx")
+    import docx  # pylint: disable=import-outside-toplevel
+    path = tmp_path / "plain.docx"
+    d = docx.Document()
+    d.add_paragraph("x")
+    d.save(str(path))
+    os.chmod(path, 0o644)
+    with zipfile.ZipFile(path) as z:
+        before = z.namelist()
+    build_report.stamp_page_colour(str(path), "2E3440")
+    with zipfile.ZipFile(path) as z:
+        assert z.namelist() == before  # same parts, same order ([Content_Types].xml first)
+        doc = z.read("word/document.xml").decode()
+        settings = z.read("word/settings.xml").decode()
+    assert '<w:background w:color="2E3440"/>' in doc
+    order = _settings_order(settings)
+    assert "displayBackgroundShape" in order
+    if "zoom" in order:
+        assert order.index("displayBackgroundShape") > order.index("zoom")
+    assert oct(os.stat(path).st_mode & 0o777) == oct(0o644)
+    assert build_report.page_colour(str(path)) == 0x2E + (0x34 << 8) + (0x40 << 16)
+
+
+def test_libreoffice_convert_stamps_a_dark_page_docx(tmp_path, monkeypatch):
+    """convert() must stamp the page colour after a LibreOffice DOCX export
+    (which drops it). The engine is stubbed; the stamp is what is under test."""
+    pytest.importorskip("docx")
+    import docx  # pylint: disable=import-outside-toplevel
+    html = build_report.build(build_report.EXAMPLE, _resolve(theme="midnight"))
+    src = tmp_path / "r.html"
+    src.write_text(html, encoding="utf-8")
+
+    def fake_soffice(path, want_docx=False, want_pdf=False):
+        d = docx.Document()
+        d.add_paragraph("x")
+        d.save(os.path.splitext(path)[0] + ".docx")
+        return 0
+
+    import render_engine  # pylint: disable=import-outside-toplevel
+    monkeypatch.setattr(render_engine, "choose_engine", lambda r: (render_engine.LIBREOFFICE, "test"))
+    monkeypatch.setattr(render_engine, "to_soffice", fake_soffice)
+    assert build_report.convert(str(src), want_docx=True) == 0
+    assert build_report.page_colour(str(tmp_path / "r.docx")) is not None
+
+
+@pytest.mark.parametrize("theme", ["professional", "midnight"])
+def test_restyle_in_place_replaces_the_page_marking(theme):
+    """A page themed midnight and then restyled must carry the NEW theme's
+    marking only - not the old dark bgcolor and meta."""
+    dark = house_style.Palette(_resolve(theme="midnight"))
+    new = house_style.Palette(_resolve(theme=theme))
+    base = "<html><head><style></style></head><body><h1>x</h1></body></html>"
+    once = house_style.apply_to_html(base, dark, "guide")
+    twice = house_style.apply_to_html(once, new, "guide")
+    assert twice.count("bgcolor") == (0 if new.page.upper() == "#FFFFFF" else 1)
+    assert twice.count(house_style.PAGE_META) == (0 if new.page.upper() == "#FFFFFF" else 1)
+
+
+def test_page_colour_finds_the_meta_after_a_long_head(tmp_path):
+    pal = house_style.Palette(_resolve(theme="midnight"))
+    base = "<html><head><script>" + "x" * 20000 + "</script><style></style></head><body></body></html>"
+    src = tmp_path / "g.html"
+    src.write_text(house_style.apply_to_html(base, pal, "guide"), encoding="utf-8")
+    assert build_report.page_colour(str(src)) is not None

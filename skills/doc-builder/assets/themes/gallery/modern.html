@@ -10,6 +10,7 @@ h1 { font-size:20px; margin:18px 0 2px; color:#18181B; }
 h2 { font-size:15px; margin:22px 0 8px; padding-bottom:4px;
      border-bottom:1px solid #E4E4E7; color:#18181B; }
 p  { margin:6px 0; }
+a  { color:#0563C1; }
 .sub    { color:#52525B; font-size:12px; margin:0 0 10px; }
 .footer { color:#52525B; font-size:11px; margin-top:26px;
           border-top:1px solid #E4E4E7; padding-top:8px; }
@@ -43,8 +44,9 @@ table.data th, table.data td { border:1px solid #52525B; padding:7px 10px;
              text-align:left; vertical-align:top; overflow-wrap:break-word; }
 table.data th { background:#18181B; color:#FFFFFF; font-weight:700;
              letter-spacing:0.02em; padding:8px 10px; }
-/* Every body cell carries its own fill, so a dark-page theme's tables stay
-   readable even where a renderer drops the page colour. */
+/* Every body cell carries its own fill. Word keeps it when a print drops the
+   page colour; LibreOffice keeps it only in the guide profile's bare `td`
+   (it drops the report's scoped selector - word-traps.md). */
 table.data td { background:#FFFFFF; color:#18181B; }
 /* Zebra is an explicit class, written per row by the builder. */
 table.data tr.alt td { background:#F4F4F5; }

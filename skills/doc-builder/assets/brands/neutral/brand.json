@@ -26,6 +26,9 @@
     "title_ink": "#FFFFFF",
     "handling_bg": "#FDE8E6",
     "handling_ink": "#A01B12",
+    "warn_ink": "#8A6100",
+    "fail_ink": "#A01B12",
+    "link": "#0563C1",
     "density": {
       "base_px": 13, "cell_pad": "7px 10px", "head_pad": "8px 10px",
       "band_pad": "14px 18px", "title_px": 26, "logo_px": 44,

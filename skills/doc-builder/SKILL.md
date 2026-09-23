@@ -205,11 +205,14 @@ Dark-page themes (`midnight`, `high-contrast`) carry the page colour into the DO
 the HTML states it as CSS, as `bgcolor` and as a `doc-builder-page` meta; Word conversion
 sets the page colour over COM and turns on *Print background colours* only for that save; a
 LibreOffice DOCX gets `<w:background>` written back in (LibreOffice drops it); an SOP writes
-`<w:background>` itself. A themed SOP is checked with the same `--theme` passed to
-`check_conformance.py`. Palettes, sources and density numbers: `references/themes.md`.
+`<w:background>` itself. A themed SOP is checked with the same `--theme` AND `--density` passed to
+`check_conformance.py` - a compact SOP checked without `--density compact` fails on
+heading, caption and margins. Palettes, sources and density numbers: `references/themes.md`.
 
 Adding a theme: copy one in `assets/themes/`, change the hex values, run
 `python build_gallery.py --png` and the suite - the contrast test tells you which pair fails.
+A malformed theme file is skipped with a warning naming it (builds that ask for no theme keep
+working); asking for it by name fails with the same path.
 
 ## Quick start
 

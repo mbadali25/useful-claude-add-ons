@@ -476,17 +476,39 @@ def _overlays(directory):
     return out
 
 
+class OverlayInvalid(Exception):
+    """A theme or density file that is not valid JSON, named by path."""
+
+
+def _load_overlay_file(path):
+    try:
+        return _load(path)
+    except (OSError, ValueError) as e:
+        raise OverlayInvalid(f"{path} is not a valid theme/density file: {e}") from e
+
+
+def _listable(directory):
+    """(name, data) for every overlay that parses. A broken file is SKIPPED here
+    with a warning naming it, never raised: listing runs while every build
+    script builds its --help, so one bad file dropped into assets/themes/ would
+    otherwise stop every build, including builds that never ask for a theme.
+    Asking for the broken one by name still fails loudly (load_overlay)."""
+    out = []
+    for name, path in _overlays(directory).items():
+        try:
+            out.append((name, _load_overlay_file(path)))
+        except OverlayInvalid as e:
+            print(f"brand: warning: skipping {e}", file=sys.stderr)
+    return out
+
+
 def list_themes():
-    """[(name, label, description)] for every built-in theme."""
-    rows = []
-    for name, path in _overlays(THEMES_DIR).items():
-        data = _load(path)
-        rows.append((name, data.get("label") or name, data.get("description") or ""))
-    return rows
+    """[(name, label, description)] for every built-in theme that parses."""
+    return [(n, d.get("label") or n, d.get("description") or "") for n, d in _listable(THEMES_DIR)]
 
 
 def list_densities():
-    return [(n, _load(p).get("description") or "") for n, p in _overlays(DENSITIES_DIR).items()]
+    return [(n, d.get("description") or "") for n, d in _listable(DENSITIES_DIR)]
 
 
 def load_overlay(kind, wanted):
@@ -497,7 +519,7 @@ def load_overlay(kind, wanted):
     key = re.sub(r"[\s_]+", "-", wanted.strip().lower())
     if key not in found:
         raise OverlayNotFound(kind, wanted, sorted(found))
-    return key, _load(found[key])
+    return key, _load_overlay_file(found[key])
 
 
 def resolve(explicit=None, root=None, announce=True, theme=None, density=None) -> Brand:
@@ -508,8 +530,13 @@ def resolve(explicit=None, root=None, announce=True, theme=None, density=None) -
     colours because it was asked for explicitly; the brand keeps its identity
     (logo, fonts, footer, template, paths) because a theme never carries one."""
     brand = _resolve_pack(explicit, root, announce=False)
-    for kind, value, env in (("theme", theme, THEME_ENV), ("density", density, DENSITY_ENV)):
-        wanted = value or os.environ.get(env)
+    # The THEME/DENSITY environment variables are NOT read here. They reach a
+    # run only through add_theme_arguments' defaults, i.e. only in the scripts
+    # that build a document. Read here, they leaked into extract_spec (whose
+    # heading/caption classifier keys on point sizes a density changes), the
+    # gallery (which must render every sample at its labelled density) and the
+    # checkers - none of which take a theme.
+    for kind, wanted in (("theme", theme), ("density", density)):
         if wanted:
             name, overlay = load_overlay(kind, wanted)
             brand.apply_overlay(kind, name, overlay)
@@ -572,11 +599,11 @@ def add_theme_arguments(parser: argparse.ArgumentParser) -> None:
     checkers and extractors do not take them: they measure a pack's masters."""
     themes = ", ".join(n for n, _, _ in list_themes())
     parser.add_argument(
-        "--theme", default=None,
+        "--theme", default=os.environ.get(THEME_ENV) or None,
         help=f"built-in colour theme over the brand ({themes}); default: the brand's own "
              f"colours, or {THEME_ENV}")
     parser.add_argument(
-        "--density", default=None,
+        "--density", default=os.environ.get(DENSITY_ENV) or None,
         help=f"spacing and type size ({', '.join(n for n, _ in list_densities())}); "
              f"default: comfortable, or {DENSITY_ENV}")
 
