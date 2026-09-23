@@ -6,6 +6,17 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Changed
 
+- **obsidian-vault 0.4.1: writers use only the primary vault; gardener acks
+  only a file it changed; git steps inside the run deadline; safe quoting in
+  scheduler units; import refuses symlinked destinations and re-imports
+  idempotently; adopt refuses unassigned vaults.**
+
+- **`crew` 0.20.20: seven on-demand stack skills (terraform, dotnet incl. .NET
+  Framework 4.8, angular incl. AngularJS, python, sql for SQL Server/MySQL/
+  PostgreSQL, powershell with separate 5.1 and 7 checks, bash), each proposing
+  verify.json rules where a missing tool is UNVERIFIED, never PASS.** The
+  skill count is now 27, was 20.
+
 - **`crew` 0.20.19: one budgeted context hook, off by default until 1.0.**
   One budgeted context hook (SessionStart/UserPromptSubmit/PostToolUse/SubagentStart)
   with vault-labelled recall that reaches subagents (measured via SubagentStart),
