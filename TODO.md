@@ -3880,3 +3880,6 @@ Two-round budget spent. Raw: scratchpad revD2-YOncm9/out.txt.
 - `role-write-guard.ps1`, `pm-brief.ps1` have the same unbounded python probe the context wrapper had; pm-brief's must match role-write-guard's byte for byte.
 - SubagentStart parallel attribution relies on `tool_use_id` in the payload; unverified that Claude Code sends it.
 - `scripts/check-powershell.ps1` not run (sandbox refused direct pwsh).
+
+### crew-1.0 T4: `docs/guides/crew/src/README.md:11-12` rows say "(not yet written)" for guides that exist - OPEN (filed 2026-09-23)
+- Also: `plugin/crew/commands/review.md` is 552 lines against the 120-line command budget; T8 enforces budgets.
