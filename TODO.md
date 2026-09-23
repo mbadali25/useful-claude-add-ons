@@ -3233,19 +3233,19 @@ still does not exist anywhere in this repo.
 
 ## Filed 2026-09-22 by the crew-house-style HTML print-rules developer, not fixed here
 
-- **The four `docs/guides/crew-*.html` guides have no generator and nothing
+- **The four `docs/guides/crew/crew-*.html` guides have no generator and nothing
   binds them to the house style.** `plugin/crew/tests/test_docs_routing.py`
   now goes red if the HTML route loses the print rules or the `<thead>`
   requirement, but nothing asserts the four shipped files still carry them --
   a hand edit can drop the `@media print` block from
-  `docs/guides/crew-overview.html:20-24` (and its three siblings) and every
+  `docs/guides/crew/crew-overview.html:20-24` (and its three siblings) and every
   check stays green. Not fixed here: the brief scoped the regression test to
   the house style, and a crew test asserting things about repo docs outside
   `plugin/crew/` couples crew's suite to files that may be deleted.
 
 - **The `.docx` half of the print discipline is inherited, not asserted, and
   was verified only through LibreOffice.** In the regenerated
-  `docs/guides/crew-*.docx`, `word/document.xml` contains zero `w:keepNext`
+  `docs/guides/crew/crew-*.docx`, `word/document.xml` contains zero `w:keepNext`
   elements: LibreOffice's HTML import drops `page-break-after:avoid`
   outright (measured -- adding the same rule outside `@media print` changed
   nothing). Headings keep with the next paragraph only because
