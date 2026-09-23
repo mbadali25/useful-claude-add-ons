@@ -285,6 +285,7 @@ class Brand:
         neutral = _load(NEUTRAL_JSON)
         pack = neutral if os.path.normcase(self.path) == os.path.normcase(NEUTRAL_JSON) else _load(self.path)
         self.data = _merge(neutral, pack)
+        self._notes = []
         self.name = self.data.get("name") or os.path.basename(
             os.path.dirname(self.root))
 
@@ -514,7 +515,7 @@ def resolve(explicit=None, root=None, announce=True, theme=None, density=None) -
             brand.apply_overlay(kind, name, overlay)
     if announce:
         brand.announce()
-        for n in getattr(brand, "_notes", []):
+        for n in brand._notes:  # pylint: disable=protected-access
             print("brand: note: " + n, file=sys.stderr)
     return brand
 
@@ -550,7 +551,7 @@ def _resolve_pack(explicit=None, root=None, announce=True) -> Brand:
             reason = ("no brand pack found - using neutral. Searched: "
                       + "; ".join(searched))
     brand = Brand(path, reason)
-    brand._notes = notes  # pylint: disable=protected-access
+    brand._notes.extend(notes)  # pylint: disable=protected-access
     if announce:
         brand.announce()
         for n in notes:
