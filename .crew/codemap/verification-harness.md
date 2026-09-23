@@ -1,19 +1,29 @@
-anchor: useful-claude-add-ons@2b337296
+anchor: useful-claude-add-ons@5d1fc5fd
 verified: 2026-09-22
-**Full re-derivation of every DERIVED claim below, not a re-anchor.** The
-per-path diff from the previous anchor was not empty, so nothing carried
-forward on the strength of the anchor alone. See "Re-anchor provenance —
-ea8a014 -> 84976536" for the command, its output, and what changed.
+**Targeted correction pass, not a full re-derivation.** A merged-branch review
+found "### Two defects in the gate this map feeds" (below, now "### One
+defect fixed since the previous anchor, one still open") stating the
+per-rule-evidence fix as "not yet committed" and citing
+`plugin/crew/hooks/scripts/verify-gate.sh:1563` for its exit check — both
+wrong at `5d1fc5fd`, where the fix landed (PR #208) and the file grew enough
+that the line moved again, to `:1633`. That section, a new section on
+`plugin/crew/hooks/scripts/verify-gate.sh`'s python3 shim and fail-closed
+interpreter resolution, and every file their citations touch
+were re-derived directly against `5d1fc5fd`. Everything else in this note
+carries forward unread from the `2b337296` full re-derivation described
+immediately below and in "Re-anchor provenance — ea8a014 -> 84976536". See
+"Re-anchor provenance — 2b337296 -> 5d1fc5fd" at the bottom of this file for
+the per-path diff this pass ran and what it found changed.
 
-**This sha is a branch commit** (`crew-0.19.96-docbuilder-install-fixes`), not
-a trunk one — `git merge-base HEAD origin/main` is `d9da1409`, and a squash
-merge of this branch would discard `84976536` and put this note into
-`knowledge.unresolvable`. The merge-base was not used as the anchor because
-`.crew/verify.json`, `scripts/check-marketplace.py` and `_verify/smoke.sh` all
-changed between `d9da1409` and here, so anchoring at `d9da1409` would have
-claimed a reading of a tree these claims do not describe. If the anchor stops
-resolving, re-derive from `d9da1409` and treat those three files as the ones
-certain to have moved.
+**`5d1fc5fd` is a trunk commit, unlike the anchor it replaces.** The previous
+anchor, `2b337296`, was a branch commit (`crew-0.19.96-docbuilder-install-fixes`)
+with `git merge-base HEAD origin/main` at `d9da1409` — the paragraph that
+used to sit here explained why the merge-base was not used as the anchor
+instead. That caveat does not apply to this anchor: `git merge-base
+--is-ancestor 5d1fc5fd origin/main` succeeds at the time this pass ran (a
+later commit, `7f83c812`, has since landed on top of it — see PR #208's own
+merge and the follow-up README re-pin), so `5d1fc5fd` is a real trunk commit,
+not a branch tip a squash merge could later discard.
 
 History, from the `ea8a014` pass, superseded above and retained as a record of
 what was believed then: narrow pass. `f9bb78a6` (#169, "Finish the crew
@@ -586,59 +596,135 @@ Notable rules, relevant to subsystems covered elsewhere in this codemap:
   genuinely new. **This is the rule that covers this note**, which is why
   editing it requires no version bump and triggers no command.
 
-### Two defects in the gate this map feeds
+### One defect fixed since the previous anchor, one still open
 
 **DERIVED, read from the gate's own source, and recorded here because they
 decide what a green `.crew/.verify-verified-at` is worth.**
 
-1. **FIXED, not yet committed as of this note.** *(Was: "One failing command
-   discards the evidence for every rule that passed", open at the previous
-   anchor `84976536` and every one before it. Kept below, marked stale,
-   rather than deleted — a reader who saw the old finding should see it was
-   actually addressed, not wonder whether this note simply dropped it.)*
-   `plugin/crew/hooks/scripts/verify-gate.sh:1563` (moved; was `:1403`) is
-   still `[ "$FAILED" -eq 0 ] || exit 2`, but the per-rule record sync now
-   runs BEFORE it, on every turn, not only when nothing FAILED — see the
-   comment immediately above that line for the reasoning, and
-   `plugin/crew/hooks/scripts/verify-gate.ps1`'s twin (`if ($failed) { exit
-   2 }`, also moved after its own sync call). `verify_record.py` gained a
-   `"fail"` branch in `_sync` that deliberately does **not** persist the
-   failing rule's own outcome (a first version of this fix that DID persist
-   it was itself reviewed BLOCK: the entry orphaned the moment the failing
-   rule was edited to fix it, since `rule_key()` hashes `run` — see
+1. **FIXED, committed in `5d1fc5fd`** (PR #208, "crew 0.20.11 and count-claim
+   checking: verify-gate evidence, python3 landmine, PM state re-read,
+   render.sh, harness guards"). *(Was, through the `2b337296` anchor: "One
+   failing command discards the evidence for every rule that passed" — open
+   at every anchor up to and including `84976536`. At `2b337296` this note
+   itself read "FIXED, not yet committed as of this note" and cited
+   `plugin/crew/hooks/scripts/verify-gate.sh:1563` for the exit check;
+   **both are wrong at this anchor** — the fix is committed, not pending,
+   and the file grew enough in
+   the interval that the line moved again. Kept as history rather than
+   deleted, so a reader who saw the old finding sees it was actually
+   addressed.)*
+   `plugin/crew/hooks/scripts/verify-gate.sh:1633` — **was cited as `:1563`,
+   itself moved from `:1403`** — is still `[ "$FAILED" -eq 0 ] || exit 2`,
+   but the per-rule record sync (`:1598-1627`) runs immediately before it, on
+   every turn, not only when nothing FAILED — see the comment at
+   `:1557-1588` for the reasoning, and
+   `plugin/crew/hooks/scripts/verify-gate.ps1:1509`'s twin (`if ($failed) {
+   exit 2 }`, likewise after its own sync call at `:1482-1502`).
+   `verify_record.py`'s `_sync` carries a `"fail"` branch (`:564-589`) that
+   deliberately does **not** persist the failing rule's own outcome (a first
+   version of this fix that DID persist it was itself reviewed BLOCK: the
+   entry orphaned the moment the failing rule was edited to fix it, since
+   `rule_key()` hashes `run` — see
    `plugin/crew/tests/test_verify_gate_partial_failure_recording.py`, whose
    docstring and
    `test_editing_a_failing_rule_to_pass_does_not_orphan_the_marker`
-   reproduce and guard both shapes of this fix). This map's own anchor is
-   **not** advanced by this note — no commit exists yet for this change —
-   so treat this paragraph as ahead of the anchor below it until the next
-   full pass reconciles them; the per-path diff check
-   (`git diff --name-only 2b337296..HEAD -- plugin/crew/hooks/scripts/verify-gate.sh
-   plugin/crew/hooks/scripts/verify-gate.ps1
-   plugin/crew/hooks/scripts/verify_record.py`) will show these three files
-   once that commit lands.
-   `.crew/verify.json:193`'s `why` field described the OLD, still-broken
-   shape and has been corrected in the same change.
-2. **A declared `seconds` can never be corrected by measurement.**
-   `plugin/crew/hooks/scripts/verify_record.py:609` (moved from `:558` by
-   this same uncommitted change — see item 1 above) gates the measured-cost
-   cache on `if rule.get("unknown"):` — only a rule with **no** declared
+   reproduce and guard both shapes of this fix).
+   `.crew/verify.json`'s two `why` fields that described the OLD,
+   still-broken shape were corrected in the same commit:
+   `rules[12]` (`.crew/verify.json:181`, the ruff/pylint rule) and
+   `rules[14]` (`.crew/verify.json:193`, `mcp-servers`) — confirmed by
+   `git diff 2b337296..5d1fc5fd -- .crew/verify.json`, which touches exactly
+   those two `why` fields (4 lines total) and nothing else in the file,
+   including no `seconds` value. **One of those two `why` fields
+   (`rules[14]`, line 193) still names this section by its old heading,
+   "Two defects in the gate this map feeds" — left as-is rather than edited,
+   since `.crew/verify.json` is outside the two files this pass was scoped
+   to touch; the heading below has changed and that field is now the stale
+   one.**
+2. **Still open: a declared `seconds` can never be corrected by
+   measurement.** `plugin/crew/hooks/scripts/verify_record.py:609` (moved
+   from `:558` by the same commit as item 1 — re-confirmed by
+   `git show 2b337296:plugin/crew/hooks/scripts/verify_record.py` putting
+   the same `if rule.get("unknown"):` line at `:558`) gates the
+   measured-cost cache on that line — only a rule with **no** declared
    `seconds` gets its elapsed time stored (`:616-617`; the comment at
    `:610-615` explains a different, already-fixed bug about discarding
    sub-second measurements). So a stale declared figure is permanent until
-   someone edits the JSON by hand. Three rules are reported wrong in that
-   direction: `rules[3]` declares 81s, `rules[4]` 96s and `rules[8]` 185s,
-   against 16s, 15s and 161s. **The three declared figures were read from
-   `.crew/verify.json` at this anchor; the three measured ones were not taken
-   by this pass** — they are carried from the session that filed the defect,
-   and no suite was run here to reproduce them. Re-time before acting on the
-   gap. Any such measurement is in any case a fact about **one** host, not
-   about the Windows / Git Bash machine every other number in the file was
-   timed on — `rules[2]`'s
-   `why` argues that point explicitly and deliberately declares a Windows-priced
-   12 over a Linux-measured 2. Re-time before treating any of the three as an
-   error rather than a platform difference; what is *not* platform-dependent is
-   that the mechanism to self-correct does not exist.
+   someone edits the JSON by hand. `.crew/verify.json`'s `seconds` values are
+   unchanged by the commit that fixed item 1 (confirmed above — the diff
+   touches no `seconds` field): `rules[3]` still declares 81s, `rules[4]`
+   96s and `rules[8]` 185s, all three read directly from `.crew/verify.json`
+   at this anchor (lines 74, 98 and 149 respectively — `python3 -c
+   "import json; [print(i, r.get('seconds')) for i, r in
+   enumerate(json.load(open('.crew/verify.json'))['rules'])]"`).
+   **No measured times were taken by this pass** — the 16s/15s/161s figures
+   the previous version of this note carried against those three rules came
+   from the session that filed the defect and were not reproduced here; do
+   not restate them as current without re-timing. Any such measurement is in
+   any case a fact about **one** host, not about the Windows / Git Bash
+   machine every other number in the file was timed on — `rules[2]`'s `why`
+   argues that point explicitly and deliberately declares a Windows-priced
+   12 over a Linux-measured 2. What is *not* platform-dependent is that the
+   mechanism to self-correct still does not exist.
+
+### `verify-gate.sh` fails closed on no python and on a stub matcher — new since the previous anchor
+
+**New since `2b337296`.** Three separate hardenings, all landed in `5d1fc5fd`
+alongside the item-1 fix above.
+
+- **The top-level python resolution is `crew_py_strict`, not `crew_py`.**
+  `plugin/crew/hooks/scripts/verify-gate.sh:660` —
+  `PY=$(crew_py_strict) || { ... exit 2; }` — replaces a plain `crew_py` call;
+  see `crew.md`'s "`crew_py` is no longer the whole story" for what
+  `crew_py_strict` itself does. Comment at `:646-659` states why:
+  `.crew/verify.json` cannot be read at all without a real interpreter, so a
+  WindowsApps stub silently "succeeding" here is worse than the same stub
+  anywhere else in the file.
+- **A matcher that runs but produces nothing is now its own failure mode,
+  independent of `crew_py_strict`.** `plugin/crew/hooks/scripts/verify-gate.sh:1248-1273`
+  — reached only once `PY_STATUS` is `0` and every other nonzero-exit branch
+  above it (`:1234-1247`, parse error / unrepresentable command / matcher
+  could not run) has already exited — treats an **empty** `$MATCHED` as proof
+  the interpreter that ran was not real python at all (a WindowsApps stub is
+  a real, executable file, so even a strict `command -v` resolves and
+  invokes it; it exits 0 having printed nothing). Comment at `:1249-1271`
+  names this a second, independent line of defence rather than trusting
+  `crew_py_strict` alone to never have a gap — "the matcher produced nothing"
+  is treated as UNKNOWN and never collapsed into the safe-looking
+  zero-rules-ran state, CLAUDE.md's own recurring-bug lesson. Exits 2
+  (`:1273`).
+- **A `python3`-hardcoding rule gets a scoped shim, not a rewrite.** Most
+  `.crew/verify.json` rules hardcode `python3` in their `run` string, so a
+  host with only `python`/`py` on PATH (Git Bash ships with no `python3` at
+  all) fails those rules with "command not found" even though the rule is
+  otherwise satisfiable. `plugin/crew/hooks/scripts/verify-gate.sh:1341-1400`
+  builds a shim **only** when `python3` itself does not already resolve
+  (`:1341`) — shimming a name that already resolves to a real interpreter can
+  only break something that already worked, per the comment at `:1316-1324`
+  describing a review-round-1 regression where an unconditional shim broke
+  `py -3 -c ...` on a machine where `py` already worked. The comment at
+  `:1326-1331` says the shim is built from `crew_py_strict`, "not the plain
+  `crew_py` `$PY` already resolved above" — **that contrast no longer holds
+  at this anchor.** `$PY` itself (`:660`, above) is `crew_py_strict` too, not
+  plain `crew_py` — see "The top-level python resolution is `crew_py_strict`,
+  not `crew_py`" a few lines up. The only `PY=` assignment anywhere in this
+  file is that one, at `:660`; there is no second, plain-`crew_py`-resolved
+  `$PY` for the shim to be contrasted against. Whether the comment was
+  written before `:660` was hardened is not something this pass can verify —
+  `5d1fc5fd` is a single squashed commit, and both the shim and the `:660`
+  upgrade land in it together — but its premise is stale regardless of when
+  it was written: both resolvers in this file are strict now. What the
+  comment gets right and still matters is the mechanism, not the contrast:
+  the shim's own interpreter is proved-working via `crew_py_strict`, written
+  to a `mktemp -d` directory prepended to `$PATH`,
+  and cleaned up on every exit path by chaining onto (not replacing) any
+  prior `EXIT`/`INT`/`TERM` trap (`:1372-1389`). Native Windows drive-letter
+  normalisation for the shim's own target used to be duplicated here and was
+  removed as dead code once `crew_py_strict` started normalising internally
+  (`:1341-1358`) — `_common.sh`'s function is now the one place that owns it.
+  `.crew/verify.json` itself is not rewritten to reference a shared
+  `$CREW_PY` variable, because the file is read by more than this gate
+  (`:1333-1340`).
 
 ## `_verify/run-all.sh` — what the deep suite actually runs
 
@@ -826,3 +912,91 @@ count still holds: `README.md`'s only change in this range (the install-URL
 re-pin, `2cc73a1e`) touched lines 12 and 18 in place with no line count
 change, so none of these three citations shifted or needed re-reading.
 Nothing else was re-read.
+
+## Re-anchor provenance — 2b337296 -> 5d1fc5fd, 2026-09-22
+
+**Targeted correction, not a full re-derivation.** Triggered by a merged-branch
+review that found "Two defects in the gate this map feeds" stating the
+per-rule-evidence fix as not yet committed, when it had landed in `5d1fc5fd`.
+Per-path check, run against the 40 cited paths `_cited_paths`
+(`plugin/crew/hooks/scripts/crew_freshness.py:263-271`) extracts from this
+file at `2b337296` (one of the 40, `plugin/crew/tests`, is a bare directory
+citation — `_cited_paths` only filters on `os.path.exists`, which a directory
+satisfies too, so `git diff -- plugin/crew/tests` below matches every file
+under it, not just ones this note names by line):
+
+```
+git diff --name-only 2b337296..5d1fc5fd -- <40 cited paths>
+```
+
+Output:
+```
+CHANGELOG.md
+CLAUDE.md
+TODO.md
+plugin/PLUGINS.md
+plugin/crew/hooks/scripts/_test/run-tests.sh
+plugin/crew/hooks/scripts/verify-gate.ps1
+plugin/crew/hooks/scripts/verify-gate.sh
+plugin/crew/hooks/scripts/verify_record.py
+plugin/crew/tests/test_context_watch_python_resolver.py
+plugin/crew/tests/test_pm_brief_platform_sync_python_resolver.py
+plugin/crew/tests/test_verify_gate_partial_failure_recording.py
+plugin/crew/tests/test_verify_gate_python3_shim.py
+scripts/_test/self-claims.py
+scripts/check-marketplace.py
+scripts/install-prerequisites.sh
+```
+
+**Correction to an earlier draft of this paragraph, caught before commit:** it
+claimed `plugin/crew/hooks/scripts/verify-gate.sh:1563` (the exact citation
+this pass was triggered to fix) was itself invisible to `_cited_paths`.
+Checked directly against the regex (`_CITED_PATH_RE.findall` on the literal
+text) — it is not: `:1563` is a single `:\d+` suffix, which the regex
+matches fine, extracting `plugin/crew/hooks/scripts/verify-gate.sh`
+regardless of whether the line number it names is stale. `_cited_paths` only
+cares about the path, so `verify-gate.sh` correctly appeared in the per-path
+diff above on the strength of *this* citation among others. **What actually
+is invisible to `_cited_paths` is a line-*range* citation** — `:82-98`,
+`:17-27`, `:383-413` — because the regex's line-number group is `(?::\d+)?`
+with no `-`, so a range makes the whole backtick-quoted token fail to match
+at all, not merely lose its line number; confirmed empty-list for
+`` `plugin/crew/hooks/scripts/_common.sh:82-98` `` and
+`` `plugin/crew/hooks/scripts/role-write-guard.sh:17-27` `` against the same
+regex. That is the actual gap `.crew/codemap/INDEX.md` names as inherent in
+the mechanical check, and it is what let the *previous* pass's now-corrected
+`crew_py_strict` section (range-cited throughout) go unflagged by the tool
+while sitting on false
+claims.
+
+**What was re-read at this anchor:**
+`plugin/crew/hooks/scripts/verify-gate.sh:640-670` and `:1225-1400` (the
+strict-resolver call site, the stub-matcher fail-closed check, and the
+`python3` shim); `plugin/crew/hooks/scripts/verify-gate.sh:1544-1633` and
+`plugin/crew/hooks/scripts/verify-gate.ps1:1440-1526` (the
+evidence-sync-before-exit-2 fix, both flavours);
+`plugin/crew/hooks/scripts/verify_record.py:508-630` (`_sync`, its `"fail"`
+branch, and the `seconds`-cache gate); `.crew/verify.json` in full
+(`seconds` values for rules[3], rules[4], rules[8], and the two `why` fields
+the commit corrected, rules[12] and rules[14]) via
+`git diff 2b337296..5d1fc5fd -- .crew/verify.json` and a direct
+`python3 -c "import json; ..."` read of the current file.
+`test_verify_gate_partial_failure_recording.py` was re-opened only for its
+test names (`test_must_record_a_pass_alongside_a_fail`,
+`test_must_not_advance_either_marker_on_a_failed_turn`,
+`test_an_all_pass_turn_still_advances_the_baseline`,
+`test_editing_a_failing_rule_to_pass_does_not_orphan_the_marker`,
+`test_a_failed_turn_still_exits_2_when_the_sync_write_also_fails`), not read
+in full.
+
+**What was not re-read:** everything else the diff above lists —
+`CHANGELOG.md`, `CLAUDE.md`, `TODO.md` (beyond the one section `crew.md`
+re-derives), `plugin/PLUGINS.md`,
+`plugin/crew/hooks/scripts/_test/run-tests.sh`, the three new test files
+(`test_context_watch_python_resolver.py`,
+`test_pm_brief_platform_sync_python_resolver.py`,
+`test_verify_gate_python3_shim.py` — confirmed to exist and to be new since
+`2b337296`, not opened), `scripts/_test/self-claims.py`,
+`scripts/check-marketplace.py` and `scripts/install-prerequisites.sh`. None
+of this note's existing claims about those files were checked against this
+diff; nothing above should be read as clearing them.

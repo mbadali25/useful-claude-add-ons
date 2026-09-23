@@ -1,5 +1,5 @@
 # obsidian-vault
-anchor: useful-claude-add-ons@2b337296
+anchor: useful-claude-add-ons@5d1fc5fd
 verified: 2026-09-22
 
 ## Does
@@ -149,10 +149,28 @@ violation visible at all. (JUDGEMENT.)
   named python" and "found something named python that is not an interpreter" send a reader to
   different places, and the second says in the message that the write **was not checked**.
   Three further things about that fix that are easy to get backwards:
-  - **It is deliberately stricter than crew's copy of the same resolver**
-    (`plugin/crew/hooks/scripts/role-write-guard.sh:32-57`), which accepts any non-empty stdout on
-    a zero exit. That rejects the Store alias but not its neighbour, a shim that prints a line and
-    exits 0. The reasoning is at `plugin/obsidian-vault/hooks/scripts/vault-guard.sh:89-94`.
+  - **It was deliberately stricter than crew's copy of the same resolver, and as of 5d1fc5fd that
+    gap has narrowed.** `plugin/obsidian-vault/hooks/scripts/vault-guard.sh:89-94` still carries the
+    comment "deliberately stricter than crew's copy, which accepts any non-empty stdout on a zero
+    exit" — that comment is unchanged (`vault-guard.sh` does not appear in the
+    `2b337296..5d1fc5fd` diff at all) but it now describes `role-write-guard.sh` inaccurately.
+    Crew's resolver (`plugin/crew/hooks/scripts/role-write-guard.sh:32-113`, was `:32-57` at the
+    previous anchor — the function grew from 26 lines to 82) no longer merely accepts non-empty
+    stdout: it strips a trailing CR (`:47`), converts a native Windows `sys.executable` path to a
+    form this shell can stat via `cygpath -u` or a hand-written fallback (`:84-94`), and then
+    requires `[ -x "$real" ]` (`:105`) — the printed path must exist and be executable, not just be
+    non-empty. That closes part of the "shim that prints a line and exits 0" gap this note
+    previously credited only to `vault-guard.sh`: such a shim now has to print a path to a real,
+    executable file to get past crew's resolver too, not merely print any line.
+    **The two resolvers are not equivalent, though.** `vault-guard.sh` proves the candidate is
+    actually python by requiring the exact chosen token prefix
+    (`vault-guard-python:`, `plugin/obsidian-vault/hooks/scripts/vault-guard.sh:95-103`) in the
+    probe's stdout; `role-write-guard.sh` has no such token and would accept any program that, when
+    run with `-c 'import sys; print(sys.executable)'`, happens to exit 0 and print a path to a real
+    executable file — a non-python interpreter that ignores or errors quietly on that flag and
+    prints something else executable would still pass. That remaining difference is DERIVED from
+    reading both files at this anchor, not carried over from the previous version of this note,
+    which asserted the older, coarser gap. (DERIVED.)
   - **It is copied, not imported, and that was a decision rather than an oversight**
     (`:45-56`): crew and obsidian-vault are separate marketplace entries, `${CLAUDE_PLUGIN_ROOT}`
     points at one plugin, and a host with obsidian-vault and no crew is the ordinary case, so
@@ -348,3 +366,85 @@ sessions — not code, and not cited by this note). None of the above is a
 
 Grepped for `CHANGELOG.md:<n>` and `README.md:<n>`: **neither appears in this
 note.** Nothing was re-read.
+
+## Re-anchor provenance — 2b337296 -> 5d1fc5fd, 2026-09-22
+
+**Correction, not a bare re-anchor.** Per-path check over this note's cited
+paths (extracted the same way `_cited_paths` in
+`plugin/crew/hooks/scripts/crew_freshness.py` would - every backtick-quoted
+repo-relative path in this file that still exists):
+
+```
+git diff --name-only 2b337296..5d1fc5fd -- \
+  plugin/crew/hooks/hooks.json plugin/obsidian-vault/hooks/scripts/bridge_status.py \
+  plugin/obsidian-vault/hooks/scripts/vault_capture.py plugin/obsidian-vault/hooks/scripts/vault_guard.py \
+  plugin/obsidian-vault/hooks/scripts/vault_ops.py plugin/obsidian-vault/README.md \
+  plugin/obsidian-vault/hooks/scripts/_test/run-tests.sh CLAUDE.md README.md AGENTS.md \
+  plugin/obsidian-vault/hooks/scripts/vault-guard.sh plugin/obsidian-vault/hooks/scripts/_test/test_vault_guard_sh.sh \
+  plugin/obsidian-vault/hooks/scripts/bridge-status.ps1 plugin/obsidian-vault/hooks/scripts/vault-capture.ps1 \
+  plugin/obsidian-vault/hooks/scripts/vault-guard.ps1 plugin/obsidian-vault/hooks/scripts/_test/test_flavour_guard.py \
+  plugin/obsidian-vault/.claude-plugin/plugin.json plugin/obsidian-vault/agents/gardener.md \
+  plugin/obsidian-vault/agents/reflector.md plugin/obsidian-vault/hooks/scripts/vault_profiles.py \
+  plugin/obsidian-vault/hooks/hooks.json CHANGELOG.md
+```
+```
+CHANGELOG.md
+CLAUDE.md
+```
+
+Two files, neither with a `path:line` citation into it from this note (grepped
+`CHANGELOG.md:<n>` and `CLAUDE.md:<n>` - neither appears here), so nothing in
+either changed file's diff could move a claim this note makes about it.
+
+**This diff alone missed the one change that mattered, for the exact reason
+the `ea8a014 -> 84976536` section above already names: a path the extraction
+regex does not capture cannot appear in its own freshness check.** Two of this
+note's citations are in that shape, for two different reasons, and neither is
+in the diff above: `.claude-plugin/marketplace.json:248` (`_CITED_PATH_RE`'s
+path body starts `[A-Za-z0-9_]`, so a leading `.` is never matched - this is a
+gap in the regex, not a case it handles) and
+`plugin/crew/hooks/scripts/role-write-guard.sh:32-57` (a *range* citation;
+the regex's optional suffix is `:\d+` alone, not `:\d+-\d+`, immediately
+before the closing backtick, so this one is never extracted either). Checking
+only the regex-extracted paths and the whole `plugin/obsidian-vault/` tree
+said "clean"; the miss was outside both, and finding it required diffing
+these two citations by hand rather than trusting the mechanical check.
+
+`git diff --name-only 2b337296..5d1fc5fd -- .claude-plugin/marketplace.json
+plugin/crew/hooks/scripts/role-write-guard.sh` returns both files. The
+marketplace citation still holds: `.claude-plugin/marketplace.json:248` is
+still the `obsidian-vault` entry, still version `0.3.14`, byte-identical at
+both commits (`git diff 2b337296..5d1fc5fd -- .claude-plugin/marketplace.json`
+is a single hunk, the `crew` entry - description rewrite, 27→28 slash commands
+and 19→20 skills, plus version `0.20.10`→`0.20.11`; nowhere near `:248`. The
+`doc-builder` bump this note mentions above belongs to the earlier
+`84976536 -> 2b337296` range, not this one - confirmed by reading the diff,
+not assumed).
+
+**`role-write-guard.sh` did move, and the claim built on it was wrong at
+HEAD.** The bullet under `## Landmines` said crew's resolver "accepts any
+non-empty stdout on a zero exit" - true at `2b337296`, false at `5d1fc5fd`:
+the function (now `:32-113`, was `:32-57` - it grew from 26 to 82 lines) added
+a trailing-CR strip, a Windows-path-to-POSIX-path conversion, and an
+`[ -x "$real" ]` executable check (`:105`) that the old text did not have and
+did not need. **Corrected in place above**, `was` -> new text, with the
+narrower difference that remains (crew's resolver still has no token-probe
+proof that the candidate is actually python, unlike `vault-guard.sh`'s
+`vault-guard-python:` prefix check). The
+`plugin/obsidian-vault/hooks/scripts/vault-guard.sh:89-94` comment this
+note also cites is unchanged text (the file itself is untouched in this
+range) that now describes the other script inaccurately; that is a fact about
+`vault-guard.sh`'s own comment, out of scope to fix here since this note may
+only correct its own text, not the source it cites - reported separately as a
+decision for scribe.
+
+Every other citation in this note resolves into the empty first diff above
+(no `plugin/obsidian-vault/` file, `CLAUDE.md`, `README.md`, `AGENTS.md`, or
+`plugin/crew/hooks/hooks.json` moved), so nothing else was re-read at this
+pass.
+
+Not re-verified at this pass: the regression suite was not re-run (last run
+recorded above is 67 passed, 0 failed at `84976536`, still the most recent
+execution on record); the two agents and eleven command files remain unopened;
+`vault_profiles.py` internals are still inferred from its tests; nothing
+touched a live vault, a live bridge port, or `~/.claude/obsidian/config.json`.
