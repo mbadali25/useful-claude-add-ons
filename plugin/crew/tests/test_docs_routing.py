@@ -517,7 +517,7 @@ def _html_rule(number):
 def test_the_html_route_carries_the_print_rules():
     """The defect this section exists for, and it is prose again.
 
-    Four guides in `docs/guides/` were hand-written HTML off this route while
+    Four guides now in `docs/guides/crew/` were hand-written HTML off this route while
     it read "HTML needs no skill; write the file and apply the palette above".
     The palette is colours. Nothing on that route said anything about a page
     boundary, so all four shipped with headings stranded at the foot of a page
@@ -880,7 +880,7 @@ def test_the_cited_lines_of_the_generator_hold_what_crew_says_they_hold():
 # about went unchecked is the exact shape this suite exists to refuse. They
 # skip when the repo is not in the checkout, like every other cross-entry
 # check here.
-_GUIDES_DIR = os.path.join(_REPO, "docs", "guides")
+_GUIDES_DIR = os.path.join(_REPO, "docs", "guides", "crew")
 _GUIDES = (
     "crew-overview.html",
     "crew-capabilities.html",
@@ -890,12 +890,20 @@ _GUIDES = (
 
 
 def _requires_guides():
-    if not os.path.isdir(_GUIDES_DIR):
+    # Skip only when the MARKETPLACE REPO is absent (crew's tests running from an
+    # installed copy). Inside the repo a missing guides folder is a failure: the
+    # guides moved into docs/guides/crew/ once already, and a skip keyed on the
+    # folder itself would let the next move turn all eight checks into silent
+    # skips.
+    if not os.path.isfile(os.path.join(_REPO, ".claude-plugin", "marketplace.json")):
         pytest.skip(
-            "docs/guides is not in this checkout at "
-            f"{os.path.normpath(_GUIDES_DIR)} -- crew's tests are running "
-            "outside the marketplace repo, so the artefacts the HTML route "
-            "produced cannot be checked here")
+            f"not inside the marketplace repo ({os.path.normpath(_REPO)}) -- "
+            "crew's tests are running from an installed copy, so the artefacts "
+            "the HTML route produced cannot be checked here")
+    assert os.path.isdir(_GUIDES_DIR), (
+        f"the marketplace repo is here but {os.path.normpath(_GUIDES_DIR)} is "
+        "not -- the crew guides moved; update _GUIDES_DIR rather than letting "
+        "these checks skip")
 
 
 def _print_block(html, name):

@@ -16,6 +16,18 @@ All notable changes to this repository are documented here. Format follows [Keep
   is now a nested two-cell table with the logo on the left and the organisation,
   title and subtitle on the right, split by a thin divider. It used to stack the
   logo above the text.
+  `crew` 0.20.14: `crew-house-style` re-points its three `house_style.py` line
+  citations to the lines doc-builder 1.6.0 moved them to.
+
+- **`docs/guides/` is organised by subject.** The guides now live in `crew/`,
+  `gizmoduck/`, `obsidian/`, `rule-of-two/` and `exchange-mailbox/`, and the
+  shared Solomon logo stays in `docs/guides/assets/`. The `-solomon.html`
+  variants point at `../assets/`. Every live reference moved with them: crew's
+  `test_docs_routing.py` and `sabotage.py`, `docs/runbooks/rollback.md` and
+  `TODO.md`. Two codemap notes keep the old path in their historical commands,
+  which is what was true at their anchor, and get a dated note recording the
+  move. crew's shipped-guide checks now fail rather than skip if the guides
+  folder moves again. `crew` goes to 0.20.13 because its test files changed.
 
 ### Fixed
 
