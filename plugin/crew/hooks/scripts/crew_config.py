@@ -289,7 +289,13 @@ def default_config():
                 "done": "Done",
             },
         },
-        "memory": {"mode": "repo", "vaultPath": None},
+        # `inject` and `recall` are the context hook's (crew_context.py,
+        # crew_recall.py). Repo-only on purpose: that hook reads the repo's
+        # file and nothing else, so a machine-global value would be accepted
+        # and then do nothing. `inject` is off through 0.20.x; see
+        # crew_context.run for why and for when that flips.
+        "memory": {"mode": "repo", "vaultPath": None, "inject": False,
+                   "recall": {"vaults": [], "maxChars": 800}},
         "verifyGate": True,
         "context": copy.deepcopy(crew_state.CONTEXT_DEFAULTS),
         "emergency": {

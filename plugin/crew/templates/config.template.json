@@ -68,7 +68,12 @@
   },
   "memory": {
     "mode": "repo",
-    "vaultPath": null
+    "vaultPath": null,
+    "inject": false,
+    "recall": {
+      "vaults": [],
+      "maxChars": 800
+    }
   },
   "verifyGate": true,
   "context": {

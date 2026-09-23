@@ -63,6 +63,34 @@ def test_bash_flavour_always_exits_zero_and_never_decides(tmp_path):
     assert emitted >= 3
 
 
+@pytest.mark.parametrize("config,inject", [
+    (None, None),
+    ({"memory": {"mode": "repo"}}, None),
+    (None, False),
+])
+def test_bash_flavour_emits_and_logs_nothing_unless_inject_is_true(tmp_path, config, inject):
+    root = make_repo(tmp_path, config=config, inject=inject)
+    outputs = []
+
+    for raw in _payloads(root):
+        done = subprocess.run(["bash", str(SCRIPTS / "crew-context.sh")], input=raw, cwd=root,
+                              capture_output=True, env=_env(tmp_path), check=False)
+        outputs.append((done.returncode, done.stdout, done.stderr))
+
+    assert (outputs, (root / ".git" / "crew" / "context-log.jsonl").exists()) == \
+        ([(0, b"", b"")] * len(outputs), False)
+
+
+def test_bash_flavour_emits_when_inject_is_true(tmp_path):
+    root = make_repo(tmp_path, inject=True)
+    start = json.dumps(payload("SessionStart", root, source="startup")).encode()
+
+    done = subprocess.run(["bash", str(SCRIPTS / "crew-context.sh")], input=start, cwd=root,
+                          capture_output=True, env=_env(tmp_path), check=False)
+
+    assert "additionalContext" in json.loads(done.stdout)["hookSpecificOutput"]
+
+
 def test_bash_flavour_exits_zero_when_python_crashes(tmp_path):
     root = make_repo(tmp_path)
     (root / ".crew" / "config.json").write_text("{", encoding="utf-8")

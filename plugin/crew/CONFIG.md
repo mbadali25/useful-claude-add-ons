@@ -128,13 +128,14 @@ both directions:
 descending at a template **leaf**.
 
 **Measured, not argued.** `leaf_paths(default_global_config())` yields **60**
-leaves. `leaf_paths(default_config())` yields **103**, so **43** are repo-only.
-For all 103, `filter_global` and `plan_global_write` agree on whether the path is
+leaves. `leaf_paths(default_config())` yields **106**, so **46** are repo-only.
+For all 106, `filter_global` and `plan_global_write` agree on whether the path is
 settable. (45 / 86 before schema 6 added the six `guards.*`, the two
 `github.mergeGate` keys and the repo-only `production.databases` /
 `production.hosts`; 44 / 85 before schema 5 added `install.policy`; 59 / 102
 before crew 0.19.92 added the seventh guard, `guards.roleWrites`, in both
-layers.
+layers; 60 / 103 before crew 0.20.19 added the context hook's three repo-only
+`memory.*` keys.
 All six of schema 6's keys are settable in both layers, so they moved the first
 two numbers and not the third — the same shape `install.policy` and
 `guards.roleWrites` had. Re-measure rather than trusting these: they are a
@@ -753,6 +754,9 @@ repository or one checkout.
 | `context.autoResume` | boolean | `true` | `handoff-read.ps1`, `handoff-read.sh` |
 | `context.staleHandoff.maxAgeHours` | integer | `72` | `crew_state.STALE_HANDOFF_DEFAULTS` |
 | `context.staleHandoff.maxCommitsBehind` | integer | `3` | `crew_state.STALE_HANDOFF_DEFAULTS` |
+| `memory.inject` | boolean | `false` | `crew_context.run` — **off through 0.20.x**: the context hook emits and logs nothing unless this is `true`. Flips on at the 1.0.0 cut, in the same change that unregisters `pm-brief` and `handoff-read`, so a session never gets the same state from both |
+| `memory.recall.vaults` | list (a leaf) | `[]` | `crew_recall.vault_order` — the repo's vault priority for recall; empty falls back to `~/.claude/obsidian/config.json` roles (`primary`, then `recall`; `ignore` never asked) |
+| `memory.recall.maxChars` | integer | `800` | `crew_recall.max_chars` — the recall CLI's `--max-chars`; a non-positive or non-integer value falls back to 800 |
 | `emergency.standDown` | boolean | `true` | `hooks/scripts/_common.sh` |
 | `emergency.ttlMinutes` | integer | `120` | `crew_incident.py` |
 | `emergency.maxTtlMinutes` | integer | `480` | `crew_incident.py` |

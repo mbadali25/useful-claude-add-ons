@@ -6,6 +6,21 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Changed
 
+- **`crew` 0.20.19: one budgeted context hook, off by default until 1.0.**
+  One budgeted context hook (SessionStart/UserPromptSubmit/PostToolUse/SubagentStart)
+  with vault-labelled recall that reaches subagents (measured via SubagentStart),
+  emission log + `--stats`; generators for `.claude/rules`, `AGENTS.md`,
+  `.codex/hooks.json`. Off by default until 1.0 (`memory.inject`).
+  `crew-context.sh` / `.ps1` is registered on all four events in both
+  flavours (30 hook entries, was 20), and emits and logs nothing unless the
+  repo's crew config sets `memory.inject: true`: `pm-brief` and
+  `handoff-read` stay registered through 0.20.x, and both on at once would
+  inject the same state twice. The default flips on at the 1.0.0 cut together
+  with unregistering those two. `memory.inject`, `memory.recall.vaults` and
+  `memory.recall.maxChars` are declared repo-only keys (106 repo leaves, was
+  103). `/crew:status --memory` now passes `--root` to `crew_context.py
+  --stats`, so it reads the named repo's log rather than `CLAUDE_PROJECT_DIR`'s.
+
 - **`crew` 0.20.18: T1 ledger fixes, and the additive half of T2 -
   `/crew:status`, `/crew:migrate`, the `reviewer` agent and the quickstart
   guide source.** Nothing is removed or renamed in this release.

@@ -258,7 +258,9 @@ def test_the_ten_keys_crew_read_but_never_declared_are_declared():
     # 102 at schema 7: the six `change` keys.
     # 103 since crew 0.19.92: `guards.roleWrites`, the role-write PreToolUse
     # guard's config key.
-    assert len(declared) == 103
+    # 106 since crew 0.20.19: the context hook's `memory.inject`,
+    # `memory.recall.vaults` and `memory.recall.maxChars`.
+    assert len(declared) == 106
 
 
 def test_autoclear_is_global_and_its_siblings_are_not():
@@ -658,8 +660,19 @@ def test_the_model_table_still_layers_globally(tmp_path, monkeypatch):
     assert resolved["dev"]["roles"]["developer"]["model"] == "gpt-6-astra"
     # BOTH memory keys are global as of 0.16.0 -- one vault per person, and a
     # person who keeps their memory in a vault keeps it there everywhere.
+    # The context hook's keys beside them come from the repo defaults.
     assert resolved["memory"] == {"mode": "vault",
-                                  "vaultPath": "/home/me/vault"}
+                                  "vaultPath": "/home/me/vault",
+                                  "inject": False,
+                                  "recall": {"vaults": [], "maxChars": 800}}
+
+
+@pytest.mark.parametrize("dotted", ["memory.inject", "memory.recall.vaults",
+                                    "memory.recall.maxChars"])
+def test_the_context_hook_memory_keys_are_repo_only(dotted):
+    """crew_context.py reads the repo's file and no other layer, so a global
+    value for these would be accepted and then do nothing."""
+    assert crew_config.is_global_path(dotted) is False
 
 
 def test_memory_mode_is_globally_settable_and_the_template_ships_it():

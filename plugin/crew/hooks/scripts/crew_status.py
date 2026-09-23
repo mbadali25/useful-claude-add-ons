@@ -7,8 +7,10 @@ none of what they did: no dispatch, no config edit, no file written anywhere.
 Every section is a fact read from disk or git, or it says it could not tell.
 
 `--memory` adds the context hook's own numbers by running `crew_context.py
---stats` from this directory when that script exists, and says "context hook
-not installed" when it does not.
+--stats --root <root>` from this directory when that script exists, and says
+"context hook not installed" when it does not. `--root` is passed explicitly:
+without it `crew_context.py` resolves `CLAUDE_PROJECT_DIR` first, so a status
+run for one repo from a session in another read the other repo's log.
 
 Read-only is a property, not a promise: git runs with `GIT_OPTIONAL_LOCKS=0`
 so `git status` cannot refresh the index, and bytecode writing is off so even
@@ -158,7 +160,8 @@ def _memory_lines(root, budget):
     if not os.path.isfile(CONTEXT_SCRIPT):
         return ["memory   context hook not installed (crew_context.py absent)"]
     try:
-        done = subprocess.run([sys.executable, "-B", CONTEXT_SCRIPT, "--stats"], cwd=root,
+        done = subprocess.run([sys.executable, "-B", CONTEXT_SCRIPT, "--stats", "--root", root],
+                              cwd=root,
                               capture_output=True, text=True, encoding="utf-8",
                               errors="replace", timeout=20, check=False,
                               stdin=subprocess.DEVNULL, env=_GIT_ENV)

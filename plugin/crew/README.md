@@ -2194,8 +2194,8 @@ CONFIG.md §17 has the table and the reasoning.
 
 ### Hooks
 
-Ten scripts across five events, each with a `.sh` and a `.ps1` twin
-registered on its own matcher or event — 20 entries total. The sentence said
+Eleven scripts across eight events, each with a `.sh` and a `.ps1` twin
+registered on its own matcher or event — 30 entries total. The sentence said
 eight and sixteen until 0.16.7 while the table below it already listed all
 ten; the prose was the half that went stale.
 
@@ -2203,6 +2203,7 @@ ten; the prose was the half that went stale.
 |---|---|---|
 | `promote-gate.sh` / `.ps1` | `PreToolUse` on Bash / PowerShell | Refuses a declared `deploy` command unless the upstream environment has an all-pass row for **this sha**, the rollback runbook is verified inside 90 days, `requireHuman` is approved, and the tree is clean. During an emergency lane it records each unmet precondition and allows the deploy (§24) |
 | `handoff-read.sh` / `.ps1` | `SessionStart` | Injects the handoff after clear, compact, or resume — first archiving it instead, under `.crew/handoffs/`, if age or reality drift (its `head`/`branch` no longer describing the checkout) says it is stale |
+| `crew-context.sh` / `.ps1` | `SessionStart`, `UserPromptSubmit`, `PostToolUse` on Read/Edit/Write/MultiEdit and vault MCP tools, `SubagentStart` | **Off until 1.0: emits and logs nothing unless `.crew/config.json` sets `memory.inject: true`.** When on, injects budgeted code-map slices and vault-labelled recall, and is the only channel that reaches a dispatched subagent (`SubagentStart`). Never blocks. The default flips at the 1.0.0 cut together with unregistering `pm-brief` and `handoff-read`, so the two never inject the same state twice |
 | `pm-brief.sh` / `.ps1` | `SessionStart` | Runs `crew_state.py`, prints the prioritized PM brief (triggers, health, knowledge, graph freshness) — report-only, changes nothing |
 | `platform-sync.sh` / `.ps1` | `SessionStart` | Detects this machine and repairs the `platform` block in `.crew/config.json` — see §3b. The only hook that writes config: the seven derived facts, plus recreating the whole file from defaults when it is missing or malformed (backing up a malformed one first) — never when `.crew/` itself does not exist. See "The config heals itself" in §3 |
 | `verify-gate.sh` / `.ps1` | `Stop` | Runs the checks the changed paths map to; fails the turn on red, on a changed path with no rule, or on a deploy that recorded no promotion row. Stands down while an emergency lane is open (§24), recording what did not run |

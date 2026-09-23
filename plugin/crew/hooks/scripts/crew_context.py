@@ -28,6 +28,9 @@ subagent's `agent_id`, the epoch advances on every `compact` or `clear`
 SessionStart (the context those slices lived in is gone), and an item is a
 code-map subsystem or one vault note.
 
+Off by default in 0.20.x: it emits and logs nothing unless the repo's crew
+config sets `memory.inject: true`. See `run` for why, and for when that flips.
+
 Never blocks. `main` returns 0 on every path, prints only an
 `additionalContext` payload or nothing, and never a `decision`.
 
@@ -645,7 +648,12 @@ def run(payload, raw, harness="claude"):
     if not os.path.isdir(os.path.join(root, ".crew")):
         return ""
     cfg = load_crew_config(root)
-    if dict_or_empty(cfg.get("memory")).get("inject") is False:
+    # OFF unless the repo says `memory.inject: true`. Through 0.20.x pm-brief
+    # and handoff-read are still registered and inject the same handoff and
+    # code-map state at SessionStart; with this on too, a session would get
+    # both. The default flips to on at the 1.0.0 cut, in the same change that
+    # unregisters those two -- not before.
+    if dict_or_empty(cfg.get("memory")).get("inject") is not True:
         return ""
     if not claim(root, raw, harness):
         return ""

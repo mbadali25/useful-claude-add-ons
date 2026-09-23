@@ -140,6 +140,19 @@ def test_claude_entries_satisfy_the_marketplace_hook_command_rules():
                 assert hook["command"].rstrip().endswith("exit $LASTEXITCODE")
 
 
+def test_the_registered_crew_context_rows_are_exactly_the_generated_ones():
+    """hooks.json is hand-formatted, so this compares parsed rows: every
+    crew-context registration is what `claude-hooks` prints, event by event,
+    and nothing else registers crew-context."""
+    path = os.path.join(os.path.dirname(os.path.abspath(ci.__file__)), os.pardir, "hooks.json")
+    with open(path, encoding="utf-8") as handle:
+        registered = json.load(handle)["hooks"]
+    ours = {event: [row for row in rows if "crew-context" in json.dumps(row)]
+            for event, rows in registered.items()}
+
+    assert {e: rows for e, rows in ours.items() if rows} == ci.claude_hooks()["hooks"]
+
+
 def test_codex_generation_writes_both_files_and_detects_drift(tmp_path):
     root = _big_repo(tmp_path)
 

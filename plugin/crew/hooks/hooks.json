@@ -6,7 +6,13 @@
       { "hooks": [{ "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/pm-brief.sh\"", "timeout": 20 }] },
       { "hooks": [{ "type": "command", "shell": "powershell", "command": "& \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/pm-brief.ps1\"; exit $LASTEXITCODE", "timeout": 20 }] },
       { "hooks": [{ "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/platform-sync.sh\"", "timeout": 20 }] },
-      { "hooks": [{ "type": "command", "shell": "powershell", "command": "& \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/platform-sync.ps1\"; exit $LASTEXITCODE", "timeout": 20 }] }
+      { "hooks": [{ "type": "command", "shell": "powershell", "command": "& \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/platform-sync.ps1\"; exit $LASTEXITCODE", "timeout": 20 }] },
+      { "hooks": [{ "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew-context.sh\"", "timeout": 20 }] },
+      { "hooks": [{ "type": "command", "shell": "powershell", "command": "& \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew-context.ps1\"; exit $LASTEXITCODE", "timeout": 20 }] }
+    ],
+    "UserPromptSubmit": [
+      { "hooks": [{ "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew-context.sh\"", "timeout": 15 }] },
+      { "hooks": [{ "type": "command", "shell": "powershell", "command": "& \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew-context.ps1\"; exit $LASTEXITCODE", "timeout": 15 }] }
     ],
     "PreToolUse": [
       { "matcher": "Bash",
@@ -17,6 +23,20 @@
         "hooks": [{ "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/role-write-guard.sh\"", "timeout": 10 }] },
       { "matcher": "Write|Edit",
         "hooks": [{ "type": "command", "shell": "powershell", "command": "& \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/role-write-guard.ps1\"; exit $LASTEXITCODE", "timeout": 10 }] }
+    ],
+    "PostToolUse": [
+      { "matcher": "Read|Edit|Write|MultiEdit",
+        "hooks": [{ "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew-context.sh\"", "timeout": 10 }] },
+      { "matcher": "Read|Edit|Write|MultiEdit",
+        "hooks": [{ "type": "command", "shell": "powershell", "command": "& \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew-context.ps1\"; exit $LASTEXITCODE", "timeout": 10 }] },
+      { "matcher": "mcp__.*(obsidian|vault|basic[-_]memory).*",
+        "hooks": [{ "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew-context.sh\"", "timeout": 10 }] },
+      { "matcher": "mcp__.*(obsidian|vault|basic[-_]memory).*",
+        "hooks": [{ "type": "command", "shell": "powershell", "command": "& \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew-context.ps1\"; exit $LASTEXITCODE", "timeout": 10 }] }
+    ],
+    "SubagentStart": [
+      { "hooks": [{ "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew-context.sh\"", "timeout": 15 }] },
+      { "hooks": [{ "type": "command", "shell": "powershell", "command": "& \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew-context.ps1\"; exit $LASTEXITCODE", "timeout": 15 }] }
     ],
     "PreCompact": [
       { "hooks": [{ "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/handoff-write.sh\"", "timeout": 30 }] },

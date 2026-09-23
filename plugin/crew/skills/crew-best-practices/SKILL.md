@@ -50,7 +50,7 @@ That last row is the document's §4.3.2 and crew reached it independently.
 ## Where crew departs, on purpose
 
 Three of the document's rules call crew's architecture an anti-pattern:
-specialised subagents (crew has 54), a large slash-command surface (26), and
+specialised subagents (crew has 55), a large slash-command surface (30), and
 being a multi-agent system at all.
 
 **These are recorded decisions, not oversights.** The reasoning, and the cost

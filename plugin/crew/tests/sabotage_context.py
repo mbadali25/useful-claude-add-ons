@@ -66,4 +66,14 @@ CONTEXT_MUTATIONS = (
         ("tests/test_crew_context.py::"
          "test_snippets_follow_the_repo_vault_priority_not_the_cli_order"),
     ),
+    (
+        # Back to default-on: 0.20.x would inject beside pm-brief and
+        # handoff-read, twice the same state per session.
+        "the context hook injects with no memory.inject in the config",
+        CONTEXT,
+        "    if dict_or_empty(cfg.get(\"memory\")).get(\"inject\") is not True:\n",
+        "    if dict_or_empty(cfg.get(\"memory\")).get(\"inject\") is False:\n",
+        ("tests/test_crew_context_wrappers.py::"
+         "test_bash_flavour_emits_and_logs_nothing_unless_inject_is_true"),
+    ),
 )

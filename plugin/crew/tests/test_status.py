@@ -86,7 +86,7 @@ def test_memory_without_context_hook_says_not_installed(tmp_path, monkeypatch):
 def test_memory_with_context_hook_shows_its_stats(tmp_path, monkeypatch):
     root = make_repo(tmp_path)
     stub = tmp_path / "crew_context.py"
-    stub.write_text("import sys\nassert sys.argv[1:] == ['--stats']\nprint('injected 1200 chars')\n",
+    stub.write_text("import sys\nassert sys.argv[1:3] == ['--stats', '--root']\nprint('injected 1200 chars')\n",
                     encoding="utf-8")
     monkeypatch.setattr(crew_status, "CONTEXT_SCRIPT", str(stub))
 
@@ -104,6 +104,18 @@ def test_memory_failing_context_hook_is_reported_not_hidden(tmp_path, monkeypatc
     lines = crew_status.collect(str(root), memory=True)
 
     assert lines[-1] == "memory   crew_context.py --stats failed (exit 1): boom"
+
+
+def test_memory_reads_the_real_context_log_of_root_not_the_session_project(tmp_path, monkeypatch):
+    root = make_repo(tmp_path)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.setitem(crew_status._GIT_ENV, "CLAUDE_PROJECT_DIR", str(elsewhere))  # pylint: disable=protected-access
+
+    lines = crew_status.collect(str(root), memory=True)
+
+    memory = next(line for line in lines if line.startswith("memory"))
+    assert memory == f"memory   crew context log: {root / '.git' / 'crew' / 'context-log.jsonl'}"
 
 
 @pytest.mark.parametrize("files,expected", [

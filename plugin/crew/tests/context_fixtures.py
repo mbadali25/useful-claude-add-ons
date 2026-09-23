@@ -46,11 +46,17 @@ def note(name, cited, landmines, anchor=None, paths_line=None):
     return "\n".join(lines) + "\n"
 
 
-def make_repo(tmp_path, subsystems=None, config=None, handoff=None):
+def make_repo(tmp_path, subsystems=None, config=None, handoff=None, inject=True):
     """A git repo with `.crew/codemap/` notes whose citations exist.
 
     `subsystems` maps name -> (list of files to create and cite, landmines).
+    `inject` is written as `memory.inject` into the config, because the hook
+    is off by default in 0.20.x; `None` leaves it out, and with `config` also
+    None no config file is written at all.
     """
+    if inject is not None:
+        config = dict(config or {})
+        config["memory"] = dict(config.get("memory") or {}, inject=inject)
     root = tmp_path / "repo"
     root.mkdir()
     subsystems = subsystems or {
