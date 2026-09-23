@@ -3909,3 +3909,12 @@ Stronger option if the owner wants approval to be a boundary: sign receipts with
 ### crew-1.0 T3 fix deferrals (filed 2026-09-23) - OPEN
 - `scope_report.gate_matches` (verify-gate) still lets `*` cross `/`.
 - Every Bash/PowerShell call now starts Python even with `scope.mode: off` when a config exists; add a shell fast path.
+
+### crew-1.0 T3/T4 integration docs drift (filed 2026-09-23) - OPEN, fold into T8
+- `plugin/crew/README.md` commands table lacks `/crew:debug`, `/crew:split`.
+- `plugin/crew/skills/crew-best-practices/references/contradictions.md:20` says "19 bundled skills" (unmarked).
+- `docs/guides/crew/src/README.md` omits `daily-workflow-scope.md`, `memory-recall-proof.md`.
+
+### crew-1.0 T5 cloud guard fix2 follow-ups (filed 2026-09-23) - OPEN
+- `plugin/crew/README.md:949-951` describes the old bash stand-down; SQL/help/WhatIf lines less precise now. Check `skills/crew-cloud/SKILL.md` for the same.
+- Behaviour change: `psql`/`mysql` commands with backslash literals are refused (every server-mode reading is scanned). Deliberate false positive; revisit with a `cloud.sqlModes` pin if it bites.
