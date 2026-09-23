@@ -890,12 +890,20 @@ _GUIDES = (
 
 
 def _requires_guides():
-    if not os.path.isdir(_GUIDES_DIR):
+    # Skip only when the MARKETPLACE REPO is absent (crew's tests running from an
+    # installed copy). Inside the repo a missing guides folder is a failure: the
+    # guides moved into docs/guides/crew/ once already, and a skip keyed on the
+    # folder itself would let the next move turn all eight checks into silent
+    # skips.
+    if not os.path.isfile(os.path.join(_REPO, ".claude-plugin", "marketplace.json")):
         pytest.skip(
-            "docs/guides is not in this checkout at "
-            f"{os.path.normpath(_GUIDES_DIR)} -- crew's tests are running "
-            "outside the marketplace repo, so the artefacts the HTML route "
-            "produced cannot be checked here")
+            f"not inside the marketplace repo ({os.path.normpath(_REPO)}) -- "
+            "crew's tests are running from an installed copy, so the artefacts "
+            "the HTML route produced cannot be checked here")
+    assert os.path.isdir(_GUIDES_DIR), (
+        f"the marketplace repo is here but {os.path.normpath(_GUIDES_DIR)} is "
+        "not -- the crew guides moved; update _GUIDES_DIR rather than letting "
+        "these checks skip")
 
 
 def _print_block(html, name):

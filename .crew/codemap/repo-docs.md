@@ -1,6 +1,11 @@
 # repo-docs
 anchor: useful-claude-add-ons@5d1fc5fd
 verified: 2026-09-22
+> **Path moved 2026-09-22 (PR #215):** `docs/guides/Running-a-Mailbox-Job.json` is now
+> `docs/guides/exchange-mailbox/Running-a-Mailbox-Job.json`, content unchanged (a `git mv`).
+> Citations and commands below keep the OLD path on purpose - they record what was run
+> and what was true at this note's anchor, where only the old path exists. On a range that
+> crosses the move, diff both paths: the new one alone prints nothing before the move.
 **This pass (`03b19262` -> `5d1fc5fd`) is a per-path diff and a re-read of
 every citation into a changed file — see the bottom-most provenance section
 for the command and output. Its headline is `## Corrected at 5d1fc5fd`
@@ -36,7 +41,7 @@ git diff --name-only ea8a014..HEAD -- <the 30 tracked paths this note cites>
 **Sixteen did not**, and every citation into them that survives
 byte-identical is closed by that result: `CLAUDE.md`, `docs/HANDOFF.md`,
 `docs/adr/0001-promote-stays-unarmed.md`, `docs/diagrams/architecture.mmd`,
-`docs/guides/exchange-mailbox/Running-a-Mailbox-Job.json`, `docs/runbooks/rollback.md`,
+`docs/guides/Running-a-Mailbox-Job.json`, `docs/runbooks/rollback.md`,
 `plugin/crew/commands/handoff.md`, `plugin/crew/hooks/scripts/crew_freshness.py`,
 `plugin/crew/skills/crew-context/SKILL.md`,
 `plugin/crew/skills/crew-diagrams/SKILL.md`,
@@ -56,7 +61,7 @@ live and actionable:**
    now pin `d541ee5708481fbf18c3a5fda050c9e40a40a2d9` (re-pinned by `2cc73a1e`,
    PR #206), and `git diff --name-only d541ee57..HEAD -- scripts/install-prerequisites.sh
    scripts/install-prerequisites.ps1` is empty — both re-verified directly.
-   **`docs/guides/exchange-mailbox/Running-a-Mailbox-Job.json:18` was NOT part of that re-pin**
+   **`docs/guides/Running-a-Mailbox-Job.json:18` was NOT part of that re-pin**
    and still reads the older `0a2d49b069bd178092e75a8cfd1a1c9df6690cd3` — one
    re-pin event (`2cc73a1e`) behind, but **59 commits** behind `d541ee57` in raw
    git history (`git log --oneline 0a2d49b0..d541ee57 | wc -l` = 59; corrected
@@ -284,7 +289,7 @@ unchanged position despite the file's other changes.)
   essentially every such entry, and a recent re-pin is no evidence the pin
   will still be fresh next week.
   **A third site carries an install-URL SHA and was NOT part of this
-  re-pin.** `docs/guides/exchange-mailbox/Running-a-Mailbox-Job.json:18` embeds the PowerShell
+  re-pin.** `docs/guides/Running-a-Mailbox-Job.json:18` embeds the PowerShell
   one-liner inside a JSON step string; re-checked at this pass, it still reads
   `0a2d49b069bd178092e75a8cfd1a1c9df6690cd3` — one re-pin event (`2cc73a1e`)
   behind the README, but **59 commits** behind in raw git history
@@ -713,7 +718,7 @@ git diff --name-only 84976536..HEAD -- .crew/verify.json CHANGELOG.md \
   plugin/crew/hooks/scripts/_test/run-tests.sh plugin/crew/hooks/scripts/crew_state.py \
   scripts/check-marketplace.py skills/README.md CLAUDE.md docs/HANDOFF.md \
   docs/adr/0001-promote-stays-unarmed.md docs/diagrams/architecture.mmd \
-  docs/guides/exchange-mailbox/Running-a-Mailbox-Job.json docs/runbooks/rollback.md \
+  docs/guides/Running-a-Mailbox-Job.json docs/runbooks/rollback.md \
   plugin/crew/commands/handoff.md plugin/crew/hooks/scripts/crew_freshness.py \
   plugin/crew/skills/crew-context/SKILL.md plugin/crew/skills/crew-diagrams/SKILL.md \
   plugin/crew/skills/crew-diagrams/scripts/_test/render.sh \
@@ -758,7 +763,7 @@ offset:
   re-verified directly; `git log --oneline d541ee57..HEAD -- scripts/install-prerequisites.sh
   scripts/install-prerequisites.ps1` is empty, so the pin is current. This
   resolves finding 1 from the previous pass ("the install-URL pin is STALE")
-  for `README.md` specifically — `docs/guides/exchange-mailbox/Running-a-Mailbox-Job.json:18`
+  for `README.md` specifically — `docs/guides/Running-a-Mailbox-Job.json:18`
   was checked separately (it is a cited path, unchanged in this diff) and
   still reads the older `0a2d49b0` SHA, now one re-pin further behind (the
   "one commit" wording this bullet previously used was never true — 59 commits
@@ -839,7 +844,7 @@ git diff --name-only 03b19262..5d1fc5fd -- .crew/verify.json CHANGELOG.md \
   plugin/crew/hooks/scripts/_test/run-tests.sh plugin/crew/hooks/scripts/crew_state.py \
   scripts/check-marketplace.py skills/README.md CLAUDE.md docs/HANDOFF.md \
   docs/adr/0001-promote-stays-unarmed.md docs/diagrams/architecture.mmd \
-  docs/guides/exchange-mailbox/Running-a-Mailbox-Job.json docs/runbooks/rollback.md \
+  docs/guides/Running-a-Mailbox-Job.json docs/runbooks/rollback.md \
   plugin/crew/commands/handoff.md plugin/crew/hooks/scripts/crew_freshness.py \
   plugin/crew/skills/crew-context/SKILL.md plugin/crew/skills/crew-diagrams/SKILL.md \
   plugin/crew/skills/crew-diagrams/scripts/_test/render.sh \
@@ -870,7 +875,7 @@ twenty-one unchanged: `INSTALLATION.md`,
 `plugin/README.md`, `plugin/crew/agents/scribe.md`,
 `plugin/crew/hooks/scripts/crew_state.py`, `skills/README.md`,
 `docs/HANDOFF.md`, `docs/adr/0001-promote-stays-unarmed.md`,
-`docs/diagrams/architecture.mmd`, `docs/guides/exchange-mailbox/Running-a-Mailbox-Job.json`,
+`docs/diagrams/architecture.mmd`, `docs/guides/Running-a-Mailbox-Job.json`,
 `docs/runbooks/rollback.md`, `plugin/crew/commands/handoff.md`,
 `plugin/crew/hooks/scripts/crew_freshness.py`,
 `plugin/crew/skills/crew-context/SKILL.md`,

@@ -1,6 +1,11 @@
 # install-scripts
 anchor: useful-claude-add-ons@5d1fc5fd
 verified: 2026-09-22
+> **Path moved 2026-09-22 (PR #215):** `docs/guides/Running-a-Mailbox-Job.json` is now
+> `docs/guides/exchange-mailbox/Running-a-Mailbox-Job.json`, content unchanged (a `git mv`).
+> Citations and commands below keep the OLD path on purpose - they record what was run
+> and what was true at this note's anchor, where only the old path exists. On a range that
+> crosses the move, diff both paths: the new one alone prints nothing before the move.
 
 **Re-derived, not re-pointed, at `84976536`.** The two scripts grew by roughly
 880 lines between `ea8a014` and that anchor and no uniform offset existed, so
@@ -239,7 +244,7 @@ standalone tools through their own package managers (see **Calls out to**). DERI
   fix exists past this anchor; a pin claim's lifespan here has twice now been shorter than one
   commit range, and "a fix merged" is not the same claim as "this anchor's pin is current."
   **Not the same as "every pin in the repo is current" either way.** `repo-docs.md` records
-  `docs/guides/exchange-mailbox/Running-a-Mailbox-Job.json:18` still pinning the *older* `0a2d49b0` SHA — **59
+  `docs/guides/Running-a-Mailbox-Job.json:18` still pinning the *older* `0a2d49b0` SHA — **59
   commits** behind `d541ee57` in raw git history (`git log --oneline 0a2d49b0..d541ee57 | wc -l` =
   59; a previous version of this bullet said "one commit behind," which conflated the single
   re-pin event with git-history distance) - that file was not part of the `2cc73a1e`
