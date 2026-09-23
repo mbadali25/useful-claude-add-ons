@@ -228,8 +228,68 @@ def check_canvas(path, text, issues, advisory, root):
 
 def main():
     try:
-        payload = json.load(sys.stdin)
-    except Exception:
+        raw = sys.stdin.buffer.read()
+    except Exception as e:
+        sys.stderr.write(
+            "obsidian-vault vault_guard.py: NOT checked: could not read the "
+            f"hook payload from stdin ({type(e).__name__}: {e})\n")
+        return 0
+
+    # Explicit UTF-8, not `json.load(sys.stdin)`. `sys.stdin` decodes with
+    # whatever the process's locale says - PYTHONUTF8=1 (set by the wrappers
+    # as a backstop, see vault-guard.sh/.ps1) normally forces UTF-8 there
+    # too, but this is the layer that stays correct even if that env var is
+    # ever unset, overridden by PYTHONIOENCODING, or the hook is ever invoked
+    # some other way. Without it, a non-ASCII note edited under a non-UTF-8
+    # console codepage (the ANSI default on Windows) decodes as mojibake
+    # rather than raising - `check_ascii` still fires, but names the wrong
+    # character, and `check_note`'s title/filename comparison can silently
+    # mismatch on text that was never actually different.
+    #
+    # `errors="surrogateescape"`, not the strict default a bare `.decode()`
+    # uses: measured (2026-09-22) that `sys.stdin`'s OWN default errors
+    # handler is 'strict' whenever the process is not already in UTF-8 mode
+    # - true for the plain default AND for a genuine `en_US.utf8` locale
+    # with no PYTHONUTF8 set, and only 'surrogateescape' once PYTHONUTF8=1
+    # (or an equivalent) is in effect. A first version of this fix used the
+    # strict default, so one invalid UTF-8 byte anywhere in an edit's
+    # content raised, was caught by a bare `except Exception: return 0`
+    # below, and ALLOWED the write in total silence on the one hook that can
+    # block - an unknown collapsing into the safe-looking value, on exactly
+    # the byte that most needed a verdict. surrogateescape never raises: an
+    # invalid byte survives as a lone surrogate codepoint, which
+    # `check_ascii`'s `ord(ch) > 0x7F` still catches (so the write is still
+    # blocked - it just names a synthetic codepoint instead of a real
+    # character), and this is now correct in EVERY environment, not only
+    # the ones where PYTHONUTF8 happens to be set.
+    #
+    # Decode lives INSIDE this try, not before it: `errors="surrogateescape"`
+    # cannot raise today, so this changes nothing about the case above (the
+    # invalid byte still reaches `check_ascii` as a real content check, not
+    # a bailout) - but it means a future regression of the `errors=` kwarg
+    # degrades to the SAME loud "NOT checked" stand-down below instead of an
+    # uncaught traceback, which is what a bare `.decode("utf-8")` outside any
+    # try produces (confirmed by sabotaging exactly that in
+    # _test/test_vault_guard_sh.sh).
+    try:
+        payload = json.loads(raw.decode("utf-8", errors="surrogateescape"))
+    except Exception as e:
+        # A hook payload Claude Code itself did not produce as valid,
+        # decodable JSON is an infrastructure condition, not a vault-content
+        # one - and this branch never used to say so; it returned 0 in
+        # silence, the same "unknown collapsing into the safe-looking value"
+        # CLAUDE.md names. Failing OPEN here (not exit 2) rather than closed
+        # matches the guard's own established philosophy stated in
+        # vault-guard.sh's header: PostToolUse fires after the write has
+        # already landed, so exit 2 cannot prevent anything, only report a
+        # specific violation - and there is no file path or content to name
+        # one against when the payload itself did not parse. Blocking every
+        # subsequent turn on a payload the guard cannot even read would not
+        # tell the agent what to fix; a loud stand-down does what every
+        # other "cannot verify" case in this plugin already does.
+        sys.stderr.write(
+            "obsidian-vault vault_guard.py: NOT checked: hook payload did "
+            f"not parse as JSON ({type(e).__name__}: {e})\n")
         return 0
 
     vault = obsidian_common.resolve_vault_path()

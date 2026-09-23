@@ -3643,3 +3643,57 @@ context clear, so the open items live here where they are tracked.
   that prints a plausible path via shell metadata alone (not proven by execution) would
   still be accepted by pm-pulse.ps1 where pm-pulse.sh would reject it. Did not block:
   fixing it means widening a file this ticket did not name.
+
+- **`vault-capture.ps1` discards `vault_capture.py`'s own exit code, unlike its
+  `.sh` twin.** `plugin/obsidian-vault/hooks/scripts/vault-capture.ps1:115` runs
+  `& $py (Join-Path $dir 'vault_capture.py') $Trigger` then unconditionally
+  `exit 0`, pre-dating the Windows-audit-wave-3 change to this file (confirmed by
+  reading the version before this ticket's edit - same unconditional `exit 0`).
+  `vault-capture.sh` `exec`s python instead, so its own exit code IS
+  `vault_capture.py`'s. The divergence is invisible for the hook path (SessionEnd/
+  PreCompact ignore a non-blocking hook's exit code either way) but bites the
+  `--selftest` CLI diagnostic specifically: `vault_capture.py --selftest` exits 1
+  and writes "selftest FAIL: no vault resolved" on stderr when no vault is
+  configured, and a human or script driving that through `vault-capture.ps1
+  -Trigger --selftest` sees exit 0 (success) despite the FAIL on stderr - exit code
+  and message disagree. Did not block Windows audit wave 3: that ticket's brief
+  scoped the interpreter-resolver shape and the UTF-8 stdin decode, not
+  `--selftest` exit-code parity between the two flavours, and the asymmetry
+  predates this change.
+
+## Filed 2026-09-22 by the mermaid-svg-bitbucket CRLF-digest fix developer, corrected 2026-09-22
+
+An earlier version of this entry said a Windows clone's checked-out SVG bytes would show
+as changed under `git diff`/`git status`, and proposed `*.svg -text` in the repo-root
+`.gitattributes` as the fix. Both halves of that were wrong, on review, and it is worth
+keeping the correction visible rather than quietly rewriting the entry, per this file's own
+"a correction that outlives the thing it corrected" pattern.
+
+- **`git status`/`git diff` do NOT show a converted checkout as changed.** That was the
+  premise for treating this as visible drift, and it inverts how `core.autocrlf` actually
+  works: on comparison, git runs the working-tree content back through its "clean" filter
+  (the same direction as a commit would use) before diffing it against the index/blob, which
+  reverses whatever the checkout's "smudge" filter did. A CRLF working-tree copy of an
+  LF-committed SVG that hasn't been otherwise touched compares as clean, not modified - the
+  same normalize-before-compare behavior that makes `.sh` scripts (this repo's existing
+  `*.sh text eol=lf` case) look unchanged in git even when their checked-out bytes carry
+  CRLF. `svg_digest()`'s normalization (`skills/mermaid-svg-bitbucket/scripts/render_mermaid.py:77`)
+  closes the one place this repo's own tooling looks at raw bytes without going through git's
+  compare-time filter - `--check`'s hash comparison - which is the part git's own filters
+  don't reach.
+- **Real mmdc output has nothing for a line-ending translation to act on.** Measured: this
+  skill's one committed real-render fixture, `tests/fixtures/sample.svg` (10937 bytes), contains
+  zero `\n` and zero `\r` bytes - it is emitted as a single line. A file with no line breaks in
+  it cannot differ by line-ending convention at all, on any host, with or without
+  `svg_digest()`'s normalization. That makes the byte-reproducibility scenario this entry
+  originally raised near-theoretical for a real render: it would need a diagram, or a
+  mermaid-cli version, that pretty-prints its SVG output with embedded newlines, which is not
+  what this skill has observed. (One fixture, one mermaid-cli version - this is not a claim
+  that no mmdc output ever contains a newline, only that the one measured here doesn't.)
+- **Conclusion: `.gitattributes` `*.svg -text`/`binary` is very likely not needed**, on the
+  evidence above - git's own compare-time normalization already prevents the "looks changed on
+  the other platform" failure mode this entry was originally written to describe, and the
+  "committed bytes literally differ" failure mode has nothing to act on in a real render. Not
+  proposed for implementation; nothing further queued here unless a future mermaid-cli version
+  is observed emitting multi-line SVGs, at which point `svg_digest()`'s normalization already
+  covers the `--check` side of that and this line should be revisited for the git-diff side.
