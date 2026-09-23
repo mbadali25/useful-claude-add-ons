@@ -401,9 +401,12 @@ def main():
                          "is deliberately mid-edit")
     ap.add_argument("--specs-dir", help="override the brand pack's specs directory")
     resolve_brand.add_brand_argument(ap)
+    # A themed SOP is checked against the SAME theme it was built with; its
+    # colours differ from the brand's masters on purpose.
+    resolve_brand.add_theme_arguments(ap)
     args = ap.parse_args()
 
-    brand = resolve_brand.resolve(args.brand)
+    brand = resolve_brand.resolve(args.brand, theme=args.theme, density=args.density)
     S.configure(brand)
 
     paths = args.paths or sorted(

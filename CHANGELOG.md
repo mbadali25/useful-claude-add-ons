@@ -6,6 +6,25 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Changed
 
+- **`doc-builder` 1.7.2: built-in themes, a compact density, and a theme gallery.**
+  Eight themes (`professional`, `corporate`, `blue`, `red`, `modern`, `dark`, `midnight`,
+  `high-contrast`) in `assets/themes/`, chosen with `--theme` or `DOC_BUILDER_THEME` on
+  `build_report.py`, `build_sop.py`, `house_style.py` and `check_conformance.py`. A theme
+  sets colours only: the brand keeps its logo, fonts, footer, template and paths, and
+  `resolve_brand.apply_overlay` strips identity keys from any overlay. `--density compact`
+  combines with any theme. `midnight` and `high-contrast` are true dark pages, carried into
+  DOCX and PDF by every renderer. LibreOffice drops the page colour from its DOCX, so it is
+  written back in. Palettes come from Tailwind, IBM Carbon, Nord and the Windows
+  high-contrast themes. Every text pair is asserted at WCAG AA (AAA for `high-contrast`) by
+  `scripts/_test/test_themes.py`. `assets/themes/gallery/` ships a sample report, PNG and
+  index per theme, built by `scripts/build_gallery.py`, and a test fails when the gallery
+  goes stale. When someone asks for documentation without naming a look, `SKILL.md` now
+  says to show the gallery first. Word COM dark-page handling is untested (no Windows host). The theme and
+  density environment variables reach only the scripts that build a document, and a malformed
+  theme file is skipped with a warning instead of breaking every build. `crew` 0.20.16
+  re-points `crew-house-style`'s `house_style.py` citations once more, since the
+  themes moved those lines.
+
 - **`doc-builder` 1.6.2: black-grid tables and a logo-left masthead.** Data and
   meta tables now draw a solid black border on every cell, data-table headers
   are black with white bold text, and the zebra fill is a stronger `#E8ECF1` so
@@ -33,6 +52,9 @@ All notable changes to this repository are documented here. Format follows [Keep
   folder moves again. `crew` goes to 0.20.13 because its test files changed.
 
 ### Fixed
+
+- **`crew` 0.20.17: merge of main into doc-builder/themes (#214).** Both branches had set
+  crew 0.20.16 with different contents, so the merged result moves to 0.20.17.
 
 - **`crew` 0.20.16: test-only.** `test_review_patch.py` passes `check=False` to
   `subprocess.run` explicitly (pylint W1510, which failed CI's `build` jobs). crew

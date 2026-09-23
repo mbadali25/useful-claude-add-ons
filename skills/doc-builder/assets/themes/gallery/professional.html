@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<title>Entra Password Posture</title>
+<style>
+body { font-family:'Segoe UI',Calibri,Arial,sans-serif; font-size:13px;
+       color:#0F172A; background:#FFFFFF; margin:0; }
+.wrap { max-width:1000px; margin:0 auto; padding:18px 22px 40px; }
+
+h1 { font-size:20px; margin:18px 0 2px; color:#0F172A; }
+h2 { font-size:15px; margin:22px 0 8px; padding-bottom:4px;
+     border-bottom:1px solid #CBD5E1; color:#0F172A; }
+p  { margin:6px 0; }
+a  { color:#0563C1; }
+.sub    { color:#475569; font-size:12px; margin:0 0 10px; }
+.footer { color:#475569; font-size:11px; margin-top:26px;
+          border-top:1px solid #CBD5E1; padding-top:8px; }
+
+/* Masthead: tables with cell shading, never coloured divs. */
+table.mast { border-collapse:collapse; width:100%; margin-bottom:14px; }
+.mast-strip { background:#64748B; height:4px; line-height:4px; font-size:1px; }
+.mast-band  { background:#1E293B; padding:14px 18px; }
+.mast-rule  { background:#0F172A; height:3px; line-height:3px; font-size:1px; }
+.mast-cls   { background:#8B1A13; color:#FFFFFF; padding:5px 18px;
+              font-size:11px; font-weight:700; letter-spacing:1.6px; }
+.mast-org   { color:#CBD5E1; font-size:11px; font-weight:600;
+              letter-spacing:1.8px; }
+.mast-title { color:#FFFFFF; font-size:26px; font-weight:600; }
+.mast-subtitle { color:#CBD5E1; font-size:12px; }
+/* Bare class, per word-traps.md rule 3/4 - the only selector shape both
+   renderers apply. Height only: no width, so the source PNG's own aspect
+   ratio (290x70 for the wordmark) is preserved rather than guessed at here. */
+.mast-logo { height:44px; }
+/* Logo left, heading text right: two SIBLING cells in the band row, never
+   a nested table (LibreOffice lifts a nested table into the row above).
+   The logo cell carries the band fill itself. Bare classes only. */
+.mast-logo-cell { background:#1E293B; width:1%; white-space:nowrap;
+              vertical-align:middle; padding:14px 18px;
+              border-right:1px solid #CBD5E1; }
+
+/* Every table: real grid, real thead. Both required. */
+table.data { border-collapse:collapse; width:100%; table-layout:fixed;
+             margin:8px 0 4px; }
+table.data th, table.data td { border:1px solid #000000; padding:7px 10px;
+             text-align:left; vertical-align:top; overflow-wrap:break-word; }
+table.data th { background:#000000; color:#FFFFFF; font-weight:700;
+             letter-spacing:0.02em; padding:8px 10px; }
+/* Every body cell carries its own fill. Word keeps it when a print drops the
+   page colour; LibreOffice keeps it only in the guide profile's bare `td`
+   (it drops the report's scoped selector - word-traps.md). */
+table.data td { background:#FFFFFF; color:#0F172A; }
+/* Zebra is an explicit class, written per row by the builder. */
+table.data tr.alt td { background:#E8ECF1; }
+
+table.meta { border-collapse:collapse; width:100%; margin:0 0 14px; }
+table.meta td { border:1px solid #000000; padding:7px 10px; font-size:12px;
+             background:#FFFFFF; color:#0F172A; }
+table.meta td.k { background:#E8ECF1; font-weight:600; width:17%; }
+
+.lede { background:#F1F5F9; border-left:4px solid #0F172A;
+        padding:10px 14px; margin:10px 0 4px; }
+.handling { background:#FDE8E6; border-left:4px solid #8B1A13;
+            padding:8px 14px; margin:10px 0; font-size:12px; color:#A01B12; }
+
+/* Cards are a table on purpose; the number and label are real block
+   elements rather than styled spans. */
+table.cards { border-collapse:separate; border-spacing:8px 0; width:100%;
+              margin:6px 0 2px; }
+td.card { background:#F1F5F9; border:1px solid #000000; padding:10px 12px;
+          text-align:center; }
+div.n { font-size:22px; font-weight:700; color:#0F172A; }
+div.l { font-size:11px; color:#475569; }
+
+.chip-critical, .chip-high, .chip-medium, .chip-low, .chip-info, .chip-unverified { display:inline-block; padding:2px 8px; font-weight:700; font-size:11px; white-space:nowrap; }
+.chip-critical { background:#FDE8E6; color:#A01B12; }
+.chip-high { background:#FFEDD5; color:#9A3412; }
+.chip-medium { background:#FDF3D7; color:#8A6100; }
+.chip-low { background:#E3F4EA; color:#1C6B3F; }
+.chip-info { background:#E8EFF8; color:#2F4B7C; }
+.chip-unverified { background:#EDEEF1; color:#5C5F6B; }
+
+@media print {
+  body { font-size:11pt; }
+  .wrap { padding:0; max-width:none; }
+  h2 { page-break-after:avoid; }
+  tr { page-break-inside:avoid; }
+  thead { display:table-header-group; }
+}
+</style>
+</head><body>
+<div class="wrap">
+<table class="mast">
+  <tr><td class="mast-strip"></td></tr>
+  <tr>
+  <td class="mast-band">
+    <div class="mast-org">CONTOSO</div>
+    <div class="mast-title">Entra Password Posture</div>
+    <div class="mast-subtitle">Tenant-wide assessment of password strength and policy</div>
+  </td></tr>
+  <tr><td class="mast-rule"></td></tr>
+  <tr><td class="mast-cls">CONFIDENTIAL - HANDLE AS RESTRICTED</td></tr>
+</table>
+
+<table class="meta">
+  <tr>
+    <td class="k">Report</td><td>EntraPasswordPosture</td>
+    <td class="k">Generated</td><td>2026-09-09 01:15 UTC</td>
+  </tr>
+  <tr>
+    <td class="k">Scope</td><td>All enabled cloud accounts</td>
+    <td class="k">Run by</td><td>svc-reporting</td>
+  </tr>
+  <tr>
+    <td class="k">Accounts assessed</td><td>4,182</td>
+    <td class="k">Findings</td><td>6</td>
+  </tr>
+</table>
+
+<div class="lede"><p>218 enabled accounts have passwords under 14 characters, and 5 of them hold privileged roles. Nothing else in this report is more urgent than those 5.</p></div>
+<div class="handling">This document names accounts with weak credentials. It is a target list if it leaves the organisation.</div>
+<h2>Summary</h2>
+<table class="cards"><tr><td class="card"><div class="n">218</div><div class="l">Under 14 characters</div></td><td class="card"><div class="n">5</div><div class="l">Privileged and weak</div></td><td class="card"><div class="n">41</div><div class="l">No MFA registered</div></td><td class="card"><div class="n">0</div><div class="l">Blocked by banned list</div></td></tr></table>
+
+<h2>Findings</h2>
+<table class="data">
+  <colgroup>
+    <col style="width:9%">
+    <col style="width:66%">
+    <col style="width:19%">
+    <col style="width:6%">
+  </colgroup>
+  <thead><tr>
+    <th>ID</th>
+    <th>Finding</th>
+    <th>Severity</th>
+    <th>Count</th>
+  </tr></thead>
+  <tbody>
+    <tr><td>EPP-001</td><td>Privileged accounts with passwords under 14 characters</td><td><span class="chip-critical">CRITICAL</span></td><td>5</td></tr>
+    <tr class="alt"><td>EPP-002</td><td>Enabled accounts with passwords under 14 characters</td><td><span class="chip-high">HIGH</span></td><td>218</td></tr>
+    <tr><td>EPP-003</td><td>Accounts with no MFA method registered</td><td><span class="chip-high">HIGH</span></td><td>41</td></tr>
+    <tr class="alt"><td>EPP-004</td><td>Custom banned-password list not configured</td><td><span class="chip-medium">MEDIUM</span></td><td>1</td></tr>
+    <tr><td>EPP-005</td><td>Password writeback health could not be queried</td><td><span class="chip-unverified">UNVERIFIED</span></td><td>1</td></tr>
+    <tr class="alt"><td>EPP-006</td><td>Smart lockout thresholds at Microsoft defaults</td><td><span class="chip-info">INFO</span></td><td>1</td></tr>
+  </tbody>
+</table>
+
+<div class="footer">Get-EntraPasswordPostureReport.ps1 v2.4 | host: RPT01 | account: svc-reporting | 2026-09-09T01:15:22Z</div>
+</div>
+</body></html>

@@ -1,0 +1,8 @@
+{
+  "_comment": "The default spacing - identical to the neutral pack's own values. Exists so --density comfortable can undo a DOC_BUILDER_DENSITY set in the environment.",
+  "description": "Default spacing: 13px report body, 7x10px cells, 11pt guides.",
+  "report": {
+    "density": {}
+  },
+  "sop": {}
+}

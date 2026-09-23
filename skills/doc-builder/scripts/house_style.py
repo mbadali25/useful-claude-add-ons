@@ -97,6 +97,21 @@ class Palette:
         self.table_head = r["table_head"]
         self.table_head_ink = r["table_head_ink"]
         self.table_border = r["table_border"]
+        self.row = r["row"]
+        self.page = r["page"]
+        # Headings, the lede rule and card numbers follow the band colour unless
+        # a theme separates them -- a dark-page theme must, because a navy
+        # heading on a near-black page is unreadable.
+        self.heading = r.get("heading") or self.navy
+        self.title_ink = r["title_ink"]
+        self.handling_bg = r["handling_bg"]
+        self.handling_ink = r["handling_ink"]
+        # Text-on-page colours a dark theme must override: the guide's .warn and
+        # .fail notes and links. Word's default link blue is 2.1:1 on midnight.
+        self.warn_ink = r["warn_ink"]
+        self.fail_ink = r["fail_ink"]
+        self.link = r["link"]
+        self.d = dict(r["density"])
         self.panel = r["panel"]
         self.rule = r["rule"]
         self.font_stack = brand.fonts["report_stack"]
@@ -180,10 +195,14 @@ def table_css(pal: Palette, sel: str = "table.data", layout: str = "fixed",
     return (
         f"{sel} {{ border-collapse:collapse; width:100%; table-layout:{layout};\n"
         f"             margin:8px 0 4px; }}\n"
-        f"{pre}th, {pre}td {{ border:1px solid {pal.table_border}; padding:7px 10px;\n"
+        f"{pre}th, {pre}td {{ border:1px solid {pal.table_border}; padding:{pal.d['cell_pad']};\n"
         f"             text-align:left; vertical-align:top; overflow-wrap:break-word; }}\n"
         f"{pre}th {{ background:{pal.table_head}; color:{pal.table_head_ink}; font-weight:700;\n"
-        "             letter-spacing:0.02em; padding:8px 10px; }\n"
+        f"             letter-spacing:0.02em; padding:{pal.d['head_pad']}; }}\n"
+        "/* Every body cell carries its own fill. Word keeps it when a print drops the\n"
+        "   page colour; LibreOffice keeps it only in the guide profile's bare `td`\n"
+        "   (it drops the report's scoped selector - word-traps.md). */\n"
+        f"{pre}td {{ background:{pal.row}; color:{pal.ink}; }}\n"
         "/* Zebra is an explicit class, written per row by the builder. */\n"
         f"{pre}tr.alt td {{ background:{pal.zebra}; }}\n"
     )
@@ -193,7 +212,9 @@ def meta_css(pal: Palette, sel: str = "table.meta") -> str:
     """The meta table and its shaded key column."""
     return (
         f"{sel} {{ border-collapse:collapse; width:100%; margin:0 0 14px; }}\n"
-        f"{sel} td {{ border:1px solid {pal.table_border}; padding:6px 10px; font-size:12px; }}\n"
+        f"{sel} td {{ border:1px solid {pal.table_border}; padding:{pal.d['cell_pad']}; "
+        f"font-size:{pal.d['meta_px']}px;\n"
+        f"             background:{pal.row}; color:{pal.ink}; }}\n"
         f"{sel} td.k {{ background:{pal.zebra}; font-weight:600; width:17%; }}\n"
     )
 
@@ -201,10 +222,10 @@ def meta_css(pal: Palette, sel: str = "table.meta") -> str:
 def panel_css(pal: Palette) -> str:
     """The lede panel and the handling notice."""
     return (
-        f".lede {{ background:{pal.panel}; border-left:4px solid {pal.navy};\n"
+        f".lede {{ background:{pal.panel}; border-left:4px solid {pal.heading};\n"
         "        padding:10px 14px; margin:10px 0 4px; }\n"
-        f".handling {{ background:#FDE8E6; border-left:4px solid {pal.classification};\n"
-        "            padding:8px 14px; margin:10px 0; font-size:12px; color:#A01B12; }\n"
+        f".handling {{ background:{pal.handling_bg}; border-left:4px solid {pal.classification};\n"
+        f"            padding:8px 14px; margin:10px 0; font-size:12px; color:{pal.handling_ink}; }}\n"
     )
 
 
@@ -215,9 +236,9 @@ def cards_css(pal: Palette) -> str:
         "   elements rather than styled spans. */\n"
         "table.cards { border-collapse:separate; border-spacing:8px 0; width:100%;\n"
         "              margin:6px 0 2px; }\n"
-        f"td.card {{ background:{pal.panel}; border:1px solid {pal.grid}; padding:10px 12px;\n"
+        f"td.card {{ background:{pal.panel}; border:1px solid {pal.grid}; padding:{pal.d['card_pad']};\n"
         "          text-align:center; }\n"
-        f"div.n {{ font-size:22px; font-weight:700; color:{pal.navy}; }}\n"
+        f"div.n {{ font-size:{pal.d['card_n_px']}px; font-weight:700; color:{pal.heading}; }}\n"
         f"div.l {{ font-size:11px; color:{pal.muted}; }}\n"
     )
 
@@ -265,14 +286,15 @@ def print_css(headings: str = "h2", body_size: str = "11pt") -> str:
 
 def _report_base_css(pal: Palette) -> str:
     return (
-        f"\nbody {{ font-family:{pal.font_stack}; font-size:13px;\n"
-        f"       color:{pal.ink}; margin:0; }}\n"
+        f"\nbody {{ font-family:{pal.font_stack}; font-size:{pal.d['base_px']}px;\n"
+        f"       color:{pal.ink}; background:{pal.page}; margin:0; }}\n"
         ".wrap { max-width:1000px; margin:0 auto; padding:18px 22px 40px; }\n"
         "\n"
-        f"h1 {{ font-size:20px; margin:18px 0 2px; color:{pal.navy}; }}\n"
-        "h2 { font-size:15px; margin:22px 0 8px; padding-bottom:4px;\n"
-        f"     border-bottom:1px solid {pal.rule}; color:{pal.navy}; }}\n"
+        f"h1 {{ font-size:{pal.d['h1_px']}px; margin:18px 0 2px; color:{pal.heading}; }}\n"
+        f"h2 {{ font-size:{pal.d['h2_px']}px; margin:{pal.d['h2_margin']}; padding-bottom:4px;\n"
+        f"     border-bottom:1px solid {pal.rule}; color:{pal.heading}; }}\n"
         "p  { margin:6px 0; }\n"
+        f"a  {{ color:{pal.link}; }}\n"
         f".sub    {{ color:{pal.muted}; font-size:12px; margin:0 0 10px; }}\n"
         f".footer {{ color:{pal.muted}; font-size:11px; margin-top:26px;\n"
         f"          border-top:1px solid {pal.rule}; padding-top:8px; }}\n"
@@ -284,23 +306,23 @@ def _masthead_css(pal: Palette) -> str:
         "/* Masthead: tables with cell shading, never coloured divs. */\n"
         "table.mast { border-collapse:collapse; width:100%; margin-bottom:14px; }\n"
         f".mast-strip {{ background:{pal.accent}; height:4px; line-height:4px; font-size:1px; }}\n"
-        f".mast-band  {{ background:{pal.navy}; padding:14px 18px; }}\n"
+        f".mast-band  {{ background:{pal.navy}; padding:{pal.d['band_pad']}; }}\n"
         f".mast-rule  {{ background:{pal.navy_dark}; height:3px; line-height:3px; font-size:1px; }}\n"
         f".mast-cls   {{ background:{pal.classification}; color:#FFFFFF; padding:5px 18px;\n"
         "              font-size:11px; font-weight:700; letter-spacing:1.6px; }\n"
         f".mast-org   {{ color:{pal.org_ink}; font-size:11px; font-weight:600;\n"
         "              letter-spacing:1.8px; }\n"
-        ".mast-title { color:#FFFFFF; font-size:26px; font-weight:600; }\n"
+        f".mast-title {{ color:{pal.title_ink}; font-size:{pal.d['title_px']}px; font-weight:600; }}\n"
         f".mast-subtitle {{ color:{pal.org_ink}; font-size:12px; }}\n"
         "/* Bare class, per word-traps.md rule 3/4 - the only selector shape both\n"
         "   renderers apply. Height only: no width, so the source PNG's own aspect\n"
         "   ratio (290x70 for the wordmark) is preserved rather than guessed at here. */\n"
-        ".mast-logo { height:44px; }\n"
+        f".mast-logo {{ height:{pal.d['logo_px']}px; }}\n"
         "/* Logo left, heading text right: two SIBLING cells in the band row, never\n"
         "   a nested table (LibreOffice lifts a nested table into the row above).\n"
         "   The logo cell carries the band fill itself. Bare classes only. */\n"
         f".mast-logo-cell {{ background:{pal.navy}; width:1%; white-space:nowrap;\n"
-        f"              vertical-align:middle; padding:14px 18px;\n"
+        f"              vertical-align:middle; padding:{pal.d['band_pad']};\n"
         f"              border-right:1px solid {pal.org_ink}; }}\n"
     )
 
@@ -314,27 +336,29 @@ def _guide_base_css(pal: Palette) -> str:
     body the same way a report does.
     """
     return (
-        f"\nbody {{ font-family:{pal.font_stack}; font-size:11pt;\n"
-        f"       color:{pal.ink}; margin:2cm; line-height:1.45; }}\n"
+        f"\nbody {{ font-family:{pal.font_stack}; font-size:{pal.d['guide_pt']}pt;\n"
+        f"       color:{pal.ink}; background:{pal.page}; margin:{pal.d['guide_margin']}; "
+        f"line-height:{pal.d['line_height']}; }}\n"
         ".wrap { max-width:none; margin:0; padding:0; }\n"
         "\n"
-        f"h1 {{ font-size:22pt; margin:0 0 4pt; color:{pal.navy}; }}\n"
+        f"h1 {{ font-size:22pt; margin:0 0 4pt; color:{pal.heading}; }}\n"
         "h2 { font-size:16pt; margin:24pt 0 8pt; padding-bottom:3pt;\n"
-        f"     border-bottom:1px solid {pal.rule}; color:{pal.navy}; }}\n"
-        f"h3 {{ font-size:13pt; margin:16pt 0 6pt; color:{pal.navy}; }}\n"
+        f"     border-bottom:1px solid {pal.rule}; color:{pal.heading}; }}\n"
+        f"h3 {{ font-size:13pt; margin:16pt 0 6pt; color:{pal.heading}; }}\n"
         "p  { margin:6pt 0; }\n"
         "ul, ol { margin:4pt 0 8pt 18pt; }\n"
         "li { margin:3pt 0; }\n"
         "code { font-family:Consolas,'Courier New',monospace; font-size:9.5pt; }\n"
         f".sub    {{ color:{pal.muted}; font-size:10pt; margin:0 0 10pt; }}\n"
         f".muted  {{ color:{pal.muted}; font-size:9.5pt; }}\n"
-        ".warn { color:#8A6100; }\n"
-        ".fail { color:#A01B12; }\n"
+        f".warn {{ color:{pal.warn_ink}; }}\n"
+        f".fail {{ color:{pal.fail_ink}; }}\n"
+        f"a {{ color:{pal.link}; }}\n"
         f".footer {{ color:{pal.muted}; font-size:9.5pt; margin-top:26pt;\n"
         f"          border-top:1px solid {pal.rule}; padding-top:8pt; }}\n"
-        f".box {{ background:{pal.panel}; border:1px solid {pal.navy};\n"
+        f".box {{ background:{pal.panel}; border:1px solid {pal.heading};\n"
         "        padding:8pt 10pt; margin:10pt 0; }\n"
-        f".plain {{ background:{pal.panel}; border-left:4px solid {pal.navy};\n"
+        f".plain {{ background:{pal.panel}; border-left:4px solid {pal.heading};\n"
         "          padding:4pt 10pt; margin:8pt 0; }\n"
     )
 
@@ -619,6 +643,39 @@ def _title_case_markup(inner: str) -> str:
     return "".join(out)
 
 
+PAGE_META = "doc-builder-page"
+_BODY_RE = re.compile(r"<body(\s[^>]*)?>", re.IGNORECASE)
+_BGCOLOR_RE = re.compile(r"""\s+bgcolor\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)""", re.IGNORECASE)
+_OLD_META_RE = re.compile(r'<meta name="' + PAGE_META + r'"[^>]*>\n?', re.IGNORECASE)
+
+
+def mark_page(html: str, pal: Palette) -> str:
+    """Carry a non-white page colour into the converted document.
+
+    CSS `body { background }` colours the browser page, but a Word or
+    LibreOffice import may drop it, and then light text lands on white paper.
+    So a dark-page theme is stated three ways: the CSS, the legacy `bgcolor`
+    attribute (the form Word itself writes when it saves a coloured page as
+    HTML), and a `<meta name="doc-builder-page">` that `build_report.to_word`
+    reads to set the page colour explicitly over COM. A white page carries
+    neither attribute nor meta.
+
+    Any marking from an EARLIER run is removed first, so a restyle in place
+    (`--apply page.html --out page.html`) from `midnight` to `professional`
+    does not leave a dark `bgcolor` and meta behind for LibreOffice and Word
+    to paint under a light theme's dark ink."""
+    html = _OLD_META_RE.sub("", html)
+    html = _BODY_RE.sub(lambda m: "<body" + _BGCOLOR_RE.sub("", m.group(1) or "") + ">", html, count=1)
+    if pal.page.upper() == "#FFFFFF":
+        return html
+    html = _BODY_RE.sub(lambda m: f'<body bgcolor="{pal.page}"{m.group(1) or ""}>', html, count=1)
+    meta = f'<meta name="{PAGE_META}" content="{pal.page}">'
+    m = re.search(r"</head>", html, re.IGNORECASE)
+    if m:
+        html = html[:m.start()] + meta + "\n" + html[m.start():]
+    return html
+
+
 def apply_to_html(text: str, pal: Palette, profile: str = "guide",
                   headings: bool = True) -> str:
     """Return `text` with its `<style>` block replaced by the house stylesheet
@@ -630,6 +687,7 @@ def apply_to_html(text: str, pal: Palette, profile: str = "guide",
     `</head>` either is refused by name rather than silently half-styled.
     """
     css = stylesheet(pal, profile)
+    text = mark_page(text, pal)
     if _STYLE_RE.search(text):
         out = _STYLE_RE.sub(lambda m: m.group(1) + css + m.group(3), text, count=1)
     else:
@@ -653,6 +711,7 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     resolve_brand.add_brand_argument(ap)
+    resolve_brand.add_theme_arguments(ap)
     ap.add_argument("--profile", choices=PROFILES, default="report",
                     help="report (build_report.py's own CSS) or guide "
                          "(a hand-authored narrative page). Default: report")
@@ -672,7 +731,7 @@ def main(argv=None) -> int:
         print(title_case(args.title_case))
         return 0
 
-    brand = resolve_brand.resolve(args.brand)
+    brand = resolve_brand.resolve(args.brand, theme=args.theme, density=args.density)
     pal = Palette(brand)
 
     # Compute the whole payload BEFORE opening the output file. `open(p,"w")`
