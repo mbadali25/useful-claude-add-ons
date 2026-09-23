@@ -776,6 +776,21 @@ A `.crew/config.json` that exists but does not parse, or a value outside those f
 
 **What this does not do.** The edit guard judges only the four editing tools against Touch; the Stop audit is what catches `sed -i`, redirects and formatters, after the fact. The audit sees what git sees: gitignored files (`.crew/*` among them) and `.work/` are outside it.
 
+### Measuring 1.0
+
+`.crew/metrics.jsonl` (append-only; `.crew/metrics.md` from 0.20 becomes this via `/crew:migrate`, with every historical value it cannot recover marked `UNKNOWN`, never `0`) is where crew 1.0's own validation claim gets checked: at least 30% lower median active time or cost against the 0.20 baseline, 100% review-budget enforcement, zero unapproved scope changes, and no rise in escaped defects, over 10–20 matched tickets (docs/review/04-redesign.md, "Validation").
+
+`hooks/scripts/crew_metrics.py` writes and reads it:
+
+| Command | What it does |
+|---|---|
+| `crew_metrics.py record --ticket <id>` | Appends one row: phases and timestamps, active time and tokens (from `--transcript <path>`, an idle-capped sum of gaps between transcript events — `UNKNOWN` without it), cost (`UNKNOWN`; no priced source exists yet), review rounds (the review ledger), scope blocks (`.crew/guard.log`), injected characters (the context log, by `--session` or the ticket's approval session), and unapproved scope changes at record time (the completion audit). Confirmed/rejected/duplicate findings and escaped defects are `UNKNOWN` from `record` — no source in this repository derives finding disposition automatically. **`/crew:done` runs this on every close:** `python3 hooks/scripts/crew_metrics.py record --ticket <id>`. |
+| `crew_metrics.py escaped --ticket <id> --count N [--note <text>]` | Appends a row setting `escapedDefects`, once a defect is found after the ticket closed. Never edits the `record` row — metrics are append-only; rewriting a line is an `AUTONOMOUS_STOP`. |
+| `crew_metrics.py baseline` | Median active time/cost over every 0.20/migrated ticket, with `n` and how many are `UNKNOWN`. Historical rows are almost always `UNKNOWN` for both — reconstruct one from an old transcript with `record --schema 0.20 --transcript <old-transcript>`. |
+| `crew_metrics.py compare --since <n\|date>` | The last `n` (or every ticket recorded on/after `date`) prospective 1.0 tickets against the baseline: medians, percent change, review-budget enforcement rate, unapproved scope changes, escaped defects, and a `PASS`/`FAIL` per success criterion — or `INSUFFICIENT DATA` below 10 tickets. |
+
+A count this module could not measure is always the string `UNKNOWN`, never `0` — a `0` here is a real measurement (the guard log exists and names no block for this ticket), and collapsing "could not tell" into `0` is exactly the failure mode that made 0.20's own review-rate metric read low (see `crew_state.read_metrics`).
+
 ---
 
 ## 11. Configuration reference
