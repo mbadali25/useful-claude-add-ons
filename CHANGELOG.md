@@ -13,8 +13,10 @@ All notable changes to this repository are documented here. Format follows [Keep
   (`report.table_border`, `report.table_head`, `report.table_head_ink`), set in
   the neutral pack and inherited by every pack that does not override them, so
   Solomon reports get them too. When a brand pack has a logo, the masthead band
-  is now a nested two-cell table with the logo on the left and the organisation,
-  title and subtitle on the right, split by a thin divider. It used to stack the
+  row holds two sibling cells, the logo on the left and the organisation, title
+  and subtitle on the right, split by a thin divider. They are siblings rather
+  than a nested table because LibreOffice lifted a nested table into the accent
+  strip. It used to stack the
   logo above the text.
   `crew` 0.20.14: `crew-house-style` re-points its three `house_style.py` line
   citations to the lines doc-builder 1.6.0 moved them to.

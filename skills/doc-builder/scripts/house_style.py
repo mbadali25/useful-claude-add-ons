@@ -296,12 +296,12 @@ def _masthead_css(pal: Palette) -> str:
         "   renderers apply. Height only: no width, so the source PNG's own aspect\n"
         "   ratio (290x70 for the wordmark) is preserved rather than guessed at here. */\n"
         ".mast-logo { height:44px; }\n"
-        "/* Logo left, heading text right: a nested table, because Word drops\n"
-        "   float and flex. Bare classes only, so LibreOffice applies them too. */\n"
-        ".mast-row { border-collapse:collapse; width:100%; }\n"
-        f".mast-logo-cell {{ width:1%; white-space:nowrap; vertical-align:middle;\n"
-        f"              padding:0 18px 0 0; border-right:1px solid {pal.org_ink}; }}\n"
-        ".mast-text { vertical-align:middle; padding:0 0 0 18px; }\n"
+        "/* Logo left, heading text right: two SIBLING cells in the band row, never\n"
+        "   a nested table (LibreOffice lifts a nested table into the row above).\n"
+        "   The logo cell carries the band fill itself. Bare classes only. */\n"
+        f".mast-logo-cell {{ background:{pal.navy}; width:1%; white-space:nowrap;\n"
+        f"              vertical-align:middle; padding:14px 18px;\n"
+        f"              border-right:1px solid {pal.org_ink}; }}\n"
     )
 
 

@@ -71,10 +71,38 @@ def test_masthead_puts_the_logo_left_of_the_heading_text():
     html = build_report.masthead("CONTOSO", "Report Title", "subtitle", "INTERNAL",
                                  logo_src="file:///fake/logo.png")
     logo_cell = html.index('<td class="mast-logo-cell">')
-    text_cell = html.index('<td class="mast-text">')
-    assert logo_cell < html.index('class="mast-logo"') < text_cell
-    assert text_cell < html.index('<div class="mast-title">Report Title</div>')
+    band = html.index('<td class="mast-band">')
+    assert logo_cell < html.index('class="mast-logo"') < band
+    assert band < html.index('<div class="mast-title">Report Title</div>')
 
+
+def test_logo_masthead_uses_sibling_cells_not_a_nested_table():
+    """LibreOffice's HTML import lifted a table nested in the band cell into the
+    accent-strip row: the band rendered in the accent colour and the logo
+    vanished (soffice 26.2.5.2). The logo and the text must be sibling cells of
+    ONE row, and every other row must span both columns."""
+    html = build_report.masthead("CONTOSO", "T", "s", "INTERNAL", logo_src="file:///fake/logo.png")
+    assert html.count("<table") == 1
+    band_row = next(r for r in html.split("<tr>") if "mast-band" in r)
+    assert 'class="mast-logo-cell"' in band_row
+    for cls in ("mast-strip", "mast-rule", "mast-cls"):
+        assert f'<td class="{cls}" colspan="2">' in html, cls
+
+
+def test_logo_cell_css_is_bare_class_with_band_fill_and_divider():
+    """Bare `.class` is the only selector shape both renderers apply
+    (word-traps.md); the logo cell must carry the band fill itself, since it is
+    no longer inside `.mast-band`, and the divider is its right border."""
+    pal = house_style.Palette(resolve_brand.resolve("solomon", announce=False))
+    css = house_style.stylesheet(pal, "report")
+    rule = css[css.index(".mast-logo-cell {"):]
+    rule = rule[:rule.index("}")]
+    assert f"background:{pal.navy}" in rule
+    assert f"border-right:1px solid {pal.org_ink}" in rule
+    for line in css.splitlines():
+        if "mast-logo-cell" in line and "{" in line:
+            assert line.lstrip().startswith(".mast-logo-cell {"), line
+    assert "mast-row" not in css and "mast-text" not in css
 
 def test_masthead_renders_with_no_img_when_there_is_no_logo():
     """The neutral case: a document with no brand logo must render fine
