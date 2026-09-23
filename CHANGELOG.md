@@ -34,6 +34,10 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Fixed
 
+- **`crew` 0.20.16: test-only.** `test_review_patch.py` passes `check=False` to
+  `subprocess.run` explicitly (pylint W1510, which failed CI's `build` jobs). crew
+  moves from 0.20.15 because its test files changed.
+
 - **`crew` 0.20.15: the PM is always spawned unnamed, so it can dispatch
   again.** Per [agent teams](https://code.claude.com/docs/en/agent-teams.md),
   an `Agent` call with `name` creates a teammate, and "teammates cannot spawn
