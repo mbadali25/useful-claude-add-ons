@@ -1,5 +1,5 @@
 %% Generated from useful-claude-add-ons@60c79407 on 2026-09-22. Verify before trusting.
-%% Anchors: skills/mermaid-svg-bitbucket/scripts/render_mermaid.py, skills/mermaid-svg-bitbucket/assets/mermaid-config.json, skills/mermaid-svg-bitbucket/assets/bitbucket-pipelines.snippet.yml, skills/mermaid-svg-bitbucket/SKILL.md
+%% Anchors: skills/mermaid-svg-bitbucket/scripts/render_mermaid.py, skills/mermaid-svg-bitbucket/assets/mermaid-config.json, skills/mermaid-svg-bitbucket/assets/bitbucket-pipelines.snippet.yml, skills/mermaid-svg-bitbucket/SKILL.md, skills/mermaid-svg-bitbucket/tests/test_check_reads_the_svg.py
 %% mermaid-svg-bitbucket: how a fenced block becomes a committed SVG, and what each gate can and cannot see.
 %% Re-check: git diff --name-only 60c79407..HEAD -- skills/mermaid-svg-bitbucket/scripts/render_mermaid.py skills/mermaid-svg-bitbucket/assets/mermaid-config.json skills/mermaid-svg-bitbucket/assets/bitbucket-pipelines.snippet.yml skills/mermaid-svg-bitbucket/SKILL.md
 %% --
@@ -44,8 +44,9 @@
 %%     rewrite keeps each line's own terminator." Concretely: svg_digest()
 %%     now normalizes CRLF/CR before hashing (:82-97); Manifest.save() (:172),
 %%     postprocess()'s SVG write (:321) and the sidecar .mmd write in
-%%     process_markdown() (:410) all pin newline="\n" so those files are
-%%     byte-identical whichever OS rendered them; and process_markdown() was
+%%     process_markdown() (:410) all pin newline="\n", so Windows no longer
+%%     writes CRLF into them (the SVG's layout is still renderer-dependent -
+%%     render_mermaid.py:93-94 disclaims raw-byte reproducibility); and process_markdown() was
 %%     rewritten around a NEW helper, _normalize_with_offsets() (:335-366), so
 %%     that rewriting a Markdown file no longer collapses every untouched
 %%     line's terminator to whatever the file's FIRST line used (the bug this
@@ -219,7 +220,7 @@ flowchart TB
         R2{"returncode != 0<br/><b>or</b> not svg.exists() :274<br/><i>both</i> checked - a tool that exits 0<br/>and writes nothing is caught here"}
         R3["postprocess() :281-321<br/>the only gate that opens the output"]
         R4{"'&lt;foreignObject' in svg :295"}
-        R5["set intrinsic width/height from the viewBox<br/>:302-305, strip mermaid's max-width style :307,<br/>then write the file back with newline=#quot;\n#quot; :321<br/>pinned (<b>NEW in 1.2.5</b>) - the write no longer turns<br/>LF into CRLF on Windows. It does NOT make raw<br/>SVG bytes reproducible across platforms - layout<br/>depends on installed fonts (render_mermaid.py:93-94). Regression:<br/>tests/test_check_reads_the_svg.py:345"]
+        R5["set intrinsic width/height from the viewBox<br/>:302-305, strip mermaid's max-width style :307,<br/>then write the file back with newline=#quot;\n#quot; :321<br/>pinned (<b>NEW in 1.2.5</b>) - the write no longer turns<br/>LF into CRLF on Windows. It does NOT make raw<br/>SVG bytes reproducible across platforms<br/>(render_mermaid.py:93-94; TODO.md:3685-3692). Regression:<br/>tests/test_check_reads_the_svg.py:345"]
         R1 --> R0
         R0 -->|spawned| R2
         R2 -->|ok| R3
