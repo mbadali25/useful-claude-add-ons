@@ -1,5 +1,5 @@
 # obsidian-vault
-anchor: useful-claude-add-ons@5d1fc5fd
+anchor: useful-claude-add-ons@60c79407
 verified: 2026-09-22
 
 ## Does
@@ -12,7 +12,7 @@ registration against Obsidian's Local REST API bridge. (DERIVED:
 
 **The guard does not block a write.** It is registered on PostToolUse
 (`plugin/obsidian-vault/hooks/hooks.json:7-12`), which fires *after* the file is on disk - the
-guard even re-reads it from disk at `plugin/obsidian-vault/hooks/scripts/vault_guard.py:261-262`.
+guard even re-reads it from disk at `plugin/obsidian-vault/hooks/scripts/vault_guard.py:321-322`.
 Exit 2 sends stderr back to Claude as same-turn feedback, which its own docstring states at
 `plugin/obsidian-vault/hooks/scripts/vault_guard.py:24-26`; the bad file still exists until Claude
 fixes it. The plugin here that can actually deny a tool call is `crew`, which registers PreToolUse
@@ -31,9 +31,12 @@ violation visible at all. (JUDGEMENT.)
   `"shell": "powershell"` at `:5,11,15,19`). Verified as a pair on all four; this is the defect that
   shipped once in `crew`, where a bare command went to Git Bash on Windows and the guard stood down.
   (DERIVED.)
-- `plugin/obsidian-vault/hooks/scripts/vault_guard.py:229-297` - `main()`, the PostToolUse guard,
-  fired on Edit/Write/MultiEdit. Reads its config toggles at `:240-246`; early-returns 0 at `:248`
-  when all three are off. (DERIVED, ranges by `ast.parse`.)
+- `plugin/obsidian-vault/hooks/scripts/vault_guard.py:229-357` - `main()`, the PostToolUse guard,
+  fired on Edit/Write/MultiEdit. Reads its config toggles at `:301-306`; early-returns 0 at
+  `:308-309` when all three are off. `main()` grew from 69 to 129 lines between anchors: the stdin
+  read and JSON parse that used to be one bare `json.load(sys.stdin)` inside a two-line
+  `try/except Exception: return 0` are now a decode-then-parse pair, each with its own failure
+  message - see Landmines. (DERIVED, ranges by `ast.parse`.)
 - `plugin/obsidian-vault/hooks/scripts/vault_guard.py:156-203` - `check_note`, the
   frontmatter/required-keys/title/updated-date contract, scoped by `notesPrefix` at `:159-160`.
   (DERIVED.)
@@ -79,21 +82,21 @@ violation visible at all. (JUDGEMENT.)
 
 ## Landmines
 - **The three guard checks do not ship the same way.** `asciiOnly` and `requireFrontmatter`
-  default OFF (`is True` tests at `plugin/obsidian-vault/hooks/scripts/vault_guard.py:241-242`);
-  `checkCanvas` defaults ON, via an `is not False` test at `:243`. Assuming all three share a
+  default OFF (`is True` tests at `plugin/obsidian-vault/hooks/scripts/vault_guard.py:301-302`);
+  `checkCanvas` defaults ON, via an `is not False` test at `:303`. Assuming all three share a
   default is the easy mistake, and it inverts which rules a fresh install enforces. All three
-  defaults are pinned by cases in the suite (`plugin/obsidian-vault/hooks/scripts/_test/run-tests.sh:404,412,433`).
+  defaults are pinned by cases in the suite (`plugin/obsidian-vault/hooks/scripts/_test/run-tests.sh:405,413,434`).
   (DERIVED.)
 - **The guard only ever sees the DEFAULT vault.** `main()` calls
   `obsidian_common.resolve_vault_path()` with no name
-  (`plugin/obsidian-vault/hooks/scripts/vault_guard.py:235`), and `resolve_vault_path()` with
+  (`plugin/obsidian-vault/hooks/scripts/vault_guard.py:295`), and `resolve_vault_path()` with
   `name=None` resolves the default entry
   (`plugin/obsidian-vault/hooks/scripts/obsidian_common.py:286-294` ->
   `:256-283`). Every edit to a second configured vault - the codegraphs vault, say - passes
   unchecked. `plugin/obsidian-vault/README.md:46-49` states this is deliberate. (DERIVED.)
 - **`.base` files reach no structural check.** The extension filter admits `.md`, `.canvas` and
-  `.base` (`plugin/obsidian-vault/hooks/scripts/vault_guard.py:258`), but the dispatch below it is
-  `if ext == ".md" and require_fm: ... elif ext == ".canvas" and check_canvas_shape:` (`:269-275`).
+  `.base` (`plugin/obsidian-vault/hooks/scripts/vault_guard.py:318`), but the dispatch below it is
+  `if ext == ".md" and require_fm: ... elif ext == ".canvas" and check_canvas_shape:` (`:329-335`).
   A `.base` therefore only ever gets `check_ascii`, and only when `asciiOnly` is on. No case in the
   suite exercises a `.base` at all. (DERIVED; grep for `\.base` over
   `plugin/obsidian-vault/hooks/scripts/_test/run-tests.sh` returns nothing.)
@@ -103,7 +106,7 @@ violation visible at all. (JUDGEMENT.)
   (`:39`). Widening one while reading the other is how an exemption silently grows. Each of the
   three ASCII-checked names is pinned individually, after a Codex round found that testing
   `README.md` alone let a narrowing of `ASCII_EXEMPT_NAMES` pass the whole suite
-  (`plugin/obsidian-vault/hooks/scripts/_test/run-tests.sh:293-304`). (DERIVED.)
+  (`plugin/obsidian-vault/hooks/scripts/_test/run-tests.sh:294-305`). (DERIVED.)
 - **The frontmatter exemption is one check wide, not the whole function.** `fm_optional` excuses an
   exempt basename from *having* frontmatter and nothing else: a `README.md` that does carry
   frontmatter is still held to required keys, title-matches-filename and the updated date
@@ -111,19 +114,47 @@ violation visible at all. (JUDGEMENT.)
   `check_note` entirely; the comment beside it still claimed "frontmatter-only". (DERIVED.)
 - **`notesPrefix` scopes the note contract only** - not the ASCII check and not the canvas check.
   `notes_glob` is passed to `check_note` alone
-  (`plugin/obsidian-vault/hooks/scripts/vault_guard.py:270-271`); `check_ascii` (`:268`) and
-  `check_canvas` (`:275`) never receive it. The note half of that is pinned
-  (`plugin/obsidian-vault/hooks/scripts/_test/run-tests.sh:450`) and the ASCII half is pinned by
-  the `wiki/ascii/CLAUDE.md` case (`:314`). **The canvas half is not pinned:** all four canvas
+  (`plugin/obsidian-vault/hooks/scripts/vault_guard.py:329-333`); `check_ascii` (`:328`) and
+  `check_canvas` (`:334-335`) never receive it. The note half of that is pinned
+  (`plugin/obsidian-vault/hooks/scripts/_test/run-tests.sh:451`) and the ASCII half is pinned by
+  the `wiki/ascii/CLAUDE.md` case (`:315`). **The canvas half is not pinned:** all four canvas
   cases live under `wiki/canvases/`, which is inside the `wiki/` prefix the ON config sets, so
   adding prefix-gating to `check_canvas` would pass the suite unnoticed. (DERIVED for the code;
   JUDGEMENT that this is the next gap worth closing.)
 - The guard reads file content from disk rather than from the hook payload
-  (`plugin/obsidian-vault/hooks/scripts/vault_guard.py:261-262`). Only the ASCII check prefers the
+  (`plugin/obsidian-vault/hooks/scripts/vault_guard.py:321-322`). Only the ASCII check prefers the
   newly introduced text (`written_text`, `:93-103`), and it falls back to the full on-disk text
-  when the payload carried no new string: `added if added is not None else text` (`:268`).
+  when the payload carried no new string: `added if added is not None else text` (`:328`).
   `check_note` and `check_canvas` always see the whole file. (DERIVED; the fallback clause was not
   stated in the previous version of this note.)
+- **A malformed or undecodable hook payload used to fail silently; as of PR #210 it fails loudly.**
+  Until this pass `main()` opened with a bare `payload = json.load(sys.stdin)` inside
+  `try/except Exception: return 0` - any read or parse failure returned 0 with nothing on stderr,
+  the same "unknown collapsing into the safe-looking value" shape CLAUDE.md names for the
+  interpreter-resolver defect below. `main()` (now `plugin/obsidian-vault/hooks/scripts/vault_guard.py:229-357`)
+  splits this into two stages, each writing an explicit `"... NOT checked: ..."` message to stderr
+  before returning 0: a raw-bytes stdin read (`:230-236`) and a decode-then-parse step
+  (`:274-293`) that decodes with `errors="surrogateescape"` rather than the strict default
+  (`:275`), so an invalid byte survives as a synthetic codepoint `check_ascii` still catches
+  instead of raising and being swallowed by a bare `except`. The decode is explicit UTF-8, not
+  `sys.stdin`'s own locale-dependent default - the comment at `:238-247` and `:249-264` notes
+  that this only matters when nothing more specific (`PYTHONIOENCODING`, or the wrapper's own
+  `PYTHONUTF8=1` backstop, below) already forced UTF-8. The MEASUREMENT is recorded elsewhere -
+  `plugin/obsidian-vault/hooks/scripts/vault-guard.sh:140-150` and
+  `plugin/obsidian-vault/hooks/scripts/_test/test_vault_guard_sh.sh:358-363` - where the guard's own
+  regression suite measured `PYTHONIOENCODING` as taking precedence OVER `PYTHONUTF8` when both are set - so the
+  wrapper backstop cannot rescue a decode an explicit `PYTHONIOENCODING` in the calling environment
+  has already corrupted. (DERIVED, and sabotage-tested: `_test/test_vault_guard_sh.sh`'s
+  non-ASCII round-trip section calls `vault_guard.py` directly under a forced
+  `PYTHONIOENCODING=cp1252`, then reverts the decode fix on a throwaway copy and confirms the case
+  goes red - see that file's own comments on why it sandboxes a copy rather than editing the
+  tracked file in place.)
+  Both wrappers now also `export`/set `PYTHONUTF8=1` before invoking the interpreter -
+  `plugin/obsidian-vault/hooks/scripts/vault-guard.sh:151` and
+  `plugin/obsidian-vault/hooks/scripts/vault-guard.ps1:176` - as a backstop for everything else
+  python does under the process's default encoding (stdout/stderr text, not the stdin decode
+  above, which never consults it). Its own comment states the narrower, measured scope rather than
+  the wider claim a first draft made. (DERIVED.)
 - **Every claim above is about `vault_guard.py`. Nothing runs it directly.** `hooks.json` invokes
   the *wrappers* - `plugin/obsidian-vault/hooks/scripts/vault-guard.sh` (`:9`) and
   `vault-guard.ps1` (`:11`) - and until 2026-09-22 this note documented the Python and never the
@@ -171,23 +202,30 @@ violation visible at all. (JUDGEMENT.)
     prints something else executable would still pass. That remaining difference is DERIVED from
     reading both files at this anchor, not carried over from the previous version of this note,
     which asserted the older, coarser gap. (DERIVED.)
-  - **It is copied, not imported, and that was a decision rather than an oversight**
-    (`:45-56`): crew and obsidian-vault are separate marketplace entries, `${CLAUDE_PLUGIN_ROOT}`
-    points at one plugin, and a host with obsidian-vault and no crew is the ordinary case, so
-    there is no path this script could source. A shared copy *inside* obsidian-vault was declined
-    for now because the other two bash wrappers here - `bridge-status.sh` and `vault-capture.sh` -
-    **still carry the naive one-liner**, and moving all three onto one resolver widens the blast
-    radius from the one hook that can report a violation to every hook this plugin registers.
-    (DERIVED for the decision and its reasoning; the two remaining naive wrappers are JUDGEMENT as
-    to risk - they are SessionStart and SessionEnd/PreCompact, neither of which reports a contract
-    violation, so the same stub costs a status line rather than a false clean bill.)
-  - **`exec` was removed** (`:132-147`). `vault_guard.py` exits 0 or 2 and nothing else, so any
+  - **It is copied, not imported** (`:45-56`): crew and obsidian-vault are separate marketplace
+    entries, `${CLAUDE_PLUGIN_ROOT}` points at one plugin, and a host with obsidian-vault and no
+    crew is the ordinary case, so there is no path this script could source. **The reason this note
+    previously gave for declining a shared copy no longer holds, and the source comment that gives
+    it is now stale.** As of PR #210, `bridge-status.sh` and `vault-capture.sh` (and their `.ps1`
+    twins) no longer carry the naive `command -v python3 || ...` one-liner this comment describes
+    them as still carrying - each now has its own independently-copied proven-interpreter resolver
+    (`_bridge_status_resolve_python`, `_vault_capture_resolve_python`, and the PowerShell
+    equivalents), so all three hooks this plugin registers get the WindowsApps-alias defence, not
+    just the one that can block. The comment at `plugin/obsidian-vault/hooks/scripts/vault-guard.sh:45-56`
+    itself is unchanged text (untouched in the `5d1fc5fd..60c79407` diff) that now misstates why a
+    shared copy was declined; correcting the source is out of scope for this note - reported
+    separately as a decision for scribe. (DERIVED that the four other wrappers were upgraded; the
+    "why still not shared" question is now open rather than settled by the stale comment -
+    JUDGEMENT.)
+  - **`exec` was removed** (`:153-167`, moved from `:132-147` by the `export PYTHONUTF8=1` insert
+    above it - see the new Landmines bullet). `vault_guard.py` exits 0 or 2 and nothing else, so any
     other status means it never reached a verdict; under `exec` that landed as a bare numeric exit,
     which is the silent shape the whole script exists to avoid. It now runs the interpreter as a
     child, and a status that is neither 0 nor 2 prints "this write was NOT checked" and stands down
     at exit 0.
-  Pinned by `plugin/obsidian-vault/hooks/scripts/_test/test_vault_guard_sh.sh`, run from the main
-  suite as one folded case at `plugin/obsidian-vault/hooks/scripts/_test/run-tests.sh:500`.
+  Pinned by `plugin/obsidian-vault/hooks/scripts/_test/test_vault_guard_sh.sh` (grown from 372 to
+  652 lines this pass - see "Measured this pass"), run from the main suite as one folded case at
+  `plugin/obsidian-vault/hooks/scripts/_test/run-tests.sh:513`.
   **The stub is MODELLED, not observed** - built on Linux from the alias's documented behaviour
   (`plugin/obsidian-vault/hooks/scripts/vault-guard.sh:35-37` says so). The *shape* of the failure
   is verified; the Windows fixture behind it is not, and nobody has reproduced this on a real
@@ -197,11 +235,13 @@ violation visible at all. (JUDGEMENT.)
   once per flavour, so on a machine with bash *and* `pwsh` both halves of each pair would fire
   unless the `.ps1` stands down off Windows. All three `.ps1` wrappers now open with
   `if ($env:OS -ne 'Windows_NT') { exit 0 }` -
-  `plugin/obsidian-vault/hooks/scripts/bridge-status.ps1:13`,
-  `plugin/obsidian-vault/hooks/scripts/vault-capture.ps1:14`,
-  `plugin/obsidian-vault/hooks/scripts/vault-guard.ps1:45`. (DERIVED.)
+  `plugin/obsidian-vault/hooks/scripts/bridge-status.ps1:19`,
+  `plugin/obsidian-vault/hooks/scripts/vault-capture.ps1:24`,
+  `plugin/obsidian-vault/hooks/scripts/vault-guard.ps1:45`. (DERIVED - the first two moved when
+  PR #210 added a header comment ahead of the flavour guard in each file; `vault-guard.ps1`'s
+  own flavour-guard line did not move.)
   **`$env:OS`, not `$IsWindows`** - and the comment at
-  `plugin/obsidian-vault/hooks/scripts/bridge-status.ps1:9-12` records why: `$IsWindows` does not
+  `plugin/obsidian-vault/hooks/scripts/bridge-status.ps1:14-18` records why: `$IsWindows` does not
   exist in PowerShell 5.1, so a bare `if (-not $IsWindows)` is truthy there and stands the hook
   down on the one platform it exists for. crew shipped that inversion once already.
   The pin derives its file list from `hooks.json` itself
@@ -210,31 +250,73 @@ violation visible at all. (JUDGEMENT.)
   regression test and a list that goes stale. (DERIVED.)
 - The regression suite is `plugin/obsidian-vault/hooks/scripts/_test/run-tests.sh`, sabotage-tested
   per its own header (`:5-6`), with must-block and must-allow sections and four Python suites
-  (`:475-478`). A change to any rule above needs a must-block and a must-allow case here before it
-  ships - this repo's rule for a hook that can block. (DERIVED.)
+  (`:476-479`). A change to any rule above needs a must-block and a must-allow case here before it
+  ships - this repo's rule for a hook that can block. (DERIVED - all four citations in this bullet
+  moved by one line versus the previous anchor: `SKIP=0` was added near the top of the file, at
+  line 29, shifting every line below it by exactly one.)
+- **A PowerShell legacy-argument-passing bug rejected every real interpreter, in the opposite
+  direction from the WindowsApps defect above - fail-open-by-standing-down rather than fail-open-
+  by-running-a-stub, but still silent about why.** `vault-guard.ps1` - the only `.ps1` wrapper that HAD
+  an interpreter probe at the previous anchor (`bridge-status.ps1` and `vault-capture.ps1` used a
+  bare `Get-Command python3, python, py` with no probe, per the naive-one-liner bullet above) -
+  used to pass its `-c` program double-quoted:
+  `-c 'import sys; sys.stdout.write("vault-guard-python:" + sys.executable)'`. Under
+  `$PSNativeCommandArgumentPassing = 'Legacy'` - the default on Windows PowerShell 5.1 and on pwsh
+  <=7.2 - PowerShell reconstructs native-command arguments itself and silently strips embedded
+  double quotes before the child process ever sees them, so python received
+  `sys.stdout.write(vault-guard-python: + sys.executable)`, a `SyntaxError`, exit 1, and every real
+  interpreter on the machine was rejected as "ran, but did not answer the interpreter probe" - the
+  same stand-down message a genuinely broken shim earns. Fixed by single-quoting the python string
+  literal, escaped for PowerShell's own single-quoted outer argument as `''...''`
+  (`plugin/obsidian-vault/hooks/scripts/vault-guard.ps1:109`); the probes the other two wrappers
+  GAINED in the same change were written that way from the start
+  (`plugin/obsidian-vault/hooks/scripts/bridge-status.ps1:60`,
+  `plugin/obsidian-vault/hooks/scripts/vault-capture.ps1:65`), which has nothing left for legacy reconstruction to strip. Reproduced without a Windows
+  machine by explicitly setting `$PSNativeCommandArgumentPassing = 'Legacy'` under `pwsh` on Linux,
+  and pinned in the new `plugin/obsidian-vault/hooks/scripts/_test/test_ps1_legacy_args.sh`
+  (188 lines), run from the main suite at `plugin/obsidian-vault/hooks/scripts/_test/run-tests.sh:516-517`. **Like the WindowsApps stub, this
+  reproduction is MODELLED under a forced setting, not observed on a real legacy-mode Windows
+  PowerShell 5.1 host** - the script's own header says so. (DERIVED.)
+- **`bridge-status.sh`/`.ps1` and `vault-capture.sh`/`.ps1` now carry their own proven-interpreter
+  resolvers, closing the gap the previous version of this note flagged as open risk.** Each is an
+  independently-copied near-twin of `vault-guard.sh`'s `_vault_guard_resolve_python` (bash) or
+  `vault-guard.ps1`'s `Resolve-VaultGuardPython` (PowerShell) - own name, own rejection-token
+  prefix (`bridge-status-python:`, `vault-capture-python:`), same WindowsApps-alias rejection and
+  probe-and-verify shape. Both hooks still cannot block (SessionStart and SessionEnd/PreCompact
+  have no exit code that stops anything), so the fail-open behaviour is unchanged - what changed is
+  that a bad interpreter now says so on stderr instead of silently running a Store stub or a shim.
+  Pinned by the new `plugin/obsidian-vault/hooks/scripts/_test/test_bridge_capture_sh.sh`
+  (350 lines), whose own header states it is closing exactly the gap this note used to name: "the
+  two remaining naive wrappers ... still carry the naive one-liner". Run from the main suite at
+  `plugin/obsidian-vault/hooks/scripts/_test/run-tests.sh:514-515`. (DERIVED.)
 
 ## Measured this pass
 - `env -u MSYS_NO_PATHCONV bash plugin/obsidian-vault/hooks/scripts/_test/run-tests.sh` re-run at
-  `84976536`, on **Linux**, checkout `/repos/personal/useful-claude-add-ons`, branch
-  `crew-0.19.96-docbuilder-install-fixes`: **RESULT: 67 passed, 0 failed.** (DERIVED - run, not
+  `60c79407`, on **Linux**, checkout
+  `/repos/personal/useful-claude-add-ons/.claude/worktrees/agent-a13e59fa14639e19c`, branch
+  `codemap/obsidian-vault-refresh`: **RESULT: 69 passed, 0 failed, 0 skipped.** (DERIVED - run, not
   inferred. The ref and the platform are stated because a count without them can only be believed:
-  the previous `65 passed` was taken on Windows at `34a333f0`, and two of this run's cases are
-  platform-sensitive.)
-  The two new passes are not new assertions about old code - they are two whole sub-suites folded
-  into one case each: `sh_suite` at
-  `plugin/obsidian-vault/hooks/scripts/_test/run-tests.sh:500` (the wrapper resolver, below) and
-  the PowerShell flavour guard at `:508-515`. **Both ran behaviourally here**, because `pwsh` is on
-  PATH at `/snap/bin/pwsh`; run directly, `test_flavour_guard.py` reports 36 passed, 0 failed over
-  four cases. On a host without `pwsh` the flavour guard exits 77 and the runner prints `SKIP:` and
-  folds it into neither count (`:511-515`), so **67 is not the number every machine sees** - a host
-  with no `pwsh` gets 66 passed and one skip. (DERIVED.)
-- Plugin version is `0.3.14` in both places that must agree:
+  the previous `67 passed, 0 failed` recorded here was taken on Linux at `84976536`, before PR #210
+  added the `SKIP` counter, two new sub-suites, and the `PYTHONUTF8=1` decode backstop.)
+  `RESULT` itself changed shape this pass - `"$PASS passed, $FAIL failed"` became
+  `"$PASS passed, $FAIL failed, $SKIP skipped"` (`plugin/obsidian-vault/hooks/scripts/_test/run-tests.sh:535`), and `sh_suite` (`:488-511`)
+  now also greps each sub-suite's own output for `SKIP:` lines and folds their count in
+  (`:498-502`) rather than discarding that output silently on a clean exit, which is what the
+  previous version of this note's "67 is not the number every machine sees" paragraph was working
+  around. There are now three `sh_suite` sub-suites, not one:
+  `test_vault_guard_sh.sh` (`:513`, grown to 652 lines this pass), the new
+  `test_bridge_capture_sh.sh` (`:514-515`, 350 lines) and the new `test_ps1_legacy_args.sh`
+  (`:516-517`, 188 lines), plus the PowerShell flavour guard at `:519-533`. **All ran behaviourally
+  here**, because `pwsh` is on PATH at `/snap/bin/pwsh` (confirmed by `SKIP=0` in the result line,
+  not just by `pwsh`'s presence on PATH - the two came apart before, see the codemap lesson on
+  running states rather than reasoning about them). The no-`pwsh` count from the previous anchor
+  (`66 passed, 1 skip`, pre-dating the three-way `sh_suite` split and the new `SKIP` counter) was
+  **not re-measured this pass** - re-running it needs `pwsh` actually absent from PATH, not merely
+  reasoned about, and that was not done here.
+- Plugin version is `0.3.16` in both places that must agree:
   `plugin/obsidian-vault/.claude-plugin/plugin.json:3` and the `obsidian-vault` entry in
-  `.claude-plugin/marketplace.json:248`. (DERIVED - `0.3.8` -> `0.3.14` between anchors; both places
-  still agree. **The marketplace citation was re-pointed, not offset**: this note cited
-  `.claude-plugin/marketplace.json:242`, and `:242` now lands inside the `localgpu` entry and reads
-  `"version": "0.1.20"`. A line number that still resolves, still looks like a version, and names a
-  different plugin is the worst shape a stale citation can take - it re-reads as confirmation.)
+  `.claude-plugin/marketplace.json:248`. (DERIVED - `0.3.14` -> `0.3.16` between anchors; both
+  places still agree, checked byte-for-byte against `git diff 5d1fc5fd..60c79407`, not offset.)
 
 ## Unverified
 - `plugin/obsidian-vault/agents/gardener.md` and `plugin/obsidian-vault/agents/reflector.md` were
@@ -448,3 +530,107 @@ recorded above is 67 passed, 0 failed at `84976536`, still the most recent
 execution on record); the two agents and eleven command files remain unopened;
 `vault_profiles.py` internals are still inferred from its tests; nothing
 touched a live vault, a live bridge port, or `~/.claude/obsidian/config.json`.
+
+## Re-anchor provenance — 5d1fc5fd -> 60c79407, 2026-09-22 (PR #210, "Windows audit wave 3")
+
+`git diff 5d1fc5fd..60c79407 -- plugin/obsidian-vault` (the whole plugin tree, not just this
+note's prior citations - the `ea8a014 -> 84976536` and `2b337296 -> 5d1fc5fd` sections above both
+found that a narrow per-path diff misses a change this note never had an anchor into, so this pass
+started wide instead):
+
+```
+plugin/obsidian-vault/.claude-plugin/plugin.json
+plugin/obsidian-vault/hooks/scripts/_test/run-tests.sh
+plugin/obsidian-vault/hooks/scripts/_test/test_bridge_capture_sh.sh   (new, 350 lines)
+plugin/obsidian-vault/hooks/scripts/_test/test_ps1_legacy_args.sh     (new, 188 lines)
+plugin/obsidian-vault/hooks/scripts/_test/test_vault_guard_sh.sh
+plugin/obsidian-vault/hooks/scripts/bridge-status.ps1
+plugin/obsidian-vault/hooks/scripts/bridge-status.sh
+plugin/obsidian-vault/hooks/scripts/vault-capture.ps1
+plugin/obsidian-vault/hooks/scripts/vault-capture.sh
+plugin/obsidian-vault/hooks/scripts/vault-guard.ps1
+plugin/obsidian-vault/hooks/scripts/vault-guard.sh
+plugin/obsidian-vault/hooks/scripts/vault_guard.py
+```
+
+Twelve files, every one of them re-read in full or diffed line-by-line against `5d1fc5fd` this
+pass (not the whole-directory grep-and-hope the two previous re-anchors warn against). The
+`.claude-plugin/marketplace.json` version bump (`0.3.14` -> `0.3.16` at `:248`, same line) was
+caught separately, the same way the `2b337296 -> 5d1fc5fd` pass caught it - `:248` starts with `.`,
+so it is outside every regex this note has ever used to auto-extract its own citations, and has to
+be checked by hand each time.
+
+**Every `path:line` and `path:range` citation in this note that pointed into one of the twelve
+files above was re-resolved against the new content and corrected above where it moved; none was
+left un-checked.** The shifts fall into two causes, both mechanical rather than semantic:
+
+- `vault_guard.py`'s `main()` gained a two-stage, loudly-failing stdin read/decode/parse in place
+  of a single bare `json.load(sys.stdin)` inside a silent `except Exception: return 0` - every line
+  number from `:235` onward inside `main()` moved by 60 lines (`main()` grew from 69 to 129 lines).
+  Nothing before line 228 moved; every citation into `check_note`, `check_canvas`,
+  `written_text`, the exemption-name lists, and the module docstring is unaffected.
+- `run-tests.sh` gained one line (`SKIP=0`) near its top (line 29), shifting every citation below
+  it by exactly one, and gained two new `sh_suite` calls plus a widened flavour-guard block near
+  its tail, shifting everything from `plugin/obsidian-vault/hooks/scripts/_test/run-tests.sh:513` on by more. Both effects were checked by
+  grepping for the cited text itself and reading off its new line number, not by assuming a
+  constant offset - the `+1` shift and the tail rewrite do not compose predictably from one number.
+
+**New mechanism this pass added, not previously covered by this note:** `vault-guard.sh` and
+`vault-guard.ps1` now export/set `PYTHONUTF8=1` before invoking the interpreter, as a backstop for
+everything except the stdin decode itself (which is explicit UTF-8 and never consults it);
+`bridge-status.sh`/`.ps1` and `vault-capture.sh`/`.ps1` gained their own independently-copied
+proven-interpreter resolvers, closing the "two remaining naive wrappers" gap this note's Landmines
+section previously named as open JUDGEMENT risk; and `vault-guard.ps1`'s interpreter probe was fixed for a
+`$PSNativeCommandArgumentPassing = 'Legacy'` double-quote-stripping bug that rejected every real
+interpreter under Windows PowerShell 5.1 and pwsh <=7.2 (the two new probes never had it). All three are
+documented in `## Landmines` above, each anchored to the code and, where the plugin's own suite
+covers it, to the regression case.
+
+**Correction, not just an addition: stale source comments are flagged rather than silently
+updated.** The `plugin/obsidian-vault/hooks/scripts/vault-guard.sh:45-56` comment this note cites (unchanged text at this pass) still
+justifies declining a shared resolver by saying `bridge-status.sh` and `vault-capture.sh` "carry
+the same naive one-liner" - false as of this commit, for the same reason the `plugin/obsidian-vault/hooks/scripts/vault-guard.sh:89-94`
+comment about `role-write-guard.sh` was already flagged stale at the previous anchor. These, and the others below, are
+facts about source comments this note may correct its own text against but not rewrite; every
+one found is reported here for scribe:
+
+- `plugin/obsidian-vault/hooks/scripts/vault-guard.sh:45-56` - says `bridge-status.sh` and
+  `vault-capture.sh` "carry the same naive one-liner"; false since PR #210.
+- `plugin/obsidian-vault/hooks/scripts/vault-guard.sh:89-94` - the `role-write-guard.sh` remark,
+  stale since the previous anchor.
+- `plugin/obsidian-vault/hooks/scripts/vault-guard.sh:9` and
+  `plugin/obsidian-vault/hooks/scripts/vault-guard.ps1:9` - both cite `vault_guard.py:243` for the
+  checkCanvas default; that line is now inside a comment and the check is at
+  `plugin/obsidian-vault/hooks/scripts/vault_guard.py:303`. Missed by this pass's first sweep and
+  caught on review. A third copy of the same stale citation is at
+  `plugin/obsidian-vault/hooks/scripts/_test/run-tests.sh:49` (caught on the second review).
+- `plugin/obsidian-vault/hooks/scripts/vault-guard.sh:42` and
+  `plugin/obsidian-vault/hooks/scripts/vault-guard.ps1:53` cite crew's resolver as
+  `plugin/crew/hooks/scripts/role-write-guard.sh:32-57`; it now spans `:32-113`.
+- `plugin/obsidian-vault/hooks/scripts/vault-guard.sh:159` cites crew's exit-status closure as
+  `plugin/crew/hooks/scripts/role-write-guard.sh:105-126`; those lines are now the resolver's tail
+  and `_role_write_is_restricted`, and the status capture and its handling start at `:159`.
+- `plugin/obsidian-vault/hooks/scripts/bridge_status.py:54` says its claim-file pattern mirrors
+  "platform-sync.py" in crew; no such file has ever existed (crew has `platform-sync.sh`/`.ps1`,
+  and the claim logic is in `plugin/crew/hooks/scripts/crew_platform.py`).
+- `plugin/obsidian-vault/hooks/scripts/bridge_status.py:439` prints its error as coming from
+  "bridge-status.py"; the file is `bridge_status.py` (the `-` form is the `.sh`/`.ps1` wrappers).
+
+How "every one" was established, so the next pass can repeat it rather than trust it: every
+`path:line` in the plugin's `.py`/`.sh`/`.ps1` was checked against the cited file, and every bare
+`*.py|*.sh|*.ps1` name was checked for existence with `git ls-files`. The names that exist
+nowhere and are NOT listed above are deliberate: two provenance notes naming a personal
+`~/.claude/hooks/` original (`bridge_status.py:4`, `vault_guard.py:4`) and the test suites' own
+throwaway sandbox/sabotage copies.
+
+The regression suite was re-run (`env -u MSYS_NO_PATHCONV bash run-tests.sh`, see
+"Measured this pass" above): **69 passed, 0 failed, 0 skipped**, with `pwsh` present. The no-`pwsh`
+count was not re-measured this pass - see the caveat there.
+
+Not re-verified at this pass: the two agents, the eleven command files, and the three skills remain
+unopened; `vault_profiles.py`, `obsidian_common.py`, `vault_ops.py`, `bridge_status.py` and
+`vault_capture.py` internals are unaffected by this diff and were not re-read (confirmed absent
+from the twelve-file list above, not assumed); nothing touched a live vault, a live bridge port, or
+`~/.claude/obsidian/config.json`; the `.ps1` twins' bodies were read in full this pass (unlike the
+previous anchor, which explicitly declined to), but still only against their own `.sh` twins and
+this note's claims about them, not against a real Windows host.
