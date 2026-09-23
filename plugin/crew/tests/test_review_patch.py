@@ -58,7 +58,7 @@ def _run_script(root, base, out_path, manifest_path):
     return subprocess.run(
         [sys.executable, _SCRIPT, "--root", str(root), "--base", base,
          "--out", str(out_path), "--manifest", str(manifest_path)],
-        capture_output=True, text=True, stdin=subprocess.DEVNULL,
+        capture_output=True, text=True, stdin=subprocess.DEVNULL, check=False,
     )
 
 
