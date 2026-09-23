@@ -49,21 +49,11 @@ per-turn block. A non-zero exit names the out-of-scope path; file it to
    `.work/INDEX.md`'s row to match (files and Obsidian modes), or push the
    tracker item to its closed state (Jira, ServiceDesk Plus) the way
    `/crew:work`'s old step 13 did. <!-- deliberate -->
-2. Append one row to `.crew/metrics.jsonl` — best effort until T9's harness
-   lands; UNKNOWN for anything not measured here, never a guess:
+2. Append this ticket's row to `.crew/metrics.jsonl` with the metrics
+   harness. Anything it cannot measure is written `UNKNOWN`, never `0`:
 
 ```bash
-python3 -c '
-import json, datetime
-row = {"ticket": "'"$1"'", "date": datetime.date.today().isoformat(),
-       "phases": "brainstorm,spec,plan,implement,review,done",
-       "activeTime": "UNKNOWN", "tokens": "UNKNOWN", "cost": "UNKNOWN",
-       "findingsConfirmed": "UNKNOWN", "findingsRejected": "UNKNOWN",
-       "findingsDuplicate": "UNKNOWN", "scopeBlocks": "UNKNOWN",
-       "injectedChars": "UNKNOWN", "escapedDefects": "UNKNOWN"}
-with open(".crew/metrics.jsonl", "a", encoding="utf-8") as fh:
-    fh.write(json.dumps(row) + "\n")
-'
+python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_metrics.py record --ticket "$1"
 ```
 
 3. Delete `.work/HANDOFF.md` if present — a stale handoff reads as current to

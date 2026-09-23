@@ -6,6 +6,20 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Changed
 
+- **`crew` 0.20.28: registration.** Metrics harness (`crew_metrics.py
+  record|baseline|compare|escaped`; UNKNOWN never 0; 10-ticket floor);
+  instruction budget checker `scripts/check_instructions.py` with BUDGETS.md
+  and an explicit allowance list; optional LSP (C#, Python, TypeScript,
+  Angular language service) and stack-tool install steps (default off).
+  `/crew:done` now records its metrics row with `crew_metrics.py record
+  --ticket <id>`.
+
+- **obsidian-vault 0.4.2: gardener drain fixes.** The gardener acks an item
+  on what it actually changed in the vault, not on the path it reported;
+  captures the processor's stdout and stderr; acks already-distilled
+  sessions without re-running them; new `reconcile`; runs `claude -p` with
+  every hook off (`--settings '{"disableAllHooks":true}'`, `CREW_HOOKS=off`).
+
 - **`crew` 0.20.27: registration.** Cloud guard: fails closed on nesting depth
   and malformed input/config; every pipeline stage and xargs/parallel heads
   are judged; az verbs found in any position; bash -c -- parsed; SQL scanned

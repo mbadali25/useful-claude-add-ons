@@ -80,7 +80,8 @@ EXPECTED_CLI = {
     "implement.md": ("crew_ticket.py validate --ticket $1",
                       "scope_base.py --root . --record $1"),
     "done.md": ('review_ledger.py --ticket "$1" --check-receipt',
-                'completion_audit.py --check --ticket "$1"'),
+                'completion_audit.py --check --ticket "$1"',
+                'crew_metrics.py record --ticket "$1"'),
     "fix.md": ("`/crew:approve <id>`",),
     "approve.md": ("Never run `crew_ticket.py approve` yourself",),
 }
