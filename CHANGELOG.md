@@ -19,7 +19,7 @@ All notable changes to this repository are documented here. Format follows [Keep
   strip. It used to stack the
   logo above the text.
   `crew` 0.20.14: `crew-house-style` re-points its three `house_style.py` line
-  citations to the lines doc-builder 1.6.0 moved them to.
+  citations to the lines doc-builder 1.6.1 moved them to.
 
 - **`docs/guides/` is organised by subject.** The guides now live in `crew/`,
   `gizmoduck/`, `obsidian/`, `rule-of-two/` and `exchange-mailbox/`, and the
