@@ -87,8 +87,38 @@ Based on the context provided:
 ```
 
 That run used a stand-in for obsidian-vault's `recall` command: a word-overlap search over the
-scratch vault's files, implementing the same contract. Run the proof again once the real command
-ships.
+scratch vault's files, implementing the same contract. It has since been re-run against the real
+command; see below.
+
+### Measured against the real `vault_ops.py recall`, 2026-09-23
+
+Claude Code 2.1.281, `claude -p --model haiku --no-session-persistence --setting-sources project
+--strict-mcp-config`, crew 0.20.19 with `memory.inject: true`, in a scratch project and scratch
+vault. obsidian-vault's own CLI (`plugin/obsidian-vault/hooks/scripts/vault_ops.py`) was named with
+`CREW_VAULT_OPS`, and both tools read a scratch obsidian config through `CREW_OBSIDIAN_CONFIG` and
+`OBSIDIAN_VAULT_CONFIG`. The seeded note: "The Brackenmoor sluice-gate audit window opens at 04:41
+Corvid time, and the countersigning warden is Ysolde Pemberton-Karrow." The `Agent` call's prompt
+asked the question and did not contain the answer. The subagent answered with `tool_uses: 0`,
+verbatim:
+
+```text
+Based on the vault recall in my context:
+
+**Time:** 04:41 Corvid time
+**Countersigning Warden:** Ysolde Pemberton-Karrow
+**Source:** [vault:proof-recall] notes/brackenmoor-sluice.md
+```
+
+The `SubagentStart` line in the emission log:
+
+```json
+{"agent_id": "a74ce527b5ab3e7cb", "agent_type": "general-purpose", "budget": 2000, "chars": 423, "dedupHits": 0, "event": "SubagentStart", "harness": "claude", "lines": 4, "query_from": "last-prompt", "recall": {"dropped": 0, "reason": "", "snippets": 2, "status": "hit", "vaults": ["proof-recall"]}, "session": "08038c78-3372-4ccb-85d0-2d765b8c79db", "sources": [{"kind": "vault", "note": "notes/other.md", "vault": "proof-recall"}, {"kind": "vault", "note": "notes/brackenmoor-sluice.md", "vault": "proof-recall"}], "truncated": false, "ts": "2026-09-23T20:59:07Z"}
+```
+
+`query_from: last-prompt` means the recall query came from the session's last user prompt, not
+from the `Agent` call in the transcript. `--no-session-persistence` leaves no transcript to read
+back. So this run proves that the real CLI's recall reaches a subagent. It does not prove that the
+query is taken from the `Agent` call.
 
 ## Reading `--stats`
 
