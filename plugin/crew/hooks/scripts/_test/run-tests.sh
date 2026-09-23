@@ -1052,14 +1052,26 @@ echo "== cloud-guard.sh =="
 CG=$(mktemp -d) || exit 1
 mkdir -p "$CG/repo/.crew" "$CG/home"
 printf '{"guards":{"cloudGuard":"block"}}' > "$CG/repo/.crew/config.json"
+cguard_raw() {  # $1 = raw stdin -> the wrapper's stdout
+  # `-u OS`: on Windows, Git Bash inherits OS=Windows_NT, and with a
+  # PowerShell on PATH the bash flavour stands down for its twin -- which
+  # would make every case below an allow.
+  printf '%s' "$1" | env -u AWS_PROFILE -u AWS_DEFAULT_PROFILE \
+        -u AWS_ACCESS_KEY_ID -u CI -u CREW_UNATTENDED -u AZURE_SUBSCRIPTION_ID \
+        -u OS HOME="$CG/home" CLAUDE_PROJECT_DIR="$CG/repo" \
+        bash "$SCRIPTS/cloud-guard.sh" 2>/dev/null
+}
 cguard() {  # $1 = tool, $2 = command -> echoes deny|ask|allow
   local out
-  out=$(json_cmd "$1" "$2" | env -u AWS_PROFILE -u AWS_ACCESS_KEY_ID -u CI \
-        -u CREW_UNATTENDED -u AZURE_SUBSCRIPTION_ID HOME="$CG/home" \
-        CLAUDE_PROJECT_DIR="$CG/repo" bash "$SCRIPTS/cloud-guard.sh" 2>/dev/null)
+  out=$(cguard_raw "$(json_cmd "$1" "$2")")
+  # A `systemMessage` with no decision (report mode, the one-time unpinned
+  # note) is an allow. A printed `allow` is not: it would skip the user's own
+  # prompt, so it is reported as unparsed and fails the case.
   case "$out" in
     *'"permissionDecision": "deny"'*) echo deny ;;
     *'"permissionDecision": "ask"'*)  echo ask ;;
+    *'"permissionDecision"'*) echo "unparsed:$out" ;;
+    '{"systemMessage": '*) echo allow ;;
     '') echo allow ;;
     *) echo "unparsed:$out" ;;
   esac
@@ -1085,6 +1097,46 @@ cexpect allow Bash "psql -c \"SELECT 'DROP TABLE x'\""
 cexpect allow Bash 'git push'
 cexpect allow Bash 'git commit -m "terraform destroy; DROP TABLE t; git push --force"'
 cexpect allow PowerShell 'Get-ChildItem; terraform plan'
+# Review round 1 (Codex): each of these was the other answer before its fix.
+cexpect deny  Bash "echo 'DROP TABLE t;' | tee /tmp/q | psql"
+cexpect deny  Bash 'echo destroy | xargs terraform'
+cexpect deny  Bash 'echo --force | xargs git push'
+cexpect deny  Bash 'az group --subscription prod delete -n rg'
+cexpect deny  Bash "bash -c -- 'terraform destroy'"
+cexpect deny  Bash 'echo $(echo $(echo $(echo $(echo $(echo $(echo $(echo $(ls))))))))'
+cexpect deny  PowerShell '(((((((((Get-Date)))))))))'
+cexpect deny  PowerShell "Write-Output 'DROP TABLE t' | Tee-Object -FilePath q | mysql app"
+cexpect allow Bash 'aws ec2 terminate-instances --instance-ids i-1 --dry-run'
+cexpect allow Bash 'terraform apply -help'
+cexpect allow PowerShell 'Remove-AzResourceGroup -Name rg -WhatIf'
+cexpect allow Bash "psql -c \"SELECT 'C:\\' AS p, 'DROP TABLE x' AS s\""
+cexpect allow Bash 'git ls-files -m | xargs git add'
+# Malformed input is refused while armed.
+case "$(cguard_raw '{not json')" in
+  *'"permissionDecision": "deny"'*) pass ;;
+  *) fail "cloud-guard: malformed input was not refused while armed" ;;
+esac
+# A pin configured anywhere makes an unnameable identity unknown, read-only
+# included; unattended, unknown is refused.
+printf '{"guards":{"cloudGuard":"block"},"cloud":{"awsRegions":["eu-*"]}}' \
+  > "$CG/repo/.crew/config.json"
+out=$(json_cmd Bash 'aws s3 ls --region eu-west-1' | env -u AWS_PROFILE \
+      -u AWS_DEFAULT_PROFILE -u AWS_ACCESS_KEY_ID -u OS CI=true \
+      HOME="$CG/home" CLAUDE_PROJECT_DIR="$CG/repo" \
+      bash "$SCRIPTS/cloud-guard.sh" 2>/dev/null)
+case "$out" in
+  *'"permissionDecision": "deny"'*'[cloudIdentity]'*) pass ;;
+  *) fail "cloud-guard: unknown identity with a region pinned passed in CI: $out" ;;
+esac
+# A malformed `cloud` block is an invalid layer: armed, it fails closed.
+printf '{"guards":{"cloudGuard":"report"},"cloud":null}' > "$CG/repo/.crew/config.json"
+cexpect deny  Bash 'terraform destroy'
+# Report mode prints NO decision, only a visible note of what block would do.
+printf '{"guards":{"cloudGuard":"report"}}' > "$CG/repo/.crew/config.json"
+case "$(cguard_raw "$(json_cmd Bash 'terraform destroy')")" in
+  '{"systemMessage": '*'report mode'*) pass ;;
+  *) fail "cloud-guard: report mode printed a decision or no note" ;;
+esac
 # Off is the default: the same destroy with no `cloudGuard` key is not judged.
 printf '{}' > "$CG/repo/.crew/config.json"
 cexpect allow Bash 'terraform destroy -auto-approve'

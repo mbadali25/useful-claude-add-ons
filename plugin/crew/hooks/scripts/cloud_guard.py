@@ -37,12 +37,22 @@ A mismatch is denied. An identity crew cannot name -- nothing set, static
 `AWS_ACCESS_KEY_ID` keys, an Az PowerShell context, or a destructive command in
 a repo that pinned nothing -- is UNKNOWN, and unknown is never allowed
 unattended: it asks when a person is there to answer and is denied when not.
+That holds for READ-ONLY calls too once any `cloud.*` pin is set; only a repo
+that pins nothing at all passes a read-only call with an unnamed identity, and
+says so once (`identity_verdict`, `_note_unpinned`).
+
+WHAT IT REFUSES BECAUSE IT COULD NOT READ IT, under `[cloudGuard]` whatever the
+per-rule policies say: nesting past MAX_DEPTH, and hook input that is not a
+readable Bash/PowerShell call. `report` mode prints no decision at all -- never
+`allow` -- plus a `systemMessage` saying what `block` would have done.
 
 WHAT IT CANNOT SEE, stated so nobody mistakes this for a sandbox: a command
 named through a variable (`$TF apply`), a script file it runs (`bash x.sh`,
 `psql -f x.sql`), SQL built at runtime, a hashtable splatted into a cmdlet, and
-anything an MCP server does. Native permissions and restricted credentials are
-the boundary; this is a tripwire in front of them.
+anything an MCP server does. What `xargs`/`parallel` append is not seen either,
+so a destructive-capable tool behind one is judged as destructive. Native
+permissions and restricted credentials are the boundary; this is a tripwire in
+front of them.
 
 WHY THE PARSER IS HAND-ROLLED. `shlex` knows nothing of `&&`, heredocs, `$( )`
 or PowerShell, and the old command guard (removed in 0.19.52) was removed
@@ -77,13 +87,21 @@ def _head_name(token):
 
 # Never deeper than this into `bash -c`, `$( )`, `ssh host '...'` and friends.
 # A real command line is two or three levels at most; the bound exists so a
-# pathological payload cannot make a PreToolUse hook spin.
+# pathological payload cannot make a PreToolUse hook spin. Past it the command
+# is REFUSED, not passed: what sits below the bound was never read, and a
+# nesting depth is free for anyone to add.
 MAX_DEPTH = 6
 
 Finding = collections.namedtuple(
     "Finding", ("rule", "text", "what", "cloud", "destructive", "identity"))
 
 IDENTITY_RULE = "cloudIdentity"
+
+# The rule a command is refused under when crew could not READ it -- nested
+# past MAX_DEPTH, or a script handed over by `xargs`. Named after the switch,
+# because no per-rule policy governs "could not tell": the switch being on is
+# the only consent there is, and it is consent to judging, not to guessing.
+UNREADABLE_RULE = "cloudGuard"
 
 # --- shared helpers ---------------------------------------------------------
 
@@ -532,21 +550,27 @@ def _lex_ps(text):
 _SQL_WORDS_RE = re.compile(r"\b(drop|truncate)\b", re.IGNORECASE)
 
 
-def _strip_sql(sql, mysql):
-    """`sql` with every string literal and comment removed, read the way one
-    dialect family reads it. Two readings, because they disagree in ways that
-    HIDE statements: standard SQL treats `\\'` as a backslash then a closing
-    quote, MySQL as an escaped quote; standard `--` always comments, MySQL's
+def _strip_sql(sql, dialect):
+    """`sql` with every string literal and comment removed, read the way
+    `dialect` reads it: `standard`, `postgres`, `tsql` or `mysql`. They
+    disagree in ways that HIDE statements: standard SQL treats `\\'` as a
+    backslash then a closing quote, MySQL as an escaped quote, and PostgreSQL
+    does too inside an `E'...'` string; standard `--` always comments, MySQL's
     needs a space after it (`1--1; DROP TABLE t` runs the DROP there); and
-    MySQL EXECUTES `/*! ... */`. The caller flags a payload when EITHER
-    reading shows the keyword, so neither dialect's quirk can hide one."""
+    MySQL EXECUTES `/*! ... */`. `sql_is_destructive` picks the reading from
+    the client, and uses every reading when it does not know the client."""
+    mysql = dialect == "mysql"
     out, i, n = [], 0, len(sql)
     while i < n:
         c = sql[i]
         if c in "'\"":
+            escapes = mysql or (
+                dialect == "postgres" and c == "'" and i > 0
+                and sql[i - 1] in "eE"
+                and not (i > 1 and (sql[i - 2].isalnum() or sql[i - 2] == "_")))
             j = i + 1
             while j < n:
-                if mysql and sql[j] == "\\":
+                if escapes and sql[j] == "\\":
                     j += 2
                     continue
                 if sql[j] == c:
@@ -577,14 +601,17 @@ def _strip_sql(sql, mysql):
     return "".join(out)
 
 
-def sql_is_destructive(sql):
+def sql_is_destructive(sql, dialect=None):
     """True when `sql` holds DROP or TRUNCATE outside every literal and comment,
-    under either dialect reading. A keyword crew can PROVE is inside a string
-    or a comment does not count; one it cannot is counted."""
+    read as `dialect` -- or, when the client is not known (`None`), under
+    both the standard and the MySQL reading, so neither quirk can hide one. A
+    keyword crew can PROVE is inside a string or a comment does not count;
+    one it cannot is counted."""
     if not isinstance(sql, str) or not sql.strip():
         return False
-    return any(_SQL_WORDS_RE.search(_strip_sql(sql, mysql))
-               for mysql in (False, True))
+    readings = (dialect,) if dialect else ("standard", "mysql")
+    return any(_SQL_WORDS_RE.search(_strip_sql(sql, reading))
+               for reading in readings)
 
 
 # Per client: the flags whose value is SQL. Written per client rather than
@@ -599,6 +626,14 @@ _SQL_FLAGS = {
     "sqlite3": ("-cmd",),
 }
 SQL_CLIENTS = frozenset(_SQL_FLAGS) | {"invoke-sqlcmd"}
+
+# Per client: which dialect reads what it is handed. Reading every payload
+# under every dialect flagged correct SQL -- `psql -c "SELECT 'C:\\' AS p,
+# 'drop' AS s"` is two plain strings in PostgreSQL and a live DROP under
+# MySQL's backslash escape.
+_SQL_DIALECT = {"psql": "postgres", "mysql": "mysql", "mariadb": "mysql",
+                "sqlcmd": "tsql", "invoke-sqlcmd": "tsql",
+                "sqlite3": "standard"}
 
 
 def _sql_payloads(head, args, stdin):
@@ -663,6 +698,10 @@ _WRAPPER_VALUE_OPTS = {
     "xargs": frozenset(("-I", "-n", "-P", "-d", "-L", "-s", "-E", "-a",
                         "--max-args", "--max-procs", "--delimiter",
                         "--arg-file", "--max-lines", "--max-chars")),
+    "parallel": frozenset(("-j", "-P", "-S", "-a", "-d", "-n", "-N", "-E",
+                           "-I", "--jobs", "--sshlogin", "--arg-file",
+                           "--delimiter", "--max-args", "--joblog",
+                           "--results", "--tmpdir", "--colsep")),
     "exec": frozenset(("-a",)),
     "time": frozenset(("-f", "-o", "--format", "--output")),
     "nohup": frozenset(),
@@ -673,13 +712,33 @@ _ASSIGN_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)\+?=(.*)$", re.DOTALL)
 _SHELLS = frozenset(("bash", "sh", "zsh", "dash", "ksh", "ash", "busybox"))
 _PWSH = frozenset(("pwsh", "powershell", "pwsh-preview"))
 
+# Wrappers that append arguments crew cannot see -- read from stdin, a file or
+# a `:::` list -- to the command they run.
+_ARGV_FEEDERS = frozenset(("xargs", "parallel"))
 
-def _unwrap(words, env):
+
+def _replace_string(args):
+    """The placeholder an `xargs -I R` / `parallel -I R` substitutes into the
+    command it runs; `{}` when none is named."""
+    for index, arg in enumerate(args):
+        if not arg.startswith("-"):
+            break
+        if arg == "-I" and index + 1 < len(args):
+            return args[index + 1]
+        if arg.startswith("--replace="):
+            return arg.partition("=")[2] or "{}"
+        if arg.startswith("-I") and len(arg) > 2:
+            return arg[2:]
+    return "{}"
+
+
+def _unwrap(words, env, fed=None):
     """Strip assignments and wrappers off `words`; returns the argv that runs.
 
     `env` is the per-command override dict, updated in place: `X=Y cmd` and
-    `env X=Y cmd` set `X`, `env -u X` and `env -i` unset. None when the
-    wrapper itself cannot be read -- a caller treats that as no command.
+    `env X=Y cmd` set `X`, `env -u X` and `env -i` unset. `fed`, when a list,
+    collects every `_ARGV_FEEDERS` wrapper stripped on the way: the argv
+    returned is then NOT the whole argv that runs.
     """
     words = list(words)
     while words:
@@ -726,6 +785,13 @@ def _unwrap(words, env):
                 rest = rest[2:] if rest[0] in takes else rest[1:]
             if head == "timeout" and rest:
                 rest = rest[1:]
+            if head in _ARGV_FEEDERS:
+                if fed is not None:
+                    fed.append((head, _replace_string(words[1:])))
+                # `parallel 'terraform {}' ::: destroy`: the command is one
+                # quoted word.
+                if rest and len(rest[0].split()) > 1:
+                    rest = rest[0].split() + rest[1:]
             words = rest
             continue
         return words
@@ -771,6 +837,10 @@ def _aws_destructive(args):
     words = _aws_words(args)
     if len(words) < 2:
         return None
+    # `--dry-run` (EC2 and friends) and `--dryrun` (the s3 commands) check
+    # permissions and print what would happen; nothing is deleted.
+    if "--dry-run" in args or "--dryrun" in args:
+        return None
     service, verb = words[0].lower(), words[1].lower()
     if verb.startswith(_AWS_DESTRUCTIVE_PREFIXES) or verb in ("delete",
                                                              "terminate"):
@@ -782,25 +852,39 @@ def _aws_destructive(args):
     return None
 
 
+def _az_verb(word):
+    word = word.lower()
+    return word in ("delete", "purge") or word.startswith(("delete-", "purge-"))
+
+
 def _az_destructive(args):
+    """`az ... delete|purge`, the verb found in ANY positional position.
+
+    The az CLI accepts options between the words of a command path
+    (`az group --subscription prod delete -n rg`), and whether a word after
+    an option is that option's value or the next path word depends on a
+    per-command table crew does not carry. So every positional word is a
+    candidate verb: a resource NAMED `delete` is refused too, which is the
+    direction a guard may be wrong in."""
     path = []
     for arg in args:
         if arg.startswith("-"):
-            if path:
-                break
             continue
         path.append(arg.lower())
-    if not path:
-        return None
-    verb = path[-1]
-    if verb in ("delete", "purge") or verb.startswith(("delete-", "purge-")):
-        return "az " + " ".join(path)
+        if _az_verb(arg):
+            return "az " + " ".join(path)
     return None
+
+
+_HELP_FLAGS = frozenset(("-help", "--help", "-h"))
 
 
 def _terraform_destructive(head, args):
     words = [a for a in args if not a.startswith("-")]
     if not words:
+        return None
+    # `terraform apply -help` prints usage; the CLI runs nothing else.
+    if _HELP_FLAGS.intersection(args):
         return None
     if words[0] in ("apply", "destroy"):
         return f"{head} {words[0]}"
@@ -853,6 +937,35 @@ def _ssh_remote(args):
     return " ".join(rest) if rest else None
 
 
+_SHELL_VALUE_OPTS = frozenset(("-o", "+o", "-O", "+O", "--rcfile",
+                               "--init-file"))
+
+
+def _shell_args(args):
+    """`(has_c, positional)` for a POSIX shell's argv. Options end at the
+    first non-option or at `--`, and `-c` is a FLAG, not an option taking the
+    script: the script is the first positional after the options, so
+    `bash -c -- 'x'` and `bash -c -e 'x'` both run `x`."""
+    has_c, index = False, 0
+    while index < len(args):
+        arg = args[index]
+        if arg == "--":
+            index += 1
+            break
+        if arg in _SHELL_VALUE_OPTS:
+            index += 2
+            continue
+        if arg.startswith("--"):
+            index += 1
+            continue
+        if len(arg) > 1 and arg[0] in "-+":
+            has_c = has_c or (arg[0] == "-" and "c" in arg[1:])
+            index += 1
+            continue
+        break
+    return has_c, args[index:]
+
+
 def _pwsh_payload(args):
     """The script a `pwsh`/`powershell` invocation runs inline, or None."""
     for index, arg in enumerate(args):
@@ -886,13 +999,13 @@ def _classify(argv, stdin, env, shell, depth):
     if head in _SHELLS:
         # `-c`, and every cluster carrying it: `bash -lc`, `sh -ec`. With no
         # `-c` at all, a heredoc or pipe on stdin is the script.
+        if head == "busybox" and args and _head_name(args[0]) in _SHELLS:
+            args = args[1:]
+        has_c, positional = _shell_args(args)
         payload = None
-        for index, arg in enumerate(args):
-            if arg.startswith("-") and not arg.startswith("--") \
-                    and "c" in arg[1:]:
-                payload = args[index + 1] if index + 1 < len(args) else ""
-                break
-        if payload is None and not [a for a in args if not a.startswith("-")]:
+        if has_c:
+            payload = positional[0] if positional else ""
+        elif not positional:
             payload = stdin
         if payload:
             out.extend(scan("bash", payload, env, depth + 1))
@@ -958,6 +1071,10 @@ def _classify(argv, stdin, env, shell, depth):
                            "az", bool(what), identity))
         return out
     if head.startswith("remove-az"):
+        # `-WhatIf` (or `-WhatIf:$true`) reports what would be removed and
+        # removes nothing; `-WhatIf:$false` is the real thing.
+        if any(a.lower() in ("-whatif", "-whatif:$true") for a in args):
+            return out
         out.append(Finding("cloudDestructive", text, argv[0], "azps", True,
                            {"name": None,
                             "unknown": "Az PowerShell acts as its own saved "
@@ -966,7 +1083,7 @@ def _classify(argv, stdin, env, shell, depth):
         return out
     if head in SQL_CLIENTS:
         payloads = _sql_payloads(head, args, stdin)
-        if any(sql_is_destructive(p) for p in payloads):
+        if any(sql_is_destructive(p, _SQL_DIALECT[head]) for p in payloads):
             out.append(Finding("sqlDestructive", text,
                                f"DROP/TRUNCATE via {head}", None, True, None))
         out.append(Finding("prodDatabase", text, head, None, False, None))
@@ -978,6 +1095,75 @@ def _classify(argv, stdin, env, shell, depth):
             out.extend(scan("bash", remote, env, depth + 1))
         return out
     return out
+
+
+_TF_READ_ONLY = frozenset(("plan", "init", "validate", "fmt", "show", "output",
+                           "providers", "version", "graph", "get", "console",
+                           "workspace", "state", "test", "login", "logout"))
+
+
+def _fed_finding(argv, env, via, placeholder):
+    """The finding for a destructive-capable tool run by `xargs`/`parallel`,
+    whose argv ends in words crew cannot see -- or None when the words it CAN
+    see already fix the operation as one the guard does not govern.
+
+    `echo destroy | xargs terraform` runs `terraform destroy`; judging only
+    `terraform` let it through. A subcommand counts as seen only when it is
+    literal: a word carrying the placeholder is filled in from stdin too.
+    """
+    head = _head_name(argv[0])
+    args = argv[1:]
+    text = " ".join(argv)
+    what = (f"{text} (via {via}, which appends arguments crew cannot see, "
+            "so the operation is not known)")
+
+    def seen(words):
+        return [w for w in words if not w.startswith("-")
+                and "{" not in w and placeholder not in w]
+
+    if head in ("terraform", "tofu", "terragrunt"):
+        words = [w for w in args if not w.startswith("-")]
+        if words and seen(words[:1]) and words[0] in _TF_READ_ONLY:
+            return None
+        return Finding("terraformApply", text, what, None, True, None)
+    if head == "git":
+        index = 0
+        while index < len(args) and args[index].startswith("-"):
+            index += 2 if args[index] in _GIT_VALUE_OPTS else 1
+        sub = args[index] if index < len(args) else ""
+        if sub and seen([sub]) and sub != "push":
+            return None
+        return Finding("forcePush", text, what, None, True, None)
+    if head in ("aws", "az"):
+        words = _aws_words(args) if head == "aws" else [
+            a for a in args if not a.startswith("-")]
+        if head == "aws" and len(words) >= 2 and seen(words[:2]) == words[:2] \
+                and not (words[0].lower() == "s3" and words[1].lower()
+                         == "sync"):
+            return None
+        if head == "az" and seen(words) == words and any(
+                w.lower() in ("list", "show") or w.lower().startswith(
+                    ("list-", "show-")) for w in words):
+            return None
+        identity = (_aws_identity if head == "aws" else _az_identity)(args,
+                                                                      env)
+        return Finding("cloudDestructive", text, what, head, True, identity)
+    if head in SQL_CLIENTS:
+        return Finding("sqlDestructive", text, what, None, True, None)
+    if head in _SHELLS or head in _PWSH:
+        # The appended words are the script's `$1..`, harmless -- unless there
+        # is no inline script (it then comes from stdin or a file) or the
+        # script itself carries the placeholder.
+        if head in _SHELLS:
+            has_c, positional = _shell_args(args)
+            script = positional[0] if has_c and positional else None
+        else:
+            script = _pwsh_payload(args)
+        if script and placeholder not in script and not (
+                via == "parallel" and "{" in script):
+            return None
+        return Finding(UNREADABLE_RULE, text, what, None, True, None)
+    return None
 
 
 # --- identity ---------------------------------------------------------------
@@ -1069,29 +1255,42 @@ def cloud_pins(root):
         return empty, "" if isinstance(cfg, dict) else \
             ".crew/config.json is not a JSON object"
     block = cfg["cloud"]
-    if not isinstance(block, dict):
-        return empty, "`cloud` is not an object"
-    pins = dict(empty)
-    for key in empty:
-        value = block.get(key, [])
-        if not isinstance(value, list) or not all(
-                isinstance(v, str) and v.strip() for v in value):
-            return empty, f"`cloud.{key}` is not a list of glob strings"
-        pins[key] = [v.strip() for v in value]
-    return pins, ""
+    problem = crew_config.cloud_block_problem(block)
+    if problem:
+        return empty, problem
+    return {key: [v.strip() for v in block.get(key, [])] for key in empty}, ""
 
 
 def _matches(value, patterns):
     return any(fnmatch.fnmatch(str(value).lower(), p.lower()) for p in patterns)
 
 
+UNPINNED = "unpinned"
+
+
 def identity_verdict(finding, pins, problem):
-    """`("ok"|"deny"|"unknown", reason)` for one cloud finding."""
+    """`("ok"|"deny"|"unknown"|"unpinned", reason)` for one cloud finding.
+
+    The rule for an identity crew cannot name: it is UNKNOWN, and unknown is
+    never allowed unattended, whenever this repo pins ANY cloud identity --
+    a read-only `aws s3 ls` included, since which account it lists is the
+    thing the pins exist to settle. Only a repo that pins nothing at all
+    lets a read-only call with an unnamed identity through, as `unpinned`:
+    there is nothing to check it against, and refusing would make arming
+    the guard on an unpinned repo refuse every `aws s3 ls` in CI. `unpinned`
+    is reported (once, see `main`), never silent. A DESTRUCTIVE call with
+    nothing pinned for its cloud stays unknown either way.
+    """
     ident = finding.identity or {}
     if problem:
         return "unknown", f"crew could not read the identity pins: {problem}"
     if finding.cloud == "azps":
         return "unknown", ident.get("unknown", "")
+    pinned_any = any(pins[key] for key in pins)
+    if ident.get("unknown") and not finding.destructive:
+        if pinned_any:
+            return "unknown", ident["unknown"]
+        return UNPINNED, ident["unknown"]
     if finding.cloud == "aws":
         profiles, regions = pins["awsProfiles"], pins["awsRegions"]
         if not profiles and not regions:
@@ -1136,17 +1335,21 @@ def identity_verdict(finding, pins, problem):
 
 
 def _stdout_literal(cmd):
-    """What a pipeline stage feeds the next one, when it is a literal."""
-    if cmd is None or not cmd.words:
+    """What a pipeline stage feeds the next one, as far as crew can tell.
+
+    A literal producer (`echo`, `printf`, `Write-Output`) feeds its words.
+    Every OTHER stage is assumed to pass its own stdin through: `tee`, `cat`,
+    `sort`, `grep`, a `sed` that happens not to touch the keyword. That reads
+    a filter that removes a DROP as one that kept it, and that is the
+    direction to be wrong in -- reading only the stage next door let
+    `echo 'DROP TABLE t;' | tee q | psql` through."""
+    if cmd is None:
         return None
-    head = _head_name(cmd.words[0])
-    if head in ("echo", "printf", "write-output", "write-host"):
-        return " ".join(w for w in cmd.words[1:] if not w.startswith("-"))
-    if head in ("cat", "type", "get-content") and len(cmd.words) == 1:
-        return cmd.stdin
-    if not cmd.words and cmd.stdin:
-        return cmd.stdin
-    return None
+    if cmd.words:
+        head = _head_name(cmd.words[0])
+        if head in ("echo", "printf", "write-output", "write-host"):
+            return " ".join(w for w in cmd.words[1:] if not w.startswith("-"))
+    return cmd.stdin
 
 
 def _substitute(word, variables):
@@ -1201,8 +1404,13 @@ def scan(shell, text, env=None, depth=0):
     bash -c '...'`); it is copied, never mutated, so a nested scope cannot
     leak into its parent.
     """
-    if depth > MAX_DEPTH or not isinstance(text, str) or not text.strip():
+    if not isinstance(text, str) or not text.strip():
         return []
+    if depth > MAX_DEPTH:
+        return [Finding(UNREADABLE_RULE, text,
+                        f"nested more than {MAX_DEPTH} shells or "
+                        "substitutions deep, so the innermost command was "
+                        "never read", None, True, None)]
     env = dict(env or {})
     variables = {}
     exported = set()
@@ -1250,10 +1458,24 @@ def scan(shell, text, env=None, depth=0):
                         env[name] = value
                 continue
         local_env = dict(env)
-        argv = _unwrap(words, local_env)
+        fed = []
+        argv = _unwrap(words, local_env, fed)
+        if fed and argv and argv[0] == ":::":
+            # `parallel ::: 'terraform destroy' ls`: every argument is a
+            # command of its own.
+            for job in argv[1:]:
+                findings.extend(scan("bash", job, local_env, depth + 1))
+            continue
         if not argv:
             continue
-        findings.extend(_classify(argv, cmd.stdin, local_env, shell, depth))
+        found = _classify(argv, None if fed else cmd.stdin, local_env, shell,
+                          depth)
+        extra = _fed_finding(argv, local_env, *fed[-1]) if fed else None
+        if extra is not None and not any(f.destructive for f in found):
+            # The fed finding carries the identity too, so the read-only
+            # identity row it replaces would only say the same thing twice.
+            found = [f for f in found if f.rule != IDENTITY_RULE] + [extra]
+        findings.extend(found)
     return findings
 
 
@@ -1304,6 +1526,11 @@ def _judge_one(root, finding, pins, problem):
     would bury the rows that matter.
     """
     applies = True
+    if finding.rule == UNREADABLE_RULE:
+        return ("deny", f"[{UNREADABLE_RULE}] {finding.what}: crew could not "
+                        "read this command, and a command it cannot read is "
+                        "refused rather than passed unjudged.",
+                "unreadable", "", True)
     if finding.rule in crew_state.GUARD_NAMES or \
             finding.rule in crew_state.PROD_GUARD_NAMES:
         out = crew_config.guard_decision(root, finding.rule, finding.text)
@@ -1320,6 +1547,10 @@ def _judge_one(root, finding, pins, problem):
     state, why = identity_verdict(finding, pins, problem)
     if state == "ok":
         return verdict + (applies,)
+    if state == UNPINNED:
+        # Passed, and said so: the row is what `main` turns into the one-time
+        # note, so it applies even where the rule's own verdict did not.
+        return verdict[:2] + (UNPINNED, "", True)
     if state == "deny":
         return ("deny", f"[{IDENTITY_RULE}] {finding.what}: {why}",
                 "pinned", "", True)
@@ -1335,18 +1566,27 @@ def evaluate(root, tool_name, command, data=None, mode="block"):
     """The whole judgement for one tool call, as a dict. Pure apart from
     reading config and approval markers; `main` does the printing and logging.
 
-    Returns `{"decision": allow|ask|deny, "reason", "rows"}` where `rows` is one
-    `(rule, policy, decision, target)` per finding for `.crew/guard.log`.
+    Returns `{"decision": allow|ask|deny|None, "reason", "rows", "unpinned",
+    "note"}` where `rows` is one `(rule, policy, decision, target)` per
+    finding for `.crew/guard.log` and `unpinned` names every read-only cloud
+    call let through with nobody's identity pinned (`main` reports those
+    once). In `report` mode `decision` is None -- NO decision, so Claude
+    Code's own permission flow runs exactly as it would without this hook --
+    and `note` says what `block` would have done. Never `allow`: that would
+    skip the user's own prompt, and report mode judged nothing.
     """
     shell = "powershell" if tool_name == "PowerShell" else "bash"
     findings = scan(shell, command)
     pins, problem = cloud_pins(root)
-    worst, reasons, rows = "allow", [], []
+    worst, reasons, rows, unpinned = "allow", [], [], []
     alone = unattended(data or {})
     for finding in findings:
         decision, reason, policy, marker, applies = _judge_one(
             root, finding, pins, problem)
         if not applies:
+            continue
+        if policy == UNPINNED:
+            unpinned.append(finding.what)
             continue
         if decision == "ask" and alone:
             decision = "deny"
@@ -1361,21 +1601,35 @@ def evaluate(root, tool_name, command, data=None, mode="block"):
         if _RANK[decision] > _RANK[worst]:
             worst = decision
     reason = "crew cloud guard: " + " | ".join(reasons) if reasons else ""
+    note = ""
     if mode == "report":
         rows = [(r, p, "report:" + d, t) for r, p, d, t in rows]
-        worst, reason = "allow", ""
-    return {"decision": worst, "reason": reason, "rows": rows}
+        if worst != "allow":
+            note = (f"crew cloud guard (report mode, nothing enforced): block "
+                    f"mode would {worst} this -- " + " | ".join(reasons))
+        worst, reason = None, ""
+    return {"decision": worst, "reason": reason, "rows": rows,
+            "unpinned": unpinned, "note": note}
 
 
 def resolve_mode(root):
     """`(mode, note)`: `off`, `report` or `block`. A config layer that exists
-    and cannot be read forces `block` -- `roleWrites`' rule, for its reason."""
+    and cannot be read forces `block` -- `roleWrites`' rule, for its reason.
+
+    So does an ARMED guard over a repo layer whose `cloud` block is malformed
+    (`"cloud": null`, a string where a list of globs belongs): that layer is
+    invalid, not unpinned. An unarmed one stays off -- unlike unparseable
+    JSON, a bad `cloud` block cannot be hiding the switch, which parsed."""
     mode = crew_config.resolve_guard(root, "cloudGuard")["effective"]
-    repo_state = crew_config.layer_state(os.path.join(root, ".crew",
-                                                      "config.json"))
+    repo_path = os.path.join(root, ".crew", "config.json")
+    repo_state = crew_config.layer_state(repo_path)
     global_state = crew_config.layer_state(crew_config.GLOBAL_CONFIG_PATH)
     if "corrupt" in (repo_state, global_state):
         return "block", "a config layer could not be read; failing closed"
+    if mode != "off" and crew_config.layer_state(repo_path, cloud=True) \
+            == "corrupt":
+        return "block", ("the repo's `cloud` block is malformed, so that "
+                         "layer is invalid; failing closed")
     return mode, ""
 
 
@@ -1394,32 +1648,84 @@ def _log(root, row):
         pass
 
 
-def _emit(decision, reason):
-    if decision == "allow":
-        return
-    sys.stdout.write(json.dumps({"hookSpecificOutput": {
-        "hookEventName": "PreToolUse",
-        "permissionDecision": decision,
-        "permissionDecisionReason": reason,
-    }}) + "\n")
+def _emit(decision, reason, message=""):
+    """ONE JSON object on stdout, or nothing. `allow` and None both print no
+    decision; `message` is a `systemMessage` the user sees, which carries no
+    permission decision of its own."""
+    out = {}
+    if decision not in ("allow", None):
+        out["hookSpecificOutput"] = {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": decision,
+            "permissionDecisionReason": reason,
+        }
+    if message:
+        out["systemMessage"] = message
+    if out:
+        sys.stdout.write(json.dumps(out) + "\n")
 
 
-def main():
+UNPINNED_NOTED = os.path.join(".crew", ".cloud-guard-unpinned-noted")
+
+
+def _note_unpinned(root, whats, command):
+    """Say ONCE per repo that read-only cloud calls are passing unchecked
+    because nothing is pinned -- a row in `.crew/guard.log` and a visible
+    message -- then stay quiet. Once, because the alternative is a row per
+    `aws s3 ls`; said at all, because a pass nobody reports looks exactly
+    like a check that happened. Delete the marker to hear it again."""
+    marker = os.path.join(root, UNPINNED_NOTED)
+    if not whats or os.path.exists(marker) \
+            or not os.path.isdir(os.path.dirname(marker)):
+        return ""
+    _log(root, (str(int(time.time())), IDENTITY_RULE, UNPINNED, "allow",
+                whats[0], command))
+    try:
+        with open(marker, "a", encoding="utf-8"):
+            pass
+    except OSError:
+        pass
+    return (f"crew cloud guard: `{whats[0]}` runs as an identity crew cannot "
+            "name, and nothing is pinned in cloud.* to check it against. "
+            "Read-only cloud calls pass unchecked until cloud.awsProfiles / "
+            "cloud.awsRegions / cloud.azureSubscriptions pin something; this "
+            f"is said once ({UNPINNED_NOTED}).")
+
+
+def _read_input():
+    """`(data, command, problem)`. `data` None means not ours to judge.
+
+    `problem` is non-empty when the input could not be read as a Bash or
+    PowerShell call at all -- undecodable, not JSON, not an object, or a
+    Bash/PowerShell call with no string `tool_input.command`. The hook is
+    registered on those two tools only, so input it cannot read is a call
+    it cannot judge, and an armed guard refuses it."""
     try:
         raw = sys.stdin.buffer.read()
         if raw[:3] == b"\xef\xbb\xbf":
             raw = raw[3:]
-        data = json.loads(raw.decode("utf-8")) if raw.strip() else {}
+        if not raw.strip():
+            return {}, None, "the hook input was empty"
+        data = json.loads(raw.decode("utf-8"))
     except (OSError, ValueError):
-        sys.stderr.write("cloud-guard: hook input did not parse; not judged.\n")
-        return 0
-    if not isinstance(data, dict) or data.get("tool_name") not in (
-            "Bash", "PowerShell"):
-        return 0
+        return {}, None, "the hook input did not parse as UTF-8 JSON"
+    if not isinstance(data, dict):
+        return {}, None, "the hook input is not a JSON object"
+    if data.get("tool_name") not in ("Bash", "PowerShell"):
+        return None, None, ""
     tool_input = data.get("tool_input")
     command = tool_input.get("command") if isinstance(tool_input, dict) \
         else None
-    if not isinstance(command, str) or not command.strip():
+    if not isinstance(command, str):
+        return data, None, "the hook input carries no string tool_input.command"
+    if not command.strip():
+        return None, None, ""
+    return data, command, ""
+
+
+def main():
+    data, command, problem = _read_input()
+    if data is None:
         return 0
     root = os.environ.get("CLAUDE_PROJECT_DIR") or data.get("cwd") or "."
     root = root if isinstance(root, str) else "."
@@ -1435,6 +1741,15 @@ def main():
                          f"({type(exc).__name__}); not judged.\n")
         return 0
     if mode == "off":
+        return 0
+    if problem:
+        # Armed, and handed something it cannot read as a command. Refuse in
+        # every armed mode: report mode's promise is "nothing refused that
+        # was judged", and this was not judged.
+        _log(root, (str(int(time.time())), UNREADABLE_RULE, mode, "deny",
+                    "malformed-input", "-"))
+        _emit("deny", f"crew cloud guard: {problem}; refusing rather than "
+                      "letting a command through unjudged.")
         return 0
     try:
         result = evaluate(root, data["tool_name"], command, data, mode)
@@ -1453,7 +1768,9 @@ def main():
     reason = result["reason"]
     if note and reason:
         reason += f" ({note})"
-    _emit(result["decision"], reason)
+    message = result["note"] or _note_unpinned(root, result["unpinned"],
+                                               command)
+    _emit(result["decision"], reason, message)
     return 0
 
 

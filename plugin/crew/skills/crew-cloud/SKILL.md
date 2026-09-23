@@ -42,9 +42,11 @@ tools. **It ships off.** Turn it on per machine or per repo:
 { "guards": { "cloudGuard": "report" } }
 ```
 
-`report` logs to `.crew/guard.log` what it *would* have refused and refuses
-nothing — run it for a few days first. `block` enforces. A repo can never turn
-off a machine-global `block` (the `guards` ratchet).
+`report` logs to `.crew/guard.log` what it *would* have refused, shows you the
+same as a message, and refuses nothing — it answers with **no** permission
+decision, so your normal prompts run exactly as they would without it (it never
+answers `allow`). Run it for a few days first. `block` enforces. A repo can
+never turn off a machine-global `block` (the `guards` ratchet).
 
 What each recognised command gets is the existing per-rule key, `block` by
 default: `guards.cloudDestructive` for `aws … delete-*/terminate-*/purge-*`,
@@ -53,6 +55,22 @@ default: `guards.cloudDestructive` for `aws … delete-*/terminate-*/purge-*`,
 `sqlite3` or `Invoke-Sqlcmd`; `guards.terraformApply` for `terraform`/`tofu`
 `apply`/`destroy`; `guards.forcePush` and `guards.adminMerge` for git and gh.
 `ask` prompts; `allow` lets it through and logs it.
+
+Not destructive, so not refused: `aws … --dry-run` / `--dryrun`, `Remove-Az*
+-WhatIf`, and `terraform apply -help`. SQL is read in the client's own dialect —
+PostgreSQL for `psql` (a backslash is a plain character except in `E'…'`),
+MySQL for `mysql`/`mariadb` (`#` comments, `\'` escapes, `/*! … */` runs),
+T-SQL for `sqlcmd`/`Invoke-Sqlcmd` — so a correct literal is not misread as a
+statement.
+
+Refused whatever the policy, as `[cloudGuard]`, because crew could not read
+them: a command nested more than six shells or substitutions deep, and hook
+input that is not a readable Bash/PowerShell call. A destructive-capable tool
+(`terraform`, `aws`, `az`, a SQL client, `git push`) run through `xargs` or
+`parallel`, whose arguments come from stdin, is judged under that tool's own
+rule as if it were destructive — `echo destroy | xargs terraform` is a
+`terraformApply` refusal. A pipe is followed through every stage:
+`echo 'DROP TABLE t;' | tee q | psql` is a `sqlDestructive` refusal.
 
 ### Pin the identity this repo may act as
 
@@ -89,8 +107,19 @@ in a repo that pinned nothing — **asks** when someone is there to answer and i
 `.crew/.approved-guard-cloudIdentity-<hash>`, good for 15 minutes and for that
 one command.
 
-With nothing pinned, read-only commands (`aws s3 ls`, `az group list`) run
-unchecked; pinning is what makes the guard check them too.
+**Read-only calls follow the same rule once anything is pinned.** With any of
+the three lists non-empty, an `aws s3 ls` or `az group list` whose identity the
+guard cannot name is unknown too — asked when attended, denied when not. Only a
+repo that pins **nothing at all** lets a read-only call with an unnamed identity
+through, because there is nothing to check it against and refusing would make
+arming the guard refuse every `aws s3 ls` in CI. That pass is reported, once per
+repo: a message and a `cloudIdentity unpinned allow` row in `.crew/guard.log`,
+then silence until you delete `.crew/.cloud-guard-unpinned-noted`.
+
+A `cloud` block that is not an object of glob lists (`"cloud": null`, a string
+where a list belongs) is an invalid config layer, not "nothing pinned": an armed
+guard — `report` included — escalates to `block`, and every cloud identity is
+unknown.
 
 ### What pinning does in the verify gate
 

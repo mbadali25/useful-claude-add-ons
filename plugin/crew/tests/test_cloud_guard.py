@@ -69,15 +69,23 @@ PINNED = {"guards": {"cloudGuard": "block", "cloudDestructive": "allow",
 # --- harness ----------------------------------------------------------------
 
 
-def _clean_env(tmp_path, extra=None):
+def _clean_env(tmp_path, extra=None, driver=None):
+    """The subprocess environment. `OS=Windows_NT` goes to the pwsh driver
+    ONLY: it is what lets the .ps1's flavour guard proceed, and it is also
+    what stands the BASH wrapper down (when a PowerShell is on PATH) -- so
+    handing it to every driver would turn each bash case into a stand-down
+    that passes every must-allow and fails every must-block for the wrong
+    reason."""
     env = {k: v for k, v in os.environ.items()
            if not k.startswith(("AWS_", "AZURE_", "ARM_"))
-           and k not in ("CI", "CREW_UNATTENDED", "CLAUDE_PROJECT_DIR")}
+           and k not in ("CI", "CREW_UNATTENDED", "CLAUDE_PROJECT_DIR", "OS")}
     home = tmp_path / "home"
     home.mkdir(exist_ok=True)
     env.update({"HOME": str(home), "USERPROFILE": str(home),
                 "CLAUDE_PROJECT_DIR": str(tmp_path / "repo"),
-                "OS": "Windows_NT", "PYTHONDONTWRITEBYTECODE": "1"})
+                "PYTHONDONTWRITEBYTECODE": "1"})
+    if driver == "pwsh":
+        env["OS"] = "Windows_NT"
     env.update(extra or {})
     return env
 
@@ -104,26 +112,34 @@ def _argv(driver):
     return [_PWSH, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", _PS1]
 
 
-def run_hook(driver, tmp_path, tool, command, extra_env=None, payload=None):
+def run_hook(driver, tmp_path, tool, command, extra_env=None, payload=None,
+             raw=None):
     """(decision, reason, exit code, stderr) for one hook invocation.
 
-    `decision` is `allow` when stdout is empty: the guard never PRINTS allow,
-    so an empty stdout is the only spelling of it.
+    `decision` is `allow` when stdout carries no permission decision: the
+    guard never PRINTS allow, so its absence is the only spelling of it. A
+    `systemMessage` with no decision (report mode, the one-time unpinned
+    note) comes back as `reason`. `raw` sends those bytes verbatim.
     """
     body = payload if payload is not None else {
         "tool_name": tool, "tool_input": {"command": command},
         "cwd": str(tmp_path / "repo")}
     proc = subprocess.run(
-        _argv(driver), input=json.dumps(body).encode("utf-8"),
-        capture_output=True, env=_clean_env(tmp_path, extra_env),
+        _argv(driver),
+        input=raw if raw is not None else json.dumps(body).encode("utf-8"),
+        capture_output=True, env=_clean_env(tmp_path, extra_env, driver),
         cwd=str(tmp_path), timeout=120, check=False)
     out = proc.stdout.decode("utf-8", "replace").strip()
     err = proc.stderr.decode("utf-8", "replace")
     if not out:
         return "allow", "", proc.returncode, err
     lines = [ln for ln in out.splitlines() if ln.startswith("{")]
-    assert lines, f"non-JSON stdout from {driver}: {out!r} / {err!r}"
-    spec = json.loads(lines[-1])["hookSpecificOutput"]
+    assert len(lines) == 1, f"want ONE JSON object from {driver}: {out!r}"
+    doc = json.loads(lines[0])
+    if "hookSpecificOutput" not in doc:
+        assert set(doc) == {"systemMessage"}, doc
+        return "allow", doc["systemMessage"], proc.returncode, err
+    spec = doc["hookSpecificOutput"]
     assert spec["hookEventName"] == "PreToolUse"
     # Printing `allow` would skip the user's own permission prompt for a
     # command the guard merely did not object to.
@@ -216,6 +232,48 @@ MUST_BLOCK = [
     ("ps-sqlcmd", "PowerShell", 'sqlcmd -S s -Q "DROP DATABASE d"',
      "sqlDestructive"),
     ("ps-git-force", "PowerShell", "git push --force", "forcePush"),
+    # Review round 1 (Codex). Each was an allow before its fix.
+    ("pipe-through-tee", "Bash", "echo 'DROP TABLE t;' | tee /tmp/q | psql",
+     "sqlDestructive"),
+    ("pipe-through-two", "Bash",
+     "printf 'TRUNCATE t;' | cat | sort | mysql app", "sqlDestructive"),
+    ("ps-pipe-through-tee", "PowerShell",
+     "Write-Output 'DROP TABLE t' | Tee-Object -FilePath q | mysql app",
+     "sqlDestructive"),
+    ("xargs-terraform", "Bash", "echo destroy | xargs terraform",
+     "terraformApply"),
+    ("xargs-placeholder", "Bash", "echo push | xargs -I% git % --force",
+     "forcePush"),
+    ("xargs-git-push", "Bash", "echo --force | xargs git push", "forcePush"),
+    ("xargs-aws", "Bash", "echo terminate-instances | xargs aws ec2",
+     "cloudDestructive"),
+    ("xargs-psql", "Bash", "echo 'DROP TABLE t' | xargs -0 psql -c",
+     "sqlDestructive"),
+    ("xargs-sh-placeholder", "Bash",
+     "echo destroy | xargs -I{} sh -c 'terraform {}'", "cloudGuard"),
+    ("parallel-terraform", "Bash", "parallel terraform ::: destroy",
+     "terraformApply"),
+    ("parallel-jobs", "Bash", "parallel ::: 'terraform destroy' 'ls'",
+     "terraformApply"),
+    ("az-option-before-verb", "Bash",
+     "az group --subscription prod delete -n rg", "cloudDestructive"),
+    ("ps-az-option-before-verb", "PowerShell",
+     "az keyvault --subscription prod purge --name kv", "cloudDestructive"),
+    ("bash-c-dashdash", "Bash", "bash -c -- 'terraform destroy'",
+     "terraformApply"),
+    ("bash-c-then-option", "Bash", "sh -c -e 'terraform destroy'",
+     "terraformApply"),
+    ("busybox-sh-c", "Bash", "busybox sh -c 'terraform destroy'",
+     "terraformApply"),
+    ("depth-exceeded", "Bash",
+     "echo $(echo $(echo $(echo $(echo $(echo $(echo $(echo $(ls))))))))",
+     "cloudGuard"),
+    ("ps-depth-exceeded", "PowerShell", "(((((((((Get-Date)))))))))",
+     "cloudGuard"),
+    ("psql-e-string", "Bash", "psql -c \"SELECT E'\\'' ; DROP TABLE t; --'\"",
+     "sqlDestructive"),
+    ("azps-whatif-false", "PowerShell",
+     "Remove-AzResourceGroup -Name rg -WhatIf:$false", "cloudDestructive"),
 ]
 
 MUST_ALLOW = [
@@ -246,6 +304,30 @@ MUST_ALLOW = [
      "Invoke-Sqlcmd -Query \"SELECT 'DROP' AS s\" -ServerInstance s"),
     ("ps-git-push", "PowerShell", "git push origin main"),
     ("ps-az-list", "PowerShell", "az group list"),
+    # Review round 1 (Codex): each was refused before its fix.
+    ("aws-dry-run", "Bash",
+     "aws ec2 terminate-instances --instance-ids i-1 --dry-run"),
+    ("aws-s3-dryrun", "Bash", "aws s3 rm s3://bucket/ --recursive --dryrun"),
+    ("tf-apply-help", "Bash", "terraform apply -help"),
+    ("tf-help-destroy", "Bash", "terraform -help destroy"),
+    ("azps-whatif", "PowerShell", "Remove-AzResourceGroup -Name rg -WhatIf"),
+    ("psql-backslash-literal", "Bash",
+     "psql -c \"SELECT 'C:\\' AS p, 'DROP TABLE x' AS s\""),
+    ("sqlcmd-backslash-literal", "Bash",
+     "sqlcmd -S s -Q \"SELECT 'C:\\' AS p, 'DROP TABLE x' AS s\""),
+    ("ps-invoke-sqlcmd-backslash", "PowerShell",
+     "Invoke-Sqlcmd -Query \"SELECT 'C:\\' AS p, 'DROP' AS s\""),
+    ("mysql-escaped-quote", "Bash",
+     "mysql -e \"SELECT 'it\\'s' AS a, 'DROP' AS s\""),
+    ("bash-c-dashdash-plan", "Bash", "bash -c -- 'terraform plan'"),
+    ("az-option-before-read-verb", "Bash",
+     "az group --subscription dev show -n rg"),
+    ("xargs-git-add", "Bash", "git ls-files -m | xargs git add"),
+    ("xargs-rm", "Bash", "find . -name '*.tmp' | xargs rm"),
+    ("xargs-terraform-fmt", "Bash", "ls *.tf | xargs terraform fmt"),
+    ("xargs-sh-literal-script", "Bash",
+     "ls | xargs sh -c 'echo \"$@\"' _"),
+    ("shallow-nesting", "Bash", "echo $(echo $(echo $(ls)))"),
 ]
 
 # Identity cases: (id, tool, command, repo cfg, global cfg, extra env,
@@ -299,6 +381,37 @@ IDENTITY = [
     ("ps-env-pinned-ok", "PowerShell",
      "$env:AWS_PROFILE = 'dev'; aws ec2 terminate-instances --region "
      "eu-west-1", PINNED, PERMISSIVE_GLOBAL, {}, "allow", ""),
+    # Review round 1 (Codex), the PM's rule: an identity crew cannot name is
+    # unknown -- read-only included -- once ANY pin is configured.
+    ("aws-read-regions-pinned-unknown-ci", "Bash",
+     "aws s3 ls --region eu-west-1",
+     {"guards": PINNED["guards"], "cloud": {"awsRegions": ["eu-*"]}},
+     PERMISSIVE_GLOBAL, {"CI": "true"}, "deny", "cloudIdentity"),
+    ("aws-read-azure-pinned-unknown-ci", "Bash", "aws s3 ls",
+     {"guards": PINNED["guards"],
+      "cloud": {"azureSubscriptions": ["sub-dev"]}},
+     PERMISSIVE_GLOBAL, {"CI": "true"}, "deny", "cloudIdentity"),
+    ("az-read-aws-pinned-unknown-ci", "Bash", "az group list",
+     {"guards": PINNED["guards"], "cloud": {"awsProfiles": ["dev"]}},
+     PERMISSIVE_GLOBAL, {"CI": "true"}, "deny", "cloudIdentity"),
+    ("aws-read-regions-pinned-unknown-attended", "Bash",
+     "aws s3 ls --region eu-west-1",
+     {"guards": PINNED["guards"], "cloud": {"awsRegions": ["eu-*"]}},
+     PERMISSIVE_GLOBAL, {}, "ask", "cloudIdentity"),
+    # ...and the other side: nothing pinned anywhere, a read-only call with
+    # no nameable identity passes, even in CI (the one-time note is below).
+    ("aws-read-nothing-pinned-ci-ok", "Bash",
+     "env -u AWS_PROFILE -u AWS_DEFAULT_PROFILE aws s3 ls",
+     {"guards": PINNED["guards"]}, PERMISSIVE_GLOBAL, {"CI": "true"},
+     "allow", ""),
+    ("az-read-nothing-pinned-ci-ok", "Bash", "az group list",
+     {"guards": PINNED["guards"]}, PERMISSIVE_GLOBAL, {"CI": "true"},
+     "allow", ""),
+    ("aws-read-known-profile-other-cloud-pinned-ok", "Bash",
+     "aws s3 ls --profile dev",
+     {"guards": PINNED["guards"],
+      "cloud": {"azureSubscriptions": ["sub-dev"]}},
+     PERMISSIVE_GLOBAL, {"CI": "true"}, "allow", ""),
 ]
 
 
@@ -431,12 +544,109 @@ def test_a_global_block_cannot_be_turned_off_by_a_repo(tmp_path, driver):
 @pytest.mark.parametrize("driver", _DRIVERS)
 def test_report_mode_refuses_nothing_and_logs_what_it_would_have(tmp_path,
                                                                    driver):
+    """Report mode prints NO decision -- never `allow`, which would skip the
+    user's own prompt -- and a visible note of what `block` would do."""
     repo = _fixture(tmp_path, {"guards": {"cloudGuard": "report"}})
-    decision, _reason, code, err = run_hook(driver, tmp_path, "Bash",
-                                            "terraform destroy")
+    decision, note, code, err = run_hook(driver, tmp_path, "Bash",
+                                         "terraform destroy")
     assert (decision, code) == ("allow", 0), err
+    assert "report mode" in note and "would deny" in note, note
+    assert "[terraformApply]" in note, note
     log = (repo / ".crew" / "guard.log").read_text(encoding="utf-8")
     assert "\tterraformApply\tblock\treport:deny\t" in log
+
+
+def test_report_mode_evaluates_to_no_decision(tmp_path):
+    """In-process, because on stdout `allow` and "no decision" look the same
+    (both print nothing) -- the invariant is that report mode never RESOLVES
+    to allow, including for an unknown identity nobody is there to answer."""
+    repo = _fixture(tmp_path, {"guards": {"cloudGuard": "report"},
+                               "cloud": {"awsProfiles": ["dev"]}})
+    for command in ("terraform destroy", "aws s3 ls", "terraform plan"):
+        result = cloud_guard.evaluate(str(repo), "Bash", command,
+                                      {"permission_mode": "dontAsk"},
+                                      mode="report")
+        assert result["decision"] is None, (command, result)
+
+
+@pytest.mark.parametrize("driver", _DRIVERS)
+@pytest.mark.parametrize("raw", [b"{not json", b"\xff\xfe", b"[1, 2]", b"",
+                                 b'{"tool_name": "Bash", "tool_input": 7}',
+                                 b'{"tool_name": "Bash", "tool_input": '
+                                 b'{"command": ["terraform", "destroy"]}}'],
+                         ids=["not-json", "not-utf8", "not-object", "empty",
+                              "no-tool-input", "command-not-string"])
+def test_malformed_input_is_refused_when_armed(tmp_path, driver, raw):
+    _fixture(tmp_path, ARMED)
+    decision, reason, code, err = run_hook(driver, tmp_path, "Bash", "",
+                                           raw=raw)
+    assert (decision, code) == ("deny", 0), (reason, err)
+    assert "refusing" in reason
+
+
+@pytest.mark.parametrize("driver", _DRIVERS)
+def test_malformed_input_is_not_judged_when_off(tmp_path, driver):
+    _fixture(tmp_path, {"guards": {"cloudGuard": "off"}})
+    assert run_hook(driver, tmp_path, "Bash", "", raw=b"{not json")[:3] == (
+        "allow", "", 0)
+
+
+@pytest.mark.parametrize("driver", _DRIVERS)
+@pytest.mark.parametrize("cloud", [None, "dev", {"awsProfiles": "dev"},
+                                   {"awsRegions": [7]}],
+                         ids=["null", "string", "profiles-string",
+                              "region-not-str"])
+def test_a_malformed_cloud_block_fails_closed_when_armed(tmp_path, driver,
+                                                         cloud):
+    """`"cloud": null` is an invalid layer, not "nothing pinned": even REPORT
+    mode escalates to block, and a read-only call's identity is unknown."""
+    _fixture(tmp_path, {"guards": {"cloudGuard": "report"}, "cloud": cloud})
+    decision, reason, _c, err = run_hook(driver, tmp_path, "Bash",
+                                         "terraform destroy")
+    assert decision == "deny", err
+    assert "`cloud` block is malformed" in reason
+    _fixture(tmp_path, {"guards": {"cloudGuard": "block"}, "cloud": cloud})
+    decision, reason, _c, err = run_hook(driver, tmp_path, "Bash", "aws s3 ls",
+                                         extra_env={"CI": "1"})
+    assert decision == "deny", err
+    assert "could not read the identity pins" in reason
+
+
+@pytest.mark.parametrize("driver", _DRIVERS)
+def test_a_malformed_cloud_block_leaves_an_unarmed_guard_off(tmp_path, driver):
+    _fixture(tmp_path, {"guards": {"cloudGuard": "off"}, "cloud": None})
+    assert run_hook(driver, tmp_path, "Bash", "terraform destroy")[0] == \
+        "allow"
+
+
+def test_layer_state_classifies_a_malformed_cloud_block(tmp_path):
+    import crew_config  # pylint: disable=import-outside-toplevel
+    path = tmp_path / "config.json"
+    path.write_text(json.dumps({"guards": {}, "cloud": None}),
+                    encoding="utf-8")
+    assert crew_config.layer_state(str(path), cloud=True) == "corrupt"
+    # Without `cloud=True` the roleWrites read is untouched by it.
+    assert crew_config.layer_state(str(path)) == "ok"
+    path.write_text(json.dumps({"cloud": {"awsProfiles": ["dev"]}}),
+                    encoding="utf-8")
+    assert crew_config.layer_state(str(path), cloud=True) == "ok"
+
+
+@pytest.mark.parametrize("driver", _DRIVERS)
+def test_unpinned_read_only_call_is_reported_once(tmp_path, driver):
+    """The pass with nothing pinned is said -- once, as a visible note and a
+    guard.log row -- and then not again."""
+    repo = _fixture(tmp_path, ARMED)
+    env = {"CI": "true"}
+    decision, note, _c, err = run_hook(driver, tmp_path, "Bash", "aws s3 ls",
+                                       extra_env=env)
+    assert decision == "allow", err
+    assert "nothing is pinned" in note, note
+    log = (repo / ".crew" / "guard.log").read_text(encoding="utf-8")
+    assert "\tcloudIdentity\tunpinned\tallow\taws s3 ls\t" in log
+    assert run_hook(driver, tmp_path, "Bash", "aws s3 ls",
+                    extra_env=env)[:2] == ("allow", "")
+    assert (repo / ".crew" / "guard.log").read_text(encoding="utf-8") == log
 
 
 @pytest.mark.parametrize("driver", _DRIVERS)
@@ -589,7 +799,7 @@ def test_pwsh_wrapper_without_python(tmp_path, armed):
     proc = subprocess.run(
         _argv("pwsh"), input=b'{"tool_name":"Bash","tool_input":'
                              b'{"command":"terraform destroy"}}',
-        capture_output=True, env=_clean_env(tmp_path, _NO_PYTHON),
+        capture_output=True, env=_clean_env(tmp_path, _NO_PYTHON, "pwsh"),
         timeout=120, check=False)
     assert proc.returncode == (2 if armed else 0), proc.stderr
 
@@ -598,12 +808,57 @@ def test_pwsh_wrapper_without_python(tmp_path, armed):
 def test_pwsh_wrapper_stands_down_off_windows(tmp_path):
     _fixture(tmp_path, ARMED)
     env = _clean_env(tmp_path)
-    env.pop("OS")
+    env.pop("OS", None)
     proc = subprocess.run(
         _argv("pwsh"), input=b'{"tool_name":"Bash","tool_input":'
                              b'{"command":"terraform destroy"}}',
         capture_output=True, env=env, timeout=120, check=False)
     assert (proc.returncode, proc.stdout) == (0, b"")
+
+
+def _bin_farm(tmp_path, with_powershell):
+    """A PATH holding only what cloud-guard.sh runs -- plus, when asked, a
+    `powershell.exe` that is never executed (the wrapper only asks
+    `command -v`). A PATH with the host's own pwsh on it could not express
+    "Windows with no PowerShell" on a machine that has one."""
+    import shutil  # pylint: disable=import-outside-toplevel
+    farm = tmp_path / ("bin-ps" if with_powershell else "bin")
+    farm.mkdir()
+    for tool in ("cat", "dirname", "grep", "head", "sed", "tr"):
+        found = shutil.which(tool)
+        if found:
+            os.symlink(found, farm / tool)
+    os.symlink(sys.executable, farm / "python3")
+    if with_powershell:
+        fake = farm / "powershell.exe"
+        fake.write_text("#!/bin/sh\nexit 99\n", encoding="utf-8")
+        fake.chmod(0o755)
+    return str(farm)
+
+
+@needs_bash
+@pytest.mark.skipif(os.name == "nt", reason="symlinks a POSIX bin farm")
+@pytest.mark.parametrize("os_value,with_ps,want", [
+    ("Windows_NT", True, "allow"),
+    ("Windows_NT", False, "deny"),
+    (None, True, "deny"),
+], ids=["windows-with-powershell", "windows-without-powershell", "not-windows"])
+def test_bash_wrapper_flavour_guard(tmp_path, os_value, with_ps, want):
+    """On Windows both flavours run, so bash stands down -- but ONLY when a
+    PowerShell exists to run the twin. Without one it judges: standing down
+    there would leave nothing judging at all."""
+    _fixture(tmp_path, ARMED)
+    env = _clean_env(tmp_path, {"PATH": _bin_farm(tmp_path, with_ps)})
+    if os_value:
+        env["OS"] = os_value
+    proc = subprocess.run(
+        [_BASH, _SH], input=b'{"tool_name":"Bash","tool_input":'
+                            b'{"command":"terraform destroy"}}',
+        capture_output=True, env=env, timeout=60, check=False)
+    assert proc.returncode == 0, proc.stderr
+    got = "deny" if b'"permissionDecision": "deny"' in proc.stdout else (
+        "allow" if not proc.stdout.strip() else proc.stdout)
+    assert got == want, proc.stderr
 
 
 # --- the pieces, in-process -------------------------------------------------
@@ -628,6 +883,29 @@ def test_pwsh_wrapper_stands_down_off_windows(tmp_path):
 ])
 def test_sql_is_destructive(sql, want):
     assert cloud_guard.sql_is_destructive(sql) is want
+
+
+@pytest.mark.parametrize("sql,dialect,want", [
+    # PostgreSQL: a backslash is an ordinary character in '...'...
+    ("SELECT 'C:\\' AS p, 'DROP' AS s", "postgres", False),
+    # ...and an escape inside E'...', where it can hide a statement.
+    ("SELECT E'\\'' ; DROP TABLE t; --'", "postgres", True),
+    ("SELECT 1 -- DROP TABLE t", "postgres", False),
+    ("SELECT 1 /* DROP TABLE t */", "postgres", False),
+    ("SELECT 1--1; DROP TABLE t", "postgres", False),
+    # MySQL: `\'` escapes, `#` comments, `--` needs a space, `/*!` runs.
+    ("SELECT 'it\\'s', 'DROP' AS s", "mysql", False),
+    ("SELECT 1 # DROP TABLE t", "mysql", False),
+    ("SELECT 1--1; DROP TABLE t", "mysql", True),
+    ("SELECT 1 /*!50000 DROP TABLE t */", "mysql", True),
+    # T-SQL: standard strings and both comment forms.
+    ("SELECT 'C:\\' AS p, 'DROP' AS s", "tsql", False),
+    ("SELECT 1 -- DROP TABLE t", "tsql", False),
+    ("SELECT 1 /* TRUNCATE t */", "tsql", False),
+    ("DROP TABLE t", "tsql", True),
+])
+def test_sql_dialect_follows_the_client(sql, dialect, want):
+    assert cloud_guard.sql_is_destructive(sql, dialect) is want
 
 
 def test_pinned_vars_are_one_list_in_all_three_places():

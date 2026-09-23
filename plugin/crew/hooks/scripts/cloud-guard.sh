@@ -14,6 +14,21 @@
 # here is the fallback below: python could not judge, and a config file says
 # the guard is armed.
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Flavour guard, the mirror of cloud-guard.ps1's. Both flavours are registered
+# for the event, and on Windows with Git Bash installed BOTH run: every
+# decision twice, every guard.log row twice. So this flavour stands down on
+# Windows -- but only when it can PROVE the twin will judge instead: `$OS` is
+# 'Windows_NT' (Git Bash inherits it; it is unset on Linux/macOS), the .ps1 is
+# beside this file, and a PowerShell interpreter is on PATH. Any of the three
+# missing and this flavour judges, because a guard that stands down on the one
+# platform it exists for blocks nothing there -- crew shipped that once.
+if [ "${OS:-}" = "Windows_NT" ] && [ -f "$DIR/cloud-guard.ps1" ] \
+   && { command -v powershell.exe || command -v pwsh.exe \
+        || command -v powershell || command -v pwsh; } >/dev/null 2>&1; then
+  exit 0
+fi
+
 . "$DIR/_common.sh"
 
 INPUT=$(cat)
