@@ -238,6 +238,7 @@ _DENY_ROLES = frozenset({
     "qa-researcher",
     "qa-reviewer",
     "researcher",
+    "reviewer",
     "security",
 })
 

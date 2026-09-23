@@ -96,7 +96,8 @@ SKILLS = {os.path.basename(os.path.dirname(f)) for f in glob.glob("skills/*/SKIL
 
 # Roles that are deliberately NOT on the default tier. Anything absent from this
 # map must declare `sonnet`; see check_agents for why each exception exists.
-MODEL_TIER = {"pm": "opus", "qa-reviewer": "opus"}
+# `reviewer` is qa-reviewer's crew 1.0 name and carries the same reason.
+MODEL_TIER = {"pm": "opus", "qa-reviewer": "opus", "reviewer": "opus"}
 
 KNOWN_TOOLS = {
     "Read", "Write", "Edit", "MultiEdit", "Bash", "PowerShell", "Grep", "Glob",

@@ -1291,6 +1291,11 @@ SPECIALIST_ROLES = frozenset({
     "exchange-online-specialist",
     "skill-author",
     "workflow-orchestrator",
+    # The crew 1.0 name for `qa-reviewer` (docs/review/04-redesign.md, "Roster:
+    # 54 agents -> 4"). Known but off the ladder while both files exist, so no
+    # tier grants a second copy of the same reviewer; the ladder itself is
+    # replaced when the 0.20 roster is retired.
+    "reviewer",
 })
 
 
