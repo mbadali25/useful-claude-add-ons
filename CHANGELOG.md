@@ -6,6 +6,21 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Changed
 
+- **`doc-builder` 1.7.0: built-in themes, a compact density, and a theme gallery.**
+  Eight themes (`professional`, `corporate`, `blue`, `red`, `modern`, `dark`, `midnight`,
+  `high-contrast`) in `assets/themes/`, chosen with `--theme` or `DOC_BUILDER_THEME` on
+  `build_report.py`, `build_sop.py`, `house_style.py` and `check_conformance.py`. A theme
+  sets colours only: the brand keeps its logo, fonts, footer, template and paths, and
+  `resolve_brand.apply_overlay` strips identity keys from any overlay. `--density compact`
+  combines with any theme. `midnight` and `high-contrast` are true dark pages, carried into
+  DOCX and PDF by every renderer. LibreOffice drops the page colour from its DOCX, so it is
+  written back in. Palettes come from Tailwind, IBM Carbon, Nord and the Windows
+  high-contrast themes. Every text pair is asserted at WCAG AA (AAA for `high-contrast`) by
+  `scripts/_test/test_themes.py`. `assets/themes/gallery/` ships a sample report, PNG and
+  index per theme, built by `scripts/build_gallery.py`, and a test fails when the gallery
+  goes stale. When someone asks for documentation without naming a look, `SKILL.md` now
+  says to show the gallery first. Word COM dark-page handling is untested (no Windows host).
+
 - **`doc-builder` 1.6.0: black-grid tables and a logo-left masthead.** Data and
   meta tables now draw a solid black border on every cell, data-table headers
   are black with white bold text, and the zebra fill is a stronger `#E8ECF1` so

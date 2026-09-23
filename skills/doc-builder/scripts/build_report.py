@@ -45,6 +45,7 @@ import uuid as _uuid
 import html
 import json
 import os
+import re
 import sys
 
 import house_style
@@ -280,7 +281,7 @@ def build(doc, brand):
         )
     parts.append(f'<div class="footer">{esc(doc.get("footer", ""))}</div>')
     parts += ["</div>", "</body></html>"]
-    return "\n".join(parts)
+    return house_style.mark_page("\n".join(parts), pal)
 
 
 EXAMPLE = {
@@ -341,7 +342,16 @@ def convert(src, want_docx=False, want_pdf=False, renderer=None):
     engine, why = render_engine.choose_engine(renderer)
     print(f"renderer : {engine} -- {why}", file=sys.stderr)
     if engine == render_engine.LIBREOFFICE:
-        return render_engine.to_soffice(src, want_docx=want_docx, want_pdf=want_pdf)
+        rc = render_engine.to_soffice(src, want_docx=want_docx, want_pdf=want_pdf)
+        bgr = page_colour(src) if src.lower().endswith((".html", ".htm")) else None
+        if rc == 0 and want_docx and bgr is not None:
+            # LibreOffice keeps a body bgcolor in its PDF but drops it from the
+            # .docx it writes (measured, soffice 26.2.5.2), so a dark-page theme
+            # would open in Word as light text on white paper. Put it back.
+            docx_path = os.path.splitext(os.path.abspath(src))[0] + ".docx"
+            b, g, r = (bgr >> 16) & 0xFF, (bgr >> 8) & 0xFF, bgr & 0xFF
+            stamp_page_colour(docx_path, f"{r:02X}{g:02X}{b:02X}")
+        return rc
     if sys.platform != "win32":
         print(f"cannot convert: --renderer word needs Microsoft Word over COM, and this is "
               f"{sys.platform}. Microsoft ships no Word desktop app for Linux, so Word is not "
@@ -350,6 +360,84 @@ def convert(src, want_docx=False, want_pdf=False, renderer=None):
               file=sys.stderr)
         return 1
     return to_word(src, want_docx, want_pdf)
+
+
+def page_colour(path):
+    """The page colour a dark-page theme wrote into `path` -- the
+    `doc-builder-page` meta of an HTML report (house_style.mark_page) or the
+    `<w:background>` of an SOP .docx (build_sop) -- as a Word BGR integer, or
+    None for a white page."""
+    low = path.lower()
+    if low.endswith(".docx"):
+        import zipfile  # pylint: disable=import-outside-toplevel
+        try:
+            with zipfile.ZipFile(path) as z:
+                xml = z.read("word/document.xml")[:4096].decode("utf-8", "replace")
+        except (OSError, KeyError, zipfile.BadZipFile):
+            return None
+        m = re.search(r'<w:background w:color="([0-9A-Fa-f]{6})"', xml)
+    elif low.endswith((".html", ".htm")):
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            head = fh.read(8192)
+        m = re.search(r'<meta name="' + house_style.PAGE_META + r'" content="#([0-9A-Fa-f]{6})"', head)
+    else:
+        return None
+    if not m:
+        return None
+    r, g, b = (int(m.group(1)[i:i + 2], 16) for i in (0, 2, 4))
+    return r + (g << 8) + (b << 16)
+
+
+# CT_Settings children that must PRECEDE <w:displayBackgroundShape/>. The
+# schema is a sequence, so inserting the flag first (before <w:zoom>) makes a
+# settings part Word may refuse or repair.
+SETTINGS_BEFORE_BG = ("writeProtection", "view", "zoom", "removePersonalInformation",
+                      "removeDateAndTime", "doNotDisplayPageBoundaries")
+
+
+def _insert_display_bg(settings_xml: str) -> str:
+    if "displayBackgroundShape" in settings_xml:
+        return settings_xml
+    end = None
+    for tag in SETTINGS_BEFORE_BG:
+        for m in re.finditer(rf"<w:{tag}\b[^>]*?(/>|>.*?</w:{tag}>)", settings_xml, re.DOTALL):
+            end = max(end or 0, m.end())
+    if end is None:
+        m = re.search(r"<w:settings\b[^>]*>", settings_xml)
+        end = m.end()
+    return settings_xml[:end] + "<w:displayBackgroundShape/>" + settings_xml[end:]
+
+
+def stamp_page_colour(docx_path, hex6):
+    """Write a page colour into an existing .docx: `<w:background>` as the first
+    child of `<w:document>` and `<w:displayBackgroundShape/>` in settings, the
+    pair Word writes for Design > Page Color. Rewrites to a temp file and
+    `os.replace`s it, so a failure leaves the original intact."""
+    import tempfile  # pylint: disable=import-outside-toplevel
+    import zipfile  # pylint: disable=import-outside-toplevel
+    with zipfile.ZipFile(docx_path) as z:
+        items = [(i, z.read(i.filename)) for i in z.infolist()]
+    out = []
+    for info, data in items:
+        if info.filename == "word/document.xml":
+            xml = data.decode("utf-8")
+            xml = re.sub(r"<w:background\b[^>]*/>", "", xml)
+            m = re.search(r"<w:document\b[^>]*>", xml)
+            xml = xml[:m.end()] + f'<w:background w:color="{hex6}"/>' + xml[m.end():]
+            data = xml.encode("utf-8")
+        elif info.filename == "word/settings.xml":
+            data = _insert_display_bg(data.decode("utf-8")).encode("utf-8")
+        out.append((info, data))
+    fd, tmp = tempfile.mkstemp(suffix=".docx", dir=os.path.dirname(os.path.abspath(docx_path)))
+    os.close(fd)
+    try:
+        with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as z:
+            for info, data in out:
+                z.writestr(info, data)
+        os.replace(tmp, docx_path)
+    finally:
+        if os.path.exists(tmp):
+            os.remove(tmp)
 
 
 def to_word(html_path, want_docx, want_pdf):
@@ -394,14 +482,25 @@ def to_word(html_path, want_docx, want_pdf):
     # process running with no window to close it from -- and one that opened a
     # document before failing left it open too. On a machine that generates
     # reports on a schedule those accumulate until Word refuses to start.
+    page_bgr = page_colour(html_path)
     word = win32.Dispatch("Word.Application")
     doc = None
     rc = 0
+    # PrintBackground is a USER-WIDE Word option. It is switched on only for a
+    # dark-page document, so the PDF export keeps the page colour, and put back
+    # in `finally` to whatever the operator had.
+    saved_print_bg = None
     try:
         word.Visible = False
         word.DisplayAlerts = 0
         base = os.path.splitext(os.path.abspath(html_path))[0]
         doc = word.Documents.Open(os.path.abspath(html_path), False, True)
+        if page_bgr is not None:
+            doc.Background.Fill.Visible = True
+            doc.Background.Fill.Solid()
+            doc.Background.Fill.ForeColor.RGB = page_bgr
+            saved_print_bg = word.Options.PrintBackground
+            word.Options.PrintBackground = True
         # Every converted file names its engine. A reader must never have to
         # guess whether a .docx came from Word or from LibreOffice.
         label = render_engine.engine_label(render_engine.WORD)
@@ -423,6 +522,11 @@ def to_word(html_path, want_docx, want_pdf):
     finally:
         # Both closes are individually guarded: if Close raises, Quit must still
         # run, or the failure that broke the save also leaks the process.
+        if saved_print_bg is not None:
+            try:
+                word.Options.PrintBackground = saved_print_bg
+            except Exception:  # pylint: disable=broad-except
+                pass
         if doc is not None:
             try:
                 doc.Close(False)
@@ -444,6 +548,7 @@ def main(argv=None):
                          "directory, normally reports/, which should be "
                          "gitignored - these documents read as an attack plan)")
     resolve_brand.add_brand_argument(ap)
+    resolve_brand.add_theme_arguments(ap)
     ap.add_argument("--name", help="basename; default is the title, slugified")
     ap.add_argument("--to-docx", action="store_true")
     ap.add_argument("--to-pdf", action="store_true")
@@ -461,7 +566,7 @@ def main(argv=None):
     with open(args.data, encoding="utf-8") as fh:
         doc = json.load(fh)
 
-    brand = resolve_brand.resolve(args.brand)
+    brand = resolve_brand.resolve(args.brand, theme=args.theme, density=args.density)
     out_dir = args.out or brand.report_output_dir
 
     # Compute the whole document BEFORE opening the output file. `open(p,"w")`

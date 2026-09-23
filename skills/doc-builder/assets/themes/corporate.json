@@ -1,0 +1,40 @@
+{
+  "_comment": "Built-in doc-builder theme: colours only; the brand keeps logo, fonts, footer. Literal hex (word-traps.md rule 1). Contrast is asserted by scripts/_test/test_themes.py.",
+  "name": "corporate",
+  "label": "Corporate",
+  "description": "Deep navy masthead, blue accent strip, navy table headers, cool grey zebra. Conservative, board-pack style.",
+  "sources": [
+    "https://carbondesignsystem.com/elements/color/overview/ (Blue 60-100, Gray 10-100)"
+  ],
+  "report": {
+    "navy": "#001D6C",
+    "navy_dark": "#001141",
+    "accent": "#0F62FE",
+    "org_ink": "#A6C8FF",
+    "classification": "#8B1A13",
+    "ink": "#161616",
+    "muted": "#525252",
+    "grid": "#6F6F6F",
+    "zebra": "#F2F4F8",
+    "panel": "#F4F4F4",
+    "rule": "#C6C6C6",
+    "table_head": "#002D9C",
+    "table_head_ink": "#FFFFFF",
+    "table_border": "#6F6F6F",
+    "row": "#FFFFFF",
+    "page": "#FFFFFF",
+    "heading": "#001141",
+    "title_ink": "#FFFFFF",
+    "handling_bg": "#FDE8E6",
+    "handling_ink": "#A01B12"
+  },
+  "sop": {
+    "accent": "0F62FE",
+    "heading": "001141",
+    "title": "404040",
+    "caption": "6B7280",
+    "body": "161616",
+    "link": "0F62FE",
+    "page": null
+  }
+}

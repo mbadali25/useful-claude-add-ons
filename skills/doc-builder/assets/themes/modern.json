@@ -1,0 +1,41 @@
+{
+  "_comment": "Built-in doc-builder theme: colours only; the brand keeps logo, fonts, footer. Literal hex (word-traps.md rule 1). Contrast is asserted by scripts/_test/test_themes.py.",
+  "name": "modern",
+  "label": "Modern",
+  "description": "Near-black flat masthead, one blue accent, zinc-grey zebra, crisp black-on-white type. Contemporary docs-site look.",
+  "sources": [
+    "https://tailwindcss.com/docs/colors (zinc)",
+    "flat neutral + single accent, as on Vercel/Linear/Stripe docs (convention, not a published spec)"
+  ],
+  "report": {
+    "navy": "#18181B",
+    "navy_dark": "#000000",
+    "accent": "#2563EB",
+    "org_ink": "#D4D4D8",
+    "classification": "#8B1A13",
+    "ink": "#18181B",
+    "muted": "#52525B",
+    "grid": "#52525B",
+    "zebra": "#F4F4F5",
+    "panel": "#F4F4F5",
+    "rule": "#E4E4E7",
+    "table_head": "#18181B",
+    "table_head_ink": "#FFFFFF",
+    "table_border": "#52525B",
+    "row": "#FFFFFF",
+    "page": "#FFFFFF",
+    "heading": "#18181B",
+    "title_ink": "#FFFFFF",
+    "handling_bg": "#FDE8E6",
+    "handling_ink": "#A01B12"
+  },
+  "sop": {
+    "accent": "2563EB",
+    "heading": "18181B",
+    "title": "404040",
+    "caption": "6B7280",
+    "body": "18181B",
+    "link": "2563EB",
+    "page": null
+  }
+}

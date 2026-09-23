@@ -22,7 +22,9 @@ description: >
   wiki", or when a generated DOCX, PDF or HTML page came out unstyled black-on-white, missing
   its print rules, or in the wrong brand's colours. Also use it
   to pick between one report and a summary plus a detail report, and to choose severity
-  colours. Brand is resolved automatically from any installed brand pack (for example
+  colours, and when the user asks for a theme or look - "dark mode", "make it modern",
+  "high contrast", "corporate", "compact", "what styles are there" - or asks for
+  documentation without naming a look (show the theme gallery first). Brand is resolved automatically from any installed brand pack (for example
   solomon-doc-builder) - the user never has to ask for branding. Do NOT use it to edit an
   arbitrary existing .docx the user hands over, or for slides or spreadsheets.
 ---
@@ -161,6 +163,53 @@ python resolve_brand.py            # what would be used, and why
 python resolve_brand.py --list     # every pack visible from here
 ```
 
+## Themes and density - a look the user picks, over the brand
+
+Eight built-in themes change **colours only**; the brand pack keeps its logo, fonts, footer,
+template and paths. Every theme keeps the house rules: literal hex, black-or-visible grid on
+every cell, a contrasting header row, explicit zebra rows, WCAG AA contrast (AAA for High
+Contrast) - all asserted by `scripts/_test/test_themes.py`.
+
+| Theme | Look |
+|---|---|
+| `professional` | Charcoal masthead, black grid, black headers, grey zebra - the default house look |
+| `corporate` | Deep navy (IBM Carbon), blue accent strip - board-pack conservative |
+| `blue` | Bright blue masthead and headers, pale-blue zebra - friendly guides and runbooks |
+| `red` | Crimson masthead and headers, rose zebra - incident, audit, risk |
+| `modern` | Near-black flat masthead, single blue accent, zinc zebra - docs-site look |
+| `dark` | Dark accents on a **white** page - prints cleanly |
+| `midnight` | **True dark page**, soft Nord palette - on-screen reading |
+| `high-contrast` | **Black page**, white text and grid, yellow accents - WCAG AAA |
+
+Density is separate and combines with any theme: `--density compact` (tight cells, smaller
+masthead, 10pt guides, narrower SOP margins) or `comfortable` (the default).
+
+```powershell
+python build_report.py --data r.json --theme red --density compact --to-pdf
+python build_sop.py spec.json --theme blue --out vpn.docx --to-pdf
+python house_style.py --apply page.html --out page.html --profile guide --theme modern
+python resolve_brand.py --list-themes        # names, descriptions, gallery path
+```
+
+`DOC_BUILDER_THEME` / `DOC_BUILDER_DENSITY` set a default; the flag wins. No theme -> the
+brand's own colours, exactly as before themes existed.
+
+**When someone asks for documentation and has not named a look, show them the gallery
+before building** - `assets/themes/gallery/index.html` (every theme side by side, with
+thumbnails, swatches and the flag to pass), or a single `assets/themes/gallery/<theme>.png`
+inline. Ask which theme and whether compact; if they do not care, use the brand's own colours
+(no `--theme`). Never invent a colour on request - pick the nearest theme, or add a theme file.
+
+Dark-page themes (`midnight`, `high-contrast`) carry the page colour into the DOCX and PDF:
+the HTML states it as CSS, as `bgcolor` and as a `doc-builder-page` meta; Word conversion
+sets the page colour over COM and turns on *Print background colours* only for that save; a
+LibreOffice DOCX gets `<w:background>` written back in (LibreOffice drops it); an SOP writes
+`<w:background>` itself. A themed SOP is checked with the same `--theme` passed to
+`check_conformance.py`. Palettes, sources and density numbers: `references/themes.md`.
+
+Adding a theme: copy one in `assets/themes/`, change the hex values, run
+`python build_gallery.py --png` and the suite - the contrast test tells you which pair fails.
+
 ## Quick start
 
 Run scripts from `scripts/` (they import each other as siblings), with absolute paths for
@@ -264,6 +313,7 @@ what clips a border. Run the gates anyway.
 |---|---|
 | CSS Word silently drops, what LibreOffice drops instead, column sizing, print rules, the Word-object-model verification snippet, pre-ship checklist | `references/word-traps.md` - **before writing any report CSS** |
 | Report palette tokens, severity colours, how a brand pack overrides them | `references/palette.md` |
+| Built-in themes, their sources and contrast, density numbers, the gallery | `references/themes.md` |
 | SOP house template: page setup, per-block formatting, the border clipping defect and its real fix | `references/template-spec.md` |
 | Every script, spec JSON format, `SopBuilder` API, brand.json schema | `references/toolchain-usage.md` |
 | Screenshot anonymisation and provenance checks | `references/screenshots.md` - **before embedding any screenshot** |

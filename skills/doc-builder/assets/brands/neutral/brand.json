@@ -20,6 +20,19 @@
     "table_head": "#000000",
     "table_head_ink": "#FFFFFF",
     "table_border": "#000000",
+    "row": "#FFFFFF",
+    "page": "#FFFFFF",
+    "heading": null,
+    "title_ink": "#FFFFFF",
+    "handling_bg": "#FDE8E6",
+    "handling_ink": "#A01B12",
+    "density": {
+      "base_px": 13, "cell_pad": "7px 10px", "head_pad": "8px 10px",
+      "band_pad": "14px 18px", "title_px": 26, "logo_px": 44,
+      "h1_px": 20, "h2_px": 15, "h2_margin": "22px 0 8px",
+      "card_pad": "10px 12px", "card_n_px": 22, "meta_px": 12,
+      "guide_pt": 11, "guide_margin": "2cm", "line_height": 1.45
+    },
     "panel": "#F6F7F9",
     "rule": "#DCDEE5",
     "severity": {
@@ -55,7 +68,8 @@
       "required_text": ["Internal use only"],
       "optional_text": []
     },
-    "help_contact": ""
+    "help_contact": "",
+    "page": null
   },
   "screenshots": {
     "stand_in_email": "firstname.lastname@example.com",

@@ -120,6 +120,8 @@ class Style:
         self.MARGINS_IN = dict(sop["margins_in"])
         self.FOOTER = dict(sop.get("footer") or {})
         self.TEMPLATE = brand.template
+        # A dark-page theme's page colour (hex, no '#'), or None for white.
+        self.PAGE = (sop.get("page") or "").lstrip("#").upper() or None
 
 
 # Module-level mirror of the active Style, so `import build_sop as S; S.ACCENT_RED`
@@ -605,7 +607,31 @@ class SopBuilder:
     def spacer(self):
         return self.doc.add_paragraph()
 
+    def _apply_page_colour(self):
+        """`<w:background>` as the first child of `<w:document>`, plus
+        `<w:displayBackgroundShape/>` in settings -- the pair Word writes when
+        a page colour is set through Design > Page Color. Without the settings
+        flag Word stores the colour and does not show it."""
+        root = self.doc.element
+        for old in root.findall(qn("w:background")):
+            root.remove(old)
+        root.insert(0, _el("w:background", color=self.style.PAGE))
+        settings = self.doc.settings.element
+        if settings.find(qn("w:displayBackgroundShape")) is None:
+            # CT_Settings is a sequence: the flag goes after the last of the
+            # children the schema puts before it (build_report.SETTINGS_BEFORE_BG).
+            from build_report import SETTINGS_BEFORE_BG  # pylint: disable=import-outside-toplevel
+            flag = _el("w:displayBackgroundShape")
+            before = [c for c in settings
+                      if c.tag in {qn("w:" + t) for t in SETTINGS_BEFORE_BG}]
+            if before:
+                before[-1].addnext(flag)
+            else:
+                settings.insert(0, flag)
+
     def save(self, path):
+        if self.style.PAGE:
+            self._apply_page_colour()
         self.doc.save(path)
         return path
 
@@ -719,12 +745,13 @@ def main(argv=None):
                          "LibreOffice elsewhere; see --renderer)")
     render_engine.add_renderer_argument(ap)
     resolve_brand.add_brand_argument(ap)
+    resolve_brand.add_theme_arguments(ap)
     args = ap.parse_args(argv)
 
     spec_path = os.path.abspath(args.spec)
     with open(spec_path, encoding="utf-8") as fh:
         spec = json.load(fh)
-    brand = resolve_brand.resolve(args.brand)
+    brand = resolve_brand.resolve(args.brand, theme=args.theme, density=args.density)
     out = build_from_spec(spec, base_dir=os.path.dirname(spec_path), out=args.out,
                           brand=brand, dry_run=args.dry_run)
     if args.dry_run:

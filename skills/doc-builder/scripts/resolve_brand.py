@@ -53,6 +53,18 @@ import sys
 SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
 SKILL_ROOT = os.path.normpath(os.path.join(SCRIPTS_DIR, os.pardir))
 NEUTRAL_JSON = os.path.join(SKILL_ROOT, "assets", "brands", "neutral", "brand.json")
+THEMES_DIR = os.path.join(SKILL_ROOT, "assets", "themes")
+DENSITIES_DIR = os.path.join(SKILL_ROOT, "assets", "densities")
+THEME_ENV = "DOC_BUILDER_THEME"
+DENSITY_ENV = "DOC_BUILDER_DENSITY"
+
+# A theme or density overlay may set colours and sizes, never identity. These
+# stay with the brand pack whatever theme is picked: the logo, the fonts, the
+# organisation, the SOP footer and help contact, and every path.
+_OVERLAY_SECTIONS = ("report", "sop")
+_IDENTITY_SOP_KEYS = frozenset((
+    "template", "masters_dir", "assets_dir", "specs_dir", "footer", "help_contact"))
+_IDENTITY_REPORT_KEYS = frozenset(("output_dir",))
 
 # The directory holding every installed skill in a checkout. Overridable so the
 # discovery rules can be tested against a scratch tree with zero, one and two packs.
@@ -263,6 +275,9 @@ def _merge(base, over):
 class Brand:
     """The merged brand pack plus every path the toolchain derives from it."""
 
+    theme = None
+    density = None
+
     def __init__(self, path, reason):
         self.path = os.path.normpath(path)
         self.root = os.path.dirname(self.path)          # .../assets
@@ -394,8 +409,21 @@ class Brand:
             raise ValueError(f"background must be 'light' or 'dark', got {background!r}")
         return self.logo_path(f"icon_on_{background}")
 
+    def apply_overlay(self, kind, name, overlay):
+        """Merge a theme or density over the resolved brand: colours and sizes
+        only (see `_OVERLAY_SECTIONS`), identity untouched."""
+        for section in _OVERLAY_SECTIONS:
+            values = dict(overlay.get(section) or {})
+            banned = _IDENTITY_SOP_KEYS if section == "sop" else _IDENTITY_REPORT_KEYS
+            for k in banned & set(values):
+                values.pop(k)
+            self.data[section] = _merge(self.data[section], values)
+        setattr(self, kind, name)
+
     def describe(self) -> str:
-        return f"brand: {self.name} -- {self.reason} ({self.path})"
+        extra = "".join(f", {k} {getattr(self, k)}" for k in ("theme", "density")
+                        if getattr(self, k, None))
+        return f"brand: {self.name} -- {self.reason} ({self.path}){extra}"
 
     def announce(self, stream=sys.stderr):
         print(self.describe(), file=stream)
@@ -434,7 +462,64 @@ def _all_packs():
     return out
 
 
-def resolve(explicit=None, root=None, announce=True) -> Brand:
+class OverlayNotFound(Exception):
+    def __init__(self, kind, wanted, names):
+        super().__init__(f"unknown {kind} {wanted!r} - available: {', '.join(names) or '(none)'}")
+
+
+def _overlays(directory):
+    """{name: path} for every *.json in `directory`, sorted by name."""
+    out = {}
+    for p in sorted(glob.glob(os.path.join(directory, "*.json"))):
+        out[os.path.splitext(os.path.basename(p))[0].lower()] = p
+    return out
+
+
+def list_themes():
+    """[(name, label, description)] for every built-in theme."""
+    rows = []
+    for name, path in _overlays(THEMES_DIR).items():
+        data = _load(path)
+        rows.append((name, data.get("label") or name, data.get("description") or ""))
+    return rows
+
+
+def list_densities():
+    return [(n, _load(p).get("description") or "") for n, p in _overlays(DENSITIES_DIR).items()]
+
+
+def load_overlay(kind, wanted):
+    """The theme or density JSON named `wanted` (case-insensitive; spaces and
+    underscores read as hyphens, so "High Contrast" finds high-contrast)."""
+    directory = THEMES_DIR if kind == "theme" else DENSITIES_DIR
+    found = _overlays(directory)
+    key = re.sub(r"[\s_]+", "-", wanted.strip().lower())
+    if key not in found:
+        raise OverlayNotFound(kind, wanted, sorted(found))
+    return key, _load(found[key])
+
+
+def resolve(explicit=None, root=None, announce=True, theme=None, density=None) -> Brand:
+    """Apply the five steps, then the theme and density overlays. Prints the
+    outcome to stderr unless told not to.
+
+    Merge order: neutral -> brand pack -> theme -> density. A theme wins on
+    colours because it was asked for explicitly; the brand keeps its identity
+    (logo, fonts, footer, template, paths) because a theme never carries one."""
+    brand = _resolve_pack(explicit, root, announce=False)
+    for kind, value, env in (("theme", theme, THEME_ENV), ("density", density, DENSITY_ENV)):
+        wanted = value or os.environ.get(env)
+        if wanted:
+            name, overlay = load_overlay(kind, wanted)
+            brand.apply_overlay(kind, name, overlay)
+    if announce:
+        brand.announce()
+        for n in getattr(brand, "_notes", []):
+            print("brand: note: " + n, file=sys.stderr)
+    return brand
+
+
+def _resolve_pack(explicit=None, root=None, announce=True) -> Brand:
     """Apply the five steps. Prints the outcome to stderr unless told not to."""
     if root:
         os.environ[SKILLS_DIR_ENV] = root
@@ -465,6 +550,7 @@ def resolve(explicit=None, root=None, announce=True) -> Brand:
             reason = ("no brand pack found - using neutral. Searched: "
                       + "; ".join(searched))
     brand = Brand(path, reason)
+    brand._notes = notes  # pylint: disable=protected-access
     if announce:
         brand.announce()
         for n in notes:
@@ -480,13 +566,40 @@ def add_brand_argument(parser: argparse.ArgumentParser) -> None:
              "else neutral; ambiguous when several are installed - see resolve_brand.py)")
 
 
+def add_theme_arguments(parser: argparse.ArgumentParser) -> None:
+    """--theme and --density, for the scripts that BUILD a document. The
+    checkers and extractors do not take them: they measure a pack's masters."""
+    themes = ", ".join(n for n, _, _ in list_themes())
+    parser.add_argument(
+        "--theme", default=None,
+        help=f"built-in colour theme over the brand ({themes}); default: the brand's own "
+             f"colours, or {THEME_ENV}")
+    parser.add_argument(
+        "--density", default=None,
+        help=f"spacing and type size ({', '.join(n for n, _ in list_densities())}); "
+             f"default: comfortable, or {DENSITY_ENV}")
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     add_brand_argument(ap)
     ap.add_argument("--list", action="store_true", help="list every visible brand pack, by location, and exit")
     ap.add_argument("--json", action="store_true", help="print the merged brand values")
+    ap.add_argument("--list-themes", action="store_true",
+                    help="list the built-in themes and densities, and exit")
+    add_theme_arguments(ap)
     args = ap.parse_args(argv)
+
+    if args.list_themes:
+        print("themes (--theme):")
+        for name, label, desc in list_themes():
+            print(f"  {name:<14} {label:<16} {desc}")
+        print("\ndensities (--density):")
+        for name, desc in list_densities():
+            print(f"  {name:<14} {desc}")
+        print(f"\ngallery: {os.path.join(THEMES_DIR, 'gallery', 'index.html')}")
+        return 0
 
     if args.list:
         print(f"neutral  {NEUTRAL_JSON}  (built in)")
@@ -499,7 +612,8 @@ def main(argv=None) -> int:
                 print("  (none)")
         return 0
 
-    brand = resolve(args.brand, announce=not args.json)
+    brand = resolve(args.brand, announce=not args.json, theme=args.theme,
+                    density=args.density)
     if args.json:
         print(json.dumps(brand.data, indent=2))
     else:
