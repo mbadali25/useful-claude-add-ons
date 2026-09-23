@@ -5,7 +5,7 @@ allowed-tools: Read, Write, Edit, Bash, Agent
 ---
 
 Spec ticket $1. Replaces `/crew:ticket` in 1.0; that file stays and now says
-so at its top.
+so at its top. <!-- deliberate -->
 
 1. Read `.work/tickets/$1/direction.md`. If it is missing, this ticket has no
    approved direction — stop and say to run `/crew:brainstorm` first, or
@@ -39,7 +39,7 @@ first, not a plan that quietly reaches outside it.
 4. Append `.work/INDEX.md`: `$1 | spec | <risk> | <this-repo> | <title>`
    (files and Obsidian modes) or push the tracker item to the equivalent state
    (Jira, ServiceDesk Plus) — same rule `/crew:ticket` states for its own
-   append.
+   append. <!-- deliberate -->
 5. `/crew:plan`, `/crew:implement`, `/crew:review` and `/crew:done` all refuse
    to run without this file. An empty or placeholder Acceptance list is the
    same as no spec — say so rather than writing one to satisfy the section

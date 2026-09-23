@@ -24,7 +24,7 @@ Read `.crew/crew.json` (or `.crew/config.json` on an unmigrated repo) for
 `T-####`, create `.work/tickets/T-####/`, and append
 `T-#### | direction | - | <this-repo> | <title>` to `.work/INDEX.md`. Obsidian
 mode also adds the `[[T-####]]` card to the board's `backlog` lane, the way
-`/crew:ticket` does — a direction is not yet ready work. **Jira and
+`/crew:ticket` does — a direction is not yet ready work. <!-- deliberate --> **Jira and
 ServiceDesk Plus modes**: create the tracker item now with a one-line
 placeholder summary, so the id exists before anything else does, and cache it
 at `.work/tickets/<KEY>/`.

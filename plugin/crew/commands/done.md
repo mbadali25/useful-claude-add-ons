@@ -48,7 +48,7 @@ per-turn block. A non-zero exit names the out-of-scope path; file it to
 1. Set `.work/tickets/$1/spec.md`'s header to `status: done`. Update
    `.work/INDEX.md`'s row to match (files and Obsidian modes), or push the
    tracker item to its closed state (Jira, ServiceDesk Plus) the way
-   `/crew:work`'s old step 13 did.
+   `/crew:work`'s old step 13 did. <!-- deliberate -->
 2. Append one row to `.crew/metrics.jsonl` — best effort until T9's harness
    lands; UNKNOWN for anything not measured here, never a guess:
 
@@ -67,10 +67,10 @@ with open(".crew/metrics.jsonl", "a", encoding="utf-8") as fh:
 ```
 
 3. Delete `.work/HANDOFF.md` if present — a stale handoff reads as current to
-   the next session, the same rule `/crew:work`'s old step 14 states.
+   the next session, the same rule `/crew:work`'s old step 14 states. <!-- deliberate -->
 4. If `notify.provider` is not `none`:
    `bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/notify.sh done "$1 complete"`
 
 Do not run step 4 before checks 1–3 pass. "Done" that means "I stopped typing"
 is the reason nobody trusts a notification channel — the same line `/crew:work`
-opened with.
+opened with. <!-- deliberate -->

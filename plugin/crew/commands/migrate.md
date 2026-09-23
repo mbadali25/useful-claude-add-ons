@@ -48,7 +48,7 @@ What apply does, in order:
 | `.work/tickets/<ID>.md` | `.work/tickets/<ID>/ticket.md` + `provenance.json` |
 | `.work/cache/<ID>.md` (Jira, SDP, Obsidian) | the same, with `source` naming the tracker |
 | `.crew/metrics.md` | `.crew/metrics.jsonl`, one object per row, missing values `UNKNOWN` |
-| `.crew/pm-journal.md`, `pm-standing.md` | copied to `.crew/archive/` |
+| `.crew/pm-journal.md`, `pm-standing.md` | copied to `.crew/archive/` | <!-- deliberate -->
 | `.crew/codemap/` and its anchors | untouched |
 
 The full key-by-key table for `crew.json` is the docstring of

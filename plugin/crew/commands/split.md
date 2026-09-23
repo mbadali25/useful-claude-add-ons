@@ -48,11 +48,10 @@ to split.
 | The issue names more than one subsystem | `.crew/codemap/INDEX.md`, or `crew:explorer` |
 | Acceptance criteria that cannot be verified together | the issue itself |
 
-`health.rate` is a **repo-wide** average, not a measurement of THIS issue. It
-says the tickets here tend to be too large; it does not say this one is. Say
-which you have. If the only evidence is the repo-wide rate, say so plainly and
-let the user decide — a high average is a reason to look, not a verdict on the
-issue in front of you.
+`health.rate` is a **repo-wide** average, not a measurement of THIS issue: it
+says tickets here tend to be too large, not that this one is. Say which you
+have — if the only evidence is the repo-wide rate, say so and let the user
+decide; a high average is a reason to look, not a verdict on this issue.
 
 **If the issue is not too large, say so and stop.** A command that always finds
 work is a command nobody can trust to say no.
