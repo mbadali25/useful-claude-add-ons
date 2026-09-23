@@ -236,10 +236,19 @@ def test_the_migration_is_behaviour_neutral():
     """A schema bump makes every crew repo on every machine report
     `upgradeNeeded`, so this migration is mandatory. A mandatory migration that
     started running install commands on other people's machines would be
-    indefensible, so the key has to land on the floor."""
+    indefensible, so the key has to land on the floor.
+
+    `install.policy` is globally-settable and ratcheted, so as of this
+    ticket's fix the migration no longer WRITES it into a repo that never
+    named it (see `crew_upgrade._prune_unsupplied_global_leaves`) -- doing
+    so is the newer bug this ticket fixes, the one that freezes a
+    machine-global answer out forever. It stays behaviour-neutral either way:
+    `INSTALL_POLICY_DEFAULT` -- what an absent key normalises to -- IS the
+    floor this migration used to write literally."""
     out, notes = crew_upgrade.upgrade_config(
         {"schema": 4, "pm": {"authority": "act"}})
-    assert out["install"]["policy"] == "manual"
+    assert "install" not in out
+    assert crew_state.INSTALL_POLICY_DEFAULT == "manual"
     assert notes["installKeysAdded"] == ["install.policy"]
     assert out["schema"] == crew_state.SCHEMA_CURRENT
 
@@ -320,4 +329,13 @@ def test_the_schema_bump_actually_reaches_a_repo_at_the_previous_schema(
     assert result["status"] != "already current"
     written = json.loads((root / ".crew" / "config.json").read_text("utf-8"))
     assert written["schema"] == crew_state.SCHEMA_CURRENT
-    assert written["install"]["policy"] == "manual"
+    # `install.policy` itself is globally-settable, so as of this ticket's
+    # fix it is no longer WRITTEN into a repo that never named it (see
+    # `crew_upgrade._prune_unsupplied_global_leaves`) -- the literal-value
+    # check this test used to make is gone with it. `notes` is what proves
+    # the schema-5 migration itself actually ran rather than the number
+    # merely being bumped: `run()` returns "already current" WITHOUT calling
+    # `upgrade_config` at all when the schema check short-circuits, so
+    # `notes` would be `None` were that sabotage reintroduced.
+    assert result["notes"]["installKeysAdded"] == ["install.policy"]
+    assert "install" not in written

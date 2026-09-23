@@ -34,6 +34,143 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Fixed
 
+- **`crew` 0.20.16: test-only.** `test_review_patch.py` passes `check=False` to
+  `subprocess.run` explicitly (pylint W1510, which failed CI's `build` jobs). crew
+  moves from 0.20.15 because its test files changed.
+
+- **`crew` 0.20.15: the PM is always spawned unnamed, so it can dispatch
+  again.** Per [agent teams](https://code.claude.com/docs/en/agent-teams.md),
+  an `Agent` call with `name` creates a teammate, and "teammates cannot spawn
+  their own teammates" — the standing PM was spawned with `name: "crew-pm"`,
+  so its own `Agent` calls failed outright with "Teammates cannot spawn other
+  teammates" the moment it tried to dispatch a role. `commands/pm.md`,
+  `skills/crew-pm/SKILL.md` and `agents/pm.md` no longer instruct a named
+  spawn, a `ListAgents` lookup for a teammate named `crew-pm`, or a
+  `SendMessage` to that name. Continuity now comes from two mechanisms
+  instead: resuming a held agent id with `SendMessage` within a session, and
+  two append-only files the PM reads and appends to on every invocation when
+  `isCrew: true` — `.crew/pm-journal.md`, a dated tail of what was
+  dispatched, decided, deferred and vetoed, and `.crew/pm-standing.md`, read
+  in full every time, one line per still-live decision, veto, or
+  onboard/offboard ruling that a bounded tail must never lose — the durable
+  memory across sessions that a name used to stand in for.
+  `test_pm_unnamed_spawn.py` guards the wording, sabotage-tested against a
+  reintroduced `name: "crew-pm"` and a negation-elsewhere-on-the-line false
+  allow.
+
+- **`crew` 0.20.15: the PM journal and standing-file append no longer goes
+  through a shell.** A Codex BLOCK on `agents/pm.md:941` found the prescribed
+  `cat >> .crew/pm-journal.md <<'CREW_EOF' ... CREW_EOF` still a shell
+  heredoc regardless of quoting: an entry containing a line reading exactly
+  `CREW_EOF` closes it early and runs whatever follows as a shell command.
+  New `hooks/scripts/pm_journal.py` removes the shell from the path
+  entirely — the caller `Write`s the entry to `.work/pm-entry.md` and the
+  script moves those bytes with one `os.open(O_APPEND|O_CREAT)` plus one
+  `os.write`, refusing (non-zero, no traceback) outside a provisioned crew
+  repo, an empty entry, a `--from` path outside `.work/`, or a multi-line
+  standing entry. `agents/pm.md`, `commands/pm.md`, `skills/crew-pm/SKILL.md`,
+  `README.md` and `PLUGINS.md` now all point at it instead of the heredoc;
+  `test_pm_journal.py` covers the append/read contract and the injection
+  case byte-for-byte, and `test_pm_unnamed_spawn.py` now asserts no crew doc
+  shows `>>`/`<<`/`printf`/`echo`/`cat` targeting either file.
+
+- **`crew` 0.20.15: `pm_journal.py` did not check where its target actually
+  was.** Codex BLOCK (`hooks/scripts/pm_journal.py:178`): the script opened
+  `.crew/pm-journal.md`/`pm-standing.md` by name with no containment check
+  and `os.open` follows symlinks, so a repo with either file symlinked
+  outside `.crew/` — or with `.crew` itself symlinked outside the repo —
+  had the PM's own append land wherever that symlink pointed. Both
+  `--append` and `--read` now resolve the target and `.crew` with
+  `os.path.realpath` and refuse (non-zero, no write) unless the target
+  resolves inside `.crew`, refuse a target that is a symlink at all, and
+  refuse a `.crew` that resolves outside the repo root; `os.open` now also
+  passes `O_NOFOLLOW` on POSIX to close the gap between that check and the
+  open (absent on Windows, so unavailable there). `test_pm_journal.py`
+  covers all three refusals and a plain append still working, sabotage-
+  tested against a neutered containment check.
+
+- **`crew` 0.20.15: `/crew:upgrade` stopped writing 48 globally-settable
+  keys onto every migrated repo, so a machine-global answer set afterward
+  could never reach it.** `upgrade_config` (`skills/crew-graph/scripts/
+  crew_upgrade.py`) seeded every `CONFIG_BLOCKS` default the repo did not
+  already have, including `pm.authority`, `qa.order`, `dev.provider`,
+  `install.policy` and every `guards.*` — and `resolve_config` resolves an
+  ordinary key by precedence, so that written default outranked
+  `~/.claude/crew/config.json` forever. `_prune_unsupplied_global_leaves`
+  now drops a leaf the repo did not itself supply whenever
+  `default_global_config()` would let a global file set it; a key the repo
+  already wrote, and every repo-only key (`graph`, `production`, `tier`,
+  `roles`, `schema`, ...), is unaffected. Ratcheted leaves (`install.policy`,
+  every `guards.*`) are provably safe to omit: `resolve_ratcheted` reads the
+  raw repo value directly rather than through `resolve_config`, and absent
+  there already normalises to the identical floor value the merge used to
+  write. `resolve_config`/`layered_state` already fell back through global
+  then built-in defaults for any missing key, so an upgraded repo resolves
+  identically and `upgradeNeeded` (`schema < SCHEMA_CURRENT` alone) does not
+  fire on one. An already-upgraded repo's pre-fix pins are never stripped —
+  the upgrade report now names a globally-settable leaf still sitting at
+  exactly the built-in default as "may be pinned by an earlier
+  `/crew:upgrade`", and leads with a `NO MACHINE-GLOBAL CONFIG` headline
+  naming the effective `pm.authority` and its layer when
+  `~/.claude/crew/config.json` is absent. `commands/upgrade.md` step 4b now
+  reads that headline first rather than as one bullet among the separate
+  `--check-global` findings. `test_crew_config.py` and `test_upgrade.py`
+  cover the measured repro end to end, sabotage-tested against both the
+  pruning and the headline.
+
+- **`crew` 0.20.15: an already-current repo never saw the headline or the
+  pinned-at-default list the fix above just added.** Codex BLOCK
+  (`skills/crew-graph/scripts/crew_upgrade.py:1306`): `run()`'s
+  already-current early return predates both diagnostics and still returned
+  `report=""` and `notes=None` before either could be computed, so a
+  schema-current repo with no machine-global config, or with `pm.authority`
+  sitting at the built-in default from a pre-fix upgrade, never heard about
+  it — `commands/upgrade.md` step 1 stops on the same finding before step 4b
+  is ever reached. That branch now calls `upgrade_config` on a copy of the
+  config (pure — no write, no backup, no codemap or anchor change) and
+  returns the same headline and pinned-at-default list via the existing
+  `_absent_global_headline`/`_config_lines` builders, report-only; `main()`
+  now prints that report for this status, and `commands/upgrade.md` step 1
+  runs `crew_upgrade.py` for it instead of stopping on `crew_state.py`'s bare
+  `schema` field. `test_upgrade.py` covers both the headline and the
+  pinned-at-default case, and that a global config still silences the
+  headline, sabotage-tested against the restored early return.
+
+- **`crew` 0.20.15: `/crew:review` reviewed an empty patch on a dirty tree.**
+  Step 2 built its review input with `git diff "$BASE"...HEAD` — committed
+  range only — so on a working tree with real uncommitted change it produced
+  a 0-byte patch while `git diff HEAD` showed real content, and untracked
+  files never entered the patch at all (Codex found this against the live
+  0.20.15 tree; `docs/review/03-codex-review.md`). New
+  `hooks/scripts/review_patch.py` builds one patch — the committed range
+  plus staged, plus unstaged, plus untracked non-ignored changes, all diffed
+  against `$BASE` in a single pass, via a `GIT_INDEX_FILE`-redirected
+  temporary index so the developer's own real index is never touched — plus
+  a manifest recording base, head, branch, dirtiness and which category each
+  changed file fell into. It exits non-zero rather than passing an empty
+  review silently, with a distinct code for the legitimate "nothing to
+  review" case. `commands/review.md` step 2 now calls it and derives
+  `changed.txt` from the manifest instead of a second `git diff`;
+  `test_review_patch.py` covers all four categories, the real-index
+  invariant and the empty/nothing-to-review split, sabotage-tested against
+  committed-range-only, dropped-untracked and real-index variants.
+
+- **`crew` 0.20.15: the Claude fallback reviewer never read the manifest-built
+  patch, so dirty and untracked content could still return a false CLEAN.**
+  Codex BLOCK (`commands/review.md:459`, found by making Codex and Copilot
+  ineligible, adding an untracked-only defect, and running review): step 2c
+  told `qa-reviewer` to "start with `git diff` against the base branch" —
+  its own, freshly re-derived, committed-range-only diff — instead of handing
+  it the same `$SCRATCH/prompt.txt` + `$SCRATCH/diff.txt` +
+  `$SCRATCH/manifest.json` bundle 2a and 2b already read. Step 2c now hands
+  `qa-reviewer` that exact bundle and tells it to review that patch only;
+  `qa-reviewer.md` reviews a supplied patch path instead of re-deriving one,
+  and keeps its own `git diff` procedure only as the no-patch fallback, which
+  now leads its output with a `NIT|self-derived|...` line saying it may have
+  missed staged, unstaged or untracked content. `test_review_fallback_bundle.py`
+  covers both files, sabotage-tested against a diff.txt reference dropped from
+  step 2c and the git-diff fallback restored as an unconditional first step.
+
 - **Windows audit wave 3: `claude-code-defaults` 1.0.1, `intune-graph` 1.1.3,
   `mermaid-svg-bitbucket` 1.2.5, `wazuh-onprem` 1.1.1, `obsidian-vault` 0.3.16.**
   Each lane went through four review rounds with sabotage evidence.

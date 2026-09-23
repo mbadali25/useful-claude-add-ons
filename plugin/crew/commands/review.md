@@ -308,7 +308,27 @@ as though it were a preference.
 # $BASE comes from step 1a. Reuse it; do not recompute it here. A second
 # derivation can disagree with the first, and then the staleness verdict was
 # about a different range than the diff the reviewer actually read.
-git diff "$BASE"...HEAD > "$SCRATCH/diff.txt"
+#
+# review_patch.py builds ONE patch: the committed range $BASE...HEAD PLUS
+# staged, unstaged and untracked changes against HEAD. The line this
+# replaced -- `git diff "$BASE"...HEAD` alone -- is committed-range only, so
+# on a dirty tree with nothing committed yet it produced a 0-byte patch while
+# `git diff HEAD` showed real, uncommitted change, and untracked files never
+# entered the patch at all. A reviewer handed that empty file reported CLEAN
+# on nothing it had read (found by Codex, `docs/review/03-codex-review.md`).
+# It never writes to the real index -- see the script's own docstring --
+# so anything YOU staged there for your own next commit is untouched.
+MANIFEST="$SCRATCH/manifest.json"
+python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/review_patch.py \
+  --root . --base "$BASE" --out "$SCRATCH/diff.txt" --manifest "$MANIFEST"
+PATCH_STATUS=$?
+if [ "$PATCH_STATUS" -eq 2 ]; then
+  echo "nothing to review: HEAD matches $BASE and the tree is clean"
+  exit 0
+elif [ "$PATCH_STATUS" -ne 0 ]; then
+  echo "review-patch failed (exit $PATCH_STATUS) -- see stderr above. This is a defect in building the review input, not an empty diff to wave through."
+  exit "$PATCH_STATUS"
+fi
 
 # Gather this repo's own failure modes BEFORE writing the prompt, so every
 # provider gets them. crew 0.19.61 taught `qa-reviewer.md` to read the codemap,
@@ -327,9 +347,19 @@ git diff "$BASE"...HEAD > "$SCRATCH/diff.txt"
 # ever wrote, and because the failure was routed to /dev/null every note
 # failed to match, every review got an empty landmine section, and the step
 # reported itself complete. Build the input before you filter on it.
-git diff --name-only "$BASE"...HEAD > "$SCRATCH/changed.txt"
-git ls-files --others --exclude-standard >> "$SCRATCH/changed.txt"
-sort -u -o "$SCRATCH/changed.txt" "$SCRATCH/changed.txt"
+#
+# Derived from $MANIFEST, not re-derived with a second `git diff` -- a second
+# derivation here could disagree with what review_patch.py actually diffed
+# into $SCRATCH/diff.txt, the same bug class as the two independent $BASE
+# computations warned about above.
+python3 -c '
+import json, sys
+m = json.load(open(sys.argv[1]))
+files = set()
+for key in ("committed_files", "staged_files", "unstaged_files", "untracked_files"):
+    files.update(m.get(key) or [])
+sys.stdout.write("".join(f + "\n" for f in sorted(files)))
+' "$MANIFEST" > "$SCRATCH/changed.txt"
 
 : > "$SCRATCH/context.txt"
 for note in .crew/codemap/*.md; do
@@ -426,9 +456,17 @@ failure: auth succeeds, the call returns nothing, and an empty findings file is
 indistinguishable from a clean diff. Never record a CLEAN verdict from a run that
 exited non-zero.
 
-**Step 2c — Claude fallback.** Invoke the `crew:qa-reviewer` subagent. It reviews
-in its own context so it has not seen your reasoning for writing the code.
-Write its output to `$SCRATCH/out.txt` in the same format.
+**Step 2c — Claude fallback.** Invoke the `crew:qa-reviewer` subagent with the
+SAME bundle 2a and 2b just read: the exact `$SCRATCH/prompt.txt` content —
+byte-identical instructions, per this file's own invariant — plus the concrete
+paths `$SCRATCH/diff.txt` and `$SCRATCH/manifest.json`. Tell it to review that
+patch only; it must not re-derive its own diff with `git diff` — that is the
+same committed-range-only mistake `review_patch.py` exists to fix (found by
+Codex, `docs/review/03-codex-review.md`), and a subagent computing its own
+`git diff` fresh can miss the staged, unstaged and untracked content the
+manifest already captured. It reviews in its own context so it has not seen
+your reasoning for writing the code. Write its output to `$SCRATCH/out.txt` in
+the same format.
 
 The fallback is genuinely weaker than a different family: the same model family
 reviewing itself finds fewer defects. Tell me when it is what ran, so I review
@@ -453,7 +491,11 @@ has never been shown to fail is the defect class this crew loses the most time
 to.
 
 **Step 3 — act.**
-1. Report every BLOCK and FIX line verbatim. Do not soften or argue before showing me.
+1. Report every BLOCK and FIX line verbatim. Do not soften or argue before
+   showing me. State the review range and file list **from `$MANIFEST`**, not
+   by re-deriving it: base, head, branch, whether the tree was dirty, and
+   which category (committed / staged / unstaged / untracked) each changed
+   file fell into is the one record of what was actually reviewed.
 2. Fix all BLOCK items. Rerun `./_verify/smoke.sh`. Rerun this review once.
 3. If you disagree with a finding, say so explicitly and let me decide.
 4. **Land the verdict as a review, not a comment.** If the change is on a

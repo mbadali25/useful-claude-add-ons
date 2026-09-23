@@ -185,14 +185,21 @@ def test_the_schema_6_bump_reaches_a_repo_at_schema_5(tmp_path):
     written = json.loads(
         (root / ".crew" / "config.json").read_text("utf-8"))
     assert written["schema"] == crew_state.SCHEMA_CURRENT
-    assert written["guards"] == crew_state.GUARD_DEFAULTS
-    # Six keys, two vocabularies, one migration. The production pair lands
-    # at `none` WITH an empty `production` block, so the strictest level
-    # there is refuses the empty set until somebody declares a pattern --
-    # which is what let them ship inside a mandatory migration.
+    # `guards` and `github` are both entirely globally-settable and ratcheted
+    # (`guards`) or precedence-resolved (`github`), so as of this ticket's fix
+    # neither is WRITTEN into a repo that never named it (see
+    # `crew_upgrade._prune_unsupplied_global_leaves`) -- the literal-block
+    # checks this test used to make are gone with them. `notes` is what
+    # proves the schema-6 migration itself ran, same reasoning as
+    # `test_install_policy.py`'s sibling.
+    assert "guards" not in written
+    assert "github" not in written
+    # `production` is repo-only and untouched by the fix, so it still lands
+    # whole: the production pair lands at `none` WITH an empty `production`
+    # block, so the strictest level there refuses the empty set until
+    # somebody declares a pattern -- which is what let them ship inside a
+    # mandatory migration.
     assert written["production"] == {"databases": [], "hosts": []}
-    assert written["github"] == {"mergeGate": {"enabled": False,
-                                               "branch": None}}
     # The keys are NAMED in the notes, or the report cannot say what it added.
     assert set(result["notes"]["guardKeysAdded"]) == set(
         crew_upgrade.SCHEMA_6_KEYS)

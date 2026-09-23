@@ -101,8 +101,12 @@ MODEL_TIER = {"pm": "opus", "qa-reviewer": "opus"}
 KNOWN_TOOLS = {
     "Read", "Write", "Edit", "MultiEdit", "Bash", "PowerShell", "Grep", "Glob",
     "Agent", "Task", "Skill", "WebSearch", "WebFetch", "ToolSearch", "NotebookEdit",
-    # The standing PM is reached by name rather than respawned, which needs both
-    # of these: ListAgents to find it, SendMessage to continue it.
+    # The PM is spawned unnamed and resumed by id, not by name -- SendMessage
+    # to a held id is how `/crew:pm` continues the same plain subagent
+    # in-session. ListAgents stays valid here for any role that still needs
+    # to check what else is live (see agents/pm.md "Reap what is idle"); it
+    # is no longer how the PM itself is found, since there is no addressable
+    # `crew-pm` teammate to list.
     "ListAgents", "SendMessage",
     # A crew SUBAGENT cannot prompt -- `AskUserQuestion` is documented as
     # unavailable in agents spawned via the Task tool, and a subagent blocking
