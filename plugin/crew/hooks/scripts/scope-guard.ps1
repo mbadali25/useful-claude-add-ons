@@ -1,6 +1,8 @@
-# PreToolUse plan-approval + scope guard on Write|Edit|MultiEdit|NotebookEdit.
-# PowerShell twin of scope-guard.sh -- both delegate to scope_guard.py, so
-# neither can drift from the other. Exit 0 allows, exit 2 refuses.
+# PreToolUse plan-approval + scope guard on Write|Edit|MultiEdit|NotebookEdit,
+# and the approval-forgery check on Bash|PowerShell. PowerShell twin of
+# scope-guard.sh -- both delegate to scope_guard.py, so neither can drift from
+# the other. Exit 0 allows, exit 2 refuses. No python, or python not reaching
+# a decision, fails CLOSED unless the config provably sets scope.mode off.
 param(
   # Probe seam, the twin of role-write-guard.ps1's -PrintPython.
   [switch]$PrintPython
@@ -110,29 +112,44 @@ if ($stdinBytes.Length -ge 3 -and $stdinBytes[0] -eq 0xEF -and
 }
 $raw = [System.Text.Encoding]::UTF8.GetString($stdinBytes)
 
-# `scope.mode` is block or auto in the repo config. Crude on purpose: it runs
-# only when python could not, so it cannot use a JSON parser.
-function Test-ScopeOptedIn {
+# BYTE-FOR-BYTE the copy in the other scope wrapper (asserted by the tests);
+# the twin of the .sh `_scope_provably_off`. True only when
+# `.crew/config.json` PROVABLY leaves the scope hooks off: the file is absent,
+# or it is one JSON object (crudely: starts `{`, ends `}`, braces balance)
+# with exactly one "scope" key, whose object has exactly one "mode", and that
+# mode is "off". Crude on purpose -- it runs only when python could not -- and
+# every shape it cannot prove is NOT off: corrupt, an unknown mode, report,
+# auto, block, or no scope key at all.
+function Test-ScopeProvablyOff {
   $projectDir = $env:CLAUDE_PROJECT_DIR
   if (-not $projectDir) { $projectDir = (Get-Location).Path }
   $configPath = Join-Path (Join-Path $projectDir '.crew') 'config.json'
+  $item = Get-Item -LiteralPath $configPath -Force -ErrorAction SilentlyContinue
+  if (-not $item -and -not (Test-Path -LiteralPath $configPath)) { return $true }
   if (-not (Test-Path -LiteralPath $configPath -PathType Leaf)) { return $false }
   try {
-    $text = [System.IO.File]::ReadAllText($configPath) -replace '[\r\n]', ''
+    $text = ([System.IO.File]::ReadAllText($configPath) -replace '[\r\n]', '').Trim()
   } catch {
     return $false
   }
-  return $text -match '"scope"\s*:\s*\{[^}]*"mode"\s*:\s*"(block|auto)"'
+  if (-not ($text.StartsWith('{') -and $text.EndsWith('}'))) { return $false }
+  if (([regex]::Matches($text, '\{')).Count -ne ([regex]::Matches($text, '\}')).Count) { return $false }
+  if (([regex]::Matches($text, '"scope"')).Count -ne 1) { return $false }
+  $m = [regex]::Match($text, '"scope"\s*:\s*(\{[^{}]*\})')
+  if (-not $m.Success) { return $false }
+  $obj = $m.Groups[1].Value
+  if (([regex]::Matches($obj, '"mode"')).Count -ne 1) { return $false }
+  return [bool]($obj -match '"mode"\s*:\s*"off"')
 }
 
 $py = Resolve-CrewPython
 if (-not $py) {
-  if (Test-ScopeOptedIn) {
-    [Console]::Error.WriteLine("SCOPE GUARD: no usable python - failing closed because scope.mode is block or auto.")
-    exit 2
+  if (Test-ScopeProvablyOff) {
+    [Console]::Error.WriteLine("scope-guard: no usable python - not judged (scope.mode is off).")
+    exit 0
   }
-  [Console]::Error.WriteLine("SCOPE GUARD: no usable python - not judged.")
-  exit 0
+  [Console]::Error.WriteLine("SCOPE GUARD: no usable python - failing closed because .crew/config.json does not provably set scope.mode off.")
+  exit 2
 }
 
 $prevConsoleEncoding = [Console]::OutputEncoding
@@ -161,11 +178,11 @@ try {
 # at all, which `exit $LASTEXITCODE` would turn into a silent 0 -- means python
 # never reached a decision.
 if ($exitCode -ne 0 -and $exitCode -ne 2) {
-  if (Test-ScopeOptedIn) {
-    [Console]::Error.WriteLine("SCOPE GUARD: scope_guard.py did not run to a decision (exit $exitCode); failing closed because scope.mode is block or auto.")
-    exit 2
+  if (Test-ScopeProvablyOff) {
+    [Console]::Error.WriteLine("scope-guard: scope_guard.py did not run to a decision (exit $exitCode); not judged (scope.mode is off).")
+    exit 0
   }
-  [Console]::Error.WriteLine("SCOPE GUARD: scope_guard.py did not run to a decision (exit $exitCode); not judged.")
-  exit 0
+  [Console]::Error.WriteLine("SCOPE GUARD: scope_guard.py did not run to a decision (exit $exitCode); failing closed because .crew/config.json does not provably set scope.mode off.")
+  exit 2
 }
 exit $exitCode

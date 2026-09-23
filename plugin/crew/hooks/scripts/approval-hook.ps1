@@ -1,6 +1,7 @@
-# Stop-time completion scope audit. PowerShell twin of completion-audit.sh --
-# both delegate to completion_audit.py (0 lines on pass, <= 6 on fail, exit 2
-# blocks the Stop).
+# UserPromptSubmit: record a plan approval when the user types
+# `/crew:approve <id>`. PowerShell twin of approval-hook.sh -- both delegate to
+# approval_hook.py. Exit 0 lets the prompt through; exit 2 blocks it with the
+# reason, which is what happens when an approval was asked for and not recorded.
 param(
   # Probe seam, the twin of role-write-guard.ps1's -PrintPython.
   [switch]$PrintPython
@@ -110,86 +111,14 @@ if ($stdinBytes.Length -ge 3 -and $stdinBytes[0] -eq 0xEF -and
 }
 $raw = [System.Text.Encoding]::UTF8.GetString($stdinBytes)
 
-
-# BYTE-FOR-BYTE the copy in the other scope wrapper (asserted by the tests);
-# the twin of the .sh `_scope_provably_off`. True only when
-# `.crew/config.json` PROVABLY leaves the scope hooks off: the file is absent,
-# or it is one JSON object (crudely: starts `{`, ends `}`, braces balance)
-# with exactly one "scope" key, whose object has exactly one "mode", and that
-# mode is "off". Crude on purpose -- it runs only when python could not -- and
-# every shape it cannot prove is NOT off: corrupt, an unknown mode, report,
-# auto, block, or no scope key at all.
-function Test-ScopeProvablyOff {
-  $projectDir = $env:CLAUDE_PROJECT_DIR
-  if (-not $projectDir) { $projectDir = (Get-Location).Path }
-  $configPath = Join-Path (Join-Path $projectDir '.crew') 'config.json'
-  $item = Get-Item -LiteralPath $configPath -Force -ErrorAction SilentlyContinue
-  if (-not $item -and -not (Test-Path -LiteralPath $configPath)) { return $true }
-  if (-not (Test-Path -LiteralPath $configPath -PathType Leaf)) { return $false }
-  try {
-    $text = ([System.IO.File]::ReadAllText($configPath) -replace '[\r\n]', '').Trim()
-  } catch {
-    return $false
-  }
-  if (-not ($text.StartsWith('{') -and $text.EndsWith('}'))) { return $false }
-  if (([regex]::Matches($text, '\{')).Count -ne ([regex]::Matches($text, '\}')).Count) { return $false }
-  if (([regex]::Matches($text, '"scope"')).Count -ne 1) { return $false }
-  $m = [regex]::Match($text, '"scope"\s*:\s*(\{[^{}]*\})')
-  if (-not $m.Success) { return $false }
-  $obj = $m.Groups[1].Value
-  if (([regex]::Matches($obj, '"mode"')).Count -ne 1) { return $false }
-  return [bool]($obj -match '"mode"\s*:\s*"off"')
-}
-
-# One marker per session and project, in the temp directory. Its presence
-# means the previous Stop was blocked because nothing could be audited.
-function Get-AuditMarker {
-  $sid = 'nosession'
-  $found = [regex]::Match($raw, '"session_id"\s*:\s*"([A-Za-z0-9._-]{1,128})"')
-  if ($found.Success) { $sid = $found.Groups[1].Value }
-  $projectDir = $env:CLAUDE_PROJECT_DIR
-  if (-not $projectDir) { $projectDir = (Get-Location).Path }
-  $sha = [System.Security.Cryptography.SHA256]::Create()
-  $digest = $sha.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($projectDir))
-  $proj = ($digest[0..5] | ForEach-Object { $_.ToString('x2') }) -join ''
-  return (Join-Path ([System.IO.Path]::GetTempPath()) "crew-completion-audit.$sid-$proj")
-}
-
-# Block this Stop -- unless the previous one was already blocked for the same
-# reason, or the marker cannot be written (then a block could repeat forever).
-function Exit-BlockOnce([string]$message) {
-  $marker = Get-AuditMarker
-  if (Test-Path -LiteralPath $marker) {
-    Remove-Item -LiteralPath $marker -Force -ErrorAction SilentlyContinue
-    [Console]::Error.WriteLine("completion audit: $message Not blocking again: the previous stop was already blocked for this.")
-    exit 0
-  }
-  try {
-    [System.IO.File]::WriteAllText($marker, '')
-  } catch {
-    [Console]::Error.WriteLine("completion audit: $message Not blocking: no marker could be written, so a block could loop.")
-    exit 0
-  }
-  [Console]::Error.WriteLine("COMPLETION AUDIT: $message")
-  exit 2
-}
-
-# `stop_hook_active` is honoured here as well as in python, so a continuation
-# the audit caused is never blocked again even when python is broken. `\s`
-# is any JSON whitespace, newlines included. A continuation also ends the
-# "blocked once" count, so the next real turn is audited.
-if ($raw -match '"stop_hook_active"\s*:\s*true') {
-  Remove-Item -LiteralPath (Get-AuditMarker) -Force -ErrorAction SilentlyContinue
-  exit 0
-}
+# The common case is a prompt that is not an approval: leave before any
+# python is looked for.
+if ($raw -notmatch 'crew:approve') { exit 0 }
 
 $py = Resolve-CrewPython
 if (-not $py) {
-  if (Test-ScopeProvablyOff) {
-    [Console]::Error.WriteLine("completion audit: no usable python - not audited (scope.mode is off).")
-    exit 0
-  }
-  Exit-BlockOnce "no usable python - the tree was not audited against the ticket's scope."
+  [Console]::Error.WriteLine("crew: /crew:approve was NOT recorded -- no usable python to validate the plan.")
+  exit 2
 }
 
 $prevConsoleEncoding = [Console]::OutputEncoding
@@ -203,7 +132,7 @@ try {
   $env:PYTHONUTF8 = '1'
   $env:PYTHONIOENCODING = 'utf-8'
   $global:LASTEXITCODE = $null
-  $raw | & $py (Join-Path $dir 'completion_audit.py')
+  $raw | & $py (Join-Path $dir 'approval_hook.py')
   $exitCode = $LASTEXITCODE
 } catch {
   $exitCode = $null
@@ -214,16 +143,10 @@ try {
   $env:PYTHONIOENCODING = $prevPythonIoEncoding
 }
 
-# completion_audit.py only ever exits 0 or 2. Anything else -- including no exit code
-# at all, which `exit $LASTEXITCODE` would turn into a silent 0 -- means python
-# never reached a decision.
+# approval_hook.py only ever exits 0 or 2. Anything else -- including no exit
+# code at all -- means no approval was recorded, and the user is told so.
 if ($exitCode -ne 0 -and $exitCode -ne 2) {
-  if (Test-ScopeProvablyOff) {
-    [Console]::Error.WriteLine("completion audit: completion_audit.py did not run to a verdict (exit $exitCode); not audited (scope.mode is off).")
-    exit 0
-  }
-  Exit-BlockOnce "completion_audit.py did not run to a verdict (exit $exitCode); nothing was audited."
+  [Console]::Error.WriteLine("crew: /crew:approve was NOT recorded -- approval_hook.py did not run to a decision (exit $exitCode).")
+  exit 2
 }
-# Python reached a verdict, so the next failure to run starts a fresh count.
-Remove-Item -LiteralPath (Get-AuditMarker) -Force -ErrorAction SilentlyContinue
 exit $exitCode

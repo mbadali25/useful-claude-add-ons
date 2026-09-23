@@ -354,7 +354,9 @@ def default_config():
         # default -- a new blocking hook starts disarmed. `auto` is `report`
         # for the first ten tickets, then `block` (crew_ticket.effective_mode).
         # REPO ONLY: it is read from `.crew/config.json` and nothing else.
-        "scope": {"mode": "off"},
+        # `allowCliApproval` false: only an approval the user typed as
+        # `/crew:approve <id>` satisfies the guard (crew_ticket.accepted).
+        "scope": {"mode": "off", "allowCliApproval": False},
     }
 
 

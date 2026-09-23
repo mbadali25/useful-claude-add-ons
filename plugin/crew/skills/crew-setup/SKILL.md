@@ -162,7 +162,7 @@ still writes only the repo file.
   "production": { "databases": [], "hosts": [] },
   "change": { "requester": null, "implementor": null, "requireForProduction": false,
               "sdpTemplate": "Change Management Request", "jiraIssueType": "Change", "category": null },
-  "scope": { "mode": "off" }
+  "scope": { "mode": "off", "allowCliApproval": false }
 }
 ```
 

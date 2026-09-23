@@ -30,17 +30,34 @@ fact a subset; it never accepts one that is wider.
 ## The approval receipt
 
 `approve` writes `<git-common-dir>/crew/tickets/<id>/approval.json`:
-`{plan_sha256, spec_sha256, approved_at, approved_by, history}`. The receipt
-lives in the common git directory, outside every worktree, and
-`scope_guard.py` refuses any Write/Edit under `<git-common-dir>/crew/` in
-every mode but `off` -- so an Edit cannot forge or refresh it. `approve` is
-for the USER to run (the lifecycle command tells the session to ask). Nothing
-here can tell a person at a shell from a session's Bash tool; that limit is
-stated, not papered over (README "Scope and approval").
+`{plan_sha256, spec_sha256, approved_at, approved_by, approved_via,
+history}`. The receipt lives in the common git directory, outside every
+worktree, and `scope_guard.py` refuses any Write/Edit under
+`<git-common-dir>/crew/` in every mode but `off` -- so an Edit cannot forge or
+refresh it.
+
+Approval comes from the USER'S PROMPT. `approval_hook.py` (UserPromptSubmit)
+records it when the prompt the user typed is `/crew:approve <id>`, with
+`approved_via: "user-prompt"` and the prompt's `session_id` and `prompt_id`.
+The `approve` CLI below stays for tests and CI and writes
+`approved_via: "cli"`; the scope guard and the Stop audit accept a `cli`
+receipt (or one with no `approved_via`, from before the field existed) only
+when `.crew/config.json` sets `scope.allowCliApproval: true` -- see
+`accepted`. The scope guard also refuses a Bash/PowerShell command that
+invokes `crew_ticket.py approve` or the approval hook, or writes under
+`<git-common-dir>/crew/`. That stops drift and accidental bypass; a session
+with a shell can still forge local state on purpose, and README "Scope and
+approval" says so.
+
+READ ONCE. `approve` reads spec.md and plan.md once, validates those bytes
+and hashes the same bytes, so a file edited between the check and the hash
+is never approved unvalidated. `status` likewise hashes the bytes it parses
+Touch from and returns that Touch: a caller never pairs one read's approval
+with another read's scope.
 
 `status` is `approved` (both hashes match the files now), `stale` (either
 file changed since approval) or `none`. Editing spec.md or plan.md after
-approval makes it stale; amending scope is edit + `approve` again.
+approval makes it stale; amending scope is edit + approve again.
 
 ## Successor plans
 
@@ -58,6 +75,12 @@ the open ticket in `.work/INDEX.md` (`crew_state.read_work`, what `/crew:work`
 already maintains) is used -- but only when `.work/tickets/<id>/` exists, so a
 0.x ticket file (`.work/tickets/<id>.md`) never engages the 1.0 guard.
 
+A pointer that is BROKEN -- this worktree's entry names a ticket with no
+directory or is not a ticket id, or the file does not parse -- never falls
+back to INDEX.md and never reads as "no active ticket": `resolve_active`
+reports it as broken, and the guard and the audit refuse under `block`. A
+stale or planted pointer must not be the way every write gets through.
+
 ## Scope mode
 
 `scope.mode` in `.crew/config.json`: `off` (the default -- the hooks do
@@ -68,12 +91,22 @@ approval. A config file that exists but does not parse, or an unknown value,
 resolves to `block` and says so: an armed guard going permissive because its
 config broke is the unknown collapsing into the safe-looking value.
 
+## Touch globs are segment-aware
+
+`*`, `?` and `[...]` match within ONE path segment and never cross `/`;
+`**` as a whole segment matches zero or more segments. `src/*.py` is the
+files directly in `src/`, not `src/a/b.py`. A Touch entry with no wildcard
+also covers everything under it as a directory. This is deliberately NOT
+`scope_report.gate_matches` (python fnmatch, where `*` consumes `/`): Touch
+is an allow-list, and a `*` that silently spans directories widens it.
+
 Exit codes: 0 ok / approved; 1 refused, invalid, stale or none; 2 usage;
 3 approved, but the review ledger refused the successor plan.
 """
 import argparse
 import datetime
 import fnmatch
+import functools
 import getpass
 import hashlib
 import json
@@ -88,6 +121,8 @@ SECTIONS = ("Intent", "Exclusions", "Evidence", "Unknowns", "Touch",
             "Acceptance checks")
 MODES = ("off", "report", "block", "auto")
 RAMP_TICKETS = 10
+USER_PROMPT = "user-prompt"
+CLI = "cli"
 
 _TICKET_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$")
 _HEADING_RE = re.compile(r"^##\s+(.+?)\s*#*\s*$")
@@ -303,17 +338,39 @@ def gate_matches(path, pat):
     return any(fnmatch.fnmatch(path, c) for c in cands)
 
 
+def _segments(text):
+    return [s for s in text.split("/") if s not in ("", ".")]
+
+
+def glob_match(path, glob, plan=False):
+    """Segment-aware match of `path` against Touch `glob` (module docstring).
+    `*`/`?`/`[...]` stay inside one segment (fnmatch per segment, which
+    case-folds on Windows); a `**` segment spans zero or more segments.
+
+    `plan=True` judges a plan GLOB as though it were a path: a plan segment
+    carrying `**` names any depth, so only a Touch `**` segment covers it."""
+    pat, names = _segments(glob), _segments(path)
+
+    @functools.lru_cache(maxsize=None)
+    def walk(i, j):
+        if i == len(pat):
+            return j == len(names)
+        if pat[i] == "**":
+            return any(walk(i + 1, k) for k in range(j, len(names) + 1))
+        if j == len(names) or (plan and "**" in names[j]):
+            return False
+        return fnmatch.fnmatch(names[j], pat[i]) and walk(i + 1, j + 1)
+
+    return walk(0, 0)
+
+
 def path_matches(path, glob):
-    """`scope_report.matches`: the gate's matcher plus a bare directory
-    entry covering everything under it. Case-folded on Windows through
-    fnmatch's own normcase, and by hand for the prefix form."""
-    if gate_matches(path, glob):
+    """`path` is inside Touch entry `glob`: a segment-aware glob match, or --
+    for an entry with no wildcard -- anything under it as a directory."""
+    if glob_match(path, glob):
         return True
     stem = glob.rstrip("/")
-    if os.name == "nt":
-        return os.path.normcase(path).startswith(os.path.normcase(stem + "/")) \
-            or fnmatch.fnmatch(path, stem + "/*")
-    return fnmatch.fnmatch(path, stem + "/*") or path.startswith(stem + "/")
+    return not _is_glob(stem) and glob_match(path, stem + "/**")
 
 
 def in_touch(path, touch):
@@ -337,28 +394,45 @@ def covered_by(plan_entry, touch):
                 os.path.normcase(stem + "/")):
             return True
         star_only = "?" not in glob and "[" not in glob
-        if star_only and "[" not in plan_entry and gate_matches(plan_entry, glob):
+        if star_only and "[" not in plan_entry and "?" not in plan_entry \
+                and glob_match(plan_entry, glob, plan=True):
             return True
     return False
 
 
 # --- validate -------------------------------------------------------------------
 
-def _read(path):
-    text = crew_common.read_text(path)
-    if text is None:
-        raise TicketError(f"{path} is missing or unreadable")
-    return text
-
-
-def validate(top, ticket):
-    """A list of problems; empty means the spec and plan are a valid contract."""
-    folder = ticket_dir(top, ticket)
-    problems = []
+def _read_bytes(path):
     try:
-        spec = _read(os.path.join(folder, "spec.md"))
-    except TicketError as exc:
-        return [str(exc)]
+        with open(path, "rb") as handle:
+            return handle.read()
+    except (OSError, ValueError):
+        return None
+
+
+def _text(data):
+    """`crew_common.read_text`'s decoding, applied to bytes already read."""
+    text = data.decode("utf-8", errors="replace")
+    return text[1:] if text.startswith("\ufeff") else text
+
+
+def read_contract(top, ticket):
+    """`{"spec.md": bytes_or_None, "plan.md": bytes_or_None}` -- ONE read of
+    each file. Everything that validates, hashes or parses Touch for one
+    decision works from these bytes."""
+    folder = ticket_dir(top, ticket)
+    return {name: _read_bytes(os.path.join(folder, name)) for name in ("spec.md", "plan.md")}
+
+
+def validate(top, ticket, contract=None):
+    """A list of problems; empty means the spec and plan are a valid contract.
+    `contract` is `read_contract`'s result; read here when not given."""
+    folder = ticket_dir(top, ticket)
+    contract = contract if contract is not None else read_contract(top, ticket)
+    problems = []
+    if contract.get("spec.md") is None:
+        return [f"{os.path.join(folder, 'spec.md')} is missing or unreadable"]
+    spec = _text(contract["spec.md"])
     found = sections(spec)
     for name in SECTIONS:
         body = found.get(name.casefold())
@@ -368,11 +442,9 @@ def validate(top, ticket):
             problems.append(f"spec.md ## {name} is empty")
     touch, touch_problems = parse_touch(spec)
     problems.extend(touch_problems)
-    try:
-        plan = _read(os.path.join(folder, "plan.md"))
-    except TicketError as exc:
-        return problems + [str(exc)]
-    files, counts, plan_problems = parse_plan(plan)
+    if contract.get("plan.md") is None:
+        return problems + [f"{os.path.join(folder, 'plan.md')} is missing or unreadable"]
+    files, counts, plan_problems = parse_plan(_text(contract["plan.md"]))
     problems.extend(plan_problems)
     if counts["files"] == 0:
         problems.append("plan.md has no step with a Files: line")
@@ -390,18 +462,13 @@ def validate(top, ticket):
 
 # --- approval --------------------------------------------------------------------
 
-def file_sha256(path):
-    try:
-        with open(path, "rb") as handle:
-            return hashlib.sha256(handle.read()).hexdigest()
-    except OSError:
-        return None
+def _sha(data):
+    return hashlib.sha256(data).hexdigest() if data is not None else None
 
 
 def current_hashes(top, ticket):
-    folder = ticket_dir(top, ticket)
-    return (file_sha256(os.path.join(folder, "plan.md")),
-            file_sha256(os.path.join(folder, "spec.md")))
+    contract = read_contract(top, ticket)
+    return _sha(contract["plan.md"]), _sha(contract["spec.md"])
 
 
 def read_approval(root, ticket):
@@ -413,29 +480,61 @@ def read_approval(root, ticket):
 
 
 def status(root, ticket):
-    """`{"status": approved|stale|none, "why": ..., "receipt": ...}`.
-    A corrupt receipt is `none` with the reason: an approval nobody can read
-    is not one."""
+    """`{"status": approved|stale|none, "why", "receipt", "touch"}`.
+
+    spec.md and plan.md are read ONCE; the hashes compared with the receipt
+    and the `touch` returned both come from those bytes, so an `approved`
+    status never travels with a Touch read from a later version of the spec.
+    `touch` is empty unless the status is `approved`. A corrupt receipt is
+    `none` with the reason: an approval nobody can read is not one."""
     top = toplevel(root) or os.path.abspath(root)
     try:
         receipt, state = read_approval(root, ticket)
     except TicketError as exc:
-        return {"status": "none", "why": str(exc), "receipt": None}
+        return {"status": "none", "why": str(exc), "receipt": None, "touch": []}
     if state == "absent":
-        return {"status": "none", "why": f"{ticket} has no approved plan", "receipt": None}
+        return {"status": "none", "why": f"{ticket} has no approved plan", "receipt": None,
+                "touch": []}
     if state == "corrupt":
         return {"status": "none", "why": f"the approval receipt for {ticket} is unreadable",
-                "receipt": None}
-    plan_sha, spec_sha = current_hashes(top, ticket)
+                "receipt": None, "touch": []}
+    contract = read_contract(top, ticket)
     changed = [name for name, now, then in (
-        ("plan.md", plan_sha, receipt.get("plan_sha256")),
-        ("spec.md", spec_sha, receipt.get("spec_sha256"))) if not now or now != then]
+        ("plan.md", _sha(contract["plan.md"]), receipt.get("plan_sha256")),
+        ("spec.md", _sha(contract["spec.md"]), receipt.get("spec_sha256")))
+        if not now or now != then]
     if changed:
-        return {"status": "stale", "receipt": receipt,
+        return {"status": "stale", "receipt": receipt, "touch": [],
                 "why": (f"{' and '.join(changed)} changed since approval at "
                         f"{receipt.get('approved_at')}; approve again")}
-    return {"status": "approved", "receipt": receipt,
-            "why": f"approved by {receipt.get('approved_by')} at {receipt.get('approved_at')}"}
+    touch, _ = parse_touch(_text(contract["spec.md"]))
+    return {"status": "approved", "receipt": receipt, "touch": touch,
+            "why": (f"approved by {receipt.get('approved_by')} at "
+                    f"{receipt.get('approved_at')} via "
+                    f"{receipt.get('approved_via') or 'an unrecorded route'}")}
+
+
+def cli_approval_allowed(top):
+    """True only when `.crew/config.json` parses and sets
+    `scope.allowCliApproval` to exactly `true`."""
+    data, state = _read_json(os.path.join(top, ".crew", "config.json"))
+    scope = data.get("scope") if state == "ok" and isinstance(data, dict) else None
+    return isinstance(scope, dict) and scope.get("allowCliApproval") is True
+
+
+def accepted(root, ticket):
+    """`status`, with an `approved` receipt that did not come from the user's
+    prompt demoted to `unaccepted` unless `scope.allowCliApproval` is true.
+    This is what the scope guard and the Stop audit act on."""
+    result = status(root, ticket)
+    if result["status"] != "approved":
+        return result
+    via = (result["receipt"] or {}).get("approved_via")
+    if via == USER_PROMPT or cli_approval_allowed(toplevel(root) or os.path.abspath(root)):
+        return result
+    return dict(result, status="unaccepted", touch=[],
+                why=(f"its approval was recorded via {via or 'an unrecorded route'}, not "
+                     f"the user's prompt; the user types `/crew:approve {ticket}`"))
 
 
 def _default_approver(root):
@@ -460,18 +559,25 @@ def _register_ramp(root, ticket):
         _write_json(path, {"tickets": tickets})
 
 
-def approve(root, ticket, by=None):
+def approve(root, ticket, by=None, via=CLI, session=None, prompt_id=None):
     """Validate, then write the receipt. Returns `(receipt, successor)`;
     `successor` is None when the review ledger is not NEEDS_REPLAN, else
-    `(allowed, reason)` from the ledger seam."""
+    `(allowed, reason)` from the ledger seam.
+
+    spec.md and plan.md are read once; the bytes validated are the bytes
+    hashed. `via` is `cli` (this module's CLI, tests, CI) or `user-prompt`
+    (`approval_hook.py`, which also passes the prompt's session and id)."""
+    if via not in (CLI, USER_PROMPT):
+        raise TicketError(f"approved_via {via!r} is not {CLI} or {USER_PROMPT}")
     top = toplevel(root)
     if not top:
         raise TicketError(f"{root} is not a git repository")
-    problems = validate(top, ticket)
+    contract = read_contract(top, ticket)
+    problems = validate(top, ticket, contract)
     if problems:
         raise TicketError("not approved -- the contract does not validate:\n  "
                           + "\n  ".join(problems))
-    plan_sha, spec_sha = current_hashes(top, ticket)
+    plan_sha, spec_sha = _sha(contract["plan.md"]), _sha(contract["spec.md"])
     previous, state = read_approval(root, ticket)
     if state == "corrupt":
         # The history is what tells a successor plan from the one that ran out
@@ -480,7 +586,11 @@ def approve(root, ticket, by=None):
                           "unreadable; inspect it and remove it by hand before approving")
     history = list((previous or {}).get("history") or [])
     entry = {"plan_sha256": plan_sha, "spec_sha256": spec_sha,
-             "approved_at": _now(), "approved_by": (by or "").strip() or _default_approver(root)}
+             "approved_at": _now(), "approved_by": (by or "").strip() or _default_approver(root),
+             "approved_via": via}
+    if via == USER_PROMPT:
+        entry["session_id"] = session if isinstance(session, str) else None
+        entry["prompt_id"] = prompt_id if isinstance(prompt_id, str) else None
     receipt = dict(entry, ticket=ticket, history=history + [entry])
     _write_json(approval_path(root, ticket), receipt)
     _register_ramp(root, ticket)
@@ -529,27 +639,41 @@ def deactivate(root):
         _write_json(path, data)
 
 
-def active_ticket(root):
-    """(ticket_or_None, source). The ticket is returned only when its 1.0
-    directory exists under this worktree."""
+def resolve_active(root):
+    """(ticket_or_None, source, broken). `broken` is True when this
+    worktree's active-ticket pointer exists but cannot be honoured -- the
+    file does not parse, the entry is not a ticket id, or it names a ticket
+    with no `.work/tickets/<id>/` directory. A broken pointer never falls back
+    to INDEX.md; the caller refuses under `block` (module docstring)."""
     top = toplevel(root)
     if not top:
-        return None, "not a git repository"
+        return None, "not a git repository", False
     path = _active_path(root)
     data, state = _read_json(path) if path else (None, "absent")
-    if state == "ok" and isinstance(data, dict) and isinstance(data.get(top), str):
+    if state == "corrupt" or (state == "ok" and not isinstance(data, dict)):
+        return None, f"the active-ticket pointer {path} does not parse", True
+    if state == "ok" and top in data:
         ticket = data[top]
-        if _TICKET_RE.match(ticket) and os.path.isdir(ticket_dir(top, ticket)):
-            return ticket, "active-ticket"
-        return None, f"active-ticket names {ticket!r}, which has no .work/tickets/ directory"
+        if isinstance(ticket, str) and _TICKET_RE.match(ticket) \
+                and os.path.isdir(ticket_dir(top, ticket)):
+            return ticket, "active-ticket", False
+        return None, (f"active-ticket names {ticket!r}, which has no .work/tickets/ "
+                      "directory"), True
     try:
         import crew_state  # pylint: disable=import-outside-toplevel
         ticket = crew_state.read_work(top).get("ticket")
     except Exception:  # pylint: disable=broad-except
         ticket = None
     if ticket and _TICKET_RE.match(ticket) and os.path.isdir(ticket_dir(top, ticket)):
-        return ticket, ".work/INDEX.md"
-    return None, "no active ticket"
+        return ticket, ".work/INDEX.md", False
+    return None, "no active ticket", False
+
+
+def active_ticket(root):
+    """(ticket_or_None, source) -- `resolve_active` without the broken flag.
+    The ticket is returned only when its 1.0 directory exists."""
+    ticket, source, _broken = resolve_active(root)
+    return ticket, source
 
 
 # --- scope mode -------------------------------------------------------------------------
@@ -596,7 +720,8 @@ def effective_mode(root, ticket):
 
 
 def touch_for(top, ticket):
-    """Touch entries of `ticket`'s spec (empty when unreadable)."""
+    """Touch entries of `ticket`'s spec (empty when unreadable). For display;
+    a decision takes Touch from `status`, which hashed the same bytes."""
     text = crew_common.read_text(os.path.join(ticket_dir(top, ticket), "spec.md"))
     entries, _ = parse_touch(text or "")
     return entries
@@ -646,8 +771,11 @@ def main(argv):
             print(f"{result['status']}: {result['why']}")
             return 0 if result["status"] == "approved" else 1
         receipt, successor = approve(root, args.ticket, args.by)
-        print(f"crew-ticket: {args.ticket} approved by {receipt['approved_by']} "
+        print(f"crew-ticket: {args.ticket} approved by {receipt['approved_by']} via cli "
               f"(plan {receipt['plan_sha256'][:12]}, spec {receipt['spec_sha256'][:12]})")
+        if not cli_approval_allowed(top):
+            print("crew-ticket: a cli approval satisfies the scope guard only with "
+                  f"scope.allowCliApproval true; the user types `/crew:approve {args.ticket}`")
         if successor is not None:
             allowed, reason = successor
             print(f"crew-ticket: review {'may continue' if allowed else 'is still NEEDS_REPLAN'}"

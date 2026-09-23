@@ -2,6 +2,7 @@
 scope mode and its ten-ticket ramp, and the successor-plan seam it drives in
 review_ledger.py.
 """
+import hashlib
 import json
 import os
 import pathlib
@@ -183,6 +184,77 @@ def test_a_corrupt_receipt_is_none_and_blocks_reapproval(repo):
         crew_ticket.approve(str(repo), "T-1")
 
 
+def test_approve_hashes_the_bytes_it_validated_not_a_later_version(repo, monkeypatch):
+    make_ticket(repo)
+    plan = repo / ".work" / "tickets" / "T-1" / "plan.md"
+    validated = plan.read_bytes()
+    real_validate = crew_ticket.validate
+
+    def validate_then_edit(top, ticket, contract=None):
+        problems = real_validate(top, ticket, contract)
+        plan.write_text("## Step 1\nFiles: other/keep.py\nTest: x\nRisk: x\n",
+                        encoding="utf-8")
+        return problems
+
+    monkeypatch.setattr(crew_ticket, "validate", validate_then_edit)
+
+    receipt, _ = crew_ticket.approve(str(repo), "T-1", by="owner")
+
+    assert receipt["plan_sha256"] == hashlib.sha256(validated).hexdigest()
+
+
+def test_the_cli_writes_approved_via_cli(repo):
+    make_ticket(repo)
+
+    _cli(repo, "approve", "--ticket", "T-1", "--by", "owner")
+
+    assert crew_ticket.status(str(repo), "T-1")["receipt"]["approved_via"] == "cli"
+
+
+def test_a_cli_approval_is_unaccepted_unless_the_config_allows_it(repo):
+    make_ticket(repo)
+    crew_ticket.approve(str(repo), "T-1", by="owner")
+    before = crew_ticket.accepted(str(repo), "T-1")["status"]
+    (repo / ".crew" / "config.json").write_text(
+        json.dumps({"scope": {"mode": "block", "allowCliApproval": True}}), encoding="utf-8")
+
+    after = crew_ticket.accepted(str(repo), "T-1")["status"]
+
+    assert (before, after) == ("unaccepted", "approved")
+
+
+@pytest.mark.parametrize("value", ["true", 1, "yes", None])
+def test_only_a_literal_true_allows_cli_approval(repo, value):
+    (repo / ".crew" / "config.json").write_text(
+        json.dumps({"scope": {"mode": "block", "allowCliApproval": value}}), encoding="utf-8")
+
+    assert crew_ticket.cli_approval_allowed(str(repo)) is False
+
+
+def test_a_receipt_from_before_approved_via_is_unaccepted(repo):
+    ready(repo)
+    path = pathlib.Path(common_dir(repo), "crew", "tickets", "T-1", "approval.json")
+    receipt = json.loads(path.read_text(encoding="utf-8"))
+    del receipt["approved_via"]
+    path.write_text(json.dumps(receipt), encoding="utf-8")
+
+    assert crew_ticket.accepted(str(repo), "T-1")["status"] == "unaccepted"
+
+
+def test_status_returns_touch_from_the_bytes_it_hashed(repo, monkeypatch):
+    ready(repo)
+    folder = repo / ".work" / "tickets" / "T-1"
+    approved = {n: (folder / n).read_bytes() for n in ("spec.md", "plan.md")}
+    spec = folder / "spec.md"
+    spec.write_text(spec.read_text(encoding="utf-8").replace("`src/**`", "`**`"),
+                    encoding="utf-8")
+    monkeypatch.setattr(crew_ticket, "read_contract", lambda top, ticket: dict(approved))
+
+    result = crew_ticket.status(str(repo), "T-1")
+
+    assert (result["status"], result["touch"]) == ("approved", ["src/**"])
+
+
 @pytest.mark.parametrize("bad", ["../x", "a/b", "", ".hidden"])
 def test_ticket_ids_that_could_name_a_path_are_refused(repo, bad):
     assert _cli(repo, "status", "--ticket", bad).returncode in (1, 2)
@@ -209,6 +281,27 @@ def test_index_md_is_the_fallback_only_for_a_1_0_ticket_directory(repo):
     second = crew_ticket.active_ticket(str(repo))
 
     assert (first, second[0]) == (("T-3", ".work/INDEX.md"), None)
+
+
+@pytest.mark.parametrize("entry", ["T-404", "../x", 7, None])
+def test_a_pointer_to_a_missing_ticket_is_broken_not_absent(repo, entry):
+    make_ticket(repo, "T-3", activate=False)
+    (repo / ".work" / "INDEX.md").write_text("- T-3 in progress\n", encoding="utf-8")
+    path = pathlib.Path(common_dir(repo), "crew", "active-ticket")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({crew_ticket.toplevel(str(repo)): entry}), encoding="utf-8")
+
+    ticket, _source, broken = crew_ticket.resolve_active(str(repo))
+
+    assert (ticket, broken) == (None, True)
+
+
+def test_an_unparseable_pointer_is_broken(repo):
+    path = pathlib.Path(common_dir(repo), "crew", "active-ticket")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("{", encoding="utf-8")
+
+    assert crew_ticket.resolve_active(str(repo))[2] is True
 
 
 def test_deactivate_clears_only_this_worktree(repo):
@@ -259,17 +352,45 @@ def test_reapproving_a_ticket_does_not_advance_the_ramp(tmp_path):
 def test_the_default_config_declares_scope_off():
     import crew_config  # pylint: disable=import-outside-toplevel
 
-    assert crew_config.default_config()["scope"] == {"mode": "off"}
+    assert crew_config.default_config()["scope"] == {"mode": "off", "allowCliApproval": False}
 
 
-# --- the matcher stays the gate's -----------------------------------------------
+# --- Touch globs are segment-aware ------------------------------------------------
 
 @pytest.mark.parametrize("path,glob", [
-    ("main.py", "**/*.py"), ("src/a.py", "src/**/a.py"), ("src/a/b.py", "src/*.py"),
-    ("docs/x.md", "src/**"), ("src/x", "src"),
+    ("main.py", "**/*.py"), ("src/a.py", "src/**/a.py"), ("docs/x.md", "src/**"),
+    ("src/x", "src"), ("src/a.py", "src/*.py"), ("src/a/b/c.py", "src/**"),
 ])
-def test_matching_is_the_scope_reports(path, glob):
+def test_matching_agrees_with_the_scope_report_where_no_star_crosses_a_slash(path, glob):
     assert crew_ticket.path_matches(path, glob) == scope_report.matches(path, glob)
+
+
+@pytest.mark.parametrize("path,glob,expected", [
+    ("src/a/b.py", "src/*.py", False),
+    ("src/a/b.py", "src/*", False),
+    ("src/a/b.py", "*/b.py", False),
+    ("src/a/b.py", "s?c/*/b.py", True),
+    ("src/a/b.py", "src/**/b.py", True),
+    ("src/b.py", "src/**/b.py", True),
+    ("src/a/b.py", "src", True),
+    ("src/a/b.py", "src/", True),
+    ("src/a/b.py", "src/a*", False),
+    ("x/src/a.py", "src/**", False),
+])
+def test_a_star_never_crosses_a_slash(path, glob, expected):
+    assert crew_ticket.path_matches(path, glob) is expected
+
+
+@pytest.mark.parametrize("plan,touch,expected", [
+    ("src/*/x.py", ("src/*",), False),
+    ("src/**", ("src/*",), False),
+    ("src/a/**", ("src/*",), False),
+    ("src/*.py", ("src/*",), True),
+    ("src/a/*.py", ("src/**",), True),
+    ("src/**/x.py", ("src/**",), True),
+])
+def test_a_plan_glob_cannot_widen_touch_through_a_slash(plan, touch, expected):
+    assert crew_ticket.covered_by(plan, list(touch)) is expected
 
 
 # --- successor plans through the review ledger -------------------------------------
@@ -340,6 +461,28 @@ def test_findings_from_before_the_successor_cannot_be_accepted(repo):
 def _exhaust_after_two(repo):
     rl.reserve(str(repo), "T-1", "codex")
     assert rl.status(str(repo), "T-1")["state"] == rl.NEEDS_REPLAN
+
+
+def test_the_successor_approval_is_rechecked_under_the_ledger_lock(repo, monkeypatch):
+    ready(repo)
+    _exhaust(repo)
+    _plan(repo, "## Step 1\nFiles: src/app.py\nTest: new\nRisk: new\n")
+    seam = rl.continue_with_successor_plan
+    monkeypatch.setattr(rl, "continue_with_successor_plan", lambda *_: (False, "later"))
+    crew_ticket.approve(str(repo), "T-1", by="owner")
+    monkeypatch.setattr(rl, "continue_with_successor_plan", seam)
+    plan_hash = crew_ticket.status(str(repo), "T-1")["receipt"]["plan_sha256"]
+    real_enter = rl._Lock.__enter__  # pylint: disable=protected-access
+
+    def enter_after_an_edit(self):
+        _plan(repo, "## Step 1\nFiles: src/app.py\nTest: newer\nRisk: new\n")
+        return real_enter(self)
+
+    monkeypatch.setattr(rl._Lock, "__enter__", enter_after_an_edit)  # pylint: disable=protected-access
+
+    ok, reason = rl.continue_with_successor_plan(str(repo), "T-1", plan_hash)
+
+    assert (ok, rl.status(str(repo), "T-1")["state"]) == (False, rl.NEEDS_REPLAN), reason
 
 
 def test_a_round_from_before_the_successor_cannot_be_recorded(repo):

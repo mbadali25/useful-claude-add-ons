@@ -1,4 +1,5 @@
-"""PreToolUse plan-approval + scope guard on Write/Edit/MultiEdit/NotebookEdit.
+"""PreToolUse plan-approval + scope guard on Write/Edit/MultiEdit/NotebookEdit,
+and the approval-forgery check on Bash/PowerShell.
 
 crew 1.0, lane T3 (docs/review/04-redesign.md, Hooks table). The decision
 lives here; `scope-guard.sh` and `scope-guard.ps1` only find a python and pipe
@@ -13,13 +14,31 @@ the payload in, so the two shells cannot disagree.
    `.crew/.scope-base` is REFUSED in every mode but `off`, whether or not a
    ticket is active. Those files are what the guard and the Stop audit trust;
    an Edit that could write them could approve its own plan.
-3. No active ticket (`crew_ticket.active_ticket`) -> allowed: the guard
-   enforces a ticket's contract and there is no contract to enforce.
-4. Otherwise every target must be the ticket's own `.work/tickets/<id>/` files
+3. A BROKEN active-ticket pointer (`crew_ticket.resolve_active`: it names a
+   ticket with no directory, is not an id, or does not parse) is refused
+   under `block` -- never read as "no active ticket".
+4. No active ticket -> allowed: the guard enforces a ticket's contract and
+   there is no contract to enforce.
+5. Otherwise every target must be the ticket's own `.work/tickets/<id>/` files
    (always writable, so the spec and plan can be amended), or -- with an
-   approved, non-stale plan -- inside `spec.Touch`. Nothing else is exempt:
-   not `.crew/`, not `TODO.md`, not `.claude/`, not crew's policy files.
-   Put them in Touch if the ticket is meant to change them.
+   approval that is current AND came from the user's prompt
+   (`crew_ticket.accepted`; a `cli` receipt only with
+   `scope.allowCliApproval: true`) -- inside `spec.Touch`. The approval and
+   the Touch it is judged against come from ONE read of spec.md
+   (`crew_ticket.status`). Nothing else is exempt: not `.crew/`, not
+   `TODO.md`, not `.claude/`, not crew's policy files. Put them in Touch if
+   the ticket is meant to change them.
+
+## Bash and PowerShell
+
+A shell command is not judged against Touch (the Stop audit does that, from
+the tree). It is refused, in every mode but `off`, when its text invokes
+`crew_ticket.py approve`, names the approval hook script, or names
+`<git-common-dir>/crew/` alongside a redirect or a writing command. That is a
+textual check, not a shell parser: it stops drift and accidental bypass, and
+a session that sets out to forge local state -- a variable holding the path,
+an encoded command -- still can. README "Scope and approval" states the
+threat model; the Stop audit and review are the backstop.
 
 `block` refuses (exit 2, <= 6 lines on stderr). `report` allows, logs the row
 to `.crew/guard.log` (never creating `.crew/`), and prints a `systemMessage`
@@ -43,13 +62,15 @@ Shell-made writes are not this hook's to see; the Stop-time
 
 ## Failure
 
-A payload that does not parse or names no path, under `block`, is refused --
-an unclassifiable write is not evidence the write is in scope. An exception
-this file did not anticipate fails closed when the configured mode is `block`
-or `auto`, and open (with a note) under `report`.
+A payload that does not parse, whenever the EFFECTIVE mode is `block`
+(`auto` past its ramp included), or one that names no path under `block`, is
+refused -- an unclassifiable write is not evidence the write is in scope. An
+exception this file did not anticipate fails closed when the configured mode
+is `block` or `auto`, and open (with a note) under `report`.
 """
 import json
 import os
+import re
 import sys
 import time
 
@@ -57,8 +78,24 @@ import crew_ticket
 import role_write_guard
 
 TOOLS = ("Write", "Edit", "MultiEdit", "NotebookEdit")
+SHELLS = ("Bash", "PowerShell")
 GUARD_LOG = os.path.join(".crew", "guard.log")
 SCOPE_BASE = ".crew/.scope-base"
+
+# One simple command's worth of text: a separator ends the span, so
+# `crew_ticket.py status ... && echo approve` is not an approval.
+_APPROVE_RE = re.compile(r"crew_ticket(?:\.py)?\b[^\n;&|]*\bapprove\b", re.IGNORECASE)
+_HOOK_RE = re.compile(r"approval[_-]hook(?:\.py|\.sh|\.ps1)?\b", re.IGNORECASE)
+_DOTGIT_CREW_RE = re.compile(r"\.git[\\/]+crew\b|git-common-dir\b.*\bcrew\b",
+                             re.IGNORECASE | re.DOTALL)
+# A redirect (not into /dev/null, $null or another descriptor), or a word
+# that writes files. Reading crew's state -- `cat`, `Get-Content` -- passes.
+_WRITES_RE = re.compile(
+    r"(?<!>)>>?(?!>)(?!\s*(?:&\d|/dev/null\b|\$null\b))|"
+    r"\b(?:tee|cp|mv|rm|ln|touch|mkdir|rmdir|install|dd|rsync|truncate|sed|perl|"
+    r"python[0-9.]*|py|node|chmod|echo|printf|set-content|add-content|out-file|"
+    r"new-item|copy-item|move-item|remove-item|rename-item|clear-content|set-item|ni|"
+    r"sc|ac)\b", re.IGNORECASE)
 
 
 def _read_payload():
@@ -117,7 +154,8 @@ def classify(top, common, ticket, touch, approval, target, base):
     if all(os.path.normcase(r).startswith(os.path.normcase(own)) for r in checks):
         return True, "the ticket's own files"
     if approval["status"] != "approved":
-        return False, (f"{ticket}: {approval['why']}" if approval["status"] == "stale"
+        return False, (f"{ticket}: {approval['why']}"
+                       if approval["status"] in ("stale", "unaccepted")
                        else f"{ticket} has no approved plan")
     outside = [r for r in checks if not crew_ticket.in_touch(r, touch)]
     if real_rel is None and named_rel is not None:
@@ -139,6 +177,25 @@ def protected(top, state, target, base):
         if rel is not None and os.path.normcase(rel) == os.path.normcase(SCOPE_BASE):
             return True
     return False
+
+
+def shell_refusal(command, common):
+    """Why a Bash/PowerShell `command` is refused, or None (module docstring,
+    "Bash and PowerShell"). Textual on purpose, and conservative: a benign
+    command that names crew's state beside a writing word is refused too."""
+    if not isinstance(command, str):
+        return None
+    if _APPROVE_RE.search(command):
+        return "it runs `crew_ticket.py approve`; approval comes from the user's own prompt"
+    if _HOOK_RE.search(command):
+        return "it names the approval hook, which only the user's prompt may drive"
+    state = os.path.join(common, "crew") if common else None
+    folded = os.path.normcase(command).replace("\\", "/")
+    names_state = bool(_DOTGIT_CREW_RE.search(command)) or bool(
+        state and os.path.normcase(state).replace("\\", "/") in folded)
+    if names_state and _WRITES_RE.search(command):
+        return "it writes under <git-common-dir>/crew/, crew's approval and ledger state"
+    return None
 
 
 def _log(top, mode, decision, ticket, path, reason):
@@ -163,11 +220,25 @@ def _note(text):
     return 0
 
 
+def _broken_pointer(top, root, source):
+    """A broken active-ticket pointer: refused under `block`, noted under
+    `report`. Never the same as no active ticket."""
+    mode, why = crew_ticket.effective_mode(root, None)
+    reason = f"the active-ticket pointer is broken ({source})"
+    _log(top, mode, "block" if mode == "block" else "report", None, "-", reason)
+    if mode == "block":
+        return _deny([f"SCOPE GUARD: refused -- {reason}.",
+                      "  Point it at a real ticket: `crew_ticket.py activate --ticket <id>`,",
+                      f"  or clear it: `crew_ticket.py deactivate`. ({why})"])
+    return _note(f"scope-guard (report, would block): {reason}. ({why})")
+
+
 def decide(data):
     """The exit code for one payload. Writes its own stderr/stdout."""
     if data is None:
         return None
-    if data.get("tool_name") not in TOOLS:
+    tool = data.get("tool_name")
+    if tool not in TOOLS and tool not in SHELLS:
         return 0
     root = data.get("cwd") if isinstance(data.get("cwd"), str) else None
     root = root or os.environ.get("CLAUDE_PROJECT_DIR") or "."
@@ -178,6 +249,16 @@ def decide(data):
     if configured == "off":
         return 0
     common = crew_ticket.common_dir(root)
+    if tool in SHELLS:
+        tool_input = data.get("tool_input")
+        command = tool_input.get("command") if isinstance(tool_input, dict) else None
+        reason = shell_refusal(command, common)
+        if reason is None:
+            return 0
+        _log(top, configured, "block", None, "-", f"{tool}: {reason}")
+        return _deny([f"SCOPE GUARD: refused this {tool} command -- {reason}.",
+                      "  Approval is recorded when the USER types `/crew:approve <id>`;",
+                      "  ask them to, rather than running it for them."])
     state = os.path.join(common, "crew") if common else None
     paths = targets(data)
     base = os.path.abspath(root)
@@ -186,9 +267,10 @@ def decide(data):
             _log(top, configured, "block", None, path, "crew approval/ledger state")
             return _deny([f"SCOPE GUARD: {path} is crew's approval/ledger state and is never "
                           "written by Write/Edit.",
-                          "  Approve with `crew_ticket.py approve --ticket <id>` (run by you, "
-                          "not the session)."])
-    ticket, _source = crew_ticket.active_ticket(root)
+                          "  Approval is recorded when the USER types `/crew:approve <id>`."])
+    ticket, source, broken = crew_ticket.resolve_active(root)
+    if broken:
+        return _broken_pointer(top, root, source)
     if not ticket:
         return 0
     mode, why = crew_ticket.effective_mode(root, ticket)
@@ -196,9 +278,10 @@ def decide(data):
         reason = "the call names no file path, so its scope cannot be judged"
         verdicts = [("-", False, reason)]
     else:
-        touch = crew_ticket.touch_for(top, ticket)
-        approval = crew_ticket.status(root, ticket)
-        verdicts = [(p,) + classify(top, common, ticket, touch, approval, p, base)
+        # ONE read of spec.md: the approval's hash check and the Touch judged
+        # below come from the same bytes (crew_ticket.status).
+        approval = crew_ticket.accepted(root, ticket)
+        verdicts = [(p,) + classify(top, common, ticket, approval["touch"], approval, p, base)
                     for p in paths]
     bad = [(p, reason) for p, ok, reason in verdicts if not ok]
     if not bad:
@@ -209,8 +292,8 @@ def decide(data):
         return _deny([f"SCOPE GUARD: refused {data.get('tool_name')} on {path}.",
                        f"  Reason: {reason}.",
                        f"  To widen scope: amend .work/tickets/{ticket}/spec.md ## Touch "
-                       "(and plan.md), then ask the user to run",
-                       f"  `crew_ticket.py approve --ticket {ticket}`. ({why})"])
+                       "(and plan.md), then ask the user to type",
+                       f"  `/crew:approve {ticket}`. ({why})"])
     return _note(f"scope-guard (report, would block): {path} - {reason}. ({why})")
 
 
@@ -231,18 +314,32 @@ def main():
                          "allowed.\n")
         return 0
     if code is None:
-        # Unparseable payload: fail closed only where the repo asked for block.
         try:
-            top = crew_ticket.toplevel(os.environ.get("CLAUDE_PROJECT_DIR") or ".")
-            configured, _ = crew_ticket.configured_mode(top) if top else ("off", "")
+            mode = unjudged_mode(os.environ.get("CLAUDE_PROJECT_DIR") or ".")
         except Exception:  # pylint: disable=broad-except
-            configured = "block"
-        if configured == "block":
+            mode = "block"
+        if mode == "block":
             return _deny(["SCOPE GUARD: the hook payload did not parse; failing closed "
-                          "under scope.mode block."])
+                          "because the effective scope mode is block."])
         sys.stderr.write("scope-guard: hook payload did not parse; allowed unjudged.\n")
         return 0
     return code
+
+
+def unjudged_mode(root):
+    """The EFFECTIVE mode for a payload that could not be read: `auto` is
+    resolved against the active ticket (a broken pointer is `block`), so an
+    `auto` repo past its ramp fails closed exactly like a `block` one."""
+    top = crew_ticket.toplevel(root)
+    if not top:
+        return "off"
+    configured, _ = crew_ticket.configured_mode(top)
+    if configured != "auto":
+        return configured
+    ticket, _source, broken = crew_ticket.resolve_active(root)
+    if broken:
+        return "block"
+    return crew_ticket.effective_mode(root, ticket)[0]
 
 
 if __name__ == "__main__":

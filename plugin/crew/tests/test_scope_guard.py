@@ -7,6 +7,7 @@ Each rule was sabotaged by hand -- see sabotage_scope.py for the mutations.
 """
 import json
 import os
+import pathlib
 
 import pytest
 
@@ -212,7 +213,114 @@ def test_block_messages_stay_within_six_lines(flavour, repo):
     assert 1 <= len(err.strip().splitlines()) <= 6
 
 
+def test_a_cli_approval_does_not_open_touch(flavour, repo):
+    make_ticket(repo)
+    crew_ticket.approve(str(repo), "T-1", by="session")
+
+    code, _, err = _guard(flavour, repo, edit(repo, repo / "src" / "app.py", "Edit"))
+
+    assert (code, "/crew:approve T-1" in err) == (2, True)
+
+
+@pytest.mark.parametrize("entry", ["T-404", 7])
+def test_a_pointer_to_a_missing_ticket_is_refused_not_ignored(flavour, repo, entry):
+    make_ticket(repo, "T-3", activate=False)
+    (repo / ".work" / "INDEX.md").write_text("- T-3 in progress\n", encoding="utf-8")
+    pointer = pathlib.Path(common_dir(repo), "crew", "active-ticket")
+    pointer.parent.mkdir(parents=True, exist_ok=True)
+    pointer.write_text(json.dumps({crew_ticket.toplevel(str(repo)): entry}), encoding="utf-8")
+
+    code, _, err = _guard(flavour, repo, edit(repo, repo / "other" / "keep.py"))
+
+    assert (code, "pointer is broken" in err) == (2, True)
+
+
+def test_an_unparseable_payload_under_auto_past_the_ramp_is_refused(flavour, tmp_path):
+    root = make_repo(tmp_path, mode="auto")
+    for number in range(1, 11):
+        make_ticket(root, f"T-{number}", activate=False)
+        crew_ticket.approve(str(root), f"T-{number}", by="tester")
+    ready(root, "T-11")
+
+    code, _, _ = _guard(flavour, root, b"{not json")
+
+    assert code == 2
+
+
+@pytest.mark.parametrize("tool,command", [
+    ("Bash", "python3 hooks/scripts/crew_ticket.py approve --ticket T-1"),
+    ("Bash", "python3 -m crew_ticket --root . approve --ticket T-1"),
+    ("Bash", "echo '{\"prompt\": \"/crew:approve T-1\"}' | python3 approval_hook.py"),
+    ("Bash", "bash hooks/scripts/approval-hook.sh < forged.json"),
+    ("Bash", "echo '{}' > \"$(git rev-parse --git-common-dir)/crew/active-ticket\""),
+    ("Bash", "cp forged.json .git/crew/tickets/T-1/approval.json"),
+    ("Bash", "rm -rf .git/crew/review"),
+    ("PowerShell", "Set-Content -Path .git\\crew\\active-ticket -Value '{}'"),
+    ("PowerShell", "& python crew_ticket.py approve --ticket T-1"),
+])
+def test_a_shell_command_forging_approval_state_is_refused(flavour, repo, tool, command):
+    code, _, err = _guard(flavour, repo, {"tool_name": tool, "cwd": str(repo),
+                                          "tool_input": {"command": command}})
+
+    assert (code, "SCOPE GUARD" in err) == (2, True)
+
+
+def test_a_shell_write_to_the_absolute_state_path_is_refused(flavour, repo):
+    target = os.path.join(common_dir(repo), "crew", "scope-tickets.json")
+
+    code, _, _ = _guard(flavour, repo, {"tool_name": "Bash", "cwd": str(repo),
+                                        "tool_input": {"command": f"echo '{{}}' > {target}"}})
+
+    assert code == 2
+
+
 # --- must-allow -------------------------------------------------------------------
+
+@pytest.mark.parametrize("tool,command", [
+    ("Bash", "ls -la"),
+    ("Bash", "python3 hooks/scripts/crew_ticket.py status --ticket T-1"),
+    ("Bash", "python3 hooks/scripts/crew_ticket.py activate --ticket T-1"),
+    ("Bash", "python3 crew_ticket.py status --ticket T-1 && echo approve"),
+    ("Bash", "cat .git/crew/active-ticket 2>/dev/null"),
+    ("PowerShell", "Get-Content .git\\crew\\active-ticket"),
+])
+def test_ordinary_shell_commands_are_allowed(flavour, repo, tool, command):
+    ready(repo)
+
+    code, out, err = _guard(flavour, repo, {"tool_name": tool, "cwd": str(repo),
+                                            "tool_input": {"command": command}})
+
+    assert (code, out, err) == (0, "", "")
+
+
+def test_a_forging_command_is_allowed_when_scope_is_off(flavour, tmp_path):
+    root = make_repo(tmp_path, mode="off")
+
+    code, _, _ = _guard(flavour, root, {"tool_name": "Bash", "cwd": str(root),
+                                        "tool_input": {"command": "crew_ticket.py approve"}})
+
+    assert code == 0
+
+
+def test_a_cli_approval_opens_touch_when_the_config_allows_it(flavour, repo):
+    (repo / ".crew" / "config.json").write_text(
+        json.dumps({"scope": {"mode": "block", "allowCliApproval": True}}), encoding="utf-8")
+    make_ticket(repo)
+    crew_ticket.approve(str(repo), "T-1", by="ci")
+
+    code, _, _ = _guard(flavour, repo, edit(repo, repo / "src" / "app.py", "Edit"))
+
+    assert code == 0
+
+
+def test_an_unparseable_payload_under_auto_within_the_ramp_is_allowed(flavour, tmp_path):
+    root = make_repo(tmp_path, mode="auto")
+    ready(root)
+
+    code, _, _ = _guard(flavour, root, b"{not json")
+
+    assert code == 0
+
 
 def test_an_in_scope_edit_with_an_approved_plan_is_allowed(flavour, repo):
     ready(repo)
@@ -310,3 +418,22 @@ def test_auto_reports_for_the_first_ten_tickets_then_blocks(flavour, tmp_path):
     eleventh = _guard(flavour, root, edit(root, root / "other" / "keep.py"))[0]
 
     assert (tenth, eleventh) == (0, 2)
+
+
+# --- one read of spec.md: approval and Touch from the same bytes ------------------
+
+def test_touch_is_judged_from_the_bytes_the_approval_hashed(flavour, repo, monkeypatch):
+    if flavour != "module":
+        pytest.skip("in-process: the race is staged by replacing read_contract")
+    import scope_guard  # pylint: disable=import-outside-toplevel
+    ready(repo)
+    folder = repo / ".work" / "tickets" / "T-1"
+    approved = {n: (folder / n).read_bytes() for n in ("spec.md", "plan.md")}
+    spec = folder / "spec.md"
+    spec.write_text(spec.read_text(encoding="utf-8").replace("`src/**`", "`**`"),
+                    encoding="utf-8")
+    monkeypatch.setattr(crew_ticket, "read_contract", lambda top, ticket: dict(approved))
+
+    code = scope_guard.decide(edit(repo, repo / "other" / "keep.py"))
+
+    assert code == 2

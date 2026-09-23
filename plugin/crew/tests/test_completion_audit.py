@@ -99,6 +99,91 @@ def test_a_staged_out_of_scope_deletion_blocks(repo):
     assert (code, "other/keep.py" in err) == (2, True)
 
 
+@pytest.mark.parametrize("flavour", FLAVOURS)
+def test_a_cli_approval_does_not_make_touch_approved(flavour, repo):
+    make_ticket(repo)
+    crew_ticket.approve(str(repo), "T-1", by="session")
+    (repo / "src" / "app.py").write_text("x = 2\n", encoding="utf-8")
+
+    code, _, err = _audit(flavour, repo, stop(repo))
+
+    assert (code, "/crew:approve T-1" in err) == (2, True)
+
+
+@pytest.mark.parametrize("flavour", FLAVOURS)
+def test_a_broken_active_ticket_pointer_blocks_the_stop(flavour, repo):
+    pointer = pathlib.Path(crew_ticket.common_dir(str(repo)), "crew", "active-ticket")
+    pointer.parent.mkdir(parents=True, exist_ok=True)
+    pointer.write_text(json.dumps({crew_ticket.toplevel(str(repo)): "T-404"}), encoding="utf-8")
+
+    code, _, err = _audit(flavour, repo, stop(repo))
+
+    assert (code, "pointer is broken" in err) == (2, True)
+
+
+@pytest.mark.parametrize("flavour", FLAVOURS)
+def test_a_filename_with_newlines_cannot_add_lines(flavour, repo):
+    ready(repo)
+    for number in range(12):
+        (repo / "other" / f"a{number}\nb\nc.py").write_text("y\n", encoding="utf-8")
+
+    code, _, err = _audit(flavour, repo, stop(repo))
+
+    assert (code, len(err.splitlines()) <= 6, "\\x0a" in err) == (2, True, True)
+
+
+def test_physical_caps_lines_whatever_they_contain():
+    assert len(completion_audit.physical(["a\nb\nc"] * 4)) == 6
+
+
+def test_the_audit_lists_paths_without_building_the_review_bundle(repo, monkeypatch):
+    import review_patch  # pylint: disable=import-outside-toplevel
+    ready(repo)
+    (repo / "other" / "made-by-sed.py").write_text("y = 2\n", encoding="utf-8")
+
+    def no_bundle(*_args, **_kwargs):
+        raise AssertionError("the Stop audit built the review bundle")
+
+    monkeypatch.setattr(review_patch, "compute", no_bundle)
+
+    ok, lines = completion_audit.audit(str(repo), "T-1")
+
+    assert (ok, "other/made-by-sed.py" in lines[1]) == (False, True)
+
+
+@pytest.mark.parametrize("shell", ["sh", "ps1"])
+@pytest.mark.parametrize("spacing", [
+    pytest.param('"stop_hook_active":  true', id="two-spaces"),
+    pytest.param('"stop_hook_active"\n:\ttrue', id="newline-tab"),
+    pytest.param('"stop_hook_active" :\r\n true', id="crlf")])
+def test_stop_hook_active_is_seen_in_any_json_whitespace_even_when_python_crashes(
+        tmp_path, shell, spacing):
+    if shell == "ps1" and PWSH is None:
+        pytest.skip("pwsh not installed - the .ps1 flavour was NOT run")
+    root = make_repo(tmp_path, mode="block")
+    ready(root)
+    raw = ('{"hook_event_name": "Stop", ' + spacing + ', "cwd": ' + json.dumps(str(root))
+           + '}').encode()
+
+    done = _wrapper(tmp_path, root, "completion-audit", shell, raw)
+
+    assert done.returncode == 0, done.stderr
+
+
+@pytest.mark.parametrize("shell", ["sh", "ps1"])
+def test_a_crashed_python_never_blocks_two_stops_in_a_row(tmp_path, shell):
+    if shell == "ps1" and PWSH is None:
+        pytest.skip("pwsh not installed - the .ps1 flavour was NOT run")
+    root = make_repo(tmp_path, mode="block")
+    ready(root)
+    raw = json.dumps(dict(stop(root), session_id=f"loop-{shell}")).encode()
+
+    codes = [_wrapper(tmp_path, root, "completion-audit", shell, raw).returncode
+             for _ in range(3)]
+
+    assert codes == [2, 0, 2]
+
+
 # --- must-allow -------------------------------------------------------------------
 
 @pytest.mark.parametrize("flavour", FLAVOURS)
@@ -279,6 +364,61 @@ def _broken_python(tmp_path):
     return folder
 
 
+def _wrapper(tmp_path, root, stem, shell, raw):
+    """Run one wrapper with a `python3` that passes the probe and crashes."""
+    fake = tmp_path / "fakebin"
+    folder = fake if fake.is_dir() else _broken_python(tmp_path)
+    env = dict(os.environ, CLAUDE_PROJECT_DIR=str(root), OS="Windows_NT",
+               PATH=os.pathsep.join([str(folder), "/usr/bin", "/bin"]))
+    cmd = ([PWSH, "-NoProfile", "-File", os.path.join(SCRIPTS, stem + ".ps1")]
+           if shell == "ps1" else ["bash", os.path.join(SCRIPTS, stem + ".sh")])
+    return subprocess.run(cmd, input=raw, cwd=str(root), capture_output=True, env=env,
+                          check=False, timeout=120)
+
+
+# Every shape the crude no-python reader cannot PROVE is off must fail closed;
+# python itself reads a corrupt config or an unknown mode as block.
+_CONFIGS = [
+    pytest.param('{"scope": {"mode": "block"}}', 2, id="block"),
+    pytest.param('{"scope": {"mode": "auto"}}', 2, id="auto"),
+    pytest.param('{"scope": {"mode": "report"}}', 2, id="report"),
+    pytest.param('{"scope": {"mode": "bogus"}}', 2, id="bogus"),
+    pytest.param('{"scope": {"mode": "off"}', 2, id="unbalanced"),
+    pytest.param('{"scope": {"mode": "off"}} trailing', 2, id="trailing"),
+    pytest.param('{"scope": {"mode": "off"}, "x": {"scope": 1}}', 2, id="two-scopes"),
+    pytest.param('{"scope": {"mode": "off", "mode": "block"}}', 2, id="two-modes"),
+    pytest.param('{"scope": "off"}', 2, id="scope-not-object"),
+    pytest.param('{"install": {}}', 2, id="no-scope-key"),
+    pytest.param('{', 2, id="corrupt"),
+    pytest.param('{"scope": {"mode": "off"}}', 0, id="off"),
+    pytest.param('\ufeff{\n  "scope": {\n    "mode": "off",\n    "allowCliApproval": false\n'
+                 '  }\n}\n', 0, id="off-template-bom"),
+    pytest.param(None, 0, id="absent"),
+]
+
+
+@pytest.mark.parametrize("stem", _WRAPPERS)
+@pytest.mark.parametrize("shell", ["sh", "ps1"])
+@pytest.mark.parametrize("config,expected", _CONFIGS)
+def test_a_crashed_python_fails_closed_unless_scope_is_provably_off(tmp_path, stem, shell,
+                                                                    config, expected):
+    if shell == "ps1" and PWSH is None:
+        pytest.skip("pwsh not installed - the .ps1 flavour was NOT run")
+    root = make_repo(tmp_path, mode=None)
+    config_path = root / ".crew" / "config.json"
+    if config is None:
+        config_path.unlink(missing_ok=True)
+    else:
+        config_path.write_text(config, encoding="utf-8")
+    payload = stop(root) if stem == "completion-audit" else {
+        "tool_name": "Write", "tool_input": {"file_path": str(root / "src" / "app.py")},
+        "cwd": str(root)}
+
+    done = _wrapper(tmp_path, root, stem, shell, json.dumps(payload).encode())
+
+    assert done.returncode == expected, done.stderr
+
+
 @pytest.mark.parametrize("stem", _WRAPPERS)
 @pytest.mark.parametrize("shell", ["sh", "ps1"])
 @pytest.mark.parametrize("mode,expected", [("block", 2), ("auto", 2), ("off", 0)])
@@ -288,15 +428,29 @@ def test_a_crashed_python_fails_closed_only_where_scope_is_armed(tmp_path, stem,
         pytest.skip("pwsh not installed - the .ps1 flavour was NOT run")
     root = make_repo(tmp_path, mode=mode)
     ready(root)
-    env = dict(os.environ, CLAUDE_PROJECT_DIR=str(root), OS="Windows_NT",
-               PATH=os.pathsep.join([str(_broken_python(tmp_path)), "/usr/bin", "/bin"]))
     payload = stop(root) if stem == "completion-audit" else {
         "tool_name": "Write", "tool_input": {"file_path": str(root / "src" / "app.py")},
         "cwd": str(root)}
-    cmd = ([PWSH, "-NoProfile", "-File", os.path.join(SCRIPTS, stem + ".ps1")]
-           if shell == "ps1" else ["bash", os.path.join(SCRIPTS, stem + ".sh")])
 
-    done = subprocess.run(cmd, input=json.dumps(payload).encode(), cwd=str(root),
-                          capture_output=True, env=env, check=False, timeout=120)
+    done = _wrapper(tmp_path, root, stem, shell, json.dumps(payload).encode())
 
     assert done.returncode == expected, done.stderr
+
+
+def _sh_function(stem, name):
+    src = pathlib.Path(SCRIPTS, stem + ".sh").read_text(encoding="utf-8")
+    start = src.index(name + "() {")
+    return src[start:src.index("\n}\n", start) + 3]
+
+
+def _ps_function(stem, name):
+    src = pathlib.Path(SCRIPTS, stem + ".ps1").read_text(encoding="utf-8")
+    start = src.index(f"function {name} {{")
+    return src[start:src.index("\n}\n", start) + 3]
+
+
+def test_the_provably_off_readers_are_byte_for_byte_twins():
+    assert _sh_function("scope-guard", "_scope_provably_off") == \
+        _sh_function("completion-audit", "_scope_provably_off")
+    assert _ps_function("scope-guard", "Test-ScopeProvablyOff") == \
+        _ps_function("completion-audit", "Test-ScopeProvablyOff")

@@ -424,6 +424,12 @@ def continue_with_successor_plan(root, ticket, plan_hash):
         return False, f"refused: {why}; {NEEDS_REPLAN} stands"
 
     def change(data, state):
+        # Re-checked UNDER the ledger lock: the check above is a cheap early
+        # refusal, and the approval can go stale (or be replaced) between it
+        # and the lock. The receipt acted on is the one read here.
+        receipt, why = _plan_approval_receipt(root, ticket, plan_hash)
+        if receipt is None:
+            return None, (False, f"refused: {why}; {NEEDS_REPLAN} stands")
         if state != "ok" or data.get("state") != NEEDS_REPLAN:
             return None, (False, f"refused: {ticket} is "
                                  f"{data.get('state') if state == 'ok' else state}, not "

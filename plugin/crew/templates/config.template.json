@@ -179,6 +179,7 @@
     "category": null
   },
   "scope": {
-    "mode": "off"
+    "mode": "off",
+    "allowCliApproval": false
   }
 }

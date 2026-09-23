@@ -86,10 +86,23 @@ def make_ticket(root, ticket="T-1", touch=("src/**",), files=None, activate=True
     return folder
 
 
+def approve_as_user(root, ticket="T-1"):
+    """Approve the way the user does: a `/crew:approve <id>` prompt through
+    approval_hook.py's module entry point (the receipt says `user-prompt`)."""
+    import approval_hook  # pylint: disable=import-outside-toplevel
+    code = approval_hook.handle(prompt(root, f"/crew:approve {ticket}"))
+    assert code == 0, f"approval_hook refused {ticket}"
+
+
+def prompt(root, text, session="sess-1"):
+    return {"hook_event_name": "UserPromptSubmit", "prompt": text, "cwd": str(root),
+            "session_id": session, "prompt_id": "p-1"}
+
+
 def ready(root, ticket="T-1", touch=("src/**",), record_base=True):
     """A ticket made, activated, approved and with its scope base recorded."""
     make_ticket(root, ticket, touch)
-    crew_ticket.approve(str(root), ticket, by="tester")
+    approve_as_user(root, ticket)
     if record_base:
         subprocess.run([sys.executable, os.path.join(SCRIPTS, "scope_base.py"),
                         "--root", str(root), "--record", ticket],
