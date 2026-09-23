@@ -561,18 +561,27 @@ MARKDOWN_LINES_RE = re.compile(r"([\d,]+)\s+lines\b")
 BIND_WINDOW = 12
 
 
-def count_crew_markdown_lines() -> int:
+def count_crew_markdown_lines() -> int | None:
     """Total lines across every tracked `plugin/crew/*.md` file, recursively.
 
     Counted with `splitlines()` per file rather than `wc -l` semantics, so a
     file with no trailing newline is not undercounted by one -- the same
     reason `plugin/crew/BUDGETS.md` warns its own figure moves when a
     `plugin/crew/*.md` file is added, removed or resized, including itself.
+
+    Returns None, not 0, if git could not answer -- uses `_tracked_files`
+    rather than the shared `git()` helper, which collapses any failure to
+    `''`. `''.split()` is `[]`, so a git failure used to total to exactly 0,
+    and a claim of "0 plugin/crew Markdown lines" would have passed as
+    verified when nothing was actually counted -- the repo's own named
+    recurring bug, an unknown collapsing into the safe-looking value. The
+    caller must treat None as its own outcome (UNVERIFIED) and never compare
+    it as though it were a real count.
     """
-    total = 0
-    for rel in git("ls-files", "plugin/crew/*.md").split():
-        total += len(read(os.path.join(ROOT, rel)).splitlines())
-    return total
+    listed = _tracked_files("plugin/crew/*.md")
+    if listed is None:
+        return None
+    return sum(len(read(os.path.join(ROOT, rel)).splitlines()) for rel in listed)
 
 
 def count_plugin_skills(name: str) -> int:
@@ -826,6 +835,14 @@ def check_self_claims(entries, fail):
                         )
                         continue
                     actual = count_crew_markdown_lines()
+                    if actual is None:
+                        fail(
+                            f"{path}:{index + 1}: UNVERIFIED - could not verify "
+                            "'crew-markdown-lines' - git could not answer for "
+                            "plugin/crew/*.md (no git binary, or ROOT is not a git "
+                            "working tree)"
+                        )
+                        continue
                     stated = int(found.group(1).replace(",", ""))
                     if stated != actual:
                         fail(

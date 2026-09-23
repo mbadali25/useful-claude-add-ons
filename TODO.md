@@ -3909,3 +3909,17 @@ Stronger option if the owner wants approval to be a boundary: sign receipts with
 ### crew-1.0 T3 fix deferrals (filed 2026-09-23) - OPEN
 - `scope_report.gate_matches` (verify-gate) still lets `*` cross `/`.
 - Every Bash/PowerShell call now starts Python even with `scope.mode: off` when a config exists; add a shell fast path.
+
+### crew-1.0 T8 fix round deferrals (filed 2026-09-23) - OPEN
+- `python3 scripts/check-marketplace.py` fails `check_versions` on this branch: "crew: plugin/crew/ has
+  changed since version 0.20.25 was set (8dacc525 2026-09-23), but the version was not bumped." Confirmed
+  pre-existing on the T8 lane base commit (3244a37e) - reproduces with `git status --short` showing no
+  changes under `plugin/crew/` from this fix round. Out of scope here (this round only touched
+  `scripts/check_instructions.py`, `scripts/check-marketplace.py`'s `crew-markdown-lines` claim code, and
+  `scripts/_test/instruction-budgets.py`); whoever lands the next `plugin/crew/` content change on this
+  lane needs to bump crew's version in `marketplace.json`.
+- `scripts/check_instructions.py:517-528` (`_body_after_frontmatter`)'s `text.find("\n---", 3)` has the
+  same imprecise-substring-match shape as the `_has_frontmatter` bug fixed this round (matches "\n----" or
+  "\n--- trailing text" as a closing delimiter) - not fixed here because the finding handed to this round
+  named only `_has_frontmatter` (`:180` at the time), and no fixture in this repo currently trips it
+  (frontmatter blocks here don't contain a stray "---"-prefixed body line before the real close).
