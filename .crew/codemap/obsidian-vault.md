@@ -586,13 +586,13 @@ interpreter under Windows PowerShell 5.1 and pwsh <=7.2 (the two new probes neve
 documented in `## Landmines` above, each anchored to the code and, where the plugin's own suite
 covers it, to the regression case.
 
-**Correction, not just an addition: two claims were flagged as stale rather than silently
+**Correction, not just an addition: stale source comments are flagged rather than silently
 updated.** The `plugin/obsidian-vault/hooks/scripts/vault-guard.sh:45-56` comment this note cites (unchanged text at this pass) still
 justifies declining a shared resolver by saying `bridge-status.sh` and `vault-capture.sh` "carry
 the same naive one-liner" - false as of this commit, for the same reason the `plugin/obsidian-vault/hooks/scripts/vault-guard.sh:89-94`
-comment about `role-write-guard.sh` was already flagged stale at the previous anchor. Both are
-facts about source comments this note may correct its own text against but not rewrite; all are
-reported here for scribe:
+comment about `role-write-guard.sh` was already flagged stale at the previous anchor. These, and the others below, are
+facts about source comments this note may correct its own text against but not rewrite; every
+one found is reported here for scribe:
 
 - `plugin/obsidian-vault/hooks/scripts/vault-guard.sh:45-56` - says `bridge-status.sh` and
   `vault-capture.sh` "carry the same naive one-liner"; false since PR #210.
@@ -602,7 +602,14 @@ reported here for scribe:
   `plugin/obsidian-vault/hooks/scripts/vault-guard.ps1:9` - both cite `vault_guard.py:243` for the
   checkCanvas default; that line is now inside a comment and the check is at
   `plugin/obsidian-vault/hooks/scripts/vault_guard.py:303`. Missed by this pass's first sweep and
-  caught on review.
+  caught on review. A third copy of the same stale citation is at
+  `plugin/obsidian-vault/hooks/scripts/_test/run-tests.sh:49` (caught on the second review).
+- `plugin/obsidian-vault/hooks/scripts/vault-guard.sh:42` and
+  `plugin/obsidian-vault/hooks/scripts/vault-guard.ps1:53` cite crew's resolver as
+  `plugin/crew/hooks/scripts/role-write-guard.sh:32-57`; it now spans `:32-113`.
+- `plugin/obsidian-vault/hooks/scripts/vault-guard.sh:159` cites crew's exit-status closure as
+  `plugin/crew/hooks/scripts/role-write-guard.sh:105-126`; those lines are now the resolver's tail
+  and `_role_write_is_restricted`, and the status capture and its handling start at `:159`.
 
 The regression suite was re-run (`env -u MSYS_NO_PATHCONV bash run-tests.sh`, see
 "Measured this pass" above): **69 passed, 0 failed, 0 skipped**, with `pwsh` present. The no-`pwsh`
