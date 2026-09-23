@@ -232,7 +232,7 @@ def main():
     except Exception as e:
         sys.stderr.write(
             "obsidian-vault vault_guard.py: NOT checked: could not read the "
-            "hook payload from stdin (%s: %s)\n" % (type(e).__name__, e))
+            f"hook payload from stdin ({type(e).__name__}: {e})\n")
         return 0
 
     # Explicit UTF-8, not `json.load(sys.stdin)`. `sys.stdin` decodes with
@@ -289,7 +289,7 @@ def main():
         # other "cannot verify" case in this plugin already does.
         sys.stderr.write(
             "obsidian-vault vault_guard.py: NOT checked: hook payload did "
-            "not parse as JSON (%s: %s)\n" % (type(e).__name__, e))
+            f"not parse as JSON ({type(e).__name__}: {e})\n")
         return 0
 
     vault = obsidian_common.resolve_vault_path()

@@ -107,7 +107,7 @@
       "name": "intune-graph",
       "source": "./skills/intune-graph",
       "description": "Microsoft Intune via Microsoft Graph - device troubleshooting, compliance/config profiles, app deployment, report exports.",
-      "version": "1.1.1"
+      "version": "1.1.2"
     },
     {
       "name": "jira-manager",
@@ -245,7 +245,7 @@
       "name": "obsidian-vault",
       "source": "./plugin/obsidian-vault",
       "description": "Make one or more Obsidian vaults Claude Code's durable, token-efficient memory - cross-platform, multi-vault setup and health checks for the Local REST API bridge (one MCP server per vault), a vault contract guard whose frontmatter and ASCII rules ship off and whose canvas shape check ships on, gardening and reflection agents, canvas and map-of-content generation, and graphify wiring into a separate codegraphs vault.",
-      "version": "0.3.15"
+      "version": "0.3.16"
     },
     {
       "name": "rule-of-two",
