@@ -6,6 +6,13 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Changed
 
+- **obsidian-vault 0.4.0: vault roles (primary/recall/ignore) with an
+  exactly-one-primary check, import with provenance that never overwrites,
+  read-only `recall` CLI for crew's context hook, per-host capture queues, a
+  bounded gardener (5 items / 10 min, acknowledge only after a write, one
+  designated host) with `drain` and generated cron/systemd/Task Scheduler
+  units, and portable memory-vault/canvas profiles.**
+
 - **`crew` 0.20.17 (T1): the review adapter - a computed verdict, a two-round
   ledger, and a receipt bound to the bundle.** `review_patch.py` now records
   renames, mode changes, binary files (git's marker plus both blob ids and
