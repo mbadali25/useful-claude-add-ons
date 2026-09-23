@@ -204,3 +204,97 @@ def test_codex_probe_without_codex_installed(monkeypatch, tmp_path):
     monkeypatch.setenv("CREW_CODEX_BIN", str(tmp_path / "nope"))
 
     assert ci.codex_probe(str(tmp_path), "/opt/crew") == ["codex: not installed - Codex parity not configured"]
+
+
+# --- T6 review fixes ----------------------------------------------------------
+
+def _sub(**over):
+    base = {"name": "alpha", "file": ".crew/codemap/alpha.md", "paths": ["src/alpha/**"],
+            "anchor": "abc1234", "body": "# alpha\n"}
+    base.update(over)
+    return base
+
+
+@pytest.mark.parametrize("field, value", [
+    ("paths", ["src/other/**"]), ("anchor", "def5678"),
+    ("file", ".crew/codemap/renamed.md"), ("name", "renamed"),
+])
+def test_the_recorded_source_hash_moves_with_every_rendered_input(field, value):
+    assert ci.rule_digest(_sub(), {}) != ci.rule_digest(_sub(**{field: value}), {})
+
+
+def test_a_rule_with_24_scoped_paths_still_fits_30_lines():
+    paths = [f"pkg{i:02d}/**" for i in range(24)]
+    sub = _sub(paths=paths, body="# alpha\n\n## Landmines\n\n" + "".join(f"- mine {i}.\n" for i in range(10)))
+
+    text = ci.render_rule(sub, {"alpha": "The alpha subsystem."})
+
+    lines = text.splitlines()
+    assert len(lines) <= ci.RULES_MAX_LINES
+    assert any(l.startswith("  # +") and "more paths not scoped here" in l for l in lines)
+    assert lines.count("---") == 2 and "## Landmines" in lines
+
+
+def test_rules_check_fails_on_a_hand_written_file_at_a_generated_path(tmp_path):
+    root = _big_repo(tmp_path)
+    ci.rules(str(root))
+    blocker = root / ".claude" / "rules" / "sub001.md"
+    blocker.write_text("---\npaths:\n  - x/**\n---\nmine\n", encoding="utf-8")
+
+    problems, _ = ci.rules(str(root), check=True)
+
+    assert problems == ["hand-written file blocks generated output: "
+                        + os.path.join(".claude", "rules", "sub001.md")]
+    assert ci.main(["rules", "--root", str(root), "--check"]) == 1
+
+
+def test_agents_check_fails_on_a_hand_written_agents_md(tmp_path):
+    root = _big_repo(tmp_path)
+    (root / "AGENTS.md").write_text("# mine\n", encoding="utf-8")
+
+    assert ci.main(["agents", "--root", str(root), "--check"]) == 1
+
+
+def _hand_codex(root):
+    path = root / ".codex" / "hooks.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    mine = json.dumps({"hooks": {"Stop": [{"hooks": [{"type": "command", "command": "echo mine"}]}]}})
+    path.write_text(mine, encoding="utf-8")
+    return path, mine
+
+
+def test_codex_never_overwrites_a_hand_written_hooks_json(tmp_path):
+    root = _big_repo(tmp_path)
+    path, mine = _hand_codex(root)
+
+    problems, _ = ci.codex(str(root), "/opt/crew")
+
+    assert (path.read_text(encoding="utf-8"), problems) == \
+        (mine, ["hand-written, left alone: " + os.path.join(".codex", "hooks.json")])
+
+
+def test_codex_force_overwrites_a_hand_written_hooks_json(tmp_path):
+    root = _big_repo(tmp_path)
+    path, _ = _hand_codex(root)
+
+    ci.codex(str(root), "/opt/crew", force=True)
+
+    assert json.loads(path.read_text(encoding="utf-8")) == ci.codex_hooks("/opt/crew")
+
+
+def test_codex_regenerates_its_own_hooks_json_for_a_moved_plugin(tmp_path):
+    root = _big_repo(tmp_path)
+    ci.codex(str(root), "/opt/crew")
+
+    ci.codex(str(root), "/elsewhere")
+
+    assert json.loads((root / ".codex" / "hooks.json").read_text(encoding="utf-8")) == \
+        ci.codex_hooks("/elsewhere")
+
+
+def test_codex_write_says_the_hooks_file_is_machine_local(tmp_path, capsys):
+    root = _big_repo(tmp_path)
+
+    ci.main(["codex", "--root", str(root), "--plugin-root", "/opt/crew"])
+
+    assert "machine-local" in capsys.readouterr().out

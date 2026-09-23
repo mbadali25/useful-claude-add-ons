@@ -4,7 +4,7 @@ already records (the code map, `.crew/verify.json`) and from one hook table.
 
     python3 crew_instructions.py rules  [--root R] [--check]
     python3 crew_instructions.py agents [--root R] [--check]
-    python3 crew_instructions.py codex  [--root R] [--check] [--plugin-root P]
+    python3 crew_instructions.py codex  [--root R] [--check] [--plugin-root P] [--force]
     python3 crew_instructions.py codex-probe [--root R]
     python3 crew_instructions.py claude-hooks     # the hooks.json entries, for registration
 
@@ -13,7 +13,15 @@ most RULES_MAX_LINES lines, `paths:`-scoped, and carries the sha256 of the note
 it came from; AGENTS.md is at most AGENTS_MAX_LINES. `--check` exits 1 on drift
 -- a generated file missing, stale against its source, or orphaned -- and
 writes nothing. Hand-written files (no `crew:generated` marker) are never
-overwritten or reported as orphans.
+overwritten or reported as orphans; one sitting at a path a generated file
+needs is left alone on a write and FAILS `--check`, because the generated
+output that path should hold is absent.
+
+`.codex/hooks.json` cannot carry a comment, so "generated" there means every
+hook in it runs crew-context; anything else is hand-written and refused
+without `--force`. It holds this machine's absolute plugin paths -- no Codex
+variable for a plugin root was found in the 0.155.1 strings -- so it is
+MACHINE-LOCAL: regenerate it per machine and do not commit it.
 
 **Codex claims are labelled by how they were established.** The hook schema
 keys used below (`matcher`, `hooks`, `type`, `command`, `commandWindows`,
@@ -62,6 +70,13 @@ def _sha(text):
     return hashlib.sha256((GENERATOR_VERSION + "\0" + text).encode("utf-8")).hexdigest()[:16]
 
 
+def rule_digest(sub, covers):
+    """The recorded source hash: everything the rule is rendered from, so a
+    changed `paths`, anchor, note filename or subsystem name moves it too."""
+    return _sha(json.dumps([sub["name"], sub["file"], list(sub["paths"]), sub["anchor"],
+                            sub["body"], covers.get(sub["name"], "")]))
+
+
 def _write(path, text):
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     tmp = f"{path}.{os.getpid()}.tmp"
@@ -79,16 +94,26 @@ def render_rule(sub, covers):
     opposite of what a subsystem rule is for."""
     if not sub["paths"]:
         return None
-    digest = _sha(sub["body"] + "\0" + covers.get(sub["name"], ""))
-    head = ["---", "paths:"] + [f'  - "{p}"' for p in sub["paths"]] + ["---",
+    digest = rule_digest(sub, covers)
+    rest = ["---",
             f"<!-- {MARKER} source={sub['file']} sha256={digest} -- do not hand-edit;"
             " regenerate with crew_instructions.py rules -->",
             f"# {sub['name']}",
             f"Code map anchor `{sub['anchor'] or 'none'}`; if it is behind HEAD, re-check with "
             f"`git diff --name-only {sub['anchor'] or '<anchor>'}..HEAD -- <cited paths>`."]
     if covers.get(sub["name"]):
-        head.append("Covers: " + covers[sub["name"]])
+        rest.append("Covers: " + covers[sub["name"]])
     tail = [f"Full note: `{sub['file']}`."]
+    # Paths get what the fixed lines leave, less two for a title and one
+    # bullet. Past that the list is cut and a YAML comment says how many
+    # paths the rule does NOT load for, and where the full list is.
+    paths = [f'  - "{p}"' for p in sub["paths"]]
+    room_paths = RULES_MAX_LINES - 2 - len(rest) - len(tail) - 2
+    if len(paths) > room_paths:
+        shown = max(1, room_paths - 1)
+        paths = paths[:shown] + [f"  # +{len(sub['paths']) - shown} more paths not scoped here;"
+                                 f" see {sub['file']}"]
+    head = ["---", "paths:"] + paths + rest
     marks = crew_context.bullets(sub["body"], "Landmines", limit=20, width=220)
     title = "## Landmines"
     if not marks:
@@ -96,7 +121,17 @@ def render_rule(sub, covers):
         title = "## Entry points"
     room = RULES_MAX_LINES - len(head) - len(tail) - 1
     body = [title] + ["- " + m for m in marks[:max(0, room)]] if marks and room > 0 else []
-    return "\n".join(head + body + tail) + "\n"
+    lines = head + body + tail
+    # The final word on the budget, whatever the arithmetic above assumed:
+    # drop bullets from the end, then the title, until it fits.
+    while len(lines) > RULES_MAX_LINES and body:
+        body.pop()
+        if body == [title]:
+            body = []
+        lines = head + body + tail
+    if len(lines) > RULES_MAX_LINES:
+        return None
+    return "\n".join(lines) + "\n"
 
 
 def expected_rules(root):
@@ -113,6 +148,14 @@ def _is_generated(path):
     return MARKER in (read_text(path) or "")[:2000]
 
 
+def _hand_written(rel, check):
+    """A file with no marker at a path generated output needs. Left alone on
+    a write; in --check it is drift, because what should be there is not."""
+    if check:
+        return f"hand-written file blocks generated output: {rel}"
+    return f"hand-written, left alone: {rel}"
+
+
 def rules(root, check=False):
     """(problems, written). Problems are drift in --check mode, and
     hand-written files left alone in either mode."""
@@ -122,7 +165,7 @@ def rules(root, check=False):
         rel = os.path.relpath(path, root)
         current = read_text(path)
         if current is not None and not _is_generated(path):
-            problems.append(f"hand-written, left alone: {rel}")
+            problems.append(_hand_written(rel, check))
             continue
         if current == text:
             continue
@@ -216,7 +259,7 @@ def agents(root, check=False):
     path = os.path.join(root, "AGENTS.md")
     existing = read_text(path)
     if existing is not None and MARKER not in existing:
-        return ["hand-written, left alone: AGENTS.md"], []
+        return [_hand_written("AGENTS.md", check)], []
     text = render_agents(root, existing)
     if len(text.splitlines()) > AGENTS_MAX_LINES:
         return [f"AGENTS.md would be {len(text.splitlines())} lines (budget {AGENTS_MAX_LINES}): "
@@ -294,7 +337,28 @@ approval_policy = "on-request"
 """
 
 
-def codex(root, plugin_root, check=False):
+def _codex_hooks_generated(text):
+    """JSON has no comment to carry the marker, so a hooks.json is ours when
+    it parses and every hook in it runs crew-context -- which is all the
+    generator ever writes. A file with anything else in it is someone's."""
+    try:
+        data = json.loads(text)
+    except (TypeError, ValueError):
+        return False
+    events = data.get("hooks") if isinstance(data, dict) else None
+    if not isinstance(events, dict) or set(data) != {"hooks"}:
+        return False
+    commands = []
+    for entries in events.values():
+        for entry in entries if isinstance(entries, list) else [None]:
+            hooks = entry.get("hooks") if isinstance(entry, dict) else None
+            for hook in hooks if isinstance(hooks, list) else [None]:
+                commands.append(hook.get("command") if isinstance(hook, dict) else None)
+    return bool(commands) and all(isinstance(c, str) and f"/hooks/scripts/{SCRIPT}." in c
+                                  for c in commands)
+
+
+def codex(root, plugin_root, check=False, force=False):
     targets = {os.path.join(root, ".codex", "hooks.json"):
                json.dumps(codex_hooks(plugin_root), indent=2) + "\n",
                os.path.join(root, ".codex", "config.toml"): CODEX_CONFIG}
@@ -304,8 +368,9 @@ def codex(root, plugin_root, check=False):
         current = read_text(path)
         if current == text:
             continue
-        if path.endswith(".toml") and current is not None and MARKER not in current:
-            problems.append(f"hand-written, left alone: {rel}")
+        ours = _codex_hooks_generated(current) if path.endswith(".json") else MARKER in (current or "")
+        if current is not None and not ours and not force:
+            problems.append(_hand_written(rel, check))
             continue
         if check:
             problems.append(("stale: " if current is not None else "missing: ") + rel)
@@ -355,7 +420,7 @@ def codex_probe(root, plugin_root):
     problems, _ = codex(root, plugin_root, check=True)
     lines.append("project files: " + ("current" if not problems else "; ".join(problems)))
     seen = {}
-    for raw in (read_text(crew_context.log_path(root)) or "").splitlines():
+    for raw in crew_context.read_log(root).splitlines():
         try:
             rec = json.loads(raw)
         except ValueError:
@@ -378,6 +443,8 @@ def main(argv=None):
     parser.add_argument("--root", default="")
     parser.add_argument("--check", action="store_true")
     parser.add_argument("--plugin-root", default="")
+    parser.add_argument("--force", action="store_true",
+                        help="codex only: overwrite a hand-written .codex file")
     args = parser.parse_args(argv)
     root = crew_context.find_root(args.root or os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd())
     plugin_root = args.plugin_root or default_plugin_root()
@@ -392,12 +459,15 @@ def main(argv=None):
     elif args.what == "agents":
         problems, written = agents(root, args.check)
     else:
-        problems, written = codex(root, plugin_root, args.check)
+        problems, written = codex(root, plugin_root, args.check, args.force)
     for item in written:
-        print("wrote " + item if not item.startswith("removed") else item)
+        line = "wrote " + item if not item.startswith("removed") else item
+        if item.endswith("hooks.json"):
+            line += " (machine-local: absolute plugin paths for this machine - do not commit it)"
+        print(line)
     for item in problems:
         print(item)
-    drift = [p for p in problems if not p.startswith("hand-written")]
+    drift = [p for p in problems if not p.startswith("hand-written, left alone")]
     if not drift and not written:
         print(f"{args.what}: up to date")
     return 1 if drift else 0

@@ -252,21 +252,9 @@ def test_subagent_start_reads_the_task_from_the_parent_transcript(tmp_path, stub
     assert "beta retry path" in argv[argv.index("--query") + 1]
 
 
-def test_parallel_dispatches_each_get_their_own_task(tmp_path):
-    root = make_repo(tmp_path)
-    transcript = tmp_path / "t.jsonl"
-    calls = [{"type": "tool_use", "id": f"tu{i}", "name": "Agent",
-              "input": {"subagent_type": "explorer", "prompt": f"look at {name}"}}
-             for i, name in enumerate(("alpha", "beta"))]
-    transcript.write_text(json.dumps({"message": {"content": calls}}) + "\n", encoding="utf-8")
-
-    first = _run(payload("SubagentStart", root, agent_id="a1", agent_type="explorer",
-                         transcript_path=str(transcript)))
-    second = _run(payload("SubagentStart", root, agent_id="a2", agent_type="explorer",
-                          transcript_path=str(transcript)))
-
-    assert "ALPHA-LANDMINE" in first and "BETA-LANDMINE" not in first
-    assert "BETA-LANDMINE" in second and "ALPHA-LANDMINE" not in second
+# Parallel same-type dispatches: see test_crew_context_fixes.py. The test
+# that stood here asserted list-order attribution, which the T6 review showed
+# hands task one's recall to whichever sibling's hook runs first.
 
 
 def test_slice_for_subagent_prints_labelled_context_for_a_dispatch_prompt(tmp_path, stub, monkeypatch):
