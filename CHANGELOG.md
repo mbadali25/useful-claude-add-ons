@@ -6,6 +6,26 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Changed
 
+- **`crew` 0.20.18: T1 ledger fixes, and the additive half of T2 -
+  `/crew:status`, `/crew:migrate`, the `reviewer` agent and the quickstart
+  guide source.** Nothing is removed or renamed in this release.
+  T1 fixes: once a ticket is `NEEDS_REPLAN`, `review_ledger.py --accept` is
+  refused and no state changes, and a review bundle with an empty parts list
+  is INCOMPLETE rather than CLEAN.
+  New `/crew:status` (`crew_status.py`) is read-only - no dispatch, no config
+  edit, no file written - and prints at most 40 lines covering config, roster,
+  tickets, review budget, gate, codemap and handoff; `--memory` adds the context
+  hook's numbers or says the hook is not installed.
+  New `/crew:migrate` (`crew_migrate.py`) moves a 0.20 setup onto the 1.0
+  layout: `--preview` (the default, writes nothing), `--apply` (backup, then
+  atomic writes of `.crew/crew.json` schema 1, `.work/tickets/<ID>/ticket.md`
+  with provenance, and `.crew/metrics.jsonl` with missing values `UNKNOWN`),
+  and `--rollback <backup-dir>`. Originals are kept.
+  New `reviewer` agent, the 1.0 successor of `qa-reviewer`; `qa-reviewer` stays
+  until the roster cut. The agent count is now 55 and the command count 30.
+  New `docs/guides/crew/src/quickstart.md`, the Markdown source of the crew
+  quickstart guide.
+
 - **obsidian-vault 0.4.0: vault roles (primary/recall/ignore) with an
   exactly-one-primary check, import with provenance that never overwrites,
   read-only `recall` CLI for crew's context hook, per-host capture queues, a
