@@ -6,7 +6,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Changed
 
-- **`doc-builder` 1.6.1: black-grid tables and a logo-left masthead.** Data and
+- **`doc-builder` 1.6.2: black-grid tables and a logo-left masthead.** Data and
   meta tables now draw a solid black border on every cell, data-table headers
   are black with white bold text, and the zebra fill is a stronger `#E8ECF1` so
   alternate rows survive greyscale printing. Three new brand keys carry this
@@ -16,10 +16,11 @@ All notable changes to this repository are documented here. Format follows [Keep
   row holds two sibling cells, the logo on the left and the organisation, title
   and subtitle on the right, split by a thin divider. They are siblings rather
   than a nested table because LibreOffice lifted a nested table into the accent
-  strip. It used to stack the
-  logo above the text.
+  strip. It used to stack the logo above the text. LibreOffice's HTML->PDF
+  leaves the logo out, on `main` too; its DOCX keeps it (documented in
+  `word-traps.md`).
   `crew` 0.20.14: `crew-house-style` re-points its three `house_style.py` line
-  citations to the lines doc-builder 1.6.1 moved them to.
+  citations to the lines doc-builder 1.6.2 moved them to.
 
 - **`docs/guides/` is organised by subject.** The guides now live in `crew/`,
   `gizmoduck/`, `obsidian/`, `rule-of-two/` and `exchange-mailbox/`, and the
