@@ -3864,3 +3864,19 @@ Raw: scratchpad revA2-LTowwk/out.txt. Two-round budget spent; no BLOCKs.
 - The proof run left `~/.claude/projects/-tmp-claude-0--repos-personal-useful-claude-add-ons-1acab233-...-proof-project/.../subagents/agent-a74ce527b5ab3e7cb.meta.json` (198 bytes); owner's call to delete.
 
 ### `plugin/PLUGINS.md:234` "Bundled skills — 18" vs 19 rows; table lacks the 7 stack-* skills - OPEN (filed 2026-09-23)
+
+### crew-1.0 T2 migrate/status round-2 findings, not fixed (filed 2026-09-23) - OPEN
+
+Two-round budget spent. Raw: scratchpad revD2-YOncm9/out.txt.
+- BLOCK `plugin/crew/hooks/scripts/crew_migrate.py:616` parent-directory symlink/junction race between `contained()` and `os.open()`; needs an actor swapping directories inside the repo during a user-run migration. Fix shape: open with `O_NOFOLLOW` via dir fds (`openat`-style) on POSIX; on Windows, re-check the handle's final path after open.
+- BLOCK `crew_migrate.py:630` stale-plan check not atomic with `os.replace`; a target created in between is overwritten. Fix shape: `os.link`/`O_EXCL` placement for new targets, compare-and-swap via rename-into-place with a backup of the loser.
+- Fix both before recommending `/crew:migrate` outside the owner's own machines.
+- FIX `crew_migrate.py:728` rollback leaves a partial staging temp and marks the manifest rolled-back; later applies blocked.
+- FIX `crew_status.py:63` `crew.json` containing JSON `null` treated as absent.
+- NIT `crew_status.py:152` legacy metrics headers/separators counted as rows.
+
+### crew-1.0 T6 lane B fix follow-ups - OPEN (filed 2026-09-23)
+
+- `role-write-guard.ps1`, `pm-brief.ps1` have the same unbounded python probe the context wrapper had; pm-brief's must match role-write-guard's byte for byte.
+- SubagentStart parallel attribution relies on `tool_use_id` in the payload; unverified that Claude Code sends it.
+- `scripts/check-powershell.ps1` not run (sandbox refused direct pwsh).
