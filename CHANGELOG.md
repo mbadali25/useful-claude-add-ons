@@ -6,7 +6,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Fixed
 
-- **Windows audit wave 3: `claude-code-defaults` 1.0.1, `intune-graph` 1.1.2,
+- **Windows audit wave 3: `claude-code-defaults` 1.0.1, `intune-graph` 1.1.3,
   `mermaid-svg-bitbucket` 1.2.5, `wazuh-onprem` 1.1.1, `obsidian-vault` 0.3.16.**
   Each lane went through four review rounds with sabotage evidence.
   `claude-code-defaults`: the settings.json validators now distinguish no

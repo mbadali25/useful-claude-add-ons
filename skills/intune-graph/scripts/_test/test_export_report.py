@@ -195,7 +195,8 @@ class DownloadTest(unittest.TestCase):
         self._patch_get(_build_zip(corrupt=False))
         real_fdopen = os.fdopen
 
-        def failing_fdopen(fd, mode="r", *a, **kw):  # pylint: disable=keyword-arg-before-vararg  (mirrors os.fdopen)
+        # Keeps os.fdopen's own (fd, mode, *args) order so positional mode still works.
+        def failing_fdopen(fd, mode="r", *a, **kw):  # pylint: disable=keyword-arg-before-vararg
             return _ENOSPCFile(real_fdopen(fd, mode))
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -284,7 +285,8 @@ class DownloadTest(unittest.TestCase):
         real_fdopen = os.fdopen
         call_count = {"n": 0}
 
-        def fail_on_second_fdopen(fd, mode="r", *a, **kw):  # pylint: disable=keyword-arg-before-vararg  (mirrors os.fdopen)
+        # Keeps os.fdopen's own (fd, mode, *args) order so positional mode still works.
+        def fail_on_second_fdopen(fd, mode="r", *a, **kw):  # pylint: disable=keyword-arg-before-vararg
             call_count["n"] += 1
             if call_count["n"] == 2:
                 return _ENOSPCFile(real_fdopen(fd, mode))
@@ -424,7 +426,8 @@ class DownloadTest(unittest.TestCase):
                 self.close()
                 return False
 
-        def record_fdopen(fd, mode="r", *a, **kw):  # pylint: disable=keyword-arg-before-vararg  (mirrors os.fdopen)
+        # Keeps os.fdopen's own (fd, mode, *args) order so positional mode still works.
+        def record_fdopen(fd, mode="r", *a, **kw):  # pylint: disable=keyword-arg-before-vararg
             return _RecordingFile(real_fdopen(fd, mode))
 
         def record_fsync(fd):
