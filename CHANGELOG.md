@@ -4,6 +4,19 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Changed
+
+- **`doc-builder` 1.6.0: black-grid tables and a logo-left masthead.** Data and
+  meta tables now draw a solid black border on every cell, data-table headers
+  are black with white bold text, and the zebra fill is a stronger `#E8ECF1` so
+  alternate rows survive greyscale printing. Three new brand keys carry this
+  (`report.table_border`, `report.table_head`, `report.table_head_ink`), set in
+  the neutral pack and inherited by every pack that does not override them, so
+  Solomon reports get them too. When a brand pack has a logo, the masthead band
+  is now a nested two-cell table with the logo on the left and the organisation,
+  title and subtitle on the right, split by a thin divider. It used to stack the
+  logo above the text.
+
 ### Fixed
 
 - **Windows audit wave 3: `claude-code-defaults` 1.0.1, `intune-graph` 1.1.3,

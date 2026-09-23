@@ -246,7 +246,7 @@ So LibreOffice honours **simple selectors only**. In a doc-builder report that c
 silently:
 
 - the table grid — `table.data th, table.data td { border:1px solid ... }`
-- the navy header row — `table.data th { background:NAVY; color:#FFFFFF }`
+- the header row — `table.data th { background:TABLE_HEAD; color:TABLE_HEAD_INK }`
 - the zebra rows — `table.data tr.alt td { background:ZEBRA }`
 - the summary-card panels — `td.card { background:PANEL; border:... }`
 - the meta-table key shading — `table.meta td.k { background:ZEBRA }`

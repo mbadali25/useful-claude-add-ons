@@ -3,7 +3,7 @@
 place doc-builder's visual defaults live, for every path that emits HTML.
 
 Until this module existed the defaults were report-path only: the table grid,
-the navy header shading, the zebra rows, the meta-table key shading and the
+the header shading, the zebra rows, the meta-table key shading and the
 summary-card panels all sat inside `build_report.stylesheet()`, already
 palette-parameterised and already correct, and nothing but `build_report.py`
 could reach them. A hand-authored page -- a narrative guide, a runbook, an
@@ -33,7 +33,7 @@ plain `<h1>` and not a navy band.
 Both carry the contract, from the same functions, with only the selector and
 the table-layout differing:
 
-    table_css()   the grid, and the navy header shading, and the zebra rows
+    table_css()   the grid, and the header shading, and the zebra rows
     meta_css()    the meta table, and its shaded key column
     cards_css()   the summary-card panels
     chip_css()    the severity chips
@@ -94,6 +94,9 @@ class Palette:
         self.muted = r["muted"]
         self.grid = r["grid"]
         self.zebra = r["zebra"]
+        self.table_head = r["table_head"]
+        self.table_head_ink = r["table_head_ink"]
+        self.table_border = r["table_border"]
         self.panel = r["panel"]
         self.rule = r["rule"]
         self.font_stack = brand.fonts["report_stack"]
@@ -134,7 +137,12 @@ def logo_uri(path):
 
 def table_css(pal: Palette, sel: str = "table.data", layout: str = "fixed",
               cell_scope: str | None = None) -> str:
-    """The table grid, the navy header shading and the zebra rows.
+    """The table grid, the header shading and the zebra rows.
+
+    Every cell carries a solid `table_border` edge (black in neutral) and the
+    header row is `table_head` fill with `table_head_ink` text (black/white in
+    neutral) -- high contrast on screen and when printed in greyscale, where a
+    pale grid and a mid-navy header both wash out.
 
     `sel` is the table selector. The report path writes `<table class="data">`
     because the same page also carries layout tables -- the masthead, the meta
@@ -148,7 +156,7 @@ def table_css(pal: Palette, sel: str = "table.data", layout: str = "fixed",
     -- both measured on soffice 26.2.5.2 against a two-table probe, where the
     scoped rule's colour never appeared and the bare rule's did. The guides
     used bare `th` before doc-builder owned their CSS, so scoping the cells
-    would have silently removed the navy header shading from every one of them
+    would have silently removed the header shading from every one of them
     on the .docx/.pdf path while leaving the browser unchanged. Same family as
     word-traps.md rules 3 and 4: the SELECTOR SHAPE, not the declaration.
     `SKILL.md` already states the general rule -- LibreOffice "applies only a
@@ -172,9 +180,10 @@ def table_css(pal: Palette, sel: str = "table.data", layout: str = "fixed",
     return (
         f"{sel} {{ border-collapse:collapse; width:100%; table-layout:{layout};\n"
         f"             margin:8px 0 4px; }}\n"
-        f"{pre}th, {pre}td {{ border:1px solid {pal.grid}; padding:7px 10px;\n"
+        f"{pre}th, {pre}td {{ border:1px solid {pal.table_border}; padding:7px 10px;\n"
         f"             text-align:left; vertical-align:top; overflow-wrap:break-word; }}\n"
-        f"{pre}th {{ background:{pal.navy}; color:#FFFFFF; font-weight:600; }}\n"
+        f"{pre}th {{ background:{pal.table_head}; color:{pal.table_head_ink}; font-weight:700;\n"
+        "             letter-spacing:0.02em; padding:8px 10px; }\n"
         "/* Zebra is an explicit class, written per row by the builder. */\n"
         f"{pre}tr.alt td {{ background:{pal.zebra}; }}\n"
     )
@@ -184,7 +193,7 @@ def meta_css(pal: Palette, sel: str = "table.meta") -> str:
     """The meta table and its shaded key column."""
     return (
         f"{sel} {{ border-collapse:collapse; width:100%; margin:0 0 14px; }}\n"
-        f"{sel} td {{ border:1px solid {pal.grid}; padding:6px 10px; font-size:12px; }}\n"
+        f"{sel} td {{ border:1px solid {pal.table_border}; padding:6px 10px; font-size:12px; }}\n"
         f"{sel} td.k {{ background:{pal.zebra}; font-weight:600; width:17%; }}\n"
     )
 
@@ -286,7 +295,13 @@ def _masthead_css(pal: Palette) -> str:
         "/* Bare class, per word-traps.md rule 3/4 - the only selector shape both\n"
         "   renderers apply. Height only: no width, so the source PNG's own aspect\n"
         "   ratio (290x70 for the wordmark) is preserved rather than guessed at here. */\n"
-        ".mast-logo { height:28px; margin-bottom:6px; }\n"
+        ".mast-logo { height:44px; }\n"
+        "/* Logo left, heading text right: a nested table, because Word drops\n"
+        "   float and flex. Bare classes only, so LibreOffice applies them too. */\n"
+        ".mast-row { border-collapse:collapse; width:100%; }\n"
+        f".mast-logo-cell {{ width:1%; white-space:nowrap; vertical-align:middle;\n"
+        f"              padding:0 18px 0 0; border-right:1px solid {pal.org_ink}; }}\n"
+        ".mast-text { vertical-align:middle; padding:0 0 0 18px; }\n"
     )
 
 

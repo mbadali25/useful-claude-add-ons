@@ -74,7 +74,7 @@ ENGINES = (WORD, LIBREOFFICE)
 LIBREOFFICE_FIDELITY = (
     "LibreOffice is not Word. On the REPORT (HTML) path its importer applies only SIMPLE\n"
     "  selectors - a bare `.class` or a bare element. Every compound or descendant selector is\n"
-    "  dropped silently, which costs the table grid, the navy header shading, the zebra rows,\n"
+    "  dropped silently, which costs the table grid, the header shading, the zebra rows,\n"
     "  the summary-card panels and the meta-table key shading. The masthead, the lede, the\n"
     "  handling banner and every severity chip (bare classes) DO render. On the SOP path the\n"
     "  input is real OOXML rather than HTML, so far more survives - but nothing here is\n"

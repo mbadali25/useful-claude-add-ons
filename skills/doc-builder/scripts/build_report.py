@@ -131,19 +131,31 @@ def column_widths(labels, rows):
 
 def masthead(org, title, subtitle, classification, logo_src=None):
     """`logo_src`, when given, is the `-on-dark` wordmark - `.mast-band` is
-    filled navy, so anything else placed there is the wrong variant. None
-    renders the masthead exactly as it did before a brand pack ever carried
-    a logo."""
-    logo_html = (f'    <img class="mast-logo" src="{esc(logo_src)}" alt="{esc(org)}">\n'
-                 if logo_src else "")
+    filled navy, so anything else placed there is the wrong variant. With a
+    logo the band holds a nested two-cell table: the logo on the left, the
+    heading text on the right. A nested table rather than a float or flex,
+    because Word's HTML import drops both (word-traps.md). None renders the
+    masthead exactly as it did before a brand pack ever carried a logo."""
+    text = (f'    <div class="mast-org">{esc(org)}</div>\n'
+            f'    <div class="mast-title">{esc(title)}</div>\n'
+            f'    <div class="mast-subtitle">{esc(subtitle)}</div>\n')
+    if logo_src:
+        band = (
+            '    <table class="mast-row"><tr>\n'
+            '      <td class="mast-logo-cell">'
+            f'<img class="mast-logo" src="{esc(logo_src)}" alt="{esc(org)}"></td>\n'
+            '      <td class="mast-text">\n'
+            f'{text}'
+            '      </td>\n'
+            '    </tr></table>\n'
+        )
+    else:
+        band = text
     return (
         '<table class="mast">\n'
         '  <tr><td class="mast-strip"></td></tr>\n'
         '  <tr><td class="mast-band">\n'
-        f'{logo_html}'
-        f'    <div class="mast-org">{esc(org)}</div>\n'
-        f'    <div class="mast-title">{esc(title)}</div>\n'
-        f'    <div class="mast-subtitle">{esc(subtitle)}</div>\n'
+        f'{band}'
         '  </td></tr>\n'
         '  <tr><td class="mast-rule"></td></tr>\n'
         f'  <tr><td class="mast-cls">{esc(classification)}</td></tr>\n'

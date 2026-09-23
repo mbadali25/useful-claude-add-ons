@@ -110,7 +110,7 @@ Three things the preflight can only **report**, because pip cannot fix them:
 **Fidelity through LibreOffice is reduced, and specifically so.** Measured 2026-09-22
 against LibreOffice 26.2.5.2: its HTML importer applies only **simple** selectors - a bare
 `.class` or a bare element - and silently drops every compound or descendant one. On the
-report path that costs the table grid, the navy header shading, the zebra rows, the
+report path that costs the table grid, the header shading, the zebra rows, the
 summary-card panels and the meta-table key shading; the masthead, lede, handling banner and
 every severity chip still render. The SOP path feeds it real OOXML rather than HTML and
 survives far better - the self-test renders correctly, borders included - but no LibreOffice

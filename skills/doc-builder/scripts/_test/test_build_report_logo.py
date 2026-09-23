@@ -67,6 +67,15 @@ def test_masthead_embeds_an_img_when_a_logo_is_configured():
     assert '<img class="mast-logo" src="file:///fake/logo.png" alt="CONTOSO">' in html
 
 
+def test_masthead_puts_the_logo_left_of_the_heading_text():
+    html = build_report.masthead("CONTOSO", "Report Title", "subtitle", "INTERNAL",
+                                 logo_src="file:///fake/logo.png")
+    logo_cell = html.index('<td class="mast-logo-cell">')
+    text_cell = html.index('<td class="mast-text">')
+    assert logo_cell < html.index('class="mast-logo"') < text_cell
+    assert text_cell < html.index('<div class="mast-title">Report Title</div>')
+
+
 def test_masthead_renders_with_no_img_when_there_is_no_logo():
     """The neutral case: a document with no brand logo must render fine
     without one - no <img> tag, and nothing that looks like a broken

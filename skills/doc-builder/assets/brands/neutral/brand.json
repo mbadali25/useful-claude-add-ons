@@ -16,7 +16,10 @@
     "ink": "#1B1B1F",
     "muted": "#5C5F6B",
     "grid": "#B8BCC6",
-    "zebra": "#EEF3F8",
+    "zebra": "#E8ECF1",
+    "table_head": "#000000",
+    "table_head_ink": "#FFFFFF",
+    "table_border": "#000000",
     "panel": "#F6F7F9",
     "rule": "#DCDEE5",
     "severity": {
