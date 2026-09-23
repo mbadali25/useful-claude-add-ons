@@ -9,6 +9,12 @@
 # positively prove this is not Windows. `$env:OS` is 'Windows_NT' on BOTH
 # Windows PowerShell 5.1 and PowerShell 7 and unset elsewhere; a bare
 # `-not $IsWindows` stands down on 5.1, where `$IsWindows` does not exist.
+# This line is the plugin-wide convention test_flavour_guard.py enforces; it
+# is safe HERE because cloud-guard.sh judges every call off Windows. On
+# Windows the split is by TOOL, not OS: this flavour judges PowerShell calls
+# and stands down for Bash ones, which cloud-guard.sh always judges -- decided
+# in cloud_guard.py `stands_down`, told the flavour by
+# CREW_CLOUD_GUARD_FLAVOUR below.
 if ($env:OS -ne 'Windows_NT') { exit 0 }
 
 $dir = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -80,12 +86,14 @@ $prevConsoleEncoding = [Console]::OutputEncoding
 $prevOutputEncodingVar = $OutputEncoding
 $prevPythonUtf8 = $env:PYTHONUTF8
 $prevPythonIoEncoding = $env:PYTHONIOENCODING
+$prevFlavour = $env:CREW_CLOUD_GUARD_FLAVOUR
 $exitCode = $null
 try {
   [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
   $OutputEncoding = New-Object System.Text.UTF8Encoding($false)
   $env:PYTHONUTF8 = '1'
   $env:PYTHONIOENCODING = 'utf-8'
+  $env:CREW_CLOUD_GUARD_FLAVOUR = 'powershell'
   $global:LASTEXITCODE = $null
   $raw | & $py $scriptPath
   $exitCode = $LASTEXITCODE
@@ -96,6 +104,7 @@ try {
   $OutputEncoding = $prevOutputEncodingVar
   $env:PYTHONUTF8 = $prevPythonUtf8
   $env:PYTHONIOENCODING = $prevPythonIoEncoding
+  $env:CREW_CLOUD_GUARD_FLAVOUR = $prevFlavour
 }
 
 # cloud_guard.py only ever exits 0 -- its decisions are JSON on stdout -- so a

@@ -15,19 +15,14 @@
 # the guard is armed.
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Flavour guard, the mirror of cloud-guard.ps1's. Both flavours are registered
-# for the event, and on Windows with Git Bash installed BOTH run: every
-# decision twice, every guard.log row twice. So this flavour stands down on
-# Windows -- but only when it can PROVE the twin will judge instead: `$OS` is
-# 'Windows_NT' (Git Bash inherits it; it is unset on Linux/macOS), the .ps1 is
-# beside this file, and a PowerShell interpreter is on PATH. Any of the three
-# missing and this flavour judges, because a guard that stands down on the one
-# platform it exists for blocks nothing there -- crew shipped that once.
-if [ "${OS:-}" = "Windows_NT" ] && [ -f "$DIR/cloud-guard.ps1" ] \
-   && { command -v powershell.exe || command -v pwsh.exe \
-        || command -v powershell || command -v pwsh; } >/dev/null 2>&1; then
-  exit 0
-fi
+# Flavour stand-down: by the TOOL, never by the OS. Both flavours are
+# registered and on Windows both run, so each call must be judged by exactly
+# one. This flavour judges EVERY Bash call -- nothing about the host (an `OS`
+# value, a same-named executable on PATH) can stand it down for one -- and
+# stands down for a PowerShell call only when the .ps1 twin will judge it.
+# That decision needs `tool_name`, so it is made in cloud_guard.py
+# (`stands_down`), told which flavour is asking through
+# CREW_CLOUD_GUARD_FLAVOUR below. Without python, both flavours fail closed.
 
 . "$DIR/_common.sh"
 
@@ -58,7 +53,8 @@ if [ -z "$PY" ]; then
   exit 0
 fi
 
-printf '%s' "$INPUT" | PYTHONUTF8=1 PYTHONIOENCODING=utf-8 "$PY" "$DIR/cloud_guard.py"
+printf '%s' "$INPUT" | CREW_CLOUD_GUARD_FLAVOUR=bash PYTHONUTF8=1 \
+  PYTHONIOENCODING=utf-8 "$PY" "$DIR/cloud_guard.py"
 status=$?
 
 if [ "$status" -ne 0 ]; then

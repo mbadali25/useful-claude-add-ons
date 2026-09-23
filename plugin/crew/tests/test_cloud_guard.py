@@ -15,7 +15,11 @@ sabotage harness can aim at the fast one:
 
 Each case names the TOOL whose command it is (`Bash` or `PowerShell`), and the
 same case runs through all three drivers: the tool decides the parser, never
-the flavour of the wrapper that happened to run.
+the flavour of the wrapper that happened to run. The tool also decides which
+flavour judges on Windows, where both run: bash judges every Bash call and the
+.ps1 every PowerShell call. So through the pwsh driver a Bash case asserts
+that the .ps1 STOOD DOWN (no output, exit 0) -- bash judges it -- and the
+switch tests below pick the tool the driver actually judges (`_tool`).
 
 Isolation: every subprocess gets its own HOME/USERPROFILE (so the machine-
 global crew config and `~/.azure` are fixtures), its own CLAUDE_PROJECT_DIR,
@@ -72,13 +76,14 @@ PINNED = {"guards": {"cloudGuard": "block", "cloudDestructive": "allow",
 def _clean_env(tmp_path, extra=None, driver=None):
     """The subprocess environment. `OS=Windows_NT` goes to the pwsh driver
     ONLY: it is what lets the .ps1's flavour guard proceed, and it is also
-    what stands the BASH wrapper down (when a PowerShell is on PATH) -- so
-    handing it to every driver would turn each bash case into a stand-down
+    what stands the BASH wrapper down for PowerShell calls -- so handing it
+    to every driver would turn each bash PowerShell case into a stand-down
     that passes every must-allow and fails every must-block for the wrong
     reason."""
     env = {k: v for k, v in os.environ.items()
            if not k.startswith(("AWS_", "AZURE_", "ARM_"))
-           and k not in ("CI", "CREW_UNATTENDED", "CLAUDE_PROJECT_DIR", "OS")}
+           and k not in ("CI", "CREW_UNATTENDED", "CLAUDE_PROJECT_DIR", "OS",
+                         cloud_guard.FLAVOUR_VAR)}
     home = tmp_path / "home"
     home.mkdir(exist_ok=True)
     env.update({"HOME": str(home), "USERPROFILE": str(home),
@@ -274,6 +279,48 @@ MUST_BLOCK = [
      "sqlDestructive"),
     ("azps-whatif-false", "PowerShell",
      "Remove-AzResourceGroup -Name rg -WhatIf:$false", "cloudDestructive"),
+    # Review round 2 (Codex). Each was an allow before its fix.
+    ("azps-whatif-quoted-value", "PowerShell",
+     "Remove-AzResourceGroup -Name '-WhatIf'", "cloudDestructive"),
+    ("azps-whatif-quoted-positional", "PowerShell",
+     "Remove-AzResourceGroup '-WhatIf' -Force", "cloudDestructive"),
+    ("azps-whatif-escaped", "PowerShell",
+     "Remove-AzResourceGroup -Force `-WhatIf", "cloudDestructive"),
+    ("azps-whatif-after-valued-param", "PowerShell",
+     "Remove-AzResourceGroup -Name -WhatIf", "cloudDestructive"),
+    ("bash-pwsh-whatif-quoted", "Bash",
+     "pwsh -c \"Remove-AzResourceGroup -Name '-WhatIf'\"",
+     "cloudDestructive"),
+    ("xargs-exe-placeholder", "Bash", "xargs -a input -I CMD CMD destroy",
+     "cloudGuard"),
+    ("xargs-exe-bsd-J", "Bash", "echo terraform | xargs -J CMD CMD destroy",
+     "cloudGuard"),
+    ("xargs-exe-unknown-replacement", "Bash",
+     "ls | xargs --replace-with=% % destroy", "cloudGuard"),
+    ("parallel-exe-placeholder", "Bash", "parallel {} destroy ::: terraform",
+     "cloudGuard"),
+    ("mysql-no-backslash-escapes", "Bash",
+     "mysql -e \"SELECT 'a\\\\' ; DROP TABLE t; -- '\"", "sqlDestructive"),
+    ("mysql-escaped-quote-mode", "Bash",
+     "mysql -e \"SELECT 'it\\\\'s' AS a, 'DROP' AS s\"", "sqlDestructive"),
+    ("mariadb-executable-comment", "Bash",
+     "mariadb -e 'SELECT 1 /*M!100000 DROP TABLE t */'", "sqlDestructive"),
+    ("psql-scs-off", "Bash",
+     "psql -c \"SELECT 'a\\\\', ' ; DROP TABLE t; -- '\"", "sqlDestructive"),
+    ("psql-backslash-literal-scs-off", "Bash",
+     "psql -c \"SELECT 'C:\\\\' AS p, 'DROP TABLE x' AS s\"",
+     "sqlDestructive"),
+    ("aws-dry-run-negated", "Bash",
+     "aws ec2 terminate-instances --instance-ids i-1 --dry-run --no-dry-run",
+     "cloudDestructive"),
+    ("ps-aws-dry-run-negated", "PowerShell",
+     "aws ec2 terminate-instances --dry-run --no-dry-run", "cloudDestructive"),
+    ("tf-help-as-option-value", "Bash",
+     "terraform destroy -auto-approve -var-file '--help'", "terraformApply"),
+    ("tf-help-after-unknown-option", "Bash",
+     "terraform apply -some-new-option -help", "terraformApply"),
+    ("tf-help-after-dashdash", "Bash", "terraform apply -- -help",
+     "terraformApply"),
 ]
 
 MUST_ALLOW = [
@@ -311,14 +358,10 @@ MUST_ALLOW = [
     ("tf-apply-help", "Bash", "terraform apply -help"),
     ("tf-help-destroy", "Bash", "terraform -help destroy"),
     ("azps-whatif", "PowerShell", "Remove-AzResourceGroup -Name rg -WhatIf"),
-    ("psql-backslash-literal", "Bash",
-     "psql -c \"SELECT 'C:\\' AS p, 'DROP TABLE x' AS s\""),
     ("sqlcmd-backslash-literal", "Bash",
      "sqlcmd -S s -Q \"SELECT 'C:\\' AS p, 'DROP TABLE x' AS s\""),
     ("ps-invoke-sqlcmd-backslash", "PowerShell",
      "Invoke-Sqlcmd -Query \"SELECT 'C:\\' AS p, 'DROP' AS s\""),
-    ("mysql-escaped-quote", "Bash",
-     "mysql -e \"SELECT 'it\\'s' AS a, 'DROP' AS s\""),
     ("bash-c-dashdash-plan", "Bash", "bash -c -- 'terraform plan'"),
     ("az-option-before-read-verb", "Bash",
      "az group --subscription dev show -n rg"),
@@ -328,6 +371,24 @@ MUST_ALLOW = [
     ("xargs-sh-literal-script", "Bash",
      "ls | xargs sh -c 'echo \"$@\"' _"),
     ("shallow-nesting", "Bash", "echo $(echo $(echo $(ls)))"),
+    # Review round 2 (Codex): the other side of each fix.
+    ("azps-whatif-after-switch", "PowerShell",
+     "Remove-AzResourceGroup -Name rg -Force -WhatIf"),
+    ("azps-whatif-first", "PowerShell",
+     "Remove-AzResourceGroup -WhatIf -Name rg"),
+    ("bash-pwsh-whatif", "Bash",
+     "pwsh -c 'Remove-AzResourceGroup -Name rg -WhatIf'"),
+    ("xargs-abs-path", "Bash", "ls | xargs /usr/bin/rm"),
+    ("xargs-placeholder-argument", "Bash", "xargs -a list -I F rm F"),
+    ("mysql-comment-every-mode", "Bash",
+     "mysql -e 'SELECT 1 -- DROP TABLE t'"),
+    ("psql-dashdash-no-space", "Bash", "psql -c 'SELECT 1 --DROP TABLE x'"),
+    ("aws-dry-run-last", "Bash",
+     "aws ec2 terminate-instances --no-dry-run --dry-run"),
+    ("tf-help-after-option-value", "Bash",
+     "terraform apply -var-file x.tfvars -help"),
+    ("tf-help-after-bool-option", "Bash",
+     "terraform destroy -auto-approve -help"),
 ]
 
 # Identity cases: (id, tool, command, repo cfg, global cfg, extra env,
@@ -415,10 +476,30 @@ IDENTITY = [
 ]
 
 
+def _tool(driver):
+    """The tool whose calls `driver` judges: the .ps1 stands down for Bash
+    calls (bash judges those), so a switch test run through it says
+    PowerShell. Every command those tests send parses the same in both."""
+    return "PowerShell" if driver == "pwsh" else "Bash"
+
+
+def _stood_down(driver, tool, result):
+    """True -- after asserting it stood down CLEANLY -- when `driver` is the
+    .ps1 and `tool` is Bash: no output at all, exit 0."""
+    if driver != "pwsh" or tool != "Bash":
+        return False
+    decision, reason, code, err = result
+    assert (decision, reason, code) == ("allow", "", 0), (reason, err)
+    return True
+
+
 def _block(driver, tmp_path, case):
     _id, tool, command, rule = case
     _fixture(tmp_path, ARMED)
-    decision, reason, code, err = run_hook(driver, tmp_path, tool, command)
+    result = run_hook(driver, tmp_path, tool, command)
+    if _stood_down(driver, tool, result):
+        return
+    decision, reason, code, err = result
     assert code == 0, err
     assert decision == "deny", (command, decision, err)
     assert f"[{rule}]" in reason, reason
@@ -427,7 +508,10 @@ def _block(driver, tmp_path, case):
 def _allow(driver, tmp_path, case):
     _id, tool, command = case
     _fixture(tmp_path, ARMED)
-    decision, reason, code, err = run_hook(driver, tmp_path, tool, command)
+    result = run_hook(driver, tmp_path, tool, command)
+    if _stood_down(driver, tool, result):
+        return
+    decision, reason, code, err = result
     assert code == 0, err
     assert decision == "allow", (command, reason, err)
 
@@ -435,8 +519,10 @@ def _allow(driver, tmp_path, case):
 def _identity(driver, tmp_path, case):
     _id, tool, command, repo_cfg, global_cfg, env, want, rule = case
     _fixture(tmp_path, repo_cfg, global_cfg)
-    decision, reason, code, err = run_hook(driver, tmp_path, tool, command,
-                                           extra_env=env)
+    result = run_hook(driver, tmp_path, tool, command, extra_env=env)
+    if _stood_down(driver, tool, result):
+        return
+    decision, reason, code, err = result
     assert code == 0, err
     assert decision == want, (command, decision, reason, err)
     if rule:
@@ -516,7 +602,7 @@ def test_disabled_guard_allows_everything(tmp_path, driver, repo_cfg):
     """Off is the default: a repo that never set `guards.cloudGuard` runs
     `terraform destroy` exactly as it did before this hook existed."""
     _fixture(tmp_path, repo_cfg)
-    decision, reason, code, err = run_hook(driver, tmp_path, "Bash",
+    decision, reason, code, err = run_hook(driver, tmp_path, _tool(driver),
                                            "terraform destroy -auto-approve")
     assert (decision, code) == ("allow", 0), (reason, err)
 
@@ -536,7 +622,7 @@ def test_a_global_block_cannot_be_turned_off_by_a_repo(tmp_path, driver):
     `block`."""
     _fixture(tmp_path, {"guards": {"cloudGuard": "off"}},
              {"guards": {"cloudGuard": "block"}})
-    decision, _reason, _code, err = run_hook(driver, tmp_path, "Bash",
+    decision, _reason, _code, err = run_hook(driver, tmp_path, _tool(driver),
                                              "terraform destroy")
     assert decision == "deny", err
 
@@ -547,7 +633,7 @@ def test_report_mode_refuses_nothing_and_logs_what_it_would_have(tmp_path,
     """Report mode prints NO decision -- never `allow`, which would skip the
     user's own prompt -- and a visible note of what `block` would do."""
     repo = _fixture(tmp_path, {"guards": {"cloudGuard": "report"}})
-    decision, note, code, err = run_hook(driver, tmp_path, "Bash",
+    decision, note, code, err = run_hook(driver, tmp_path, _tool(driver),
                                          "terraform destroy")
     assert (decision, code) == ("allow", 0), err
     assert "report mode" in note and "would deny" in note, note
@@ -578,7 +664,7 @@ def test_report_mode_evaluates_to_no_decision(tmp_path):
                               "no-tool-input", "command-not-string"])
 def test_malformed_input_is_refused_when_armed(tmp_path, driver, raw):
     _fixture(tmp_path, ARMED)
-    decision, reason, code, err = run_hook(driver, tmp_path, "Bash", "",
+    decision, reason, code, err = run_hook(driver, tmp_path, _tool(driver), "",
                                            raw=raw)
     assert (decision, code) == ("deny", 0), (reason, err)
     assert "refusing" in reason
@@ -587,7 +673,7 @@ def test_malformed_input_is_refused_when_armed(tmp_path, driver, raw):
 @pytest.mark.parametrize("driver", _DRIVERS)
 def test_malformed_input_is_not_judged_when_off(tmp_path, driver):
     _fixture(tmp_path, {"guards": {"cloudGuard": "off"}})
-    assert run_hook(driver, tmp_path, "Bash", "", raw=b"{not json")[:3] == (
+    assert run_hook(driver, tmp_path, _tool(driver), "", raw=b"{not json")[:3] == (
         "allow", "", 0)
 
 
@@ -601,12 +687,12 @@ def test_a_malformed_cloud_block_fails_closed_when_armed(tmp_path, driver,
     """`"cloud": null` is an invalid layer, not "nothing pinned": even REPORT
     mode escalates to block, and a read-only call's identity is unknown."""
     _fixture(tmp_path, {"guards": {"cloudGuard": "report"}, "cloud": cloud})
-    decision, reason, _c, err = run_hook(driver, tmp_path, "Bash",
+    decision, reason, _c, err = run_hook(driver, tmp_path, _tool(driver),
                                          "terraform destroy")
     assert decision == "deny", err
     assert "`cloud` block is malformed" in reason
     _fixture(tmp_path, {"guards": {"cloudGuard": "block"}, "cloud": cloud})
-    decision, reason, _c, err = run_hook(driver, tmp_path, "Bash", "aws s3 ls",
+    decision, reason, _c, err = run_hook(driver, tmp_path, _tool(driver), "aws s3 ls",
                                          extra_env={"CI": "1"})
     assert decision == "deny", err
     assert "could not read the identity pins" in reason
@@ -615,7 +701,7 @@ def test_a_malformed_cloud_block_fails_closed_when_armed(tmp_path, driver,
 @pytest.mark.parametrize("driver", _DRIVERS)
 def test_a_malformed_cloud_block_leaves_an_unarmed_guard_off(tmp_path, driver):
     _fixture(tmp_path, {"guards": {"cloudGuard": "off"}, "cloud": None})
-    assert run_hook(driver, tmp_path, "Bash", "terraform destroy")[0] == \
+    assert run_hook(driver, tmp_path, _tool(driver), "terraform destroy")[0] == \
         "allow"
 
 
@@ -638,22 +724,43 @@ def test_unpinned_read_only_call_is_reported_once(tmp_path, driver):
     guard.log row -- and then not again."""
     repo = _fixture(tmp_path, ARMED)
     env = {"CI": "true"}
-    decision, note, _c, err = run_hook(driver, tmp_path, "Bash", "aws s3 ls",
+    decision, note, _c, err = run_hook(driver, tmp_path, _tool(driver), "aws s3 ls",
                                        extra_env=env)
     assert decision == "allow", err
     assert "nothing is pinned" in note, note
     log = (repo / ".crew" / "guard.log").read_text(encoding="utf-8")
     assert "\tcloudIdentity\tunpinned\tallow\taws s3 ls\t" in log
-    assert run_hook(driver, tmp_path, "Bash", "aws s3 ls",
+    assert run_hook(driver, tmp_path, _tool(driver), "aws s3 ls",
                     extra_env=env)[:2] == ("allow", "")
     assert (repo / ".crew" / "guard.log").read_text(encoding="utf-8") == log
+
+
+@pytest.mark.parametrize("driver", _DRIVERS)
+def test_unpinned_note_is_said_even_with_no_crew_dir(tmp_path, driver):
+    """Armed from the machine-global layer in a repo with no `.crew/`: there
+    is nowhere to record that the note was said, and the guard never creates
+    `.crew/` -- so it is said every time rather than silently never."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _fixture_global = tmp_path / "home" / ".claude" / "crew"
+    _fixture_global.mkdir(parents=True)
+    (_fixture_global / "config.json").write_text(json.dumps(ARMED),
+                                                 encoding="utf-8")
+    env = {"CI": "true"}
+    for _ in range(2):
+        decision, note, _c, err = run_hook(driver, tmp_path, _tool(driver),
+                                           "aws s3 ls", extra_env=env)
+        assert decision == "allow", err
+        assert "nothing is pinned" in note and "said every time" in note, \
+            (note, err)
+    assert not (repo / ".crew").exists()
 
 
 @pytest.mark.parametrize("driver", _DRIVERS)
 def test_a_corrupt_config_fails_closed(tmp_path, driver):
     repo = _fixture(tmp_path)
     (repo / ".crew" / "config.json").write_text("{not json", encoding="utf-8")
-    decision, _reason, _code, err = run_hook(driver, tmp_path, "Bash",
+    decision, _reason, _code, err = run_hook(driver, tmp_path, _tool(driver),
                                              "terraform destroy")
     assert decision == "deny", err
 
@@ -663,7 +770,7 @@ def test_ask_policy_prompts_when_attended(tmp_path, driver):
     _fixture(tmp_path, {"guards": {"cloudGuard": "block",
                                    "terraformApply": "ask"}},
              {"guards": {"terraformApply": "ask"}})
-    decision, reason, _code, err = run_hook(driver, tmp_path, "Bash",
+    decision, reason, _code, err = run_hook(driver, tmp_path, _tool(driver),
                                             "terraform apply")
     assert decision == "ask", err
     assert "[terraformApply]" in reason
@@ -678,12 +785,12 @@ def test_ask_is_denied_when_nobody_is_attending(tmp_path, driver, how):
                                    "terraformApply": "ask"}},
              {"guards": {"terraformApply": "ask"}})
     env = how if isinstance(how, dict) else {}
-    payload = {"tool_name": "Bash",
+    payload = {"tool_name": _tool(driver),
                "tool_input": {"command": "terraform apply"},
                "cwd": str(tmp_path / "repo")}
     if isinstance(how, str):
         payload["permission_mode"] = how
-    decision, reason, _code, err = run_hook(driver, tmp_path, "Bash", "",
+    decision, reason, _code, err = run_hook(driver, tmp_path, _tool(driver), "",
                                             extra_env=env, payload=payload)
     assert decision == "deny", err
     assert ".approved-guard-terraformApply-" in reason
@@ -695,7 +802,7 @@ def test_a_live_approval_marker_lets_one_command_through(tmp_path, driver):
                                           "terraformApply": "ask"}},
                     {"guards": {"terraformApply": "ask"}})
     env = {"CREW_UNATTENDED": "1"}
-    decision, reason, _c, _e = run_hook(driver, tmp_path, "Bash",
+    decision, reason, _c, _e = run_hook(driver, tmp_path, _tool(driver),
                                         "terraform apply", extra_env=env)
     assert decision == "deny"
     marker = re.search(r"(\S*\.approved-guard-terraformApply-[0-9a-f]+)",
@@ -703,15 +810,15 @@ def test_a_live_approval_marker_lets_one_command_through(tmp_path, driver):
     assert os.path.dirname(marker) == str(repo / ".crew")
     with open(marker, "w", encoding="utf-8"):
         pass
-    assert run_hook(driver, tmp_path, "Bash", "terraform apply",
+    assert run_hook(driver, tmp_path, _tool(driver), "terraform apply",
                     extra_env=env)[0] == "allow"
     # The approval names ONE command: a different one still refuses.
-    assert run_hook(driver, tmp_path, "Bash", "terraform destroy",
+    assert run_hook(driver, tmp_path, _tool(driver), "terraform destroy",
                     extra_env=env)[0] == "deny"
     # And it expires.
     old = time.time() - 3600
     os.utime(marker, (old, old))
-    assert run_hook(driver, tmp_path, "Bash", "terraform apply",
+    assert run_hook(driver, tmp_path, _tool(driver), "terraform apply",
                     extra_env=env)[0] == "deny"
 
 
@@ -727,13 +834,13 @@ def test_azure_default_subscription_is_read_from_the_cli_profile(tmp_path,
     # utf-8-sig: the az CLI writes this file with a BOM.
     (azure / "azureProfile.json").write_text(json.dumps(profile),
                                              encoding="utf-8-sig")
-    assert run_hook(driver, tmp_path, "Bash", "az group delete -n rg",
+    assert run_hook(driver, tmp_path, _tool(driver), "az group delete -n rg",
                     extra_env={"CREW_UNATTENDED": "1"})[0] == "allow"
     profile["subscriptions"][0]["isDefault"] = True
     profile["subscriptions"][1]["isDefault"] = False
     (azure / "azureProfile.json").write_text(json.dumps(profile),
                                              encoding="utf-8-sig")
-    assert run_hook(driver, tmp_path, "Bash", "az group delete -n rg",
+    assert run_hook(driver, tmp_path, _tool(driver), "az group delete -n rg",
                     extra_env={"CREW_UNATTENDED": "1"})[0] == "deny"
 
 
@@ -745,7 +852,7 @@ def test_malformed_pins_make_every_cloud_identity_unknown(tmp_path, driver):
     cfg = {"guards": PINNED["guards"], "cloud": {"awsProfiles": "dev"}}
     _fixture(tmp_path, cfg, PERMISSIVE_GLOBAL)
     decision, reason, _c, err = run_hook(
-        driver, tmp_path, "Bash", "aws s3 ls --profile dev",
+        driver, tmp_path, _tool(driver), "aws s3 ls --profile dev",
         extra_env={"CREW_UNATTENDED": "1"})
     assert decision == "deny", err
     assert "could not read the identity pins" in reason
@@ -756,10 +863,11 @@ def test_production_database_patterns_are_wired(tmp_path, driver):
     _fixture(tmp_path, {"guards": {"cloudGuard": "block"},
                         "production": {"databases": ["prod-db-*"]}})
     decision, reason, _c, err = run_hook(
-        driver, tmp_path, "Bash", "psql -h prod-db-1 -c 'SELECT 1'")
+        driver, tmp_path, _tool(driver),
+        "psql -h prod-db-1 -c 'SELECT 1'")
     assert decision == "deny", err
     assert "[prodDatabase]" in reason
-    assert run_hook(driver, tmp_path, "Bash",
+    assert run_hook(driver, tmp_path, _tool(driver),
                     "psql -h dev-db-1 -c 'SELECT 1'")[0] == "allow"
 
 
@@ -805,6 +913,26 @@ def test_pwsh_wrapper_without_python(tmp_path, armed):
 
 
 @needs_pwsh
+@pytest.mark.parametrize("tool,want", [("Bash", "stood-down"),
+                                       ("PowerShell", "deny")])
+def test_pwsh_wrapper_judges_by_tool(tmp_path, tool, want):
+    """On Windows the .ps1 judges PowerShell calls and stands down for Bash
+    ones -- cloud-guard.sh judges every Bash call, so nothing is lost and
+    nothing is judged twice."""
+    _fixture(tmp_path, ARMED)
+    proc = subprocess.run(
+        _argv("pwsh"),
+        input=json.dumps({"tool_name": tool, "tool_input": {
+            "command": "terraform destroy"}}).encode("utf-8"),
+        capture_output=True, env=_clean_env(tmp_path, None, "pwsh"),
+        timeout=120, check=False)
+    assert proc.returncode == 0, proc.stderr
+    got = "deny" if b'"permissionDecision": "deny"' in proc.stdout else (
+        "stood-down" if not proc.stdout.strip() else proc.stdout)
+    assert got == want, proc.stderr
+
+
+@needs_pwsh
 def test_pwsh_wrapper_stands_down_off_windows(tmp_path):
     _fixture(tmp_path, ARMED)
     env = _clean_env(tmp_path)
@@ -818,9 +946,9 @@ def test_pwsh_wrapper_stands_down_off_windows(tmp_path):
 
 def _bin_farm(tmp_path, with_powershell):
     """A PATH holding only what cloud-guard.sh runs -- plus, when asked, a
-    `powershell.exe` that is never executed (the wrapper only asks
-    `command -v`). A PATH with the host's own pwsh on it could not express
-    "Windows with no PowerShell" on a machine that has one."""
+    `powershell.exe` that exits 99 if anything ever runs it. It is there to
+    prove a same-named executable on PATH changes nothing: the old wrapper
+    stood down for EVERY call when `command -v` found one."""
     import shutil  # pylint: disable=import-outside-toplevel
     farm = tmp_path / ("bin-ps" if with_powershell else "bin")
     farm.mkdir()
@@ -838,27 +966,69 @@ def _bin_farm(tmp_path, with_powershell):
 
 @needs_bash
 @pytest.mark.skipif(os.name == "nt", reason="symlinks a POSIX bin farm")
-@pytest.mark.parametrize("os_value,with_ps,want", [
-    ("Windows_NT", True, "allow"),
-    ("Windows_NT", False, "deny"),
-    (None, True, "deny"),
-], ids=["windows-with-powershell", "windows-without-powershell", "not-windows"])
-def test_bash_wrapper_flavour_guard(tmp_path, os_value, with_ps, want):
-    """On Windows both flavours run, so bash stands down -- but ONLY when a
-    PowerShell exists to run the twin. Without one it judges: standing down
-    there would leave nothing judging at all."""
+@pytest.mark.parametrize("os_value,tool,with_ps,want", [
+    ("Windows_NT", "Bash", True, "deny"),
+    ("Windows_NT", "Bash", False, "deny"),
+    ("Windows_NT", "PowerShell", True, "allow"),
+    ("Windows_NT", "PowerShell", False, "allow"),
+    (None, "PowerShell", True, "deny"),
+    (None, "Bash", True, "deny"),
+], ids=["windows-bash-with-powershell", "windows-bash",
+        "windows-powershell-with-powershell", "windows-powershell",
+        "not-windows-powershell", "not-windows-bash"])
+def test_bash_wrapper_flavour_guard(tmp_path, os_value, tool, with_ps, want):
+    """By the TOOL, not the OS (review round 2): bash judges every Bash call
+    whatever `OS` says and whatever is on PATH -- the old wrapper stood down
+    for all of them on `OS=Windows_NT` plus any `powershell.exe`, so both
+    Windows flavours could be made no-ops. It stands down for a PowerShell
+    call only where the .ps1 judges it (`OS=Windows_NT`), and judges
+    PowerShell calls everywhere else, where the .ps1 exits at its first
+    line."""
     _fixture(tmp_path, ARMED)
     env = _clean_env(tmp_path, {"PATH": _bin_farm(tmp_path, with_ps)})
     if os_value:
         env["OS"] = os_value
     proc = subprocess.run(
-        [_BASH, _SH], input=b'{"tool_name":"Bash","tool_input":'
-                            b'{"command":"terraform destroy"}}',
+        [_BASH, _SH],
+        input=json.dumps({"tool_name": tool, "tool_input": {
+            "command": "terraform destroy"}}).encode("utf-8"),
         capture_output=True, env=env, timeout=60, check=False)
     assert proc.returncode == 0, proc.stderr
     got = "deny" if b'"permissionDecision": "deny"' in proc.stdout else (
         "allow" if not proc.stdout.strip() else proc.stdout)
     assert got == want, proc.stderr
+
+
+@needs_bash
+def test_bash_wrapper_ignores_an_inherited_flavour(tmp_path):
+    """The wrapper names its OWN flavour: an inherited
+    `CREW_CLOUD_GUARD_FLAVOUR=powershell` must not stand it down for Bash."""
+    _fixture(tmp_path, ARMED)
+    env = _clean_env(tmp_path, {cloud_guard.FLAVOUR_VAR: "powershell",
+                                "OS": "Windows_NT"})
+    proc = subprocess.run(
+        [_BASH, _SH], input=b'{"tool_name":"Bash","tool_input":'
+                            b'{"command":"terraform destroy"}}',
+        capture_output=True, env=env, timeout=60, check=False)
+    assert b'"permissionDecision": "deny"' in proc.stdout, proc.stderr
+
+
+@pytest.mark.parametrize("flavour,tool,os_value,want", [
+    ("bash", "Bash", "Windows_NT", False),
+    ("bash", "PowerShell", "Windows_NT", True),
+    ("bash", "PowerShell", None, False),
+    ("powershell", "Bash", "Windows_NT", True),
+    ("powershell", "PowerShell", "Windows_NT", False),
+    (None, "Bash", "Windows_NT", False),
+    (None, "PowerShell", "Windows_NT", False),
+])
+def test_stands_down_is_decided_by_the_tool(flavour, tool, os_value, want):
+    environ = {}
+    if flavour:
+        environ[cloud_guard.FLAVOUR_VAR] = flavour
+    if os_value:
+        environ["OS"] = os_value
+    assert cloud_guard.stands_down(tool, environ) is want
 
 
 # --- the pieces, in-process -------------------------------------------------
@@ -903,9 +1073,37 @@ def test_sql_is_destructive(sql, want):
     ("SELECT 1 -- DROP TABLE t", "tsql", False),
     ("SELECT 1 /* TRUNCATE t */", "tsql", False),
     ("DROP TABLE t", "tsql", True),
+    # Review round 2: the server MODES. MySQL under NO_BACKSLASH_ESCAPES and
+    # PostgreSQL with standard_conforming_strings off read `\\'` the other
+    # way from their defaults, and each can hide a DROP the other shows.
+    ("SELECT 'a\\' ; DROP TABLE t; -- '", "mysql", False),
+    ("SELECT 'a\\' ; DROP TABLE t; -- '", "mysql-no-escapes", True),
+    ("SELECT 1 # DROP TABLE t", "mysql-no-escapes", False),
+    ("SELECT 1 /*M!100000 DROP TABLE t */", "mysql", True),
+    ("SELECT 'a\\', ' ; DROP TABLE t; -- '", "postgres", False),
+    ("SELECT 'a\\', ' ; DROP TABLE t; -- '", "postgres-escapes", True),
+    ("SELECT 1 -- DROP TABLE t", "postgres-escapes", False),
 ])
 def test_sql_dialect_follows_the_client(sql, dialect, want):
     assert cloud_guard.sql_is_destructive(sql, dialect) is want
+
+
+@pytest.mark.parametrize("client,sql,want", [
+    ("mysql", "SELECT 'a\\' ; DROP TABLE t; -- '", True),
+    ("mariadb", "SELECT 'a\\' ; DROP TABLE t; -- '", True),
+    ("psql", "SELECT 'a\\', ' ; DROP TABLE t; -- '", True),
+    # A comment every reading of the client agrees on is not flagged.
+    ("mysql", "SELECT 1 -- DROP TABLE t", False),
+    ("psql", "SELECT 1 --DROP TABLE t", False),
+    # T-SQL and SQLite have no backslash-escape mode to read.
+    ("sqlcmd", "SELECT 'C:\\' AS p, 'DROP' AS s", False),
+    ("sqlite3", "SELECT 'C:\\' AS p, 'DROP' AS s", False),
+])
+def test_sql_client_is_read_under_every_mode(client, sql, want):
+    """A DROP ANY of the client's readings sees counts: which mode the server
+    runs in is not on the command line."""
+    readings = cloud_guard._SQL_DIALECT[client]  # pylint: disable=protected-access
+    assert cloud_guard.sql_is_destructive(sql, readings) is want
 
 
 def test_pinned_vars_are_one_list_in_all_three_places():

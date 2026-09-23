@@ -1053,9 +1053,10 @@ CG=$(mktemp -d) || exit 1
 mkdir -p "$CG/repo/.crew" "$CG/home"
 printf '{"guards":{"cloudGuard":"block"}}' > "$CG/repo/.crew/config.json"
 cguard_raw() {  # $1 = raw stdin -> the wrapper's stdout
-  # `-u OS`: on Windows, Git Bash inherits OS=Windows_NT, and with a
-  # PowerShell on PATH the bash flavour stands down for its twin -- which
-  # would make every case below an allow.
+  # `-u OS`: on Windows, Git Bash inherits OS=Windows_NT, and there the bash
+  # flavour stands down for PowerShell CALLS, which its twin judges -- which
+  # would make every PowerShell case below an allow. Bash calls it judges
+  # whatever OS says; the Windows_NT cases after this list prove that.
   printf '%s' "$1" | env -u AWS_PROFILE -u AWS_DEFAULT_PROFILE \
         -u AWS_ACCESS_KEY_ID -u CI -u CREW_UNATTENDED -u AZURE_SUBSCRIPTION_ID \
         -u OS HOME="$CG/home" CLAUDE_PROJECT_DIR="$CG/repo" \
@@ -1109,8 +1110,35 @@ cexpect deny  PowerShell "Write-Output 'DROP TABLE t' | Tee-Object -FilePath q |
 cexpect allow Bash 'aws ec2 terminate-instances --instance-ids i-1 --dry-run'
 cexpect allow Bash 'terraform apply -help'
 cexpect allow PowerShell 'Remove-AzResourceGroup -Name rg -WhatIf'
-cexpect allow Bash "psql -c \"SELECT 'C:\\' AS p, 'DROP TABLE x' AS s\""
 cexpect allow Bash 'git ls-files -m | xargs git add'
+# Review round 2 (Codex): each of these was the other answer before its fix.
+# The psql case was an allow in round 1; with standard_conforming_strings off
+# the server reads `\'` as an escape and the DROP as live, so it is refused.
+cexpect deny  Bash "psql -c \"SELECT 'C:\\' AS p, 'DROP TABLE x' AS s\""
+cexpect deny  Bash "mysql -e \"SELECT 'a\\' ; DROP TABLE t; -- '\""
+cexpect deny  PowerShell "Remove-AzResourceGroup -Name '-WhatIf'"
+cexpect deny  Bash 'xargs -a input -I CMD CMD destroy'
+cexpect deny  Bash 'aws ec2 terminate-instances --dry-run --no-dry-run'
+cexpect deny  Bash "terraform destroy -auto-approve -var-file '--help'"
+cexpect allow Bash "mysql -e 'SELECT 1 -- DROP TABLE t'"
+cexpect allow Bash 'aws ec2 terminate-instances --no-dry-run --dry-run'
+cexpect allow Bash 'terraform apply -var-file x.tfvars -help'
+cexpect allow PowerShell 'Remove-AzResourceGroup -Name rg -Force -WhatIf'
+# By the TOOL, not the OS: under OS=Windows_NT this flavour still judges a
+# Bash call, and stands down only for a PowerShell one, which the .ps1 judges.
+cg_windows() {  # $1 = tool, $2 = command -> the wrapper's stdout
+  json_cmd "$1" "$2" | env -u AWS_PROFILE -u AWS_DEFAULT_PROFILE \
+      -u AWS_ACCESS_KEY_ID -u CI -u CREW_UNATTENDED OS=Windows_NT \
+      HOME="$CG/home" CLAUDE_PROJECT_DIR="$CG/repo" \
+      bash "$SCRIPTS/cloud-guard.sh" 2>/dev/null
+}
+case "$(cg_windows Bash 'terraform destroy')" in
+  *'"permissionDecision": "deny"'*) pass ;;
+  *) fail "cloud-guard: OS=Windows_NT stood the bash flavour down for a Bash call" ;;
+esac
+if [ -z "$(cg_windows PowerShell 'terraform destroy')" ]; then pass; else
+  fail "cloud-guard: OS=Windows_NT, the bash flavour judged a PowerShell call its twin judges"
+fi
 # Malformed input is refused while armed.
 case "$(cguard_raw '{not json')" in
   *'"permissionDecision": "deny"'*) pass ;;

@@ -50,7 +50,8 @@ WHAT IT CANNOT SEE, stated so nobody mistakes this for a sandbox: a command
 named through a variable (`$TF apply`), a script file it runs (`bash x.sh`,
 `psql -f x.sql`), SQL built at runtime, a hashtable splatted into a cmdlet, and
 anything an MCP server does. What `xargs`/`parallel` append is not seen either,
-so a destructive-capable tool behind one is judged as destructive. Native
+so a destructive-capable tool behind one is judged as destructive, and one
+whose executable is a placeholder is refused as unreadable. Native
 permissions and restricted credentials are the boundary; this is a tripwire in
 front of them.
 
@@ -366,6 +367,18 @@ def _lex_bash(text):
 
 # --- PowerShell -------------------------------------------------------------
 
+
+class _Bare(str):
+    """A PowerShell word typed out in full with no quote, escape, group or
+    variable in it -- the only spelling PowerShell can bind as a PARAMETER.
+    `'-WhatIf'`, `` `-WhatIf `` and `$w` holding "-WhatIf" are all a string
+    argument. Every other word is a plain `str`, so anything that rebuilds a
+    word (a substitution, a split) loses the mark, and "not known to be bare"
+    is the default."""
+
+    __slots__ = ()
+
+
 _PS_REDIRECT_RE = re.compile(r"^(?:\d|\*)?>>?(?:&\d)?$|^\d?>&\d$")
 
 
@@ -437,11 +450,12 @@ def _read_ps_herestring(text, i, subs):
 def _lex_ps(text):
     """PowerShell `text` as a list of `_Cmd`, plus every subexpression."""
     cmds, subs = [], []
-    state = {"cur": _Cmd(), "word": None}
+    state = {"cur": _Cmd(), "word": None, "bare": True}
 
     def end_word():
         if state["word"] is not None:
-            state["cur"].words.append("".join(state["word"]))
+            value = "".join(state["word"])
+            state["cur"].words.append(_Bare(value) if state["bare"] else value)
             state["word"] = None
 
     def finish(pipe=False):
@@ -451,10 +465,12 @@ def _lex_ps(text):
             cmds.append(cur)
         state["cur"] = _Cmd(pipe_from=cur if pipe else None)
 
-    def add(chars):
+    def add(chars, bare=False):
         if state["word"] is None:
             state["word"] = []
+            state["bare"] = True
         state["word"].append(chars)
+        state["bare"] = state["bare"] and bare
 
     i, n = 0, len(text)
     while i < n:
@@ -528,7 +544,7 @@ def _lex_ps(text):
             end_word()
             i += 1
             continue
-        add(c)
+        add(c, bare=True)
         i += 1
     finish()
     for cmd in cmds:
@@ -552,20 +568,25 @@ _SQL_WORDS_RE = re.compile(r"\b(drop|truncate)\b", re.IGNORECASE)
 
 def _strip_sql(sql, dialect):
     """`sql` with every string literal and comment removed, read the way
-    `dialect` reads it: `standard`, `postgres`, `tsql` or `mysql`. They
-    disagree in ways that HIDE statements: standard SQL treats `\\'` as a
-    backslash then a closing quote, MySQL as an escaped quote, and PostgreSQL
-    does too inside an `E'...'` string; standard `--` always comments, MySQL's
-    needs a space after it (`1--1; DROP TABLE t` runs the DROP there); and
-    MySQL EXECUTES `/*! ... */`. `sql_is_destructive` picks the reading from
-    the client, and uses every reading when it does not know the client."""
-    mysql = dialect == "mysql"
+    `dialect` reads it: `standard`, `postgres`, `postgres-escapes`, `tsql`,
+    `mysql` or `mysql-no-escapes`. They disagree in ways that HIDE
+    statements: standard SQL treats `\\'` as a backslash then a closing
+    quote, MySQL as an escaped quote, and PostgreSQL does too inside an
+    `E'...'` string; standard `--` always comments, MySQL's needs a space
+    after it (`1--1; DROP TABLE t` runs the DROP there); and MySQL EXECUTES
+    `/*! ... */` (MariaDB `/*M! ... */` too). The two `-escapes` readings are
+    server MODES, not other products: MySQL under `NO_BACKSLASH_ESCAPES`, and
+    PostgreSQL with `standard_conforming_strings` off, where a backslash
+    escapes inside every `'...'`. `sql_is_destructive` reads a payload under
+    every reading its client could be running with."""
+    mysql = dialect.startswith("mysql")
     out, i, n = [], 0, len(sql)
     while i < n:
         c = sql[i]
         if c in "'\"":
-            escapes = mysql or (
-                dialect == "postgres" and c == "'" and i > 0
+            escapes = dialect == "mysql" or (
+                dialect == "postgres-escapes" and c == "'") or (
+                dialect.startswith("postgres") and c == "'" and i > 0
                 and sql[i - 1] in "eE"
                 and not (i > 1 and (sql[i - 2].isalnum() or sql[i - 2] == "_")))
             j = i + 1
@@ -591,7 +612,8 @@ def _strip_sql(sql, dialect):
             j = sql.find("\n", i)
             i = n if j < 0 else j
             continue
-        if sql.startswith("/*", i) and not (mysql and sql.startswith("/*!", i)):
+        if sql.startswith("/*", i) and not (
+                mysql and sql.startswith(("/*!", "/*M!"), i)):
             j = sql.find("*/", i + 2)
             i = n if j < 0 else j + 2
             out.append(" ")
@@ -602,14 +624,19 @@ def _strip_sql(sql, dialect):
 
 
 def sql_is_destructive(sql, dialect=None):
-    """True when `sql` holds DROP or TRUNCATE outside every literal and comment,
-    read as `dialect` -- or, when the client is not known (`None`), under
-    both the standard and the MySQL reading, so neither quirk can hide one. A
-    keyword crew can PROVE is inside a string or a comment does not count;
-    one it cannot is counted."""
+    """True when `sql` holds DROP or TRUNCATE outside every literal and comment
+    under ANY of the readings `dialect` names -- one reading, a tuple of
+    them, or, when the client is not known (`None`), the standard and both
+    MySQL readings. A keyword counts as inside a string or a comment only
+    when EVERY reading agrees it is; one reading that sees it live is
+    enough, because which mode the server runs in is not on the command
+    line."""
     if not isinstance(sql, str) or not sql.strip():
         return False
-    readings = (dialect,) if dialect else ("standard", "mysql")
+    if isinstance(dialect, str):
+        readings = (dialect,)
+    else:
+        readings = tuple(dialect or ("standard", "mysql", "mysql-no-escapes"))
     return any(_SQL_WORDS_RE.search(_strip_sql(sql, reading))
                for reading in readings)
 
@@ -627,13 +654,18 @@ _SQL_FLAGS = {
 }
 SQL_CLIENTS = frozenset(_SQL_FLAGS) | {"invoke-sqlcmd"}
 
-# Per client: which dialect reads what it is handed. Reading every payload
-# under every dialect flagged correct SQL -- `psql -c "SELECT 'C:\\' AS p,
-# 'drop' AS s"` is two plain strings in PostgreSQL and a live DROP under
-# MySQL's backslash escape.
-_SQL_DIALECT = {"psql": "postgres", "mysql": "mysql", "mariadb": "mysql",
-                "sqlcmd": "tsql", "invoke-sqlcmd": "tsql",
-                "sqlite3": "standard"}
+# Per client: every reading the server it talks to could apply. Not every
+# dialect for every client -- T-SQL and SQLite never read a backslash as an
+# escape, so `sqlcmd -Q "SELECT 'C:\\' AS p, 'drop' AS s"` is two plain
+# strings. But not ONE reading per client either: a MySQL server under
+# NO_BACKSLASH_ESCAPES, or a PostgreSQL one with standard_conforming_strings
+# off, reads the same text differently from its default, and the mode is
+# not on the command line. A DROP any of the client's readings sees counts.
+_SQL_DIALECT = {"psql": ("postgres", "postgres-escapes"),
+                "mysql": ("mysql", "mysql-no-escapes"),
+                "mariadb": ("mysql", "mysql-no-escapes"),
+                "sqlcmd": ("tsql",), "invoke-sqlcmd": ("tsql",),
+                "sqlite3": ("standard",)}
 
 
 def _sql_payloads(head, args, stdin):
@@ -695,8 +727,8 @@ _WRAPPER_VALUE_OPTS = {
     "nice": frozenset(("-n", "--adjustment")),
     "timeout": frozenset(("-s", "-k", "--signal", "--kill-after")),
     "stdbuf": frozenset(("-i", "-o", "-e")),
-    "xargs": frozenset(("-I", "-n", "-P", "-d", "-L", "-s", "-E", "-a",
-                        "--max-args", "--max-procs", "--delimiter",
+    "xargs": frozenset(("-I", "-J", "-R", "-n", "-P", "-d", "-L", "-s", "-E",
+                        "-a", "--max-args", "--max-procs", "--delimiter",
                         "--arg-file", "--max-lines", "--max-chars")),
     "parallel": frozenset(("-j", "-P", "-S", "-a", "-d", "-n", "-N", "-E",
                            "-I", "--jobs", "--sshlogin", "--arg-file",
@@ -717,19 +749,27 @@ _PWSH = frozenset(("pwsh", "powershell", "pwsh-preview"))
 _ARGV_FEEDERS = frozenset(("xargs", "parallel"))
 
 
-def _replace_string(args):
-    """The placeholder an `xargs -I R` / `parallel -I R` substitutes into the
-    command it runs; `{}` when none is named."""
-    for index, arg in enumerate(args):
-        if not arg.startswith("-"):
+def _replace_strings(head, args):
+    """Every placeholder an `xargs`/`parallel` invocation substitutes into
+    the command it runs: `{}` always, plus whatever `-I R`, `-IR`, `-iR`,
+    `--replace=R` or BSD's `-J R` names. The options are walked the way
+    `_unwrap` walks them, value-taking ones skipping their value -- stopping
+    at the first word that is not an option lost `-I` behind `-a file`."""
+    found = ["{}"]
+    takes = _WRAPPER_VALUE_OPTS.get(head, frozenset())
+    index = 0
+    while index < len(args):
+        arg = args[index]
+        if not arg.startswith("-") or arg in ("-", "--"):
             break
-        if arg == "-I" and index + 1 < len(args):
-            return args[index + 1]
-        if arg.startswith("--replace="):
-            return arg.partition("=")[2] or "{}"
-        if arg.startswith("-I") and len(arg) > 2:
-            return arg[2:]
-    return "{}"
+        if arg in ("-I", "-J") and index + 1 < len(args):
+            found.append(args[index + 1])
+        elif arg.startswith("--replace="):
+            found.append(arg.partition("=")[2] or "{}")
+        elif arg[:2] in ("-I", "-i", "-J") and len(arg) > 2:
+            found.append(arg[2:])
+        index += 2 if arg in takes else 1
+    return tuple(p for p in found if p)
 
 
 def _unwrap(words, env, fed=None):
@@ -787,7 +827,7 @@ def _unwrap(words, env, fed=None):
                 rest = rest[1:]
             if head in _ARGV_FEEDERS:
                 if fed is not None:
-                    fed.append((head, _replace_string(words[1:])))
+                    fed.append((head, _replace_strings(head, words[1:])))
                 # `parallel 'terraform {}' ::: destroy`: the command is one
                 # quoted word.
                 if rest and len(rest[0].split()) > 1:
@@ -838,8 +878,12 @@ def _aws_destructive(args):
     if len(words) < 2:
         return None
     # `--dry-run` (EC2 and friends) and `--dryrun` (the s3 commands) check
-    # permissions and print what would happen; nothing is deleted.
-    if "--dry-run" in args or "--dryrun" in args:
+    # permissions and print what would happen; nothing is deleted. The CLI
+    # takes the LAST of a flag and its `--no-` negation, so
+    # `--dry-run --no-dry-run` is the real thing.
+    dry = [a for a in args if a in ("--dry-run", "--no-dry-run", "--dryrun",
+                                    "--no-dryrun")]
+    if dry and dry[-1] in ("--dry-run", "--dryrun"):
         return None
     service, verb = words[0].lower(), words[1].lower()
     if verb.startswith(_AWS_DESTRUCTIVE_PREFIXES) or verb in ("delete",
@@ -878,13 +922,49 @@ def _az_destructive(args):
 
 _HELP_FLAGS = frozenset(("-help", "--help", "-h"))
 
+# Terraform/OpenTofu options that take the NEXT word as their value when
+# written without `=` -- Go's flag package does that even when the word
+# starts with a dash, so `-var-file --help` names a file called `--help`.
+_TF_VALUE_OPTS = frozenset((
+    "var", "var-file", "target", "replace", "exclude", "state", "state-out",
+    "backup", "out", "lock-timeout", "parallelism", "chdir", "plugin-dir",
+    "backend-config", "generate-config-out", "from-module", "config",
+    "test-directory", "filter"))
+# ...and the ones known to take none. An option in neither set might take a
+# value, so a help flag after it proves nothing.
+_TF_BOOL_OPTS = frozenset((
+    "auto-approve", "input", "lock", "refresh", "refresh-only", "destroy",
+    "compact-warnings", "json", "no-color", "upgrade", "reconfigure",
+    "migrate-state", "force-copy", "backend", "get", "recursive", "check",
+    "diff", "write", "list", "raw", "detailed-exitcode", "verbose"))
+
+
+def _tf_help_requested(args):
+    """True only when a help flag stands on its own, where no preceding option
+    could be taking it as its value. When unsure -- an option this does not
+    know, `--` included -- it is not help, and the apply is real."""
+    index = 0
+    while index < len(args):
+        arg = args[index]
+        if arg in _HELP_FLAGS:
+            return True
+        if arg.startswith("-") and "=" not in arg:
+            name = arg.lstrip("-")
+            if name in _TF_VALUE_OPTS:
+                index += 2
+                continue
+            if name not in _TF_BOOL_OPTS:
+                return False
+        index += 1
+    return False
+
 
 def _terraform_destructive(head, args):
     words = [a for a in args if not a.startswith("-")]
     if not words:
         return None
     # `terraform apply -help` prints usage; the CLI runs nothing else.
-    if _HELP_FLAGS.intersection(args):
+    if _tf_help_requested(args):
         return None
     if words[0] in ("apply", "destroy"):
         return f"{head} {words[0]}"
@@ -1071,9 +1151,7 @@ def _classify(argv, stdin, env, shell, depth):
                            "az", bool(what), identity))
         return out
     if head.startswith("remove-az"):
-        # `-WhatIf` (or `-WhatIf:$true`) reports what would be removed and
-        # removes nothing; `-WhatIf:$false` is the real thing.
-        if any(a.lower() in ("-whatif", "-whatif:$true") for a in args):
+        if _whatif_requested(args):
             return out
         out.append(Finding("cloudDestructive", text, argv[0], "azps", True,
                            {"name": None,
@@ -1097,19 +1175,58 @@ def _classify(argv, stdin, env, shell, depth):
     return out
 
 
+# Switch parameters a Remove-Az* cmdlet or PowerShell itself takes: none of
+# them consumes the word after it.
+_AZPS_SWITCHES = frozenset(("-force", "-asjob", "-passthru", "-confirm",
+                            "-verbose", "-debug"))
+
+
+def _whatif_requested(args):
+    """True only when `-WhatIf` (or `-WhatIf:$true`) is a PARAMETER: a bare
+    word (`_Bare` -- not quoted, escaped or substituted) that no preceding
+    parameter can be taking as its value. `-WhatIf` reports what would be
+    removed and removes nothing; `-Name '-WhatIf'` removes a resource group
+    named `-WhatIf`, and `-WhatIf:$false` is the real thing. A preceding
+    parameter this does not know to be a switch might take the word as its
+    value, so it is not an exemption: when unsure, the removal is real."""
+    for index, arg in enumerate(args):
+        if not isinstance(arg, _Bare) \
+                or arg.lower() not in ("-whatif", "-whatif:$true"):
+            continue
+        prev = args[index - 1] if index else None
+        if prev is None:
+            return True
+        if prev.endswith(","):
+            # `-Name rg, -WhatIf`: an array still being written.
+            continue
+        if not isinstance(prev, _Bare) or not prev.startswith("-"):
+            return True
+        if ":" in prev or prev.lower() in _AZPS_SWITCHES:
+            return True
+    return False
+
+
 _TF_READ_ONLY = frozenset(("plan", "init", "validate", "fmt", "show", "output",
                            "providers", "version", "graph", "get", "console",
                            "workspace", "state", "test", "login", "logout"))
 
 
-def _fed_finding(argv, env, via, placeholder):
+# What a literal executable name looks like: a bare name or a path. Anything
+# else in the executable position under `xargs`/`parallel` -- `%`, a quote-
+# built word, a variable -- is not known to name a harmless command.
+_LITERAL_EXE_RE = re.compile(r"^[A-Za-z0-9_./~\\][A-Za-z0-9_.+:/\\~-]*$")
+
+
+def _fed_finding(argv, env, via, placeholders):
     """The finding for a destructive-capable tool run by `xargs`/`parallel`,
     whose argv ends in words crew cannot see -- or None when the words it CAN
     see already fix the operation as one the guard does not govern.
 
     `echo destroy | xargs terraform` runs `terraform destroy`; judging only
     `terraform` let it through. A subcommand counts as seen only when it is
-    literal: a word carrying the placeholder is filled in from stdin too.
+    literal: a word carrying a placeholder is filled in from stdin too. So is
+    the EXECUTABLE when it carries one: `xargs -I CMD CMD destroy` runs
+    whatever the input names, which is refused as unreadable.
     """
     head = _head_name(argv[0])
     args = argv[1:]
@@ -1117,9 +1234,17 @@ def _fed_finding(argv, env, via, placeholder):
     what = (f"{text} (via {via}, which appends arguments crew cannot see, "
             "so the operation is not known)")
 
+    def carries(word):
+        return "{" in word or any(p in word for p in placeholders)
+
     def seen(words):
-        return [w for w in words if not w.startswith("-")
-                and "{" not in w and placeholder not in w]
+        return [w for w in words if not w.startswith("-") and not carries(w)]
+
+    if carries(argv[0]) or "$" in argv[0] or "`" in argv[0] \
+            or not _LITERAL_EXE_RE.match(argv[0]):
+        return Finding(UNREADABLE_RULE, text,
+                       f"{text} (via {via}, whose executable is filled in "
+                       "from input crew cannot see)", None, True, None)
 
     if head in ("terraform", "tofu", "terragrunt"):
         words = [w for w in args if not w.startswith("-")]
@@ -1159,7 +1284,7 @@ def _fed_finding(argv, env, via, placeholder):
             script = positional[0] if has_c and positional else None
         else:
             script = _pwsh_payload(args)
-        if script and placeholder not in script and not (
+        if script and not any(p in script for p in placeholders) and not (
                 via == "parallel" and "{" in script):
             return None
         return Finding(UNREADABLE_RULE, text, what, None, True, None)
@@ -1359,8 +1484,10 @@ def _substitute(word, variables):
     def repl(match):
         name = match.group(1) or match.group(2)
         return variables.get(name.lower(), match.group(0))
-    return re.sub(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)",
-                  repl, word)
+    out = re.sub(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)",
+                 repl, word)
+    # The same object when nothing changed, so a `_Bare` word stays marked.
+    return word if out == word else out
 
 
 _PS_ENV_RE = re.compile(r"^\$env:([A-Za-z_][A-Za-z0-9_]*)(?:=(.*))?$",
@@ -1673,11 +1800,21 @@ def _note_unpinned(root, whats, command):
     because nothing is pinned -- a row in `.crew/guard.log` and a visible
     message -- then stay quiet. Once, because the alternative is a row per
     `aws s3 ls`; said at all, because a pass nobody reports looks exactly
-    like a check that happened. Delete the marker to hear it again."""
+    like a check that happened. Delete the marker to hear it again.
+
+    A repo with no `.crew/` (armed from the machine-global layer) has nowhere
+    to record that it was said, and `.crew/` is never created here -- so it
+    is said EVERY time there, rather than never."""
     marker = os.path.join(root, UNPINNED_NOTED)
-    if not whats or os.path.exists(marker) \
-            or not os.path.isdir(os.path.dirname(marker)):
+    if not whats or os.path.exists(marker):
         return ""
+    said = (f"crew cloud guard: `{whats[0]}` runs as an identity crew cannot "
+            "name, and nothing is pinned in cloud.* to check it against. "
+            "Read-only cloud calls pass unchecked until cloud.awsProfiles / "
+            "cloud.awsRegions / cloud.azureSubscriptions pin something; ")
+    if not os.path.isdir(os.path.dirname(marker)):
+        return said + ("this repo has no .crew/ to record having said so, "
+                       "so it is said every time.")
     _log(root, (str(int(time.time())), IDENTITY_RULE, UNPINNED, "allow",
                 whats[0], command))
     try:
@@ -1685,11 +1822,7 @@ def _note_unpinned(root, whats, command):
             pass
     except OSError:
         pass
-    return (f"crew cloud guard: `{whats[0]}` runs as an identity crew cannot "
-            "name, and nothing is pinned in cloud.* to check it against. "
-            "Read-only cloud calls pass unchecked until cloud.awsProfiles / "
-            "cloud.awsRegions / cloud.azureSubscriptions pin something; this "
-            f"is said once ({UNPINNED_NOTED}).")
+    return said + f"this is said once ({UNPINNED_NOTED})."
 
 
 def _read_input():
@@ -1723,9 +1856,48 @@ def _read_input():
     return data, command, ""
 
 
+# Set by each wrapper for the call it makes, never read from anywhere else:
+# `bash` from cloud-guard.sh, `powershell` from cloud-guard.ps1. Unset (the
+# module run directly) judges every call.
+FLAVOUR_VAR = "CREW_CLOUD_GUARD_FLAVOUR"
+_PS1_TWIN = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                         "cloud-guard.ps1")
+
+
+def stands_down(tool_name, environ=None):
+    """True when the OTHER flavour judges this call, so this one must not.
+
+    Both flavours are registered, and on Windows both run. Which one judges
+    is decided by the TOOL, never by what this host looks like:
+
+    - `bash` judges every `Bash` call, always. A Bash call is running in
+      the very bash this flavour runs in, so no host condition can mean
+      "bash is not here to judge it" -- and so nothing the environment says
+      (an `OS` value, a same-named executable on PATH) can stand it down.
+    - `bash` stands down for a `PowerShell` call only when the `.ps1` twin
+      will run past its own first line: `OS` is `Windows_NT` (the exact test
+      that twin makes, read from the same environment both inherit) and the
+      twin is beside this file. Off Windows the twin exits at once, so bash
+      judges PowerShell calls there.
+    - `powershell` judges every `PowerShell` call and stands down for every
+      `Bash` call, which the rule above guarantees bash judges.
+    """
+    environ = os.environ if environ is None else environ
+    flavour = environ.get(FLAVOUR_VAR, "")
+    if flavour == "powershell":
+        return tool_name == "Bash"
+    if flavour == "bash":
+        return tool_name == "PowerShell" \
+            and environ.get("OS") == "Windows_NT" \
+            and os.path.isfile(_PS1_TWIN)
+    return False
+
+
 def main():
     data, command, problem = _read_input()
     if data is None:
+        return 0
+    if not problem and stands_down(data.get("tool_name")):
         return 0
     root = os.environ.get("CLAUDE_PROJECT_DIR") or data.get("cwd") or "."
     root = root if isinstance(root, str) else "."
