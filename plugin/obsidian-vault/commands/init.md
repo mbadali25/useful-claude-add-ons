@@ -36,10 +36,17 @@ In outline, so you know the shape before you load the skill:
    - a hook silently pointed at the wrong directory is how the personal version
    of this plugin used to fail for everyone else. For a second or later named
    vault there is nothing to detect from - always ask.
-2. **Install Obsidian if it is missing.** `winget install Obsidian.Obsidian` on
-   Windows; on Linux, detect the package manager and offer the Flatpak
-   (`flatpak install flathub md.obsidian.Obsidian`) or point at the AppImage -
-   there is no universal package name across distros, so ask rather than guess.
+   When `scan` finds more than one vault, run `vault_ops.py adopt` and ask about
+   **each vault separately** for a role - `primary` (exactly one; receives
+   captures and imports), `recall` (read for injection) or `ignore` - then
+   write every answer in one `adopt --role NAME=ROLE ... [--apply]` call, dry
+   run first. It refuses zero or two primaries and is a no-op on a re-run.
+2. **Install Obsidian only if it is missing.** Run `vault_ops.py
+   detect-obsidian`; on `missing`, show `install-obsidian`'s dry run (it prints
+   the exact winget / snap / flatpak command, or the manual deb/AppImage step)
+   and run it with `--apply` only after a yes. `unknown` is not `missing` - ask
+   the user to check rather than installing. With no vault at all, offer
+   `create-vault --name <name> --path <path>`, dry run first.
 3. **Name the vault in config, before anything addresses it by name.** Every
    step below takes `--vault <name>`, and a vault config has never heard of is
    discovered under its *directory basename*. If the chosen name differs from
@@ -145,7 +152,13 @@ In outline, so you know the shape before you load the skill:
    ```
    Report what it returned, not that the steps ran. `/obsidian-vault:doctor`
    explains the verdicts if one needs translating.
-9. **Companions.** Offer each of the following as its own yes/no - never a
+9. **Optional, each its own yes.** Importing an existing Markdown folder
+   (`import --source <dir>`, dry run first - it never overwrites), and the
+   daily gardener schedule (`schedule --os cron|systemd|windows`, which prints
+   the unit and never installs it; `--designate --apply` makes this host the
+   one gardener host). The REST bridge (steps 4-5) is optional too: capture,
+   recall, import and gardening all work on the files without it.
+10. **Companions.** Offer each of the following as its own yes/no - never a
    batched "install all three." State what it adds and the exact command
    before asking; skip an item with a one-line note if its check fails (e.g.
    its marketplace is unreachable), and never add a marketplace or install a

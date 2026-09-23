@@ -60,6 +60,15 @@ def _home():
 
 
 def config_path():
+    """~/.claude/obsidian/config.json, or OBSIDIAN_VAULT_CONFIG when set.
+
+    The override exists for callers that must not read the real config - a
+    test fixture, or a second tool (crew's context hook) pointed at a scratch
+    config - without having to fake a whole HOME.
+    """
+    override = os.environ.get("OBSIDIAN_VAULT_CONFIG")
+    if override:
+        return override
     return os.path.join(_home(), ".claude", "obsidian", "config.json")
 
 
@@ -74,11 +83,36 @@ def read_config():
 
 
 def write_config(data):
+    """Serialize first, then replace atomically.
+
+    `open(path, "w")` truncates before json.dump has produced a byte, so a
+    dump that raises (a non-serializable value) used to leave a zero-byte
+    config behind - every vault unconfigured at once. The text is built in
+    memory, written to a sibling temp file, and swapped in with os.replace.
+    """
     path = config_path()
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w", encoding="utf-8") as fh:
-        json.dump(data, fh, indent=2, sort_keys=True)
-        fh.write("\n")
+    text = json.dumps(data, indent=2, sort_keys=True) + "\n"
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    tmp = f"{path}.tmp-{os.getpid()}"
+    with open(tmp, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write(text)
+    os.replace(tmp, path)
+
+
+ROLES = ("primary", "recall", "ignore")
+
+
+def host_id():
+    """This machine's name as used in per-host file names: lowercase, [a-z0-9-].
+
+    OBSIDIAN_VAULT_HOST overrides it - for a machine whose hostname changes
+    (DHCP-assigned names, a renamed laptop) and for tests. An empty result
+    falls back to "unknown-host" rather than producing `pending-reflect..md`.
+    """
+    raw = os.environ.get("OBSIDIAN_VAULT_HOST") or platform.node() or ""
+    raw = raw.split(".")[0].lower()
+    cleaned = re.sub(r"[^a-z0-9-]+", "-", raw).strip("-")
+    return cleaned or "unknown-host"
 
 
 def obsidian_app_json_path():
@@ -196,6 +230,7 @@ def list_vaults():
                 "port": _valid_port(entry.get("port", DEFAULT_PORT), f"vaults.{name}.port"),
                 "layout": entry.get("layout"),
                 "default": entry.get("default") is True,
+                "role": entry.get("role") if entry.get("role") in ROLES else None,
             }
         if out and not any(v["default"] for v in out.values()):
             # No surviving vault explicitly marked default (either none was,

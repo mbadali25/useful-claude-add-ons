@@ -477,6 +477,8 @@ py_suite "obsidian_common: multi-vault resolution" test_obsidian_common.py
 py_suite "ports, collisions, identity, vault_ops CLI" test_vault_ops.py
 py_suite "profiles: the three sets, detection, the 50k line, split breakage" test_vault_profiles.py
 py_suite "the four bridge states, told apart" test_bridge_states.py
+py_suite "adopt roles, import, recall, gardener bounds, schedule units, per-host capture" \
+  test_memory_ops.py
 
 echo "== the guard WRAPPERS: python resolution (own PATH, own HOME) =="
 
