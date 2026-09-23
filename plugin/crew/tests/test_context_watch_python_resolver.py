@@ -33,6 +33,7 @@ import pathlib
 import re
 import shutil
 import subprocess
+import uuid
 
 import pytest
 
@@ -726,9 +727,14 @@ def test_resolver_rejects_a_native_windows_path_with_no_real_target(tmp_path, pa
     """Must-block: proves the FULL resolver actually runs `-x` against the
     normalised absolute path rather than skipping the check once a drive
     letter is seen. `/c/<unique token>/python.exe` cannot exist on any
-    non-Windows host -- the token is derived from `tmp_path` so two
-    parallel test workers can never collide on the same absolute path."""
-    token = os.path.basename(str(tmp_path))
+    non-Windows host -- the token is derived from `tmp_path` PLUS a uuid
+    suffix, not `tmp_path` alone: `tmp_path`'s own basename repeats
+    identically across separate pytest runs (it is numbered relative to a
+    per-session parent directory, which the basename strips off), so a
+    leftover `/c/<token>` from a run of the must-allow test below that was
+    killed before its `finally: shutil.rmtree` ran would otherwise make
+    THIS test's "must not exist" assumption false on the very next run."""
+    token = os.path.basename(str(tmp_path)) + "-" + uuid.uuid4().hex[:8]
     stub_dir = tmp_path / "stubs"
     stub_dir.mkdir()
     body = f"#!/bin/sh\nprintf '%s\\n' 'C:\\{token}\\python.exe'\nexit 0\n"
@@ -772,9 +778,23 @@ def test_resolver_accepts_a_native_windows_path_to_a_real_target_under_c(tmp_pat
     """Must-allow, real end-to-end: only runs where `/c` is ALREADY a real
     mount (WSL, or Git Bash's own view of the C: drive) -- never created,
     only used, and only a throwaway subdirectory under it, cleaned up after
-    like any other tmp fixture."""
-    token = os.path.basename(str(tmp_path))
+    like any other tmp fixture.
+
+    The token carries a uuid suffix, not just `tmp_path`'s own basename:
+    that basename repeats identically across separate pytest runs (pytest
+    numbers it relative to a per-session parent directory, which the
+    basename strips off), so a run killed before the `finally:
+    shutil.rmtree` below could run left this exact directory behind, and
+    the next run's bare `mkdir(parents=True)` (deliberately with no
+    `exist_ok` -- see below) then raised FileExistsError on its own
+    leftover rather than on a genuine collision. The guarantee that this
+    never touches a pre-existing directory of the REAL user's stays: a
+    uuid-suffixed name cannot collide with one the user already had."""
+    token = os.path.basename(str(tmp_path)) + "-" + uuid.uuid4().hex[:8]
     target_dir = pathlib.Path(f"/c/{token}")
+    # NO exist_ok - see the docstring above: a genuine collision (now
+    # vanishingly unlikely, with the uuid suffix) must still be loud rather
+    # than silently reused and then deleted in the `finally` block below.
     target_dir.mkdir(parents=True)
     try:
         target = target_dir / "python.exe"

@@ -651,9 +651,11 @@ fi
 # 0, zero output), and the fall-through below treated empty output as
 # "nothing matched" rather than "nothing ran" - the gate exited 0 having
 # checked precisely nothing, the DEFAULT state on a Windows host with no
-# real python. crew_py_strict actually RUNS each candidate and rejects a
-# WindowsApps path outright (see its own header in _common.sh), so that
-# stub can no longer become $PY at all; see the `elif [ -z "$MATCHED" ]`
+# real python. crew_py_strict actually RUNS each candidate and rejects any
+# that fails to prove a real interpreter - not a blanket WindowsApps-path
+# match, which also catches a genuine Store Python install (see its own
+# header in _common.sh) - so a placeholder alias stub can no longer become
+# $PY at all; see the `elif [ -z "$MATCHED" ]`
 # branch below the matcher invocation for the second, independent check
 # that exists in case some OTHER broken-but-`command -v`-resolvable
 # interpreter ever slips past crew_py_strict the same way.
@@ -1563,7 +1565,7 @@ fi
 # never look fully verified) and wrong at the PER-RULE granularity the sync
 # actually writes at: one failing rule among many discarded every OTHER
 # rule's passing evidence too, because the whole sync call was skipped.
-# `.crew/verify.json:193` recorded the measured cost of that: one absent
+# `.crew/verify.json:200` recorded the measured cost of that: one absent
 # `node_modules` kept three unrelated rules UNVERIFIED and the sha marker
 # frozen 14 commits behind HEAD.
 #

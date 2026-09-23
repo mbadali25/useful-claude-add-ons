@@ -177,9 +177,36 @@ def _print_python(ps1_path, path_entries):
 
 
 def _stub(path):
+    """A file Get-Command resolves as an Application. NOT "never executed by
+    -PrintPython" (stale as of Windows audit wave 3, corrected round-2
+    review 2026-09-22): Resolve-CrewPython DOES attempt to run this -- the
+    rejection these must-block cases below depend on comes from the launch
+    failing (garbage content behind a real-looking .exe extension is not a
+    valid PE), not from the candidate being skipped unexamined."""
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="ascii") as fh:
-        fh.write("rem stub, never executed by -PrintPython" + chr(10))
+        fh.write("rem stub, not a valid executable when actually launched" + chr(10))
+    return path
+
+
+def _real_stub(path):
+    """A REAL, launchable `.cmd` batch file that echoes its OWN path when
+    run -- never the inert `_stub()` above. Review round, 2026-09-22:
+    `test_a_real_python_beside_a_stub_still_resolves` used `_stub()` for
+    the interpreter it expects the resolver to FIND, which only ever
+    looked like a real Application to Get-Command's metadata and was never
+    actually launchable.
+
+    LIMITATION, noted rather than worked around: `echo <path>` is
+    UNESCAPED cmd.exe text -- `tmp_path`'s own fixtures never contain `&`,
+    `^`, `%`, parens, or non-ASCII characters, so this has never needed to
+    quote or escape them, but a profile whose OWN path did (a Windows
+    username with an accent, for instance) would need this stub widened
+    first; batch-quoting rules are their own trap and are not worth
+    adding speculatively."""
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="ascii") as fh:
+        fh.write("@echo off\r\necho " + path + "\r\n")
     return path
 
 
@@ -198,13 +225,45 @@ def test_windowsapps_stub_is_never_returned(ps1_path, tmp_path):
 
 @_WINDOWS_ONLY
 @pytest.mark.parametrize("ps1_path", [_PM_BRIEF_PS1, _PLATFORM_SYNC_PS1])
+def test_a_store_python_alias_relaying_to_a_real_interpreter_still_resolves(
+        ps1_path, tmp_path):
+    """Must-allow: Windows audit wave 3's WindowsApps-parity fix. A genuine
+    Microsoft Store Python install resolves through EXACTLY this layout --
+    the alias at `...\\WindowsApps\\python3.exe` relays to a real
+    interpreter whose own `sys.executable` is ALSO WindowsApps-rooted.
+    Before this fix the blanket `-match 'WindowsApps'` check (on both
+    `$cmd.Source` and the relay's own reported `$real`) rejected that
+    working case too. This is a `.cmd` that PRINTS a WindowsApps-rooted
+    path rather than one that lives at it, because -PrintPython never
+    executes what the resolver returns."""
+    apps = tmp_path / "WindowsApps"
+    relay_target = str(
+        apps / "PythonSoftwareFoundation.Python.3.12_qbz5n2kfra8p0"
+        / "python.exe")
+    os.makedirs(os.path.dirname(relay_target), exist_ok=True)
+    with open(relay_target, "w", encoding="ascii") as fh:
+        fh.write("placeholder")
+    stub = apps / "python3.cmd"
+    stub.parent.mkdir(parents=True, exist_ok=True)
+    stub.write_text("@echo off\r\necho " + relay_target + "\r\n",
+                     encoding="ascii")
+
+    resolved = _print_python(ps1_path, [str(apps)])
+    assert resolved == relay_target, (
+        "a Store-Python alias relaying to a real interpreter under "
+        "WindowsApps must be ACCEPTED, not rejected for its path. got: "
+        + resolved)
+
+
+@_WINDOWS_ONLY
+@pytest.mark.parametrize("ps1_path", [_PM_BRIEF_PS1, _PLATFORM_SYNC_PS1])
 def test_a_real_python_beside_a_stub_still_resolves(ps1_path, tmp_path):
     apps = tmp_path / "WindowsApps"
     real = tmp_path / "tools"
     _stub(str(apps / "python3.exe"))
-    _stub(str(real / "python3.exe"))
+    real_exe = _real_stub(str(real / "python3.cmd"))
 
     resolved = _print_python(ps1_path, [str(apps), str(real)])
-    assert resolved.lower().startswith(str(real).lower()), (
-        "the real python3.exe must win over the WindowsApps stub. got: "
+    assert resolved == real_exe, (
+        "the real python3.cmd must win over the WindowsApps stub. got: "
         + resolved)

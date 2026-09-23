@@ -533,4 +533,12 @@ esac
 
 echo
 echo "RESULT: $PASS passed, $FAIL failed, $SKIP skipped"
-[ "$FAIL" -eq 0 ]
+[ "$FAIL" -eq 0 ] || exit 1
+# A missing pwsh degrades some sub-cases to SKIP without failing anything -
+# that used to exit 0 here, and the Stop gate (and any CI step reading this
+# script's exit code) reads 0 as PASS whether or not every check actually
+# ran. Exit 77 instead, this repo's SKIP convention (render.sh does the
+# same for a missing mmdc): "some of this suite did not run" must never
+# read as "this suite ran and passed".
+[ "$SKIP" -eq 0 ] || exit 77
+exit 0

@@ -25,34 +25,39 @@ $dir = Split-Path -Parent $MyInvocation.MyCommand.Path
 
 function Resolve-CrewPython {
   # BYTE-FOR-BYTE the resolver in role-write-guard.ps1 -- see that file's own
-  # header for why a dot-sourced shared copy is not used. This copy was
-  # widened to match it (Windows audit wave 3): the old
-  # `(Get-Command python3, python | Select-Object -First 1).Source` trusted a
-  # WindowsApps App Execution Alias's metadata without executing it, and
-  # walked every PATH match for one name before moving to the next rather
-  # than taking only the first. A hook that WRITES `.crew/config.json`'s
-  # platform block is the last place that should run on an unverified
-  # interpreter. `tests/test_pm_brief_platform_sync_python_resolver.py` asserts this
+  # header for why a dot-sourced shared copy is not used, and for the full
+  # history: metadata-only -> execute-and-verify (Windows audit wave 3) ->
+  # `-All`-walk-every-match restored (review, 2026-09-22) after `-First 1`
+  # proved unable to see a real interpreter shadowed by a same-named
+  # profile function or sitting behind a same-named WindowsApps stub. A
+  # hook that WRITES `.crew/config.json`'s platform block is the last place
+  # that should run on an unverified interpreter.
+  # `tests/test_pm_brief_platform_sync_python_resolver.py` asserts this
   # copy still agrees with role-write-guard.ps1's.
   $names = @('python3', 'python', 'py')
   foreach ($name in $names) {
-    $cmd = Get-Command $name -ErrorAction SilentlyContinue | Select-Object -First 1
-    if (-not $cmd -or $cmd.CommandType -ne 'Application' -or -not $cmd.Source) { continue }
-    if ($cmd.Source -match 'WindowsApps') { continue }
-    $real = $null
-    $global:LASTEXITCODE = $null
-    try {
-      $output = & $cmd.Source -c 'import sys; print(sys.executable)' 2>$null
-      if ($LASTEXITCODE -eq 0 -and $output) {
-        $real = @($output)[0]
+    $candidates = Get-Command $name -All -ErrorAction SilentlyContinue
+    foreach ($cmd in $candidates) {
+      if ($cmd.CommandType -ne 'Application' -or -not $cmd.Source) { continue }
+      $global:LASTEXITCODE = $null
+      $output = $null
+      try {
+        $output = & $cmd.Source -c 'import sys; print(sys.executable)' 2>$null
+      } catch {
+        $output = $null
       }
-    } catch {
-      $real = $null
+      if ($LASTEXITCODE -ne 0 -or -not $output) { continue }
+      $lines = @($output)
+      if ($lines.Count -ne 1) { continue }
+      $real = $lines[0]
+      if ([string]::IsNullOrEmpty($real)) { continue }
+      if (-not (Test-Path -LiteralPath $real -PathType Leaf)) { continue }
+      if ($env:OS -ne 'Windows_NT') {
+        $item = Get-Item -LiteralPath $real -ErrorAction SilentlyContinue
+        if (-not $item -or $item.UnixMode -notmatch 'x') { continue }
+      }
+      return $real
     }
-    if ($real) { $real = $real.ToString().Trim() }
-    if (-not $real -or $real -match 'WindowsApps') { continue }
-    if (-not (Test-Path -LiteralPath $real -PathType Leaf)) { continue }
-    return $real
   }
   return ''
 }

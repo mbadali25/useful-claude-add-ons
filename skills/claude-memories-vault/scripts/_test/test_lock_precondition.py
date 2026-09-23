@@ -146,7 +146,7 @@ def test_the_interpreter_is_never_named_bare():
 
 
 def test_the_resolver_tries_every_candidate_verify_json_tries():
-    """Ported from `.crew/verify.json:170`, and the order is load-bearing.
+    """Ported from `.crew/verify.json:178`, and the order is load-bearing.
 
     Under WSL the reachable binary is the Windows one and is named `pwsh.exe`,
     so omitting the suffix reported TOOL MISSING on a box where PowerShell was

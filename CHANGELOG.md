@@ -6,6 +6,25 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Fixed
 
+- **`crew` 0.20.12, `obsidian-vault` 0.3.17, `jira-manager` 1.0.3,
+  `claude-memories-vault` 1.3.1, `claude-memories-canvas` 1.1.1: CI and the Stop
+  gate now run the harness suites, and a missing tool reads as unverified
+  instead of passed; the five PowerShell python resolvers match the bash one.**
+  `uv-install.sh`, `mcp-preflight-catalog.sh`, the render suite, the
+  obsidian-vault hook suites and the jira-manager `jq` suite are wired into CI
+  and `.crew/verify.json`; each exits 77 when a case was skipped for a missing
+  tool, which the Stop gate records as unverified and a GitHub step shows as a
+  failure (the workflow comments say it means a tool is missing on the runner).
+  The five `.ps1` resolvers walk every `Get-Command -All` hit and execute-probe
+  each one, so a WindowsApps stub earlier on PATH no longer hides a real python
+  and a same-named profile function no longer shadows it; they reject
+  multi-line output, leading whitespace, non-executable and nonexistent targets
+  as `crew_py_strict` does. 72+ parity cases run on Linux pwsh against
+  `crew_py_strict` on the same PATH, sabotage-tested. Still open, in `TODO.md`:
+  the `.ps1` hooks exit 0 when no python resolves, the probes have no timeout,
+  and `role-write-guard.sh` allows a write unjudged when a WindowsApps stub
+  precedes a real python.
+
 - **Windows audit wave 3: `claude-code-defaults` 1.0.1, `intune-graph` 1.1.3,
   `mermaid-svg-bitbucket` 1.2.5, `wazuh-onprem` 1.1.1, `obsidian-vault` 0.3.16.**
   Each lane went through four review rounds with sabotage evidence.

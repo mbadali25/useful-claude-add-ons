@@ -77,7 +77,7 @@ def test_the_interpreter_is_never_named_bare():
 
 
 def test_the_resolver_tries_every_candidate_verify_json_tries():
-    """Ported from `.crew/verify.json:170`; the order is load-bearing.
+    """Ported from `.crew/verify.json:178`; the order is load-bearing.
 
     Under WSL the reachable binary is the Windows one and is named `pwsh.exe`,
     so both known locations are tried with AND without the suffix.

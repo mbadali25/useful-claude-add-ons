@@ -25,76 +25,125 @@ if ($env:OS -ne 'Windows_NT') { exit 0 }
 $dir = Split-Path -Parent $MyInvocation.MyCommand.Path
 
 function Resolve-CrewPython {
-  # NOT byte-for-byte with verify-gate.ps1's/pm-pulse.ps1's copies any more
-  # -- see tests/test_role_write_guard.py for why the parity discipline
-  # changed shape rather than being dropped. Those two files' resolver only
-  # needs to match `_common.sh`'s bare `crew_py()`; this one needs to match
-  # role-write-guard.sh's OWN resolver, which does more than `crew_py()`
-  # does, so this copy has to as well.
+  # Review round, 2026-09-22, on top of the 2026-09-19 execute-and-verify
+  # fix below: `Get-Command $name -ErrorAction SilentlyContinue |
+  # Select-Object -First 1` (the shape this function briefly carried)
+  # PROVED TWO REGRESSIONS, both against real, previously-reported failure
+  # modes this file exists to prevent:
   #
-  # Two bugs, reported together 2026-09-19 by a PowerShell-focused review of
-  # THIS file specifically, on top of the WindowsApps/profile-shadow guards
-  # this function already had:
+  #   1. A PowerShell FUNCTION always outranks an Application of the SAME
+  #      name in Get-Command's own result order -- confirmed directly:
+  #      `Get-Command python3 -All` against a PATH carrying both a
+  #      `function python3 {}` (hooks.json passes no -NoProfile, so a
+  #      profile-defined wrapper is live) and a real `python3` executable
+  #      returns `[Function, Application]`, in that order, every time.
+  #      `-First 1` therefore NEVER sees the Application: it keeps only the
+  #      function, which fails the `CommandType -ne 'Application'` check
+  #      and moves to the NEXT NAME -- so a profile function shadowing
+  #      `python3`/`python` silently loses the real interpreter under
+  #      those names even when one is sitting right there. `-All` returns
+  #      BOTH entries in that same rank order, letting the loop below skip
+  #      the function and reach the real one for the SAME name.
+  #   2. The identical shape applies to a WindowsApps alias stub sitting
+  #      ahead of a genuine interpreter under the SAME name further down
+  #      PATH (`PATH=WindowsApps\python3;RealDir\python3`, no `python`/`py`
+  #      anywhere): `-First 1` tries only the stub, the stub fails the
+  #      execute-probe, and the loop moves to the NEXT NAME rather than
+  #      trying `RealDir`'s `python3` -- exactly the "one shell flavour
+  #      enforces guards.roleWrites: block, the other allows unjudged"
+  #      failure this file's history already names, reintroduced by a
+  #      different mechanism. `-All`, walking and PROBING every match for
+  #      a name before giving up on it, finds `RealDir`'s `python3`.
   #
-  #   1. Metadata alone (`.CommandType` / `.Source`) is exactly what a
-  #      WindowsApps stub already passes -- `Get-Command` reports it as a
-  #      real Application with a real Source. role-write-guard.sh's own
-  #      resolver does not trust that either: it EXECUTES the candidate
-  #      (`$cand -c "import sys;print(sys.executable)"`) and reads back
-  #      what actually ran. This copy now does the same, rejecting a
-  #      candidate that produces no output when actually launched.
-  #   2. `Get-Command $name -All` walked every match for ONE name before
-  #      moving to the next name -- so on `PATH=WindowsApps;RealDir` with
-  #      only `python3` present anywhere (no `python`/`py` at all), the old
-  #      code walked PAST the WindowsApps `python3` stub and found
-  #      RealDir's `python3` further down PATH. Bash's `command -v
-  #      python3` (role-write-guard.sh's resolver) takes only the FIRST
-  #      match for a name; rejecting it moves to the NEXT NAME, never a
-  #      second search of the same one -- so the .sh abandoned `python3`
-  #      after the stub and never found a `python`/`py` that did not
-  #      exist either. Same PATH, same machine: one shell flavour
-  #      enforced `guards.roleWrites: block` and the other silently
-  #      allowed the write unjudged. This copy now takes only the first
-  #      match per name too, mirroring the .sh's name-order exactly.
+  # `-All` was the shape here until the 2026-09-19 fix (see below)
+  # deliberately narrowed it to `-First 1` to match bash's `command -v`,
+  # which can only ever report ONE match. That narrowing is what
+  # reintroduced both regressions above: PowerShell's Get-Command CAN
+  # enumerate every match for a name, bash's `command -v` structurally
+  # cannot, and giving that capability up to imitate a shell that does not
+  # have it made this resolver WORSE at its one job -- finding a working
+  # interpreter -- for a guard whose failure mode is allowing a write
+  # unjudged. Every candidate is still PROVED by execution before being
+  # trusted (below), so walking every match for a name costs nothing in
+  # safety and fixes both regressions above.
+  #
+  # The 2026-09-19 fix itself stays: metadata alone (`.CommandType` /
+  # `.Source`) is exactly what a WindowsApps stub already passes --
+  # `Get-Command` reports it as a real Application with a real Source.
+  # role-write-guard.sh's own resolver does not trust that either: it
+  # EXECUTES the candidate (`$cand -c "import sys;print(sys.executable)"`)
+  # and reads back what actually ran, rejecting one that produces no
+  # output when actually launched, or that exits nonzero despite printing
+  # something plausible (matching `real=$(...) || continue` on the bash
+  # side).
+  #
+  # NOT a blanket "reject anything containing WindowsApps" -- that used to
+  # sit here (on both the candidate's own Source and its reported $real)
+  # and rejected a genuine Microsoft Store Python install, which resolves
+  # through EXACTLY that shape: `Get-Command python3` finds the alias at
+  # `...\Microsoft\WindowsApps\python3.exe`, and when Python IS actually
+  # installed through the Store that alias relays to a REAL working
+  # interpreter whose own `sys.executable` is
+  # `...\WindowsApps\PythonSoftwareFoundation.Python.3.x_<hash>\python.exe`
+  # -- also WindowsApps-rooted, so the substring match caught it too. The
+  # execute-and-verify probe below already proves the difference without
+  # needing to know WHERE the interpreter lives. See `_common.sh`'s
+  # `crew_py_strict` header for the bash-side twin of this correction.
+  #
+  # Three further proofs, matching `crew_py_strict` exactly rather than
+  # just its outcome (review, 2026-09-22): MULTI-LINE stdout is rejected,
+  # not silently truncated to its first line -- bash's `$(...)` captures
+  # the WHOLE output as one string, so an embedded newline can never equal
+  # a real file's path and `-x` fails structurally; PowerShell instead
+  # splits multi-line native output into an array, so that has to be
+  # checked explicitly (`$lines.Count -ne 1`) to reject the same shape.
+  # LEADING WHITESPACE is never trimmed away -- bash does not trim it
+  # either (only a trailing newline, consumed by `$(...)` itself, and any
+  # `\r`, which PowerShell's own per-line output capture already discards
+  # -- confirmed directly, a `\r\n`-terminated stub's captured line carries
+  # no trailing `\r`), so a leading space prepended to an otherwise-real
+  # path fails the existence check below exactly as it fails bash's `-x`,
+  # and that implicit rejection is the correct parity, not a dedicated
+  # whitespace check. NON-EXECUTABLE TARGET: `Test-Path -PathType Leaf` on
+  # Windows only proves EXISTENCE (there is no POSIX-style executable bit
+  # there; an .exe's "executability" is its extension, matching this
+  # file's original proof), but on a POSIX host -- the Linux test harness,
+  # or a genuine WSL/Linux run -- existence is not enough, so `UnixMode` is
+  # also checked there for the same reason bash's `-x` requires it.
   $names = @('python3', 'python', 'py')
   foreach ($name in $names) {
-    $cmd = Get-Command $name -ErrorAction SilentlyContinue | Select-Object -First 1
-    if (-not $cmd -or $cmd.CommandType -ne 'Application' -or -not $cmd.Source) { continue }
-    if ($cmd.Source -match 'WindowsApps') { continue }
-    $real = $null
-    $global:LASTEXITCODE = $null
-    try {
-      # Captured WHOLE, not piped through `Select-Object -First 1` --
-      # that cmdlet can stop reading (and signal the pipeline to close)
-      # as soon as it has one object, which races the native process's
-      # own exit and can leave `$LASTEXITCODE` reflecting an early
-      # termination rather than the candidate's real exit status. Letting
-      # the candidate run to completion first is what makes the exit-code
-      # check below trustworthy.
-      $output = & $cmd.Source -c 'import sys; print(sys.executable)' 2>$null
+    $candidates = Get-Command $name -All -ErrorAction SilentlyContinue
+    foreach ($cmd in $candidates) {
+      if ($cmd.CommandType -ne 'Application' -or -not $cmd.Source) { continue }
+      $global:LASTEXITCODE = $null
+      $output = $null
+      try {
+        # Captured WHOLE, not piped through `Select-Object -First 1` --
+        # that cmdlet can stop reading (and signal the pipeline to close)
+        # as soon as it has one object, which races the native process's
+        # own exit and can leave `$LASTEXITCODE` reflecting an early
+        # termination rather than the candidate's real exit status.
+        $output = & $cmd.Source -c 'import sys; print(sys.executable)' 2>$null
+      } catch {
+        $output = $null
+      }
       # NOT just "did it print something" -- a wrapper that prints a
       # plausible interpreter path and then exits nonzero must be
       # rejected too, matching role-write-guard.sh's own
       # `real=$(...) || continue`, which checks the candidate's exit
-      # status. Reported 2026-09-19: this check was absent, so a
-      # candidate bash correctly rejected (nonzero exit) was still
-      # ACCEPTED here on output alone.
-      if ($LASTEXITCODE -eq 0 -and $output) {
-        $real = @($output)[0]
+      # status.
+      if ($LASTEXITCODE -ne 0 -or -not $output) { continue }
+      $lines = @($output)
+      if ($lines.Count -ne 1) { continue }
+      $real = $lines[0]
+      if ([string]::IsNullOrEmpty($real)) { continue }
+      if (-not (Test-Path -LiteralPath $real -PathType Leaf)) { continue }
+      if ($env:OS -ne 'Windows_NT') {
+        $item = Get-Item -LiteralPath $real -ErrorAction SilentlyContinue
+        if (-not $item -or $item.UnixMode -notmatch 'x') { continue }
       }
-    } catch {
-      $real = $null
+      return $real
     }
-    if ($real) { $real = $real.ToString().Trim() }
-    if (-not $real -or $real -match 'WindowsApps') { continue }
-    # Exit 0 and non-empty output is still not proof: a wrapper could print a
-    # plausible-looking path to something that is not actually there. Confirm
-    # the path EXISTS as a file before trusting it -- the bash-side parity
-    # check is `[ -x "$real" ]`; Test-Path has no executable-bit concept on
-    # Windows (an .exe's "executability" is its extension, not a mode bit),
-    # so -PathType Leaf is the equivalent proof here.
-    if (-not (Test-Path -LiteralPath $real -PathType Leaf)) { continue }
-    return $real
   }
   return ''
 }

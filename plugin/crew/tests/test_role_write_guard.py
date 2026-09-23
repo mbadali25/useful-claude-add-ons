@@ -1780,6 +1780,41 @@ def test_the_windowsapps_stub_is_never_returned(tmp_path):
 
 
 @needs_pwsh_windows
+def test_a_store_python_alias_relaying_to_a_real_interpreter_still_resolves(tmp_path):
+    """Must-allow: the Windows audit wave 3 fix, and the shape that matters.
+    A genuine Microsoft Store Python install resolves through EXACTLY this
+    layout -- `Get-Command python3` finds the alias at
+    `...\\Microsoft\\WindowsApps\\python3.exe`, and that alias relays to a
+    REAL working interpreter whose own `sys.executable` is ALSO
+    WindowsApps-rooted (`...\\WindowsApps\\PythonSoftwareFoundation.
+    Python.3.x_<hash>\\python.exe`). Before this fix the blanket
+    `-match 'WindowsApps'` check rejected the relay's reported path too,
+    even though the execute-and-verify probe had already proved it real --
+    so a machine with Python genuinely installed through the Store reported
+    "no usable python" on every turn. The stub here reports a path that
+    itself contains "WindowsApps", proving this is no longer rejected on
+    that substring alone."""
+    apps = tmp_path / "WindowsApps"
+    relay_target = str(
+        apps / "PythonSoftwareFoundation.Python.3.12_qbz5n2kfra8p0"
+        / "python.exe")
+    # Resolve-CrewPython's Test-Path check only requires the REPORTED path
+    # to exist as a file -- it never executes it a second level down -- so a
+    # placeholder file at that path is enough to prove the resolver stops
+    # rejecting on the WindowsApps substring, without needing a second real
+    # interpreter on disk.
+    os.makedirs(os.path.dirname(relay_target), exist_ok=True)
+    pathlib.Path(relay_target).write_text("placeholder", encoding="ascii")
+    _stub(str(apps / "python3.cmd"), reports=relay_target)
+
+    resolved = _print_python([str(apps)])
+    assert resolved == relay_target, (
+        "a Store-Python alias relaying to a real interpreter under "
+        "WindowsApps must be ACCEPTED, not rejected for its path. got: "
+        + resolved)
+
+
+@needs_pwsh_windows
 def test_a_real_python_under_a_different_name_still_resolves(tmp_path):
     """Must-allow: the fix must not become "never finds python". Under the
     name-order semantics FIX 3 introduced, rejecting `python3` moves to
@@ -1800,14 +1835,32 @@ def test_a_real_python_under_a_different_name_still_resolves(tmp_path):
 
 
 @needs_pwsh_windows
-def test_windowsapps_stub_with_only_one_name_present_falls_through_like_bash(tmp_path):
-    """The exact reported divergence. PATH = WindowsApps(python3 stub
-    only); RealDir(python3, real) -- no `python`/`py` ANYWHERE. The old
-    `Get-Command $name -All` walked past the stub to RealDir's python3
-    WITHIN the same name and resolved it; bash's `command -v python3`
-    takes only the first match, rejects it, and moves to the NEXT NAME --
-    finding nothing, since `python`/`py` do not exist either. Both shell
-    flavours must now agree that neither resolves an interpreter here."""
+def test_windowsapps_stub_with_only_one_name_present_still_resolves(tmp_path):
+    """SUPERSEDES the 2026-09-19 divergence fix this test used to assert
+    the opposite of. PATH = WindowsApps(python3 stub only); RealDir(python3,
+    real) -- no `python`/`py` ANYWHERE.
+
+    Review, 2026-09-22: `Get-Command $name -All`, walking past the stub to
+    RealDir's python3 WITHIN the same name, was narrowed to `-First 1` on
+    2026-09-19 specifically to STOP doing this and match bash's `command -v`
+    (which takes only the first match and cannot retry a name it already
+    rejected). That narrowing turned out to cost more than it fixed: the
+    identical `-First 1` shape also can never see a real interpreter behind
+    a same-named PowerShell profile function (`Get-Command name -All`
+    against a function-shadowed name returns `[Function, Application]`, in
+    that rank order, every time -- confirmed directly in
+    test_ps1_python_resolver_parity.py), and hooks.json registers this hook
+    with no -NoProfile, so that shadow is a live vector. `-All` is restored;
+    every candidate is still proved by execution before being trusted
+    (`_stub`'s docstring), so walking every match for a name costs nothing
+    in safety and fixes both. bash's `command -v` has no way to walk past
+    its own first match (see
+    test_bash_allows_the_write_unjudged_in_the_same_layout below, and its
+    docstring's correction: bash does not fail CLOSED here, it fails OPEN,
+    allowing the write) -- ps1 being MORE likely to find a working
+    interpreter than bash here is the safe direction for a guard whose
+    failure mode is allowing a write unjudged, and is not a divergence
+    this file needs to eliminate."""
     apps = tmp_path / "WindowsApps"
     real = tmp_path / "tools"
     real_exe = str(real / "python3.cmd")
@@ -1815,18 +1868,31 @@ def test_windowsapps_stub_with_only_one_name_present_falls_through_like_bash(tmp
     _stub(real_exe, reports=real_exe)      # a REAL python3 further down PATH
 
     resolved = _print_python([str(apps), str(real)])
-    assert resolved == "", (
-        "role-write-guard.ps1 must take only the FIRST match for a name, "
-        "matching role-write-guard.sh's `command -v` semantics -- walking "
-        "past the WindowsApps stub to a SECOND python3 further down PATH "
-        "is the divergence reported 2026-09-19. got: " + resolved)
+    assert resolved == real_exe, (
+        "role-write-guard.ps1 must walk every match for a name, not stop "
+        "at the first one -- a WindowsApps stub ahead of a REAL python3 "
+        "under the SAME name must not hide it. got: " + resolved)
 
 
 @needs_bash
-def test_bash_agrees_it_finds_nothing_in_the_same_layout(tmp_path):
-    """The bash HALF of the parity claim above, driven through the actual
-    .sh end to end (not just the .ps1's -PrintPython probe), so the
-    assertion is about real behaviour, not the resolver in isolation."""
+def test_bash_allows_the_write_unjudged_in_the_same_layout(tmp_path):
+    """The bash HALF of the comparison above, driven through the actual .sh
+    end to end (not just the .ps1's -PrintPython probe) -- recorded as an
+    INTENTIONAL divergence from the .ps1 test above, and NOT described as
+    bash "failing closed" here (corrected 2026-09-22 review round: that
+    framing implied the write gets blocked, when the opposite happens).
+    `_resolve_role_write_python` (bash's `command -v` sees only the FIRST
+    PATH match for a name and has no way to retry it) returns nothing on
+    this layout, and `role-write-guard.sh:115-117` treats that as
+    `PY=$(_resolve_role_write_python) || { echo "...allowing it unjudged."
+    >&2; exit 0; }` -- no python to judge WITH means the write is ALLOWED,
+    not blocked. Under `guards.roleWrites: block` (the config this fixture
+    sets), an out-of-scope PM write on EXACTLY this PATH shape goes through
+    unjudged. That is bash FAILING OPEN, the opposite of safe -- see
+    TODO.md's entry filed against this exact layout. `role-write-guard.ps1`
+    (proven above) does not have this gap: it finds the real interpreter
+    and actually judges the write, which is why the ps1/bash divergence
+    here is the SAFE direction, not a defect to eliminate."""
     apps = tmp_path / "WindowsApps"
     real = tmp_path / "tools"
     apps.mkdir(parents=True)
@@ -1861,10 +1927,11 @@ def test_bash_agrees_it_finds_nothing_in_the_same_layout(tmp_path):
         input=_write_payload("Write", str(root / "src" / "app.py"), "pm", str(root)),
         capture_output=True, text=True, check=False, env=env, cwd=str(root))
     assert proc.returncode == 0, (
-        "bash must ALSO find nothing usable in this exact layout -- if "
-        "this ever fails while the .ps1 test above still passes, the two "
-        "shells have re-diverged. stdout: " + proc.stdout + " stderr: "
-        + proc.stderr)
+        "bash must ALSO find no usable python in this exact layout, and "
+        "exit 0 allowing the write unjudged (NOT a pass -- see this test's "
+        "docstring) -- if this ever changes while the .ps1 test above "
+        "still judges the write, the two shells have re-diverged in a new "
+        "way. stdout: " + proc.stdout + " stderr: " + proc.stderr)
 
 
 def _resolver_source(path):
@@ -1891,13 +1958,17 @@ def _resolver_code_lines(path):
 
 
 def test_verify_gate_and_pm_pulse_resolvers_still_agree():
-    """The two-way parity that remains. verify-gate.ps1 and pm-pulse.ps1
-    both only need to match `_common.sh`'s bare `crew_py()`, so their
-    copies of Resolve-CrewPython are UNCHANGED and must still be
-    byte-identical to each other -- role-write-guard.ps1 is the one that
-    now answers a different question (parity with its OWN, stricter bash
-    sibling) and is deliberately excluded from this comparison; see
-    `test_role_write_guard_resolver_documents_its_own_divergence` below."""
+    """The parity that used to be narrower than this. Before Windows audit
+    wave 3's WindowsApps-parity fix, verify-gate.ps1 and pm-pulse.ps1 only
+    needed to match `_common.sh`'s bare `crew_py()`, because role-write-guard
+    was the only bash hook whose resolver (`_resolve_role_write_python`)
+    proved each candidate by execution. That premise no longer holds:
+    `verify-gate.sh`'s top-level $PY and `pm-pulse.sh` now both resolve via
+    `crew_py_strict` too (as do `pm-brief.sh` and `platform-sync.sh`), so all
+    of these .ps1 twins carry the SAME execute-and-verify resolver as
+    role-write-guard.ps1's -- see
+    `test_role_write_guard_resolver_now_matches_the_others` below, which
+    replaces the divergence tripwire this docstring used to point at."""
     gate = _resolver_code_lines(_VERIFY_GATE_PS1)
     pulse = _resolver_code_lines(_PM_PULSE_PS1)
     assert gate == pulse, (
@@ -1907,23 +1978,31 @@ def test_verify_gate_and_pm_pulse_resolvers_still_agree():
         + "\npm-pulse.ps1:    " + repr(pulse))
 
 
-def test_role_write_guard_resolver_documents_its_own_divergence():
-    """A cheap tripwire for the OPPOSITE mistake: if role-write-guard.ps1's
-    copy ever silently becomes byte-identical to the other two again
-    (e.g. a careless future hand-copy), the execute-to-verify and
-    single-match-per-name behaviour this section's tests depend on would
-    be gone without anything else here noticing, since those behaviours
-    are asserted operationally (through -PrintPython), not textually."""
+def test_role_write_guard_resolver_now_matches_the_others():
+    """Windows audit wave 3, 2026-09-22: role-write-guard.ps1's resolver is
+    no longer the odd one out.
+
+    This test REPLACES a previous tripwire that asserted the opposite
+    (`guard != gate`) -- correct for the state that existed before this
+    pass, when verify-gate.ps1 and pm-pulse.ps1 matched plain `crew_py()`
+    and only role-write-guard.sh's own resolver was execute-and-verify. That
+    is no longer true on the bash side either: `verify-gate.sh`'s top-level
+    $PY and `pm-pulse.sh` both now call `crew_py_strict`, the same function
+    role-write-guard.sh's own copy always mirrored, so keeping the three
+    .ps1 twins textually distinct would itself now BE the drift. Asserting
+    equality here is the ticket's intended outcome, not an accidental
+    hand-copy -- corroborated independently by the parity tests in
+    test_pm_pulse_python_resolver.py and
+    test_pm_brief_platform_sync_python_resolver.py, which assert the same
+    convergence from the other files' side."""
     guard = _resolver_code_lines(_PS1)
     gate = _resolver_code_lines(_VERIFY_GATE_PS1)
-    assert guard != gate, (
-        "role-write-guard.ps1's Resolve-CrewPython is now byte-identical "
-        "to verify-gate.ps1's again -- it should NOT be: this file's "
-        "resolver must execute each candidate and take only the first "
-        "match per name, which the other two do not do. If this was a "
-        "deliberate simplification, re-verify the WindowsApps-only-one-"
-        "name-present test above still passes for the right reason before "
-        "relaxing this tripwire.")
+    assert guard == gate, (
+        "role-write-guard.ps1's Resolve-CrewPython has drifted from "
+        "verify-gate.ps1's, now that both are meant to carry the identical "
+        "execute-and-verify resolver."
+        + "\nrole-write-guard.ps1: " + repr(guard)
+        + "\nverify-gate.ps1:      " + repr(gate))
 
 
 # --- BLOCK 1: a launch failure must not silently allow --------------------

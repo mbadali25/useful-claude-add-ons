@@ -212,7 +212,7 @@ Canvas links include the extension: `[[exec-insights.canvas]]`.
    is indistinguishable, to the agent reading the exit code, from a lock that
    refused you — which is the failure this whole step exists to prevent:
    ```bash
-   # Interpreter. Order is load-bearing and is ported from .crew/verify.json:170:
+   # Interpreter. Order is load-bearing and is ported from .crew/verify.json:178:
    # under WSL the reachable binary is the Windows one and is named pwsh.exe, so
    # the .exe suffix must be tried as well as omitted, at both known locations.
    PWSH=""
