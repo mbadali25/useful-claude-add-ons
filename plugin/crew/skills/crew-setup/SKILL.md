@@ -161,7 +161,8 @@ still writes only the repo file.
               "prodDatabase": "none", "prodServer": "none", "roleWrites": "off" },
   "production": { "databases": [], "hosts": [] },
   "change": { "requester": null, "implementor": null, "requireForProduction": false,
-              "sdpTemplate": "Change Management Request", "jiraIssueType": "Change", "category": null }
+              "sdpTemplate": "Change Management Request", "jiraIssueType": "Change", "category": null },
+  "scope": { "mode": "off" }
 }
 ```
 

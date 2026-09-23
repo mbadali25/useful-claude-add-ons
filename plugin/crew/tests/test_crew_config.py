@@ -260,7 +260,8 @@ def test_the_ten_keys_crew_read_but_never_declared_are_declared():
     # guard's config key.
     # 106 since crew 0.20.19: the context hook's `memory.inject`,
     # `memory.recall.vaults` and `memory.recall.maxChars`.
-    assert len(declared) == 106
+    # 107 since crew 1.0 T3: `scope.mode`, the scope guard's key.
+    assert len(declared) == 107
 
 
 def test_autoclear_is_global_and_its_siblings_are_not():

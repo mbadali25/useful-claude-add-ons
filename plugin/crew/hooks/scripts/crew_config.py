@@ -349,6 +349,12 @@ def default_config():
         # never off -- which is a property of the tier ORDER in
         # `crew_state.CHANGE_REQUIREMENTS`, not of a second mechanism.
         "change": copy.deepcopy(crew_upgrade.CHANGE_BLOCK),
+        # crew 1.0 T3: the plan-approval + scope guard and the Stop-time
+        # completion audit (scope_guard.py, completion_audit.py). `off` by
+        # default -- a new blocking hook starts disarmed. `auto` is `report`
+        # for the first ten tickets, then `block` (crew_ticket.effective_mode).
+        # REPO ONLY: it is read from `.crew/config.json` and nothing else.
+        "scope": {"mode": "off"},
     }
 
 
