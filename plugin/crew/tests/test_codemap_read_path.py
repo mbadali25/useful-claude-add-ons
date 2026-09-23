@@ -132,15 +132,42 @@ def test_review_injects_repo_landmines_into_the_shared_prompt():
     never saw the landmines. Wiring an agent file is not wiring the reviewer.
     """
     body = _command("review")
+    body_raw = _command_raw("review")
     assert "context.txt" in body, (
         "review.md no longer gathers repo landmines, so the provider path "
         "reviews with no knowledge of what breaks in this repository"
     )
     assert "## Landmines" in body and "Written by" in body
-    assert 'git diff --name-only "$BASE"...HEAD > "$SCRATCH/changed.txt"' in body, (
-        "review.md must BUILD the changed-file list it filters on. An earlier "
-        "draft grepped a changed.txt nothing wrote; the failure went to "
-        "/dev/null, no note ever matched, and the step reported itself done"
+    # changed.txt is built from review_patch.py's manifest now, not from a
+    # second `git diff` -- dirty and untracked files never showed up in the
+    # old committed-range-only form. review_patch.py must be invoked with a
+    # manifest before anything can be derived from one.
+    assert '--manifest "$MANIFEST"' in body_raw, (
+        "review.md no longer invokes review_patch.py with a manifest, so "
+        "changed.txt has nothing to be derived from"
+    )
+    # review.md must BUILD the changed-file list it filters on. An earlier
+    # draft grepped a changed.txt nothing wrote; the failure went to
+    # /dev/null, no note ever matched, and the step reported itself done.
+    # The write must be the manifest redirected into changed.txt, not a
+    # second, independent derivation that could disagree with what
+    # review_patch.py actually diffed.
+    write_marker = '"$MANIFEST" > "$SCRATCH/changed.txt"'
+    assert write_marker in body_raw, (
+        "review.md must BUILD the changed-file list it filters on, from the "
+        "same manifest review_patch.py wrote, not a changed.txt nothing "
+        "writes into or a second independent derivation"
+    )
+    loop_marker = "for note in .crew/codemap/*.md"
+    assert loop_marker in body_raw, (
+        "review.md no longer loops over the codemap notes to grep changed.txt"
+    )
+    write_index = body_raw.index(write_marker)
+    loop_index = body_raw.index(loop_marker)
+    assert write_index < loop_index, (
+        "changed.txt is written AFTER the codemap loop that greps it -- the "
+        "same failure mode as never writing it at all, since the loop reads "
+        "it before the write has landed"
     )
 
 

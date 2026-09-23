@@ -198,9 +198,17 @@ def test_upgrade_config_stamps_the_current_schema():
 
 
 def test_upgrade_config_adds_pm_and_graph_blocks():
+    """`graph` is repo-only, so it is still seeded whole. `pm` is entirely
+    globally-settable, so a `pm` the repo never wrote is left OUT of the file
+    entirely rather than seeded with the built-in default -- see
+    `_prune_unsupplied_global_leaves`. Written to disk, `pm.authority:
+    "report-only"` would outrank a machine-global `pm.authority` forever;
+    `resolve_config` already falls back to the built-in default (still
+    `"report-only"`) for a `pm` block that is simply absent, so nothing about
+    resolution regresses -- only the ability for a global file to ever answer
+    for THIS repo."""
     got = _cfg({"tier": 0})
-    assert got["pm"]["mode"] == "adaptive"
-    assert got["pm"]["authority"] == "report-only"
+    assert "pm" not in got
     assert got["graph"]["mode"] == "code-only"
     # `graph.obsidian` was removed in 0.16.13. Asserting its ABSENCE is the
     # point: a key with no consumer that survives an upgrade reads, to anyone
@@ -208,40 +216,69 @@ def test_upgrade_config_adds_pm_and_graph_blocks():
     assert "obsidian" not in got["graph"]
 
 
-def test_upgrade_config_adds_the_docs_and_bitbucket_blocks():
-    """An already-initialised repo -- one carrying a full pre-`docs` config --
-    must come out of an upgrade holding both new blocks. A block left out of
-    `CONFIG_BLOCKS` is invisible: the config is stamped current, the feature
-    reads its default forever, and nothing anywhere says why. That is the
-    0.16.0 qa/dev bug exactly, so it gets its own regression rather than
-    relying on the fresh-config path, which never touches `CONFIG_BLOCKS`.
+def test_upgrade_config_recognises_the_docs_and_bitbucket_blocks():
+    """A block left out of `CONFIG_BLOCKS` entirely is invisible -- the
+    0.16.0 qa/dev bug: the config is stamped current and the feature reads
+    its default forever, with nothing anywhere saying why. Both blocks are
+    in it, proven here by feeding each a partial value and watching the
+    repo's OWN leaf survive the merge.
+
+    `docs` and `bitbucket` are wholly globally-settable (`crew_config.
+    default_global_config()` copies each block whole), so as of this fix an
+    untouched leaf is no longer SEEDED -- see
+    `test_upgrade_config_does_not_clobber_a_configured_theme_or_merge_gate`
+    for that half. This is the complementary case: the repo's own value does
+    not vanish, and a repo that never mentions either block gets neither key
+    at all, rather than the block's built-in default written to disk where
+    it would outrank a value set later in `~/.claude/crew/config.json`
+    forever.
     """
     got = _cfg({"tier": 0, "roles": ["explorer", "qa-reviewer"],
+                "qa": {"provider": "codex"},
+                "docs": {"theme": "acme"},
+                "bitbucket": {"mergeGate": {"enabled": True}}})
+    assert got["docs"]["theme"] == "acme"
+    assert got["bitbucket"]["mergeGate"]["enabled"] is True
+
+    bare = _cfg({"tier": 0, "roles": ["explorer", "qa-reviewer"],
                 "qa": {"provider": "codex"}})
-    assert got["docs"] == {"theme": None, "reportTheme": None}
-    assert got["bitbucket"] == {
-        "mergeGate": {"enabled": False, "branch": None, "preset": "standard"}}
+    assert "docs" not in bare
+    assert "bitbucket" not in bare
 
 
 def test_upgrade_config_does_not_clobber_a_configured_theme_or_merge_gate():
-    """Partial blocks fill in, they do not replace. Someone who set a theme
-    before the rest of the block existed keeps it."""
+    """Partial blocks fill in the repo's OWN value only -- they do not
+    replace it and they do not seed a sibling the repo never wrote. Someone
+    who set a theme before the rest of the block existed keeps it, and
+    `reportTheme` / `branch` / `preset` -- every sibling leaf this repo never
+    mentioned -- stay absent rather than pinned at the built-in default,
+    since all three are globally-settable (see `_prune_unsupplied_global_
+    leaves`); a global value can still reach this repo for them."""
     got = _cfg({"docs": {"theme": "acme"},
                 "bitbucket": {"mergeGate": {"enabled": True}}})
-    assert got["docs"] == {"theme": "acme", "reportTheme": None}
-    assert got["bitbucket"]["mergeGate"] == {
-        "enabled": True, "branch": None, "preset": "standard"}
+    assert got["docs"] == {"theme": "acme"}
+    assert got["bitbucket"]["mergeGate"] == {"enabled": True}
 
 
 def test_upgrade_config_does_not_alias_the_shared_docs_block():
     """Same aliasing trap as `graph` and the provider blocks: `upgrade_config`
     deepcopies the block before merging, and a run that stopped doing so would
-    let one upgraded repo's theme leak into the next one in the process."""
-    got = _cfg({})
-    got["docs"]["theme"] = "mutated"
-    got["bitbucket"]["mergeGate"]["preset"] = "mutated"
-    assert crew_upgrade.DOCS_BLOCK["theme"] is None
-    assert crew_upgrade.BITBUCKET_BLOCK["mergeGate"]["preset"] == "standard"
+    let one upgraded repo's theme leak into the next one in the process.
+
+    `docs`/`bitbucket` are entirely globally-settable, so `{"docs": {},
+    "bitbucket": {}}` -- an explicitly-empty dict at each block, which counts
+    as `supplied` at the block level and so survives pruning -- still has
+    every LEAF inside it pruned right back out, and for `bitbucket.mergeGate`
+    the now-empty container is then stripped too (`_strip_empty_dicts`).
+    There is nothing left in the RESULT to mutate, so this is proven the same
+    way as the provider-blocks version: on the shared TEMPLATE's own keys
+    surviving the `.pop()` calls that emptied the copy, not on a post-hoc
+    mutation of a dict that no longer exists in the result.
+    """
+    crew_upgrade.upgrade_config({"docs": {}, "bitbucket": {}})
+    assert crew_upgrade.DOCS_BLOCK == {"theme": None, "reportTheme": None}
+    assert crew_upgrade.BITBUCKET_BLOCK["mergeGate"] == {
+        "enabled": False, "branch": None, "preset": "standard"}
 
 
 def test_a_specialist_role_is_kept_and_not_reported_as_unknown():
@@ -274,9 +311,13 @@ def test_upgrade_config_preserves_unknown_keys():
 
 
 def test_upgrade_config_does_not_clobber_an_existing_pm_block():
+    """The repo's own leaf survives; a sibling the repo never wrote is left
+    for the global layer to answer rather than pinned at the built-in
+    default -- `pm` is entirely globally-settable (see
+    `_prune_unsupplied_global_leaves`)."""
     got = _cfg({"pm": {"quietLines": 3}})
-    assert got["pm"]["quietLines"] == 3
-    assert got["pm"]["mode"] == "adaptive"  # defaults still filled in
+    assert got["pm"] == {"quietLines": 3}
+    assert "mode" not in got["pm"]
 
 
 def test_a_wrong_typed_nested_block_is_kept_and_reported_not_destroyed():
@@ -309,15 +350,19 @@ def test_a_wrong_typed_nested_block_is_kept_and_reported_not_destroyed():
 
 
 def test_a_legitimate_nested_override_still_wins():
+    """`qa` is globally-settable, so a sibling the repo never named
+    (`reasoningEffort`, alongside the `codex.model` it DID name) is left
+    absent rather than pinned at the built-in default -- see
+    `_prune_unsupplied_global_leaves`. `pm.quietLines` is the same rule one
+    block over. `graph` is repo-only, so it is untouched and still defaulted
+    whole."""
     got = _cfg(
         {"pm": {"quietLines": 3}, "qa": {"codex": {"model": "gpt-5.6-luna"}}}
     )
-    assert got["pm"]["quietLines"] == 3
-    assert got["pm"]["mode"] == "adaptive"          # default still filled in
+    assert got["pm"] == {"quietLines": 3}
     assert got["qa"]["codex"]["model"] == "gpt-5.6-luna"
-    # sibling defaults inside the same overridden block still fill in
-    assert got["qa"]["codex"]["reasoningEffort"] is None
-    # and an untouched block is still defaulted whole
+    assert "reasoningEffort" not in got["qa"]["codex"]
+    # and an untouched repo-only block is still defaulted whole
     assert got["graph"]["mode"] == "code-only"
 
 
@@ -378,6 +423,52 @@ def test_second_run_reports_already_current(tmp_path):
 def test_force_reruns_a_current_setup(tmp_path):
     root = crew_fixtures.make_repo(tmp_path, config={"schema": crew_state.SCHEMA_CURRENT})
     assert crew_upgrade.run(str(root), {}, force=True)["status"] == "upgraded"
+
+
+def test_already_current_still_reports_the_two_diagnostics(tmp_path):
+    """B1. Before this fix, `run()`'s already-current early return produced
+    `report=""` and `notes=None`, so a schema-current repo with no
+    machine-global config and a `pm.authority` sitting at the built-in
+    default never heard either fact -- both were only ever computed on the
+    write path below this early return, which a current repo never reaches.
+
+    Report-only: no write to `.crew/config.json` (bytes and mtime
+    unchanged), and no backup of either the config or the codemap."""
+    root = crew_fixtures.make_repo(
+        tmp_path, config={"schema": crew_state.SCHEMA_CURRENT,
+                          "pm": {"authority": "report-only"}})
+    cfg_path = root / ".crew" / "config.json"
+    before_bytes = cfg_path.read_bytes()
+    before_mtime = cfg_path.stat().st_mtime_ns
+
+    out = crew_upgrade.run(str(root), {})
+
+    assert out["status"] == "already current"
+    assert out["report"].startswith("NO MACHINE-GLOBAL CONFIG")
+    assert "pm.authority" in out["report"]
+    assert "may be pinned by an earlier /crew:upgrade" in out["report"]
+    assert cfg_path.read_bytes() == before_bytes
+    assert cfg_path.stat().st_mtime_ns == before_mtime
+    assert not (root / ".crew" / "config.json.v1.bak").exists()
+    assert not (root / ".crew" / "codemap.v1.bak").exists()
+
+
+def test_already_current_headline_is_silent_with_a_global_config(
+        tmp_path, monkeypatch):
+    """Same schema-current, pinned-at-default repo, but with a machine-global
+    config present -- the headline is specifically about ABSENCE, and must
+    not fire just because the report is now built on this path."""
+    present = tmp_path / "global.json"
+    present.write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(crew_state, "GLOBAL_CONFIG_PATH", str(present))
+    root = crew_fixtures.make_repo(
+        tmp_path / "r", config={"schema": crew_state.SCHEMA_CURRENT,
+                                "pm": {"authority": "report-only"}})
+
+    out = crew_upgrade.run(str(root), {})
+
+    assert out["status"] == "already current"
+    assert "NO MACHINE-GLOBAL CONFIG" not in out["report"]
 
 
 def test_conflicts_land_in_the_report_not_in_the_map(tmp_path):
@@ -544,23 +635,45 @@ def test_config_backup_is_not_overwritten_by_a_second_run(tmp_path):
 
 
 def test_upgrade_config_brings_the_provider_table_forward():
-    """The reported bug. A config predating 0.14.4 has neither `qa.order` nor
-    a `dev` block, and an absent `qa.order` made /crew:model report zero
-    candidates and "no independent reviewer" for a setup that reviews fine."""
+    """The reported bug, from 0.14.4: a config predating the provider table
+    has neither `qa.order` nor a `dev` block, and an absent `qa.order` made
+    `/crew:model` report zero candidates and "no independent reviewer" for a
+    setup that reviews fine.
+
+    `qa`/`dev` are now entirely globally-settable (see
+    `_prune_unsupplied_global_leaves`), so the migration no longer WRITES
+    `qa.order` or the whole `dev` block into a repo that never named them --
+    doing so is the newer bug this ticket fixes, the one that freezes a
+    machine-global answer out forever. `crew_config.resolve_config` is what
+    proves the ORIGINAL bug stays fixed, by falling back to the built-in
+    default for a leaf this repo left unwritten -- see
+    `test_an_upgraded_repo_still_resolves_every_provider_default` below.
+    `upgrade_config`'s own contract, checked here, is narrower: the repo's
+    own leaf survives and nothing else is invented.
+    """
     got = _cfg({"tier": 0, "roles": ["explorer", "qa-reviewer"],
                 "qa": {"provider": "codex"}})
-    assert got["qa"]["order"] == ["codex", "copilot", "claude"]
-    assert got["qa"]["provider"] == "codex"          # the user's value survives
-    assert got["qa"]["codex"] == {"model": None, "reasoningEffort": None}
-    assert got["dev"] == crew_state.DEV_DEFAULTS
+    assert got["qa"] == {"provider": "codex"}
+    assert "dev" not in got
 
 
 def test_upgrade_config_does_not_alias_the_shared_provider_blocks():
-    got = _cfg({})
-    got["qa"]["codex"]["model"] = "mutated"
-    got["dev"]["copilot"]["model"] = "mutated"
-    assert crew_state.QA_DEFAULTS["codex"]["model"] is None
-    assert crew_state.DEV_DEFAULTS["copilot"]["model"] is None
+    """`upgrade_config` deepcopies each block before merging. Without it, an
+    untouched nested container (`qa.codex`, when the repo names `qa` but not
+    `codex`) would be the ACTUAL `crew_state.QA_DEFAULTS["codex"]` object,
+    and `_prune_unsupplied_global_leaves` -- which pops every leaf absent
+    from what the repo supplied -- would delete `model`/`reasoningEffort`
+    off the real template in place, corrupting it for the next repo this
+    process upgrades.
+
+    Proven on the TEMPLATE's own keys surviving, not by a post-hoc mutation
+    of the result: the container comes back stripped empty either way (see
+    `_strip_empty_dicts`), so there is nothing left in the result to mutate,
+    but the shared template itself must never have lost anything."""
+    crew_upgrade.upgrade_config({"qa": {"provider": "codex"},
+                                 "dev": {"provider": "codex"}})
+    assert set(crew_state.QA_DEFAULTS["codex"]) == {"model", "reasoningEffort"}
+    assert set(crew_state.DEV_DEFAULTS["copilot"]) == {"model"}
 
 
 def test_upgrade_adds_roles_the_declared_tier_already_entitles():
@@ -723,6 +836,13 @@ def test_a_v2_config_migrates_to_v3_with_identical_dispatch():
 
 
 def test_the_migration_adds_the_schema_3_keys_empty():
+    """`qa.roles`/`dev.roles`/`qa.fallback`/`dev.fallback` are globally
+    settable, so V2_CONFIG -- which never named any of the four -- gets none
+    of them WRITTEN (see `_prune_unsupplied_global_leaves`); the migration
+    still reports each as added (`providerKeysAdded`, computed from the
+    incoming file, unaffected by what this run then chooses to write), and
+    the effective value stays empty/neutral through `resolve_role`'s own
+    `dict_or_empty` fallback -- proven directly here rather than assumed."""
     got, notes = crew_upgrade.upgrade_config(V2_CONFIG)
 
     # SCHEMA_CURRENT, not a literal 3. This assertion is about the stamp being
@@ -730,10 +850,12 @@ def test_the_migration_adds_the_schema_3_keys_empty():
     # the test fail on the next schema bump for a reason that had nothing to
     # do with what it covers -- the schema-3 provider keys, asserted below.
     assert got["schema"] == crew_state.SCHEMA_CURRENT
-    assert got["qa"]["roles"] == {}  # pylint: disable=use-implicit-booleaness-not-comparison
-    assert got["dev"]["roles"] == {}  # pylint: disable=use-implicit-booleaness-not-comparison
-    assert got["qa"]["fallback"] == crew_state.FALLBACK_DEFAULT
-    assert got["dev"]["fallback"] == crew_state.FALLBACK_DEFAULT
+    assert "roles" not in got["qa"]
+    assert "roles" not in got["dev"]
+    assert "fallback" not in got["qa"]
+    assert "fallback" not in got["dev"]
+    assert crew_state.resolve_role(got, "qa", "review")["fallback"] == (
+        crew_state.FALLBACK_DEFAULT)
     assert notes["schemaFrom"] == 2
     assert set(notes["providerKeysAdded"]) == set(crew_upgrade.SCHEMA_3_KEYS)
 
@@ -750,11 +872,16 @@ def test_the_migration_preserves_every_v2_provider_value():
 def test_the_migration_never_writes_a_role_pin_nobody_chose():
     """`/crew:init` and `/crew:upgrade` OFFER the recommended table. Shipping
     it as a migration would route developer work to codex the moment a repo
-    upgraded, with no opt-in left to give."""
+    upgraded, with no opt-in left to give.
+
+    This config never names `dev` at all, so the whole block -- entirely
+    globally-settable -- is left out rather than seeded (see
+    `_prune_unsupplied_global_leaves`); the dispatch outcome is proven on
+    `resolve_role`, which falls back to the built-in default exactly as it
+    does for a `dev` block that is merely empty."""
     got, _ = crew_upgrade.upgrade_config({"schema": 2, "tier": 0,
                                           "roles": ["explorer"]})
-    assert got["dev"]["roles"] == {}  # pylint: disable=use-implicit-booleaness-not-comparison
-    assert got["dev"]["provider"] == "claude"
+    assert "dev" not in got
     assert crew_state.resolve_role(got, "dev", "developer")["provider"] == "claude"
 
 
@@ -1060,6 +1187,79 @@ def test_a_partly_failed_migration_does_not_rewrite_the_theme():
     assert got["docs"]["theme"] is None
 
 
+# --- 0.20.15: globally-settable leaves stop freezing the global layer -----
+
+
+def test_the_measured_repro_no_longer_writes_pm_authority():
+    """`upgrade_config({"schema": 2, "pm": {"enabled": True}})` used to
+    return `pm.authority: "report-only"`, `pm.maxDispatches: 3` and
+    `schemaStamped: True` -- exactly as the PM measured at 8b8a4028. The
+    stamp and the repo's own leaf are unchanged; every OTHER `pm` leaf is
+    now absent so a later machine-global `pm.authority` can still reach this
+    repo (see `test_an_upgraded_repo_still_lets_a_later_global_authority_
+    through` in test_crew_config.py for the end-to-end proof)."""
+    out, notes = crew_upgrade.upgrade_config(
+        {"schema": 2, "pm": {"enabled": True}})
+    assert notes["schemaStamped"] is True
+    assert out["pm"] == {"enabled": True}
+    assert "authority" not in out["pm"]
+    assert "maxDispatches" not in out["pm"]
+
+
+def test_pinned_at_default_is_named_not_removed():
+    """An existing repo upgraded by a PRE-FIX release wrote `pm.authority:
+    "report-only"` literally. This run must not touch it -- removing a value
+    from a user's file needs their yes, not an upgrade's guess -- but the
+    report has to say it looks frozen, so the operator can delete it and let
+    the global layer decide."""
+    out, notes = crew_upgrade.upgrade_config(
+        {"schema": crew_state.SCHEMA_CURRENT,
+         "pm": {"enabled": True, "authority": "report-only"}})
+    # Untouched: the exact value the (older) upgrade wrote survives verbatim.
+    assert out["pm"]["authority"] == "report-only"
+    assert "pm.authority" in notes["pinnedAtDefault"]
+    said = "\n".join(crew_upgrade._config_lines(notes))
+    assert "pm.authority" in said
+    assert "may be pinned by an earlier /crew:upgrade" in said
+
+
+def test_pinned_at_default_says_nothing_for_a_value_the_repo_chose():
+    """A repo that deliberately set `pm.authority` to something OTHER than
+    the built-in default must never be told it looks frozen -- it is not at
+    the default, so there is nothing to suspect."""
+    _out, notes = crew_upgrade.upgrade_config(
+        {"schema": crew_state.SCHEMA_CURRENT, "pm": {"authority": "act"}})
+    assert notes["pinnedAtDefault"] == []
+
+
+def test_the_report_leads_with_no_machine_global_config(monkeypatch, tmp_path):
+    """When `~/.claude/crew/config.json` is absent, the upgrade report's
+    FIRST line says so and names the effective `pm.authority` and its layer
+    -- not a bullet buried in `/crew:upgrade` step 4b's separate
+    `--check-global` output."""
+    missing = tmp_path / "nope" / "global.json"
+    monkeypatch.setattr(crew_state, "GLOBAL_CONFIG_PATH", str(missing))
+    root = crew_fixtures.make_repo(tmp_path / "r", config={"schema": 2,
+                                                            "tier": 0})
+    out = crew_upgrade.run(str(root), {})
+    first_line = out["report"].splitlines()[0]
+    assert first_line.startswith("NO MACHINE-GLOBAL CONFIG")
+    assert "pm.authority" in first_line
+    assert crew_state.AUTHORITY_DEFAULT in first_line
+    assert "/crew:config" in first_line
+
+
+def test_the_headline_is_silent_when_a_global_config_exists(
+        monkeypatch, tmp_path):
+    present = tmp_path / "global.json"
+    present.write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(crew_state, "GLOBAL_CONFIG_PATH", str(present))
+    root = crew_fixtures.make_repo(tmp_path / "r", config={"schema": 2,
+                                                            "tier": 0})
+    out = crew_upgrade.run(str(root), {})
+    assert "NO MACHINE-GLOBAL CONFIG" not in out["report"]
+
+
 def test_a_global_neutral_is_reported_because_it_defeats_the_migration(
         tmp_path, monkeypatch):
     """Repo null means "ask the next authority", and the next authority is the
@@ -1191,3 +1391,55 @@ def test_the_global_warning_stays_quiet_when_the_repo_names_its_own_theme(
         {"schema": 3, "docs": {"theme": "neutral"}})
     assert deferring["docsThemeAfter"] is None
     assert warning in "\n".join(crew_upgrade._config_lines(deferring))
+
+
+def test_global_whole_blocks_mirror_stays_in_parity_with_crew_config():
+    """`crew_upgrade._GLOBAL_WHOLE_BLOCKS` (plus the `context.autoClear`
+    special case) is a hand-maintained MIRROR of which blocks/leaves
+    `crew_config.default_global_config()` makes globally settable --
+    `crew_upgrade` cannot import `crew_config` at runtime, so nothing keeps
+    them honest at import time. Nothing else checks the mirror: a leaf later
+    added to `default_global_config()` would silently be pinned into every
+    repo an old-schema upgrade touches, exactly the `pm.authority` defect
+    `_prune_unsupplied_global_leaves` was written to fix, for a leaf that
+    mirror simply never learned about.
+
+    Two halves:
+
+      * an upgrade run on a config with NOTHING supplied must never seed a
+        leaf that is also globally settable -- if it did, that leaf would
+        freeze the global layer out of every repo upgraded before the mirror
+        caught up, forever.
+      * every top-level block `default_global_config()` grants that
+        `crew_upgrade.CONFIG_BLOCKS` also migrates must be named in
+        `_GLOBAL_WHOLE_BLOCKS`, or be the one documented partial exception,
+        `context` (only its `autoClear` subtree, minus `unsafeFocus`, is
+        global -- see `_prune_unsupplied_global_leaves`)."""
+    import crew_config  # pylint: disable=import-outside-toplevel
+
+    global_cfg = crew_config.default_global_config()
+    global_leaves = set(crew_config.leaf_paths(global_cfg))
+
+    for old_schema_cfg in ({"schema": 2}, {"schema": 1}):
+        out, _notes = crew_upgrade.upgrade_config(old_schema_cfg)
+        out_leaves = set(crew_config.leaf_paths(out))
+        pinned = sorted(out_leaves & global_leaves)
+        assert not pinned, (
+            f"upgrade_config({old_schema_cfg!r}) seeded globally-settable "
+            f"leaf(es) {pinned} that _GLOBAL_WHOLE_BLOCKS (or the "
+            "context.autoClear special case) failed to prune -- a global "
+            "value for these can never reach an upgraded repo again"
+        )
+
+    global_blocks = {key for key, value in global_cfg.items()
+                     if isinstance(value, dict)}
+    config_block_keys = {key for key, _default in crew_upgrade.CONFIG_BLOCKS}
+    covered = crew_upgrade._GLOBAL_WHOLE_BLOCKS | {"context"}  # pylint: disable=protected-access
+    uncovered = sorted((global_blocks & config_block_keys) - covered)
+    assert not uncovered, (
+        f"block(s) {uncovered} are globally settable in "
+        "crew_config.default_global_config() and migrated by "
+        "crew_upgrade.CONFIG_BLOCKS, but are named in neither "
+        "_GLOBAL_WHOLE_BLOCKS nor the documented context.autoClear "
+        "special case"
+    )

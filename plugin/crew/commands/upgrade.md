@@ -21,10 +21,17 @@ its `schema` field.
   tool must never write `upgrade_config({})` over a file it could not
   understand.
 - The config's `schema` is **already at or above the current one** and
-  `$ARGUMENTS` does not contain `--force` — print **"already current"** and stop. Do not
-  touch the config, the codemap, or the graph. `crew_upgrade.py` makes this same check and
-  returns `already current` without writing anything; do not re-derive graph facts
-  or spend a `crew:explorer` budget ahead of a call that is about to no-op.
+  `$ARGUMENTS` does not contain `--force` — run
+  `python3 ${CLAUDE_PLUGIN_ROOT}/skills/crew-graph/scripts/crew_upgrade.py --root <repo>`
+  (no `--derived`) anyway. It makes this same schema check and writes
+  nothing — no backup, no config write, no codemap or anchor change — but it
+  still computes two report-only diagnostics the config's own `schema` field
+  cannot: the absent-global-config headline (if `~/.claude/crew/config.json`
+  does not exist) and any globally-settable keys this repo's config still
+  carries at exactly the built-in default. Print its `status` and, if
+  non-empty, its `report`, then stop. Do not re-derive graph facts or spend a
+  `crew:explorer` budget ahead of a call that is about to no-op, and do not
+  proceed to step 2 or beyond.
 
   **Do not hardcode the number here, and do not carry one over from a previous
   version of this file.** This step said `schema >= 3` while the code had moved
@@ -95,17 +102,27 @@ A subsystem with nothing new to add can be omitted from the JSON entirely —
 
 ## 4b. Report the machine-global config — do not resolve it
 
+**Absent is the headline, not a list item.** `crew_upgrade.py` already checked
+this once, for its own reason: since `_prune_unsupplied_global_leaves` stopped
+writing a globally-settable leaf the repo never asked for, whether a global
+file exists at all decides where `pm.authority` and every key like it
+actually come from. So when `~/.claude/crew/config.json` is absent, the
+upgrade report you already read in step 5 opens with a line starting `NO
+MACHINE-GLOBAL CONFIG`, naming the effective `pm.authority` and pointing at
+`/crew:config` — lead with THAT line, verbatim, before running the command
+below or reading any of its other findings. Every repo on this machine falls
+back to built-in defaults until that file exists, and that fact is the one
+thing here nobody should have to go looking for.
+
 ```
 python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_config.py   --root <repo> --check-global
 ```
 
 `~/.claude/crew/config.json` sets defaults for every crew repo on this machine
 and nothing about this repo will ever mention it. It is reporting-only and
-always exits 0 — read the output, not the status. Surface every finding it
-prints:
+always exits 0 — read the output, not the status. Surface every OTHER finding
+it prints:
 
-- **`absent`** — there is no global file, so every repo on this machine falls
-  back to built-in defaults.
 - **`unreadable`** — it exists but did not parse as a JSON object, so it
   contributes exactly nothing, silently.
 - **`missing-keys`** — keys the current template defines that this file does
@@ -127,7 +144,9 @@ prints:
   it is read from the repo file alone so a global value cannot make an
   unmigrated repo look current.
 - **`authority`** — the effective `pm.authority` for this repo, with the layer
-  that decided it named.
+  that decided it named. Repeats the fact the report's headline already gave
+  when the global file was absent; when it exists, this is the only place
+  that says which layer answered.
 
 **Do not fix any of this here.** Point at `/crew:config`, which is the guided
 walkthrough for that file, and which asks before writing anything outside the
@@ -152,6 +171,14 @@ surface it, do not re-derive it by hand:
   that, and `/crew:pm offboard` is still the only thing that removes a role.
   A crew that silently grows is exactly what `/crew:scale` exists to catch,
   so state the additions even when the answer is none.
+- **May be pinned by an earlier `/crew:upgrade`** — a globally-settable leaf
+  (`pm.authority`, `qa.order`, `install.policy`, any `guards.*`, ...) this
+  repo's file still carries at exactly the built-in default. This run never
+  writes one of those unless the repo asked for it, but an OLDER release did,
+  and this line is how a repo upgraded before that fix finds out. Never
+  removed automatically — say the operator can delete the line from
+  `.crew/config.json` by hand to let the global layer answer again, and that
+  doing so needs their yes, not this command's guess.
 - **Schema 2 → 3** — when the report names `qa.roles`, `dev.roles`,
   `qa.fallback` or `dev.fallback`, read the whole line out. Those keys arrive
   **neutral**: the role tables are empty, so every role still runs on its

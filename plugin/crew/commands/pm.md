@@ -1,7 +1,7 @@
 ---
 description: Talk to the crew's manager - status, assign work, set its authority, onboarding, offboarding
 argument-hint: "[assign | authority [report-only|act|autonomous] | onboard <role> | offboard <role>]"
-allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, ListAgents, SendMessage, AskUserQuestion
+allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, SendMessage, AskUserQuestion
 ---
 
 Talk to the crew's manager. Arguments: $ARGUMENTS
@@ -12,33 +12,40 @@ path below. This command reads crew state; it never re-derives it by hand.
 Read `${CLAUDE_PLUGIN_ROOT}/skills/crew-pm/SKILL.md` before anything else — it
 owns the field meanings and the authority rule this command must not loosen.
 
-## The PM is standing. Reach the existing one before making a new one.
+## The PM is always spawned unnamed. Resume by id when you can.
 
-The manager is worth having only if it is the same manager each time. A fresh
-subagent per invocation knows the JSON and nothing else — not what it dispatched
-an hour ago, not what you vetoed, not why a trigger was judged not worth acting
-on. That is the "PM keeps disappearing" failure, and this is where it is
-prevented.
+The `crew:pm` subagent is dispatched with **no `name`**, always. A `name`
+makes a spawned agent an addressable teammate, and per
+[agent teams](https://code.claude.com/docs/en/agent-teams.md) "teammates
+cannot spawn their own teammates — only the lead can manage the team." The
+PM's whole job is dispatching roles, so naming it is what disables it: a
+named PM's own `Agent` calls fail with "Teammates cannot spawn other
+teammates," and the crew stops mid-turn. Never `ListAgents` for a teammate
+named `crew-pm` and never `SendMessage` to that name — there is no such
+teammate to find.
 
-So, in every path that needs the PM:
+Continuity ("same manager each time") now comes from two mechanisms instead:
 
-1. **Call `ListAgents`.** Look for a teammate named `crew-pm`.
-2. **If it is there, `SendMessage` to `crew-pm`.** It resumes with its whole
-   transcript. Do not spawn.
-3. **Only if it is not there, spawn it once:** the `crew:pm` subagent, with
-   `name: "crew-pm"`. The name is what makes it addressable later; a PM spawned
-   without one cannot be reached again and is exactly the thing this section
-   exists to stop.
+1. **Resume by id, in this session.** After a PM spawn returns, record the
+   agent id it was given. On a later `/crew:pm` invocation in the *same*
+   session, `SendMessage` to that id (never a name) to resume the same plain
+   subagent with its whole transcript — resuming a plain subagent by id is
+   itself per the docs above, and the resume call must not pass `name`
+   either. If no id is held, or the resume errors, do not retry it: spawn a
+   fresh unnamed `crew:pm` and say so in one line.
+2. **The PM journal and standing file, across sessions.** `.crew/pm-journal.md`
+   is the dated record — what was dispatched, decided, deferred, and what's
+   next — read as a bounded tail. `.crew/pm-standing.md` is the durable one:
+   one line per still-live decision, veto, or onboard/offboard ruling, read in
+   full every time so it can never fall out of view. The PM reads both and
+   appends a journal entry every turn, plus a standing line whenever the turn
+   produced a durable outcome; a fresh PM (this session, or a new one) picks
+   the picture back up from there rather than from a transcript that no
+   longer exists.
 
-Never run two. If `ListAgents` somehow shows more than one, message the one that
-has been alive longest and say so — two managers with two pictures is worse than
-either picture alone.
-
-**When the spawn is refused.** A named spawn fails outright if this session is
-itself a teammate — the runtime enforces a flat roster. Do not retry it and do
-not silently fall back: dispatch the `crew:pm` subagent unnamed, and tell me in
-one line that the PM will not persist past this invocation, so I know why it
-asks the same questions next time.
+Never run two PM subagents concurrently in the same session. If you are
+unsure whether the held id is still resumable, attempt the resume once; on
+error, spawn fresh rather than guessing.
 
 ## A `**Decision needed:**` block is yours to render, not to relay
 
@@ -61,6 +68,16 @@ Pasting the block through as prose is the failure here. The user then has to
 type an answer to a question that was built to be picked, which is the whole
 thing this is meant to avoid. If a report has a decision block, you ask it — you
 do not summarise it and you do not answer it on their behalf.
+
+**The answer is yours to journal too.** The block's answer arrives after the
+PM's turn already ended, so nothing guarantees a later PM spawn ever learns
+what was picked — resume-by-id may fail, or the next spawn may be fresh. When
+`isCrew: true`, append the outcome yourself, the same way as onboard/offboard
+below: `Write` a journal entry naming which option was chosen and the
+one-line reason if you have it to `.work/pm-entry.md`, then `python3
+${CLAUDE_PLUGIN_ROOT}/hooks/scripts/pm_journal.py --root . --append journal
+--from .work/pm-entry.md` — plus, if the decision is durable (a veto, a
+ruling that should hold), the same for `--append standing`.
 
 ## Relay what it did, never what it said it would do
 
@@ -100,14 +117,15 @@ running.
 
 If answering well means correlating the whole metrics history, auditing every
 codemap anchor, or building the full evidence chain for a tier change — more
-context than the answer is worth spending here — put the question to the
-standing `crew-pm` instead of doing it in this session. It returns a report
-under 200 words plus a recommendation, and it keeps the working it did, so the
-follow-up question costs a message rather than another full analysis.
+context than the answer is worth spending here — put the question to `crew:pm`
+instead of doing it in this session, resuming by id where you hold one. It
+returns a report under 200 words plus a recommendation, and — resumed or via
+the journal — it keeps the working it did, so the follow-up question costs a
+message rather than another full analysis.
 
 **`assign`.**
-Reach the standing PM as described above — message `crew-pm` if it is running,
-spawn it named if it is not — and let it act: it reads state, decides what the
+Reach the PM as described above — resume by id if you hold one, otherwise
+spawn it fresh and unnamed — and let it act: it reads state, decides what the
 crew should do next, and dispatches the roles that do it. Pass along anything
 the user has said about priorities in this session — that ordering outranks the
 trigger order, and the PM cannot see the conversation you are in.
@@ -162,6 +180,17 @@ the role closes, confirm `.crew/metrics.md` supports it, then stop and ask me
 yes/no. Only on yes: add the role to `.crew/config.json` -> `roles` and
 recompute `tier` from `crew-scaling`'s tier table.
 
+This decision is yours, the caller's, not the PM's — it never reaches the PM
+to journal on its own. So when `isCrew: true`, append the outcome yourself,
+using the mechanism in `agents/pm.md`'s append-mechanism rule ("Reporting";
+`Write` the entry to `.work/pm-entry.md`, then `pm_journal.py --append`;
+never `Write`/`Edit` against `.crew/pm-standing.md` or `.crew/pm-journal.md`
+directly, never a heredoc, `printf`, or `echo`): a standing line,
+`onboarded <role> — <defect class>`, or `vetoed onboarding <role> —
+<reason>` if I said no — this is a durable ruling, so it gets a standing
+line. It also gets a one-line journal entry, the same as every turn does;
+standing is in addition to the journal entry, never a replacement for it.
+
 **Domain specialists take the same command and a different justification.**
 The specialists are real roles with real agent definitions and no tier — no
 amount of scaling ever grants one, because "this repo does SharePoint" is a
@@ -196,6 +225,14 @@ this is new capability with no shorter version to fall back to. Stop and ask
 me yes/no before touching `.crew/config.json` or deleting anything. The
 procedure ends with naming, out loud, the failure mode this removal leaves
 uncovered — that sentence is the actual point, not optional polish.
+
+Same standing-file rule as onboarding: this is your decision to record, not
+the PM's. When `isCrew: true`, append the outcome yourself, using the
+mechanism in `agents/pm.md`'s append-mechanism rule ("Reporting"): a
+standing line, `offboarded <role> — <failure mode left uncovered>`, or
+`vetoed offboarding <role> — <reason>` if I said no — plus a one-line
+journal entry, the same as every turn does; standing is in addition to the
+journal entry, never a replacement for it.
 
 **Anything else.**
 An argument that is not empty, `assign`, `authority [value]`, `onboard
