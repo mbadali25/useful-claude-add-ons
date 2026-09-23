@@ -610,6 +610,18 @@ one found is reported here for scribe:
 - `plugin/obsidian-vault/hooks/scripts/vault-guard.sh:159` cites crew's exit-status closure as
   `plugin/crew/hooks/scripts/role-write-guard.sh:105-126`; those lines are now the resolver's tail
   and `_role_write_is_restricted`, and the status capture and its handling start at `:159`.
+- `plugin/obsidian-vault/hooks/scripts/bridge_status.py:54` says its claim-file pattern mirrors
+  "platform-sync.py" in crew; no such file has ever existed (crew has `platform-sync.sh`/`.ps1`,
+  and the claim logic is in `plugin/crew/hooks/scripts/crew_platform.py`).
+- `plugin/obsidian-vault/hooks/scripts/bridge_status.py:439` prints its error as coming from
+  "bridge-status.py"; the file is `bridge_status.py` (the `-` form is the `.sh`/`.ps1` wrappers).
+
+How "every one" was established, so the next pass can repeat it rather than trust it: every
+`path:line` in the plugin's `.py`/`.sh`/`.ps1` was checked against the cited file, and every bare
+`*.py|*.sh|*.ps1` name was checked for existence with `git ls-files`. The names that exist
+nowhere and are NOT listed above are deliberate: two provenance notes naming a personal
+`~/.claude/hooks/` original (`bridge_status.py:4`, `vault_guard.py:4`) and the test suites' own
+throwaway sandbox/sabotage copies.
 
 The regression suite was re-run (`env -u MSYS_NO_PATHCONV bash run-tests.sh`, see
 "Measured this pass" above): **69 passed, 0 failed, 0 skipped**, with `pwsh` present. The no-`pwsh`
