@@ -5,7 +5,8 @@ verified: 2026-09-22
 > `docs/guides/exchange-mailbox/Running-a-Mailbox-Job.json`, content unchanged (a `git mv`).
 > Citations and commands below keep the OLD path on purpose - they record what was run
 > and what was true at this note's anchor, where only the old path exists. On a range that
-> crosses the move, diff both paths: the new one alone prints nothing before the move.
+> crosses the move, use `git diff -M --stat` (or `git log --follow`): the new path alone
+> reports the file as ADDED, a false "changed" for a pure rename.
 **This pass (`03b19262` -> `5d1fc5fd`) is a per-path diff and a re-read of
 every citation into a changed file — see the bottom-most provenance section
 for the command and output. Its headline is `## Corrected at 5d1fc5fd`
