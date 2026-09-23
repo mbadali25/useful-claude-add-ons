@@ -3918,3 +3918,27 @@ Stronger option if the owner wants approval to be a boundary: sign receipts with
 ### crew-1.0 T5 cloud guard fix2 follow-ups (filed 2026-09-23) - OPEN
 - `plugin/crew/README.md:949-951` describes the old bash stand-down; SQL/help/WhatIf lines less precise now. Check `skills/crew-cloud/SKILL.md` for the same.
 - Behaviour change: `psql`/`mysql` commands with backslash literals are refused (every server-mode reading is scanned). Deliberate false positive; revisit with a `cloud.sqlModes` pin if it bites.
+
+### crew 1.0 release follow-ups (filed 2026-09-23) - OPEN
+- After the 1.0 PR merges: re-pin both README install URLs to the merge SHA (`git rev-parse HEAD`); T11 changed both install scripts.
+- `scripts/_test/drift-detection.sh` not run for T11 (drives the real claude CLI); run by hand before pushing the update path.
+- Windows burn-in before the 1.0 PR merges: plan in `.work/windows-burn-in.md` (main checkout), run by the coordinator from a Windows session.
+
+### crew creates `.crew/` in repos that are not crew repos - OPEN, queued after T2 removal (filed 2026-09-23)
+- `plugin/crew/hooks/scripts/verify-gate.sh:496` does `mkdir -p .crew` with no crew-repo check; next SessionStart
+  `crew_platform.py:522` treats the bare dir as crew and `heal_config` (`:547`) writes a default `config.json`.
+  Measured on the owner's vault `/repos/claude-memories` (gardener's `claude -p`). `test_unmanaged_repo_is_left_untouched.py`
+  never runs the Stop hooks in a plain repo. Fix + test: no crew hook creates `.crew/`; `crew_platform` requires config.json,
+  not a bare dir; honour `CREW_HOOKS=off` (obsidian-vault 0.4.2 sets it for the gardener) in every crew wrapper.
+- Owner cleanup (machine, not done): `/repos/claude-memories/.crew/` (config.json, 4 `.hook-*`, 2 `.pm-pulse-*`);
+  3 queue items 17:55/17:58/18:01 with cwd `/repos/claude-memories` are the gardener's own sessions — remove before the next drain;
+  `vault_ops.py reconcile --apply` acks the 5 already-distilled items.
+
+### crew 1.0 T12-trim: instruction budget (filed 2026-09-23) - OPEN, after T2
+T8 measured crew Markdown at 29,148 lines; ~17.8k after the T2 deletions; ~16.3k with the 10 to-trim commands at 120.
+The 6,000 target is far off. Ticket: cut the held command/skill allowances in `plugin/crew/.budget-allowance.json`,
+prioritising what loads into context (skill/agent descriptions, commands) over on-disk reference files; measure
+per-session loaded characters as well as total lines; record both in `BUDGETS.md`. The scorecard prose row stays
+**Behind** until this lands. The post-1.0 review decides whether 6,000 is the right target.
+Also: wire `scripts/check_instructions.py` into CI once T2 clears its 4 intentional red findings
+(`review.md:450,465` qa-reviewer dispatch; README `guard.sh`/`.ps1` citations).
