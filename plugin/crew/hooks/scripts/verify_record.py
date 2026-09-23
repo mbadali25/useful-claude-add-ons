@@ -146,10 +146,24 @@ def rule_key(rule):
 # Set-Item/Remove-Item); --price ran commands with NO pinning at all, so a
 # caller's inherited ENV=prod rode straight into a `seconds` measurement
 # whose whole point is to be reusable by everyone who later reads the map.
-# ONE list, here, rather than a fourth copy: verify-gate.sh, verify-gate.ps1
-# and verify_price.py all read PINNED_VARS instead of naming the five again.
+# verify_price.py reads PINNED_VARS. verify-gate.sh and verify-gate.ps1 name
+# the list literally (they pin it in shell, before any python runs), and
+# `tests/test_cloud_guard.py` asserts all three spellings are this tuple -- the
+# earlier version of this comment said both gates read PINNED_VARS, which they
+# never did.
+#
+# The second five arrived with the cloud guard (crew 1.0, T5), and for the
+# same reason as the first: each one silently picks an account, region,
+# subscription or environment. `AWS_REGION` is the variable AWS SDKs and CLI v2
+# prefer over `AWS_DEFAULT_REGION`, `AWS_DEFAULT_PROFILE` is the CLI's fallback
+# profile, `AZURE_SUBSCRIPTION_ID` / `ARM_SUBSCRIPTION_ID` pick the Azure
+# subscription for az-adjacent tooling and the azurerm provider, and
+# `TF_VAR_environment` is the conventional Terraform input naming the
+# environment a plan targets.
 PINNED_VARS = ("ENV", "AWS_PROFILE", "AWS_DEFAULT_REGION", "KUBECONFIG",
-               "TF_WORKSPACE")
+               "TF_WORKSPACE", "AWS_REGION", "AWS_DEFAULT_PROFILE",
+               "AZURE_SUBSCRIPTION_ID", "ARM_SUBSCRIPTION_ID",
+               "TF_VAR_environment")
 
 
 def pinned_env(rule_env, base=None):

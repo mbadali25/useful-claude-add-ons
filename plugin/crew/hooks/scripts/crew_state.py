@@ -69,6 +69,8 @@ from crew_guards import (
     ALL_GUARD_NAMES,  # noqa: F401
     CHANGE_REQUIREMENTS,  # noqa: F401
     CHANGE_REQUIREMENT_DEFAULT,  # noqa: F401
+    CLOUD_DEFAULTS,  # noqa: F401
+    CLOUD_GUARD_NAMES,  # noqa: F401
     GUARD_APPROVAL_PREFIX,  # noqa: F401
     GUARD_APPROVAL_TTL,  # noqa: F401
     GUARD_DEFAULTS,  # noqa: F401

@@ -258,7 +258,10 @@ def test_the_ten_keys_crew_read_but_never_declared_are_declared():
     # 102 at schema 7: the six `change` keys.
     # 103 since crew 0.19.92: `guards.roleWrites`, the role-write PreToolUse
     # guard's config key.
-    assert len(declared) == 103
+    # 109 with the cloud guard: `guards.cloudDestructive`,
+    # `guards.sqlDestructive`, the `guards.cloudGuard` switch, and the three
+    # repo-only `cloud.*` identity-pin lists.
+    assert len(declared) == 109
 
 
 def test_autoclear_is_global_and_its_siblings_are_not():

@@ -295,7 +295,13 @@ def test_the_ratchet_is_one_table_covering_install_policy_and_all_four_guards():
         "install.policy", "guards.terraformApply", "guards.forcePush",
         "guards.adminMerge", "guards.mergeGate", "guards.prodDatabase",
         "guards.prodServer", "guards.roleWrites",
+        "guards.cloudDestructive", "guards.sqlDestructive",
+        "guards.cloudGuard",
         "change.requireForProduction"}
+    # The cloud guard's switch shares `roleWrites`' vocabulary and split
+    # default; it must never be normalised through `block`/`ask`/`allow`.
+    assert crew_state.RATCHETED_KEYS["guards.cloudGuard"][0] == (
+        crew_state.ROLE_WRITE_POLICIES)
     # Three vocabularies, one table. The production guards ratchet by
     # `none` < `read` < `full`, `roleWrites` by `block` < `report` < `off`,
     # and neither may ever be normalised through the other's tiers -- that

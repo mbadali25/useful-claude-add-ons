@@ -998,15 +998,21 @@ earn its own section: see §18, not the tables immediately below.
 
 | Key | Type | Default | Layer | Read by |
 |---|---|---|---|---|
-| `guards.terraformApply` | `block` \| `ask` \| `allow` | `"block"` | both, **narrower wins** | `hooks/scripts/guard.sh`, `guard.ps1` |
-| `guards.forcePush` | `block` \| `ask` \| `allow` | `"block"` | both, **narrower wins** | `hooks/scripts/guard.sh`, `guard.ps1` |
-| `guards.adminMerge` | `block` \| `ask` \| `allow` | `"block"` | both, **narrower wins** | `hooks/scripts/guard.sh`, `guard.ps1` |
+| `guards.terraformApply` | `block` \| `ask` \| `allow` | `"block"` | both, **narrower wins** | `hooks/scripts/cloud_guard.py` (while `guards.cloudGuard` is on) |
+| `guards.forcePush` | `block` \| `ask` \| `allow` | `"block"` | both, **narrower wins** | `hooks/scripts/cloud_guard.py` (while `guards.cloudGuard` is on) |
+| `guards.adminMerge` | `block` \| `ask` \| `allow` | `"block"` | both, **narrower wins** | `hooks/scripts/cloud_guard.py` (while `guards.cloudGuard` is on) |
 | `guards.mergeGate` | `block` \| `ask` \| `allow` | `"block"` | both, **narrower wins** | `commands/gate.md`, `commands/promote.md` |
-| `guards.prodDatabase` | `none` \| `read` \| `full` | `"none"` | both, **narrower wins** | `hooks/scripts/guard.sh`, `guard.ps1` |
-| `guards.prodServer` | `none` \| `read` \| `full` | `"none"` | both, **narrower wins** | `hooks/scripts/guard.sh`, `guard.ps1` |
+| `guards.prodDatabase` | `none` \| `read` \| `full` | `"none"` | both, **narrower wins** | `hooks/scripts/cloud_guard.py` (while `guards.cloudGuard` is on) |
+| `guards.prodServer` | `none` \| `read` \| `full` | `"none"` | both, **narrower wins** | `hooks/scripts/cloud_guard.py` (while `guards.cloudGuard` is on) |
 | `guards.roleWrites` | `block` \| `report` \| `off` | `"off"` | both, **narrower wins** | `hooks/scripts/role-write-guard.sh`, `.ps1` |
+| `guards.cloudDestructive` | `block` \| `ask` \| `allow` | `"block"` | both, **narrower wins** | `hooks/scripts/cloud_guard.py` (while `guards.cloudGuard` is on) |
+| `guards.sqlDestructive` | `block` \| `ask` \| `allow` | `"block"` | both, **narrower wins** | `hooks/scripts/cloud_guard.py` (while `guards.cloudGuard` is on) |
+| `guards.cloudGuard` | `block` \| `report` \| `off` | `"off"` | both, **narrower wins** | `hooks/scripts/cloud-guard.sh`, `.ps1` -> `cloud_guard.py` |
 | `production.databases` | list of globs | `[]` | **repo only** | `crew_config.py::production_patterns` |
 | `production.hosts` | list of globs | `[]` | **repo only** | `crew_config.py::production_patterns` |
+| `cloud.awsProfiles` | list of globs | `[]` | **repo only** | `cloud_guard.py::cloud_pins` |
+| `cloud.awsRegions` | list of globs | `[]` | **repo only** | `cloud_guard.py::cloud_pins` |
+| `cloud.azureSubscriptions` | list of globs (id or name) | `[]` | **repo only** | `cloud_guard.py::cloud_pins` |
 
 Read one with `crew_config.py --guard <name> [--json]`, which prints the
 decision, both layers' values and which one is holding it down. The two shell
@@ -1793,8 +1799,9 @@ on every Stop. `verify-gate.sh --price [path] [--force]` /
 by typing the flag; the Stop hook (`hooks.json`) never passes it.
 
 **Environment pinning is unconditional, not a config key either.** Every rule
-command the gate runs gets `ENV`, `AWS_PROFILE`, `AWS_DEFAULT_REGION`,
-`KUBECONFIG` and `TF_WORKSPACE` unset, unless that rule's own `"env"` object
+command the gate runs gets `ENV`, `AWS_PROFILE`, `AWS_DEFAULT_PROFILE`, `AWS_DEFAULT_REGION`,
+`AWS_REGION`, `AZURE_SUBSCRIPTION_ID`, `ARM_SUBSCRIPTION_ID`, `KUBECONFIG`,
+`TF_WORKSPACE` and `TF_VAR_environment` unset, unless that rule's own `"env"` object
 declares values for them — in which case exactly those are set instead, and
 the gate prints what it pinned. There is no `verify.envPinning: false` escape
 hatch; a rule that genuinely needs a variable declares it, in the map, next

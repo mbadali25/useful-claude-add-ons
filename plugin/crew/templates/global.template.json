@@ -97,9 +97,12 @@
     "forcePush": "block",
     "adminMerge": "block",
     "mergeGate": "block",
+    "cloudDestructive": "block",
+    "sqlDestructive": "block",
     "prodDatabase": "none",
     "prodServer": "none",
-    "roleWrites": "off"
+    "roleWrites": "off",
+    "cloudGuard": "off"
   },
   "change": {
     "requester": null,

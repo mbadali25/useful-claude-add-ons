@@ -433,11 +433,13 @@ CONFIG_BLOCKS = (
     ("install", crew_state.INSTALL_DEFAULTS),
     ("guards", crew_state.GUARD_DEFAULTS),
     ("github", GITHUB_BLOCK),
-    # Repo-only, and the ONLY block here that is. `default_global_config()`
+    # Repo-only, one of the two blocks here that is. `default_global_config()`
     # does not carry it, so `filter_global` prunes a `production` block out
     # of a machine-global file and reports it: the level ratchets across
     # both layers, the patterns are a fact about this checkout.
     ("production", crew_state.PRODUCTION_DEFAULTS),
+    # Repo-only for the same reason: the cloud guard's identity pins.
+    ("cloud", crew_state.CLOUD_DEFAULTS),
     ("change", CHANGE_BLOCK),
 )
 

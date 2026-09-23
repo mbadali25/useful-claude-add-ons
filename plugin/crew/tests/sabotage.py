@@ -64,6 +64,7 @@ import signal
 import subprocess
 import sys
 
+from sabotage_cloud import CLOUD_GUARD_MUTATIONS
 from sabotage_review import REVIEW_FIX_MUTATIONS
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(
@@ -3068,11 +3069,11 @@ MUTATIONS = (
          "test_run_reserves_before_launch_so_a_crash_still_spends_the_round"),
     ),
 )
-# The T1 review-fix mutations live in `sabotage_review.py`: this file is at
+# The T1 review-fix and T5 cloud-guard mutations live in `sabotage_review.py`/`sabotage_cloud.py`: this file is at
 # `.pylintrc`'s max-module-lines, and raising that limit again is the move its
 # own comment warns against. Content-anchored, so where they are defined
 # changes nothing about what they match.
-MUTATIONS += REVIEW_FIX_MUTATIONS
+MUTATIONS += REVIEW_FIX_MUTATIONS + CLOUD_GUARD_MUTATIONS
 
 
 # pytest's own exit codes (documented, not this file's invention): 0 all

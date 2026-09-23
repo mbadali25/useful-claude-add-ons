@@ -4,6 +4,9 @@
 # The command guard (guard.sh / guard.ps1) was REMOVED in 0.19.52 - it blocked
 # development work, and the two gates below are what crew still enforces. Its
 # cases went with it; do not re-add them without re-adding the hook.
+# Its successor, cloud-guard.sh (crew 1.0 T5, off unless guards.cloudGuard is
+# set), has its own section near the end: it judges only the command a
+# segment RUNS, never a word inside an argument, which is what sank the old one.
 # promote-gate.sh and verify-gate.sh keep their coverage here, and both have
 # had real regressions found by running them rather than reading them. This
 # file exists so the next edit has a safety net.
@@ -1037,6 +1040,55 @@ check(crew_state.read_diagrams(root, {"docs": "nonsense"})["total"] == 3,
 
 sys.exit(0 if ok else 1)
 PYEOF
+
+# --- cloud-guard.sh: the cloud/destructive guard ---------------------------
+# The bash flavour, end to end, through the real wrapper. The full matrix -
+# every case through python, bash AND pwsh - is tests/test_cloud_guard.py;
+# this is the must-block / must-allow floor that runs wherever bash does.
+# A decision is PreToolUse JSON on stdout with exit 0: `deny` or `ask` in
+# `permissionDecision`, or NO output at all, which is the only spelling of
+# allow (the guard never prints `allow`).
+echo "== cloud-guard.sh =="
+CG=$(mktemp -d) || exit 1
+mkdir -p "$CG/repo/.crew" "$CG/home"
+printf '{"guards":{"cloudGuard":"block"}}' > "$CG/repo/.crew/config.json"
+cguard() {  # $1 = tool, $2 = command -> echoes deny|ask|allow
+  local out
+  out=$(json_cmd "$1" "$2" | env -u AWS_PROFILE -u AWS_ACCESS_KEY_ID -u CI \
+        -u CREW_UNATTENDED -u AZURE_SUBSCRIPTION_ID HOME="$CG/home" \
+        CLAUDE_PROJECT_DIR="$CG/repo" bash "$SCRIPTS/cloud-guard.sh" 2>/dev/null)
+  case "$out" in
+    *'"permissionDecision": "deny"'*) echo deny ;;
+    *'"permissionDecision": "ask"'*)  echo ask ;;
+    '') echo allow ;;
+    *) echo "unparsed:$out" ;;
+  esac
+}
+cexpect() {  # $1 = want, $2 = tool, $3 = command
+  local got; got=$(cguard "$2" "$3")
+  if [ "$got" = "$1" ]; then pass; else fail "cloud-guard want=$1 got=$got  [$2] $3"; fi
+}
+cexpect deny  Bash 'terraform apply -auto-approve'
+cexpect deny  Bash 'cd infra && sudo -E env TF_LOG=1 tofu destroy'
+cexpect deny  Bash 'aws ec2 terminate-instances --instance-ids i-1'
+cexpect deny  Bash 'aws s3 rm s3://bucket --recursive'
+cexpect deny  Bash 'az group delete -n rg --yes'
+cexpect deny  Bash "psql -h db -c 'DROP TABLE users'"
+cexpect deny  Bash "$(printf 'psql <<SQL\nTRUNCATE t;\nSQL')"
+cexpect deny  Bash 'git push --force origin main'
+cexpect deny  PowerShell 'Invoke-Sqlcmd -Query "DROP TABLE t" -ServerInstance s'
+cexpect deny  PowerShell "& 'C:\\tools\\terraform.exe' destroy"
+cexpect allow Bash 'terraform plan'
+cexpect allow Bash 'aws s3 ls'
+cexpect allow Bash 'az group list'
+cexpect allow Bash "psql -c \"SELECT 'DROP TABLE x'\""
+cexpect allow Bash 'git push'
+cexpect allow Bash 'git commit -m "terraform destroy; DROP TABLE t; git push --force"'
+cexpect allow PowerShell 'Get-ChildItem; terraform plan'
+# Off is the default: the same destroy with no `cloudGuard` key is not judged.
+printf '{}' > "$CG/repo/.crew/config.json"
+cexpect allow Bash 'terraform destroy -auto-approve'
+rm -rf "$CG"
 
 # --- the PowerShell flavour guard ------------------------------------------
 # hooks.json registers every event TWICE, once per flavour. On a host with

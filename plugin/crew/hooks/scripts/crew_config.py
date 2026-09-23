@@ -335,6 +335,10 @@ def default_config():
         # `filter_global` prunes it out of a global file and reports it --
         # one repo's hostnames must never become every repo's.
         "production": copy.deepcopy(crew_state.PRODUCTION_DEFAULTS),
+        # REPO ONLY, for `production`'s reason: which AWS profile/region and
+        # Azure subscription THIS checkout's commands are pinned to is a fact
+        # about the checkout. Read by `cloud_guard.py` alone.
+        "cloud": copy.deepcopy(crew_state.CLOUD_DEFAULTS),
         # `/crew:change`. Both layers, like `install` and `guards` and for the
         # same two reasons: `requireForProduction` ratchets across them, and a
         # key that existed only globally would fail `is_global_path`'s rule
@@ -2115,6 +2119,11 @@ _GUARD_ACTIONS = {
     "roleWrites": "a Write or Edit outside the calling role's declared scope, "
                   "per the policy table in "
                   "hooks/scripts/role_write_guard.py",
+    "cloudDestructive": "aws delete-*/terminate-*/purge-*, s3 rm/rb and "
+                        "sync --delete, az ... delete/purge, and Remove-Az*",
+    "sqlDestructive": "DROP or TRUNCATE handed to psql, mysql, sqlcmd, "
+                      "sqlite3 or Invoke-Sqlcmd, by flag, heredoc or pipe",
+    "cloudGuard": "the Bash/PowerShell cloud guard's per-rule policies",
 }
 
 
@@ -2211,6 +2220,31 @@ def _role_write_widening_notes(name, what):
     }
 
 
+def _cloud_guard_widening_notes(name, what):
+    """The `! widens to` note for `guards.cloudGuard`, total over
+    `crew_state.ROLE_WRITE_POLICIES` -- the vocabulary it shares with
+    `roleWrites`, and the same split default (`off`) for the same reason.
+    """
+    del name
+    return {
+        "block": (
+            f"crew enforces {what}: `block` denies, `ask` prompts (or denies "
+            "when nobody is attending), `allow` lets through and logs. This is "
+            "the narrowest tier and nothing widens into it."
+        ),
+        "report": (
+            f"crew evaluates {what} and appends what it WOULD have done to "
+            f"`{crew_state.GUARD_LOG_PATH}`, but refuses and prompts for "
+            "nothing -- so the record exists, but nothing stops it at the time."
+        ),
+        "off": (
+            "the cloud guard does not judge any command. This is the WIDEST "
+            "tier and it is also the default -- every repo that has never set "
+            "`guards.cloudGuard` is already here."
+        ),
+    }
+
+
 _RATCHETED = {
     "pm.authority": (
         crew_state.authority_rank,
@@ -2257,6 +2291,16 @@ _RATCHETED.update({
         _role_write_widening_notes(_name, _GUARD_ACTIONS[_name]),
     )
     for _name in crew_state.ROLE_WRITE_GUARD_NAMES
+})
+# The cloud guard's switch: `roleWrites`' vocabulary and functions, its own
+# words.
+_RATCHETED.update({
+    f"guards.{_name}": (
+        crew_state.role_writes_rank,
+        crew_state.normalise_role_writes,
+        _cloud_guard_widening_notes(_name, _GUARD_ACTIONS[_name]),
+    )
+    for _name in crew_state.CLOUD_GUARD_NAMES
 })
 
 
