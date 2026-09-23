@@ -49,7 +49,14 @@ whether the tree still matches what a reviewer accepted.
 `.work/` is excluded from the bundle and the manifest says so
 (`excluded`): it is crew's own scratch space, and the review's scratch files
 landing in the bundle would change the hash between building it and checking
-the receipt.
+the receipt. The exclusion is NOT a pathspec on `git add`: `git add -A -- .
+':(exclude).work'` exits 1 with "paths are ignored by one of your .gitignore
+files" in every repository that gitignores `.work/` -- this one included --
+so no bundle could be built there at all. Instead `add -A` runs unrestricted
+and every diff and listing carries the exclude pathspec. That is also what
+keeps out `.work` entries the copied index already held (force-added, or
+committed at the base): they are in the temp tree, and on both sides of the
+range, but no diff reads them.
 
 CLI: --root <repo> --base <sha> --out <patch-file> --manifest <json-file>
      [--parts-dir <dir>] [--max-part-bytes N]
@@ -82,7 +89,8 @@ EXIT_NOTHING_TO_REVIEW = 2
 # and small enough that a reviewer acknowledging each part is meaningful.
 DEFAULT_MAX_PART_BYTES = 200 * 1024
 
-# Pathspec excluding crew's scratch space from the temp-index `add -A`.
+# Pathspec excluding crew's scratch space from every diff and listing. Never
+# passed to `git add`: there it fails outright when `.work` is gitignored.
 EXCLUDED = (".work/",)
 _EXCLUDE_SPEC = [":(exclude).work"]
 
@@ -189,8 +197,10 @@ def _binary_paths(numstat):
 
 
 def _entries(root, base_sha, tree):
-    raw = _run_raw(root, ["diff", "--raw", "-z", "-M", "--no-abbrev", base_sha, tree])
-    numstat = _run_raw(root, ["diff", "--numstat", "-z", "-M", base_sha, tree])
+    raw = _run_raw(root, ["diff", "--raw", "-z", "-M", "--no-abbrev", base_sha, tree,
+                          "--", "."] + _EXCLUDE_SPEC)
+    numstat = _run_raw(root, ["diff", "--numstat", "-z", "-M", base_sha, tree,
+                              "--", "."] + _EXCLUDE_SPEC)
     binary = _binary_paths(numstat)
     entries = _parse_raw(raw)
     for entry in entries:
@@ -267,11 +277,11 @@ def compute(root, base, max_part_bytes=DEFAULT_MAX_PART_BYTES):
         raise RuntimeError(f"--base {base!r} does not resolve to a commit: {exc}") from exc
     branch = _run(root, ["rev-parse", "--abbrev-ref", "HEAD"]).strip()
 
-    committed_files = _lines(root, ["diff", "--name-only", base_sha, head])
-    staged_files = _lines(root, ["diff", "--cached", "--name-only"])
-    unstaged_files = _lines(root, ["diff", "--name-only"])
-    untracked_files = _lines(root, ["ls-files", "--others", "--exclude-standard",
-                                    "--", "."] + _EXCLUDE_SPEC)
+    only = ["--", "."] + _EXCLUDE_SPEC
+    committed_files = _lines(root, ["diff", "--name-only", base_sha, head] + only)
+    staged_files = _lines(root, ["diff", "--cached", "--name-only"] + only)
+    unstaged_files = _lines(root, ["diff", "--name-only"] + only)
+    untracked_files = _lines(root, ["ls-files", "--others", "--exclude-standard"] + only)
     dirty = bool(staged_files or unstaged_files or untracked_files)
 
     real_index = _run(root, ["rev-parse", "--git-path", "index"]).strip()
@@ -290,7 +300,10 @@ def compute(root, base, max_part_bytes=DEFAULT_MAX_PART_BYTES):
         # developer staged there for their own next commit -- is never
         # touched by this call. `test_review_patch.py` asserts
         # `git diff --cached --name-only` is byte-identical before and after.
-        _run(root, ["add", "-A", "--", "."] + _EXCLUDE_SPEC, env=env)
+        #
+        # No exclude pathspec here (see the module docstring): it fails when
+        # `.work` is gitignored. The diffs below exclude it instead.
+        _run(root, ["add", "-A", "--", "."], env=env)
         working_tree = _run(root, ["write-tree"], env=env).strip()
 
         # ONE diff: base -> the full working state (committed range, staged,
@@ -298,7 +311,7 @@ def compute(root, base, max_part_bytes=DEFAULT_MAX_PART_BYTES):
         # produced). Binary files get git's own "Binary files ... differ"
         # marker -- no `--binary` flag -- and `--full-index` puts both full
         # blob ids on the `index` line, so the bytes still change with them.
-        patch = _run_raw(root, ["diff"] + _DIFF_FLAGS + [base_sha, working_tree])
+        patch = _run_raw(root, ["diff"] + _DIFF_FLAGS + [base_sha, working_tree] + only)
         entries = _entries(root, base_sha, working_tree)
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)

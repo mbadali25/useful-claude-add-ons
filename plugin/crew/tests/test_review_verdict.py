@@ -86,10 +86,34 @@ def test_parse_clean_beside_a_finding_is_incomplete():
     assert result["verdict"] == rv.INCOMPLETE
 
 
-def test_parse_tolerates_a_bare_code_fence():
-    result = rv.parse("```\nCLEAN\n```\n", 0)
+@pytest.mark.parametrize("text", ["```\nCLEAN\n```\n", "```text\nCLEAN\n```\n"])
+def test_parse_a_code_fence_is_incomplete(text):
+    """Tolerating fences was fail-open: a fence is not part of the contract,
+    and whatever it wrapped was never read as one."""
+    result = rv.parse(text, 0)
 
-    assert result["verdict"] == rv.CLEAN
+    assert result["verdict"] == rv.INCOMPLETE
+
+
+@pytest.mark.parametrize("line", [
+    "FIX|a.py:1||",
+    "FIX|a.py:1|breaks|",
+    "FIX|a.py:1||repro",
+    "FIX||breaks|repro",
+    "BLOCK| |breaks|repro",
+    "NIT|a.py:1|  |repro",
+    "FIX|a.py:1|breaks",
+])
+def test_parse_a_finding_with_an_empty_or_missing_field_is_incomplete(line):
+    result = rv.parse(line, 0)
+
+    assert result["verdict"] == rv.INCOMPLETE
+
+
+def test_parse_a_finding_whose_repro_contains_a_pipe_is_findings():
+    result = rv.parse("FIX|a.py:1|breaks|run `a | b`", 0)
+
+    assert result["verdict"] == rv.FINDINGS
 
 
 def _stream(*events):
@@ -125,3 +149,15 @@ def test_codex_final_message_reads_the_older_msg_shape():
                      {"msg": {"type": "task_complete", "last_agent_message": "CLEAN"}})
 
     assert rv.codex_final_message(stream) == ("CLEAN", None)
+
+
+@pytest.mark.parametrize("garbage", ["not json at all", '{"type": "item.comp', "[1, 2]",
+                                     "warning: something"])
+def test_codex_final_message_an_unparseable_event_line_is_an_error(garbage):
+    """A garbled stream that still ends in a CLEAN message and a completed
+    turn used to read as clean: unreadable lines were skipped."""
+    stream = _stream(
+        {"type": "item.completed", "item": {"type": "agent_message", "text": "CLEAN"}}
+    ) + "\n" + garbage + "\n" + _stream({"type": "turn.completed"})
+
+    assert rv.codex_final_message(stream)[1] is not None

@@ -269,3 +269,80 @@ def test_claude_verdict_refuses_an_unreserved_round(repo, tmp_path):
 
     assert result.returncode == 2 and "never reserved" in result.stderr
     assert not (tmp_path / "w" / "review.json").exists()
+
+
+# ---- recording rules: latest round, once, by the reserved reviewer ----------
+
+def _result(verdict, provider="codex", model=None):
+    return {"verdict": verdict, "counts": {}, "bundle_sha256": "0" * 64, "base": "HEAD",
+            "head": "HEAD", "provider": provider, "model": model, "model_family": "gpt"}
+
+
+def test_record_an_older_round_after_the_budget_is_spent_is_refused(repo):
+    """Codex BLOCK: round 1's late CLEAN turned NEEDS_REPLAN back into
+    ACCEPTED and minted a receipt."""
+    rl.reserve(str(repo), "T1", "codex")
+    rl.reserve(str(repo), "T1", "codex")
+    rl.record(str(repo), "T1", 2, _result("FINDINGS"))
+
+    with pytest.raises(rl.LedgerError):
+        rl.record(str(repo), "T1", 1, _result("CLEAN"))
+
+    assert (rl.status(str(repo), "T1")["state"], rl.status(str(repo), "T1")["receipt"]) == (
+        rl.NEEDS_REPLAN, None)
+
+
+def test_record_an_older_round_while_a_later_one_is_reserved_is_refused(repo):
+    rl.reserve(str(repo), "T1", "codex")
+    rl.reserve(str(repo), "T1", "codex")
+
+    with pytest.raises(rl.LedgerError, match="most recent"):
+        rl.record(str(repo), "T1", 1, _result("CLEAN"))
+
+
+def test_record_a_round_twice_is_refused(repo):
+    rl.reserve(str(repo), "T1", "codex")
+    rl.record(str(repo), "T1", 1, _result("FINDINGS"))
+
+    with pytest.raises(rl.LedgerError, match="already has a result"):
+        rl.record(str(repo), "T1", 1, _result("CLEAN"))
+
+
+def test_record_after_needs_replan_is_refused_even_for_the_latest_round(repo):
+    rl.reserve(str(repo), "T1", "codex")
+    rl.reserve(str(repo), "T1", "codex")
+    rl.reserve(str(repo), "T1", "codex")
+
+    with pytest.raises(rl.LedgerError, match=rl.NEEDS_REPLAN):
+        rl.record(str(repo), "T1", 2, _result("CLEAN"))
+
+
+@pytest.mark.parametrize("provider,model", [("claude", None), ("codex", "gpt-other")])
+def test_record_by_a_reviewer_other_than_the_reserved_one_is_refused(repo, provider, model):
+    rl.reserve(str(repo), "T1", "codex", "gpt-6-astra")
+
+    with pytest.raises(rl.LedgerError, match="reserved for codex/gpt-6-astra"):
+        rl.record(str(repo), "T1", 1, _result("CLEAN", provider, model))
+
+
+def test_claude_result_cannot_complete_a_codex_reservation(repo, tmp_path):
+    """Codex BLOCK: reserve round 1 as codex, then `review_run.py --provider
+    claude --round 1` with CLEAN output. The ledger accepted it and erased the
+    provider that was actually reserved."""
+    (repo / "change.txt").write_text("change\n", encoding="utf-8")
+    scratch = tmp_path / "scratch"
+    _bundle(repo, scratch)
+    rl.reserve(str(repo), "T1", "codex")
+    parts = json.loads((scratch / "manifest.json").read_text(encoding="utf-8"))["parts"]
+    (scratch / "out.txt").write_text(
+        "".join(f"READ|{p['name']}\n" for p in parts) + "CLEAN\n", encoding="utf-8")
+
+    result = subprocess.run(
+        [sys.executable, _RUN, "--root", str(repo), "--ticket", "T1", "--scratch",
+         str(scratch), "--provider", "claude", "--round", "1", "--output",
+         str(scratch / "out.txt"), "--exit-code", "0", "--work-dir", str(tmp_path / "w")],
+        capture_output=True, text=True, stdin=subprocess.DEVNULL, check=False)
+
+    row = rl.status(str(repo), "T1")["rounds"][0]
+    assert result.returncode == 2, result.stdout + result.stderr
+    assert (row["status"], row["provider"]) == ("reserved", "codex")

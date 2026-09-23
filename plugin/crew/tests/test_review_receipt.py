@@ -5,7 +5,9 @@ and fails unless its sha256 still matches, so an edit after review invalidates
 the receipt. `/crew:done` (T4) gates on this; in 0.20.16 it is exposed and
 documented.
 """
+import json
 import os
+import pathlib
 import subprocess
 import sys
 
@@ -18,6 +20,8 @@ from review_fixtures import git, init_repo
 
 _LEDGER = os.path.join(context._ROOT, "hooks", "scripts",  # pylint: disable=protected-access
                        "review_ledger.py")
+_RUN = os.path.join(context._ROOT, "hooks", "scripts",  # pylint: disable=protected-access
+                    "review_run.py")
 
 
 @pytest.fixture(name="repo")
@@ -125,3 +129,31 @@ def test_accept_refuses_when_the_tree_changed_since_the_review(repo):
 
     with pytest.raises(rl.LedgerError):
         rl.accept(str(repo), "T1", "the owner")
+
+
+def test_truncated_bundle_parts_are_incomplete_and_mint_no_receipt(repo, tmp_path):
+    """Codex BLOCK: build a bundle, truncate every part, return the READ lines
+    plus CLEAN -- the receipt used to pass, bound to the untouched tree hash
+    while the reviewer read empty files."""
+    base = git(repo, "rev-parse", "HEAD")
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    review_patch.build(str(repo), base, str(scratch / "diff.txt"),
+                       str(scratch / "manifest.json"))
+    parts = json.loads((scratch / "manifest.json").read_text(encoding="utf-8"))["parts"]
+    for part in parts:
+        pathlib.Path(part["path"]).write_bytes(b"")
+    (scratch / "out.txt").write_text(
+        "".join(f"READ|{p['name']}\n" for p in parts) + "CLEAN\n", encoding="utf-8")
+    common = [sys.executable, _RUN, "--root", str(repo), "--ticket", "T1",
+              "--scratch", str(scratch), "--provider", "claude"]
+    subprocess.run(common + ["--reserve-only"], capture_output=True,
+                   stdin=subprocess.DEVNULL, check=True)
+
+    verdict = subprocess.run(common + ["--round", "1", "--output", str(scratch / "out.txt"),
+                                       "--exit-code", "0", "--work-dir", str(tmp_path / "w")],
+                             capture_output=True, text=True, stdin=subprocess.DEVNULL,
+                             check=False)
+
+    assert verdict.returncode == 3, verdict.stdout + verdict.stderr
+    assert _check(repo).returncode == 1

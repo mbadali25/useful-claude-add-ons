@@ -15,9 +15,10 @@ THE CONTRACT the shared prompt asks every reviewer for:
 THE RULE, in precedence order:
 
   INCOMPLETE  timed out; no exit status; non-zero exit; empty output; any line
-              that is none of the above (a bare ``` fence is tolerated); a
-              bundle part with no READ line; CLEAN beside findings; CLEAN more
-              than once; neither CLEAN nor a finding.
+              that is none of the above -- a code fence included, and a
+              finding with any of its four fields empty; a bundle part with
+              no READ line; CLEAN beside findings; CLEAN more than once;
+              neither CLEAN nor a finding.
   FINDINGS    at least one BLOCK/FIX/NIT line and nothing above applies.
   CLEAN       exactly one CLEAN line (plus the READ lines), exit 0.
 
@@ -32,7 +33,9 @@ common failure: a reviewer that read part 1 of 3 and answered.
 `codex exec --json` prints a JSONL event stream instead of the message itself;
 `codex_final_message` extracts the last agent message and whether the turn
 completed, so a Codex turn that failed is INCOMPLETE even when its process
-exited 0.
+exited 0. A non-blank line of that stream that is not a JSON object is an
+error too: the stream is only trustworthy whole, and skipping what cannot be
+read would let a garbled stream with a final CLEAN still read as CLEAN.
 """
 import json
 import re
@@ -42,9 +45,11 @@ FINDINGS = "FINDINGS"
 INCOMPLETE = "INCOMPLETE"
 SEVERITIES = ("BLOCK", "FIX", "NIT")
 
-_FINDING = re.compile(r"^(BLOCK|FIX|NIT)\|[^|]+\|.+$")
+# SEVERITY|file:line|what breaks|repro -- every field non-blank. The repro is
+# last and may itself contain `|`.
+_FIELD = r"[^|]*[^|\s][^|]*"
+_FINDING = re.compile(rf"^(BLOCK|FIX|NIT)\|{_FIELD}\|{_FIELD}\|.*\S.*$")
 _READ = re.compile(r"^READ\|(\S+)$")
-_FENCE = re.compile(r"^```[A-Za-z]*$")
 
 
 def parse(text, exit_code, timed_out=False, expected_parts=()):
@@ -55,7 +60,7 @@ def parse(text, exit_code, timed_out=False, expected_parts=()):
     clean_lines = 0
     for raw in (text or "").splitlines():
         line = raw.strip()
-        if not line or _FENCE.match(line):
+        if not line:
             continue
         if line == CLEAN:
             clean_lines += 1
@@ -125,13 +130,15 @@ def codex_final_message(jsonl):
     message, completed, error = None, False, None
     for line in (jsonl or "").splitlines():
         line = line.strip()
-        if not line.startswith("{"):
+        if not line:
             continue
         try:
             event = json.loads(line)
         except ValueError:
-            continue
+            event = None
         if not isinstance(event, dict):
+            if error is None:
+                error = f"unparseable Codex event line: {line[:120]!r}"
             continue
         kind, body = _event_type(event)
         if kind == "item.completed" and isinstance(body.get("item"), dict):

@@ -115,13 +115,25 @@ step 1, and carry `$BASE` forward — step 2 reuses it rather than recomputing i
 for the same reason `$SCRATCH` is carried:
 
 ```bash
-# `... | sed ... || echo main` does NOT work: the || binds to the whole pipeline
-# and sed exits 0 even when symbolic-ref failed, so the fallback never fires and
-# merge-base is handed an empty string. Branch on the ref itself.
-DEFAULT_BRANCH=$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null) || DEFAULT_BRANCH=""
-DEFAULT_BRANCH=${DEFAULT_BRANCH#origin/}
-: "${DEFAULT_BRANCH:=main}"
-BASE=$(git merge-base HEAD "$DEFAULT_BRANCH")
+# The ticket's START, recorded by /crew:work step 1 (`scope_base.py --record`):
+# the same range /crew:work's scope evidence covers, so the bundle -- and the
+# receipt bound to its hash -- is this ticket's change, not everything on the
+# branch since the trunk. With no record, or one this clone no longer holds,
+# scope_base.py itself falls back to the merge-base with the default branch
+# and says "(fallback)" on stderr; repeat that word in the verdict when it does.
+BASE=$(python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/scope_base.py --root . --base "$TICKET")
+if [ -z "$BASE" ]; then
+  # scope_base.py did not run at all (no python3). The stated fallback:
+  # the merge-base. `... | sed ... || echo main` does NOT work: the || binds
+  # to the whole pipeline and sed exits 0 even when symbolic-ref failed, so
+  # the fallback never fires and merge-base is handed an empty string.
+  # Branch on the ref itself.
+  DEFAULT_BRANCH=$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null) || DEFAULT_BRANCH=""
+  DEFAULT_BRANCH=${DEFAULT_BRANCH#origin/}
+  : "${DEFAULT_BRANCH:=main}"
+  BASE=$(git merge-base HEAD "$DEFAULT_BRANCH")
+  echo "review base: merge-base with $DEFAULT_BRANCH (fallback - scope_base.py did not run)"
+fi
 
 # The NEWEST of `.work/dispatch.json` and anything in `.work/dispatch.d/`.
 # Since 0.16.7 each dispatch writes its own file in that directory and the
@@ -164,7 +176,7 @@ fi
 | Reading | Means | Do |
 |---|---|---|
 | `REC_AT` is `0` | no record anywhere -- neither `.work/dispatch.json` nor `.work/dispatch.d/` -- or no `python3` | source is `config`; announce it in those words |
-| `REC_AT >= BASE_AT` | the record is no older than the point this branch left the trunk | trust it |
+| `REC_AT >= BASE_AT` | the record is no older than the review base (the ticket's start, or the merge-base on fallback) | trust it |
 | `REC_AT < BASE_AT` | **STALE** — the record predates every commit under review, so it cannot describe any of them | fail closed, below |
 
 Compare against the **base**, never the tip. The normal sequence is implement,
@@ -302,7 +314,7 @@ fallback and say in the verdict that this review is same-family and does not
 count as independent.
 
 `source=stale` means the recorded dispatch could not be tied to this diff -- a
-different branch, an unrecorded branch, or a record older than the merge-base --
+different branch, an unrecorded branch, or a record older than the review base --
 so **both** the recorded and the configured family were struck. Report that as
 the reason a rung was lost, rather than presenting the narrower candidate list
 as though it were a preference.
@@ -399,7 +411,7 @@ Output one line per defect: SEVERITY|file:line|what breaks|how to reproduce.
 SEVERITY is BLOCK, FIX, or NIT. Check: unintended behavior changes, unhandled
 error paths, boundary and empty-collection cases, concurrency, anything the
 change makes reachable that was not before, and every acceptance check.
-Output nothing but the READ lines and those lines.
+Output nothing but the READ lines and those lines - no code fences, no prose.
 If no defects, after the READ lines output exactly: CLEAN
 
 $(cat "$SCRATCH/contract.txt")

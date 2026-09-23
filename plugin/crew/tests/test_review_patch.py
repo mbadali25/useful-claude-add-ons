@@ -330,3 +330,43 @@ def test_split_parts_never_truncates():
         parts = review_patch.split_parts(data, limit)
         assert b"".join(parts) == data
         assert all(0 < len(p) <= limit for p in parts)
+
+
+def test_gitignored_work_dir_still_builds_a_bundle(repo, tmp_path):
+    """Dogfood BLOCK: `git add -A -- . ':(exclude).work'` exits 1 ("paths are
+    ignored by one of your .gitignore files") in every repo that gitignores
+    `.work/` -- this marketplace included -- so no bundle could be built. The
+    earlier fixtures never gitignored `.work`, which is how it shipped."""
+    (repo / ".gitignore").write_text(".work/\n", encoding="utf-8")
+    _git(repo, "add", ".gitignore")
+    _git(repo, "commit", "-qm", "ignore .work")
+    base = _git(repo, "rev-parse", "HEAD")
+    (repo / ".work" / "tickets").mkdir(parents=True)
+    (repo / ".work" / "tickets" / "scratch.txt").write_text("scratch\n", encoding="utf-8")
+    (repo / "real.txt").write_text("real-change\n", encoding="utf-8")
+
+    result = _run_script(repo, base, tmp_path / "diff.txt", tmp_path / "manifest.json")
+
+    assert result.returncode == 0, result.stderr
+    assert b"real-change" in (tmp_path / "diff.txt").read_bytes()
+
+
+def test_work_entries_already_in_the_index_stay_out_of_the_bundle(repo, tmp_path):
+    """The exclusion used to act only on what `add -A` staged, so a `.work`
+    path the copied real index already held -- force-added, or committed --
+    still reached the bundle and its hash."""
+    (repo / ".work").mkdir()
+    (repo / ".work" / "committed.txt").write_text("committed-scratch\n", encoding="utf-8")
+    _git(repo, "add", "-f", ".work/committed.txt")
+    _git(repo, "commit", "-qm", "a .work file in history")
+    base = _git(repo, "rev-parse", "HEAD")
+    (repo / ".work" / "committed.txt").write_text("edited-scratch\n", encoding="utf-8")
+    (repo / ".work" / "staged.txt").write_text("staged-scratch\n", encoding="utf-8")
+    _git(repo, "add", "-f", ".work/staged.txt")
+    (repo / "real.txt").write_text("real\n", encoding="utf-8")
+
+    result = _run_script(repo, base, tmp_path / "diff.txt", tmp_path / "manifest.json")
+
+    assert result.returncode == 0, result.stderr
+    patch = (tmp_path / "diff.txt").read_bytes()
+    assert b".work/" not in patch and b"scratch" not in patch

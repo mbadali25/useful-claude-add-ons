@@ -27,6 +27,13 @@ stuck lock fails closed with its path in the message.
 AN UNREADABLE LEDGER is UNKNOWN, never empty: reservation refuses rather
 than starting a fresh budget.
 
+RECORDING A RESULT is allowed only for the most recent reserved round, only
+once, and only with the provider and model that round was reserved for; once
+the state is NEEDS_REPLAN no result changes it. Without the first rule an
+older round's late CLEAN turned NEEDS_REPLAN back into ACCEPTED and minted a
+receipt; without the third, a crashed Codex reservation could be completed by
+an unreserved Claude run, erasing the provider that was actually launched.
+
 RECEIPT. A CLEAN verdict writes `receipt` automatically; FINDINGS become a
 receipt only through `--accept --by <who>`, which records who and when.
 Either way the receipt carries the bundle sha256 the reviewer read, and
@@ -206,18 +213,32 @@ def record(root, ticket, number, review):
     def change(data, state):
         if state != "ok":
             raise LedgerError(f"ledger is {state}; round {number} was never reserved")
-        rows = [r for r in data.get("rounds", []) if r.get("round") == number]
+        if data.get("state") == NEEDS_REPLAN:
+            raise LedgerError(f"{ticket} is {NEEDS_REPLAN}; no review result changes that "
+                              "state, only an approved successor plan continues")
+        rounds = data.get("rounds", [])
+        rows = [r for r in rounds if r.get("round") == number]
         if not rows:
             raise LedgerError(f"round {number} was never reserved for {ticket}")
         row = rows[0]
+        if row is not rounds[-1]:
+            raise LedgerError(f"round {number} is not the most recent reservation (round "
+                              f"{rounds[-1].get('round')} is); an older round's result "
+                              "cannot be recorded")
         if row.get("status") != "reserved":
             raise LedgerError(f"round {number} already has a result ({row.get('verdict')})")
+        reserved_for = (row.get("provider"), row.get("model") or None)
+        recording = (review.get("provider"), review.get("model") or None)
+        if recording != reserved_for:
+            raise LedgerError(f"round {number} was reserved for {reserved_for[0]}/"
+                              f"{reserved_for[1] or 'default'}, not {recording[0]}/"
+                              f"{recording[1] or 'default'}; a round is recorded only by "
+                              "the reviewer it was reserved for")
         row.update({
             "status": "completed", "completed_at": _now(),
             "verdict": review["verdict"], "counts": review.get("counts"),
             "bundle_sha256": review.get("bundle_sha256"), "base": review.get("base"),
-            "head": review.get("head"), "provider": review.get("provider"),
-            "model": review.get("model"), "model_family": review.get("model_family"),
+            "head": review.get("head"), "model_family": review.get("model_family"),
         })
         if review["verdict"] == "CLEAN":
             data["receipt"] = {

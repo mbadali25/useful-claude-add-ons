@@ -27,6 +27,14 @@ All notable changes to this repository are documented here. Format follows [Keep
   spec sections, plan and verify receipts to the shared prompt, writing
   `MISSING` for what is absent. `/crew:work` now reviews after tests and docs.
   `/crew:review` needs a ticket id.
+  Review fixes before release: the bundle builds in a repo that gitignores
+  `.work/` (the exclude pathspec on `git add` failed there), and `.work` paths
+  already in the index stay out of it; the ledger records a result only for
+  the latest reserved round, once, from the reviewer it was reserved for, and
+  never after `NEEDS_REPLAN`; a bundle part that no longer matches its
+  manifest, a code fence, a finding with an empty field, or an unreadable
+  Codex event line is INCOMPLETE; `/crew:review` bundles from the ticket's
+  recorded start (`scope_base.py`), the merge-base only as a named fallback.
 
 - **`doc-builder` 1.6.2: black-grid tables and a logo-left masthead.** Data and
   meta tables now draw a solid black border on every cell, data-table headers

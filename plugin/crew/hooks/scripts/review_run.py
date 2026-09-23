@@ -26,6 +26,13 @@ was launched, so nothing is spent.
 The prompt is passed inline when it fits a Windows command line; otherwise the
 argument tells the reviewer to read `prompt.txt`, and says so on stderr.
 
+Before the verdict, every bundle part is re-read and checked against the
+manifest's size and sha256 for it, and the parts together against
+`bundle_sha256`. A part that is missing, truncated or altered makes the round
+INCOMPLETE: the receipt binds the manifest's hash, so without this check a
+reviewer could have read an emptied part while the receipt still vouched for
+the untouched tree.
+
 Writes `<work-dir>/review.json` (default `.work/tickets/<id>/review.json`)
 and records the round in the ledger; a CLEAN round writes the receipt.
 
@@ -34,6 +41,7 @@ Exit codes: 0 CLEAN; 1 FINDINGS; 3 INCOMPLETE; 4 budget refused
 """
 import argparse
 import datetime
+import hashlib
 import json
 import os
 import shutil
@@ -102,10 +110,35 @@ def launch(cmd, root, timeout):
     return done.stdout, done.stderr, done.returncode, False
 
 
+def bundle_problems(manifest):
+    """Reasons the part files on disk are not the bundle the manifest
+    describes; empty when every part matches its recorded size and sha256
+    and the parts together hash to `bundle_sha256`."""
+    problems = []
+    whole = hashlib.sha256()
+    for row in manifest.get("parts") or []:
+        try:
+            with open(row["path"], "rb") as fh:
+                data = fh.read()
+        except (OSError, KeyError, TypeError) as exc:
+            problems.append(f"bundle part {row.get('name')} could not be read: {exc}")
+            continue
+        whole.update(data)
+        if len(data) != row.get("bytes") or hashlib.sha256(data).hexdigest() != row.get(
+                "sha256"):
+            problems.append(f"bundle part {row.get('name')} is {len(data)} bytes and does "
+                            f"not match its manifest entry ({row.get('bytes')} bytes)")
+    if not problems and manifest.get("parts") and \
+            whole.hexdigest() != manifest.get("bundle_sha256"):
+        problems.append("the bundle parts do not hash to the manifest's bundle_sha256")
+    return problems
+
+
 def finish(args, number, output, exit_code, timed_out, extra_reasons=()):
     """Verdict -> ledger -> review.json. Returns the process exit code."""
     manifest = json.loads(_read(args.manifest))
     parts = [p["name"] for p in manifest.get("parts") or []]
+    extra_reasons = list(extra_reasons) + bundle_problems(manifest)
     result = review_verdict.parse(output, exit_code, timed_out, parts)
     if extra_reasons:
         result["reasons"] = list(extra_reasons) + result["reasons"]
