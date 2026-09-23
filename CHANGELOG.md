@@ -6,6 +6,15 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Changed
 
+- **`crew` 0.20.24: registration.** Stack skills corrected against tool docs:
+  eslint/prettier probes fail closed and prettier is scoped to Angular files;
+  git ls-files -z for shell files; .NET 4.8 LangVersion and EF6 AsNoTracking
+  wording, dotnet format subcommand probe and project-file triggers;
+  PSScriptAnalyzer rules check the module, pass -Settings once and exit
+  non-zero on findings; .pyi, *.tf.json/*.tfvars.json triggers; tflint
+  --recursive; PostgreSQL/MySQL DDL caveats. The skill test executes each
+  rule's missing-tool branch.
+
 - **`crew` 0.20.23: registration.** Context hook: recalled vault text wrapped
   as labelled reference data, not instructions; vault allow-list and
   single-line vault/note names; memory.inject honoured by
