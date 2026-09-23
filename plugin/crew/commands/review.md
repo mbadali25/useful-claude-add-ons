@@ -26,7 +26,8 @@ TICKET="<ticket id>"
 total** (`review_ledger.py`, in `<git-common-dir>/crew/review/<id>.json`,
 shared by every worktree). A round is reserved before the reviewer launches,
 so a crashed one still counts; a third is refused and the ticket becomes
-`NEEDS_REPLAN`. No flag, variable or config key raises or resets it.
+`NEEDS_REPLAN`. Round 2's FINDINGS can still be accepted until then. No flag,
+variable or config key raises or resets it.
 
 `mktemp`'s branch-prefixed, randomly-suffixed directory is ticket-scoped (the
 branch name) and session-scoped (no other process can be handed the same
@@ -506,8 +507,9 @@ to.
 3. If you disagree with a finding, say so explicitly and let me decide. If I
    accept FINDINGS as they stand, record it — the receipt names who and when:
    `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/review_ledger.py --ticket "$TICKET" --accept --by "<who>"`.
-   Only the most recent round can be accepted, and not once the ticket is
-   `NEEDS_REPLAN`. A CLEAN round writes its receipt itself. `review_ledger.py --ticket "$TICKET"
+   Only the most recent round can be accepted, once, including round 2, and not
+   once the ticket is `NEEDS_REPLAN` (a refused third reservation, or
+   `review_ledger.py --ticket "$TICKET" --reject --by "<who>"`). A CLEAN round writes its receipt itself. `review_ledger.py --ticket "$TICKET"
    --check-receipt` rebuilds the bundle and fails if anything changed since.
 4. **Land the verdict as a review, not a comment.** If the change is on a
    GitHub PR, post the outcome with `gh pr review` so it exists as an artifact

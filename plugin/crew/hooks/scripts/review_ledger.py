@@ -15,6 +15,9 @@ RESERVATION BEFORE LAUNCH. `reserve` appends a round with status `reserved`
 and writes the ledger before any reviewer process exists. A reviewer that
 crashes, hangs or is killed leaves that round `reserved` forever, and it
 counts. A third reservation is refused and the state becomes `NEEDS_REPLAN`.
+That refusal, and an explicit `--reject --by <who>`, are the only ways into
+NEEDS_REPLAN: a completed round 2 -- FINDINGS or INCOMPLETE -- leaves the
+ticket REVIEWED, so the owner can still accept round 2's FINDINGS.
 
 ATOMICITY. Every mutation holds `<ticket>.lock`, created with
 O_CREAT|O_EXCL, for the read-modify-write, and replaces the ledger with
@@ -37,8 +40,11 @@ an unreserved Claude run, erasing the provider that was actually launched.
 RECEIPT. A CLEAN verdict writes `receipt` automatically; FINDINGS become a
 receipt only through `--accept --by <who>`, which records who and when.
 `--accept` takes only the most recent round, only once it completed with
-FINDINGS, and never once the state is NEEDS_REPLAN: accepting an older
-completed round used to move NEEDS_REPLAN back to ACCEPTED.
+FINDINGS, only once per round, and never once the state is NEEDS_REPLAN:
+accepting an older completed round used to move NEEDS_REPLAN back to
+ACCEPTED. Round 2's FINDINGS are acceptable -- the budget is exhausted only
+when it is spent with nothing accepted, which is the refused third
+reservation.
 Either way the receipt carries the bundle sha256 the reviewer read, and
 `--check-receipt` rebuilds the bundle from the receipt's base and exits
 non-zero unless the hash still matches. `/crew:done` (T4) gates on it.
@@ -250,8 +256,6 @@ def record(root, ticket, number, review):
                 "accepted_at": row["completed_at"],
             }
             data["state"] = ACCEPTED
-        elif number >= BUDGET:
-            data["state"] = NEEDS_REPLAN
         else:
             data["state"] = REVIEWED
         return data, data["state"]
@@ -283,6 +287,10 @@ def accept(root, ticket, by):
             raise LedgerError(f"round {row['round']} is {row.get('verdict')}; only FINDINGS "
                               "can be owner-accepted (CLEAN writes its own receipt, and "
                               "INCOMPLETE was not read)")
+        receipt = data.get("receipt") or {}
+        if receipt.get("round") == row["round"]:
+            raise LedgerError(f"round {row['round']} was already accepted by "
+                              f"{receipt.get('accepted_by')} at {receipt.get('accepted_at')}")
         current = _current_hash(root, row.get("base"))
         if current != row.get("bundle_sha256"):
             raise LedgerError("the tree has changed since that review, so accepting it would "
@@ -294,6 +302,27 @@ def accept(root, ticket, by):
         }
         data["state"] = ACCEPTED
         return data, data["receipt"]
+
+    return _mutate(root, ticket, change)
+
+
+def reject(root, ticket, by):
+    """The owner sends the ticket to NEEDS_REPLAN without spending a third
+    reservation. Refuses on a ticket already ACCEPTED or NEEDS_REPLAN, and
+    changes nothing when it refuses."""
+    if not isinstance(by, str) or not by.strip():
+        raise LedgerError("--reject needs --by <who is rejecting>")
+
+    def change(data, state):
+        if state != "ok":
+            raise LedgerError(f"ledger is {state}; there is no review to reject")
+        if data.get("state") in (NEEDS_REPLAN, ACCEPTED):
+            raise LedgerError(f"{ticket} is {data.get('state')}; --reject does not change "
+                              "that state")
+        data["rejected"] = {"by": by.strip(), "at": _now(),
+                            "round": (data.get("rounds") or [{}])[-1].get("round")}
+        data["state"] = NEEDS_REPLAN
+        return data, data["rejected"]
 
     return _mutate(root, ticket, change)
 
@@ -372,11 +401,13 @@ def main(argv):
                         help="reserve the next round (use review_run.py; this is for the "
                              "Claude fallback, which is not a process it can launch)")
     action.add_argument("--accept", action="store_true")
+    action.add_argument("--reject", action="store_true",
+                        help="send the ticket to NEEDS_REPLAN now (needs --by)")
     action.add_argument("--check-receipt", action="store_true")
     action.add_argument("--successor-plan", metavar="PLAN_SHA256")
     parser.add_argument("--provider", default="claude")
     parser.add_argument("--model")
-    parser.add_argument("--by", help="who accepts, with --accept")
+    parser.add_argument("--by", help="who accepts or rejects, with --accept / --reject")
     args = parser.parse_args(argv)
     root = os.path.abspath(args.root)
 
@@ -394,6 +425,11 @@ def main(argv):
             receipt = accept(root, args.ticket, args.by)
             print(f"review-ledger: round {receipt['round']} FINDINGS accepted by "
                   f"{receipt['accepted_by']} at {receipt['accepted_at']}")
+            return 0
+        if args.reject:
+            rejected = reject(root, args.ticket, args.by)
+            print(f"review-ledger: {args.ticket} is {NEEDS_REPLAN}, rejected by "
+                  f"{rejected['by']} at {rejected['at']}")
             return 0
         if args.check_receipt:
             ok, message = check_receipt(root, args.ticket)

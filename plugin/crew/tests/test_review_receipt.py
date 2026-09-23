@@ -177,11 +177,73 @@ def test_accept_an_older_round_after_needs_replan_is_refused(repo):
 
 
 def test_accept_the_latest_findings_round_once_it_is_needs_replan_is_refused(repo):
+    """Round 2 FINDINGS left unaccepted, then a third reservation: refused,
+    NEEDS_REPLAN, and --accept of round 2 is refused from then on."""
     _review(repo, "FINDINGS")
     _review(repo, "FINDINGS")
+    ok, _, _ = rl.reserve(str(repo), "T1", "codex")
+    assert (ok, rl.status(str(repo), "T1")["state"]) == (False, rl.NEEDS_REPLAN)
 
     with pytest.raises(rl.LedgerError, match=rl.NEEDS_REPLAN):
         rl.accept(str(repo), "T1", "the owner")
+
+
+def _accept_cli(repo):
+    return subprocess.run([sys.executable, _LEDGER, "--root", str(repo), "--ticket", "T1",
+                           "--accept", "--by", "the owner"], capture_output=True, text=True,
+                          stdin=subprocess.DEVNULL, check=False)
+
+
+def test_accept_round_two_findings_writes_a_receipt(repo):
+    _review(repo, "FINDINGS")
+    _review(repo, "FINDINGS")
+
+    result = _accept_cli(repo)
+
+    receipt = rl.status(str(repo), "T1")["receipt"]
+    assert (result.returncode, rl.status(str(repo), "T1")["state"], receipt["round"],
+            receipt["kind"], receipt["accepted_by"], _check(repo).returncode) == (
+                0, rl.ACCEPTED, 2, "owner-accepted", "the owner", 0), result.stderr
+
+
+def test_accept_the_same_round_twice_is_refused(repo):
+    _review(repo, "FINDINGS")
+    rl.accept(str(repo), "T1", "the owner")
+    first = rl.status(str(repo), "T1")["receipt"]
+
+    with pytest.raises(rl.LedgerError, match="already accepted"):
+        rl.accept(str(repo), "T1", "someone else")
+
+    assert rl.status(str(repo), "T1")["receipt"] == first
+
+
+def _reject_cli(repo, *extra):
+    return subprocess.run([sys.executable, _LEDGER, "--root", str(repo), "--ticket", "T1",
+                           "--reject", *extra], capture_output=True, text=True,
+                          stdin=subprocess.DEVNULL, check=False)
+
+
+def test_reject_sets_needs_replan_and_accept_is_then_refused(repo):
+    _review(repo, "FINDINGS")
+
+    rejected = _reject_cli(repo, "--by", "the owner")
+
+    assert (rejected.returncode, rl.status(str(repo), "T1")["state"],
+            _accept_cli(repo).returncode, rl.status(str(repo), "T1")["receipt"]) == (
+                0, rl.NEEDS_REPLAN, 1, None), rejected.stderr
+
+
+@pytest.mark.parametrize("setup", ["needs_replan", "accepted", "no_by"])
+def test_reject_is_refused_and_changes_nothing(repo, setup):
+    _review(repo, "CLEAN" if setup == "accepted" else "FINDINGS")
+    if setup == "needs_replan":
+        _review(repo, "FINDINGS")
+        rl.reserve(str(repo), "T1", "codex")
+    before = rl.status(str(repo), "T1")
+
+    result = _reject_cli(repo) if setup == "no_by" else _reject_cli(repo, "--by", "x")
+
+    assert (result.returncode, rl.status(str(repo), "T1")) == (1, before)
 
 
 def test_accept_an_older_round_while_a_later_one_is_reserved_is_refused(repo):

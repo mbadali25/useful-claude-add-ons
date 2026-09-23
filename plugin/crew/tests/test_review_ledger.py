@@ -284,6 +284,7 @@ def test_record_an_older_round_after_the_budget_is_spent_is_refused(repo):
     rl.reserve(str(repo), "T1", "codex")
     rl.reserve(str(repo), "T1", "codex")
     rl.record(str(repo), "T1", 2, _result("FINDINGS"))
+    rl.reserve(str(repo), "T1", "codex")
 
     with pytest.raises(rl.LedgerError):
         rl.record(str(repo), "T1", 1, _result("CLEAN"))
@@ -298,6 +299,17 @@ def test_record_an_older_round_while_a_later_one_is_reserved_is_refused(repo):
 
     with pytest.raises(rl.LedgerError, match="most recent"):
         rl.record(str(repo), "T1", 1, _result("CLEAN"))
+
+
+@pytest.mark.parametrize("verdict", ["FINDINGS", "INCOMPLETE"])
+def test_record_round_two_without_clean_leaves_the_ticket_reviewed(repo, verdict):
+    rl.reserve(str(repo), "T1", "codex")
+    rl.record(str(repo), "T1", 1, _result("FINDINGS"))
+    rl.reserve(str(repo), "T1", "codex")
+
+    state = rl.record(str(repo), "T1", 2, _result(verdict))
+
+    assert state == rl.REVIEWED
 
 
 def test_record_a_round_twice_is_refused(repo):

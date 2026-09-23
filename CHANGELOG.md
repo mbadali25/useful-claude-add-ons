@@ -11,7 +11,9 @@ All notable changes to this repository are documented here. Format follows [Keep
   guide source.** Nothing is removed or renamed in this release.
   T1 fixes: once a ticket is `NEEDS_REPLAN`, `review_ledger.py --accept` is
   refused and no state changes, and a review bundle with an empty parts list
-  is INCOMPLETE rather than CLEAN.
+  is INCOMPLETE rather than CLEAN. Round 2's FINDINGS can be accepted
+  (`--accept --by`, latest round only, once): only a refused third reservation
+  or the new `review_ledger.py --reject --by <who>` enters `NEEDS_REPLAN`.
   New `/crew:status` (`crew_status.py`) is read-only - no dispatch, no config
   edit, no file written - and prints at most 40 lines covering config, roster,
   tickets, review budget, gate, codemap and handoff; `--memory` adds the context

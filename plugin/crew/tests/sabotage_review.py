@@ -178,4 +178,33 @@ REVIEW_FIX_MUTATIONS = (
         ("tests/test_review_receipt.py::"
          "test_dropped_part_with_a_rewritten_bundle_hash_is_incomplete"),
     ),
+    (
+        # 0.20.18: the 1a16af5f rule back -- round 2's FINDINGS set
+        # NEEDS_REPLAN on record, so the owner can never accept them.
+        "round-2 FINDINGS set NEEDS_REPLAN again",
+        REVIEW_LEDGER,
+        "        else:\n            data[\"state\"] = REVIEWED\n",
+        "        elif number >= BUDGET:\n            data[\"state\"] = NEEDS_REPLAN\n"
+        "        else:\n            data[\"state\"] = REVIEWED\n",
+        ("tests/test_review_receipt.py::"
+         "test_accept_round_two_findings_writes_a_receipt"),
+    ),
+    (
+        # --accept a second time on the same round rewrites who and when.
+        "--accept takes the same round twice",
+        REVIEW_LEDGER,
+        "        if receipt.get(\"round\") == row[\"round\"]:\n",
+        "        if False:\n",
+        ("tests/test_review_receipt.py::"
+         "test_accept_the_same_round_twice_is_refused"),
+    ),
+    (
+        # --reject moves an ACCEPTED or NEEDS_REPLAN ticket.
+        "--reject changes an ACCEPTED or NEEDS_REPLAN ticket",
+        REVIEW_LEDGER,
+        "        if data.get(\"state\") in (NEEDS_REPLAN, ACCEPTED):\n",
+        "        if False:\n",
+        ("tests/test_review_receipt.py::"
+         "test_reject_is_refused_and_changes_nothing"),
+    ),
 )
