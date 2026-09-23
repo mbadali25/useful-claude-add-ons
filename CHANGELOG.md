@@ -6,6 +6,14 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Changed
 
+- **`crew` 0.20.21: `/crew:migrate` refuses symlinked/junction targets and
+  paths outside the repo, never clobbers temp files, re-verifies each target
+  before replacing (stale plan aborts and rolls back), and rollback validates
+  every manifest path; review ledger: reservations after NEEDS_REPLAN are
+  refused without writing, and `--check-receipt` passes only for the latest
+  round when CLEAN or accepted; `/crew:status` ignores `core.fsmonitor`,
+  reports a corrupt `crew.json`, and reads leading-pipe INDEX rows.**
+
 - **obsidian-vault 0.4.1: writers use only the primary vault; gardener acks
   only a file it changed; git steps inside the run deadline; safe quoting in
   scheduler units; import refuses symlinked destinations and re-imports
