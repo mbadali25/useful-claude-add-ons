@@ -1,6 +1,6 @@
 # install-scripts
-anchor: useful-claude-add-ons@5d1fc5fd
-verified: 2026-09-22
+anchor: useful-claude-add-ons@8b8a4028
+verified: 2026-09-23
 > **Path moved 2026-09-22 (PR #215):** `docs/guides/Running-a-Mailbox-Job.json` is now
 > `docs/guides/exchange-mailbox/Running-a-Mailbox-Job.json`, content unchanged (a `git mv`).
 > Citations and commands below keep the OLD path on purpose - they record what was run
@@ -648,3 +648,6 @@ pin bullet.
 `python3 scripts/check-marketplace.py` was not run at this pass. Per the task that produced this
 pass: run `python3 plugin/crew/hooks/scripts/crew_state.py` after all three notes are updated and
 report whether this file is still in `knowledge.behind`.
+
+## Re-anchor provenance - 5d1fc5fd -> 8b8a4028
+`git diff --name-only 5d1fc5fd..8b8a4028 -- <paths this note cites>`, run 2026-09-23. Version-string-only changes to `.claude-plugin/marketplace.json`, `plugin/PLUGINS.md` and `plugin.json` files, and edits to other `.crew/codemap/` notes, were set aside. Substantive changes: `docs/guides/exchange-mailbox/Running-a-Mailbox-Job.json`. Every claim and citation in this note touching them was re-read against `8b8a4028`; none is wrong (no line-number citation lands in a changed hunk, and the `sabotage.py` edits were equal-line-count). Nothing else in the note was re-read.

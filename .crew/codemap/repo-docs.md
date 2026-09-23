@@ -1,6 +1,6 @@
 # repo-docs
-anchor: useful-claude-add-ons@5d1fc5fd
-verified: 2026-09-22
+anchor: useful-claude-add-ons@8b8a4028
+verified: 2026-09-23
 > **Path moved 2026-09-22 (PR #215):** `docs/guides/Running-a-Mailbox-Job.json` is now
 > `docs/guides/exchange-mailbox/Running-a-Mailbox-Job.json`, content unchanged (a `git mv`).
 > Citations and commands below keep the OLD path on purpose - they record what was run
@@ -299,11 +299,10 @@ unchanged position despite the file's other changes.)
   (`git log --oneline 0a2d49b0..d541ee57 | wc -l` = 59, re-measured this
   pass — "one commit behind" in a previous version of this bullet was wrong;
   a single re-pin commit does not mean the two SHAs are adjacent commits).
-  `docs/runbooks/rollback.md:55`, which says to replace
-  the SHA in "BOTH raw.githubusercontent.com URLs in README.md," is still an
-  undercount by this same site, and following it literally now leaves that
-  guide installing a script older than the one shipped by PR #205. Not fixed
-  here — outside this note's write scope. Re-measure with
+  `docs/runbooks/rollback.md:55-57` now names all three SHA sites — README.md
+  twice and `docs/guides/exchange-mailbox/Running-a-Mailbox-Job.json` — so the
+  undercount this bullet used to record (the runbook said "BOTH ... URLs in
+  README.md") is fixed as of `8b8a4028`. Re-measure with
   `grep -rn <old-sha> --include='*.md' --include='*.json' .` rather than
   trusting this list; `.claude/worktrees/` copies are agent worktrees and are
   not tracked sites.
@@ -908,3 +907,6 @@ changed-file result and the specific citations corrected above:
 body beyond the two `why`-field diffs already characterised in
 `marketplace-registration.md`, and `CHANGELOG.md`'s history below the new
 `### Fixed` entry.
+
+## Re-anchor provenance - 5d1fc5fd -> 8b8a4028
+`git diff --name-only 5d1fc5fd..8b8a4028 -- <paths this note cites>`, run 2026-09-23. Version-string-only changes to `.claude-plugin/marketplace.json`, `plugin/PLUGINS.md` and `plugin.json` files, and edits to other `.crew/codemap/` notes, were set aside. Substantive changes: `docs/runbooks/rollback.md`, `docs/guides/exchange-mailbox/Running-a-Mailbox-Job.json` (moved by PR #215, `:18` still pins `0a2d49b0`), three `docs/diagrams/*.mmd`, and `plugin/crew/tests/{sabotage,test_docs_routing}.py` / `crew-house-style/SKILL.md`. One claim reversed (the rollback runbook undercount) and was corrected. The three diagrams are now anchored at `60c79407`; this note mentions them only historically, so nothing contradicts, but it was not re-derived against them.

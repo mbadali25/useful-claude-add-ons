@@ -1,5 +1,5 @@
-anchor: useful-claude-add-ons@5d1fc5fd
-verified: 2026-09-22
+anchor: useful-claude-add-ons@8b8a4028
+verified: 2026-09-23
 Targeted correction pass, not a full re-derivation. A merged-branch review
 found the "`crew_py` is no longer the whole story" section below stating a
 caller count and a rejection mechanism that PR #208 (`2b337296..5d1fc5fd`)
@@ -1073,3 +1073,6 @@ them. The "35/61" and "96 unique citations" figures in "Citation freshness"
 below are a claim about the `2b337296` full re-derivation and were not
 re-measured here; do not read this section's own citation count as revising
 them.
+
+## Re-anchor provenance - 5d1fc5fd -> 8b8a4028
+`git diff --name-only 5d1fc5fd..8b8a4028 -- <paths this note cites>`, run 2026-09-23. Version-string-only changes to `.claude-plugin/marketplace.json`, `plugin/PLUGINS.md` and `plugin.json` files, and edits to other `.crew/codemap/` notes, were set aside. Substantive changes: `plugin/crew/tests/sabotage.py` and `skills/doc-builder/*`. Every claim and citation in this note touching them was re-read against `8b8a4028`; none is wrong (no line-number citation lands in a changed hunk, and the `sabotage.py` edits were equal-line-count). Nothing else in the note was re-read.

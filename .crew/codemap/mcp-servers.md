@@ -1,6 +1,6 @@
 # mcp-servers
-anchor: useful-claude-add-ons@5d1fc5fd
-verified: 2026-09-22
+anchor: useful-claude-add-ons@8b8a4028
+verified: 2026-09-23
 
 ## Does
 An npm workspace monorepo shipping four thin stdio MCP servers for Microsoft Graph, Intune and
@@ -236,3 +236,6 @@ built, installed, executed or imported. The `## Unverified` section's
 measurement, unrefreshed for sixteen further days, and should still be read
 as a record of what was once true on one machine, not a fact about this
 checkout.
+
+## Re-anchor provenance - 5d1fc5fd -> 8b8a4028
+`git diff --name-only 5d1fc5fd..8b8a4028 -- <paths this note cites>`, run 2026-09-23. Version-string-only changes to `.claude-plugin/marketplace.json`, `plugin/PLUGINS.md` and `plugin.json` files, and edits to other `.crew/codemap/` notes, were set aside. Substantive changes: none. Current despite the lag; no claim re-read.

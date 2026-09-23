@@ -1,5 +1,5 @@
-anchor: useful-claude-add-ons@5d1fc5fd
-verified: 2026-09-22
+anchor: useful-claude-add-ons@8b8a4028
+verified: 2026-09-23
 **Targeted correction pass, not a full re-derivation.** A merged-branch review
 found "### Two defects in the gate this map feeds" (below, now "### One
 defect fixed since the previous anchor, one still open") stating the
@@ -1000,3 +1000,6 @@ re-derives), `plugin/PLUGINS.md`,
 `scripts/check-marketplace.py` and `scripts/install-prerequisites.sh`. None
 of this note's existing claims about those files were checked against this
 diff; nothing above should be read as clearing them.
+
+## Re-anchor provenance - 5d1fc5fd -> 8b8a4028
+`git diff --name-only 5d1fc5fd..8b8a4028 -- <paths this note cites>`, run 2026-09-23. Version-string-only changes to `.claude-plugin/marketplace.json`, `plugin/PLUGINS.md` and `plugin.json` files, and edits to other `.crew/codemap/` notes, were set aside. Substantive changes: `plugin/crew/tests/{sabotage,test_docs_routing}.py`, `plugin/crew/skills/crew-house-style/SKILL.md`. Every claim and citation in this note touching them was re-read against `8b8a4028`; none is wrong (no line-number citation lands in a changed hunk, and the `sabotage.py` edits were equal-line-count). Nothing else in the note was re-read.

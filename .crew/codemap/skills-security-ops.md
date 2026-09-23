@@ -1,6 +1,6 @@
 # skills-security-ops
-anchor: useful-claude-add-ons@ea8a014
-verified: 2026-09-06
+anchor: useful-claude-add-ons@8b8a4028
+verified: 2026-09-23
 
 ## Does
 Two read-and-remediate skills pointed at live infrastructure: `cisco-meraki` drives the Meraki
@@ -26,11 +26,11 @@ credential-driven, destructive writes reachable) and no code. DERIVED: no module
 - `skills/wazuh-onprem/scripts/wazuh_client.py:413` (`main`) - CLI over the Server API (JWT,
   `:135-158`) and Indexer API (HTTP basic, `:252-257`); the generic `post` / `put` / `delete` verbs
   are registered by the loop at `:428-429`, arguments at `:430-432`.
-- `skills/wazuh-onprem/scripts/manager_config.py:240` (`main`) - SSH-based `ossec.conf` editing:
-  fetch, diff, apply, rollback, list-backups, registered at `:244-259`, dispatched at `:263-269`.
+- `skills/wazuh-onprem/scripts/manager_config.py:484` (`main`) - SSH-based `ossec.conf` editing:
+  fetch, diff, apply, rollback, list-backups, registered at `:488-503`, dispatched at `:505-513`.
   (Previously cited `:251` - the `apply` subparser alone - and omitted `fetch` from the verb list.
   Corrected 2026-09-06.)
-- `skills/intune-graph/scripts/export_report.py:96` — module entry point (`main()`), from the graph
+- `skills/intune-graph/scripts/export_report.py:246` — module entry point (`main()`), from the graph
 - `skills/intune-graph/scripts/graph.py:190` — module entry point (`main()`), from the graph
 
 ## Owns data
@@ -48,11 +48,15 @@ credential-driven, destructive writes reachable) and no code. DERIVED: no module
   `meraki_config.py:36-41` was reworked to avoid; the client module was not. DERIVED. Contents are
   org/network/device inventory, not credentials.
 - Wazuh manager config backups (`ossec.conf.bak.<timestamp>`) written on the remote host by
-  `skills/wazuh-onprem/scripts/manager_config.py:172-176` (`sudo cp`). DERIVED.
-- Wazuh local scratch copies of the live `ossec.conf` - `_scratch_path`
-  (`skills/wazuh-onprem/scripts/manager_config.py:46-58`) puts them in the system temp dir, written
-  by `cmd_diff` at `:154-157` and `cmd_apply` at `:179-190`. Nothing deletes them: DERIVED, grep for
-  `unlink` / `remove(` / `cleanup` / `finally` over that file returns zero hits.
+  `skills/wazuh-onprem/scripts/manager_config.py:357` (`sudo cp`). DERIVED.
+- Wazuh scratch copies of the live `ossec.conf` - `_local_scratch_path`
+  (`skills/wazuh-onprem/scripts/manager_config.py:47-62`) puts local ones in the system temp dir and
+  `_remote_scratch_path` (`:65-81`) names the remote candidate. Local files are created empty at
+  mode 0600 with `O_EXCL` before anything writes to them (`_create_local_scratch_file`, `:84-104`),
+  and are deleted on every exit path: `cmd_diff` unlinks its copy in a `finally` (`:246-253`);
+  `cmd_apply`'s `_cleanup_scratch` (defined `:278`, called from the `finally` at `:466-467`) unlinks
+  every local file the run created and removes the remote candidate. DERIVED. (Until `60c79407`
+  (#210) this bullet said "Nothing deletes them", which was true then; corrected 2026-09-23.)
 
 ## Calls out to
 - Meraki Dashboard API v1, base URL at `skills/cisco-meraki/scripts/meraki_http.py:26`. (Previously
@@ -64,8 +68,9 @@ credential-driven, destructive writes reachable) and no code. DERIVED: no module
   (Previously cited `:314`, which is a line *inside the error-message string* of `_dashboard_auth`.
   It reads plausibly and resolves forever; it supports nothing. Corrected 2026-09-06.)
 - The Wazuh manager over SSH: the actual shellouts are `subprocess.run` at
-  `skills/wazuh-onprem/scripts/manager_config.py:97` (`run_remote`), `:108` (`scp_down`) and `:115`
-  (`scp_up`), with argv built at `:78-90`. (Previously cited `:176`, which is one `run_remote` call
+  `skills/wazuh-onprem/scripts/manager_config.py:167` (`run_remote`, defined `:154`), `:184`
+  (`scp_down`, `:182`) and `:191` (`scp_up`, `:189`), with argv built by `_ssh_base` (`:124-131`)
+  and `_scp_base` (`:134-138`). (Previously cited `:176`, which is one `run_remote` call
   site inside `cmd_apply`. Corrected 2026-09-06.)
 
 ## Gates that actually exist in code
@@ -90,8 +95,8 @@ note previously listed only the missing gates, which reads as if there were none
   `skills/cisco-meraki/scripts/meraki_diff.py:32-42`, applied to every rendered diff at `:248` and
   to every CLI JSON emission in `meraki_config.py` (`:391`, `:397`, `:401`, `:406`). Enforced **on
   display only** - snapshots on disk are deliberately unredacted (see Owns data).
-- **Wazuh `ossec.conf` apply is validated before it is trusted.** `manager_config.py:195-197` runs
-  `xmllint --noout` on the uploaded candidate and aborts without touching `ossec.conf`; `:201-209`
+- **Wazuh `ossec.conf` apply is validated before it is trusted.** `manager_config.py:399` runs
+  `xmllint --noout` on the uploaded candidate and aborts without touching `ossec.conf`; `:443-451`
   then runs `wazuh-analysisd -t` and, on failure, restores the backup and exits. DERIVED. This step
   was listed as unread in the prior version; resolved 2026-09-06. Enforced.
 
@@ -105,21 +110,22 @@ note previously listed only the missing gates, which reads as if there were none
   not restrain a call - it instructs one. CONFIRMED 2026-09-06; still the sharpest thing in either
   skill.
 - **`manager_config.py apply` has no confirmation either, and this note previously missed it.**
-  Its subparser (`skills/wazuh-onprem/scripts/manager_config.py:251-254`) takes only `--block`,
+  Its subparser (`skills/wazuh-onprem/scripts/manager_config.py:495-498`) takes only `--block`,
   `--anchor` and `--restart` - there is no `--yes` because there is no prompt to skip. `cmd_apply`
-  (`:170-223`) backs up, validates, and `sudo cp`s over production `ossec.conf` at `:200` in one
+  (`:256-467`) backs up, validates, and `sudo cp`s over production `ossec.conf` at `:411` in one
   non-interactive run. The validation gates above are real but they check *well-formedness* and
   *parseability*, not *intent*. The restraint on intent is again prose, at
   `skills/wazuh-onprem/SKILL.md:144` ("Always `diff` and show the user the exact XML before
   applying"). Same class as the generic verbs above. DERIVED.
 - **Nothing in `skills/wazuh-onprem/scripts/` redacts anything.** DERIVED: grep for
   `redact` / `mask` / `***` over both scripts returns zero hits. `cmd_diff` writes the full live
-  `ossec.conf` diff to stdout at `manager_config.py:167`, and `cmd_fetch` writes the whole file to
-  `--out` at `:148`. `ossec.conf` carries `<integration>` webhook URLs and API keys
+  `ossec.conf` diff to stdout at `manager_config.py:245`, and `cmd_fetch` writes the whole file to
+  `--out` at `:224`. `ossec.conf` carries `<integration>` webhook URLs and API keys
   (`skills/wazuh-onprem/SKILL.md:131`) and authd keys. Contrast Meraki, which redacts on every
-  display path. DERIVED for the mechanism; **JUDGEMENT** that this is the more likely credential
-  leak of the two skills, because Meraki's unredacted artifact is gitignored and Wazuh's lands in
-  the system temp dir uncovered.
+  display path. DERIVED for the mechanism. What no longer holds is the old **JUDGEMENT** that this
+  is the more likely credential leak because Wazuh's scratch copy "lands in the system temp dir
+  uncovered": since `60c79407` those copies are 0600 and deleted on exit (see Owns data). The
+  unredacted stdout diff and `fetch --out` file remain; `--out` goes wherever the operator points it.
 - **`--yes` on the Meraki write path auto-confirms.** The swap happens at
   `skills/cisco-meraki/scripts/meraki_config.py:389` (apply), `:395` (rollback) and `:404`
   (batch-commit); `_auto_confirm` at `:414-416` prints the diff to stderr and returns True. Consent
@@ -150,19 +156,22 @@ note previously listed only the missing gates, which reads as if there were none
   own `InsecureRequestWarning` is deliberately silenced at `:64-69`, so the library's independent
   signal is gone too. DERIVED.
 - **`cmd_rollback` interpolates an operator-supplied path into a remote shell string.**
-  `skills/wazuh-onprem/scripts/manager_config.py:228` builds `sudo cp {args.backup} {conf_path}` and
-  hands it to `run_remote`, whose docstring at `:94-95` promises "no untrusted interpolation".
+  `skills/wazuh-onprem/scripts/manager_config.py:472` builds `sudo cp {args.backup} {conf_path}` and
+  hands it to `run_remote`, whose docstring at `:155-156` promises "no untrusted interpolation".
   `--backup` comes from the command line, so the promise holds only as far as the operator is
   trusted. DERIVED. **JUDGEMENT:** low severity given the caller already has SSH and sudo on the
   manager; recorded because the docstring states a stronger guarantee than the code provides.
-- Test coverage is asymmetric: `skills/cisco-meraki/tests/` holds eight `test_*.py` modules;
-  `skills/wazuh-onprem/` ships no `tests/` directory at all (DERIVED: it contains only `SKILL.md`,
-  `references/`, `scripts/`). The skill with the ungated write verbs and the unprompted `apply` is
-  the one with no tests.
+- Test coverage is asymmetric: `skills/cisco-meraki/tests/` holds eight `test_*.py` modules (not
+  re-counted 2026-09-23); `skills/wazuh-onprem/` has one suite,
+  `skills/wazuh-onprem/scripts/_test/test_manager_config_remote_paths.py` (added in `60c79407`),
+  which covers `manager_config.py`'s scratch-path and cleanup handling. Nothing tests
+  `wazuh_client.py`, the module with the ungated generic write verbs. DERIVED.
 
 ## Out of scope for this note
-- `skills/intune-graph/scripts/export_report.py:90` - the live truncating-`open` bug CLAUDE.md
-  records - is in neither skill this note covers. Not checked here; see CLAUDE.md.
+- `skills/intune-graph/scripts/export_report.py` - the truncating-`open` bug CLAUDE.md records at
+  `:90` - is in neither skill this note covers. The 2026-09-23 per-path diff shows `60c79407`
+  replaced that write with a staged write plus `os.replace`, so CLAUDE.md's "the live one" wording
+  looks stale; not verified further here.
 - Gizmoduck ticket creation and `skills/infra-work-ticketing/SKILL.md` are likewise outside this
   note's two skills. Neither `cisco-meraki` nor `wazuh-onprem` creates tickets: DERIVED, no
   reference to gizmoduck, SDP or ticketing anywhere in either `scripts/` tree.
@@ -209,3 +218,12 @@ Re-read for this refresh: `skills/cisco-meraki/scripts/meraki_http.py` and
 `:84-94`; `skills/wazuh-onprem/SKILL.md:125-145`; `.gitignore:265-280`; and directory listings of
 `skills/cisco-meraki/tests/`, `skills/wazuh-onprem/` and both `references/`. No live system was
 contacted and no scan was run; every claim above is from source in the working tree at 1f97e51c.
+
+## Re-anchor provenance - ea8a014 -> 8b8a4028
+`git diff --name-only ea8a014..8b8a4028 -- <paths this note cites>` returned
+`skills/intune-graph/scripts/export_report.py`, `skills/wazuh-onprem/scripts/manager_config.py` and
+the new `skills/wazuh-onprem/scripts/_test/test_manager_config_remote_paths.py`, all from
+`60c79407` (#210). Every `manager_config.py` citation moved and was re-resolved by reading the line;
+two claims reversed (scratch copies are now 0600 and deleted; wazuh-onprem now has a test suite) and
+one JUDGEMENT that rested on them was withdrawn. `wazuh_client.py` and every `cisco-meraki` path
+were unchanged in that range and were not re-read.

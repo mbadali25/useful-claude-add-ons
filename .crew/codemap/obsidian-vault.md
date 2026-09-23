@@ -1,6 +1,6 @@
 # obsidian-vault
-anchor: useful-claude-add-ons@60c79407
-verified: 2026-09-22
+anchor: useful-claude-add-ons@8b8a4028
+verified: 2026-09-23
 
 ## Does
 Turns one or more Obsidian vaults into Claude Code's durable memory: a PostToolUse guard that
@@ -634,3 +634,6 @@ from the twelve-file list above, not assumed); nothing touched a live vault, a l
 `~/.claude/obsidian/config.json`; the `.ps1` twins' bodies were read in full this pass (unlike the
 previous anchor, which explicitly declined to), but still only against their own `.sh` twins and
 this note's claims about them, not against a real Windows host.
+
+## Re-anchor provenance - 60c79407 -> 8b8a4028
+`git diff --name-only 60c79407..8b8a4028 -- <paths this note cites>`, run 2026-09-23. Version-string-only changes to `.claude-plugin/marketplace.json`, `plugin/PLUGINS.md` and `plugin.json` files, and edits to other `.crew/codemap/` notes, were set aside. Substantive changes: none. Current despite the lag; no claim re-read.

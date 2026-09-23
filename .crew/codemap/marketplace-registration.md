@@ -1,5 +1,5 @@
-anchor: useful-claude-add-ons@5d1fc5fd
-verified: 2026-09-22
+anchor: useful-claude-add-ons@8b8a4028
+verified: 2026-09-23
 Full per-path re-verification at `2b337296`, the first this note had since
 `a573ca24`: the path diff was run, every one of its thirteen changed files was
 re-read for the citations this note makes into it, and every line number was
@@ -789,7 +789,7 @@ figure too, since that is what the previous version of this section recorded.
 
 - `.claude-plugin/marketplace.json` — **36 skills and 5 plugins**, 41 entries (re-counts unchanged
   in this range). `web-research` is still the newest skill; `rule-of-two` (added `9fde7d82`, #128)
-  is still the newest plugin; `crew` is **0.20.11** (was 0.20.10 at `84976536`). **Its crew
+  is still the newest plugin; `crew` is **0.20.14** (was 0.20.11 at `5d1fc5fd`). **Its crew
   `description` at `:229` now states correct counts** — 28 commands, 20 skills — see `## Corrected
   at 5d1fc5fd` above; this replaces the previous "states counts that are wrong" line.
 - `scripts/check-marketplace.py:301` — `check_catalogs` (unchanged position since `84976536`),
@@ -972,3 +972,6 @@ time), the worked example's historical git ranges, and the external community
 marketplaces. `verification-harness.md` and `install-scripts.md` should be
 read alongside this pass's findings — the new checks and the pin-staleness
 finding both recur there.
+
+## Re-anchor provenance - 5d1fc5fd -> 8b8a4028
+`git diff --name-only 5d1fc5fd..8b8a4028 -- <paths this note cites>`, run 2026-09-23. Version-string-only changes to `.claude-plugin/marketplace.json`, `plugin/PLUGINS.md` and `plugin.json` files, and edits to other `.crew/codemap/` notes, were set aside. Substantive changes: files under `skills/doc-builder/` (masthead, table palette, PDF-logo caveat). No claim here rests on doc-builder (see the note's own statement to that effect); the one wrong line was the crew version, now `.claude-plugin/marketplace.json:230`. Only version/count claims and doc-builder mentions were re-checked.
