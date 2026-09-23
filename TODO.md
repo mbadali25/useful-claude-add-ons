@@ -3799,3 +3799,68 @@ Raw: `.work/review/main-B1-B3-W6CLul/out.txt`. B2 drew no finding.
 - `plugin/crew/hooks/scripts/review_verdict.py:46` - `READ|<part>` acknowledgements are the reviewer's own claim, not an observation of its file reads. They catch "answered after part 1"; they do not prove reading. A Codex event-stream check of actual reads would be stronger.
 - `plugin/crew/tests/review_fixtures.py` - the fake reviewer's Windows `.cmd` shim and the crash test's SIGTERM fallback are UNVERIFIED on Windows (Linux host only).
 - `plugin/crew/agents/qa-reviewer.md:237` - the self-derived fallback tells qa-reviewer to emit `NIT|self-derived|...` then `CLEAN`, but `plugin/crew/hooks/scripts/review_verdict.py:96` makes CLEAN beside any finding INCOMPLETE. Only reachable on a direct dispatch with no bundle (step 2c always hands one, via review_run.py), so it did not block the T1 review fixes.
+
+### crew-1.0 T1: round-2 FINDINGS cannot be accepted - OPEN, fix queued with first lane integration (filed 2026-09-23)
+
+After `1a16af5f`, recording FINDINGS on round 2 sets NEEDS_REPLAN immediately, so an owner cannot accept a
+round-2 result that is only NIT/FIX. `docs/review/04-redesign.md` says "Exhaustion sets NEEDS_REPLAN";
+PM reading (autonomous, taken): exhaustion = budget spent with nothing accepted. Change: round-2 FINDINGS
+stays acceptable via `--accept`; NEEDS_REPLAN is entered by a refused third reservation (or an explicit
+`--reject`), after which nothing is accepted. `1a16af5f`'s two BLOCK fixes were not Codex-reviewed (two-round
+rule); review them with the lane-integration round.
+
+### crew-1.0 T7 (lane A, obsidian-vault 0.4.0) deferred items - OPEN (filed 2026-09-23)
+
+- `plugin/obsidian-vault/hooks/scripts/bridge_status.py:393` still reports `ignore`-role vaults at SessionStart.
+- `doctor` does not fail when a second capture hook is registered (04a spec asks for it).
+- `plugin/obsidian-vault/agents/gardener.md:27`: unverified whether `${CLAUDE_PLUGIN_ROOT}` is set in the subagent's shell.
+- Windows: `.ps1` flavours and the Task Scheduler unit are generated text only, never run.
+- Retire after the owner's yes: `skills/claude-memories-vault`, `skills/claude-memories-canvas` (registered), `vault-automation/` (unregistered, tracked).
+
+### crew-1.0 T2 (lane D, additive) deferred items - OPEN (filed 2026-09-23)
+
+- `plugin/crew/commands/review.md` still dispatches `qa-reviewer`; switch to `reviewer` in T4 or with the held deletion.
+- `/crew:init` still writes `.crew/config.json` and no hook reads `.crew/crew.json` yet; quickstart tells users to run `/crew:migrate` after init. Cut over in T3/T4.
+- Lane D's three sabotage mutations were run by hand, not added to `plugin/crew/tests/sabotage*.py`.
+- "`/context` roster <=1.5k tokens" acceptance not measured (char estimate ~1.2k tokens for the four agents).
+- Held deletion list (72 paths): `.work/laneD-held-deletions.txt` in lane D's worktree; awaits the owner's yes.
+
+### crew-1.0 T6 (lane B) deferred items - OPEN (filed 2026-09-23)
+
+- `plugin/crew/CONFIG.md:655` needs rows for `memory.recall.vaults`, `memory.recall.maxChars`, `memory.inject`.
+- Recall proof ran against a stand-in CLI; re-run with obsidian-vault 0.4.0's real `vault_ops.py recall` after lanes A+B are merged (PM checked the arg contract matches: comma-split `--vaults`, `hooks/scripts/vault_ops.py` in `_CLI_RELATIVE`).
+- `.crew/codemap/repo-docs.md` needs an explicit `paths:` line for the rules generator.
+- Codex: context delivery to the model and project `profiles` unmeasured ("configured, not proven"); generated `.codex/hooks.json` holds machine-absolute paths.
+
+### crew-1.0 T5 (lane C2, stack skills) note - OPEN
+
+- `crew-terraform` and `crew-lint` kept; 04a suggests folding `crew-terraform` into `stack-terraform` (a removal; needs the owner's yes).
+
+### crew-1.0 T5 (lane C, cloud guard) deferred items - OPEN (filed 2026-09-23)
+
+- `plugin/README.md:414` says the command guard was removed / "18 hook entries"; update when cloud-guard is registered.
+- `plugin/crew/README.md:618,975`, `plugin/crew/CONFIG.md:1221-1227` still describe the removed `guard.sh` (pre-existing stale).
+- `plugin/crew/hooks/scripts/crew_config.py:2512` (`--guard`) judges `cloudGuard`/`roleWrites` with block/ask/allow and misreports both.
+- Terraform `apply` identity comes from provider blocks, not checked; AWS Tools for PowerShell cmdlets not identity-checked.
+- `_test/test_flavour_guard.py` only discovers hooks.json-registered scripts; run it against `cloud-guard.ps1` after registration.
+
+### crew-1.0 T7 (obsidian-vault) round-2 FIX items, not fixed (filed 2026-09-23) - OPEN
+
+Raw: scratchpad revA2-LTowwk/out.txt. Two-round budget spent; no BLOCKs.
+- `vault_garden.py:212` manual ack accepts a pre-existing note: capture timestamps are minute-precision.
+- `vault_garden.py:386` timed-out git command can overrun the deadline ~5 s while termination is awaited.
+- `vault_garden.py:415` timeout reported as "not committed" when a hanging post-commit hook ran after the commit.
+- `vault_garden.py:447` full-vault snapshot is outside the deadline; processor gets stale remaining time.
+- `vault_import.py:147` suffix-collision idempotence fails when the source already carries `imported_from`.
+- `vault_import.py:323` dry-run blocked by `outside-vault` exits 0.
+- `vault_setup.py:264` any truthy role string (e.g. "archive") passes validation.
+- `vault_garden.py` `run_processor` on timeout kills only `claude`, not its children (lane A fix developer).
+
+### crew-1.0 T6 (lane B integration) items - OPEN (filed 2026-09-23)
+
+- `plugin/crew/CONFIG.md:718` says "all 41" repo-only keys; there are 46; table omits `production.databases`/`production.hosts`, lists undeclared `verify.stopBudgetSeconds` (pre-existing).
+- `plugin/crew/README.md:2386` hooks-with-no-tool-branch list: wrong count, omits `crew-context`, `platform-sync`, `pm-pulse`.
+- Recall proof query came from the last user prompt, not the Agent call (`--no-session-persistence` leaves no transcript); prove the transcript path in a persisted session.
+- The proof run left `~/.claude/projects/-tmp-claude-0--repos-personal-useful-claude-add-ons-1acab233-...-proof-project/.../subagents/agent-a74ce527b5ab3e7cb.meta.json` (198 bytes); owner's call to delete.
+
+### `plugin/PLUGINS.md:234` "Bundled skills — 18" vs 19 rows; table lacks the 7 stack-* skills - OPEN (filed 2026-09-23)
