@@ -88,12 +88,13 @@
 %% the `%% Anchors:` line above. A citation into a different file is written
 %% out in full, repo-relative - including the regression-test file for the
 %% 1.2.5 fix, skills/mermaid-svg-bitbucket/tests/test_check_reads_the_svg.py,
-%% which is cited a few times below by its own test-function line number
+%% which is cited a few times below by its own test-function line number.
 %% It did not exist at a573ca24 and is evidence for a claim rather than its
 %% subject, but since it IS cited by line number it is now on the Anchors and
 %% Re-check lines too, so a change to it marks this diagram behind. TODO.md is
 %% cited too but by bullet heading, not line, and is deliberately NOT anchored:
-%% it changes on most commits and would mark this diagram behind constantly.
+%% it changed in 21 of the last 50 commits on main, so anchoring it would mark
+%% this diagram behind about as often as not.
 %% --
 %% Derived by reading render_mermaid.py at this anchor and by MEASURING the
 %% foreignObject claim rather than repeating it. Same source file, two configs:
