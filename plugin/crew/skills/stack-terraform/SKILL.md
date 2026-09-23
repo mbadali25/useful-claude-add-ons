@@ -22,9 +22,14 @@ knowing which account is targeted.
 - **Read the plan for replacements, not the count.** `# forces replacement` on a database,
   a stateful volume or an ENI is the finding - "3 to add, 1 to change, 1 to destroy" hides
   which one. Quote the replacement lines verbatim.
-- **`count` and unkeyed `for_each` re-index everything after the change.** Removing the
-  middle element of a `count` list destroys and recreates every resource below it.
-  Converting `count` to `for_each` over stable keys is a state operation, not a plain edit.
+- **`count` re-indexes everything after the change; `for_each` does not.** `count` addresses
+  each instance by a numeric index (`resource.name[2]`), so removing the middle element of a
+  `count` list shifts every index after it - Terraform sees that as destroying and recreating
+  each shifted resource, not just the one removed. `for_each` addresses instances by the map
+  key or set value itself, so removing one element leaves every other instance's address
+  untouched - there is no "unkeyed `for_each`" to re-index. Converting `count` to `for_each`
+  over stable keys is still a state operation (the resource addresses change shape), not a
+  plain edit.
 - **State is the product.** A local backend means the state lives on one laptop; a remote
   backend without locking lets two applies corrupt it. State holds secrets in plaintext, so
   a state file written anywhere readable is a finding regardless of what the code does.
@@ -53,10 +58,10 @@ it:
 
 ```json
 {
-  "paths": ["**/*.tf", "**/*.tfvars"],
+  "paths": ["**/*.tf", "**/*.tfvars", "**/*.tf.json", "**/*.tfvars.json"],
   "run": [
     "sh -c 'command -v terraform >/dev/null 2>&1 || { echo \"TOOL MISSING: terraform is not on PATH, so fmt/validate DID NOT RUN. This is a missing tool, not a passing or failing check. Install Terraform to check locally.\" >&2; exit 77; }; terraform fmt -check -recursive && terraform validate'",
-    "sh -c 'command -v tflint >/dev/null 2>&1 || { echo \"TOOL MISSING: tflint is not on PATH, so the lint pass DID NOT RUN. Install tflint (and run tflint --init once) to check locally.\" >&2; exit 77; }; tflint'"
+    "sh -c 'command -v tflint >/dev/null 2>&1 || { echo \"TOOL MISSING: tflint is not on PATH, so the lint pass DID NOT RUN. Install tflint (and run tflint --init once) to check locally.\" >&2; exit 77; }; tflint --recursive'"
   ],
   "reach": "local",
   "why": "fmt/validate/tflint catch drift and syntax before a human ever runs plan"
@@ -66,6 +71,11 @@ it:
 A missing tool exits **77**, the code `verify-gate.sh` and every existing probe in this
 repo's own `.crew/verify.json` (e.g. the `pwsh`/`ruff` rules) already treat as UNVERIFIED,
 never PASS - copy that shape rather than a bare `command -v` check that silently exits 0.
+`paths` includes the JSON variants of both file types - `*.tf.json` and `*.tfvars.json` are
+valid Terraform/tfvars syntax and a change there should trigger the same rule. Bare `tflint`
+only lints the current directory's module; `--recursive` walks nested root modules too (verify
+the flag is still current for the installed tflint version - it has been stable since tflint
+0.42).
 
 ## LSP
 

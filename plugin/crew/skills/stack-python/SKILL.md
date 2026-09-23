@@ -52,7 +52,7 @@ outlives the tool timeout rather than backgrounding it.
 
 ```json
 {
-  "paths": ["**/*.py"],
+  "paths": ["**/*.py", "**/*.pyi"],
   "run": [
     "sh -c 'python3 -m ruff --version >/dev/null 2>&1 || { echo \"TOOL MISSING: ruff is not importable by this python3, so the lint pass DID NOT RUN. This is a missing tool, not a passing or failing check. Install ruff to check locally.\" >&2; exit 77; }; python3 -m ruff check .'"
   ],

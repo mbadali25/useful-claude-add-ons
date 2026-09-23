@@ -71,14 +71,24 @@ repo's settings and its exit code, `-WhatIf` output for every mutating step. Sta
 {
   "paths": ["**/*.ps1", "**/*.psm1"],
   "run": [
-    "sh -c 'for c in pwsh pwsh.exe \"/c/Program Files/PowerShell/7/pwsh\"; do if command -v \"$c\" >/dev/null 2>&1 || [ -x \"$c\" ]; then exec \"$c\" -NoProfile -Command \"Invoke-ScriptAnalyzer -Path . -Recurse -Severity Error -Settings PSGallery -Settings @{Rules=@{PSUseCompatibleSyntax=@{Enabled=$true;TargetVersions=@(\\\"7.0\\\")}}}\"; fi; done; echo \"TOOL MISSING: pwsh (PowerShell 7) is on no known PATH, so the 7-targeted analysis DID NOT RUN. Install PowerShell 7 to check locally.\" >&2; exit 77'",
-    "sh -c 'for c in powershell.exe powershell \"/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe\"; do if command -v \"$c\" >/dev/null 2>&1 || [ -x \"$c\" ]; then exec \"$c\" -NoProfile -Command \"Invoke-ScriptAnalyzer -Path . -Recurse -Severity Error -Settings @{Rules=@{PSUseCompatibleSyntax=@{Enabled=$true;TargetVersions=@(\\\"5.1\\\")}}}\"; fi; done; echo \"TOOL MISSING: Windows PowerShell 5.1 is on no known PATH (Linux/macOS host), so the 5.1-targeted analysis DID NOT RUN.\" >&2; exit 77'"
+    "sh -c 'PW=\"\"; for c in pwsh pwsh.exe \"/c/Program Files/PowerShell/7/pwsh\"; do if command -v \"$c\" >/dev/null 2>&1 || [ -x \"$c\" ]; then PW=\"$c\"; break; fi; done; if [ -z \"$PW\" ]; then echo \"TOOL MISSING: pwsh (PowerShell 7) is on no known PATH, so the 7-targeted analysis DID NOT RUN. Install PowerShell 7 to check locally.\" >&2; exit 77; fi; \"$PW\" -NoProfile -Command \"if (-not (Get-Module -ListAvailable -Name PSScriptAnalyzer)) { [Console]::Error.WriteLine(\\\"TOOL MISSING: PSScriptAnalyzer module is not installed for pwsh, so the 7-targeted analysis DID NOT RUN. Install-Module PSScriptAnalyzer to check locally.\\\"); exit 77 }; \\$r = Invoke-ScriptAnalyzer -Path . -Recurse -Severity Error -Settings @{Rules=@{PSUseCompatibleSyntax=@{Enabled=\\$true;TargetVersions=@(\\\"7.0\\\")}}}; if (\\$r) { \\$r | Format-Table -AutoSize; exit 1 }\"'",
+    "sh -c 'PW=\"\"; for c in powershell.exe powershell \"/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe\"; do if command -v \"$c\" >/dev/null 2>&1 || [ -x \"$c\" ]; then PW=\"$c\"; break; fi; done; if [ -z \"$PW\" ]; then echo \"TOOL MISSING: Windows PowerShell 5.1 is on no known PATH (Linux/macOS host), so the 5.1-targeted analysis DID NOT RUN.\" >&2; exit 77; fi; \"$PW\" -NoProfile -Command \"if (-not (Get-Module -ListAvailable -Name PSScriptAnalyzer)) { [Console]::Error.WriteLine(\\\"TOOL MISSING: PSScriptAnalyzer module is not installed for Windows PowerShell 5.1, so the 5.1-targeted analysis DID NOT RUN. Install-Module PSScriptAnalyzer to check locally.\\\"); exit 77 }; \\$r = Invoke-ScriptAnalyzer -Path . -Recurse -Severity Error -Settings @{Rules=@{PSUseCompatibleSyntax=@{Enabled=\\$true;TargetVersions=@(\\\"5.1\\\")}}}; if (\\$r) { \\$r | Format-Table -AutoSize; exit 1 }\"'"
   ],
   "agents": ["powershell-security-hardening"],
   "reach": "local",
   "why": "5.1 and 7 accept different syntax - one green run does not prove the other edition parses"
 }
 ```
+
+Both stages fail closed at three points, not one: no `pwsh`/`powershell.exe` on PATH exits 77 before
+PowerShell ever starts; a resolved host missing the `PSScriptAnalyzer` module exits 77 from inside
+`-Command` before analysis runs (`Get-Module -ListAvailable` first - Invoke-ScriptAnalyzer on a
+missing module is an ordinary error, not this repo's tool-missing convention); only then does
+`Invoke-ScriptAnalyzer` run, capture its result, and `exit 1` if it found anything - the cmdlet
+itself never sets the process exit code, so a findings-only run that skipped this three-way split
+would print violations and still report PASS. One `-Settings` argument per invocation: passing the
+bundled `PSGallery` preset alongside a second `-Settings` hashtable is a duplicate-parameter error
+that PowerShell rejects before any file is analysed.
 
 Copies the exit-77 tool-missing pattern already used for `.ps1` files in this repo's own
 `.crew/verify.json` (the `pwsh`-resolution rule). Nothing in this repo writes rules into
