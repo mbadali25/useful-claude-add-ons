@@ -1,9 +1,10 @@
 ---
 description: Independent QA review of the current diff (Codex, Copilot, or Claude - first that probes clean)
+argument-hint: "[ticket id]"
 allowed-tools: Bash, Read, Agent
 ---
 
-Run independent review of the working diff.
+Run independent review of the working diff — called after tests and docs, last, so the reviewer reads the finished change, not a draft a later edit moves out from under it.
 
 **Step 0a - claim a scratch directory.** A fixed `.work/review-*.txt` path
 collides: two concurrent reviews - a second ticket, or a second session on the
@@ -17,9 +18,8 @@ scoped to both:
 mkdir -p .work/review
 SCRATCH=$(mktemp -d ".work/review/$(git rev-parse --abbrev-ref HEAD 2>/dev/null | tr -c 'A-Za-z0-9._-' '-')-XXXXXX")
 echo "SCRATCH=$SCRATCH"
-# REQUIRED. The two-round budget, review.json and the receipt are per ticket.
-# If you do not know the id, stop and ask - never derive or invent one.
-TICKET="<ticket id>"
+TICKET="${1:-$(awk -F'|' 'NF>1{gsub(/^[ \t]+|[ \t]+$/,"",$2);if($2~/^(open|in-progress|in progress|review)$/){c++;t=$1}} END{if(c==1)print t}' .work/INDEX.md 2>/dev/null | tr -d ' ')}"  # no $1: exactly one active row, else empty - stop and ask, never guess
+[ -n "$TICKET" ] || { echo "no ticket id and no single active ticket - stop and ask" >&2; exit 1; }
 ```
 
 **Review runs after tests and docs**, and has **two rounds per ticket in

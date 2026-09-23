@@ -7,7 +7,7 @@ until its guide section exists (`docs/review/04-redesign.md`, "Guides").
 | # | Guide | Source | Produced by |
 |---|---|---|---|
 | 1 | Quickstart - install to first ticket in ten minutes, Windows and Linux | `quickstart.md` | T2 (this build), completed by T4 and T8 |
-| 2 | Daily workflow - one ticket worked end to end, full and light paths | `daily-workflow.md` (not yet written) | T4 |
+| 2 | Daily workflow - one ticket worked end to end, full and light paths | `daily-workflow.md` | T4 |
 | 3 | Memory and Obsidian - setup, capture, the gardener, upkeep | `memory-and-obsidian.md` (not yet written) | T7 |
 | 4 | Working with Codex - `AGENTS.md`, profiles, review and hooks | `working-with-codex.md` (not yet written) | T6 |
 | 5 | Troubleshooting - stale installs, hook noise, review loops, turning things off | `troubleshooting.md` (not yet written) | T10 |

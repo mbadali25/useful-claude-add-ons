@@ -4,6 +4,10 @@ argument-hint: <ticket id, e.g. T-0042, PROJ-123 or SDP-40219>
 allowed-tools: Read, Edit, Write, Bash, Grep, Glob, Agent
 ---
 
+**Superseded by `/crew:implement` in 1.0**, which refuses without an approved
+`plan.md` and runs review only after tests and docs. This file is kept for
+repos still on the 0.20 lifecycle.
+
 Work ticket $1.
 
 When the ticket is complete and verified, and `notify.provider` is not `none`,
