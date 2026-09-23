@@ -7,8 +7,20 @@ read_json() { crew_json_field "$INPUT" "$1"; }
 SOURCE=$(read_json source); CWD=$(read_json cwd); SESSION=$(read_json session_id)
 cd "${CWD:-${CLAUDE_PROJECT_DIR:-.}}" 2>/dev/null || exit 0
 
-rm -f .crew/.handoff-requested   # reset the once-per-session gate
-rm -f .crew/.autoclear-sent      # ditto for auto-clear's own once-per-session claim
+# Reset THIS session's wrap-up gate and auto-clear claim, and nobody else's.
+# Both used to be one file per repository, so any terminal's SessionStart --
+# a plain `startup` in a second window included -- re-armed every other
+# session in the repo. Keyed exactly as context-watch.sh keys them. The
+# unkeyed names are the pre-fix layout and are still removed, so a marker
+# left by an older version cannot sit there forever.
+KEY="${SESSION//[^A-Za-z0-9_-]/_}"
+KEY="${KEY:0:100}"
+KEY="${KEY:-nosession}"
+rm -f ".crew/.handoff-requested-${KEY}" ".crew/.autoclear-sent-${KEY}"
+rm -f .crew/.handoff-requested .crew/.autoclear-sent
+# Another session's markers are never touched here, so the ones a cleared
+# session leaves behind (its id is gone for good) are aged out instead.
+find .crew -maxdepth 1 \( -name '.handoff-requested-*' -o -name '.autoclear-sent-*' \) -mtime +7 -exec rm -f {} + 2>/dev/null
 rm -f .crew/.deploy-in-flight    # a deploy from a dead session cannot be recorded now
 
 # SessionStart fires once per SOURCE EVENT (startup, clear, compact, resume,

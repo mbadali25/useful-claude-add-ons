@@ -652,12 +652,15 @@ STALE_HANDOFF_DEFAULTS = {"maxAgeHours": 72, "maxCommitsBehind": 3}
 # "not set" (`if ($a.windowTitle)` is false for either), and null is what
 # "not set" means everywhere else in this file, so null is the honest default.
 AUTOCLEAR_DEFAULTS = {
-    # 0.19.52: ON by default. It still refuses unless the handoff note
-    # exists, is newer than the request and clears `minHandoffLines`,
-    # and on Windows it refuses without `windowTitle` because SendKeys
-    # types into whatever has focus. So "enabled" means "allowed to act
-    # once everything is wrapped up", not "will type into your terminal".
-    "enabled": True,
+    # OFF by default, and a MACHINE opt-in: the scripts
+    # (`crew_autocycle.settings`, `auto-clear.ps1`) act only when the
+    # machine-global file says exactly `true`, and a repo may switch it
+    # off but never on -- what it drives is this machine's keyboard.
+    # null rather than false so the /crew:init template, which writes
+    # every key, does not veto a machine opt-in (`null_shadows`).
+    # 0.19.52 made this `true` in every template, which is why a repo
+    # value of `true` alone no longer counts.
+    "enabled": None,
     "method": "auto",
     "windowTitle": None,
     "command": "/clear",

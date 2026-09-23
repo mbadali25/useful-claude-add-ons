@@ -40,22 +40,29 @@ twin read that - see "How the reading is taken" below. `/context` should agree
 with the watcher to within a turn; if it does not, the budget is wrong, not
 the reading, and the warning prints both numbers so you can see which.
 
-The watcher fires **once per session**. It writes `.crew/.handoff-requested` and
-stays quiet afterwards; `SessionStart` clears the marker. Without that gate a
-`Stop` hook returning exit 2 will fire on every turn and trap the session in a
-loop.
+The watcher fires **once per threshold crossing per session**. It writes
+`.crew/.handoff-requested-<session_id>` (the payload's `session_id`, reduced to
+`[A-Za-z0-9_-]`) and stays quiet afterwards; that session's next `SessionStart`
+clears it, and so does a measured reading back under the threshold. Without
+that gate a `Stop` hook returning exit 2 will fire on every turn and trap the
+session in a loop. It never blocks on a `stop_hook_active` continuation, but
+that continuation is the turn it hands to auto-clear.
 
 The claim is taken atomically - `set -o noclobber` in bash, `FileMode::CreateNew`
 in PowerShell - because on Windows with Git Bash installed **both** flavours
 really do run on the same `Stop`, and a test-then-create lets both through and
 prints the warning twice.
 
-**The marker is per repository, not per session.** Two sessions open in the same
-repo share it: the first to cross the threshold claims it and the second is not
-warned, and either one's `SessionStart` clears it for both. That is pre-existing
-behaviour and it is wrong, not deliberate - the fix is to key the marker on the
-hook payload's `session_id`. Worth knowing before concluding the watcher is
-broken in a two-terminal workflow.
+**The marker is per session.** It used to be one file per repository, so two
+terminals in one repo shared it: the first to cross the threshold silenced the
+other, and either one's `SessionStart` re-armed both. It is now keyed on the
+payload's `session_id`, and `SessionStart` clears only its own session's marker
+(other sessions' markers age out after seven days).
+
+The marker also records the reading that caused it, and whether that reading
+can be trusted. Auto-clear (opt-in per machine; see
+`docs/guides/crew/src/auto-cycle.md`) never clears on an estimate, an unknown
+window, a pre-compaction reading, or an empty marker.
 
 ## The handoff note
 

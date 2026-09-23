@@ -10,7 +10,7 @@ until its guide section exists (`docs/review/04-redesign.md`, "Guides").
 | 2 | Daily workflow - one ticket worked end to end, full and light paths | `daily-workflow.md` | T4 |
 | 3 | Memory and Obsidian - setup, capture, the gardener, upkeep | `memory-and-obsidian.md` | T7 |
 | 4 | Working with Codex - `AGENTS.md`, profiles, review and hooks | `working-with-codex.md` | T6 |
-| 5 | Troubleshooting - stale installs, hook noise, review loops, turning things off | `troubleshooting.md` (not yet written) | T10 |
+| 5 | Troubleshooting - stale installs, hook noise, review loops, turning things off | `troubleshooting.md` (not yet written); its auto wrap-up / clear / resume section is already in `auto-cycle.md`, to be linked from it | T10 |
 
 Ticket numbers follow the merged order in `docs/review/04-redesign.md`
 ("Ticket order"). That order and `04a`'s table number two tickets differently

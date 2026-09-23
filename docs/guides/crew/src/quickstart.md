@@ -135,6 +135,28 @@ tests and docs, and has a budget of two rounds.
 
 Check: `.work/tickets/<id>/` exists and `/crew:status` lists it under `open`.
 
+## Optional: let a long session wrap up, clear and resume itself
+
+When the context fills, crew asks the session once to finish or park its work and write
+`.work/HANDOFF.md`. The next session starts with that handoff and its next action. Both steps are
+on by default.
+
+Auto-clear sits between those two steps: it types `/clear` for you. It is **off** by default and is
+turned on per machine, in `~/.claude/crew/config.json` (Windows:
+`%USERPROFILE%\.claude\crew\config.json`):
+
+```json
+{ "context": { "autoClear": { "enabled": true } } }
+```
+
+To turn it off again, set `context.autoClear.enabled` to `false` in the same file. To turn it off in
+one repository, set it to `false` in that repository's `.crew/config.json`; setting it to `true`
+there does not turn it on. On Windows Terminal, also set `context.autoClear.windowTitle` to a
+substring of this session's tab title. See `auto-cycle.md` for the full key list and for what each
+line in `.crew/.autoclear.log` means.
+
+Check: after a wrap-up, `.crew/.autoclear.log` has a `sent` line or a `refusing - <reason>` line.
+
 ## If something goes wrong
 
 | Symptom | Do |

@@ -17,11 +17,21 @@ try { $d = $raw | ConvertFrom-Json } catch { exit 0 }
 $cwd = if ($d.cwd) { $d.cwd } elseif ($env:CLAUDE_PROJECT_DIR) { $env:CLAUDE_PROJECT_DIR } else { "." }
 Set-Location $cwd -ErrorAction SilentlyContinue
 
-Remove-Item ".crew/.handoff-requested" -ErrorAction SilentlyContinue
-# Auto-clear's own once-per-session claim. Without this reset it fires once per
-# repository rather than once per session, which for a /clear is the difference
-# between a feature and a one-shot.
-Remove-Item ".crew/.autoclear-sent" -ErrorAction SilentlyContinue
+# Reset THIS session's wrap-up gate and auto-clear claim, and nobody else's.
+# Both used to be one file per repository, so any terminal's SessionStart
+# re-armed every other session in the repo. Keyed exactly as
+# context-watch.ps1 keys them; the unkeyed names are the pre-fix layout.
+$sessionKey = [regex]::Replace([string]$d.session_id, '[^A-Za-z0-9_-]', '_')
+if ($sessionKey.Length -gt 100) { $sessionKey = $sessionKey.Substring(0, 100) }
+if (-not $sessionKey) { $sessionKey = "nosession" }
+Remove-Item -LiteralPath ".crew/.handoff-requested-$sessionKey", ".crew/.autoclear-sent-$sessionKey" -Force -ErrorAction SilentlyContinue
+Remove-Item -LiteralPath ".crew/.handoff-requested", ".crew/.autoclear-sent" -Force -ErrorAction SilentlyContinue
+# Another session's markers are never touched here, so the ones a cleared
+# session leaves behind are aged out instead.
+$cutoff = (Get-Date).AddDays(-7)
+Get-ChildItem ".crew" -Force -File -ErrorAction SilentlyContinue |
+  Where-Object { ($_.Name -like ".handoff-requested-*" -or $_.Name -like ".autoclear-sent-*") -and $_.LastWriteTime -lt $cutoff } |
+  Remove-Item -Force -ErrorAction SilentlyContinue
 
 # SessionStart fires once per SOURCE EVENT (startup, clear, compact, resume,
 # fork), not once per session -- claiming on session id alone would let the
