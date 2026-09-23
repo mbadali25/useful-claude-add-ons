@@ -250,6 +250,133 @@ _merged = crew_state.merge_defaults
 
 _ABSENT = object()
 
+# CONFIG_BLOCKS keys `~/.claude/crew/config.json` may set WHOLE -- every leaf
+# of the block named here is one `crew_config.default_global_config()` copies
+# verbatim from the SAME defaults object this module hands to `_merged`, per
+# that function's own docstring. Mirrored here as a plain set rather than
+# imported: `crew_config` imports THIS module (for these very block objects),
+# so the reverse import would be the real cycle `crew_state.CONTEXT_DEFAULTS`'s
+# own comment already documents for the same reason.
+#
+# `graph` and `production` are deliberately absent -- both are entirely
+# repo-only, so they keep seeding every leaf regardless of what the repo
+# supplied, exactly as before this fix. `context` is also absent: it is only
+# PARTIALLY global (its `autoClear` subtree, minus `unsafeFocus`), so it gets
+# its own branch in `_prune_unsupplied_global_leaves` rather than a place in
+# this set.
+_GLOBAL_WHOLE_BLOCKS = frozenset((
+    "pm", "qa", "dev", "worktree", "docs", "bitbucket",
+    "install", "guards", "github", "change",
+))
+
+
+def _leaf_paths(node, prefix=()):
+    """Every dotted-tuple path to a non-dict value in `node`. An empty dict
+    is itself a leaf -- `qa.roles`/`dev.roles` are open tables replaced
+    wholesale, not blocks to descend into, matching `crew_config.leaf_paths`,
+    which this mirrors for the reason `_GLOBAL_WHOLE_BLOCKS` gives."""
+    out = []
+    for key, value in node.items():
+        here = prefix + (key,)
+        if isinstance(value, dict) and value:
+            out.extend(_leaf_paths(value, here))
+        else:
+            out.append(here)
+    return out
+
+
+def _dig(node, parts):
+    cur = node
+    for part in parts:
+        if not isinstance(cur, dict) or part not in cur:
+            return _ABSENT
+        cur = cur[part]
+    return cur
+
+
+def _pop_path(node, parts):
+    cur = node
+    for part in parts[:-1]:
+        cur = cur.get(part) if isinstance(cur, dict) else None
+        if not isinstance(cur, dict):
+            return
+    if isinstance(cur, dict):
+        cur.pop(parts[-1], None)
+
+
+def _prune_unsupplied_global_leaves(block_key, merged, supplied):
+    """`merged`, with every globally-settable leaf the repo never wrote
+    dropped back out. Mutates and returns `merged`.
+
+    THE FIX for the defect the PM measured at 8b8a4028: `crew_config.
+    resolve_config` resolves an ordinary key by PRECEDENCE -- repo beats
+    global beats built-in -- so a leaf this function seeded, even at the
+    exact built-in default, outranks a value set in
+    `~/.claude/crew/config.json` afterward, forever.
+    `upgrade_config({"schema": 2, "pm": {"enabled": True}})` used to return
+    `pm.authority: "report-only"` written to disk, and no global
+    `pm.authority` could ever reach that repo again. A leaf the repo
+    ACTUALLY wrote -- present in `supplied` at that same path, whatever its
+    value -- is never touched; only a leaf this function was about to invent
+    is removed.
+
+    Safe for the ratcheted leaves too (`install.policy`, every `guards.*`),
+    and provably a no-op for the ratchet mechanism itself: those resolve
+    through `crew_state.effective_ratcheted` / `crew_config.
+    resolve_ratcheted`, which read the RAW repo value directly rather than
+    through `resolve_config`, and an absent key there normalises to the
+    IDENTICAL floor value the merge would have written --
+    `crew_guards.normalise_install_policy(None) == INSTALL_POLICY_DEFAULT`,
+    and the same shape for every other `guards.*` reader, `roleWrites`
+    included: its default IS what absent already means (see
+    `crew_guards.normalise_role_writes`'s own docstring, which is explicit
+    that this one is not the floor). Pruning them removes a value that was
+    never doing anything either way.
+
+    Repo-only blocks (`graph`, `production`, and every `context` leaf besides
+    `autoClear`) are untouched -- see `_GLOBAL_WHOLE_BLOCKS`.
+    """
+    supplied = supplied if isinstance(supplied, dict) else {}
+    if block_key == "context":
+        auto = merged.get("autoClear")
+        if not isinstance(auto, dict):
+            return merged
+        supplied_auto = supplied.get("autoClear")
+        supplied_auto = (supplied_auto if isinstance(supplied_auto, dict)
+                         else {})
+        for parts in _leaf_paths(auto):
+            if parts[0] in crew_state.AUTOCLEAR_CONSENT_KEYS:
+                continue          # repo-only; never pruned
+            if _dig(supplied_auto, parts) is _ABSENT:
+                _pop_path(auto, parts)
+        return merged
+    if block_key not in _GLOBAL_WHOLE_BLOCKS:
+        return merged
+    for parts in _leaf_paths(merged):
+        if _dig(supplied, parts) is _ABSENT:
+            _pop_path(merged, parts)
+    _strip_empty_dicts(merged)
+    return merged
+
+
+def _strip_empty_dicts(node):
+    """Remove a nested dict `_pop_path` emptied out but did not remove --
+    it only ever pops the LEAF, so a container two levels deep whose every
+    leaf was pruned (`qa.codex` with both `model` and `reasoningEffort`
+    absent) survives as a stray `{}`. Left in, `qa` would read `{"codex":
+    {}, "copilot": {}}` for a repo that named neither -- harmless to
+    `resolve_config` (an empty dict "supplies" nothing, same as absent) but
+    noisy on disk, and inconsistent with the flat blocks (`pm`, `install`),
+    which come out omitted entirely rather than as an empty shell. Mutates.
+    """
+    for key in list(node.keys()):
+        value = node[key]
+        if isinstance(value, dict):
+            _strip_empty_dicts(value)
+            if not value:
+                del node[key]
+
+
 # Every block an upgrade brings forward, and the defaults it brings it onto.
 # `qa` and `dev` were missing from this list until 0.16.0, which is the whole
 # of the bug: a config predating the 0.14.4 provider table was stamped current
@@ -313,6 +440,44 @@ CONFIG_BLOCKS = (
     ("production", crew_state.PRODUCTION_DEFAULTS),
     ("change", CHANGE_BLOCK),
 )
+
+# `{block_key: block_default}`, restricted to the whole-block globally
+# settable ones -- the lookup `_pinned_at_default` walks. Built from
+# `CONFIG_BLOCKS` itself rather than written out a second time, so a block
+# added there is covered here automatically as soon as it is also added to
+# `_GLOBAL_WHOLE_BLOCKS`.
+_GLOBAL_BLOCK_DEFAULTS = {k: v for k, v in CONFIG_BLOCKS
+                          if k in _GLOBAL_WHOLE_BLOCKS}
+
+
+def _pinned_at_default(out):
+    """Globally-settable leaves `out` still carries at exactly the built-in
+    default -- named in the report, never touched here. See `notes
+    ["pinnedAtDefault"]`'s own comment for why: most likely written by an
+    upgrade that predates `_prune_unsupplied_global_leaves`, which is what
+    made a leaf like this frozen against the global layer in the first
+    place, and removing a value from a user's file still needs their yes.
+    """
+    found = []
+    for key, default_block in _GLOBAL_BLOCK_DEFAULTS.items():
+        node = out.get(key)
+        if not isinstance(node, dict):
+            continue
+        for parts in _leaf_paths(default_block):
+            actual = _dig(node, parts)
+            if actual is _ABSENT:
+                continue
+            if actual == _dig(default_block, parts):
+                found.append(key + "." + ".".join(parts))
+    ctx = out.get("context")
+    auto = ctx.get("autoClear") if isinstance(ctx, dict) else None
+    if isinstance(auto, dict):
+        for leaf_key, default_val in crew_state.AUTOCLEAR_DEFAULTS.items():
+            if leaf_key in crew_state.AUTOCLEAR_CONSENT_KEYS:
+                continue
+            if leaf_key in auto and auto[leaf_key] == default_val:
+                found.append(f"context.autoClear.{leaf_key}")
+    return sorted(found)
 
 # The keys schema 3 introduced. Named here rather than diffed generically so
 # the report can SAY what the 2 -> 3 migration added, in the words the user
@@ -458,7 +623,21 @@ def upgrade_config(cfg):
              # handed only `notes` -- never has to read the config itself.
              # That keeps one module deciding what the value is, and keeps the
              # report builder's only file access the GLOBAL one.
-             "docsThemeAfter": None}
+             "docsThemeAfter": None,
+             # Globally-settable leaves this repo's config still carries at
+             # exactly the built-in default -- most likely written by an
+             # upgrade that predates `_prune_unsupplied_global_leaves`, which
+             # is what made them frozen in the first place. Never removed
+             # here: taking a value out of a user's file needs their yes, not
+             # an upgrade's guess. Set at the end, from `out`, same contract
+             # as `docsThemeAfter`.
+             "pinnedAtDefault": [],
+             # The two facts `_report`'s absent-global headline needs about
+             # `pm.authority` specifically, computed here rather than by the
+             # report builder reading `out` itself -- same contract as
+             # `docsThemeAfter` and `pinnedAtDefault`.
+             "pmAuthorityAfter": None,
+             "pmAuthorityLayer": "default"}
 
     for key, block in CONFIG_BLOCKS:
         supplied = cfg.get(key, _ABSENT)
@@ -491,7 +670,19 @@ def upgrade_config(cfg):
             # be gone from disk either way.
             notes["unmigrated"].extend(dropped)
             continue
-        out[key] = merged
+        merged = _prune_unsupplied_global_leaves(
+            key, merged, None if supplied is _ABSENT else supplied)
+        # A block the repo never mentioned, once every globally-settable leaf
+        # is pruned back out, can come back empty (`pm`, `install`, ...).
+        # Writing `"pm": {}` into the file is functionally identical to
+        # omitting the key -- `crew_config._layer_supplies` already treats an
+        # empty dict as "mentions a key without deciding its value" -- but
+        # omitting it is the honest statement of what this run actually
+        # decided: nothing. A block the repo DID write (`supplied` a dict,
+        # even `{}`) keeps its key regardless, so a deliberate empty block
+        # survives exactly as written.
+        if merged or supplied is not _ABSENT:
+            out[key] = merged
 
     # What each schema bump actually added to THIS config, computed from the
     # incoming file rather than from the version number: a config hand-edited
@@ -618,6 +809,14 @@ def upgrade_config(cfg):
 
     notes["docsThemeAfter"] = (
         crew_state.dict_or_empty(out.get("docs")).get("theme"))
+
+    notes["pmAuthorityAfter"] = crew_state.normalise_authority(
+        crew_state.dict_or_empty(out.get("pm")).get("authority"))
+    notes["pmAuthorityLayer"] = (
+        "repo" if "authority" in crew_state.dict_or_empty(out.get("pm"))
+        else "default")
+
+    notes["pinnedAtDefault"] = _pinned_at_default(out)
 
     return out, notes
 
@@ -935,6 +1134,12 @@ def _config_lines(notes):
             "still reports an upgrade as needed. Fix the block by hand and "
             "run `/crew:upgrade` again."
         )
+    if notes["pinnedAtDefault"]:
+        lines.append(
+            "- may be pinned by an earlier /crew:upgrade; delete from "
+            ".crew/config.json to let the global file decide: "
+            + ", ".join(notes["pinnedAtDefault"])
+        )
     lines.append("")
     return lines
 
@@ -994,12 +1199,45 @@ def _carried_conflicts(root, conflicts):
     return (out or ["- none"]), len(annotated)
 
 
+def _absent_global_headline(notes):
+    """The report's FIRST line when this machine has no global config at all.
+
+    Mirrors `crew_config.inspect_global`'s `"absent"` finding -- same test
+    (no file at `crew_state.GLOBAL_CONFIG_PATH`), same fact named
+    (`pm.authority`'s effective value) -- without importing `crew_config`,
+    which this module cannot: see `crew_state.CONTEXT_DEFAULTS`'s comment for
+    why the dependency only runs the other way.
+
+    Every OTHER `--check-global` finding (`unreadable`, `missing-keys`,
+    `repo-keys`, `inert-schema`) still lives only in `/crew:upgrade` step 4b,
+    which runs `crew_config.py --check-global` directly. This is the one
+    finding an upgrade run has a stake of its own in, because it is the run
+    that just decided whether `pm.authority` survives in the repo file at all
+    (see `_prune_unsupplied_global_leaves`) -- worth leading the report with,
+    not left in a bullet list a reader has to reach step 4b to see. Returns
+    None when a global file exists.
+    """
+    if crew_state.read_text(crew_state.GLOBAL_CONFIG_PATH) is not None:
+        return None
+    return (
+        f"NO MACHINE-GLOBAL CONFIG at {crew_state.GLOBAL_CONFIG_PATH} -- "
+        "every crew repo on this machine falls back to built-in defaults. "
+        f"Effective pm.authority for THIS repo: {notes['pmAuthorityAfter']} "
+        f"(from {notes['pmAuthorityLayer']}). Run /crew:config to set one."
+    )
+
+
 def _report(status, head, results, notes, root):
     schema_line = (
         f"to schema: {crew_state.SCHEMA_CURRENT}" if notes["schemaStamped"]
         else "schema: NOT stamped — see Config below"
     )
-    lines = [
+    lines = []
+    headline = _absent_global_headline(notes)
+    if headline:
+        lines.append(headline)
+        lines.append("")
+    lines.extend([
         "# Upgrade report",
         f"status: {status}",
         schema_line,
@@ -1022,7 +1260,7 @@ def _report(status, head, results, notes, root):
         "the graph disagreeing, and either can be wrong: the graph misses",
         "generated call sites, reflection, and dynamic dispatch.",
         "",
-    ]
+    ])
     lines.extend(_config_lines(notes))
     # `.get`, not `[...]`: `_report` must survive an entry that is not a
     # full result. The shape is fixed at the source above, and this is the
@@ -1067,8 +1305,23 @@ def run(root, derived, force=False):
                 "conflicts": []}
     if crew_state.int_or(cfg.get("schema", 1), 1) >= crew_state.SCHEMA_CURRENT \
             and not force:
-        return {"status": "already current", "report": "", "notes": None,
-                "conflicts": []}
+        # Already current does not mean "nothing to say". `upgrade_config` is
+        # pure, so running it here on a COPY costs nothing on disk -- no
+        # write to config.json, no backup, no codemap touch -- and it is the
+        # one place that already knows how to compute the absent-global
+        # headline and the pinned-at-default list. Without this, a schema-
+        # current repo with no machine-global config never heard about either,
+        # because both were only ever computed on the write path below.
+        _, notes = upgrade_config(copy.deepcopy(cfg))
+        lines = []
+        headline = _absent_global_headline(notes)
+        if headline:
+            lines.append(headline)
+            lines.append("")
+        lines.extend(_config_lines(notes))
+        report = "\n".join(lines) + "\n"
+        return {"status": "already current", "report": report,
+                "notes": notes, "conflicts": []}
 
     backup_codemap(root)
     backup_config(root)
@@ -1166,6 +1419,13 @@ def main(argv=None):
 
     out = run(args.root, derived, force=args.force)
     print(out["status"])
+    if out["status"] == "already current":
+        # No UPGRADE.md is written on this path (see run()) -- the report
+        # exists only in `out`, so this is the only place either diagnostic
+        # reaches the user.
+        if out["report"]:
+            print(out["report"], end="")
+        return 0
     notes = out.get("notes")
     if notes:
         # Printed at the CLI, not only buried in UPGRADE.md: the roles an

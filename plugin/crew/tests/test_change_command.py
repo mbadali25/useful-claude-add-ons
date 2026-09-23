@@ -330,9 +330,18 @@ def test_the_schema_7_bump_reaches_a_repo_at_schema_6(tmp_path):
     assert result["status"] != "already current"
     written = json.loads((root / ".crew" / "config.json").read_text("utf-8"))
     assert written["schema"] == crew_state.SCHEMA_CURRENT
-    assert written["change"] == crew_upgrade.CHANGE_BLOCK
-    # Behaviour-neutral on arrival: promotion asks for no change request.
-    assert written["change"]["requireForProduction"] is False
+    # `change` is entirely globally-settable, so as of this ticket's fix it
+    # is no longer WRITTEN into a repo that never named it (see
+    # `crew_upgrade._prune_unsupplied_global_leaves`) -- the literal-block
+    # check this test used to make is gone with it. `notes` is what proves
+    # the schema-7 migration itself ran, same reasoning as
+    # `test_guards.py`'s schema-6 sibling. Behaviour-neutral on arrival
+    # either way: `CHANGE_REQUIREMENT_DEFAULT` -- what an absent
+    # `requireForProduction` normalises to -- IS `False`, the value this
+    # migration used to write literally, so promotion still asks for no
+    # change request.
+    assert "change" not in written
+    assert crew_state.CHANGE_REQUIREMENT_DEFAULT is False
     # The keys are NAMED in the notes, or the report cannot say what it added.
     assert set(result["notes"]["changeKeysAdded"]) == set(
         crew_upgrade.SCHEMA_7_KEYS)

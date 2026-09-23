@@ -555,7 +555,7 @@ def test_pm_command_resumes_a_partial_result_with_sendmessage():
     )
     assert (
         "allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, "
-        "ListAgents, SendMessage, AskUserQuestion"
+        "SendMessage, AskUserQuestion"
     ) in body, (
         "commands/pm.md's frontmatter no longer actually grants "
         "SendMessage -- the prose above can still NAME the mechanism while "

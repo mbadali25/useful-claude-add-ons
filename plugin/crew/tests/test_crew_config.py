@@ -477,6 +477,64 @@ def test_resolve_config_repo_overrides_global(tmp_path, monkeypatch):
     assert resolved["pm"]["authority"] == "act"
 
 
+def test_an_upgraded_repo_still_lets_a_later_global_authority_through(
+        tmp_path, monkeypatch):
+    """THE MEASURED DEFECT, reproduced end to end. Before this fix,
+    `crew_upgrade.upgrade_config({"schema": 2, "pm": {"enabled": True}})`
+    wrote `pm.authority: "report-only"` -- the built-in default, but written
+    -- into the repo file, and `resolve_config` resolves an ordinary key by
+    PRECEDENCE, so that literal value outranked anything set in
+    `~/.claude/crew/config.json` afterward, forever: a global `pm.authority`
+    set AFTER the upgrade could never reach this repo again.
+
+    Order matters here and is the point: the global file is written AFTER
+    the repo is upgraded, exactly as it would be for an operator who
+    upgrades first and only later decides the PM should run autonomously."""
+    root = crew_fixtures.make_repo(tmp_path, config={"schema": 2, "tier": 0,
+                                                      "pm": {"enabled": True}})
+    crew_upgrade.run(str(root), {})
+    upgraded = json.loads((root / ".crew" / "config.json")
+                          .read_text(encoding="utf-8"))
+    assert upgraded["schema"] == crew_state.SCHEMA_CURRENT
+    # THE FIX, on the file itself: the built-in default is not written where
+    # the repo never asked for it.
+    assert "authority" not in upgraded.get("pm", {})
+
+    _global(tmp_path, monkeypatch, contents={"pm": {"authority": "autonomous"}})
+    resolved = crew_config.resolve_config(str(root))
+    assert resolved["pm"]["authority"] == "autonomous"
+
+
+def test_an_upgraded_repo_with_no_global_file_still_resolves_the_default(
+        tmp_path, monkeypatch):
+    """The other half: no global answer at all still resolves cleanly to the
+    built-in default, and the repo is not left reporting `upgradeNeeded` for
+    a key `upgrade_config` chose not to write. `upgradeNeeded` is `schema <
+    SCHEMA_CURRENT` and never compares key sets, so this is a fact about
+    `upgrade_config`'s own stamp, checked directly."""
+    _global(tmp_path, monkeypatch, contents=None)  # no global file at all
+    root = crew_fixtures.make_repo(tmp_path, config={"schema": 2, "tier": 0})
+    out = crew_upgrade.run(str(root), {})
+    assert out["status"] == "upgraded"
+    upgraded = json.loads((root / ".crew" / "config.json")
+                          .read_text(encoding="utf-8"))
+    assert upgraded["schema"] == crew_state.SCHEMA_CURRENT
+
+    resolved = crew_config.resolve_config(str(root))
+    assert resolved["pm"]["authority"] == crew_state.AUTHORITY_DEFAULT
+    assert resolved["qa"]["order"] == crew_state.QA_DEFAULTS["order"]
+    assert resolved["dev"]["provider"] == crew_state.DEV_DEFAULTS["provider"]
+
+    # And the trigger that would send someone back to `/crew:upgrade` does
+    # not fire on a config this migration already brought current --
+    # `upgradeNeeded` is `schema < SCHEMA_CURRENT` alone, never a key-set
+    # comparison, so a globally-settable leaf this run chose not to write
+    # cannot make an already-upgraded repo look unmigrated.
+    state = crew_config.layered_state(str(root))
+    fired = crew_state.evaluate_triggers(state)
+    assert "upgradeNeeded" not in fired
+
+
 def test_resolve_config_malformed_global_is_ignored(tmp_path, monkeypatch):
     path = tmp_path / "global-config.json"
     path.write_text("{ not json, half-edited", encoding="utf-8")

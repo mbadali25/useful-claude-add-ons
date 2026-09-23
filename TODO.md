@@ -3697,3 +3697,97 @@ keeping the correction visible rather than quietly rewriting the entry, per this
   proposed for implementation; nothing further queued here unless a future mermaid-cli version
   is observed emitting multi-line SVGs, at which point `svg_digest()`'s normalization already
   covers the `--check` side of that and this line should be revisited for the git-diff side.
+
+## Filed 2026-09-23 by the crew PM, during the unnamed-PM fix, not fixed there
+
+Deferred: outside that fix's scope (PM spawn/persistence). Measured at `8b8a4028`, crew 0.20.14.
+
+### `/crew:upgrade` freezes built-in defaults into the repo layer, so the global layer can never reach an upgraded repo - OPEN
+
+`upgrade_config` (`plugin/crew/skills/crew-graph/scripts/crew_upgrade.py:393`) merges every
+`CONFIG_BLOCKS` default (`:290`) into `.crew/config.json`. Measured:
+`upgrade_config({"schema":2,"pm":{"enabled":True}})` returns a `pm` block carrying
+`authority: "report-only"` and `maxDispatches: 3`, with `schemaStamped: True`. The repo layer
+outranks `~/.claude/crew/config.json` (`plugin/crew/hooks/scripts/crew_config.py:28-31`), so a
+global `pm.authority` set AFTER `/crew:upgrade` is dead in every upgraded repo, and `--check-global`
+then reports the repo layer as the decider, which reads as a choice the user made. Intersecting the
+leaf keys of `default_global_config()` with the leaf keys of an upgraded empty config gives 48 frozen
+keys, including `pm.authority`, `qa.order`, `qa.provider`, `dev.provider`, all `guards.*`, and
+`install.policy`. `docs.theme` is the one key already handled (it is written as null = "ask the next
+authority"; see `_DOCS_THEME_REWRITTEN_FROM`). Fix shape to evaluate: write globally settable keys
+absent from the repo as absent/null rather than as the built-in value, and report which keys the
+repo pins. Needs a crew version bump and a regression case in the upgrade suite.
+
+### `/crew:upgrade` step 4b treats an absent global file as one finding among six - OPEN
+
+`plugin/crew/commands/upgrade.md:107` lists `absent` alongside the other findings, but on a machine
+with no global file (this host: `--check-global` prints `[absent] no global config at
+/root/.claude/crew/config.json`) every crew repo whose own config does not set `pm.authority`
+resolves to `report-only`. Combined with the freeze above, an upgraded repo is pinned there even
+after the user creates the global file. Recommendation: when `absent` coincides with a repo whose
+effective `pm.authority` came from built-in defaults, print it as a headline line naming the
+effective authority and `/crew:config` as the fix, not as a list item.
+
+### `/crew:upgrade` does not migrate PM spawn or persistence - OPEN (informational)
+
+Nothing in `commands/upgrade.md` or `crew_upgrade.py` touches how the PM is spawned or remembered
+(grep: the only `crew-pm` hit is `upgrade.md:262`, about anchor freshness). This is correct as long
+as that behaviour lives in the plugin's command/agent text rather than in repo config, so updating
+the plugin is the whole migration. Record it so nobody expects `/crew:upgrade` to fix the teammate bug.
+
+### Concurrent PMs can dispatch the same trigger twice - OPEN (filed 2026-09-23, crew 0.20.15 review)
+
+Codex round-2 review of the unnamed-PM change: `FIX|plugin/crew/agents/pm.md:922|The journal
+serializes final notes but does not claim work, so concurrent PMs can dispatch the same role against
+the same trigger`. Deferred: the old named-PM design prevented this only by "never run two" prose
+and a ListAgents check, so it is not a regression of that change. Fix shape to evaluate: a
+per-trigger claim file under `.work/` (O_CREAT|O_EXCL, like `pm_pulse.claim`) taken before dispatch.
+
+### Shipped user-guide HTML still instructs a named `crew-pm` teammate - OPEN (filed 2026-09-23)
+
+`docs/guides/crew/crew-technical-reference.html:111` and
+`docs/guides/crew/crew-technical-reference-solomon.html:112` say "Standing teammate named `crew-pm`,
+reached by `SendMessage`", which contradicts crew 0.20.15. Regenerate those guides; they were outside
+the fix's `plugin/crew/` scope.
+
+### Unnamed-PM change (crew 0.20.15): residual Codex round-5 findings, uncommitted diff - OPEN (filed 2026-09-23)
+
+Loop stopped after 5 review rounds by PM decision; raw output in `.work/review/main-pmunnamed-gDjlF3/out.txt`.
+- `BLOCK|plugin/crew/agents/pm.md:941|The fixed CREW_EOF delimiter permits heredoc termination and shell-command injection despite quoting` - the doc forbids a line equal to the delimiter but nothing enforces it. Fix shape: a random per-entry delimiter, or a `crew_state.py --append-journal` helper that takes the text on stdin and writes it from Python (removes the shell from the path entirely).
+- `BLOCK|plugin/crew/commands/pm.md:31|SendMessage addresses teammates, not resumable unnamed subagents` - PM DISPUTES: this session's harness returned "Use SendMessage with to: '<agentId>' ... to continue this agent" for every unnamed subagent, and code.claude.com/docs/en/sub-agents.md (relayed via claude-code-guide) documents resuming subagents. Not executed end-to-end from `/crew:pm`; verify by hand once 0.20.15 is installed.
+- FIX x3 in `plugin/crew/tests/test_pm_unnamed_spawn.py` (:306 comma-joined contradictory clause bypasses the forbidding prefix; :411 quoted-heredoc test does not require a heredoc; :506 post-positioned negation "read in full is not required" passes).
+
+### `crew-technical-reference.docx` / `.pdf` still describe the named `crew-pm` teammate - OPEN (filed 2026-09-23)
+
+The HTML guides were updated for crew 0.20.15 (`docs/guides/crew/crew-technical-reference{,-solomon}.html`),
+but the `.docx` and `.pdf` siblings have no generator in the repo (see the earlier "no generator" entry)
+and were not hand-edited. `crew:docs-writer` confirmed via `unzip -p ... word/document.xml` and
+`pdftotext` that both still say "Standing teammate ... SendMessage ... ListAgents". Regenerate them
+from the HTML with doc-builder (Word or LibreOffice) on a machine that has the toolchain.
+
+### `crew:qa-reviewer` fallback is not handed the manifest-built patch - OPEN (filed 2026-09-23, T4)
+
+`plugin/crew/agents/qa-reviewer.md:59` says "Start with `git diff` against the base branch" in prose, and
+`/crew:review` step 2c does not pass it `$SCRATCH/diff.txt` or the `review_patch.py` manifest, so the
+Claude fallback can still review a committed-only range on a dirty tree. Deferred from T4 (crew 0.20.15)
+because a review redesign is being planned separately; fold into that.
+
+### crew 0.20.15 T1-T4: Codex single-round findings, not fixed (filed 2026-09-23) - OPEN
+
+Raw: `.work/review/main-T1-T4-CJlsZC/out.txt`. One round by the user's instruction; nothing below was fixed.
+- BLOCK `plugin/crew/skills/crew-graph/scripts/crew_upgrade.py:1306` - schema-current repos return "already current" before the T2 headline / pinned-at-default report runs. PM confirmed with a copy of this repo's config: output is `already current`. Every repo already upgraded to 0.20.14 therefore never sees either diagnostic. Highest priority of this list.
+- BLOCK `plugin/crew/commands/review.md:459` - qa-reviewer fallback is not handed the manifest-built patch (same as the earlier qa-reviewer.md:59 entry).
+- BLOCK `plugin/crew/hooks/scripts/pm_journal.py:178` - target not containment-checked; a symlinked `.crew/pm-journal.md` writes outside `.crew/`.
+- FIX pm_journal.py: short `os.write` treated as success then source unlinked (:181); forged `## <timestamp>` header lines split entries (:196); 200-line bound not enforced for one oversized entry (:210); shared `.work/pm-entry.md` name races between concurrent PMs (agents/pm.md:946).
+- FIX unquoted `${CLAUDE_PLUGIN_ROOT}` paths break on installs with spaces (commands/pm.md:77, commands/review.md:322).
+- FIX review.md:34 specialist selection omits committed-only files; review_patch.py:67 decodes with errors=replace (non-UTF-8 bytes altered).
+- FIX crew_upgrade.py:470 null pass-through defaults (docs.theme, worktree.root, qa.codex.model = null) falsely reported as pins.
+
+### crew 0.20.15 B1-B3: Codex single-round residuals, not fixed (filed 2026-09-23) - OPEN
+
+Raw: `.work/review/main-B1-B3-W6CLul/out.txt`. B2 drew no finding.
+- BLOCK `plugin/crew/hooks/scripts/pm_journal.py:147` - `.crew` as a Windows directory junction is not `os.path.islink()`, so the out-of-repo `.crew` check can be bypassed. UNVERIFIED here (Linux host); reproduce on Windows with `mklink /J`. Fix shape: compare `realpath(root/.crew)` against `realpath(root)` rather than relying on islink.
+- BLOCK `plugin/crew/hooks/scripts/pm_journal.py:245` - check-then-open race: swapping `.crew` for a symlink between the check and `os.open` redirects the append; `O_NOFOLLOW` guards only the last component and is 0 on Windows. Needs an attacker with concurrent write access to the checkout.
+- FIX `crew_upgrade.py:1321` - report-only (already-current) path prints migration claims ("roles added", "schema 7 -> 7 ... added") for changes it never writes.
+- FIX `tests/test_pm_journal.py:216` - no test covers `O_NOFOLLOW`; removing it leaves the suite green.
+- FIX `tests/test_upgrade.py:428` - B1 tests call `run()` only; deleting `main()`'s new print path leaves them green.

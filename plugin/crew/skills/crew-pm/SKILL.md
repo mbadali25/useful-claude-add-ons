@@ -9,28 +9,36 @@ The manager's own procedures: read crew state, act on what it says, and keep
 the user's stated priorities ahead of its own. Removal and deletion are the
 exceptions that still need an explicit yes.
 
-## The PM is standing
+## The PM is always spawned unnamed
 
-The PM is spawned once per session under the name `crew-pm` and stays
-addressable. Every later instruction is a message to that name, not a new
-spawn. The reason is not efficiency, it is memory: the roles it dispatches each
-see one slice and are gone, and the PM is the only thing holding what was
-decided, what was deferred, who was onboarded, and why.
+The `crew:pm` subagent is dispatched with **no `name`**, ever. A `name` turns
+the spawn into an addressable teammate, and per
+[agent teams](https://code.claude.com/docs/en/agent-teams.md) teammates
+cannot spawn their own teammates — only the lead can. Dispatching roles is
+the PM's entire job, so a named PM cannot do it: its own `Agent` calls fail
+with "Teammates cannot spawn other teammates." There is no `crew-pm` teammate
+to `ListAgents` for or `SendMessage` to by name.
 
 | Do | Not |
 |---|---|
-| `ListAgents`, then `SendMessage` to `crew-pm` | spawn a fresh `crew:pm` per invocation |
-| Spawn once, with `name: "crew-pm"` | spawn unnamed and lose the ability to reach it |
+| Resume by the held agent id; otherwise spawn `crew:pm` unnamed | spawn it with `name: "crew-pm"` |
+| Resume a held agent id with `SendMessage` when one exists (in-session) | `ListAgents` for a teammate named `crew-pm` |
+| Read and append `.crew/pm-journal.md` and `.crew/pm-standing.md` through `hooks/scripts/pm_journal.py` (`--read`/`--append ... --from .work/pm-entry.md`) for continuity across spawns and sessions — only when `isCrew: true` | rely on a transcript that no longer exists once the session ends, read/write either file when `isCrew: false`, or touch either file with `Write`/`Edit`/a heredoc |
 | Report and wait when the queue is empty | end the engagement because there is nothing to do |
 
-A PM that signs off has to be rehired, and rehiring costs the whole project
-picture — which is the one thing on the crew that cannot be rebuilt from the
-repository.
+**The `isCrew: true` gate is not optional.** When `crew_state.py` reports
+`isCrew: false` there is no `.crew/` for either file to live in: do not read
+`.crew/pm-journal.md` or `.crew/pm-standing.md`, do not append to either, and
+never create `.crew/` yourself just to write one — that would turn an
+ordinary repo into a crew repo as a side effect of a read. `/crew:init` is
+what creates a crew; the PM is not it.
 
-The flat-roster limit applies: a session that is itself a teammate cannot spawn
-a named one. Dispatch the PM unnamed in that case and say out loud that it will
-not persist, rather than letting the user discover it by being asked the same
-question twice.
+A PM that signs off has to be rehired, and rehiring used to cost the whole
+project picture. It no longer does: the journal is the dated record and
+`.crew/pm-standing.md` is the durable one — one line per still-live decision,
+veto, or onboard/offboard ruling, read in full every time so it never falls
+out of view — so a fresh unnamed PM reading both picks the picture back up
+rather than starting blank.
 
 ## One hat per role
 

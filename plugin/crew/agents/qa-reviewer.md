@@ -56,8 +56,29 @@ each change, first ask "what input makes this wrong?" before asking "does this
 look correct?" Ask it that way regardless; on your own family's diff it is the
 only thing standing in for independence.
 
-Start with `git diff` against the base branch. Review the diff plus the
-functions it calls into. Ignore unchanged code unless the diff makes it reachable.
+## Which diff to review
+
+If you were dispatched with a patch path — `/crew:review` step 2c hands you
+the same bundle Codex and Copilot just read: the exact `$SCRATCH/prompt.txt`
+content plus the concrete paths of `$SCRATCH/diff.txt` and
+`$SCRATCH/manifest.json` — review that patch file only. Do NOT re-derive your
+own diff with `git diff`: a `git diff` run fresh from inside this subagent
+sees only the committed range and the working tree as they stand right now,
+and can miss the staged, unstaged or untracked content `review_patch.py`
+exists to capture (found by Codex, `docs/review/03-codex-review.md`).
+Reviewing anything other than the handed patch also breaks the
+byte-identical-input invariant the other two providers rely on.
+
+If you were invoked with no patch path at all — dispatched directly, with
+nothing handed to you to read — fall back: start with `git diff` against the
+base branch, and say so. Emit `NIT|self-derived|diff built with git diff
+against the base branch, not the manifest-built patch; may miss staged,
+unstaged or untracked changes|n/a` as your first output line, before any other
+defect lines or before `CLEAN`, so a reader can tell this run may have missed
+content the handed-bundle path would have caught.
+
+Review the diff plus the functions it calls into. Ignore unchanged code
+unless the diff makes it reachable.
 
 Hunt specifically for:
 - Behavior the diff changes that the ticket did not ask it to change
@@ -207,7 +228,9 @@ Output one line per defect, nothing else:
 `SEVERITY|file:line|what breaks|how to reproduce`
 SEVERITY is BLOCK, FIX, or NIT.
 
-If you find nothing, output exactly: CLEAN
+If you find nothing, output exactly: CLEAN — except on the self-derived
+fallback above, where the `NIT|self-derived|...` line always leads, so
+"nothing else found" is that line followed by `CLEAN`, never `CLEAN` alone.
 
 Do not summarize. Do not praise. Do not explain the code back to me. That
 holds even for the caveats this file names elsewhere — which model
