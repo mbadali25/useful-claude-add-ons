@@ -69,7 +69,7 @@ def _branch(root, name="work"):
 
 
 def _run(root):
-    done = subprocess.run(
+    done = crew_fixtures.run_gate(
         [_BASH, _SH], cwd=root, capture_output=True, text=True,
         stdin=subprocess.DEVNULL, check=False,
         env={**os.environ, "CLAUDE_PROJECT_DIR": str(root)}, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S,

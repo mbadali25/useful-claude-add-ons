@@ -201,7 +201,7 @@ def _run(flavour, root, *extra, scripts=None):
     else:
         cmd = [_PWSH, "-NoProfile", "-NonInteractive", "-File", ps1,
                *[a.replace("--all", "-All") for a in extra]]
-    return subprocess.run(
+    return crew_fixtures.run_gate(
         cmd, input="{}", cwd=str(root),
         env=dict(os.environ, CLAUDE_PROJECT_DIR=str(root)),
         capture_output=True, text=True, check=False, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S,
@@ -280,7 +280,7 @@ def test_c_price_writes_integers_never_zero_never_overwrites(tmp_path):
     target = tmp_path / "fixture.json"
     target.write_text(json.dumps(vmap), encoding="utf-8")
 
-    result = subprocess.run([_PY, _PRICE_PY, str(target)],
+    result = crew_fixtures.run_gate([_PY, _PRICE_PY, str(target)],
                             capture_output=True, text=True, check=False, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
     assert result.returncode == 0, result.stderr
     written = json.loads(target.read_text(encoding="utf-8"))
@@ -291,7 +291,7 @@ def test_c_price_writes_integers_never_zero_never_overwrites(tmp_path):
         + json.dumps(written)
     )
 
-    forced = subprocess.run([_PY, _PRICE_PY, str(target), "--force"],
+    forced = crew_fixtures.run_gate([_PY, _PRICE_PY, str(target), "--force"],
                             capture_output=True, text=True, check=False, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
     assert forced.returncode == 0, forced.stderr
     reforced = json.loads(target.read_text(encoding="utf-8"))
@@ -357,7 +357,7 @@ def test_e_reach_host_is_stop_excluded_all_included_price_skipped(flavour, tmp_p
 
     target = tmp_path / "price_fixture.json"
     target.write_text(json.dumps(vmap), encoding="utf-8")
-    priced = subprocess.run([_PY, _PRICE_PY, str(target)],
+    priced = crew_fixtures.run_gate([_PY, _PRICE_PY, str(target)],
                             capture_output=True, text=True, check=False, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
     assert "SKIPPED" in priced.stdout, priced.stdout
     assert "seconds" not in json.loads(target.read_text(encoding="utf-8"))["rules"][0]
@@ -385,7 +385,7 @@ def test_f_undeclared_reach_verb_is_stop_deferred_and_price_refused(flavour, tmp
 
     target = tmp_path / "price_fixture2.json"
     target.write_text(json.dumps(vmap), encoding="utf-8")
-    priced = subprocess.run([_PY, _PRICE_PY, str(target)],
+    priced = crew_fixtures.run_gate([_PY, _PRICE_PY, str(target)],
                             capture_output=True, text=True, check=False, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
     assert "REFUSED" in priced.stdout, priced.stdout
     assert "seconds" not in json.loads(target.read_text(encoding="utf-8"))["rules"][0]
@@ -483,7 +483,7 @@ def test_1_crlf_from_native_python_does_not_leak_an_inherited_credential(
         cmd = [_BASH, _SH]
     else:
         cmd = [_PWSH, "-NoProfile", "-NonInteractive", "-File", _PS1]
-    result = subprocess.run(cmd, input="{}", cwd=str(root), env=env,
+    result = crew_fixtures.run_gate(cmd, input="{}", cwd=str(root), env=env,
                             capture_output=True, text=True, check=False, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
     assert result.returncode == 0, (
         "AWS_PROFILE was not actually unset under a CRLF-corrupted "
@@ -816,7 +816,7 @@ def test_15_price_refuses_a_wrapper_that_reaches_ssh_and_never_runs_it(tmp_path)
     }
     target = tmp_path / "price_wrapper.json"
     target.write_text(json.dumps(vmap), encoding="utf-8")
-    priced = subprocess.run([_PY, _PRICE_PY, str(target)], cwd=str(tmp_path),
+    priced = crew_fixtures.run_gate([_PY, _PRICE_PY, str(target)], cwd=str(tmp_path),
                             capture_output=True, text=True, check=False, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
     assert priced.returncode == 0, priced.stderr
     assert "REFUSED" in priced.stdout, priced.stdout
@@ -941,7 +941,7 @@ def test_19_price_records_rc77_as_skip_with_no_seconds(tmp_path):
     }
     target = tmp_path / "price_77.json"
     target.write_text(json.dumps(vmap), encoding="utf-8")
-    priced = subprocess.run([_PY, _PRICE_PY, str(target)],
+    priced = crew_fixtures.run_gate([_PY, _PRICE_PY, str(target)],
                             capture_output=True, text=True, check=False, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
     assert priced.returncode == 0, priced.stderr
     assert "SKIP" in priced.stdout, priced.stdout
@@ -970,7 +970,7 @@ def test_20_price_pins_declared_env_and_strips_undeclared_pinned_vars(tmp_path):
     target = tmp_path / "price_env.json"
     target.write_text(json.dumps(vmap), encoding="utf-8")
     env = dict(os.environ, ENV="prod", AWS_PROFILE="caller-profile")
-    priced = subprocess.run([_PY, _PRICE_PY, str(target)], cwd=str(tmp_path),
+    priced = crew_fixtures.run_gate([_PY, _PRICE_PY, str(target)], cwd=str(tmp_path),
                             env=env, capture_output=True, text=True, check=False, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
     assert priced.returncode == 0, priced.stderr
     seen = (tmp_path / "seen.txt").read_text(encoding="utf-8")
@@ -1377,6 +1377,109 @@ def test_34_a_skip_beside_a_failure_still_deletes_the_fingerprint(
         "the stale fingerprint (left behind by the FAILED early exit) "
         "skipped the next ordinary Stop instead of re-attempting the "
         "outstanding SKIP. " + third.stderr
+    )
+
+
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+def test_34b_a_backgrounded_grandchild_holding_stdout_does_not_wedge_the_gate(
+        flavour, tmp_path):
+    """A rule's OWN command can background something and never wait on it
+    (a stray `long-thing &`, a detached daemon) without wedging the GATE
+    ITSELF - independent of whatever timeout an external caller sets.
+
+    This is the class of bug behind test_34 wedging past
+    GATE_SUBPROCESS_TIMEOUT_S on Windows/Git Bash: before the fix,
+    `OUT=$(eval "$c" 2>&1 </dev/null)` (verify-gate.sh) / `$out = &
+    $bashExe -c $c 2>&1` (verify-gate.ps1) captured a rule's output through
+    a PIPE, and a pipe only ever reports EOF once every process holding its
+    write end has closed it - not just the one command the gate is
+    actually waiting on. The rule below backgrounds a `sleep` that ignores
+    SIGTERM (`trap '' TERM`, a disposition that survives the fork,
+    unlike a trap HANDLER) and inherits the rule's own stdout/stderr, so
+    the foreground part returns in well under a second while the
+    grandchild alone would keep a pipe-based capture blocked for its whole
+    20s sleep.
+
+    Bounded tight (10s), not at GATE_SUBPROCESS_TIMEOUT_S: the fix makes
+    this return in a fraction of a second. Sabotaged by hand against
+    verify-gate.sh's old `OUT=$(eval "$c" 2>&1 </dev/null)` (reverting only
+    that one line, nothing else) and confirmed red - this test's own
+    10s bound is comfortably under the sleep's 20s, so a regression back to
+    the old pipe capture fails loudly rather than merely running slow.
+    """
+    vmap = {
+        "version": 1,
+        "rules": [{"paths": ["a.py"], "reach": "local", "run": [
+            "sh -c \"trap '' TERM; sleep 20 &\""
+        ]}],
+        "default": [], "unmapped": "ignore",
+    }
+    root = _repo(tmp_path, vmap)
+    (root / "a.py").write_text("x", encoding="utf-8")
+
+    started = time.time()
+    result = _run(flavour, root)
+    elapsed = time.time() - started
+    assert result.returncode == 0, result.stderr
+    assert elapsed < 10, (
+        f"the gate took {elapsed:.1f}s to return - a backgrounded, "
+        "SIGTERM-ignoring grandchild inheriting the rule's stdout wedged "
+        "the gate's own read of that rule's output, instead of the read "
+        "coming from a file that does not care who else still has it "
+        f"open. stderr: {result.stderr}"
+    )
+
+
+@pytest.mark.skipif(_BASH is None, reason="needs bash")
+def test_run_gate_kills_the_whole_group_on_timeout_not_just_the_direct_child(
+        tmp_path):
+    """crew_fixtures.run_gate must turn a hung grandchild into a named
+    TimeoutExpired within the bound, not a hang that wedges the whole test
+    session. This is the harness-level twin of test_34b above: a synthetic
+    script stands in for verify-gate.sh so the case does not depend on the
+    product fix at all.
+
+    NOTE on what this reproduces and what it does not: CPython's own
+    `subprocess.run` on POSIX does not actually hang on this scenario -
+    reading its source (3.14), the POSIX branch of its TimeoutExpired
+    handler calls `process.wait()`, not `communicate()` again, and its
+    internal `_communicate` loop already collected whatever output existed
+    before raising. The unconditional, unbounded second `communicate()`
+    this class of bug depends on is real, but it is CPython's `_mswindows`
+    branch only - confirmed here by reading `inspect.getsource(subprocess.run)`
+    rather than assumed. `run_gate` does not rely on that platform split:
+    it always kills the whole process GROUP first (`kill_process_group`),
+    so the orphan is dead before the bounded post-kill drain runs, on
+    either platform.
+
+    Sabotaged by hand: temporarily reducing `kill_process_group` to a bare
+    `proc.kill()` (no `os.killpg`) reproduces the wedge even on Linux,
+    because `run_gate`'s own post-kill drain (`communicate(timeout=30)`,
+    mirroring what CPython's Windows branch does unconditionally) then
+    blocks on the still-open pipe until the orphaned `sleep 20` exits on
+    its own - elapsed measured at 20.0s against this test's 15s bound.
+    Confirmed red that way, restored, confirmed green again.
+    """
+    script = tmp_path / "hang.sh"
+    script.write_text(
+        "#!/bin/sh\n"
+        "trap '' TERM\n"
+        "sleep 20 &\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    os.chmod(script, 0o755)
+
+    started = time.time()
+    with pytest.raises(subprocess.TimeoutExpired):
+        crew_fixtures.run_gate(
+            [_BASH, str(script)], capture_output=True, text=True, timeout=3,
+        )
+    elapsed = time.time() - started
+    assert elapsed < 15, (
+        f"run_gate took {elapsed:.1f}s to report the timeout - the "
+        "grandchild's held-open pipe still wedged the drain instead of "
+        "being killed as a group before it. elapsed={elapsed:.1f}s"
     )
 
 

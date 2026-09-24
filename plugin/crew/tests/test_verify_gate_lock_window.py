@@ -113,7 +113,7 @@ def _env(root):
 
 
 def _run(flavour, root):
-    return subprocess.run(
+    return crew_fixtures.run_gate(
         _cmd(flavour), input="{}", cwd=str(root), env=_env(root),
         capture_output=True, text=True, check=False, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
 
@@ -126,23 +126,50 @@ def _lock(root):
 def test_a_rule_longer_than_the_ttl_keeps_its_lock(flavour, tmp_path):
     """MUST-ALLOW, and the defect itself: the holder is still working, well
     past the TTL, and the challenger must stand down rather than run a second
-    gate over the same turn."""
+    gate over the same turn.
+
+    Synchronised on the lock's own files, not a fixed sleep: a `sleep(4)`
+    here flaked 1/5 on a loaded Windows host, because it was really guessing
+    two things at once -- how long process start-up plus the mkdir-and-write
+    that acquires the lock takes on THIS machine (pwsh alone was measured at
+    0.8-1.4s a case elsewhere in this suite, see
+    docs/review/06-windows-burn-in.md, and that is before the lock is even
+    touched), and that 4s would land past the 3s TTL once it had. A slow
+    enough start-up made the first guess wrong before the second guess's
+    margin mattered. Waiting for `token`/`deadline` to exist removes the
+    first guess; computing the remaining wait from the token's own recorded
+    `mtime` removes the second."""
     root = _repo(tmp_path)
-    holder = subprocess.Popen(  # pylint: disable=consider-using-with
+    holder = crew_fixtures.popen_gate(
         _cmd(flavour), stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL, cwd=str(root), env=_env(root), text=True)
     try:
         holder.stdin.write("{}")
         holder.stdin.close()
-        # Past the 3s TTL, comfortably inside the 16s window, and while the
-        # 6s rule is still running.
-        time.sleep(4)
-        assert holder.poll() is None, "the holder finished too early to test"
+
+        # lock_extend() (both flavours) runs immediately after the lock is
+        # acquired, well before the 6s rule -- so this loop resolves in
+        # however long start-up plus one mkdir actually took, not a guess.
+        token_file = _lock(root) / "token"
         deadline_file = _lock(root) / "deadline"
-        assert deadline_file.exists(), (
-            "the holder published no deadline, so the challenger has only the "
-            "age window and will reclaim a live lock"
-        )
+        sync_deadline = time.time() + 15
+        while not (token_file.exists() and deadline_file.exists()):
+            assert holder.poll() is None, (
+                "the holder exited before publishing a deadline at all"
+            )
+            assert time.time() < sync_deadline, (
+                "the holder never published a deadline within 15s"
+            )
+            time.sleep(0.05)
+
+        # The property under test is that a challenger arriving AFTER the
+        # TTL still backs off because of the published deadline, not the age
+        # window -- so wait out the TTL measured from the token's own
+        # mtime, rather than assuming a fixed sleep landed past it.
+        remaining = float(_TTL) - (time.time() - token_file.stat().st_mtime)
+        if remaining > 0:
+            time.sleep(remaining)
+        assert holder.poll() is None, "the holder finished too early to test"
 
         challenger = _run(flavour, root)
         assert "backed off" in challenger.stderr, (
@@ -157,7 +184,7 @@ def test_a_rule_longer_than_the_ttl_keeps_its_lock(flavour, tmp_path):
         try:
             holder.wait(timeout=30)
         except subprocess.TimeoutExpired:
-            holder.kill()
+            crew_fixtures.kill_process_group(holder)
 
 
 @pytest.mark.parametrize("flavour", _FLAVOURS)
@@ -398,7 +425,7 @@ def _published_window(flavour, tmp_path, env_ttl):
         env.pop("CREW_VERIFY_LOCK_TTL", None)
     else:
         env["CREW_VERIFY_LOCK_TTL"] = env_ttl
-    result = subprocess.run(
+    result = crew_fixtures.run_gate(
         _cmd(flavour), input="{}", cwd=str(root), env=env,
         capture_output=True, text=True, check=False, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
     assert result.returncode == 0, (
@@ -586,7 +613,7 @@ _TTL_PROBE_RULE = {
 def test_a_zero_prefixed_ttl_is_decimal_and_still_publishes_a_deadline(
         flavour, tmp_path):
     root = _repo(tmp_path, _TTL_PROBE_RULE)
-    result = subprocess.run(
+    result = crew_fixtures.run_gate(
         _cmd(flavour), input="{}", cwd=str(root),
         env=dict(os.environ, CLAUDE_PROJECT_DIR=str(root),
                  CREW_VERIFY_LOCK_TTL="08"),

@@ -55,7 +55,7 @@ def _touch(path):
 def _print_bash(path_entries):
     env = os.environ.copy()
     env["PATH"] = os.pathsep.join(path_entries)
-    result = subprocess.run(
+    result = crew_fixtures.run_gate(
         [_PWSH, "-NoProfile", "-NonInteractive", "-File", _PS1, "-PrintBash"],
         env=env, stdin=subprocess.DEVNULL, capture_output=True, text=True,
         check=False, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S,
@@ -135,7 +135,7 @@ def test_falls_through_when_git_is_a_powershell_function(tmp_path):
     command = ("$env:SystemRoot = '%s'\n"
                "function git { }\n& '%s' -PrintBash"
                % (tmp_path / "Windows", _PS1))
-    result = subprocess.run(
+    result = crew_fixtures.run_gate(
         [_PWSH, "-NoProfile", "-NonInteractive", "-Command", command],
         env=env, stdin=subprocess.DEVNULL, capture_output=True, text=True,
         check=False, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S,
@@ -196,7 +196,7 @@ def test_tier_b_skips_a_bash_defined_as_a_powershell_function(tmp_path):
     command = ("$env:SystemRoot = '%s'\n"
                "function bash { }\n& '%s' -PrintBash"
                % (tmp_path / "Windows", _PS1))
-    result = subprocess.run(
+    result = crew_fixtures.run_gate(
         [_PWSH, "-NoProfile", "-NonInteractive", "-Command", command],
         env=env, stdin=subprocess.DEVNULL, capture_output=True, text=True,
         check=False, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S,

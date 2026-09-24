@@ -108,7 +108,7 @@ def _run(flavour, root, *extra):
     else:
         cmd = [_PWSH, "-NoProfile", "-NonInteractive", "-File", _PS1,
                *[a.replace("--all", "-All") for a in extra]]
-    return subprocess.run(
+    return crew_fixtures.run_gate(
         cmd, input="{}", cwd=str(root),
         env=dict(os.environ, CLAUDE_PROJECT_DIR=str(root)),
         capture_output=True, text=True, check=False, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S,

@@ -1444,6 +1444,32 @@ CMD_LOG=""
 # exceed the TTL as any later one, and until this ran the lock carried no
 # deadline at all.
 lock_extend
+# A THIRD chained trap layer (on top of the lock's own release trap and,
+# when it fires, the python3 shim's) was tried here to `kill $(jobs -p)`
+# on every exit path - reaping whatever a rule's own command left
+# backgrounded in THIS shell's job table. Reverted: `trap -p SIG` re-quotes
+# its output as a single-quoted string literal, escaping any embedded `'`
+# as `'\''` (see the shim's own `SHIM_DIR` fragment two screens up, which
+# is itself wrapped in literal quotes) - correct as a self-contained
+# `trap -- '...' SIG` statement, but the shim's sed-based extraction (copied
+# here) only strips the outer quoting and never un-escapes what is left, so
+# splicing that text into a THIRD trap's double-quoted body leaves a bare
+# `'\''` behind - not valid shell, and `bash: exit trap: ... unexpected EOF`
+# at whichever signal actually fires it. Caught by
+# test_shim_cleanup_does_not_clobber_the_lock_release_trap going from a
+# clean EXIT to exactly that error the moment this ran after the shim.
+# Two links of this chain (lock -> shim) survive today only because the
+# LOCK's own trap body has no embedded single quotes for the shim's
+# extraction to mis-handle; a third link exposes the same idiom's actual
+# limit. Fixing this generally (a single registered cleanup FUNCTION that
+# every stage appends to, instead of splicing `trap -p` text) touches the
+# lock's and the shim's trap-setting too, which is a larger and riskier
+# change than reaping alone justifies - left for a dedicated pass rather
+# than attempted here. RULE_OUT_FILE below is the fix that actually
+# matters for the class of bug this was reaching for: it keeps a
+# backgrounded grandchild from wedging THIS script's own read of a rule's
+# output at all, independent of whether that grandchild is ever reaped
+# afterward.
 while IFS= read -r IDENT; do
   [ -z "$IDENT" ] && continue
   # IDENT is a matcher IDENTITY: the literal command text, and - only when
@@ -1515,8 +1541,45 @@ for v in ("ENV", "AWS_PROFILE", "AWS_DEFAULT_REGION", "KUBECONFIG", "TF_WORKSPAC
   # </dev/null: a check that reads stdin (some test runners do) would otherwise
   # consume the rest of $CMDS from the here-string and silently skip those checks.
   RULE_START=$(date +%s)
-  OUT=$(eval "$c" 2>&1 </dev/null)
-  RC=$?
+  # Captured through a REGULAR FILE, not the `$(...)` pipe this used before
+  # (kept as the fallback below for the one case a temp file cannot be
+  # made). `$(...)` only reports EOF once EVERY process holding its
+  # write end has closed it, not just the one command this line is
+  # waiting on - so a rule that backgrounds something and does not itself
+  # wait for it (`long-thing &`, a lock-extend-style loop, anything left
+  # with `disown`) hands that write end to the grandchild too, and the
+  # grandchild holding it open wedges THIS shell forever: not bounded by
+  # anything the rule declared, and not something an external caller's own
+  # timeout can fix by killing the direct child alone, since the
+  # grandchild keeps the pipe open regardless. See
+  # test_verify_gate_stop_gate_record.py's account of test_34 for the run
+  # that first exposed a version of this. Reading a regular file has no
+  # such rule: a read returns whatever bytes are on disk right now and
+  # hits EOF at the file's current size regardless of who else still has
+  # it open for writing, so a background grandchild can no longer hold
+  # this shell's own read hostage.
+  RULE_OUT_FILE=$(mktemp 2>/dev/null) || RULE_OUT_FILE=""
+  if [ -n "$RULE_OUT_FILE" ]; then
+    # `( ... )`, not a bare `eval "$c"`: `$(...)` (the old form) forks a
+    # subshell IMPLICITLY, which is why a rule command calling `exit N`
+    # (`.crew/verify.json` rules do this routinely - "run": ["exit 1"]) only
+    # ever exited THAT subshell rather than this whole script. Dropping the
+    # pipe without also keeping an explicit subshell here loses that
+    # isolation silently: `exit 77` in a rule would `exit 77` this entire
+    # gate mid-loop instead of just failing the one rule. Caught by this
+    # suite's own exit-77/exit-1 rule fixtures going from a named assertion
+    # to a bare wrong-returncode failure, not by inspection.
+    ( eval "$c" ) >"$RULE_OUT_FILE" 2>&1 </dev/null
+    RC=$?
+    OUT=$(cat "$RULE_OUT_FILE" 2>/dev/null)
+    rm -f "$RULE_OUT_FILE"
+  else
+    # No writable temp dir: fall back to the old pipe form rather than
+    # skipping the rule outright - a check that still runs, carrying the
+    # original wedge risk, beats one silently skipped.
+    OUT=$(eval "$c" 2>&1 </dev/null)
+    RC=$?
+  fi
   # Exit 77 is SKIP, the _verify/smoke.sh and GNU automake convention for
   # "skipped, environment absent" -- not a pass, not a fail. It must not
   # fail the turn, and it must not be recorded as verified either: it is
