@@ -143,6 +143,7 @@ import re
 import shutil
 import subprocess
 import sys
+from typing import NoReturn
 
 import pytest
 
@@ -181,12 +182,13 @@ _FLAVOURS = [
 _GATE_TIMEOUT = 120
 
 
-def _fail_on_gate_timeout(flavour, exc):
+def _fail_on_gate_timeout(flavour, exc) -> NoReturn:
     pytest.fail(
         f"verify-gate [{flavour}] did not terminate within "
         f"{_GATE_TIMEOUT}s - the gate hung instead of exiting "
         f"(rule[8] non-terminating repro). {exc}"
     )
+    raise AssertionError("unreachable - pytest.fail always raises")
 
 
 def _git(root, *args):
