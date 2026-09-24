@@ -1171,7 +1171,7 @@ MENU_NAME=(
   "MCP server: Microsoft Learn (Azure, SharePoint and Power Automate docs, no credentials)"
   "MCP server: Perplexity (web-grounded search for the web-research skill - needs an API key)"
   "LSP plugins: csharp-lsp, pyright-lsp, typescript-lsp (claude-plugins-official) + Angular language server (npm) - needs dotnet/npm"
-  "Stack tooling: tflint, ruff, sqlfluff (uv), shellcheck, PSScriptAnalyzer (pwsh if present)"
+  "Stack tooling: tflint, ruff, sqlfluff (uv), shellcheck, PSScriptAnalyzer (Windows PowerShell 5.1 and 7; pwsh only on non-Windows)"
 )
 
 SELECTED=""
@@ -3156,13 +3156,30 @@ install_lsp_binary() {
   ok "$label installed at $(command -v "$probe")"
 }
 install_csharp_ls_binary() {
+  # Detect the binary BEFORE requiring its prerequisite: a csharp-ls already on
+  # PATH (installed by some other means, or dotnet removed after the fact) must
+  # not be reported as a failure just because dotnet is absent now.
+  if have csharp-ls; then
+    skip "csharp-ls already installed ($(command -v csharp-ls))"
+    return 0
+  fi
   if ! have dotnet; then
     warn "dotnet not found on PATH - csharp-ls (a dotnet tool) needs the .NET SDK; install it (https://dotnet.microsoft.com) and re-run."
     return 1
   fi
-  install_lsp_binary "csharp-ls" "csharp-ls" dotnet tool install --global csharp-ls
+  # 'dotnet tool install --global' writes into $HOME/.dotnet/tools and never adds
+  # that directory to PATH itself - export it for this session before the shared
+  # helper's post-install probe runs, or a successful install always reports
+  # "not resolvable".
+  export PATH="$HOME/.dotnet/tools:$PATH"
+  install_lsp_binary "csharp-ls" "csharp-ls" dotnet tool install --global csharp-ls || return 1
+  warn "csharp-ls is on PATH for this session only - add \$HOME/.dotnet/tools to your shell profile (e.g. ~/.bashrc: export PATH=\"\$HOME/.dotnet/tools:\$PATH\") to keep it there in new shells."
 }
 install_pyright_binary() {
+  if have pyright-langserver; then
+    skip "pyright-langserver already installed ($(command -v pyright-langserver))"
+    return 0
+  fi
   if ! have npm; then
     warn "npm not found on PATH - select the prerequisites item (or install Node.js) and re-run. ('pip install pyright' also works if Python is on PATH instead.)"
     return 1
@@ -3170,6 +3187,10 @@ install_pyright_binary() {
   install_lsp_binary "pyright-langserver" "pyright-langserver" npm install -g pyright
 }
 install_typescript_lsp_binary() {
+  if have typescript-language-server; then
+    skip "typescript-language-server already installed ($(command -v typescript-language-server))"
+    return 0
+  fi
   if ! have npm; then
     warn "npm not found on PATH - select the prerequisites item (or install Node.js) and re-run."
     return 1
@@ -3177,6 +3198,10 @@ install_typescript_lsp_binary() {
   install_lsp_binary "typescript-language-server" "typescript-language-server" npm install -g typescript-language-server typescript
 }
 install_angular_language_server() {
+  if have ngserver; then
+    skip "Angular language server (ngserver) already installed ($(command -v ngserver))"
+    return 0
+  fi
   if ! have npm; then
     warn "npm not found on PATH - select the prerequisites item (or install Node.js) and re-run."
     return 1
@@ -3231,6 +3256,11 @@ install_ruff() {
     uv_warn "not installing ruff - 'uv tool install ruff' needs uv."
     return 1
   }
+  # ruff needs `uv` itself, not just `uvx`: ensure_uv is satisfied by either.
+  if ! have uv; then
+    uv_warn "uv still not found after attempting to install it - install it manually (https://docs.astral.sh/uv) and re-run."
+    return 1
+  fi
   uv tool install ruff || return 1
   export PATH="$HOME/.local/bin:$PATH"
   if ! have ruff; then
@@ -3249,6 +3279,11 @@ install_sqlfluff() {
     uv_warn "not installing sqlfluff - 'uv tool install sqlfluff' needs uv."
     return 1
   }
+  # sqlfluff needs `uv` itself, not just `uvx`: ensure_uv is satisfied by either.
+  if ! have uv; then
+    uv_warn "uv still not found after attempting to install it - install it manually (https://docs.astral.sh/uv) and re-run."
+    return 1
+  fi
   uv tool install sqlfluff || return 1
   export PATH="$HOME/.local/bin:$PATH"
   if ! have sqlfluff; then
@@ -3279,14 +3314,21 @@ install_shellcheck() {
     apt)    as_root apt-get update -y && as_root apt-get install -y shellcheck ;;
     dnf)    as_root dnf install -y shellcheck ;;
     yum)    as_root yum install -y shellcheck ;;
-    pacman) as_root pacman -Sy --noconfirm shellcheck ;;
+    # Never `pacman -Sy <pkg>`: syncing the database for a single package is a
+    # partial upgrade (Arch guidance: sync and upgrade together, or not at all).
+    # `-S --needed` installs against whatever database is already there.
+    pacman) as_root pacman -S --needed --noconfirm shellcheck ;;
     zypper) as_root zypper install -y shellcheck ;;
     apk)    as_root apk add --no-cache shellcheck ;;
     brew)   brew install shellcheck ;;
   esac
   local rc=$?
   if [ "$rc" -ne 0 ]; then
-    warn "shellcheck install via $mgr failed (exit $rc)."
+    if [ "$mgr" = "pacman" ]; then
+      warn "shellcheck install via pacman failed (exit $rc). This script never runs 'pacman -Sy <pkg>' (a partial upgrade) - if the local package database is stale or does not have shellcheck, run 'sudo pacman -Syu' to fully refresh it, then re-run this script."
+    else
+      warn "shellcheck install via $mgr failed (exit $rc)."
+    fi
     return 1
   fi
   if ! have shellcheck; then

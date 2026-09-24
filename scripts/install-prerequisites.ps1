@@ -1005,7 +1005,7 @@ $script:Catalog = @(
     [pscustomobject]@{ Key = 'ms-learn-mcp';      Default = $false; Name = 'MCP server: Microsoft Learn (Azure, SharePoint and Power Automate docs, no credentials)' }
     [pscustomobject]@{ Key = 'perplexity-mcp';    Default = $false; Name = 'MCP server: Perplexity (web-grounded search for the web-research skill - needs an API key)' }
     [pscustomobject]@{ Key = 'lsp-plugins';       Default = $false; Name = 'LSP plugins: csharp-lsp, pyright-lsp, typescript-lsp (claude-plugins-official) + Angular language server (npm) - needs dotnet/npm' }
-    [pscustomobject]@{ Key = 'stack-tools';       Default = $false; Name = 'Stack tooling: tflint, ruff, sqlfluff (uv), shellcheck, PSScriptAnalyzer (5.1 and 7)' }
+    [pscustomobject]@{ Key = 'stack-tools';       Default = $false; Name = 'Stack tooling: tflint, ruff, sqlfluff (uv), shellcheck, PSScriptAnalyzer (Windows PowerShell 5.1 and 7; pwsh only on non-Windows)' }
 )
 
 $script:Selected = @{}
@@ -2833,8 +2833,12 @@ if (Test-Selected 'lsp-plugins') {
         Install-ClaudePlugin 'csharp-lsp@claude-plugins-official'
     }
     Invoke-Step "csharp-ls (dotnet tool)" {
-        if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) {
-            throw "dotnet not found on PATH - csharp-ls (a dotnet tool) needs the .NET SDK; install it (https://dotnet.microsoft.com) and re-run."
+        # Detect the binary BEFORE requiring its prerequisite: a csharp-ls already on
+        # PATH must not be reported as a failure just because dotnet is absent now.
+        if (-not (Get-Command csharp-ls -ErrorAction SilentlyContinue)) {
+            if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) {
+                throw "dotnet not found on PATH - csharp-ls (a dotnet tool) needs the .NET SDK; install it (https://dotnet.microsoft.com) and re-run."
+            }
         }
         Install-LspBinary -Label 'csharp-ls' -Probe 'csharp-ls' -Install { dotnet tool install --global csharp-ls }
     }
@@ -2842,8 +2846,10 @@ if (Test-Selected 'lsp-plugins') {
         Install-ClaudePlugin 'pyright-lsp@claude-plugins-official'
     }
     Invoke-Step "pyright-langserver (npm)" {
-        if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
-            throw "npm not found on PATH - select the prerequisites item (or install Node.js) and re-run."
+        if (-not (Get-Command pyright-langserver -ErrorAction SilentlyContinue)) {
+            if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
+                throw "npm not found on PATH - select the prerequisites item (or install Node.js) and re-run."
+            }
         }
         Install-LspBinary -Label 'pyright-langserver' -Probe 'pyright-langserver' -Install { npm install -g pyright }
     }
@@ -2851,14 +2857,18 @@ if (Test-Selected 'lsp-plugins') {
         Install-ClaudePlugin 'typescript-lsp@claude-plugins-official'
     }
     Invoke-Step "typescript-language-server (npm)" {
-        if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
-            throw "npm not found on PATH - select the prerequisites item (or install Node.js) and re-run."
+        if (-not (Get-Command typescript-language-server -ErrorAction SilentlyContinue)) {
+            if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
+                throw "npm not found on PATH - select the prerequisites item (or install Node.js) and re-run."
+            }
         }
         Install-LspBinary -Label 'typescript-language-server' -Probe 'typescript-language-server' -Install { npm install -g typescript-language-server typescript }
     }
     Invoke-Step "Angular language server (npm; no official Claude plugin)" {
-        if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
-            throw "npm not found on PATH - select the prerequisites item (or install Node.js) and re-run."
+        if (-not (Get-Command ngserver -ErrorAction SilentlyContinue)) {
+            if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
+                throw "npm not found on PATH - select the prerequisites item (or install Node.js) and re-run."
+            }
         }
         Install-LspBinary -Label 'Angular language server (ngserver)' -Probe 'ngserver' -Install { npm install -g '@angular/language-server' }
     }
@@ -2873,121 +2883,142 @@ if (Test-Selected 'lsp-plugins') {
 # tells the user to install by hand rather than installing itself, and
 # eslint/prettier are project-local (npm devDependencies), not a global tool this
 # script would own.
+function Install-Tflint {
+    if (Get-Command tflint -ErrorAction SilentlyContinue) {
+        Write-Skip "tflint already installed"
+    } elseif (Get-Command choco -ErrorAction SilentlyContinue) {
+        if (-not (Test-Admin)) {
+            throw "tflint needs an elevated prompt to install via Chocolatey - re-run this script as Administrator."
+        }
+        choco install tflint -y --no-progress
+        if ($LASTEXITCODE -ne 0) { throw "choco install tflint failed with exit code $LASTEXITCODE - see the output above." }
+        Sync-SessionEnvironment
+        $cmd = Get-Command tflint -ErrorAction SilentlyContinue
+        if (-not $cmd) { throw "tflint installed via Chocolatey but not resolvable in this session - open a new shell and re-run." }
+        $script:Summary.Installed++
+        Write-Ok "tflint installed via Chocolatey at $($cmd.Source)"
+    } elseif (Get-Command winget -ErrorAction SilentlyContinue) {
+        winget install -e --id TerraformLinters.tflint --accept-source-agreements --accept-package-agreements
+        if ($LASTEXITCODE -ne 0) { throw "winget install TerraformLinters.tflint failed with exit code $LASTEXITCODE - see the output above." }
+        Sync-SessionEnvironment
+        $cmd = Get-Command tflint -ErrorAction SilentlyContinue
+        if (-not $cmd) { throw "tflint installed via winget but not resolvable in this session - open a new shell and re-run." }
+        $script:Summary.Installed++
+        Write-Ok "tflint installed via winget at $($cmd.Source)"
+    } else {
+        throw "no Chocolatey or winget found - install tflint from https://github.com/terraform-linters/tflint#installation and re-run."
+    }
+}
+function Install-Ruff {
+    $existing = Get-Command ruff -ErrorAction SilentlyContinue
+    if ($existing) {
+        Write-Skip "ruff already installed ($($existing.Source))"
+    } else {
+        try { Install-Uv } catch {
+            throw "not installing ruff - 'uv tool install ruff' needs uv. $($_.Exception.Message)"
+        }
+        # ruff needs uv itself, not just uvx: Install-Uv is satisfied by either.
+        if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
+            throw "uv still not found after attempting to install it - install it manually (https://docs.astral.sh/uv) and re-run."
+        }
+        uv tool install ruff
+        if ($LASTEXITCODE -ne 0) { throw "'uv tool install ruff' failed - see the output above." }
+        Sync-SessionEnvironment
+        $cmd = Get-Command ruff -ErrorAction SilentlyContinue
+        if (-not $cmd) { throw "ruff installed but not resolvable in this session - open a new shell and re-run." }
+        $script:Summary.Installed++
+        Write-Ok "ruff installed at $($cmd.Source)"
+    }
+}
+function Install-Sqlfluff {
+    $existing = Get-Command sqlfluff -ErrorAction SilentlyContinue
+    if ($existing) {
+        Write-Skip "sqlfluff already installed ($($existing.Source))"
+    } else {
+        try { Install-Uv } catch {
+            throw "not installing sqlfluff - 'uv tool install sqlfluff' needs uv. $($_.Exception.Message)"
+        }
+        # sqlfluff needs uv itself, not just uvx: Install-Uv is satisfied by either.
+        if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
+            throw "uv still not found after attempting to install it - install it manually (https://docs.astral.sh/uv) and re-run."
+        }
+        uv tool install sqlfluff
+        if ($LASTEXITCODE -ne 0) { throw "'uv tool install sqlfluff' failed - see the output above." }
+        Sync-SessionEnvironment
+        $cmd = Get-Command sqlfluff -ErrorAction SilentlyContinue
+        if (-not $cmd) { throw "sqlfluff installed but not resolvable in this session - open a new shell and re-run." }
+        $script:Summary.Installed++
+        Write-Ok "sqlfluff installed at $($cmd.Source)"
+    }
+}
+function Install-Shellcheck {
+    if (Get-Command shellcheck -ErrorAction SilentlyContinue) {
+        Write-Skip "shellcheck already installed"
+    } elseif (Get-Command choco -ErrorAction SilentlyContinue) {
+        if (-not (Test-Admin)) {
+            throw "shellcheck needs an elevated prompt to install via Chocolatey - re-run this script as Administrator."
+        }
+        choco install shellcheck -y --no-progress
+        if ($LASTEXITCODE -ne 0) { throw "choco install shellcheck failed with exit code $LASTEXITCODE - see the output above." }
+        Sync-SessionEnvironment
+        $cmd = Get-Command shellcheck -ErrorAction SilentlyContinue
+        if (-not $cmd) { throw "shellcheck installed via Chocolatey but not resolvable in this session - open a new shell and re-run." }
+        $script:Summary.Installed++
+        Write-Ok "shellcheck installed via Chocolatey at $($cmd.Source)"
+    } elseif (Get-Command winget -ErrorAction SilentlyContinue) {
+        winget install --id koalaman.shellcheck --accept-source-agreements --accept-package-agreements
+        if ($LASTEXITCODE -ne 0) { throw "winget install koalaman.shellcheck failed with exit code $LASTEXITCODE - see the output above." }
+        Sync-SessionEnvironment
+        $cmd = Get-Command shellcheck -ErrorAction SilentlyContinue
+        if (-not $cmd) { throw "shellcheck installed via winget but not resolvable in this session - open a new shell and re-run." }
+        $script:Summary.Installed++
+        Write-Ok "shellcheck installed via winget at $($cmd.Source)"
+    } else {
+        throw "no Chocolatey or winget found - install shellcheck from https://github.com/koalaman/shellcheck#installing and re-run."
+    }
+}
+function Install-PSScriptAnalyzer {
+    # -Scope CurrentUser installs into a DIFFERENT module path per host
+    # (Documents\WindowsPowerShell\Modules for 5.1, Documents\PowerShell\Modules
+    # for 7), so each host needs its own Install-Module run - one is not visible
+    # to the other. Every 64-bit Windows since 7/8.1 ships powershell.exe; pwsh.exe
+    # only exists once PowerShell 7 has been installed separately.
+    $hosts = @()
+    if (Get-Command powershell.exe -ErrorAction SilentlyContinue) { $hosts += 'powershell.exe' }
+    if (Get-Command pwsh.exe -ErrorAction SilentlyContinue)       { $hosts += 'pwsh.exe' }
+    if ($hosts.Count -eq 0) {
+        throw "neither powershell.exe nor pwsh.exe found on PATH - nothing to install PSScriptAnalyzer into."
+    }
+    $failures = 0
+    foreach ($h in $hosts) {
+        $already = & $h -NoProfile -Command "if (Get-Module -ListAvailable -Name PSScriptAnalyzer) { 'yes' }"
+        if ($already -match 'yes') {
+            Write-Skip "PSScriptAnalyzer already installed for $h"
+            continue
+        }
+        & $h -NoProfile -Command "Install-Module -Name PSScriptAnalyzer -Scope CurrentUser -Force -ErrorAction Stop"
+        if ($LASTEXITCODE -ne 0) {
+            Write-Warn2 "Install-Module PSScriptAnalyzer failed under $h (exit $LASTEXITCODE) - see the output above."
+            $failures++
+            continue
+        }
+        $verify = & $h -NoProfile -Command "if (Get-Module -ListAvailable -Name PSScriptAnalyzer) { 'yes' }"
+        if ($verify -notmatch 'yes') {
+            Write-Warn2 "Install-Module reported success but PSScriptAnalyzer is not resolvable under $h."
+            $failures++
+            continue
+        }
+        $script:Summary.Installed++
+        Write-Ok "PSScriptAnalyzer installed for $h"
+    }
+    if ($failures -gt 0) { throw "PSScriptAnalyzer install failed for $failures of $($hosts.Count) PowerShell host(s) - see the WARN lines above." }
+}
 if (Test-Selected 'stack-tools') {
-    Invoke-Step "tflint (Terraform linter)" {
-        if (Get-Command tflint -ErrorAction SilentlyContinue) {
-            Write-Skip "tflint already installed"
-        } elseif (Get-Command choco -ErrorAction SilentlyContinue) {
-            if (-not (Test-Admin)) {
-                throw "tflint needs an elevated prompt to install via Chocolatey - re-run this script as Administrator."
-            }
-            choco install tflint -y --no-progress
-            if ($LASTEXITCODE -ne 0) { throw "choco install tflint failed with exit code $LASTEXITCODE - see the output above." }
-            Sync-SessionEnvironment
-            $script:Summary.Installed++
-            Write-Ok "tflint installed via Chocolatey"
-        } elseif (Get-Command winget -ErrorAction SilentlyContinue) {
-            winget install -e --id TerraformLinters.tflint --accept-source-agreements --accept-package-agreements
-            if ($LASTEXITCODE -ne 0) { throw "winget install TerraformLinters.tflint failed with exit code $LASTEXITCODE - see the output above." }
-            Sync-SessionEnvironment
-            $script:Summary.Installed++
-            Write-Ok "tflint installed via winget"
-        } else {
-            throw "no Chocolatey or winget found - install tflint from https://github.com/terraform-linters/tflint#installation and re-run."
-        }
-    }
-    Invoke-Step "ruff (uv tool install ruff)" {
-        $existing = Get-Command ruff -ErrorAction SilentlyContinue
-        if ($existing) {
-            Write-Skip "ruff already installed ($($existing.Source))"
-        } else {
-            try { Install-Uv } catch {
-                throw "not installing ruff - 'uv tool install ruff' needs uv. $($_.Exception.Message)"
-            }
-            uv tool install ruff
-            if ($LASTEXITCODE -ne 0) { throw "'uv tool install ruff' failed - see the output above." }
-            Sync-SessionEnvironment
-            $cmd = Get-Command ruff -ErrorAction SilentlyContinue
-            if (-not $cmd) { throw "ruff installed but not resolvable in this session - open a new shell and re-run." }
-            $script:Summary.Installed++
-            Write-Ok "ruff installed at $($cmd.Source)"
-        }
-    }
-    Invoke-Step "sqlfluff (uv tool install sqlfluff)" {
-        $existing = Get-Command sqlfluff -ErrorAction SilentlyContinue
-        if ($existing) {
-            Write-Skip "sqlfluff already installed ($($existing.Source))"
-        } else {
-            try { Install-Uv } catch {
-                throw "not installing sqlfluff - 'uv tool install sqlfluff' needs uv. $($_.Exception.Message)"
-            }
-            uv tool install sqlfluff
-            if ($LASTEXITCODE -ne 0) { throw "'uv tool install sqlfluff' failed - see the output above." }
-            Sync-SessionEnvironment
-            $cmd = Get-Command sqlfluff -ErrorAction SilentlyContinue
-            if (-not $cmd) { throw "sqlfluff installed but not resolvable in this session - open a new shell and re-run." }
-            $script:Summary.Installed++
-            Write-Ok "sqlfluff installed at $($cmd.Source)"
-        }
-    }
-    Invoke-Step "shellcheck" {
-        if (Get-Command shellcheck -ErrorAction SilentlyContinue) {
-            Write-Skip "shellcheck already installed"
-        } elseif (Get-Command choco -ErrorAction SilentlyContinue) {
-            if (-not (Test-Admin)) {
-                throw "shellcheck needs an elevated prompt to install via Chocolatey - re-run this script as Administrator."
-            }
-            choco install shellcheck -y --no-progress
-            if ($LASTEXITCODE -ne 0) { throw "choco install shellcheck failed with exit code $LASTEXITCODE - see the output above." }
-            Sync-SessionEnvironment
-            $script:Summary.Installed++
-            Write-Ok "shellcheck installed via Chocolatey"
-        } elseif (Get-Command winget -ErrorAction SilentlyContinue) {
-            winget install --id koalaman.shellcheck --accept-source-agreements --accept-package-agreements
-            if ($LASTEXITCODE -ne 0) { throw "winget install koalaman.shellcheck failed with exit code $LASTEXITCODE - see the output above." }
-            Sync-SessionEnvironment
-            $script:Summary.Installed++
-            Write-Ok "shellcheck installed via winget"
-        } else {
-            throw "no Chocolatey or winget found - install shellcheck from https://github.com/koalaman/shellcheck#installing and re-run."
-        }
-    }
-    Invoke-Step "PSScriptAnalyzer (Windows PowerShell 5.1 and PowerShell 7)" {
-        # -Scope CurrentUser installs into a DIFFERENT module path per host
-        # (Documents\WindowsPowerShell\Modules for 5.1, Documents\PowerShell\Modules
-        # for 7), so each host needs its own Install-Module run - one is not visible
-        # to the other. Every 64-bit Windows since 7/8.1 ships powershell.exe; pwsh.exe
-        # only exists once PowerShell 7 has been installed separately.
-        $hosts = @()
-        if (Get-Command powershell.exe -ErrorAction SilentlyContinue) { $hosts += 'powershell.exe' }
-        if (Get-Command pwsh.exe -ErrorAction SilentlyContinue)       { $hosts += 'pwsh.exe' }
-        if ($hosts.Count -eq 0) {
-            throw "neither powershell.exe nor pwsh.exe found on PATH - nothing to install PSScriptAnalyzer into."
-        }
-        $failures = 0
-        foreach ($h in $hosts) {
-            $already = & $h -NoProfile -Command "if (Get-Module -ListAvailable -Name PSScriptAnalyzer) { 'yes' }"
-            if ($already -match 'yes') {
-                Write-Skip "PSScriptAnalyzer already installed for $h"
-                continue
-            }
-            & $h -NoProfile -Command "Install-Module -Name PSScriptAnalyzer -Scope CurrentUser -Force -ErrorAction Stop"
-            if ($LASTEXITCODE -ne 0) {
-                Write-Warn2 "Install-Module PSScriptAnalyzer failed under $h (exit $LASTEXITCODE) - see the output above."
-                $failures++
-                continue
-            }
-            $verify = & $h -NoProfile -Command "if (Get-Module -ListAvailable -Name PSScriptAnalyzer) { 'yes' }"
-            if ($verify -notmatch 'yes') {
-                Write-Warn2 "Install-Module reported success but PSScriptAnalyzer is not resolvable under $h."
-                $failures++
-                continue
-            }
-            $script:Summary.Installed++
-            Write-Ok "PSScriptAnalyzer installed for $h"
-        }
-        if ($failures -gt 0) { throw "PSScriptAnalyzer install failed for $failures of $($hosts.Count) PowerShell host(s) - see the WARN lines above." }
-    }
+    Invoke-Step "tflint (Terraform linter)" { Install-Tflint }
+    Invoke-Step "ruff (uv tool install ruff)" { Install-Ruff }
+    Invoke-Step "sqlfluff (uv tool install sqlfluff)" { Install-Sqlfluff }
+    Invoke-Step "shellcheck" { Install-Shellcheck }
+    Invoke-Step "PSScriptAnalyzer (Windows PowerShell 5.1 and PowerShell 7)" { Install-PSScriptAnalyzer }
 }
 
 # --- Summary -----------------------------------------------------------------
