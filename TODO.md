@@ -4025,7 +4025,8 @@ Enforced by the same hooks (approval receipts, scope guard, cloud guard, review 
 ### crew 1.1.x: install the tools crew needs to run tests and do its work - OPEN, after 1.0 ships (filed 2026-09-24, owner decision)
 Evidence (win-repo, Windows burn-in, 2026-09-24): `/crew:verify --all` reported two rules as exit 77 SKIP, "environment
 absent", because `ruff` and `pylint` could not be imported, and diagnosing the hanging pytest rule needed `pytest-timeout`.
-All three were installed by hand. Today a missing tool silently narrows what a green verify covers.
+All three were installed by hand, and so were `pytest-xdist` (needed for a full run to finish: 427s with `-n auto`) and
+`podman` in WSL2 (for the visual baseline). Today a missing tool silently narrows what a green verify covers.
 - Each rule, role or skill declares the tools it needs (in `.crew/verify.json` rules, and in a manifest for everything else);
   for Python tools, name the interpreter that will run the rule.
 - A single provisioning step (`/crew:init` phase, plus `/crew:verify --install-missing`) detects what is missing and installs
