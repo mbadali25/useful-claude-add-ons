@@ -141,13 +141,22 @@ liar_stub() {
 # and this probe succeeds. This is the 2026-09-24 regression: reproduced
 # against a real PreToolUse Write payload where a working Python 3.14 was
 # discarded untested because its path matched WindowsApps.
+# A hand-written canned probe answer (main's original shape here) cannot
+# ALSO run vault_guard.py when the guard launches it a second time as the
+# resolved interpreter - it would print the same canned probe text
+# regardless of the arguments it was actually given, so the guard's own
+# exit code would be the stub's hard-coded 0, not a real judgement. `exec
+# "$PY" "$@"` makes it behave as a genuinely working interpreter no matter
+# how it is invoked (probed with `-c ...`, or launched against
+# vault_guard.py), while its path still lives under a directory literally
+# named WindowsApps - the one thing a path-substring reject would still
+# have caught.
 real_windowsapps_stub() {
   local dir="$work/$1" name="$2"
   mkdir -p "$dir"
   cat > "$dir/$name" <<STUB
 #!/bin/sh
-printf 'vault-guard-python:%s' "$dir/$name"
-exit 0
+exec "$PY" "\$@"
 STUB
   chmod 755 "$dir/$name"
   printf '%s' "$dir"

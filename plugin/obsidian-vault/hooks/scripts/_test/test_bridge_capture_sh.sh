@@ -106,13 +106,24 @@ liar_stub() {
 # install's sys.executable actually lives. See test_vault_guard_sh.sh's header
 # for the 2026-09-24 regression this models: a resolver that rejects on a
 # WindowsApps path SUBSTRING throws this out even though it works.
+# A hand-written canned probe answer (main's original shape here) cannot
+# ALSO run the real hook script when it launches the resolved interpreter a
+# second time - it would print the same canned probe text regardless of the
+# arguments it was actually given, so the hook's own behaviour would be the
+# stub's hard-coded exit, not a real run. `exec "$PY" "$@"` makes it behave
+# as a genuinely working interpreter no matter how it is invoked (probed
+# with `-c ...`, or launched against the real script), while its path still
+# lives under a directory literally named WindowsApps - the one thing a
+# path-substring reject would still have caught. `prefix` (the caller's
+# per-hook probe token) is no longer needed once the stub actually runs a
+# real interpreter instead of echoing a canned answer - kept as a parameter
+# so call sites do not need to change.
 real_windowsapps_stub() {
-  local dir="$work/$1" name="$2" prefix="$3"
+  local dir="$work/$1" name="$2"
   mkdir -p "$dir"
   cat > "$dir/$name" <<STUB
 #!/bin/sh
-printf '$prefix%s' "$dir/$name"
-exit 0
+exec "$PY" "\$@"
 STUB
   chmod 755 "$dir/$name"
   printf '%s' "$dir"
