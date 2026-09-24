@@ -35,9 +35,22 @@ reviewer could have read an emptied part while the receipt still vouched for
 the untouched tree.
 
 Writes `<work-dir>/review.json` (default `.work/tickets/<id>/review.json`)
-and records the round in the ledger; a CLEAN round writes the receipt. Its
-`webtest_findings` is the open healer-skip rows `webtest_guard.py skips` wrote
-(None when that check never ran for the ticket).
+and records the round in the ledger; a CLEAN round writes the receipt.
+
+WEB TESTS. In a Playwright repository (the manifest carries a `webtest`
+listing) or wherever `.work/tickets/<id>/webtest/findings.json` exists, the
+healer-skip check is RE-RUN here, before the verdict, stamped with the
+manifest's head and bundle sha256 -- a findings file computed for an older
+tree must never vouch for this one. `webtest_check` in review.json records
+whether the file it replaced was missing, stale (another head or bundle) or
+current. The review is INCOMPLETE when HEAD or the working tree no longer
+matches the bundle (the findings would describe a different tree) or when
+the check could not tell. `webtest_findings` is the open (unexcluded) rows,
+None when the check does not apply; any open row makes a CLEAN verdict
+FINDINGS, named in `webtest_verdict`, because a healer skip is a finding
+whether or not the reviewer carried it. When the prompt overflowed its inline
+rows into `webtest-findings.txt` in the scratch directory, that file is an
+expected READ like a bundle part.
 
 Exit codes: 0 CLEAN; 1 FINDINGS; 3 INCOMPLETE; 4 budget refused
 (NEEDS_REPLAN); 2 usage or setup error.
@@ -51,9 +64,13 @@ import shutil
 import subprocess
 import sys
 
+import crew_common
 import crew_state
 import review_ledger
+import review_patch
+import review_prompt
 import review_verdict
+import webtest_guard
 
 EXIT_CLEAN, EXIT_FINDINGS, EXIT_USAGE, EXIT_INCOMPLETE, EXIT_REFUSED = 0, 1, 2, 3, 4
 DEFAULT_TIMEOUT = 1800
@@ -145,28 +162,74 @@ def bundle_problems(manifest):
     return problems
 
 
+def _findings_doc(root, ticket):
+    try:
+        doc = json.loads(_read(webtest_guard.findings_path(root, ticket)))
+    except (OSError, ValueError):
+        return None
+    return doc if isinstance(doc, dict) else None
+
+
 def webtest_findings(root, ticket):
     """The healer-skip rows not excused by the spec, from
     `webtest_guard.py skips`; None when that check never ran for the ticket."""
-    path = os.path.join(root, ".work", "tickets", ticket, "webtest", "findings.json")
-    try:
-        rows = json.loads(_read(path)).get("findings")
-    except (OSError, ValueError, AttributeError):
-        return None
+    rows = (_findings_doc(root, ticket) or {}).get("findings")
     if not isinstance(rows, list):
         return None
     return [r for r in rows if isinstance(r, dict) and not r.get("excluded")]
+
+
+def webtest_check(root, ticket, manifest):
+    """(open_rows_or_None, record_or_None, incomplete_reasons). Re-runs the
+    healer-skip check for the tree the bundle was cut from; see WEB TESTS."""
+    path = webtest_guard.findings_path(root, ticket)
+    if manifest.get("webtest") is None and not os.path.exists(path):
+        return None, None, []
+    head, bundle = manifest.get("head"), manifest.get("bundle_sha256")
+    prior = _findings_doc(root, ticket)
+    state = ("missing" if prior is None else "current"
+             if (prior.get("head"), prior.get("bundle_sha256")) == (head, bundle) else "stale")
+    reasons = []
+    now = crew_common.git_out(root, "rev-parse", "HEAD")
+    if now != head:
+        reasons.append(f"webtest: HEAD is {str(now)[:12]}, not the bundle's {str(head)[:12]}; "
+                       "the healer-skip check cannot be tied to the reviewed tree")
+    else:
+        try:
+            current = review_patch.compute(root, manifest.get("base") or "")[0]
+        except RuntimeError as exc:
+            current = {}
+            reasons.append(f"webtest: the bundle could not be rebuilt to check it is current: {exc}")
+        if current and current.get("bundle_sha256") != bundle:
+            reasons.append("webtest: the working tree changed after the bundle was cut; the "
+                           "healer-skip check cannot be tied to the reviewed tree")
+    code, lines = webtest_guard.check_skips(root, ticket, bundle_sha256=None if reasons else bundle)
+    if code == webtest_guard.EXIT_UNKNOWN:
+        reasons.append(f"webtest: {lines[0]}")
+    rows = webtest_findings(root, ticket) if code != webtest_guard.EXIT_UNKNOWN else None
+    record = {"prior_findings": state, "rerun_exit": code, "head": now, "bundle_sha256": bundle}
+    return rows, record, reasons
 
 
 def finish(args, number, output, exit_code, timed_out, extra_reasons=()):
     """Verdict -> ledger -> review.json. Returns the process exit code."""
     manifest = json.loads(_read(args.manifest))
     parts = [p["name"] for p in manifest.get("parts") or []]
+    if os.path.exists(os.path.join(args.scratch, review_prompt.WEBTEST_FINDINGS_FILE)):
+        parts.append(review_prompt.WEBTEST_FINDINGS_FILE)
+    rows, webtest_record, webtest_reasons = webtest_check(args.root, args.ticket, manifest)
     extra_reasons = list(extra_reasons) + bundle_problems(manifest)
+    extra_reasons += webtest_reasons
     result = review_verdict.parse(output, exit_code, timed_out, parts)
     if extra_reasons:
         result["reasons"] = list(extra_reasons) + result["reasons"]
         result["verdict"] = review_verdict.INCOMPLETE
+    webtest_verdict = None
+    if rows:
+        webtest_verdict = (f"{len(rows)} open healer skip(s) in webtest_findings; a healer skip "
+                           "is a finding, never accepted, so this round is not CLEAN")
+        if result["verdict"] == review_verdict.CLEAN:
+            result["verdict"] = review_verdict.FINDINGS
     review = {
         "ticket": args.ticket, "round": number, "budget": review_ledger.BUDGET,
         "verdict": result["verdict"], "counts": result["counts"],
@@ -177,7 +240,8 @@ def finish(args, number, output, exit_code, timed_out, extra_reasons=()):
         "bundle_sha256": manifest.get("bundle_sha256"),
         "base": manifest.get("base"), "head": manifest.get("head"),
         "exit_code": exit_code, "timed_out": timed_out,
-        "webtest_findings": webtest_findings(args.root, args.ticket),
+        "webtest_findings": rows, "webtest_check": webtest_record,
+        "webtest_verdict": webtest_verdict,
         "written_at": datetime.datetime.now(datetime.timezone.utc).isoformat(
             timespec="seconds"),
     }
@@ -194,6 +258,8 @@ def finish(args, number, output, exit_code, timed_out, extra_reasons=()):
           f"ledger={state}")
     for reason in result["reasons"]:
         print(f"review: INCOMPLETE because {reason}")
+    if webtest_verdict:
+        print(f"review: {result['verdict']} because {webtest_verdict}")
     return {review_verdict.CLEAN: EXIT_CLEAN, review_verdict.FINDINGS: EXIT_FINDINGS}.get(
         result["verdict"], EXIT_INCOMPLETE)
 

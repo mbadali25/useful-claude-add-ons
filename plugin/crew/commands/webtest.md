@@ -53,13 +53,17 @@ After EVERY healer run:
 python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/webtest_guard.py" skips --root . --ticket "$1"
 ```
 
-Exit 1 means a `.skip(`, `.fixme(`, `test.fail(` or skip annotation was added
-since the ticket's base. **A healer skip is reported as a finding, never
-accepted.** Print every `FINDING|...` line verbatim to the user. Do not delete
-the skip quietly and do not add it to the spec yourself: either the test is
-restored and the bug fixed, or the owner lists it under the spec's
-`## Exclusions` as `skip: <path>` (or `skip: <path> "<text>"`) and re-approves
-the plan. Exit 2 means the check could not tell - say so; it is not a pass.
+Exit 1 means a skip site (`.skip`, `.fixme`, `test['skip']`, `test.fail(`, or a
+`type: 'skip'|'fixme'|'fail'` annotation, split across lines or not) appeared
+since the ticket's base in a JS/TS spec, a file under a test directory, or a
+helper a spec imports - each file is read in full, renames included. **A
+healer skip is reported as a finding, never accepted.** Print every
+`FINDING|...` line verbatim to the user. Do not delete the skip quietly and do
+not add it to the spec yourself: either the test is restored and the bug
+fixed, or the owner adds a list item directly under the spec's `## Exclusions`
+that begins `- skip: <path>` (or `- skip: <path> "<title text>"`) and
+re-approves the plan; prose there is not an exclusion. Exit 2 means the check
+could not tell - say so; it is not a pass.
 
 ## 4. `--stage evidence` - what the reviewer gets
 
@@ -72,14 +76,19 @@ python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/webtest_guard.py" visual --root .
 ```
 
 Quote each exit code. `visual` exits 77 off the pinned image
-(`mcr.microsoft.com/playwright:v1.63.0-noble`): report it as **UNVERIFIED**,
-never as passed. `auth-leak` exit 1 is a stop: a session file is tracked.
+(`mcr.microsoft.com/playwright:v1.63.0-noble`) - the env var alone is not
+evidence; it needs a container marker and the image's `/ms-playwright`
+browsers - report it as **UNVERIFIED**, never as passed. `auth-leak` exit 1
+is a stop: a session file is tracked, or a `storageState` it cannot resolve
+needs declaring as `webtest.storageState` in `.crew/config.json`.
 
 Then `/crew:review $1`. Nothing extra to pass: `review_patch.py` lists the
 newest trace zips and axe results under `test-results/` in the manifest
 (bounded, the rest counted), and `review_prompt.py` hands the reviewer those
-paths plus every healer-skip row as a FINDING. `review.json` carries the open
-rows as `webtest_findings`.
+paths plus every healer-skip row as a FINDING. `review_run.py` re-runs the
+skip check against the reviewed bundle before the verdict; any open row makes
+the round FINDINGS, never CLEAN, and `review.json` carries them as
+`webtest_findings`.
 
 ## 5. The verify rules
 

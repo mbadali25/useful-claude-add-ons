@@ -75,6 +75,58 @@ try {
     $env:GIT_CEILING_DIRECTORIES = $wt
     Expect 2 'auth-leak outside git is UNKNOWN, not a pass' (Join-Path $wt 'nogit') @('auth-leak')
     Remove-Item Env:GIT_CEILING_DIRECTORIES
+
+    # Full-content skip scan (round-1 fixes): helpers, renames, prose
+    # exclusions, multiline and computed forms, then storageState resolution.
+    Invoke-Git rm -q --cached playwright/.auth/user.json
+    Remove-Item (Join-Path $wt 'tests/b.spec.ts')
+    Write-Text 'tests/util.ts' "export const u = 1;`n"
+    Write-Text 'tests/skipper.ts' "test.skip(true, 'disabled');`n"
+    Write-Text '.work/tickets/T-0008/spec.md' "# s`n`n## Exclusions`nDo not add skip: tests/util.ts`n"
+    Invoke-Git add -A
+    Invoke-Git commit -qm base2
+    $base2 = (& git -C $wt rev-parse HEAD).Trim()
+    $skips2 = @('skips', '--ticket', 'T-0008', '--base', $base2)
+
+    Expect 0 'skips: an unchanged tree allows' $wt $skips2
+    Write-Text 'tests/util.ts' "export const u = 1;`ntest.skip(true, 'disabled');`n"
+    Expect 1 'skips: a helper skip blocks; prose under Exclusions excuses nothing' $wt $skips2
+    Write-Text 'tests/util.ts' "export const u = 1;`n"
+    Invoke-Git mv tests/skipper.ts tests/skipper.spec.ts
+    Expect 1 'skips: renaming a skipping helper into a spec blocks' $wt $skips2
+    Invoke-Git mv tests/skipper.spec.ts tests/skipper.ts
+    Write-Text 'tests/c.spec.ts' "test('c', {`n  annotation: {`n    type:`n      'fixme' },`n}, async () => {});`n"
+    Expect 1 'skips: an annotation split across lines blocks' $wt $skips2
+    Remove-Item (Join-Path $wt 'tests/c.spec.ts')
+    Write-Text 'tests/d.spec.cts' "test['skip']('d', () => {});`n"
+    Expect 1 'skips: a computed skip in a .cts spec blocks' $wt $skips2
+    Remove-Item (Join-Path $wt 'tests/d.spec.cts')
+    Write-Text 'tests/e.spec.ts' "// test.skip('only a comment');`n"
+    Expect 0 'skips: a skip inside a comment allows' $wt $skips2
+    Remove-Item (Join-Path $wt 'tests/e.spec.ts')
+
+    Write-Text 'playwright.config.ts' "const state = 'sessions/user.json';`nexport default { use: { storageState: state } };`n"
+    Write-Text 'sessions/user.json' '{}'
+    Invoke-Git add -f sessions/user.json
+    Expect 1 'auth-leak: a tracked storageState named through a const blocks' $wt @('auth-leak')
+    Invoke-Git rm -q --cached sessions/user.json
+    Expect 0 'auth-leak: the same const-bound storageState, untracked, allows' $wt @('auth-leak')
+    Write-Text 'playwright.config.ts' "export default { use: { storageState: process.env.STATE } };`n"
+    Expect 1 'auth-leak: an unresolvable storageState fails closed' $wt @('auth-leak')
+    Write-Text '.crew/config.json' '{"webtest":{"storageState":"sessions/user.json"}}'
+    Expect 0 'auth-leak: a declared storageState resolves it' $wt @('auth-leak')
+
+    # The env var alone is not evidence of the pinned image. Asserted only
+    # where no container marker exists (always true off Linux, where visual
+    # skips anyway), because inside a real container the answer differs.
+    if (-not (Test-Path '/.dockerenv') -and -not (Test-Path '/run/.containerenv') -and -not (Test-Path '/ms-playwright')) {
+        $env:CREW_PLAYWRIGHT_IMAGE = 'mcr.microsoft.com/playwright:v1.63.0-noble'
+        Expect 77 'visual: the pinned image named by env alone is SKIP' $wt @('visual')
+        Remove-Item Env:CREW_PLAYWRIGHT_IMAGE
+    }
+    else {
+        Write-Output 'SKIP: webtest-guard env-alone visual case -- this host carries a container marker'
+    }
 }
 finally {
     Remove-Item -Recurse -Force $wt -ErrorAction SilentlyContinue

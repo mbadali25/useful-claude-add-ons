@@ -14,11 +14,23 @@ gains missing `mcpServers` keys, `.codex/config.toml` gains missing
 `.mcp.json` that does not parse is reported and left alone. Every write is
 computed in full first, then staged as a temp and `os.replace`d.
 
-`npx playwright init-agents --loop=claude` and `--loop=codex` run on apply
-unless `.claude/agents/playwright-test-planner.md` already exists. The claude
-loop writes its own `.mcp.json`, so the file's bytes are captured before and,
-if any server that was there is gone or changed after, the original is put
-back with only the NEW servers added.
+An existing `playwright.config.*` is kept, and READ: when it lacks the
+`setup`, `axe` or `visual` project, or the visual project's gate on the
+pinned image, the missing pieces are named and the run exits 1 -- the verify
+rules this installs run those projects, so a config without them is not a
+success.
+
+Test Agents: `npx -y --package=@playwright/test@<PINNED_PLAYWRIGHT> playwright
+init-agents --loop=claude` and `--loop=codex` run on apply unless every one of
+the planner, generator and healer files under `.claude/agents/` exists. The
+`--package` pin means npx fetches exactly the release crew verifies, never
+whatever is current, even before the pinned `npm i` has run. Every file
+already under `.claude/agents/` is snapshotted first and put back
+byte-for-byte after, so a customised generator or healer survives; an agent
+file still missing afterwards is reported and fails the run. The claude loop
+writes its own `.mcp.json`, so the file's bytes are captured before and, if
+any server that was there is gone or changed after, the original is put back
+with only the NEW servers added.
 
 Exit codes: 0 done (or nothing to do); 1 something was refused or failed; 2 usage.
 """
@@ -32,7 +44,12 @@ import webtest_guard
 
 PLAYWRIGHT_MCP = "@playwright/mcp@0.0.82"
 DEVTOOLS_MCP = "chrome-devtools-mcp@1.10.1"
-AGENT_MARKER = os.path.join(".claude", "agents", "playwright-test-planner.md")
+AGENTS_DIR = os.path.join(".claude", "agents")
+AGENT_FILES = tuple(os.path.join(AGENTS_DIR, f"playwright-test-{role}.md")
+                    for role in ("planner", "generator", "healer"))
+INIT_AGENTS = ("npx", "-y", f"--package=@playwright/test@{webtest_guard.PINNED_PLAYWRIGHT}",
+               "playwright", "init-agents")
+REQUIRED_PROJECTS = ("setup", "axe", "visual")
 IGNORE_LINES = ("/playwright/.auth/", "/test-results/", "/playwright-report/", "/blob-report/")
 
 CONFIG_TS = """import { defineConfig, devices } from '@playwright/test';
@@ -202,10 +219,28 @@ def merge_ignore(text):
     return (text or "") + sep + "\n".join(added) + "\n", added
 
 
+def config_gaps(text):
+    """What an existing config lacks of what crew's rules run: each missing
+    project by name, and the visual project's gate on the pinned image."""
+    toks = webtest_guard.tokens(text)
+    named = {toks[i + 2][1] for i in range(len(toks) - 2)
+             if toks[i][1] == "name" and toks[i + 1][1] == ":" and toks[i + 2][0] == "str"}
+    gaps = [f"'{p}' project" for p in REQUIRED_PROJECTS if p not in named]
+    if webtest_guard.PINNED_IMAGE not in text:
+        gaps.append(f"the visual project's gate on {webtest_guard.PINNED_IMAGE}")
+    return gaps
+
+
+def _existing_config(root):
+    names = sorted(n for n in os.listdir(root) if n.startswith("playwright.config."))
+    return names[0] if names else None
+
+
 def plan(root, windows):
     """[(rel, new_text_or_None, note)]. None text = nothing to write."""
     angular = os.path.exists(os.path.join(root, "angular.json"))
-    has_config = any(n.startswith("playwright.config.") for n in os.listdir(root))
+    existing = _existing_config(root)
+    has_config = existing is not None
     config = CONFIG_TS % {"image": webtest_guard.PINNED_IMAGE, "env": webtest_guard.IMAGE_ENV,
                           "base_url": "http://localhost:4200" if angular else "http://localhost:3000"}
     items = []
@@ -214,7 +249,12 @@ def plan(root, windows):
              ("tests/fixtures/axe.ts", AXE_FIXTURE_TS, False),
              ("tests/home.axe.spec.ts", AXE_SPEC_TS, False))
     for rel, text, skip in whole:
-        if skip or os.path.exists(os.path.join(root, rel)):
+        if skip:
+            gaps = config_gaps(_read(os.path.join(root, existing)) or "")
+            items.append((existing, None, "exists - kept" if not gaps else
+                          f"exists - kept, but MISSING {'; '.join(gaps)} -- add them "
+                          "(the verify rules run these projects)"))
+        elif os.path.exists(os.path.join(root, rel)):
             items.append((rel, None, "exists - kept"))
         else:
             items.append((rel, text, "create"))
@@ -239,18 +279,59 @@ def _write(root, rel, text):
     os.replace(tmp, path)
 
 
+def missing_agents(root):
+    return [a.replace(os.sep, "/") for a in AGENT_FILES if not os.path.exists(os.path.join(root, a))]
+
+
+def _snapshot_agents(root):
+    """{path: bytes} for every file already under `.claude/agents/`."""
+    found = {}
+    for base, _dirs, files in os.walk(os.path.join(root, AGENTS_DIR)):
+        for name in files:
+            path = os.path.join(base, name)
+            with open(path, "rb") as fh:
+                found[path] = fh.read()
+    return found
+
+
+def _restore_agents(root, snapshot):
+    """Put back every snapshotted file init-agents changed or removed."""
+    out = []
+    for path, data in sorted(snapshot.items()):
+        try:
+            with open(path, "rb") as fh:
+                same = fh.read() == data
+        except OSError:
+            same = False
+        if not same:
+            tmp = f"{path}.{os.getpid()}.tmp"
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(tmp, "wb") as fh:
+                fh.write(data)
+            os.replace(tmp, path)
+            out.append(f"  restore {os.path.relpath(path, root).replace(os.sep, '/')} as it was")
+    return out
+
+
 def run_agents(root, windows, runner=subprocess.call):
     """Lines to report. `runner` is injectable so tests never run npx."""
-    if os.path.exists(os.path.join(root, AGENT_MARKER)):
-        return [f"  keep    Test Agents ({AGENT_MARKER.replace(os.sep, '/')} exists)"], True
+    missing = missing_agents(root)
+    if not missing:
+        return ["  keep    Test Agents (planner, generator and healer all exist)"], True
+    kept = _snapshot_agents(root)
     mcp_path = os.path.join(root, ".mcp.json")
     before = _read(mcp_path)
-    out, ok = [], True
+    out, ok = [f"  missing {', '.join(missing)}"], True
     for loop in ("claude", "codex"):
-        cmd = ["npx", "playwright", "init-agents", f"--loop={loop}"]
+        cmd = list(INIT_AGENTS) + [f"--loop={loop}"]
         rc = runner((["cmd", "/c"] if windows else []) + cmd, cwd=root)
         out.append(f"  {'ran' if rc == 0 else 'FAILED'}     {' '.join(cmd)} (exit {rc})")
         ok = ok and rc == 0
+    out += _restore_agents(root, kept)
+    still = missing_agents(root)
+    if still:
+        out.append(f"  FAILED  init-agents left {', '.join(still)} missing")
+        ok = False
     after = _read(mcp_path)
     if before is not None and after != before:
         try:
@@ -284,7 +365,7 @@ def main(argv):
     for rel, text, note in items:
         if text is None:
             print(f"  keep    {rel}: {note}")
-            ok = ok and "left alone" not in note
+            ok = ok and "left alone" not in note and "MISSING" not in note
             continue
         print(f"  write   {rel}: {note}")
         if args.apply:
@@ -292,11 +373,11 @@ def main(argv):
     if args.apply:
         lines, agents_ok = run_agents(root, args.windows)
         ok = ok and agents_ok
-    elif os.path.exists(os.path.join(root, AGENT_MARKER)):
-        lines = [f"  keep    Test Agents ({AGENT_MARKER.replace(os.sep, '/')} exists)"]
+    elif not missing_agents(root):
+        lines = ["  keep    Test Agents (planner, generator and healer all exist)"]
     else:
-        lines = ["  run     npx playwright init-agents --loop=claude",
-                 "  run     npx playwright init-agents --loop=codex"]
+        lines = [f"  missing {', '.join(missing_agents(root))}"] + [
+            f"  run     {' '.join(INIT_AGENTS)} --loop={loop}" for loop in ("claude", "codex")]
     print("\n".join(lines))
     print(f"next: npm i -D @playwright/test@{webtest_guard.PINNED_PLAYWRIGHT} "
           "@axe-core/playwright@4.13.0 && npx playwright install --with-deps chromium")

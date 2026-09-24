@@ -979,6 +979,53 @@ CREW_PLAYWRIGHT_IMAGE=mcr.microsoft.com/playwright:v1.62.0-noble \
   wexpect 77 "visual: a different image is SKIP" "$WT" visual
 GIT_CEILING_DIRECTORIES="$WT" \
   wexpect 2 "auth-leak outside git is UNKNOWN, not a pass" "$WT/nogit" auth-leak
+# Full-content skip scan (round-1 fixes): helpers, renames, prose exclusions,
+# multiline and computed forms. A fresh base with the tracked .auth file gone.
+wt_git rm -q --cached playwright/.auth/user.json
+rm -f "$WT/tests/b.spec.ts"
+printf 'export const u = 1;\n' > "$WT/tests/util.ts"
+printf "test.skip(true, 'disabled');\n" > "$WT/tests/skipper.ts"
+mkdir -p "$WT/.work/tickets/T-0008"
+printf '# s\n\n## Exclusions\nDo not add skip: tests/util.ts\n' > "$WT/.work/tickets/T-0008/spec.md"
+wt_git add -A
+wt_git commit -qm base2
+WT_BASE2=$(git -C "$WT" rev-parse HEAD)
+wexpect 0 "skips: an unchanged tree allows" "$WT" skips --ticket T-0008 --base "$WT_BASE2"
+printf "test.skip(true, 'disabled');\n" >> "$WT/tests/util.ts"
+wexpect 1 "skips: a helper skip blocks; prose under Exclusions excuses nothing" "$WT" skips --ticket T-0008 --base "$WT_BASE2"
+printf 'export const u = 1;\n' > "$WT/tests/util.ts"
+wt_git mv tests/skipper.ts tests/skipper.spec.ts
+wexpect 1 "skips: renaming a skipping helper into a spec blocks" "$WT" skips --ticket T-0008 --base "$WT_BASE2"
+wt_git mv tests/skipper.spec.ts tests/skipper.ts
+printf "test('c', {\n  annotation: {\n    type:\n      'fixme' },\n}, async () => {});\n" > "$WT/tests/c.spec.ts"
+wexpect 1 "skips: an annotation split across lines blocks" "$WT" skips --ticket T-0008 --base "$WT_BASE2"
+rm -f "$WT/tests/c.spec.ts"
+printf "test['skip']('d', () => {});\n" > "$WT/tests/d.spec.cts"
+wexpect 1 "skips: a computed skip in a .cts spec blocks" "$WT" skips --ticket T-0008 --base "$WT_BASE2"
+rm -f "$WT/tests/d.spec.cts"
+printf "// test.skip('only a comment');\n" > "$WT/tests/e.spec.ts"
+wexpect 0 "skips: a skip inside a comment allows" "$WT" skips --ticket T-0008 --base "$WT_BASE2"
+rm -f "$WT/tests/e.spec.ts"
+mkdir -p "$WT/sessions"
+printf "const state = 'sessions/user.json';\nexport default { use: { storageState: state } };\n" > "$WT/playwright.config.ts"
+printf '{}' > "$WT/sessions/user.json"
+wt_git add -f sessions/user.json
+wexpect 1 "auth-leak: a tracked storageState named through a const blocks" "$WT" auth-leak
+wt_git rm -q --cached sessions/user.json
+wexpect 0 "auth-leak: the same const-bound storageState, untracked, allows" "$WT" auth-leak
+printf 'export default { use: { storageState: process.env.STATE } };\n' > "$WT/playwright.config.ts"
+wexpect 1 "auth-leak: an unresolvable storageState fails closed" "$WT" auth-leak
+mkdir -p "$WT/.crew"
+printf '{"webtest":{"storageState":"sessions/user.json"}}' > "$WT/.crew/config.json"
+wexpect 0 "auth-leak: a declared storageState resolves it" "$WT" auth-leak
+# The env var alone is not evidence of the pinned image. Only asserted on a
+# host with no container marker and no /ms-playwright, where it must SKIP.
+if [ ! -e /.dockerenv ] && [ ! -e /run/.containerenv ] && [ ! -d /ms-playwright ]; then
+  CREW_PLAYWRIGHT_IMAGE=mcr.microsoft.com/playwright:v1.63.0-noble \
+    wexpect 77 "visual: the pinned image named by env alone is SKIP" "$WT" visual
+else
+  echo "SKIP: webtest-guard env-alone visual case -- this host carries a container marker"
+fi
 rm -rf "$WT"
 
 # --- the PowerShell flavour guard ------------------------------------------
