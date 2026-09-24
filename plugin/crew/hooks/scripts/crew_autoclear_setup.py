@@ -633,8 +633,31 @@ def apply_migrate_to_repo(root, global_path=None, repo_label=None, yes_widen=Fal
                 except OSError:
                     pass
             raise
-        for tmp, path in staged:
-            os.replace(tmp, path)
+        # NOT a bare loop. An `os.replace` failure partway through this
+        # batch (permissions, disk full, an antivirus lock on `path`, ...)
+        # used to leave every UNCONSUMED staged temp file behind -- the
+        # staging loop above already cleans up after a failure to STAGE,
+        # but nothing cleaned up after a failure to COMMIT what was
+        # already staged. `finally` runs on both the success and the
+        # failure path; on success every staged tmp has already been
+        # renamed away by `os.replace` (so `os.path.exists` is false and
+        # the removal is a no-op), and on a failure partway through it
+        # removes the temp that failed to commit and every later one that
+        # never got the chance to. Committed-and-replaced files are left
+        # exactly as they are -- the docstring above already accepts a
+        # partial conversion across a crash between two `os.replace`
+        # calls; this only stops the LEFTOVER TEMP FILE from being the
+        # thing a crash leaves behind too.
+        try:
+            for tmp, path in staged:
+                os.replace(tmp, path)
+        finally:
+            for tmp, _ in staged:
+                if os.path.exists(tmp):
+                    try:
+                        os.remove(tmp)
+                    except OSError:
+                        pass
 
     return {
         "notes": notes,

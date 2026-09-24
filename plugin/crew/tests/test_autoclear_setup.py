@@ -619,6 +619,50 @@ def test_apply_migrate_to_repo_retry_repairs_a_half_migrated_pair(tmp_path, monk
     assert "enabled" not in crew_after["context"]["autoClear"]
 
 
+def test_apply_migrate_to_repo_commit_failure_leaves_no_orphaned_temp_file(
+        tmp_path, monkeypatch):
+    """FIX: an `os.replace` failure during the COMMIT loop (both files
+    already staged) used to leave every unconsumed staged temp file
+    behind -- the staging loop's own `except BaseException` cleanup only
+    covers a failure to STAGE, not a failure to commit what was already
+    staged. Monkeypatches the FIRST `os.replace` call to raise, so
+    neither file has been committed yet, and asserts no `.tmp` file
+    remains under `.crew/` afterwards."""
+    root = str(tmp_path / "repo")
+    context_block = {"autoClear": {"method": "windows", "enabled": True}}
+    _write_config_json(root, context_block)
+    _write_crew_json(root, context_block)
+    config_path = os.path.join(root, ".crew", "config.json")
+    crew_json_path = os.path.join(root, ".crew", "crew.json")
+    with open(config_path, "rb") as handle:
+        config_before = handle.read()
+    with open(crew_json_path, "rb") as handle:
+        crew_before = handle.read()
+
+    real_replace = os.replace
+
+    def _boom_first(src, dst):
+        raise OSError("simulated: disk full committing the first file")
+
+    monkeypatch.setattr(setup.os, "replace", _boom_first)
+    try:
+        setup.apply_migrate_to_repo(root, global_path=str(tmp_path / "g.json"))
+        assert False, "expected the simulated commit failure to propagate"
+    except OSError:
+        pass
+    monkeypatch.setattr(setup.os, "replace", real_replace)
+
+    with open(config_path, "rb") as handle:
+        assert handle.read() == config_before, (
+            "config.json must stay untouched when the first commit fails")
+    with open(crew_json_path, "rb") as handle:
+        assert handle.read() == crew_before
+    leftovers = [n for n in os.listdir(os.path.join(root, ".crew"))
+                if n.endswith(".tmp")]
+    assert leftovers == [], (
+        f"orphaned temp file(s) after a failed commit: {leftovers}")
+
+
 # --------------------------------------- _read_json_if_present: type safety
 # FIX: a repo config file that parses as valid JSON but is not an OBJECT
 # ([], a bare string, ...) must fail in a controlled way, not crash with an

@@ -1308,6 +1308,35 @@ def test_no_python_blocks_restricted_role_even_when_role_writes_is_off_bash(tmp_
 
 
 @needs_bash
+def test_no_python_refusal_message_names_off_report_and_allowances_bash(tmp_path):
+    """The refusal message text is part of the PM decision's contract
+    (`plugin/crew/CONFIG.md` sec 18, "Without Python, a restricted role's
+    write is always blocked"), not just its exit code -- a caller reading
+    only stderr must be told THAT `off`/`report`/pm's allowances are the
+    things python's absence stops the fallback from honouring, not just
+    that the write failed. Asserted verbatim so a future edit to the
+    wording and to CONFIG.md's own claim about it cannot drift apart."""
+    root = crew_fixtures.make_repo(
+        tmp_path, config={"guards": {"roleWrites": "off"}})
+    home = _global_home(tmp_path)
+    env = os.environ.copy()
+    env["PATH"] = _coreutils_only_path(tmp_path)
+    env["CLAUDE_PROJECT_DIR"] = str(root)
+    env["HOME"] = home
+    env["USERPROFILE"] = home
+    proc = subprocess.run(
+        [_BASH, _SH],
+        input=_write_payload("Write", str(root / "src" / "app.py"), "pm", str(root)),
+        capture_output=True, text=True, check=False, env=env, cwd=str(root))
+    assert proc.returncode == 2, proc.stderr
+    assert (
+        "python is unavailable, so guards.roleWrites (off/report/allowances) "
+        "cannot be evaluated for restricted role 'pm' - install python, or "
+        "the write is blocked." in proc.stderr
+    ), "message text drifted from CONFIG.md sec 18's contract: " + proc.stderr
+
+
+@needs_bash
 def test_no_python_blocks_restricted_role_even_when_role_writes_is_report_bash(tmp_path):
     """Must-block twin: `guards.roleWrites: report` never blocks once
     python can evaluate it, but without python this fallback does not
@@ -1402,6 +1431,39 @@ def test_no_python_allows_unrestricted_role_regardless_of_role_writes_config_bas
     assert proc.returncode == 0, (
         "an unrestricted role must still be allowed unjudged with no "
         "python. stdout: " + proc.stdout + " stderr: " + proc.stderr)
+
+
+@needs_bash
+@pytest.mark.parametrize("agent_type", ["CREW:PM", "Crew:pm", "crew:PM", "PM"])
+def test_no_python_blocks_restricted_role_regardless_of_crew_prefix_case_bash(
+        tmp_path, agent_type):
+    """Must-block: FIX (2026-09-24), a case mismatch between `case`
+    matching (made case-insensitive by `shopt -s nocasematch`) and `#`
+    parameter-expansion prefix removal (which `nocasematch` does not
+    reach). `case "$role" in crew:*)` matched `"CREW:PM"`, but
+    `${role#crew:}` left it untouched because that expansion stays
+    case-sensitive -- `_role_write_is_restricted` then read the
+    unstripped `"CREW:PM"` against its exact-match deny list, found no
+    match, and allowed the write. Every case variant of the `crew:`
+    prefix, and the bare role with no prefix at all, must still resolve
+    to the restricted role `pm` and fail closed with no python."""
+    root = crew_fixtures.make_repo(
+        tmp_path, config={"guards": {"roleWrites": "block"}})
+    home = _global_home(tmp_path)
+    env = os.environ.copy()
+    env["PATH"] = _coreutils_only_path(tmp_path)
+    env["CLAUDE_PROJECT_DIR"] = str(root)
+    env["HOME"] = home
+    env["USERPROFILE"] = home
+    proc = subprocess.run(
+        [_BASH, _SH],
+        input=_write_payload("Write", str(root / "src" / "app.py"),
+                              agent_type, str(root)),
+        capture_output=True, text=True, check=False, env=env, cwd=str(root))
+    assert proc.returncode == 2, (
+        "agent_type " + repr(agent_type) + " must still be recognised as "
+        "the restricted role 'pm' and blocked with no python. stdout: "
+        + proc.stdout + " stderr: " + proc.stderr)
 
 
 @needs_bash

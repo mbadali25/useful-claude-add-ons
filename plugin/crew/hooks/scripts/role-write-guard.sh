@@ -278,8 +278,23 @@ _role_write_fallback_role() {
   # every `case`/`[[ ]]` match below (this prefix strip, and
   # `_role_write_is_restricted`'s deny-list check) case-insensitive
   # instead, so the raw, un-lowered value can be compared directly.
+  #
+  # NOT `${_ROLE_WRITE_FALLBACK_ROLE#crew:}`. `nocasematch` governs `case`
+  # and `[[ ]]` pattern matching only -- it does NOT extend to `#`/`%`
+  # parameter-expansion pattern removal, which stays case-sensitive
+  # regardless. So `case "CREW:PM" in crew:*)` matched (nocasematch), but
+  # `${role#crew:}` on that same value found no case-sensitive `crew:`
+  # prefix and left the string untouched -- `_ROLE_WRITE_FALLBACK_ROLE`
+  # stayed `"CREW:PM"`, which `_role_write_is_restricted` (an exact
+  # `pm`/`explorer`/... match) then read as an unrecognised, unrestricted
+  # role and the write was ALLOWED. Fixed 2026-09-24: since the `case`
+  # above already proved (case-insensitively) that the first 5 characters
+  # spell `crew:`, a fixed-length substring removes exactly those 5
+  # characters regardless of their case -- no second case-sensitive match
+  # is involved. Pure bash 3.2-compatible substring expansion (`${var:N}`),
+  # no `${var,,}`, no `tr`.
   case "$_ROLE_WRITE_FALLBACK_ROLE" in
-    crew:*) _ROLE_WRITE_FALLBACK_ROLE="${_ROLE_WRITE_FALLBACK_ROLE#crew:}" ;;
+    crew:*) _ROLE_WRITE_FALLBACK_ROLE="${_ROLE_WRITE_FALLBACK_ROLE:5}" ;;
   esac
 }
 
