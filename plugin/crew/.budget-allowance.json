@@ -16,8 +16,8 @@
     "reason": "T8: to trim"
   },
   "plugin/crew/commands/onboard.md": {
-    "lines": 248,
-    "reason": "raised: step 6 runs crew_instructions.py rules, the only caller of the generated .claude/rules"
+    "lines": 255,
+    "reason": "raised: item 5 under 'Then make the knowledge executable' runs crew_autoclear_setup.py so a standalone /crew:onboard configures context.autoClear the same way /crew:init does"
   },
   "plugin/crew/commands/promote.md": {
     "lines": 335,
