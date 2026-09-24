@@ -8,6 +8,7 @@ import os
 import pathlib
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -27,6 +28,109 @@ _BASH = "unprobed"
 # above the longest sleep any fixture here uses (10s) with headroom for a
 # slow CI host, never a value a passing run is expected to approach.
 GATE_SUBPROCESS_TIMEOUT_S = 120
+
+
+def popen_gate(cmd, **kwargs):
+    """`subprocess.Popen`, but the child is made killable as a whole GROUP.
+
+    A gate spawn (verify-gate.sh/.ps1, running commands read out of
+    `.crew/verify.json`) can leave a GRANDCHILD alive after the direct child
+    exits or is killed -- a rule that backgrounds something, or a Git Bash /
+    MSYS helper process the platform's own fork emulation leaves behind. If
+    that grandchild still holds the direct child's stdout/stderr pipe open,
+    `communicate()` blocks forever reading it, because a pipe's read side
+    only ever sees EOF once every process holding its write side has exited.
+    Killing only the direct child (what a plain `subprocess.Popen`/`.kill()`
+    does) does nothing about that grandchild.
+
+    POSIX: `start_new_session=True` makes the child its own session leader,
+    so `os.killpg` (`kill_process_group`, below) reaches everything it forked
+    or backgrounded, not just itself. Windows: `CREATE_NEW_PROCESS_GROUP`
+    is the flag `taskkill /T` needs to walk the same tree -- Windows has no
+    signal-based `killpg` to mirror.
+
+    Use `run_gate` for the ordinary spawn-wait-collect-output case; use this
+    directly only when a test drives more than one gate concurrently by hand
+    (see test_verify_gate_lock_concurrent.py) and pair it with
+    `kill_process_group` on any timeout from a hand-rolled `wait`/
+    `communicate`.
+    """
+    if os.name == "nt":
+        kwargs.setdefault("creationflags", subprocess.CREATE_NEW_PROCESS_GROUP)
+    else:
+        kwargs.setdefault("start_new_session", True)
+    return subprocess.Popen(cmd, **kwargs)  # pylint: disable=consider-using-with
+
+
+def kill_process_group(proc):
+    """Kill `proc` and everything it started (see `popen_gate`). Best-effort:
+    a process that already exited, or one this user cannot signal, is not an
+    error here -- the caller is about to give up on it either way."""
+    if os.name == "nt":
+        subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)],
+                        capture_output=True, timeout=30, check=False)
+    else:
+        try:
+            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+        except (ProcessLookupError, PermissionError, OSError):
+            pass
+    try:
+        proc.kill()
+    except OSError:
+        pass
+
+
+def run_gate(cmd, *, timeout=GATE_SUBPROCESS_TIMEOUT_S, input=None,  # pylint: disable=redefined-builtin
+             check=False, capture_output=False, text=None, stdin=None,
+             stdout=None, stderr=None, cwd=None, env=None):
+    """`subprocess.run`, but a timeout kills the child's whole process GROUP
+    before the retry-drain, not just the one pid `subprocess.run` started.
+
+    `subprocess.run`'s own `timeout` handling -- see cpython's `subprocess.py`
+    -- kills only the direct child, then calls `communicate()` a SECOND time,
+    with no timeout at all, to collect whatever output is left. That second
+    call is the hang: see `popen_gate`'s docstring for why a grandchild can
+    keep the pipe open past the direct child's own death. Every verify-gate
+    spawn in this suite must go through here (or `popen_gate` for the one
+    hand-rolled concurrent case) instead of raw `subprocess.run`/`Popen`, so a
+    hung gate fails as a named `TimeoutExpired` within `timeout` seconds
+    instead of wedging the whole session -- see
+    test_verify_gate_stop_gate_record.py's account of test_34 for the run
+    that first exposed this.
+    """
+    if input is not None:
+        if stdin is not None:
+            raise ValueError("input and stdin are mutually exclusive")
+        stdin = subprocess.PIPE
+    if capture_output:
+        if stdout is not None or stderr is not None:
+            raise ValueError(
+                "capture_output and stdout/stderr are mutually exclusive")
+        stdout = subprocess.PIPE
+        stderr = subprocess.PIPE
+
+    popen_kwargs = dict(cwd=cwd, env=env, stdin=stdin, stdout=stdout,
+                         stderr=stderr)
+    if text is not None:
+        popen_kwargs["text"] = text
+
+    proc = popen_gate(cmd, **popen_kwargs)
+    try:
+        out, err = proc.communicate(input=input, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        kill_process_group(proc)
+        # Bounded drain: every holder of the pipe is now dead, so this
+        # returns fast -- but "fast" is not trusted blindly, hence the bound.
+        try:
+            out, err = proc.communicate(timeout=30)
+        except subprocess.TimeoutExpired:
+            out, err = None, None
+        raise subprocess.TimeoutExpired(
+            cmd, timeout, output=out, stderr=err) from None
+    result = subprocess.CompletedProcess(cmd, proc.returncode, out, err)
+    if check and proc.returncode:
+        raise subprocess.CalledProcessError(proc.returncode, cmd, out, err)
+    return result
 
 
 def _usable(candidate):

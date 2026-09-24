@@ -107,7 +107,7 @@ def _seed_lock(root, age_seconds):
 
 
 def _run_verify(root):
-    return subprocess.run(
+    return crew_fixtures.run_gate(
         [_BASH, _VERIFY_SH],
         input=json.dumps({}), cwd=str(root),
         env=dict(os.environ, CLAUDE_PROJECT_DIR=str(root)),

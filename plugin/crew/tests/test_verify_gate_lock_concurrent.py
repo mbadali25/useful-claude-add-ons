@@ -85,11 +85,11 @@ def test_only_one_flavour_runs_the_expensive_part(tmp_path):
     env = dict(os.environ, CLAUDE_PROJECT_DIR=str(root))
 
     procs = [
-        subprocess.Popen(  # pylint: disable=consider-using-with
+        crew_fixtures.popen_gate(
             [_BASH, _VERIFY_SH], stdin=subprocess.PIPE,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
             cwd=str(root), env=env),
-        subprocess.Popen(  # pylint: disable=consider-using-with
+        crew_fixtures.popen_gate(
             [_PWSH, "-NoProfile", "-NonInteractive", "-File", _VERIFY_PS1],
             stdin=subprocess.PIPE, stdout=subprocess.PIPE,
             stderr=subprocess.PIPE, text=True, cwd=str(root), env=env),
@@ -98,7 +98,11 @@ def test_only_one_flavour_runs_the_expensive_part(tmp_path):
         proc.stdin.write(json.dumps({}))
         proc.stdin.close()
     for proc in procs:
-        proc.wait(timeout=120)
+        try:
+            proc.wait(timeout=120)
+        except subprocess.TimeoutExpired:
+            crew_fixtures.kill_process_group(proc)
+            raise
 
     runs = root / "runs.txt"
     lines = (runs.read_text(encoding="utf-8").split()
@@ -118,11 +122,11 @@ def test_the_loser_backs_off_silently_and_does_not_fail_the_turn(tmp_path):
     env = dict(os.environ, CLAUDE_PROJECT_DIR=str(root))
 
     procs = [
-        subprocess.Popen(  # pylint: disable=consider-using-with
+        crew_fixtures.popen_gate(
             [_BASH, _VERIFY_SH], stdin=subprocess.PIPE,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
             cwd=str(root), env=env),
-        subprocess.Popen(  # pylint: disable=consider-using-with
+        crew_fixtures.popen_gate(
             [_PWSH, "-NoProfile", "-NonInteractive", "-File", _VERIFY_PS1],
             stdin=subprocess.PIPE, stdout=subprocess.PIPE,
             stderr=subprocess.PIPE, text=True, cwd=str(root), env=env),
@@ -130,7 +134,13 @@ def test_the_loser_backs_off_silently_and_does_not_fail_the_turn(tmp_path):
     for proc in procs:
         proc.stdin.write(json.dumps({}))
         proc.stdin.close()
-    results = [proc.communicate(timeout=120) for proc in procs]
+    results = []
+    for proc in procs:
+        try:
+            results.append(proc.communicate(timeout=120))
+        except subprocess.TimeoutExpired:
+            crew_fixtures.kill_process_group(proc)
+            raise
 
     for proc, (out, err) in zip(procs, results):
         assert proc.returncode == 0, f"stdout: {out} stderr: {err}"
@@ -146,7 +156,7 @@ def test_a_second_pair_on_the_next_turn_still_runs(tmp_path):
     env = dict(os.environ, CLAUDE_PROJECT_DIR=str(root))
 
     for _ in range(2):
-        proc = subprocess.run(
+        proc = crew_fixtures.run_gate(
             [_BASH, _VERIFY_SH], input=json.dumps({}), cwd=str(root),
             env=env, capture_output=True, text=True, check=False, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
         assert proc.returncode == 0, f"stderr: {proc.stderr}"

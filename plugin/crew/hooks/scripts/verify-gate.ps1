@@ -1546,8 +1546,32 @@ foreach ($ident in $cmds) {
   $global:LASTEXITCODE = 0
   Push-Location $root
   try {
-    $out = & $bashExe -c $c 2>&1
-    $rc = $LASTEXITCODE
+    # Captured through a REGULAR FILE, not `$out = & ... 2>&1` (kept as the
+    # fallback below for the one case a temp file cannot be made) - the
+    # twin of the same fix in verify-gate.sh, where the full rationale
+    # lives. Capturing to a variable reads the child's output through a
+    # pipe PowerShell itself manages, and a pipe only ever reports EOF once
+    # EVERY process holding its write end has closed it - so a rule that
+    # backgrounds something and does not itself wait for it inherits that
+    # same write end, and the grandchild holding it open wedges THIS
+    # process forever, the same way as the bash side. A file has no such
+    # rule: `Get-Content` reads whatever is on disk right now and hits EOF
+    # at the file's current size regardless of who else still has it open
+    # for writing.
+    $ruleOutFile = $null
+    try { $ruleOutFile = [System.IO.Path]::GetTempFileName() } catch { $ruleOutFile = $null }
+    if ($ruleOutFile) {
+      & $bashExe -c $c > $ruleOutFile 2>&1
+      $rc = $LASTEXITCODE
+      $out = @(Get-Content -Path $ruleOutFile -ErrorAction SilentlyContinue)
+      Remove-Item -Path $ruleOutFile -Force -ErrorAction SilentlyContinue
+    } else {
+      # No writable temp dir: fall back to the old capture form rather
+      # than skipping the rule outright - a check that still runs,
+      # carrying the original wedge risk, beats one silently skipped.
+      $out = & $bashExe -c $c 2>&1
+      $rc = $LASTEXITCODE
+    }
   } finally {
     Pop-Location
   }

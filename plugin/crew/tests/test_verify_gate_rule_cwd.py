@@ -97,7 +97,7 @@ def _repo(tmp_path, rules):
 
 
 def _run_verify(root):
-    return subprocess.run(
+    return crew_fixtures.run_gate(
         [_PWSH, "-NoProfile", "-NonInteractive", "-File", _VERIFY_PS1],
         input=json.dumps({}), cwd=str(root),
         env=dict(os.environ, CLAUDE_PROJECT_DIR=str(root)),

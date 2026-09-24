@@ -127,7 +127,7 @@ def _repo(tmp_path, verify_map):
 
 def _run(root, tools_dir):
     env = dict(os.environ, PATH=tools_dir, CLAUDE_PROJECT_DIR=str(root))
-    return subprocess.run(
+    return crew_fixtures.run_gate(
         [_BASH, _SH], input="{}", cwd=str(root), env=env,
         capture_output=True, text=True, check=False, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S,
     )
@@ -736,7 +736,7 @@ def test_a_windowsapps_stub_fails_closed_with_zero_rules_run(tmp_path):
     combined_path = windows_apps_dir + os.pathsep + tools_dir
 
     env = dict(os.environ, PATH=combined_path, CLAUDE_PROJECT_DIR=str(root))
-    result = subprocess.run(
+    result = crew_fixtures.run_gate(
         [_BASH, _SH], input="{}", cwd=str(root), env=env,
         capture_output=True, text=True, check=False, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S,
     )
@@ -795,7 +795,7 @@ def test_matcher_producing_no_output_fails_closed_even_past_crew_py_strict(tmp_p
     os.chmod(stub, 0o755)
 
     env = dict(os.environ, PATH=tools_dir, CLAUDE_PROJECT_DIR=str(root))
-    result = subprocess.run(
+    result = crew_fixtures.run_gate(
         [_BASH, _SH], input="{}", cwd=str(root), env=env,
         capture_output=True, text=True, check=False, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S,
     )

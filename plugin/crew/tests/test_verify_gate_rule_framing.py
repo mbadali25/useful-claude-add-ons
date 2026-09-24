@@ -88,7 +88,7 @@ def _repo(tmp_path, verify_map):
 
 def _run(script, root, interpreter=None):
     cmd = list(interpreter or [_BASH]) + [script]
-    return subprocess.run(
+    return crew_fixtures.run_gate(
         cmd, input=json.dumps({}), cwd=str(root),
         env=dict(os.environ, CLAUDE_PROJECT_DIR=str(root)),
         capture_output=True, text=True, check=False, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S,

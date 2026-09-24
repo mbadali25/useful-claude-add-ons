@@ -85,7 +85,7 @@ def _launchable(path):
 def _print_python(path_entries):
     env = os.environ.copy()
     env["PATH"] = os.pathsep.join(path_entries)
-    result = subprocess.run(
+    result = crew_fixtures.run_gate(
         [_PWSH, "-NoProfile", "-NonInteractive", "-File", _PS1, "-PrintPython"],
         env=env, stdin=subprocess.DEVNULL, capture_output=True, text=True,
         check=False, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S,
@@ -177,7 +177,7 @@ def test_a_profile_function_named_python_does_not_shadow_the_interpreter(tmp_pat
 
     env = os.environ.copy()
     env["PATH"] = str(real)
-    result = subprocess.run(
+    result = crew_fixtures.run_gate(
         [_PWSH, "-NoProfile", "-NonInteractive", "-File", str(script_path)],
         env=env, stdin=subprocess.DEVNULL, capture_output=True, text=True,
         check=False, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S,
@@ -238,7 +238,7 @@ def test_the_scope_report_call_site_actually_uses_the_hardened_resolver(tmp_path
         [str(apps), os.path.dirname(shutil.which("git"))])
     env["CLAUDE_PROJECT_DIR"] = str(repo)
 
-    result = subprocess.run(
+    result = crew_fixtures.run_gate(
         [_PWSH, "-NoProfile", "-NonInteractive", "-File", _PS1],
         input="{}", cwd=str(repo), env=env,
         capture_output=True, text=True, check=False, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S,
@@ -300,7 +300,7 @@ def test_a_missing_scope_report_says_so_instead_of_a_python_error(tmp_path):
                    check=True, capture_output=True, text=True, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
     (repo / "unverified.py").write_text("x = 1", encoding="utf-8")
 
-    result = subprocess.run(
+    result = crew_fixtures.run_gate(
         [_PWSH, "-NoProfile", "-NonInteractive", "-File", str(copied)],
         input="{}", cwd=str(repo),
         env=dict(os.environ, CLAUDE_PROJECT_DIR=str(repo)),
@@ -330,7 +330,7 @@ def test_the_bash_flavour_also_names_a_missing_scope_report(tmp_path):
     copied = lonely / "verify-gate.sh"
 
     repo = _fixture_repo(tmp_path)
-    result = subprocess.run(
+    result = crew_fixtures.run_gate(
         [_BASH, str(copied)], input="{}", cwd=str(repo),
         env=dict(os.environ, CLAUDE_PROJECT_DIR=str(repo)),
         capture_output=True, text=True, check=False, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S,
