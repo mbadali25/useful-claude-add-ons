@@ -244,6 +244,44 @@ def test_the_forced_continuation_hands_over_to_auto_clear(flavor, tmp_path):
     assert "would have sent" in _log(root), _log(root) + result.stderr
 
 
+@pytest.mark.skipif(_BASH is None, reason="needs bash")
+def test_context_watch_stdout_reaches_eof_promptly_even_with_a_long_delay(tmp_path):
+    """FIX (Codex): auto-clear.sh's detached tmux/xdotool sender used to
+    inherit fd 3 -- the real hook stdout `cw_run_auto_clear` dup's onto it
+    before handing over -- so the sender held that pipe open for the whole
+    `sleep $DELAY`, and whoever reads the hook's stdout (Claude Code; here,
+    this test's own subprocess pipe) never saw EOF until the sender woke up
+    and exited. delaySeconds=30 against a 5s read deadline proves the fix
+    without the test itself waiting out the delay: the OLD code would still
+    be sleeping, well past the deadline.
+
+    Deliberately NOT `_invoke` (which always sets CREW_AUTOCLEAR_INHIBIT):
+    inhibit skips the spawn entirely and would prove nothing here. The fake
+    `tmux` is genuinely invoked by the real (harmless) detached sender."""
+    root = _repo(tmp_path, method="tmux", delaySeconds=30)
+    _machine(root)
+    _write_marker(root)
+    _write_handoff(root)
+    bindir = tmp_path / "fakebin"
+    crew_fixtures.write_shim(bindir, "tmux", f"#!/bin/sh\necho {os.getpid()}\n")
+    home = tmp_path / "home"  # `_machine` writes to root.parent/"home" == tmp_path/"home"
+    env = dict(os.environ, HOME=str(home), USERPROFILE=str(home),
+               CLAUDE_PROJECT_DIR=str(root),
+               PATH=crew_fixtures.shell_path("sh", [bindir]),
+               TMUX="/tmp/fake,1,0", TMUX_PANE="%7")
+    payload = _stop(root, root / ".work" / "irrelevant.jsonl", active=True)
+
+    started = time.time()
+    result = subprocess.run([_BASH, _script("sh", "context-watch")], cwd=str(root), env=env,
+                            input=json.dumps(payload), capture_output=True, text=True,
+                            timeout=5, check=False)
+    elapsed = time.time() - started
+
+    assert result.returncode == 0, result.stderr
+    assert elapsed < 5, elapsed
+    assert "sent - method tmux" in _log(root), _log(root) + result.stderr
+
+
 @by_flavor
 def test_the_forced_continuation_reaches_auto_clear_with_no_repo_config_json(flavor, tmp_path):
     """crew 1.0 F4 reachability fix. Before it, `context-watch.sh:81` /
@@ -611,6 +649,28 @@ def test_auto_resolves_to_notify_on_native_windows_and_never_to_sendkeys(flavor,
     assert "would send" in result.stdout, result.stdout + result.stderr
     assert "method: notify" in result.stdout, result.stdout
     assert "sendkeys" not in result.stdout
+
+
+@by_flavor
+def test_notify_dry_run_never_reports_a_delay_number(flavor, tmp_path):
+    """`notify` types nothing, so `delaySeconds` buys it no wait -- printing
+    the configured number (or, as `auto-clear.ps1` used to, a hardcoded `0`)
+    would read as a real delay `notify` never takes. Both flavours print the
+    identical `n/a` text instead; `_repo`'s configured delaySeconds (9, not
+    the default 3) proves the printed text is not simply the default."""
+    root = _repo(tmp_path, delaySeconds=9)
+    _machine(root)
+    _write_marker(root)
+    _write_handoff(root)
+    env = dict(_NO_CAPABILITY_ENV, OS="Windows_NT")
+
+    result = _invoke(flavor, "auto-clear", root, args=("--session", SESSION_A, "--dry-run"),
+                     env_extra=env)
+
+    assert "method: notify" in result.stdout, result.stdout
+    assert "delay: n/a (notify sends no keystroke)" in result.stdout, result.stdout
+    assert "delay: 9s" not in result.stdout
+    assert "delay: 0s" not in result.stdout
 
 
 @by_flavor

@@ -431,12 +431,22 @@ def test_the_second_attempt_in_one_session_is_silent(flavor, tmp_path):
 @by_flavor
 def test_the_dry_run_plan_reports_the_configured_command_and_delay(
         flavor, tmp_path):
+    """A keystroke method (sh's tmux here) must echo the configured delay
+    verbatim -- it is a real wait. `_sendable`'s ps1 config leaves `method`
+    at `auto`, which auto-clear.ps1's OWNER DECISION always resolves to
+    `notify`, never `sendkeys`; `notify` types nothing, so there is no wait
+    to report and the configured number must NOT appear as if it were one --
+    see auto-clear.sh/.ps1's shared "delay: n/a" text."""
     cfg, env = _sendable(flavor, tmp_path)
     cfg = dict(cfg, command="/compact", delaySeconds=9)
     root = _repo(tmp_path, auto_clear=cfg)
     out = _run(flavor, root, "--dry-run", env_extra=env).stdout
     assert "command: /compact" in out
-    assert "delay: 9s" in out
+    if flavor == "sh":
+        assert "delay: 9s" in out
+    else:
+        assert "delay: n/a (notify sends no keystroke)" in out
+        assert "delay: 9s" not in out
 
 
 @pytest.mark.skipif("sh" not in FLAVORS, reason="needs bash")

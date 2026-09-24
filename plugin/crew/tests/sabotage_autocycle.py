@@ -387,6 +387,26 @@ AUTOCYCLE_MUTATIONS = (
      "  return $Arg\n  $sb = New-Object System.Text.StringBuilder\n",
      "tests/test_auto_clear_review_fixes.py::"
      "test_convert_to_crew_win32_arg_round_trips_through_the_real_argv_algorithm[root-with-space]"),
+    # --- notify's dry-run delay must never echo a number (Windows relay,
+    # 2f7f71f7, item 3): `notify` types nothing, so `delaySeconds` buys it no
+    # wait, and echoing the configured number (or a hardcoded 0) reads as a
+    # real delay it never takes. ---
+    ("auto-clear.sh's notify dry-run echoes the configured delay again", CLEAR_SH,
+     '  [ "$RESOLVED" = "notify" ] && DELAY_LINE="delay: n/a (notify sends no keystroke)"\n',
+     "",
+     _T + "test_notify_dry_run_never_reports_a_delay_number[sh]"),
+    ("auto-clear.ps1's notify dry-run hardcodes delay: 0s again", CLEAR_PS1,
+     '    Write-Output "  delay: n/a (notify sends no keystroke)"\n',
+     '    Write-Output "  delay: 0s"\n',
+     _T + "test_notify_dry_run_never_reports_a_delay_number[ps1]"),
+    # --- fd 3 leaking into the detached tmux/xdotool sender (Codex FIX, item
+    # 4): held context-watch.sh's own stdout pipe open for the whole
+    # `sleep $DELAY`, which is what let a slow /clear hit the hook's 20s
+    # timeout even though context-watch.sh itself had long since exited. ---
+    ("auto-clear.sh's detached sender inherits fd 3 again", CLEAR_SH,
+     'setsid bash "$send_script" 3>&- >/dev/null 2>&1 &',
+     'setsid bash "$send_script" >/dev/null 2>&1 &',
+     _T + "test_context_watch_stdout_reaches_eof_promptly_even_with_a_long_delay"),
     ("context-watch.sh swallows auto-clear's stdout when mktemp fails again", WATCH_SH,
      "  exec 3>&1\n"
      "  err=$(bash \"$(dirname \"${BASH_SOURCE[0]}\")/auto-clear.sh\" --root \"$PWD\" --session \"$SESSION_ID\" 2>&1 1>&3)\n"

@@ -460,7 +460,11 @@ if ($method -eq "notify") {
     Write-Output "autoclear: would send"
     Write-Output "  method: notify"
     Write-Output "  command: $command"
-    Write-Output "  delay: 0s"
+    # Never a number here: notify types nothing, so there is no wait to
+    # report, and printing the configured delaySeconds (or a hardcoded 0)
+    # would contradict context.autoClear.delaySeconds for no reason a reader
+    # could infer from the figure alone. Same text as the .sh twin.
+    Write-Output "  delay: n/a (notify sends no keystroke)"
     exit 0
   }
   if (-not $Force) {

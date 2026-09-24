@@ -969,6 +969,15 @@ property of the machine — but **a wrong global value now aims keystrokes at th
 wrong window in every repo on that machine rather than in one.** That is the
 trade, taken deliberately.
 
+**`--dry-run`'s delay line never states a number for `notify`.** `notify`
+types nothing, so `delaySeconds` buys it nothing; both `auto-clear.sh` and
+`auto-clear.ps1` print `delay: n/a (notify sends no keystroke)` there instead
+of echoing the configured value (or a hardcoded `0`, which `auto-clear.ps1`
+did until this was fixed) — either would read as a real wait that
+`delaySeconds` controls, which for `notify` it never does. A keystroke
+method (`tmux`, `xdotool`, `sendkeys`) still echoes the configured delay
+verbatim.
+
 Its default is `null` where the scripts fall back to `""`. The two are
 behaviourally identical (`if ($a.windowTitle)` is false for either, and
 `auto-clear.sh` does the same), and `null` wins the tiebreak: `""` can read
