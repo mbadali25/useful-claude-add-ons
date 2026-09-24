@@ -35,7 +35,7 @@ fail() { FAIL=$((FAIL + 1)); printf '  FAIL  %s\n' "$1"; }
 [ -f "$API" ] || { echo "FAIL: cannot find jira-api.sh at $API" >&2; exit 1; }
 
 REAL_JQ="$(command -v jq 2>/dev/null)"
-[ -n "$REAL_JQ" ] || { echo "TOOL MISSING: jq is not on PATH, so the jq-PRESENT half of this suite DID NOT RUN. This is a missing tool, not a failed check. Install jq." >&2; exit 127; }
+[ -n "$REAL_JQ" ] || { echo "TOOL MISSING: jq is not on PATH, so this suite DID NOT RUN. This is a missing tool, not a failed check. Install jq." >&2; exit 77; }
 
 TMP="$(mktemp -d)" || exit 1
 trap 'rm -rf "$TMP"' EXIT
@@ -44,7 +44,21 @@ trap 'rm -rf "$TMP"' EXIT
 # NOJQ holds only the recording curl stub, so jq is genuinely absent rather
 # than shadowed. WITHJQ adds a symlink to the real jq. Neither contains any
 # other binary, which is why everything below sticks to bash builtins.
-mkdir -p "$TMP/nojq" "$TMP/withjq"
+#
+# _jira_jq() (jira-api.sh:48-55) does not stop at PATH: after `jq`/`jq.exe` it
+# also tries `${HOME}/scoop/shims/jq.exe` and three Chocolatey/Program-Files
+# absolute paths, by `[[ -x "$c" ]]`, which reads the filesystem directly and
+# is NOT affected by stripping PATH. So on a Windows/Git-Bash host with jq
+# installed via Scoop, "nojq" mode with only PATH scrubbed would still find
+# the real jq.exe through $HOME and silently defeat this suite's own
+# hermeticity claim. `drive()` below repoints HOME for nojq mode to a fresh
+# empty directory under $TMP to close that one; it CANNOT close the
+# Chocolatey/Program-Files candidates the same way, because those are
+# absolute system paths with no HOME-relative component to redirect - on a
+# host where jq is installed via Chocolatey (not Scoop), "nojq" mode is not
+# actually hermetic and this suite's jq-absent cases would silently exercise
+# the real jq instead of the TOOL-MISSING path. That gap is not closed here.
+mkdir -p "$TMP/nojq" "$TMP/nojq/home" "$TMP/withjq"
 cat >"$TMP/nojq/curl" <<'STUB'
 #!/bin/bash
 # Recording stub. Never contacts anything. One arg per line into $CURL_LOG.
@@ -82,6 +96,11 @@ drive() {
     export JIRA_API_TOKEN="fixture-token-not-real"
     export JIRA_BASE_URL="https://fixture.example.invalid"
     export PATH="$TMP/$mode"
+    # HOME is repointed too, not just PATH - see the comment above the
+    # fixture setup: _jira_jq()'s Scoop candidate is HOME-relative, and a
+    # real jq under the ambient $HOME/scoop/shims would otherwise resolve
+    # even with PATH scrubbed.
+    [ "$mode" = nojq ] && export HOME="$TMP/nojq/home"
     # shellcheck disable=SC1090
     source "$API" && "$@"
   } 2>"$errf" )
