@@ -10,6 +10,8 @@ import json
 import os
 import re
 import subprocess
+import sys
+import time
 
 import pytest
 
@@ -20,7 +22,6 @@ SHA_RE = re.compile(r"^[0-9a-f]{7}$")
 
 
 def test_context_puts_script_dirs_on_sys_path():
-    import sys  # pylint: disable=import-outside-toplevel
     assert any(p.endswith("hooks\\scripts") or p.endswith("hooks/scripts")
                for p in sys.path)
     assert any(p.endswith("crew-graph\\scripts")
@@ -228,3 +229,47 @@ def test_a_posix_shim_is_executable_and_has_no_cmd_twin(tmp_path):
     assert os.access(path, os.X_OK)
     assert [p.name for p in tmp_path.iterdir()] == ["tmux"]
     assert subprocess.run([path], capture_output=True, text=True, check=False).stdout == "7\n"
+
+
+# --- gate_processes: hygiene, not a check --------------------------------
+
+def _pid_alive(pid):
+    if os.name == "nt":
+        done = subprocess.run(
+            ["tasklist", "/FI", f"PID eq {pid}"], capture_output=True,
+            text=True, check=False, timeout=30)
+        return str(pid) in done.stdout
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+    return True
+
+
+def test_gate_processes_kills_a_still_running_child_at_teardown():
+    """Drives `gate_processes` as a plain generator (`__wrapped__` is the
+    undecorated function every `@pytest.fixture` carries) rather than
+    through pytest's own fixture machinery -- the finalizer under test IS
+    the code after `yield`, and a generator's `next()` past that point runs
+    it, with no need to spin up a second pytest session just to observe a
+    teardown.
+
+    A REAL child (through `popen_gate`, killable as a whole group the same
+    way a real gate spawn is), sleeping far longer than this test, proves
+    the finalizer actually reaches it rather than merely not raising."""
+    gen = crew_fixtures.gate_processes.__wrapped__()
+    track = next(gen)
+    proc = crew_fixtures.popen_gate(
+        [sys.executable, "-c", "import time; time.sleep(120)"],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    track(proc)
+    assert _pid_alive(proc.pid), "sanity: the child never actually started"
+
+    assert next(gen, "exhausted") == "exhausted", (
+        "gate_processes's body must contain exactly one yield")
+
+    deadline = time.time() + 10
+    while _pid_alive(proc.pid) and time.time() < deadline:
+        time.sleep(0.1)
+    assert not _pid_alive(proc.pid), (
+        "gate_processes's finalizer did not kill the tracked child")

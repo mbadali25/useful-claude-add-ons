@@ -16,6 +16,10 @@ import pytest
 import context  # noqa: F401  pylint: disable=unused-import
 import crew_config
 import crew_state
+# Re-exported so pytest discovers it as a fixture package-wide (fixture
+# discovery is by name in a conftest module's namespace, not by definition
+# site) -- see crew_fixtures.gate_processes's own docstring for what it does.
+from crew_fixtures import gate_processes  # noqa: F401  pylint: disable=unused-import
 
 
 @pytest.fixture(autouse=True)

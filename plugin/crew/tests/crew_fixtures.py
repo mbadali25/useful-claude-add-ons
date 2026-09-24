@@ -133,6 +133,46 @@ def run_gate(cmd, *, timeout=GATE_SUBPROCESS_TIMEOUT_S, input=None,  # pylint: d
     return result
 
 
+@pytest.fixture
+def gate_processes():
+    """Hygiene, not a check: kills every tracked gate's whole process GROUP
+    at test teardown, regardless of whether the test passed, failed, or
+    raised partway through -- and makes no assertion of its own about what
+    it finds still running.
+
+    `run_gate` already cleans up its OWN spawn on a `TimeoutExpired`, but a
+    test that drives `popen_gate` directly (concurrent-lock tests, the
+    stdin-bound tests that hold a pipe open on purpose) owns its process for
+    the whole test body, and an assertion failing partway through skips
+    whatever manual `finally:` cleanup that test wrote. A gate left running
+    past its own test can still be holding `.crew/.verify-gate.lock`, which
+    then fails the NEXT test to spawn one for a reason that has nothing to
+    do with what that next test is actually checking.
+
+    Usage: request this fixture, then call it (it IS the tracking function)
+    on every `Popen` returned by `popen_gate` as soon as you have it --
+    `gate_processes(proc)`. A test that already closes its own process out
+    cleanly gains nothing from also registering it here except a harmless,
+    already-dead `poll()` at teardown; one that does not is now covered
+    either way.
+    """
+    procs = []
+    yield procs.append
+    for proc in procs:
+        if proc.poll() is None:
+            kill_process_group(proc)
+            # SIGKILL/taskkill only ends execution -- the pid stays a zombie,
+            # still answering `os.kill(pid, 0)`, until something reaps it.
+            # `kill_process_group`'s OWN callers (`run_gate`'s timeout path)
+            # get that for free from the `communicate()` retry right after
+            # it; this fixture has no such second call, so it does the
+            # `wait()` itself.
+            try:
+                proc.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                pass
+
+
 def _usable(candidate):
     """Does this bash actually run a script living at a Windows path?
 
