@@ -124,6 +124,10 @@ These back the `/gizmoduck:*` commands; all use `gizmoduck.py`:
 - **report** / **tickets** — regenerate a report or open tickets from an existing
   `findings.jsonl` without rescanning.
 - **update** — `gizmoduck.py update` refreshes the Nuclei engine and templates.
+- **ci** — `gizmoduck_ci.py render` installs GitHub Actions / Bitbucket Pipelines security
+  scans into a repo. Dry run by default; `--apply` writes and refuses to overwrite without
+  `--force`. Confirm who authorised scanning the staging URL (`--authorized-by`) and never
+  contact the staging URL from the session - see `commands/ci.md`.
 - **doctor** — `gizmoduck.py doctor` verifies nuclei, templates, python, and
   wkhtmltopdf; if anything's missing, point the user at the bootstrap scripts.
   It also reports whether `NVD_API_KEY` is set (never the value) — that's a

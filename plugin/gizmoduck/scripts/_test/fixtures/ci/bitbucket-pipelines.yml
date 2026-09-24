@@ -1,0 +1,172 @@
+# Rendered by /gizmoduck:ci (gizmoduck 0.0.0-golden).
+# Re-render with gizmoduck_ci.py rather than hand-editing; the prod-refusal
+# guard's staging origins are baked in below and re-checked at runtime.
+# Repository variables read at runtime: GIZMODUCK_BB_TOKEN (secured; baseline
+# Downloads), GIZMODUCK_ALLOWED_PROD_ORIGINS + GIZMODUCK_ALLOW_PROD_SCAN,
+# GIZMODUCK_ALLOWED_IP_ORIGINS, GIZMODUCK_ALLOW_NO_BASELINE,
+# GIZMODUCK_ALLOW_INCOMPLETE, GIZMODUCK_TRUST_ASSIGNED_SEVERITY, NVD_API_KEY,
+# GIZMODUCK_SDP_TICKETS + SDP_BASE_URL + SDP_API_KEY (+ SDP_AUTH_HEADER).
+image: ghcr.io/example/gizmoduck-ci:0.0.0-golden
+
+definitions:
+  steps:
+    - step: &gizmoduck-code-scan
+        name: "gizmoduck: code scan (Semgrep, Trivy fs, Checkov, Dependency-Check)"
+        size: 2x
+        max-time: 120
+        script:
+          - |
+            export GIZMODUCK_HOME="${GIZMODUCK_HOME:-/opt/gizmoduck}"
+            export GIZMODUCK_OUT=/tmp/gizmoduck-out/code
+            export GIZMODUCK_AUTHORIZED_BY='Jane Doe (CISO), ticket SEC-42 - '"'"'quoted'"'"' "too"'
+            export GIZMODUCK_DEFAULT_BRANCH=main
+            export GIZMODUCK_SOURCE_REPO=https://github.com/mbadali25/useful-claude-add-ons
+            export GIZMODUCK_REF=0123456789abcdef0123456789abcdef01234567
+            export GIZMODUCK_STAGING_URLS=https://staging.example.com
+            export GIZMODUCK_ENABLE=nikto,nmap
+            export PATH="$HOME/.local/bin:$PATH"
+          - |
+            GIZMODUCK_HOME="${GIZMODUCK_HOME:-/opt/gizmoduck}"
+            if [ -f "$GIZMODUCK_HOME/scripts/gizmoduck_ci.py" ]; then
+              echo "gizmoduck: toolchain present at $GIZMODUCK_HOME (runner image)"
+            else
+              echo "gizmoduck: runner image not in use - inline bootstrap from $GIZMODUCK_SOURCE_REPO@$GIZMODUCK_REF (slow; build the image to skip this)"
+              SUDO=""
+              if [ "$(id -u)" -ne 0 ]; then SUDO=sudo; fi
+              if ! command -v sudo >/dev/null 2>&1; then apt-get update -y && apt-get install -y sudo; fi
+              $SUDO apt-get update -y
+              $SUDO apt-get install -y ca-certificates curl git unzip python3 python3-pip python3-yaml
+              src="$(mktemp -d)"
+              git -C "$src" init -q
+              git -C "$src" fetch -q --depth 1 "$GIZMODUCK_SOURCE_REPO" "$GIZMODUCK_REF"
+              git -C "$src" checkout -q FETCH_HEAD
+              $SUDO rm -rf "$GIZMODUCK_HOME"
+              $SUDO cp -r "$src/plugin/gizmoduck" "$GIZMODUCK_HOME"
+              PIP_BREAK_SYSTEM_PACKAGES=1 bash "$GIZMODUCK_HOME/bootstrap.sh"
+            fi
+          - |
+            mkdir -p /tmp/gizmoduck-baseline/code "$GIZMODUCK_OUT"
+            if [ -n "${GIZMODUCK_BB_TOKEN:-}" ]; then
+              curl -fsSL -H "Authorization: Bearer $GIZMODUCK_BB_TOKEN" -o /tmp/gizmoduck-baseline/code/findings.jsonl "https://api.bitbucket.org/2.0/repositories/$BITBUCKET_REPO_FULL_NAME/downloads/gizmoduck-code-baseline.jsonl" || { rm -f /tmp/gizmoduck-baseline/code/findings.jsonl; echo "gizmoduck: no code baseline in Downloads yet"; }
+            else
+              echo "gizmoduck: GIZMODUCK_BB_TOKEN is not set - no baseline can be read or saved"
+            fi
+          - |
+            python3 "$GIZMODUCK_HOME/scripts/gizmoduck_ci.py" code-stage --path "$BITBUCKET_CLONE_DIR" --out "$GIZMODUCK_OUT"
+          - |
+            python3 "$GIZMODUCK_HOME/scripts/gizmoduck_ci.py" publish --out "$GIZMODUCK_OUT" --baseline /tmp/gizmoduck-baseline/code/findings.jsonl --title 'gizmoduck code scan'
+          - |
+            gate_rc=0
+            python3 "$GIZMODUCK_HOME/scripts/gizmoduck_ci.py" gate --baseline /tmp/gizmoduck-baseline/code/findings.jsonl --current "$GIZMODUCK_OUT/findings.jsonl" --manifest "$GIZMODUCK_OUT/run-manifest.json" --json-out "$GIZMODUCK_OUT/gate.json" --new-out "$GIZMODUCK_OUT/new-blocking.jsonl" || gate_rc=$?
+          - |
+            python3 "$GIZMODUCK_HOME/scripts/gizmoduck_ci.py" bb-insights "$GIZMODUCK_OUT/findings.jsonl" --gate "$GIZMODUCK_OUT/gate.json" --outdir "$GIZMODUCK_OUT/insights" --srcroot "$BITBUCKET_CLONE_DIR" || true
+            rep="http://api.bitbucket.org/2.0/repositories/$BITBUCKET_REPO_FULL_NAME/commit/$BITBUCKET_COMMIT/reports/gizmoduck-code"
+            if [ -f "$GIZMODUCK_OUT/insights/report.json" ]; then
+              curl -fsS --proxy http://localhost:29418 -X PUT "$rep" -H "Content-Type: application/json" --data-binary @"$GIZMODUCK_OUT/insights/report.json" || echo "gizmoduck: Code Insights report upload failed"
+              for f in "$GIZMODUCK_OUT"/insights/annotations-*.json; do
+                [ -f "$f" ] || continue
+                curl -fsS --proxy http://localhost:29418 -X POST "$rep/annotations" -H "Content-Type: application/json" --data-binary @"$f" || echo "gizmoduck: annotation upload failed for $f"
+              done
+            fi
+          - |
+            if [ "$gate_rc" -eq 0 ] && [ "${BITBUCKET_BRANCH:-}" = "$GIZMODUCK_DEFAULT_BRANCH" ] && [ -z "${BITBUCKET_PR_ID:-}" ] && [ -n "${GIZMODUCK_BB_TOKEN:-}" ]; then
+              curl -fsS -X POST -H "Authorization: Bearer $GIZMODUCK_BB_TOKEN" -F "files=@$GIZMODUCK_OUT/findings.jsonl;filename=gizmoduck-code-baseline.jsonl" "https://api.bitbucket.org/2.0/repositories/$BITBUCKET_REPO_FULL_NAME/downloads" || echo "gizmoduck: baseline upload failed - the next run compares against the previous baseline"
+            fi
+          - |
+            if [ "$gate_rc" -eq 1 ] && [ -z "${BITBUCKET_PR_ID:-}" ] && [ "${GIZMODUCK_SDP_TICKETS:-}" = "true" ]; then
+              python3 "$GIZMODUCK_HOME/scripts/gizmoduck_ci.py" tickets "$GIZMODUCK_OUT/new-blocking.jsonl" --out "$GIZMODUCK_OUT/tickets.json" --yes || echo "gizmoduck: ticketing failed"
+            fi
+          - |
+            mkdir -p "$BITBUCKET_CLONE_DIR/gizmoduck-out"
+            cp -r "$GIZMODUCK_OUT" "$BITBUCKET_CLONE_DIR/gizmoduck-out/code"
+            exit "$gate_rc"
+        artifacts:
+          - gizmoduck-out/**
+    - step: &gizmoduck-endpoint-scan
+        name: "gizmoduck: staging endpoint scan (Nuclei, ZAP baseline, testssl, nikto, nmap)"
+        size: 2x
+        max-time: 120
+        script:
+          - |
+            export GIZMODUCK_HOME="${GIZMODUCK_HOME:-/opt/gizmoduck}"
+            export GIZMODUCK_OUT=/tmp/gizmoduck-out/endpoints
+            export GIZMODUCK_AUTHORIZED_BY='Jane Doe (CISO), ticket SEC-42 - '"'"'quoted'"'"' "too"'
+            export GIZMODUCK_DEFAULT_BRANCH=main
+            export GIZMODUCK_SOURCE_REPO=https://github.com/mbadali25/useful-claude-add-ons
+            export GIZMODUCK_REF=0123456789abcdef0123456789abcdef01234567
+            export GIZMODUCK_STAGING_URLS=https://staging.example.com
+            export GIZMODUCK_ENABLE=nikto,nmap
+            export PATH="$HOME/.local/bin:$PATH"
+          - |
+            GIZMODUCK_HOME="${GIZMODUCK_HOME:-/opt/gizmoduck}"
+            if [ -f "$GIZMODUCK_HOME/scripts/gizmoduck_ci.py" ]; then
+              echo "gizmoduck: toolchain present at $GIZMODUCK_HOME (runner image)"
+            else
+              echo "gizmoduck: runner image not in use - inline bootstrap from $GIZMODUCK_SOURCE_REPO@$GIZMODUCK_REF (slow; build the image to skip this)"
+              SUDO=""
+              if [ "$(id -u)" -ne 0 ]; then SUDO=sudo; fi
+              if ! command -v sudo >/dev/null 2>&1; then apt-get update -y && apt-get install -y sudo; fi
+              $SUDO apt-get update -y
+              $SUDO apt-get install -y ca-certificates curl git unzip python3 python3-pip python3-yaml
+              src="$(mktemp -d)"
+              git -C "$src" init -q
+              git -C "$src" fetch -q --depth 1 "$GIZMODUCK_SOURCE_REPO" "$GIZMODUCK_REF"
+              git -C "$src" checkout -q FETCH_HEAD
+              $SUDO rm -rf "$GIZMODUCK_HOME"
+              $SUDO cp -r "$src/plugin/gizmoduck" "$GIZMODUCK_HOME"
+              PIP_BREAK_SYSTEM_PACKAGES=1 bash "$GIZMODUCK_HOME/bootstrap.sh"
+            fi
+          - |
+            # Prod-refusal guard: runs before any endpoint scan and fails the step on a refused target.
+            mkdir -p "$GIZMODUCK_OUT"
+            python3 "$GIZMODUCK_HOME/scripts/gizmoduck_ci.py" targets --endpoints "$BITBUCKET_CLONE_DIR/.crew/endpoints.json" --out "$GIZMODUCK_OUT/targets.json"
+          - |
+            mkdir -p /tmp/gizmoduck-baseline/endpoints "$GIZMODUCK_OUT"
+            if [ -n "${GIZMODUCK_BB_TOKEN:-}" ]; then
+              curl -fsSL -H "Authorization: Bearer $GIZMODUCK_BB_TOKEN" -o /tmp/gizmoduck-baseline/endpoints/findings.jsonl "https://api.bitbucket.org/2.0/repositories/$BITBUCKET_REPO_FULL_NAME/downloads/gizmoduck-endpoints-baseline.jsonl" || { rm -f /tmp/gizmoduck-baseline/endpoints/findings.jsonl; echo "gizmoduck: no endpoints baseline in Downloads yet"; }
+            else
+              echo "gizmoduck: GIZMODUCK_BB_TOKEN is not set - no baseline can be read or saved"
+            fi
+          - |
+            python3 "$GIZMODUCK_HOME/scripts/gizmoduck_ci.py" endpoint-stage --targets "$GIZMODUCK_OUT/targets.json" --out "$GIZMODUCK_OUT"
+          - |
+            python3 "$GIZMODUCK_HOME/scripts/gizmoduck_ci.py" publish --out "$GIZMODUCK_OUT" --baseline /tmp/gizmoduck-baseline/endpoints/findings.jsonl --title 'gizmoduck staging endpoint scan'
+          - |
+            gate_rc=0
+            python3 "$GIZMODUCK_HOME/scripts/gizmoduck_ci.py" gate --baseline /tmp/gizmoduck-baseline/endpoints/findings.jsonl --current "$GIZMODUCK_OUT/findings.jsonl" --manifest "$GIZMODUCK_OUT/run-manifest.json" --json-out "$GIZMODUCK_OUT/gate.json" --new-out "$GIZMODUCK_OUT/new-blocking.jsonl" || gate_rc=$?
+          - |
+            if [ "$gate_rc" -eq 0 ] && [ "${BITBUCKET_BRANCH:-}" = "$GIZMODUCK_DEFAULT_BRANCH" ] && [ -z "${BITBUCKET_PR_ID:-}" ] && [ -n "${GIZMODUCK_BB_TOKEN:-}" ]; then
+              curl -fsS -X POST -H "Authorization: Bearer $GIZMODUCK_BB_TOKEN" -F "files=@$GIZMODUCK_OUT/findings.jsonl;filename=gizmoduck-endpoints-baseline.jsonl" "https://api.bitbucket.org/2.0/repositories/$BITBUCKET_REPO_FULL_NAME/downloads" || echo "gizmoduck: baseline upload failed - the next run compares against the previous baseline"
+            fi
+          - |
+            if [ "$gate_rc" -eq 1 ] && [ -z "${BITBUCKET_PR_ID:-}" ] && [ "${GIZMODUCK_SDP_TICKETS:-}" = "true" ]; then
+              python3 "$GIZMODUCK_HOME/scripts/gizmoduck_ci.py" tickets "$GIZMODUCK_OUT/new-blocking.jsonl" --out "$GIZMODUCK_OUT/tickets.json" --yes || echo "gizmoduck: ticketing failed"
+            fi
+          - |
+            mkdir -p "$BITBUCKET_CLONE_DIR/gizmoduck-out"
+            cp -r "$GIZMODUCK_OUT" "$BITBUCKET_CLONE_DIR/gizmoduck-out/endpoints"
+            exit "$gate_rc"
+        artifacts:
+          - gizmoduck-out/**
+
+pipelines:
+  pull-requests:
+    '**':
+      - step: *gizmoduck-code-scan
+  branches:
+    "main":
+      - step: *gizmoduck-code-scan
+      # Put your staging deploy step here, between the two scans, so the
+      # endpoint scan runs against what was just deployed.
+      - step: *gizmoduck-endpoint-scan
+  custom:
+    gizmoduck-endpoint-scan:
+      - step: *gizmoduck-endpoint-scan
+    gizmoduck-code-scan-bootstrap:
+      - step:
+          <<: *gizmoduck-code-scan
+          image: ubuntu:24.04
+    gizmoduck-endpoint-scan-bootstrap:
+      - step:
+          <<: *gizmoduck-endpoint-scan
+          image: ubuntu:24.04

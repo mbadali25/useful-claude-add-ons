@@ -17,6 +17,7 @@ step, no API restrictions. **Only scan assets you own or have written permission
 | `/gizmoduck:diff <old.jsonl> <new.jsonl> [sev]` | What's new since a previous scan |
 | `/gizmoduck:update` | Update the Nuclei engine + templates |
 | `/gizmoduck:doctor` | Check the toolchain (nuclei, templates, python, PDF) |
+| `/gizmoduck:ci <github\|bitbucket\|both> <staging-url> [repo]` | Install CI security-scan pipelines into a repo (dry run first) |
 
 ## Install Nuclei (once)
 **WSL / Linux:** `./bootstrap.sh`
@@ -55,10 +56,15 @@ gizmoduck/
 ├── .claude-plugin/plugin.json
 ├── bootstrap.sh / bootstrap.ps1   # installers (Linux/WSL, Windows)
 ├── scripts/gizmoduck.py           # scan / report / tickets / diff / doctor / update
+├── scripts/gizmoduck_ci.py        # /gizmoduck:ci - render pipelines, run their steps
+├── scripts/ci_guard.py            # prod-refusal guard for endpoint scans
+├── scripts/ci_gate.py             # fail only on new Critical/High
+├── scripts/ci_render.py           # GitHub Actions / Bitbucket Pipelines templates
+├── ci/Dockerfile                  # CI runner image (bootstrap.sh baked in)
 ├── scripts/report_template.py     # HTML+PDF rendering (read its docstring before
 │                                  # editing the CSS - wkhtmltopdf is Qt WebKit 4.8)
 ├── skills/gizmoduck/SKILL.md
-├── commands/                      # scan, report, tickets, diff, update, doctor
+├── commands/                      # scan, report, tickets, diff, update, doctor, ci
 └── README.md
 ```
 
@@ -84,6 +90,10 @@ a stale or mismatched one (a different findings file, a different `--min-severit
 that changed in between) is refused with `GIZMODUCK_APPROVAL_MISMATCH` rather than silently
 creating whatever the current batch turns out to be. Zero qualifying findings has nothing to
 confirm: it prints `[]` and exits 0 either way, `--yes` or not.
+
+## CI pipelines
+
+TODO: the CI guide (docs lane) - rendering, runner image build/push, repository variables and secrets, baseline bootstrap, the prod-refusal guard, SDP ticketing.
 
 ## Manual CLI (Linux: `python3`, Windows: `python`)
 ```bash

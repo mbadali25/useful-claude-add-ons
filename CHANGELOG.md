@@ -4,7 +4,30 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Changed
+### Added
+
+- **`gizmoduck` 0.6.0: `/gizmoduck:ci`, security-scan pipelines for GitHub Actions and
+  Bitbucket Pipelines.** `scripts/gizmoduck_ci.py render` writes the pipelines into a target
+  repo. It is a dry run by default, `--apply` writes, and an existing file is refused unless
+  `--force` is passed. The code stage runs Semgrep, Trivy fs, Checkov and Dependency-Check on
+  every PR and push. GitHub gets SARIF via `upload-sarif`; Bitbucket gets a Code Insights
+  report with annotations. The endpoint stage runs after a staging deploy (GitHub
+  `deployment_status`, or `workflow_run` with `--deploy-workflow`; Bitbucket a step after the
+  deploy step). It runs Nuclei, ZAP baseline and testssl against the configured staging URL and
+  the `.crew/endpoints.json` endpoints. nikto, nmap and sqlmap are off unless `--enable` names
+  them. A prod-refusal guard (`scripts/ci_guard.py`, rules R1-R9) runs at render time and again
+  as a pipeline step before any scan. It normalises scheme, host, port, case, trailing dots and
+  IDNA, then requires an exact staging origin. It refuses userinfo, IP literals and localhost,
+  and redirects off the allowed set. Production needs both an allow-list variable and a second
+  opt-in. Results are kept as artifacts (JSONL, Markdown, HTML, PDF, diff.md) and compared with
+  the previous passing run's baseline: a GitHub artifact, or Bitbucket Downloads. The build fails
+  only on a new Critical/High (`scripts/ci_gate.py`). An unknown severity, a missing baseline,
+  unreadable input or a scanner that did not run all fail closed, and each has an explicit
+  repository-variable override. SDP tickets for new Critical/High findings are off by default.
+  They need `GIZMODUCK_SDP_TICKETS=true` and the SDP secrets, and they go through gizmoduck's own
+  preview-digest-`--yes` flow. `ci/Dockerfile` bakes `bootstrap.sh` into a version-tagged runner
+  image, and the pipelines fall back to running the bootstrap inline. Actions are pinned by full
+  commit SHA. The README's CI guide is a stub for now.
 
 - **`doc-builder` 1.7.2: built-in themes, a compact density, and a theme gallery.**
   Eight themes (`professional`, `corporate`, `blue`, `red`, `modern`, `dark`, `midnight`,

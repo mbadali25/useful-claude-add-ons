@@ -1,0 +1,799 @@
+#!/usr/bin/env python3
+"""gizmoduck_ci.py - install and run gizmoduck security-scan pipelines (/gizmoduck:ci).
+
+Rendering (run on the operator's machine):
+  gizmoduck_ci.py render --platform github|bitbucket|both --staging-url URL [--staging-url URL ...]
+                         --authorized-by TEXT [--repo PATH] [--production-url URL ...]
+                         [--allow-ip-origin URL ...] [--enable nikto,nmap,sqlmap]
+                         [--image REF] [--gizmoduck-ref SHA] [--default-branch main]
+                         [--staging-environment staging] [--deploy-workflow NAME]
+                         [--bitbucket-out PATH] [--apply] [--force]
+      Dry run by default: prints every file it would write and writes nothing.
+      --apply writes them; an existing file is refused unless --force.
+
+Pipeline steps (run inside the rendered pipeline):
+  targets        --endpoints .crew/endpoints.json --out targets.json   # prod-refusal guard
+  endpoint-stage --targets targets.json --out DIR                      # re-guards, then scans
+  code-stage     --path . --out DIR
+  publish        --out DIR [--baseline FILE] [--title T]               # reports + diff.md
+  gate           --baseline FILE --current FILE [--manifest FILE] ...  # exit 1 on new Crit/High
+  sarif          FINDINGS --out FILE [--srcroot DIR]
+  bb-insights    FINDINGS --gate gate.json --outdir DIR [--srcroot DIR]
+  gh-previous-run --workflow FILE [--branch B]                         # prints run_id=...
+  tickets        NEW.jsonl --out FILE [--yes]                          # SDP, opt-in only
+
+Guard configuration at runtime comes from the environment: GIZMODUCK_STAGING_URLS
+(baked into the rendered file), GIZMODUCK_ALLOWED_PROD_ORIGINS plus
+GIZMODUCK_ALLOW_PROD_SCAN=true (both, or production is refused), and
+GIZMODUCK_ALLOWED_IP_ORIGINS. See ci_guard.py for the rules.
+
+Stdlib only apart from routine.py's PyYAML, which only the two *-stage
+commands import.
+"""
+import argparse
+import hashlib
+import json
+import os
+import re
+import subprocess
+import sys
+import urllib.error
+import urllib.parse
+import urllib.request
+
+_HERE = os.path.dirname(os.path.abspath(__file__))
+if _HERE not in sys.path:
+    sys.path.insert(0, _HERE)
+
+import ci_gate
+import ci_guard
+import ci_render
+
+GIZMODUCK_PY = os.path.join(_HERE, "gizmoduck.py")
+PLUGIN_JSON = os.path.join(os.path.dirname(_HERE), ".claude-plugin", "plugin.json")
+_SAFE_NAME = re.compile(r"[^A-Za-z0-9_.-]+")
+_SEV_LABEL = {4: "critical", 3: "high", 2: "medium", 1: "low", 0: "info"}
+
+
+def plugin_version():
+    with open(PLUGIN_JSON, encoding="utf-8") as fh:
+        return json.load(fh)["version"]
+
+
+def _truthy(value):
+    return str(value or "").strip().lower() == "true"
+
+
+def _split(value):
+    return [v for v in re.split(r"[\s,]+", value or "") if v]
+
+
+def write_files(files, root):
+    """Every file's content is already a finished string in `files` before
+    the first open() - a truncating open must never run ahead of its payload."""
+    for rel, content in files.items():
+        path = os.path.join(root, rel)
+        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+        with open(path, "w", encoding="utf-8", newline="\n") as fh:
+            fh.write(content)
+
+
+def write_json(path, obj):
+    text = json.dumps(obj, indent=2) + "\n"
+    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+    with open(path, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write(text)
+
+
+# --------------------------------------------------------------------------
+# Endpoint ledger ingestion (.crew/endpoints.json, written by crew_state.py)
+# --------------------------------------------------------------------------
+
+class LedgerError(ValueError):
+    pass
+
+
+def ingest_endpoints(doc, base_urls):
+    """Turn ledger records into candidate URLs. Returns (candidates, skipped).
+
+    The ledger's shape is `{"records": [{"id", "endpoint", "status", ...}],
+    "nextSeq": N}` (crew_endpoints.declare_endpoint). A record's `endpoint` is
+    a URL, a host, or a path; a path is joined onto every base URL. Closed
+    records and values that are none of those three are skipped and reported,
+    never guessed at. Every candidate still has to pass the guard.
+    """
+    if not isinstance(doc, dict) or not isinstance(doc.get("records"), list):
+        raise LedgerError("endpoints.json has no 'records' list")
+    candidates, skipped = [], []
+    for n, rec in enumerate(doc["records"], 1):
+        if not isinstance(rec, dict):
+            skipped.append({"record": n, "reason": "not an object"})
+            continue
+        rid = str(rec.get("id") or f"record-{n}")
+        value = rec.get("endpoint")
+        if str(rec.get("status", "")).lower() == "closed":
+            skipped.append({"id": rid, "endpoint": value, "reason": "status is closed"})
+            continue
+        if not isinstance(value, str) or not value.strip() or any(c.isspace() for c in value.strip()):
+            skipped.append({"id": rid, "endpoint": value,
+                            "reason": "not a URL, host or path (free text is not a target)"})
+            continue
+        value = value.strip()
+        lowered = value.lower()
+        if lowered.startswith(("http://", "https://")):
+            candidates.append((rid, value))
+        elif value.startswith("/"):
+            for base in base_urls:
+                candidates.append((rid, urllib.parse.urljoin(base.rstrip("/") + "/", value.lstrip("/"))))
+        elif "://" in value:
+            skipped.append({"id": rid, "endpoint": value, "reason": "scheme is not http(s)"})
+        else:
+            candidates.append((rid, "https://" + value))
+    return candidates, skipped
+
+
+def load_ledger(path):
+    if not path or not os.path.exists(path):
+        return None
+    with open(path, encoding="utf-8") as fh:
+        try:
+            return json.load(fh)
+        except ValueError as exc:
+            raise LedgerError(f"{path} is not valid JSON: {exc}") from exc
+
+
+def policy_from_env(env):
+    return ci_guard.Policy.build(
+        staging_urls=_split(env.get("GIZMODUCK_STAGING_URLS")),
+        production_urls=_split(env.get("GIZMODUCK_ALLOWED_PROD_ORIGINS")),
+        allow_production=_truthy(env.get("GIZMODUCK_ALLOW_PROD_SCAN")),
+        ip_allowed_urls=_split(env.get("GIZMODUCK_ALLOWED_IP_ORIGINS")),
+    )
+
+
+def build_targets(env, ledger_doc, redirects=True, fetch=ci_guard.http_fetch):
+    """The runtime guard. Returns (report, exit_code). Exit 2 when a configured
+    staging URL is refused or nothing is left to scan; a refused ledger
+    endpoint is dropped and listed, and scanned by nothing."""
+    try:
+        policy = policy_from_env(env)
+    except ci_guard.GuardError as exc:
+        return {"allowed": [], "refused": [{"url": None, "rule": exc.rule, "reason": exc.reason}],
+                "skipped": []}, 2
+    base_urls = _split(env.get("GIZMODUCK_STAGING_URLS"))
+    report = {"allowed": [], "refused": [], "skipped": []}
+    rc = 0
+
+    def decide(url):
+        d = ci_guard.check_target(url, policy)
+        if d.allowed and redirects:
+            d = ci_guard.check_redirects(url, policy, fetch=fetch)
+        return d
+
+    seen = set()
+    for n, url in enumerate(base_urls, 1):
+        d = decide(url)
+        if not d.allowed:
+            report["refused"].append({"url": url, "source": "configured", "rule": d.rule,
+                                      "reason": d.reason})
+            rc = 2
+            continue
+        name = "staging" if n == 1 else f"staging-{n}"
+        report["allowed"].append({"name": name, "url": url, "kind": "base"})
+        seen.add(url)
+    if ledger_doc is not None:
+        candidates, skipped = ingest_endpoints(ledger_doc, base_urls)
+        report["skipped"] = skipped
+        for i, (rid, url) in enumerate(candidates, 1):
+            if url in seen:
+                continue
+            d = decide(url)
+            if not d.allowed:
+                report["refused"].append({"url": url, "source": f"endpoints.json:{rid}",
+                                          "rule": d.rule, "reason": d.reason})
+                continue
+            seen.add(url)
+            name = _SAFE_NAME.sub("-", f"endpoint-{rid}-{i}")
+            report["allowed"].append({"name": name, "url": url, "kind": "endpoint"})
+    if not report["allowed"]:
+        rc = 2
+    return report, rc
+
+
+def cmd_targets(args, env=None):
+    env = os.environ if env is None else env
+    try:
+        doc = load_ledger(args.endpoints)
+    except LedgerError as exc:
+        print(f"GIZMODUCK_GUARD_REFUSED: {exc}", file=sys.stderr)
+        return 2
+    try:
+        report, rc = build_targets(env, doc, redirects=not args.no_redirect_check)
+    except LedgerError as exc:
+        print(f"GIZMODUCK_GUARD_REFUSED: {exc}", file=sys.stderr)
+        return 2
+    write_json(args.out, report)
+    for t in report["allowed"]:
+        print(f"allowed  {t['url']}  ({t['kind']})")
+    for r in report["refused"]:
+        print(f"REFUSED  {r['url']}  [{r['rule']}] {r['reason']}")
+    for s in report["skipped"]:
+        print(f"skipped  {s.get('endpoint')!r}  {s['reason']}")
+    if rc:
+        print("GIZMODUCK_GUARD_REFUSED: no endpoint scan will run", file=sys.stderr)
+    return rc
+
+
+# --------------------------------------------------------------------------
+# Stages (both call routine.run_routine; nothing here invokes a scanner itself)
+# --------------------------------------------------------------------------
+
+def endpoint_manifest(targets, authorized_by, enable, templates_dir=None):
+    import routine
+    extra = f"-t {templates_dir} -duc" if templates_dir else "-duc"
+    out = []
+    for t in targets:
+        tools = ["nuclei", "zap"]
+        options = {"extra": extra}
+        if t["kind"] == "base":
+            tools.append("testssl")
+            tools += [x for x in ("nmap", "nikto") if x in enable]
+        else:
+            tools += [x for x in ("nikto",) if x in enable]
+            if "sqlmap" in enable:
+                tools.append("sqlmap")
+                options["sqlmap"] = True
+        out.append(routine.Target(name=t["name"], kind="web", url=t["url"],
+                                  tools=tools, options=options))
+    return routine.Manifest(authorized_by=authorized_by, targets=out)
+
+
+def cmd_endpoint_stage(args, env=None, runner=None, fetch=ci_guard.http_fetch):
+    env = os.environ if env is None else env
+    with open(args.targets, encoding="utf-8") as fh:
+        report = json.load(fh)
+    policy = policy_from_env(env)
+    targets = []
+    for t in report.get("allowed", []):
+        d = ci_guard.check_target(t["url"], policy)
+        if d.allowed and not args.no_redirect_check:
+            d = ci_guard.check_redirects(t["url"], policy, fetch=fetch)
+        if not d.allowed:
+            print(f"GIZMODUCK_GUARD_REFUSED: {t['url']} [{d.rule}] {d.reason}", file=sys.stderr)
+            return 2
+        targets.append(t)
+    if not targets:
+        print("GIZMODUCK_GUARD_REFUSED: no targets", file=sys.stderr)
+        return 2
+    enable = set(_split(env.get("GIZMODUCK_ENABLE")))
+    manifest = endpoint_manifest(targets, env.get("GIZMODUCK_AUTHORIZED_BY", ""), enable,
+                                 env.get("GIZMODUCK_NUCLEI_TEMPLATES"))
+    if runner is None:
+        import routine
+        runner = routine.run_routine
+    runner(manifest, args.out, confirm="sqlmap" in enable)
+    return 0
+
+
+def code_manifest(path, authorized_by):
+    import routine
+    return routine.Manifest(authorized_by=authorized_by, targets=[
+        routine.Target(name="code", kind="code", path=path),
+        routine.Target(name="deps", kind="deps", path=path),
+        routine.Target(name="iac", kind="iac", path=path),
+    ])
+
+
+def cmd_code_stage(args, env=None, runner=None):
+    env = os.environ if env is None else env
+    manifest = code_manifest(args.path, env.get("GIZMODUCK_AUTHORIZED_BY", ""))
+    if runner is None:
+        import routine
+        runner = routine.run_routine
+    runner(manifest, args.out)
+    return 0
+
+
+# --------------------------------------------------------------------------
+# publish / gate / sarif / bb-insights
+# --------------------------------------------------------------------------
+
+def cmd_publish(args, run=subprocess.run):
+    findings = os.path.join(args.out, "findings.jsonl")
+    base = [sys.executable, GIZMODUCK_PY]
+    steps = [
+        ("report.md", base + ["report", findings, "--format", "md", "--out",
+                              os.path.join(args.out, "report.md"), "--title", args.title]),
+        ("report.html", base + ["report", findings, "--format", "html", "--out",
+                                os.path.join(args.out, "report.html"), "--title", args.title]),
+        ("report.pdf", base + ["report", findings, "--format", "pdf", "--out",
+                               os.path.join(args.out, "report.pdf"), "--title", args.title]),
+    ]
+    rc = 0
+    for label, argv in steps:
+        p = run(argv, capture_output=True, text=True, check=False)
+        if p.returncode != 0:
+            print(f"{label}: exit {p.returncode}: {(p.stderr or p.stdout).strip()}", file=sys.stderr)
+            if label != "report.pdf":
+                rc = 1
+    diff_path = os.path.join(args.out, "diff.md")
+    if args.baseline and os.path.exists(args.baseline):
+        p = run(base + ["diff", args.baseline, findings, "--min-severity", "low"],
+                capture_output=True, text=True, check=False)
+        text = p.stdout if p.returncode == 0 else f"diff failed (exit {p.returncode}): {p.stderr}"
+    else:
+        text = "# Scan Diff\n\n_No baseline was available, so nothing can be called new or resolved._\n"
+    with open(diff_path, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write(text)
+    return rc
+
+
+def cmd_gate(args, env=None):
+    env = os.environ if env is None else env
+    trust = _truthy(env.get("GIZMODUCK_TRUST_ASSIGNED_SEVERITY"))
+    try:
+        current = ci_gate.load_findings(args.current, trust)
+        baseline = None
+        if args.baseline and os.path.exists(args.baseline):
+            baseline = ci_gate.load_findings(args.baseline, trust)
+        manifest = None
+        if args.manifest:
+            if not os.path.exists(args.manifest):
+                raise ci_gate.GateInputError(f"run manifest {args.manifest} is missing")
+            with open(args.manifest, encoding="utf-8") as fh:
+                manifest = json.load(fh)
+    except (OSError, ValueError) as exc:
+        print(f"GIZMODUCK_GATE_FAILED: unreadable input, failing closed: {exc}", file=sys.stderr)
+        return 2
+    result = ci_gate.evaluate(baseline, current, manifest,
+                              allow_missing_baseline=_truthy(env.get("GIZMODUCK_ALLOW_NO_BASELINE")),
+                              allow_incomplete=_truthy(env.get("GIZMODUCK_ALLOW_INCOMPLETE")))
+    if args.json_out:
+        write_json(args.json_out, result.to_dict())
+    if args.new_out:
+        lines = "".join(json.dumps(f.record) + "\n" for f in result.new_blocking)
+        with open(args.new_out, "w", encoding="utf-8", newline="\n") as fh:
+            fh.write(lines)
+    verdict = "FAIL" if result.fail else "PASS"
+    summary = [f"## gizmoduck gate: {verdict}", ""]
+    summary += [f"- {r}" for r in result.reasons] or ["- no new Critical/High findings"]
+    for f in result.new_blocking + result.new_unknown:
+        summary.append(f"  - [{f.severity_label}] {f.name} `{f.key[0]}` @ {f.key[1]}")
+    text = "\n".join(summary) + "\n"
+    print(text)
+    if args.summary:
+        with open(args.summary, "a", encoding="utf-8") as fh:
+            fh.write(text)
+    return 1 if result.fail else 0
+
+
+def _path_line(matched_at, srcroot):
+    where = str(matched_at or "")
+    path, sep, tail = where.rpartition(":")
+    line = None
+    if sep and tail.isdigit():
+        line = int(tail)
+    else:
+        path = where
+    if srcroot and path.startswith(srcroot.rstrip("/") + "/"):
+        path = path[len(srcroot.rstrip("/")) + 1:]
+    path = path.removeprefix("./")
+    return path, line
+
+
+def _read_jsonl(path):
+    out = []
+    with open(path, encoding="utf-8") as fh:
+        for line in fh:
+            if line.strip():
+                out.append(ci_gate.parse_line(line.strip(), where=path))
+    return out
+
+
+def _key_id(key):
+    return hashlib.sha256(json.dumps(list(key)).encode("utf-8")).hexdigest()[:32]
+
+
+def to_sarif(findings, srcroot="", version=""):
+    rules, results = {}, []
+    levels = {4: "error", 3: "error", 2: "warning", 1: "note", 0: "note"}
+    scores = {4: "9.5", 3: "8.0", 2: "5.5", 1: "2.0", 0: "0.0"}
+    for f in findings:
+        rec = f.record
+        rid = f.key[0] or "gizmoduck:unknown"
+        if rid not in rules:
+            rule = {"id": rid, "name": rid, "shortDescription": {"text": f.name[:1000] or rid},
+                    "properties": {"tags": ["security"]}}
+            if f.severity >= 0:
+                rule["properties"]["security-severity"] = scores[f.severity]
+            refs = [r for r in (rec.get("reference") or []) if str(r).startswith("http")]
+            if refs:
+                rule["helpUri"] = refs[0]
+            rules[rid] = rule
+        path, line = _path_line(rec.get("matched_at") or rec.get("host"), srcroot)
+        loc = {"physicalLocation": {"artifactLocation": {"uri": path or "."}}}
+        if line and line > 0:
+            loc["physicalLocation"]["region"] = {"startLine": line}
+        desc = str(rec.get("description") or "").strip()
+        text = f"{f.name} [{f.severity_label}]" + (f" - {desc[:800]}" if desc else "")
+        results.append({"ruleId": rid, "level": levels.get(f.severity, "warning"),
+                        "message": {"text": text}, "locations": [loc],
+                        "partialFingerprints": {"gizmoduckKey/v1": _key_id(f.key)}})
+    return {"$schema": "https://json.schemastore.org/sarif-2.1.0.json", "version": "2.1.0",
+            "runs": [{"tool": {"driver": {"name": "gizmoduck", "version": version,
+                                          "informationUri": ci_render.SOURCE_REPO,
+                                          "rules": list(rules.values())}},
+                      "results": results}]}
+
+
+def cmd_sarif(args):
+    write_json(args.out, to_sarif(_read_jsonl(args.findings), args.srcroot, plugin_version()))
+    return 0
+
+
+def bb_insights(findings, gate, srcroot="", chunk=100, limit=1000):
+    bb_sev = {4: "CRITICAL", 3: "HIGH", 2: "MEDIUM", 1: "LOW", 0: "LOW"}
+    report = {
+        "title": "gizmoduck security scan",
+        "details": ("; ".join(gate.get("reasons") or []) or "No new Critical/High findings.")[:2000],
+        "report_type": "SECURITY",
+        "reporter": "gizmoduck",
+        "result": "FAILED" if gate.get("fail", True) else "PASSED",
+        "data": [
+            {"title": "New Critical/High", "type": "NUMBER", "value": len(gate.get("new_blocking") or [])},
+            {"title": "New findings", "type": "NUMBER", "value": int(gate.get("new_total") or 0)},
+            {"title": "Total findings", "type": "NUMBER", "value": len(findings)},
+        ],
+    }
+    annotations = []
+    for f in findings[:limit]:
+        path, line = _path_line(f.record.get("matched_at") or f.record.get("host"), srcroot)
+        a = {"external_id": _key_id(f.key), "annotation_type": "VULNERABILITY",
+             "summary": f"[{f.severity_label}] {f.name}"[:450],
+             "severity": bb_sev.get(f.severity, "HIGH")}
+        desc = str(f.record.get("description") or "").strip()
+        if desc:
+            a["details"] = desc[:2000]
+        if path:
+            a["path"] = path
+        if line and line > 0:
+            a["line"] = line
+        annotations.append(a)
+    chunks = [annotations[i:i + chunk] for i in range(0, len(annotations), chunk)]
+    return report, chunks
+
+
+def cmd_bb_insights(args):
+    with open(args.gate, encoding="utf-8") as fh:
+        gate = json.load(fh)
+    report, chunks = bb_insights(_read_jsonl(args.findings), gate, args.srcroot)
+    write_json(os.path.join(args.outdir, "report.json"), report)
+    for i, c in enumerate(chunks):
+        write_json(os.path.join(args.outdir, f"annotations-{i:03d}.json"), c)
+    return 0
+
+
+# --------------------------------------------------------------------------
+# GitHub baseline lookup
+# --------------------------------------------------------------------------
+
+def previous_run_id(workflow, branch, env, opener=urllib.request.urlopen):
+    api = env.get("GITHUB_API_URL", "https://api.github.com").rstrip("/")
+    repo = env["GITHUB_REPOSITORY"]
+    query = {"status": "success", "per_page": "20"}
+    if branch:
+        query["branch"] = branch
+    url = (f"{api}/repos/{repo}/actions/workflows/{urllib.parse.quote(workflow)}/runs?"
+           f"{urllib.parse.urlencode(query)}")
+    headers = {"Accept": "application/vnd.github+json"}
+    token = env.get("GH_TOKEN") or env.get("GITHUB_TOKEN")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    with opener(urllib.request.Request(url, headers=headers), timeout=30) as resp:
+        data = json.load(resp)
+    current = str(env.get("GITHUB_RUN_ID", ""))
+    for run in data.get("workflow_runs") or []:
+        if str(run.get("id")) != current:
+            return str(run["id"])
+    return ""
+
+
+def cmd_gh_previous_run(args, env=None):
+    env = os.environ if env is None else env
+    try:
+        rid = previous_run_id(args.workflow, args.branch, env)
+    except (OSError, ValueError, KeyError) as exc:
+        print(f"gizmoduck: baseline run lookup failed ({exc}); the gate will treat the "
+              f"baseline as missing", file=sys.stderr)
+        rid = ""
+    print(f"run_id={rid}")
+    return 0
+
+
+# --------------------------------------------------------------------------
+# ServiceDesk Plus tickets - gizmoduck.py's confirm-then-open, driven by CI
+# --------------------------------------------------------------------------
+
+_DIGEST_RE = re.compile(r"--yes\s+([0-9a-f]{12})\s*$")
+
+
+def ticket_records(findings_path, yes, run=subprocess.run):
+    """Drive gizmoduck.py tickets exactly as an attended session does: preview
+    first, read the digest it prints for THIS batch, and only with `yes` rerun
+    with `--yes <digest>`. Returns (records, preview_text)."""
+    argv = [sys.executable, GIZMODUCK_PY, "tickets", findings_path, "--min-severity", "high"]
+    p = run(argv, capture_output=True, text=True, check=False)
+    if p.returncode == 0:
+        return json.loads(p.stdout or "[]"), p.stdout
+    if p.returncode != 3 or "GIZMODUCK_CONFIRMATION_REQUIRED" not in (p.stdout or ""):
+        raise RuntimeError(f"gizmoduck.py tickets exited {p.returncode}: {p.stderr or p.stdout}")
+    digests = [m.group(1) for m in (_DIGEST_RE.search(ln) for ln in p.stdout.splitlines()) if m]
+    if len(digests) != 1:
+        raise RuntimeError("could not read exactly one digest from the tickets preview")
+    if not yes:
+        return None, p.stdout
+    p2 = run(argv + ["--yes", digests[0]], capture_output=True, text=True, check=False)
+    if p2.returncode != 0:
+        raise RuntimeError(f"gizmoduck.py tickets --yes exited {p2.returncode}: {p2.stdout}")
+    return json.loads(p2.stdout), p.stdout
+
+
+class SdpClient:
+    """Minimal ServiceDesk Plus v3 client: search for an open request carrying
+    the `[Nuclei <template-id>]` tag, add a note if one exists, else create."""
+
+    def __init__(self, base_url, api_key, auth_header="authtoken", opener=urllib.request.urlopen):
+        self.base = base_url.rstrip("/")
+        self.headers = {auth_header or "authtoken": api_key,
+                        "Accept": "application/vnd.manageengine.sdp.v3+json"}
+        self.opener = opener
+
+    def _call(self, method, path, input_data):
+        body = urllib.parse.urlencode({"input_data": json.dumps(input_data)})
+        if method == "GET":
+            req = urllib.request.Request(f"{self.base}{path}?{body}", headers=self.headers)
+        else:
+            headers = dict(self.headers, **{"Content-Type": "application/x-www-form-urlencoded"})
+            req = urllib.request.Request(f"{self.base}{path}", data=body.encode("utf-8"),
+                                         headers=headers, method=method)
+        with self.opener(req, timeout=30) as resp:
+            return json.load(resp)
+
+    def open_or_note(self, record):
+        tag = record["subject"].split("]", 1)[0] + "]"
+        found = self._call("GET", "/api/v3/requests", {"list_info": {"row_count": 1, "search_criteria": [
+            {"field": "subject", "condition": "contains", "value": tag},
+            {"field": "status.name", "condition": "is not", "value": "Closed", "logical_operator": "AND"},
+        ]}})
+        existing = found.get("requests") or []
+        if existing:
+            rid = existing[0]["id"]
+            self._call("POST", f"/api/v3/requests/{rid}/notes",
+                       {"note": {"description": record["description"]}})
+            return "noted", rid
+        made = self._call("POST", "/api/v3/requests",
+                          {"request": {"subject": record["subject"],
+                                       "description": record["description"]}})
+        return "created", (made.get("request") or {}).get("id")
+
+
+def cmd_tickets(args, env=None, run=subprocess.run, client=None):
+    env = os.environ if env is None else env
+    if not _truthy(env.get("GIZMODUCK_SDP_TICKETS")):
+        print("gizmoduck: GIZMODUCK_SDP_TICKETS is not 'true' - no tickets (default off)")
+        return 0
+    if not (env.get("SDP_BASE_URL") and env.get("SDP_API_KEY")):
+        print("gizmoduck: SDP_BASE_URL / SDP_API_KEY secrets are not present - no tickets")
+        return 0
+    if not os.path.exists(args.findings) or os.path.getsize(args.findings) == 0:
+        print("gizmoduck: no new Critical/High findings - nothing to ticket")
+        return 0
+    try:
+        records, preview = ticket_records(args.findings, args.yes, run=run)
+    except (RuntimeError, ValueError) as exc:
+        print(f"gizmoduck: ticketing refused: {exc}", file=sys.stderr)
+        return 2
+    print(preview)
+    if records is None:
+        print("gizmoduck: preview only - rerun with --yes to open these tickets")
+        return 3
+    write_json(args.out, records)
+    if client is None:
+        client = SdpClient(env["SDP_BASE_URL"], env["SDP_API_KEY"], env.get("SDP_AUTH_HEADER") or "authtoken")
+    rc = 0
+    for rec in records:
+        try:
+            action, rid = client.open_or_note(rec)
+            print(f"{action}: {rid} {rec['subject']}")
+        except (OSError, ValueError, KeyError) as exc:
+            print(f"failed: {rec['subject']}: {exc}", file=sys.stderr)
+            rc = 2
+    return rc
+
+
+# --------------------------------------------------------------------------
+# render
+# --------------------------------------------------------------------------
+
+class RenderError(ValueError):
+    pass
+
+
+def build_config(args, version):
+    enable = []
+    for t in _split(args.enable):
+        if t not in ci_render.OPT_IN_TOOLS:
+            raise RenderError(f"--enable accepts only {', '.join(ci_render.OPT_IN_TOOLS)}; got {t!r}")
+        if t not in enable:
+            enable.append(t)
+    if not (args.authorized_by or "").strip() or "\n" in args.authorized_by:
+        raise RenderError("--authorized-by is required: one line naming who authorised scanning staging")
+    for value in [args.authorized_by, *args.staging_url]:
+        # GitHub evaluates ${{ }} anywhere in a workflow, env values included.
+        if "${{" in value:
+            raise RenderError(f"refusing a value containing a GitHub expression: {value!r}")
+    try:
+        policy = ci_guard.Policy.build(args.staging_url, args.production_url or (),
+                                       allow_production=False,
+                                       ip_allowed_urls=args.allow_ip_origin or ())
+    except ci_guard.GuardError as exc:
+        raise RenderError(f"[{exc.rule}] {exc.reason}") from exc
+    for url in args.staging_url:
+        origin, _ = ci_guard.normalise_origin(url)
+        if origin in policy.production:
+            raise RenderError(f"{url} is listed as both staging and production; refusing")
+        d = ci_guard.check_target(url, policy)
+        if not d.allowed:
+            raise RenderError(f"staging URL {url} refused: [{d.rule}] {d.reason}")
+    for value in (args.default_branch, args.staging_environment, args.gizmoduck_ref,
+                  args.deploy_workflow or "x"):
+        if not re.fullmatch(r"[A-Za-z0-9._/@+-]+( [A-Za-z0-9._/@+-]+)*", value or ""):
+            raise RenderError(f"refusing unsafe name {value!r}")
+    if not re.fullmatch(r"[a-z0-9./_:@-]+", args.image or ""):
+        raise RenderError(f"refusing unsafe image reference {args.image!r}")
+    return {
+        "version": version,
+        "staging_urls": list(args.staging_url),
+        "authorized_by": args.authorized_by.strip(),
+        "enable": enable,
+        "image": args.image,
+        "gizmoduck_ref": args.gizmoduck_ref,
+        "source_repo": ci_render.SOURCE_REPO,
+        "default_branch": args.default_branch,
+        "staging_environment": args.staging_environment,
+        "deploy_workflow": args.deploy_workflow,
+        "bitbucket_out": args.bitbucket_out,
+    }
+
+
+def cmd_render(args):
+    version = plugin_version()
+    if args.image is None:
+        args.image = f"ghcr.io/mbadali25/gizmoduck-ci:{version}"
+    try:
+        cfg = build_config(args, version)
+    except RenderError as exc:
+        print(f"GIZMODUCK_CI_REFUSED: {exc}", file=sys.stderr)
+        return 2
+    if not re.fullmatch(r"[0-9a-f]{40}", cfg["gizmoduck_ref"]):
+        print(f"# warning: --gizmoduck-ref {cfg['gizmoduck_ref']!r} is not a commit SHA, so the "
+              f"inline-bootstrap fallback runs whatever that ref points at when the pipeline "
+              f"runs. The runner image tag is pinned; this path is not.", file=sys.stderr)
+    platforms = ("github", "bitbucket") if args.platform == "both" else (args.platform,)
+    files = ci_render.render_all(cfg, platforms)
+    existing = [rel for rel in files if os.path.exists(os.path.join(args.repo, rel))]
+    for rel, content in files.items():
+        state = "exists - refused without --force" if rel in existing and not args.force else \
+            ("exists - will overwrite (--force)" if rel in existing else "new")
+        print(f"===== {rel} ({state}) =====")
+        if not args.apply:
+            print(content)
+    ledger = os.path.join(args.repo, ".crew", "endpoints.json")
+    if os.path.exists(ledger):
+        try:
+            cands, skipped = ingest_endpoints(load_ledger(ledger), cfg["staging_urls"])
+            print(f"# .crew/endpoints.json: {len(cands)} candidate endpoint(s), {len(skipped)} skipped; "
+                  f"each is re-checked by the guard at runtime")
+        except LedgerError as exc:
+            print(f"# .crew/endpoints.json is unreadable ({exc}); the runtime guard will refuse the scan")
+    if not args.apply:
+        print("# dry run - nothing written. Re-run with --apply to write these files.")
+        return 0
+    if existing and not args.force:
+        print(f"GIZMODUCK_CI_REFUSED: {', '.join(existing)} already exist(s); nothing written. "
+              f"Pass --force to overwrite, or --bitbucket-out to write the Bitbucket file elsewhere.",
+              file=sys.stderr)
+        return 1
+    write_files(files, args.repo)
+    for rel in files:
+        print(f"wrote {os.path.join(args.repo, rel)}")
+    return 0
+
+
+def build_parser():
+    p = argparse.ArgumentParser(description="gizmoduck CI pipelines", allow_abbrev=False)
+    sub = p.add_subparsers(dest="command", required=True)
+
+    r = sub.add_parser("render", allow_abbrev=False)
+    r.add_argument("--platform", choices=["github", "bitbucket", "both"], required=True)
+    r.add_argument("--repo", default=".")
+    r.add_argument("--staging-url", action="append", required=True)
+    r.add_argument("--authorized-by", required=True)
+    r.add_argument("--production-url", action="append")
+    r.add_argument("--allow-ip-origin", action="append")
+    r.add_argument("--enable", default="")
+    r.add_argument("--image", default=None)
+    r.add_argument("--gizmoduck-ref", default="main")
+    r.add_argument("--default-branch", default="main")
+    r.add_argument("--staging-environment", default="staging")
+    r.add_argument("--deploy-workflow", default=None)
+    r.add_argument("--bitbucket-out", default=None)
+    r.add_argument("--apply", action="store_true")
+    r.add_argument("--force", action="store_true")
+
+    t = sub.add_parser("targets", allow_abbrev=False)
+    t.add_argument("--endpoints", default=".crew/endpoints.json")
+    t.add_argument("--out", required=True)
+    t.add_argument("--no-redirect-check", action="store_true")
+
+    e = sub.add_parser("endpoint-stage", allow_abbrev=False)
+    e.add_argument("--targets", required=True)
+    e.add_argument("--out", required=True)
+    e.add_argument("--no-redirect-check", action="store_true")
+
+    c = sub.add_parser("code-stage", allow_abbrev=False)
+    c.add_argument("--path", default=".")
+    c.add_argument("--out", required=True)
+
+    pb = sub.add_parser("publish", allow_abbrev=False)
+    pb.add_argument("--out", required=True)
+    pb.add_argument("--baseline", default=None)
+    pb.add_argument("--title", default="gizmoduck scan")
+
+    g = sub.add_parser("gate", allow_abbrev=False)
+    g.add_argument("--baseline", default=None)
+    g.add_argument("--current", required=True)
+    g.add_argument("--manifest", default=None)
+    g.add_argument("--json-out", default=None)
+    g.add_argument("--new-out", default=None)
+    g.add_argument("--summary", default=None)
+
+    s = sub.add_parser("sarif", allow_abbrev=False)
+    s.add_argument("findings")
+    s.add_argument("--out", required=True)
+    s.add_argument("--srcroot", default="")
+
+    b = sub.add_parser("bb-insights", allow_abbrev=False)
+    b.add_argument("findings")
+    b.add_argument("--gate", required=True)
+    b.add_argument("--outdir", required=True)
+    b.add_argument("--srcroot", default="")
+
+    h = sub.add_parser("gh-previous-run", allow_abbrev=False)
+    h.add_argument("--workflow", required=True)
+    h.add_argument("--branch", default=None)
+
+    k = sub.add_parser("tickets", allow_abbrev=False)
+    k.add_argument("findings")
+    k.add_argument("--out", required=True)
+    k.add_argument("--yes", action="store_true",
+                   help="CI's out-of-band approval: the GIZMODUCK_SDP_TICKETS repository "
+                        "variable. Without it the preview is printed and nothing is opened.")
+    return p
+
+
+_COMMANDS = {
+    "render": cmd_render, "targets": cmd_targets, "endpoint-stage": cmd_endpoint_stage,
+    "code-stage": cmd_code_stage, "publish": cmd_publish, "gate": cmd_gate,
+    "sarif": cmd_sarif, "bb-insights": cmd_bb_insights,
+    "gh-previous-run": cmd_gh_previous_run, "tickets": cmd_tickets,
+}
+
+
+def main(argv=None):
+    args = build_parser().parse_args(argv)
+    return _COMMANDS[args.command](args)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

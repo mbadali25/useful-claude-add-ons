@@ -478,16 +478,16 @@ The hooks go with it. To keep the plugin but stop the `Stop` gate, set `verifyGa
 | | |
 |---|---|
 | **Source** | [`gizmoduck/`](gizmoduck) |
-| **Version** | 0.5.3<!-- claim: plugin-version:gizmoduck --> |
+| **Version** | 0.6.0<!-- claim: plugin-version:gizmoduck --> |
 | **Install** | `claude plugin install gizmoduck@useful-claude-add-ons` |
-| **Registers** | 6 commands, 1 skill. **No agents, no hooks** — nothing runs unless you type a command |
+| **Registers** | 7 commands<!-- claim: plugin-commands:gizmoduck -->, 1 skill. **No agents, no hooks** — nothing runs unless you type a command |
 | **Upstream guide** | [`gizmoduck/README.md`](gizmoduck/README.md) |
 
 Runs [Nuclei](https://github.com/projectdiscovery/nuclei) against hosts and websites, then does the part that usually gets skipped: diffs the run against a baseline so you see what is genuinely new, renders a triaged report, and turns Critical and High findings into ServiceDesk Plus tickets after one batch confirmation. Nuclei is MIT-licensed and self-hosted, so the whole loop runs locally — no export step, no API quota, no findings leaving the machine.
 
 **Only scan assets you own or have written permission to test.** The bundled skill says so in its first paragraph and tells the session to confirm authorisation when a target does not look like the user's. That is a prompt, not an enforcement mechanism: nothing here can tell whose host an IP is, so the check is yours to actually make.
 
-### Commands — 6
+### Commands — 7
 
 | Command | Does |
 |---|---|
@@ -497,12 +497,13 @@ Runs [Nuclei](https://github.com/projectdiscovery/nuclei) against hosts and webs
 | `/gizmoduck:diff <old.jsonl> <new.jsonl> [sev]` | What is present in the new run and absent from the old, keyed on template plus location |
 | `/gizmoduck:update` | Update the Nuclei engine and the community template set |
 | `/gizmoduck:doctor` | Which half of the toolchain is missing — `nuclei`, templates, `python`, or the PDF renderer |
+| `/gizmoduck:ci <github\|bitbucket\|both> <staging-url> [repo]` | Install security-scan pipelines into a repo: Semgrep, Trivy, Checkov and Dependency-Check on every PR; Nuclei, ZAP baseline and testssl against the configured staging URL after a deploy, behind a prod-refusal guard; a baseline diff; a build that fails only on new Critical/High. Dry run by default |
 
 `scan` defaults to `--severity critical,high,medium` and reports at High and above; both are overridable per invocation. The severity floor for *tickets* is separate from the floor for the *report*, which is the point — Mediums belong in the document, not in somebody's queue.
 
 ### The CLI underneath
 
-Everything is one Python file, `scripts/gizmoduck.py`, with `scan`, `summary`, `report`, `tickets`, `diff`, `doctor`, and `update` subcommands. It is usable directly, which matters for scheduling: a cron job or a scheduled task can run the scan and the diff without a Claude session in the loop.
+Everything is one Python file, `scripts/gizmoduck.py`, with `scan`, `summary`, `report`, `tickets`, `diff`, `doctor`, and `update` subcommands. `/gizmoduck:ci` adds `scripts/gizmoduck_ci.py`, which renders the pipelines and runs their steps (guard, stages, gate) inside them. It is usable directly, which matters for scheduling: a cron job or a scheduled task can run the scan and the diff without a Claude session in the loop.
 
 `tickets` does not call ServiceDesk Plus itself, and it is gated: without `--yes` it prints a preview of the candidate tickets (severity + subject, one per line), a digest over that exact batch, and the rerun command carrying it, then exits 3 with a `GIZMODUCK_CONFIRMATION_REQUIRED` marker, emitting no records at all. Only with `--yes <digest>` — the digest the preview just printed, passed after the batch has been shown to and approved by the user — does it emit one ticket payload per finding: subject prefixed `[Nuclei <template-id>]`, severity, CVSS, CVE, affected hosts, remediation. A `--yes` whose digest does not match what `tickets` recomputes right now — a different findings file, a different `--min-severity`, findings that changed in between — is refused with `GIZMODUCK_APPROVAL_MISMATCH` rather than silently creating whatever the current batch turns out to be. The session then opens or updates the approved records through the ServiceDesk Plus tools it already has. The template-id prefix is what makes the second run idempotent: a finding whose ticket is still open gets a note instead of a duplicate.
 
