@@ -117,8 +117,15 @@ sabotage_copy() {
 import re, sys
 path, marker = sys.argv[1], sys.argv[2]
 text = open(path, encoding="utf-8").read()
-fixed = "sys.stdout.write(''%s'' + ''%%d:%%d:%%s:''" % marker
-broken = 'sys.stdout.write("%s" + "%%d:%%d:%%s:"' % marker
+# Since the '%d:%d:%s:' % (...) form was replaced with str(...) concatenation
+# (cmd.exe expands a literal '%' when a .cmd/.bat candidate is routed through
+# it, and the old form put three of them in this exact string), the fixed
+# text this fixture targets no longer contains '%' either. Only the marker
+# varies between the three targets.
+fixed = ("sys.stdout.write(''%s'' + str(v[0]) + '':'' + str(v[1]) + '':'' + "
+         "sys.implementation.name + '':'' + sys.executable)") % marker
+broken = ('sys.stdout.write("%s" + str(v[0]) + ":" + str(v[1]) + ":" + '
+          'sys.implementation.name + ":" + sys.executable)') % marker
 assert fixed in text, "fixture assumption broken: the fixed probe text moved (%s)" % path
 text = text.replace(fixed, broken)
 open(path, "w", encoding="utf-8").write(text)

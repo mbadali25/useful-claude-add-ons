@@ -24,6 +24,9 @@ $ErrorActionPreference = 'SilentlyContinue'
 $dir = Split-Path -Parent $MyInvocation.MyCommand.Path
 
 function Resolve-CrewPython {
+  # Every python3/python/py candidate found anywhere on PATH is executed
+  # once against one fixed -c probe below; cwd is never searched unless it
+  # is itself on PATH. No behaviour change from this comment.
   # Memoized within this process: verify-gate.ps1 alone calls this up to
   # seven times in one run, and each call would otherwise re-walk and
   # re-probe PATH from scratch. Cached only for the life of THIS process --
@@ -123,6 +126,9 @@ function Resolve-CrewPython {
             try { & taskkill.exe /T /F /PID $proc.Id 2>&1 | Out-Null } catch { }
             try { $proc.Kill() } catch { }
           }
+          # Reap the killed tree with its own bound, rather than leaving it
+          # torn down but never waited on for however long that takes.
+          try { $null = $proc.WaitForExit(2000) } catch { }
         } elseif ($proc.ExitCode -eq 0 -and $outTask.Wait(1000)) {
           $line = @(($outTask.Result -split "`r?`n") | Where-Object { $_.Trim() })[-1]
           $probe = $line | ConvertFrom-Json
@@ -134,6 +140,7 @@ function Resolve-CrewPython {
             $real = $probe.exe
           }
         }
+        try { $proc.Dispose() } catch { }
       } catch {
         $real = $null
       }

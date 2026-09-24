@@ -260,9 +260,51 @@ def check_cmd_bat_routing_present():
                 "UseShellExecute=false")
 
 
+# --- FIX (crew-1.0 Windows burn-in re-run, item 2): the three obsidian-vault
+#     `-c` probe strings built their version/executable line with
+#     `'%d:%d:%s:' % (...)`, and `check_cmd_bat_routing_present` above proves
+#     that same string is handed to `cmd.exe /d /c` for a .cmd/.bat shim.
+#     cmd.exe expands `%...%` pairs in a command line before the child ever
+#     sees it, so those three `%` corrupted the program and a .cmd-only
+#     Python (a pyenv-win install) always failed the probe. Fixed by building
+#     the line with `str(...)` and `+` instead of `%`-formatting -- same
+#     output shape (`<major>:<minor>:<impl>:<executable>`), no `%` anywhere
+#     for cmd.exe to expand. crew's own Resolve-CrewPython (role-write-guard.ps1
+#     and its ten identical siblings) was checked for the same shape and
+#     never carried one: its probe prints a `json.dumps(...)` line, which has
+#     no `%`-formatting either. STATIC, like the check above: whether a `%`
+#     reaches cmd.exe is a fact about the source, not something this sandbox
+#     can execute end to end.
+
+
+def check_no_percent_reaches_cmd():
+    for stem in HOOKS:
+        camel = _camel(stem)
+        src = (SCRIPTS / f"{stem}.ps1").read_text(encoding="utf-8")
+        body = _body(src, f"function Resolve-{camel}Python {{")
+        start = body.index("$probeArgs = ")
+        line = body[start:body.index("\n", start)]
+        if "%" in line:
+            FAILURES.append(
+                f"{stem}.ps1's Resolve-{camel}Python probe string contains "
+                "'%', which cmd.exe expands when a .cmd/.bat candidate "
+                f"routes through it: {line.strip()!r}")
+
+    crew_src = (SCRIPTS.parent.parent.parent / "crew" / "hooks" / "scripts"
+                / "role-write-guard.ps1").read_text(encoding="utf-8")
+    crew_body = _body(crew_src, "function Resolve-CrewPython {")
+    crew_start = crew_body.index("$probeArgs = ")
+    crew_line = crew_body[crew_start:crew_body.index("\n", crew_start)]
+    if "%" in crew_line:
+        FAILURES.append(
+            "crew's Resolve-CrewPython probe string contains '%', which "
+            f"cmd.exe expands the same way: {crew_line.strip()!r}")
+
+
 run()
 check_no_dead_memo()
 check_cmd_bat_routing_present()
+check_no_percent_reaches_cmd()
 for skip in SKIPS:
     print("SKIP:", skip)
 print(f"RESULT: {len(FAILURES)} failed")
