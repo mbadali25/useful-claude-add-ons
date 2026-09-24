@@ -4022,6 +4022,23 @@ Enforced by the same hooks (approval receipts, scope guard, cloud guard, review 
 1.0 part (folded into the web-testing lane): `/crew:migrate` maps `pm.authority: autonomous` to a visible note
 "autopilot arrives in 1.1.0" instead of dropping it silently.
 
+### crew 1.1.x: install the tools crew needs to run tests and do its work - OPEN, after 1.0 ships (filed 2026-09-24, owner decision)
+Evidence (win-repo, Windows burn-in, 2026-09-24): `/crew:verify --all` reported two rules as exit 77 SKIP, "environment
+absent", because `ruff` and `pylint` could not be imported, and diagnosing the hanging pytest rule needed `pytest-timeout`.
+All three were installed by hand. Today a missing tool silently narrows what a green verify covers.
+- Each rule, role or skill declares the tools it needs (in `.crew/verify.json` rules, and in a manifest for everything else);
+  for Python tools, name the interpreter that will run the rule.
+- A single provisioning step (`/crew:init` phase, plus `/crew:verify --install-missing`) detects what is missing and installs
+  it into that interpreter (uv/pip; winget/apt/brew for non-Python), in both a `.sh` and a `.ps1` flavour.
+- It must be idempotent: a present tool reports "already installed".
+- Every install needs a yes, shown with the exact command. Nothing installs silently from a hook.
+Acceptance criteria:
+- A fresh Linux and Windows host with ruff/pylint/pytest-timeout absent: `--install-missing` installs them, and a second
+  run reports "already installed" for each.
+- After provisioning, `/crew:verify --all` reports no exit-77 skips for those rules.
+- A declined or failed install leaves the rule as a named SKIP with the reason, never a pass.
+- A regression suite covers detect, install, already-installed and install-failed on both flavours.
+
 ### crew-1.0 retirement review FIX/NIT (filed 2026-09-23) - OPEN, fold into the web-testing integration
 - `README.md:736` Documentation table still links deleted `vault-automation/`.
 - `skills/obsidian-canvas/SKILL.md:18` points skill-only installs at `obsidian-memory-contract`, which ships only with the obsidian-vault plugin (repo-plugins row); say so or inline the minimal conventions.
