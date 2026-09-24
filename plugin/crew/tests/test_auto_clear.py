@@ -431,22 +431,53 @@ def test_the_second_attempt_in_one_session_is_silent(flavor, tmp_path):
 @by_flavor
 def test_the_dry_run_plan_reports_the_configured_command_and_delay(
         flavor, tmp_path):
-    """A keystroke method (sh's tmux here) must echo the configured delay
-    verbatim -- it is a real wait. `_sendable`'s ps1 config leaves `method`
-    at `auto`, which auto-clear.ps1's OWNER DECISION always resolves to
-    `notify`, never `sendkeys`; `notify` types nothing, so there is no wait
-    to report and the configured number must NOT appear as if it were one --
-    see auto-clear.sh/.ps1's shared "delay: n/a" text."""
+    # Whatever method `_sendable` actually resolves to on this host decides
+    # what "the delay" means: sendkeys/tmux wait the configured seconds out,
+    # notify has none to wait (its own exact wording is asserted below). Read
+    # `method:` back out of the emitted plan rather than assuming which one
+    # was reached -- forcing a method here is what made the old version of
+    # this test vacuous: under the window-stub pid (999999) the .ps1 flavour
+    # declines sendkeys and prints a decline notice with no `method:` line at
+    # all, so a hard-coded "sendkeys" expectation never got asserted against.
     cfg, env = _sendable(flavor, tmp_path)
     cfg = dict(cfg, command="/compact", delaySeconds=9)
     root = _repo(tmp_path, auto_clear=cfg)
-    out = _run(flavor, root, "--dry-run", env_extra=env).stdout
-    assert "command: /compact" in out
-    if flavor == "sh":
-        assert "delay: 9s" in out
+    result = _run(flavor, root, "--dry-run", env_extra=env)
+    out = result.stdout
+    method_lines = [line.split(":", 1)[1].strip()
+                    for line in out.splitlines()
+                    if line.strip().startswith("method:")]
+    assert method_lines, (
+        f"no dry-run plan was emitted at all (stdout={out!r} "
+        f"stderr={result.stderr!r})")
+    resolved = method_lines[0]
+    assert "command: /compact" in out, out
+    if resolved in ("sendkeys", "tmux"):
+        assert "delay: 9s" in out, out
+    elif resolved == "notify":
+        assert "delay: n/a (notify sends no keystroke)" in out, out
     else:
-        assert "delay: n/a (notify sends no keystroke)" in out
-        assert "delay: 9s" not in out
+        pytest.fail(f"unexpected resolved method {resolved!r} in plan: {out!r}")
+
+
+@by_flavor
+def test_the_notify_plan_says_the_delay_is_not_applicable(flavor, tmp_path):
+    """notify types nothing, so it has no delay to wait out and no window to
+    target. The plan used to print `delay: 0s` (.ps1) or the configured number
+    (.sh), and an empty `target:` line (.sh). Each reads as a real setting;
+    none is one."""
+    root = _repo(tmp_path, auto_clear={
+        "enabled": True, "method": "notify",
+        "command": "/compact", "delaySeconds": 9})
+    out = _run(flavor, root, "--dry-run").stdout
+    assert "method: notify" in out, out
+    assert "command: /compact" in out, out
+    # Exact wording, not a substring: "delay: n/a" alone is also a substring
+    # of the old bare text, so a loose check here stays green even if the
+    # " (notify sends no keystroke)" suffix regresses.
+    assert "delay: n/a (notify sends no keystroke)" in out, out
+    assert "9s" not in out, out
+    assert "target:" not in out, out
 
 
 @pytest.mark.skipif("sh" not in FLAVORS, reason="needs bash")
