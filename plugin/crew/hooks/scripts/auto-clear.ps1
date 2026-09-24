@@ -578,10 +578,30 @@ $label = "$($target.Title) [window $($target.Id), pid $($target.Pid), $how]"
 # Terminal can never be confirmed as the session's ONLY tab from outside
 # it -- this declines rather than guess, exactly as an unresolvable target
 # would, and falls back to `notify` instead of typing nowhere useful.
-$ownerProcessName = ""
-try { $ownerProcessName = (Get-Process -Id $target.Pid -ErrorAction Stop).ProcessName } catch { }
-if ($ownerProcessName -eq "WindowsTerminal") {
-  $declineReason = "cannot verify the active tab - Windows Terminal hosts multiple tabs in one window, and that cannot be confirmed from outside it"
+#
+# Review (Codex FIX|auto-clear.ps1:~582): a failure to determine the owning
+# process (Get-Process throwing, e.g. the window's pid already exited) used
+# to be swallowed by the empty catch and leave $ownerProcessName as "" --
+# which is not "WindowsTerminal", so the check below read that as PROOF the
+# owner is safe and let sendkeys proceed against an UNKNOWN safety predicate.
+# Unknown must decline, exactly like a known-Windows-Terminal owner, not fall
+# through to the permissive branch: "could not tell" is its own value here,
+# never folded into "fine" (the same rule CLAUDE.md states for a probe that
+# can fail). $ownerKnown distinguishes "confirmed some other process" from
+# "could not confirm anything" so the two failure reasons are not conflated
+# in the log a human reads afterward.
+$ownerProcessName = $null
+$ownerKnown = $false
+try {
+  $ownerProcessName = (Get-Process -Id $target.Pid -ErrorAction Stop).ProcessName
+  $ownerKnown = $true
+} catch { }
+if (-not $ownerKnown -or $ownerProcessName -eq "WindowsTerminal") {
+  $declineReason = if ($ownerKnown) {
+    "cannot verify the active tab - Windows Terminal hosts multiple tabs in one window, and that cannot be confirmed from outside it"
+  } else {
+    "cannot determine the process that owns window pid $($target.Pid) - an unknown owner must decline, not assume it is safe to type into"
+  }
   if ($DryRun) {
     Write-Output "autoclear: would decline sendkeys - $declineReason"
     Write-Output "  falling back to notify: would say it is safe to run $command yourself"
@@ -684,11 +704,64 @@ Set-Content -Path $childPath -Value $child -Encoding utf8
 
 $exe = (Get-Process -Id $PID).Path
 if (-not $exe) { $exe = "pwsh" }
+
+# Review (Codex FIX|auto-clear.ps1:~691): `-ArgumentList` here is an ARRAY,
+# but `Start-Process` does not quote its elements individually -- it joins
+# them into ONE command-line string with plain spaces
+# (`[string]::Join(" ", $ArgumentList)`, the documented behaviour on both
+# Windows PowerShell 5.1 and 7). An element that itself contains a space --
+# $sendRoot (a `-Root` under a "Program Files"-shaped path, or any repo
+# checked out under a directory with a space in its name) or a
+# non-default $command most commonly -- then SPLITS into two argv entries
+# once the child process's own CommandLineToArgvW parses that joined
+# string back apart, and the detached child sees a `-Root` value that is
+# not the real root (or none at all, depending on where the split lands)
+# and exits before it can send anything or write to the log -- silently,
+# because by this point the PARENT has already exited 0 to end the turn.
+# Quoting each element ourselves, the same way CommandLineToArgvW parses
+# it back apart, is what keeps one array element as one argv entry.
+function ConvertTo-CrewWin32Arg([string]$Arg) {
+  # The MS-documented C runtime argv-quoting algorithm (the same one every
+  # child process on Windows -- pwsh, cmd, a .NET Main(string[]) -- uses to
+  # split its own command line back into arguments), applied unconditionally
+  # rather than only when $Arg "looks like" it needs it: quoting a token with
+  # no special characters is a no-op once CommandLineToArgvW strips the
+  # quotes back off, so there is no case where doing it always is wrong, and
+  # no conditional to get wrong either.
+  $sb = New-Object System.Text.StringBuilder
+  [void]$sb.Append('"')
+  for ($i = 0; $i -lt $Arg.Length; $i++) {
+    $backslashes = 0
+    while ($i -lt $Arg.Length -and $Arg[$i] -eq '\') { $backslashes++; $i++ }
+    if ($i -eq $Arg.Length) {
+      # A run of backslashes immediately before the CLOSING quote this
+      # function is about to append: each one must become two, or the
+      # parser reads the last one as escaping our own closing quote.
+      [void]$sb.Append('\' * ($backslashes * 2))
+      break
+    } elseif ($Arg[$i] -eq '"') {
+      # A run of backslashes before a LITERAL quote character: each becomes
+      # two (so they still mean literal backslashes), plus one more to
+      # escape the quote itself.
+      [void]$sb.Append('\' * ($backslashes * 2 + 1))
+      [void]$sb.Append('"')
+    } else {
+      # An ordinary character: the backslashes before it were not escaping
+      # anything and pass through unchanged.
+      [void]$sb.Append('\' * $backslashes)
+      [void]$sb.Append($Arg[$i])
+    }
+  }
+  [void]$sb.Append('"')
+  return $sb.ToString()
+}
+
 # Hidden so it does not steal the focus the child is about to check for.
 Start-Process -FilePath $exe -WindowStyle Hidden -ArgumentList @(
   "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
-  "-File", $childPath, "-Hwnd", "$($target.Id)", "-Text", $command,
-  "-Delay", "$delay", "-Root", $sendRoot
+  "-File", (ConvertTo-CrewWin32Arg $childPath), "-Hwnd", "$($target.Id)",
+  "-Text", (ConvertTo-CrewWin32Arg $command),
+  "-Delay", "$delay", "-Root", (ConvertTo-CrewWin32Arg $sendRoot)
 ) | Out-Null
 
 Write-CrewAutoClearNote "sent - method sendkeys, target $label, command '$command' in ${delay}s (only if that window still has focus)"

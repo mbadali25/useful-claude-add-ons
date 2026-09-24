@@ -92,7 +92,7 @@ cw_log_autoclear_trouble() {
 }
 
 cw_run_auto_clear() {
-  local err rc out_file out
+  local err rc
   # Stdout is forwarded, not discarded: `method notify` (and a `sendkeys`
   # decline that falls back to it) is the ONE real, non-dry-run path that
   # writes anything there -- a single line of JSON, `{"systemMessage": ...}`
@@ -100,18 +100,24 @@ cw_run_auto_clear() {
   # there is nothing here for it to collide with. Every other auto-clear
   # path (a refusal, a tmux/xdotool/sendkeys send) still writes nothing to
   # stdout, exactly as before; only `notify`'s message is new here.
-  out_file=$(mktemp 2>/dev/null) || out_file=""
-  if [ -n "$out_file" ]; then
-    err=$(bash "$(dirname "${BASH_SOURCE[0]}")/auto-clear.sh" --root "$PWD" --session "$SESSION_ID" \
-          2>&1 1>"$out_file")
-    rc=$?
-    out=$(cat "$out_file" 2>/dev/null)
-    rm -f "$out_file"
-    [ -n "$out" ] && printf '%s\n' "$out"
-  else
-    err=$(bash "$(dirname "${BASH_SOURCE[0]}")/auto-clear.sh" --root "$PWD" --session "$SESSION_ID" 2>&1 1>/dev/null)
-    rc=$?
-  fi
+  #
+  # Review (Codex FIX|context-watch.sh:~103): this used to capture stdout
+  # through a `mktemp` file and, ONLY when mktemp failed, redirect that same
+  # stdout to /dev/null -- silently dropping the notify JSON on the one path
+  # where mktemp is unavailable. That was also unrecoverable: auto-clear.sh
+  # had already claimed the one-per-session SENT_MARKER inside that same
+  # call, so a retry would find its attempt already spent and refuse before
+  # printing anything again. The fix removes the mktemp dependency (and
+  # therefore its failure mode) entirely: fd 3 holds this hook's own real
+  # stdout before auto-clear.sh's fd 1 is temporarily aimed at fd 2's
+  # capture pipe by `2>&1`, then handed back to fd 1 by `1>&3` -- so
+  # auto-clear.sh's stdout streams straight through to wherever THIS
+  # process's stdout already goes (unconditionally, not behind a
+  # mktemp-shaped maybe), and only its stderr lands in $err.
+  exec 3>&1
+  err=$(bash "$(dirname "${BASH_SOURCE[0]}")/auto-clear.sh" --root "$PWD" --session "$SESSION_ID" 2>&1 1>&3)
+  rc=$?
+  exec 3>&-
   if [ "$rc" -ne 0 ] || [ -n "$err" ]; then
     cw_log_autoclear_trouble "auto-clear exited $rc${err:+ - stderr: $err}"
   fi

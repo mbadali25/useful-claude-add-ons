@@ -304,6 +304,63 @@ AUTOCYCLE_MUTATIONS = (
      "                lead = f\"Next action: {action}\\n\" if action else \"\"\n",
      "                lead = \"\"\n",
      _T + "test_write_clear_resume_carries_the_next_action_end_to_end[clear-sh]"),
+    # --- order invariant: crew-repo gate -> enabled/narrowing -> only THEN
+    # may anything be logged. A not-opted-in run reaching a LATER refusal
+    # (no session id, no usable method) before the silent `off`/narrowing
+    # exit runs is the exact regression `test_auto_clear_order.py` exists to
+    # pin -- see that file's own docstring and CONFIG.md sec 14.
+    ("the enabled check no longer runs before anything can log (bash)", CYCLE,
+     "    if not cfg[\"enabled\"]:\n",
+     "    if False and not cfg[\"enabled\"]:\n",
+     "tests/test_auto_clear_order.py::"
+     "test_config_present_enabled_false_writes_no_log_sh"),
+    ("the enabled check no longer runs before anything can log (PowerShell)", CLEAR_PS1,
+     "if (-not $enabled) { exit 0 }\n",
+     "if ($false) { exit 0 }\n",
+     "tests/test_auto_clear_order.py::"
+     "test_config_present_enabled_false_writes_no_log_ps1"),
+    ("the onlyRepos/onlySessions narrowing no longer runs before anything can log (bash)",
+     CYCLE,
+     "    if not in_scope(cfg, root, session_id):\n",
+     "    if False and not in_scope(cfg, root, session_id):\n",
+     "tests/test_auto_clear_order.py::"
+     "test_config_present_only_repos_excludes_writes_no_log_sh"),
+    ("the onlyRepos narrowing no longer runs before anything can log (PowerShell)",
+     CLEAR_PS1,
+     "  if (-not $here -or $listed -notcontains $here) { exit 0 }\n",
+     "  if ($false) { exit 0 }\n",
+     "tests/test_auto_clear_order.py::"
+     "test_config_present_only_repos_excludes_writes_no_log_ps1"),
+    # --- Codex review FIXes (gpt-5.6-sol, 485a1b08..3f347d52) ----------------
+    ("an unresolvable sendkeys window owner is assumed safe again", CLEAR_PS1,
+     "if (-not $ownerKnown -or $ownerProcessName -eq \"WindowsTerminal\") {\n",
+     "if ($ownerProcessName -eq \"WindowsTerminal\") {\n",
+     "tests/test_auto_clear_review_fixes.py::"
+     "test_sendkeys_declines_when_the_window_owner_cannot_be_determined"),
+    ("ConvertTo-CrewWin32Arg stops quoting Start-Process's arguments", CLEAR_PS1,
+     "  $sb = New-Object System.Text.StringBuilder\n",
+     "  return $Arg\n  $sb = New-Object System.Text.StringBuilder\n",
+     "tests/test_auto_clear_review_fixes.py::"
+     "test_convert_to_crew_win32_arg_round_trips_through_the_real_argv_algorithm[root-with-space]"),
+    ("context-watch.sh swallows auto-clear's stdout when mktemp fails again", WATCH_SH,
+     "  exec 3>&1\n"
+     "  err=$(bash \"$(dirname \"${BASH_SOURCE[0]}\")/auto-clear.sh\" --root \"$PWD\" --session \"$SESSION_ID\" 2>&1 1>&3)\n"
+     "  rc=$?\n"
+     "  exec 3>&-\n",
+     "  out_file=$(mktemp 2>/dev/null) || out_file=\"\"\n"
+     "  if [ -n \"$out_file\" ]; then\n"
+     "    err=$(bash \"$(dirname \"${BASH_SOURCE[0]}\")/auto-clear.sh\" --root \"$PWD\" --session \"$SESSION_ID\" \\\n"
+     "          2>&1 1>\"$out_file\")\n"
+     "    rc=$?\n"
+     "    out=$(cat \"$out_file\" 2>/dev/null)\n"
+     "    rm -f \"$out_file\"\n"
+     "    [ -n \"$out\" ] && printf '%s\\n' \"$out\"\n"
+     "  else\n"
+     "    err=$(bash \"$(dirname \"${BASH_SOURCE[0]}\")/auto-clear.sh\" --root \"$PWD\" --session \"$SESSION_ID\" 2>&1 1>/dev/null)\n"
+     "    rc=$?\n"
+     "  fi\n",
+     "tests/test_auto_clear_review_fixes.py::"
+     "test_context_watch_forwards_the_notify_json_even_when_mktemp_fails"),
 )
 
 

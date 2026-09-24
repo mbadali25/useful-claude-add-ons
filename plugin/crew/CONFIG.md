@@ -888,6 +888,35 @@ this block, in `context-watch`, or in auto-clear influences when or whether
 it happens. This block only decides what happens *after* a handoff is
 written and verified — whether, and how, to act on it.
 
+### A deliberate trade-off: the machine opt-in does nothing without `/crew:init`
+
+`auto-clear.sh`/`auto-clear.ps1` and `context-watch.sh`/`.ps1` gate on
+`.crew/config.json` **existing**, not on `.crew/` the directory and not on
+`context.autoClear.enabled` — that check comes after. **Required order in
+both senders: is this a crew repo at all (the file exists) → is auto-clear
+armed (the machine's `enabled`, then `onlyRepos`/`onlySessions`) → only then
+may anything be written, even a log line.** So `context.autoClear.enabled:
+true` in the machine-global file arms *nothing* in a repository that has
+never run `/crew:init` (or otherwise gained a `.crew/config.json`) — run
+`/crew:init` there first. This is not a bug to route around; it is the same
+"is this a crew repo at all" question every other hook in this family answers
+the same way (`crew_state.is_crew`, `bool(load_config)`), and a directory-only
+gate was tried and reverted specifically because it let a `.crew/` directory
+with no config (a fresh checkout — `config.json` is git-ignored in this very
+repo) reach the merge below and get logged to, which a repo that never opted
+into anything must never do.
+
+The ordering matters for a second reason beyond "is this a crew repo": the
+enabled/narrowing check must ALSO run before anything is written, or a
+disabled or narrowed-out repo stops being silent — it starts leaving a
+`.crew/.autoclear.log` behind (even one line saying "refusing") the moment it
+falls through to a refusal path instead of the silent `off` one. Both
+`auto-clear.sh` and `auto-clear.ps1` special-case `off` (the enabled check,
+then the `onlyRepos`/`onlySessions` narrowing) as an unconditional, silent
+`exit 0` reached *before* the log file or its logging function is armed —
+never a `note()`/`Write-CrewAutoClearNote` call. See `plugin/crew/tests/test_auto_clear_order.py`
+for the regression tests pinning this order in both flavours.
+
 ### `method`
 
 | Value | What it does | Where it can run |
