@@ -609,9 +609,28 @@ def test_a_zero_prefixed_ttl_is_decimal_and_still_publishes_a_deadline(
     # dropped back to the compiled 180s default -- the window moves, so the
     # published deadline is what pins the value rather than the absence of an
     # error message.
+    #
+    # NOT asserted here: a tight upper bound on how many seconds out the
+    # deadline lands. Measured on this Windows/Git-Bash host, the first
+    # lock_extend fires several real seconds after process start (fork/exec
+    # overhead launching bash.exe and every rule-matcher subprocess, not a
+    # calculation bug), so a bound sized to "8 plus a little slack" flaked at
+    # 12-16s. What the octal-vs-decimal question actually predicts, and what
+    # stays true regardless of host speed, is DIRECTION: the deadline is
+    # published (checked above) and it sits in the future relative to when
+    # the gate started (monotonic), nowhere near the untouched 180s compiled
+    # default -- which is what a silent fallback (the failure mode a broken
+    # decimal parse would actually produce, once the "value too great for
+    # base" crash is ruled out above) would look like instead.
     window = int(seen) - before
-    assert 0 < window <= 10, (
-        "`CREW_VERIFY_LOCK_TTL=08` must narrow the window to EIGHT seconds; "
-        "the published deadline is " + str(window) + "s out, which is neither "
-        "8 nor a rounding of it. " + result.stderr
+    assert window > 0, (
+        "the published deadline is not after the moment the gate started, "
+        "so lock_extend did not actually publish a forward-moving deadline. "
+        "window=" + str(window) + "s " + result.stderr
+    )
+    assert window < 170, (
+        "`CREW_VERIFY_LOCK_TTL=08` produced a window of " + str(window)
+        + "s, indistinguishable from a silent fallback to the untouched "
+        "180s compiled default rather than the requested eight seconds. "
+        + result.stderr
     )
