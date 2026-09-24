@@ -80,7 +80,13 @@ function Resolve-BridgeStatusPython {
       $reason = ''
       try {
         $psi = New-Object System.Diagnostics.ProcessStartInfo
-        $probeArgs = '-c "import sys; v = sys.version_info; sys.stdout.write(''bridge-status-python:'' + ''%d:%d:%s:'' % (v[0], v[1], sys.implementation.name) + sys.executable)"'
+        # No literal `%` anywhere in this string: it is passed through
+        # `cmd.exe /d /c` below for a .cmd/.bat shim, and cmd.exe expands
+        # `%...%` pairs in the command line before python ever sees it -
+        # the old `'%d:%d:%s:' % (...)` form put three of them here and
+        # cmd's expansion corrupted the program, so a .cmd-only Python
+        # (a pyenv-win install, for instance) always failed the probe.
+        $probeArgs = '-c "import sys; v = sys.version_info; sys.stdout.write(''bridge-status-python:'' + str(v[0]) + '':'' + str(v[1]) + '':'' + sys.implementation.name + '':'' + sys.executable)"'
         if ($cmd.Source -match '\.(cmd|bat)$') {
           # UseShellExecute=false hands FileName straight to CreateProcess,
           # which can only launch a real PE executable -- not a .cmd/.bat
@@ -117,12 +123,16 @@ function Resolve-BridgeStatusPython {
             try { & taskkill.exe /T /F /PID $proc.Id 2>&1 | Out-Null } catch { }
             try { $proc.Kill() } catch { }
           }
+          # Reap the killed tree with its own bound, rather than leaving it
+          # torn down but never waited on for however long that takes.
+          try { $null = $proc.WaitForExit(2000) } catch { }
           $reason = "$($cmd.Source) (did not answer the interpreter probe within 3s, and was killed)"
         } elseif ($proc.ExitCode -ne 0) {
           $reason = "$($cmd.Source) (ran, but exited $($proc.ExitCode) instead of answering the interpreter probe)"
         } elseif ($outTask.Wait(1000)) {
           $probe = $outTask.Result
         }
+        try { $proc.Dispose() } catch { }
       } catch {
         $reason = "$($cmd.Source) (could not be launched: $($_.Exception.Message))"
       }

@@ -399,7 +399,7 @@ def _wrapper(tmp_path, root, stem, shell, raw, python="crashed"):
         path = os.pathsep.join([str(folder), "/usr/bin", "/bin"])
     env = dict(os.environ, CLAUDE_PROJECT_DIR=str(root), OS="Windows_NT", PATH=path)
     cmd = ([PWSH, "-NoProfile", "-File", os.path.join(SCRIPTS, stem + ".ps1")]
-           if shell == "ps1" else ["/bin/bash", os.path.join(SCRIPTS, stem + ".sh")])
+           if shell == "ps1" else [crew_fixtures.resolve_bash(), os.path.join(SCRIPTS, stem + ".sh")])
     return subprocess.run(cmd, input=raw, cwd=str(root), capture_output=True, env=env,
                           check=False, timeout=120)
 
@@ -459,6 +459,8 @@ def test_a_crashed_python_fails_closed_unless_scope_is_provably_off(tmp_path, st
                                                                     ps1_expected):
     if shell == "ps1" and PWSH is None:
         pytest.skip("pwsh not installed - the .ps1 flavour was NOT run")
+    if shell == "sh" and crew_fixtures.resolve_bash() is None:
+        pytest.skip("no usable bash - the sh flavour was NOT run")
 
     done = _run_config(tmp_path, stem, shell, config, "crashed")
 
@@ -472,6 +474,8 @@ def test_no_python_fails_closed_unless_scope_is_provably_off(tmp_path, stem, she
                                                              sh_expected, ps1_expected):
     if shell == "ps1" and PWSH is None:
         pytest.skip("pwsh not installed - the .ps1 flavour was NOT run")
+    if shell == "sh" and crew_fixtures.resolve_bash() is None:
+        pytest.skip("no usable bash - the sh flavour was NOT run")
 
     done = _run_config(tmp_path, stem, shell, config, "missing")
 
