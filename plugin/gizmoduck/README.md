@@ -99,7 +99,7 @@ confirm: it prints `[]` and exits 0 either way, `--yes` or not.
 
 | Tier | Trigger | Runs | Blocks |
 |---|---|---|---|
-| 1 light PR check | non-draft PRs, path-filtered (docs-only changes skipped), not covered by tier 2 | Semgrep diff-aware on the changed files; Trivy only if a lockfile/manifest changed; Checkov only if a `*.tf` changed; gitleaks over the PR's commits | a NEW Critical only; the rest goes to annotations + SARIF / Code Insights |
+| 1 light PR check | every non-draft PR not covered by tier 2; a docs-only PR passes its `gate` with "no scannable changes" (merge-base diff, not a path filter) | Semgrep diff-aware on the changed files; Trivy only if a lockfile/manifest changed; Checkov only if a `*.tf` changed; gitleaks over the PR's commits | a NEW Critical only; the rest goes to annotations + SARIF / Code Insights |
 | 2 targeted full | PRs into the default branch or `release/*`, or the `security-scan` PR label (GitHub); Bitbucket: the manual `custom: security-full` pipeline | all code scans (Semgrep, Trivy, Checkov, gitleaks), plus Nuclei, ZAP baseline and testssl against staging after the staging deploy | a new Critical/High. No branch-name or path triggers |
 | 3 weekly sweep | GitHub `schedule`, Sunday 23:00 UTC; Bitbucket a scheduled `custom: security-weekly` (one-time UI setup: Repository settings -> Pipelines -> Schedules) | everything, Dependency-Check with NVD included, against the default branch and staging; the weekly Nuclei template update | never; saves results as the next baseline, diffs against the last run, optional tickets |
 | Manual | `workflow_dispatch` (any ref, or any base URL the prod-refusal guard allows); the Bitbucket custom pipelines | a full scan | per the tier-2 rule |
@@ -138,6 +138,37 @@ declared records instead. Each endpoint run re-detects cheaply and can fetch the
 document through the guard. It scans what it finds, reports anything uncommitted as
 "new, confirm at next setup", and fails UNVERIFIED ("run /gizmoduck:ci --detect") when there are
 no endpoints, so an empty scan never passes.
+
+**Monorepo inventory.** `gizmoduck_ci.py inventory` writes `endpoints-inventory.md` at the
+repository root: one table per module (endpoint | source | staging URL). A module is a directory
+holding a `public-endpoint.md` declaration or a project marker (`*.csproj`, `package.json`,
+`pyproject.toml`, `main.tf`, `go.mod`, ...); the outermost one wins, `docs/` is excluded, and roots,
+excludes and the file name are configurable (`--root`, `--exclude`, `--output`, or an `inventory`
+block in `gizmoduck-ci.json`). A declared module is taken from its declaration's frontmatter
+(`name`, `url`, `status`, `kind`, `additional_endpoints`, optional `staging_url`) and nothing is
+detected there; any other module is autodetected, each row with its confidence and source file. A
+staging URL that cannot be read from the repository is `undetermined`, never guessed. The file is a
+pure function of the repository - no dates, stable order, credentials redacted - so
+`gizmoduck_ci.py check` can fail when it is stale and print the command that regenerates it.
+
+**Scan report.** After every endpoint scan, `gizmoduck_ci.py scan-report` writes
+`security-scan-report.md`: Critical/High/Medium and new-since-baseline counts per module and
+endpoint, UNVERIFIED where nothing scanned an endpoint, the scan date and commit, and a link to the
+run's HTML/PDF artifacts. Counts only - no finding bodies.
+
+**Publishing - branches only.** The generated files are committed on the branch a run was for and
+never on the default branch, which only verifies (`check`). Self-commits carry `[skip ci]` and a
+`[gizmoduck-self-commit]` mark; a regeneration that matches commits nothing, and one that still
+differs on top of a self-commit refuses instead of looping. No publishing step holds a secret.
+
+| | GitHub | Bitbucket |
+|---|---|---|
+| `endpoints-inventory.md` | `gizmoduck-inventory.yml`: push to a non-default branch regenerates and commits it (the only job with `contents: write`, guarded by `if:` and again at runtime); push to the default branch runs `check`; a PR gets a sticky comment saying whether it is current | `default:` step regenerates and commits on the branch - `default:`, not `pull-requests:`, whose pre-run merge would be pushed and can die on conflicts; `branches: <default>` runs `check` only |
+| `security-scan-report.md` | the endpoint workflow's `publish-report` job commits it on a non-default branch (`contents: write`, no secret); on the default branch and for the weekly sweep it stays an artifact and the step summary | `custom: security-full` commits it from a step after the trusted stage (no deployment variables); the weekly sweep keeps it in artifacts, optionally uploads it to Downloads (`GIZMODUCK_REPORT_DOWNLOADS=true`) or commits it to a results branch (`GIZMODUCK_RESULTS_BRANCH`, never the default branch or `release/*`) |
+
+A self-commit's tip has no build of its own (`[skip ci]` on Bitbucket; on GitHub a `GITHUB_TOKEN`
+push starts no workflow), so a merge check keyed on the tip's build waits for the next push. Commit
+the regenerated file yourself - `check` prints the command - and no self-commit happens.
 
 TODO: the rest of the CI guide (docs lane) - runner image build/push, repository variables and secrets, baseline bootstrap, the prod-refusal guard, SDP ticketing.
 

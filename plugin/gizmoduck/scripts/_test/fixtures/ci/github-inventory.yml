@@ -1,0 +1,186 @@
+# Rendered by /gizmoduck:ci (gizmoduck 0.0.0-golden) - endpoints-inventory.md (verify on main, commit on other branches, PR comment).
+# Re-render with gizmoduck_ci.py rather than hand-editing; the prod-refusal
+# guard's staging origins are baked in below and re-checked at runtime.
+# Actions are pinned by full commit SHA; the trailing comment names the release.
+# Tiers: gizmoduck-pr.yml (1, light PR check), gizmoduck-full.yml (2 + weekly
+# code sweep + manual), gizmoduck-endpoints.yml (2 after the staging deploy +
+# weekly endpoint sweep + manual). Endpoint scans never run on a pull request.
+# Branch protection: require the `gate` job of gizmoduck-pr.yml and of
+# gizmoduck-full.yml - each always runs and decides from the event, so a
+# later skipped run can never stand in for a failed scan. Every non-draft PR
+# triggers both; a docs-only PR's tier-1 gate PASSes with "no scannable
+# changes" (decided from a merge-base diff, not a path filter), so it is never
+# left waiting for a check that cannot report.
+# gizmoduck-inventory.yml keeps endpoints-inventory.md current: it commits the
+# regenerated file on non-default branches only and verifies it on the default
+# branch.
+
+name: gizmoduck endpoints inventory
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions: {}
+
+concurrency:
+  group: gizmoduck-inventory-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  GIZMODUCK_HOME: /opt/gizmoduck
+  GIZMODUCK_DEFAULT_BRANCH: "main"
+  GIZMODUCK_SOURCE_REPO: "https://github.com/mbadali25/useful-claude-add-ons"
+  GIZMODUCK_REF: "0123456789abcdef0123456789abcdef01234567"
+
+jobs:
+  verify:
+    name: gizmoduck inventory (verify on main; never writes)
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: endpoints-inventory.md must match the declarations and detection
+        run: |
+          GIZMODUCK_HOME="${GIZMODUCK_HOME:-/opt/gizmoduck}"
+          if [ ! -f "$GIZMODUCK_HOME/scripts/gizmoduck_ci.py" ]; then
+            echo "gizmoduck: runner image not in use - fetching the scripts from $GIZMODUCK_SOURCE_REPO@$GIZMODUCK_REF"
+            command -v git >/dev/null 2>&1 || { apt-get update -y && apt-get install -y git ca-certificates python3; }
+            src="$(mktemp -d)"
+            git -C "$src" init -q
+            git -C "$src" fetch -q --depth 1 "$GIZMODUCK_SOURCE_REPO" "$GIZMODUCK_REF"
+            git -C "$src" checkout -q FETCH_HEAD
+            GIZMODUCK_HOME="$src/plugin/gizmoduck"
+          fi
+          python3 "$GIZMODUCK_HOME/scripts/gizmoduck_ci.py" check --repo "$GITHUB_WORKSPACE" --output endpoints-inventory.md
+
+  publish:
+    name: gizmoduck inventory (regenerate; commit on this branch)
+    if: >-
+      github.event_name == 'push' && startsWith(github.ref, 'refs/heads/') &&
+      github.ref != 'refs/heads/main' &&
+      !contains(github.event.head_commit.message, '[gizmoduck-self-commit]')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      GIZMODUCK_PUBLISH_BRANCH: ${{ github.ref_name }}
+      GIZMODUCK_PUBLISH_FILES: endpoints-inventory.md
+      GIZMODUCK_PUBLISH_WHAT: endpoints-inventory.md
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Regenerate endpoints-inventory.md and commit it here ([skip ci]; never the default branch)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          GIZMODUCK_HOME="${GIZMODUCK_HOME:-/opt/gizmoduck}"
+          if [ ! -f "$GIZMODUCK_HOME/scripts/gizmoduck_ci.py" ]; then
+            echo "gizmoduck: runner image not in use - fetching the scripts from $GIZMODUCK_SOURCE_REPO@$GIZMODUCK_REF"
+            command -v git >/dev/null 2>&1 || { apt-get update -y && apt-get install -y git ca-certificates python3; }
+            src="$(mktemp -d)"
+            git -C "$src" init -q
+            git -C "$src" fetch -q --depth 1 "$GIZMODUCK_SOURCE_REPO" "$GIZMODUCK_REF"
+            git -C "$src" checkout -q FETCH_HEAD
+            GIZMODUCK_HOME="$src/plugin/gizmoduck"
+          fi
+          python3 "$GIZMODUCK_HOME/scripts/gizmoduck_ci.py" inventory --repo "$GITHUB_WORKSPACE" --output endpoints-inventory.md
+          GIZMODUCK_GIT_AUTH="http.$GITHUB_SERVER_URL/.extraheader=AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')"
+          export GIZMODUCK_GIT_AUTH
+          branch="${GIZMODUCK_PUBLISH_BRANCH#refs/heads/}"
+          if [ -z "$branch" ] || [ "$branch" = "$GIZMODUCK_DEFAULT_BRANCH" ]; then
+            echo "gizmoduck: '${branch:-<no branch>}' is the default branch (or unknown) - verify-only there;" "$GIZMODUCK_PUBLISH_WHAT is not committed"
+          else
+            # shellcheck disable=SC2086
+            git add -- $GIZMODUCK_PUBLISH_FILES
+            if git diff --cached --quiet; then
+              echo "gizmoduck: $GIZMODUCK_PUBLISH_WHAT unchanged on $branch - nothing to commit"
+            elif git log -1 --format=%B | grep -qF '[gizmoduck-self-commit]'; then
+              echo "gizmoduck: HEAD is already a gizmoduck self-commit and $GIZMODUCK_PUBLISH_WHAT still differs -"
+              echo "refusing to commit again (loop guard). Regenerate it locally and commit the result."
+              exit 1
+            else
+              git -c user.name=gizmoduck-ci -c user.email=gizmoduck-ci@noreply.invalid commit -q       -m "gizmoduck: regenerate $GIZMODUCK_PUBLISH_WHAT [skip ci] [gizmoduck-self-commit]"
+              if [ -n "${GIZMODUCK_GIT_AUTH:-}" ]; then
+                push_ok() { git -c "$GIZMODUCK_GIT_AUTH" push -q origin "HEAD:refs/heads/$branch"; }
+              else
+                push_ok() { git push -q origin "HEAD:refs/heads/$branch"; }
+              fi
+              if push_ok; then
+                echo "gizmoduck: $GIZMODUCK_PUBLISH_WHAT committed on $branch"
+              else
+                echo "gizmoduck: could not push the $GIZMODUCK_PUBLISH_WHAT commit to $branch (did the branch move?)."
+                echo "  The run for the newer commit regenerates it; or regenerate locally and commit it."
+                exit 1
+              fi
+            fi
+          fi
+
+  comment:
+    name: gizmoduck inventory (PR comment)
+    if: >-
+      github.event_name == 'pull_request' && github.event.pull_request.draft == false &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Comment whether endpoints-inventory.md is current
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          GIZMODUCK_HOME="${GIZMODUCK_HOME:-/opt/gizmoduck}"
+          if [ ! -f "$GIZMODUCK_HOME/scripts/gizmoduck_ci.py" ]; then
+            echo "gizmoduck: runner image not in use - fetching the scripts from $GIZMODUCK_SOURCE_REPO@$GIZMODUCK_REF"
+            command -v git >/dev/null 2>&1 || { apt-get update -y && apt-get install -y git ca-certificates python3; }
+            src="$(mktemp -d)"
+            git -C "$src" init -q
+            git -C "$src" fetch -q --depth 1 "$GIZMODUCK_SOURCE_REPO" "$GIZMODUCK_REF"
+            git -C "$src" checkout -q FETCH_HEAD
+            GIZMODUCK_HOME="$src/plugin/gizmoduck"
+          fi
+          marker="<!-- gizmoduck-inventory -->"
+          if python3 "$GIZMODUCK_HOME/scripts/gizmoduck_ci.py" check --repo "$GITHUB_WORKSPACE" --output endpoints-inventory.md > /tmp/gizmoduck-inventory-check.txt 2>&1; then
+            state="endpoints-inventory.md is current."
+          else
+            state="endpoints-inventory.md is stale on this PR. The branch run regenerates and commits it; or run 'gizmoduck_ci.py inventory --repo .' yourself and commit the result."
+          fi
+          {
+            echo "$marker"
+            echo "**gizmoduck endpoints inventory:** $state"
+            echo
+            echo "<details><summary>check output</summary>"
+            echo
+            echo "~~~"
+            head -c 60000 /tmp/gizmoduck-inventory-check.txt
+            echo "~~~"
+            echo "</details>"
+          } > /tmp/gizmoduck-comment.md
+          id="$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" --paginate --jq ".[] | select(.body | startswith(\"$marker\")) | .id" | head -n 1)"
+          if [ -n "$id" ]; then
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$id" -F body=@/tmp/gizmoduck-comment.md > /dev/null
+          else
+            gh api -X POST "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" -F body=@/tmp/gizmoduck-comment.md > /dev/null
+          fi

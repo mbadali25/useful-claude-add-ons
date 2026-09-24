@@ -113,7 +113,11 @@ DOCS_ONLY = ("**/*.md", "docs/**", "**/*.png", "**/*.jpg", "**/*.gif")
 PR_FILE = ".github/workflows/gizmoduck-pr.yml"
 FULL_FILE = ".github/workflows/gizmoduck-full.yml"
 ENDPOINTS_FILE = ".github/workflows/gizmoduck-endpoints.yml"
-GITHUB_FILES = (PR_FILE, FULL_FILE, ENDPOINTS_FILE)
+INVENTORY_FILE = ".github/workflows/gizmoduck-inventory.yml"
+GITHUB_FILES = (PR_FILE, FULL_FILE, ENDPOINTS_FILE, INVENTORY_FILE)
+INVENTORY_MD = "endpoints-inventory.md"
+REPORT_MD = "security-scan-report.md"
+SELF_COMMIT_MARK = "[gizmoduck-self-commit]"
 LEGACY_FILES = (".github/workflows/gizmoduck-code.yml",)
 BB_FULL = "security-full"
 BB_WEEKLY = "security-weekly"
@@ -200,6 +204,106 @@ else
 fi""".replace("@@NOTICE@@", _INLINE_NOTICE)
 
 
+def _docs_case():
+    """DOCS_ONLY as one `case` pattern list. A `case` `*` also matches `/`,
+    so `**/*.md` is `*.md` and `docs/**` is `docs/*`."""
+    pats = []
+    for p in DOCS_ONLY:
+        p = p[3:] if p.startswith("**/") else p
+        p = p[:-3] + "/*" if p.endswith("/**") else p
+        pats.append(p)
+    return "|".join(pats)
+
+
+# Docs-only detection for the tier-1 PR check, on both platforms. It diffs the
+# MERGE BASE of $GIZMODUCK_DIFF_BASE and HEAD against HEAD - everything the
+# change did since it forked - and never relies on `paths-ignore` (a
+# docs-only PR would then never report the required `gate` check) or
+# Bitbucket's `condition.changesets` (evaluated against the TIP commit of a
+# push only, so a code commit followed by a docs commit skipped the scan).
+# Sets `scannable=true|false`; a merge base or diff it cannot compute exits 2 -
+# "could not tell" is never read as "nothing to scan".
+CHANGED_SH = """\
+if ! mb="$(git merge-base "$GIZMODUCK_DIFF_BASE" HEAD 2>/dev/null)"; then
+  echo "gizmoduck: no merge base between $GIZMODUCK_DIFF_BASE and HEAD - cannot tell what changed; failing closed"
+  exit 2
+fi
+short="$(printf '%s' "$mb" | cut -c1-12)"
+if ! changed="$(git diff --name-only "$mb" HEAD)"; then
+  echo "gizmoduck: git diff $short..HEAD failed - cannot tell what changed; failing closed"
+  exit 2
+fi
+scannable=false
+while IFS= read -r f; do
+  [ -n "$f" ] || continue
+  case "$f" in
+    @@DOCS@@) ;;
+    *) scannable=true; echo "gizmoduck: scannable change since $short: $f"; break ;;
+  esac
+done <<GIZMODUCK_CHANGED
+$changed
+GIZMODUCK_CHANGED
+if [ "$scannable" = false ]; then
+  echo "gizmoduck: only documentation changed since $short - no scannable changes"
+fi""".replace("@@DOCS@@", _docs_case())
+
+
+# Fetches gizmoduck's scripts (stdlib Python, no scanner) when the runner
+# image is not in use: building or checking the inventory needs nothing else.
+FETCH_SCRIPTS_SH = """\
+GIZMODUCK_HOME="${GIZMODUCK_HOME:-/opt/gizmoduck}"
+if [ ! -f "$GIZMODUCK_HOME/scripts/gizmoduck_ci.py" ]; then
+  echo "gizmoduck: runner image not in use - fetching the scripts from $GIZMODUCK_SOURCE_REPO@$GIZMODUCK_REF"
+  command -v git >/dev/null 2>&1 || { apt-get update -y && apt-get install -y git ca-certificates python3; }
+  src="$(mktemp -d)"
+  git -C "$src" init -q
+  git -C "$src" fetch -q --depth 1 "$GIZMODUCK_SOURCE_REPO" "$GIZMODUCK_REF"
+  git -C "$src" checkout -q FETCH_HEAD
+  GIZMODUCK_HOME="$src/plugin/gizmoduck"
+fi"""
+
+
+# The only way a rendered pipeline writes to the repository: generated
+# Markdown, committed on the BRANCH it ran for. Never the default branch - on
+# it this only reports (a default branch commonly carries a push restriction
+# CI cannot pass, and a report is not a reason to lift one). Loop safety: the
+# commit carries `[skip ci]` and the SELF_COMMIT_MARK; a regeneration that
+# matches the committed file commits nothing, and one that still differs while
+# HEAD is already a self-commit refuses rather than committing again - that
+# means the generator is not deterministic here, and a loop is the result.
+SELF_COMMIT_SH = """\
+branch="${GIZMODUCK_PUBLISH_BRANCH#refs/heads/}"
+if [ -z "$branch" ] || [ "$branch" = "$GIZMODUCK_DEFAULT_BRANCH" ]; then
+  echo "gizmoduck: '${branch:-<no branch>}' is the default branch (or unknown) - verify-only there;" \
+"$GIZMODUCK_PUBLISH_WHAT is not committed"
+else
+  # shellcheck disable=SC2086
+  git add -- $GIZMODUCK_PUBLISH_FILES
+  if git diff --cached --quiet; then
+    echo "gizmoduck: $GIZMODUCK_PUBLISH_WHAT unchanged on $branch - nothing to commit"
+  elif git log -1 --format=%B | grep -qF '@@MARK@@'; then
+    echo "gizmoduck: HEAD is already a gizmoduck self-commit and $GIZMODUCK_PUBLISH_WHAT still differs -"
+    echo "refusing to commit again (loop guard). Regenerate it locally and commit the result."
+    exit 1
+  else
+    git -c user.name=gizmoduck-ci -c user.email=gizmoduck-ci@noreply.invalid commit -q \
+      -m "gizmoduck: regenerate $GIZMODUCK_PUBLISH_WHAT [skip ci] @@MARK@@"
+    if [ -n "${GIZMODUCK_GIT_AUTH:-}" ]; then
+      push_ok() { git -c "$GIZMODUCK_GIT_AUTH" push -q origin "HEAD:refs/heads/$branch"; }
+    else
+      push_ok() { git push -q origin "HEAD:refs/heads/$branch"; }
+    fi
+    if push_ok; then
+      echo "gizmoduck: $GIZMODUCK_PUBLISH_WHAT committed on $branch"
+    else
+      echo "gizmoduck: could not push the $GIZMODUCK_PUBLISH_WHAT commit to $branch (did the branch move?)."
+      echo "  The run for the newer commit regenerates it; or regenerate locally and commit it."
+      exit 1
+    fi
+  fi
+fi""".replace("@@MARK@@", SELF_COMMIT_MARK)
+
+
 # --------------------------------------------------------------------------
 # GitHub Actions
 # --------------------------------------------------------------------------
@@ -231,8 +335,13 @@ def _gh_header(title, cfg):
             f"# weekly endpoint sweep + manual). Endpoint scans never run on a pull request.\n"
             f"# Branch protection: require the `gate` job of gizmoduck-pr.yml and of\n"
             f"# gizmoduck-full.yml - each always runs and decides from the event, so a\n"
-            f"# later skipped run can never stand in for a failed scan. (A docs-only PR\n"
-            f"# does not trigger gizmoduck-pr.yml at all, so its gate reports nothing.)\n")
+            f"# later skipped run can never stand in for a failed scan. Every non-draft PR\n"
+            f"# triggers both; a docs-only PR's tier-1 gate PASSes with \"no scannable\n"
+            f"# changes\" (decided from a merge-base diff, not a path filter), so it is never\n"
+            f"# left waiting for a check that cannot report.\n"
+            f"# gizmoduck-inventory.yml keeps {INVENTORY_MD} current: it commits the\n"
+            f"# regenerated file on non-default branches only and verifies it on the default\n"
+            f"# branch.\n")
 
 
 def _gh_env(cfg, out, tier, block_at, extra=()):
@@ -396,6 +505,17 @@ if [ "$GIZMODUCK_APPLIES" != "true" ]; then
   echo "gizmoduck: this event is outside this workflow's tier - nothing to gate (pass)"
   exit 0
 fi
+if [ -n "${CHANGES_RESULT:-}" ]; then
+  if [ "$CHANGES_RESULT" != "success" ]; then
+    echo "gizmoduck: gate FAIL - could not tell what this PR changed (changes job: $CHANGES_RESULT)"
+    exit 1
+  fi
+  case "${SCANNABLE:-}" in
+    false) echo "gizmoduck: gate PASS - no scannable changes (documentation only)"; exit 0 ;;
+    true) ;;
+    *) echo "gizmoduck: gate FAIL - the changes job reported no verdict ('${SCANNABLE:-}')"; exit 1 ;;
+  esac
+fi
 echo "gizmoduck: scan jobs - runner image: $IMAGE_RESULT, inline bootstrap: $BOOT_RESULT"
 if { [ "$IMAGE_RESULT" = "success" ] && [ "$BOOT_RESULT" = "skipped" ]; } \\
    || { [ "$IMAGE_RESULT" = "skipped" ] && [ "$BOOT_RESULT" = "success" ]; }; then
@@ -406,11 +526,14 @@ echo "gizmoduck: gate FAIL - the scan this event requires did not pass"
 exit 1"""
 
 
-def _gh_gate_job(label, applies):
+def _gh_gate_job(label, applies, changes=False):
+    needs = "[changes, scan, scan-bootstrap]" if changes else "[scan, scan-bootstrap]"
+    change_env = ("      CHANGES_RESULT: ${{ needs.changes.result }}\n"
+                  "      SCANNABLE: ${{ needs.changes.outputs.scannable }}\n") if changes else ""
     return f"""\
   gate:
     name: {label} gate
-    needs: [scan, scan-bootstrap]
+    needs: {needs}
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -419,13 +542,24 @@ def _gh_gate_job(label, applies):
       GIZMODUCK_APPLIES: ${{{{ {applies} }}}}
       IMAGE_RESULT: ${{{{ needs.scan.result }}}}
       BOOT_RESULT: ${{{{ needs.scan-bootstrap.result }}}}
-    steps:
+{change_env}    steps:
       - name: Gate (required check - always runs, decides from the event)
         run: |
 {_indent(_GATE_JOB_SH, 10)}"""
 
 
+_GH_SCAN_REPORT = f"""\
+- name: {REPORT_MD} (counts per module and endpoint; UNVERIFIED where nothing scanned)
+  if: always()
+  run: |
+    mkdir -p "$GIZMODUCK_OUT"
+    {CLI} scan-report --repo "$GITHUB_WORKSPACE" --out "$GIZMODUCK_OUT" --commit "$GITHUB_SHA" \\
+      --branch "$GITHUB_REF_NAME" --tier "$GIZMODUCK_TIER" --baseline /tmp/gizmoduck-baseline/endpoints/findings.jsonl \\
+      --run-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" --summary "$GITHUB_STEP_SUMMARY\""""
+
+
 def _gh_tail(stage, title, tickets):
+    report = ("\n" + _GH_SCAN_REPORT) if stage == "endpoints" else ""
     out = f"""\
 - name: Reports (JSONL, Markdown, HTML, PDF) and diff
   if: always() && steps.scan.outcome == 'success'
@@ -434,7 +568,7 @@ def _gh_tail(stage, title, tickets):
   id: gate
   if: always() && steps.scan.outcome == 'success'
 {_indent(_GATE_ENV, 2)}
-  run: {_gate_cmd(stage)} --summary "$GITHUB_STEP_SUMMARY"
+  run: {_gate_cmd(stage)} --summary "$GITHUB_STEP_SUMMARY"{report}
 - name: Upload results
   if: always()
   {uses('upload-artifact')}
@@ -455,19 +589,23 @@ def _gh_tail(stage, title, tickets):
 _SCAN_PERMS = [("contents", "read"), ("actions", "read")]
 
 
-def _gh_jobs(steps, label, condition, sarif=False, gate=False, trust=None):
+def _gh_jobs(steps, label, condition, sarif=False, gate=False, trust=None, changes=False, after=()):
     """The scan job twice (runner image / inline bootstrap - exactly one runs),
     each with read-only permissions; then, for code workflows, the SARIF
     upload job (the only `security-events: write`), and for PR-event
     workflows the always-running gate job. `trust`, when given, is a job
-    rendered first that both scan jobs `needs:`."""
+    rendered first that both scan jobs `needs:`. `changes` renders the
+    merge-base docs-only job first: the scan jobs run only when it found a
+    scannable change, and the gate passes a docs-only PR from its verdict.
+    `after` are further jobs appended as given."""
     perm = "\n".join(f"      {k}: {v}" for k, v in _SCAN_PERMS)
     outputs = ("    outputs:\n      sarif: ${{ steps.sarif.outcome == 'success' }}\n" if sarif else "")
-    needs = "    needs: [trust]\n" if trust else ""
+    needs = "    needs: [trust]\n" if trust else ("    needs: [changes]\n" if changes else "")
+    scan_cond = condition + (" && needs.changes.outputs.scannable == 'true'" if changes else "")
     image_job = f"""\
   scan:
     name: {label} (runner image)
-{needs}    if: {condition.format(runner="vars.GIZMODUCK_RUNNER != 'bootstrap'")}
+{needs}    if: {scan_cond.format(runner="vars.GIZMODUCK_RUNNER != 'bootstrap'")}
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     container:
@@ -479,19 +617,45 @@ def _gh_jobs(steps, label, condition, sarif=False, gate=False, trust=None):
     boot_job = f"""\
   scan-bootstrap:
     name: {label} (inline bootstrap fallback)
-{needs}    if: {condition.format(runner="vars.GIZMODUCK_RUNNER == 'bootstrap'")}
+{needs}    if: {scan_cond.format(runner="vars.GIZMODUCK_RUNNER == 'bootstrap'")}
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     permissions:
 {perm}
 {outputs}    steps:
 {_indent(steps, 6)}"""
-    jobs = ([trust] if trust else []) + [image_job, boot_job]
+    pre = [trust] if trust else ([_gh_changes_job(label, condition.format(runner="true"))] if changes else [])
+    jobs = pre + [image_job, boot_job]
     if sarif:
         jobs.append(_gh_sarif_job(label))
     if gate:
-        jobs.append(_gh_gate_job(label, condition.format(runner="true")))
+        jobs.append(_gh_gate_job(label, condition.format(runner="true"), changes=changes))
+    jobs += list(after)
     return "jobs:\n" + "\n\n".join(jobs) + "\n"
+
+
+def _gh_changes_job(label, applies):
+    """Secret-free, toolchain-free: a checkout and `git`. Its verdict decides
+    whether the scan jobs run, and the gate reads it."""
+    return f"""\
+  changes:
+    name: {label} (scannable changes? merge-base diff)
+    if: {applies}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      scannable: ${{{{ steps.diff.outputs.scannable }}}}
+    steps:
+{_indent(_gh_checkout(fetch_depth=0), 6)}
+      - name: Anything but documentation changed since the merge base?
+        id: diff
+        env:
+          GIZMODUCK_DIFF_BASE: ${{{{ github.event.pull_request.base.sha }}}}
+        run: |
+{_indent(CHANGED_SH, 10)}
+          echo "scannable=$scannable" >> "$GITHUB_OUTPUT\""""
 
 
 def _gh_file(title, name, triggers, group, env, jobs, cfg):
@@ -544,14 +708,15 @@ def github_pr(cfg):
     # labeled/unlabeled too: removing the security-scan label takes the PR
     # out of tier 2, and tier 1 must then scan the head commit rather than
     # leave tier 2's no-longer-applicable PASS as the only verdict on it.
+    # No `paths-ignore`: a docs-only PR must still get a `gate` verdict, or a
+    # branch rule requiring it waits forever. The `changes` job decides
+    # docs-only from a merge-base diff; the scan jobs skip, the gate passes.
     triggers = ["  pull_request:",
-                "    types: [opened, synchronize, reopened, ready_for_review, labeled, unlabeled]",
-                "    paths-ignore:",
-                *[f"      - {_yq(p)}" for p in DOCS_ONLY]]
+                "    types: [opened, synchronize, reopened, ready_for_review, labeled, unlabeled]"]
     env = _gh_env(cfg, CODE_OUT, "light", "critical", [("TRIVY_CACHE_DIR", _CACHES["trivy"][1])])
     return _gh_file("tier 1, light PR check (blocks on a new Critical only)", "gizmoduck PR check", triggers,
                     "gizmoduck-pr-${{ github.event.pull_request.number || github.ref }}", env,
-                    _gh_jobs(steps, "gizmoduck PR check", condition, sarif=True, gate=True), cfg)
+                    _gh_jobs(steps, "gizmoduck PR check", condition, sarif=True, gate=True, changes=True), cfg)
 
 
 def github_full(cfg):
@@ -730,13 +895,195 @@ def github_endpoints(cfg):
     env = _gh_env(cfg, ENDPOINT_OUT, f"${{{{ {_IS_SWEEP} && 'sweep' || 'full' }}}}",
                   f"${{{{ {_IS_SWEEP} && 'never' || 'high' }}}}",
                   [("GIZMODUCK_NUCLEI_TEMPLATES", _CACHES["nuclei"][1])])
+    branch = (("github.event.workflow_run.head_branch || " if cfg.get("deploy_workflow") else "") +
+              "github.event.deployment.ref || github.ref_name")
     return _gh_file("endpoint stage (Nuclei, ZAP baseline, testssl against staging)",
                     "gizmoduck staging endpoint scan", triggers,
                     "gizmoduck-endpoints-${{ github.event_name }}-${{ " +
                     ("github.event.workflow_run.head_branch || " if cfg.get("deploy_workflow") else "") +
                     "github.event.deployment.ref || github.ref }}", env,
                     _gh_jobs(steps, "gizmoduck staging endpoint scan", condition,
-                             trust=_gh_deploy_trust_job(cfg)), cfg)
+                             trust=_gh_deploy_trust_job(cfg), after=[_gh_publish_report_job(cfg, branch)]), cfg)
+
+
+def _gh_git_auth():
+    """The push credential for one `git -c`, built from GITHUB_TOKEN inside
+    the step: checkout never persists it, so no other step can use it."""
+    return ('GIZMODUCK_GIT_AUTH="http.$GITHUB_SERVER_URL/.extraheader=AUTHORIZATION: basic '
+            '$(printf \'x-access-token:%s\' "$GH_TOKEN" | base64 | tr -d \'\\n\')"\n'
+            'export GIZMODUCK_GIT_AUTH')
+
+
+def _gh_not_default(expr, cfg):
+    d = cfg["default_branch"]
+    return f"{expr} != {_sq(d)} && {expr} != {_sq('refs/heads/' + d)}"
+
+
+def _gh_publish_report_job(cfg, branch):
+    """Commits the scan's security-scan-report.md on the branch the scan ran
+    for. `contents: write` is this job's alone; its `if:` (and the self-commit
+    script, again, at runtime) keeps it off the default branch and off the
+    weekly sweep - the sweep's report stays an artifact. It holds no secret,
+    runs no scanner and executes nothing from the repository."""
+    b = f"({branch})"
+    cond = ("always() && (needs.scan.result == 'success' || needs.scan.result == 'failure' || "
+            "needs.scan-bootstrap.result == 'success' || needs.scan-bootstrap.result == 'failure') && "
+            f"github.event_name != 'schedule' && github.event_name != 'pull_request' && {_gh_not_default(b, cfg)}")
+    script = "\n".join([
+        f'if [ ! -f /tmp/gizmoduck-report/{REPORT_MD} ]; then',
+        f'  echo "gizmoduck: the scan left no {REPORT_MD} - nothing to commit (see the run artifacts)"',
+        '  exit 0',
+        'fi',
+        f'cp /tmp/gizmoduck-report/{REPORT_MD} {REPORT_MD}',
+        _gh_git_auth(),
+        SELF_COMMIT_SH])
+    return f"""\
+  publish-report:
+    name: gizmoduck {REPORT_MD} (commit on the branch; never the default branch)
+    needs: [scan, scan-bootstrap]
+    if: {cond}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      actions: read
+    env:
+      GIZMODUCK_DEFAULT_BRANCH: {_yq(cfg['default_branch'])}
+      GIZMODUCK_PUBLISH_BRANCH: ${{{{ {branch} }}}}
+      GIZMODUCK_PUBLISH_FILES: {REPORT_MD}
+      GIZMODUCK_PUBLISH_WHAT: {REPORT_MD}
+    steps:
+      - name: Check out the branch the scan ran for
+        {uses('checkout')}
+        with:
+          persist-credentials: false
+          ref: ${{{{ {branch} }}}}
+      - name: Download the scan results
+        continue-on-error: true
+        {uses('download-artifact')}
+        with:
+          name: gizmoduck-endpoints
+          path: /tmp/gizmoduck-report
+      - name: Commit {REPORT_MD} ([skip ci]; branch only)
+        env:
+          GH_TOKEN: ${{{{ github.token }}}}
+        run: |
+{_indent(script, 10)}"""
+
+
+def github_inventory(cfg):
+    """endpoints-inventory.md: verified on the default branch (never written
+    there), regenerated and committed on every other branch, and summarised in
+    a sticky PR comment. No scanner, no secret, no runner image - gizmoduck's
+    stdlib scripts are enough."""
+    d = cfg["default_branch"]
+    check = (f'python3 "$GIZMODUCK_HOME/scripts/gizmoduck_ci.py" check --repo "$GITHUB_WORKSPACE" '
+             f'--output {INVENTORY_MD}')
+    publish = "\n".join([
+        FETCH_SCRIPTS_SH,
+        f'python3 "$GIZMODUCK_HOME/scripts/gizmoduck_ci.py" inventory --repo "$GITHUB_WORKSPACE" '
+        f'--output {INVENTORY_MD}',
+        _gh_git_auth(),
+        SELF_COMMIT_SH])
+    comment = "\n".join([
+        FETCH_SCRIPTS_SH,
+        'marker="<!-- gizmoduck-inventory -->"',
+        f'if {check} > /tmp/gizmoduck-inventory-check.txt 2>&1; then',
+        f'  state="{INVENTORY_MD} is current."',
+        'else',
+        f'  state="{INVENTORY_MD} is stale on this PR. The branch run regenerates and commits it; or run '
+        '\'gizmoduck_ci.py inventory --repo .\' yourself and commit the result."',
+        'fi',
+        '{',
+        '  echo "$marker"',
+        '  echo "**gizmoduck endpoints inventory:** $state"',
+        '  echo',
+        '  echo "<details><summary>check output</summary>"',
+        '  echo',
+        '  echo "~~~"',
+        '  head -c 60000 /tmp/gizmoduck-inventory-check.txt',
+        '  echo "~~~"',
+        '  echo "</details>"',
+        '} > /tmp/gizmoduck-comment.md',
+        'id="$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" --paginate '
+        '--jq ".[] | select(.body | startswith(\\"$marker\\")) | .id" | head -n 1)"',
+        'if [ -n "$id" ]; then',
+        '  gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$id" -F body=@/tmp/gizmoduck-comment.md '
+        '> /dev/null',
+        'else',
+        '  gh api -X POST "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" -F body=@/tmp/gizmoduck-comment.md '
+        '> /dev/null',
+        'fi'])
+    jobs = f"""\
+jobs:
+  verify:
+    name: gizmoduck inventory (verify on {d}; never writes)
+    if: github.event_name == 'push' && github.ref == {_sq('refs/heads/' + d)}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+{_indent(_gh_checkout(), 6)}
+      - name: {INVENTORY_MD} must match the declarations and detection
+        run: |
+{_indent(FETCH_SCRIPTS_SH + chr(10) + check, 10)}
+
+  publish:
+    name: gizmoduck inventory (regenerate; commit on this branch)
+    if: >-
+      github.event_name == 'push' && startsWith(github.ref, 'refs/heads/') &&
+      github.ref != {_sq('refs/heads/' + d)} &&
+      !contains(github.event.head_commit.message, {_sq(SELF_COMMIT_MARK)})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      GIZMODUCK_PUBLISH_BRANCH: ${{{{ github.ref_name }}}}
+      GIZMODUCK_PUBLISH_FILES: {INVENTORY_MD}
+      GIZMODUCK_PUBLISH_WHAT: {INVENTORY_MD}
+    steps:
+{_indent(_gh_checkout(), 6)}
+      - name: Regenerate {INVENTORY_MD} and commit it here ([skip ci]; never the default branch)
+        env:
+          GH_TOKEN: ${{{{ github.token }}}}
+        run: |
+{_indent(publish, 10)}
+
+  comment:
+    name: gizmoduck inventory (PR comment)
+    if: >-
+      github.event_name == 'pull_request' && {_NOT_DRAFT} &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+{_indent(_gh_checkout(), 6)}
+      - name: Comment whether {INVENTORY_MD} is current
+        env:
+          GH_TOKEN: ${{{{ github.token }}}}
+          PR_NUMBER: ${{{{ github.event.pull_request.number }}}}
+        run: |
+{_indent(comment, 10)}
+"""
+    triggers = ["  push:",
+                "    branches: ['**']",
+                "  pull_request:",
+                "    types: [opened, synchronize, reopened, ready_for_review]"]
+    env = "\n".join(["env:",
+                     "  GIZMODUCK_HOME: /opt/gizmoduck",
+                     f"  GIZMODUCK_DEFAULT_BRANCH: {_yq(d)}",
+                     f"  GIZMODUCK_SOURCE_REPO: {_yq(cfg['source_repo'])}",
+                     f"  GIZMODUCK_REF: {_yq(cfg['gizmoduck_ref'])}"])
+    return _gh_file(f"{INVENTORY_MD} (verify on {d}, commit on other branches, PR comment)",
+                    "gizmoduck endpoints inventory", triggers,
+                    "gizmoduck-inventory-${{ github.event_name }}-"
+                    "${{ github.event.pull_request.number || github.ref }}",
+                    env, jobs, cfg)
 
 
 # --------------------------------------------------------------------------
@@ -890,15 +1237,20 @@ fi""")
     return parts
 
 
-def _bb_step(anchor, name, script_items, caches, max_time=120, pr_check=False, full_clone=False):
+def _bb_step(anchor, name, script_items, caches, max_time=120, pr_check=False, full_clone=False,
+             after_script=()):
+    """No step uses `condition.changesets`: Bitbucket evaluates it against the
+    TIP commit of a push, not the push, so a code commit followed by a docs
+    commit skipped the step. The PR step decides docs-only itself, from a
+    merge-base diff (CHANGED_SH)."""
     items = "\n".join(_bb_item(s) for s in script_items)
     extra = ""
     if pr_check or full_clone:
         extra = "        clone:\n          depth: full\n"
-    if pr_check:
-        paths = "\n".join(f"              - {_yq(p)}" for p in DOCS_ONLY)
-        extra += "        condition:\n          changesets:\n            excludePaths:\n" + paths + "\n"
     cache_lines = "\n".join(f"          - gizmoduck-{c}" for c in caches)
+    after = ""
+    if after_script:
+        after = "\n        after-script:\n" + _indent("\n".join(_bb_item(s) for s in after_script), 10)
     return f"""\
     - step: &{anchor}
         name: {_yq(name)}
@@ -907,14 +1259,144 @@ def _bb_step(anchor, name, script_items, caches, max_time=120, pr_check=False, f
 {extra}        caches:
 {cache_lines}
         script:
-{_indent(items, 10)}
+{_indent(items, 10)}{after}
         artifacts:
           - gizmoduck-out/**"""
+
+
+_BB_PR_CHANGED = """\
+# Docs-only? Decided from the merge-base diff with the destination branch -
+# never `condition.changesets`, which sees only a push's tip commit. A
+# docs-only pull request passes this check without a scan.
+git fetch -q origin "$BITBUCKET_PR_DESTINATION_BRANCH" || {
+  echo "gizmoduck: could not fetch $BITBUCKET_PR_DESTINATION_BRANCH - cannot tell what changed; failing closed"
+  exit 2
+}
+GIZMODUCK_DIFF_BASE=FETCH_HEAD
+@@CHANGED@@
+if [ "$scannable" = false ]; then
+  echo "gizmoduck: check PASS - no scannable changes (documentation only)"
+  exit 0
+fi""".replace("@@CHANGED@@", CHANGED_SH)
+
+
+def _bb_minimal_exports(cfg):
+    pairs = [("GIZMODUCK_DEFAULT_BRANCH", cfg["default_branch"]), ("GIZMODUCK_SOURCE_REPO", cfg["source_repo"]),
+             ("GIZMODUCK_REF", cfg["gizmoduck_ref"])]
+    return "\n".join(['export GIZMODUCK_HOME="${GIZMODUCK_HOME:-/opt/gizmoduck}"'] +
+                     [f"export {k}={shlex.quote(v)}" for k, v in pairs] +
+                     ["# No secret is used here, and none should be visible (they are deployment variables).",
+                      f"unset {' '.join(TRUSTED_SECRETS)}"])
+
+
+def _bb_plain_step(anchor, name, script_items, max_time=15):
+    items = "\n".join(_bb_item(x) for x in script_items)
+    return f"""\
+    - step: &{anchor}
+        name: {_yq(name)}
+        max-time: {max_time}
+        script:
+{_indent(items, 10)}"""
+
+
+def _bb_report_after_script(cfg, tier, block_at):
+    """Runs even when the step failed (after-script), so a blocked or
+    UNVERIFIED scan still leaves its security-scan-report.md in the
+    artifacts. The weekly sweep may also upload it to Downloads - opt-in, from
+    the default branch only, with the token only a trusted run holds."""
+    return [_bb_exports(cfg, ENDPOINT_OUT, tier, block_at), f"""\
+mkdir -p "$GIZMODUCK_OUT" "$BITBUCKET_CLONE_DIR/gizmoduck-out/endpoints"
+{CLI} scan-report --repo "$BITBUCKET_CLONE_DIR" --out "$GIZMODUCK_OUT" --commit "$BITBUCKET_COMMIT" \\
+  --branch "${{BITBUCKET_BRANCH:-}}" --tier "$GIZMODUCK_TIER" \\
+  --baseline /tmp/gizmoduck-baseline/endpoints/findings.jsonl \\
+  --run-url "https://bitbucket.org/$BITBUCKET_REPO_FULL_NAME/pipelines/results/$BITBUCKET_BUILD_NUMBER" \\
+  || echo "gizmoduck: {REPORT_MD} could not be written (exit $?)"
+cp "$GIZMODUCK_OUT/{REPORT_MD}" "$BITBUCKET_CLONE_DIR/gizmoduck-out/endpoints/" 2>/dev/null || true
+if [ "$GIZMODUCK_TIER" = "sweep" ] && [ "${{GIZMODUCK_REPORT_DOWNLOADS:-}}" = "true" ] \\
+&& [ "${{BITBUCKET_BRANCH:-}}" = "$GIZMODUCK_DEFAULT_BRANCH" ] && [ -n "${{GIZMODUCK_BB_TOKEN:-}}" ] \\
+&& [ -f "$GIZMODUCK_OUT/{REPORT_MD}" ]; then
+  curl -fsS -X POST -H "Authorization: Bearer $GIZMODUCK_BB_TOKEN" \\
+-F "files=@$GIZMODUCK_OUT/{REPORT_MD};filename=gizmoduck-{REPORT_MD}" \\
+"https://api.bitbucket.org/2.0/repositories/$BITBUCKET_REPO_FULL_NAME/downloads" \\
+|| echo "gizmoduck: uploading {REPORT_MD} to Downloads failed - it is still in this run's artifacts"
+fi"""]
+
+
+def _bb_inventory_steps(cfg):
+    gen = 'python3 "$GIZMODUCK_HOME/scripts/gizmoduck_ci.py"'
+    branch = _bb_plain_step(
+        "gizmoduck-inventory-branch", f"gizmoduck: regenerate {INVENTORY_MD} and commit it on this branch",
+        [_bb_minimal_exports(cfg), FETCH_SCRIPTS_SH + f"\n{gen} inventory --repo \"$BITBUCKET_CLONE_DIR\" "
+                                                      f"--output {INVENTORY_MD}",
+         f"export GIZMODUCK_PUBLISH_BRANCH=\"${{BITBUCKET_BRANCH:-}}\" GIZMODUCK_PUBLISH_FILES={INVENTORY_MD} "
+         f"GIZMODUCK_PUBLISH_WHAT={INVENTORY_MD}\n" + SELF_COMMIT_SH])
+    verify = _bb_plain_step(
+        "gizmoduck-inventory-verify", f"gizmoduck: {INVENTORY_MD} is current (verify-only; never writes)",
+        [_bb_minimal_exports(cfg), FETCH_SCRIPTS_SH + f"\n{gen} check --repo \"$BITBUCKET_CLONE_DIR\" "
+                                                      f"--output {INVENTORY_MD}"])
+    return branch, verify
+
+
+def _bb_publish_steps(cfg):
+    """Secret-free steps after the trusted stage: a step outside a deployment
+    stage gets no deployment variable, so the self-commit runs with no secret
+    in its environment."""
+    report = _bb_plain_step(
+        "gizmoduck-publish-report",
+        f"gizmoduck: commit {REPORT_MD} on this branch (no secrets; never the default branch)",
+        [_bb_minimal_exports(cfg), f"""\
+if [ ! -f "gizmoduck-out/endpoints/{REPORT_MD}" ]; then
+  echo "gizmoduck: the scan left no {REPORT_MD} - nothing to commit (see the run artifacts)"
+  exit 0
+fi
+command -v git >/dev/null 2>&1 || {{ apt-get update -y && apt-get install -y git; }}
+cp "gizmoduck-out/endpoints/{REPORT_MD}" {REPORT_MD}
+export GIZMODUCK_PUBLISH_BRANCH="${{BITBUCKET_BRANCH:-}}" GIZMODUCK_PUBLISH_FILES={REPORT_MD} \\
+  GIZMODUCK_PUBLISH_WHAT={REPORT_MD}
+{SELF_COMMIT_SH}"""])
+    sweep = _bb_plain_step(
+        "gizmoduck-publish-sweep",
+        f"gizmoduck: weekly {REPORT_MD} to a results branch (opt-in; never the default branch)",
+        [_bb_minimal_exports(cfg), f"""\
+# The weekly sweep's report is always in this run's artifacts (and in Downloads
+# with GIZMODUCK_REPORT_DOWNLOADS=true). A results branch is opt-in:
+# GIZMODUCK_RESULTS_BRANCH names it, and it may not be the default branch or
+# release/* - a sweep never commits to a branch people merge from.
+if [ -z "${{GIZMODUCK_RESULTS_BRANCH:-}}" ]; then
+  echo "gizmoduck: GIZMODUCK_RESULTS_BRANCH is not set - the report stays in this run's artifacts"
+  exit 0
+fi
+case "$GIZMODUCK_RESULTS_BRANCH" in
+  "$GIZMODUCK_DEFAULT_BRANCH"|release/*|refs/*)
+    echo "gizmoduck: refusing results branch '$GIZMODUCK_RESULTS_BRANCH' - not the default branch or release/*"
+    exit 1 ;;
+esac
+if [ ! -f "gizmoduck-out/endpoints/{REPORT_MD}" ]; then
+  echo "gizmoduck: the sweep left no {REPORT_MD} - nothing to publish"
+  exit 0
+fi
+command -v git >/dev/null 2>&1 || {{ apt-get update -y && apt-get install -y git; }}
+work="$(mktemp -d)"
+if git fetch -q origin "refs/heads/$GIZMODUCK_RESULTS_BRANCH"; then
+  git worktree add -q "$work" FETCH_HEAD
+else
+  git worktree add -q --detach "$work" HEAD
+  git -C "$work" checkout -q --orphan gizmoduck-results-new
+  git -C "$work" rm -rqf .
+fi
+cp "gizmoduck-out/endpoints/{REPORT_MD}" "$work/{REPORT_MD}"
+cd "$work"
+export GIZMODUCK_PUBLISH_BRANCH="$GIZMODUCK_RESULTS_BRANCH" GIZMODUCK_PUBLISH_FILES={REPORT_MD} \\
+  GIZMODUCK_PUBLISH_WHAT="weekly {REPORT_MD}"
+{SELF_COMMIT_SH}"""])
+    return report, sweep
 
 
 def _bb_code_items(cfg, tier, block_at, stage_cmd, title, pr_check=False):
     items = [_bb_exports(cfg, CODE_OUT, tier, block_at)]
     items.append(_BB_PR_TRUST if pr_check else _BB_TRUSTED_REF)
+    if pr_check:
+        items.append(_BB_PR_CHANGED)
     items += [BOOTSTRAP_SH, _bb_baseline_download("code"), stage_cmd,
               *_bb_tail("code", title, insights=True, trusted=not pr_check)]
     return items
@@ -956,12 +1438,16 @@ def bitbucket(cfg):
                  _bb_code_items(cfg, "full", "high", code_tiered, "gizmoduck full code scan"), ["trivy"],
                  full_clone=True),
         _bb_step("gizmoduck-endpoint-scan", f"gizmoduck tier 2: staging endpoint scan ({ep})",
-                 _bb_endpoint_items(cfg, "full", "high"), ["nuclei"]),
+                 _bb_endpoint_items(cfg, "full", "high"), ["nuclei"],
+                 after_script=_bb_report_after_script(cfg, "full", "high")),
         _bb_step("gizmoduck-sweep-code", "gizmoduck tier 3: weekly code sweep incl. Dependency-Check (never blocks)",
                  _bb_code_items(cfg, "sweep", "never", code_tiered, "gizmoduck weekly code sweep"),
                  ["trivy", "nvd"], max_time=240, full_clone=True),
         _bb_step("gizmoduck-sweep-endpoints", f"gizmoduck tier 3: weekly endpoint sweep ({ep}; never blocks)",
-                 _bb_endpoint_items(cfg, "sweep", "never"), ["nuclei"], max_time=240),
+                 _bb_endpoint_items(cfg, "sweep", "never"), ["nuclei"], max_time=240,
+                 after_script=_bb_report_after_script(cfg, "sweep", "never")),
+        *_bb_inventory_steps(cfg),
+        *_bb_publish_steps(cfg),
     ])
     # Trust-scoped caches: the PR step's is its own name, never restored by
     # a trusted step.
@@ -974,7 +1460,9 @@ def bitbucket(cfg):
 # guard's staging origins are baked in below and re-checked at runtime.
 #
 # Trigger tiers:
-#   1  light PR check   pull-requests '**' (docs-only changes skipped); blocks on a new Critical.
+#   1  light PR check   pull-requests '**'; blocks on a new Critical. A docs-only PR passes
+#                       without a scan - decided from a merge-base diff with the destination,
+#                       not `condition.changesets` (which sees only a push's tip commit).
 #   2  targeted full    custom: {BB_FULL} - run it by hand (Pipelines -> Run pipeline -> pick
 #                       the branch -> custom: {BB_FULL}); blocks on a new Critical/High. Set
 #                       GIZMODUCK_TARGET_URL to scan another guard-allowed base URL.
@@ -1000,6 +1488,23 @@ def bitbucket(cfg):
 #   GIZMODUCK_ALLOWED_IP_ORIGINS, GIZMODUCK_ALLOW_NO_BASELINE, GIZMODUCK_ALLOW_INCOMPLETE,
 #   GIZMODUCK_TRUST_ASSIGNED_SEVERITY, GIZMODUCK_SDP_TICKETS (+ SDP_AUTH_HEADER).
 # Caches: the PR step uses gizmoduck-pr-trivy only; trusted steps never restore it.
+#
+# Generated Markdown ({INVENTORY_MD}, {REPORT_MD}):
+#   default:  every branch but {default}: regenerate {INVENTORY_MD} and commit it ON
+#             THE BRANCH. `default:`, not `pull-requests:` - a pull-request pipeline
+#             merges {default} in before it runs (a commit from there would push that
+#             merge, and a conflict kills the build) and runs in addition to this one.
+#   {default}: verify-only - `check` fails while {INVENTORY_MD} is stale; nothing is
+#             pushed (a default branch commonly refuses pushes from Pipelines).
+#   custom: {BB_FULL} commits the scan's {REPORT_MD} on the branch it ran on (never
+#             {default}) from a step outside the trusted stage - it holds no secret.
+#   custom: {BB_WEEKLY} keeps its report in artifacts; optional: Downloads
+#             (GIZMODUCK_REPORT_DOWNLOADS=true) or a results branch (GIZMODUCK_RESULTS_BRANCH,
+#             never {default} or release/*). Never a commit to {default}.
+#   Loop safety: self-commits carry [skip ci] and {SELF_COMMIT_MARK}; a regeneration that
+#   matches commits nothing, and one that still differs on top of a self-commit refuses.
+#   A [skip ci] tip has no build of its own; a merge check keyed on the tip's build waits
+#   for the next push - commit the regenerated file yourself and no self-commit happens.
 image: {_yq(check_image(cfg['image']))}
 
 definitions:
@@ -1009,6 +1514,11 @@ definitions:
 {steps}
 
 pipelines:
+  default:
+    - step: *gizmoduck-inventory-branch
+  branches:
+    {_yq(default)}:
+      - step: *gizmoduck-inventory-verify
   pull-requests:
     '**':
       - step: *gizmoduck-pr-check
@@ -1026,6 +1536,7 @@ pipelines:
             # If this pipeline also deploys staging, put the deploy step here so the
             # endpoint scan runs against what was just deployed.
             - step: *gizmoduck-endpoint-scan
+      - step: *gizmoduck-publish-report
     {BB_WEEKLY}:
       - stage:
           name: gizmoduck tier 3 (trusted)
@@ -1033,6 +1544,7 @@ pipelines:
           steps:
             - step: *gizmoduck-sweep-code
             - step: *gizmoduck-sweep-endpoints
+      - step: *gizmoduck-publish-sweep
     {BB_FULL}-bootstrap:
       - variables:
           - name: GIZMODUCK_TARGET_URL
@@ -1048,6 +1560,9 @@ pipelines:
             - step:
                 <<: *gizmoduck-endpoint-scan
                 image: ubuntu:24.04
+      - step:
+          <<: *gizmoduck-publish-report
+          image: ubuntu:24.04
     {BB_WEEKLY}-bootstrap:
       - stage:
           name: gizmoduck tier 3 (trusted, inline bootstrap)
@@ -1059,6 +1574,9 @@ pipelines:
             - step:
                 <<: *gizmoduck-sweep-endpoints
                 image: ubuntu:24.04
+      - step:
+          <<: *gizmoduck-publish-sweep
+          image: ubuntu:24.04
 """
 
 
@@ -1069,6 +1587,7 @@ def render_all(cfg, platforms):
         files[PR_FILE] = github_pr(cfg)
         files[FULL_FILE] = github_full(cfg)
         files[ENDPOINTS_FILE] = github_endpoints(cfg)
+        files[INVENTORY_FILE] = github_inventory(cfg)
     if "bitbucket" in platforms:
         files[cfg.get("bitbucket_out") or "bitbucket-pipelines.yml"] = bitbucket(cfg)
     return files

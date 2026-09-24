@@ -3,7 +3,9 @@
 # guard's staging origins are baked in below and re-checked at runtime.
 #
 # Trigger tiers:
-#   1  light PR check   pull-requests '**' (docs-only changes skipped); blocks on a new Critical.
+#   1  light PR check   pull-requests '**'; blocks on a new Critical. A docs-only PR passes
+#                       without a scan - decided from a merge-base diff with the destination,
+#                       not `condition.changesets` (which sees only a push's tip commit).
 #   2  targeted full    custom: security-full - run it by hand (Pipelines -> Run pipeline -> pick
 #                       the branch -> custom: security-full); blocks on a new Critical/High. Set
 #                       GIZMODUCK_TARGET_URL to scan another guard-allowed base URL.
@@ -29,6 +31,23 @@
 #   GIZMODUCK_ALLOWED_IP_ORIGINS, GIZMODUCK_ALLOW_NO_BASELINE, GIZMODUCK_ALLOW_INCOMPLETE,
 #   GIZMODUCK_TRUST_ASSIGNED_SEVERITY, GIZMODUCK_SDP_TICKETS (+ SDP_AUTH_HEADER).
 # Caches: the PR step uses gizmoduck-pr-trivy only; trusted steps never restore it.
+#
+# Generated Markdown (endpoints-inventory.md, security-scan-report.md):
+#   default:  every branch but main: regenerate endpoints-inventory.md and commit it ON
+#             THE BRANCH. `default:`, not `pull-requests:` - a pull-request pipeline
+#             merges main in before it runs (a commit from there would push that
+#             merge, and a conflict kills the build) and runs in addition to this one.
+#   main: verify-only - `check` fails while endpoints-inventory.md is stale; nothing is
+#             pushed (a default branch commonly refuses pushes from Pipelines).
+#   custom: security-full commits the scan's security-scan-report.md on the branch it ran on (never
+#             main) from a step outside the trusted stage - it holds no secret.
+#   custom: security-weekly keeps its report in artifacts; optional: Downloads
+#             (GIZMODUCK_REPORT_DOWNLOADS=true) or a results branch (GIZMODUCK_RESULTS_BRANCH,
+#             never main or release/*). Never a commit to main.
+#   Loop safety: self-commits carry [skip ci] and [gizmoduck-self-commit]; a regeneration that
+#   matches commits nothing, and one that still differs on top of a self-commit refuses.
+#   A [skip ci] tip has no build of its own; a merge check keyed on the tip's build waits
+#   for the next push - commit the regenerated file yourself and no self-commit happens.
 image: "ghcr.io/example/gizmoduck-ci:0.0.0-golden"
 
 definitions:
@@ -44,14 +63,6 @@ definitions:
         max-time: 30
         clone:
           depth: full
-        condition:
-          changesets:
-            excludePaths:
-              - "**/*.md"
-              - "docs/**"
-              - "**/*.png"
-              - "**/*.jpg"
-              - "**/*.gif"
         caches:
           - gizmoduck-pr-trivy
         script:
@@ -97,6 +108,41 @@ definitions:
               false) ;;
               *) echo "gizmoduck: could not read whether pull request ${BITBUCKET_PR_ID:-?} is a draft - failing closed"; exit 1 ;;
             esac
+          - |
+            # Docs-only? Decided from the merge-base diff with the destination branch -
+            # never `condition.changesets`, which sees only a push's tip commit. A
+            # docs-only pull request passes this check without a scan.
+            git fetch -q origin "$BITBUCKET_PR_DESTINATION_BRANCH" || {
+              echo "gizmoduck: could not fetch $BITBUCKET_PR_DESTINATION_BRANCH - cannot tell what changed; failing closed"
+              exit 2
+            }
+            GIZMODUCK_DIFF_BASE=FETCH_HEAD
+            if ! mb="$(git merge-base "$GIZMODUCK_DIFF_BASE" HEAD 2>/dev/null)"; then
+              echo "gizmoduck: no merge base between $GIZMODUCK_DIFF_BASE and HEAD - cannot tell what changed; failing closed"
+              exit 2
+            fi
+            short="$(printf '%s' "$mb" | cut -c1-12)"
+            if ! changed="$(git diff --name-only "$mb" HEAD)"; then
+              echo "gizmoduck: git diff $short..HEAD failed - cannot tell what changed; failing closed"
+              exit 2
+            fi
+            scannable=false
+            while IFS= read -r f; do
+              [ -n "$f" ] || continue
+              case "$f" in
+                *.md|docs/*|*.png|*.jpg|*.gif) ;;
+                *) scannable=true; echo "gizmoduck: scannable change since $short: $f"; break ;;
+              esac
+            done <<GIZMODUCK_CHANGED
+            $changed
+            GIZMODUCK_CHANGED
+            if [ "$scannable" = false ]; then
+              echo "gizmoduck: only documentation changed since $short - no scannable changes"
+            fi
+            if [ "$scannable" = false ]; then
+              echo "gizmoduck: check PASS - no scannable changes (documentation only)"
+              exit 0
+            fi
           - |
             GIZMODUCK_HOME="${GIZMODUCK_HOME:-/opt/gizmoduck}"
             if [ -f "$GIZMODUCK_HOME/scripts/gizmoduck_ci.py" ]; then
@@ -365,6 +411,38 @@ definitions:
               echo "gizmoduck: Code Insights report failed (exit $insights_rc) - failing the step"
               exit "$insights_rc"
             fi
+        after-script:
+          - |
+            export GIZMODUCK_HOME="${GIZMODUCK_HOME:-/opt/gizmoduck}"
+            export GIZMODUCK_OUT=/tmp/gizmoduck-out/endpoints
+            export GIZMODUCK_TIER=full
+            export GIZMODUCK_BLOCK_AT=high
+            export GIZMODUCK_AUTHORIZED_BY='Jane Doe (CISO), ticket SEC-42 - '"'"'quoted'"'"' "too"'
+            export GIZMODUCK_DEFAULT_BRANCH=main
+            export GIZMODUCK_SOURCE_REPO=https://github.com/mbadali25/useful-claude-add-ons
+            export GIZMODUCK_REF=0123456789abcdef0123456789abcdef01234567
+            export GIZMODUCK_STAGING_URLS=https://staging.example.com
+            export GIZMODUCK_ENABLE=nikto,nmap
+            export TRIVY_CACHE_DIR=/tmp/gizmoduck-cache/trivy
+            export GIZMODUCK_DEPCHECK_DATA=/tmp/gizmoduck-cache/nvd
+            export GIZMODUCK_NUCLEI_TEMPLATES=/tmp/gizmoduck-cache/nuclei-templates
+            export PATH="$HOME/.local/bin:$PATH"
+          - |
+            mkdir -p "$GIZMODUCK_OUT" "$BITBUCKET_CLONE_DIR/gizmoduck-out/endpoints"
+            python3 "$GIZMODUCK_HOME/scripts/gizmoduck_ci.py" scan-report --repo "$BITBUCKET_CLONE_DIR" --out "$GIZMODUCK_OUT" --commit "$BITBUCKET_COMMIT" \
+              --branch "${BITBUCKET_BRANCH:-}" --tier "$GIZMODUCK_TIER" \
+              --baseline /tmp/gizmoduck-baseline/endpoints/findings.jsonl \
+              --run-url "https://bitbucket.org/$BITBUCKET_REPO_FULL_NAME/pipelines/results/$BITBUCKET_BUILD_NUMBER" \
+              || echo "gizmoduck: security-scan-report.md could not be written (exit $?)"
+            cp "$GIZMODUCK_OUT/security-scan-report.md" "$BITBUCKET_CLONE_DIR/gizmoduck-out/endpoints/" 2>/dev/null || true
+            if [ "$GIZMODUCK_TIER" = "sweep" ] && [ "${GIZMODUCK_REPORT_DOWNLOADS:-}" = "true" ] \
+            && [ "${BITBUCKET_BRANCH:-}" = "$GIZMODUCK_DEFAULT_BRANCH" ] && [ -n "${GIZMODUCK_BB_TOKEN:-}" ] \
+            && [ -f "$GIZMODUCK_OUT/security-scan-report.md" ]; then
+              curl -fsS -X POST -H "Authorization: Bearer $GIZMODUCK_BB_TOKEN" \
+            -F "files=@$GIZMODUCK_OUT/security-scan-report.md;filename=gizmoduck-security-scan-report.md" \
+            "https://api.bitbucket.org/2.0/repositories/$BITBUCKET_REPO_FULL_NAME/downloads" \
+            || echo "gizmoduck: uploading security-scan-report.md to Downloads failed - it is still in this run's artifacts"
+            fi
         artifacts:
           - gizmoduck-out/**
     - step: &gizmoduck-sweep-code
@@ -576,10 +654,241 @@ definitions:
               echo "gizmoduck: Code Insights report failed (exit $insights_rc) - failing the step"
               exit "$insights_rc"
             fi
+        after-script:
+          - |
+            export GIZMODUCK_HOME="${GIZMODUCK_HOME:-/opt/gizmoduck}"
+            export GIZMODUCK_OUT=/tmp/gizmoduck-out/endpoints
+            export GIZMODUCK_TIER=sweep
+            export GIZMODUCK_BLOCK_AT=never
+            export GIZMODUCK_AUTHORIZED_BY='Jane Doe (CISO), ticket SEC-42 - '"'"'quoted'"'"' "too"'
+            export GIZMODUCK_DEFAULT_BRANCH=main
+            export GIZMODUCK_SOURCE_REPO=https://github.com/mbadali25/useful-claude-add-ons
+            export GIZMODUCK_REF=0123456789abcdef0123456789abcdef01234567
+            export GIZMODUCK_STAGING_URLS=https://staging.example.com
+            export GIZMODUCK_ENABLE=nikto,nmap
+            export TRIVY_CACHE_DIR=/tmp/gizmoduck-cache/trivy
+            export GIZMODUCK_DEPCHECK_DATA=/tmp/gizmoduck-cache/nvd
+            export GIZMODUCK_NUCLEI_TEMPLATES=/tmp/gizmoduck-cache/nuclei-templates
+            export PATH="$HOME/.local/bin:$PATH"
+          - |
+            mkdir -p "$GIZMODUCK_OUT" "$BITBUCKET_CLONE_DIR/gizmoduck-out/endpoints"
+            python3 "$GIZMODUCK_HOME/scripts/gizmoduck_ci.py" scan-report --repo "$BITBUCKET_CLONE_DIR" --out "$GIZMODUCK_OUT" --commit "$BITBUCKET_COMMIT" \
+              --branch "${BITBUCKET_BRANCH:-}" --tier "$GIZMODUCK_TIER" \
+              --baseline /tmp/gizmoduck-baseline/endpoints/findings.jsonl \
+              --run-url "https://bitbucket.org/$BITBUCKET_REPO_FULL_NAME/pipelines/results/$BITBUCKET_BUILD_NUMBER" \
+              || echo "gizmoduck: security-scan-report.md could not be written (exit $?)"
+            cp "$GIZMODUCK_OUT/security-scan-report.md" "$BITBUCKET_CLONE_DIR/gizmoduck-out/endpoints/" 2>/dev/null || true
+            if [ "$GIZMODUCK_TIER" = "sweep" ] && [ "${GIZMODUCK_REPORT_DOWNLOADS:-}" = "true" ] \
+            && [ "${BITBUCKET_BRANCH:-}" = "$GIZMODUCK_DEFAULT_BRANCH" ] && [ -n "${GIZMODUCK_BB_TOKEN:-}" ] \
+            && [ -f "$GIZMODUCK_OUT/security-scan-report.md" ]; then
+              curl -fsS -X POST -H "Authorization: Bearer $GIZMODUCK_BB_TOKEN" \
+            -F "files=@$GIZMODUCK_OUT/security-scan-report.md;filename=gizmoduck-security-scan-report.md" \
+            "https://api.bitbucket.org/2.0/repositories/$BITBUCKET_REPO_FULL_NAME/downloads" \
+            || echo "gizmoduck: uploading security-scan-report.md to Downloads failed - it is still in this run's artifacts"
+            fi
         artifacts:
           - gizmoduck-out/**
+    - step: &gizmoduck-inventory-branch
+        name: "gizmoduck: regenerate endpoints-inventory.md and commit it on this branch"
+        max-time: 15
+        script:
+          - |
+            export GIZMODUCK_HOME="${GIZMODUCK_HOME:-/opt/gizmoduck}"
+            export GIZMODUCK_DEFAULT_BRANCH=main
+            export GIZMODUCK_SOURCE_REPO=https://github.com/mbadali25/useful-claude-add-ons
+            export GIZMODUCK_REF=0123456789abcdef0123456789abcdef01234567
+            # No secret is used here, and none should be visible (they are deployment variables).
+            unset GIZMODUCK_BB_TOKEN SDP_API_KEY SDP_BASE_URL NVD_API_KEY GIZMODUCK_AUTH_HEADER_VALUE
+          - |
+            GIZMODUCK_HOME="${GIZMODUCK_HOME:-/opt/gizmoduck}"
+            if [ ! -f "$GIZMODUCK_HOME/scripts/gizmoduck_ci.py" ]; then
+              echo "gizmoduck: runner image not in use - fetching the scripts from $GIZMODUCK_SOURCE_REPO@$GIZMODUCK_REF"
+              command -v git >/dev/null 2>&1 || { apt-get update -y && apt-get install -y git ca-certificates python3; }
+              src="$(mktemp -d)"
+              git -C "$src" init -q
+              git -C "$src" fetch -q --depth 1 "$GIZMODUCK_SOURCE_REPO" "$GIZMODUCK_REF"
+              git -C "$src" checkout -q FETCH_HEAD
+              GIZMODUCK_HOME="$src/plugin/gizmoduck"
+            fi
+            python3 "$GIZMODUCK_HOME/scripts/gizmoduck_ci.py" inventory --repo "$BITBUCKET_CLONE_DIR" --output endpoints-inventory.md
+          - |
+            export GIZMODUCK_PUBLISH_BRANCH="${BITBUCKET_BRANCH:-}" GIZMODUCK_PUBLISH_FILES=endpoints-inventory.md GIZMODUCK_PUBLISH_WHAT=endpoints-inventory.md
+            branch="${GIZMODUCK_PUBLISH_BRANCH#refs/heads/}"
+            if [ -z "$branch" ] || [ "$branch" = "$GIZMODUCK_DEFAULT_BRANCH" ]; then
+              echo "gizmoduck: '${branch:-<no branch>}' is the default branch (or unknown) - verify-only there;" "$GIZMODUCK_PUBLISH_WHAT is not committed"
+            else
+              # shellcheck disable=SC2086
+              git add -- $GIZMODUCK_PUBLISH_FILES
+              if git diff --cached --quiet; then
+                echo "gizmoduck: $GIZMODUCK_PUBLISH_WHAT unchanged on $branch - nothing to commit"
+              elif git log -1 --format=%B | grep -qF '[gizmoduck-self-commit]'; then
+                echo "gizmoduck: HEAD is already a gizmoduck self-commit and $GIZMODUCK_PUBLISH_WHAT still differs -"
+                echo "refusing to commit again (loop guard). Regenerate it locally and commit the result."
+                exit 1
+              else
+                git -c user.name=gizmoduck-ci -c user.email=gizmoduck-ci@noreply.invalid commit -q       -m "gizmoduck: regenerate $GIZMODUCK_PUBLISH_WHAT [skip ci] [gizmoduck-self-commit]"
+                if [ -n "${GIZMODUCK_GIT_AUTH:-}" ]; then
+                  push_ok() { git -c "$GIZMODUCK_GIT_AUTH" push -q origin "HEAD:refs/heads/$branch"; }
+                else
+                  push_ok() { git push -q origin "HEAD:refs/heads/$branch"; }
+                fi
+                if push_ok; then
+                  echo "gizmoduck: $GIZMODUCK_PUBLISH_WHAT committed on $branch"
+                else
+                  echo "gizmoduck: could not push the $GIZMODUCK_PUBLISH_WHAT commit to $branch (did the branch move?)."
+                  echo "  The run for the newer commit regenerates it; or regenerate locally and commit it."
+                  exit 1
+                fi
+              fi
+            fi
+    - step: &gizmoduck-inventory-verify
+        name: "gizmoduck: endpoints-inventory.md is current (verify-only; never writes)"
+        max-time: 15
+        script:
+          - |
+            export GIZMODUCK_HOME="${GIZMODUCK_HOME:-/opt/gizmoduck}"
+            export GIZMODUCK_DEFAULT_BRANCH=main
+            export GIZMODUCK_SOURCE_REPO=https://github.com/mbadali25/useful-claude-add-ons
+            export GIZMODUCK_REF=0123456789abcdef0123456789abcdef01234567
+            # No secret is used here, and none should be visible (they are deployment variables).
+            unset GIZMODUCK_BB_TOKEN SDP_API_KEY SDP_BASE_URL NVD_API_KEY GIZMODUCK_AUTH_HEADER_VALUE
+          - |
+            GIZMODUCK_HOME="${GIZMODUCK_HOME:-/opt/gizmoduck}"
+            if [ ! -f "$GIZMODUCK_HOME/scripts/gizmoduck_ci.py" ]; then
+              echo "gizmoduck: runner image not in use - fetching the scripts from $GIZMODUCK_SOURCE_REPO@$GIZMODUCK_REF"
+              command -v git >/dev/null 2>&1 || { apt-get update -y && apt-get install -y git ca-certificates python3; }
+              src="$(mktemp -d)"
+              git -C "$src" init -q
+              git -C "$src" fetch -q --depth 1 "$GIZMODUCK_SOURCE_REPO" "$GIZMODUCK_REF"
+              git -C "$src" checkout -q FETCH_HEAD
+              GIZMODUCK_HOME="$src/plugin/gizmoduck"
+            fi
+            python3 "$GIZMODUCK_HOME/scripts/gizmoduck_ci.py" check --repo "$BITBUCKET_CLONE_DIR" --output endpoints-inventory.md
+    - step: &gizmoduck-publish-report
+        name: "gizmoduck: commit security-scan-report.md on this branch (no secrets; never the default branch)"
+        max-time: 15
+        script:
+          - |
+            export GIZMODUCK_HOME="${GIZMODUCK_HOME:-/opt/gizmoduck}"
+            export GIZMODUCK_DEFAULT_BRANCH=main
+            export GIZMODUCK_SOURCE_REPO=https://github.com/mbadali25/useful-claude-add-ons
+            export GIZMODUCK_REF=0123456789abcdef0123456789abcdef01234567
+            # No secret is used here, and none should be visible (they are deployment variables).
+            unset GIZMODUCK_BB_TOKEN SDP_API_KEY SDP_BASE_URL NVD_API_KEY GIZMODUCK_AUTH_HEADER_VALUE
+          - |
+            if [ ! -f "gizmoduck-out/endpoints/security-scan-report.md" ]; then
+              echo "gizmoduck: the scan left no security-scan-report.md - nothing to commit (see the run artifacts)"
+              exit 0
+            fi
+            command -v git >/dev/null 2>&1 || { apt-get update -y && apt-get install -y git; }
+            cp "gizmoduck-out/endpoints/security-scan-report.md" security-scan-report.md
+            export GIZMODUCK_PUBLISH_BRANCH="${BITBUCKET_BRANCH:-}" GIZMODUCK_PUBLISH_FILES=security-scan-report.md \
+              GIZMODUCK_PUBLISH_WHAT=security-scan-report.md
+            branch="${GIZMODUCK_PUBLISH_BRANCH#refs/heads/}"
+            if [ -z "$branch" ] || [ "$branch" = "$GIZMODUCK_DEFAULT_BRANCH" ]; then
+              echo "gizmoduck: '${branch:-<no branch>}' is the default branch (or unknown) - verify-only there;" "$GIZMODUCK_PUBLISH_WHAT is not committed"
+            else
+              # shellcheck disable=SC2086
+              git add -- $GIZMODUCK_PUBLISH_FILES
+              if git diff --cached --quiet; then
+                echo "gizmoduck: $GIZMODUCK_PUBLISH_WHAT unchanged on $branch - nothing to commit"
+              elif git log -1 --format=%B | grep -qF '[gizmoduck-self-commit]'; then
+                echo "gizmoduck: HEAD is already a gizmoduck self-commit and $GIZMODUCK_PUBLISH_WHAT still differs -"
+                echo "refusing to commit again (loop guard). Regenerate it locally and commit the result."
+                exit 1
+              else
+                git -c user.name=gizmoduck-ci -c user.email=gizmoduck-ci@noreply.invalid commit -q       -m "gizmoduck: regenerate $GIZMODUCK_PUBLISH_WHAT [skip ci] [gizmoduck-self-commit]"
+                if [ -n "${GIZMODUCK_GIT_AUTH:-}" ]; then
+                  push_ok() { git -c "$GIZMODUCK_GIT_AUTH" push -q origin "HEAD:refs/heads/$branch"; }
+                else
+                  push_ok() { git push -q origin "HEAD:refs/heads/$branch"; }
+                fi
+                if push_ok; then
+                  echo "gizmoduck: $GIZMODUCK_PUBLISH_WHAT committed on $branch"
+                else
+                  echo "gizmoduck: could not push the $GIZMODUCK_PUBLISH_WHAT commit to $branch (did the branch move?)."
+                  echo "  The run for the newer commit regenerates it; or regenerate locally and commit it."
+                  exit 1
+                fi
+              fi
+            fi
+    - step: &gizmoduck-publish-sweep
+        name: "gizmoduck: weekly security-scan-report.md to a results branch (opt-in; never the default branch)"
+        max-time: 15
+        script:
+          - |
+            export GIZMODUCK_HOME="${GIZMODUCK_HOME:-/opt/gizmoduck}"
+            export GIZMODUCK_DEFAULT_BRANCH=main
+            export GIZMODUCK_SOURCE_REPO=https://github.com/mbadali25/useful-claude-add-ons
+            export GIZMODUCK_REF=0123456789abcdef0123456789abcdef01234567
+            # No secret is used here, and none should be visible (they are deployment variables).
+            unset GIZMODUCK_BB_TOKEN SDP_API_KEY SDP_BASE_URL NVD_API_KEY GIZMODUCK_AUTH_HEADER_VALUE
+          - |
+            # The weekly sweep's report is always in this run's artifacts (and in Downloads
+            # with GIZMODUCK_REPORT_DOWNLOADS=true). A results branch is opt-in:
+            # GIZMODUCK_RESULTS_BRANCH names it, and it may not be the default branch or
+            # release/* - a sweep never commits to a branch people merge from.
+            if [ -z "${GIZMODUCK_RESULTS_BRANCH:-}" ]; then
+              echo "gizmoduck: GIZMODUCK_RESULTS_BRANCH is not set - the report stays in this run's artifacts"
+              exit 0
+            fi
+            case "$GIZMODUCK_RESULTS_BRANCH" in
+              "$GIZMODUCK_DEFAULT_BRANCH"|release/*|refs/*)
+                echo "gizmoduck: refusing results branch '$GIZMODUCK_RESULTS_BRANCH' - not the default branch or release/*"
+                exit 1 ;;
+            esac
+            if [ ! -f "gizmoduck-out/endpoints/security-scan-report.md" ]; then
+              echo "gizmoduck: the sweep left no security-scan-report.md - nothing to publish"
+              exit 0
+            fi
+            command -v git >/dev/null 2>&1 || { apt-get update -y && apt-get install -y git; }
+            work="$(mktemp -d)"
+            if git fetch -q origin "refs/heads/$GIZMODUCK_RESULTS_BRANCH"; then
+              git worktree add -q "$work" FETCH_HEAD
+            else
+              git worktree add -q --detach "$work" HEAD
+              git -C "$work" checkout -q --orphan gizmoduck-results-new
+              git -C "$work" rm -rqf .
+            fi
+            cp "gizmoduck-out/endpoints/security-scan-report.md" "$work/security-scan-report.md"
+            cd "$work"
+            export GIZMODUCK_PUBLISH_BRANCH="$GIZMODUCK_RESULTS_BRANCH" GIZMODUCK_PUBLISH_FILES=security-scan-report.md \
+              GIZMODUCK_PUBLISH_WHAT="weekly security-scan-report.md"
+            branch="${GIZMODUCK_PUBLISH_BRANCH#refs/heads/}"
+            if [ -z "$branch" ] || [ "$branch" = "$GIZMODUCK_DEFAULT_BRANCH" ]; then
+              echo "gizmoduck: '${branch:-<no branch>}' is the default branch (or unknown) - verify-only there;" "$GIZMODUCK_PUBLISH_WHAT is not committed"
+            else
+              # shellcheck disable=SC2086
+              git add -- $GIZMODUCK_PUBLISH_FILES
+              if git diff --cached --quiet; then
+                echo "gizmoduck: $GIZMODUCK_PUBLISH_WHAT unchanged on $branch - nothing to commit"
+              elif git log -1 --format=%B | grep -qF '[gizmoduck-self-commit]'; then
+                echo "gizmoduck: HEAD is already a gizmoduck self-commit and $GIZMODUCK_PUBLISH_WHAT still differs -"
+                echo "refusing to commit again (loop guard). Regenerate it locally and commit the result."
+                exit 1
+              else
+                git -c user.name=gizmoduck-ci -c user.email=gizmoduck-ci@noreply.invalid commit -q       -m "gizmoduck: regenerate $GIZMODUCK_PUBLISH_WHAT [skip ci] [gizmoduck-self-commit]"
+                if [ -n "${GIZMODUCK_GIT_AUTH:-}" ]; then
+                  push_ok() { git -c "$GIZMODUCK_GIT_AUTH" push -q origin "HEAD:refs/heads/$branch"; }
+                else
+                  push_ok() { git push -q origin "HEAD:refs/heads/$branch"; }
+                fi
+                if push_ok; then
+                  echo "gizmoduck: $GIZMODUCK_PUBLISH_WHAT committed on $branch"
+                else
+                  echo "gizmoduck: could not push the $GIZMODUCK_PUBLISH_WHAT commit to $branch (did the branch move?)."
+                  echo "  The run for the newer commit regenerates it; or regenerate locally and commit it."
+                  exit 1
+                fi
+              fi
+            fi
 
 pipelines:
+  default:
+    - step: *gizmoduck-inventory-branch
+  branches:
+    "main":
+      - step: *gizmoduck-inventory-verify
   pull-requests:
     '**':
       - step: *gizmoduck-pr-check
@@ -597,6 +906,7 @@ pipelines:
             # If this pipeline also deploys staging, put the deploy step here so the
             # endpoint scan runs against what was just deployed.
             - step: *gizmoduck-endpoint-scan
+      - step: *gizmoduck-publish-report
     security-weekly:
       - stage:
           name: gizmoduck tier 3 (trusted)
@@ -604,6 +914,7 @@ pipelines:
           steps:
             - step: *gizmoduck-sweep-code
             - step: *gizmoduck-sweep-endpoints
+      - step: *gizmoduck-publish-sweep
     security-full-bootstrap:
       - variables:
           - name: GIZMODUCK_TARGET_URL
@@ -619,6 +930,9 @@ pipelines:
             - step:
                 <<: *gizmoduck-endpoint-scan
                 image: ubuntu:24.04
+      - step:
+          <<: *gizmoduck-publish-report
+          image: ubuntu:24.04
     security-weekly-bootstrap:
       - stage:
           name: gizmoduck tier 3 (trusted, inline bootstrap)
@@ -630,3 +944,6 @@ pipelines:
             - step:
                 <<: *gizmoduck-sweep-endpoints
                 image: ubuntu:24.04
+      - step:
+          <<: *gizmoduck-publish-sweep
+          image: ubuntu:24.04

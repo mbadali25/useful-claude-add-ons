@@ -37,6 +37,15 @@ Pipeline steps (run inside the rendered pipeline):
   image-check                                                          # runner image build: doctor + every
                                                                        # scanner, or exit 1 (ci/Dockerfile)
 
+Monorepo inventory and reports (pipeline steps, and runnable by hand):
+  inventory      [--repo .] [--output NAME] [--root DIR ...] [--exclude GLOB ...] [--stdout]
+                 # (re)write endpoints-inventory.md; exit 2 on an unreadable declaration
+  check          [--repo .] [--output NAME] [--root DIR ...] [--exclude GLOB ...]
+                 # exit 1 when endpoints-inventory.md is stale or missing, with a regenerate hint
+  scan-report    --out DIR [--repo .] --commit SHA [--date YYYY-MM-DD] [--branch B] [--tier T]
+                 [--baseline FILE] [--run-url URL] [--summary FILE]
+                 # DIR/security-scan-report.md from targets.json, run-manifest.json, findings.jsonl
+
 Guard configuration at runtime comes from the environment: GIZMODUCK_STAGING_URLS
 (baked into the rendered file), GIZMODUCK_ALLOWED_PROD_ORIGINS plus
 GIZMODUCK_ALLOW_PROD_SCAN=true (both, or production is refused), and
@@ -65,7 +74,9 @@ if _HERE not in sys.path:
 import ci_detect
 import ci_gate
 import ci_guard
+import ci_inventory
 import ci_render
+import ci_report
 
 GIZMODUCK_PY = os.path.join(_HERE, "gizmoduck.py")
 PLUGIN_JSON = os.path.join(os.path.dirname(_HERE), ".claude-plugin", "plugin.json")
@@ -705,6 +716,83 @@ def cmd_setup(args):
 
 
 # --------------------------------------------------------------------------
+# Monorepo inventory (ci_inventory) and the scan report (ci_report)
+# --------------------------------------------------------------------------
+
+def _inventory_conf(args):
+    config = ci_detect.load_config(args.repo)
+    conf = ci_inventory.settings(config, output=args.output, roots=args.root, exclude=args.exclude)
+    return config, conf
+
+
+def cmd_inventory(args):
+    try:
+        config, conf = _inventory_conf(args)
+        text = ci_inventory.generate(args.repo, conf, config)
+    except (ci_inventory.InventoryError, ci_detect.SetupError) as exc:
+        print(f"GIZMODUCK_INVENTORY_FAILED: {ci_guard.redact_text(str(exc))}", file=sys.stderr)
+        return 2
+    if args.stdout:
+        sys.stdout.write(text)
+        return 0
+    path = os.path.join(args.repo, conf["output"])
+    with open(path, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write(text)
+    print(f"wrote {path}")
+    return 0
+
+
+def cmd_check(args):
+    try:
+        config, conf = _inventory_conf(args)
+        current, _, diff = ci_inventory.check(args.repo, conf, config)
+    except (ci_inventory.InventoryError, ci_detect.SetupError) as exc:
+        print(f"GIZMODUCK_INVENTORY_FAILED: {ci_guard.redact_text(str(exc))}", file=sys.stderr)
+        return 2
+    if current:
+        print(f"gizmoduck: {conf['output']} is current")
+        return 0
+    for line in diff[:80]:
+        print(line)
+    if len(diff) > 80:
+        print(f"... {len(diff) - 80} more diff line(s)")
+    print(f"GIZMODUCK_INVENTORY_STALE: {conf['output']} does not match the declarations and detection. "
+          f"Regenerate it with\n    {ci_inventory.REGENERATE}\nand commit the result.", file=sys.stderr)
+    return 1
+
+
+def cmd_scan_report(args):
+    try:
+        config, conf = _inventory_conf(args)
+        modules = ci_inventory.build(args.repo, conf, config)
+    except (ci_inventory.InventoryError, ci_detect.SetupError) as exc:
+        print(f"GIZMODUCK_REPORT_FAILED: {ci_guard.redact_text(str(exc))}", file=sys.stderr)
+        return 2
+    try:
+        targets = ci_report.load_json(os.path.join(args.out, "targets.json"))
+        manifest = ci_report.load_json(os.path.join(args.out, "run-manifest.json"))
+        findings = ci_report.load_jsonl(os.path.join(args.out, "findings.jsonl"))
+        baseline = ci_report.load_jsonl(args.baseline) if args.baseline else None
+    except (OSError, ValueError) as exc:
+        print(f"GIZMODUCK_REPORT_FAILED: unreadable scan output: {ci_guard.redact_text(str(exc))}",
+              file=sys.stderr)
+        return 2
+    report = ci_report.build(modules, targets, manifest, findings, baseline)
+    meta = {"date": args.date or time.strftime("%Y-%m-%d", time.gmtime()), "commit": args.commit,
+            "branch": args.branch, "tier": args.tier, "run_url": args.run_url,
+            "artifacts": [a for a in ci_report.ARTIFACT_FILES if os.path.exists(os.path.join(args.out, a))]}
+    text = ci_report.render(report, meta)
+    path = os.path.join(args.out, ci_report.DEFAULT_OUTPUT)
+    with open(path, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write(text)
+    if args.summary:
+        with open(args.summary, "a", encoding="utf-8") as fh:
+            fh.write(text)
+    print(f"wrote {path}")
+    return 0
+
+
+# --------------------------------------------------------------------------
 # publish / gate / sarif / bb-insights
 # --------------------------------------------------------------------------
 
@@ -1296,6 +1384,24 @@ def build_parser():
                    help="CI's out-of-band approval: the GIZMODUCK_SDP_TICKETS repository "
                         "variable. Without it the preview is printed and nothing is opened.")
     sub.add_parser("image-check", allow_abbrev=False)
+
+    for name in ("inventory", "check", "scan-report"):
+        iv = sub.add_parser(name, allow_abbrev=False)
+        iv.add_argument("--repo", default=".")
+        iv.add_argument("--output", default=None, help="inventory file name (default endpoints-inventory.md)")
+        iv.add_argument("--root", action="append", help="directory to look for modules under (repeatable)")
+        iv.add_argument("--exclude", action="append", help="fnmatch glob of directories to skip (repeatable)")
+        if name == "inventory":
+            iv.add_argument("--stdout", action="store_true")
+        if name == "scan-report":
+            iv.add_argument("--out", required=True)
+            iv.add_argument("--commit", required=True)
+            iv.add_argument("--date", default=None)
+            iv.add_argument("--branch", default=None)
+            iv.add_argument("--tier", default=None)
+            iv.add_argument("--baseline", default=None)
+            iv.add_argument("--run-url", default=None)
+            iv.add_argument("--summary", default=None)
     return p
 
 
@@ -1307,6 +1413,7 @@ _COMMANDS = {
     "sarif": cmd_sarif, "bb-insights": cmd_bb_insights,
     "gh-previous-run": cmd_gh_previous_run, "tickets": cmd_tickets,
     "image-check": cmd_image_check,
+    "inventory": cmd_inventory, "check": cmd_check, "scan-report": cmd_scan_report,
 }
 
 

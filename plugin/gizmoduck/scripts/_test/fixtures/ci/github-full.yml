@@ -7,8 +7,13 @@
 # weekly endpoint sweep + manual). Endpoint scans never run on a pull request.
 # Branch protection: require the `gate` job of gizmoduck-pr.yml and of
 # gizmoduck-full.yml - each always runs and decides from the event, so a
-# later skipped run can never stand in for a failed scan. (A docs-only PR
-# does not trigger gizmoduck-pr.yml at all, so its gate reports nothing.)
+# later skipped run can never stand in for a failed scan. Every non-draft PR
+# triggers both; a docs-only PR's tier-1 gate PASSes with "no scannable
+# changes" (decided from a merge-base diff, not a path filter), so it is never
+# left waiting for a check that cannot report.
+# gizmoduck-inventory.yml keeps endpoints-inventory.md current: it commits the
+# regenerated file on non-default branches only and verifies it on the default
+# branch.
 
 name: gizmoduck full code scan
 
@@ -317,6 +322,17 @@ jobs:
           if [ "$GIZMODUCK_APPLIES" != "true" ]; then
             echo "gizmoduck: this event is outside this workflow's tier - nothing to gate (pass)"
             exit 0
+          fi
+          if [ -n "${CHANGES_RESULT:-}" ]; then
+            if [ "$CHANGES_RESULT" != "success" ]; then
+              echo "gizmoduck: gate FAIL - could not tell what this PR changed (changes job: $CHANGES_RESULT)"
+              exit 1
+            fi
+            case "${SCANNABLE:-}" in
+              false) echo "gizmoduck: gate PASS - no scannable changes (documentation only)"; exit 0 ;;
+              true) ;;
+              *) echo "gizmoduck: gate FAIL - the changes job reported no verdict ('${SCANNABLE:-}')"; exit 1 ;;
+            esac
           fi
           echo "gizmoduck: scan jobs - runner image: $IMAGE_RESULT, inline bootstrap: $BOOT_RESULT"
           if { [ "$IMAGE_RESULT" = "success" ] && [ "$BOOT_RESULT" = "skipped" ]; } \

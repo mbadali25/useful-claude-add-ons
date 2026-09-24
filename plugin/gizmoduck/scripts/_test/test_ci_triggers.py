@@ -212,6 +212,14 @@ def _on(doc):
     return doc.get("on", doc.get(True))
 
 
+def scannable(changed):
+    """What the rendered `changes` job concludes, in Python: the same `case`
+    patterns (a `case` `*` matches `/`, as fnmatch's does).
+    test_changes_job_* run the real shell against a real repository."""
+    pats = ci_render._docs_case().split("|")
+    return any(not any(fnmatch.fnmatchcase(f, p) for p in pats) for f in changed)
+
+
 def pr_event(base="feature/x", draft=False, labels=(), action="synchronize", changed=("src/app.py",)):
     return {"name": "pull_request", "action": action, "changed": list(changed), "ref": "refs/pull/7/merge",
             "ctx": {"github": {"event_name": "pull_request", "base_ref": base, "ref": "refs/pull/7/merge",
@@ -220,6 +228,8 @@ def pr_event(base="feature/x", draft=False, labels=(), action="synchronize", cha
                                          "label": {"name": labels[-1]} if action == "labeled" and labels else {},
                                          "pull_request": {"draft": draft, "number": 7,
                                                           "labels": [{"name": n} for n in labels]}}},
+                    "needs": {"changes": {"result": "success",
+                                          "outputs": {"scannable": "true" if scannable(changed) else "false"}}},
                     "vars": {}}}
 
 
@@ -273,7 +283,7 @@ def running(ev, gh):
     whose runner-image job would run for this event."""
     out = {}
     for rel, doc in gh.items():
-        if not triggered(doc, ev):
+        if "scan" not in doc["jobs"] or not triggered(doc, ev):
             continue
         if not _truthy(evaluate(doc["jobs"]["scan"]["if"], ev["ctx"])):
             continue
@@ -294,7 +304,12 @@ MATRIX = [
     ("draft PR into main", pr_event(base="main", draft=True), {}),
     ("PR into a feature branch", pr_event(), TIER1),
     ("PR into a feature branch marked ready", pr_event(action="ready_for_review"), TIER1),
+    # Triggered (no paths-ignore), but the merge-base diff finds nothing to scan:
+    # no scan runs, and the gate PASSes rather than never reporting.
     ("docs-only PR into a feature branch", pr_event(changed=("README.md", "docs/guide.md")), {}),
+    ("docs-only PR, nested docs and images", pr_event(changed=("svc/a/NOTES.md", "docs/img/x.png")), {}),
+    ("PR with docs and one code change", pr_event(changed=("README.md", "svc/app.py")), TIER1),
+    ("PR touching only the generated inventory", pr_event(changed=("endpoints-inventory.md",)), {}),
     ("PR into main", pr_event(base="main"), TIER2_CODE),
     ("docs-only PR into main (tier 2 has no path filter)", pr_event(base="main", changed=("README.md",)),
      TIER2_CODE),
@@ -361,6 +376,9 @@ def gate_verdict(doc, ev, image_result=None, boot_result="skipped"):
     script = job["steps"][0]["run"]
     env = {"GIZMODUCK_APPLIES": "true" if applies else "false", "IMAGE_RESULT": image_result,
            "BOOT_RESULT": boot_result, "PATH": os.environ.get("PATH", "")}
+    for key in ("CHANGES_RESULT", "SCANNABLE"):
+        if key in job["env"]:
+            env[key] = str(evaluate(job["env"][key], ev["ctx"]) or "")
     p = subprocess.run(["bash", "-c", script], env=env, capture_output=True, text=True, check=False)
     return applies, p.returncode
 
@@ -374,7 +392,9 @@ def test_gate_job_applies_exactly_when_the_tier_runs(label, ev, expected):
         if "gate" not in doc["jobs"] or not triggered(doc, ev):
             continue
         applies, rc = gate_verdict(doc, ev)
-        assert applies is (name in expected), (label, name)
+        # A docs-only tier-1 PR: the tier applies, nothing is scanned, the gate passes.
+        docs_only = name == PR and not scannable(ev["changed"])
+        assert applies is (name in expected or (docs_only and applies)), (label, name)
         assert rc == 0, (label, name)
 
 
@@ -482,18 +502,31 @@ def test_deployment_secrets_live_only_in_jobs_that_need_the_trust_check():
     assert holders and all(doc["jobs"][n].get("needs") == ["trust"] for n in holders), holders
 
 
+# Every write permission any rendered job holds - and nothing else may hold one.
+WRITERS = {
+    (ci_render.PR_FILE, "sarif"): {"contents": "read", "security-events": "write"},
+    (ci_render.FULL_FILE, "sarif"): {"contents": "read", "security-events": "write"},
+    (ci_render.ENDPOINTS_FILE, "publish-report"): {"contents": "write", "actions": "read"},
+    (ci_render.INVENTORY_FILE, "publish"): {"contents": "write"},
+    (ci_render.INVENTORY_FILE, "comment"): {"contents": "read", "pull-requests": "write"},
+}
+
+
 def test_permissions_are_least_privilege_per_job():
     _, gh = render()
+    seen = set()
     for rel, doc in gh.items():
         assert doc["permissions"] == {}, rel
         for name, job in doc["jobs"].items():
             perms = job.get("permissions")
             assert perms is not None, f"{rel}:{name} must state its permissions"
-            if name == "sarif":
-                assert perms == {"contents": "read", "security-events": "write"}, rel
+            if (rel, name) in WRITERS:
+                assert perms == WRITERS[(rel, name)], (rel, name)
+                seen.add((rel, name))
             else:
                 assert "write" not in (perms or {}).values(), f"{rel}:{name} holds a write permission"
         assert "pull_request_target" not in _on(doc), rel
+    assert seen == set(WRITERS)
 
 
 def test_no_secret_reaches_a_pull_request_job():
@@ -534,14 +567,30 @@ def test_endpoint_scans_never_run_on_a_pull_request():
     assert all(" endpoint-stage " not in "\n".join(s["script"]) for s in pr_steps)
 
 
+_SCANNERS = (" code-stage ", " endpoint-stage ", "bootstrap.sh")
+
+
 def test_no_branch_name_or_push_triggers():
+    """No SCAN is triggered by a push or a branch name. The only push-triggered
+    workflow (and the only Bitbucket branch pipelines) keep the inventory: no
+    scanner, no secret."""
     files, gh = render()
     for rel, doc in gh.items():
         on = _on(doc)
-        assert "push" not in on, rel
         assert not (on.get("pull_request") or {}).get("branches"), rel
+        if rel == ci_render.INVENTORY_FILE:
+            assert on["push"] == {"branches": ["**"]}
+            assert not any(x in files[rel] for x in _SCANNERS) and "secrets." not in files[rel]
+            continue
+        assert "push" not in on, rel
     bb = yaml.safe_load(files["bitbucket-pipelines.yml"])
-    assert set(bb["pipelines"]) == {"pull-requests", "custom"}
+    assert set(bb["pipelines"]) == {"default", "branches", "pull-requests", "custom"}
+    branch_steps = [s["step"] for s in bb["pipelines"]["default"]] + \
+        [s["step"] for steps in bb["pipelines"]["branches"].values() for s in steps]
+    for step in branch_steps:
+        body = "\n".join(step["script"])
+        assert not any(x in body for x in _SCANNERS), step["name"]
+        assert not re.search(r"\$\{?(" + "|".join(ci_render.TRUSTED_SECRETS) + r")\b", body), step["name"]
 
 
 def test_every_workflow_cancels_in_progress_per_ref():
@@ -613,13 +662,22 @@ def _bb_exports(step):
     return {k: v.strip("'") for k, v in re.findall(r"^export (GIZMODUCK_TIER|GIZMODUCK_BLOCK_AT)=(\S+)$", body, re.M)}
 
 
+_SECRET_REF = re.compile(r"\$\{?(" + "|".join(ci_render.TRUSTED_SECRETS) + r")\b")
+
+
 def _bb_trusted_steps(bb):
-    """Every step of every custom pipeline - each must sit in a stage bound to
-    the trusted deployment environment."""
+    """Every scanning step of every custom pipeline - each must sit in a stage
+    bound to the trusted deployment environment. The only steps allowed
+    outside it are the secret-free publish steps that follow the stage."""
     out = []
     for name, items in bb["pipelines"]["custom"].items():
         stages = [i["stage"] for i in items if "stage" in i]
-        assert not [i for i in items if "step" in i], f"custom: {name} has a step outside the trusted stage"
+        for loose in [i["step"] for i in items if "step" in i]:
+            body = "\n".join(loose["script"])
+            assert loose["name"].startswith("gizmoduck: ") and "commit" in loose["name"] or \
+                "results branch" in loose["name"], f"custom: {name} has a step outside the trusted stage"
+            assert not any(x in body for x in _SCANNERS) and not _SECRET_REF.search(body), loose["name"]
+            assert "deployment" not in loose, loose["name"]
         for st in stages:
             assert st["deployment"] == ci_render.BB_TRUSTED_ENV, name
             out += [s["step"] for s in st["steps"]]
@@ -747,13 +805,15 @@ def test_bitbucket_tiers():
     pipes = bb["pipelines"]
     (pr,) = [s["step"] for s in pipes["pull-requests"]["**"]]
     assert _bb_exports(pr) == {"GIZMODUCK_TIER": "light", "GIZMODUCK_BLOCK_AT": "critical"}
-    assert pr["condition"]["changesets"]["excludePaths"] == list(ci_render.DOCS_ONLY)
+    assert "changesets:" not in files["bitbucket-pipelines.yml"]
+    assert "condition" not in pr, "docs-only is decided by the merge-base diff, never condition.changesets"
+    assert any('GIZMODUCK_DIFF_BASE=FETCH_HEAD' in x for x in pr["script"])
     assert "--tier light --base-ref" in "\n".join(pr["script"])
     assert "draft" in "\n".join(pr["script"])
     full = [s["step"] for i in pipes["custom"]["security-full"] if "stage" in i for s in i["stage"]["steps"]]
     assert [_bb_exports(s) for s in full] == [{"GIZMODUCK_TIER": "full", "GIZMODUCK_BLOCK_AT": "high"}] * 2
     assert " endpoint-stage " in "\n".join(full[1]["script"])
-    weekly = [s["step"] for i in pipes["custom"]["security-weekly"] for s in i["stage"]["steps"]]
+    weekly = [s["step"] for i in pipes["custom"]["security-weekly"] if "stage" in i for s in i["stage"]["steps"]]
     assert [_bb_exports(s) for s in weekly] == [{"GIZMODUCK_TIER": "sweep", "GIZMODUCK_BLOCK_AT": "never"}] * 2
     assert "gizmoduck-nvd" in weekly[0]["caches"]
     assert full[0]["clone"]["depth"] == "full" and weekly[0]["clone"]["depth"] == "full", \

@@ -39,6 +39,7 @@ GOLDEN_FILES = {
     ".github/workflows/gizmoduck-pr.yml": "github-pr.yml",
     ".github/workflows/gizmoduck-full.yml": "github-full.yml",
     ".github/workflows/gizmoduck-endpoints.yml": "github-endpoints.yml",
+    ".github/workflows/gizmoduck-inventory.yml": "github-inventory.yml",
     "bitbucket-pipelines.yml": "bitbucket-pipelines.yml",
 }
 
@@ -59,7 +60,8 @@ def test_rendered_yaml_parses_and_carries_the_config(rel):
     doc = yaml.safe_load(text)
     assert isinstance(doc, dict)
     assert "\r" not in text and "@@" not in text
-    assert "Jane Doe (CISO)" in text
+    if rel != ".github/workflows/gizmoduck-inventory.yml":   # scans nothing, so names no authoriser
+        assert "Jane Doe (CISO)" in text
 
 
 def test_every_action_is_pinned_by_full_sha():
@@ -216,4 +218,8 @@ def test_image_is_emitted_quoted_on_both_platforms():
     quoted = f'image: "{GOLDEN_CFG["image"]}"'
     assert quoted in files["bitbucket-pipelines.yml"]
     for rel in ci_render.GITHUB_FILES:
+        if rel == ci_render.INVENTORY_FILE:
+            # No scanner there: it runs on the plain runner with gizmoduck's stdlib scripts.
+            assert "image:" not in files[rel] and "container:" not in files[rel]
+            continue
         assert quoted in files[rel], rel

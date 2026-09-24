@@ -127,7 +127,10 @@ These back the `/gizmoduck:*` commands; all use `gizmoduck.py`:
 - **ci** — `gizmoduck_ci.py render` installs GitHub Actions / Bitbucket Pipelines security
   scans into a repo. Dry run by default; `--apply` writes and refuses to overwrite without
   `--force`. Confirm who authorised scanning the staging URL (`--authorized-by`) and never
-  contact the staging URL from the session - see `commands/ci.md`.
+  contact the staging URL from the session - see `commands/ci.md`. `gizmoduck_ci.py inventory`
+  writes the monorepo's `endpoints-inventory.md` (declared or detected, per module) and `check`
+  fails when it is stale; the pipelines commit it, and `security-scan-report.md`, on branches
+  only - never the default branch.
 - **doctor** — `gizmoduck.py doctor` verifies nuclei, templates, python, and
   wkhtmltopdf; if anything's missing, point the user at the bootstrap scripts.
   It also reports whether `NVD_API_KEY` is set (never the value) — that's a

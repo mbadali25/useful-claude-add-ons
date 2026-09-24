@@ -4,6 +4,37 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Added
+
+- **`gizmoduck` 0.8.0: monorepo endpoints inventory, `security-scan-report.md`, stale check,
+  branch-only publishing.** `gizmoduck_ci.py inventory` walks a repository for modules (a
+  directory holding `public-endpoint.md` or a project marker - csproj, package.json,
+  pyproject.toml, main.tf, go.mod and others; outermost wins; `docs/` excluded; roots, excludes
+  and the file name configurable) and writes `endpoints-inventory.md`: per module, endpoint |
+  source (declared, or detected with its confidence) | staging URL, `undetermined` rather than a
+  guess. Declared modules use the `public-endpoint.md` frontmatter format as-is; the output has no
+  date, a stable order and redacted credentials, so `gizmoduck_ci.py check` fails when it is stale
+  and prints the regenerate command. `gizmoduck_ci.py scan-report` writes
+  `security-scan-report.md` after every endpoint scan: Critical/High/Medium and new-since-baseline
+  per module and endpoint, UNVERIFIED where nothing scanned, scan date, commit and artifact links.
+  Rendered pipelines commit both files on the branch only: GitHub's new `gizmoduck-inventory.yml`
+  (verify on the default branch, `contents: write` on other branches only, a sticky PR comment)
+  and a `publish-report` job in the endpoint workflow; Bitbucket's `default:` branch step (not
+  `pull-requests:`), a verify-only step on the default branch, and a secret-free publish step
+  after the trusted stage. The weekly sweep's report stays an artifact, optionally in Downloads or
+  on a results branch, never on the default branch. Self-commits carry `[skip ci]` and a
+  `[gizmoduck-self-commit]` mark and refuse to commit twice in a row.
+
+### Fixed
+
+- **`gizmoduck` 0.8.0: a docs-only PR no longer leaves the required tier-1 `gate` check
+  unreported.** `gizmoduck-pr.yml` had `paths-ignore` for documentation, so a docs-only PR never
+  ran the workflow and branch protection requiring its `gate` waited forever. The workflow now
+  runs for every non-draft PR; a secret-free `changes` job decides docs-only from a merge-base
+  diff and the gate PASSes with "no scannable changes". Bitbucket's PR step makes the same
+  decision the same way instead of `condition.changesets`, which Bitbucket evaluates against a
+  push's tip commit only.
+
 ### Security
 
 - **`gizmoduck` 0.7.2: CI trust fixes - deployment ancestry check, no secrets on untrusted

@@ -7,20 +7,19 @@
 # weekly endpoint sweep + manual). Endpoint scans never run on a pull request.
 # Branch protection: require the `gate` job of gizmoduck-pr.yml and of
 # gizmoduck-full.yml - each always runs and decides from the event, so a
-# later skipped run can never stand in for a failed scan. (A docs-only PR
-# does not trigger gizmoduck-pr.yml at all, so its gate reports nothing.)
+# later skipped run can never stand in for a failed scan. Every non-draft PR
+# triggers both; a docs-only PR's tier-1 gate PASSes with "no scannable
+# changes" (decided from a merge-base diff, not a path filter), so it is never
+# left waiting for a check that cannot report.
+# gizmoduck-inventory.yml keeps endpoints-inventory.md current: it commits the
+# regenerated file on non-default branches only and verifies it on the default
+# branch.
 
 name: gizmoduck PR check
 
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review, labeled, unlabeled]
-    paths-ignore:
-      - "**/*.md"
-      - "docs/**"
-      - "**/*.png"
-      - "**/*.jpg"
-      - "**/*.gif"
 
 permissions: {}
 
@@ -46,9 +45,54 @@ env:
   TRIVY_CACHE_DIR: /tmp/gizmoduck-cache/trivy
 
 jobs:
+  changes:
+    name: gizmoduck PR check (scannable changes? merge-base diff)
+    if: true && github.event_name == 'pull_request' && github.event.pull_request.draft == false && !(github.base_ref == 'main' || startsWith(github.base_ref, 'release/') || contains(github.event.pull_request.labels.*.name, 'security-scan'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      scannable: ${{ steps.diff.outputs.scannable }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Anything but documentation changed since the merge base?
+        id: diff
+        env:
+          GIZMODUCK_DIFF_BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if ! mb="$(git merge-base "$GIZMODUCK_DIFF_BASE" HEAD 2>/dev/null)"; then
+            echo "gizmoduck: no merge base between $GIZMODUCK_DIFF_BASE and HEAD - cannot tell what changed; failing closed"
+            exit 2
+          fi
+          short="$(printf '%s' "$mb" | cut -c1-12)"
+          if ! changed="$(git diff --name-only "$mb" HEAD)"; then
+            echo "gizmoduck: git diff $short..HEAD failed - cannot tell what changed; failing closed"
+            exit 2
+          fi
+          scannable=false
+          while IFS= read -r f; do
+            [ -n "$f" ] || continue
+            case "$f" in
+              *.md|docs/*|*.png|*.jpg|*.gif) ;;
+              *) scannable=true; echo "gizmoduck: scannable change since $short: $f"; break ;;
+            esac
+          done <<GIZMODUCK_CHANGED
+          $changed
+          GIZMODUCK_CHANGED
+          if [ "$scannable" = false ]; then
+            echo "gizmoduck: only documentation changed since $short - no scannable changes"
+          fi
+          echo "scannable=$scannable" >> "$GITHUB_OUTPUT"
+
   scan:
     name: gizmoduck PR check (runner image)
-    if: vars.GIZMODUCK_RUNNER != 'bootstrap' && github.event_name == 'pull_request' && github.event.pull_request.draft == false && !(github.base_ref == 'main' || startsWith(github.base_ref, 'release/') || contains(github.event.pull_request.labels.*.name, 'security-scan'))
+    needs: [changes]
+    if: vars.GIZMODUCK_RUNNER != 'bootstrap' && github.event_name == 'pull_request' && github.event.pull_request.draft == false && !(github.base_ref == 'main' || startsWith(github.base_ref, 'release/') || contains(github.event.pull_request.labels.*.name, 'security-scan')) && needs.changes.outputs.scannable == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     container:
@@ -146,7 +190,8 @@ jobs:
 
   scan-bootstrap:
     name: gizmoduck PR check (inline bootstrap fallback)
-    if: vars.GIZMODUCK_RUNNER == 'bootstrap' && github.event_name == 'pull_request' && github.event.pull_request.draft == false && !(github.base_ref == 'main' || startsWith(github.base_ref, 'release/') || contains(github.event.pull_request.labels.*.name, 'security-scan'))
+    needs: [changes]
+    if: vars.GIZMODUCK_RUNNER == 'bootstrap' && github.event_name == 'pull_request' && github.event.pull_request.draft == false && !(github.base_ref == 'main' || startsWith(github.base_ref, 'release/') || contains(github.event.pull_request.labels.*.name, 'security-scan')) && needs.changes.outputs.scannable == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     permissions:
@@ -268,7 +313,7 @@ jobs:
 
   gate:
     name: gizmoduck PR check gate
-    needs: [scan, scan-bootstrap]
+    needs: [changes, scan, scan-bootstrap]
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -277,12 +322,25 @@ jobs:
       GIZMODUCK_APPLIES: ${{ true && github.event_name == 'pull_request' && github.event.pull_request.draft == false && !(github.base_ref == 'main' || startsWith(github.base_ref, 'release/') || contains(github.event.pull_request.labels.*.name, 'security-scan')) }}
       IMAGE_RESULT: ${{ needs.scan.result }}
       BOOT_RESULT: ${{ needs.scan-bootstrap.result }}
+      CHANGES_RESULT: ${{ needs.changes.result }}
+      SCANNABLE: ${{ needs.changes.outputs.scannable }}
     steps:
       - name: Gate (required check - always runs, decides from the event)
         run: |
           if [ "$GIZMODUCK_APPLIES" != "true" ]; then
             echo "gizmoduck: this event is outside this workflow's tier - nothing to gate (pass)"
             exit 0
+          fi
+          if [ -n "${CHANGES_RESULT:-}" ]; then
+            if [ "$CHANGES_RESULT" != "success" ]; then
+              echo "gizmoduck: gate FAIL - could not tell what this PR changed (changes job: $CHANGES_RESULT)"
+              exit 1
+            fi
+            case "${SCANNABLE:-}" in
+              false) echo "gizmoduck: gate PASS - no scannable changes (documentation only)"; exit 0 ;;
+              true) ;;
+              *) echo "gizmoduck: gate FAIL - the changes job reported no verdict ('${SCANNABLE:-}')"; exit 1 ;;
+            esac
           fi
           echo "gizmoduck: scan jobs - runner image: $IMAGE_RESULT, inline bootstrap: $BOOT_RESULT"
           if { [ "$IMAGE_RESULT" = "success" ] && [ "$BOOT_RESULT" = "skipped" ]; } \

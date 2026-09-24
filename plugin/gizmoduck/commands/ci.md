@@ -34,7 +34,12 @@ the repository is `${2:-.}`.
    scan after that workflow succeeds).
 6. **Write only after approval**: the same command plus `--apply`. Existing files are refused
    unless the user asks for `--force`; for Bitbucket, offer `--bitbucket-out <path>` instead.
-7. Tell the user:
+7. **Endpoints inventory.** Show `CLI inventory --repo <repo> --stdout` verbatim: one table per
+   module, declared (`<module>/public-endpoint.md`) or autodetected, with `undetermined` wherever
+   no staging URL could be read. Offer `--root`, `--exclude` and `--output` if the module list is
+   wrong. Only after approval run it without `--stdout` so `endpoints-inventory.md` exists before
+   the pipelines' `check` runs on the default branch.
+8. Tell the user:
    - the tiers (README "CI pipelines"): tier 1 light PR check blocks on a new Critical only; tier
      2 (PRs into the default branch or `release/*`, the `security-scan` label, or Bitbucket's
      manual `custom: security-full`) blocks on a new Critical/High; the tier-3 weekly sweep never
@@ -52,7 +57,10 @@ the repository is `${2:-.}`.
      ever scanned when BOTH `GIZMODUCK_ALLOWED_PROD_ORIGINS` lists the origin AND
      `GIZMODUCK_ALLOW_PROD_SCAN=true`;
    - that an endpoint run with no endpoints fails UNVERIFIED rather than passing, and endpoints
-     seen for the first time are scanned and reported "new, confirm at next setup".
+     seen for the first time are scanned and reported "new, confirm at next setup";
+   - that `endpoints-inventory.md` and `security-scan-report.md` are committed on branches only
+     (`[skip ci]`, never the default branch, which only runs `check`), and that a docs-only PR's
+     tier-1 `gate` passes with "no scannable changes" (README "CI pipelines").
 
 Never run a scan from this command, and never contact the staging URL yourself - the pipeline does
 that, behind its runtime guard.
