@@ -65,16 +65,18 @@ All notable changes to this repository are documented here. Format follows [Keep
   `/crew:done` now records its metrics row with `crew_metrics.py record
   --ticket <id>`.
 
-- **obsidian-vault 0.4.2: gardener drain fixes.** The gardener acks an item
-  on what it actually changed in the vault, not on the path it reported;
-  captures the processor's stdout and stderr; acks already-distilled
-  sessions without re-running them; new `reconcile`; runs `claude -p` with
-  every hook off (`--settings '{"disableAllHooks":true}'`, `CREW_HOOKS=off`).
-  Acks only changed files that carry the item's `session_id`, so a change
-  without it is not counted as that item's work; the processor's stdout and
-  stderr are captured into bounded buffers; vault snapshots are stat-first
-  and count against the run's deadline, leaving an item queued rather than
-  overrunning.
+- **obsidian-vault 0.4.3: the gardener acks only files whose frontmatter
+  carries the item's `session_id`; bounded (64 KiB) processor output
+  capture; stat-first snapshots counted against the run deadline.** (0.4.2
+  never shipped; folded into this entry.) The gardener acks an item on what
+  it actually changed in the vault, not on the path it reported; acks
+  already-distilled sessions without re-running them; new `reconcile`; runs
+  `claude -p` with every hook off (`--settings '{"disableAllHooks":true}'`,
+  `CREW_HOOKS=off`). Acks only a changed file whose frontmatter names the
+  item's `session_id`, so a change without it is not counted as that item's
+  work; the processor's stdout and stderr are captured into bounded (64 KiB)
+  buffers; vault snapshots are stat-first and count against the run's
+  deadline, leaving an item queued rather than overrunning.
 
 - **`crew` 0.20.27: registration.** Cloud guard: fails closed on nesting depth
   and malformed input/config; every pipeline stage and xargs/parallel heads

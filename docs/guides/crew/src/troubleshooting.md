@@ -279,6 +279,13 @@ See [Memory and Obsidian](memory-and-obsidian.md) for setup. What goes wrong day
   `inbox/pending-reflect.md` (no host suffix) is still read if present, so an old backlog drains
   rather than being stranded — it is just never written again.
 
+## Auto wrap-up, clear and resume
+
+See [Auto wrap-up, clear and resume](auto-cycle.md) for the full cycle that lets a long session
+finish itself cleanly, clear, and pick up where it stopped — what wrap-up, auto-clear and resume
+each do, the machine-global keys that turn auto-clear on, and every reason a clear can refuse
+(logged to `.crew/.autoclear.log`).
+
 ## Turning things off
 
 Every switch named above, in one place. "Off" for a guard means the `PreToolUse` hook still fires
