@@ -146,6 +146,25 @@ _resolve_role_write_python() {
     # that string is RELATIVE, so `-x` on it silently depends on the
     # resolver's own cwd, and any `cd` between here and the caller breaks it
     # -- `-x` on the absolute `/c/...` form does not.
+    #
+    # DECIDED CONTRACT (PM, Windows burn-in FAIL 3/4): this function returns
+    # the interpreter path in the form THIS bash itself execs as "$py" --
+    # POSIX-shaped under Git Bash/MSYS, whatever `sys.executable` printed.
+    # A caller that only does `"$PY" ...` (execs it, bash-to-bash) needs
+    # nothing further; a caller that hands this path to a DIFFERENT
+    # interpreter as DATA -- embedded in a python/pwsh argument, a JSON
+    # payload, a file a python script will `open()` -- must convert it at
+    # THAT boundary with `cygpath -w`, guarded (`command -v cygpath` first;
+    # do nothing if absent, same fail-open shape as the conversion above).
+    # `tests/test_context_watch_python_resolver.py`'s
+    # `test_resolver_accepts_a_crlf_terminated_real_interpreter` asserts the
+    # POSIX-vs-native side of this by asking `_BASH` the same question this
+    # function asks (`command -v cygpath`), not by asking the test's own
+    # python process -- FAIL 3/4 was exactly that asymmetry: bash's own MSYS
+    # runtime finds `cygpath.exe` under its compiled-in `/usr/bin`
+    # regardless of what the PARENT (a native python.exe running pytest)
+    # was given, so the two can disagree about whether cygpath exists at
+    # all on the very host this combination is meant to cover.
     case "$real" in
       [A-Za-z]:\\*|[A-Za-z]:/*)
         if command -v cygpath >/dev/null 2>&1; then

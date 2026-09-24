@@ -122,7 +122,18 @@ function Test-CrewTrue($Value) { return ($Value -is [bool]) -and $Value }
 function Test-CrewFalse($Value) { return ($Value -is [bool]) -and -not $Value }
 
 $repoCfg    = Read-CrewJsonFile ".crew/config.json"
-$userHome   = [Environment]::GetFolderPath('UserProfile')
+# NOT [Environment]::GetFolderPath('UserProfile'): on native Windows that
+# resolves the profile path via the Shell API from the user's token/registry
+# and ignores an overridden $env:USERPROFILE entirely, unlike its Linux/.NET
+# Core implementation, which does read $env:HOME. That asymmetry is invisible
+# on a Linux-pwsh test run (the fixture's HOME override works there) and
+# silent on native Windows: every test in this suite redirects HOME/
+# USERPROFILE to an isolated fixture directory specifically so no case reads
+# the developer's real ~/.claude/crew/config.json, and this API bypassed
+# that, reading the REAL machine config instead on the one platform this
+# script actually runs on. Matches cloud-guard.ps1's own
+# `Test-CloudGuardArmed`, the existing convention in this directory.
+$userHome   = if ($env:USERPROFILE) { $env:USERPROFILE } else { $env:HOME }
 $globalCfg  = Read-CrewJsonFile (Join-Path $userHome ".claude/crew/config.json")
 $repoAuto   = Get-CrewChild (Get-CrewChild $repoCfg "context") "autoClear"
 $globalAuto = Get-CrewChild (Get-CrewChild $globalCfg "context") "autoClear"

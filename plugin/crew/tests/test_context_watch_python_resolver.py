@@ -438,6 +438,30 @@ def _function_raw_source(path, header):
     return src[start:end + 3]
 
 
+def _bash_has_cygpath():
+    """Whether `_BASH` ITSELF can find `cygpath` -- asked by running
+    `command -v cygpath` inside that bash, never by `shutil.which` in this
+    python process. Burn-in FAIL 3/4: those two answers can genuinely
+    differ under Git Bash on native Windows. `bash.exe` is an MSYS program
+    and prepends its own compiled-in `/usr/bin`-equivalent to whatever PATH
+    it inherits before resolving any command, so it finds `cygpath.exe`
+    there even when the PARENT process's PATH (what a native `python.exe`
+    running pytest sees, and all `shutil.which` can ever consult) does not
+    list that directory at all -- Git for Windows' installer adds `<git>\\
+    cmd` and `<git>\\bin` to the system PATH, not `<git>\\usr\\bin`, on
+    purpose, specifically so it does not expose the full unix toolchain to
+    native Windows programs. Asking bash directly is what keeps this
+    process's notion of "cygpath exists" in sync with the resolver's own."""
+    if _BASH is None:
+        return False
+    proc = subprocess.run([_BASH, "-c", "command -v cygpath"],
+                           capture_output=True, text=True, check=False)
+    return proc.returncode == 0 and proc.stdout.strip() != ""
+
+
+_HAS_CYGPATH = _bash_has_cygpath()
+
+
 def _posix_form(path_str):
     """The path string the resolver's OWN shell would see, mirroring
     MSYS/Cygwin's path translation (mount table included) instead of
@@ -454,15 +478,39 @@ def _posix_form(path_str):
     where the string is already POSIX-shaped (no drive letter -- Linux,
     macOS, or when `_BASH` is not a Windows Git Bash), there is no
     translation layer to account for and the string is returned unchanged.
+
+    Two things burn-in FAIL 3/4 got wrong about the previous version of this
+    function, both now fixed:
+
+    1. It asked `shutil.which("cygpath")`, this process's own view of PATH,
+       rather than `_bash_has_cygpath()` -- see that function's docstring
+       for why those two can disagree on the exact host this test exists
+       to cover.
+    2. When cygpath was NOT found, it gave up and returned the path
+       UNCHANGED (native-shaped) -- but the resolver's own fallback, run
+       through `_BASH` here via `cygpath`, DOES NOT give up: `_common.sh`'s
+       `crew_py_strict` and `role-write-guard.sh`'s
+       `_resolve_role_write_python` both hand-roll the identical conversion
+       (lower-case the drive letter, drop the colon, backslash to forward
+       slash, leading `/`) when `command -v cygpath` fails, and STILL
+       return a POSIX-shaped path. An expectation that quietly reverts to
+       "no conversion" in that branch is exactly backwards from what the
+       resolver under test actually does, and the mismatch this produced
+       (resolver: POSIX; test expectation: native) is FAIL 3/4 verbatim.
     """
     if not (len(path_str) >= 2 and path_str[1] == ":"):
         return path_str
-    cygpath = shutil.which("cygpath")
-    if not cygpath:
-        return path_str
-    out = subprocess.run([cygpath, "-u", path_str], capture_output=True,
-                          text=True, check=False).stdout.strip()
-    return out or path_str
+    if _bash_has_cygpath():
+        out = subprocess.run([_BASH, "-c", 'cygpath -u "$1"', "_", path_str],
+                              capture_output=True, text=True,
+                              check=False).stdout.strip()
+        return out or path_str
+    # Mirror the resolver's own no-cygpath fallback exactly (see the case
+    # statement in `_common.sh:crew_py_strict` / `role-write-guard.sh:
+    # _resolve_role_write_python`): "C:\\fakepy\\python.exe" -> "/c/fakepy/python.exe".
+    drive = path_str[0].lower()
+    rest = path_str[2:].replace("\\", "/")
+    return "/" + drive + rest
 
 
 def _is_executable_via_shell(path):
@@ -856,7 +904,6 @@ def test_resolver_rejects_a_windowsapps_alias_stub_with_no_real_python(
 #     the filesystem, false and therefore skipped everywhere else, including
 #     in this container).
 
-_HAS_CYGPATH = shutil.which("cygpath") is not None
 _cygpath_absent = pytest.mark.skipif(
     _HAS_CYGPATH, reason="cygpath present -- these fixtures assume the tr fallback")
 

@@ -20,6 +20,7 @@ usual, because the failure mode is a keystroke going somewhere unintended.
 """
 import json
 import os
+import pathlib
 import shutil
 import subprocess
 import sys
@@ -65,6 +66,44 @@ def _stub(directory, name, body="#!/bin/sh\nexit 0\n", cmd_body="@echo off\r\nex
     on Windows, the `.cmd` twin -- the only form the native python behind
     `crew_autocycle.py` can find with `shutil.which`."""
     return crew_fixtures.write_shim(directory, name, body, cmd_body)
+
+
+def _crlf_python_env(tmp_path):
+    """A `PYTHONPATH` entry carrying a `sitecustomize.py` that reconfigures
+    EVERY python process that inherits it to write CRLF, rather than the
+    real `crew_py_strict`-resolved interpreter's own untouched choice.
+
+    The naive way to model "python on Windows writes \\r\\n" -- a wrapper
+    script pretending to be `python3` on PATH ahead of the real one -- does
+    not work here: `crew_py_strict`'s probe proves a candidate by running
+    `sys.executable` and then uses THAT resolved path for every later call
+    (exactly the alias-forwarding behaviour
+    `test_context_watch_python_resolver.py`'s Store-alias case exists to
+    prove), so a wrapper is bypassed the moment it hands back a real
+    interpreter's own path -- confirmed by hand before trusting this
+    fixture. A real native Windows python.exe does not need a wrapper to
+    write CRLF; it is `sys.stdout`'s own default text-mode newline
+    translation on that platform (`io.TextIOWrapper(..., newline=None)`
+    translates every `\\n` a `print()` writes to `os.linesep`, and
+    `os.linesep` is `\\r\\n` there). `sitecustomize.py` reproduces that SAME
+    effect on whichever real interpreter this host resolves, instead of
+    substituting a fake one, so it survives the resolver's own
+    sys.executable indirection intact.
+
+    Sabotage-checked by hand: with `auto-clear.sh`'s own `tr -d '\\r'` on the
+    plan capture removed, a run using this env refuses (empty stdout,
+    "refusing" on stderr) instead of reporting `method: tmux`. Without this
+    fixture the same sabotage left the pre-existing test passing unchanged,
+    because a real Linux python3 never emits the CR this guards against."""
+    sitedir = tmp_path / "crlf-sitecustomize"
+    sitedir.mkdir(exist_ok=True)
+    (sitedir / "sitecustomize.py").write_text(
+        "import sys, io\n"
+        "sys.stdout = io.TextIOWrapper(\n"
+        "    sys.stdout.buffer, encoding=sys.stdout.encoding,\n"
+        "    newline='\\r\\n', line_buffering=True)\n",
+        encoding="utf-8")
+    return {"PYTHONPATH": str(sitedir)}
 
 
 SESSION = "sess-1"
@@ -158,6 +197,40 @@ def _sendable(flavor, tmp_path):
 
 def test_flavors_are_discoverable():
     assert FLAVORS, "neither bash nor pwsh is on PATH; cannot test auto-clear"
+
+
+# --- The Windows burn-in's real cause: home-dir resolution bypassed the test
+#     isolation entirely ---------------------------------------------------
+#
+# `[Environment]::GetFolderPath('UserProfile')` resolves the profile path via
+# the Shell API from the current user's token/registry on native Windows,
+# and ignores an overridden $env:USERPROFILE there -- unlike its Linux/.NET
+# Core implementation, which reads $env:HOME and so happily obeys every
+# fixture in this suite that redirects HOME/USERPROFILE at a tmp directory.
+# That made the divergence invisible on a Linux-pwsh run (this container
+# included) and live on the one platform the script actually runs on: a
+# burn-in there read the REAL machine ~/.claude/crew/config.json instead of
+# the isolated fixture one, arming on whatever autoClear state that real
+# machine happened to be carrying. No env-var trick can prove the ORIGINAL
+# bug here -- the asymmetry is in the .NET runtime's own per-OS
+# implementation of GetFolderPath, not in anything a Linux pwsh process can
+# be made to disagree with itself about -- so this is a static tripwire
+# instead, the same shape as
+# `test_context_watch_does_not_call_the_unhardened_resolver`.
+def test_auto_clear_ps1_resolves_home_from_the_env_not_the_shell_api():
+    # Comment lines excluded: this test's own docstring/header quotes the old
+    # call form by name, and a bare substring check over the whole file would
+    # match its own explanation rather than the code.
+    code_lines = [line for line in pathlib.Path(_PS1).read_text(encoding="utf-8").splitlines()
+                  if not line.strip().startswith("#")]
+    source = "\n".join(code_lines)
+    assert "GetFolderPath" not in source, (
+        "auto-clear.ps1 is back on [Environment]::GetFolderPath('UserProfile'), "
+        "which ignores $env:USERPROFILE on native Windows and so cannot be "
+        "redirected to an isolated fixture home -- every other case in this "
+        "suite depends on that redirection actually working. Read $env:"
+        "USERPROFILE (falling back to $env:HOME) instead, matching "
+        "cloud-guard.ps1's Test-CloudGuardArmed.")
 
 
 # --- Opted out ------------------------------------------------------------
@@ -395,14 +468,22 @@ def test_config_values_survive_a_crlf_writing_python(tmp_path):
     a trailing CR. `enabled` read as "true\\r", the equality test failed, and the
     script exited 0 having done nothing and said nothing - the hardest possible
     failure to diagnose from a Stop hook.
+
+    Runs `crew_autocycle.py` itself through a CRLF-emitting python
+    (`_crlf_python_env`) so this actually exercises `auto-clear.sh:106`'s
+    `tr -d '\\r'` on the plan capture -- the real python3 this test ran
+    against before never wrote a CR at all, so the assertions below passed
+    whether or not that stripping was there to catch. See
+    `_crlf_python_env`'s docstring for the sabotage check that proved it.
     """
     bindir = str(tmp_path / "fakebin")
     _stub(bindir, "tmux", f"#!/bin/sh\necho {os.getpid()}\n",
               f"@echo off\r\necho {os.getpid()}\r\n")
     root = _repo(tmp_path, auto_clear={"enabled": True, "method": "tmux"})
-    out = _run("sh", root, "--dry-run", env_extra={
-        "PATH": crew_fixtures.shell_path("sh", [bindir]),
-        "TMUX": "/tmp/fake,1,0", "TMUX_PANE": "%9"}).stdout
+    env = {"PATH": crew_fixtures.shell_path("sh", [bindir]),
+           "TMUX": "/tmp/fake,1,0", "TMUX_PANE": "%9"}
+    env.update(_crlf_python_env(tmp_path))
+    out = _run("sh", root, "--dry-run", env_extra=env).stdout
     assert "method: tmux" in out, "a CR in the config values would break this"
     assert "target: %9" in out
 
