@@ -88,7 +88,7 @@ def _print_python(path_entries):
     result = subprocess.run(
         [_PWSH, "-NoProfile", "-NonInteractive", "-File", _PS1, "-PrintPython"],
         env=env, stdin=subprocess.DEVNULL, capture_output=True, text=True,
-        check=False,
+        check=False, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S,
     )
     assert result.returncode == 0, (
         "the probe must exit 0. stderr: " + result.stderr
@@ -180,7 +180,7 @@ def test_a_profile_function_named_python_does_not_shadow_the_interpreter(tmp_pat
     result = subprocess.run(
         [_PWSH, "-NoProfile", "-NonInteractive", "-File", str(script_path)],
         env=env, stdin=subprocess.DEVNULL, capture_output=True, text=True,
-        check=False,
+        check=False, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S,
     )
     assert result.returncode == 0, result.stderr
     resolved = result.stdout.strip()
@@ -200,12 +200,12 @@ def _fixture_repo(tmp_path):
     for args in (("init", "-q"), ("config", "user.email", "t@example.invalid"),
                  ("config", "user.name", "t")):
         subprocess.run(("git",) + args, cwd=repo, check=True,
-                       capture_output=True, text=True)
+                       capture_output=True, text=True, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
     (repo / "README.md").write_text("committed", encoding="utf-8")
     subprocess.run(("git", "add", "-A"), cwd=repo, check=True,
-                   capture_output=True, text=True)
+                   capture_output=True, text=True, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
     subprocess.run(("git", "commit", "-q", "-m", "fixture"), cwd=repo,
-                   check=True, capture_output=True, text=True)
+                   check=True, capture_output=True, text=True, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
     (repo / "unverified.py").write_text("x = 1", encoding="utf-8")
     return repo
 
@@ -241,7 +241,7 @@ def test_the_scope_report_call_site_actually_uses_the_hardened_resolver(tmp_path
     result = subprocess.run(
         [_PWSH, "-NoProfile", "-NonInteractive", "-File", _PS1],
         input="{}", cwd=str(repo), env=env,
-        capture_output=True, text=True, check=False,
+        capture_output=True, text=True, check=False, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S,
     )
     assert "(no python; scope not checked)" in result.stderr, (
         "the scope report did not go through Resolve-CrewPython: with only a "
@@ -292,19 +292,19 @@ def test_a_missing_scope_report_says_so_instead_of_a_python_error(tmp_path):
     for args in (("init", "-q"), ("config", "user.email", "t@example.invalid"),
                  ("config", "user.name", "t")):
         subprocess.run(("git",) + args, cwd=repo, check=True,
-                       capture_output=True, text=True)
+                       capture_output=True, text=True, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
     (repo / "README.md").write_text("committed", encoding="utf-8")
     subprocess.run(("git", "add", "-A"), cwd=repo, check=True,
-                   capture_output=True, text=True)
+                   capture_output=True, text=True, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
     subprocess.run(("git", "commit", "-q", "-m", "fixture"), cwd=repo,
-                   check=True, capture_output=True, text=True)
+                   check=True, capture_output=True, text=True, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
     (repo / "unverified.py").write_text("x = 1", encoding="utf-8")
 
     result = subprocess.run(
         [_PWSH, "-NoProfile", "-NonInteractive", "-File", str(copied)],
         input="{}", cwd=str(repo),
         env=dict(os.environ, CLAUDE_PROJECT_DIR=str(repo)),
-        capture_output=True, text=True, check=False,
+        capture_output=True, text=True, check=False, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S,
     )
     assert "scope_report.py not found" in result.stderr, (
         "a missing scope_report.py must produce the uniform fallback line, "
@@ -333,7 +333,7 @@ def test_the_bash_flavour_also_names_a_missing_scope_report(tmp_path):
     result = subprocess.run(
         [_BASH, str(copied)], input="{}", cwd=str(repo),
         env=dict(os.environ, CLAUDE_PROJECT_DIR=str(repo)),
-        capture_output=True, text=True, check=False,
+        capture_output=True, text=True, check=False, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S,
     )
     assert "scope_report.py not found" in result.stderr, (
         "verify-gate.sh must name the missing scope script rather than "

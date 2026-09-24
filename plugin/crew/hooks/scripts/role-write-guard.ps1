@@ -74,11 +74,39 @@ function Resolve-CrewPython {
   # up past the shortest hook timeout that calls this (bridge-status.ps1's
   # twin, 10s) even though every individual probe is bounded. Kept well
   # inside that.
+  #
+  # REAL Windows only, never the flavour-guard seam: $env:OS -eq 'Windows_NT'
+  # is also true in this suite's own fixtures, which run REAL pwsh on Linux
+  # with that variable set to get past the guard at the top of this file --
+  # their candidates are ordinary extensionless Linux shim scripts, valid
+  # executables here, and gating on the seam would reject every one of them
+  # and break the fixtures that exist to prove this resolver works. $IsWindows
+  # (PowerShell 6+) reports the actual OS regardless of $env:OS; it does not
+  # exist in Windows PowerShell 5.1, which never runs anywhere but Windows, so
+  # its absence is itself a true answer.
+  $crewPythonRealWindows = if (Test-Path variable:IsWindows) { $IsWindows } else { $true }
+  # Only .exe/.com/.cmd/.bat (PATHEXT's launchable core) can be started
+  # without going through shell association. An extensionless file --
+  # anything else, including no extension at all -- CreateProcess cannot
+  # launch directly, and reaching it here is the same failure mode this
+  # probe's own bounded wait/kill exists to survive from a HUNG candidate,
+  # not from one Windows cannot start in the first place. Skipped before
+  # Process.Start is ever called, not caught after: a WindowsApps alias
+  # already carries `.exe`, so it is untouched by this and still tried like
+  # any other candidate, per the comment above.
+  $crewPythonNativeExts = @('.exe', '.com', '.cmd', '.bat')
   $crewPythonDeadline = [System.Diagnostics.Stopwatch]::StartNew()
   foreach ($name in @('python3', 'python', 'py')) {
     $candidates = @(Get-Command $name -All -CommandType Application -ErrorAction SilentlyContinue)
     foreach ($cmd in $candidates) {
       if (-not $cmd.Source) { continue }
+      if ($crewPythonRealWindows) {
+        $crewPythonExt = [System.IO.Path]::GetExtension($cmd.Source)
+        if ($crewPythonNativeExts -notcontains $crewPythonExt) {
+          Write-Verbose "Resolve-CrewPython: skipping '$($cmd.Source)' - not natively launchable on Windows (extension '$crewPythonExt' outside .exe/.com/.cmd/.bat)"
+          continue
+        }
+      }
       # The remaining budget, not a flat 3000ms, bounds THIS candidate's
       # wait: checking the deadline only before launch and then waiting the
       # full 3s regardless can still overrun the deadline by up to 3s once

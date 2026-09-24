@@ -108,7 +108,7 @@ def _scoped_tools_dir(tmp_path, python_names, real_py=None):
 
 def _git(root, *args):
     subprocess.run(("git",) + args, cwd=root, check=True,
-                   capture_output=True, text=True)
+                   capture_output=True, text=True, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
 
 
 def _repo(tmp_path, verify_map):
@@ -129,7 +129,7 @@ def _run(root, tools_dir):
     env = dict(os.environ, PATH=tools_dir, CLAUDE_PROJECT_DIR=str(root))
     return subprocess.run(
         [_BASH, _SH], input="{}", cwd=str(root), env=env,
-        capture_output=True, text=True, check=False,
+        capture_output=True, text=True, check=False, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S,
     )
 
 
@@ -738,7 +738,7 @@ def test_a_windowsapps_stub_fails_closed_with_zero_rules_run(tmp_path):
     env = dict(os.environ, PATH=combined_path, CLAUDE_PROJECT_DIR=str(root))
     result = subprocess.run(
         [_BASH, _SH], input="{}", cwd=str(root), env=env,
-        capture_output=True, text=True, check=False,
+        capture_output=True, text=True, check=False, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S,
     )
     assert result.returncode == 2, (
         "a WindowsApps-only environment must fail closed (exit 2), not run "
@@ -797,7 +797,7 @@ def test_matcher_producing_no_output_fails_closed_even_past_crew_py_strict(tmp_p
     env = dict(os.environ, PATH=tools_dir, CLAUDE_PROJECT_DIR=str(root))
     result = subprocess.run(
         [_BASH, _SH], input="{}", cwd=str(root), env=env,
-        capture_output=True, text=True, check=False,
+        capture_output=True, text=True, check=False, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S,
     )
     assert result.returncode == 2, (
         "an interpreter that PASSES crew_py_strict but prints nothing when "

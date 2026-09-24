@@ -43,7 +43,7 @@ _VERIFY = """{
 
 def _git(root, *args):
     subprocess.run(("git",) + args, cwd=root, check=True,
-                   capture_output=True, text=True, stdin=subprocess.DEVNULL)
+                   capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
 
 
 def _repo(tmp_path):
@@ -72,7 +72,7 @@ def _run(root):
     done = subprocess.run(
         [_BASH, _SH], cwd=root, capture_output=True, text=True,
         stdin=subprocess.DEVNULL, check=False,
-        env={**os.environ, "CLAUDE_PROJECT_DIR": str(root)},
+        env={**os.environ, "CLAUDE_PROJECT_DIR": str(root)}, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S,
     )
     return done.returncode
 
@@ -84,7 +84,7 @@ def _marker(root):
 
 def _head(root):
     return subprocess.run(["git", "rev-parse", "HEAD"], cwd=root, check=True,
-                          capture_output=True, text=True).stdout.strip()
+                          capture_output=True, text=True, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S).stdout.strip()
 
 
 # --- must block -----------------------------------------------------------
@@ -197,7 +197,7 @@ def test_the_marker_is_not_tracked_by_git(tmp_path):
     assert _marker(root) is not None
     tracked = subprocess.run(
         ["git", "ls-files", "--", ".crew/.verify-verified-at"],
-        cwd=root, capture_output=True, text=True, check=True).stdout.strip()
+        cwd=root, capture_output=True, text=True, check=True, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S).stdout.strip()
     assert tracked == ""
 
 

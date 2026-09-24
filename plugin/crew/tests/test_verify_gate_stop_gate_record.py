@@ -143,6 +143,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 
 import pytest
 
@@ -171,7 +172,7 @@ _FLAVOURS = [
 
 def _git(root, *args):
     subprocess.run(("git",) + args, cwd=root, check=True,
-                    capture_output=True, text=True)
+                    capture_output=True, text=True, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
 
 
 def _repo(tmp_path, verify_map):
@@ -202,7 +203,7 @@ def _run(flavour, root, *extra, scripts=None):
     return subprocess.run(
         cmd, input="{}", cwd=str(root),
         env=dict(os.environ, CLAUDE_PROJECT_DIR=str(root)),
-        capture_output=True, text=True, check=False,
+        capture_output=True, text=True, check=False, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S,
     )
 
 
@@ -279,7 +280,7 @@ def test_c_price_writes_integers_never_zero_never_overwrites(tmp_path):
     target.write_text(json.dumps(vmap), encoding="utf-8")
 
     result = subprocess.run([_PY, _PRICE_PY, str(target)],
-                            capture_output=True, text=True, check=False)
+                            capture_output=True, text=True, check=False, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
     assert result.returncode == 0, result.stderr
     written = json.loads(target.read_text(encoding="utf-8"))
     assert written["rules"][0]["seconds"] >= 1, written
@@ -290,7 +291,7 @@ def test_c_price_writes_integers_never_zero_never_overwrites(tmp_path):
     )
 
     forced = subprocess.run([_PY, _PRICE_PY, str(target), "--force"],
-                            capture_output=True, text=True, check=False)
+                            capture_output=True, text=True, check=False, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
     assert forced.returncode == 0, forced.stderr
     reforced = json.loads(target.read_text(encoding="utf-8"))
     assert reforced["rules"][1]["seconds"] >= 1, reforced
@@ -356,7 +357,7 @@ def test_e_reach_host_is_stop_excluded_all_included_price_skipped(flavour, tmp_p
     target = tmp_path / "price_fixture.json"
     target.write_text(json.dumps(vmap), encoding="utf-8")
     priced = subprocess.run([_PY, _PRICE_PY, str(target)],
-                            capture_output=True, text=True, check=False)
+                            capture_output=True, text=True, check=False, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
     assert "SKIPPED" in priced.stdout, priced.stdout
     assert "seconds" not in json.loads(target.read_text(encoding="utf-8"))["rules"][0]
 
@@ -384,7 +385,7 @@ def test_f_undeclared_reach_verb_is_stop_deferred_and_price_refused(flavour, tmp
     target = tmp_path / "price_fixture2.json"
     target.write_text(json.dumps(vmap), encoding="utf-8")
     priced = subprocess.run([_PY, _PRICE_PY, str(target)],
-                            capture_output=True, text=True, check=False)
+                            capture_output=True, text=True, check=False, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
     assert "REFUSED" in priced.stdout, priced.stdout
     assert "seconds" not in json.loads(target.read_text(encoding="utf-8"))["rules"][0]
 
@@ -482,7 +483,7 @@ def test_1_crlf_from_native_python_does_not_leak_an_inherited_credential(
     else:
         cmd = [_PWSH, "-NoProfile", "-NonInteractive", "-File", _PS1]
     result = subprocess.run(cmd, input="{}", cwd=str(root), env=env,
-                            capture_output=True, text=True, check=False)
+                            capture_output=True, text=True, check=False, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
     assert result.returncode == 0, (
         "AWS_PROFILE was not actually unset under a CRLF-corrupted "
         "env-pin read. " + result.stderr
@@ -815,7 +816,7 @@ def test_15_price_refuses_a_wrapper_that_reaches_ssh_and_never_runs_it(tmp_path)
     target = tmp_path / "price_wrapper.json"
     target.write_text(json.dumps(vmap), encoding="utf-8")
     priced = subprocess.run([_PY, _PRICE_PY, str(target)], cwd=str(tmp_path),
-                            capture_output=True, text=True, check=False)
+                            capture_output=True, text=True, check=False, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
     assert priced.returncode == 0, priced.stderr
     assert "REFUSED" in priced.stdout, priced.stdout
     assert "interpreter given a script argument 'wrapper.sh'" in priced.stdout, priced.stdout
@@ -940,7 +941,7 @@ def test_19_price_records_rc77_as_skip_with_no_seconds(tmp_path):
     target = tmp_path / "price_77.json"
     target.write_text(json.dumps(vmap), encoding="utf-8")
     priced = subprocess.run([_PY, _PRICE_PY, str(target)],
-                            capture_output=True, text=True, check=False)
+                            capture_output=True, text=True, check=False, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
     assert priced.returncode == 0, priced.stderr
     assert "SKIP" in priced.stdout, priced.stdout
     assert "77" in priced.stdout, priced.stdout
@@ -969,7 +970,7 @@ def test_20_price_pins_declared_env_and_strips_undeclared_pinned_vars(tmp_path):
     target.write_text(json.dumps(vmap), encoding="utf-8")
     env = dict(os.environ, ENV="prod", AWS_PROFILE="caller-profile")
     priced = subprocess.run([_PY, _PRICE_PY, str(target)], cwd=str(tmp_path),
-                            env=env, capture_output=True, text=True, check=False)
+                            env=env, capture_output=True, text=True, check=False, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
     assert priced.returncode == 0, priced.stderr
     seen = (tmp_path / "seen.txt").read_text(encoding="utf-8")
     assert "ENV=test" in seen, seen
@@ -1622,8 +1623,8 @@ def test_48_a_corrupt_record_holds_the_marker_until_all_rebuilds_it(flavour, tmp
     assert marker.exists(), first.stderr
     before = marker.read_text(encoding="utf-8").strip()
     # a new commit, then corrupt the record, then an unrelated change
-    subprocess.run(["git", "add", "-A"], cwd=str(root), check=True, capture_output=True)
-    subprocess.run(["git", "commit", "-qm", "advance"], cwd=str(root), check=True, capture_output=True)
+    subprocess.run(["git", "add", "-A"], cwd=str(root), check=True, capture_output=True, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
+    subprocess.run(["git", "commit", "-qm", "advance"], cwd=str(root), check=True, capture_output=True, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
     (root / ".crew" / ".verify-gate.record.json").write_text("not json", encoding="utf-8")
     (root / "a.py").write_text("x2", encoding="utf-8")
     second = _run(flavour, root)
@@ -1659,8 +1660,8 @@ def test_49_editing_a_deferred_rules_paths_keeps_its_obligation(flavour, tmp_pat
     # advance the marker past it - so the NEXT turn's changed set is only
     # verify.json, which the widened rule does not match (Codex's repro:
     # "Next Stop runs zero commands").
-    subprocess.run(["git", "add", "-A"], cwd=str(root), check=True, capture_output=True)
-    subprocess.run(["git", "commit", "-qm", "a.txt"], cwd=str(root), check=True, capture_output=True)
+    subprocess.run(["git", "add", "-A"], cwd=str(root), check=True, capture_output=True, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
+    subprocess.run(["git", "commit", "-qm", "a.txt"], cwd=str(root), check=True, capture_output=True, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
     mid = _run(flavour, root)
     assert mid.returncode == 0, mid.stderr
     marker = root / ".crew" / ".verify-verified-at"
@@ -1668,8 +1669,8 @@ def test_49_editing_a_deferred_rules_paths_keeps_its_obligation(flavour, tmp_pat
     # commit ONLY an expansion of the rule's paths list
     vmap["rules"][0]["paths"] = ["a.txt", "b.txt"]
     (root / ".crew" / "verify.json").write_text(json.dumps(vmap), encoding="utf-8")
-    subprocess.run(["git", "add", "-A"], cwd=str(root), check=True, capture_output=True)
-    subprocess.run(["git", "commit", "-qm", "widen the rule"], cwd=str(root), check=True, capture_output=True)
+    subprocess.run(["git", "add", "-A"], cwd=str(root), check=True, capture_output=True, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
+    subprocess.run(["git", "commit", "-qm", "widen the rule"], cwd=str(root), check=True, capture_output=True, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
     second = _run(flavour, root)
     assert "NOT VERIFIED ON THIS TREE" in second.stderr, second.stderr
     assert "rule edited or removed since" in second.stderr, second.stderr
@@ -1717,3 +1718,108 @@ def test_28_the_real_verify_json_scans_clean_for_every_rule():
         "the REAL .crew/verify.json - the merged gate would defer them, "
         "on every Stop: " + json.dumps(non_local, indent=2)
     )
+
+
+# --- bounded stdin: an open, never-closed pipe must not park the gate ------
+#
+# win-repo's parked process (pwsh -NonInteractive, 1.94s CPU, no children,
+# lock held, no record written) disproved an undrained-pipe deadlock theory
+# specifically, so this is NOT a re-test of that theory - it is independent
+# hardening for the same unconditional-read shape, verbatim from the brief:
+# `[Console]::In.ReadToEnd()` (.ps1) and `INPUT=$(cat 2>/dev/null)` (.sh) both
+# block forever on a pipe that is open but never closed and never sends
+# stop_hook_active. Both gates now bound that read; this proves the bound
+# actually fires rather than merely existing in a comment.
+_STDIN_BOUND_DEADLINE_S = 20  # generous over the ~5s read bound each flavour declares
+
+
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+def test_40_an_open_never_closed_stdin_does_not_park_the_gate(flavour, tmp_path):
+    """Neither flavour may hang waiting on stdin that is open (a real pipe,
+    not a terminal - `[ -t 0 ]` / IsInputRedirected both read this as
+    "redirected") but never written to and never closed. Nothing is ever
+    sent, so the ONLY way this returns is the bounded read timing out and
+    the gate proceeding with no payload - exactly like a plain Stop event
+    with an empty body."""
+    vmap = {
+        "version": 1,
+        "rules": [{"paths": ["a.py"], "run": ["exit 0"]}],
+        "default": [], "unmapped": "ignore",
+    }
+    root = _repo(tmp_path, vmap)
+    (root / "a.py").write_text("x", encoding="utf-8")
+    env = dict(os.environ, CLAUDE_PROJECT_DIR=str(root))
+    if flavour == "sh":
+        cmd = [_BASH, _SH]
+    else:
+        cmd = [_PWSH, "-NoProfile", "-NonInteractive", "-File", _PS1]
+    proc = subprocess.Popen(  # pylint: disable=consider-using-with
+        cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE, text=True, cwd=str(root), env=env)
+    started = time.time()
+    try:
+        # Deliberately NOT communicate(): it closes stdin the instant it is
+        # called even with input=None, which would hand the gate a normal
+        # closed pipe and prove nothing about an OPEN one. wait() alone
+        # touches neither stdin nor stdout/stderr, so the pipe genuinely
+        # stays open, unwritten-to, for the whole timeout.
+        proc.wait(timeout=_STDIN_BOUND_DEADLINE_S)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait(timeout=10)
+        raise AssertionError(
+            f"the {flavour} gate did not return within "
+            f"{_STDIN_BOUND_DEADLINE_S}s with stdin open and never closed - "
+            "the unbounded read was not actually bounded")
+    finally:
+        if proc.stdin:
+            proc.stdin.close()
+    elapsed = time.time() - started
+    out = proc.stdout.read() if proc.stdout else ""
+    err = proc.stderr.read() if proc.stderr else ""
+    assert elapsed < _STDIN_BOUND_DEADLINE_S, (
+        f"the {flavour} gate returned but took {elapsed:.1f}s - "
+        f"stderr: {err}")
+    assert proc.returncode == 0, (
+        f"stdout: {out} stderr: {err}"
+    )
+
+
+@pytest.mark.skipif(_PWSH is None, reason="needs pwsh")
+def test_40b_the_ps1_gate_bounds_stdin_on_linux_too(tmp_path):
+    """The .ps1 half of test_40, exercised for real rather than skipped: pwsh
+    is cross-platform, so `OS=Windows_NT` (the same override
+    test_ps1_python_probe.py uses to reach this file's guarded body on a
+    Linux runner) lets `[Console]::IsInputRedirected` / `ReadToEndAsync`
+    actually run here, on the real interpreter, instead of only being read
+    as source."""
+    vmap = {
+        "version": 1,
+        "rules": [{"paths": ["a.py"], "run": ["exit 0"]}],
+        "default": [], "unmapped": "ignore",
+    }
+    root = _repo(tmp_path, vmap)
+    (root / "a.py").write_text("x", encoding="utf-8")
+    env = dict(os.environ, CLAUDE_PROJECT_DIR=str(root), OS="Windows_NT")
+    proc = subprocess.Popen(  # pylint: disable=consider-using-with
+        [_PWSH, "-NoProfile", "-NonInteractive", "-File", _PS1],
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE, text=True, cwd=str(root), env=env)
+    started = time.time()
+    try:
+        proc.wait(timeout=_STDIN_BOUND_DEADLINE_S)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait(timeout=10)
+        raise AssertionError(
+            f"the ps1 gate did not return within {_STDIN_BOUND_DEADLINE_S}s "
+            "with stdin open and never closed - the unbounded read was not "
+            "actually bounded")
+    finally:
+        if proc.stdin:
+            proc.stdin.close()
+    elapsed = time.time() - started
+    out = proc.stdout.read() if proc.stdout else ""
+    err = proc.stderr.read() if proc.stderr else ""
+    assert elapsed < _STDIN_BOUND_DEADLINE_S, f"took {elapsed:.1f}s - {err}"
+    assert proc.returncode == 0, f"stdout: {out} stderr: {err}"
