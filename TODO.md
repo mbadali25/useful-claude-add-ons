@@ -4,6 +4,16 @@ Findings queued for a later PR. Each carries the `path:line` it came from so it
 can be re-verified rather than re-discovered — and so an item that turns out to
 be wrong can be closed on evidence.
 
+- `scripts/_test/web-testing.sh:97` lifts `load_mcp_servers` out of
+  `scripts/install-prerequisites.sh` without its `claude_available` dependency
+  (defined at `scripts/install-prerequisites.sh:508`, outside the lifted awk
+  range), so every run prints `claude_available: command not found` to stderr.
+  Harmless today - the resulting nonzero status makes `load_mcp_servers`
+  return early exactly like a real "claude not on PATH" case would, so no
+  assertion is affected - but it is noise a future reader could mistake for a
+  real failure. Not fixed here: out of the paths this ticket (crew 1.0 web
+  testing lane B) was scoped to.
+
 Opened 2026-09-05 from the codemap pass (`.crew/codemap/`). Every citation here
 was checked against source when it was written; anchor `fe538879`.
 
