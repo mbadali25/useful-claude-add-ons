@@ -256,10 +256,15 @@ function Resolve-CrewPython {
           $psi.Arguments = $probeArgs
         }
         $psi.UseShellExecute = $false
+        $psi.RedirectStandardInput = $true
         $psi.RedirectStandardOutput = $true
         $psi.RedirectStandardError = $true
         $psi.CreateNoWindow = $true
         $proc = [System.Diagnostics.Process]::Start($psi)
+        # Closed at once: the probe never reads stdin, and an OPEN inherited
+        # stdin parks a child forever, which would make a healthy candidate
+        # look dead and get it rejected.
+        $proc.StandardInput.Close()
         $outTask = $proc.StandardOutput.ReadToEndAsync()
         $null = $proc.StandardError.ReadToEndAsync()
         if (-not $proc.WaitForExit($crewPythonWaitMs)) {
@@ -435,8 +440,8 @@ if (Test-Path .crew/config.json) {
 # instead, and /crew:emergency end reports the debt.
 if (Test-CrewIncidentActive) {
   $n = @(
-    (git -c core.quotePath=false diff --name-only HEAD 2>$null)
-    (git -c core.quotePath=false ls-files --others --exclude-standard 2>$null)
+    ($null | git -c core.quotePath=false diff --name-only HEAD 2>$null)
+    ($null | git -c core.quotePath=false ls-files --others --exclude-standard 2>$null)
   ) | Where-Object { $_ -and $_.Trim() }
   Write-CrewIncidentSkip "verify" "stop gate stood down with $($n.Count) changed file(s) unverified"
   exit 0
@@ -445,7 +450,7 @@ if (Test-CrewIncidentActive) {
 # Records the commit this gate has proven clean. Mirrors record_verified in
 # verify-gate.sh; called on every exit-0 path and on none that exit nonzero.
 function Write-CrewVerified {
-  $verified = (git rev-parse HEAD 2>$null)
+  $verified = ($null | git rev-parse HEAD 2>$null)
   if ($verified) {
     if (-not (Test-Path .crew)) { New-Item -ItemType Directory .crew -Force | Out-Null }
     Set-Content -Path .crew/.verify-verified-at -Value $verified.Trim() -Encoding ascii
@@ -462,14 +467,14 @@ if (Test-Path .crew/.verify-verified-at) {
   $cand = (Get-Content .crew/.verify-verified-at -TotalCount 1 -ErrorAction SilentlyContinue)
   if ($cand) { $cand = $cand.Trim() }
   if ($cand) {
-    git cat-file -e "$cand^{commit}" 2>$null
+    $null | git cat-file -e "$cand^{commit}" 2>$null
     if ($LASTEXITCODE -eq 0) { $base = $cand }
   }
 }
 if (-not $base) {
-  $def = (git symbolic-ref --short refs/remotes/origin/HEAD 2>$null)
+  $def = ($null | git symbolic-ref --short refs/remotes/origin/HEAD 2>$null)
   if ($def) { $def = $def -replace '^origin/', '' } else { $def = "main" }
-  $base = (git merge-base HEAD $def 2>$null)
+  $base = ($null | git merge-base HEAD $def 2>$null)
 }
 if (-not $base) { $base = "HEAD" }
 
@@ -495,18 +500,18 @@ if ($All) {
   # the twin of the same fix in verify-gate.sh. `--name-status -M
   # --diff-filter=R` names both columns per rename (status, old, new);
   # split each line on tab and take columns 1 and 2.
-  $changed += (git -c core.quotePath=false ls-files 2>$null)
-  $changed += (git -c core.quotePath=false diff --name-only --cached --diff-filter=D 2>$null)
-  $changed += (git -c core.quotePath=false diff --name-only HEAD 2>$null)
-  $renameLines = (git -c core.quotePath=false diff --name-status --cached -M --diff-filter=R 2>$null)
+  $changed += ($null | git -c core.quotePath=false ls-files 2>$null)
+  $changed += ($null | git -c core.quotePath=false diff --name-only --cached --diff-filter=D 2>$null)
+  $changed += ($null | git -c core.quotePath=false diff --name-only HEAD 2>$null)
+  $renameLines = ($null | git -c core.quotePath=false diff --name-status --cached -M --diff-filter=R 2>$null)
   foreach ($line in @($renameLines)) {
     $cols = $line -split "`t"
     if ($cols.Count -ge 3) { $changed += $cols[1]; $changed += $cols[2] }
   }
-  $changed += (git -c core.quotePath=false ls-files --others --exclude-standard 2>$null)
+  $changed += ($null | git -c core.quotePath=false ls-files --others --exclude-standard 2>$null)
 } else {
-  $changed += (git -c core.quotePath=false diff --name-only $base 2>$null)
-  $changed += (git -c core.quotePath=false ls-files --others --exclude-standard 2>$null)
+  $changed += ($null | git -c core.quotePath=false diff --name-only $base 2>$null)
+  $changed += ($null | git -c core.quotePath=false ls-files --others --exclude-standard 2>$null)
 }
 $changed = $changed | Where-Object { $_ -and $_.Trim() } | Sort-Object -Unique
 if (-not $changed) {
@@ -806,7 +811,7 @@ if (-not (Test-Path .crew/verify.json)) {
   $smoke = @("_verify/smoke.sh", "scripts/smoke.sh") | Where-Object { Test-Path $_ } | Select-Object -First 1
   if ($smoke) {
     $bashExe = Resolve-CrewBash
-    $out = & $bashExe $smoke 2>&1
+    $out = $null | & $bashExe $smoke 2>&1
     if ($LASTEXITCODE -ne 0) {
       [Console]::Error.WriteLine("Smoke FAILED. Work is not complete.")
       [Console]::Error.WriteLine("bash: $bashExe")
@@ -1408,7 +1413,7 @@ $bashExe = Resolve-CrewBash
 $shimDir = $null
 if ($bashExe) {
   $global:LASTEXITCODE = 0
-  & $bashExe -c 'command -v python3' 1>$null 2>$null
+  $null | & $bashExe -c 'command -v python3' 1>$null 2>$null
   $python3Already = ($LASTEXITCODE -eq 0)
   if (-not $python3Already) {
     $shimPy = Resolve-CrewPython
@@ -1442,14 +1447,14 @@ if ($bashExe) {
         # confined here to a single, simple command.
         $candidateForward = $candidateDir -replace '\\', '/'
         $global:LASTEXITCODE = 0
-        $chmodOut = & $bashExe -c "chmod +x '$candidateForward/python3'" 2>&1
+        $chmodOut = $null | & $bashExe -c "chmod +x '$candidateForward/python3'" 2>&1
         if ($LASTEXITCODE -ne 0) {
           [Console]::Error.WriteLine("verify-gate: could not make the python3 shim executable: $chmodOut")
         } else {
           # PROBE before PATH - run it once and check it actually behaves
           # like python, through the same bash rule commands use.
           $global:LASTEXITCODE = 0
-          $probeOut = & $bashExe -c "'$candidateForward/python3' -c 'import sys'" 2>&1
+          $probeOut = $null | & $bashExe -c "'$candidateForward/python3' -c 'import sys'" 2>&1
           if ($LASTEXITCODE -eq 0) {
             $shimDir = $candidateDir
           } else {
@@ -1578,10 +1583,14 @@ foreach ($ident in $cmds) {
     # rule: `Get-Content` reads whatever is on disk right now and hits EOF
     # at the file's current size regardless of who else still has it open
     # for writing.
+    # `$null |` on every call below hands the child a closed stdin - the
+    # same fix as everywhere else in this file (see the interpreter probe
+    # and the git call sites above); without it a rule that reads stdin
+    # parks forever the same way an unclosed pipe does.
     $ruleOutFile = $null
     try { $ruleOutFile = [System.IO.Path]::GetTempFileName() } catch { $ruleOutFile = $null }
     if ($ruleOutFile) {
-      & $bashExe -c $c > $ruleOutFile 2>&1
+      $null | & $bashExe -c $c > $ruleOutFile 2>&1
       $rc = $LASTEXITCODE
       $out = @(Get-Content -Path $ruleOutFile -ErrorAction SilentlyContinue)
       Remove-Item -Path $ruleOutFile -Force -ErrorAction SilentlyContinue
@@ -1589,7 +1598,7 @@ foreach ($ident in $cmds) {
       # No writable temp dir: fall back to the old capture form rather
       # than skipping the rule outright - a check that still runs,
       # carrying the original wedge risk, beats one silently skipped.
-      $out = & $bashExe -c $c 2>&1
+      $out = $null | & $bashExe -c $c 2>&1
       $rc = $LASTEXITCODE
     }
   } finally {
@@ -1690,7 +1699,7 @@ try {
   $syncPy = Resolve-CrewPython
   $syncScript = Join-Path $PSScriptRoot 'verify_record.py'
   if ($syncPy -and (Test-Path $syncScript)) {
-    $syncSha = (git rev-parse HEAD 2>$null)
+    $syncSha = ($null | git rev-parse HEAD 2>$null)
     $payload = [ordered]@{
       sha = $syncSha
       all = [bool]$All

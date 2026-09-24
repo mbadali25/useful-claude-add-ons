@@ -137,10 +137,15 @@ function Resolve-CrewPython {
           $psi.Arguments = $probeArgs
         }
         $psi.UseShellExecute = $false
+        $psi.RedirectStandardInput = $true
         $psi.RedirectStandardOutput = $true
         $psi.RedirectStandardError = $true
         $psi.CreateNoWindow = $true
         $proc = [System.Diagnostics.Process]::Start($psi)
+        # Closed at once: the probe never reads stdin, and an OPEN inherited
+        # stdin parks a child forever, which would make a healthy candidate
+        # look dead and get it rejected.
+        $proc.StandardInput.Close()
         $outTask = $proc.StandardOutput.ReadToEndAsync()
         $null = $proc.StandardError.ReadToEndAsync()
         if (-not $proc.WaitForExit($crewPythonWaitMs)) {
