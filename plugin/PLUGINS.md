@@ -11,7 +11,7 @@ Read the **Hooks** section of any plugin before installing it. Commands and agen
 | | |
 |---|---|
 | **Source** | [`crew/`](crew) |
-| **Version** | 1.0.6<!-- claim: plugin-version:crew --> |
+| **Version** | 1.0.7<!-- claim: plugin-version:crew --> |
 | **Install** | `claude plugin install crew@useful-claude-add-ons` |
 | **Menu item** | 21, `repo-plugins` — **off by default**. Menu item 22, `graphify`, is a separate, also-off-by-default install of the `graphify` CLI this plugin's graph feature depends on — see **The code graph** below. |
 | **Registers** | 4 agents, 34 commands, 29 skills<!-- claim: plugin-skills:crew -->, 34 hook entries (13 scripts × `.sh`/`.ps1`) across 8 events |
@@ -588,7 +588,7 @@ Nothing keeps running afterwards — there were no hooks. Ollama, the models it 
 | | |
 |---|---|
 | **Source** | [`obsidian-vault/`](obsidian-vault) |
-| **Version** | 0.4.11<!-- claim: plugin-version:obsidian-vault --> |
+| **Version** | 0.4.12<!-- claim: plugin-version:obsidian-vault --> |
 | **Install** | `claude plugin install obsidian-vault@useful-claude-add-ons` |
 | **Registers** | 2 agents, 11 commands, 3 skills, 8 hook entries (3 scripts × `.sh`/`.ps1`) across 4 events |
 | **Upstream guide** | [`obsidian-vault/README.md`](obsidian-vault/README.md) |
