@@ -129,6 +129,72 @@ def test_no_ps1_rejects_a_candidate_by_its_path_or_takes_only_the_first_match(st
     assert [line for line in code if "WindowsApps" in line or "-First 1" in line] == []
 
 
+@pytest.mark.parametrize("stem", _CARRIERS)
+def test_an_extensionless_candidate_is_refused_before_process_start_on_real_windows(stem):
+    """Windows burn-in FAIL, win-repo: a fixture put an extensionless
+    `#!/bin/bash` `python3` stub first on PATH; the old resolver executed it
+    anyway, and the parked pwsh process (1.94s CPU, no children, no record
+    written) matches CreateProcess failing to launch a file with no
+    recognised extension, not a hung candidate the 3s-per-candidate bound
+    already covers.
+
+    CreateProcess (what UseShellExecute=$false hands the candidate to) can
+    only start a real PE executable or route a `.cmd`/`.bat` through
+    cmd.exe -- never an extensionless file. This is a STRING-level test, not
+    a behavioural one: it cannot execute the true-Windows branch on a Linux
+    runner ($IsWindows is genuinely $false here, same as production), so it
+    asserts the source directly -- the native-extension allow-list exists,
+    is checked before ProcessStartInfo is ever built, and is gated on real
+    OS detection rather than the flavour guard's $env:OS seam, which this
+    whole test module also sets to 'Windows_NT' while running pwsh on Linux
+    to exercise every extensionless WindowsApps-alias fixture above. Gating
+    on that seam instead of $IsWindows would make every one of those cases
+    fail here, since a real seam-based gate cannot distinguish "really
+    Windows" from "faked for this test"."""
+    body = _resolver(stem)
+    assert "IsWindows" in body, "no real-Windows detection found"
+    for ext in (".exe", ".com", ".cmd", ".bat"):
+        assert ext in body, f"native extension {ext!r} missing from the allow-list"
+    launch_pos = body.index("ProcessStartInfo")
+    assign_line = next(
+        line for line in body.splitlines()
+        if "IsWindows" in line and "=" in line and not line.lstrip().startswith("#"))
+    gate_pos = body.index(assign_line)
+    assert gate_pos < launch_pos, (
+        "the extension gate must be checked before ProcessStartInfo is "
+        "constructed, or a candidate this gate should refuse still reaches "
+        "Process.Start")
+    # The seam every fixture above relies on must NOT be what gates this: the
+    # ASSIGNMENT line itself (not nearby prose explaining the contrast) must
+    # not read $env:OS -- $env:OS is set to 'Windows_NT' for every case in
+    # this file, so gating the real check on it would reject the
+    # extensionless stubs _working/_broken/_hung write, on this very host,
+    # which the parametrized cases above prove is not what happens.
+    assert "$env:OS" not in assign_line, (
+        "the extensionless-file gate's real-Windows detection reads $env:OS "
+        "instead of real OS detection ($IsWindows / OSVersion) -- it would "
+        "misfire on every Linux-run fixture in this file, which all rely on "
+        "$env:OS='Windows_NT' to get past the flavour guard while running "
+        "real, valid extensionless shims: " + assign_line)
+
+
+@needs_pwsh
+def test_an_extensionless_candidate_still_resolves_on_the_real_linux_this_suite_runs_on(tmp_path):
+    """The other half of the same contract, proven by EXECUTION rather than
+    by reading source: on this host, which is genuinely not Windows, the
+    gate above must never fire, so an extensionless shim ahead of nothing
+    else on PATH is still found and run -- exactly what _working() already
+    depends on throughout this module, pinned here directly against the one
+    new code path this ticket adds. Not parametrized over every carrier:
+    `-PrintPython` is only wired on seven of the eleven (verify-gate,
+    completion-audit, scope-guard, approval-hook, crew-context,
+    platform-sync, role-write-guard); the byte-identical check above already
+    proves the other four share this exact function body."""
+    apps = tmp_path / "bin"
+    _working(apps, ("python3",))
+    assert _print_python([apps, _tools(tmp_path)]) == REAL
+
+
 def test_no_crew_ps1_resolves_python_any_other_way():
     """A hook that finds python without the probe is the old bug in a new
     file. Every python lookup outside the shared function goes through it."""

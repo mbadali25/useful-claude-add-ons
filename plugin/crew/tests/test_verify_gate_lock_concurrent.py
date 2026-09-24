@@ -47,7 +47,7 @@ pytestmark = pytest.mark.skipif(
 
 def _git(root, *args):
     subprocess.run(("git",) + args, cwd=root, check=True,
-                   capture_output=True, text=True, stdin=subprocess.DEVNULL)
+                   capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
 
 
 def _repo(tmp_path):
@@ -148,7 +148,7 @@ def test_a_second_pair_on_the_next_turn_still_runs(tmp_path):
     for _ in range(2):
         proc = subprocess.run(
             [_BASH, _VERIFY_SH], input=json.dumps({}), cwd=str(root),
-            env=env, capture_output=True, text=True, check=False)
+            env=env, capture_output=True, text=True, check=False, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
         assert proc.returncode == 0, f"stderr: {proc.stderr}"
         time.sleep(0.2)
 

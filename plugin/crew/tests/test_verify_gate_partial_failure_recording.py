@@ -74,7 +74,7 @@ _FLAVOURS = [
 
 def _git(root, *args):
     subprocess.run(("git",) + args, cwd=root, check=True,
-                   capture_output=True, text=True)
+                   capture_output=True, text=True, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
 
 
 def _repo(tmp_path, verify_map):
@@ -100,7 +100,7 @@ def _run(flavour, root, *extra):
     return subprocess.run(
         cmd, input="{}", cwd=str(root),
         env=dict(os.environ, CLAUDE_PROJECT_DIR=str(root)),
-        capture_output=True, text=True, check=False,
+        capture_output=True, text=True, check=False, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S,
     )
 
 

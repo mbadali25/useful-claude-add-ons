@@ -34,6 +34,7 @@ import sys
 import pytest
 
 import context  # noqa: F401  pylint: disable=unused-import
+import crew_fixtures
 
 _ROOT = context._ROOT  # pylint: disable=protected-access
 _VERIFY_PS1 = os.path.join(_ROOT, "hooks", "scripts", "verify-gate.ps1")
@@ -58,7 +59,7 @@ pytestmark = pytest.mark.skipif(
 
 def _git(root, *args):
     subprocess.run(("git",) + args, cwd=root, check=True,
-                   capture_output=True, text=True, stdin=subprocess.DEVNULL)
+                   capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
 
 
 def _py_exit_unless(condition, code):
@@ -100,7 +101,7 @@ def _run_verify(root):
         [_PWSH, "-NoProfile", "-NonInteractive", "-File", _VERIFY_PS1],
         input=json.dumps({}), cwd=str(root),
         env=dict(os.environ, CLAUDE_PROJECT_DIR=str(root)),
-        capture_output=True, text=True, check=False,
+        capture_output=True, text=True, check=False, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S,
     )
 
 

@@ -41,7 +41,22 @@ fi
 # shells they race for the same turn's gate, and a short-lived per-turn lock
 # right before the expensive part lets whichever gets there first do the
 # real work while the other backs off (see LOCK below).
-INPUT=$(cat 2>/dev/null)
+#
+# Bounded, and the twin of verify-gate.ps1's read below. A Stop hook always
+# pipes JSON here, but nothing enforces that the pipe is ever actually
+# closed, and a bare `cat` blocks the WHOLE script on it -- the same
+# parked-process shape a hung interpreter probe produces, for a different
+# cause. `[ -t 0 ]` is true only for an interactive terminal (nothing was
+# ever going to arrive), so nothing is read at all in that case. When
+# redirected, each line is read with its own bound rather than trusting the
+# read to finish outright: the Stop hook's payload is one line and arrives
+# immediately in every real invocation, so this never fires on the real path.
+INPUT=""
+if [ ! -t 0 ]; then
+  while IFS= read -r -t 5 CREW_STDIN_LINE || [ -n "$CREW_STDIN_LINE" ]; do
+    INPUT="${INPUT}${CREW_STDIN_LINE}"$'\n'
+  done
+fi
 
 # Claude Code re-fires Stop after a blocking Stop hook. Without this check the
 # gate blocks its own retry forever, and a failing check becomes a stuck session.

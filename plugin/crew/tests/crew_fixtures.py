@@ -20,6 +20,14 @@ import pytest
 _PROBE_EXIT = 37
 _BASH = "unprobed"
 
+# Bounds every gate spawn across the verify-gate suite: a hung sh/pwsh child
+# (a stuck interpreter probe, a lock holder that never releases, a shell
+# association dialog under -NonInteractive) turns into a red test with a
+# name attached, instead of a suite that never returns. 120s is comfortably
+# above the longest sleep any fixture here uses (10s) with headroom for a
+# slow CI host, never a value a passing run is expected to approach.
+GATE_SUBPROCESS_TIMEOUT_S = 120
+
 
 def _usable(candidate):
     """Does this bash actually run a script living at a Windows path?
@@ -271,7 +279,7 @@ def shim_env(flavor, bindir, **extra):
 def _git(root, *args):
     subprocess.run(
         ("git",) + args, cwd=root, check=True,
-        capture_output=True, text=True, stdin=subprocess.DEVNULL,
+        capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=30,
     )
 
 
@@ -343,7 +351,7 @@ def head_sha(root, length=7):
     done = subprocess.run(
         ("git", "rev-parse", f"--short={length}", "HEAD"),
         cwd=root, check=True, capture_output=True, text=True,
-        stdin=subprocess.DEVNULL,
+        stdin=subprocess.DEVNULL, timeout=30,
     )
     return done.stdout.strip()
 
@@ -369,7 +377,7 @@ def commit_with_date(root, path, iso_date):
                GIT_AUTHOR_DATE=iso_date, GIT_COMMITTER_DATE=iso_date)
     subprocess.run(("git", "add", path), cwd=root, check=True,
                    capture_output=True, text=True,
-                   stdin=subprocess.DEVNULL)
+                   stdin=subprocess.DEVNULL, timeout=30)
     subprocess.run(("git", "commit", "-q", "-m", f"backdated {path}"),
                    cwd=root, check=True, capture_output=True, text=True,
-                   env=env, stdin=subprocess.DEVNULL)
+                   env=env, stdin=subprocess.DEVNULL, timeout=30)

@@ -26,6 +26,7 @@ import sys
 import pytest
 
 import context  # noqa: F401  pylint: disable=unused-import
+import crew_fixtures
 
 _ROOT = context._ROOT  # pylint: disable=protected-access
 _PS1 = os.path.join(_ROOT, "hooks", "scripts", "verify-gate.ps1")
@@ -57,7 +58,7 @@ def _print_bash(path_entries):
     result = subprocess.run(
         [_PWSH, "-NoProfile", "-NonInteractive", "-File", _PS1, "-PrintBash"],
         env=env, stdin=subprocess.DEVNULL, capture_output=True, text=True,
-        check=False,
+        check=False, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S,
     )
     assert result.returncode == 0, f"stderr: {result.stderr}"
     return result.stdout.strip()
@@ -137,7 +138,7 @@ def test_falls_through_when_git_is_a_powershell_function(tmp_path):
     result = subprocess.run(
         [_PWSH, "-NoProfile", "-NonInteractive", "-Command", command],
         env=env, stdin=subprocess.DEVNULL, capture_output=True, text=True,
-        check=False,
+        check=False, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S,
     )
 
     assert result.returncode == 0, f"stderr: {result.stderr}"
@@ -198,7 +199,7 @@ def test_tier_b_skips_a_bash_defined_as_a_powershell_function(tmp_path):
     result = subprocess.run(
         [_PWSH, "-NoProfile", "-NonInteractive", "-Command", command],
         env=env, stdin=subprocess.DEVNULL, capture_output=True, text=True,
-        check=False,
+        check=False, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S,
     )
 
     assert result.returncode == 0, f"stderr: {result.stderr}"

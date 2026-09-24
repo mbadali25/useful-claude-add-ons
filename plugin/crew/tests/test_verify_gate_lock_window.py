@@ -88,12 +88,12 @@ def _repo(tmp_path, verify_map=None):
     for args in (("init", "-q"), ("config", "user.email", "t@example.invalid"),
                  ("config", "user.name", "t")):
         subprocess.run(("git",) + args, cwd=root, check=True,
-                       capture_output=True, text=True)
+                       capture_output=True, text=True, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
     (root / "README.md").write_text("committed", encoding="utf-8")
     subprocess.run(("git", "add", "-A"), cwd=root, check=True,
-                   capture_output=True, text=True)
+                   capture_output=True, text=True, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
     subprocess.run(("git", "commit", "-q", "-m", "fixture"), cwd=root,
-                   check=True, capture_output=True, text=True)
+                   check=True, capture_output=True, text=True, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
     (root / "a.py").write_text("x = 1", encoding="utf-8")
     (root / ".crew" / "verify.json").write_text(
         json.dumps(verify_map if verify_map is not None else _LONG_RULE),
@@ -115,7 +115,7 @@ def _env(root):
 def _run(flavour, root):
     return subprocess.run(
         _cmd(flavour), input="{}", cwd=str(root), env=_env(root),
-        capture_output=True, text=True, check=False)
+        capture_output=True, text=True, check=False, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
 
 
 def _lock(root):
@@ -400,7 +400,7 @@ def _published_window(flavour, tmp_path, env_ttl):
         env["CREW_VERIFY_LOCK_TTL"] = env_ttl
     result = subprocess.run(
         _cmd(flavour), input="{}", cwd=str(root), env=env,
-        capture_output=True, text=True, check=False)
+        capture_output=True, text=True, check=False, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
     assert result.returncode == 0, (
         f"the probe rule should pass. stdout: {result.stdout} "
         f"stderr: {result.stderr}"
@@ -590,7 +590,7 @@ def test_a_zero_prefixed_ttl_is_decimal_and_still_publishes_a_deadline(
         _cmd(flavour), input="{}", cwd=str(root),
         env=dict(os.environ, CLAUDE_PROJECT_DIR=str(root),
                  CREW_VERIFY_LOCK_TTL="08"),
-        capture_output=True, text=True, check=False)
+        capture_output=True, text=True, check=False, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
 
     assert "value too great for base" not in result.stderr, (
         "`08` reached shell arithmetic as an octal literal. " + result.stderr
