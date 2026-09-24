@@ -957,10 +957,15 @@ add_mcp_server() {
     skip "MCP server '$name' already registered"
     return 0
   fi
+  # MCP_SCOPE_OVERRIDE lets a caller that must land at a fixed scope regardless
+  # of the global --scope/INSTALL_SCOPE default (add_or_refresh_mcp_server,
+  # below) reuse this one 'claude mcp add' call site instead of duplicating
+  # it - empty means "use the global default", exactly today's behaviour.
+  local scope="${MCP_SCOPE_OVERRIDE:-$INSTALL_SCOPE}"
   if [ "$env_spec" = "-" ]; then
-    claude mcp add --scope "$INSTALL_SCOPE" "$name" -- "$@" || return 1
+    claude mcp add --scope "$scope" "$name" -- "$@" || return 1
   else
-    claude mcp add --scope "$INSTALL_SCOPE" "$name" --env "$env_spec" -- "$@" || return 1
+    claude mcp add --scope "$scope" "$name" --env "$env_spec" -- "$@" || return 1
   fi
   load_mcp_servers
   COUNT_INSTALLED=$((COUNT_INSTALLED+1))
@@ -994,6 +999,72 @@ add_mcp_http_server() {
   load_mcp_servers
   COUNT_INSTALLED=$((COUNT_INSTALLED+1))
   ok "added MCP server '$name'"
+}
+
+# Full 'cmd arg arg...' string 'claude mcp get <name>' reports for an already-
+# registered server, or nothing with return 2 when it cannot be read or
+# parsed. 'claude mcp list' (load_mcp_servers) only gives the name off the
+# front of each line - this is the only way to compare an existing
+# registration's command/args against the exact form a row requires. Return 2
+# rather than treating a read failure as either a match or a mismatch: an
+# unknown here must stay its own value, not collapse into whichever looks
+# safe.
+mcp_registration_command() {
+  local name="$1" out cmd args
+  have claude || return 2
+  out="$(claude mcp get "$name" 2>/dev/null)" || return 2
+  cmd="$(printf '%s\n' "$out" | sed -n 's/^[[:space:]]*Command:[[:space:]]*//p' | sed -n '1p')"
+  [ -n "$cmd" ] || return 2
+  args="$(printf '%s\n' "$out" | sed -n 's/^[[:space:]]*Args:[[:space:]]*//p' | sed -n '1p')"
+  printf '%s %s' "$cmd" "$args"
+  return 0
+}
+
+# add_or_refresh_mcp_server <scope> <name> <command...>
+# Same detect-then-act contract as add_mcp_server, but for a row that must
+# land at a fixed scope regardless of the global --scope/INSTALL_SCOPE
+# default, and that must notice when an earlier run (or a hand-added
+# registration) left different command/args behind rather than trusting the
+# registered name alone - add_mcp_server's plain 'already registered' skip
+# treats any registration under the name as current, which is exactly wrong
+# once the required flags change. The actual 'claude mcp add' still happens
+# inside add_mcp_server itself (via MCP_SCOPE_OVERRIDE below) rather than
+# here, so this is not a second call site for it.
+add_or_refresh_mcp_server() {
+  local scope="$1" name="$2"; shift 2
+  if ! have claude; then
+    warn "claude not found on PATH in this shell - run 'source ~/.bashrc' and re-run this script."
+    return 1
+  fi
+  mcp_launcher_resolves "$name" "$1" || return 1
+  local required="$*"
+  if mcp_server_registered "$name"; then
+    local current rc
+    current="$(mcp_registration_command "$name")"; rc=$?
+    if [ "$rc" -eq 2 ]; then
+      skip "MCP server '$name' already registered (could not read its command/args back from 'claude mcp get' to compare against the required form)"
+      return 0
+    fi
+    if [ "$current" = "$required" ]; then
+      skip "MCP server '$name' already registered with the required form"
+      return 0
+    fi
+    if [ "$NON_INTERACTIVE" -eq 1 ] || [ "$SELECT_ALL" -eq 1 ] || [ -n "$SELECT_SPEC" ]; then
+      warn "MCP server '$name' is registered as '$current', not the required '$required' - outdated registration left; run with --select web-testing interactively to be asked to migrate it."
+      return 0
+    fi
+    printf '\n\033[33m  MCP server '\''%s'\'' is already registered as:\033[0m\n' "$name" >&2
+    printf '\033[90m    %s\033[0m\n' "$current" >&2
+    printf '\033[33m  This row requires:\033[0m\n' >&2
+    printf '\033[90m    %s\033[0m\n' "$required" >&2
+    local answer
+    read -r -p "  Remove and re-register '$name' with the required form? [y/N] " answer <&"$TTY_FD"
+    case "${answer:-N}" in
+      [Yy]*) claude mcp remove "$name" >/dev/null 2>&1; load_mcp_servers ;;
+      *) skip "leaving the existing registration for '$name' as it is"; return 0 ;;
+    esac
+  fi
+  MCP_SCOPE_OVERRIDE="$scope" add_mcp_server "$name" "-" "$@"
 }
 
 # --- Detection: user-level skills --------------------------------------------
@@ -2694,29 +2765,77 @@ install_web_testing() {
     warn "no package.json in $(pwd) - Playwright installs as a project devDependency, not globally. cd into the project's root (or run 'npm init -y' first) and re-run '--select web-testing'."
     return 1
   fi
-  if node -e "process.exit((require('./package.json').devDependencies||{})['@playwright/test'] ? 0 : 1)" 2>/dev/null; then
-    ok "@playwright/test already a devDependency here - reinstalling the pinned versions to pick up updates"
+  # Skip the reinstall entirely when both pinned versions are already exact -
+  # without this a rerun against an already-installed project ran 'npm install'
+  # again every time, so two runs looked identical to one that only checked.
+  if node -e "
+    var d=(require('./package.json').devDependencies||{});
+    process.exit(d['@playwright/test']==='1.63.0' && d['@axe-core/playwright']==='4.13.0' ? 0 : 1);
+  " 2>/dev/null; then
+    skip "@playwright/test@1.63.0 and @axe-core/playwright@4.13.0 already pinned in package.json"
+  else
+    if node -e "process.exit((require('./package.json').devDependencies||{})['@playwright/test'] ? 0 : 1)" 2>/dev/null; then
+      ok "@playwright/test already a devDependency here - reinstalling the pinned versions to pick up updates"
+    fi
+    npm install -D "@playwright/test@1.63.0" "@axe-core/playwright@4.13.0" || return 1
+    COUNT_INSTALLED=$((COUNT_INSTALLED+1))
+    ok "@playwright/test@1.63.0 and @axe-core/playwright@4.13.0 added as devDependencies"
   fi
-  npm install -D "@playwright/test@1.63.0" "@axe-core/playwright@4.13.0" || return 1
-  COUNT_INSTALLED=$((COUNT_INSTALLED+1))
-  ok "@playwright/test@1.63.0 and @axe-core/playwright@4.13.0 added as devDependencies"
 
-  if ! npx playwright install --with-deps chromium; then
-    warn "'npx playwright install --with-deps chromium' failed - browsers or system deps may be missing; see https://playwright.dev/docs/browsers"
-    return 1
+  # 'install --dry-run' prints each browser's cache directory without touching
+  # the network, whether or not it is already there - its own text never says
+  # "already installed" (checked against 1.63.0 directly), so the directory on
+  # disk is what detects it, not the dry-run output's wording.
+  local chromium_loc=""
+  chromium_loc="$(npx --no-install playwright install --dry-run chromium 2>/dev/null | sed -n 's/^[[:space:]]*Install location:[[:space:]]*//p' | sed -n '1p')"
+  if [ -n "$chromium_loc" ] && [ -d "$chromium_loc" ]; then
+    skip "Chromium already installed at $chromium_loc"
+  else
+    # '--with-deps' shells out to apt/sudo for system packages, which either
+    # prompts for a password or fails outright without one - wrong in both
+    # directions under '--non-interactive'. 'sudo -n' itself never prompts
+    # (that is what -n means), so probing it is safe unconditionally rather
+    # than branching on NON_INTERACTIVE.
+    if [ "$(id -u)" -eq 0 ] || sudo -n true 2>/dev/null; then
+      if ! npx playwright install --with-deps chromium; then
+        warn "'npx playwright install --with-deps chromium' failed - browsers or system deps may be missing; see https://playwright.dev/docs/browsers"
+        return 1
+      fi
+    else
+      if ! npx playwright install chromium; then
+        warn "'npx playwright install chromium' failed - see https://playwright.dev/docs/browsers"
+        return 1
+      fi
+      warn "installed Chromium without its system dependencies - '--with-deps' needs root or passwordless sudo, and neither is available in this shell. Run 'sudo npx playwright install-deps chromium' by hand to install them."
+    fi
+    ok "Chromium installed for Playwright"
   fi
-  ok "Chromium installed for Playwright"
 
   if [ -f ".claude/agents/playwright-test-planner.md" ]; then
     skip "Playwright Test Agents already scaffolded (.claude/agents/playwright-test-planner.md exists)"
   else
-    npx playwright init-agents --loop=claude || warn "'npx playwright init-agents --loop=claude' failed - run it by hand."
-    npx playwright init-agents --loop=codex || warn "'npx playwright init-agents --loop=codex' failed - run it by hand."
-    ok "Playwright Test Agents scaffolded (planner/generator/healer; claude + codex loops)"
+    # Report OK only when every requested loop actually succeeded - a run where
+    # one loop failed and the other did not used to print a warning for the
+    # failed one and then an unconditional OK right after it, so the OK read as
+    # "scaffolding worked" over a partial failure.
+    local -a failed_loops=()
+    npx playwright init-agents --loop=claude || failed_loops+=("claude")
+    npx playwright init-agents --loop=codex || failed_loops+=("codex")
+    if [ "${#failed_loops[@]}" -eq 0 ]; then
+      ok "Playwright Test Agents scaffolded (planner/generator/healer; claude + codex loops)"
+    else
+      warn "Playwright Test Agents scaffolding failed for: ${failed_loops[*]} - run 'npx playwright init-agents --loop=<name>' by hand for each."
+    fi
   fi
 
-  add_mcp_server "playwright" "-" npx @playwright/mcp@latest --isolated --headless --caps testing || return 1
-  add_mcp_server "chrome-devtools" "-" npx chrome-devtools-mcp@latest || return 1
+  # Registered at project scope regardless of the global --scope/INSTALL_SCOPE
+  # default - stack-web's SKILL.md documents this row's wiring as a per-project
+  # .mcp.json, not a machine-wide registration - and migrated rather than
+  # trusted on name alone: add_mcp_server's plain 'already registered' skip
+  # would leave an old registration (missing --isolated --headless --caps
+  # testing, or a stale package) in place forever.
+  add_or_refresh_mcp_server "project" "playwright" npx @playwright/mcp@latest --isolated --headless --caps testing || return 1
+  add_or_refresh_mcp_server "project" "chrome-devtools" npx chrome-devtools-mcp@latest || return 1
   ok "Playwright downloads its browsers on first use if skipped above; 'npx playwright install' does it ahead of time."
 
   if have docker; then
