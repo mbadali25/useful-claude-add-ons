@@ -36,14 +36,18 @@ function Resolve-BridgeStatusPython {
       $script:BridgeStatusRejected += "$name (resolved to a $($cmd.CommandType), not an executable - a profile function or alias is shadowing it)"
       continue
     }
-    if ($cmd.Source -match 'WindowsApps') {
-      $script:BridgeStatusRejected += "$($cmd.Source) (WindowsApps App Execution Alias)"
-      continue
-    }
-    # Metadata alone is exactly what the Store alias passes: Get-Command
+    # NOT a blanket "reject anything whose Source contains WindowsApps" - a
+    # genuine Microsoft Store Python install reports its real interpreter
+    # under exactly that path
+    # (...\WindowsApps\PythonSoftwareFoundation.Python.3.x_<hash>\python.exe),
+    # so a path-substring reject throws out a working interpreter along with
+    # the stub. Reported 2026-09-24 against vault-guard.ps1's identical check
+    # (see its Resolve-VaultGuardPython comment); fixed here in parallel.
+    # Metadata alone is exactly what the Store alias ALSO passes: Get-Command
     # reports it as a real Application with a real Source. Launch it and read
     # back a token this script chose - only a python that parsed and ran the
-    # -c program can emit the prefix.
+    # -c program can emit the prefix; that proof does not need to know WHERE
+    # the interpreter lives.
     $probe = $null
     $reason = ''
     $global:LASTEXITCODE = $null
@@ -82,10 +86,9 @@ function Resolve-BridgeStatusPython {
       $script:BridgeStatusRejected += "$($cmd.Source) (answered the probe with an empty sys.executable)"
       continue
     }
-    if ($real -match 'WindowsApps') {
-      $script:BridgeStatusRejected += "$($cmd.Source) -> $real (WindowsApps App Execution Alias)"
-      continue
-    }
+    # No post-execution WindowsApps check either, for the same reason: a real
+    # Store-installed interpreter's OWN sys.executable lives under that path
+    # too. The launch itself is already the proof that matters here.
     # sys.executable, not Source: the PATH-found name may be a shim that
     # re-execs elsewhere, and the probe already asked python where it lives.
     return $real

@@ -33,14 +33,17 @@ _bridge_status_resolve_python() {
     # `command -v` takes only the FIRST match for a name and then moves to
     # the NEXT NAME - it never searches the same name further down PATH.
     candidate=$(command -v "$name" 2>/dev/null) || continue
-    case "$candidate" in
-      */WindowsApps/*|*\\WindowsApps\\*)
-        _bridge_status_reject "$candidate (WindowsApps App Execution Alias)"
-        continue ;;
-    esac
-    # Running the candidate and reading back a token this script chose is
-    # what actually tells a real interpreter from something wearing the name
-    # - the WindowsApps alias resolves cleanly as a file but is not one.
+    # NOT a blanket "reject anything under a WindowsApps path" - a genuine
+    # Microsoft Store Python install reports its real interpreter under
+    # exactly that path
+    # (.../WindowsApps/PythonSoftwareFoundation.Python.3.x_<hash>/python.exe),
+    # so a path-substring reject throws out a working interpreter along with
+    # the stub. Reported 2026-09-24 against vault-guard.sh's identical check
+    # (see its own comment); fixed here in parallel. Running the candidate and
+    # reading back a token this script chose is what actually tells a real
+    # interpreter from something wearing the name - the WindowsApps alias
+    # resolves cleanly as a file but fails the probe below (nonzero exit or no
+    # token), which is proof enough without knowing WHERE it lives.
     probe=$("$candidate" -c 'import sys; sys.stdout.write("bridge-status-python:" + sys.executable)' 2>/dev/null) || {
       _bridge_status_reject "$candidate (ran, but exited nonzero instead of answering the interpreter probe)"
       continue; }
@@ -55,11 +58,9 @@ _bridge_status_resolve_python() {
     [ -n "$real" ] || {
       _bridge_status_reject "$candidate (answered the probe with an empty sys.executable)"
       continue; }
-    case "$real" in
-      */WindowsApps/*|*\\WindowsApps\\*)
-        _bridge_status_reject "$candidate -> $real (WindowsApps App Execution Alias)"
-        continue ;;
-    esac
+    # No post-execution WindowsApps check either, for the same reason: a real
+    # Store-installed interpreter's OWN sys.executable lives under that path
+    # too. The launch itself is already the proof that matters here.
     # `sys.executable`, not `$candidate`: the PATH-found name may be a shim
     # that re-execs elsewhere, and the probe already paid the cost of asking
     # python where it actually lives.
