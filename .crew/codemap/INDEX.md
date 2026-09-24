@@ -83,18 +83,26 @@ live inside a `%%` comment. Both `%% anchor: <sha>` and
 Anchors are re-measured below rather than carried forward — the previous table
 named `3167721f` and `a02331ee` for every row, and no file carried either sha.
 
+Re-measured again 2026-09-23, at `bc6a3a09`: the table had drifted the same way a
+third time, naming `7b0d8f3a` and `1f97e51c` for rows whose notes carried neither.
+Every anchor in the table is now read out of the note's own `anchor:` line with the
+`<repo>@` prefix stripped, rather than typed. The drift has recurred on every pass
+that edited this table by hand, so **re-derive this column mechanically or not at
+all** - a hand-written anchor here is indistinguishable from a measured one and has
+been wrong three times running.
+
 | File | Anchor | Last pass | Covers |
 |---|---|---|---|
-| [`marketplace-registration.md`](marketplace-registration.md) | `7b0d8f3a` | re-verified 2026-09-12 | The marketplace itself: what registers a skill vs. a plugin, the two install scripts, and the two separate version-check paths (`check-marketplace.py` vs. `_verify/smoke.sh`). |
-| [`localgpu.md`](localgpu.md) | `1f97e51c` | unchanged | The `localgpu` plugin: its two independent process trees, the shared-Ollama constraint that drives `OLLAMA_MAX_LOADED_MODELS=1`, the embed-model mismatch guard, `.mcp.json` provisioning, and the bootstrap.sh/bootstrap.ps1 parity verdict. |
-| [`crew.md`](crew.md) | `7b0d8f3a` | **re-derived** 2026-09-12 | The `crew` plugin: hooks, agents, commands, skills inventory, and how `crew_state.py` reads this very directory. |
-| [`verification-harness.md`](verification-harness.md) | `7b0d8f3a` | re-verified 2026-09-12 | `_verify/smoke.sh`, `_verify/run-all.sh`, `scripts/check-marketplace.py`, and `.crew/verify.json` — what each actually runs, and where they overlap or don't. **`.crew/verify.json` does not exist**; see below. |
+| [`marketplace-registration.md`](marketplace-registration.md) | `5d1fc5fd` | re-verified 2026-09-12 | The marketplace itself: what registers a skill vs. a plugin, the two install scripts, and the two separate version-check paths (`check-marketplace.py` vs. `_verify/smoke.sh`). |
+| [`localgpu.md`](localgpu.md) | `5d1fc5fd` | unchanged | The `localgpu` plugin: its two independent process trees, the shared-Ollama constraint that drives `OLLAMA_MAX_LOADED_MODELS=1`, the embed-model mismatch guard, `.mcp.json` provisioning, and the bootstrap.sh/bootstrap.ps1 parity verdict. |
+| [`crew.md`](crew.md) | `5d1fc5fd` | **re-derived** 2026-09-12 | The `crew` plugin: hooks, agents, commands, skills inventory, and how `crew_state.py` reads this very directory. |
+| [`verification-harness.md`](verification-harness.md) | `5d1fc5fd` | re-verified 2026-09-12 | `_verify/smoke.sh`, `_verify/run-all.sh`, `scripts/check-marketplace.py`, and `.crew/verify.json` — what each actually runs, and where they overlap or don't. **`.crew/verify.json` does not exist**; see below. |
 | [`obsidian-vault.md`](obsidian-vault.md) | `60c79407` | **re-derived** 2026-09-22 | The `obsidian-vault` plugin: four hook events registered as bash+PowerShell pairs, the three guard checks and their **unequal defaults**, the two differently-sized exemption sets, and per-vault MCP registration. PR #210 added a proven-interpreter resolver to the two remaining "naive" wrappers, a loud stdin-decode failure mode, and a PowerShell legacy-argument-passing fix. |
-| [`mcp-servers.md`](mcp-servers.md) | `1f97e51c` | unchanged | The TypeScript monorepo — four stdio MCP servers over one shared `core`. Holds the two recorded `adminAuth.ts` defects (TODO #2 and #3), re-verified unchanged. Not a marketplace plugin; nothing registers it. |
-| [`install-scripts.md`](install-scripts.md) | `7b0d8f3a` | re-verified 2026-09-12 | The `install-prerequisites.{sh,ps1}` matched pair: catalog parity (confirmed in sync), the `pick_fit`/`Format-PickerLine` no-bypass rule, idempotency branches, and hook-plugins-default-off on both sides. |
-| [`skills-itsm.md`](skills-itsm.md) | `1f97e51c` | unchanged | `infra-work-ticketing` + `notify`. Records that **`SKILL.md:209-211` instructs an unconfirmed ticket creation** against a live service desk, and that its `:213` list is missing-fact questions, not write confirmation. |
-| [`skills-security-ops.md`](skills-security-ops.md) | `1f97e51c` | unchanged | `cisco-meraki` + `wazuh-onprem`. Records that **Wazuh's generic `post`/`put`/`delete` have no gate in code** — only prose — and that the skill with the ungated verbs is the one with no tests. |
-| [`repo-docs.md`](repo-docs.md) | `7b0d8f3a` | re-verified 2026-09-12 | `docs/` and `CHANGELOG.md`. Records that **`docs/adr/` does not exist** despite two documents citing it, and that TODO.md's `render.sh` entry is stale — the `cygpath -w` fix is in source. |
+| [`mcp-servers.md`](mcp-servers.md) | `5d1fc5fd` | unchanged | The TypeScript monorepo — four stdio MCP servers over one shared `core`. Holds the two recorded `adminAuth.ts` defects (TODO #2 and #3), re-verified unchanged. Not a marketplace plugin; nothing registers it. |
+| [`install-scripts.md`](install-scripts.md) | `5d1fc5fd` | re-verified 2026-09-12 | The `install-prerequisites.{sh,ps1}` matched pair: catalog parity (confirmed in sync), the `pick_fit`/`Format-PickerLine` no-bypass rule, idempotency branches, and hook-plugins-default-off on both sides. |
+| [`skills-itsm.md`](skills-itsm.md) | `089a04b9` | unchanged | `infra-work-ticketing` + `notify`. Records that **`SKILL.md:209-211` instructs an unconfirmed ticket creation** against a live service desk, and that its `:213` list is missing-fact questions, not write confirmation. |
+| [`skills-security-ops.md`](skills-security-ops.md) | `ea8a014` | unchanged | `cisco-meraki` + `wazuh-onprem`. Records that **Wazuh's generic `post`/`put`/`delete` have no gate in code** — only prose — and that the skill with the ungated verbs is the one with no tests. |
+| [`repo-docs.md`](repo-docs.md) | `5d1fc5fd` | re-verified 2026-09-12 | `docs/` and `CHANGELOG.md`. Records that **`docs/adr/` does not exist** despite two documents citing it, and that TODO.md's `render.sh` entry is stale — the `cygpath -w` fix is in source. |
 
 ## Coverage — and what is still unmapped
 
