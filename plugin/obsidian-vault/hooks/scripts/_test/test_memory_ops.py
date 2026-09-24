@@ -30,6 +30,15 @@ The guards pinned here, each sabotage-tested (reintroduce the bug -> red):
     `reconcile` without --apply writes nothing
   * the default processor runs with --settings disableAllHooks, CREW_HOOKS=off
     and OBSIDIAN_VAULT_GARDENER=1, and leaves no .crew/ in the vault
+  * ack requires attribution: a changed file only counts for an item if its
+    frontmatter carries that item's id - an unrelated vault change in the same
+    before/after window acks nothing and is never credited or committed
+  * a processor's stdout/stderr are read into a bounded ring buffer, not
+    accumulated whole, while it runs
+  * an item's before-snapshot reuses the previous item's after-snapshot (only
+    changed files get re-hashed), and snapshot time counts against the run's
+    deadline - a snapshot that spends it stops the item before its processor
+    ever starts
 """
 import contextlib
 import io
@@ -377,7 +386,7 @@ if mode == "existing":
 if mode in ("ok", "fail", "misreport", "crash"):
     os.makedirs(os.path.join(vault, "wiki", "daily"), exist_ok=True)
     with open(os.path.join(vault, rel), "w") as fh:
-        fh.write("digest for " + ident + "\n")
+        fh.write("---\nsession_id: " + ident + "\n---\ndigest for " + ident + "\n")
 if mode == "misreport":
     rel = "wiki/concepts/somewhere-else.md"   # wrote the daily note, reports another path
 if mode == "moved":
@@ -388,17 +397,24 @@ if mode == "moved":
     rel = "wiki/concepts/anew/anew/AWS VPN Client checksums its script.md"
     os.makedirs(os.path.join(vault, os.path.dirname(rel)), exist_ok=True)
     with open(os.path.join(vault, rel), "w") as fh:
-        fh.write("---\ntags:\n  - concept\n---\nnote for " + ident + "\n")
+        fh.write("---\ntags:\n  - concept\nsession_id: " + ident + "\n---\nnote for "
+                  + ident + "\n")
     os.replace(os.path.join(vault, rel),
                os.path.join(vault, "wiki", "concepts", os.path.basename(rel)))
 if mode == "counted":
     with open(os.path.join(os.path.dirname(vault), "processor-ran"), "a") as fh:
         fh.write(ident + "\n")
+if mode == "unrelated":
+    # Nothing this item's own work: stands in for Obsidian sync or another
+    # plugin touching an unrelated file in the same before/after window.
+    os.makedirs(os.path.join(vault, "wiki"), exist_ok=True)
+    with open(os.path.join(vault, "wiki", "unrelated.md"), "w") as fh:
+        fh.write("touched by something with no relation to this item\n")
 if mode == "crash":
     print("Error: Reached max turns (40)")
     sys.stderr.write("boom on stderr\n")
     sys.exit(1)
-if mode != "nothing":
+if mode not in ("nothing", "unrelated"):
     print("GARDENER-WROTE: " + rel)
 sys.exit(1 if mode == "fail" else 0)
 '''
@@ -408,11 +424,14 @@ sys.exit(1 if mode == "fail" else 0)
 # every hook off: SessionStart creates `.crew/config.json` in its cwd, and the
 # capture hook queues the processor's own session.
 FAKE_CLAUDE = r'''
-import json, os, sys
+import json, os, re, sys
 argv = sys.argv[1:]
 settings = {}
 if "--settings" in argv:
     settings = json.loads(argv[argv.index("--settings") + 1])
+prompt = argv[argv.index("-p") + 1] if "-p" in argv else ""
+match = re.search(r"session_id: ([A-Za-z0-9_.-]+)", prompt)
+ident = match.group(1) if match else "unknown"
 out = os.environ["FAKE_CLAUDE_RECORD"]
 with open(out, "w") as fh:
     json.dump({"argv": argv, "CREW_HOOKS": os.environ.get("CREW_HOOKS"),
@@ -423,7 +442,7 @@ if settings.get("disableAllHooks") is not True:
         fh.write("{}\n")
 os.makedirs(os.path.join("wiki", "daily"), exist_ok=True)
 with open(os.path.join("wiki", "daily", "fake.md"), "a") as fh:
-    fh.write("digest\n")
+    fh.write("---\nsession_id: " + ident + "\n---\ndigest\n")
 print("GARDENER-WROTE: wiki/daily/fake.md")
 '''
 
@@ -553,7 +572,10 @@ def _t_garden_hosts_and_legacy():
 
     with Sandbox() as sb:
         vault, _, proc = _garden_fixture(sb, 3)
-        ticks = iter([0, 0, 700, 700, 700])
+        # clock() calls: the run's deadline, item 0's outer per-item check, item
+        # 0's post-snapshot check inside _process_item (both still under budget,
+        # so it runs), then item 1's outer check - now past it.
+        ticks = iter([0, 0, 0, 700, 700, 700])
         summary = vault_garden.garden_run(vault, processor=json.loads(_proc(proc, "ok")),
                                           clock=lambda: next(ticks))
         check("time bound: nothing starts once ten minutes are spent",
@@ -1182,6 +1204,98 @@ def _t_snapshot_bounds_and_touch():
               capped["complete"], False)
 
 
+# --- T7 fix round: attribution, bounded stream capture, deadline-aware snapshots -------
+
+def _t_garden_unattributed_change_is_not_acked():
+    """BLOCK: a processor that exits 0 without writing anything of its own, while
+    something else (Obsidian sync, another plugin) touches an unrelated file in
+    the same before/after window, must not ack the item - and that unrelated
+    file must never be credited to it or committed for it."""
+    with Sandbox() as sb:
+        vault, _, proc = _garden_fixture(sb, 1)
+        summary = vault_garden.garden_run(vault, processor=json.loads(_proc(proc, "unrelated")))
+        check("an unrelated vault change does not ack the item", summary["acked"], [])
+        check("the unrelated file is never credited as this item's write",
+              summary["written"], [])
+        reason = json.dumps(summary["failed"])
+        check_in("the reason names the identity gate", "none carries this item's identity",
+                 reason)
+        check("the item stays queued", len(vault_garden.read_queue(vault)), 1)
+        check_true("no ledger line was written for it",
+                   not os.path.exists(vault_garden.ledger_path(vault)))
+
+
+def _t_bounded_stream_reader_caps_memory():
+    """FIX: stdout/stderr are read into a bounded ring buffer, not accumulated
+    whole - a runaway processor cannot grow this process's memory without
+    bound just by printing a lot."""
+    read_fd, write_fd = os.pipe()
+    reader = vault_garden._BoundedStreamReader(os.fdopen(read_fd, "rb"))  # pylint: disable=protected-access
+    with os.fdopen(write_fd, "wb") as wf:
+        chunk = b"A" * 65536
+        for _ in range(20):  # 20 * 64 KiB = 1.25 MiB, well past the cap
+            wf.write(chunk)
+        wf.write(b"TAIL-MARKER")
+    reader.join(timeout=5)
+    check_true("the internal buffer never grows past twice the cap",
+               len(reader._buf) <= vault_garden.STREAM_CAP_BYTES * 2)  # pylint: disable=protected-access
+    text = reader.text()
+    check_true("the kept text is capped near STREAM_CAP_BYTES, not the 1.25 MiB written",
+               len(text) <= vault_garden.STREAM_CAP_BYTES)
+    check_in("and it is the TAIL that survives, not the head", "TAIL-MARKER", text)
+
+
+def _t_garden_snapshot_reuses_hashes_across_items():
+    """FIX: each item's before-snapshot reuses the previous item's after-snapshot,
+    so a file whose mtime/size never moved is stat-compared once for the whole
+    run, not re-hashed once per item."""
+    with Sandbox() as sb:
+        vault, _, proc = _garden_fixture(sb, 2)
+        os.makedirs(os.path.join(vault, "wiki", "stable"), exist_ok=True)
+        for n in range(20):
+            with open(os.path.join(vault, "wiki", "stable", f"n{n}.md"), "w",
+                     encoding="utf-8") as fh:
+                fh.write(f"stable {n}\n")
+        calls = []
+        real_hash = vault_garden._hash_file
+
+        def counting_hash(full):
+            calls.append(full)
+            return real_hash(full)
+
+        vault_garden._hash_file = counting_hash
+        try:
+            summary = vault_garden.garden_run(vault, processor=json.loads(_proc(proc, "ok")))
+        finally:
+            vault_garden._hash_file = real_hash
+        check("both items acked", sorted(summary["acked"]), ["s0", "s1"])
+        stable_hashes = [c for c in calls if "stable" in c]
+        check("the 20 unchanged files are hashed once across the whole run, "
+              "not once per item", len(stable_hashes), 20)
+
+
+def _t_garden_snapshot_time_counts_against_deadline():
+    """FIX: if taking the before-snapshot already spends the run's remaining
+    budget, that item's processor never starts - it is not run anyway with
+    whatever time happens to be left."""
+    with Sandbox() as sb:
+        vault, _, proc = _garden_fixture(sb, 1)
+        # clock() is called: once for the run's deadline, once by the batch
+        # loop's per-item check (still positive - the item is attempted), and
+        # once inside _process_item right after the snapshot (already past
+        # the deadline the first call set).
+        ticks = iter([0, 1, 700])
+        summary = vault_garden.garden_run(vault, processor=json.loads(_proc(proc, "counted")),
+                                          clock=lambda: next(ticks))
+        check("the item is not acked", summary["acked"], [])
+        ran = _read_or_none(os.path.join(sb.tmp, "processor-ran"))
+        check_true("the processor never ran - the snapshot alone spent the budget",
+                   ran is None)
+        reason = json.dumps(summary["failed"])
+        check_in("the reason names the snapshot as what spent the budget",
+                 "spent snapshotting the vault", reason)
+
+
 for case in (_t_adopt, _t_import, _t_recall, _t_garden_bound, _t_garden_ack_after_write,
              _t_garden_hosts_and_legacy, _t_garden_owned_commit, _t_schedule, _t_capture,
              _t_detect_install, _t_create_vault_and_config_override,
@@ -1192,7 +1306,10 @@ for case in (_t_adopt, _t_import, _t_recall, _t_garden_bound, _t_garden_ack_afte
              _t_garden_note_moved_by_obsidian_is_acked, _t_garden_nothing_written_is_not_acked,
              _t_garden_failed_processor_output_is_captured,
              _t_garden_dedupe_acks_without_processing, _t_reconcile_dry_run_writes_nothing,
-             _t_processor_runs_with_hooks_off, _t_snapshot_bounds_and_touch):
+             _t_processor_runs_with_hooks_off, _t_snapshot_bounds_and_touch,
+             _t_garden_unattributed_change_is_not_acked, _t_bounded_stream_reader_caps_memory,
+             _t_garden_snapshot_reuses_hashes_across_items,
+             _t_garden_snapshot_time_counts_against_deadline):
     try:
         case()
     except Exception as exc:  # pylint: disable=broad-except

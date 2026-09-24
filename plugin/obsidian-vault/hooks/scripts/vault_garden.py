@@ -51,6 +51,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import threading
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -241,6 +242,47 @@ def changed_files(before, after):
     return out
 
 
+def _frontmatter_text(full):
+    """The text between the opening and closing `---` markers, or None - no
+    frontmatter, unreadable, or never closed. Best-effort: a decode error
+    reads as no frontmatter rather than raising."""
+    try:
+        with open(full, "r", encoding="utf-8", errors="replace") as fh:
+            lines = fh.read().splitlines()
+    except OSError:
+        return None
+    if not lines or lines[0].strip() != "---":
+        return None
+    body = []
+    for line in lines[1:]:
+        if line.strip() == "---":
+            return "\n".join(body)
+        body.append(line)
+    return None
+
+
+def attributed_files(vault, written, ident):
+    """The subset of `written` whose frontmatter carries `ident` - a
+    `session_id:` field naming it, or `ident` appearing anywhere else in the
+    frontmatter block (a `sources:` line naming its transcript, say).
+
+    A changed file that never mentions the item proves nothing about it: an
+    unrelated Obsidian sync, or another plugin, can touch a file in the same
+    before/after window a processor ran in. Without this gate any such
+    coincidence would ack (and, with --commit, commit) a file nobody wrote for
+    this item. No frontmatter at all - a file with no opening `---`, or one
+    never closed - counts as not attributed, the same as frontmatter that
+    exists but never mentions `ident`.
+    """
+    out = []
+    for rel in written:
+        full = os.path.join(vault, *rel.split("/"))
+        fm = _frontmatter_text(full)
+        if fm and ident in fm:
+            out.append(rel)
+    return out
+
+
 def session_notes(vault):
     """{session_id: [vault-relative session page, ...]} from wiki/sessions/, recursively.
 
@@ -388,7 +430,11 @@ Follow the obsidian-vault:gardener agent's distillation rules and the vault's ow
 CLAUDE.md. Distil durable knowledge only; never invent a source, date or quote.
 Always append a one-line digest for this session to today's daily note, so the
 run leaves a written trace even when nothing else is worth keeping.
-The session page you write carries `session_id: {ident}` in its frontmatter.
+Every file this counts as YOUR work MUST carry this session's identity in its
+frontmatter - at minimum the session page, with the literal line
+`session_id: {ident}` in its frontmatter (quotes optional). A file that never
+mentions {ident} in its frontmatter is not attributed to this item and will
+never be acknowledged, however useful its content.
 Do NOT edit anything under inbox/, and do NOT run git - the runner does both.
 When done, print one line per file you created or modified, vault-relative:
 {prefix} <path>
@@ -455,20 +501,80 @@ def _streams(stdout, stderr):
     return " | ".join(parts)
 
 
+# How much of a stream is ever kept in memory while the processor runs. Only
+# the last STREAM_TAIL *characters* are ever shown, but a runaway processor
+# can print far more than that before it is stopped, and buffering all of it
+# (as subprocess.run's capture_output does) holds every byte until exit. This
+# is bytes, not characters, and comfortably above STREAM_TAIL so trimming
+# never lands mid multi-byte sequence in a way `_tail` would notice.
+STREAM_CAP_BYTES = 64 * 1024
+
+
+class _BoundedStreamReader:
+    """Reads one pipe in a background thread, keeping only its last
+    STREAM_CAP_BYTES. Memory use is bounded by the cap, not by how much the
+    child prints - trimmed in chunks rather than on every read so the common
+    case (well under the cap) costs one append per chunk."""
+
+    def __init__(self, stream):
+        self._buf = bytearray()
+        self._thread = threading.Thread(target=self._run, args=(stream,), daemon=True)
+        self._thread.start()
+
+    def _run(self, stream):
+        try:
+            for chunk in iter(lambda: stream.read(65536), b""):
+                self._buf.extend(chunk)
+                if len(self._buf) > STREAM_CAP_BYTES * 2:
+                    del self._buf[:-STREAM_CAP_BYTES]
+        except (OSError, ValueError):
+            pass
+        finally:
+            try:
+                stream.close()
+            except OSError:
+                pass
+
+    def join(self, timeout=None):
+        self._thread.join(timeout)
+
+    def text(self):
+        return bytes(self._buf[-STREAM_CAP_BYTES:]).decode("utf-8", errors="replace")
+
+
 def run_processor(argv, vault, timeout):
     """(ok, reported, detail). `reported` is what the processor SAID it wrote -
-    a hint for the log only; the ack decision is made on a vault snapshot."""
+    a hint for the log only; the ack decision is made on a vault snapshot.
+
+    stdout and stderr are read by background threads into bounded buffers
+    (_BoundedStreamReader) rather than accumulated whole, the way
+    subprocess.run's capture_output does - a processor that prints without
+    bound must not be able to grow this process's memory without bound.
+    """
     try:
-        proc = subprocess.run(argv, cwd=vault, capture_output=True, text=True,
-                              encoding="utf-8", errors="replace", env=processor_env(),
-                              timeout=max(1, timeout), check=False)
-    except subprocess.TimeoutExpired as exc:
-        return False, [], (f"timed out after {int(timeout)}s; "
-                           + _streams(exc.stdout, exc.stderr))
+        proc = subprocess.Popen(argv, cwd=vault, stdout=subprocess.PIPE,  # pylint: disable=consider-using-with
+                                stderr=subprocess.PIPE, env=processor_env())
     except OSError as exc:
         return False, [], f"could not start: {exc}"
+    out_reader = _BoundedStreamReader(proc.stdout)
+    err_reader = _BoundedStreamReader(proc.stderr)
+    try:
+        proc.wait(timeout=max(1, timeout))
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            pass
+        out_reader.join(timeout=5)
+        err_reader.join(timeout=5)
+        return False, [], (f"timed out after {int(timeout)}s; "
+                           + _streams(out_reader.text(), err_reader.text()))
+    out_reader.join(timeout=5)
+    err_reader.join(timeout=5)
+    stdout_text = out_reader.text()
     reported = []
-    for line in (proc.stdout or "").splitlines():
+    for line in stdout_text.splitlines():
         line = line.strip()
         if line.startswith(WROTE_PREFIX):
             rel = line[len(WROTE_PREFIX):].strip().strip("`")
@@ -476,7 +582,7 @@ def run_processor(argv, vault, timeout):
                 reported.append(rel)
     if proc.returncode != 0:
         return False, reported, (f"processor exited {proc.returncode}; "
-                                 + _streams(proc.stdout, proc.stderr))
+                                 + _streams(stdout_text, err_reader.text()))
     return True, reported, None
 
 
@@ -573,16 +679,31 @@ def already_distilled(pending, index):
     return [(item, index[item["id"]]) for item in pending if item["id"] in index]
 
 
-def _process_item(vault, item, processor, remaining):
-    """(acked, written, detail) for one item, decided on a before/after snapshot."""
-    before = snapshot(vault)
+def _process_item(vault, item, processor, clock, deadline, before_snapshot=None):
+    """(acked, written, detail, snapshot_after) for one item, decided on a
+    before/after snapshot.
+
+    `before_snapshot` is the previous item's after-snapshot (or None for the
+    first item in a batch): passing it lets `snapshot()` reuse a hash for
+    every file whose mtime and size have not moved, instead of re-hashing up
+    to MAX_SNAPSHOT_FILES files again for each item in the batch. Taking the
+    snapshot itself counts against `deadline` like everything else - if it
+    alone spends what is left, the processor for this item never starts, and
+    the item is left for the next run rather than given a shortened timeout
+    with no way to tell it apart from a shortened run.
+    """
+    before = snapshot(vault, previous=before_snapshot)
     if not before["complete"]:
-        return False, [], before["detail"]
+        return False, [], before["detail"], before
+    remaining = deadline - clock()
+    if remaining <= 0:
+        return False, [], ("the run's time budget was spent snapshotting the vault before "
+                           "this item's processor could start"), before
     ok, reported, detail = run_processor(processor_argv(processor, vault, item),
                                          vault, remaining)
     after = snapshot(vault, previous=before)
     if not after["complete"]:
-        return False, [], after["detail"]
+        return False, [], after["detail"], after
     written = changed_files(before, after)
     unseen = [r for r in reported if r.replace("\\", "/") not in written]
     if unseen:
@@ -590,14 +711,20 @@ def _process_item(vault, item, processor, remaining):
     if not ok:
         if written:
             detail += f" (it changed {len(written)} file(s): {', '.join(written)})"
-        return False, written, detail
+        return False, written, detail, after
     if not written:
         said = (f"; it reported {', '.join(reported)}, which is unchanged or absent"
                 if reported else "; it reported nothing either")
         return False, [], ("no file in the vault was created or changed while it ran - "
-                           "nothing proves the item was distilled" + said)
+                           "nothing proves the item was distilled" + said), after
+    attributed = attributed_files(vault, written, item["id"])
+    if not attributed:
+        return False, [], (
+            f"{len(written)} file(s) changed ({', '.join(written)}) but none carries this "
+            f"item's identity ({item['id']!r} in frontmatter) - an unrelated vault change "
+            "cannot acknowledge this item"), after
     write_ledger(vault, item["id"], written)
-    return True, written, None
+    return True, written, None, after
 
 
 def garden_run(vault, max_items=MAX_ITEMS, processor=None, seconds=RUN_SECONDS,
@@ -634,12 +761,14 @@ def garden_run(vault, max_items=MAX_ITEMS, processor=None, seconds=RUN_SECONDS,
                 summary["unresolved_here"].append(item["id"])
         batch = runnable[:max_items]
         summary["not_started"] = len(runnable) - len(batch)
+        carry_snapshot = None
         for index, item in enumerate(batch):
             remaining = deadline - clock()
             if remaining <= 0:
                 summary["not_started"] += len(batch) - index
                 break
-            ok, written, detail = _process_item(vault, item, processor, remaining)
+            ok, written, detail, carry_snapshot = _process_item(
+                vault, item, processor, clock, deadline, carry_snapshot)
             if ok:
                 summary["acked"].append(item["id"])
                 summary["written"].extend(w for w in written if w not in summary["written"])
