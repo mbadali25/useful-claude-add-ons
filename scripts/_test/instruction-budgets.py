@@ -136,6 +136,61 @@ def run_stale_names(body: str, path_rel: str, legacy: bool = False):
             CHECKER.LEGACY_STALE_NAME_FILES = saved_files
 
 
+def run_stale_names_real_list(body: str, path_rel: str):
+    """`check_stale_names` against the REAL, unpatched
+    `LEGACY_STALE_NAME_FILES` -- proving a specific path is exempted by the
+    checker as shipped, not by a fixture-local monkeypatch of the list the
+    way `run_stale_names` above does for the general case."""
+    with tempfile.TemporaryDirectory() as tmp:
+        _write(os.path.join(tmp, path_rel), body)
+        return _patched(tmp, CHECKER.check_stale_names)
+
+
+def _win_relpath(real_relpath):
+    """A drop-in for `os.path.relpath` that simulates its return shape on
+    native Windows: backslash-separated. `real_relpath` is the genuine
+    function, captured before patching, so this still does the real
+    relative-path computation and only changes the separator."""
+    def _patched_relpath(path, start):
+        return real_relpath(path, start).replace("/", "\\")
+    return _patched_relpath
+
+
+def run_windows_relpath_simulation():
+    """The Windows burn-in reproduction: `os.path.relpath` patched to return
+    backslash-separated paths (what it actually returns on Windows), on
+    whatever platform this suite runs on. Exercises the two checks the
+    burn-in report named -- `check_command_budget`'s allowance lookup and
+    `check_stale_names`'s legacy-exemption lookup -- against real
+    POSIX-keyed `.budget-allowance.json` / `LEGACY_STALE_NAME_FILES` data, so
+    a `rel()` that stopped normalising would fail this on Linux exactly the
+    way it failed on Windows.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        _write(os.path.join(tmp, "plugin", "crew", "commands", "change.md"),
+               FRONTMATTER + "line\n" * 150)
+        _write(
+            os.path.join(tmp, "plugin", "crew", ".budget-allowance.json"),
+            json.dumps({
+                "plugin/crew/commands/change.md":
+                    {"lines": 200, "reason": "T8: to trim"},
+            }),
+        )
+        _write(os.path.join(tmp, "plugin", "crew", "commands", "ticket.md"),
+               FRONTMATTER + "`/crew:ticket` was removed in crew 1.0.\n")
+        loaded = _load_allowance(tmp)
+        saved_relpath = CHECKER.os.path.relpath
+        CHECKER.os.path.relpath = _win_relpath(saved_relpath)
+        try:
+            with _root_at(tmp):
+                problems: list[str] = []
+                CHECKER.check_command_budget(loaded, problems.append)
+                CHECKER.check_stale_names(problems.append)
+                return problems
+        finally:
+            CHECKER.os.path.relpath = saved_relpath
+
+
 def run_broken_references(body: str):
     with tempfile.TemporaryDirectory() as tmp:
         _write(os.path.join(tmp, "plugin", "crew", "commands", "fixture.md"), body)
@@ -643,6 +698,30 @@ def main() -> int:
         ),
         True,
         "stale name",
+    )
+    check(
+        "the real removal stub commands/ticket.md is exempt under the shipped legacy list",
+        run_stale_names_real_list(
+            FRONTMATTER + "`/crew:ticket` was removed in crew 1.0.\n",
+            "plugin/crew/commands/ticket.md",
+        ),
+        False,
+    )
+    check(
+        "the real removal stub commands/work.md is exempt under the shipped legacy list",
+        run_stale_names_real_list(
+            FRONTMATTER + "`/crew:work` was removed in crew 1.0.\n",
+            "plugin/crew/commands/work.md",
+        ),
+        False,
+    )
+
+    # --- Windows path-separator normalisation (burn-in FAIL 2) ------------
+    check(
+        "backslash-separated os.path.relpath (simulating Windows) still matches "
+        "a POSIX-keyed allowance entry and the POSIX legacy-exemption list",
+        run_windows_relpath_simulation(),
+        False,
     )
 
     # --- frontmatter close (FIX :180) -------------------------------------

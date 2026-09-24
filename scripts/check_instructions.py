@@ -128,6 +128,15 @@ LEGACY_STALE_NAME_FILES = (
     "plugin/crew/commands/sdp-sync.md",
     "plugin/crew/commands/split.md",
     "plugin/crew/commands/survey.md",
+    # ticket.md and work.md are the deliberate 10-line "removed in crew 1.0"
+    # stubs (coordinator recommends keeping them, not deleting the command
+    # files outright, so a user who types the old name gets pointed at its
+    # 1.0 replacement instead of "unknown command"). Each names its own
+    # stale name in the sentence saying it was removed
+    # ("`/crew:ticket` was removed in crew 1.0", "`/crew:work` was removed in
+    # crew 1.0"), which is exactly what this check exists to catch elsewhere
+    # -- so both need the same explicit exemption every other legacy file
+    # here gets, not a silent special case.
     "plugin/crew/commands/ticket.md",
     "plugin/crew/commands/upgrade.md",
     "plugin/crew/commands/verify.md",
@@ -193,7 +202,21 @@ def read(path: str) -> str:
 
 
 def rel(path: str) -> str:
-    return os.path.relpath(path, ROOT)
+    """Path relative to ROOT, normalised to POSIX separators regardless of
+    platform.
+
+    On Windows, `os.path.relpath` returns backslash-separated paths
+    (`plugin\\crew\\commands\\change.md`), while every comparison target this
+    value gets checked against is written POSIX: `.budget-allowance.json`'s
+    keys, `LEGACY_STALE_NAME_FILES`, `STALE_NAMES` scan reports. An
+    un-normalised path silently fails an `in` lookup against either list on
+    Windows only -- a command actually listed in the allowance reads as
+    unlisted, and a file on the legacy exemption list reads as not exempt --
+    while every check passes clean on Linux/macOS, where `relpath` already
+    happens to emit forward slashes. `.replace("\\\\", "/")` is a no-op on
+    those platforms and the fix on Windows, so one implementation covers all
+    three."""
+    return os.path.relpath(path, ROOT).replace("\\", "/")
 
 
 def load_allowance(fail) -> dict:
@@ -306,7 +329,10 @@ def _allowance_at(ref: str) -> dict | None:
     not answer at all (no binary, not a repository, unreadable JSON); {} means
     git answered and the file did not exist at that commit yet, which is a
     real, checkable "no prior ceilings" rather than a failure to read one."""
-    allowance_rel = os.path.relpath(ALLOWANCE_PATH, ROOT)
+    # git's `<rev>:<path>` pathspec is always POSIX, even on Windows -- rel()
+    # (not a bare os.path.relpath) so this does not hand git a backslash path
+    # it would fail to resolve.
+    allowance_rel = rel(ALLOWANCE_PATH)
     done = subprocess.run(
         ["git", "-C", ROOT, "show", f"{ref}:{allowance_rel}"],
         capture_output=True, text=True, check=False,
