@@ -6,7 +6,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Changed
 
-- **`crew` 1.0.2: Windows burn-in fixes merged - in-process test decision
+- **`crew` 1.0.3: Windows burn-in fixes merged - in-process test decision
   logic with a default parity sample and the full per-shell matrix marked
   `slow` (run on windows-latest CI); per-flavour PATH fixtures for shim
   tests plus `autoClear` `onlyRepos`/`onlySessions` scope narrowing;
@@ -14,13 +14,17 @@ All notable changes to this repository are documented here. Format follows [Keep
   with a timeout, and Python probes that prove CPython/PyPy and kill the
   process tree.** Three burn-in lanes (`crew-1.0-burnin-fix1`,
   `crew-1.0-burnin-fix4`, `crew-1.0-burnin-fix3b`) merged into `crew-1.0`;
-  `obsidian-vault` 0.4.6 picks up the same proven-Python-probe resolver in
+  `obsidian-vault` 0.4.7 picks up the same proven-Python-probe resolver in
   its bash wrappers from the fix3b lane. `plugin/crew/BUDGETS.md`'s
   Markdown line-count claim re-measured against the merged tree.
   Review-round-3 fixes: fail-closed `autoClear` scoping, including `.ps1`
   whitespace parity with `crew_autocycle`; a nonce check on `mark_sent`;
   `.cmd`/`.bat` shim launch; an overall resolver deadline; JSON-proof
-  Windows fixtures; and a `:Z` bind mount.
+  Windows fixtures; and a `:Z` bind mount. Review-round-4 fixes: `onlyRepos`
+  resolves symlinks before `..` (`.ps1`), an atomic nonce-keyed sent marker
+  in `event_claim`, the probe wait clamped to the overall resolver
+  deadline, a dead bash memo removed, and `obsidian-vault`'s `.ps1`
+  wrappers launching `.cmd`/`.bat` Pythons.
 
 - **`obsidian-canvas` 1.1.2: says plainly that `obsidian-memory-contract`
   ships only with the `obsidian-vault` plugin.** A skill-only install was
