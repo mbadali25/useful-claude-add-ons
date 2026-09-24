@@ -6,6 +6,79 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Changed
 
+- **`crew` 1.0.10: release integration of four review-round branches plus a CI
+  fix, and six follow-ups found while merging them.**
+  Four `--no-ff` merges onto 1.0.9, in order: **W-a** (verify-gate.sh/.ps1: a
+  backgrounded rule's grandchild can no longer wedge the gate or the test
+  harness — rule output now goes through a temp file, `crew_fixtures.run_gate`/
+  `popen_gate` kill the whole process GROUP on a timeout instead of only the
+  direct child, and the lock-window TTL test is now deterministic). **W-d**
+  (sendkeys: a real Windows Terminal tab check via UIA, driven by a pure
+  decision function so it is unit-testable without a live WT window; delay
+  regression tests; dry-run target parity — carries **W-b**, `ab0b8679`:
+  `notify`'s dry-run no longer echoes a fake delay it never takes, and the
+  detached sender no longer holds context-watch's stdout open by inheriting
+  fd 3). **W-c** (Windows-only fixture bugs fixed in
+  `test_ps1_python_probe.py`/`test_crew_instructions.py`/
+  `test_event_claim_crash_safety.py`/`test_stack_skills.py`; `crew_config.py`
+  notes that `guards.roleWrites` of `off`/`report` needs Python). **CI1**
+  (`instruction-budgets.yml` fetches full history so `check_instructions.py`
+  can diff; `.pylintrc` ignores markdown; the `stack-powershell` skill's
+  PSScriptAnalyzer severity filter now matches `-Severity Error,ParseError`;
+  `test_stack_skills.py` skips the Windows absolute-fallback case where it
+  cannot run). All four merged clean — the only overlap, `test_stack_skills.py`
+  between W-c and CI1, auto-resolved with both sides' changes intact. The 11
+  byte-pinned `Resolve-CrewPython` copies remained byte-identical throughout.
+
+  Six follow-ups, found integrating the above:
+  (a) `test_the_window_is_identified_uniquely_or_not_at_all[title-one-ps1]`
+  failed in CI — the window-matrix fixture stubs `Get-CrewWindows` but not
+  `Get-Process`, so a uniquely-resolved *fake* pid hit the real owner-safety
+  check and declined with "cannot determine the process that owns window pid
+  ...". That check is correct and untouched (an unresolvable owner must still
+  decline); added `CREW_AUTOCLEAR_OWNER_STUB`, consulted only for a pid it
+  names, so an unstubbed pid still declines exactly as before.
+  (b) pylint W0707 (raise-missing-from) fixed on five identical
+  except/raise blocks in `test_verify_gate_stop_gate_record.py` (moved from
+  the CI-cited line numbers after the W-a merge); each now chains
+  `from exc`. Also fixed R1735 (`use-dict-literal`) in `crew_fixtures.py`,
+  a genuinely NEW finding from the W-a merge (confirmed clean immediately
+  before it). Five other pre-existing pylint findings were left alone.
+  (c) Ported PR #224's (`origin/todo/xdist-and-codex-profile-tickets`,
+  `31e1451c`) extensionless-PATH-shim guard to `Resolve-CrewBash`'s PATH
+  fallback loop in `verify-gate.ps1` — `Resolve-CrewPython` already carries
+  the equivalent guard here; `Resolve-CrewBash` did not, and is exactly as
+  vulnerable to a PATH shim `CreateProcess` cannot launch directly (hangs,
+  rather than errors, when invoked anyway). One further fix from that PR
+  (a sibling test's fixed `time.sleep(6)` racing gate startup,
+  `test_each_flavour_honours_a_deadline_the_other_published`) is still
+  missing from this tree — filed in `TODO.md`, out of scope for this item.
+  (d) `context.autoClear`'s `delaySeconds` was already correctly honoured
+  (win-repo's report of a 3s wait against a configured 4/6 was a different,
+  already-fixed issue) — but an unrecognised key (e.g. `delay`, typed
+  instead of `delaySeconds`) or a `delaySeconds` present but not a usable
+  number both silently fell through to the compiled default with no record
+  it happened. Both flavours now log a warning to `.crew/.autoclear.log`
+  naming the problem and the effective value used, once past the
+  enabled/onlyRepos/onlySessions silent-exit gates (an opted-out machine
+  still gets no log file at all). A numeric STRING (`"4"`) is still
+  accepted silently — decided that is not a misconfiguration.
+  (e) Measured the G1 stdin-bound tests
+  (`test_40`/`test_40b`/`test_50`/`test_50b`/`test_51` in
+  `test_verify_gate_stop_gate_record.py`) with `--durations=0`: each takes
+  ~5.0-5.9s, against a `_STDIN_BOUND_DEADLINE_S` of 20. All five are
+  deliberately waiting out the product's own ~5s stdin-read bound (a pipe
+  that is never closed, held open with a complete payload, or trickled
+  slower than the per-line timeout) — that IS the scenario each test
+  exists to prove is still bounded, so none of them has a fixture that
+  could close stdin earlier without testing something else. No fixture or
+  product change made.
+  (f) Added `crew_fixtures.gate_processes`, a pytest fixture (re-exported
+  from `conftest.py`) that tracks any `Popen` a test hands it and kills its
+  whole process group — then reaps it, so a killed process does not
+  linger as a zombie — at teardown regardless of pass/fail/error. Purely
+  additive: no existing verify-gate test was rewired to use it.
+
 - **`crew` 1.0.9: integration merge of the explorer/opus owner decision plus a
   second independent-review round on the 1.0.8 no-python fallback and
   `crew_autoclear_setup` fixes.**
