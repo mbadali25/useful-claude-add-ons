@@ -19,10 +19,13 @@ Ticket numbers follow the merged order in `docs/review/04-redesign.md`
 ("Ticket order"). That order and `04a`'s table number two tickets differently
 (Codex parity is T6 in the merged order, T5 in `04a`); the merged order wins.
 
-The four existing HTML families in `docs/guides/crew/` (overview,
-capabilities, technical reference, the dated progress report) are replaced or
-archived by T10, not by this directory. This build does not touch or remove
-them — that decision is still the owner's.
+The four existing HTML families that used to live in `docs/guides/crew/`
+(overview, capabilities, technical reference, the dated progress report) are
+retired: `crew-overview`, `crew-capabilities` and `crew-technical-reference`
+are replaced by the `crew-1.0-*` guides below and removed; the dated progress
+report has no replacement and was moved to `docs/guides/crew/archive/` as
+historical record. This directory's own build is unaffected — none of the
+five guides here were ever built from those four.
 
 ## Built artifacts
 

@@ -16,6 +16,17 @@ All notable changes to this repository are documented here. Format follows [Keep
   `claude-memories-canvas` now points at the same profile. Marketplace
   skill count 36 -> 34.
 
+- **crew 1.0 guides: retired the 0.20 overview, capabilities and
+  technical-reference guide families; archived the dated progress report.**
+  `docs/guides/crew/crew-overview*`, `crew-capabilities*` and
+  `crew-technical-reference*` (HTML, DOCX, PDF, and their `-solomon`
+  variants) are removed, superseded by the `crew-1.0-*` guides, which have a
+  generator (`docs/guides/crew/src/build.py`) and their own test coverage;
+  `crew-progress-report-2026-09-20*` moved to `docs/guides/crew/archive/` as
+  historical record. `plugin/crew/tests/test_docs_routing.py`'s `_GUIDES` and
+  `sabotage.py`'s `GUIDE_HTML` now point at the archived progress report,
+  the one guide in this set with no generator of its own.
+
 - **`crew` 1.0.0: one session owns a ticket.** The interactive session carries
   a ticket through brainstorm → spec → plan → implement → tests → docs →
   review → done (`/crew:brainstorm`, `/crew:spec`, `/crew:plan`,

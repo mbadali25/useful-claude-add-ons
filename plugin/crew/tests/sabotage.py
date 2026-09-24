@@ -105,10 +105,17 @@ HOUSE_STYLE_PY = os.path.join(
 # A shipped artefact of crew's HTML route, outside the plugin for a third
 # reason again: the route is the one entry on the routing table with NO
 # generator behind it, so the only place its rule can be observed holding is a
-# document it produced. One guide is sabotaged rather than all four -- the
-# assertion is parametrized per file, so breaking any one of them is what the
-# suite has to catch, and mutating four would prove the same thing four times.
-GUIDE_HTML = os.path.join(ROOT, "docs", "guides", "crew", "crew-overview.html")
+# document it produced. One guide is sabotaged rather than every one covered
+# by test_docs_routing.py's `_GUIDES` -- the assertion is parametrized per
+# file, so breaking any one of them is what the suite has to catch, and
+# mutating every one would prove the same thing repeatedly. `crew-overview.html`
+# was retired along with `crew-capabilities.html` and `crew-technical-reference*`
+# in favour of the generated `crew-1.0-*` guides; the dated progress report was
+# archived rather than deleted and is `_GUIDES`'s only remaining entry, so the
+# sabotage target moved with it.
+GUIDE_HTML = os.path.join(
+    ROOT, "docs", "guides", "crew", "archive",
+    "crew-progress-report-2026-09-20.html")
 # What each schema migration does. test_upgrade.py checks the entry for the
 # CURRENT hop exists, so the mutation below deletes exactly that entry.
 UPGRADE_DOC = os.path.join(CREW, "commands", "upgrade.md")
@@ -773,10 +780,8 @@ MUTATIONS = (
         # each table on its own.
         "a table in a shipped guide goes back to a bare header row",
         GUIDE_HTML,
-        "<thead><tr><th>Habit</th><th>What it costs</th>"
-        "<th>What crew does about it</th></tr></thead>",
-        "<tr><th>Habit</th><th>What it costs</th>"
-        "<th>What crew does about it</th></tr>",
+        "<thead><tr><th>Ask</th><th>Result</th><th>Where</th></tr></thead>",
+        "<tr><th>Ask</th><th>Result</th><th>Where</th></tr>",
         "tests/test_docs_routing.py::"
         "test_every_table_in_every_shipped_guide_has_a_real_thead",
     ),
