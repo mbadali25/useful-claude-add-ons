@@ -674,6 +674,107 @@ def test_notify_dry_run_never_reports_a_delay_number(flavor, tmp_path):
 
 
 @by_flavor
+def test_notifys_dry_run_plan_has_no_target_line(flavor, tmp_path):
+    """PARITY (item 3): `notify` identifies no window, so LABEL/target is
+    always empty for it. `auto-clear.ps1` has never printed a `target:` line
+    there; `auto-clear.sh` used to print an empty one (`target: ` with
+    nothing after it) regardless. Both now omit the line entirely."""
+    root = _repo(tmp_path)
+    _machine(root)
+    _write_marker(root)
+    _write_handoff(root)
+    env = dict(_NO_CAPABILITY_ENV, OS="Windows_NT")
+
+    result = _invoke(flavor, "auto-clear", root, args=("--session", SESSION_A, "--dry-run"),
+                     env_extra=env)
+
+    assert "method: notify" in result.stdout, result.stdout
+    assert "target" not in result.stdout, result.stdout
+
+
+# --- the configured delay, at several values, on the keystroke methods -----
+#
+# `notify` types nothing, so its own delay handling is covered above; a
+# keystroke method (tmux/sendkeys) has a real wait, and it is this value --
+# not the schema default of 3 -- that must reach both the dry-run plan and
+# the sent-log line. Several values, none of them 3, so a hard-coded
+# fallback would fail every one of them, not merely the ones that happen to
+# differ from the default.
+
+
+@pytest.mark.parametrize("delay", [1, 4, 6, 9])
+@by_flavor
+def test_the_configured_delay_reaches_the_dry_run_plan_at_several_values(flavor, tmp_path, delay):
+    root = _repo(tmp_path, delaySeconds=delay)
+    env = _sendable(flavor, tmp_path, root)
+    _write_marker(root)
+    _write_handoff(root)
+
+    result = _invoke(flavor, "auto-clear", root, args=("--session", SESSION_A, "--dry-run"),
+                     env_extra=env)
+
+    assert "would send" in result.stdout, result.stdout + result.stderr
+    assert f"delay: {delay}s" in result.stdout, result.stdout
+    assert "delay: 3s" not in result.stdout, result.stdout
+
+
+@pytest.mark.skipif(_BASH is None, reason="needs bash")
+@pytest.mark.parametrize("delay", [1, 4, 6, 9])
+def test_the_configured_delay_reaches_the_detached_senders_own_sleep_argument(tmp_path, delay):
+    """The value handed to the DETACHED sender -- not merely echoed by the
+    dry-run plan -- must be the configured delaySeconds. Captures the
+    argument itself, never wall-clock elapsed time: a hard-coded `sleep 3`
+    still finishes in well under a second regardless of what is configured,
+    and a wall-clock assertion could not tell that apart from the real fix.
+
+    A fake `sleep` on PATH would ALSO intercept `_common.sh`'s unrelated
+    python-probe watchdog (`crew_py_strict`'s `sleep "$probe_timeout"`),
+    which fires at least once per script in this chain and is capped at 3s
+    regardless of `delaySeconds` -- confirmed by hand: a naive `sleep` shim
+    here logs several extra "3"s that have nothing to do with this delay.
+    So this shims `bash` instead, on the ONE call shape unique to the
+    generated sender (`setsid/nohup bash "$send_script"`, the only `bash
+    SCRIPT` invocation in this chain whose script is NOT named
+    `auto-clear.sh` itself -- `context-watch.sh`'s own `bash
+    ".../auto-clear.sh" ...` call is the other one, and must run for real or
+    nothing downstream happens): reads its `sleep N` line and never actually
+    launches it. Everything else execs straight through to the real bash
+    unchanged."""
+    root = _repo(tmp_path, method="tmux", delaySeconds=delay)
+    _machine(root)
+    _write_marker(root)
+    _write_handoff(root)
+    bindir = tmp_path / "fakebin"
+    crew_fixtures.write_shim(bindir, "tmux", f"#!/bin/sh\necho {os.getpid()}\n")
+    sleep_log = tmp_path / "sleep-calls.log"
+    crew_fixtures.write_shim(bindir, "bash", (
+        "#!/bin/sh\n"
+        'case "$1" in\n'
+        "  */auto-clear.sh) exec \"$CREW_TEST_REAL_BASH\" \"$@\" ;;\n"
+        "esac\n"
+        f'grep "^sleep " "$1" | head -1 | cut -d" " -f2 >> "{sleep_log}"\n'
+        "exit 0\n"))
+    home = tmp_path / "home"  # `_machine` writes to root.parent/"home" == tmp_path/"home"
+    env = dict(os.environ, HOME=str(home), USERPROFILE=str(home),
+               CLAUDE_PROJECT_DIR=str(root),
+               PATH=crew_fixtures.shell_path("sh", [bindir]),
+               CREW_TEST_REAL_BASH=_BASH,
+               TMUX="/tmp/fake,1,0", TMUX_PANE="%7")
+    payload = _stop(root, root / ".work" / "irrelevant.jsonl", active=True)
+
+    result = subprocess.run([_BASH, _script("sh", "context-watch")], cwd=str(root), env=env,
+                            input=json.dumps(payload), capture_output=True, text=True,
+                            timeout=5, check=False)
+    deadline = time.time() + 5
+    while time.time() < deadline and not sleep_log.exists():
+        time.sleep(0.02)
+
+    assert result.returncode == 0, result.stderr
+    assert sleep_log.exists(), "the detached sender's bash was never invoked"
+    assert sleep_log.read_text(encoding="utf-8").strip() == str(delay)
+
+
+@by_flavor
 def test_auto_does_not_resolve_to_notify_off_windows_with_no_capability(flavor, tmp_path):
     """The mirror case: off native Windows (no `OS=Windows_NT`), with no tmux
     and no X11, `auto` still refuses outright -- it must not paper over a

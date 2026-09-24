@@ -572,36 +572,108 @@ if ($null -eq $target) {
 $label = "$($target.Title) [window $($target.Id), pid $($target.Pid), $how]"
 
 # `sendkeys` may still not be safe to use even once a window is uniquely
-# identified: Windows Terminal hosts every tab in ONE window, and nothing
-# short of UI Automation (not a dependency here) can ask that window which
-# tab is active or how many it has. So a target window OWNED by Windows
-# Terminal can never be confirmed as the session's ONLY tab from outside
-# it -- this declines rather than guess, exactly as an unresolvable target
-# would, and falls back to `notify` instead of typing nowhere useful.
-#
+# identified: Windows Terminal hosts every tab in ONE window, so the
+# foreground-window check above passes even when a DIFFERENT tab than this
+# session's is the one showing. The decision is factored in two: a PURE
+# function (below) that is unit-tested on Linux, and the real UI Automation
+# probe that feeds it, which is NOT -- there is no live Windows Terminal
+# window or UIAutomationClient assembly on the platform this suite runs on.
+# "Could not tell" (UIA unavailable, an exception, zero tab elements found)
+# must decline exactly like a KNOWN multi-tab window with no provable
+# selection -- never folded into "safe to send" (the same rule CLAUDE.md
+# states for a probe that can fail).
+function Get-CrewSendKeysTabDecision([bool]$UiaAvailable, $TabCount, [bool]$SelectedMatches) {
+  if (-not $UiaAvailable) {
+    return @{ Decision = "decline"; Reason = (
+      "cannot verify the active tab - Windows Terminal hosts multiple tabs in one window and " +
+      "UI Automation could not be used to confirm which one is active") }
+  }
+  if ($null -eq $TabCount -or $TabCount -lt 1) {
+    return @{ Decision = "decline"; Reason = (
+      "cannot verify the active tab - Windows Terminal hosts multiple tabs in one window and " +
+      "no tab elements could be found to confirm which one is active") }
+  }
+  if ($TabCount -eq 1) {
+    return @{ Decision = "send"; Reason = "" }
+  }
+  if ($SelectedMatches) {
+    return @{ Decision = "send"; Reason = "" }
+  }
+  return @{ Decision = "decline"; Reason = (
+    "cannot verify the active tab - Windows Terminal has $TabCount tabs and the active one " +
+    "could not be proven to be this session's") }
+}
+
+# Real IO against a live Windows Terminal window -- NOT unit-tested on Linux,
+# for the reason above. Any failure (the assembly missing, FromHandle
+# returning nothing, any other exception) reports UiaAvailable=$false rather
+# than letting an exception propagate and crash the hook mid-decision.
+# `Title` proves the selected tab is THIS session's only when it is the
+# UNIQUE title match among all tabs found -- two tabs matching windowTitle
+# singles out neither, whichever of them happens to be selected.
+function Get-CrewWindowsTerminalTabState([IntPtr]$Hwnd, [string]$Title) {
+  try {
+    Add-Type -AssemblyName UIAutomationClient -ErrorAction Stop
+    Add-Type -AssemblyName UIAutomationTypes -ErrorAction Stop
+    $elem = [System.Windows.Automation.AutomationElement]::FromHandle($Hwnd)
+    if ($null -eq $elem) {
+      return @{ UiaAvailable = $false; TabCount = 0; SelectedMatches = $false }
+    }
+    $cond = New-Object System.Windows.Automation.PropertyCondition(
+      [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
+      [System.Windows.Automation.ControlType]::TabItem)
+    $tabs = $elem.FindAll([System.Windows.Automation.TreeScope]::Descendants, $cond)
+    $needle = if ($Title) { $Title.ToLowerInvariant() } else { "" }
+    $titleMatches = 0
+    $selectedName = $null
+    foreach ($tab in $tabs) {
+      $name = [string]$tab.Current.Name
+      if ($needle -and $name.ToLowerInvariant().Contains($needle)) { $titleMatches++ }
+      $pattern = $null
+      if ($tab.TryGetCurrentPattern(
+            [System.Windows.Automation.SelectionItemPattern]::Pattern, [ref]$pattern) -and
+          ([System.Windows.Automation.SelectionItemPattern]$pattern).Current.IsSelected) {
+        $selectedName = $name
+      }
+    }
+    $selectedMatches = $needle -and $titleMatches -eq 1 -and $selectedName -and
+                       $selectedName.ToLowerInvariant().Contains($needle)
+    return @{ UiaAvailable = $true; TabCount = $tabs.Count; SelectedMatches = [bool]$selectedMatches }
+  } catch {
+    return @{ UiaAvailable = $false; TabCount = 0; SelectedMatches = $false }
+  }
+}
+
 # Review (Codex FIX|auto-clear.ps1:~582): a failure to determine the owning
 # process (Get-Process throwing, e.g. the window's pid already exited) used
 # to be swallowed by the empty catch and leave $ownerProcessName as "" --
 # which is not "WindowsTerminal", so the check below read that as PROOF the
 # owner is safe and let sendkeys proceed against an UNKNOWN safety predicate.
-# Unknown must decline, exactly like a known-Windows-Terminal owner, not fall
-# through to the permissive branch: "could not tell" is its own value here,
-# never folded into "fine" (the same rule CLAUDE.md states for a probe that
-# can fail). $ownerKnown distinguishes "confirmed some other process" from
-# "could not confirm anything" so the two failure reasons are not conflated
-# in the log a human reads afterward.
+# Unknown must decline, exactly like a known-Windows-Terminal owner with no
+# provable single tab, not fall through to the permissive branch. $ownerKnown
+# distinguishes "confirmed some other process" from "could not confirm
+# anything" so the two failure reasons are not conflated in the log a human
+# reads afterward.
 $ownerProcessName = $null
 $ownerKnown = $false
 try {
   $ownerProcessName = (Get-Process -Id $target.Pid -ErrorAction Stop).ProcessName
   $ownerKnown = $true
 } catch { }
-if (-not $ownerKnown -or $ownerProcessName -eq "WindowsTerminal") {
-  $declineReason = if ($ownerKnown) {
-    "cannot verify the active tab - Windows Terminal hosts multiple tabs in one window, and that cannot be confirmed from outside it"
-  } else {
-    "cannot determine the process that owns window pid $($target.Pid) - an unknown owner must decline, not assume it is safe to type into"
-  }
+
+$declineReason = $null
+if (-not $ownerKnown) {
+  $declineReason = "cannot determine the process that owns window pid $($target.Pid) - an unknown owner must decline, not assume it is safe to type into"
+} elseif ($ownerProcessName -eq "WindowsTerminal") {
+  $tabState = Get-CrewWindowsTerminalTabState -Hwnd $target.Id -Title $windowTitle
+  $decision = Get-CrewSendKeysTabDecision -UiaAvailable $tabState.UiaAvailable `
+                -TabCount $tabState.TabCount -SelectedMatches $tabState.SelectedMatches
+  if ($decision.Decision -ne "send") { $declineReason = $decision.Reason }
+}
+# else: a non-Windows-Terminal console host (conhost) has no tabs to
+# disambiguate -- falls straight through to sendkeys below, unchanged.
+
+if ($declineReason) {
   if ($DryRun) {
     Write-Output "autoclear: would decline sendkeys - $declineReason"
     Write-Output "  falling back to notify: would say it is safe to run $command yourself"
@@ -756,13 +828,23 @@ function ConvertTo-CrewWin32Arg([string]$Arg) {
   return $sb.ToString()
 }
 
+# Pulled out so the DELAY value handed to the detached child is checkable
+# directly -- the exact argv entry, not how long the child takes to run --
+# without spawning anything. Pure: only calls the already-pure
+# ConvertTo-CrewWin32Arg above.
+function Get-CrewSendKeysChildArgs([string]$ChildPath, [long]$Hwnd, [string]$Command,
+                                    [int]$Delay, [string]$Root) {
+  return @(
+    "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+    "-File", (ConvertTo-CrewWin32Arg $ChildPath), "-Hwnd", "$Hwnd",
+    "-Text", (ConvertTo-CrewWin32Arg $Command),
+    "-Delay", "$Delay", "-Root", (ConvertTo-CrewWin32Arg $Root)
+  )
+}
+
 # Hidden so it does not steal the focus the child is about to check for.
-Start-Process -FilePath $exe -WindowStyle Hidden -ArgumentList @(
-  "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
-  "-File", (ConvertTo-CrewWin32Arg $childPath), "-Hwnd", "$($target.Id)",
-  "-Text", (ConvertTo-CrewWin32Arg $command),
-  "-Delay", "$delay", "-Root", (ConvertTo-CrewWin32Arg $sendRoot)
-) | Out-Null
+Start-Process -FilePath $exe -WindowStyle Hidden -ArgumentList (Get-CrewSendKeysChildArgs `
+  -ChildPath $childPath -Hwnd $target.Id -Command $command -Delay $delay -Root $sendRoot) | Out-Null
 
 Write-CrewAutoClearNote "sent - method sendkeys, target $label, command '$command' in ${delay}s (only if that window still has focus)"
 exit 0

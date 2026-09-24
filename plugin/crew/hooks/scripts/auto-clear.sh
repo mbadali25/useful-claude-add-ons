@@ -129,8 +129,17 @@ if [ "$DRY_RUN" -eq 1 ]; then
   # delay applies here".
   DELAY_LINE="delay: ${DELAY}s"
   [ "$RESOLVED" = "notify" ] && DELAY_LINE="delay: n/a (notify sends no keystroke)"
-  printf 'autoclear: would send\n  method: %s\n  target: %s\n  command: %s\n  %s\n' \
-    "$RESOLVED" "$LABEL" "$COMMAND" "$DELAY_LINE"
+  # PARITY: `notify` identifies no window, so LABEL is empty -- printing an
+  # empty `target: ` line there said nothing a reader could use, and
+  # auto-clear.ps1's own notify dry-run never prints one at all. Matched here
+  # by omitting the line, rather than adding an empty one to the .ps1 twin.
+  if [ -n "$LABEL" ]; then
+    printf 'autoclear: would send\n  method: %s\n  target: %s\n  command: %s\n  %s\n' \
+      "$RESOLVED" "$LABEL" "$COMMAND" "$DELAY_LINE"
+  else
+    printf 'autoclear: would send\n  method: %s\n  command: %s\n  %s\n' \
+      "$RESOLVED" "$COMMAND" "$DELAY_LINE"
+  fi
   exit 0
 fi
 
