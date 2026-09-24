@@ -267,10 +267,154 @@ lookup silently reported "absent", which reads as a clean result rather than an 
 The practical rule: prefer `git cat-file blob` for scripted reads, and set
 `MSYS_NO_PATHCONV=1` when a `git show` names both a remote-tracking ref and a dotfile path.
 
+## 5 - doc-builder, Quickstart in `midnight` through Word COM. PASS.
+
+`preflight.py` first, as SKILL.md requires: python 3.14.6, `python-docx` 1.2.0, `pywin32` 311,
+PyMuPDF 1.28.2, Pillow 12.2.0, numpy 2.5.3 all present; **Microsoft Word (COM)
+`Word.Application.16` ok**; LibreOffice ABSENT; Gate 2 AVAILABLE. Exit 0.
+
+    python build_report.py --example > report.json
+    python build_report.py --data report.json --out <scratch> --theme midnight \
+        --to-docx --to-pdf --renderer word
+
+Exit 0, three files written. **The renderer is named on every line it wrote**, which is the half
+of this section that was in question:
+
+    brand: solomon -- the only brand pack found in sibling skill directories, theme midnight
+    renderer : word -- --renderer word (explicit)
+    wrote ...Entra-Password-Posture-20260924063427-3786.html
+    wrote ...-3786.docx  [renderer: Microsoft Word (COM)]
+    wrote ...-3786.pdf   [renderer: Microsoft Word (COM)]
+
+**The dark page carries into both.** Measured, not eyeballed:
+
+| Artifact | Evidence |
+|---|---|
+| HTML | `body { background:#2E3440; }` - midnight's page colour, literal hex |
+| DOCX | `<w:background w:color="2E3440"/>` in `word/document.xml`; top `w:fill` values `3B4252` (25), `2E3440` (18), `434C5E` (4), accent `88C0D0`, classification `A3303A` |
+| PDF | page 1 dominant `#2D3440` at 60.7%, page 2 at 93.3%; luminance 51.4 = DARK |
+
+The PDF check is the one that settles it. Sampling **all four corners and both margins on both
+pages** returns `#2D3440` at every point, so the dark is a true page background painted edge to
+edge, not a content block that happens to be wide. (`#2D3440` vs `#2E3440` is Word's colour
+conversion, one unit on red.)
+
+One observation, deliberately not called a defect: `word/settings.xml` carries **no
+`w:displayBackgroundShape`**, the setting that makes Word show a document background in Print
+Layout. The PDF export honours `w:background` regardless - measured above - so it does not affect
+this section's result. Whether Word's on-screen Print Layout view shows the dark page is
+**unmeasured**; that needs a GUI check, not a file read.
+
+## 3 - memory and Obsidian. The parts that exist PASS; one step names a command that does not.
+
+### `/crew:memory-setup` does not exist at this commit - NOT RUN
+
+`plugin/crew/commands/` holds 34 commands and none is `memory-setup`. The only two mentions of
+that name anywhere in the tree are `docs/review/02-memory-and-injection.md` and
+`docs/review/04b-redesign-codex.md` - design documents, not shipped commands. The nearest shipped
+equivalents are `/crew:init`, `/crew:obsidian-sync` and `/obsidian-vault:init`. Recorded as NOT
+RUN with the reason rather than substituting a command and calling it a pass.
+
+### winget detection - PASS
+
+    Obsidian on windows: INSTALLED
+      found  file: C:\Program Files\Obsidian\Obsidian.exe
+      found  winget: Obsidian.Obsidian is installed
+      probed winget list --id Obsidian.Obsidian -e
+
+`install-obsidian` with no `--apply` answers "already installed ... Nothing to do." - the
+detection branch an idempotent installer is required to have.
+
+### `schedule --os windows` - PASS, and the refusal is real
+
+It prints the `Register-ScheduledTask` block, says plainly `NOTHING below is installed by this
+command`, and ends with:
+
+    This host is not the designated gardener host (gardener.host = None); garden-run will
+    refuse here until you pass --designate --apply.
+
+**Not taken on the message's word.** `vault_ops.py garden-run` on this host exits **1** with
+`no gardener host designated (config gardener.host)`. This host was not designated; the Linux
+laptop remains the gardener.
+
+### Capture - PASS. Both flavours fire, exactly one entry survives.
+
+Run in an isolated vault via `OBSIDIAN_VAULT_CONFIG`, invoking the wrappers exactly as
+`hooks.json` does, with a valid hook payload on stdin:
+
+| Step | Result |
+|---|---|
+| `vault-capture.sh session-end` | one entry in `inbox/pending-reflect.dadeush-desktop.md`, **all fields present** - `session=deadbeef-...`, `cwd=C:\repos\probe`, `transcript=...probe.jsonl` |
+| `vault-capture.ps1 -Trigger session-end`, same session id | **no second entry** - de-duplicated |
+
+So "every hook fires exactly once" holds for capture on Windows - and it holds by session-id
+de-duplication rather than by the hook firing once. On Windows **both** flavours run;
+`already_queued` is what collapses them.
+
+**A correction I have to record, because I nearly filed it as a defect.** My first two runs
+produced `session=? | cwd=? | transcript=?` and I read that as the wrappers dropping the payload.
+They were not. My probe payload was built in a single-quoted bash string, which collapsed the
+doubled backslashes and left `"C:\repos\probe"` as an invalid JSON escape. `json.loads` raised,
+`vault_capture.py` fell back to `{}` exactly as its code says it will, and the `?` fields were it
+behaving correctly on my malformed input. Rebuilding the payload with `json.dumps` produced the
+PASS above. Same shell-quoting trap as the withdrawn CRLF claim - the second time in this
+burn-in that a backslash eaten by a shell produced a confident wrong reading.
+
+**One robustness note that survives that correction.** `already_queued` returns False whenever
+the session id is `?`:
+
+```python
+def already_queued(vault, sid):
+    if sid == "?":
+        return False
+```
+
+A capture that cannot identify its session therefore bypasses de-duplication entirely. Because
+the hook is registered once per flavour, an unparseable payload yields **one unusable entry per
+flavour, per trigger**, and nothing can ever collapse or distil them - there is no transcript
+path to read. The live vault shows this shape: `inbox/pending-reflect.dadeush-desktop.md` holds
+two entries at `2026-09-24 06:08`, both `unknown | session=? | cwd=? | transcript=?`. Their
+trigger is `unknown`, meaning `sys.argv[1]` was absent, so those two were **not** written by a
+registered hook - the registered entries always pass `session-end`/`pre-compact`. Something
+invoked the script bare. I am not claiming a hook defect from them; I am claiming the
+de-duplication gap is real, and that those entries are what it looks like when it is hit.
+
+### Recall - the mechanism PASSES; the full seeded-note proof is still outstanding
+
+A scratch recall vault holding the guide's own seeded note, reached through a scratch config:
+
+    [ops-recall] notes/tidewater-ledger.md: The Tidewater ledger reconciliation cutoff is
+    03:17 Kestrel time, and the approving steward is Marisol Quennell-Vantage.
+
+`--json` reports `score 24`, `chars 124`, `max_chars 4000`, `truncated false`.
+
+**A second thing I nearly filed wrongly.** My first seeded note was hard-wrapped, and `recall`
+returned the line ending at `and the approving`, cutting the steward's name - which read like
+truncation that `truncated: false` was lying about. It was not. Snippets are **line-scoped**, my
+heredoc had split the fact across two lines, and raising `--max-chars` to 4000 changed nothing
+because the budget was never the constraint. Rewriting the note on one line returns the whole
+fact, and `truncated: false` was accurate throughout.
+
+Still to run: steps 3 and 4 of `docs/guides/crew/src/memory-recall-proof.md` - the fresh session
+and the subagent that answers with `tool_uses: 0`. The recall command underneath them is now
+known to work on this host.
+
+### Vault inventory on this machine - context, not a 1.0 finding
+
+`adopt` lists four vaults, all `unassigned`, three of them `[not on disk]`.
+`~/.claude/obsidian/config.json` is dated **2026-09-05**, three weeks before this commit, so that
+is pre-existing machine config rather than anything 1.0 did. It is also not a blocker:
+`writer_vault()` documents and implements a pre-roles fallback to `default: true`, which this
+config has, so capture still resolves a target.
+
 ## Sections not yet run
 
-3 (memory/Obsidian), 4 (review/Codex), 5 (Word COM render), 6 (landmines), `/crew:verify
---all`, the 5.1-vs-7 obsidian-vault probes, and 2a steps 3/5/6 are **NOT RUN** at this
-commit. 2a's live cycle needs its own operator confirmation each time it is attempted,
-because `autoClear` is still read from the machine file — the narrowing changes which
-repos/sessions act on it, not where the switch lives.
+**4 (review and Codex)** and **2a steps 3/5/6** are NOT RUN at this commit.
+
+From section 3, still outstanding: `/crew:memory-setup` (no such command here - see above) and
+steps 3 and 4 of the seeded-note recall proof, which need a nested `claude -p` run with
+`SessionStart`/`UserPromptSubmit`/`SubagentStart` wired to `crew-context.sh`.
+
+2a's live cycle needs its own operator confirmation each time it is attempted, because
+`autoClear` is still read from the machine file - the narrowing changes which repos and sessions
+act on it, not where the switch lives.
