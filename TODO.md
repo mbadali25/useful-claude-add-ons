@@ -3887,18 +3887,49 @@ quiet machine** (0 other gate processes, 0 concurrent suites): 0.00s of CPU
 across 90s with the child still parked, stalling at the same 95% point as a
 contended run. So it is a defect, not contention.
 
-Two halves, fix both, and the second is the cheaper and more valuable one:
+**CAUSE CORRECTED 2026-09-24, and the first answer was wrong.** This ticket
+originally blamed `verify-gate.ps1:235`'s unconditional
+`[Console]::In.ReadToEnd()`. That is not it. The real mechanism, established by
+reproducing each step rather than by reading:
 
-1. **The gate blocks.** `plugin/crew/hooks/scripts/verify-gate.ps1:235` is an
-   unconditional `[Console]::In.ReadToEnd()`. The gate stops mid-script still
-   holding its lock, rather than hanging at shutdown - the fixture's `.crew/`
-   held the lock and `verify.json` but no `.verify-gate.record.json` and no
-   `.verify-verified-at`.
-2. **The harness cannot notice.** `:479` spawns the gate with
-   `capture_output=True` and **no `timeout=`**. That is what converts a blocked
-   gate into a non-terminating suite instead of one red test. Fix this
-   independently and first: it makes every future occurrence diagnosable
-   instead of a mystery stall.
+`Resolve-CrewPython` accepts the first PATH match for `python3`/`python` that
+`Get-Command -All` reports as `CommandType: Application`. On Windows
+`Get-Command` reports an **extensionless** file matching that bare name as an
+Application too. This test plants exactly such a file - a CRLF shebang stub -
+on PATH. `Resolve-CrewPython` returns the stub, and PowerShell's `&` has no
+shebang support, so invoking it blocks forever. That is why the fixture's
+`.crew/` held the lock and `verify.json` but neither record file: the gate
+reached record-sync and never returned.
+
+`[sh]` does not hang **by construction**: `crew_py_strict`
+(`plugin/crew/hooks/scripts/_common.sh:82`) executes and probes each candidate
+(`"$candidate" -c 'import sys; print(sys.executable)'`) and strips `\r`. Bash
+runs a shebang script natively, so the stub forwards to the real interpreter and
+the probe unwraps it to the real path.
+
+The stdin reads are a **separate latent fragility**, not this bug: with stdin
+left as a never-closed pipe both flavours park forever, and every spawn in the
+suite closes stdin. Recorded because it was the leading theory twice and is
+still worth its own fix someday.
+
+FIXED in `31e1451c` by a shared `Test-CrewWindowsExecutable` guard - the
+extension must be in `$env:PATHEXT` - applied to both `Resolve-CrewPython` call
+sites and to `Resolve-CrewBash`'s PATH fallback. **The identical unguarded
+pattern remains in `pm-brief.ps1`, `role-write-guard.ps1`,
+`platform-sync.ps1` and `pm-pulse.ps1`** - reported, not fixed, and worth its
+own ticket.
+
+The remaining half, still worth doing:
+**The harness could not notice, and that was the more valuable fix.** `:479`
+spawned the gate with `capture_output=True` and **no `timeout=`**, which is what
+converts a blocked gate into a non-terminating suite instead of one red test.
+Fixed in `6cfe69e7` with `timeout=120` (the value already used for a full gate
+invocation elsewhere in this suite), failing with a message naming the flavour.
+
+**Nine sibling `test_verify_gate_*.py` files have the identical gap** and were
+deliberately left alone to keep that commit scoped to the file that hung
+rule[8]. They are the next occurrence waiting to happen, and they are a
+mechanical fix.
 
 **Correction, recorded so it does not reach anyone as a cause.** An earlier read
 of this - mine - was that the `.ps1` flavour specifically blocks while `.sh`
