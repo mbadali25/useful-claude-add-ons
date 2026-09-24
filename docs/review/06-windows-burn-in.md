@@ -118,11 +118,80 @@ fixture assumes — tmux is not a Windows tool, and the owner-process walk finds
 window from a non-interactive runner. **The narrowing logic itself is not shown wrong by
 these**, and is not shown right either: these tests could not exercise it here.
 
-## 2a — RUN. The Windows sender does nothing at all, silently.
+## 2a - CORRECTED. The earlier FAIL is WITHDRAWN; the cause is a gate above the logger.
 
-Operator approved a live run. **Scope was narrowed first, and 1.0.3's own narrowing made
-that possible** — `onlyRepos` was set to this worktree and proven to exclude the other repos
-on this host before anything was armed:
+**What this section said before, and why it was wrong.** It reported the Windows sender as
+producing nothing at all, silently, called that a contradiction of `auto-clear.ps1`'s own header
+contract, and recorded "cause not established". The behaviour was real and reproducible. The
+reading of it was wrong, and it was withdrawn after the operator said plainly that auto-clear had
+been working for them. Going back to measure rather than defending the finding is what produced
+everything below.
+
+**Auto-clear works on this machine.** Five repos here carry `context.autoClear` in their
+repo-local `.crew/config.json` and it runs in them - `anew/SRL`,
+`solomon/aws-managed-services`, `solomon-eii-calculator`, `solomon-fuels-participant`,
+`wt-sdp-6670`, all `enabled: true`.
+
+### The cause, now established: `auto-clear.ps1:55`
+
+    51: if ($env:OS -ne 'Windows_NT') { exit 0 }
+    55: if (-not (Test-Path ".crew/config.json")) { exit 0 }
+    57: $log = ".crew/.autoclear.log"
+    59: function Write-CrewAutoClearNote([string]$Message) {
+
+Line 55 exits **two lines above** the log path, and four above the function that writes it. This
+worktree's `.crew/` holds `codemap/` and `verify.json` and **no `config.json`**, so every probe I
+ran took that exit. Zero bytes on both streams and no log file is exactly what that line does.
+
+That also disposes of the contradiction I claimed. The header's "every refusal is written to
+`.crew/.autoclear.log`" governs refusals *after* opt-in; 0.20.17's twin makes the intent explicit
+at its own equivalent gate - *"Enabled is checked FIRST and silently: a repo that has not opted in
+must not even get a log file out of this."* Silence for a repo that never opted in is deliberate,
+not a defect.
+
+### The finding that replaces it, and it is a 1.0 finding
+
+1.0 **already implements** the global-layer merge that 0.20.17 lacks. `auto-clear.ps1:93-103`
+reads both files and combines them:
+
+    93: $repoCfg   = Read-CrewJsonFile ".crew/config.json"
+    95: $globalCfg = Read-CrewJsonFile (Join-Path $userHome ".claude/crew/config.json")
+   101: $enabled = (Test-CrewTrue (Get-CrewChild $globalAuto "enabled")) -and
+   102:            -not (Test-CrewFalse (Get-CrewChild $repoAuto "enabled"))
+
+which is its header's stated contract: *"The MACHINE opted in: `context.autoClear.enabled` is true
+in `~/.claude/crew/config.json`. A repo may switch it off, never on."*
+
+**Line 55 defeats that contract for any repo with no `.crew/config.json` at all.** The machine can
+be opted in, the merge at 93-103 would enable correctly, and control never reaches it - the
+absent-file check exits first. A repo with the file and `autoClear` absent behaves as the header
+intends; a repo with no file behaves as though the machine had opted out. Those two cases should
+not differ, and nothing anywhere says which one you are in.
+
+This is not hypothetical here: it is the entire reason this section previously read as a BLOCK.
+
+The 0.20.17 flavour has the more basic version of the same problem - it reads `context` from
+`.crew/config.json` only (`auto-clear.ps1:72`, `auto-clear.sh:66`) and never opens the global file,
+while `crew_config.py` deliberately stores `context.autoClear` globally and has a test asserting it
+(`test_autoclear_is_global_and_its_siblings_are_not`). Someone hit that weeks ago and worked around
+it by hand; `solomon/aws-managed-services/.crew/config.json` carries the note, dated 2026-09-17:
+
+> `"autoClear is duplicated from ~/.claude/crew/config.json because auto-clear.ps1 reads this file raw and never merges the global layer"`
+
+Duplicating a machine-global block into every repo is precisely the toil the global-config
+rationale exists to prevent. 1.0's merge is the right fix; line 55 is what still has to move below
+the logger for it to hold.
+
+### PASS - the handoff gate chain (unchanged, still stands)
+
+Driving `crew_autocycle.py plan` refused at each condition in turn and named it: a marker recording
+a different session, then no request time, then the handoff file, then its age against the request.
+Each refusal distinct and accurate. The gates fail closed and say why.
+
+### Scope narrowing (unchanged)
+
+Operator approved a live run, and 1.0.3's own narrowing made it safe: `onlyRepos` was set to this
+worktree and proven to exclude the other repos on this host before anything was armed.
 
 ```
 C:/repos/personal/crew-1.0-win          -> True
@@ -130,50 +199,14 @@ C:/repos/personal/useful-claude-add-ons -> False
 C:/repos/anew/SRL                       -> False
 ```
 
-Recorded separately because it surprised me: **`autoClear.enabled` was already `true` on
-this machine with no narrowing**, so it had been armed for every session all along. The
-machine config was backed up and restored afterwards; it is unchanged.
+`autoClear.enabled` was already `true` in the machine config with no narrowing. The machine config
+was backed up and restored; it is unchanged, verified by hash.
 
-### PASS — the handoff gate chain
+### Steps 3, 5 and 6 - still NOT RUN
 
-Driving `crew_autocycle.py plan` refused at each condition in turn and named it: a marker
-recording a different session, then no request time, then the handoff file, then its age
-against the request. Each refusal distinct and accurate. The gates fail closed and say why.
-
-### FAIL — the Windows sender
-
-`auto-clear.sh` / `crew_autocycle.py` correctly decline Windows: `resolve_method` returns
-`none` with *"Inside tmux this works with no configuration; on X11 install xdotool"*, and
-the `.ps1` twin states the division explicitly — *"method tmux is auto-clear.sh's job; this
-is the native-Windows flavour."* So on Windows the sender is `auto-clear.ps1`, using
-`System.Windows.Forms.SendKeys`.
-
-Invoked exactly as `hooks.json` invokes it, it produces **nothing**:
-
-```
-pwsh -NoProfile -File ...uto-clear.ps1 -DryRun -Root ...
-exit=0   stdout bytes: 0   stderr bytes: 0   .crew/.autoclear.log: does not exist
-```
-
-Same with `-Session burnin-2a`, with `-Force` (which skips every handoff gate), and with
-**no `-Session` at all** — that last case must reach line 313,
-`Stop-CrewAutoClear "no session id, so no way to tell whose handoff this is"`, which calls
-`Write-CrewAutoClearNote` and writes both a log line and a stderr line. Neither appeared.
-
-**This contradicts the file's own header contract:** *"Every refusal is written to
-`.crew/.autoclear.log`, because a Stop hook's stderr is invisible on exit 0."* On this host
-nothing is written anywhere, so a Stop hook using it stands down with no trace — the silent
-stand-down shape, in the component whose whole job is to act.
-
-**The flavour guard is not the cause, checked directly.** Line 51 is
-`if ($env:OS -ne 'Windows_NT') { exit 0 }`, and under the `-File` invocation hooks.json
-uses, from this shell, `$env:OS` is `Windows_NT`, `$IsWindows` is `True`, and the working
-directory is correctly the repo. The guard passes; something after it exits first.
-
-**Cause not established.** The behaviour is certain and reproducible; the line it exits at
-is not, and I am not guessing it. Steps 3, 5 and 6 — where `/clear` lands, which tab
-receives it with two tabs, whether alt-tab suppresses the send — remain **NOT RUN**, because
-nothing was ever sent to observe.
+Where `/clear` lands, which tab receives it with two tabs, and whether alt-tab suppresses the send
+all need something to actually be sent. Re-running them needs a repo-local `.crew/config.json` in
+the burn-in worktree, or the line-55 fix, whichever lands first.
 
 ## 5.1 vs 7 - the obsidian-vault probes. The `%d` concern is unfounded.
 
