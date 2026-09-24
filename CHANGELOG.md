@@ -6,41 +6,6 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Changed
 
-- **`crew` 1.0.0: one session owns a ticket.** The interactive session carries
-  a ticket through brainstorm → spec → plan → implement → tests → docs →
-  review → done (`/crew:brainstorm`, `/crew:spec`, `/crew:plan`,
-  `/crew:approve`, `/crew:implement`, `/crew:review`, `/crew:done`, with
-  `/crew:fix` as the compressed light path and `/crew:status` read-only).
-  Roster 54 → 4 agents (`explorer`, `reviewer`, `security`, `researcher`)
-  plus on-demand `stack-*` skills. Hooks: the context hook (on by default),
-  plan-approval, scope guard and completion audit, the cloud/destructive
-  guard (off by default), and the verify gate. `/crew:migrate` is the
-  upgrade path from 0.20: preview, backup, atomic apply, rollback.
-
-  **Breaking changes:**
-  - The PM agent, `/crew:pm`, the `pm-brief` SessionStart brief, the
-    `pm-pulse` Stop hook and `pm_journal.py` are removed. Nothing dispatches
-    work on its own; `pm.*` config is read only so `/crew:migrate` can carry
-    it to `retired.pm`, and `.crew/pm-journal.md` is archived by migrate.
-  - `/crew:roster` and `/crew:scale` are removed (use `/crew:status`); the
-    `crew-pm` and `crew-scaling` skills are removed.
-  - 51 agents are deleted, including every domain specialist, `developer`,
-    `planner`, `smoke-author`, `dba`, `scribe` and `docs-writer`.
-    `crew_state.SPECIALIST_ROLES` is empty and `ROLE_TIERS` is the four.
-  - `qa-reviewer` is renamed `reviewer`; `/crew:review`'s Claude rung
-    dispatches `crew:reviewer`.
-  - `/crew:work` and `/crew:ticket` are removal stubs, not aliases: they say
-    to use `/crew:implement` and `/crew:brainstorm` + `/crew:spec`.
-  - `memory.inject` defaults to `true`: the context hook injects code-map
-    state and the handoff unless a repo sets it `false`.
-    `context.autoResume` is no longer read; `handoff-read` stays registered
-    for its once-per-session marker resets and prints the handoff only when
-    `memory.inject` is `false`.
-  - `/crew:upgrade` now only brings a pre-0.20 config up to the 0.20 schema;
-    a 0.20 repo runs `/crew:migrate`.
-  - The role-write guard's deny list is the four read-only agents; no
-    shipped agent is unrestricted.
-
 - **`crew` 0.20.28: registration.** Metrics harness (`crew_metrics.py
   record|baseline|compare|escaped`; UNKNOWN never 0; 10-ticket floor);
   instruction budget checker `scripts/check_instructions.py` with BUDGETS.md
