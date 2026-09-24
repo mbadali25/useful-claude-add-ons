@@ -3,7 +3,6 @@
 <head>
 <meta charset="utf-8">
 <title>Daily Workflow</title>
-<meta name="doc-builder-page" content="#2E3440">
 <style>
 body { font-family:'Segoe UI',Calibri,Arial,sans-serif; font-size:11pt;
        color:#ECEFF4; background:#2E3440; margin:2cm; line-height:1.45; }
@@ -77,7 +76,10 @@ div.l { font-size:11px; color:#D8DEE9; }
   tr { page-break-inside:avoid; }
   thead { display:table-header-group; }
 }
+pre { background:#3B4252; border:1px solid #6B7A94; border-radius:3px;
+      padding:8pt 10pt; margin:8pt 0; overflow-x:auto; white-space:pre; }
 </style>
+<meta name="doc-builder-page" content="#2E3440">
 </head>
 <body bgcolor="#2E3440">
 <h1 id="daily-workflow">Daily Workflow</h1>
@@ -218,9 +220,7 @@ forcing the rest of the ticket through a path that no longer fits it.</p>
 </tr>
 </tbody>
 </table>
-<p>The full troubleshooting guide arrives in T10.</p>
-<hr>
-
+<p>See <a href="troubleshooting.md">Troubleshooting</a> for the rest.</p>
 <h2 id="scope-and-approval">Scope and Approval</h2>
 <p>Every crew 1.0 ticket has a contract: the spec says which files it may touch, the plan says which
 of those each step changes, and you approve both. Two hooks then hold the session to that
@@ -233,11 +233,11 @@ work.</p>
   <code>## Touch</code> and <code>## Acceptance checks</code>. <code>## Touch</code> lists one repo-relative glob or path per
   bullet:</li>
 </ul>
-<p><code>markdown
-  ## Touch
-  - `src/export/**`
-  - `tests/test_export.py`
-  - `docs/export.md`</code></p>
+<pre><code class="language-markdown">## Touch
+- `src/export/**`
+- `tests/test_export.py`
+- `docs/export.md`
+</code></pre>
 <ul>
 <li><code>plan.md</code> is a list of steps. Each step has a <code>Files:</code> line, a <code>Test:</code> line and a <code>Risk:</code> line.
   Every <code>Files:</code> entry must fall inside Touch. A plan cannot add a path the spec does not list.</li>

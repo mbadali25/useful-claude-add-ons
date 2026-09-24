@@ -2,7 +2,7 @@
 title: Daily workflow
 guide: 2 of 5
 produced-by: T4
-status: draft - the commands below exist; the enforcing hooks (plan approval, scope guard, completion audit) are T3's and are described here as "what they do" without yet being demonstrated failing
+status: current for crew 1.0 - the commands and the enforcing hooks (plan approval, scope guard, completion audit) below are shipped and wired into hooks.json
 ---
 
 # Daily workflow
@@ -117,4 +117,4 @@ forcing the rest of the ticket through a path that no longer fits it.
 | `/crew:done` reports `NEEDS_REPLAN` | the review budget (two rounds) is spent | `/crew:plan <id>` for a successor plan; no third round |
 | `/crew:done` fails the completion audit | a path outside scope changed, including one a shell command wrote | file it to `TODO.md`, not to this ticket, then rerun |
 
-The full troubleshooting guide arrives in T10.
+See [Troubleshooting](troubleshooting.md) for the rest.

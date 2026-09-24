@@ -3,7 +3,6 @@
 <head>
 <meta charset="utf-8">
 <title>Troubleshooting</title>
-<meta name="doc-builder-page" content="#2E3440">
 <style>
 body { font-family:'Segoe UI',Calibri,Arial,sans-serif; font-size:11pt;
        color:#ECEFF4; background:#2E3440; margin:2cm; line-height:1.45; }
@@ -77,7 +76,10 @@ div.l { font-size:11px; color:#D8DEE9; }
   tr { page-break-inside:avoid; }
   thead { display:table-header-group; }
 }
+pre { background:#3B4252; border:1px solid #6B7A94; border-radius:3px;
+      padding:8pt 10pt; margin:8pt 0; overflow-x:auto; white-space:pre; }
 </style>
+<meta name="doc-builder-page" content="#2E3440">
 </head>
 <body bgcolor="#2E3440">
 <h1 id="troubleshooting">Troubleshooting</h1>
@@ -91,8 +93,8 @@ or behaves like an older release.</p>
 <ul>
 <li><strong>Check the installed version against the repo.</strong></li>
 </ul>
-<p><code>bash
-  cat ~/.claude/plugins/installed_plugins.json | grep -A3 '"crew"'</code></p>
+<pre><code class="language-bash">cat ~/.claude/plugins/installed_plugins.json | grep -A3 '&quot;crew&quot;'
+</code></pre>
 <p>Compare the commit or version it records against <code>plugin/crew/.claude-plugin/plugin.json</code>'s
   <code>version</code> in the marketplace clone. <code>claude plugin update</code> decides whether to re-copy a plugin by
   comparing the <strong>declared version</strong>, not its content — a content change that ships with no version
@@ -108,8 +110,8 @@ or behaves like an older release.</p>
 <ul>
 <li><strong>Fix:</strong></li>
 </ul>
-<p><code>bash
-  claude plugin update crew@useful-claude-add-ons</code></p>
+<pre><code class="language-bash">claude plugin update crew@useful-claude-add-ons
+</code></pre>
 <p>then <strong>restart</strong> <code>claude</code> — a running session does not pick up a re-copied plugin. If the update
   reports "already at the latest version" and you can see the fix in the marketplace repo's <code>main</code>,
   the version was not bumped when it should have been; that is a defect to file against the plugin,
@@ -117,7 +119,8 @@ or behaves like an older release.</p>
 <ul>
 <li><strong>Check it worked:</strong></li>
 </ul>
-<p><code>/crew:status</code></p>
+<pre><code>/crew:status
+</code></pre>
 <p>Read-only, at most 40 lines, dispatches nothing. Its <code>config</code> line names which config file it
   read (<code>.crew/crew.json</code> for 1.0, <code>.crew/config.json</code> for 0.20); <code>codemap</code> reports <code>behind:
   &lt;subsystem&gt;</code> when a map's anchor and the path diff both say it is stale.</p>
@@ -239,8 +242,8 @@ every pair — that is what "even counts" in the file means, not a bug.</p>
   context hook; <code>handoff-read.sh</code> then prints the handoff on resume instead.</li>
 <li><strong>See what the context hook is actually doing:</strong></li>
 </ul>
-<p><code>bash
-  python3 "&lt;crew plugin root&gt;/hooks/scripts/crew_context.py" --stats</code></p>
+<pre><code class="language-bash">python3 &quot;&lt;crew plugin root&gt;/hooks/scripts/crew_context.py&quot; --stats
+</code></pre>
 <p>Reports emissions, injected characters, dedup hits, and vault-recall hit/miss/skip counts with a
   reason breakdown (see "Obsidian" below). The log itself is
   <code>&lt;git-common-dir&gt;/crew/context-log.jsonl</code> (or <code>.work/crew/context-log.jsonl</code> outside git), shared
@@ -255,12 +258,12 @@ every pair — that is what "even counts" in the file means, not a bug.</p>
 <code>&lt;git-common-dir&gt;/crew/review/&lt;ticket&gt;.json</code> — shared by every worktree of the repo, so a second
 worktree of the same repo spends the same budget (<code>review_ledger.py</code>).</p>
 <ul>
-<li>
-<p><strong>Symptom: review keeps re-running / "budget exhausted".</strong>
-  <strong>Check:</strong>
-  <code>bash
-  python3 "&lt;crew&gt;/hooks/scripts/review_ledger.py" --root . --ticket &lt;id&gt; --status</code>
-  A round's outcome is <code>CLEAN</code>, <code>FINDINGS</code> or <code>INCOMPLETE</code>. A completed round 2 — either <code>FINDINGS</code>
+<li><strong>Symptom: review keeps re-running / "budget exhausted".</strong>
+  <strong>Check:</strong></li>
+</ul>
+<pre><code class="language-bash">python3 &quot;&lt;crew&gt;/hooks/scripts/review_ledger.py&quot; --root . --ticket &lt;id&gt; --status
+</code></pre>
+<p>A round's outcome is <code>CLEAN</code>, <code>FINDINGS</code> or <code>INCOMPLETE</code>. A completed round 2 — either <code>FINDINGS</code>
   or <code>INCOMPLETE</code> — leaves the ticket state <code>REVIEWED</code>, so its <code>FINDINGS</code> can still be accepted. A
   <strong>third</strong> reservation attempt is refused outright and the state becomes <code>NEEDS_REPLAN</code>; that
   refusal, and an explicit <code>--reject</code>, are the only two ways into <code>NEEDS_REPLAN</code>.
@@ -268,39 +271,37 @@ worktree of the same repo spends the same budget (<code>review_ledger.py</code>)
   once, never once <code>NEEDS_REPLAN</code>), or write a new plan and get it approved — <code>crew_ticket.py
   approve</code> on a <code>NEEDS_REPLAN</code> ticket opens a fresh budget of two rounds counted from the successor
   plan; the rounds already spent stay in the ledger and are not erased.</p>
-</li>
-<li>
-<p><strong>Symptom: <code>/crew:done</code> refuses with a receipt error.</strong>
-  <strong>Check:</strong>
-  <code>bash
-  python3 "&lt;crew&gt;/hooks/scripts/review_ledger.py" --root . --ticket &lt;id&gt; --check-receipt</code>
-  A <code>CLEAN</code> verdict writes a receipt automatically; a <code>FINDINGS</code> verdict only becomes one through
+<ul>
+<li><strong>Symptom: <code>/crew:done</code> refuses with a receipt error.</strong>
+  <strong>Check:</strong></li>
+</ul>
+<pre><code class="language-bash">python3 &quot;&lt;crew&gt;/hooks/scripts/review_ledger.py&quot; --root . --ticket &lt;id&gt; --check-receipt
+</code></pre>
+<p>A <code>CLEAN</code> verdict writes a receipt automatically; a <code>FINDINGS</code> verdict only becomes one through
   <code>--accept</code>. <code>--check-receipt</code> rebuilds the review bundle from the receipt's recorded base and
   fails unless the hash still matches, the receipt is for the <strong>latest</strong> recorded round, and the
   state is not <code>NEEDS_REPLAN</code> — so editing a file after the reviewer read it, or after the receipt
   was written, invalidates the receipt even though nothing about the ledger itself looks wrong.
   <strong>Fix:</strong> if the edit was deliberate, get the ticket reviewed again (spends the next round); if it
   was accidental, revert the edit and re-check.</p>
-</li>
-<li>
-<p><strong>Symptom: you want to send a ticket back without spending the third round.</strong>
-  <code>bash
-  python3 "&lt;crew&gt;/hooks/scripts/review_ledger.py" --root . --ticket &lt;id&gt; --reject --by &lt;who&gt;</code>
-  Refuses on a ticket already <code>ACCEPTED</code> or already <code>NEEDS_REPLAN</code>.</p>
-</li>
+<ul>
+<li><strong>Symptom: you want to send a ticket back without spending the third round.</strong></li>
 </ul>
+<pre><code class="language-bash">python3 &quot;&lt;crew&gt;/hooks/scripts/review_ledger.py&quot; --root . --ticket &lt;id&gt; --reject --by &lt;who&gt;
+</code></pre>
+<p>Refuses on a ticket already <code>ACCEPTED</code> or already <code>NEEDS_REPLAN</code>.</p>
 <h2 id="scope-approval-and-the-completion-audit">Scope: Approval and the Completion Audit</h2>
 <p>A ticket's contract lives in <code>.work/tickets/&lt;id&gt;/</code>: <code>spec.md</code>'s <code>## Touch</code> section names every path
 the ticket may change; <code>plan.md</code>'s <code>Files:</code> lines must each fall inside Touch. Two hooks hold a
 session to that contract — see <a href="daily-workflow-scope.md">Daily workflow: scope and approval</a> for the
 contract itself. This section is what goes wrong with the approval and the audit.</p>
 <ul>
-<li>
-<p><strong>Symptom: an edit inside Touch is still refused.</strong>
-  <strong>Check:</strong> approval status.
-  <code>bash
-  python3 "&lt;crew&gt;/hooks/scripts/crew_ticket.py" status --ticket &lt;id&gt;</code>
-  Returns <code>approved</code> (both <code>spec.md</code> and <code>plan.md</code> hash to what was approved), <code>stale</code> (either
+<li><strong>Symptom: an edit inside Touch is still refused.</strong>
+  <strong>Check:</strong> approval status.</li>
+</ul>
+<pre><code class="language-bash">python3 &quot;&lt;crew&gt;/hooks/scripts/crew_ticket.py&quot; status --ticket &lt;id&gt;
+</code></pre>
+<p>Returns <code>approved</code> (both <code>spec.md</code> and <code>plan.md</code> hash to what was approved), <code>stale</code> (either
   file changed since), or <code>none</code>. <strong>Editing spec.md or plan.md after approval makes the approval
   stale immediately</strong> — that is deliberate: an edited spec cannot silently widen what the guard
   accepts. Only a receipt from the user's own prompt counts by default; a <code>cli</code>-sourced receipt
@@ -309,7 +310,7 @@ contract itself. This section is what goes wrong with the approval and the audit
   <strong>Fix:</strong> re-approve. The user types <code>/crew:approve &lt;id&gt;</code> again — nothing else can write the
   receipt; <code>scope_guard.py</code> refuses a Write/Edit under <code>&lt;git-common-dir&gt;/crew/</code> in every mode but
   <code>off</code>, so a session cannot forge or refresh its own approval.</p>
-</li>
+<ul>
 <li>
 <p><strong>Symptom: you need to touch one more path mid-ticket.</strong>
   <strong>Fix:</strong> amend <code>spec.md</code>'s <code>## Touch</code> (widen it), then approve again. There is no partial-approve;
@@ -323,13 +324,15 @@ contract itself. This section is what goes wrong with the approval and the audit
   against the ticket's scope base (<code>scope_base.resolve</code> — the commit the ticket started from) across
   committed, staged, unstaged and untracked changes, so a shell-made write is caught here even
   though nothing blocked it at the time.
-  <strong>Check it directly, without waiting for a Stop:</strong>
-  <code>bash
-  python3 "&lt;crew&gt;/hooks/scripts/completion_audit.py" --check --ticket &lt;id&gt;</code>
-  <strong>Fix:</strong> either the path genuinely needs to be in scope (widen Touch and re-approve), or revert
+  <strong>Check it directly, without waiting for a Stop:</strong></p>
+</li>
+</ul>
+<pre><code class="language-bash">python3 &quot;&lt;crew&gt;/hooks/scripts/completion_audit.py&quot; --check --ticket &lt;id&gt;
+</code></pre>
+<p><strong>Fix:</strong> either the path genuinely needs to be in scope (widen Touch and re-approve), or revert
   the out-of-scope change. Files git ignores (including everything under <code>.crew/</code>) and <code>.work/</code>
   itself are outside what the audit can see at all — that is by design, not a gap to work around.</p>
-</li>
+<ul>
 <li>
 <p><strong><code>scope.mode</code> values, and what "auto" means:</strong> <code>off</code> (hooks do nothing, the default), <code>report</code>
   (allows everything, logs the row to <code>.crew/guard.log</code>), <code>block</code> (refuses out-of-scope writes and
@@ -381,18 +384,18 @@ it <em>would</em> refuse before enforcing with <code>"block"</code>.</p>
   most likely to surprise a first-time user, because it fires even in a repo that has never
   configured anything cloud-related.
   <strong>Fix — pin the identity this repo may act as</strong>, in <code>.crew/config.json</code> (repo-only; a
-  machine-global <code>cloud</code> block is ignored):
-  <code>json
-  { "cloud": {
-      "awsProfiles": ["acme-dev", "acme-sandbox-*"],
-      "awsRegions": ["eu-west-1"],
-      "azureSubscriptions": ["00000000-0000-0000-0000-000000000000", "Acme Dev"] } }</code>
-  A profile/region/subscription outside the pins is denied outright (<code>[cloudIdentity]</code>). Static
+  machine-global <code>cloud</code> block is ignored):</p>
+</li>
+</ul>
+<pre><code class="language-json">{ &quot;cloud&quot;: {
+    &quot;awsProfiles&quot;: [&quot;acme-dev&quot;, &quot;acme-sandbox-*&quot;],
+    &quot;awsRegions&quot;: [&quot;eu-west-1&quot;],
+    &quot;azureSubscriptions&quot;: [&quot;00000000-0000-0000-0000-000000000000&quot;, &quot;Acme Dev&quot;] } }
+</code></pre>
+<p>A profile/region/subscription outside the pins is denied outright (<code>[cloudIdentity]</code>). Static
   <code>AWS_ACCESS_KEY_ID</code> credentials and <code>Remove-Az*</code>'s saved PowerShell context are <strong>always</strong>
   unknown — the guard has no way to read either — so pinning does not silence those; only removing
   the static keys or naming the account through <code>--profile</code>/<code>--subscription</code> does.</p>
-</li>
-</ul>
 <h2 id="obsidian">Obsidian</h2>
 <p>See <a href="memory-and-obsidian.md">Memory and Obsidian</a> for setup. What goes wrong day to day:</p>
 <ul>
@@ -405,10 +408,12 @@ it <em>would</em> refuse before enforcing with <code>"block"</code>.</p>
 </li>
 <li>
 <p><strong>Symptom: recall never surfaces anything you know is in the vault.</strong>
-  <strong>Check:</strong>
-  <code>bash
-  python3 "&lt;crew plugin root&gt;/hooks/scripts/crew_context.py" --stats</code>
-  Read the <code>miss reasons</code> line. <code>cli-missing</code> means <code>obsidian-vault</code> is not installed where crew can
+  <strong>Check:</strong></p>
+</li>
+</ul>
+<pre><code class="language-bash">python3 &quot;&lt;crew plugin root&gt;/hooks/scripts/crew_context.py&quot; --stats
+</code></pre>
+<p>Read the <code>miss reasons</code> line. <code>cli-missing</code> means <code>obsidian-vault</code> is not installed where crew can
   find it; <code>cli-exit-N</code>, <code>cli-timeout</code>, <code>cli-bad-json</code> mean the CLI ran and failed; <code>no-vaults</code> means
   no vault is currently <code>primary</code> or <code>recall</code>; <code>no-hits</code> means the search itself found nothing. Only
   <code>no-hits</code> means "the vault genuinely has nothing relevant" — every other reason is a setup problem.
@@ -416,7 +421,7 @@ it <em>would</em> refuse before enforcing with <code>"block"</code>.</p>
   are on by default since 1.0.0, so "no recall ever appears" with the key set to <code>false</code> is expected.
   <strong>Fix:</strong> <code>$VO recall --query "&lt;words you expect&gt;"</code> directly, to separate "the CLI can't find it"
   from "the hook isn't calling the CLI".</p>
-</li>
+<ul>
 <li>
 <p><strong>Symptom: the gardener seems to be falling behind.</strong>
   It runs in bounded passes on purpose, not continuously: <strong>at most 5 items or 10 minutes per run</strong>,
@@ -553,12 +558,10 @@ guard the machine owner set to <code>block</code>. <code>/crew:config</code> sho
   PowerShell twin stands itself down on the wrong platform (<code>$env:OS -ne 'Windows_NT'</code>) rather than
   the bash twin doing that job.</li>
 </ul>
-<hr>
-
 <h2 id="auto-wrap-up-auto-clear-and-auto-resume">Auto Wrap-Up, Auto-Clear and Auto-Resume</h2>
-<p>This section is written for the troubleshooting guide (<code>troubleshooting.md</code>, arriving in T10), which
-should link to it. It covers the cycle that lets a long session finish itself cleanly, clear, and
-pick up where it stopped.</p>
+<p>This section is folded into the troubleshooting guide (<code>troubleshooting.md</code>), linked from it as
+"Auto wrap-up, clear and resume". It covers the cycle that lets a long session finish itself
+cleanly, clear, and pick up where it stopped.</p>
 <h3 id="what-the-cycle-does">What the Cycle Does</h3>
 <ol>
 <li><strong>Wrap-up.</strong> When the context window crosses its threshold, the <code>Stop</code> hook blocks once. It asks

@@ -3,7 +3,6 @@
 <head>
 <meta charset="utf-8">
 <title>Memory and Obsidian</title>
-<meta name="doc-builder-page" content="#2E3440">
 <style>
 body { font-family:'Segoe UI',Calibri,Arial,sans-serif; font-size:11pt;
        color:#ECEFF4; background:#2E3440; margin:2cm; line-height:1.45; }
@@ -77,7 +76,10 @@ div.l { font-size:11px; color:#D8DEE9; }
   tr { page-break-inside:avoid; }
   thead { display:table-header-group; }
 }
+pre { background:#3B4252; border:1px solid #6B7A94; border-radius:3px;
+      padding:8pt 10pt; margin:8pt 0; overflow-x:auto; white-space:pre; }
 </style>
+<meta name="doc-builder-page" content="#2E3440">
 </head>
 <body bgcolor="#2E3440">
 <h1 id="memory-and-obsidian">Memory and Obsidian</h1>
@@ -290,8 +292,6 @@ default time is 02:23; change it with <code>--time HH:MM</code>.</p>
 shows fewer items.</p>
 <h2 id="confirming-recall-reaches-your-sessions">Confirming Recall Reaches Your Sessions</h2>
 <p>(written by the context-hook ticket)</p>
-<hr>
-
 <h2 id="confirming-recall-reaches-your-sessions_1">Confirming Recall Reaches Your Sessions</h2>
 <p>crew's context hook (<code>plugin/crew/hooks/scripts/crew_context.py</code>) puts two kinds of memory into a
 session: <strong>code-map slices</strong> from <code>.crew/codemap/</code>, and <strong>vault recall</strong> from the Obsidian vaults
@@ -363,12 +363,12 @@ paste in a slice:</p>
    claude-hooks</code> prints the full set of entries.</li>
 <li>Start a fresh session and ask for a subagent that may not use tools:</li>
 </ol>
-<p><code>bash
-   claude -p --model haiku --output-format stream-json --verbose --include-hook-events \
-     "Use the Task tool once with exactly this prompt: 'Without using any tools, answer only from \
-   your context: what is the Tidewater ledger reconciliation cutoff, and who is the approving \
-   steward? If it is not in your context, answer UNKNOWN. Name the source label.' Then reply with \
-   the subagent's answer verbatim."</code></p>
+<pre><code class="language-bash">claude -p --model haiku --output-format stream-json --verbose --include-hook-events \
+  &quot;Use the Task tool once with exactly this prompt: 'Without using any tools, answer only from \
+your context: what is the Tidewater ledger reconciliation cutoff, and who is the approving \
+steward? If it is not in your context, answer UNKNOWN. Name the source label.' Then reply with \
+the subagent's answer verbatim.&quot;
+</code></pre>
 <p><strong>What success looks like.</strong> The <code>Agent</code> tool call's prompt does not contain the answer, the
 <code>SubagentStart</code> hook response contains
 <code>- [vault:ops-recall] notes/tidewater-ledger.md: ... 03:17 Kestrel time ... Marisol Quennell-Vantage</code>,

@@ -3,7 +3,7 @@ title: crew quickstart
 subtitle: From install to your first ticket in ten minutes, on Windows or Linux
 guide: 1 of 5
 produced-by: T2 (this page), T4 (first-ticket commands), T8 (size budgets)
-status: draft - steps marked "(arrives in T4)" do not exist yet
+status: current for crew 1.0 - every step below uses a shipped command
 ---
 
 # crew quickstart
@@ -12,12 +12,9 @@ This guide takes you from nothing installed to a first ticket worked in one
 repository. It assumes a machine with network access and a Git repository you
 can write to. Every step says how to check that it worked before you move on.
 
-Steps marked **(arrives in T4)** name commands that the crew 1.0 build has not
-shipped yet. Until they land, use the 0.20 command named beside them.
-
 ## The ten-minute checklist
 
-| # | Step | Check | Minutes |
+| # | Step | Check | Min |
 |---|---|---|---|
 | 1 | Install Claude Code and the marketplace | `claude --version` prints a version | 3 |
 | 2 | Install the `crew` plugin | `/crew:status` answers | 1 |
@@ -163,4 +160,4 @@ Check: after a wrap-up, `.crew/.autoclear.log` has a `sent` line or a `refusing 
 | `migrate` reports an interrupted apply | `/crew:migrate --rollback <dir>` first |
 | a crew command cannot find Python | install Python 3; on Windows make `python` or `py -3` work |
 
-The full troubleshooting guide arrives in T10.
+See [Troubleshooting](troubleshooting.md) for the rest.

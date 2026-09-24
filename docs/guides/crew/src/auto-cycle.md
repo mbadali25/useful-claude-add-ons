@@ -1,8 +1,8 @@
 # Auto wrap-up, auto-clear and auto-resume
 
-This section is written for the troubleshooting guide (`troubleshooting.md`, arriving in T10), which
-should link to it. It covers the cycle that lets a long session finish itself cleanly, clear, and
-pick up where it stopped.
+This section is folded into the troubleshooting guide (`troubleshooting.md`), linked from it as
+"Auto wrap-up, clear and resume". It covers the cycle that lets a long session finish itself
+cleanly, clear, and pick up where it stopped.
 
 ## What the cycle does
 
