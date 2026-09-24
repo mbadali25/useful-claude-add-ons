@@ -50,6 +50,7 @@ import sys
 import time
 
 from crew_common import dict_or_empty, git_out, read_text
+import crew_incident
 import crew_recall
 
 HARD_CAP = 6000
@@ -454,6 +455,28 @@ def slice_for(root, sub, head, covers):
 
 
 # --------------------------------------------------------------------------
+# the incident banner
+
+def incident_line(root, cfg):
+    """One SessionStart line when an incident is open or expired-unclosed, else None.
+
+    The same two findings `crew_state` raises (`incidentActive`,
+    `incidentUnclosed`), read from the same reader. It is not memory: an open
+    incident means the gates are down right now, so the line is emitted
+    whether or not `memory.inject` is on."""
+    incident = crew_incident.read_state(root, cfg)
+    ident = incident.get("id") or "an incident"
+    if incident.get("active"):
+        return (f"INCIDENT {ident} open: {incident.get('minutesLeft', 0)}m left; gates stood down: "
+                f"{', '.join(crew_incident.STANDABLE_GATES)}; {incident.get('skips', 0)} skipped so far. "
+                "Close it with /crew:emergency end.")
+    if incident.get("present") and incident.get("expired"):
+        return (f"INCIDENT {ident} expired and not closed: gates are back on; "
+                f"{incident.get('skips', 0)} skipped gate(s) still owed. Close it with /crew:emergency end.")
+    return None
+
+
+# --------------------------------------------------------------------------
 # assembling an emission
 
 def fit(items, budget, max_lines=None):
@@ -713,6 +736,9 @@ def build(root, payload, cfg, state, harness):
         branch = git_out(root, "rev-parse", "--abbrev-ref", "HEAD") or "?"
         items = [{"id": "", "text": f"crew context ({source}): branch {branch} @ {head or 'no commit'}.",
                   "source": {"kind": "git"}}]
+        banner = incident_line(root, cfg)
+        if banner:
+            items.append({"id": "", "text": banner, "source": {"kind": "incident"}})
         if subs:
             behind = [s["name"] for s in subs if anchor_state(root, s, head) in ("behind", "unresolvable")]
             line = (f"Code map: {len(subs)} subsystems in .crew/codemap/; a slice arrives when you name "
@@ -811,7 +837,9 @@ def run(payload, raw, harness="claude"):
     # same flag (`inject_enabled`) and stops printing the handoff when it is
     # on, so a session gets the handoff from one emitter, never both.
     if not _inject_on(cfg):
-        return ""
+        # Nothing but the incident banner, which is not memory (incident_line).
+        banner = incident_line(root, cfg) if payload.get("hook_event_name") == "SessionStart" else None
+        return banner if banner and claim(root, raw, harness) else ""
     if not claim(root, raw, harness):
         return ""
     session = payload.get("session_id") or "nosession-" + time.strftime("%Y%m%d")
@@ -856,10 +884,10 @@ def _run_locked(root, payload, cfg, session, harness):
     if not save_session(root, session, state):
         # Fail closed on budget: state that did not reach disk means the next
         # event re-spends this turn's budget and re-injects what dedup saw.
-        # SessionStart keeps its one-line minimum (branch and HEAD); every
-        # other event emits nothing.
+        # SessionStart keeps its minimum (branch and HEAD, and the incident
+        # banner when there is one); every other event emits nothing.
         extra["stateWrite"] = "failed"
-        kept = [i for i in kept if i["source"]["kind"] == "git"] if event == "SessionStart" else []
+        kept = [i for i in kept if i["source"]["kind"] in ("git", "incident")] if event == "SessionStart" else []
         text, cut = "\n".join(i["text"] for i in kept), True
     worth_a_line = extra.get("vaultTool") or extra.get("stateWrite") or extra.get("query_from") == "ambiguous"
     if text or recall or hits or worth_a_line:
