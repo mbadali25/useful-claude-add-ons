@@ -4302,3 +4302,24 @@ crew:explorer reported on 2026-09-24 that 60c79407 (PR #210) fixed it (`_downloa
 `os.replace`, `skills/intune-graph/scripts/export_report.py:136-243`). CLAUDE.md's truncating-`open` landmine still calls
 this "the live one" and says three unfixed files remain. Relayed, not re-read by the PM. A developer should re-run the AST scan that
 paragraph describes and correct the count. Deferred because CLAUDE.md is not the PM's to edit and the codemap refresh did not depend on it.
+
+### win-repo hand-offs from the merge/pipe-capture/test-hygiene pass (filed 2026-09-24) - OPEN
+
+- `plugin/crew/hooks/scripts/verify-gate.ps1` twin of the `.sh` pipe-capture fix (`verify-gate.sh`, this session):
+  when the per-rule output-capture temp file cannot be created, `.sh` now tries a second, repo-local location
+  (`.crew/.verify-rule-out.XXXXXX`) before refusing the rule with a named reason, and reads back at most a
+  1MiB-capped, size-snapshotted amount rather than the whole file. `.ps1`'s equivalent capture
+  (`verify-gate.ps1:~1586`, a `Get-Content`-based read of a growing tempfile per this file's CLAUDE.md landmine
+  entry) has neither: no repo-local fallback location, and no cap on a rule that legitimately writes a lot or
+  backgrounds a continuously-writing grandchild. Not ported here per the OWNER RULE (POSIX/bash/Python/CI only
+  in this repo; Windows/PowerShell product work is win-repo's).
+- `plugin/crew/tests/test_auto_cycle.py:~287`
+  (`test_context_watch_stdout_reaches_eof_promptly_even_with_a_long_delay`) deliberately spawns a REAL detached
+  sender with `delaySeconds=30` to prove the hook's own stdout reaches EOF promptly despite it (a 5s read
+  deadline), which is exactly what the test needs - but it does not reap the sender afterward, so the fake
+  `tmux` shim's `sleep 30` keeps running for up to 30s past the test's own return, untracked. Not fixed here:
+  scoped to this session's POSIX/pytest-hygiene pass, and the fix shape (capture and kill the sender's pid, or
+  accept the leak as bounded and cheap at 30s) is a product-test call for whoever owns `test_auto_cycle.py`'s
+  fixtures next, cross-referenced from `crew_fixtures.gate_processes` becoming autouse this same session (which
+  does not cover this file - it only auto-tracks `popen_gate`/`run_gate` spawns, and this sender is launched a
+  different way).

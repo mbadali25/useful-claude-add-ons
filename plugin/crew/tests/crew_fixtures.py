@@ -29,6 +29,13 @@ _BASH = "unprobed"
 # slow CI host, never a value a passing run is expected to approach.
 GATE_SUBPROCESS_TIMEOUT_S = 120
 
+# Set only while a `gate_processes` fixture instance is active (see below);
+# `None` outside one, which is also the default state a test file that never
+# requests it -- or drives the fixture's raw generator by hand, as
+# test_gate_processes_kills_a_still_running_child_at_teardown does -- runs
+# under, and `popen_gate` treats `None` as "nothing to auto-register with".
+_AMBIENT_GATE_TRACKER = None
+
 
 def popen_gate(cmd, **kwargs):
     """`subprocess.Popen`, but the child is made killable as a whole GROUP.
@@ -59,7 +66,21 @@ def popen_gate(cmd, **kwargs):
         kwargs.setdefault("creationflags", subprocess.CREATE_NEW_PROCESS_GROUP)
     else:
         kwargs.setdefault("start_new_session", True)
-    return subprocess.Popen(cmd, **kwargs)  # pylint: disable=consider-using-with
+    proc = subprocess.Popen(cmd, **kwargs)  # pylint: disable=consider-using-with
+    # Auto-tracked by whichever test's `gate_processes` fixture is
+    # currently active (autouse, see below) -- a caller that ALSO does its
+    # own explicit `gate_processes(proc)` registration (the pre-existing
+    # usage this repo's tests already wrote) just double-registers into the
+    # same list, which `gate_processes`'s teardown already tolerates (a
+    # `poll()` check before each kill, not an assumption every entry is
+    # still alive and untouched). This is what closes the gap the previous
+    # design left: a test that drives `popen_gate` directly and then fails
+    # an assertion before reaching its own manual `finally:` cleanup used to
+    # leak that child past the test's own end; now it does not, whether or
+    # not that test remembers to register anything itself.
+    if _AMBIENT_GATE_TRACKER is not None:
+        _AMBIENT_GATE_TRACKER(proc)
+    return proc
 
 
 def kill_process_group(proc):
@@ -133,7 +154,7 @@ def run_gate(cmd, *, timeout=GATE_SUBPROCESS_TIMEOUT_S, input=None,  # pylint: d
     return result
 
 
-@pytest.fixture
+@pytest.fixture(autouse=True)
 def gate_processes():
     """Hygiene, not a check: kills every tracked gate's whole process GROUP
     at test teardown, regardless of whether the test passed, failed, or
@@ -149,28 +170,66 @@ def gate_processes():
     then fails the NEXT test to spawn one for a reason that has nothing to
     do with what that next test is actually checking.
 
-    Usage: request this fixture, then call it (it IS the tracking function)
-    on every `Popen` returned by `popen_gate` as soon as you have it --
-    `gate_processes(proc)`. A test that already closes its own process out
-    cleanly gains nothing from also registering it here except a harmless,
-    already-dead `poll()` at teardown; one that does not is now covered
-    either way.
+    AUTOUSE, and every `popen_gate` call registers itself here automatically
+    (see `_AMBIENT_GATE_TRACKER`) -- this used to require a test to request
+    the fixture BY NAME and then call it explicitly on every `Popen`, and
+    nothing in the verify-gate test modules actually did, which made the
+    whole mechanism dead weight everywhere it mattered. Explicit
+    `gate_processes(proc)` registration (still exported, still exercised by
+    test_crew_fixtures.py's own meta-test of this fixture) is now redundant
+    with the automatic path rather than required by it -- calling it anyway
+    just double-registers into the same list, which the teardown loop below
+    already tolerates via its `poll()` check. Cheap where it does nothing:
+    a test file that never calls `popen_gate` leaves `procs` empty and this
+    loop a no-op, so making it autouse suite-wide costs nothing there.
     """
+    global _AMBIENT_GATE_TRACKER
     procs = []
-    yield procs.append
+    previous_tracker = _AMBIENT_GATE_TRACKER
+    _AMBIENT_GATE_TRACKER = procs.append
+    try:
+        yield procs.append
+    finally:
+        _AMBIENT_GATE_TRACKER = previous_tracker
     for proc in procs:
-        if proc.poll() is None:
+        if os.name == "nt":
+            # Unchanged: Windows' equivalent of the POSIX gap below is a
+            # separate question (taskkill against an already-exited PID
+            # behaves differently again) and is win-repo's call per the
+            # OWNER RULE, not decided here - see TODO.md.
+            if proc.poll() is None:
+                kill_process_group(proc)
+            else:
+                continue
+        else:
+            # POSIX: killpg REGARDLESS of whether the direct child (the
+            # process GROUP LEADER) has already exited. Gating on
+            # `proc.poll() is None` skipped exactly the case this fixture
+            # exists for - a rule that backgrounds a grandchild and returns
+            # immediately leaves the leader's own poll() non-None almost
+            # instantly, while the grandchild it forked keeps running in
+            # the SAME process group for as long as it likes (test_34b's
+            # leaked `sleep 20`, before that test grew its own explicit
+            # pid-based cleanup). A process group survives its leader's
+            # exit as long as any member is still alive, so `os.killpg` via
+            # `kill_process_group` still reaches it; `kill_process_group`
+            # already treats a `ProcessLookupError` (the group is gone too,
+            # or the leader's now-reused pid resolves to an unrelated
+            # process' group) as nothing left to do, which is the
+            # unavoidable, accepted cost of signalling by a possibly-
+            # recycled pid in a best-effort test-teardown path, not
+            # production code.
             kill_process_group(proc)
-            # SIGKILL/taskkill only ends execution -- the pid stays a zombie,
-            # still answering `os.kill(pid, 0)`, until something reaps it.
-            # `kill_process_group`'s OWN callers (`run_gate`'s timeout path)
-            # get that for free from the `communicate()` retry right after
-            # it; this fixture has no such second call, so it does the
-            # `wait()` itself.
-            try:
-                proc.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                pass
+        # SIGKILL/taskkill only ends execution -- the pid stays a zombie,
+        # still answering `os.kill(pid, 0)`, until something reaps it.
+        # `kill_process_group`'s OWN callers (`run_gate`'s timeout path)
+        # get that for free from the `communicate()` retry right after
+        # it; this fixture has no such second call, so it does the
+        # `wait()` itself.
+        try:
+            proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            pass
 
 
 def _usable(candidate):

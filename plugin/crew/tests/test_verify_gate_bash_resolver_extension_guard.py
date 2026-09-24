@@ -57,6 +57,26 @@ def test_resolve_crew_bash_rejects_an_extensionless_path_candidate_on_real_windo
         "by 'continue') before that loop's `return $src`, or a candidate it "
         "should refuse still escapes")
 
+    # ORDER alone (the assert above) is satisfied by an unconditional
+    # `-notcontains`/`continue` sitting anywhere after an UNUSED
+    # `$crewBashRealWindows = ...` assignment -- it does not prove the
+    # extensionless check is actually GATED on that assignment's variable,
+    # only that both text fragments exist in the right sequence. Sabotage-
+    # confirmed: mutating the guard's own `if ($crewBashRealWindows) {` to
+    # `if ($false) {` (which disables the check on real Windows entirely,
+    # every candidate now passing it unconditionally) left every assertion
+    # above this one green. Reading the variable name straight out of
+    # assign_line, rather than hardcoding `crewBashRealWindows`, keeps this
+    # from breaking on an unrelated rename while still catching the guard
+    # being swapped for a constant.
+    var_token = assign_line.split("=", 1)[0].strip()  # e.g. "$crewBashRealWindows"
+    between = body[gate_pos:notcontains_pos]
+    assert f"if ({var_token})" in between, (
+        f"the extensionless-file check must be wrapped in `if ({var_token})` "
+        "somewhere between its declaration and the '-notcontains' test, or "
+        "the guard variable is declared but never actually the thing the "
+        "check is conditioned on. Text in between:\n" + between)
+
     # Same seam distinction test_ps1_python_probe.py makes for
     # Resolve-CrewPython: this repo's OWN bash-resolver fixtures
     # (test_verify_gate_bash_resolver.py) run under a faked $env:OS on
