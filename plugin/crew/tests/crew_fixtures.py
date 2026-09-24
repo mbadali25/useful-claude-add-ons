@@ -109,8 +109,8 @@ def run_gate(cmd, *, timeout=GATE_SUBPROCESS_TIMEOUT_S, input=None,  # pylint: d
         stdout = subprocess.PIPE
         stderr = subprocess.PIPE
 
-    popen_kwargs = dict(cwd=cwd, env=env, stdin=stdin, stdout=stdout,
-                         stderr=stderr)
+    popen_kwargs = {"cwd": cwd, "env": env, "stdin": stdin, "stdout": stdout,
+                    "stderr": stderr}
     if text is not None:
         popen_kwargs["text"] = text
 

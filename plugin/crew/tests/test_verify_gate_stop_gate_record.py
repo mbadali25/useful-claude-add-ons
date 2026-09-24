@@ -1868,13 +1868,13 @@ def test_40_an_open_never_closed_stdin_does_not_park_the_gate(flavour, tmp_path)
         # touches neither stdin nor stdout/stderr, so the pipe genuinely
         # stays open, unwritten-to, for the whole timeout.
         proc.wait(timeout=_STDIN_BOUND_DEADLINE_S)
-    except subprocess.TimeoutExpired:
+    except subprocess.TimeoutExpired as exc:
         proc.kill()
         proc.wait(timeout=10)
         raise AssertionError(
             f"the {flavour} gate did not return within "
             f"{_STDIN_BOUND_DEADLINE_S}s with stdin open and never closed - "
-            "the unbounded read was not actually bounded")
+            "the unbounded read was not actually bounded") from exc
     finally:
         if proc.stdin:
             proc.stdin.close()
@@ -1912,13 +1912,13 @@ def test_40b_the_ps1_gate_bounds_stdin_on_linux_too(tmp_path):
     started = time.time()
     try:
         proc.wait(timeout=_STDIN_BOUND_DEADLINE_S)
-    except subprocess.TimeoutExpired:
+    except subprocess.TimeoutExpired as exc:
         proc.kill()
         proc.wait(timeout=10)
         raise AssertionError(
             f"the ps1 gate did not return within {_STDIN_BOUND_DEADLINE_S}s "
             "with stdin open and never closed - the unbounded read was not "
-            "actually bounded")
+            "actually bounded") from exc
     finally:
         if proc.stdin:
             proc.stdin.close()
@@ -1975,13 +1975,13 @@ def test_50_stop_hook_active_is_honoured_despite_a_pipe_held_open(
     # arrives, which is exactly what a held-open retry pipe looks like.
     try:
         proc.wait(timeout=_STDIN_BOUND_DEADLINE_S)
-    except subprocess.TimeoutExpired:
+    except subprocess.TimeoutExpired as exc:
         proc.kill()
         proc.wait(timeout=10)
         raise AssertionError(
             f"the {flavour} gate did not return within "
             f"{_STDIN_BOUND_DEADLINE_S}s with a complete stop_hook_active "
-            "payload sitting in a held-open pipe")
+            "payload sitting in a held-open pipe") from exc
     finally:
         if proc.stdin:
             proc.stdin.close()
@@ -2014,13 +2014,13 @@ def test_50b_the_ps1_gate_honours_stop_hook_active_on_linux_too(tmp_path):
     proc.stdin.flush()
     try:
         proc.wait(timeout=_STDIN_BOUND_DEADLINE_S)
-    except subprocess.TimeoutExpired:
+    except subprocess.TimeoutExpired as exc:
         proc.kill()
         proc.wait(timeout=10)
         raise AssertionError(
             f"the ps1 gate did not return within {_STDIN_BOUND_DEADLINE_S}s "
             "with a complete stop_hook_active payload sitting in a "
-            "held-open pipe")
+            "held-open pipe") from exc
     finally:
         if proc.stdin:
             proc.stdin.close()
@@ -2065,14 +2065,14 @@ def test_51_a_trickling_sh_stdin_producer_does_not_park_the_gate(tmp_path):
     trickler.start()
     try:
         proc.wait(timeout=_STDIN_BOUND_DEADLINE_S)
-    except subprocess.TimeoutExpired:
+    except subprocess.TimeoutExpired as exc:
         proc.kill()
         proc.wait(timeout=10)
         raise AssertionError(
             f"the sh gate did not return within {_STDIN_BOUND_DEADLINE_S}s "
             "against a stdin producer trickling complete lines slower than "
             "the per-line timeout -- the read bound is re-arming per line "
-            "instead of covering the whole read")
+            "instead of covering the whole read") from exc
     finally:
         if proc.stdin:
             proc.stdin.close()
