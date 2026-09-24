@@ -3821,9 +3821,27 @@ fast way and reads the failure count as a defect count gets a number that is
 wrong by 17. Both a human and an agent did precisely that on 2026-09-24 and
 reasoned about the gate from it.
 
+**It is also not crash-safe, which is worse than the race.** Observed
+2026-09-24: a run killed part-way through left
+`plugin/crew/hooks/scripts/verify_record.py` **deleted** from the working tree
+with `verify_record.py.hidden-for-test` beside it, because the rename is
+in-place and teardown never ran. Every subsequent run - serial included - then
+died at collection:
+
+```
+ERROR collecting plugin/crew/tests/test_verify_gate_stop_gate_record.py
+E   ModuleNotFoundError: No module named 'verify_record'
+```
+
+So an interrupted run does not merely lose its own result, it corrupts the
+checkout for the next one. The hidden file was byte-identical to `HEAD` (modulo
+line endings), so recovery is `git checkout --` plus deleting the stray, but
+nothing announces that this is what happened.
+
 FIX: give `test_22` its own copy of `verify_record.py`, or take a lock around
-the rename. Scoped to this mechanism only - the two entries below are different
-mechanisms and must not be folded in.
+the rename. A copy fixes both halves - the race and the crash-safety - and a
+lock fixes only the race. Scoped to this mechanism only; the entries below are
+different mechanisms and must not be folded in.
 
 ## `test_verify_gate_lock_window.py`'s sleep-based assertions are host-timing dependent - OPEN 2026-09-24
 
@@ -3853,6 +3871,46 @@ repro.
 
 FIX: PATH isolation that survives the MSYS prepend, or invoke the shim with an
 explicit interpreter path rather than relying on lookup order.
+
+## rule[8] does not terminate: one test hangs the gate, and the harness has no timeout - OPEN 2026-09-24
+
+**This is why the crew verify marker cannot be written.** Not the two red tests
+that were fixed in `e0278bc9` - `python3 -m pytest plugin/crew/tests/ -q`, which
+is `.crew/verify.json` rule[8] verbatim, cannot be run to completion on this
+host at all.
+
+The hang:
+`plugin/crew/tests/test_verify_gate_stop_gate_record.py:438::test_1_crlf_from_native_python_does_not_leak_an_inherited_credential[ps1]`.
+90-second repro: `timeout 90 python -m pytest <nodeid> -q` exits 124, having
+printed one dot - `[sh]` passes, `[ps1]` hangs. Reproduced on a **provably
+quiet machine** (0 other gate processes, 0 concurrent suites): 0.00s of CPU
+across 90s with the child still parked, stalling at the same 95% point as a
+contended run. So it is a defect, not contention.
+
+Two halves, fix both, and the second is the cheaper and more valuable one:
+
+1. **The gate blocks.** `plugin/crew/hooks/scripts/verify-gate.ps1:235` is an
+   unconditional `[Console]::In.ReadToEnd()`. The gate stops mid-script still
+   holding its lock, rather than hanging at shutdown - the fixture's `.crew/`
+   held the lock and `verify.json` but no `.verify-gate.record.json` and no
+   `.verify-verified-at`.
+2. **The harness cannot notice.** `:479` spawns the gate with
+   `capture_output=True` and **no `timeout=`**. That is what converts a blocked
+   gate into a non-terminating suite instead of one red test. Fix this
+   independently and first: it makes every future occurrence diagnosable
+   instead of a mystery stall.
+
+**Correction, recorded so it does not reach anyone as a cause.** An earlier read
+of this - mine - was that the `.ps1` flavour specifically blocks while `.sh`
+does not. That holds for this test, but not as a general mechanism: an A/B probe
+with stdin left as a never-closed pipe parks **both** flavours forever, because
+the `.sh` blocks on the same read. Every spawn in the suite does close stdin, so
+that is a separate latent fragility, not this bug. The stdin-inheritance family
+is the same one as `codex exec` hanging on inherited stdin.
+
+Locating method, worth reusing: `verify-gate.ps1:563` builds its lock token as
+`ps1-$PID-...`, so grepping the pytest tmp tree for `ps1-<pid>-` names the
+fixture directory, and pytest names fixture directories after the test.
 
 ## The generated `.codex/config.toml`'s `profiles` are ignored at project level - OPEN 2026-09-24
 
