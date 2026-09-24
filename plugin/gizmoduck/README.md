@@ -95,7 +95,30 @@ confirm: it prints `[]` and exits 0 either way, `--yes` or not.
 ## CI pipelines
 
 `/gizmoduck:ci` installs three GitHub workflows (`gizmoduck-pr.yml`, `gizmoduck-full.yml`,
-`gizmoduck-endpoints.yml`) or one `bitbucket-pipelines.yml`, split into trigger tiers:
+`gizmoduck-endpoints.yml`, `gizmoduck-inventory.yml`) or one `bitbucket-pipelines.yml`, split into
+trigger tiers:
+
+### Quick start
+
+`/gizmoduck:ci` (interactive) or `gizmoduck_ci.py` directly, all in the target repo:
+
+1. `gizmoduck_ci.py detect --repo .` - reads the repository only, writes nothing. Prints every
+   endpoint/staging finding with its `path:line` and confidence, then a `**Decision needed:**`
+   block per question it could not settle (staging URL, auth for protected endpoints, scope,
+   which confidence to accept). `--detect` on the slash command re-runs just this step.
+2. Answer every `Decision needed:` block yourself; a URL detection found is a candidate, never a
+   default it applies for you.
+3. `gizmoduck_ci.py setup --repo . --staging-url <url|none> --auth <none|header|exclude-protected>
+   --accept <high|medium|low> (--scope all | --include GLOB ... --exclude GLOB ...)` - dry run by
+   default (prints `gizmoduck-ci.json` and, with crew present, the `.crew/endpoints.json` records
+   it would append). Add `--apply` only once you've reviewed that output; it is the only path that
+   writes declared ledger records.
+4. `gizmoduck_ci.py render --platform github|bitbucket|both --staging-url <url> --repo . \
+   --authorized-by "<who authorised scanning staging>"` - dry run by default, prints every
+   rendered file. An existing file is refused unless you pass `--force`; `--apply` writes.
+5. `gizmoduck_ci.py inventory --repo . --stdout` to review `endpoints-inventory.md` before
+   committing it, then run it again without `--stdout` so the file exists before `check` runs on
+   the default branch.
 
 | Tier | Trigger | Runs | Blocks |
 |---|---|---|---|
@@ -126,7 +149,118 @@ as on a fork's PR, the check fails rather than scanning blind). Every endpoint s
 redirects disabled or scoped to the target origin, and the stage fails if any recorded request left
 it; URLs with credentials are refused by the guard and redacted in every log and artifact.
 
-**Endpoints are detected, then confirmed.** `gizmoduck_ci.py detect` reads `.crew/endpoints.json`,
+### Repository variables and secrets
+
+Everything below is read at runtime from the environment (`ci_guard.py`, `ci_gate.py`); the
+staging URL, `--authorized-by`, `--enable` and the image reference are baked into the rendered
+files at `render` time instead and are not repository settings.
+
+**GitHub** (repository variable unless marked *secret*; Settings -> Secrets and variables -> Actions):
+
+| Name | Required? | Visible to | If absent |
+|---|---|---|---|
+| `GIZMODUCK_RUNNER` | optional (`bootstrap` to disable the runner image) | every scan job (chooses which of the two duplicate jobs runs) | the runner-image job runs |
+| `GIZMODUCK_ALLOWED_PROD_ORIGINS` | optional | endpoint-scan jobs only | every origin on it stays refused (R8) |
+| `GIZMODUCK_ALLOW_PROD_SCAN` | optional (`true`) | endpoint-scan jobs only | production origins refused even if allow-listed (both are required together) |
+| `GIZMODUCK_ALLOWED_IP_ORIGINS` | optional | endpoint-scan jobs only | an IP-literal or `localhost` origin is refused (R6) |
+| `GIZMODUCK_ALLOW_NO_BASELINE` | optional (`true`) | the `gate` step, every workflow | a missing baseline fails the gate closed - set this for the first run only |
+| `GIZMODUCK_ALLOW_INCOMPLETE` | optional (`true`) | the `gate` step | any tool that did not run (no coverage cell, or a status other than `ran`/`skipped-active`) fails the gate closed |
+| `GIZMODUCK_TRUST_ASSIGNED_SEVERITY` | optional (`true`) | the `gate` step | a finding the tool gave no severity to (adapter-assigned) is treated as unknown severity and fails closed |
+| `GIZMODUCK_SDP_TICKETS` | optional (`true`) | the tickets step, non-PR runs only | no tickets are opened (default off) |
+| `SDP_AUTH_HEADER` | optional | the tickets step | defaults to `authtoken` |
+| `GIZMODUCK_AUTH_HEADER_VALUE` *(secret)* | required only when `gizmoduck-ci.json` sets `auth: "header"` | endpoint-scan job only | protected endpoints are refused rather than scanned anonymously - `endpoint-stage` exits 2 |
+| `NVD_API_KEY` *(secret)* | optional | the weekly sweep only (Dependency-Check) | NVD sync runs unauthenticated (much slower first sync; see "Dependency-Check" above) |
+| `SDP_BASE_URL`, `SDP_API_KEY` *(secrets)* | required together to ticket | the tickets step, non-PR runs only | "SDP_BASE_URL / SDP_API_KEY secrets are not present - no tickets" |
+
+`GITHUB_TOKEN` (`github.token`) needs no setup: read-only for the baseline-run lookup and the
+SARIF upload, `contents: write` only inside the two self-commit jobs. See "Known limitation: the
+self-commit's tip has no `gate` run" below for what using it as-is costs you.
+
+**Bitbucket.** Every secret lives on the `gizmoduck-trusted` **deployment environment**
+(Repository settings -> Deployments), never as a repository variable - the PR step and any custom
+run on an untrusted branch refuse outright if one is visible to them:
+
+| Name | Required? | If absent |
+|---|---|---|
+| `GIZMODUCK_BB_TOKEN` *(secured)* | required to upload the next baseline | "baseline upload failed - the next run compares against the previous baseline" |
+| `SDP_BASE_URL`, `SDP_API_KEY` *(secured)* | required together to ticket | no ticket step runs |
+| `NVD_API_KEY` *(secured)* | optional | weekly sweep syncs NVD unauthenticated |
+| `GIZMODUCK_AUTH_HEADER_VALUE` *(secured)* | required only when `gizmoduck-ci.json` sets `auth: "header"` | protected endpoints refused, not scanned anonymously |
+
+Repository variables (Repository settings -> Variables), read by both the PR step and trusted runs:
+
+| Name | Required? | If absent |
+|---|---|---|
+| `GIZMODUCK_BB_READ_TOKEN` *(secured)* | required for the PR step (baselines, draft state) | the PR check fails rather than scanning blind |
+| `GIZMODUCK_ALLOWED_PROD_ORIGINS`, `GIZMODUCK_ALLOW_PROD_SCAN`, `GIZMODUCK_ALLOWED_IP_ORIGINS` | optional | same guard defaults as GitHub, above |
+| `GIZMODUCK_ALLOW_NO_BASELINE`, `GIZMODUCK_ALLOW_INCOMPLETE`, `GIZMODUCK_TRUST_ASSIGNED_SEVERITY` | optional | same gate defaults as GitHub, above |
+| `GIZMODUCK_SDP_TICKETS`, `SDP_AUTH_HEADER` | optional | no tickets |
+| `GIZMODUCK_REPORT_DOWNLOADS` (`true`) | optional | the weekly sweep's report stays only in run artifacts |
+| `GIZMODUCK_RESULTS_BRANCH` | optional | the weekly sweep's report is not committed anywhere (never the default branch or `release/*` either way) |
+
+### The prod-refusal guard
+
+Every endpoint target is normalised and checked twice - once at `render` time against the
+staging/production URLs you passed, and again at runtime, before any scanner starts
+(`ci_guard.py`):
+
+- the URL is lower-cased, IDNA-encoded, trailing dots stripped, and the port made explicit, so two
+  spellings of one origin always compare equal;
+- any whitespace (ASCII or Unicode), control/format character or backslash anywhere in the URL is
+  **refused, never stripped** - a parser and a scanner disagreeing about where the host ends is
+  how a lookalike gets through;
+- userinfo (`user@`, `user:pass@`) and any query parameter whose name looks like it carries a
+  credential (token, key, secret, password, signature, ...) are refused outright, not just
+  redacted - a scan target is logged and uploaded as an artifact;
+- an IP literal (any form Python's `inet_aton`/`ipaddress` accepts, IPv6 included) or `localhost`
+  is refused unless its exact origin is on `GIZMODUCK_ALLOWED_IP_ORIGINS`, even if it is also a
+  configured staging origin;
+- the origin must equal a configured staging origin **exactly** - not a suffix or prefix match, so
+  `staging.example.com.evil.test` is refused;
+- an origin on the production allow-list (`GIZMODUCK_ALLOWED_PROD_ORIGINS`) is scanned only when
+  `GIZMODUCK_ALLOW_PROD_SCAN=true` is *also* set - either alone refuses, and an origin listed as
+  both staging and production is treated as production;
+- every redacted URL - in logs, `targets.json`, findings and reports - masks userinfo as `***@`
+  and a credential-named query value as `***`, judged after percent-decoding so an encoded `=` or
+  a nested URL/query does not slip a credential through half-redacted.
+
+That is a pre-check; a server can answer it differently than it answers a scanner. The actual
+control is per scanner (`gizmoduck_ci.endpoint_manifest`): Nuclei runs with `-dr`
+(disable-redirects), ZAP's scope is the target origin only (anchored, regex-escaped), testssl and
+nmap have no redirect-follow option enabled, nikto needs `-followredirects` to leave the target
+and never gets it, and sqlmap runs with `--ignore-redirects`. After the scan, `audit_findings`
+re-checks the origin of every URL a scanner actually recorded and fails the endpoint stage if any
+left the policy - a redirect a probe missed still fails the run, not just a warning.
+
+### Baselines and the gate
+
+The gate (`ci_gate.py`) fails only on a **new** Critical (tier 1) or new Critical/High (tier 2,
+manual) finding, identified the same way `gizmoduck.py diff` does, so the gate and the published
+`diff.md` never disagree about what counts as new.
+
+- **First baseline.** There is none until a run produces one, so the very first tier-2/weekly run
+  on a repository has nothing to diff against. Set `GIZMODUCK_ALLOW_NO_BASELINE=true` for that
+  run; it is accepted and its findings become the baseline. Leave it unset afterward - a
+  permanently-missing baseline would otherwise silently pass every scan.
+- **Trusted-branch-only baselines.** A baseline can only come from a successful, non-pull-request
+  run of the same workflow on the default branch (or `release/*`) of *this* repository -
+  `gizmoduck_ci.previous_run_id` on GitHub, the Bitbucket Downloads upload gated the same way in
+  `_bb_tail`. A pull request's own scan can never become the next baseline.
+- **What fails closed, and its override:**
+  | Case | Fails unless | Variable |
+  |---|---|---|
+  | No baseline found | first-run opt-in | `GIZMODUCK_ALLOW_NO_BASELINE=true` |
+  | A baseline record has an unknown severity | never - always fails; an unreadable baseline entry could hide a new Critical/High under the same identity | none |
+  | A current finding's severity cannot be read | never - always fails when it is new | none |
+  | The tool gave no severity and the adapter assigned one (`severity-assigned` tag) | trust the assigned value | `GIZMODUCK_TRUST_ASSIGNED_SEVERITY=true` |
+  | A scanner did not run (no coverage cell, or any manifest status other than `ran`/`skipped-active`) | incomplete-coverage opt-in | `GIZMODUCK_ALLOW_INCOMPLETE=true` |
+
+  The tier-3 weekly sweep computes every one of these the same way but never blocks (`block_at:
+  never`); it records, diffs and optionally tickets instead.
+
+### Endpoints are detected, then confirmed
+
+`gizmoduck_ci.py detect` reads `.crew/endpoints.json`,
 OpenAPI/Swagger documents (including build output under `obj/`), ASP.NET controllers and
 minimal-API `Map*` calls, Angular routes, FastAPI, Flask and Express. It looks for a staging URL
 in appsettings and environment files, `.env.example`-style templates, Terraform outputs, GitHub
@@ -166,11 +300,111 @@ differs on top of a self-commit refuses instead of looping. No publishing step h
 | `endpoints-inventory.md` | `gizmoduck-inventory.yml`: push to a non-default branch regenerates and commits it (the only job with `contents: write`, guarded by `if:` and again at runtime); push to the default branch runs `check`; a PR gets a sticky comment saying whether it is current | `default:` step regenerates and commits on the branch - `default:`, not `pull-requests:`, whose pre-run merge would be pushed and can die on conflicts; `branches: <default>` runs `check` only |
 | `security-scan-report.md` | the endpoint workflow's `publish-report` job commits it on a non-default branch (`contents: write`, no secret); on the default branch and for the weekly sweep it stays an artifact and the step summary | `custom: security-full` commits it from a step after the trusted stage (no deployment variables); the weekly sweep keeps it in artifacts, optionally uploads it to Downloads (`GIZMODUCK_REPORT_DOWNLOADS=true`) or commits it to a results branch (`GIZMODUCK_RESULTS_BRANCH`, never the default branch or `release/*`) |
 
-A self-commit's tip has no build of its own (`[skip ci]` on Bitbucket; on GitHub a `GITHUB_TOKEN`
-push starts no workflow), so a merge check keyed on the tip's build waits for the next push. Commit
-the regenerated file yourself - `check` prints the command - and no self-commit happens.
+### Known limitation: the self-commit's tip has no `gate` run
 
-TODO: the rest of the CI guide (docs lane) - runner image build/push, repository variables and secrets, baseline bootstrap, the prod-refusal guard, SDP ticketing.
+A self-commit's tip has no build of its own: `[skip ci]` on Bitbucket, and on GitHub the built-in
+`GITHUB_TOKEN` a workflow pushes with does not trigger further workflow runs (this is GitHub's
+own limitation, not gizmoduck's). So after `gizmoduck-inventory.yml`'s `publish` job commits the
+regenerated `endpoints-inventory.md` onto a pull request's branch, that new tip commit never gets
+a `gate` run, and a branch-protection rule requiring `gate` blocks the merge on a commit CI will
+never check. **The rendered template's default is none of the options below** - it commits with
+the plain `github.token` on every branch push, including a PR's, so this limitation is live out of
+the box. Pick one:
+
+- **(a) Use a GitHub App installation token or a fine-grained PAT for the self-commit instead of
+  `github.token`.** A push made with a real user/app identity does trigger workflows. Scope it to
+  `contents: write` on this repository only, and restrict it (App installation, or the PAT's
+  fine-grained repo permissions) to non-default branches - it must never be able to push to the
+  default branch. Store it as a secret and change `_gh_git_auth`'s `GH_TOKEN` env in
+  `gizmoduck-inventory.yml` (and `gizmoduck-endpoints.yml`'s `publish-report` job) to read it,
+  then re-render.
+- **(b) Make the inventory job check-only on pull requests.** Drop the `publish` job's PR-branch
+  commit behaviour and let it fail with the regenerate hint instead (`gizmoduck_ci.py check`
+  already prints the exact command); the developer runs it locally and commits the result
+  themselves, so the commit that needs a `gate` run is the developer's, which triggers normally.
+- **(c) Don't require `gate` on the self-commit's own tip.** If your branch protection allows "the
+  most recent applicable run" rather than "the tip commit exactly", a stale-but-passing `gate` from
+  the commit before the self-commit is enough. This is a branch-protection setting in GitHub's UI,
+  not something `/gizmoduck:ci` can render for you.
+
+Whichever you pick, `gizmoduck_ci.py check` (or its Bitbucket `default:` step) always prints the
+regenerate command as a fallback, so a stuck PR is never a dead end.
+
+### Runner image
+
+The scan jobs try the runner image first and fall back to installing every tool inline
+(`bootstrap.sh`) only when it is unavailable - set `GIZMODUCK_RUNNER=bootstrap` (GitHub repository
+variable) or run the `*-bootstrap` custom pipelines (Bitbucket) to skip the image path entirely.
+Building one is optional but much faster (`ci/Dockerfile` bakes in every scanner `bootstrap.sh`
+installs, so a run does not reinstall nine tools and the Nuclei template feed on every job):
+
+```bash
+cd plugin/gizmoduck
+# Pin the base by digest, never by tag - a tag is a mutable pointer:
+digest="$(docker buildx imagetools inspect ubuntu:24.04 --format '{{json .Manifest.Digest}}' | tr -d '"')"
+# or: digest="$(crane digest ubuntu:24.04)"
+docker build --build-arg GIZMODUCK_BASE_DIGEST="$digest" -f ci/Dockerfile \
+  -t ghcr.io/<owner>/gizmoduck-ci:<version> .
+echo "$GHCR_TOKEN" | docker login ghcr.io -u <owner> --password-stdin
+docker push ghcr.io/<owner>/gizmoduck-ci:<version>
+```
+
+`<version>` is the plugin version in `.claude-plugin/plugin.json`; push one tag per release and
+never move it - the rendered pipelines reference exactly that tag (`gizmoduck_ci.py render
+--image`). Docker Hub works the same way (`docker.io/<user>/gizmoduck-ci:<version>`); a private
+image needs registry credentials on the runner (GitHub: `jobs.<id>.container.credentials`;
+Bitbucket: `image.username`/`password`). The build fails without `GIZMODUCK_BASE_DIGEST` or with
+anything but a `sha256:` digest, and its last step runs `gizmoduck_ci.py image-check` - `doctor`
+plus every scanner adapter reporting itself runnable - so an image missing a tool fails the build
+instead of shipping a scan that silently records that tool as skipped-missing.
+
+Optional NVD pre-sync (Dependency-Check's first run otherwise downloads the whole NVD corpus,
+which can exceed the weekly sweep's timeout on a cold image):
+
+```bash
+docker build --build-arg GIZMODUCK_NVD_PRESYNC=1 --secret id=nvd_api_key,env=NVD_API_KEY \
+  -f ci/Dockerfile -t ghcr.io/<owner>/gizmoduck-ci:<version> .
+```
+
+The key is mounted for that one build step only and is never written to a layer.
+
+### ServiceDesk Plus tickets
+
+Opt-in and off by default: set the `GIZMODUCK_SDP_TICKETS` repository variable to `true` *and*
+supply `SDP_BASE_URL`/`SDP_API_KEY` (Bitbucket: as `gizmoduck-trusted` deployment variables), or
+nothing is ticketed. A ticket step never runs on a pull request. It drives `gizmoduck.py tickets`
+exactly like an attended session: preview first, then rerun with `--yes <digest>` read back from
+that same preview - never a digest computed independently - so what gets filed is exactly the
+batch that was shown. `SdpClient` searches for an open request tagged `[Nuclei <template-id>]`
+and adds a note to it rather than opening a duplicate.
+
+### Pinning `--gizmoduck-ref`
+
+`--gizmoduck-ref` defaults to `main` (unpinned): every pipeline run fetches gizmoduck's scripts
+(and the inline-bootstrap fallback, and `bootstrap.sh` for the runner-image build) from whatever
+that ref currently points at. `render` prints a warning when the value is not a 40-character commit
+SHA, precisely because `main` can change under a pipeline between two runs with no diff in this
+repository to explain it. Pin it to a commit SHA for anything beyond local experimentation; the
+runner image's tag is already pinned (a version string), but this ref is not, unless you set it.
+
+### Bitbucket one-time setup
+
+Two things the pipeline file cannot declare for you, done once in the Bitbucket UI:
+
+1. **The weekly sweep's schedule** (a `custom:` pipeline is never triggered by a `schedule:` key
+   the way GitHub Actions is): Repository settings -> Pipelines -> Schedules -> New schedule,
+   Branch: the default branch, Pipeline: `custom: security-weekly`, Interval: weekly (the render
+   comment header gives Sunday 23:00 UTC to match the GitHub cron).
+2. **The `gizmoduck-trusted` deployment environment**: Repository settings -> Deployments -> add an
+   environment named `gizmoduck-trusted`, then add every secret in the table above to it as a
+   **deployment variable** - never a repository variable, since only the custom pipelines' trusted
+   stages read a deployment environment's variables, and the PR step and untrusted branches refuse
+   to run at all if one of those names is visible to them as a repository variable instead.
+   **Premium caveat:** restricting a deployment environment to specific branches (Repository
+   settings -> Deployments -> Environment -> Restrict branches) requires a Premium plan. Without
+   it, anyone who can edit `bitbucket-pipelines.yml` on a branch and trigger a custom pipeline on
+   it can reach the `gizmoduck-trusted` variables from that branch - the environment scoping alone
+   is not a substitute for branch permissions on who may edit the pipeline file.
 
 ## Manual CLI (Linux: `python3`, Windows: `python`)
 ```bash
