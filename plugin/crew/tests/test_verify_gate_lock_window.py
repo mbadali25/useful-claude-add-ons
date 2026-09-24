@@ -574,6 +574,7 @@ def test_both_flavours_read_the_same_deadline_the_same_way(value, tmp_path):
 _TTL_PROBE_RULE = {
     "version": 1,
     "rules": [{"paths": ["a.py"], "reach": "local", "run": [
+        "date +%s > now.txt",
         "cat .crew/.verify-gate.lock/deadline > seen.txt 2>&1 "
         "|| echo ABSENT > seen.txt",
     ], "why": "reads the published deadline from inside the run"}],
@@ -585,7 +586,6 @@ _TTL_PROBE_RULE = {
 def test_a_zero_prefixed_ttl_is_decimal_and_still_publishes_a_deadline(
         flavour, tmp_path):
     root = _repo(tmp_path, _TTL_PROBE_RULE)
-    before = int(time.time())
     result = subprocess.run(
         _cmd(flavour), input="{}", cwd=str(root),
         env=dict(os.environ, CLAUDE_PROJECT_DIR=str(root),
@@ -617,18 +617,18 @@ def test_a_zero_prefixed_ttl_is_decimal_and_still_publishes_a_deadline(
     # failure this test exists to catch. window must be MONOTONIC (checked
     # first) and DERIVED FROM 8, not merely "somewhere under 180".
     #
-    # No wall-clock-speed assumption, though: measured on a slow Windows/
-    # Git-Bash host, the first lock_extend fires several real seconds after
-    # process start (fork/exec overhead launching bash.exe and every
-    # rule-matcher subprocess, not a calculation bug) -- up to 12-16s observed
-    # there. A bound sized to "8 plus a little slack" flaked on exactly that
-    # host. 40s gives that overhead better than 2x headroom over its worst
-    # observed value while sitting comfortably under half of 80 (the
-    # misparsed value this test guards against) and a fifth of 180 (the
-    # compiled default) -- wide enough to never flake on process-spawn
-    # variance, narrow enough that neither wrong value could land inside it
-    # by chance.
-    window = int(seen) - before
+    # NOT wall-clock-speed-dependent: `before` used to be read by the TEST,
+    # ahead of spawning the subprocess, so a slow host's fork/exec overhead
+    # (launching bash.exe or pwsh and every rule-matcher subprocess, not a
+    # calculation bug -- up to 12-16s observed on a slow Windows/Git-Bash
+    # host) counted against the same 40s budget meant to catch a misparse.
+    # A host slow enough to delay startup past 32s flaked this even though
+    # the TTL was read correctly. `now.txt` is instead the gate's OWN
+    # published start time: `date +%s`, run from INSIDE the rule, by the
+    # same process that computed the deadline, so the difference is pure
+    # TTL arithmetic with no process-spawn overhead in it at all.
+    now = int((root / "now.txt").read_text(encoding="utf-8").strip())
+    window = int(seen) - now
     assert window > 0, (
         "the published deadline is not after the moment the gate started, "
         "so lock_extend did not actually publish a forward-moving deadline. "
@@ -636,8 +636,7 @@ def test_a_zero_prefixed_ttl_is_decimal_and_still_publishes_a_deadline(
     )
     assert window < 40, (
         "`CREW_VERIFY_LOCK_TTL=08` produced a window of " + str(window)
-        + "s -- not close enough to a decimal-8 TTL (max(8, 2*0), plus real "
-        "process-spawn overhead) to rule out a silent misparse to 80 (an "
-        "octal/base error) or a fallback to the untouched 180s compiled "
-        "default. " + result.stderr
+        + "s -- not close enough to a decimal-8 TTL (max(8, 2*0)) to rule "
+        "out a silent misparse to 80 (an octal/base error) or a fallback to "
+        "the untouched 180s compiled default. " + result.stderr
     )

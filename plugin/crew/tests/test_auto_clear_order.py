@@ -26,7 +26,6 @@ import json
 import os
 import shutil
 import subprocess
-import sys
 import time
 
 import pytest
@@ -102,6 +101,7 @@ def _assert_silent(result, root):
 # --- config.json present, autoClear block absent entirely -----------------
 
 
+@pytest.mark.skipif(_BASH is None, reason="needs bash")
 def test_config_present_autoclear_absent_writes_no_log_sh(tmp_path):
     root = _repo(tmp_path)  # no autoClear block at all in the repo config
     _write_machine(root, {})  # machine never opted in either
@@ -120,6 +120,7 @@ def test_config_present_autoclear_absent_writes_no_log_ps1(tmp_path):
 # --- config.json present, repo-local enabled: false, machine says true ----
 
 
+@pytest.mark.skipif(_BASH is None, reason="needs bash")
 def test_config_present_enabled_false_writes_no_log_sh(tmp_path):
     root = _repo(tmp_path, repo_auto={"enabled": False})
     _write_machine(root, {"enabled": True, "method": "tmux"})
@@ -136,6 +137,7 @@ def test_config_present_enabled_false_writes_no_log_ps1(tmp_path):
 # --- config.json present, machine on, onlyRepos excludes this repo --------
 
 
+@pytest.mark.skipif(_BASH is None, reason="needs bash")
 def test_config_present_only_repos_excludes_writes_no_log_sh(tmp_path):
     root = _repo(tmp_path)
     _write_machine(root, {"enabled": True,
@@ -158,6 +160,7 @@ def test_config_present_only_repos_excludes_writes_no_log_ps1(tmp_path):
 # covered anywhere with an explicit no-log assertion before this file.
 
 
+@pytest.mark.skipif(_BASH is None, reason="needs bash")
 def test_config_present_only_sessions_excludes_writes_no_log_sh(tmp_path):
     root = _repo(tmp_path)
     _write_machine(root, {"enabled": True, "onlySessions": ["some-other-session"]})
