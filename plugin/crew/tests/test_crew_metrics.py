@@ -277,17 +277,27 @@ def test_baseline_computes_median_when_a_row_was_hand_reconstructed(repo):
     assert result["activeTimeKnown"] == 2
 
 
+def _baseline_rows(active_time, n=cm.MIN_BASELINE_KNOWN, escaped=0):
+    """`n` genuinely-known 0.20 legacy rows -- enough for `compare`'s
+    per-criterion known-baseline thresholds to be satisfied honestly,
+    rather than by the single-row inference bug this file used to rely on."""
+    return [{"schema": "0.20", "ticket": f"T-old-{i}", "ticketId": f"T-old-{i}",
+             "activeTime": active_time, "cost": "UNKNOWN", "escapedDefects": escaped}
+            for i in range(n)]
+
+
 def test_compare_below_ten_tickets_is_insufficient_data(repo):
-    # Every criterion would otherwise PASS cleanly (a >=30% active-time drop,
-    # known review rounds, zero unapproved scope changes, zero escaped
-    # defects against a known baseline) -- the ONLY thing standing between
-    # this fixture and a false PASS is the floor. A test fixture where the
-    # criteria themselves also read INSUFFICIENT DATA would pass even with
-    # the floor check deleted, which is the failure this guards against.
-    _write_rows(repo, [
-        {"schema": "0.20", "ticket": "T-old", "ticketId": "T-old", "activeTime": 1000,
-         "cost": "UNKNOWN"},
-    ])
+    # A genuinely clean baseline (10 known legacy rows, all with known
+    # escapedDefects) and a genuinely clean prospective cohort (known review
+    # rounds, zero unapproved scope changes, zero escaped defects) -- every
+    # criterion EXCEPT the median-based one has enough known data to PASS
+    # honestly. The median-based criterion alone reads INSUFFICIENT DATA
+    # because only 5 prospective tickets are known, below
+    # MIN_COMPARE_TICKETS -- that is "the floor", now enforced per-criterion
+    # rather than by a separate early return. A fixture where every
+    # criterion reads INSUFFICIENT DATA would pass even with that per-
+    # criterion floor deleted, which is the failure this guards against.
+    _write_rows(repo, _baseline_rows(1000))
     rows = [_row(f"T-{i}", "1.0", activeTime=600, cost="UNKNOWN",
                 reviewRounds=[{"round": 1, "verdict": "CLEAN"}],
                 unapprovedScopeChanges=0, escapedDefects=0) for i in range(5)]
@@ -297,13 +307,14 @@ def test_compare_below_ten_tickets_is_insufficient_data(repo):
 
     assert result["verdict"] == "INSUFFICIENT DATA"
     assert result["n"] == 5
+    assert result["criteria"]["30pctLowerActiveTimeOrCost"] == "INSUFFICIENT DATA"
+    assert result["criteria"]["reviewBudgetEnforcement100pct"] == "PASS"
+    assert result["criteria"]["zeroUnapprovedScopeChanges"] == "PASS"
+    assert result["criteria"]["noRiseInEscapedDefects"] == "PASS"
 
 
 def test_compare_passes_every_criterion_on_a_clean_fixture(repo):
-    _write_rows(repo, [
-        {"schema": "0.20", "ticket": "T-old", "ticketId": "T-old", "activeTime": 1000,
-         "cost": "UNKNOWN"},
-    ])
+    _write_rows(repo, _baseline_rows(1000))
     rows = [_row(f"T-{i}", "1.0", activeTime=600, cost="UNKNOWN", reviewRounds=[],
                 unapprovedScopeChanges=0, escapedDefects=0) for i in range(10)]
     _write_rows(repo, rows)
@@ -314,13 +325,11 @@ def test_compare_passes_every_criterion_on_a_clean_fixture(repo):
     assert result["criteria"]["30pctLowerActiveTimeOrCost"] == "PASS"
     assert result["criteria"]["reviewBudgetEnforcement100pct"] == "PASS"
     assert result["criteria"]["zeroUnapprovedScopeChanges"] == "PASS"
+    assert result["criteria"]["noRiseInEscapedDefects"] == "PASS"
 
 
 def test_compare_fails_when_active_time_did_not_drop_enough(repo):
-    _write_rows(repo, [
-        {"schema": "0.20", "ticket": "T-old", "ticketId": "T-old", "activeTime": 1000,
-         "cost": "UNKNOWN"},
-    ])
+    _write_rows(repo, _baseline_rows(1000))
     rows = [_row(f"T-{i}", "1.0", activeTime=950, cost="UNKNOWN", reviewRounds=[],
                 unapprovedScopeChanges=0, escapedDefects=0) for i in range(10)]
     _write_rows(repo, rows)
@@ -344,3 +353,224 @@ def test_compare_flags_unapproved_scope_changes(repo):
 
     assert result["unapprovedScopeChanges"] == 1
     assert result["criteria"]["zeroUnapprovedScopeChanges"] == "FAIL"
+
+
+# --------------------------------------------------------------------------
+# fix round: every field and criterion carries UNKNOWN through
+
+def test_append_row_repairs_a_missing_trailing_newline(repo):
+    path = cm.metrics_path(str(repo))
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write(json.dumps({"ticket": "T-1", "ticketId": "T-1", "kind": "record"}))  # no \n
+
+    cm.append_row(str(repo), {"ticket": "T-2", "ticketId": "T-2", "kind": "record"})
+
+    with open(path, encoding="utf-8") as handle:
+        lines = handle.read().splitlines()
+    assert len(lines) == 2
+    assert json.loads(lines[0])["ticket"] == "T-1"
+    assert json.loads(lines[1])["ticket"] == "T-2"
+
+
+def test_scope_blocks_unknown_when_guard_log_has_a_truncated_row(repo):
+    make_ticket(repo, "T-1")
+    approve_as_user(repo, "T-1")
+    path = os.path.join(str(repo), ".crew", "guard.log")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "a", encoding="utf-8") as handle:
+        handle.write("1000\tscope\tblock\n")  # crashed mid-write, only 3 of 7 fields
+
+    row = cm.record(str(repo), "T-1")
+
+    assert row["scopeBlocks"] == cm.UNKNOWN
+
+
+def test_injected_chars_unknown_when_a_matching_record_has_no_chars(repo):
+    make_ticket(repo, "T-1")
+    approve_as_user(repo, "T-1")  # session "sess-1", via user-prompt
+    _write_context_log(repo, [{"session": "sess-1", "event": "UserPromptSubmit"}])
+
+    row = cm.record(str(repo), "T-1")
+
+    assert row["injectedChars"] == cm.UNKNOWN
+
+
+def test_active_time_and_tokens_unknown_with_an_unparseable_transcript_line(tmp_path):
+    path = tmp_path / "transcript.jsonl"
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write(json.dumps({"type": "user", "timestamp": "2026-01-01T00:00:00Z"}) + "\n")
+        handle.write("{not valid json\n")
+        handle.write(json.dumps({"type": "assistant", "timestamp": "2026-01-01T00:00:10Z",
+                                 "message": {"usage": {"input_tokens": 5}}}) + "\n")
+
+    # Both readings would otherwise be measurable from the parseable lines
+    # alone (a real gap, a real usage object) -- the corrupt line must still
+    # make the whole result UNKNOWN rather than silently reporting a partial
+    # figure from the surviving fragment.
+    assert cm.active_time_seconds(str(path)) == cm.UNKNOWN
+    assert cm.transcript_tokens(str(path)) == cm.UNKNOWN
+
+
+def test_active_time_sorts_by_parsed_instant_not_raw_timestamp_text(tmp_path):
+    # Two events 90 minutes apart in real UTC time, but their raw ISO strings
+    # compare in the OPPOSITE order lexically (an explicit "+02:00" offset
+    # sorts after a same-clock-time "Z" suffix even though it names an
+    # earlier instant). Sorting the raw strings misorders them; the
+    # resulting negative gap is then discarded, undercounting.
+    transcript = _transcript(tmp_path, [
+        {"type": "user", "timestamp": "2026-01-01T01:00:00+02:00"},  # UTC 2025-12-31T23:00:00
+        {"type": "user", "timestamp": "2026-01-01T00:30:00Z"},        # UTC 2026-01-01T00:30:00
+    ])
+
+    total = cm.active_time_seconds(transcript, idle_threshold=100000)
+
+    assert total == 5400.0
+
+
+def test_parse_iso_never_raises_and_rejects_naive_or_non_string_timestamps():
+    assert cm._parse_iso(12345) is None
+    assert cm._parse_iso(None) is None
+    assert cm._parse_iso("not-a-timestamp") is None
+    assert cm._parse_iso("2026-01-01T00:00:00") is None  # naive, no offset -- unmixable
+
+
+def test_active_time_rejects_a_non_positive_idle_threshold(tmp_path):
+    transcript = _transcript(tmp_path, [
+        {"type": "user", "timestamp": "2026-01-01T00:00:00Z"},
+        {"type": "user", "timestamp": "2026-01-01T00:00:10Z"},
+    ])
+
+    with pytest.raises(cm.MetricsError):
+        cm.active_time_seconds(transcript, idle_threshold=0)
+    with pytest.raises(cm.MetricsError):
+        cm.active_time_seconds(transcript, idle_threshold=-5)
+
+
+def test_tokens_unknown_when_usage_object_has_no_recognized_fields(tmp_path):
+    transcript = _transcript(tmp_path, [
+        {"type": "assistant", "timestamp": "2026-01-01T00:00:00Z",
+         "message": {"usage": {"some_other_field": 5}}},
+    ])
+
+    assert cm.transcript_tokens(transcript) == cm.UNKNOWN
+
+
+def test_select_prospective_selects_by_the_record_rows_timestamp_not_any_row(repo):
+    _write_rows(repo, [_row("T-1", "1.0", recordedAt="2026-01-01T00:00:00Z", activeTime=600)])
+    cm.escaped(str(repo), "T-1", 1, note="found later")
+    rows, _bad = cm.read_rows(str(repo))
+    escaped_row = [r for r in rows if r["kind"] == "escaped"][0]
+
+    # `since` is the escaped row's own (much later) timestamp -- only the
+    # T-1 `record` row's timestamp should decide selection, and it is well
+    # before `since`, so T-1 must not be selected just because ITS escaped
+    # correction happens to be recent.
+    selected = cm._select_prospective(rows, escaped_row["recordedAt"])
+
+    assert selected == {}
+
+
+def test_compare_cannot_pass_with_an_unparseable_metrics_row(repo):
+    _write_rows(repo, _baseline_rows(1000))
+    rows = [_row(f"T-{i}", "1.0", activeTime=600, cost="UNKNOWN", reviewRounds=[],
+                unapprovedScopeChanges=0, escapedDefects=0) for i in range(10)]
+    _write_rows(repo, rows)
+    path = cm.metrics_path(str(repo))
+    with open(path, "a", encoding="utf-8") as handle:
+        handle.write("{not valid json\n")
+
+    result = cm.compare(str(repo), "10")
+
+    assert result["unparseableRows"] == 1
+    assert result["verdict"] != "PASS"
+
+
+def test_30pct_criterion_is_insufficient_with_only_one_known_value_each_side(repo):
+    _write_rows(repo, [
+        {"schema": "0.20", "ticket": "T-old", "ticketId": "T-old", "activeTime": 1000,
+         "cost": "UNKNOWN"},
+    ])
+    rows = [_row("T-0", "1.0", activeTime=100, cost="UNKNOWN", reviewRounds=[],
+                unapprovedScopeChanges=0, escapedDefects=0)]
+    rows += [_row(f"T-{i}", "1.0", activeTime="UNKNOWN", cost="UNKNOWN", reviewRounds=[],
+                  unapprovedScopeChanges=0, escapedDefects=0) for i in range(1, 10)]
+    _write_rows(repo, rows)
+
+    result = cm.compare(str(repo), "10")
+
+    # A single known value on each side shows a huge, fake-looking drop
+    # ((100-1000)/1000 = -90%) -- the old code PASSed on exactly this.
+    assert result["criteria"]["30pctLowerActiveTimeOrCost"] == "INSUFFICIENT DATA"
+
+
+def test_review_budget_treats_a_missing_reviewrounds_field_as_unknown(repo):
+    _write_rows(repo, _baseline_rows(1000))
+    rows = [_row(f"T-{i}", "1.0", activeTime=600, cost="UNKNOWN",
+                unapprovedScopeChanges=0, escapedDefects=0) for i in range(10)]  # no reviewRounds
+    _write_rows(repo, rows)
+
+    result = cm.compare(str(repo), "10")
+
+    assert result["reviewBudgetEnforcementRate"] == 0.0
+    assert result["criteria"]["reviewBudgetEnforcement100pct"] == "FAIL"
+
+
+def test_scope_change_sum_excludes_non_integer_values_from_known_count(repo):
+    _write_rows(repo, _baseline_rows(1000))
+    rows = [_row(f"T-{i}", "1.0", activeTime=600, cost="UNKNOWN", reviewRounds=[],
+                unapprovedScopeChanges="not-a-number" if i == 0 else 0,
+                escapedDefects=0) for i in range(10)]
+    _write_rows(repo, rows)
+
+    result = cm.compare(str(repo), "10")
+
+    assert result["unapprovedScopeChanges"] == 0
+    assert result["unapprovedScopeChangesUnknown"] == 1
+    assert result["criteria"]["zeroUnapprovedScopeChanges"] == "INSUFFICIENT DATA"
+
+
+def test_escaped_defects_criterion_requires_a_measured_baseline(repo):
+    _write_rows(repo, [
+        {"schema": "0.20", "ticket": "T-old", "ticketId": "T-old", "activeTime": 1000,
+         "cost": "UNKNOWN"},  # baseline never carries an escapedDefects field
+    ])
+    rows = [_row(f"T-{i}", "1.0", activeTime=600, cost="UNKNOWN", reviewRounds=[],
+                unapprovedScopeChanges=0, escapedDefects=0) for i in range(10)]
+    _write_rows(repo, rows)
+
+    result = cm.compare(str(repo), "10")
+
+    assert result["criteria"]["noRiseInEscapedDefects"] == "INSUFFICIENT DATA"
+
+
+def test_escaped_defects_criterion_requires_every_prospective_value_known(repo):
+    _write_rows(repo, _baseline_rows(1000))
+    rows = [_row(f"T-{i}", "1.0", activeTime=600, cost="UNKNOWN", reviewRounds=[],
+                unapprovedScopeChanges=0,
+                escapedDefects="UNKNOWN" if i == 0 else 0) for i in range(10)]
+    _write_rows(repo, rows)
+
+    result = cm.compare(str(repo), "10")
+
+    assert result["escapedDefectsUnknown"] == 1
+    assert result["criteria"]["noRiseInEscapedDefects"] == "INSUFFICIENT DATA"
+
+
+def test_overall_verdict_fails_even_when_another_criterion_is_insufficient(repo):
+    # Only 1 baseline row -> the median-based criterion reads INSUFFICIENT
+    # DATA. That must not swallow the definite FAIL from unapproved scope
+    # changes -- any FAIL wins the overall verdict.
+    _write_rows(repo, [
+        {"schema": "0.20", "ticket": "T-old", "ticketId": "T-old", "activeTime": 1000,
+         "cost": "UNKNOWN"},
+    ])
+    rows = [_row(f"T-{i}", "1.0", activeTime=600, cost="UNKNOWN", reviewRounds=[],
+                unapprovedScopeChanges=1 if i == 0 else 0, escapedDefects=0) for i in range(10)]
+    _write_rows(repo, rows)
+
+    result = cm.compare(str(repo), "10")
+
+    assert result["criteria"]["30pctLowerActiveTimeOrCost"] == "INSUFFICIENT DATA"
+    assert result["criteria"]["zeroUnapprovedScopeChanges"] == "FAIL"
+    assert result["verdict"] == "FAIL"
