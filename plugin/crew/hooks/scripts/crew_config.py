@@ -2274,6 +2274,18 @@ def _role_write_widening_notes(name, what):
     So the widening direction a reader most needs warned about is the same
     one every fresh repo already sits at: nothing narrows FROM `off`, because
     nothing narrower has been chosen yet.
+
+    `off` and `report` both carry a Python caveat `block` does not need:
+    only `role_write_guard.py` (Python) can actually evaluate this policy.
+    `role-write-guard.sh`'s no-python fallback (its own "THE NO-PYTHON
+    CONTRACT" comment) reads only the deny-list floor and fails CLOSED on a
+    restricted role or one it cannot read at all -- so a repo set to `off`
+    or `report` still gets `block`'s behaviour for a restricted role the
+    moment python is unavailable. Printing `off`/`report` here with no
+    mention of that would tell a reader those tiers apply unconditionally,
+    which is the "unknown collapsing into the safe-looking value" shape
+    CLAUDE.md names, worn the other way: not a guard that fails open, but a
+    note that describes a WIDER guarantee than the fallback actually keeps.
     """
     del name
     return {
@@ -2285,13 +2297,19 @@ def _role_write_widening_notes(name, what):
             f"crew allows {what}, and appends a row to "
             f"`{crew_state.GUARD_LOG_PATH}` for every decision, not only "
             "the ones outside scope -- so the record exists, but nothing "
-            "stops it at the time."
+            "stops it at the time. Requires Python: without a usable "
+            "interpreter, role-write-guard.sh/.ps1 cannot evaluate `report` "
+            "at all and falls back to blocking a restricted role's write "
+            "instead of logging it."
         ),
         "off": (
             f"crew's role-write guard does not run its policy check at all. "
             f"{what.capitalize()} is not refused and nothing is logged. "
             "This is the WIDEST tier and it is also the default -- every "
-            "repo that has never set `guards.roleWrites` is already here."
+            "repo that has never set `guards.roleWrites` is already here. "
+            "Requires Python: without a usable interpreter, the fallback "
+            "cannot evaluate `off` either, so a restricted role's write is "
+            "blocked anyway rather than let through."
         ),
     }
 

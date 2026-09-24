@@ -494,8 +494,24 @@ def _tools(tmp_path):
     return tools
 
 
-def _stub(directory, name, body):
+def _stub(directory, name, body, win_body=None):
+    """Windows burn-in, win-repo: an extensionless file is invisible to
+    `Get-Command -CommandType Application` and to `Resolve-CrewPython`'s own
+    native-extension gate (see `test_ps1_python_probe.py::_stub`, the same
+    fixture duplicated here) -- so a "real python3" stub written this way is
+    never found on a genuine Windows host, and a `.ps1` hook resolving no
+    python at all still falls open and emits (documented in
+    handoff-write.ps1's own `Test-CrewEventClaim`: "every failure to decide
+    ... emits, because a duplicate is the safe side"), turning the ONE
+    transcript copy this module's burn-in test asserts into two. On real
+    Windows this writes a `.cmd` instead, which both `Get-Command` and Git
+    Bash's own PATH resolution can find."""
     directory.mkdir(parents=True, exist_ok=True)
+    if os.name == "nt":
+        path = directory / (name + ".cmd")
+        path.write_text("@echo off\r\n" + (win_body if win_body is not None else body) + "\r\n",
+                        encoding="ascii", newline="\r\n")
+        return path
     path = directory / name
     path.write_text("#!/bin/sh\n" + body + "\n", encoding="ascii", newline="\n")
     path.chmod(0o755)
@@ -544,9 +560,9 @@ def test_the_burn_in_path_writes_one_transcript_copy_across_both_flavours(tmp_pa
     transcript = pathlib.Path(root) / "t.jsonl"
     transcript.write_text("{}\n", encoding="utf-8")
     apps = tmp_path / "Microsoft" / "WindowsApps"
-    _stub(apps, "python3", "exit 9009")
+    _stub(apps, "python3", "exit 9009", win_body="exit /b 9009")
     real = tmp_path / "Python312"
-    _stub(real, "python3", f'exec "{REAL}" "$@"')
+    _stub(real, "python3", f'exec "{REAL}" "$@"', win_body=f'"{REAL}" %*')
     env = dict(os.environ, CLAUDE_PROJECT_DIR=root, OS="Windows_NT",
                PATH=os.pathsep.join([str(apps), str(real), str(_tools(tmp_path))]))
     payload = json.dumps({"hook_event_name": "PreCompact", "session_id": "burn-in", "cwd": root,
@@ -700,7 +716,7 @@ def test_the_probe_rejects_anything_that_is_not_a_proven_python_3(tmp_path, body
 @needs_pwsh
 def test_the_probe_accepts_a_real_python_3(tmp_path):
     real = tmp_path / "real"
-    _stub(real, "python3", f'exec "{REAL}" "$@"')
+    _stub(real, "python3", f'exec "{REAL}" "$@"', win_body=f'"{REAL}" %*')
 
     assert _print_python([real, _tools(tmp_path)]) == REAL
 
