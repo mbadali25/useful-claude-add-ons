@@ -694,6 +694,53 @@ def _t_capture():
                    os.path.isfile(os.path.join(vault, "inbox", "pending-reflect.hostb.md")))
 
 
+def _t_capture_unknown_session():
+    """session_id="?": refuse when there is nothing to distil or dedupe on;
+    queue once, not once per invocation, when a transcript is present.
+
+    Sabotage-tested by hand against the pre-fix `already_queued`, which
+    returned False unconditionally for sid="?": both cases here go red
+    against it - the no-transcript case because it queues a line instead of
+    refusing, the with-transcript case because two invocations of the SAME
+    transcript+trigger each queue their own line (2, not 1)."""
+    with Sandbox() as sb:
+        vault = sb.vault("mem")
+        sb.write_config({"vaults": {"mem": {"path": vault, "role": "primary",
+                                            "default": True}}})
+        script = os.path.join(SCRIPTS, "vault_capture.py")
+        host_file = os.path.join(vault, "inbox", "pending-reflect.hosta.md")
+
+        def capture(payload, trigger="SessionEnd"):
+            return subprocess.run([sys.executable, script, trigger],
+                                  input=json.dumps(payload),
+                                  capture_output=True, text=True, env=dict(os.environ),
+                                  check=False)
+
+        # No usable session id AND no transcript: refuse, log why, queue nothing.
+        result = capture({"session_id": "?", "cwd": "/w", "transcript_path": "?"})
+        check("an unparseable payload with nothing to dedupe on is not queued",
+              os.path.isfile(host_file), False)
+        check_in("and the reason is logged on stderr, not swallowed",
+                 "no usable session id and no transcript path", result.stderr)
+
+        # A transcript but no session id: queued once, even across two
+        # invocations of the same event (the .sh/.ps1 twins on Windows, or a
+        # hook that simply fires twice).
+        transcript = os.path.join(sb.tmp, "t.jsonl")
+        with open(transcript, "w", encoding="utf-8") as fh:
+            fh.write("{}\n")
+        payload = {"session_id": "?", "cwd": "/w", "transcript_path": transcript}
+        capture(payload)
+        capture(payload)
+        check_true("a transcript with no session id IS queued", os.path.isfile(host_file))
+        with open(host_file, "r", encoding="utf-8") as fh:
+            data = fh.read()
+        check("queued exactly once across two invocations, not twice",
+              data.count(transcript), 1)
+        check_in("the line still carries session=? (unusable, but not a reason to hide it)",
+                 "session=? ", data)
+
+
 # --- detect / install: three states, never installs on a dry run ------------------------
 
 def _t_detect_install():
@@ -1298,7 +1345,7 @@ def _t_garden_snapshot_time_counts_against_deadline():
 
 for case in (_t_adopt, _t_import, _t_recall, _t_garden_bound, _t_garden_ack_after_write,
              _t_garden_hosts_and_legacy, _t_garden_owned_commit, _t_schedule, _t_capture,
-             _t_detect_install, _t_create_vault_and_config_override,
+             _t_capture_unknown_session, _t_detect_install, _t_create_vault_and_config_override,
              _t_writers_primary_only, _t_garden_ack_needs_a_write, _t_garden_commit_bounded,
              _t_schedule_quoting, _t_import_containment_and_suffix_idempotence,
              _t_adopt_every_vault_gets_a_role,

@@ -76,7 +76,7 @@ to be asked; hooks do not.
 |---|---|---|
 | `bridge-status.sh`/`.ps1` | `SessionStart` | Probes **every** configured vault's Local REST API bridge and states plainly whether each `mcp__obsidian-<name>__*` will work this session. Both ports come from that vault's own `data.json` (`insecurePort` HTTP, `port` HTTPS), never derived from each other. It checks for a port collision across every vault **before** blaming any per-vault setting - `enableInsecureServer` is not the cause when the losing vault never started a server at all. Not-installed ("there is no bridge") and wrong-vault-answering (authenticates, serves someone else's files) are separate verdicts from down and rejected-key, each with its own fix. Never blocks. |
 | `vault-guard.sh`/`.ps1` | `PostToolUse` on `Edit`/`Write`/`MultiEdit` | Enforces the *default* vault's frontmatter contract, ASCII rule, and canvas well-formedness - **the frontmatter and ASCII rules are OFF by default; the canvas shape check is ON** (`checkCanvas` defaults true - a `.canvas` that does not parse opens blank with no error, and checking costs nothing). `/obsidian-vault:init` turns one of the other two on only when it finds the matching rule stated in the target vault's own `CLAUDE.md`. Can block (exit 2) with the specific fix on stderr. Does not apply to a non-default vault. Four basenames - `CLAUDE.md`, `README.md`, `AGENTS.md`, `GEMINI.md` - are excused from *having* frontmatter, and from nothing else: if one of them does carry frontmatter it is still held to the required keys, the title/filename match and the updated date. The ASCII rule still applies to three of the four, because `CLAUDE.md` is separately ASCII-exempt by an older decision. The canvas rule never enters into it: all four are `.md`, and the canvas checks run only on a `.canvas` file. |
-| `vault-capture.sh`/`.ps1` | `SessionEnd`, `PreCompact` | Appends one line (session id, cwd, transcript path) to the primary (default) vault's `inbox/pending-reflect.<host>.md` - one queue file per host, so two machines never append to one synced file. The legacy `inbox/pending-reflect.md` is no longer written but is still read, for de-duplication and by the gardener, so an old backlog drains. This is the only capture owner. Costs nothing, cannot break a session. |
+| `vault-capture.sh`/`.ps1` | `SessionEnd`, `PreCompact` | Appends one line (session id, cwd, transcript path) to the primary (default) vault's `inbox/pending-reflect.<host>.md` - one queue file per host, so two machines never append to one synced file. The legacy `inbox/pending-reflect.md` is no longer written but is still read, for de-duplication and by the gardener, so an old backlog drains. A payload with no usable session id AND no transcript path (an unparseable hook payload) is refused rather than queued, with the reason on stderr; a payload with a transcript but no session id is still queued, deduped on a hash of trigger+transcript so it is queued once, not once per invocation. This is the only capture owner. Costs nothing, cannot break a session. |
 
 Every script delegates to one Python module shared by both the bash and
 PowerShell wrapper, so the two flavours cannot drift from each other - the
@@ -193,7 +193,19 @@ works a backlog in the same bounded batches, dry run first.
 `schedule --os cron|systemd|windows` prints the unit; nothing here installs
 one. See the `obsidian-scheduling` skill.
 
-## Recall contract (for crew's context hook)
+**Finding and clearing pre-existing unusable `?` queue entries.** Before this
+fix, a capture whose hook payload had neither a usable `session_id` nor a
+`transcript_path` (both read as `?`) was queued anyway - one such line per
+trigger per host, that the gardener can never distil since there is nothing
+to read a session from and no transcript to fall back to. To find them in a
+vault: `grep -n 'session=? .*transcript=?$' inbox/pending-reflect.*.md
+inbox/pending-reflect.md` (a line matching this has *both* fields unusable;
+a line with `session=?` but a real `transcript=` path is not one of these -
+it is still gardenable from its transcript and this fix leaves it queued).
+Each matched line is a checklist item (`- [ ] ...`); deleting the line removes
+it from the queue, same as checking it off. This fix does not touch any
+existing vault - it only stops new ones of this shape from being written -
+so a live vault's current backlog needs this done by hand, once, per vault.
 
 Stable read interface for any caller that injects vault context - crew's
 context hook is the first. It is read-only: no network, no REST bridge, no

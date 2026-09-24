@@ -21,6 +21,7 @@ writable, without writing a queue entry.
 import sys
 import json
 import datetime
+import hashlib
 import pathlib
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
@@ -41,17 +42,42 @@ def inbox_path(vault):
     return pathlib.Path(vault) / "inbox" / f"pending-reflect.{obsidian_common.host_id()}.md"
 
 
-def already_queued(vault, sid):
-    """True when this session id is in this host's queue or the legacy queue."""
-    if sid == "?":
+def transcript_key(trigger, transcript):
+    """Stable id for a capture that has a transcript but no usable session id.
+
+    Two invocations of the SAME event (the .sh and .ps1 twins firing for one
+    hook on a Windows host that has both bash and pwsh on PATH, or a hook
+    that simply fires twice) carry the same trigger and transcript path, so
+    this hashes to the same key both times - unlike sid="?", which never
+    matched itself and so never deduped at all.
+    """
+    digest = hashlib.sha256(f"{trigger}\x00{transcript}".encode("utf-8", "surrogateescape"))
+    return digest.hexdigest()[:16]
+
+
+def already_queued(vault, sid, key=None):
+    """True when this session id - or, with no usable session id, this
+    trigger+transcript key - is already in this host's queue or the legacy
+    queue."""
+    if key is not None:
+        needle = f"key={key}"
+    elif sid == "?":
+        # No session id and nothing to dedupe on either: main() refuses to
+        # queue this case at all (see there), so this branch is never
+        # reached with key=None and sid="?" today - kept explicit rather
+        # than falling through to a needle that could never match itself.
         return False
-    needle = f"session={sid} "
+    else:
+        needle = f"session={sid} "
     for path in (inbox_path(vault), legacy_inbox_path(vault)):
         try:
             text = path.read_text(encoding="utf-8")
         except OSError:
             continue
-        if needle in text or text.rstrip().endswith(f"session={sid}"):
+        if key is not None:
+            if needle in text:
+                return True
+        elif needle in text or text.rstrip().endswith(f"session={sid}"):
             return True
     return False
 
@@ -97,15 +123,46 @@ def main():
             data = {}
         if not isinstance(data, dict):
             data = {}
-        sid = data.get("session_id", "?")
-        cwd = data.get("cwd", "?")
-        transcript = data.get("transcript_path", "?")
+        # `or "?"` rather than a plain `.get(key, "?")` default: a payload
+        # that carries the key with an explicit null or empty string is just
+        # as unusable as one that omits it, and both must count as "?" below.
+        sid = data.get("session_id") or "?"
+        cwd = data.get("cwd") or "?"
+        transcript = data.get("transcript_path") or "?"
+
+        usable_sid = sid if sid != "?" else None
+        usable_transcript = transcript if transcript != "?" else None
+
+        if usable_sid is None and usable_transcript is None:
+            # Nothing to distil and nothing to dedupe on: queuing this would
+            # add one unusable line per trigger per flavour (bash, PowerShell)
+            # that the gardener can never resolve to anything and that can
+            # never be told apart from the next one either - the defect this
+            # fix closes. Say why on the channel this hook already uses for
+            # every other skipped capture, and stop.
+            print(f"obsidian-vault vault-capture.py: not captured: no usable session id and "
+                  f"no transcript path in the hook payload (trigger={trigger}) - nothing to "
+                  f"distil and nothing to dedupe on", file=sys.stderr)
+            return
+
+        key = None
+        if usable_sid is None:
+            # A transcript exists but the session id does not: dedupe on
+            # trigger+transcript instead of on sid="?", which never matched
+            # itself. This is what stops the .sh/.ps1 twins (or a hook that
+            # simply fires twice for one event) from both queuing the same
+            # transcript.
+            key = transcript_key(trigger, usable_transcript)
+
         ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
-        line = f"- [ ] {ts} | {trigger} | session={sid} | cwd={cwd} | transcript={transcript}\n"
+        line = f"- [ ] {ts} | {trigger} | session={sid} | cwd={cwd} | transcript={transcript}"
+        if key is not None:
+            line += f" | key={key}"
+        line += "\n"
         inbox = inbox_path(vault)
         inbox.parent.mkdir(parents=True, exist_ok=True)
-        if already_queued(vault, sid):
-            return  # one queue entry per session, whichever trigger fires first
+        if already_queued(vault, sid, key=key):
+            return  # one queue entry per session (or per transcript+trigger)
         if not inbox.exists():
             inbox.write_text(HEADER + "\n" + line, encoding="utf-8", newline="\n")
             return
