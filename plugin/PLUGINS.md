@@ -11,10 +11,10 @@ Read the **Hooks** section of any plugin before installing it. Commands and agen
 | | |
 |---|---|
 | **Source** | [`crew/`](crew) |
-| **Version** | 1.0.1<!-- claim: plugin-version:crew --> |
+| **Version** | 1.0.0<!-- claim: plugin-version:crew --> |
 | **Install** | `claude plugin install crew@useful-claude-add-ons` |
 | **Menu item** | 21, `repo-plugins` — **off by default**. Menu item 22, `graphify`, is a separate, also-off-by-default install of the `graphify` CLI this plugin's graph feature depends on — see **The code graph** below. |
-| **Registers** | 4 agents, 33 commands, 28 skills<!-- claim: plugin-skills:crew -->, 34 hook entries (13 scripts × `.sh`/`.ps1`) across 8 events |
+| **Registers** | 4 agents, 34 commands, 29 skills<!-- claim: plugin-skills:crew -->, 34 hook entries (13 scripts × `.sh`/`.ps1`) across 8 events |
 | **Upstream guide** | [`crew/README.md`](crew/README.md) — 25 sections, the authoritative version |
 
 Built for the awkward case: several repositories, mixed stacks, legacy code, and almost no test coverage. The workflow is file-backed tickets, one implementation session, an independent reviewer, and deterministic gates that block on failure rather than offering an opinion.
@@ -120,7 +120,7 @@ Enforcement is session-local, like every other gate here: an incident stands
 the hooks down for sessions in this repository on this machine. It does nothing
 to CI or to branch protection.
 
-### Commands — 33, all explicit
+### Commands — 34, all explicit
 
 | Command | Purpose |
 |---|---|
@@ -156,6 +156,7 @@ to CI or to branch protection.
 | `/crew:ticket <what needs doing>` | Removed in crew 1.0 - use /crew:spec |
 | `/crew:upgrade` | Bring a pre-0.20 crew config up to the 0.20 schema so /crew:migrate can move it to 1.0 |
 | `/crew:verify [--refresh] [--price]` | Build or refresh the verification map from evidence |
+| `/crew:webtest <ticket id> [--stage spec\|implement\|heal\|evidence]` | Drive Playwright's Test Agents inside the ticket lifecycle - a healer skip is a finding, never accepted |
 | `/crew:work <ticket id>` | Removed in crew 1.0 - use /crew:implement |
 
 First run in a new repository: `/crew:init`, then `/crew:onboard`, then `/crew:verify`. A 0.20 repository runs `/crew:migrate --preview` first.
@@ -179,7 +180,7 @@ earns a role its place. `reviewer` runs on `opus` because it shares a model
 family with the author when Codex and Copilot are both unavailable, and the
 tier is the only compensation left.
 
-### Bundled skills — 28
+### Bundled skills — 29
 
 These are ordinary skills, scoped to `crew`'s own workflow. They work on every Claude surface, including chat, unlike the hooks and agents.
 
@@ -213,6 +214,7 @@ These are ordinary skills, scoped to `crew`'s own workflow. They work on every C
 | `stack-python` | Python pitfalls, checks and `verify.json` wiring — mutable defaults, exception widening, async, text/bytes encoding |
 | `stack-sql` | SQL Server, MySQL and PostgreSQL pitfalls, checks and `verify.json` wiring — sargability, NULL semantics, per-engine locking |
 | `stack-terraform` | Terraform pitfalls, checks and `verify.json` wiring — state, plan replacements, `count`/`for_each` re-indexing, module interfaces |
+| `stack-web` | Playwright web UI testing pitfalls, checks and `verify.json` wiring — role/testid locators, web-first assertions, trace and visual-baseline discipline, accessibility via axe. Backs `/crew:webtest` |
 
 ### What it creates in a repository
 

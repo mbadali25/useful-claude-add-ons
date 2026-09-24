@@ -26,7 +26,7 @@ this skill says so rather than picking a side and presenting it as consensus.
 |---|---|
 | Asked "how should I use Claude Code" | Answer from `references/practices.md`, not from memory |
 | Auditing a repo's CLAUDE.md | `references/claude-md.md` has the size limits and the anti-patterns |
-| Asked why crew has 4 agents or 33 commands<!-- claim: plugin-commands:crew --> | `docs/adr/0003-crew-departs-from-three-community-best-practices.md` |
+| Asked why crew has 4 agents or 34 commands<!-- claim: plugin-commands:crew --> | `docs/adr/0003-crew-departs-from-three-community-best-practices.md` |
 | Tempted to "fix" crew to match the document | Read the ADR first. Three departures are deliberate |
 | Adding a hook, skill or command | `references/practices.md` §Hooks, §Skills, §Commands |
 
