@@ -14,13 +14,25 @@ import re
 import subprocess
 import sys
 
+import pytest
+
 import context  # noqa: F401  pylint: disable=unused-import
+import crew_fixtures
 from context_fixtures import make_repo
 
 CREW = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ONBOARD = os.path.join(CREW, "commands", "onboard.md")
 MIGRATE = os.path.join(CREW, "commands", "migrate.md")
 RULES_CALL = re.compile(r'crew_instructions\.py"?\s+rules\b')
+
+# A bare "bash" raised FileNotFoundError: [WinError 2] on native Windows
+# (Windows burn-in family D, docs/review/06-windows-burn-in.md@84f32325) --
+# there is no `bash` on PATH there without Git for Windows, and even when one
+# resolves it may be WSL's own copy, which cannot open a Windows path.
+# `resolve_bash()` PROVES a candidate by running it and returns None rather
+# than a path that will not work, so this module is skipped, not failed.
+_BASH = crew_fixtures.resolve_bash()
+pytestmark = pytest.mark.skipif(_BASH is None, reason="no usable bash on this machine")
 
 
 def _read(path):
@@ -49,7 +61,7 @@ def _run(command, root):
     env = dict(os.environ, CLAUDE_PLUGIN_ROOT=CREW)
     env.pop("CLAUDE_PROJECT_DIR", None)
     command = command.replace("python3 ", f'"{sys.executable}" ', 1)
-    return subprocess.run(["bash", "-c", command], cwd=str(root), env=env,
+    return subprocess.run([_BASH, "-c", command], cwd=str(root), env=env,
                           capture_output=True, text=True, check=False)
 
 

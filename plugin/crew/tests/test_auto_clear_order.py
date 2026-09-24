@@ -1,8 +1,9 @@
 """Pins the ORDER invariant both auto-clear senders must follow, in both
 flavours:
 
-    1. is this a crew repo at all? (`.crew/config.json` exists -- a
-       directory-only gate was tried once and reverted, see CONFIG.md sec 14)
+    1. is this a crew repo at all? (`.crew/` the directory exists -- crew
+       1.0 F4 reverses this back to the directory from the `.crew/config.json`
+       file-only gate F3 shipped, see CONFIG.md sec 14)
     2. is auto-clear ARMED? (the machine's `enabled`, then its
        `onlyRepos`/`onlySessions` narrowing)
     3. only THEN may anything be written -- even a single log line.
@@ -198,7 +199,7 @@ def _lineno(lines, needle):
 def test_sh_gate_and_off_exit_precede_the_logger():
     with open(_ROOT + "/hooks/scripts/auto-clear.sh", encoding="utf-8") as handle:
         lines = handle.readlines()
-    gate = _lineno(lines, "[ -f .crew/config.json ] || exit 0")
+    gate = _lineno(lines, "[ -d .crew ] || exit 0")
     log_var = _lineno(lines, 'LOG=".crew/.autoclear.log"')
     note_def = _lineno(lines, "note() {")
     off_exit = _lineno(lines, '[ "$STATUS" = "off" ] && exit 0')
@@ -220,7 +221,7 @@ def test_sh_gate_and_off_exit_precede_the_logger():
 def test_ps1_gate_and_enabled_check_precede_the_logger():
     with open(_ROOT + "/hooks/scripts/auto-clear.ps1", encoding="utf-8") as handle:
         lines = handle.readlines()
-    gate = _lineno(lines, 'Test-Path ".crew/config.json"')
+    gate = _lineno(lines, 'Test-Path ".crew" -PathType Container')
     log_var = _lineno(lines, '$log = ".crew/.autoclear.log"')
     note_def = _lineno(lines, "function Write-CrewAutoClearNote")
     enabled_exit = _lineno(lines, "if (-not $enabled) { exit 0 }")

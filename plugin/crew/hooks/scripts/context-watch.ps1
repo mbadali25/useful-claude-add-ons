@@ -3,8 +3,17 @@
 # handoff note before ending the turn. Exit 2 returns control to the model with
 # the reason on stderr.
 #
-# NOTHING HERE RUNS until a repository has .crew/config.json - crew is
-# per-repository and its hooks are inert until `/crew:init`.
+# NOTHING HERE RUNS until a repository at least has a `.crew/` directory -
+# crew is per-repository and its hooks are inert until something (`/crew:init`
+# or a worktree copy) has made that much true.
+#
+# Two gates below, not one, since crew 1.0 F4: this hook's own handover to
+# auto-clear.ps1 (the forced-continuation branch) reaches it on `.crew/`
+# existing alone, matching auto-clear.ps1's own directory gate -
+# `context.autoClear` is a machine-global switch and must work in any crew
+# repo (CONFIG.md sec 14). This hook's OWN context-window measurement and
+# nagging, further down, is a separate question and keeps requiring a real
+# `.crew/config.json` underneath, unchanged.
 
 # Flavour guard. Both flavours are registered for every event, so on a host
 # that has BOTH interpreters both would otherwise run. Stand down only when
@@ -22,7 +31,7 @@ try { $d = $raw | ConvertFrom-Json } catch { exit 0 }
 $cwd = if ($d.cwd) { $d.cwd } elseif ($env:CLAUDE_PROJECT_DIR) { $env:CLAUDE_PROJECT_DIR } else { "." }
 Set-Location $cwd -ErrorAction SilentlyContinue
 
-if (-not (Test-Path ".crew/config.json")) { exit 0 }
+if (-not (Test-Path ".crew" -PathType Container)) { exit 0 }
 
 # Every marker is keyed on this Stop's session. It used to be one
 # .crew/.handoff-requested per REPOSITORY, so two terminals in one repo shared
@@ -122,6 +131,14 @@ if ($d.stop_hook_active -eq $true) {
   }
   exit 0
 }
+
+# From here down: this hook's OWN context-window measurement and nagging --
+# as distinct from the auto-clear handover above, which needed only `.crew/`
+# -- still requires a fully initialised crew repo. Unchanged from before F4:
+# a `.crew/` directory with no config.json gets no warnings and writes no
+# marker, exactly as a repo that never ran `/crew:init` always has.
+if (-not (Test-Path ".crew/config.json")) { exit 0 }
+
 if (-not $d.transcript_path -or -not (Test-Path $d.transcript_path)) { exit 0 }
 
 # No hook_once claim here on purpose: Stop fires once per TURN against a

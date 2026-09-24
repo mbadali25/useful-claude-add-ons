@@ -284,21 +284,66 @@ AUTOCYCLE_MUTATIONS = (
      "  }\n",
      "tests/test_auto_cycle.py::"
      "test_resolve_crew_link_root_classifies_drive_unc_and_rootless_targets[/repo]"),
-    # --- the `.crew/config.json` gate removed entirely: a `.crew/` directory
-    # present with no config.json (or none at all) must stay silent, not fall
-    # through to the merge below -- the regression a directory-only gate
-    # reintroduces. OWNER DECISION reverted the gate from the directory back
-    # to this file; these two mutations replace the directory-gate ones.
-    ("auto-clear.sh's .crew/config.json gate removed entirely", CLEAR_SH,
+    # --- the `.crew/` directory gate reintroducing the OLD `.crew/config.json`
+    # requirement: a `.crew/` directory present with no config.json must ARM
+    # (state (2) of the six-state matrix, test_auto_clear.py's own comment
+    # block), not stand down the way the F3 file-based gate did. OWNER
+    # DECISION reversed the gate from the file back to the directory (crew
+    # 1.0 F4); these two mutations reintroduce the file check this reversal
+    # removed.
+    ("auto-clear.sh's .crew/ directory gate reverts to the old config.json check", CLEAR_SH,
+     "[ -d .crew ] || exit 0\nLOG=\".crew/.autoclear.log\"\n",
      "[ -f .crew/config.json ] || exit 0\nLOG=\".crew/.autoclear.log\"\n",
-     "LOG=\".crew/.autoclear.log\"\n",
      "tests/test_auto_clear.py::"
-     "test_a_crew_directory_with_no_config_json_stays_silent_and_creates_nothing_sh"),
-    ("auto-clear.ps1's .crew/config.json gate removed entirely", CLEAR_PS1,
+     "test_a_crew_directory_with_no_config_json_arms_and_reaches_the_session_check_sh"),
+    ("auto-clear.ps1's .crew/ directory gate reverts to the old config.json check", CLEAR_PS1,
+     "if (-not (Test-Path \".crew\" -PathType Container)) { exit 0 }\n\n$log = \".crew/.autoclear.log\"\n",
      "if (-not (Test-Path \".crew/config.json\" -PathType Leaf)) { exit 0 }\n\n$log = \".crew/.autoclear.log\"\n",
-     "$log = \".crew/.autoclear.log\"\n",
      "tests/test_auto_clear.py::"
-     "test_a_crew_directory_with_no_config_json_stays_silent_and_creates_nothing_ps1"),
+     "test_a_crew_directory_with_no_config_json_arms_and_reaches_the_session_check_ps1"),
+    # --- `.crew/` created as a side effect of note()/Write-CrewAutoClearNote,
+    # WITH the directory gate itself also gone: the never-create rule (state
+    # (1) of the same matrix -- no `.crew/` at all) exists because the gate
+    # above stands the whole hook down before note() can ever run; reintroduce
+    # BOTH the removed gate and the mkdir/New-Item this F4 pass took out of
+    # note() and a session with no `.crew/` at all would get one created the
+    # moment ANY refusal past that point tried to log (here, "no session
+    # id"). Mkdir alone, with the gate left standing, is unreachable dead code
+    # and would make this mutation vacuous -- the gate is what has to go too.
+    ("auto-clear.sh's directory gate is gone and note() creates .crew/ again", CLEAR_SH,
+     "[ -d .crew ] || exit 0\n"
+     "LOG=\".crew/.autoclear.log\"\n"
+     "\n"
+     "note() {  # one line to the log and to stderr; the log is the one anybody reads\n"
+     "  # `.crew/` is guaranteed to exist by the gate above, which runs before this\n"
+     "  # function is ever called -- no mkdir needed, and none may run here: a\n"
+     "  # repo with no `.crew/` must never get one created as a side effect.\n"
+     "  printf",
+     "LOG=\".crew/.autoclear.log\"\n"
+     "\n"
+     "note() {  # one line to the log and to stderr; the log is the one anybody reads\n"
+     "  mkdir -p .crew 2>/dev/null\n"
+     "  printf",
+     "tests/test_auto_clear.py::"
+     "test_no_crew_directory_at_all_stays_silent_and_creates_nothing_sh"),
+    ("auto-clear.ps1's directory gate is gone and Write-CrewAutoClearNote creates .crew/ again", CLEAR_PS1,
+     "if (-not (Test-Path \".crew\" -PathType Container)) { exit 0 }\n"
+     "\n"
+     "$log = \".crew/.autoclear.log\"\n"
+     "\n"
+     "function Write-CrewAutoClearNote([string]$Message) {\n"
+     "  # A Stop hook's stderr is invisible on exit 0, so the log is the only place\n"
+     "  # anybody can find out why nothing happened. `.crew` is guaranteed to exist\n"
+     "  # by the gate above, which runs before this function is ever called -- no\n"
+     "  # New-Item needed, and none may run here.\n"
+     "  $stamp",
+     "$log = \".crew/.autoclear.log\"\n"
+     "\n"
+     "function Write-CrewAutoClearNote([string]$Message) {\n"
+     "  if (-not (Test-Path \".crew\")) { New-Item -ItemType Directory -Path \".crew\" -Force | Out-Null }\n"
+     "  $stamp",
+     "tests/test_auto_clear.py::"
+     "test_no_crew_directory_at_all_stays_silent_and_creates_nothing_ps1"),
     # --- resume --------------------------------------------------------------
     ("the resume cuts the next action off a long handoff", CONTEXT,
      "                lead = f\"Next action: {action}\\n\" if action else \"\"\n",

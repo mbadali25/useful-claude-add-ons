@@ -65,32 +65,28 @@ if ($env:OS -ne 'Windows_NT') { exit 0 }
 $where = if ($Root) { $Root } elseif ($env:CLAUDE_PROJECT_DIR) { $env:CLAUDE_PROJECT_DIR } else { "." }
 Set-Location $where -ErrorAction SilentlyContinue
 
-# Gated on `.crew/config.json`, not on the `.crew/` directory. OWNER DECISION
-# (standing, journaled): auto-clear runs only in an initialised crew repo, and
-# "initialised" means this file exists -- the same test context-watch.sh:81
-# and context-watch.ps1:25 use, and the same one `crew_state.is_crew` names
-# (`bool(load_config)`). This has been the gate before: a directory-only gate
-# sat here briefly, reasoned that "only the machine may opt in"
-# (test_only_the_machine_can_opt_in_and_a_repo_can_only_opt_out) means a repo
-# need not have ANY config to be armed by the machine's global enabled:true,
-# so a `.crew/` directory with no config.json should still reach the merge
-# below. That is true of the MERGE, but the PM's ruling is that "is this a
-# crew repo at all" is a separate question from "did this repo opt out", and
-# this script answers the first one the same way every other hook in this
-# family does -- consistently, not by a bespoke directory check nobody else
-# uses. A repo with NO `.crew/config.json` at all -- a fresh checkout, since
-# it is git-ignored in this very repo -- must stay completely silent and must
-# NEVER get `.crew/` or `.crew/.autoclear.log` created as a side effect of
-# this hook running, so this check runs before Write-CrewAutoClearNote ever
-# gets a chance to call New-Item/Add-Content.
-if (-not (Test-Path ".crew/config.json" -PathType Leaf)) { exit 0 }
+# Gated on the `.crew/` DIRECTORY, not on `.crew/config.json`. OWNER DECISION
+# (crew 1.0 F4, reversing the previous file-based gate -- see CONFIG.md sec
+# 14): `context.autoClear` is a MACHINE-global switch (`crew_config.py`), so
+# it must work in any crew repo without a per-repo config of its own -- and
+# "crew repo" is read the same way both senders now agree: `.crew/` exists.
+# `context-watch.sh`/`.ps1` gate their OWN handover to this script the same
+# way, while their OWN context-window warnings keep requiring a real
+# `.crew/config.json` underneath -- that is a separate question, unaffected
+# here. A repo with NO `.crew/` at all -- a fresh checkout, since the
+# directory itself is git-ignored in this very repo -- must stay completely
+# silent and must NEVER get `.crew/` or `.crew/.autoclear.log` created as a
+# side effect of this hook running, so this check runs before
+# Write-CrewAutoClearNote ever gets a chance to call Add-Content.
+if (-not (Test-Path ".crew" -PathType Container)) { exit 0 }
 
 $log = ".crew/.autoclear.log"
 
 function Write-CrewAutoClearNote([string]$Message) {
   # A Stop hook's stderr is invisible on exit 0, so the log is the only place
-  # anybody can find out why nothing happened.
-  if (-not (Test-Path ".crew")) { New-Item -ItemType Directory -Path ".crew" -Force | Out-Null }
+  # anybody can find out why nothing happened. `.crew` is guaranteed to exist
+  # by the gate above, which runs before this function is ever called -- no
+  # New-Item needed, and none may run here.
   $stamp = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
   Add-Content -Path $log -Value "$stamp`t$Message" -Encoding utf8 -ErrorAction SilentlyContinue
   [Console]::Error.WriteLine("autoclear: $Message")
