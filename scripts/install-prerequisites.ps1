@@ -497,7 +497,12 @@ function Add-McpServer {
         [string]$Url,
         [hashtable]$EnvVars,
         [hashtable]$Headers,
-        [string]$Note
+        [string]$Note,
+        # Lets a caller that must land at a fixed scope regardless of the
+        # global -InstallScope default (Add-OrRefreshMcpServer, below) reuse
+        # this one 'claude mcp add' call site instead of duplicating it -
+        # empty means "use the global default", exactly today's behaviour.
+        [string]$Scope
     )
     if (-not (Test-ClaudeAvailable)) {
         throw "claude not found on PATH in this session - open a new shell and re-run this script."
@@ -531,8 +536,9 @@ function Add-McpServer {
         Write-Skip "MCP server '$Name' already registered"
         return
     }
+    $effectiveScope = if ($Scope) { $Scope } else { $InstallScope }
     if ($Url) {
-        $addArgs = @('mcp', 'add', '--scope', $InstallScope, '--transport', 'http', $Name, $Url)
+        $addArgs = @('mcp', 'add', '--scope', $effectiveScope, '--transport', 'http', $Name, $Url)
         # Headers go after the URL. Used for endpoints that authenticate with a
         # bearer token rather than launching a command, e.g. the Obsidian vault
         # server's Local REST API.
@@ -540,7 +546,7 @@ function Add-McpServer {
             foreach ($k in $Headers.Keys) { $addArgs += @('--header', "${k}: $($Headers[$k])") }
         }
     } else {
-        $addArgs = @('mcp', 'add', '--scope', $InstallScope, $Name)
+        $addArgs = @('mcp', 'add', '--scope', $effectiveScope, $Name)
         if ($EnvVars) {
             foreach ($k in $EnvVars.Keys) { $addArgs += @('--env', "$k=$($EnvVars[$k])") }
         }
@@ -553,6 +559,86 @@ function Add-McpServer {
     $script:Summary.Installed++
     Write-Ok "added MCP server '$Name'"
     if ($Note) { Write-Ok $Note }
+}
+
+function Get-McpRegistrationCommand {
+    # Full 'cmd arg arg...' string 'claude mcp get <name>' reports for an
+    # already-registered server, or $null when it cannot be read or parsed.
+    # 'claude mcp list' (Get-ClaudeMcpServers) only gives the name - this is
+    # the only way to compare an existing registration's command/args against
+    # the exact form a row requires. $null is its own value here, never read
+    # as a match or a mismatch.
+    param([string]$Name)
+    if (-not (Test-ClaudeAvailable)) { return $null }
+    try {
+        $out = (claude mcp get $Name 2>$null) -join "`n"
+    } catch {
+        return $null
+    }
+    if ($LASTEXITCODE -ne 0) { return $null }
+    $cmd = $null; $cargs = $null
+    foreach ($line in ($out -split "`n")) {
+        if ($line -match '^\s*Command:\s*(.*)$') { $cmd = $Matches[1].Trim() }
+        if ($line -match '^\s*Args:\s*(.*)$') { $cargs = $Matches[1].Trim() }
+    }
+    if (-not $cmd) { return $null }
+    return ("$cmd $cargs").Trim()
+}
+
+function Add-OrRefreshMcpServer {
+    # Same detect-then-act contract as Add-McpServer, but for a row that must
+    # land at a fixed scope regardless of the global -InstallScope default,
+    # and that must notice when an earlier run (or a hand-added registration)
+    # left different command/args behind rather than trusting the registered
+    # name alone - Add-McpServer's plain 'already registered' skip treats any
+    # registration under the name as current, which is exactly wrong once the
+    # required flags change. The actual 'claude mcp add' still happens inside
+    # Add-McpServer itself (via its own -Scope parameter) rather than here, so
+    # this is not a second call site for it.
+    param(
+        [string]$Scope,
+        [string]$Name,
+        [string[]]$CommandArgs,
+        [string]$Note
+    )
+    if (-not (Test-ClaudeAvailable)) {
+        throw "claude not found on PATH in this session - open a new shell and re-run this script."
+    }
+    $launcher = @($CommandArgs) | Select-Object -First 1
+    if ($launcher -and -not (Get-Command $launcher -ErrorAction SilentlyContinue)) {
+        Write-WarnErr "not registering MCP server '$Name': its launch command '$launcher' does not resolve on PATH in this session. 'claude mcp add' records a command without running it, so registering now would report success for a server that cannot start."
+        throw "MCP server '$Name' not registered - '$launcher' is not on PATH."
+    }
+    $required = ($CommandArgs -join ' ').Trim()
+    if (Test-McpServerRegistered $Name) {
+        $current = Get-McpRegistrationCommand -Name $Name
+        if ($null -eq $current) {
+            Write-Skip "MCP server '$Name' already registered (could not read its command/args back from 'claude mcp get' to compare against the required form)"
+            return
+        }
+        if ($current -eq $required) {
+            Write-Skip "MCP server '$Name' already registered with the required form"
+            return
+        }
+        if ($NonInteractive -or $All -or $Select) {
+            Write-Warn2 "MCP server '$Name' is registered as '$current', not the required '$required' - outdated registration left; run with -Select web-testing interactively to be asked to migrate it."
+            return
+        }
+        Write-Host ""
+        Write-Host "  MCP server '$Name' is already registered as:" -ForegroundColor Yellow
+        Write-Host "    $current" -ForegroundColor DarkGray
+        Write-Host "  This row requires:" -ForegroundColor Yellow
+        Write-Host "    $required" -ForegroundColor DarkGray
+        $answer = "$(Read-Host "  Remove and re-register '$Name' with the required form? [y/N]")".Trim()
+        if ($answer -match '^(?i)y(es)?$') {
+            try { claude mcp remove $Name 2>&1 | Out-Null } catch { }
+            Get-ClaudeMcpServers -Refresh | Out-Null
+        } else {
+            Write-Skip "leaving the existing registration for '$Name' as it is"
+            return
+        }
+    }
+    Add-McpServer -Name $Name -CommandArgs $CommandArgs -Scope $Scope -Note $Note
 }
 
 function Get-ClaudeSkillsDir {
@@ -2322,35 +2408,72 @@ if (Test-Selected 'web-testing') {
             throw "no package.json in $(Get-Location) - Playwright installs as a project devDependency, not globally. cd into the project's root (or run 'npm init -y' first) and re-run '-Select web-testing'."
         }
         $pkg = Get-Content 'package.json' -Raw | ConvertFrom-Json
-        if ($pkg.devDependencies.'@playwright/test') {
-            Write-Ok "@playwright/test already a devDependency here - reinstalling the pinned versions to pick up updates"
+        # Skip the reinstall entirely when both pinned versions are already exact -
+        # without this a rerun against an already-installed project ran 'npm
+        # install' again every time, so two runs looked identical to one that
+        # only checked.
+        if ($pkg.devDependencies.'@playwright/test' -eq '1.63.0' -and $pkg.devDependencies.'@axe-core/playwright' -eq '4.13.0') {
+            Write-Skip "@playwright/test@1.63.0 and @axe-core/playwright@4.13.0 already pinned in package.json"
+        } else {
+            if ($pkg.devDependencies.'@playwright/test') {
+                Write-Ok "@playwright/test already a devDependency here - reinstalling the pinned versions to pick up updates"
+            }
+            npm install -D '@playwright/test@1.63.0' '@axe-core/playwright@4.13.0'
+            if ($LASTEXITCODE -ne 0) { throw "'npm install -D @playwright/test@1.63.0 @axe-core/playwright@4.13.0' failed - see the output above." }
+            $script:Summary.Installed++
+            Write-Ok "@playwright/test@1.63.0 and @axe-core/playwright@4.13.0 added as devDependencies"
         }
-        npm install -D '@playwright/test@1.63.0' '@axe-core/playwright@4.13.0'
-        if ($LASTEXITCODE -ne 0) { throw "'npm install -D @playwright/test@1.63.0 @axe-core/playwright@4.13.0' failed - see the output above." }
-        $script:Summary.Installed++
-        Write-Ok "@playwright/test@1.63.0 and @axe-core/playwright@4.13.0 added as devDependencies"
 
-        npx playwright install --with-deps chromium
-        if ($LASTEXITCODE -ne 0) {
-            Write-Warn2 "'npx playwright install --with-deps chromium' failed - browsers or system deps may be missing; see https://playwright.dev/docs/browsers"
-            throw "Chromium install failed."
+        # 'install --dry-run' prints each browser's cache directory without
+        # touching the network, whether or not it is already there - its own
+        # text never says "already installed", so the directory on disk is what
+        # detects it, not the dry-run output's wording.
+        $chromiumLoc = (npx --no-install playwright install --dry-run chromium 2>$null |
+            Select-String -Pattern '^\s*Install location:\s*(.*)$' |
+            ForEach-Object { $_.Matches[0].Groups[1].Value.Trim() } |
+            Select-Object -First 1)
+        if ($chromiumLoc -and (Test-Path $chromiumLoc)) {
+            Write-Skip "Chromium already installed at $chromiumLoc"
+        } else {
+            # Unlike the Linux/macOS row, Windows browser installs never shell
+            # out to a system package manager, so there is no sudo/root case
+            # to branch on here - '--with-deps' is always safe to pass.
+            npx playwright install --with-deps chromium
+            if ($LASTEXITCODE -ne 0) {
+                Write-Warn2 "'npx playwright install --with-deps chromium' failed - browsers or system deps may be missing; see https://playwright.dev/docs/browsers"
+                throw "Chromium install failed."
+            }
+            Write-Ok "Chromium installed for Playwright"
         }
-        Write-Ok "Chromium installed for Playwright"
 
         if (Test-Path '.claude/agents/playwright-test-planner.md') {
             Write-Skip "Playwright Test Agents already scaffolded (.claude/agents/playwright-test-planner.md exists)"
         } else {
+            # Report OK only when every requested loop actually succeeded - a run
+            # where one loop failed and the other did not used to warn for the
+            # failed one and then print an unconditional OK right after it.
+            $failedLoops = @()
             npx playwright init-agents --loop=claude
-            if ($LASTEXITCODE -ne 0) { Write-Warn2 "'npx playwright init-agents --loop=claude' failed - run it by hand." }
+            if ($LASTEXITCODE -ne 0) { $failedLoops += 'claude' }
             npx playwright init-agents --loop=codex
-            if ($LASTEXITCODE -ne 0) { Write-Warn2 "'npx playwright init-agents --loop=codex' failed - run it by hand." }
-            Write-Ok "Playwright Test Agents scaffolded (planner/generator/healer; claude + codex loops)"
+            if ($LASTEXITCODE -ne 0) { $failedLoops += 'codex' }
+            if ($failedLoops.Count -eq 0) {
+                Write-Ok "Playwright Test Agents scaffolded (planner/generator/healer; claude + codex loops)"
+            } else {
+                Write-Warn2 "Playwright Test Agents scaffolding failed for: $($failedLoops -join ', ') - run 'npx playwright init-agents --loop=<name>' by hand for each."
+            }
         }
 
-        Add-McpServer -Name 'playwright' `
-            -CommandArgs @('npx', '@playwright/mcp@latest', '--isolated', '--headless', '--caps', 'testing') `
+        # Registered at project scope regardless of the global -InstallScope
+        # default - stack-web's SKILL.md documents this row's wiring as a
+        # per-project .mcp.json, not a machine-wide registration - migrated
+        # rather than trusted on name alone, and launched as 'cmd /c npx ...'
+        # because the MCP host cannot execute npx's .cmd shim directly on
+        # Windows ('Connection closed' at connect time otherwise).
+        Add-OrRefreshMcpServer -Scope 'project' -Name 'playwright' `
+            -CommandArgs @('cmd', '/c', 'npx', '@playwright/mcp@latest', '--isolated', '--headless', '--caps', 'testing') `
             -Note "Playwright downloads its browsers on first use if skipped above; 'npx playwright install' does it ahead of time."
-        Add-McpServer -Name 'chrome-devtools' -CommandArgs @('npx', 'chrome-devtools-mcp@latest')
+        Add-OrRefreshMcpServer -Scope 'project' -Name 'chrome-devtools' -CommandArgs @('cmd', '/c', 'npx', 'chrome-devtools-mcp@latest')
 
         if (Get-Command docker -ErrorAction SilentlyContinue) {
             Write-Ok "Docker found - visual baselines can be captured in mcr.microsoft.com/playwright:v1.63.0-noble, the only image guaranteed to match CI's rendering."

@@ -102,6 +102,13 @@ FAILED_STEPS=()
 COUNT_INSTALLED=0
 COUNT_SKIPPED=0
 INSTALL_SCOPE="user"
+# add_or_refresh_mcp_server (lifted above with load_mcp_servers) reads all four
+# of these under 'set -u' - undefined here would be a harness bug, not a
+# script one, so they get the same defaults the real script gives them.
+NON_INTERACTIVE=0
+SELECT_ALL=0
+SELECT_SPEC=""
+TTY_FD=""
 
 REALTOOLS="$TMP/realtools"
 mkdir -p "$REALTOOLS"
@@ -290,6 +297,200 @@ EOF
   check "docker present -> exits 0"                     0 "$rc"
   check "docker present -> names the pinned image"      yes \
     "$(case "$out" in *"mcr.microsoft.com/playwright:v1.63.0-noble"*) echo yes;; *) echo no;; esac)"
+
+  echo
+  echo "=== install_web_testing: idempotent rerun - both devDependency and browser install skip ==="
+  newcase
+  stub_node "20.19.0"
+  cat > "$WORK/stubs/npm" <<'EOF'
+#!/bin/sh
+echo "$@" >> "$NPM_LOG"
+exit 0
+EOF
+  chmod +x "$WORK/stubs/npm"
+  export NPM_LOG="$WORK/npm.log"; : > "$NPM_LOG"
+  mkdir -p "$WORK/fakecache/chromium-9999"
+  export NPX_LOG="$WORK/npx-idempotent.log"; : > "$NPX_LOG"
+  cat > "$WORK/stubs/npx" <<EOF
+#!/bin/sh
+echo "\$@" >> "$NPX_LOG"
+case "\$*" in
+  *"install --dry-run chromium"*) echo "  Install location:    $WORK/fakecache/chromium-9999" ;;
+esac
+exit 0
+EOF
+  chmod +x "$WORK/stubs/npx"
+  stub claude 'exit 0'
+  printf '{"devDependencies":{"@playwright/test":"1.63.0","@axe-core/playwright":"4.13.0"}}\n' > package.json
+  mkdir -p .claude/agents; touch .claude/agents/playwright-test-planner.md
+  run_iwt
+  check "idempotent rerun -> exits 0"                   0 "$rc"
+  check "idempotent rerun -> skips 'npm install -D'"    0 "$(grep -c -- '-D' "$NPM_LOG")"
+  check "idempotent rerun -> says devDependencies already pinned" yes \
+    "$(case "$out" in *"already pinned in package.json"*) echo yes;; *) echo no;; esac)"
+  check "idempotent rerun -> does not reinstall chromium" 0 \
+    "$(grep -cE 'install (--with-deps )?chromium$' "$NPX_LOG")"
+  check "idempotent rerun -> says chromium already installed" yes \
+    "$(case "$out" in *"Chromium already installed at"*) echo yes;; *) echo no;; esac)"
+  unset NPM_LOG NPX_LOG
+
+  echo
+  echo "=== install_web_testing: --with-deps needs root/sudo - falls back and warns without either ==="
+  newcase
+  stub_node "20.19.0"
+  stub npm 'exit 0'
+  export NPX_LOG="$WORK/npx-nosudo.log"; : > "$NPX_LOG"
+  cat > "$WORK/stubs/npx" <<EOF
+#!/bin/sh
+echo "\$@" >> "$NPX_LOG"
+exit 0
+EOF
+  chmod +x "$WORK/stubs/npx"
+  stub claude 'exit 0'
+  # Non-root id, and no 'sudo' stub at all - PATH is restricted to
+  # $WORK/stubs:$REALTOOLS and neither carries one, so 'sudo -n true' fails as
+  # command-not-found, the same shape a non-root shell without passwordless
+  # sudo actually has. Never prompts either way: '-n' is what makes sudo fail
+  # instead of asking for a password.
+  cat > "$WORK/stubs/id" <<'EOF'
+#!/bin/sh
+if [ "$1" = "-u" ]; then echo 1000; exit 0; fi
+exit 1
+EOF
+  chmod +x "$WORK/stubs/id"
+  printf '{}\n' > package.json
+  mkdir -p .claude/agents; touch .claude/agents/playwright-test-planner.md
+  run_iwt
+  check "no-sudo path -> exits 0"                       0 "$rc"
+  check "no-sudo path -> installs chromium without --with-deps" yes \
+    "$(grep -qE 'install chromium$' "$NPX_LOG" && echo yes || echo no)"
+  check "no-sudo path -> never passes --with-deps"      0 "$(grep -c -- '--with-deps' "$NPX_LOG")"
+  check "no-sudo path -> warns with the exact sudo command" yes \
+    "$(case "$out" in *"sudo npx playwright install-deps chromium"*) echo yes;; *) echo no;; esac)"
+  unset NPX_LOG
+
+  echo
+  echo "=== install_web_testing: init-agents partial failure is a WARN, not an unconditional OK ==="
+  newcase
+  stub_node "20.19.0"
+  stub npm 'exit 0'
+  export NPX_LOG="$WORK/npx-initfail.log"; : > "$NPX_LOG"
+  cat > "$WORK/stubs/npx" <<EOF
+#!/bin/sh
+echo "\$@" >> "$NPX_LOG"
+case "\$*" in
+  *"init-agents --loop=claude"*) exit 1 ;;
+  *) exit 0 ;;
+esac
+EOF
+  chmod +x "$WORK/stubs/npx"
+  stub claude 'exit 0'
+  printf '{}\n' > package.json
+  # No Test Agents scaffold - the claude loop is made to fail, the codex loop
+  # to succeed, so the two loops must be tracked separately.
+  run_iwt
+  check "init-agents partial failure -> still exits 0"  0 "$rc"
+  check "init-agents partial failure -> names the failed loop" yes \
+    "$(case "$out" in *"scaffolding failed for: claude"*) echo yes;; *) echo no;; esac)"
+  check "init-agents partial failure -> does not print the unconditional success OK" no \
+    "$(case "$out" in *"Test Agents scaffolded (planner"*) echo yes;; *) echo no;; esac)"
+  unset NPX_LOG
+
+  echo
+  echo "=== add_or_refresh_mcp_server: project scope, outdated-registration detection ==="
+  newcase
+  stub npx 'exit 0'
+  CLAUDE_LOG="$WORK/claude-mcp.log"; : > "$CLAUDE_LOG"
+  export CLAUDE_LOG
+  cat > "$WORK/stubs/claude" <<'EOF'
+#!/bin/sh
+echo "$@" >> "$CLAUDE_LOG"
+if [ "$1" = "mcp" ] && [ "$2" = "get" ]; then
+  cat "$MCP_GET_OUTPUT" 2>/dev/null
+  exit "${MCP_GET_EXIT:-0}"
+fi
+exit 0
+EOF
+  chmod +x "$WORK/stubs/claude"
+
+  # Case 1: fresh registration lands at --scope project regardless of the
+  # global INSTALL_SCOPE ('user' in this harness, same as the real default).
+  MCP_CACHE=""
+  COUNT_INSTALLED=0
+  add_or_refresh_mcp_server "project" "playwright" npx @playwright/mcp@latest --isolated --headless --caps testing
+  rc=$?
+  check "fresh registration -> exits 0"                 0 "$rc"
+  check "fresh registration -> uses --scope project"    yes \
+    "$(grep -qF -- '--scope project' "$CLAUDE_LOG" && echo yes || echo no)"
+  check "fresh registration -> counts one install"      1 "$COUNT_INSTALLED"
+
+  # Case 2: already registered with the exact required form -> skip, never
+  # removes or re-adds.
+  : > "$CLAUDE_LOG"
+  export MCP_GET_OUTPUT="$WORK/mcp-get-match.txt"
+  cat > "$MCP_GET_OUTPUT" <<'EOF'
+playwright:
+  Type: stdio
+  Command: npx
+  Args: @playwright/mcp@latest --isolated --headless --caps testing
+EOF
+  MCP_CACHE="playwright"
+  out2="$(add_or_refresh_mcp_server "project" "playwright" npx @playwright/mcp@latest --isolated --headless --caps testing 2>&1)"
+  rc=$?
+  check "matching registration -> exits 0"              0 "$rc"
+  check "matching registration -> skips"                yes \
+    "$(case "$out2" in *"already registered with the required form"*) echo yes;; *) echo no;; esac)"
+  check "matching registration -> never re-adds"        0 "$(grep -c 'mcp add' "$CLAUDE_LOG")"
+
+  # Case 3: outdated registration, non-interactive -> WARNs and leaves it -
+  # never prompts, never removes, never re-adds.
+  : > "$CLAUDE_LOG"
+  export MCP_GET_OUTPUT="$WORK/mcp-get-stale.txt"
+  cat > "$MCP_GET_OUTPUT" <<'EOF'
+playwright:
+  Type: stdio
+  Command: npx
+  Args: @playwright/mcp@latest
+EOF
+  MCP_CACHE="playwright"
+  NON_INTERACTIVE=1
+  out3="$(add_or_refresh_mcp_server "project" "playwright" npx @playwright/mcp@latest --isolated --headless --caps testing 2>&1)"
+  rc=$?
+  NON_INTERACTIVE=0
+  check "outdated + non-interactive -> exits 0"         0 "$rc"
+  check "outdated + non-interactive -> names the migrate path" yes \
+    "$(case "$out3" in *"outdated registration left; run with --select web-testing interactively"*) echo yes;; *) echo no;; esac)"
+  check "outdated + non-interactive -> never removes"   0 "$(grep -c 'mcp remove' "$CLAUDE_LOG")"
+  check "outdated + non-interactive -> never re-adds"   0 "$(grep -c 'mcp add' "$CLAUDE_LOG")"
+
+  # Case 4: outdated registration, interactive accept -> removes the old one
+  # then re-adds with the required form.
+  : > "$CLAUDE_LOG"
+  exec 9<<< "y"
+  TTY_FD=9
+  out4="$(add_or_refresh_mcp_server "project" "playwright" npx @playwright/mcp@latest --isolated --headless --caps testing 2>&1)"
+  rc=$?
+  exec 9<&-
+  TTY_FD=""
+  check "outdated + interactive accept -> exits 0"      0 "$rc"
+  check "outdated + interactive accept -> removes the old one" yes \
+    "$(grep -qF 'mcp remove playwright' "$CLAUDE_LOG" && echo yes || echo no)"
+  check "outdated + interactive accept -> re-adds at --scope project" yes \
+    "$(grep -qF -- '--scope project' "$CLAUDE_LOG" && echo yes || echo no)"
+
+  # Case 5: 'claude mcp get' cannot be read - unknown stays its own value,
+  # never assumed to match or to differ.
+  : > "$CLAUDE_LOG"
+  export MCP_GET_EXIT=1
+  : > "$MCP_GET_OUTPUT"
+  MCP_CACHE="playwright"
+  out5="$(add_or_refresh_mcp_server "project" "playwright" npx @playwright/mcp@latest --isolated --headless --caps testing 2>&1)"
+  rc=$?
+  unset MCP_GET_EXIT
+  check "unreadable registration -> exits 0"            0 "$rc"
+  check "unreadable registration -> says could not read" yes \
+    "$(case "$out5" in *"could not read its command/args back"*) echo yes;; *) echo no;; esac)"
+  unset CLAUDE_LOG MCP_GET_OUTPUT
 fi
 
 cd "$REPO" || exit 2
@@ -318,6 +519,30 @@ case "$(awk "/Test-Selected 'web-testing'/,/^\}/" "$PS1SCRIPT")" in
   *'Get-Command docker'*) got=yes ;; *) got=no ;;
 esac
 check ".ps1 web-testing checks for docker (warning only)" yes "$got"
+# Windows MCP host cannot launch npx's .cmd shim directly ('Connection closed')
+# - both registrations must wrap it as 'cmd /c npx ...', not call npx bare.
+webtest_block="$(awk "/Test-Selected 'web-testing'/,/^\}/" "$PS1SCRIPT")"
+case "$webtest_block" in
+  *"'cmd', '/c', 'npx', '@playwright/mcp@latest'"*) got=yes ;; *) got=no ;;
+esac
+check ".ps1 web-testing wraps the playwright MCP server as cmd /c npx" yes "$got"
+case "$webtest_block" in
+  *"'cmd', '/c', 'npx', 'chrome-devtools-mcp@latest'"*) got=yes ;; *) got=no ;;
+esac
+check ".ps1 web-testing wraps chrome-devtools-mcp as cmd /c npx" yes "$got"
+# Registered at project scope regardless of the global -InstallScope default -
+# through the new helper, not the shared Add-McpServer (which would use
+# -InstallScope).
+check ".ps1 web-testing no longer calls the shared Add-McpServer" 0 \
+  "$(printf '%s\n' "$webtest_block" | grep -c "Add-McpServer -Name 'playwright'")"
+case "$webtest_block" in
+  *"Add-OrRefreshMcpServer -Scope 'project' -Name 'playwright'"*) got=yes ;; *) got=no ;;
+esac
+check ".ps1 web-testing registers playwright at -Scope project" yes "$got"
+case "$webtest_block" in
+  *"Add-OrRefreshMcpServer -Scope 'project' -Name 'chrome-devtools'"*) got=yes ;; *) got=no ;;
+esac
+check ".ps1 web-testing registers chrome-devtools at -Scope project" yes "$got"
 
 if [ ! -x "$REAL_PWSH" ]; then
   printf '\033[90m%s\033[0m\n' "SKIPPED: pwsh not found at '$REAL_PWSH' - install-prerequisites.ps1's behavioural half of this suite went unverified in this run. That is a MISSING TOOL, not a failed check."
@@ -332,7 +557,11 @@ if [ "$1" = "-v" ]; then echo "v20.19.0"; exit 0; fi
 exit 0
 STUB
   chmod +x "$PWSHTMP/stubs/node"
-  for t in npm npx claude docker; do
+  # 'cmd' stands in for cmd.exe here - always on PATH on real Windows (where
+  # this script only ever runs), never on the Linux box this harness runs on,
+  # so it needs the same stub treatment as npm/npx/claude/docker rather than
+  # being read as a missing launcher.
+  for t in npm npx claude docker cmd; do
     printf '#!/bin/sh\nexit 0\n' > "$PWSHTMP/stubs/$t"
     chmod +x "$PWSHTMP/stubs/$t"
   done
@@ -364,6 +593,8 @@ Invoke-Expression (Get-Block '^function Test-ClaudeAvailable' '^\}')
 Invoke-Expression (Get-Block '^function Get-ClaudeMcpServers' '^\}')
 Invoke-Expression (Get-Block '^function Test-McpServerRegistered' '^\}')
 Invoke-Expression (Get-Block '^function Add-McpServer' '^\}')
+Invoke-Expression (Get-Block '^function Get-McpRegistrationCommand' '^\}')
+Invoke-Expression (Get-Block '^function Add-OrRefreshMcpServer' '^\}')
 function Test-Selected { param([string]$Key) return ($Key -eq 'web-testing') }
 $body = Get-Block "Test-Selected 'web-testing'" '^\}'
 # Body is the whole 'if (Test-Selected ...) { Invoke-Step ... { ... } }' wrapper;

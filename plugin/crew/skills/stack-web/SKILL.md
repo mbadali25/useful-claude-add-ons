@@ -81,16 +81,18 @@ report path, never a summary line. A rule proposed for `verify.json`:
 {
   "paths": ["playwright.config.*", "**/*.spec.ts", "tests/**/*.ts", "e2e/**/*.ts"],
   "run": [
-    "sh -c 'P=node_modules/.bin/playwright; [ -x \"$P\" ] || P=$(command -v playwright 2>/dev/null); if [ -z \"$P\" ]; then echo \"TOOL MISSING: playwright is not installed locally (checked node_modules/.bin and PATH) - npx would try to download it rather than reporting UNVERIFIED. Run npm install to check locally.\" >&2; exit 77; fi; \"$P\" test --reporter=blob'"
+    "sh -c 'P=node_modules/.bin/playwright; if [ ! -x \"$P\" ]; then echo \"TOOL MISSING: playwright is not installed locally (checked node_modules/.bin only - a global playwright on PATH does not count, it could be a different version than the 1.63.0 pin) - run npm install to check locally.\" >&2; exit 77; fi; V=$(\"$P\" --version 2>/dev/null | sed -n \"s/^Version //p\"); if [ \"$V\" != \"1.63.0\" ]; then echo \"TOOL MISMATCH: node_modules/.bin/playwright reports version $V, this repo pins 1.63.0 - run npm install to sync it, do not test against the wrong version.\" >&2; exit 77; fi; \"$P\" test --reporter=blob'"
   ],
   "reach": "local",
   "why": "a rerunnable trace and blob report a reviewer can open, not a summary line"
 }
 ```
 
-The probe checks for an already-installed `playwright` binary (local `node_modules/.bin` first,
-then `PATH`) rather than a bare `command -v npx`, matching this repo's other stack-* rules -
-`npx <missing-pkg>` on a modern npm reaches the registry rather than failing closed.
+The probe checks ONLY the project-local `node_modules/.bin/playwright` binary and never falls back
+to a global one on `PATH` - a global binary could be a different version than the pin, and a passing
+run against the wrong version is worse than an honest UNVERIFIED. It also checks that binary's
+`--version` output matches `1.63.0` exactly before running; a missing binary or a version mismatch
+both report UNVERIFIED (exit 77) rather than testing against the wrong install.
 
 Nothing in this repo writes rules into `verify.json` on a skill's behalf (see the
 `crew-verification` skill) - add this by hand.
