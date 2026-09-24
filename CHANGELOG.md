@@ -23,7 +23,7 @@ All notable changes to this repository are documented here. Format follows [Keep
   `claude-memories-canvas` now points at the same profile. Marketplace
   skill count 36 -> 34.
 
-- **`crew` 1.0.0: retired the 0.20 overview, capabilities and
+- **`crew` 1.0.1: retired the 0.20 overview, capabilities and
   technical-reference guide families; archived the dated progress report.**
   `docs/guides/crew/crew-overview*`, `crew-capabilities*` and
   `crew-technical-reference*` (HTML, DOCX, PDF, and their `-solomon`
@@ -33,23 +33,6 @@ All notable changes to this repository are documented here. Format follows [Keep
   historical record. `plugin/crew/tests/test_docs_routing.py`'s `_GUIDES` and
   `sabotage.py`'s `GUIDE_HTML` now point at the archived progress report,
   the one guide in this set with no generator of its own.
-
-- **`crew` 1.0.0: web testing is core.** `/crew:webtest` runs Playwright
-  Test Agents inside crew's lifecycle; a healer skip is a finding, and the
-  trace and axe results go to the reviewer. New `stack-web` skill. Verify
-  rules: blob reporter, merge-reports, axe zero violations, no committed auth
-  state, and visual diffs only inside the pinned Playwright image, otherwise
-  UNVERIFIED. `/crew:init` gains a web phase. The installer gains a
-  default-on web-testing row (Node >=20.19, `@playwright/test` 1.63.0,
-  `@axe-core/playwright` 4.13.0, chromium, Test Agents, MCP, and a Docker
-  warning). `/crew:migrate` notes that autopilot arrives in 1.1.0. Web
-  testing guard: skip detection over full file content, renames and helpers;
-  exclusions only as `- skip:` list items; storageState resolved or
-  fail-closed; visual checks need container evidence; open webtest findings
-  make a review FINDINGS; web-testing install row is idempotent, avoids sudo
-  when unavailable, reports init-agents/MCP failures honestly, and registers
-  MCP servers at project scope with `cmd /c` on Windows. Crew counts: 34
-  commands, 29 bundled skills, 4 agents, 34 hook entries.
 
 - **`crew` 1.0.0: one session owns a ticket.** The interactive session carries
   a ticket through brainstorm → spec → plan → implement → tests → docs →
