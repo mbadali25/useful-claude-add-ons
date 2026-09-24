@@ -207,6 +207,8 @@ it from the queue, same as checking it off. This fix does not touch any
 existing vault - it only stops new ones of this shape from being written -
 so a live vault's current backlog needs this done by hand, once, per vault.
 
+## Recall contract (for crew's context hook)
+
 Stable read interface for any caller that injects vault context - crew's
 context hook is the first. It is read-only: no network, no REST bridge, no
 writes, no cache.

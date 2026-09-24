@@ -25,9 +25,7 @@ developer's real opt-in, enumerate a real window, or send a keystroke.
 import json
 import os
 import pathlib
-import shutil
 import subprocess
-import tempfile
 import time
 
 import pytest
@@ -569,53 +567,18 @@ def _armed_or_silent(result, root):
 
 
 # A "silent" case never reaches method/window resolution -- in_scope refuses
-# first -- so only the "armed" cases below depend on a REAL capability this
-# host may not have, whatever `_sendable`'s fake tmux/window stands in for.
-# Detect the capability directly rather than trusting the OS name: burn-in
-# saw both `method tmux but tmux is not on PATH` and `no window whose title
-# ...` on a real, opted-in Windows host, which is exactly what a host with
-# neither capability produces even when the narrowing decision is correct.
-
-
-def _real_tmux_on_path():
-    """The REAL PATH's tmux, never `_sendable`'s injected shim: if this host
-    truly has no tmux, `resolve_method` refuses by design and no "armed"
-    sh-flavour case can ever be proved here."""
-    return shutil.which("tmux") is not None
-
-
-_OWNER_WINDOW_CAPABLE = None
-
-
-def _pwsh_can_resolve_an_owner_window():
-    """Probes the REAL (non-stubbed) window walk once: does any window on
-    this host belong to an ancestor of this process? A non-interactive
-    runner -- a scheduled task, a headless CI agent -- has none, and no
-    "armed" ps1-flavour case can be proved there either, independent of
-    whether the narrowing decision itself is right. Memoized: this spawns a
-    real pwsh and is not free."""
-    global _OWNER_WINDOW_CAPABLE  # pylint: disable=global-statement
-    if _OWNER_WINDOW_CAPABLE is not None:
-        return _OWNER_WINDOW_CAPABLE
-    if _PWSH is None:
-        _OWNER_WINDOW_CAPABLE = False
-        return False
-    scratch = tempfile.mkdtemp(prefix="crew-owner-window-probe-")
-    try:
-        base = pathlib.Path(scratch)
-        root = crew_fixtures.make_repo(base, config={"context": {"warnAt": 0.8}}, git=False)
-        _machine(root)
-        env = dict(os.environ, HOME=str(base / "home"), USERPROFILE=str(base / "home"),
-                   CLAUDE_PROJECT_DIR=str(root), CREW_AUTOCLEAR_INHIBIT="1", OS="Windows_NT")
-        result = subprocess.run(
-            [_PWSH, "-NoProfile", "-NonInteractive", "-File", _script("ps1", "auto-clear"),
-             "-Force", "-DryRun", "-Root", str(root)],
-            cwd=str(root), env=env, stdin=subprocess.DEVNULL,
-            capture_output=True, text=True, check=False, timeout=30)
-        _OWNER_WINDOW_CAPABLE = "would send" in result.stdout
-    finally:
-        shutil.rmtree(scratch, ignore_errors=True)
-    return _OWNER_WINDOW_CAPABLE
+# first -- so only the "armed" cases below would depend on a REAL capability
+# this host may lack. But every case in `_SCOPE_CASES` is driven through
+# `_scoped`, which always calls `_sendable` first -- and `_sendable` injects
+# a FAKE tmux (sh) or a FAKE window stub (ps1) unconditionally, for every
+# case, before `resolve_method`/window resolution ever runs. So no case here
+# ever reaches the real, non-stubbed capability at all, and a probe for it
+# (Codex review, W8: "the new capability checks skip armed wrapper cases even
+# though _sendable injects a fake tmux/window") was skipping "armed" cases on
+# a CI host that has no real tmux or no real ancestor-owned window, even
+# though the fake substitute those cases actually exercise works fine there.
+# A capability check only belongs on a test whose fixture does NOT inject the
+# fake; nothing in this table qualifies, so nothing here skips on that basis.
 
 
 _ROOT_TOKEN = "{root}"
@@ -672,23 +635,6 @@ def test_the_machine_can_narrow_auto_clear_to_listed_repos_and_sessions(
     del case
     if isinstance(expect, dict):
         expect = expect[flavor]
-    if expect == "armed":
-        # Only an "armed" case reaches method/window resolution -- in_scope
-        # refuses every "silent" one first -- so only these depend on a
-        # capability this host may genuinely lack.
-        if flavor == "sh" and not _real_tmux_on_path():
-            pytest.skip("tmux is not on PATH on this host, so this case can "
-                        "only be PROVED armed by actually resolving a method "
-                        "- see test_in_scope_decides_the_scope_matrix_with_"
-                        "no_subprocess_on_every_os for the narrowing decision "
-                        "itself, which does not need tmux")
-        if flavor == "ps1" and not _pwsh_can_resolve_an_owner_window():
-            pytest.skip("no window on this host belongs to any ancestor of "
-                        "this process (a non-interactive runner), so this "
-                        "case can only be PROVED armed by actually resolving "
-                        "one - see test_in_scope_decides_the_scope_matrix_"
-                        "with_no_subprocess_on_every_os for the narrowing "
-                        "decision itself, which does not need a window")
     root = _repo(tmp_path)
 
     result = _scoped(flavor, tmp_path, root, **{k: _fill(v, root) for k, v in scope.items()})

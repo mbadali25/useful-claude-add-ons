@@ -14,6 +14,7 @@ import pytest
 import context  # noqa: F401  pylint: disable=unused-import
 import crew_instructions as ci
 from context_fixtures import make_repo
+from crew_common import read_text
 
 
 def _big_repo(tmp_path, count=3, marks=40):
@@ -301,13 +302,96 @@ def test_codex_trust_is_unknown_when_codex_home_is_set_but_missing(tmp_path, mon
     assert state == ci.TRUST_UNKNOWN and "does-not-exist" in detail
 
 
+# --- W8 review fix #2: malformed TOML must never report "trusted" ----------
+
+def _write_config_toml(tmp_path, monkeypatch, body):
+    home = tmp_path / "codex-home"
+    home.mkdir()
+    (home / "config.toml").write_text(body, encoding="utf-8")
+    monkeypatch.setenv("CODEX_HOME", str(home))
+    return home
+
+
+def test_codex_trust_is_unknown_for_malformed_toml_even_with_a_trusted_entry(tmp_path, monkeypatch):
+    """`broken =` (a key with no value) is not valid TOML. A real trust
+    entry for `root` sits right above it in the same file, so the previous
+    regex scanner reported TRUST_OK regardless -- the false "trusted" this
+    fix closes."""
+    root = _big_repo(tmp_path)
+    path = os.path.abspath(str(root))
+    body = f'[projects."{path}"]\ntrust_level = "trusted"\n\nbroken =\n'
+    _write_config_toml(tmp_path, monkeypatch, body)
+
+    state, detail = ci.codex_trust(str(root))
+
+    assert state == ci.TRUST_UNKNOWN
+    assert "not valid TOML" in detail
+
+
+def test_codex_trust_malformed_fallback_scanner_also_reports_unknown(tmp_path, monkeypatch):
+    """Same fixture, but with `tomllib` unavailable (as on Python 3.8-3.10) --
+    the fallback line scanner must independently refuse to call this
+    trusted, not just tomllib."""
+    root = _big_repo(tmp_path)
+    monkeypatch.setattr(ci, "_tomllib", None)
+    path = os.path.abspath(str(root))
+    body = f'[projects."{path}"]\ntrust_level = "trusted"\n\nbroken =\n'
+    _write_config_toml(tmp_path, monkeypatch, body)
+
+    state, detail = ci.codex_trust(str(root))
+
+    assert state == ci.TRUST_UNKNOWN
+    assert "broken =" in detail
+
+
+def test_codex_trust_fallback_scanner_still_trusts_a_clean_file(tmp_path, monkeypatch):
+    """The fallback path is not simply disabled -- a well-formed file with no
+    unclassifiable line still resolves TRUST_OK without tomllib."""
+    root = _big_repo(tmp_path)
+    monkeypatch.setattr(ci, "_tomllib", None)
+    path = os.path.abspath(str(root))
+    body = f'[projects."{path}"]\ntrust_level = "trusted"\n'
+    _write_config_toml(tmp_path, monkeypatch, body)
+
+    state, detail = ci.codex_trust(str(root))
+
+    assert state == ci.TRUST_OK and "trusted" in detail
+
+
+# --- W8 review fix #3: canonical (realpath) beats literal, Codex's own order
+
+def test_codex_trust_prefers_the_canonical_path_over_a_symlinked_literal(tmp_path, monkeypatch):
+    """A symlinked root: the literal (symlink) path is trusted, the
+    canonical (realpath) target is untrusted. Codex looks up canonical
+    before literal, so the overall answer must be untrusted, not trusted --
+    the previous implementation returned whichever entry came first in the
+    FILE, which this fixture writes in the trust-first order to prove the
+    fix reads by lookup order, not file order."""
+    real = tmp_path / "real-repo"
+    real.mkdir()
+    link = tmp_path / "link-to-repo"
+    try:
+        link.symlink_to(real, target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(f"cannot create a symlink here: {exc}")
+    literal = os.path.abspath(str(link))
+    canonical = os.path.realpath(str(link))
+    body = (f'[projects."{literal}"]\ntrust_level = "trusted"\n\n'
+            f'[projects."{canonical}"]\ntrust_level = "untrusted"\n')
+    _write_config_toml(tmp_path, monkeypatch, body)
+
+    state, detail = ci.codex_trust(str(link))
+
+    assert state == ci.TRUST_CLOSED and "untrusted" in detail
+
+
 def test_codex_trust_windows_paths_fold_case_insensitively(monkeypatch):
     monkeypatch.setattr(ci.os, "name", "nt")
     text = '[projects."C:\\\\Repos\\\\thing"]\ntrust_level = "trusted"\n'
 
-    level, matched = ci._scan_project_trust(text, ["c:\\repos\\thing"])
+    level, matched, bad_line = ci._scan_project_trust(text, ["c:\\repos\\thing"])
 
-    assert (level, matched) == ("trusted", "C:\\Repos\\thing")
+    assert (level, matched, bad_line) == ("trusted", "C:\\Repos\\thing", None)
 
 
 def test_codex_probe_reports_a_closed_trust_gate_plainly_not_as_fine(tmp_path, fake_codex, monkeypatch):
@@ -426,3 +510,46 @@ def test_codex_write_says_the_hooks_file_is_machine_local(tmp_path, capsys):
     ci.main(["codex", "--root", str(root), "--plugin-root", "/opt/crew"])
 
     assert "machine-local" in capsys.readouterr().out
+
+
+# --- W8 review fix: docs must not tell users to run `--profile review|work` --
+# against PROJECT config -----------------------------------------------------
+#
+# CODEX_CONFIG (above) deliberately never writes a `[profiles.*]` table into
+# the generated `.codex/config.toml`, because `profiles` is on Codex's own
+# project-local config denylist and is stripped every time it loads, trusted
+# or not (MEASURED, codex-cli 0.154.0). A doc telling a reader to run
+# `codex exec --profile review` / `--profile work` describes a project
+# profile that was never applied in the first place. `--profile NAME` is a
+# real flag -- it just layers a USER-level `$CODEX_HOME/NAME.config.toml`,
+# never this repo's `.codex/config.toml` -- so the only wrong claim is
+# "against the project config", which this scans the repo's shipped docs for.
+
+_REPO_ROOT = os.path.abspath(os.path.join(context._ROOT, os.pardir, os.pardir))  # pylint: disable=protected-access
+_BAD_PROFILE_INVOCATION_RE = re.compile(r"codex\s+exec\b[^\n<]*--profile\s+(review|work)\b")
+_SKIP_DIRS = {".git", "node_modules", "graphify-out"}
+
+
+def _doc_files(root):
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if d not in _SKIP_DIRS]
+        for name in filenames:
+            if name.endswith((".md", ".html")):
+                yield os.path.join(dirpath, name)
+
+
+def test_no_shipped_doc_tells_users_to_run_a_profile_against_project_config():
+    """A doc MAY still explain that `--profile NAME` exists (it does, and is
+    real) -- this only refuses the specific runnable invocation
+    (`codex exec --profile review|work ...`) that implies a PROJECT profile
+    applied, which CODEX_CONFIG's own comment says never happens."""
+    offenders = []
+    for path in _doc_files(_REPO_ROOT):
+        text = read_text(path)
+        if text is None:
+            continue
+        for match in _BAD_PROFILE_INVOCATION_RE.finditer(text):
+            line = text.count("\n", 0, match.start()) + 1
+            offenders.append(f"{os.path.relpath(path, _REPO_ROOT)}:{line}")
+
+    assert offenders == []
