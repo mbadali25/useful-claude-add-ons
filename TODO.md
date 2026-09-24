@@ -3791,3 +3791,95 @@ Raw: `.work/review/main-B1-B3-W6CLul/out.txt`. B2 drew no finding.
 - FIX `crew_upgrade.py:1321` - report-only (already-current) path prints migration claims ("roles added", "schema 7 -> 7 ... added") for changes it never writes.
 - FIX `tests/test_pm_journal.py:216` - no test covers `O_NOFOLLOW`; removing it leaves the suite green.
 - FIX `tests/test_upgrade.py:428` - B1 tests call `run()` only; deleting `main()`'s new print path leaves them green.
+
+## The verify gate's own tests race each other under `-n auto` - OPEN 2026-09-24
+
+`plugin/crew/tests/test_verify_gate_stop_gate_record.py:1043`
+(`test_22_a_missing_verify_record_refuses_to_sync...`) renames the shared
+`verify_record.py` **in place** - no copy, no lock - so any xdist worker running
+another test against that module at the same moment sees it missing.
+`test_16_a_skip_after_a_pass_deletes_the_stale_fingerprint` (`:850`) and
+`test_39_subshell_parentheses_still_defer` (`:1398`) are its measured victims.
+
+Measured on `obsidian-vault/windowsapps-resolver` @ `2f359231`:
+
+| How it was run | Result for this file |
+|---|---|
+| `pytest plugin/crew/tests/ -q -n auto` | **17 failed** (of 43 suite-wide) |
+| `pytest plugin/crew/tests/test_verify_gate_stop_gate_record.py -q` | **88 passed, 0 failed** in 327s |
+
+**Priority: ordinary. This is a test-suite defect, not a gate-evidence defect.**
+An earlier draft of this entry argued it should come first, on the grounds that
+the verify gate's own regression evidence could not be believed. That was wrong:
+`.crew/verify.json` rule[8] is `python3 -m pytest plugin/crew/tests/ -q` -
+**serial**, no xdist - so the gate never runs the suite the way that produces
+these failures, and its evidence was never affected. Do not "fix" the gate for
+this.
+
+The damage is narrower and worth stating exactly: anyone who runs the suite the
+fast way and reads the failure count as a defect count gets a number that is
+wrong by 17. Both a human and an agent did precisely that on 2026-09-24 and
+reasoned about the gate from it.
+
+FIX: give `test_22` its own copy of `verify_record.py`, or take a lock around
+the rename. Scoped to this mechanism only - the two entries below are different
+mechanisms and must not be folded in.
+
+## `test_verify_gate_lock_window.py`'s sleep-based assertions are host-timing dependent - OPEN 2026-09-24
+
+Separate mechanism from the rename race above. Four failures under `-n auto`,
+from assertions that a lock holder is still running after a fixed `sleep`
+(`plugin/crew/tests/test_verify_gate_lock_window.py:142`, `:222`, `:280`).
+Worker CPU contention breaks the assumption; they pass serially.
+
+One of the four is **not** an xdist artifact and reproduces serially:
+`test_a_zero_prefixed_ttl_is_decimal_and_still_publishes_a_deadline[sh]`
+(`:613`) measures 12-16s against a `<=10s` expectation, because the first
+`lock_extend` fires ~3s after process start on this Windows/Git-Bash host
+(`plugin/crew/hooks/scripts/verify-gate.sh:487`). That is real fork/exec
+overhead, not a calculation bug - the test encodes a host-speed assumption.
+
+FIX: host-relative slack, or measure the interval rather than wall-clock.
+
+## `test_verify_gate_python3_shim.py`'s PATH override is shadowed by Git Bash - OPEN 2026-09-24
+
+Separate mechanism again, and not a race - it reproduces serially.
+`test_the_cygpath_branch_is_taken_when_cygpath_is_present`
+(`plugin/crew/tests/test_verify_gate_python3_shim.py:618`) puts a fake `cygpath`
+on PATH, but Git Bash/MSYS unconditionally prepends `/usr/bin` - which holds the
+real `cygpath.exe` - ahead of the override, so the test exercises the real
+binary and never reaches its own branch. Proven by direct `subprocess.run`
+repro.
+
+FIX: PATH isolation that survives the MSYS prepend, or invoke the shim with an
+explicit interpreter path rather than relying on lookup order.
+
+## The generated `.codex/config.toml`'s `profiles` are ignored at project level - OPEN 2026-09-24
+
+Found during the crew 1.0 Windows burn-in. Codex says so on **stderr every
+run**, and the generated file itself already flagged this as UNVERIFIED.
+
+`[profiles.review]` declares a read-only sandbox. At project level that profile
+is **not applied**, so a reviewer launched with `--profile review` runs under
+whatever the *user* config says - measured as `workspace-write` in the burn-in
+run.
+
+**Why this is its own ticket and not a line in another one.** The whole value of
+a separate reviewer is that it is independent of the thing it reviews. A
+reviewer that believes it is read-only and is in fact able to write the
+workspace can modify the code it was asked to judge, and nothing in the run says
+otherwise - the warning is on stderr, which nobody reads on a green run. This is
+the same shape as the guard that stood down silently: a restriction that is
+declared, believed, and not in force.
+
+Related but distinct, from the same burn-in and NOT to be folded in:
+`commandWindows` **does** fire in `codex exec` - only the PowerShell branch ever
+ran, the bash one never did - but it needs **both** project trust and hook
+trust, and Codex prints no warning when either is missing. That makes
+`codex-probe`'s "configured, not proven" promotable to "proven" for
+`SessionStart` and `UserPromptSubmit` on 0.154.0.
+
+FIX: do not rely on a project-level profile for the reviewer's sandbox. Either
+pass the sandbox explicitly on the command line, or verify at launch that the
+profile took effect and refuse to review if it did not - a reviewer that cannot
+confirm its own restriction should fail closed, not proceed.
