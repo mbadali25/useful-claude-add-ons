@@ -6,6 +6,18 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Changed
 
+- **`crew` 1.0.1: Windows burn-in fixes merged - in-process test decision
+  logic with a default parity sample and the full per-shell matrix marked
+  `slow` (run on windows-latest CI); per-flavour PATH fixtures for shim
+  tests plus `autoClear` `onlyRepos`/`onlySessions` scope narrowing;
+  crash-safe per-event claims, bash resolvers that try every PATH match
+  with a timeout, and Python probes that prove CPython/PyPy and kill the
+  process tree.** Three burn-in lanes (`crew-1.0-burnin-fix1`,
+  `crew-1.0-burnin-fix4`, `crew-1.0-burnin-fix3b`) merged into `crew-1.0`;
+  `obsidian-vault` 0.4.5 picks up the same proven-Python-probe resolver in
+  its bash wrappers from the fix3b lane. `plugin/crew/BUDGETS.md`'s
+  Markdown line-count claim re-measured against the merged tree.
+
 - **`obsidian-canvas` 1.1.2: says plainly that `obsidian-memory-contract`
   ships only with the `obsidian-vault` plugin.** A skill-only install was
   pointed at a profile that is not on the machine; it now says where the
