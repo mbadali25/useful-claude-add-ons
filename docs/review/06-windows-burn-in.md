@@ -71,24 +71,43 @@ Most frequent error lines:
   3  OSError: [WinError 1920] The file cannot be accessed by the system
 ```
 
-### The CRLF failures are REAL, not a checkout artifact
+### The CRLF failures are real, but they are a WINDOWS-CHECKOUT defect, not a shipped one
 
-This is the one that would have been easy to dismiss, and the repo's own notes warn that
-`git show` lies about line endings under `core.autocrlf=true`. So the committed objects were
-read with `git cat-file blob`, which applies no filters:
+**Corrected. An earlier revision of this file claimed the committed blobs carry CR and
+called it a shipping defect. That was wrong, and the measurement behind it was broken.**
 
-| File | CR in committed blob | CR in worktree |
-|---|---|---|
-| `approval-hook.ps1` | **72** | 90 |
-| `approval_hook.py` | **65** | 85 |
-| `completion-audit.ps1` | **66** | 85 |
+Re-measured by writing each blob to a file and counting bytes equal to 13:
 
-The blob itself carries CR. The test asserts `b"\r" not in pathlib.Path(...).read_bytes()`
-and is **correct to fail**. `.gitattributes` pins `*.sh text eol=lf` only — `.ps1` and `.py`
-have no such attribute, so nothing forces normalisation for them.
+| File | blob bytes | CR in committed blob | CR in worktree |
+|---|---|---|---|
+| `approval-hook.ps1` | 9647 | **0** | 204 |
+| `approval_hook.py` | 5999 | **0** | 141 |
+| `completion-audit.ps1` | 14036 | **0** | 293 |
 
-This is a shipping defect, not a local one: those bytes are what anyone who installs crew
-1.0 receives.
+The committed objects are LF. What an installer receives is LF.
+
+**The broken measurement, recorded because the failure mode is reusable.** The original
+count came from:
+
+```sh
+git cat-file blob HEAD:$f | head -c 2000 | od -c | grep -c '\\r'
+```
+
+In single quotes the shell passes `\\r` to grep, and this grep collapsed it to match a
+plain `r`. `grep -o '\\r'` on that same stream returns **98 matches, every one the letter
+"r"** — so the "CR count" was really a count of `od` lines containing the letter r, which
+in English source text is most of them. The control settles it: a genuinely CRLF stream,
+`printf 'a\r\nb\r\n' | od -c | grep -c '\\r'`, returns **1**. The pattern was wrong in both
+directions, reporting large numbers for LF files and small ones for CRLF files. Count bytes
+(`tr -cd '\r' | wc -c`), never `od` text through a regex.
+
+**What survives is still a real defect, with a different owner.** The eleven
+`test_every_new_file_is_lf_only` / `test_wrappers_and_modules_are_lf_only` failures stand,
+because the tests read **working-tree** bytes. `.gitattributes` pins `*.sh text eol=lf` and
+nothing else, so under `core.autocrlf=true` a Windows checkout of the `.py` and `.ps1` files
+gets CRLF — 204, 141 and 293 CR respectively above — and the assertion `b"\r" not in
+read_bytes()` fails correctly. The fix is to extend `eol=lf` to those types, which changes
+what a checkout produces rather than what is stored.
 
 ### The 26 auto-clear narrowing failures are environment, not the feature
 
