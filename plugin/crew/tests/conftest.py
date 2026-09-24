@@ -9,6 +9,8 @@ that specifically exercises the global layer overrides it again with its own
 scratch file; `monkeypatch` allows a later `setattr` to win within the same
 test and undoes everything at teardown regardless of ordering.
 """
+import re
+
 import pytest
 
 import context  # noqa: F401  pylint: disable=unused-import
@@ -84,11 +86,21 @@ def pytest_configure(config):
         "default, run with -m slow or --run-slow")
 
 
+_SLOW_TOKEN_RE = re.compile(r"(?<!\w)slow(?!\w)")
+
+
 def pytest_collection_modifyitems(config, items):
     """Deselect `slow` unless asked for, by `--run-slow` or by any `-m`
     expression naming it -- so `-m slow` and `-m "slow and not pwsh"` both
-    select from the full set rather than from an already-emptied one."""
-    if config.getoption("--run-slow") or "slow" in (config.option.markexpr or ""):
+    select from the full set rather than from an already-emptied one.
+
+    `_SLOW_TOKEN_RE` is a WORD match, not `"slow" in markexpr`: a bare
+    substring check reads `slow` inside `slowfoo` too, so `-m "not slowfoo"`
+    -- a marker that has nothing to do with this one -- read as "slow was
+    named" and returned early, collecting the full set (including the
+    deselected-by-default matrix) instead of applying the expression the
+    caller actually asked for."""
+    if config.getoption("--run-slow") or _SLOW_TOKEN_RE.search(config.option.markexpr or ""):
         return
     keep, drop = [], []
     for item in items:

@@ -1516,6 +1516,10 @@ def _layer_supplies(layer, parts, defaults):
     return False
 
 
+_AUTOCLEAR_MACHINE_ONLY_PATHS = tuple(
+    "context.autoClear." + key for key in crew_state.AUTOCLEAR_MACHINE_ONLY_KEYS)
+
+
 def explain_config(root, path=None):
     """Every globally-settable key, with its effective value and its source.
 
@@ -1538,6 +1542,16 @@ def explain_config(root, path=None):
     `resolve_config` prunes it. Explaining an effective value from a layer the
     resolver would have discarded is how a source column comes to name a key
     that does nothing.
+
+    `context.autoClear.onlyRepos` / `.onlySessions` are a second exception to
+    plain precedence, for the opposite reason a ratchet is: the hooks that
+    actually read them (`crew_autocycle.settings`, `auto-clear.ps1`) consult
+    the machine file ONLY, never a repo's own copy. Their rows carry `source`
+    of `"global"` or `"default"` and never `"repo"`/`"repo+global"`, and a
+    row gets `"repoIgnored"` (the repo's raw value) when a repo config
+    supplies one anyway -- so a repo that sets these sees them named as not
+    in effect, rather than this table claiming a narrowing the run does not
+    apply.
     """
     defaults = default_config()
     repo_cfg = crew_state.load_config(root)
@@ -1555,6 +1569,29 @@ def explain_config(root, path=None):
         from_repo = _layer_supplies(repo_cfg, parts, defaults)
         from_global = _layer_supplies(global_cfg, parts, defaults)
         value = _dig(resolved, parts)
+        if dotted in _AUTOCLEAR_MACHINE_ONLY_PATHS:
+            # `crew_autocycle.settings` and `auto-clear.ps1` read onlyRepos
+            # / onlySessions from the machine file ONLY -- a repo's own copy
+            # is never consulted (AUTOCLEAR_DEFAULTS's comment: a narrowing a
+            # repo could write for itself would be a widening). The generic
+            # repo-over-global precedence below is therefore the WRONG rule
+            # for these two leaves: it would report a repo-level value as
+            # `source: repo` (or merge it into `repo+global`), claiming
+            # auto-clear is narrowed to a repo the hooks never actually
+            # restrict it to. Report the global layer alone, and flag a
+            # repo-level value as ignored rather than folding it in.
+            global_only = crew_state.merge_defaults(defaults, global_cfg)
+            only_value = _dig(global_only, parts)
+            row = {
+                "path": dotted,
+                "value": None if only_value is _MISSING else only_value,
+                "source": "global" if from_global else "default",
+            }
+            if from_repo:
+                repo_value = _dig(repo_cfg, parts)
+                row["repoIgnored"] = None if repo_value is _MISSING else repo_value
+            rows.append(row)
+            continue
         if crew_state.ratchet_spec(dotted) is not None:
             # A ratcheted key does not resolve by precedence, so the merged
             # result is the WRONG value to print for it. This table said
@@ -2513,12 +2550,14 @@ def write_global_config(updates, path=None):
 def _print_explain(rows):
     width = max((len(r["path"]) for r in rows), default=4)
     print(f"{'key'.ljust(width)}  source    value")
-    narrowed = []
+    narrowed, ignored = [], []
     for row in rows:
         print(f"{row['path'].ljust(width)}  {row['source'].ljust(8)}  "
               f"{json.dumps(row['value'])}")
         if row.get("heldDownBy"):
             narrowed.append(row)
+        if "repoIgnored" in row:
+            ignored.append(row)
     # THE NARROWING SOURCE, named, on its own lines. A ratcheted key is the one
     # place in this table where the value shown is not the value either layer
     # asked for, and a `source` column alone cannot say so -- it has one slot
@@ -2535,6 +2574,15 @@ def _print_explain(rows):
         print("  layers, never the repo's: a cloned repo may ask for less "
               "than your machine allows")
         print("  and be obeyed, and may ask for more and be refused.")
+    # A repo-level onlyRepos/onlySessions is not merely lower precedence --
+    # the hooks that narrow auto-clear never read it at all, so printing it
+    # unlabelled would claim a restriction that is not in force.
+    for row in ignored:
+        print()
+        print(f"! {row['path']}: repo asks `{row['repoIgnored']}`, but only "
+              "the machine-global file's value is ever read for this key")
+        print(f"  -> `{row['value']}` is in force. A repo cannot narrow or "
+              "widen auto-clear's onlyRepos/onlySessions for itself.")
     # Say what this table is NOT, or it reads as the whole resolved config and
     # a reader concludes their `tracker` or `jira.project` is unset.
     print()

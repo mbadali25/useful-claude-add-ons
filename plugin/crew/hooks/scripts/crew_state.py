@@ -694,6 +694,18 @@ AUTOCLEAR_DEFAULTS = {
 # a guided flow may hand over. Same reasoning, same treatment.
 AUTOCLEAR_CONSENT_KEYS = ("unsafeFocus",)
 
+# Keys inside `autoClear` that are machine-only in a STRONGER sense than the
+# ordinary repo-over-global precedence every other key here resolves by:
+# `crew_autocycle.settings` and `auto-clear.ps1` read these from the machine
+# file ONLY and never consult a repo's own copy (see the comment on
+# `onlyRepos`/`onlySessions` above -- a narrowing a repo could write for
+# itself would be a widening). `crew_config.explain_config` uses this set to
+# report the two from the global layer alone and flag a repo-level value as
+# ignored, rather than crediting `repo` the way the generic precedence walk
+# would -- crediting it made `/crew:config --show` claim auto-clear was
+# restricted to a repo the hooks do not actually restrict it to.
+AUTOCLEAR_MACHINE_ONLY_KEYS = ("onlyRepos", "onlySessions")
+
 # The whole `context` block, defined HERE rather than in
 # `crew_config.default_config()` where it used to live, for one
 # reason: `crew_upgrade.CONFIG_BLOCKS` has to reference it so an
