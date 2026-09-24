@@ -21,7 +21,7 @@ description: |
   </commentary>
   </example>
 tools: Read, Grep, Glob, Skill, mcp__localgpu__search_code, mcp__localgpu__index_status
-model: sonnet
+model: opus
 ---
 
 You map code. You never change it.
