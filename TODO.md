@@ -4024,6 +4024,33 @@ Enforced by the same hooks (approval receipts, scope guard, cloud guard, review 
 1.0 part (folded into the web-testing lane): `/crew:migrate` maps `pm.authority: autonomous` to a visible note
 "autopilot arrives in 1.1.0" instead of dropping it silently.
 
+### crew 1.1.x: platform-native routing - OPEN, after 1.0 ships (filed 2026-09-24, owner decision)
+Owner request, filed next to the 1.1.0 autopilot item above because both are "1.0 stops short of this on purpose."
+This session did a `.sh`-only pipe-capture fix and left the `.ps1` twin as a TODO per the OWNER RULE (POSIX/bash/
+Python/CI only in this repo, Windows/PowerShell product work is win-repo's) - that hand-off is manual today (a
+TODO entry someone has to notice and pick up). 1.1.x's job is to make the hand-off a routed, tracked step instead.
+- **How the PM learns which peer session runs which OS/shells.** Two candidate mechanisms, not yet decided between:
+  a peer registry (sessions register their host OS/shell capability somewhere shared and durable) or a live
+  `ListAgents` probe plus self-report (ask what is currently reachable, rather than trusting a stale registry).
+  Either way: refs are per-viewer (a session id or branch name one agent can see is not guaranteed resolvable by
+  another), so "bare names can be ambiguous" is a real failure mode to design against, not a footnote.
+- **Routing rules by file type / test flavour.** `.ps1` files, any test carrying a `[ps1]` parametrize id, and
+  Windows-only fixtures (a faked `$env:OS`, a `pwsh`-only skip condition) route to a session that can actually run
+  them; POSIX-only work stays local. The rule has to be mechanical (grep-able from a diff), not a judgment call
+  each hand-off re-derives.
+- **Branch-and-integrate hand-off contract.** No version bumps and no pushes to the integration branch from the
+  receiving session - the routed work lands as a reviewable diff, not a fait accompli. Root cause first (this
+  repo's `/crew:debug` discipline applies across the hand-off too, not just within one session). Tests that go
+  with a routed fix must be sabotage-checked before the hand-off is considered done, the same bar this session
+  held itself to for the `.sh` pipe-capture fix and the bash-resolver guard test.
+- **Fallback when no native session exists.** Do the work locally anyway rather than blocking on an unavailable
+  peer, but label the result "not verified natively" wherever it is recorded (TODO.md, a commit message, a review
+  note) - an unlabelled fix that was never run on the platform it targets is indistinguishable from one that was.
+- **Acceptance criteria:** a `.ps1`-touching change filed from a POSIX-only session is automatically routed to (or
+  flagged for) a session that can run it; a routed fix carries a sabotage-checked test before it is accepted back;
+  a hand-off with no native session available still produces a fix, correctly labelled as unverified on that
+  platform, rather than sitting un-actioned.
+
 ### crew 1.1.x: install the tools crew needs to run tests and do its work - OPEN, after 1.0 ships (filed 2026-09-24, owner decision)
 Evidence (win-repo, Windows burn-in, 2026-09-24): `/crew:verify --all` reported two rules as exit 77 SKIP, "environment
 absent", because `ruff` and `pylint` could not be imported, and diagnosing the hanging pytest rule needed `pytest-timeout`.
@@ -4323,3 +4350,47 @@ paragraph describes and correct the count. Deferred because CLAUDE.md is not the
   fixtures next, cross-referenced from `crew_fixtures.gate_processes` becoming autouse this same session (which
   does not cover this file - it only auto-tracks `popen_gate`/`run_gate` spawns, and this sender is launched a
   different way).
+
+### pytest's own keep-3 temp-dir retention is defeated on Windows - OPEN (filed 2026-09-24, win-repo burn-in evidence)
+
+`D:\temp\pytest-of-<user>` held 59 `pytest-N` directories (roughly 24k files/dirs total) on a Windows burn-in
+host, when pytest's documented default keeps only the 3 most recent per base-temp root and removes the rest at
+the start of the NEXT run. Not investigated here (POSIX/bash/Python/CI scope this session, and the cause is a
+Windows-specific accumulation): candidates include a process holding a handle open in an old numbered dir
+(Windows will not let pytest delete a directory an earlier PowerShell/git-bash child is still using, unlike
+POSIX where an open-but-unlinked file is silently reclaimed later), a CI/test run that never let pytest reach
+its own cleanup pass (killed instead of exiting), or `--basetemp` usage bypassing the keep-3 accounting entirely
+for some runs while leaving others on the default root. Whoever owns this should first confirm which of those it
+is before choosing a fix - deleting old directories blind, without knowing why they survived, risks deleting one
+still legitimately in use.
+
+### test_verify_gate_stop_gate_record.py is slow on Windows - not a hang, filed for visibility (2026-09-24, win-repo burn-in evidence)
+
+463.61s wall time on a quiet Windows box, 2 failed / 89 passed. Distinguishing "slow" from "hung" matters here
+because this repo's own CLAUDE.md has a lesson about exactly that confusion (a failing gate names the failure,
+not the cause) - a bare "it took 463s" read next to `_GATE_TIMEOUT = 120` in the same test module could look like
+a regression to the non-terminating-gate bug that constant's own comment describes, when it is not: 463s is the
+sum of many sub-120s-bounded gate spawns across the whole file, not one gate that never returned. The 2 failures
+are not itemised here (this entry exists to record the timing and the "not a hang" distinction, filed by win-repo
+burn-in; the failures themselves need their own triage by whoever has the Windows host to reproduce them).
+
+### win-repo hand-offs from Codex review, 2afa08df..8585c57d (filed 2026-09-24)
+
+- `auto-clear.ps1:~729` - the WindowsTerminal tab-safety check runs BEFORE the configured delay elapses, so
+  switching tabs during the delay window (after the check passed, before `/clear` actually sends) can send
+  `/clear` to whatever tab is now focused rather than the one the check verified. Re-check tab ownership AFTER
+  the delay, immediately before sending, not only before it.
+- `test_ps1_python_probe.py:~93` - the `.cmd` stubs this test builds make the bash-parity cases hand a POSIX
+  `/c/...`-style path to a native Windows `CreateProcess` call, which cannot resolve it. Needs either a
+  path-translation step before the native call, or a test-only seam that supplies the Windows-native form to
+  that specific code path without changing what production code receives.
+- `crew_fixtures.py:~69` (`kill_process_group`'s Windows branch, `taskkill /T /F`) cannot find descendants once
+  the direct child has already exited - `taskkill /T` walks the process tree from the still-running parent, and
+  a parent that already exited leaves no tree to walk, the same gap this session's POSIX `killpg`-regardless fix
+  (above, this same TODO pass) closed for `os.killpg` but did not - and per the OWNER RULE did not attempt to -
+  close for Windows.
+- `verify-gate.ps1:~1586` - a continuously-writing background process keeps `Get-Content` reading a growing
+  tempfile, the `.ps1` counterpart of the `.sh` size/time cost this session's `verify-gate.sh` fix addresses
+  (measured there: an uncapped read of a multi-GiB file took double-digit seconds and several GiB of RSS). Same
+  fix shape likely applies - snapshot a size, cap the read - but is win-repo's to implement and verify on a real
+  Windows host per the OWNER RULE.
