@@ -135,14 +135,31 @@ def test_a_rule_longer_than_the_ttl_keeps_its_lock(flavour, tmp_path):
         holder.stdin.write("{}")
         holder.stdin.close()
         # Past the 3s TTL, comfortably inside the 16s window, and while the
-        # 6s rule is still running.
-        time.sleep(4)
-        assert holder.poll() is None, "the holder finished too early to test"
+        # 6s rule is still running. A fixed sleep(4) raced gate startup on a
+        # slow run -- fork/exec overhead launching bash.exe/pwsh plus the
+        # rule-matcher subprocess can push the first deadline write past 4s
+        # real time, same mechanism noted in e0278bc9 for the sibling test.
+        # Poll for the deadline instead, but keep the >=4s floor so the
+        # challenger still arrives past the TTL, which is the property under
+        # test.
         deadline_file = _lock(root) / "deadline"
-        assert deadline_file.exists(), (
-            "the holder published no deadline, so the challenger has only the "
-            "age window and will reclaim a live lock"
-        )
+        min_wait = time.monotonic() + 4
+        bound = time.monotonic() + 12
+        while True:
+            assert holder.poll() is None, (
+                "the holder finished too early to test (exit code %r)"
+                % holder.returncode
+            )
+            now = time.monotonic()
+            if now >= min_wait and deadline_file.exists():
+                break
+            assert now < bound, (
+                "the holder published no deadline within " +
+                str(bound - min_wait + 4) + "s, so the challenger has only "
+                "the age window and will reclaim a live lock"
+            )
+            time.sleep(0.1)
+        assert holder.poll() is None, "the holder finished too early to test"
 
         challenger = _run(flavour, root)
         assert "backed off" in challenger.stderr, (
