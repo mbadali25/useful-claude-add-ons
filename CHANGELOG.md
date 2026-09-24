@@ -53,12 +53,17 @@ All notable changes to this repository are documented here. Format follows [Keep
   G1: `verify-gate`'s stdin read is now bounded in both flavours (a
   line-at-a-time `read -t 5` loop in `.sh`, an `OpenStandardInput()` +
   `CopyToAsync().Wait(5000)` in `.ps1`) instead of blocking the whole script
-  on a pipe that is never closed; `Resolve-CrewPython` now refuses an
-  extensionless candidate before `ProcessStartInfo` is ever built when
-  running on real Windows (gated on `$IsWindows`, never the flavour-guard's
-  `$env:OS` seam, so the suite's own extensionless-shim fixtures on Linux
-  are untouched); and every `verify-gate` test's subprocess spawn now
-  carries an explicit timeout.
+  on a pipe that is never closed, and every `verify-gate` test's subprocess
+  spawn now carries an explicit timeout -- these two stand on their own.
+  `Resolve-CrewPython` also now skips an extensionless candidate before
+  `ProcessStartInfo` is ever built when running on real Windows (gated on
+  `$IsWindows`, never the flavour-guard's `$env:OS` seam, so the suite's own
+  extensionless-shim fixtures on Linux are untouched) -- this is defence in
+  depth, not a defect fix: the resolver already executes every candidate
+  before believing it (see `Resolve-CrewPython`'s own comment,
+  `verify-gate.ps1:138-144`), so an extensionless stub was never accepted
+  blindly here; the skip only avoids a launch attempt Windows cannot honour
+  in the first place.
 
 - **`crew` 1.0.6: notify-by-default auto-clear on native Windows (R1), setup
   wiring for it (R2), and the Windows-burn-in W8/W9 review fixes that landed
