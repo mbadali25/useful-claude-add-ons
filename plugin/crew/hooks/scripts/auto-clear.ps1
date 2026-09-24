@@ -180,8 +180,15 @@ function Resolve-CrewRealPath([string]$Path) {
 }
 
 function ConvertTo-CrewScopePath($Path) {
+  # Leading/trailing whitespace in $Path is significant and is NOT stripped
+  # below -- it is a legal POSIX filename character, and trimming it
+  # collapsed two distinct entries (a repo path and that same path plus a
+  # trailing space) into one, letting a listed repo whose name happens to
+  # end in a space authorise an unlisted, space-free repo of the same name.
+  # Only whitespace-ONLY input is treated as absent (matches
+  # crew_autocycle.normalise_repo_path's `not path.strip()` check).
   if (-not ($Path -is [string]) -or -not $Path.Trim()) { return "" }
-  $text = $Path.Trim()
+  $text = $Path
   if ($text.StartsWith("~")) { $text = $userHome + $text.Substring(1) }
   $text = $text.Replace('\', '/')
   $native = [System.IO.Path]::DirectorySeparatorChar -eq '\'

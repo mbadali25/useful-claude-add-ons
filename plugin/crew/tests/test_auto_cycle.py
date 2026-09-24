@@ -498,6 +498,15 @@ _SCOPE_CASES = [
     ("sessions-empty", {"onlySessions": []}, "silent"),
     ("repo-listed", {"onlyRepos": [_ROOT_TOKEN]}, "armed"),
     ("repo-trailing-sep", {"onlyRepos": [_ROOT_TOKEN + "/"]}, "armed"),
+    # Review round 2 (crew-1.0-r3-autocycle): whitespace is a legal POSIX
+    # filename character, so an onlyRepos entry with a trailing space must
+    # NOT authorise the space-free repo -- an unlisted repo must never be
+    # in scope. crew_autocycle.normalise_repo_path stopped stripping it
+    # (see test_a_trailing_space_in_an_only_repos_entry_does_not_authorise_
+    # the_bare_path for the direct unit test); this case proves
+    # auto-clear.ps1's ConvertTo-CrewScopePath now matches, end to end,
+    # through the real wrapper of each flavour.
+    ("repo-trailing-space", {"onlyRepos": [_ROOT_TOKEN + " "]}, "silent"),
     # A backslash is a legal POSIX filename character, not a separator on
     # bash's flavour (crew_autocycle.normalise_repo_path, fixed in review
     # round 1 of crew-1.0-burnin-fix4 -- see test_in_scope_does_not_collapse_

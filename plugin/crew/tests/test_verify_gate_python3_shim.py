@@ -250,7 +250,7 @@ def test_a_command_v_hit_that_fails_the_proved_check_fails_loudly(tmp_path):
     MATCHER script (`py - args << script`), but it rejects `-c`
     specifically (a narrow but real shape: a policy-wrapped launcher that
     permits running a script but not inline code), which is exactly what
-    crew_py_strict's proof (`py -c "import sys; print(sys.executable)"`)
+    crew_py_strict's proof (`py -c "import sys; sys.version_info>=(3,8) and print(sys.executable)"`)
     needs.
 
     **Architecture note, round 6.** This test used to reach the SHIM's own
@@ -463,13 +463,13 @@ def test_a_native_windows_sys_executable_path_is_accepted_and_works(tmp_path):
     # otherwise a real, working interpreter, so the MATCHER's own
     # `python - args << script` invocation (which crew_py, not
     # crew_py_strict, resolves to this SAME file) still works. Only the
-    # EXACT crew_py_strict probe (`-c 'import sys; print(sys.executable)'`)
+    # EXACT crew_py_strict probe (`-c 'import sys; sys.version_info>=(3,8) and print(sys.executable)'`)
     # gets the fake answer.
     stub = os.path.join(tools_dir, "python")
     with open(stub, "w", encoding="utf-8", newline="\n") as fh:
         fh.write(
             "#!/bin/sh\n"
-            "if [ \"$1\" = \"-c\" ] && [ \"$2\" = \"import sys; print(sys.executable)\" ]; then\n"
+            "if [ \"$1\" = \"-c\" ] && [ \"$2\" = \"import sys; sys.version_info>=(3,8) and print(sys.executable)\" ]; then\n"
             # printf, not echo - some /bin/sh implementations (dash's
             # builtin echo among them) interpret XSI backslash escapes by
             # default, so `echo 'C:\<token>\...'` silently eats the `\<`
@@ -581,7 +581,7 @@ def test_the_cygpath_branch_is_taken_when_cygpath_is_present(tmp_path):
     with open(stub, "w", encoding="utf-8", newline="\n") as fh:
         fh.write(
             "#!/bin/sh\n"
-            "if [ \"$1\" = \"-c\" ] && [ \"$2\" = \"import sys; print(sys.executable)\" ]; then\n"
+            "if [ \"$1\" = \"-c\" ] && [ \"$2\" = \"import sys; sys.version_info>=(3,8) and print(sys.executable)\" ]; then\n"
             "  printf '%s\\n' 'C:\\fakepy\\python.exe'\n"
             "  exit 0\n"
             "fi\n"
@@ -697,7 +697,7 @@ def test_a_windowsapps_stub_fails_closed_with_zero_rules_run(tmp_path):
 def test_matcher_producing_no_output_fails_closed_even_past_crew_py_strict(tmp_path):
     """The SECOND, independent line of defence added alongside the fix
     above: even a python that PASSES crew_py_strict's own proof (a real,
-    working `-c "import sys; print(sys.executable)"` response, `-x` and
+    working `-c "import sys; sys.version_info>=(3,8) and print(sys.executable)"` response, `-x` and
     all) can still behave differently when invoked the OTHER way this gate
     needs it - as the MATCHER's own interpreter, reading a script from
     stdin with `-` as the first argument. This stub deliberately has that
