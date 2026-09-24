@@ -2155,6 +2155,7 @@ CONFIG.md §17 has the table and the reasoning.
 | `/crew:handoff` | Write the handoff note before clearing |
 | `/crew:diagram <type>` | Architecture, data-flow, process and sequence diagrams |
 | `/crew:verify` | Build or refresh the change-to-check map; creates `_verify/` if the repo has no check directory |
+| `/crew:webtest <id> [--stage spec\|implement\|heal\|evidence]` | Drive Playwright's Test Agents inside the ticket lifecycle; a healer skip is a finding, and the trace and axe results go to the reviewer |
 | `/crew:promote <env> [--dry-run\|--status]` | Promote development -> qa -> production with deploy, smoke, regression and post-soak verification as separate gates |
 | `/crew:survey [area]` | Research gaps, produce ranked findings with options |
 | `/crew:jira-sync <KEY> [--push]` | Sync one issue with the local cache |
@@ -2169,7 +2170,7 @@ CONFIG.md §17 has the table and the reasoning.
 | `/crew:gate <disable\|enable\|status> <github\|bitbucket>` | Take a repository's merge gate down and put it back **from the export**. Gated by `guards.mergeGate`, which ships as `block` |
 | `/crew:change <new\|status <id>\|close <id>\|list>` | File a change request into SDP, Jira or `.work/changes/`, one process either way. `new` refuses to file while any of the template's questions 1–9 is unanswered or a placeholder and names which; `close` refuses without the post-change validation results — see §24b |
 
-33 commands.<!-- claim: plugin-commands:crew -->
+34 commands.<!-- claim: plugin-commands:crew -->
 
 ### Agents
 
@@ -2398,7 +2399,7 @@ Two things worth knowing:
 
 **`python3` is not required by the hooks.** Every hook script resolves `python3`, then `python`, then `py` — that is `crew_py()` in `hooks/scripts/_common.sh` — and `guard.sh` prefers `jq` when present. With none available the hook says so on stderr and exits 0 — loudly inert rather than silently passing.
 
-The **commands** are the other half, and they do require it: 10 of the files under `commands/` now invoke `python3` by name. Those are instructions to the model rather than scripts that source `_common.sh`, so they get no resolution step. On a machine where only `python` or `py` resolves, the hooks stay inert-but-honest and the slash commands fail at the call site. At `61af85cb` that count was **nine**: `commands/emergency.md` invoked bare `python` at five call sites while its own text claimed all three names were resolved — the one command meant to be run under pressure was the only one that broke on a default Ubuntu or WSL box. It was brought into line on 2026-09-14, which is what moved the count to 10.
+The **commands** are the other half, and they do require it: 14 of the files under `commands/` now invoke `python3` by name (re-measure with `grep -l python3 plugin/crew/commands/*.md`). Those are instructions to the model rather than scripts that source `_common.sh`, so they get no resolution step. On a machine where only `python` or `py` resolves, the hooks stay inert-but-honest and the slash commands fail at the call site. At `61af85cb` that count was **nine**: `commands/emergency.md` invoked bare `python` at five call sites while its own text claimed all three names were resolved — the one command meant to be run under pressure was the only one that broke on a default Ubuntu or WSL box. It was brought into line on 2026-09-14, which is what moved the count to 10.
 
 ---
 
