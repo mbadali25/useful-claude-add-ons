@@ -3991,3 +3991,12 @@ Codex r1 on ed91114d..c3bd8dfd (modified files), 0 BLOCK:
 - `handoff-read.sh:18`/`.ps1:26` missing session_id maps to shared `nosession`; decline cleanup instead.
 - `handoff-read.sh:23`/`.ps1:32` seven-day sweep deletes other sessions' markers.
 - `handoff-read.sh:44`/`.ps1:57` require legacy `.crew/config.json`; a crew.json-only 1.0 repo with inject=false gets no handoff.
+
+### crew 1.0 guides: multi-line code blocks render with a blank line between every line (LibreOffice, quickstart p1) - OPEN, cosmetic (filed 2026-09-23)
+- Seen in `docs/guides/crew/crew-1.0-quickstart.pdf` page 1; likely `<pre>` newline handling in `docs/guides/crew/src/build.py` / LibreOffice Writer/Web.
+
+### Post-1.0: superpowers' systematic-debugging vs crew-debugging - OPEN (filed 2026-09-23, owner request)
+Owner: "superpowers' systematic-debugging works great." After 1.0, compare it with crew's `crew-debugging` skill and
+`/crew:debug`, then either vendor it (<=120 lines, licence checked — superpowers is MIT — credited in `plugin/crew/NOTICE.md`
+like crew-brainstorm/plan/execute) or fold its method into `crew-debugging`. **Do not uninstall superpowers from the
+owner's machine until this lands**, or the skill is lost. (The 04-redesign "uninstall superpowers" step waits on this.)
