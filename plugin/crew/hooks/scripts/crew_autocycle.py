@@ -27,6 +27,13 @@ Also: `enabled` is a MACHINE opt-in. It is read from the machine-global
 `~/.claude/crew/config.json`; a repo may switch it off but cannot switch it
 on, because the thing it drives is this machine's keyboard.
 
+And `onlyRepos` / `onlySessions` NARROW that opt-in, machine file only. Absent
+(or null) changes nothing; present, the clear is armed only in a listed repo
+and/or a listed session, and an empty list arms nothing. A repo's own copy of
+either key is never read -- a narrowing a repo could write for itself would be
+a widening. Without them, `enabled: true` arms every Claude session on the
+host, which is why a scratch repo could not be tested safely beside live ones.
+
 CLI (used by auto-clear.sh): `plan --root R --session S [--force]` prints one
 value per line -- status (off|refuse|send), reason, method, target, label,
 command, delay, key. Never raises; an internal error is a refusal.
@@ -105,9 +112,80 @@ def settings(root, global_path=None):
         text = str(out[key] or "").splitlines()
         out[key] = text[0] if text else _DEFAULTS[key]
     out["enabled"] = machine.get("enabled") is True and repo.get("enabled") is not False
+    # Machine only, and deliberately not in the repo-then-machine loop above.
+    out["onlyRepos"] = machine.get("onlyRepos")
+    out["onlySessions"] = machine.get("onlySessions")
     handoff = _block(repo_cfg, "context").get("handoffPath")
     out["handoffPath"] = handoff if isinstance(handoff, str) and handoff else ".work/HANDOFF.md"
     return out
+
+
+_WIN_DRIVE_SLASH = re.compile(r"^/([A-Za-z])(?=/|$)")
+_ABSOLUTE = re.compile(r"^(/|[a-z]:/)")
+
+
+def normalise_repo_path(path, windows=None):
+    """The form `onlyRepos` entries and the repo root are compared in, or ""
+    for anything that is not an absolute path.
+
+    On Windows, backslashes become slashes; on POSIX a backslash is a legal
+    filename character and is left alone, or two distinct paths collapse into
+    one and an unlisted repo passes `onlyRepos`. Trailing separators go,
+    symlinks are resolved (`realpath`), and on Windows the Git Bash `/c/x`
+    shape becomes `c:/x` and the whole path is case-folded. A RELATIVE entry
+    is refused rather than resolved: it would resolve against the repo being
+    asked about, so `.` would match every repository on the machine.
+    `windows` lets a Linux test drive the Windows rules; realpath runs only
+    on the platform it describes."""
+    windows = os.name == "nt" if windows is None else windows
+    if not isinstance(path, str) or not path.strip():
+        return ""
+    text = os.path.expanduser(path.strip())
+    if windows:
+        text = text.replace("\\", "/")
+        text = _WIN_DRIVE_SLASH.sub(lambda m: m.group(1) + ":", text, count=1)
+        if re.fullmatch(r"[A-Za-z]:", text):
+            text += "/"
+    if not _ABSOLUTE.match(text.lower() if windows else text):
+        return ""
+    if windows == (os.name == "nt"):
+        text = os.path.realpath(text)
+        if windows:
+            text = text.replace("\\", "/")
+    text = text.rstrip("/") or "/"
+    if windows:
+        if re.fullmatch(r"[A-Za-z]:", text):
+            text += "/"
+        text = text.casefold()
+    return text
+
+
+def _scope(value):
+    """None when the key does not narrow (absent or null); otherwise the list
+    of string entries. A value that is present but not a list narrows to
+    NOTHING -- a malformed narrowing must never read as no narrowing."""
+    if value is None:
+        return None
+    if not isinstance(value, list):
+        return []
+    return [v for v in value if isinstance(v, str)]
+
+
+def in_scope(cfg, root, session_id, windows=None):
+    """Is this repo AND this session inside the machine's narrowing?
+
+    Each key that is present must match; both present means both must. This
+    can only ever turn an armed machine off, never an unarmed one on."""
+    repos = _scope(cfg.get("onlyRepos"))
+    if repos is not None:
+        here = normalise_repo_path(root, windows)
+        listed = {normalise_repo_path(r, windows) for r in repos} - {""}
+        if not here or here not in listed:
+            return False
+    sessions = _scope(cfg.get("onlySessions"))
+    if sessions is not None and (not session_id or session_id not in sessions):
+        return False
+    return True
 
 
 def read_marker(root, key):
@@ -321,6 +399,11 @@ def plan(root, session_id, force=False, global_path=None, env=None):
     cfg = settings(root, global_path)
     out.update(command=cfg["command"], delay=str(cfg["delaySeconds"]))
     if not cfg["enabled"]:
+        out["status"] = "off"
+        return out
+    # Silent like "not opted in": outside the narrowing, this session is one
+    # the machine never armed, so it must not even get a log line.
+    if not in_scope(cfg, root, session_id):
         out["status"] = "off"
         return out
     if not force:

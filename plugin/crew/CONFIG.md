@@ -127,10 +127,13 @@ both directions:
 `is_global_path` agrees with `filter_global` by construction — both stop
 descending at a template **leaf**.
 
-**Measured, not argued.** `leaf_paths(default_global_config())` yields **60**
-leaves. `leaf_paths(default_config())` yields **106**, so **46** are repo-only.
-For all 106, `filter_global` and `plan_global_write` agree on whether the path is
-settable. (45 / 86 before schema 6 added the six `guards.*`, the two
+**Measured, not argued.** `leaf_paths(default_global_config())` yields **65**
+leaves. `leaf_paths(default_config())` yields **116**, so **51** are repo-only.
+For all 116, `filter_global` and `plan_global_write` agree on whether the path is
+settable. (63 / 114 before the Windows burn-in added
+`context.autoClear.onlyRepos` and `onlySessions` to both layers; this paragraph
+still said 60 / 106 at that point, so the cloud-guard and scope-guard keys had
+moved the counts without it. 45 / 86 before schema 6 added the six `guards.*`, the two
 `github.mergeGate` keys and the repo-only `production.databases` /
 `production.hosts`; 44 / 85 before schema 5 added `install.policy`; 59 / 102
 before crew 0.19.92 added the seventh guard, `guards.roleWrites`, in both
@@ -679,6 +682,8 @@ they are repo-only, and §16 says why. Defaults are identical in `default_config
 | `context.autoClear.command` | string | `"/clear"` |
 | `context.autoClear.delaySeconds` | integer | `3` |
 | `context.autoClear.minHandoffLines` | integer | `5` |
+| `context.autoClear.onlyRepos` | list of absolute repo paths, or `null`. **Narrowing only, read from this global layer only** (`crew_autocycle.in_scope`, `auto-clear.ps1`): `null` narrows nothing, a list arms only those repos (compared realpath-resolved, separator- and trailing-slash-insensitive, case-insensitive on Windows; a relative entry never matches), `[]` or a non-list arms nothing. A repo's own value is never read (`docs/guides/crew/src/auto-cycle.md`) | `null` |
+| `context.autoClear.onlySessions` | list of session ids, or `null`. Same rules as `onlyRepos`, matched exactly and case-sensitively; with both set, both must match | `null` |
 | `docs.theme` | string or `null`, see §7 | `null` |
 | `docs.reportTheme` | string or `null`, see §7 | `null` |
 | `bitbucket.mergeGate.enabled` | boolean, see §8 | `false` |

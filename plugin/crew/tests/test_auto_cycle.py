@@ -154,24 +154,21 @@ def _sendable(flavor, tmp_path, root):
     window owned by this test process for PowerShell."""
     if flavor == "sh":
         bindir = tmp_path / "fakebin"
-        bindir.mkdir(exist_ok=True)
-        tmux = bindir / "tmux"
-        tmux.write_text(f"#!/bin/sh\necho {os.getpid()}\n", encoding="ascii", newline="\n")
-        tmux.chmod(0o755)
+        crew_fixtures.write_shim(bindir, "tmux", f"#!/bin/sh\necho {os.getpid()}\n",
+                                 f"@echo off\r\necho {os.getpid()}\r\n")
         _machine(root, method="tmux")
-        return {"PATH": f"{bindir}{os.pathsep}{os.environ['PATH']}", "TMUX": "/tmp/fake,1,0",
-                "TMUX_PANE": "%7"}
+        return crew_fixtures.shim_env("sh", bindir, TMUX="/tmp/fake,1,0", TMUX_PANE="%7")
     _machine(root)
     return _windows(tmp_path, [{"id": 4242, "pid": os.getpid(), "title": "Claude Code"}])
 
 
 def _xdotool_env(tmp_path, windows):
+    """A fake `xdotool` the bash flavour AND the python it starts can find:
+    on Windows that is an extensionless shim for bash plus `xdotool.cmd`,
+    because a native `shutil.which` never matches an extensionless file."""
     bindir = tmp_path / "fakebin"
-    bindir.mkdir(exist_ok=True)
-    fake = bindir / "xdotool"
-    fake.write_text("#!/bin/sh\nexit 0\n", encoding="ascii", newline="\n")
-    fake.chmod(0o755)
-    env = {"PATH": f"{bindir}{os.pathsep}{os.environ['PATH']}", "DISPLAY": ":0"}
+    crew_fixtures.write_shim(bindir, "xdotool")
+    env = crew_fixtures.shim_env("sh", bindir, DISPLAY=":0")
     env.update(_windows(tmp_path, windows))
     return env
 
@@ -440,7 +437,8 @@ def test_resolve_target_table(case, windows, title, expect):
 def test_a_tmux_pane_must_be_the_one_running_this_session(pane_pid, sent, tmp_path):
     root = _repo(tmp_path)
     env = _sendable("sh", tmp_path, root)
-    (tmp_path / "fakebin" / "tmux").write_text(f"#!/bin/sh\necho {pane_pid}\n", encoding="ascii", newline="\n")
+    crew_fixtures.write_shim(tmp_path / "fakebin", "tmux", f"#!/bin/sh\necho {pane_pid}\n",
+                             f"@echo off\r\necho {pane_pid}\r\n")
     _write_marker(root)
     _write_handoff(root)
 
@@ -454,18 +452,217 @@ def test_a_tmux_pane_must_be_the_one_running_this_session(pane_pid, sent, tmp_pa
 def test_wtype_is_refused_even_with_unsafe_focus(tmp_path):
     root = _repo(tmp_path, unsafeFocus=True)
     bindir = tmp_path / "fakebin"
-    bindir.mkdir()
-    (bindir / "wtype").write_text("#!/bin/sh\nexit 0\n", encoding="ascii", newline="\n")
-    (bindir / "wtype").chmod(0o755)
+    crew_fixtures.write_shim(bindir, "wtype")
     _machine(root, method="wtype")
     _write_marker(root)
     _write_handoff(root)
 
     result = _invoke("sh", "auto-clear", root, args=("--session", SESSION_A, "--dry-run"),
-                     env_extra={"PATH": f"{bindir}{os.pathsep}{os.environ['PATH']}", "WAYLAND_DISPLAY": "w-0"})
+                     env_extra=crew_fixtures.shim_env("sh", bindir, WAYLAND_DISPLAY="w-0"))
 
     assert "would send" not in result.stdout
     assert "cannot identify a window" in result.stderr
+
+
+# --- narrowing: onlyRepos / onlySessions -------------------------------------
+#
+# `enabled: true` in the machine file arms every Claude session on the host.
+# These two machine-only keys narrow it, and can only narrow it. Every case
+# goes through the real wrapper of each flavour, so the parity is measured.
+# An unarmed case must be SILENT -- no plan on stdout, no log line -- because
+# a session the machine never armed must not learn the feature exists.
+
+def _scoped(flavor, tmp_path, root, session=SESSION_A, **scope):
+    env = _sendable(flavor, tmp_path, root)
+    _machine(root, **({"method": "tmux"} if flavor == "sh" else {}), **scope)
+    _write_marker(root, session)
+    _write_handoff(root)
+    return _invoke(flavor, "auto-clear", root, args=("--session", session, "--dry-run"),
+                   env_extra=env)
+
+
+def _armed_or_silent(result, root):
+    if "would send" in result.stdout:
+        return "armed"
+    assert (result.stdout.strip(), _log(root)) == ("", ""), result.stderr + _log(root)
+    return "silent"
+
+
+_ROOT_TOKEN = "{root}"
+_SCOPE_CASES = [
+    ("absent", {}, "armed"),
+    ("null", {"onlyRepos": None, "onlySessions": None}, "armed"),
+    ("session-listed", {"onlySessions": [SESSION_A]}, "armed"),
+    ("session-other", {"onlySessions": [SESSION_B]}, "silent"),
+    ("session-case-differs", {"onlySessions": [SESSION_A.upper()]}, "silent"),
+    ("sessions-empty", {"onlySessions": []}, "silent"),
+    ("repo-listed", {"onlyRepos": [_ROOT_TOKEN]}, "armed"),
+    ("repo-trailing-sep", {"onlyRepos": [_ROOT_TOKEN + "/"]}, "armed"),
+    # A backslash is a legal POSIX filename character, not a separator on
+    # bash's flavour (crew_autocycle.normalise_repo_path, fixed in review
+    # round 1 of crew-1.0-burnin-fix4 -- see test_in_scope_does_not_collapse_
+    # backslash_and_slash_on_posix for the direct unit test). auto-clear.ps1
+    # keeps its existing backslash handling -- real Windows paths always use
+    # backslash as a separator, so ps1's answer is unchanged and correct
+    # there; only bash's answer flips with this fix.
+    ("repo-backslashes", {"onlyRepos": ["{root\\}"]}, {"sh": "silent", "ps1": "armed"}),
+    ("repo-other", {"onlyRepos": ["{root}-other"]}, "silent"),
+    ("repo-parent", {"onlyRepos": ["{parent}"]}, "silent"),
+    ("repos-empty", {"onlyRepos": []}, "silent"),
+    ("repo-relative-dot", {"onlyRepos": ["."]}, "silent"),
+    ("repos-not-a-list", {"onlyRepos": _ROOT_TOKEN}, "silent"),
+    ("both-match", {"onlyRepos": [_ROOT_TOKEN], "onlySessions": [SESSION_A]}, "armed"),
+    ("both-session-misses", {"onlyRepos": [_ROOT_TOKEN], "onlySessions": [SESSION_B]}, "silent"),
+    ("both-repo-misses", {"onlyRepos": ["{root}-other"], "onlySessions": [SESSION_A]}, "silent"),
+]
+
+
+def _fill(value, root):
+    if isinstance(value, list):
+        return [_fill(v, root) for v in value]
+    if not isinstance(value, str):
+        return value
+    return (value.replace("{root\\}", str(root).replace("/", "\\"))
+            .replace("{parent}", str(root.parent)).replace(_ROOT_TOKEN, str(root)))
+
+
+@by_flavor
+@pytest.mark.parametrize("case,scope,expect", _SCOPE_CASES, ids=[c[0] for c in _SCOPE_CASES])
+def test_the_machine_can_narrow_auto_clear_to_listed_repos_and_sessions(
+        flavor, case, scope, expect, tmp_path):
+    del case
+    if isinstance(expect, dict):
+        expect = expect[flavor]
+    root = _repo(tmp_path)
+
+    result = _scoped(flavor, tmp_path, root, **{k: _fill(v, root) for k, v in scope.items()})
+
+    assert _armed_or_silent(result, root) == expect
+
+
+@by_flavor
+def test_a_symlink_to_the_repo_in_only_repos_arms_it(flavor, tmp_path):
+    root = _repo(tmp_path)
+    link = tmp_path / "link-to-repo"
+    try:
+        link.symlink_to(root, target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(f"cannot create a symlink here: {exc}")
+
+    result = _scoped(flavor, tmp_path, root, onlyRepos=[str(link)])
+
+    assert _armed_or_silent(result, root) == "armed"
+
+
+@by_flavor
+def test_a_chained_relative_symlink_in_only_repos_resolves_from_its_own_parent(flavor, tmp_path):
+    """A/link1 -> ../B/link2 -> inner/repo: each hop must resolve against the
+    symlink that names it. Review round 1 (crew-1.0-burnin-fix4):
+    auto-clear.ps1's own Resolve-CrewRealPath resolved every hop against the
+    FIRST link's parent, so this chain silently resolved to A/inner/repo
+    instead of B/inner/repo and disabled auto-clear for a listed repo.
+    crew_autocycle.py has no equivalent bug -- it uses os.path.realpath --
+    so this is ps1-only."""
+    if flavor != "ps1":
+        pytest.skip("only auto-clear.ps1 has its own symlink-chase implementation")
+    b_dir = tmp_path / "B"
+    root = _repo(b_dir / "inner")
+    a_dir = tmp_path / "A"
+    a_dir.mkdir()
+    try:
+        (b_dir / "link2").symlink_to(os.path.join("inner", "repo"), target_is_directory=True)
+        (a_dir / "link1").symlink_to(os.path.join("..", "B", "link2"), target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(f"cannot create a symlink here: {exc}")
+
+    result = _scoped(flavor, tmp_path, root, onlyRepos=[str(a_dir / "link1")])
+
+    assert _armed_or_silent(result, root) == "armed"
+
+
+@by_flavor
+@pytest.mark.parametrize("key", ["onlyRepos", "onlySessions"])
+def test_a_repo_config_cannot_widen_the_machines_narrowing(flavor, key, tmp_path):
+    """One key at a time, so neither can hide a widening of the other."""
+    mine = {"onlyRepos": [str(tmp_path / "repo")], "onlySessions": [SESSION_A]}
+    theirs = {"onlyRepos": [str(tmp_path / "elsewhere")], "onlySessions": [SESSION_B]}
+    root = _repo(tmp_path, **{key: mine[key]})
+
+    result = _scoped(flavor, tmp_path, root, **{key: theirs[key]})
+
+    assert _armed_or_silent(result, root) == "silent"
+
+
+@by_flavor
+def test_a_repo_config_listing_itself_arms_nothing_the_machine_did_not(flavor, tmp_path):
+    root = _repo(tmp_path, enabled=True, onlyRepos=[str(tmp_path / "repo")])
+
+    result = _scoped(flavor, tmp_path, root, enabled=None)
+
+    assert _armed_or_silent(result, root) == "silent"
+
+
+@by_flavor
+def test_a_repo_opt_out_still_wins_inside_the_narrowing(flavor, tmp_path):
+    root = _repo(tmp_path, enabled=False)
+
+    result = _scoped(flavor, tmp_path, root, onlyRepos=[str(root)], onlySessions=[SESSION_A])
+
+    assert _armed_or_silent(result, root) == "silent"
+
+
+@pytest.mark.parametrize("raw,expect", [
+    ("C:\\Repos\\Scratch\\", "c:/repos/scratch"),
+    ("c:/repos/scratch", "c:/repos/scratch"),
+    ("/c/Repos/Scratch", "c:/repos/scratch"),
+    ("C:/Repos/Scratch//", "c:/repos/scratch"),
+    ("C:", "c:/"),
+    ("C:\\", "c:/"),
+    ("\\\\server\\share\\repo\\", "//server/share/repo"),
+    ("Repos\\Scratch", ""),
+    (".", ""),
+    ("", ""),
+    (None, ""),
+    (["C:\\x"], ""),
+])
+def test_windows_repo_paths_normalise_to_one_form(raw, expect):
+    assert crew_autocycle.normalise_repo_path(raw, windows=True) == expect
+
+
+@pytest.mark.parametrize("raw,expect", [
+    ("/srv/repo/", "/srv/repo"),
+    # A backslash is a legal POSIX filename character, not a separator -- it
+    # is not the leading "/" an absolute POSIX path needs, so this is refused
+    # rather than resolved as "/srv/repo".
+    ("\\srv\\repo\\", ""),
+    # A literal backslash INSIDE an otherwise-absolute POSIX path survives
+    # untouched, rather than collapsing into a slash and matching a
+    # different, unlisted directory.
+    ("/srv\\repo", "/srv\\repo"),
+    ("/", "/"),
+    ("srv/repo", ""),
+])
+def test_posix_repo_paths_normalise_to_one_form(raw, expect):
+    assert crew_autocycle.normalise_repo_path(raw, windows=False) == expect
+
+
+def test_in_scope_on_windows_is_case_insensitive_for_repos_only():
+    cfg = {"onlyRepos": ["C:\\Repos\\Scratch"], "onlySessions": ["Abc"]}
+
+    assert crew_autocycle.in_scope(cfg, "c:/repos/scratch/", "Abc", windows=True) is True
+    assert crew_autocycle.in_scope(cfg, "c:/repos/scratch/", "abc", windows=True) is False
+
+
+def test_in_scope_does_not_collapse_backslash_and_slash_on_posix():
+    """Review round 1 (crew-1.0-burnin-fix4): normalise_repo_path used to
+    replace backslashes with slashes unconditionally, so an onlyRepos entry
+    written with a backslash matched a differently-named POSIX repo that
+    was never listed. A backslash is an ordinary filename character on
+    POSIX, not a separator, and must not be treated as one."""
+    cfg = {"onlyRepos": ["/tmp/allowed\\repo"]}
+
+    assert crew_autocycle.in_scope(cfg, "/tmp/allowed/repo", "s", windows=False) is False
+    assert crew_autocycle.in_scope(cfg, "/tmp/allowed\\repo", "s", windows=False) is True
 
 
 # --- the whole cycle: wrap-up -> handoff -> clear -> resume ----------------

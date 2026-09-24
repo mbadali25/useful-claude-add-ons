@@ -6,6 +6,7 @@ test asks git for HEAD and comparing against a mocked sha would test the mock.
 import json
 import os
 import pathlib
+import re
 import shutil
 import subprocess
 import sys
@@ -171,6 +172,100 @@ def sample_params(params, keep):
     return [pytest.param(*p.values, id=p.id,
                          marks=tuple(p.marks) + (() if p.id in keep else (SLOW,)))
             for p in params]
+
+
+# --- PATH shims, per flavour -------------------------------------------------
+#
+# A fake tool on PATH has to be findable by THREE different searchers, and on
+# Windows they disagree about what "findable" means:
+#
+#   * bash (`command -v`) runs an extensionless file with a shebang, and wants
+#     a `:`-separated POSIX PATH (`/c/...`);
+#   * pwsh wants a `;`-separated native PATH;
+#   * the native-Windows python a hook script starts (`crew_autocycle.py`)
+#     asks `shutil.which`, which with the default X_OK mode only ever matches
+#     `name + <a PATHEXT extension>` -- an extensionless shim is invisible to
+#     it however PATH is joined. That, more than the separator, is what the
+#     Windows burn-in's "method xdotool but xdotool is not on PATH" points at.
+#
+# So a shim is written twice on Windows (extensionless for bash, `.cmd` for
+# everything native), and PATH is built for the flavour that will read it.
+# chmod is a no-op on NTFS and is skipped there; on POSIX it is load-bearing.
+
+_DRIVE_RE = re.compile(r"^([A-Za-z]):(?:[\\/]+(.*))?$")
+
+
+def windows_to_posix(path):
+    """`C:\\x\\y` -> `/c/x/y`, the shape `cygpath -u` gives. Pure, so the
+    Windows conversion is covered on a Linux runner. A path with no drive
+    letter keeps its shape, with backslashes turned into slashes."""
+    text = str(path)
+    match = _DRIVE_RE.match(text)
+    if not match:
+        return text.replace("\\", "/")
+    rest = (match.group(2) or "").replace("\\", "/").strip("/")
+    drive = "/" + match.group(1).lower()
+    return f"{drive}/{rest}" if rest else drive
+
+
+def _cygpath_list(entries, cygpath):
+    """`cygpath -u -p` over the whole list in one process, or None."""
+    try:
+        done = subprocess.run([cygpath, "-u", "-p", ";".join(entries)],
+                              capture_output=True, text=True, timeout=30,
+                              stdin=subprocess.DEVNULL, check=False)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    out = done.stdout.strip()
+    return out.split(":") if done.returncode == 0 and out else None
+
+
+def shell_path(flavor, dirs, base=None, windows=None, cygpath=None):
+    """The PATH value `flavor` ("sh" or "ps1") should be handed, with `dirs`
+    first and `base` (default: this process's PATH) behind them.
+
+    `windows` and `cygpath` exist so a Linux test can drive the Windows
+    branch: `windows=True` treats `base` as a `;`-list of native paths, and
+    `cygpath=False` forces the manual `C:\\x` -> `/c/x` conversion."""
+    windows = os.name == "nt" if windows is None else windows
+    base = os.environ.get("PATH", "") if base is None else base
+    native_sep = ";" if windows else ":"
+    entries = [str(d) for d in dirs] + [e for e in base.split(native_sep) if e]
+    if not (windows and flavor == "sh"):
+        return native_sep.join(entries)
+    if cygpath is None:
+        cygpath = shutil.which("cygpath") if os.name == "nt" else None
+    converted = _cygpath_list(entries, cygpath) if cygpath else None
+    if converted is None or len(converted) != len(entries):
+        converted = [windows_to_posix(e) for e in entries]
+    return ":".join(converted)
+
+
+def write_shim(directory, name, sh_body="#!/bin/sh\nexit 0\n",
+               cmd_body="@echo off\r\nexit /b 0\r\n", windows=None):
+    """A fake executable called `name` in `directory`; returns its path.
+
+    POSIX: one extensionless file, chmod 755. Windows: the extensionless file
+    (bash runs it by its shebang) plus `name.cmd`, the only form a native
+    `shutil.which` or pwsh will find. No chmod there -- NTFS ignores it."""
+    windows = os.name == "nt" if windows is None else windows
+    os.makedirs(str(directory), exist_ok=True)
+    path = os.path.join(str(directory), name)
+    with open(path, "w", encoding="ascii", newline="\n") as handle:
+        handle.write(sh_body)
+    if windows:
+        with open(path + ".cmd", "w", encoding="ascii", newline="") as handle:
+            handle.write(cmd_body)
+    else:
+        os.chmod(path, 0o755)
+    return path
+
+
+def shim_env(flavor, bindir, **extra):
+    """`{"PATH": ...}` with `bindir` first, built for `flavor`, plus `extra`."""
+    env = {"PATH": shell_path(flavor, [bindir])}
+    env.update(extra)
+    return env
 
 
 def _git(root, *args):

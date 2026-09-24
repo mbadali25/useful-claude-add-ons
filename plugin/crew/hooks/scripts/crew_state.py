@@ -671,6 +671,14 @@ AUTOCLEAR_DEFAULTS = {
     # read it, and the first pass read the Windows scripts -- a default set
     # from one platform's consumer is a default half-derived.
     "unsafeFocus": False,
+    # NARROWING-ONLY, and read from the machine file only
+    # (`crew_autocycle.in_scope`, `auto-clear.ps1`'s twin): null arms every
+    # repo and session the machine opt-in already covers; a list arms only
+    # the listed repo paths / session ids; an empty list arms nothing. A
+    # repo's own value is never read -- a repo that could list itself would
+    # be widening, which is exactly what `enabled` forbids.
+    "onlyRepos": None,
+    "onlySessions": None,
 }
 
 # Keys inside `autoClear` that are CONSENT rather than capability, and so are

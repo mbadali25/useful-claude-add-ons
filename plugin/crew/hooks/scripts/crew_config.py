@@ -483,8 +483,8 @@ def default_global_config():
         # The siblings stay repo-only and are refused by name, which is
         # measured rather than assumed -- see `test_autoclear_is_global_and_
         # its_siblings_are_not`. `_prune` and `is_global_path` both descend
-        # structurally, so naming `context` here grants exactly the six
-        # `autoClear` leaves and nothing beside them.
+        # structurally, so naming `context` here grants exactly the
+        # `autoClear` leaves (all but `unsafeFocus`) and nothing beside them.
         "context": {"autoClear": {
             key: copy.deepcopy(value)
             for key, value in crew_state.AUTOCLEAR_DEFAULTS.items()

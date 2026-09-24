@@ -7,8 +7,11 @@ later tasks build on them, and so this harness lands with a green pytest run
 instead of "no tests collected" (pytest exit code 5).
 """
 import json
+import os
 import re
 import subprocess
+
+import pytest
 
 import context  # noqa: F401  pylint: disable=unused-import
 import crew_fixtures
@@ -161,3 +164,67 @@ def test_git_calls_never_inherit_the_parent_stdin(tmp_path, monkeypatch):
             "a git subprocess.run call is missing stdin=subprocess.DEVNULL "
             f"-- kwargs were: {kwargs}"
         )
+
+
+# --- per-flavour PATH shims (the Windows conversion, driven from Linux) -----
+
+
+@pytest.mark.parametrize("native,posix", [
+    ("C:\\Users\\me\\AppData\\Local\\Temp\\fakebin", "/c/Users/me/AppData/Local/Temp/fakebin"),
+    ("D:/a/b/", "/d/a/b"),
+    ("C:\\x\\y\\\\", "/c/x/y"),
+    ("C:\\", "/c"),
+    ("C:", "/c"),
+    ("/usr/bin", "/usr/bin"),
+    ("relative\\dir", "relative/dir"),
+])
+def test_windows_to_posix_matches_cygpath_shape(native, posix):
+    assert crew_fixtures.windows_to_posix(native) == posix
+
+
+def test_bash_on_windows_gets_a_colon_joined_posix_path():
+    base = "C:\\Windows\\system32;C:\\Program Files\\Tools\\bin;"
+
+    got = crew_fixtures.shell_path("sh", ["C:\\t\\fakebin"], base=base, windows=True,
+                                   cygpath=False)
+
+    assert got == "/c/t/fakebin:/c/Windows/system32:/c/Program Files/Tools/bin"
+
+
+def test_pwsh_on_windows_keeps_a_semicolon_joined_native_path():
+    got = crew_fixtures.shell_path("ps1", ["C:\\t\\fakebin"], base="C:\\Windows;C:\\x",
+                                   windows=True)
+
+    assert got == "C:\\t\\fakebin;C:\\Windows;C:\\x"
+
+
+@pytest.mark.parametrize("flavor", ["sh", "ps1"])
+def test_posix_path_is_colon_joined_and_untouched(flavor):
+    got = crew_fixtures.shell_path(flavor, ["/tmp/fakebin"], base="/usr/bin:/bin", windows=False)
+
+    assert got == "/tmp/fakebin:/usr/bin:/bin"
+
+
+def test_a_cygpath_that_fails_falls_back_to_the_manual_conversion(tmp_path):
+    missing = str(tmp_path / "no-such-cygpath")
+
+    got = crew_fixtures.shell_path("sh", ["E:\\bin"], base="", windows=True, cygpath=missing)
+
+    assert got == "/e/bin"
+
+
+def test_a_windows_shim_gets_a_cmd_twin_the_native_which_can_find(tmp_path):
+    crew_fixtures.write_shim(tmp_path, "xdotool", windows=True)
+
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["xdotool", "xdotool.cmd"]
+    assert (tmp_path / "xdotool").read_bytes().startswith(b"#!/bin/sh\n")
+    assert (tmp_path / "xdotool.cmd").read_bytes() == b"@echo off\r\nexit /b 0\r\n"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="the POSIX branch: chmod is what makes it runnable")
+def test_a_posix_shim_is_executable_and_has_no_cmd_twin(tmp_path):
+    path = crew_fixtures.write_shim(tmp_path, "tmux", "#!/bin/sh\necho 7\n", windows=False)
+
+    assert os.access(path, os.X_OK)
+    assert [p.name for p in tmp_path.iterdir()] == ["tmux"]
+    assert subprocess.run([path], capture_output=True, text=True, check=False).stdout == "7\n"

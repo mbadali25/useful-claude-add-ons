@@ -164,6 +164,45 @@ AUTOCYCLE_MUTATIONS = (
      "        if not pane_pid or pane_pid not in ancestors():\n",
      "        if not pane_pid:\n",
      _T + "test_a_tmux_pane_must_be_the_one_running_this_session[999999-False]"),
+    # --- narrowing: onlyRepos / onlySessions --------------------------------
+    ("bash arms every repo whatever onlyRepos lists", CYCLE,
+     "    repos = _scope(cfg.get(\"onlyRepos\"))\n",
+     "    repos = None\n",
+     _T + "test_the_machine_can_narrow_auto_clear_to_listed_repos_and_sessions[repo-other-sh]"),
+    ("PowerShell arms every repo whatever onlyRepos lists", CLEAR_PS1,
+     "$onlyRepos = Get-CrewScopeList $globalAuto \"onlyRepos\"\n",
+     "$onlyRepos = $null\n",
+     _T + "test_the_machine_can_narrow_auto_clear_to_listed_repos_and_sessions[repo-other-ps1]"),
+    ("a repo's own onlyRepos widens the bash flavour", CYCLE,
+     "    out[\"onlyRepos\"] = machine.get(\"onlyRepos\")\n",
+     "    out[\"onlyRepos\"] = repo.get(\"onlyRepos\", machine.get(\"onlyRepos\"))\n",
+     _T + "test_a_repo_config_cannot_widen_the_machines_narrowing[onlyRepos-sh]"),
+    ("a repo's own onlySessions widens the PowerShell flavour", CLEAR_PS1,
+     "$onlySessions = Get-CrewScopeList $globalAuto \"onlySessions\"\n",
+     "$onlySessions = Get-CrewScopeList $repoAuto \"onlySessions\"\n",
+     _T + "test_a_repo_config_cannot_widen_the_machines_narrowing[onlySessions-ps1]"),
+    # --- backslash/slash collapse on POSIX (review round 1, fix4) -----------
+    ("bash normalises a POSIX backslash into a slash again (pre-check)", CYCLE,
+     "    text = os.path.expanduser(path.strip())\n"
+     "    if windows:\n"
+     "        text = text.replace(\"\\\\\", \"/\")\n",
+     "    text = os.path.expanduser(path.strip()).replace(\"\\\\\", \"/\")\n"
+     "    if windows:\n",
+     _T + "test_in_scope_does_not_collapse_backslash_and_slash_on_posix"),
+    ("bash normalises a POSIX backslash into a slash again (post-realpath)", CYCLE,
+     "        text = os.path.realpath(text)\n"
+     "        if windows:\n"
+     "            text = text.replace(\"\\\\\", \"/\")\n",
+     "        text = os.path.realpath(text).replace(\"\\\\\", \"/\")\n",
+     _T + "test_in_scope_does_not_collapse_backslash_and_slash_on_posix"),
+    # --- chained relative symlink resolves from the wrong parent (fix4) -----
+    ("PowerShell chases a chained relative symlink from the first hop's parent", CLEAR_PS1,
+     "      $hopParent = Split-Path -Parent $next\n"
+     "      if ([System.IO.Path]::IsPathRooted($link)) { $next = [System.IO.Path]::GetFullPath($link) }\n"
+     "      else { $next = [System.IO.Path]::GetFullPath((Join-Path $hopParent $link)) }\n",
+     "      if ([System.IO.Path]::IsPathRooted($link)) { $next = [System.IO.Path]::GetFullPath($link) }\n"
+     "      else { $next = [System.IO.Path]::GetFullPath((Join-Path $cur $link)) }\n",
+     _T + "test_a_chained_relative_symlink_in_only_repos_resolves_from_its_own_parent[ps1]"),
     # --- resume --------------------------------------------------------------
     ("the resume cuts the next action off a long handoff", CONTEXT,
      "                lead = f\"Next action: {action}\\n\" if action else \"\"\n",

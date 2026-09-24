@@ -42,6 +42,47 @@ in the machine-global config, because it drives this machine's keyboard:
 `/crew:config` shows where each value comes from and walks you through the global file. To turn the
 cycle off on a machine, set `context.autoClear.enabled` to `false` or delete the key.
 
+### Arming one scratch repo while other sessions are live
+
+`enabled: true` arms auto-clear in **every** Claude session on the machine, not just the one you
+are testing. If other sessions are running, one of them can get `/clear` typed into its terminal
+when its own handoff lands. To limit auto-clear to one repo or one session, add these keys to the
+same machine file. They can only narrow what `enabled` turns on:
+
+| Key | Value | Effect |
+|---|---|---|
+| `context.autoClear.onlyRepos` | list of absolute repo paths | auto-clear runs only in these repos |
+| `context.autoClear.onlySessions` | list of session ids | auto-clear runs only in these sessions |
+
+- A missing key or `null` does not narrow anything. An empty list `[]` turns auto-clear off
+  everywhere. If a key holds anything other than a list, auto-clear is off everywhere too.
+- When both keys are set, a session must match both.
+- Paths are compared after symlinks are resolved. Backslashes and trailing separators do not
+  matter. On Windows, case does not matter and `/c/repos/x` means `C:\repos\x`. A relative path such
+  as `.` never matches.
+- Session ids must match exactly, including case.
+- These keys are read **only** from the machine file. If a repo's `.crew/config.json` sets them, they
+  are ignored, so a repo cannot add itself. A repo's `enabled: false` still turns auto-clear off.
+- In any other repo or session, auto-clear stays silent. It does not write a log line, just as it
+  does when `enabled` is off.
+
+To arm one scratch repo safely:
+
+```json
+{
+  "context": {
+    "autoClear": {
+      "enabled": true,
+      "onlyRepos": ["C:\\repos\\autoclear-scratch"]
+    }
+  }
+}
+```
+
+On Linux, use a path such as `"/home/you/autoclear-scratch"`. When you are done testing, remove
+`enabled` or set it to `false`. Also delete `onlyRepos`, so that a later `enabled: true` does not
+arm only that repo without anyone noticing.
+
 ## When it will not clear
 
 Each refusal is logged with its reason to `.crew/.autoclear.log`. A Stop hook's stderr is not shown
