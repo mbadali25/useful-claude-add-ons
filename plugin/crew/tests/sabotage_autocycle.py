@@ -287,19 +287,31 @@ AUTOCYCLE_MUTATIONS = (
     # --- a missing repo config used to stand the whole script down silently --
     ("auto-clear.sh exits before note() if the repo has no config.json", CLEAR_SH,
      "cd \"$ROOT\" 2>/dev/null || exit 0\n\n"
-     "# NOT a `[ -f .crew/config.json ] || exit 0` guard -- that used to sit here and\n",
+     "# Gated on the `.crew/` DIRECTORY, never on config.json. A repo with no\n",
      "cd \"$ROOT\" 2>/dev/null || exit 0\n"
      "[ -f .crew/config.json ] || exit 0\n\n"
-     "# NOT a `[ -f .crew/config.json ] || exit 0` guard -- that used to sit here and\n",
+     "# Gated on the `.crew/` DIRECTORY, never on config.json. A repo with no\n",
      "tests/test_auto_clear.py::test_a_missing_repo_config_still_logs_the_no_session_refusal_sh"),
     ("auto-clear.ps1 exits before Write-CrewAutoClearNote if the repo has no config.json",
      CLEAR_PS1,
      "Set-Location $where -ErrorAction SilentlyContinue\n\n"
-     "# NOT a `Test-Path \".crew/config.json\") { exit 0 }` guard -- that used to sit\n",
+     "# Gated on the `.crew/` DIRECTORY, never on config.json. A repo with no\n",
      "Set-Location $where -ErrorAction SilentlyContinue\n"
      "if (-not (Test-Path \".crew/config.json\")) { exit 0 }\n\n"
-     "# NOT a `Test-Path \".crew/config.json\") { exit 0 }` guard -- that used to sit\n",
+     "# Gated on the `.crew/` DIRECTORY, never on config.json. A repo with no\n",
      "tests/test_auto_clear.py::test_a_missing_repo_config_still_logs_the_no_session_refusal_ps1"),
+    # --- the directory gate itself removed entirely: a repo with NO `.crew/`
+    # at all must stay silent, not fall through to the merge below --
+    ("auto-clear.sh's .crew/ directory gate removed entirely", CLEAR_SH,
+     "[ -d .crew ] || exit 0\nLOG=\".crew/.autoclear.log\"\n",
+     "LOG=\".crew/.autoclear.log\"\n",
+     "tests/test_auto_clear.py::"
+     "test_no_crew_directory_at_all_stays_silent_and_creates_nothing_sh"),
+    ("auto-clear.ps1's .crew/ directory gate removed entirely", CLEAR_PS1,
+     "if (-not (Test-Path \".crew\" -PathType Container)) { exit 0 }\n\n$log = \".crew/.autoclear.log\"\n",
+     "$log = \".crew/.autoclear.log\"\n",
+     "tests/test_auto_clear.py::"
+     "test_no_crew_directory_at_all_stays_silent_and_creates_nothing_ps1"),
     # --- resume --------------------------------------------------------------
     ("the resume cuts the next action off a long handoff", CONTEXT,
      "                lead = f\"Next action: {action}\\n\" if action else \"\"\n",

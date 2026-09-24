@@ -53,19 +53,27 @@ if ($env:OS -ne 'Windows_NT') { exit 0 }
 $where = if ($Root) { $Root } elseif ($env:CLAUDE_PROJECT_DIR) { $env:CLAUDE_PROJECT_DIR } else { "." }
 Set-Location $where -ErrorAction SilentlyContinue
 
-# NOT a `Test-Path ".crew/config.json") { exit 0 }` guard -- that used to sit
-# here and stood this whole script down, silently, before Write-CrewAutoClearNote
-# even exists to be called, on the ONE thing that matters most to prove: a
-# fresh checkout has no repo config at all (.crew/config.json is git-ignored in
-# this very repo), and "only the machine may opt in" (test_only_the_machine_
-# can_opt_in_and_a_repo_can_only_opt_out) already means a repo need not have
-# ANY config to be armed by the machine's global enabled:true. A present-but-
-# empty repo config and an absent one are the same input to Read-CrewJsonFile
-# (both come back as "no repo autoClear block"), and only one of them used to
-# get evaluated. Read-CrewJsonFile already returns $null for a missing file
-# (caught inside its own try/catch), and every consumer of $repoAuto is
-# already null-safe (Get-CrewChild), so nothing below needs this repo's own
-# config.json to exist at all.
+# Gated on the `.crew/` DIRECTORY, never on config.json. A repo with no
+# `.crew/` at all must stay completely silent and must NEVER get a `.crew/`
+# directory or `.crew/.autoclear.log` created as a side effect of this hook
+# running -- crew never creates `.crew/` from a read, and this check has to
+# run before Write-CrewAutoClearNote ever gets a chance to call
+# New-Item/Add-Content. An EARLIER version of this gate checked
+# `Test-Path ".crew/config.json"` instead and stood the whole script down,
+# silently, on the ONE thing that matters most to prove: a fresh checkout has
+# no repo config at all (.crew/config.json is git-ignored in this very repo),
+# and "only the machine may opt in" (test_only_the_machine_can_opt_in_and_a_
+# repo_can_only_opt_out) already means a repo need not have ANY config to be
+# armed by the machine's global enabled:true. That version was removed
+# outright, which went too far the other way: a repo with NO `.crew/` at all
+# then reached this far and got one created. A `.crew/` directory present
+# with no config.json falls through to the merge below exactly like a
+# present-but-empty repo config would -- Read-CrewJsonFile already returns
+# $null for a missing file (caught inside its own try/catch), and every
+# consumer of $repoAuto is already null-safe (Get-CrewChild) -- so gating on
+# the directory rather than the file loses nothing this script needs.
+if (-not (Test-Path ".crew" -PathType Container)) { exit 0 }
+
 $log = ".crew/.autoclear.log"
 
 function Write-CrewAutoClearNote([string]$Message) {

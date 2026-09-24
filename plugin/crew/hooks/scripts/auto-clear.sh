@@ -59,16 +59,26 @@ done
 
 cd "$ROOT" 2>/dev/null || exit 0
 
-# NOT a `[ -f .crew/config.json ] || exit 0` guard -- that used to sit here and
-# stood this whole script down, silently, before note() even exists to be
-# called, on the ONE thing that matters most to prove: a fresh checkout has no
-# repo config at all (.crew/config.json is git-ignored in this very repo), and
-# "only the machine may opt in" (test_only_the_machine_can_opt_in_and_a_repo_
-# can_only_opt_out) already means a repo need not have ANY config to be armed
-# by the machine's global enabled:true. crew_autocycle._load() already returns
-# {} for a missing file -- the same value a present-but-empty repo config
-# produces -- so settings()/plan() already treat "absent" and "empty" alike;
-# only the guard that used to sit here treated them differently.
+# Gated on the `.crew/` DIRECTORY, never on config.json. A repo with no
+# `.crew/` at all must stay completely silent and must NEVER get a `.crew/`
+# directory or `.crew/.autoclear.log` created as a side effect of this hook
+# running -- crew never creates `.crew/` from a read, and this check has to
+# run before note() ever gets a chance to `mkdir -p .crew`. An EARLIER
+# version of this gate checked `[ -f .crew/config.json ]` instead and stood
+# the whole script down, silently, on the ONE thing that matters most to
+# prove: a fresh checkout has no repo config at all (.crew/config.json is
+# git-ignored in this very repo), and "only the machine may opt in"
+# (test_only_the_machine_can_opt_in_and_a_repo_can_only_opt_out) already
+# means a repo need not have ANY config to be armed by the machine's global
+# enabled:true. That version was removed outright, which went too far the
+# other way: a repo with NO `.crew/` at all then reached this far and got
+# one created. A `.crew/` directory present with no config.json falls
+# through to the merge below exactly like a present-but-empty repo config
+# would -- crew_autocycle._load() already returns {} for a missing file, the
+# same value a present-but-empty repo config produces, so settings()/plan()
+# already treat "absent" and "empty" alike -- so gating on the directory
+# rather than the file loses nothing this script needs.
+[ -d .crew ] || exit 0
 LOG=".crew/.autoclear.log"
 
 note() {  # one line to the log and to stderr; the log is the one anybody reads

@@ -452,14 +452,33 @@ def test_the_windows_flavour_stands_down_entirely_off_windows(tmp_path):
     assert not (root / ".crew" / ".autoclear.log").exists()
 
 
-# --- A repo with NO .crew/config.json at all --------------------------------
+# --- The `.crew/` directory gate ---------------------------------------------
+#
+# The gate is on the DIRECTORY, never on config.json, and never on nothing:
+#
+#   (a) `.crew/` present, no config.json, machine opted in -- ARMED. Reaches
+#       the session check (the no-session refusal is logged), because a
+#       present-but-empty repo config and an absent one are the same input to
+#       Read-CrewJsonFile/crew_autocycle._load (both come back as "no repo
+#       autoClear block"), and 1.0 already merges: machine opts in, repo may
+#       only opt out.
+#   (b) NO `.crew/` at all, machine opted in -- SILENT. Exit 0, nothing on
+#       stdout or stderr, and `.crew/` must not spring into existence as a
+#       side effect of a hook that only ever reads -- crew never creates
+#       `.crew/` from a read.
+#   (c) `.crew/` present, no config.json, machine opted in but `onlyRepos`
+#       excludes this repo -- SILENT, no log line either (a narrowing that
+#       does not match this repo is the same as never having opted in).
+#   (d) `.crew/config.json` opts this repo OUT while the machine is on --
+#       SILENT (a repo may only narrow the machine's opt-in, never widen it).
 
 
 def _repo_with_no_config(tmp_path, machine_enabled=True):
-    """A repo directory that has never run `/crew:init` -- no `.crew/config.json`
-    at all, matching a fresh checkout: `.crew/config.json` is git-ignored in
-    this very repo (`.gitignore:292`), so every clone or worktree starts this
-    way until something writes one. The MACHINE is opted in regardless --
+    """A repo directory that HAS `.crew/` (so it has been through
+    `/crew:init` or equivalent) but no `.crew/config.json` -- matching a fresh
+    checkout: `.crew/config.json` is git-ignored in this very repo
+    (`.gitignore:292`), so every clone or worktree starts this way until
+    something writes one. The MACHINE is opted in regardless --
     `test_only_the_machine_can_opt_in_and_a_repo_can_only_opt_out` already
     proves a repo need not enable anything for the machine's global config to
     arm it, and an absent repo config is not a different input to that check
@@ -470,12 +489,56 @@ def _repo_with_no_config(tmp_path, machine_enabled=True):
     return root
 
 
+def _repo_with_no_crew_dir(tmp_path, machine_enabled=True):
+    """A repo directory with NO `.crew/` at all -- never initialised, and
+    never touched by anything crew has run before. `make_repo` always
+    creates `.crew/` (every other fixture in this file needs it to exist),
+    so this one is built by hand instead."""
+    root = tmp_path / "repo"
+    (root / ".work").mkdir(parents=True)
+    _write_machine(root, machine_enabled)
+    return root
+
+
+def _write_machine_autoclear(root, auto_clear):
+    """Like `_write_machine`, but writes the whole `context.autoClear` block
+    instead of just `enabled` -- for onlyRepos/onlySessions narrowing."""
+    crew = root.parent / "home" / ".claude" / "crew"
+    crew.mkdir(parents=True, exist_ok=True)
+    cfg = {"context": {"autoClear": auto_clear}}
+    (crew / "config.json").write_text(json.dumps(cfg), encoding="utf-8")
+
+
+def _run_ps1_forced_windows(root, *extra_args):
+    """The `.ps1` twin, run the way hooks.json's registered scripts are
+    invoked (`pwsh -NoProfile ... -File script.ps1 <args>`), with
+    `OS=Windows_NT` forced -- the same test seam `scope_fixtures.py`/
+    `test_context_watch.py` use to drive this flavour on a non-Windows host.
+    Nothing in these cases reaches the send path, so it is safe off real
+    Windows too.
+    """
+    home = str(root.parent / "home")
+    env = dict(os.environ, CLAUDE_PROJECT_DIR=str(root), OS="Windows_NT",
+               CREW_AUTOCLEAR_INHIBIT="1", HOME=home, USERPROFILE=home)
+    return subprocess.run(
+        [_PWSH_ANY, "-NoProfile", "-NonInteractive", "-File", _PS1,
+         "-Root", str(root), *extra_args],
+        cwd=str(root), env=env, stdin=subprocess.DEVNULL,
+        capture_output=True, text=True, check=False)
+
+
+# (a) `.crew/` present, no config.json, machine on -- armed, reaches the
+#     session check.
+
+
 def test_a_missing_repo_config_still_logs_the_no_session_refusal_sh(tmp_path):
-    """Regression: `[ -f .crew/config.json ] || exit 0` used to sit before
-    `note()` is even defined, so a repo that never ran `/crew:init` stood down
-    with 0 bytes on stdout AND stderr and no `.crew/.autoclear.log` line ever
-    written, whatever `--session`/`--force` said -- the exact Windows burn-in
-    symptom, reproduced here without any repo config at all.
+    """Regression: `[ -f .crew/config.json ] || exit 0` used to sit right
+    after `cd`, before `note()` is even defined, so a repo that never ran
+    `/crew:init` stood down with 0 bytes on stdout AND stderr and no
+    `.crew/.autoclear.log` line ever written, whatever `--session`/`--force`
+    said -- the exact Windows burn-in symptom, reproduced here without any
+    repo config at all. `.crew/` itself IS present (this fixture's whole
+    point), so the current directory-only gate does not stand this down.
     """
     root = _repo_with_no_config(tmp_path)
     assert not (root / ".crew" / "config.json").exists()
@@ -488,24 +551,92 @@ def test_a_missing_repo_config_still_logs_the_no_session_refusal_sh(tmp_path):
 
 @pytest.mark.skipif(_PWSH_ANY is None, reason="needs pwsh")
 def test_a_missing_repo_config_still_logs_the_no_session_refusal_ps1(tmp_path):
-    """The `.ps1` twin of the case above, run the way hooks.json's registered
-    scripts are invoked (`pwsh -NoProfile ... -File script.ps1 <args>`), with
-    no `-Session` -- byte-for-byte the Windows burn-in repro. `OS=Windows_NT`
-    is the same test seam `scope_fixtures.py`/`test_context_watch.py` use to
-    drive this flavour on a non-Windows host; nothing here reaches the send
-    path, so it is safe off real Windows too.
-    """
+    """The `.ps1` twin of the case above."""
     root = _repo_with_no_config(tmp_path)
     assert not (root / ".crew" / "config.json").exists()
-    home = str(root.parent / "home")
-    env = dict(os.environ, CLAUDE_PROJECT_DIR=str(root), OS="Windows_NT",
-               CREW_AUTOCLEAR_INHIBIT="1", HOME=home, USERPROFILE=home)
-    result = subprocess.run(
-        [_PWSH_ANY, "-NoProfile", "-NonInteractive", "-File", _PS1,
-         "-Root", str(root)],
-        cwd=str(root), env=env, stdin=subprocess.DEVNULL,
-        capture_output=True, text=True, check=False)
+    result = _run_ps1_forced_windows(root)
     assert result.returncode == 0
     assert "no session id" in result.stderr, result.stderr
     log = (root / ".crew" / ".autoclear.log").read_text(encoding="utf-8")
     assert "no session id" in log
+
+
+# (b) NO `.crew/` at all, machine on -- silent, and `.crew/` must not be
+#     created as a side effect.
+
+
+def test_no_crew_directory_at_all_stays_silent_and_creates_nothing_sh(tmp_path):
+    root = _repo_with_no_crew_dir(tmp_path)
+    assert not (root / ".crew").exists()
+    result = _run("sh", root, session=None)
+    assert result.returncode == 0
+    assert result.stdout == ""
+    assert result.stderr == ""
+    assert not (root / ".crew").exists()
+
+
+@pytest.mark.skipif(_PWSH_ANY is None, reason="needs pwsh")
+def test_no_crew_directory_at_all_stays_silent_and_creates_nothing_ps1(tmp_path):
+    root = _repo_with_no_crew_dir(tmp_path)
+    assert not (root / ".crew").exists()
+    result = _run_ps1_forced_windows(root)
+    assert result.returncode == 0
+    assert result.stdout.strip() == ""
+    assert result.stderr.strip() == ""
+    assert not (root / ".crew").exists()
+
+
+# (c) `.crew/` present, no config.json, machine on but `onlyRepos` excludes
+#     this repo -- silent, no log line either.
+
+
+def test_only_repos_excluding_this_repo_stays_silent_with_no_config_sh(tmp_path):
+    root = crew_fixtures.make_repo(tmp_path, config=None, git=False)
+    _write_machine_autoclear(root, {"enabled": True,
+                                     "onlyRepos": [str(tmp_path / "elsewhere")]})
+    assert not (root / ".crew" / "config.json").exists()
+    result = _run("sh", root, session=None)
+    assert result.returncode == 0
+    assert result.stdout.strip() == ""
+    assert not (root / ".crew" / ".autoclear.log").exists()
+
+
+@pytest.mark.skipif(_PWSH_ANY is None, reason="needs pwsh")
+def test_only_repos_excluding_this_repo_stays_silent_with_no_config_ps1(tmp_path):
+    root = crew_fixtures.make_repo(tmp_path, config=None, git=False)
+    _write_machine_autoclear(root, {"enabled": True,
+                                     "onlyRepos": [str(tmp_path / "elsewhere")]})
+    assert not (root / ".crew" / "config.json").exists()
+    result = _run_ps1_forced_windows(root)
+    assert result.returncode == 0
+    assert result.stdout.strip() == ""
+    assert not (root / ".crew" / ".autoclear.log").exists()
+
+
+# (d) repo-local `enabled: false` while the machine is on -- silent (a repo
+#     may only narrow the opt-in, never widen it).
+
+
+def _repo_opted_out(tmp_path):
+    cfg = {"context": {"warnAt": 0.8, "handoffPath": ".work/HANDOFF.md",
+                        "autoClear": {"enabled": False}}}
+    root = crew_fixtures.make_repo(tmp_path, config=cfg, git=False)
+    _write_machine(root, True)
+    return root
+
+
+def test_repo_local_opt_out_stays_silent_with_global_on_sh(tmp_path):
+    root = _repo_opted_out(tmp_path)
+    result = _run("sh", root, session=None)
+    assert result.returncode == 0
+    assert result.stdout.strip() == ""
+    assert not (root / ".crew" / ".autoclear.log").exists()
+
+
+@pytest.mark.skipif(_PWSH_ANY is None, reason="needs pwsh")
+def test_repo_local_opt_out_stays_silent_with_global_on_ps1(tmp_path):
+    root = _repo_opted_out(tmp_path)
+    result = _run_ps1_forced_windows(root)
+    assert result.returncode == 0
+    assert result.stdout.strip() == ""
+    assert not (root / ".crew" / ".autoclear.log").exists()
