@@ -6,6 +6,64 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Changed
 
+- **`crew` 1.0.11: merge origin/main (crew 0.20.25/0.20.26, PRs #220/#224)
+  onto 1.0.10, plus two verify-gate.sh hardening fixes and test-hygiene
+  follow-ups found doing it.**
+  Merged `origin/main` at `3c68ebaf` (#224 "make rule[8] terminate, and
+  green" plus #220). Conflict resolutions: `pm-pulse.ps1` stays deleted (1.0
+  dropped it); `marketplace.json`/`plugin.json`/`PLUGINS.md` keep 1.0's
+  4-agent `crew` description and version (main's is the pre-1.0, 54-agent
+  description); `.crew/verify.json` keeps 1.0's rule[8] (377s, measured
+  serial on Linux) — main introduced no rule 1.0 lacked, only extra paths
+  for modules (`pm_brief.py`/`pm_pulse.py`) 1.0 no longer has;
+  `verify-gate.ps1` keeps 1.0's version entirely — main's is strictly
+  older (no shared extensionless-shim guard across both resolvers, no
+  bounded stdin read, no temp-file rule-output capture, a shorter
+  `PINNED_VARS` list); `test_verify_gate_lock_window.py` takes main's
+  polling for both fixed-sleep races (`test_a_rule_longer_than_the_ttl_
+  keeps_its_lock`'s `sleep(4)`, `test_each_flavour_honours_a_deadline_the_
+  other_published`'s `sleep(6)`) while keeping 1.0's tighter,
+  spawn-overhead-independent TTL-window bound;
+  `test_verify_gate_python3_shim.py` keeps 1.0's more precise
+  `_BASH_IS_MSYS_SHIM` skip scoping over main's blanket platform check;
+  `test_verify_gate_stop_gate_record.py` combines both sides —
+  1.0's `run_gate`/`popen_gate` process-group-cleanup harness with main's
+  `_GATE_TIMEOUT`/named-failure wrapping — and reaps `test_34b`'s
+  previously-leaked `sleep 20`. Swept `plugin/crew/tests` for other fixed
+  `time.sleep(N)` races against gate startup: none found outside the
+  window-lock file (the rest are already poll-loops, timestamp-granularity
+  spacers between two already-completed blocking calls, or deliberate long
+  sleeps inside a stub/fake process that gets killed rather than waited
+  on).
+
+  Two BLOCK-class fixes to `verify-gate.sh`, both sabotage-confirmed
+  (reverted, red; restored, green): (1) when the per-rule output-capture
+  temp file cannot be created, the gate now tries a second, repo-local
+  location (`.crew/.verify-rule-out.XXXXXX`) before refusing the rule with
+  a named reason, rather than falling back to the old pipe-form capture a
+  backgrounded grandchild can hold open forever; (2) the rule's own output
+  is read back through a size snapshotted the moment the rule's process
+  exits, capped at 1MiB, rather than the whole file — not a hang fix (a
+  regular file's `read()` cannot block on a writer that has not closed,
+  unlike a pipe), but a real time/memory one: a 3GiB file took 16s and
+  several GiB of RSS to read whole, under a second capped.
+
+  Test hygiene: `crew_fixtures.gate_processes` is now autouse (previously
+  requestable but nothing in the verify-gate test modules requested it),
+  and `popen_gate` auto-registers every spawn with whichever instance is
+  active; its teardown now `killpg`s the whole POSIX process group
+  regardless of whether the tracked leader process has already exited —
+  gated on that before, which is exactly the state a rule that backgrounds
+  a grandchild and returns immediately leaves it in (Windows' `taskkill`
+  path is unchanged, filed to `TODO.md`). `test_verify_gate_bash_resolver_
+  extension_guard.py` gained an assertion that the extensionless-file check
+  is actually conditioned on its own guard variable, not merely declared
+  and checked somewhere in the right order — sabotage-confirmed against a
+  `$crewBashRealWindows` → `$false` mutation that the previous assertions
+  missed. `.ps1`-side counterparts of both `verify-gate.sh` fixes, and a
+  platform-native routing proposal for this kind of `.sh`/`.ps1` hand-off,
+  filed to `TODO.md` for win-repo per the OWNER RULE.
+
 - **`crew` 1.0.10: release integration of four review-round branches plus a CI
   fix, and six follow-ups found while merging them.**
   Four `--no-ff` merges onto 1.0.9, in order: **W-a** (verify-gate.sh/.ps1: a
