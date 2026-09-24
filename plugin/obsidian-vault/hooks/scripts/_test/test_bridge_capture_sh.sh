@@ -100,6 +100,24 @@ liar_stub() {
   printf '%s' "$dir"
 }
 
+# real-in-windowsapps: models a genuine Microsoft Store Python install, not a
+# stub - behaves exactly like a real interpreter answering the probe, from a
+# directory literally named WindowsApps, which is where a real Store
+# install's sys.executable actually lives. See test_vault_guard_sh.sh's header
+# for the 2026-09-24 regression this models: a resolver that rejects on a
+# WindowsApps path SUBSTRING throws this out even though it works.
+real_windowsapps_stub() {
+  local dir="$work/$1" name="$2" prefix="$3"
+  mkdir -p "$dir"
+  cat > "$dir/$name" <<STUB
+#!/bin/sh
+printf '$prefix%s' "$dir/$name"
+exit 0
+STUB
+  chmod 755 "$dir/$name"
+  printf '%s' "$dir"
+}
+
 # -------------------------------------------------------- HOME + isolation --
 # No obsidian config.json and no obsidian.json app registry: list_vaults()
 # and resolve_vault_path() both come up empty, so bridge_status.py and
@@ -204,6 +222,8 @@ realpath_dir="$(real_dir realpy python3)"
 store_dir="$(store_stub WindowsApps python3)"
 silent_dir="$(silent_stub silentstub python3)"
 liar_dir="$(liar_stub liarstub python3)"
+real_winapps_bridge_dir="$(real_windowsapps_stub WindowsAppsRealBridge python3 bridge-status-python:)"
+real_winapps_capture_dir="$(real_windowsapps_stub WindowsAppsRealCapture python3 vault-capture-python:)"
 
 # ================================================================ bridge-status.sh
 echo "== bridge-status.sh: must run, with a working interpreter =="
@@ -234,6 +254,17 @@ run_sh "$BRIDGE_SH" "$liar_dir:$TOOLS"
 check_exit "a stub that prints a plausible path is refused" 0
 check_err_has "and refusing it is reported" "did not answer the interpreter probe"
 
+echo "== bridge-status.sh: a working interpreter under WindowsApps is ACCEPTED =="
+
+sid2="bridge-status-winapps-test-$$"
+rm -f "$tmpdir/obsidian-vault-bridge-status-$sid2.claim"
+run_sh_stdin "$BRIDGE_SH" "$real_winapps_bridge_dir:$TOOLS" "{\"session_id\": \"$sid2\"}"
+check_exit "a working interpreter under a WindowsApps path still runs" 0
+check_err_empty "and it runs silently, like any other working interpreter"
+if [ -f "$tmpdir/obsidian-vault-bridge-status-$sid2.claim" ]; then ok
+else bad "the WindowsApps-path interpreter actually ran (claim marker was not written)"
+fi
+
 echo "== bridge-status.sh: nothing named python at all =="
 
 run_sh "$BRIDGE_SH" "$TOOLS"
@@ -262,6 +293,14 @@ check_err_has "and refusing it is reported" "no candidate is a usable interprete
 run_sh "$CAPTURE_SH" "$liar_dir:$TOOLS" --selftest
 check_exit "a stub that prints a plausible path is refused" 0
 check_err_has "and refusing it is reported" "did not answer the interpreter probe"
+
+echo "== vault-capture.sh: a working interpreter under WindowsApps is ACCEPTED =="
+
+run_sh "$CAPTURE_SH" "$real_winapps_capture_dir:$TOOLS" --selftest
+check_exit "a working interpreter under a WindowsApps path still runs --selftest" 1
+check_err_has "and it reports the real vault-resolution failure (python ran)" "no vault resolved"
+check_err_lacks "and it is NOT rejected as an unusable candidate" \
+  "no candidate is a usable interpreter"
 
 echo "== vault-capture.sh: nothing named python at all =="
 
@@ -298,6 +337,14 @@ if [ -n "$PWSH" ]; then
   check_exit "ps1: a stub that prints a plausible path is refused" 0
   check_err_has "ps1: and refusing it is reported" "did not answer the interpreter probe"
 
+  sid_ps1_winapps="bridge-status-ps1-winapps-test-$$"
+  rm -f "$tmpdir/obsidian-vault-bridge-status-$sid_ps1_winapps.claim"
+  run_ps1_stdin "$BRIDGE_PS1" "$real_winapps_bridge_dir:$TOOLS" "{\"session_id\": \"$sid_ps1_winapps\"}"
+  check_exit "ps1: a working interpreter under WindowsApps still runs" 0
+  if [ -f "$tmpdir/obsidian-vault-bridge-status-$sid_ps1_winapps.claim" ]; then ok
+  else bad "ps1: the WindowsApps-path interpreter actually ran (claim marker was not written)"
+  fi
+
   run_ps1 "$BRIDGE_PS1" "$TOOLS"
   check_exit "ps1: nothing named python: stand down" 0
   check_err_has "ps1: and the ABSENCE message is the distinct one" \
@@ -329,6 +376,12 @@ if [ -n "$PWSH" ]; then
   check_exit "ps1: a stub that prints a plausible path is refused" 0
   check_err_has "ps1: and refusing it is reported" "did not answer the interpreter probe"
 
+  run_ps1 "$CAPTURE_PS1" "$real_winapps_capture_dir:$TOOLS" -Trigger "--selftest"
+  check_exit "ps1: a working interpreter under WindowsApps still exits 0 (pre-existing)" 0
+  check_err_has "ps1: but --selftest still says FAIL, proving python ran" "no vault resolved"
+  check_err_lacks "ps1: and it is NOT rejected as an unusable candidate" \
+    "no candidate is a usable interpreter"
+
   run_ps1 "$CAPTURE_PS1" "$TOOLS" -Trigger "--selftest"
   check_exit "ps1: nothing named python: stand down" 0
   check_err_has "ps1: and the ABSENCE message is the distinct one" \
@@ -342,7 +395,7 @@ else
   # $PASS, and printing it in OUR OWN "RESULT" line is what lets run-tests.sh
   # forward a real count instead of manufacturing a false "all clear".
   SKIP=$((SKIP+1))
-  echo "SKIP: bridge-status.ps1 / vault-capture.ps1 - no pwsh on PATH (10 cases not run)"
+  echo "SKIP: bridge-status.ps1 / vault-capture.ps1 - no pwsh on PATH (12 cases not run)"
 fi
 
 echo

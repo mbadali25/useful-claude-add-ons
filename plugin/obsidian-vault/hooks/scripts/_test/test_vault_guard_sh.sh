@@ -30,6 +30,13 @@
 #   liar-stub     prints a plausible interpreter path, exits 0 (the
 #                 neighbouring case: passes "did it print something")
 #
+# A FIFTH shape, added 2026-09-24, models the opposite defect: a resolver that
+# rejects on a WindowsApps path SUBSTRING throws out a genuine Store Python
+# install too, because a real Store interpreter's own sys.executable lives
+# under that path. `real-windowsapps-stub` behaves exactly like a real
+# interpreter (parses the probe, exits 0, reports itself) from a directory
+# literally named WindowsApps, and must be ACCEPTED.
+#
 # Sabotage-tested: the naive resolver was put back and the stub cases go red.
 # Run: bash plugin/obsidian-vault/hooks/scripts/_test/test_vault_guard_sh.sh
 set -uo pipefail
@@ -118,6 +125,30 @@ liar_stub() {
   local dir="$work/$1" name="$2"
   mkdir -p "$dir"
   printf '#!/bin/sh\necho /opt/no-such-dir/python3\nexit 0\n' > "$dir/$name"
+  chmod 755 "$dir/$name"
+  printf '%s' "$dir"
+}
+
+# real-in-windowsapps: models a genuine Microsoft Store Python install, not a
+# stub. It behaves EXACTLY like a real interpreter answering the probe (parses
+# the -c program, exits 0, reports a real sys.executable) - the only thing
+# unusual about it is that its own path lives under a directory literally
+# named WindowsApps, which is where a real Store install's sys.executable
+# actually lives
+# (...\WindowsApps\PythonSoftwareFoundation.Python.3.x_<hash>\python.exe).
+# A resolver that rejects on that path SUBSTRING (pre- or post-execution)
+# throws this out even though it works; only a failing probe may reject it,
+# and this probe succeeds. This is the 2026-09-24 regression: reproduced
+# against a real PreToolUse Write payload where a working Python 3.14 was
+# discarded untested because its path matched WindowsApps.
+real_windowsapps_stub() {
+  local dir="$work/$1" name="$2"
+  mkdir -p "$dir"
+  cat > "$dir/$name" <<STUB
+#!/bin/sh
+printf 'vault-guard-python:%s' "$dir/$name"
+exit 0
+STUB
   chmod 755 "$dir/$name"
   printf '%s' "$dir"
 }
@@ -293,6 +324,18 @@ liar_dir="$(liar_stub liarstub python3)"
 run_sh "$liar_dir:$TOOLS" "$bad_canvas_payload"
 check_exit "a stub that prints a plausible path and exits 0 is refused" 0
 check_err_has "and refusing it is reported" "did not answer the interpreter probe"
+
+echo "== vault-guard.sh: a working interpreter under a WindowsApps path is ACCEPTED =="
+
+# The regression this fixes: a genuine Store Python install answers the probe
+# correctly, but a resolver that also rejects on a WindowsApps path substring
+# throws it out anyway. Only the probe's own failure may reject a candidate.
+real_winapps_dir="$(real_windowsapps_stub WindowsAppsReal python3)"
+run_sh "$real_winapps_dir:$TOOLS" "$bad_canvas_payload"
+check_exit "a working interpreter under WindowsApps still blocks the write" 2
+check_err_has "and the violation is named on stderr" "DOES NOT PARSE"
+check_err_lacks "and it is NOT rejected as an unusable candidate" \
+  "no candidate is a usable interpreter"
 
 echo "== vault-guard.sh: a real interpreter behind a stub still wins =="
 
@@ -632,6 +675,10 @@ if [ -n "$PWSH" ]; then
   check_exit "ps1: a stub that prints a plausible path is refused" 0
   check_err_has "ps1: and refusing it is reported" "did not answer the interpreter probe"
 
+  run_ps1 "$real_winapps_dir:$TOOLS" "$bad_canvas_payload"
+  check_exit "ps1: a working interpreter under WindowsApps still blocks" 2
+  check_err_has "ps1: and the violation is named" "DOES NOT PARSE"
+
   run_ps1 "$TOOLS" "$bad_canvas_payload"
   check_exit "ps1: nothing named python: stand down" 0
   check_err_has "ps1: and the ABSENCE message is the distinct one" \
@@ -644,7 +691,7 @@ else
   # silently never runs any of the 6 .ps1 cases below and the parent's
   # RESULT line reads no differently than a run where they all passed.
   SKIP=$((SKIP+1))
-  echo "SKIP: vault-guard.ps1 - no pwsh on PATH (6 cases not run)"
+  echo "SKIP: vault-guard.ps1 - no pwsh on PATH (7 cases not run)"
 fi
 
 echo

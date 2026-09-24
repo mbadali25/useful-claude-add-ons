@@ -73,14 +73,22 @@ function Resolve-VaultGuardPython {
       $script:VaultGuardRejected += "$name (resolved to a $($cmd.CommandType), not an executable - a profile function or alias is shadowing it)"
       continue
     }
-    if ($cmd.Source -match 'WindowsApps') {
-      $script:VaultGuardRejected += "$($cmd.Source) (WindowsApps App Execution Alias)"
-      continue
-    }
-    # Metadata alone is exactly what the Store alias passes: Get-Command
-    # reports it as a real Application with a real Source. Launch it and read
-    # back a token this script chose - only a python that parsed and ran the
-    # -c program can emit the prefix.
+    # NOT a blanket "reject anything whose Source contains WindowsApps" - that
+    # used to sit here (on both $cmd.Source above and $real below) and is a
+    # location guess, not a stub detector. On a host where Python is installed
+    # through the Microsoft Store, EVERY candidate's real interpreter genuinely
+    # lives under
+    # ...\WindowsApps\PythonSoftwareFoundation.Python.3.x_<hash>\python.exe -
+    # so the blanket reject fired on a working Python 3.14 too, this resolver
+    # returned '', and the caller's "no usable python" fallback stood the
+    # guard down on a machine where python plainly works. Reported 2026-09-24
+    # against a real PreToolUse-shaped Write payload; role-write-guard.ps1 hit
+    # and fixed the identical bug the same day (see its Resolve-CrewPython
+    # comment). Metadata alone is exactly what the Store alias ALSO passes:
+    # Get-Command reports it as a real Application with a real Source. Launch
+    # it and read back a token this script chose - only a python that parsed
+    # and ran the -c program can emit the prefix; that proof does not need to
+    # know WHERE the interpreter lives.
     #
     # No `continue` from inside the try/catch below: the loop-control
     # keywords behave inconsistently across PowerShell versions when they
@@ -131,10 +139,13 @@ function Resolve-VaultGuardPython {
       $script:VaultGuardRejected += "$($cmd.Source) (answered the probe with an empty sys.executable)"
       continue
     }
-    if ($real -match 'WindowsApps') {
-      $script:VaultGuardRejected += "$($cmd.Source) -> $real (WindowsApps App Execution Alias)"
-      continue
-    }
+    # No post-execution WindowsApps check either, for the same reason: a real
+    # Store-installed interpreter's OWN sys.executable lives under that path
+    # too. The launch itself is already the proof that matters - a candidate
+    # that could not be exec'd or did not answer the probe was already
+    # rejected above; a printed, non-empty sys.executable came from an
+    # interpreter that just ran successfully, which a path substring adds
+    # nothing to.
     # sys.executable, not Source: the PATH-found name may be a shim that
     # re-execs elsewhere, and the probe already asked python where it lives.
     return $real
