@@ -6,6 +6,52 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Changed
 
+- **`crew` 1.0.12: verify-gate.ps1 closed-stdin fix (win-repo), and a pylint
+  clean-up to exit 0.**
+  Merged `origin/crew-1.0-win-stdin` (`1fa70a47`) onto 1.0.11. win-repo
+  bisected a Windows-only hang in `test_40[ps1]`/`test_40b` to the gate's
+  child processes inheriting its own open stdin: once the bounded stdin
+  read gives up, the pipe is still open and unwritten, and a child that
+  itself reads stdin then parks forever with the gate waiting on it.
+  PowerShell has no `<` redirection operator, so the fix is `$null | ...`
+  on all 14 git invocations and the five bare `$bashExe` calls (including
+  the rule loop), plus `RedirectStandardInput = $true` and an immediate
+  `StandardInput.Close()` on the interpreter probe's `ProcessStartInfo`.
+  Conflict: 1.0's temp-file rule-output capture (see the 1.0.11 entry
+  below) touched the same rule-loop call site win-stdin's `$null |`
+  change did; kept both, so the temp-file capture (and its
+  no-writable-temp-dir fallback) now launch through
+  `$null | & $bashExe ...`.
+
+  The probe hardening is the shared `Resolve-CrewPython` function, byte-
+  identical across 11 `.ps1` hooks and asserted so by
+  `test_ps1_python_probe.py`; win-stdin's diff only touched `verify-gate.ps1`'s
+  copy, which reproduced locally as that test's byte-identical check going
+  red for `verify-gate`. Propagated the identical two-line change (no new
+  PowerShell logic authored — win-repo's own diff, copied verbatim) to the
+  other 10 carriers (`role-write-guard`, `completion-audit`, `scope-guard`,
+  `approval-hook`, `crew-context`, `platform-sync`, `cloud-guard`,
+  `handoff-read`, `notify`, `handoff-write`). All 11 `.ps1` files
+  parse-checked clean; `test_ps1_python_probe.py` 47/47.
+
+  `pylint $(git ls-files '*.py')` now exits 0 (was exit 30, 35 findings: 25
+  C0301, 4 W0612, 2 E1135, 2 W1514, 1 R1732, 1 W0603). Long lines wrapped
+  without changing any embedded fixture string (verified by comparing every
+  `ast.Constant` string in the affected sabotage/shim fixtures before and
+  after); unused tuple-unpacked variables underscored; `encoding="utf-8"`
+  added to a bare `Path.read_text()`; a bare `Popen` moved under `with`
+  alongside its existing `try/finally` terminate-and-wait; the module-level
+  `global` in `crew_fixtures.gate_processes` is a save/restore of an ambient
+  tracker for the fixture's own duration, not a persistent mutation, so it
+  keeps a targeted disable rather than a rewrite. The two remaining E1135s
+  (`test_crew_instructions.py`) are `_scan_project_trust`'s `bad_line`
+  reassigned via `nonlocal` inside a nested closure — astroid does not
+  trace that reassignment into the function's inferred return type, so it
+  infers `None` regardless of an `is not None` or `isinstance` guard at the
+  call site (reproduced in isolation before disabling); targeted disables,
+  not a rewrite of a security-relevant TOML trust scanner for lint
+  cosmetics.
+
 - **`crew` 1.0.11: merge origin/main (crew 0.20.25/0.20.26, PRs #220/#224)
   onto 1.0.10, plus two verify-gate.sh hardening fixes and test-hygiene
   follow-ups found doing it.**
