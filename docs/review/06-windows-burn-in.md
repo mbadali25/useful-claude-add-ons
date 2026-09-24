@@ -26,6 +26,7 @@ Report-only. No crew code was changed on this branch.
 | `az` | `C:\Program Files\Microsoft SDKs\Azure\CLI2\wbin\az` |
 | `dotnet` | `C:\Program Files\dotnet\dotnet.exe` |
 | **`docker`** | **NOT FOUND** — `INFO: Could not find "docker".` |
+| `podman` (in WSL2) | **4.9.3**, installed during this run — see 2b.2 |
 
 ### `pwsh` IS on Git Bash's PATH on this host
 
@@ -226,13 +227,63 @@ four of its cases test the `.ps1` off Windows.
 2a drives `/clear` by sending keystrokes to a terminal window. The operator has now approved
 running it in a scratch terminal. It is NOT RUN at this commit and is next.
 
+## 2b. Web testing
+
+| Step | Result | Evidence |
+|---|---|---|
+| 2b.1 Windows `cmd /c` wrapper | **PASS (generator)** | see below |
+| 2b.1 both servers connect in `/mcp` | **NOT RUN** | needs a live session |
+| 2b.2 containerised visual baseline | **PASS, on Podman not Docker Desktop** | see below |
+| 2b.3 `/crew:init` web phase | **NOT RUN** | |
+| 2b.4 pinned versions in install script | **PASS** | `@playwright/test@1.63.0`, `@axe-core/playwright@4.13.0` |
+
+### 2b.1 — the wrapper is right, and it is not in `.mcp.json`
+
+There is **no `.mcp.json` at the repo root** on `84e90591`, so the step as written cannot be
+read off a file. The entries are generated. `webtest_scaffold.py:161` is the whole of it:
+
+```python
+def _npx(windows, *args):
+    return ({"command": "cmd", "args": ["/c", "npx"] + list(args)} if windows
+            else {"command": "npx", "args": list(args)})
+```
+
+Exercised directly rather than read, `mcp_servers(windows=True)` returns:
+
+```json
+{"playwright": {"command": "cmd", "args": ["/c", "npx", "@playwright/mcp@0.0.82",
+  "--isolated", "--headless", "--caps", "testing"]},
+ "chrome-devtools": {"command": "cmd", "args": ["/c", "npx", "chrome-devtools-mcp@1.10.1"]}}
+```
+
+Exactly the required form, with the specified flags, and the POSIX branch correctly drops
+the wrapper. **Whether both servers then connect in `/mcp` is NOT RUN** — that needs a live
+session, and a correct config entry is not evidence that a server starts. `claude mcp add`
+records a command without running it, a point the install script itself makes at line 938.
+
+### 2b.2 — runs, on a different runtime than specified
+
+Docker Desktop was **declined** by this host's operator on licensing grounds; WSL2 was
+already present, so **Podman 4.9.3** was installed inside WSL2 Ubuntu-24.04 instead.
+
+`podman pull mcr.microsoft.com/playwright:v1.63.0-noble` succeeded, and the container runs:
+
+```
+podman run --rm mcr.microsoft.com/playwright:v1.63.0-noble \
+  /bin/sh -c "npx --yes playwright@1.63.0 --version"
+-> Version 1.63.0
+```
+
+**This is evidence about Podman, not about Docker Desktop.** The image, its tag and the
+Playwright version are the ones specified, and the container starts and reports the pinned
+version. It does not demonstrate anything about Docker Desktop's WSL2 backend, its
+networking, or its volume mounts, and it should not be read as a PASS of the step as
+written. Visual checks run on the host rather than in this container still report
+UNVERIFIED, per the requester's rule.
+
 ## 3-6 — NOT RUN
 
 Memory and Obsidian, review and Codex, doc-builder, and the landmine checks are NOT RUN.
-
-Of these, **2b.2 cannot pass on this host at all**: Docker is absent, so the containerised
-visual baseline has no runtime. Per the requester's own rule, visual checks on the host
-report UNVERIFIED rather than PASS.
 
 ## Summary of FAILs
 
