@@ -6,6 +6,54 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Changed
 
+- **`crew` 1.0.8: independent-review round on the 1.0.7 merge (role-write-guard
+  no-python contract, verify-gate stdin bound, crew_autoclear_setup divergent-
+  file and staging fixes, a TOML fallback-scanner grammar gap, lint/test
+  fixes).**
+  `role-write-guard.sh`/`.ps1`'s no-python fallback no longer parses
+  `guards.roleWrites` or pm's own path allowances itself (that class carried
+  its own defects: a dangling config symlink read as absent rather than
+  corrupt, a lexical pm-scope check that accepted `..` traversal and symlink
+  escapes, and a policy reader that accepted corrupt JSON as a clean "off").
+  It now only determines whether the acting role is restricted and fails
+  CLOSED unconditionally without python -- `off`/`report`/pm's allowances
+  need python to be evaluated at all (`plugin/crew/CONFIG.md` sec 18). The
+  bash role-extraction kept its grep-free pure-bash form but dropped the
+  bash-4-only `${var,,}`, using `shopt -s nocasematch` instead so Bash 3.2
+  (macOS) does not die on it.
+  `verify-gate.sh`/`.ps1`'s stdin read is now bounded by TOTAL time, not per
+  read/line: `.ps1` used to discard a complete `stop_hook_active` payload if
+  the pipe stayed open past the 5s bound (the retry hook then re-ran the
+  gate and blocked again); `.sh`'s `while read -t 5` loop re-armed a fresh
+  5s on every line, so a producer trickling complete lines slower than 5s
+  apart, without closing the pipe, was never actually bounded. `.sh` now
+  uses a single `read -t 5 -d ''`.
+  `crew_autoclear_setup.py`'s `apply_migrate_to_repo` no longer computes one
+  plan from whichever of `.crew/config.json` / `.crew/crew.json` it reads
+  first and copies that context onto both -- each file converts from and
+  writes back only its own prior content, so a divergent setting in either
+  file is never silently overwritten by the other's. The two repo writes
+  are staged into temp files before either real file is replaced (a staging
+  failure now leaves both untouched); a crash between the two `os.replace`
+  calls can still leave one file converted and the other not, but a retry
+  detects and repairs exactly the file that did not make it. Also: a
+  non-object repo config file ([], a string) now fails in a controlled way
+  instead of crashing with `AttributeError`, and invalid UTF-8 in the
+  machine-global file is reported as the unreadable-config result instead
+  of raising `UnicodeDecodeError`.
+  `crew_instructions.py`'s Python 3.8-3.10 TOML fallback scanner (used only
+  when stdlib `tomllib` is unavailable) now rejects a missing comma between
+  two array elements spread across lines -- a bare trailing scalar used to
+  be accepted unconditionally as "still open", so two elements with nothing
+  between them but whitespace read as an ordinary array; it is now valid
+  only when the very next line is nothing but the closing `]`.
+  Lint: removed an unused `import sys` from two test files. Test fixes: the
+  four bash-flavour tests in `test_auto_clear_order.py` now skip cleanly
+  when no bash is on PATH instead of crashing; `test_verify_gate_lock_
+  window.py`'s TTL-window bound now reads the gate's own published start
+  time instead of a test-side wall clock, removing a flake on a host slow
+  enough to delay process startup.
+
 - **`crew` 1.0.7 / `obsidian-vault` 0.4.12: release-integration merge of F1-F4
   and G1 (role-write-guard fallback hardening, autoClear setup review
   fixes, sendkeys/context-watch review fixes, the `.crew/`-directory gate
