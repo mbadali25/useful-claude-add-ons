@@ -15,7 +15,7 @@ description: >
 
 A `.canvas` file is plain JSON (the open [JSON Canvas](https://jsoncanvas.org) spec). No plugin API or REST bridge is needed — author the file with normal file tools and Obsidian renders it natively (the core `canvas` plugin, enabled by default).
 
-> **Working in a memory vault with tuned canvas conventions instead?** Read `obsidian-memory-contract`'s `profiles/canvas-maps.md` first — a memory vault may have its own schema conventions (1-space indent, fixed node/group geometry, `Project - *.md` link rows) that this generic guidance will quietly violate.
+> **Working in a memory vault with tuned canvas conventions instead?** Read `obsidian-memory-contract`'s `profiles/canvas-maps.md` first — a memory vault may have its own schema conventions (1-space indent, fixed node/group geometry, `Project - *.md` link rows) that this generic guidance will quietly violate. That skill is **not** part of this one: it ships only with the `obsidian-vault` plugin (`claude plugin install obsidian-vault@useful-claude-add-ons`). With this skill installed on its own, the profile is not on the machine — ask the user whether the vault has canvas conventions before assuming the generic ones below.
 
 ## Quick start
 

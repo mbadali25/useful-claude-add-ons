@@ -733,7 +733,7 @@ Node client rejects the self-signed certificate.
 | [`CHANGELOG.md`](CHANGELOG.md) | Notable changes to this repo, dated. |
 | [`docs/HANDOFF.md`](docs/HANDOFF.md) | Session handoff notes — why things are built the way they are, what was verified, what's still open. |
 | [`claude-obsidian-setup/`](claude-obsidian-setup/) | **Obsidian knowledge-vault setup** for Windows (WSL) and Linux — the deeper version of menu item 18. |
-| [`vault-automation/`](vault-automation/) | **Self-feeding vault pipeline** — session-capture hooks, nightly gardener (headless Claude distillation), Dataview dashboard, Obsidian plugins, optional git layer. |
+| [`plugin/obsidian-vault/`](plugin/obsidian-vault/) | **Self-feeding vault pipeline** — session-capture hooks, a bounded gardener that distills queued sessions, and portable conventions profiles. Replaces the retired Windows-only `vault-automation/` scripts. |
 
 ## Obsidian knowledge vault
 

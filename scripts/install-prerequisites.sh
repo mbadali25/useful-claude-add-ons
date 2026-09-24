@@ -2426,7 +2426,7 @@ run_skill_preflights() {
       3)
         # preflight.py's own exit code for "packages are missing and I did not
         # install them". Its report goes to stderr with the skill named, because the
-        # alternative - a line on stdout in the middle of a 36-skill install - is the
+        # alternative - a line on stdout in the middle of a 34-skill install - is the
         # silence this step exists to end.
         preflight_warn "$key: Python dependencies are MISSING. This script does not install them; see reason 1 and 2 in the comment above run_skill_preflights."
         sed -n 's/^  MISSING */        missing: /p' "$out" >&2

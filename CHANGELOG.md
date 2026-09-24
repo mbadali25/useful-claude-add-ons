@@ -6,6 +6,13 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Changed
 
+- **`obsidian-canvas` 1.1.2: says plainly that `obsidian-memory-contract`
+  ships only with the `obsidian-vault` plugin.** A skill-only install was
+  pointed at a profile that is not on the machine; it now says where the
+  profile comes from and to ask about vault conventions when it is absent.
+  `README.md`'s Documentation table stops linking the deleted
+  `vault-automation/` and points at `plugin/obsidian-vault/`.
+
 - **Retired `claude-memories-vault` and `claude-memories-canvas` (their
   conventions ship as obsidian-vault portable profiles) and the unregistered
   `vault-automation/` scripts (replaced by obsidian-vault's capture and

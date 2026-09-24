@@ -939,8 +939,9 @@ def test_every_shipped_guide_carries_the_print_block(name):
     """The artefact, not the prose that describes it.
 
     Nothing else in this suite looks at a produced document. Regenerate or
-    hand-edit these four without the block and every other test here stays
-    green, which is how the defect reached a reader in the first place.
+    hand-edit the one guide left in `_GUIDES` without the block and every
+    other test here stays green, which is how the defect reached a reader in
+    the first place.
 
     Asserted per declaration and inside the print block, so reformatting the
     CSS passes, moving a declaration out to the screen stylesheet fails, and
