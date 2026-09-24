@@ -57,10 +57,27 @@ crew_strip_cr() { printf '%s' "$1" | tr -d '\r'; }
 # for a broken stub would turn a refusal into a stand-down. Callers that
 # `exec` the interpreter and have nothing left to check use `crew_py_strict`.
 crew_py() {
+  # Memoized within this process: a hook that resolves more than once (e.g.
+  # handoff-write.sh calls this twice) must not re-walk and re-probe PATH
+  # from scratch each time. Cached only for the life of THIS process -- a
+  # fresh hook invocation gets a fresh probe.
+  if [ -n "${_CREW_PY_MEMO_DONE:-}" ]; then
+    [ -n "${_CREW_PY_MEMO_RESULT:-}" ] && printf '%s\n' "$_CREW_PY_MEMO_RESULT"
+    return "$_CREW_PY_MEMO_RC"
+  fi
   local candidate first=""
+  # An OVERALL deadline on top of each candidate's own 3s probe bound: a
+  # PATH with several hung candidates would otherwise cost 3s EACH, adding
+  # up past the shortest hook timeout that calls this (bridge-status.ps1's
+  # twin, 10s) even though every individual probe is bounded. Kept well
+  # inside that: the walk gives up on the probing (falling back to the
+  # first PATH match, as it always did when nothing runs) once this much of
+  # the budget is spent.
+  local deadline=$((SECONDS + 8))
   while IFS= read -r candidate; do
     [ -n "$candidate" ] || continue
     [ -n "$first" ] || first=$candidate
+    [ "$SECONDS" -lt "$deadline" ] || break
     (
       set -m
       "$candidate" -c pass </dev/null >/dev/null 2>&1 &
@@ -78,11 +95,22 @@ crew_py() {
       kill -9 -- "-$watchdog" "-$pid" 2>/dev/null
       exit "$status"
     ) || continue
+    _CREW_PY_MEMO_DONE=1
+    _CREW_PY_MEMO_RESULT=$candidate
+    _CREW_PY_MEMO_RC=0
     printf '%s\n' "$candidate"
     return 0
   done < <(type -ap python3 python py 2>/dev/null)
-  [ -n "$first" ] || return 1
-  printf '%s\n' "$first"
+  _CREW_PY_MEMO_DONE=1
+  if [ -n "$first" ]; then
+    _CREW_PY_MEMO_RESULT=$first
+    _CREW_PY_MEMO_RC=0
+    printf '%s\n' "$first"
+    return 0
+  fi
+  _CREW_PY_MEMO_RESULT=""
+  _CREW_PY_MEMO_RC=1
+  return 1
 }
 
 # Resolve a python that has been PROVED to be an interpreter. Echoes nothing
@@ -109,6 +137,14 @@ crew_py() {
 # asserts the two copies still agree -- a hand-copy with no guard is this
 # repository's most repeated defect.
 crew_py_strict() {
+  # Memoized within this process: verify-gate.sh alone calls this twice (PY
+  # and SHIM_PY), and each call would otherwise re-walk and re-probe PATH
+  # from scratch. Cached only for the life of THIS process -- a fresh hook
+  # invocation gets a fresh probe.
+  if [ -n "${_CREW_PY_STRICT_MEMO_DONE:-}" ]; then
+    [ -n "${_CREW_PY_STRICT_MEMO_RESULT:-}" ] && printf '%s\n' "$_CREW_PY_STRICT_MEMO_RESULT"
+    return "$_CREW_PY_STRICT_MEMO_RC"
+  fi
   # EVERY PATH match of every name, in order -- `type -ap` lists them all,
   # where `command -v` stops at the first. Windows burn-in 2026-09-23 (FAIL
   # 3): a broken WindowsApps python3 ahead of a real python3 made this
@@ -116,8 +152,17 @@ crew_py_strict() {
   # tries every match, found the real one -- so the two flavours disagreed
   # about whether python existed, and notify.sh failed open and sent a ping
   # its PowerShell twin then sent again.
+  #
+  # An OVERALL deadline on top of each candidate's own 3s probe bound: a
+  # PATH with several hung candidates would otherwise cost 3s EACH, adding
+  # up past the shortest hook timeout that calls this (bridge-status.ps1's
+  # twin, 10s) even though every individual probe is bounded. Kept well
+  # inside that: the walk gives up and reports "no python" rather than keep
+  # trying once this much of the budget is spent.
+  local _crew_py_strict_deadline=$((SECONDS + 8))
   while IFS= read -r candidate; do
     [ -n "$candidate" ] || continue
+    [ "$SECONDS" -lt "$_crew_py_strict_deadline" ] || break
     # BOUNDED, and the whole process tree dies with it. A candidate that
     # never exits would otherwise hang the hook forever, and one that spawns
     # a child holding stdout (a py.exe-style launcher) would hang this `$()`
@@ -231,9 +276,15 @@ crew_py_strict() {
     # non-executable file and fails if the check is missing OR merely present
     # after the `return 0` below where it can never run.
     [ -x "$real" ] || continue
+    _CREW_PY_STRICT_MEMO_DONE=1
+    _CREW_PY_STRICT_MEMO_RESULT=$real
+    _CREW_PY_STRICT_MEMO_RC=0
     printf '%s\n' "$real"
     return 0
   done < <(type -ap python3 python py 2>/dev/null)
+  _CREW_PY_STRICT_MEMO_DONE=1
+  _CREW_PY_STRICT_MEMO_RESULT=""
+  _CREW_PY_STRICT_MEMO_RC=1
   return 1
 }
 

@@ -70,8 +70,23 @@ _vault_guard_reject() {
 }
 
 _vault_guard_resolve_python() {
+  # Memoized within this process: a resolved (or exhausted) answer is not
+  # re-derived by a second call in the same run, which would otherwise
+  # re-walk and re-probe PATH from scratch. Cached only for the life of
+  # THIS process -- a fresh hook invocation gets a fresh probe.
+  if [ -n "$_VAULT_GUARD_PY_MEMO_DONE" ]; then
+    VAULT_GUARD_PY="$_VAULT_GUARD_PY_MEMO_RESULT"
+    VAULT_GUARD_REJECTED="$_VAULT_GUARD_PY_MEMO_REJECTED"
+    return "$_VAULT_GUARD_PY_MEMO_RC"
+  fi
   VAULT_GUARD_PY=""
   VAULT_GUARD_REJECTED=""
+  # An OVERALL deadline on top of each candidate's own 3s probe bound: a
+  # PATH with several hung candidates would otherwise cost 3s EACH, adding
+  # up past this hook's own timeout even though every individual probe is
+  # bounded. Kept well inside the shortest hook timeout that resolves
+  # python this way (bridge-status.ps1's twin, 10s).
+  local _vault_guard_deadline=$((SECONDS + 8))
   for name in python3 python py; do
     # EVERY PATH match of the name, not only the first (`type -aP`, not
     # `command -v`), and each is executed before it is believed: where it
@@ -81,6 +96,10 @@ _vault_guard_resolve_python() {
     # behind them. vault-guard.ps1 walks the same order, so both flavours agree.
     while IFS= read -r candidate; do
       [ -n "$candidate" ] || continue
+      if [ "$SECONDS" -ge "$_vault_guard_deadline" ]; then
+        _vault_guard_reject "PATH walk stopped: the overall resolver deadline was reached before every candidate could be probed"
+        break 2
+      fi
       # Running the candidate and reading back a token this script chose is
       # what tells a real interpreter from something wearing the name: only
       # a python that parsed and ran the -c program can emit the prefix. A
@@ -168,9 +187,17 @@ _vault_guard_resolve_python() {
       # that re-execs elsewhere, and the probe already paid the cost of asking
       # python where it actually lives.
       VAULT_GUARD_PY="$real"
+      _VAULT_GUARD_PY_MEMO_DONE=1
+      _VAULT_GUARD_PY_MEMO_RESULT="$VAULT_GUARD_PY"
+      _VAULT_GUARD_PY_MEMO_REJECTED="$VAULT_GUARD_REJECTED"
+      _VAULT_GUARD_PY_MEMO_RC=0
       return 0
     done < <(type -aP "$name" 2>/dev/null)
   done
+  _VAULT_GUARD_PY_MEMO_DONE=1
+  _VAULT_GUARD_PY_MEMO_RESULT=""
+  _VAULT_GUARD_PY_MEMO_REJECTED="$VAULT_GUARD_REJECTED"
+  _VAULT_GUARD_PY_MEMO_RC=1
   return 1
 }
 

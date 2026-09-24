@@ -48,6 +48,14 @@ $dir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $script:VaultGuardRejected = @()
 
 function Resolve-VaultGuardPython {
+  # Memoized within this process: a resolved (or exhausted) answer is not
+  # re-derived by a second call in the same run, which would otherwise
+  # re-walk and re-probe PATH from scratch. Cached only for the life of
+  # THIS process -- a fresh hook invocation gets a fresh probe.
+  if ($script:VaultGuardPyMemoDone) {
+    $script:VaultGuardRejected = $script:VaultGuardPyMemoRejected
+    return $script:VaultGuardPyMemoResult
+  }
   # The PowerShell twin of vault-guard.sh's resolver, and the same algorithm as
   # crew's one shared Resolve-CrewPython: EVERY PATH match of every name is a
   # candidate, and each is EXECUTED (bounded, 3s) before it is believed.
@@ -63,6 +71,12 @@ function Resolve-VaultGuardPython {
   # literal stays single-quoted all the same (_test/test_ps1_legacy_args.sh).
   # No `continue` inside try/catch: loop control across that boundary
   # differs between PowerShell versions, so the verdict leaves in variables.
+  #
+  # An OVERALL deadline on top of each candidate's own 3s probe bound: a
+  # PATH with several hung candidates would otherwise cost 3s EACH, adding
+  # up past this hook's own 10s timeout even though every individual probe
+  # is bounded. Kept well inside that.
+  $deadline = [System.Diagnostics.Stopwatch]::StartNew()
   $names = @('python3', 'python', 'py')
   foreach ($name in $names) {
     # hooks.json registers this hook with no -NoProfile, so a `function
@@ -73,6 +87,13 @@ function Resolve-VaultGuardPython {
     }
     foreach ($cmd in @(Get-Command $name -All -CommandType Application -ErrorAction SilentlyContinue)) {
       if (-not $cmd.Source) { continue }
+      if ($deadline.Elapsed.TotalSeconds -ge 8) {
+        $script:VaultGuardRejected += "PATH walk stopped: the overall resolver deadline was reached before every candidate could be probed"
+        $script:VaultGuardPyMemoDone = $true
+        $script:VaultGuardPyMemoResult = ''
+        $script:VaultGuardPyMemoRejected = $script:VaultGuardRejected
+        return ''
+      }
       $probe = $null
       $reason = ''
       try {
@@ -148,9 +169,15 @@ function Resolve-VaultGuardPython {
       }
       # sys.executable, not Source: the PATH-found name may be a shim that
       # re-execs elsewhere, and the probe already asked python where it lives.
+      $script:VaultGuardPyMemoDone = $true
+      $script:VaultGuardPyMemoResult = $real
+      $script:VaultGuardPyMemoRejected = $script:VaultGuardRejected
       return $real
     }
   }
+  $script:VaultGuardPyMemoDone = $true
+  $script:VaultGuardPyMemoResult = ''
+  $script:VaultGuardPyMemoRejected = $script:VaultGuardRejected
   return ''
 }
 

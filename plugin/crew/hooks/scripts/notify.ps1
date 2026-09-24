@@ -20,6 +20,13 @@ if ($env:OS -ne 'Windows_NT') { exit 0 }
 
 # BYTE-FOR-BYTE the resolver in role-write-guard.ps1, asserted by the tests.
 function Resolve-CrewPython {
+  # Memoized within this process: verify-gate.ps1 alone calls this up to
+  # seven times in one run, and each call would otherwise re-walk and
+  # re-probe PATH from scratch. Cached only for the life of THIS process --
+  # a fresh hook invocation gets a fresh probe.
+  if ($script:CrewPythonMemoDone) {
+    return $script:CrewPythonMemoResult
+  }
   # ONE probe, byte for byte in every crew .ps1 that runs python, asserted by
   # tests/test_ps1_python_probe.py. Inline rather than dot-sourced for the
   # reason verify-gate.ps1's emergency-lane note gives: a dot-sourced
@@ -55,15 +62,41 @@ function Resolve-CrewPython {
   # taskkill /T /F. No `continue` inside try/catch: loop control across that
   # boundary differs between PowerShell versions, so the verdict is carried
   # out in $real and acted on after it.
+  # An OVERALL deadline on top of each candidate's own 3s probe bound: a
+  # PATH with several hung candidates would otherwise cost 3s EACH, adding
+  # up past the shortest hook timeout that calls this (bridge-status.ps1's
+  # twin, 10s) even though every individual probe is bounded. Kept well
+  # inside that.
+  $crewPythonDeadline = [System.Diagnostics.Stopwatch]::StartNew()
   foreach ($name in @('python3', 'python', 'py')) {
     $candidates = @(Get-Command $name -All -CommandType Application -ErrorAction SilentlyContinue)
     foreach ($cmd in $candidates) {
       if (-not $cmd.Source) { continue }
+      if ($crewPythonDeadline.Elapsed.TotalSeconds -ge 8) {
+        $script:CrewPythonMemoDone = $true
+        $script:CrewPythonMemoResult = ''
+        return ''
+      }
       $real = $null
       try {
         $psi = New-Object System.Diagnostics.ProcessStartInfo
-        $psi.FileName = $cmd.Source
-        $psi.Arguments = '-c "import sys,json;print(json.dumps({''v'':list(sys.version_info[:2]),''exe'':sys.executable,''impl'':sys.implementation.name}))"'
+        $probeArgs = '-c "import sys,json;print(json.dumps({''v'':list(sys.version_info[:2]),''exe'':sys.executable,''impl'':sys.implementation.name}))"'
+        if ($cmd.Source -match '\.(cmd|bat)$') {
+          # UseShellExecute=false hands FileName straight to CreateProcess,
+          # which can only launch a real PE executable -- not a .cmd/.bat
+          # shim (a pyenv-win install is exactly this shape). Route it
+          # through cmd.exe /d /c instead of flipping UseShellExecute to
+          # $true, which would resolve by shell file association rather
+          # than run it as a command. Wrapping the whole command line in
+          # one more pair of quotes defeats cmd's "exactly two quotes"
+          # special case, so both the quoted shim path and the quoted -c
+          # argument survive intact.
+          $psi.FileName = Join-Path $env:SystemRoot 'System32\cmd.exe'
+          $psi.Arguments = '/d /c "' + '"' + $cmd.Source + '" ' + $probeArgs + '"'
+        } else {
+          $psi.FileName = $cmd.Source
+          $psi.Arguments = $probeArgs
+        }
         $psi.UseShellExecute = $false
         $psi.RedirectStandardOutput = $true
         $psi.RedirectStandardError = $true
@@ -95,9 +128,13 @@ function Resolve-CrewPython {
       if ($real) { $real = $real.ToString().Trim() }
       if (-not $real) { continue }
       if (-not (Test-Path -LiteralPath $real -PathType Leaf)) { continue }
+      $script:CrewPythonMemoDone = $true
+      $script:CrewPythonMemoResult = $real
       return $real
     }
   }
+  $script:CrewPythonMemoDone = $true
+  $script:CrewPythonMemoResult = ''
   return ''
 }
 

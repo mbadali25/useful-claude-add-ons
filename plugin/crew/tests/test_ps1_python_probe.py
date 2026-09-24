@@ -297,6 +297,51 @@ def test_a_hung_candidate_is_killed_and_the_next_one_is_tried(tmp_path):
     assert (resolved, time.monotonic() - began < 30) == (REAL, True)
 
 
+# --- an overall deadline bounds several hung candidates -----------------------
+
+def _many_hung(tmp_path, count, name="python3"):
+    """`count` separate directories, each with ONE hung candidate named
+    `name`, so Get-Command -All / `type -ap` finds all of them as distinct
+    PATH matches -- the shape an overall deadline exists to bound, as
+    opposed to the single hung candidate above."""
+    dirs = []
+    for i in range(count):
+        directory = tmp_path / f"hang{i}"
+        _hung(directory, (name,))
+        dirs.append(directory)
+    return dirs
+
+
+@needs_pwsh
+@needs_bash
+def test_an_overall_deadline_bounds_several_hung_candidates(tmp_path):
+    """Four candidates at the per-candidate 3s bound cost 12s+ before even
+    reaching a real python further down PATH -- past the shortest hook
+    timeout that resolves python this way (bridge-status.ps1's twin, 10s),
+    even though each individual probe is bounded. An overall deadline must
+    give up well inside that rather than pay the full per-candidate cost for
+    every hung entry -- which can mean answering "no python" with a working
+    one still further down PATH, the same honest-failure-over-budget-
+    overrun tradeoff `event_claim.py` makes for a suppressed emission."""
+    hangs = _many_hung(tmp_path, 4)
+    real = tmp_path / "real"
+    _working(real, ("python3",))
+    path = [*hangs, real, _tools(tmp_path)]
+
+    began = time.monotonic()
+    ps1_resolved = _print_python(path)
+    ps1_elapsed = time.monotonic() - began
+
+    began = time.monotonic()
+    bash_resolved = _bash_resolver("crew_py_strict", path)
+    bash_elapsed = time.monotonic() - began
+
+    assert (ps1_elapsed < 10, bash_elapsed < 10) == (True, True), (
+        f"ps1={ps1_elapsed}s ({ps1_resolved!r}) bash={bash_elapsed}s "
+        f"({bash_resolved!r}) -- an overall deadline should have given up "
+        "well before paying the full per-candidate cost for every hung entry")
+
+
 # --- the burn-in host, end to end ----------------------------------------------
 
 @needs_pwsh

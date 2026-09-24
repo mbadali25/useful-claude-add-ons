@@ -80,8 +80,12 @@ Quote each exit code. `visual` exits 77 off the pinned image
 evidence; it needs a container marker and the image's `/ms-playwright`
 browsers - report it as **UNVERIFIED**, never as passed. To verify, run the
 suite in that image with Docker or Podman (same image, same flags; either's
-marker counts): `podman run --rm --ipc=host -v "$PWD":/work -w /work -e
+marker counts): `podman run --rm --ipc=host -v "$PWD":/work:Z -w /work -e
 CREW_PLAYWRIGHT_IMAGE=<image> <image> npx playwright test --project=visual`.
+`:Z` relabels the bind mount for SELinux (private, unshared with other
+containers) - without it the mount is unreadable inside the container on an
+SELinux-enforcing host (Fedora/RHEL); it is a documented no-op where SELinux
+is absent or permissive.
 With neither runtime installed the check says so. `auth-leak` exit 1
 is a stop: a session file is tracked, or a `storageState` it cannot resolve
 needs declaring as `webtest.storageState` in `.crew/config.json`.

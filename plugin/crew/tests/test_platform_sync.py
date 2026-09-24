@@ -771,13 +771,16 @@ def _stub(path):
 
 
 def _launchable(path):
-    """A stub that RUNS and answers like an interpreter: it echoes its own
-    path, as `print(sys.executable)` would. Since crew 1.0 every candidate
-    is executed before it is believed, so a plain-text file wearing an .exe
-    extension no longer stands in for a real python."""
+    """A stub that RUNS and answers like an interpreter: it prints the JSON
+    proof object Resolve-CrewPython requires -- {"v": [major, minor],
+    "exe": sys.executable, "impl": sys.implementation.name} -- rather than a
+    bare path. Since crew 1.0 every candidate is executed and its answer is
+    parsed as that JSON, so a plain `echo <path>`, as `print(sys.executable)`
+    would produce, no longer stands in for a real python."""
     os.makedirs(os.path.dirname(path), exist_ok=True)
+    proof = '{"v": [3, 9], "exe": "' + path.replace("\\", "\\\\") + '", "impl": "cpython"}'
     with open(path, "w", encoding="ascii") as fh:
-        fh.write("@echo off" + chr(13) + chr(10) + "echo " + path + chr(13) + chr(10))
+        fh.write("@echo off" + chr(13) + chr(10) + "echo " + proof + chr(13) + chr(10))
     return path
 
 

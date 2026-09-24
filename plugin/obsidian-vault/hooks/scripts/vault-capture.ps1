@@ -27,6 +27,14 @@ $dir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $script:VaultCaptureRejected = @()
 
 function Resolve-VaultCapturePython {
+  # Memoized within this process: a resolved (or exhausted) answer is not
+  # re-derived by a second call in the same run, which would otherwise
+  # re-walk and re-probe PATH from scratch. Cached only for the life of
+  # THIS process -- a fresh hook invocation gets a fresh probe.
+  if ($script:VaultCapturePyMemoDone) {
+    $script:VaultCaptureRejected = $script:VaultCapturePyMemoRejected
+    return $script:VaultCapturePyMemoResult
+  }
   # The PowerShell twin of vault-capture.sh's resolver, and the same algorithm as
   # crew's one shared Resolve-CrewPython: EVERY PATH match of every name is a
   # candidate, and each is EXECUTED (bounded, 3s) before it is believed.
@@ -42,6 +50,13 @@ function Resolve-VaultCapturePython {
   # literal stays single-quoted all the same (_test/test_ps1_legacy_args.sh).
   # No `continue` inside try/catch: loop control across that boundary
   # differs between PowerShell versions, so the verdict leaves in variables.
+  #
+  # An OVERALL deadline on top of each candidate's own 3s probe bound: a
+  # PATH with several hung candidates would otherwise cost 3s EACH, adding
+  # up past this hook's own timeout even though every individual probe is
+  # bounded. Kept well inside the shortest hook timeout that resolves
+  # python this way (bridge-status.ps1's twin, 10s).
+  $deadline = [System.Diagnostics.Stopwatch]::StartNew()
   $names = @('python3', 'python', 'py')
   foreach ($name in $names) {
     # hooks.json registers this hook with no -NoProfile, so a `function
@@ -52,6 +67,13 @@ function Resolve-VaultCapturePython {
     }
     foreach ($cmd in @(Get-Command $name -All -CommandType Application -ErrorAction SilentlyContinue)) {
       if (-not $cmd.Source) { continue }
+      if ($deadline.Elapsed.TotalSeconds -ge 8) {
+        $script:VaultCaptureRejected += "PATH walk stopped: the overall resolver deadline was reached before every candidate could be probed"
+        $script:VaultCapturePyMemoDone = $true
+        $script:VaultCapturePyMemoResult = ''
+        $script:VaultCapturePyMemoRejected = $script:VaultCaptureRejected
+        return ''
+      }
       $probe = $null
       $reason = ''
       try {
@@ -127,9 +149,15 @@ function Resolve-VaultCapturePython {
       }
       # sys.executable, not Source: the PATH-found name may be a shim that
       # re-execs elsewhere, and the probe already asked python where it lives.
+      $script:VaultCapturePyMemoDone = $true
+      $script:VaultCapturePyMemoResult = $real
+      $script:VaultCapturePyMemoRejected = $script:VaultCaptureRejected
       return $real
     }
   }
+  $script:VaultCapturePyMemoDone = $true
+  $script:VaultCapturePyMemoResult = ''
+  $script:VaultCapturePyMemoRejected = $script:VaultCaptureRejected
   return ''
 }
 
