@@ -56,11 +56,32 @@ function Resolve-CrewPython {
   #      enforced `guards.roleWrites: block` and the other silently
   #      allowed the write unjudged. This copy now takes only the first
   #      match per name too, mirroring the .sh's name-order exactly.
+  #
+  # A third bug, reported 2026-09-24: this function used to ALSO reject any
+  # candidate whose `.Source` (pre-execution) or resolved `sys.executable`
+  # (post-execution) merely contained the substring "WindowsApps", untested.
+  # That is not a stub detector, it is a location guess, and on a host where
+  # Python is installed through the Microsoft Store, EVERY candidate's real
+  # interpreter genuinely lives under
+  # `...\WindowsApps\PythonSoftwareFoundation.Python.3.x_<hash>\python.exe`
+  # -- so the blanket reject fired on all three names, `Resolve-CrewPython`
+  # returned '', and the caller's "no usable python" fallback let every write
+  # through unjudged on a machine where python plainly works (confirmed here:
+  # all three names launch fine, reporting Python 3.14.6). role-write-
+  # guard.sh's OWN resolver hit and fixed this exact bug on 2026-09-22 (see
+  # its comment on `_resolve_role_write_python`); this copy had not been
+  # brought back into parity until now. The execute-and-probe checks below
+  # already prove real-vs-stub without needing to know WHERE the interpreter
+  # lives: a placeholder App Execution Alias run non-interactively via `-c`
+  # produces no usable stdout (rejected below) rather than a real
+  # interpreter path, and `Test-Path -PathType Leaf` further down still
+  # requires whatever path IS printed to be a real, existing file. Trust
+  # that proof instead of a path substring that happens to reject the
+  # working case too.
   $names = @('python3', 'python', 'py')
   foreach ($name in $names) {
     $cmd = Get-Command $name -ErrorAction SilentlyContinue | Select-Object -First 1
     if (-not $cmd -or $cmd.CommandType -ne 'Application' -or -not $cmd.Source) { continue }
-    if ($cmd.Source -match 'WindowsApps') { continue }
     $real = $null
     $global:LASTEXITCODE = $null
     try {
@@ -86,7 +107,7 @@ function Resolve-CrewPython {
       $real = $null
     }
     if ($real) { $real = $real.ToString().Trim() }
-    if (-not $real -or $real -match 'WindowsApps') { continue }
+    if (-not $real) { continue }
     # Exit 0 and non-empty output is still not proof: a wrapper could print a
     # plausible-looking path to something that is not actually there. Confirm
     # the path EXISTS as a file before trusting it -- the bash-side parity
@@ -134,9 +155,62 @@ if ($stdinBytes.Length -ge 3 -and $stdinBytes[0] -eq 0xEF -and
 }
 $raw = [System.Text.Encoding]::UTF8.GetString($stdinBytes)
 
+# Deny-list mirror of role_write_guard.py's `_DENY_ROLES`, plus `pm` (that
+# module's other restricted role) -- used both when NO python resolves at
+# all (below) and by the BLOCK-1 fallback further down, when
+# role_write_guard.py could not be launched. `tests/test_role_write_guard.py`'s
+# parity test re-derives the python side from `agents/*.md` on every run
+# and asserts this list matches it.
+$RestrictedRolesForFallback = @(
+  'analyst', 'compliance-auditor', 'dba', 'explorer',
+  'infrastructure-architect', 'kimi-consult', 'penetration-tester',
+  'planner', 'qa-researcher', 'qa-reviewer', 'researcher', 'security',
+  'pm'
+)
+
+function Get-FallbackRole {
+  # Consulted whenever python cannot be used to reach a real decision --
+  # either no candidate resolves at all, or a resolved candidate fails to
+  # launch role_write_guard.py. Never throws: an unparseable payload
+  # answers $null, the same permissive fallback role_write_guard.py itself
+  # gives one.
+  param([string]$RawJson)
+  try {
+    $obj = $RawJson | ConvertFrom-Json -ErrorAction Stop
+  } catch {
+    return $null
+  }
+  $agentType = $obj.agent_type
+  if (-not $agentType) { return $null }
+  $role = ([string]$agentType).Trim().ToLowerInvariant()
+  if ($role.StartsWith('crew:')) { $role = $role.Substring(5).Trim() }
+  if (-not $role) { return $null }
+  return $role
+}
+
 $py = Resolve-CrewPython
 if (-not $py) {
-  [Console]::Error.WriteLine("role-write-guard: no usable python - cannot judge this write, allowing it unjudged.")
+  # No candidate resolved at all -- a DIFFERENT failure than BLOCK-1 below
+  # (which is a candidate that resolved, was proven executable, and then
+  # still failed to launch). Reported 2026-09-24 alongside the WindowsApps
+  # resolver fix: fixing the resolver alone still leaves a genuinely
+  # python-less host (or any other total-resolution failure) falling
+  # through to an unconditional "allow it unjudged" -- which for a role
+  # this table ALREADY knows is restricted (`pm`, or a `_DENY_ROLES`
+  # member) throws away a decision that needed no python at all. A
+  # `_DENY_ROLES` role may not write ANY file regardless of path; `pm` is
+  # refused for anything outside its own patterns often enough that
+  # collapsing "cannot judge" into "allow" for either is exactly CLAUDE.md's
+  # named recurring bug ("an unknown collapsing into the safe-looking
+  # value"), not a neutral default. Mirrors BLOCK-1's own
+  # $RestrictedRolesForFallback / Get-FallbackRole exactly, so both failure
+  # modes agree on which roles fail closed.
+  $fallbackRole = Get-FallbackRole $raw
+  if ($RestrictedRolesForFallback -contains $fallbackRole) {
+    [Console]::Error.WriteLine("role-write-guard: no usable python found - cannot judge this write; failing closed for role ``$fallbackRole``.")
+    exit 2
+  }
+  [Console]::Error.WriteLine("role-write-guard: no usable python found - cannot judge this write; allowing it unjudged.")
   exit 0
 }
 
@@ -150,37 +224,6 @@ if (-not (Test-Path -LiteralPath $scriptPath -PathType Leaf)) {
   # is safe. Reported and fixed 2026-09-19.
   [Console]::Error.WriteLine("role-write-guard: role_write_guard.py is missing at $scriptPath; failing closed.")
   exit 2
-}
-
-# Deny-list mirror of role_write_guard.py's `_DENY_ROLES`, plus `pm` (that
-# module's other restricted role) -- used ONLY by the BLOCK-1 fallback
-# below, when role_write_guard.py could not be launched at all and there
-# is no real decision to defer to. `tests/test_role_write_guard.py`'s
-# parity test re-derives the python side from `agents/*.md` on every run
-# and asserts this list matches it.
-$RestrictedRolesForFallback = @(
-  'analyst', 'compliance-auditor', 'dba', 'explorer',
-  'infrastructure-architect', 'kimi-consult', 'penetration-tester',
-  'planner', 'qa-researcher', 'qa-reviewer', 'researcher', 'security',
-  'pm'
-)
-
-function Get-FallbackRole {
-  # Only consulted when python could not run at all -- see below. Never
-  # throws: an unparseable payload answers $null, the same permissive
-  # fallback role_write_guard.py itself gives one.
-  param([string]$RawJson)
-  try {
-    $obj = $RawJson | ConvertFrom-Json -ErrorAction Stop
-  } catch {
-    return $null
-  }
-  $agentType = $obj.agent_type
-  if (-not $agentType) { return $null }
-  $role = ([string]$agentType).Trim().ToLowerInvariant()
-  if ($role.StartsWith('crew:')) { $role = $role.Substring(5).Trim() }
-  if (-not $role) { return $null }
-  return $role
 }
 
 # Force the string back OUT as UTF-8 when it is piped to the native python

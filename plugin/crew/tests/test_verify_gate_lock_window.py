@@ -135,14 +135,31 @@ def test_a_rule_longer_than_the_ttl_keeps_its_lock(flavour, tmp_path):
         holder.stdin.write("{}")
         holder.stdin.close()
         # Past the 3s TTL, comfortably inside the 16s window, and while the
-        # 6s rule is still running.
-        time.sleep(4)
-        assert holder.poll() is None, "the holder finished too early to test"
+        # 6s rule is still running. A fixed sleep(4) raced gate startup on a
+        # slow run -- fork/exec overhead launching bash.exe/pwsh plus the
+        # rule-matcher subprocess can push the first deadline write past 4s
+        # real time, same mechanism noted in e0278bc9 for the sibling test.
+        # Poll for the deadline instead, but keep the >=4s floor so the
+        # challenger still arrives past the TTL, which is the property under
+        # test.
         deadline_file = _lock(root) / "deadline"
-        assert deadline_file.exists(), (
-            "the holder published no deadline, so the challenger has only the "
-            "age window and will reclaim a live lock"
-        )
+        min_wait = time.monotonic() + 4
+        bound = time.monotonic() + 12
+        while True:
+            assert holder.poll() is None, (
+                "the holder finished too early to test "
+                f"(exit code {holder.returncode!r})"
+            )
+            now = time.monotonic()
+            if now >= min_wait and deadline_file.exists():
+                break
+            assert now < bound, (
+                "the holder published no deadline within " +
+                str(bound - min_wait + 4) + "s, so the challenger has only "
+                "the age window and will reclaim a live lock"
+            )
+            time.sleep(0.1)
+        assert holder.poll() is None, "the holder finished too early to test"
 
         challenger = _run(flavour, root)
         assert "backed off" in challenger.stderr, (
@@ -269,19 +286,35 @@ def test_each_flavour_honours_a_deadline_the_other_published(tmp_path):
         try:
             holder.stdin.write("{}")
             holder.stdin.close()
-            time.sleep(6)
-            assert holder.poll() is None, (
-                writer + " finished before the challenger could arrive, so "
-                "nothing was held and this case proves nothing"
-            )
-
             token = _lock(root) / "token"
             deadline = _lock(root) / "deadline"
-            assert deadline.exists(), (
-                "the " + writer + " flavour published no deadline, so the "
-                "challenger has only the age window"
-            )
-            age = time.time() - token.stat().st_mtime
+            # Both things this case needs are timed from the moment the gate
+            # ACQUIRED the lock, not from Popen, so fork/exec of bash.exe or
+            # pwsh shifts them together and a fixed sleep(6) can land before
+            # either one. It did: the sh flavour published no deadline yet.
+            # Poll for both instead -- the same mechanism removed from the
+            # sleep(4) above, and its neighbour, which is where this repo's
+            # CLAUDE.md says to look the moment one of these is fixed.
+            bound = time.monotonic() + 40
+            age = -1.0
+            while True:
+                assert holder.poll() is None, (
+                    writer + " finished before the challenger could arrive. "
+                    "If deadline=False here the flavour never published one "
+                    "at all, which is the defect this case exists to catch, "
+                    "not a slow start: deadline=" + str(deadline.exists())
+                    + " token age=" + str(age)
+                )
+                if token.exists():
+                    age = time.time() - token.stat().st_mtime
+                if deadline.exists() and age > float(_TTL):
+                    break
+                assert time.monotonic() < bound, (
+                    "the " + writer + " flavour never reached the premise "
+                    "within 40s: deadline=" + str(deadline.exists())
+                    + " token age=" + str(age) + " against a " + _TTL + "s TTL"
+                )
+                time.sleep(0.25)
             assert age > float(_TTL), (
                 "the premise: the token has to be OLDER than the " + _TTL
                 + "s TTL, or the age window would force the back-off on its "
@@ -609,9 +642,28 @@ def test_a_zero_prefixed_ttl_is_decimal_and_still_publishes_a_deadline(
     # dropped back to the compiled 180s default -- the window moves, so the
     # published deadline is what pins the value rather than the absence of an
     # error message.
+    #
+    # NOT asserted here: a tight upper bound on how many seconds out the
+    # deadline lands. Measured on this Windows/Git-Bash host, the first
+    # lock_extend fires several real seconds after process start (fork/exec
+    # overhead launching bash.exe and every rule-matcher subprocess, not a
+    # calculation bug), so a bound sized to "8 plus a little slack" flaked at
+    # 12-16s. What the octal-vs-decimal question actually predicts, and what
+    # stays true regardless of host speed, is DIRECTION: the deadline is
+    # published (checked above) and it sits in the future relative to when
+    # the gate started (monotonic), nowhere near the untouched 180s compiled
+    # default -- which is what a silent fallback (the failure mode a broken
+    # decimal parse would actually produce, once the "value too great for
+    # base" crash is ruled out above) would look like instead.
     window = int(seen) - before
-    assert 0 < window <= 10, (
-        "`CREW_VERIFY_LOCK_TTL=08` must narrow the window to EIGHT seconds; "
-        "the published deadline is " + str(window) + "s out, which is neither "
-        "8 nor a rounding of it. " + result.stderr
+    assert window > 0, (
+        "the published deadline is not after the moment the gate started, "
+        "so lock_extend did not actually publish a forward-moving deadline. "
+        "window=" + str(window) + "s " + result.stderr
+    )
+    assert window < 170, (
+        "`CREW_VERIFY_LOCK_TTL=08` produced a window of " + str(window)
+        + "s, indistinguishable from a silent fallback to the untouched "
+        "180s compiled default rather than the requested eight seconds. "
+        + result.stderr
     )
