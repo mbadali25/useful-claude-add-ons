@@ -141,10 +141,12 @@ import json
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import threading
 import time
+from typing import NoReturn
 
 import pytest
 
@@ -169,6 +171,27 @@ _FLAVOURS = [
         not sys.platform.startswith("win") or _PWSH is None,
         reason="the .ps1 gate is the native-Windows flavour")),
 ]
+
+# rule[8] does not terminate - OPEN 2026-09-24 (TODO.md): a spawn of the real
+# gate here had no timeout at all, so a hung gate (verify-gate.ps1's python
+# resolver returning an unrunnable PATH shim, see verify-gate.ps1's
+# Test-CrewWindowsExecutable) turned into a non-terminating `pytest
+# plugin/crew/tests/ -q` - .crew/verify.json rule[8] verbatim - instead of one
+# red test. Every fixture rule in this file runs in well under a second
+# (echo/test/exit); 120s matches the headroom this suite already uses for a
+# full gate invocation elsewhere (test_gate_command.py, test_docs_routing.py,
+# test_promote_merge_gate.py) rather than inventing a new number, and is
+# still short enough that a real hang fails fast instead of stalling rule[8].
+_GATE_TIMEOUT = 120
+
+
+def _fail_on_gate_timeout(flavour, exc) -> NoReturn:
+    pytest.fail(
+        f"verify-gate [{flavour}] did not terminate within "
+        f"{_GATE_TIMEOUT}s - the gate hung instead of exiting "
+        f"(rule[8] non-terminating repro). {exc}"
+    )
+    raise AssertionError("unreachable - pytest.fail always raises")
 
 
 def _git(root, *args):
@@ -201,11 +224,15 @@ def _run(flavour, root, *extra, scripts=None):
     else:
         cmd = [_PWSH, "-NoProfile", "-NonInteractive", "-File", ps1,
                *[a.replace("--all", "-All") for a in extra]]
-    return crew_fixtures.run_gate(
-        cmd, input="{}", cwd=str(root),
-        env=dict(os.environ, CLAUDE_PROJECT_DIR=str(root)),
-        capture_output=True, text=True, check=False, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S,
-    )
+    try:
+        return crew_fixtures.run_gate(
+            cmd, input="{}", cwd=str(root),
+            env=dict(os.environ, CLAUDE_PROJECT_DIR=str(root)),
+            capture_output=True, text=True, check=False,
+            timeout=_GATE_TIMEOUT,
+        )
+    except subprocess.TimeoutExpired as exc:
+        _fail_on_gate_timeout(flavour, exc)
 
 
 def _record(root):
@@ -483,8 +510,12 @@ def test_1_crlf_from_native_python_does_not_leak_an_inherited_credential(
         cmd = [_BASH, _SH]
     else:
         cmd = [_PWSH, "-NoProfile", "-NonInteractive", "-File", _PS1]
-    result = crew_fixtures.run_gate(cmd, input="{}", cwd=str(root), env=env,
-                            capture_output=True, text=True, check=False, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
+    try:
+        result = crew_fixtures.run_gate(cmd, input="{}", cwd=str(root), env=env,
+                                capture_output=True, text=True, check=False,
+                                timeout=_GATE_TIMEOUT)
+    except subprocess.TimeoutExpired as exc:
+        _fail_on_gate_timeout(flavour, exc)
     assert result.returncode == 0, (
         "AWS_PROFILE was not actually unset under a CRLF-corrupted "
         "env-pin read. " + result.stderr
@@ -1407,10 +1438,18 @@ def test_34b_a_backgrounded_grandchild_holding_stdout_does_not_wedge_the_gate(
     10s bound is comfortably under the sleep's 20s, so a regression back to
     the old pipe capture fails loudly rather than merely running slow.
     """
+    # The backgrounded `sleep 20 &` outlives the gate's own return (that is
+    # the point of the test - the gate must not wait on it) and ignores
+    # SIGTERM by inheriting the parent shell's disposition, so it is not
+    # reachable through run_gate's own process-group cleanup: by the time
+    # the gate returns, the shell that backgrounded it has already exited
+    # and the sleep has been reparented away from that group. Recording its
+    # own pid lets the test reap it directly instead of leaving a 20s
+    # orphan behind every time this test runs.
     vmap = {
         "version": 1,
         "rules": [{"paths": ["a.py"], "reach": "local", "run": [
-            "sh -c \"trap '' TERM; sleep 20 &\""
+            "sh -c \"trap '' TERM; sleep 20 & echo $! > bg.pid\""
         ]}],
         "default": [], "unmapped": "ignore",
     }
@@ -1418,16 +1457,25 @@ def test_34b_a_backgrounded_grandchild_holding_stdout_does_not_wedge_the_gate(
     (root / "a.py").write_text("x", encoding="utf-8")
 
     started = time.time()
-    result = _run(flavour, root)
-    elapsed = time.time() - started
-    assert result.returncode == 0, result.stderr
-    assert elapsed < 10, (
-        f"the gate took {elapsed:.1f}s to return - a backgrounded, "
-        "SIGTERM-ignoring grandchild inheriting the rule's stdout wedged "
-        "the gate's own read of that rule's output, instead of the read "
-        "coming from a file that does not care who else still has it "
-        f"open. stderr: {result.stderr}"
-    )
+    try:
+        result = _run(flavour, root)
+        elapsed = time.time() - started
+        assert result.returncode == 0, result.stderr
+        assert elapsed < 10, (
+            f"the gate took {elapsed:.1f}s to return - a backgrounded, "
+            "SIGTERM-ignoring grandchild inheriting the rule's stdout wedged "
+            "the gate's own read of that rule's output, instead of the read "
+            "coming from a file that does not care who else still has it "
+            f"open. stderr: {result.stderr}"
+        )
+    finally:
+        pidfile = root / "bg.pid"
+        if pidfile.exists():
+            try:
+                bg_pid = int(pidfile.read_text(encoding="utf-8").strip())
+                os.kill(bg_pid, signal.SIGKILL)
+            except (ValueError, ProcessLookupError, PermissionError, OSError):
+                pass
 
 
 @pytest.mark.skipif(_BASH is None, reason="needs bash")
