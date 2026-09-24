@@ -147,8 +147,8 @@ def test_a_rule_longer_than_the_ttl_keeps_its_lock(flavour, tmp_path):
         bound = time.monotonic() + 12
         while True:
             assert holder.poll() is None, (
-                "the holder finished too early to test (exit code %r)"
-                % holder.returncode
+                "the holder finished too early to test "
+                f"(exit code {holder.returncode!r})"
             )
             now = time.monotonic()
             if now >= min_wait and deadline_file.exists():
@@ -286,19 +286,35 @@ def test_each_flavour_honours_a_deadline_the_other_published(tmp_path):
         try:
             holder.stdin.write("{}")
             holder.stdin.close()
-            time.sleep(6)
-            assert holder.poll() is None, (
-                writer + " finished before the challenger could arrive, so "
-                "nothing was held and this case proves nothing"
-            )
-
             token = _lock(root) / "token"
             deadline = _lock(root) / "deadline"
-            assert deadline.exists(), (
-                "the " + writer + " flavour published no deadline, so the "
-                "challenger has only the age window"
-            )
-            age = time.time() - token.stat().st_mtime
+            # Both things this case needs are timed from the moment the gate
+            # ACQUIRED the lock, not from Popen, so fork/exec of bash.exe or
+            # pwsh shifts them together and a fixed sleep(6) can land before
+            # either one. It did: the sh flavour published no deadline yet.
+            # Poll for both instead -- the same mechanism removed from the
+            # sleep(4) above, and its neighbour, which is where this repo's
+            # CLAUDE.md says to look the moment one of these is fixed.
+            bound = time.monotonic() + 40
+            age = -1.0
+            while True:
+                assert holder.poll() is None, (
+                    writer + " finished before the challenger could arrive. "
+                    "If deadline=False here the flavour never published one "
+                    "at all, which is the defect this case exists to catch, "
+                    "not a slow start: deadline=" + str(deadline.exists())
+                    + " token age=" + str(age)
+                )
+                if token.exists():
+                    age = time.time() - token.stat().st_mtime
+                if deadline.exists() and age > float(_TTL):
+                    break
+                assert time.monotonic() < bound, (
+                    "the " + writer + " flavour never reached the premise "
+                    "within 40s: deadline=" + str(deadline.exists())
+                    + " token age=" + str(age) + " against a " + _TTL + "s TTL"
+                )
+                time.sleep(0.25)
             assert age > float(_TTL), (
                 "the premise: the token has to be OLDER than the " + _TTL
                 + "s TTL, or the age window would force the back-off on its "
