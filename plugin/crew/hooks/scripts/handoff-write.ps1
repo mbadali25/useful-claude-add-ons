@@ -147,6 +147,51 @@ function Resolve-CrewPython {
   return ''
 }
 
+function Format-CrewProcessArgument([string]$Value) {
+  # BYTE-FOR-BYTE in notify.ps1 and handoff-write.ps1. The Win32 argv
+  # quoting rule (the one CommandLineToArgvW documents): used only as the
+  # fallback below, on a runtime whose ProcessStartInfo has no ArgumentList
+  # to build the command line correctly for us. A value with none of the
+  # characters that need quoting is passed through untouched; otherwise it
+  # is wrapped in quotes, with each run of backslashes doubled only where it
+  # immediately precedes a literal quote -- its own, or the closing one this
+  # function adds.
+  if ($Value -and $Value -notmatch '[\s"]') { return $Value }
+  $sb = New-Object System.Text.StringBuilder
+  [void]$sb.Append('"')
+  $backslashes = 0
+  foreach ($ch in $Value.ToCharArray()) {
+    if ($ch -eq '\') { $backslashes++; continue }
+    if ($ch -eq '"') {
+      [void]$sb.Append('\' * (2 * $backslashes + 1))
+      [void]$sb.Append('"')
+      $backslashes = 0
+      continue
+    }
+    if ($backslashes -gt 0) { [void]$sb.Append('\' * $backslashes); $backslashes = 0 }
+    [void]$sb.Append($ch)
+  }
+  if ($backslashes -gt 0) { [void]$sb.Append('\' * (2 * $backslashes)) }
+  [void]$sb.Append('"')
+  return $sb.ToString()
+}
+
+function Set-CrewProcessArguments([System.Diagnostics.ProcessStartInfo]$Psi, [string[]]$ArgList) {
+  # BYTE-FOR-BYTE in notify.ps1 and handoff-write.ps1. Replaces building
+  # $psi.Arguments by string concatenation -- fragile even where nothing on
+  # this path is attacker-controlled today (a hex nonce, a path under our
+  # own claims directory): one stray space or quote in an argument used to
+  # need hand escaping at every call site, and a call site that forgot was
+  # invisible until it broke. ArgumentList exists on this runtime's
+  # ProcessStartInfo everywhere .NET builds argv for us; the manual fallback
+  # is only for a PowerShell 5.1 host old enough to predate it.
+  if ($Psi.PSObject.Properties['ArgumentList']) {
+    foreach ($a in $ArgList) { $Psi.ArgumentList.Add($a) }
+  } else {
+    $Psi.Arguments = (($ArgList | ForEach-Object { Format-CrewProcessArgument $_ }) -join ' ')
+  }
+}
+
 function Test-CrewEventClaim([string]$Hook, [byte[]]$Payload) {
   # BYTE-FOR-BYTE in notify.ps1 and handoff-write.ps1, asserted by
   # tests/test_flavour_windows_direction.py. $null ONLY when event_claim.py
@@ -162,7 +207,7 @@ function Test-CrewEventClaim([string]$Hook, [byte[]]$Payload) {
   try {
     $psi = New-Object System.Diagnostics.ProcessStartInfo
     $psi.FileName = $claimPy
-    $psi.Arguments = '"' + (Join-Path $PSScriptRoot 'event_claim.py') + '" ' + $Hook + ' . ps1'
+    Set-CrewProcessArguments $psi @((Join-Path $PSScriptRoot 'event_claim.py'), $Hook, '.', 'ps1')
     $psi.WorkingDirectory = (Get-Location).Path
     $psi.UseShellExecute = $false
     $psi.RedirectStandardInput = $true
@@ -193,7 +238,7 @@ function Complete-CrewEventClaim([string]$Claim) {
   try {
     $psi = New-Object System.Diagnostics.ProcessStartInfo
     $psi.FileName = $parts[1]
-    $psi.Arguments = '"' + (Join-Path $PSScriptRoot 'event_claim.py') + '" --sent "' + $parts[0] + '"'
+    Set-CrewProcessArguments $psi @((Join-Path $PSScriptRoot 'event_claim.py'), '--sent', $parts[0])
     $psi.UseShellExecute = $false
     $proc = [System.Diagnostics.Process]::Start($psi)
     if (-not $proc.WaitForExit(10000)) { try { $proc.Kill() } catch { } }
