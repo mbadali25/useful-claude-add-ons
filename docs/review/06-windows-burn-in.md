@@ -407,9 +407,112 @@ is pre-existing machine config rather than anything 1.0 did. It is also not a bl
 `writer_vault()` documents and implements a pre-roles fallback to `default: true`, which this
 config has, so capture still resolves a target.
 
+## 4 - review and Codex. The patch PASSES. The Codex hooks fire, but only behind two gates, and one generated config key is ignored.
+
+### The review patch carries an untracked file's CONTENT - PASS
+
+Built a throwaway repo holding one of each kind of change, each with its own canary string, and
+ran `review_patch.py --root <repo> --base <base>`:
+
+    review-patch: 1135 bytes in 1 part(s), bundle=6294c931ec81 base=424bb31240f8
+                  head=fc3707f7f1bd branch=main dirty=True
+
+| What | Wanted in the patch | Found | Verdict |
+|---|---|---|---|
+| committed change after base | yes | yes | PASS |
+| staged, uncommitted | yes | yes | PASS |
+| unstaged, tracked file | yes | yes | PASS |
+| **untracked file's content** | yes | **yes** | **PASS** |
+| gitignored file | no | no | PASS |
+
+The defect this script exists to fix - `git diff BASE...HEAD` producing a 0-byte patch on a dirty
+tree, with untracked files never entering it at all - does not reproduce here. The bundle is
+non-empty and the untracked file's content is in it, not just its name.
+
+The `GIT_INDEX_FILE` technique also behaves on Windows: the repo's real `.git/index` was read
+before and after and is **byte-identical**, so the temporary-index staging never touched it.
+The manifest carries `entries`, `untracked_files`, `staged_files`, `unstaged_files`,
+`committed_files`, `excluded`, `renames`, `binary_files`, `mode_changes`, `submodules` and
+`bundle_sha256`.
+
+### The two-round ledger - PASS
+
+    status, before        state EMPTY, budget 2, rounds_used 0
+    reserve round 1       exit 0, ROUND=1, "round 1 of 2 reserved"
+    reserve round 2       exit 0, ROUND=2, "round 2 of 2 reserved"
+    reserve round 3       exit 1, ROUND= (empty)
+                          "review budget exhausted: 2 of 2 rounds used. State is
+                           NEEDS_REPLAN; only an approved successor plan continues"
+
+The third reservation refuses with a non-zero exit rather than a warning, and the state moves to
+`NEEDS_REPLAN` rather than silently allowing a third round.
+
+### `.codex/hooks.json` generation - PASS
+
+`crew_instructions.py codex` writes `.codex/hooks.json` (2430 bytes) and `.codex/config.toml`
+(818 bytes), and says out loud that hooks.json is machine-local and must not be committed. Every
+one of the four events - `SessionStart`, `UserPromptSubmit`, `PostToolUse` (two matchers) and
+`SubagentStart` - carries **both** a bash `command` and a `commandWindows`, the latter a
+`powershell -NoProfile -ExecutionPolicy Bypass -File` line with native backslash paths while the
+bash form uses forward slashes. Valid JSON.
+
+### Does `commandWindows` actually fire in `codex exec`? YES - and this is now measured, not configured
+
+crew's own `codex-probe` reports every event as **"configured, not proven"**. It is now proven,
+on codex-cli **0.154.0**, by replacing each hook with two *distinguishable* probes - the bash
+`command` appends to `bash.marker`, the `commandWindows` PowerShell appends to `windows.marker` -
+so the result names which branch Codex chose rather than only that something ran.
+
+| Run | Project trusted | `--dangerously-bypass-hook-trust` | Hooks fired |
+|---|---|---|---|
+| 1 | no | yes | **none** |
+| 2 | **yes** | no | **none** |
+| 3 | **yes** | **yes** | **`windows.marker`: `powershell SessionStart`, `powershell UserPromptSubmit`** |
+
+`bash.marker` was never created in any run. **On Windows, Codex takes the `commandWindows`
+branch** - which is what this section needed to establish.
+
+**Both gates are required, and neither announces itself.** Project trust is the `[projects.'<path>']
+trust_level = "trusted"` table in `~/.codex/config.toml`; crew's guide already states "Codex reads
+project config only for a trusted project". Hook trust is separate, and `codex exec --help`
+documents `--dangerously-bypass-hook-trust` as running "enabled hooks without requiring persisted
+hook trust for this invocation". Runs 1 and 2 each satisfied exactly one gate and fired nothing.
+
+The operationally important part is the silence: in runs 1 and 2 Codex printed **no warning about
+hooks at all**. It warns about an unrelated config key (below) and says nothing about the hooks it
+declined to run. Someone who wires crew's Codex hooks and never persists hook trust gets a working
+`codex exec`, an untouched `.codex/hooks.json`, and no signal anywhere that the context hook never
+ran.
+
+To measure this the scratch repo was temporarily added to `~/.codex/config.toml`'s trust table and
+the file restored afterwards; both runs verified the restore by SHA-256 against the bytes read
+before the edit, and both came back identical.
+
+### `profiles` in the generated `.codex/config.toml` are IGNORED - previously UNVERIFIED, now negative
+
+The generated file carries its own caveat: "UNVERIFIED on a live run: whether `profiles` are
+honoured from project config rather than only from `~/.codex/config.toml`." Every trusted run
+answered it, twice per run, on stderr:
+
+    warning: Ignored unsupported project-local config keys in <repo>\.codex\config.toml:
+    profiles. If you want these settings to apply, manually set them in your user-level
+    config.toml.
+
+So `[profiles.review]` (`sandbox_mode = "read-only"`, `approval_policy = "never"`) and
+`[profiles.work]` do **not** take effect from the project file on 0.154.0. The trusted run's own
+banner shows it: `sandbox: workspace-write [workdir, /tmp, $TMPDIR]`, inherited from user config,
+where the generated review profile intends read-only. A reviewer launched as
+`codex exec --profile review` on this machine would not get its sandbox from that file.
+
+`project_doc_fallback_filenames` was **not** named in the warning, so that key does appear to be
+accepted at project level. Not separately proven - only that Codex did not reject it.
+
+One version note: the generated `config.toml` cites "codex 0.155.1's own help text" while the
+installed CLI is 0.154.0. Every result above is 0.154.0.
+
 ## Sections not yet run
 
-**4 (review and Codex)** and **2a steps 3/5/6** are NOT RUN at this commit.
+**2a steps 3/5/6** are NOT RUN at this commit.
 
 From section 3, still outstanding: `/crew:memory-setup` (no such command here - see above) and
 steps 3 and 4 of the seeded-note recall proof, which need a nested `claude -p` run with
