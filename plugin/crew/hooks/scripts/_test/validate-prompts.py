@@ -96,8 +96,12 @@ SKILLS = {os.path.basename(os.path.dirname(f)) for f in glob.glob("skills/*/SKIL
 
 # Roles that are deliberately NOT on the default tier. Anything absent from this
 # map must declare `sonnet`; see check_agents for why each exception exists.
-# `reviewer` (qa-reviewer until crew 1.0) is the only one left.
-MODEL_TIER = {"reviewer": "opus"}
+# `reviewer` (qa-reviewer until crew 1.0) was the only one until `explorer`
+# joined it (owner decision, 2026-09-24): it maps unfamiliar code for every
+# other role, and with the `localgpu` semantic index disabled or unavailable
+# it has only Read/Grep/Glob, so a wrong map is inherited by everything built
+# on it -- see CHANGELOG.md's 1.0.9 entry and README's model-tiers section.
+MODEL_TIER = {"reviewer": "opus", "explorer": "opus"}
 
 KNOWN_TOOLS = {
     "Read", "Write", "Edit", "MultiEdit", "Bash", "PowerShell", "Grep", "Glob",

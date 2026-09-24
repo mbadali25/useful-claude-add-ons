@@ -6,12 +6,31 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Changed
 
-- **`crew`: `explorer` now runs on `opus` instead of `sonnet`** (owner
-  decision, 2026-09-24). Explorer maps unfamiliar code for every other role.
-  With the `localgpu` semantic index disabled or unavailable it has only
-  Read/Grep/Glob, and a wrong map is inherited by everything built on it.
-  Cost: every explorer dispatch now runs on the stronger, pricier tier. The
-  other read-only roles stay on `sonnet`.
+- **`crew` 1.0.9: integration merge of the explorer/opus owner decision plus a
+  second independent-review round on the 1.0.8 no-python fallback and
+  `crew_autoclear_setup` fixes.**
+  `explorer` now runs on `opus` instead of `sonnet` (owner decision,
+  2026-09-24): it maps unfamiliar code for every other role, and with the
+  `localgpu` semantic index disabled or unavailable it has only
+  Read/Grep/Glob, so a wrong map is inherited by everything built on it. Cost:
+  every explorer dispatch now runs on the stronger, pricier tier. The other
+  read-only roles stay on `sonnet`. README's tier table and rationale, the
+  agent frontmatter and its snapshot test, and this entry are updated to
+  match.
+  `role-write-guard.sh`'s no-python fallback had a case-sensitivity gap: with
+  `nocasematch` set, `case ... crew:*)` matched a `crew:` prefix in any case
+  (`CREW:PM`, `Crew:pm`, ...), but the `${role#crew:}` prefix-removal
+  expansion that followed does not honour `nocasematch` at all and left the
+  prefix on the string — `_role_write_is_restricted`'s exact-match deny list
+  then read the un-stripped role as unrecognised and allowed the write
+  unjudged. Fixed with a fixed-length substring removal (`${role:5}`) that
+  needs no second, case-sensitive match, since the `case` above already
+  proved the first 5 characters spell `crew:` regardless of case.
+  `crew_autoclear_setup.py`'s `apply_migrate_to_repo` commit loop (both
+  repo files already staged into temp files) had no cleanup of its own: an
+  `os.replace` failure partway through left every unconsumed staged temp file
+  behind. Now wrapped in `try`/`finally` so any staged temp not yet renamed
+  away is removed on any failure, without touching files already committed.
 
 - **`crew` 1.0.8: independent-review round on the 1.0.7 merge (role-write-guard
   no-python contract, verify-gate stdin bound, crew_autoclear_setup divergent-

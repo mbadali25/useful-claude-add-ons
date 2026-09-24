@@ -11,7 +11,7 @@ Read the **Hooks** section of any plugin before installing it. Commands and agen
 | | |
 |---|---|
 | **Source** | [`crew/`](crew) |
-| **Version** | 1.0.8<!-- claim: plugin-version:crew --> |
+| **Version** | 1.0.9<!-- claim: plugin-version:crew --> |
 | **Install** | `claude plugin install crew@useful-claude-add-ons` |
 | **Menu item** | 21, `repo-plugins` — **off by default**. Menu item 22, `graphify`, is a separate, also-off-by-default install of the `graphify` CLI this plugin's graph feature depends on — see **The code graph** below. |
 | **Registers** | 4 agents, 34 commands, 29 skills<!-- claim: plugin-skills:crew -->, 34 hook entries (13 scripts × `.sh`/`.ps1`) across 8 events |
@@ -170,7 +170,7 @@ the crew up or down.
 
 | Agent | Tools | Model | Tier | Role |
 |---|---|---|---|---|
-| `explorer` | read-only | `sonnet` | 0 | Maps code, returns summaries not contents |
+| `explorer` | read-only | `opus` | 0 | Maps code, returns summaries not contents |
 | `reviewer` | read-only + Bash | `opus` | 0 | Hostile review; the last rung of `qa.order`. Renamed from `qa-reviewer` in 1.0 |
 | `security` | read-only + Bash | `sonnet` | 1 | Exploitable defects in the diff |
 | `researcher` | read-only + web | `sonnet` | 2 | External research only — docs, APIs, versions, vendor limits, standards, prior art. Every claim carries its source |
@@ -178,7 +178,10 @@ the crew up or down.
 All four are read-only — a restricted tool set is one of the three things that
 earns a role its place. `reviewer` runs on `opus` because it shares a model
 family with the author when Codex and Copilot are both unavailable, and the
-tier is the only compensation left.
+tier is the only compensation left. `explorer` also runs on `opus` (owner
+decision, 2026-09-24): it maps unfamiliar code for every other role, and with
+the `localgpu` semantic index disabled or unavailable it has only
+Read/Grep/Glob, so a wrong map is inherited by everything built on it.
 
 ### Bundled skills — 29
 
