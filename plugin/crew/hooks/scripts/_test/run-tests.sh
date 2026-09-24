@@ -258,16 +258,26 @@ unset CLAUDE_PROJECT_DIR
 # config - the same observable shape as the E2BIG exec failure this fix was for.
 #
 # The stubs must answer crew_py_strict's OWN proof (`-c 'import sys;
-# print(sys.executable)'`) with their own absolute path and exit 0 - only then
-# does crew_py_strict accept one of them as $PY, past the top-level check at
-# verify-gate.sh's `PY=$(crew_py_strict) || ...`, so it is the MATCHER
-# invocation (a different shape - `"$PY" - args << script`) that fails, which
-# is the actual code path this case exists to exercise. A stub that exits 9
+# sys.version_info>=(3,8) and print(sys.executable)'`) with their own
+# absolute path and exit 0 - only then does crew_py_strict accept one of
+# them as $PY, past the top-level check at verify-gate.sh's
+# `PY=$(crew_py_strict) || ...`, so it is the MATCHER invocation (a
+# different shape - `"$PY" - args << script`) that fails, which is the
+# actual code path this case exists to exercise. A stub that exits 9
 # unconditionally (the previous shape) fails crew_py_strict's proof too, so it
 # never resolves to $PY at all and the matcher is never even reached - the
 # hollow shape review round 6 caught: it was quietly testing "no python
 # resolves", not "the matcher could not run", and a case arm was added here to
-# paper over that instead of fixing the fixture.
+# paper over that instead of fixing the fixture. The proof text itself
+# changed again when crew_py_strict grew its own >=3.8 floor check
+# (`_common.sh`'s `crew_py_strict`): a stub answering the OLD text no longer
+# matches, so crew_py_strict silently falls through it to the real system
+# python further down PATH, and the matcher then actually runs (against a
+# real interpreter) instead of exercising the "could not run" branch this
+# case means to hit. Measured 2026-09-24: with the stale text this case's
+# $OUT was a fully-successful matcher run ("0 rule command(s)" / "UNMAPPED
+# CHANGES"), not "could not RUN the matcher" - the fixture had gone stale
+# against the product, not the other way around.
 UNRUNNABLE=$(mktemp -d) || exit 1
 (
   cd "$UNRUNNABLE" || exit 1
@@ -285,7 +295,7 @@ UNRUNNABLE=$(mktemp -d) || exit 1
   # this fix is for, and deliberately NOT 3, which is the parse status.
   cat > fakebin/python3 <<STUB
 #!/bin/sh
-if [ "\$1" = "-c" ] && [ "\$2" = "import sys; print(sys.executable)" ]; then
+if [ "\$1" = "-c" ] && [ "\$2" = "import sys; sys.version_info>=(3,8) and print(sys.executable)" ]; then
   printf '%s\n' "$UNRUNNABLE/fakebin/python3"
   exit 0
 fi
@@ -293,7 +303,7 @@ exit 9
 STUB
   cat > fakebin/python <<STUB
 #!/bin/sh
-if [ "\$1" = "-c" ] && [ "\$2" = "import sys; print(sys.executable)" ]; then
+if [ "\$1" = "-c" ] && [ "\$2" = "import sys; sys.version_info>=(3,8) and print(sys.executable)" ]; then
   printf '%s\n' "$UNRUNNABLE/fakebin/python"
   exit 0
 fi
@@ -301,7 +311,7 @@ exit 9
 STUB
   cat > fakebin/py <<STUB
 #!/bin/sh
-if [ "\$1" = "-c" ] && [ "\$2" = "import sys; print(sys.executable)" ]; then
+if [ "\$1" = "-c" ] && [ "\$2" = "import sys; sys.version_info>=(3,8) and print(sys.executable)" ]; then
   printf '%s\n' "$UNRUNNABLE/fakebin/py"
   exit 0
 fi

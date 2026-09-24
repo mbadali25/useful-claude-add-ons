@@ -288,14 +288,34 @@ def build_fixture(root):
     calls = root / "calls"
     calls.mkdir()
     for name in SHIM_NAMES:
-        p = shims / name
-        p.write_text(
-            "#!/usr/bin/env bash\n"
-            f'printf "%s\\n" "$*" >> "{calls}/{name}.called"\n'
-            "exit 0\n",
-            encoding="utf-8", newline="\n",
-        )
-        p.chmod(0o755)
+        if os.name == "nt":
+            # A bare, extensionless shebang script is not a Windows
+            # executable. PowerShell resolves an unqualified command by
+            # trying PATHEXT extensions per PATH directory, and without a
+            # recognized extension it treats the shim file as a "document":
+            # inside an explicit pipeline it fails fast ("Cannot run a
+            # document in the middle of a pipeline"), but a plain capture
+            # like `(git rev-parse ... 2>$null)` is not a pipeline, so
+            # PowerShell instead hands it to Windows' shell-association
+            # resolution -- which blocks non-interactively with nothing to
+            # click. That is what actually hangs this suite; give Windows a
+            # real executable shim instead.
+            p = shims / f"{name}.cmd"
+            p.write_text(
+                "@echo off\n"
+                f'echo %*>>"{calls / (name + ".called")}"\n'
+                "exit /b 0\n",
+                encoding="utf-8",
+            )
+        else:
+            p = shims / name
+            p.write_text(
+                "#!/usr/bin/env bash\n"
+                f'printf "%s\\n" "$*" >> "{calls}/{name}.called"\n'
+                "exit 0\n",
+                encoding="utf-8", newline="\n",
+            )
+            p.chmod(0o755)
     return root / "repo", home, shims, calls
 
 

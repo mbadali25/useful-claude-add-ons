@@ -30,6 +30,14 @@ INPUT=$(cat)
 # instead -- the bash twin of `role-write-guard.ps1`'s
 # `Resolve-CrewPython`, not a shared one.
 _resolve_role_write_python() {
+  # Memoized within this process: verify-gate.sh alone calls this twice (PY
+  # and SHIM_PY), and each call would otherwise re-walk and re-probe PATH
+  # from scratch. Cached only for the life of THIS process -- a fresh hook
+  # invocation gets a fresh probe.
+  if [ -n "${_CREW_PY_STRICT_MEMO_DONE:-}" ]; then
+    [ -n "${_CREW_PY_STRICT_MEMO_RESULT:-}" ] && printf '%s\n' "$_CREW_PY_STRICT_MEMO_RESULT"
+    return "$_CREW_PY_STRICT_MEMO_RC"
+  fi
   # EVERY PATH match of every name, in order -- `type -ap` lists them all,
   # where `command -v` stops at the first. Windows burn-in 2026-09-23 (FAIL
   # 3): a broken WindowsApps python3 ahead of a real python3 made this
@@ -37,8 +45,17 @@ _resolve_role_write_python() {
   # tries every match, found the real one -- so the two flavours disagreed
   # about whether python existed, and notify.sh failed open and sent a ping
   # its PowerShell twin then sent again.
+  #
+  # An OVERALL deadline on top of each candidate's own 3s probe bound: a
+  # PATH with several hung candidates would otherwise cost 3s EACH, adding
+  # up past the shortest hook timeout that calls this (bridge-status.ps1's
+  # twin, 10s) even though every individual probe is bounded. Kept well
+  # inside that: the walk gives up and reports "no python" rather than keep
+  # trying once this much of the budget is spent.
+  local _crew_py_strict_deadline=$((SECONDS + 8))
   while IFS= read -r candidate; do
     [ -n "$candidate" ] || continue
+    [ "$SECONDS" -lt "$_crew_py_strict_deadline" ] || break
     # `command -v` finding a name on PATH is not enough -- the WindowsApps
     # alias IS a real, executable file, so `command -v python3` resolves it
     # cleanly. Running it and reading back `sys.executable` is what
@@ -148,9 +165,15 @@ _resolve_role_write_python() {
     # `sys.executable`, not `$candidate`: the PATH-found name may be a shim
     # that re-execs elsewhere, and the probe already paid the cost of
     # asking python where it actually lives.
+    _CREW_PY_STRICT_MEMO_DONE=1
+    _CREW_PY_STRICT_MEMO_RESULT=$real
+    _CREW_PY_STRICT_MEMO_RC=0
     printf '%s\n' "$real"
     return 0
   done < <(type -ap python3 python py 2>/dev/null)
+  _CREW_PY_STRICT_MEMO_DONE=1
+  _CREW_PY_STRICT_MEMO_RESULT=""
+  _CREW_PY_STRICT_MEMO_RC=1
   return 1
 }
 

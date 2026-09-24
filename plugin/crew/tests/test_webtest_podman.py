@@ -8,6 +8,7 @@ whichever runtime is on PATH, and names both when neither is.
 """
 import json
 import os
+import pathlib
 import shutil
 import sys
 
@@ -150,3 +151,20 @@ def test_inside_a_container_without_the_browsers_no_run_line_is_offered(tmp_path
     code, lines = webtest_guard.check_visual(_repo(tmp_path), runner=lambda *a, **k: 0)
 
     assert (code, len(lines)) == (77, 1)
+
+
+# --- the documented command must not drift from runtime_line()'s own one ------
+
+@pytest.mark.parametrize("rel", ["commands/webtest.md", "skills/stack-web/SKILL.md"])
+def test_the_documented_bind_mount_carries_the_selinux_relabel(rel):
+    """`runtime_line()` prints `-v "$PWD":/work:Z -w /work` (the SELinux
+    relabel above). The two docs that copy this command by hand had drifted
+    to the pre-`:Z` form -- this pins both against the product's own flag
+    rather than each other, so a future flag change has to touch all three
+    or this goes red."""
+    text = pathlib.Path(context._ROOT, rel).read_text(encoding="utf-8")  # pylint: disable=protected-access
+
+    assert '-v "$PWD":/work:Z -w /work' in text, (
+        rel + " does not carry the SELinux-relabeled bind mount "
+        "(-v \"$PWD\":/work:Z -w /work) that webtest_guard.py's "
+        "runtime_line() actually prints")

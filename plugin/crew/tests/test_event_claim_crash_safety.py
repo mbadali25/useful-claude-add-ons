@@ -239,6 +239,36 @@ def test_sent_is_recorded_by_replace_and_leaves_no_temp_behind(tmp_path):
             json.loads(files[0].read_text())["state"]) == ([True], "sent")
 
 
+# --- mark_sent must check the NONCE, not just the generation file's name ---
+
+def test_mark_sent_does_not_stamp_a_pruned_and_reused_generation(tmp_path):
+    """g1 is created, ages past `_STALE_SECONDS` and is pruned, then g1 is
+    RECREATED for an unrelated later claim -- `decide` reuses the same
+    generation number once nothing about it remains on disk. A delayed
+    owner of the FIRST g1 now calls mark_sent with its old token: the file
+    at that path is a different claim's now, and the stale token must be
+    refused rather than stamping the new claim "sent" out from under its
+    real owner (which would falsely suppress its twin's takeover)."""
+    root = _repo(tmp_path)
+    old_now = time.time() - event_claim.WINDOW - 1
+    old_token = event_claim.decide(root, "notify", NOTE, now=old_now)[1]
+    _, old_path = old_token.split(" ", 1)
+    old_cutoff_mtime = time.time() - event_claim._STALE_SECONDS - 1
+    os.utime(old_path, (old_cutoff_mtime, old_cutoff_mtime))
+    event_claim._prune(event_claim.claims_dir(root), time.time())
+    assert not os.path.exists(old_path), "the aged g1 must actually be pruned"
+
+    new_now = time.time()
+    new_token = event_claim.decide(root, "notify", NOTE, now=new_now)[1]
+    new_nonce, new_path = new_token.split(" ", 1)
+    assert new_path == old_path, "the reused generation must share the old path"
+
+    accepted = event_claim.mark_sent(old_token)
+
+    on_disk = json.loads(pathlib.Path(new_path).read_text())
+    assert (accepted, on_disk["state"], on_disk["nonce"]) == (False, "claimed", new_nonce)
+
+
 # --- handoff-write.sh:64 -- a failed write must not be marked sent ---------------
 
 def _handoff_repo_with_broken_path(tmp_path):

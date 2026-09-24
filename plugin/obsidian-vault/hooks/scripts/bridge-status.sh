@@ -27,8 +27,22 @@ _bridge_status_reject() {
 }
 
 _bridge_status_resolve_python() {
+  # Memoized within this process: a resolved (or exhausted) answer is not
+  # re-derived by a second call in the same run, which would otherwise
+  # re-walk and re-probe PATH from scratch. Cached only for the life of
+  # THIS process -- a fresh hook invocation gets a fresh probe.
+  if [ -n "$_BRIDGE_STATUS_PY_MEMO_DONE" ]; then
+    BRIDGE_STATUS_PY="$_BRIDGE_STATUS_PY_MEMO_RESULT"
+    BRIDGE_STATUS_REJECTED="$_BRIDGE_STATUS_PY_MEMO_REJECTED"
+    return "$_BRIDGE_STATUS_PY_MEMO_RC"
+  fi
   BRIDGE_STATUS_PY=""
   BRIDGE_STATUS_REJECTED=""
+  # An OVERALL deadline on top of each candidate's own 3s probe bound: a
+  # PATH with several hung candidates would otherwise cost 3s EACH, adding
+  # up past this hook's own 10s timeout even though every individual probe
+  # is bounded. Kept well inside that.
+  local _bridge_status_deadline=$((SECONDS + 8))
   for name in python3 python py; do
     # EVERY PATH match of the name, not only the first (`type -aP`, not
     # `command -v`), and each is executed before it is believed: where it
@@ -38,6 +52,10 @@ _bridge_status_resolve_python() {
     # behind them. bridge-status.ps1 walks the same order, so both flavours agree.
     while IFS= read -r candidate; do
       [ -n "$candidate" ] || continue
+      if [ "$SECONDS" -ge "$_bridge_status_deadline" ]; then
+        _bridge_status_reject "PATH walk stopped: the overall resolver deadline was reached before every candidate could be probed"
+        break 2
+      fi
       # Running the candidate and reading back a token this script chose is
       # what tells a real interpreter from something wearing the name: only
       # a python that parsed and ran the -c program can emit the prefix. A
@@ -125,9 +143,17 @@ _bridge_status_resolve_python() {
       # that re-execs elsewhere, and the probe already paid the cost of asking
       # python where it actually lives.
       BRIDGE_STATUS_PY="$real"
+      _BRIDGE_STATUS_PY_MEMO_DONE=1
+      _BRIDGE_STATUS_PY_MEMO_RESULT="$BRIDGE_STATUS_PY"
+      _BRIDGE_STATUS_PY_MEMO_REJECTED="$BRIDGE_STATUS_REJECTED"
+      _BRIDGE_STATUS_PY_MEMO_RC=0
       return 0
     done < <(type -aP "$name" 2>/dev/null)
   done
+  _BRIDGE_STATUS_PY_MEMO_DONE=1
+  _BRIDGE_STATUS_PY_MEMO_RESULT=""
+  _BRIDGE_STATUS_PY_MEMO_REJECTED="$BRIDGE_STATUS_REJECTED"
+  _BRIDGE_STATUS_PY_MEMO_RC=1
   return 1
 }
 

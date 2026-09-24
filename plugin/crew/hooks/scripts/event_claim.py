@@ -266,17 +266,38 @@ def claim(root, hook, raw, now=None, flavour=None):
 
 def mark_sent(token):
     """Record that the emission for `token` succeeded. Temp-then-replace, so
-    a crash leaves either the old "claimed" record or the new one."""
+    a crash leaves either the old "claimed" record or the new one.
+
+    The generation file NAME alone is not proof that `token` still owns it:
+    `_prune` deletes a generation once it is 24h stale, and `decide` can then
+    reuse that same generation number for an unrelated, later event. A
+    caller that was delayed past that window and only now reports "sent"
+    for its OLD claim must not be allowed to stamp the NEW one sharing its
+    path -- the nonce in `token` is checked against the nonce actually on
+    disk, and a mismatch (or a record too corrupt to carry one) means the
+    generation was recycled out from under this token: refuse rather than
+    overwrite, the same "refuse rather than destroy" rule `heal_config`
+    applies to a config it cannot safely touch."""
     nonce, _, path = token.partition(" ")
     if not nonce or not path:
         return False
-    seen = _read(path)
-    if seen is None:
+    try:
+        with open(path, "rb") as handle:
+            body = handle.read()
+    except OSError:
+        return False
+    try:
+        data = json.loads(body.decode("utf-8"))
+        at = float(data["at"])
+        stored_nonce = str(data["nonce"])
+    except (ValueError, KeyError, TypeError):
+        return False
+    if stored_nonce != nonce:
         return False
     temp = f"{path}.tmp-{nonce}"
     try:
         with open(temp, "wb") as handle:
-            handle.write(_record("sent", nonce, seen[1]))
+            handle.write(_record("sent", nonce, at))
         os.replace(temp, path)
     except OSError:
         return False
