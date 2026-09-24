@@ -71,8 +71,8 @@ repo's settings and its exit code, `-WhatIf` output for every mutating step. Sta
 {
   "paths": ["**/*.ps1", "**/*.psm1"],
   "run": [
-    "sh -c 'PW=\"\"; for c in pwsh pwsh.exe \"/c/Program Files/PowerShell/7/pwsh\"; do if command -v \"$c\" >/dev/null 2>&1 || [ -x \"$c\" ]; then PW=\"$c\"; break; fi; done; if [ -z \"$PW\" ]; then echo \"TOOL MISSING: pwsh (PowerShell 7) is on no known PATH, so the 7-targeted analysis DID NOT RUN. Install PowerShell 7 to check locally.\" >&2; exit 77; fi; \"$PW\" -NoProfile -Command \"if (-not (Get-Module -ListAvailable -Name PSScriptAnalyzer)) { [Console]::Error.WriteLine(\\\"TOOL MISSING: PSScriptAnalyzer module is not installed for pwsh, so the 7-targeted analysis DID NOT RUN. Install-Module PSScriptAnalyzer to check locally.\\\"); exit 77 }; \\$r = Invoke-ScriptAnalyzer -Path . -Recurse -Severity Error -Settings @{Rules=@{PSUseCompatibleSyntax=@{Enabled=\\$true;TargetVersions=@(\\\"7.0\\\")}}}; if (\\$r) { \\$r | Format-Table -AutoSize; exit 1 }\"'",
-    "sh -c 'PW=\"\"; for c in powershell.exe powershell \"/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe\"; do if command -v \"$c\" >/dev/null 2>&1 || [ -x \"$c\" ]; then PW=\"$c\"; break; fi; done; if [ -z \"$PW\" ]; then echo \"TOOL MISSING: Windows PowerShell 5.1 is on no known PATH (Linux/macOS host), so the 5.1-targeted analysis DID NOT RUN.\" >&2; exit 77; fi; \"$PW\" -NoProfile -Command \"if (-not (Get-Module -ListAvailable -Name PSScriptAnalyzer)) { [Console]::Error.WriteLine(\\\"TOOL MISSING: PSScriptAnalyzer module is not installed for Windows PowerShell 5.1, so the 5.1-targeted analysis DID NOT RUN. Install-Module PSScriptAnalyzer to check locally.\\\"); exit 77 }; \\$r = Invoke-ScriptAnalyzer -Path . -Recurse -Severity Error -Settings @{Rules=@{PSUseCompatibleSyntax=@{Enabled=\\$true;TargetVersions=@(\\\"5.1\\\")}}}; if (\\$r) { \\$r | Format-Table -AutoSize; exit 1 }\"'"
+    "sh -c 'PW=\"\"; for c in pwsh pwsh.exe \"/c/Program Files/PowerShell/7/pwsh\"; do if command -v \"$c\" >/dev/null 2>&1 || [ -x \"$c\" ]; then PW=\"$c\"; break; fi; done; if [ -z \"$PW\" ]; then echo \"TOOL MISSING: pwsh (PowerShell 7) is on no known PATH, so the 7-targeted analysis DID NOT RUN. Install PowerShell 7 to check locally.\" >&2; exit 77; fi; \"$PW\" -NoProfile -Command \"if (-not (Get-Module -ListAvailable -Name PSScriptAnalyzer)) { [Console]::Error.WriteLine(\\\"TOOL MISSING: PSScriptAnalyzer module is not installed for pwsh, so the 7-targeted analysis DID NOT RUN. Install-Module PSScriptAnalyzer to check locally.\\\"); exit 77 }; \\$r = Invoke-ScriptAnalyzer -Path . -Recurse -Severity Error,ParseError -Settings @{Rules=@{PSUseCompatibleSyntax=@{Enabled=\\$true;TargetVersions=@(\\\"7.0\\\")}}}; if (\\$r) { \\$r | Format-Table -AutoSize; exit 1 }\"'",
+    "sh -c 'PW=\"\"; for c in powershell.exe powershell \"/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe\"; do if command -v \"$c\" >/dev/null 2>&1 || [ -x \"$c\" ]; then PW=\"$c\"; break; fi; done; if [ -z \"$PW\" ]; then echo \"TOOL MISSING: Windows PowerShell 5.1 is on no known PATH (Linux/macOS host), so the 5.1-targeted analysis DID NOT RUN.\" >&2; exit 77; fi; \"$PW\" -NoProfile -Command \"if (-not (Get-Module -ListAvailable -Name PSScriptAnalyzer)) { [Console]::Error.WriteLine(\\\"TOOL MISSING: PSScriptAnalyzer module is not installed for Windows PowerShell 5.1, so the 5.1-targeted analysis DID NOT RUN. Install-Module PSScriptAnalyzer to check locally.\\\"); exit 77 }; \\$r = Invoke-ScriptAnalyzer -Path . -Recurse -Severity Error,ParseError -Settings @{Rules=@{PSUseCompatibleSyntax=@{Enabled=\\$true;TargetVersions=@(\\\"5.1\\\")}}}; if (\\$r) { \\$r | Format-Table -AutoSize; exit 1 }\"'"
   ],
   "agents": ["powershell-security-hardening"],
   "reach": "local",
@@ -89,6 +89,14 @@ itself never sets the process exit code, so a findings-only run that skipped thi
 would print violations and still report PASS. One `-Settings` argument per invocation: passing the
 bundled `PSGallery` preset alongside a second `-Settings` hashtable is a duplicate-parameter error
 that PowerShell rejects before any file is analysed.
+
+`-Severity Error,ParseError`, not `-Severity Error` alone: PSScriptAnalyzer's `-Severity` is an
+exact-match allowlist against the diagnostic's own severity, not a floor, and a real parse error
+(a missing closing brace, for one) comes back with `Severity: ParseError` - a distinct enum value
+`-Severity Error` does not match. `-Severity Error` on its own returns zero results for a script
+that fails to parse at all, `$r` stays empty, and the rule exits 0 on exactly the input it exists
+to catch. Confirmed both ways: `Invoke-ScriptAnalyzer -Path . -Severity Error` on an unterminated
+function returns nothing, and adding `ParseError` to the list surfaces it.
 
 Copies the exit-77 tool-missing pattern already used for `.ps1` files in this repo's own
 `.crew/verify.json` (the `pwsh`-resolution rule). Nothing in this repo writes rules into

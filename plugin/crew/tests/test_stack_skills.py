@@ -244,6 +244,28 @@ def _run_stripped(cmd, path_dir, cwd):
     )
 
 
+def _absolute_fallback_present(cmd):
+    """stack-powershell's rule commands, unlike every other stack's, also
+    probe a fixed OS install path when the tool isn't on PATH (`/c/Program
+    Files/PowerShell/7/pwsh`, `/c/Windows/.../powershell.exe` - a winget
+    install that never touched PATH still needs finding). PATH-stripping
+    cannot turn that branch into "tool missing" on a host where the tool
+    genuinely lives at that literal path: GitHub's windows-latest image
+    ships PowerShell 7 there, so `[ -x "$c" ]` finds it regardless of what
+    PATH says. Returns the first such absolute-path literal in `cmd` that
+    resolves to a real executable file on THIS host, or None - checked with
+    bash's own `-x` (not `os.access`), so the test asks the exact question
+    the rule itself asks, translated paths and all."""
+    for literal in re.findall(r'"(/[^"]+)"', cmd):
+        probe = subprocess.run(
+            [_BASH, "-c", f'[ -x "{literal}" ]'],
+            capture_output=True, text=True, check=False, timeout=10,
+        )
+        if probe.returncode == 0:
+            return literal
+    return None
+
+
 @pytest.mark.skipif(not (_SH and _BASH), reason="sh and bash are both required to run these rules")
 def test_missing_tool_branch_actually_exits_77_for_real(tmp_path):
     """Structural checks above only look at the text. Actually run every
@@ -251,9 +273,21 @@ def test_missing_tool_branch_actually_exits_77_for_real(tmp_path):
     checks for, and confirm it exits 77 with TOOL MISSING on stdout/stderr -
     the sabotage case this catches that the string search does not: a rule
     whose exit-77 branch is syntactically present but unreachable (wrong
-    quoting, wrong `||`/`&&`, a typo in the tool name being probed)."""
+    quoting, wrong `||`/`&&`, a typo in the tool name being probed).
+
+    Skips the real-run assertion for a (name, ri, ci) whose command also
+    names an absolute-path fallback that resolves on this host - there the
+    tool truly is installed, just off PATH, and asserting rc==77 would be
+    asserting a falsehood about the environment rather than testing the
+    rule (see `_absolute_fallback_present`). `checked` guards the guard:
+    if every command's fallback resolved, nothing here was actually
+    exercised, and that is reported as a failure rather than a quiet pass."""
     stub = _stub_bin_dir(tmp_path)
+    checked = 0
     for name, ri, ci, cmd in _all_rule_commands():
+        if _absolute_fallback_present(cmd):
+            continue
+        checked += 1
         work = tmp_path / f"{name}-{ri}-{ci}"
         work.mkdir()
         result = _run_stripped(cmd, stub, work)
@@ -266,6 +300,10 @@ def test_missing_tool_branch_actually_exits_77_for_real(tmp_path):
         assert "TOOL MISSING" in combined, (
             f"{name} rule[{ri}].run[{ci}]: exit-77 branch produced no TOOL MISSING text"
         )
+    assert checked > 0, (
+        "every rule command's absolute-path fallback resolved on this host - "
+        "nothing was actually run through the PATH-stripped check"
+    )
 
 
 _PS_PARAM_RE = re.compile(r"(?<!\S)-([A-Za-z][A-Za-z]+)\b")

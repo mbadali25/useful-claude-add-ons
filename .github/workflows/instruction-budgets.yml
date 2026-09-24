@@ -16,6 +16,17 @@ jobs:
         python-version: ["3.11", "3.12", "3.13"]
     steps:
     - uses: actions/checkout@v4
+      with:
+        # check_allowance_no_silent_raise needs a default-branch ref
+        # (origin/main) to diff .budget-allowance.json against. actions/checkout
+        # defaults to a 1-commit shallow clone with no other refs fetched, so
+        # _resolve_default_branch() finds neither origin/main nor main and the
+        # checker fails closed with "could not resolve a default branch" --
+        # correctly, since it genuinely could not answer. fetch-depth: 0 gets
+        # the full history and every remote ref instead of hand-picking one
+        # (git fetch --no-tags origin main:refs/remotes/origin/main), which
+        # would silently stop working the day the default branch is renamed.
+        fetch-depth: 0
     - name: Set up Python ${{ matrix.python-version }}
       uses: actions/setup-python@v5
       with:
