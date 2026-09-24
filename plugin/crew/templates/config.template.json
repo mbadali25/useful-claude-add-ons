@@ -90,7 +90,9 @@
       "command": "/clear",
       "delaySeconds": 3,
       "minHandoffLines": 5,
-      "unsafeFocus": false
+      "unsafeFocus": false,
+      "onlyRepos": null,
+      "onlySessions": null
     },
     "autoWrapUp": true,
     "autoResume": true,

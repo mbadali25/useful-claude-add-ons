@@ -58,20 +58,13 @@ HANDOFF = (
 )
 
 
-def _stub(directory, name, body="#!/bin/sh\nexit 0\n"):
-    """A fake executable on PATH, so a resolved method never really types."""
-    os.makedirs(directory, exist_ok=True)
-    path = os.path.join(directory, name)
-    with open(path, "w", encoding="ascii", newline="\n") as handle:
-        handle.write(body)
-    os.chmod(path, 0o755)
-    # On Windows a .sh-style stub is not executable by tmux's own name, so also
-    # drop a .cmd alias -- only the ps1 flavour would ever look, and it does not
-    # shell out to either tool.
-    if sys.platform.startswith("win"):
-        with open(path + ".cmd", "w", encoding="ascii", newline="\r\n") as handle:
-            handle.write("@echo off\r\nexit /b 0\r\n")
-    return path
+def _stub(directory, name, body="#!/bin/sh\nexit 0\n", cmd_body="@echo off\r\nexit /b 0\r\n"):
+    """A fake executable on PATH, so a resolved method never really types.
+
+    `crew_fixtures.write_shim` writes the extensionless file bash runs and,
+    on Windows, the `.cmd` twin -- the only form the native python behind
+    `crew_autocycle.py` can find with `shutil.which`."""
+    return crew_fixtures.write_shim(directory, name, body, cmd_body)
 
 
 SESSION = "sess-1"
@@ -153,9 +146,10 @@ def _sendable(flavor, tmp_path):
     the only match -- the title fallback, since no ancestor owns it."""
     if flavor == "sh":
         bindir = str(tmp_path / "fakebin")
-        _stub(bindir, "tmux", f"#!/bin/sh\necho {os.getpid()}\n")
+        _stub(bindir, "tmux", f"#!/bin/sh\necho {os.getpid()}\n",
+              f"@echo off\r\necho {os.getpid()}\r\n")
         return ({"enabled": True, "method": "tmux"},
-                {"PATH": bindir + os.pathsep + os.environ["PATH"],
+                {"PATH": crew_fixtures.shell_path("sh", [bindir]),
                  "TMUX": "/tmp/fake,1,0", "TMUX_PANE": "%9"})
     return ({"enabled": True, "windowTitle": "NoSuchWindowForTests"},
             _window_stub(tmp_path, [{"id": 4242, "pid": 999999,
@@ -267,7 +261,7 @@ def test_a_method_that_cannot_verify_its_target_refuses_without_a_title(
         bindir = str(tmp_path / "fakebin")
         _stub(bindir, "xdotool")
         cfg = {"enabled": True, "method": "xdotool"}
-        env = {"PATH": bindir + os.pathsep + os.environ["PATH"], "DISPLAY": ":0"}
+        env = {"PATH": crew_fixtures.shell_path("sh", [bindir]), "DISPLAY": ":0"}
         root = _repo(tmp_path, auto_clear=cfg)
         result = _run(flavor, root, env_extra=env)
         assert result.returncode == 0
@@ -305,7 +299,7 @@ def test_wtype_needs_explicit_consent_because_it_cannot_check_focus(tmp_path):
     root = _repo(tmp_path, auto_clear={"enabled": True, "method": "wtype",
                                        "windowTitle": "Claude"})
     result = _run("sh", root, env_extra={
-        "PATH": bindir + os.pathsep + os.environ["PATH"],
+        "PATH": crew_fixtures.shell_path("sh", [bindir]),
         "WAYLAND_DISPLAY": "wayland-0"})
     assert "unsafeFocus" in result.stderr
     assert not (root / ".crew" / SENT).exists()
@@ -388,7 +382,7 @@ def test_a_window_title_containing_spaces_survives_config_parsing(tmp_path):
     root = _repo(tmp_path, auto_clear={
         "enabled": True, "method": "xdotool",
         "windowTitle": "Claude Code - my repo"})
-    env = {"PATH": bindir + os.pathsep + os.environ["PATH"], "DISPLAY": ":0"}
+    env = {"PATH": crew_fixtures.shell_path("sh", [bindir]), "DISPLAY": ":0"}
     env.update(_window_stub(tmp_path, [
         {"id": 77, "pid": 999999, "title": "Claude Code - my repo"}]))
     out = _run("sh", root, "--dry-run", env_extra=env).stdout
@@ -403,10 +397,11 @@ def test_config_values_survive_a_crlf_writing_python(tmp_path):
     failure to diagnose from a Stop hook.
     """
     bindir = str(tmp_path / "fakebin")
-    _stub(bindir, "tmux", f"#!/bin/sh\necho {os.getpid()}\n")
+    _stub(bindir, "tmux", f"#!/bin/sh\necho {os.getpid()}\n",
+              f"@echo off\r\necho {os.getpid()}\r\n")
     root = _repo(tmp_path, auto_clear={"enabled": True, "method": "tmux"})
     out = _run("sh", root, "--dry-run", env_extra={
-        "PATH": bindir + os.pathsep + os.environ["PATH"],
+        "PATH": crew_fixtures.shell_path("sh", [bindir]),
         "TMUX": "/tmp/fake,1,0", "TMUX_PANE": "%9"}).stdout
     assert "method: tmux" in out, "a CR in the config values would break this"
     assert "target: %9" in out
@@ -417,7 +412,7 @@ def test_tmux_method_refuses_outside_tmux(tmp_path):
     bindir = str(tmp_path / "fakebin")
     _stub(bindir, "tmux")
     root = _repo(tmp_path, auto_clear={"enabled": True, "method": "tmux"})
-    env = {"PATH": bindir + os.pathsep + os.environ["PATH"]}
+    env = {"PATH": crew_fixtures.shell_path("sh", [bindir])}
     env["TMUX"] = ""
     result = _run("sh", root, env_extra=env)
     assert "not in a tmux pane" in result.stderr or "TMUX" in result.stderr

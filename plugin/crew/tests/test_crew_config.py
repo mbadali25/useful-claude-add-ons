@@ -265,7 +265,9 @@ def test_the_ten_keys_crew_read_but_never_declared_are_declared():
     # repo-only `cloud.*` identity-pin lists.
     # 114 with crew 1.0 T3: `scope.mode`, the scope guard's key, and
     # `scope.allowCliApproval` from the T3 fix round.
-    assert len(declared) == 114
+    # 116 with the Windows burn-in's autoClear narrowing:
+    # `context.autoClear.onlyRepos` and `context.autoClear.onlySessions`.
+    assert len(declared) == 116
 
 
 def test_autoclear_is_global_and_its_siblings_are_not():
@@ -286,7 +288,9 @@ def test_autoclear_is_global_and_its_siblings_are_not():
     for dotted in ("context.autoClear.enabled", "context.autoClear.method",
                    "context.autoClear.windowTitle", "context.autoClear.command",
                    "context.autoClear.delaySeconds",
-                   "context.autoClear.minHandoffLines"):
+                   "context.autoClear.minHandoffLines",
+                   "context.autoClear.onlyRepos",
+                   "context.autoClear.onlySessions"):
         assert crew_config.is_global_path(dotted), dotted
 
     # The siblings, refused -- and refused BY NAME, not by the block name.
@@ -1546,7 +1550,9 @@ def test_only_autoclear_is_in_scope_for_null_shadowing_under_context():
                               "context.autoClear.windowTitle",
                               "context.autoClear.command",
                               "context.autoClear.delaySeconds",
-                              "context.autoClear.minHandoffLines"]
+                              "context.autoClear.minHandoffLines",
+                              "context.autoClear.onlyRepos",
+                              "context.autoClear.onlySessions"]
     assert "context.autoClear.unsafeFocus" not in leaves
     assert not [p for p in leaves if p.startswith("emergency.")]
 

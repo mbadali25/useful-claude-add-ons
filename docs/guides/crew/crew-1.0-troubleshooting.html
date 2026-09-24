@@ -676,6 +676,58 @@ in the machine-global config, because it drives this machine's keyboard:</p>
 </table>
 <p><code>/crew:config</code> shows where each value comes from and walks you through the global file. To turn the
 cycle off on a machine, set <code>context.autoClear.enabled</code> to <code>false</code> or delete the key.</p>
+<h4 id="arming-one-scratch-repo-while-other-sessions-are-live">Arming one scratch repo while other sessions are live</h4>
+<p><code>enabled: true</code> arms auto-clear in <strong>every</strong> Claude session on the machine, not just the one you
+are testing. If other sessions are running, one of them can get <code>/clear</code> typed into its terminal
+when its own handoff lands. To limit auto-clear to one repo or one session, add these keys to the
+same machine file. They can only narrow what <code>enabled</code> turns on:</p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Value</th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>context.autoClear.onlyRepos</code></td>
+<td>list of absolute repo paths</td>
+<td>auto-clear runs only in these repos</td>
+</tr>
+<tr>
+<td><code>context.autoClear.onlySessions</code></td>
+<td>list of session ids</td>
+<td>auto-clear runs only in these sessions</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li>A missing key or <code>null</code> does not narrow anything. An empty list <code>[]</code> turns auto-clear off
+  everywhere. If a key holds anything other than a list, auto-clear is off everywhere too.</li>
+<li>When both keys are set, a session must match both.</li>
+<li>Paths are compared after symlinks are resolved. Backslashes and trailing separators do not
+  matter. On Windows, case does not matter and <code>/c/repos/x</code> means <code>C:\repos\x</code>. A relative path such
+  as <code>.</code> never matches.</li>
+<li>Session ids must match exactly, including case.</li>
+<li>These keys are read <strong>only</strong> from the machine file. If a repo's <code>.crew/config.json</code> sets them, they
+  are ignored, so a repo cannot add itself. A repo's <code>enabled: false</code> still turns auto-clear off.</li>
+<li>In any other repo or session, auto-clear stays silent. It does not write a log line, just as it
+  does when <code>enabled</code> is off.</li>
+</ul>
+<p>To arm one scratch repo safely:</p>
+<pre><code class="language-json">{
+  &quot;context&quot;: {
+    &quot;autoClear&quot;: {
+      &quot;enabled&quot;: true,
+      &quot;onlyRepos&quot;: [&quot;C:\\repos\\autoclear-scratch&quot;]
+    }
+  }
+}
+</code></pre>
+<p>On Linux, use a path such as <code>"/home/you/autoclear-scratch"</code>. When you are done testing, remove
+<code>enabled</code> or set it to <code>false</code>. Also delete <code>onlyRepos</code>, so that a later <code>enabled: true</code> does not
+arm only that repo without anyone noticing.</p>
 <h3 id="when-it-will-not-clear">When It Will Not Clear</h3>
 <p>Each refusal is logged with its reason to <code>.crew/.autoclear.log</code>. A Stop hook's stderr is not shown
 to you, so check that log first.</p>

@@ -69,7 +69,9 @@
       "windowTitle": null,
       "command": "/clear",
       "delaySeconds": 3,
-      "minHandoffLines": 5
+      "minHandoffLines": 5,
+      "onlyRepos": null,
+      "onlySessions": null
     }
   },
   "docs": {

@@ -102,6 +102,79 @@ $enabled = (Test-CrewTrue (Get-CrewChild $globalAuto "enabled")) -and
            -not (Test-CrewFalse (Get-CrewChild $repoAuto "enabled"))
 if (-not $enabled) { exit 0 }
 
+# onlyRepos / onlySessions NARROW the machine opt-in, and are read from the
+# machine file ONLY -- a repo's copy is never consulted, because a narrowing a
+# repo could write for itself would be a widening. Absent or null: no
+# narrowing. Present: this repo and/or session must be listed; an empty list,
+# or a value that is not a list, arms nothing. Silent like "not opted in".
+# Same rules as crew_autocycle.in_scope / normalise_repo_path.
+function Resolve-CrewRealPath([string]$Path) {
+  # Component by component, so a symlinked PARENT resolves the way python's
+  # realpath does, not just a link at the leaf. Works on Windows PowerShell
+  # 5.1 (`.Target`) and 7 (`.LinkTarget`).
+  $full = [System.IO.Path]::GetFullPath($Path)
+  $root = [System.IO.Path]::GetPathRoot($full)
+  $cur = $root
+  foreach ($part in $full.Substring($root.Length).Split([char[]]@('\', '/'), [StringSplitOptions]::RemoveEmptyEntries)) {
+    $next = Join-Path $cur $part
+    for ($hop = 0; $hop -lt 8; $hop++) {
+      $item = Get-Item -LiteralPath $next -Force -ErrorAction SilentlyContinue
+      if ($null -eq $item) { break }
+      $link = $null
+      if ($item.PSObject.Properties['LinkTarget']) { $link = $item.LinkTarget }
+      elseif ($item.PSObject.Properties['Target']) { $link = @($item.Target)[0] }
+      if (-not $link) { break }
+      if ([System.IO.Path]::IsPathRooted($link)) { $next = [System.IO.Path]::GetFullPath($link) }
+      else { $next = [System.IO.Path]::GetFullPath((Join-Path $cur $link)) }
+    }
+    $cur = $next
+  }
+  return $cur
+}
+
+function ConvertTo-CrewScopePath($Path) {
+  if (-not ($Path -is [string]) -or -not $Path.Trim()) { return "" }
+  $text = $Path.Trim()
+  if ($text.StartsWith("~")) { $text = $userHome + $text.Substring(1) }
+  $text = $text.Replace('\', '/')
+  $native = [System.IO.Path]::DirectorySeparatorChar -eq '\'
+  if ($native) {
+    $text = [regex]::Replace($text, '^/([A-Za-z])(?=/|$)', '$1:')
+    if ($text -match '^[A-Za-z]:$') { $text += "/" }
+    if ($text -notmatch '^([A-Za-z]:/|//)') { return "" }
+  } elseif (-not $text.StartsWith("/")) {
+    return ""
+  }
+  try { $text = (Resolve-CrewRealPath $text).Replace('\', '/') } catch { }
+  $text = $text.TrimEnd('/')
+  if (-not $text) { $text = "/" }
+  if ($text -match '^[A-Za-z]:$') { $text += "/" }
+  # Case-folded: this flavour runs on Windows only, whose paths are.
+  return $text.ToLowerInvariant()
+}
+
+function Get-CrewScopeList($Node, [string]$Name) {
+  # $null: not narrowing. Otherwise the string entries -- a present value that
+  # is not a list narrows to nothing, never to "no narrowing".
+  if ($null -eq $Node -or -not $Node.PSObject.Properties[$Name]) { return $null }
+  $value = $Node.$Name
+  if ($null -eq $value) { return $null }
+  if (-not ($value -is [System.Array])) { return ,@() }
+  return ,@($value | Where-Object { $_ -is [string] })
+}
+
+$onlyRepos = Get-CrewScopeList $globalAuto "onlyRepos"
+if ($null -ne $onlyRepos) {
+  $here = ConvertTo-CrewScopePath (Get-Location).Path
+  $listed = @($onlyRepos | ForEach-Object { ConvertTo-CrewScopePath $_ } | Where-Object { $_ })
+  if (-not $here -or $listed -notcontains $here) { exit 0 }
+}
+$onlySessions = Get-CrewScopeList $globalAuto "onlySessions"
+if ($null -ne $onlySessions) {
+  # -ccontains: a session id is case-sensitive, as the marker check is.
+  if (-not $Session -or -not ($onlySessions -ccontains $Session)) { exit 0 }
+}
+
 function Get-CrewAutoClearValue([string]$Key, $Default) {
   $value = Get-CrewChild $repoAuto $Key
   if ($null -eq $value) { $value = Get-CrewChild $globalAuto $Key }
