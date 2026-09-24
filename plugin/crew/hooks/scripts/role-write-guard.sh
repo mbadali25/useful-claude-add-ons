@@ -177,17 +177,12 @@ _resolve_role_write_python() {
   return 1
 }
 
-PY=$(_resolve_role_write_python) || {
-  echo "role-write-guard: no usable python - cannot judge this write, allowing it unjudged." >&2
-  exit 0
-}
-
 # Deny-list mirror of role_write_guard.py's `_DENY_ROLES`, plus `pm` (that
-# module's other restricted role) -- used ONLY by the launch-failure
-# fallback below, mirroring role-write-guard.ps1's own
-# `$RestrictedRolesForFallback`. `tests/test_role_write_guard.py`'s parity
-# test re-derives the python side from `agents/*.md` on every run and
-# asserts this list matches it.
+# module's other restricted role) -- used both when NO python resolves at
+# all (below) and by the launch-failure fallback further down, mirroring
+# role-write-guard.ps1's own `$RestrictedRolesForFallback`.
+# `tests/test_role_write_guard.py`'s parity test re-derives the python side
+# from `agents/*.md` on every run and asserts this list matches it.
 _role_write_is_restricted() {
   case "$1" in
     explorer|researcher|reviewer|security|pm) return 0 ;;
@@ -197,9 +192,9 @@ _role_write_is_restricted() {
 
 # Best-effort `agent_type` extraction from the raw JSON -- never fails, and
 # a value this cannot find or parse answers empty (unrestricted). Mirrors
-# role-write-guard.ps1's `Get-FallbackRole`: only consulted when python
-# could not run at all, so there is no real decision to defer to and this
-# never needs to be more than "good enough to fail closed for pm/deny".
+# role-write-guard.ps1's `Get-FallbackRole`: consulted whenever python
+# cannot be used to reach a real decision, so this never needs to be more
+# than "good enough to fail closed for pm/deny".
 _role_write_fallback_role() {
   role=$(printf '%s' "$1" | grep -o '"agent_type"[[:space:]]*:[[:space:]]*"[^"]*"' \
          | head -n 1 | sed -E 's/.*:[[:space:]]*"([^"]*)"/\1/')
@@ -208,6 +203,29 @@ _role_write_fallback_role() {
     crew:*) role="${role#crew:}" ;;
   esac
   printf '%s' "$role"
+}
+
+PY=$(_resolve_role_write_python) || {
+  # No candidate resolved at all -- a DIFFERENT failure than the
+  # launch-failure fallback further down (a candidate that resolved, was
+  # proven executable, and then still failed to launch
+  # role_write_guard.py). Reported 2026-09-24: an unconditional "allow it
+  # unjudged" here throws away a decision that needs no python at all for a
+  # role this table ALREADY knows is restricted -- a `_DENY_ROLES` role may
+  # not write ANY file regardless of path, and `pm` is refused outside its
+  # own patterns often enough that collapsing "cannot judge" into "allow"
+  # for either is CLAUDE.md's named recurring bug ("an unknown collapsing
+  # into the safe-looking value"), not a neutral default. Mirrors the
+  # launch-failure fallback's own `_role_write_is_restricted` /
+  # `_role_write_fallback_role` exactly, so both failure modes agree on
+  # which roles fail closed.
+  fallback_role=$(_role_write_fallback_role "$INPUT")
+  if _role_write_is_restricted "$fallback_role"; then
+    echo "role-write-guard: no usable python found - cannot judge this write; failing closed for role '$fallback_role'." >&2
+    exit 2
+  fi
+  echo "role-write-guard: no usable python found - cannot judge this write; allowing it unjudged." >&2
+  exit 0
 }
 
 # PYTHONUTF8=1 / PYTHONIOENCODING=utf-8 in the CHILD's environment only --

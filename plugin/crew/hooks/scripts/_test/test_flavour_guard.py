@@ -298,7 +298,7 @@ def build_fixture(root):
             # like `(git rev-parse ... 2>$null)` is not a pipeline, so
             # PowerShell instead hands it to Windows' shell-association
             # resolution -- which blocks non-interactively with nothing to
-            # click. That is what actually hangs this suite; give Windows a
+            # click. That is what actually hung this suite; give Windows a
             # real executable shim instead.
             p = shims / f"{name}.cmd"
             p.write_text(
