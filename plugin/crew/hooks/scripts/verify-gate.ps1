@@ -372,14 +372,26 @@ function Write-CrewIncidentSkip([string]$Gate, [string]$Detail) {
 # that can be slow. Confirmed both ways against a pipe that never sends
 # anything: `[Console]::In.ReadToEndAsync()` itself never returns,
 # `OpenStandardInput()` returns immediately every time.
+#
+# THE BOUND IS TOTAL, NOT "did it reach EOF". A complete
+# `{"stop_hook_active":true}` payload sitting in the buffer, with the pipe
+# held open past the 5s bound, used to be discarded outright -- the retry
+# hook then ran the gate again and blocked again on a failing check it had
+# already reported this turn. `CopyToAsync` still only completes at EOF, so
+# `Wait(5000)` still times out on a held-open pipe; what changed is that the
+# buffer is read regardless of whether the Task finished. Whatever arrived
+# within the bound is what gets parsed -- a complete JSON object is enough,
+# EOF is not required. Garbage or a half-written object still fails
+# `ConvertFrom-Json` below and is caught exactly as an empty `$raw` always
+# was, so a producer that never sends anything parseable keeps today's
+# behaviour.
 $raw = ""
 if ([Console]::IsInputRedirected) {
   $crewStdinStream = [Console]::OpenStandardInput()
   $crewStdinBuffer = New-Object System.IO.MemoryStream
   $crewStdinTask = $crewStdinStream.CopyToAsync($crewStdinBuffer)
-  if ($crewStdinTask.Wait(5000)) {
-    $raw = [System.Text.Encoding]::UTF8.GetString($crewStdinBuffer.ToArray())
-  }
+  $crewStdinTask.Wait(5000) | Out-Null
+  $raw = [System.Text.Encoding]::UTF8.GetString($crewStdinBuffer.ToArray())
 }
 
 # Claude Code re-fires Stop after a blocking Stop hook. Without this check the

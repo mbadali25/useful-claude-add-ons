@@ -47,15 +47,22 @@ fi
 # closed, and a bare `cat` blocks the WHOLE script on it -- the same
 # parked-process shape a hung interpreter probe produces, for a different
 # cause. `[ -t 0 ]` is true only for an interactive terminal (nothing was
-# ever going to arrive), so nothing is read at all in that case. When
-# redirected, each line is read with its own bound rather than trusting the
-# read to finish outright: the Stop hook's payload is one line and arrives
-# immediately in every real invocation, so this never fires on the real path.
+# ever going to arrive), so nothing is read at all in that case.
+#
+# THE BOUND IS TOTAL, NOT PER LINE. A `while read -t 5` loop gives EACH read
+# call its own fresh 5s, so a producer that trickles bytes slowly enough to
+# keep completing one read just under the wire (without ever closing the
+# pipe) resets the clock forever and parks the whole script -- the same
+# hang this bound exists to prevent, just spread across more reads. A
+# single `read -t 5 -d ''` has one deadline for the WHOLE operation: it
+# reads everything that arrives (embedded newlines included, since the
+# delimiter is NUL, not newline) until either EOF or the 5s bound, whichever
+# comes first, and preserves whatever partial input arrived either way. The
+# Stop hook's payload is one line and arrives immediately in every real
+# invocation, so this never differs from the old behaviour on the real path.
 INPUT=""
 if [ ! -t 0 ]; then
-  while IFS= read -r -t 5 CREW_STDIN_LINE || [ -n "$CREW_STDIN_LINE" ]; do
-    INPUT="${INPUT}${CREW_STDIN_LINE}"$'\n'
-  done
+  IFS= read -r -t 5 -d '' INPUT || true
 fi
 
 # Claude Code re-fires Stop after a blocking Stop hook. Without this check the

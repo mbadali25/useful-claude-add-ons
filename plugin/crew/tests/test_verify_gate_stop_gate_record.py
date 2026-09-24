@@ -143,6 +143,7 @@ import re
 import shutil
 import subprocess
 import sys
+import threading
 import time
 
 import pytest
@@ -1822,4 +1823,156 @@ def test_40b_the_ps1_gate_bounds_stdin_on_linux_too(tmp_path):
     out = proc.stdout.read() if proc.stdout else ""
     err = proc.stderr.read() if proc.stderr else ""
     assert elapsed < _STDIN_BOUND_DEADLINE_S, f"took {elapsed:.1f}s - {err}"
+    assert proc.returncode == 0, f"stdout: {out} stderr: {err}"
+
+
+# --- G1 review round: the stop_hook_active retry must not re-block, and the
+#     bound on stdin must be TOTAL rather than per-read -------------------
+#
+# Two distinct defects, one shared cause: both gates used to read stdin in a
+# way that only worked correctly when the bound and "did the data actually
+# arrive" happened to line up. They can disagree.
+#
+# (1) `.ps1` discarded whatever had already arrived if `CopyToAsync` had not
+#     reached EOF within the 5s `Wait`, so a complete
+#     `{"stop_hook_active": true}` payload sitting in a pipe the caller kept
+#     open past the bound was thrown away -- the retry hook then ran the
+#     gate again and blocked again on a check it had already reported this
+#     turn.
+# (2) `.sh` bounded EACH LINE with its own fresh `read -t 5`, not the whole
+#     read, so a producer sending complete lines slower than 5s apart -- but
+#     never closing the pipe -- kept the loop's per-call timeout from ever
+#     firing and parked the gate exactly as an unbounded read would.
+
+
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+def test_50_stop_hook_active_is_honoured_despite_a_pipe_held_open(
+        flavour, tmp_path):
+    """A complete `stop_hook_active: true` payload must be read and acted
+    on even if the sender keeps the pipe open well past the ~5s stdin
+    bound. The one rule here fails unconditionally, so exit 0 can only
+    come from the stop_hook_active short-circuit -- never from the checks
+    themselves passing."""
+    vmap = {
+        "version": 1,
+        "rules": [{"paths": ["a.py"], "run": ["exit 1"]}],
+        "default": [], "unmapped": "ignore",
+    }
+    root = _repo(tmp_path, vmap)
+    (root / "a.py").write_text("x", encoding="utf-8")
+    env = dict(os.environ, CLAUDE_PROJECT_DIR=str(root))
+    cmd = ([_BASH, _SH] if flavour == "sh"
+           else [_PWSH, "-NoProfile", "-NonInteractive", "-File", _PS1])
+    proc = subprocess.Popen(  # pylint: disable=consider-using-with
+        cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE, text=True, cwd=str(root), env=env)
+    proc.stdin.write('{"stop_hook_active": true}')
+    proc.stdin.flush()
+    # Deliberately not closed: the payload is complete, but EOF never
+    # arrives, which is exactly what a held-open retry pipe looks like.
+    try:
+        proc.wait(timeout=_STDIN_BOUND_DEADLINE_S)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait(timeout=10)
+        raise AssertionError(
+            f"the {flavour} gate did not return within "
+            f"{_STDIN_BOUND_DEADLINE_S}s with a complete stop_hook_active "
+            "payload sitting in a held-open pipe")
+    finally:
+        if proc.stdin:
+            proc.stdin.close()
+    out = proc.stdout.read() if proc.stdout else ""
+    err = proc.stderr.read() if proc.stderr else ""
+    assert proc.returncode == 0, (
+        f"a held-open pipe carrying a complete stop_hook_active payload "
+        f"should short-circuit to exit 0 without running the checks, got "
+        f"{proc.returncode}. stdout: {out} stderr: {err}"
+    )
+
+
+@pytest.mark.skipif(_PWSH is None, reason="needs pwsh")
+def test_50b_the_ps1_gate_honours_stop_hook_active_on_linux_too(tmp_path):
+    """The .ps1 half of test_50, exercised for real via the `OS=Windows_NT`
+    override (see test_40b)."""
+    vmap = {
+        "version": 1,
+        "rules": [{"paths": ["a.py"], "run": ["exit 1"]}],
+        "default": [], "unmapped": "ignore",
+    }
+    root = _repo(tmp_path, vmap)
+    (root / "a.py").write_text("x", encoding="utf-8")
+    env = dict(os.environ, CLAUDE_PROJECT_DIR=str(root), OS="Windows_NT")
+    proc = subprocess.Popen(  # pylint: disable=consider-using-with
+        [_PWSH, "-NoProfile", "-NonInteractive", "-File", _PS1],
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE, text=True, cwd=str(root), env=env)
+    proc.stdin.write('{"stop_hook_active": true}')
+    proc.stdin.flush()
+    try:
+        proc.wait(timeout=_STDIN_BOUND_DEADLINE_S)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait(timeout=10)
+        raise AssertionError(
+            f"the ps1 gate did not return within {_STDIN_BOUND_DEADLINE_S}s "
+            "with a complete stop_hook_active payload sitting in a "
+            "held-open pipe")
+    finally:
+        if proc.stdin:
+            proc.stdin.close()
+    out = proc.stdout.read() if proc.stdout else ""
+    err = proc.stderr.read() if proc.stderr else ""
+    assert proc.returncode == 0, f"stdout: {out} stderr: {err}"
+
+
+def _trickle(stdin, lines, interval_s):
+    try:
+        for i in range(lines):
+            stdin.write('{"partial": %d}\n' % i)
+            stdin.flush()
+            time.sleep(interval_s)
+    except (BrokenPipeError, ValueError, OSError):
+        pass  # the gate returned (or was killed) before the trickle finished
+
+
+@pytest.mark.skipif(_BASH is None, reason="needs bash")
+def test_51_a_trickling_sh_stdin_producer_does_not_park_the_gate(tmp_path):
+    """MUST-BLOCK the per-line-timeout shape. A producer that sends complete
+    lines every 3s -- comfortably under the 5s a `while read -t 5` loop
+    would re-arm on every iteration -- and never closes the pipe must not
+    keep the gate parked: the bound has to cover the WHOLE read, not just
+    each individual line. 8 lines at 3s apart is 24s of trickle, well past
+    both the ~5s bound this proves and the 20s ceiling below -- a version
+    that re-arms per line would still be blocked reading stdin when that
+    ceiling is hit."""
+    vmap = {
+        "version": 1,
+        "rules": [{"paths": ["a.py"], "run": ["exit 0"]}],
+        "default": [], "unmapped": "ignore",
+    }
+    root = _repo(tmp_path, vmap)
+    (root / "a.py").write_text("x", encoding="utf-8")
+    env = dict(os.environ, CLAUDE_PROJECT_DIR=str(root))
+    proc = subprocess.Popen(  # pylint: disable=consider-using-with
+        [_BASH, _SH], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE, text=True, cwd=str(root), env=env)
+    trickler = threading.Thread(
+        target=_trickle, args=(proc.stdin, 8, 3), daemon=True)
+    trickler.start()
+    try:
+        proc.wait(timeout=_STDIN_BOUND_DEADLINE_S)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait(timeout=10)
+        raise AssertionError(
+            f"the sh gate did not return within {_STDIN_BOUND_DEADLINE_S}s "
+            "against a stdin producer trickling complete lines slower than "
+            "the per-line timeout -- the read bound is re-arming per line "
+            "instead of covering the whole read")
+    finally:
+        if proc.stdin:
+            proc.stdin.close()
+    out = proc.stdout.read() if proc.stdout else ""
+    err = proc.stderr.read() if proc.stderr else ""
     assert proc.returncode == 0, f"stdout: {out} stderr: {err}"
