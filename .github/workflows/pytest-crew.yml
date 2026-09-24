@@ -108,3 +108,42 @@ jobs:
       # sys.modules collision documented above, and a separate step is what
       # keeps that always false rather than merely false today.
       run: pytest skills/wazuh-onprem/scripts/_test/ -v
+
+  crew-shell-matrix:
+    # The full bash/pwsh driver matrix for crew's hooks -- every test marked
+    # `slow` (plugin/crew/tests/conftest.py). The `test` job above runs crew's
+    # DEFAULT set, which deselects it: there the python driver runs every
+    # decision case and the shells run a parity sample per hook. This job is
+    # what keeps the rest of the matrix run, on both operating systems.
+    #
+    # Why it is split out: on Windows every shell case is a process creation
+    # plus a python start inside it (0.8-1.4 s a case, measured by
+    # docs/review/06-windows-burn-in.md), and with the matrix in it the default
+    # run could not finish there at all.
+    #
+    # pwsh is found by crew_fixtures.resolve_pwsh() -- `shutil.which`, then
+    # C:\Program Files\PowerShell\7\pwsh.exe -- and always spawned by that
+    # absolute path, never bare. It is preinstalled on both images.
+    #
+    # pytest-xdist is installed HERE only, as a speed-up: the suite does not
+    # depend on it and runs the same without `-n`.
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+    - uses: actions/checkout@v4
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.13"
+    - name: Install pytest
+      # pyyaml: three crew test modules import it at module top, so without
+      # it collection fails and takes the whole run down with it.
+      run: |
+        python -m pip install --upgrade pip
+        pip install "pytest~=8.0" pytest-xdist pyyaml
+    - name: Run crew's slow set (the full per-shell hook matrix)
+      run: python -m pytest plugin/crew/tests -m slow -n auto -v

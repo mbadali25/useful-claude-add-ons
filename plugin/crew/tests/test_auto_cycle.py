@@ -24,7 +24,6 @@ developer's real opt-in, enumerate a real window, or send a keystroke.
 """
 import json
 import os
-import shutil
 import subprocess
 import time
 
@@ -37,9 +36,16 @@ import crew_fixtures
 
 _SCRIPTS = os.path.join(context._ROOT, "hooks", "scripts")  # pylint: disable=protected-access
 _BASH = crew_fixtures.resolve_bash()
-_PWSH = shutil.which("pwsh")
+_PWSH = crew_fixtures.resolve_pwsh()
 FLAVORS = [f for f, have in (("sh", _BASH), ("ps1", _PWSH)) if have]
+# There is no python driver here: the rules live in the two wrappers. Four
+# tests (`by_flavor`) are the per-shell parity sample run by default -- a
+# wrap-up block, a stop_hook_active stand-down, a clear sent, and the resume
+# end to end. Every other test (`by_flavor_matrix`) is `slow` in both
+# flavours: `pytest -m slow` or `--run-slow` (conftest.py).
 by_flavor = pytest.mark.parametrize("flavor", FLAVORS)
+by_flavor_matrix = pytest.mark.parametrize(
+    "flavor", [pytest.param(f, marks=crew_fixtures.SLOW) for f in FLAVORS])
 
 SESSION_A = "11111111-aaaa-4aaa-8aaa-000000000001"
 SESSION_B = "22222222-bbbb-4bbb-8bbb-000000000002"
@@ -205,7 +211,7 @@ def test_stop_hook_active_never_blocks_and_claims_nothing(flavor, tmp_path):
     assert not _marker_path(root, SESSION_A).exists()
 
 
-@by_flavor
+@by_flavor_matrix
 def test_the_forced_continuation_hands_over_to_auto_clear(flavor, tmp_path):
     """Root cause of "worked when it worked": the continuation the wrap-up
     forces is the turn the handoff gets written, and the hook used to exit on
@@ -223,7 +229,7 @@ def test_the_forced_continuation_hands_over_to_auto_clear(flavor, tmp_path):
     assert "would have sent" in _log(root), _log(root) + result.stderr
 
 
-@by_flavor
+@by_flavor_matrix
 def test_a_measured_drop_under_the_threshold_rearms_the_next_crossing(flavor, tmp_path):
     root = _repo(tmp_path)
     _write_marker(root)
@@ -237,7 +243,7 @@ def test_a_measured_drop_under_the_threshold_rearms_the_next_crossing(flavor, tm
     assert again.returncode == 2, again.stderr
 
 
-@by_flavor
+@by_flavor_matrix
 def test_an_estimate_under_the_threshold_does_not_rearm(flavor, tmp_path):
     root = _repo(tmp_path, budget=100)
     _write_marker(root)
@@ -249,7 +255,7 @@ def test_an_estimate_under_the_threshold_does_not_rearm(flavor, tmp_path):
     assert _marker_path(root, SESSION_A).exists()
 
 
-@by_flavor
+@by_flavor_matrix
 def test_two_sessions_in_one_repo_each_get_their_own_wrap_up(flavor, tmp_path):
     root = _repo(tmp_path)
     transcript = _transcript(root, 950_000)
@@ -261,7 +267,7 @@ def test_two_sessions_in_one_repo_each_get_their_own_wrap_up(flavor, tmp_path):
     assert _marker_path(root, SESSION_A).exists() and _marker_path(root, SESSION_B).exists()
 
 
-@by_flavor
+@by_flavor_matrix
 def test_the_session_key_is_the_same_in_every_flavour(flavor, tmp_path):
     odd = "ab/c d:e..é-9_z"
     root = _repo(tmp_path)
@@ -273,7 +279,7 @@ def test_the_session_key_is_the_same_in_every_flavour(flavor, tmp_path):
         ".handoff-requested-" + crew_autocycle.session_key(odd)]
 
 
-@by_flavor
+@by_flavor_matrix
 def test_one_sessions_start_does_not_rearm_another(flavor, tmp_path):
     root = _repo(tmp_path)
     for session in (SESSION_A, SESSION_B):
@@ -291,7 +297,7 @@ def test_one_sessions_start_does_not_rearm_another(flavor, tmp_path):
 
 # --- what the marker says about the reading ---------------------------------
 
-@by_flavor
+@by_flavor_matrix
 @pytest.mark.parametrize("case,why", [
     ("measured", "measured"),
     ("estimated", "estimated-from-transcript-size"),
@@ -329,7 +335,7 @@ def test_a_verified_handoff_behind_a_trusted_reading_is_sent(flavor, tmp_path):
     assert "would send" in result.stdout, result.stderr
 
 
-@by_flavor
+@by_flavor_matrix
 @pytest.mark.parametrize("case,expect", [
     ("no-handoff", "has not been written"),
     ("older-handoff", "predates"),
@@ -364,7 +370,7 @@ def test_no_clear_without_a_verified_handoff_and_a_trusted_reading(flavor, case,
     assert not (root / ".crew" / (".autoclear-sent-" + SESSION_A)).exists()
 
 
-@by_flavor
+@by_flavor_matrix
 @pytest.mark.parametrize("machine,repo", [(None, True), (True, False), ("true", None), (False, True)])
 def test_only_the_machine_can_opt_in_and_a_repo_can_only_opt_out(flavor, machine, repo, tmp_path):
     root = _repo(tmp_path, **({} if repo is None else {"enabled": repo}))
@@ -396,7 +402,7 @@ _WINDOW_CASES = [
 ]
 
 
-@by_flavor
+@by_flavor_matrix
 @pytest.mark.parametrize("case,windows,title,expect", _WINDOW_CASES, ids=[c[0] for c in _WINDOW_CASES])
 def test_the_window_is_identified_uniquely_or_not_at_all(flavor, case, windows, title, expect, tmp_path):
     del case
@@ -427,7 +433,10 @@ def test_resolve_target_table(case, windows, title, expect):
 
 
 @pytest.mark.skipif(_BASH is None, reason="needs bash")
-@pytest.mark.parametrize("pane_pid,sent", [(os.getpid(), True), (999999, False)])
+# A fixed id for this process's pid: under pytest-xdist each worker has its
+# own pid, and ids that differ between workers abort the whole run.
+@pytest.mark.parametrize("pane_pid,sent", [pytest.param(os.getpid(), True, id="own-pid-True"),
+                                           pytest.param(999999, False, id="999999-False")])
 def test_a_tmux_pane_must_be_the_one_running_this_session(pane_pid, sent, tmp_path):
     root = _repo(tmp_path)
     env = _sendable("sh", tmp_path, root)

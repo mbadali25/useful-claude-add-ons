@@ -260,6 +260,13 @@ def test_malformed_policy_value_fails_closed_to_block(tmp_path):
 
 
 # --- The hook scripts, end to end -------------------------------------------
+#
+# Every `_bash` / `_powershell` test below spawns a shell and a python inside
+# it. A per-shell parity sample runs by default -- off, a pm block, a pm
+# allow, a deny role, report mode, a corrupt config, a non-object payload,
+# the launch failure and the resolver -- and every other one is marked
+# `crew_fixtures.SLOW`: `pytest -m slow` or `--run-slow` (conftest.py). The
+# decisions themselves are tested in-process above (classify, layer_state).
 
 def _write_payload(tool_name, file_path, agent_type, cwd):
     payload = {"tool_name": tool_name, "cwd": cwd}
@@ -318,6 +325,7 @@ def test_block_mode_pm_outside_scope_is_refused_bash(tmp_path):
     assert "\tblock\tpm\t" in log
 
 
+@crew_fixtures.SLOW
 @needs_bash
 @pytest.mark.parametrize("rel", _INCIDENT_PATHS)
 def test_the_incident_paths_are_refused_once_the_guard_is_armed_bash(
@@ -338,6 +346,7 @@ def test_the_incident_paths_are_refused_once_the_guard_is_armed_bash(
     assert "pm" in proc.stderr and "may not write" in proc.stderr
 
 
+@crew_fixtures.SLOW
 @needs_bash
 @pytest.mark.parametrize("rel", _INCIDENT_PATHS)
 def test_the_incident_paths_are_the_off_default_gap_not_a_classify_bug_bash(
@@ -382,6 +391,7 @@ def test_block_mode_pm_inside_scope_is_allowed_bash(tmp_path):
     assert "\tallow\tpm\t" in log
 
 
+@crew_fixtures.SLOW
 @needs_bash
 def test_block_mode_deny_role_is_refused_bash(tmp_path):
     """Must-block: a role with no Write/Edit grant, any path."""
@@ -392,6 +402,7 @@ def test_block_mode_deny_role_is_refused_bash(tmp_path):
     assert "explorer" in proc.stderr
 
 
+@crew_fixtures.SLOW
 @needs_bash
 def test_block_mode_unrestricted_role_is_allowed_bash(tmp_path):
     """Must-allow: a developer-type role, any path."""
@@ -401,6 +412,7 @@ def test_block_mode_unrestricted_role_is_allowed_bash(tmp_path):
     assert proc.returncode == 0, proc.stderr
 
 
+@crew_fixtures.SLOW
 @needs_bash
 def test_block_mode_missing_agent_type_allows_and_logs_bash(tmp_path):
     root = crew_fixtures.make_repo(
@@ -411,6 +423,7 @@ def test_block_mode_missing_agent_type_allows_and_logs_bash(tmp_path):
     assert "\t-\t" in log, log  # role column is "-" when agent_type is absent
 
 
+@crew_fixtures.SLOW
 @needs_bash
 def test_block_mode_prefixed_agent_type_still_matches_bash(tmp_path):
     """`crew:explorer` must be judged exactly like `explorer`."""
@@ -430,6 +443,7 @@ def test_report_mode_never_blocks_but_logs_the_would_be_refusal_bash(tmp_path):
     assert "\treport\treport\texplorer\t" in log, log
 
 
+@crew_fixtures.SLOW
 @needs_bash
 def test_non_write_edit_tool_is_ignored_bash(tmp_path):
     root = crew_fixtures.make_repo(
@@ -446,6 +460,7 @@ def test_non_write_edit_tool_is_ignored_bash(tmp_path):
     assert not (root / ".crew" / "guard.log").exists()
 
 
+@crew_fixtures.SLOW
 @needs_bash
 def test_no_crew_directory_never_crashes_and_never_creates_one_bash(tmp_path):
     """An unmanaged repo (no `.crew/`) must not be silently adopted into crew.
@@ -473,6 +488,7 @@ def test_no_crew_directory_never_crashes_and_never_creates_one_bash(tmp_path):
 # function in isolation, per `promote-gate.sh`'s own test suite reasoning
 # that a correct resolver behind an unwired call site is not a fix.
 
+@crew_fixtures.SLOW
 @needs_bash
 def test_windowsapps_python_stub_does_not_silence_bash_enforcement(tmp_path):
     """Must-block: a WindowsApps python3 stub ahead of a real interpreter on
@@ -528,6 +544,7 @@ def test_corrupt_repo_config_forces_block_not_off_bash(tmp_path):
     assert "could not be read as guards.roleWrites needs" in proc.stderr, proc.stderr
 
 
+@crew_fixtures.SLOW
 @needs_bash
 def test_non_object_guards_block_forces_block_not_off_bash(tmp_path):
     """Must-block, the second shape: valid JSON, `guards` is not an object."""
@@ -537,6 +554,7 @@ def test_non_object_guards_block_forces_block_not_off_bash(tmp_path):
     assert "could not be read as guards.roleWrites needs" in proc.stderr, proc.stderr
 
 
+@crew_fixtures.SLOW
 @needs_bash
 def test_absent_config_file_is_not_corrupt_stays_off_bash(tmp_path):
     """Must-allow: the twin case. No `.crew/config.json` at all is every
@@ -548,6 +566,7 @@ def test_absent_config_file_is_not_corrupt_stays_off_bash(tmp_path):
     assert proc.returncode == 0, proc.stderr
 
 
+@crew_fixtures.SLOW
 @needs_bash
 def test_valid_config_with_no_guards_key_is_not_corrupt_stays_off_bash(tmp_path):
     """Must-allow: a well-formed config that simply never set `guards` at
@@ -647,6 +666,7 @@ def _run_sh_with_home(root, home, tool_name, file_path, agent_type):
     )
 
 
+@crew_fixtures.SLOW
 @needs_bash
 def test_directory_at_repo_config_path_forces_block_bash(tmp_path):
     """Must-block: BLOCK 1. `.crew/config.json` is a DIRECTORY -- present
@@ -659,6 +679,7 @@ def test_directory_at_repo_config_path_forces_block_bash(tmp_path):
     assert proc.returncode == 2, proc.stdout
 
 
+@crew_fixtures.SLOW
 @needs_bash
 def test_dangling_global_config_symlink_forces_block_bash(tmp_path):
     """Must-block: round-3 BLOCK 1's own repro. The GLOBAL config path is
@@ -678,6 +699,7 @@ def test_dangling_global_config_symlink_forces_block_bash(tmp_path):
     assert proc.returncode == 2, proc.stdout
 
 
+@crew_fixtures.SLOW
 @needs_bash
 def test_explicit_guards_null_forces_block_bash(tmp_path):
     """Must-block: BLOCK 2. Explicit `{"guards": null}`, no global
@@ -692,6 +714,7 @@ def test_explicit_guards_null_forces_block_bash(tmp_path):
     assert proc.returncode == 2, proc.stdout
 
 
+@crew_fixtures.SLOW
 @needs_bash
 def test_corrupt_global_config_forces_block_even_with_valid_repo_bash(tmp_path):
     """Must-block: BLOCK 5. Repo config is valid and empty (`{}`); the
@@ -703,6 +726,7 @@ def test_corrupt_global_config_forces_block_even_with_valid_repo_bash(tmp_path):
     assert proc.returncode == 2, proc.stdout
 
 
+@crew_fixtures.SLOW
 @needs_bash
 def test_corrupt_repo_config_forces_block_even_with_valid_global_report_bash(tmp_path):
     """Must-block: BLOCK 6, the gap the FIRST corruption fix could not
@@ -720,6 +744,7 @@ def test_corrupt_repo_config_forces_block_even_with_valid_global_report_bash(tmp
     assert proc.returncode == 2, proc.stdout
 
 
+@crew_fixtures.SLOW
 @needs_bash
 def test_valid_global_report_with_unset_repo_stays_report_bash(tmp_path):
     """Must-allow twin of BLOCK 6: BOTH layers VALID (repo unset -> off,
@@ -737,6 +762,7 @@ def test_valid_global_report_with_unset_repo_stays_report_bash(tmp_path):
 
 # --- BLOCK 7: the exception handler must never crash itself ---------------
 
+@crew_fixtures.SLOW
 @needs_bash
 def test_malformed_cwd_array_does_not_crash_the_exception_handler_bash(tmp_path):
     """Must-not-crash: `CLAUDE_PROJECT_DIR` unset, `cwd` is a JSON array.
@@ -783,6 +809,7 @@ def test_malformed_cwd_array_does_not_crash_the_exception_handler_bash(tmp_path)
 # call with no `agent_type`, allows, since Claude Code itself never
 # emits this form for a `Write`/`Edit` call.
 
+@crew_fixtures.SLOW
 @needs_bash
 @pytest.mark.skipif(not sys.platform.startswith("win"),
                      reason="\\\\?\\ extended-length paths are a Windows concept")
@@ -801,6 +828,7 @@ def test_extended_length_prefix_path_blocks_for_pm_bash(tmp_path):
         "form that silently drops the trailing dot. stdout: " + proc.stdout)
 
 
+@crew_fixtures.SLOW
 @needs_pwsh_windows
 def test_extended_length_prefix_path_blocks_for_pm_powershell(tmp_path):
     """PowerShell twin of the bash must-block case above."""
@@ -812,6 +840,7 @@ def test_extended_length_prefix_path_blocks_for_pm_powershell(tmp_path):
     assert proc.returncode == 2, proc.stderr
 
 
+@crew_fixtures.SLOW
 @needs_bash
 @pytest.mark.skipif(not sys.platform.startswith("win"),
                      reason="\\\\?\\ extended-length paths are a Windows concept")
@@ -828,6 +857,7 @@ def test_extended_length_prefix_path_allows_for_unrestricted_role_bash(tmp_path)
     assert proc.returncode == 0, proc.stderr
 
 
+@crew_fixtures.SLOW
 @needs_pwsh_windows
 def test_extended_length_prefix_path_allows_for_unrestricted_role_powershell(tmp_path):
     """PowerShell twin of the bash must-allow case above."""
@@ -839,6 +869,7 @@ def test_extended_length_prefix_path_allows_for_unrestricted_role_powershell(tmp
     assert proc.returncode == 0, proc.stderr
 
 
+@crew_fixtures.SLOW
 @needs_bash
 @pytest.mark.skipif(not sys.platform.startswith("win"),
                      reason="\\\\?\\ extended-length paths are a Windows concept")
@@ -856,6 +887,7 @@ def test_extended_length_prefix_path_allows_with_no_agent_type_bash(tmp_path):
 
 # --- BLOCK 4: the BOM strip lives in Python, shared by both flavours ------
 
+@crew_fixtures.SLOW
 @needs_bash
 def test_utf8_bom_on_stdin_does_not_bypass_bash_enforcement(tmp_path):
     """Must-block: a leading UTF-8 BOM plus an otherwise well-formed `pm`
@@ -880,6 +912,7 @@ def test_utf8_bom_on_stdin_does_not_bypass_bash_enforcement(tmp_path):
         + " stderr: " + proc.stderr.decode("utf-8", "replace"))
 
 
+@crew_fixtures.SLOW
 @needs_bash
 def test_pythonutf8_forced_even_when_caller_env_disables_it_bash(tmp_path):
     """Must-block, verified via STDERR BYTES -- NOT `.crew/guard.log`,
@@ -912,6 +945,7 @@ def test_pythonutf8_forced_even_when_caller_env_disables_it_bash(tmp_path):
 
 # --- BLOCK 3: PYTHONUTF8/PYTHONIOENCODING forced regardless of caller env -
 
+@crew_fixtures.SLOW
 @needs_pwsh_windows
 def test_pythonutf8_forced_even_when_caller_env_disables_it_powershell(tmp_path):
     """Must-block: the CALLER's environment sets `PYTHONUTF8=0` and unsets
@@ -944,6 +978,7 @@ def test_pythonutf8_forced_even_when_caller_env_disables_it_powershell(tmp_path)
         + " stderr: " + proc.stderr.decode("utf-8", "replace"))
 
 
+@crew_fixtures.SLOW
 @needs_pwsh_windows
 def test_pythonutf8_forced_writes_correct_utf8_stderr_powershell(tmp_path):
     """The bash twin's exact assertion, on role-write-guard.ps1: the
@@ -976,6 +1011,7 @@ def test_pythonutf8_forced_writes_correct_utf8_stderr_powershell(tmp_path):
 
 # --- FIX 1: Resolve-CrewPython must check the candidate's exit status -----
 
+@crew_fixtures.SLOW
 @needs_pwsh_windows
 def test_candidate_nonzero_exit_status_is_rejected_powershell(tmp_path):
     """Must resolve to NOTHING (matching bash's `|| continue`): a python3
@@ -1083,6 +1119,7 @@ def _make_dotted_dir(path):
     os.mkdir("\\\\?\\" + str(path))
 
 
+@crew_fixtures.SLOW
 @needs_bash
 def test_symlink_escaping_the_repo_entirely_is_allowed_bash(tmp_path):
     """Must-allow: a symlink staged inside pm's own scope, whose target
@@ -1102,6 +1139,7 @@ def test_symlink_escaping_the_repo_entirely_is_allowed_bash(tmp_path):
     assert "outside-repo" in log, log
 
 
+@crew_fixtures.SLOW
 @needs_pwsh_windows
 def test_junction_escaping_the_repo_entirely_is_allowed_powershell(tmp_path):
     """PowerShell twin of the symlink case above, with a real Windows
@@ -1118,6 +1156,7 @@ def test_junction_escaping_the_repo_entirely_is_allowed_powershell(tmp_path):
     assert proc.returncode == 0, proc.stderr
 
 
+@crew_fixtures.SLOW
 @needs_bash
 def test_symlink_inside_scope_is_still_allowed_bash(tmp_path):
     """Must-allow twin: a link that stays INSIDE the permitted prefix must
@@ -1134,6 +1173,7 @@ def test_symlink_inside_scope_is_still_allowed_bash(tmp_path):
     assert proc.returncode == 0, proc.stderr
 
 
+@crew_fixtures.SLOW
 @needs_bash
 def test_repo_internal_symlink_to_an_out_of_scope_prefix_is_still_refused_bash(tmp_path):
     """Must-block: the case the outside-repo exception must NOT catch. The
@@ -1159,6 +1199,7 @@ def test_repo_internal_symlink_to_an_out_of_scope_prefix_is_still_refused_bash(t
         "not apply. stdout: " + proc.stdout)
 
 
+@crew_fixtures.SLOW
 @needs_pwsh_windows
 def test_repo_internal_junction_to_an_out_of_scope_prefix_is_still_refused_powershell(tmp_path):
     """PowerShell/junction twin of the symlink case above -- junction
@@ -1325,6 +1366,7 @@ def test_resolve_real_target_windows_splits_on_mixed_separators(tmp_path):
     assert os.path.basename(resolved) == "new.py"
 
 
+@crew_fixtures.SLOW
 @needs_windows
 @needs_bash
 def test_windows_link_pointing_out_of_scope_with_dotdot_still_allows_bash(tmp_path):
@@ -1351,6 +1393,7 @@ def test_windows_link_pointing_out_of_scope_with_dotdot_still_allows_bash(tmp_pa
         "this must be allowed, not blocked. stdout: " + proc.stdout)
 
 
+@crew_fixtures.SLOW
 @needs_pwsh_windows
 def test_windows_link_pointing_out_of_scope_with_dotdot_still_allows_powershell(tmp_path):
     """PowerShell/junction twin of the bash case above."""
@@ -1367,6 +1410,7 @@ def test_windows_link_pointing_out_of_scope_with_dotdot_still_allows_powershell(
     assert proc.returncode == 0, proc.stderr
 
 
+@crew_fixtures.SLOW
 @needs_windows
 @needs_bash
 def test_windows_link_staged_out_of_scope_escapes_via_dotdot_blocks_bash(tmp_path):
@@ -1393,6 +1437,7 @@ def test_windows_link_staged_out_of_scope_escapes_via_dotdot_blocks_bash(tmp_pat
         "must not allow this write. stdout: " + proc.stdout)
 
 
+@crew_fixtures.SLOW
 @needs_pwsh_windows
 def test_windows_link_staged_out_of_scope_escapes_via_dotdot_blocks_powershell(tmp_path):
     """PowerShell/junction twin of the bash case above."""
@@ -1410,6 +1455,7 @@ def test_windows_link_staged_out_of_scope_escapes_via_dotdot_blocks_powershell(t
     assert proc.returncode == 2, proc.stderr
 
 
+@crew_fixtures.SLOW
 @needs_bash
 def test_dotdot_without_a_symlink_still_resolves_normally_bash(tmp_path):
     """Must-allow: an ordinary `..` with NO symlink anywhere in the path
@@ -1423,6 +1469,7 @@ def test_dotdot_without_a_symlink_still_resolves_normally_bash(tmp_path):
     assert proc.returncode == 0, proc.stderr
 
 
+@crew_fixtures.SLOW
 @pytest.mark.skipif(
     os.name == "nt",
     reason="this suite's bash runner still resolves through a native "
@@ -1472,6 +1519,7 @@ def test_real_repo_relative_different_drive_is_outside_repo():
         "sentinel, not None (cannot classify). got: " + repr(rel))
 
 
+@crew_fixtures.SLOW
 @needs_bash
 @pytest.mark.skipif(not os.path.exists("D:\\"),
                      reason="no D: drive on this machine to prove against")
@@ -1495,6 +1543,7 @@ def test_different_drive_target_is_allowed_as_outside_repo_bash(tmp_path):
     assert "outside-repo" in log, log
 
 
+@crew_fixtures.SLOW
 @needs_bash
 def test_pm_write_outside_the_repo_entirely_is_allowed_bash(tmp_path):
     """Must-allow, no symlink involved: a scratchpad-style path with
@@ -1552,6 +1601,7 @@ def test_classify_deny_role_is_not_given_the_outside_repo_exception():
 
 # --- Namespace collision: only `crew:` is a crew role (round-1 FIX) --------
 
+@crew_fixtures.SLOW
 @needs_bash
 def test_other_plugin_namespaced_role_is_allowed_not_denied_bash(tmp_path):
     """Must-allow, the exact reported repro: `other-plugin:explorer` is not
@@ -1565,6 +1615,7 @@ def test_other_plugin_namespaced_role_is_allowed_not_denied_bash(tmp_path):
     assert "unknown-role:other-plugin:explorer" in log, log
 
 
+@crew_fixtures.SLOW
 @needs_bash
 def test_crew_prefixed_deny_role_is_still_refused_bash(tmp_path):
     """Must-block twin: `crew:explorer` must still be judged as crew's own
@@ -1600,6 +1651,7 @@ def test_json_array_top_level_does_not_crash_bash(tmp_path):
     assert "Traceback" not in proc.stderr, proc.stderr
 
 
+@crew_fixtures.SLOW
 @needs_bash
 def test_non_string_file_path_for_pm_fails_closed_not_crashed_bash(tmp_path):
     """Must-block: `pm` with a malformed `file_path` cannot be VERIFIED as
@@ -1620,6 +1672,7 @@ def test_non_string_file_path_for_pm_fails_closed_not_crashed_bash(tmp_path):
     assert "Traceback" not in proc.stderr, proc.stderr
 
 
+@crew_fixtures.SLOW
 @needs_bash
 def test_non_string_file_path_for_unrestricted_role_still_allows_bash(tmp_path):
     """Must-allow twin: an unrestricted role's malformed file_path was
@@ -1643,6 +1696,7 @@ def test_non_string_file_path_for_unrestricted_role_still_allows_bash(tmp_path):
 # .crew/guard.log rather than merged into one unreadable 'allow' row" --
 # but the row-building code computed `reason` and never wrote it anywhere.
 
+@crew_fixtures.SLOW
 @needs_bash
 def test_guard_log_carries_no_agent_type_reason_bash(tmp_path):
     root = crew_fixtures.make_repo(
@@ -1653,6 +1707,7 @@ def test_guard_log_carries_no_agent_type_reason_bash(tmp_path):
     assert "no-agent-type" in log, log
 
 
+@crew_fixtures.SLOW
 @needs_bash
 def test_guard_log_carries_unknown_role_reason_bash(tmp_path):
     root = crew_fixtures.make_repo(
@@ -1759,6 +1814,7 @@ def _print_python(path_entries):
     return result.stdout.strip()
 
 
+@crew_fixtures.SLOW
 @needs_pwsh_windows
 def test_the_windowsapps_stub_is_never_returned(tmp_path):
     """Must-block. The un-hardened one-liner returned the Store alias and
@@ -1776,6 +1832,7 @@ def test_the_windowsapps_stub_is_never_returned(tmp_path):
         "must answer empty rather than hand back a stub. got: " + resolved)
 
 
+@crew_fixtures.SLOW
 @needs_pwsh_windows
 def test_a_real_python_under_a_different_name_still_resolves(tmp_path):
     """Must-allow: the fix must not become "never finds python". Under the
@@ -1796,6 +1853,7 @@ def test_a_real_python_under_a_different_name_still_resolves(tmp_path):
         "stub, must still resolve. got: " + resolved)
 
 
+@crew_fixtures.SLOW
 @needs_pwsh_windows
 def test_windowsapps_stub_with_only_one_name_present_falls_through_like_bash(tmp_path):
     """The exact reported divergence. PATH = WindowsApps(python3 stub
@@ -1819,6 +1877,7 @@ def test_windowsapps_stub_with_only_one_name_present_falls_through_like_bash(tmp
         "is the divergence reported 2026-09-19. got: " + resolved)
 
 
+@crew_fixtures.SLOW
 @needs_bash
 def test_bash_agrees_it_finds_nothing_in_the_same_layout(tmp_path):
     """The bash HALF of the parity claim above, driven through the actual
@@ -1964,6 +2023,7 @@ def test_launch_failure_fails_closed_for_pm_powershell(tmp_path):
     assert "pm" in proc.stderr, proc.stderr
 
 
+@crew_fixtures.SLOW
 @needs_pwsh_windows
 def test_launch_failure_still_allows_unrestricted_role_powershell(tmp_path):
     """Must-allow twin: an unrestricted role was always going to be
@@ -2033,6 +2093,7 @@ def test_launch_failure_fails_closed_for_pm_bash(tmp_path):
     assert "pm" in proc.stderr, proc.stderr
 
 
+@crew_fixtures.SLOW
 @needs_bash
 def test_launch_failure_still_allows_unrestricted_role_bash(tmp_path):
     """Must-allow twin."""
@@ -2058,6 +2119,7 @@ def test_launch_failure_still_allows_unrestricted_role_bash(tmp_path):
 # two shell flavours diverged on byte-identical input. Reported and fixed
 # 2026-09-19.
 
+@crew_fixtures.SLOW
 @needs_pwsh_windows
 def test_accented_character_in_path_round_trips_intact_powershell(tmp_path):
     """Must-block, verified via `.crew/guard.log` -- `_log` writes it with
@@ -2091,6 +2153,7 @@ def test_accented_character_in_path_round_trips_intact_powershell(tmp_path):
         "the accented character did not round-trip intact: " + repr(log))
 
 
+@crew_fixtures.SLOW
 @needs_pwsh_windows
 def test_utf8_bom_on_stdin_does_not_break_the_payload_powershell(tmp_path):
     """Must-block (proving the BOM was stripped and the payload parsed): a

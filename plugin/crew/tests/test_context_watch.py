@@ -9,7 +9,6 @@ stdin, exit code and stderr as the contract.
 import json
 import os
 import re
-import shutil
 import subprocess
 
 import pytest
@@ -25,11 +24,20 @@ _PS1 = _ROOT + "/hooks/scripts/context-watch.ps1"
 
 _BASH = crew_fixtures.resolve_bash()
 _HAS_BASH = _BASH is not None
-_HAS_PWSH = shutil.which("pwsh") is not None
+# Absolute, and found at its install location when it is not on PATH.
+_PWSH = crew_fixtures.resolve_pwsh()
+_HAS_PWSH = _PWSH is not None
 
 FLAVORS = [f for f, have in (("sh", _HAS_BASH), ("ps1", _HAS_PWSH)) if have]
 
+# Four tests (`by_flavor`) are the per-shell parity sample run by default:
+# under the threshold, over it without and with autoWrapUp, and the
+# stop_hook_active stand-down -- plus the three cross-flavour identity tests
+# at the end. Every other test (`by_flavor_matrix`) is `slow` in both
+# flavours: `pytest -m slow` or `--run-slow` (conftest.py).
 by_flavor = pytest.mark.parametrize("flavor", FLAVORS)
+by_flavor_matrix = pytest.mark.parametrize(
+    "flavor", [pytest.param(f, marks=crew_fixtures.SLOW) for f in FLAVORS])
 
 # budgetTokens=100, warnAt=0.8 -> the threshold sits at 80 estimated tokens.
 # EST = bytes/4*0.75, so EST=80 needs bytes ~= 427. 500 bytes clears it
@@ -60,7 +68,7 @@ def _run(flavor, root, transcript_path, stop_hook_active=False):
     if flavor == "sh":
         cmd = [_BASH, _SH]
     else:
-        cmd = ["pwsh", "-NoProfile", "-NonInteractive", "-File", _PS1]
+        cmd = [_PWSH, "-NoProfile", "-NonInteractive", "-File", _PS1]
         # The .ps1 flavour now stands down unless $env:OS says Windows -- both
         # flavours are registered for every event, so on a host with BOTH
         # interpreters (this Linux box, since pwsh was installed) both would
@@ -181,7 +189,7 @@ def test_above_threshold_auto_wrap_up_false_emits_existing_warning_only(
     assert _marker(root).exists()
 
 
-@by_flavor
+@by_flavor_matrix
 def test_above_threshold_default_config_behaves_like_auto_wrap_up_false(
         flavor, tmp_path):
     # autoWrapUp is absent from the fixture's config entirely -- default false.
@@ -221,7 +229,7 @@ def test_stop_hook_active_emits_nothing_even_above_threshold(flavor, tmp_path):
     assert not _marker(root).exists()
 
 
-@by_flavor
+@by_flavor_matrix
 def test_once_per_session_marker_still_gates_repeats(flavor, tmp_path):
     root = crew_fixtures.make_repo(
         tmp_path, config=_config(auto_wrap_up=True), git=False)
@@ -243,7 +251,7 @@ def test_once_per_session_marker_still_gates_repeats(flavor, tmp_path):
 CLAUDE5 = ["claude-opus-5", "claude-fable-5", "claude-sonnet-5"]
 
 
-@by_flavor
+@by_flavor_matrix
 @pytest.mark.parametrize("model", CLAUDE5)
 def test_claude5_model_at_170k_does_not_fire(flavor, model, tmp_path):
     # 170k is 85% of 200k but 17% of the 1M window these models ship with.
@@ -257,7 +265,7 @@ def test_claude5_model_at_170k_does_not_fire(flavor, model, tmp_path):
     assert not _marker(root).exists()
 
 
-@by_flavor
+@by_flavor_matrix
 def test_claude5_model_at_850k_fires_against_1m(flavor, tmp_path):
     root = crew_fixtures.make_repo(tmp_path, config=_config(budget=None), git=False)
     transcript = _usage_transcript(root, "claude-fable-5", used=850_000)
@@ -268,7 +276,7 @@ def test_claude5_model_at_850k_fires_against_1m(flavor, tmp_path):
     assert "estimate" not in result.stderr  # this is a measurement, say so
 
 
-@by_flavor
+@by_flavor_matrix
 def test_claude5_model_at_960k_still_fires_against_1m(flavor, tmp_path):
     # A real Opus 5 session on this machine held 995,862 tokens. A self-correct
     # that trips at 95% of a *correct* 1M table entry would bump the budget to
@@ -291,7 +299,7 @@ def test_claude5_model_at_960k_still_fires_against_1m(flavor, tmp_path):
 # ever delay the warning, never bring it forward.
 
 
-@by_flavor
+@by_flavor_matrix
 def test_reserve_floor_defers_the_warning_on_a_large_window(flavor, tmp_path):
     # 850k is 85% of 1M and would have fired on the percentage alone, with
     # 150,000 tokens still free - more than a whole 200k session's worth.
@@ -304,7 +312,7 @@ def test_reserve_floor_defers_the_warning_on_a_large_window(flavor, tmp_path):
     assert not _marker(root).exists()
 
 
-@by_flavor
+@by_flavor_matrix
 def test_reserve_floor_fires_once_the_headroom_is_gone(flavor, tmp_path):
     root = crew_fixtures.make_repo(
         tmp_path, config=_config(budget=None, reserve=100_000), git=False)
@@ -317,7 +325,7 @@ def test_reserve_floor_fires_once_the_headroom_is_gone(flavor, tmp_path):
     assert "the later of warnAt 80%" in result.stderr
 
 
-@by_flavor
+@by_flavor_matrix
 def test_reserve_floor_leaves_a_200k_window_exactly_where_it_was(flavor, tmp_path):
     # 0.8 of 200k leaves 40k, which is under the 100k floor, so the percentage
     # is the later rule and wins. This is the no-regression case: every repo on
@@ -331,7 +339,7 @@ def test_reserve_floor_leaves_a_200k_window_exactly_where_it_was(flavor, tmp_pat
     assert "Threshold: 160,000 tokens" in result.stderr
 
 
-@by_flavor
+@by_flavor_matrix
 def test_reserve_floor_can_never_fire_earlier_than_warn_at(flavor, tmp_path):
     # A reserve larger than the whole window makes budget - reserve negative.
     # max() must keep the percentage, not fire on turn one.
@@ -343,7 +351,7 @@ def test_reserve_floor_can_never_fire_earlier_than_warn_at(flavor, tmp_path):
     assert result.stderr.strip() == "", result.stderr
 
 
-@by_flavor
+@by_flavor_matrix
 def test_reserve_tokens_defaults_to_zero_when_the_key_is_absent(flavor, tmp_path):
     # CHANGED in 0.19.52, and the direction matters. The floor used to default
     # to 100k, which made the threshold `max(warnAt * budget, budget - 100k)`
@@ -364,7 +372,7 @@ def test_reserve_tokens_defaults_to_zero_when_the_key_is_absent(flavor, tmp_path
     assert "context.reserveTokens is off" in result.stderr
 
 
-@by_flavor
+@by_flavor_matrix
 def test_reserve_tokens_zero_restores_the_pure_percentage_threshold(flavor, tmp_path):
     root = crew_fixtures.make_repo(
         tmp_path, config=_config(budget=None, reserve=0), git=False)
@@ -374,7 +382,7 @@ def test_reserve_tokens_zero_restores_the_pure_percentage_threshold(flavor, tmp_
     assert "context.reserveTokens is off" in result.stderr
 
 
-@by_flavor
+@by_flavor_matrix
 def test_warn_at_zero_still_beats_the_reserve_floor(flavor, tmp_path):
     # warnAt 0 is the documented "always fire" override. A floor that quietly
     # outranked it would make that a lie.
@@ -387,7 +395,7 @@ def test_warn_at_zero_still_beats_the_reserve_floor(flavor, tmp_path):
     assert "10,000 of 1,000,000 tokens (1%)" in result.stderr
 
 
-@by_flavor
+@by_flavor_matrix
 def test_haiku_at_170k_fires_against_200k(flavor, tmp_path):
     root = crew_fixtures.make_repo(tmp_path, config=_config(budget=None), git=False)
     transcript = _usage_transcript(root, "claude-haiku-4-5-20251001", used=170_000)
@@ -396,7 +404,7 @@ def test_haiku_at_170k_fires_against_200k(flavor, tmp_path):
     assert "170,000 of 200,000 tokens (85%)" in result.stderr
 
 
-@by_flavor
+@by_flavor_matrix
 def test_observed_peak_overrides_smaller_configured_budget(flavor, tmp_path):
     # A stale `budgetTokens: 200000` pinned by an older /crew:init. The session
     # has already held 300k, so 200k is provably not the window.
@@ -409,7 +417,7 @@ def test_observed_peak_overrides_smaller_configured_budget(flavor, tmp_path):
     assert result.stderr.strip() == "", result.stderr
 
 
-@by_flavor
+@by_flavor_matrix
 def test_configured_budget_still_wins_when_observed_fits_inside_it(flavor, tmp_path):
     root = crew_fixtures.make_repo(
         tmp_path, config=_config(budget=200_000), git=False)
@@ -420,7 +428,7 @@ def test_configured_budget_still_wins_when_observed_fits_inside_it(flavor, tmp_p
     assert "Budget source: configured." in result.stderr
 
 
-@by_flavor
+@by_flavor_matrix
 def test_subagent_usage_is_not_counted(flavor, tmp_path):
     # Agent-tool transcripts live in <session>/subagents/*.jsonl and, in older
     # Claude Code builds, as isSidechain records inline. Neither is main-window
@@ -434,7 +442,7 @@ def test_subagent_usage_is_not_counted(flavor, tmp_path):
     assert result.stderr.strip() == "", result.stderr
 
 
-@by_flavor
+@by_flavor_matrix
 def test_sidechain_only_transcript_does_not_feed_the_size_fallback(flavor, tmp_path):
     # No main-thread usage record at all, only inline subagent records: the
     # size fallback must not count their bytes either. Codex review finding.
@@ -448,7 +456,7 @@ def test_sidechain_only_transcript_does_not_feed_the_size_fallback(flavor, tmp_p
     assert result.stderr.strip() == "", result.stderr
 
 
-@by_flavor
+@by_flavor_matrix
 def test_warn_at_zero_means_always_fire(flavor, tmp_path):
     # 0 is falsy in PowerShell; a truthiness test silently turned it into 0.8.
     cfg = _config(budget=None)

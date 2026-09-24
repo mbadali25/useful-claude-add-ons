@@ -13,6 +13,11 @@ sabotage harness can aim at the fast one:
              flavour guard (which stands it down off Windows) lets it run.
              Skipped, with the reason, where no pwsh exists.
 
+The python driver runs every case by default. The bash and pwsh drivers run a
+parity sample by default (`_B_SHELL`, `_A_SHELL`, `_I_SHELL`,
+`_DRIVERS_SAMPLE`, and the wrapper tests at the end) and the rest of the
+matrix as `slow` -- `pytest -m slow` or `--run-slow` (see conftest.py).
+
 Each case names the TOOL whose command it is (`Bash` or `PowerShell`), and the
 same case runs through all three drivers: the tool decides the parser, never
 the flavour of the wrapper that happened to run. The tool also decides which
@@ -533,6 +538,17 @@ _B_IDS = [c[0] for c in MUST_BLOCK]
 _A_IDS = [c[0] for c in MUST_ALLOW]
 _I_IDS = [c[0] for c in IDENTITY]
 
+# The bash and pwsh drivers run a parity sample by default -- one Bash and one
+# PowerShell case each, so the pwsh driver proves both its stand-down and a
+# real decision -- and the rest of each table as `slow`. The python driver
+# runs every case by default: that is where the decisions are made.
+_B_SHELL = crew_fixtures.parity_sample(MUST_BLOCK, _B_IDS,
+                                       {"tf-apply", "ps-tf-apply"})
+_A_SHELL = crew_fixtures.parity_sample(MUST_ALLOW, _A_IDS,
+                                       {"tf-plan", "ps-tf-plan"})
+_I_SHELL = crew_fixtures.parity_sample(
+    IDENTITY, _I_IDS, {"aws-unknown-attended", "ps-env-wrong-profile"})
+
 
 @pytest.mark.parametrize("case", MUST_BLOCK, ids=_B_IDS)
 def test_must_block_python(tmp_path, case):
@@ -540,13 +556,13 @@ def test_must_block_python(tmp_path, case):
 
 
 @needs_bash
-@pytest.mark.parametrize("case", MUST_BLOCK, ids=_B_IDS)
+@pytest.mark.parametrize("case", _B_SHELL)
 def test_must_block_bash(tmp_path, case):
     _block("bash", tmp_path, case)
 
 
 @needs_pwsh
-@pytest.mark.parametrize("case", MUST_BLOCK, ids=_B_IDS)
+@pytest.mark.parametrize("case", _B_SHELL)
 def test_must_block_pwsh(tmp_path, case):
     _block("pwsh", tmp_path, case)
 
@@ -557,13 +573,13 @@ def test_must_allow_python(tmp_path, case):
 
 
 @needs_bash
-@pytest.mark.parametrize("case", MUST_ALLOW, ids=_A_IDS)
+@pytest.mark.parametrize("case", _A_SHELL)
 def test_must_allow_bash(tmp_path, case):
     _allow("bash", tmp_path, case)
 
 
 @needs_pwsh
-@pytest.mark.parametrize("case", MUST_ALLOW, ids=_A_IDS)
+@pytest.mark.parametrize("case", _A_SHELL)
 def test_must_allow_pwsh(tmp_path, case):
     _allow("pwsh", tmp_path, case)
 
@@ -574,13 +590,13 @@ def test_identity_python(tmp_path, case):
 
 
 @needs_bash
-@pytest.mark.parametrize("case", IDENTITY, ids=_I_IDS)
+@pytest.mark.parametrize("case", _I_SHELL)
 def test_identity_bash(tmp_path, case):
     _identity("bash", tmp_path, case)
 
 
 @needs_pwsh
-@pytest.mark.parametrize("case", IDENTITY, ids=_I_IDS)
+@pytest.mark.parametrize("case", _I_SHELL)
 def test_identity_pwsh(tmp_path, case):
     _identity("pwsh", tmp_path, case)
 
@@ -588,6 +604,14 @@ def test_identity_pwsh(tmp_path, case):
 # --- the switch, and what it does when on -----------------------------------
 
 _DRIVERS = [
+    pytest.param("python", id="python"),
+    pytest.param("bash", id="bash", marks=(needs_bash, crew_fixtures.SLOW)),
+    pytest.param("pwsh", id="pwsh", marks=(needs_pwsh, crew_fixtures.SLOW)),
+]
+# The same drivers with the shells in the default run, for the switch tests
+# that form the per-shell parity sample: off, malformed input, ask, and a
+# systemMessage passed through on stdout.
+_DRIVERS_SAMPLE = [
     pytest.param("python", id="python"),
     pytest.param("bash", id="bash", marks=needs_bash),
     pytest.param("pwsh", id="pwsh", marks=needs_pwsh),
@@ -670,7 +694,7 @@ def test_malformed_input_is_refused_when_armed(tmp_path, driver, raw):
     assert "refusing" in reason
 
 
-@pytest.mark.parametrize("driver", _DRIVERS)
+@pytest.mark.parametrize("driver", _DRIVERS_SAMPLE)
 def test_malformed_input_is_not_judged_when_off(tmp_path, driver):
     _fixture(tmp_path, {"guards": {"cloudGuard": "off"}})
     assert run_hook(driver, tmp_path, _tool(driver), "", raw=b"{not json")[:3] == (
@@ -718,7 +742,7 @@ def test_layer_state_classifies_a_malformed_cloud_block(tmp_path):
     assert crew_config.layer_state(str(path), cloud=True) == "ok"
 
 
-@pytest.mark.parametrize("driver", _DRIVERS)
+@pytest.mark.parametrize("driver", _DRIVERS_SAMPLE)
 def test_unpinned_read_only_call_is_reported_once(tmp_path, driver):
     """The pass with nothing pinned is said -- once, as a visible note and a
     guard.log row -- and then not again."""
@@ -756,7 +780,7 @@ def test_unpinned_note_is_said_even_with_no_crew_dir(tmp_path, driver):
     assert not (repo / ".crew").exists()
 
 
-@pytest.mark.parametrize("driver", _DRIVERS)
+@pytest.mark.parametrize("driver", _DRIVERS_SAMPLE)
 def test_a_corrupt_config_fails_closed(tmp_path, driver):
     repo = _fixture(tmp_path)
     (repo / ".crew" / "config.json").write_text("{not json", encoding="utf-8")
@@ -765,7 +789,7 @@ def test_a_corrupt_config_fails_closed(tmp_path, driver):
     assert decision == "deny", err
 
 
-@pytest.mark.parametrize("driver", _DRIVERS)
+@pytest.mark.parametrize("driver", _DRIVERS_SAMPLE)
 def test_ask_policy_prompts_when_attended(tmp_path, driver):
     _fixture(tmp_path, {"guards": {"cloudGuard": "block",
                                    "terraformApply": "ask"}},
