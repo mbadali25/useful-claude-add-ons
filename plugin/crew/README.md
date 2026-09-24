@@ -2178,14 +2178,14 @@ CONFIG.md §17 has the table and the reasoning.
 
 | Agent | Tools | Model | Tier | Role |
 |---|---|---|---|---|
-| `explorer` | read-only | `sonnet` | 0 | Maps code, returns summaries not contents |
+| `explorer` | read-only | `opus` | 0 | Maps code, returns summaries not contents |
 | `reviewer` | read-only + Bash | `opus` | 0 | Hostile review; the last rung of `qa.order`, reached when neither Codex nor Copilot probes clean. Renamed from `qa-reviewer` in 1.0 |
 | `security` | read-only + Bash | `sonnet` | 1 | Exploitable defects in the diff |
 | `researcher` | read-only + web | `sonnet` | 2 | External research only. Every claim carries its source |
 
 4 agents, all on the tier ladder (`crew_state.ROLE_TIERS`); `crew_state.SPECIALIST_ROLES` is empty in 1.0. Re-measure with `ls plugin/crew/agents/*.md`, which is one file per agent. **"read-only" in the Tools column means no `Write` and no `Edit`** — it does not mean no `Bash`, which is why the rows that hold `Bash` say so. `validate-prompts.py` enforces exactly that: a description saying read-only may not carry `Write` or `Edit`, and `Bash` is not part of that check. `tests/test_role_ladder.py` checks this table against the code in both directions.
 
-**Model tiers are part of the design, not a cost knob.** QA walks `qa.order` (`qa.provider` ships as `auto`) and takes the first provider that probes clean — Codex, then Copilot pinned to a non-Claude model, then `reviewer` on `opus`. The ordering is not a preference ranking; it is a family-diversity ranking. A different model family is what makes review independent, so a provider that would land back on the author's own family is skipped rather than used, and if you cannot have a different family at all, the strongest model in this one is the only compensation left. The read-only roles run on `sonnet`: narrow brief, clean context, one deliverable.
+**Model tiers are part of the design, not a cost knob.** QA walks `qa.order` (`qa.provider` ships as `auto`) and takes the first provider that probes clean — Codex, then Copilot pinned to a non-Claude model, then `reviewer` on `opus`. The ordering is not a preference ranking; it is a family-diversity ranking. A different model family is what makes review independent, so a provider that would land back on the author's own family is skipped rather than used, and if you cannot have a different family at all, the strongest model in this one is the only compensation left. The read-only roles run on `sonnet`: narrow brief, clean context, one deliverable. `explorer` is the exception and runs on `opus`: it maps unfamiliar code with only Read/Grep/Glob when no semantic index is available, and a wrong map is inherited by every role that works from it.
 
 `opus` and `sonnet` here are tiers, not pinned versions. Agent frontmatter asks for a tier and gets whatever the session's strongest model at that tier is; there is no way to pin a point release from a plugin.
 

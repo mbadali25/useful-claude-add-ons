@@ -6,6 +6,13 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Changed
 
+- **`crew`: `explorer` now runs on `opus` instead of `sonnet`** (owner
+  decision, 2026-09-24). Explorer maps unfamiliar code for every other role.
+  With the `localgpu` semantic index disabled or unavailable it has only
+  Read/Grep/Glob, and a wrong map is inherited by everything built on it.
+  Cost: every explorer dispatch now runs on the stronger, pricier tier. The
+  other read-only roles stay on `sonnet`.
+
 - **`crew` 1.0.7 / `obsidian-vault` 0.4.12: release-integration merge of F1-F4
   and G1 (role-write-guard fallback hardening, autoClear setup review
   fixes, sendkeys/context-watch review fixes, the `.crew/`-directory gate

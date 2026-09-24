@@ -1,7 +1,7 @@
 {
   "agents": {
     "explorer.md": {
-      "model": "sonnet",
+      "model": "opus",
       "name": "explorer",
       "tools": "Read, Grep, Glob, Skill, mcp__localgpu__search_code, mcp__localgpu__index_status"
     },
