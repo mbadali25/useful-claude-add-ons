@@ -118,6 +118,63 @@ fixture assumes — tmux is not a Windows tool, and the owner-process walk finds
 window from a non-interactive runner. **The narrowing logic itself is not shown wrong by
 these**, and is not shown right either: these tests could not exercise it here.
 
+## 2a — RUN. The Windows sender does nothing at all, silently.
+
+Operator approved a live run. **Scope was narrowed first, and 1.0.3's own narrowing made
+that possible** — `onlyRepos` was set to this worktree and proven to exclude the other repos
+on this host before anything was armed:
+
+```
+C:/repos/personal/crew-1.0-win          -> True
+C:/repos/personal/useful-claude-add-ons -> False
+C:/repos/anew/SRL                       -> False
+```
+
+Recorded separately because it surprised me: **`autoClear.enabled` was already `true` on
+this machine with no narrowing**, so it had been armed for every session all along. The
+machine config was backed up and restored afterwards; it is unchanged.
+
+### PASS — the handoff gate chain
+
+Driving `crew_autocycle.py plan` refused at each condition in turn and named it: a marker
+recording a different session, then no request time, then the handoff file, then its age
+against the request. Each refusal distinct and accurate. The gates fail closed and say why.
+
+### FAIL — the Windows sender
+
+`auto-clear.sh` / `crew_autocycle.py` correctly decline Windows: `resolve_method` returns
+`none` with *"Inside tmux this works with no configuration; on X11 install xdotool"*, and
+the `.ps1` twin states the division explicitly — *"method tmux is auto-clear.sh's job; this
+is the native-Windows flavour."* So on Windows the sender is `auto-clear.ps1`, using
+`System.Windows.Forms.SendKeys`.
+
+Invoked exactly as `hooks.json` invokes it, it produces **nothing**:
+
+```
+pwsh -NoProfile -File ...uto-clear.ps1 -DryRun -Root ...
+exit=0   stdout bytes: 0   stderr bytes: 0   .crew/.autoclear.log: does not exist
+```
+
+Same with `-Session burnin-2a`, with `-Force` (which skips every handoff gate), and with
+**no `-Session` at all** — that last case must reach line 313,
+`Stop-CrewAutoClear "no session id, so no way to tell whose handoff this is"`, which calls
+`Write-CrewAutoClearNote` and writes both a log line and a stderr line. Neither appeared.
+
+**This contradicts the file's own header contract:** *"Every refusal is written to
+`.crew/.autoclear.log`, because a Stop hook's stderr is invisible on exit 0."* On this host
+nothing is written anywhere, so a Stop hook using it stands down with no trace — the silent
+stand-down shape, in the component whose whole job is to act.
+
+**The flavour guard is not the cause, checked directly.** Line 51 is
+`if ($env:OS -ne 'Windows_NT') { exit 0 }`, and under the `-File` invocation hooks.json
+uses, from this shell, `$env:OS` is `Windows_NT`, `$IsWindows` is `True`, and the working
+directory is correctly the repo. The guard passes; something after it exits first.
+
+**Cause not established.** The behaviour is certain and reproducible; the line it exits at
+is not, and I am not guessing it. Steps 3, 5 and 6 — where `/clear` lands, which tab
+receives it with two tabs, whether alt-tab suppresses the send — remain **NOT RUN**, because
+nothing was ever sent to observe.
+
 ## Sections not yet run
 
 3 (memory/Obsidian), 4 (review/Codex), 5 (Word COM render), 6 (landmines), `/crew:verify
