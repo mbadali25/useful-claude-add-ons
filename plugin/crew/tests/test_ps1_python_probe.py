@@ -342,6 +342,67 @@ def test_an_overall_deadline_bounds_several_hung_candidates(tmp_path):
         "well before paying the full per-candidate cost for every hung entry")
 
 
+# --- FIX (Codex review of crew-1.0, item 2): the deadline was only checked
+#     BEFORE launching a candidate; the wait itself was then a flat 3000ms
+#     (ps1) / 3s (bash) regardless of how much budget was left. Several
+#     candidates that each fail just under the per-candidate bound -- close
+#     to, but under, the 8s deadline -- followed by one that hangs could
+#     still overrun both the deadline and the 10s hook timeout that calls
+#     this. Unlike the all-hung case above (each hung candidate is bounded
+#     at its own 3s regardless, so four of them already sit close to the
+#     10s ceiling on their own), this shape isolates the actual defect: the
+#     slow candidates alone stay safely under 8s, so any elapsed time at or
+#     past 10s can only come from the FINAL wait not being capped to what
+#     remained.
+
+def _slow_fail(directory, delay_seconds, names=("python3",)):
+    """Ignores whatever it is asked and sleeps `delay_seconds` before
+    exiting 1 -- a PATH entry that answers, eventually, but never as a
+    usable interpreter."""
+    for name in names:
+        _stub(directory, name, f"sleep {delay_seconds}\nexit 1")
+
+
+def _hang_forever(directory, names=("python3",)):
+    for name in names:
+        _stub(directory, name, "sleep 60")
+
+
+@needs_pwsh
+@needs_bash
+def test_near_deadline_candidates_then_a_hang_stay_within_the_hook_timeout(tmp_path):
+    """Four candidates that each fail after 1.8s (7.2s total, comfortably
+    under the 8s deadline) followed by one that hangs. Before the fix the
+    hung candidate's wait was a flat 3000ms/3s regardless of budget
+    remaining, pushing the total past 10s. With the fix the wait is capped
+    to whatever remains of the 8s budget. (Three candidates at 2.5s --
+    closer to the boundary -- measured flakier: per-candidate overhead can
+    tip the deadline check before the final candidate is even launched.)"""
+    slow_dirs = []
+    for i in range(4):
+        d = tmp_path / f"slow{i}"
+        _slow_fail(d, 1.8)
+        slow_dirs.append(d)
+    hang = tmp_path / "hang"
+    _hang_forever(hang)
+    path = [*slow_dirs, hang, _tools(tmp_path)]
+
+    began = time.monotonic()
+    ps1_resolved = _print_python(path)
+    ps1_elapsed = time.monotonic() - began
+
+    began = time.monotonic()
+    bash_resolved = _bash_resolver("crew_py_strict", path)
+    bash_elapsed = time.monotonic() - began
+
+    assert (ps1_elapsed < 10, bash_elapsed < 10, ps1_resolved, bash_resolved) == (
+        True, True, "", ""), (
+        f"ps1={ps1_elapsed}s ({ps1_resolved!r}) bash={bash_elapsed}s "
+        f"({bash_resolved!r}) -- the final candidate's wait must be capped "
+        "to what remains of the 8s deadline, not a flat 3s/3000ms, or the "
+        "total overruns the 10s hook timeout this bounds against")
+
+
 # --- the burn-in host, end to end ----------------------------------------------
 
 @needs_pwsh

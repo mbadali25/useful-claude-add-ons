@@ -27,15 +27,12 @@ _bridge_status_reject() {
 }
 
 _bridge_status_resolve_python() {
-  # Memoized within this process: a resolved (or exhausted) answer is not
-  # re-derived by a second call in the same run, which would otherwise
-  # re-walk and re-probe PATH from scratch. Cached only for the life of
-  # THIS process -- a fresh hook invocation gets a fresh probe.
-  if [ -n "$_BRIDGE_STATUS_PY_MEMO_DONE" ]; then
-    BRIDGE_STATUS_PY="$_BRIDGE_STATUS_PY_MEMO_RESULT"
-    BRIDGE_STATUS_REJECTED="$_BRIDGE_STATUS_PY_MEMO_REJECTED"
-    return "$_BRIDGE_STATUS_PY_MEMO_RC"
-  fi
+  # NOT memoized. This hook has one call site (`if ! _bridge_status_resolve_python`
+  # below), so a cache here would never see a second call to save -- an
+  # earlier version carried one anyway, copied from crew's own (there,
+  # actually dead: every crew call site invokes its resolver through a
+  # `$(...)` subshell, which discards whatever the cache set). Removed here
+  # too rather than kept as inert weight.
   BRIDGE_STATUS_PY=""
   BRIDGE_STATUS_REJECTED=""
   # An OVERALL deadline on top of each candidate's own 3s probe bound: a
@@ -43,6 +40,7 @@ _bridge_status_resolve_python() {
   # up past this hook's own 10s timeout even though every individual probe
   # is bounded. Kept well inside that.
   local _bridge_status_deadline=$((SECONDS + 8))
+  local _bridge_status_remaining _bridge_status_probe_timeout
   for name in python3 python py; do
     # EVERY PATH match of the name, not only the first (`type -aP`, not
     # `command -v`), and each is executed before it is believed: where it
@@ -52,10 +50,18 @@ _bridge_status_resolve_python() {
     # behind them. bridge-status.ps1 walks the same order, so both flavours agree.
     while IFS= read -r candidate; do
       [ -n "$candidate" ] || continue
-      if [ "$SECONDS" -ge "$_bridge_status_deadline" ]; then
+      # The remaining budget, not a flat 3s, bounds THIS candidate's probe: a
+      # fixed 3s watchdog checked only before launch can still overrun the
+      # deadline by up to 3s once entered, which on a run of several
+      # near-8s-but-under candidates followed by one hung one can overrun
+      # both this deadline and the 10s hook timeout it exists to stay inside.
+      _bridge_status_remaining=$((_bridge_status_deadline - SECONDS))
+      if [ "$_bridge_status_remaining" -le 0 ]; then
         _bridge_status_reject "PATH walk stopped: the overall resolver deadline was reached before every candidate could be probed"
         break 2
       fi
+      _bridge_status_probe_timeout=$_bridge_status_remaining
+      [ "$_bridge_status_probe_timeout" -le 3 ] || _bridge_status_probe_timeout=3
       # Running the candidate and reading back a token this script chose is
       # what tells a real interpreter from something wearing the name: only
       # a python that parsed and ran the -c program can emit the prefix. A
@@ -78,7 +84,7 @@ _bridge_status_resolve_python() {
         "$candidate" -c 'import sys; v = sys.version_info; sys.stdout.write("bridge-status-python:" + "%d:%d:%s:" % (v[0], v[1], sys.implementation.name) + sys.executable)' </dev/null 2>/dev/null &
         pid=$!
         (
-          sleep 3 2>/dev/null || exit 0
+          sleep "$_bridge_status_probe_timeout" 2>/dev/null || exit 0
           if [ -r "/proc/$pid/winpid" ] && read -r winpid < "/proc/$pid/winpid"; then
             MSYS2_ARG_CONV_EXCL='*' taskkill /F /T /PID "$winpid"
           fi
@@ -143,17 +149,9 @@ _bridge_status_resolve_python() {
       # that re-execs elsewhere, and the probe already paid the cost of asking
       # python where it actually lives.
       BRIDGE_STATUS_PY="$real"
-      _BRIDGE_STATUS_PY_MEMO_DONE=1
-      _BRIDGE_STATUS_PY_MEMO_RESULT="$BRIDGE_STATUS_PY"
-      _BRIDGE_STATUS_PY_MEMO_REJECTED="$BRIDGE_STATUS_REJECTED"
-      _BRIDGE_STATUS_PY_MEMO_RC=0
       return 0
     done < <(type -aP "$name" 2>/dev/null)
   done
-  _BRIDGE_STATUS_PY_MEMO_DONE=1
-  _BRIDGE_STATUS_PY_MEMO_RESULT=""
-  _BRIDGE_STATUS_PY_MEMO_REJECTED="$BRIDGE_STATUS_REJECTED"
-  _BRIDGE_STATUS_PY_MEMO_RC=1
   return 1
 }
 

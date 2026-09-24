@@ -163,7 +163,12 @@ def test_the_powershell_resolver_is_role_write_guards_except_the_bounded_probe()
     ours = _resolver(SCRIPTS / "crew-context.ps1")
 
     assert _without_probe(ours) == _without_probe(_resolver(SCRIPTS / "role-write-guard.ps1"))
-    assert "WaitForExit(3000)" in ours
+    # Codex review of crew-1.0, item 2: the wait is no longer a flat 3000ms --
+    # it is capped to whatever remains of the 8s overall deadline, so a
+    # candidate entered close to the deadline cannot itself push the total
+    # past the 10s hook timeout that calls this.
+    assert "WaitForExit($crewPythonWaitMs)" in ours
+    assert "[Math]::Min(3000, $crewPythonRemainingMs)" in ours
 
 
 @pytest.mark.skipif(PWSH is None, reason="pwsh not installed - the .ps1 flavour was NOT run")

@@ -30,14 +30,12 @@ INPUT=$(cat)
 # instead -- the bash twin of `role-write-guard.ps1`'s
 # `Resolve-CrewPython`, not a shared one.
 _resolve_role_write_python() {
-  # Memoized within this process: verify-gate.sh alone calls this twice (PY
-  # and SHIM_PY), and each call would otherwise re-walk and re-probe PATH
-  # from scratch. Cached only for the life of THIS process -- a fresh hook
-  # invocation gets a fresh probe.
-  if [ -n "${_CREW_PY_STRICT_MEMO_DONE:-}" ]; then
-    [ -n "${_CREW_PY_STRICT_MEMO_RESULT:-}" ] && printf '%s\n' "$_CREW_PY_STRICT_MEMO_RESULT"
-    return "$_CREW_PY_STRICT_MEMO_RC"
-  fi
+  # NOT memoized. This hook has one call site (`PY=$(_resolve_role_write_python)`
+  # below), itself a `$(...)` subshell, so a cache set here never survives
+  # even that one caller -- an earlier version carried the cache anyway,
+  # copied from `crew_py_strict`'s own (equally dead) memo. Removed for the
+  # same reason `_common.sh`'s copy was: see that copy's comment for the
+  # full account.
   # EVERY PATH match of every name, in order -- `type -ap` lists them all,
   # where `command -v` stops at the first. Windows burn-in 2026-09-23 (FAIL
   # 3): a broken WindowsApps python3 ahead of a real python3 made this
@@ -55,7 +53,15 @@ _resolve_role_write_python() {
   local _crew_py_strict_deadline=$((SECONDS + 8))
   while IFS= read -r candidate; do
     [ -n "$candidate" ] || continue
-    [ "$SECONDS" -lt "$_crew_py_strict_deadline" ] || break
+    # The remaining budget, not a flat 3s, bounds THIS candidate's probe: a
+    # fixed 3s watchdog checked only before launch can still overrun the
+    # deadline by up to 3s once it is entered, which on a run of several
+    # near-8s-but-under candidates followed by one hung one can overrun both
+    # this deadline and the 10s hook timeout it exists to stay inside.
+    local _crew_py_strict_remaining=$((_crew_py_strict_deadline - SECONDS))
+    [ "$_crew_py_strict_remaining" -gt 0 ] || break
+    local _crew_py_strict_probe_timeout=$_crew_py_strict_remaining
+    [ "$_crew_py_strict_probe_timeout" -le 3 ] || _crew_py_strict_probe_timeout=3
     # `command -v` finding a name on PATH is not enough -- the WindowsApps
     # alias IS a real, executable file, so `command -v python3` resolves it
     # cleanly. Running it and reading back `sys.executable` is what
@@ -82,7 +88,7 @@ _resolve_role_write_python() {
       "$candidate" -c 'import sys; sys.version_info>=(3,8) and print(sys.executable)' </dev/null 2>/dev/null &
       pid=$!
       (
-        sleep 3 2>/dev/null || exit 0
+        sleep "$_crew_py_strict_probe_timeout" 2>/dev/null || exit 0
         if [ -r "/proc/$pid/winpid" ] && read -r winpid < "/proc/$pid/winpid"; then
           MSYS2_ARG_CONV_EXCL='*' taskkill /F /T /PID "$winpid"
         fi
@@ -165,15 +171,9 @@ _resolve_role_write_python() {
     # `sys.executable`, not `$candidate`: the PATH-found name may be a shim
     # that re-execs elsewhere, and the probe already paid the cost of
     # asking python where it actually lives.
-    _CREW_PY_STRICT_MEMO_DONE=1
-    _CREW_PY_STRICT_MEMO_RESULT=$real
-    _CREW_PY_STRICT_MEMO_RC=0
     printf '%s\n' "$real"
     return 0
   done < <(type -ap python3 python py 2>/dev/null)
-  _CREW_PY_STRICT_MEMO_DONE=1
-  _CREW_PY_STRICT_MEMO_RESULT=""
-  _CREW_PY_STRICT_MEMO_RC=1
   return 1
 }
 

@@ -70,15 +70,12 @@ _vault_guard_reject() {
 }
 
 _vault_guard_resolve_python() {
-  # Memoized within this process: a resolved (or exhausted) answer is not
-  # re-derived by a second call in the same run, which would otherwise
-  # re-walk and re-probe PATH from scratch. Cached only for the life of
-  # THIS process -- a fresh hook invocation gets a fresh probe.
-  if [ -n "$_VAULT_GUARD_PY_MEMO_DONE" ]; then
-    VAULT_GUARD_PY="$_VAULT_GUARD_PY_MEMO_RESULT"
-    VAULT_GUARD_REJECTED="$_VAULT_GUARD_PY_MEMO_REJECTED"
-    return "$_VAULT_GUARD_PY_MEMO_RC"
-  fi
+  # NOT memoized. This hook has one call site (`if ! _vault_guard_resolve_python`
+  # below), so a cache here would never see a second call to save -- an
+  # earlier version carried one anyway, copied from crew's own (there,
+  # actually dead: every crew call site invokes its resolver through a
+  # `$(...)` subshell, which discards whatever the cache set). Removed here
+  # too rather than kept as inert weight.
   VAULT_GUARD_PY=""
   VAULT_GUARD_REJECTED=""
   # An OVERALL deadline on top of each candidate's own 3s probe bound: a
@@ -87,6 +84,7 @@ _vault_guard_resolve_python() {
   # bounded. Kept well inside the shortest hook timeout that resolves
   # python this way (bridge-status.ps1's twin, 10s).
   local _vault_guard_deadline=$((SECONDS + 8))
+  local _vault_guard_remaining _vault_guard_probe_timeout
   for name in python3 python py; do
     # EVERY PATH match of the name, not only the first (`type -aP`, not
     # `command -v`), and each is executed before it is believed: where it
@@ -96,10 +94,18 @@ _vault_guard_resolve_python() {
     # behind them. vault-guard.ps1 walks the same order, so both flavours agree.
     while IFS= read -r candidate; do
       [ -n "$candidate" ] || continue
-      if [ "$SECONDS" -ge "$_vault_guard_deadline" ]; then
+      # The remaining budget, not a flat 3s, bounds THIS candidate's probe: a
+      # fixed 3s watchdog checked only before launch can still overrun the
+      # deadline by up to 3s once entered, which on a run of several
+      # near-8s-but-under candidates followed by one hung one can overrun
+      # both this deadline and the 10s hook timeout it exists to stay inside.
+      _vault_guard_remaining=$((_vault_guard_deadline - SECONDS))
+      if [ "$_vault_guard_remaining" -le 0 ]; then
         _vault_guard_reject "PATH walk stopped: the overall resolver deadline was reached before every candidate could be probed"
         break 2
       fi
+      _vault_guard_probe_timeout=$_vault_guard_remaining
+      [ "$_vault_guard_probe_timeout" -le 3 ] || _vault_guard_probe_timeout=3
       # Running the candidate and reading back a token this script chose is
       # what tells a real interpreter from something wearing the name: only
       # a python that parsed and ran the -c program can emit the prefix. A
@@ -122,7 +128,7 @@ _vault_guard_resolve_python() {
         "$candidate" -c 'import sys; v = sys.version_info; sys.stdout.write("vault-guard-python:" + "%d:%d:%s:" % (v[0], v[1], sys.implementation.name) + sys.executable)' </dev/null 2>/dev/null &
         pid=$!
         (
-          sleep 3 2>/dev/null || exit 0
+          sleep "$_vault_guard_probe_timeout" 2>/dev/null || exit 0
           if [ -r "/proc/$pid/winpid" ] && read -r winpid < "/proc/$pid/winpid"; then
             MSYS2_ARG_CONV_EXCL='*' taskkill /F /T /PID "$winpid"
           fi
@@ -187,17 +193,9 @@ _vault_guard_resolve_python() {
       # that re-execs elsewhere, and the probe already paid the cost of asking
       # python where it actually lives.
       VAULT_GUARD_PY="$real"
-      _VAULT_GUARD_PY_MEMO_DONE=1
-      _VAULT_GUARD_PY_MEMO_RESULT="$VAULT_GUARD_PY"
-      _VAULT_GUARD_PY_MEMO_REJECTED="$VAULT_GUARD_REJECTED"
-      _VAULT_GUARD_PY_MEMO_RC=0
       return 0
     done < <(type -aP "$name" 2>/dev/null)
   done
-  _VAULT_GUARD_PY_MEMO_DONE=1
-  _VAULT_GUARD_PY_MEMO_RESULT=""
-  _VAULT_GUARD_PY_MEMO_REJECTED="$VAULT_GUARD_REJECTED"
-  _VAULT_GUARD_PY_MEMO_RC=1
   return 1
 }
 

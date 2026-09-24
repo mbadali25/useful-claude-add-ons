@@ -76,11 +76,19 @@ function Resolve-CrewPython {
     $candidates = @(Get-Command $name -All -CommandType Application -ErrorAction SilentlyContinue)
     foreach ($cmd in $candidates) {
       if (-not $cmd.Source) { continue }
-      if ($crewPythonDeadline.Elapsed.TotalSeconds -ge 8) {
+      # The remaining budget, not a flat 3000ms, bounds THIS candidate's
+      # wait: checking the deadline only before launch and then waiting the
+      # full 3s regardless can still overrun the deadline by up to 3s once
+      # a candidate is entered, which on a run of several near-8s-but-under
+      # candidates followed by one hung one can overrun both this deadline
+      # and the 10s hook timeout it exists to stay inside.
+      $crewPythonRemainingMs = 8000 - [int]$crewPythonDeadline.Elapsed.TotalMilliseconds
+      if ($crewPythonRemainingMs -le 0) {
         $script:CrewPythonMemoDone = $true
         $script:CrewPythonMemoResult = ''
         return ''
       }
+      $crewPythonWaitMs = [Math]::Min(3000, $crewPythonRemainingMs)
       $real = $null
       try {
         $psi = New-Object System.Diagnostics.ProcessStartInfo
@@ -108,7 +116,7 @@ function Resolve-CrewPython {
         $proc = [System.Diagnostics.Process]::Start($psi)
         $outTask = $proc.StandardOutput.ReadToEndAsync()
         $null = $proc.StandardError.ReadToEndAsync()
-        if (-not $proc.WaitForExit(3000)) {
+        if (-not $proc.WaitForExit($crewPythonWaitMs)) {
           try {
             $proc.Kill($true)
           } catch {
