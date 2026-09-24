@@ -581,6 +581,63 @@ def test_a_chained_relative_symlink_in_only_repos_resolves_from_its_own_parent(f
 
 
 @by_flavor
+def test_a_symlinked_component_inside_a_substituted_target_still_resolves(flavor, tmp_path):
+    """alias -> B, A/link -> ../alias/inner/repo: `alias` is a symlink
+    INSIDE the target `link` substitutes to, not a symlink named directly
+    by the path being walked. Review round 2 (crew-1.0-r3-autocycle):
+    auto-clear.ps1's Resolve-CrewRealPath only re-chased a symlink chain
+    hanging off the ORIGINAL path component ("link"); once its target was
+    substituted, "alias" inside that substituted string was walked as an
+    ordinary directory name and never itself resolved, so the listed path
+    stayed under `alias` and did not match a run from `B/inner/repo`.
+    crew_autocycle.py has no equivalent bug -- os.path.realpath resolves
+    every component of a substituted target too -- so this is ps1-only."""
+    if flavor != "ps1":
+        pytest.skip("only auto-clear.ps1 has its own symlink-chase implementation")
+    b_dir = tmp_path / "B"
+    root = _repo(b_dir / "inner")
+    a_dir = tmp_path / "A"
+    a_dir.mkdir()
+    alias = tmp_path / "alias"
+    try:
+        alias.symlink_to(b_dir, target_is_directory=True)
+        (a_dir / "link").symlink_to(
+            os.path.join("..", "alias", "inner", "repo"), target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(f"cannot create a symlink here: {exc}")
+
+    result = _scoped(flavor, tmp_path, root, onlyRepos=[str(a_dir / "link")])
+
+    assert _armed_or_silent(result, root) == "armed"
+
+
+@by_flavor
+def test_a_symlink_cycle_in_only_repos_fails_closed(flavor, tmp_path):
+    """A self-referential symlink in an onlyRepos entry must never resolve
+    to a partial path that happens to match something real. Review round 2
+    raised auto-clear.ps1's old 8-hop-per-component bound (too low for a
+    legitimate long chain, and silently kept whatever partial path it had
+    reached on exceeding it) to a single bound across the whole walk, and
+    made exceeding THAT an explicit failure -- the entry normalises to ""
+    and therefore matches nothing, rather than arming (or silently
+    disarming) on an unresolvable value."""
+    if flavor != "ps1":
+        pytest.skip("crew_autocycle.py's os.path.realpath is cycle-safe by construction")
+    loop_dir = tmp_path / "loop"
+    loop_dir.mkdir()
+    loop_link = loop_dir / "loop"
+    try:
+        loop_link.symlink_to(loop_link, target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(f"cannot create a symlink here: {exc}")
+    root = _repo(tmp_path)
+
+    result = _scoped(flavor, tmp_path, root, onlyRepos=[str(loop_link)])
+
+    assert _armed_or_silent(result, root) == "silent"
+
+
+@by_flavor
 @pytest.mark.parametrize("key", ["onlyRepos", "onlySessions"])
 def test_a_repo_config_cannot_widen_the_machines_narrowing(flavor, key, tmp_path):
     """One key at a time, so neither can hide a widening of the other."""
@@ -663,6 +720,48 @@ def test_in_scope_does_not_collapse_backslash_and_slash_on_posix():
 
     assert crew_autocycle.in_scope(cfg, "/tmp/allowed/repo", "s", windows=False) is False
     assert crew_autocycle.in_scope(cfg, "/tmp/allowed\\repo", "s", windows=False) is True
+
+
+# --- review round 2 (crew-1.0-r3-autocycle) --------------------------------
+
+
+def test_a_trailing_space_in_an_only_repos_entry_does_not_authorise_the_bare_path():
+    """Review round 2: normalise_repo_path used to `.strip()` the entry
+    before comparing, so an onlyRepos entry that (by typo or otherwise)
+    named "<repo> " with a trailing space matched the space-free repo too --
+    a repo NOT listed must never come into scope. Whitespace is a legal
+    POSIX filename character and two paths that differ only by it are two
+    different paths."""
+    root = os.getcwd()
+    cfg = {"onlyRepos": [root + " "]}
+
+    assert crew_autocycle.in_scope(cfg, root, "s", windows=False) is False
+    assert crew_autocycle.in_scope(cfg, root + " ", "s", windows=False) is True
+
+
+def test_a_drive_letter_path_is_not_absolute_on_posix():
+    """Review round 2: the absolute-path check used one regex for both
+    platforms, so a Windows-shaped "c:/.." entry read as absolute on POSIX
+    too and, being relative to nothing real, matched the current repo
+    through realpath's own resolution. A RELATIVE entry (this repo has no
+    "c:" root) must be refused, not resolved."""
+    root = os.getcwd()
+    assert crew_autocycle.normalise_repo_path("c:/..", windows=False) == ""
+    assert crew_autocycle.in_scope({"onlyRepos": ["c:/.."]}, root, "s", windows=False) is False
+
+
+def test_windows_repo_matching_does_not_casefold_a_sharp_s():
+    """Review round 2: comparing paths with `str.casefold()` uses Unicode
+    special-casing, which maps "straße" and "strasse" to the same string --
+    Windows' own case-insensitive path comparison does not. A listed
+    "strasse" must not authorise an unlisted "straße"."""
+    cfg = {"onlyRepos": [r"C:\Repos\strasse"]}
+
+    assert crew_autocycle.in_scope(
+        cfg, "C:\\Repos\\stra\u00dfe", "s", windows=True) is False
+    # Ordinary ASCII case-insensitivity still holds.
+    assert crew_autocycle.in_scope(
+        cfg, "C:\\REPOS\\STRASSE", "s", windows=True) is True
 
 
 # --- the whole cycle: wrap-up -> handoff -> clear -> resume ----------------

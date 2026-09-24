@@ -23,6 +23,7 @@ import re
 import pytest
 
 import context  # noqa: F401  pylint: disable=unused-import
+import crew_autocycle
 import crew_config
 import crew_fixtures
 import crew_platform
@@ -1629,3 +1630,37 @@ def test_explain_config_credits_global_not_repo_for_an_inherited_null(
 
     assert row["value"] == "G:" + os.sep + "shared"
     assert row["source"] == "global", row
+
+
+def test_explain_config_reports_autoclear_only_repos_from_the_global_layer_only(
+        tmp_path):
+    """Review round 2 (crew-1.0-r3-autocycle, lane fix4 finding 4).
+
+    `crew_autocycle.settings` and `auto-clear.ps1` read onlyRepos /
+    onlySessions from the machine-global file ONLY -- a repo's own copy is
+    never consulted. `explain_config` applied the same repo-over-global
+    precedence as every other key, so a repo that listed itself was
+    credited `source: repo`, and `/crew:config --show` could claim
+    auto-clear was restricted to that repo while the hooks left it armed
+    everywhere the machine opt-in reaches. The report must agree with the
+    run: source is never `repo`, the value is the global one, and a
+    repo-level value is flagged rather than folded in."""
+    global_path = tmp_path / "global-config.json"
+    global_path.write_text(
+        json.dumps({"context": {"autoClear": {"enabled": True}}}), encoding="utf-8")
+    root = tmp_path / "repo"
+    root_cfg = {"schema": crew_state.SCHEMA_CURRENT,
+                "context": {"autoClear": {"onlyRepos": [str(root)]}}}
+    crew_fixtures.make_repo(tmp_path, config=root_cfg, git=False)
+
+    rows = {r["path"]: r for r in
+            crew_config.explain_config(str(root), path=str(global_path))}
+    row = rows["context.autoClear.onlyRepos"]
+
+    assert row["source"] != "repo" and row["source"] != "repo+global"
+    assert row["value"] is None
+    assert row["repoIgnored"] == [str(root)]
+
+    settings = crew_autocycle.settings(str(root), global_path=str(global_path))
+    assert settings["onlyRepos"] is None
+    assert settings["onlyRepos"] == row["value"]

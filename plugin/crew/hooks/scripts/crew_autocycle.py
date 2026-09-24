@@ -121,7 +121,14 @@ def settings(root, global_path=None):
 
 
 _WIN_DRIVE_SLASH = re.compile(r"^/([A-Za-z])(?=/|$)")
-_ABSOLUTE = re.compile(r"^(/|[a-z]:/)")
+# Split by platform on purpose: a bare leading "/" is absolute on both, but
+# "[a-z]:/" is a drive letter, which is only a path on Windows. A single
+# alternation checked with the same pattern on POSIX let a RELATIVE entry
+# like "c:/.." read as absolute there too, and a relative entry is supposed
+# to be refused outright (see the docstring below) rather than quietly
+# treated as rooted.
+_ABSOLUTE_SLASH = re.compile(r"^/")
+_ABSOLUTE_DRIVE = re.compile(r"^[a-z]:/")
 
 
 def normalise_repo_path(path, windows=None):
@@ -132,21 +139,32 @@ def normalise_repo_path(path, windows=None):
     filename character and is left alone, or two distinct paths collapse into
     one and an unlisted repo passes `onlyRepos`. Trailing separators go,
     symlinks are resolved (`realpath`), and on Windows the Git Bash `/c/x`
-    shape becomes `c:/x` and the whole path is case-folded. A RELATIVE entry
-    is refused rather than resolved: it would resolve against the repo being
-    asked about, so `.` would match every repository on the machine.
-    `windows` lets a Linux test drive the Windows rules; realpath runs only
-    on the platform it describes."""
+    shape becomes `c:/x` and the whole path is case-mapped per character
+    (`.lower()`, not `.casefold()` -- casefold's Unicode special-casing
+    merges distinct strings, e.g. "straße" and "strasse", which Windows'
+    own case-insensitive comparison does not). A RELATIVE entry is refused
+    rather than resolved: it would resolve against the repo being asked
+    about, so `.` would match every repository on the machine. `windows`
+    lets a Linux test drive the Windows rules; realpath runs only on the
+    platform it describes.
+
+    Leading/trailing whitespace in `path` is significant and is NOT
+    stripped before comparison -- it is a legal POSIX filename character,
+    and trimming it collapsed two distinct entries (a repo path and that
+    same path plus a trailing space) into one, letting a listed repo whose
+    name happens to end in a space authorise an unlisted, space-free repo
+    of the same name. Only whitespace-ONLY input is treated as absent."""
     windows = os.name == "nt" if windows is None else windows
     if not isinstance(path, str) or not path.strip():
         return ""
-    text = os.path.expanduser(path.strip())
+    text = os.path.expanduser(path)
     if windows:
         text = text.replace("\\", "/")
         text = _WIN_DRIVE_SLASH.sub(lambda m: m.group(1) + ":", text, count=1)
         if re.fullmatch(r"[A-Za-z]:", text):
             text += "/"
-    if not _ABSOLUTE.match(text.lower() if windows else text):
+    candidate = text.lower() if windows else text
+    if not (_ABSOLUTE_SLASH.match(candidate) or (windows and _ABSOLUTE_DRIVE.match(candidate))):
         return ""
     if windows == (os.name == "nt"):
         text = os.path.realpath(text)
@@ -156,7 +174,7 @@ def normalise_repo_path(path, windows=None):
     if windows:
         if re.fullmatch(r"[A-Za-z]:", text):
             text += "/"
-        text = text.casefold()
+        text = text.lower()
     return text
 
 

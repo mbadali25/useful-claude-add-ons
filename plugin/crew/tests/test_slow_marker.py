@@ -36,6 +36,14 @@ def _collected(*args):
     pytest.param((), True, False, id="default"),
     pytest.param(("-m", "slow"), False, True, id="m-slow"),
     pytest.param(("--run-slow",), True, True, id="run-slow"),
+    # Review round 2 (crew-1.0-r3-autocycle): `"slow" in markexpr` is a
+    # SUBSTRING check, so a marker expression naming an unrelated marker
+    # that merely contains the letters "slow" -- "slowfoo" is nobody's real
+    # marker -- read as "slow was named", took the early return, and
+    # collected the full set (matrix included) rather than deselecting it
+    # per the default. `not slowfoo` names a marker no test carries, so
+    # this is expected to behave exactly like the bare default case.
+    pytest.param(("-m", "not slowfoo"), True, False, id="m-not-slowfoo"),
 ])
 def test_collection_selects_by_the_slow_marker(args, sample, matrix):
     collected = _collected(*args)

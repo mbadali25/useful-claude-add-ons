@@ -108,32 +108,73 @@ if (-not $enabled) { exit 0 }
 # narrowing. Present: this repo and/or session must be listed; an empty list,
 # or a value that is not a list, arms nothing. Silent like "not opted in".
 # Same rules as crew_autocycle.in_scope / normalise_repo_path.
+# Total symlink SUBSTITUTIONS allowed across the whole walk -- not per
+# component, and not the old per-component "8" this replaces. That bound
+# resolved only a chain hanging off ONE original path component; it never
+# re-checked a component that came from a SUBSTITUTED target (see the
+# function's own comment), so raising it alone would not have been enough.
+# 40 mirrors the common POSIX ELOOP bound (Linux's MAXSYMLINKS): generous
+# for any real chain, and a fixed, known-terminating stand-in for the cycle
+# detection crew_autocycle.py gets for free from `os.path.realpath`.
+$script:_CREW_SYMLINK_HOP_LIMIT = 40
+
 function Resolve-CrewRealPath([string]$Path) {
-  # Component by component, so a symlinked PARENT resolves the way python's
-  # realpath does, not just a link at the leaf. Works on Windows PowerShell
-  # 5.1 (`.Target`) and 7 (`.LinkTarget`).
+  # POSIX-style, one path component at a time. When a component is itself a
+  # symlink, its OWN target components go back at the FRONT of the queue of
+  # components still to walk, rather than the target string being spliced
+  # in and left unexamined. That is what lets a symlinked component INSIDE
+  # a substituted target resolve too -- `A\link -> ..\alias\inner\repo`
+  # where `alias` is itself a symlink to `B`: the old version only re-chased
+  # a symlink chain hanging off the ORIGINAL component ("link"), so "alias"
+  # inside the substituted target was walked as an ordinary directory name
+  # and the listed path stayed under `alias` instead of resolving to `B`.
+  # Works on Windows PowerShell 5.1 (`.Target`) and 7 (`.LinkTarget`).
+  #
+  # Returns $null, never a partially-resolved path, once
+  # $_CREW_SYMLINK_HOP_LIMIT substitutions have happened without
+  # terminating -- a cycle, or a chain too long to be legitimate. The
+  # caller must treat $null as "this entry does not resolve" and fail it
+  # CLOSED (normalise to "", which cannot match anything real), not fall
+  # back to whatever partial value the walk had reached.
   $full = [System.IO.Path]::GetFullPath($Path)
   $root = [System.IO.Path]::GetPathRoot($full)
+  $queue = New-Object System.Collections.Generic.List[string]
+  foreach ($p in $full.Substring($root.Length).Split([char[]]@('\', '/'), [StringSplitOptions]::RemoveEmptyEntries)) {
+    $queue.Add($p)
+  }
   $cur = $root
-  foreach ($part in $full.Substring($root.Length).Split([char[]]@('\', '/'), [StringSplitOptions]::RemoveEmptyEntries)) {
+  $hops = 0
+  while ($queue.Count -gt 0) {
+    $part = $queue[0]
+    $queue.RemoveAt(0)
     $next = Join-Path $cur $part
-    for ($hop = 0; $hop -lt 8; $hop++) {
-      $item = Get-Item -LiteralPath $next -Force -ErrorAction SilentlyContinue
-      if ($null -eq $item) { break }
-      $link = $null
+    $item = Get-Item -LiteralPath $next -Force -ErrorAction SilentlyContinue
+    $link = $null
+    if ($null -ne $item) {
       if ($item.PSObject.Properties['LinkTarget']) { $link = $item.LinkTarget }
       elseif ($item.PSObject.Properties['Target']) { $link = @($item.Target)[0] }
-      if (-not $link) { break }
-      # THIS hop's parent, not the outer loop's: a chained relative symlink
-      # (link1 -> ../B/link2, link2 -> inner/target) resolves each hop
-      # against the link that names it, or a later hop in the SAME chain
-      # silently resolves against the first hop's directory instead of its
-      # own.
-      $hopParent = Split-Path -Parent $next
-      if ([System.IO.Path]::IsPathRooted($link)) { $next = [System.IO.Path]::GetFullPath($link) }
-      else { $next = [System.IO.Path]::GetFullPath((Join-Path $hopParent $link)) }
     }
-    $cur = $next
+    if (-not $link) { $cur = $next; continue }
+    $hops++
+    if ($hops -gt $script:_CREW_SYMLINK_HOP_LIMIT) { return $null }
+    # THIS hop's parent -- the directory containing the symlink just read,
+    # i.e. $cur before this component was joined onto it -- not any
+    # earlier hop's, so a chained relative symlink resolves each hop
+    # against the link that names it.
+    $hopParent = $cur
+    $linkNorm = $link.Replace('\', '/')
+    if ([System.IO.Path]::IsPathRooted($linkNorm)) {
+      $targetFull = [System.IO.Path]::GetFullPath($linkNorm)
+    } else {
+      $targetFull = [System.IO.Path]::GetFullPath((Join-Path $hopParent $linkNorm))
+    }
+    $targetRoot = [System.IO.Path]::GetPathRoot($targetFull)
+    $cur = $targetRoot
+    $insertAt = 0
+    foreach ($p in $targetFull.Substring($targetRoot.Length).Split([char[]]@('\', '/'), [StringSplitOptions]::RemoveEmptyEntries)) {
+      $queue.Insert($insertAt, $p)
+      $insertAt++
+    }
   }
   return $cur
 }
@@ -151,7 +192,13 @@ function ConvertTo-CrewScopePath($Path) {
   } elseif (-not $text.StartsWith("/")) {
     return ""
   }
-  try { $text = (Resolve-CrewRealPath $text).Replace('\', '/') } catch { }
+  # $null (the symlink hop bound was exceeded -- a cycle, or a chain too
+  # long to be legitimate) fails CLOSED: "" cannot match a real path, so
+  # this entry narrows to nothing rather than being compared as whatever
+  # partial value the walk had reached when it gave up.
+  try { $resolved = Resolve-CrewRealPath $text } catch { $resolved = $text }
+  if ($null -eq $resolved) { return "" }
+  $text = $resolved.Replace('\', '/')
   $text = $text.TrimEnd('/')
   if (-not $text) { $text = "/" }
   if ($text -match '^[A-Za-z]:$') { $text += "/" }

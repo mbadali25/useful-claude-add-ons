@@ -183,12 +183,26 @@ AUTOCYCLE_MUTATIONS = (
      _T + "test_a_repo_config_cannot_widen_the_machines_narrowing[onlySessions-ps1]"),
     # --- backslash/slash collapse on POSIX (review round 1, fix4) -----------
     ("bash normalises a POSIX backslash into a slash again (pre-check)", CYCLE,
-     "    text = os.path.expanduser(path.strip())\n"
+     "    text = os.path.expanduser(path)\n"
      "    if windows:\n"
      "        text = text.replace(\"\\\\\", \"/\")\n",
-     "    text = os.path.expanduser(path.strip()).replace(\"\\\\\", \"/\")\n"
+     "    text = os.path.expanduser(path).replace(\"\\\\\", \"/\")\n"
      "    if windows:\n",
      _T + "test_in_scope_does_not_collapse_backslash_and_slash_on_posix"),
+    # --- review round 2 (crew-1.0-r3-autocycle): trailing whitespace, POSIX
+    # drive-letter, and Unicode casefold ---------------------------------
+    ("bash strips whitespace out of onlyRepos entries again", CYCLE,
+     "    text = os.path.expanduser(path)\n",
+     "    text = os.path.expanduser(path.strip())\n",
+     _T + "test_a_trailing_space_in_an_only_repos_entry_does_not_authorise_the_bare_path"),
+    ("bash accepts a POSIX-relative drive-letter path as absolute again", CYCLE,
+     "    if not (_ABSOLUTE_SLASH.match(candidate) or (windows and _ABSOLUTE_DRIVE.match(candidate))):\n",
+     "    if not (_ABSOLUTE_SLASH.match(candidate) or _ABSOLUTE_DRIVE.match(candidate)):\n",
+     _T + "test_a_drive_letter_path_is_not_absolute_on_posix"),
+    ("bash casefolds onlyRepos comparisons on Windows again", CYCLE,
+     "        text = text.lower()\n    return text\n",
+     "        text = text.casefold()\n    return text\n",
+     _T + "test_windows_repo_matching_does_not_casefold_a_sharp_s"),
     ("bash normalises a POSIX backslash into a slash again (post-realpath)", CYCLE,
      "        text = os.path.realpath(text)\n"
      "        if windows:\n"
@@ -197,12 +211,35 @@ AUTOCYCLE_MUTATIONS = (
      _T + "test_in_scope_does_not_collapse_backslash_and_slash_on_posix"),
     # --- chained relative symlink resolves from the wrong parent (fix4) -----
     ("PowerShell chases a chained relative symlink from the first hop's parent", CLEAR_PS1,
-     "      $hopParent = Split-Path -Parent $next\n"
-     "      if ([System.IO.Path]::IsPathRooted($link)) { $next = [System.IO.Path]::GetFullPath($link) }\n"
-     "      else { $next = [System.IO.Path]::GetFullPath((Join-Path $hopParent $link)) }\n",
-     "      if ([System.IO.Path]::IsPathRooted($link)) { $next = [System.IO.Path]::GetFullPath($link) }\n"
-     "      else { $next = [System.IO.Path]::GetFullPath((Join-Path $cur $link)) }\n",
+     "    $hopParent = $cur\n"
+     "    $linkNorm = $link.Replace('\\', '/')\n"
+     "    if ([System.IO.Path]::IsPathRooted($linkNorm)) {\n"
+     "      $targetFull = [System.IO.Path]::GetFullPath($linkNorm)\n"
+     "    } else {\n"
+     "      $targetFull = [System.IO.Path]::GetFullPath((Join-Path $hopParent $linkNorm))\n"
+     "    }\n",
+     "    $linkNorm = $link.Replace('\\', '/')\n"
+     "    if ([System.IO.Path]::IsPathRooted($linkNorm)) {\n"
+     "      $targetFull = [System.IO.Path]::GetFullPath($linkNorm)\n"
+     "    } else {\n"
+     "      $targetFull = [System.IO.Path]::GetFullPath((Join-Path $root $linkNorm))\n"
+     "    }\n",
      _T + "test_a_chained_relative_symlink_in_only_repos_resolves_from_its_own_parent[ps1]"),
+    # --- review round 2 (crew-1.0-r3-autocycle): a symlinked component
+    # INSIDE a substituted target, and the raised/explicit-fail hop bound --
+    ("PowerShell does not re-resolve a symlinked component inside a substituted target", CLEAR_PS1,
+     "    $insertAt = 0\n"
+     "    foreach ($p in $targetFull.Substring($targetRoot.Length).Split([char[]]@('\\', '/'), [StringSplitOptions]::RemoveEmptyEntries)) {\n"
+     "      $queue.Insert($insertAt, $p)\n"
+     "      $insertAt++\n"
+     "    }\n",
+     "\n",
+     _T + "test_a_symlinked_component_inside_a_substituted_target_still_resolves[ps1]"),
+    ("PowerShell's symlink hop bound silently keeps a partial path instead of failing closed",
+     CLEAR_PS1,
+     "    if ($hops -gt $script:_CREW_SYMLINK_HOP_LIMIT) { return $null }\n",
+     "\n",
+     _T + "test_a_symlink_cycle_in_only_repos_fails_closed[ps1]"),
     # --- resume --------------------------------------------------------------
     ("the resume cuts the next action off a long handoff", CONTEXT,
      "                lead = f\"Next action: {action}\\n\" if action else \"\"\n",
