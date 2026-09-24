@@ -205,47 +205,168 @@ $RestrictedRolesForFallback = @(
 function Get-FallbackRole {
   # Consulted whenever python cannot be used to reach a real decision --
   # either no candidate resolves at all, or a resolved candidate fails to
-  # launch role_write_guard.py. Never throws: an unparseable payload
-  # answers $null, the same permissive fallback role_write_guard.py itself
-  # gives one.
+  # launch role_write_guard.py.
+  #
+  # Returns @{ Role = <string-or-$null>; Determined = <bool>; Obj =
+  # <parsed-object-or-$null> } rather than a bare role string. Reported
+  # 2026-09-24 alongside role-write-guard.sh's own FIX 1/2: the OLD
+  # contract collapsed "unparseable JSON" and "a JSON array/scalar with no
+  # `agent_type` to read" into the SAME `$null` this function ALSO returns
+  # for "a well-formed object that genuinely has no `agent_type` key" --
+  # three different facts wearing one answer. The first two are "cannot
+  # tell", not "not a subagent", and CLAUDE.md's named recurring bug is
+  # exactly an unknown wearing the safe-looking value's label -- a `pm`
+  # write on a payload this could not read used to go through unjudged the
+  # same way a genuinely subagent-free write does. `Determined` is $false
+  # only for the first two; the caller fails closed on that regardless of
+  # what role a guess might have produced.
   param([string]$RawJson)
   try {
     $obj = $RawJson | ConvertFrom-Json -ErrorAction Stop
   } catch {
-    return $null
+    return @{ Role = $null; Determined = $false; Obj = $null }
+  }
+  if ($obj -isnot [System.Management.Automation.PSCustomObject]) {
+    # A JSON array or scalar parses cleanly but is not an object this can
+    # read an `agent_type` property from at all -- same "cannot tell" shape
+    # as unparseable JSON, not "no agent_type field" (which needs an
+    # OBJECT that simply omits it).
+    return @{ Role = $null; Determined = $false; Obj = $null }
+  }
+  $hasAgentType = Get-Member -InputObject $obj -Name 'agent_type' -MemberType NoteProperty -ErrorAction SilentlyContinue
+  if (-not $hasAgentType) {
+    # No `agent_type` KEY at all -- this hook fired outside a subagent.
+    # Confidently "no role", not "cannot tell".
+    return @{ Role = $null; Determined = $true; Obj = $obj }
   }
   $agentType = $obj.agent_type
-  if (-not $agentType) { return $null }
-  $role = ([string]$agentType).Trim().ToLowerInvariant()
+  if ($agentType -isnot [string]) {
+    # The key IS present but not as a string (null, a number, a bool, an
+    # array, ...) -- the bash twin's `_role_write_fallback_role` fails
+    # closed on this exact shape (its string-only regex cannot match it
+    # either), and parity between the two flavours matters more here than
+    # matching role_write_guard.py's own looser real-python behaviour
+    # (which treats any non-string `agent_type` as `None`, same as absent)
+    # -- a fallback that CANNOT confirm what real python would decide must
+    # not guess in the permissive direction.
+    return @{ Role = $null; Determined = $false; Obj = $obj }
+  }
+  $role = $agentType.Trim().ToLowerInvariant()
   if ($role.StartsWith('crew:')) { $role = $role.Substring(5).Trim() }
-  if (-not $role) { return $null }
-  return $role
+  if (-not $role) {
+    # A blank/whitespace-only string -- confidently read, and confidently
+    # empty; not the same "cannot tell" as a non-string value above.
+    return @{ Role = $null; Determined = $true; Obj = $obj }
+  }
+  return @{ Role = $role; Determined = $true; Obj = $obj }
+}
+
+# `guards.roleWrites` for ONE config layer, read WITHOUT python -- same
+# crude regex technique cloud-guard.ps1's `Test-CloudGuardArmed` uses (and
+# role-write-guard.sh's own `_role_write_layer_policy`), not a JSON parse:
+# "off" when the file is genuinely ABSENT (crew_guards.ROLE_WRITE_DEFAULT --
+# every repo that has never set this key), "block" -- the floor, never
+# "off" -- for anything this cannot read with confidence: unreadable, a
+# directory, no match, more than one match, or a value that is not
+# "off"/"report"/"block".
+function Get-RoleWriteLayerPolicy {
+  param([string]$ConfigPath)
+  if (-not (Test-Path -LiteralPath $ConfigPath)) { return 'off' }
+  if (Test-Path -LiteralPath $ConfigPath -PathType Container) { return 'block' }
+  $text = Get-Content -LiteralPath $ConfigPath -Raw -ErrorAction SilentlyContinue
+  if (-not $text) { return 'block' }
+  $found = [regex]::Matches($text, '"roleWrites"\s*:\s*"([A-Za-z]*)"')
+  if ($found.Count -ne 1) { return 'block' }
+  switch ($found[0].Groups[1].Value.ToLowerInvariant()) {
+    'off' { return 'off' }
+    'report' { return 'report' }
+    'block' { return 'block' }
+    default { return 'block' }
+  }
+}
+
+# Ratchets the two layers exactly as `crew_guards.role_writes_rank` does:
+# the MORE RESTRICTIVE of the two wins (block < report < off), so a repo
+# cloned with `guards.roleWrites: off` cannot widen past a stricter
+# machine-global value.
+function Get-RoleWriteEffectivePolicy {
+  param([string]$Root)
+  $userHome = if ($env:USERPROFILE) { $env:USERPROFILE } else { $env:HOME }
+  $repoPolicy = Get-RoleWriteLayerPolicy (Join-Path $Root '.crew/config.json')
+  $globalPolicy = Get-RoleWriteLayerPolicy (Join-Path $userHome '.claude/crew/config.json')
+  $rank = @{ block = 0; report = 1; off = 2 }
+  if ($rank[$repoPolicy] -le $rank[$globalPolicy]) { return $repoPolicy }
+  return $globalPolicy
+}
+
+# Mirrors role_write_guard.py's `_PM_ALLOWED_PATTERNS` (agents/pm.md:49-53's
+# prose, made mechanical) -- REPO-RELATIVE and LEXICAL only, unlike the real
+# classifier's symlink-resolved `scope_path`: this fallback exists only for
+# the brief window before python becomes available again. The ps1 twin of
+# role-write-guard.sh's own `_role_write_pm_path_allowed`.
+function Test-RoleWritePmPathAllowed {
+  param([string]$Root, [string]$FilePath)
+  if (-not $FilePath) { return $false }
+  $rel = $FilePath -replace '\\', '/'
+  $normRoot = ($Root -replace '\\', '/').TrimEnd('/')
+  if ($rel -eq $normRoot) { $rel = '' }
+  elseif ($rel.StartsWith($normRoot + '/')) { $rel = $rel.Substring($normRoot.Length + 1) }
+  foreach ($prefix in @('.crew', 'TODO.md', '.work', 'docs/diagrams')) {
+    if ($rel -eq $prefix -or $rel.StartsWith($prefix + '/')) { return $true }
+  }
+  return $false
+}
+
+# The one decision both no-python fallbacks below reach for -- the ps1 twin
+# of role-write-guard.sh's own `_role_write_fallback_decision`. `$Why` is
+# the reason this fallback is being consulted at all, for the stderr
+# message.
+function Resolve-RoleWriteFallback {
+  param([string]$RawJson, [string]$Why)
+  $fallback = Get-FallbackRole $RawJson
+  $root = if ($env:CLAUDE_PROJECT_DIR) { $env:CLAUDE_PROJECT_DIR } else { (Get-Location).Path }
+
+  if (-not $fallback.Determined) {
+    [Console]::Error.WriteLine("role-write-guard: $Why; the hook payload could not be read to determine the acting role - failing closed rather than treating an unknown role as unrestricted.")
+    exit 2
+  }
+
+  $policy = Get-RoleWriteEffectivePolicy $root
+  if ($policy -eq 'off') {
+    [Console]::Error.WriteLine("role-write-guard: $Why; guards.roleWrites is off - allowing unjudged.")
+    exit 0
+  }
+
+  $role = $fallback.Role
+  if ($RestrictedRolesForFallback -notcontains $role) {
+    [Console]::Error.WriteLine("role-write-guard: $Why; allowing it unjudged (role '$role' is not restricted).")
+    exit 0
+  }
+
+  if ($role -eq 'pm') {
+    $filePath = $null
+    if ($fallback.Obj -and $fallback.Obj.tool_input) { $filePath = $fallback.Obj.tool_input.file_path }
+    if (Test-RoleWritePmPathAllowed $root $filePath) {
+      [Console]::Error.WriteLine("role-write-guard: $Why; allowing - '$filePath' is inside pm's permitted patterns.")
+      exit 0
+    }
+  }
+
+  if ($policy -eq 'report') {
+    [Console]::Error.WriteLine("role-write-guard: $Why; guards.roleWrites is report - allowing, but this write would be blocked under guards.roleWrites: block for role '$role'.")
+    exit 0
+  }
+
+  [Console]::Error.WriteLine("role-write-guard: $Why - cannot judge this write; failing closed for role ``$role``.")
+  exit 2
 }
 
 $py = Resolve-CrewPython
 if (-not $py) {
   # No candidate resolved at all -- a DIFFERENT failure than BLOCK-1 below
   # (which is a candidate that resolved, was proven executable, and then
-  # still failed to launch). Reported 2026-09-24 alongside the WindowsApps
-  # resolver fix: fixing the resolver alone still leaves a genuinely
-  # python-less host (or any other total-resolution failure) falling
-  # through to an unconditional "allow it unjudged" -- which for a role
-  # this table ALREADY knows is restricted (`pm`, or a `_DENY_ROLES`
-  # member) throws away a decision that needed no python at all. A
-  # `_DENY_ROLES` role may not write ANY file regardless of path; `pm` is
-  # refused for anything outside its own patterns often enough that
-  # collapsing "cannot judge" into "allow" for either is exactly CLAUDE.md's
-  # named recurring bug ("an unknown collapsing into the safe-looking
-  # value"), not a neutral default. Mirrors BLOCK-1's own
-  # $RestrictedRolesForFallback / Get-FallbackRole exactly, so both failure
-  # modes agree on which roles fail closed.
-  $fallbackRole = Get-FallbackRole $raw
-  if ($RestrictedRolesForFallback -contains $fallbackRole) {
-    [Console]::Error.WriteLine("role-write-guard: no usable python found - cannot judge this write; failing closed for role ``$fallbackRole``.")
-    exit 2
-  }
-  [Console]::Error.WriteLine("role-write-guard: no usable python found - cannot judge this write; allowing it unjudged.")
-  exit 0
+  # still failed to launch).
+  Resolve-RoleWriteFallback $raw "no usable python found"
 }
 
 $scriptPath = Join-Path $dir 'role_write_guard.py'
@@ -316,13 +437,7 @@ if ($null -eq $exitCode) {
   # permissions, antivirus, ...) -- rare, but not nonexistent, and not
   # evidence a write from a role this table already knows is restricted
   # is safe to let through.
-  $fallbackRole = Get-FallbackRole $raw
-  if ($RestrictedRolesForFallback -contains $fallbackRole) {
-    [Console]::Error.WriteLine("role-write-guard: could not launch the python interpreter ($py) to judge this write; failing closed for role ``$fallbackRole``. $launchFailure")
-    exit 2
-  }
-  [Console]::Error.WriteLine("role-write-guard: could not launch the python interpreter ($py) to judge this write; allowing it unjudged. $launchFailure")
-  exit 0
+  Resolve-RoleWriteFallback $raw "could not launch the python interpreter ($py) to judge this write. $launchFailure"
 }
 
 exit $exitCode
