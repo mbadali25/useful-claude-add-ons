@@ -33,6 +33,7 @@ import pathlib
 import re
 import shutil
 import subprocess
+import time
 
 import pytest
 
@@ -488,6 +489,119 @@ def test_crew_py_strict_and_role_write_guard_still_agree_after_tightening():
         "_resolve_role_write_python have drifted after the `-x` tightening."
         + "\n_common.sh:          " + repr(shared)
         + "\nrole-write-guard.sh: " + repr(guard))
+
+
+# --- FIX (Codex review of crew-1.0, item 1): the "memoized within this
+#     process" caching crew 1.0 r3 added never survives a caller -- every
+#     call site resolves these functions as `PY=$(crew_py...)`, and a
+#     `$(...)` command substitution runs the function in a SUBSHELL, so
+#     whatever cache variable it set is discarded the instant that subshell
+#     exits. Reproduced by hand: `source _common.sh; p=$(crew_py_strict);
+#     [ -n "$_CREW_PY_STRICT_MEMO_DONE" ]` is FALSE in the caller's own
+#     shell -- the cache never once did anything. Removed rather than made
+#     real: doing that would mean rewriting every `$(crew_py...)` call site
+#     in this directory (and role-write-guard.sh's own single subshelled
+#     call) to avoid a subshell, for a saving that never actually happened.
+#     STATIC, not behavioural: there is nothing a caching optimisation that
+#     never fires can be proven to do at runtime -- the claim itself is
+#     what must be gone.
+
+def test_crew_py_no_longer_claims_a_dead_memo():
+    body = _function_raw_source(_COMMON_SH, "crew_py() {")
+    assert "MEMO" not in body, (
+        "crew_py() still carries memoization variables that cannot survive "
+        "its own call site (`PY=$(crew_py)`, a subshell): " + body)
+
+
+@pytest.mark.parametrize("path,header", [
+    (_COMMON_SH, "crew_py_strict() {"),
+    (_GUARD_SH, "_resolve_role_write_python() {"),
+])
+def test_crew_py_strict_and_its_byte_copy_no_longer_claim_a_dead_memo(path, header):
+    body = _function_raw_source(path, header)
+    assert "MEMO" not in body, (
+        f"{path} still carries a memoization for `{header}` that cannot "
+        f"survive its own call site (a `$(...)` subshell): {body!r}")
+
+
+# --- FIX (Codex review of crew-1.0, item 2): the overall 8s deadline was
+#     only checked before LAUNCHING a candidate; the probe itself then
+#     waited a flat 3s regardless of how much budget was left, so several
+#     candidates that each fail just under that per-candidate bound --
+#     summing to just under the 8s deadline -- followed by one that hangs
+#     could still overrun both the 8s deadline and the 10s hook timeout
+#     that calls this (bridge-status.ps1's twin). The fix caps each probe's
+#     wait to whatever budget remains, not a flat 3s, and gives up outright
+#     once nothing remains.
+
+def _slow_failing_stub(directory, delay_seconds):
+    """A real, executable `python3` that ignores whatever it is asked and
+    just sleeps `delay_seconds` before exiting 1 -- modelling a PATH entry
+    that answers, eventually, but never as a usable interpreter."""
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / "python3"
+    path.write_text(f"#!/bin/sh\nsleep {delay_seconds}\nexit 1\n",
+                     encoding="ascii", newline="\n")
+    os.chmod(path, 0o755)
+    return path
+
+
+def _hung_stub(directory):
+    """Never exits on its own -- only the resolver's own 3s watchdog (or,
+    with the fix, a shorter one bounded by the remaining deadline) kills
+    it."""
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / "python3"
+    path.write_text("#!/bin/sh\nsleep 60\n", encoding="ascii", newline="\n")
+    os.chmod(path, 0o755)
+    return path
+
+
+@needs_bash
+@pytest.mark.parametrize("path,header,fn", [
+    (_COMMON_SH, "crew_py_strict() {", "crew_py_strict"),
+    (_GUARD_SH, "_resolve_role_write_python() {", "_resolve_role_write_python"),
+])
+def test_the_final_probes_wait_is_capped_to_the_remaining_deadline(tmp_path, path, header, fn):
+    """The review's own reproduction, sized for a fast test: four
+    candidates that each fail after 1.8s (7.2s total, comfortably under the
+    8s deadline) followed by one that hangs. Before the fix the hung
+    candidate's wait was a flat 3s regardless, pushing the total past
+    10s -- past the 10s hook timeout this deadline exists to stay inside.
+    With the fix the hung candidate's wait is capped to whatever remains of
+    the 8s budget, so the whole run finishes well under 10s. (Three
+    candidates at 2.5s -- closer to the 8s boundary -- was tried first and
+    is measurably flakier: bash's own per-candidate overhead can tip the
+    deadline check before the final candidate is even launched, passing
+    either way regardless of whether the fix is present.)"""
+    slow_dirs = [_slow_failing_stub(tmp_path / f"slow{i}", 1.8) for i in range(4)]
+    hang_dir = _hung_stub(tmp_path / "hang")
+
+    driver = tmp_path / "driver.sh"
+    driver.write_text(
+        _function_raw_source(path, header) + "\n"
+        f"{fn}\n"
+        'printf "EXIT:%s\\n" "$?"\n',
+        encoding="utf-8", newline="\n")
+
+    env = os.environ.copy()
+    env["PATH"] = os.pathsep.join(
+        [str(d.parent) for d in slow_dirs] + [str(hang_dir.parent),
+                                               _python_free_path(tmp_path)])
+    began = time.monotonic()
+    proc = subprocess.run(
+        [_BASH, str(driver)], capture_output=True, text=True,
+        check=False, env=env, timeout=30)
+    elapsed = time.monotonic() - began
+    lines = proc.stdout.splitlines()
+    exit_line = next((l for l in lines if l.startswith("EXIT:")), "EXIT:?")
+    assert exit_line == "EXIT:1", (
+        "none of these candidates is a usable interpreter; must report "
+        f"failure. stdout={proc.stdout!r} stderr={proc.stderr!r}")
+    assert elapsed < 10, (
+        f"the run took {elapsed:.1f}s -- the final (hung) candidate's wait "
+        "must be capped to what remains of the 8s deadline, not a flat 3s, "
+        "or the total overruns the 10s hook timeout this bounds against")
 
 
 # --- BLOCK item: the `-x` check needs a BEHAVIOURAL test, not just a

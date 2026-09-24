@@ -61,19 +61,44 @@ function Resolve-BridgeStatusPython {
     }
     foreach ($cmd in @(Get-Command $name -All -CommandType Application -ErrorAction SilentlyContinue)) {
       if (-not $cmd.Source) { continue }
-      if ($deadline.Elapsed.TotalSeconds -ge 8) {
+      # The remaining budget, not a flat 3000ms, bounds THIS candidate's
+      # wait: checking the deadline only before launch and then waiting the
+      # full 3s regardless can still overrun the deadline by up to 3s once
+      # a candidate is entered, which on a run of several near-8s-but-under
+      # candidates followed by one hung one can overrun both this deadline
+      # and the 10s hook timeout it exists to stay inside.
+      $bridgeStatusRemainingMs = 8000 - [int]$deadline.Elapsed.TotalMilliseconds
+      if ($bridgeStatusRemainingMs -le 0) {
         $script:BridgeStatusRejected += "PATH walk stopped: the overall resolver deadline was reached before every candidate could be probed"
         $script:BridgeStatusPyMemoDone = $true
         $script:BridgeStatusPyMemoResult = ''
         $script:BridgeStatusPyMemoRejected = $script:BridgeStatusRejected
         return ''
       }
+      $bridgeStatusWaitMs = [Math]::Min(3000, $bridgeStatusRemainingMs)
       $probe = $null
       $reason = ''
       try {
         $psi = New-Object System.Diagnostics.ProcessStartInfo
-        $psi.FileName = $cmd.Source
-        $psi.Arguments = '-c "import sys; v = sys.version_info; sys.stdout.write(''bridge-status-python:'' + ''%d:%d:%s:'' % (v[0], v[1], sys.implementation.name) + sys.executable)"'
+        $probeArgs = '-c "import sys; v = sys.version_info; sys.stdout.write(''bridge-status-python:'' + ''%d:%d:%s:'' % (v[0], v[1], sys.implementation.name) + sys.executable)"'
+        if ($cmd.Source -match '\.(cmd|bat)$') {
+          # UseShellExecute=false hands FileName straight to CreateProcess,
+          # which can only launch a real PE executable -- not a .cmd/.bat
+          # shim (a pyenv-win install is exactly this shape). Route it
+          # through cmd.exe /d /c instead of flipping UseShellExecute to
+          # $true, which would resolve by shell file association rather
+          # than run it as a command. Wrapping the whole command line in
+          # one more pair of quotes defeats cmd's "exactly two quotes"
+          # special case, so both the quoted shim path and the quoted -c
+          # argument survive intact. Ported from crew's role-write-guard.ps1
+          # (commit a39ac347), which fixed the same gap on the same
+          # machines first.
+          $psi.FileName = Join-Path $env:SystemRoot 'System32\cmd.exe'
+          $psi.Arguments = '/d /c "' + '"' + $cmd.Source + '" ' + $probeArgs + '"'
+        } else {
+          $psi.FileName = $cmd.Source
+          $psi.Arguments = $probeArgs
+        }
         $psi.UseShellExecute = $false
         $psi.RedirectStandardOutput = $true
         $psi.RedirectStandardError = $true
@@ -81,7 +106,7 @@ function Resolve-BridgeStatusPython {
         $proc = [System.Diagnostics.Process]::Start($psi)
         $outTask = $proc.StandardOutput.ReadToEndAsync()
         $null = $proc.StandardError.ReadToEndAsync()
-        if (-not $proc.WaitForExit(3000)) {
+        if (-not $proc.WaitForExit($bridgeStatusWaitMs)) {
           # The whole tree, not the candidate: a py.exe-style launcher's child
           # inherits the redirected handles and outlives a plain Kill().
           # Kill($true) is PowerShell 7 (.NET Core 3+); 5.1 has no such

@@ -57,14 +57,16 @@ crew_strip_cr() { printf '%s' "$1" | tr -d '\r'; }
 # for a broken stub would turn a refusal into a stand-down. Callers that
 # `exec` the interpreter and have nothing left to check use `crew_py_strict`.
 crew_py() {
-  # Memoized within this process: a hook that resolves more than once (e.g.
-  # handoff-write.sh calls this twice) must not re-walk and re-probe PATH
-  # from scratch each time. Cached only for the life of THIS process -- a
-  # fresh hook invocation gets a fresh probe.
-  if [ -n "${_CREW_PY_MEMO_DONE:-}" ]; then
-    [ -n "${_CREW_PY_MEMO_RESULT:-}" ] && printf '%s\n' "$_CREW_PY_MEMO_RESULT"
-    return "$_CREW_PY_MEMO_RC"
-  fi
+  # NOT memoized. An earlier version of this function cached its result in
+  # process-global variables, but every call site invokes it as
+  # `PY=$(crew_py)` -- a `$(...)` command substitution runs the function in
+  # a SUBSHELL, so any variable it set was discarded the moment that
+  # subshell exited and the next call started from nothing regardless. The
+  # cache never once survived a caller; reported 2026-09-24 and removed
+  # rather than repaired, because making it real would mean rewriting every
+  # `$(crew_py...)` call site across this directory to avoid a subshell --
+  # a change to the whole hook layer to speed up a function nothing here
+  # calls more than once or twice per process anyway.
   local candidate first=""
   # An OVERALL deadline on top of each candidate's own 3s probe bound: a
   # PATH with several hung candidates would otherwise cost 3s EACH, adding
@@ -77,13 +79,21 @@ crew_py() {
   while IFS= read -r candidate; do
     [ -n "$candidate" ] || continue
     [ -n "$first" ] || first=$candidate
-    [ "$SECONDS" -lt "$deadline" ] || break
+    # The remaining budget, not a flat 3s, bounds THIS candidate's probe: a
+    # fixed 3s watchdog checked only before launch can still overrun the
+    # deadline by up to 3s once it is entered, which on a run of several
+    # near-8s-but-under candidates followed by one hung one can overrun both
+    # this deadline and the 10s hook timeout it exists to stay inside.
+    local remaining=$((deadline - SECONDS))
+    [ "$remaining" -gt 0 ] || break
+    local probe_timeout=$remaining
+    [ "$probe_timeout" -le 3 ] || probe_timeout=3
     (
       set -m
       "$candidate" -c pass </dev/null >/dev/null 2>&1 &
       pid=$!
       (
-        sleep 3 2>/dev/null || exit 0
+        sleep "$probe_timeout" 2>/dev/null || exit 0
         if [ -r "/proc/$pid/winpid" ] && read -r winpid < "/proc/$pid/winpid"; then
           MSYS2_ARG_CONV_EXCL='*' taskkill /F /T /PID "$winpid"
         fi
@@ -95,21 +105,13 @@ crew_py() {
       kill -9 -- "-$watchdog" "-$pid" 2>/dev/null
       exit "$status"
     ) || continue
-    _CREW_PY_MEMO_DONE=1
-    _CREW_PY_MEMO_RESULT=$candidate
-    _CREW_PY_MEMO_RC=0
     printf '%s\n' "$candidate"
     return 0
   done < <(type -ap python3 python py 2>/dev/null)
-  _CREW_PY_MEMO_DONE=1
   if [ -n "$first" ]; then
-    _CREW_PY_MEMO_RESULT=$first
-    _CREW_PY_MEMO_RC=0
     printf '%s\n' "$first"
     return 0
   fi
-  _CREW_PY_MEMO_RESULT=""
-  _CREW_PY_MEMO_RC=1
   return 1
 }
 
@@ -137,14 +139,15 @@ crew_py() {
 # asserts the two copies still agree -- a hand-copy with no guard is this
 # repository's most repeated defect.
 crew_py_strict() {
-  # Memoized within this process: verify-gate.sh alone calls this twice (PY
-  # and SHIM_PY), and each call would otherwise re-walk and re-probe PATH
-  # from scratch. Cached only for the life of THIS process -- a fresh hook
-  # invocation gets a fresh probe.
-  if [ -n "${_CREW_PY_STRICT_MEMO_DONE:-}" ]; then
-    [ -n "${_CREW_PY_STRICT_MEMO_RESULT:-}" ] && printf '%s\n' "$_CREW_PY_STRICT_MEMO_RESULT"
-    return "$_CREW_PY_STRICT_MEMO_RC"
-  fi
+  # NOT memoized. An earlier version of this function cached its result in
+  # process-global variables, but every call site invokes it as
+  # `PY=$(crew_py_strict)` -- a `$(...)` command substitution runs the
+  # function in a SUBSHELL, so any variable it set was discarded the moment
+  # that subshell exited and verify-gate.sh's second call (PY, then
+  # SHIM_PY) started from nothing regardless of the cache. Reported
+  # 2026-09-24 and removed rather than repaired: making it real would mean
+  # rewriting every `$(crew_py_strict)` call site in this directory to avoid
+  # a subshell, for a saving that never actually happened.
   # EVERY PATH match of every name, in order -- `type -ap` lists them all,
   # where `command -v` stops at the first. Windows burn-in 2026-09-23 (FAIL
   # 3): a broken WindowsApps python3 ahead of a real python3 made this
@@ -162,7 +165,15 @@ crew_py_strict() {
   local _crew_py_strict_deadline=$((SECONDS + 8))
   while IFS= read -r candidate; do
     [ -n "$candidate" ] || continue
-    [ "$SECONDS" -lt "$_crew_py_strict_deadline" ] || break
+    # The remaining budget, not a flat 3s, bounds THIS candidate's probe: a
+    # fixed 3s watchdog checked only before launch can still overrun the
+    # deadline by up to 3s once it is entered, which on a run of several
+    # near-8s-but-under candidates followed by one hung one can overrun both
+    # this deadline and the 10s hook timeout it exists to stay inside.
+    local _crew_py_strict_remaining=$((_crew_py_strict_deadline - SECONDS))
+    [ "$_crew_py_strict_remaining" -gt 0 ] || break
+    local _crew_py_strict_probe_timeout=$_crew_py_strict_remaining
+    [ "$_crew_py_strict_probe_timeout" -le 3 ] || _crew_py_strict_probe_timeout=3
     # BOUNDED, and the whole process tree dies with it. A candidate that
     # never exits would otherwise hang the hook forever, and one that spawns
     # a child holding stdout (a py.exe-style launcher) would hang this `$()`
@@ -182,7 +193,7 @@ crew_py_strict() {
       "$candidate" -c 'import sys; sys.version_info>=(3,8) and print(sys.executable)' </dev/null 2>/dev/null &
       pid=$!
       (
-        sleep 3 2>/dev/null || exit 0
+        sleep "$_crew_py_strict_probe_timeout" 2>/dev/null || exit 0
         if [ -r "/proc/$pid/winpid" ] && read -r winpid < "/proc/$pid/winpid"; then
           MSYS2_ARG_CONV_EXCL='*' taskkill /F /T /PID "$winpid"
         fi
@@ -276,15 +287,9 @@ crew_py_strict() {
     # non-executable file and fails if the check is missing OR merely present
     # after the `return 0` below where it can never run.
     [ -x "$real" ] || continue
-    _CREW_PY_STRICT_MEMO_DONE=1
-    _CREW_PY_STRICT_MEMO_RESULT=$real
-    _CREW_PY_STRICT_MEMO_RC=0
     printf '%s\n' "$real"
     return 0
   done < <(type -ap python3 python py 2>/dev/null)
-  _CREW_PY_STRICT_MEMO_DONE=1
-  _CREW_PY_STRICT_MEMO_RESULT=""
-  _CREW_PY_STRICT_MEMO_RC=1
   return 1
 }
 

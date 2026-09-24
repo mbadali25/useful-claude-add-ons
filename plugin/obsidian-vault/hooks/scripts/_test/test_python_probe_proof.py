@@ -185,11 +185,84 @@ def run():
                     time.sleep(0.5)
                     check(f"{stem}.{flavour}: the timeout kills the launcher's child too",
                           (got, survivors(token)), (REAL, []))
+
+                # FIX (Codex review of crew-1.0, item 2): the overall 8s
+                # deadline used to be checked only BEFORE launching a
+                # candidate, then waited a flat 3s regardless of budget
+                # left. Four candidates that each fail after 1.8s (7.2s
+                # total, comfortably under the deadline) followed by one
+                # that hangs must still finish under the 10s hook timeout
+                # that calls this -- the final wait has to be capped to
+                # whatever remains, not a flat 3s. (Measured against the
+                # unfixed shape: this exact fixture took 10.2s+ there and
+                # 7.2s here -- tighter margins, like three candidates at
+                # 2.5s, land close enough to the 8s boundary that bash's
+                # own per-candidate overhead can tip the deadline check
+                # before the final candidate is even launched, silently
+                # passing either way.)
+                slow_dirs = []
+                for i in range(4):
+                    slow_dirs.append(stub(base / f"{stem}-{flavour}-slow{i}",
+                                          "python3", "sleep 1.8\nexit 1"))
+                near_hang = stub(base / f"{stem}-{flavour}-near-deadline-hang",
+                                 "python3", "exec sleep 60")
+                began = time.monotonic()
+                got, _ = resolve(stem, os.pathsep.join(
+                    [str(d) for d in slow_dirs] + [str(near_hang), str(tool_dir)]))
+                check(f"{stem}.{flavour}: near-deadline candidates then a hang "
+                      "stay within the hook timeout",
+                      (got, time.monotonic() - began < 10), ("", True))
     finally:
         shutil.rmtree(base, ignore_errors=True)
 
 
+# --- FIX (Codex review of crew-1.0, item 1): the "memoized within this
+#     process" caching an earlier version carried in each `.sh` resolver
+#     never had a second call to save -- each of these three hooks calls
+#     its resolver exactly once per process (`if ! _..._resolve_python`),
+#     unlike crew's copies, which are additionally broken by their `$(...)`
+#     call sites. Kept as inert weight either way; removed rather than left
+#     in as a claimed optimisation that never fires.
+
+def check_no_dead_memo():
+    for stem in HOOKS:
+        u = stem.replace("-", "_")
+        src = (SCRIPTS / f"{stem}.sh").read_text(encoding="utf-8")
+        body = _body(src, f"_{u}_resolve_python() {{")
+        if "MEMO" in body:
+            FAILURES.append(
+                f"{stem}.sh still carries a memoization for its resolver "
+                "that never has a second call to save")
+
+
+# --- FIX (Codex review of crew-1.0, item 3): a python exposed only via a
+#     .cmd/.bat shim (a pyenv-win install is exactly this shape) cannot be
+#     launched with UseShellExecute=false -- CreateProcess only starts a
+#     real PE executable, not a shell shim. crew's role-write-guard.ps1 (and
+#     its ten sibling carriers) were already fixed to route a .cmd/.bat
+#     candidate through `cmd.exe /d /c` in commit a39ac347; these three
+#     obsidian-vault resolvers were not. Ported the same routing here.
+#     STATIC, not behavioural: launching a real .cmd shim through
+#     ProcessStartInfo is Windows-only, so there is nothing this sandbox can
+#     execute end to end -- the fix is provably present or absent in the
+#     source either way, which is what this checks.
+
+def check_cmd_bat_routing_present():
+    for stem in HOOKS:
+        camel = _camel(stem)
+        src = (SCRIPTS / f"{stem}.ps1").read_text(encoding="utf-8")
+        body = _body(src, f"function Resolve-{camel}Python {{")
+        if r"-match '\.(cmd|bat)$'" not in body or "System32\\cmd.exe" not in body:
+            FAILURES.append(
+                f"{stem}.ps1's Resolve-{camel}Python does not route a "
+                ".cmd/.bat candidate through cmd.exe -- a python exposed "
+                "only via a shim (pyenv-win) cannot be launched with "
+                "UseShellExecute=false")
+
+
 run()
+check_no_dead_memo()
+check_cmd_bat_routing_present()
 for skip in SKIPS:
     print("SKIP:", skip)
 print(f"RESULT: {len(FAILURES)} failed")
