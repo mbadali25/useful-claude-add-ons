@@ -1,0 +1,33 @@
+name: Instruction budgets
+
+# push alone tests the branch tip, never the merge result a PR would produce.
+# Matches marketplace.yml and mcp-servers.yml, which already declare both.
+on: [push, pull_request]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    strategy:
+      # Don't cancel the other versions the moment one fails -- when a check is
+      # version-specific, seeing the whole matrix is what tells you that.
+      fail-fast: false
+      matrix:
+        # Matches the pylint and pytest jobs. Both scripts are stdlib-only.
+        python-version: ["3.11", "3.12", "3.13"]
+    steps:
+    - uses: actions/checkout@v4
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+    - name: Check instruction budgets, stale names, references and policy IDs
+      # Wired in at crew 1.0.0, once T2's deletions cleared the intentional red
+      # findings it carried; running it here earlier would only have taught
+      # people to ignore a red job. The allowance file (plugin/crew/.budget-allowance.json)
+      # is the only exception to the command budget, and growth even there fails.
+      run: python3 scripts/check_instructions.py
+    - name: Budget checker regression suite
+      # The checker's fail-open paths each have a must-fail case here; a checker
+      # that went silent would otherwise look exactly like a clean repo. Builds
+      # throwaway git repos under a temp dir and sets their identity itself.
+      run: python3 scripts/_test/instruction-budgets.py

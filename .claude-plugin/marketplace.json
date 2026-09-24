@@ -226,8 +226,8 @@
     {
       "name": "crew",
       "source": "./plugin/crew",
-      "description": "Virtual dev team for multi-repo legacy work - 55 context-isolated agents (13 tiered, 40 domain specialists and the reviewer opted into per repo, and the unnamed manager, resumed by id or via its journal), 36 slash commands, 30 bundled skills, and deterministic hooks that gate unverified turns, brief the PM at session start, re-engage it to assign work when project state changes, carry a handoff across compaction (archiving one it judges stale rather than injecting it as current), recreate a missing or broken .crew/config.json from a single-source template, and layer a guided, walkthrough-written machine-global config under the per-repo one.",
-      "version": "0.20.28"
+      "description": "Virtual dev team for multi-repo legacy work - one interactive session owns a ticket from brainstorm through spec, plan, implement, tests, docs and review to done; 4 context-isolated agents (explorer, reviewer, security, researcher) plus on-demand stack skills, 33 slash commands, 28 bundled skills, and deterministic hooks: a budgeted context hook (on by default) that carries the handoff across a clear or compaction, plan-approval and scope guards with a completion audit, an opt-in cloud/destructive guard, and a verify gate that fails unverified turns. /crew:migrate carries a 0.20 setup forward.",
+      "version": "1.0.0"
     },
     {
       "name": "gizmoduck",

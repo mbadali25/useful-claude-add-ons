@@ -1322,7 +1322,7 @@ PLUGIN_KEYS=(
   "rule-of-two"
 )
 PLUGIN_NAME=(
-  "crew                    - Virtual dev team: 55 agents, 36 commands, safety hooks"
+  "crew                    - Virtual dev team: 4 agents, 33 commands, safety hooks"
   "gizmoduck               - Nuclei scans: diff, triaged reports, SDP tickets. No hooks"
   "localgpu                - Local models via Ollama: index, search, ask. MCP, no hooks"
   "obsidian-vault          - Multi-vault memory: gardener/reflector agents, bridge+guard hooks"
