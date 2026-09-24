@@ -838,6 +838,105 @@ def test_resolver_accepts_a_native_windows_path_to_a_real_target_under_c(tmp_pat
         shutil.rmtree(target_dir, ignore_errors=True)
 
 
+# --- FIX (Codex r1 finding 3): the version floor bash was missing --------
+#     bash's crew_py_strict/`_resolve_role_write_python` used to accept ANY
+#     candidate that printed a real, executable sys.executable, regardless
+#     of its actual version, while the PowerShell Resolve-CrewPython already
+#     required >= 3.8. A real Python 3.7 (or older) is what this looks like
+#     -- monkeypatching sys.version_info before running the probe's own code
+#     is the only way to prove this without an actual old CPython installed.
+
+def _spoofed_version_stub(directory, version_tuple, names=("python3", "python", "py")):
+    real = shutil.which("python3") or shutil.which("python")
+    assert real, "need a real python3/python for this fixture"
+    # DOUBLE-quoted release level ("final", not 'final'): repr()'s default
+    # single quotes would close the shell's own single-quoted `-c` argument
+    # early, corrupting the embedded code -- caught by hand running this
+    # exact stub before trusting the test.
+    major, minor, micro, level, serial = version_tuple
+    tuple_text = f'({major}, {minor}, {micro}, "{level}", {serial})'
+    directory.mkdir(parents=True, exist_ok=True)
+    body = (
+        "#!/bin/sh\n"
+        'if [ "$1" = "-c" ]; then\n'
+        f'  exec "{real}" -c \'import sys; sys.version_info={tuple_text}; '
+        "exec(sys.argv[1])' \"$2\"\n"
+        "fi\n"
+        f'exec "{real}" "$@"\n'
+    )
+    for name in names:
+        path = directory / name
+        path.write_text(body, encoding="ascii", newline="\n")
+        os.chmod(path, 0o755)
+
+
+@needs_bash
+@pytest.mark.parametrize("path,header,fn", [
+    (_COMMON_SH, "crew_py_strict() {", "crew_py_strict"),
+    (_GUARD_SH, "_resolve_role_write_python() {", "_resolve_role_write_python"),
+])
+def test_resolver_rejects_a_proven_python_37(tmp_path, path, header, fn):
+    """Codex r1 finding 3's own reproduction: only CPython 3.7 on PATH."""
+    stub_dir = tmp_path / "stubs"
+    _spoofed_version_stub(stub_dir, (3, 7, 9, "final", 0))
+
+    driver = tmp_path / "driver.sh"
+    driver.write_text(
+        _function_raw_source(path, header) + "\n"
+        f"{fn}\n"
+        'printf "EXIT:%s\\n" "$?"\n',
+        encoding="utf-8", newline="\n")
+
+    env = os.environ.copy()
+    env["PATH"] = os.pathsep.join([str(stub_dir), _python_free_path(tmp_path)])
+    proc = subprocess.run(
+        [_BASH, str(driver)], capture_output=True, text=True,
+        check=False, env=env)
+    lines = proc.stdout.splitlines()
+    exit_line = next((l for l in lines if l.startswith("EXIT:")), "EXIT:?")
+    printed = [l for l in lines if not l.startswith("EXIT:")]
+    assert exit_line == "EXIT:1", (
+        f"a proven Python 3.7 must be REJECTED (return 1) -- the version "
+        f"floor must match the PowerShell probe's >= 3.8. "
+        f"stdout={proc.stdout!r} stderr={proc.stderr!r}")
+    assert not printed, "must print nothing when rejecting: " + repr(printed)
+
+
+@needs_bash
+@pytest.mark.parametrize("path,header,fn", [
+    (_COMMON_SH, "crew_py_strict() {", "crew_py_strict"),
+    (_GUARD_SH, "_resolve_role_write_python() {", "_resolve_role_write_python"),
+])
+def test_resolver_accepts_a_proven_python_38(tmp_path, path, header, fn):
+    """Must-allow companion: the same spoofing machinery at exactly the
+    floor must still be ACCEPTED, proving the rejection above is about the
+    version and not an accidental side effect of the spoofing stub itself."""
+    real = shutil.which("python3") or shutil.which("python")
+    assert real, "need a real python3/python for this fixture"
+    stub_dir = tmp_path / "stubs"
+    _spoofed_version_stub(stub_dir, (3, 8, 0, "final", 0))
+
+    driver = tmp_path / "driver.sh"
+    driver.write_text(
+        _function_raw_source(path, header) + "\n"
+        f"{fn}\n"
+        'printf "EXIT:%s\\n" "$?"\n',
+        encoding="utf-8", newline="\n")
+
+    env = os.environ.copy()
+    env["PATH"] = os.pathsep.join([str(stub_dir), _python_free_path(tmp_path)])
+    proc = subprocess.run(
+        [_BASH, str(driver)], capture_output=True, text=True,
+        check=False, env=env)
+    lines = proc.stdout.splitlines()
+    exit_line = next((l for l in lines if l.startswith("EXIT:")), "EXIT:?")
+    printed = [l for l in lines if not l.startswith("EXIT:")]
+    assert exit_line == "EXIT:0", (
+        f"a proven Python 3.8 must be ACCEPTED. "
+        f"stdout={proc.stdout!r} stderr={proc.stderr!r}")
+    assert printed == [real], f"must return the real interpreter's path. got {printed!r}"
+
+
 # --- FIX (round-3 review): context.enabled must be honoured even when
 #     python is unusable -- fail-closed-once is for an UNKNOWN state, and an
 #     explicitly disabled hook is a KNOWN one. Before this fix the

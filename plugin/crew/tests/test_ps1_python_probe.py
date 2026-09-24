@@ -215,6 +215,39 @@ def test_no_python_anywhere_is_empty_in_every_resolver(tmp_path):
     assert resolved == ("", "")
 
 
+# --- (d) a proven Python 3.7 -- Codex r1 finding 3's own reproduction ---------
+
+def _spoofed_version(directory, version_tuple, names=_NAMES):
+    """A real interpreter whose sys.version_info is monkeypatched to
+    `version_tuple` before it runs whatever -c code it is handed -- the only
+    way to fake an old CPython on a host that has none installed. DOUBLE
+    quotes on the release level: repr()'s default single quotes would close
+    the shell's own single-quoted -c argument early."""
+    major, minor, micro, level, serial = version_tuple
+    tuple_text = f'({major}, {minor}, {micro}, "{level}", {serial})'
+    body = ('if [ "$1" = "-c" ]; then\n'
+            f'  exec "{REAL}" -c \'import sys; sys.version_info={tuple_text}; '
+            "exec(sys.argv[1])' \"$2\"\n"
+            "fi\n"
+            f'exec "{REAL}" "$@"\n')
+    for name in names:
+        _stub(directory, name, body)
+
+
+@needs_pwsh
+@needs_bash
+def test_a_proven_python_37_is_rejected_by_both_flavours(tmp_path):
+    """Before the fix: bash's crew_py_strict accepted this candidate (any
+    real, executable sys.executable was enough) while the PowerShell probe's
+    own floor rejected it -- exactly the review's reproduction, put only
+    CPython 3.7 on PATH."""
+    old = tmp_path / "py37"
+    _spoofed_version(old, (3, 7, 9, "final", 0))
+    path = [old, _tools(tmp_path)]
+
+    assert (_print_python(path), _bash_resolver("crew_py_strict", path)) == ("", "")
+
+
 def _stop_audit(tmp_path, config):
     """completion-audit.ps1 on a Stop with no usable python. Its documented
     behaviour: fail CLOSED (exit 2, "no usable python") unless scope.mode is

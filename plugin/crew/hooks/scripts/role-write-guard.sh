@@ -62,7 +62,7 @@ _resolve_role_write_python() {
     # this loop's own input.
     real=$(
       set -m
-      "$candidate" -c 'import sys; print(sys.executable)' </dev/null 2>/dev/null &
+      "$candidate" -c 'import sys; sys.version_info>=(3,8) and print(sys.executable)' </dev/null 2>/dev/null &
       pid=$!
       (
         sleep 3 2>/dev/null || exit 0
@@ -83,6 +83,11 @@ _resolve_role_write_python() {
     # file, rejecting every real interpreter on that combination.
     real=$(printf '%s' "$real" | tr -d '\r')
     [ -n "$real" ] || continue
+    # The `sys.version_info>=(3,8) and print(...)` guard above is the version
+    # floor, BYTE-FOR-BYTE the same fix `_common.sh`'s `crew_py_strict` got
+    # (see that copy's comment for the full reasoning): a genuine Python 3.7
+    # answers `-c` correctly but prints NOTHING, so `$real` is empty and is
+    # rejected right here, matching role-write-guard.ps1's own >= 3.8 floor.
     # NOT a blanket "reject anything containing WindowsApps" -- that used to
     # sit here (on both $candidate above and $real here) and rejected a
     # genuine Microsoft Store Python install, which runs from EXACTLY that

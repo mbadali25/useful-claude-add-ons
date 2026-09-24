@@ -15,6 +15,7 @@ gave for it (.work/burnin-fix3-r1.txt).
   the whole process tree on its timeout; `_common.sh`'s bash resolver kills
   the tree too.
 """
+import itertools
 import json
 import os
 import pathlib
@@ -22,6 +23,7 @@ import subprocess
 import sys
 import threading
 import time
+from unittest import mock
 
 import pytest
 
@@ -114,6 +116,60 @@ def test_only_one_of_two_racing_takeovers_wins(tmp_path):
     assert [emit for emit, _ in wins].count(True) == 1
 
 
+def test_a_loser_of_the_takeover_race_waits_instead_of_returning_false(tmp_path):
+    """Codex r1 finding 1 (event_claim.py:230): a claimant that loses the
+    O_EXCL race used to return False immediately. If the winner then
+    crashes right after _create -- never marking its claim "sent" -- BOTH
+    flavours emitted nothing. Reproduction: barrier two decide() calls so
+    they hit _take at the same instant; the winner is never marked sent
+    (standing in for a crash right after exit 0). The loser must wait out
+    the grace and take over the next generation itself, not give up."""
+    root = _repo(tmp_path)
+    barrier = threading.Barrier(2)
+    real_take = event_claim._take
+    counter = itertools.count()
+    lock = threading.Lock()
+
+    def barriered_take(*args, **kwargs):
+        with lock:
+            idx = next(counter)
+        if idx < 2:
+            # Only the first call from each thread races through the
+            # barrier -- a later takeover attempt (the fixed behaviour)
+            # must run unimpeded, or this fixture would deadlock waiting
+            # for a third party that never arrives.
+            barrier.wait(timeout=10)
+        return real_take(*args, **kwargs)
+
+    results = []
+
+    def contender():
+        began = time.monotonic()
+        emit, token = event_claim.decide(root, "notify", NOTE)
+        results.append((emit, token, time.monotonic() - began))
+        # Deliberately never mark_sent -- simulates a crash right after the
+        # claim's own exit 0, before the caller reports "sent".
+
+    with mock.patch.object(event_claim, "_take", side_effect=barriered_take):
+        threads = [threading.Thread(target=contender) for _ in range(2)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=15)
+
+    assert len(results) == 2
+    emits = sorted(emit for emit, _, _ in results)
+    elapsed = sorted(waited for _, _, waited in results)
+    grace = event_claim._HOOK_GRACE["notify"]
+    assert emits == [True, True], (
+        "the loser must eventually take over and emit -- not return False "
+        f"outright: {results}")
+    assert elapsed[0] < 1, "the winner must not have waited: " + repr(elapsed)
+    assert elapsed[1] >= grace - 0.5, (
+        "the loser must WAIT for the takeover grace before winning the next "
+        "generation, not return immediately: " + repr(elapsed))
+
+
 # --- :121 identity -----------------------------------------------------------------
 
 def test_two_invocations_with_different_unique_fields_are_two_events(tmp_path):
@@ -181,6 +237,59 @@ def test_sent_is_recorded_by_replace_and_leaves_no_temp_behind(tmp_path):
 
     assert ([f.name.endswith(".g1") for f in files],
             json.loads(files[0].read_text())["state"]) == ([True], "sent")
+
+
+# --- handoff-write.sh:64 -- a failed write must not be marked sent ---------------
+
+def _handoff_repo_with_broken_path(tmp_path):
+    """`context.handoffPath` beneath a regular file, so the write can never
+    land -- Codex r1 finding 2's own reproduction."""
+    root = _repo(tmp_path)
+    (pathlib.Path(root) / ".crew").mkdir()
+    blocker = pathlib.Path(root) / ".work" / "blocker"
+    blocker.parent.mkdir(parents=True, exist_ok=True)
+    blocker.write_text("not a directory", encoding="utf-8")
+    (pathlib.Path(root) / ".crew" / "config.json").write_text(
+        json.dumps({"context": {"handoffPath": ".work/blocker/HANDOFF.md"}}),
+        encoding="utf-8")
+    return root
+
+
+@needs_bash
+def test_sh_does_not_mark_a_failed_handoff_write_sent(tmp_path):
+    root = _handoff_repo_with_broken_path(tmp_path)
+    payload = json.dumps({"hook_event_name": "PreCompact", "session_id": "s",
+                          "cwd": root, "trigger": "auto"}).encode()
+
+    done = subprocess.run([BASH, str(SCRIPTS / "handoff-write.sh")], input=payload,
+                          cwd=root, env=dict(os.environ, CLAUDE_PROJECT_DIR=root),
+                          capture_output=True, check=False, timeout=30)
+
+    assert done.returncode == 0, done.stderr
+    assert not (pathlib.Path(root) / ".work" / "blocker" / "HANDOFF.md").exists()
+    claims = _generation_files(root)
+    assert len(claims) == 1
+    assert json.loads(claims[0].read_text())["state"] != "sent", (
+        "a failed handoff write must not be marked sent -- a real twin "
+        "would find 'sent' and stand down, losing the handoff for good")
+
+
+@needs_pwsh
+def test_ps1_does_not_mark_a_failed_handoff_write_sent(tmp_path):
+    root = _handoff_repo_with_broken_path(tmp_path)
+    payload = json.dumps({"hook_event_name": "PreCompact", "session_id": "s",
+                          "cwd": root, "trigger": "auto"}).encode()
+    env = dict(os.environ, CLAUDE_PROJECT_DIR=root, OS="Windows_NT")
+
+    done = subprocess.run([PWSH, "-NoProfile", "-File", str(SCRIPTS / "handoff-write.ps1")],
+                          input=payload, cwd=root, env=env, capture_output=True,
+                          check=False, timeout=60)
+
+    assert done.returncode == 0, done.stderr
+    assert not (pathlib.Path(root) / ".work" / "blocker" / "HANDOFF.md").exists()
+    claims = _generation_files(root)
+    assert len(claims) == 1
+    assert json.loads(claims[0].read_text())["state"] != "sent"
 
 
 # --- :129 an unusable store --------------------------------------------------------
@@ -316,6 +425,87 @@ def test_the_burn_in_path_writes_one_transcript_copy_across_both_flavours(tmp_pa
     copies = list((pathlib.Path(root) / ".crew" / "transcripts").glob("*.jsonl"))
 
     assert (codes, len(copies)) == ([0, 0], 1)
+
+
+def _notify_repo_bad_provider(tmp_path):
+    """`notify.provider` set to a typo -- Codex r1 finding 4's own
+    reproduction: neither the bash `case` nor the PowerShell `switch` had a
+    default arm, so nothing ever called claim_sent/Complete-CrewEventClaim
+    for it."""
+    root = _repo(tmp_path)
+    (pathlib.Path(root) / ".crew").mkdir()
+    (pathlib.Path(root) / ".crew" / "config.json").write_text(
+        json.dumps({"notify": {"provider": "tems"}}), encoding="utf-8")
+    return root
+
+
+@needs_bash
+def test_sh_marks_an_unknown_provider_claim_sent_not_orphaned(tmp_path):
+    root = _notify_repo_bad_provider(tmp_path)
+    env = dict(os.environ, CLAUDE_PROJECT_DIR=root)
+
+    done = subprocess.run([BASH, str(SCRIPTS / "notify.sh"), "waiting", "hi"], input=NOTE,
+                          cwd=root, env=env, capture_output=True, check=False, timeout=30)
+
+    assert done.returncode == 0, done.stderr
+    claims = _generation_files(root)
+    assert len(claims) == 1
+    assert json.loads(claims[0].read_text())["state"] == "sent", (
+        "an unknown provider must release the claim immediately, not leave "
+        "it 'claimed' forever")
+
+
+@needs_pwsh
+def test_ps1_marks_an_unknown_provider_claim_sent_not_orphaned(tmp_path):
+    root = _notify_repo_bad_provider(tmp_path)
+    payload = json.dumps({"hook_event_name": "Notification", "session_id": "burn-in",
+                          "cwd": root, "message": "hi"}).encode()
+    env = dict(os.environ, CLAUDE_PROJECT_DIR=root, OS="Windows_NT")
+
+    done = subprocess.run([PWSH, "-NoProfile", "-File", str(SCRIPTS / "notify.ps1"),
+                           "waiting", "hi"], input=payload, cwd=root, env=env,
+                          capture_output=True, check=False, timeout=60)
+
+    assert done.returncode == 0, done.stderr
+    claims = _generation_files(root)
+    assert len(claims) == 1
+    assert json.loads(claims[0].read_text())["state"] == "sent", (
+        "an unknown provider must release the claim immediately, not leave "
+        "it 'claimed' forever")
+
+
+@needs_bash
+@needs_pwsh
+def test_an_unknown_provider_does_not_orphan_the_twin(tmp_path):
+    """Both flavours, sequentially, the same nonempty payload: before the
+    fix the second flavour waited out the whole grace (4s for notify) and
+    then created a SECOND orphaned generation -- itself unsendable for the
+    same reason. Fixed, the first flavour releases the claim immediately and
+    the second stands down at once. PowerShell runs FIRST here -- with bash
+    first the claim is already "sent" before ps1 ever reaches its own
+    switch, which would prove only the bash half."""
+    root = _notify_repo_bad_provider(tmp_path)
+    payload = json.dumps({"hook_event_name": "Notification", "session_id": "burn-in",
+                          "cwd": root, "message": "hi"}).encode()
+    env = dict(os.environ, CLAUDE_PROJECT_DIR=root, OS="Windows_NT")
+
+    began = time.monotonic()
+    codes = []
+    for cmd in ([PWSH, "-NoProfile", "-File", str(SCRIPTS / "notify.ps1")],
+                [BASH, str(SCRIPTS / "notify.sh")]):
+        done = subprocess.run(cmd + ["waiting", "hi"], input=payload, cwd=root, env=env,
+                              capture_output=True, check=False, timeout=30)
+        codes.append(done.returncode)
+    elapsed = time.monotonic() - began
+
+    claims = _generation_files(root)
+    assert (codes, elapsed < 3) == ([0, 0], True), (
+        "the twin must stand down immediately, not wait out the grace: "
+        f"codes={codes} elapsed={elapsed}")
+    assert len(claims) == 1, (
+        "an unknown provider must not orphan a second generation: " +
+        repr([c.name for c in claims]))
+    assert json.loads(claims[0].read_text())["state"] == "sent"
 
 
 @needs_bash

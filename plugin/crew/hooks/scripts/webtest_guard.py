@@ -632,8 +632,18 @@ def runtime_line():
     if not found:
         return (f"webtest visual: neither {' nor '.join(RUNTIMES)} is on PATH, so "
                 f"{PINNED_IMAGE} cannot run on this host; visual stays UNVERIFIED here")
+    # :Z relabels the bind mount for SELinux (private, unshared with other
+    # containers -- the common case for a one-off test run). Codex r1
+    # finding 5: without it, the printed command is unreadable inside the
+    # container on an SELinux-enforcing host (Fedora/RHEL) -- podman and
+    # docker both refuse container access to a bind mount whose label
+    # disagrees with the container's, and neither relabels on its own.
+    # UNTESTED here -- this repo's CI/dev hosts are not SELinux-enforcing;
+    # :Z is a documented no-op where SELinux is absent or permissive, so it
+    # should not regress a non-SELinux host, but that has not been proven
+    # on an actual enforcing machine.
     return (f"webtest visual: to verify, run the suite inside the image with "
-            f"{' or '.join(found)}: {found[0]} run --rm --ipc=host -v \"$PWD\":/work -w /work "
+            f"{' or '.join(found)}: {found[0]} run --rm --ipc=host -v \"$PWD\":/work:Z -w /work "
             f"-e {IMAGE_ENV}={PINNED_IMAGE} {PINNED_IMAGE} npx playwright test --project=visual")
 
 

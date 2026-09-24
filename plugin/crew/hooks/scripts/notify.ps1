@@ -232,5 +232,15 @@ switch ($provider) {
       Complete-CrewEventClaim $claim
     } catch {}
   }
+  default {
+    # Parity with notify.sh: an unrecognised provider used to fall through
+    # this switch with no arm running at all, so Complete-CrewEventClaim was
+    # never called -- the claim stayed "claimed" forever, the bash twin
+    # waited out the grace on every notification and then took over,
+    # hitting the same unknown provider and orphaning another generation.
+    # Nothing can be sent for an unknown provider, so release the claim.
+    [Console]::Error.WriteLine("notify: unknown provider '$provider'")
+    Complete-CrewEventClaim $claim
+  }
 }
 exit 0

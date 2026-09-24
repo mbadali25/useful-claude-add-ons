@@ -176,9 +176,19 @@ if ($null -eq $claim) { exit 0 }
 $trigger = if ($d.trigger) { $d.trigger } else { "auto" }
 New-Item -ItemType Directory -Path ".crew/transcripts", ".work" -Force | Out-Null
 
+# Whether either write below actually landed. Codex r1 finding 2 (parity
+# with handoff-write.sh): this used to mark the claim "sent" unconditionally,
+# so a write that silently failed (a bad handoffPath, a full disk) suppressed
+# the bash twin's retry -- the twin sees "sent", stands down, and the
+# handoff is lost for good. A failure here must leave the claim unmarked so
+# the twin (or a later run of this same flavour) can still take over and
+# try again.
+$failed = $false
 if ($d.transcript_path -and (Test-Path $d.transcript_path)) {
   $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
-  Copy-Item $d.transcript_path ".crew/transcripts/$stamp-$trigger.jsonl" -ErrorAction SilentlyContinue
+  $dest = ".crew/transcripts/$stamp-$trigger.jsonl"
+  Copy-Item $d.transcript_path $dest -ErrorAction SilentlyContinue
+  if (-not (Test-Path $dest)) { $failed = $true }
   $keep = 5
   try {
     $k = (Get-Content .crew/config.json -Raw | ConvertFrom-Json).context.keepTranscripts
@@ -191,7 +201,10 @@ if ($d.transcript_path -and (Test-Path $d.transcript_path)) {
 
 $cfg  = Get-Content .crew/config.json -Raw | ConvertFrom-Json
 $path = if ($cfg.context.handoffPath) { $cfg.context.handoffPath } else { ".work/HANDOFF.md" }
-if (Test-Path $path) { Complete-CrewEventClaim $claim; exit 0 }
+if (Test-Path $path) {
+  if (-not $failed) { Complete-CrewEventClaim $claim }
+  exit 0
+}
 
 # If no handoff exists, write a factual skeleton from the repo, not from memory.
 $branch = (git rev-parse --abbrev-ref HEAD 2>$null)
@@ -214,6 +227,7 @@ $lines.Add("## Next action")
 $lines.Add("UNKNOWN - this skeleton was written automatically at compaction.")
 $lines.Add("Verify against the diff before continuing.")
 
-Set-Content -Path $path -Value $lines -Encoding UTF8
-Complete-CrewEventClaim $claim
+Set-Content -Path $path -Value $lines -Encoding UTF8 -ErrorAction SilentlyContinue
+if (-not (Test-Path $path)) { $failed = $true }
+if (-not $failed) { Complete-CrewEventClaim $claim }
 exit 0

@@ -134,7 +134,7 @@ crew_py_strict() {
     # this loop's own input.
     real=$(
       set -m
-      "$candidate" -c 'import sys; print(sys.executable)' </dev/null 2>/dev/null &
+      "$candidate" -c 'import sys; sys.version_info>=(3,8) and print(sys.executable)' </dev/null 2>/dev/null &
       pid=$!
       (
         sleep 3 2>/dev/null || exit 0
@@ -155,6 +155,25 @@ crew_py_strict() {
     # file, rejecting every real interpreter on that combination.
     real=$(printf '%s' "$real" | tr -d '\r')
     [ -n "$real" ] || continue
+    # The `sys.version_info>=(3,8) and print(...)` guard above is the version
+    # floor: a genuine, working Python 3.7 answers `-c` correctly but prints
+    # NOTHING, so `$real` comes back empty and is rejected right here by the
+    # check above, same as a broken candidate. Reported 2026-09-24: this
+    # function had no version floor at all while role-write-guard.ps1's
+    # Resolve-CrewPython already required >= 3.8, so a host with nothing but
+    # a real Python 3.7 on PATH had the two flavours disagree about whether
+    # python existed at all. Deliberately NOT the .ps1 probe's full
+    # JSON-proof-of-implementation shape (CPython/PyPy, major/minor as a
+    # structured object): that would need the candidate to answer a SECOND,
+    # differently-shaped probe, and dozens of fixtures across this suite are
+    # narrow shell stubs that only ever answer the exact single `-c` string
+    # this function has always sent -- a second probe would reject all of
+    # them regardless of their fixture's own intent (TODO.md's
+    # "crew_py_strict not proving Python 3" entry, closed by this narrower
+    # form). Folding the floor into the SAME `-c` argument costs nothing
+    # extra: a delegating stub falls through to a real interpreter, which
+    # answers correctly either way, and a stub that special-cases the exact
+    # OLD command still matches, since only the printed CONTENT changed.
     # NOT a blanket "reject anything containing WindowsApps" -- that used to
     # sit here (on both $candidate above and $real here) and rejected a
     # genuine Microsoft Store Python install, which runs from EXACTLY that

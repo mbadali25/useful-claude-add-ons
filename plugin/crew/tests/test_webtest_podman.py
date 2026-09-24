@@ -113,6 +113,24 @@ def test_off_the_image_it_shows_the_run_line_for_the_runtime_on_path(monkeypatch
         == (77, True, True)
 
 
+@pytest.mark.parametrize("present, runtime", [(("podman",), "podman"), (("docker",), "docker")])
+def test_the_run_line_relabels_the_bind_mount_for_selinux(monkeypatch, tmp_path, present, runtime):
+    """Codex r1 finding 5: the advertised bind mount (`-v "$PWD":/work`) had
+    no SELinux relabel option, so the printed command is unreadable inside
+    the container on an SELinux-enforcing host (Fedora/RHEL) -- podman and
+    docker both refuse access to a mismatched-label mount. `:Z` is the fix;
+    untested on an actual enforcing host (none available here), but `:Z` is
+    documented as a no-op where SELinux is absent, so this only asserts the
+    printed command carries it."""
+    monkeypatch.delenv(webtest_guard.IMAGE_ENV, raising=False)
+    _on_path(monkeypatch, present)
+
+    code, lines = webtest_guard.check_visual(_repo(tmp_path), runner=lambda *a, **k: 0)
+
+    assert (code, f'{runtime} run --rm --ipc=host -v "$PWD":/work:Z -w /work' in lines[1]) \
+        == (77, True)
+
+
 def test_off_the_image_with_neither_runtime_it_is_unverified_and_names_both(monkeypatch, tmp_path):
     monkeypatch.delenv(webtest_guard.IMAGE_ENV, raising=False)
     _on_path(monkeypatch, ())

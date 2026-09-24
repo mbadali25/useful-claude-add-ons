@@ -66,5 +66,16 @@ case "$PROVIDER" in
       --data-urlencode "chat_id=${CHAT}" --data-urlencode "text=${TEXT}" \
       --data-urlencode "disable_notification=$([ "$EVENT" = "waiting" ] && echo false || echo true)" >/dev/null && claim_sent
     ;;
+  *)
+    # An unrecognised provider used to fall through this case with NEITHER
+    # branch running, so claim_sent was never called: the claim stayed
+    # "claimed" forever, the twin waited out the grace on every single
+    # notification and then took over -- itself hitting the same unknown
+    # provider and orphaning ANOTHER generation, every time. Nothing can be
+    # sent for an unknown provider, so release the claim immediately, same
+    # as the "nothing to send" branches above.
+    echo "notify: unknown provider '$PROVIDER'" >&2
+    claim_sent
+    ;;
 esac
 exit 0

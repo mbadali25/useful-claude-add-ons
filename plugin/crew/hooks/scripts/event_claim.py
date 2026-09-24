@@ -227,14 +227,31 @@ def decide(root, hook, raw, flavour=None, now=None):
                 # No claim, or only one from an EARLIER identical event: this
                 # is a new event, and both flavours race for the same next
                 # generation.
-                return _take(directory, key, current + 1, now)
+                ok, token = _take(directory, key, current + 1, now)
+                if ok:
+                    return True, token
+                # Lost the O_EXCL race: the other flavour just created this
+                # generation. Loop back rather than returning False here --
+                # if the winner then crashes before marking it "sent", a
+                # bare loss must not be the loser's final answer, or a
+                # winner that dies right after _create costs BOTH flavours
+                # their only emission. Falling through to the top treats the
+                # winner's fresh claim like any other seen claim: wait for
+                # "sent", and take over the NEXT generation ourselves if it
+                # never comes.
+                continue
             state, at = seen
             if state == "sent":
                 return False, ""
             # `waited` bounds this even when `at` is nonsense (a clock step,
             # a hand-edited record): no caller waits longer than one grace.
             if now - at >= grace or waited >= grace:
-                return _take(directory, key, current + 1, now)
+                ok, token = _take(directory, key, current + 1, now)
+                if ok:
+                    return True, token
+                # Lost the takeover race too; loop back and wait on whoever
+                # won it, same reasoning as above.
+                continue
             time.sleep(_POLL)
             now += _POLL
             waited += _POLL
