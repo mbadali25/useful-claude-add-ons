@@ -330,6 +330,21 @@ def test_every_ratcheted_key_has_a_widening_note_for_every_one_of_its_tiers():
             assert notes[tier], (dotted, tier)
 
 
+def test_role_writes_off_and_report_name_the_python_requirement_block_does_not():
+    """Windows burn-in owner decision: with no Python,
+    role-write-guard.sh/.ps1 cannot evaluate `guards.roleWrites` at all (its
+    own "THE NO-PYTHON CONTRACT" comment) and falls back to blocking a
+    restricted role's write regardless of what the repo asked for. `off` and
+    `report` both promise something WIDER than `block` -- silence about the
+    no-python fallback would tell a reader that promise always holds. `block`
+    needs no such caveat: it is what the fallback already does."""
+    _rank_fn, _norm, notes = crew_config._RATCHETED["guards.roleWrites"]  # pylint: disable=protected-access
+    assert "Python" in notes["off"]
+    assert "blocked" in notes["off"]
+    assert "Python" in notes["report"]
+    assert "Python" not in notes["block"]
+
+
 @pytest.mark.parametrize("dotted", sorted(crew_state.RATCHETED_KEYS))
 def test_the_effective_value_is_the_lower_rank_of_the_two_layers(dotted):
     """Narrowing-only, in both directions. The repo may ask for LESS than the

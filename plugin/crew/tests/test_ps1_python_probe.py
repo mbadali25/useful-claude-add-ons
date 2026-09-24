@@ -12,6 +12,20 @@ The fixtures model that host on Linux: directories of stub executables on a
 PATH built for the test, with a directory named WindowsApps. pwsh runs the
 .ps1 with `OS=Windows_NT` so the flavour guard proceeds. The bash resolvers
 run against the SAME PATH, so each case states what both flavours conclude.
+
+**On a REAL Windows host (`os.name == "nt"`, not the faked `OS=Windows_NT`
+env var above) an extensionless stub is invisible to this suite's own
+target.** `Get-Command -CommandType Application` never matches a file with
+no recognised extension, and `Resolve-CrewPython`'s own native-extension gate
+would skip it even if it did -- CreateProcess cannot launch it either way,
+by design (see the resolver's own comment). `_stub` therefore writes a
+`.cmd` file with a `win_body` translation when actually running on Windows,
+so a "working"/"broken" candidate is something the real resolver can find
+and probe, exactly as a real WindowsApps alias or `python.exe` is. Left
+untranslated on Windows (still POSIX-only): `_slow_fail`, `_hang_forever`
+and `_spoofed_version` -- none of their tests assert that a candidate is
+*found*, only that resolution ends in `""`, which an unrecognised `.cmd`
+body still reaches, just by a different (fail-closed) path.
 """
 import json
 import os
@@ -46,8 +60,26 @@ def _resolver(stem):
     return src[start:src.index("\n}\n", start) + 3]
 
 
-def _stub(directory, name, body):
+def _stub(directory, name, body, win_body=None):
+    """Windows burn-in, win-repo (2f7f71f7): every extensionless fixture in
+    this module models a WindowsApps alias / real python.exe, but on a
+    genuine Windows host neither `Get-Command` nor `Resolve-CrewPython`'s own
+    native-extension gate ever sees an extensionless file -- so the fixture
+    that is supposed to be FOUND (working or broken) silently vanishes
+    instead, and every assertion expecting it to resolve to REAL fails. A
+    `.cmd` file is the smallest native-launchable stand-in: `Get-Command`
+    matches it, the gate passes it, and `Resolve-CrewPython` already routes
+    `.cmd`/`.bat` through `cmd.exe` for exactly this shape (a pyenv-win
+    shim). `win_body` is the batch translation of `body`; when the caller has
+    none, the sh `body` is still written into a `.cmd` on Windows -- inert,
+    not silently wrong, since every caller that omits `win_body` only asserts
+    non-resolution, which an unrunnable batch file still produces."""
     directory.mkdir(parents=True, exist_ok=True)
+    if os.name == "nt":
+        path = directory / (name + ".cmd")
+        path.write_text("@echo off\r\n" + (win_body if win_body is not None else body) + "\r\n",
+                        encoding="ascii", newline="\r\n")
+        return path
     path = directory / name
     path.write_text("#!/bin/sh\n" + body + "\n", encoding="ascii", newline="\n")
     path.chmod(0o755)
@@ -58,19 +90,20 @@ def _working(directory, names=_NAMES):
     """An alias that forwards to a real interpreter, as a WindowsApps alias
     does when Python is installed."""
     for name in names:
-        _stub(directory, name, f'exec "{REAL}" "$@"')
+        _stub(directory, name, f'exec "{REAL}" "$@"', win_body=f'"{REAL}" %*')
 
 
 def _broken(directory, names=_NAMES):
     """An alias with nothing behind it: no output, exit 9009, as the Store
     placeholder does when run non-interactively."""
     for name in names:
-        _stub(directory, name, "exit 9009")
+        _stub(directory, name, "exit 9009", win_body="exit /b 9009")
 
 
 def _hung(directory, names=("python3",)):
     for name in names:
-        _stub(directory, name, f'exec "{REAL}" -c "import time; time.sleep(60)"')
+        _stub(directory, name, f'exec "{REAL}" -c "import time; time.sleep(60)"',
+              win_body=f'"{REAL}" -c "import time; time.sleep(60)"')
 
 
 def _tools(tmp_path):

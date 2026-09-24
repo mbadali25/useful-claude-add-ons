@@ -185,13 +185,31 @@ def fake_codex(tmp_path, monkeypatch):
     return path
 
 
+def _toml_string(value):
+    """`value` escaped for a TOML basic string. Windows burn-in, win-repo:
+    every fixture below embeds a real filesystem path straight into
+    `[projects."{path}"]` -- fine on POSIX, where `os.path.abspath` never
+    emits a backslash, but a native Windows path (`C:\\Users\\...\\AppData\\
+    Local\\Temp\\...`) carries plenty of them, and a bare backslash is not
+    a value f-string interpolation escapes for TOML. `tomllib` reads `\\U`,
+    `\\A`, `\\L`... as the start of a Unicode escape and rejects the whole
+    file as malformed, so a fixture built to prove "trusted" instead proves
+    "unknown" -- the trust probe correctly refusing TOML that was never
+    valid, not a defect in it. Escaping only `\\` and `"` (the two characters
+    a path can contain that TOML's basic-string grammar treats specially) is
+    what a real `config.toml` write already does; `_project_trust_lookup_keys`
+    compares against the UN-escaped path, so this only has to be reversible
+    by TOML's own rules, not by anything crew's reader does."""
+    return value.replace("\\", "\\\\").replace('"', '\\"')
+
+
 def _codex_home_trusting(tmp_path, monkeypatch, root, level="trusted", inline=False):
     """Point CODEX_HOME at a fresh, isolated directory recording `level` for
     `root` -- so a test never reads whatever trust state happens to be on the
     machine actually running it."""
     home = tmp_path / "codex-home"
     home.mkdir()
-    path = os.path.abspath(str(root))
+    path = _toml_string(os.path.abspath(str(root)))
     if inline:
         body = f'[projects]\n"{path}" = {{ trust_level = "{level}" }}\n'
     else:
@@ -282,10 +300,16 @@ def test_codex_trust_is_closed_when_no_entry_was_ever_recorded(tmp_path, monkeyp
 def test_codex_trust_is_closed_when_codex_home_has_never_been_used(tmp_path, monkeypatch):
     """No CODEX_HOME env var and no ~/.codex -- the common fresh-machine case.
     Redirect HOME so this does not depend on whatever is on the machine
-    actually running the suite."""
+    actually running the suite. Windows burn-in, win-repo: `_codex_home()`
+    falls back to `os.path.expanduser("~")`, and `ntpath.expanduser` (what
+    runs there) checks `USERPROFILE` first and never looks at `HOME` at all
+    -- setting only `HOME` leaves this test reading the REAL machine's
+    `~/.codex`, not this fixture's empty one, on Windows. Both are set so
+    the isolation holds under either `expanduser` implementation."""
     root = _big_repo(tmp_path)
     monkeypatch.delenv("CODEX_HOME", raising=False)
     monkeypatch.setenv("HOME", str(tmp_path / "empty-home"))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path / "empty-home"))
     (tmp_path / "empty-home").mkdir()
 
     state, _ = ci.codex_trust(str(root))
@@ -318,7 +342,7 @@ def test_codex_trust_is_unknown_for_malformed_toml_even_with_a_trusted_entry(tmp
     regex scanner reported TRUST_OK regardless -- the false "trusted" this
     fix closes."""
     root = _big_repo(tmp_path)
-    path = os.path.abspath(str(root))
+    path = _toml_string(os.path.abspath(str(root)))
     body = f'[projects."{path}"]\ntrust_level = "trusted"\n\nbroken =\n'
     _write_config_toml(tmp_path, monkeypatch, body)
 
@@ -334,7 +358,7 @@ def test_codex_trust_malformed_fallback_scanner_also_reports_unknown(tmp_path, m
     trusted, not just tomllib."""
     root = _big_repo(tmp_path)
     monkeypatch.setattr(ci, "_tomllib", None)
-    path = os.path.abspath(str(root))
+    path = _toml_string(os.path.abspath(str(root)))
     body = f'[projects."{path}"]\ntrust_level = "trusted"\n\nbroken =\n'
     _write_config_toml(tmp_path, monkeypatch, body)
 
@@ -349,7 +373,7 @@ def test_codex_trust_fallback_scanner_still_trusts_a_clean_file(tmp_path, monkey
     unclassifiable line still resolves TRUST_OK without tomllib."""
     root = _big_repo(tmp_path)
     monkeypatch.setattr(ci, "_tomllib", None)
-    path = os.path.abspath(str(root))
+    path = _toml_string(os.path.abspath(str(root)))
     body = f'[projects."{path}"]\ntrust_level = "trusted"\n'
     _write_config_toml(tmp_path, monkeypatch, body)
 
@@ -369,7 +393,7 @@ def test_codex_trust_multiline_array_is_not_misread_as_malformed(tmp_path, monke
     scanner is shown to independently agree rather than merely not being
     exercised."""
     root = _big_repo(tmp_path)
-    path = os.path.abspath(str(root))
+    path = _toml_string(os.path.abspath(str(root)))
     body = (
         '[hooks]\n'
         'args = [\n'
@@ -398,7 +422,7 @@ def test_codex_trust_fallback_scanner_rejects_an_unterminated_string_value(tmp_p
     TRUST_OK regardless -- the false "trusted" this fix closes, the same
     way `broken =` (fix #2, above) already does for an empty RHS."""
     root = _big_repo(tmp_path)
-    path = os.path.abspath(str(root))
+    path = _toml_string(os.path.abspath(str(root)))
     body = (f'[projects."{path}"]\ntrust_level = "trusted"\n\n'
             'broken = "unterminated\n')
     _write_config_toml(tmp_path, monkeypatch, body)
@@ -487,8 +511,8 @@ def test_codex_trust_prefers_the_canonical_path_over_a_symlinked_literal(tmp_pat
         pytest.skip(f"cannot create a symlink here: {exc}")
     literal = os.path.abspath(str(link))
     canonical = os.path.realpath(str(link))
-    body = (f'[projects."{literal}"]\ntrust_level = "trusted"\n\n'
-            f'[projects."{canonical}"]\ntrust_level = "untrusted"\n')
+    body = (f'[projects."{_toml_string(literal)}"]\ntrust_level = "trusted"\n\n'
+            f'[projects."{_toml_string(canonical)}"]\ntrust_level = "untrusted"\n')
     _write_config_toml(tmp_path, monkeypatch, body)
 
     state, detail = ci.codex_trust(str(link))

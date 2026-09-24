@@ -225,11 +225,26 @@ def _stub_bin_dir(tmp_path):
     --version || exit 77`, and a python3 that isn't found at all still
     fails with a nonzero exit that the same `||` catches, so leaving it out
     also exercises that "command not found" (127), not just "importable but
-    absent module", reaches the same UNVERIFIED branch."""
+    absent module", reaches the same UNVERIFIED branch.
+
+    Windows burn-in, win-repo: `Path.symlink_to` needs SeCreateSymbolicLink
+    (admin, or Developer Mode) on Windows -- absent either, it raises
+    `OSError: [WinError 1314]` right here, in the test function itself,
+    before any command ever runs. A `.cmd` forwarding wrapper needs no
+    privilege and still resolves as `sh`/`bash` from this stub dir's PATH
+    entry; it forwards to the real interpreter BY ITS OWN ABSOLUTE PATH, so
+    that real bash.exe still loads its sibling DLLs (msys-2.0.dll and
+    friends) from ITS OWN directory, not from this stub -- a plain
+    `shutil.copy2` of just the .exe would drop those and fail to launch."""
     stub = tmp_path / "stubbin"
     stub.mkdir()
     for shell_name, real in (("sh", _SH), ("bash", _BASH)):
-        if real:
+        if not real:
+            continue
+        if os.name == "nt":
+            (stub / (shell_name + ".cmd")).write_text(
+                f'@echo off\r\n"{real}" %*\r\n', encoding="ascii", newline="\r\n")
+        else:
             (stub / shell_name).symlink_to(real)
     return str(stub)
 
