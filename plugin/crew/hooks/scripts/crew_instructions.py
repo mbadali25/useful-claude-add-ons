@@ -527,17 +527,40 @@ def _strip_trailing_comment(line):
     return line if idx == -1 else line[:idx]
 
 
+def _array_line_state(tail):
+    """Classify one line's worth of array content (`tail`: already
+    comment-stripped and trimmed). `None` when it is not valid array syntax
+    at all. Otherwise `(still_open, pending_close)`:
+
+    - `still_open`: this line's closing `]` has not been seen.
+    - `pending_close`: this line ended on a BARE scalar -- no trailing
+      comma, no `]` -- which real TOML allows only as the array's LAST
+      element. A no-lookahead, per-line scanner cannot confirm that from
+      this line alone: it is valid only if the very next non-blank,
+      non-comment line is nothing but `]`. Missing-comma finding (Codex
+      review): the previous version treated a bare trailing scalar as
+      unconditionally "fine, still open" regardless of what followed, so
+      `"one"` then `"two"]` on the next line -- two elements with no comma
+      between them, which a real TOML parser rejects -- read as a
+      perfectly ordinary two-line array. The caller is responsible for
+      rejecting any further array content once this is `True` and the next
+      line is anything other than a bare `]`.
+    """
+    if not _ARRAY_LINE_RE.match(tail):
+        return None
+    still_open = not tail.endswith("]")
+    pending_close = still_open and bool(tail) and not tail.rstrip().endswith(",")
+    return still_open, pending_close
+
+
 def _array_open_tail(value_text):
     """`None` when `value_text` -- the RHS of a `key = value` line -- is not
-    array syntax at all (does not start with `[`). Otherwise, whether the
-    array is still open after this line, i.e. its closing `]` has not been
-    seen yet."""
+    array syntax at all (does not start with `[`). Otherwise `(still_open,
+    pending_close)`, see `_array_line_state`."""
     if not value_text.startswith("["):
         return None
     tail = _strip_trailing_comment(value_text[1:]).strip()
-    if not _ARRAY_LINE_RE.match(tail):
-        return None
-    return not tail.endswith("]")
+    return _array_line_state(tail)
 
 
 def _array_continuation_open(line):
@@ -545,28 +568,29 @@ def _array_continuation_open(line):
     already-open array -- no leading `[` to strip here, since this scanner
     does not support one array nested inside another."""
     tail = _strip_trailing_comment(line).strip()
-    if not _ARRAY_LINE_RE.match(tail):
-        return None
-    return not tail.endswith("]")
+    return _array_line_state(tail)
 
 
 def _kv_line_status(line):
-    """Classify an ordinary `key = value` line as `"ok"` (a complete,
-    recognised scalar or a fully-closed single-line array), `"array-open"`
-    (a multi-line array that continues past this line), or `"bad"` -- no
-    shape here that a real TOML parser would accept, which is what
-    `broken = "unterminated` (an `=` followed by *something*, but not a
-    complete value) now returns instead of the old regex's blanket accept."""
+    """Classify an ordinary `key = value` line. Returns `(status,
+    pending_close)`: `status` is `"ok"` (a complete, recognised scalar or a
+    fully-closed single-line array), `"array-open"` (a multi-line array
+    that continues past this line), or `"bad"` -- no shape here that a real
+    TOML parser would accept, which is what `broken = "unterminated` (an
+    `=` followed by *something*, but not a complete value) now returns
+    instead of the old regex's blanket accept. `pending_close` is
+    `_array_line_state`'s own flag, always `False` for `"ok"`/`"bad"`."""
     head = _KV_HEAD_RE.match(line)
     if not head:
-        return "bad"
+        return "bad", False
     value = head.group(2).strip()
     if _SCALAR_FULL_RE.match(value):
-        return "ok"
-    still_open = _array_open_tail(value)
-    if still_open is None:
-        return "bad"
-    return "array-open" if still_open else "ok"
+        return "ok", False
+    state = _array_open_tail(value)
+    if state is None:
+        return "bad", False
+    still_open, pending_close = state
+    return ("array-open" if still_open else "ok"), pending_close
 
 
 def _scan_project_trust(text, keys):
@@ -590,6 +614,10 @@ def _scan_project_trust(text, keys):
     fold = (lambda s: s.lower()) if os.name == "nt" else (lambda s: s)
     mode = None  # None | "bare" | ("entry", key)
     in_array = False  # inside an as-yet-unclosed multi-line array's value
+    # True when the array's PREVIOUS line ended on a bare scalar with no
+    # trailing comma and no `]` -- see `_array_line_state`. Only a bare `]`
+    # may legally follow; anything else is a missing comma.
+    array_pending_close = False
     found = {}
     bad_line = None
 
@@ -602,24 +630,35 @@ def _scan_project_trust(text, keys):
         """Classify an ordinary `key = value` line, common to all three
         modes below: mark it bad, or open a multi-line array and remember
         that this loop is now inside one."""
-        nonlocal in_array
-        status = _kv_line_status(line)
+        nonlocal in_array, array_pending_close
+        status, pending_close = _kv_line_status(line)
         if status == "bad":
             _mark_bad(raw_line)
         elif status == "array-open":
             in_array = True
+            array_pending_close = pending_close
 
     for raw_line in text.splitlines():
         line = raw_line.strip()
         if not line or line.startswith("#"):
             continue
         if in_array:
-            still_open = _array_continuation_open(line)
-            if still_open is None:
+            if array_pending_close and _strip_trailing_comment(line).strip() != "]":
+                # The previous line's bare trailing scalar is valid TOML
+                # only if THIS line is nothing but the closing bracket --
+                # anything else here is a missing comma between two
+                # elements, not a second element silently accepted.
                 _mark_bad(raw_line)
                 in_array = False
+                array_pending_close = False
+                continue
+            state = _array_continuation_open(line)
+            if state is None:
+                _mark_bad(raw_line)
+                in_array = False
+                array_pending_close = False
             else:
-                in_array = still_open
+                in_array, array_pending_close = state
             continue
         entry = _PROJECTS_ENTRY_RE.match(line)
         if entry:

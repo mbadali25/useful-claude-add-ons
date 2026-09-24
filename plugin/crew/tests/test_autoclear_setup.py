@@ -467,3 +467,195 @@ def test_plan_windows_default_converts_a_retained_global_windows_method(tmp_path
     assert plan["status"] == "proposed"
     assert plan["updates"] == {"context.autoClear.method": "notify"}
     assert "windows" in plan["message"] and "notify" in plan["message"]
+
+
+# ------------------------------------ apply_migrate_to_repo: divergent files
+# PM decision (Codex review, BLOCK): config.json is what every autoClear
+# sender reads and crew.json is never read for behaviour, but a single plan
+# computed from whichever file happened to be read first and then copied
+# onto BOTH used to destroy whatever the OTHER file had settled on if the
+# two had genuinely diverged (a hand-edit to one after migration, or two
+# repos merged). Each file must convert from and write back only its OWN
+# prior content.
+
+
+def test_apply_migrate_to_repo_never_copies_one_files_context_onto_the_other(tmp_path):
+    root = str(tmp_path / "repo")
+    _write_config_json(root, {"autoClear": {"method": "windows", "enabled": True}})
+    _write_crew_json(root, {"autoClear": {"method": "auto",
+                                          "windowTitle": "My Custom Title"}})
+    crew_json_path = os.path.join(root, ".crew", "crew.json")
+    with open(crew_json_path, "rb") as handle:
+        crew_before = handle.read()
+
+    plan = setup.apply_migrate_to_repo(root, global_path=str(tmp_path / "g.json"))
+
+    with open(os.path.join(root, ".crew", "config.json"), encoding="utf-8") as handle:
+        config_on_disk = json.load(handle)
+    assert config_on_disk["context"]["autoClear"]["method"] == "notify"
+    assert "enabled" not in config_on_disk["context"]["autoClear"]
+
+    # crew.json had NOTHING of its own to convert (method is "auto", not
+    # "windows"; no enabled/onlyRepos/onlySessions to strip) -- it must be
+    # byte-identical to before, never overwritten with config.json's
+    # unrelated post-migration context.
+    with open(crew_json_path, "rb") as handle:
+        crew_after = handle.read()
+    assert crew_after == crew_before
+    assert plan["alreadyConfigured"] is False
+    assert plan["perFile"]["config.json"]["autoClear"]["method"] == "notify"
+    assert plan["perFile"]["crew.json"]["autoClear"]["method"] == "auto"
+
+
+def test_apply_migrate_to_repo_converts_each_divergent_file_from_its_own_content(tmp_path):
+    """The other direction: BOTH files need converting, but from DIFFERENT
+    starting points -- config.json has a repo-local `enabled: true` to
+    strip, crew.json does not. Each file's own result must reflect only
+    its own prior content."""
+    root = str(tmp_path / "repo")
+    _write_config_json(root, {"autoClear": {"method": "windows", "enabled": True}})
+    _write_crew_json(root, {"autoClear": {"method": "windows"}})
+
+    setup.apply_migrate_to_repo(root, global_path=str(tmp_path / "g.json"))
+
+    with open(os.path.join(root, ".crew", "config.json"), encoding="utf-8") as handle:
+        config_on_disk = json.load(handle)
+    with open(os.path.join(root, ".crew", "crew.json"), encoding="utf-8") as handle:
+        crew_on_disk = json.load(handle)
+    assert config_on_disk["context"]["autoClear"]["method"] == "notify"
+    assert "enabled" not in config_on_disk["context"]["autoClear"]
+    assert crew_on_disk["context"]["autoClear"]["method"] == "notify"
+    assert "enabled" not in crew_on_disk["context"]["autoClear"]  # never had one
+
+
+# --------------------------------- apply_migrate_to_repo: staging is batched
+# BLOCK: the two repo writes are not one transaction. Both new payloads must
+# be staged into temp files before EITHER real file is replaced, so a
+# failure while staging leaves BOTH real files untouched; and a retry must
+# detect and repair a pair left half-migrated by a crash BETWEEN the two
+# os.replace calls (POSIX has no atomic rename of two files at once).
+
+
+def test_apply_migrate_to_repo_leaves_both_files_untouched_if_staging_either_fails(
+        tmp_path, monkeypatch):
+    root = str(tmp_path / "repo")
+    context_block = {"autoClear": {"method": "windows", "enabled": True}}
+    _write_config_json(root, context_block)
+    _write_crew_json(root, context_block)
+    config_path = os.path.join(root, ".crew", "config.json")
+    crew_json_path = os.path.join(root, ".crew", "crew.json")
+    with open(config_path, "rb") as handle:
+        config_before = handle.read()
+    with open(crew_json_path, "rb") as handle:
+        crew_before = handle.read()
+
+    real_stage = setup._stage_json
+
+    def _boom(path, obj):
+        if path == crew_json_path:
+            raise OSError("simulated: disk full staging crew.json")
+        return real_stage(path, obj)
+
+    monkeypatch.setattr(setup, "_stage_json", _boom)
+
+    try:
+        setup.apply_migrate_to_repo(root, global_path=str(tmp_path / "g.json"))
+        assert False, "expected the simulated staging failure to propagate"
+    except OSError:
+        pass
+
+    with open(config_path, "rb") as handle:
+        assert handle.read() == config_before, (
+            "config.json must stay untouched when crew.json's staging fails")
+    with open(crew_json_path, "rb") as handle:
+        assert handle.read() == crew_before
+    leftovers = [n for n in os.listdir(os.path.join(root, ".crew"))
+                if n.endswith(".tmp")]
+    assert leftovers == [], f"orphaned temp file(s) after a failed batch: {leftovers}"
+
+
+def test_apply_migrate_to_repo_retry_repairs_a_half_migrated_pair(tmp_path, monkeypatch):
+    root = str(tmp_path / "repo")
+    context_block = {"autoClear": {"method": "windows", "enabled": True}}
+    _write_config_json(root, context_block)
+    _write_crew_json(root, context_block)
+    config_path = os.path.join(root, ".crew", "config.json")
+    crew_json_path = os.path.join(root, ".crew", "crew.json")
+    global_path = str(tmp_path / "g.json")
+
+    real_replace = os.replace
+    calls = []
+
+    def _flaky_replace(src, dst):
+        calls.append(dst)
+        if dst == crew_json_path and len(calls) == 2:
+            raise OSError("simulated: crash between the two replace calls")
+        return real_replace(src, dst)
+
+    monkeypatch.setattr(setup.os, "replace", _flaky_replace)
+    try:
+        setup.apply_migrate_to_repo(root, global_path=global_path)
+        assert False, "expected the simulated mid-batch crash to propagate"
+    except OSError:
+        pass
+    monkeypatch.setattr(setup.os, "replace", real_replace)
+
+    with open(config_path, encoding="utf-8") as handle:
+        config_mid = json.load(handle)
+    with open(crew_json_path, encoding="utf-8") as handle:
+        crew_mid = json.load(handle)
+    assert config_mid["context"]["autoClear"]["method"] == "notify"  # made it
+    assert crew_mid["context"]["autoClear"]["method"] == "windows"  # did not
+
+    plan = setup.apply_migrate_to_repo(root, global_path=global_path)
+    assert plan["alreadyConfigured"] is False
+
+    with open(config_path, encoding="utf-8") as handle:
+        config_after = json.load(handle)
+    with open(crew_json_path, encoding="utf-8") as handle:
+        crew_after = json.load(handle)
+    assert config_after["context"]["autoClear"]["method"] == "notify"
+    assert crew_after["context"]["autoClear"]["method"] == "notify"
+    assert "enabled" not in crew_after["context"]["autoClear"]
+
+
+# --------------------------------------- _read_json_if_present: type safety
+# FIX: a repo config file that parses as valid JSON but is not an OBJECT
+# ([], a bare string, ...) must fail in a controlled way, not crash with an
+# uncaught AttributeError/TypeError once this module tries `.get("context")`
+# on it.
+
+
+def test_apply_migrate_to_repo_refuses_a_non_object_config_json(tmp_path):
+    root = str(tmp_path / "repo")
+    os.makedirs(os.path.join(root, ".crew"))
+    with open(os.path.join(root, ".crew", "config.json"), "w", encoding="utf-8") as handle:
+        json.dump([1, 2, 3], handle)
+
+    try:
+        setup.apply_migrate_to_repo(root, global_path=str(tmp_path / "g.json"))
+        assert False, "expected ValueError"
+    except ValueError as exc:
+        assert "not an object" in str(exc)
+
+
+# ------------------------------------------- global file: invalid UTF-8 bytes
+# FIX: bytes that are not valid UTF-8 must read as the unreadable-config
+# result (a string reason), not raise an uncaught UnicodeDecodeError out of
+# a helper every caller expects to return `None` or a string.
+
+
+def test_global_file_problem_reports_invalid_utf8_instead_of_raising(tmp_path):
+    path = _global(tmp_path)
+    with open(path, "wb") as handle:
+        handle.write(b"\xff\xfe\x00\x80not valid utf-8")
+
+    problem = setup._global_file_problem(path)  # pylint: disable=protected-access
+
+    assert problem is not None and "utf-8" in problem.lower()
+
+    try:
+        setup.write_autoclear_method("notify", consent=True, path=path)
+        assert False, "expected GlobalConfigUnreadable, not a raw exception"
+    except setup.GlobalConfigUnreadable:
+        pass

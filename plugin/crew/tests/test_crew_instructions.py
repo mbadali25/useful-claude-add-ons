@@ -435,6 +435,40 @@ def test_scan_project_trust_rejects_an_unterminated_string_value_directly():
     assert bad_line is not None and "unterminated" in bad_line
 
 
+def test_scan_project_trust_rejects_a_missing_comma_between_array_elements_directly():
+    """A bare scalar with no trailing comma is legal TOML only as the
+    array's LAST element -- `"one"` immediately followed by a bare `]` on
+    the next line closes cleanly. `"one"` then `"two"]` (or `"two"` on a
+    further line) with nothing between them but whitespace is a MISSING
+    COMMA a real TOML parser rejects; the previous fallback scanner read a
+    bare trailing scalar as unconditionally "fine, still open" regardless
+    of what followed, so this read as an ordinary two-element array."""
+    text = ('[projects."/repo"]\ntrust_level = "trusted"\n\n'
+            'args = [\n'
+            '  "one"\n'
+            '  "two"\n'
+            ']\n')
+
+    level, matched, bad_line = ci._scan_project_trust(text, ["/repo"])
+
+    assert bad_line is not None and '"two"' in bad_line
+
+
+def test_scan_project_trust_still_accepts_a_bare_last_element_before_a_lone_bracket():
+    """The must-allow twin: a bare scalar (no trailing comma) IS valid when
+    the very next content line is nothing but the closing `]` -- proving
+    the missing-comma check above did not also break this legal shape."""
+    text = ('[projects."/repo"]\ntrust_level = "trusted"\n\n'
+            'args = [\n'
+            '  "one",\n'
+            '  "two"\n'
+            ']\n')
+
+    level, matched, bad_line = ci._scan_project_trust(text, ["/repo"])
+
+    assert (level, matched, bad_line) == ("trusted", "/repo", None)
+
+
 # --- W8 review fix #3: canonical (realpath) beats literal, Codex's own order
 
 def test_codex_trust_prefers_the_canonical_path_over_a_symlinked_literal(tmp_path, monkeypatch):

@@ -87,6 +87,14 @@ def _global_file_problem(path=None):
         return None
     except OSError as exc:
         return f"could not read {real_path} ({type(exc).__name__})"
+    except UnicodeDecodeError as exc:
+        # Text-mode `open` decodes eagerly on `.read()` -- bytes that are
+        # not valid UTF-8 raise here, before `json.loads` ever runs. Left
+        # uncaught this is a crash out of a plain read helper rather than
+        # this function's own "unreadable" result; every caller already
+        # expects a STRING reason or `None`, never an exception escaping
+        # this deep for a file that is simply not text at all.
+        return f"{real_path} is not valid UTF-8 ({exc})"
     try:
         parsed = json.loads(text)
     except ValueError as exc:
@@ -410,10 +418,20 @@ def plan_migrate_context(context, global_cfg, repo_root, repo_label="this repo")
     return {"context": stripped, "notes": notes, "widening": widening}
 
 
-def _atomic_write_json(path, obj):
-    """The full payload is built before anything is opened (CLAUDE.md's
-    `open(p, "w")` truncation trap), and the target is only ever replaced
-    whole via a sibling temp file, never truncated in place."""
+def _stage_json(path, obj):
+    """Build the full payload and write it to a SIBLING temp file next to
+    `path` -- CLAUDE.md's `open(p, "w")` truncation trap: `path` itself is
+    never opened for writing here, so a failure anywhere in this function
+    leaves whatever was already at `path` completely untouched. Returns
+    the temp file's path; `path` itself is not replaced until the caller
+    does that explicitly, which is what lets `apply_migrate_to_repo` stage
+    more than one file before committing any of them.
+
+    On any failure the temp file is removed and the exception re-raised --
+    callers staging several files in a batch are expected to remove any
+    EARLIER temp file in that same batch themselves (this function only
+    knows about its own).
+    """
     payload = (json.dumps(obj, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
     tmp = f"{path}.{os.getpid()}.tmp"
     try:
@@ -421,6 +439,21 @@ def _atomic_write_json(path, obj):
             handle.write(payload)
             handle.flush()
             os.fsync(handle.fileno())
+    except BaseException:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        raise
+    return tmp
+
+
+def _atomic_write_json(path, obj):
+    """Single-file atomic write: stage, then replace. The target is only
+    ever replaced whole via a sibling temp file, never truncated in
+    place."""
+    tmp = _stage_json(path, obj)
+    try:
         os.replace(tmp, path)
     except BaseException:
         try:
@@ -434,12 +467,27 @@ def _read_json_if_present(path):
     """The parsed JSON object at `path`, or `None` when it does not exist.
     Any other read/parse failure is left to raise -- a present-but-broken
     repo file is not the same "nothing to convert" signal as an absent
-    one, and swallowing it here would silently skip the conversion."""
+    one, and swallowing it here would silently skip the conversion.
+
+    Raises `ValueError` (caught by `main`'s `apply-migrate` handler,
+    alongside the JSON-decode `ValueError` `json.load` itself already
+    raises for unparseable text) when the file parses cleanly but is not a
+    JSON OBJECT -- a top-level `[]` or a bare string is valid JSON, so
+    `json.load` would otherwise hand back something this module's own
+    `doc.get("context")` / `doc["context"] = ...` calls further down
+    assume is a dict, crashing with an uncaught `AttributeError`/
+    `TypeError` instead of the same controlled failure a malformed global
+    file already gets via `GlobalConfigUnreadable`."""
     try:
         with open(path, "r", encoding="utf-8") as handle:
-            return json.load(handle)
+            parsed = json.load(handle)
     except FileNotFoundError:
         return None
+    if not isinstance(parsed, dict):
+        raise ValueError(
+            f"{path} holds a JSON {type(parsed).__name__}, not an object -- "
+            "refusing to migrate it")
+    return parsed
 
 
 def apply_migrate_to_repo(root, global_path=None, repo_label=None, yes_widen=False):
@@ -447,31 +495,51 @@ def apply_migrate_to_repo(root, global_path=None, repo_label=None, yes_widen=Fal
     and `<root>/.crew/crew.json` are present, and write each one back in
     place.
 
-    **Both, when both exist, because they can disagree about what fires.**
-    `crew_migrate.py --apply` copies `config.json`'s `context` block into a
-    new `crew.json` UNCONVERTED and keeps the original -- `config.json` is
-    marked "retireable", not deleted (`commands/migrate.md`'s own table).
-    Every autoClear SENDER (`auto-clear.sh`, `auto-clear.ps1`,
-    `crew_autocycle.py`'s `_load`) reads `.crew/config.json` only; nothing
-    in this plugin's runtime reads `crew.json` for autoClear behaviour --
-    `crew_status.py` reads it only to report the migration schema. So
-    converting `crew.json` alone (the previous behaviour here) left a
-    retained legacy method like `"windows"` live in `config.json`, where
-    every sender still reads it and then refuses it as unsupported --
-    migration looked complete and autoClear was silently dead. Converting
-    `config.json` alone would leave `crew.json`'s copy stale for
-    `/crew:status`'s own report. So both are read, the plan is computed
-    once (from whichever exists; their `context` blocks are identical
-    immediately after `crew_migrate.py --apply`, before this function has
-    touched either), and both are rewritten when there is something to
-    convert.
+    **Both, when both exist, because they can disagree about what fires --
+    and EACH FILE'S OWN `context` IS CONVERTED FROM ITSELF, never copied
+    from the other.** `crew_migrate.py --apply` copies `config.json`'s
+    `context` block into a new `crew.json` UNCONVERTED and keeps the
+    original -- `config.json` is marked "retireable", not deleted
+    (`commands/migrate.md`'s own table). Every autoClear SENDER
+    (`auto-clear.sh`, `auto-clear.ps1`, `crew_autocycle.py`'s `_load`)
+    reads `.crew/config.json` only; nothing in this plugin's runtime reads
+    `crew.json` for autoClear behaviour -- `crew_status.py` reads it only
+    to report the migration schema. So converting `crew.json` alone (an
+    earlier version of this function) left a retained legacy method like
+    `"windows"` live in `config.json`, where every sender still reads it
+    and then refuses it as unsupported -- migration looked complete and
+    autoClear was silently dead.
 
-    Returns the plan (see `plan_migrate_context`) plus `alreadyConfigured`
-    (no notes -> nothing to convert -> neither file is touched, so a
-    repeat run is byte-idempotent) and `wideningApplied`. The ONLY global
-    write this makes is the `onlyRepos` narrowing, and only when
-    `plan["widening"]["widening"]` is true AND `yes_widen` is true -- the
-    explicit-yes gate `detect_onlyRepos_widening`'s docstring describes.
+    A LATER version of this function fixed that by computing ONE plan
+    (from whichever file it read first) and writing that SAME converted
+    `context` into both files. That is only correct the instant after
+    `crew_migrate.py --apply` runs, when the two blocks are still
+    identical; nothing keeps them in step after that, and nothing here
+    ever re-syncs them on purpose. A repo that has since hand-edited
+    `config.json` (or `crew.json`) independently -- or was migrated,
+    edited, and is only now being converted -- would have that whole
+    file's divergent `context` silently OVERWRITTEN with the other file's
+    post-migration copy, discarding settings nobody asked to change. Each
+    file below is read, converted (method-rename, then the repo-local-
+    duplication strip) and re-checked for "anything to convert" entirely
+    from its OWN prior content; the only thing shared between the two is
+    the widening signal, which is deliberately the OR of both files'
+    pre-migration `enabled: true` (a repo-local opt-in recorded in EITHER
+    file counts, since either is evidence this repo asked for auto-clear
+    under 0.20.x).
+
+    Returns `{"notes": [...], "perFile": {"config.json": {...} or None,
+    "crew.json": {...} or None}, "widening": {...}, "alreadyConfigured":
+    bool, "wideningApplied": bool}`. `perFile[<name>]` is `None` when that
+    file does not exist, and otherwise the module's post-conversion
+    `context` for that specific file. `alreadyConfigured` is true only
+    when NEITHER file had anything to convert -- a repeat run is then
+    byte-idempotent for both.
+
+    The ONLY global write this makes is the `onlyRepos` narrowing, and
+    only when `plan["widening"]["widening"]` is true AND `yes_widen` is
+    true -- the explicit-yes gate `detect_onlyRepos_widening`'s docstring
+    describes.
 
     **The global write happens BEFORE either repo file is touched.**
     `apply_onlyRepos_narrowing` raises (`GlobalConfigUnreadable`, an
@@ -484,15 +552,28 @@ def apply_migrate_to_repo(root, global_path=None, repo_label=None, yes_widen=Fal
     side recording the widening, and no way to retell which repos had
     opted in.
 
+    **The two repo writes are not one transaction, but a retry repairs a
+    half-migrated pair on its own.** Both new file payloads are computed
+    and staged into sibling temp files (`_stage_json`) BEFORE either real
+    file is replaced, so a failure anywhere in that staging leaves BOTH
+    real files untouched (every already-staged temp file in the same
+    batch is removed first). A crash between the two `os.replace` calls
+    that follow can still leave one file converted and the other not --
+    POSIX has no atomic rename of two files at once -- but nothing here
+    needs that to be safe: each file's own "does IT still have anything to
+    convert" check is independent and re-derived from that file's own
+    on-disk content on every call, so a retry converts exactly the file
+    that did not make it and leaves the one that already did alone.
+
     **Decide `yes_widen` on THIS call, not a follow-up one.** The widening
     proposal's `proposedOnlyRepos` reads this repo's pre-migration
-    `enabled: true` off the file passed in -- the FIRST call that strips it
-    (because there was something to convert) removes that signal for good.
-    A second call after that one will report this repo as never having
-    opted in, which is wrong for THIS repo even though it is an honest read
-    of what is left on disk. Show the proposal and get the yes before
-    calling this at all, or accept `--yes-widen` up front on the one call
-    that also does the stripping.
+    `enabled: true` off the file(s) passed in -- the FIRST call that strips
+    it (because there was something to convert) removes that signal for
+    good. A second call after that one will report this repo as never
+    having opted in, which is wrong for THIS repo even though it is an
+    honest read of what is left on disk. Show the proposal and get the yes
+    before calling this at all, or accept `--yes-widen` up front on the one
+    call that also does the stripping.
     """
     config_path = os.path.join(root, ".crew", "config.json")
     crew_json_path = os.path.join(root, ".crew", "crew.json")
@@ -503,31 +584,65 @@ def apply_migrate_to_repo(root, global_path=None, repo_label=None, yes_widen=Fal
             f"neither {config_path} nor {crew_json_path} exists -- nothing "
             "to migrate")
 
-    source_doc = config_doc if config_doc is not None else crew_doc
-    context = source_doc.get("context")
-    context = context if isinstance(context, dict) else {}
     global_cfg = crew_config.read_global_config(global_path)
     label = repo_label or os.path.basename(os.path.abspath(root))
-    plan = plan_migrate_context(context, global_cfg, root, label)
-    already_configured = not plan["notes"]
-    plan["alreadyConfigured"] = already_configured
+
+    # Each entry's `context` is converted from THAT file's own prior
+    # content -- never from the other file's result -- so a divergent
+    # crew.json (or config.json) setting is never silently clobbered.
+    entries = []
+    opted_in = False
+    for name, path, doc in (("config.json", config_path, config_doc),
+                            ("crew.json", crew_json_path, crew_doc)):
+        if doc is None:
+            entries.append({"name": name, "path": path, "doc": None,
+                           "context": None, "notes": []})
+            continue
+        context = doc.get("context")
+        context = context if isinstance(context, dict) else {}
+        opted_in = opted_in or had_repo_local_opt_in(context)
+        renamed, rename_note = convert_method_windows_literal(context)
+        stripped, strip_notes = strip_repo_duplication(renamed, label)
+        file_notes = ([rename_note] if rename_note else []) + strip_notes
+        entries.append({"name": name, "path": path, "doc": doc,
+                        "context": stripped, "notes": file_notes})
+
+    notes = [note for entry in entries for note in entry["notes"]]
+    already_configured = not notes
+    widening = detect_onlyRepos_widening(global_cfg, root, opted_in)
 
     widening_applied = False
-    if plan["widening"]["widening"] and yes_widen:
+    if widening["widening"] and yes_widen:
         apply_onlyRepos_narrowing(
-            plan["widening"]["proposedOnlyRepos"], consent=True, path=global_path)
+            widening["proposedOnlyRepos"], consent=True, path=global_path)
         widening_applied = True
 
     if not already_configured:
-        if config_doc is not None:
-            config_doc["context"] = plan["context"]
-            _atomic_write_json(config_path, config_doc)
-        if crew_doc is not None:
-            crew_doc["context"] = plan["context"]
-            _atomic_write_json(crew_json_path, crew_doc)
+        to_write = [entry for entry in entries if entry["notes"]]
+        staged = []
+        try:
+            for entry in to_write:
+                new_doc = copy.deepcopy(entry["doc"])
+                new_doc["context"] = entry["context"]
+                tmp = _stage_json(entry["path"], new_doc)
+                staged.append((tmp, entry["path"]))
+        except BaseException:
+            for tmp, _ in staged:
+                try:
+                    os.remove(tmp)
+                except OSError:
+                    pass
+            raise
+        for tmp, path in staged:
+            os.replace(tmp, path)
 
-    plan["wideningApplied"] = widening_applied
-    return plan
+    return {
+        "notes": notes,
+        "perFile": {entry["name"]: entry["context"] for entry in entries},
+        "widening": widening,
+        "alreadyConfigured": already_configured,
+        "wideningApplied": widening_applied,
+    }
 
 
 # --------------------------------------------------------------- self-check
