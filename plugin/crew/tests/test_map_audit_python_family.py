@@ -26,6 +26,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 
 import pytest
 
@@ -55,19 +56,40 @@ def _repo_with_map(tmp_path):
 
 
 def _pathdir_with(tmp_path, names):
-    """A directory holding `names`, each a copy of the real interpreter.
+    """A directory holding `names`, each a shim that `exec`s the real
+    interpreter by its original absolute path.
 
-    A copy rather than a symlink: on Windows a symlink needs a privilege the
-    test runner may not hold, and the point of the directory is only that
+    Not a copy: on Windows, `python.exe` loads its own runtime DLL and the
+    platform CRT from the SAME directory it lives in, so a bare copy sitting
+    alone anywhere else fails at process start -- proven empirically, this
+    is not theoretical: `shutil.copy2`ing just the exe elsewhere and running
+    it produces "error while loading shared libraries:
+    api-ms-win-crt-heap-l1-1-0.dll". Not a symlink either: on Windows a
+    symlink needs a privilege the test runner may not hold. A shim that
+    `exec`s the real interpreter by its ORIGINAL absolute path needs
+    neither privilege -- Windows resolves the real exe's DLLs relative to
+    where it actually lives -- and the point of the directory is only that
     `command -v <name>` finds something that really runs.
+
+    `sys.executable` rather than `shutil.which("python3")` supplies that
+    absolute path: on a machine where the Microsoft Store's "python3" App
+    Execution Alias sits on PATH ahead of the real interpreter (this repo's
+    own documented python3 landmine), `shutil.which` resolves to that alias
+    -- a reparse-point stub that only works when EXECUTED, never when
+    opened as a regular file, so even reading it to build a shim around it
+    fails. `sys.executable` is, by definition, the interpreter actually
+    running this test, so it is always a real, absolute, runnable path
+    regardless of what else sits on PATH.
     """
-    real = shutil.which("python3") or shutil.which("python")
-    assert real, "this test needs a real interpreter to copy"
+    real = sys.executable if sys.executable and os.path.exists(sys.executable) \
+        else (shutil.which("python3") or shutil.which("python"))
+    assert real, "this test needs a real interpreter to shim"
     d = tmp_path / "onlypath"
     d.mkdir()
     for name in names:
         dest = d / name
-        shutil.copy2(real, dest)
+        dest.write_text("#!/bin/sh\n" f'exec "{real}" "$@"\n',
+                         encoding="ascii", newline="\n")
         os.chmod(dest, 0o755)
     return d
 
