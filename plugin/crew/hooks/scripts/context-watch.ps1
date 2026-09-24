@@ -35,6 +35,68 @@ if (-not $sessionKey) { $sessionKey = "nosession" }
 $marker     = ".crew/.handoff-requested-$sessionKey"
 $sentMarker = ".crew/.autoclear-sent-$sessionKey"
 
+# auto-clear.ps1 logs its own refusals/sends to .crew/.autoclear.log (see its
+# own Write-CrewAutoClearNote) and writes the same line to [Console]::Error --
+# but only on paths that reach that function, and [Console]::Error bypasses
+# PowerShell's own error STREAM (stream 2) entirely, so the `2>$null` below
+# never actually redirected it. What DID work, and what made a crash totally
+# silent, was `| Out-Null` eating the success stream and the empty `catch {}`
+# eating a genuine terminating exception -- together covering every remaining
+# way out. `.crew/.autoclear.log` was reported to exist nowhere on the
+# affected Windows host, which is what that total silence looks like.
+#
+# This captures both signals instead of discarding them: the PowerShell error
+# stream (`2>&1`, for the rare case auto-clear ever emits through it) AND the
+# raw Console error stream, by swapping [Console]::Error for a StringWriter
+# for the DURATION of the call only, then independently appends a line to the
+# SAME log whenever the child looks unhealthy -- exited non-zero, wrote
+# anything to either stream, or threw. Deliberately unconditional rather than
+# trying to detect whether auto-clear ALREADY logged the same thing; a
+# duplicate line on an ordinary refusal costs nothing a human reading the log
+# would notice, and a MISSING line is the whole defect this closes.
+#
+# Must never throw itself and must never touch THIS hook's own stdout, which
+# Claude Code reads as the Stop hook's protocol -- the fallback, if the log
+# cannot be written (an unwritable .crew/), is this hook's own stderr.
+function Write-ContextWatchAutoClearTrouble([string]$Message) {
+  $clean = ($Message -replace "[`r`n`t]", " ")
+  try {
+    if (-not (Test-Path ".crew")) { New-Item -ItemType Directory -Path ".crew" -Force -ErrorAction Stop | Out-Null }
+    $stamp = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
+    Add-Content -Path ".crew/.autoclear.log" -Value "$stamp`t$clean" -Encoding utf8 -ErrorAction Stop
+  } catch {
+    [Console]::Error.WriteLine("context-watch: $clean")
+  }
+}
+
+function Invoke-ContextWatchAutoClear([string]$SessionId) {
+  $origErr = [Console]::Error
+  $sw = New-Object System.IO.StringWriter
+  $threw = $null
+  $rc = $null
+  try {
+    [Console]::SetError($sw)
+    try {
+      & "$PSScriptRoot/auto-clear.ps1" -Session $SessionId -Root (Get-Location).Path 2>&1 |
+        ForEach-Object {
+          if ($_ -is [System.Management.Automation.ErrorRecord]) { $sw.WriteLine($_.ToString()) }
+        }
+      $rc = $LASTEXITCODE
+    } catch {
+      $threw = $_.Exception.Message
+    }
+  } finally {
+    [Console]::SetError($origErr)
+  }
+  $captured = $sw.ToString().Trim()
+  if ($threw) {
+    Write-ContextWatchAutoClearTrouble "auto-clear threw: $threw"
+  } elseif (($null -ne $rc -and $rc -ne 0) -or $captured) {
+    $suffix = if ($captured) { " - stderr: $captured" } else { "" }
+    Write-ContextWatchAutoClearTrouble "auto-clear exited $rc$suffix"
+  }
+}
+
 # Loop safety, layer 1: Claude Code is already continuing because of a stop
 # hook -- do not pile on more feedback. Layer 2 is the once-per-crossing
 # marker below. Layer 3 is Claude Code's own 8-consecutive-block backstop.
@@ -45,7 +107,7 @@ $sentMarker = ".crew/.autoclear-sent-$sessionKey"
 # block, never ask again -- when THIS session has a wrap-up marker.
 if ($d.stop_hook_active -eq $true) {
   if (Test-Path $marker) {
-    try { & "$PSScriptRoot/auto-clear.ps1" -Session $sessionId -Root (Get-Location).Path 2>$null | Out-Null } catch { }
+    Invoke-ContextWatchAutoClear $sessionId
   }
   exit 0
 }
@@ -217,7 +279,7 @@ if (Test-Path $marker) {
   }
   # This crossing was already asked about. Never block twice for it; the
   # handoff may have been written since, which is all auto-clear wants to know.
-  try { & "$PSScriptRoot/auto-clear.ps1" -Session $sessionId -Root (Get-Location).Path 2>$null | Out-Null } catch { }
+  Invoke-ContextWatchAutoClear $sessionId
   exit 0
 }
 if ($used -lt $threshold) { exit 0 }
