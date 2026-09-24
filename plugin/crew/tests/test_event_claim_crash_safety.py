@@ -256,6 +256,33 @@ def test_sent_is_recorded_by_a_nonce_keyed_marker_not_a_mutation(tmp_path):
     assert event_claim._read(path)[0] == "sent"
 
 
+# --- upgrade compat: a "sent" state written by the pre-marker release -------------
+
+def test_a_legacy_sent_generation_with_no_marker_reads_as_sent(tmp_path):
+    """Codex FIX (event_claim.py:215 at the previous anchor): the release
+    before the nonce-keyed marker existed recorded "sent" by mutating the
+    generation file's own "state" field in place, and wrote no separate
+    marker at all. After upgrading to this code, `_read` used to check ONLY
+    for the marker -- absent for every such file -- so a generation a prior
+    release had already sent came back "claimed", `decide` waited out the
+    grace against its (now long-past) "at", and then emitted a second time
+    for an event the previous release had already reported. Reproduction:
+    write that exact legacy shape by hand (no `mark_sent` call, since this
+    process's own write path can no longer produce it), then call `decide`
+    with the same payload."""
+    root = _repo(tmp_path)
+    directory = event_claim.claims_dir(root)
+    os.makedirs(directory, exist_ok=True)
+    key = event_claim.event_key("notify", event_claim.normalise(NOTE))
+    path = os.path.join(directory, f"{key}.g1")
+    legacy_at = time.time()
+    with open(path, "wb") as handle:
+        handle.write(json.dumps({"state": "sent", "nonce": "legacy", "at": legacy_at}).encode())
+
+    assert event_claim._read(path)[0] == "sent"
+    assert event_claim.claim(root, "notify", NOTE, now=legacy_at) is False
+
+
 # --- mark_sent must check the NONCE, not just the generation file's name ---
 
 def test_mark_sent_does_not_stamp_a_pruned_and_reused_generation(tmp_path):

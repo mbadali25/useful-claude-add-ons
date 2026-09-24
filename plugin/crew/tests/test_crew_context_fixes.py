@@ -22,6 +22,11 @@ from context_fixtures import (log_records, make_obsidian_config, make_repo,
                               make_stub_cli, payload)
 
 SCRIPTS = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "hooks", "scripts")
+# A bare "bash" can resolve to WSL's system32 copy, which cannot open a
+# Windows path at all (see crew_fixtures.resolve_bash's docstring) --
+# resolved and proved once here, same as every other flavour-paired suite.
+BASH = crew_fixtures.resolve_bash()
+needs_bash = pytest.mark.skipif(BASH is None, reason="bash not installed - the sh flavour was NOT run")
 
 
 @pytest.fixture(autouse=True)
@@ -154,6 +159,7 @@ def _handoff_repo(tmp_path, inject):
     return root
 
 
+@needs_bash
 @pytest.mark.parametrize("inject, speaks", [(True, False), (None, False), (False, True)])
 def test_handoff_read_sh_stands_down_exactly_when_memory_inject_is_on(tmp_path, inject, speaks):
     root = _handoff_repo(tmp_path, inject)
@@ -161,7 +167,7 @@ def test_handoff_read_sh_stands_down_exactly_when_memory_inject_is_on(tmp_path, 
     env = dict(os.environ)
     env.pop("CLAUDE_PROJECT_DIR", None)
 
-    done = subprocess.run(["bash", os.path.join(SCRIPTS, "handoff-read.sh")], input=raw, cwd=root,
+    done = subprocess.run([BASH, os.path.join(SCRIPTS, "handoff-read.sh")], input=raw, cwd=root,
                           capture_output=True, env=env, check=False, timeout=60)
 
     assert (done.returncode, b"HANDOFF-BODY-TOKEN" in done.stdout) == (0, speaks)

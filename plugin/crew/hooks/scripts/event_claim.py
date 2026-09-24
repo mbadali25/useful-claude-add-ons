@@ -196,9 +196,18 @@ def _sent_marker(path, nonce):
 def _read(path):
     """(state, at), or None when the generation vanished (pruned).
 
-    `state` is "sent" exactly when a sent-marker exists for the nonce THIS
-    generation's own body currently carries -- never by inspecting a "state"
-    field written into `path` itself. A generation file's body is written
+    `state` is "sent" when a sent-marker exists for the nonce THIS
+    generation's own body currently carries, OR when the body's own "state"
+    field already says "sent" -- the shape a pre-marker release wrote by
+    mutating the generation file in place instead of creating a separate
+    marker. A generation file written by THIS release's `_create`/`_record`
+    only ever carries "claimed" (see `_take`), so a body read as "sent" here
+    can only be a file this process's own write path never produced --
+    either inherited from before the marker design landed, or hand-edited --
+    never a live claim this code is racing against. Honouring it is a plain
+    read of bytes already loaded above, not a second filesystem call, so it
+    reopens no read-then-write gap: there is nothing here for two racing
+    readers to disagree about. A generation file's body is otherwise written
     once, at `_create` time, and never mutated again; see `mark_sent`."""
     try:
         with open(path, "rb") as handle:
@@ -212,6 +221,8 @@ def _read(path):
         at = float(data["at"])
     except (ValueError, KeyError, TypeError):
         return "claimed", mtime
+    if data.get("state") == "sent":
+        return "sent", at
     if os.path.exists(_sent_marker(path, nonce)):
         return "sent", at
     return "claimed", at

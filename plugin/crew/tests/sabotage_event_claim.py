@@ -61,6 +61,21 @@ EVENT_CLAIM_MUTATIONS = (
      "        return False\n"
      "    return True\n",
      _T + "test_mark_sent_is_immune_to_a_prune_and_recreate_race_mid_call"),
+    # --- Codex FIX (event_claim.py:215): a generation a pre-marker release
+    # already sent, with "state":"sent" in the file body and no separate
+    # marker, used to read back as "claimed" and get re-emitted after
+    # upgrade. Reverts `_read` to checking only the marker.
+    ("_read stops honouring a legacy in-file \"sent\" state with no marker",
+     EVENT_CLAIM,
+     '    except (ValueError, KeyError, TypeError):\n'
+     '        return "claimed", mtime\n'
+     '    if data.get("state") == "sent":\n'
+     '        return "sent", at\n'
+     "    if os.path.exists(_sent_marker(path, nonce)):\n",
+     '    except (ValueError, KeyError, TypeError):\n'
+     '        return "claimed", mtime\n'
+     "    if os.path.exists(_sent_marker(path, nonce)):\n",
+     _T + "test_a_legacy_sent_generation_with_no_marker_reads_as_sent"),
 )
 
 
