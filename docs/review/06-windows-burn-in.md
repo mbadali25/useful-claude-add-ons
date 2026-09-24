@@ -222,10 +222,62 @@ stands the PowerShell twin down *off* Windows. So both proceeding on Windows is 
 observed and is not claimed here. The flavour-guard suite does not cover this direction: all
 four of its cases test the `.ps1` off Windows.
 
-### 2a — withheld, now approved, not yet run
+### 2a — mechanism tested, live cycle NOT RUN, and the config is machine-global
 
-2a drives `/clear` by sending keystrokes to a terminal window. The operator has now approved
-running it in a scratch terminal. It is NOT RUN at this commit and is next.
+**The live cycle was not run, for a reason worth reporting on its own: `autoClear` cannot be
+scoped to a test repo.** `crew_autocycle.py:95` reads it from the machine file only:
+
+```python
+machine = _block(_load(global_path or global_config_path()), "context", "autoClear")
+```
+
+So "set `context.autoClear.enabled: true` with a low `warnAt`" is not a change to a scratch
+repo — it arms auto-clear for **every Claude session on the machine**. This host had five
+other local sessions live, two of them busy. Since the mechanism sends `/clear` keystrokes
+to a window resolved by an owner-process walk, and step 5 of this plan exists precisely
+because that walk can pick the wrong tab, the blast radius is not the scratch terminal the
+plan assumes. `test_only_the_machine_can_opt_in_and_a_repo_can_only_opt_out` confirms this
+is deliberate: a repo may opt **out** and only the machine may opt **in**.
+
+That is a real constraint on testing auto-clear anywhere, not a defect.
+
+Instead, 1.0's own auto-clear suites were run on Windows:
+
+| Suite | Result |
+|---|---|
+| `test_auto_clear.py` | **7 failed**, 25 passed, 1 skipped |
+| `test_auto_cycle.py` | **27 failed**, 56 passed |
+| `test_context_watch.py` | **1 failed**, 51 passed |
+
+**These are Windows fixture defects, not product failures — same family as the four already
+fixed on `main`.** Checked rather than assumed. Thirteen of the 27 are one parametrised
+test, `test_the_window_is_identified_uniquely_or_not_at_all`, and its failure is:
+
+```
+autoclear: refusing - method xdotool but xdotool is not on PATH
+```
+
+That is the product behaving correctly: told to use `xdotool` and unable to find it, it
+refuses rather than sending keystrokes blind. The fixture is what is broken:
+
+```python
+fake = bindir / "xdotool"
+fake.write_text("#!/bin/sh\nexit 0\n", encoding="ascii", newline="\n")
+fake.chmod(0o755)
+env = {"PATH": f"{bindir}{os.pathsep}{os.environ['PATH']}", "DISPLAY": ":0"}
+```
+
+`os.pathsep` is `;` on Windows while Git Bash needs a `:`-separated POSIX `PATH`, so the
+directory never joins bash's search path and the shim is unreachable. `chmod(0o755)` is also
+a no-op on Windows. The same fixture then drives the `ps1` flavour, which is why both
+flavours fail together. This is the shape the four fixes on `main` addressed — a fixture
+written for POSIX that does not translate — and it says nothing about whether window
+identification works on Windows.
+
+**So the steps this was meant to answer remain unanswered.** Steps 3, 5 and 6 — where
+`/clear` actually lands, which tab receives it with two tabs and no `windowTitle`, and
+whether alt-tabbing away suppresses the send — are **NOT RUN**, and the suite that would
+have covered step 5 cannot currently run on Windows at all.
 
 ## 2b. Web testing
 
@@ -293,7 +345,13 @@ Memory and Obsidian, review and Codex, doc-builder, and the landmine checks are 
    twin accepts the same interpreter and proceeds. Same host, same PATH, opposite verdicts.
    See 2c.
 
-1. **`check_instructions.py` exits 1 with 19 problems** — nine command files over the
+1. **35 auto-clear / autocycle tests fail on Windows, all fixture defects.**
+   `test_auto_clear` 7, `test_auto_cycle` 27, `test_context_watch` 1. The dominant cause is
+   `_xdotool_env` building `PATH` with `os.pathsep` (`;`) where Git Bash needs `:`, so a fake
+   `xdotool` is unreachable and the product correctly refuses. Product code looks right; the
+   suite that would prove window identification on Windows cannot run there. See 2a.
+
+2. **`check_instructions.py` exits 1 with 19 problems** — nine command files over the
    120-line budget and unlisted in `.budget-allowance.json`, plus ten stale pre-1.0 names
    (`qa-reviewer`, `/crew:ticket`, `/crew:work`, `pm-pulse`) inside files 1.0 should have
    purged. `commands\ticket.md` and `commands\work.md` still exist and still name
