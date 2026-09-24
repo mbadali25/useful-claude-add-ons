@@ -6,6 +6,31 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Changed
 
+- **`obsidian-vault` 0.4.13 / `jira-manager` 1.0.3: ported PR #212's
+  exit-77-on-skip convention and CI wiring from `origin/item8-ps1-parity`.**
+  A missing `pwsh` used to let `scripts/_test/uv-install.sh` (5 cases),
+  `scripts/_test/mcp-preflight-catalog.sh` (1 case) and
+  `plugin/obsidian-vault/hooks/scripts/_test/run-tests.sh` (its own `.ps1`
+  sub-cases) skip silently and still exit 0 - "PASSED" even though the
+  `.ps1` half was never behaviourally verified. All three now exit 77
+  (this repo's SKIP convention, matching `render.sh`'s missing-`mmdc`
+  case) when nothing failed but something was skipped for a missing tool.
+  `skills/jira-manager/scripts/_test/jq_absence.sh` gets the same
+  77-not-127 fix, plus a HOME repoint for its "nojq" fixture (`_jira_jq()`
+  also tries a Scoop-relative candidate that PATH-scrubbing alone does not
+  close - the Chocolatey/Program-Files candidates are absolute paths with
+  no HOME-relative form, so that gap stays open, documented in place).
+  `.github/workflows/marketplace.yml` and `shell-suites.yml` gain the CI
+  step for each of the four suites, none previously run by any workflow.
+  Two of the four files (`uv-install.sh`, `mcp-preflight-catalog.sh`)
+  applied unchanged from origin/main (pre-image hashes matched exactly);
+  `run-tests.sh` had diverged elsewhere during T7/PR #210 but its final
+  exit line had not, so the same replacement still applied by hand.
+  Directly verified, not just `bash -n`'d: 162/0, 122/0, 31/0 and 71/0/0
+  skipped respectively, all exit 0 (pwsh present at `/snap/bin/pwsh` on
+  this host, so the 77 path itself is exercised by the suites' own
+  fixtures rather than by this run).
+
 - **`crew` 1.0.12: verify-gate.ps1 closed-stdin fix (win-repo), and a pylint
   clean-up to exit 0.**
   Merged `origin/crew-1.0-win-stdin` (`1fa70a47`) onto 1.0.11. win-repo
