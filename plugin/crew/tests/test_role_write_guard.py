@@ -1000,7 +1000,16 @@ def test_candidate_nonzero_exit_status_is_rejected_powershell(tmp_path):
 def test_bash_already_rejects_nonzero_exit_candidate(tmp_path):
     """The bash HALF of FIX 1's parity claim -- bash already gets this
     right via `real=$(...) || continue`; locked in here so a future change
-    to `_resolve_role_write_python` cannot silently drop it."""
+    to `_resolve_role_write_python` cannot silently drop it.
+
+    Asserted via the discriminating stderr message, not the exit code: since
+    2026-09-24 total resolution failure fails closed for a restricted role
+    (`pm`) exactly like a launch failure does, so both now exit 2 and only
+    the message says which one actually happened -- "no usable python
+    found" (resolver rejected the candidate) versus "could not launch the
+    python interpreter" (resolver accepted, launch of role_write_guard.py
+    itself failed). Pinning only the exit code here would make this test
+    unable to tell those two apart."""
     apps = tmp_path / "wrappers"
     apps.mkdir()
     wrapper = apps / "python3"
@@ -1017,10 +1026,13 @@ def test_bash_already_rejects_nonzero_exit_candidate(tmp_path):
         [_BASH, _SH],
         input=_write_payload("Write", str(root / "src" / "app.py"), "pm", str(root)),
         capture_output=True, text=True, check=False, env=env, cwd=str(root))
-    assert proc.returncode == 0, (
-        "no usable python resolved (the only candidate exits nonzero), so "
-        "the write must be allowed unjudged, not blocked as if a real "
-        "decision was reached. stdout: " + proc.stdout)
+    assert proc.returncode == 2, (
+        "no usable python resolved (the only candidate exits nonzero) for "
+        "restricted role 'pm', so the write must fail closed. stdout: "
+        + proc.stdout + " stderr: " + proc.stderr)
+    assert "no usable python found" in proc.stderr, (
+        "expected the resolution-failure message, not the launch-failure "
+        "one -- got: " + proc.stderr)
 
 
 # --- Scope is judged on the REAL path, not the lexical one (round-1 BLOCK,
@@ -1860,11 +1872,19 @@ def test_bash_agrees_it_finds_nothing_in_the_same_layout(tmp_path):
         [_BASH, _SH],
         input=_write_payload("Write", str(root / "src" / "app.py"), "pm", str(root)),
         capture_output=True, text=True, check=False, env=env, cwd=str(root))
-    assert proc.returncode == 0, (
+    # Since 2026-09-24, total resolution failure fails closed for a
+    # restricted role ('pm') exactly like a launch failure does, so this
+    # now exits 2 rather than 0 -- the resolution-failure message is what
+    # actually proves "bash found nothing usable", not the exit code alone
+    # (a launch failure would exit 2 too).
+    assert proc.returncode == 2, (
         "bash must ALSO find nothing usable in this exact layout -- if "
         "this ever fails while the .ps1 test above still passes, the two "
         "shells have re-diverged. stdout: " + proc.stdout + " stderr: "
         + proc.stderr)
+    assert "no usable python found" in proc.stderr, (
+        "expected the resolution-failure message, not the launch-failure "
+        "one -- got: " + proc.stderr)
 
 
 def _resolver_source(path):
@@ -2010,8 +2030,16 @@ def test_launch_failure_still_allows_unrestricted_role_powershell(tmp_path):
 def _patch_py_to_nonexistent_sh(src):
     """Force `$PY` to an unlaunchable path immediately after
     `_resolve_role_write_python` would normally set it -- same technique
-    as the .ps1 twin's `_patch_py_to_nonexistent`."""
-    anchor = "\n# Deny-list mirror of role_write_guard.py's"
+    as the .ps1 twin's `_patch_py_to_nonexistent`.
+
+    The anchor must be textually AFTER the `PY=$(_resolve_role_write_python)
+    || { ... }` block, not before it -- since 2026-09-24 the deny-list
+    helpers moved above that block (they are needed there too, for the
+    resolution-failure fallback), so anchoring on them would overwrite $PY
+    with the nonexistent path BEFORE resolution runs, only for the real
+    resolver to immediately clobber it again with a genuine interpreter and
+    silently defeat this patch."""
+    anchor = "\n# PYTHONUTF8=1 / PYTHONIOENCODING=utf-8 in the CHILD's environment only --"
     assert anchor in src, "anchor moved; re-point this patch"
     return src.replace(
         anchor,
