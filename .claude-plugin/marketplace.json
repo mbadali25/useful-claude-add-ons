@@ -215,7 +215,7 @@
       "name": "crew",
       "source": "./plugin/crew",
       "description": "Virtual dev team for multi-repo legacy work - one interactive session owns a ticket from brainstorm through spec, plan, implement, tests, docs and review to done; 4 context-isolated agents (explorer, reviewer, security, researcher) plus on-demand stack skills, 34 slash commands, 29 bundled skills, and deterministic hooks: a budgeted context hook (on by default) that carries the handoff across a clear or compaction, plan-approval and scope guards with a completion audit, an opt-in cloud/destructive guard, and a verify gate that fails unverified turns. /crew:migrate carries a 0.20 setup forward.",
-      "version": "1.0.1"
+      "version": "1.0.2"
     },
     {
       "name": "gizmoduck",
@@ -233,7 +233,7 @@
       "name": "obsidian-vault",
       "source": "./plugin/obsidian-vault",
       "description": "Make one or more Obsidian vaults Claude Code's durable, token-efficient memory - cross-platform, multi-vault setup and health checks for the Local REST API bridge (one MCP server per vault), a vault contract guard whose frontmatter and ASCII rules ship off and whose canvas shape check ships on, gardening and reflection agents, canvas and map-of-content generation, and graphify wiring into a separate codegraphs vault.",
-      "version": "0.4.5"
+      "version": "0.4.6"
     },
     {
       "name": "rule-of-two",
