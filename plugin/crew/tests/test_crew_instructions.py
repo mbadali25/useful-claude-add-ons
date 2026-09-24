@@ -6,6 +6,7 @@ asserted to come from the same table as the Claude registration.
 """
 import json
 import os
+import re
 import stat
 
 import pytest
@@ -161,8 +162,13 @@ def test_codex_generation_writes_both_files_and_detects_drift(tmp_path):
     assert ci.codex(str(root), "/opt/crew", check=True) == ([], [])
     config = (root / ".codex" / "config.toml").read_text(encoding="utf-8")
     assert 'project_doc_fallback_filenames = ["CLAUDE.md"]' in config
-    assert '[profiles.review]\nsandbox_mode = "read-only"' in config
-    assert "[profiles.work]" in config
+    # No real [profiles.*] table: measured on codex-cli 0.154.0, `profiles` is
+    # on Codex's own project-local config denylist and is stripped whether the
+    # project is trusted or not, so writing one here would be a no-op that
+    # looks like enforcement. (A mention of the phrase in the explanatory
+    # comment is fine; an actual table header is not.)
+    assert not re.search(r"^\[profiles\.", config, re.MULTILINE)
+    assert "codex-cli 0.154.0" in config
     assert json.loads((root / ".codex" / "hooks.json").read_text(encoding="utf-8"))["hooks"]
     assert ci.codex(str(root), "/elsewhere", check=True)[0] == ["stale: " + os.path.join(".codex", "hooks.json")]
 
@@ -178,19 +184,46 @@ def fake_codex(tmp_path, monkeypatch):
     return path
 
 
-def test_codex_probe_says_configured_not_proven_without_an_observed_invocation(tmp_path, fake_codex):
+def _codex_home_trusting(tmp_path, monkeypatch, root, level="trusted", inline=False):
+    """Point CODEX_HOME at a fresh, isolated directory recording `level` for
+    `root` -- so a test never reads whatever trust state happens to be on the
+    machine actually running it."""
+    home = tmp_path / "codex-home"
+    home.mkdir()
+    path = os.path.abspath(str(root))
+    if inline:
+        body = f'[projects]\n"{path}" = {{ trust_level = "{level}" }}\n'
+    else:
+        body = f'[projects."{path}"]\ntrust_level = "{level}"\n'
+    (home / "config.toml").write_text(body, encoding="utf-8")
+    monkeypatch.setenv("CODEX_HOME", str(home))
+    return home
+
+
+def _codex_home_empty(tmp_path, monkeypatch):
+    """CODEX_HOME exists but has never recorded any project trust."""
+    home = tmp_path / "codex-home"
+    home.mkdir()
+    monkeypatch.setenv("CODEX_HOME", str(home))
+    return home
+
+
+def test_codex_probe_says_configured_not_proven_without_an_observed_invocation(tmp_path, fake_codex, monkeypatch):
     root = _big_repo(tmp_path)
     ci.codex(str(root), "/opt/crew")
+    _codex_home_trusting(tmp_path, monkeypatch, root)
 
     lines = ci.codex_probe(str(root), "/opt/crew")
 
     assert "hooks feature: enabled" in lines
     assert "project files: current" in lines
+    assert any(l.startswith("project trust: trusted - ") for l in lines)
     assert "SubagentStart: configured, not proven" in lines
 
 
-def test_codex_probe_reports_an_invocation_only_as_invoked(tmp_path, fake_codex):
+def test_codex_probe_reports_an_invocation_only_as_invoked(tmp_path, fake_codex, monkeypatch):
     root = _big_repo(tmp_path)
+    _codex_home_trusting(tmp_path, monkeypatch, root)
     log = root / ".git" / "crew" / "context-log.jsonl"
     log.parent.mkdir(parents=True)
     log.write_text(json.dumps({"harness": "codex", "event": "SessionStart"}) + "\n", encoding="utf-8")
@@ -204,6 +237,101 @@ def test_codex_probe_without_codex_installed(monkeypatch, tmp_path):
     monkeypatch.setenv("CREW_CODEX_BIN", str(tmp_path / "nope"))
 
     assert ci.codex_probe(str(tmp_path), "/opt/crew") == ["codex: not installed - Codex parity not configured"]
+
+
+# --- codex-probe: project trust is CLOSED, not merely unproven ---------------
+
+def test_codex_trust_is_trusted_for_an_exploded_projects_entry(tmp_path, monkeypatch):
+    root = _big_repo(tmp_path)
+    _codex_home_trusting(tmp_path, monkeypatch, root)
+
+    assert ci.codex_trust(str(root)) == (
+        ci.TRUST_OK, f'trust_level = "trusted" for {os.path.abspath(str(root))} in '
+                     f"{os.path.join(str(tmp_path / 'codex-home'), 'config.toml')}")
+
+
+def test_codex_trust_is_trusted_for_the_inline_table_form(tmp_path, monkeypatch):
+    root = _big_repo(tmp_path)
+    _codex_home_trusting(tmp_path, monkeypatch, root, inline=True)
+
+    state, detail = ci.codex_trust(str(root))
+
+    assert state == ci.TRUST_OK and "trusted" in detail
+
+
+def test_codex_trust_is_closed_when_explicitly_untrusted(tmp_path, monkeypatch):
+    root = _big_repo(tmp_path)
+    _codex_home_trusting(tmp_path, monkeypatch, root, level="untrusted")
+
+    state, detail = ci.codex_trust(str(root))
+
+    assert state == ci.TRUST_CLOSED and "untrusted" in detail
+
+
+def test_codex_trust_is_closed_when_no_entry_was_ever_recorded(tmp_path, monkeypatch):
+    root = _big_repo(tmp_path)
+    _codex_home_empty(tmp_path, monkeypatch)
+
+    state, detail = ci.codex_trust(str(root))
+
+    assert state == ci.TRUST_CLOSED
+    assert "config.toml" in detail
+
+
+def test_codex_trust_is_closed_when_codex_home_has_never_been_used(tmp_path, monkeypatch):
+    """No CODEX_HOME env var and no ~/.codex -- the common fresh-machine case.
+    Redirect HOME so this does not depend on whatever is on the machine
+    actually running the suite."""
+    root = _big_repo(tmp_path)
+    monkeypatch.delenv("CODEX_HOME", raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path / "empty-home"))
+    (tmp_path / "empty-home").mkdir()
+
+    state, _ = ci.codex_trust(str(root))
+
+    assert state == ci.TRUST_CLOSED
+
+
+def test_codex_trust_is_unknown_when_codex_home_is_set_but_missing(tmp_path, monkeypatch):
+    root = _big_repo(tmp_path)
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "does-not-exist"))
+
+    state, detail = ci.codex_trust(str(root))
+
+    assert state == ci.TRUST_UNKNOWN and "does-not-exist" in detail
+
+
+def test_codex_trust_windows_paths_fold_case_insensitively(monkeypatch):
+    monkeypatch.setattr(ci.os, "name", "nt")
+    text = '[projects."C:\\\\Repos\\\\thing"]\ntrust_level = "trusted"\n'
+
+    level, matched = ci._scan_project_trust(text, ["c:\\repos\\thing"])
+
+    assert (level, matched) == ("trusted", "C:\\Repos\\thing")
+
+
+def test_codex_probe_reports_a_closed_trust_gate_plainly_not_as_fine(tmp_path, fake_codex, monkeypatch):
+    root = _big_repo(tmp_path)
+    ci.codex(str(root), "/opt/crew")
+    _codex_home_empty(tmp_path, monkeypatch)
+
+    lines = ci.codex_probe(str(root), "/opt/crew")
+
+    assert any(l.startswith("project trust: missing trust - ") for l in lines)
+    assert any(l.startswith("SessionStart: CLOSED - ") for l in lines)
+    assert not any("configured, not proven" in l for l in lines)
+
+
+def test_codex_probe_reports_unknown_trust_as_its_own_state(tmp_path, fake_codex, monkeypatch):
+    root = _big_repo(tmp_path)
+    ci.codex(str(root), "/opt/crew")
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "nope"))
+
+    lines = ci.codex_probe(str(root), "/opt/crew")
+
+    assert any(l.startswith("project trust: unknown - ") for l in lines)
+    assert any(l.startswith("SessionStart: unknown - ") for l in lines)
+    assert not any("CLOSED" in l or "configured, not proven" in l for l in lines)
 
 
 # --- T6 review fixes ----------------------------------------------------------
