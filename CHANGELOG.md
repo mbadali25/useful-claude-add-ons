@@ -6,7 +6,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Changed
 
-- **`crew` 1.0.4: Windows burn-in fixes merged - in-process test decision
+- **`crew` 1.0.5: Windows burn-in fixes merged - in-process test decision
   logic with a default parity sample and the full per-shell matrix marked
   `slow` (run on windows-latest CI); per-flavour PATH fixtures for shim
   tests plus `autoClear` `onlyRepos`/`onlySessions` scope narrowing;
@@ -14,7 +14,7 @@ All notable changes to this repository are documented here. Format follows [Keep
   with a timeout, and Python probes that prove CPython/PyPy and kill the
   process tree.** Three burn-in lanes (`crew-1.0-burnin-fix1`,
   `crew-1.0-burnin-fix4`, `crew-1.0-burnin-fix3b`) merged into `crew-1.0`;
-  `obsidian-vault` 0.4.8 picks up the same proven-Python-probe resolver in
+  `obsidian-vault` 0.4.9 picks up the same proven-Python-probe resolver in
   its bash wrappers from the fix3b lane. `plugin/crew/BUDGETS.md`'s
   Markdown line-count claim re-measured against the merged tree.
   Review-round-3 fixes: fail-closed `autoClear` scoping, including `.ps1`
@@ -25,6 +25,20 @@ All notable changes to this repository are documented here. Format follows [Keep
   in `event_claim`, the probe wait clamped to the overall resolver
   deadline, a dead bash memo removed, and `obsidian-vault`'s `.ps1`
   wrappers launching `.cmd`/`.bat` Pythons.
+- **`crew` 1.0.5 / `obsidian-vault` 0.4.9: main's #221 and #222 fixes
+  merged in.** `main`'s crew 0.20.19/0.20.20 (#221) closed a gap 1.0's own
+  resolver hardening had not reached: when `role-write-guard.sh`/`.ps1`
+  resolve NO usable python at all, a restricted role (a `_DENY_ROLES`
+  member, or `pm`) now fails closed (exit 2) instead of being allowed
+  unjudged - ported onto 1.0's own resolvers and role list, which already
+  had the WindowsApps-rejection fix main's #221 also carried. `main`'s
+  obsidian-vault 0.3.17 (#222) removed the same WindowsApps path-substring
+  rejection from vault-guard/vault-capture/bridge-status; 1.0's
+  execute-and-verify resolvers never had that rejection to begin with, so
+  nothing to port there. `test_role_write_guard.py` also gained #221's
+  CI-only PATH-fixture fix (a coreutils-stripped `$PATH` used to hide the
+  guard's own "no usable python" decision behind a `command not found`
+  fall-through to allow).
 
 ### Fixed
 
