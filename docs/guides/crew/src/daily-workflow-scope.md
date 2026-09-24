@@ -35,8 +35,7 @@ Check the contract at any time:
 python3 <crew>/hooks/scripts/crew_ticket.py validate --ticket T-0042
 ```
 
-A plan path outside Touch is reported as `INVALID: plan Files entry '...' is outside spec
-## Touch`. To fix it, add the path to Touch. crew never widens Touch for you.
+A plan path outside Touch is reported as `INVALID: plan Files entry '...' is outside spec ## Touch`. To fix it, add the path to Touch. crew never widens Touch for you.
 
 ## Approval
 

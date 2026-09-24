@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Memory and Obsidian</title>
+<meta name="doc-builder-page" content="#2E3440">
+<style>
+body { font-family:'Segoe UI',Calibri,Arial,sans-serif; font-size:11pt;
+       color:#ECEFF4; background:#2E3440; margin:2cm; line-height:1.45; }
+.wrap { max-width:none; margin:0; padding:0; }
+
+h1 { font-size:22pt; margin:0 0 4pt; color:#88C0D0; }
+h2 { font-size:16pt; margin:24pt 0 8pt; padding-bottom:3pt;
+     border-bottom:1px solid #4C566A; color:#88C0D0; }
+h3 { font-size:13pt; margin:16pt 0 6pt; color:#88C0D0; }
+p  { margin:6pt 0; }
+ul, ol { margin:4pt 0 8pt 18pt; }
+li { margin:3pt 0; }
+code { font-family:Consolas,'Courier New',monospace; font-size:9.5pt; }
+.sub    { color:#D8DEE9; font-size:10pt; margin:0 0 10pt; }
+.muted  { color:#D8DEE9; font-size:9.5pt; }
+.warn { color:#EBCB8B; }
+.fail { color:#FFB3B8; }
+a { color:#88C0D0; }
+.footer { color:#D8DEE9; font-size:9.5pt; margin-top:26pt;
+          border-top:1px solid #4C566A; padding-top:8pt; }
+.box { background:#3B4252; border:1px solid #88C0D0;
+        padding:8pt 10pt; margin:10pt 0; }
+.plain { background:#3B4252; border-left:4px solid #88C0D0;
+          padding:4pt 10pt; margin:8pt 0; }
+
+/* Every table: real grid, real thead. Both required. */
+table { border-collapse:collapse; width:100%; table-layout:auto;
+             margin:8px 0 4px; }
+th, td { border:1px solid #6B7A94; padding:7px 10px;
+             text-align:left; vertical-align:top; overflow-wrap:break-word; }
+th { background:#434C5E; color:#ECEFF4; font-weight:700;
+             letter-spacing:0.02em; padding:8px 10px; }
+/* Every body cell carries its own fill. Word keeps it when a print drops the
+   page colour; LibreOffice keeps it only in the guide profile's bare `td`
+   (it drops the report's scoped selector - word-traps.md). */
+td { background:#2E3440; color:#ECEFF4; }
+/* Zebra is an explicit class, written per row by the builder. */
+tr.alt td { background:#3B4252; }
+
+table.meta { border-collapse:collapse; width:100%; margin:0 0 14px; }
+table.meta td { border:1px solid #6B7A94; padding:7px 10px; font-size:12px;
+             background:#2E3440; color:#ECEFF4; }
+table.meta td.k { background:#3B4252; font-weight:600; width:17%; }
+
+.lede { background:#3B4252; border-left:4px solid #88C0D0;
+        padding:10px 14px; margin:10px 0 4px; }
+.handling { background:#4A2C33; border-left:4px solid #A3303A;
+            padding:8px 14px; margin:10px 0; font-size:12px; color:#FFD7DB; }
+
+/* Cards are a table on purpose; the number and label are real block
+   elements rather than styled spans. */
+table.cards { border-collapse:separate; border-spacing:8px 0; width:100%;
+              margin:6px 0 2px; }
+td.card { background:#3B4252; border:1px solid #6B7A94; padding:10px 12px;
+          text-align:center; }
+div.n { font-size:22px; font-weight:700; color:#88C0D0; }
+div.l { font-size:11px; color:#D8DEE9; }
+
+.chip-critical, .chip-high, .chip-medium, .chip-low, .chip-info, .chip-unverified { display:inline-block; padding:2px 8px; font-weight:700; font-size:11px; white-space:nowrap; }
+.chip-critical { background:#FDE8E6; color:#A01B12; }
+.chip-high { background:#FFEDD5; color:#9A3412; }
+.chip-medium { background:#FDF3D7; color:#8A6100; }
+.chip-low { background:#E3F4EA; color:#1C6B3F; }
+.chip-info { background:#E8EFF8; color:#2F4B7C; }
+.chip-unverified { background:#EDEEF1; color:#5C5F6B; }
+
+@media print {
+  body { font-size:11pt; }
+  .wrap { padding:0; max-width:none; }
+  h2, h3 { page-break-after:avoid; }
+  tr { page-break-inside:avoid; }
+  thead { display:table-header-group; }
+}
+</style>
+</head>
+<body bgcolor="#2E3440">
+<h1 id="memory-and-obsidian">Memory and Obsidian</h1>
+<p>Crew keeps durable memory in plain Markdown: your repository's contracts,
+ADRs and code map stay authoritative for that repository, and an Obsidian
+vault holds the lessons that cross projects. The <code>obsidian-vault</code> plugin owns
+that vault. It sets it up, captures sessions into it, gardens the captures into
+notes, and answers recall queries from it. Crew calls the plugin rather than
+doing any of this itself.</p>
+<p>Every command below is <code>vault_ops.py</code>, which ships with the plugin. It is
+<strong>dry-run by default</strong>: it prints the exact change and writes nothing until you
+repeat it with <code>--apply</code>. Exit 0 means done or healthy, 1 means there is
+something to do or something wrong, and 2 means the command was refused or
+mistyped.</p>
+<p>Set a shorthand once per shell. It picks the newest installed version of the plugin:</p>
+<pre><code class="language-bash"># Linux / macOS / Git Bash
+VO=&quot;python3 $(ls -d ~/.claude/plugins/cache/*/obsidian-vault/*/ | sort -V | tail -1)hooks/scripts/vault_ops.py&quot;
+</code></pre>
+<pre><code class="language-powershell"># Windows PowerShell
+$VO = (Get-ChildItem &quot;$env:USERPROFILE\.claude\plugins\cache\*\obsidian-vault\*\hooks\scripts\vault_ops.py&quot; |
+  Sort-Object { [version]$_.Directory.Parent.Parent.Name } | Select-Object -Last 1).FullName
+function vo { python $VO @args }
+</code></pre>
+<p>On Windows, read <code>$VO ...</code> in the examples below as <code>vo ...</code>. Inside Claude
+Code you do not need either: <code>/obsidian-vault:init</code> runs the same steps and
+asks you before each one.</p>
+<h2 id="what-gets-captured">What Gets Captured</h2>
+<p>When a session ends, and before the context is compacted, a hook appends one
+line to the primary vault:</p>
+<pre><code>inbox/pending-reflect.&lt;host&gt;.md
+- [ ] 2026-09-23 14:02 | SessionEnd | session=4f1c... | cwd=/repos/app | transcript=/home/you/.claude/projects/.../4f1c....jsonl
+</code></pre>
+<p>That is all it records: when, which session, which folder, and where the
+transcript is. It never copies conversation text into the vault. Each machine
+writes its own <code>&lt;host&gt;</code> file, so two machines syncing one vault never write the
+same file. One line per session, whichever trigger fires first. The capture
+hook cannot block or slow a session; if it fails it says so on stderr and moves
+on.</p>
+<p>Capture, import and the gardener write to the primary vault only. If the
+primary is not available (an unmounted drive, say), they write nothing and say
+why; capture reports it on stderr and the session carries on. They never fall
+back to a recall vault.</p>
+<p>An older version wrote a single <code>inbox/pending-reflect.md</code>. That file is no
+longer written, but it is still read, so an existing backlog drains rather than
+being stranded.</p>
+<h2 id="how-gardening-works">How Gardening Works</h2>
+<p>The gardener turns queued sessions into notes. It reads each transcript,
+writes or extends concept and decision notes with sources, and appends a line
+to the day's daily note.</p>
+<p>It runs <strong>on one host, once a day, in bounded passes</strong>:</p>
+<ul>
+<li>at most <strong>5 items or 10 minutes</strong> per run, whichever comes first;</li>
+<li>an item is acknowledged only after the note it produced exists, is
+  non-empty, and was written during that item's run. If the model fails, times
+  out, or names a file it did not write (including one that was already
+  there), the item stays queued for the next run;</li>
+<li>acknowledgements go to <code>inbox/reflected.&lt;host&gt;.md</code>, so the queue files keep
+  one writer each;</li>
+<li>a session whose transcript lives on another machine is left for that machine
+  and does not use up one of the five slots;</li>
+<li>only the designated host runs it (<code>gardener.host</code> in the config), and one
+  run at a time;</li>
+<li>with <code>--commit</code>, it commits only the files that run wrote plus its own
+  acknowledgement file. It never sweeps in anything else you had staged.
+  git, including the vault's own git hooks, runs inside the same 10-minute
+  bound: a hook still running then is stopped and the commit is reported as
+  not made. Leave <code>--commit</code> off if Obsidian Git already commits the vault.</li>
+</ul>
+<p>Run a pass by hand with <code>/obsidian-vault:garden</code>, or:</p>
+<pre><code class="language-bash">$VO queue                 # what is waiting
+$VO garden-run            # one bounded pass (designated host only)
+</code></pre>
+<p>A large backlog drains in the same bounded batches:</p>
+<pre><code class="language-bash">$VO drain                         # dry run: backlog size, batch count, first batch
+$VO drain --apply --batches 4     # up to 4 passes of 5, stops early if one acknowledges nothing
+</code></pre>
+<h2 id="upkeep">Upkeep</h2>
+<table>
+<thead>
+<tr>
+<th>When</th>
+<th>Do</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Daily, automatically</td>
+<td>The scheduled gardener. Check <code>~/.claude/obsidian/gardener.log</code> now and then for lines that start <code>left queued</code>.</td>
+</tr>
+<tr>
+<td>After a plugin update</td>
+<td>Re-run <code>$VO schedule --os &lt;yours&gt;</code> and reinstall the unit it prints. The unit names the plugin's versioned folder, which the update replaces.</td>
+</tr>
+<tr>
+<td>When a vault moves or you add one</td>
+<td><code>$VO adopt</code> to review roles.</td>
+</tr>
+<tr>
+<td>When recall seems blind</td>
+<td><code>$VO recall --query "&lt;words you expect&gt;"</code> and check which vaults it names.</td>
+</tr>
+<tr>
+<td>When the bridge misbehaves</td>
+<td><code>/obsidian-vault:doctor</code>, then <code>/obsidian-vault:repair</code>. The bridge is optional; capture, recall, import and gardening all work on the files without it.</td>
+</tr>
+<tr>
+<td>When the code changed a lot</td>
+<td><code>/crew:onboard --refresh &lt;subsystem&gt;</code> for the repository's own code map. That map lives in the repository, not the vault.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="setup">Setup</h2>
+<p>Every case ends in the same place: exactly one <strong>primary</strong> vault, which receives
+captures and imports, and optionally some <strong>recall</strong> vaults that are read but
+never written.</p>
+<h3 id="case-1-obsidian-is-not-installed">Case 1: Obsidian Is Not Installed</h3>
+<p><strong>Linux</strong></p>
+<pre><code class="language-bash">$VO detect-obsidian
+</code></pre>
+<p>It checks snap (<code>/snap/bin/obsidian</code>), Flatpak (<code>md.obsidian.Obsidian</code>), the
+<code>obsidian</code> deb, AppImage locations and <code>PATH</code>, and answers <code>INSTALLED</code>,
+<code>MISSING</code> or <code>UNKNOWN</code>. <code>UNKNOWN</code> means none of those checks could run. It is
+not the same as missing, and install refuses it.</p>
+<pre><code class="language-bash">$VO install-obsidian              # prints e.g.: Planned install (snap): sudo snap install obsidian --classic
+$VO install-obsidian --apply      # runs exactly that command
+</code></pre>
+<p>Without snap it offers <code>flatpak install -y flathub md.obsidian.Obsidian</code>. For a
+deb or AppImage it tells you what to download from obsidian.md and does not
+fetch anything. Choose one with <code>--method snap|flatpak|deb|appimage</code>.</p>
+<p><strong>Windows</strong></p>
+<pre><code class="language-powershell">vo detect-obsidian
+vo install-obsidian               # Planned install (winget): winget install --id Obsidian.Obsidian -e ...
+vo install-obsidian --apply
+</code></pre>
+<p>Then create the vault:</p>
+<pre><code class="language-bash">$VO create-vault --name memory --path ~/vaults/memory
+$VO create-vault --name memory --path ~/vaults/memory --apply
+$VO adopt --role memory=primary --apply
+</code></pre>
+<p>On Windows use a path such as <code>C:\vaults\memory</code>. Open the folder once in
+Obsidian (<strong>Open folder as vault</strong>) so Obsidian registers it too.</p>
+<p><strong>Success looks like:</strong> <code>detect-obsidian</code> prints <code>INSTALLED</code>, a second
+<code>create-vault ... --apply</code> prints <code>Nothing to do</code>, and <code>$VO adopt</code> lists
+<code>memory  primary</code>.</p>
+<h3 id="case-2-obsidian-with-one-vault">Case 2: Obsidian with One Vault</h3>
+<pre><code class="language-bash">$VO adopt
+</code></pre>
+<pre><code>1 vault(s). Ask for a role for each: primary (exactly one; receives captures and imports), recall (read for injection), ignore.
+
+  notes                    unassigned /home/you/notes
+</code></pre>
+<pre><code class="language-bash">$VO adopt --role notes=primary            # dry run: shows role and default changes
+$VO adopt --role notes=primary --apply
+</code></pre>
+<p><strong>Success looks like:</strong> running the same <code>--apply</code> again prints <code>Every
+requested role is already set. Nothing to change.</code> and exits 0.</p>
+<h3 id="case-3-several-vaults">Case 3: Several Vaults</h3>
+<p><code>adopt</code> lists every vault in the config and every vault Obsidian itself knows
+about. Decide on each one separately:</p>
+<ul>
+<li><code>primary</code>: this vault receives captures and imports. Choose exactly one.</li>
+<li><code>recall</code>: this vault is searched for context but never written.</li>
+<li><code>ignore</code>: leave this vault alone. The answer is stored so a re-run does not
+  ask again.</li>
+</ul>
+<p>Then write every answer in one call:</p>
+<pre><code class="language-bash">$VO adopt --role memory=primary --role work-notes=recall --role journal=ignore
+$VO adopt --role memory=primary --role work-notes=recall --role journal=ignore --apply
+</code></pre>
+<p>The command refuses any result with no primary, with two, or with any listed
+vault left without a role, and writes nothing when it does. That is why every
+answer goes in one call. To move the primary later, demote the old one in the same call:
+<code>--role memory=recall --role new-memory=primary</code>.</p>
+<p><strong>Success looks like:</strong> <code>$VO adopt</code> lists each vault with its role and no
+<code>[FAIL]</code> line.</p>
+<h3 id="case-4-importing-a-folder">Case 4: Importing a Folder</h3>
+<p>Bring notes from a plain Markdown folder, or from another vault by name, into
+the primary vault:</p>
+<pre><code class="language-bash">$VO import --source ~/old-notes                 # dry run: counts and collisions
+$VO import --source ~/old-notes --apply
+</code></pre>
+<p>On Windows, for example: <code>vo import --source C:\Users\you\Documents\old-notes --apply</code>.</p>
+<p>Notes land under <code>imported/&lt;folder name&gt;/</code> with the same sub-folders. Each one
+gets two frontmatter keys: <code>imported_from</code> (the absolute source path) and
+<code>imported_at</code> (the UTC date). Line endings become LF. The import never
+overwrites a file. If a file already exists at the destination, the import
+skips it and reports it as a <code>COLLISION</code>. With <code>--suffix-collisions</code> it writes
+the new file beside it as <code>&lt;name&gt; (imported).md</code>; run again, it recognises
+that copy and writes nothing. A destination that passes through a symlinked
+folder, or lands outside the vault, is refused as <code>outside-vault</code>. Files that are not Markdown
+are counted and left behind. Use <code>--dest-subdir &lt;folder&gt;</code> to choose another
+destination inside the vault.</p>
+<p><strong>Success looks like:</strong> <code>Imported N note(s)</code>; running it again reports
+<code>already-imported: N</code> and writes nothing.</p>
+<h3 id="scheduling-the-gardener">Scheduling the Gardener</h3>
+<p>On the one machine that should garden, run:</p>
+<pre><code class="language-bash">$VO schedule --os cron --designate            # Linux without a systemd user session (root, containers)
+$VO schedule --os systemd --designate         # Linux desktop with systemd --user
+</code></pre>
+<pre><code class="language-powershell">vo schedule --os windows --designate
+</code></pre>
+<p>Each command prints the unit, the install commands, a verify command and a
+remove command. It installs nothing. Paths are quoted for the shell that
+reads them, so a folder name with a quote, a space or <code>$</code> is safe to paste.
+Add <code>--apply</code> to make this machine the
+designated gardener, then run the printed install commands yourself. The
+default time is 02:23; change it with <code>--time HH:MM</code>.</p>
+<p><strong>Success looks like:</strong> after the first scheduled run,
+<code>~/.claude/obsidian/gardener.log</code> has <code>acked &lt;session&gt;</code> lines, and <code>$VO queue</code>
+shows fewer items.</p>
+<h2 id="confirming-recall-reaches-your-sessions">Confirming Recall Reaches Your Sessions</h2>
+<p>(written by the context-hook ticket)</p>
+<hr>
+
+<h2 id="confirming-recall-reaches-your-sessions_1">Confirming Recall Reaches Your Sessions</h2>
+<p>crew's context hook (<code>plugin/crew/hooks/scripts/crew_context.py</code>) puts two kinds of memory into a
+session: <strong>code-map slices</strong> from <code>.crew/codemap/</code>, and <strong>vault recall</strong> from the Obsidian vaults
+<code>obsidian-vault</code> manages. This page shows how to prove, on your own machine, that recall reaches the
+main session <em>and</em> the subagents it dispatches, and that the model actually uses it.</p>
+<h3 id="which-channel-reaches-which-agent">Which Channel Reaches Which Agent</h3>
+<p>Measured on Claude Code 2.1.281 on 2026-09-23 with a canary per hook event (one <code>claude -p</code> run,
+Haiku, a <code>general-purpose</code> subagent told to report what was in its context without using tools):</p>
+<table>
+<thead>
+<tr>
+<th>Hook event</th>
+<th>Reaches the main agent</th>
+<th>Reaches a subagent</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>SessionStart</code></td>
+<td>yes</td>
+<td><strong>no</strong></td>
+</tr>
+<tr>
+<td><code>UserPromptSubmit</code></td>
+<td>yes</td>
+<td><strong>no</strong></td>
+</tr>
+<tr>
+<td><code>SubagentStart</code></td>
+<td>n/a</td>
+<td><strong>yes</strong></td>
+</tr>
+</tbody>
+</table>
+<p>The subagent's verbatim answer in that run: <code>Harbour colour: UNKNOWN</code>, <code>Orchard number: UNKNOWN</code>,
+<code>Lighthouse keeper name: OSWIN-TARRANT-92</code>, where only the last came from <code>SubagentStart</code>. So crew
+registers the hook on <code>SubagentStart</code> as well. That event's payload names the agent (<code>agent_id</code>,
+<code>agent_type</code>) but does not include the task, so the hook reads the task back from the parent
+transcript's latest <code>Agent</code> tool call. Commands that write a subagent prompt themselves can also
+paste in a slice:</p>
+<pre><code class="language-bash">python3 &quot;&lt;crew plugin root&gt;/hooks/scripts/crew_context.py&quot; --slice-for-subagent \
+  --query &quot;&lt;the task text&gt;&quot; --paths &lt;files the task touches&gt;
+</code></pre>
+<h3 id="where-recall-comes-from">Where Recall Comes From</h3>
+<ul>
+<li>The vaults and their roles come from <code>~/.claude/obsidian/config.json</code>. Each vault has a <code>role</code>:
+  <code>primary</code>, <code>recall</code> or <code>ignore</code>. A vault with no role is <code>primary</code> if it is the default and
+  <code>recall</code> otherwise. crew <strong>never</strong> asks an <code>ignore</code> vault, even if the repo lists it.</li>
+<li>A repo can set its own order in its crew config: <code>memory.recall.vaults</code> (an ordered list of names)
+  and <code>memory.recall.maxChars</code> (default 800). Snippets come back in that vault order first, then in
+  the order the search ranked them.</li>
+<li>crew calls obsidian-vault's read-only CLI:
+  <code>vault_ops.py recall --query ... --vaults a,b --max-chars N --json</code>. If the plugin is missing, or
+  the CLI fails, times out or prints something other than JSON, the session goes on without recall
+  and the log records a miss with the reason.</li>
+<li>Every recall line starts with the vault's name: <code>- [vault:&lt;name&gt;] &lt;note path&gt;: &lt;text&gt;</code>. Any snippet
+  the CLI returns without a vault name is dropped.</li>
+</ul>
+<h3 id="the-seeded-note-proof">The Seeded-Note Proof</h3>
+<ol>
+<li>Make a scratch vault holding one note whose wording appears nowhere else, for example
+   <code>notes/tidewater-ledger.md</code>: "The Tidewater ledger reconciliation cutoff is 03:17 Kestrel time,
+   and the approving steward is Marisol Quennell-Vantage."</li>
+<li>Add that vault to your obsidian config with <code>"role": "recall"</code>. For a dry run that leaves the real
+   config alone, write a copy and point <code>CREW_OBSIDIAN_CONFIG</code> at it.</li>
+<li>In a scratch project that has a <code>.crew/</code> directory, register crew's hook in
+   <code>.claude/settings.json</code> for <code>SessionStart</code>, <code>UserPromptSubmit</code> and <code>SubagentStart</code>. Use the
+   command <code>bash "&lt;crew plugin root&gt;/hooks/scripts/crew-context.sh"</code>. <code>crew_instructions.py
+   claude-hooks</code> prints the full set of entries.</li>
+<li>Start a fresh session and ask for a subagent that may not use tools:</li>
+</ol>
+<p><code>bash
+   claude -p --model haiku --output-format stream-json --verbose --include-hook-events \
+     "Use the Task tool once with exactly this prompt: 'Without using any tools, answer only from \
+   your context: what is the Tidewater ledger reconciliation cutoff, and who is the approving \
+   steward? If it is not in your context, answer UNKNOWN. Name the source label.' Then reply with \
+   the subagent's answer verbatim."</code></p>
+<p><strong>What success looks like.</strong> The <code>Agent</code> tool call's prompt does not contain the answer, the
+<code>SubagentStart</code> hook response contains
+<code>- [vault:ops-recall] notes/tidewater-ledger.md: ... 03:17 Kestrel time ... Marisol Quennell-Vantage</code>,
+and the subagent answers with the answer and cites the label, with <code>tool_uses: 0</code>. From the
+2026-09-23 run, verbatim:</p>
+<pre><code class="language-text">Based on the context provided:
+
+**Tidewater ledger reconciliation cutoff:** 03:17 Kestrel time
+
+**Approving steward:** Marisol Quennell-Vantage
+
+**Source label:** [vault:ops-recall]
+</code></pre>
+<p>That run used a stand-in for obsidian-vault's <code>recall</code> command: a word-overlap search over the
+scratch vault's files, implementing the same contract. It has since been re-run against the real
+command; see below.</p>
+<h4 id="measured-against-the-real-vault_opspy-recall-2026-09-23">Measured against the real <code>vault_ops.py recall</code>, 2026-09-23</h4>
+<p>Claude Code 2.1.281, <code>claude -p --model haiku --no-session-persistence --setting-sources project
+--strict-mcp-config</code>, crew 0.20.19 with <code>memory.inject: true</code>, in a scratch project and scratch
+vault. obsidian-vault's own CLI (<code>plugin/obsidian-vault/hooks/scripts/vault_ops.py</code>) was named with
+<code>CREW_VAULT_OPS</code>, and both tools read a scratch obsidian config through <code>CREW_OBSIDIAN_CONFIG</code> and
+<code>OBSIDIAN_VAULT_CONFIG</code>. The seeded note: "The Brackenmoor sluice-gate audit window opens at 04:41
+Corvid time, and the countersigning warden is Ysolde Pemberton-Karrow." The <code>Agent</code> call's prompt
+asked the question and did not contain the answer. The subagent answered with <code>tool_uses: 0</code>,
+verbatim:</p>
+<pre><code class="language-text">Based on the vault recall in my context:
+
+**Time:** 04:41 Corvid time
+**Countersigning Warden:** Ysolde Pemberton-Karrow
+**Source:** [vault:proof-recall] notes/brackenmoor-sluice.md
+</code></pre>
+<p>The <code>SubagentStart</code> line in the emission log:</p>
+<pre><code class="language-json">{&quot;agent_id&quot;: &quot;a74ce527b5ab3e7cb&quot;, &quot;agent_type&quot;: &quot;general-purpose&quot;, &quot;budget&quot;: 2000, &quot;chars&quot;: 423, &quot;dedupHits&quot;: 0, &quot;event&quot;: &quot;SubagentStart&quot;, &quot;harness&quot;: &quot;claude&quot;, &quot;lines&quot;: 4, &quot;query_from&quot;: &quot;last-prompt&quot;, &quot;recall&quot;: {&quot;dropped&quot;: 0, &quot;reason&quot;: &quot;&quot;, &quot;snippets&quot;: 2, &quot;status&quot;: &quot;hit&quot;, &quot;vaults&quot;: [&quot;proof-recall&quot;]}, &quot;session&quot;: &quot;08038c78-3372-4ccb-85d0-2d765b8c79db&quot;, &quot;sources&quot;: [{&quot;kind&quot;: &quot;vault&quot;, &quot;note&quot;: &quot;notes/other.md&quot;, &quot;vault&quot;: &quot;proof-recall&quot;}, {&quot;kind&quot;: &quot;vault&quot;, &quot;note&quot;: &quot;notes/brackenmoor-sluice.md&quot;, &quot;vault&quot;: &quot;proof-recall&quot;}], &quot;truncated&quot;: false, &quot;ts&quot;: &quot;2026-09-23T20:59:07Z&quot;}
+</code></pre>
+<p><code>query_from: last-prompt</code> means the recall query came from the session's last user prompt, not
+from the <code>Agent</code> call in the transcript. <code>--no-session-persistence</code> leaves no transcript to read
+back. So this run proves that the real CLI's recall reaches a subagent. It does not prove that the
+query is taken from the <code>Agent</code> call.</p>
+<h3 id="reading-stats">Reading <code>--Stats</code></h3>
+<p>Every emission adds one JSON line to <code>&lt;git-common-dir&gt;/crew/context-log.jsonl</code>, which all worktrees
+of the repo share. Outside git, the log is <code>.work/crew/context-log.jsonl</code>. To summarise it:</p>
+<pre><code class="language-bash">python3 &quot;&lt;crew plugin root&gt;/hooks/scripts/crew_context.py&quot; --stats          # add --json for machines
+</code></pre>
+<p>This is the output after the proof run above, without its first line (the log path):</p>
+<pre><code class="language-text">emissions: 3  injected chars: 647  dedup hits: 0  truncated: 0
+  SessionStart: 1 emissions, 45 chars
+  SubagentStart: 1 emissions, 352 chars
+  UserPromptSubmit: 1 emissions, 250 chars
+vault recall: 2 hit, 1 miss, 0 skipped; 2 snippets injected; code-map slices: 0
+  miss reasons: no-hits=1
+vault MCP/search tool calls seen: 0
+by harness: claude=3
+</code></pre>
+<ul>
+<li><strong>hit / miss / skipped</strong> are counted per recall attempt. <code>cli-missing</code> means obsidian-vault is not
+  installed where crew can find it. <code>cli-exit-N</code>, <code>cli-timeout</code> and <code>cli-bad-json</code> mean the CLI ran
+  and failed. <code>no-vaults</code> means no vault is <code>primary</code> or <code>recall</code>. <code>no-hits</code> means the search
+  matched nothing.</li>
+<li><strong>dedup hits</strong> count slices that were not injected again because this context already had them.
+  Deduplication applies per subsystem or vault note, and per compaction epoch: after <code>/compact</code> or
+  <code>/clear</code>, crew injects them once more.</li>
+<li><strong>vault MCP/search tool calls seen</strong> counts the times the model searched a vault itself
+  (<code>mcp__obsidian-*</code>, <code>mcp__basic-memory__*</code>). The baseline before crew 1.0 was 5 calls in 305
+  sessions. If recall is helping, this number stays low while hits rise.</li>
+<li><strong>by harness</strong> separates Claude Code from Codex (<code>codex</code>) and from dispatch slices (<code>cli</code>).</li>
+</ul>
+</body>
+</html>
