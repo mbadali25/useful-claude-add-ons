@@ -9,18 +9,26 @@ It reads the two JSONL files itself rather than parsing diff.md, because the
 diff renders severity through SEV_NAME, where an unrecognised severity has
 already become Info. Everything this gate cannot read fails closed:
 
-- a new finding whose severity is not one of critical/high/medium/low/info, or
+- a finding whose severity is not one of critical/high/medium/low/info, or
   that carries normalize.py's `severity-assigned` tag (the tool gave none and
-  the adapter assigned a default), is UNKNOWN and fails the gate unless
-  `trust_assigned` is set - and `trust_assigned` only covers the tagged case,
-  never an unreadable value;
+  the adapter assigned a default), is UNKNOWN - in the current scan when it is
+  new, and in the BASELINE whenever it is there at all, because an unknown
+  baseline record would otherwise suppress a current Critical with the same
+  identity. `trust_assigned` covers only the tagged case, never an unreadable
+  value;
+- several current records sharing one identity are judged at their MAXIMUM
+  severity, so the order a scanner wrote them in cannot hide a High behind a
+  Low;
 - a line that is neither raw Nuclei JSONL nor a normalised finding, in either
   file, fails the gate;
-- a missing baseline fails the gate unless `allow_missing_baseline` is set
-  (that flag is how a repository creates its first baseline);
-- a run manifest with an `error:*` or `skipped-missing` cell fails the gate
-  unless `allow_incomplete` is set, because a scanner that did not run is not
-  a scanner that found nothing.
+- a missing baseline fails the gate on its own - even when the scan found
+  nothing - unless `allow_missing_baseline` is set (that flag is how a
+  repository creates its first baseline);
+- the run manifest must list at least one cell, and every cell must be `ran`,
+  `ran(<mode>)` or `skipped-active` (an active tool that declined by design).
+  No manifest, no cells, `error:*`, `skipped-missing` or any status this gate
+  does not know fails unless `allow_incomplete` is set, because a scanner that
+  did not run is not a scanner that found nothing.
 
 `block_at` is the trigger tier's threshold (ci_render.py): 4 blocks on a new
 Critical only (tier 1, the light PR check), 3 on a new Critical or High
@@ -117,11 +125,24 @@ def load_findings(path, trust_assigned=False):
     return out
 
 
+def _cell_complete(cell):
+    status = cell.get("status") if isinstance(cell, dict) else None
+    if not isinstance(status, str):
+        return False
+    return status in ("ran", "skipped-active") or (status.startswith("ran(") and status.endswith(")"))
+
+
 def incomplete_cells(manifest):
-    cells = (manifest or {}).get("cells") or []
-    return [c for c in cells
-            if str(c.get("status", "")).startswith("error")
-            or c.get("status") == "skipped-missing"]
+    """Every cell that does not prove its tool ran. A manifest with no cells at
+    all is one synthetic incomplete cell: coverage nobody recorded is not
+    coverage."""
+    if not isinstance(manifest, dict):
+        return [{"target": "(run)", "tool": "(all)", "status": "no run manifest"}]
+    cells = manifest.get("cells")
+    if not isinstance(cells, list) or not cells:
+        return [{"target": "(run)", "tool": "(all)", "status": "no coverage cells"}]
+    return [c if isinstance(c, dict) else {"target": "?", "tool": "?", "status": repr(c)}
+            for c in cells if not _cell_complete(c)]
 
 
 BLOCK_AT = {"critical": 4, "high": 3, "never": None}
@@ -129,7 +150,8 @@ BLOCK_AT = {"critical": 4, "high": 3, "never": None}
 
 def evaluate(baseline, current, manifest=None, allow_missing_baseline=False,
              allow_incomplete=False, block_at=_BLOCKING):
-    """`baseline` is a list of Finding or None (no baseline); `current` a list."""
+    """`baseline` is a list of Finding or None (no baseline); `current` a list;
+    `manifest` the run manifest (None is incomplete coverage)."""
     result = _evaluate(baseline, current, manifest, allow_missing_baseline, allow_incomplete,
                        _BLOCKING if block_at is None else block_at)
     if block_at is None and result.fail:
@@ -139,27 +161,50 @@ def evaluate(baseline, current, manifest=None, allow_missing_baseline=False,
     return result
 
 
+def _worst_by_key(findings):
+    """{key: (worst Finding, any_unknown)} - order-independent. The worst is the
+    highest known severity; an unknown one is tracked separately so it still
+    fails even beside a known record of the same identity."""
+    out = {}
+    for f in findings:
+        worst, unknown = out.get(f.key, (None, False))
+        if f.severity < 0:
+            unknown = True
+            if worst is None:
+                worst = f
+        elif worst is None or worst.severity < 0 or f.severity > worst.severity:
+            worst = f
+        out[f.key] = (worst, unknown)
+    return out
+
+
 def _evaluate(baseline, current, manifest, allow_missing_baseline, allow_incomplete, threshold):
     result = GateResult(fail=False, baseline_present=baseline is not None)
+    first_run = baseline is None and allow_missing_baseline
     if baseline is None:
         if allow_missing_baseline:
             result.reasons.append("no baseline; allowed by GIZMODUCK_ALLOW_NO_BASELINE - "
                                   "this run is accepted and becomes the baseline")
-            return _with_coverage(result, manifest, allow_incomplete)
+        else:
+            result.fail = True
+            result.reasons.append("no baseline found - failing closed; nothing can be called new or "
+                                  "old without one (set GIZMODUCK_ALLOW_NO_BASELINE=true for a first run)")
         baseline = []
-        result.reasons.append("no baseline found; every finding counts as new "
-                              "(set GIZMODUCK_ALLOW_NO_BASELINE=true for a first run)")
+    base_unknown = [f for f in baseline if f.severity < 0]
+    if base_unknown:
+        result.fail = True
+        result.reasons.append(f"{len(base_unknown)} baseline finding(s) with an unknown severity "
+                              f"(fail closed - an unreadable baseline record could hide a new "
+                              f"Critical/High with the same identity)")
     base_keys = {f.key for f in baseline}
-    seen = set()
-    for f in current:
-        if f.key in base_keys or f.key in seen:
+    for key, (worst, unknown) in _worst_by_key(current).items():
+        if key in base_keys:
             continue
-        seen.add(f.key)
         result.new_total += 1
-        if f.severity < 0:
-            result.new_unknown.append(f)
-        elif f.severity >= threshold:
-            result.new_blocking.append(f)
+        if unknown:
+            result.new_unknown.append(next(f for f in current if f.key == key and f.severity < 0))
+        if worst.severity >= threshold and not first_run:
+            result.new_blocking.append(worst)
     if result.new_blocking:
         result.fail = True
         label = "Critical" if threshold >= 4 else "Critical/High"

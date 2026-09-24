@@ -180,6 +180,9 @@ def test_bitbucket_out_writes_beside_an_existing_file(tmp_path):
     (["--authorized-by", " "], "--authorized-by is required"),
     (["--default-branch", "main; rm -rf /"], "unsafe name"),
     (["--image", "evil image"], "unsafe image"),
+    (["--image", "ubuntu:24.04\n      options: --privileged"], "unsafe image"),
+    (["--image", "ubuntu:24.04\n"], "unsafe image"),
+    (["--image", "ubuntu:24.04\u2028x"], "unsafe image"),
     (["--authorized-by", "${{ secrets.SDP_API_KEY }}"], "GitHub expression"),
     (["--staging-url", "https://staging.example.com/${{github.token}}"], "GitHub expression"),
 ])
@@ -199,3 +202,18 @@ def test_unpinned_ref_warns(tmp_path):
     assert "is not a commit SHA" in render(tmp_path).stderr
     sha = "0123456789abcdef0123456789abcdef01234567"
     assert "is not a commit SHA" not in render(tmp_path, "--gizmoduck-ref", sha).stderr
+
+
+@pytest.mark.parametrize("image", ["ubuntu:24.04\n      options: --privileged", "ubuntu:24.04\n", "",
+                                   "a b", "ubuntu:24.04\r", "Ubuntu:24.04", None, "x" * 300])
+def test_render_all_itself_refuses_an_unsafe_image(image):
+    with pytest.raises(ValueError, match="unsafe image"):
+        ci_render.render_all(dict(GOLDEN_CFG, image=image), ("github", "bitbucket"))
+
+
+def test_image_is_emitted_quoted_on_both_platforms():
+    files = ci_render.render_all(GOLDEN_CFG, ("github", "bitbucket"))
+    quoted = f'image: "{GOLDEN_CFG["image"]}"'
+    assert quoted in files["bitbucket-pipelines.yml"]
+    for rel in ci_render.GITHUB_FILES:
+        assert quoted in files[rel], rel

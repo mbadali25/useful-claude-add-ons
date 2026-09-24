@@ -27,6 +27,7 @@ this module defers to it rather than re-deriving the mapping.
 """
 import json
 import os
+import re
 from pathlib import Path
 
 import yaml
@@ -115,6 +116,15 @@ def _context_name(target):
     return "".join(c if c.isalnum() else "-" for c in name) or "target"
 
 
+def scope_regex(url):
+    """The context's one include pattern: `url` and what is below it, and
+    nothing else. Regex-escaped (an unescaped `.` let
+    `https://staging.example.com.*` match `staging.example.com.evil.test`)
+    and cut at a path boundary, so no other origin - including the one a
+    redirect points at - is ever in scope for the spider or the active scan."""
+    return "(?i)" + re.escape(url.rstrip("/")) + "(?:[/?#].*)?"
+
+
 def _build_plan(url, context_name, active, report_dir, report_file):
     jobs = [
         {"type": "passiveScan-config", "parameters": {"maxAlertsPerRule": 0}},
@@ -137,7 +147,7 @@ def _build_plan(url, context_name, active, report_dir, report_file):
             "contexts": [{
                 "name": context_name,
                 "urls": [url],
-                "includePaths": [url.rstrip("/") + ".*"],
+                "includePaths": [scope_regex(url)],
             }],
             "parameters": {"progressToStdout": True},
         },

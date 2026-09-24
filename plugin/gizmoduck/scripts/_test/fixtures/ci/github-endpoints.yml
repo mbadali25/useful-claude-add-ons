@@ -5,6 +5,10 @@
 # Tiers: gizmoduck-pr.yml (1, light PR check), gizmoduck-full.yml (2 + weekly
 # code sweep + manual), gizmoduck-endpoints.yml (2 after the staging deploy +
 # weekly endpoint sweep + manual). Endpoint scans never run on a pull request.
+# Branch protection: require the `gate` job of gizmoduck-pr.yml and of
+# gizmoduck-full.yml - each always runs and decides from the event, so a
+# later skipped run can never stand in for a failed scan. (A docs-only PR
+# does not trigger gizmoduck-pr.yml at all, so its gate reports nothing.)
 
 name: gizmoduck staging endpoint scan
 
@@ -23,11 +27,10 @@ on:
         default: ''
         type: string
 
-permissions:
-  contents: read
+permissions: {}
 
 concurrency:
-  group: gizmoduck-endpoints-${{ github.event_name }}-${{ github.ref }}
+  group: gizmoduck-endpoints-${{ github.event_name }}-${{ github.event.workflow_run.head_branch || github.event.deployment.ref || github.ref }}
   cancel-in-progress: true
 
 defaults:
@@ -50,11 +53,11 @@ env:
 jobs:
   scan:
     name: gizmoduck staging endpoint scan (runner image)
-    if: vars.GIZMODUCK_RUNNER != 'bootstrap' && (github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || (github.event_name == 'deployment_status' && github.event.deployment_status.state == 'success' && github.event.deployment.environment == 'staging') || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success'))
+    if: vars.GIZMODUCK_RUNNER != 'bootstrap' && (github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || (github.event_name == 'deployment_status' && github.event.deployment_status.state == 'success' && github.event.deployment.environment == 'staging' && github.event.repository.full_name == github.repository && (github.event.deployment.ref == 'main' || github.event.deployment.ref == 'refs/heads/main' || startsWith(github.event.deployment.ref, 'release/') || startsWith(github.event.deployment.ref, 'refs/heads/release/'))) || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_repository.full_name == github.repository && github.event.workflow_run.event != 'pull_request' && github.event.workflow_run.event != 'pull_request_target' && (github.event.workflow_run.head_branch == 'main' || github.event.workflow_run.head_branch == 'refs/heads/main' || startsWith(github.event.workflow_run.head_branch, 'release/') || startsWith(github.event.workflow_run.head_branch, 'refs/heads/release/'))))
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     container:
-      image: ghcr.io/example/gizmoduck-ci:0.0.0-golden
+      image: "ghcr.io/example/gizmoduck-ci:0.0.0-golden"
     permissions:
       contents: read
       actions: read
@@ -84,15 +87,19 @@ jobs:
             PIP_BREAK_SYSTEM_PACKAGES=1 bash "$GIZMODUCK_HOME/bootstrap.sh"
           fi
           if [ -n "${GITHUB_PATH:-}" ]; then echo "$HOME/.local/bin" >> "$GITHUB_PATH"; fi
-      - name: Cache key (ISO week)
+      - name: Cache key (trust level, ISO week)
         id: week
-        run: echo "key=$(date -u +%G-%V)" >> "$GITHUB_OUTPUT"
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then trust="pr"; else trust="trusted"; fi
+          suffix=""
+          if [ "$GITHUB_EVENT_NAME" = "schedule" ]; then suffix="-sweep-$GITHUB_RUN_ID"; fi
+          { echo "trust=$trust"; echo "key=$(date -u +%G-%V)"; echo "suffix=$suffix"; } >> "$GITHUB_OUTPUT"
       - name: Cache the Nuclei templates
         uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
         with:
           path: /tmp/gizmoduck-cache/nuclei-templates
-          key: gizmoduck-nuclei-${{ steps.week.outputs.key }}
-          restore-keys: gizmoduck-nuclei-
+          key: gizmoduck-nuclei-${{ steps.week.outputs.trust }}-${{ steps.week.outputs.key }}${{ steps.week.outputs.suffix }}
+          restore-keys: gizmoduck-nuclei-${{ steps.week.outputs.trust }}-
       - name: Nuclei templates (seeded from the runner; updated by the weekly sweep)
         run: python3 "$GIZMODUCK_HOME/scripts/gizmoduck_ci.py" prepare-templates --dir "$GIZMODUCK_NUCLEI_TEMPLATES" --tier "$GIZMODUCK_TIER"
       - name: Endpoints (committed list + re-detect; none is UNVERIFIED and fails)
@@ -112,11 +119,11 @@ jobs:
           GIZMODUCK_ALLOWED_IP_ORIGINS: ${{ vars.GIZMODUCK_ALLOWED_IP_ORIGINS }}
           GIZMODUCK_TARGET_URL: ${{ inputs.url }}
         run: python3 "$GIZMODUCK_HOME/scripts/gizmoduck_ci.py" targets --run-endpoints "$GIZMODUCK_OUT/endpoints-run.json" --out "$GIZMODUCK_OUT/targets.json"
-      - name: Find the baseline run
+      - name: Find the baseline run (default branch, trusted runs only)
         id: prev
         env:
           GH_TOKEN: ${{ github.token }}
-        run: python3 "$GIZMODUCK_HOME/scripts/gizmoduck_ci.py" gh-previous-run --workflow gizmoduck-endpoints.yml >> "$GITHUB_OUTPUT"
+        run: python3 "$GIZMODUCK_HOME/scripts/gizmoduck_ci.py" gh-previous-run --workflow gizmoduck-endpoints.yml --trusted "$GIZMODUCK_DEFAULT_BRANCH" --artifact gizmoduck-endpoints >> "$GITHUB_OUTPUT"
       - name: Download the baseline
         if: steps.prev.outputs.run_id != ''
         continue-on-error: true
@@ -165,7 +172,7 @@ jobs:
 
   scan-bootstrap:
     name: gizmoduck staging endpoint scan (inline bootstrap fallback)
-    if: vars.GIZMODUCK_RUNNER == 'bootstrap' && (github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || (github.event_name == 'deployment_status' && github.event.deployment_status.state == 'success' && github.event.deployment.environment == 'staging') || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success'))
+    if: vars.GIZMODUCK_RUNNER == 'bootstrap' && (github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || (github.event_name == 'deployment_status' && github.event.deployment_status.state == 'success' && github.event.deployment.environment == 'staging' && github.event.repository.full_name == github.repository && (github.event.deployment.ref == 'main' || github.event.deployment.ref == 'refs/heads/main' || startsWith(github.event.deployment.ref, 'release/') || startsWith(github.event.deployment.ref, 'refs/heads/release/'))) || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_repository.full_name == github.repository && github.event.workflow_run.event != 'pull_request' && github.event.workflow_run.event != 'pull_request_target' && (github.event.workflow_run.head_branch == 'main' || github.event.workflow_run.head_branch == 'refs/heads/main' || startsWith(github.event.workflow_run.head_branch, 'release/') || startsWith(github.event.workflow_run.head_branch, 'refs/heads/release/'))))
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     permissions:
@@ -197,15 +204,19 @@ jobs:
             PIP_BREAK_SYSTEM_PACKAGES=1 bash "$GIZMODUCK_HOME/bootstrap.sh"
           fi
           if [ -n "${GITHUB_PATH:-}" ]; then echo "$HOME/.local/bin" >> "$GITHUB_PATH"; fi
-      - name: Cache key (ISO week)
+      - name: Cache key (trust level, ISO week)
         id: week
-        run: echo "key=$(date -u +%G-%V)" >> "$GITHUB_OUTPUT"
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then trust="pr"; else trust="trusted"; fi
+          suffix=""
+          if [ "$GITHUB_EVENT_NAME" = "schedule" ]; then suffix="-sweep-$GITHUB_RUN_ID"; fi
+          { echo "trust=$trust"; echo "key=$(date -u +%G-%V)"; echo "suffix=$suffix"; } >> "$GITHUB_OUTPUT"
       - name: Cache the Nuclei templates
         uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
         with:
           path: /tmp/gizmoduck-cache/nuclei-templates
-          key: gizmoduck-nuclei-${{ steps.week.outputs.key }}
-          restore-keys: gizmoduck-nuclei-
+          key: gizmoduck-nuclei-${{ steps.week.outputs.trust }}-${{ steps.week.outputs.key }}${{ steps.week.outputs.suffix }}
+          restore-keys: gizmoduck-nuclei-${{ steps.week.outputs.trust }}-
       - name: Nuclei templates (seeded from the runner; updated by the weekly sweep)
         run: python3 "$GIZMODUCK_HOME/scripts/gizmoduck_ci.py" prepare-templates --dir "$GIZMODUCK_NUCLEI_TEMPLATES" --tier "$GIZMODUCK_TIER"
       - name: Endpoints (committed list + re-detect; none is UNVERIFIED and fails)
@@ -225,11 +236,11 @@ jobs:
           GIZMODUCK_ALLOWED_IP_ORIGINS: ${{ vars.GIZMODUCK_ALLOWED_IP_ORIGINS }}
           GIZMODUCK_TARGET_URL: ${{ inputs.url }}
         run: python3 "$GIZMODUCK_HOME/scripts/gizmoduck_ci.py" targets --run-endpoints "$GIZMODUCK_OUT/endpoints-run.json" --out "$GIZMODUCK_OUT/targets.json"
-      - name: Find the baseline run
+      - name: Find the baseline run (default branch, trusted runs only)
         id: prev
         env:
           GH_TOKEN: ${{ github.token }}
-        run: python3 "$GIZMODUCK_HOME/scripts/gizmoduck_ci.py" gh-previous-run --workflow gizmoduck-endpoints.yml >> "$GITHUB_OUTPUT"
+        run: python3 "$GIZMODUCK_HOME/scripts/gizmoduck_ci.py" gh-previous-run --workflow gizmoduck-endpoints.yml --trusted "$GIZMODUCK_DEFAULT_BRANCH" --artifact gizmoduck-endpoints >> "$GITHUB_OUTPUT"
       - name: Download the baseline
         if: steps.prev.outputs.run_id != ''
         continue-on-error: true

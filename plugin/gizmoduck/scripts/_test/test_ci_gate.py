@@ -3,8 +3,10 @@ closed on anything the gate cannot read.
 
 SABOTAGE-TEST before trusting a change here: in a scratch copy of ci_gate.py,
 make an unknown severity count as Info, drop the baseline-key check, lower the
-blocking floor to Medium, or treat a missing baseline as empty-and-passing, and
-confirm the matching case below goes red. Restore the copy afterwards.
+blocking floor to Medium, treat a missing baseline as empty-and-passing, treat
+an empty/absent manifest or an unknown cell status as complete, skip unknown
+severities in the baseline, or keep the first of several duplicate records,
+and confirm the matching case below goes red. Restore the copy afterwards.
 """
 import json
 import subprocess
@@ -41,36 +43,44 @@ def parse(records, trust=False):
     return [ci_gate.parse_line(json.dumps(r), trust) for r in records]
 
 
+OK = {"cells": [{"target": "code", "tool": "semgrep", "status": "ran"}]}
+
+
+def evaluate(baseline, current, manifest="complete", **kw):
+    """ci_gate.evaluate with a complete run manifest unless a test says otherwise."""
+    return ci_gate.evaluate(baseline, current, OK if manifest == "complete" else manifest, **kw)
+
+
 def test_new_high_fails():
-    r = ci_gate.evaluate(parse([]), parse([norm("semgrep:x", 3)]))
+    r = evaluate(parse([]), parse([norm("semgrep:x", 3)]))
     assert r.fail and len(r.new_blocking) == 1
 
 
 def test_new_critical_fails():
-    assert ci_gate.evaluate(parse([]), parse([norm("semgrep:x", 4)])).fail
+    assert evaluate(parse([]), parse([norm("semgrep:x", 4)])).fail
 
 
 def test_existing_high_passes():
     rec = norm("semgrep:x", 3)
-    r = ci_gate.evaluate(parse([rec]), parse([rec]))
+    r = evaluate(parse([rec]), parse([rec]))
     assert not r.fail and r.new_total == 0
 
 
 def test_same_rule_at_a_new_location_is_new():
-    r = ci_gate.evaluate(parse([norm("semgrep:x", 3, "a.py:1")]),
+    r = evaluate(parse([norm("semgrep:x", 3, "a.py:1")]),
                          parse([norm("semgrep:x", 3, "b.py:9")]))
     assert r.fail
 
 
 @pytest.mark.parametrize("sev", [2, 1, 0])
 def test_new_medium_low_info_pass(sev):
-    r = ci_gate.evaluate(parse([]), parse([norm("semgrep:x", sev)]))
+    r = evaluate(parse([]), parse([norm("semgrep:x", sev)]))
     assert not r.fail and r.new_total == 1
 
 
 def test_raw_nuclei_high_fails_and_medium_passes():
-    assert ci_gate.evaluate(parse([]), parse([raw("t1", "high")])).fail
-    assert not ci_gate.evaluate(parse([]), parse([raw("t1", "medium")])).fail
+    assert evaluate(parse([]), parse([raw("t1", "high")])).fail
+    assert not evaluate(parse([]), parse([raw("t1", "medium")])).fail
 
 
 @pytest.mark.parametrize("record", [
@@ -85,46 +95,79 @@ def test_raw_nuclei_high_fails_and_medium_passes():
     norm("checkov:CKV_1", 2, tags=["severity-assigned"]),
 ])
 def test_unknown_severity_fails_closed(record):
-    r = ci_gate.evaluate(parse([]), parse([record]))
+    r = evaluate(parse([]), parse([record]))
     assert r.fail and len(r.new_unknown) == 1, r.reasons
 
 
 def test_trust_assigned_severity_covers_only_the_tagged_case():
     tagged = norm("checkov:CKV_1", 2, tags=["severity-assigned"])
-    assert not ci_gate.evaluate(parse([]), parse([tagged], trust=True)).fail
-    assert ci_gate.evaluate(parse([]), parse([raw("t1", "unknown")], trust=True)).fail
+    assert not evaluate(parse([]), parse([tagged], trust=True)).fail
+    assert evaluate(parse([]), parse([raw("t1", "unknown")], trust=True)).fail
 
 
-def test_unknown_severity_already_in_baseline_passes():
+def test_unknown_severity_in_the_baseline_fails_closed():
     rec = raw("t1", "unknown")
-    assert not ci_gate.evaluate(parse([rec]), parse([rec])).fail
+    r = evaluate(parse([rec]), parse([rec]))
+    assert r.fail and "baseline" in " ".join(r.reasons)
+
+
+def test_unknown_baseline_record_cannot_suppress_a_new_critical():
+    base = {**norm("semgrep:x", 3), "severity": 9, "severity_name": "critical"}
+    assert evaluate(parse([base]), parse([norm("semgrep:x", 3)])).fail
+
+
+@pytest.mark.parametrize("order", [(1, 3), (3, 1), (0, 4, 2)])
+def test_duplicate_identities_are_judged_at_their_max_severity(order):
+    r = evaluate(parse([]), parse([norm("semgrep:x", s) for s in order]))
+    assert r.fail and [f.severity for f in r.new_blocking] == [max(order)] and r.new_total == 1
+
+
+def test_duplicate_identity_with_an_unknown_severity_still_fails():
+    r = evaluate(parse([]), parse([norm("semgrep:x", 1), raw("semgrep:x", "bogus", "app.py:1")]))
+    assert r.fail and len(r.new_unknown) == 1
 
 
 def test_missing_baseline_fails_closed_on_high():
-    r = ci_gate.evaluate(None, parse([norm("semgrep:x", 3)]))
+    r = evaluate(None, parse([norm("semgrep:x", 3)]))
     assert r.fail and not r.baseline_present
 
 
-def test_missing_baseline_with_no_high_passes():
-    assert not ci_gate.evaluate(None, parse([norm("semgrep:x", 2)])).fail
+@pytest.mark.parametrize("records", [[], [norm("semgrep:x", 2)], [norm("semgrep:x", 0)]])
+def test_missing_baseline_fails_even_with_nothing_blocking(records):
+    r = evaluate(None, parse(records))
+    assert r.fail and any("no baseline" in x for x in r.reasons)
 
 
 def test_missing_baseline_allowed_passes_as_first_run():
-    r = ci_gate.evaluate(None, parse([norm("semgrep:x", 4)]), allow_missing_baseline=True)
+    r = evaluate(None, parse([norm("semgrep:x", 4)]), allow_missing_baseline=True)
     assert not r.fail
 
 
-@pytest.mark.parametrize("status", ["error:timeout", "error:returncode=2", "skipped-missing"])
+def test_first_run_opt_in_still_fails_an_unknown_severity():
+    assert evaluate(None, parse([raw("t1", "bogus")]), allow_missing_baseline=True).fail
+
+
+@pytest.mark.parametrize("status", ["error:timeout", "error:returncode=2", "skipped-missing", "not-run",
+                                    "", None, 3, "ran-ish", "RAN", "skipped"])
 def test_incomplete_coverage_fails_unless_allowed(status):
     manifest = {"cells": [{"target": "code", "tool": "semgrep", "status": status}]}
-    assert ci_gate.evaluate(parse([]), parse([]), manifest).fail
+    assert evaluate(parse([]), parse([]), manifest).fail
+    assert not evaluate(parse([]), parse([]), manifest, allow_incomplete=True).fail
+
+
+@pytest.mark.parametrize("manifest", [None, {}, {"cells": []}, {"cells": None}, {"cells": "ran"}, [],
+                                      {"cells": ["ran"]}, {"cells": [{"target": "a", "tool": "b"}]}])
+def test_missing_or_empty_coverage_fails_closed(manifest):
+    r = ci_gate.evaluate(parse([]), parse([]), manifest)
+    assert r.fail and any("incomplete coverage" in x for x in r.reasons)
     assert not ci_gate.evaluate(parse([]), parse([]), manifest, allow_incomplete=True).fail
 
 
 def test_ran_and_skipped_active_cells_are_complete():
     manifest = {"cells": [{"target": "a", "tool": "semgrep", "status": "ran"},
+                          {"target": "a", "tool": "zap", "status": "ran(baseline)"},
                           {"target": "a", "tool": "sqlmap", "status": "skipped-active"}]}
-    assert not ci_gate.evaluate(parse([]), parse([]), manifest).fail
+    assert not evaluate(parse([]), parse([]), manifest).fail
 
 
 @pytest.mark.parametrize("line", ["not json", "[1,2]", '{"hello": "world"}'])
@@ -135,9 +178,13 @@ def test_unreadable_line_is_an_error(line):
 
 # --- the CLI, as the pipeline runs it -------------------------------------
 
-def run_gate(tmp_path, base, cur, *extra, env=None):
+def run_gate(tmp_path, base, cur, *extra, env=None, manifest="complete"):
     argv = [sys.executable, str(_CLI), "gate", "--current", str(cur),
             "--json-out", str(tmp_path / "gate.json"), "--new-out", str(tmp_path / "new.jsonl")]
+    if manifest is not None and "--manifest" not in extra:
+        path = tmp_path / "run-manifest.json"
+        path.write_text(json.dumps(OK if manifest == "complete" else manifest), encoding="utf-8")
+        argv += ["--manifest", str(path)]
     if base is not None:
         argv += ["--baseline", str(base)]
     return subprocess.run(argv + list(extra), capture_output=True, text=True,
@@ -167,6 +214,12 @@ def test_cli_missing_baseline_and_env_override(tmp_path):
     assert run_gate(tmp_path, missing, cur).returncode == 1
     assert run_gate(tmp_path, missing, cur,
                     env={"GIZMODUCK_ALLOW_NO_BASELINE": "true"}).returncode == 0
+
+
+def test_cli_without_a_manifest_fails_closed(tmp_path):
+    cur = jsonl(tmp_path / "c.jsonl", [])
+    p = run_gate(tmp_path, cur, cur, manifest=None)
+    assert p.returncode == 1 and "incomplete coverage" in p.stdout
 
 
 def test_cli_corrupt_current_fails_closed(tmp_path):

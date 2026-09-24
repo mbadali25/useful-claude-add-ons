@@ -4,6 +4,44 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Security
+
+- **`gizmoduck` 0.7.1: CI review fixes - the gate and the guard fail closed, trusted-ref
+  endpoint runs, no secrets to PRs, trust-scoped caches, detection containment and
+  redaction.** Gate (`ci_gate.py`): a missing baseline fails on its own (the first-run opt-in
+  still works); a run manifest with no cells, or any cell that is not `ran`/`ran(...)`/
+  `skipped-active`, is incomplete coverage; an unknown severity in the baseline fails too, so it
+  can no longer hide a current Critical with the same identity; duplicate identities are judged
+  at their highest severity, whatever the order. Guard (`ci_guard.py`): an origin on both the
+  staging and production lists is production and needs the opt-in; Unicode whitespace, format
+  characters and edge whitespace are refused, never stripped; a URL with userinfo or a
+  credential-named query parameter is refused, and every URL in a log, `targets.json` or refusal
+  is redacted. The redirect probe is now a pre-check only: Nuclei runs with `-dr`, sqlmap with
+  `--ignore-redirects`, ZAP's context is the regex-escaped target origin (it previously matched
+  `staging.example.com.evil.test`), and the endpoint stage fails if any URL a scanner recorded
+  left the allowed origins. Workflows: PR jobs hold `contents: read` + `actions: read` and no
+  secret, and a separate job alone holds `security-events: write` to upload SARIF; each PR
+  workflow ends in an always-running `gate` job to require in branch protection, and tier 2 is
+  decided from the label set, so an unrelated `labeled` event re-runs it instead of skipping it;
+  the endpoint workflow scans after `deployment_status`/`workflow_run` only for the default
+  branch or `release/*` of this repository and not from a pull request; baselines come only
+  from successful non-PR default-branch runs of this repository that still carry the artifact;
+  cache keys carry the trust level, and the weekly sweep always saves a fresh cache; the image
+  reference is validated as one line and emitted quoted. Bitbucket: write-capable secrets move to
+  a `gizmoduck-trusted` deployment environment used by stages in the custom pipelines only; the
+  PR step refuses to run if it can see one, uses a read-only `GIZMODUCK_BB_READ_TOKEN`, fails
+  rather than scanning when it cannot read the draft state, and has its own cache; Code Insights
+  failures fail the step. Tier 2 and the sweep run gitleaks over the whole git history instead of
+  the tree. Detection (`ci_detect.py`): never follows a symlink, reads regular files only,
+  refuses a module directory outside the repository, bounds the walk's depth, entries and
+  candidates, redacts credential-bearing URLs, resolves fluent `MapGroup(...).Map*` chains and
+  nested FastAPI/Express router prefixes, and treats a staging-named key in a generic settings
+  file as a candidate. Runner image: the base is pinned by a required `GIZMODUCK_BASE_DIGEST`
+  build argument, and `gizmoduck_ci.py image-check` (doctor plus every scanner) fails the build.
+  Upgrading: re-render the pipelines; Bitbucket needs the `gizmoduck-trusted` environment and
+  `GIZMODUCK_BB_READ_TOKEN`; a repository with no baseline yet needs
+  `GIZMODUCK_ALLOW_NO_BASELINE=true` for its first run.
+
 ### Added
 
 - **`gizmoduck` 0.7.0: endpoint autodetection that asks instead of guessing, an endpoint

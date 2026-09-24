@@ -8,6 +8,7 @@ Nothing here contacts a network or a real scanner.
 """
 import io
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -151,11 +152,18 @@ def test_targets_cli_refusal_writes_report_and_exits_2(tmp_path):
 # --- stages (fake runner) -----------------------------------------------------
 
 class FakeRunner:
-    def __init__(self):
+    """routine.run_routine's stand-in: records the call and writes the combined
+    findings file the real one always writes (empty unless `records`)."""
+
+    def __init__(self, records=()):
         self.calls = []
+        self.records = list(records)
 
     def __call__(self, manifest, out, confirm=None):
         self.calls.append((manifest, out, confirm))
+        os.makedirs(out, exist_ok=True)
+        with open(os.path.join(out, "findings.jsonl"), "w", encoding="utf-8") as fh:
+            fh.write("".join(json.dumps(r) + "\n" for r in self.records))
 
 
 def write_targets(tmp_path, targets):
@@ -214,7 +222,7 @@ def test_endpoint_stage_passes_the_image_template_dir(tmp_path):
     args = SimpleNamespace(targets=str(t), out=str(tmp_path / "o"), no_redirect_check=True)
     ci.cmd_endpoint_stage(args, env=dict(ENV, GIZMODUCK_NUCLEI_TEMPLATES="/opt/nuclei-templates"),
                           runner=runner)
-    assert runner.calls[0][0].targets[0].options["extra"] == "-t /opt/nuclei-templates -duc"
+    assert runner.calls[0][0].targets[0].options["extra"] == "-t /opt/nuclei-templates -duc -dr"
 
 
 def test_code_stage_manifest(tmp_path):
@@ -317,22 +325,64 @@ class FakeResp(io.BytesIO):
         return False
 
 
-def test_previous_run_skips_the_current_run_and_filters_success():
-    seen = {}
+def run_(rid, event="schedule", branch="main", repo="o/r"):
+    return {"id": rid, "event": event, "head_branch": branch, "head_repository": {"full_name": repo}}
+
+
+def fake_api(runs, artifacts=None):
+    """A fake GitHub API: the workflow-runs list, and per-run artifact lists
+    (every run has the artifact unless `artifacts` says otherwise)."""
+    seen = []
 
     def opener(req, timeout):
-        seen["url"] = req.full_url
-        seen["auth"] = req.get_header("Authorization")
-        return FakeResp(json.dumps({"workflow_runs": [{"id": 42}, {"id": 41}]}).encode())
+        seen.append((req.full_url, req.get_header("Authorization")))
+        if "/actions/workflows/" in req.full_url:
+            return FakeResp(json.dumps({"workflow_runs": runs}).encode())
+        rid = int(req.full_url.split("/actions/runs/")[1].split("/")[0])
+        names = (artifacts or {}).get(rid, ["gizmoduck-code"])
+        return FakeResp(json.dumps({"artifacts": [{"name": n, "expired": False} for n in names]}).encode())
+    opener.seen = seen
+    return opener
+
+
+def test_previous_run_skips_the_current_run_and_filters_success():
+    opener = fake_api([run_(42), run_(41)])
     env = {"GITHUB_REPOSITORY": "o/r", "GITHUB_RUN_ID": "42", "GH_TOKEN": "t0k"}
-    assert ci.previous_run_id("gizmoduck-code.yml", "main", env, opener) == "41"
-    assert "status=success" in seen["url"] and "branch=main" in seen["url"]
-    assert "/actions/workflows/gizmoduck-code.yml/runs" in seen["url"]
-    assert seen["auth"] == "Bearer t0k"
+    assert ci.previous_run_id("gizmoduck-code.yml", ["main"], env, opener, artifact="gizmoduck-code") == "41"
+    url, auth = opener.seen[0]
+    assert "status=success" in url and "branch=main" in url
+    assert "/actions/workflows/gizmoduck-code.yml/runs" in url
+    assert auth == "Bearer t0k"
+
+
+@pytest.mark.parametrize("untrusted", [
+    run_(50, event="pull_request"),                      # a PR run, even one whose head is named main
+    run_(50, event="pull_request_target"),
+    run_(50, repo="attacker/fork"),                      # from a fork
+    run_(50, branch="feature/x"),                        # not a trusted branch
+    {"id": 50, "event": "schedule", "head_branch": "main"},  # no head repository - cannot be verified
+])
+def test_previous_run_never_takes_an_untrusted_run_as_the_baseline(untrusted):
+    opener = fake_api([untrusted, run_(41)])
+    env = {"GITHUB_REPOSITORY": "o/r", "GITHUB_RUN_ID": "99"}
+    assert ci.previous_run_id("w.yml", ["main"], env, opener, artifact="gizmoduck-code") == "41"
+
+
+def test_previous_run_skips_a_run_without_the_artifact():
+    """A trusted-looking run whose jobs were all skipped (an untrusted deploy
+    event) has no artifact and must not become the baseline."""
+    opener = fake_api([run_(50, event="workflow_run"), run_(41)], artifacts={50: []})
+    env = {"GITHUB_REPOSITORY": "o/r", "GITHUB_RUN_ID": "99"}
+    assert ci.previous_run_id("w.yml", ["main"], env, opener, artifact="gizmoduck-code") == "41"
+
+
+def test_previous_run_none_trusted_is_empty():
+    opener = fake_api([run_(50, event="pull_request")])
+    assert ci.previous_run_id("w.yml", ["main"], {"GITHUB_REPOSITORY": "o/r"}, opener) == ""
 
 
 def test_previous_run_lookup_failure_prints_empty(capsys):
-    args = SimpleNamespace(workflow="w.yml", branch=None)
+    args = SimpleNamespace(workflow="w.yml", trusted="main", artifact="gizmoduck-code")
     assert ci.cmd_gh_previous_run(args, env={}) == 0
     assert capsys.readouterr().out.strip() == "run_id="
 
@@ -405,3 +455,154 @@ def test_sdp_client_notes_an_open_request_instead_of_duplicating():
     action, rid = client.open_or_note({"subject": "[Nuclei x:y] thing", "description": "d"})
     assert (action, rid) == ("noted", "77")
     assert calls[1] == ("POST", "https://sdp.invalid/api/v3/requests/77/notes")
+
+
+# --- round-2: redirects per scanner, post-scan audit, redaction -----------------------
+
+def _stage(tmp_path, runner, url="https://staging.example.com", env=None):
+    env = ENV if env is None else env
+    t = write_targets(tmp_path, [{"name": "staging", "url": url, "kind": "base"},
+                                 {"name": "ep", "url": url + "/api?id=1", "kind": "endpoint"}])
+    args = SimpleNamespace(targets=str(t), out=str(tmp_path / "o"), no_redirect_check=True)
+    return ci.cmd_endpoint_stage(args, env=env, runner=runner)
+
+
+def test_every_endpoint_scanner_runs_with_redirects_disabled(tmp_path):
+    runner = FakeRunner()
+    assert _stage(tmp_path, runner, env=dict(ENV, GIZMODUCK_ENABLE="sqlmap")) == 0
+    for target in runner.calls[0][0].targets:
+        assert "-dr" in target.options["extra"].split(), "nuclei -disable-redirects"
+        assert target.options["no_redirects"] is True, "sqlmap --ignore-redirects"
+
+
+def test_sqlmap_adapter_ignores_redirects_when_asked(monkeypatch, tmp_path):
+    from scanners import base as sbase
+    from scanners import sqlmap
+    seen = {}
+
+    def fake(argv, timeout, cwd=None):
+        seen["argv"] = argv
+        return sbase.ToolResult(0, "", "", False)
+    monkeypatch.setattr(sbase, "run_tool", fake)
+    sqlmap.run("https://staging.example.com/a?id=1", str(tmp_path), {"confirm": True, "no_redirects": True})
+    assert "--ignore-redirects" in seen["argv"]
+    sqlmap.run("https://staging.example.com/a?id=1", str(tmp_path), {"confirm": True})
+    assert "--ignore-redirects" not in seen["argv"]
+
+
+@pytest.mark.parametrize("url,inside", [
+    ("https://staging.example.com/", True),
+    ("https://staging.example.com/api/x?y=1", True),
+    ("https://STAGING.example.com/a", True),
+    ("https://staging.example.com.evil.test/", False),    # the unescaped-dot lookalike
+    ("https://staging-example.com/", False),
+    ("https://staging.example.comx/", False),
+    ("https://www.example.com/", False),                   # a redirect's destination
+])
+def test_zap_scope_is_the_target_origin_only(url, inside):
+    import re as _re
+    from scanners import zap
+    pattern = zap.scope_regex("https://staging.example.com")
+    java_like = pattern.replace("(?i)", "")
+    assert bool(_re.fullmatch(java_like, url, _re.I)) is inside
+
+
+def test_zap_endpoint_scope_stops_at_a_path_boundary():
+    import re as _re
+    from scanners import zap
+    pattern = zap.scope_regex("https://staging.example.com/api").replace("(?i)", "")
+    assert _re.fullmatch(pattern, "https://staging.example.com/api/users", _re.I)
+    assert not _re.fullmatch(pattern, "https://staging.example.com/apiary", _re.I)
+
+
+def test_endpoint_stage_fails_when_a_scanner_recorded_a_request_off_the_origin(tmp_path, capsys):
+    """The server answered the guard's probe with 200 and sent a scanner to
+    production: the post-scan audit is what catches it."""
+    runner = FakeRunner(records=[{"template_id": "x", "matched_at": "https://www.example.com/admin?token=SECRET"}])
+    assert _stage(tmp_path, runner) == 2
+    err = capsys.readouterr().err
+    assert "outside the allowed origins" in err and "SECRET" not in err
+
+
+def test_endpoint_stage_passes_when_every_recorded_request_stayed_on_staging(tmp_path):
+    runner = FakeRunner(records=[{"template_id": "x", "matched_at": "https://staging.example.com/login"},
+                                 {"template_id": "tls", "matched_at": "staging.example.com:443"}])
+    assert _stage(tmp_path, runner) == 0
+
+
+def test_endpoint_stage_without_a_findings_file_cannot_be_audited(tmp_path):
+    def runner(manifest, out, confirm=None):
+        os.makedirs(out, exist_ok=True)
+    assert _stage(tmp_path, runner) == 2
+
+
+def test_targets_report_and_output_never_carry_a_credential(tmp_path, capsys):
+    doc = ledger(rec("ep-1", "https://alice:SECRETPW@staging.example.com/x"),
+                 rec("ep-2", "https://staging.example.com/cb?token=SECRETTOK"),
+                 rec("ep-3", "https://evil.test/?api_key=SECRETKEY"),
+                 rec("ep-4", "/api"))
+    path = tmp_path / "endpoints.json"
+    path.write_text(json.dumps(doc), encoding="utf-8")
+    args = SimpleNamespace(endpoints=str(path), run_endpoints=None, out=str(tmp_path / "targets.json"),
+                           no_redirect_check=True)
+    ci.cmd_targets(args, env=ENV)
+    out = capsys.readouterr()
+    text = (tmp_path / "targets.json").read_text(encoding="utf-8") + out.out + out.err
+    for secret in ("SECRETPW", "SECRETTOK", "SECRETKEY"):
+        assert secret not in text, secret
+    report = json.loads((tmp_path / "targets.json").read_text(encoding="utf-8"))
+    assert [t["url"] for t in report["allowed"]] == ["https://staging.example.com",
+                                                     "https://staging.example.com/api"]
+
+
+@pytest.mark.parametrize("value", [" /api", "/api ", "https://staging.example.com/\u00a0",
+                                   "\u3000/api", "/a\u200bb"])
+def test_ingest_refuses_rather_than_strips_whitespace(value):
+    cands, skipped = ci.ingest_endpoints(ledger(rec("ep-1", value)), ["https://staging.example.com"])
+    assert cands == [] and len(skipped) == 1
+
+
+# --- runner image: digest-pinned base, a health check that fails the build ------------
+
+_DOCKERFILE = Path(__file__).resolve().parents[2] / "ci" / "Dockerfile"
+
+
+def test_dockerfile_base_is_pinned_by_digest_and_validated():
+    text = _DOCKERFILE.read_text(encoding="utf-8")
+    froms = [ln for ln in text.splitlines() if ln.startswith("FROM ")]
+    assert froms == ["FROM ubuntu:24.04@${GIZMODUCK_BASE_DIGEST}"]
+    assert "sha256:" + "?" * 64 + ")" in text, "a non-digest value fails the build"
+
+
+def test_dockerfile_health_check_is_not_masked():
+    text = _DOCKERFILE.read_text(encoding="utf-8")
+    assert "|| true" not in text
+    assert "RUN python3 /opt/gizmoduck/scripts/gizmoduck_ci.py image-check" in text
+
+
+def _doctor(rc):
+    return lambda argv, **_kw: SimpleNamespace(returncode=rc, stdout="doctor output\n", stderr="")
+
+
+class _Adapter:
+    def __init__(self, ok):
+        self.ok = ok
+
+    def is_available(self):
+        if isinstance(self.ok, Exception):
+            raise self.ok
+        return self.ok
+
+
+def test_image_check_passes_only_with_doctor_and_every_scanner(capsys):
+    assert ci.cmd_image_check(run=_doctor(0), adapters={"nuclei": _Adapter(True), "zap": _Adapter(True)}) == 0
+
+
+@pytest.mark.parametrize("doctor_rc,adapters,needle", [
+    (1, {"nuclei": _Adapter(True)}, "doctor exited 1"),
+    (0, {"nuclei": _Adapter(True), "zap": _Adapter(False)}, "zap: not installed"),
+    (0, {"zap": _Adapter(OSError("boom"))}, "zap: availability check raised OSError"),
+])
+def test_image_check_fails_the_build(capsys, doctor_rc, adapters, needle):
+    assert ci.cmd_image_check(run=_doctor(doctor_rc), adapters=adapters) == 1
+    assert needle in capsys.readouterr().err

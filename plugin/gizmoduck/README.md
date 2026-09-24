@@ -105,9 +105,23 @@ confirm: it prints `[]` and exits 0 either way, `--yes` or not.
 | Manual | `workflow_dispatch` (any ref, or any base URL the prod-refusal guard allows); the Bitbucket custom pipelines | a full scan | per the tier-2 rule |
 
 Controls: draft PRs are skipped; each workflow has a `concurrency` group per event and ref with
-cancel-in-progress; the Trivy DB, NVD data and Nuclei templates are cached per ISO week; endpoint
-scans never run on a pull request. Bitbucket has no labels and no cancel-in-progress, and can only
-tell a draft PR apart when `GIZMODUCK_BB_TOKEN` can read the pull request.
+cancel-in-progress; the Trivy DB, NVD data and Nuclei templates are cached per ISO week, keyed by
+trust level so a pull request's cache never reaches a trusted run; endpoint scans never run on a
+pull request. The gate fails closed: no baseline (unless `GIZMODUCK_ALLOW_NO_BASELINE=true` for a
+first run), a run manifest with no cells or any tool that did not run, an unknown severity in
+either file, and duplicate findings judged at their highest severity.
+
+Trust: pull-request jobs hold no write-capable secret or token; only a separate SARIF-upload job has
+`security-events: write`. Require each PR workflow's always-running `gate` job in branch
+protection - it decides from the event, so a later skipped run cannot stand in for a failed scan.
+The endpoint workflow scans after a deploy only for the default branch or `release/*` of this
+repository; baselines come only from trusted default-branch runs. On Bitbucket, the write-capable
+secrets (`GIZMODUCK_BB_TOKEN`, `SDP_*`) are deployment variables of a `gizmoduck-trusted`
+deployment environment used only by the custom pipelines; the PR step refuses to run if it can see
+one, and reads baselines and draft state with a read-only `GIZMODUCK_BB_READ_TOKEN` (without it,
+as on a fork's PR, the check fails rather than scanning blind). Every endpoint scanner runs with
+redirects disabled or scoped to the target origin, and the stage fails if any recorded request left
+it; URLs with credentials are refused by the guard and redacted in every log and artifact.
 
 **Endpoints are detected, then confirmed.** `gizmoduck_ci.py detect` reads `.crew/endpoints.json`,
 OpenAPI/Swagger documents (including build output under `obj/`), ASP.NET controllers and

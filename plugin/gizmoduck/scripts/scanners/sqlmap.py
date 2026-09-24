@@ -208,6 +208,10 @@ def run(target, outdir, opts):
         f"--time-limit={time_limit:d}",
         f"--output-dir={outdir}",
     ]
+    if opts.get("no_redirects"):
+        # /gizmoduck:ci endpoint scans: a redirect is never followed, so a
+        # server cannot send the injection traffic to another origin.
+        argv.append("--ignore-redirects")
     result = base.run_tool(argv, timeout=timeout, cwd=None)
     if result.timed_out:
         return None, result

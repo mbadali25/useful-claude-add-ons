@@ -33,6 +33,40 @@ Endpoint scans never run on a pull_request event. Draft PRs are skipped; every
 workflow has a `concurrency` group per event and ref with cancel-in-progress;
 the Trivy DB, NVD data and Nuclei templates are cached.
 
+Trust. A pull request is untrusted code, and nothing it runs may hold a
+write-capable credential or feed a trusted run:
+
+  - GitHub PR jobs use `pull_request` (never `pull_request_target`), hold
+    `contents: read` + `actions: read`, and reference no secret. Only the
+    separate SARIF upload job holds `security-events: write`, and it runs no
+    scanner and no bootstrap. Every other job states its own permissions;
+    the workflow default is none.
+  - Each PR workflow ends in a `gate` job that ALWAYS runs and passes or
+    fails from the event itself (tier applies? did the scan succeed?), so
+    the check a branch rule requires is never a skipped job that a later
+    unrelated event (a `labeled` for another label) can supersede.
+  - The endpoint workflow scans after `deployment_status` / `workflow_run`
+    only when the deployment or triggering run is for a trusted branch
+    (the default branch or release/*) of THIS repository and did not come
+    from a pull request; anything else skips every job - a neutral result
+    that never evaluates a secret.
+  - Baselines come only from successful runs on the default branch that
+    were not pull-request events, from this repository, and still carry
+    the artifact (gizmoduck_ci.previous_run_id).
+  - Caches are keyed by trust level: a pull-request run's cache key starts
+    `gizmoduck-<name>-pr-` and a trusted run restores only
+    `gizmoduck-<name>-trusted-`.
+  - Bitbucket has no per-pipeline variable scoping, so the write-capable
+    secrets (GIZMODUCK_BB_TOKEN, SDP_*) are deployment variables of the
+    `gizmoduck-trusted` deployment environment, which only the custom
+    pipelines' stages use. The PR step refuses to run if one of them is
+    visible to it (that means it was made a repository variable), reads
+    its baseline and draft state with the read-only
+    GIZMODUCK_BB_READ_TOKEN, and uses its own `gizmoduck-pr-*` caches.
+    A PR that edits bitbucket-pipelines.yml itself runs whatever it
+    writes - Bitbucket's own limit; deployment permissions (Premium)
+    restricting `gizmoduck-trusted` to the default branch are what close it.
+
 Action pinning: every third-party action is pinned to a full commit SHA with
 the release it came from in a trailing comment. A tag - even a major tag like
 `@v4` - is a mutable pointer that the action's owner (or anyone who takes over
@@ -42,6 +76,7 @@ updates are manual; Dependabot's `github-actions` ecosystem updates SHA pins
 and keeps the comment in step.
 """
 import json
+import re
 import shlex
 
 ACTIONS = {
@@ -69,6 +104,20 @@ GITHUB_FILES = (PR_FILE, FULL_FILE, ENDPOINTS_FILE)
 LEGACY_FILES = (".github/workflows/gizmoduck-code.yml",)
 BB_FULL = "security-full"
 BB_WEEKLY = "security-weekly"
+BB_TRUSTED_ENV = "gizmoduck-trusted"
+RELEASE_GLOB = "release/*"
+WRITE_SECRETS = ("GIZMODUCK_BB_TOKEN", "SDP_API_KEY", "SDP_BASE_URL")
+_IMAGE_RE = re.compile(r"[a-z0-9][a-z0-9._/:@-]{0,254}")
+
+
+def check_image(image):
+    """The runner image reference: one line of registry/name[:tag][@digest]
+    characters, nothing YAML or a shell could read as more than a string.
+    The renderer also emits it quoted."""
+    if not isinstance(image, str) or not _IMAGE_RE.fullmatch(image):
+        raise ValueError(f"refusing unsafe image reference {image!r}: one line of lower-case "
+                         f"letters, digits and ./_:@-")
+    return image
 
 
 def _publish_cmd(stage, title):
@@ -146,8 +195,15 @@ def _tier2_pr(cfg):
 
 
 _NOT_DRAFT = "github.event.pull_request.draft == false"
-_LABEL_EVENT_OK = f"(github.event.action != 'labeled' || github.event.label.name == {_sq(TIER2_LABEL)})"
 _IS_SWEEP = "github.event_name == 'schedule'"
+
+
+def _trusted_ref(expr, cfg):
+    """`expr` names a trusted branch: the default branch or release/*, bare or
+    as refs/heads/..."""
+    d = cfg["default_branch"]
+    return (f"({expr} == {_sq(d)} || {expr} == {_sq('refs/heads/' + d)} || "
+            f"startsWith({expr}, 'release/') || startsWith({expr}, 'refs/heads/release/'))")
 
 
 def _gh_header(title, cfg):
@@ -157,7 +213,11 @@ def _gh_header(title, cfg):
             f"# Actions are pinned by full commit SHA; the trailing comment names the release.\n"
             f"# Tiers: gizmoduck-pr.yml (1, light PR check), gizmoduck-full.yml (2 + weekly\n"
             f"# code sweep + manual), gizmoduck-endpoints.yml (2 after the staging deploy +\n"
-            f"# weekly endpoint sweep + manual). Endpoint scans never run on a pull request.\n")
+            f"# weekly endpoint sweep + manual). Endpoint scans never run on a pull request.\n"
+            f"# Branch protection: require the `gate` job of gizmoduck-pr.yml and of\n"
+            f"# gizmoduck-full.yml - each always runs and decides from the event, so a\n"
+            f"# later skipped run can never stand in for a failed scan. (A docs-only PR\n"
+            f"# does not trigger gizmoduck-pr.yml at all, so its gate reports nothing.)\n")
 
 
 def _gh_env(cfg, out, tier, block_at, extra=()):
@@ -199,33 +259,48 @@ _CACHES = {
 }
 
 
+_CACHE_KEY_SH = """\
+if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then trust="pr"; else trust="trusted"; fi
+suffix=""
+if [ "$GITHUB_EVENT_NAME" = "schedule" ]; then suffix="-sweep-$GITHUB_RUN_ID"; fi
+{ echo "trust=$trust"; echo "key=$(date -u +%G-%V)"; echo "suffix=$suffix"; } >> "$GITHUB_OUTPUT\""""
+
+
 def _gh_caches(names, conditions=None):
-    """One week-stamped key per cache: every run restores the newest copy
-    (restore-keys), and the first run of each ISO week saves a fresh one - so
-    the weekly sweep's refreshed data reaches the next week's PR checks."""
+    """Keys `gizmoduck-<name>-<trust>-<ISO week>[-sweep-<run>]`. The trust
+    level (pr / trusted) is in the key AND the restore prefix, so a pull
+    request's cache is never restored into a trusted run. Every run restores
+    the newest copy for its trust level; the first run of a week saves one,
+    and the weekly sweep always saves a fresh one under its own run-stamped
+    key - an earlier run that week cannot pin the refreshed data out."""
     conditions = conditions or {}
-    out = ["- name: Cache key (ISO week)\n  id: week\n  run: echo \"key=$(date -u +%G-%V)\" >> \"$GITHUB_OUTPUT\""]
+    out = ["- name: Cache key (trust level, ISO week)\n  id: week\n  run: |\n" + _indent(_CACHE_KEY_SH, 4)]
     for name in names:
         label, path = _CACHES[name]
         cond = f"\n  if: {conditions[name]}" if name in conditions else ""
+        prefix = f"gizmoduck-{name}-${{{{ steps.week.outputs.trust }}}}-"
         out.append(f"""\
 - name: Cache {label}{cond}
   {uses('cache')}
   with:
     path: {path}
-    key: gizmoduck-{name}-${{{{ steps.week.outputs.key }}}}
-    restore-keys: gizmoduck-{name}-""")
+    key: {prefix}${{{{ steps.week.outputs.key }}}}${{{{ steps.week.outputs.suffix }}}}
+    restore-keys: {prefix}""")
     return "\n".join(out)
 
 
-def _gh_baseline(stage, workflow_file, branch_filter):
-    branch_arg = ' --branch "$GIZMODUCK_DEFAULT_BRANCH"' if branch_filter else ""
+def _gh_baseline(stage, workflow_file):
+    """The newest successful non-PR run of `workflow_file` on the default
+    branch, from this repository, that still has the artifact - never a run a
+    pull request or an untrusted deploy could have produced."""
+    lookup = (f'{CLI} gh-previous-run --workflow {workflow_file} --trusted "$GIZMODUCK_DEFAULT_BRANCH" '
+              f'--artifact gizmoduck-{stage} >> "$GITHUB_OUTPUT"')
     return f"""\
-- name: Find the baseline run
+- name: Find the baseline run (default branch, trusted runs only)
   id: prev
   env:
     GH_TOKEN: ${{{{ github.token }}}}
-  run: {CLI} gh-previous-run --workflow {workflow_file}{branch_arg} >> "$GITHUB_OUTPUT"
+  run: {lookup}
 - name: Download the baseline
   if: steps.prev.outputs.run_id != ''
   continue-on-error: true
@@ -264,18 +339,75 @@ env:
 
 
 def _gh_sarif():
+    """SARIF is written here and uploaded by the separate `sarif` job - the
+    only job that holds `security-events: write`."""
+    run = (f'{CLI} sarif "$GIZMODUCK_OUT/findings.jsonl" --out "$GIZMODUCK_OUT/gizmoduck.sarif" '
+           '--srcroot "$GITHUB_WORKSPACE"')
     return f"""\
-- name: SARIF
+- name: SARIF (uploaded by the sarif job)
   id: sarif
   if: always() && steps.scan.outcome == 'success'
-  run: {CLI} sarif "$GIZMODUCK_OUT/findings.jsonl" --out "$GIZMODUCK_OUT/gizmoduck.sarif" --srcroot "$GITHUB_WORKSPACE"
-- name: Upload SARIF to code scanning
-  if: always() && steps.sarif.outcome == 'success'
-  continue-on-error: ${{{{ github.event.pull_request.head.repo.fork == true }}}}
-  {uses('upload-sarif')}
-  with:
-    sarif_file: {CODE_OUT}/gizmoduck.sarif
-    category: gizmoduck-code"""
+  run: {run}"""
+
+
+def _gh_sarif_job(label):
+    return f"""\
+  sarif:
+    name: {label} (upload SARIF)
+    needs: [scan, scan-bootstrap]
+    if: always() && (needs.scan.outputs.sarif == 'true' || needs.scan-bootstrap.outputs.sarif == 'true')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+{_indent(_gh_checkout(), 6)}
+      - name: Download the scan results
+        {uses('download-artifact')}
+        with:
+          name: gizmoduck-code
+          path: /tmp/gizmoduck-sarif
+      - name: Upload SARIF to code scanning
+        continue-on-error: ${{{{ github.event.pull_request.head.repo.fork == true }}}}
+        {uses('upload-sarif')}
+        with:
+          sarif_file: /tmp/gizmoduck-sarif/gizmoduck.sarif
+          category: gizmoduck-code"""
+
+
+_GATE_JOB_SH = """\
+if [ "$GIZMODUCK_APPLIES" != "true" ]; then
+  echo "gizmoduck: this event is outside this workflow's tier - nothing to gate (pass)"
+  exit 0
+fi
+echo "gizmoduck: scan jobs - runner image: $IMAGE_RESULT, inline bootstrap: $BOOT_RESULT"
+if { [ "$IMAGE_RESULT" = "success" ] && [ "$BOOT_RESULT" = "skipped" ]; } \\
+   || { [ "$IMAGE_RESULT" = "skipped" ] && [ "$BOOT_RESULT" = "success" ]; }; then
+  echo "gizmoduck: gate PASS"
+  exit 0
+fi
+echo "gizmoduck: gate FAIL - the scan this event requires did not pass"
+exit 1"""
+
+
+def _gh_gate_job(label, applies):
+    return f"""\
+  gate:
+    name: {label} gate
+    needs: [scan, scan-bootstrap]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions: {{}}
+    env:
+      GIZMODUCK_APPLIES: ${{{{ {applies} }}}}
+      IMAGE_RESULT: ${{{{ needs.scan.result }}}}
+      BOOT_RESULT: ${{{{ needs.scan-bootstrap.result }}}}
+    steps:
+      - name: Gate (required check - always runs, decides from the event)
+        run: |
+{_indent(_GATE_JOB_SH, 10)}"""
 
 
 def _gh_tail(stage, title, tickets):
@@ -305,8 +437,16 @@ def _gh_tail(stage, title, tickets):
     return out
 
 
-def _gh_jobs(steps, label, condition, permissions):
-    perm = "\n".join(f"      {k}: {v}" for k, v in permissions)
+_SCAN_PERMS = [("contents", "read"), ("actions", "read")]
+
+
+def _gh_jobs(steps, label, condition, sarif=False, gate=False):
+    """The scan job twice (runner image / inline bootstrap - exactly one runs),
+    each with read-only permissions; then, for code workflows, the SARIF
+    upload job (the only `security-events: write`), and for PR-event
+    workflows the always-running gate job."""
+    perm = "\n".join(f"      {k}: {v}" for k, v in _SCAN_PERMS)
+    outputs = ("    outputs:\n      sarif: ${{ steps.sarif.outcome == 'success' }}\n" if sarif else "")
     image_job = f"""\
   scan:
     name: {label} (runner image)
@@ -317,7 +457,7 @@ def _gh_jobs(steps, label, condition, permissions):
       image: @@IMAGE@@
     permissions:
 {perm}
-    steps:
+{outputs}    steps:
 {_indent(steps, 6)}"""
     boot_job = f"""\
   scan-bootstrap:
@@ -327,9 +467,14 @@ def _gh_jobs(steps, label, condition, permissions):
     timeout-minutes: 180
     permissions:
 {perm}
-    steps:
+{outputs}    steps:
 {_indent(steps, 6)}"""
-    return "jobs:\n" + image_job + "\n\n" + boot_job + "\n"
+    jobs = [image_job, boot_job]
+    if sarif:
+        jobs.append(_gh_sarif_job(label))
+    if gate:
+        jobs.append(_gh_gate_job(label, condition.format(runner="true")))
+    return "jobs:\n" + "\n\n".join(jobs) + "\n"
 
 
 def _gh_file(title, name, triggers, group, env, jobs, cfg):
@@ -340,8 +485,7 @@ def _gh_file(title, name, triggers, group, env, jobs, cfg):
         "on:",
         *triggers,
         "",
-        "permissions:",
-        "  contents: read",
+        "permissions: {}",
         "",
         "concurrency:",
         f"  group: {group}",
@@ -355,10 +499,7 @@ def _gh_file(title, name, triggers, group, env, jobs, cfg):
         "",
         jobs,
     ])
-    return text.replace("@@IMAGE@@", cfg["image"])
-
-
-_CODE_PERMS = [("contents", "read"), ("actions", "read"), ("security-events", "write")]
+    return text.replace("@@IMAGE@@", _yq(check_image(cfg["image"])))
 
 
 def github_pr(cfg):
@@ -368,7 +509,7 @@ def github_pr(cfg):
         _gh_checkout(fetch_depth=0),
         _gh_bootstrap_step(),
         _gh_caches(["trivy"]),
-        _gh_baseline("code", "gizmoduck-full.yml", branch_filter=True),
+        _gh_baseline("code", "gizmoduck-full.yml"),
         f"""\
 - name: Scan (Semgrep diff-aware, Trivy if a manifest changed, Checkov if *.tf changed, gitleaks)
   id: scan
@@ -390,7 +531,7 @@ def github_pr(cfg):
     env = _gh_env(cfg, CODE_OUT, "light", "critical", [("TRIVY_CACHE_DIR", _CACHES["trivy"][1])])
     return _gh_file("tier 1, light PR check (blocks on a new Critical only)", "gizmoduck PR check", triggers,
                     "gizmoduck-pr-${{ github.event.pull_request.number || github.ref }}", env,
-                    _gh_jobs(steps, "gizmoduck PR check", condition, _CODE_PERMS), cfg)
+                    _gh_jobs(steps, "gizmoduck PR check", condition, sarif=True, gate=True), cfg)
 
 
 def github_full(cfg):
@@ -398,24 +539,30 @@ def github_full(cfg):
     security-scan label), the tier-3 weekly code sweep (schedule), and a
     manual full scan of any ref (workflow_dispatch)."""
     steps = "\n".join([
-        _gh_checkout(ref_input=True),
+        _gh_checkout(fetch_depth=0, ref_input=True),
         _gh_bootstrap_step(),
         _gh_caches(["trivy", "nvd"], {"nvd": _IS_SWEEP}),
-        _gh_baseline("code", "gizmoduck-full.yml", branch_filter=True),
+        _gh_baseline("code", "gizmoduck-full.yml"),
         f"""\
-- name: Scan (Semgrep, Trivy fs, Checkov, gitleaks; Dependency-Check on the weekly sweep)
+- name: Scan (Semgrep, Trivy fs, Checkov, gitleaks history; Dependency-Check on the weekly sweep)
   id: scan
   env:
-    NVD_API_KEY: ${{{{ secrets.NVD_API_KEY }}}}
-  run: {CLI} code-stage --tier "$GIZMODUCK_TIER" --path "$GITHUB_WORKSPACE" --out "$GIZMODUCK_OUT\"""",
+    NVD_API_KEY: ${{{{ {_IS_SWEEP} && secrets.NVD_API_KEY || '' }}}}
+  run: |
+    git config --global --add safe.directory "$GITHUB_WORKSPACE"
+    {CLI} code-stage --tier "$GIZMODUCK_TIER" --path "$GITHUB_WORKSPACE" --out "$GIZMODUCK_OUT\"""",
         _gh_sarif(),
         _gh_tail("code", "gizmoduck full code scan", tickets=True),
     ])
+    # Tier 2 is decided from the PR's label SET, never from which label an
+    # event added: any labeled/unlabeled event re-evaluates it, so an
+    # unrelated label cannot skip a tier-2 PR's scan, and the gate job turns
+    # the result into a check a skipped run cannot supersede.
     condition = ("{runner} && ((github.event_name == 'pull_request' && " + _NOT_DRAFT + " && " +
-                 _tier2_pr(cfg) + " && " + _LABEL_EVENT_OK + ") || " + _IS_SWEEP +
+                 _tier2_pr(cfg) + ") || " + _IS_SWEEP +
                  " || github.event_name == 'workflow_dispatch')")
     triggers = ["  pull_request:",
-                "    types: [opened, synchronize, reopened, ready_for_review, labeled]",
+                "    types: [opened, synchronize, reopened, ready_for_review, labeled, unlabeled]",
                 "  schedule:",
                 f"    - cron: {_yq(WEEKLY_CRON)}",
                 "  workflow_dispatch:",
@@ -431,7 +578,7 @@ def github_full(cfg):
     return _gh_file("tier 2 full code scan, tier 3 weekly code sweep, manual scans", "gizmoduck full code scan",
                     triggers,
                     "gizmoduck-full-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}",
-                    env, _gh_jobs(steps, "gizmoduck full code scan", condition, _CODE_PERMS), cfg)
+                    env, _gh_jobs(steps, "gizmoduck full code scan", condition, sarif=True, gate=True), cfg)
 
 
 def github_endpoints(cfg):
@@ -440,16 +587,25 @@ def github_endpoints(cfg):
     pull_request."""
     env_name = cfg["staging_environment"]
     triggers = ["  deployment_status:"]
+    # A deploy event is trusted only for a trusted branch of THIS repository
+    # and not from a pull request; anything else skips every job (a neutral
+    # result) before any step - and so any secret - is evaluated.
     conds = ["github.event_name == 'workflow_dispatch'", _IS_SWEEP,
              ("(github.event_name == 'deployment_status' && "
               "github.event.deployment_status.state == 'success' && "
-              f"github.event.deployment.environment == {_sq(env_name)})")]
+              f"github.event.deployment.environment == {_sq(env_name)} && "
+              "github.event.repository.full_name == github.repository && "
+              f"{_trusted_ref('github.event.deployment.ref', cfg)})")]
     if cfg.get("deploy_workflow"):
         triggers += ["  workflow_run:",
                      f"    workflows: [{_yq(cfg['deploy_workflow'])}]",
                      "    types: [completed]"]
         conds.append("(github.event_name == 'workflow_run' && "
-                     "github.event.workflow_run.conclusion == 'success')")
+                     "github.event.workflow_run.conclusion == 'success' && "
+                     "github.event.workflow_run.head_repository.full_name == github.repository && "
+                     "github.event.workflow_run.event != 'pull_request' && "
+                     "github.event.workflow_run.event != 'pull_request_target' && "
+                     f"{_trusted_ref('github.event.workflow_run.head_branch', cfg)})")
     triggers += ["  schedule:",
                  f"    - cron: {_yq(WEEKLY_CRON)}",
                  "  workflow_dispatch:",
@@ -477,7 +633,7 @@ def github_endpoints(cfg):
 - name: Prod-refusal guard (runs before any endpoint scan)
 {_indent(_guard_env(target_url=True), 2)}
   run: {CLI} targets --run-endpoints "$GIZMODUCK_OUT/endpoints-run.json" --out "$GIZMODUCK_OUT/targets.json\"""",
-        _gh_baseline("endpoints", "gizmoduck-endpoints.yml", branch_filter=False),
+        _gh_baseline("endpoints", "gizmoduck-endpoints.yml"),
         f"""\
 - name: Scan staging (Nuclei, ZAP baseline, testssl{_opt_in_label(cfg)})
   id: scan
@@ -490,9 +646,10 @@ def github_endpoints(cfg):
                   [("GIZMODUCK_NUCLEI_TEMPLATES", _CACHES["nuclei"][1])])
     return _gh_file("endpoint stage (Nuclei, ZAP baseline, testssl against staging)",
                     "gizmoduck staging endpoint scan", triggers,
-                    "gizmoduck-endpoints-${{ github.event_name }}-${{ github.ref }}", env,
-                    _gh_jobs(steps, "gizmoduck staging endpoint scan", condition,
-                             [("contents", "read"), ("actions", "read")]), cfg)
+                    "gizmoduck-endpoints-${{ github.event_name }}-${{ " +
+                    ("github.event.workflow_run.head_branch || " if cfg.get("deploy_workflow") else "") +
+                    "github.event.deployment.ref || github.ref }}", env,
+                    _gh_jobs(steps, "gizmoduck staging endpoint scan", condition), cfg)
 
 
 # --------------------------------------------------------------------------
@@ -525,54 +682,90 @@ def _bb_item(text):
 
 
 def _bb_baseline_download(stage):
+    """Read with the read-only token. A missing token or baseline leaves the
+    file absent, and the gate fails closed on it (unless the first-run
+    opt-in is set)."""
     return f"""\
 mkdir -p /tmp/gizmoduck-baseline/{stage} "$GIZMODUCK_OUT"
-if [ -n "${{GIZMODUCK_BB_TOKEN:-}}" ]; then
-  curl -fsSL -H "Authorization: Bearer $GIZMODUCK_BB_TOKEN" -o /tmp/gizmoduck-baseline/{stage}/findings.jsonl \
+if [ -n "${{GIZMODUCK_BB_READ_TOKEN:-}}" ]; then
+  curl -fsSL -H "Authorization: Bearer $GIZMODUCK_BB_READ_TOKEN" -o /tmp/gizmoduck-baseline/{stage}/findings.jsonl \
 "https://api.bitbucket.org/2.0/repositories/$BITBUCKET_REPO_FULL_NAME/downloads/gizmoduck-{stage}-baseline.jsonl" \
 || {{ rm -f /tmp/gizmoduck-baseline/{stage}/findings.jsonl; echo "gizmoduck: no {stage} baseline in Downloads yet"; }}
 else
-  echo "gizmoduck: GIZMODUCK_BB_TOKEN is not set - no baseline can be read or saved"
+  echo "gizmoduck: GIZMODUCK_BB_READ_TOKEN is not set - no baseline can be read; the gate fails closed on that"
 fi"""
 
 
-_BB_DRAFT_SKIP = """\
-# Tier 1 skips draft PRs. Bitbucket passes no draft flag to a pipeline, so it
-# is read from the pull request itself - which needs GIZMODUCK_BB_TOKEN.
-if [ -n "${GIZMODUCK_BB_TOKEN:-}" ] && [ -n "${BITBUCKET_PR_ID:-}" ]; then
-  draft="$(curl -fsS -H "Authorization: Bearer $GIZMODUCK_BB_TOKEN" \
-"https://api.bitbucket.org/2.0/repositories/$BITBUCKET_REPO_FULL_NAME/pullrequests/$BITBUCKET_PR_ID" \
-| python3 -c 'import json,sys; print(str(json.load(sys.stdin).get("draft", False)).lower())' || echo unknown)"
-  if [ "$draft" = "true" ]; then
-    echo "gizmoduck: draft pull request - tier 1 is skipped until it is marked ready for review"
-    exit 0
+_BB_PR_TRUST = """\
+# A pull request is untrusted code: no write-capable secret may be visible to
+# it. They belong to the gizmoduck-trusted deployment environment, which only
+# the custom pipelines use - one visible here was made a repository variable.
+for v in @@WRITE_SECRETS@@; do
+  if [ -n "$(printenv "$v" || true)" ]; then
+    echo "gizmoduck: $v is visible to a pull-request pipeline - it is a repository variable. Move it to the" \
+"@@TRUSTED_ENV@@ deployment environment (Repository settings -> Deployments); refusing to run with it."
+    exit 1
   fi
-else
-  echo "gizmoduck: GIZMODUCK_BB_TOKEN is not set - cannot tell a draft PR apart, so this runs regardless"
-fi"""
+done
+unset @@WRITE_SECRETS@@ GIZMODUCK_AUTH_HEADER_VALUE NVD_API_KEY
+# Tier 1 skips draft PRs. Bitbucket passes no draft flag to a pipeline, so it
+# is read from the pull request with the read-only GIZMODUCK_BB_READ_TOKEN. A
+# state this step cannot read fails the check - a draft is never guessed at.
+if [ -z "${GIZMODUCK_BB_READ_TOKEN:-}" ]; then
+  echo "gizmoduck: GIZMODUCK_BB_READ_TOKEN is not available (a fork's pull request never gets secured variables),"
+  echo "so this check cannot tell a draft apart or read its baseline - failing rather than scanning blind."
+  echo "A maintainer can run custom: @@BB_FULL@@ on the branch instead."
+  exit 1
+fi
+draft="$(curl -fsS -H "Authorization: Bearer $GIZMODUCK_BB_READ_TOKEN" \
+"https://api.bitbucket.org/2.0/repositories/$BITBUCKET_REPO_FULL_NAME/pullrequests/${BITBUCKET_PR_ID:-0}" \
+| python3 -c 'import json,sys; print(str(json.load(sys.stdin).get("draft", False)).lower())' || echo unknown)"
+case "$draft" in
+  true) echo "gizmoduck: draft pull request - tier 1 is skipped until it is marked ready for review"; exit 0 ;;
+  false) ;;
+  *) echo "gizmoduck: could not read whether pull request ${BITBUCKET_PR_ID:-?} is a draft - failing closed"; exit 1 ;;
+esac""".replace("@@WRITE_SECRETS@@", " ".join(WRITE_SECRETS)).replace("@@TRUSTED_ENV@@", BB_TRUSTED_ENV) \
+    .replace("@@BB_FULL@@", BB_FULL)
 
 
-def _bb_tail(stage, title, insights):
+_BB_TRUSTED_REF = """\
+# Write-capable secrets (gizmoduck-trusted deployment variables) are used only
+# on a trusted branch: the default branch or release/*.
+case "${BITBUCKET_BRANCH:-}" in
+  "$GIZMODUCK_DEFAULT_BRANCH"|release/*) ;;
+  *) echo "gizmoduck: '${BITBUCKET_BRANCH:-<none>}' is not a trusted branch - write-capable secrets are dropped"
+     unset @@WRITE_SECRETS@@ ;;
+esac""".replace("@@WRITE_SECRETS@@", " ".join(WRITE_SECRETS))
+
+
+def _bb_tail(stage, title, insights, trusted=True):
+    """Publish, gate, Code Insights; then - trusted steps only - the baseline
+    upload and tickets, the two things a write-capable secret is for. The
+    pull-request step renders neither."""
     parts = [
         _publish_cmd(stage, title),
         f"gate_rc=0\n{_gate_cmd(stage)} || gate_rc=$?",
+        "insights_rc=0",
     ]
     if insights:
         parts.append(f"""\
+# Code Insights: a failure here fails the step (after the gate's own verdict),
+# so a broken report or credential is never a green pipeline with no report.
 {CLI} bb-insights "$GIZMODUCK_OUT/findings.jsonl" --gate "$GIZMODUCK_OUT/gate.json" \
---outdir "$GIZMODUCK_OUT/insights" --srcroot "$BITBUCKET_CLONE_DIR" || true
+--outdir "$GIZMODUCK_OUT/insights" --srcroot "$BITBUCKET_CLONE_DIR" || insights_rc=$?
 rep="http://api.bitbucket.org/2.0/repositories/$BITBUCKET_REPO_FULL_NAME/commit/$BITBUCKET_COMMIT\
 /reports/gizmoduck-{stage}"
-if [ -f "$GIZMODUCK_OUT/insights/report.json" ]; then
+if [ "$insights_rc" -eq 0 ]; then
   curl -fsS --proxy http://localhost:29418 -X PUT "$rep" -H "Content-Type: application/json" \
---data-binary @"$GIZMODUCK_OUT/insights/report.json" || echo "gizmoduck: Code Insights report upload failed"
+--data-binary @"$GIZMODUCK_OUT/insights/report.json" || insights_rc=$?
   for f in "$GIZMODUCK_OUT"/insights/annotations-*.json; do
     [ -f "$f" ] || continue
     curl -fsS --proxy http://localhost:29418 -X POST "$rep/annotations" -H "Content-Type: application/json" \
---data-binary @"$f" || echo "gizmoduck: annotation upload failed for $f"
+--data-binary @"$f" || insights_rc=$?
   done
 fi""")
-    parts.append(f"""\
+    if trusted:
+        parts.append(f"""\
 # The next baseline: the weekly sweep's results (it never blocks), or a clean
 # tier-2 run - both only on the default branch, never from a pull request.
 if {{ [ "$GIZMODUCK_TIER" = "sweep" ] || [ "$gate_rc" -eq 0 ]; }} \
@@ -583,25 +776,30 @@ if {{ [ "$GIZMODUCK_TIER" = "sweep" ] || [ "$gate_rc" -eq 0 ]; }} \
 "https://api.bitbucket.org/2.0/repositories/$BITBUCKET_REPO_FULL_NAME/downloads" \
 || echo "gizmoduck: baseline upload failed - the next run compares against the previous baseline"
 fi""")
-    parts.append(f"""\
+        parts.append(f"""\
 if [ -z "${{BITBUCKET_PR_ID:-}}" ] && [ "${{GIZMODUCK_SDP_TICKETS:-}}" = "true" ] \
-&& [ -s "$GIZMODUCK_OUT/new-blocking.jsonl" ]; then
+&& [ -n "${{SDP_API_KEY:-}}" ] && [ -s "$GIZMODUCK_OUT/new-blocking.jsonl" ]; then
   {_TICKETS_CMD} || echo "gizmoduck: ticketing failed"
 fi""")
     parts.append(f"""\
 mkdir -p "$BITBUCKET_CLONE_DIR/gizmoduck-out"
 cp -r "$GIZMODUCK_OUT" "$BITBUCKET_CLONE_DIR/gizmoduck-out/{stage}"
-exit "$gate_rc\"""")
+if [ "$gate_rc" -ne 0 ]; then exit "$gate_rc"; fi
+if [ "$insights_rc" -ne 0 ]; then
+  echo "gizmoduck: Code Insights report failed (exit $insights_rc) - failing the step"
+  exit "$insights_rc"
+fi""")
     return parts
 
 
-def _bb_step(anchor, name, script_items, caches, max_time=120, pr_check=False):
+def _bb_step(anchor, name, script_items, caches, max_time=120, pr_check=False, full_clone=False):
     items = "\n".join(_bb_item(s) for s in script_items)
     extra = ""
+    if pr_check or full_clone:
+        extra = "        clone:\n          depth: full\n"
     if pr_check:
         paths = "\n".join(f"              - {_yq(p)}" for p in DOCS_ONLY)
-        extra = ("        clone:\n          depth: full\n"
-                 "        condition:\n          changesets:\n            excludePaths:\n" + paths + "\n")
+        extra += "        condition:\n          changesets:\n            excludePaths:\n" + paths + "\n"
     cache_lines = "\n".join(f"          - gizmoduck-{c}" for c in caches)
     return f"""\
     - step: &{anchor}
@@ -618,16 +816,16 @@ def _bb_step(anchor, name, script_items, caches, max_time=120, pr_check=False):
 
 def _bb_code_items(cfg, tier, block_at, stage_cmd, title, pr_check=False):
     items = [_bb_exports(cfg, CODE_OUT, tier, block_at)]
-    if pr_check:
-        items.append(_BB_DRAFT_SKIP)
+    items.append(_BB_PR_TRUST if pr_check else _BB_TRUSTED_REF)
     items += [BOOTSTRAP_SH, _bb_baseline_download("code"), stage_cmd,
-              *_bb_tail("code", title, insights=True)]
+              *_bb_tail("code", title, insights=True, trusted=not pr_check)]
     return items
 
 
 def _bb_endpoint_items(cfg, tier, block_at):
     return [
         _bb_exports(cfg, ENDPOINT_OUT, tier, block_at),
+        _BB_TRUSTED_REF,
         BOOTSTRAP_SH,
         f'{CLI} prepare-templates --dir "$GIZMODUCK_NUCLEI_TEMPLATES" --tier "$GIZMODUCK_TIER"',
         ("# Endpoints: the committed list merged with a cheap re-detect. None at all\n"
@@ -655,18 +853,22 @@ def bitbucket(cfg):
     steps = "\n".join([
         _bb_step("gizmoduck-pr-check", "gizmoduck tier 1: light PR check (blocks on a new Critical)",
                  _bb_code_items(cfg, "light", "critical", code_light, "gizmoduck PR check", pr_check=True),
-                 ["trivy"], max_time=30, pr_check=True),
+                 ["pr-trivy"], max_time=30, pr_check=True),
         _bb_step("gizmoduck-full-code", "gizmoduck tier 2: full code scan (Semgrep, Trivy, Checkov, gitleaks)",
-                 _bb_code_items(cfg, "full", "high", code_tiered, "gizmoduck full code scan"), ["trivy"]),
+                 _bb_code_items(cfg, "full", "high", code_tiered, "gizmoduck full code scan"), ["trivy"],
+                 full_clone=True),
         _bb_step("gizmoduck-endpoint-scan", f"gizmoduck tier 2: staging endpoint scan ({ep})",
                  _bb_endpoint_items(cfg, "full", "high"), ["nuclei"]),
         _bb_step("gizmoduck-sweep-code", "gizmoduck tier 3: weekly code sweep incl. Dependency-Check (never blocks)",
                  _bb_code_items(cfg, "sweep", "never", code_tiered, "gizmoduck weekly code sweep"),
-                 ["trivy", "nvd"], max_time=240),
+                 ["trivy", "nvd"], max_time=240, full_clone=True),
         _bb_step("gizmoduck-sweep-endpoints", f"gizmoduck tier 3: weekly endpoint sweep ({ep}; never blocks)",
                  _bb_endpoint_items(cfg, "sweep", "never"), ["nuclei"], max_time=240),
     ])
-    caches = "\n".join(f"    gizmoduck-{k}: {v[1]}" for k, v in _CACHES.items())
+    # Trust-scoped caches: the PR step's is its own name, never restored by
+    # a trusted step.
+    caches = "\n".join([f"    gizmoduck-{k}: {v[1]}" for k, v in _CACHES.items()]
+                       + [f"    gizmoduck-pr-trivy: {_CACHES['trivy'][1]}"])
     default = cfg["default_branch"]
     return f"""\
 # Rendered by /gizmoduck:ci (gizmoduck {cfg['version']}).
@@ -684,13 +886,21 @@ def bitbucket(cfg):
 #   Branch: {default}   Pipeline: custom: {BB_WEEKLY}   Interval: Weekly, Sunday, 23:00 UTC
 # Bitbucket has no PR labels and no cancel-in-progress. Endpoint scans never run on a PR.
 #
-# Repository variables read at runtime: GIZMODUCK_BB_TOKEN (secured; baseline
-# Downloads, draft detection), GIZMODUCK_ALLOWED_PROD_ORIGINS + GIZMODUCK_ALLOW_PROD_SCAN,
-# GIZMODUCK_ALLOWED_IP_ORIGINS, GIZMODUCK_ALLOW_NO_BASELINE,
-# GIZMODUCK_ALLOW_INCOMPLETE, GIZMODUCK_TRUST_ASSIGNED_SEVERITY, NVD_API_KEY,
-# GIZMODUCK_AUTH_HEADER_VALUE (secured; only when gizmoduck-ci.json sets auth "header"),
-# GIZMODUCK_SDP_TICKETS + SDP_BASE_URL + SDP_API_KEY (+ SDP_AUTH_HEADER).
-image: {cfg['image']}
+# One-time setup for trust (the pull-request step refuses to run without it):
+#   Repository settings -> Deployments -> add an environment named {BB_TRUSTED_ENV}
+#   and put the WRITE-capable secrets there as deployment variables, never as
+#   repository variables: GIZMODUCK_BB_TOKEN (secured; uploads the baseline),
+#   SDP_BASE_URL + SDP_API_KEY (secured; tickets), NVD_API_KEY,
+#   GIZMODUCK_AUTH_HEADER_VALUE (secured; only when gizmoduck-ci.json sets auth "header").
+#   Only the custom pipelines' stages use that environment. On Premium, restrict its
+#   deployment permissions to {default} - a pull request that edits this file runs
+#   whatever it writes, and that restriction is what keeps it from the environment.
+# Repository variables: GIZMODUCK_BB_READ_TOKEN (secured; a READ-only access token -
+#   baselines and draft detection), GIZMODUCK_ALLOWED_PROD_ORIGINS + GIZMODUCK_ALLOW_PROD_SCAN,
+#   GIZMODUCK_ALLOWED_IP_ORIGINS, GIZMODUCK_ALLOW_NO_BASELINE, GIZMODUCK_ALLOW_INCOMPLETE,
+#   GIZMODUCK_TRUST_ASSIGNED_SEVERITY, GIZMODUCK_SDP_TICKETS (+ SDP_AUTH_HEADER).
+# Caches: the PR step uses gizmoduck-pr-trivy only; trusted steps never restore it.
+image: {_yq(check_image(cfg['image']))}
 
 definitions:
   caches:
@@ -708,35 +918,52 @@ pipelines:
           - name: GIZMODUCK_TARGET_URL
             default: ""
             description: Base URL to scan instead of the configured staging URL (the guard still applies)
-      - step: *gizmoduck-full-code
-      # If this pipeline also deploys staging, put the deploy step here so the
-      # endpoint scan runs against what was just deployed.
-      - step: *gizmoduck-endpoint-scan
+      - stage:
+          name: gizmoduck tier 2 (trusted)
+          deployment: {BB_TRUSTED_ENV}
+          steps:
+            - step: *gizmoduck-full-code
+            # If this pipeline also deploys staging, put the deploy step here so the
+            # endpoint scan runs against what was just deployed.
+            - step: *gizmoduck-endpoint-scan
     {BB_WEEKLY}:
-      - step: *gizmoduck-sweep-code
-      - step: *gizmoduck-sweep-endpoints
+      - stage:
+          name: gizmoduck tier 3 (trusted)
+          deployment: {BB_TRUSTED_ENV}
+          steps:
+            - step: *gizmoduck-sweep-code
+            - step: *gizmoduck-sweep-endpoints
     {BB_FULL}-bootstrap:
       - variables:
           - name: GIZMODUCK_TARGET_URL
             default: ""
             description: Base URL to scan instead of the configured staging URL (the guard still applies)
-      - step:
-          <<: *gizmoduck-full-code
-          image: ubuntu:24.04
-      - step:
-          <<: *gizmoduck-endpoint-scan
-          image: ubuntu:24.04
+      - stage:
+          name: gizmoduck tier 2 (trusted, inline bootstrap)
+          deployment: {BB_TRUSTED_ENV}
+          steps:
+            - step:
+                <<: *gizmoduck-full-code
+                image: ubuntu:24.04
+            - step:
+                <<: *gizmoduck-endpoint-scan
+                image: ubuntu:24.04
     {BB_WEEKLY}-bootstrap:
-      - step:
-          <<: *gizmoduck-sweep-code
-          image: ubuntu:24.04
-      - step:
-          <<: *gizmoduck-sweep-endpoints
-          image: ubuntu:24.04
+      - stage:
+          name: gizmoduck tier 3 (trusted, inline bootstrap)
+          deployment: {BB_TRUSTED_ENV}
+          steps:
+            - step:
+                <<: *gizmoduck-sweep-code
+                image: ubuntu:24.04
+            - step:
+                <<: *gizmoduck-sweep-endpoints
+                image: ubuntu:24.04
 """
 
 
 def render_all(cfg, platforms):
+    check_image(cfg["image"])
     files = {}
     if "github" in platforms:
         files[PR_FILE] = github_pr(cfg)

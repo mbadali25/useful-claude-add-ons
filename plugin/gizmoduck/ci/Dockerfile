@@ -3,10 +3,17 @@
 #
 # Build from the plugin directory (the build context must be plugin/gizmoduck).
 # Needs BuildKit (docker buildx; the default builder since Docker 23) for the
-# secret mount below:
+# secret mount below. The base image is pinned by DIGEST, never by tag: a tag
+# is a pointer its owner can move, so rebuilding the same release from
+# `ubuntu:24.04` could silently take different base contents. Resolve the
+# digest once per release, record it in the release notes, and pass it:
 #
 #   cd plugin/gizmoduck
-#   docker build -f ci/Dockerfile -t ghcr.io/<owner>/gizmoduck-ci:<version> .
+#   digest="$(docker buildx imagetools inspect ubuntu:24.04 --format '{{json .Manifest.Digest}}' | tr -d '"')"
+#   docker build --build-arg GIZMODUCK_BASE_DIGEST="$digest" \
+#     -f ci/Dockerfile -t ghcr.io/<owner>/gizmoduck-ci:<version> .
+#
+# Without the argument, or with anything but a sha256 digest, the build fails.
 #
 # <version> is the plugin version in .claude-plugin/plugin.json. The rendered
 # pipelines reference exactly that tag, so push one tag per release and never
@@ -29,9 +36,18 @@
 # Without the image, the rendered pipelines fall back to running this same
 # bootstrap.sh inline (GitHub: repository variable GIZMODUCK_RUNNER=bootstrap;
 # Bitbucket: the *-bootstrap custom pipelines).
-FROM ubuntu:24.04
+ARG GIZMODUCK_BASE_DIGEST
+FROM ubuntu:24.04@${GIZMODUCK_BASE_DIGEST}
 
+ARG GIZMODUCK_BASE_DIGEST
 ARG GIZMODUCK_NVD_PRESYNC=0
+LABEL org.opencontainers.image.base.name="docker.io/library/ubuntu:24.04" \
+      org.opencontainers.image.base.digest="${GIZMODUCK_BASE_DIGEST}"
+
+RUN case "${GIZMODUCK_BASE_DIGEST}" in \
+      sha256:????????????????????????????????????????????????????????????????) ;; \
+      *) echo "GIZMODUCK_BASE_DIGEST must be the base image's sha256 digest; got '${GIZMODUCK_BASE_DIGEST}'" >&2; exit 1 ;; \
+    esac
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PIP_BREAK_SYSTEM_PACKAGES=1 \
@@ -63,4 +79,7 @@ RUN --mount=type=secret,id=nvd_api_key,required=false \
 COPY scripts /opt/gizmoduck/scripts
 COPY .claude-plugin /opt/gizmoduck/.claude-plugin
 
-RUN python3 /opt/gizmoduck/scripts/gizmoduck.py doctor || true
+# The image is only as good as its toolchain: doctor must pass and every
+# scanner adapter must be runnable, or the build fails here rather than
+# shipping an image whose scans record tools as skipped-missing.
+RUN python3 /opt/gizmoduck/scripts/gizmoduck_ci.py image-check

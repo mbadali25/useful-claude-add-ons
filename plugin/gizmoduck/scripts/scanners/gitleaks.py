@@ -12,9 +12,11 @@ release checksum; `git` and `dir` subcommands need 8.19 or later.
 
 Two modes, chosen by `opts["gitleaks_mode"]`:
 
-    git   `gitleaks git <path> --log-opts <range>` - commits in a range (the
-          tier-1 PR check: base..HEAD, so only what the PR adds)
-    dir   `gitleaks dir <path>` - the checked-out tree (tier 2 and the sweep)
+    git   `gitleaks git <path> [--log-opts <range>]` - commits in a range (the
+          tier-1 PR check: base..HEAD, so only what the PR adds), or with no
+          range the whole history (tier 2 and the sweep: a secret added and
+          deleted again is still in the history a tree scan cannot see)
+    dir   `gitleaks dir <path>` - the checked-out tree
 
 `--redact` is always passed: the report is uploaded as a pipeline artifact,
 and a report that reprinted the secret would leak it a second time. The parser

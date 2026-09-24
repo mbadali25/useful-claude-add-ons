@@ -589,3 +589,166 @@ def test_detect_on_a_subdirectory_keeps_repo_relative_paths(tmp_path):
     root = make_repo(tmp_path, {"services/api/server.js": EXPRESS, "services/web/server.js": EXPRESS})
     det = cd.detect(str(root), os.path.join("services", "api"))
     assert {f.source.split(":")[0] for f in det.of("endpoint")} == {"services/api/server.js"}
+
+
+# --- round-2: containment, redaction, bounds, route resolution ----------------------
+
+APPSETTINGS_STAGING = '{\n  "Api": { "BaseUrl": "https://alice:SECRETPW@staging.acme.test/api" }\n}\n'
+
+
+def test_a_symlinked_candidate_file_is_never_read(tmp_path):
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "creds.json").write_text('{"Url": "https://staging.leak.test/?token=SECRET"}', encoding="utf-8")
+    repo = tmp_path / "repo"
+    make_repo(repo, {"server.js": EXPRESS})
+    os.symlink(outside / "creds.json", repo / "appsettings.Staging.json")
+    det = cd.detect(str(repo))
+    assert not det.of("staging_url")
+    assert "leak.test" not in json.dumps(det.to_dict())
+    # Each layer holds on its own: the walk never lists the link, and a read of
+    # it (should anything else hand it over) returns nothing.
+    assert [rel for rel, _ in cd._walk(str(repo), ".")] == ["server.js"]
+    assert cd._read(str(repo / "appsettings.Staging.json")) is None
+
+
+@pytest.mark.skipif(not os.path.exists("/dev/zero"), reason="needs /dev/zero")
+def test_a_symlink_to_a_device_is_not_read(tmp_path):
+    repo = make_repo(tmp_path / "repo", {"server.js": EXPRESS})
+    os.symlink("/dev/zero", repo / "appsettings.Staging.json")
+    assert cd._read(str(repo / "appsettings.Staging.json")) is None
+    assert endpoints(cd.detect(str(repo)), "express")
+
+
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="needs mkfifo")
+def test_a_fifo_is_skipped_rather_than_blocking(tmp_path):
+    repo = make_repo(tmp_path / "repo", {"server.js": EXPRESS})
+    os.mkfifo(repo / "openapi.json")
+    assert endpoints(cd.detect(str(repo)), "express"), "detection finished"
+
+
+def test_a_symlinked_directory_is_not_walked(tmp_path):
+    outside = make_repo(tmp_path / "outside", {"server.js": EXPRESS})
+    repo = make_repo(tmp_path / "repo", {"README.md": "x\n"})
+    os.symlink(outside, repo / "linked", target_is_directory=True)
+    assert not cd.detect(str(repo)).of("endpoint")
+
+
+@pytest.mark.parametrize("subdir", ["../outside", "../../", "/etc", "linked"])
+def test_a_module_dir_outside_the_repo_is_refused(tmp_path, subdir):
+    outside = make_repo(tmp_path / "outside", {"server.js": EXPRESS})
+    repo = make_repo(tmp_path / "repo", {"README.md": "x\n"})
+    os.symlink(outside, repo / "linked", target_is_directory=True)
+    with pytest.raises(cd.SetupError, match="outside the repository"):
+        cd.detect(str(repo), subdir)
+
+
+def test_credential_bearing_urls_are_redacted_in_findings_and_output(tmp_path):
+    root = make_repo(tmp_path, {"appsettings.Staging.json": APPSETTINGS_STAGING,
+                                ".env.example": "STAGING_URL=https://staging.acme.test/cb?token=SECRETTOK\n"})
+    det = cd.detect(str(root))
+    text = cd.render_findings(det) + json.dumps(det.to_dict())
+    assert "SECRETPW" not in text and "SECRETTOK" not in text and "alice" not in text
+    assert "https://***@staging.acme.test/api" in text
+
+
+def test_the_walk_is_bounded_and_says_so(tmp_path, monkeypatch):
+    files = {f"src/f{i:03d}.py": "x = 1\n" for i in range(30)}
+    root = make_repo(tmp_path, files)
+    monkeypatch.setattr(cd, "_MAX_CANDIDATES", 10)
+    det = cd.detect(str(root))
+    assert any("walk stopped after 10 candidate files" in c for c in det.checked)
+
+
+def test_the_walk_depth_is_bounded(tmp_path, monkeypatch):
+    root = make_repo(tmp_path, {"a/b/c/d/e/server.js": EXPRESS})
+    monkeypatch.setattr(cd, "_MAX_DEPTH", 2)
+    det = cd.detect(str(root))
+    assert not det.of("endpoint") and any("deeper than 2 levels" in c for c in det.checked)
+
+
+def test_obj_walks_json_only_and_skip_dirs_are_skipped(tmp_path):
+    root = make_repo(tmp_path, {"src/Api/obj/Api.json": OBJ_OPENAPI, "src/Api/obj/gen.cs": PROGRAM,
+                                "node_modules/x/server.js": EXPRESS, "bin/server.js": EXPRESS,
+                                "vendor/server.js": EXPRESS, ".git/server.js": EXPRESS})
+    det = cd.detect(str(root))
+    assert {f.detector for f in det.of("endpoint")} == {"openapi"}
+
+
+def test_fluent_mapgroup_chain_is_detected(tmp_path):
+    root = make_repo(tmp_path, {"Program.cs": 'var app = builder.Build();\n'
+                                              'app.MapGroup("/api").MapGet("/users", () => 1);\n'
+                                              'app.MapGroup("/v1").MapGroup("/admin").RequireAuthorization()'
+                                              '.MapPost("/jobs", (Job j) => j);\n'})
+    got = endpoints(cd.detect(str(root)), "aspnet-minimal-api")
+    assert set(got) == {("GET", "/api/users"), ("POST", "/v1/admin/jobs")}
+    assert got[("POST", "/v1/admin/jobs")].protected and not got[("GET", "/api/users")].protected
+    assert all(f.confidence == cd.HIGH for f in got.values())
+
+
+FASTAPI_NESTED = """\
+from fastapi import FastAPI, APIRouter
+
+app = FastAPI()
+v1 = APIRouter()
+users = APIRouter(prefix="/users")
+
+@users.get("/{id}")
+def get_user(id: int): ...
+
+v1.include_router(users)
+app.include_router(v1, prefix="/api/v1")
+"""
+
+EXPRESS_NESTED = """\
+const express = require('express');
+const app = express();
+const api = express.Router();
+const users = express.Router();
+users.get('/x', (req, res) => res.send('x'));
+api.use('/v1', users);
+app.use('/api', api);
+"""
+
+
+def test_nested_fastapi_routers_keep_every_ancestor_prefix(tmp_path):
+    root = make_repo(tmp_path, {"main.py": FASTAPI_NESTED})
+    got = endpoints(cd.detect(str(root)), "fastapi")
+    assert set(got) == {("GET", "/api/v1/users/{id}")}
+    assert got[("GET", "/api/v1/users/{id}")].confidence == cd.HIGH
+
+
+def test_nested_fastapi_router_whose_parent_is_mounted_elsewhere_is_medium(tmp_path):
+    root = make_repo(tmp_path, {"routes.py": FASTAPI_NESTED.replace('app.include_router(v1, prefix="/api/v1")\n', "")})
+    (f,) = endpoints(cd.detect(str(root)), "fastapi").values()
+    assert f.confidence == cd.MEDIUM and f.value == "/users/{id}"
+
+
+def test_nested_express_routers_keep_every_ancestor_prefix(tmp_path):
+    root = make_repo(tmp_path, {"server.js": EXPRESS_NESTED})
+    got = endpoints(cd.detect(str(root)), "express")
+    assert set(got) == {("GET", "/api/v1/x")} and got[("GET", "/api/v1/x")].confidence == cd.HIGH
+
+
+def test_nested_express_router_whose_parent_is_unmounted_is_medium(tmp_path):
+    root = make_repo(tmp_path, {"server.js": EXPRESS_NESTED.replace("app.use('/api', api);\n", "")})
+    (f,) = endpoints(cd.detect(str(root)), "express").values()
+    assert f.confidence == cd.MEDIUM
+
+
+@pytest.mark.parametrize("rel,text", [
+    ("appsettings.json", '{\n  "StagingUrl": "https://preview.company.test"\n}\n'),
+    ("appsettings.json", '{\n  "Stage_Api_Url": "https://preview.company.test"\n}\n'),
+    ("src/environments/environment.ts",
+     "export const environment = {\n  stagingApiUrl: 'https://preview.company.test',\n};\n"),
+])
+def test_staging_named_key_in_a_generic_settings_file_is_a_candidate(tmp_path, rel, text):
+    root = make_repo(tmp_path, {rel: text})
+    got = [(f.value, f.confidence) for f in cd.detect(str(root)).of("staging_url")]
+    assert got == [("https://preview.company.test", cd.MEDIUM)]
+
+
+def test_a_non_staging_key_in_a_generic_settings_file_is_not(tmp_path):
+    root = make_repo(tmp_path, {"appsettings.json": '{\n  "ProdUrl": "https://www.company.test",\n'
+                                                    '  "Stagger": "https://x.company.test"\n}\n'})
+    assert cd.detect(str(root)).of("staging_url") == []

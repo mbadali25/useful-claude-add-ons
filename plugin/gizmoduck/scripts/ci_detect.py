@@ -38,18 +38,32 @@ Every finding carries its source as `path:line` and one confidence level:
           domain, a Bitbucket deployment named staging (its variables live in
           the Bitbucket UI), a staging-looking host in a non-staging file.
 
+Containment. A repository is untrusted input, so the walk never follows a
+symlink (to a file or a directory), reads only regular files (never a FIFO,
+device or socket), refuses a `subdir` that resolves outside the repository,
+skips dependency/build/VCS directories (`obj/` is walked only for the JSON
+build-time OpenAPI document), and is bounded in depth, file count and file
+size - a truncated walk says so in `checked`. Any URL carrying credentials
+(userinfo, or a credential-named query parameter) is redacted by
+ci_guard.redact_url before it becomes a finding, so setup output and CI logs
+never repeat it.
+
 Nothing here decides anything. Setup shows the findings and turns what is not
 settled into `**Decision needed:**` blocks (`decisions`); no staging URL at any
 confidence is persisted unless the owner names it, and no endpoint below the
 confidence the owner accepts is committed. Section C (monorepo inventory) calls
 `detect(root, module_dir)` once per module; paths stay relative to `root`.
 """
+import errno
 import fnmatch
 import json
 import os
 import re
+import stat
 import urllib.parse
 from dataclasses import dataclass, field
+
+import ci_guard
 
 HIGH, MEDIUM, LOW = "high", "medium", "low"
 _RANK = {HIGH: 3, MEDIUM: 2, LOW: 1}
@@ -63,8 +77,12 @@ AUTH_MODES = ("none", "header", "exclude-protected")
 _SKIP_DIRS = {".git", "node_modules", ".venv", "venv", "__pycache__", ".terraform", "bin",
               "vendor", "dist", "build", "target", "coverage", ".angular", ".next", ".nuxt",
               "gizmoduck-out", ".idea", ".vs", ".tox", ".mypy_cache", ".pytest_cache",
-              "site-packages"}
+              "site-packages", "bower_components", "jspm_packages", "third_party", ".gradle", ".cache",
+              ".hg", ".svn"}
 _MAX_BYTES = 1_000_000
+_MAX_DEPTH = 24             # directory levels below the walk's base
+_MAX_ENTRIES = 200_000      # directory entries looked at, of any kind
+_MAX_CANDIDATES = 20_000    # files handed to a detector
 _HTTP_METHODS = ("get", "put", "post", "delete", "options", "head", "patch", "trace")
 _URL_RE = re.compile(r"https?://[^\s\"'<>\\)\]},;`]+")
 _PLACEHOLDER_HOSTS = ("example.com", "example.org", "example.net")
@@ -120,31 +138,92 @@ def _line_of(text, index):
 
 
 def _read(path):
+    """The text of a regular file of at most _MAX_BYTES, or None. Never follows
+    a symlink (O_NOFOLLOW, and an lstat check where that flag is absent) and
+    never opens a FIFO, device or socket, so a committed link to a host file or
+    to /dev/zero reads nothing."""
     try:
-        if os.path.getsize(path) > _MAX_BYTES:
+        st = os.lstat(path)
+        if not stat.S_ISREG(st.st_mode) or st.st_size > _MAX_BYTES:
             return None
-        with open(path, encoding="utf-8", errors="replace") as fh:
-            return fh.read()
+        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+        fd = os.open(path, flags)
     except OSError:
         return None
+    try:
+        fst = os.fstat(fd)
+        if not stat.S_ISREG(fst.st_mode) or (fst.st_dev, fst.st_ino) != (st.st_dev, st.st_ino):
+            return None
+        with os.fdopen(fd, "rb") as fh:
+            fd = None
+            data = fh.read(_MAX_BYTES + 1)
+    except OSError:
+        return None
+    finally:
+        if fd is not None:
+            os.close(fd)
+    if len(data) > _MAX_BYTES:
+        return None
+    return data.decode("utf-8", errors="replace")
 
 
-def _walk(root, subdir):
+def _inside(root, path):
+    """True when `path` resolves (symlinks followed) inside `root`."""
+    real_root, real = os.path.realpath(root), os.path.realpath(path)
+    return real == real_root or real.startswith(real_root.rstrip(os.sep) + os.sep)
+
+
+def _walk(root, subdir, notes=None):
     """(rel, full) for every candidate file under root/subdir, in sorted order.
-    Files inside an `obj/` directory are kept only when they are JSON - that is
-    where Microsoft.AspNetCore.OpenApi writes its build-time document."""
+    Symlinked directories and files, and anything that is not a regular file,
+    are skipped; so are _SKIP_DIRS. Files inside an `obj/` directory are kept
+    only when they are JSON - that is where Microsoft.AspNetCore.OpenApi writes
+    its build-time document. Bounded by _MAX_DEPTH, _MAX_ENTRIES and
+    _MAX_CANDIDATES; hitting a bound is recorded in `notes`."""
+    notes = notes if notes is not None else []
     base = os.path.normpath(os.path.join(root, subdir))
-    out = []
-    for dirpath, dirnames, filenames in os.walk(base):
-        dirnames[:] = sorted(d for d in dirnames if d not in _SKIP_DIRS)
-        rel_dir = os.path.relpath(dirpath, root)
-        in_obj = "obj" in rel_dir.replace("\\", "/").split("/")
-        for name in sorted(filenames):
-            if in_obj and not name.endswith(".json"):
+    out, seen = [], 0
+
+    def walk_dir(path, depth):
+        nonlocal seen
+        if depth > _MAX_DEPTH:
+            notes.append(f"{os.path.relpath(path, root)}: deeper than {_MAX_DEPTH} levels - not walked")
+            return False
+        try:
+            entries = sorted(os.scandir(path), key=lambda e: e.name)
+        except OSError as exc:
+            if exc.errno not in (errno.ENOENT, errno.ENOTDIR):
+                notes.append(f"{os.path.relpath(path, root)}: unreadable ({exc.strerror}) - skipped")
+            return True
+        rel_dir = os.path.relpath(path, root).replace("\\", "/")
+        in_obj = "obj" in rel_dir.split("/")
+        subdirs = []
+        for entry in entries:
+            seen += 1
+            if seen > _MAX_ENTRIES:
+                notes.append(f"walk stopped after {_MAX_ENTRIES} entries - detection is partial")
+                return False
+            if entry.is_symlink():
                 continue
-            full = os.path.join(dirpath, name)
-            rel = os.path.relpath(full, root).replace("\\", "/")
-            out.append((rel, full))
+            if entry.is_dir(follow_symlinks=False):
+                if entry.name not in _SKIP_DIRS:
+                    subdirs.append(entry)
+                continue
+            if not entry.is_file(follow_symlinks=False):
+                continue
+            if in_obj and not entry.name.endswith(".json"):
+                continue
+            if len(out) >= _MAX_CANDIDATES:
+                notes.append(f"walk stopped after {_MAX_CANDIDATES} candidate files - detection is partial")
+                return False
+            out.append((os.path.relpath(entry.path, root).replace("\\", "/"), entry.path))
+        for entry in subdirs:
+            if not walk_dir(entry.path, depth + 1):
+                return False
+        return True
+
+    if not os.path.islink(base) and os.path.isdir(base):
+        walk_dir(base, 0)
     return out
 
 
@@ -253,7 +332,7 @@ def _detect_crew(rel, text, out, checked):
         idx = text.find(f'"{rec.get("id")}"') if rec.get("id") else -1
         conf = HIGH if rec.get("source") == "declared" else MEDIUM
         value = value.strip()
-        out.append(Finding("endpoint", normalise_path(value) if value.startswith("/") else value,
+        out.append(Finding("endpoint", normalise_path(value) if value.startswith("/") else ci_guard.redact_url(value),
                            f"{rel}:{_line_of(text, idx) if idx >= 0 else 1}", conf, "crew-ledger"))
         n += 1
     checked.append(f"{rel}: {n} open record(s)")
@@ -330,7 +409,8 @@ def _detect_openapi(rel, text, out, checked):
     for m in _URL_RE.finditer(text[:20000]):
         url = m.group(0)
         if "stag" in (urllib.parse.urlsplit(url).hostname or "") and not _is_local(url):
-            out.append(Finding("staging_url", url.rstrip("/"), f"{rel}:{_line_of(text, m.start())}",
+            out.append(Finding("staging_url", ci_guard.redact_url(url.rstrip("/")),
+                               f"{rel}:{_line_of(text, m.start())}",
                                LOW if _is_placeholder(url) else MEDIUM, "openapi-servers",
                                note="server URL declared in the OpenAPI document"))
     checked.append(f"{rel}: OpenAPI document, {len(ops)} operation(s)")
@@ -347,6 +427,11 @@ _CS_METHOD = re.compile(r"^\s*(?:\[[^\]]*\]\s*)*(?:public|internal)\s+[^=;(]*?\b
 _CS_BUILD = re.compile(r"\b(?:var|WebApplication)\s+(\w+)\s*=\s*\w+\s*\.\s*Build\s*\(\s*\)")
 _CS_GROUP = re.compile(r"\b(?:var|RouteGroupBuilder)\s+(\w+)\s*=\s*(\w+)\s*\.\s*MapGroup\s*\(\s*@?\"([^\"]*)\"")
 _CS_MAP = re.compile(r"\b(\w+)\s*\.\s*Map(Get|Post|Put|Delete|Patch|Methods)\s*\(\s*(?:pattern\s*:\s*)?@?\"([^\"]*)\"")
+# `app.MapGroup("/api").RequireAuthorization().MapGet("/users", ...)`: a Map*
+# call on an inline chain of calls, at least one of them MapGroup.
+_CS_CHAIN = re.compile(r"\b(\w+)((?:\s*\.\s*\w+\s*\((?:[^()\"]|\"[^\"]*\")*\))+)\s*\.\s*"
+                       r"Map(Get|Post|Put|Delete|Patch|Methods)\s*\(\s*(?:pattern\s*:\s*)?@?\"([^\"]*)\"")
+_CS_CHAIN_GROUP = re.compile(r"\.\s*MapGroup\s*\(\s*(?:prefix\s*:\s*)?@?\"([^\"]*)\"\s*\)")
 
 
 def _cs_controllers(rel, text, out):
@@ -408,6 +493,21 @@ def _cs_minimal(rel, text, out):
             return _join(p_prefix, prefix), auth or p_auth, known
         return "", False, False
 
+    for m in _CS_CHAIN.finditer(text):
+        recv, chain, verb, pattern = m.group(1), m.group(2), m.group(3), m.group(4)
+        prefixes = _CS_CHAIN_GROUP.findall(chain)
+        if not prefixes:
+            continue
+        base, auth, known = resolve(recv)
+        end = text.find(";", m.end())
+        stmt = text[m.end():end if end >= 0 else len(text)]
+        auth = auth or ".RequireAuthorization(" in chain or ".RequireAuthorization(" in stmt
+        protected = auth and ".AllowAnonymous(" not in stmt
+        out.append(Finding("endpoint", _join(base, *prefixes, pattern), f"{rel}:{_line_of(text, m.start())}",
+                           HIGH if known else MEDIUM, "aspnet-minimal-api",
+                           method="" if verb == "Methods" else verb.upper(), protected=protected,
+                           note="" if known else f"receiver '{recv}' is a group or builder declared "
+                                                 f"elsewhere; its prefix may be missing"))
     for m in _CS_MAP.finditer(text):
         recv, verb, pattern = m.group(1), m.group(2), m.group(3)
         prefix, auth, known = resolve(recv)
@@ -483,8 +583,23 @@ def _detect_python(rel, text, out):
             kw = "url_prefix" if m.group(2) == "register_blueprint" else "prefix"
             pm = re.search(_PY_KW.format(kw), args)
             child["mount"] = pm.group(1) if pm else ""
+            child["parent"] = m.group(1)
             if pm and kw == "url_prefix":
                 child["prefix"], child["mount"] = "", pm.group(1)
+
+    def py_prefix(name, depth=0):
+        """(full prefix, resolved to an app?) through every include_router /
+        register_blueprint in this file - a router mounted on a router mounted
+        on the app carries both mounts."""
+        c = ctors.get(name)
+        if c is None or depth > 10:
+            return "", False
+        if c["kind"] in ("FastAPI", "Flask"):
+            return "", True
+        if c["mount"] is None:
+            return c["prefix"], False
+        parent_prefix, known = py_prefix(c.get("parent"), depth + 1)
+        return _join(parent_prefix, c["mount"], c["prefix"]), known
     for name, c in ctors.items():
         if c["kind"] == "FastAPI" and c.get("openapi"):
             out.append(Finding("openapi_url", normalise_path(c["openapi"]), f"{rel}:{c['line']}", MEDIUM,
@@ -501,10 +616,11 @@ def _detect_python(rel, text, out):
             prefix, conf, note = "", MEDIUM, f"'{recv}' is imported from another module; its prefix may be missing"
         elif c["kind"] in ("FastAPI", "Flask"):
             prefix, conf, note = "", HIGH, ""
-        elif c["mount"] is not None:
-            prefix, conf, note = _join(c["mount"], c["prefix"]), HIGH, ""
         else:
-            prefix, conf, note = c["prefix"], MEDIUM, f"'{recv}' is mounted in another file; that prefix is missing"
+            prefix, known = py_prefix(recv)
+            conf, note = (HIGH, "") if known else \
+                (MEDIUM, f"'{recv}' (or a router it is mounted on) is mounted in another file; that prefix "
+                         f"is missing")
         if verb in ("route", "api_route"):
             mm = _PY_METHODS.search(rest)
             methods = [x.strip(" '\"").upper() for x in mm.group(1).split(",") if x.strip(" '\"")] if mm \
@@ -554,17 +670,31 @@ def _detect_express(rel, text, out):
         for name in re.findall(r"\b(\w+)\b", m.group(4)):
             if name in recvs and not recvs[name]["app"]:
                 recvs[name]["mount"] = m.group(3)
+                recvs[name]["parent"] = m.group(1)
+
+    def js_prefix(name, depth=0):
+        """(full prefix, resolved to the app?) through every `.use(path, router)`
+        in this file - a router mounted on a router carries both mounts."""
+        r = recvs.get(name)
+        if r is None or depth > 10:
+            return "", False
+        if r["app"]:
+            return "", True
+        if r["mount"] is None:
+            return "", False
+        parent_prefix, known = js_prefix(r.get("parent"), depth + 1)
+        return _join(parent_prefix, r["mount"]), known
     for m in _JS_ROUTE.finditer(text):
         recv, verb, path, rest = m.group(1), m.group(2), m.group(4), m.group(5)
         r = recvs.get(recv)
         if r is None or not path.startswith("/") or "${" in path:
             continue
-        if r["app"]:
-            prefix, conf, note = "", HIGH, ""
-        elif r["mount"] is not None:
-            prefix, conf, note = r["mount"], HIGH, ""
+        prefix, known = js_prefix(recv)
+        if known:
+            conf, note = HIGH, ""
         else:
-            prefix, conf, note = "", MEDIUM, f"router '{recv}' is mounted in another file; that prefix is missing"
+            conf, note = MEDIUM, (f"router '{recv}' (or a router it is mounted on) is mounted in another file; "
+                                  f"that prefix is missing")
         handler_at = min([i for i in (rest.find("=>"), rest.find("function")) if i >= 0] or [len(rest)])
         protected = bool(_JS_AUTH.search(rest[:handler_at]))
         out.append(Finding("endpoint", _join(prefix, path), f"{rel}:{_line_of(text, m.start())}", conf,
@@ -650,10 +780,24 @@ _TF_OUTPUT = re.compile(r"^\s*output\s+\"([^\"]+)\"\s*\{", re.M)
 
 
 def _url_finding(url, rel, text, idx, conf, detector, note=""):
-    url = url.rstrip("/.")
+    url = ci_guard.redact_url(url.rstrip("/."))
     if _is_placeholder(url):
         conf, note = LOW, (note + "; " if note else "") + "placeholder value"
     return Finding("staging_url", url, f"{rel}:{_line_of(text, idx)}", conf, detector, note=note)
+
+
+_KEY_BEFORE = re.compile(r"[\"']?([A-Za-z_][\w.-]*)[\"']?\s*[:=]\s*[\"'`]?$")
+
+
+def _staging_key(text, idx):
+    """True when the key the URL at `idx` is assigned to names staging, in any
+    casing: StagingUrl, stagingApiUrl, STAGE_URL, stg-base."""
+    line_start = text.rfind("\n", 0, idx) + 1
+    m = _KEY_BEFORE.search(text[line_start:idx])
+    if not m:
+        return False
+    words = re.findall(r"[A-Z]?[a-z]+|[A-Z]+(?![a-z])|\d+", m.group(1))
+    return any(w.lower() in ("staging", "stage", "stg") for w in words)
 
 
 def _detect_staging_files(rel, text, out):
@@ -670,6 +814,9 @@ def _detect_staging_files(rel, text, out):
             if env_is_staging:
                 out.append(_url_finding(url, rel, text, um.start(), MEDIUM, detector,
                                         f"URL in the {m.group(1)} environment file"))
+            elif _staging_key(text, um.start()):
+                out.append(_url_finding(url, rel, text, um.start(), MEDIUM, detector,
+                                        "URL under a staging-named key"))
             elif "stag" in (urllib.parse.urlsplit(url).hostname or ""):
                 out.append(_url_finding(url, rel, text, um.start(), LOW, detector,
                                         "staging-looking host in a non-staging file"))
@@ -725,7 +872,8 @@ def _detect_github_envs(rel, text, out, checked):
                                     f"environment '{name}'"))
         else:
             out.append(Finding("staging_url", "", f"{rel}:{_line_of(text, anchor)}", LOW, "github-environment",
-                               note=f"environment '{name}' has " + (f"url {url}, an expression resolved at run time"
+                               note=f"environment '{name}' has " + (f"url {ci_guard.redact_text(str(url))}, an "
+                                                                    f"expression resolved at run time"
                                                                    if url else "no url") +
                                " - the value may be in Settings -> Environments"))
 
@@ -783,16 +931,19 @@ def crew_present(root):
 def detect(root, subdir="."):
     """Everything this module can find under root/subdir. Pure read."""
     root = os.path.abspath(root)
+    if os.path.isabs(subdir or "") or not _inside(root, os.path.join(root, subdir or ".")):
+        raise SetupError(f"module directory {subdir!r} resolves outside the repository {root}; refused")
     det = Detection(root=root, subdir=subdir, crew_present=crew_present(root))
     out, checked = [], []
     ledger = os.path.join(root, subdir, ".crew", "endpoints.json")
-    text = _read(ledger) if os.path.isfile(ledger) else None
+    text = _read(ledger)
     if text is not None:
         _detect_crew(os.path.relpath(ledger, root).replace("\\", "/"), text, out, checked)
     else:
         checked.append(f"{LEDGER_REL}: absent")
     n_files = 0
-    for rel, full in _walk(root, subdir):
+    notes = []
+    for rel, full in _walk(root, subdir, notes):
         name = rel.rsplit("/", 1)[-1]
         ext = os.path.splitext(name)[1].lower()
         if rel.endswith(LEDGER_REL) or ext not in (".json", ".yaml", ".yml", ".cs", ".py", ".js", ".mjs",
@@ -819,6 +970,7 @@ def detect(root, subdir="."):
         if name == "bitbucket-pipelines.yml":
             _detect_bitbucket_deployments(rel, text, out, checked)
         _detect_staging_files(rel, text, out)
+    checked.extend(notes)
     checked.append(f"{n_files} candidate file(s) read under {subdir}")
     det.findings = _dedupe(out)
     det.checked = checked
@@ -1165,7 +1317,7 @@ def merge_for_run(config, ledger_doc, det, live_ops=()):
         value = rec.get("endpoint")
         if not isinstance(value, str) or not value.strip() or any(ch.isspace() for ch in value.strip()):
             continue
-        value = value.strip()
+        value = value.strip() if value.startswith("/") else ci_guard.redact_url(value.strip())
         key = normalise_path(value) if value.startswith("/") else value
         add(key, scan_path(value) if value.startswith("/") else value, "crew-ledger", True, HIGH,
             f"{LEDGER_REL}:{rec.get('id') or n}")

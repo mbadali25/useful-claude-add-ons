@@ -6,6 +6,7 @@ cache, and the gitleaks adapter. No scanner, no git binary, no network: the
 routine runner, `git diff` and every fetch are fakes.
 """
 import json
+import os
 from types import SimpleNamespace
 
 import ci_detect
@@ -22,11 +23,18 @@ def no_redirects(_url):
 
 
 class FakeRunner:
-    def __init__(self):
+    """routine.run_routine's stand-in: records the call and writes the combined
+    findings file the real one always writes (empty unless `records`)."""
+
+    def __init__(self, records=()):
         self.calls = []
+        self.records = list(records)
 
     def __call__(self, manifest, out, confirm=None):
         self.calls.append((manifest, out, confirm))
+        os.makedirs(out, exist_ok=True)
+        with open(os.path.join(out, "findings.jsonl"), "w", encoding="utf-8") as fh:
+            fh.write("".join(json.dumps(r) + "\n" for r in self.records))
 
 
 def fake_git(files, rc=0, stderr=""):
@@ -116,7 +124,10 @@ def test_full_skips_dependency_check_and_sweep_runs_it_with_cached_data(tmp_path
     assert tools(full) == {"semgrep", "trivy", "checkov", "gitleaks"}
     assert tools(sweep) == {"semgrep", "trivy", "checkov", "depcheck", "gitleaks"}
     assert by_name(sweep)["deps"].options == {"depcheck_data_dir": "/tmp/nvd"}
-    assert by_name(full)["secrets"].options == {"gitleaks_mode": "dir"}
+    secrets = by_name(full)["secrets"].options
+    assert secrets["gitleaks_mode"] == "git" and "gitleaks_log_opts" not in secrets, \
+        "tier 2 scans the whole git history, not just the tree"
+    assert by_name(sweep)["secrets"].options["gitleaks_mode"] == "git"
 
 
 # --- gate thresholds ---------------------------------------------------------------
@@ -136,12 +147,15 @@ def finding(tid, sev):
 ])
 def test_block_at(block_at, current, fails):
     cur = [finding(f"t{i}", s) for i, s in enumerate(current)]
-    result = ci_gate.evaluate([], cur, block_at=ci_gate.BLOCK_AT[block_at])
+    result = ci_gate.evaluate([], cur, COMPLETE, block_at=ci_gate.BLOCK_AT[block_at])
     assert result.fail is fails
 
 
+COMPLETE = {"cells": [{"target": "code", "tool": "semgrep", "status": "ran"}]}
+
+
 def test_never_still_lists_new_critical_high_for_tickets_and_reports_why():
-    result = ci_gate.evaluate([], [finding("a", 4), finding("b", 3), finding("c", 2)], block_at=None)
+    result = ci_gate.evaluate([], [finding("a", 4), finding("b", 3), finding("c", 2)], COMPLETE, block_at=None)
     assert not result.fail and len(result.new_blocking) == 2
     assert any("never blocks" in r for r in result.reasons)
 
@@ -158,9 +172,11 @@ def test_gate_cli_block_at(tmp_path):
                                "matched_at": "x", "tags": []}) + "\n", encoding="utf-8")
     base_file = tmp_path / "base.jsonl"
     base_file.write_text("", encoding="utf-8")
+    manifest = tmp_path / "run-manifest.json"
+    manifest.write_text(json.dumps(COMPLETE), encoding="utf-8")
 
     def args(block_at):
-        return SimpleNamespace(current=str(cur), baseline=str(base_file), manifest=None, json_out=None,
+        return SimpleNamespace(current=str(cur), baseline=str(base_file), manifest=str(manifest), json_out=None,
                                new_out=None, summary=None, block_at=block_at)
     assert ci.cmd_gate(args("critical"), env={}) == 0
     assert ci.cmd_gate(args("high"), env={}) == 1

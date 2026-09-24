@@ -13,19 +13,28 @@
 #   Branch: main   Pipeline: custom: security-weekly   Interval: Weekly, Sunday, 23:00 UTC
 # Bitbucket has no PR labels and no cancel-in-progress. Endpoint scans never run on a PR.
 #
-# Repository variables read at runtime: GIZMODUCK_BB_TOKEN (secured; baseline
-# Downloads, draft detection), GIZMODUCK_ALLOWED_PROD_ORIGINS + GIZMODUCK_ALLOW_PROD_SCAN,
-# GIZMODUCK_ALLOWED_IP_ORIGINS, GIZMODUCK_ALLOW_NO_BASELINE,
-# GIZMODUCK_ALLOW_INCOMPLETE, GIZMODUCK_TRUST_ASSIGNED_SEVERITY, NVD_API_KEY,
-# GIZMODUCK_AUTH_HEADER_VALUE (secured; only when gizmoduck-ci.json sets auth "header"),
-# GIZMODUCK_SDP_TICKETS + SDP_BASE_URL + SDP_API_KEY (+ SDP_AUTH_HEADER).
-image: ghcr.io/example/gizmoduck-ci:0.0.0-golden
+# One-time setup for trust (the pull-request step refuses to run without it):
+#   Repository settings -> Deployments -> add an environment named gizmoduck-trusted
+#   and put the WRITE-capable secrets there as deployment variables, never as
+#   repository variables: GIZMODUCK_BB_TOKEN (secured; uploads the baseline),
+#   SDP_BASE_URL + SDP_API_KEY (secured; tickets), NVD_API_KEY,
+#   GIZMODUCK_AUTH_HEADER_VALUE (secured; only when gizmoduck-ci.json sets auth "header").
+#   Only the custom pipelines' stages use that environment. On Premium, restrict its
+#   deployment permissions to main - a pull request that edits this file runs
+#   whatever it writes, and that restriction is what keeps it from the environment.
+# Repository variables: GIZMODUCK_BB_READ_TOKEN (secured; a READ-only access token -
+#   baselines and draft detection), GIZMODUCK_ALLOWED_PROD_ORIGINS + GIZMODUCK_ALLOW_PROD_SCAN,
+#   GIZMODUCK_ALLOWED_IP_ORIGINS, GIZMODUCK_ALLOW_NO_BASELINE, GIZMODUCK_ALLOW_INCOMPLETE,
+#   GIZMODUCK_TRUST_ASSIGNED_SEVERITY, GIZMODUCK_SDP_TICKETS (+ SDP_AUTH_HEADER).
+# Caches: the PR step uses gizmoduck-pr-trivy only; trusted steps never restore it.
+image: "ghcr.io/example/gizmoduck-ci:0.0.0-golden"
 
 definitions:
   caches:
     gizmoduck-trivy: /tmp/gizmoduck-cache/trivy
     gizmoduck-nvd: /tmp/gizmoduck-cache/nvd
     gizmoduck-nuclei: /tmp/gizmoduck-cache/nuclei-templates
+    gizmoduck-pr-trivy: /tmp/gizmoduck-cache/trivy
   steps:
     - step: &gizmoduck-pr-check
         name: "gizmoduck tier 1: light PR check (blocks on a new Critical)"
@@ -42,7 +51,7 @@ definitions:
               - "**/*.jpg"
               - "**/*.gif"
         caches:
-          - gizmoduck-trivy
+          - gizmoduck-pr-trivy
         script:
           - |
             export GIZMODUCK_HOME="${GIZMODUCK_HOME:-/opt/gizmoduck}"
@@ -60,17 +69,31 @@ definitions:
             export GIZMODUCK_NUCLEI_TEMPLATES=/tmp/gizmoduck-cache/nuclei-templates
             export PATH="$HOME/.local/bin:$PATH"
           - |
-            # Tier 1 skips draft PRs. Bitbucket passes no draft flag to a pipeline, so it
-            # is read from the pull request itself - which needs GIZMODUCK_BB_TOKEN.
-            if [ -n "${GIZMODUCK_BB_TOKEN:-}" ] && [ -n "${BITBUCKET_PR_ID:-}" ]; then
-              draft="$(curl -fsS -H "Authorization: Bearer $GIZMODUCK_BB_TOKEN" "https://api.bitbucket.org/2.0/repositories/$BITBUCKET_REPO_FULL_NAME/pullrequests/$BITBUCKET_PR_ID" | python3 -c 'import json,sys; print(str(json.load(sys.stdin).get("draft", False)).lower())' || echo unknown)"
-              if [ "$draft" = "true" ]; then
-                echo "gizmoduck: draft pull request - tier 1 is skipped until it is marked ready for review"
-                exit 0
+            # A pull request is untrusted code: no write-capable secret may be visible to
+            # it. They belong to the gizmoduck-trusted deployment environment, which only
+            # the custom pipelines use - one visible here was made a repository variable.
+            for v in GIZMODUCK_BB_TOKEN SDP_API_KEY SDP_BASE_URL; do
+              if [ -n "$(printenv "$v" || true)" ]; then
+                echo "gizmoduck: $v is visible to a pull-request pipeline - it is a repository variable. Move it to the" "gizmoduck-trusted deployment environment (Repository settings -> Deployments); refusing to run with it."
+                exit 1
               fi
-            else
-              echo "gizmoduck: GIZMODUCK_BB_TOKEN is not set - cannot tell a draft PR apart, so this runs regardless"
+            done
+            unset GIZMODUCK_BB_TOKEN SDP_API_KEY SDP_BASE_URL GIZMODUCK_AUTH_HEADER_VALUE NVD_API_KEY
+            # Tier 1 skips draft PRs. Bitbucket passes no draft flag to a pipeline, so it
+            # is read from the pull request with the read-only GIZMODUCK_BB_READ_TOKEN. A
+            # state this step cannot read fails the check - a draft is never guessed at.
+            if [ -z "${GIZMODUCK_BB_READ_TOKEN:-}" ]; then
+              echo "gizmoduck: GIZMODUCK_BB_READ_TOKEN is not available (a fork's pull request never gets secured variables),"
+              echo "so this check cannot tell a draft apart or read its baseline - failing rather than scanning blind."
+              echo "A maintainer can run custom: security-full on the branch instead."
+              exit 1
             fi
+            draft="$(curl -fsS -H "Authorization: Bearer $GIZMODUCK_BB_READ_TOKEN" "https://api.bitbucket.org/2.0/repositories/$BITBUCKET_REPO_FULL_NAME/pullrequests/${BITBUCKET_PR_ID:-0}" | python3 -c 'import json,sys; print(str(json.load(sys.stdin).get("draft", False)).lower())' || echo unknown)"
+            case "$draft" in
+              true) echo "gizmoduck: draft pull request - tier 1 is skipped until it is marked ready for review"; exit 0 ;;
+              false) ;;
+              *) echo "gizmoduck: could not read whether pull request ${BITBUCKET_PR_ID:-?} is a draft - failing closed"; exit 1 ;;
+            esac
           - |
             GIZMODUCK_HOME="${GIZMODUCK_HOME:-/opt/gizmoduck}"
             if [ -f "$GIZMODUCK_HOME/scripts/gizmoduck_ci.py" ]; then
@@ -92,10 +115,10 @@ definitions:
             fi
           - |
             mkdir -p /tmp/gizmoduck-baseline/code "$GIZMODUCK_OUT"
-            if [ -n "${GIZMODUCK_BB_TOKEN:-}" ]; then
-              curl -fsSL -H "Authorization: Bearer $GIZMODUCK_BB_TOKEN" -o /tmp/gizmoduck-baseline/code/findings.jsonl "https://api.bitbucket.org/2.0/repositories/$BITBUCKET_REPO_FULL_NAME/downloads/gizmoduck-code-baseline.jsonl" || { rm -f /tmp/gizmoduck-baseline/code/findings.jsonl; echo "gizmoduck: no code baseline in Downloads yet"; }
+            if [ -n "${GIZMODUCK_BB_READ_TOKEN:-}" ]; then
+              curl -fsSL -H "Authorization: Bearer $GIZMODUCK_BB_READ_TOKEN" -o /tmp/gizmoduck-baseline/code/findings.jsonl "https://api.bitbucket.org/2.0/repositories/$BITBUCKET_REPO_FULL_NAME/downloads/gizmoduck-code-baseline.jsonl" || { rm -f /tmp/gizmoduck-baseline/code/findings.jsonl; echo "gizmoduck: no code baseline in Downloads yet"; }
             else
-              echo "gizmoduck: GIZMODUCK_BB_TOKEN is not set - no baseline can be read or saved"
+              echo "gizmoduck: GIZMODUCK_BB_READ_TOKEN is not set - no baseline can be read; the gate fails closed on that"
             fi
           - |
             # Diff-aware: everything is measured from the merge base with the PR's destination.
@@ -108,35 +131,35 @@ definitions:
             gate_rc=0
             python3 "$GIZMODUCK_HOME/scripts/gizmoduck_ci.py" gate --baseline /tmp/gizmoduck-baseline/code/findings.jsonl --current "$GIZMODUCK_OUT/findings.jsonl" --manifest "$GIZMODUCK_OUT/run-manifest.json" --block-at "$GIZMODUCK_BLOCK_AT" --json-out "$GIZMODUCK_OUT/gate.json" --new-out "$GIZMODUCK_OUT/new-blocking.jsonl" || gate_rc=$?
           - |
-            python3 "$GIZMODUCK_HOME/scripts/gizmoduck_ci.py" bb-insights "$GIZMODUCK_OUT/findings.jsonl" --gate "$GIZMODUCK_OUT/gate.json" --outdir "$GIZMODUCK_OUT/insights" --srcroot "$BITBUCKET_CLONE_DIR" || true
+            insights_rc=0
+          - |
+            # Code Insights: a failure here fails the step (after the gate's own verdict),
+            # so a broken report or credential is never a green pipeline with no report.
+            python3 "$GIZMODUCK_HOME/scripts/gizmoduck_ci.py" bb-insights "$GIZMODUCK_OUT/findings.jsonl" --gate "$GIZMODUCK_OUT/gate.json" --outdir "$GIZMODUCK_OUT/insights" --srcroot "$BITBUCKET_CLONE_DIR" || insights_rc=$?
             rep="http://api.bitbucket.org/2.0/repositories/$BITBUCKET_REPO_FULL_NAME/commit/$BITBUCKET_COMMIT/reports/gizmoduck-code"
-            if [ -f "$GIZMODUCK_OUT/insights/report.json" ]; then
-              curl -fsS --proxy http://localhost:29418 -X PUT "$rep" -H "Content-Type: application/json" --data-binary @"$GIZMODUCK_OUT/insights/report.json" || echo "gizmoduck: Code Insights report upload failed"
+            if [ "$insights_rc" -eq 0 ]; then
+              curl -fsS --proxy http://localhost:29418 -X PUT "$rep" -H "Content-Type: application/json" --data-binary @"$GIZMODUCK_OUT/insights/report.json" || insights_rc=$?
               for f in "$GIZMODUCK_OUT"/insights/annotations-*.json; do
                 [ -f "$f" ] || continue
-                curl -fsS --proxy http://localhost:29418 -X POST "$rep/annotations" -H "Content-Type: application/json" --data-binary @"$f" || echo "gizmoduck: annotation upload failed for $f"
+                curl -fsS --proxy http://localhost:29418 -X POST "$rep/annotations" -H "Content-Type: application/json" --data-binary @"$f" || insights_rc=$?
               done
-            fi
-          - |
-            # The next baseline: the weekly sweep's results (it never blocks), or a clean
-            # tier-2 run - both only on the default branch, never from a pull request.
-            if { [ "$GIZMODUCK_TIER" = "sweep" ] || [ "$gate_rc" -eq 0 ]; } && [ "${BITBUCKET_BRANCH:-}" = "$GIZMODUCK_DEFAULT_BRANCH" ] && [ -z "${BITBUCKET_PR_ID:-}" ] && [ -n "${GIZMODUCK_BB_TOKEN:-}" ]; then
-              curl -fsS -X POST -H "Authorization: Bearer $GIZMODUCK_BB_TOKEN" -F "files=@$GIZMODUCK_OUT/findings.jsonl;filename=gizmoduck-code-baseline.jsonl" "https://api.bitbucket.org/2.0/repositories/$BITBUCKET_REPO_FULL_NAME/downloads" || echo "gizmoduck: baseline upload failed - the next run compares against the previous baseline"
-            fi
-          - |
-            if [ -z "${BITBUCKET_PR_ID:-}" ] && [ "${GIZMODUCK_SDP_TICKETS:-}" = "true" ] && [ -s "$GIZMODUCK_OUT/new-blocking.jsonl" ]; then
-              python3 "$GIZMODUCK_HOME/scripts/gizmoduck_ci.py" tickets "$GIZMODUCK_OUT/new-blocking.jsonl" --out "$GIZMODUCK_OUT/tickets.json" --yes || echo "gizmoduck: ticketing failed"
             fi
           - |
             mkdir -p "$BITBUCKET_CLONE_DIR/gizmoduck-out"
             cp -r "$GIZMODUCK_OUT" "$BITBUCKET_CLONE_DIR/gizmoduck-out/code"
-            exit "$gate_rc"
+            if [ "$gate_rc" -ne 0 ]; then exit "$gate_rc"; fi
+            if [ "$insights_rc" -ne 0 ]; then
+              echo "gizmoduck: Code Insights report failed (exit $insights_rc) - failing the step"
+              exit "$insights_rc"
+            fi
         artifacts:
           - gizmoduck-out/**
     - step: &gizmoduck-full-code
         name: "gizmoduck tier 2: full code scan (Semgrep, Trivy, Checkov, gitleaks)"
         size: 2x
         max-time: 120
+        clone:
+          depth: full
         caches:
           - gizmoduck-trivy
         script:
@@ -156,6 +179,14 @@ definitions:
             export GIZMODUCK_NUCLEI_TEMPLATES=/tmp/gizmoduck-cache/nuclei-templates
             export PATH="$HOME/.local/bin:$PATH"
           - |
+            # Write-capable secrets (gizmoduck-trusted deployment variables) are used only
+            # on a trusted branch: the default branch or release/*.
+            case "${BITBUCKET_BRANCH:-}" in
+              "$GIZMODUCK_DEFAULT_BRANCH"|release/*) ;;
+              *) echo "gizmoduck: '${BITBUCKET_BRANCH:-<none>}' is not a trusted branch - write-capable secrets are dropped"
+                 unset GIZMODUCK_BB_TOKEN SDP_API_KEY SDP_BASE_URL ;;
+            esac
+          - |
             GIZMODUCK_HOME="${GIZMODUCK_HOME:-/opt/gizmoduck}"
             if [ -f "$GIZMODUCK_HOME/scripts/gizmoduck_ci.py" ]; then
               echo "gizmoduck: toolchain present at $GIZMODUCK_HOME (runner image)"
@@ -176,10 +207,10 @@ definitions:
             fi
           - |
             mkdir -p /tmp/gizmoduck-baseline/code "$GIZMODUCK_OUT"
-            if [ -n "${GIZMODUCK_BB_TOKEN:-}" ]; then
-              curl -fsSL -H "Authorization: Bearer $GIZMODUCK_BB_TOKEN" -o /tmp/gizmoduck-baseline/code/findings.jsonl "https://api.bitbucket.org/2.0/repositories/$BITBUCKET_REPO_FULL_NAME/downloads/gizmoduck-code-baseline.jsonl" || { rm -f /tmp/gizmoduck-baseline/code/findings.jsonl; echo "gizmoduck: no code baseline in Downloads yet"; }
+            if [ -n "${GIZMODUCK_BB_READ_TOKEN:-}" ]; then
+              curl -fsSL -H "Authorization: Bearer $GIZMODUCK_BB_READ_TOKEN" -o /tmp/gizmoduck-baseline/code/findings.jsonl "https://api.bitbucket.org/2.0/repositories/$BITBUCKET_REPO_FULL_NAME/downloads/gizmoduck-code-baseline.jsonl" || { rm -f /tmp/gizmoduck-baseline/code/findings.jsonl; echo "gizmoduck: no code baseline in Downloads yet"; }
             else
-              echo "gizmoduck: GIZMODUCK_BB_TOKEN is not set - no baseline can be read or saved"
+              echo "gizmoduck: GIZMODUCK_BB_READ_TOKEN is not set - no baseline can be read; the gate fails closed on that"
             fi
           - |
             python3 "$GIZMODUCK_HOME/scripts/gizmoduck_ci.py" code-stage --tier "$GIZMODUCK_TIER" --path "$BITBUCKET_CLONE_DIR" --out "$GIZMODUCK_OUT"
@@ -189,13 +220,17 @@ definitions:
             gate_rc=0
             python3 "$GIZMODUCK_HOME/scripts/gizmoduck_ci.py" gate --baseline /tmp/gizmoduck-baseline/code/findings.jsonl --current "$GIZMODUCK_OUT/findings.jsonl" --manifest "$GIZMODUCK_OUT/run-manifest.json" --block-at "$GIZMODUCK_BLOCK_AT" --json-out "$GIZMODUCK_OUT/gate.json" --new-out "$GIZMODUCK_OUT/new-blocking.jsonl" || gate_rc=$?
           - |
-            python3 "$GIZMODUCK_HOME/scripts/gizmoduck_ci.py" bb-insights "$GIZMODUCK_OUT/findings.jsonl" --gate "$GIZMODUCK_OUT/gate.json" --outdir "$GIZMODUCK_OUT/insights" --srcroot "$BITBUCKET_CLONE_DIR" || true
+            insights_rc=0
+          - |
+            # Code Insights: a failure here fails the step (after the gate's own verdict),
+            # so a broken report or credential is never a green pipeline with no report.
+            python3 "$GIZMODUCK_HOME/scripts/gizmoduck_ci.py" bb-insights "$GIZMODUCK_OUT/findings.jsonl" --gate "$GIZMODUCK_OUT/gate.json" --outdir "$GIZMODUCK_OUT/insights" --srcroot "$BITBUCKET_CLONE_DIR" || insights_rc=$?
             rep="http://api.bitbucket.org/2.0/repositories/$BITBUCKET_REPO_FULL_NAME/commit/$BITBUCKET_COMMIT/reports/gizmoduck-code"
-            if [ -f "$GIZMODUCK_OUT/insights/report.json" ]; then
-              curl -fsS --proxy http://localhost:29418 -X PUT "$rep" -H "Content-Type: application/json" --data-binary @"$GIZMODUCK_OUT/insights/report.json" || echo "gizmoduck: Code Insights report upload failed"
+            if [ "$insights_rc" -eq 0 ]; then
+              curl -fsS --proxy http://localhost:29418 -X PUT "$rep" -H "Content-Type: application/json" --data-binary @"$GIZMODUCK_OUT/insights/report.json" || insights_rc=$?
               for f in "$GIZMODUCK_OUT"/insights/annotations-*.json; do
                 [ -f "$f" ] || continue
-                curl -fsS --proxy http://localhost:29418 -X POST "$rep/annotations" -H "Content-Type: application/json" --data-binary @"$f" || echo "gizmoduck: annotation upload failed for $f"
+                curl -fsS --proxy http://localhost:29418 -X POST "$rep/annotations" -H "Content-Type: application/json" --data-binary @"$f" || insights_rc=$?
               done
             fi
           - |
@@ -205,13 +240,17 @@ definitions:
               curl -fsS -X POST -H "Authorization: Bearer $GIZMODUCK_BB_TOKEN" -F "files=@$GIZMODUCK_OUT/findings.jsonl;filename=gizmoduck-code-baseline.jsonl" "https://api.bitbucket.org/2.0/repositories/$BITBUCKET_REPO_FULL_NAME/downloads" || echo "gizmoduck: baseline upload failed - the next run compares against the previous baseline"
             fi
           - |
-            if [ -z "${BITBUCKET_PR_ID:-}" ] && [ "${GIZMODUCK_SDP_TICKETS:-}" = "true" ] && [ -s "$GIZMODUCK_OUT/new-blocking.jsonl" ]; then
+            if [ -z "${BITBUCKET_PR_ID:-}" ] && [ "${GIZMODUCK_SDP_TICKETS:-}" = "true" ] && [ -n "${SDP_API_KEY:-}" ] && [ -s "$GIZMODUCK_OUT/new-blocking.jsonl" ]; then
               python3 "$GIZMODUCK_HOME/scripts/gizmoduck_ci.py" tickets "$GIZMODUCK_OUT/new-blocking.jsonl" --out "$GIZMODUCK_OUT/tickets.json" --yes || echo "gizmoduck: ticketing failed"
             fi
           - |
             mkdir -p "$BITBUCKET_CLONE_DIR/gizmoduck-out"
             cp -r "$GIZMODUCK_OUT" "$BITBUCKET_CLONE_DIR/gizmoduck-out/code"
-            exit "$gate_rc"
+            if [ "$gate_rc" -ne 0 ]; then exit "$gate_rc"; fi
+            if [ "$insights_rc" -ne 0 ]; then
+              echo "gizmoduck: Code Insights report failed (exit $insights_rc) - failing the step"
+              exit "$insights_rc"
+            fi
         artifacts:
           - gizmoduck-out/**
     - step: &gizmoduck-endpoint-scan
@@ -237,6 +276,14 @@ definitions:
             export GIZMODUCK_NUCLEI_TEMPLATES=/tmp/gizmoduck-cache/nuclei-templates
             export PATH="$HOME/.local/bin:$PATH"
           - |
+            # Write-capable secrets (gizmoduck-trusted deployment variables) are used only
+            # on a trusted branch: the default branch or release/*.
+            case "${BITBUCKET_BRANCH:-}" in
+              "$GIZMODUCK_DEFAULT_BRANCH"|release/*) ;;
+              *) echo "gizmoduck: '${BITBUCKET_BRANCH:-<none>}' is not a trusted branch - write-capable secrets are dropped"
+                 unset GIZMODUCK_BB_TOKEN SDP_API_KEY SDP_BASE_URL ;;
+            esac
+          - |
             GIZMODUCK_HOME="${GIZMODUCK_HOME:-/opt/gizmoduck}"
             if [ -f "$GIZMODUCK_HOME/scripts/gizmoduck_ci.py" ]; then
               echo "gizmoduck: toolchain present at $GIZMODUCK_HOME (runner image)"
@@ -267,10 +314,10 @@ definitions:
             python3 "$GIZMODUCK_HOME/scripts/gizmoduck_ci.py" targets --run-endpoints "$GIZMODUCK_OUT/endpoints-run.json" --out "$GIZMODUCK_OUT/targets.json"
           - |
             mkdir -p /tmp/gizmoduck-baseline/endpoints "$GIZMODUCK_OUT"
-            if [ -n "${GIZMODUCK_BB_TOKEN:-}" ]; then
-              curl -fsSL -H "Authorization: Bearer $GIZMODUCK_BB_TOKEN" -o /tmp/gizmoduck-baseline/endpoints/findings.jsonl "https://api.bitbucket.org/2.0/repositories/$BITBUCKET_REPO_FULL_NAME/downloads/gizmoduck-endpoints-baseline.jsonl" || { rm -f /tmp/gizmoduck-baseline/endpoints/findings.jsonl; echo "gizmoduck: no endpoints baseline in Downloads yet"; }
+            if [ -n "${GIZMODUCK_BB_READ_TOKEN:-}" ]; then
+              curl -fsSL -H "Authorization: Bearer $GIZMODUCK_BB_READ_TOKEN" -o /tmp/gizmoduck-baseline/endpoints/findings.jsonl "https://api.bitbucket.org/2.0/repositories/$BITBUCKET_REPO_FULL_NAME/downloads/gizmoduck-endpoints-baseline.jsonl" || { rm -f /tmp/gizmoduck-baseline/endpoints/findings.jsonl; echo "gizmoduck: no endpoints baseline in Downloads yet"; }
             else
-              echo "gizmoduck: GIZMODUCK_BB_TOKEN is not set - no baseline can be read or saved"
+              echo "gizmoduck: GIZMODUCK_BB_READ_TOKEN is not set - no baseline can be read; the gate fails closed on that"
             fi
           - |
             python3 "$GIZMODUCK_HOME/scripts/gizmoduck_ci.py" endpoint-stage --targets "$GIZMODUCK_OUT/targets.json" --out "$GIZMODUCK_OUT"
@@ -280,25 +327,33 @@ definitions:
             gate_rc=0
             python3 "$GIZMODUCK_HOME/scripts/gizmoduck_ci.py" gate --baseline /tmp/gizmoduck-baseline/endpoints/findings.jsonl --current "$GIZMODUCK_OUT/findings.jsonl" --manifest "$GIZMODUCK_OUT/run-manifest.json" --block-at "$GIZMODUCK_BLOCK_AT" --json-out "$GIZMODUCK_OUT/gate.json" --new-out "$GIZMODUCK_OUT/new-blocking.jsonl" || gate_rc=$?
           - |
+            insights_rc=0
+          - |
             # The next baseline: the weekly sweep's results (it never blocks), or a clean
             # tier-2 run - both only on the default branch, never from a pull request.
             if { [ "$GIZMODUCK_TIER" = "sweep" ] || [ "$gate_rc" -eq 0 ]; } && [ "${BITBUCKET_BRANCH:-}" = "$GIZMODUCK_DEFAULT_BRANCH" ] && [ -z "${BITBUCKET_PR_ID:-}" ] && [ -n "${GIZMODUCK_BB_TOKEN:-}" ]; then
               curl -fsS -X POST -H "Authorization: Bearer $GIZMODUCK_BB_TOKEN" -F "files=@$GIZMODUCK_OUT/findings.jsonl;filename=gizmoduck-endpoints-baseline.jsonl" "https://api.bitbucket.org/2.0/repositories/$BITBUCKET_REPO_FULL_NAME/downloads" || echo "gizmoduck: baseline upload failed - the next run compares against the previous baseline"
             fi
           - |
-            if [ -z "${BITBUCKET_PR_ID:-}" ] && [ "${GIZMODUCK_SDP_TICKETS:-}" = "true" ] && [ -s "$GIZMODUCK_OUT/new-blocking.jsonl" ]; then
+            if [ -z "${BITBUCKET_PR_ID:-}" ] && [ "${GIZMODUCK_SDP_TICKETS:-}" = "true" ] && [ -n "${SDP_API_KEY:-}" ] && [ -s "$GIZMODUCK_OUT/new-blocking.jsonl" ]; then
               python3 "$GIZMODUCK_HOME/scripts/gizmoduck_ci.py" tickets "$GIZMODUCK_OUT/new-blocking.jsonl" --out "$GIZMODUCK_OUT/tickets.json" --yes || echo "gizmoduck: ticketing failed"
             fi
           - |
             mkdir -p "$BITBUCKET_CLONE_DIR/gizmoduck-out"
             cp -r "$GIZMODUCK_OUT" "$BITBUCKET_CLONE_DIR/gizmoduck-out/endpoints"
-            exit "$gate_rc"
+            if [ "$gate_rc" -ne 0 ]; then exit "$gate_rc"; fi
+            if [ "$insights_rc" -ne 0 ]; then
+              echo "gizmoduck: Code Insights report failed (exit $insights_rc) - failing the step"
+              exit "$insights_rc"
+            fi
         artifacts:
           - gizmoduck-out/**
     - step: &gizmoduck-sweep-code
         name: "gizmoduck tier 3: weekly code sweep incl. Dependency-Check (never blocks)"
         size: 2x
         max-time: 240
+        clone:
+          depth: full
         caches:
           - gizmoduck-trivy
           - gizmoduck-nvd
@@ -318,6 +373,14 @@ definitions:
             export GIZMODUCK_DEPCHECK_DATA=/tmp/gizmoduck-cache/nvd
             export GIZMODUCK_NUCLEI_TEMPLATES=/tmp/gizmoduck-cache/nuclei-templates
             export PATH="$HOME/.local/bin:$PATH"
+          - |
+            # Write-capable secrets (gizmoduck-trusted deployment variables) are used only
+            # on a trusted branch: the default branch or release/*.
+            case "${BITBUCKET_BRANCH:-}" in
+              "$GIZMODUCK_DEFAULT_BRANCH"|release/*) ;;
+              *) echo "gizmoduck: '${BITBUCKET_BRANCH:-<none>}' is not a trusted branch - write-capable secrets are dropped"
+                 unset GIZMODUCK_BB_TOKEN SDP_API_KEY SDP_BASE_URL ;;
+            esac
           - |
             GIZMODUCK_HOME="${GIZMODUCK_HOME:-/opt/gizmoduck}"
             if [ -f "$GIZMODUCK_HOME/scripts/gizmoduck_ci.py" ]; then
@@ -339,10 +402,10 @@ definitions:
             fi
           - |
             mkdir -p /tmp/gizmoduck-baseline/code "$GIZMODUCK_OUT"
-            if [ -n "${GIZMODUCK_BB_TOKEN:-}" ]; then
-              curl -fsSL -H "Authorization: Bearer $GIZMODUCK_BB_TOKEN" -o /tmp/gizmoduck-baseline/code/findings.jsonl "https://api.bitbucket.org/2.0/repositories/$BITBUCKET_REPO_FULL_NAME/downloads/gizmoduck-code-baseline.jsonl" || { rm -f /tmp/gizmoduck-baseline/code/findings.jsonl; echo "gizmoduck: no code baseline in Downloads yet"; }
+            if [ -n "${GIZMODUCK_BB_READ_TOKEN:-}" ]; then
+              curl -fsSL -H "Authorization: Bearer $GIZMODUCK_BB_READ_TOKEN" -o /tmp/gizmoduck-baseline/code/findings.jsonl "https://api.bitbucket.org/2.0/repositories/$BITBUCKET_REPO_FULL_NAME/downloads/gizmoduck-code-baseline.jsonl" || { rm -f /tmp/gizmoduck-baseline/code/findings.jsonl; echo "gizmoduck: no code baseline in Downloads yet"; }
             else
-              echo "gizmoduck: GIZMODUCK_BB_TOKEN is not set - no baseline can be read or saved"
+              echo "gizmoduck: GIZMODUCK_BB_READ_TOKEN is not set - no baseline can be read; the gate fails closed on that"
             fi
           - |
             python3 "$GIZMODUCK_HOME/scripts/gizmoduck_ci.py" code-stage --tier "$GIZMODUCK_TIER" --path "$BITBUCKET_CLONE_DIR" --out "$GIZMODUCK_OUT"
@@ -352,13 +415,17 @@ definitions:
             gate_rc=0
             python3 "$GIZMODUCK_HOME/scripts/gizmoduck_ci.py" gate --baseline /tmp/gizmoduck-baseline/code/findings.jsonl --current "$GIZMODUCK_OUT/findings.jsonl" --manifest "$GIZMODUCK_OUT/run-manifest.json" --block-at "$GIZMODUCK_BLOCK_AT" --json-out "$GIZMODUCK_OUT/gate.json" --new-out "$GIZMODUCK_OUT/new-blocking.jsonl" || gate_rc=$?
           - |
-            python3 "$GIZMODUCK_HOME/scripts/gizmoduck_ci.py" bb-insights "$GIZMODUCK_OUT/findings.jsonl" --gate "$GIZMODUCK_OUT/gate.json" --outdir "$GIZMODUCK_OUT/insights" --srcroot "$BITBUCKET_CLONE_DIR" || true
+            insights_rc=0
+          - |
+            # Code Insights: a failure here fails the step (after the gate's own verdict),
+            # so a broken report or credential is never a green pipeline with no report.
+            python3 "$GIZMODUCK_HOME/scripts/gizmoduck_ci.py" bb-insights "$GIZMODUCK_OUT/findings.jsonl" --gate "$GIZMODUCK_OUT/gate.json" --outdir "$GIZMODUCK_OUT/insights" --srcroot "$BITBUCKET_CLONE_DIR" || insights_rc=$?
             rep="http://api.bitbucket.org/2.0/repositories/$BITBUCKET_REPO_FULL_NAME/commit/$BITBUCKET_COMMIT/reports/gizmoduck-code"
-            if [ -f "$GIZMODUCK_OUT/insights/report.json" ]; then
-              curl -fsS --proxy http://localhost:29418 -X PUT "$rep" -H "Content-Type: application/json" --data-binary @"$GIZMODUCK_OUT/insights/report.json" || echo "gizmoduck: Code Insights report upload failed"
+            if [ "$insights_rc" -eq 0 ]; then
+              curl -fsS --proxy http://localhost:29418 -X PUT "$rep" -H "Content-Type: application/json" --data-binary @"$GIZMODUCK_OUT/insights/report.json" || insights_rc=$?
               for f in "$GIZMODUCK_OUT"/insights/annotations-*.json; do
                 [ -f "$f" ] || continue
-                curl -fsS --proxy http://localhost:29418 -X POST "$rep/annotations" -H "Content-Type: application/json" --data-binary @"$f" || echo "gizmoduck: annotation upload failed for $f"
+                curl -fsS --proxy http://localhost:29418 -X POST "$rep/annotations" -H "Content-Type: application/json" --data-binary @"$f" || insights_rc=$?
               done
             fi
           - |
@@ -368,13 +435,17 @@ definitions:
               curl -fsS -X POST -H "Authorization: Bearer $GIZMODUCK_BB_TOKEN" -F "files=@$GIZMODUCK_OUT/findings.jsonl;filename=gizmoduck-code-baseline.jsonl" "https://api.bitbucket.org/2.0/repositories/$BITBUCKET_REPO_FULL_NAME/downloads" || echo "gizmoduck: baseline upload failed - the next run compares against the previous baseline"
             fi
           - |
-            if [ -z "${BITBUCKET_PR_ID:-}" ] && [ "${GIZMODUCK_SDP_TICKETS:-}" = "true" ] && [ -s "$GIZMODUCK_OUT/new-blocking.jsonl" ]; then
+            if [ -z "${BITBUCKET_PR_ID:-}" ] && [ "${GIZMODUCK_SDP_TICKETS:-}" = "true" ] && [ -n "${SDP_API_KEY:-}" ] && [ -s "$GIZMODUCK_OUT/new-blocking.jsonl" ]; then
               python3 "$GIZMODUCK_HOME/scripts/gizmoduck_ci.py" tickets "$GIZMODUCK_OUT/new-blocking.jsonl" --out "$GIZMODUCK_OUT/tickets.json" --yes || echo "gizmoduck: ticketing failed"
             fi
           - |
             mkdir -p "$BITBUCKET_CLONE_DIR/gizmoduck-out"
             cp -r "$GIZMODUCK_OUT" "$BITBUCKET_CLONE_DIR/gizmoduck-out/code"
-            exit "$gate_rc"
+            if [ "$gate_rc" -ne 0 ]; then exit "$gate_rc"; fi
+            if [ "$insights_rc" -ne 0 ]; then
+              echo "gizmoduck: Code Insights report failed (exit $insights_rc) - failing the step"
+              exit "$insights_rc"
+            fi
         artifacts:
           - gizmoduck-out/**
     - step: &gizmoduck-sweep-endpoints
@@ -400,6 +471,14 @@ definitions:
             export GIZMODUCK_NUCLEI_TEMPLATES=/tmp/gizmoduck-cache/nuclei-templates
             export PATH="$HOME/.local/bin:$PATH"
           - |
+            # Write-capable secrets (gizmoduck-trusted deployment variables) are used only
+            # on a trusted branch: the default branch or release/*.
+            case "${BITBUCKET_BRANCH:-}" in
+              "$GIZMODUCK_DEFAULT_BRANCH"|release/*) ;;
+              *) echo "gizmoduck: '${BITBUCKET_BRANCH:-<none>}' is not a trusted branch - write-capable secrets are dropped"
+                 unset GIZMODUCK_BB_TOKEN SDP_API_KEY SDP_BASE_URL ;;
+            esac
+          - |
             GIZMODUCK_HOME="${GIZMODUCK_HOME:-/opt/gizmoduck}"
             if [ -f "$GIZMODUCK_HOME/scripts/gizmoduck_ci.py" ]; then
               echo "gizmoduck: toolchain present at $GIZMODUCK_HOME (runner image)"
@@ -430,10 +509,10 @@ definitions:
             python3 "$GIZMODUCK_HOME/scripts/gizmoduck_ci.py" targets --run-endpoints "$GIZMODUCK_OUT/endpoints-run.json" --out "$GIZMODUCK_OUT/targets.json"
           - |
             mkdir -p /tmp/gizmoduck-baseline/endpoints "$GIZMODUCK_OUT"
-            if [ -n "${GIZMODUCK_BB_TOKEN:-}" ]; then
-              curl -fsSL -H "Authorization: Bearer $GIZMODUCK_BB_TOKEN" -o /tmp/gizmoduck-baseline/endpoints/findings.jsonl "https://api.bitbucket.org/2.0/repositories/$BITBUCKET_REPO_FULL_NAME/downloads/gizmoduck-endpoints-baseline.jsonl" || { rm -f /tmp/gizmoduck-baseline/endpoints/findings.jsonl; echo "gizmoduck: no endpoints baseline in Downloads yet"; }
+            if [ -n "${GIZMODUCK_BB_READ_TOKEN:-}" ]; then
+              curl -fsSL -H "Authorization: Bearer $GIZMODUCK_BB_READ_TOKEN" -o /tmp/gizmoduck-baseline/endpoints/findings.jsonl "https://api.bitbucket.org/2.0/repositories/$BITBUCKET_REPO_FULL_NAME/downloads/gizmoduck-endpoints-baseline.jsonl" || { rm -f /tmp/gizmoduck-baseline/endpoints/findings.jsonl; echo "gizmoduck: no endpoints baseline in Downloads yet"; }
             else
-              echo "gizmoduck: GIZMODUCK_BB_TOKEN is not set - no baseline can be read or saved"
+              echo "gizmoduck: GIZMODUCK_BB_READ_TOKEN is not set - no baseline can be read; the gate fails closed on that"
             fi
           - |
             python3 "$GIZMODUCK_HOME/scripts/gizmoduck_ci.py" endpoint-stage --targets "$GIZMODUCK_OUT/targets.json" --out "$GIZMODUCK_OUT"
@@ -443,19 +522,25 @@ definitions:
             gate_rc=0
             python3 "$GIZMODUCK_HOME/scripts/gizmoduck_ci.py" gate --baseline /tmp/gizmoduck-baseline/endpoints/findings.jsonl --current "$GIZMODUCK_OUT/findings.jsonl" --manifest "$GIZMODUCK_OUT/run-manifest.json" --block-at "$GIZMODUCK_BLOCK_AT" --json-out "$GIZMODUCK_OUT/gate.json" --new-out "$GIZMODUCK_OUT/new-blocking.jsonl" || gate_rc=$?
           - |
+            insights_rc=0
+          - |
             # The next baseline: the weekly sweep's results (it never blocks), or a clean
             # tier-2 run - both only on the default branch, never from a pull request.
             if { [ "$GIZMODUCK_TIER" = "sweep" ] || [ "$gate_rc" -eq 0 ]; } && [ "${BITBUCKET_BRANCH:-}" = "$GIZMODUCK_DEFAULT_BRANCH" ] && [ -z "${BITBUCKET_PR_ID:-}" ] && [ -n "${GIZMODUCK_BB_TOKEN:-}" ]; then
               curl -fsS -X POST -H "Authorization: Bearer $GIZMODUCK_BB_TOKEN" -F "files=@$GIZMODUCK_OUT/findings.jsonl;filename=gizmoduck-endpoints-baseline.jsonl" "https://api.bitbucket.org/2.0/repositories/$BITBUCKET_REPO_FULL_NAME/downloads" || echo "gizmoduck: baseline upload failed - the next run compares against the previous baseline"
             fi
           - |
-            if [ -z "${BITBUCKET_PR_ID:-}" ] && [ "${GIZMODUCK_SDP_TICKETS:-}" = "true" ] && [ -s "$GIZMODUCK_OUT/new-blocking.jsonl" ]; then
+            if [ -z "${BITBUCKET_PR_ID:-}" ] && [ "${GIZMODUCK_SDP_TICKETS:-}" = "true" ] && [ -n "${SDP_API_KEY:-}" ] && [ -s "$GIZMODUCK_OUT/new-blocking.jsonl" ]; then
               python3 "$GIZMODUCK_HOME/scripts/gizmoduck_ci.py" tickets "$GIZMODUCK_OUT/new-blocking.jsonl" --out "$GIZMODUCK_OUT/tickets.json" --yes || echo "gizmoduck: ticketing failed"
             fi
           - |
             mkdir -p "$BITBUCKET_CLONE_DIR/gizmoduck-out"
             cp -r "$GIZMODUCK_OUT" "$BITBUCKET_CLONE_DIR/gizmoduck-out/endpoints"
-            exit "$gate_rc"
+            if [ "$gate_rc" -ne 0 ]; then exit "$gate_rc"; fi
+            if [ "$insights_rc" -ne 0 ]; then
+              echo "gizmoduck: Code Insights report failed (exit $insights_rc) - failing the step"
+              exit "$insights_rc"
+            fi
         artifacts:
           - gizmoduck-out/**
 
@@ -469,28 +554,44 @@ pipelines:
           - name: GIZMODUCK_TARGET_URL
             default: ""
             description: Base URL to scan instead of the configured staging URL (the guard still applies)
-      - step: *gizmoduck-full-code
-      # If this pipeline also deploys staging, put the deploy step here so the
-      # endpoint scan runs against what was just deployed.
-      - step: *gizmoduck-endpoint-scan
+      - stage:
+          name: gizmoduck tier 2 (trusted)
+          deployment: gizmoduck-trusted
+          steps:
+            - step: *gizmoduck-full-code
+            # If this pipeline also deploys staging, put the deploy step here so the
+            # endpoint scan runs against what was just deployed.
+            - step: *gizmoduck-endpoint-scan
     security-weekly:
-      - step: *gizmoduck-sweep-code
-      - step: *gizmoduck-sweep-endpoints
+      - stage:
+          name: gizmoduck tier 3 (trusted)
+          deployment: gizmoduck-trusted
+          steps:
+            - step: *gizmoduck-sweep-code
+            - step: *gizmoduck-sweep-endpoints
     security-full-bootstrap:
       - variables:
           - name: GIZMODUCK_TARGET_URL
             default: ""
             description: Base URL to scan instead of the configured staging URL (the guard still applies)
-      - step:
-          <<: *gizmoduck-full-code
-          image: ubuntu:24.04
-      - step:
-          <<: *gizmoduck-endpoint-scan
-          image: ubuntu:24.04
+      - stage:
+          name: gizmoduck tier 2 (trusted, inline bootstrap)
+          deployment: gizmoduck-trusted
+          steps:
+            - step:
+                <<: *gizmoduck-full-code
+                image: ubuntu:24.04
+            - step:
+                <<: *gizmoduck-endpoint-scan
+                image: ubuntu:24.04
     security-weekly-bootstrap:
-      - step:
-          <<: *gizmoduck-sweep-code
-          image: ubuntu:24.04
-      - step:
-          <<: *gizmoduck-sweep-endpoints
-          image: ubuntu:24.04
+      - stage:
+          name: gizmoduck tier 3 (trusted, inline bootstrap)
+          deployment: gizmoduck-trusted
+          steps:
+            - step:
+                <<: *gizmoduck-sweep-code
+                image: ubuntu:24.04
+            - step:
+                <<: *gizmoduck-sweep-endpoints
+                image: ubuntu:24.04

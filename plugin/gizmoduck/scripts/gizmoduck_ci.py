@@ -32,8 +32,10 @@ Pipeline steps (run inside the rendered pipeline):
   gate           --baseline FILE --current FILE [--manifest FILE] [--block-at critical|high|never] ...
   sarif          FINDINGS --out FILE [--srcroot DIR]
   bb-insights    FINDINGS --gate gate.json --outdir DIR [--srcroot DIR]
-  gh-previous-run --workflow FILE [--branch B]                         # prints run_id=...
+  gh-previous-run --workflow FILE --artifact NAME [--trusted "main release/*"]  # prints run_id=...
   tickets        NEW.jsonl --out FILE [--yes]                          # SDP, opt-in only
+  image-check                                                          # runner image build: doctor + every
+                                                                       # scanner, or exit 1 (ci/Dockerfile)
 
 Guard configuration at runtime comes from the environment: GIZMODUCK_STAGING_URLS
 (baked into the rendered file), GIZMODUCK_ALLOWED_PROD_ORIGINS plus
@@ -44,6 +46,7 @@ Stdlib only apart from routine.py's PyYAML, which only the two *-stage
 commands import.
 """
 import argparse
+import fnmatch
 import hashlib
 import json
 import os
@@ -127,13 +130,13 @@ def ingest_endpoints(doc, base_urls):
         rid = str(rec.get("id") or f"record-{n}")
         value = rec.get("endpoint")
         if str(rec.get("status", "")).lower() == "closed":
-            skipped.append({"id": rid, "endpoint": value, "reason": "status is closed"})
+            skipped.append({"id": rid, "endpoint": ci_guard.redact_url(value), "reason": "status is closed"})
             continue
-        if not isinstance(value, str) or not value.strip() or any(c.isspace() for c in value.strip()):
-            skipped.append({"id": rid, "endpoint": value,
-                            "reason": "not a URL, host or path (free text is not a target)"})
+        if not isinstance(value, str) or not value or any(ci_guard.bad_char(c) for c in value):
+            skipped.append({"id": rid, "endpoint": ci_guard.redact_url(value),
+                            "reason": "not a URL, host or path (free text, or whitespace/control characters "
+                                      "anywhere - refused, not stripped - is not a target)"})
             continue
-        value = value.strip()
         lowered = value.lower()
         if lowered.startswith(("http://", "https://")):
             candidates.append((rid, value))
@@ -141,7 +144,7 @@ def ingest_endpoints(doc, base_urls):
             for base in base_urls:
                 candidates.append((rid, urllib.parse.urljoin(base.rstrip("/") + "/", value.lstrip("/"))))
         elif "://" in value:
-            skipped.append({"id": rid, "endpoint": value, "reason": "scheme is not http(s)"})
+            skipped.append({"id": rid, "endpoint": ci_guard.redact_url(value), "reason": "scheme is not http(s)"})
         else:
             candidates.append((rid, "https://" + value))
     return candidates, skipped
@@ -185,7 +188,8 @@ def build_targets(env, ledger_doc, redirects=True, fetch=ci_guard.http_fetch, ru
     try:
         policy = policy_from_env(env)
     except ci_guard.GuardError as exc:
-        return {"allowed": [], "refused": [{"url": None, "rule": exc.rule, "reason": exc.reason}],
+        return {"allowed": [], "refused": [{"url": None, "rule": exc.rule,
+                                            "reason": ci_guard.redact_text(exc.reason)}],
                 "skipped": []}, 2
     base_urls = _split(env.get("GIZMODUCK_TARGET_URL")) or _split(env.get("GIZMODUCK_STAGING_URLS"))
     report = {"allowed": [], "refused": [], "skipped": []}
@@ -208,8 +212,8 @@ def build_targets(env, ledger_doc, redirects=True, fetch=ci_guard.http_fetch, ru
     for n, url in enumerate(base_urls, 1):
         d = decide(url)
         if not d.allowed:
-            report["refused"].append({"url": url, "source": "configured", "rule": d.rule,
-                                      "reason": d.reason})
+            report["refused"].append({"url": ci_guard.redact_url(url), "source": "configured", "rule": d.rule,
+                                      "reason": ci_guard.redact_text(d.reason)})
             rc = 2
             continue
         name = "staging" if n == 1 else f"staging-{n}"
@@ -224,8 +228,8 @@ def build_targets(env, ledger_doc, redirects=True, fetch=ci_guard.http_fetch, ru
                 continue
             d = decide(url)
             if not d.allowed:
-                report["refused"].append({"url": url, "source": f"endpoints.json:{rid}",
-                                          "rule": d.rule, "reason": d.reason})
+                report["refused"].append({"url": ci_guard.redact_url(url), "source": f"endpoints.json:{rid}",
+                                          "rule": d.rule, "reason": ci_guard.redact_text(d.reason)})
                 continue
             seen.add(url)
             covered += 1
@@ -256,20 +260,20 @@ def cmd_targets(args, env=None):
         else:
             doc = load_ledger(args.endpoints)
     except (LedgerError, ValueError) as exc:
-        print(f"GIZMODUCK_GUARD_REFUSED: {exc}", file=sys.stderr)
+        print(f"GIZMODUCK_GUARD_REFUSED: {ci_guard.redact_text(str(exc))}", file=sys.stderr)
         return 2
     try:
         report, rc = build_targets(env, doc, redirects=not args.no_redirect_check, run_doc=run_doc)
     except LedgerError as exc:
-        print(f"GIZMODUCK_GUARD_REFUSED: {exc}", file=sys.stderr)
+        print(f"GIZMODUCK_GUARD_REFUSED: {ci_guard.redact_text(str(exc))}", file=sys.stderr)
         return 2
     write_json(args.out, report)
     for t in report["allowed"]:
-        print(f"allowed  {t['url']}  ({t['kind']})")
+        print(f"allowed  {ci_guard.redact_url(t['url'])}  ({t['kind']})")
     for r in report["refused"]:
-        print(f"REFUSED  {r['url']}  [{r['rule']}] {r['reason']}")
+        print(f"REFUSED  {ci_guard.redact_url(r['url'])}  [{r['rule']}] {ci_guard.redact_text(r['reason'])}")
     for s in report["skipped"]:
-        print(f"skipped  {s.get('endpoint')!r}  {s['reason']}")
+        print(f"skipped  {ci_guard.redact_url(s.get('endpoint'))!r}  {s['reason']}")
     if rc:
         print("GIZMODUCK_GUARD_REFUSED: no endpoint scan will run", file=sys.stderr)
     return rc
@@ -279,13 +283,32 @@ def cmd_targets(args, env=None):
 # Stages (both call routine.run_routine; nothing here invokes a scanner itself)
 # --------------------------------------------------------------------------
 
+# How each endpoint scanner is kept on the target origin. The guard's redirect
+# probe (ci_guard R9) is a pre-check only - a server can answer the probe and
+# a scanner differently - so the control is per scanner, plus the post-scan
+# audit of every recorded URL (ci_guard.audit_findings) in cmd_endpoint_stage.
+#   nuclei   -dr (-disable-redirects): no template follows a redirect.
+#   zap      the AF context's includePaths is the target origin only, anchored
+#            and regex-escaped (scanners/zap.py), so the spider and active
+#            scan never request an out-of-scope URL; a Location elsewhere is
+#            out of scope.
+#   testssl  speaks TLS to the one host:port it is given; it reports a
+#            Location header and has no option to follow it.
+#   nikto    follows nothing unless -followredirects is passed; it is not.
+#   nmap     host-level; NSE's http library refuses a redirect to another
+#            host or port by default (its redirect_ok rules).
+#   sqlmap   --ignore-redirects (opts["no_redirects"], scanners/sqlmap.py).
+NUCLEI_NO_REDIRECTS = "-dr"
+
+
 def endpoint_manifest(targets, authorized_by, enable, templates_dir=None, headers=None):
     import routine
     extra = f"-t {templates_dir} -duc" if templates_dir else "-duc"
+    extra += f" {NUCLEI_NO_REDIRECTS}"
     out = []
     for t in targets:
         tools = ["nuclei", "zap"]
-        options = {"extra": extra}
+        options = {"extra": extra, "no_redirects": True}
         if headers:
             options["headers"] = list(headers)
         if t["kind"] == "base":
@@ -312,7 +335,8 @@ def cmd_endpoint_stage(args, env=None, runner=None, fetch=ci_guard.http_fetch):
         if d.allowed and not args.no_redirect_check:
             d = ci_guard.check_redirects(t["url"], policy, fetch=fetch)
         if not d.allowed:
-            print(f"GIZMODUCK_GUARD_REFUSED: {t['url']} [{d.rule}] {d.reason}", file=sys.stderr)
+            print(f"GIZMODUCK_GUARD_REFUSED: {ci_guard.redact_url(t['url'])} [{d.rule}] "
+                  f"{ci_guard.redact_text(d.reason)}", file=sys.stderr)
             return 2
         targets.append(t)
     if not targets:
@@ -337,7 +361,33 @@ def cmd_endpoint_stage(args, env=None, runner=None, fetch=ci_guard.http_fetch):
         import routine
         runner = routine.run_routine
     runner(manifest, args.out, confirm="sqlmap" in enable)
-    return 0
+    return audit_endpoint_findings(os.path.join(args.out, "findings.jsonl"), policy)
+
+
+def audit_endpoint_findings(findings_path, policy):
+    """R9's second half: every URL the scanners recorded must still be on an
+    allowed origin. A missing findings file means the scan did not finish, and
+    an out-of-policy URL means a scanner left the target; both exit 2."""
+    if not os.path.isfile(findings_path):
+        print(f"GIZMODUCK_GUARD_REFUSED: {findings_path} is missing - the scan did not complete, so "
+              f"what it requested cannot be audited", file=sys.stderr)
+        return 2
+    records = []
+    with open(findings_path, encoding="utf-8") as fh:
+        for n, line in enumerate(fh, 1):
+            if not line.strip():
+                continue
+            try:
+                records.append(json.loads(line))
+            except ValueError:
+                print(f"GIZMODUCK_GUARD_REFUSED: {findings_path}:{n} is not JSON - cannot audit the "
+                      f"scan's requests", file=sys.stderr)
+                return 2
+    bad = ci_guard.audit_findings(records, policy)
+    for fld, url, d in bad:
+        print(f"GIZMODUCK_GUARD_REFUSED: a scanner recorded {url} ({fld}) outside the allowed origins "
+              f"[{d.rule}] {ci_guard.redact_text(d.reason)}", file=sys.stderr)
+    return 2 if bad else 0
 
 
 def code_manifest(path, authorized_by):
@@ -386,7 +436,8 @@ def tiered_code_manifest(path, authorized_by, tier, base_ref=None, env=None, run
       light  Semgrep diff-aware on the changed files; Trivy only when a
              lockfile/manifest changed; Checkov only when a *.tf changed;
              gitleaks over the commits base..HEAD.
-      full   Semgrep, Trivy fs, Checkov + Trivy config, gitleaks on the tree.
+      full   Semgrep, Trivy fs, Checkov + Trivy config, gitleaks over the
+             whole git history.
       sweep  full, plus Dependency-Check against NVD (cached data directory).
     """
     import routine
@@ -426,9 +477,12 @@ def tiered_code_manifest(path, authorized_by, tier, base_ref=None, env=None, run
         targets.append(routine.Target(name="deps", kind="deps", path=root,
                                       tools=None if tier == "sweep" else ["trivy"], options=deps_opts))
         targets.append(routine.Target(name="iac", kind="iac", path=root))
+        # Git mode over the whole history (the pipelines clone it in full): a
+        # secret committed and then deleted is still in the history, and a
+        # tree scan would miss it where tier 1's commit-range scan does not.
         targets.append(routine.Target(name="secrets", kind="secrets", path=root,
-                                      options={"gitleaks_mode": "dir"}))
-        plan["ran"] += ["semgrep", "trivy fs", "checkov + trivy config", "gitleaks (tree)"]
+                                      options={"gitleaks_mode": "git", "cwd": root}))
+        plan["ran"] += ["semgrep", "trivy fs", "checkov + trivy config", "gitleaks (full git history)"]
         if tier == "sweep":
             plan["ran"].append("dependency-check (NVD)")
         else:
@@ -835,31 +889,60 @@ def cmd_bb_insights(args):
 # GitHub baseline lookup
 # --------------------------------------------------------------------------
 
-def previous_run_id(workflow, branch, env, opener=urllib.request.urlopen):
+_UNTRUSTED_EVENTS = {"pull_request", "pull_request_target", "pull_request_review",
+                     "pull_request_review_comment", "issue_comment", "merge_group"}
+
+
+def _trusted_run(run, repo, trusted):
+    """A run whose results may become a baseline: not a pull-request event, from
+    this repository (not a fork), on a branch matching a trusted pattern."""
+    head_repo = (run.get("head_repository") or {}).get("full_name")
+    branch = run.get("head_branch") or ""
+    return (run.get("event") not in _UNTRUSTED_EVENTS and head_repo == repo
+            and any(fnmatch.fnmatchcase(branch, pat) for pat in trusted))
+
+
+def previous_run_id(workflow, trusted, env, opener=urllib.request.urlopen, artifact=None):
+    """The newest successful, TRUSTED run of `workflow` (see _trusted_run) that
+    still has `artifact`. "" when there is none - the gate then fails closed on
+    the missing baseline unless the first-run opt-in is set."""
     api = env.get("GITHUB_API_URL", "https://api.github.com").rstrip("/")
     repo = env["GITHUB_REPOSITORY"]
-    query = {"status": "success", "per_page": "20"}
-    if branch:
-        query["branch"] = branch
-    url = (f"{api}/repos/{repo}/actions/workflows/{urllib.parse.quote(workflow)}/runs?"
-           f"{urllib.parse.urlencode(query)}")
+    trusted = [t for t in (trusted or []) if t]
+    if not trusted:
+        raise ValueError("no trusted branch pattern given")
+    query = {"status": "success", "per_page": "50"}
+    if len(trusted) == 1 and not any(c in trusted[0] for c in "*?["):
+        query["branch"] = trusted[0]
     headers = {"Accept": "application/vnd.github+json"}
     token = env.get("GH_TOKEN") or env.get("GITHUB_TOKEN")
     if token:
         headers["Authorization"] = f"Bearer {token}"
-    with opener(urllib.request.Request(url, headers=headers), timeout=30) as resp:
-        data = json.load(resp)
+
+    def get(url):
+        with opener(urllib.request.Request(url, headers=headers), timeout=30) as resp:
+            return json.load(resp)
+
+    data = get(f"{api}/repos/{repo}/actions/workflows/{urllib.parse.quote(workflow)}/runs?"
+               f"{urllib.parse.urlencode(query)}")
     current = str(env.get("GITHUB_RUN_ID", ""))
     for run in data.get("workflow_runs") or []:
-        if str(run.get("id")) != current:
-            return str(run["id"])
+        if str(run.get("id")) == current or not _trusted_run(run, repo, trusted):
+            continue
+        if artifact:
+            arts = get(f"{api}/repos/{repo}/actions/runs/{run['id']}/artifacts?"
+                       f"{urllib.parse.urlencode({'name': artifact})}")
+            if not any(a.get("name") == artifact and not a.get("expired")
+                       for a in arts.get("artifacts") or []):
+                continue
+        return str(run["id"])
     return ""
 
 
 def cmd_gh_previous_run(args, env=None):
     env = os.environ if env is None else env
     try:
-        rid = previous_run_id(args.workflow, args.branch, env)
+        rid = previous_run_id(args.workflow, _split(args.trusted), env, artifact=args.artifact)
     except (OSError, ValueError, KeyError) as exc:
         print(f"gizmoduck: baseline run lookup failed ({exc}); the gate will treat the "
               f"baseline as missing", file=sys.stderr)
@@ -970,6 +1053,39 @@ def cmd_tickets(args, env=None, run=subprocess.run, client=None):
 
 
 # --------------------------------------------------------------------------
+# image-check - the runner image's build-time health check
+# --------------------------------------------------------------------------
+
+def cmd_image_check(_args=None, run=subprocess.run, adapters=None):
+    """Fail (exit 1) unless `gizmoduck.py doctor` passes AND every scanner
+    adapter reports itself runnable. doctor alone lets a missing scanner
+    through by design (an interactive install may be partial); an image that
+    is missing one would record it as skipped-missing on every run, so the
+    image build fails instead."""
+    p = run([sys.executable, GIZMODUCK_PY, "doctor"], capture_output=True, text=True, check=False)
+    print(p.stdout or "", end="")
+    problems = []
+    if p.returncode != 0:
+        problems.append(f"gizmoduck.py doctor exited {p.returncode}")
+    if adapters is None:
+        import scanners
+        adapters = scanners.ADAPTERS
+    for name in sorted(adapters):
+        try:
+            ok = bool(adapters[name].is_available())
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            # Any failure of the probe is the same answer: not runnable.
+            ok = False
+            problems.append(f"{name}: availability check raised {type(exc).__name__}: {exc}")
+            continue
+        if not ok:
+            problems.append(f"{name}: not installed")
+    for line in problems:
+        print(f"GIZMODUCK_IMAGE_CHECK_FAILED: {line}", file=sys.stderr)
+    return 1 if problems else 0
+
+
+# --------------------------------------------------------------------------
 # render
 # --------------------------------------------------------------------------
 
@@ -1007,8 +1123,10 @@ def build_config(args, version):
                   args.deploy_workflow or "x"):
         if not re.fullmatch(r"[A-Za-z0-9._/@+-]+( [A-Za-z0-9._/@+-]+)*", value or ""):
             raise RenderError(f"refusing unsafe name {value!r}")
-    if not re.fullmatch(r"[a-z0-9./_:@-]+", args.image or ""):
-        raise RenderError(f"refusing unsafe image reference {args.image!r}")
+    try:
+        ci_render.check_image(args.image)
+    except ValueError as exc:
+        raise RenderError(str(exc)) from exc
     return {
         "version": version,
         "staging_urls": list(args.staging_url),
@@ -1167,7 +1285,9 @@ def build_parser():
 
     h = sub.add_parser("gh-previous-run", allow_abbrev=False)
     h.add_argument("--workflow", required=True)
-    h.add_argument("--branch", default=None)
+    h.add_argument("--trusted", default="main",
+                   help="space-separated branch patterns a baseline run may come from")
+    h.add_argument("--artifact", default=None)
 
     k = sub.add_parser("tickets", allow_abbrev=False)
     k.add_argument("findings")
@@ -1175,6 +1295,7 @@ def build_parser():
     k.add_argument("--yes", action="store_true",
                    help="CI's out-of-band approval: the GIZMODUCK_SDP_TICKETS repository "
                         "variable. Without it the preview is printed and nothing is opened.")
+    sub.add_parser("image-check", allow_abbrev=False)
     return p
 
 
@@ -1185,6 +1306,7 @@ _COMMANDS = {
     "code-stage": cmd_code_stage, "publish": cmd_publish, "gate": cmd_gate,
     "sarif": cmd_sarif, "bb-insights": cmd_bb_insights,
     "gh-previous-run": cmd_gh_previous_run, "tickets": cmd_tickets,
+    "image-check": cmd_image_check,
 }
 
 

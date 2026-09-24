@@ -6,7 +6,9 @@ Nothing here touches the network: redirect cases use an injected fake fetcher.
 SABOTAGE-TEST before trusting a change here: reintroduce a rule's bug in a
 scratch copy of ci_guard.py (drop the userinfo check, make R7 a suffix match,
 ignore the port, skip IDNA, ignore allow_production, stop re-checking redirect
-hops...) and confirm the matching case below goes red, then restore the copy.
+hops, check staging before production, strip instead of refusing whitespace,
+admit a credential query parameter, disable audit_findings...) and confirm the
+matching case below goes red, then restore the copy.
 """
 import ci_guard as g
 import pytest
@@ -170,3 +172,94 @@ def test_redirect_check_never_probes_a_refused_url():
     fetch = _fetcher({})
     d = g.check_redirects("https://evil.com/", policy(), fetch=fetch)
     assert not d.allowed and fetch.calls == []
+
+
+# --- round-2 fixes: production wins, refuse-not-strip, redaction, post-scan audit ---
+
+def test_origin_on_both_lists_is_production_and_needs_the_opt_in():
+    p = g.Policy.build(staging_urls=["https://prod.example"], production_urls=["https://prod.example"],
+                       allow_production=False)
+    d = g.check_target("https://prod.example/", p)
+    assert not d.allowed and d.rule == "R8", d
+    both = g.Policy.build(staging_urls=["https://prod.example"], production_urls=["https://prod.example"],
+                          allow_production=True)
+    assert g.check_target("https://prod.example/", both).allowed
+
+
+@pytest.mark.parametrize("url", [
+    " https://staging.example.com",                      # leading ASCII space
+    "https://staging.example.com ",                      # trailing ASCII space
+    "https://staging.example.com/\u00a0",                # NBSP
+    "\u3000https://staging.example.com/",                # ideographic space
+    "https://staging.example.com/\u2028",                # line separator
+    "https://staging.example.com\u200b/",                # zero-width space (format char)
+    "https://staging.example.com/\u202e",                # bidi override
+    "https://staging.example.com/\ufeff",                # BOM
+])
+def test_unicode_and_edge_whitespace_is_refused_not_stripped(url):
+    d = g.check_target(url, policy())
+    assert not d.allowed and d.rule == "R2", d
+
+
+@pytest.mark.parametrize("url", [
+    "https://staging.example.com/cb?token=SECRETVALUE",
+    "https://staging.example.com/?api_key=SECRETVALUE&id=1",
+    "https://staging.example.com/?X-Amz-Signature=SECRETVALUE",
+    "https://staging.example.com/?password=SECRETVALUE",
+])
+def test_credential_query_parameters_are_refused_and_never_echoed(url):
+    d = g.check_target(url, policy())
+    assert not d.allowed and d.rule == "R3", d
+    assert "SECRETVALUE" not in d.reason
+
+
+def test_userinfo_refusal_does_not_echo_the_password():
+    d = g.check_target("https://alice:SECRETVALUE@staging.example.com/", policy())
+    assert not d.allowed and d.rule == "R3" and "SECRETVALUE" not in d.reason
+
+
+def test_non_credential_query_parameters_still_pass():
+    assert g.check_target("https://staging.example.com/api?id=1&page=2", policy()).allowed
+
+
+@pytest.mark.parametrize("url,expected", [
+    ("https://alice:pw@host.example/x", "https://***@host.example/x"),
+    ("https://host.example/cb?token=abc&id=1", "https://host.example/cb?token=***&id=1"),
+    ("https://host.example/cb?id=1", "https://host.example/cb?id=1"),
+    ("https://host.example/?access_token=a&Signature=b", "https://host.example/?access_token=***&Signature=***"),
+])
+def test_redact_url(url, expected):
+    assert g.redact_url(url) == expected
+
+
+def test_redact_text_masks_every_url_in_free_text():
+    text = "refused https://u:SECRET@a.example/ then http://b.example/?token=SECRET2 end"
+    out = g.redact_text(text)
+    assert "SECRET" not in out and "a.example" in out and "b.example" in out
+
+
+def test_audit_passes_findings_on_the_staging_origin():
+    recs = [{"matched_at": "https://staging.example.com/login?next=/x%20y", "host": "staging.example.com"},
+            {"matched-at": "https://STAGING.example.com:443/a"},
+            {"matched_at": "staging.example.com:443", "tool": "testssl"}]
+    assert g.audit_findings(recs, policy()) == []
+
+
+@pytest.mark.parametrize("recorded", [
+    "https://www.example.com/admin",               # a scanner followed a redirect to production
+    "https://evil.com/",
+    "http://127.0.0.1/",
+    "https://u:SECRETVALUE@staging.example.com/",
+])
+def test_audit_fails_any_recorded_request_that_left_the_origin(recorded):
+    bad = g.audit_findings([{"matched_at": recorded}], policy())
+    assert len(bad) == 1 and "SECRETVALUE" not in bad[0][1]
+
+
+def test_probe_answered_differently_than_the_scanner_is_caught_by_the_audit():
+    """The server returns 200 to the guard's probe and 302 to production for the
+    scanner: the probe passes, and only the post-scan audit can see it."""
+    fetch = _fetcher({"https://staging.example.com/": (200, None)})
+    assert g.check_redirects("https://staging.example.com/", policy(), fetch=fetch).allowed
+    scanner_recorded = [{"template_id": "x", "matched_at": "https://www.example.com/"}]
+    assert g.audit_findings(scanner_recorded, policy())
