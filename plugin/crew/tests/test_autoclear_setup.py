@@ -291,3 +291,179 @@ def test_apply_migrate_to_repo_widens_with_yes_widen(tmp_path):
     with open(global_path, encoding="utf-8") as handle:
         on_disk = json.load(handle)
     assert on_disk["context"]["autoClear"]["onlyRepos"] == [os.path.realpath(root)]
+
+
+# ------------------------------------------ apply_migrate_to_repo: config.json
+# Codex review (gpt-5.6-sol) finding #1: config.json is what the senders read
+
+
+def _write_config_json(root, context_block):
+    crew_dir = os.path.join(root, ".crew")
+    os.makedirs(crew_dir, exist_ok=True)
+    with open(os.path.join(crew_dir, "config.json"), "w", encoding="utf-8") as handle:
+        json.dump({"schema": 7, "context": context_block}, handle)
+
+
+def test_apply_migrate_to_repo_converts_config_json_the_senders_actually_read(tmp_path):
+    """Reproduces the review finding directly: `crew_migrate.py --apply`
+    copies config.json's `context` into a new crew.json UNCONVERTED and
+    keeps config.json (`commands/migrate.md`'s own table marks it
+    "retireable", never deleted). Every autoClear sender -- auto-clear.sh,
+    auto-clear.ps1, crew_autocycle.py's `_load` -- reads `.crew/config.json`
+    only, never crew.json. Before this fix, converting crew.json alone left
+    a retained legacy "windows" method live in config.json, where every
+    sender still read it and refused it as unsupported."""
+    root = str(tmp_path / "repo")
+    context_block = {"autoClear": {"method": "windows", "enabled": True}}
+    _write_config_json(root, context_block)
+    _write_crew_json(root, context_block)
+
+    plan = setup.apply_migrate_to_repo(root, global_path=str(tmp_path / "g.json"))
+
+    with open(os.path.join(root, ".crew", "config.json"), encoding="utf-8") as handle:
+        config_on_disk = json.load(handle)
+    with open(os.path.join(root, ".crew", "crew.json"), encoding="utf-8") as handle:
+        crew_on_disk = json.load(handle)
+    assert config_on_disk["context"]["autoClear"]["method"] == "notify"
+    assert crew_on_disk["context"]["autoClear"]["method"] == "notify"
+    assert "enabled" not in config_on_disk["context"]["autoClear"]
+    assert "enabled" not in crew_on_disk["context"]["autoClear"]
+    assert config_on_disk["schema"] == 7  # the rest of the file survives untouched
+    assert crew_on_disk["schema"] == 1
+    assert plan["alreadyConfigured"] is False
+
+
+def test_apply_migrate_to_repo_config_json_only_before_crew_migrate_has_run(tmp_path):
+    """A repo that has not yet run `crew_migrate.py --apply` (only
+    config.json exists, no crew.json yet) is still converted -- this is
+    the same helper `/crew:init` and `/crew:onboard` share, and neither
+    ever creates crew.json."""
+    root = str(tmp_path / "repo")
+    _write_config_json(root, {"autoClear": {"method": "windows", "enabled": True}})
+
+    plan = setup.apply_migrate_to_repo(root, global_path=str(tmp_path / "g.json"))
+
+    with open(os.path.join(root, ".crew", "config.json"), encoding="utf-8") as handle:
+        on_disk = json.load(handle)
+    assert on_disk["context"]["autoClear"]["method"] == "notify"
+    assert not os.path.exists(os.path.join(root, ".crew", "crew.json"))
+    assert plan["alreadyConfigured"] is False
+
+
+def test_apply_migrate_to_repo_neither_config_file_present_raises(tmp_path):
+    root = str(tmp_path / "repo")
+    os.makedirs(os.path.join(root, ".crew"))
+    try:
+        setup.apply_migrate_to_repo(root, global_path=str(tmp_path / "g.json"))
+        assert False, "expected FileNotFoundError"
+    except FileNotFoundError:
+        pass
+
+
+# --------------------------------------------- apply_migrate_to_repo: ordering
+# Codex review finding #2: the global write must land before either repo file
+# is touched, so a failed global write leaves the repo untouched too.
+
+
+def test_apply_migrate_to_repo_writes_global_narrowing_before_repo_files(tmp_path, monkeypatch):
+    root = str(tmp_path / "repo")
+    context_block = {"autoClear": {"method": "auto", "enabled": True}}
+    _write_config_json(root, context_block)
+    _write_crew_json(root, context_block)
+    config_path = os.path.join(root, ".crew", "config.json")
+    crew_json_path = os.path.join(root, ".crew", "crew.json")
+    with open(config_path, "rb") as handle:
+        config_before = handle.read()
+    with open(crew_json_path, "rb") as handle:
+        crew_before = handle.read()
+
+    global_path = str(tmp_path / "g.json")
+    setup.write_autoclear_method("auto", consent=True, path=global_path)
+    setup.write_autoclear_enabled(True, consent=True, path=global_path)
+    with open(global_path, "rb") as handle:
+        global_before = handle.read()
+
+    def _boom(updates, path=None):
+        raise OSError("simulated: the machine-global config directory is unwritable")
+
+    monkeypatch.setattr(setup.crew_config, "write_global_config", _boom)
+
+    try:
+        setup.apply_migrate_to_repo(root, global_path=global_path, yes_widen=True)
+        assert False, "expected the simulated global write failure to propagate"
+    except OSError:
+        pass
+
+    # Neither repo file was rewritten, and the global file is untouched too --
+    # the failure happened before ANY write in this call, not partway through.
+    with open(config_path, "rb") as handle:
+        assert handle.read() == config_before
+    with open(crew_json_path, "rb") as handle:
+        assert handle.read() == crew_before
+    with open(global_path, "rb") as handle:
+        assert handle.read() == global_before
+
+
+# ------------------------------------------------- global file: malformed JSON
+# Codex review finding #3: unparseable is its own state, and never gets
+# collapsed into "nothing configured yet, propose and write the default".
+
+
+def test_plan_windows_default_reports_unreadable_for_malformed_global_json(tmp_path):
+    path = _global(tmp_path)
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write("{not valid json")
+
+    plan = setup.plan_windows_notify_default(path=path)
+
+    assert plan["status"] == "unreadable"
+    assert plan["updates"] == {}
+    with open(path, encoding="utf-8") as handle:
+        assert handle.read() == "{not valid json"
+
+
+def test_apply_method_refuses_to_write_over_malformed_global_json(tmp_path):
+    path = _global(tmp_path)
+    original = "{not valid json"
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write(original)
+
+    try:
+        setup.write_autoclear_method("notify", consent=True, path=path)
+        assert False, "expected GlobalConfigUnreadable"
+    except setup.GlobalConfigUnreadable:
+        pass
+
+    with open(path, encoding="utf-8") as handle:
+        assert handle.read() == original, "a malformed file must never be overwritten"
+
+
+def test_apply_enabled_refuses_to_write_over_a_global_file_that_is_not_an_object(tmp_path):
+    path = _global(tmp_path)
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump([1, 2, 3], handle)
+
+    try:
+        setup.write_autoclear_enabled(True, consent=True, path=path)
+        assert False, "expected GlobalConfigUnreadable"
+    except setup.GlobalConfigUnreadable:
+        pass
+
+
+# ---------------------------------- global file: retained "windows" literal
+# Codex review finding #4: a machine-global legacy "windows" method must be
+# proposed for conversion, not reported as already-configured.
+
+
+def test_plan_windows_default_converts_a_retained_global_windows_method(tmp_path):
+    path = _global(tmp_path)
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump({"context": {"autoClear": {"method": "windows"}}}, handle)
+
+    assert setup.already_configured_global(path) is None
+
+    plan = setup.plan_windows_notify_default(path=path)
+
+    assert plan["status"] == "proposed"
+    assert plan["updates"] == {"context.autoClear.method": "notify"}
+    assert "windows" in plan["message"] and "notify" in plan["message"]

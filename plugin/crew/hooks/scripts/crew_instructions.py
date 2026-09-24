@@ -495,7 +495,78 @@ def _project_trust_lookup_keys(root):
 # recognise as WELL-FORMED so it does not mistake ordinary content elsewhere
 # in the file for the malformed line that makes the whole read untrustworthy.
 _TABLE_HEADER_RE = re.compile(r'^\[[^\[\]]*\]$')
-_GENERIC_KV_RE = re.compile(r'^[^\s=][^=]*=\s*\S.*$')
+
+# `_GENERIC_KV_RE` used to be `^[^\s=][^=]*=\s*\S.*$` -- ANY non-blank text
+# after the `=` counted as a value. That accepted `broken = "unterminated`
+# (an unclosed string tomllib rejects outright) as well-formed, and rejected
+# a legal multi-line array's continuation lines (`"one",` on their own,
+# with no `=` at all) as unclassifiable. Replaced with a small, strict
+# grammar for the one subset this scanner (and Codex) actually writes:
+# tables, `key = string/bool/number`, and arrays of those spanning one line
+# or several. Anything outside that subset is UNKNOWN, never trusted.
+_STRING_RE = r'"(?:[^"\\]|\\.)*"|\'[^\']*\''
+_SCALAR_RE = r'(?:' + _STRING_RE + r'|true|false|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)'
+_BARE_KEY_RE = r'[A-Za-z0-9_-]+'
+_KEY_RE = r'(?:' + _BARE_KEY_RE + r'(?:\.\s*' + _BARE_KEY_RE + r')*|' + _STRING_RE + r')'
+_KV_HEAD_RE = re.compile(r'^(' + _KEY_RE + r')\s*=\s*(.*)$')
+_SCALAR_FULL_RE = re.compile(r'^(?:' + _SCALAR_RE + r')\s*(?:#.*)?$')
+# Zero or more comma-separated scalars, optionally followed by the array's
+# closing `]`. Covers a still-open continuation line (`"one",`) and the one
+# that closes it (`"two"]` or a bare `]`) alike. No nesting: nothing this
+# scanner reads or writes puts an array inside another array.
+_ARRAY_LINE_RE = re.compile(
+    r'^(?:' + _SCALAR_RE + r'\s*,\s*)*(?:' + _SCALAR_RE + r')?\s*\]?\s*(?:#.*)?$')
+
+
+def _strip_trailing_comment(line):
+    """`line` with a trailing `# ...` comment removed, but only a `#` that
+    sits outside every quoted string -- so a literal `#` inside string data
+    (`"a#b"`) is never mistaken for a comment start."""
+    masked = re.sub(_STRING_RE, lambda m: '"' * len(m.group(0)), line)
+    idx = masked.find('#')
+    return line if idx == -1 else line[:idx]
+
+
+def _array_open_tail(value_text):
+    """`None` when `value_text` -- the RHS of a `key = value` line -- is not
+    array syntax at all (does not start with `[`). Otherwise, whether the
+    array is still open after this line, i.e. its closing `]` has not been
+    seen yet."""
+    if not value_text.startswith("["):
+        return None
+    tail = _strip_trailing_comment(value_text[1:]).strip()
+    if not _ARRAY_LINE_RE.match(tail):
+        return None
+    return not tail.endswith("]")
+
+
+def _array_continuation_open(line):
+    """Same contract as `_array_open_tail`, for a line inside an
+    already-open array -- no leading `[` to strip here, since this scanner
+    does not support one array nested inside another."""
+    tail = _strip_trailing_comment(line).strip()
+    if not _ARRAY_LINE_RE.match(tail):
+        return None
+    return not tail.endswith("]")
+
+
+def _kv_line_status(line):
+    """Classify an ordinary `key = value` line as `"ok"` (a complete,
+    recognised scalar or a fully-closed single-line array), `"array-open"`
+    (a multi-line array that continues past this line), or `"bad"` -- no
+    shape here that a real TOML parser would accept, which is what
+    `broken = "unterminated` (an `=` followed by *something*, but not a
+    complete value) now returns instead of the old regex's blanket accept."""
+    head = _KV_HEAD_RE.match(line)
+    if not head:
+        return "bad"
+    value = head.group(2).strip()
+    if _SCALAR_FULL_RE.match(value):
+        return "ok"
+    still_open = _array_open_tail(value)
+    if still_open is None:
+        return "bad"
+    return "array-open" if still_open else "ok"
 
 
 def _scan_project_trust(text, keys):
@@ -518,6 +589,7 @@ def _scan_project_trust(text, keys):
     FILE, not the canonical one Codex itself would prefer."""
     fold = (lambda s: s.lower()) if os.name == "nt" else (lambda s: s)
     mode = None  # None | "bare" | ("entry", key)
+    in_array = False  # inside an as-yet-unclosed multi-line array's value
     found = {}
     bad_line = None
 
@@ -526,9 +598,28 @@ def _scan_project_trust(text, keys):
         if bad_line is None:
             bad_line = raw
 
+    def _dispatch_kv(line, raw_line):
+        """Classify an ordinary `key = value` line, common to all three
+        modes below: mark it bad, or open a multi-line array and remember
+        that this loop is now inside one."""
+        nonlocal in_array
+        status = _kv_line_status(line)
+        if status == "bad":
+            _mark_bad(raw_line)
+        elif status == "array-open":
+            in_array = True
+
     for raw_line in text.splitlines():
         line = raw_line.strip()
         if not line or line.startswith("#"):
+            continue
+        if in_array:
+            still_open = _array_continuation_open(line)
+            if still_open is None:
+                _mark_bad(raw_line)
+                in_array = False
+            else:
+                in_array = still_open
             continue
         entry = _PROJECTS_ENTRY_RE.match(line)
         if entry:
@@ -549,19 +640,16 @@ def _scan_project_trust(text, keys):
                 if level:
                     found[_unescape_toml_key(inline.group(1))] = level.group(1)
                 continue
-            if not _GENERIC_KV_RE.match(line):
-                _mark_bad(raw_line)
+            _dispatch_kv(line, raw_line)
             continue
         if isinstance(mode, tuple):
             level = _TRUST_LEVEL_RE.match(line)
             if level:
                 found[mode[1]] = level.group(1)
                 continue
-            if not _GENERIC_KV_RE.match(line):
-                _mark_bad(raw_line)
+            _dispatch_kv(line, raw_line)
             continue
-        if not _GENERIC_KV_RE.match(line):
-            _mark_bad(raw_line)
+        _dispatch_kv(line, raw_line)
 
     for key in keys:
         ck = fold(key)

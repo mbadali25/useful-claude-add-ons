@@ -78,17 +78,9 @@ Run it **once**: a second run cannot see this repo's pre-migration opt-in.
 python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autoclear_setup.py" --root . apply-migrate
 ```
 
-It rewrites `.crew/crew.json`'s `context.autoClear` and prints a `notes` line per conversion, never
-silently: pre-1.0 `"windows"` becomes `"notify"` (sendkeys is an explicit opt-in); a duplicated repo
-`enabled: true` (0.20.17's read-only-the-repo-file workaround) is dropped since 1.0 gives it no
-effect (`enabled: false` opt-outs are kept); repo-copied `onlyRepos`/`onlySessions` are dropped too,
-being global-only under 1.0. `alreadyConfigured: true` means nothing to convert.
+It rewrites `context.autoClear` in **both** `.crew/config.json` (what every sender reads) and `.crew/crew.json` (step 2's un-converted copy), whichever exist — converting only one leaves the other's stale value live. Prints a `notes` line per conversion, never silently: pre-1.0 `"windows"` becomes `"notify"` (sendkeys is an explicit opt-in); a duplicated repo `enabled: true` (0.20.17's read-only-the-repo-file workaround) is dropped since 1.0 gives it no effect (`enabled: false` opt-outs are kept); repo-copied `onlyRepos`/`onlySessions` are dropped too, being global-only under 1.0. `alreadyConfigured: true` means nothing to convert; a non-zero exit (e.g. a malformed machine-global file) means nothing was written — show the stderr message and stop.
 
-A `widening: true` means the global file arms every crew repo on this machine (`enabled: true`,
-`onlyRepos: null`) — show `proposedOnlyRepos` and ask; only on yes, apply it with the generic
-writer, never by re-running the command above: `crew_config.py --set
-'context.autoClear.onlyRepos=<the list>' --apply`. Without a yes, say the widening is still in
-effect and leave it.
+A `widening: true` means the global file arms every crew repo on this machine (`enabled: true`, `onlyRepos: null`) — show `proposedOnlyRepos` and ask; only on yes, apply it with the generic writer (this write always precedes either repo write), never by re-running the command above: `crew_config.py --set 'context.autoClear.onlyRepos=<the list>' --apply`. Without a yes, say the widening is still in effect and leave it.
 
 Then generate the rules the preview listed, and show the output verbatim:
 
