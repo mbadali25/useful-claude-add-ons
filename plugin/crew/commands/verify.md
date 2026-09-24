@@ -33,7 +33,7 @@ Build `.crew/verify.json` — the map from changed paths to the checks they requ
    step 4.
 
 If the repo has no meaningful tests, do not fabricate a map. Say so, and hand off
-to `crew:smoke-author` — a map pointing at checks that cannot fail is worse than
+to a smoke-harness ticket (`/crew:brainstorm`) — a map pointing at checks that cannot fail is worse than
 no map, because the gate turns green and everyone relaxes.
 
 **Running the whole map, unbudgeted.** The Stop gate spends a budget
@@ -188,10 +188,9 @@ deferred command named there is excluded from the fallback exactly like an
 undeclared rule would be, never silently reintroduced through it.
 
 `--price` refuses to time a verb-, syntax-, or wrapper-classified rule
-outright, in both directions, same as the gate. The pm-pulse
-`verifyReachUndeclared` trigger separately nudges toward declaring `reach`
-on any rule that has none
-at all — see `CONFIG.md` §18 for the full classification.
+outright, in both directions, same as the gate. The
+`verifyReachUndeclared` trigger in `crew_state.py` separately flags any rule
+with no `reach` at all — see `CONFIG.md` §18 for the full classification.
 
 ## Environment pinning
 

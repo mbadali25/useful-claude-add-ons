@@ -4,7 +4,7 @@ Both were found by mutation rather than by reading: each change below left the
 ENTIRE crew suite green, exit 0, so the suite could not tell the working code
 from the broken code.
 
-1. `reportTracked`. `pm_brief` reads it to decide which graph-refresh command
+1. `reportTracked`. `pm_brief` (deleted in crew 1.0) read it to decide which graph-refresh command
    to recommend, and this repo's CLAUDE.md says the two are NOT interchangeable
    -- `graphify . --no-viz --code-only` skips `GRAPH_REPORT.md`, so in a repo
    that tracks the pair it leaves the two tracked files describing different
@@ -79,33 +79,6 @@ def test_an_untracked_report_on_disk_does_not_count(tmp_path):
     assert os.path.isfile(report)  # present on disk...
     graph = crew_state._read_graph(str(root), {})
     assert graph["reportTracked"] is False  # ...and still not tracked
-
-
-def test_report_tracked_survives_into_the_pulse_wording(tmp_path):
-    """The producer and the consumer, joined.
-
-    Each half was already reachable on its own and the suite still could not
-    catch a rename, because nothing ran them against each other. This asserts
-    the key `_read_graph` writes is the key `pm_brief` reads -- rename it in
-    one place and this fails, which is the whole point.
-    """
-    import pm_brief
-
-    root = crew_fixtures.make_repo(tmp_path, graph=True)
-    report = os.path.join(root, "graphify-out", "GRAPH_REPORT.md")
-    with open(report, "w", encoding="utf-8", newline="\n") as handle:
-        handle.write("# Graph report\n")
-    _git(root, "add", "graphify-out/GRAPH_REPORT.md")
-    _git(root, "commit", "-q", "-m", "track the report")
-
-    graph = crew_state._read_graph(str(root), {})
-    assert "reportTracked" in graph, (
-        "_read_graph no longer emits reportTracked; pm_brief reads that exact "
-        "key and will silently fall back to the --no-viz wording"
-    )
-    assert graph.get("reportTracked") is True
-    # pm_brief.render is what turns it into the recommended command.
-    assert pm_brief.__name__ == "pm_brief"
 
 
 # ------------------------------------------------------------ anchor truncation

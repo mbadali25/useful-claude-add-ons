@@ -5,8 +5,8 @@ allowed-tools: Bash, Read
 ---
 
 Show where this repo's crew stands. **Read-only**: this command dispatches
-nothing, edits nothing and writes no file. It replaces what `/crew:pm`, <!-- deliberate -->
-`/crew:roster` and `/crew:scale` reported in 0.20, and none of what they did. <!-- deliberate -->
+nothing, edits nothing and writes no file. It replaces what the 0.20 PM, roster
+and scale commands reported, and none of what they did.
 
 ## Run it
 

@@ -15,7 +15,7 @@ part of the source.
 
 Anti-pattern: mock implementations that pass without testing anything real.
 
-**crew:** `smoke-author` and `browser-tester` write checks; `sabotage.py` in
+**crew:** the implementing session writes checks, before review; `sabotage.py` in
 this repo is the stronger form of "confirm it fails" — it applies a mutation
 and requires the suite to go red, which catches a test that passes for the
 wrong reason.
@@ -72,8 +72,8 @@ The document's highest-priority area.
 - Keep plans living: update them during implementation.
 
 **crew:** the hooks implement this — `context-watch` warns at the threshold,
-`handoff-write` fires on PreCompact, `handoff-read` injects the note at
-SessionStart. Since 0.19.52 `autoWrapUp`, `autoResume` and `autoClear` default
+`handoff-write` fires on PreCompact, the context hook injects the note at
+SessionStart. Since 0.19.52 `autoWrapUp` and `autoClear` default
 on, so the loop runs without being asked. The 60k figure does not transfer to a
 1M window; crew uses a fraction and auto-detects the window.
 
@@ -91,7 +91,7 @@ yet" said explicitly during exploration.
 > "Steps #1-#2 are crucial—without them, Claude tends to jump straight to
 > coding."
 
-**crew:** `/crew:plan` and the `planner` role, which works from an abstracted
+**crew:** `/crew:plan`, whose optional second opinion works from an abstracted
 brief rather than source, so it cannot pattern-match the existing code.
 
 ## Skills

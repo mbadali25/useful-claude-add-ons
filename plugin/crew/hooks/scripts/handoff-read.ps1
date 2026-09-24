@@ -35,9 +35,9 @@ $dir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $py = (Get-Command python3, python -ErrorAction SilentlyContinue |
        Select-Object -First 1).Source
 if (-not $py) { exit 0 }
-# `memory.inject: true` hands the handoff to crew-context.ps1, which injects
-# it inside its own SessionStart budget -- printing it here too would put it
-# in the session twice. Same reader as that hook (crew_context.inject_enabled).
+# `memory.inject` on (the default since 1.0.0) hands the handoff to
+# crew-context.ps1, which injects it inside its own SessionStart budget --
+# printing it here too would put it in the session twice. Same reader as that hook (crew_context.inject_enabled).
 # No double quotes in the -c text: 5.1 strips them from native arguments.
 & $py -c 'import sys; sys.path.insert(0, sys.argv[1]); import crew_context as c; sys.exit(0 if c.inject_enabled(c.find_root(sys.argv[2])) else 1)' $dir (Get-Location).Path 2>$null
 if ($LASTEXITCODE -eq 0) { exit 0 }
@@ -46,16 +46,6 @@ if ($LASTEXITCODE -ne 0) { exit 0 }
 
 if (-not (Test-Path ".crew/config.json")) { exit 0 }
 $cfg = Get-Content .crew/config.json -Raw | ConvertFrom-Json
-
-# When context.autoResume is exactly true, pm_brief._resume_context() owns
-# the handoff in this mode: it folds the same text plus the extracted next
-# action into its additionalContext payload. Standing down here keeps the
-# handoff to a single emitter -- printing it here too would inject it twice.
-# Absent means TRUE since 0.19.52, so an unset key must take this branch
-# too -- the bare -is [bool] test below reads "not present" as false and
-# would put this flavour one behind the .sh.
-if ($null -eq $cfg.context.autoResume -or
-    ($cfg.context.autoResume -is [bool] -and $cfg.context.autoResume -eq $true)) { exit 0 }
 
 $path = if ($cfg.context.handoffPath) { $cfg.context.handoffPath } else { ".work/HANDOFF.md" }
 if (-not (Test-Path $path)) { exit 0 }

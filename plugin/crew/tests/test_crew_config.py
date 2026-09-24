@@ -668,7 +668,7 @@ def test_the_model_table_still_layers_globally(tmp_path, monkeypatch):
     # The context hook's keys beside them come from the repo defaults.
     assert resolved["memory"] == {"mode": "vault",
                                   "vaultPath": "/home/me/vault",
-                                  "inject": False,
+                                  "inject": True,
                                   "recall": {"vaults": [], "maxChars": 800}}
 
 

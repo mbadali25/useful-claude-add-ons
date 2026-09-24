@@ -12,7 +12,7 @@ out of this file would take it on by accident.
 marker skips a line, a table status wins over a text marker, no in-progress
 line yields None rather than a guess. Re-deriving that in bash AND in
 PowerShell is two copies that drift from the original and from each other.
-pm-pulse.sh made the same call for the same reason and says so in its header.
+crew_context.py makes the same call for its own wrappers.
 
 ## Unknowns stay unknown
 

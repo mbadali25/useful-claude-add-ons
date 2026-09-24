@@ -66,11 +66,10 @@ def test_bash_flavour_always_exits_zero_and_never_decides(tmp_path):
 
 
 @pytest.mark.parametrize("config,inject", [
-    (None, None),
-    ({"memory": {"mode": "repo"}}, None),
+    ({"memory": {"mode": "repo"}}, False),
     (None, False),
 ])
-def test_bash_flavour_emits_and_logs_nothing_unless_inject_is_true(tmp_path, config, inject):
+def test_bash_flavour_emits_and_logs_nothing_when_inject_is_false(tmp_path, config, inject):
     root = make_repo(tmp_path, config=config, inject=inject)
     outputs = []
 
@@ -83,8 +82,13 @@ def test_bash_flavour_emits_and_logs_nothing_unless_inject_is_true(tmp_path, con
         ([(0, b"", b"")] * len(outputs), False)
 
 
-def test_bash_flavour_emits_when_inject_is_true(tmp_path):
-    root = make_repo(tmp_path, inject=True)
+@pytest.mark.parametrize("config,inject", [
+    (None, True),
+    (None, None),
+    ({"memory": {"mode": "repo"}}, None),
+])
+def test_bash_flavour_emits_when_inject_is_on_or_unset(tmp_path, config, inject):
+    root = make_repo(tmp_path, config=config, inject=inject)
     start = json.dumps(payload("SessionStart", root, source="startup")).encode()
 
     done = subprocess.run(["bash", str(SCRIPTS / "crew-context.sh")], input=start, cwd=root,
@@ -194,13 +198,13 @@ def test_both_flavours_claim_the_same_event_so_only_one_emits(tmp_path):
 
 
 @pytest.mark.skipif(PWSH is None, reason="pwsh not installed - the .ps1 flavour was NOT run")
-@pytest.mark.parametrize("inject, speaks", [(True, False), (False, True)])
-def test_handoff_read_ps1_stands_down_exactly_when_memory_inject_is_true(tmp_path, inject, speaks):
+@pytest.mark.parametrize("inject, speaks", [(True, False), (None, False), (False, True)])
+def test_handoff_read_ps1_stands_down_exactly_when_memory_inject_is_on(tmp_path, inject, speaks):
     root = tmp_path / "repo"
     (root / ".crew").mkdir(parents=True)
     (root / ".work").mkdir()
-    (root / ".crew" / "config.json").write_text(json.dumps(
-        {"context": {"autoResume": False}, "memory": {"inject": inject}}), encoding="utf-8")
+    config = {} if inject is None else {"memory": {"inject": inject}}
+    (root / ".crew" / "config.json").write_text(json.dumps(config), encoding="utf-8")
     (root / ".work" / "HANDOFF.md").write_text("# Handoff\nHANDOFF-BODY-TOKEN\n", encoding="utf-8")
     raw = json.dumps({"source": "resume", "cwd": str(root), "session_id": f"s-{inject}"}).encode()
 

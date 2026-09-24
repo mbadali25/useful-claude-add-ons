@@ -182,7 +182,7 @@ repo also has:
 3. `.crew/secrets.md` — record where test credentials come from and which env
    var each lands in. Names and retrieval commands only, never values. See the
    `crew-verification` skill.
-4. `e2e/` specs if this repo has a UI — delegate to `crew:browser-tester`.
+4. `e2e/` specs if this repo has a UI — write them in this session.
 
 Report which of the four are missing when you finish. A codemap on its own is
 the least useful of the five artifacts.

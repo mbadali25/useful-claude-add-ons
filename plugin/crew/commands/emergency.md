@@ -54,9 +54,9 @@ library only.
    |---|---|---|
    | change | `crew:explorer` | What shipped or changed in the window before the symptom? Commits, deploys, config, feature flags, migrations, dependency bumps. |
    | blast radius | `crew:explorer` | What calls the failing path, and what else uses the same resource? Who else is already broken and does not know it yet. |
-   | cause | `crew:analyst` | Given the symptom and the change list, the two or three most probable causes, each with the one cheap observation that would confirm or kill it. |
+   | cause | `crew:explorer` | Given the symptom and the change list, the two or three most probable causes, each with the one cheap observation that would confirm or kill it. |
    | exposure | `crew:security` | Only when the symptom could be an incident of a different kind: auth, data exposure, injection, an unexpected 200. Skip it for a plain outage and say you skipped it. |
-   | data | `crew:dba` | Only when a database is in the picture: locks, a long transaction, a migration mid-flight, replica lag, a table that grew. |
+   | data | `crew:explorer` | Only when a database is in the picture: locks, a long transaction, a migration mid-flight, replica lag, a table that grew. |
 
    Lanes are **read-only investigators**. They do not fix anything. If two
    plausible fixes need trying at once, that is a separate call with
@@ -101,7 +101,7 @@ done, which is what the debt list is for.
    knows which the changed files need) and record the result; if a deploy went
    out ungated, add its row to `.work/PROMOTIONS.md`, failures included.
 3. **Turn the rest into tickets**, one per item still owed, referencing the
-   incident id. `/crew:ticket` for each. A debt list in a markdown file that
+   incident id. `/crew:brainstorm` then `/crew:spec` for each. A debt list in a markdown file that
    nobody has a ticket for is a debt nobody will pay.
 4. **Update the runbook**, per `crew-runbooks`. The runbook change is worth more
    than the postmortem: it is what makes the next occurrence boring.

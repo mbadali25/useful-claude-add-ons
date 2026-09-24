@@ -369,10 +369,11 @@ def test_context_watch_does_not_call_the_unhardened_resolver():
         "a WindowsApps stub. Found: " + repr(calls))
 
 
-@pytest.mark.parametrize("script", ["pm-brief.sh", "platform-sync.sh"])
+@pytest.mark.parametrize("script", ["platform-sync.sh", "crew-context.sh"])
 def test_thin_wrapper_hooks_do_not_call_the_unhardened_resolver(script):
-    """Same tripwire, the two other scripts converted alongside
-    context-watch.sh in the same pass. Both `exec` what they resolve, so a
+    """Same tripwire, for the thin wrappers converted alongside
+    context-watch.sh (pm-brief.sh was the other one until crew 1.0 deleted
+    it; crew-context.sh took its SessionStart slot). Both hand off what they resolve, so a
     revert to `crew_py` is a one-word edit this static check catches on any
     machine, not only one where a stub happens to exist."""
     path = os.path.join(_ROOT, "hooks", "scripts", script)

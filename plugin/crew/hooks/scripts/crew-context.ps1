@@ -23,9 +23,9 @@ $dir = Split-Path -Parent $MyInvocation.MyCommand.Path
 # is time-bounded here (see the probe comment), asserted by
 # tests/test_crew_context_wrappers.py.
 function Resolve-CrewPython {
-  # NOT byte-for-byte with verify-gate.ps1's/pm-pulse.ps1's copies any more
+  # NOT byte-for-byte with verify-gate.ps1's copy any more
   # -- see tests/test_role_write_guard.py for why the parity discipline
-  # changed shape rather than being dropped. Those two files' resolver only
+  # changed shape rather than being dropped. That file's resolver only
   # needs to match `_common.sh`'s bare `crew_py()`; this one needs to match
   # role-write-guard.sh's OWN resolver, which does more than `crew_py()`
   # does, so this copy has to as well.

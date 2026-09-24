@@ -1,22 +1,16 @@
-"""The role ladder has one definition in code and three descriptions in prose.
+"""The crew 1.0 roster has one definition in code and one description in prose.
 
-`crew_state.ROLE_TIERS` is what `/crew:upgrade` computes a tier from.
-`skills/crew-scaling/SKILL.md`, `skills/crew-pm/onboarding.md` and `README.md`
-are what a human reads. No markdown table is parsed at runtime -- doing that
-would make a heading in a skill file decide what an upgrade writes -- so a test
-is the only thing keeping the four honest. A row added to one table and not the
-dict (or the reverse) fails here rather than shipping as a `/crew:scale` that
-proposes a role no upgrade recognises.
+`crew_state.ROLE_TIERS` is what `/crew:upgrade` computes a tier from and what
+`crew_upgrade` checks a config's `roles` against. `README.md`'s agent table is
+what a human reads. No markdown table is parsed at runtime, so a test is the
+only thing keeping the two honest -- and every `agents/*.md` is checked back
+against the code, because an agent file nobody registered dispatches nothing
+and fails silently.
 
-`SPECIALIST_ROLES` gets the same treatment, in both directions and one more
-place: the set against onboarding.md's and README's tables, and every
-`agents/*.md` against the set. That last direction is the one nothing used to
-check -- a specialist can ship as a file nobody registered, and the only
-symptom is `/crew:pm onboard <name>` calling it unrecognised forever.
-
-The third thing checked here is that every ladder role has an agent definition
-behind it: a name in `config.json.roles` with no `agents/<role>.md` dispatches
-nothing and fails silently, which `crew-pm/onboarding.md` says in as many words.
+crew 1.0 cut the roster to four (`docs/review/04-redesign.md`, "Roster: 54
+agents -> 4"). The skill tables this file used to check (`crew-scaling`,
+`crew-pm/onboarding.md`) were deleted with the PM, and `SPECIALIST_ROLES` is
+empty: stack knowledge became the `stack-*` skills.
 """
 import os
 import re
@@ -25,10 +19,10 @@ import context  # noqa: F401  pylint: disable=unused-import
 import crew_state
 
 _PLUGIN = os.path.join(os.path.dirname(os.path.abspath(__file__)), os.pardir)
-_SCALING = os.path.join(_PLUGIN, "skills", "crew-scaling", "SKILL.md")
-_ONBOARDING = os.path.join(_PLUGIN, "skills", "crew-pm", "onboarding.md")
 _AGENTS = os.path.join(_PLUGIN, "agents")
 _README = os.path.join(_PLUGIN, "README.md")
+
+ROSTER_1_0 = {"explorer": 0, "reviewer": 0, "security": 1, "researcher": 2}
 
 
 def _read(path):
@@ -36,56 +30,13 @@ def _read(path):
         return handle.read()
 
 
-def _onboarding_ladder():
-    """`| `role` | closes | tier |` rows from the roster table."""
-    rows = re.findall(r"^\|\s*`([a-z-]+)`\s*\|[^|]*\|\s*(\d+)\s*\|\s*$",
-                      _read(_ONBOARDING), re.MULTILINE)
-    return {name: int(tier) for name, tier in rows}
+def _agent_files():
+    return {entry[:-len(".md")] for entry in os.listdir(_AGENTS)
+            if entry.endswith(".md")}
 
 
-def _scaling_ladder():
-    """`| tier | + role, role | when |` rows from the tier table.
-
-    A leading `+` is the table's own "added at this tier" marker. The tier-3
-    row lists parallelism, not roles, and contributes nothing: no role lives
-    at `TIER_PARALLEL`, which is why `tier_for_roles` can never return it.
-    """
-    ladder = {}
-    for tier, cell in re.findall(r"^\|\s*(\d+)\s*\|([^|]+)\|", _read(_SCALING),
-                                 re.MULTILINE):
-        if int(tier) == crew_state.TIER_PARALLEL:
-            # This row lists parallelism, not roles -- no role lives at this
-            # tier, which is why tier_for_roles can never return it. Skipping
-            # the row is a claim about the table; skipping unrecognised NAMES
-            # would be using the code as the answer key for its own docs.
-            continue
-        for name in cell.replace("+", "").split(","):
-            name = name.strip()
-            # Deliberately NOT filtered through crew_state.ROLE_TIERS. Doing
-            # that used the production dict as a sieve for the documentation
-            # it is supposed to be checked against, so a table listing
-            # `securty`, or a role crew does not have, was dropped before the
-            # comparison and the equality below still passed. This parser has
-            # to represent the table as written, wrong entries included.
-            if name and not name.startswith("`"):
-                ladder[name] = int(tier)
-    return ladder
-
-
-def test_onboarding_roster_matches_the_code_ladder():
-    assert _onboarding_ladder() == crew_state.ROLE_TIERS
-
-
-def test_crew_scaling_tier_table_matches_the_code_ladder():
-    assert _scaling_ladder() == crew_state.ROLE_TIERS
-
-
-def test_the_three_roles_added_in_0_15_x_are_on_the_ladder():
-    """They shipped as definitions with no tier row, so `/crew:scale` would
-    not propose them and `/crew:pm` would not onboard them from evidence."""
-    for name in ("infrastructure-architect", "scribe", "researcher"):
-        assert crew_state.ROLE_TIERS[name] == 2, name
-        assert name in _scaling_ladder(), name
+def test_the_code_ladder_is_the_1_0_roster():
+    assert crew_state.ROLE_TIERS == ROSTER_1_0
 
 
 def test_every_ladder_role_has_an_agent_definition():
@@ -93,9 +44,32 @@ def test_every_ladder_role_has_an_agent_definition():
         assert os.path.isfile(os.path.join(_AGENTS, f"{name}.md")), name
 
 
-def test_pm_is_not_on_the_ladder():
-    """It is not sized in or out by /crew:scale -- it is the thing sizing."""
+def test_every_agent_definition_is_a_role_crew_knows():
+    """The file -> code direction. An `agents/<name>.md` nobody registered
+    dispatches nothing, and `/crew:upgrade` would call it unrecognised."""
+    for name in sorted(_agent_files()):
+        assert crew_state.known_role(name) is True, (
+            f"agents/{name}.md is not in ROLE_TIERS, so nothing dispatches it")
+
+
+def test_the_agent_files_are_exactly_the_roster():
+    assert _agent_files() == set(ROSTER_1_0)
+
+
+def test_there_are_no_specialists_in_1_0():
+    assert crew_state.SPECIALIST_ROLES == frozenset()
+
+
+def test_pm_is_not_a_role():
     assert "pm" not in crew_state.ROLE_TIERS
+    assert crew_state.known_role("pm") is False
+
+
+def test_qa_reviewer_is_not_a_role_any_more():
+    """Renamed to `reviewer`. A 0.20 config naming it is carried forward by
+    `/crew:migrate` (crew_migrate.RENAMED), not recognised here."""
+    assert crew_state.known_role("qa-reviewer") is False
+    assert crew_state.known_role("reviewer") is True
 
 
 def test_no_role_sits_at_the_parallelism_tier():
@@ -105,143 +79,33 @@ def test_no_role_sits_at_the_parallelism_tier():
 
 
 def test_roles_for_tier_is_cumulative_and_in_ladder_order():
-    assert crew_state.roles_for_tier(0) == ["explorer", "qa-reviewer"]
-    tier_one = crew_state.roles_for_tier(1)
-    assert tier_one[:2] == ["explorer", "qa-reviewer"]
-    assert set(crew_state.roles_for_tier(0)) < set(tier_one)
-    assert set(tier_one) < set(crew_state.roles_for_tier(2))
+    assert crew_state.roles_for_tier(0) == ["explorer", "reviewer"]
+    assert crew_state.roles_for_tier(1) == ["explorer", "reviewer", "security"]
+    assert crew_state.roles_for_tier(2) == ["explorer", "reviewer", "security",
+                                            "researcher"]
 
 
 def test_tier_for_roles_ignores_a_name_it_does_not_know():
+    """A retired 0.20 role contributes nothing: its tier is genuinely unknown
+    to this release, and guessing one would move a crew up the ladder on the
+    strength of a string nobody recognises."""
     assert crew_state.tier_for_roles(["explorer", "not-a-real-role"]) == 0
     assert crew_state.tier_for_roles([]) == 0
-    assert crew_state.tier_for_roles(["planner"]) == 2
+    assert crew_state.tier_for_roles(["planner", "dba"]) == 0
+    assert crew_state.tier_for_roles(["researcher"]) == 2
 
 
-# --- domain specialists ----------------------------------------------------
-#
-# Off the ladder ON PURPOSE, which is the opposite of the 0.15.x bug directly
-# above: those three were general-purpose roles that had simply been forgotten,
-# and being unreachable was the defect. These are domain-specific, and being
-# unreachable-by-default is the feature.
-
-
-def test_specialists_are_not_on_the_tier_ladder():
-    """The whole point. `roles_for_tier` grants every rung up to the declared
-    tier, so putting a SharePoint developer on the ladder would hand one to
-    every tier-2 repo on the machine -- including the ones with no SharePoint.
-    That is already visible with `dba`: this repo has no database and was
-    granted one anyway."""
-    for name in crew_state.SPECIALIST_ROLES:
-        assert name not in crew_state.ROLE_TIERS, name
-
-
-def test_no_tier_ever_auto_grants_a_specialist():
-    """The rule stated against the function that would break it, rather than
-    against the data. A specialist added to ROLE_TIERS by mistake fails here
-    even if the set above is edited to match."""
-    for tier in range(0, crew_state.TIER_PARALLEL + 2):
-        granted = set(crew_state.roles_for_tier(tier))
-        assert not (granted & crew_state.SPECIALIST_ROLES), tier
-
-
-def test_every_specialist_has_an_agent_definition():
-    for name in crew_state.SPECIALIST_ROLES:
-        assert os.path.isfile(os.path.join(_AGENTS, f"{name}.md")), name
-
-
-def test_a_specialist_is_a_known_role_even_though_it_has_no_tier():
-    """`known_role` is what separates "off the ladder deliberately" from
-    "a name this release has never heard of". Without it a repo that onboards
-    a specialist gets it reported as unrecognised on every upgrade."""
-    for name in crew_state.SPECIALIST_ROLES:
-        assert crew_state.known_role(name) is True, name
-    for name in crew_state.ROLE_TIERS:
-        assert crew_state.known_role(name) is True, name
+def test_known_role_rejects_a_typo():
     assert crew_state.known_role("wharrgarbl") is False
 
 
-def _onboarding_specialists():
-    """`| `role` | closes | — |` rows from the specialist table.
-
-    The em dash in the tier column is what separates these rows from the
-    ladder table above, and it is deliberately matched rather than skipped:
-    a specialist row that acquired a number would then fail BOTH tables
-    instead of silently moving between them. The name pattern allows digits
-    and dots because `dotnet-framework-4.8-expert` has both.
-    """
-    return set(re.findall(
-        r"^\|\s*`([a-z0-9.-]+)`\s*\|[^|]*\|\s*(?:—|-)\s*\|\s*$",
-        _read(_ONBOARDING), re.MULTILINE))
-
-
-def test_onboarding_specialist_table_matches_the_code_set():
-    """The other half of the ladder drift check, for the roles with no tier.
-
-    Nothing in the runtime parses this table, so without this a specialist
-    could ship registered in code and undocumented -- or documented and
-    unregistered, which is worse: `/crew:pm onboard <role>` then reports a
-    name the README told the user to use as one crew does not recognise.
-    """
-    assert _onboarding_specialists() == set(crew_state.SPECIALIST_ROLES)
-
-
-def test_every_agent_definition_is_a_role_crew_knows():
-    """The file -> code direction. `test_every_specialist_has_an_agent_definition`
-    checks the reverse and cannot see this one: an `agents/<name>.md` that was
-    never added to `SPECIALIST_ROLES` dispatches nothing, and the only symptom
-    is `/crew:pm onboard <name>` calling it unrecognised forever.
-
-    `pm` is the one deliberate exception -- it is outside the ladder because it
-    is the thing doing the sizing, not because it was forgotten.
-    """
-    outside_the_ladder = {"pm"}
-    for entry in sorted(os.listdir(_AGENTS)):
-        if not entry.endswith(".md"):
-            continue
-        name = entry[:-len(".md")]
-        if name in outside_the_ladder:
-            continue
-        assert crew_state.known_role(name) is True, (
-            f"agents/{entry} is not in ROLE_TIERS or SPECIALIST_ROLES, so no "
-            f"repo can onboard it and nothing dispatches it")
-
-
 def _readme_roster():
-    """`| `role` | tools | model | tier | what it closes |` rows from the README.
-
-    Returns (ladder, specialists). The tier cell is what sorts them: a number
-    is a ladder rung, an em dash is a role no tier grants. `pm` carries the
-    dash too and is removed by the caller -- it is off the ladder because it
-    is the thing doing the sizing, which is a third case, not a specialist.
-    """
-    ladder, specialists = {}, set()
-    for name, tier in re.findall(
-            r"^\|\s*`([a-z0-9.-]+)`\s*\|[^|]*\|[^|]*\|\s*(—|-|\d+)\s*\|",
-            _read(_README), re.MULTILINE):
-        if tier.isdigit():
-            ladder[name] = int(tier)
-        else:
-            specialists.add(name)
-    return ladder, specialists
+    """`| `role` | tools | model | tier | what it closes |` rows from the README."""
+    return {name: int(tier) for name, tier in re.findall(
+        r"^\|\s*`([a-z0-9.-]+)`\s*\|[^|]*\|[^|]*\|\s*(\d+)\s*\|",
+        _read(_README), re.MULTILINE)}
 
 
 def test_the_readme_roster_table_matches_the_code():
-    """The third copy of the roster, and the one a user reads first.
-
-    `onboarding.md` is checked above; this table is what someone installing
-    the plugin sees, and it drifts the same way. Both halves in one test
-    because a row moving between them -- a specialist that acquired a tier --
-    is the failure that leaves each half individually plausible.
-    """
-    ladder, specialists = _readme_roster()
-    assert ladder == crew_state.ROLE_TIERS
-    assert specialists - {"pm"} == set(crew_state.SPECIALIST_ROLES)
-    assert "pm" in specialists, "the README stopped listing pm at all"
-
-
-def test_a_specialist_contributes_no_tier():
-    """It carries no evidence about how much crew a repo needs, so it must not
-    move the tier -- in either direction."""
-    assert crew_state.tier_for_roles(["node-developer"]) == 0
-    assert crew_state.tier_for_roles(["dba", "node-developer"]) == 2
+    """The copy of the roster a user reads first, and it drifts the same way."""
+    assert _readme_roster() == crew_state.ROLE_TIERS

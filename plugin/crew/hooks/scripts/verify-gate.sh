@@ -332,8 +332,7 @@ BUDGET_FLAG=""
 #
 # Stop fires once per TURN, so a turn that changed nothing the gate cares
 # about re-runs the whole map to reach the answer it reached a minute ago.
-# The event is not the gate; the STATE is -- pm_pulse.py makes the same
-# argument in its own header for the same reason.
+# The event is not the gate; the STATE is.
 #
 # The digest comes from verify_fingerprint.py, shared with the .ps1 so the
 # two cannot drift, and covers HEAD, the changed paths AND their bytes,
@@ -592,8 +591,8 @@ fi
 # `|| true` and the explicit `:` -- a python that dies, is missing, or writes
 # nothing must leave this gate exactly as it found it.
 #
-# The logic lives in scope_report.py, not here, for the reason pm-pulse.sh
-# gives: the bash and PowerShell flavours must not drift, and the ticket is
+# The logic lives in scope_report.py, not here, because the bash and
+# PowerShell flavours must not drift, and the ticket is
 # resolved by crew_state.read_work, whose rules (done markers, table status,
 # None rather than a guess) are not worth re-deriving twice in two shells.
 # $DIR is NOT defined in this script -- only `dirname` inline at the top. An

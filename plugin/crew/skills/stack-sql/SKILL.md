@@ -59,7 +59,7 @@ isolation in ways that make a rule true on one and wrong on another.
 Uniqueness differs too: SQL Server permits one NULL in a unique index, Postgres and MySQL
 permit many. A migration is reviewed only once it has actually been applied to a real
 database (ephemeral, container, or dev) with rollback proven, not "it will apply at deploy
-time" - see `crew:dba` if this crew has that role for the review side of this.
+time" - `crew:security` reviews the injection and permission side of this.
 
 ## Verification
 

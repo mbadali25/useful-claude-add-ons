@@ -56,8 +56,8 @@ or created a missing heading). A codemap none of whose sections changed
 keeps its old anchor and is listed in the report under "Anchors left stale
 on purpose."
 
-A false freshness claim is worse than an honest stale one — `crew-pm`'s
-freshness check and `crew_state.knowledge.behind` both trust the anchor, and
+A false freshness claim is worse than an honest stale one — the context
+hook's anchor check and `crew_state.knowledge.behind` both trust the anchor, and
 that trust only holds if nothing bumps it without having actually looked.
 
 ## Invoking it

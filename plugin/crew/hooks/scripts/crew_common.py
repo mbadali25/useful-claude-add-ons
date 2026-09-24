@@ -7,7 +7,7 @@ need them: putting them in `crew_endpoints` would make `crew_state` import a
 git timeout from a module named for endpoints, and putting them in
 `crew_state` would make the import run both ways.
 
-`crew_state` re-exports all three, so `crew_config`, `pm_brief` and
+`crew_state` re-exports all three, so `crew_config` and
 `crew_upgrade` keep reaching them as `crew_state.read_text` and friends.
 
 Standard library only, and every read fails soft, for the reason `crew_state`

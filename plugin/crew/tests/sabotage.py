@@ -81,7 +81,6 @@ STATE = os.path.join(CREW, "hooks", "scripts", "crew_state.py")
 # by this suite rather than by the absence of one.
 ENDPOINTS = os.path.join(CREW, "hooks", "scripts", "crew_endpoints.py")
 COMMON = os.path.join(CREW, "hooks", "scripts", "crew_common.py")
-LADDER_DOC = os.path.join(CREW, "skills", "crew-scaling", "SKILL.md")
 PLATFORM = os.path.join(CREW, "hooks", "scripts", "crew_platform.py")
 CONFIG = os.path.join(CREW, "hooks", "scripts", "crew_config.py")
 UPGRADE = os.path.join(
@@ -109,10 +108,8 @@ HOUSE_STYLE_PY = os.path.join(
 # assertion is parametrized per file, so breaking any one of them is what the
 # suite has to catch, and mutating four would prove the same thing four times.
 GUIDE_HTML = os.path.join(ROOT, "docs", "guides", "crew", "crew-overview.html")
-PM_BRIEF = os.path.join(CREW, "hooks", "scripts", "pm_brief.py")
-# The other half of the upgrade message. The brief NAMES the migration and
-# this file SAYS WHAT IT DOES, deliberately one copy each -- so the only
-# way to sabotage "the two agree" is to break one of them.
+# What each schema migration does. test_upgrade.py checks the entry for the
+# CURRENT hop exists, so the mutation below deletes exactly that entry.
 UPGRADE_DOC = os.path.join(CREW, "commands", "upgrade.md")
 PROMOTE_DOC = os.path.join(CREW, "commands", "promote.md")
 REVIEW_DOC = os.path.join(CREW, "commands", "review.md")
@@ -171,8 +168,7 @@ CHANGE_PY = os.path.join(CREW, "hooks", "scripts", "crew_change.py")
 # regression is the sentence changing under the developer.
 SCOPE_BASE = os.path.join(CREW, "hooks", "scripts", "scope_base.py")
 SCOPE_REPORT = os.path.join(CREW, "hooks", "scripts", "scope_report.py")
-DEVELOPER_MD = os.path.join(CREW, "agents", "developer.md")
-WORK_MD = os.path.join(CREW, "commands", "work.md")
+IMPLEMENT_MD = os.path.join(CREW, "commands", "implement.md")
 
 GUARD = '    if out["family"] is not None and out["family"] in authors:'
 ROLE_PIN = '    decided = resolve_role(cfg, "dev", "developer")'
@@ -784,54 +780,6 @@ MUTATIONS = (
         "test_every_table_in_every_shipped_guide_has_a_real_thead",
     ),
     (
-        # The false sentence itself. `upgradeNeeded` shipped ONE fixed string
-        # -- "config has no schema" -- and bumping SCHEMA_CURRENT to 4 aimed
-        # it at every schema-2 and schema-3 repo in existence. It sorts third
-        # in TRIGGERS, so it leads the brief: the first thing a user reads
-        # after a mandatory migration described a situation they are not in.
-        "every repo is told its config has no schema, whatever it declares",
-        PM_BRIEF,
-        "    if not key_present:",
-        "    if True:",
-        "tests/test_pm_brief.py::"
-        "test_a_repo_with_a_schema_is_not_told_it_has_none",
-    ),
-    (
-        # A schema `int_or` cannot read collapses to 1, and 1 reads as a
-        # pre-PM config. The user then hunts a migration instead of the
-        # character they mistyped. This repo's named recurring bug, in the
-        # sentence that reports it.
-        "an unparseable schema is reported as a pre-PM config",
-        PM_BRIEF,
-        "    elif crew_state.int_or(declared, None) is None:",
-        "    elif False:",
-        "tests/test_pm_brief.py::"
-        "test_an_unparseable_schema_is_reported_as_a_typo_not_as_a_pre_pm_config",
-    ),
-    (
-        # ABSENT and None collapsed into one, which is the same bug one level
-        # up: every hand-built state -- the crew:pm agent's, a stale cache's
-        # -- would be told its config declares no schema.
-        "an absent schemaDeclared is read as an explicit null",
-        PM_BRIEF,
-        "        declared, key_present = schema, True",
-        "        declared, key_present = None, False",
-        "tests/test_pm_brief.py::"
-        "test_a_hand_built_state_without_the_key_is_not_told_it_has_no_schema",
-    ),
-    (
-        # collect() stops carrying the raw value, so the real SessionStart
-        # path silently falls back to the hand-built branch. Every hand-built
-        # test above keeps passing; only a test that drives the collector on a
-        # real repo can see it.
-        "collect() no longer carries the raw declared schema",
-        STATE,
-        '        "schemaDeclared": raw_cfg.get("schema") if raw_cfg else None,',
-        '        "schemaDeclaredGone": None,',
-        "tests/test_pm_brief.py::"
-        "test_collect_carries_the_raw_schema_so_the_brief_can_tell_them_apart",
-    ),
-    (
         # The command's half. The brief names the hop and nothing explains
         # what that migration does -- a user reads a version number and is
         # told to run a command whose report walks past the entry for it.
@@ -849,33 +797,8 @@ MUTATIONS = (
         UPGRADE_DOC,
         "- **Schema 6 \u2192 7**",
         "- **The change-request migration**",
-        "tests/test_pm_brief.py::"
-        "test_the_brief_and_upgrade_md_agree_on_the_current_migration",
-    ),
-    (
-        # Codex's finding, and the reason `schemaKeyPresent` exists at all.
-        # `{"schema": null}` reads back from `.get()` as None, the same value
-        # an ABSENT key gives -- so keying the "no schema" sentence on the
-        # VALUE calls an explicit null a pre-PM config and sends the user
-        # hunting a migration instead of the word they typed. The same
-        # collapse the whole finding was rewritten to remove, one level down.
-        "an explicit null schema is read as an absent one",
-        PM_BRIEF,
-        '        key_present = bool(state.get("schemaKeyPresent"))',
-        "        key_present = declared is not None",
-        "tests/test_pm_brief.py::"
-        "test_an_explicit_null_schema_is_not_read_as_an_absent_one",
-    ),
-    (
-        # The collector half. Every hand-built test keeps passing without
-        # this flag because it supplies the flag itself; only a test driven
-        # through collect() on a real repo can see it go missing.
-        "collect() no longer records whether the schema key is present",
-        STATE,
-        '        "schemaKeyPresent": bool(raw_cfg) and "schema" in raw_cfg,',
-        '        "schemaKeyPresentGone": False,',
-        "tests/test_pm_brief.py::"
-        "test_an_explicit_null_schema_is_not_read_as_an_absent_one",
+        "tests/test_upgrade.py::"
+        "test_upgrade_md_documents_the_current_migration",
     ),
     (
         # doc-builder takes DOCX and PDF over generally -- the "simplification"
@@ -1149,16 +1072,6 @@ MUTATIONS = (
          "test_the_widening_warning_names_the_tier_it_grants"),
     ),
     (
-        # A capability gate that names a rung instead of a floor. Restoring it
-        # makes `autonomous` -- the WIDER tier -- unable to act at all, which
-        # presents as "the new tier does nothing" rather than as a guard bug.
-        "can_act names a rung instead of a floor",
-        STATE,
-        '    return authority_rank(pm.get("authority")) >= authority_rank("act")',
-        '    return normalise_authority(pm.get("authority")) == "act"',
-        "tests/test_pm_brief.py::test_autonomous_can_act_too",
-    ),
-    (
         # An unknown authority collapsing UPWARD is the repo's named recurring
         # bug class, in the one field where it grants capability. `index` on a
         # raw value would raise, so the mutation returns the top rank instead:
@@ -1168,7 +1081,7 @@ MUTATIONS = (
         "    return AUTHORITIES.index(normalise_authority(value))",
         "    return (AUTHORITIES.index(value) if value in AUTHORITIES\n"
         "            else len(AUTHORITIES) - 1)",
-        "tests/test_pm_brief.py::test_authority_rank_is_ordered_and_fails_closed",
+        "tests/test_crew_state.py::test_authority_rank_is_ordered_and_fails_closed",
     ),
     (
         "family guard deleted",
@@ -1544,13 +1457,6 @@ MUTATIONS = (
         ("tests/test_provider_table.py::test_a_legacy_slot_holding_"
          "nothing_is_a_record_that_was_lost"),
     ),
-    (
-        "bogus documented role",
-        LADDER_DOC,
-        "| 1 | + security",
-        "| 1 | + ghost-reviewer, + security",
-        "tests/test_role_ladder.py",
-    ),
     # --- The endpoint ledger and endpointUnscanned (BLOCK 1, BLOCK 2, findings
     # 2-11 of this round). ---------------------------------------------------
     (
@@ -1877,30 +1783,6 @@ MUTATIONS = (
         "            if False:\n                continue",
         ("tests/test_endpoints.py::"
          "test_infer_endpoints_gates_openapi_path_to_spec_files"),
-    ),
-    (
-        # Finding 10: `status`, not `source`, is authoritative -- a record
-        # whose fields disagree must still render as a candidate.
-        "the brief splits declared vs. candidate on source, not status",
-        PM_BRIEF,
-        'candidates = [hit for hit in hits if hit.get("status") == '
-        '"candidate"]\n    declared = [hit for hit in hits if hit.get('
-        '"status") != "candidate"]',
-        'candidates = [hit for hit in hits if hit.get("source") != '
-        '"declared"]\n    declared = [hit for hit in hits if hit.get('
-        '"source") == "declared"]',
-        ("tests/test_pm_brief.py::"
-         "test_endpoint_finding_keys_on_status_not_source"),
-    ),
-    (
-        # The hard requirement behind the whole feature: a candidate must
-        # say, in its own text, that it is not confirmed.
-        "the candidate finding text drops its NOT confirmed wording",
-        PM_BRIEF,
-        '"candidates are NOT confirmed endpoints until researched"',
-        '""',
-        ("tests/test_pm_brief.py::"
-         "test_endpoint_finding_distinguishes_declared_from_candidate"),
     ),
     (
         # Finding 7: an unsafe-id hit must still carry location.
@@ -2856,46 +2738,17 @@ MUTATIONS = (
          "test_a_mandatory_command_keeps_its_place_inside_its_rule"),
     ),
     (
-        # The blanket ban comes back onto developer.md while every brief
-        # still says "commit on your branch" -- the exact contradiction
-        # T-0003 closed. The heading AND the narrowed sentence go together,
-        # since a real re-widening would rewrite both.
-        "the blanket commit ban returns to developer.md",
-        DEVELOPER_MD,
-        "- **Commit anywhere but the ticket's own branch, or `git stash` at "
-        "all.** The\n  developer may commit on the ticket's own branch and "
-        "nowhere else — never a\n  shared branch, never `git stash`. That "
-        "developer is you,",
-        "- **Never `git commit`, `git stash`, or otherwise move work out of "
-        "the working\n  tree.** The developer does not commit. That "
-        "developer is you,",
-        ("tests/test_scope_discipline.py::"
-         "test_developer_commits_only_on_the_tickets_own_branch"),
-    ),
-    (
-        # Only the LIMITS drift, in one file: the permission stays, so the
-        # single-file rule test above is still satisfied, and only the
-        # three-way agreement test can catch that developer.md now says less
-        # than work.md and pm.md.
-        "developer.md drops the stash half of the limits the briefs keep",
-        DEVELOPER_MD,
-        "never a\n  shared branch, never `git stash`. That developer is you,",
-        "never a\n  shared branch. That developer is you,",
-        ("tests/test_scope_discipline.py::"
-         "test_every_file_that_briefs_a_developer_states_the_same_commit_rule"),
-    ),
-    (
         # work.md stops recording where the ticket starts. Everything else
         # still reads fine -- the evidence command still names scope_base.py
         # -- so every run falls back to the merge-base and the record that
         # makes the narrowed rule safe is never written.
-        "work.md no longer records the ticket's start",
-        WORK_MD,
-        "   python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/scope_base.py --root . "
+        "implement.md no longer records the ticket's start",
+        IMPLEMENT_MD,
+        "python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/scope_base.py --root . "
         "--record $1\n",
-        "   true\n",
+        "true\n",
         ("tests/test_scope_discipline.py::"
-         "test_work_records_the_ticket_base_before_printing_the_evidence"),
+         "test_implement_records_the_ticket_base_before_printing_the_evidence"),
     ),
     (
         # The record advances on every call. A /crew:work re-run after a
@@ -3000,18 +2853,6 @@ MUTATIONS = (
         '        suffix = ""\n',
         ("tests/test_scope_base.py::"
          "test_scope_report_marks_the_outside_scope_line_itself_on_a_fallback"),
-    ),
-    (
-        # Codex round 1, finding 5: one word reversed in ONE file. The two
-        # substrings the first agreement test looked for both survive
-        # ("commit on the ticket's own branch and nowhere else" is still
-        # there), so only a full-sentence comparison can catch it.
-        "pm.md reverses the commit permission by one word",
-        os.path.join(CREW, "agents", "pm.md"),
-        "The developer may commit on the ticket's own branch and nowhere",
-        "The developer never commit on the ticket's own branch and nowhere",
-        ("tests/test_scope_discipline.py::"
-         "test_every_file_that_briefs_a_developer_states_the_same_commit_rule"),
     ),
     (
         # scope_report resolves the base, prints its line, and then reports

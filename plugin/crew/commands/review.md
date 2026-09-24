@@ -116,8 +116,8 @@ step 1, and carry `$BASE` forward — step 2 reuses it rather than recomputing i
 for the same reason `$SCRATCH` is carried:
 
 ```bash
-# The ticket's START, recorded by /crew:work step 1 (`scope_base.py --record`): <!-- deliberate -->
-# the same range /crew:work's scope evidence covers, so the bundle -- and the <!-- deliberate -->
+# The ticket's START, recorded by /crew:implement (`scope_base.py --record`):
+# the same range /crew:implement's scope evidence covers, so the bundle -- and the
 # receipt bound to its hash -- is this ticket's change, not everything on the
 # branch since the trunk. With no record, or one this clone no longer holds,
 # scope_base.py itself falls back to the merge-base with the default branch
@@ -210,7 +210,7 @@ apply the same strike to the provider you are about to run. When the source is
 
 | `dev.provider` | Struck from QA |
 |---|---|
-| `claude` (default) | `claude` — the `qa-reviewer` fallback | <!-- deliberate -->
+| `claude` (default) | `claude` — the `reviewer` fallback |
 | `codex` | `codex` |
 | `copilot` | whichever family `dev.copilot.model` names — `gemini-*` strikes nothing here, `claude-*` strikes the fallback, `gpt-*` strikes Codex |
 
@@ -222,9 +222,8 @@ times by different people, and the ordering is a preference while this is a rule
 If striking the author's family leaves **no** candidate, fall back to step 2c and
 say **in the verdict itself** that this review is same-family and does not count as
 independent. Do not refuse to review: a repo with neither Codex nor Copilot still
-benefits from the weaker pass, and `README.md`, `agents/pm.md` and `crew-pm` all
-document `qa-reviewer` as the fallback — a step 1 that stopped instead would <!-- deliberate -->
-contradict all three.
+benefits from the weaker pass, and `README.md` documents `reviewer` as the
+fallback — a step 1 that stopped instead would contradict it.
 
 What is forbidden is letting a same-family review be *recorded* as an independent
 one. Announce it, and never write it to `.crew/metrics.md` as though a different
@@ -310,7 +309,7 @@ echo "authors=$AUTHORS source=$AUTHOR_SOURCE eligible=${ELIGIBLE:-<none>}"
 report's own answer to "who may review this", with the family guard already
 applied and `qa.order` already walked. Re-deriving the choice from `qa.provider`
 here would be a second implementation of the rule that can disagree with the one
-`/crew:model` prints. An empty `$ELIGIBLE` is step 2c: run the `qa-reviewer` <!-- deliberate -->
+`/crew:model` prints. An empty `$ELIGIBLE` is step 2c: run the `reviewer`
 fallback and say in the verdict that this review is same-family and does not
 count as independent.
 
@@ -350,7 +349,7 @@ python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/review_prompt.py --root . \
   --ticket "$TICKET" --manifest "$MANIFEST" --out "$SCRATCH/contract.txt"
 
 # Gather this repo's own failure modes INTO the shared prompt, so every
-# provider gets them -- wiring them into qa-reviewer.md alone reached only the <!-- deliberate -->
+# provider gets them -- wiring them into reviewer.md alone reached only the
 # fallback. Byte-identical instructions across providers is this file's
 # invariant: never append for one provider.
 # The changed-file list MUST be built here, before the loop greps it (an
@@ -447,7 +446,7 @@ denied by policy settings` is org or enterprise policy — report that exact
 cause. Exit 2 means nothing launched (not on PATH) and no round was spent; walk
 to the next eligible provider.
 
-**Step 2c — Claude fallback.** Invoke the `crew:qa-reviewer` subagent with the
+**Step 2c — Claude fallback.** Invoke the `crew:reviewer` subagent with the
 SAME bundle 2a and 2b just read: the exact `$SCRATCH/prompt.txt` content —
 byte-identical instructions, per this file's own invariant — plus the concrete
 paths `$SCRATCH/diff.txt` and `$SCRATCH/manifest.json`. Tell it to review that
@@ -462,7 +461,7 @@ then hand its output to the same verdict parser:
 ```bash
 ROUND=$(python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/review_run.py --root . --ticket "$TICKET" \
   --scratch "$SCRATCH" --provider claude --reserve-only | sed -n 's/^ROUND=//p')
-# ... dispatch crew:qa-reviewer; write its output to $SCRATCH/out.txt ...
+# ... dispatch crew:reviewer; write its output to $SCRATCH/out.txt ...
 python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/review_run.py --root . --ticket "$TICKET" \
   --scratch "$SCRATCH" --provider claude --round "$ROUND" \
   --output "$SCRATCH/out.txt" --exit-code 0
@@ -537,7 +536,7 @@ to.
    rule naming an agent this box does not have fails the same way while looking
    even more normal — there is nothing to skip, so nothing feels skipped.
 
-   Record the not-installed ones in `.crew/metrics.md` too. `/crew:scale` reads <!-- deliberate -->
+   Record the not-installed ones in `.crew/metrics.md` too. `/crew:status` reads
    that file, and "this rule has asked for `security-auditor` eleven times and
    never got it" is exactly the evidence that should drive either installing it
    or deleting the rule.
@@ -548,5 +547,5 @@ to.
    fact or on a guess, and that is the whole difference this record exists to
    make visible.
 
-That metrics line is not bookkeeping. `/crew:scale` reads it to decide whether <!-- deliberate -->
+That metrics line is not bookkeeping. `/crew:status` reads it to show whether
 this setup is actually catching anything.

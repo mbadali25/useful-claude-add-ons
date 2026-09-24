@@ -3,7 +3,7 @@
   "tier": 0,
   "roles": [
     "explorer",
-    "qa-reviewer"
+    "reviewer"
   ],
   "qa": {
     "provider": "auto",
@@ -69,7 +69,7 @@
   "memory": {
     "mode": "repo",
     "vaultPath": null,
-    "inject": false,
+    "inject": true,
     "recall": {
       "vaults": [],
       "maxChars": 800

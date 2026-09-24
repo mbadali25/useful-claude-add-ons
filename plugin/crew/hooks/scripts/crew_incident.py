@@ -394,10 +394,10 @@ def end(root, cfg=None, now=None):
 def format_status(state):
     """One human line for a status query or a brief.
 
-    Every read is .get() with a default: this is called from pm_brief, which
-    runs on SessionStart, and it is also called by the crew:pm agent against
-    hand-assembled state. A KeyError here would break every session opened in
-    the repository, which is a high price for a missing key in a status line.
+    Every read is .get() with a default: callers may pass hand-assembled
+    state, not only what `crew_state.collect` produced. A KeyError here would
+    break every session opened in the repository, which is a high price for a
+    missing key in a status line.
     """
     if not state.get("present"):
         return "no incident open"

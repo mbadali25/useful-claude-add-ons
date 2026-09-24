@@ -2,7 +2,7 @@
 #
 # PreToolUse gate on Write/Edit, keyed on `agent_type`. Thin wrapper: the
 # whole decision lives in role_write_guard.py so bash and PowerShell cannot
-# drift -- same shape as pm-brief.sh -> pm_brief.py.
+# drift -- same shape as crew-context.sh -> crew_context.py.
 #
 # Registered on matcher `Write|Edit`, not branched by tool_name the way
 # promote-gate.sh branches on Bash vs PowerShell: Write and Edit are the same
@@ -125,9 +125,7 @@ PY=$(_resolve_role_write_python) || {
 # asserts this list matches it.
 _role_write_is_restricted() {
   case "$1" in
-    analyst|compliance-auditor|dba|explorer|infrastructure-architect| \
-    kimi-consult|penetration-tester|planner|qa-researcher|qa-reviewer| \
-    researcher|security|pm) return 0 ;;
+    explorer|researcher|reviewer|security|pm) return 0 ;;
     *) return 1 ;;
   esac
 }

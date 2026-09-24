@@ -115,6 +115,6 @@ criterion went where. Then say what was NOT done: the parent was not
 transitioned, no estimate was carried over unless the project auto-copies it,
 and nothing was assigned — assignment is a person decision.
 
-If `/crew:scale` or the PM raised `ticketsTooLarge`, say that splitting one
+If `crew_state.py` reports the `ticketsTooLarge` trigger, say that splitting one
 issue does not clear it. That trigger reads a rate over the whole metrics file;
 it falls when future tickets are smaller, not when one old one is divided.

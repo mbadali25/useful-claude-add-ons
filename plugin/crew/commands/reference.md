@@ -11,7 +11,7 @@ system do, and how do I call it". They are different documents and the second
 one does not fall out of the first.
 
 Follow the `crew-docs` skill, section on references. Delegate the reading to
-`crew:explorer` per area and the writing to `crew:docs-writer`; only summaries
+`crew:explorer` per area and do the writing here; only summaries of the reading
 should reach this conversation.
 
 ## The rule that makes this worth doing

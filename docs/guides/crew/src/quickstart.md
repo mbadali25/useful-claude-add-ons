@@ -126,9 +126,6 @@ For a small first change use the light path:
 /crew:fix <one sentence: what is wrong and where>
 ```
 
-**(arrives in T4)** `/crew:fix` is not shipped yet. Until it is, use
-`/crew:ticket <what needs doing>` followed by `/crew:work T-0001`.
-
 The light path runs every phase in short form: a one-line direction, a short
 spec, a one-step plan, and your approval before any edit. Review runs after
 tests and docs, and has a budget of two rounds.

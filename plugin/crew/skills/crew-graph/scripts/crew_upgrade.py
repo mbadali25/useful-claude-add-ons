@@ -578,12 +578,11 @@ def upgrade_config(cfg):
         claimed. An upgrade that made the user re-derive that from a report
         would be the same "a default nobody chose" failure the guided-config
         work exists to close. It cannot grow a crew past the tier the config
-        itself declares: a tier-0 repo gains nothing, and `/crew:scale` is
-        still the only thing that moves a repo UP the ladder. Removal is not
-        the mirror of this and never happens here -- `/crew:pm offboard` keeps
-        its explicit-yes gate, because adding a role is reversible and
-        removing one destroys the coverage that would have told you whether
-        the removal was right.
+        itself declares: a tier-0 repo gains nothing, and nothing here moves
+        a repo UP the ladder. Removal is not the mirror of this and never
+        happens here, because adding a role is reversible and removing one
+        destroys the coverage that would have told you whether the removal
+        was right.
       * **Schema 3's per-role provider table arrives EMPTY.** `qa.roles` and
         `dev.roles` are added as `{}` and `fallback` as its default value, so
         a v2 config comes out of this dispatching to exactly the provider and
@@ -751,14 +750,15 @@ def upgrade_config(cfg):
         declared = crew_state.int_or(cfg.get("tier"), 0)
         # The tier to grant from is the higher of what the config claims and
         # what its own role list already implies -- a config saying tier 0
-        # while listing `planner` is at tier 2 whatever the number says.
+        # while listing `researcher` is at tier 2 whatever the number says.
         entitled = max(declared, crew_state.tier_for_roles(current))
         ladder = crew_state.roles_for_tier(entitled)
         notes["rolesAdded"] = [r for r in ladder if r not in current]
         # `known_role`, not `ROLE_TIERS`: a domain specialist has no tier on
-        # purpose and is not an unrecognised name. Reporting it as one would
-        # tell a repo that deliberately onboarded `node-developer` that crew
-        # has never heard of it, on every single upgrade.
+        # purpose and is not an unrecognised name. Since crew 1.0 there are
+        # none (`SPECIALIST_ROLES` is empty), so a retired 0.20 role such as
+        # `node-developer` IS reported here -- it is kept, and `/crew:migrate`
+        # filters it out of the 1.0 roster.
         notes["rolesUnknown"] = [r for r in current
                                  if not crew_state.known_role(r)]
         # Ladder order, then the roles that are not on it: domain specialists
@@ -996,7 +996,7 @@ def global_theme_defeats_migration():
 
 def _config_lines(notes):
     """The config half of the report: what the migration changed, and what it
-    could not. A crew that silently grows is the thing `/crew:scale` exists to
+    could not. A crew that silently grows is the thing this report exists to
     catch, so the roles it added and the tier it moved are stated every run,
     including when the answer is "none"."""
     lines = ["## Config"]
@@ -1009,9 +1009,8 @@ def _config_lines(notes):
     else:
         lines.append(f"- tier: {notes['tierFrom']} -> {notes['tierTo']}")
     lines.append(
-        "- roles are added only up to the tier this config already declares. "
-        "Moving UP a tier is `/crew:scale`; removing a role is "
-        "`/crew:pm offboard`, which still stops for an explicit yes."
+        "- roles are added only up to the tier this config already declares, "
+        "and never removed. On crew 1.0, run `/crew:migrate` next."
     )
     if notes["droppedKeys"]:
         lines.append(

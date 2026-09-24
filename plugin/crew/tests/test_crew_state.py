@@ -1438,3 +1438,14 @@ def test_metrics_rows_with_no_ticket_id_keep_their_raw_label(tmp_path):
     got = crew_state.read_metrics(str(root))
     assert got["tickets"] == 2, "two unrelated unlabelled rows are not one ticket"
     assert got["findings"] == 3
+
+
+def test_authority_rank_is_ordered_and_fails_closed():
+    """Carried from test_pm_brief.py when crew 1.0 deleted it: `authority_rank`
+    still ratchets `pm.authority` in crew_config and crew_guards. Rank is the
+    only thing permitted to know the tiers are ordered."""
+    ranks = [crew_state.authority_rank(name) for name in crew_state.AUTHORITIES]
+    assert ranks == sorted(ranks) == list(range(len(crew_state.AUTHORITIES)))
+    # An unknown ranks LOWEST, never highest -- the whole fail-safe property.
+    assert crew_state.authority_rank("nonsense") == 0
+    assert crew_state.authority_rank(None) == 0

@@ -66,10 +66,9 @@ every pair — that is what "even counts" in the file means, not a bug.
 
 | Event | Script | What it does | Switch | Default |
 |---|---|---|---|---|
-| `SessionStart` | `handoff-read.sh` | reads back `.work/HANDOFF.md` if one is pending | — (always runs) | on |
-| `SessionStart` | `pm-brief.sh` | prints the PM's session-open brief | `pm.enabled`, `pm.mode` (`adaptive`/`quiet`), `pm.quietLines`, `pm.maxLines` | on, `adaptive` |
+| `SessionStart` | `handoff-read.sh` | resets its once-per-session markers; reads back `.work/HANDOFF.md` only when `memory.inject` is false | — (always runs) | on |
 | `SessionStart` | `platform-sync.sh` | detects/repairs `platform.{os,wsl,shell,windowsHostIp}` | — (always runs) | on |
-| `SessionStart` / `UserPromptSubmit` / `PostToolUse` / `SubagentStart` | `crew-context.sh` | injects code-map slices and vault recall, tracks the token budget | `context.enabled` (whole hook), `memory.inject` (codemap/vault injection specifically — off through 0.20.x) | `context.enabled: true`, `memory.inject: false` |
+| `SessionStart` / `UserPromptSubmit` / `PostToolUse` / `SubagentStart` | `crew-context.sh` | injects code-map slices and vault recall, tracks the token budget | `context.enabled` (whole hook), `memory.inject` (codemap, handoff and vault injection — on by default since 1.0.0) | `context.enabled: true`, `memory.inject: true` |
 | `UserPromptSubmit` | `approval-hook.sh` | records or refuses a `/crew:approve <id>` receipt | always records; enforcement depends on `scope.mode` | n/a |
 | `PreToolUse` (`Bash`/`PowerShell`) | `promote-gate.sh` | the six command/production guards plus `mergeGate` | `guards.terraformApply`, `guards.forcePush`, `guards.adminMerge`, `guards.mergeGate`, `guards.cloudDestructive`, `guards.sqlDestructive`, `guards.prodDatabase`, `guards.prodServer` | `block` / `none` (the strictest tier) |
 | `PreToolUse` (`Write`\|`Edit`) | `role-write-guard.sh` | refuses a write outside the dispatched role's declared scope | `guards.roleWrites` (`block`/`report`/`off`) | `off` |
@@ -79,16 +78,14 @@ every pair — that is what "even counts" in the file means, not a bug.
 | `Notification` | `notify.sh` | pings an external channel | `notify.provider` (`none` disables it), `notify.events` | `none` |
 | `Stop` | `verify-gate.sh` | runs `.crew/verify.json`'s checks | `verifyGate` (boolean) | `true` |
 | `Stop` | `context-watch.sh` | nags for a handoff near the context budget, drives auto-clear | `context.enabled`, `context.warnAt`, `context.budgetTokens`, `context.reserveTokens`, `context.autoClear.*` | on, `warnAt: 0.5` |
-| `Stop` | `pm-pulse.sh` | the PM's end-of-turn pulse line | `pm.enabled`, `pm.authority` | on |
 | `Stop` | `completion-audit.sh` | diffs the whole tree against the ticket's scope base | `scope.mode` | `off` |
 
 - **Silence one hook without touching the rest:** set its own key. `guards.roleWrites: off`,
   `guards.cloudGuard: off` and `scope.mode: off` are already the shipped defaults — a noisy session
   usually means one of these was turned on somewhere (repo or machine-global) and forgotten, not
   that the default changed.
-- **Silence the SessionStart brief specifically:** `{"pm": {"enabled": false}}` turns off both
-  `pm-brief.sh` and `pm-pulse.sh` (`pm_pulse.py:247` reads the same key). `pm.mode: "quiet"` keeps
-  the brief but shortens it to `pm.quietLines` lines instead of `pm.maxLines`.
+- **Silence the SessionStart context specifically:** `{"memory": {"inject": false}}` stops the
+  context hook; `handoff-read.sh` then prints the handoff on resume instead.
 - **See what the context hook is actually doing:**
 
   ```bash
@@ -262,8 +259,8 @@ See [Memory and Obsidian](memory-and-obsidian.md) for setup. What goes wrong day
   find it; `cli-exit-N`, `cli-timeout`, `cli-bad-json` mean the CLI ran and failed; `no-vaults` means
   no vault is currently `primary` or `recall`; `no-hits` means the search itself found nothing. Only
   `no-hits` means "the vault genuinely has nothing relevant" — every other reason is a setup problem.
-  Also confirm `memory.inject: true` in `.crew/config.json` — recall and code-map injection are off
-  through 0.20.x by default, so "no recall ever appears" is expected with the key unset.
+  Also confirm `memory.inject` is not `false` in `.crew/config.json` — recall and code-map injection
+  are on by default since 1.0.0, so "no recall ever appears" with the key set to `false` is expected.
   **Fix:** `$VO recall --query "<words you expect>"` directly, to separate "the CLI can't find it"
   from "the hook isn't calling the CLI".
 
@@ -285,12 +282,12 @@ See [Memory and Obsidian](memory-and-obsidian.md) for setup. What goes wrong day
 ## Turning things off
 
 Every switch named above, in one place. "Off" for a guard means the `PreToolUse` hook still fires
-but returns immediately without judging anything; "off" for `verifyGate`/`pm.enabled` means the
-`Stop`/`SessionStart` hook does nothing at all that turn.
+but returns immediately without judging anything; "off" for `verifyGate` means the
+`Stop` hook does nothing at all that turn.
 
 | Key | Lives in | Values | What "off"/floor means |
 |---|---|---|---|
-| `memory.inject` | repo only | bool | `false`: no code-map or vault text is injected (0.20.x default) |
+| `memory.inject` | repo only | bool | `false`: no code-map, handoff or vault text is injected (default `true` since 1.0.0) |
 | `guards.cloudGuard` | both layers, ratchets | `block`/`report`/`off` | `off`: the hook reads this key and exits |
 | `guards.roleWrites` | both layers, ratchets | `block`/`report`/`off` | `off`: every Write/Edit is allowed unconditionally |
 | `guards.terraformApply`, `forcePush`, `adminMerge`, `mergeGate`, `cloudDestructive`, `sqlDestructive` | both layers, ratchets | `block`/`ask`/`allow` | there is no "off" — `allow` is the most permissive tier, still logged |
@@ -298,10 +295,8 @@ but returns immediately without judging anything; "off" for `verifyGate`/`pm.ena
 | `scope.mode` | repo only | `off`/`report`/`block`/`auto` | `off`: neither the edit guard nor the completion audit runs |
 | `scope.allowCliApproval` | repo only | bool | `false`: only a `/crew:approve` typed by the user counts |
 | `verifyGate` | repo only | bool | `false`: the Stop verify gate does not run at all |
-| `pm.enabled` | both layers | bool | `false`: no SessionStart brief, no Stop pulse |
-| `pm.mode` | both layers | `adaptive`/`quiet` | `quiet`: brief capped at `pm.quietLines` instead of `pm.maxLines` |
 | `context.enabled` | both layers | bool | `false`: `context-watch.sh` (the Stop nag) does nothing |
-| `context.autoClear.enabled`, `autoWrapUp`, `autoResume` | both layers | bool | each independently disables one leg of the wrap-up/clear/resume loop |
+| `context.autoClear.enabled`, `autoWrapUp` | both layers | bool | each independently disables one leg of the wrap-up/clear loop |
 | `notify.provider` | both layers | provider name / `none` | `none`: the `Notification` hook sends nothing |
 | `change.requireForProduction` | both layers, ratchets (may only turn ON) | bool | `false`: promoting needs no approved change request |
 | `install.policy` | both layers, ratchets | see `plugin/crew/CONFIG.md` §"install" | narrowest tier refuses more install actions |

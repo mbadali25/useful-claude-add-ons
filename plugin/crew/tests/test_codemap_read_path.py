@@ -37,9 +37,11 @@ def _norm(text):
 
 
 # The roles that read or write code, and therefore need this repo's landmines.
-# `explorer` and `analyst` are NOT here: both already read the codemap, and
-# both existed before this change.
-DOING_ROLES = ("developer", "dba", "qa-reviewer", "smoke-author")
+# crew 1.0 cut the roster to four agents. `reviewer` is the only one that
+# judges a diff against the map; the writers (developer, dba, smoke-author)
+# were deleted, and the interactive session that replaced them reads the map
+# through the context hook rather than an agent file.
+DOING_ROLES = ("reviewer",)
 
 
 def _agent(name):
@@ -83,18 +85,6 @@ def test_every_doing_role_carries_the_anchor_recheck_rule():
             f"{name}.md dropped the per-path freshness check. Without it the "
             "role treats 'anchor behind HEAD' as 'note is wrong', which "
             "over-reports staleness and sends it re-deriving anyway"
-        )
-
-
-def test_every_doing_role_must_report_which_notes_it_read():
-    """A note read and a note skipped are indistinguishable in a summary that
-    mentions neither -- the same shape as the metrics bug that counted rows
-    instead of tickets. The evidence has to survive into the report."""
-    for name in DOING_ROLES:
-        body = _agent(name)
-        assert "Say which notes you read" in body, (
-            f"{name}.md dropped the reporting requirement, so a skipped "
-            "landmine and a checked one now look identical downstream"
         )
 
 

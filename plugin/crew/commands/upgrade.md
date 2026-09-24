@@ -1,12 +1,15 @@
 ---
-description: Bring a crew setup created before the PM and the code graph up to date
+description: Bring a pre-0.20 crew config up to the 0.20 schema so /crew:migrate can move it to 1.0
 allowed-tools: Read, Write, Edit, Bash, Agent
 ---
 
-Bring an out-of-date crew setup up to the current schema — a v1 one with no
-`schema` key, or a v2 one predating the per-role provider table. This is a
-migration, not a rebuild — it must not lose or silently skip anything a human
-wrote, and it must not change where any role dispatches.
+**On crew 1.0, a 0.20 repo upgrades with `/crew:migrate --preview`, not this.**
+Use this only for a config `/crew:migrate` refuses (no integer `schema`), then migrate.
+
+Bring an out-of-date crew setup up to the current schema — a v1 one with no `schema`
+key, or a v2 one predating the per-role provider table. This is a migration, not a
+rebuild — it must not lose or silently skip anything a human wrote, and it must
+not change where any role dispatches.
 
 ## 1. Detect
 
@@ -38,8 +41,7 @@ its `schema` field.
   to 4, which is worse than an out-of-date comment: this prose is an
   INSTRUCTION, so the command stopped at step 1 and reported "already current"
   for repos that genuinely needed migrating, and `crew_upgrade.py`'s own correct
-  check was never reached. A schema bump would have shipped a migration that
-  the documented flow refused to run. Read the current number from
+  check was never reached. Read the current number from
   `crew_state.SCHEMA_CURRENT` if you need to state it:
 
   ```
@@ -167,10 +169,8 @@ surface it, do not re-derive it by hand:
   roles the migration ADDED and the tier it moved from and to. Read both out.
   An upgrade adds every ladder role at or below the tier the config already
   declares — those are roles a later release added at a tier this repo had
-  already chosen — and it never moves a repo up a tier; `/crew:scale` does
-  that, and `/crew:pm offboard` is still the only thing that removes a role.
-  A crew that silently grows is exactly what `/crew:scale` exists to catch,
-  so state the additions even when the answer is none.
+  already chosen — and it never moves a repo up a tier or removes a role.
+  State the additions even when the answer is none.
 - **May be pinned by an earlier `/crew:upgrade`** — a globally-settable leaf
   (`pm.authority`, `qa.order`, `install.policy`, any `guards.*`, ...) this
   repo's file still carries at exactly the built-in default. This run never
@@ -286,7 +286,7 @@ surface it, do not re-derive it by hand:
   nothing new to add this run keep their old `anchor:`. That is correct
   behavior, not a bug: `crew_upgrade.py` only bumps an anchor on a section it
   actually re-verified. A false freshness claim is worse than an honest stale
-  one, because `crew-pm`'s freshness check and `knowledge.behind` both trust
+  one, because the context hook's anchor check and `knowledge.behind` both trust
   the anchor.
 
 Neither list is something this command fixes on its own. Present both and

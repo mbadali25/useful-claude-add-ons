@@ -2,8 +2,7 @@
 
 Stop fires once per TURN, and a turn that edited nothing the gate cares about
 re-runs the whole map to reach the same answer it reached a minute ago. The
-event is not the gate; the STATE is -- the same argument pm_pulse.py makes in
-its own header, and this is the same mechanism pointed at a different verdict.
+event is not the gate; the STATE is.
 
 ## What is in it, and why each piece has to be
 

@@ -24,7 +24,7 @@ equally authoritative.
 ## What is authoritative
 
 The board and the ticket note in the vault are the remote, exactly as Jira is.
-`.work/cache/T-####.md` is a terse local mirror that `/crew:work` reads so the
+`.work/cache/T-####.md` is a terse local mirror that `/crew:implement` reads so the
 vault is touched at boundaries only.
 
 | | Wins |
@@ -96,9 +96,9 @@ an existing board renames lanes in config, not in the vault.
 
 | Config key | Default | Means |
 |---|---|---|
-| `backlog` | `Backlog` | Deferred or untriaged. Where the PM parks a non-blocking finding. |
-| `ready` | `Ready` | Scoped by `/crew:ticket` and pickup-able. |
-| `inProgress` | `In Progress` | `/crew:work` has it. |
+| `backlog` | `Backlog` | Deferred or untriaged. Where a non-blocking finding is parked. |
+| `ready` | `Ready` | Scoped by `/crew:spec` and pickup-able. |
+| `inProgress` | `In Progress` | `/crew:implement` has it. |
 | `review` | `Review` | Implementation done, `/crew:review` outstanding. |
 | `done` | `Done` | Complete and verified. Carries `**Complete**`. |
 

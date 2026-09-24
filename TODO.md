@@ -3942,3 +3942,22 @@ per-session loaded characters as well as total lines; record both in `BUDGETS.md
 **Behind** until this lands. The post-1.0 review decides whether 6,000 is the right target.
 Also: wire `scripts/check_instructions.py` into CI once T2 clears its 4 intentional red findings
 (`review.md:450,465` qa-reviewer dispatch; README `guard.sh`/`.ps1` citations).
+
+### crew-1.0 auto-cycle (04013a07) follow-ups (filed 2026-09-23) - OPEN
+- Integration: the lane changed `handoff-read.{sh,ps1}` to remove only this session's marker; if the T2 removal unregistered handoff-read, move that per-session marker cleanup into `crew_context.py`'s SessionStart path.
+- `plugin/crew/hooks/scripts/crew_state.py:473` `read_auto_clear` docstring describes the old Windows targeting.
+- `.crew/codemap/crew.md:415-441` cites the unkeyed marker; refresh after 1.0 merges (codemap refresh deferred).
+- Windows Terminal tabs share a process; only `windowTitle` narrows it (documented, not enforced).
+
+### crew 1.0 T2 removal follow-ups (filed 2026-09-23) - OPEN
+Found while deleting the PM, pulse, journal and retired roles; none blocked T2.
+- **Open incident is no longer announced at SessionStart.** `pm_brief.render` printed `EMERGENCY LANE OPEN`; neither `crew_context.py:708` (SessionStart) nor `crew_status.py` reads `crew_incident`. Gates still stand down and log skips. Add an incident line to the context hook's SessionStart items.
+- **Dispatch log has no reader.** `crew_state.py:2412` `DISPATCH_LOG_DIR` / `--log-dispatch`: its only consumer was `pm_pulse._dispatch_gap_note`. Now state written to nowhere; retiring it means deleting `tests/test_dispatch_log.py` (needs owner OK - not in the T2 list).
+- **`role_write_guard.py:243` keeps the path-scoped `pm` branch** for a role 1.0 no longer ships, and `_UNRESTRICTED_ROLES` is empty. Retire or re-scope the guard in its own ticket with its suite (`tests/test_role_write_guard.py`, ~2,100 lines built around `pm`).
+- **Fallback deny mirrors are untested.** `role-write-guard.sh:126` / `role-write-guard.ps1` `$RestrictedRolesForFallback` claim a parity test in `tests/test_role_write_guard.py`; none exists (hand-sabotage: dropping `explorer` from the .sh mirror left the suite green). Pre-existing.
+- **All five plugin evals test deleted agents** (`plugin/crew/evals/{pm-*,developer-*,qa-reviewer-*}`), and `scripts/run-plugin-evals.{sh,ps1}` default `EVAL_EXPECTED_FAIL_CASES=pm-does-not-write-code`. Retire or re-target (owner decision; not in the T2 list).
+- **`sabotage.py:980` mutation names a test that does not exist** (`test_upgrade_config_adds_the_docs_and_bitbucket_blocks`); pre-existing at ed91114d, not caught by `test_sabotage_harness.py` (it checks anchors, not test names).
+- **localgpu docs still name `qa-reviewer` and `/crew:roster`**: `plugin/localgpu/commands/crew.md:105,110,202`, `plugin/localgpu/README.md:283`. Separate marketplace entry; needs its own version bump.
+- **`INSTALLATION.md:269` hooks table lists `guard.sh`** (removed in 0.19.52) and omits cloud-guard, approval-hook, scope-guard, completion-audit, role-write-guard, platform-sync. Pre-existing.
+- **PM-only state with no consumer**: `crew_state.collect` still emits `schemaDeclared`/`schemaKeyPresent` (`crew_state.py:3008`), and `pm.*` / `context.autoResume` config keys are read only so `/crew:migrate` can carry them to `retired.*`. Kept deliberately for migrate; drop after the 1.0 migration window.
+- **`.crew/codemap/crew.md` and `docs/diagrams/`** still describe pm-brief/pm-pulse and the 54-agent roster: `/crew:onboard --refresh crew`. Rendered guide HTML (`docs/guides/crew/*.html`) likewise - T10/owner decision.

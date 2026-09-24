@@ -246,12 +246,17 @@ This is the only key in the file handled outside the merge.
 
 ## 5. `pm.authority`
 
+**Retired in crew 1.0.** The PM agent that honoured this key was deleted;
+`crew_config.py` still reads and ratchets it so a 0.20 config resolves and
+`/crew:migrate` can carry it to `crew.json`'s `retired.pm`. Nothing dispatches
+on it any more.
+
 | | |
 |---|---|
 | Type | string enum |
 | Values | `report-only` (default), `act`, `autonomous` |
 | Layer | global-settable |
-| Consumer | `crew_state.normalise_authority` / `authority_rank`; `pm_brief.py`; `crew_config.py` |
+| Consumer | `crew_state.normalise_authority` / `authority_rank`; `crew_config.py`; `/crew:migrate` (carries it to `retired.pm`) |
 
 `crew_state.AUTHORITIES` is `["report-only", "act", "autonomous"]` (dumped by
 execution). `authority_rank` returns `report-only` 0, `act` 1, `autonomous` 2 —
@@ -577,7 +582,7 @@ settling the default in the same diff.
 The `graph` block's **only** key any crew code reads is `graph.out`, at
 `crew_state.py`. Verified by grepping every tracked `.py`, `.sh` and `.ps1`
 for `get("graph")` and `["graph"]`: the other hits are `crew_state.py` and
-`pm_brief.py`, which read `knowledge["graph"]` — the *state* dict
+the since-deleted `pm_brief.py`, which read `knowledge["graph"]` — the *state* dict
 `read_knowledge` builds, not the config block — and `crew_upgrade.py`,
 which drops the removed `obsidian` sub-block.
 
@@ -726,8 +731,8 @@ repository or one checkout.
 |---|---|---|---|
 | `schema` | integer | `7` | see §4 |
 | `tier` | integer | `0` | `crew_state.collect` |
-| `roles` | list (a leaf) | `["explorer", "qa-reviewer"]` | `crew_state.collect` |
-| `tracker` | string | `"files"` | `crew_state.py`, `pm_brief.py`, `commands/ticket.md` |
+| `roles` | list (a leaf) | `["explorer", "reviewer"]` | `crew_state.collect` |
+| `tracker` | string | `"files"` | `crew_state.py`, `commands/brainstorm.md`, `commands/spec.md` |
 | `jira.project` | string or `null` | `null` | **no consumer found**, §9 |
 | `jira.cloudId` | string or `null` | `null` | written by `commands/jira-sync.md`; **read by nothing**, §9 |
 | `sdp.portal` | string or `null` | `null` | prose, §9 |
@@ -751,10 +756,10 @@ repository or one checkout.
 | `context.keepTranscripts` | integer | `5` | `handoff-write.ps1` |
 | `context.autoClear.unsafeFocus` | boolean | `false` | `auto-clear.sh`, gating `wtype` — **consent, not capability**, see §14 |
 | `context.autoWrapUp` | boolean | `true` | `context-watch.ps1`, `context-watch.sh` |
-| `context.autoResume` | boolean | `true` | `handoff-read.ps1`, `handoff-read.sh` |
+| `context.autoResume` | boolean | `true` | nothing since 1.0.0 — the context hook injects the handoff on resume whenever `memory.inject` is on; kept so `/crew:migrate` carries it |
 | `context.staleHandoff.maxAgeHours` | integer | `72` | `crew_state.STALE_HANDOFF_DEFAULTS` |
 | `context.staleHandoff.maxCommitsBehind` | integer | `3` | `crew_state.STALE_HANDOFF_DEFAULTS` |
-| `memory.inject` | boolean | `false` | `crew_context.run` — **off through 0.20.x**: the context hook emits and logs nothing unless this is `true`. Flips on at the 1.0.0 cut, in the same change that unregisters `pm-brief` and `handoff-read`, so a session never gets the same state from both |
+| `memory.inject` | boolean | `true` | `crew_context.run` — **on by default since 1.0.0**: only an explicit `false` stops the context hook, which then emits and logs nothing. `handoff-read` stops printing the handoff while it is on, so a session never gets it from both |
 | `memory.recall.vaults` | list (a leaf) | `[]` | `crew_recall.vault_order` — the repo's vault priority for recall; empty falls back to `~/.claude/obsidian/config.json` roles (`primary`, then `recall`; `ignore` never asked) |
 | `memory.recall.maxChars` | integer | `800` | `crew_recall.max_chars` — the recall CLI's `--max-chars`; a non-positive or non-integer value falls back to 800 |
 | `emergency.standDown` | boolean | `true` | `hooks/scripts/_common.sh` |
@@ -1473,16 +1478,15 @@ buckets, decided by that file's own `tools:` frontmatter — not by its prose,
 which is exactly the gap this hook exists to close:
 
 - a role whose `tools:` line names neither `Write` nor `Edit` may not write
-  anywhere, regardless of path (`analyst`, `compliance-auditor`, `dba`,
-  `explorer`, `infrastructure-architect`, `kimi-consult`,
-  `penetration-tester`, `planner`, `qa-researcher`, `qa-reviewer`,
-  `researcher`, `security` as of 2026-09-19 — re-derive rather than trusting
+  anywhere, regardless of path (`explorer`, `researcher`, `reviewer`,
+  `security` — the whole crew 1.0 roster; re-derive rather than trusting
   this list, and `tests/test_role_write_guard.py` does exactly that on every
   run);
 - `pm` may write only under `.crew/**`, `TODO.md`, `.work/**` and
-  `docs/diagrams/**` — `agents/pm.md`'s own stated scope, made mechanical;
+  `docs/diagrams/**`. crew 1.0 ships no `pm` agent; the branch stays for a
+  repo-local agent of that name until the guard is retired (`TODO.md`);
   everyone else whose `tools:` line grants both Write and Edit is
-  unrestricted by this hook.
+  unrestricted by this hook — no shipped agent does, since 1.0.
 
 `tests/test_role_write_guard.py::test_policy_table_matches_the_agent_files`
 parses every agent file's `tools:` line and asserts the script's three sets

@@ -224,70 +224,21 @@ import crew_state
 # session. `tests/test_role_write_guard.py` is what keeps this table honest
 # against the files -- see the module docstring above.
 #
-# Built from `agents/*.md`'s `tools:` frontmatter on 2026-09-19: every role
-# whose tools line names neither `Write` nor `Edit`.
+# Built from `agents/*.md`'s `tools:` frontmatter on 2026-09-19, and cut to
+# the crew 1.0 roster (explorer, reviewer, security, researcher) when the
+# other agents were deleted: every shipped role is read-only.
 _DENY_ROLES = frozenset({
-    "analyst",
-    "compliance-auditor",
-    "dba",
     "explorer",
-    "infrastructure-architect",
-    "kimi-consult",
-    "penetration-tester",
-    "planner",
-    "qa-researcher",
-    "qa-reviewer",
     "researcher",
     "reviewer",
     "security",
 })
 
 # Every remaining role whose tools line grants BOTH Write and Edit, minus
-# `pm`, which gets its own path-scoped branch below. Also built from
-# `agents/*.md` on 2026-09-19.
-_UNRESTRICTED_ROLES = frozenset({
-    "ad-security-reviewer",
-    "ai-writing-auditor",
-    "angular-architect",
-    "api-designer",
-    "architect-reviewer",
-    "backend-developer",
-    "browser-tester",
-    "code-reviewer",
-    "database-administrator",
-    "design-bridge",
-    "developer",
-    "docs-writer",
-    "dotnet-core-expert",
-    "dotnet-framework-4.8-expert",
-    "exchange-online-specialist",
-    "fintech-engineer",
-    "git-workflow-manager",
-    "graphql-architect",
-    "legacy-modernizer",
-    "microservices-architect",
-    "multi-agent-coordinator",
-    "network-engineer",
-    "node-developer",
-    "payment-integration",
-    "php-pro",
-    "platform-engineer",
-    "power-automate-specialist",
-    "powershell-5.1-expert",
-    "powershell-7-expert",
-    "powershell-security-hardening",
-    "python-pro",
-    "react-specialist",
-    "rust-engineer",
-    "scribe",
-    "sharepoint-developer",
-    "skill-author",
-    "smoke-author",
-    "sql-pro",
-    "terraform-engineer",
-    "windows-infra-admin",
-    "workflow-orchestrator",
-})
+# `pm`, which keeps its own path-scoped branch below. Empty since crew 1.0:
+# no shipped agent writes. The interactive session implements, and it carries
+# no `agent_type`, so it is never classified here at all.
+_UNRESTRICTED_ROLES = frozenset()
 
 _PM_ROLE = "pm"
 

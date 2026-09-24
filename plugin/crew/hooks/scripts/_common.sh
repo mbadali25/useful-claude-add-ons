@@ -65,8 +65,8 @@ crew_py() {
 # file, so `command -v python3` resolves it, the non-empty test passes, and
 # the stub gets run -- producing no output and a nonzero status that a caller
 # which already `exec`ed has no way left to report. Reported 2026-09-19
-# against role-write-guard.sh and again 2026-09-22 against pm-pulse.sh, where
-# it cost the PM's findings, blocking ones included, in total silence.
+# against role-write-guard.sh and again 2026-09-22 against the since-deleted
+# PM pulse hook, where it cost blocking findings in total silence.
 #
 # The probe, not the path, is what decides: a candidate is only accepted once
 # it has run `print(sys.executable)` and handed back a path. `sys.executable`
@@ -76,7 +76,7 @@ crew_py() {
 # BYTE-FOR-BYTE the body of `_resolve_role_write_python` in
 # role-write-guard.sh, which keeps its own copy for the reason its header
 # records (that hook is the one that can BLOCK a tool call, and its test
-# suite patches that file textually). `tests/test_pm_pulse_bash_resolver.py`
+# suite patches that file textually). `tests/test_context_watch_python_resolver.py`
 # asserts the two copies still agree -- a hand-copy with no guard is this
 # repository's most repeated defect.
 crew_py_strict() {

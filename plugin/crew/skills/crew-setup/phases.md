@@ -106,28 +106,6 @@ missing precondition. Obsidian's gate is a vault directory that exists on this
 machine rather than a connector, so ask for the path and check it before
 offering the option.
 
-**Then ask the fourth: how much authority the PM gets in this repo.** Default
-`report-only` on any hesitation - a repo that gets autonomy by accident is worse
-than one that has to be asked twice.
-
-> The crew manager can either recommend work and wait for you, or dispatch the
-> crew itself when it spots something. Which do you want here?
-> - `report-only` (default) - it tells you what it would do, you decide.
-> - `act` - it dispatches roles and refreshes diagrams on its own, reports
->   after. It stays on the findings it was working: a problem it stumbles on
->   gets fixed only if it BLOCKS one of them, and anything else becomes a ticket
->   or a `TODO.md` line rather than a detour. It still asks you to choose when a
->   decision is genuinely open.
-> - `autonomous` - everything `act` does, and it settles its own open
->   decisions: it takes the option it would have recommended and tells you
->   which, rather than stopping to ask.
-
-Write the answer to `pm.authority`. Say that `/crew:pm authority <value>`
-changes it later, so this is not a decision they are stuck with - and that at
-every tier, `autonomous` included, four things still stop for a yes:
-offboarding a role, deleting a codemap or diagram, rewriting
-`.crew/metrics.md`, and destroying git history or tracked work.
-
 **Then offer the machine-global config, once.** Run:
 
 ```
@@ -136,8 +114,7 @@ python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_config.py --root <repo> --expla
 
 and show the table. It names, per setting, the layer that decided it - `repo`,
 `global`, or `default`. If anything the user just chose is already coming from
-a global file, or if `pm.authority` resolves to something other than what they
-answered, say so now rather than letting them find out when the PM behaves
+a global file, say so now rather than letting them find out when crew behaves
 differently from what they set up.
 
 Then offer `/crew:config` in one line: it walks the machine-global file at
@@ -249,7 +226,7 @@ Run `providers.sh`. Then, per the `crew-providers` skill:
   `claude`, and set `secondOpinion` to `none`. Do **not** write `none` into
   `qa.provider` or `dev.provider` - `/crew:model` rejects it, and `/crew:review`
   would find no rung by that name. Say what declining means for the loop: review
-  falls to the same-family `qa-reviewer`, announced as such every run.
+  falls to the same-family `reviewer`, announced as such every run.
 
 **Notifications.** Offer them, do not assume them. Per the `crew-notify` skill:
 
@@ -289,8 +266,8 @@ Checks live in `_verify/`. Look for it first, along with `qa/`, `spec/` and
 second home for checks beside an existing one.
 
 If none exists, create `_verify/` from `templates/_verify/`: `README.md`,
-`smoke.sh`, `run-all.sh`, and an empty `cases/`. Then delegate to
-`crew:smoke-author` to fill it. Nothing else happens in this repo until
+`smoke.sh`, `run-all.sh`, and an empty `cases/`. Then fill it, in this
+session. Nothing else happens in this repo until
 `bash _verify/smoke.sh` runs green from a clean checkout.
 
 `_verify/README.md` is part of the deliverable, not an afterthought. Its layout
@@ -373,8 +350,7 @@ npx playwright install --with-deps chromium
 npx playwright test --list
 ```
 
-Chromium alone unless there is evidence of a browser-specific bug. Then delegate
-to `crew:browser-tester`
+Chromium alone unless there is evidence of a browser-specific bug. Then write specs
 for the two or three flows where breakage is expensive, plus visual baselines
 for the pages that matter. Tag `@visual` and `@flow`, then add the rules to
 `verify.json`.
@@ -436,8 +412,8 @@ carries the §3c block (`.crew/*`, the un-ignore list, `.crew/.approved-*` and
 
 ## Phase 7 — First real ticket
 
-Run one small, real piece of work end to end: `/crew:ticket` → `/crew:plan` if
-the design is not obvious → `/crew:work` → `/crew:review`.
+Run one small, real piece of work end to end: `/crew:brainstorm` → `/crew:spec`
+→ `/crew:plan` → `/crew:implement` → `/crew:review` → `/crew:done`.
 
 Pick something genuinely small. The purpose is to test the loop, not the code.
 
@@ -460,5 +436,5 @@ Say this plainly:
 - Write the first runbook for whatever this repo's deploy or rollback actually
   is, then `/crew:runbook --verify` it. An unverified runbook is a guess
   formatted as instructions.
-- Run `/crew:scale` after about ten tickets, and believe the numbers over the
+- Run `/crew:status` after about ten tickets, and believe the numbers over the
   ambition.

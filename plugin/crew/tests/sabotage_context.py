@@ -12,7 +12,6 @@ SCRIPTS = os.path.join(CREW, "hooks", "scripts")
 CONTEXT = os.path.join(SCRIPTS, "crew_context.py")
 RECALL = os.path.join(SCRIPTS, "crew_recall.py")
 INSTRUCTIONS = os.path.join(SCRIPTS, "crew_instructions.py")
-PM_BRIEF = os.path.join(SCRIPTS, "pm_brief.py")
 CONTEXT_PS1 = os.path.join(SCRIPTS, "crew-context.ps1")
 HANDOFF_SH = os.path.join(SCRIPTS, "handoff-read.sh")
 HANDOFF_PS1 = os.path.join(SCRIPTS, "handoff-read.ps1")
@@ -25,21 +24,16 @@ _OFF = "  # pylint: disable=using-constant-test\n"
 # pwsh; on a host without it their tests SKIP (exit 0) and these read as
 # STILL GREEN, which is the honest answer there -- nothing was tested.
 REVIEW_FIX_CONTEXT_MUTATIONS = (
-    ("pm-brief speaks although memory.inject hands SessionStart to the context hook",
-     PM_BRIEF,
-     "        if crew_context.inject_enabled(crew_context.find_root(root)):\n",
-     "        if False:" + _OFF,
-     _FIXES + "test_pm_brief_stands_down_exactly_when_memory_inject_is_true"),
-    ("handoff-read.sh prints the handoff although memory.inject is true",
+    ("handoff-read.sh prints the handoff although memory.inject is on",
      HANDOFF_SH,
      "\"$DIR\" \"$PWD\" 2>/dev/null && exit 0\n",
      "\"$DIR\" \"$PWD\" 2>/dev/null && :\n",
-     _FIXES + "test_handoff_read_sh_stands_down_exactly_when_memory_inject_is_true"),
-    ("handoff-read.ps1 prints the handoff although memory.inject is true",
+     _FIXES + "test_handoff_read_sh_stands_down_exactly_when_memory_inject_is_on"),
+    ("handoff-read.ps1 prints the handoff although memory.inject is on",
      HANDOFF_PS1,
      "if ($LASTEXITCODE -eq 0) { exit 0 }\n",
      "if ($false) { exit 0 }\n",
-     _WRAP + "test_handoff_read_ps1_stands_down_exactly_when_memory_inject_is_true"),
+     _WRAP + "test_handoff_read_ps1_stands_down_exactly_when_memory_inject_is_on"),
     ("the .ps1 flavour hands python its stdin plus a newline, so both flavours emit",
      CONTEXT_PS1,
      "  $proc.StandardInput.BaseStream.Write($stdinBytes, 0, $stdinBytes.Length)\n",
@@ -80,15 +74,15 @@ REVIEW_FIX_CONTEXT_MUTATIONS = (
      "        lines += [_RECALL_DELIM_RE.sub(r\"&lt;\\1\", i[\"text\"]) for i in kept]\n",
      "        lines += [i[\"text\"] for i in kept]\n",
      _FIXES + "test_recalled_text_sits_inside_one_data_block_it_cannot_close"),
-    ("slice-for-subagent emits vault context with memory.inject unset",
+    ("slice-for-subagent emits vault context although memory.inject is false",
      CONTEXT,
-     ("    gate as the hook, so no path emits vault context the repo did not ask for.\"\"\"\n"
+     ("    gate as the hook, so no path emits vault context the repo turned off.\"\"\"\n"
       "    cfg = load_crew_config(root)\n"
-      "    if dict_or_empty(cfg.get(\"memory\")).get(\"inject\") is not True:\n"),
-     ("    gate as the hook, so no path emits vault context the repo did not ask for.\"\"\"\n"
+      "    if not _inject_on(cfg):\n"),
+     ("    gate as the hook, so no path emits vault context the repo turned off.\"\"\"\n"
       "    cfg = load_crew_config(root)\n"
-      "    if dict_or_empty(cfg.get(\"memory\")).get(\"inject\") is False:\n"),
-     _FIXES + "test_slice_for_subagent_emits_and_logs_nothing_unless_inject_is_true"),
+      "    if False:" + _OFF),
+     _FIXES + "test_slice_for_subagent_emits_and_logs_nothing_when_inject_is_false"),
     ("a vault or note name carrying a line break is injected",
      RECALL,
      "        if _CONTROL_RE.search(vault) or _CONTROL_RE.search(note) or vault not in priority:\n",
@@ -186,17 +180,14 @@ CONTEXT_MUTATIONS = (
          "test_snippets_follow_the_repo_vault_priority_not_the_cli_order"),
     ),
     (
-        # Back to default-on: 0.20.x would inject beside pm-brief and
-        # handoff-read, twice the same state per session.
-        "the context hook injects with no memory.inject in the config",
+        # Back to default-off: the 0.20.x behaviour. crew 1.0 turned the
+        # context hook on by default when it unregistered pm-brief, so an
+        # unset key has to inject -- this puts the old reading back.
+        "the context hook stays silent with memory.inject unset",
         CONTEXT,
-        # Anchored on the comment line above it: slice_for_subagent carries
-        # the same `if` since the T6 review, so the bare line is not unique.
-        ("    # cut, in the same change that unregisters those two -- not before.\n"
-         "    if dict_or_empty(cfg.get(\"memory\")).get(\"inject\") is not True:\n"),
-        ("    # cut, in the same change that unregisters those two -- not before.\n"
-         "    if dict_or_empty(cfg.get(\"memory\")).get(\"inject\") is False:\n"),
+        '    return dict_or_empty(cfg.get("memory")).get("inject") is not False\n',
+        '    return dict_or_empty(cfg.get("memory")).get("inject") is True\n',
         ("tests/test_crew_context_wrappers.py::"
-         "test_bash_flavour_emits_and_logs_nothing_unless_inject_is_true"),
+         "test_bash_flavour_emits_when_inject_is_on_or_unset"),
     ),
 ) + REVIEW_FIX_CONTEXT_MUTATIONS

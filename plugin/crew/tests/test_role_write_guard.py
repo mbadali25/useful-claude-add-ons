@@ -98,13 +98,10 @@ def test_policy_table_matches_the_agent_files():
     assert grants, "expected at least one agents/*.md file"
 
     computed_deny = set()
-    computed_pm = set()
     computed_unrestricted = set()
     for role, tools in grants.items():
         has_write_edit = "Write" in tools and "Edit" in tools
-        if role == "pm":
-            computed_pm.add(role)
-        elif has_write_edit:
+        if has_write_edit:
             computed_unrestricted.add(role)
         else:
             computed_deny.add(role)
@@ -112,7 +109,9 @@ def test_policy_table_matches_the_agent_files():
     assert computed_deny == role_write_guard._DENY_ROLES, (  # pylint: disable=protected-access
         f"deny-list drift: computed {sorted(computed_deny)} vs script "
         f"{sorted(role_write_guard._DENY_ROLES)}")  # pylint: disable=protected-access
-    assert computed_pm == {"pm"}
+    # crew 1.0 ships no `agents/pm.md`; the guard's path-scoped `pm` branch
+    # stays for a repo-local agent of that name, so it is in no file bucket.
+    assert "pm" not in grants
     assert computed_unrestricted == role_write_guard._UNRESTRICTED_ROLES, (  # pylint: disable=protected-access
         f"unrestricted-list drift: computed {sorted(computed_unrestricted)} "
         f"vs script {sorted(role_write_guard._UNRESTRICTED_ROLES)}")  # pylint: disable=protected-access
@@ -121,7 +120,6 @@ def test_policy_table_matches_the_agent_files():
     # none, is the partition failing to be a partition.
     all_roles = set(grants)
     partitioned = (role_write_guard._DENY_ROLES  # pylint: disable=protected-access
-                   | {"pm"}
                    | role_write_guard._UNRESTRICTED_ROLES)  # pylint: disable=protected-access
     assert partitioned == all_roles, (
         f"not a partition: files {sorted(all_roles - partitioned)} are in no "
@@ -186,9 +184,9 @@ def test_classify_the_incident_paths_are_all_out_of_scope_for_pm():
 
 
 def test_classify_deny_role_is_always_out_of_scope():
-    in_scope, reason = role_write_guard.classify("analyst", "TODO.md")
+    in_scope, reason = role_write_guard.classify("explorer", "TODO.md")
     assert not in_scope
-    assert "analyst" in reason
+    assert "explorer" in reason
 
 
 def test_classify_unrestricted_role_is_always_in_scope():
@@ -210,33 +208,33 @@ def test_classify_unrecognised_role_allows_as_unknown():
 
 
 @pytest.mark.parametrize("raw,expected", [
-    ("crew:analyst", "analyst"), ("analyst", "analyst"),
+    ("crew:explorer", "explorer"), ("explorer", "explorer"),
     ("CREW:PM", "pm"), ("  pm  ", "pm"), ("", None), (None, None),
     # NOT "c". The first draft stripped up to the LAST colon unconditionally,
-    # so "other-plugin:analyst" collapsed onto this table's own `analyst`
+    # so "other-plugin:explorer" collapsed onto this table's own `explorer`
     # (a _DENY_ROLES member) and a totally unrelated plugin's agent was
     # refused under crew's policy. Only a LEADING `crew:` is stripped now;
     # anything else is returned whole (lowercased) so it cannot collide with
     # a bare crew role name and falls through to classify()'s unknown-role
     # branch instead. Reported and fixed 2026-09-19.
     ("a:b:c", "a:b:c"),
-    ("other-plugin:analyst", "other-plugin:analyst"),
-    ("CREW:Analyst", "analyst"),
+    ("other-plugin:explorer", "other-plugin:explorer"),
+    ("CREW:Explorer", "explorer"),
 ])
 def test_normalise_role_strips_only_a_leading_crew_prefix(raw, expected):
     assert role_write_guard._normalise_role(raw) == expected  # pylint: disable=protected-access
 
 
 def test_classify_other_plugin_namespaced_role_is_unknown_not_deny():
-    """Must-allow: the exact regression case. `other-plugin:analyst`
+    """Must-allow: the exact regression case. `other-plugin:explorer`
     normalises to the WHOLE string (see the parametrized test above), which
-    is not `_DENY_ROLES`' bare `analyst`, so it falls through to
+    is not `_DENY_ROLES`' bare `explorer`, so it falls through to
     unknown-role -- allowed and logged, never refused under a policy this
     table has no business applying to a different plugin's agent."""
-    role = role_write_guard._normalise_role("other-plugin:analyst")  # pylint: disable=protected-access
+    role = role_write_guard._normalise_role("other-plugin:explorer")  # pylint: disable=protected-access
     in_scope, reason = role_write_guard.classify(role, "TODO.md")
     assert in_scope
-    assert reason == "unknown-role:other-plugin:analyst"
+    assert reason == "unknown-role:other-plugin:explorer"
 
 
 # --- guards.roleWrites resolves through the same ratchet as every guard ----
@@ -389,9 +387,9 @@ def test_block_mode_deny_role_is_refused_bash(tmp_path):
     """Must-block: a role with no Write/Edit grant, any path."""
     root = crew_fixtures.make_repo(
         tmp_path, config={"guards": {"roleWrites": "block"}})
-    proc = _run_sh(root, "Edit", str(root / "TODO.md"), "analyst")
+    proc = _run_sh(root, "Edit", str(root / "TODO.md"), "explorer")
     assert proc.returncode == 2, proc.stdout
-    assert "analyst" in proc.stderr
+    assert "explorer" in proc.stderr
 
 
 @needs_bash
@@ -415,10 +413,10 @@ def test_block_mode_missing_agent_type_allows_and_logs_bash(tmp_path):
 
 @needs_bash
 def test_block_mode_prefixed_agent_type_still_matches_bash(tmp_path):
-    """`crew:analyst` must be judged exactly like `analyst`."""
+    """`crew:explorer` must be judged exactly like `explorer`."""
     root = crew_fixtures.make_repo(
         tmp_path, config={"guards": {"roleWrites": "block"}})
-    proc = _run_sh(root, "Write", str(root / "src" / "app.py"), "crew:analyst")
+    proc = _run_sh(root, "Write", str(root / "src" / "app.py"), "crew:explorer")
     assert proc.returncode == 2, proc.stdout
 
 
@@ -426,10 +424,10 @@ def test_block_mode_prefixed_agent_type_still_matches_bash(tmp_path):
 def test_report_mode_never_blocks_but_logs_the_would_be_refusal_bash(tmp_path):
     root = crew_fixtures.make_repo(
         tmp_path, config={"guards": {"roleWrites": "report"}})
-    proc = _run_sh(root, "Write", str(root / "src" / "app.py"), "analyst")
+    proc = _run_sh(root, "Write", str(root / "src" / "app.py"), "explorer")
     assert proc.returncode == 0, proc.stderr
     log = (root / ".crew" / "guard.log").read_text(encoding="utf-8")
-    assert "\treport\treport\tanalyst\t" in log, log
+    assert "\treport\treport\texplorer\t" in log, log
 
 
 @needs_bash
@@ -440,7 +438,7 @@ def test_non_write_edit_tool_is_ignored_bash(tmp_path):
         [_BASH, _SH],
         input=json.dumps({"tool_name": "Bash",
                           "tool_input": {"command": "ls"},
-                          "agent_type": "analyst", "cwd": str(root)}),
+                          "agent_type": "explorer", "cwd": str(root)}),
         capture_output=True, text=True, check=False,
         env=dict(os.environ, CLAUDE_PROJECT_DIR=str(root)), cwd=str(root),
     )
@@ -458,7 +456,7 @@ def test_no_crew_directory_never_crashes_and_never_creates_one_bash(tmp_path):
     root = tmp_path / "plain"
     root.mkdir()
     subprocess.run(["git", "init", "-q"], cwd=root, check=True)
-    proc = _run_sh(root, "Write", str(root / "x.py"), "analyst")
+    proc = _run_sh(root, "Write", str(root / "x.py"), "explorer")
     assert proc.returncode == 0, proc.stderr  # off by default: no .crew/config.json at all
     assert not (root / ".crew").exists()
 
@@ -1548,7 +1546,7 @@ def test_classify_pm_none_path_does_not_get_the_outside_repo_exception():
 def test_classify_deny_role_is_not_given_the_outside_repo_exception():
     """A deny-role's restriction is "no Write/Edit at all", not "confined to
     the repo" -- an outside-repo path must not exempt it."""
-    in_scope, _ = role_write_guard.classify("analyst", "../elsewhere/plan.md")
+    in_scope, _ = role_write_guard.classify("explorer", "../elsewhere/plan.md")
     assert not in_scope
 
 
@@ -1556,25 +1554,25 @@ def test_classify_deny_role_is_not_given_the_outside_repo_exception():
 
 @needs_bash
 def test_other_plugin_namespaced_role_is_allowed_not_denied_bash(tmp_path):
-    """Must-allow, the exact reported repro: `other-plugin:analyst` is not
-    crew's own `analyst`, so it must be allowed (and logged unknown), never
+    """Must-allow, the exact reported repro: `other-plugin:explorer` is not
+    crew's own `explorer`, so it must be allowed (and logged unknown), never
     refused under crew's deny-list."""
     root = crew_fixtures.make_repo(
         tmp_path, config={"guards": {"roleWrites": "block"}})
-    proc = _run_sh(root, "Write", str(root / "TODO.md"), "other-plugin:analyst")
+    proc = _run_sh(root, "Write", str(root / "TODO.md"), "other-plugin:explorer")
     assert proc.returncode == 0, proc.stderr
     log = (root / ".crew" / "guard.log").read_text(encoding="utf-8")
-    assert "unknown-role:other-plugin:analyst" in log, log
+    assert "unknown-role:other-plugin:explorer" in log, log
 
 
 @needs_bash
 def test_crew_prefixed_deny_role_is_still_refused_bash(tmp_path):
-    """Must-block twin: `crew:analyst` must still be judged as crew's own
-    `analyst` -- narrowing the strip must not also stop matching the real
+    """Must-block twin: `crew:explorer` must still be judged as crew's own
+    `explorer` -- narrowing the strip must not also stop matching the real
     prefix."""
     root = crew_fixtures.make_repo(
         tmp_path, config={"guards": {"roleWrites": "block"}})
-    proc = _run_sh(root, "Write", str(root / "TODO.md"), "crew:analyst")
+    proc = _run_sh(root, "Write", str(root / "TODO.md"), "crew:explorer")
     assert proc.returncode == 2, proc.stdout
 
 
@@ -1697,7 +1695,7 @@ def test_off_by_default_never_blocks_powershell(tmp_path):
 def test_block_mode_deny_role_is_refused_powershell(tmp_path):
     root = crew_fixtures.make_repo(
         tmp_path, config={"guards": {"roleWrites": "block"}})
-    proc = _run_ps1(root, "Edit", str(root / "TODO.md"), "analyst")
+    proc = _run_ps1(root, "Edit", str(root / "TODO.md"), "explorer")
     assert proc.returncode == 2, proc.stdout
 
 
@@ -1725,7 +1723,6 @@ def test_block_mode_deny_role_is_refused_powershell(tmp_path):
 # test below became a two-way one, plus new cases specific to this file.
 
 _VERIFY_GATE_PS1 = os.path.join(_ROOT, "hooks", "scripts", "verify-gate.ps1")
-_PM_PULSE_PS1 = os.path.join(_ROOT, "hooks", "scripts", "pm-pulse.ps1")
 
 
 def _stub(path, reports=None):
@@ -1888,23 +1885,6 @@ def _resolver_code_lines(path):
             out.append(re.sub(r"\s+", " ", stripped))
         return out
     return code_lines(_resolver_source(path))
-
-
-def test_verify_gate_and_pm_pulse_resolvers_still_agree():
-    """The two-way parity that remains. verify-gate.ps1 and pm-pulse.ps1
-    both only need to match `_common.sh`'s bare `crew_py()`, so their
-    copies of Resolve-CrewPython are UNCHANGED and must still be
-    byte-identical to each other -- role-write-guard.ps1 is the one that
-    now answers a different question (parity with its OWN, stricter bash
-    sibling) and is deliberately excluded from this comparison; see
-    `test_role_write_guard_resolver_documents_its_own_divergence` below."""
-    gate = _resolver_code_lines(_VERIFY_GATE_PS1)
-    pulse = _resolver_code_lines(_PM_PULSE_PS1)
-    assert gate == pulse, (
-        "verify-gate.ps1 and pm-pulse.ps1 have drifted. One hook would "
-        "then resolve an interpreter the other refuses."
-        + "\nverify-gate.ps1: " + repr(gate)
-        + "\npm-pulse.ps1:    " + repr(pulse))
 
 
 def test_role_write_guard_resolver_documents_its_own_divergence():

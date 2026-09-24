@@ -33,7 +33,7 @@ Built for the awkward case: several repositories, mixed stacks, legacy code, and
 19. [Runbooks](#19-runbooks)
 20. [Diagrams](#20-diagrams)
 21. [AWS and Azure MCP](#21-aws-and-azure-mcp)
-22. [Growing the crew](#22-growing-the-crew)
+22. [The crew](#22-the-crew)
 23. [Promotion: development to qa to production](#23-promotion-development-to-qa-to-production)
 24. [The emergency lane](#24-the-emergency-lane)
 25. [Command and agent reference](#25-command-and-agent-reference)
@@ -49,9 +49,9 @@ Built for the awkward case: several repositories, mixed stacks, legacy code, and
 
 | Benefit | Which roles provide it |
 |---|---|
-| An isolated context window | `explorer`, `security`, `qa-reviewer` |
+| An isolated context window | `explorer`, `security`, `reviewer`, `researcher` |
 | A restricted tool set | `explorer` holds no `Write`, `Edit` or `Bash`; `security` holds no `Write` or `Edit` but does hold `Bash` |
-| Genuinely independent eyes | Codex, or `qa-reviewer` in its own context |
+| Genuinely independent eyes | Codex, or `reviewer` in its own context |
 
 Everything else — project management, business analysis, architecture, documentation, training — is a file, a command, or you. Those are not agents because there is nothing for an agent to isolate.
 
@@ -158,9 +158,9 @@ was written from WSL and the first thing the session says is:
 | Reported, not changed | a preference this OS cannot honour: an `autoClear.method` that only exists on the other platform, a clone under `/mnt/`, CRLF in a committed `.sh` |
 | Never touched | everything else. `tracker`, `qa`, `roles`, `tier`, `notify`, `emergency`, the context thresholds, `verifyGate`. If a human chose it, it stays chosen |
 
-That split is the whole design, and it is why this hook is allowed to write when
-the PM is report-only. The PM's subject is *judgement* — whether a role earns its
-context is not a fact. `platform.os` is a fact, it is wrong on the other machine,
+That split is the whole design, and it is why this hook is allowed to write at
+all. A choice a human made is *judgement* — whether a role earns its context is
+not a fact. `platform.os` is a fact, it is wrong on the other machine,
 and being asked about it once per clone would be worse than having it fixed.
 
 It never writes when nothing changed, so it does not dirty your tree on every
@@ -271,7 +271,7 @@ Then inside Claude Code:
 /plugin install crew@my-marketplace
 ```
 
-Verify with `/help` — you should see `/crew:ticket`, `/crew:work`, `/crew:review`, `/crew:onboard`, `/crew:scale`, `/crew:pm`, `/crew:upgrade`, and `/crew:jira-sync`.
+Verify with `/help` — you should see `/crew:brainstorm`, `/crew:spec`, `/crew:plan`, `/crew:implement`, `/crew:review`, `/crew:done`, `/crew:status`, `/crew:migrate`, and `/crew:onboard`.
 
 Plugin components other than skills are cached at load time. After editing agents, hooks, or `.mcp.json`, run `/reload-plugins` or restart.
 
@@ -327,7 +327,7 @@ identical either way. There is no shorter path that skips the gates.
 
 The other skills trigger the same way: "set up gemini" or "wire up the API key"
 reaches `crew-providers`, "add browser tests" reaches `crew-verification`,
-"expand the crew" reaches `crew-scaling`, "connect my vault" reaches
+"connect my vault" reaches
 `crew-memory`, and "set up notifications" or "send updates to Teams" reaches
 `crew-notify`.
 
@@ -392,8 +392,10 @@ A repo that already has a working `scripts/smoke.sh` keeps it. The gate checks `
 At this point `_verify/smoke.sh` exists but contains no checks, so the gate passes vacuously. The crew has no safety net.
 
 ```
-@crew:smoke-author build the smoke harness for this repo
+/crew:init --phase 3
 ```
+
+The session fills `_verify/` itself; crew 1.0 ships no writing agents.
 
 Do nothing else in this repository until that script runs green from a clean checkout.
 
@@ -560,8 +562,8 @@ and a pairing that stays green has just told you about a coverage hole.
 
 ### Checks and rules are written together
 
-**Whoever writes a check writes its rule, in the same turn.** `smoke-author` and
-`browser-tester` both do this now, and both prove the rule fires before calling
+**Whoever writes a check writes its rule, in the same turn.** The implementing
+session does this, and proves the rule fires before calling
 it done — break the code, run the mapped command, confirm red, revert.
 
 The failure this prevents is quiet and common: a check exists, is committed, is
@@ -595,8 +597,8 @@ The third is the one people skip, and it is the one that matters: a migration
 that applies cleanly and leaves a column nullable the code assumes is populated
 passes the first two and fails in production.
 
-`dba` proposes the specific check — which script, what it asserts, which paths —
-and `smoke-author` writes it, since `dba` is read-only.
+The implementing session writes the specific check — which script, what it
+asserts, which paths — with the `stack-sql` skill loaded.
 
 `"unmapped": "fail"` is the most valuable line in the file. A changed path with
 no rule blocks the turn and names the file, so "we forgot to test that area"
@@ -633,7 +635,7 @@ fixture, or `AWS_PROFILE=production` anywhere reachable.
 ### Browser tests
 
 ```
-@crew:browser-tester cover the checkout flow and the pricing page styling
+Write Playwright specs for the checkout flow and the pricing page styling
 ```
 
 Deliverables are spec files under `e2e/`, runnable by `npx playwright test` with
@@ -663,7 +665,7 @@ Tag specs `@visual` and `@flow` so `verify.json` can run them selectively.
 /crew:survey the billing module
 ```
 
-The `analyst` agent investigates and writes `.work/FINDINGS.md` — at most seven
+`crew:explorer` investigates, one pass per subsystem, and returns at most seven
 findings, each with a file-and-line anchor, a concrete impact, and three options
 where **option A is always "do nothing"** and is always a real option.
 
@@ -676,7 +678,7 @@ It starts from evidence — `git log` file-change frequency, existing findings,
 smoke gaps — rather than from a checklist, because the files that change
 constantly are where the pain is.
 
-It does not create tickets. You read the findings and decide; `/crew:ticket` is a
+It does not create tickets. You read the findings and decide; `/crew:brainstorm` is a
 separate, deliberate step. A survey that automatically becomes a backlog is a way
 of committing to seven things nobody agreed to.
 
@@ -690,24 +692,25 @@ are just a list.
 ### Scope it
 
 ```
-/crew:ticket the export job times out on tenants with more than 50k rows
+/crew:brainstorm the export job times out on tenants with more than 50k rows
+/crew:spec T-0042
 ```
 
-`explorer` checks what the change touches and whether it crosses repositories. You get one round of clarifying questions, then a ticket under twenty lines: Want, Scope, Done when, Notes.
+`/crew:brainstorm` mints the ticket and settles a direction, one question at a time; `/crew:spec` fills the contract (Intent, Exclusions, Evidence, Unknowns, Touch, Acceptance checks), with `explorer` checking what the change touches and whether it crosses repositories.
 
-"Done when" must be **observable**. "Export works properly" is not a ticket. "Export of a 100k-row tenant completes under 60s and the smoke check covers it" is.
+Acceptance checks must be **observable**. "Export works properly" is not a ticket. "Export of a 100k-row tenant completes under 60s and the smoke check covers it" is.
 
 Work spanning repositories gets one ticket per repository, cross-referenced by ID. Never a ticket that silently spans repos.
 
 ### Work it
 
 ```
-/crew:work T-0042
+/crew:implement T-0042
 ```
 
-The session reads exactly one ticket file, delegates the search to `explorer`, plans before editing, implements the smallest sufficient change, runs smoke, escalates to `security` or `dba` when the change warrants it, adds any missing checks and docs, and runs review last.
+The session reads exactly one ticket file, delegates the search to `explorer`, plans before editing, implements the smallest sufficient change, runs smoke, escalates to `security` (or loads a `stack-*` skill) when the change warrants it, adds any missing checks and docs, and runs review last.
 
-If the change added behavior with no smoke coverage, `smoke-author` adds a check. A feature without a check is how the next change breaks it silently. Review comes after the tests and the docs (since 0.20.17), so the reviewer reads the finished change rather than a draft that later edits move out from under it.
+If the change added behavior with no smoke coverage, the implementing session adds a check. A feature without a check is how the next change breaks it silently. Review comes after the tests and the docs (since 0.20.17), so the reviewer reads the finished change rather than a draft that later edits move out from under it.
 
 ### Review it
 
@@ -715,11 +718,11 @@ If the change added behavior with no smoke coverage, `smoke-author` adds a check
 /crew:review
 ```
 
-Codex if available, the `qa-reviewer` agent if not — and it always tells you which ran. Findings are reported verbatim before any argument about them. `BLOCK` items get fixed, smoke reruns, review runs once more — and that second round is the last one.
+Codex if available, the `reviewer` agent if not — and it always tells you which ran. Findings are reported verbatim before any argument about them. `BLOCK` items get fixed, smoke reruns, review runs once more — and that second round is the last one.
 
 The reviewer reads a **bundle**, not a `git diff` of the committed range: `hooks/scripts/review_patch.py` stages committed, staged, unstaged and untracked changes into a temporary index (your own index is never written) and diffs the ticket base against it. Renames, file-mode changes, binary files (git's marker plus both blob ids and sizes) and submodules are listed in the manifest. A large bundle is split into ordered parts — never truncated — and the manifest records a sha256 over them.
 
-Then it appends a line to `.crew/metrics.md`. That line is not bookkeeping; `/crew:scale` reads it to determine whether any of this is catching anything.
+Then it appends a line to `.crew/metrics.md`. That line is not bookkeeping; `/crew:status` reads it to show whether any of this is catching anything.
 
 ### Review: verdicts and the two-round budget
 
@@ -846,7 +849,7 @@ python3 hooks/scripts/crew_config.py --set pm.authority='"act"' --apply  # write
 the layer that decided it. That column is the point. The reason this command
 exists is a machine where the global file carried `tier`, `roles`, `qa` and
 `sdp` but **no `pm` block**, so every repo on it resolved to
-`pm.authority: report-only` while the user believed the PM was autonomous.
+`pm.authority: report-only` while the user believed the 0.20 PM was autonomous.
 Every file was valid; nothing surfaced the discrepancy. `/crew:upgrade` now
 runs `--check-global` and reports the same findings.
 
@@ -1078,7 +1081,7 @@ Without Codex, `/crew:review` walks `qa.order` — `["codex", "copilot", "claude
 
 GitHub Copilot is the middle rung, and it earns its place for one reason: it is a gateway to model families nothing else here reaches. Pin `qa.copilot.model` to a Google model such as `gemini-3.7-flash` and the reviewer is genuinely independent of both the author and Codex. Confirm the name against Copilot's current catalog rather than copying one from documentation - the names churn, and a stale one fails at startup with `Model "<name>" from --model flag is not available`. Leave it unset and Copilot is **skipped entirely** — its own default is `claude-sonnet-4.6`, the author's family, so an unpinned Copilot would be a same-family review wearing an independent one's costume. That is worse than the fallback below, which at least admits what it is.
 
-Last is the `qa-reviewer` agent — on `opus`, in its own context window, so it has at least not seen the reasoning that produced the code. Its prompt tells it outright that it shares a model family with the author and must compensate: ask "what input makes this wrong" before "does this look correct." That is genuinely weaker than a different family, and the command says so every time it happens, so you know to review harder yourself. It also says so itself if something dispatches it directly and skips the provider walk.
+Last is the `reviewer` agent — on `opus`, in its own context window, so it has at least not seen the reasoning that produced the code. Its prompt tells it outright that it shares a model family with the author and must compensate: ask "what input makes this wrong" before "does this look correct." That is genuinely weaker than a different family, and the command says so every time it happens, so you know to review harder yourself. It also says so itself if something dispatches it directly and skips the provider walk.
 
 Two knobs on the Codex rung, both read at call time and both passing no flag when null, so an upgraded repo behaves exactly as it did before: `qa.codex.model` pins a model, and `qa.codex.reasoningEffort` takes `none`, `minimal`, `low`, `medium`, `high`, `xhigh` or `max`. A wrong effort value is safe to get wrong — Codex rejects it with a 400 naming the supported set rather than quietly returning a shallower review.
 
@@ -1089,8 +1092,8 @@ Two knobs on the Codex rung, both read at call time and both passing no flag whe
 /crew:plan should the export run inline or move to a queue
 ```
 
-The `planner` agent gets an independent opinion on a design decision before
-anything is built. Gemini's free tier suits this well — design questions are a
+`/crew:plan`'s optional second opinion gets an independent view on a design
+decision before anything is built. Gemini's free tier suits this well — design questions are a
 handful of calls a week, so rate limits never bite.
 
 **It works from a brief, never from your code.** Free tiers are funded by prompts
@@ -1099,7 +1102,7 @@ problem: constraints, volumes, latency budgets, the options under consideration,
 and what has already been ruled out. No source, no real schema names, no service
 names, no ticket text.
 
-The control is not a promise — it is an artifact. `planner` writes the brief to
+The control is not a promise — it is an artifact. `/crew:plan` writes the brief to
 `.work/briefs/`, shows it to you, and waits for approval before sending. You can
 read exactly what goes out, every time.
 
@@ -1131,46 +1134,11 @@ configured provider before marking itself done.
 ## 12b. Optional: Perplexity MCP for web-grounded QA
 
 A code reviewer reads the diff. It cannot tell you that the API the diff calls
-was deprecated four months ago, that the runtime it pins went EOL last quarter,
-or that the dependency it adds has an open advisory — none of that is in the
-diff, and a model answering from memory is guessing with confidence about
-exactly the class of fact that rots fastest.
-
-`crew:qa-researcher` is that second pass. It is a **domain specialist**, opted
-into per repo:
-
-```
-/crew:pm onboard qa-researcher
-```
-
-and what justifies it is not a stack but a server: the Perplexity MCP has to be
-configured on the machine, because every finding it returns is a fetched source
-rather than a read of the code. crew does not install or configure it — set it
-up the way you set up any other MCP server, with your own API key, and confirm
-it in `/mcp`.
-
-Three things to be clear about before onboarding it:
-
-- **It complements a code reviewer; it never replaces one.** A change reviewed
-  only by `qa-researcher` has not been reviewed. It says so itself when it is
-  the only QA that ran.
-- **It is not the family-independence check either.** That guard lives in QA
-  routing and compares the reviewing model's family against the author's. A
-  clean web-grounded pass proves the diff's external claims hold, not that
-  anything independent read its logic.
-- **When the server is absent it stops and says so.** It does not fall back to
-  answering from memory — a report that quietly ran without its source is the
-  failure mode this whole role exists to close.
-
-`crew:researcher` is the neighbouring role, and the seam is the question rather
-than the tool: `researcher` answers "how does this library work" *before* the
-code is written, from Context7 and vendor docs; `qa-researcher` audits a diff
-that already exists.
-
-Not yet done, and worth saying rather than leaving to be discovered: Perplexity
-is not selectable as a `qa.provider`, so `/crew:review`'s reviewer routing and
-the self-review family guard are untouched by this. That is tracked in
-`TODO.md`.
+was deprecated four months ago, or that the dependency it adds has an open
+advisory. The 0.20 `qa-researcher` specialist that did this second pass was
+removed in crew 1.0 with the other specialists; `crew:researcher` answers the
+same class of question from fetched sources (web tools and Context7), and a
+Perplexity MCP server you configure yourself is one more source it can use.
 
 ---
 
@@ -1192,7 +1160,7 @@ Run `/mcp`, approve the server, authenticate. The cloud ID is then fetched once 
 
 **The cache is the actual strategy.** Tool *definitions* are less of a problem than they used to be; Claude Code defers MCP tool definitions automatically once they exceed roughly ten percent of the context window, which can turn tens of thousands of tokens into a few hundred. What deferral does not help with is *response* payloads, and a Jira issue is a fat one — rendered description, changelog, watchers, sprint metadata, custom fields.
 
-So `/crew:jira-sync` keeps six fields and discards the rest, writing a compact local file that `/crew:work` reads instead of calling the API. That is the difference between paying for a ticket once and paying for it on every pickup, retry, and context reset. Sync happens at two boundaries only: pickup and completion. Three Jira calls in one ticket means the cache is wrong.
+So `/crew:jira-sync` keeps six fields and discards the rest, writing a compact local file that `/crew:implement` reads instead of calling the API. That is the difference between paying for a ticket once and paying for it on every pickup, retry, and context reset. Sync happens at two boundaries only: pickup and completion. Three Jira calls in one ticket means the cache is wrong.
 
 One limitation to know rather than discover: plugin-shipped agents cannot declare `mcpServers` in frontmatter, for security reasons. Jira access therefore lives at session level. If you want it isolated in its own context window, that agent has to live in `~/.claude/agents/` outside the plugin.
 
@@ -1212,14 +1180,14 @@ two people are working from divergent state.
 
 **The local key is `SDP-<id>`, not the bare request number.** SDP request ids are
 plain integers, and the rest of crew recognises a ticket by its `LETTERS-digits`
-shape — so a bare `40219` is invisible to the session brief, to `/crew:work`, and
+shape — so a bare `40219` is invisible to `/crew:status`, to `/crew:implement`, and
 to the index. `/crew:sdp-sync` accepts either form and always writes `SDP-40219`.
 
 The caching argument is identical to Jira's: a request payload runs thousands of
 tokens across resolution HTML, the full note history, SLA timers, approvals and
 every UDF the desk has ever defined, and about forty of them affect what you
 build. `/crew:sdp-sync` keeps id, subject, status, requester, priority, category
-and the last three notes, and `/crew:work` reads that file instead of the API.
+and the last three notes, and `/crew:implement` reads that file instead of the API.
 
 **What is different from Jira, and worth knowing before the first write:**
 
@@ -1253,7 +1221,7 @@ vault/
 ```
 
 The vault is the remote, exactly as Jira is: `.work/cache/T-####.md` is a terse
-local mirror that `/crew:work` reads, and `/crew:obsidian-sync` touches the
+local mirror that `/crew:implement` reads, and `/crew:obsidian-sync` touches the
 vault at pickup and completion only. The key keeps the `T-####` shape, so
 nothing else in crew needed a new format to recognise.
 
@@ -1267,9 +1235,9 @@ per ticket and is why the brief names a real ticket here rather than nothing.
 
 | Lane | Means |
 |---|---|
-| Backlog | Deferred or untriaged. Where the PM parks a non-blocking finding. |
-| Ready | Scoped by `/crew:ticket` and pickup-able. |
-| In Progress | `/crew:work` has it. |
+| Backlog | Deferred or untriaged. Where a non-blocking finding is parked. |
+| Ready | Scoped by `/crew:spec` and pickup-able. |
+| In Progress | `/crew:implement` has it. |
 | Review | Implementation done, `/crew:review` outstanding. |
 | Done | Complete and verified. Carries the `**Complete**` marker. |
 
@@ -1563,29 +1531,27 @@ If you run Claude Code in a tmux pane inside WSL, prefer the `.sh` flavour: it
 addresses a pane by id and never touches focus, which is strictly safer than
 anything the Windows side can do.
 
-### Auto-resume is off by default
+### Resuming from the handoff
 
-`context.autoResume` opens the next `SessionStart` already holding the last
-handoff, and I'd leave it off. It is implemented as `additionalContext`, not
-`initialUserMessage` — `initialUserMessage` is confirmed only for
-non-interactive `-p` invocations, and could not be proven to behave the same
-way in an interactive session, so the safer, universally-confirmed field was
-used instead. That means enabling it puts the handoff in view at the start of
-the next session; **it does not make the session start working on its own.**
-A human still reads the note and gives the first turn — which is the one
+Since 1.0.0 the context hook (`crew-context.sh`, on by default through
+`memory.inject`) opens the next `SessionStart` after `/clear`, `/compact` or a
+resume already holding the last handoff, as `additionalContext` rather than
+`initialUserMessage`. It does not make the session start working on its own:
+a human still reads the note and gives the first turn — which is the one
 moment where a subtly wrong handoff gets caught before more work is built on
-top of it.
+top of it. `context.autoResume` is no longer read. Set `memory.inject: false`
+and `handoff-read` prints the note instead.
 
 ### Housekeeping
 
-`/crew:work` deletes `HANDOFF.md` on ticket completion — do that yourself
+`/crew:done` deletes `HANDOFF.md` on ticket completion — do that yourself
 whenever the work it describes is finished, rather than relying on the check
 below to catch it. A stale handoff is worse than none: it gets injected into
 every later session as though current, and that session can't tell it's
 reading history.
 
-As a backstop for when that manual step gets missed, `handoff-read` (and,
-under `autoResume`, `pm_brief`) now judges the note before printing or
+As a backstop for when that manual step gets missed, `handoff-read` and the
+context hook both judge the note before printing or
 injecting it, on age (`written:` vs. `context.staleHandoff.maxAgeHours`) and
 on whether its `head:`/`branch:` lines still describe the checkout (a `head:`
 this repo cannot verify, or `staleHandoff.maxCommitsBehind` or more commits
@@ -1621,7 +1587,7 @@ explained it:
   "why": "_verify/ holds the team's hand-written QA checks for loader changes" }
 ```
 
-`smoke-author` also checks for these before writing anything, so it wires into
+The implementing session checks for these before writing anything, so it wires into
 what exists instead of building a parallel suite that will drift out of
 agreement with it.
 
@@ -1685,8 +1651,8 @@ message.
 documentation becomes noise — a CHANGELOG with an entry per typo fix is
 unreadable, and a README rewritten every sprint stops being trusted.
 
-So each document has a trigger condition, checked once per ticket at step 12 of
-`/crew:work`:
+So each document has a trigger condition, checked once per ticket by
+`/crew:implement`:
 
 | Document | Update when | Never |
 |---|---|---|
@@ -1728,7 +1694,7 @@ type?"** Not how the system works — that's architecture. Not why it was built
 that way — that's an ADR. A procedure someone half-awake can follow without
 judgement calls.
 
-`/crew:work` step 11 captures one when a ticket involved a procedure that will
+`/crew:implement` captures one when a ticket involved a procedure that will
 be repeated, is destructive, or lived only in one person's head. Drafts are built
 from the commands **actually run in the session**, plus `verify.json` and the
 terraform config for real resource names — never from memory, because a wrong
@@ -1836,8 +1802,8 @@ claude mcp add aws-pricing uvx awslabs.aws-pricing-mcp-server@latest
 claude mcp add aws-api uvx awslabs.aws-api-mcp-server@latest
 ```
 
-Docs and pricing need no credentials and are genuinely useful to `analyst` and
-`planner`. There is also a consolidated AWS MCP Server now generally available,
+Docs and pricing need no credentials and are genuinely useful to `researcher`
+and to planning. There is also a consolidated AWS MCP Server now generally available,
 and an Agent Toolkit for AWS positioned as the successor to the Labs servers,
 with IAM condition keys distinguishing agent actions from human ones. If you are
 wiring agents into a real account, that attribution is worth more than any
@@ -1857,72 +1823,23 @@ Studio and VS Code use `servers`; copying a snippet between them fails silently.
 
 ---
 
-## 22. Growing the crew
+## 22. The crew
 
-```
-/crew:scale
-```
+crew 1.0 ships four agents: `explorer` (read-only mapping), `reviewer` (the
+Claude rung of `qa.order`, renamed from `qa-reviewer`), `security` (read-only
+review of risky changes) and `researcher` (external sources only). The
+interactive session implements; nothing else is dispatched to write. Stack
+knowledge that used to be specialist agents loads on demand as the `stack-*`
+skills. There is no PM agent, no Stop pulse and no journal, and nothing grows
+or shrinks the roster: `/crew:status` reports it read-only.
 
-This answers three questions from `.crew/metrics.md` before recommending anything.
-
-**Is review catching defects?** `BLOCK` plus `FIX` per ticket over the last ten:
-
-- Below 0.3 — the review is broken, not thorough. Adding roles makes a system that finds nothing cost more and find nothing faster. Check that Codex is really running, the diff is not empty, and the base branch is right.
-- 0.3 to 2.0 — healthy. Scaling questions are legitimate.
-- Above 2.0 — tickets are too large. Cut scope before adding anyone.
-
-**Where does work actually sit?** If tickets pile up waiting on *your* review, the bottleneck is your attention, and more agents make it strictly worse: more parallel output, same reviewer. The skill will tell you this even though it is not what you asked.
-
-**Can the work genuinely run in parallel?** Parallelism scales on independent work units, not job titles.
+Parallelism scales on independent work units, not job titles.
 
 | Arrangement | Actually parallel? |
 |---|---|
 | Two repositories | Yes — the good case at your repo count |
 | Two git worktrees of one repo | Yes, with merge cost at the end |
 | Two agents, one working tree | No. Conflicting edits and lost writes |
-
-"Add three more developer agents" to a single working tree is not throughput. It is a race condition with a job title.
-
-### Tiers
-
-| Tier | Roles | Add when |
-|---|---|---|
-| 0 | `explorer`, `qa-reviewer` | Always start here |
-| 1 | `+ security`, `smoke-author` | Security findings reach review; coverage gaps cause regressions |
-| 2 | `+ dba`, `docs-writer` | Migrations are routine; documentation staleness costs real time |
-| 3 | Parallel sessions, worktrees, agent teams | Every repository involved has green smoke |
-
-Native multi-session coordination requires `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` and is experimental, with known limitations around session resumption and shutdown. Plain parallel sessions across repositories are less exciting and more reliable.
-
-Every added role costs a full context load plus the `CLAUDE.md` hierarchy on every invocation. If that cost does not show up as findings in `metrics.md`, it is not there at all.
-
-A scaling review that concludes "this is the right size" is a successful review.
-
-### Onboarding and offboarding a role
-
-```
-/crew:pm onboard <role>
-/crew:pm offboard <role>
-```
-
-Growing the crew is a decision, not a command that just runs: `/crew:pm
-onboard <role>` names the specific defect class the role closes and confirms
-`.crew/metrics.md` actually supports adding it, then stops and asks yes/no
-before touching `.crew/config.json` or recomputing `tier`.
-
-Offboarding is the same shape in reverse, and checks a precondition first: the
-role has to actually be on the crew. `/crew:pm offboard <role>` reads `roles`
-from `crew_state.py`'s output before doing anything else — running the
-procedure for a role that was never active would append a real `offboarded
-<role>` line to `.crew/metrics.md` for coverage that never existed, and that
-file is what `/crew:scale` reads to decide whether the crew is catching
-anything. If the role is on the crew, it walks the removal, then states —
-out loud, every time — which failure mode the removal leaves uncovered. That
-sentence is the point of the command, not a courtesy.
-
-Neither direction ever changes `config.json` on its own. Both need your
-explicit yes, no matter how obvious the recommendation looks — see the
-`crew:pm` agent's authority rule below.
 
 ---
 
@@ -2135,9 +2052,9 @@ briefed with the symptom and nothing else:
 |---|---|---|
 | change | `explorer` | What shipped in the window before the symptom — commits, deploys, config, flags, migrations? |
 | blast radius | `explorer` | What else calls the failing path or shares the resource, and is already broken without knowing? |
-| cause | `analyst` | The two or three most probable causes, each with the cheapest observation that would kill it |
+| cause | `explorer` | The two or three most probable causes, each with the cheapest observation that would kill it |
 | exposure | `security` | Only when the symptom might be an incident of a different kind — auth, data exposure, an unexpected 200 |
-| data | `dba` | Only when a database is in the picture — locks, a long transaction, a migration mid-flight, replica lag |
+| data | `explorer` | Only when a database is in the picture — locks, a long transaction, a migration mid-flight, replica lag |
 
 They investigate; they do not fix. Two plausible fixes that both need trying get
 a worktree each, so a half-applied one cannot land on top of the other.
@@ -2208,8 +2125,8 @@ CONFIG.md §17 has the table and the reasoning.
 
 | Command | Purpose |
 |---|---|
-| `/crew:ticket <description>` | Scope a request into a ticket |
-| `/crew:work <id>` | Work one ticket end to end. Superseded by the lifecycle commands below; remains until 1.0 |
+| `/crew:ticket` | Removed in 1.0 — a stub that says to use `/crew:brainstorm` then `/crew:spec` |
+| `/crew:work` | Removed in 1.0 — a stub that says to use `/crew:implement` |
 | `/crew:brainstorm <what needs doing>` | crew 1.0 lifecycle: brainstorm a request into an approved direction, before it becomes a spec |
 | `/crew:spec <id>` | Fill the ticket contract — Intent, Exclusions, Evidence, Unknowns, Touch, Acceptance |
 | `/crew:approve <id>` | **Typed by you only** (`disable-model-invocation`): the UserPromptSubmit hook records the plan approval from your own prompt — see "Scope and approval" |
@@ -2228,16 +2145,13 @@ CONFIG.md §17 has the table and the reasoning.
 | `/crew:verify` | Build or refresh the change-to-check map; creates `_verify/` if the repo has no check directory |
 | `/crew:promote <env> [--dry-run\|--status]` | Promote development -> qa -> production with deploy, smoke, regression and post-soak verification as separate gates |
 | `/crew:survey [area]` | Research gaps, produce ranked findings with options |
-| `/crew:scale` | Evidence-based crew sizing |
 | `/crew:jira-sync <KEY> [--push]` | Sync one issue with the local cache |
 | `/crew:sdp-sync <REQUEST-ID> [--push]` | Sync one ServiceDesk Plus request with the local cache — see §13b |
 | `/crew:obsidian-sync <T-####> [--push]` | Sync one Obsidian Kanban card with the local cache — see §13c |
-| `/crew:pm [onboard\|offboard <role>]` | Crew-manager status, or add/remove a role — see §22 |
-| `/crew:upgrade [--force]` | Bring a setup behind the current schema forward — see §11 |
+| `/crew:upgrade [--force]` | Bring a pre-0.20 config up to the 0.20 schema; a 0.20 repo goes straight to `/crew:migrate` — see §11 |
 | `/crew:emergency <what is broken>` | Declare a time-boxed incident: gates stand down and record what they skipped, lanes investigate in parallel — see §24. `status`, `extend [min]`, `end` |
 | `/crew:model` | Report the resolved provider and model for every role, and which family would be reviewing which — see §12 |
-| `/crew:roster` | Print the crew as configured: roles, tier, and what each one is for |
-| `/crew:status [--memory]` | crew 1.0: read-only status in at most 40 lines - config, roster, tickets, review budget, gate, codemap, handoff; `--memory` adds the context hook's stats. Will replace `/crew:pm`, `/crew:roster` and `/crew:scale` |
+| `/crew:status [--memory]` | Read-only status in at most 40 lines - config, roster, tickets, review budget, gate, codemap, handoff; `--memory` adds the context hook's stats |
 | `/crew:migrate [--preview\|--apply\|--rollback <dir>]` | crew 1.0: one-time move of `.crew/config.json` to `.crew/crew.json`, tickets and tracker caches to `.work/tickets/<id>/`, `metrics.md` to `metrics.jsonl`; previews first, backs up, applies atomically, rolls back |
 | `/crew:config [--show]` | Show where every setting comes from, and walk the machine-global config — see §11 |
 | `/crew:gate <disable\|enable\|status> <github\|bitbucket>` | Take a repository's merge gate down and put it back **from the export**. Gated by `guards.mergeGate`, which ships as `block` |
@@ -2250,81 +2164,24 @@ CONFIG.md §17 has the table and the reasoning.
 | Agent | Tools | Model | Tier | Role |
 |---|---|---|---|---|
 | `explorer` | read-only | `sonnet` | 0 | Maps code, returns summaries not contents |
-| `qa-reviewer` | read-only + Bash | `opus` | 0 | Hostile review; the last rung of `qa.order`, reached when neither Codex nor Copilot probes clean |
-| `reviewer` | read-only + Bash | `opus` | — | crew 1.0 name for `qa-reviewer`. Both files exist until the old one is retired; off the ladder so no tier grants the same reviewer twice |
+| `reviewer` | read-only + Bash | `opus` | 0 | Hostile review; the last rung of `qa.order`, reached when neither Codex nor Copilot probes clean. Renamed from `qa-reviewer` in 1.0 |
 | `security` | read-only + Bash | `sonnet` | 1 | Exploitable defects in the diff |
-| `smoke-author` | read/write | `sonnet` | 1 | Builds and repairs the safety net |
-| `developer` | read/write | `sonnet` | 1 | Implements one scoped change; never reviews it |
-| `browser-tester` | read/write | `sonnet` | 2 | Playwright specs, visual baselines, user flows |
-| `analyst` | read-only + Bash | `sonnet` | 2 | Anchored findings and options, never tickets |
-| `planner` | read-only + Bash | `sonnet` | 2 | Design second opinion from an abstracted brief |
-| `dba` | read-only + Bash | `sonnet` | 2 | Migrations, locks, online safety |
-| `docs-writer` | read/write | `sonnet` | 2 | Architecture and data flow from real code |
-| `infrastructure-architect` | read-only + Bash | `sonnet` | 2 | AWS network and account design, with tradeoffs. Never applies to a live account |
-| `scribe` | read/write | `sonnet` | 2 | The durable record: ADRs, CHANGELOG entries, handoff notes, and what was rejected |
 | `researcher` | read-only + web | `sonnet` | 2 | External research only. Every claim carries its source |
-| `sharepoint-developer` | read/write | `sonnet` | — | SPFx, Graph and REST, list and library schema, permissions. Never changes a live tenant unasked |
-| `power-automate-specialist` | read/write | `sonnet` | — | Flows and the Power Platform around them. A flow with a trigger is already live, so it never edits a production flow unasked |
-| `node-developer` | read/write | `sonnet` | — | Node work where the async model, the module system or the dependency tree is the hard part |
-| `php-pro` | read/write | `sonnet` | — | PHP 8.x, Laravel and Symfony. Writes against the version `composer.json` allows, not the newest one |
-| `python-pro` | read/write | `sonnet` | — | Python 3.x — typing, the async model, packaging, and the platform-conditional behaviour a green suite hides |
-| `dotnet-core-expert` | read/write | `sonnet` | — | .NET 6+ — DI lifetimes, EF Core tracking, the async model. Reads the `TargetFramework` before it writes |
-| `dotnet-framework-4.8-expert` | read/write | `sonnet` | — | Legacy .NET on Windows — Web Forms, WCF, `web.config`, binding redirects. Fixes on 4.8; does not start a port |
-| `angular-architect` | read/write | `sonnet` | — | Angular — subscription lifetime, change detection, the injector hierarchy. Writes in the major version the repo is on |
-| `react-specialist` | read/write | `sonnet` | — | React — effect timing, re-render behaviour, the server/client boundary |
-| `rust-engineer` | read/write | `sonnet` | — | Rust — ownership, trait bounds, async runtimes. Every `unsafe` carries its safety invariant |
-| `sql-pro` | read/write | `sonnet` | — | Writes and optimises SQL, and returns the plan. `dba` reviews it; it never reviews itself |
-| `terraform-engineer` | read/write | `sonnet` | — | Writes HCL and returns a plan. Never runs `apply`, `destroy` or a state operation |
-| `network-engineer` | read/write | `sonnet` | — | Routing, DNS, firewalls, TLS, hybrid links. Names the layer that failed; never changes a live device |
-| `windows-infra-admin` | read/write | `sonnet` | — | AD, GPO, DNS and DHCP automation with an export and a rollback. Never runs the change against a live domain |
-| `qa-researcher` | read-only + Bash + Perplexity MCP | `sonnet` | — | Checks what a diff assumes about the outside world against live sources. Complements a code reviewer; never replaces one |
-| `ad-security-reviewer` | read/write | `sonnet` | — | AD privilege paths, delegation and authentication hardening reviewed by eye instead of enumerated |
-| `ai-writing-auditor` | read/write | `sonnet` | — | Audits prose for AI writing tells and rewrites them out |
-| `api-designer` | read/write | `sonnet` | — | REST and GraphQL surface design, OpenAPI, auth patterns and versioning before the endpoints exist |
-| `architect-reviewer` | read/write | `sonnet` | — | Second opinion on system design, patterns and technology choice at the macro level |
-| `backend-developer` | read/write | `sonnet` | — | Server-side APIs and services, built with the scaling and operability story attached |
-| `code-reviewer` | read/write | `sonnet` | — | Quality, security and best-practice review of a diff |
-| `compliance-auditor` | read-only | `sonnet` | — | GDPR, HIPAA, PCI DSS, SOC 2 and ISO control gaps, and audit preparation |
-| `database-administrator` | read/write | `sonnet` | — | Performance, high availability, disaster recovery and the rest of running a production database |
-| `design-bridge` | read/write + web | `sonnet` | — | Turns a DESIGN.md brand spec into UI instructions that actually match it |
-| `exchange-online-specialist` | read/write | `sonnet` | — | Exchange Online and Purview automation through ExchangeOnlineManagement and Security & Compliance PowerShell, where a wrong answer is a compliance answer |
-| `fintech-engineer` | read/write | `sonnet` | — | Payment and financial systems where accuracy and regulatory fit are the requirement |
-| `git-workflow-manager` | read/write | `sonnet` | — | Branching strategy, merge management and the workflow a team actually follows |
-| `graphql-architect` | read/write | `sonnet` | — | Federated schema design across services, and query performance in a distributed graph |
-| `kimi-consult` | read-only + Bash | `sonnet` | — | A second opinion from a different model family, through the Copilot CLI |
-| `legacy-modernizer` | read/write | `sonnet` | — | Incremental migration of a legacy system without stopping the business |
-| `microservices-architect` | read/write | `sonnet` | — | Service decomposition and the communication patterns between the pieces |
-| `multi-agent-coordinator` | read/write, no Bash | `sonnet` | — | State sharing, synchronisation and failure handling across concurrent agents |
-| `payment-integration` | read/write | `sonnet` | — | Gateway integration, PCI scope, and fraud handling on the money path |
-| `penetration-tester` | read-only + Bash | `sonnet` | — | Authorized offensive testing that proves a vulnerability rather than reporting a possibility |
-| `platform-engineer` | read/write | `sonnet` | — | Internal developer platforms, golden paths and self-service infrastructure |
-| `powershell-5.1-expert` | read/write | `sonnet` | — | Windows PowerShell 5.1 — the in-box edition on every Windows Server, for modules with no PowerShell 7 story |
-| `powershell-7-expert` | read/write | `sonnet` | — | PowerShell 7, for modern language features, real parallelism and UTF-8 defaults — and for whether a host can run `pwsh` at all |
-| `powershell-security-hardening` | read/write | `sonnet` | — | PowerShell automation and remoting hardened to an enterprise baseline |
-| `skill-author` | read/write | `sonnet` | — | Claude Code skills, commands and plugins: frontmatter, the description that decides whether a skill fires, and the operator walkthrough |
-| `workflow-orchestrator` | read/write, no Bash | `sonnet` | — | Multi-state business processes, with error handling and transaction management |
-| `pm` | read/write, scoped to `.crew/` and generated diagrams | `opus` | — | The manager, spawned unnamed and resumed by id or journal: scope, onboarding, communication, ticket hygiene, and dispatch |
 
-55 agents — 13 on the tier ladder (`crew_state.ROLE_TIERS`), 41 off it (`crew_state.SPECIALIST_ROLES`: 40 domain specialists plus `reviewer`, the 1.0 name for `qa-reviewer` while both files exist), and `pm`. Re-measure with `ls plugin/crew/agents/*.md`, which is one file per agent; the table above is now one row per agent too, but it repeated four names until 2026-09-14, so the file count is still the authority. **"read-only" in the Tools column means no `Write` and no `Edit`** — it does not mean no `Bash`, which is why the rows that hold `Bash` say so. `validate-prompts.py` enforces exactly that: a description saying read-only may not carry `Write` or `Edit`, and `Bash` is not part of that check. `pm` sits outside the tier ladder — it is not sized in or out by `/crew:scale`, it is the thing doing the sizing. The specialist rows above are a readable copy of `crew_state.SPECIALIST_ROLES`; `tests/test_role_ladder.py` checks that copy against the code in both directions, so a row here with no registration behind it, or an `agents/<name>.md` nobody registered, fails the suite rather than shipping as a role `/crew:pm onboard` calls unrecognised.
+4 agents, all on the tier ladder (`crew_state.ROLE_TIERS`); `crew_state.SPECIALIST_ROLES` is empty in 1.0. Re-measure with `ls plugin/crew/agents/*.md`, which is one file per agent. **"read-only" in the Tools column means no `Write` and no `Edit`** — it does not mean no `Bash`, which is why the rows that hold `Bash` say so. `validate-prompts.py` enforces exactly that: a description saying read-only may not carry `Write` or `Edit`, and `Bash` is not part of that check. `tests/test_role_ladder.py` checks this table against the code in both directions.
 
-**No tier grants a specialist, and that is deliberate.** Every ladder role closes a defect class any repo can have, so `roles_for_tier` hands out every rung up to the declared tier — which is exactly how a repo with no database ends up with `dba`. "This repo does SharePoint" is not a defect class; it is a fact about one checkout, and it is knowable on day one. Put these on the ladder and every tier-2 repo on the machine gets a SharePoint developer it will never dispatch. So they are opted into per repo with `/crew:pm onboard <role>`, justified by what is actually in the repo — a `package.json` with a server entry point, an SPFx `config/package-solution.json`, an exported flow definition — rather than by a pattern in `.crew/metrics.md`, and onboarding one leaves `tier` where it was: the crew has specialised, not grown.
-
-**Model tiers are part of the design, not a cost knob.** The PM runs on `opus` because it holds the whole project picture and every dispatch decision derives from it — a cheap manager makes cheap assignments and every role below inherits the mistake. Working roles run on `sonnet`: narrow brief, clean context, one deliverable. QA walks `qa.order` (`qa.provider` ships as `auto`) and takes the first provider that probes clean — Codex, then Copilot pinned to a non-Claude model, then `qa-reviewer` on `opus`. The ordering is not a preference ranking; it is a family-diversity ranking. A different model family is what makes review independent, so a provider that would land back on the author's own family is skipped rather than used, and if you cannot have a different family at all, the strongest model in this one is the only compensation left.
+**Model tiers are part of the design, not a cost knob.** QA walks `qa.order` (`qa.provider` ships as `auto`) and takes the first provider that probes clean — Codex, then Copilot pinned to a non-Claude model, then `reviewer` on `opus`. The ordering is not a preference ranking; it is a family-diversity ranking. A different model family is what makes review independent, so a provider that would land back on the author's own family is skipped rather than used, and if you cannot have a different family at all, the strongest model in this one is the only compensation left. The read-only roles run on `sonnet`: narrow brief, clean context, one deliverable.
 
 `opus` and `sonnet` here are tiers, not pinned versions. Agent frontmatter asks for a tier and gets whatever the session's strongest model at that tier is; there is no way to pin a point release from a plugin.
 
-**The PM is always spawned unnamed.** A `name` would make it an addressable teammate, and [agent teams](https://code.claude.com/docs/en/agent-teams.md) forbids a teammate spawning its own teammates — since dispatching roles is the PM's whole job, naming it disables it. Continuity instead comes from two mechanisms: `/crew:pm` resumes a held agent id with `SendMessage` when one exists in the same session (per the docs above, still with no `name`), and two files it reads and appends, through `hooks/scripts/pm_journal.py` rather than a shell redirect or heredoc, on every invocation when `isCrew: true` — `.crew/pm-journal.md`, a dated tail of what was dispatched, decided, deferred, and vetoed, and `.crew/pm-standing.md`, the durable one, read in full every time, one line per decision, veto, or onboard/offboard ruling that must never fall out of view. That matters because the roles it dispatches each see one slice of the work and are gone — the journal and standing file are the only things that remember what was decided, what was deferred, who was onboarded, and why. A PM that signs off when the queue empties still gets rehired, but the journal is what stops that costing the whole project picture. It reports what is outstanding and waits.
-
-**One hat per role, the PM's included.** The PM manages: it assesses scope, onboards and offboards roles, communicates to you and to the crew, and keeps tickets current. It does not write application code, tests, docs, migrations, or reviews — implementation goes to `developer`, review goes through `/crew:review`, and everything else goes to the role that owns it. Its own writes are `.crew/` bookkeeping, ticket text, `TODO.md`, and the generated diagram artifacts its triggers name.
-
 ### Hooks
 
-Fifteen scripts across eight events, each with a `.sh` and a `.ps1` twin
-registered on its own matcher or event — 38 entries total. The sentence said
-eight and sixteen until 0.16.7 while the table below it already listed all
-ten; the prose was the half that went stale. Until 0.20.25 it was the table's
-turn: it said eleven and thirty with `cloud-guard`, `role-write-guard` and
-`pm-pulse` registered and unlisted.
+Thirteen scripts across eight events, each with a `.sh` and a `.ps1` twin
+registered on its own matcher or event — 34 entries total. crew 1.0 removed
+`pm-brief` and `pm-pulse`. The sentence said eight and sixteen until 0.16.7
+while the table below it already listed all ten; the prose was the half that
+went stale. Until 0.20.25 it was the table's turn: it said eleven and thirty
+with three hooks registered and unlisted.
 
 | Script | Event | Behavior |
 |---|---|---|
@@ -2334,13 +2191,11 @@ turn: it said eleven and thirty with `cloud-guard`, `role-write-guard` and
 | `approval-hook.sh` / `.ps1` | `UserPromptSubmit` | Records a ticket's plan approval only when the prompt *you* typed is `/crew:approve <id>`: validates `spec.md` and `plan.md` and writes the receipt bound to both hashes, or blocks the prompt and says why. Any other prompt: no output, exit 0 |
 | `scope-guard.sh` / `.ps1` | `PreToolUse` on Write/Edit/MultiEdit/NotebookEdit/Bash/PowerShell | **Off by default** (`scope.mode`: `off`/`report`/`block`/`auto`; `/crew:init` writes `auto` for a new repo). Refuses an edit with no current approval or outside the spec's Touch, and a shell command that runs `crew_ticket.py approve` or writes crew state — see "Scope and approval" |
 | `completion-audit.sh` / `.ps1` | `Stop` | **Off by default**, same `scope.mode`. Diffs the whole tree against the ticket's start commit and blocks the stop once if any changed path is outside Touch, shell-made writes included |
-| `handoff-read.sh` / `.ps1` | `SessionStart` | Injects the handoff after clear, compact, or resume — first archiving it instead, under `.crew/handoffs/`, if age or reality drift (its `head`/`branch` no longer describing the checkout) says it is stale |
-| `crew-context.sh` / `.ps1` | `SessionStart`, `UserPromptSubmit`, `PostToolUse` on Read/Edit/Write/MultiEdit and vault MCP tools, `SubagentStart` | **Off until 1.0: emits and logs nothing unless `.crew/config.json` sets `memory.inject: true`.** When on, injects budgeted code-map slices and vault-labelled recall, and is the only channel that reaches a dispatched subagent (`SubagentStart`). Never blocks. The default flips at the 1.0.0 cut together with unregistering `pm-brief` and `handoff-read`, so the two never inject the same state twice |
-| `pm-brief.sh` / `.ps1` | `SessionStart` | Runs `crew_state.py`, prints the prioritized PM brief (triggers, health, knowledge, graph freshness) — report-only, changes nothing |
+| `handoff-read.sh` / `.ps1` | `SessionStart` | Resets its once-per-session markers. Prints the handoff after clear, compact, or resume only when `memory.inject` is false (the context hook injects it otherwise) — first archiving it instead, under `.crew/handoffs/`, if age or reality drift (its `head`/`branch` no longer describing the checkout) says it is stale |
+| `crew-context.sh` / `.ps1` | `SessionStart`, `UserPromptSubmit`, `PostToolUse` on Read/Edit/Write/MultiEdit and vault MCP tools, `SubagentStart` | **On by default since 1.0.0; `memory.inject: false` in `.crew/config.json` turns it off, and then it emits and logs nothing.** Injects branch/HEAD, code-map anchor state and the handoff at SessionStart, budgeted code-map slices and vault-labelled recall per turn, and is the only channel that reaches a dispatched subagent (`SubagentStart`). Never blocks. `handoff-read` stops printing the handoff while this is on, so the two never inject it twice |
 | `platform-sync.sh` / `.ps1` | `SessionStart` | Detects this machine and repairs the `platform` block in `.crew/config.json` — see §3b. The only hook that writes config: the seven derived facts, plus recreating the whole file from defaults when it is missing or malformed (backing up a malformed one first) — never when `.crew/` itself does not exist. See "The config heals itself" in §3 |
 | `verify-gate.sh` / `.ps1` | `Stop` | Runs the checks the changed paths map to; fails the turn on red, on a changed path with no rule, or on a deploy that recorded no promotion row. Stands down while an emergency lane is open (§24), recording what did not run |
 | `context-watch.sh` / `.ps1` | `Stop` | Measures window occupancy from the transcript; asks for a handoff once per session at the later of `warnAt` and `reserveTokens` remaining, or instructs a wrap-up if `context.autoWrapUp` is on |
-| `pm-pulse.sh` / `.ps1` | `Stop` | Re-engages the PM when project state actually changed (a ticket closed, a gate broke, diagrams fell behind); fails the turn to hand its findings back, and what that means depends on `pm.authority` |
 | `handoff-write.sh` / `.ps1` | `PreCompact` | Snapshots the transcript, writes a skeleton handoff |
 | `notify.sh` / `.ps1` | `Notification`, plus called by commands | Outbound one-line message to Teams or Telegram. Never reads. |
 
@@ -2456,6 +2311,11 @@ graded on the transcript rather than on prose:
 | `developer-runs-command-in-foreground` | no silent backgrounding | The developer launching a short command with `run_in_background: true` and telling the user to wait for a notification instead of just running it |
 | `pm-answers-status-mid-pass` | `agents/pm.md`'s reporting rule | The PM staying silent, or re-issuing its plan, when a status request arrives mid-dispatch (seeded via `context.history_file`, a fabricated prior turn) |
 
+**All five cases exercise 0.20 roles that crew 1.0 deleted** (`pm`, `developer`,
+`qa-reviewer`). Each case's `prompt.md` carries its rules inline, so they still
+run, but they no longer test a shipped agent. Retiring or re-targeting them is
+an owner decision tracked in `TODO.md`.
+
 Every grader here is free (`regex`, `tool_used`) — none calls a judge model —
 because each rule above has a mechanical tell: a tool that was called when it
 shouldn't have been, or text that is or isn't in the reply. Where a case
@@ -2508,16 +2368,16 @@ model call on your own account.
 
 ### How the Windows half works
 
-Every event is registered **twice** in `hooks.json`, once per flavour, with `shell: powershell` on the PowerShell side — a field Claude Code documents and does read; setting it runs that entry via PowerShell on Windows without needing `CLAUDE_CODE_USE_POWERSHELL_TOOL`, since hooks spawn the interpreter directly. `guard.sh`/`guard.ps1` and `promote-gate.sh`/`promote-gate.ps1` are additionally registered on separate `Bash` / `PowerShell` matchers at `PreToolUse`, so the branch is **which tool Claude used**, not which OS is running:
+Every event is registered **twice** in `hooks.json`, once per flavour, with `shell: powershell` on the PowerShell side — a field Claude Code documents and does read; setting it runs that entry via PowerShell on Windows without needing `CLAUDE_CODE_USE_POWERSHELL_TOOL`, since hooks spawn the interpreter directly. `promote-gate.sh`/`promote-gate.ps1` are additionally registered on separate `Bash` / `PowerShell` matchers at `PreToolUse` (`cloud-guard.sh`/`cloud-guard.ps1` share one `Bash|PowerShell` matcher and branch on `tool_name` inside `cloud_guard.py`), so the branch is **which tool Claude used**, not which OS is running:
 
 ```json
-{ "matcher": "Bash",       "hooks": [{ "type": "command", "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/guard.sh", "timeout": 10 }] },
-{ "matcher": "PowerShell", "hooks": [{ "type": "command", "shell": "powershell", "command": "& '${CLAUDE_PLUGIN_ROOT}/hooks/scripts/guard.ps1'", "timeout": 10 }] }
+{ "matcher": "Bash",       "hooks": [{ "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/promote-gate.sh\"", "timeout": 20 }] },
+{ "matcher": "PowerShell", "hooks": [{ "type": "command", "shell": "powershell", "command": "& \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/promote-gate.ps1\"; exit $LASTEXITCODE", "timeout": 20 }] }
 ```
 
-That distinction is load-bearing. A `Bash` tool call is bash syntax *even on Windows*, so judging it with PowerShell rules gets it backwards in both directions: it blocks the correct capture form (`DB_PASS=$(...)`) and misses the wrong one. Branch on the tool and each command is judged by the rules of the language it is written in. (`hooks/scripts/_common.sh` also ships a `crew_tool_dispatch` helper for judging a command from inside a single bash-registered script — the other valid shape for the same problem. It is **called**, not dead code: `guard.sh:7` and `promote-gate.sh:27` both invoke it. With the dual-matcher registration above in place it never actually fires, because a `PowerShell` tool call reaches `guard.ps1` directly and never enters `guard.sh` — so it is a belt-and-braces second path, and deleting it on the assumption that nothing calls it would silently remove the fallback for anyone who registers one of these scripts on a single matcher.)
+That distinction is load-bearing. A `Bash` tool call is bash syntax *even on Windows*, so judging it with PowerShell rules gets it backwards in both directions: it blocks the correct capture form (`DB_PASS=$(...)`) and misses the wrong one. Branch on the tool and each command is judged by the rules of the language it is written in. (`hooks/scripts/_common.sh` also ships a `crew_tool_dispatch` helper for judging a command from inside a single bash-registered script — the other valid shape for the same problem. It is **called**, not dead code: `promote-gate.sh:27` invokes it. With the dual-matcher registration above in place it never actually fires, because a `PowerShell` tool call reaches `promote-gate.ps1` directly and never enters `promote-gate.sh` — so it is a belt-and-braces second path, and deleting it on the assumption that nothing calls it would silently remove the fallback for anyone who registers one of these scripts on a single matcher.)
 
-The other six hooks judge no command, so both flavours are simply wired to their event with no branch: `verify-gate.sh`/`.ps1`, `context-watch.sh`/`.ps1`, `handoff-read.sh`/`.ps1`, `handoff-write.sh`/`.ps1`, `pm-brief.sh`/`.ps1`, and `notify.sh`/`.ps1` are all registered in `hooks.json`, one entry per flavour per event.
+The other six hooks judge no command, so both flavours are simply wired to their event with no branch: `verify-gate.sh`/`.ps1`, `context-watch.sh`/`.ps1`, `handoff-read.sh`/`.ps1`, `handoff-write.sh`/`.ps1`, `crew-context.sh`/`.ps1`, and `notify.sh`/`.ps1` are all registered in `hooks.json`, one entry per flavour per event.
 
 Two things worth knowing:
 
@@ -2570,7 +2430,7 @@ The **commands** are the other half, and they do require it: 10 of the files und
 | MCP snippet copied from VS Code does nothing | VS Code uses the `servers` key; Claude Code uses `mcpServers`. |
 | Plan command hangs | The Gemini CLI dropped into interactive mode. Confirm the non-interactive flag with `gemini --help`. |
 | Provider call fails with model-not-found | Free catalogs churn. Update `secondOpinion.model` rather than debugging the request. |
-| Survey returns generic advice | The analyst could not anchor its findings. Give it a narrower area and make sure the code map exists. |
+| Survey returns generic advice | Explorer could not anchor its findings. Give it a narrower area and make sure the code map exists. |
 | `bad interpreter: ...^M` | CRLF line endings. Add `.gitattributes` with `* text=auto eol=lf` and `git add --renormalize .`. |
 | Tests connect fine on Windows, time out in WSL | WSL2 — the service is on the Windows host, not `localhost`. Use the gateway IP from `.crew/config.json`. |
 | Smoke suite takes minutes instead of seconds | Repo is on `/mnt/c`. Re-clone inside WSL. |
@@ -2636,4 +2496,4 @@ plugin is the first thing to check.
 2. If tickets pile up waiting on your review, more agents make it worse.
 3. If the code map is stale, the code wins and the map gets deleted.
 
-Those are written into `crew-scaling` and `crew-memory` deliberately. A setup that only agrees with you is the thing you were trying to avoid by adding a review step in the first place.
+Those are written into this README and `crew-memory` deliberately. A setup that only agrees with you is the thing you were trying to avoid by adding a review step in the first place.

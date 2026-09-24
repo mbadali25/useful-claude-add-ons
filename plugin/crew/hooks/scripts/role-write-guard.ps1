@@ -3,8 +3,7 @@
 # drift from the other. See role-write-guard.sh for why this is NOT branched
 # by tool_name the way promote-gate.ps1 is.
 param(
-  # Probe seam, the twin of verify-gate.ps1's -PrintPython and
-  # pm-pulse.ps1's: prints the interpreter Resolve-CrewPython would use and
+  # Probe seam, the twin of verify-gate.ps1's -PrintPython: prints the interpreter Resolve-CrewPython would use and
   # exits 0 without touching stdin or running the guard. This hook's only
   # consumer is Claude Code's PreToolUse hook, which pipes JSON on stdin and
   # has no interactive path to probe resolution.
@@ -25,9 +24,9 @@ if ($env:OS -ne 'Windows_NT') { exit 0 }
 $dir = Split-Path -Parent $MyInvocation.MyCommand.Path
 
 function Resolve-CrewPython {
-  # NOT byte-for-byte with verify-gate.ps1's/pm-pulse.ps1's copies any more
+  # NOT byte-for-byte with verify-gate.ps1's copy any more
   # -- see tests/test_role_write_guard.py for why the parity discipline
-  # changed shape rather than being dropped. Those two files' resolver only
+  # changed shape rather than being dropped. That file's resolver only
   # needs to match `_common.sh`'s bare `crew_py()`; this one needs to match
   # role-write-guard.sh's OWN resolver, which does more than `crew_py()`
   # does, so this copy has to as well.
@@ -159,10 +158,7 @@ if (-not (Test-Path -LiteralPath $scriptPath -PathType Leaf)) {
 # parity test re-derives the python side from `agents/*.md` on every run
 # and asserts this list matches it.
 $RestrictedRolesForFallback = @(
-  'analyst', 'compliance-auditor', 'dba', 'explorer',
-  'infrastructure-architect', 'kimi-consult', 'penetration-tester',
-  'planner', 'qa-researcher', 'qa-reviewer', 'researcher', 'security',
-  'pm'
+  'explorer', 'researcher', 'reviewer', 'security', 'pm'
 )
 
 function Get-FallbackRole {

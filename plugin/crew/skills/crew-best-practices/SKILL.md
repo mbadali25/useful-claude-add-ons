@@ -36,12 +36,12 @@ Claiming these as gaps wastes a session. Each is checked, with where it lives:
 
 | Practice | Crew |
 |---|---|
-| Plan before coding | `/crew:plan`, the `planner` role |
+| Plan before coding | `/crew:plan`, with an approval receipt before edits |
 | Aggressive context clearing | `context-watch` hook, `context.warnAt` 0.5 since 0.19.52 |
 | "Document & Clear" pattern | `handoff-write` (PreCompact) + `handoff-read` (SessionStart) |
 | Quality-gate hooks | `verify-gate` on Stop, over `.crew/verify.json` |
 | Multi-instance review | `/crew:review` — prefers a different model family, not a clone |
-| Dev docs system | `.work/`, `/crew:ticket`, `/crew:handoff` |
+| Dev docs system | `.work/tickets/<id>/`, `/crew:spec`, `/crew:handoff` |
 | Utility scripts in skills | every `skills/*/scripts/` directory |
 | Don't block at write time | 0.19.52 removed the PreToolUse command guard, kept the Stop gate |
 

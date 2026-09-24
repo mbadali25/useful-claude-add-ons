@@ -32,7 +32,7 @@ function Resolve-CrewPython {
   # walked every PATH match for one name before moving to the next rather
   # than taking only the first. A hook that WRITES `.crew/config.json`'s
   # platform block is the last place that should run on an unverified
-  # interpreter. `tests/test_pm_brief_platform_sync_python_resolver.py` asserts this
+  # interpreter. `tests/test_platform_sync.py` asserts this
   # copy still agrees with role-write-guard.ps1's.
   $names = @('python3', 'python', 'py')
   foreach ($name in $names) {

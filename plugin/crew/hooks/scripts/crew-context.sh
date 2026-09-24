@@ -4,7 +4,7 @@
 # stdout is an additionalContext payload or nothing. NEVER blocks: every path
 # exits 0 and nothing here or in crew_context.py prints a `decision`.
 #
-# Thin wrapper on purpose, like pm-brief.sh: the logic, the budgets and the
+# Thin wrapper on purpose, like platform-sync.sh: the logic, the budgets and the
 # one-flavour-per-event claim all live in crew_context.py, so the bash and
 # PowerShell paths cannot drift.
 #

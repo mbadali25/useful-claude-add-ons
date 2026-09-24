@@ -595,7 +595,7 @@ if (-not $unlocked) {
 # nothing there. try/catch because this gate can exit 2 and the scope layer
 # must not be able to.
 try {
-  # Same resolver pm-pulse.ps1 uses. verify-gate.ps1 had NO python dependency
+  # Same resolver the other thin .ps1 wrappers use. verify-gate.ps1 had NO python dependency
   # before this -- it reads verify.json with ConvertFrom-Json -- so the
   # resolver is introduced here rather than assumed. An invented
   # Resolve-CrewPython would have thrown into the catch below and printed

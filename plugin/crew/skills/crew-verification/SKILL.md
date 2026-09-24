@@ -113,7 +113,7 @@ against, so you can tell how stale it is. Neither changes what runs.
 
 ### `agents` can name any installed subagent
 
-Crew ships the roles in `ROLE_TIERS` and `SPECIALIST_ROLES` — read them there
+Crew ships the roles in `crew_state.ROLE_TIERS` — read them there
 rather than trusting a count written down here, which is wrong one release
 after it is written. A machine usually has more: agents from other
 marketplaces, and whatever the user wrote themselves. A rule may name any of
@@ -137,11 +137,10 @@ other one.
 
 **That order is why a crew release can change what an existing rule
 dispatches.** 0.16.23 added twelve specialists under names that also exist in
-other collections — `php-pro`, `python-pro`, `react-specialist`,
-`terraform-engineer`, `network-engineer` and the rest. A rule that named one of
-those bare, meaning the one from another marketplace, now resolves to crew's.
-Nothing errors, and the finding style simply changes. Namespace the name if you
-meant the other agent.
+other collections, and 1.0 removed them again, so a bare name like `python-pro`
+now resolves to whichever other marketplace still ships one. Nothing errors,
+and the finding style simply changes. Namespace the name if you mean a
+particular agent.
 
 **A named agent that is not installed is a reported gap, never a silent skip.**
 <!-- crew-ignore-policy:list -->
@@ -169,7 +168,7 @@ one whose brief actually matches the change, and say in `why` why that one.
 ### The authoring contract
 
 **Whoever writes a check writes its rule, in the same turn.** This applies to
-`smoke-author`, `browser-tester`, and to you when you add a check by hand.
+the implementing session and to you when you add a check by hand.
 
 The failure this prevents is subtle and common: a check exists, is committed, is
 visible in the repo, and never runs. Nobody discovers that until the change it

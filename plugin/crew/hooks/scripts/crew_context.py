@@ -1,8 +1,8 @@
 """crew's one context hook: SessionStart, UserPromptSubmit, PostToolUse and
 SubagentStart, for Claude Code and Codex alike.
 
-It replaces four emitters (pm-brief, handoff-read, context-watch's nag and the
-PM pulse's context lines) with one budgeted owner. What it injects, per event:
+It is crew's one budgeted context emitter; crew 1.0 removed the pm-brief and
+PM-pulse emitters it replaced. What it injects, per event:
 
 | Event | Injects | Budget |
 |---|---|---|
@@ -28,8 +28,8 @@ subagent's `agent_id`, the epoch advances on every `compact` or `clear`
 SessionStart (the context those slices lived in is gone), and an item is a
 code-map subsystem or one vault note.
 
-Off by default in 0.20.x: it emits and logs nothing unless the repo's crew
-config sets `memory.inject: true`. See `run` for why, and for when that flips.
+On by default since 1.0.0: it emits and logs nothing only when the repo's
+crew config sets `memory.inject: false`. See `inject_enabled`.
 
 Never blocks. `main` returns 0 on every path, prints only an
 `additionalContext` payload or nothing, and never a `decision`.
@@ -131,12 +131,19 @@ def load_crew_config(root):
     return {}
 
 
+def _inject_on(cfg):
+    """`memory.inject` defaults to on since 1.0.0: only an explicit `false`
+    turns the hook off. Any other value -- absent, null, a typo'd string --
+    reads as the default rather than silently disabling injection."""
+    return dict_or_empty(cfg.get("memory")).get("inject") is not False
+
+
 def inject_enabled(root):
-    """True only when the repo's crew config sets `memory.inject: true`. The
-    one flag every SessionStart emitter reads: this hook runs only when it is
-    true, and pm-brief and handoff-read stand down when it is -- so a
-    session gets its handoff and code-map state from exactly one of them."""
-    return dict_or_empty(load_crew_config(root).get("memory")).get("inject") is True
+    """The one flag both SessionStart emitters read: this hook runs when it
+    is on, and handoff-read stops printing the handoff when it is -- so a
+    session gets its handoff from exactly one of them. handoff-read still
+    runs its once-per-session marker resets either way."""
+    return _inject_on(load_crew_config(root))
 
 
 def _write_json_atomic(path, data):
@@ -795,13 +802,10 @@ def run(payload, raw, harness="claude"):
     if not os.path.isdir(os.path.join(root, ".crew")):
         return ""
     cfg = load_crew_config(root)
-    # OFF unless the repo says `memory.inject: true`. pm-brief and
-    # handoff-read are still registered through 0.20.x and inject the same
-    # handoff and code-map state at SessionStart; they read this same flag
-    # (`inject_enabled`) and stand down when it is on, so a session gets one
-    # emitter or the other, never both. The default flips to on at the 1.0.0
-    # cut, in the same change that unregisters those two -- not before.
-    if dict_or_empty(cfg.get("memory")).get("inject") is not True:
+    # ON unless the repo says `memory.inject: false`. handoff-read reads the
+    # same flag (`inject_enabled`) and stops printing the handoff when it is
+    # on, so a session gets the handoff from one emitter, never both.
+    if not _inject_on(cfg):
         return ""
     if not claim(root, raw, harness):
         return ""
@@ -933,10 +937,10 @@ def stats(root, as_json=False):
 
 def slice_for_subagent(root, query, paths):
     """Plain text a dispatching command pastes into a subagent's prompt.
-    Empty, and nothing logged, unless `memory.inject` is true -- the same
-    gate as the hook, so no path emits vault context the repo did not ask for."""
+    Empty, and nothing logged, when `memory.inject` is false -- the same
+    gate as the hook, so no path emits vault context the repo turned off."""
     cfg = load_crew_config(root)
-    if dict_or_empty(cfg.get("memory")).get("inject") is not True:
+    if not _inject_on(cfg):
         return ""
     head = git_out(root, "rev-parse", "--short=8", "HEAD")
     subs = subsystems(root)

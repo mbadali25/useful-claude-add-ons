@@ -16,7 +16,7 @@ the document is left alone and that is the correct outcome.
 
 **Diagrams are the exception, and only diagrams.** `docs/diagrams/*.mmd` carry
 an anchor sha, so whether one is current is a fact rather than a judgement —
-the PM refreshes those itself when `diagramsStale` or `diagramsMissing` fires
+`/crew:diagram` refreshes those when `diagramsStale` or `diagramsMissing` fires
 (see `crew-diagrams`). Nothing in the table below works that way. Whether a
 change deserves a CHANGELOG entry depends on whether a user can observe it, and
 no sha answers that, which is why these stay manual.
@@ -31,7 +31,7 @@ no sha answers that, which is why these stay manual.
 | `docs/diagrams/` | The structure a diagram shows moved (see `crew-diagrams`) | Cosmetic changes |
 | `docs/runbooks/` | An operational procedure changed, or a new one was needed | Anything `make deploy` already does |
 
-`/crew:work` step 12 asks this question once per ticket. The honest answer is
+`/crew:implement` asks this question once per ticket. The honest answer is
 usually "none of them."
 
 ## Generated blocks are not yours to edit
@@ -122,7 +122,7 @@ reports rather than fixes, because bulk doc edits are unreviewable.
 
 ## References: API and features
 
-`/crew:reference` writes these; `crew:docs-writer` does the writing. They are
+`/crew:reference` writes these, in the session that runs it. They are
 separate from everything above because they are **enumerations**, not narratives
 - the value is in being complete and anchored, not in being well written.
 

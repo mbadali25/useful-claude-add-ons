@@ -4,8 +4,8 @@ argument-hint: <ticket id>
 allowed-tools: Read, Write, Edit, Bash, Agent
 ---
 
-Spec ticket $1. Replaces `/crew:ticket` in 1.0; that file stays and now says
-so at its top. <!-- deliberate -->
+Spec ticket $1. Replaces `/crew:ticket` in 1.0; that command is now a <!-- deliberate -->
+removal stub with no behaviour.
 
 1. Read `.work/tickets/$1/direction.md`. If it is missing, this ticket has no
    approved direction — stop and say to run `/crew:brainstorm` first, or

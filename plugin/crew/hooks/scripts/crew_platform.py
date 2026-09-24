@@ -527,7 +527,7 @@ def main(argv=None):
         # No crew here at all. Not ours to touch.
         return 0
 
-    # Keyed on session+source for the same reason pm_brief is: SessionStart
+    # Keyed on session+source for the same reason handoff-read is: SessionStart
     # fires once per SOURCE EVENT, so a session-id-only claim would let
     # `startup` burn it and every later /clear go unreported.
     session = payload.get("session_id")

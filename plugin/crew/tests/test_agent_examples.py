@@ -308,16 +308,16 @@ def _copy_without_key(src, dst, key):
     _write(dst, f"---\n{dumped}---\n{body}")
 
 
-def _real_qa_reviewer_fields():
-    fields = yaml.safe_load(_raw_frontmatter(os.path.join(_AGENTS, "qa-reviewer.md")))
+def _real_reviewer_fields():
+    fields = yaml.safe_load(_raw_frontmatter(os.path.join(_AGENTS, "reviewer.md")))
     assert isinstance(fields, dict)
     return fields
 
 
-def _qa_reviewer_with_description(dst, description_line, comment_line):
-    """qa-reviewer.md's real pinned fields around a substituted description,
+def _reviewer_with_description(dst, description_line, comment_line):
+    """reviewer.md's real pinned fields around a substituted description,
     with a YAML comment line placed in the frontmatter."""
-    fields = _real_qa_reviewer_fields()
+    fields = _real_reviewer_fields()
     _write(dst, (
         "---\n"
         f"name: {fields['name']}\n"
@@ -329,15 +329,15 @@ def _qa_reviewer_with_description(dst, description_line, comment_line):
     ))
 
 
-def _qa_reviewer_with_folded_tools(dst):
-    """qa-reviewer.md's fields with the description as a double-QUOTED scalar
+def _reviewer_with_folded_tools(dst):
+    """reviewer.md's fields with the description as a double-QUOTED scalar
     and `tools:` immediately after it as a folded block scalar (`>-`) with the
     same value indented underneath - Codex's exact shape. Every parsed value
     is identical to the real file's. The quoting is load-bearing: after a
     block-scalar description, a line-deleting helper's orphaned continuation
     is silently absorbed into the description and parses; after a quoted
     one it is a ParserError, which is the false alarm being reproduced."""
-    raw, body = _split(os.path.join(_AGENTS, "qa-reviewer.md"))
+    raw, body = _split(os.path.join(_AGENTS, "reviewer.md"))
     fields = yaml.safe_load(raw)
     quoted = json.dumps(fields["description"], ensure_ascii=False)  # JSON escapes are valid YAML "..." escapes
     _write(dst, (
@@ -355,15 +355,15 @@ def _qa_reviewer_with_folded_tools(dst):
 # --- repro cases --------------------------------------------------------------
 
 def test_regenerated_snapshot_without_tools_is_red(tmp_path):
-    """Codex round 1, verbatim: delete qa-reviewer.md's `tools`, then
+    """Codex round 1, verbatim: delete reviewer.md's `tools`, then
     regenerate its snapshot row from that broken file. Every version of this
     check that trusts the snapshot's key set passes; this one must not.
 
     Runs on a temp copy so the real agent file and snapshot are untouched.
     """
-    src = os.path.join(_AGENTS, "qa-reviewer.md")
-    good = tmp_path / "good" / "qa-reviewer.md"
-    broken = tmp_path / "broken" / "qa-reviewer.md"
+    src = os.path.join(_AGENTS, "reviewer.md")
+    good = tmp_path / "good" / "reviewer.md"
+    broken = tmp_path / "broken" / "reviewer.md"
     good.parent.mkdir()
     broken.parent.mkdir()
     shutil.copyfile(src, good)
@@ -372,13 +372,13 @@ def test_regenerated_snapshot_without_tools_is_red(tmp_path):
     # Must-allow control: the untouched copy with a row regenerated from
     # itself is clean, so the failure below is about the missing field and
     # not about the harness.
-    assert _problems(str(good), {"qa-reviewer.md": _row_from_file(str(good))}) == []
+    assert _problems(str(good), {"reviewer.md": _row_from_file(str(good))}) == []
 
     # Must-block: the regenerated row has no `tools`, and neither does the
     # file. Both the file check and the row check must say so.
     row = _row_from_file(str(broken))
     assert "tools" not in row, "repro precondition: regenerated row must lack tools"
-    problems = _problems(str(broken), {"qa-reviewer.md": row})
+    problems = _problems(str(broken), {"reviewer.md": row})
     assert any("`tools` is missing or empty in the frontmatter" in p for p in problems), problems
     assert any("snapshot row has no `tools`" in p for p in problems), problems
 
@@ -390,12 +390,12 @@ def test_regenerated_snapshot_without_tools_is_red(tmp_path):
 
 def test_regenerated_snapshot_without_model_is_red(tmp_path):
     """The same gap for `model`: an agent that silently lost its tier."""
-    src = os.path.join(_AGENTS, "pm.md")
-    broken = tmp_path / "pm.md"
+    src = os.path.join(_AGENTS, "explorer.md")
+    broken = tmp_path / "explorer.md"
     _copy_without_key(src, broken, "model")
     row = _row_from_file(str(broken))
     assert "model" not in row
-    problems = _problems(str(broken), {"pm.md": row})
+    problems = _problems(str(broken), {"explorer.md": row})
     assert any("`model` is missing or empty in the frontmatter" in p for p in problems), problems
     assert any("snapshot row has no `model`" in p for p in problems), problems
 
@@ -404,9 +404,9 @@ def test_mapping_description_with_tags_in_a_comment_is_red(tmp_path):
     """Codex round 2, repro 1: `description: {bad: value}` and a frontmatter
     comment carrying `<example></example>`, pinned fields unchanged. Both
     tests passed when the tags were searched in the raw text."""
-    dst = tmp_path / "qa-reviewer.md"
-    _qa_reviewer_with_description(dst, "{bad: value}", "# <example></example>")
-    assert _row_from_file(str(dst)) == _snapshot()["qa-reviewer.md"], "pinned fields must be intact"
+    dst = tmp_path / "reviewer.md"
+    _reviewer_with_description(dst, "{bad: value}", "# <example></example>")
+    assert _row_from_file(str(dst)) == _snapshot()["reviewer.md"], "pinned fields must be intact"
 
     presence = _presence_problem(str(dst))
     assert presence and "parsed as dict, not a string" in presence, presence
@@ -419,9 +419,9 @@ def test_unclosed_example_with_closer_in_a_comment_is_red(tmp_path):
     separate comment carrying `</example>`. Two independent substring checks
     on the raw text found both tags; the ordered check on the parsed string
     finds an unclosed block."""
-    dst = tmp_path / "qa-reviewer.md"
-    _qa_reviewer_with_description(dst, '"<example>unfinished"', "# </example>")
-    assert _row_from_file(str(dst)) == _snapshot()["qa-reviewer.md"], "pinned fields must be intact"
+    dst = tmp_path / "reviewer.md"
+    _reviewer_with_description(dst, '"<example>unfinished"', "# </example>")
+    assert _row_from_file(str(dst)) == _snapshot()["reviewer.md"], "pinned fields must be intact"
 
     presence = _presence_problem(str(dst))
     assert presence and "unclosed <example>" in presence, presence
@@ -432,8 +432,8 @@ def test_unclosed_example_with_closer_in_a_comment_is_red(tmp_path):
 def test_tags_out_of_order_is_red(tmp_path):
     """The neighbour of repro 2: a closer before the opener has both tags
     present and is still not a block."""
-    dst = tmp_path / "qa-reviewer.md"
-    _qa_reviewer_with_description(dst, '"</example> x <example>"', "# nothing")
+    dst = tmp_path / "reviewer.md"
+    _reviewer_with_description(dst, '"</example> x <example>"', "# nothing")
     presence = _presence_problem(str(dst))
     assert presence and "out of order" in presence, presence
 
@@ -443,11 +443,11 @@ def test_folded_multiline_tools_is_a_correct_tree(tmp_path):
     `tools: >-` directly after the description parses to the identical value,
     so the backstop passes on it, and the sabotage helper removes the key
     cleanly instead of raising ParserError on an orphaned continuation."""
-    folded = tmp_path / "folded" / "qa-reviewer.md"
-    stripped = tmp_path / "stripped" / "qa-reviewer.md"
+    folded = tmp_path / "folded" / "reviewer.md"
+    stripped = tmp_path / "stripped" / "reviewer.md"
     folded.parent.mkdir()
     stripped.parent.mkdir()
-    _qa_reviewer_with_folded_tools(folded)
+    _reviewer_with_folded_tools(folded)
 
     # Correct tree: clean against the real snapshot.
     assert _problems(str(folded), _snapshot()) == []

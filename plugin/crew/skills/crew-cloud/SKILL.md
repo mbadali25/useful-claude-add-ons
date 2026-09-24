@@ -152,7 +152,7 @@ claude mcp add aws-pricing uvx awslabs.aws-pricing-mcp-server@latest
 ```
 
 Documentation and pricing lookups, no credentials involved. Genuinely useful for
-the `analyst` and `planner` roles, and risk-free.
+the `researcher` role and for planning, and risk-free.
 
 **Account-reaching servers — deliberate choice:**
 

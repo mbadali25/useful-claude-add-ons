@@ -23,8 +23,8 @@ Its central design claim is worth repeating, because it is the opposite of how m
 
 ### Hooks — the part that runs without being asked
 
-Fifteen scripts across eight events, each shipped as a `.sh`/`.ps1` pair
-registered on its own matcher or event — 38 hook entries. **These are why
+Thirteen scripts across eight events, each shipped as a `.sh`/`.ps1` pair
+registered on its own matcher or event — 34 hook entries. **These are why
 menu item 21 is unticked by default.**
 
 | Script | Event | What it does |
@@ -34,28 +34,24 @@ menu item 21 is unticked by default.**
 | `approval-hook.sh` / `.ps1` | `UserPromptSubmit` | Records a ticket's plan approval only when the prompt *you* typed is `/crew:approve <id>`: validates `spec.md` and `plan.md` and writes the receipt bound to both hashes, or blocks the prompt and says why. Any other prompt: no output, exit 0 |
 | `scope-guard.sh` / `.ps1` | `PreToolUse` on Write/Edit/MultiEdit/NotebookEdit/Bash/PowerShell | **Off by default** (`scope.mode`: `off`/`report`/`block`/`auto`; `/crew:init` writes `auto` for a new repo). Refuses an edit with no current approval or outside the spec's Touch, and a shell command that runs `crew_ticket.py approve` or writes crew state — see "Scope and approval" |
 | `completion-audit.sh` / `.ps1` | `Stop` | **Off by default**, same `scope.mode`. Diffs the whole tree against the ticket's start commit and blocks the stop once if any changed path is outside Touch, shell-made writes included |
-| `handoff-read.sh` / `.ps1` | `SessionStart` | Injects the prior handoff back after a clear, compact, or resume |
+| `handoff-read.sh` / `.ps1` | `SessionStart` | Resets its once-per-session markers; prints the prior handoff after a clear, compact, or resume only when `memory.inject` is false |
 | `platform-sync.sh` / `.ps1` | `SessionStart` | Detects this machine and repairs the `platform` block in `.crew/config.json` - machine-local (`.crew/*` is ignored; the un-ignore list is `codemap/`, `endpoints.json`, `verify.json`), so the block goes wrong in place rather than in transit: one checkout opened from Windows and from WSL, or WSL2's `windowsHostIp` after a reboot. **Writes config**, and is the only hook that does: the seven derived facts (`os`, `wsl`, `wslVersion`, `distro`, `shell`, `repoFilesystem`, `windowsHostIp`) and nothing a human chose. Also recreates `config.json` itself when `.crew/` exists but the file is missing or unreadable - backing up a malformed one to `config.json.broken` first - and never when `.crew/` does not exist. Reports, without changing, a preference this OS cannot honour |
-| `crew-context.sh` / `.ps1` | `SessionStart`, `UserPromptSubmit`, `PostToolUse` on Read/Edit/Write/MultiEdit and vault MCP tools, `SubagentStart` | **Off until 1.0: emits and logs nothing unless `.crew/config.json` sets `memory.inject: true`.** When on, injects budgeted code-map slices and vault-labelled recall, and is the only channel that reaches a dispatched subagent (`SubagentStart`). Never blocks. The default flips at the 1.0.0 cut together with unregistering `pm-brief` and `handoff-read`, so the two never inject the same state twice |
-| `pm-brief.sh` / `.ps1` | `SessionStart` | Runs `crew_state.py` and prints a prioritized brief — schema currency, a stale or missing code graph, a pending handoff, stale or missing diagrams, review health, ticket sizing. Prints only; the acting is the PM's |
-| `pm-pulse.sh` / `.ps1` | `Stop` | Re-engages the PM when the project state actually changed — a ticket closed, a gate broke, diagrams fell behind HEAD. **Fails the turn** to hand its findings back. What it then says depends on `pm.authority`: under the default `report-only` it presents recommendations and explicitly forbids dispatching; under `act` it is a work order; under `autonomous` it is a work order that also tells the PM to settle its own open decisions rather than asking. Gated on a state fingerprint, not on the event: turns that change nothing stay silent, and the same state can only interrupt once. Honours `stop_hook_active`, and stands down after 12 pulses in a session |
+| `crew-context.sh` / `.ps1` | `SessionStart`, `UserPromptSubmit`, `PostToolUse` on Read/Edit/Write/MultiEdit and vault MCP tools, `SubagentStart` | **On by default since 1.0.0; `memory.inject: false` in `.crew/config.json` turns it off, and then it emits and logs nothing.** Injects branch/HEAD, code-map anchor state and the handoff at SessionStart, budgeted code-map slices and vault-labelled recall per turn, and is the only channel that reaches a dispatched subagent (`SubagentStart`). Never blocks. `handoff-read` stops printing the handoff while this is on, so the two never inject it twice |
 | `verify-gate.sh` / `.ps1` | `Stop` | Runs the checks the changed paths map to; **fails the turn** on red, on a changed path with no rule, or on a deploy that wrote no promotion row. Honours `stop_hook_active`, so a red check cannot pin the session. Stands down while an emergency lane is open, recording what did not run |
 | `context-watch.sh` / `.ps1` | `Stop` | Reads actual window occupancy from the transcript's last `message.usage` record and asks for a handoff once per session, at the later of `context.warnAt` and `context.reserveTokens` of remaining headroom; instructs a full wrap-up instead if `context.autoWrapUp` is `true`. On the following turn it invokes `auto-clear`, which is inert unless `context.autoClear.enabled` is `true` |
 | `auto-clear.sh` / `.ps1` | called by `context-watch`, not registered | **Experimental, off by default.** Types `/clear` into the *terminal* once the handoff is written — it cannot clear the conversation, it drives the terminal the way a human would. `tmux` targets a pane by id; every other method needs an explicit `windowTitle` and refuses without one. Refusals go to `.crew/.autoclear.log`, because a `Stop` hook's stderr is invisible on exit 0 |
 | `handoff-write.sh` / `.ps1` | `PreCompact` | Snapshots the transcript and writes a skeleton handoff before compaction discards it |
 | `notify.sh` / `.ps1` | `Notification`, and called directly by commands | One outbound line to Teams or Telegram. Never reads, never accepts instructions |
 
-**This is what "the moment the plugin is enabled" means in practice: a `SessionStart` hook now fires on every session's `startup`, unconditionally, in a repository with `.crew/config.json` present.** `handoff-read` and `pm-brief` both run before you type anything, so enabling the plugin changes what the very first turn of every session looks like, not just what later tool calls are allowed to do.
+**This is what "the moment the plugin is enabled" means in practice: a `SessionStart` hook now fires on every session's `startup`, unconditionally, in a repository with `.crew/config.json` present.** `crew-context`, `platform-sync` and `handoff-read` all run before you type anything, so enabling the plugin changes what the very first turn of every session looks like, not just what later tool calls are allowed to do.
 
-**Since 0.8.0 it also changes how turns end.** `pm-pulse` is a `Stop` hook that *fails the turn* when the project's state has changed, handing its findings back to the session. That is the part to understand before enabling: a hook that can block is a hook you cannot talk out of it. It is gated on a state fingerprint rather than on the event, so turns that change nothing are silent; it honours `stop_hook_active`, so it cannot loop; and it stands down after 12 pulses in a session. Set `pm.enabled: false` in `.crew/config.json` to switch it off along with the brief.
+**crew 1.0 removed the PM agent, its `pm-brief` SessionStart brief and its `pm-pulse` Stop hook.** Nothing in crew dispatches work on its own any more: one interactive session owns a ticket, and the Stop hooks that remain (`verify-gate`, `completion-audit`, `context-watch`) block on a failed check, not on a changed project state.
 
-**It does not dispatch anything by default.** `pm.authority` ships as `report-only`, so out of the box the pulse surfaces findings and stops — a plugin update must not turn someone's PM autonomous underneath them, because consent to install is not consent to delegate. Setting `pm.authority: "act"` (or answering the question `/crew:init` now asks) lets the PM dispatch roles and refresh diagrams on its own, and `"autonomous"` additionally lets it take the option it would have recommended instead of stopping to ask. The three tiers are ordered and every gate reads the setting as a floor, so anything `act` may do, `autonomous` may do. An unrecognised value resolves to `report-only`, the least permissive of the three: a typo in a permissions field has to fail closed. Four things need an explicit yes at every tier, `autonomous` included — offboarding a role, deleting a codemap or diagram, rewriting `.crew/metrics.md`, and destroying git history or tracked work. They are enumerated in `crew_state.AUTONOMOUS_STOPS` rather than in prose, so they can be diffed and asserted on rather than paraphrased.
-
-Every event is registered twice, once per flavour, each with the matching `shell` field on the PowerShell side — a `shell: powershell` entry is documented and Claude Code does read it, running that entry via PowerShell without needing `CLAUDE_CODE_USE_POWERSHELL_TOOL`. `guard.sh` / `guard.ps1` and `promote-gate.sh` / `promote-gate.ps1` additionally branch on `tool_name` at the `PreToolUse` matcher — a `PowerShell` tool call goes to the `.ps1`, a `Bash` tool call is judged by the `.sh` — because that is which language the command is actually written in, not which OS is running. Branching on the OS instead would judge bash commands with PowerShell rules on Windows, which blocks the correct secret-capture form and misses the wrong one. The other hooks judge no command, so both flavours are simply wired to their event with no branch. `hooks/scripts/_common.sh` also ships a `crew_tool_dispatch` helper for judging a command from inside a single bash-registered script; it is unused here in favour of the explicit dual-matcher registration above, but stays available for a hook that wants that shape instead.
+Every event is registered twice, once per flavour, each with the matching `shell` field on the PowerShell side — a `shell: powershell` entry is documented and Claude Code does read it, running that entry via PowerShell without needing `CLAUDE_CODE_USE_POWERSHELL_TOOL`. `promote-gate.sh` / `promote-gate.ps1` additionally branch on `tool_name` at the `PreToolUse` matcher (and `cloud-guard` inside `cloud_guard.py`) — a `PowerShell` tool call goes to the `.ps1`, a `Bash` tool call is judged by the `.sh` — because that is which language the command is actually written in, not which OS is running. Branching on the OS instead would judge bash commands with PowerShell rules on Windows, which blocks the correct secret-capture form and misses the wrong one. The other hooks judge no command, so both flavours are simply wired to their event with no branch. `hooks/scripts/_common.sh` also ships a `crew_tool_dispatch` helper for judging a command from inside a single bash-registered script; it is unused here in favour of the explicit dual-matcher registration above, but stays available for a hook that wants that shape instead.
 
 A hook cannot be argued out of blocking `terraform apply`; an agent can. That is the entire value, and also the reason a bootstrap run should not install one without the box being ticked.
 
-Committed suites, all sabotage-tested: `hooks/scripts/_test/run-tests.sh` (177 cases across the three gates, the emergency lane, and the PM pulse), `setup-walkthrough.sh` (32 cases running every setup-phase script against a real mixed-stack scratch repo), `validate-prompts.py` (298 structural checks over the commands, agents and skills), and `tests/` under pytest (1404 cases, including both flavours of `context-watch` and of the two gates that stand down). All but the pytest suite's Windows-only cases run in CI. What none of them proves is whether the prompts produce good work — that needs a live session on a real ticket, which is what setup Phase 7 is for.
+Committed suites, all sabotage-tested: `hooks/scripts/_test/run-tests.sh` (the gates and the emergency lane), `setup-walkthrough.sh` (32 cases running every setup-phase script against a real mixed-stack scratch repo), `validate-prompts.py` (298 structural checks over the commands, agents and skills), and `tests/` under pytest (1404 cases, including both flavours of `context-watch` and of the two gates that stand down). All but the pytest suite's Windows-only cases run in CI. What none of them proves is whether the prompts produce good work — that needs a live session on a real ticket, which is what setup Phase 7 is for.
 
 **Every hook is inert until the repository has `.crew/config.json`.** Installing the plugin arms nothing - `/crew:init` in a repo is what turns the gates on there. A gate firing in every repository you opened would be hostile, so this is deliberate; it does mean "installed it, nothing happened" is expected rather than broken.
 
@@ -65,9 +61,9 @@ Committed suites, all sabotage-tested: `hooks/scripts/_test/run-tests.sh` (177 c
 
 **`python3` is no longer required.** The scripts resolve `python3`, then `python`, then `py`, and `guard.sh` prefers `jq` when it is present. With none of them available the affected hook says so on stderr and exits 0 rather than failing open in silence.
 
-**`context.autoWrapUp` and `context.autoResume`** (both default `false`) change what happens around the handoff, not whether it happens:
+**`context.autoWrapUp`** (default `false`) changes what happens around the handoff, not whether it happens:
 - `autoWrapUp` changes what `context-watch` tells the session to do at `warnAt` — reach a stopping point and write the handoff, instead of just asking for one. **The `/clear` itself stays manual regardless of this setting, because no hook can trigger one** — a hook runs as a child process and cannot reset its parent's conversation. Without stating that plainly, the feature reads as broken (why doesn't it actually clear?) rather than as what it is: bounded by a real constraint.
-- `autoResume` makes the next `SessionStart` open already holding the last handoff, emitted as `additionalContext` rather than `initialUserMessage` — the latter is confirmed only for non-interactive `-p` invocations, and could not be confirmed to behave the same way in an interactive session, so the safer field was used. That means the session opens **with the handoff in view**; it does not start working unattended. A human still gives the first turn.
+- Resuming needs no setting since 1.0.0: the context hook opens the next `SessionStart` after `/clear`, `/compact` or a resume already holding the last handoff, as `additionalContext`. The session opens **with the handoff in view**; it does not start working unattended. A human still gives the first turn. `context.autoResume` is no longer read.
 
 ### The code graph
 
@@ -124,117 +120,66 @@ Enforcement is session-local, like every other gate here: an incident stands
 the hooks down for sessions in this repository on this machine. It does nothing
 to CI or to branch protection.
 
-### Commands — 24, all explicit
+### Commands — 33, all explicit
 
 | Command | Purpose |
 |---|---|
-| `/crew:init` | Guided phased setup, resumable |
-| `/crew:onboard [--refresh <area>]` | Build or refresh the code map |
-| `/crew:reference [--api\|--features\|--audit]` | Enumerate endpoints, jobs, consumers, CLI commands and feature flags into `docs/reference/`, each anchored to `file:line` |
-| `/crew:verify` | Build or refresh the change-to-check map the `Stop` gate reads, creating `_verify/` if the repo has no check directory |
-| `/crew:promote <env> [--dry-run\|--status]` | Promote development -> qa -> production, running deploy, smoke, regression, and post-soak verification as separate gates |
-| `/crew:emergency <what is broken>\|status\|extend [min]\|end` | Declare a time-boxed incident: the `verify` and `promote` gates stand down and record what they skipped, parallel read-only lanes investigate the cause at once, and `end` writes the debt list. The command guard does **not** stand down |
-| `/crew:ticket <description>` | Scope a request into a ticket |
-| `/crew:split <ISSUE-KEY> [--dry-run]` | Split an oversized **Jira** ticket into sub-tickets. Jira only — a files-mode ticket is a file the user can edit and an Obsidian card is theirs to drag; Jira is where splitting creates issues other people see. Judges size from `.crew/metrics.md` and the codemap rather than by feel, says so when the only evidence is the repo-wide rate, proposes 2–5 children with every acceptance criterion accounted for, and asks once before writing anything |
-| `/crew:work <id>` | Work one ticket end to end |
-| `/crew:review` | Independent QA — walks `qa.order` (Codex, Copilot, `qa-reviewer`), striking the author's own model family first |
-| `/crew:model [key value]` | Show which model backs each role and probe it; set `qa.*` / `dev.*` keys with validation |
-| `/crew:roster` | List every role: active here, available but off, and which are backed by an external provider |
-| `/crew:plan <decision>` | Independent design opinion before building |
-| `/crew:survey [area]` | Research gaps, produce ranked findings with options |
-| `/crew:scale` | Evidence-based crew sizing |
-| `/crew:docs [--audit]` | Update the documents this change should touch |
-| `/crew:runbook <name\|--audit\|--verify>` | Write, verify, or audit operational runbooks |
-| `/crew:handoff` | Write the handoff note before clearing |
-| `/crew:diagram <type>` | Architecture, data-flow, process, and sequence diagrams |
-| `/crew:jira-sync <KEY> [--push]` | Sync one issue with the local cache |
-| `/crew:sdp-sync <REQUEST-ID> [--push]` | Sync one ServiceDesk Plus request with the local cache: pull the forty tokens that matter out of a several-thousand-token payload, push one note and a transition |
-| `/crew:obsidian-sync <T-####> [--push]` | Sync one Obsidian Kanban card with the local cache: pull reads the card's lane as the status, push moves the card and appends one note. Edits the board in place — the `kanban-plugin` frontmatter, the trailing `%% kanban:settings` block and the `**Complete**` marker are load-bearing, and a regenerated board silently stops rendering as one |
-| `/crew:pm [assign\|authority [value]\|onboard\|offboard <role>]` | Talk to the crew's manager: status with no argument, `assign` to let it decide and dispatch the next work itself, `authority report-only\|act\|autonomous` to read or set how much it may do unprompted, or add/remove a role. Offboarding still needs an explicit yes before it touches `.crew/config.json` |
-| `/crew:upgrade [--force]` | Bring an out-of-date setup forward: backs up the codemap and the config first, migrates `pm`, `graph`, `qa`, `dev` and `roles`, recomputes the tier, builds the graph if missing, reconciles derived facts per subsystem, and reports contradictions, stale-on-purpose anchors and machine-global config findings rather than resolving them. A block that arrived as the wrong type is left untouched and `schema` is deliberately not stamped |
-| `/crew:config [--show]` | Show every globally-settable key with its effective value and the layer that decided it, and walk the machine-global config at `~/.claude/crew/config.json`. Dry run by default; `--apply` writes, merging rather than replacing. Refuses any key that describes a repository rather than a machine, and marks a widening of `pm.authority` on both the plan and the write. The only thing in crew that writes outside the repository |
+| `/crew:approve <ticket-id>` | Approve a ticket's plan - only you can, by typing this; the prompt hook records the receipt |
+| `/crew:brainstorm <what needs doing>` | Brainstorm a request into an approved direction, before it becomes a spec |
+| `/crew:change <new \| status <id> \| close <id> \| list>` | File, check and close a change request — SDP, Jira or local |
+| `/crew:config [--show]` | Show where every crew setting comes from, and guide the machine-global config |
+| `/crew:debug <the symptom, or a ticket id, e.g. "login 500s after deploy" or T-0042>` | Find the cause of a defect before anyone proposes a fix |
+| `/crew:diagram <architecture \| data-flow <area> \| process <name> \| sequence <flow> \| refresh>` | Create or refresh diagrams from the actual code |
+| `/crew:docs [--audit]` | Update the documents this change should touch — and only those |
+| `/crew:done <ticket id>` | Close a ticket - requires an accepted review receipt, a clean verify gate, and a passing completion audit |
+| `/crew:emergency <what is broken> \| status \| extend [minutes] \| end` | Declare an incident - stand the gates down, spin up parallel investigation lanes, and record what was skipped |
+| `/crew:fix <one sentence - what is wrong and where>` | The light path - every lifecycle phase present, each compressed to one step |
+| `/crew:gate <disable \| enable \| status> <github \| bitbucket>` | Take a repository's merge gate down and put it back, from the export |
+| `/crew:handoff [--clear]` | Write the handoff note for the next session |
+| `/crew:implement <ticket id>` | Implement an approved plan for a ticket, then tests, docs and review |
+| `/crew:init [--status \| --phase N]` | Guided phased setup for this repo — resumable, one phase at a time |
+| `/crew:jira-sync <ISSUE-KEY> [--push]` | Sync a ticket between Jira (via MCP) and the local cache |
+| `/crew:migrate [--preview \| --apply \| --rollback <backup-dir>]` | One-time move of a 0.20 crew setup to the 1.0 layout - preview, backup, atomic apply, rollback |
+| `/crew:model` | Show or change which model backs each crew role, and probe that it actually answers |
+| `/crew:obsidian-sync <T-####> [--push]` | Sync a ticket between an Obsidian Kanban board and the local cache |
+| `/crew:onboard [--refresh <subsystem>]` | Learn this codebase once and write a durable, verifiable code map |
+| `/crew:plan <ticket id> [--approve]` | Turn an approved spec into a step-by-step plan, then get it approved |
+| `/crew:promote <development \| qa \| production> [--dry-run \| --status]` | Promote a build to the next environment, with the full post-deploy proof |
+| `/crew:reference [--api \| --features \| --audit \| <area>]` | Generate the API and feature reference from the code, with anchors |
+| `/crew:review [ticket id]` | Independent QA review of the current diff (Codex, Copilot, or Claude - first that probes clean) |
+| `/crew:runbook <name \| --from-ticket T-#### \| --audit \| --verify <name>>` | Write, update, or audit operational runbooks |
+| `/crew:sdp-sync <REQUEST-ID> [--push]` | Sync a ticket between ServiceDesk Plus (via MCP) and the local cache |
+| `/crew:spec <ticket id>` | Fill the ticket contract from an approved direction - Intent, Exclusions, Evidence, Unknowns, Touch, Acceptance checks |
+| `/crew:split <ISSUE-KEY> [--dry-run]` | Split an oversized Jira ticket into sub-tickets, with evidence and a confirmation |
+| `/crew:status [--memory]` | Read-only crew status for this repo - config, roster, tickets, review budget, gate, codemap, handoff |
+| `/crew:survey [area, e.g. "performance" or "the billing module"]` | Research the app for real gaps and propose options with tradeoffs |
+| `/crew:ticket <what needs doing>` | Removed in crew 1.0 - use /crew:spec |
+| `/crew:upgrade` | Bring a pre-0.20 crew config up to the 0.20 schema so /crew:migrate can move it to 1.0 |
+| `/crew:verify [--refresh] [--price]` | Build or refresh the verification map from evidence |
+| `/crew:work <ticket id>` | Removed in crew 1.0 - use /crew:implement |
 
-First run in a new repository: `/crew:init`, then `/crew:onboard`, then `/crew:verify`.
+First run in a new repository: `/crew:init`, then `/crew:onboard`, then `/crew:verify`. A 0.20 repository runs `/crew:migrate --preview` first.
 
 ### Agents — one per `agents/*.md`
 
-Tier 0 installs with everyone; tiers 1 and 2 are added as the work demands. `/crew:scale` decides from evidence rather than taste.
-
-**The table below is abridged** — it lists the whole tier ladder, the manager, and only the specialists that existed when it was written. Every specialist is registered in `crew_state.SPECIALIST_ROLES` and listed in full in [`crew/README.md`](crew/README.md), which `tests/test_role_ladder.py` checks against the code in both directions. Count them with `ls plugin/crew/agents/*.md` rather than by counting rows here.
+crew 1.0 ships four. The interactive session implements; these isolate context,
+restrict tools, or supply independent eyes. Stack knowledge that used to be
+specialist agents loads on demand as the `stack-*` skills, and nothing sizes
+the crew up or down.
 
 | Agent | Tools | Model | Tier | Role |
 |---|---|---|---|---|
 | `explorer` | read-only | `sonnet` | 0 | Maps code, returns summaries not contents |
-| `qa-reviewer` | read-only | `opus` | 0 | Hostile review; the Codex fallback |
-| `security` | read-only | `sonnet` | 1 | Exploitable defects in the diff |
-| `smoke-author` | read/write | `sonnet` | 1 | Builds and repairs the safety net |
-| `developer` | read/write | `sonnet` | 1 | Implements one scoped change and returns a summary; never reviews its own diff, never merges or pushes |
-| `browser-tester` | read/write | `sonnet` | 2 | Playwright specs, visual baselines, user flows |
-| `analyst` | read-only | `sonnet` | 2 | Anchored findings and options, never tickets |
-| `planner` | read-only | `sonnet` | 2 | Design second opinion from an abstracted brief |
-| `dba` | read-only | `sonnet` | 2 | Migrations, locks, online safety |
-| `docs-writer` | read/write | `sonnet` | 2 | Architecture and data flow from real code; exports a delivered artifact per `crew-house-style` |
-| `infrastructure-architect` | read-only | `sonnet` | 2 | AWS network and account design — VPCs, routing, connectivity, DNS, ingress, landing zones — with tradeoffs. Never applies to a live account |
-| `scribe` | read/write | `sonnet` | 2 | The durable record: ADRs, CHANGELOG entries, handoff notes, and what was tried and rejected |
+| `reviewer` | read-only + Bash | `opus` | 0 | Hostile review; the last rung of `qa.order`. Renamed from `qa-reviewer` in 1.0 |
+| `security` | read-only + Bash | `sonnet` | 1 | Exploitable defects in the diff |
 | `researcher` | read-only + web | `sonnet` | 2 | External research only — docs, APIs, versions, vendor limits, standards, prior art. Every claim carries its source |
-| `sharepoint-developer` | read/write | `sonnet` | — (specialist) | One scoped change against SharePoint Online — SPFx, Graph and REST, list and library schema, permissions. Never changes a live tenant unasked, never breaks permission inheritance to make something work |
-| `power-automate-specialist` | read/write | `sonnet` | — (specialist) | Power Automate flows and the Power Platform around them — triggers, connectors, connection references, environment promotion, solution packaging. A flow with a trigger is already live, so it never edits a production flow unasked |
-| `node-developer` | read/write | `sonnet` | — (specialist) | One scoped change in a Node.js codebase where the async model, the module system or the dependency tree is the hard part |
-| `php-pro` | read/write | `sonnet` | — (specialist) | PHP 8.x, Laravel and Symfony — written against the version `composer.json` allows rather than the newest release |
-| `python-pro` | read/write | `sonnet` | — (specialist) | Python 3.x — typing, the async model, packaging, and the platform-conditional behaviour a passing suite hides |
-| `dotnet-core-expert` | read/write | `sonnet` | — (specialist) | .NET 6+ — DI lifetimes, EF Core change tracking, the async model. Reads the `TargetFramework` before writing |
-| `dotnet-framework-4.8-expert` | read/write | `sonnet` | — (specialist) | Legacy .NET on Windows — Web Forms, WCF, `web.config`, binding redirects. Fixes on 4.8 rather than starting a port |
-| `angular-architect` | read/write | `sonnet` | — (specialist) | Angular — subscription lifetime, change detection, the injector hierarchy, in the major version the repo is on |
-| `react-specialist` | read/write | `sonnet` | — (specialist) | React — effect timing, re-render behaviour, hydration and the server/client boundary |
-| `rust-engineer` | read/write | `sonnet` | — (specialist) | Rust — ownership, trait bounds, async runtimes. Every `unsafe` carries its safety invariant |
-| `sql-pro` | read/write | `sonnet` | — (specialist) | Writes and optimises SQL and returns the plan that justifies it. `dba` reviews it; it never reviews itself |
-| `terraform-engineer` | read/write | `sonnet` | — (specialist) | Writes HCL and returns a plan, quoting what it replaces. Never runs `apply`, `destroy` or a state operation |
-| `network-engineer` | read/write | `sonnet` | — (specialist) | Routing, DNS, firewalls, TLS, MTU, hybrid links. Names the layer that failed; never changes a live device |
-| `windows-infra-admin` | read/write | `sonnet` | — (specialist) | AD, GPO, DNS and DHCP automation with a pre-change export, a `-WhatIf` run and a rollback. Never runs it against a live domain |
-| `qa-researcher` | read-only + Perplexity MCP | `sonnet` | — (specialist) | Checks what a diff assumes about the outside world — deprecated APIs, EOL runtimes, advisories, limits — against live sources. Complements a code reviewer, never replaces one |
-| `pm` | read/write + `Agent` | `opus` | — (outside the ladder) | The crew's manager, always spawned unnamed. Reads state, decides what the crew does next, and — **when `pm.authority` is `act` or above** — dispatches the roles that do it. Under the default `report-only` it recommends and stops; under `autonomous` it also settles its own open decisions instead of asking. Also does the heavy analysis that would cost more context in the main session than the answer is worth: correlating defect classes across `.crew/metrics.md`, auditing codemap anchors, assembling tier-change evidence |
 
-`explorer`, `qa-reviewer`, `security`, `analyst`, `planner`, `dba`, `infrastructure-architect` and `researcher` are read-only — a restricted tool set is one of the three things that earns a role its place. `researcher`'s read-only set is the seam that keeps it out of the codebase: it holds web and Context7 tools and no `Grep`, because anything inside this repository belongs to `explorer` or `analyst`.
+All four are read-only — a restricted tool set is one of the three things that
+earns a role its place. `reviewer` runs on `opus` because it shares a model
+family with the author when Codex and Copilot are both unavailable, and the
+tier is the only compensation left.
 
-**Fifteen domain specialists sit off the ladder entirely**, and no tier ever
-grants one. Every ladder role closes a defect class *any* repo can have, which
-is why `roles_for_tier` hands out every rung up to the declared tier — and why
-a repo with no database gets `dba`. "This repo does SharePoint" is not a defect
-class; it is a fact about one checkout, knowable before a single ticket exists.
-So each of the specialist rows above is opted into per repo with `/crew:pm
-onboard <role>`, justified by the repo's own stack — the agent file names the
-file it expects to find — rather than by `.crew/metrics.md`, and onboarding one
-does not move `tier`. They live in `crew_state.SPECIALIST_ROLES`, which is what
-stops `/crew:upgrade` from reporting a deliberately-onboarded specialist as an
-unrecognised name on every run.
-
-`qa-researcher` is the one whose evidence is not a stack: what it needs present
-is the Perplexity MCP server, because every finding it returns is a fetched
-source rather than a read of the diff. It says so and stops when the server is
-absent, rather than answering from memory.
-
-Three specialists sit next to a ladder role without replacing it — `sql-pro`
-writes what `dba` reviews, `terraform-engineer` writes the HCL whose topology
-`infrastructure-architect` reviews, and `network-engineer` owns the packet path
-where `infrastructure-architect` owns AWS account and VPC structure. The
-specialist's output goes to the ladder role, never the reverse and never the
-same agent doing both.
-
-**The three agents added in 0.15.x joined the ladder in 0.16.0**, at tier 2, alongside `dba` and `docs-writer` — each closes a defect class that only appears once a repo is doing enough of that kind of work to have the evidence. `/crew:scale` proposes them, `/crew:pm` can onboard them, and `/crew:upgrade` adds them to any config already at tier 2. The ladder itself lives in `crew_state.ROLE_TIERS`; the three markdown tables that describe it (`crew-scaling/SKILL.md`, `crew-pm/onboarding.md` and crew's own `README.md`) are checked against that dict by a committed test rather than parsed at runtime. The same test checks `SPECIALIST_ROLES` against its tables, and checks every `agents/*.md` back against the code — a specialist file nobody registered would otherwise ship as a role `/crew:pm onboard` reports as unrecognised, forever.
-
-**Model tiers.** `opus` for the PM, because every dispatch decision derives from the project picture it holds and a bad assignment is inherited by every role below it. `opus` for `qa-reviewer`, because it is the same model family as the author and the tier is the only compensation left when Codex is absent. `sonnet` for the working roles: narrow brief, clean context, one deliverable. QA itself defaults to Codex — `qa.provider` ships as `auto`, so a machine with `codex` on `PATH` gets a different model family reviewing, and `/crew:review` says out loud which reviewer ran. These are tiers, not pinned versions; a plugin cannot pin a point release.
-
-**The PM is always spawned unnamed, and continuity survives that.** A `name` would make it an addressable teammate, and [agent teams](https://code.claude.com/docs/en/agent-teams.md) forbids a teammate spawning its own teammates — since dispatching roles is the PM's whole job, naming it disables it. Continuity instead comes from two mechanisms: `/crew:pm` resumes a held agent id with `SendMessage` when one exists in the same session (still with no `name`), and two append-only files it reads and appends, through `hooks/scripts/pm_journal.py` rather than a shell redirect or heredoc, on every invocation when `isCrew: true` — `.crew/pm-journal.md`, a dated tail of what was dispatched, decided, deferred, and vetoed, and `.crew/pm-standing.md`, read in full every time, one line per decision or ruling durable enough that a bounded tail must never lose it. The roles it dispatches each see one slice of the work and are gone — the journal and standing file are the only things that remember what was decided, what was deferred, who was onboarded, and why. It also does not end when the queue empties: it reports what is outstanding and waits.
-
-**One hat per role, the PM's included.** The PM assesses scope, onboards and offboards roles, communicates, and keeps tickets current. It does not write application code, tests, docs, migrations, or reviews — implementation goes to `developer`, review goes through `/crew:review`, and its own writes are limited to `.crew/`, ticket text, `TODO.md`, and generated diagrams. `agents/pm.md` carries a routing table from kind-of-work to role, and an explicit rule that a dispatch is an Agent call rather than a sentence describing one — narrating a plan and calling it progress is this agent's characteristic failure, and `/crew:pm` refuses to relay a report written in the future tense.
-
-`pm` is the exception, and it is a deliberate one — but it is opt-in. A manager whose only output is a recommendation is a manager the user has to manage, so `pm.authority: "act"` lets this one assign work itself and report afterwards, and `"autonomous"` lets it stop putting its own open decisions to you. It ships `report-only`.
-
-Four bounds keep `act` honest. A priority the user has stated **outranks** the PM's own trigger ordering, and the PM says so when it re-orders. **Removal and deletion still need an explicit yes** — offboarding a role, deleting a codemap or a diagram, rewriting `metrics.md` — because adding capability is reversible and removing it destroys the evidence that would say whether removing it was right. A multi-agent run is **announced before** it happens, which is not a permission gate but the difference between a manager and a surprise. And `pm.maxDispatches` (default 3) caps roles per pass, so a queue is never worked until the context runs out.
-
-The fifth bound is about scope rather than permission, and it is the one that makes autonomy survivable: **a problem the PM stumbles on gets fixed only if it blocks a finding it was already working.** Everything else becomes a ticket (if a `tracker` is configured) or a `TODO.md` line with its reason, and the report has to say what was deferred and where it went. Autonomy's failure mode is not doing the wrong thing, it is doing too many things — refreshing a diagram, noticing a bug, fixing it, noticing thin tests, writing tests, and never finishing the diagram. It writes only inside `.crew/`, `docs/diagrams/`, and `TODO.md` — application source is always someone else's job.
-
-### Bundled skills — 30
+### Bundled skills — 28
 
 These are ordinary skills, scoped to `crew`'s own workflow. They work on every Claude surface, including chat, unlike the hooks and agents.
 
@@ -255,8 +200,6 @@ These are ordinary skills, scoped to `crew`'s own workflow. They work on every C
 | `crew-memory` | Obsidian-backed memory |
 | `crew-notify` | Teams and Telegram payload discipline |
 | `crew-cloud` | AWS and Azure MCP |
-| `crew-scaling` | Evidence for growing or shrinking the crew |
-| `crew-pm` | Field meanings and the authority rule behind `/crew:pm` and the `pm-brief` / `pm-pulse` hooks — what `pm.authority` switches, the guardrails that bound `act` (blockers only, ticket-or-TODO the rest, dispatch cap), and the removal/deletion yes that holds either way |
 | `crew-graph` | Building and querying the `graphify` code graph, the reconcile shape `/crew:upgrade` reads, and the Obsidian export consent gate |
 | `find-skills` | Discovering and installing other skills |
 | `crew-debugging` | Root cause before any fix — reproduce, check recent changes, gather evidence from the code map and verification map, one hypothesis tested minimally. Backs `/crew:debug` |
@@ -369,7 +312,7 @@ end the turn on unmapped changes (`verify-gate.sh:189-190`).
 so everything it is meant to shake down has to be armed before it runs. Its
 output is the awkward-parts feedback, and that feedback is only worth having if
 promotion is part of what was exercised. Phase 8 is also where `.gitignore`
-grows to cover `.crew/` and `.work/` — the directories Phase 7's `/crew:work`
+grows to cover `.crew/` and `.work/` — the directories Phase 7's `/crew:implement`
 immediately starts writing into, and an ungitignored marker there dirties the
 tree and blocks the next deploy.
 
@@ -447,8 +390,8 @@ Per phase, what it produces and what going wrong looks like:
   looks like an `environments` block with five aspirational commands nobody
   has run — it reads as coverage while being worse than an empty file.
 - **Phase 7 — First real ticket.** Produces one small, real change carried
-  through `/crew:ticket` -> `/crew:plan` -> `/crew:work` -> `/crew:review` end
-  to end, plus the awkward-parts feedback that gets fed back into the command
+  through `/crew:brainstorm` -> `/crew:spec` -> `/crew:plan` -> `/crew:implement` ->
+  `/crew:review` -> `/crew:done` end to end, plus the awkward-parts feedback that gets fed back into the command
   prompts themselves. Wrong looks like picking something too large — which
   tests the code instead of the loop — or treating one clean run as proof the
   prompts are good rather than proof this one ticket went well.
@@ -467,10 +410,10 @@ Four committed suites, all sabotage-tested - three under `plugin/crew/hooks/scri
 
 | Suite | Cases | Covers |
 |---|---|---|
-| `run-tests.sh` | 101 | Every gate: what the command guard blocks and allows, root-level glob matching, the stop-loop exit, all four promotion preconditions, and the PM pulse — that `stop_hook_active` never blocks, that an unchanged state cannot interrupt twice, and that diagram freshness is read from the anchor rather than an mtime |
+| `run-tests.sh` | 101 | Every gate: what the command guard blocks and allows, root-level glob matching, the stop-loop exit, all four promotion preconditions, and that `stop_hook_active` never blocks |
 | `setup-walkthrough.sh` | 32 | Builds a mixed-stack scratch repo and runs every script phases 0-8 invoke |
 | `validate-prompts.py` | 110 | Frontmatter, tool names, referenced agents and paths, read-only agents holding no write tools |
-| `tests/` (pytest, one level up) | 324 | The Python behind the hooks: `crew_state`, `pm_brief`, `pm_pulse`, both flavours of `context-watch`, and the two gates that stand down. Run it — it is the suite that catches renderer regressions the shell suite cannot see, such as a new brief line squeezing the top finding out of a capped brief |
+| `tests/` (pytest, one level up) | 324 | The Python behind the hooks: `crew_state`, `crew_context`, both flavours of `context-watch`, and the two gates that stand down. Run it — it is the suite that catches regressions the shell suite cannot see |
 
 What none of them proves is whether the prompts produce good work. Every command and every agent is an instruction to a model; only a live session on a real ticket exercises those, which is what setup phase 7 is for.
 

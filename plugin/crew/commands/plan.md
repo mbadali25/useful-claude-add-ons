@@ -5,8 +5,7 @@ allowed-tools: Read, Write, Edit, Bash, Agent
 ---
 
 Plan ticket $1. **Redefined for 1.0** — this used to be a standalone second
-opinion via `crew:planner`; that is now step 3 below, optional, inside the
-real plan phase.
+opinion; that is now step 3 below, optional, inside the real plan phase.
 
 **Method adapted from `superpowers:writing-plans` (Jesse Vincent, MIT). Full
 notice in `plugin/crew/NOTICE.md`.** The backing skill is
@@ -20,9 +19,9 @@ summarises.
 2. Use `crew:explorer` for exact paths and line ranges — a plan step naming
    "the auth module" instead of `src/auth/session.py:40-88` is not
    implementable without re-deriving it.
-3. **Optional second opinion.** If the design is non-obvious, invoke
-   `crew:planner`: it writes a brief, shows it to me for approval, sends it to
-   `secondOpinion.provider`, and reports the disagreement. Fold anything it
+3. **Optional second opinion.** If the design is non-obvious, write a brief,
+   show it to me for approval, send it to `secondOpinion.provider` (the
+   `crew-providers` skill says how), and report the disagreement. Fold anything it
    surfaces into the plan below rather than reporting it separately. Skip this
    step for a small or well-understood change and say so.
 4. Write `.work/tickets/$1/plan.md`:

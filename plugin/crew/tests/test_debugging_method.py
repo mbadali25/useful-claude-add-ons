@@ -18,7 +18,7 @@ things that regress differently:
    notice travel with the copy. A copy whose notice was edited away is a
    licence violation that no test but this one would notice.
 3. **Something dispatches it.** A skill nothing routes to is a file. The
-   routing lives in `commands/work.md` and `agents/developer.md`, and it is
+   routing lives in `commands/fix.md` (crew 1.0), and it is
    prose in a subagent prompt, so -- exactly as in test_codemap_read_path.py
    and test_scope_discipline.py -- there is nothing executable to run and the
    only mechanical regression is the instruction going missing. That is the
@@ -286,43 +286,20 @@ def test_the_command_carries_the_deferred_contract():
     )
 
 
-def test_work_routes_a_defect_to_the_debug_command():
-    """A copy nobody dispatches is a file, not an integration."""
-    body = _command("work")
-    assert "run `/crew:debug` before you plan" in body, (
-        "work.md no longer routes a defect to /crew:debug before planning, so "
+def test_fix_routes_a_defect_to_the_debug_command():
+    """A copy nobody dispatches is a file, not an integration. In crew 1.0
+    `/crew:fix` is the light path a defect takes; `/crew:work` and the
+    `developer` agent that used to carry this routing were removed."""
+    body = _command("fix")
+    assert "gets `/crew:debug` before anything" in body, (
+        "fix.md no longer routes a defect to /crew:debug before the fix, so "
         "a defect ticket goes straight to plan-and-fix and the method ships "
-        "unreachable. The bare string `/crew:debug` also appears in the "
-        "paragraph explaining what the command returns, so asserting only "
-        "the name passes while the routing step is gone -- a miss this "
-        "suite's sabotage run actually produced"
+        "unreachable"
     )
-    assert "defect rather than a feature" in body, (
-        "work.md dropped the condition that decides when to debug. 'Run "
+    assert "A defect (broken, wrong, flaky, regressed)" in body, (
+        "fix.md dropped the condition that decides when to debug. 'Run "
         "/crew:debug' with no trigger is either always or never, and in "
         "practice never"
-    )
-
-
-def test_developer_debugs_before_proposing_a_fix():
-    body = _agent("developer")
-    assert "run `/crew:debug` **before** you write the fix" in body, (
-        "developer.md no longer runs /crew:debug before a fix, so the role "
-        "that actually writes the diff is the one role not using the method. "
-        "The bare name appears again further down, in the paragraph about a "
-        "brief that already carries a debug report, so a presence check on "
-        "it alone passes with the instruction deleted"
-    )
-    assert "NO FIXES WITHOUT ROOT CAUSE INVESTIGATION FIRST" in body, (
-        "developer.md dropped the Iron Law. Pointing at a command without "
-        "stating the rule it enforces leaves the obvious fix looking "
-        "reasonable, which is the whole failure mode"
-    )
-    assert "follow the `crew-debugging` skill it loads" in body, (
-        "developer.md no longer sends the role into the crew-debugging skill, "
-        "so it reaches the command but not the method behind it. Asserting "
-        "the bare skill name passes on the mention in the reporting "
-        "requirement below, which is about provenance rather than method"
     )
 
 

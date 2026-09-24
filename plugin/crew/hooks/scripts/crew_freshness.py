@@ -37,8 +37,7 @@ name here that is not about freshness -- it is a containment check, and its
 docstring says why it exists. Two of its three callers (`_read_graph` and
 `read_diagrams`) are in this module, so leaving it in `crew_state` would make
 this module import from the module that imports it. `crew_state` re-exports it
-for the third caller, `handoff_path`, and for `pm_brief`, which already spells
-it `crew_state.contained_path`.
+for the third caller, `handoff_path`.
 
 **Nothing here imports `crew_state`, and nothing may.** `crew_state`
 re-exports these names so its callers did not have to change, and an import in

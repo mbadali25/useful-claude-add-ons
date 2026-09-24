@@ -251,7 +251,7 @@ def default_config():
     return {
         "schema": crew_state.SCHEMA_CURRENT,
         "tier": 0,
-        "roles": ["explorer", "qa-reviewer"],
+        "roles": ["explorer", "reviewer"],
         "qa": copy.deepcopy(crew_state.QA_DEFAULTS),
         "dev": copy.deepcopy(crew_state.DEV_DEFAULTS),
         "worktree": copy.deepcopy(crew_state.WORKTREE_DEFAULTS),
@@ -292,9 +292,9 @@ def default_config():
         # `inject` and `recall` are the context hook's (crew_context.py,
         # crew_recall.py). Repo-only on purpose: that hook reads the repo's
         # file and nothing else, so a machine-global value would be accepted
-        # and then do nothing. `inject` is off through 0.20.x; see
-        # crew_context.run for why and for when that flips.
-        "memory": {"mode": "repo", "vaultPath": None, "inject": False,
+        # and then do nothing. `inject` is on by default since 1.0.0; see
+        # crew_context.inject_enabled.
+        "memory": {"mode": "repo", "vaultPath": None, "inject": True,
                    "recall": {"vaults": [], "maxChars": 800}},
         "verifyGate": True,
         "context": copy.deepcopy(crew_state.CONTEXT_DEFAULTS),
@@ -1454,9 +1454,8 @@ def layered_state(root):
     computing `resolve_config` here unconditionally costs nothing on a plain
     repo and needs no `isCrew` check of its own.
 
-    Every caller that wants a config-layered brief -- `pm_brief.py`, and
-    anything else that would otherwise call `crew_state.collect` directly --
-    should call this instead.
+    Every caller that wants config-layered state -- anything that would
+    otherwise call `crew_state.collect` directly -- should call this instead.
     """
     return crew_state.collect(root, cfg_override=resolve_config(root))
 
@@ -2039,7 +2038,7 @@ def _print_models(report):
     else:
         print("\nNO INDEPENDENT REVIEWER -- every candidate is unreachable or "
               "speaks as the family that wrote the diff. /crew:review falls "
-              "back to the qa-reviewer subagent and LABELS the result "
+              "back to the reviewer subagent and LABELS the result "
               "same-family. It runs; it does not count as an independent "
               "review.")
     print()

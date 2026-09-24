@@ -12,13 +12,10 @@ hours to prove an expiry is a test nobody runs.
 """
 import json
 
-import pytest
-
 import context  # noqa: F401  pylint: disable=unused-import
 import crew_fixtures
 import crew_incident
 import crew_state
-import pm_brief
 
 T0 = 1_800_000_000          # a fixed "now", so every assertion is arithmetic
 HOUR = 3600
@@ -305,53 +302,3 @@ def test_crew_state_reports_an_expired_incident_as_unclosed(tmp_path):
     state = crew_state.collect(str(root))
     assert "incidentUnclosed" in state["triggers"]
     assert "incidentActive" not in state["triggers"]
-
-
-@pytest.mark.parametrize("mode", ["adaptive", "quiet"])
-def test_the_brief_names_the_incident_in_both_pm_modes(mode):
-    # The findings section can be truncated away by the line cap; "the gates
-    # are currently off" must not be the line that gets cut.
-    state = {
-        "isCrew": True,
-        "pm": {"enabled": True, "mode": mode, "quietLines": 8, "maxLines": 40},
-        "triggers": ["incidentActive"],
-        "incident": {"present": True, "active": True, "expired": False,
-                     "id": "INC-20260825-1342", "summary": "prod 5xx",
-                     "skips": 3, "minutesLeft": 47, "standDown": True},
-    }
-    lines = pm_brief.render(state)
-    assert lines[0].startswith("## incident - INC-20260825-1342 open, 47m left")
-    if mode == "adaptive":
-        joined = "\n".join(lines)
-        assert "EMERGENCY LANE OPEN - INC-20260825-1342 (prod 5xx)" in joined
-        assert "47m left, 3 gate(s) skipped" in joined
-        assert "/crew:emergency end" in joined
-
-
-def test_the_brief_survives_an_incident_with_no_usable_fields():
-    # _fill must never raise: this renders from a SessionStart hook, and an
-    # exception there breaks every session opened in the repository.
-    state = {
-        "isCrew": True,
-        "pm": {"enabled": True, "mode": "adaptive", "quietLines": 8,
-               "maxLines": 40},
-        "triggers": ["incidentActive"],
-        "incident": {"present": True, "active": True},
-    }
-    lines = pm_brief.render(state)
-    assert any("EMERGENCY LANE OPEN" in line for line in lines)
-
-
-def test_a_long_summary_is_trimmed_in_the_brief():
-    state = {
-        "isCrew": True,
-        "pm": {"enabled": True, "mode": "adaptive", "quietLines": 8,
-               "maxLines": 40},
-        "triggers": ["incidentActive"],
-        "incident": {"present": True, "active": True, "id": "INC-1",
-                     "summary": "x" * 200, "skips": 0, "minutesLeft": 5,
-                     "standDown": True},
-    }
-    joined = "\n".join(pm_brief.render(state))
-    assert "x" * 57 + "..." in joined
-    assert "x" * 61 not in joined

@@ -7,7 +7,6 @@ bounded emission log, and parallel same-type subagent attribution.
 Same isolation as test_crew_context.py: throwaway repos, a stub vault CLI,
 never the machine's `~/.claude`.
 """
-import io
 import json
 import os
 import subprocess
@@ -19,7 +18,6 @@ import pytest
 import context  # noqa: F401  pylint: disable=unused-import
 import crew_context
 import crew_fixtures
-import pm_brief
 from context_fixtures import (log_records, make_obsidian_config, make_repo,
                               make_stub_cli, payload)
 
@@ -129,9 +127,8 @@ def test_a_snippet_from_a_vault_not_asked_for_is_dropped(tmp_path, stub, monkeyp
 
 # --- memory.inject on every path --------------------------------------------
 
-@pytest.mark.parametrize("inject", [None, False])
-def test_slice_for_subagent_emits_and_logs_nothing_unless_inject_is_true(tmp_path, stub, monkeypatch, inject):
-    root = make_repo(tmp_path, config={}, inject=inject)
+def test_slice_for_subagent_emits_and_logs_nothing_when_inject_is_false(tmp_path, stub, monkeypatch):
+    root = make_repo(tmp_path, config={}, inject=False)
     monkeypatch.setenv("STUB_JSON", json.dumps([{"vault": "primary-v", "note": "a.md", "text": "NOTE"}]))
 
     text = crew_context.slice_for_subagent(str(root), "review alpha caching", [])
@@ -139,35 +136,26 @@ def test_slice_for_subagent_emits_and_logs_nothing_unless_inject_is_true(tmp_pat
     assert (text, log_records(root)) == ("", [])
 
 
-def _pm_brief_out(root, monkeypatch, capsys):
-    monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(
-        {"source": "resume", "cwd": str(root), "session_id": "s1"})))
-    assert pm_brief.main([]) == 0
-    return capsys.readouterr().out
+def test_slice_for_subagent_emits_when_inject_is_unset_since_it_defaults_on(tmp_path, stub, monkeypatch):
+    root = make_repo(tmp_path, config={}, inject=None)
+    monkeypatch.setenv("STUB_JSON", json.dumps([{"vault": "primary-v", "note": "a.md", "text": "NOTE"}]))
 
+    text = crew_context.slice_for_subagent(str(root), "review alpha caching", [])
 
-@pytest.mark.parametrize("inject, speaks", [(True, False), (False, True), (None, True)])
-def test_pm_brief_stands_down_exactly_when_memory_inject_is_true(tmp_path, monkeypatch, capsys, inject, speaks):
-    config = {"schema": 2, "tier": 0, "roles": [], "tracker": "files"}
-    if inject is not None:
-        config["memory"] = {"inject": inject}
-    root = crew_fixtures.make_repo(tmp_path, config=config, graph=True, handoff=True)
-
-    out = _pm_brief_out(root, monkeypatch, capsys)
-
-    assert bool(out.strip()) is speaks
+    assert "ALPHA-LANDMINE" in text
 
 
 def _handoff_repo(tmp_path, inject):
-    config = {"schema": 2, "tier": 0, "roles": [], "tracker": "files",
-              "context": {"autoResume": False}, "memory": {"inject": inject}}
+    config = {"schema": 2, "tier": 0, "roles": [], "tracker": "files"}
+    if inject is not None:
+        config["memory"] = {"inject": inject}
     root = crew_fixtures.make_repo(tmp_path, config=config, graph=True)
     (root / ".work" / "HANDOFF.md").write_text("# Handoff\nHANDOFF-BODY-TOKEN\n", encoding="utf-8")
     return root
 
 
-@pytest.mark.parametrize("inject, speaks", [(True, False), (False, True)])
-def test_handoff_read_sh_stands_down_exactly_when_memory_inject_is_true(tmp_path, inject, speaks):
+@pytest.mark.parametrize("inject, speaks", [(True, False), (None, False), (False, True)])
+def test_handoff_read_sh_stands_down_exactly_when_memory_inject_is_on(tmp_path, inject, speaks):
     root = _handoff_repo(tmp_path, inject)
     raw = json.dumps({"source": "resume", "cwd": str(root), "session_id": f"s-{inject}"}).encode()
     env = dict(os.environ)

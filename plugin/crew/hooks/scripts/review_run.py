@@ -14,7 +14,7 @@ PROVIDERS.
            `--effort` pass through from config, and nothing is passed when
            they are empty.
   copilot  `copilot -p ... --deny-tool write --deny-tool shell -s`, stdin closed.
-  claude   the `qa-reviewer` subagent runs inside the Claude session, not as a
+  claude   the `reviewer` subagent runs inside the Claude session, not as a
            process this script can launch. So it is two calls: `--reserve-only`
            before the subagent is dispatched, then `--round N --output FILE
            --exit-code 0` after, which refuses a round that was not reserved or
