@@ -313,6 +313,30 @@ where both speak. A **ratcheted** key (marked above) can only be *narrowed* by t
 the machine-global value, never widened — a repo cloned from someone else cannot silently loosen a
 guard the machine owner set to `block`. `/crew:config` shows where each setting actually came from.
 
+## Web testing
+
+**Symptom:** `--select web-testing` (or the ticked default row) fails, or Playwright
+runs but the visual rule never passes.
+
+- **Node too old.** `install-prerequisites.{sh,ps1}` checks for Node >= 20.19 (or
+  >= 22.12) itself and refuses rather than installing or upgrading Node for you —
+  `node -v`, install a newer one, and re-run `--select web-testing`.
+- **Browsers missing system dependencies.** `npx playwright install --with-deps
+  chromium` is what the installer runs; a bare `npx playwright install` (no
+  `--with-deps`) skips the OS packages Chromium needs and produces a browser that
+  launches, then crashes on first navigation.
+- **Docker absent -> visual UNVERIFIED, not a fail.** `toHaveScreenshot` baselines are
+  only meaningful when generated inside `mcr.microsoft.com/playwright:v1.63.0-noble` —
+  the installer warns rather than blocking when Docker is missing, and the visual
+  `verify.json` rule is written to skip (report UNVERIFIED) outside that image rather
+  than compare against a baseline that can never match.
+- **MCP server won't connect on Windows.** Both `@playwright/mcp` and
+  `chrome-devtools-mcp` are launched with `npx`, which the MCP host cannot invoke
+  directly on Windows — wrap the entry as `"command": "cmd", "args": ["/c", "npx",
+  ...]` in `.mcp.json` (documented in chrome-devtools-mcp's own troubleshooting for
+  the "Connection closed" failure); the `stack-web` skill's `.mcp.json` example
+  already shows this.
+
 ## Windows notes
 
 - **`pwsh` is not on Git Bash's `PATH`.** Every script that shells out to PowerShell names it by an

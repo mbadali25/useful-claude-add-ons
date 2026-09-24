@@ -1,4 +1,5 @@
-"""Doc tests for the seven `stack-*` skills (crew 1.0 T5 part 2, lane C2 fix round).
+"""Doc tests for the `stack-*` skills (crew 1.0 T5 part 2, lane C2 fix round; stack-web
+added for crew 1.0 web testing, lane B).
 
 Each skill under `plugin/crew/skills/stack-<name>/SKILL.md` must: exist, stay
 at or under 120 lines (the brief's budget - a skill this long stops loading
@@ -66,6 +67,7 @@ STACK_NAMES = [
     "stack-sql",
     "stack-powershell",
     "stack-bash",
+    "stack-web",
 ]
 
 MAX_LINES = 120
@@ -82,6 +84,7 @@ _TRIGGER_TERMS = {
     "stack-sql": ("sql",),
     "stack-powershell": ("powershell",),
     "stack-bash": ("bash",),
+    "stack-web": ("playwright",),
 }
 
 _JSON_BLOCK_RE = re.compile(r"```json\n(.*?)\n```", re.S)

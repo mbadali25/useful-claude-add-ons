@@ -108,6 +108,32 @@ shows up, the cause wasn't what you thought — the session says so and hands
 off to `/crew:spec <id>` to fill in what the light path left out, rather than
 forcing the rest of the ticket through a path that no longer fits it.
 
+## Web testing — `/crew:webtest`
+
+For a ticket whose acceptance criteria describe UI behaviour (the `stack-web` skill
+triggers on `playwright.config.*`, `@playwright/test`, or an Angular e2e suite),
+`/crew:webtest` sits inside the normal eight phases rather than replacing them:
+
+1. **Planner.** `playwright-test-planner` reads the ticket's acceptance criteria and
+   writes `specs/<ticket>.md` — what to test, not code yet.
+2. **Plan.** crew's own `/crew:plan` reads that spec the same way it reads any other
+   Files/Test/Risk plan, and needs the same approval receipt before implement starts.
+3. **Generator.** `/crew:implement` calls `playwright-test-generator` against the
+   approved spec to write the actual `*.spec.ts` files.
+4. **Healer.** A failing generated test goes to `playwright-test-healer` for
+   locator/wait repairs only. **A Healer "skip" is a finding, not a pass** — it means
+   the healer decided the feature itself is broken, and review is where that surfaces
+   rather than sailing through as a green suite.
+5. **Review.** The reviewer gets the trace zip (`trace: 'on-first-retry'`) and the axe
+   accessibility attachment alongside the diff, the same way it gets the completion
+   audit today.
+
+Visual regression (`toHaveScreenshot`) only runs inside
+`mcr.microsoft.com/playwright:v1.63.0-noble` — a baseline captured on a bare host does
+not match CI's font hinting and subpixel rendering, and fails every later run for
+reasons unrelated to the change under test. Outside that image the visual rule reports
+**UNVERIFIED**, not a pass; see [Troubleshooting](troubleshooting.md).
+
 ## If something refuses
 
 | Refusal | Means | Do |

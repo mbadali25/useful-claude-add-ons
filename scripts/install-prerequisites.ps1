@@ -989,11 +989,10 @@ $script:Catalog = @(
     [pscustomobject]@{ Key = 'task-observer';     Default = $true;  Name = 'task-observer skill (rebelytics/one-skill-to-rule-them-all)' }
     [pscustomobject]@{ Key = 'aws-mcp';           Default = $false; Name = 'MCP server: AWS (awslabs.aws-api-mcp-server)' }
     [pscustomobject]@{ Key = 'azure-mcp';         Default = $false; Name = 'MCP server: Azure (@azure/mcp)' }
-    [pscustomobject]@{ Key = 'playwright-mcp';    Default = $false; Name = 'MCP server: Playwright (@playwright/mcp)' }
+    [pscustomobject]@{ Key = 'web-testing';       Default = $true;  Name = 'Web testing: Playwright (@playwright/test + axe-core) + MCP + Test Agents - project-local, needs Node >= 20.19' }
     [pscustomobject]@{ Key = 'obsidian-mcp';      Default = $false; Name = 'MCP server: Obsidian vault server (Local REST API over an SSH tunnel)' }
     [pscustomobject]@{ Key = 'supabase';          Default = $false; Name = 'Supabase plugin (supabase@claude-plugins-official)' }
     [pscustomobject]@{ Key = 'context7';          Default = $false; Name = 'Context7 up-to-date library docs (npx ctx7 setup)' }
-    [pscustomobject]@{ Key = 'playwright-cli';    Default = $false; Name = 'Playwright CLI (@playwright/cli) - browser automation from the shell' }
     [pscustomobject]@{ Key = 'skillui';           Default = $false; Name = 'SkillUI (npm) + Playwright/Chromium - extract a design system from a URL' }
     [pscustomobject]@{ Key = 'strix';             Default = $false; Name = 'Strix AI pentesting CLI (needs Docker + an LLM API key)' }
     [pscustomobject]@{ Key = 'obsidian';          Default = $false; Name = 'Obsidian desktop + claude-obsidian + obsidian-skills plugins' }
@@ -2295,11 +2294,69 @@ if (Test-Selected 'ms-learn-mcp') {
     }
 }
 
-if (Test-Selected 'playwright-mcp') {
-    Invoke-Step "Install Playwright MCP server" {
+# Folds the old separate 'playwright-mcp' and 'playwright-cli' rows into one: a
+# modern Playwright setup is the test runner, the browsers, both MCP servers and
+# the Test Agents together, not three things a user ticks separately. Default ON
+# (see $script:Catalog above), so '-NonInteractive' now installs this row unless
+# the user excludes it with '-Select' naming other keys.
+if (Test-Selected 'web-testing') {
+    Invoke-Step "Install web testing (Playwright test runner, browsers, MCP servers, Test Agents)" {
+        if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
+            throw "node not found on PATH - select the prerequisites item (or install Node.js >= 20.19) and re-run '-Select web-testing'."
+        }
+        # Told, not fixed: this script does not install or upgrade Node for any row.
+        $nodeVer = (node -v 2>$null) -replace '^v', ''
+        $parts = $nodeVer -split '\.'
+        $major = [int]$parts[0]; $minor = [int]$parts[1]
+        if ($major -lt 20 -or ($major -eq 20 -and $minor -lt 19)) {
+            throw "node $nodeVer found, but Playwright 1.63 needs Node >= 20.19 (or >= 22.12). Install a newer Node yourself and re-run '-Select web-testing'."
+        }
+        if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
+            throw "npm not found on PATH - select the prerequisites item (or install Node.js) and re-run '-Select web-testing'."
+        }
+
+        # @playwright/test and @axe-core/playwright are project devDependencies, not
+        # global tools: the pinned version travels with the repo's package.json and
+        # has to match what CI runs. This installer does not run 'npm init' for you.
+        if (-not (Test-Path 'package.json')) {
+            throw "no package.json in $(Get-Location) - Playwright installs as a project devDependency, not globally. cd into the project's root (or run 'npm init -y' first) and re-run '-Select web-testing'."
+        }
+        $pkg = Get-Content 'package.json' -Raw | ConvertFrom-Json
+        if ($pkg.devDependencies.'@playwright/test') {
+            Write-Ok "@playwright/test already a devDependency here - reinstalling the pinned versions to pick up updates"
+        }
+        npm install -D '@playwright/test@1.63.0' '@axe-core/playwright@4.13.0'
+        if ($LASTEXITCODE -ne 0) { throw "'npm install -D @playwright/test@1.63.0 @axe-core/playwright@4.13.0' failed - see the output above." }
+        $script:Summary.Installed++
+        Write-Ok "@playwright/test@1.63.0 and @axe-core/playwright@4.13.0 added as devDependencies"
+
+        npx playwright install --with-deps chromium
+        if ($LASTEXITCODE -ne 0) {
+            Write-Warn2 "'npx playwright install --with-deps chromium' failed - browsers or system deps may be missing; see https://playwright.dev/docs/browsers"
+            throw "Chromium install failed."
+        }
+        Write-Ok "Chromium installed for Playwright"
+
+        if (Test-Path '.claude/agents/playwright-test-planner.md') {
+            Write-Skip "Playwright Test Agents already scaffolded (.claude/agents/playwright-test-planner.md exists)"
+        } else {
+            npx playwright init-agents --loop=claude
+            if ($LASTEXITCODE -ne 0) { Write-Warn2 "'npx playwright init-agents --loop=claude' failed - run it by hand." }
+            npx playwright init-agents --loop=codex
+            if ($LASTEXITCODE -ne 0) { Write-Warn2 "'npx playwright init-agents --loop=codex' failed - run it by hand." }
+            Write-Ok "Playwright Test Agents scaffolded (planner/generator/healer; claude + codex loops)"
+        }
+
         Add-McpServer -Name 'playwright' `
-            -CommandArgs @('npx', '@playwright/mcp@latest') `
-            -Note "Playwright downloads its browsers on first use; 'npx playwright install' does it ahead of time."
+            -CommandArgs @('npx', '@playwright/mcp@latest', '--isolated', '--headless', '--caps', 'testing') `
+            -Note "Playwright downloads its browsers on first use if skipped above; 'npx playwright install' does it ahead of time."
+        Add-McpServer -Name 'chrome-devtools' -CommandArgs @('npx', 'chrome-devtools-mcp@latest')
+
+        if (Get-Command docker -ErrorAction SilentlyContinue) {
+            Write-Ok "Docker found - visual baselines can be captured in mcr.microsoft.com/playwright:v1.63.0-noble, the only image guaranteed to match CI's rendering."
+        } else {
+            Write-Warn2 "Docker not found - this is a warning, not a blocker: everything else in this row still works. Visual regression baselines (toHaveScreenshot) must be generated inside mcr.microsoft.com/playwright:v1.63.0-noble or they will not match CI's font hinting and subpixel rendering."
+        }
     }
 }
 
@@ -2382,34 +2439,6 @@ if (Test-Selected 'context7') {
         if ($LASTEXITCODE -ne 0) { throw "'npx ctx7 setup' failed - see the output above." }
         $script:Summary.Installed++
         Write-Ok "Context7 configured. Free tier works without a key; higher limits: https://context7.com"
-    }
-}
-
-# --- 15. Playwright CLI ------------------------------------------------------ ---
-if (Test-Selected 'playwright-cli') {
-    Invoke-Step "Install Playwright CLI (@playwright/cli)" {
-        # Detection is on the binary the package provides ('playwright-cli'), which is
-        # what a user actually cares about - it can also arrive via another manager.
-        $existing = Get-Command playwright-cli -ErrorAction SilentlyContinue
-        if ($existing -and $NoUpdate) {
-            Write-Skip "playwright-cli already installed at $($existing.Source) (-NoUpdate set)"
-            return
-        }
-        if ($existing) {
-            Write-Ok "playwright-cli already installed - reinstalling @latest to pick up updates"
-        }
-        if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
-            throw "npm not found on PATH - select the prerequisites item (or install Node.js) and re-run."
-        }
-        npm install -g '@playwright/cli@latest'
-        if ($LASTEXITCODE -ne 0) { throw "'npm install -g @playwright/cli@latest' failed - see the output above." }
-        Sync-SessionEnvironment
-        $cmd = Get-Command playwright-cli -ErrorAction SilentlyContinue
-        if (-not $cmd) {
-            throw "@playwright/cli installed but 'playwright-cli' is not resolvable in this session - open a new shell and try again."
-        }
-        $script:Summary.Installed++
-        Write-Ok "playwright-cli installed at $($cmd.Source)"
     }
 }
 
@@ -2800,7 +2829,7 @@ if (Test-Selected 'ms-mcp') {
 # anthropics/claude-plugins-official's own marketplace.json on 2026-09-23, which
 # lists csharp-lsp/pyright-lsp/typescript-lsp (and eleven other languages) but no
 # 'angular' entry - so Angular's language server goes in as a plain npm package
-# instead, the same way playwright-cli and skillui are above.
+# instead, the same way skillui's Playwright/Chromium install is above.
 function Install-LspBinary {
     # $Label for messages, $Probe the command Claude Code will actually run,
     # $Install a scriptblock run directly - never a string that gets invoked.
