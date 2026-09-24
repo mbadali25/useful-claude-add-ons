@@ -22,73 +22,75 @@ $dir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $script:BridgeStatusRejected = @()
 
 function Resolve-BridgeStatusPython {
-  # Near-copy of vault-guard.ps1's Resolve-VaultGuardPython. Copied, not
-  # shared, for the same reason recorded there: crew and obsidian-vault
-  # install independently, and each wrapper's stand-down message needs to
-  # name itself.
+  # The PowerShell twin of bridge-status.sh's resolver, and the same algorithm as
+  # crew's one shared Resolve-CrewPython: EVERY PATH match of every name is a
+  # candidate, and each is EXECUTED (bounded, 3s) before it is believed.
+  # Where it lives never decides. A WindowsApps App Execution Alias is tried
+  # like anything else: it forwards to a working interpreter when Python is
+  # installed and fails the probe when it is not. crew 1.0's Windows burn-in
+  # found the old path rule plus first-match-per-name discarding three
+  # WORKING aliases and never reaching the real python.exe behind them.
+  #
+  # Launched as a Process, not `& $cmd.Source -c ...`: the argument string
+  # reaches the OS as written, so legacy native-argument passing (5.1, pwsh
+  # <=7.2) has nothing to strip, and the probe can be timed out. The python
+  # literal stays single-quoted all the same (_test/test_ps1_legacy_args.sh).
+  # No `continue` inside try/catch: loop control across that boundary
+  # differs between PowerShell versions, so the verdict leaves in variables.
   $names = @('python3', 'python', 'py')
   foreach ($name in $names) {
-    $cmd = Get-Command $name -ErrorAction SilentlyContinue | Select-Object -First 1
-    if (-not $cmd) { continue }
-    if ($cmd.CommandType -ne 'Application' -or -not $cmd.Source) {
-      # hooks.json registers this hook with no -NoProfile, so a
-      # `function python { ... }` in a user profile is loaded and wins here.
-      $script:BridgeStatusRejected += "$name (resolved to a $($cmd.CommandType), not an executable - a profile function or alias is shadowing it)"
-      continue
+    # hooks.json registers this hook with no -NoProfile, so a `function
+    # python { ... }` in a user profile is loaded. It is reported, never run;
+    # the executables behind it are still candidates.
+    foreach ($shadow in @(Get-Command $name -All -ErrorAction SilentlyContinue | Where-Object { $_.CommandType -ne 'Application' })) {
+      $script:BridgeStatusRejected += "$name (resolved to a $($shadow.CommandType), not an executable - a profile function or alias is shadowing it)"
     }
-    if ($cmd.Source -match 'WindowsApps') {
-      $script:BridgeStatusRejected += "$($cmd.Source) (WindowsApps App Execution Alias)"
-      continue
-    }
-    # Metadata alone is exactly what the Store alias passes: Get-Command
-    # reports it as a real Application with a real Source. Launch it and read
-    # back a token this script chose - only a python that parsed and ran the
-    # -c program can emit the prefix.
-    $probe = $null
-    $reason = ''
-    $global:LASTEXITCODE = $null
-    try {
-      # Captured WHOLE, not piped through `Select-Object -First 1`: that
-      # cmdlet can close the pipeline as soon as it has one object, racing
-      # the native process's exit and leaving $LASTEXITCODE reflecting an
-      # early termination rather than the candidate's real status.
-      # Single-quoted python string literal, escaped for PowerShell's outer
-      # single-quoted argument as `''...''` - see vault-guard.ps1's twin of
-      # this comment for the legacy-native-argument-passing bug this avoids
-      # (double quotes here got silently stripped before python saw them,
-      # producing a SyntaxError and rejecting every real interpreter).
-      $output = & $cmd.Source -c 'import sys; sys.stdout.write(''bridge-status-python:'' + sys.executable)' 2>$null
-      if ($LASTEXITCODE -ne 0) {
-        $reason = "$($cmd.Source) (ran, but exited $LASTEXITCODE instead of answering the interpreter probe)"
-      } elseif ($output) {
-        $probe = @($output)[0]
+    foreach ($cmd in @(Get-Command $name -All -CommandType Application -ErrorAction SilentlyContinue)) {
+      if (-not $cmd.Source) { continue }
+      $probe = $null
+      $reason = ''
+      try {
+        $psi = New-Object System.Diagnostics.ProcessStartInfo
+        $psi.FileName = $cmd.Source
+        $psi.Arguments = '-c "import sys; sys.stdout.write(''bridge-status-python:'' + sys.executable)"'
+        $psi.UseShellExecute = $false
+        $psi.RedirectStandardOutput = $true
+        $psi.RedirectStandardError = $true
+        $psi.CreateNoWindow = $true
+        $proc = [System.Diagnostics.Process]::Start($psi)
+        $outTask = $proc.StandardOutput.ReadToEndAsync()
+        $null = $proc.StandardError.ReadToEndAsync()
+        if (-not $proc.WaitForExit(3000)) {
+          try { $proc.Kill() } catch { }
+          $reason = "$($cmd.Source) (did not answer the interpreter probe within 3s, and was killed)"
+        } elseif ($proc.ExitCode -ne 0) {
+          $reason = "$($cmd.Source) (ran, but exited $($proc.ExitCode) instead of answering the interpreter probe)"
+        } elseif ($outTask.Wait(1000)) {
+          $probe = $outTask.Result
+        }
+      } catch {
+        $reason = "$($cmd.Source) (could not be launched: $($_.Exception.Message))"
       }
-    } catch {
-      $reason = "$($cmd.Source) (could not be launched: $($_.Exception.Message))"
+      if ($reason) {
+        $script:BridgeStatusRejected += $reason
+        continue
+      }
+      if ($probe) { $probe = $probe.ToString().Trim() }
+      if (-not $probe -or -not $probe.StartsWith('bridge-status-python:')) {
+        $script:BridgeStatusRejected += "$($cmd.Source) (ran, but did not answer the interpreter probe)"
+        continue
+      }
+      $real = $probe.Substring('bridge-status-python:'.Length)
+      if (-not $real) {
+        # An embedded or frozen interpreter can report an empty sys.executable.
+        # It answered honestly, and the answer is still unusable here.
+        $script:BridgeStatusRejected += "$($cmd.Source) (answered the probe with an empty sys.executable)"
+        continue
+      }
+      # sys.executable, not Source: the PATH-found name may be a shim that
+      # re-execs elsewhere, and the probe already asked python where it lives.
+      return $real
     }
-    if ($reason) {
-      $script:BridgeStatusRejected += $reason
-      continue
-    }
-    if ($probe) { $probe = $probe.ToString().Trim() }
-    if (-not $probe -or -not $probe.StartsWith('bridge-status-python:')) {
-      $script:BridgeStatusRejected += "$($cmd.Source) (ran, but did not answer the interpreter probe)"
-      continue
-    }
-    $real = $probe.Substring('bridge-status-python:'.Length)
-    if (-not $real) {
-      # An embedded or frozen interpreter can report an empty sys.executable.
-      # It answered honestly, and the answer is still unusable here.
-      $script:BridgeStatusRejected += "$($cmd.Source) (answered the probe with an empty sys.executable)"
-      continue
-    }
-    if ($real -match 'WindowsApps') {
-      $script:BridgeStatusRejected += "$($cmd.Source) -> $real (WindowsApps App Execution Alias)"
-      continue
-    }
-    # sys.executable, not Source: the PATH-found name may be a shim that
-    # re-execs elsewhere, and the probe already asked python where it lives.
-    return $real
   }
   return ''
 }

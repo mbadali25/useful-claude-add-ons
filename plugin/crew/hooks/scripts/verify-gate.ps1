@@ -61,30 +61,6 @@ param(
 # that bug once - the guard stood down on Windows and blocked nothing there.
 if ($env:OS -ne 'Windows_NT') { exit 0 }
 
-if ($Price) {
-  $root0 = if ($env:CLAUDE_PROJECT_DIR) { $env:CLAUDE_PROJECT_DIR } else { "." }
-  Set-Location $root0
-  function Resolve-CrewPythonEarly {
-    foreach ($name in @('python3', 'python')) {
-      $c = Get-Command $name -All -ErrorAction SilentlyContinue |
-        Where-Object { $_.CommandType -eq 'Application' -and $_.Source -and $_.Source -notmatch 'WindowsApps' } |
-        Select-Object -First 1
-      if ($c) { return $c.Source }
-    }
-    return ''
-  }
-  $py0 = Resolve-CrewPythonEarly
-  if (-not $py0) {
-    [Console]::Error.WriteLine("verify-gate -Price: no python available")
-    exit 1
-  }
-  $script0 = Join-Path $PSScriptRoot 'verify_price.py'
-  $priceArgs = @($script0, $PriceTarget)
-  if ($PriceForce) { $priceArgs += '--force' }
-  & $py0 @priceArgs
-  exit $LASTEXITCODE
-}
-
 # Resolve a real bash.exe, not WSL's launcher. With WSL installed, unqualified
 # `bash` on PATH normally resolves to C:\Windows\System32\bash.exe or the
 # WindowsApps shim ahead of Git for Windows' bash -- inside WSL none of a
@@ -143,37 +119,77 @@ function Resolve-CrewBash {
 }
 
 function Resolve-CrewPython {
-  # THE SAME GUARD AS Resolve-CrewBash ABOVE, and it is here because this
-  # file already contained that guard and the scope report's resolver did
-  # not -- one file, two resolvers, one of them hardened.
+  # ONE probe, byte for byte in every crew .ps1 that runs python, asserted by
+  # tests/test_ps1_python_probe.py. Inline rather than dot-sourced for the
+  # reason verify-gate.ps1's emergency-lane note gives: a dot-sourced
+  # function is invisible to scripts/check-powershell.ps1's static check.
   #
-  # Two live failure modes, both of which `Get-Command python3, python |
-  # Select-Object -First 1` walks straight into:
+  # EVERY PATH match of every name is a candidate, and each is EXECUTED
+  # before it is believed; where it lives never decides. A WindowsApps App
+  # Execution Alias is tried like anything else: it forwards to a working
+  # interpreter when Python is installed and fails the probe when it is not.
+  # Windows burn-in 2026-09-23 (docs/review/06-windows-burn-in.md, 2c): the
+  # previous copy skipped WindowsApps by path and took only the first match
+  # per name, so on a host whose python, python3 and py were all working
+  # WindowsApps aliases it discarded all three untested, never reached the
+  # real python.exe further down PATH, and completion-audit.ps1 blocked
+  # every Stop while its bash twin proceeded.
   #
-  #   1. A `function python { ... }` in a PowerShell profile is returned
-  #      AHEAD of any python.exe and its .Source is empty. hooks.json passes
-  #      no -NoProfile, so the profile is loaded and this is a live vector
-  #      rather than a theoretical one. The empty .Source then failed the
-  #      `if ($scopePy)` test and the gate reported "no python" on a machine
-  #      with python installed -- an unknown wearing the label of a check.
-  #   2. The Store's python.exe App Execution Alias in WindowsApps is a real
-  #      Application with a real .Source, so it resolves and is INVOKED; the
-  #      stub opens the Store instead of running the script.
-  #
-  # Only real executables, never the WindowsApps shim. Unlike the bash
-  # resolver there is no System32 shim to exclude -- WSL ships a bash
-  # launcher there, nothing ships a python one -- so that filter is
-  # deliberately absent rather than forgotten.
-  $names = @('python3', 'python')
-  foreach ($name in $names) {
-    $candidates = Get-Command $name -All -ErrorAction SilentlyContinue
+  # The probe is bounded: it runs to completion or is killed at 3s, with
+  # stdout and stderr read asynchronously so a chatty candidate cannot fill a
+  # pipe and hang. A candidate is accepted only when it exits 0, reports
+  # Python 3 or later, and prints a sys.executable that exists as a file.
+  # No `continue` inside try/catch: loop control across that boundary
+  # differs between PowerShell versions, so the verdict is carried out in
+  # $real and acted on after it.
+  foreach ($name in @('python3', 'python', 'py')) {
+    $candidates = @(Get-Command $name -All -CommandType Application -ErrorAction SilentlyContinue)
     foreach ($cmd in $candidates) {
-      if ($cmd.CommandType -ne 'Application' -or -not $cmd.Source) { continue }
-      if ($cmd.Source -match 'WindowsApps') { continue }
-      return $cmd.Source
+      if (-not $cmd.Source) { continue }
+      $real = $null
+      try {
+        $psi = New-Object System.Diagnostics.ProcessStartInfo
+        $psi.FileName = $cmd.Source
+        $psi.Arguments = '-c "import sys; sys.version_info[0] >= 3 or sys.exit(1); print(sys.executable)"'
+        $psi.UseShellExecute = $false
+        $psi.RedirectStandardOutput = $true
+        $psi.RedirectStandardError = $true
+        $psi.CreateNoWindow = $true
+        $proc = [System.Diagnostics.Process]::Start($psi)
+        $outTask = $proc.StandardOutput.ReadToEndAsync()
+        $null = $proc.StandardError.ReadToEndAsync()
+        if (-not $proc.WaitForExit(3000)) {
+          try { $proc.Kill() } catch { }
+        } elseif ($proc.ExitCode -eq 0 -and $outTask.Wait(1000)) {
+          $real = @(($outTask.Result -split "`r?`n") | Where-Object { $_.Trim() })[0]
+        }
+      } catch {
+        $real = $null
+      }
+      if ($real) { $real = $real.ToString().Trim() }
+      if (-not $real) { continue }
+      if (-not (Test-Path -LiteralPath $real -PathType Leaf)) { continue }
+      return $real
     }
   }
   return ''
+}
+
+# -Price resolves python with the same probe as everything else here, so it
+# sits below Resolve-CrewPython rather than above it with a copy of its own.
+if ($Price) {
+  $root0 = if ($env:CLAUDE_PROJECT_DIR) { $env:CLAUDE_PROJECT_DIR } else { "." }
+  Set-Location $root0
+  $py0 = Resolve-CrewPython
+  if (-not $py0) {
+    [Console]::Error.WriteLine("verify-gate -Price: no python available")
+    exit 1
+  }
+  $script0 = Join-Path $PSScriptRoot 'verify_price.py'
+  $priceArgs = @($script0, $PriceTarget)
+  if ($PriceForce) { $priceArgs += '--force' }
+  & $py0 @priceArgs
+  exit $LASTEXITCODE
 }
 
 if ($PrintBash) {

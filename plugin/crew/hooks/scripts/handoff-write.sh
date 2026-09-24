@@ -12,6 +12,16 @@ cd "${CWD:-${CLAUDE_PROJECT_DIR:-.}}" 2>/dev/null || exit 0
 # session, and both writes below are idempotent (the transcript copy is
 # timestamped, the handoff skeleton only gets written if one doesn't already
 # exist) -- duplication is safe, suppression of the only handoff is not.
+#
+# The per-EVENT claim is a different thing: on Windows both flavours run for
+# ONE PreCompact, and "idempotent" held only when they did not overlap -- two
+# transcript copies in one second race one name, and two skeleton writers can
+# both see no handoff. event_claim.py lets exactly one flavour write for this
+# event, keyed on the payload, so the next compaction is a new event. Exit 10
+# is the only "the other flavour has it"; anything else writes.
+if CLAIM_PY=$(crew_py_strict); then
+  printf '%s' "$INPUT" | "$CLAIM_PY" "$(dirname "${BASH_SOURCE[0]}")/event_claim.py" handoff-write . ; [ $? -eq 10 ] && exit 0
+fi
 
 mkdir -p .crew/transcripts .work
 if [ -f "$TRANSCRIPT" ]; then

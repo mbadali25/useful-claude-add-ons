@@ -296,25 +296,28 @@ check_err_has "and refusing it is reported" "did not answer the interpreter prob
 
 echo "== vault-guard.sh: a real interpreter behind a stub still wins =="
 
-# Name order, not PATH order: bash's `command -v python3` takes the FIRST
-# python3 and then moves to the NEXT NAME. So a real `python` after a stub
-# `python3` is found...
+# A real `python` after a stub `python3` is found...
 mixed_real="$(real_dir mixedreal python)"
 run_sh "$store_dir:$mixed_real:$TOOLS" "$bad_canvas_payload"
 check_exit "stub python3 + real python: the real one runs and blocks" 2
 check_err_has "and the violation is named" "DOES NOT PARSE"
 
-# ...while a second python3 further down PATH is NOT, because `command -v`
-# never searches the same name twice. That is bash's behaviour, mirrored on
-# purpose so the two shell flavours cannot reach different verdicts on one
-# machine (crew shipped that divergence once). It is a limitation, and the
-# thing that makes it acceptable is that it is LOUD.
+# ...and so, since the crew 1.0 Windows burn-in, is a second python3 further
+# down PATH. The resolver walks EVERY match of a name (`type -aP`), and
+# vault-guard.ps1 walks the same order, so the two flavours still reach one
+# verdict. This case used to assert a stand-down: on a host whose every name
+# hits WindowsApps first, that rule never reached the real python.exe.
 shadowed_real="$(real_dir shadowedreal python3)"
 run_sh "$store_dir:$shadowed_real:$TOOLS" "$bad_canvas_payload"
-check_exit "stub python3 shadowing a real python3: stands down" 0
-check_err_nonempty "and says so rather than failing silently"
-check_err_has "and names it as an unusable candidate, not as absence" \
-  "no candidate is a usable interpreter"
+check_exit "stub python3 ahead of a real python3: the real one runs and blocks" 2
+check_err_has "and the violation is named" "DOES NOT PARSE"
+
+# A WindowsApps alias that WORKS (Python installed behind it) is an
+# interpreter. Where it lives never decides; the probe does.
+working_alias="$(real_dir aliases/WindowsApps python3)"
+run_sh "$working_alias:$TOOLS" "$bad_canvas_payload"
+check_exit "a working WindowsApps alias is used, and blocks" 2
+check_err_has "and the violation is named" "DOES NOT PARSE"
 
 echo "== vault-guard.sh: nothing named python at all =="
 
@@ -632,6 +635,15 @@ if [ -n "$PWSH" ]; then
   check_exit "ps1: a stub that prints a plausible path is refused" 0
   check_err_has "ps1: and refusing it is reported" "did not answer the interpreter probe"
 
+  # The two crew 1.0 burn-in cases, same verdicts as the .sh above: a
+  # second python3 behind a stub is reached, and a WORKING WindowsApps alias
+  # is used rather than skipped by its path.
+  run_ps1 "$store_dir:$shadowed_real:$TOOLS" "$bad_canvas_payload"
+  check_exit "ps1: stub python3 ahead of a real python3: the real one blocks" 2
+
+  run_ps1 "$working_alias:$TOOLS" "$bad_canvas_payload"
+  check_exit "ps1: a working WindowsApps alias is used, and blocks" 2
+
   run_ps1 "$TOOLS" "$bad_canvas_payload"
   check_exit "ps1: nothing named python: stand down" 0
   check_err_has "ps1: and the ABSENCE message is the distinct one" \
@@ -641,10 +653,10 @@ else
   # test_bridge_capture_sh.sh's twin of this branch: run-tests.sh's
   # `sh_suite` folds this whole file into one PASS on a clean exit and only
   # shows this script's OWN stdout when it FAILS, so a host with no pwsh
-  # silently never runs any of the 6 .ps1 cases below and the parent's
+  # silently never runs any of the 8 .ps1 cases below and the parent's
   # RESULT line reads no differently than a run where they all passed.
   SKIP=$((SKIP+1))
-  echo "SKIP: vault-guard.ps1 - no pwsh on PATH (6 cases not run)"
+  echo "SKIP: vault-guard.ps1 - no pwsh on PATH (8 cases not run)"
 fi
 
 echo

@@ -28,41 +28,38 @@ _vault_capture_resolve_python() {
   VAULT_CAPTURE_PY=""
   VAULT_CAPTURE_REJECTED=""
   for name in python3 python py; do
-    # `command -v` takes only the FIRST match for a name and then moves to
-    # the NEXT NAME - it never searches the same name further down PATH.
-    candidate=$(command -v "$name" 2>/dev/null) || continue
-    case "$candidate" in
-      */WindowsApps/*|*\\WindowsApps\\*)
-        _vault_capture_reject "$candidate (WindowsApps App Execution Alias)"
-        continue ;;
-    esac
-    # Running the candidate and reading back a token this script chose is
-    # what actually tells a real interpreter from something wearing the name
-    # - the WindowsApps alias resolves cleanly as a file but is not one.
-    probe=$("$candidate" -c 'import sys; sys.stdout.write("vault-capture-python:" + sys.executable)' 2>/dev/null) || {
-      _vault_capture_reject "$candidate (ran, but exited nonzero instead of answering the interpreter probe)"
-      continue; }
-    case "$probe" in
-      vault-capture-python:*) real="${probe#vault-capture-python:}" ;;
-      *)
-        _vault_capture_reject "$candidate (ran, but did not answer the interpreter probe)"
-        continue ;;
-    esac
-    # An embedded or frozen interpreter can report an empty sys.executable.
-    # It answered honestly, and the answer is still unusable here.
-    [ -n "$real" ] || {
-      _vault_capture_reject "$candidate (answered the probe with an empty sys.executable)"
-      continue; }
-    case "$real" in
-      */WindowsApps/*|*\\WindowsApps\\*)
-        _vault_capture_reject "$candidate -> $real (WindowsApps App Execution Alias)"
-        continue ;;
-    esac
-    # `sys.executable`, not `$candidate`: the PATH-found name may be a shim
-    # that re-execs elsewhere, and the probe already paid the cost of asking
-    # python where it actually lives.
-    VAULT_CAPTURE_PY="$real"
-    return 0
+    # EVERY PATH match of the name, not only the first (`type -aP`, not
+    # `command -v`), and each is executed before it is believed: where it
+    # lives never decides. A WindowsApps alias is tried like anything else.
+    # crew 1.0's Windows burn-in: a path rule plus first-match-per-name
+    # discarded three WORKING aliases and never reached the real python.exe
+    # behind them. vault-capture.ps1 walks the same order, so both flavours agree.
+    while IFS= read -r candidate; do
+      [ -n "$candidate" ] || continue
+      # Running the candidate and reading back a token this script chose is
+      # what tells a real interpreter from something wearing the name: only
+      # a python that parsed and ran the -c program can emit the prefix. A
+      # zero exit with other output (a wrapper that prints a line) fails it.
+      probe=$("$candidate" -c 'import sys; sys.stdout.write("vault-capture-python:" + sys.executable)' 2>/dev/null) || {
+        _vault_capture_reject "$candidate (ran, but exited nonzero instead of answering the interpreter probe)"
+        continue; }
+      case "$probe" in
+        vault-capture-python:*) real="${probe#vault-capture-python:}" ;;
+        *)
+          _vault_capture_reject "$candidate (ran, but did not answer the interpreter probe)"
+          continue ;;
+      esac
+      # An embedded or frozen interpreter can report an empty sys.executable.
+      # It answered honestly, and the answer is still unusable here.
+      [ -n "$real" ] || {
+        _vault_capture_reject "$candidate (answered the probe with an empty sys.executable)"
+        continue; }
+      # `sys.executable`, not `$candidate`: the PATH-found name may be a shim
+      # that re-execs elsewhere, and the probe already paid the cost of asking
+      # python where it actually lives.
+      VAULT_CAPTURE_PY="$real"
+      return 0
+    done < <(type -aP "$name" 2>/dev/null)
   done
   return 1
 }

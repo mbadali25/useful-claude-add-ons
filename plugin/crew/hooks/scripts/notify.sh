@@ -9,6 +9,11 @@ EVENT="${1:-info}"; shift 2>/dev/null; MSG="$*"
 
 # No hook_once claim here on purpose: Notification can fire many times per
 # session, and a duplicate ping is a safe failure -- a suppressed one is not.
+# The per-EVENT claim further down is a different thing: on Windows both
+# flavours of this hook run for one Notification, and event_claim.py lets
+# exactly one of them send it (keyed on the payload, so the next Notification
+# is new). Exit 10 is the only "the other flavour sent it"; anything else
+# sends. A command calling this script by hand passes no payload and sends.
 
 CREW_PY=$(crew_py) || exit 0
 read_cfg() { "$CREW_PY" - "$1" << 'PY' 2>/dev/null
@@ -28,6 +33,10 @@ PY
 PROVIDER=$(read_cfg provider); [ -z "$PROVIDER" ] || [ "$PROVIDER" = "none" ] && exit 0
 EVENTS=$(read_cfg events)
 case ",$EVENTS," in *",$EVENT,"*) ;; *) [ -n "$EVENTS" ] && exit 0 ;; esac
+
+if [ ! -t 0 ] && CLAIM_PY=$(crew_py_strict); then
+  "$CLAIM_PY" "$(dirname "${BASH_SOURCE[0]}")/event_claim.py" notify . ; [ $? -eq 10 ] && exit 0
+fi
 
 REPO=$(basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")
 BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)

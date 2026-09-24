@@ -63,12 +63,15 @@ SKIP, which is never recorded as verified -- and says UNVERIFIED. The
 environment variable is not evidence on its own, since any caller can set it.
 "Inside" needs all of: Linux; `CREW_PLAYWRIGHT_IMAGE` naming the pinned image
 (the scaffolded config gates the visual project on it); a container marker
-(`/.dockerenv`, `/run/.containerenv`, or docker/containerd/kubepods/podman in
-`/proc/1/cgroup`); the image's browser store `/ms-playwright`; and in it the
+(Docker's `/.dockerenv`, Podman's `/run/.containerenv`, or
+docker/containerd/kubepods/podman/libpod in `/proc/1/cgroup` -- either
+runtime counts, the image is the same); the image's browser store `/ms-playwright`; and in it the
 chromium revision the installed `playwright-core/browsers.json` asks for,
 which only the matching image release ships. An installed `@playwright/test`
 that is not `PINNED_PLAYWRIGHT` fails rather than skips, since that is a real
-misconfiguration, not an absent one. What was verified is printed.
+misconfiguration, not an absent one. What was verified is printed. Off the
+image it also says how to get there: the `docker run` / `podman run` line for
+the pinned image with whichever runtime is on PATH, or that neither is.
 
 ## artifacts
 
@@ -86,6 +89,7 @@ import json
 import os
 import posixpath
 import re
+import shutil
 import subprocess
 import sys
 
@@ -105,6 +109,7 @@ CONTAINER_MARKERS = ("/.dockerenv", "/run/.containerenv")
 CGROUP_FILE = "/proc/1/cgroup"
 CGROUP_WORDS = ("docker", "containerd", "kubepods", "podman", "libpod")
 BROWSERS_DIR = "/ms-playwright"
+RUNTIMES = ("docker", "podman")
 
 JS_EXTS = (".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".mts", ".cts")
 TEST_DIRS = frozenset(("test", "tests", "e2e", "spec", "specs", "__tests__", "playwright",
@@ -618,21 +623,38 @@ def expected_chromium(root):
     return None
 
 
-def _unverified(why):
+def runtime_line():
+    """How to reach the pinned image from this host: the run line for each
+    container runtime on PATH, or that there is none. Podman takes the same
+    image and flags as Docker (the Windows burn-in host declined Docker
+    Desktop and runs Podman in WSL)."""
+    found = [name for name in RUNTIMES if shutil.which(name)]
+    if not found:
+        return (f"webtest visual: neither {' nor '.join(RUNTIMES)} is on PATH, so "
+                f"{PINNED_IMAGE} cannot run on this host; visual stays UNVERIFIED here")
+    return (f"webtest visual: to verify, run the suite inside the image with "
+            f"{' or '.join(found)}: {found[0]} run --rm --ipc=host -v \"$PWD\":/work -w /work "
+            f"-e {IMAGE_ENV}={PINNED_IMAGE} {PINNED_IMAGE} npx playwright test --project=visual")
+
+
+def _unverified(why, off_image=False):
+    hint = [runtime_line()] if off_image else []
     return EXIT_SKIP, [f"webtest visual: UNVERIFIED -- visual diffs run only inside "
-                       f"{PINNED_IMAGE}; skipped here ({why})"]
+                       f"{PINNED_IMAGE}; skipped here ({why})"] + hint
 
 
 def check_visual(root, extra=(), runner=subprocess.call):
     image = os.environ.get(IMAGE_ENV, "")
     if not sys.platform.startswith("linux"):
-        return _unverified(sys.platform)
+        return _unverified(sys.platform, off_image=True)
     if image != PINNED_IMAGE:
-        return _unverified(f"{IMAGE_ENV}={image!r}" if image else f"{IMAGE_ENV} unset")
+        return _unverified(f"{IMAGE_ENV}={image!r}" if image else f"{IMAGE_ENV} unset",
+                           off_image=True)
     markers = container_evidence()
     if not markers:
         return _unverified(f"{IMAGE_ENV} is set but nothing shows a container: none of "
-                           f"{', '.join(CONTAINER_MARKERS)}, and no container in {CGROUP_FILE}")
+                           f"{', '.join(CONTAINER_MARKERS)}, and no container in {CGROUP_FILE}",
+                           off_image=True)
     if not os.path.isdir(BROWSERS_DIR):
         return _unverified(f"container, but no Playwright image browser store {BROWSERS_DIR}")
     version = installed_playwright(root)

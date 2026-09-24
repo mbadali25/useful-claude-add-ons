@@ -40,7 +40,9 @@ DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # The bash twin of vault-guard.ps1's `Resolve-VaultGuardPython`, and a
 # deliberate near-copy of crew's `_resolve_role_write_python`
 # (plugin/crew/hooks/scripts/role-write-guard.sh:32-57), which is the same
-# resolver for the same defect on the same machines.
+# resolver for the same defect on the same machines -- except that since the
+# crew 1.0 Windows burn-in this one walks EVERY PATH match of a name (as
+# crew's shared .ps1 probe does) and has no WindowsApps path rule at all.
 #
 # NOT imported from there. crew and obsidian-vault are separate marketplace
 # entries, installed independently: `${CLAUDE_PLUGIN_ROOT}` points at this
@@ -71,51 +73,38 @@ _vault_guard_resolve_python() {
   VAULT_GUARD_PY=""
   VAULT_GUARD_REJECTED=""
   for name in python3 python py; do
-    # `command -v` takes only the FIRST match for a name and then moves to
-    # the NEXT NAME - it never searches the same name further down PATH.
-    # vault-guard.ps1 mirrors that ordering on purpose; see the note there.
-    candidate=$(command -v "$name" 2>/dev/null) || continue
-    case "$candidate" in
-      */WindowsApps/*|*\\WindowsApps\\*)
-        _vault_guard_reject "$candidate (WindowsApps App Execution Alias)"
-        continue ;;
-    esac
-    # `command -v` finding a name on PATH is not enough - the WindowsApps
-    # alias IS a real, executable file, so it resolves cleanly. Running the
-    # candidate and reading back a token this script chose is what actually
-    # tells a real interpreter from something wearing the name: only a python
-    # that parsed and ran the -c program can emit the prefix.
-    #
-    # Deliberately stricter than crew's copy, which accepts any non-empty
-    # stdout on a zero exit. That is enough for the Store alias (it exits
-    # 9009, so the status check alone rejects it) and not enough for its
-    # neighbour: a wrapper or shim that prints a line and exits 0 passes
-    # "did it print something" and fails this. CLAUDE.md: check the
-    # neighbouring case before closing a guard fix.
-    probe=$("$candidate" -c 'import sys; sys.stdout.write("vault-guard-python:" + sys.executable)' 2>/dev/null) || {
-      _vault_guard_reject "$candidate (ran, but exited nonzero instead of answering the interpreter probe)"
-      continue; }
-    case "$probe" in
-      vault-guard-python:*) real="${probe#vault-guard-python:}" ;;
-      *)
-        _vault_guard_reject "$candidate (ran, but did not answer the interpreter probe)"
-        continue ;;
-    esac
-    # An embedded or frozen interpreter can report an empty sys.executable.
-    # It answered honestly, and the answer is still unusable here.
-    [ -n "$real" ] || {
-      _vault_guard_reject "$candidate (answered the probe with an empty sys.executable)"
-      continue; }
-    case "$real" in
-      */WindowsApps/*|*\\WindowsApps\\*)
-        _vault_guard_reject "$candidate -> $real (WindowsApps App Execution Alias)"
-        continue ;;
-    esac
-    # `sys.executable`, not `$candidate`: the PATH-found name may be a shim
-    # that re-execs elsewhere, and the probe already paid the cost of asking
-    # python where it actually lives.
-    VAULT_GUARD_PY="$real"
-    return 0
+    # EVERY PATH match of the name, not only the first (`type -aP`, not
+    # `command -v`), and each is executed before it is believed: where it
+    # lives never decides. A WindowsApps alias is tried like anything else.
+    # crew 1.0's Windows burn-in: a path rule plus first-match-per-name
+    # discarded three WORKING aliases and never reached the real python.exe
+    # behind them. vault-guard.ps1 walks the same order, so both flavours agree.
+    while IFS= read -r candidate; do
+      [ -n "$candidate" ] || continue
+      # Running the candidate and reading back a token this script chose is
+      # what tells a real interpreter from something wearing the name: only
+      # a python that parsed and ran the -c program can emit the prefix. A
+      # zero exit with other output (a wrapper that prints a line) fails it.
+      probe=$("$candidate" -c 'import sys; sys.stdout.write("vault-guard-python:" + sys.executable)' 2>/dev/null) || {
+        _vault_guard_reject "$candidate (ran, but exited nonzero instead of answering the interpreter probe)"
+        continue; }
+      case "$probe" in
+        vault-guard-python:*) real="${probe#vault-guard-python:}" ;;
+        *)
+          _vault_guard_reject "$candidate (ran, but did not answer the interpreter probe)"
+          continue ;;
+      esac
+      # An embedded or frozen interpreter can report an empty sys.executable.
+      # It answered honestly, and the answer is still unusable here.
+      [ -n "$real" ] || {
+        _vault_guard_reject "$candidate (answered the probe with an empty sys.executable)"
+        continue; }
+      # `sys.executable`, not `$candidate`: the PATH-found name may be a shim
+      # that re-execs elsewhere, and the probe already paid the cost of asking
+      # python where it actually lives.
+      VAULT_GUARD_PY="$real"
+      return 0
+    done < <(type -aP "$name" 2>/dev/null)
   done
   return 1
 }

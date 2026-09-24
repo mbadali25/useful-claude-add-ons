@@ -1797,14 +1797,16 @@ def test_a_real_python_under_a_different_name_still_resolves(tmp_path):
 
 
 @needs_pwsh_windows
-def test_windowsapps_stub_with_only_one_name_present_falls_through_like_bash(tmp_path):
-    """The exact reported divergence. PATH = WindowsApps(python3 stub
-    only); RealDir(python3, real) -- no `python`/`py` ANYWHERE. The old
-    `Get-Command $name -All` walked past the stub to RealDir's python3
-    WITHIN the same name and resolved it; bash's `command -v python3`
-    takes only the first match, rejects it, and moves to the NEXT NAME --
-    finding nothing, since `python`/`py` do not exist either. Both shell
-    flavours must now agree that neither resolves an interpreter here."""
+def test_windowsapps_stub_with_only_one_name_present_walks_on_to_the_real_one(tmp_path):
+    """PATH = WindowsApps(python3 stub only); RealDir(python3, real) -- no
+    `python`/`py` anywhere. Until crew 1.0 this asserted NOTHING resolved,
+    mirroring bash's first-match-per-name `command -v`. The Windows burn-in
+    (docs/review/06-windows-burn-in.md, 2c) showed where that leads: a host
+    whose every name hits WindowsApps first never reaches the real python
+    further down PATH. The one shared probe now walks every match of every
+    name and executes each, so the real python3 resolves here. bash still
+    stops at the first match -- that divergence is pinned, strict-xfail, in
+    tests/test_ps1_python_probe.py and filed in TODO.md."""
     apps = tmp_path / "WindowsApps"
     real = tmp_path / "tools"
     real_exe = str(real / "python3.cmd")
@@ -1812,18 +1814,17 @@ def test_windowsapps_stub_with_only_one_name_present_falls_through_like_bash(tmp
     _stub(real_exe, reports=real_exe)      # a REAL python3 further down PATH
 
     resolved = _print_python([str(apps), str(real)])
-    assert resolved == "", (
-        "role-write-guard.ps1 must take only the FIRST match for a name, "
-        "matching role-write-guard.sh's `command -v` semantics -- walking "
-        "past the WindowsApps stub to a SECOND python3 further down PATH "
-        "is the divergence reported 2026-09-19. got: " + resolved)
+    assert resolved.lower().startswith(str(real).lower()), (
+        "the probe must walk past a stub that fails to a SECOND python3 "
+        "further down PATH. got: " + resolved)
 
 
 @needs_bash
 def test_bash_agrees_it_finds_nothing_in_the_same_layout(tmp_path):
-    """The bash HALF of the parity claim above, driven through the actual
-    .sh end to end (not just the .ps1's -PrintPython probe), so the
-    assertion is about real behaviour, not the resolver in isolation."""
+    """bash's side of the same layout, driven through the actual .sh end to
+    end. Since crew 1.0 the .ps1 resolves the second python3 here and bash
+    does not: the KNOWN divergence pinned strict-xfail in
+    tests/test_ps1_python_probe.py and filed in TODO.md."""
     apps = tmp_path / "WindowsApps"
     real = tmp_path / "tools"
     apps.mkdir(parents=True)
@@ -1887,23 +1888,14 @@ def _resolver_code_lines(path):
     return code_lines(_resolver_source(path))
 
 
-def test_role_write_guard_resolver_documents_its_own_divergence():
-    """A cheap tripwire for the OPPOSITE mistake: if role-write-guard.ps1's
-    copy ever silently becomes byte-identical to the other two again
-    (e.g. a careless future hand-copy), the execute-to-verify and
-    single-match-per-name behaviour this section's tests depend on would
-    be gone without anything else here noticing, since those behaviours
-    are asserted operationally (through -PrintPython), not textually."""
-    guard = _resolver_code_lines(_PS1)
-    gate = _resolver_code_lines(_VERIFY_GATE_PS1)
-    assert guard != gate, (
-        "role-write-guard.ps1's Resolve-CrewPython is now byte-identical "
-        "to verify-gate.ps1's again -- it should NOT be: this file's "
-        "resolver must execute each candidate and take only the first "
-        "match per name, which the other two do not do. If this was a "
-        "deliberate simplification, re-verify the WindowsApps-only-one-"
-        "name-present test above still passes for the right reason before "
-        "relaxing this tripwire.")
+def test_role_write_guard_resolver_is_the_one_shared_probe():
+    """This used to assert the OPPOSITE -- that role-write-guard.ps1's copy
+    differed from verify-gate.ps1's. crew 1.0 replaced every copy with one
+    probe (execute every PATH match, bounded, WindowsApps tried rather than
+    skipped); tests/test_ps1_python_probe.py asserts all of them agree and
+    drives the behaviour. This keeps the two files this section names in
+    step with that."""
+    assert _resolver_code_lines(_PS1) == _resolver_code_lines(_VERIFY_GATE_PS1)
 
 
 # --- BLOCK 1: a launch failure must not silently allow --------------------

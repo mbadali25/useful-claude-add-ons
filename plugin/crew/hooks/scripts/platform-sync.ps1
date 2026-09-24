@@ -24,35 +24,58 @@ $ErrorActionPreference = 'SilentlyContinue'
 $dir = Split-Path -Parent $MyInvocation.MyCommand.Path
 
 function Resolve-CrewPython {
-  # BYTE-FOR-BYTE the resolver in role-write-guard.ps1 -- see that file's own
-  # header for why a dot-sourced shared copy is not used. This copy was
-  # widened to match it (Windows audit wave 3): the old
-  # `(Get-Command python3, python | Select-Object -First 1).Source` trusted a
-  # WindowsApps App Execution Alias's metadata without executing it, and
-  # walked every PATH match for one name before moving to the next rather
-  # than taking only the first. A hook that WRITES `.crew/config.json`'s
-  # platform block is the last place that should run on an unverified
-  # interpreter. `tests/test_platform_sync.py` asserts this
-  # copy still agrees with role-write-guard.ps1's.
-  $names = @('python3', 'python', 'py')
-  foreach ($name in $names) {
-    $cmd = Get-Command $name -ErrorAction SilentlyContinue | Select-Object -First 1
-    if (-not $cmd -or $cmd.CommandType -ne 'Application' -or -not $cmd.Source) { continue }
-    if ($cmd.Source -match 'WindowsApps') { continue }
-    $real = $null
-    $global:LASTEXITCODE = $null
-    try {
-      $output = & $cmd.Source -c 'import sys; print(sys.executable)' 2>$null
-      if ($LASTEXITCODE -eq 0 -and $output) {
-        $real = @($output)[0]
-      }
-    } catch {
+  # ONE probe, byte for byte in every crew .ps1 that runs python, asserted by
+  # tests/test_ps1_python_probe.py. Inline rather than dot-sourced for the
+  # reason verify-gate.ps1's emergency-lane note gives: a dot-sourced
+  # function is invisible to scripts/check-powershell.ps1's static check.
+  #
+  # EVERY PATH match of every name is a candidate, and each is EXECUTED
+  # before it is believed; where it lives never decides. A WindowsApps App
+  # Execution Alias is tried like anything else: it forwards to a working
+  # interpreter when Python is installed and fails the probe when it is not.
+  # Windows burn-in 2026-09-23 (docs/review/06-windows-burn-in.md, 2c): the
+  # previous copy skipped WindowsApps by path and took only the first match
+  # per name, so on a host whose python, python3 and py were all working
+  # WindowsApps aliases it discarded all three untested, never reached the
+  # real python.exe further down PATH, and completion-audit.ps1 blocked
+  # every Stop while its bash twin proceeded.
+  #
+  # The probe is bounded: it runs to completion or is killed at 3s, with
+  # stdout and stderr read asynchronously so a chatty candidate cannot fill a
+  # pipe and hang. A candidate is accepted only when it exits 0, reports
+  # Python 3 or later, and prints a sys.executable that exists as a file.
+  # No `continue` inside try/catch: loop control across that boundary
+  # differs between PowerShell versions, so the verdict is carried out in
+  # $real and acted on after it.
+  foreach ($name in @('python3', 'python', 'py')) {
+    $candidates = @(Get-Command $name -All -CommandType Application -ErrorAction SilentlyContinue)
+    foreach ($cmd in $candidates) {
+      if (-not $cmd.Source) { continue }
       $real = $null
+      try {
+        $psi = New-Object System.Diagnostics.ProcessStartInfo
+        $psi.FileName = $cmd.Source
+        $psi.Arguments = '-c "import sys; sys.version_info[0] >= 3 or sys.exit(1); print(sys.executable)"'
+        $psi.UseShellExecute = $false
+        $psi.RedirectStandardOutput = $true
+        $psi.RedirectStandardError = $true
+        $psi.CreateNoWindow = $true
+        $proc = [System.Diagnostics.Process]::Start($psi)
+        $outTask = $proc.StandardOutput.ReadToEndAsync()
+        $null = $proc.StandardError.ReadToEndAsync()
+        if (-not $proc.WaitForExit(3000)) {
+          try { $proc.Kill() } catch { }
+        } elseif ($proc.ExitCode -eq 0 -and $outTask.Wait(1000)) {
+          $real = @(($outTask.Result -split "`r?`n") | Where-Object { $_.Trim() })[0]
+        }
+      } catch {
+        $real = $null
+      }
+      if ($real) { $real = $real.ToString().Trim() }
+      if (-not $real) { continue }
+      if (-not (Test-Path -LiteralPath $real -PathType Leaf)) { continue }
+      return $real
     }
-    if ($real) { $real = $real.ToString().Trim() }
-    if (-not $real -or $real -match 'WindowsApps') { continue }
-    if (-not (Test-Path -LiteralPath $real -PathType Leaf)) { continue }
-    return $real
   }
   return ''
 }
