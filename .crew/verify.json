@@ -36,9 +36,13 @@
     "unstated. Most rules here are deliberately in that state - only the ones",
     "actually timed carry a number, and filling the rest in by guesswork would",
     "be exactly the fiction the field exists to replace. Re-time rather than",
-    "trusting these: measured on a quiet tree 2026-09-18/19, and the whole-suite",
-    "185 is the midpoint of five runs spanning 157-201s, which is itself a",
-    "reason to treat it as approximate.",
+    "trusting these: measured on a quiet tree 2026-09-18/19. The whole-suite rule",
+    "(rules[8], `python3 -m pytest plugin/crew/tests/ -q`) was re-priced 2026-09-24",
+    "from the then-current 185 (itself the midpoint of five runs spanning 157-201s,",
+    "which were partial or otherwise not the full serial suite) to the measured",
+    "full-serial 1928s (2 failed, 2018 passed, 10 skipped) - see that rule's own",
+    "`why` for what the two failures were and why 1928s, not the faster -n auto",
+    "figure, is the number priced here on purpose.",
     "non-empty every time and `default` unreachable."
   ],
 
@@ -143,10 +147,10 @@
 
     { "paths": ["plugin/crew/tests/conftest.py", "plugin/crew/tests/crew_fixtures.py",
                 "plugin/crew/tests/context.py", "plugin/crew/tests/sabotage.py"],
-      "seconds": 185,
+      "seconds": 1928,
       "run": ["python3 -m pytest plugin/crew/tests/ -q"],
       "reach": "local",
-      "why": "245s, deliberately over the ~3-minute guidance. These four are imported by every test module, so a change here can make the whole suite vacuous while every module still reports green - the one case where nothing narrower is honest. Rare edit; crew_fixtures.resolve_bash() is why the suite runs at all under PowerShell. reach: local - the whole crew test suite runs against fixtures under tmp_path; nothing here calls out to a real network host." },
+      "why": "1928s measured 2026-09-24 (serial: 2 failed, 2018 passed, 10 skipped - see e0278bc9, ported, for the two failures) - the honest cost of the `run` command exactly as written above, no `-n auto`. Priced at that serial figure ON PURPOSE, not at the faster number this same suite gets in practice: `-n auto` (pytest-xdist) measures 427s for a full run (TODO.md, crew 1.1.x tool-provisioning entry, 2026-09-24 win-repo burn-in), but xdist is a tool this repo does not yet provision (same TODO entry), so nothing here may assume it is installed, and pricing to the number a missing dependency would produce is exactly the fiction `seconds` exists to replace. 1928s is also what keeps this rule out of Stop's hands without a second flag: it is more than 30x the default `verify.stopBudgetSeconds` (60), so verify-gate.sh's own budget accounting classifies it CHRONIC on every Stop run (`rules[8] is permanently over budget ... deferred every Stop ... stays UNVERIFIED until /crew:verify --all runs it`) - there is no separate `--all`-only field in this schema; being priced above the Stop budget IS what makes a rule --all-only, and understating `seconds` would have let it slip into a Stop run's budget instead. These four paths are imported by every test module, so a change here can make the whole suite vacuous while every module still reports green - the one case where nothing narrower is honest. Rare edit; crew_fixtures.resolve_bash() is why the suite runs at all under PowerShell. reach: local - the whole crew test suite runs against fixtures under tmp_path; nothing here calls out to a real network host." },
 
     { "paths": ["plugin/crew/skills/crew-graph/scripts/crew_upgrade.py",
                 "plugin/crew/tests/test_upgrade.py",
@@ -162,6 +166,12 @@
       "run": ["(cd plugin/crew && python3 hooks/scripts/_test/validate-prompts.py)"],
       "reach": "local",
       "why": "0s. Frontmatter, tool permissions and every ${CLAUDE_PLUGIN_ROOT} path a command/agent/skill names. Wrapped in a subshell ON PURPOSE: verify-gate.sh runs each command with `eval` in its own shell, so a bare `cd` would move the gate's working directory for every check after it. map-audit.sh reports this rule as 'pointing at a file that does not exist' - that is a FALSE POSITIVE: it resolves the path from the repo root while the subshell resolves it from plugin/crew, which is also the working-directory marketplace.yml sets for the same step. Verified exit 0 with that cwd on 2026-09-13. Do not 'fix' it by rewriting the path from the root; the script itself resolves its inputs relative to cwd. reach: local - the `cd` stays inside this checkout (plugin/crew) and validate-prompts.py only reads command/agent/skill files already there." },
+
+    { "paths": ["plugin/crew/skills/crew-diagrams/**"],
+      "seconds": 8,
+      "run": ["bash plugin/crew/skills/crew-diagrams/scripts/_test/render.sh"],
+      "reach": "local",
+      "why": "7.6s measured here 2026-09-24 with mmdc present (12 cases: the MSYS_NO_PATHCONV=1 /tmp-vs-puppeteer-config regression from CLAUDE.md's own Lessons section, plus the flag-parsing and artifact-checking rework). Needs mmdc (npm install -g @mermaid-js/mermaid-cli), which CI runners do not carry - the suite used to SKIP on exit 0 when mmdc is absent, which the Stop gate records as a rule that PASSED rather than one that never ran; ported from PR #212 (origin/item8-ps1-parity) to exit 77 instead (this repo's SKIP convention, verify-gate.sh:1504's `skip77`) with a loud TOOL MISSING line on stderr, matching the ruff/pylint and check-powershell.sh rules elsewhere in this file. Read the consequence precisely, both directions: rc=77 sets the run's skipped state, which is NOT a free pass - a skip blocks the baseline sha marker from advancing and drops the fingerprint cache, so the next Stop re-diffs against the SAME unmoved baseline and re-runs every rule matched by the still-unresolved change again, not just this one. That repeated cost is the actual price of a missing mmdc. Verified both paths on this host: with mmdc on PATH, 12 passed 0 failed, exit 0 (7.6s); with PATH stripped to /usr/bin:/bin, TOOL MISSING on stderr, exit 77. No CI workflow runs this suite, and none is added by this port - CI runners typically carry no mmdc, so a CI step here would only ever exercise the exit-77 skip path; this Stop-gate rule is where it actually runs, on whichever machine has mmdc installed (this one does). reach: local - render.sh's own header says there is no service to curl and no live host this repo reaches; every case renders a fixture .mmd file under a throwaway output directory." },
 
     { "paths": ["**/*.ps1", "**/*.psm1"],
       "seconds": 2,

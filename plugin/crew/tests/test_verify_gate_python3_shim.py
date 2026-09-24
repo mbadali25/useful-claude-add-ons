@@ -57,6 +57,24 @@ _SH = os.path.join(_ROOT, "hooks", "scripts", "verify-gate.sh")
 _BASH = crew_fixtures.resolve_bash()
 pytestmark = pytest.mark.skipif(_BASH is None, reason="needs bash")
 
+# True only when the bash this suite will actually launch is Git for
+# Windows' bin/bash.exe SHIM (not usr/bin/bash.exe directly, and not a
+# WSL/other bash on some other Windows setup). `crew_fixtures.resolve_bash`
+# prefers that shim -- see its own comment -- and it is specifically the
+# shim's launcher that unconditionally prepends its own mingw64/bin:/usr/bin
+# ahead of any PATH a subprocess is given, which is the one thing
+# `test_the_cygpath_branch_is_taken_when_cygpath_is_present` below cannot
+# route around. `sys.platform.startswith("win")` cannot draw this line: it
+# is also true when the resolved bash is usr/bin/bash.exe (a different,
+# narrower failure -- that bash cannot exec native Windows tools at all, so
+# it cannot run the gate to begin with) or when there is no Git-for-Windows
+# bash in play at all.
+_BASH_IS_MSYS_SHIM = (
+    sys.platform.startswith("win")
+    and _BASH is not None
+    and "usr" not in [p.lower() for p in pathlib.Path(_BASH).parts]
+)
+
 # Every EXTERNAL (non-builtin) command verify-gate.sh and _common.sh invoke,
 # found by grepping both files - printf/read/local/export/eval/case etc. are
 # bash builtins and need nothing on PATH.
@@ -523,6 +541,45 @@ def test_a_native_windows_sys_executable_path_is_accepted_and_works(tmp_path):
     )
 
 
+@pytest.mark.skipif(
+    _BASH_IS_MSYS_SHIM,
+    reason=(
+        "On Git for Windows, this test's own PATH-scoping technique cannot "
+        "actually isolate cygpath, and the one way found to fix that breaks "
+        "the test a different way. crew_fixtures.resolve_bash() resolves to "
+        "bin/bash.exe, the launcher shim, which unconditionally prepends "
+        "its own /mingw64/bin and /usr/bin (holding a REAL cygpath.exe) "
+        "ahead of ANY PATH this test supplies - measured directly: a "
+        "restricted PATH of exactly one directory still comes back as "
+        "'/mingw64/bin:/usr/bin:...:<that directory>' inside the shim. So "
+        "the fake cygpath here is never reached; the real one is, and its "
+        "real translation of the fake 'C:\\fakepy\\python.exe' target lands "
+        "on a path that does not exist, so the gate fails closed with 'no "
+        "python ... resolves' instead of exercising the branch this test "
+        "names. The only bash that does NOT add anything to a supplied "
+        "PATH is the OTHER one Git for Windows ships, usr/bin/bash.exe "
+        "(confirmed empirically: PATH survives through it unchanged) - but "
+        "that binary, launched fresh from a non-MSYS parent process such as "
+        "pytest's own python.exe, cannot exec any native Windows "
+        "executable at all: dirname.exe placed on its PATH, both "
+        "symlinked and plain-copied alongside its own msys-2.0.dll, still "
+        "fails with 'No such file or directory' even invoked by absolute "
+        "path, because it never bootstraps the POSIX-to-Windows mount table "
+        "that MSYS's exec path depends on (the same limitation "
+        "crew_fixtures.resolve_bash() already documents for running a "
+        "script at a Windows path). Every external tool verify-gate.sh "
+        "needs - git, sed, grep, stat, and the rest of _NEEDED_TOOLS - is a "
+        "native executable, so that bash cannot run this gate at all, let "
+        "alone reach the cygpath branch. Testing this for real would need a "
+        "bash process spawned from an already-MSYS-bootstrapped parent "
+        "(e.g. another bash), which pytest's subprocess-per-test harness "
+        "does not provide. Scoped to the MSYS shim specifically (not "
+        "`sys.platform.startswith(\"win\")`), because that check alone is "
+        "also true when the resolved bash is usr/bin/bash.exe -- a "
+        "different failure -- or when no Git-for-Windows bash is in play "
+        "at all; on Linux/WSL-without-the-shim this test runs for real."
+    ),
+)
 def test_the_cygpath_branch_is_taken_when_cygpath_is_present(tmp_path):
     """NIT from review round 4, corrected in round 5. This host has no real
     `cygpath`, so `test_a_native_windows_sys_executable_path_is_accepted_

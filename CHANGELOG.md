@@ -6,6 +6,56 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Changed
 
+- **`crew` 1.0.6: notify-by-default auto-clear on native Windows (R1), setup
+  wiring for it (R2), and the Windows-burn-in W8/W9 review fixes that landed
+  alongside.** `auto-clear`'s `auto` method never resolves to a keystroke
+  method on native Windows; it resolves to a new `notify` method instead,
+  which types nothing and prints a Stop-hook `systemMessage` saying the
+  handoff is written and verified and it is safe to run `/clear` (or
+  `/compact`) yourself - no toast. The old SendKeys mechanism is renamed
+  `sendkeys` and becomes opt-in only: it declines (falling back to `notify`,
+  logged) against a window owned by Windows Terminal, where nothing outside
+  the process can confirm which tab is active, and against a window that has
+  lost focus by send time. `context-watch.sh`/`.ps1` now forward
+  auto-clear's stdout onto their own, which is the only path that makes
+  `notify`'s `systemMessage` visible in production. `crew_platform.py`'s
+  `_AUTOCLEAR_METHODS` gains `notify` everywhere and `sendkeys` (renamed
+  from `"windows"`) on Windows. `config.json`'s gate is kept: `notify` is
+  never suppressed by `CREW_AUTOCLEAR_INHIBIT` since it never touches a
+  keyboard, and neither method ever prints "cleared"/"compacted" without a
+  verified keystroke behind it.
+  `/crew:init`, `/crew:migrate` and `/crew:onboard` now configure this
+  through one helper, `crew_autoclear_setup.py`: on native Windows, init
+  proposes writing `method: "notify"` to the machine-global config layer
+  explicitly, and shows exactly what was set; migrate rewrites a repo's
+  pre-1.0 `"windows"` to `"notify"` (naming `sendkeys` as the opt-in) and
+  drops the repo-local duplicate block the 0.20.17 workaround left behind;
+  no `sendkeys`, `enabled: true`, or `onlyRepos`/`onlySessions` widening is
+  ever written without a separate explicit yes; everything is idempotent
+  (an already-set global method, or nothing left to convert, leaves the
+  file byte-identical). Codex review round on the same lane (W8) fixed the
+  Codex-profile docs (`--profile` is user-level, not a project-config
+  concept - `profiles` is on Codex's own project-config denylist and never
+  applies), hardened the TOML trust scanner with `tomllib` ground truth and
+  canonical-then-literal key resolution, removed a capability-check
+  overreach that was skipping armed test cases it never needed to skip, and
+  restored a README heading a previous merge had folded away.
+  Windows burn-in W9 then fixed two more real defects and two test-fixture
+  gaps found on a real Windows/Git-Bash host: `auto-clear.ps1` resolved its
+  home directory via the Shell API (ignoring an overridden
+  `$env:USERPROFILE`) instead of matching `cloud-guard.ps1`'s
+  `$env:USERPROFILE`-then-`$env:HOME` convention; a CRLF-writing-python test
+  fixture gap that made a real `tr -d '\r'` regression invisible on Linux;
+  and a resolver-contract test that asked the wrong process whether
+  `cygpath` exists (its own, not the bash that will actually run it), fixed
+  alongside a new DECIDED CONTRACT comment on both `crew_py_strict`
+  (`_common.sh`) and `_resolve_role_write_python`
+  (`role-write-guard.sh`, kept byte-identical per policy): each returns the
+  interpreter path in the POSIX form bash itself execs; a caller that hands
+  it to a different interpreter as data converts at that boundary with
+  `cygpath -w`. A consumer audit found no such caller today - guidance for
+  the future, not a live fix.
+
 - **`crew` 1.0.5: Windows burn-in fixes merged - in-process test decision
   logic with a default parity sample and the full per-shell matrix marked
   `slow` (run on windows-latest CI); per-flavour PATH fixtures for shim
@@ -67,12 +117,48 @@ All notable changes to this repository are documented here. Format follows [Keep
 - `obsidian-vault`: refuse to queue an unparseable "?" session capture with
   no transcript (logged, not silent); dedupe transcript-only captures by
   trigger+transcript hash.
+- `crew`: two test-only fixes ported from `e0278bc9`, the only two failures
+  in a full serial run of `plugin/crew/tests/` (2 failed, 2018 passed, 10
+  skipped in 1928s). `test_verify_gate_lock_window.py`'s zero-prefixed-TTL
+  case asserted the published deadline landed inside a 10s window; on a
+  Windows/Git-Bash host the first `lock_extend` fires several real seconds
+  after process start (fork/exec overhead, not a calculation bug), so the
+  assertion now checks direction and order of magnitude instead - the
+  deadline is published and monotonic (`window > 0`), and nowhere near the
+  untouched 180s compiled default (`window < 170`) - rather than a tight
+  wall-clock bound; the octal-vs-decimal subject itself (a 0-prefixed TTL
+  parsing as decimal) is unchanged. `test_verify_gate_python3_shim.py`'s
+  cygpath-branch case is now skipped specifically when the resolved bash is
+  Git for Windows' `bin/bash.exe` shim (not on any `sys.platform ==
+  "win*"`, which is also true for the narrower `usr/bin/bash.exe` case and
+  for a plain WSL bash, neither of which has this problem): that shim
+  unconditionally prepends its own `mingw64/bin:/usr/bin` (holding a real
+  `cygpath.exe`) ahead of any PATH the test supplies, so its fake `cygpath`
+  is never reached and the branch cannot be exercised there. Confirmed the
+  branch is genuinely reached elsewhere: unskipped and passing on this
+  Linux host.
+- `crew`: `.crew/verify.json`'s `rules[8]` (the whole-suite
+  `python3 -m pytest plugin/crew/tests/ -q` rule) re-priced from a stale 185s
+  to the measured 1928s full-serial cost, and documented as an `--all`-only
+  rule rather than a Stop-budget one - it has no separate `--all`-only flag
+  in this schema; being priced far above `verify.stopBudgetSeconds` (60) is
+  what makes `verify-gate.sh` classify it CHRONIC and defer it to
+  `/crew:verify --all` on every Stop run. Priced at the serial figure on
+  purpose, not at the faster 427s `-n auto` (pytest-xdist) number also on
+  record, because xdist is not yet a provisioned tool in 1.0 (see TODO.md's
+  1.1.x tool-provisioning entry).
 
 ### Added
 
 - `crew`: `codex-probe` reads Codex project trust from `~/.codex/config.toml`
   (`CODEX_HOME`-aware) and reports trusted / missing trust (CLOSED) /
   unknown.
+- `crew`: `crew-diagrams/scripts/_test/render.sh` now exits 77 (this
+  repo's SKIP convention, `verify-gate.sh`'s `skip77`) instead of 0 when
+  `mmdc` is absent from PATH, so a host with no mermaid-cli reports "did
+  not run" rather than a false pass; matching `.crew/verify.json` rule
+  added for `plugin/crew/skills/crew-diagrams/**`. Ported from PR #212
+  (`origin/item8-ps1-parity`).
 
 - **`obsidian-canvas` 1.1.2: says plainly that `obsidian-memory-contract`
   ships only with the `obsidian-vault` plugin.** A skill-only install was
