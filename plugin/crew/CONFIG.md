@@ -1790,6 +1790,31 @@ header states — "one mechanism can be wrong; two can disagree, and then only
 one of them gets fixed." Adding `"roleWrites"` to `crew_guards.ALL_GUARD_NAMES`
 and one branch to `crew_guards.guard_tiers` was the whole cost of reusing it.
 
+### Without Python, a restricted role's write is always blocked
+
+`role_write_guard.py` is what actually reads `guards.roleWrites` (both
+layers, ratcheted) and pm's own path allowances. `role-write-guard.sh` /
+`.ps1` are thin wrappers around it, and when no python interpreter can be
+found or launched, neither wrapper falls back to re-implementing that
+policy read itself — an earlier fallback tried to (parsing `roleWrites`
+per layer with a bare regex, and pm's path allowances lexically), and
+carried its own defects doing it: a dangling config symlink read as
+absent rather than corrupt, bypassing fail-closed; the lexical pm-scope
+check accepted `..` traversal and symlink escapes a real filesystem walk
+would have caught; and the regex policy reader accepted truncated or
+otherwise corrupt JSON as a clean `"off"`.
+
+Rather than re-fix each of those, the no-python fallback in both flavours
+now does less: it tells a restricted role (`explorer`, `researcher`,
+`reviewer`, `security`, `pm`) from an unrestricted one — a floor that
+needs no config to apply — and fails **closed** on the restricted side,
+or on any role it cannot read at all (an unparseable payload, a non-string
+`agent_type`, ...). It never reads `guards.roleWrites` and never applies
+pm's path allowances. **Practically:** `off` and `report` only take
+effect when python is available; without it, a restricted role's write is
+refused regardless of what either config layer says, until python is
+installed and the real classifier can run.
+
 ## 19. `verify.stopBudgetSeconds` and the Stop gate's per-rule record
 
 `verifyGate` and `verify.stopBudgetSeconds` are the only two config keys this

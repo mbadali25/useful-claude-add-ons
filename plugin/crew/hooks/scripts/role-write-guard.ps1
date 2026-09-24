@@ -289,80 +289,35 @@ function Get-FallbackRole {
   return @{ Role = $role; Determined = $true; Obj = $obj }
 }
 
-# `guards.roleWrites` for ONE config layer, read WITHOUT python -- same
-# crude regex technique cloud-guard.ps1's `Test-CloudGuardArmed` uses (and
-# role-write-guard.sh's own `_role_write_layer_policy`), not a JSON parse:
-# "off" when the file is genuinely ABSENT (crew_guards.ROLE_WRITE_DEFAULT --
-# every repo that has never set this key), "block" -- the floor, never
-# "off" -- for anything this cannot read with confidence: unreadable, a
-# directory, no match, more than one match, or a value that is not
-# "off"/"report"/"block".
-function Get-RoleWriteLayerPolicy {
-  param([string]$ConfigPath)
-  if (-not (Test-Path -LiteralPath $ConfigPath)) { return 'off' }
-  if (Test-Path -LiteralPath $ConfigPath -PathType Container) { return 'block' }
-  $text = Get-Content -LiteralPath $ConfigPath -Raw -ErrorAction SilentlyContinue
-  if (-not $text) { return 'block' }
-  $found = [regex]::Matches($text, '"roleWrites"\s*:\s*"([A-Za-z]*)"')
-  if ($found.Count -ne 1) { return 'block' }
-  switch ($found[0].Groups[1].Value.ToLowerInvariant()) {
-    'off' { return 'off' }
-    'report' { return 'report' }
-    'block' { return 'block' }
-    default { return 'block' }
-  }
-}
-
-# Ratchets the two layers exactly as `crew_guards.role_writes_rank` does:
-# the MORE RESTRICTIVE of the two wins (block < report < off), so a repo
-# cloned with `guards.roleWrites: off` cannot widen past a stricter
-# machine-global value.
-function Get-RoleWriteEffectivePolicy {
-  param([string]$Root)
-  $userHome = if ($env:USERPROFILE) { $env:USERPROFILE } else { $env:HOME }
-  $repoPolicy = Get-RoleWriteLayerPolicy (Join-Path $Root '.crew/config.json')
-  $globalPolicy = Get-RoleWriteLayerPolicy (Join-Path $userHome '.claude/crew/config.json')
-  $rank = @{ block = 0; report = 1; off = 2 }
-  if ($rank[$repoPolicy] -le $rank[$globalPolicy]) { return $repoPolicy }
-  return $globalPolicy
-}
-
-# Mirrors role_write_guard.py's `_PM_ALLOWED_PATTERNS` (agents/pm.md:49-53's
-# prose, made mechanical) -- REPO-RELATIVE and LEXICAL only, unlike the real
-# classifier's symlink-resolved `scope_path`: this fallback exists only for
-# the brief window before python becomes available again. The ps1 twin of
-# role-write-guard.sh's own `_role_write_pm_path_allowed`.
-function Test-RoleWritePmPathAllowed {
-  param([string]$Root, [string]$FilePath)
-  if (-not $FilePath) { return $false }
-  $rel = $FilePath -replace '\\', '/'
-  $normRoot = ($Root -replace '\\', '/').TrimEnd('/')
-  if ($rel -eq $normRoot) { $rel = '' }
-  elseif ($rel.StartsWith($normRoot + '/')) { $rel = $rel.Substring($normRoot.Length + 1) }
-  foreach ($prefix in @('.crew', 'TODO.md', '.work', 'docs/diagrams')) {
-    if ($rel -eq $prefix -or $rel.StartsWith($prefix + '/')) { return $true }
-  }
-  return $false
-}
-
-# The one decision both no-python fallbacks below reach for -- the ps1 twin
-# of role-write-guard.sh's own `_role_write_fallback_decision`. `$Why` is
-# the reason this fallback is being consulted at all, for the stderr
-# message.
+# THE NO-PYTHON CONTRACT (PM decision, superseding an earlier fallback that
+# read `guards.roleWrites` per layer -- `Get-RoleWriteLayerPolicy` and
+# `Get-RoleWriteEffectivePolicy`, both removed here -- and pm's own path
+# allowances -- `Test-RoleWritePmPathAllowed`, also removed).
+#
+# `Get-RoleWriteLayerPolicy` classified a dangling config symlink the same
+# as a genuinely absent file (`Test-Path` returns $false for both), so a
+# corrupt config bypassed fail-closed and read as an unset "off" (F1
+# review). Rather than re-fix that one case, the class is gone: without
+# python this hook cannot actually EVALUATE `guards.roleWrites` (off,
+# report, or pm's own allowed patterns) at all -- role_write_guard.py is
+# the only thing that reads that policy correctly -- so it no longer
+# pretends to. The ps1 twin of role-write-guard.sh's own
+# `_role_write_fallback_decision`: it only tells a restricted role from an
+# unrestricted one (`$RestrictedRolesForFallback` above is a floor that
+# needs no config to apply) and fails CLOSED on the restricted side, or on
+# any role it cannot read at all. `off`/`report`/pm's allowances need
+# python; without it, a restricted role's write is always blocked. See
+# `plugin/crew/CONFIG.md`, next to `guards.roleWrites`.
+#
+# `$Why` is the reason this fallback is being consulted at all, for the
+# stderr message.
 function Resolve-RoleWriteFallback {
   param([string]$RawJson, [string]$Why)
   $fallback = Get-FallbackRole $RawJson
-  $root = if ($env:CLAUDE_PROJECT_DIR) { $env:CLAUDE_PROJECT_DIR } else { (Get-Location).Path }
 
   if (-not $fallback.Determined) {
-    [Console]::Error.WriteLine("role-write-guard: $Why; the hook payload could not be read to determine the acting role - failing closed rather than treating an unknown role as unrestricted.")
+    [Console]::Error.WriteLine("role-write-guard: $Why; the hook payload could not be read to determine the acting role - install python so guards.roleWrites can be evaluated, or the write is blocked.")
     exit 2
-  }
-
-  $policy = Get-RoleWriteEffectivePolicy $root
-  if ($policy -eq 'off') {
-    [Console]::Error.WriteLine("role-write-guard: $Why; guards.roleWrites is off - allowing unjudged.")
-    exit 0
   }
 
   $role = $fallback.Role
@@ -371,21 +326,7 @@ function Resolve-RoleWriteFallback {
     exit 0
   }
 
-  if ($role -eq 'pm') {
-    $filePath = $null
-    if ($fallback.Obj -and $fallback.Obj.tool_input) { $filePath = $fallback.Obj.tool_input.file_path }
-    if (Test-RoleWritePmPathAllowed $root $filePath) {
-      [Console]::Error.WriteLine("role-write-guard: $Why; allowing - '$filePath' is inside pm's permitted patterns.")
-      exit 0
-    }
-  }
-
-  if ($policy -eq 'report') {
-    [Console]::Error.WriteLine("role-write-guard: $Why; guards.roleWrites is report - allowing, but this write would be blocked under guards.roleWrites: block for role '$role'.")
-    exit 0
-  }
-
-  [Console]::Error.WriteLine("role-write-guard: $Why - cannot judge this write; failing closed for role ``$role``.")
+  [Console]::Error.WriteLine("role-write-guard: $Why - python is unavailable, so guards.roleWrites (off/report/allowances) cannot be evaluated for restricted role '$role' - install python, or the write is blocked.")
   exit 2
 }
 
