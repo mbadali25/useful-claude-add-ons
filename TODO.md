@@ -3802,6 +3802,11 @@ that branch's commits exist nowhere else. No other local branch ref is broken. D
 repair (deleting the ref, pruning, `git gc`) destroys history and needs the owner's yes; the gizmoduck-ci
 work itself lives on `gizmoduck-ci` @ 3966cb5f per the 2026-09-24 handoff. Do NOT run `git gc`/`prune`
 before deciding. The empty files are most likely the result of a crash or a full disk mid-write; that cause was not verified.
+Update 2026-09-24: crew:developer found no intact copy anywhere on this machine (packs, all worktree reflogs, and the
+only other clone at `/root/.claude/plugins/marketplaces/useful-claude-add-ons`). The last reachable commit on that line is
+`9aab4d38` (`gizmoduck-ci-f2`); the ref moved to 81b347ba without a reflog entry. All 24 empty objects have mtimes within
+one ~3 s window (1790224088-1790224091), so this looks like a single batch truncation, cause not investigated. `git fetch
+origin` still fails (exit 1) with or without `--negotiation-tip`. The ref delete is waiting on the owner's direct confirmation.
 
 ### Stopped PM left 15 uncommitted edits in worktree `crew-1.0-burnin-fix4` - OPEN (filed 2026-09-24, PM)
 
