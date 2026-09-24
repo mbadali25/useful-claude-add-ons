@@ -75,16 +75,22 @@ _vault_guard_resolve_python() {
     # the NEXT NAME - it never searches the same name further down PATH.
     # vault-guard.ps1 mirrors that ordering on purpose; see the note there.
     candidate=$(command -v "$name" 2>/dev/null) || continue
-    case "$candidate" in
-      */WindowsApps/*|*\\WindowsApps\\*)
-        _vault_guard_reject "$candidate (WindowsApps App Execution Alias)"
-        continue ;;
-    esac
-    # `command -v` finding a name on PATH is not enough - the WindowsApps
-    # alias IS a real, executable file, so it resolves cleanly. Running the
-    # candidate and reading back a token this script chose is what actually
-    # tells a real interpreter from something wearing the name: only a python
-    # that parsed and ran the -c program can emit the prefix.
+    # NOT a blanket "reject anything under a WindowsApps path" - that used to
+    # sit here (on both $candidate above and $real below) and is a location
+    # guess, not a stub detector. On a host where Python is installed through
+    # the Microsoft Store, EVERY candidate's real interpreter genuinely lives
+    # under
+    # .../WindowsApps/PythonSoftwareFoundation.Python.3.x_<hash>/python.exe -
+    # so the blanket reject fired on a working Python 3.14 too, this resolver
+    # returned failure, and the caller's "no usable python" fallback stood the
+    # guard down on a machine where python plainly works. Reported 2026-09-24
+    # against a real PreToolUse-shaped Write payload; crew's
+    # `_resolve_role_write_python` hit and fixed the identical bug on
+    # 2026-09-22 (see its own comment). Running the candidate and reading back
+    # a token this script chose is what actually tells a real interpreter from
+    # something wearing the name: only a python that parsed and ran the -c
+    # program can emit the prefix, and that proof does not need to know WHERE
+    # the interpreter lives.
     #
     # Deliberately stricter than crew's copy, which accepts any non-empty
     # stdout on a zero exit. That is enough for the Store alias (it exits
@@ -106,11 +112,13 @@ _vault_guard_resolve_python() {
     [ -n "$real" ] || {
       _vault_guard_reject "$candidate (answered the probe with an empty sys.executable)"
       continue; }
-    case "$real" in
-      */WindowsApps/*|*\\WindowsApps\\*)
-        _vault_guard_reject "$candidate -> $real (WindowsApps App Execution Alias)"
-        continue ;;
-    esac
+    # No post-execution WindowsApps check either, for the same reason: a real
+    # Store-installed interpreter's OWN sys.executable lives under that path
+    # too. The launch itself is already the proof that matters - a candidate
+    # that could not be exec'd or did not answer the probe was already
+    # rejected above; a printed, non-empty sys.executable came from an
+    # interpreter that just ran successfully, which a path substring adds
+    # nothing to.
     # `sys.executable`, not `$candidate`: the PATH-found name may be a shim
     # that re-execs elsewhere, and the probe already paid the cost of asking
     # python where it actually lives.
