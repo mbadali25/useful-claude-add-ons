@@ -145,5 +145,17 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install "pytest~=8.0" pytest-xdist pyyaml
+    - name: Run crew's default set (the per-shell parity sample) on Windows
+      # The `test` job above covers this set too, but only on ubuntu-latest --
+      # its command has no `-m slow` and no OS restriction, so the unmarked
+      # parity-sample cases (FLAVOURS: module/sh/ps1, e.g.
+      # test_edit_with_no_approved_plan_is_blocked[ps1]) run there but never
+      # natively on Windows. `-m slow` below runs only slow-marked items
+      # (FLAVOUR_MATRIX's sh/ps1), which deselects the parity sample entirely
+      # -- so without this step those PowerShell parity cases never execute
+      # on this runner. Windows-only: ubuntu already gets this set from the
+      # `test` job, so running it again here would be pure duplication.
+      if: matrix.os == 'windows-latest'
+      run: python -m pytest plugin/crew/tests -n auto -v
     - name: Run crew's slow set (the full per-shell hook matrix)
       run: python -m pytest plugin/crew/tests -m slow -n auto -v
