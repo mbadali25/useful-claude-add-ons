@@ -459,6 +459,64 @@ def test_no_clear_without_a_verified_handoff_and_a_trusted_reading(flavor, case,
     assert not (root / ".crew" / (".autoclear-sent-" + SESSION_A)).exists()
 
 
+# --- silent-default guard: an unusable config value is logged, not just defaulted ---
+
+@by_flavor_matrix
+def test_an_unrecognised_autoclear_key_is_logged_and_the_default_still_applies(flavor, tmp_path):
+    """`delay` (not `delaySeconds`) is exactly the shape a hand-edit typo
+    takes: nothing in `settings()`/`Get-CrewAutoClearValue` ever reads it, so
+    it silently does nothing and `delaySeconds` falls through to the
+    compiled default -- indistinguishable, on disk, from an operator who
+    genuinely wanted 3s. The warning is the only thing that tells the two
+    apart."""
+    root = _repo(tmp_path)
+    env = _sendable(flavor, tmp_path, root)
+    _machine(root, method="tmux" if flavor == "sh" else "sendkeys", delay=4)
+    _write_marker(root)
+    _write_handoff(root)
+
+    result = _invoke(flavor, "auto-clear", root, args=("--session", SESSION_A, "--dry-run"), env_extra=env)
+
+    assert "delay: 3s" in result.stdout, result.stdout + result.stderr
+    log = _log(root)
+    assert "delay" in log and "not a recognised key" in log, log
+
+
+@by_flavor_matrix
+def test_a_numeric_string_delay_is_accepted_silently(flavor, tmp_path):
+    """The other half of the same guard: `delaySeconds` as a numeric STRING
+    (a plausible hand-edit, quoting a number that did not need it) is
+    already accepted and used -- not a misconfiguration, so it must not log
+    a warning either."""
+    root = _repo(tmp_path)
+    env = _sendable(flavor, tmp_path, root)
+    _machine(root, method="tmux" if flavor == "sh" else "sendkeys", delaySeconds="4")
+    _write_marker(root)
+    _write_handoff(root)
+
+    result = _invoke(flavor, "auto-clear", root, args=("--session", SESSION_A, "--dry-run"), env_extra=env)
+
+    assert "delay: 4s" in result.stdout, result.stdout + result.stderr
+    assert "not a usable number" not in _log(root), _log(root)
+
+
+@by_flavor_matrix
+def test_an_unusable_delay_seconds_is_logged_and_the_default_still_applies(flavor, tmp_path):
+    """A `delaySeconds` that is SET but not a usable number at all (unlike
+    the numeric-string case above) must warn, naming the effective value."""
+    root = _repo(tmp_path)
+    env = _sendable(flavor, tmp_path, root)
+    _machine(root, method="tmux" if flavor == "sh" else "sendkeys", delaySeconds="soon")
+    _write_marker(root)
+    _write_handoff(root)
+
+    result = _invoke(flavor, "auto-clear", root, args=("--session", SESSION_A, "--dry-run"), env_extra=env)
+
+    assert "delay: 3s" in result.stdout, result.stdout + result.stderr
+    log = _log(root)
+    assert "delaySeconds" in log and "not a usable number" in log, log
+
+
 @by_flavor_matrix
 @pytest.mark.parametrize("machine,repo", [(None, True), (True, False), ("true", None), (False, True)])
 def test_only_the_machine_can_opt_in_and_a_repo_can_only_opt_out(flavor, machine, repo, tmp_path):

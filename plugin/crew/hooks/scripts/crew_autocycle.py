@@ -60,6 +60,7 @@ import re
 import shutil
 import subprocess
 import sys
+from datetime import datetime, timezone
 
 MARKER_PREFIX = ".handoff-requested-"
 SENT_PREFIX = ".autoclear-sent-"
@@ -70,6 +71,15 @@ SKELETON_MARK = "UNKNOWN - this skeleton was written automatically"
 WINDOW_STUB_ENV = "CREW_AUTOCLEAR_WINDOW_STUB"
 _DEFAULTS = {"method": "auto", "windowTitle": "", "command": "/clear",
              "delaySeconds": 3, "minHandoffLines": 5}
+# Every key `settings()` actually reads from context.autoClear, in either
+# layer -- `unsafeFocus` is CONFIG.md-documented but "no longer read"
+# (deliberately still recognised, so it does not trip the unknown-key
+# warning below). A key not in this set is either a typo (`delay` for
+# `delaySeconds`) or leftover from an older schema; either way it silently
+# does nothing today, which is exactly the "unknown collapsing into the
+# safe-looking default" shape this file's warnings exist to surface.
+_RECOGNIZED_AUTOCLEAR_KEYS = frozenset(_DEFAULTS) | {
+    "enabled", "onlyRepos", "onlySessions", "unsafeFocus"}
 _ANCESTOR_LIMIT = 16
 
 
@@ -109,18 +119,55 @@ def _num(value, default):
         return default
 
 
+def _num_checked(value, default):
+    """Like `_num`, but also reports whether the fallback fired because
+    `value` was actually SET and unusable, as opposed to simply absent --
+    absent is the ordinary, silent default path (nobody configured it);
+    present-and-unusable is the misconfiguration `settings()` warns about."""
+    if value is None:
+        return default, True
+    if isinstance(value, bool) or not isinstance(value, (int, float, str)):
+        return default, False
+    try:
+        return int(value), True
+    except (TypeError, ValueError):
+        return default, False
+
+
 def settings(root, global_path=None):
-    """The autoClear settings in force for `root` on this machine."""
+    """The autoClear settings in force for `root` on this machine.
+
+    `out["_warnings"]` carries a human-readable line for every
+    context.autoClear key that this resolver read but could not act on as
+    configured -- an unrecognised key (most often a typo, e.g. `delay` for
+    `delaySeconds`) or a `delaySeconds` that was actually set but is not a
+    usable number. Both would otherwise silently fall through to the
+    compiled default with no record that anything was wrong -- an unknown
+    collapsing into the safe-looking value, indistinguishable from an
+    operator who genuinely wanted the default."""
     repo_cfg = _load(os.path.join(root, ".crew", "config.json"))
     repo = _block(repo_cfg, "context", "autoClear")
     machine = _block(_load(global_path or global_config_path()), "context", "autoClear")
+    warnings = []
+    for label, block in (("repo", repo), ("machine", machine)):
+        for key in block:
+            if key not in _RECOGNIZED_AUTOCLEAR_KEYS:
+                warnings.append(
+                    f"context.autoClear.{key} in the {label} layer is not a "
+                    "recognised key and is ignored")
     out = {}
+    raw = {}
     for key, default in _DEFAULTS.items():
         value = repo.get(key)
         if value is None:
             value = machine.get(key)
+        raw[key] = value
         out[key] = default if value is None else value
-    out["delaySeconds"] = _num(out["delaySeconds"], _DEFAULTS["delaySeconds"])
+    out["delaySeconds"], delay_ok = _num_checked(raw["delaySeconds"], _DEFAULTS["delaySeconds"])
+    if not delay_ok:
+        warnings.append(
+            f"context.autoClear.delaySeconds is set to {raw['delaySeconds']!r}, not a "
+            f"usable number - using the default {out['delaySeconds']}")
     out["minHandoffLines"] = _num(out["minHandoffLines"], _DEFAULTS["minHandoffLines"])
     for key in ("method", "command", "windowTitle"):
         text = str(out[key] or "").splitlines()
@@ -131,7 +178,24 @@ def settings(root, global_path=None):
     out["onlySessions"] = machine.get("onlySessions")
     handoff = _block(repo_cfg, "context").get("handoffPath")
     out["handoffPath"] = handoff if isinstance(handoff, str) and handoff else ".work/HANDOFF.md"
+    out["_warnings"] = warnings
     return out
+
+
+def log_autoclear(root, message):
+    """One line to .crew/.autoclear.log, in the same tab-separated,
+    UTC-timestamped shape auto-clear.sh's own `note()` (and its .ps1 twin's
+    `Write-CrewAutoClearNote`) already write -- so a config-validation
+    warning from here interleaves sensibly with every refusal/sent line
+    those two log. Best-effort: a write failure here must never abort a
+    plan the caller still needs, the same contract `note()` has via its own
+    `2>/dev/null`."""
+    try:
+        stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        with open(os.path.join(root, ".crew", ".autoclear.log"), "a", encoding="utf-8") as handle:
+            handle.write(f"{stamp}\t{message}\n")
+    except OSError:
+        pass
 
 
 _WIN_DRIVE_SLASH = re.compile(r"^/([A-Za-z])(?=/|$)")
@@ -462,6 +526,12 @@ def plan(root, session_id, force=False, global_path=None, env=None):
     if not in_scope(cfg, root, session_id):
         out["status"] = "off"
         return out
+    # Past both silent-exit gates above: a machine that HAS opted in gets a
+    # log line for anything `settings()` could not act on as configured.
+    # An opted-out machine gets none of this either, matching "off is
+    # silent" for the log file as a whole, not only for refusal reasons.
+    for warning in cfg.get("_warnings", ()):
+        log_autoclear(root, warning)
     if not force:
         ok, why = verify_handoff(root, session_id, cfg)
         if not ok:

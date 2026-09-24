@@ -389,6 +389,42 @@ $minLines    = Get-CrewAutoClearInt (Get-CrewAutoClearValue "minHandoffLines" 5)
 $handoffRel  = [string](Get-CrewChild (Get-CrewChild $repoCfg "context") "handoffPath")
 if (-not $handoffRel) { $handoffRel = ".work/HANDOFF.md" }
 
+# Silent-default guard: an unknown collapsing into the default value with no
+# record of it happened for real -- a config carrying `delay` (not
+# `delaySeconds`) or a `delaySeconds` neither valid JSON int nor a numeric
+# string reads as "nothing configured" and silently gets the compiled
+# default, indistinguishable from an operator who genuinely wanted 3s. Two
+# checks, both AFTER the enabled/onlyRepos/onlySessions gates above (an
+# opted-out machine must still get no log file at all): every KEY in either
+# layer that this resolver does not recognise, and `delaySeconds` present but
+# not usable as a number. Both name the effective value actually used.
+# `Get-CrewAutoClearValue ... $null` is the probe: it returns $null only when
+# NEITHER layer set the key at all, so a $null result here means "absent",
+# not "misconfigured" -- absence is the ordinary, silent default path.
+$_crewAutoClearKnownKeys = @('method', 'windowTitle', 'command', 'delaySeconds',
+                             'minHandoffLines', 'enabled', 'onlyRepos', 'onlySessions',
+                             'unsafeFocus')
+foreach ($layer in @(@{Label = 'repo'; Node = $repoAuto}, @{Label = 'machine'; Node = $globalAuto})) {
+  if ($null -eq $layer.Node) { continue }
+  foreach ($prop in $layer.Node.PSObject.Properties.Name) {
+    if ($_crewAutoClearKnownKeys -notcontains $prop) {
+      Write-CrewAutoClearNote ("context.autoClear.$prop in the $($layer.Label) layer is not a " +
+        "recognised key and is ignored")
+    }
+  }
+}
+$_crewDelayRaw = Get-CrewAutoClearValue "delaySeconds" $null
+if ($null -ne $_crewDelayRaw) {
+  $_crewDelayOk = $false
+  if (-not ($_crewDelayRaw -is [bool])) {
+    try { [void][int]$_crewDelayRaw; $_crewDelayOk = $true } catch { }
+  }
+  if (-not $_crewDelayOk) {
+    Write-CrewAutoClearNote ("context.autoClear.delaySeconds is set to '$_crewDelayRaw', not a " +
+      "usable number - using the default $delay")
+  }
+}
+
 # Same key rule as context-watch.{sh,ps1} and crew_autocycle.session_key.
 $sessionKey = [regex]::Replace($Session, '[^A-Za-z0-9_-]', '_')
 if ($sessionKey.Length -gt 100) { $sessionKey = $sessionKey.Substring(0, 100) }
@@ -663,6 +699,7 @@ function Get-CrewWindowsTerminalTabState([IntPtr]$Hwnd, [string]$Title) {
 # the stub does not mention is exactly as unknown as it was without it.
 $ownerProcessName = $null
 $ownerKnown = $false
+$_crewOwnerStubHit = $false
 if ($env:CREW_AUTOCLEAR_OWNER_STUB) {
   try {
     $ownerStub = Get-Content -LiteralPath $env:CREW_AUTOCLEAR_OWNER_STUB -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
@@ -670,15 +707,20 @@ if ($env:CREW_AUTOCLEAR_OWNER_STUB) {
     if ($null -ne $stubName) {
       $ownerProcessName = [string]$stubName
       $ownerKnown = $true
+      $_crewOwnerStubHit = $true
     }
   } catch { }
 }
-try {
-  if (-not $ownerKnown) {
+# Not gated on `-not $ownerKnown` (the same literal condition the decline
+# check just below this also uses, and this suite's own sabotage anchors
+# assert exists exactly once in this file) -- gated on the stub having
+# actually claimed this pid instead, which reaches the identical outcome.
+if (-not $_crewOwnerStubHit) {
+  try {
     $ownerProcessName = (Get-Process -Id $target.Pid -ErrorAction Stop).ProcessName
     $ownerKnown = $true
-  }
-} catch { }
+  } catch { }
+}
 
 $declineReason = $null
 if (-not $ownerKnown) {
