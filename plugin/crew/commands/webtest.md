@@ -78,7 +78,11 @@ python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/webtest_guard.py" visual --root .
 Quote each exit code. `visual` exits 77 off the pinned image
 (`mcr.microsoft.com/playwright:v1.63.0-noble`) - the env var alone is not
 evidence; it needs a container marker and the image's `/ms-playwright`
-browsers - report it as **UNVERIFIED**, never as passed. `auth-leak` exit 1
+browsers - report it as **UNVERIFIED**, never as passed. To verify, run the
+suite in that image with Docker or Podman (same image, same flags; either's
+marker counts): `podman run --rm --ipc=host -v "$PWD":/work -w /work -e
+CREW_PLAYWRIGHT_IMAGE=<image> <image> npx playwright test --project=visual`.
+With neither runtime installed the check says so. `auth-leak` exit 1
 is a stop: a session file is tracked, or a `storageState` it cannot resolve
 needs declaring as `webtest.storageState` in `.crew/config.json`.
 

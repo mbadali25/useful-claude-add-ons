@@ -42,18 +42,47 @@ crew_strip_cr() { printf '%s' "$1" | tr -d '\r'; }
 
 # Resolve a usable Python. Echoes nothing when there is none.
 #
-# DELIBERATELY NOT hardened against a WindowsApps App Execution Alias. Most
-# callers of this are mitigated downstream -- they check the status of the
-# python they invoked and fail closed with a named message (verify-gate.sh,
-# promote-gate.sh) -- and widening this one would change the behaviour of
-# every hook that calls it for a bug that only matters where the caller
-# `exec`s the interpreter and has nothing left to check afterwards. Those
-# callers use `crew_py_strict` below instead.
+# Prefers the first PATH match of python3/python/py -- EVERY match, not the
+# first per name -- that actually RUNS (`-c pass`, exit 0, bounded at 3s with
+# its process tree killed, exactly as `crew_py_strict` bounds its probe). The
+# Windows burn-in (FAIL 3) had a failing WindowsApps python3 ahead of a real
+# one: the first-match version handed hooks the stub, so handoff-write.sh
+# read no payload fields, while the PowerShell twin found the real python.
+#
+# When NOTHING runs it still returns the first match, as it always did,
+# rather than nothing. That is the fail-closed half of its contract: callers
+# like promote-gate.sh and verify-gate.sh invoke what this returns, check the
+# status and refuse with a named message, and "no python at all" means
+# something else to them (promote-gate.sh stands down). Returning nothing
+# for a broken stub would turn a refusal into a stand-down. Callers that
+# `exec` the interpreter and have nothing left to check use `crew_py_strict`.
 crew_py() {
-  command -v python3 2>/dev/null && return 0
-  command -v python  2>/dev/null && return 0
-  command -v py      2>/dev/null && return 0
-  return 1
+  local candidate first=""
+  while IFS= read -r candidate; do
+    [ -n "$candidate" ] || continue
+    [ -n "$first" ] || first=$candidate
+    (
+      set -m
+      "$candidate" -c pass </dev/null >/dev/null 2>&1 &
+      pid=$!
+      (
+        sleep 3 2>/dev/null || exit 0
+        if [ -r "/proc/$pid/winpid" ] && read -r winpid < "/proc/$pid/winpid"; then
+          MSYS2_ARG_CONV_EXCL='*' taskkill /F /T /PID "$winpid"
+        fi
+        kill -9 -- "-$pid" || kill -9 "$pid"
+      ) </dev/null >/dev/null 2>&1 &
+      watchdog=$!
+      wait "$pid"
+      status=$?
+      kill -9 -- "-$watchdog" "-$pid" 2>/dev/null
+      exit "$status"
+    ) || continue
+    printf '%s\n' "$candidate"
+    return 0
+  done < <(type -ap python3 python py 2>/dev/null)
+  [ -n "$first" ] || return 1
+  printf '%s\n' "$first"
 }
 
 # Resolve a python that has been PROVED to be an interpreter. Echoes nothing
@@ -80,15 +109,71 @@ crew_py() {
 # asserts the two copies still agree -- a hand-copy with no guard is this
 # repository's most repeated defect.
 crew_py_strict() {
-  for name in python3 python py; do
-    candidate=$(command -v "$name" 2>/dev/null) || continue
-    real=$("$candidate" -c 'import sys; print(sys.executable)' 2>/dev/null) || continue
+  # EVERY PATH match of every name, in order -- `type -ap` lists them all,
+  # where `command -v` stops at the first. Windows burn-in 2026-09-23 (FAIL
+  # 3): a broken WindowsApps python3 ahead of a real python3 made this
+  # function give up while role-write-guard.ps1's Resolve-CrewPython, which
+  # tries every match, found the real one -- so the two flavours disagreed
+  # about whether python existed, and notify.sh failed open and sent a ping
+  # its PowerShell twin then sent again.
+  while IFS= read -r candidate; do
+    [ -n "$candidate" ] || continue
+    # BOUNDED, and the whole process tree dies with it. A candidate that
+    # never exits would otherwise hang the hook forever, and one that spawns
+    # a child holding stdout (a py.exe-style launcher) would hang this `$()`
+    # even after the candidate itself was killed. `timeout` is absent on Git
+    # Bash, so a watchdog kills at 3s instead; `wait` returns the moment the
+    # candidate exits, so a working interpreter costs no added latency.
+    # `set -m` puts the candidate in its own process group, which the kill
+    # takes whole -- on a timeout, and after a normal exit too, for any child
+    # it left behind. Under MSYS a native child is outside that group, so
+    # `taskkill /T` takes the Windows tree when /proc exposes its winpid
+    # (MODELLED, not observed on a Windows host). No `sleep` at all means no
+    # watchdog: unbounded, as before, rather than killing every candidate.
+    # stdin is /dev/null: the candidate must not read the hook payload or
+    # this loop's own input.
+    real=$(
+      set -m
+      "$candidate" -c 'import sys; sys.version_info>=(3,8) and print(sys.executable)' </dev/null 2>/dev/null &
+      pid=$!
+      (
+        sleep 3 2>/dev/null || exit 0
+        if [ -r "/proc/$pid/winpid" ] && read -r winpid < "/proc/$pid/winpid"; then
+          MSYS2_ARG_CONV_EXCL='*' taskkill /F /T /PID "$winpid"
+        fi
+        kill -9 -- "-$pid" || kill -9 "$pid"
+      ) </dev/null >/dev/null 2>&1 &
+      watchdog=$!
+      wait "$pid"
+      status=$?
+      kill -9 -- "-$watchdog" "-$pid" 2>/dev/null
+      exit "$status"
+    ) || continue
     # A trailing CR must not survive into the `-x` test below: a real native
     # Windows interpreter run under Git Bash can leave one on its stdout, and
     # `-x "$real"` on a path with a stray \r appended never matches an actual
     # file, rejecting every real interpreter on that combination.
     real=$(printf '%s' "$real" | tr -d '\r')
     [ -n "$real" ] || continue
+    # The `sys.version_info>=(3,8) and print(...)` guard above is the version
+    # floor: a genuine, working Python 3.7 answers `-c` correctly but prints
+    # NOTHING, so `$real` comes back empty and is rejected right here by the
+    # check above, same as a broken candidate. Reported 2026-09-24: this
+    # function had no version floor at all while role-write-guard.ps1's
+    # Resolve-CrewPython already required >= 3.8, so a host with nothing but
+    # a real Python 3.7 on PATH had the two flavours disagree about whether
+    # python existed at all. Deliberately NOT the .ps1 probe's full
+    # JSON-proof-of-implementation shape (CPython/PyPy, major/minor as a
+    # structured object): that would need the candidate to answer a SECOND,
+    # differently-shaped probe, and dozens of fixtures across this suite are
+    # narrow shell stubs that only ever answer the exact single `-c` string
+    # this function has always sent -- a second probe would reject all of
+    # them regardless of their fixture's own intent (TODO.md's
+    # "crew_py_strict not proving Python 3" entry, closed by this narrower
+    # form). Folding the floor into the SAME `-c` argument costs nothing
+    # extra: a delegating stub falls through to a real interpreter, which
+    # answers correctly either way, and a stub that special-cases the exact
+    # OLD command still matches, since only the printed CONTENT changed.
     # NOT a blanket "reject anything containing WindowsApps" -- that used to
     # sit here (on both $candidate above and $real here) and rejected a
     # genuine Microsoft Store Python install, which runs from EXACTLY that
@@ -148,7 +233,7 @@ crew_py_strict() {
     [ -x "$real" ] || continue
     printf '%s\n' "$real"
     return 0
-  done
+  done < <(type -ap python3 python py 2>/dev/null)
   return 1
 }
 

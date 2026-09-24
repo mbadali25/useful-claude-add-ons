@@ -24,76 +24,83 @@ if ($env:OS -ne 'Windows_NT') { exit 0 }
 $dir = Split-Path -Parent $MyInvocation.MyCommand.Path
 
 function Resolve-CrewPython {
-  # NOT byte-for-byte with verify-gate.ps1's copy any more
-  # -- see tests/test_role_write_guard.py for why the parity discipline
-  # changed shape rather than being dropped. That file's resolver only
-  # needs to match `_common.sh`'s bare `crew_py()`; this one needs to match
-  # role-write-guard.sh's OWN resolver, which does more than `crew_py()`
-  # does, so this copy has to as well.
+  # ONE probe, byte for byte in every crew .ps1 that runs python, asserted by
+  # tests/test_ps1_python_probe.py. Inline rather than dot-sourced for the
+  # reason verify-gate.ps1's emergency-lane note gives: a dot-sourced
+  # function is invisible to scripts/check-powershell.ps1's static check.
   #
-  # Two bugs, reported together 2026-09-19 by a PowerShell-focused review of
-  # THIS file specifically, on top of the WindowsApps/profile-shadow guards
-  # this function already had:
+  # EVERY PATH match of every name is a candidate, and each is EXECUTED
+  # before it is believed; where it lives never decides. A WindowsApps App
+  # Execution Alias is tried like anything else: it forwards to a working
+  # interpreter when Python is installed and fails the probe when it is not.
+  # Windows burn-in 2026-09-23 (docs/review/06-windows-burn-in.md, 2c): the
+  # previous copy skipped WindowsApps by path and took only the first match
+  # per name, so on a host whose python, python3 and py were all working
+  # WindowsApps aliases it discarded all three untested, never reached the
+  # real python.exe further down PATH, and completion-audit.ps1 blocked
+  # every Stop while its bash twin proceeded.
   #
-  #   1. Metadata alone (`.CommandType` / `.Source`) is exactly what a
-  #      WindowsApps stub already passes -- `Get-Command` reports it as a
-  #      real Application with a real Source. role-write-guard.sh's own
-  #      resolver does not trust that either: it EXECUTES the candidate
-  #      (`$cand -c "import sys;print(sys.executable)"`) and reads back
-  #      what actually ran. This copy now does the same, rejecting a
-  #      candidate that produces no output when actually launched.
-  #   2. `Get-Command $name -All` walked every match for ONE name before
-  #      moving to the next name -- so on `PATH=WindowsApps;RealDir` with
-  #      only `python3` present anywhere (no `python`/`py` at all), the old
-  #      code walked PAST the WindowsApps `python3` stub and found
-  #      RealDir's `python3` further down PATH. Bash's `command -v
-  #      python3` (role-write-guard.sh's resolver) takes only the FIRST
-  #      match for a name; rejecting it moves to the NEXT NAME, never a
-  #      second search of the same one -- so the .sh abandoned `python3`
-  #      after the stub and never found a `python`/`py` that did not
-  #      exist either. Same PATH, same machine: one shell flavour
-  #      enforced `guards.roleWrites: block` and the other silently
-  #      allowed the write unjudged. This copy now takes only the first
-  #      match per name too, mirroring the .sh's name-order exactly.
-  $names = @('python3', 'python', 'py')
-  foreach ($name in $names) {
-    $cmd = Get-Command $name -ErrorAction SilentlyContinue | Select-Object -First 1
-    if (-not $cmd -or $cmd.CommandType -ne 'Application' -or -not $cmd.Source) { continue }
-    if ($cmd.Source -match 'WindowsApps') { continue }
-    $real = $null
-    $global:LASTEXITCODE = $null
-    try {
-      # Captured WHOLE, not piped through `Select-Object -First 1` --
-      # that cmdlet can stop reading (and signal the pipeline to close)
-      # as soon as it has one object, which races the native process's
-      # own exit and can leave `$LASTEXITCODE` reflecting an early
-      # termination rather than the candidate's real exit status. Letting
-      # the candidate run to completion first is what makes the exit-code
-      # check below trustworthy.
-      $output = & $cmd.Source -c 'import sys; print(sys.executable)' 2>$null
-      # NOT just "did it print something" -- a wrapper that prints a
-      # plausible interpreter path and then exits nonzero must be
-      # rejected too, matching role-write-guard.sh's own
-      # `real=$(...) || continue`, which checks the candidate's exit
-      # status. Reported 2026-09-19: this check was absent, so a
-      # candidate bash correctly rejected (nonzero exit) was still
-      # ACCEPTED here on output alone.
-      if ($LASTEXITCODE -eq 0 -and $output) {
-        $real = @($output)[0]
-      }
-    } catch {
+  # PROOF, not a printed line. The candidate must answer one JSON object
+  # only a Python can build: {"v": [major, minor], "exe": sys.executable,
+  # "impl": sys.implementation.name}. Accepted only when it exits 0, the
+  # JSON parses, impl is cpython or pypy (the two implementations the hooks
+  # are run under; anything else is rejected rather than guessed at), v is
+  # at least [3, 8] (the floor crew's python targets), and exe exists as a
+  # file. A program that ignores -c and prints some existing path -- which
+  # the previous "print(sys.executable)" probe accepted -- fails the parse.
+  #
+  # The probe is bounded: it runs to completion or its WHOLE PROCESS TREE is
+  # killed at 3s, with stdout and stderr read asynchronously so a chatty
+  # candidate cannot fill a pipe and hang. The tree, not the candidate: a
+  # py.exe-style launcher starts a child interpreter that inherits the
+  # redirected handles, and killing only the launcher leaves that child
+  # running. Kill($true) is the tree kill on PowerShell 7 (.NET Core 3+);
+  # Windows PowerShell 5.1 has no such overload, so it falls back to
+  # taskkill /T /F. No `continue` inside try/catch: loop control across that
+  # boundary differs between PowerShell versions, so the verdict is carried
+  # out in $real and acted on after it.
+  foreach ($name in @('python3', 'python', 'py')) {
+    $candidates = @(Get-Command $name -All -CommandType Application -ErrorAction SilentlyContinue)
+    foreach ($cmd in $candidates) {
+      if (-not $cmd.Source) { continue }
       $real = $null
+      try {
+        $psi = New-Object System.Diagnostics.ProcessStartInfo
+        $psi.FileName = $cmd.Source
+        $psi.Arguments = '-c "import sys,json;print(json.dumps({''v'':list(sys.version_info[:2]),''exe'':sys.executable,''impl'':sys.implementation.name}))"'
+        $psi.UseShellExecute = $false
+        $psi.RedirectStandardOutput = $true
+        $psi.RedirectStandardError = $true
+        $psi.CreateNoWindow = $true
+        $proc = [System.Diagnostics.Process]::Start($psi)
+        $outTask = $proc.StandardOutput.ReadToEndAsync()
+        $null = $proc.StandardError.ReadToEndAsync()
+        if (-not $proc.WaitForExit(3000)) {
+          try {
+            $proc.Kill($true)
+          } catch {
+            try { & taskkill.exe /T /F /PID $proc.Id 2>&1 | Out-Null } catch { }
+            try { $proc.Kill() } catch { }
+          }
+        } elseif ($proc.ExitCode -eq 0 -and $outTask.Wait(1000)) {
+          $line = @(($outTask.Result -split "`r?`n") | Where-Object { $_.Trim() })[-1]
+          $probe = $line | ConvertFrom-Json
+          $v = @($probe.v)
+          if ($probe.impl -in @('cpython', 'pypy') -and $v.Count -ge 2 -and
+              ($v[0] -is [long] -or $v[0] -is [int]) -and ($v[1] -is [long] -or $v[1] -is [int]) -and
+              ([int]$v[0] -gt 3 -or ([int]$v[0] -eq 3 -and [int]$v[1] -ge 8)) -and
+              $probe.exe -is [string]) {
+            $real = $probe.exe
+          }
+        }
+      } catch {
+        $real = $null
+      }
+      if ($real) { $real = $real.ToString().Trim() }
+      if (-not $real) { continue }
+      if (-not (Test-Path -LiteralPath $real -PathType Leaf)) { continue }
+      return $real
     }
-    if ($real) { $real = $real.ToString().Trim() }
-    if (-not $real -or $real -match 'WindowsApps') { continue }
-    # Exit 0 and non-empty output is still not proof: a wrapper could print a
-    # plausible-looking path to something that is not actually there. Confirm
-    # the path EXISTS as a file before trusting it -- the bash-side parity
-    # check is `[ -x "$real" ]`; Test-Path has no executable-bit concept on
-    # Windows (an .exe's "executability" is its extension, not a mode bit),
-    # so -PathType Leaf is the equivalent proof here.
-    if (-not (Test-Path -LiteralPath $real -PathType Leaf)) { continue }
-    return $real
   }
   return ''
 }

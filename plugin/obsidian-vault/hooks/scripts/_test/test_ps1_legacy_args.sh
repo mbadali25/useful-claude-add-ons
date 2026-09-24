@@ -117,8 +117,8 @@ sabotage_copy() {
 import re, sys
 path, marker = sys.argv[1], sys.argv[2]
 text = open(path, encoding="utf-8").read()
-fixed = "sys.stdout.write(''%s'' + sys.executable)" % marker
-broken = 'sys.stdout.write("%s" + sys.executable)' % marker
+fixed = "sys.stdout.write(''%s'' + ''%%d:%%d:%%s:''" % marker
+broken = 'sys.stdout.write("%s" + "%%d:%%d:%%s:"' % marker
 assert fixed in text, "fixture assumption broken: the fixed probe text moved (%s)" % path
 text = text.replace(fixed, broken)
 open(path, "w", encoding="utf-8").write(text)

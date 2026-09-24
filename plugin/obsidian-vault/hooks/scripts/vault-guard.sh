@@ -40,7 +40,9 @@ DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # The bash twin of vault-guard.ps1's `Resolve-VaultGuardPython`, and a
 # deliberate near-copy of crew's `_resolve_role_write_python`
 # (plugin/crew/hooks/scripts/role-write-guard.sh:32-57), which is the same
-# resolver for the same defect on the same machines.
+# resolver for the same defect on the same machines -- except that since the
+# crew 1.0 Windows burn-in this one walks EVERY PATH match of a name (as
+# crew's shared .ps1 probe does) and has no WindowsApps path rule at all.
 #
 # NOT imported from there. crew and obsidian-vault are separate marketplace
 # entries, installed independently: `${CLAUDE_PLUGIN_ROOT}` points at this
@@ -71,51 +73,103 @@ _vault_guard_resolve_python() {
   VAULT_GUARD_PY=""
   VAULT_GUARD_REJECTED=""
   for name in python3 python py; do
-    # `command -v` takes only the FIRST match for a name and then moves to
-    # the NEXT NAME - it never searches the same name further down PATH.
-    # vault-guard.ps1 mirrors that ordering on purpose; see the note there.
-    candidate=$(command -v "$name" 2>/dev/null) || continue
-    case "$candidate" in
-      */WindowsApps/*|*\\WindowsApps\\*)
-        _vault_guard_reject "$candidate (WindowsApps App Execution Alias)"
-        continue ;;
-    esac
-    # `command -v` finding a name on PATH is not enough - the WindowsApps
-    # alias IS a real, executable file, so it resolves cleanly. Running the
-    # candidate and reading back a token this script chose is what actually
-    # tells a real interpreter from something wearing the name: only a python
-    # that parsed and ran the -c program can emit the prefix.
-    #
-    # Deliberately stricter than crew's copy, which accepts any non-empty
-    # stdout on a zero exit. That is enough for the Store alias (it exits
-    # 9009, so the status check alone rejects it) and not enough for its
-    # neighbour: a wrapper or shim that prints a line and exits 0 passes
-    # "did it print something" and fails this. CLAUDE.md: check the
-    # neighbouring case before closing a guard fix.
-    probe=$("$candidate" -c 'import sys; sys.stdout.write("vault-guard-python:" + sys.executable)' 2>/dev/null) || {
-      _vault_guard_reject "$candidate (ran, but exited nonzero instead of answering the interpreter probe)"
-      continue; }
-    case "$probe" in
-      vault-guard-python:*) real="${probe#vault-guard-python:}" ;;
-      *)
-        _vault_guard_reject "$candidate (ran, but did not answer the interpreter probe)"
-        continue ;;
-    esac
-    # An embedded or frozen interpreter can report an empty sys.executable.
-    # It answered honestly, and the answer is still unusable here.
-    [ -n "$real" ] || {
-      _vault_guard_reject "$candidate (answered the probe with an empty sys.executable)"
-      continue; }
-    case "$real" in
-      */WindowsApps/*|*\\WindowsApps\\*)
-        _vault_guard_reject "$candidate -> $real (WindowsApps App Execution Alias)"
-        continue ;;
-    esac
-    # `sys.executable`, not `$candidate`: the PATH-found name may be a shim
-    # that re-execs elsewhere, and the probe already paid the cost of asking
-    # python where it actually lives.
-    VAULT_GUARD_PY="$real"
-    return 0
+    # EVERY PATH match of the name, not only the first (`type -aP`, not
+    # `command -v`), and each is executed before it is believed: where it
+    # lives never decides. A WindowsApps alias is tried like anything else.
+    # crew 1.0's Windows burn-in: a path rule plus first-match-per-name
+    # discarded three WORKING aliases and never reached the real python.exe
+    # behind them. vault-guard.ps1 walks the same order, so both flavours agree.
+    while IFS= read -r candidate; do
+      [ -n "$candidate" ] || continue
+      # Running the candidate and reading back a token this script chose is
+      # what tells a real interpreter from something wearing the name: only
+      # a python that parsed and ran the -c program can emit the prefix. A
+      # zero exit with other output (a wrapper that prints a line) fails it.
+      # The answer is `<prefix><major>:<minor>:<implementation>:<executable>`
+      # and all four are checked below: Python 3.8 or later, CPython or PyPy,
+      # and an executable that exists -- the same proof crew's
+      # Resolve-CrewPython demands. Python 2 has no sys.implementation, so it
+      # exits nonzero here rather than answering.
+      #
+      # BOUNDED at 3s, process tree included, by the same watchdog crew's
+      # `crew_py_strict` uses (`timeout` is absent on Git Bash): a candidate
+      # that never exits would otherwise stall this hook forever, and a
+      # launcher's child holding stdout would hang the `$()` after the
+      # launcher itself died. `set -m` gives the candidate its own process
+      # group for the kill; under MSYS `taskkill /T` takes the native tree
+      # (MODELLED, not observed on Windows). No `sleep` means no watchdog.
+      probe=$(
+        set -m
+        "$candidate" -c 'import sys; v = sys.version_info; sys.stdout.write("vault-guard-python:" + "%d:%d:%s:" % (v[0], v[1], sys.implementation.name) + sys.executable)' </dev/null 2>/dev/null &
+        pid=$!
+        (
+          sleep 3 2>/dev/null || exit 0
+          if [ -r "/proc/$pid/winpid" ] && read -r winpid < "/proc/$pid/winpid"; then
+            MSYS2_ARG_CONV_EXCL='*' taskkill /F /T /PID "$winpid"
+          fi
+          kill -9 -- "-$pid" || kill -9 "$pid"
+        ) </dev/null >/dev/null 2>&1 &
+        watchdog=$!
+        wait "$pid"
+        status=$?
+        kill -9 -- "-$watchdog" "-$pid" 2>/dev/null
+        exit "$status"
+      ) || {
+        _vault_guard_reject "$candidate (ran, but exited nonzero or did not finish within 3s instead of answering the interpreter probe)"
+        continue; }
+      case "$probe" in
+        vault-guard-python:*) answer="${probe#vault-guard-python:}" ;;
+        *)
+          _vault_guard_reject "$candidate (ran, but did not answer the interpreter probe)"
+          continue ;;
+      esac
+      major="${answer%%:*}"; answer="${answer#*:}"
+      minor="${answer%%:*}"; answer="${answer#*:}"
+      impl="${answer%%:*}"; real="${answer#*:}"
+      real=${real%$'\r'}
+      case "$major:$minor" in
+        *[!0-9:]*|:*|*:)
+          _vault_guard_reject "$candidate (answered the probe without a version, implementation and executable)"
+          continue ;;
+      esac
+      if [ "$major" -lt 3 ] || { [ "$major" -eq 3 ] && [ "$minor" -lt 8 ]; }; then
+        _vault_guard_reject "$candidate (answered the probe as Python $major.$minor; 3.8 or later is required)"
+        continue
+      fi
+      case "$impl" in
+        cpython|pypy) ;;
+        *)
+          _vault_guard_reject "$candidate (answered the probe as implementation '$impl', not cpython or pypy)"
+          continue ;;
+      esac
+      # An embedded or frozen interpreter can report an empty sys.executable.
+      # It answered honestly, and the answer is still unusable here.
+      [ -n "$real" ] || {
+        _vault_guard_reject "$candidate (answered the probe with an empty sys.executable)"
+        continue; }
+      # A native Windows sys.executable (C:\...) is normalised to a path this
+      # shell can stat -- `cygpath -u` when present, else the same /c/...
+      # shape by hand -- exactly as crew's `crew_py_strict` does.
+      case "$real" in
+        [A-Za-z]:\\*|[A-Za-z]:/*)
+          if command -v cygpath >/dev/null 2>&1; then
+            real=$(cygpath -u "$real")
+          else
+            drive=$(printf '%s' "$real" | cut -c1 | tr '[:upper:]' '[:lower:]')
+            rest=$(printf '%s' "$real" | cut -c3- | tr '\\\\' '/')
+            real="/$drive$rest"
+          fi
+          ;;
+      esac
+      [ -x "$real" ] || {
+        _vault_guard_reject "$candidate (answered the probe with a sys.executable that does not exist: $real)"
+        continue; }
+      # `sys.executable`, not `$candidate`: the PATH-found name may be a shim
+      # that re-execs elsewhere, and the probe already paid the cost of asking
+      # python where it actually lives.
+      VAULT_GUARD_PY="$real"
+      return 0
+    done < <(type -aP "$name" 2>/dev/null)
   done
   return 1
 }

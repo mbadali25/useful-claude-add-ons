@@ -68,7 +68,12 @@ integration, not the rule itself). It wires: `npx playwright test --reporter=blo
 code, `npx playwright merge-reports --reporter html ./blob-report` to produce the reviewer
 artifact, an axe project asserting zero `violations`, `git ls-files playwright/.auth` asserting
 empty, and `toHaveScreenshot` diffs bounded by `maxDiffPixelRatio` - run only inside the pinned
-Docker image, skipped (not failed) on a bare host. `/crew:webtest` drives the planner ->
+image, skipped (not failed) on a bare host. Docker and Podman run the same image with the same
+flags - `docker run` or `podman run --rm --ipc=host -v "$PWD":/work -w /work -e
+CREW_PLAYWRIGHT_IMAGE=mcr.microsoft.com/playwright:v1.63.0-noble
+mcr.microsoft.com/playwright:v1.63.0-noble npx playwright test --project=visual` - and either
+runtime's marker (`/.dockerenv`, `/run/.containerenv`) is container evidence. With neither
+runtime on the host, visual stays UNVERIFIED and the check says so, naming both. `/crew:webtest` drives the planner ->
 generator -> healer loop against a ticket's acceptance criteria; see that command for the phase
 sequence.
 

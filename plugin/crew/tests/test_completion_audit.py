@@ -360,11 +360,16 @@ def test_the_powershell_flavour_stands_down_off_windows(stem, repo):
 
 
 def _broken_python(tmp_path):
-    """A `python3` that passes the interpreter probe and then crashes."""
+    """A `python3` that passes the interpreter probe and then crashes. The
+    .ps1 probe demands a JSON proof (burn-in FAIL 3), so it answers that one
+    with the JSON a real CPython 3.12 would print; bash's probe gets the bare
+    path it asks for."""
     folder = tmp_path / "fakebin"
     folder.mkdir()
     fake = folder / "python3"
-    fake.write_text('#!/bin/sh\nif [ "$1" = "-c" ]; then echo "$0"; exit 0; fi\nexit 1\n',
+    fake.write_text('#!/bin/sh\nif [ "$1" = "-c" ]; then\n  case "$2" in\n'
+                    '    *json.dumps*) printf \'{"v": [3, 12], "exe": "%s", "impl": "cpython"}\\n\' "$0" ;;\n'
+                    '    *) echo "$0" ;;\n  esac\n  exit 0\nfi\nexit 1\n',
                     encoding="utf-8", newline="\n")
     fake.chmod(0o755)
     return folder

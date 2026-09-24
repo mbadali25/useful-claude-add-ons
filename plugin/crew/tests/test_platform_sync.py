@@ -770,6 +770,17 @@ def _stub(path):
                                   encoding="ascii")
 
 
+def _launchable(path):
+    """A stub that RUNS and answers like an interpreter: it echoes its own
+    path, as `print(sys.executable)` would. Since crew 1.0 every candidate
+    is executed before it is believed, so a plain-text file wearing an .exe
+    extension no longer stands in for a real python."""
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="ascii") as fh:
+        fh.write("@echo off" + chr(13) + chr(10) + "echo " + path + chr(13) + chr(10))
+    return path
+
+
 @_WINDOWS_ONLY
 def test_platform_sync_windowsapps_stub_is_never_returned(tmp_path):
     apps = tmp_path / "WindowsApps"
@@ -783,5 +794,5 @@ def test_platform_sync_a_real_python_beside_a_stub_still_resolves(tmp_path):
     apps = tmp_path / "WindowsApps"
     real = tmp_path / "tools"
     _stub(str(apps / "python3.exe"))
-    _stub(str(real / "python3.exe"))
+    _launchable(str(real / "python3.cmd"))
     assert _print_python([str(apps), str(real)]).lower().startswith(str(real).lower())
