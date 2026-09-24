@@ -308,7 +308,8 @@ def test_c_price_writes_integers_never_zero_never_overwrites(tmp_path):
     target.write_text(json.dumps(vmap), encoding="utf-8")
 
     result = crew_fixtures.run_gate([_PY, _PRICE_PY, str(target)],
-                            capture_output=True, text=True, check=False, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
+                            capture_output=True, text=True, check=False,
+                            timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
     assert result.returncode == 0, result.stderr
     written = json.loads(target.read_text(encoding="utf-8"))
     assert written["rules"][0]["seconds"] >= 1, written
@@ -319,7 +320,8 @@ def test_c_price_writes_integers_never_zero_never_overwrites(tmp_path):
     )
 
     forced = crew_fixtures.run_gate([_PY, _PRICE_PY, str(target), "--force"],
-                            capture_output=True, text=True, check=False, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
+                            capture_output=True, text=True, check=False,
+                            timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
     assert forced.returncode == 0, forced.stderr
     reforced = json.loads(target.read_text(encoding="utf-8"))
     assert reforced["rules"][1]["seconds"] >= 1, reforced
@@ -385,7 +387,8 @@ def test_e_reach_host_is_stop_excluded_all_included_price_skipped(flavour, tmp_p
     target = tmp_path / "price_fixture.json"
     target.write_text(json.dumps(vmap), encoding="utf-8")
     priced = crew_fixtures.run_gate([_PY, _PRICE_PY, str(target)],
-                            capture_output=True, text=True, check=False, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
+                            capture_output=True, text=True, check=False,
+                            timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
     assert "SKIPPED" in priced.stdout, priced.stdout
     assert "seconds" not in json.loads(target.read_text(encoding="utf-8"))["rules"][0]
 
@@ -413,7 +416,8 @@ def test_f_undeclared_reach_verb_is_stop_deferred_and_price_refused(flavour, tmp
     target = tmp_path / "price_fixture2.json"
     target.write_text(json.dumps(vmap), encoding="utf-8")
     priced = crew_fixtures.run_gate([_PY, _PRICE_PY, str(target)],
-                            capture_output=True, text=True, check=False, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
+                            capture_output=True, text=True, check=False,
+                            timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
     assert "REFUSED" in priced.stdout, priced.stdout
     assert "seconds" not in json.loads(target.read_text(encoding="utf-8"))["rules"][0]
 
@@ -848,7 +852,8 @@ def test_15_price_refuses_a_wrapper_that_reaches_ssh_and_never_runs_it(tmp_path)
     target = tmp_path / "price_wrapper.json"
     target.write_text(json.dumps(vmap), encoding="utf-8")
     priced = crew_fixtures.run_gate([_PY, _PRICE_PY, str(target)], cwd=str(tmp_path),
-                            capture_output=True, text=True, check=False, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
+                            capture_output=True, text=True, check=False,
+                            timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
     assert priced.returncode == 0, priced.stderr
     assert "REFUSED" in priced.stdout, priced.stdout
     assert "interpreter given a script argument 'wrapper.sh'" in priced.stdout, priced.stdout
@@ -973,7 +978,8 @@ def test_19_price_records_rc77_as_skip_with_no_seconds(tmp_path):
     target = tmp_path / "price_77.json"
     target.write_text(json.dumps(vmap), encoding="utf-8")
     priced = crew_fixtures.run_gate([_PY, _PRICE_PY, str(target)],
-                            capture_output=True, text=True, check=False, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
+                            capture_output=True, text=True, check=False,
+                            timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
     assert priced.returncode == 0, priced.stderr
     assert "SKIP" in priced.stdout, priced.stdout
     assert "77" in priced.stdout, priced.stdout
@@ -1002,7 +1008,8 @@ def test_20_price_pins_declared_env_and_strips_undeclared_pinned_vars(tmp_path):
     target.write_text(json.dumps(vmap), encoding="utf-8")
     env = dict(os.environ, ENV="prod", AWS_PROFILE="caller-profile")
     priced = crew_fixtures.run_gate([_PY, _PRICE_PY, str(target)], cwd=str(tmp_path),
-                            env=env, capture_output=True, text=True, check=False, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
+                            env=env, capture_output=True, text=True, check=False,
+                            timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
     assert priced.returncode == 0, priced.stderr
     seen = (tmp_path / "seen.txt").read_text(encoding="utf-8")
     assert "ENV=test" in seen, seen
@@ -1896,8 +1903,10 @@ def test_48_a_corrupt_record_holds_the_marker_until_all_rebuilds_it(flavour, tmp
     assert marker.exists(), first.stderr
     before = marker.read_text(encoding="utf-8").strip()
     # a new commit, then corrupt the record, then an unrelated change
-    subprocess.run(["git", "add", "-A"], cwd=str(root), check=True, capture_output=True, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
-    subprocess.run(["git", "commit", "-qm", "advance"], cwd=str(root), check=True, capture_output=True, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
+    subprocess.run(["git", "add", "-A"], cwd=str(root), check=True,
+                   capture_output=True, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
+    subprocess.run(["git", "commit", "-qm", "advance"], cwd=str(root),
+                   check=True, capture_output=True, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
     (root / ".crew" / ".verify-gate.record.json").write_text("not json", encoding="utf-8")
     (root / "a.py").write_text("x2", encoding="utf-8")
     second = _run(flavour, root)
@@ -1933,8 +1942,10 @@ def test_49_editing_a_deferred_rules_paths_keeps_its_obligation(flavour, tmp_pat
     # advance the marker past it - so the NEXT turn's changed set is only
     # verify.json, which the widened rule does not match (Codex's repro:
     # "Next Stop runs zero commands").
-    subprocess.run(["git", "add", "-A"], cwd=str(root), check=True, capture_output=True, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
-    subprocess.run(["git", "commit", "-qm", "a.txt"], cwd=str(root), check=True, capture_output=True, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
+    subprocess.run(["git", "add", "-A"], cwd=str(root), check=True,
+                   capture_output=True, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
+    subprocess.run(["git", "commit", "-qm", "a.txt"], cwd=str(root),
+                   check=True, capture_output=True, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
     mid = _run(flavour, root)
     assert mid.returncode == 0, mid.stderr
     marker = root / ".crew" / ".verify-verified-at"
@@ -1942,8 +1953,10 @@ def test_49_editing_a_deferred_rules_paths_keeps_its_obligation(flavour, tmp_pat
     # commit ONLY an expansion of the rule's paths list
     vmap["rules"][0]["paths"] = ["a.txt", "b.txt"]
     (root / ".crew" / "verify.json").write_text(json.dumps(vmap), encoding="utf-8")
-    subprocess.run(["git", "add", "-A"], cwd=str(root), check=True, capture_output=True, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
-    subprocess.run(["git", "commit", "-qm", "widen the rule"], cwd=str(root), check=True, capture_output=True, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
+    subprocess.run(["git", "add", "-A"], cwd=str(root), check=True,
+                   capture_output=True, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
+    subprocess.run(["git", "commit", "-qm", "widen the rule"], cwd=str(root),
+                   check=True, capture_output=True, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
     second = _run(flavour, root)
     assert "NOT VERIFIED ON THIS TREE" in second.stderr, second.stderr
     assert "rule edited or removed since" in second.stderr, second.stderr

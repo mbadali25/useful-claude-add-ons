@@ -183,6 +183,9 @@ def gate_processes():
     a test file that never calls `popen_gate` leaves `procs` empty and this
     loop a no-op, so making it autouse suite-wide costs nothing there.
     """
+    # pylint: disable=global-statement  # save/restore of the ambient
+    # tracker for the duration of this fixture's yield, not a persistent
+    # mutation - see the previous_tracker restore in the finally below.
     global _AMBIENT_GATE_TRACKER
     procs = []
     previous_tracker = _AMBIENT_GATE_TRACKER

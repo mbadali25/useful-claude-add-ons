@@ -67,7 +67,8 @@ pytestmark = pytest.mark.skipif(_BASH is None, reason="needs bash")
 
 def _git(root, *args):
     subprocess.run(("git",) + args, cwd=root, check=True,
-                   capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
+                   capture_output=True, text=True, stdin=subprocess.DEVNULL,
+                   timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
 
 
 def _repo(tmp_path):

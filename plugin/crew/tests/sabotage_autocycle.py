@@ -445,7 +445,8 @@ AUTOCYCLE_MUTATIONS = (
      "test_get_crew_send_keys_child_args_carries_the_configured_delay[4]"),
     ("context-watch.sh swallows auto-clear's stdout when mktemp fails again", WATCH_SH,
      "  exec 3>&1\n"
-     "  err=$(bash \"$(dirname \"${BASH_SOURCE[0]}\")/auto-clear.sh\" --root \"$PWD\" --session \"$SESSION_ID\" 2>&1 1>&3)\n"
+     "  err=$(bash \"$(dirname \"${BASH_SOURCE[0]}\")/auto-clear.sh\" --root \"$PWD\" "
+     "--session \"$SESSION_ID\" 2>&1 1>&3)\n"
      "  rc=$?\n"
      "  exec 3>&-\n",
      "  out_file=$(mktemp 2>/dev/null) || out_file=\"\"\n"
@@ -457,7 +458,8 @@ AUTOCYCLE_MUTATIONS = (
      "    rm -f \"$out_file\"\n"
      "    [ -n \"$out\" ] && printf '%s\\n' \"$out\"\n"
      "  else\n"
-     "    err=$(bash \"$(dirname \"${BASH_SOURCE[0]}\")/auto-clear.sh\" --root \"$PWD\" --session \"$SESSION_ID\" 2>&1 1>/dev/null)\n"
+     "    err=$(bash \"$(dirname \"${BASH_SOURCE[0]}\")/auto-clear.sh\" --root \"$PWD\" "
+     "--session \"$SESSION_ID\" 2>&1 1>/dev/null)\n"
      "    rc=$?\n"
      "  fi\n",
      "tests/test_auto_clear_review_fixes.py::"

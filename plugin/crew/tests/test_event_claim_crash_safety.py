@@ -317,7 +317,7 @@ def test_mark_sent_does_not_stamp_a_pruned_and_reused_generation(tmp_path):
 
     accepted = event_claim.mark_sent(old_token)
 
-    on_disk = json.loads(pathlib.Path(new_path).read_text())
+    on_disk = json.loads(pathlib.Path(new_path).read_text(encoding="utf-8"))
     assert (accepted, on_disk["state"], on_disk["nonce"]) == (True, "claimed", new_nonce)
     assert event_claim._read(new_path)[0] == "claimed", (
         "the stale token's marker must not make the LIVE, recycled "
@@ -367,7 +367,7 @@ def test_mark_sent_is_immune_to_a_prune_and_recreate_race_mid_call(tmp_path):
     assert accepted is True
     new_nonce, new_path = new_token_box[0].split(" ", 1)
     assert new_path == old_path, "the reused generation must share the old path"
-    on_disk = json.loads(pathlib.Path(new_path).read_text())
+    on_disk = json.loads(pathlib.Path(new_path).read_text(encoding="utf-8"))
     assert (on_disk["state"], on_disk["nonce"]) == ("claimed", new_nonce)
     assert event_claim._read(new_path)[0] == "claimed", (
         "the live, un-emitted claim must not read as sent no matter when "

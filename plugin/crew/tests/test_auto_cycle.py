@@ -933,24 +933,24 @@ def test_sendkeys_declines_and_falls_back_to_notify_when_the_owner_is_windows_te
     wtbin.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy(exe, wtbin)
     wtbin.chmod(0o755)
-    proc = subprocess.Popen([str(wtbin), "-c", "trap : TERM; sleep 30 & wait"])
-    try:
-        deadline = time.time() + 5
-        while time.time() < deadline and _proc_comm(proc.pid) != "WindowsTerminal":
-            time.sleep(0.05)
-        assert _proc_comm(proc.pid) == "WindowsTerminal", (
-            "the renamed process never reported comm=WindowsTerminal on this host")
-        _machine(root, method="sendkeys", windowTitle="Claude")
-        env = _windows(tmp_path, [{"id": 1, "pid": proc.pid, "title": "Claude - a tab"}])
-        _write_marker(root)
-        _write_handoff(root)
+    with subprocess.Popen([str(wtbin), "-c", "trap : TERM; sleep 30 & wait"]) as proc:
+        try:
+            deadline = time.time() + 5
+            while time.time() < deadline and _proc_comm(proc.pid) != "WindowsTerminal":
+                time.sleep(0.05)
+            assert _proc_comm(proc.pid) == "WindowsTerminal", (
+                "the renamed process never reported comm=WindowsTerminal on this host")
+            _machine(root, method="sendkeys", windowTitle="Claude")
+            env = _windows(tmp_path, [{"id": 1, "pid": proc.pid, "title": "Claude - a tab"}])
+            _write_marker(root)
+            _write_handoff(root)
 
-        dry = _invoke("ps1", "auto-clear", root, args=("--session", SESSION_A, "--dry-run"),
-                     env_extra=env)
-        result = _invoke("ps1", "auto-clear", root, args=("--session", SESSION_A), env_extra=env)
-    finally:
-        proc.terminate()
-        proc.wait(timeout=5)
+            dry = _invoke("ps1", "auto-clear", root, args=("--session", SESSION_A, "--dry-run"),
+                         env_extra=env)
+            result = _invoke("ps1", "auto-clear", root, args=("--session", SESSION_A), env_extra=env)
+        finally:
+            proc.terminate()
+            proc.wait(timeout=5)
 
     assert "would decline" in dry.stdout, dry.stdout + dry.stderr
     assert "cannot verify the active tab" in dry.stdout

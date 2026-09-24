@@ -454,9 +454,17 @@ def test_scan_project_trust_rejects_an_unterminated_string_value_directly():
     text = ('[projects."/repo"]\ntrust_level = "trusted"\n\n'
             'broken = "unterminated\n')
 
-    level, matched, bad_line = ci._scan_project_trust(text, ["/repo"])
+    _, _, bad_line = ci._scan_project_trust(text, ["/repo"])
 
-    assert bad_line is not None and "unterminated" in bad_line
+    assert bad_line is not None
+    # `bad_line` is reassigned via `nonlocal` inside a nested closure in
+    # `_scan_project_trust` -- astroid does not trace that reassignment
+    # into the function's inferred return type, so it infers `None` only
+    # regardless of the `is not None` check just above (reproduced in
+    # isolation: the same nonlocal-closure shape triggers E1135 even with
+    # an `isinstance(bad_line, str)` guard immediately before the `in`).
+    # pylint: disable-next=unsupported-membership-test
+    assert "unterminated" in bad_line
 
 
 def test_scan_project_trust_rejects_a_missing_comma_between_array_elements_directly():
@@ -473,9 +481,14 @@ def test_scan_project_trust_rejects_a_missing_comma_between_array_elements_direc
             '  "two"\n'
             ']\n')
 
-    level, matched, bad_line = ci._scan_project_trust(text, ["/repo"])
+    _, _, bad_line = ci._scan_project_trust(text, ["/repo"])
 
-    assert bad_line is not None and '"two"' in bad_line
+    assert bad_line is not None
+    # See the same disable a few tests up: astroid does not trace
+    # `bad_line`'s `nonlocal` reassignment inside `_scan_project_trust`'s
+    # nested closure into its inferred return type.
+    # pylint: disable-next=unsupported-membership-test
+    assert '"two"' in bad_line
 
 
 def test_scan_project_trust_still_accepts_a_bare_last_element_before_a_lone_bracket():

@@ -487,7 +487,8 @@ def test_a_native_windows_sys_executable_path_is_accepted_and_works(tmp_path):
     with open(stub, "w", encoding="utf-8", newline="\n") as fh:
         fh.write(
             "#!/bin/sh\n"
-            "if [ \"$1\" = \"-c\" ] && [ \"$2\" = \"import sys; sys.version_info>=(3,8) and print(sys.executable)\" ]; then\n"
+            "if [ \"$1\" = \"-c\" ] && "
+            "[ \"$2\" = \"import sys; sys.version_info>=(3,8) and print(sys.executable)\" ]; then\n"
             # printf, not echo - some /bin/sh implementations (dash's
             # builtin echo among them) interpret XSI backslash escapes by
             # default, so `echo 'C:\<token>\...'` silently eats the `\<`
@@ -638,7 +639,8 @@ def test_the_cygpath_branch_is_taken_when_cygpath_is_present(tmp_path):
     with open(stub, "w", encoding="utf-8", newline="\n") as fh:
         fh.write(
             "#!/bin/sh\n"
-            "if [ \"$1\" = \"-c\" ] && [ \"$2\" = \"import sys; sys.version_info>=(3,8) and print(sys.executable)\" ]; then\n"
+            "if [ \"$1\" = \"-c\" ] && "
+            "[ \"$2\" = \"import sys; sys.version_info>=(3,8) and print(sys.executable)\" ]; then\n"
             "  printf '%s\\n' 'C:\\fakepy\\python.exe'\n"
             "  exit 0\n"
             "fi\n"
