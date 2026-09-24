@@ -142,14 +142,89 @@ independent spawns; use `pytest-xdist` (`-n auto`) so spawns overlap; mark the p
 flavour `slow` and exclude it from the default run while keeping it in CI. Which of those
 is right is the 1.0 author's call.
 
-## 2. Hooks, live — NOT RUN
+## 2. Hooks
 
-Sections 2, 2a, 2b, 3, 4, 5 and 6 are NOT RUN at the time of this commit.
+| Step | Result | Evidence |
+|---|---|---|
+| flavour-guard suite | **PASS** | exit 0, `159 passed, 0 failed` |
+| `check-powershell.ps1` over all hooks | **PASS** | 44 files, all clean |
+| python resolver parity, bash vs PowerShell | **FAIL — blocking** | see 2c |
+| each hook fires exactly once | **NOT RUN** | needs a live session; see note |
+| python absent from PATH → fails closed | **NOT RUN** | superseded by 2c, which fails closed with python *present* |
 
-**2a is deliberately excluded.** It drives `/clear` by sending keystrokes to a terminal
-window, and the requester flagged it as needing operator confirmation. This session's
-operator approved the burn-in explicitly *minus* 2a. It is not deferred for convenience —
-it is withheld pending its own yes.
+### 2c. The PowerShell python resolver rejects every working interpreter on this host
+
+**This is the most serious finding in the run. On this machine crew 1.0's
+`completion-audit.ps1` blocks at every Stop, and its bash twin does not.**
+
+Measured, same host, same PATH, same moment:
+
+| Resolver | Verdict |
+|---|---|
+| `_common.sh`'s `crew_py` | returns `/c/Users/…/WindowsApps/python3` — **accepts** |
+| `completion-audit.ps1 -PrintPython` | returns **empty** — no python found |
+
+And python demonstrably works here. From PowerShell, all three names launch and report
+**Python 3.14.6**:
+
+```
+python   C:\Users\…\WindowsApps\python.exe   -> 3.14.6
+python3  C:\Users\…\WindowsApps\python3.exe  -> 3.14.6
+py       C:\Users\…\WindowsApps\py.exe       -> 3.14.6
+```
+
+**The mechanism is two deliberate fixes interacting.** In `Resolve-CrewPython`:
+
+```powershell
+$names = @('python3', 'python', 'py')
+foreach ($name in $names) {
+  $cmd = Get-Command $name -ErrorAction SilentlyContinue | Select-Object -First 1
+  …
+  if ($cmd.Source -match 'WindowsApps') { continue }
+```
+
+1. The `WindowsApps` path match rejects a candidate **on its path alone, without ever
+   executing it** — even though the file's own comments argue at length that metadata is
+   untrustworthy and the candidate must be launched to be believed. That execution check
+   sits *below* this line and never runs.
+2. `Select-Object -First 1` takes only the first match per name, and a rejection
+   `continue`s to the next **name**, never the next match of the same name. This was added
+   on purpose, to mirror bash's `command -v` taking only the first hit.
+
+Each is defensible alone. Together, on a host where all three names resolve to WindowsApps
+first, every candidate is discarded untested and the function returns `''` — while a real
+interpreter at `C:\Users\d3ade\AppData\Local\Python\bin\python.exe` sits further down PATH,
+unreachable by construction.
+
+**The consequence is the exact asymmetry the file's own comment claims to have fixed.**
+That comment describes the old bug as "one shell flavour enforced `guards.roleWrites:
+block` and the other silently allowed the write unjudged." It is still here, with the
+flavours swapped. Demonstrated on a scratch repo with a `Stop` payload:
+
+```
+sh  exit=0   (silent, proceeds)
+ps1 exit=2   COMPLETION AUDIT: no usable python - the tree was not audited
+             against the ticket's scope.
+```
+
+Failing closed is correct behaviour for a genuinely missing python. **Here it fails closed
+against three working interpreters**, so on this host the audit never actually audits — it
+only blocks. The bash flavour meanwhile proceeds, so which verdict a Windows user gets
+depends on which flavour the harness runs.
+
+**Not verified:** whether the harness runs both flavours in one turn. `hooks.json` registers
+every event twice with no condition — a bash `command` and a `shell: "powershell"` twin —
+and no `.sh` under `hooks/scripts/` carries a reciprocal "stand down on Windows" guard
+(checked across all 15). The `.ps1` guard `if ($env:OS -ne 'Windows_NT') { exit 0 }` only
+stands the PowerShell twin down *off* Windows. So both proceeding on Windows is the
+**necessary** condition for a double fire and it is met, but a live double fire was not
+observed and is not claimed here. The flavour-guard suite does not cover this direction: all
+four of its cases test the `.ps1` off Windows.
+
+### 2a — withheld, now approved, not yet run
+
+2a drives `/clear` by sending keystrokes to a terminal window. The operator has now approved
+running it in a scratch terminal. It is NOT RUN at this commit and is next.
 
 ## 3-6 — NOT RUN
 
@@ -160,6 +235,12 @@ visual baseline has no runtime. Per the requester's own rule, visual checks on t
 report UNVERIFIED rather than PASS.
 
 ## Summary of FAILs
+
+0. **BLOCKING — `completion-audit.ps1` finds no python on a host with three working
+   interpreters, and blocks every Stop.** Its `WindowsApps` path match rejects each
+   candidate untested, and first-match-per-name means no fallback is ever reached. The bash
+   twin accepts the same interpreter and proceeds. Same host, same PATH, opposite verdicts.
+   See 2c.
 
 1. **`check_instructions.py` exits 1 with 19 problems** — nine command files over the
    120-line budget and unlisted in `.budget-allowance.json`, plus ten stale pre-1.0 names
