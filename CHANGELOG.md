@@ -16,7 +16,7 @@ All notable changes to this repository are documented here. Format follows [Keep
   `claude-memories-canvas` now points at the same profile. Marketplace
   skill count 36 -> 34.
 
-- **crew 1.0 guides: retired the 0.20 overview, capabilities and
+- **`crew` 1.0.1: retired the 0.20 overview, capabilities and
   technical-reference guide families; archived the dated progress report.**
   `docs/guides/crew/crew-overview*`, `crew-capabilities*` and
   `crew-technical-reference*` (HTML, DOCX, PDF, and their `-solomon`
