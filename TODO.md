@@ -3791,3 +3791,28 @@ Raw: `.work/review/main-B1-B3-W6CLul/out.txt`. B2 drew no finding.
 - FIX `crew_upgrade.py:1321` - report-only (already-current) path prints migration claims ("roles added", "schema 7 -> 7 ... added") for changes it never writes.
 - FIX `tests/test_pm_journal.py:216` - no test covers `O_NOFOLLOW`; removing it leaves the suite green.
 - FIX `tests/test_upgrade.py:428` - B1 tests call `run()` only; deleting `main()`'s new print path leaves them green.
+
+### Local object store has 24 empty object files; branch `gizmoduck-ci-f2-fix` is unreadable - OPEN (filed 2026-09-24, PM)
+
+Measured by the PM on 2026-09-24 at main bc6a3a09: `find .git/objects -type f -empty | wc -l` = 24, and
+`git rev-parse refs/heads/gizmoduck-ci-f2-fix^{commit}` fails (`object file .git/objects/81/b347ba... is empty`).
+`git fetch origin` aborts on it (`fatal: bad object refs/heads/gizmoduck-ci-f2-fix`), so origin refs in this
+checkout are stale until it is fixed. `git ls-remote origin 'refs/heads/gizmoduck-ci*'` returns nothing, so
+that branch's commits exist nowhere else. No other local branch ref is broken. Deferred, not repaired: every
+repair (deleting the ref, pruning, `git gc`) destroys history and needs the owner's yes; the gizmoduck-ci
+work itself lives on `gizmoduck-ci` @ 3966cb5f per the 2026-09-24 handoff. Do NOT run `git gc`/`prune`
+before deciding. The empty files are most likely the result of a crash or a full disk mid-write; that cause was not verified.
+
+### Stopped PM left 15 uncommitted edits in worktree `crew-1.0-burnin-fix4` - OPEN (filed 2026-09-24, PM)
+
+`.claude/worktrees/agent-a1576883b4819735f` (branch `crew-1.0-burnin-fix4` @ 72e9dead) is `locked` by
+pid 2363532, which is no longer running; `git status --porcelain` shows 15 modified paths under `plugin/crew/hooks/scripts/`,
+`plugin/crew/CONFIG.md` and `docs/guides/crew/src/`. This is most likely the partial burn-in fix work the
+2026-09-24 handoff says to check before re-dispatching FAILs 1-7. Nobody has reviewed it. Whoever picks up the burn-in fixes should start from it rather than starting over.
+
+### CLAUDE.md still lists `skills/intune-graph/scripts/export_report.py:90` as a live landmine - OPEN (filed 2026-09-24, PM)
+
+crew:explorer reported on 2026-09-24 that 60c79407 (PR #210) fixed it (`_download` now stages writes through `mkstemp` and
+`os.replace`, `skills/intune-graph/scripts/export_report.py:136-243`). CLAUDE.md's truncating-`open` landmine still calls
+this "the live one" and says three unfixed files remain. Relayed, not re-read by the PM. A developer should re-run the AST scan that
+paragraph describes and correct the count. Deferred because CLAUDE.md is not the PM's to edit and the codemap refresh did not depend on it.
