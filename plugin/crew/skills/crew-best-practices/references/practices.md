@@ -144,7 +144,7 @@ reason: a clone inherits the context whose blind spots a review exists to find.
 Its recommended set is about eight: `/dev-docs`, `/catchup`, `/code-review`,
 `/build-and-fix`, `/test-route`, `/pr`.
 
-**crew:** departs — 26 commands. See the ADR. The short reason: crew's commands
+**crew:** departs — 34 commands.<!-- claim: plugin-commands:crew --> See the ADR. The short reason: crew's commands
 are gated workflows whose steps must not vary, not shortcuts.
 
 ## MCP
