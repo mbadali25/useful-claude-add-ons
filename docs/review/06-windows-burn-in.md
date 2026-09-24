@@ -213,6 +213,60 @@ via `pwsh -File` / `powershell -File`. It does not test invocation through a `cm
 wrapper, which is the layer the original concern named. If that layer is the worry, it needs
 its own test.
 
+## 6 - landmines
+
+| Landmine | Result on this host |
+|---|---|
+| CRLF in `.sh` | **PASS** - 0 of 66 tracked `.sh` files carry CR in a clean checkout |
+| `pwsh` absent from Git Bash PATH | **does not reproduce** - resolves at `/c/Program Files/PowerShell/7/pwsh` |
+| python via `py` | **PASS** - `python`, `python3` and `py` all report 3.14.6 |
+| `MSYS_NO_PATHCONV` | reproduces, but **only in a narrow shape** - see below |
+
+### The `.sh` CRLF landmine does not reproduce in a clean checkout
+
+`.gitattributes` pins `*.sh text eol=lf` and it works: zero of 66 tracked `.sh` files carry
+a CR here. Measured by counting bytes (`tr -cd '\r' | wc -c`), not by matching `od` output.
+
+This is worth contrasting with the **`.py`/`.ps1`** case in the CRLF section above, which
+does fail - those extensions have no `.gitattributes` entry, so `core.autocrlf=true` gives
+them CRLF on checkout. The landmine is real for the file types nobody pinned, and closed for
+the one somebody did.
+
+### The WindowsApps alias FORWARDS when Python is installed - proven, not argued
+
+This is the fact the `role-write-guard` fix rests on, and it can be demonstrated directly:
+
+```
+first on PATH : C:\Users\...\AppData\Local\Microsoft\WindowsApps\python.exe
+executing it  : C:\Users\...\AppData\Local\Python\pythoncore-3.14-64\python.exe
+```
+
+The alias is first on PATH, it launches, and `sys.executable` reports the real pythoncore
+install behind it. So a resolver that rejects a candidate because its *path* contains
+`WindowsApps` discards a working interpreter. It is only a dead stub when Python is not
+installed at all - rejecting by path assumes the failing case.
+
+### `MSYS_NO_PATHCONV` needs BOTH a slash in the ref AND a dot-prefixed path
+
+The general warning ("git mangles colon arguments") is too broad and sends people setting
+the variable everywhere. Isolated here:
+
+| Command | Result |
+|---|---|
+| `git show HEAD:.crew/verify.json` | resolved |
+| `git show origin/crew-1.0:plugin/crew/hooks/hooks.json` | resolved |
+| `git show origin/crew-1.0:.crew/verify.json` | **MANGLED** |
+| `git cat-file blob origin/crew-1.0:<any path>` | resolved |
+
+So it takes a **ref containing a slash** *and* a **path beginning with a dot**, through
+`git show`. Either alone is fine, and `git cat-file blob` is immune in every combination
+tried. That matches the failure that bit this session earlier -
+`git show origin/main:.crew/codemap/X.md` became `origin\main;.crew\codemap\X.md` and every
+lookup silently reported "absent", which reads as a clean result rather than an error.
+
+The practical rule: prefer `git cat-file blob` for scripted reads, and set
+`MSYS_NO_PATHCONV=1` when a `git show` names both a remote-tracking ref and a dotfile path.
+
 ## Sections not yet run
 
 3 (memory/Obsidian), 4 (review/Codex), 5 (Word COM render), 6 (landmines), `/crew:verify
