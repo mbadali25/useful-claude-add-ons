@@ -11,6 +11,11 @@ session: **code-map slices** from `.crew/codemap/`, and **vault recall** from th
 `obsidian-vault` manages. This page shows how to prove, on your own machine, that recall reaches the
 main session *and* the subagents it dispatches, and that the model actually uses it.
 
+A third channel needs no hook: `/crew:onboard` and `/crew:migrate` generate
+`.claude/rules/<subsystem>.md` from the same code map, and Claude Code loads each rule when a file
+matching its `paths:` is read. This page does not test that channel; the drift check in
+`scripts/check_instructions.py` covers whether the rules match their notes.
+
 ## Which channel reaches which agent
 
 Measured on Claude Code 2.1.281 on 2026-09-23 with a canary per hook event (one `claude -p` run,

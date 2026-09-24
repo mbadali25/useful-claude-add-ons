@@ -25,6 +25,16 @@ Preview writes nothing. Show me its output verbatim and point out:
   `retired.pm` and records in `crew.json` `notes` as "autopilot arrives in
   1.1.0". Say plainly that nothing will dispatch on its own until then.
 
+Then list the path-scoped rules apply will generate from the code map:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_instructions.py" rules --root . --check
+```
+
+It writes nothing. Each `missing:` or `stale:` line is a `.claude/rules/` file apply will write,
+each `orphan:` one it will remove, each `hand-written` line a file it will leave alone. Exit 1 here
+means only that there is something to generate.
+
 Then ask whether to apply. Do not apply in the same turn as the preview.
 
 ## Step 2 - apply (only after I say yes)
@@ -59,6 +69,16 @@ The full key-by-key table for `crew.json` is the docstring of
 other.
 
 Print the `backup:` line apply ends with. That path is the only way to undo it.
+
+Then generate the rules the preview listed, and show the output verbatim:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_instructions.py" rules --root .
+```
+
+A `hand-written, left alone` line is a collision to report, never to overwrite. These files are
+derived from `.crew/codemap/`, which migrate does not change, so they are outside the backup
+manifest and rollback leaves them; `/crew:onboard` regenerates them.
 
 ## Rollback
 

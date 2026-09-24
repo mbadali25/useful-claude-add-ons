@@ -31,9 +31,15 @@ gates, file by file:
                                  replacement for it)
     generated-file drift        crew_instructions.py --check, for any
                                  generated file this repo actually has
-                                 committed (none, at present -- crew's
-                                 generators target a CONSUMING repo, not this
-                                 marketplace)
+                                 committed: every .claude/rules/*.md against
+                                 its codemap note's source hash (stale,
+                                 missing, orphaned), plus AGENTS.md and
+                                 .codex/. A hand-written file at a generated
+                                 path is reported under its own label, not as
+                                 drift. None committed here at present --
+                                 /crew:onboard and /crew:migrate generate them
+                                 in a CONSUMING repo -- so this is a no-op
+                                 here, and tested on fixtures
     stale names                 a maintained list of pre-1.0 names, scanned
                                  across every plugin/crew Markdown file (and
                                  AGENTS.md) by default -- an explicit,
@@ -461,6 +467,11 @@ def _tracked_generated_files() -> list[str]:
     return found
 
 
+# crew_instructions.py's `--check` wording for a hand-written file sitting at
+# a path a generated file needs (`_hand_written` there).
+HAND_WRITTEN_COLLISION = "hand-written file blocks generated output:"
+
+
 def check_generated_drift(fail) -> None:
     generated = _tracked_generated_files()
     if not generated:
@@ -479,8 +490,25 @@ def check_generated_drift(fail) -> None:
             [sys.executable, script, kind, "--root", ROOT, "--check"],
             capture_output=True, text=True, check=False,
         )
-        if done.returncode != 0:
-            fail(f"generated {kind}: drift - {done.stdout.strip() or done.stderr.strip()}")
+        if done.returncode == 0:
+            continue
+        lines = [line.strip() for line in done.stdout.splitlines() if line.strip()]
+        # A file with no crew:generated marker at a path generated output
+        # needs is not drift -- nothing generated it, so nothing went stale --
+        # and the generator never overwrites it. It still fails, because the
+        # rule that path should hold is absent, but under its own label so
+        # nobody "fixes" it by regenerating over someone's hand-written file.
+        collisions = [line for line in lines if line.startswith(HAND_WRITTEN_COLLISION)]
+        drift = [line for line in lines if line not in collisions
+                 and not line.startswith("hand-written, left alone")]
+        for line in collisions:
+            fail(f"generated {kind}: hand-written file, not drift - "
+                 f"{line[len(HAND_WRITTEN_COLLISION):].strip()} has no crew:generated "
+                 "marker, so crew_instructions.py will not overwrite it; rename it or "
+                 "resolve it by hand")
+        if drift or not collisions:
+            fail(f"generated {kind}: drift - "
+                 f"{'; '.join(drift) or done.stderr.strip() or 'exit ' + str(done.returncode)}")
 
 
 def _body_after_frontmatter(text: str) -> tuple[str, int]:

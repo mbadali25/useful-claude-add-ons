@@ -167,6 +167,19 @@ join between the schema and the code map: it answers "if I change this column,
 what breaks", which is the question a migration review turns on. Derive it from
 the graph where the graph can see it, and from grep where it cannot.
 
+## 6. Generate the path-scoped rules
+
+After any codemap note is written or refreshed, `--refresh` included, run:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_instructions.py" rules --root .
+```
+
+It writes `.claude/rules/<subsystem>.md` (≤30 lines, `paths:`-scoped, source hash) from each
+note. Report every `wrote` and `removed` line. A `hand-written, left alone` line is a collision:
+report it, never overwrite or rename it yourself. Commit the rules with the notes; CI checks them
+for drift.
+
 ## Then make the knowledge executable
 
 A code map describes; it does not verify. Onboarding is not finished until the
@@ -232,4 +245,4 @@ consequences before running it, not after:
   stale anchors) instead of repeating that status verbatim.
 
 Report any conflicts and any anchor left stale on purpose exactly as
-`/crew:upgrade` does — surfaced, not resolved.
+`/crew:upgrade` does — surfaced, not resolved. Then run step 6.

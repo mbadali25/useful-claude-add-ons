@@ -4031,3 +4031,8 @@ Enforced by the same hooks (approval receipts, scope guard, cloud guard, review 
 ### crew 1.0 web integration deferrals (filed 2026-09-23) - OPEN
 - `plugin/crew/README.md` command table: 32 rows vs 34 claimed; add `/crew:debug`, `/crew:split`.
 - `scripts/install-prerequisites.sh:1050` / `.ps1:887` "25-skill item" comment: unclear referent; verify or remove (both scripts).
+
+### crew 1.0 generated-rules gap fix: deferrals (filed 2026-09-23) - OPEN
+- `plugin/crew/hooks/scripts/crew_instructions.py` `agents` and `codex` subcommands still have no caller in any command, skill or hook (only `rules` is wired, by `/crew:onboard` and `/crew:migrate`). `docs/review/04-redesign.md` "Codex parity" says hook delivery is probed at init, so `/crew:init` is the likely owner; the spec does not give AGENTS.md to migrate, so this fix did not.
+- `docs/guides/crew/src/memory-and-obsidian.md:258` still carries the placeholder line "(written by the context-hook ticket)" under "Confirming recall reaches your sessions"; the rules subsection was added below it, the placeholder is another ticket's.
+- `scripts/check_instructions.py` `check_generated_drift` is a no-op for a repo with a code map but no generated rule committed at all (never onboarded on 1.0), so "rules never generated" is not flagged; only drift of rules that exist is. Deliberate for this marketplace repo (no `.claude/rules/`), but a consuming repo gets no signal until its first generation.
