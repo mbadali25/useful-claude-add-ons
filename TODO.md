@@ -3972,3 +3972,35 @@ FIX: do not rely on a project-level profile for the reviewer's sandbox. Either
 pass the sandbox explicitly on the command line, or verify at launch that the
 profile took effect and refuse to review if it did not - a reviewer that cannot
 confirm its own restriction should fail closed, not proceed.
+
+### Local object store has 24 empty object files; branch `gizmoduck-ci-f2-fix` is unreadable - OPEN (filed 2026-09-24, PM)
+
+Measured by the PM on 2026-09-24 at main bc6a3a09: `find .git/objects -type f -empty | wc -l` = 24, and
+`git rev-parse refs/heads/gizmoduck-ci-f2-fix^{commit}` fails (`object file .git/objects/81/b347ba... is empty`).
+`git fetch origin` aborts on it (`fatal: bad object refs/heads/gizmoduck-ci-f2-fix`), so origin refs in this
+checkout are stale until it is fixed. `git ls-remote origin 'refs/heads/gizmoduck-ci*'` returns nothing, so
+that branch's commits exist nowhere else. No other local branch ref is broken. Deferred, not repaired: every
+repair (deleting the ref, pruning, `git gc`) destroys history and needs the owner's yes; the gizmoduck-ci
+work itself lives on `gizmoduck-ci` @ 3966cb5f per the 2026-09-24 handoff. Do NOT run `git gc`/`prune`
+before deciding. The empty files are most likely the result of a crash or a full disk mid-write; that cause was not verified.
+Update 2026-09-24: crew:developer found no intact copy anywhere on this machine (packs, all worktree reflogs, and the
+only other clone at `/root/.claude/plugins/marketplaces/useful-claude-add-ons`). The last reachable commit on that line is
+`9aab4d38` (`gizmoduck-ci-f2`); the ref moved to 81b347ba without a reflog entry. All 24 empty objects have mtimes within
+one ~3 s window (1790224088-1790224091), so this looks like a single batch truncation, cause not investigated. `git fetch
+origin` still fails (exit 1) with or without `--negotiation-tip`. The ref delete is waiting on the owner's direct confirmation.
+Update 2026-09-24: the owner chose "recover, then delete"; with no copy found, the ref was deleted (`git update-ref -d`),
+and `git fetch origin` then exited 0. Still OPEN: the 24 empty objects remain and their cause is uninvestigated; there has been no gc/prune.
+
+### Stopped PM left 15 uncommitted edits in worktree `crew-1.0-burnin-fix4` - OPEN (filed 2026-09-24, PM)
+
+`.claude/worktrees/agent-a1576883b4819735f` (branch `crew-1.0-burnin-fix4` @ 72e9dead) is `locked` by
+pid 2363532, which is no longer running; `git status --porcelain` shows 15 modified paths under `plugin/crew/hooks/scripts/`,
+`plugin/crew/CONFIG.md` and `docs/guides/crew/src/`. This is most likely the partial burn-in fix work the
+2026-09-24 handoff says to check before re-dispatching FAILs 1-7. Nobody has reviewed it. Whoever picks up the burn-in fixes should start from it rather than starting over.
+
+### CLAUDE.md still lists `skills/intune-graph/scripts/export_report.py:90` as a live landmine - OPEN (filed 2026-09-24, PM)
+
+crew:explorer reported on 2026-09-24 that 60c79407 (PR #210) fixed it (`_download` now stages writes through `mkstemp` and
+`os.replace`, `skills/intune-graph/scripts/export_report.py:136-243`). CLAUDE.md's truncating-`open` landmine still calls
+this "the live one" and says three unfixed files remain. Relayed, not re-read by the PM. A developer should re-run the AST scan that
+paragraph describes and correct the count. Deferred because CLAUDE.md is not the PM's to edit and the codemap refresh did not depend on it.
