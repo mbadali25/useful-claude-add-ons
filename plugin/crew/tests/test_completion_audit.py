@@ -16,10 +16,16 @@ import pytest
 
 import context  # noqa: F401  pylint: disable=unused-import
 import completion_audit
+import crew_fixtures
 import crew_ticket
 from review_fixtures import git
-from scope_fixtures import (FLAVOURS, PWSH, SCRIPTS, make_repo, make_ticket, needs_pwsh,
-                            ready, run_hook, stop)
+from scope_fixtures import (FLAVOUR_MATRIX, FLAVOURS, PWSH, SCRIPTS, make_repo, make_ticket,
+                            needs_pwsh, ready, run_hook, stop)
+
+# Per-shell parity sample, run by default: the FLAVOURS tests (a block, an
+# allow, mode off, report mode's message on stdout), and a sample of each
+# wrapper-only table below. Every other `sh`/`ps1` case is `slow`
+# (FLAVOUR_MATRIX, crew_fixtures.sample_params; see conftest.py).
 
 _AUDIT = os.path.join(SCRIPTS, "completion_audit.py")
 
@@ -46,7 +52,7 @@ def test_a_shell_made_out_of_scope_file_blocks_the_stop(flavour, repo):
     assert len(err.strip().splitlines()) <= 6
 
 
-@pytest.mark.parametrize("flavour", FLAVOURS)
+@pytest.mark.parametrize("flavour", FLAVOUR_MATRIX)
 def test_a_committed_out_of_scope_change_blocks_the_stop(flavour, repo):
     ready(repo)
     (repo / "other" / "keep.py").write_text("x = 2\n", encoding="utf-8")
@@ -57,7 +63,7 @@ def test_a_committed_out_of_scope_change_blocks_the_stop(flavour, repo):
     assert (code, "other/keep.py" in err) == (2, True)
 
 
-@pytest.mark.parametrize("flavour", FLAVOURS)
+@pytest.mark.parametrize("flavour", FLAVOUR_MATRIX)
 def test_a_rename_out_of_scope_blocks_the_stop(flavour, repo):
     ready(repo)
     git(repo, "mv", "src/app.py", "other/app.py")
@@ -67,7 +73,7 @@ def test_a_rename_out_of_scope_blocks_the_stop(flavour, repo):
     assert (code, "other/app.py" in err) == (2, True)
 
 
-@pytest.mark.parametrize("flavour", FLAVOURS)
+@pytest.mark.parametrize("flavour", FLAVOUR_MATRIX)
 def test_a_rename_from_out_of_scope_into_scope_blocks_too(flavour, repo):
     ready(repo)
     git(repo, "mv", "other/keep.py", "src/keep.py")
@@ -77,7 +83,7 @@ def test_a_rename_from_out_of_scope_into_scope_blocks_too(flavour, repo):
     assert (code, "other/keep.py" in err) == (2, True)
 
 
-@pytest.mark.parametrize("flavour", FLAVOURS)
+@pytest.mark.parametrize("flavour", FLAVOUR_MATRIX)
 def test_changes_under_a_stale_approval_block(flavour, repo):
     ready(repo)
     (repo / "src" / "app.py").write_text("x = 3\n", encoding="utf-8")
@@ -99,7 +105,7 @@ def test_a_staged_out_of_scope_deletion_blocks(repo):
     assert (code, "other/keep.py" in err) == (2, True)
 
 
-@pytest.mark.parametrize("flavour", FLAVOURS)
+@pytest.mark.parametrize("flavour", FLAVOUR_MATRIX)
 def test_a_cli_approval_does_not_make_touch_approved(flavour, repo):
     make_ticket(repo)
     crew_ticket.approve(str(repo), "T-1", by="session")
@@ -110,7 +116,7 @@ def test_a_cli_approval_does_not_make_touch_approved(flavour, repo):
     assert (code, "/crew:approve T-1" in err) == (2, True)
 
 
-@pytest.mark.parametrize("flavour", FLAVOURS)
+@pytest.mark.parametrize("flavour", FLAVOUR_MATRIX)
 def test_a_broken_active_ticket_pointer_blocks_the_stop(flavour, repo):
     pointer = pathlib.Path(crew_ticket.common_dir(str(repo)), "crew", "active-ticket")
     pointer.parent.mkdir(parents=True, exist_ok=True)
@@ -121,7 +127,7 @@ def test_a_broken_active_ticket_pointer_blocks_the_stop(flavour, repo):
     assert (code, "pointer is broken" in err) == (2, True)
 
 
-@pytest.mark.parametrize("flavour", FLAVOURS)
+@pytest.mark.parametrize("flavour", FLAVOUR_MATRIX)
 def test_a_filename_with_newlines_cannot_add_lines(flavour, repo):
     ready(repo)
     for number in range(12):
@@ -152,10 +158,10 @@ def test_the_audit_lists_paths_without_building_the_review_bundle(repo, monkeypa
 
 
 @pytest.mark.parametrize("shell", ["sh", "ps1"])
-@pytest.mark.parametrize("spacing", [
+@pytest.mark.parametrize("spacing", crew_fixtures.sample_params([
     pytest.param('"stop_hook_active":  true', id="two-spaces"),
     pytest.param('"stop_hook_active"\n:\ttrue', id="newline-tab"),
-    pytest.param('"stop_hook_active" :\r\n true', id="crlf")])
+    pytest.param('"stop_hook_active" :\r\n true', id="crlf")], {"newline-tab"}))
 def test_stop_hook_active_is_seen_in_any_json_whitespace_even_when_python_crashes(
         tmp_path, shell, spacing):
     if shell == "ps1" and PWSH is None:
@@ -197,7 +203,7 @@ def test_in_scope_changes_pass_silently(flavour, repo):
     assert (code, out, err) == (0, "", "")
 
 
-@pytest.mark.parametrize("flavour", FLAVOURS)
+@pytest.mark.parametrize("flavour", FLAVOUR_MATRIX)
 def test_stop_hook_active_never_re_blocks(flavour, repo):
     ready(repo)
     (repo / "other" / "made-by-sed.py").write_text("y = 2\n", encoding="utf-8")
@@ -230,7 +236,7 @@ def test_report_mode_allows_the_stop_and_says_so(flavour, tmp_path):
     assert "other/made-by-sed.py" in json.loads(out)["systemMessage"]
 
 
-@pytest.mark.parametrize("flavour", FLAVOURS)
+@pytest.mark.parametrize("flavour", FLAVOUR_MATRIX)
 def test_no_active_ticket_is_not_audited(flavour, repo):
     make_ticket(repo, activate=False)
     (repo / "other" / "made-by-sed.py").write_text("y = 2\n", encoding="utf-8")
@@ -422,6 +428,9 @@ _CONFIGS = [
                  '  }\n}\n', 2, 0, id="off-template-bom"),
     pytest.param(None, 0, 0, id="absent"),
 ]
+# By default: `off` (the one row bash and pwsh answer differently) and
+# `corrupt` (fails closed in both); the other rows are `slow`.
+_CONFIGS_SHELL = crew_fixtures.sample_params(_CONFIGS, {"off", "corrupt"})
 
 
 def _run_config(tmp_path, stem, shell, config, python):
@@ -439,7 +448,7 @@ def _run_config(tmp_path, stem, shell, config, python):
 
 @pytest.mark.parametrize("stem", _WRAPPERS)
 @pytest.mark.parametrize("shell", ["sh", "ps1"])
-@pytest.mark.parametrize("config,sh_expected,ps1_expected", _CONFIGS)
+@pytest.mark.parametrize("config,sh_expected,ps1_expected", _CONFIGS_SHELL)
 def test_a_crashed_python_fails_closed_unless_scope_is_provably_off(tmp_path, stem, shell,
                                                                     config, sh_expected,
                                                                     ps1_expected):
@@ -453,7 +462,7 @@ def test_a_crashed_python_fails_closed_unless_scope_is_provably_off(tmp_path, st
 
 @pytest.mark.parametrize("stem", _WRAPPERS)
 @pytest.mark.parametrize("shell", ["sh", "ps1"])
-@pytest.mark.parametrize("config,sh_expected,ps1_expected", _CONFIGS)
+@pytest.mark.parametrize("config,sh_expected,ps1_expected", _CONFIGS_SHELL)
 def test_no_python_fails_closed_unless_scope_is_provably_off(tmp_path, stem, shell, config,
                                                              sh_expected, ps1_expected):
     if shell == "ps1" and PWSH is None:
@@ -467,7 +476,10 @@ def test_no_python_fails_closed_unless_scope_is_provably_off(tmp_path, stem, she
 @pytest.mark.parametrize("stem", _WRAPPERS)
 @pytest.mark.parametrize("shell", ["sh", "ps1"])
 @pytest.mark.parametrize("mode,sh_expected,ps1_expected",
-                         [("block", 2, 2), ("auto", 2, 2), ("off", 2, 0)])
+                         crew_fixtures.sample_params(
+                             [pytest.param("block", 2, 2, id="block-2-2"),
+                              pytest.param("auto", 2, 2, id="auto-2-2"),
+                              pytest.param("off", 2, 0, id="off-2-0")], {"off-2-0"}))
 def test_a_crashed_python_fails_closed_only_where_scope_is_armed(tmp_path, stem, shell,
                                                                  mode, sh_expected,
                                                                  ps1_expected):

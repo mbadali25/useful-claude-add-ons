@@ -15,8 +15,11 @@ import pytest
 import context  # noqa: F401  pylint: disable=unused-import
 import approval_hook
 import crew_ticket
-from scope_fixtures import (FLAVOURS, PWSH, SCRIPTS, common_dir, make_repo, make_ticket,
-                            prompt, run_hook)
+from scope_fixtures import (FLAVOUR_MATRIX, FLAVOURS, PWSH, SCRIPTS, common_dir, make_repo,
+                            make_ticket, prompt, run_hook)
+
+# FLAVOURS tests are the per-shell parity sample (a receipt recorded, a block,
+# a malformed payload refused); FLAVOUR_MATRIX tests run `sh`/`ps1` as `slow`.
 
 
 def _hook(flavour, root, payload):
@@ -97,7 +100,7 @@ def test_a_malformed_approve_prompt_is_refused(repo, text):
 
 # --- must-allow, recording nothing -------------------------------------------------------
 
-@pytest.mark.parametrize("flavour", FLAVOURS)
+@pytest.mark.parametrize("flavour", FLAVOUR_MATRIX)
 @pytest.mark.parametrize("text", ["please look at the widget",
                                   "should I run /crew:approve T-1 now?",
                                   "`/crew:approve T-1`"])
@@ -122,7 +125,7 @@ def test_a_malformed_payload_naming_the_command_is_refused(flavour, repo, raw):
     assert (code, "NOT recorded" in err, _receipt(repo)) == (2, True, None)
 
 
-@pytest.mark.parametrize("flavour", FLAVOURS)
+@pytest.mark.parametrize("flavour", FLAVOUR_MATRIX)
 def test_a_malformed_payload_not_naming_the_command_passes(flavour, repo):
     make_ticket(repo)
 

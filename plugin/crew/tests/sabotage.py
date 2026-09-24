@@ -2954,10 +2954,16 @@ def run_test(target):
     intermittent "STILL GREEN" for a mutation that goes red on every
     isolated re-run. Never writing bytecode removes the cache entirely
     rather than trying to invalidate it correctly.
+
+    `--run-slow`: many targets name a bash or pwsh driver case, which the
+    default run deselects (conftest.py). Without it such a target collects
+    nothing and exits 5, which is not 1 -- a mutation it would have caught
+    would read as surviving.
     """
     env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1")
     completed = subprocess.run(
-        [sys.executable, "-m", "pytest", target, "-q", "--no-header", "-x"],
+        [sys.executable, "-m", "pytest", target, "-q", "--no-header", "-x",
+         "--run-slow"],
         cwd=CREW, capture_output=True, text=True, check=False, env=env)
     return completed.returncode, completed.stdout + completed.stderr
 

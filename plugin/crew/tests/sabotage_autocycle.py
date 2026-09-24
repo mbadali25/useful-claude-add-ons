@@ -174,8 +174,10 @@ AUTOCYCLE_MUTATIONS = (
 
 def run_test(target):
     env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1")
+    # --run-slow: a target naming a bash/pwsh case is deselected by default
+    # (conftest.py) and would exit 5, not 1, however the mutation behaved.
     done = subprocess.run([sys.executable, "-m", "pytest", target, "-q", "--no-header", "-x",
-                           "-p", "no:cacheprovider"],
+                           "-p", "no:cacheprovider", "--run-slow"],
                           cwd=CREW, capture_output=True, text=True, check=False, env=env)
     return done.returncode
 

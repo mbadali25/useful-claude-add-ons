@@ -20,7 +20,12 @@ from review_fixtures import git, init_repo
 
 SCRIPTS = os.path.join(context._ROOT, "hooks", "scripts")  # pylint: disable=protected-access
 PWSH = crew_fixtures.resolve_pwsh()
+# FLAVOURS runs all three by default: the per-shell parity sample uses it.
+# FLAVOUR_MATRIX runs the module by default and `sh`/`ps1` as `slow`
+# (conftest.py) -- every other flavoured test uses it. The ids are the same.
 FLAVOURS = ("module", "sh", "ps1")
+FLAVOUR_MATRIX = ("module", pytest.param("sh", marks=crew_fixtures.SLOW),
+                  pytest.param("ps1", marks=crew_fixtures.SLOW))
 
 needs_pwsh = pytest.mark.skipif(PWSH is None, reason="pwsh not installed - the .ps1 "
                                 "flavour was NOT run")

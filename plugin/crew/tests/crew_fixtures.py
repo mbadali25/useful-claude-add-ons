@@ -11,6 +11,8 @@ import subprocess
 import sys
 import tempfile
 
+import pytest
+
 # Sentinel exit code for the bash probe. Any value a failing-to-launch bash
 # would not produce on its own: 127 is "command not found", 126 is "found but
 # not executable", 1 and 2 are ordinary script failures.
@@ -135,6 +137,40 @@ def resolve_pwsh():
         print("crew tests: no pwsh - the '.ps1' flavour is SKIPPED, not "
               "failed.", file=sys.stderr)
     return _PWSH
+
+
+# The full per-shell matrix. `conftest.py` registers the marker and deselects
+# it from a default run; `pytest -m slow` or `--run-slow` runs it. Only the
+# bash and pwsh drivers of a decision case carry it: the python driver runs
+# every case by default, and the wrappers only pass stdin, the exit code and
+# stdout through to that same module. On Windows each shell case costs one
+# process creation plus a python start inside it (0.8-1.4 s a case measured
+# by docs/review/06-windows-burn-in.md), which is what made the default run
+# unfinishable there.
+SLOW = pytest.mark.slow
+
+
+def parity_sample(cases, ids, keep, marks=()):
+    """`cases` as pytest params for a bash or pwsh driver: the ids in `keep`
+    run by default -- the parity sample -- and every other case is `slow`.
+
+    `keep` naming an id the table lacks raises at collection, so renaming a
+    case cannot quietly empty the sample."""
+    missing = set(keep) - set(ids)
+    assert not missing, f"parity sample names unknown case(s): {sorted(missing)}"
+    return [pytest.param(case, id=case_id,
+                         marks=tuple(marks) + (() if case_id in keep else (SLOW,)))
+            for case, case_id in zip(cases, ids)]
+
+
+def sample_params(params, keep):
+    """`parity_sample` for a list that is already `pytest.param`s: those
+    whose id is in `keep` keep their marks, every other one gains `slow`."""
+    missing = set(keep) - {p.id for p in params}
+    assert not missing, f"parity sample names unknown case(s): {sorted(missing)}"
+    return [pytest.param(*p.values, id=p.id,
+                         marks=tuple(p.marks) + (() if p.id in keep else (SLOW,)))
+            for p in params]
 
 
 def _git(root, *args):

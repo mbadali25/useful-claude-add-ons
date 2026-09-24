@@ -13,10 +13,13 @@ import pytest
 
 import context  # noqa: F401  pylint: disable=unused-import
 import crew_ticket
-from scope_fixtures import (FLAVOURS, common_dir, edit, make_repo, make_ticket, ready,
-                            run_hook)
+from scope_fixtures import (FLAVOUR_MATRIX, FLAVOURS, common_dir, edit, make_repo,
+                            make_ticket, ready, run_hook)
 
-pytestmark = pytest.mark.parametrize("flavour", FLAVOURS)
+# Every test runs the module flavour by default. Five run `sh` and `ps1` by
+# default too -- the per-shell parity sample: a block, an allow, a malformed
+# payload refused, mode off, and report mode's message on stdout. Every other
+# test's shell flavours are `slow` (FLAVOUR_MATRIX; see conftest.py).
 
 
 def _guard(flavour, root, payload):
@@ -30,6 +33,7 @@ def _repo(tmp_path):
 
 # --- must-block -----------------------------------------------------------------
 
+@pytest.mark.parametrize("flavour", FLAVOURS)
 def test_edit_with_no_approved_plan_is_blocked(flavour, repo):
     make_ticket(repo)
 
@@ -38,6 +42,7 @@ def test_edit_with_no_approved_plan_is_blocked(flavour, repo):
     assert (code, "no approved plan" in err) == (2, True)
 
 
+@pytest.mark.parametrize("flavour", FLAVOUR_MATRIX)
 def test_edit_after_the_spec_changed_is_blocked_as_stale(flavour, repo):
     ready(repo)
     spec = repo / ".work" / "tickets" / "T-1" / "spec.md"
@@ -48,6 +53,7 @@ def test_edit_after_the_spec_changed_is_blocked_as_stale(flavour, repo):
     assert (code, "spec.md changed since approval" in err) == (2, True)
 
 
+@pytest.mark.parametrize("flavour", FLAVOUR_MATRIX)
 def test_edit_after_the_plan_changed_is_blocked_as_stale(flavour, repo):
     ready(repo)
     plan = repo / ".work" / "tickets" / "T-1" / "plan.md"
@@ -58,6 +64,7 @@ def test_edit_after_the_plan_changed_is_blocked_as_stale(flavour, repo):
     assert (code, "plan.md changed since approval" in err) == (2, True)
 
 
+@pytest.mark.parametrize("flavour", FLAVOUR_MATRIX)
 @pytest.mark.parametrize("tool", ["Write", "Edit", "MultiEdit", "NotebookEdit"])
 def test_a_path_outside_touch_is_blocked_for_every_editing_tool(flavour, repo, tool):
     ready(repo)
@@ -67,6 +74,7 @@ def test_a_path_outside_touch_is_blocked_for_every_editing_tool(flavour, repo, t
     assert (code, "outside T-1's spec ## Touch" in err) == (2, True)
 
 
+@pytest.mark.parametrize("flavour", FLAVOUR_MATRIX)
 def test_a_relative_path_outside_touch_is_blocked(flavour, repo):
     ready(repo)
 
@@ -75,6 +83,7 @@ def test_a_relative_path_outside_touch_is_blocked(flavour, repo):
     assert code == 2
 
 
+@pytest.mark.parametrize("flavour", FLAVOUR_MATRIX)
 def test_a_symlink_inside_touch_pointing_out_of_scope_is_blocked(flavour, repo):
     ready(repo)
     os.symlink(repo / "secret" / "x.py", repo / "src" / "link.py")
@@ -84,6 +93,7 @@ def test_a_symlink_inside_touch_pointing_out_of_scope_is_blocked(flavour, repo):
     assert (code, "secret/x.py" in err) == (2, True)
 
 
+@pytest.mark.parametrize("flavour", FLAVOUR_MATRIX)
 def test_a_symlink_outside_touch_pointing_into_scope_is_blocked(flavour, repo):
     ready(repo)
     os.symlink(repo / "src" / "app.py", repo / "other" / "link.py")
@@ -93,6 +103,7 @@ def test_a_symlink_outside_touch_pointing_into_scope_is_blocked(flavour, repo):
     assert (code, "other/link.py" in err) == (2, True)
 
 
+@pytest.mark.parametrize("flavour", FLAVOUR_MATRIX)
 def test_a_symlinked_directory_into_scope_does_not_launder_an_outside_name(flavour, repo):
     ready(repo)
     os.symlink(repo / "src", repo / "other" / "srcdir")
@@ -102,6 +113,7 @@ def test_a_symlinked_directory_into_scope_does_not_launder_an_outside_name(flavo
     assert code == 2
 
 
+@pytest.mark.parametrize("flavour", FLAVOUR_MATRIX)
 def test_dotdot_traversal_out_of_touch_is_blocked(flavour, repo):
     ready(repo)
 
@@ -111,6 +123,7 @@ def test_dotdot_traversal_out_of_touch_is_blocked(flavour, repo):
     assert (code, "secret/x.py" in err) == (2, True)
 
 
+@pytest.mark.parametrize("flavour", FLAVOUR_MATRIX)
 def test_dotdot_through_a_symlink_resolves_where_the_os_does(flavour, repo):
     ready(repo)
     (repo / "secret" / "deep").mkdir()
@@ -121,6 +134,7 @@ def test_dotdot_through_a_symlink_resolves_where_the_os_does(flavour, repo):
     assert code == 2
 
 
+@pytest.mark.parametrize("flavour", FLAVOUR_MATRIX)
 @pytest.mark.parametrize("rel", [
     ("crew", "tickets", "T-1", "approval.json"),
     ("crew", "review", "T-1.json"),
@@ -135,6 +149,7 @@ def test_writes_to_approval_and_ledger_state_are_blocked(flavour, repo, rel):
     assert (code, "approval/ledger state" in err) == (2, True)
 
 
+@pytest.mark.parametrize("flavour", FLAVOUR_MATRIX)
 def test_approval_state_is_blocked_even_in_report_mode(flavour, tmp_path):
     root = make_repo(tmp_path, mode="report")
     ready(root)
@@ -145,6 +160,7 @@ def test_approval_state_is_blocked_even_in_report_mode(flavour, tmp_path):
     assert code == 2
 
 
+@pytest.mark.parametrize("flavour", FLAVOUR_MATRIX)
 def test_approval_state_is_blocked_with_no_active_ticket(flavour, repo):
     target = os.path.join(common_dir(repo), "crew", "tickets", "T-9", "approval.json")
 
@@ -153,6 +169,7 @@ def test_approval_state_is_blocked_with_no_active_ticket(flavour, repo):
     assert code == 2
 
 
+@pytest.mark.parametrize("flavour", FLAVOUR_MATRIX)
 def test_the_scope_base_record_is_blocked(flavour, repo):
     ready(repo, touch=(".crew/**", "src/**"))
 
@@ -161,6 +178,7 @@ def test_the_scope_base_record_is_blocked(flavour, repo):
     assert code == 2
 
 
+@pytest.mark.parametrize("flavour", FLAVOUR_MATRIX)
 @pytest.mark.parametrize("rel", [".crew/config.json", "TODO.md", ".claude/settings.json",
                                  ".work/INDEX.md", ".work/tickets/T-2/spec.md"])
 def test_crew_policy_and_bookkeeping_files_have_no_blanket_exemption(flavour, repo, rel):
@@ -171,6 +189,7 @@ def test_crew_policy_and_bookkeeping_files_have_no_blanket_exemption(flavour, re
     assert code == 2
 
 
+@pytest.mark.parametrize("flavour", FLAVOUR_MATRIX)
 def test_the_git_directory_is_never_in_scope(flavour, repo):
     ready(repo, touch=("**",))
 
@@ -179,6 +198,7 @@ def test_the_git_directory_is_never_in_scope(flavour, repo):
     assert code == 2
 
 
+@pytest.mark.parametrize("flavour", FLAVOUR_MATRIX)
 def test_a_payload_naming_no_path_is_blocked(flavour, repo):
     ready(repo)
 
@@ -188,6 +208,7 @@ def test_a_payload_naming_no_path_is_blocked(flavour, repo):
     assert code == 2
 
 
+@pytest.mark.parametrize("flavour", FLAVOURS)
 def test_an_unparseable_payload_under_block_is_refused(flavour, repo):
     ready(repo)
 
@@ -196,6 +217,7 @@ def test_an_unparseable_payload_under_block_is_refused(flavour, repo):
     assert code == 2
 
 
+@pytest.mark.parametrize("flavour", FLAVOUR_MATRIX)
 def test_a_corrupt_config_fails_closed(flavour, repo):
     ready(repo)
     (repo / ".crew" / "config.json").write_text("{", encoding="utf-8")
@@ -205,6 +227,7 @@ def test_a_corrupt_config_fails_closed(flavour, repo):
     assert (code, "does not parse" in err) == (2, True)
 
 
+@pytest.mark.parametrize("flavour", FLAVOUR_MATRIX)
 def test_block_messages_stay_within_six_lines(flavour, repo):
     ready(repo)
 
@@ -213,6 +236,7 @@ def test_block_messages_stay_within_six_lines(flavour, repo):
     assert 1 <= len(err.strip().splitlines()) <= 6
 
 
+@pytest.mark.parametrize("flavour", FLAVOUR_MATRIX)
 def test_a_cli_approval_does_not_open_touch(flavour, repo):
     make_ticket(repo)
     crew_ticket.approve(str(repo), "T-1", by="session")
@@ -222,6 +246,7 @@ def test_a_cli_approval_does_not_open_touch(flavour, repo):
     assert (code, "/crew:approve T-1" in err) == (2, True)
 
 
+@pytest.mark.parametrize("flavour", FLAVOUR_MATRIX)
 @pytest.mark.parametrize("entry", ["T-404", 7])
 def test_a_pointer_to_a_missing_ticket_is_refused_not_ignored(flavour, repo, entry):
     make_ticket(repo, "T-3", activate=False)
@@ -235,6 +260,7 @@ def test_a_pointer_to_a_missing_ticket_is_refused_not_ignored(flavour, repo, ent
     assert (code, "pointer is broken" in err) == (2, True)
 
 
+@pytest.mark.parametrize("flavour", FLAVOUR_MATRIX)
 def test_an_unparseable_payload_under_auto_past_the_ramp_is_refused(flavour, tmp_path):
     root = make_repo(tmp_path, mode="auto")
     for number in range(1, 11):
@@ -247,6 +273,7 @@ def test_an_unparseable_payload_under_auto_past_the_ramp_is_refused(flavour, tmp
     assert code == 2
 
 
+@pytest.mark.parametrize("flavour", FLAVOUR_MATRIX)
 @pytest.mark.parametrize("tool,command", [
     ("Bash", "python3 hooks/scripts/crew_ticket.py approve --ticket T-1"),
     ("Bash", "python3 -m crew_ticket --root . approve --ticket T-1"),
@@ -265,6 +292,7 @@ def test_a_shell_command_forging_approval_state_is_refused(flavour, repo, tool, 
     assert (code, "SCOPE GUARD" in err) == (2, True)
 
 
+@pytest.mark.parametrize("flavour", FLAVOUR_MATRIX)
 def test_a_shell_write_to_the_absolute_state_path_is_refused(flavour, repo):
     target = os.path.join(common_dir(repo), "crew", "scope-tickets.json")
 
@@ -276,6 +304,7 @@ def test_a_shell_write_to_the_absolute_state_path_is_refused(flavour, repo):
 
 # --- must-allow -------------------------------------------------------------------
 
+@pytest.mark.parametrize("flavour", FLAVOUR_MATRIX)
 @pytest.mark.parametrize("tool,command", [
     ("Bash", "ls -la"),
     ("Bash", "python3 hooks/scripts/crew_ticket.py status --ticket T-1"),
@@ -293,6 +322,7 @@ def test_ordinary_shell_commands_are_allowed(flavour, repo, tool, command):
     assert (code, out, err) == (0, "", "")
 
 
+@pytest.mark.parametrize("flavour", FLAVOUR_MATRIX)
 def test_a_forging_command_is_allowed_when_scope_is_off(flavour, tmp_path):
     root = make_repo(tmp_path, mode="off")
 
@@ -302,6 +332,7 @@ def test_a_forging_command_is_allowed_when_scope_is_off(flavour, tmp_path):
     assert code == 0
 
 
+@pytest.mark.parametrize("flavour", FLAVOUR_MATRIX)
 def test_a_cli_approval_opens_touch_when_the_config_allows_it(flavour, repo):
     (repo / ".crew" / "config.json").write_text(
         json.dumps({"scope": {"mode": "block", "allowCliApproval": True}}), encoding="utf-8")
@@ -313,6 +344,7 @@ def test_a_cli_approval_opens_touch_when_the_config_allows_it(flavour, repo):
     assert code == 0
 
 
+@pytest.mark.parametrize("flavour", FLAVOUR_MATRIX)
 def test_an_unparseable_payload_under_auto_within_the_ramp_is_allowed(flavour, tmp_path):
     root = make_repo(tmp_path, mode="auto")
     ready(root)
@@ -322,6 +354,7 @@ def test_an_unparseable_payload_under_auto_within_the_ramp_is_allowed(flavour, t
     assert code == 0
 
 
+@pytest.mark.parametrize("flavour", FLAVOURS)
 def test_an_in_scope_edit_with_an_approved_plan_is_allowed(flavour, repo):
     ready(repo)
 
@@ -330,6 +363,7 @@ def test_an_in_scope_edit_with_an_approved_plan_is_allowed(flavour, repo):
     assert (code, out, err) == (0, "", "")
 
 
+@pytest.mark.parametrize("flavour", FLAVOUR_MATRIX)
 def test_a_new_file_inside_touch_is_allowed(flavour, repo):
     ready(repo)
 
@@ -338,6 +372,7 @@ def test_a_new_file_inside_touch_is_allowed(flavour, repo):
     assert code == 0
 
 
+@pytest.mark.parametrize("flavour", FLAVOUR_MATRIX)
 @pytest.mark.parametrize("name", ["spec.md", "plan.md", "notes.md"])
 def test_the_tickets_own_files_are_allowed_even_unapproved(flavour, repo, name):
     make_ticket(repo)
@@ -348,6 +383,7 @@ def test_the_tickets_own_files_are_allowed_even_unapproved(flavour, repo, name):
     assert code == 0
 
 
+@pytest.mark.parametrize("flavour", FLAVOURS)
 def test_mode_off_allows_everything(flavour, tmp_path):
     root = make_repo(tmp_path, mode="off")
     make_ticket(root)
@@ -357,6 +393,7 @@ def test_mode_off_allows_everything(flavour, tmp_path):
     assert (code, out, err) == (0, "", "")
 
 
+@pytest.mark.parametrize("flavour", FLAVOUR_MATRIX)
 def test_no_scope_key_is_off(flavour, tmp_path):
     root = make_repo(tmp_path, mode=None)
     make_ticket(root)
@@ -366,6 +403,7 @@ def test_no_scope_key_is_off(flavour, tmp_path):
     assert code == 0
 
 
+@pytest.mark.parametrize("flavour", FLAVOURS)
 def test_report_mode_allows_logs_and_says_so(flavour, tmp_path):
     root = make_repo(tmp_path, mode="report")
     ready(root)
@@ -378,6 +416,7 @@ def test_report_mode_allows_logs_and_says_so(flavour, tmp_path):
     assert "\tscope\treport\treport\tT-1\t" in log
 
 
+@pytest.mark.parametrize("flavour", FLAVOUR_MATRIX)
 def test_no_active_ticket_is_allowed(flavour, repo):
     make_ticket(repo, activate=False)
 
@@ -386,6 +425,7 @@ def test_no_active_ticket_is_allowed(flavour, repo):
     assert code == 0
 
 
+@pytest.mark.parametrize("flavour", FLAVOUR_MATRIX)
 def test_a_tool_that_does_not_edit_is_not_judged(flavour, repo):
     make_ticket(repo)
 
@@ -395,6 +435,7 @@ def test_a_tool_that_does_not_edit_is_not_judged(flavour, repo):
     assert code == 0
 
 
+@pytest.mark.parametrize("flavour", FLAVOUR_MATRIX)
 def test_a_path_outside_the_worktree_is_not_a_repository_path(flavour, repo, tmp_path):
     ready(repo)
 
@@ -405,6 +446,7 @@ def test_a_path_outside_the_worktree_is_not_a_repository_path(flavour, repo, tmp
 
 # --- the ramp: report for the first ten tickets, then block --------------------------
 
+@pytest.mark.parametrize("flavour", FLAVOUR_MATRIX)
 def test_auto_reports_for_the_first_ten_tickets_then_blocks(flavour, tmp_path):
     root = make_repo(tmp_path, mode="auto")
     for number in range(1, 11):
@@ -422,6 +464,7 @@ def test_auto_reports_for_the_first_ten_tickets_then_blocks(flavour, tmp_path):
 
 # --- one read of spec.md: approval and Touch from the same bytes ------------------
 
+@pytest.mark.parametrize("flavour", FLAVOUR_MATRIX)
 def test_touch_is_judged_from_the_bytes_the_approval_hashed(flavour, repo, monkeypatch):
     if flavour != "module":
         pytest.skip("in-process: the race is staged by replacing read_contract")

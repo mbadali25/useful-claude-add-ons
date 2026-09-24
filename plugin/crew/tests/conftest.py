@@ -53,3 +53,46 @@ def _no_real_global_config(tmp_path, monkeypatch):
     # afterwards (`monkeypatch.setenv`, or an explicit `env=` for a subprocess)
     # and that still wins; this only removes the ambient value nobody declared.
     monkeypatch.delenv("CLAUDE_PROJECT_DIR", raising=False)
+
+
+# --- the `slow` marker: the full per-shell hook matrix ------------------------
+#
+# A conftest hook rather than `addopts = -m "not slow"`: this repo has no
+# pytest ini, and one at the root would reach every suite CI collects in the
+# same process (gizmoduck, the skills), while a `-m` given on the command line
+# REPLACES an addopts `-m` rather than combining with it. The hook touches only
+# items that carry the marker, and only crew's tests carry it.
+#
+#   pytest plugin/crew/tests               the slow set is deselected
+#   pytest plugin/crew/tests -m slow       only the slow set
+#   pytest plugin/crew/tests --run-slow    everything
+#
+# `-n auto` (pytest-xdist: optional, not a dependency) works with all three.
+
+
+def pytest_addoption(parser):
+    parser.addoption(
+        "--run-slow", action="store_true", default=False,
+        help="crew: also run tests marked `slow` (the full bash/pwsh hook "
+             "matrix). `-m slow` runs only those.")
+
+
+def pytest_configure(config):
+    config.addinivalue_line(
+        "markers",
+        "slow: the full bash/pwsh driver matrix for a hook; deselected by "
+        "default, run with -m slow or --run-slow")
+
+
+def pytest_collection_modifyitems(config, items):
+    """Deselect `slow` unless asked for, by `--run-slow` or by any `-m`
+    expression naming it -- so `-m slow` and `-m "slow and not pwsh"` both
+    select from the full set rather than from an already-emptied one."""
+    if config.getoption("--run-slow") or "slow" in (config.option.markexpr or ""):
+        return
+    keep, drop = [], []
+    for item in items:
+        (drop if item.get_closest_marker("slow") else keep).append(item)
+    if drop:
+        config.hook.pytest_deselected(items=drop)
+        items[:] = keep

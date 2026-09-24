@@ -188,11 +188,16 @@ def _repo(tmp_path, verify_map):
     return root
 
 
-def _run(flavour, root, *extra):
+def _run(flavour, root, *extra, scripts=None):
+    """`scripts`: run the gate from that copy of hooks/scripts instead of the
+    real one (the gate finds every sibling relative to itself)."""
+    sh, ps1 = ((_SH, _PS1) if scripts is None else
+               (os.path.join(scripts, "verify-gate.sh"),
+                os.path.join(scripts, "verify-gate.ps1")))
     if flavour == "sh":
-        cmd = [_BASH, _SH, *extra]
+        cmd = [_BASH, sh, *extra]
     else:
-        cmd = [_PWSH, "-NoProfile", "-NonInteractive", "-File", _PS1,
+        cmd = [_PWSH, "-NoProfile", "-NonInteractive", "-File", ps1,
                *[a.replace("--all", "-All") for a in extra]]
     return subprocess.run(
         cmd, input="{}", cwd=str(root),
@@ -1031,8 +1036,13 @@ def test_22_a_missing_verify_record_refuses_to_sync_and_advances_nothing(
     file's own verify_record.py renamed away on .sh) before writing this
     in. A DECLARED reach is used so classification itself needs no python
     call and the notice reliably prints on both flavours regardless."""
-    verify_record_path = os.path.join(_ROOT, "hooks", "scripts", "verify_record.py")
-    hidden_path = verify_record_path + ".hidden-for-test"
+    # A copy of hooks/scripts with verify_record.py removed -- never the real
+    # file renamed away, which every other test (and, under pytest-xdist,
+    # every other worker) running meanwhile would find missing too.
+    scripts = tmp_path / "scripts"
+    shutil.copytree(os.path.join(_ROOT, "hooks", "scripts"), scripts,
+                    ignore=shutil.ignore_patterns("_test", "__pycache__"))
+    (scripts / "verify_record.py").unlink()
     vmap = {
         "version": 1,
         "rules": [{"paths": ["a.py"], "reach": "network", "run": ["echo remote"]}],
@@ -1040,11 +1050,7 @@ def test_22_a_missing_verify_record_refuses_to_sync_and_advances_nothing(
     }
     root = _repo(tmp_path, vmap)
     (root / "a.py").write_text("x", encoding="utf-8")
-    os.replace(verify_record_path, hidden_path)
-    try:
-        result = _run(flavour, root)
-    finally:
-        os.replace(hidden_path, verify_record_path)
+    result = _run(flavour, root, scripts=str(scripts))
     assert result.returncode == 0, result.stderr
     assert "declared reach: network" in result.stderr, result.stderr
     assert "could not sync the record" in result.stderr, (
