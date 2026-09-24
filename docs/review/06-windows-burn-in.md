@@ -175,6 +175,44 @@ is not, and I am not guessing it. Steps 3, 5 and 6 — where `/clear` lands, whi
 receives it with two tabs, whether alt-tab suppresses the send — remain **NOT RUN**, because
 nothing was ever sent to observe.
 
+## 5.1 vs 7 - the obsidian-vault probes. The `%d` concern is unfounded.
+
+Linux review flagged `%d` tokens that `cmd.exe` might rewrite. **It does not, and both
+PowerShell editions agree.** The tokens are real - one per file, all the same shape:
+
+```
+plugin/obsidian-vault/hooks/scripts/vault-guard.ps1:109
+  $probeArgs = '-c "import sys; v = sys.version_info; sys.stdout.write(''vault-guard-python:''
+               + ''%d:%d:%s:'' % (v[0], v[1], sys.implementation.name) + sys.executable)"'
+```
+
+Run under both editions, from the same host:
+
+| Probe | pwsh 7.6.6 | Windows PowerShell 5.1 |
+|---|---|---|
+| `bridge-status.ps1` | correct JSON, bridge UP, Local REST API 5.2.0 | **byte-identical** |
+| `vault-guard.ps1 -PrintPython` | `C:\Users\...\pythoncore-3.14-64\python.exe` | **identical** |
+| `vault-capture.ps1` | see note | see note |
+
+`vault-guard` resolving a real interpreter under both editions is the proof the review
+wanted: if `%d` were being rewritten, the probe string would not round-trip and the resolver
+would reject the candidate. It does not - it returns the same genuine interpreter either
+way, and it is the non-alias one.
+
+`bridge-status` returning byte-identical JSON under both is a second, independent
+confirmation on a different file carrying the same token.
+
+**`vault-capture` returned empty under both, and that was my error, not a defect.** It has
+no `-PrintPython` parameter - its param block is `param([string]$Trigger = 'unknown')`, so
+an unrecognised flag was ignored. Not a finding; recorded so the blank row above is not read
+as one.
+
+**Verdict: PASS on the specific question asked.** No `%d` rewriting under either edition.
+Worth stating what this does *not* cover: both probes were invoked directly from Git Bash
+via `pwsh -File` / `powershell -File`. It does not test invocation through a `cmd.exe`
+wrapper, which is the layer the original concern named. If that layer is the worry, it needs
+its own test.
+
 ## Sections not yet run
 
 3 (memory/Obsidian), 4 (review/Codex), 5 (Word COM render), 6 (landmines), `/crew:verify
