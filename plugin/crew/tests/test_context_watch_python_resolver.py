@@ -54,7 +54,9 @@ _NO_PYTHON = "no usable python"
 # both now write the handoff instruction and claim the same marker.
 _HANDOFF_MARKER = "write the handoff note to"
 
-_MARKER_REL = os.path.join(".crew", ".handoff-requested")
+# Keyed on the session since the auto-cycle fix; these payloads carry no
+# session_id, so this is the documented fallback key.
+_MARKER_REL = os.path.join(".crew", ".handoff-requested-nosession")
 
 
 def _real_python_dir():
@@ -113,7 +115,7 @@ def _run(root, path_entries, transcript_bytes, isolate_path=False,
         "transcript_path": str(transcript), "cwd": str(root),
         "stop_hook_active": stop_hook_active,
     })
-    env = os.environ.copy()
+    env = dict(os.environ, HOME=str(root), CREW_AUTOCLEAR_INHIBIT="1")
     entries = list(path_entries)
     if not isolate_path:
         entries.append(env.get("PATH", ""))

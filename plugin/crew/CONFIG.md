@@ -673,7 +673,7 @@ they are repo-only, and §16 says why. Defaults are identical in `default_config
 | `pm.authority` | see §5 | `"report-only"` |
 | `pm.ticketGranularity` | see §6 | `"system"` |
 | `pm.maxDispatches` | integer | `3` |
-| `context.autoClear.enabled` | boolean, see §14 | `true` |
+| `context.autoClear.enabled` | boolean or `null`; **only this global layer can turn it on** — a repo `false` switches it off, a repo `true` does nothing (`docs/guides/crew/src/auto-cycle.md`) | `null` (off) |
 | `context.autoClear.method` | string, see §14 | `"auto"` |
 | `context.autoClear.windowTitle` | string or `null`, see §14 | `null` |
 | `context.autoClear.command` | string | `"/clear"` |
@@ -754,7 +754,7 @@ repository or one checkout.
 | `context.reserveTokens` | integer or `null` | `0` | `context-watch.ps1` |
 | `context.handoffPath` | path | `".work/HANDOFF.md"` | `auto-clear.ps1` |
 | `context.keepTranscripts` | integer | `5` | `handoff-write.ps1` |
-| `context.autoClear.unsafeFocus` | boolean | `false` | `auto-clear.sh`, gating `wtype` — **consent, not capability**, see §14 |
+| `context.autoClear.unsafeFocus` | boolean | `false` | no longer read: `wtype` cannot identify a window, so `auto-clear.sh` refuses it whatever this says — **consent, not capability**, see §14 |
 | `context.autoWrapUp` | boolean | `true` | `context-watch.ps1`, `context-watch.sh` |
 | `context.autoResume` | boolean | `true` | nothing since 1.0.0 — the context hook injects the handoff on resume whenever `memory.inject` is on; kept so `/crew:migrate` carries it |
 | `context.staleHandoff.maxAgeHours` | integer | `72` | `crew_state.STALE_HANDOFF_DEFAULTS` |

@@ -84,7 +84,7 @@
     "handoffPath": ".work/HANDOFF.md",
     "keepTranscripts": 5,
     "autoClear": {
-      "enabled": true,
+      "enabled": null,
       "method": "auto",
       "windowTitle": null,
       "command": "/clear",

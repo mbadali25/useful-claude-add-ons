@@ -23,7 +23,39 @@ INPUT=$(cat)
 # prevent. Same idiom verify-gate.sh:48 uses for the same reason, deliberately
 # NOT a python-based read: it must work even when the interpreter that would
 # parse the JSON properly is the very thing that is broken.
-case "$INPUT" in *'"stop_hook_active": true'*|*'"stop_hook_active":true'*) exit 0 ;; esac
+#
+# stop_hook_active is also the ONE turn on which auto-clear matters: the block
+# below sends Claude back to write the handoff, and the Stop that follows that
+# forced continuation is the first moment the note exists. This hook used to
+# exit here unconditionally, so auto-clear only ran on the NEXT user turn's
+# Stop -- a cleared session needed the user to type something first, which is
+# most of why the cycle "worked when it worked". So this turn hands over to
+# auto-clear.sh (never blocks, never asks again) when THIS session has a
+# wrap-up marker, and does nothing else.
+STOP_ACTIVE=0
+case "$INPUT" in *'"stop_hook_active": true'*|*'"stop_hook_active":true'*) STOP_ACTIVE=1 ;; esac
+
+# The session this Stop belongs to. Every marker is keyed on it: the wrap-up
+# marker used to be one `.crew/.handoff-requested` per REPOSITORY, so two
+# terminals in one repo shared it -- the first to cross the threshold silenced
+# the other, and either one's SessionStart re-armed both. Same cheap
+# extraction as cwd below, for the same reason; the key keeps only
+# [A-Za-z0-9_-], matching crew_autocycle.session_key and the .ps1 twins.
+# Pure bash on purpose: nothing beyond grep/sed/awk may be needed before
+# python is resolved (test_context_watch_python_resolver's coreutils-only PATH).
+session_markers() {
+  local key="${1//[^A-Za-z0-9_-]/_}"
+  key="${key:0:100}"
+  SESSION_KEY="${key:-nosession}"
+  MARKER=".crew/.handoff-requested-${SESSION_KEY}"
+  SENT_MARKER=".crew/.autoclear-sent-${SESSION_KEY}"
+}
+SESSION_ID=""
+SESSION_RE='"session_id"[[:space:]]*:[[:space:]]*"([^"]*)"'
+if [[ "$INPUT" =~ $SESSION_RE ]]; then
+  SESSION_ID="${BASH_REMATCH[1]}"
+fi
+session_markers "$SESSION_ID"
 
 # `.crew/config.json`'s existence decides whether this hook does ANYTHING,
 # so it is checked BEFORE resolving python, not after -- a non-crew
@@ -48,11 +80,19 @@ CWD_RAW=$(printf '%s' "$INPUT" | grep -o '"cwd"[[:space:]]*:[[:space:]]*"[^"]*"'
 cd "${CWD_RAW:-${CLAUDE_PROJECT_DIR:-.}}" 2>/dev/null || exit 0
 [ -f .crew/config.json ] || exit 0
 
-# Loop safety, layer 2: once-per-session, cleared by handoff-read.sh at the
-# next SessionStart. Owned entirely by the REAL over-threshold nag further
-# down this file -- the no-python branch immediately below does NOT read or
-# write this, on purpose; see its own header comment for why.
-MARKER=".crew/.handoff-requested"
+if [ "$STOP_ACTIVE" = 1 ]; then
+  if [ -f "$MARKER" ]; then
+    bash "$(dirname "${BASH_SOURCE[0]}")/auto-clear.sh" --root "$PWD" --session "$SESSION_ID" 2>/dev/null
+  fi
+  exit 0
+fi
+
+# Loop safety, layer 2: once per session per threshold crossing ($MARKER,
+# keyed above), cleared by handoff-read.sh at this session's next
+# SessionStart and re-armed below when a trustworthy reading drops back under
+# the threshold. Owned entirely by the REAL over-threshold nag further down
+# this file -- the no-python branch immediately below does NOT read or write
+# it, on purpose; see its own header comment for why.
 
 # `crew_py_strict`, NOT `crew_py`. `crew_py`'s bare `command -v` accepts the
 # Windows Store App Execution Alias stub (a real, executable file that
@@ -147,6 +187,14 @@ fi
 
 read_json() { "$PY" -c 'import sys,json;d=json.load(sys.stdin);print(d.get(sys.argv[1],""))' "$1" <<< "$INPUT" 2>/dev/null; }
 TRANSCRIPT=$(read_json transcript_path)
+# The properly-parsed id wins over the grep above for what is RECORDED in the
+# marker; the key is recomputed from it so the two can never name different
+# files.
+PARSED_SESSION=$(read_json session_id | tr -d '\r')
+if [ -n "$PARSED_SESSION" ]; then
+  SESSION_ID="$PARSED_SESSION"
+  session_markers "$SESSION_ID"
+fi
 STOP_HOOK_ACTIVE=$(read_json stop_hook_active)
 [ -f "$TRANSCRIPT" ] || exit 0
 
@@ -216,15 +264,6 @@ fi
 read -r WARN_AT BUDGET HANDOFF ENABLED AUTO_WRAP_UP RESERVE <<< "$CFG"
 [ "$ENABLED" = "false" ] && exit 0
 
-if [ -f "$MARKER" ]; then
-  # The nag already happened. This is the turn on which the handoff may have
-  # just been written, which is the only moment auto-clear is interested in.
-  # It is off unless context.autoClear.enabled is true, and it decides for
-  # itself whether the note is complete enough to act on.
-  bash "$(dirname "${BASH_SOURCE[0]}")/auto-clear.sh" 2>/dev/null
-  exit 0
-fi
-
 # Read the ACTUAL window occupancy, not a guess at it.
 #
 # Every assistant turn in the transcript carries message.usage, and the last one
@@ -264,7 +303,11 @@ WINDOWS = (
 TIERS = (200_000, 500_000, 1_000_000, 2_000_000)
 
 SIDECHAIN = re.compile(r'"isSidechain"\s*:\s*true')
+# A compaction writes a boundary record; a usage record from before it
+# describes a window that no longer exists. See `trusted` below.
+BOUNDARY = re.compile(r'"compact_boundary"|"isCompactSummary"\s*:\s*true')
 last, model, peak, main_bytes = None, "", 0, 0
+last_at, boundary_at, lineno = -1, -1, 0
 try:
     with open(path, encoding="utf-8", errors="replace") as fh:
         for line in fh:
@@ -279,7 +322,10 @@ try:
             # count them either.
             if SIDECHAIN.search(line):
                 continue
+            lineno += 1
             main_bytes += len(line.encode("utf-8")) + 1
+            if BOUNDARY.search(line):
+                boundary_at = lineno
             if '"usage"' not in line:
                 continue
             try:
@@ -290,7 +336,7 @@ try:
             usage = msg.get("usage")
             if not isinstance(usage, dict) or "cache_read_input_tokens" not in usage:
                 continue
-            last = usage
+            last, last_at = usage, lineno
             if msg.get("model") and not msg["model"].startswith("<"):
                 model = msg["model"]
             peak = max(peak, usage.get("input_tokens", 0)
@@ -308,9 +354,10 @@ else:
     used, source = int(main_bytes / 4 * 0.75), "estimated"
 
 if configured > 0:
-    budget, how = configured, "configured"
+    budget, how, known = configured, "configured", True
 else:
     low = model.lower()
+    known = any(key in low for key, _ in WINDOWS)
     budget = next((w for key, w in WINDOWS if key in low), 200_000)
     how = f"auto:{model or 'unknown'}"
 
@@ -351,22 +398,57 @@ threshold = int(threshold)
 
 over = 1 if budget > 0 and used >= threshold else 0
 pct = int(used / budget * 100) if budget > 0 else 0
+
+# Whether this reading may license a /clear. It still drives the nag either
+# way -- asking for a handoff on a doubtful reading costs a paragraph -- but
+# auto-clear acts only on a reading that is a measurement of THIS window.
+# Unknown is its own value here, never folded into "fine".
+if source != "exact":
+    why = "estimated-from-transcript-size"
+elif not known:
+    why = "unknown-window"
+elif boundary_at > last_at:
+    why = "stale-reading-before-compaction"
+elif used <= 0 or used > budget:
+    why = "implausible-reading"
+else:
+    why = "measured"
+trusted = 1 if why == "measured" else 0
 fmt = lambda n: format(int(n), ",d")  # noqa: E731  pylint: disable=unnecessary-lambda-assignment
 print(used, source, budget, how, over, pct, fmt(used), fmt(budget),
       fmt(max(0, budget - used)), fmt(threshold), int(warn_at * 100),
-      fmt(reserve))
+      fmt(reserve), trusted, why)
 PY
 )
 [ -z "$READ" ] && exit 0
-read -r USED SOURCE BUDGET HOW OVER PCT_H USED_H BUDGET_H REMAIN_H THRESH_H WARN_PCT RESERVE_H <<< "$READ"
+read -r USED SOURCE BUDGET HOW OVER PCT_H USED_H BUDGET_H REMAIN_H THRESH_H WARN_PCT RESERVE_H TRUSTED WHY <<< "$READ"
 [ -z "$USED" ] || [ -z "$BUDGET" ] && exit 0
+
+if [ -f "$MARKER" ]; then
+  if [ "${OVER:-0}" -eq 0 ] && [ "$SOURCE" = "exact" ]; then
+    # A measured reading back under the threshold means the window shrank
+    # (a compaction) since the wrap-up: that crossing is over, so re-arm for
+    # the next one. Measured only -- an estimate must not re-arm a nag.
+    rm -f "$MARKER" "$SENT_MARKER"
+    exit 0
+  fi
+  # This crossing was already asked about. Never block twice for it; the
+  # handoff may have been written since, which is all auto-clear wants to
+  # know. It is off unless this machine opted in, and it decides for itself
+  # whether the note and the reading are good enough to act on.
+  bash "$(dirname "${BASH_SOURCE[0]}")/auto-clear.sh" --root "$PWD" --session "$SESSION_ID" 2>/dev/null
+  exit 0
+fi
 [ "${OVER:-0}" -eq 0 ] && exit 0
 
-# Claim the once-per-session gate ATOMICALLY. Both flavours are registered for
+# Claim the once-per-crossing gate ATOMICALLY. Both flavours are registered for
 # Stop and, on Windows with Git Bash installed, both actually run - a
 # test-then-touch would let both pass the check and emit the same warning
-# twice. noclobber makes the create fail for whichever loses.
-( set -o noclobber; : > "$MARKER" ) 2>/dev/null || exit 0
+# twice. noclobber makes the create fail for whichever loses. The marker
+# records WHICH session asked and the reading that caused it, so auto-clear
+# can refuse a reading nobody should trust.
+MARKER_JSON=$("$PY" -c 'import json,sys,time; print(json.dumps({"session_id": sys.argv[1], "requested_at": time.time(), "used": int(sys.argv[2]), "budget": int(sys.argv[3]), "source": sys.argv[4], "trusted": sys.argv[5] == "1", "why": sys.argv[6]}))' "$SESSION_ID" "$USED" "$BUDGET" "$SOURCE" "$TRUSTED" "$WHY" 2>/dev/null)
+( set -o noclobber; printf '%s\n' "$MARKER_JSON" > "$MARKER" ) 2>/dev/null || exit 0
 
 bash "$(dirname "$0")/notify.sh" waiting "context ${PCT_H}% - writing handoff" 2>/dev/null
 

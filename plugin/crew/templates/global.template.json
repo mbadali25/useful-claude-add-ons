@@ -64,7 +64,7 @@
   },
   "context": {
     "autoClear": {
-      "enabled": true,
+      "enabled": null,
       "method": "auto",
       "windowTitle": null,
       "command": "/clear",

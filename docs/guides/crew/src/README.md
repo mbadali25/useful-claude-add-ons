@@ -13,6 +13,7 @@ until its guide section exists (`docs/review/04-redesign.md`, "Guides").
 | 3a | Memory and Obsidian: confirming recall reaches your sessions | `memory-recall-proof.md` | T7 |
 | 4 | Working with Codex - `AGENTS.md`, profiles, review and hooks | `working-with-codex.md` | T6 |
 | 5 | Troubleshooting - stale installs, hook noise, review loops, turning things off | `troubleshooting.md` | T10 |
+| 5a | Auto wrap-up, clear and resume - the automatic context cycle, linked from guide 5 | `auto-cycle.md` | crew 1.0 autocycle |
 
 Ticket numbers follow the merged order in `docs/review/04-redesign.md`
 ("Ticket order"). That order and `04a`'s table number two tickets differently

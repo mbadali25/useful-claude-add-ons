@@ -38,13 +38,25 @@ _OVER_BYTES = 500
 _UNDER_BYTES = 100
 
 
+def _marker(root):
+    """The wrap-up marker for a payload with no session_id. Markers are keyed
+    on the session since the auto-cycle fix; these payloads carry none, so
+    the key is the documented fallback. test_auto_cycle.py owns the keying."""
+    return root / ".crew" / ".handoff-requested-nosession"
+
+
 def _run(flavor, root, transcript_path, stop_hook_active=False):
     payload = json.dumps({
         "transcript_path": str(transcript_path),
         "cwd": str(root),
         "stop_hook_active": stop_hook_active,
     })
-    env = dict(os.environ)
+    # A marker makes context-watch hand over to auto-clear, which reads the
+    # machine-global config under HOME. Point HOME at the fixture so the
+    # developer's real opt-in can never reach a test, and inhibit the
+    # keystroke besides.
+    env = dict(os.environ, HOME=str(root), USERPROFILE=str(root),
+               CREW_AUTOCLEAR_INHIBIT="1")
     if flavor == "sh":
         cmd = [_BASH, _SH]
     else:
@@ -153,7 +165,7 @@ def test_below_threshold_emits_nothing(flavor, tmp_path):
     result = _run(flavor, root, transcript)
     assert result.returncode == 0, result.stderr
     assert result.stderr.strip() == "", result.stderr
-    assert not (root / ".crew" / ".handoff-requested").exists()
+    assert not _marker(root).exists()
 
 
 @by_flavor
@@ -166,7 +178,7 @@ def test_above_threshold_auto_wrap_up_false_emits_existing_warning_only(
     assert result.returncode == 2, result.stderr
     assert "write the handoff note to" in result.stderr
     assert "Reach a stopping point" not in result.stderr
-    assert (root / ".crew" / ".handoff-requested").exists()
+    assert _marker(root).exists()
 
 
 @by_flavor
@@ -195,7 +207,7 @@ def test_above_threshold_auto_wrap_up_true_emits_wrap_up_instruction(
     assert "update the ticket" in result.stderr
     assert "ready to clear" in result.stderr
     assert "Do not start new work" in result.stderr
-    assert (root / ".crew" / ".handoff-requested").exists()
+    assert _marker(root).exists()
 
 
 @by_flavor
@@ -206,7 +218,7 @@ def test_stop_hook_active_emits_nothing_even_above_threshold(flavor, tmp_path):
     result = _run(flavor, root, transcript, stop_hook_active=True)
     assert result.returncode == 0, result.stderr
     assert result.stderr.strip() == "", result.stderr
-    assert not (root / ".crew" / ".handoff-requested").exists()
+    assert not _marker(root).exists()
 
 
 @by_flavor
@@ -242,7 +254,7 @@ def test_claude5_model_at_170k_does_not_fire(flavor, model, tmp_path):
     result = _run(flavor, root, transcript)
     assert result.returncode == 0, result.stderr
     assert result.stderr.strip() == "", result.stderr
-    assert not (root / ".crew" / ".handoff-requested").exists()
+    assert not _marker(root).exists()
 
 
 @by_flavor
@@ -289,7 +301,7 @@ def test_reserve_floor_defers_the_warning_on_a_large_window(flavor, tmp_path):
     result = _run(flavor, root, transcript)
     assert result.returncode == 0, result.stderr
     assert result.stderr.strip() == "", result.stderr
-    assert not (root / ".crew" / ".handoff-requested").exists()
+    assert not _marker(root).exists()
 
 
 @by_flavor

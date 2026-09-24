@@ -1437,66 +1437,83 @@ at once, and that's the real finding.
 
 Anything uncertain goes under **Verify first** rather than being asserted as done.
 
-### Auto-wrap-up is off by default
+### Auto-wrap-up (on by default since 0.19.52)
 
 `context.autoWrapUp` changes what the `Stop` hook says at `warnAt`, not
-whether it fires. Off (the default), it just asks you to write the handoff.
-On, it instructs the session to reach a stopping point — finish or safely
-abandon the change in flight, write the handoff, update the ticket — before
-telling you it's ready. **Either way, the `/clear` itself stays manual**,
-because no hook can trigger one: hooks run as child processes, and a child
-cannot reset its parent's conversation. `autoWrapUp` bounds what happens
-before you clear; it does not remove the clear.
+whether it fires. On (the default), it instructs the session to reach a
+stopping point — finish or safely abandon the change in flight, write the
+handoff, update the ticket — before telling you it's ready. Off, it just asks
+you to write the handoff.
 
-### Auto-clear (experimental, off by default)
+It blocks **once per threshold crossing per session**: keyed on the payload's
+`session_id`, never on a `stop_hook_active` continuation, and re-armed only
+when a measured reading drops back under the threshold (a compaction). It is
+the one blocking `Stop` crew keeps besides the verify gate, as a documented
+exception. The `/clear` that follows is yours to type unless this machine
+opted in to auto-clear, below.
+
+### Auto-clear (off by default, opt-in per machine)
 
 The correction at the top of this section stands: a hook cannot clear the
 conversation, because a hook is a child process and a child cannot reset its
 parent. `context.autoClear` does not contradict that. It does something else —
 it drives the **terminal**, typing `/clear` at the prompt the way you would.
 
-That is why it can work, and also why it is experimental: typing into a terminal
-is only safe if you know *which* terminal, and the available methods answer that
-question with very different confidence.
+Together with the wrap-up (above) and the resume (below) it is one cycle:
+**wrap-up → handoff → clear → resume**. The full user guide is
+`docs/guides/crew/src/auto-cycle.md`.
 
-| Method | How it finds the target | Confidence |
-|---|---|---|
-| `tmux` | `$TMUX_PANE`, by pane id | **Exact.** No focus involved. Use this if you can. |
-| `xdotool` | window title, then activates it | Steals focus. Right window if the title is right. |
-| `wtype` | types into whatever has focus | None. Wayland offers no way to check. Needs `unsafeFocus: true`. |
-| `windows` | SendKeys, title-checked at send time | Right window *if it still has focus* when the delay expires. |
+**It is a machine opt-in.** `enabled` is read from the machine-global
+`~/.claude/crew/config.json`; a repo's `.crew/config.json` can switch it
+*off* (`false`) but a repo `true` does not switch it on — the thing it drives is
+this machine's keyboard, and templates written since 0.19.52 carried `true` in
+every repo. The other keys layer normally, repo over machine.
 
 ```json
-"context": {
-  "autoClear": {
-    "enabled": false,
+{ "context": { "autoClear": {
+    "enabled": true,
     "method": "auto",
     "windowTitle": null,
     "command": "/clear",
     "delaySeconds": 3,
     "minHandoffLines": 5
-  }
-}
+} } }
 ```
 
-**In tmux this needs no configuration beyond `enabled: true`.** Everywhere else
-it needs `windowTitle`, and refuses without it rather than guessing.
+| Method | How it finds the target | Confidence |
+|---|---|---|
+| `tmux` | `$TMUX_PANE`, and only when that pane's pid is an ancestor of the hook | **Exact.** No focus involved. Use this if you can. |
+| `xdotool` | the one window owned by the nearest ancestor process; `windowTitle` narrows or, failing that, is a fallback that must match exactly one window | Activates that window id, re-checks it is active, then types. |
+| `windows` | the same rule through `EnumWindows`; at send time that exact window handle must have focus | Windows Terminal hosts every tab in one window — set `windowTitle`. |
+| `wtype` | cannot identify a window | **Refused**, whatever `unsafeFocus` says. |
 
 #### What has to be true before it types anything
 
-1. `context.autoClear.enabled` is exactly `true`. The string `"true"` is not.
-2. `context-watch` actually asked for a handoff this session.
-3. The handoff file exists and is **newer** than that request — a leftover note
-   from a previous session is not this session's note.
-4. It has at least `minHandoffLines` non-blank lines. Clearing on a two-line
-   placeholder loses the session's work and leaves a note that says "continue
-   the work", which is the worst of both outcomes.
-5. Nothing has claimed the one-per-session attempt yet.
+1. This machine opted in, as above.
+2. `context-watch` asked **this session** for a wrap-up. The marker is
+   `.crew/.handoff-requested-<session_id>` — it used to be one file per repo,
+   so two terminals shared it.
+3. The context reading behind that request was a measurement: not an estimate
+   from transcript size, not an unknown model window, not a reading from before
+   a compaction. A marker that is empty or not the hook's JSON — the shape of
+   the Windows low-context `/clear` — is unknown, and unknown never clears.
+4. The handoff exists, is **newer** than the request, has at least
+   `minHandoffLines` non-blank lines, and is not PreCompact's automatic skeleton.
+5. The target window is identified uniquely (the table above). Zero or several
+   candidates is a refusal, never a guess.
+6. Nothing has claimed this session's one attempt (`.crew/.autoclear-sent-<session_id>`).
 
 Fail any of those and it writes a line to `.crew/.autoclear.log` saying which,
 and does nothing. That log exists because a `Stop` hook's stderr is invisible
 when it exits 0, so without it "nothing happened" is indistinguishable from
 "the feature is broken".
+
+#### When it runs
+
+On the `Stop` that ends the forced continuation — the turn the wrap-up block
+sent back to write the handoff. `context-watch` never blocks on
+`stop_hook_active`, but it does hand that turn to auto-clear; before this it
+exited first, so the clear waited for your next message.
 
 #### The delay, and why it is not zero
 
@@ -1505,16 +1522,11 @@ and typing immediately types into nothing. The keystroke is handed to a detached
 child that sleeps first. Three seconds is usually enough; raise it on a slow
 machine. The parent exits 0 straight away so the turn is not held up.
 
-#### Two ways it can go wrong, stated plainly
+#### A `/clear` is not undoable
 
-- **On Windows, focus is the whole mechanism.** SendKeys goes to the foreground
-  window. The child re-checks the title immediately before typing, so alt-tabbing
-  during the delay means nothing is sent — but if you alt-tab to *another window
-  with a matching title*, that is where `/clear` lands. Keep the title specific.
-- **A `/clear` is not undoable.** With `minHandoffLines` set too low, or a
-  handoff the session wrote badly, you lose the context and keep a note that does
-  not replace it. Watch the first few, and read `.work/HANDOFF.md` before
-  trusting the next session to resume from it.
+With `minHandoffLines` set too low, or a handoff the session wrote badly, you
+lose the context and keep a note that does not replace it. Watch the first few,
+and read `.work/HANDOFF.md` before trusting the next session to resume from it.
 
 #### Try it without risking anything
 
@@ -1524,8 +1536,8 @@ pwsh -File ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/auto-clear.ps1 -DryRun -Force
 ```
 
 `--dry-run` prints the method, target, command and delay it *would* use and sends
-nothing. `--force` skips the handoff conditions so you can see the plan without
-being deep into a session. Neither consumes the one-per-session attempt.
+nothing. `--force` skips the handoff and reading conditions so you can see the
+plan without being deep into a session. Neither consumes the one attempt.
 
 If you run Claude Code in a tmux pane inside WSL, prefer the `.sh` flavour: it
 addresses a pane by id and never touches focus, which is strictly safer than

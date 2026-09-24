@@ -731,8 +731,13 @@ def build(root, payload, cfg, state, harness):
                 items.append({"id": "", "text": pointer, "source": {"kind": "handoff", "path": rel}})
             else:
                 budget, max_lines = RESUME_CHARS, None
-                body = handoff.strip()[: RESUME_CHARS - 600]
-                items.append({"id": "", "text": f"## Handoff from the previous session ({rel})\n{body}\n"
+                # The next action leads, and the body is cut to make room for
+                # it: the note is cut from the END, and "## Next action" is
+                # conventionally the last section, so a long note used to lose
+                # exactly the line auto-resume exists to carry.
+                lead = f"Next action: {action}\n" if action else ""
+                body = handoff.strip()[: RESUME_CHARS - 600 - len(lead)]
+                items.append({"id": "", "text": f"## Handoff from the previous session ({rel})\n{lead}{body}\n"
                               "The working tree is the source of truth; verify against git diff.",
                               "source": {"kind": "handoff", "path": rel}})
         query = next_action(handoff) if handoff else ""

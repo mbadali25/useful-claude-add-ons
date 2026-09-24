@@ -23,6 +23,7 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 
 import pytest
 
@@ -73,53 +74,92 @@ def _stub(directory, name, body="#!/bin/sh\nexit 0\n"):
     return path
 
 
+SESSION = "sess-1"
+SENT = ".autoclear-sent-" + SESSION
+REQUESTED = ".handoff-requested-" + SESSION
+
+
+def _write_machine(root, enabled):
+    """`enabled` is a MACHINE opt-in: it is read from the global file under
+    HOME, which `_run` points at `<tmp>/home`, never the real one."""
+    crew = root.parent / "home" / ".claude" / "crew"
+    crew.mkdir(parents=True, exist_ok=True)
+    cfg = {} if enabled is _ABSENT else {"context": {"autoClear": {"enabled": enabled}}}
+    (crew / "config.json").write_text(json.dumps(cfg), encoding="utf-8")
+
+
+_ABSENT = object()
+
+
 def _repo(tmp_path, auto_clear=None, handoff=HANDOFF, requested=True):
     cfg = {"context": {"warnAt": 0.8, "handoffPath": ".work/HANDOFF.md"}}
+    auto = dict(auto_clear or {})
+    enabled = auto.pop("enabled", _ABSENT)
     if auto_clear is not None:
-        cfg["context"]["autoClear"] = auto_clear
+        cfg["context"]["autoClear"] = auto
     root = crew_fixtures.make_repo(tmp_path, config=cfg, git=False)
+    _write_machine(root, enabled)
     if requested:
-        (root / ".crew" / ".handoff-requested").write_text("", encoding="utf-8")
+        # A trusted wrap-up request for THIS session, as context-watch writes
+        # it. test_auto_cycle.py owns the untrusted and foreign-session cases.
+        (root / ".crew" / REQUESTED).write_text(json.dumps({
+            "session_id": SESSION, "requested_at": time.time() - 30,
+            "trusted": True, "why": "measured"}), encoding="utf-8")
     if handoff is not None:
-        # mtime must be strictly newer than the request marker: "the handoff was
+        # mtime must be strictly newer than the request: "the handoff was
         # written AFTER we asked for it" is one of the conditions.
         path = root / ".work" / "HANDOFF.md"
         path.write_text(handoff, encoding="utf-8")
-        marker = root / ".crew" / ".handoff-requested"
-        if marker.exists():
-            stamp = os.path.getmtime(path) + 5
-            os.utime(path, (stamp, stamp))
+        stamp = time.time() + 5
+        os.utime(path, (stamp, stamp))
     return root
 
 
-def _run(flavor, root, *args, env_extra=None):
+def _run(flavor, root, *args, env_extra=None, session=SESSION):
     # Never let the suite reach the real send path. Set here rather than
     # per-test so a case added later cannot forget it; the cases that DO
     # exercise sending pass --dry-run, which prints the decision without the
     # keystroke. See CREW_AUTOCLEAR_INHIBIT in auto-clear.{sh,ps1}.
+    home = str(root.parent / "home")
     env = dict(os.environ, CLAUDE_PROJECT_DIR=str(root),
-               CREW_AUTOCLEAR_INHIBIT="1")
+               CREW_AUTOCLEAR_INHIBIT="1", HOME=home, USERPROFILE=home)
     if env_extra:
         env.update(env_extra)
+    if session is not None:
+        args = ("--session", session) + args
     if flavor == "sh":
         cmd = [_BASH, _SH, *args]
     else:
         ps_args = ["-DryRun" if a == "--dry-run" else
-                   "-Force" if a == "--force" else a for a in args]
+                   "-Force" if a == "--force" else
+                   "-Session" if a == "--session" else a for a in args]
         cmd = [_PWSH, "-NoProfile", "-NonInteractive", "-File", _PS1, *ps_args]
     return subprocess.run(cmd, cwd=str(root), env=env, stdin=subprocess.DEVNULL,
                           capture_output=True, text=True, check=False)
 
 
+def _window_stub(tmp_path, windows):
+    path = tmp_path / "windows.json"
+    path.write_text(json.dumps(windows), encoding="utf-8")
+    return {"CREW_AUTOCLEAR_WINDOW_STUB": str(path)}
+
+
 def _sendable(flavor, tmp_path):
-    """Config and env for a method each flavour will actually agree to use."""
+    """Config and env for a method each flavour will actually agree to use.
+
+    tmux must now prove the pane is this session's: the stub reports this
+    test process's pid as the pane pid, and this process IS an ancestor of
+    the script. The Windows flavour gets one stubbed window whose title is
+    the only match -- the title fallback, since no ancestor owns it."""
     if flavor == "sh":
         bindir = str(tmp_path / "fakebin")
-        _stub(bindir, "tmux")
+        _stub(bindir, "tmux", f"#!/bin/sh\necho {os.getpid()}\n")
         return ({"enabled": True, "method": "tmux"},
                 {"PATH": bindir + os.pathsep + os.environ["PATH"],
                  "TMUX": "/tmp/fake,1,0", "TMUX_PANE": "%9"})
-    return ({"enabled": True, "windowTitle": "NoSuchWindowForTests"}, {})
+    return ({"enabled": True, "windowTitle": "NoSuchWindowForTests"},
+            _window_stub(tmp_path, [{"id": 4242, "pid": 999999,
+                                     "title": "NoSuchWindowForTests"}]))
 
 
 def test_flavors_are_discoverable():
@@ -167,7 +207,7 @@ def test_no_handoff_request_means_nothing_to_clear_after(flavor, tmp_path):
     root = _repo(tmp_path, auto_clear=cfg, requested=False)
     result = _run(flavor, root, env_extra=env)
     assert result.returncode == 0
-    assert not (root / ".crew" / ".autoclear-sent").exists()
+    assert not (root / ".crew" / SENT).exists()
 
 
 @by_flavor
@@ -179,7 +219,7 @@ def test_a_stub_handoff_refuses(flavor, tmp_path):
     result = _run(flavor, root, env_extra=env)
     assert result.returncode == 0
     assert "minHandoffLines" in result.stderr
-    assert not (root / ".crew" / ".autoclear-sent").exists()
+    assert not (root / ".crew" / SENT).exists()
 
 
 @by_flavor
@@ -188,11 +228,11 @@ def test_a_handoff_older_than_the_request_refuses(flavor, tmp_path):
     cfg, env = _sendable(flavor, tmp_path)
     root = _repo(tmp_path, auto_clear=cfg)
     path = root / ".work" / "HANDOFF.md"
-    stale = os.path.getmtime(root / ".crew" / ".handoff-requested") - 60
+    stale = os.path.getmtime(root / ".crew" / REQUESTED) - 60
     os.utime(path, (stale, stale))
     result = _run(flavor, root, env_extra=env)
     assert result.returncode == 0
-    assert not (root / ".crew" / ".autoclear-sent").exists()
+    assert not (root / ".crew" / SENT).exists()
 
 
 @by_flavor
@@ -268,7 +308,7 @@ def test_wtype_needs_explicit_consent_because_it_cannot_check_focus(tmp_path):
         "PATH": bindir + os.pathsep + os.environ["PATH"],
         "WAYLAND_DISPLAY": "wayland-0"})
     assert "unsafeFocus" in result.stderr
-    assert not (root / ".crew" / ".autoclear-sent").exists()
+    assert not (root / ".crew" / SENT).exists()
 
 
 # --- The one-per-session claim -------------------------------------------
@@ -280,7 +320,7 @@ def test_a_dry_run_does_not_burn_the_one_attempt(flavor, tmp_path):
     root = _repo(tmp_path, auto_clear=cfg)
     result = _run(flavor, root, "--dry-run", env_extra=env)
     assert "would send" in result.stdout
-    assert not (root / ".crew" / ".autoclear-sent").exists()
+    assert not (root / ".crew" / SENT).exists()
 
 
 @by_flavor
@@ -293,7 +333,7 @@ def test_a_refusal_does_not_burn_the_one_attempt(flavor, tmp_path):
     """
     root = _repo(tmp_path, auto_clear={"enabled": True, "method": "telepathy"})
     _run(flavor, root)
-    assert not (root / ".crew" / ".autoclear-sent").exists()
+    assert not (root / ".crew" / SENT).exists()
 
     # Now fix it in the same session and confirm it really does retry.
     cfg, env = _sendable(flavor, tmp_path)
@@ -302,7 +342,7 @@ def test_a_refusal_does_not_burn_the_one_attempt(flavor, tmp_path):
                                 "autoClear": cfg}}), encoding="utf-8")
     result = _run(flavor, root, env_extra=env)
     assert "sent" in result.stderr
-    assert (root / ".crew" / ".autoclear-sent").exists()
+    assert (root / ".crew" / SENT).exists()
 
 
 @by_flavor
@@ -338,14 +378,20 @@ def test_a_window_title_containing_spaces_survives_config_parsing(tmp_path):
     `IFS=$'\\t' read`. Tab is IFS *whitespace*, so bash collapsed consecutive
     tabs and an empty windowTitle - the default - shifted every later field left
     by one. The script then exited silently having done nothing.
+
+    The window layer is stubbed with exactly one window of that title, so the
+    title fallback resolves it uniquely; test_auto_cycle.py owns the zero and
+    many cases.
     """
     bindir = str(tmp_path / "fakebin")
     _stub(bindir, "xdotool")
     root = _repo(tmp_path, auto_clear={
         "enabled": True, "method": "xdotool",
         "windowTitle": "Claude Code - my repo"})
-    out = _run("sh", root, "--dry-run", env_extra={
-        "PATH": bindir + os.pathsep + os.environ["PATH"], "DISPLAY": ":0"}).stdout
+    env = {"PATH": bindir + os.pathsep + os.environ["PATH"], "DISPLAY": ":0"}
+    env.update(_window_stub(tmp_path, [
+        {"id": 77, "pid": 999999, "title": "Claude Code - my repo"}]))
+    out = _run("sh", root, "--dry-run", env_extra=env).stdout
     assert "target: Claude Code - my repo" in out
 
 
@@ -357,7 +403,7 @@ def test_config_values_survive_a_crlf_writing_python(tmp_path):
     failure to diagnose from a Stop hook.
     """
     bindir = str(tmp_path / "fakebin")
-    _stub(bindir, "tmux")
+    _stub(bindir, "tmux", f"#!/bin/sh\necho {os.getpid()}\n")
     root = _repo(tmp_path, auto_clear={"enabled": True, "method": "tmux"})
     out = _run("sh", root, "--dry-run", env_extra={
         "PATH": bindir + os.pathsep + os.environ["PATH"],
@@ -375,7 +421,7 @@ def test_tmux_method_refuses_outside_tmux(tmp_path):
     env["TMUX"] = ""
     result = _run("sh", root, env_extra=env)
     assert "not in a tmux pane" in result.stderr or "TMUX" in result.stderr
-    assert not (root / ".crew" / ".autoclear-sent").exists()
+    assert not (root / ".crew" / SENT).exists()
 
 
 @pytest.mark.skipif("ps1" not in FLAVORS, reason="needs pwsh")
@@ -407,5 +453,5 @@ def test_the_windows_flavour_stands_down_entirely_off_windows(tmp_path):
         stdin=subprocess.DEVNULL, capture_output=True, text=True, check=False)
     assert result.returncode == 0
     assert result.stdout.strip() == ""
-    assert not (root / ".crew" / ".autoclear-sent").exists()
+    assert not (root / ".crew" / SENT).exists()
     assert not (root / ".crew" / ".autoclear.log").exists()
