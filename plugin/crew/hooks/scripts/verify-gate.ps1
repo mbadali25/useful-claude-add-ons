@@ -98,6 +98,19 @@ function Resolve-CrewBash {
   # No usable git, or no bash found near it: fall back to PATH, filtering out
   # the WSL launcher and the WindowsApps App Execution Alias shim.
   $sysRoot = $env:SystemRoot
+  # Same native-extension gate as Resolve-CrewPython's G1 guard below, and for
+  # the identical reason: an extensionless PATH entry named bare `bash` (a
+  # pyenv/conda/direnv-style POSIX shim) is CommandType Application with a
+  # real, non-WindowsApps .Source -- indistinguishable from bash.exe by either
+  # filter above it. CreateProcess cannot launch it directly; invoking it
+  # anyway is exactly the non-terminating hang PR #224 measured against
+  # Resolve-CrewPython, not a bounded failure this resolver has any timeout
+  # to survive. Gated on real-OS detection ($IsWindows, not the $env:OS seam)
+  # for the same reason Resolve-CrewPython gates it there: this suite's own
+  # bash-resolver fixtures are real, valid extensionless shims run under a
+  # faked $env:OS on Linux, and gating on that seam would reject them all.
+  $crewBashRealWindows = if (Test-Path variable:IsWindows) { $IsWindows } else { $true }
+  $crewBashNativeExts = @('.exe', '.com', '.cmd', '.bat')
   $candidates = Get-Command bash -All -ErrorAction SilentlyContinue
   foreach ($cmd in $candidates) {
     # Same guard as the git walk-up above, for the same reason. A `bash`
@@ -110,6 +123,13 @@ function Resolve-CrewBash {
     $src = $cmd.Source
     if ($sysRoot -and $src.StartsWith($sysRoot, [System.StringComparison]::OrdinalIgnoreCase)) { continue }
     if ($src -match 'WindowsApps') { continue }
+    if ($crewBashRealWindows) {
+      $crewBashExt = [System.IO.Path]::GetExtension($src)
+      if ($crewBashNativeExts -notcontains $crewBashExt) {
+        Write-Verbose "Resolve-CrewBash: skipping '$src' - not natively launchable on Windows (extension '$crewBashExt' outside .exe/.com/.cmd/.bat)"
+        continue
+      }
+    }
     return $src
   }
 
