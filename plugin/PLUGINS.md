@@ -478,7 +478,7 @@ The hooks go with it. To keep the plugin but stop the `Stop` gate, set `verifyGa
 | | |
 |---|---|
 | **Source** | [`gizmoduck/`](gizmoduck) |
-| **Version** | 0.6.0<!-- claim: plugin-version:gizmoduck --> |
+| **Version** | 0.7.0<!-- claim: plugin-version:gizmoduck --> |
 | **Install** | `claude plugin install gizmoduck@useful-claude-add-ons` |
 | **Registers** | 7 commands<!-- claim: plugin-commands:gizmoduck -->, 1 skill. **No agents, no hooks** — nothing runs unless you type a command |
 | **Upstream guide** | [`gizmoduck/README.md`](gizmoduck/README.md) |
@@ -497,7 +497,7 @@ Runs [Nuclei](https://github.com/projectdiscovery/nuclei) against hosts and webs
 | `/gizmoduck:diff <old.jsonl> <new.jsonl> [sev]` | What is present in the new run and absent from the old, keyed on template plus location |
 | `/gizmoduck:update` | Update the Nuclei engine and the community template set |
 | `/gizmoduck:doctor` | Which half of the toolchain is missing — `nuclei`, templates, `python`, or the PDF renderer |
-| `/gizmoduck:ci <github\|bitbucket\|both> <staging-url> [repo]` | Install security-scan pipelines into a repo: Semgrep, Trivy, Checkov and Dependency-Check on every PR; Nuclei, ZAP baseline and testssl against the configured staging URL after a deploy, behind a prod-refusal guard; a baseline diff; a build that fails only on new Critical/High. Dry run by default |
+| `/gizmoduck:ci [--detect] <github\|bitbucket\|both> [repo]` | Install tiered security-scan pipelines into a repo. Setup detects endpoints and a staging URL (with source and confidence) and asks a Decision-needed question for anything it cannot settle. Tier 1 is a light, diff-aware PR check that blocks on a new Critical. Tier 2 (PRs into main or `release/*`, the `security-scan` label, Bitbucket `custom: security-full`) runs every code scan plus Nuclei, ZAP baseline and testssl after the staging deploy, behind a prod-refusal guard, and blocks on a new Critical/High. Tier 3 is a weekly sweep that never blocks. An endpoint stage with no endpoints fails UNVERIFIED. Dry run by default |
 
 `scan` defaults to `--severity critical,high,medium` and reports at High and above; both are overridable per invocation. The severity floor for *tickets* is separate from the floor for the *report*, which is the point — Mediums belong in the document, not in somebody's queue.
 

@@ -36,7 +36,8 @@ GOLDEN_CFG = {
 }
 
 GOLDEN_FILES = {
-    ".github/workflows/gizmoduck-code.yml": "github-code.yml",
+    ".github/workflows/gizmoduck-pr.yml": "github-pr.yml",
+    ".github/workflows/gizmoduck-full.yml": "github-full.yml",
     ".github/workflows/gizmoduck-endpoints.yml": "github-endpoints.yml",
     "bitbucket-pipelines.yml": "bitbucket-pipelines.yml",
 }
@@ -92,6 +93,30 @@ def test_no_workflow_run_trigger_without_deploy_workflow():
     assert "workflow_run" not in text
 
 
+def test_endpoint_workflow_detects_endpoints_before_the_guard():
+    """The endpoints step (UNVERIFIED on zero) must run before the guard, and
+    the guard must read its output - not the raw ledger."""
+    text = ci_render.github_endpoints(GOLDEN_CFG)
+    for job in ("  scan:\n", "  scan-bootstrap:\n"):
+        body = text.split(job, 1)[1]
+        assert body.index(" endpoints --config ") < body.index(" targets --run-endpoints ") \
+            < body.index(" endpoint-stage ")
+    step = ci_render.bitbucket(GOLDEN_CFG).split("&gizmoduck-endpoint-scan", 1)[1]
+    assert step.index(" endpoints --config ") < step.index(" targets --run-endpoints ") \
+        < step.index(" endpoint-stage ")
+
+
+def test_legacy_code_workflow_is_flagged(tmp_path):
+    (tmp_path / ".github" / "workflows").mkdir(parents=True)
+    (tmp_path / ".github" / "workflows" / "gizmoduck-code.yml").write_text("name: old\n", encoding="utf-8")
+    p = render(tmp_path)
+    assert "gizmoduck-code.yml is from gizmoduck before 0.7.0" in p.stdout
+
+
+def test_missing_config_is_flagged(tmp_path):
+    assert "no gizmoduck-ci.json" in render(tmp_path).stdout
+
+
 # --- the CLI ----------------------------------------------------------------
 
 def render(tmp_path, *extra):
@@ -109,8 +134,8 @@ def test_dry_run_prints_and_writes_nothing(tmp_path):
     p = render(tmp_path)
     assert p.returncode == 0, p.stderr
     assert written(tmp_path) == []
-    assert "===== .github/workflows/gizmoduck-code.yml (new) =====" in p.stdout
-    assert "name: gizmoduck code scan" in p.stdout
+    assert "===== .github/workflows/gizmoduck-pr.yml (new) =====" in p.stdout
+    assert "name: gizmoduck PR check" in p.stdout
     assert "dry run - nothing written" in p.stdout
 
 

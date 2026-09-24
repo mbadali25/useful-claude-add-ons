@@ -106,6 +106,10 @@ def run(target, outdir, opts):
     # never required. Read straight from the environment and placed nowhere
     # but this argv - never logged, printed, or written to a file - since
     # it's a credential.
+    # A persistent NVD data directory (the CI sweep caches it between runs),
+    # so each run updates the corpus instead of downloading all of it.
+    if opts.get("depcheck_data_dir"):
+        argv += ["--data", str(opts["depcheck_data_dir"])]
     nvd_api_key = os.environ.get("NVD_API_KEY")
     if nvd_api_key:
         argv += ["--nvdApiKey", nvd_api_key]

@@ -126,6 +126,11 @@ def run(target, outdir, opts=None):
     extra = opts.get("extra")
     if extra:
         cmd += extra.split()
+    # Request headers (the CI auth header for protected staging endpoints).
+    # Separate argv items, never folded into `extra`, whose whitespace split
+    # would break a "Bearer <token>" value apart.
+    for header in opts.get("headers") or []:
+        cmd += ["-H", header]
 
     result = base.run_tool(cmd, timeout=opts.get("timeout", DEFAULT_TIMEOUT))
 

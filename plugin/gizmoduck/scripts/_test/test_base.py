@@ -16,15 +16,16 @@ def test_which_returns_none_for_missing_binary():
     assert base.which("definitely-not-a-real-binary-xyz") is None
 
 
-def test_registry_lists_ten_tools_and_no_tfsec():
-    """Ten since semgrep was added for the `code` kind. Still no tfsec: its
-    engine was folded into Trivy in 2023 and its rules stopped moving in 2025,
-    so IaC coverage runs through trivy's misconfig scanner (spec 13.4)."""
+def test_registry_lists_eleven_tools_and_no_tfsec():
+    """Ten since semgrep was added for the `code` kind, eleven since gitleaks
+    was added for `secrets`. Still no tfsec: its engine was folded into Trivy
+    in 2023 and its rules stopped moving in 2025, so IaC coverage runs through
+    trivy's misconfig scanner (spec 13.4)."""
     import scanners
-    assert len(scanners.ADAPTERS) == 10
+    assert len(scanners.ADAPTERS) == 11
     assert "tfsec" not in scanners.ADAPTERS
-    assert "semgrep" in scanners.ADAPTERS
-    assert set(scanners.KIND_DEFAULTS) == {"web", "host", "iac", "deps", "code"}
+    assert "semgrep" in scanners.ADAPTERS and "gitleaks" in scanners.ADAPTERS
+    assert set(scanners.KIND_DEFAULTS) == {"web", "host", "iac", "deps", "code", "secrets"}
 
 
 def test_every_kind_default_names_a_registered_adapter():

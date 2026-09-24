@@ -219,7 +219,7 @@ def test_endpoint_stage_passes_the_image_template_dir(tmp_path):
 
 def test_code_stage_manifest(tmp_path):
     runner = FakeRunner()
-    args = SimpleNamespace(path=str(tmp_path), out=str(tmp_path / "o"))
+    args = SimpleNamespace(path=str(tmp_path), out=str(tmp_path / "o"), tier=None, base_ref=None)
     assert ci.cmd_code_stage(args, env=ENV, runner=runner) == 0
     manifest = runner.calls[0][0]
     assert [(x.name, x.kind, x.path) for x in manifest.targets] == [
@@ -229,7 +229,8 @@ def test_code_stage_manifest(tmp_path):
 def test_code_stage_resolves_to_the_four_code_scanners(tmp_path):
     import routine
     runner = FakeRunner()
-    ci.cmd_code_stage(SimpleNamespace(path=".", out=str(tmp_path)), env=ENV, runner=runner)
+    ci.cmd_code_stage(SimpleNamespace(path=".", out=str(tmp_path), tier=None, base_ref=None), env=ENV,
+                      runner=runner)
     tools = {t for x in runner.calls[0][0].targets for t in routine.resolve_adapters(x)}
     assert tools == {"semgrep", "trivy", "checkov", "depcheck"}
 

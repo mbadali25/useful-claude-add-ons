@@ -21,6 +21,13 @@ already become Info. Everything this gate cannot read fails closed:
 - a run manifest with an `error:*` or `skipped-missing` cell fails the gate
   unless `allow_incomplete` is set, because a scanner that did not run is not
   a scanner that found nothing.
+
+`block_at` is the trigger tier's threshold (ci_render.py): 4 blocks on a new
+Critical only (tier 1, the light PR check), 3 on a new Critical or High
+(tier 2 and manual runs), and None never blocks (tier 3, the weekly sweep).
+None changes only the verdict: every reason above is still computed and
+reported, and `new_blocking` still lists the new Critical/High findings so
+the sweep can ticket them.
 """
 import json
 from dataclasses import dataclass, field
@@ -117,9 +124,22 @@ def incomplete_cells(manifest):
             or c.get("status") == "skipped-missing"]
 
 
+BLOCK_AT = {"critical": 4, "high": 3, "never": None}
+
+
 def evaluate(baseline, current, manifest=None, allow_missing_baseline=False,
-             allow_incomplete=False):
+             allow_incomplete=False, block_at=_BLOCKING):
     """`baseline` is a list of Finding or None (no baseline); `current` a list."""
+    result = _evaluate(baseline, current, manifest, allow_missing_baseline, allow_incomplete,
+                       _BLOCKING if block_at is None else block_at)
+    if block_at is None and result.fail:
+        result.fail = False
+        result.reasons.append("report only: this tier never blocks (the findings above are recorded, "
+                              "diffed and optionally ticketed)")
+    return result
+
+
+def _evaluate(baseline, current, manifest, allow_missing_baseline, allow_incomplete, threshold):
     result = GateResult(fail=False, baseline_present=baseline is not None)
     if baseline is None:
         if allow_missing_baseline:
@@ -138,11 +158,12 @@ def evaluate(baseline, current, manifest=None, allow_missing_baseline=False,
         result.new_total += 1
         if f.severity < 0:
             result.new_unknown.append(f)
-        elif f.severity >= _BLOCKING:
+        elif f.severity >= threshold:
             result.new_blocking.append(f)
     if result.new_blocking:
         result.fail = True
-        result.reasons.append(f"{len(result.new_blocking)} new Critical/High finding(s)")
+        label = "Critical" if threshold >= 4 else "Critical/High"
+        result.reasons.append(f"{len(result.new_blocking)} new {label} finding(s)")
     if result.new_unknown:
         result.fail = True
         result.reasons.append(f"{len(result.new_unknown)} new finding(s) with an unknown "

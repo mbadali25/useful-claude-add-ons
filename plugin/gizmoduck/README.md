@@ -57,6 +57,7 @@ gizmoduck/
 ├── bootstrap.sh / bootstrap.ps1   # installers (Linux/WSL, Windows)
 ├── scripts/gizmoduck.py           # scan / report / tickets / diff / doctor / update
 ├── scripts/gizmoduck_ci.py        # /gizmoduck:ci - render pipelines, run their steps
+├── scripts/ci_detect.py           # endpoint + staging-URL autodetection, setup decisions
 ├── scripts/ci_guard.py            # prod-refusal guard for endpoint scans
 ├── scripts/ci_gate.py             # fail only on new Critical/High
 ├── scripts/ci_render.py           # GitHub Actions / Bitbucket Pipelines templates
@@ -93,7 +94,35 @@ confirm: it prints `[]` and exits 0 either way, `--yes` or not.
 
 ## CI pipelines
 
-TODO: the CI guide (docs lane) - rendering, runner image build/push, repository variables and secrets, baseline bootstrap, the prod-refusal guard, SDP ticketing.
+`/gizmoduck:ci` installs three GitHub workflows (`gizmoduck-pr.yml`, `gizmoduck-full.yml`,
+`gizmoduck-endpoints.yml`) or one `bitbucket-pipelines.yml`, split into trigger tiers:
+
+| Tier | Trigger | Runs | Blocks |
+|---|---|---|---|
+| 1 light PR check | non-draft PRs, path-filtered (docs-only changes skipped), not covered by tier 2 | Semgrep diff-aware on the changed files; Trivy only if a lockfile/manifest changed; Checkov only if a `*.tf` changed; gitleaks over the PR's commits | a NEW Critical only; the rest goes to annotations + SARIF / Code Insights |
+| 2 targeted full | PRs into the default branch or `release/*`, or the `security-scan` PR label (GitHub); Bitbucket: the manual `custom: security-full` pipeline | all code scans (Semgrep, Trivy, Checkov, gitleaks), plus Nuclei, ZAP baseline and testssl against staging after the staging deploy | a new Critical/High. No branch-name or path triggers |
+| 3 weekly sweep | GitHub `schedule`, Sunday 23:00 UTC; Bitbucket a scheduled `custom: security-weekly` (one-time UI setup: Repository settings -> Pipelines -> Schedules) | everything, Dependency-Check with NVD included, against the default branch and staging; the weekly Nuclei template update | never; saves results as the next baseline, diffs against the last run, optional tickets |
+| Manual | `workflow_dispatch` (any ref, or any base URL the prod-refusal guard allows); the Bitbucket custom pipelines | a full scan | per the tier-2 rule |
+
+Controls: draft PRs are skipped; each workflow has a `concurrency` group per event and ref with
+cancel-in-progress; the Trivy DB, NVD data and Nuclei templates are cached per ISO week; endpoint
+scans never run on a pull request. Bitbucket has no labels and no cancel-in-progress, and can only
+tell a draft PR apart when `GIZMODUCK_BB_TOKEN` can read the pull request.
+
+**Endpoints are detected, then confirmed.** `gizmoduck_ci.py detect` reads `.crew/endpoints.json`,
+OpenAPI/Swagger documents (including build output under `obj/`), ASP.NET controllers and
+minimal-API `Map*` calls, Angular routes, FastAPI, Flask and Express. It looks for a staging URL
+in appsettings and environment files, `.env.example`-style templates, Terraform outputs, GitHub
+environments and Bitbucket deployments. Each finding has a `path:line` and a confidence. Whatever
+it cannot settle is asked as a `**Decision needed:**` question: the staging URL, auth for
+protected endpoints, the scope. It never guesses a URL. `setup --apply` writes the answers to a
+committed `gizmoduck-ci.json`. When crew is present the endpoints go to `.crew/endpoints.json` as
+declared records instead. Each endpoint run re-detects cheaply and can fetch the live OpenAPI
+document through the guard. It scans what it finds, reports anything uncommitted as
+"new, confirm at next setup", and fails UNVERIFIED ("run /gizmoduck:ci --detect") when there are
+no endpoints, so an empty scan never passes.
+
+TODO: the rest of the CI guide (docs lane) - runner image build/push, repository variables and secrets, baseline bootstrap, the prod-refusal guard, SDP ticketing.
 
 ## Manual CLI (Linux: `python3`, Windows: `python`)
 ```bash

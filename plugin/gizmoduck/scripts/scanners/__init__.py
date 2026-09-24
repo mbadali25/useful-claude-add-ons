@@ -5,11 +5,11 @@ moving in 2025, so IaC coverage runs through trivy's misconfig scanner
 instead (spec 13.4).
 """
 from . import (nuclei, zap, nikto, nmap, testssl,
-               trivy, depcheck, checkov, sqlmap, semgrep)
+               trivy, depcheck, checkov, sqlmap, semgrep, gitleaks)
 
 ADAPTERS = {m.NAME: m for m in
             (nuclei, zap, nikto, nmap, testssl, trivy, depcheck, checkov,
-             sqlmap, semgrep)}
+             sqlmap, semgrep, gitleaks)}
 
 KIND_DEFAULTS = {
     "web":  ["nuclei", "zap", "nikto", "nmap", "testssl"],
@@ -22,6 +22,9 @@ KIND_DEFAULTS = {
     # never written has no signature, no CVE and no misconfigured
     # resource; the endpoint answers 200 exactly as it should.
     "code": ["semgrep"],
+    # Committed credentials. Gitleaks, offline - see scanners/gitleaks.py for
+    # why not trufflehog.
+    "secrets": ["gitleaks"],
 }
 
 

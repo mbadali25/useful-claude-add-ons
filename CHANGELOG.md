@@ -6,6 +6,32 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
+- **`gizmoduck` 0.7.0: endpoint autodetection that asks instead of guessing, an endpoint
+  stage that fails on an empty scan, and three trigger tiers.** `scripts/ci_detect.py` finds
+  endpoints in `.crew/endpoints.json`, OpenAPI/Swagger documents (Swashbuckle and
+  Microsoft.AspNetCore.OpenApi output included), ASP.NET controllers and minimal APIs, Angular
+  routers, FastAPI, Flask and Express. It finds staging URL candidates in appsettings and
+  environment files, `.env.example`-style templates, Terraform outputs, GitHub environments and
+  Bitbucket deployments. Every finding has a `path:line` and a high/medium/low confidence, and
+  the rules are in the module docstring. `gizmoduck_ci.py detect` prints the findings plus a
+  `**Decision needed:**` block for each open question: staging URL, auth, scope, the confidence
+  to commit, and the live OpenAPI path. It writes nothing. `setup --apply` persists only the
+  owner's answers to `gizmoduck-ci.json`, or appends declared records to `.crew/endpoints.json`
+  when crew is present. Each endpoint run re-detects, merges with the committed list and can
+  fetch the live OpenAPI document through the prod-refusal guard. Uncommitted endpoints are
+  scanned and reported "new, confirm at next setup". With no endpoints the run is UNVERIFIED and
+  fails, telling you to run `/gizmoduck:ci --detect`. The pipelines are now tiered. Tier 1
+  (`gizmoduck-pr.yml`) is a light, diff-aware, path-filtered PR check that blocks on a new
+  Critical. Tier 2 (`gizmoduck-full.yml` and `gizmoduck-endpoints.yml`; Bitbucket
+  `custom: security-full`) runs for PRs into the default branch or `release/*` or with the
+  `security-scan` label, and after the staging deploy. It blocks on a new Critical/High. Tier 3
+  is a weekly Sunday sweep with Dependency-Check and a Nuclei template update, and it never
+  blocks. Drafts are skipped, concurrency cancels in-progress runs per ref, the Trivy DB, NVD
+  data and Nuclei templates are cached, and endpoint scans never run on a pull request. New:
+  gitleaks as the secrets scanner (pinned in `bootstrap.sh`, offline, `--redact`), `gate
+  --block-at`, and an optional auth header for protected staging endpoints (Nuclei only). An
+  existing `.github/workflows/gizmoduck-code.yml` from 0.6.0 is superseded; delete it.
+
 - **`gizmoduck` 0.6.0: `/gizmoduck:ci`, security-scan pipelines for GitHub Actions and
   Bitbucket Pipelines.** `scripts/gizmoduck_ci.py render` writes the pipelines into a target
   repo. It is a dry run by default, `--apply` writes, and an existing file is refused unless

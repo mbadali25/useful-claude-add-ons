@@ -88,8 +88,14 @@ def run(target, outdir, opts=None):
         "--timeout", str(opts.get("semgrep_rule_timeout", DEFAULT_RULE_TIMEOUT)),
         "--max-memory", str(opts.get("semgrep_max_memory_mb", DEFAULT_MAX_MEMORY_MB)),
         "-j", str(opts.get("semgrep_jobs", DEFAULT_JOBS)),
-        target,
     ]
+    # Diff-aware mode (the CI tier-1 PR check): `semgrep_paths` replaces the
+    # target with the changed files, and `semgrep_baseline_commit` makes
+    # Semgrep itself drop findings that already existed at that commit. Both
+    # are relative to `cwd`, which must be the git work tree.
+    if opts.get("semgrep_baseline_commit"):
+        argv += ["--baseline-commit", str(opts["semgrep_baseline_commit"])]
+    argv += list(opts["semgrep_paths"]) if opts.get("semgrep_paths") else [target]
     result = base.run_tool(argv, timeout=opts.get("timeout", DEFAULT_TIMEOUT),
                            cwd=opts.get("cwd"))
 

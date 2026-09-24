@@ -1,21 +1,31 @@
-# Rendered by /gizmoduck:ci (gizmoduck 0.0.0-golden) - code stage (Semgrep, Trivy fs, Checkov, Dependency-Check).
+# Rendered by /gizmoduck:ci (gizmoduck 0.0.0-golden) - tier 2 full code scan, tier 3 weekly code sweep, manual scans.
 # Re-render with gizmoduck_ci.py rather than hand-editing; the prod-refusal
 # guard's staging origins are baked in below and re-checked at runtime.
 # Actions are pinned by full commit SHA; the trailing comment names the release.
+# Tiers: gizmoduck-pr.yml (1, light PR check), gizmoduck-full.yml (2 + weekly
+# code sweep + manual), gizmoduck-endpoints.yml (2 after the staging deploy +
+# weekly endpoint sweep + manual). Endpoint scans never run on a pull request.
 
-name: gizmoduck code scan
+name: gizmoduck full code scan
 
 on:
   pull_request:
-  push:
-    branches: ["main"]
+    types: [opened, synchronize, reopened, ready_for_review, labeled]
+  schedule:
+    - cron: "0 23 * * 0"
   workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch, tag or SHA to scan (blank = the branch picked above)
+        required: false
+        default: ''
+        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: gizmoduck-code-${{ github.ref }}
+  group: gizmoduck-full-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 defaults:
@@ -25,17 +35,21 @@ defaults:
 env:
   GIZMODUCK_HOME: /opt/gizmoduck
   GIZMODUCK_OUT: /tmp/gizmoduck-out/code
+  GIZMODUCK_TIER: ${{ github.event_name == 'schedule' && 'sweep' || 'full' }}
+  GIZMODUCK_BLOCK_AT: ${{ github.event_name == 'schedule' && 'never' || 'high' }}
   GIZMODUCK_AUTHORIZED_BY: "Jane Doe (CISO), ticket SEC-42 - 'quoted' \"too\""
   GIZMODUCK_DEFAULT_BRANCH: "main"
   GIZMODUCK_SOURCE_REPO: "https://github.com/mbadali25/useful-claude-add-ons"
   GIZMODUCK_REF: "0123456789abcdef0123456789abcdef01234567"
   GIZMODUCK_STAGING_URLS: "https://staging.example.com"
   GIZMODUCK_ENABLE: "nikto,nmap"
+  TRIVY_CACHE_DIR: /tmp/gizmoduck-cache/trivy
+  GIZMODUCK_DEPCHECK_DATA: /tmp/gizmoduck-cache/nvd
 
 jobs:
   scan:
-    name: gizmoduck code scan (runner image)
-    if: vars.GIZMODUCK_RUNNER != 'bootstrap'
+    name: gizmoduck full code scan (runner image)
+    if: vars.GIZMODUCK_RUNNER != 'bootstrap' && ((github.event_name == 'pull_request' && github.event.pull_request.draft == false && (github.base_ref == 'main' || startsWith(github.base_ref, 'release/') || contains(github.event.pull_request.labels.*.name, 'security-scan')) && (github.event.action != 'labeled' || github.event.label.name == 'security-scan')) || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     container:
@@ -49,6 +63,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          ref: ${{ inputs.ref }}
       - name: Ensure the gizmoduck toolchain
         run: |
           GIZMODUCK_HOME="${GIZMODUCK_HOME:-/opt/gizmoduck}"
@@ -70,11 +85,27 @@ jobs:
             PIP_BREAK_SYSTEM_PACKAGES=1 bash "$GIZMODUCK_HOME/bootstrap.sh"
           fi
           if [ -n "${GITHUB_PATH:-}" ]; then echo "$HOME/.local/bin" >> "$GITHUB_PATH"; fi
+      - name: Cache key (ISO week)
+        id: week
+        run: echo "key=$(date -u +%G-%V)" >> "$GITHUB_OUTPUT"
+      - name: Cache the Trivy vulnerability DB
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: /tmp/gizmoduck-cache/trivy
+          key: gizmoduck-trivy-${{ steps.week.outputs.key }}
+          restore-keys: gizmoduck-trivy-
+      - name: Cache Dependency-Check's NVD data
+        if: github.event_name == 'schedule'
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: /tmp/gizmoduck-cache/nvd
+          key: gizmoduck-nvd-${{ steps.week.outputs.key }}
+          restore-keys: gizmoduck-nvd-
       - name: Find the baseline run
         id: prev
         env:
           GH_TOKEN: ${{ github.token }}
-        run: python3 "$GIZMODUCK_HOME/scripts/gizmoduck_ci.py" gh-previous-run --workflow gizmoduck-code.yml --branch "$GIZMODUCK_DEFAULT_BRANCH" >> "$GITHUB_OUTPUT"
+        run: python3 "$GIZMODUCK_HOME/scripts/gizmoduck_ci.py" gh-previous-run --workflow gizmoduck-full.yml --branch "$GIZMODUCK_DEFAULT_BRANCH" >> "$GITHUB_OUTPUT"
       - name: Download the baseline
         if: steps.prev.outputs.run_id != ''
         continue-on-error: true
@@ -84,11 +115,11 @@ jobs:
           path: /tmp/gizmoduck-baseline/code
           github-token: ${{ github.token }}
           run-id: ${{ steps.prev.outputs.run_id }}
-      - name: Scan (Semgrep, Trivy fs, Checkov, Dependency-Check)
+      - name: Scan (Semgrep, Trivy fs, Checkov, gitleaks; Dependency-Check on the weekly sweep)
         id: scan
         env:
           NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
-        run: python3 "$GIZMODUCK_HOME/scripts/gizmoduck_ci.py" code-stage --path "$GITHUB_WORKSPACE" --out "$GIZMODUCK_OUT"
+        run: python3 "$GIZMODUCK_HOME/scripts/gizmoduck_ci.py" code-stage --tier "$GIZMODUCK_TIER" --path "$GITHUB_WORKSPACE" --out "$GIZMODUCK_OUT"
       - name: SARIF
         id: sarif
         if: always() && steps.scan.outcome == 'success'
@@ -102,15 +133,15 @@ jobs:
           category: gizmoduck-code
       - name: Reports (JSONL, Markdown, HTML, PDF) and diff
         if: always() && steps.scan.outcome == 'success'
-        run: python3 "$GIZMODUCK_HOME/scripts/gizmoduck_ci.py" publish --out "$GIZMODUCK_OUT" --baseline /tmp/gizmoduck-baseline/code/findings.jsonl --title 'gizmoduck code scan'
-      - name: Fail on new Critical/High
+        run: python3 "$GIZMODUCK_HOME/scripts/gizmoduck_ci.py" publish --out "$GIZMODUCK_OUT" --baseline /tmp/gizmoduck-baseline/code/findings.jsonl --title 'gizmoduck full code scan'
+      - name: Gate (blocks at $GIZMODUCK_BLOCK_AT)
         id: gate
         if: always() && steps.scan.outcome == 'success'
         env:
           GIZMODUCK_ALLOW_NO_BASELINE: ${{ vars.GIZMODUCK_ALLOW_NO_BASELINE }}
           GIZMODUCK_ALLOW_INCOMPLETE: ${{ vars.GIZMODUCK_ALLOW_INCOMPLETE }}
           GIZMODUCK_TRUST_ASSIGNED_SEVERITY: ${{ vars.GIZMODUCK_TRUST_ASSIGNED_SEVERITY }}
-        run: python3 "$GIZMODUCK_HOME/scripts/gizmoduck_ci.py" gate --baseline /tmp/gizmoduck-baseline/code/findings.jsonl --current "$GIZMODUCK_OUT/findings.jsonl" --manifest "$GIZMODUCK_OUT/run-manifest.json" --json-out "$GIZMODUCK_OUT/gate.json" --new-out "$GIZMODUCK_OUT/new-blocking.jsonl" --summary "$GITHUB_STEP_SUMMARY"
+        run: python3 "$GIZMODUCK_HOME/scripts/gizmoduck_ci.py" gate --baseline /tmp/gizmoduck-baseline/code/findings.jsonl --current "$GIZMODUCK_OUT/findings.jsonl" --manifest "$GIZMODUCK_OUT/run-manifest.json" --block-at "$GIZMODUCK_BLOCK_AT" --json-out "$GIZMODUCK_OUT/gate.json" --new-out "$GIZMODUCK_OUT/new-blocking.jsonl" --summary "$GITHUB_STEP_SUMMARY"
       - name: Upload results
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -120,7 +151,7 @@ jobs:
           retention-days: 90
           if-no-files-found: warn
       - name: ServiceDesk Plus tickets for new Critical/High (opt-in)
-        if: always() && steps.gate.outcome == 'failure' && github.event_name != 'pull_request' && vars.GIZMODUCK_SDP_TICKETS == 'true'
+        if: always() && (steps.gate.outcome == 'success' || steps.gate.outcome == 'failure') && github.event_name != 'pull_request' && vars.GIZMODUCK_SDP_TICKETS == 'true'
         env:
           GIZMODUCK_SDP_TICKETS: ${{ vars.GIZMODUCK_SDP_TICKETS }}
           SDP_BASE_URL: ${{ secrets.SDP_BASE_URL }}
@@ -129,8 +160,8 @@ jobs:
         run: python3 "$GIZMODUCK_HOME/scripts/gizmoduck_ci.py" tickets "$GIZMODUCK_OUT/new-blocking.jsonl" --out "$GIZMODUCK_OUT/tickets.json" --yes
 
   scan-bootstrap:
-    name: gizmoduck code scan (inline bootstrap fallback)
-    if: vars.GIZMODUCK_RUNNER == 'bootstrap'
+    name: gizmoduck full code scan (inline bootstrap fallback)
+    if: vars.GIZMODUCK_RUNNER == 'bootstrap' && ((github.event_name == 'pull_request' && github.event.pull_request.draft == false && (github.base_ref == 'main' || startsWith(github.base_ref, 'release/') || contains(github.event.pull_request.labels.*.name, 'security-scan')) && (github.event.action != 'labeled' || github.event.label.name == 'security-scan')) || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     permissions:
@@ -142,6 +173,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          ref: ${{ inputs.ref }}
       - name: Ensure the gizmoduck toolchain
         run: |
           GIZMODUCK_HOME="${GIZMODUCK_HOME:-/opt/gizmoduck}"
@@ -163,11 +195,27 @@ jobs:
             PIP_BREAK_SYSTEM_PACKAGES=1 bash "$GIZMODUCK_HOME/bootstrap.sh"
           fi
           if [ -n "${GITHUB_PATH:-}" ]; then echo "$HOME/.local/bin" >> "$GITHUB_PATH"; fi
+      - name: Cache key (ISO week)
+        id: week
+        run: echo "key=$(date -u +%G-%V)" >> "$GITHUB_OUTPUT"
+      - name: Cache the Trivy vulnerability DB
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: /tmp/gizmoduck-cache/trivy
+          key: gizmoduck-trivy-${{ steps.week.outputs.key }}
+          restore-keys: gizmoduck-trivy-
+      - name: Cache Dependency-Check's NVD data
+        if: github.event_name == 'schedule'
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: /tmp/gizmoduck-cache/nvd
+          key: gizmoduck-nvd-${{ steps.week.outputs.key }}
+          restore-keys: gizmoduck-nvd-
       - name: Find the baseline run
         id: prev
         env:
           GH_TOKEN: ${{ github.token }}
-        run: python3 "$GIZMODUCK_HOME/scripts/gizmoduck_ci.py" gh-previous-run --workflow gizmoduck-code.yml --branch "$GIZMODUCK_DEFAULT_BRANCH" >> "$GITHUB_OUTPUT"
+        run: python3 "$GIZMODUCK_HOME/scripts/gizmoduck_ci.py" gh-previous-run --workflow gizmoduck-full.yml --branch "$GIZMODUCK_DEFAULT_BRANCH" >> "$GITHUB_OUTPUT"
       - name: Download the baseline
         if: steps.prev.outputs.run_id != ''
         continue-on-error: true
@@ -177,11 +225,11 @@ jobs:
           path: /tmp/gizmoduck-baseline/code
           github-token: ${{ github.token }}
           run-id: ${{ steps.prev.outputs.run_id }}
-      - name: Scan (Semgrep, Trivy fs, Checkov, Dependency-Check)
+      - name: Scan (Semgrep, Trivy fs, Checkov, gitleaks; Dependency-Check on the weekly sweep)
         id: scan
         env:
           NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
-        run: python3 "$GIZMODUCK_HOME/scripts/gizmoduck_ci.py" code-stage --path "$GITHUB_WORKSPACE" --out "$GIZMODUCK_OUT"
+        run: python3 "$GIZMODUCK_HOME/scripts/gizmoduck_ci.py" code-stage --tier "$GIZMODUCK_TIER" --path "$GITHUB_WORKSPACE" --out "$GIZMODUCK_OUT"
       - name: SARIF
         id: sarif
         if: always() && steps.scan.outcome == 'success'
@@ -195,15 +243,15 @@ jobs:
           category: gizmoduck-code
       - name: Reports (JSONL, Markdown, HTML, PDF) and diff
         if: always() && steps.scan.outcome == 'success'
-        run: python3 "$GIZMODUCK_HOME/scripts/gizmoduck_ci.py" publish --out "$GIZMODUCK_OUT" --baseline /tmp/gizmoduck-baseline/code/findings.jsonl --title 'gizmoduck code scan'
-      - name: Fail on new Critical/High
+        run: python3 "$GIZMODUCK_HOME/scripts/gizmoduck_ci.py" publish --out "$GIZMODUCK_OUT" --baseline /tmp/gizmoduck-baseline/code/findings.jsonl --title 'gizmoduck full code scan'
+      - name: Gate (blocks at $GIZMODUCK_BLOCK_AT)
         id: gate
         if: always() && steps.scan.outcome == 'success'
         env:
           GIZMODUCK_ALLOW_NO_BASELINE: ${{ vars.GIZMODUCK_ALLOW_NO_BASELINE }}
           GIZMODUCK_ALLOW_INCOMPLETE: ${{ vars.GIZMODUCK_ALLOW_INCOMPLETE }}
           GIZMODUCK_TRUST_ASSIGNED_SEVERITY: ${{ vars.GIZMODUCK_TRUST_ASSIGNED_SEVERITY }}
-        run: python3 "$GIZMODUCK_HOME/scripts/gizmoduck_ci.py" gate --baseline /tmp/gizmoduck-baseline/code/findings.jsonl --current "$GIZMODUCK_OUT/findings.jsonl" --manifest "$GIZMODUCK_OUT/run-manifest.json" --json-out "$GIZMODUCK_OUT/gate.json" --new-out "$GIZMODUCK_OUT/new-blocking.jsonl" --summary "$GITHUB_STEP_SUMMARY"
+        run: python3 "$GIZMODUCK_HOME/scripts/gizmoduck_ci.py" gate --baseline /tmp/gizmoduck-baseline/code/findings.jsonl --current "$GIZMODUCK_OUT/findings.jsonl" --manifest "$GIZMODUCK_OUT/run-manifest.json" --block-at "$GIZMODUCK_BLOCK_AT" --json-out "$GIZMODUCK_OUT/gate.json" --new-out "$GIZMODUCK_OUT/new-blocking.jsonl" --summary "$GITHUB_STEP_SUMMARY"
       - name: Upload results
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -213,7 +261,7 @@ jobs:
           retention-days: 90
           if-no-files-found: warn
       - name: ServiceDesk Plus tickets for new Critical/High (opt-in)
-        if: always() && steps.gate.outcome == 'failure' && github.event_name != 'pull_request' && vars.GIZMODUCK_SDP_TICKETS == 'true'
+        if: always() && (steps.gate.outcome == 'success' || steps.gate.outcome == 'failure') && github.event_name != 'pull_request' && vars.GIZMODUCK_SDP_TICKETS == 'true'
         env:
           GIZMODUCK_SDP_TICKETS: ${{ vars.GIZMODUCK_SDP_TICKETS }}
           SDP_BASE_URL: ${{ secrets.SDP_BASE_URL }}

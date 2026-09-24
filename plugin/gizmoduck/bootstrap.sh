@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# bootstrap.sh - install Nuclei plus the eight other gizmoduck scanners on
+# bootstrap.sh - install Nuclei plus the ten other gizmoduck scanners on
 # Linux / WSL Ubuntu 24.04.
 #
 # Each tool installs independently: a failure in one does not stop the rest
@@ -125,6 +125,37 @@ install_semgrep() {
   pip3 install --user --upgrade semgrep
 }
 
+# Pinned, unlike the tools above that resolve "latest": gitleaks is the secrets
+# gate of the CI tier-1 PR check, so a new release must not change what blocks
+# a pull request without a gizmoduck release saying so. 8.19+ is required for
+# the `git` / `dir` subcommands scanners/gitleaks.py calls. Bump deliberately.
+GITLEAKS_VERSION=8.24.0
+
+install_gitleaks() {
+  local arch
+  case "$(uname -m)" in
+    x86_64|amd64) arch=x64 ;;
+    aarch64|arm64) arch=arm64 ;;
+    *) echo "Unsupported arch $(uname -m)"; return 1 ;;
+  esac
+  local tgz="gitleaks_${GITLEAKS_VERSION}_linux_${arch}.tar.gz"
+  local sums="gitleaks_${GITLEAKS_VERSION}_checksums.txt"
+  local url="https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}"
+  # Stage under /opt, not /tmp - see install_nuclei above for why.
+  local stage=/opt/gizmoduck-gitleaks-download
+  sudo rm -rf "$stage"
+  sudo mkdir -p "$stage"
+  sudo curl -fsSL -o "$stage/$tgz" "$url/$tgz"
+  sudo curl -fsSL -o "$stage/$sums" "$url/$sums"
+  # The release's own checksum list: catches a truncated or swapped download.
+  (cd "$stage" && grep " ${tgz}\$" "$sums" | sha256sum -c -)
+  sudo tar -xzf "$stage/$tgz" -C "$stage" gitleaks
+  sudo mv "$stage/gitleaks" /usr/local/bin/gitleaks
+  sudo chmod +x /usr/local/bin/gitleaks
+  sudo rm -rf "$stage"
+  echo ">> installed: gitleaks $(gitleaks version 2>&1 | head -1)"
+}
+
 install_depcheck() {
   local ver
   ver=$(curl -fsSL https://api.github.com/repos/jeremylong/DependencyCheck/releases/latest \
@@ -211,6 +242,7 @@ try_install "testssl.sh"         install_testssl
 try_install "trivy"              install_trivy
 try_install "checkov"            install_checkov
 try_install "semgrep"            install_semgrep
+try_install "gitleaks"           install_gitleaks
 try_install "dependency-check"   install_depcheck
 
 # dependency-check's first run downloads the entire NVD CVE corpus. Without an
@@ -262,7 +294,7 @@ cat <<'MSG'
  Or drive it through the plugin:
    /gizmoduck:scan https://your-new-site.com high
 
- For the full nine-tool routine across a manifest of targets:
+ For the full eleven-tool routine across a manifest of targets:
    /gizmoduck:doctor    (confirm what actually installed)
 ------------------------------------------------------------
 MSG

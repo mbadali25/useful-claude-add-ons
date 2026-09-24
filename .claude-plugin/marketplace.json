@@ -232,8 +232,8 @@
     {
       "name": "gizmoduck",
       "source": "./plugin/gizmoduck",
-      "description": "Nuclei vulnerability scans on hosts and websites, diffed against a baseline, rendered as triaged Markdown/HTML/PDF reports that itemise Critical/High/Medium and count the rest, and turned into ServiceDesk Plus tickets for Critical and High findings after one batch confirmation. /gizmoduck:ci installs GitHub Actions and Bitbucket Pipelines security scans into a repo - code scans on every PR, staging endpoint scans behind a prod-refusal guard, a baseline diff, and a build that fails only on new Critical/High. No hooks, no agents.",
-      "version": "0.6.0"
+      "description": "Nuclei vulnerability scans on hosts and websites, diffed against a baseline, rendered as triaged Markdown/HTML/PDF reports that itemise Critical/High/Medium and count the rest, and turned into ServiceDesk Plus tickets for Critical and High findings after one batch confirmation. /gizmoduck:ci installs tiered GitHub Actions and Bitbucket Pipelines security scans into a repo - endpoint autodetection that asks instead of guessing, a light diff-aware PR check, targeted full scans with staging endpoint scans behind a prod-refusal guard, a weekly sweep, baseline diffs, and an endpoint stage that fails rather than pass an empty scan. No hooks, no agents.",
+      "version": "0.7.0"
     },
     {
       "name": "localgpu",

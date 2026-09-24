@@ -124,7 +124,7 @@ class Manifest:
 # between load_manifest's up-front validation and _location() below so the
 # two can never drift out of step with each other.
 _LOCATION_FIELD = {"web": "url", "host": "host", "iac": "path",
-                   "deps": "path", "code": "path"}
+                   "deps": "path", "code": "path", "secrets": "path"}
 
 
 def _location_field_name(kind):
