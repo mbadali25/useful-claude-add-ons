@@ -610,27 +610,34 @@ def test_a_zero_prefixed_ttl_is_decimal_and_still_publishes_a_deadline(
     # published deadline is what pins the value rather than the absence of an
     # error message.
     #
-    # NOT asserted here: a tight upper bound on how many seconds out the
-    # deadline lands. Measured on this Windows/Git-Bash host, the first
-    # lock_extend fires several real seconds after process start (fork/exec
-    # overhead launching bash.exe and every rule-matcher subprocess, not a
-    # calculation bug), so a bound sized to "8 plus a little slack" flaked at
-    # 12-16s. What the octal-vs-decimal question actually predicts, and what
-    # stays true regardless of host speed, is DIRECTION: the deadline is
-    # published (checked above) and it sits in the future relative to when
-    # the gate started (monotonic), nowhere near the untouched 180s compiled
-    # default -- which is what a silent fallback (the failure mode a broken
-    # decimal parse would actually produce, once the "value too great for
-    # base" crash is ruled out above) would look like instead.
+    # A bound of "< 170" (ported from e0278bc9) proved only "not the untouched
+    # 180s default" -- it also passed a TTL misread as, say, 80 (10x the
+    # requested 8, exactly the shape an octal/base misparse or a stray
+    # multiplier would produce), which is precisely the silent-wrong-value
+    # failure this test exists to catch. window must be MONOTONIC (checked
+    # first) and DERIVED FROM 8, not merely "somewhere under 180".
+    #
+    # No wall-clock-speed assumption, though: measured on a slow Windows/
+    # Git-Bash host, the first lock_extend fires several real seconds after
+    # process start (fork/exec overhead launching bash.exe and every
+    # rule-matcher subprocess, not a calculation bug) -- up to 12-16s observed
+    # there. A bound sized to "8 plus a little slack" flaked on exactly that
+    # host. 40s gives that overhead better than 2x headroom over its worst
+    # observed value while sitting comfortably under half of 80 (the
+    # misparsed value this test guards against) and a fifth of 180 (the
+    # compiled default) -- wide enough to never flake on process-spawn
+    # variance, narrow enough that neither wrong value could land inside it
+    # by chance.
     window = int(seen) - before
     assert window > 0, (
         "the published deadline is not after the moment the gate started, "
         "so lock_extend did not actually publish a forward-moving deadline. "
         "window=" + str(window) + "s " + result.stderr
     )
-    assert window < 170, (
+    assert window < 40, (
         "`CREW_VERIFY_LOCK_TTL=08` produced a window of " + str(window)
-        + "s, indistinguishable from a silent fallback to the untouched "
-        "180s compiled default rather than the requested eight seconds. "
-        + result.stderr
+        + "s -- not close enough to a decimal-8 TTL (max(8, 2*0), plus real "
+        "process-spawn overhead) to rule out a silent misparse to 80 (an "
+        "octal/base error) or a fallback to the untouched 180s compiled "
+        "default. " + result.stderr
     )

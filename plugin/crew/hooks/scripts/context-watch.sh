@@ -4,10 +4,19 @@
 # threshold, asks Claude to write a handoff note before ending the turn.
 # Exit 2 sends control back to the model with the reason on stderr.
 #
-# NOTHING HERE RUNS until a repository has .crew/config.json - crew is
-# per-repository and its hooks are inert until `/crew:init`. That is deliberate
-# (a gate that fires in every repo you open would be hostile), but it does mean
-# installing the plugin is not enough on its own.
+# NOTHING HERE RUNS until a repository at least has a `.crew/` directory -
+# crew is per-repository and its hooks are inert until something (`/crew:init`
+# or a worktree copy) has made that much true. That is deliberate (a gate that
+# fires in every repo you open would be hostile), but it does mean installing
+# the plugin is not enough on its own.
+#
+# Two gates below, not one, since crew 1.0 F4: this hook's own handover to
+# auto-clear.sh (the forced-continuation branch, just past the `.crew/`
+# check) reaches it on `.crew/` existing alone, matching auto-clear.sh's own
+# directory gate - `context.autoClear` is a machine-global switch and must
+# work in any crew repo (CONFIG.md sec 14). This hook's OWN context-window
+# measurement and nagging, further down, is a separate question and keeps
+# requiring a real `.crew/config.json` underneath, unchanged.
 INPUT=$(cat)
 
 # Loop safety, layer 1, checked FIRST -- before the config check, before
@@ -92,7 +101,7 @@ cw_log_autoclear_trouble() {
 }
 
 cw_run_auto_clear() {
-  local err rc out_file out
+  local err rc
   # Stdout is forwarded, not discarded: `method notify` (and a `sendkeys`
   # decline that falls back to it) is the ONE real, non-dry-run path that
   # writes anything there -- a single line of JSON, `{"systemMessage": ...}`
@@ -100,28 +109,33 @@ cw_run_auto_clear() {
   # there is nothing here for it to collide with. Every other auto-clear
   # path (a refusal, a tmux/xdotool/sendkeys send) still writes nothing to
   # stdout, exactly as before; only `notify`'s message is new here.
-  out_file=$(mktemp 2>/dev/null) || out_file=""
-  if [ -n "$out_file" ]; then
-    err=$(bash "$(dirname "${BASH_SOURCE[0]}")/auto-clear.sh" --root "$PWD" --session "$SESSION_ID" \
-          2>&1 1>"$out_file")
-    rc=$?
-    out=$(cat "$out_file" 2>/dev/null)
-    rm -f "$out_file"
-    [ -n "$out" ] && printf '%s\n' "$out"
-  else
-    err=$(bash "$(dirname "${BASH_SOURCE[0]}")/auto-clear.sh" --root "$PWD" --session "$SESSION_ID" 2>&1 1>/dev/null)
-    rc=$?
-  fi
+  #
+  # Review (Codex FIX|context-watch.sh:~103): this used to capture stdout
+  # through a `mktemp` file and, ONLY when mktemp failed, redirect that same
+  # stdout to /dev/null -- silently dropping the notify JSON on the one path
+  # where mktemp is unavailable. That was also unrecoverable: auto-clear.sh
+  # had already claimed the one-per-session SENT_MARKER inside that same
+  # call, so a retry would find its attempt already spent and refuse before
+  # printing anything again. The fix removes the mktemp dependency (and
+  # therefore its failure mode) entirely: fd 3 holds this hook's own real
+  # stdout before auto-clear.sh's fd 1 is temporarily aimed at fd 2's
+  # capture pipe by `2>&1`, then handed back to fd 1 by `1>&3` -- so
+  # auto-clear.sh's stdout streams straight through to wherever THIS
+  # process's stdout already goes (unconditionally, not behind a
+  # mktemp-shaped maybe), and only its stderr lands in $err.
+  exec 3>&1
+  err=$(bash "$(dirname "${BASH_SOURCE[0]}")/auto-clear.sh" --root "$PWD" --session "$SESSION_ID" 2>&1 1>&3)
+  rc=$?
+  exec 3>&-
   if [ "$rc" -ne 0 ] || [ -n "$err" ]; then
     cw_log_autoclear_trouble "auto-clear exited $rc${err:+ - stderr: $err}"
   fi
 }
 
-# `.crew/config.json`'s existence decides whether this hook does ANYTHING,
-# so it is checked BEFORE resolving python, not after -- a non-crew
-# repository must not pay for spinning up an interpreter (or, before the
-# WindowsApps fix below, for launching a stub) to run a hook that was always
-# going to exit 0.
+# `.crew/`'s existence decides whether this hook does ANYTHING at all, so it
+# is checked BEFORE resolving python, not after -- a non-crew repository must
+# not pay for spinning up an interpreter (or, before the WindowsApps fix
+# below, for launching a stub) to run a hook that was always going to exit 0.
 #
 # The JSON payload's own "cwd" -- NOT $CLAUDE_PROJECT_DIR -- is still the
 # PRIMARY source, restoring the priority order this hook always used: a crew
@@ -138,7 +152,12 @@ cw_run_auto_clear() {
 # do better at this point in the script.
 CWD_RAW=$(printf '%s' "$INPUT" | grep -o '"cwd"[[:space:]]*:[[:space:]]*"[^"]*"' | sed -E 's/.*:[[:space:]]*"([^"]*)"/\1/')
 cd "${CWD_RAW:-${CLAUDE_PROJECT_DIR:-.}}" 2>/dev/null || exit 0
-[ -f .crew/config.json ] || exit 0
+# crew 1.0 F4 reachability fix: this gate is `.crew/` the DIRECTORY, not
+# `.crew/config.json` -- so the forced-continuation handover to auto-clear.sh
+# just below is never blocked purely by a repo lacking a config.json, which
+# would otherwise stand this hook down before auto-clear's own (now equally
+# directory-gated) logic ever got a chance to run. See CONFIG.md sec 14.
+[ -d .crew ] || exit 0
 
 if [ "$STOP_ACTIVE" = 1 ]; then
   if [ -f "$MARKER" ]; then
@@ -146,6 +165,13 @@ if [ "$STOP_ACTIVE" = 1 ]; then
   fi
   exit 0
 fi
+
+# From here down: this hook's OWN context-window measurement and nagging --
+# as distinct from the auto-clear handover above, which needed only `.crew/`
+# -- still requires a fully initialised crew repo. Unchanged from before F4:
+# a `.crew/` directory with no config.json gets no warnings and writes no
+# marker, exactly as a repo that never ran `/crew:init` always has.
+[ -f .crew/config.json ] || exit 0
 
 # Loop safety, layer 2: once per session per threshold crossing ($MARKER,
 # keyed above), cleared by handoff-read.sh at this session's next

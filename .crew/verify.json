@@ -39,10 +39,13 @@
     "trusting these: measured on a quiet tree 2026-09-18/19. The whole-suite rule",
     "(rules[8], `python3 -m pytest plugin/crew/tests/ -q`) was re-priced 2026-09-24",
     "from the then-current 185 (itself the midpoint of five runs spanning 157-201s,",
-    "which were partial or otherwise not the full serial suite) to the measured",
-    "full-serial 1928s (2 failed, 2018 passed, 10 skipped) - see that rule's own",
-    "`why` for what the two failures were and why 1928s, not the faster -n auto",
-    "figure, is the number priced here on purpose.",
+    "which were partial or otherwise not the full serial suite) to a measured",
+    "full-serial 1928s, and re-priced again the same day (crew 1.0 F4) to 377s -",
+    "measured on THIS host (Linux, 20 CPUs, lightly loaded - see that rule's own",
+    "`why` for the full host/load/process record the 1928s figure omitted, which",
+    "is why it was superseded rather than reconciled: an unannotated number",
+    "cannot be re-derived or compared against a load figure that does not exist).",
+    "The two are not a claimed speedup of the same work - see the rule's own `why`.",
     "non-empty every time and `default` unreachable."
   ],
 
@@ -147,10 +150,10 @@
 
     { "paths": ["plugin/crew/tests/conftest.py", "plugin/crew/tests/crew_fixtures.py",
                 "plugin/crew/tests/context.py", "plugin/crew/tests/sabotage.py"],
-      "seconds": 1928,
+      "seconds": 377,
       "run": ["python3 -m pytest plugin/crew/tests/ -q"],
       "reach": "local",
-      "why": "1928s measured 2026-09-24 (serial: 2 failed, 2018 passed, 10 skipped - see e0278bc9, ported, for the two failures) - the honest cost of the `run` command exactly as written above, no `-n auto`. Priced at that serial figure ON PURPOSE, not at the faster number this same suite gets in practice: `-n auto` (pytest-xdist) measures 427s for a full run (TODO.md, crew 1.1.x tool-provisioning entry, 2026-09-24 win-repo burn-in), but xdist is a tool this repo does not yet provision (same TODO entry), so nothing here may assume it is installed, and pricing to the number a missing dependency would produce is exactly the fiction `seconds` exists to replace. 1928s is also what keeps this rule out of Stop's hands without a second flag: it is more than 30x the default `verify.stopBudgetSeconds` (60), so verify-gate.sh's own budget accounting classifies it CHRONIC on every Stop run (`rules[8] is permanently over budget ... deferred every Stop ... stays UNVERIFIED until /crew:verify --all runs it`) - there is no separate `--all`-only field in this schema; being priced above the Stop budget IS what makes a rule --all-only, and understating `seconds` would have let it slip into a Stop run's budget instead. These four paths are imported by every test module, so a change here can make the whole suite vacuous while every module still reports green - the one case where nothing narrower is honest. Rare edit; crew_fixtures.resolve_bash() is why the suite runs at all under PowerShell. reach: local - the whole crew test suite runs against fixtures under tmp_path; nothing here calls out to a real network host." },
+      "why": "377s (376.31s wall, /usr/bin/time -v) measured 2026-09-24 on crew 1.0 F4, ONE serial run, no `-n auto` - the honest cost of the `run` command exactly as written above. Host: Linux (dadeush-buntu-laptop, kernel 7.0.0-31-generic, x86_64, 20 logical CPUs), python3 3.14.4. Load at start: `uptime` 1.01/1.63/1.54 (1-min/5-min/15-min load average against 20 CPUs, i.e. lightly loaded); `ps -eo pcpu,comm --sort=-pcpu` topped out at a handful of low-single-digit-percent background processes (an editor/assistant process, a desktop shell, a browser) and nothing else contending for CPU - no concurrent test run or build. `/usr/bin/time -v` reported 64% CPU utilisation for the job (154.79s user + 87.18s system against 376.81s elapsed), consistent with a mostly-serial run whose subprocess-spawning tests (bash/pwsh children) do not saturate a single core. Result: 2814 passed, 202 skipped, 827 deselected, exit 0 - clean, unlike the previous entry here (1928s, unannotated: no host, no load, no concurrent-process record given, so it could not be re-derived or trusted as a rate rather than a one-off; superseded rather than reconciled). Re-time rather than trusting this figure too - it is a fact about one host on one day, not a rate. 1928s->377s is not a claimed 5x speedup of the SAME work: the earlier figure carries no host, so the two numbers are not known to describe comparable machines, and this entry deliberately does not assert they do. This is also what keeps this rule out of Stop's hands without a second flag: 377s is still more than 6x the default `verify.stopBudgetSeconds` (60), so verify-gate.sh's own budget accounting classifies it CHRONIC on every Stop run (`rules[8] is permanently over budget ... deferred every Stop ... stays UNVERIFIED until /crew:verify --all runs it`) - there is no separate `--all`-only field in this schema; being priced above the Stop budget IS what makes a rule --all-only. `-n auto` (pytest-xdist) is not priced here on purpose: xdist is a tool this repo does not yet provision (TODO.md, crew 1.1.x tool-provisioning entry), so nothing here may assume it is installed, and pricing to the number a missing dependency would produce is exactly the fiction `seconds` exists to replace. These four paths are imported by every test module, so a change here can make the whole suite vacuous while every module still reports green - the one case where nothing narrower is honest. Rare edit; crew_fixtures.resolve_bash() is why the suite runs at all under PowerShell. reach: local - the whole crew test suite runs against fixtures under tmp_path; nothing here calls out to a real network host." },
 
     { "paths": ["plugin/crew/skills/crew-graph/scripts/crew_upgrade.py",
                 "plugin/crew/tests/test_upgrade.py",

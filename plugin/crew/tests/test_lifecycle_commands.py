@@ -13,7 +13,7 @@ goes red on the mutation, and diffs the scratch against the tracked file to
 prove the tracked file itself was never touched.
 """
 import os
-import subprocess
+import shutil
 import tempfile
 
 import pytest
@@ -137,14 +137,18 @@ def test_fix_has_every_lifecycle_phase():
 
 
 def _sabotage(path, target, checker, expected_before=True):
-    """Copy `path` to a scratch file via `cp`, remove `target` from the
-    copy, and confirm `checker` flips from `expected_before` to its
-    opposite. `diff` against the tracked file proves the mutation landed
-    only in the scratch copy and the tracked file was never touched.
-    """
+    """Copy `path` to a scratch file, remove `target` from the copy, and
+    confirm `checker` flips from `expected_before` to its opposite. A text
+    comparison against the tracked file proves the mutation landed only in
+    the scratch copy and the tracked file was never touched.
+
+    `shutil.copyfile`, not a spawned `cp`/`diff` -- neither exists on native
+    Windows without Git Bash's `usr/bin` on PATH, and a bare `subprocess.run`
+    on either raised `FileNotFoundError: [WinError 2]` there (Windows burn-in
+    family D, `docs/review/06-windows-burn-in.md`@84f32325)."""
     with tempfile.TemporaryDirectory() as tmp:
         scratch = os.path.join(tmp, os.path.basename(path))
-        subprocess.run(["cp", path, scratch], check=True)
+        shutil.copyfile(path, scratch)
         before_text = _read(scratch)
         assert target in before_text, f"sabotage target not found in {path}"
         assert checker(before_text) is expected_before
@@ -156,9 +160,8 @@ def _sabotage(path, target, checker, expected_before=True):
             f"{path}: check did not go red after removing {target!r} - "
             "the assertion is not exercising this text"
         )
-        diff = subprocess.run(["diff", path, scratch], capture_output=True,
-                              text=True, check=False)
-        assert diff.returncode == 1, "sabotage produced no diff against the tracked file"
+        assert _read(path) != _read(scratch), (
+            "sabotage produced no diff against the tracked file")
         tracked_now = _read(path)
         assert tracked_now == before_text, "tracked file was mutated by this test"
 

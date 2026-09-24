@@ -107,6 +107,16 @@ def _repo(tmp_path, budget=None, **auto):
     return crew_fixtures.make_repo(tmp_path, config={"context": cfg}, git=False)
 
 
+def _repo_no_config(tmp_path):
+    """`.crew/` present (so `make_repo` still creates it) but NO
+    `.crew/config.json` -- state (2) of `test_auto_clear.py`'s six-state
+    matrix. Proves `context-watch`'s OWN handover to auto-clear (the
+    forced-continuation branch) reaches it on `.crew/` alone, matching
+    auto-clear's own directory gate -- crew 1.0 F4's reachability fix
+    (CONFIG.md sec 14)."""
+    return crew_fixtures.make_repo(tmp_path, config=None, git=False)
+
+
 def _usage(model, total):
     return json.dumps({"type": "assistant", "message": {"role": "assistant", "model": model, "usage": {
         "input_tokens": total // 10, "cache_read_input_tokens": total - total // 10 - 1000,
@@ -223,6 +233,30 @@ def test_the_forced_continuation_hands_over_to_auto_clear(flavor, tmp_path):
     stop_hook_active before auto-clear could look -- so the clear waited for
     the user's NEXT turn."""
     root = _repo(tmp_path)
+    env = _sendable(flavor, tmp_path, root)
+    _write_marker(root)
+    _write_handoff(root)
+    transcript = _transcript(root, 950_000)
+
+    result = _invoke(flavor, "context-watch", root, _stop(root, transcript, active=True), env_extra=env)
+
+    assert result.returncode == 0
+    assert "would have sent" in _log(root), _log(root) + result.stderr
+
+
+@by_flavor
+def test_the_forced_continuation_reaches_auto_clear_with_no_repo_config_json(flavor, tmp_path):
+    """crew 1.0 F4 reachability fix. Before it, `context-watch.sh:81` /
+    `context-watch.ps1:25` stood the whole hook down on a missing
+    `.crew/config.json`, so a `.crew/` directory the machine had still opted
+    in for (a fresh checkout, or one that ran `/crew:init` for something
+    other than auto-clear) never reached the forced-continuation handover
+    below -- even though auto-clear.sh/.ps1's OWN gate now arms on `.crew/`
+    alone (test_auto_clear.py's state (2)). This is the caller-level proof
+    that the handover actually runs end to end through context-watch, not
+    only when auto-clear is invoked directly."""
+    root = _repo_no_config(tmp_path)
+    assert not (root / ".crew" / "config.json").exists()
     env = _sendable(flavor, tmp_path, root)
     _write_marker(root)
     _write_handoff(root)

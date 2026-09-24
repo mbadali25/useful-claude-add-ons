@@ -888,6 +888,57 @@ this block, in `context-watch`, or in auto-clear influences when or whether
 it happens. This block only decides what happens *after* a handoff is
 written and verified — whether, and how, to act on it.
 
+### `context.autoClear` is machine-global by design, and reaches every crew repo
+
+`context.autoClear` lives in `crew_config.py`'s machine-global layer because
+*how a terminal is driven to accept a keystroke* is a fact about the machine,
+not the repository — the same reasoning `method` gets above. Since it is a
+machine-wide switch, the OWNER DECISION (crew 1.0 F4, reversing the file-based
+gate this section used to describe) is that it works in *any* crew repo, not
+only ones that have run `/crew:init` far enough to have written a
+`.crew/config.json` of their own. "Crew repo" is read the same way both
+senders now agree: `.crew/` the DIRECTORY exists. `auto-clear.sh`/
+`auto-clear.ps1` gate on it directly; `context-watch.sh`/`.ps1` gate their OWN
+handover to auto-clear the same way, while their OWN context-window warnings
+and wrap-up prompts keep requiring a real `.crew/config.json` underneath —
+sizing a token budget against nothing is not a warning worth printing, so that
+half of each hook stays exactly as strict as before.
+
+**The never-create rule holds regardless.** A repo with no `.crew/` at all —
+a fresh checkout, since the directory itself is git-ignored in this very repo
+— gets nothing: no `.crew/`, no `.crew/.autoclear.log`, not even a silent
+read that could be observed. Nothing here creates `.crew/`; the directory
+gate only ever widens what happens once something else (`/crew:init`, a
+worktree copy, or any other hook) has already made it exist.
+
+**Required order in both senders, unchanged from before F4:** is `.crew/` a
+directory at all → is auto-clear armed (the machine's `enabled`, then
+`onlyRepos`/`onlySessions`) → only then may anything be written, even a log
+line. `.crew/config.json`'s presence or absence plays no part in that order
+any more. The ordering matters for a second reason beyond "is this a crew
+repo": the enabled/narrowing check must ALSO run before anything is written,
+or a disabled or narrowed-out repo stops being silent — it starts leaving a
+`.crew/.autoclear.log` behind (even one line saying "refusing") the moment it
+falls through to a refusal path instead of the silent `off` one. Both
+`auto-clear.sh` and `auto-clear.ps1` special-case `off` (the enabled check,
+then the `onlyRepos`/`onlySessions` narrowing) as an unconditional, silent
+`exit 0` reached *before* the log file or its logging function is armed —
+never a `note()`/`Write-CrewAutoClearNote` call. See `plugin/crew/tests/test_auto_clear_order.py`
+for the regression tests pinning this order in both flavours.
+
+**What this replaces.** The previous account here described a "deliberate
+trade-off": the machine's `enabled: true` armed nothing in a repository until
+it had run `/crew:init` far enough to gain a `.crew/config.json`, and a repo
+that wanted the machine switch to reach it before that point had no option
+but to write one anyway — a minimal, otherwise-pointless per-repo
+`context.autoClear` stanza duplicated into a config that existed only to
+satisfy the file gate (`solomon/aws-managed-services` carried exactly this
+workaround). That duplication is no longer needed: the directory alone is
+enough, and a repo's own `context.autoClear` config is back to doing only
+what it always meant to do — narrow or switch OFF what the machine turned
+on, never manufacture a "not initialised" refusal the machine did not ask
+for.
+
 ### `method`
 
 | Value | What it does | Where it can run |

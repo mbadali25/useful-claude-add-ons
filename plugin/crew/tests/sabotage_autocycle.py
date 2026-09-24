@@ -284,26 +284,128 @@ AUTOCYCLE_MUTATIONS = (
      "  }\n",
      "tests/test_auto_cycle.py::"
      "test_resolve_crew_link_root_classifies_drive_unc_and_rootless_targets[/repo]"),
-    # --- the `.crew/config.json` gate removed entirely: a `.crew/` directory
-    # present with no config.json (or none at all) must stay silent, not fall
-    # through to the merge below -- the regression a directory-only gate
-    # reintroduces. OWNER DECISION reverted the gate from the directory back
-    # to this file; these two mutations replace the directory-gate ones.
-    ("auto-clear.sh's .crew/config.json gate removed entirely", CLEAR_SH,
+    # --- the `.crew/` directory gate reintroducing the OLD `.crew/config.json`
+    # requirement: a `.crew/` directory present with no config.json must ARM
+    # (state (2) of the six-state matrix, test_auto_clear.py's own comment
+    # block), not stand down the way the F3 file-based gate did. OWNER
+    # DECISION reversed the gate from the file back to the directory (crew
+    # 1.0 F4); these two mutations reintroduce the file check this reversal
+    # removed.
+    ("auto-clear.sh's .crew/ directory gate reverts to the old config.json check", CLEAR_SH,
+     "[ -d .crew ] || exit 0\nLOG=\".crew/.autoclear.log\"\n",
      "[ -f .crew/config.json ] || exit 0\nLOG=\".crew/.autoclear.log\"\n",
-     "LOG=\".crew/.autoclear.log\"\n",
      "tests/test_auto_clear.py::"
-     "test_a_crew_directory_with_no_config_json_stays_silent_and_creates_nothing_sh"),
-    ("auto-clear.ps1's .crew/config.json gate removed entirely", CLEAR_PS1,
+     "test_a_crew_directory_with_no_config_json_arms_and_reaches_the_session_check_sh"),
+    ("auto-clear.ps1's .crew/ directory gate reverts to the old config.json check", CLEAR_PS1,
+     "if (-not (Test-Path \".crew\" -PathType Container)) { exit 0 }\n\n$log = \".crew/.autoclear.log\"\n",
      "if (-not (Test-Path \".crew/config.json\" -PathType Leaf)) { exit 0 }\n\n$log = \".crew/.autoclear.log\"\n",
-     "$log = \".crew/.autoclear.log\"\n",
      "tests/test_auto_clear.py::"
-     "test_a_crew_directory_with_no_config_json_stays_silent_and_creates_nothing_ps1"),
+     "test_a_crew_directory_with_no_config_json_arms_and_reaches_the_session_check_ps1"),
+    # --- `.crew/` created as a side effect of note()/Write-CrewAutoClearNote,
+    # WITH the directory gate itself also gone: the never-create rule (state
+    # (1) of the same matrix -- no `.crew/` at all) exists because the gate
+    # above stands the whole hook down before note() can ever run; reintroduce
+    # BOTH the removed gate and the mkdir/New-Item this F4 pass took out of
+    # note() and a session with no `.crew/` at all would get one created the
+    # moment ANY refusal past that point tried to log (here, "no session
+    # id"). Mkdir alone, with the gate left standing, is unreachable dead code
+    # and would make this mutation vacuous -- the gate is what has to go too.
+    ("auto-clear.sh's directory gate is gone and note() creates .crew/ again", CLEAR_SH,
+     "[ -d .crew ] || exit 0\n"
+     "LOG=\".crew/.autoclear.log\"\n"
+     "\n"
+     "note() {  # one line to the log and to stderr; the log is the one anybody reads\n"
+     "  # `.crew/` is guaranteed to exist by the gate above, which runs before this\n"
+     "  # function is ever called -- no mkdir needed, and none may run here: a\n"
+     "  # repo with no `.crew/` must never get one created as a side effect.\n"
+     "  printf",
+     "LOG=\".crew/.autoclear.log\"\n"
+     "\n"
+     "note() {  # one line to the log and to stderr; the log is the one anybody reads\n"
+     "  mkdir -p .crew 2>/dev/null\n"
+     "  printf",
+     "tests/test_auto_clear.py::"
+     "test_no_crew_directory_at_all_stays_silent_and_creates_nothing_sh"),
+    ("auto-clear.ps1's directory gate is gone and Write-CrewAutoClearNote creates .crew/ again", CLEAR_PS1,
+     "if (-not (Test-Path \".crew\" -PathType Container)) { exit 0 }\n"
+     "\n"
+     "$log = \".crew/.autoclear.log\"\n"
+     "\n"
+     "function Write-CrewAutoClearNote([string]$Message) {\n"
+     "  # A Stop hook's stderr is invisible on exit 0, so the log is the only place\n"
+     "  # anybody can find out why nothing happened. `.crew` is guaranteed to exist\n"
+     "  # by the gate above, which runs before this function is ever called -- no\n"
+     "  # New-Item needed, and none may run here.\n"
+     "  $stamp",
+     "$log = \".crew/.autoclear.log\"\n"
+     "\n"
+     "function Write-CrewAutoClearNote([string]$Message) {\n"
+     "  if (-not (Test-Path \".crew\")) { New-Item -ItemType Directory -Path \".crew\" -Force | Out-Null }\n"
+     "  $stamp",
+     "tests/test_auto_clear.py::"
+     "test_no_crew_directory_at_all_stays_silent_and_creates_nothing_ps1"),
     # --- resume --------------------------------------------------------------
     ("the resume cuts the next action off a long handoff", CONTEXT,
      "                lead = f\"Next action: {action}\\n\" if action else \"\"\n",
      "                lead = \"\"\n",
      _T + "test_write_clear_resume_carries_the_next_action_end_to_end[clear-sh]"),
+    # --- order invariant: crew-repo gate -> enabled/narrowing -> only THEN
+    # may anything be logged. A not-opted-in run reaching a LATER refusal
+    # (no session id, no usable method) before the silent `off`/narrowing
+    # exit runs is the exact regression `test_auto_clear_order.py` exists to
+    # pin -- see that file's own docstring and CONFIG.md sec 14.
+    ("the enabled check no longer runs before anything can log (bash)", CYCLE,
+     "    if not cfg[\"enabled\"]:\n",
+     "    if False and not cfg[\"enabled\"]:\n",
+     "tests/test_auto_clear_order.py::"
+     "test_config_present_enabled_false_writes_no_log_sh"),
+    ("the enabled check no longer runs before anything can log (PowerShell)", CLEAR_PS1,
+     "if (-not $enabled) { exit 0 }\n",
+     "if ($false) { exit 0 }\n",
+     "tests/test_auto_clear_order.py::"
+     "test_config_present_enabled_false_writes_no_log_ps1"),
+    ("the onlyRepos/onlySessions narrowing no longer runs before anything can log (bash)",
+     CYCLE,
+     "    if not in_scope(cfg, root, session_id):\n",
+     "    if False and not in_scope(cfg, root, session_id):\n",
+     "tests/test_auto_clear_order.py::"
+     "test_config_present_only_repos_excludes_writes_no_log_sh"),
+    ("the onlyRepos narrowing no longer runs before anything can log (PowerShell)",
+     CLEAR_PS1,
+     "  if (-not $here -or $listed -notcontains $here) { exit 0 }\n",
+     "  if ($false) { exit 0 }\n",
+     "tests/test_auto_clear_order.py::"
+     "test_config_present_only_repos_excludes_writes_no_log_ps1"),
+    # --- Codex review FIXes (gpt-5.6-sol, 485a1b08..3f347d52) ----------------
+    ("an unresolvable sendkeys window owner is assumed safe again", CLEAR_PS1,
+     "if (-not $ownerKnown -or $ownerProcessName -eq \"WindowsTerminal\") {\n",
+     "if ($ownerProcessName -eq \"WindowsTerminal\") {\n",
+     "tests/test_auto_clear_review_fixes.py::"
+     "test_sendkeys_declines_when_the_window_owner_cannot_be_determined"),
+    ("ConvertTo-CrewWin32Arg stops quoting Start-Process's arguments", CLEAR_PS1,
+     "  $sb = New-Object System.Text.StringBuilder\n",
+     "  return $Arg\n  $sb = New-Object System.Text.StringBuilder\n",
+     "tests/test_auto_clear_review_fixes.py::"
+     "test_convert_to_crew_win32_arg_round_trips_through_the_real_argv_algorithm[root-with-space]"),
+    ("context-watch.sh swallows auto-clear's stdout when mktemp fails again", WATCH_SH,
+     "  exec 3>&1\n"
+     "  err=$(bash \"$(dirname \"${BASH_SOURCE[0]}\")/auto-clear.sh\" --root \"$PWD\" --session \"$SESSION_ID\" 2>&1 1>&3)\n"
+     "  rc=$?\n"
+     "  exec 3>&-\n",
+     "  out_file=$(mktemp 2>/dev/null) || out_file=\"\"\n"
+     "  if [ -n \"$out_file\" ]; then\n"
+     "    err=$(bash \"$(dirname \"${BASH_SOURCE[0]}\")/auto-clear.sh\" --root \"$PWD\" --session \"$SESSION_ID\" \\\n"
+     "          2>&1 1>\"$out_file\")\n"
+     "    rc=$?\n"
+     "    out=$(cat \"$out_file\" 2>/dev/null)\n"
+     "    rm -f \"$out_file\"\n"
+     "    [ -n \"$out\" ] && printf '%s\\n' \"$out\"\n"
+     "  else\n"
+     "    err=$(bash \"$(dirname \"${BASH_SOURCE[0]}\")/auto-clear.sh\" --root \"$PWD\" --session \"$SESSION_ID\" 2>&1 1>/dev/null)\n"
+     "    rc=$?\n"
+     "  fi\n",
+     "tests/test_auto_clear_review_fixes.py::"
+     "test_context_watch_forwards_the_notify_json_even_when_mktemp_fails"),
 )
 
 
