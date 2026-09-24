@@ -32,6 +32,33 @@ generated hook's `additionalContext` actually reaches the Codex model has NOT
 been measured, which is why `codex-probe` reports "configured, not proven"
 until the context log records a Codex invocation, and even then only claims
 the hook was invoked.
+
+**MEASURED, a different reading and a different build: on Windows with
+codex-cli 0.154.0, a trusted run prints "Ignored unsupported project-local
+config keys in .codex/config.toml: profiles" and its own `sandbox` field
+reports `workspace-write`.** `[profiles.*]` is therefore not generated into
+`.codex/config.toml` at all -- see `CODEX_CONFIG` below. Read-only enforcement
+for the reviewer lives only on the command line
+(`codex exec --sandbox read-only`, `review_run.py`'s `command_for`), never in
+project-local config. This 0.154.0 finding and the 0.155.1 hook-schema reading
+above are two different measurements against two different builds; neither
+supersedes the other.
+
+**Hooks fire only when two separate gates both open, and `codex-probe` now
+reports on the first of them.** Per `codex-rs/config/src/loader/mod.rs`
+(`sanitize_project_config`, `disabled_reason_for_decision`): a project's
+`.codex/hooks.json` is not even loaded as a config layer unless
+`~/.codex/config.toml` (respecting `CODEX_HOME`) records that project as
+`trust_level = "trusted"` under `[projects."<path>"]` -- an untrusted or
+unrecorded project is disabled silently, with no warning printed, the same
+"gated_features" message class the denylisted `profiles` key would get if it
+were project-scoped at all. A hook that *did* load still needs its own
+content hash trusted, or the run needs `--dangerously-bypass-hook-trust`
+(`codex-rs/hooks/src/engine/discovery.rs`) -- `codex exec` has no interactive
+path to grant that trust, so a headless launch that relies on hooks needs the
+flag every time. `codex_trust()` below checks the first gate (project trust)
+and reports the second (the flag) as a static fact about crew's own launch
+sites, because it is not something a config file records.
 """
 
 import argparse
@@ -318,22 +345,21 @@ def codex_hooks(plugin_root):
 CODEX_CONFIG = """# crew:generated -- regenerate with crew_instructions.py codex.
 # Project config applies only to a TRUSTED project (codex 0.155.1's own help
 # text: "Project `.codex/config.toml`: settings for a trusted repository").
-# UNVERIFIED on a live run: whether `profiles` are honoured from project
-# config rather than only from ~/.codex/config.toml. `crew_instructions.py
-# codex-probe` reports what has been observed.
+#
+# No `[profiles.*]` table here, and none should be added. MEASURED on Windows
+# with codex-cli 0.154.0: `profiles` is on Codex's own project-local config
+# denylist (codex-rs/config/src/loader/mod.rs, PROJECT_LOCAL_CONFIG_DENYLIST)
+# and is stripped from this file every time it loads, trusted or not --
+# "Ignored unsupported project-local config keys in .codex/config.toml:
+# profiles. If you want these settings to apply, manually set them in your
+# user-level config.toml." A `[profiles.review] sandbox_mode = "read-only"`
+# entry here would be silently discarded and enforce nothing; a trusted run
+# with no `--sandbox` flag confirmed `workspace-write`, not read-only. The
+# reviewer's read-only sandbox is enforced on the command line instead:
+# `codex exec --sandbox read-only` (review_run.py's `command_for`).
 
 # AGENTS.md is read natively; CLAUDE.md is the fallback where it is absent.
 project_doc_fallback_filenames = ["CLAUDE.md"]
-
-# `codex exec --profile review --json` is the reviewer: it cannot write.
-[profiles.review]
-sandbox_mode = "read-only"
-approval_policy = "never"
-
-# `--profile work` implements under crew's scope guard.
-[profiles.work]
-sandbox_mode = "workspace-write"
-approval_policy = "on-request"
 """
 
 
@@ -401,9 +427,128 @@ def _run(argv):
     return done.stdout if done.returncode == 0 else None
 
 
+# --------------------------------------------------------------------------
+# Codex project trust -- gates whether .codex/hooks.json ever loads at all.
+#
+# Schema confirmed by reading codex-rs (openai/codex, 2026-09-24):
+#   codex-rs/config/src/loader/mod.rs `set_project_trust_level_inner` writes,
+#   and `disabled_reason_for_decision` / `project_trust.rs` read:
+#     [projects]
+#     [projects."<native absolute path>"]
+#     trust_level = "trusted"            # or "untrusted"
+#   (an inline `"<path>" = { trust_level = "..." }` form under a bare
+#   `[projects]` table is also accepted -- the same function's own comment
+#   says it is what an older write, or a hand edit, can leave behind).
+#   Lookup tries the repo root then cwd, canonical (realpath) spelling before
+#   the literal one; Windows keys fold ASCII-case-insensitive, POSIX keys do
+#   not (project_trust.rs::normalize_lookup_key). `find_codex_home()` resolves
+#   `CODEX_HOME` when set, erroring if it is set but does not exist, and
+#   otherwise defaults to `~/.codex`.
+#
+# An untrusted or unrecorded project does not merely leave hooks unproven --
+# `disabled_reason_for_decision` names "project-local config, hooks, and exec
+# policies" as the features gated on trust, and the layer is skipped with no
+# warning printed (the warning path for the denylisted `profiles` key, above,
+# is itself gated on `disabled_reason.is_none()`, i.e. it is trust-conditional
+# too). So "no entry" and "trust_level = \"untrusted\"" are the SAME closed
+# state for this purpose, not two different findings.
+
+TRUST_OK, TRUST_CLOSED, TRUST_UNKNOWN = "trusted", "missing trust", "unknown"
+BYPASS_HOOK_TRUST_FLAG = "--dangerously-bypass-hook-trust"
+
+_PROJECTS_TABLE_RE = re.compile(r'^\[projects\]\s*$')
+_PROJECTS_ENTRY_RE = re.compile(r'^\[projects\."((?:[^"\\]|\\.)*)"\]\s*$')
+_PROJECTS_INLINE_RE = re.compile(r'^"((?:[^"\\]|\\.)*)"\s*=\s*\{(.*)\}\s*$')
+_TRUST_LEVEL_RE = re.compile(r'^trust_level\s*=\s*"(trusted|untrusted)"\s*$')
+_INLINE_TRUST_LEVEL_RE = re.compile(r'trust_level\s*=\s*"(trusted|untrusted)"')
+
+
+def _unescape_toml_key(raw):
+    """Just enough of a TOML basic string's escapes for a path: `\\\\` and
+    `\\"`. Anything more exotic is left as-is rather than guessed at."""
+    return raw.replace('\\"', '"').replace("\\\\", "\\")
+
+
+def _codex_home():
+    return os.environ.get("CODEX_HOME") or os.path.join(os.path.expanduser("~"), ".codex")
+
+
+def _project_trust_lookup_keys(root):
+    """Native path spellings Codex tries for `root`, canonical before literal
+    (`ProjectTrustLookup`); we have no cwd distinct from `root` to also try."""
+    literal = os.path.abspath(root)
+    try:
+        canonical = os.path.realpath(root)
+    except OSError:
+        canonical = literal
+    return ([canonical] if canonical != literal else []) + [literal]
+
+
+def _scan_project_trust(text, keys):
+    """(level, matched_key), or (None, None) when no entry for `keys` is
+    found. A narrow section-scanner, not a full TOML parser -- it reads only
+    the `[projects]` table's two documented shapes and ignores everything
+    else, which is sufficient for this one lookup and does not attempt to
+    validate the rest of the file."""
+    fold = (lambda s: s.lower()) if os.name == "nt" else (lambda s: s)
+    wanted = {fold(k) for k in keys}
+    mode = None  # None | "bare" | ("entry", key)
+    found = {}
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        entry = _PROJECTS_ENTRY_RE.match(line)
+        if entry:
+            mode = ("entry", _unescape_toml_key(entry.group(1)))
+            continue
+        if _PROJECTS_TABLE_RE.match(line):
+            mode = "bare"
+            continue
+        if line.startswith("["):
+            mode = None
+            continue
+        if mode == "bare":
+            inline = _PROJECTS_INLINE_RE.match(line)
+            if inline:
+                level = _INLINE_TRUST_LEVEL_RE.search(inline.group(2))
+                if level:
+                    found[_unescape_toml_key(inline.group(1))] = level.group(1)
+        elif isinstance(mode, tuple):
+            level = _TRUST_LEVEL_RE.match(line)
+            if level:
+                found[mode[1]] = level.group(1)
+    for key, level in found.items():
+        if fold(key) in wanted:
+            return level, key
+    return None, None
+
+
+def codex_trust(root):
+    """(state, detail). `state` is one of TRUST_OK / TRUST_CLOSED /
+    TRUST_UNKNOWN -- UNKNOWN is its own value and is never reported as
+    TRUST_OK just because trust could not be disproven either."""
+    home = _codex_home()
+    if os.environ.get("CODEX_HOME") and not os.path.isdir(home):
+        return TRUST_UNKNOWN, (f"CODEX_HOME={home} does not exist; codex itself refuses "
+                               "to start against a CODEX_HOME that is set but missing, so "
+                               "nothing here can be inferred either way")
+    path = os.path.join(home, "config.toml")
+    if not os.path.exists(path):
+        return TRUST_CLOSED, f"no {path}: this project has never been recorded as trusted"
+    text = read_text(path)
+    if text is None:
+        return TRUST_UNKNOWN, f"could not read {path}"
+    level, matched = _scan_project_trust(text, _project_trust_lookup_keys(root))
+    if level == TRUST_OK:
+        return TRUST_OK, f'trust_level = "trusted" for {matched} in {path}'
+    if level == "untrusted":
+        return TRUST_CLOSED, f'trust_level = "untrusted" for {matched} in {path}'
+    return TRUST_CLOSED, f"no [projects] entry for this repo in {path}"
+
+
 def codex_probe(root, plugin_root):
     """Report lines. Nothing here counts as "proven" except an invocation the
-    context log actually recorded under the codex harness."""
+    context log actually recorded under the codex harness, and nothing here
+    reports a closed trust gate as merely unproven."""
     lines = []
     binary = _codex_bin()
     if not binary:
@@ -419,6 +564,11 @@ def codex_probe(root, plugin_root):
     lines.append(f"hooks feature: {flag}")
     problems, _ = codex(root, plugin_root, check=True)
     lines.append("project files: " + ("current" if not problems else "; ".join(problems)))
+    trust_state, trust_detail = codex_trust(root)
+    lines.append(f"project trust: {trust_state} - {trust_detail}")
+    lines.append(f"hook trust bypass ({BYPASS_HOOK_TRUST_FLAG}): review_run.py's codex "
+                 "launch does not pass it -- review does not rely on hooks, so that is not "
+                 "a gap for it; crew ships no other automated `codex exec` launch today")
     seen = {}
     for raw in crew_context.read_log(root).splitlines():
         try:
@@ -432,6 +582,13 @@ def codex_probe(root, plugin_root):
         if seen.get(event):
             lines.append(f"{event}: hook invoked {seen[event]}x under Codex "
                          "(delivery to the model not measured)")
+        elif trust_state == TRUST_CLOSED:
+            lines.append(f"{event}: CLOSED - {trust_detail}; .codex/hooks.json is not even "
+                         "loaded until this project is trusted, and Codex prints no warning "
+                         "when it is skipped")
+        elif trust_state == TRUST_UNKNOWN:
+            lines.append(f"{event}: unknown - {trust_detail}; cannot tell whether hooks "
+                         "load here, so this is neither proven nor closed")
         else:
             lines.append(f"{event}: configured, not proven")
     return lines
