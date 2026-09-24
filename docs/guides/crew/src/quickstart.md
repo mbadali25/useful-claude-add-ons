@@ -129,6 +129,20 @@ tests and docs, and has a budget of two rounds.
 
 Check: `.work/tickets/<id>/` exists and `/crew:status` lists it under `open`.
 
+## First UI ticket: `/crew:webtest`
+
+If your first ticket touches a web UI, `/crew:init`'s Phase 6 (Browser tests) installs
+Playwright and asks for two or three specs where breakage is expensive, plus visual
+baselines for the pages that matter — do that once, during setup, not per ticket.
+From then on, work the ticket normally and type `/crew:webtest` where you would
+otherwise hand-write the spec file: it runs the planner -> generator -> healer loop
+against the ticket's acceptance criteria and hands the reviewer a trace and an
+accessibility report alongside the diff. See [Daily workflow](daily-workflow.md) for
+the phase-by-phase detail.
+
+Check: a `specs/<ticket>.md` file exists and `npx playwright test` passes with no
+agent attached.
+
 ## Optional: let a long session wrap up, clear and resume itself
 
 When the context fills, crew asks the session once to finish or park its work and write

@@ -543,6 +543,31 @@ but returns immediately without judging anything; "off" for <code>verifyGate</co
 where both speak. A <strong>ratcheted</strong> key (marked above) can only be <em>narrowed</em> by the repo relative to
 the machine-global value, never widened — a repo cloned from someone else cannot silently loosen a
 guard the machine owner set to <code>block</code>. <code>/crew:config</code> shows where each setting actually came from.</p>
+<h2 id="web-testing">Web Testing</h2>
+<p><strong>Symptom:</strong> <code>--select web-testing</code> (or the ticked default row) fails, or Playwright
+runs but the visual rule never passes.</p>
+<ul>
+<li><strong>Node too old.</strong> <code>install-prerequisites.{sh,ps1}</code> checks for Node &gt;= 20.19 (or<blockquote>
+<p>= 22.12) itself and refuses rather than installing or upgrading Node for you —
+  <code>node -v</code>, install a newer one, and re-run <code>--select web-testing</code>.</p>
+</blockquote>
+</li>
+<li><strong>Browsers missing system dependencies.</strong> <code>npx playwright install --with-deps
+  chromium</code> is what the installer runs; a bare <code>npx playwright install</code> (no
+  <code>--with-deps</code>) skips the OS packages Chromium needs and produces a browser that
+  launches, then crashes on first navigation.</li>
+<li><strong>Docker absent -&gt; visual UNVERIFIED, not a fail.</strong> <code>toHaveScreenshot</code> baselines are
+  only meaningful when generated inside <code>mcr.microsoft.com/playwright:v1.63.0-noble</code> —
+  the installer warns rather than blocking when Docker is missing, and the visual
+  <code>verify.json</code> rule is written to skip (report UNVERIFIED) outside that image rather
+  than compare against a baseline that can never match.</li>
+<li><strong>MCP server won't connect on Windows.</strong> Both <code>@playwright/mcp</code> and
+  <code>chrome-devtools-mcp</code> are launched with <code>npx</code>, which the MCP host cannot invoke
+  directly on Windows — wrap the entry as <code>"command": "cmd", "args": ["/c", "npx",
+  ...]</code> in <code>.mcp.json</code> (documented in chrome-devtools-mcp's own troubleshooting for
+  the "Connection closed" failure); the <code>stack-web</code> skill's <code>.mcp.json</code> example
+  already shows this.</li>
+</ul>
 <h2 id="windows-notes">Windows Notes</h2>
 <ul>
 <li><strong><code>pwsh</code> is not on Git Bash's <code>PATH</code>.</strong> Every script that shells out to PowerShell names it by an

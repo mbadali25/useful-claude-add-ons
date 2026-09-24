@@ -188,6 +188,30 @@ cause, nothing touching auth/SQL/IaC/secrets/migrations):</p>
 shows up, the cause wasn't what you thought — the session says so and hands
 off to <code>/crew:spec &lt;id&gt;</code> to fill in what the light path left out, rather than
 forcing the rest of the ticket through a path that no longer fits it.</p>
+<h2 id="web-testing-crewwebtest">Web Testing — <code>/crew:webtest</code></h2>
+<p>For a ticket whose acceptance criteria describe UI behaviour (the <code>stack-web</code> skill
+triggers on <code>playwright.config.*</code>, <code>@playwright/test</code>, or an Angular e2e suite),
+<code>/crew:webtest</code> sits inside the normal eight phases rather than replacing them:</p>
+<ol>
+<li><strong>Planner.</strong> <code>playwright-test-planner</code> reads the ticket's acceptance criteria and
+   writes <code>specs/&lt;ticket&gt;.md</code> — what to test, not code yet.</li>
+<li><strong>Plan.</strong> crew's own <code>/crew:plan</code> reads that spec the same way it reads any other
+   Files/Test/Risk plan, and needs the same approval receipt before implement starts.</li>
+<li><strong>Generator.</strong> <code>/crew:implement</code> calls <code>playwright-test-generator</code> against the
+   approved spec to write the actual <code>*.spec.ts</code> files.</li>
+<li><strong>Healer.</strong> A failing generated test goes to <code>playwright-test-healer</code> for
+   locator/wait repairs only. <strong>A Healer "skip" is a finding, not a pass</strong> — it means
+   the healer decided the feature itself is broken, and review is where that surfaces
+   rather than sailing through as a green suite.</li>
+<li><strong>Review.</strong> The reviewer gets the trace zip (<code>trace: 'on-first-retry'</code>) and the axe
+   accessibility attachment alongside the diff, the same way it gets the completion
+   audit today.</li>
+</ol>
+<p>Visual regression (<code>toHaveScreenshot</code>) only runs inside
+<code>mcr.microsoft.com/playwright:v1.63.0-noble</code> — a baseline captured on a bare host does
+not match CI's font hinting and subpixel rendering, and fails every later run for
+reasons unrelated to the change under test. Outside that image the visual rule reports
+<strong>UNVERIFIED</strong>, not a pass; see <a href="troubleshooting.md">Troubleshooting</a>.</p>
 <h2 id="if-something-refuses">If Something Refuses</h2>
 <table>
 <thead>

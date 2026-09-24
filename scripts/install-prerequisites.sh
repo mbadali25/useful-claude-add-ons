@@ -1137,13 +1137,13 @@ install_plugin() {
 MENU_KEYS=(
   "prereqs" "cli" "own-skills" "team" "find-skills" "community"
   "claude-code-setup" "task-observer"
-  "aws-mcp" "azure-mcp" "playwright-mcp" "obsidian-mcp"
-  "supabase" "context7" "playwright-cli" "skillui" "strix" "obsidian"
+  "aws-mcp" "azure-mcp" "web-testing" "obsidian-mcp"
+  "supabase" "context7" "skillui" "strix" "obsidian"
   "repo-plugins" "graphify" "ms-mcp"
   "aws-docs-mcp" "aws-pricing-mcp" "ms-learn-mcp" "perplexity-mcp"
   "lsp-plugins" "stack-tools"
 )
-MENU_DEFAULT=(1 1 1 1 1 1 1 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+MENU_DEFAULT=(1 1 1 1 1 1 1 1 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
 MENU_NAME=(
   "Prerequisites: git, nodejs, npm, python3, pip3 (needs root or sudo)"
   "Claude Code CLI (@anthropic-ai/claude-code) + PATH export + update check"
@@ -1155,11 +1155,10 @@ MENU_NAME=(
   "task-observer skill (rebelytics/one-skill-to-rule-them-all)"
   "MCP server: AWS (awslabs.aws-api-mcp-server)"
   "MCP server: Azure (@azure/mcp)"
-  "MCP server: Playwright (@playwright/mcp)"
+  "Web testing: Playwright (@playwright/test + axe-core) + MCP + Test Agents - project-local, needs Node >= 20.19"
   "MCP server: Obsidian vault server (Local REST API over an SSH tunnel)"
   "Supabase plugin (supabase@claude-plugins-official)"
   "Context7 up-to-date library docs (npx ctx7 setup)"
-  "Playwright CLI (@playwright/cli) - browser automation from the shell"
   "SkillUI (npm) + Playwright/Chromium - extract a design system from a URL"
   "Strix AI pentesting CLI (needs Docker + an LLM API key)"
   "Obsidian desktop + claude-obsidian + obsidian-skills plugins"
@@ -2665,12 +2664,69 @@ if is_selected "ms-learn-mcp"; then
   run_step "Register the Microsoft Learn MCP endpoint" install_ms_learn_mcp
 fi
 
-install_playwright_mcp() {
-  add_mcp_server "playwright" "-" npx @playwright/mcp@latest || return 1
-  ok "Playwright downloads its browsers on first use; 'npx playwright install' does it ahead of time."
+# Folds the old separate 'playwright-mcp' and 'playwright-cli' rows into one:
+# a modern Playwright setup is the test runner, the browsers, both MCP servers and
+# the Test Agents together, not three things a user ticks separately. Default ON
+# (see MENU_DEFAULT), so '--non-interactive' now installs this row unless the user
+# excludes it with '--select' naming other keys.
+install_web_testing() {
+  if ! have node; then
+    warn "node not found on PATH - select the prerequisites item (or install Node.js >= 20.19) and re-run '--select web-testing'."
+    return 1
+  fi
+  # Told, not fixed: this script does not install or upgrade Node for any row.
+  local node_ver major minor
+  node_ver="$(node -v 2>/dev/null | sed 's/^v//')"
+  major="${node_ver%%.*}"; minor="${node_ver#*.}"; minor="${minor%%.*}"
+  if [ -z "$major" ] || [ "$major" -lt 20 ] || { [ "$major" -eq 20 ] && [ "$minor" -lt 19 ]; }; then
+    warn "node $node_ver found, but Playwright 1.63 needs Node >= 20.19 (or >= 22.12). Install a newer Node yourself and re-run '--select web-testing'."
+    return 1
+  fi
+  if ! have npm; then
+    warn "npm not found on PATH - select the prerequisites item (or install Node.js) and re-run '--select web-testing'."
+    return 1
+  fi
+
+  # @playwright/test and @axe-core/playwright are project devDependencies, not
+  # global tools: the pinned version travels with the repo's package.json and has
+  # to match what CI runs. This installer does not run 'npm init' for you.
+  if [ ! -f package.json ]; then
+    warn "no package.json in $(pwd) - Playwright installs as a project devDependency, not globally. cd into the project's root (or run 'npm init -y' first) and re-run '--select web-testing'."
+    return 1
+  fi
+  if node -e "process.exit((require('./package.json').devDependencies||{})['@playwright/test'] ? 0 : 1)" 2>/dev/null; then
+    ok "@playwright/test already a devDependency here - reinstalling the pinned versions to pick up updates"
+  fi
+  npm install -D "@playwright/test@1.63.0" "@axe-core/playwright@4.13.0" || return 1
+  COUNT_INSTALLED=$((COUNT_INSTALLED+1))
+  ok "@playwright/test@1.63.0 and @axe-core/playwright@4.13.0 added as devDependencies"
+
+  if ! npx playwright install --with-deps chromium; then
+    warn "'npx playwright install --with-deps chromium' failed - browsers or system deps may be missing; see https://playwright.dev/docs/browsers"
+    return 1
+  fi
+  ok "Chromium installed for Playwright"
+
+  if [ -f ".claude/agents/playwright-test-planner.md" ]; then
+    skip "Playwright Test Agents already scaffolded (.claude/agents/playwright-test-planner.md exists)"
+  else
+    npx playwright init-agents --loop=claude || warn "'npx playwright init-agents --loop=claude' failed - run it by hand."
+    npx playwright init-agents --loop=codex || warn "'npx playwright init-agents --loop=codex' failed - run it by hand."
+    ok "Playwright Test Agents scaffolded (planner/generator/healer; claude + codex loops)"
+  fi
+
+  add_mcp_server "playwright" "-" npx @playwright/mcp@latest --isolated --headless --caps testing || return 1
+  add_mcp_server "chrome-devtools" "-" npx chrome-devtools-mcp@latest || return 1
+  ok "Playwright downloads its browsers on first use if skipped above; 'npx playwright install' does it ahead of time."
+
+  if have docker; then
+    ok "Docker found - visual baselines can be captured in mcr.microsoft.com/playwright:v1.63.0-noble, the only image guaranteed to match CI's rendering."
+  else
+    warn "Docker not found - this is a warning, not a blocker: everything else in this row still works. Visual regression baselines (toHaveScreenshot) must be generated inside mcr.microsoft.com/playwright:v1.63.0-noble or they will not match CI's font hinting and subpixel rendering."
+  fi
 }
-if is_selected "playwright-mcp"; then
-  run_step "Install Playwright MCP server" install_playwright_mcp
+if is_selected "web-testing"; then
+  run_step "Install web testing (Playwright test runner, browsers, MCP servers, Test Agents)" install_web_testing
 fi
 
 install_obsidian_mcp() {
@@ -2757,33 +2813,6 @@ install_context7() {
 }
 if is_selected "context7"; then
   run_step "Configure Context7 (npx ctx7 setup)" install_context7
-fi
-
-# --- 15. Playwright CLI -------------------------------------------------------
-install_playwright_cli() {
-  # Detection is on the binary the package provides ('playwright-cli'), which is what
-  # a user actually cares about - the package can also arrive via another manager.
-  if have playwright-cli; then
-    if [ "$NO_UPDATE" -eq 1 ]; then
-      skip "playwright-cli already installed ($(command -v playwright-cli))"
-      return 0
-    fi
-    ok "playwright-cli already installed - reinstalling @latest to pick up updates"
-  fi
-  if ! have npm; then
-    warn "npm not found on PATH - select the prerequisites item (or install Node.js) and re-run."
-    return 1
-  fi
-  npm install -g @playwright/cli@latest || return 1
-  if ! have playwright-cli; then
-    warn "@playwright/cli installed but 'playwright-cli' is not resolvable in this shell - run 'source ~/.bashrc' and try again."
-    return 1
-  fi
-  COUNT_INSTALLED=$((COUNT_INSTALLED+1))
-  ok "playwright-cli installed at $(command -v playwright-cli)"
-}
-if is_selected "playwright-cli"; then
-  run_step "Install Playwright CLI (@playwright/cli)" install_playwright_cli
 fi
 
 # --- 16. SkillUI --------------------------------------------------------------
@@ -3130,7 +3159,7 @@ fi
 # anthropics/claude-plugins-official's own marketplace.json on 2026-09-23, which
 # lists csharp-lsp/pyright-lsp/typescript-lsp (and eleven other languages) but no
 # 'angular' entry - so Angular's language server goes in as a plain npm package
-# instead, the same way playwright-cli and skillui are above.
+# instead, the same way skillui's Playwright/Chromium install is above.
 install_lsp_binary() {
   # $1 label (for messages), $2 the command Claude Code will actually run, the
   # rest is the install command's own argv - run directly, never eval'd.

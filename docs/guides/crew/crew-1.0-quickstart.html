@@ -195,6 +195,17 @@ brainstorm, spec, plan, implement, tests, docs, review, done.</p>
 spec, a one-step plan, and your approval before any edit. Review runs after
 tests and docs, and has a budget of two rounds.</p>
 <p>Check: <code>.work/tickets/&lt;id&gt;/</code> exists and <code>/crew:status</code> lists it under <code>open</code>.</p>
+<h2 id="first-ui-ticket-crewwebtest">First UI Ticket: <code>/crew:webtest</code></h2>
+<p>If your first ticket touches a web UI, <code>/crew:init</code>'s Phase 6 (Browser tests) installs
+Playwright and asks for two or three specs where breakage is expensive, plus visual
+baselines for the pages that matter — do that once, during setup, not per ticket.
+From then on, work the ticket normally and type <code>/crew:webtest</code> where you would
+otherwise hand-write the spec file: it runs the planner -&gt; generator -&gt; healer loop
+against the ticket's acceptance criteria and hands the reviewer a trace and an
+accessibility report alongside the diff. See <a href="daily-workflow.md">Daily workflow</a> for
+the phase-by-phase detail.</p>
+<p>Check: a <code>specs/&lt;ticket&gt;.md</code> file exists and <code>npx playwright test</code> passes with no
+agent attached.</p>
 <h2 id="optional-let-a-long-session-wrap-up-clear-and-resume-itself">Optional: Let a Long Session Wrap up, Clear and Resume Itself</h2>
 <p>When the context fills, crew asks the session once to finish or park its work and write
 <code>.work/HANDOFF.md</code>. The next session starts with that handoff and its next action. Both steps are
