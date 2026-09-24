@@ -4000,3 +4000,20 @@ Owner: "superpowers' systematic-debugging works great." After 1.0, compare it wi
 `/crew:debug`, then either vendor it (<=120 lines, licence checked — superpowers is MIT — credited in `plugin/crew/NOTICE.md`
 like crew-brainstorm/plan/execute) or fold its method into `crew-debugging`. **Do not uninstall superpowers from the
 owner's machine until this lands**, or the skill is lost. (The 04-redesign "uninstall superpowers" step waits on this.)
+
+### crew 1.1.0: autopilot - OPEN, do not build before 1.0 ships (filed 2026-09-23, owner decision)
+One setting, two levels, default `off`:
+- `autopilot: plan` — after the owner approves a plan, `/crew:implement` runs every step, then tests, docs, review and done
+  without check-ins. Stops only at AUTONOMOUS_STOPS, prod/cloud writes, a failed gate, an exhausted review budget, or a
+  scope change needing re-approval.
+- `autopilot: backlog` — `plan` plus: picks the next APPROVED ticket in `.work/tickets` when one finishes; never starts an
+  unapproved ticket; per-session caps on tickets and tokens.
+Enforced by the same hooks (approval receipts, scope guard, cloud guard, review ledger, completion audit), not prose.
+1.0 part (folded into the web-testing lane): `/crew:migrate` maps `pm.authority: autonomous` to a visible note
+"autopilot arrives in 1.1.0" instead of dropping it silently.
+
+### crew-1.0 retirement review FIX/NIT (filed 2026-09-23) - OPEN, fold into the web-testing integration
+- `README.md:736` Documentation table still links deleted `vault-automation/`.
+- `skills/obsidian-canvas/SKILL.md:18` points skill-only installs at `obsidian-memory-contract`, which ships only with the obsidian-vault plugin (repo-plugins row); say so or inline the minimal conventions.
+- NIT `plugin/crew/tests/test_docs_routing.py:941` docstring says four guide artifacts; `_GUIDES` has one.
+- NIT `scripts/install-prerequisites.sh:2430` comment says 36-skill (now 34); fix in both scripts only if the .ps1 has the same comment.
