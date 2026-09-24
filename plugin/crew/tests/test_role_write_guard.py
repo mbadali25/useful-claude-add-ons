@@ -978,6 +978,83 @@ def test_pythonutf8_forced_writes_correct_utf8_stderr_powershell(tmp_path):
 
 # --- FIX 1: Resolve-CrewPython must check the candidate's exit status -----
 
+# `_resolve_role_write_python` needs nothing beyond bash builtins (`command
+# -v`, `[`, `printf`) to reject a candidate, but the SCRIPT AROUND it does
+# not: `dirname` at the top (line 12) and `cat` (line 15, `INPUT=$(cat)`)
+# run unconditionally before resolution even starts, and once resolution
+# fails, `_role_write_fallback_role` reaches for `grep`, `head`, `sed` and
+# `tr` to pull `agent_type` out of the raw JSON without python. Two tests
+# below replace `$PATH` outright to prove "no usable python resolves" --
+# and on this repo's own Windows/MSYS dev machine that was invisible,
+# because MSYS bash still finds its own coreutils regardless of what $PATH
+# says. Reported 2026-09-24 by CI (Ubuntu): with $PATH pointing at NOTHING
+# but the fake python wrapper directory, `dirname`/`cat`/`grep`/`head`/`sed`/
+# `tr` are ALL missing too, so the script never reaches a clean "no usable
+# python found" decision at all -- it prints six "command not found" lines,
+# `_role_write_fallback_role` silently returns empty because `grep`/`sed`
+# aren't there to extract `pm` from the JSON, and the guard falls through to
+# the UNRESTRICTED-role branch and exits 0. That is a gap in what these two
+# tests hand the subprocess, not a resolver defect: a real Claude Code
+# session's PATH always has coreutils on it (bash could not run hooks at
+# all otherwise), so a PATH with fake pythons but no coreutils tests a
+# situation that cannot occur in production.
+#
+# The fix is a PATH that supplies the six tools above and NOTHING else --
+# specifically, nothing that could also resolve a real python. Simply
+# re-appending the caller's real $PATH (the pattern used elsewhere in this
+# file, e.g. `test_windowsapps_python_stub_does_not_silence_bash_enforcement`)
+# does not work here: on the actual CI runner, `actions/setup-python` puts a
+# directory on PATH with a WORKING `python` AND `python3`, so appending it
+# would make one of the two "must find nothing" tests below resolve a real
+# interpreter under the one name (`python`) their fake directories do not
+# shadow, silently changing what the test proves. And on Ubuntu specifically,
+# `dirname`/`cat`/`grep`/`sed`/`tr` and `python3` all live in the SAME
+# directory (`/usr/bin`), so there is no real-PATH entry that offers one
+# without the other -- filtering by directory cannot separate them.
+#
+# A thin shell wrapper per tool, each `exec`ing the tool's own real absolute
+# path, sidesteps both problems: the wrapper directory contains only the six
+# names below, so it can never resolve `python`/`python3`/`py`, and `exec`ing
+# the ORIGINAL absolute path (not a copy) means a tool whose runtime depends
+# on files alongside it (`dirname.exe` needing `msys-2.0.dll` next to it on
+# Windows) still finds them, because it still runs from its real location.
+_MINIMAL_COREUTILS = ("dirname", "cat", "grep", "head", "sed", "tr")
+
+
+def _to_posix_path(path):
+    """`C:\\Program Files\\Git\\usr\\bin\\dirname.exe` -> `/c/Program
+    Files/Git/usr/bin/dirname.exe`, the same manual conversion
+    `_resolve_role_write_python` itself falls back to when `cygpath` is not
+    on PATH -- deliberately not shelling out to `cygpath` here, since the
+    whole point of this helper is to build a PATH before any such tool is
+    known to be reachable. A no-op on POSIX paths, which never match the
+    drive-letter pattern."""
+    text = str(path)
+    if len(text) >= 2 and text[1] == ":" and text[0].isalpha():
+        return "/" + text[0].lower() + text[2:].replace("\\", "/")
+    return text.replace("\\", "/")
+
+
+def _coreutils_only_path(tmp_path):
+    """A PATH entry that can run `role-write-guard.sh` end to end but can
+    never resolve a real python under any of the three names it tries --
+    see the block comment above for why appending or filtering the real
+    PATH cannot do both at once."""
+    toolbin = tmp_path / "coreutils-only"
+    toolbin.mkdir(exist_ok=True)
+    for name in _MINIMAL_COREUTILS:
+        real = shutil.which(name)
+        assert real, (
+            name + " is not on the real PATH -- cannot build a "
+            "coreutils-only PATH for this test without it")
+        wrapper = toolbin / name
+        wrapper.write_text(
+            '#!/bin/sh\nexec "' + _to_posix_path(real) + '" "$@"\n',
+            encoding="ascii", newline="\n")
+        os.chmod(wrapper, 0o755)
+    return str(toolbin)
+
+
 @needs_pwsh_windows
 def test_candidate_nonzero_exit_status_is_rejected_powershell(tmp_path):
     """Must resolve to NOTHING (matching bash's `|| continue`): a python3
@@ -1000,7 +1077,16 @@ def test_candidate_nonzero_exit_status_is_rejected_powershell(tmp_path):
 def test_bash_already_rejects_nonzero_exit_candidate(tmp_path):
     """The bash HALF of FIX 1's parity claim -- bash already gets this
     right via `real=$(...) || continue`; locked in here so a future change
-    to `_resolve_role_write_python` cannot silently drop it."""
+    to `_resolve_role_write_python` cannot silently drop it.
+
+    Asserted via the discriminating stderr message, not the exit code: since
+    2026-09-24 total resolution failure fails closed for a restricted role
+    (`pm`) exactly like a launch failure does, so both now exit 2 and only
+    the message says which one actually happened -- "no usable python
+    found" (resolver rejected the candidate) versus "could not launch the
+    python interpreter" (resolver accepted, launch of role_write_guard.py
+    itself failed). Pinning only the exit code here would make this test
+    unable to tell those two apart."""
     apps = tmp_path / "wrappers"
     apps.mkdir()
     wrapper = apps / "python3"
@@ -1011,16 +1097,23 @@ def test_bash_already_rejects_nonzero_exit_candidate(tmp_path):
     root = crew_fixtures.make_repo(
         tmp_path, config={"guards": {"roleWrites": "block"}})
     env = os.environ.copy()
-    env["PATH"] = str(apps)
+    # NOT `env["PATH"] = str(apps)` -- see `_coreutils_only_path`'s comment:
+    # that used to strip out `dirname`/`cat`/`grep`/`head`/`sed`/`tr` along
+    # with every real python, which is what turned this red on Linux CI
+    # while passing locally on Windows/MSYS.
+    env["PATH"] = os.pathsep.join([str(apps), _coreutils_only_path(tmp_path)])
     env["CLAUDE_PROJECT_DIR"] = str(root)
     proc = subprocess.run(
         [_BASH, _SH],
         input=_write_payload("Write", str(root / "src" / "app.py"), "pm", str(root)),
         capture_output=True, text=True, check=False, env=env, cwd=str(root))
-    assert proc.returncode == 0, (
-        "no usable python resolved (the only candidate exits nonzero), so "
-        "the write must be allowed unjudged, not blocked as if a real "
-        "decision was reached. stdout: " + proc.stdout)
+    assert proc.returncode == 2, (
+        "no usable python resolved (the only candidate exits nonzero) for "
+        "restricted role 'pm', so the write must fail closed. stdout: "
+        + proc.stdout + " stderr: " + proc.stderr)
+    assert "no usable python found" in proc.stderr, (
+        "expected the resolution-failure message, not the launch-failure "
+        "one -- got: " + proc.stderr)
 
 
 # --- Scope is judged on the REAL path, not the lexical one (round-1 BLOCK,
@@ -1853,18 +1946,31 @@ def test_bash_agrees_it_finds_nothing_in_the_same_layout(tmp_path):
     # DIFFERENT name than the stubbed one, which the resolver legitimately
     # finds once `python3` is rejected; that is not a bug, but it also
     # proves nothing about the "only one name present" layout this test
-    # means to construct.
-    env["PATH"] = os.pathsep.join([str(apps), str(real)])
+    # means to construct. `_coreutils_only_path` is not "the real PATH" in
+    # that sense -- it holds none of the three python names, only the
+    # handful of external tools role-write-guard.sh needs to run at all
+    # (see its own comment for why CI needs this and this repo's Windows/MSYS
+    # dev machine never revealed the gap).
+    env["PATH"] = os.pathsep.join(
+        [str(apps), str(real), _coreutils_only_path(tmp_path)])
     env["CLAUDE_PROJECT_DIR"] = str(root)
     proc = subprocess.run(
         [_BASH, _SH],
         input=_write_payload("Write", str(root / "src" / "app.py"), "pm", str(root)),
         capture_output=True, text=True, check=False, env=env, cwd=str(root))
-    assert proc.returncode == 0, (
+    # Since 2026-09-24, total resolution failure fails closed for a
+    # restricted role ('pm') exactly like a launch failure does, so this
+    # now exits 2 rather than 0 -- the resolution-failure message is what
+    # actually proves "bash found nothing usable", not the exit code alone
+    # (a launch failure would exit 2 too).
+    assert proc.returncode == 2, (
         "bash must ALSO find nothing usable in this exact layout -- if "
         "this ever fails while the .ps1 test above still passes, the two "
         "shells have re-diverged. stdout: " + proc.stdout + " stderr: "
         + proc.stderr)
+    assert "no usable python found" in proc.stderr, (
+        "expected the resolution-failure message, not the launch-failure "
+        "one -- got: " + proc.stderr)
 
 
 def _resolver_source(path):
@@ -2010,8 +2116,16 @@ def test_launch_failure_still_allows_unrestricted_role_powershell(tmp_path):
 def _patch_py_to_nonexistent_sh(src):
     """Force `$PY` to an unlaunchable path immediately after
     `_resolve_role_write_python` would normally set it -- same technique
-    as the .ps1 twin's `_patch_py_to_nonexistent`."""
-    anchor = "\n# Deny-list mirror of role_write_guard.py's"
+    as the .ps1 twin's `_patch_py_to_nonexistent`.
+
+    The anchor must be textually AFTER the `PY=$(_resolve_role_write_python)
+    || { ... }` block, not before it -- since 2026-09-24 the deny-list
+    helpers moved above that block (they are needed there too, for the
+    resolution-failure fallback), so anchoring on them would overwrite $PY
+    with the nonexistent path BEFORE resolution runs, only for the real
+    resolver to immediately clobber it again with a genuine interpreter and
+    silently defeat this patch."""
+    anchor = "\n# PYTHONUTF8=1 / PYTHONIOENCODING=utf-8 in the CHILD's environment only --"
     assert anchor in src, "anchor moved; re-point this patch"
     return src.replace(
         anchor,

@@ -413,6 +413,49 @@ def _function_raw_source(path, header):
     return src[start:end + 3]
 
 
+def _posix_form(path_str):
+    """The path string the resolver's OWN shell would see, mirroring
+    MSYS/Cygwin's path translation (mount table included) instead of
+    guessing at a manual backslash swap. On native Windows Python, a
+    subprocess's PATH and argv are translated by the MSYS runtime through
+    its compiled-in mount table before bash ever sees them -- e.g. this
+    machine's `/tmp` is mounted to the same directory pytest's `tmp_path`
+    resolves under (`D:\\temp`), so `D:\\temp\\...` and `/tmp/...` name the
+    SAME file, and a bare string comparison between a Windows-style path and
+    what a bash subprocess prints back is comparing two spellings of one
+    path, not two different paths. `cygpath -u` (shipped next to Git Bash)
+    performs the exact same translation, so it is used here rather than a
+    hand-rolled one that would not know about that mount. On a platform
+    where the string is already POSIX-shaped (no drive letter -- Linux,
+    macOS, or when `_BASH` is not a Windows Git Bash), there is no
+    translation layer to account for and the string is returned unchanged.
+    """
+    if not (len(path_str) >= 2 and path_str[1] == ":"):
+        return path_str
+    cygpath = shutil.which("cygpath")
+    if not cygpath:
+        return path_str
+    out = subprocess.run([cygpath, "-u", path_str], capture_output=True,
+                          text=True, check=False).stdout.strip()
+    return out or path_str
+
+
+def _is_executable_via_shell(path):
+    """`os.access(path, os.X_OK)` is not reliable evidence on native Windows
+    Python: Windows has no POSIX execute bit, `os.chmod` there only ever
+    toggles the read-only DOS attribute, and an existing file reads back as
+    X_OK regardless of the mode requested. The fixtures below need to know
+    whether the SAME bash that runs the resolver under test would reject the
+    file with `[ -x ... ]` -- which it reliably does even when Python's own
+    `os.access` cannot tell the difference -- so ask that bash directly
+    instead of trusting the Windows-side os.access` result."""
+    if _BASH is None:
+        return os.access(path, os.X_OK)
+    proc = subprocess.run([_BASH, "-c", '[ -x "$1" ]', "_", str(path)],
+                           capture_output=True, check=False)
+    return proc.returncode == 0
+
+
 def test_crew_py_strict_and_role_write_guard_still_agree_after_tightening():
     shared = _function_code_lines(_COMMON_SH, "crew_py_strict() {")
     guard = _function_code_lines(_GUARD_SH, "_resolve_role_write_python() {")
@@ -450,7 +493,7 @@ def test_resolver_rejects_a_real_but_non_executable_target(tmp_path, path, heade
     target = tmp_path / "not-actually-runnable"
     target.write_text("not a real interpreter\n", encoding="utf-8")
     os.chmod(target, 0o644)
-    assert not os.access(target, os.X_OK), "fixture must not be executable"
+    assert not _is_executable_via_shell(target), "fixture must not be executable"
 
     # ALL THREE names, matching `_stub()`'s own default -- if only "python3"
     # pointed at the broken target, `crew_py_strict`'s own for-loop would
@@ -533,7 +576,7 @@ def test_resolver_accepts_a_crlf_terminated_real_interpreter(tmp_path, path, hea
     assert exit_line == "EXIT:0", (
         f"a real interpreter behind a CRLF-terminated probe result must be "
         f"ACCEPTED. stdout={proc.stdout!r} stderr={proc.stderr!r}")
-    assert printed == [real], (
+    assert printed == [_posix_form(real)], (
         f"must return the interpreter path with the CR stripped. "
         f"got {printed!r}")
 
@@ -599,7 +642,7 @@ def test_resolver_accepts_a_store_python_alias_relaying_to_a_real_interpreter(
         f"a Store-Python alias relaying to a real interpreter under "
         f"WindowsApps must be ACCEPTED. stdout={proc.stdout!r} "
         f"stderr={proc.stderr!r}")
-    assert printed == [str(target)], (
+    assert printed == [_posix_form(str(target))], (
         f"must return the real interpreter's own path. got {printed!r}")
 
 
