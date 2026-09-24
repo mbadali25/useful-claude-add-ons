@@ -6,6 +6,60 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Changed
 
+- **`crew` 1.0.7 / `obsidian-vault` 0.4.12: release-integration merge of F1-F4
+  and G1 (role-write-guard fallback hardening, autoClear setup review
+  fixes, sendkeys/context-watch review fixes, the `.crew/`-directory gate
+  reversal, and verify-gate stdin/probe hardening).**
+  F1: `role-write-guard`'s no-python fallback now determines the role
+  without piping through `grep`/`head`/`sed`/`tr` (pure bash/PowerShell
+  string matching instead, so a PATH missing those coreutils no longer lets
+  an unjudged write through), fails closed whenever it cannot determine a
+  role or read `guards.roleWrites` rather than assuming safe, and honours
+  `guards.roleWrites: off`/`report` and `pm`'s own path allowances in that
+  fallback the same way the python path already did. The `obsidian-vault`
+  WindowsApps regression fixtures now model the real Store layout (a
+  directory literally named `WindowsApps`, forwarding to a copy of the
+  interpreter under a second `WindowsApps`-rooted path) instead of a
+  same-host real interpreter that never exercised the `*/WindowsApps/*`
+  path check at all.
+  F2: `crew_autoclear_setup`'s migrate path now converts `context.autoClear`
+  in both `.crew/config.json` (what every sender actually reads) and
+  `.crew/crew.json` (kept, not deleted); the global `onlyRepos` narrowing is
+  now written before either repo file is touched, so a failed global write
+  cannot strip a repo's opt-in with no record; every global-file writer now
+  refuses outright rather than silently merging onto a malformed
+  machine-global JSON; and a retained global legacy `"windows"` method is
+  now proposed for conversion to `"notify"` like the repo-side literal. The
+  Python 3.8-3.10 TOML fallback scanner for Codex trust now uses a strict
+  grammar instead of a blanket key/value regex, so a legal multi-line array
+  and an unterminated string value are both read correctly.
+  F3: `sendkeys` now declines when the target window's owner process cannot
+  be determined (an empty catch used to read that as safe); `Start-Process`
+  argument quoting now round-trips a `-Root`/`-Text` value containing a
+  space instead of splitting it across argv; and `context-watch.sh` no
+  longer loses the `notify` `systemMessage` when `mktemp` fails mid-handoff.
+  F4: auto-clear's gate reverts to `.crew/` the directory (not
+  `.crew/config.json`): absent `.crew/` stays silent and creates nothing,
+  present-but-not-enabled stays silent with no log line, and the
+  machine-global switch now works in any crew repo without a per-repo copy
+  of its own - the 0.20.17 repo-local duplication workaround is no longer
+  needed. `context-watch` hands the forced continuation over to auto-clear
+  on `.crew/` alone, while its own context-window warnings still require a
+  real `.crew/config.json` underneath. Two test files' bare `bash`/`cp`/
+  `diff` subprocess calls are replaced with `crew_fixtures.resolve_bash()`
+  and `shutil.copyfile`/text comparison. `.crew/verify.json` rule[8] is
+  re-priced to a measured 377s serial run on Linux, replacing an
+  unannotated Windows figure with no host or load recorded.
+  G1: `verify-gate`'s stdin read is now bounded in both flavours (a
+  line-at-a-time `read -t 5` loop in `.sh`, an `OpenStandardInput()` +
+  `CopyToAsync().Wait(5000)` in `.ps1`) instead of blocking the whole script
+  on a pipe that is never closed; `Resolve-CrewPython` now refuses an
+  extensionless candidate before `ProcessStartInfo` is ever built when
+  running on real Windows (gated on `$IsWindows`, never the flavour-guard's
+  `$env:OS` seam, so the suite's own extensionless-shim fixtures on Linux
+  are untouched); and every `verify-gate` test's subprocess spawn now
+  carries an explicit timeout.
+
 - **`crew` 1.0.6: notify-by-default auto-clear on native Windows (R1), setup
   wiring for it (R2), and the Windows-burn-in W8/W9 review fixes that landed
   alongside.** `auto-clear`'s `auto` method never resolves to a keystroke
