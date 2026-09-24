@@ -1479,6 +1479,127 @@ def test_34b_a_backgrounded_grandchild_holding_stdout_does_not_wedge_the_gate(
 
 
 @pytest.mark.skipif(_BASH is None, reason="needs bash")
+def test_34c_a_large_rule_output_is_capped_not_read_in_full(tmp_path):
+    """The other half of test_34b's fix: reading the rule's own output back
+    must be BOUNDED, not proportional to however much a rule (or a stray
+    background process inheriting its fd) actually wrote.
+
+    NOT a hang: measured directly, a regular file's read() never blocks
+    waiting for a writer that has not closed - only a pipe does that - so
+    the earlier draft of this test (a backgrounded `yes`, asserting the
+    gate returns quickly) passed even against the UNCAPPED code, and would
+    have stayed green through a regression to it. Vacuous the same way
+    this repo's CLAUDE.md already warns a lock-window test can be. What IS
+    real and measurable is the cost of reading a large amount of output
+    into a shell variable: 3GiB written by `yes | head -c` (deterministic,
+    not timing-dependent - the SAME size on any host) took 16s and several
+    GiB of RSS to `cat` whole, against under a second to read a 1MiB cap.
+    Bounded at 10s: comfortably above the capped read's real cost
+    (write + head -c, well under a second) and comfortably below the
+    uncapped one on any host fast enough to write 3GiB in a few seconds at
+    all.
+    """
+    vmap = {
+        "version": 1,
+        "rules": [{"paths": ["a.py"], "reach": "local", "run": [
+            "yes | head -c 3221225472"
+        ]}],
+        "default": [], "unmapped": "ignore",
+    }
+    root = _repo(tmp_path, vmap)
+    (root / "a.py").write_text("x", encoding="utf-8")
+
+    started = time.time()
+    result = _run("sh", root)
+    elapsed = time.time() - started
+    assert result.returncode == 0, result.stderr
+    assert elapsed < 10, (
+        f"the gate took {elapsed:.1f}s to return - a rule producing a "
+        "large amount of its own output was read back in full instead of "
+        f"a size snapshotted and capped at 1MiB. stderr: {result.stderr}"
+    )
+
+
+@pytest.mark.skipif(_BASH is None, reason="needs bash")
+def test_34d_a_second_mktemp_failure_refuses_rather_than_wedges(tmp_path):
+    """When the rule-output capture file cannot be created ANYWHERE - not
+    TMPDIR, not the .crew/ fallback - the gate must refuse the rule with a
+    named reason, never fall back to the pipe form. That fallback is
+    exactly the shape (a backgrounded grandchild holding the read open
+    forever) test_34b's fix exists to close, so silently re-opening it here
+    on a mktemp failure would undo that fix on this one path.
+
+    Root cannot be made to see an unwritable TMPDIR or .crew/ by chmod
+    alone (this sandbox runs as root, which bypasses DAC permission
+    checks), so the failure is induced by shadowing `mktemp` on PATH
+    instead: a counting stub that runs the REAL mktemp for the gate's
+    earlier, unrelated calls (CHANGED_FILE's temp file, and the python-shim
+    directory when no bare `python3` is on PATH) and starts failing only
+    once the per-rule loop is reached - covering BOTH the TMPDIR attempt
+    and this fix's own `.crew/` fallback attempt, since neither takes a
+    distinguishing argument the stub could otherwise key on. This is
+    root-safe and deterministic where a permissions-based fixture is
+    neither.
+    """
+    vmap = {
+        "version": 1,
+        "rules": [{"paths": ["a.py"], "reach": "local", "run": [
+            "sh -c \"trap '' TERM; sleep 60 &\""
+        ]}],
+        "default": [], "unmapped": "ignore",
+    }
+    root = _repo(tmp_path, vmap)
+    (root / "a.py").write_text("x", encoding="utf-8")
+
+    real_mktemp = shutil.which("mktemp")
+    assert real_mktemp, "need a real mktemp on PATH to build the stub"
+    stub_dir = tmp_path / "mktempstub"
+    stub_dir.mkdir()
+    counter = tmp_path / "mktemp.count"
+    counter.write_text("0", encoding="utf-8")
+    # Succeeds for the FIRST call only (CHANGED_FILE - measured directly:
+    # a single-rule map with python3 already on PATH, so the python-shim
+    # SHIM_DIR branch is never entered, makes exactly two plain `mktemp`
+    # calls total before this stub) and fails every call after that, which
+    # is exactly where the per-rule loop's RULE_OUT_FILE attempts (both
+    # the TMPDIR one and this fix's own `.crew/` fallback) begin.
+    (stub_dir / "mktemp").write_text(
+        "#!/bin/sh\n"
+        f'n=$(cat "{counter}")\n'
+        "n=$((n + 1))\n"
+        f'echo "$n" > "{counter}"\n'
+        "if [ \"$n\" -le 1 ]; then\n"
+        f'  exec "{real_mktemp}" "$@"\n'
+        "fi\n"
+        "exit 1\n",
+        encoding="utf-8", newline="\n")
+    (stub_dir / "mktemp").chmod(0o755)
+
+    env = dict(os.environ, CLAUDE_PROJECT_DIR=str(root),
+               PATH=str(stub_dir) + os.pathsep + os.environ.get("PATH", ""))
+    started = time.time()
+    result = crew_fixtures.run_gate(
+        [_BASH, _SH], input="{}", cwd=str(root), env=env,
+        capture_output=True, text=True, check=False,
+        timeout=_GATE_TIMEOUT)
+    elapsed = time.time() - started
+    assert elapsed < 10, (
+        f"the gate took {elapsed:.1f}s to return with mktemp failing from "
+        "the per-rule loop onward - it fell back to the pipe form and "
+        f"waited on the backgrounded sleep instead of refusing. "
+        f"stderr: {result.stderr}"
+    )
+    assert result.returncode != 0, (
+        "a rule refused for lack of a capture location must not read "
+        "as verified. " + result.stderr
+    )
+    assert "cannot create an output-capture file" in result.stderr, (
+        "the refusal must name why, not fail silently or generically. "
+        + result.stderr
+    )
+
+
+@pytest.mark.skipif(_BASH is None, reason="needs bash")
 def test_run_gate_kills_the_whole_group_on_timeout_not_just_the_direct_child(
         tmp_path):
     """crew_fixtures.run_gate must turn a hung grandchild into a named

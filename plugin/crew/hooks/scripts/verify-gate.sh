@@ -1558,7 +1558,19 @@ for v in ("ENV", "AWS_PROFILE", "AWS_DEFAULT_REGION", "KUBECONFIG", "TF_WORKSPAC
   # hits EOF at the file's current size regardless of who else still has
   # it open for writing, so a background grandchild can no longer hold
   # this shell's own read hostage.
+  #
+  # TMPDIR is not the only place this can be written, and it must never be
+  # the pipe form again if it is unwritable: falling back to `$(eval "$c"
+  # 2>&1 </dev/null)` re-opens exactly the wedge this file capture exists to
+  # close (a rule that backgrounds something and does not wait on it hangs
+  # THIS shell forever on a TMPDIR-unwritable host, e.g. `sh -c "sleep 60
+  # &"`). `.crew/` already exists (verify.json lives there) and is inside
+  # the repo this gate is already running against, so it is tried as a
+  # second, repo-local location before refusing the rule outright.
   RULE_OUT_FILE=$(mktemp 2>/dev/null) || RULE_OUT_FILE=""
+  if [ -z "$RULE_OUT_FILE" ]; then
+    RULE_OUT_FILE=$(mktemp ".crew/.verify-rule-out.XXXXXX" 2>/dev/null) || RULE_OUT_FILE=""
+  fi
   if [ -n "$RULE_OUT_FILE" ]; then
     # `( ... )`, not a bare `eval "$c"`: `$(...)` (the old form) forks a
     # subshell IMPLICITLY, which is why a rule command calling `exit N`
@@ -1571,14 +1583,34 @@ for v in ("ENV", "AWS_PROFILE", "AWS_DEFAULT_REGION", "KUBECONFIG", "TF_WORKSPAC
     # to a bare wrong-returncode failure, not by inspection.
     ( eval "$c" ) >"$RULE_OUT_FILE" 2>&1 </dev/null
     RC=$?
-    OUT=$(cat "$RULE_OUT_FILE" 2>/dev/null)
+    # Snapshot the size the moment the rule's OWN process exits, then read
+    # exactly that many bytes -- never the whole file as it stands when
+    # `cat` gets around to it. A backgrounded grandchild that keeps writing
+    # after RC is captured (`sh -c 'yes &'`, continuously appending to the
+    # same fd) keeps a bare `cat`/`$(<file)` read chasing a file that never
+    # stops growing, which is the same non-terminating shape the pipe
+    # capture produced, moved from "EOF never arrives on a pipe" to "EOF
+    # never arrives on a file being appended to concurrently". `stat` is one
+    # syscall against the size on disk right now; it does not read the
+    # file's growing content and so cannot itself be made to wait on it.
+    # Capped as well, independent of the grandchild: nothing downstream
+    # needs more than a `tail -25` of this, and a rule that legitimately
+    # writes megabytes of its own output before backgrounding anything
+    # should not turn a bounded gate into an unbounded read either.
+    RULE_OUT_SIZE=$(stat -c%s "$RULE_OUT_FILE" 2>/dev/null || stat -f%z "$RULE_OUT_FILE" 2>/dev/null || echo 0)
+    case "$RULE_OUT_SIZE" in ''|*[!0-9]*) RULE_OUT_SIZE=0 ;; esac
+    RULE_OUT_CAP=1048576
+    if [ "$RULE_OUT_SIZE" -gt "$RULE_OUT_CAP" ]; then RULE_OUT_SIZE=$RULE_OUT_CAP; fi
+    OUT=$(head -c "$RULE_OUT_SIZE" "$RULE_OUT_FILE" 2>/dev/null)
     rm -f "$RULE_OUT_FILE"
   else
-    # No writable temp dir: fall back to the old pipe form rather than
-    # skipping the rule outright - a check that still runs, carrying the
-    # original wedge risk, beats one silently skipped.
-    OUT=$(eval "$c" 2>&1 </dev/null)
-    RC=$?
+    # Neither TMPDIR nor .crew/ is writable: refuse this rule with a named
+    # reason instead of running it through the pipe form. A check that
+    # cannot capture its own output safely is not a check that ran. The
+    # "VERIFY FAILED: $c" header and this message both print below, through
+    # the same RC-ne-0 branch every other rule failure goes through.
+    OUT="verify-gate: cannot create an output-capture file (TMPDIR and .crew/ both unwritable) - refusing rather than falling back to a pipe capture that a backgrounded grandchild can wedge forever"
+    RC=1
   fi
   # Exit 77 is SKIP, the _verify/smoke.sh and GNU automake convention for
   # "skipped, environment absent" -- not a pass, not a fail. It must not
