@@ -6,6 +6,24 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Security
 
+- **`gizmoduck` 0.7.2: CI trust fixes - deployment ancestry check, no secrets on untrusted
+  Bitbucket runs, label removal cannot pass an unscanned head, strict coverage statuses,
+  decoded-query redaction.** Endpoint workflow: a `deployment_status` scan now `needs:` a
+  secret-free `trust` job that requires the configured staging environment, a trusted branch
+  name, and the deployed SHA to be an ancestor of that branch's head in this repository
+  (`git merge-base --is-ancestor`); a ref name alone - a pull request can deploy a branch named
+  `release/anything` - no longer unlocks the scan's secrets. Bitbucket: a custom run on a branch
+  other than the default branch or `release/*` refuses if any known secret is visible (including
+  `NVD_API_KEY` and `GIZMODUCK_AUTH_HEADER_VALUE`, which were previously left in place), and the
+  pull-request step refuses on all of them too. GitHub tier 1 now also runs on `labeled` /
+  `unlabeled`, so removing the `security-scan` label re-scans the head commit instead of leaving
+  tier 2's not-applicable pass as the only verdict. Gate: coverage statuses are an exact
+  allow-list (`ran`, `skipped-active`, and the `ran(<mode>)` forms nmap and ZAP write); `ran()` or
+  any other mode fails. Guard: redaction judges percent-decoded query names and nested values,
+  and replaces an ambiguously encoded query whole; the R3 refusal no longer echoes a value
+  smuggled into an encoded name; a malformed bracketed host is a refusal, not a `ValueError`.
+  Detection: userinfo in a templated Terraform URL (`https://u:p@${var.host}`) is redacted; the
+  directory walk applies its entry bound while streaming, never after listing a whole directory.
 - **`gizmoduck` 0.7.1: CI review fixes - the gate and the guard fail closed, trusted-ref
   endpoint runs, no secrets to PRs, trust-scoped caches, detection containment and
   redaction.** Gate (`ci_gate.py`): a missing baseline fails on its own (the first-run opt-in

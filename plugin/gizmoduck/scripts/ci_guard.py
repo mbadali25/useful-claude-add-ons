@@ -48,7 +48,9 @@ are applied:
                   any left the policy.
 
 `redact_url` / `redact_text` are how a URL reaches a log or an artifact:
-userinfo becomes `***@` and credential-named query values become `***`.
+userinfo becomes `***@` and credential-named query values become `***`, the
+name judged after percent-decoding; a query that decodes ambiguously (an
+encoded `=` or `&`, or a double encoding) is replaced whole by `***`.
 
 Stdlib only, like the rest of scripts/. The fetcher used for R9 is injectable
 so tests never make a network call.
@@ -88,18 +90,44 @@ def redact_url(url):
     try:
         parts = urllib.parse.urlsplit(url)
     except ValueError:
-        return re.sub(r"//[^/]*@", "//***@", url)
+        # Unparseable: userinfo masked, and the whole query with it.
+        return re.sub(r"\?.*", "?***", re.sub(r"//[^/?#]*@", "//***@", url), flags=re.S)
     netloc = parts.netloc
     if "@" in netloc:
         netloc = "***@" + netloc.rsplit("@", 1)[1]
-    query = parts.query
-    if query:
-        pieces = []
-        for piece in query.split("&"):
-            name, sep, _value = piece.partition("=")
-            pieces.append(f"{name}=***" if sep and secret_param(name) else piece)
-        query = "&".join(pieces)
-    return urllib.parse.urlunsplit((parts.scheme, netloc, parts.path, query, parts.fragment))
+    return urllib.parse.urlunsplit((parts.scheme, netloc, parts.path, _redact_query(parts.query),
+                                    parts.fragment))
+
+
+_ENCODED = re.compile(r"%[0-9A-Fa-f]{2}")
+_NESTED_SECRET = re.compile(r"(?i)(?:^|[?&;#])([^=&;?#]*)=")
+
+
+def _redact_query(query):
+    """Credential-named values -> `***`, judged on the percent-DECODED key, so
+    `access%5Ftoken=` and `access_token%3DSECRET` are caught too. A value whose
+    decoded form is itself a query or URL carrying a credential (`next=%2F%3F
+    token%3D...`, `cb=https://u:p@...`) is masked whole. When a piece does not
+    split the same way before and after decoding - an encoded `=` or `&`, or
+    something still encoded after one decode - the whole query is `***`: a
+    parse that can be read two ways is not one to leave half-redacted."""
+    if not query:
+        return query
+    pieces = []
+    for piece in query.split("&"):
+        name, sep, value = piece.partition("=")
+        dname = urllib.parse.unquote_plus(name)
+        dvalue = urllib.parse.unquote_plus(value)
+        if any(c in dname for c in "=&") or _ENCODED.search(dname) \
+                or "&" in dvalue or _ENCODED.search(dvalue):
+            return "***"
+        if secret_param(dname):
+            pieces.append(f"{name}=***" if sep else "***")
+        elif "@" in dvalue or any(secret_param(k) for k in _NESTED_SECRET.findall(dvalue)):
+            pieces.append(f"{name}=***")
+        else:
+            pieces.append(piece)
+    return "&".join(pieces)
 
 
 def redact_text(text):
@@ -173,14 +201,21 @@ def normalise_origin(url):
     if any(bad_char(ch) for ch in url):
         raise GuardError("R2", f"URL contains whitespace (ASCII or Unicode), a control or format character "
                                f"or a backslash - refused, not stripped: {redact_url(url)!r}")
-    parts = urllib.parse.urlsplit(url)
+    try:
+        parts = urllib.parse.urlsplit(url)
+    except ValueError as exc:
+        # `https://[broken` - urlsplit raises on an unbalanced bracketed host.
+        raise GuardError("R4", f"unparseable host in {redact_url(url)!r}") from exc
     scheme = parts.scheme.lower()
     if scheme not in _DEFAULT_PORTS:
         raise GuardError("R1", f"scheme {parts.scheme or '(none)'!r} is not http or https")
     netloc = parts.netloc
     if "@" in netloc:
         raise GuardError("R3", f"URL carries a userinfo part ({redact_url(url)!r}); refused outright")
-    leaked = sorted({name for name, _v in urllib.parse.parse_qsl(parts.query, keep_blank_values=True)
+    # parse_qsl decodes, so `access_token%3DSECRET` arrives as the NAME
+    # `access_token=SECRET`: only the part before a decoded `=` is echoed.
+    leaked = sorted({name.partition("=")[0].partition("&")[0]
+                     for name, _v in urllib.parse.parse_qsl(parts.query, keep_blank_values=True)
                      if secret_param(name)})
     if leaked:
         raise GuardError("R3", f"URL carries a credential-named query parameter ({', '.join(leaked)}); a "

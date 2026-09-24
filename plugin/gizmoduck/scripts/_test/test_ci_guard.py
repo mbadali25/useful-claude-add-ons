@@ -263,3 +263,37 @@ def test_probe_answered_differently_than_the_scanner_is_caught_by_the_audit():
     assert g.check_redirects("https://staging.example.com/", policy(), fetch=fetch).allowed
     scanner_recorded = [{"template_id": "x", "matched_at": "https://www.example.com/"}]
     assert g.audit_findings(scanner_recorded, policy())
+
+
+# --- round-3 fixes: decoded-query redaction, malformed bracketed hosts ---
+
+@pytest.mark.parametrize("url", [
+    "https://staging.example.com/?access_token%3DSECRETVALUE",
+    "https://staging.example.com/?access%5Ftoken=SECRETVALUE",
+    "https://staging.example.com/?id=1&api%2Dkey=SECRETVALUE",
+])
+def test_encoded_credential_parameter_is_refused_and_never_echoed(url):
+    d = g.check_target(url, policy())
+
+    assert (d.allowed, d.rule, "SECRETVALUE" in d.reason) == (False, "R3", False)
+
+
+@pytest.mark.parametrize("url,expected", [
+    ("https://h.example/?access_token%3DSECRET", "https://h.example/?***"),
+    ("https://h.example/?access%5Ftoken=SECRET&id=1", "https://h.example/?access%5Ftoken=***&id=1"),
+    ("https://h.example/?next=%2F%3Ftoken%3DSECRET&id=1", "https://h.example/?next=***&id=1"),
+    ("https://h.example/?cb=https%3A%2F%2Fu%3ASECRET%40x.example", "https://h.example/?cb=***"),
+    ("https://h.example/?a=%2525SECRET", "https://h.example/?***"),
+    ("https://h.example/?a=x%26token%3DSECRET", "https://h.example/?***"),
+    ("https://u:SECRET@[broken/?token=SECRET", "https://***@[broken/?***"),
+    ("https://h.example/?id=abc==", "https://h.example/?id=abc=="),
+])
+def test_redact_url_judges_the_decoded_query(url, expected):
+    assert g.redact_url(url) == expected
+
+
+@pytest.mark.parametrize("url", ["https://[broken", "https://[::1", "https://]x[/", "https://[staging.example.com/"])
+def test_malformed_bracketed_host_is_a_refusal_not_an_exception(url):
+    d = g.check_target(url, policy())
+
+    assert (d.allowed, d.rule) == (False, "R4")

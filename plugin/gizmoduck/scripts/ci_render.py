@@ -44,25 +44,38 @@ write-capable credential or feed a trusted run:
   - Each PR workflow ends in a `gate` job that ALWAYS runs and passes or
     fails from the event itself (tier applies? did the scan succeed?), so
     the check a branch rule requires is never a skipped job that a later
-    unrelated event (a `labeled` for another label) can supersede.
-  - The endpoint workflow scans after `deployment_status` / `workflow_run`
-    only when the deployment or triggering run is for a trusted branch
-    (the default branch or release/*) of THIS repository and did not come
-    from a pull request; anything else skips every job - a neutral result
-    that never evaluates a secret.
+    unrelated event (a `labeled` for another label) can supersede. BOTH PR
+    workflows trigger on `labeled` / `unlabeled` and decide their tier from
+    the PR's current label set, so removing the security-scan label re-runs
+    tier 1 on the head commit - a tier-2 gate that stops applying is never
+    the last word on a head nothing scanned.
+  - The endpoint workflow scans after `deployment_status` only when a
+    secret-free `trust` job has confirmed the deployment: its environment
+    is the configured staging environment, its ref names a trusted branch
+    (the default branch or release/*), and its SHA is an ancestor of that
+    branch's head in THIS repository (`git merge-base --is-ancestor`). A
+    ref name alone proves nothing - a pull request can deploy a branch
+    called release/anything. The scan jobs, the only ones holding a secret,
+    `needs:` that job. After `workflow_run` it scans only when the run was
+    for a trusted branch of this repository and not from a pull request.
+    Anything else skips every secret-holding job - a neutral result.
   - Baselines come only from successful runs on the default branch that
     were not pull-request events, from this repository, and still carry
     the artifact (gizmoduck_ci.previous_run_id).
   - Caches are keyed by trust level: a pull-request run's cache key starts
     `gizmoduck-<name>-pr-` and a trusted run restores only
     `gizmoduck-<name>-trusted-`.
-  - Bitbucket has no per-pipeline variable scoping, so the write-capable
-    secrets (GIZMODUCK_BB_TOKEN, SDP_*) are deployment variables of the
+  - Bitbucket has no per-pipeline variable scoping, so every secret the
+    pipeline knows (TRUSTED_SECRETS: GIZMODUCK_BB_TOKEN, SDP_*, NVD_API_KEY,
+    GIZMODUCK_AUTH_HEADER_VALUE) is a deployment variable of the
     `gizmoduck-trusted` deployment environment, which only the custom
     pipelines' stages use. The PR step refuses to run if one of them is
     visible to it (that means it was made a repository variable), reads
     its baseline and draft state with the read-only
-    GIZMODUCK_BB_READ_TOKEN, and uses its own `gizmoduck-pr-*` caches.
+    GIZMODUCK_BB_READ_TOKEN, and uses its own `gizmoduck-pr-*` caches. A
+    custom run on a branch that is not trusted refuses outright if any of
+    them is visible - it never runs with a secret, not even a read-only
+    one like NVD_API_KEY or the scan auth header.
     A PR that edits bitbucket-pipelines.yml itself runs whatever it
     writes - Bitbucket's own limit; deployment permissions (Premium)
     restricting `gizmoduck-trusted` to the default branch are what close it.
@@ -107,6 +120,8 @@ BB_WEEKLY = "security-weekly"
 BB_TRUSTED_ENV = "gizmoduck-trusted"
 RELEASE_GLOB = "release/*"
 WRITE_SECRETS = ("GIZMODUCK_BB_TOKEN", "SDP_API_KEY", "SDP_BASE_URL")
+# Every secret the Bitbucket pipeline knows: no untrusted run may see any.
+TRUSTED_SECRETS = WRITE_SECRETS + ("NVD_API_KEY", "GIZMODUCK_AUTH_HEADER_VALUE")
 _IMAGE_RE = re.compile(r"[a-z0-9][a-z0-9._/:@-]{0,254}")
 
 
@@ -440,17 +455,19 @@ def _gh_tail(stage, title, tickets):
 _SCAN_PERMS = [("contents", "read"), ("actions", "read")]
 
 
-def _gh_jobs(steps, label, condition, sarif=False, gate=False):
+def _gh_jobs(steps, label, condition, sarif=False, gate=False, trust=None):
     """The scan job twice (runner image / inline bootstrap - exactly one runs),
     each with read-only permissions; then, for code workflows, the SARIF
     upload job (the only `security-events: write`), and for PR-event
-    workflows the always-running gate job."""
+    workflows the always-running gate job. `trust`, when given, is a job
+    rendered first that both scan jobs `needs:`."""
     perm = "\n".join(f"      {k}: {v}" for k, v in _SCAN_PERMS)
     outputs = ("    outputs:\n      sarif: ${{ steps.sarif.outcome == 'success' }}\n" if sarif else "")
+    needs = "    needs: [trust]\n" if trust else ""
     image_job = f"""\
   scan:
     name: {label} (runner image)
-    if: {condition.format(runner="vars.GIZMODUCK_RUNNER != 'bootstrap'")}
+{needs}    if: {condition.format(runner="vars.GIZMODUCK_RUNNER != 'bootstrap'")}
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     container:
@@ -462,14 +479,14 @@ def _gh_jobs(steps, label, condition, sarif=False, gate=False):
     boot_job = f"""\
   scan-bootstrap:
     name: {label} (inline bootstrap fallback)
-    if: {condition.format(runner="vars.GIZMODUCK_RUNNER == 'bootstrap'")}
+{needs}    if: {condition.format(runner="vars.GIZMODUCK_RUNNER == 'bootstrap'")}
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     permissions:
 {perm}
 {outputs}    steps:
 {_indent(steps, 6)}"""
-    jobs = [image_job, boot_job]
+    jobs = ([trust] if trust else []) + [image_job, boot_job]
     if sarif:
         jobs.append(_gh_sarif_job(label))
     if gate:
@@ -524,8 +541,11 @@ def github_pr(cfg):
     ])
     condition = ("{runner} && github.event_name == 'pull_request' && " + _NOT_DRAFT +
                  " && !" + _tier2_pr(cfg))
+    # labeled/unlabeled too: removing the security-scan label takes the PR
+    # out of tier 2, and tier 1 must then scan the head commit rather than
+    # leave tier 2's no-longer-applicable PASS as the only verdict on it.
     triggers = ["  pull_request:",
-                "    types: [opened, synchronize, reopened, ready_for_review]",
+                "    types: [opened, synchronize, reopened, ready_for_review, labeled, unlabeled]",
                 "    paths-ignore:",
                 *[f"      - {_yq(p)}" for p in DOCS_ONLY]]
     env = _gh_env(cfg, CODE_OUT, "light", "critical", [("TRIVY_CACHE_DIR", _CACHES["trivy"][1])])
@@ -581,21 +601,84 @@ def github_full(cfg):
                     env, _gh_jobs(steps, "gizmoduck full code scan", condition, sarif=True, gate=True), cfg)
 
 
+_DEPLOY_TRUST_SH = """\
+neutral() {
+  echo "gizmoduck: $1 - not a trusted deployment; the endpoint scan is skipped (neutral) and no secret is used"
+  echo "trusted=false" >> "$GITHUB_OUTPUT"
+  exit 0
+}
+if [ "$DEPLOY_ENVIRONMENT" != "$GIZMODUCK_STAGING_ENVIRONMENT" ]; then
+  neutral "environment '$DEPLOY_ENVIRONMENT' is not the configured staging environment"
+fi
+branch="${DEPLOY_REF#refs/heads/}"
+case "$branch" in
+  "$GIZMODUCK_DEFAULT_BRANCH"|release/*) ;;
+  *) neutral "ref '$DEPLOY_REF' is not a trusted branch" ;;
+esac
+if ! printf '%s' "$DEPLOY_SHA" | grep -Eq '^[0-9a-f]{40}$'; then
+  neutral "deployment SHA '$DEPLOY_SHA' is not a full commit SHA"
+fi
+# The ref is a name the deployer chose; the SHA is what was deployed. Trust it
+# only when it is reachable from that trusted branch's head in THIS repository.
+if ! git rev-parse -q --verify "refs/remotes/origin/$branch^{commit}" >/dev/null; then
+  neutral "branch '$branch' does not exist in this repository"
+fi
+if ! git merge-base --is-ancestor "$DEPLOY_SHA" "refs/remotes/origin/$branch" 2>/dev/null; then
+  neutral "deployed SHA $DEPLOY_SHA is not reachable from origin/$branch"
+fi
+echo "gizmoduck: deployed SHA $DEPLOY_SHA is on origin/$branch - trusted"
+echo "trusted=true" >> "$GITHUB_OUTPUT\""""
+
+
+def _gh_deploy_trust_job(cfg):
+    """The secret-free job every deployment_status scan `needs:`. It fetches
+    the repository's branches (read-only token, not persisted) and decides
+    from git, never from the deployment's ref name alone."""
+    return f"""\
+  trust:
+    name: gizmoduck deployment trust check (no secrets)
+    if: github.event_name == 'deployment_status'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      trusted: ${{{{ steps.check.outputs.trusted }}}}
+    steps:
+      - name: Check out every branch (history only; nothing is run from it)
+        {uses('checkout')}
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+          ref: {_yq(cfg['default_branch'])}
+      - name: Is the deployed SHA on a trusted branch of this repository?
+        id: check
+        env:
+          GIZMODUCK_STAGING_ENVIRONMENT: {_yq(cfg['staging_environment'])}
+          DEPLOY_ENVIRONMENT: ${{{{ github.event.deployment.environment }}}}
+          DEPLOY_REF: ${{{{ github.event.deployment.ref }}}}
+          DEPLOY_SHA: ${{{{ github.event.deployment.sha }}}}
+        run: |
+{_indent(_DEPLOY_TRUST_SH, 10)}"""
+
+
 def github_endpoints(cfg):
     """Tier 2 endpoint scans after the staging deploy, the tier-3 weekly
     endpoint sweep, and a manual scan of any guard-allowed URL. Never on a
     pull_request."""
     env_name = cfg["staging_environment"]
     triggers = ["  deployment_status:"]
-    # A deploy event is trusted only for a trusted branch of THIS repository
-    # and not from a pull request; anything else skips every job (a neutral
-    # result) before any step - and so any secret - is evaluated.
+    # A deploy event is trusted only once the secret-free `trust` job has
+    # proved the deployed SHA is on a trusted branch of THIS repository; the
+    # ref name alone is chosen by whoever deployed. Anything else skips the
+    # scan jobs (a neutral result) before any of their steps - and so any
+    # secret - is evaluated.
     conds = ["github.event_name == 'workflow_dispatch'", _IS_SWEEP,
              ("(github.event_name == 'deployment_status' && "
               "github.event.deployment_status.state == 'success' && "
               f"github.event.deployment.environment == {_sq(env_name)} && "
-              "github.event.repository.full_name == github.repository && "
-              f"{_trusted_ref('github.event.deployment.ref', cfg)})")]
+              f"{_trusted_ref('github.event.deployment.ref', cfg)} && "
+              "needs.trust.outputs.trusted == 'true')")]
     if cfg.get("deploy_workflow"):
         triggers += ["  workflow_run:",
                      f"    workflows: [{_yq(cfg['deploy_workflow'])}]",
@@ -616,7 +699,10 @@ def github_endpoints(cfg):
                  "        required: false",
                  "        default: ''",
                  "        type: string"]
-    condition = "{runner} && (" + " || ".join(conds) + ")"
+    # `!cancelled()` (not first - a leading `!` is a YAML tag): without a
+    # status function a job whose `needs:` was skipped is skipped too, and
+    # `trust` is skipped for every event but deployment_status.
+    condition = "{runner} && !cancelled() && (" + " || ".join(conds) + ")"
     steps = "\n".join([
         _gh_checkout(),
         _gh_bootstrap_step(),
@@ -649,7 +735,8 @@ def github_endpoints(cfg):
                     "gizmoduck-endpoints-${{ github.event_name }}-${{ " +
                     ("github.event.workflow_run.head_branch || " if cfg.get("deploy_workflow") else "") +
                     "github.event.deployment.ref || github.ref }}", env,
-                    _gh_jobs(steps, "gizmoduck staging endpoint scan", condition), cfg)
+                    _gh_jobs(steps, "gizmoduck staging endpoint scan", condition,
+                             trust=_gh_deploy_trust_job(cfg)), cfg)
 
 
 # --------------------------------------------------------------------------
@@ -697,17 +784,18 @@ fi"""
 
 
 _BB_PR_TRUST = """\
-# A pull request is untrusted code: no write-capable secret may be visible to
-# it. They belong to the gizmoduck-trusted deployment environment, which only
-# the custom pipelines use - one visible here was made a repository variable.
-for v in @@WRITE_SECRETS@@; do
+# A pull request is untrusted code: no secret may be visible to it - not a
+# write-capable secret, and not NVD_API_KEY or the scan auth header either.
+# They belong to the gizmoduck-trusted deployment environment, which only the
+# custom pipelines use - one visible here was made a repository variable.
+for v in @@SECRETS@@; do
   if [ -n "$(printenv "$v" || true)" ]; then
     echo "gizmoduck: $v is visible to a pull-request pipeline - it is a repository variable. Move it to the" \
 "@@TRUSTED_ENV@@ deployment environment (Repository settings -> Deployments); refusing to run with it."
     exit 1
   fi
 done
-unset @@WRITE_SECRETS@@ GIZMODUCK_AUTH_HEADER_VALUE NVD_API_KEY
+unset @@SECRETS@@
 # Tier 1 skips draft PRs. Bitbucket passes no draft flag to a pipeline, so it
 # is read from the pull request with the read-only GIZMODUCK_BB_READ_TOKEN. A
 # state this step cannot read fails the check - a draft is never guessed at.
@@ -724,18 +812,28 @@ case "$draft" in
   true) echo "gizmoduck: draft pull request - tier 1 is skipped until it is marked ready for review"; exit 0 ;;
   false) ;;
   *) echo "gizmoduck: could not read whether pull request ${BITBUCKET_PR_ID:-?} is a draft - failing closed"; exit 1 ;;
-esac""".replace("@@WRITE_SECRETS@@", " ".join(WRITE_SECRETS)).replace("@@TRUSTED_ENV@@", BB_TRUSTED_ENV) \
+esac""".replace("@@SECRETS@@", " ".join(TRUSTED_SECRETS)).replace("@@TRUSTED_ENV@@", BB_TRUSTED_ENV) \
     .replace("@@BB_FULL@@", BB_FULL)
 
 
 _BB_TRUSTED_REF = """\
-# Write-capable secrets (gizmoduck-trusted deployment variables) are used only
-# on a trusted branch: the default branch or release/*.
+# Secrets (gizmoduck-trusted deployment variables) are used only on a trusted
+# branch: the default branch or release/*. A custom run on any other branch
+# refuses if ANY of them is visible - dropping some and keeping the rest is how
+# the deployment secrets reached a feature branch's staging code before.
 case "${BITBUCKET_BRANCH:-}" in
   "$GIZMODUCK_DEFAULT_BRANCH"|release/*) ;;
-  *) echo "gizmoduck: '${BITBUCKET_BRANCH:-<none>}' is not a trusted branch - write-capable secrets are dropped"
-     unset @@WRITE_SECRETS@@ ;;
-esac""".replace("@@WRITE_SECRETS@@", " ".join(WRITE_SECRETS))
+  *) for v in @@SECRETS@@; do
+       if [ -n "$(printenv "$v" || true)" ]; then
+         echo "gizmoduck: '${BITBUCKET_BRANCH:-<none>}' is not a trusted branch and $v is visible to it -" \
+"refusing to run. Run custom pipelines on the default branch or release/*, or (Premium) restrict the" \
+"@@TRUSTED_ENV@@ deployment environment to them."
+         exit 1
+       fi
+     done
+     echo "gizmoduck: '${BITBUCKET_BRANCH:-<none>}' is not a trusted branch - running with no secrets"
+     unset @@SECRETS@@ ;;
+esac""".replace("@@SECRETS@@", " ".join(TRUSTED_SECRETS)).replace("@@TRUSTED_ENV@@", BB_TRUSTED_ENV)
 
 
 def _bb_tail(stage, title, insights, trusted=True):
@@ -888,13 +986,15 @@ def bitbucket(cfg):
 #
 # One-time setup for trust (the pull-request step refuses to run without it):
 #   Repository settings -> Deployments -> add an environment named {BB_TRUSTED_ENV}
-#   and put the WRITE-capable secrets there as deployment variables, never as
-#   repository variables: GIZMODUCK_BB_TOKEN (secured; uploads the baseline),
-#   SDP_BASE_URL + SDP_API_KEY (secured; tickets), NVD_API_KEY,
+#   and put EVERY secret there as a deployment variable, never as a repository
+#   variable: GIZMODUCK_BB_TOKEN (secured; uploads the baseline), SDP_BASE_URL +
+#   SDP_API_KEY (secured; tickets), NVD_API_KEY (secured),
 #   GIZMODUCK_AUTH_HEADER_VALUE (secured; only when gizmoduck-ci.json sets auth "header").
-#   Only the custom pipelines' stages use that environment. On Premium, restrict its
-#   deployment permissions to {default} - a pull request that edits this file runs
-#   whatever it writes, and that restriction is what keeps it from the environment.
+#   Only the custom pipelines' stages use that environment. A pull request, or a
+#   custom run on a branch other than {default} or release/*, refuses to run if any
+#   of those is visible to it. On Premium, restrict the environment's deployment
+#   permissions to {default} - a pull request that edits this file runs whatever it
+#   writes, and that restriction is what keeps it from the environment.
 # Repository variables: GIZMODUCK_BB_READ_TOKEN (secured; a READ-only access token -
 #   baselines and draft detection), GIZMODUCK_ALLOWED_PROD_ORIGINS + GIZMODUCK_ALLOW_PROD_SCAN,
 #   GIZMODUCK_ALLOWED_IP_ORIGINS, GIZMODUCK_ALLOW_NO_BASELINE, GIZMODUCK_ALLOW_INCOMPLETE,

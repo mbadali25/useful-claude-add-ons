@@ -660,6 +660,47 @@ def test_the_walk_is_bounded_and_says_so(tmp_path, monkeypatch):
     assert any("walk stopped after 10 candidate files" in c for c in det.checked)
 
 
+def test_the_entry_bound_is_applied_while_a_directory_streams(tmp_path, monkeypatch):
+    root = make_repo(tmp_path, {f"big/f{i:04d}.txt": "x\n" for i in range(300)})
+    real_scandir = os.scandir
+    pulled = []
+
+    class Counting:
+        def __init__(self, path):
+            self._it = real_scandir(path)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            self._it.close()
+
+        def __iter__(self):
+            for entry in self._it:
+                pulled.append(entry.name)
+                yield entry
+
+    monkeypatch.setattr(cd, "_MAX_ENTRIES", 20)
+    monkeypatch.setattr(cd.os, "scandir", Counting)
+
+    det = cd.detect(str(root))
+
+    assert len(pulled) <= 25 and any("walk stopped after 20 entries" in c for c in det.checked)
+
+
+@pytest.mark.parametrize("value", ['"https://alice:SECRETPW@${var.staging_host}/api"',
+                                   '"https://alice:SECRETPW@${ var.staging_host }/api"',
+                                   '"${var.scheme}://alice:SECRETPW@${var.staging_host}/api"',
+                                   '"https://alice:' + "SECRETPW" * 20 + '@${var.staging_host}/api"'])
+def test_templated_terraform_url_userinfo_is_redacted(tmp_path, value):
+    root = make_repo(tmp_path, {"infra/staging/outputs.tf":
+                                f'output "staging_url" {{\n  value = {value}\n}}\n'})
+
+    det = cd.detect(str(root))
+
+    assert "SECRETPW" not in cd.render_findings(det) + json.dumps(det.to_dict())
+
+
 def test_the_walk_depth_is_bounded(tmp_path, monkeypatch):
     root = make_repo(tmp_path, {"a/b/c/d/e/server.js": EXPRESS})
     monkeypatch.setattr(cd, "_MAX_DEPTH", 2)

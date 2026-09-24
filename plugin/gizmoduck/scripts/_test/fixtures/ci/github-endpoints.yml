@@ -51,9 +51,61 @@ env:
   GIZMODUCK_NUCLEI_TEMPLATES: /tmp/gizmoduck-cache/nuclei-templates
 
 jobs:
+  trust:
+    name: gizmoduck deployment trust check (no secrets)
+    if: github.event_name == 'deployment_status'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      trusted: ${{ steps.check.outputs.trusted }}
+    steps:
+      - name: Check out every branch (history only; nothing is run from it)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+          ref: "main"
+      - name: Is the deployed SHA on a trusted branch of this repository?
+        id: check
+        env:
+          GIZMODUCK_STAGING_ENVIRONMENT: "staging"
+          DEPLOY_ENVIRONMENT: ${{ github.event.deployment.environment }}
+          DEPLOY_REF: ${{ github.event.deployment.ref }}
+          DEPLOY_SHA: ${{ github.event.deployment.sha }}
+        run: |
+          neutral() {
+            echo "gizmoduck: $1 - not a trusted deployment; the endpoint scan is skipped (neutral) and no secret is used"
+            echo "trusted=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          }
+          if [ "$DEPLOY_ENVIRONMENT" != "$GIZMODUCK_STAGING_ENVIRONMENT" ]; then
+            neutral "environment '$DEPLOY_ENVIRONMENT' is not the configured staging environment"
+          fi
+          branch="${DEPLOY_REF#refs/heads/}"
+          case "$branch" in
+            "$GIZMODUCK_DEFAULT_BRANCH"|release/*) ;;
+            *) neutral "ref '$DEPLOY_REF' is not a trusted branch" ;;
+          esac
+          if ! printf '%s' "$DEPLOY_SHA" | grep -Eq '^[0-9a-f]{40}$'; then
+            neutral "deployment SHA '$DEPLOY_SHA' is not a full commit SHA"
+          fi
+          # The ref is a name the deployer chose; the SHA is what was deployed. Trust it
+          # only when it is reachable from that trusted branch's head in THIS repository.
+          if ! git rev-parse -q --verify "refs/remotes/origin/$branch^{commit}" >/dev/null; then
+            neutral "branch '$branch' does not exist in this repository"
+          fi
+          if ! git merge-base --is-ancestor "$DEPLOY_SHA" "refs/remotes/origin/$branch" 2>/dev/null; then
+            neutral "deployed SHA $DEPLOY_SHA is not reachable from origin/$branch"
+          fi
+          echo "gizmoduck: deployed SHA $DEPLOY_SHA is on origin/$branch - trusted"
+          echo "trusted=true" >> "$GITHUB_OUTPUT"
+
   scan:
     name: gizmoduck staging endpoint scan (runner image)
-    if: vars.GIZMODUCK_RUNNER != 'bootstrap' && (github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || (github.event_name == 'deployment_status' && github.event.deployment_status.state == 'success' && github.event.deployment.environment == 'staging' && github.event.repository.full_name == github.repository && (github.event.deployment.ref == 'main' || github.event.deployment.ref == 'refs/heads/main' || startsWith(github.event.deployment.ref, 'release/') || startsWith(github.event.deployment.ref, 'refs/heads/release/'))) || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_repository.full_name == github.repository && github.event.workflow_run.event != 'pull_request' && github.event.workflow_run.event != 'pull_request_target' && (github.event.workflow_run.head_branch == 'main' || github.event.workflow_run.head_branch == 'refs/heads/main' || startsWith(github.event.workflow_run.head_branch, 'release/') || startsWith(github.event.workflow_run.head_branch, 'refs/heads/release/'))))
+    needs: [trust]
+    if: vars.GIZMODUCK_RUNNER != 'bootstrap' && !cancelled() && (github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || (github.event_name == 'deployment_status' && github.event.deployment_status.state == 'success' && github.event.deployment.environment == 'staging' && (github.event.deployment.ref == 'main' || github.event.deployment.ref == 'refs/heads/main' || startsWith(github.event.deployment.ref, 'release/') || startsWith(github.event.deployment.ref, 'refs/heads/release/')) && needs.trust.outputs.trusted == 'true') || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_repository.full_name == github.repository && github.event.workflow_run.event != 'pull_request' && github.event.workflow_run.event != 'pull_request_target' && (github.event.workflow_run.head_branch == 'main' || github.event.workflow_run.head_branch == 'refs/heads/main' || startsWith(github.event.workflow_run.head_branch, 'release/') || startsWith(github.event.workflow_run.head_branch, 'refs/heads/release/'))))
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     container:
@@ -172,7 +224,8 @@ jobs:
 
   scan-bootstrap:
     name: gizmoduck staging endpoint scan (inline bootstrap fallback)
-    if: vars.GIZMODUCK_RUNNER == 'bootstrap' && (github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || (github.event_name == 'deployment_status' && github.event.deployment_status.state == 'success' && github.event.deployment.environment == 'staging' && github.event.repository.full_name == github.repository && (github.event.deployment.ref == 'main' || github.event.deployment.ref == 'refs/heads/main' || startsWith(github.event.deployment.ref, 'release/') || startsWith(github.event.deployment.ref, 'refs/heads/release/'))) || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_repository.full_name == github.repository && github.event.workflow_run.event != 'pull_request' && github.event.workflow_run.event != 'pull_request_target' && (github.event.workflow_run.head_branch == 'main' || github.event.workflow_run.head_branch == 'refs/heads/main' || startsWith(github.event.workflow_run.head_branch, 'release/') || startsWith(github.event.workflow_run.head_branch, 'refs/heads/release/'))))
+    needs: [trust]
+    if: vars.GIZMODUCK_RUNNER == 'bootstrap' && !cancelled() && (github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || (github.event_name == 'deployment_status' && github.event.deployment_status.state == 'success' && github.event.deployment.environment == 'staging' && (github.event.deployment.ref == 'main' || github.event.deployment.ref == 'refs/heads/main' || startsWith(github.event.deployment.ref, 'release/') || startsWith(github.event.deployment.ref, 'refs/heads/release/')) && needs.trust.outputs.trusted == 'true') || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_repository.full_name == github.repository && github.event.workflow_run.event != 'pull_request' && github.event.workflow_run.event != 'pull_request_target' && (github.event.workflow_run.head_branch == 'main' || github.event.workflow_run.head_branch == 'refs/heads/main' || startsWith(github.event.workflow_run.head_branch, 'release/') || startsWith(github.event.workflow_run.head_branch, 'refs/heads/release/'))))
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     permissions:

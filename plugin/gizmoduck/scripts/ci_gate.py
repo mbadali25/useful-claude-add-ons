@@ -24,8 +24,9 @@ already become Info. Everything this gate cannot read fails closed:
 - a missing baseline fails the gate on its own - even when the scan found
   nothing - unless `allow_missing_baseline` is set (that flag is how a
   repository creates its first baseline);
-- the run manifest must list at least one cell, and every cell must be `ran`,
-  `ran(<mode>)` or `skipped-active` (an active tool that declined by design).
+- the run manifest must list at least one cell, and every cell must be one of
+  the exact statuses in COMPLETE_STATUSES: `ran`, `skipped-active` (an active
+  tool that declined by design) or a `ran(<mode>)` an adapter actually writes.
   No manifest, no cells, `error:*`, `skipped-missing` or any status this gate
   does not know fails unless `allow_incomplete` is set, because a scanner that
   did not run is not a scanner that found nothing.
@@ -125,11 +126,21 @@ def load_findings(path, trust_assigned=False):
     return out
 
 
+# Every status that proves a tool ran, as exact strings. The `ran(<mode>)`
+# forms are the ones routine._ran_status writes from routine._MODE_LABELS
+# (nmap and zap, the two adapters with ACTIVE_OPTS); a test holds the two in
+# step. Anything else - `ran()`, `ran(anything)`, a mode no adapter defines -
+# is not proof of coverage and fails.
+COMPLETE_STATUSES = frozenset({
+    "ran", "skipped-active",
+    "ran(safe)", "ran(safe+vuln)",
+    "ran(baseline)", "ran(baseline+active)",
+})
+
+
 def _cell_complete(cell):
     status = cell.get("status") if isinstance(cell, dict) else None
-    if not isinstance(status, str):
-        return False
-    return status in ("ran", "skipped-active") or (status.startswith("ran(") and status.endswith(")"))
+    return isinstance(status, str) and status in COMPLETE_STATUSES
 
 
 def incomplete_cells(manifest):

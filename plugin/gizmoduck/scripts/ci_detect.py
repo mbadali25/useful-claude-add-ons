@@ -189,20 +189,27 @@ def _walk(root, subdir, notes=None):
         if depth > _MAX_DEPTH:
             notes.append(f"{os.path.relpath(path, root)}: deeper than {_MAX_DEPTH} levels - not walked")
             return False
+        # Streamed with the bound applied per entry, so one directory holding
+        # millions of entries is never materialised: at most the remaining
+        # budget is read, and only that much is sorted.
+        entries, truncated = [], False
         try:
-            entries = sorted(os.scandir(path), key=lambda e: e.name)
+            with os.scandir(path) as it:
+                for entry in it:
+                    if seen + len(entries) >= _MAX_ENTRIES:
+                        truncated = True
+                        break
+                    entries.append(entry)
         except OSError as exc:
             if exc.errno not in (errno.ENOENT, errno.ENOTDIR):
                 notes.append(f"{os.path.relpath(path, root)}: unreadable ({exc.strerror}) - skipped")
             return True
+        entries.sort(key=lambda e: e.name)
         rel_dir = os.path.relpath(path, root).replace("\\", "/")
         in_obj = "obj" in rel_dir.split("/")
         subdirs = []
         for entry in entries:
             seen += 1
-            if seen > _MAX_ENTRIES:
-                notes.append(f"walk stopped after {_MAX_ENTRIES} entries - detection is partial")
-                return False
             if entry.is_symlink():
                 continue
             if entry.is_dir(follow_symlinks=False):
@@ -217,6 +224,9 @@ def _walk(root, subdir, notes=None):
                 notes.append(f"walk stopped after {_MAX_CANDIDATES} candidate files - detection is partial")
                 return False
             out.append((os.path.relpath(entry.path, root).replace("\\", "/"), entry.path))
+        if truncated:
+            notes.append(f"walk stopped after {_MAX_ENTRIES} entries - detection is partial")
+            return False
         for entry in subdirs:
             if not walk_dir(entry.path, depth + 1):
                 return False
@@ -800,6 +810,9 @@ def _staging_key(text, idx):
     return any(w.lower() in ("staging", "stage", "stg") for w in words)
 
 
+_TEMPLATED_USERINFO = re.compile(r"(://)[^\s\"'/?#]*@")   # scheme may be `${var.scheme}` too
+
+
 def _detect_staging_files(rel, text, out):
     name = rel.rsplit("/", 1)[-1]
     staging_file = bool(_STAGING_WORD.search(name)) or bool(_STAGING_WORD.search(rel))
@@ -845,8 +858,12 @@ def _detect_staging_files(rel, text, out):
                 out.append(_url_finding(lit.group(1), rel, text, idx, MEDIUM, "terraform-output",
                                         f"output \"{oname}\""))
             else:
+                # Redact BEFORE truncating (a cut could drop the `@` the mask
+                # keys on), and mask any `scheme://...@` even when what follows
+                # is `${var.host}` rather than a host urlsplit would recognise.
+                shown = ci_guard.redact_text(_TEMPLATED_USERINFO.sub(r"\1***@", value))[:120]
                 out.append(Finding("staging_url", "", f"{rel}:{_line_of(text, idx)}", LOW, "terraform-output",
-                                   note=f"output \"{oname}\" = {value[:120]} - resolved only at apply time "
+                                   note=f"output \"{oname}\" = {shown} - resolved only at apply time "
                                         f"(`terraform output {oname}` against the staging state)"))
 
 

@@ -170,6 +170,34 @@ def test_ran_and_skipped_active_cells_are_complete():
     assert not evaluate(parse([]), parse([]), manifest).fail
 
 
+@pytest.mark.parametrize("status", ["ran()", "ran(x)", "ran(anything)", "ran(safe+vuln+extra)",
+                                    "ran(default)", "ran( safe)", "ran(SAFE)", "ran(baseline)x",
+                                    "xran(safe)", "ran(safe))"])
+def test_ran_status_outside_the_allow_list_is_incomplete(status):
+    manifest = {"cells": [{"target": "t", "tool": "x", "status": status}]}
+
+    result = ci_gate.evaluate([], [], manifest)
+
+    assert result.fail
+
+
+def test_allow_list_covers_every_status_routine_can_write():
+    import itertools
+    import routine
+    import scanners
+
+    written = set()
+    for name, mod in scanners.ADAPTERS.items():
+        opts = list(getattr(mod, "ACTIVE_OPTS", []))
+        for n in range(len(opts) + 1):
+            for chosen in itertools.combinations(opts, n):
+                target = routine.Target(name="t", kind="web", url="https://staging.example.test/",
+                                        options={k: True for k in chosen})
+                written.add(routine._ran_status(name, mod, target))
+
+    assert written | {"skipped-active"} == set(ci_gate.COMPLETE_STATUSES)
+
+
 @pytest.mark.parametrize("line", ["not json", "[1,2]", '{"hello": "world"}'])
 def test_unreadable_line_is_an_error(line):
     with pytest.raises(ci_gate.GateInputError):

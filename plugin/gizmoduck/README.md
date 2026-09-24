@@ -115,10 +115,13 @@ Trust: pull-request jobs hold no write-capable secret or token; only a separate 
 `security-events: write`. Require each PR workflow's always-running `gate` job in branch
 protection - it decides from the event, so a later skipped run cannot stand in for a failed scan.
 The endpoint workflow scans after a deploy only for the default branch or `release/*` of this
-repository; baselines come only from trusted default-branch runs. On Bitbucket, the write-capable
-secrets (`GIZMODUCK_BB_TOKEN`, `SDP_*`) are deployment variables of a `gizmoduck-trusted`
-deployment environment used only by the custom pipelines; the PR step refuses to run if it can see
-one, and reads baselines and draft state with a read-only `GIZMODUCK_BB_READ_TOKEN` (without it,
+repository, and after `deployment_status` only once a secret-free `trust` job has confirmed the
+deployed SHA is an ancestor of that branch's head - a ref name alone is not trusted; baselines come
+only from trusted default-branch runs. On Bitbucket, every secret (`GIZMODUCK_BB_TOKEN`, `SDP_*`,
+`NVD_API_KEY`, `GIZMODUCK_AUTH_HEADER_VALUE`) is a deployment variable of a `gizmoduck-trusted`
+deployment environment used only by the custom pipelines; the PR step, and a custom run on any
+branch other than the default branch or `release/*`, refuses to run if it can see one. The PR step
+reads baselines and draft state with a read-only `GIZMODUCK_BB_READ_TOKEN` (without it,
 as on a fork's PR, the check fails rather than scanning blind). Every endpoint scanner runs with
 redirects disabled or scoped to the target origin, and the stage fails if any recorded request left
 it; URLs with credentials are refused by the guard and redacted in every log and artifact.

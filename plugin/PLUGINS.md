@@ -478,7 +478,7 @@ The hooks go with it. To keep the plugin but stop the `Stop` gate, set `verifyGa
 | | |
 |---|---|
 | **Source** | [`gizmoduck/`](gizmoduck) |
-| **Version** | 0.7.1<!-- claim: plugin-version:gizmoduck --> |
+| **Version** | 0.7.2<!-- claim: plugin-version:gizmoduck --> |
 | **Install** | `claude plugin install gizmoduck@useful-claude-add-ons` |
 | **Registers** | 7 commands<!-- claim: plugin-commands:gizmoduck -->, 1 skill. **No agents, no hooks** — nothing runs unless you type a command |
 | **Upstream guide** | [`gizmoduck/README.md`](gizmoduck/README.md) |

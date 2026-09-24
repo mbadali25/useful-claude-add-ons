@@ -43,9 +43,10 @@ the repository is `${2:-.}`.
      Pipelines -> Schedules (branch: default, pipeline: `custom: security-weekly`), as the rendered
      file's header says;
    - the required checks: each PR workflow's `gate` job (GitHub); on Bitbucket, the one-time
-     `gizmoduck-trusted` deployment environment holding `GIZMODUCK_BB_TOKEN` and `SDP_*` as
-     deployment variables, plus a read-only `GIZMODUCK_BB_READ_TOKEN` repository variable - the
-     PR step refuses to run while a write-capable secret is a repository variable;
+     `gizmoduck-trusted` deployment environment holding every secret (`GIZMODUCK_BB_TOKEN`,
+     `SDP_*`, `NVD_API_KEY`, `GIZMODUCK_AUTH_HEADER_VALUE`) as deployment variables, plus a
+     read-only `GIZMODUCK_BB_READ_TOKEN` repository variable - the PR step, and a custom run on an
+     untrusted branch, refuses to run while any of those secrets is visible to it;
    - which repository variables and secrets the pipelines read (the rendered headers list them),
      including `GIZMODUCK_AUTH_HEADER_VALUE` when auth is `header`, and that production is only
      ever scanned when BOTH `GIZMODUCK_ALLOWED_PROD_ORIGINS` lists the origin AND

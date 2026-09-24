@@ -155,6 +155,9 @@ class _Parser:
             return None
         if self.peek()[1] == "(":
             self.take("(")
+            if self.peek()[1] == ")":
+                self.take(")")
+                return self.call(val, [])
             args = [self.or_()]
             while self.peek()[1] == ",":
                 self.take()
@@ -165,6 +168,10 @@ class _Parser:
 
     @staticmethod
     def call(name, args):
+        # Status functions, for a run nobody cancelled: `needs` results are
+        # modelled in the context, not here.
+        if name in ("always", "cancelled") and not args:
+            return name == "always"
         a, b = args
         if name == "startsWith":
             return str(a or "").lower().startswith(str(b or "").lower())
@@ -226,9 +233,13 @@ def plain(name, **event):
                     "vars": {}}}
 
 
-def deploy(state="success", environment="staging", ref="main", repo=REPO):
-    return plain("deployment_status", deployment_status={"state": state},
-                 deployment={"environment": environment, "ref": ref}, repository={"full_name": repo})
+def deploy(state="success", environment="staging", ref="main", repo=REPO, trusted=True):
+    """`trusted` is the `trust` job's output - what the git ancestry check
+    decided; test_deploy_trust_job_* run that check itself."""
+    ev = plain("deployment_status", deployment_status={"state": state},
+               deployment={"environment": environment, "ref": ref}, repository={"full_name": repo})
+    ev["ctx"]["needs"] = {"trust": {"outputs": {"trusted": "true" if trusted else "false"}}}
+    return ev
 
 
 def deploy_run(conclusion="success", branch="main", repo=REPO, event="push"):
@@ -292,14 +303,19 @@ MATRIX = [
     ("security-scan label added to a feature PR",
      pr_event(labels=("security-scan",), action="labeled"), TIER2_CODE),
     ("push to a feature PR already carrying the label", pr_event(labels=("security-scan",)), TIER2_CODE),
-    ("some other label added to a feature PR", pr_event(labels=("docs",), action="labeled"), {}),
+    ("some other label added to a feature PR (tier 1 re-runs on the head)",
+     pr_event(labels=("docs",), action="labeled"), TIER1),
     # Tier 2 is decided from the label SET: an unrelated label on a tier-2 PR
     # re-runs it rather than leaving a skipped run to stand in for the scan.
     ("some other label added to a PR into main (re-evaluated, not skipped)",
      pr_event(base="main", labels=("docs",), action="labeled"), TIER2_CODE),
     ("some other label added to a labelled feature PR",
      pr_event(labels=("security-scan", "docs"), action="labeled"), TIER2_CODE),
-    ("security-scan label removed from a feature PR", pr_event(action="unlabeled"), {}),
+    # Removing the label takes the PR out of tier 2: tier 1 must then scan the
+    # head, or tier 2's not-applicable PASS would be the last word on it.
+    ("security-scan label removed from a feature PR", pr_event(action="unlabeled"), TIER1),
+    ("security-scan label removed from a PR into main (still tier 2)",
+     pr_event(base="main", action="unlabeled"), TIER2_CODE),
     ("draft PR with the label", pr_event(draft=True, labels=("security-scan",), action="labeled"), {}),
     ("weekly schedule", plain("schedule"), {FULL: ("sweep", "never"), EP: ("sweep", "never")}),
     ("manual dispatch", plain("workflow_dispatch"), {FULL: ("full", "high"), EP: ("full", "high")}),
@@ -307,6 +323,9 @@ MATRIX = [
     ("staging deploy of refs/heads/main succeeded", deploy(ref="refs/heads/main"), {EP: ("full", "high")}),
     ("staging deploy of release/2.4 succeeded", deploy(ref="release/2.4"), {EP: ("full", "high")}),
     ("staging deploy of a PR branch (untrusted ref)", deploy(ref="feature/x"), {}),
+    ("staging deploy of a PR branch named release/pwn (SHA not on the branch)",
+     deploy(ref="release/pwn", trusted=False), {}),
+    ("staging deploy of main whose SHA is not on main", deploy(trusted=False), {}),
     ("staging deploy of a bare SHA (not a trusted branch)", deploy(ref="0123abcd"), {}),
     ("staging deploy failed", deploy(state="failure"), {}),
     ("production deploy succeeded", deploy(environment="production"), {}),
@@ -369,6 +388,98 @@ def test_a_failed_tier_2_scan_fails_the_gate_and_an_unrelated_label_cannot_super
     assert applies and rc == 1, "the next labeled event re-runs the tier-2 scan and gates on it"
     assert gate_verdict(full, later_label, image_result="skipped", boot_result="skipped")[1] == 1, \
         "a tier-2 event whose scan did not run is a failure, never a pass"
+
+
+def test_removing_the_label_after_a_failed_tier_2_scan_rescans_the_head_in_tier_1():
+    _, gh = render()
+    pr_wf, full = gh[ci_render.PR_FILE], gh[ci_render.FULL_FILE]
+    removed = pr_event(action="unlabeled")
+
+    verdicts = (triggered(pr_wf, removed), gate_verdict(pr_wf, removed, image_result="failure"),
+                gate_verdict(pr_wf, removed, image_result="skipped", boot_result="skipped"),
+                gate_verdict(full, removed))
+
+    assert verdicts == (True, (True, 1), (True, 1), (False, 0))
+
+
+def _trust_repo(tmp_path):
+    """A repository whose origin has main and release/2.4, plus an unmerged
+    PR commit - the three things the deployment trust check tells apart."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    env = {"PATH": os.environ.get("PATH", ""), "HOME": str(tmp_path), "GIT_AUTHOR_NAME": "t",
+           "GIT_AUTHOR_EMAIL": "t@example.test", "GIT_COMMITTER_NAME": "t",
+           "GIT_COMMITTER_EMAIL": "t@example.test", "GIT_CONFIG_NOSYSTEM": "1"}
+
+    def git(*args):
+        return subprocess.run(["git", "-C", str(repo), *args], env=env, capture_output=True, text=True,
+                              check=True).stdout.strip()
+    git("init", "-q", "-b", "main")
+    git("commit", "-q", "--allow-empty", "-m", "base")
+    main = git("rev-parse", "HEAD")
+    git("update-ref", "refs/remotes/origin/main", main)
+    git("update-ref", "refs/remotes/origin/release/2.4", main)
+    git("checkout", "-q", "-b", "pr")
+    git("commit", "-q", "--allow-empty", "-m", "pr")
+    pr = git("rev-parse", "HEAD")
+    git("update-ref", "refs/remotes/origin/release/old", pr)
+    git("checkout", "-q", "main")
+    git("update-ref", "-d", "refs/heads/pr")
+    return repo, main, pr
+
+
+def _run_trust(tmp_path, repo, ref, sha, environment="staging"):
+    _, gh = render()
+    job = gh[ci_render.ENDPOINTS_FILE]["jobs"]["trust"]
+    step = next(s for s in job["steps"] if s.get("id") == "check")
+    out = tmp_path / "gh-output"
+    out.write_text("", encoding="utf-8")
+    env = {"PATH": os.environ.get("PATH", ""), "HOME": str(tmp_path), "GITHUB_OUTPUT": str(out),
+           "GIZMODUCK_DEFAULT_BRANCH": "main", "GIZMODUCK_STAGING_ENVIRONMENT": step["env"][
+               "GIZMODUCK_STAGING_ENVIRONMENT"], "DEPLOY_ENVIRONMENT": environment, "DEPLOY_REF": ref,
+           "DEPLOY_SHA": sha}
+    p = subprocess.run(["bash", "-c", step["run"]], cwd=repo, env=env, capture_output=True, text=True,
+                       check=False)
+    return p.returncode, out.read_text(encoding="utf-8").strip()
+
+
+@pytest.mark.parametrize("case,expected", [
+    ("main", "trusted=true"),
+    ("refs/heads/release/2.4", "trusted=true"),
+    ("pr-as-release/pwn", "trusted=false"),     # branch absent in this repository
+    ("pr-as-main", "trusted=false"),            # SHA not reachable from main
+    ("pr-as-release/old", "trusted=true"),      # a real release branch holding it
+    ("feature/x", "trusted=false"),
+    ("wrong-environment", "trusted=false"),
+    ("short-sha", "trusted=false"),
+])
+def test_deploy_trust_job_decides_from_git_ancestry_not_the_ref_name(tmp_path, case, expected):
+    repo, main, pr = _trust_repo(tmp_path)
+    ref, sha, environment = {
+        "main": ("main", main, "staging"),
+        "refs/heads/release/2.4": ("refs/heads/release/2.4", main, "staging"),
+        "pr-as-release/pwn": ("release/pwn", pr, "staging"),
+        "pr-as-main": ("main", pr, "staging"),
+        "pr-as-release/old": ("release/old", pr, "staging"),
+        "feature/x": ("feature/x", main, "staging"),
+        "wrong-environment": ("main", main, "production"),
+        "short-sha": ("main", main[:12], "staging"),
+    }[case]
+
+    result = _run_trust(tmp_path, repo, ref, sha, environment)
+
+    assert result == (0, expected)
+
+
+def test_deployment_secrets_live_only_in_jobs_that_need_the_trust_check():
+    _, gh = render()
+    doc = gh[ci_render.ENDPOINTS_FILE]
+    trust = doc["jobs"]["trust"]
+
+    holders = {name for name, job in doc["jobs"].items() if "secrets." in json.dumps(job)}
+
+    assert "secrets." not in json.dumps(trust) and trust["permissions"] == {"contents": "read"}
+    assert holders and all(doc["jobs"][n].get("needs") == ["trust"] for n in holders), holders
 
 
 def test_permissions_are_least_privilege_per_job():
@@ -538,7 +649,7 @@ def _fake_bin(tmp_path, draft="false", curl_rc=0):
     return f"{bindir}:{os.environ.get('PATH', '')}"
 
 
-@pytest.mark.parametrize("secret", list(ci_render.WRITE_SECRETS))
+@pytest.mark.parametrize("secret", list(ci_render.TRUSTED_SECRETS))
 def test_bitbucket_pr_step_refuses_a_write_capable_repository_variable(tmp_path, secret):
     env = {"PATH": _fake_bin(tmp_path), "GIZMODUCK_BB_READ_TOKEN": "r", "BITBUCKET_PR_ID": "7", secret: "w"}
     p = _bb_run(_bb_pr_trust_items() + ["echo SCANNED"], env)
@@ -584,6 +695,34 @@ def test_bitbucket_trusted_steps_drop_write_secrets_off_trusted_branches(branch,
                 {"PATH": os.environ.get("PATH", ""), "BITBUCKET_BRANCH": branch,
                  "GIZMODUCK_DEFAULT_BRANCH": "main", "GIZMODUCK_BB_TOKEN": "w"})
     assert ("token=w" not in p.stdout) is dropped, p.stdout
+
+
+def _bb_trusted_ref_items(step_index):
+    files, _ = render()
+    bb = yaml.safe_load(files["bitbucket-pipelines.yml"])
+    step = _bb_trusted_steps(bb)[step_index]
+    return [x for x in step["script"] if "is not a trusted branch" in x]
+
+
+@pytest.mark.parametrize("step_index", [0, 1])   # the code step and the endpoint step
+@pytest.mark.parametrize("secret", list(ci_render.TRUSTED_SECRETS))
+def test_bitbucket_untrusted_custom_run_refuses_any_visible_secret(step_index, secret):
+    p = _bb_run(_bb_trusted_ref_items(step_index) + ["echo SCANNED"],
+                {"PATH": os.environ.get("PATH", ""), "BITBUCKET_BRANCH": "feature/x",
+                 "GIZMODUCK_DEFAULT_BRANCH": "main", secret: "S"})
+
+    assert (p.returncode, "SCANNED" in p.stdout, secret in p.stdout) == (1, False, True), p.stdout
+
+
+@pytest.mark.parametrize("branch,scanned_with", [("feature/x", "S="), ("main", "S=v"), ("release/2.4", "S=v")])
+def test_bitbucket_custom_run_secrets_only_on_trusted_branches(branch, scanned_with):
+    env = {"PATH": os.environ.get("PATH", ""), "BITBUCKET_BRANCH": branch, "GIZMODUCK_DEFAULT_BRANCH": "main"}
+    if branch != "feature/x":
+        env.update({s: "v" for s in ci_render.TRUSTED_SECRETS})
+
+    p = _bb_run(_bb_trusted_ref_items(1) + ['echo "S=${GIZMODUCK_AUTH_HEADER_VALUE:-}"'], env)
+
+    assert (p.returncode, scanned_with in p.stdout.splitlines()) == (0, True), p.stdout
 
 
 def test_bitbucket_code_insights_failures_fail_the_step():
