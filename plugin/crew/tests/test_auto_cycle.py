@@ -621,6 +621,46 @@ def test_a_symlinked_component_inside_a_substituted_target_still_resolves(flavor
 
 
 @by_flavor
+def test_a_dotdot_after_a_symlinked_component_resolves_before_it_collapses(flavor, tmp_path):
+    """alias -> B/nested, A/link -> ../alias/../repo: the substituted target
+    string has a ".." AFTER the symlinked component "alias", not before it.
+    Review round 3 (crew-1.0-r4-scope): auto-clear.ps1 built that substituted
+    target with .NET's GetFullPath, which collapses ".." purely LEXICALLY --
+    "alias/.." cancelled to nothing before the walk ever asked whether
+    "alias" is itself a symlink -- so A/link resolved to the lexical sibling
+    "repo" instead of the real "B/repo", and an unrelated, unlisted repo
+    sitting at that lexical path got armed by a listing that never named it.
+    crew_autocycle.py has no equivalent bug -- os.path.realpath resolves
+    every component, ".." included, against what the walk has actually
+    reached so far -- so this is ps1-only."""
+    if flavor != "ps1":
+        pytest.skip("only auto-clear.ps1 has its own symlink-chase implementation")
+    b_dir = tmp_path / "B"
+    (b_dir / "nested").mkdir(parents=True)
+    real_root = _repo(b_dir)
+    decoy_root = _repo(tmp_path)
+    a_dir = tmp_path / "A"
+    a_dir.mkdir()
+    alias = tmp_path / "alias"
+    try:
+        alias.symlink_to(b_dir / "nested", target_is_directory=True)
+        (a_dir / "link").symlink_to(
+            os.path.join("..", "alias", "..", "repo"), target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(f"cannot create a symlink here: {exc}")
+
+    decoy_result = _scoped(flavor, tmp_path, decoy_root, onlyRepos=[str(a_dir / "link")])
+    real_result = _scoped(flavor, tmp_path, real_root, session=SESSION_B,
+                           onlyRepos=[str(a_dir / "link")])
+
+    # The invariant: an unlisted repo must never be in scope. The decoy sits
+    # at the LEXICAL result of the old, buggy collapse; only the real,
+    # symlink-resolved repo was ever listed.
+    assert _armed_or_silent(decoy_result, decoy_root) == "silent"
+    assert _armed_or_silent(real_result, real_root) == "armed"
+
+
+@by_flavor
 def test_a_symlink_cycle_in_only_repos_fails_closed(flavor, tmp_path):
     """A self-referential symlink in an onlyRepos entry must never resolve
     to a partial path that happens to match something real. Review round 2
@@ -771,6 +811,39 @@ def test_windows_repo_matching_does_not_casefold_a_sharp_s():
     # Ordinary ASCII case-insensitivity still holds.
     assert crew_autocycle.in_scope(
         cfg, "C:\\REPOS\\STRASSE", "s", windows=True) is True
+
+
+# --- review round 3 (crew-1.0-r4-scope) ------------------------------------
+
+
+def test_normalise_repo_path_resolves_a_dotdot_after_a_symlinked_component(tmp_path):
+    """The Python twin's realpath call must not share auto-clear.ps1's
+    lexical-collapse bug: `os.path.realpath` resolves every component of a
+    symlink's target, INCLUDING a `..` that comes after another symlinked
+    component, against what has actually been resolved on disk so far --
+    never against the raw, unresolved target string. `alias -> B/nested`,
+    `A/link -> ../alias/../repo`: the real path is `B/repo`; the LEXICAL
+    collapse of the target string alone (ignoring that `alias` is a
+    symlink) would give the sibling `repo`, which must not be what this
+    resolves to."""
+    b_dir = tmp_path / "B"
+    (b_dir / "nested").mkdir(parents=True)
+    (b_dir / "repo").mkdir()
+    (tmp_path / "repo").mkdir()
+    a_dir = tmp_path / "A"
+    a_dir.mkdir()
+    alias = tmp_path / "alias"
+    try:
+        alias.symlink_to(b_dir / "nested", target_is_directory=True)
+        (a_dir / "link").symlink_to(
+            os.path.join("..", "alias", "..", "repo"), target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(f"cannot create a symlink here: {exc}")
+
+    resolved = crew_autocycle.normalise_repo_path(str(a_dir / "link"), windows=False)
+
+    assert resolved == crew_autocycle.normalise_repo_path(str(b_dir / "repo"), windows=False)
+    assert resolved != crew_autocycle.normalise_repo_path(str(tmp_path / "repo"), windows=False)
 
 
 # --- the whole cycle: wrap-up -> handoff -> clear -> resume ----------------

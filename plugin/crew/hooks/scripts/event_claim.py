@@ -47,7 +47,9 @@ the waiter takes the next generation and emits itself. So a winner that
 crashes between exit 0 and its emission costs a delay, not the only
 emission. GRACE is bounded by the hook's own latency budget: a winner whose
 emission takes longer than GRACE produces a duplicate, which is the safe
-side.
+side. "Sent" is recorded as a SEPARATE file keyed to (path, nonce)
+(`mark_sent`), never as a mutation of the generation file itself -- see that
+function's docstring for the race a mutate-in-place design left open.
 
 UNWRITABLE STORE. When the claim directory cannot be created or written,
 both flavours would otherwise fail open and emit. Instead exactly one,
@@ -184,8 +186,20 @@ def _create(path, body):
     return True
 
 
+def _sent_marker(path, nonce):
+    """The file whose mere EXISTENCE means `nonce`'s claim at `path` was
+    reported sent -- see `mark_sent` for why this replaced a mutation of
+    `path` itself."""
+    return f"{path}.sent-{nonce}"
+
+
 def _read(path):
-    """(state, at), or None when the generation vanished (pruned)."""
+    """(state, at), or None when the generation vanished (pruned).
+
+    `state` is "sent" exactly when a sent-marker exists for the nonce THIS
+    generation's own body currently carries -- never by inspecting a "state"
+    field written into `path` itself. A generation file's body is written
+    once, at `_create` time, and never mutated again; see `mark_sent`."""
     try:
         with open(path, "rb") as handle:
             body = handle.read()
@@ -194,9 +208,13 @@ def _read(path):
         return None
     try:
         data = json.loads(body.decode("utf-8"))
-        return str(data["state"]), float(data["at"])
+        nonce = str(data["nonce"])
+        at = float(data["at"])
     except (ValueError, KeyError, TypeError):
         return "claimed", mtime
+    if os.path.exists(_sent_marker(path, nonce)):
+        return "sent", at
+    return "claimed", at
 
 
 def _take(directory, key, generation, now):
@@ -265,42 +283,47 @@ def claim(root, hook, raw, now=None, flavour=None):
 
 
 def mark_sent(token):
-    """Record that the emission for `token` succeeded. Temp-then-replace, so
-    a crash leaves either the old "claimed" record or the new one.
+    """Record that the emission for `token` succeeded.
 
-    The generation file NAME alone is not proof that `token` still owns it:
-    `_prune` deletes a generation once it is 24h stale, and `decide` can then
-    reuse that same generation number for an unrelated, later event. A
-    caller that was delayed past that window and only now reports "sent"
-    for its OLD claim must not be allowed to stamp the NEW one sharing its
-    path -- the nonce in `token` is checked against the nonce actually on
-    disk, and a mismatch (or a record too corrupt to carry one) means the
-    generation was recycled out from under this token: refuse rather than
-    overwrite, the same "refuse rather than destroy" rule `heal_config`
-    applies to a config it cannot safely touch."""
+    Review round 3 (crew-1.0-r4-scope) TOCTOU: the previous design read
+    `path`, checked `token`'s nonce against the nonce on disk, and only THEN
+    wrote "sent" back through a temp file and `os.replace` -- a check, then
+    a separate write, exactly the shape CLAIMS ARE GENERATIONS says never to
+    build ("no second step whose absence could poison the key"). Here the
+    absence was of TIME, not a step: between the read and the `replace`,
+    `_prune` could delete a 24h-stale generation and `decide` reuse that same
+    generation NUMBER for an unrelated, later event, with a NEW nonce. The
+    stale caller's `replace` would then land on that new file and stamp it
+    "sent" under the OLD nonce -- a live claim marked sent before its actual
+    owner had emitted anything, which is precisely the suppressed handoff
+    this module exists to prevent.
+
+    Fixed by never mutating the generation file at all: `mark_sent` writes a
+    SEPARATE marker, `_sent_marker(path, nonce)`, created with
+    O_CREAT|O_EXCL. There is no read-modify-write cycle left to race --
+    the one filesystem call this makes either creates that exact file or it
+    does not, and a marker keyed to (path, nonce) can only ever match the
+    ONE generation that nonce was actually issued for; a recycled generation
+    carries a different nonce and a different marker name. `_prune` already
+    ages any file in this directory out by mtime with no name pattern to
+    keep in sync, so an orphaned marker (the stale case above) is swept up
+    exactly like an orphaned claim.
+
+    Returns False only on an I/O error -- an unreadable/uncreatable store,
+    not a nonce mismatch, because there is no longer a comparison to
+    mismatch. A caller reporting the same token twice succeeds idempotently
+    (FileExistsError -> True): the marker is already there, which is exactly
+    what a repeated "sent" for the SAME nonce should record."""
     nonce, _, path = token.partition(" ")
     if not nonce or not path:
         return False
     try:
-        with open(path, "rb") as handle:
-            body = handle.read()
+        handle = os.open(_sent_marker(path, nonce), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+    except FileExistsError:
+        return True
     except OSError:
         return False
-    try:
-        data = json.loads(body.decode("utf-8"))
-        at = float(data["at"])
-        stored_nonce = str(data["nonce"])
-    except (ValueError, KeyError, TypeError):
-        return False
-    if stored_nonce != nonce:
-        return False
-    temp = f"{path}.tmp-{nonce}"
-    try:
-        with open(temp, "wb") as handle:
-            handle.write(_record("sent", nonce, at))
-        os.replace(temp, path)
-    except OSError:
-        return False
+    os.close(handle)
     return True
 
 

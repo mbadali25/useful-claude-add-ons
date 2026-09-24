@@ -210,36 +210,65 @@ AUTOCYCLE_MUTATIONS = (
      "        text = os.path.realpath(text).replace(\"\\\\\", \"/\")\n",
      _T + "test_in_scope_does_not_collapse_backslash_and_slash_on_posix"),
     # --- chained relative symlink resolves from the wrong parent (fix4) -----
+    # Review round 3 (crew-1.0-r4-scope) rewrote Resolve-CrewRealPath's
+    # symlink-substitution branch entirely (raw components pushed through the
+    # SAME per-component queue as '..', rather than a GetFullPath-collapsed
+    # string split once) -- these two mutations are re-anchored onto that new
+    # shape, same bug, same target test.
     ("PowerShell chases a chained relative symlink from the first hop's parent", CLEAR_PS1,
-     "    $hopParent = $cur\n"
-     "    $linkNorm = $link.Replace('\\', '/')\n"
-     "    if ([System.IO.Path]::IsPathRooted($linkNorm)) {\n"
-     "      $targetFull = [System.IO.Path]::GetFullPath($linkNorm)\n"
      "    } else {\n"
-     "      $targetFull = [System.IO.Path]::GetFullPath((Join-Path $hopParent $linkNorm))\n"
-     "    }\n",
-     "    $linkNorm = $link.Replace('\\', '/')\n"
-     "    if ([System.IO.Path]::IsPathRooted($linkNorm)) {\n"
-     "      $targetFull = [System.IO.Path]::GetFullPath($linkNorm)\n"
+     "      foreach ($p in (Split-CrewRawComponents $linkNorm)) {\n"
+     "        $queue.Insert($insertAt, $p)\n"
+     "        $insertAt++\n"
+     "      }\n"
+     "    }\n"
+     "  }\n"
+     "  return Join-CrewParts $root $resolved\n",
      "    } else {\n"
-     "      $targetFull = [System.IO.Path]::GetFullPath((Join-Path $root $linkNorm))\n"
-     "    }\n",
+     "      $resolved.Clear()\n"
+     "      foreach ($p in (Split-CrewRawComponents $linkNorm)) {\n"
+     "        $queue.Insert($insertAt, $p)\n"
+     "        $insertAt++\n"
+     "      }\n"
+     "    }\n"
+     "  }\n"
+     "  return Join-CrewParts $root $resolved\n",
      _T + "test_a_chained_relative_symlink_in_only_repos_resolves_from_its_own_parent[ps1]"),
     # --- review round 2 (crew-1.0-r3-autocycle): a symlinked component
     # INSIDE a substituted target, and the raised/explicit-fail hop bound --
     ("PowerShell does not re-resolve a symlinked component inside a substituted target", CLEAR_PS1,
-     "    $insertAt = 0\n"
-     "    foreach ($p in $targetFull.Substring($targetRoot.Length).Split([char[]]@('\\', '/'), [StringSplitOptions]::RemoveEmptyEntries)) {\n"
-     "      $queue.Insert($insertAt, $p)\n"
-     "      $insertAt++\n"
+     "    } else {\n"
+     "      foreach ($p in (Split-CrewRawComponents $linkNorm)) {\n"
+     "        $queue.Insert($insertAt, $p)\n"
+     "        $insertAt++\n"
+     "      }\n"
      "    }\n",
-     "\n",
+     "    } else {\n"
+     "    }\n",
      _T + "test_a_symlinked_component_inside_a_substituted_target_still_resolves[ps1]"),
     ("PowerShell's symlink hop bound silently keeps a partial path instead of failing closed",
      CLEAR_PS1,
      "    if ($hops -gt $script:_CREW_SYMLINK_HOP_LIMIT) { return $null }\n",
      "\n",
      _T + "test_a_symlink_cycle_in_only_repos_fails_closed[ps1]"),
+    # --- review round 3 (crew-1.0-r4-scope): '..' collapsed lexically before
+    # a symlinked component inside a substituted target is even looked up --
+    ("PowerShell collapses '..' before resolving a symlink inside a substituted target again",
+     CLEAR_PS1,
+     "    } else {\n"
+     "      foreach ($p in (Split-CrewRawComponents $linkNorm)) {\n"
+     "        $queue.Insert($insertAt, $p)\n"
+     "        $insertAt++\n"
+     "      }\n"
+     "    }\n",
+     "    } else {\n"
+     "      $targetFull = [System.IO.Path]::GetFullPath((Join-Path (Join-CrewParts $root $resolved) $linkNorm))\n"
+     "      foreach ($p in (Split-CrewRawComponents $targetFull.Substring($root.Length))) {\n"
+     "        $queue.Insert($insertAt, $p)\n"
+     "        $insertAt++\n"
+     "      }\n"
+     "    }\n",
+     _T + "test_a_dotdot_after_a_symlinked_component_resolves_before_it_collapses[ps1]"),
     # --- resume --------------------------------------------------------------
     ("the resume cuts the next action off a long handoff", CONTEXT,
      "                lead = f\"Next action: {action}\\n\" if action else \"\"\n",

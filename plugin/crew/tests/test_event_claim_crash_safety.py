@@ -52,6 +52,14 @@ def _generation_files(root):
     return sorted(pathlib.Path(event_claim.claims_dir(root)).iterdir())
 
 
+def _claim_files(root):
+    """`_generation_files`, minus the nonce-keyed "sent" markers `mark_sent`
+    writes beside a claim (review round 3, crew-1.0-r4-scope) -- the count a
+    test that cares about ORPHANED GENERATIONS, not marker bookkeeping,
+    actually means."""
+    return [f for f in _generation_files(root) if ".sent-" not in f.name]
+
+
 # --- :137 BLOCK -- a crash mid-takeover never outlives the claim TTL -------------
 
 _CRASH_AFTER_CREATE = """
@@ -228,15 +236,24 @@ def test_the_twin_stands_down_as_soon_as_the_winner_reports_sent(tmp_path):
     assert (lost, time.monotonic() - began < 3) == (True, True)
 
 
-def test_sent_is_recorded_by_replace_and_leaves_no_temp_behind(tmp_path):
+def test_sent_is_recorded_by_a_nonce_keyed_marker_not_a_mutation(tmp_path):
+    """Review round 3 (crew-1.0-r4-scope): `mark_sent` no longer rewrites the
+    generation file (no more temp-then-replace) -- it creates a separate
+    marker keyed to (path, nonce). The generation file's own body is
+    untouched forever; `_read` folds the marker's existence into the state
+    it reports."""
     root = _repo(tmp_path)
     token = event_claim.decide(root, "notify", NOTE)[1]
+    nonce, path = token.split(" ", 1)
+
     event_claim.mark_sent(token)
 
-    files = _generation_files(root)
-
-    assert ([f.name.endswith(".g1") for f in files],
-            json.loads(files[0].read_text())["state"]) == ([True], "sent")
+    files = _claim_files(root)
+    assert [f.name.endswith(".g1") for f in files] == [True]
+    assert json.loads(files[0].read_text())["state"] == "claimed", (
+        "the generation file itself must never be mutated")
+    assert os.path.exists(event_claim._sent_marker(path, nonce))
+    assert event_claim._read(path)[0] == "sent"
 
 
 # --- mark_sent must check the NONCE, not just the generation file's name ---
@@ -245,10 +262,18 @@ def test_mark_sent_does_not_stamp_a_pruned_and_reused_generation(tmp_path):
     """g1 is created, ages past `_STALE_SECONDS` and is pruned, then g1 is
     RECREATED for an unrelated later claim -- `decide` reuses the same
     generation number once nothing about it remains on disk. A delayed
-    owner of the FIRST g1 now calls mark_sent with its old token: the file
-    at that path is a different claim's now, and the stale token must be
-    refused rather than stamping the new claim "sent" out from under its
-    real owner (which would falsely suppress its twin's takeover)."""
+    owner of the FIRST g1 now calls mark_sent with its old token: the
+    generation at that path is a DIFFERENT claim's now, with a different
+    nonce, and the stale token's marker must never be read as marking IT
+    sent (which would falsely suppress its twin's takeover).
+
+    Review round 3 (crew-1.0-r4-scope): `mark_sent` no longer reads-then-
+    writes `path`, so it no longer "refuses" a stale token by comparing
+    nonces -- it just records its OWN (path, old-nonce) marker, which
+    exists independently of whatever generation currently sits at `path`.
+    `accepted` is therefore True (the marker was written); what matters,
+    and is asserted here, is that the LIVE generation's own reported state
+    is untouched by it."""
     root = _repo(tmp_path)
     old_now = time.time() - event_claim.WINDOW - 1
     old_token = event_claim.decide(root, "notify", NOTE, now=old_now)[1]
@@ -266,7 +291,61 @@ def test_mark_sent_does_not_stamp_a_pruned_and_reused_generation(tmp_path):
     accepted = event_claim.mark_sent(old_token)
 
     on_disk = json.loads(pathlib.Path(new_path).read_text())
-    assert (accepted, on_disk["state"], on_disk["nonce"]) == (False, "claimed", new_nonce)
+    assert (accepted, on_disk["state"], on_disk["nonce"]) == (True, "claimed", new_nonce)
+    assert event_claim._read(new_path)[0] == "claimed", (
+        "the stale token's marker must not make the LIVE, recycled "
+        "generation read as sent")
+
+
+def test_mark_sent_is_immune_to_a_prune_and_recreate_race_mid_call(tmp_path):
+    """Codex final review, round 3 (crew-1.0-r4-scope): the OLD `mark_sent`
+    read `path`, checked the nonce, and only THEN wrote "sent" back through
+    a temp file and `os.replace` -- a real gap between the check and the
+    write. Pausing exactly there (mocking `os.replace` to run the pause
+    hook first) and, from inside the pause, pruning the aged generation and
+    letting a brand-new `decide()` recreate the SAME generation number under
+    a NEW nonce reproduced exactly what the review named: the resumed
+    `os.replace` landed on the new file and stamped it "sent" under the OLD
+    nonce, even though nobody had emitted for it. Verified against the
+    pre-fix implementation in a standalone harness before this test was
+    written (not committed -- the harness IS the reproduction step; this
+    test is the regression it earns).
+
+    Fixed, `mark_sent` makes exactly one filesystem call -- creating the
+    nonce-keyed marker -- so this test injects the SAME pause hook at the
+    one call it still makes (`os.open`, filtered to the marker path) and
+    proves the live, recycled generation comes out unaffected regardless of
+    how the race lands relative to it."""
+    root = _repo(tmp_path)
+    old_now = time.time() - event_claim.WINDOW - 1
+    old_token = event_claim.decide(root, "notify", NOTE, now=old_now)[1]
+    old_nonce, old_path = old_token.split(" ", 1)
+    old_cutoff_mtime = time.time() - event_claim._STALE_SECONDS - 1
+    os.utime(old_path, (old_cutoff_mtime, old_cutoff_mtime))
+
+    marker = event_claim._sent_marker(old_path, old_nonce)
+    real_open = event_claim.os.open
+    new_token_box = []
+
+    def racing_open(path, flags, mode=0o600):
+        if path == marker:
+            event_claim._prune(event_claim.claims_dir(root), time.time())
+            assert not os.path.exists(old_path), "must actually be pruned mid-call"
+            new_token_box.append(event_claim.decide(root, "notify", NOTE, now=time.time())[1])
+        return real_open(path, flags, mode)
+
+    with mock.patch.object(event_claim.os, "open", side_effect=racing_open):
+        accepted = event_claim.mark_sent(old_token)
+
+    assert accepted is True
+    new_nonce, new_path = new_token_box[0].split(" ", 1)
+    assert new_path == old_path, "the reused generation must share the old path"
+    on_disk = json.loads(pathlib.Path(new_path).read_text())
+    assert (on_disk["state"], on_disk["nonce"]) == ("claimed", new_nonce)
+    assert event_claim._read(new_path)[0] == "claimed", (
+        "the live, un-emitted claim must not read as sent no matter when "
+        "the prune-and-recreate race lands relative to mark_sent's own "
+        "filesystem call")
 
 
 # --- handoff-write.sh:64 -- a failed write must not be marked sent ---------------
@@ -478,9 +557,9 @@ def test_sh_marks_an_unknown_provider_claim_sent_not_orphaned(tmp_path):
                           cwd=root, env=env, capture_output=True, check=False, timeout=30)
 
     assert done.returncode == 0, done.stderr
-    claims = _generation_files(root)
+    claims = _claim_files(root)
     assert len(claims) == 1
-    assert json.loads(claims[0].read_text())["state"] == "sent", (
+    assert event_claim._read(str(claims[0]))[0] == "sent", (
         "an unknown provider must release the claim immediately, not leave "
         "it 'claimed' forever")
 
@@ -497,9 +576,9 @@ def test_ps1_marks_an_unknown_provider_claim_sent_not_orphaned(tmp_path):
                           capture_output=True, check=False, timeout=60)
 
     assert done.returncode == 0, done.stderr
-    claims = _generation_files(root)
+    claims = _claim_files(root)
     assert len(claims) == 1
-    assert json.loads(claims[0].read_text())["state"] == "sent", (
+    assert event_claim._read(str(claims[0]))[0] == "sent", (
         "an unknown provider must release the claim immediately, not leave "
         "it 'claimed' forever")
 
@@ -528,14 +607,14 @@ def test_an_unknown_provider_does_not_orphan_the_twin(tmp_path):
         codes.append(done.returncode)
     elapsed = time.monotonic() - began
 
-    claims = _generation_files(root)
+    claims = _claim_files(root)
     assert (codes, elapsed < 3) == ([0, 0], True), (
         "the twin must stand down immediately, not wait out the grace: "
         f"codes={codes} elapsed={elapsed}")
     assert len(claims) == 1, (
         "an unknown provider must not orphan a second generation: " +
         repr([c.name for c in claims]))
-    assert json.loads(claims[0].read_text())["state"] == "sent"
+    assert event_claim._read(str(claims[0]))[0] == "sent"
 
 
 @needs_bash

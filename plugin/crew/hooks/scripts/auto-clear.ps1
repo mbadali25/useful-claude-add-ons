@@ -118,6 +118,21 @@ if (-not $enabled) { exit 0 }
 # detection crew_autocycle.py gets for free from `os.path.realpath`.
 $script:_CREW_SYMLINK_HOP_LIMIT = 40
 
+function Split-CrewRawComponents([string]$Text) {
+  # Raw split only -- '.' and '..' tokens are NOT collapsed here. The walking
+  # loop below resolves each one individually, in order, against whatever it
+  # has actually reached so far, which is what lets a '..' that crosses a
+  # symlinked component apply AFTER that component is resolved rather than
+  # before. See "review round 3" below for why that distinction is the fix.
+  return @($Text.Split([char[]]@('\', '/'), [StringSplitOptions]::RemoveEmptyEntries))
+}
+
+function Join-CrewParts([string]$RootPath, $Parts) {
+  $joined = $RootPath
+  foreach ($part in $Parts) { $joined = Join-Path $joined $part }
+  return $joined
+}
+
 function Resolve-CrewRealPath([string]$Path) {
   # POSIX-style, one path component at a time. When a component is itself a
   # symlink, its OWN target components go back at the FRONT of the queue of
@@ -130,23 +145,54 @@ function Resolve-CrewRealPath([string]$Path) {
   # and the listed path stayed under `alias` instead of resolving to `B`.
   # Works on Windows PowerShell 5.1 (`.Target`) and 7 (`.LinkTarget`).
   #
+  # Review round 3 (crew-1.0-r4-scope): a substituted target's raw components
+  # used to be taken from `[System.IO.Path]::GetFullPath(...)`, which
+  # collapses '..' PURELY LEXICALLY -- before anything asks whether the
+  # component it is cancelling against is itself a symlink. `A\link ->
+  # ..\alias\..\target`, with `alias` a symlink to `B\nested`, collapsed
+  # "alias\.." to nothing and produced the lexical sibling `...\target`
+  # instead of the real `...\B\target`, because `alias` was never actually
+  # looked up. Fixed by never calling GetFullPath on anything that still has
+  # unresolved components in it: every root is found with GetPathRoot (a
+  # purely syntactic prefix that does not require -- or perform -- any '..'
+  # collapse), and every remaining component, INCLUDING '.' and '..', is
+  # pushed through the same per-component queue below, which resolves '..'
+  # by popping the LAST COMPONENT THIS WALK HAS ACTUALLY RESOLVED SO FAR
+  # (`$resolved`), never a string still waiting to be looked up.
+  #
   # Returns $null, never a partially-resolved path, once
   # $_CREW_SYMLINK_HOP_LIMIT substitutions have happened without
   # terminating -- a cycle, or a chain too long to be legitimate. The
   # caller must treat $null as "this entry does not resolve" and fail it
   # CLOSED (normalise to "", which cannot match anything real), not fall
   # back to whatever partial value the walk had reached.
-  $full = [System.IO.Path]::GetFullPath($Path)
-  $root = [System.IO.Path]::GetPathRoot($full)
+  $root = [System.IO.Path]::GetPathRoot($Path)
   $queue = New-Object System.Collections.Generic.List[string]
-  foreach ($p in $full.Substring($root.Length).Split([char[]]@('\', '/'), [StringSplitOptions]::RemoveEmptyEntries)) {
-    $queue.Add($p)
+  if ($root) {
+    foreach ($p in (Split-CrewRawComponents $Path.Substring($root.Length))) { $queue.Add($p) }
+  } else {
+    # Relative input: rooted against the current directory, which is taken
+    # as already resolved -- the same assumption `os.path.realpath` makes
+    # against `getcwd()`.
+    $cwd = [System.IO.Directory]::GetCurrentDirectory()
+    $root = [System.IO.Path]::GetPathRoot($cwd)
+    foreach ($p in (Split-CrewRawComponents $cwd.Substring($root.Length))) { $queue.Add($p) }
+    foreach ($p in (Split-CrewRawComponents $Path)) { $queue.Add($p) }
   }
-  $cur = $root
+  # Components of the CURRENT root this walk has confirmed real, in order --
+  # never a string, so a '..' pop can never "un-collapse" something GetFullPath
+  # already lexically cancelled.
+  $resolved = New-Object System.Collections.Generic.List[string]
   $hops = 0
   while ($queue.Count -gt 0) {
     $part = $queue[0]
     $queue.RemoveAt(0)
+    if ($part -eq '.') { continue }
+    if ($part -eq '..') {
+      if ($resolved.Count -gt 0) { $resolved.RemoveAt($resolved.Count - 1) }
+      continue
+    }
+    $cur = Join-CrewParts $root $resolved
     $next = Join-Path $cur $part
     $item = Get-Item -LiteralPath $next -Force -ErrorAction SilentlyContinue
     $link = $null
@@ -154,29 +200,31 @@ function Resolve-CrewRealPath([string]$Path) {
       if ($item.PSObject.Properties['LinkTarget']) { $link = $item.LinkTarget }
       elseif ($item.PSObject.Properties['Target']) { $link = @($item.Target)[0] }
     }
-    if (-not $link) { $cur = $next; continue }
+    if (-not $link) { $resolved.Add($part); continue }
     $hops++
     if ($hops -gt $script:_CREW_SYMLINK_HOP_LIMIT) { return $null }
-    # THIS hop's parent -- the directory containing the symlink just read,
-    # i.e. $cur before this component was joined onto it -- not any
-    # earlier hop's, so a chained relative symlink resolves each hop
-    # against the link that names it.
-    $hopParent = $cur
+    # THIS hop's parent -- $root/$resolved as they stand right now, i.e.
+    # before $part (the symlink itself) is added -- not any earlier hop's,
+    # so a chained relative symlink resolves each hop against the link that
+    # names it.
     $linkNorm = $link.Replace('\', '/')
-    if ([System.IO.Path]::IsPathRooted($linkNorm)) {
-      $targetFull = [System.IO.Path]::GetFullPath($linkNorm)
-    } else {
-      $targetFull = [System.IO.Path]::GetFullPath((Join-Path $hopParent $linkNorm))
-    }
-    $targetRoot = [System.IO.Path]::GetPathRoot($targetFull)
-    $cur = $targetRoot
+    $linkRoot = [System.IO.Path]::GetPathRoot($linkNorm)
     $insertAt = 0
-    foreach ($p in $targetFull.Substring($targetRoot.Length).Split([char[]]@('\', '/'), [StringSplitOptions]::RemoveEmptyEntries)) {
-      $queue.Insert($insertAt, $p)
-      $insertAt++
+    if ($linkRoot) {
+      $root = $linkRoot
+      $resolved.Clear()
+      foreach ($p in (Split-CrewRawComponents $linkNorm.Substring($linkRoot.Length))) {
+        $queue.Insert($insertAt, $p)
+        $insertAt++
+      }
+    } else {
+      foreach ($p in (Split-CrewRawComponents $linkNorm)) {
+        $queue.Insert($insertAt, $p)
+        $insertAt++
+      }
     }
   }
-  return $cur
+  return Join-CrewParts $root $resolved
 }
 
 function ConvertTo-CrewScopePath($Path) {
