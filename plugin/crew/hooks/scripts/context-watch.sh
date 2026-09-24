@@ -57,6 +57,51 @@ if [[ "$INPUT" =~ $SESSION_RE ]]; then
 fi
 session_markers "$SESSION_ID"
 
+# auto-clear.sh logs its own refusals/sends to .crew/.autoclear.log (see its
+# own `note()`) and echoes the same line to ITS stderr -- but only on paths
+# that reach that function. A crash before that point (an unbound variable,
+# a missing interpreter that is not the *documented* no-python stand-down,
+# anything that dies before `note` ever runs) used to vanish completely: both
+# call sites below discarded the child's stderr and never looked at its exit
+# code, so nothing anywhere recorded that auto-clear was even asked to run.
+# `.crew/.autoclear.log` was reported to exist nowhere on the affected Windows
+# host, which is what a total silence there looks like.
+#
+# This wraps every call instead: capture the child's exit code and stderr
+# (never its stdout, which stays discarded exactly as before -- dry-run's
+# "would send" plan is not a path this hook ever takes) and independently
+# append a line to the SAME log whenever the child looks unhealthy, so this
+# hook's own record of the attempt survives however badly the child behaved.
+# Deliberately unconditional rather than trying to detect whether auto-clear
+# ALREADY logged the same thing -- that would mean parsing its own log, which
+# is exactly the kind of cleverness that breaks first. A duplicate line on an
+# ordinary refusal costs nothing a human reading the log would notice; a
+# MISSING line is the whole defect this exists to close.
+#
+# Must never throw and must never change this hook's own exit code or leak
+# anything onto ITS OWN stdout, which Claude Code reads as the Stop hook's
+# protocol -- the fallback, if the log itself cannot be written (an
+# unwritable .crew/), is this hook's own stderr, never stdout.
+cw_log_autoclear_trouble() {
+  local msg
+  msg=$(printf '%s' "$1" | tr '\n\r\t' '   ')
+  if mkdir -p .crew 2>/dev/null &&
+     printf '%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$msg" >> .crew/.autoclear.log 2>/dev/null
+  then
+    return 0
+  fi
+  echo "context-watch: $msg" >&2
+}
+
+cw_run_auto_clear() {
+  local err rc
+  err=$(bash "$(dirname "${BASH_SOURCE[0]}")/auto-clear.sh" --root "$PWD" --session "$SESSION_ID" 2>&1 1>/dev/null)
+  rc=$?
+  if [ "$rc" -ne 0 ] || [ -n "$err" ]; then
+    cw_log_autoclear_trouble "auto-clear exited $rc${err:+ - stderr: $err}"
+  fi
+}
+
 # `.crew/config.json`'s existence decides whether this hook does ANYTHING,
 # so it is checked BEFORE resolving python, not after -- a non-crew
 # repository must not pay for spinning up an interpreter (or, before the
@@ -82,7 +127,7 @@ cd "${CWD_RAW:-${CLAUDE_PROJECT_DIR:-.}}" 2>/dev/null || exit 0
 
 if [ "$STOP_ACTIVE" = 1 ]; then
   if [ -f "$MARKER" ]; then
-    bash "$(dirname "${BASH_SOURCE[0]}")/auto-clear.sh" --root "$PWD" --session "$SESSION_ID" 2>/dev/null
+    cw_run_auto_clear
   fi
   exit 0
 fi
@@ -436,7 +481,7 @@ if [ -f "$MARKER" ]; then
   # handoff may have been written since, which is all auto-clear wants to
   # know. It is off unless this machine opted in, and it decides for itself
   # whether the note and the reading are good enough to act on.
-  bash "$(dirname "${BASH_SOURCE[0]}")/auto-clear.sh" --root "$PWD" --session "$SESSION_ID" 2>/dev/null
+  cw_run_auto_clear
   exit 0
 fi
 [ "${OVER:-0}" -eq 0 ] && exit 0
