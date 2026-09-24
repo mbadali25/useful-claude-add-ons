@@ -146,10 +146,10 @@
 
     { "paths": ["plugin/crew/tests/conftest.py", "plugin/crew/tests/crew_fixtures.py",
                 "plugin/crew/tests/context.py", "plugin/crew/tests/sabotage.py"],
-      "seconds": 185,
+      "seconds": 1928,
       "run": ["python3 -m pytest plugin/crew/tests/ -q"],
       "reach": "local",
-      "why": "245s, deliberately over the ~3-minute guidance. These four are imported by every test module, so a change here can make the whole suite vacuous while every module still reports green - the one case where nothing narrower is honest. Rare edit; crew_fixtures.resolve_bash() is why the suite runs at all under PowerShell. reach: local - the whole crew test suite runs against fixtures under tmp_path; nothing here calls out to a real network host." },
+      "why": "1928s, MEASURED 2026-09-24 on main at b6ab350e by running this exact command serially, end to end. It previously recorded 185 here while this same why-string said 245 - two numbers, neither measured, disagreeing with each other and both understating the real cost by an order of magnitude. Note the run command has no -n auto: the gate runs this suite SERIALLY, so an xdist timing taken with -n auto (9m30s) does not price it. Deliberately over the ~3-minute guidance. These four are imported by every test module, so a change here can make the whole suite vacuous while every module still reports green - the one case where nothing narrower is honest. Rare edit; crew_fixtures.resolve_bash() is why the suite runs at all under PowerShell. reach: local - the whole crew test suite runs against fixtures under tmp_path; nothing here calls out to a real network host." },
 
     { "paths": ["plugin/crew/skills/crew-graph/scripts/crew_upgrade.py",
                 "plugin/crew/tests/test_upgrade.py",

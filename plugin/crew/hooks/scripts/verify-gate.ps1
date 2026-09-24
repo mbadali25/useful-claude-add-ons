@@ -61,13 +61,41 @@ param(
 # that bug once - the guard stood down on Windows and blocked nothing there.
 if ($env:OS -ne 'Windows_NT') { exit 0 }
 
+# A PATH entry matching a bare command name is not necessarily something
+# Windows can actually launch. `Get-Command python3 -All` returns an
+# EXTENSIONLESS file (a pyenv/conda/direnv-style POSIX shim, or - as the
+# regression test for this reproduces it - a shebang script planted ahead of
+# the real interpreter) as `CommandType: Application` with a real `.Source`,
+# exactly like a genuine python3.exe. Nothing before this point tells the two
+# apart. The failure is not a clean error either: `& $badPath ...` with piped
+# stdin does not throw "not a valid Win32 application" the way a bare
+# double-click would - it BLOCKS forever, and killing the PowerShell process
+# does not reliably reap whatever it half-started. Measured directly against
+# this exact shape (an extensionless PATH shim ahead of a real interpreter,
+# invoked as `$payload | & $stub $script sync`), 2026-09-24: 0% CPU, still
+# parked after 90s, and Stop-Process on the parent needed its own manual
+# child-process cleanup. That is rule[8]'s non-terminating hang - the CRLF
+# env-pin regression test plants exactly this shape on PATH, and the crash
+# is downstream in the record-sync call, not in the stdin read the first
+# read of this bug blamed.
+# Only trust a candidate Windows' own CreateProcess can run directly: an
+# extension listed in $env:PATHEXT. Every real interpreter here already
+# qualifies (.exe); nothing legitimate is excluded by requiring it.
+function Test-CrewWindowsExecutable([string]$Path) {
+  if (-not $Path) { return $false }
+  $ext = [System.IO.Path]::GetExtension($Path)
+  if (-not $ext) { return $false }
+  $pathExt = $env:PATHEXT -split ';' | Where-Object { $_ }
+  return ($pathExt -contains $ext.ToUpperInvariant())
+}
+
 if ($Price) {
   $root0 = if ($env:CLAUDE_PROJECT_DIR) { $env:CLAUDE_PROJECT_DIR } else { "." }
   Set-Location $root0
   function Resolve-CrewPythonEarly {
     foreach ($name in @('python3', 'python')) {
       $c = Get-Command $name -All -ErrorAction SilentlyContinue |
-        Where-Object { $_.CommandType -eq 'Application' -and $_.Source -and $_.Source -notmatch 'WindowsApps' } |
+        Where-Object { $_.CommandType -eq 'Application' -and $_.Source -and $_.Source -notmatch 'WindowsApps' -and (Test-CrewWindowsExecutable $_.Source) } |
         Select-Object -First 1
       if ($c) { return $c.Source }
     }
@@ -134,6 +162,10 @@ function Resolve-CrewBash {
     $src = $cmd.Source
     if ($sysRoot -and $src.StartsWith($sysRoot, [System.StringComparison]::OrdinalIgnoreCase)) { continue }
     if ($src -match 'WindowsApps') { continue }
+    # Same extensionless-shim guard as Resolve-CrewPython below (see
+    # Test-CrewWindowsExecutable) -- a PATH entry named bare `bash` with no
+    # extension is exactly as invokable-and-hangs as one named `python3`.
+    if (-not (Test-CrewWindowsExecutable $src)) { continue }
     return $src
   }
 
@@ -164,12 +196,21 @@ function Resolve-CrewPython {
   # resolver there is no System32 shim to exclude -- WSL ships a bash
   # launcher there, nothing ships a python one -- so that filter is
   # deliberately absent rather than forgotten.
+  #
+  # THIRD failure mode, found chasing rule[8]'s non-terminating hang: an
+  # extensionless PATH shim (pyenv/conda/direnv-style, or the CRLF env-pin
+  # regression test's stub) is CommandType Application with a real, non-
+  # WindowsApps .Source -- indistinguishable from a real interpreter by
+  # either guard above. Invoking it hangs rather than erroring; see
+  # Test-CrewWindowsExecutable's header comment for the measurement. Reject
+  # anything Windows itself would not treat as directly runnable.
   $names = @('python3', 'python')
   foreach ($name in $names) {
     $candidates = Get-Command $name -All -ErrorAction SilentlyContinue
     foreach ($cmd in $candidates) {
       if ($cmd.CommandType -ne 'Application' -or -not $cmd.Source) { continue }
       if ($cmd.Source -match 'WindowsApps') { continue }
+      if (-not (Test-CrewWindowsExecutable $cmd.Source)) { continue }
       return $cmd.Source
     }
   }

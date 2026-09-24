@@ -33,6 +33,26 @@ $ErrorActionPreference = 'SilentlyContinue'
 # not, and that asymmetry is now harmless because the two never both run.
 $dir = Split-Path -Parent $MyInvocation.MyCommand.Path
 
+# A PATH entry matching a bare command name is not necessarily something
+# Windows can actually launch. `Get-Command python3 -All` returns an
+# EXTENSIONLESS file (a pyenv/conda/direnv-style POSIX shim, or - as
+# verify-gate.ps1's regression test reproduces it - a shebang script planted
+# ahead of the real interpreter) as `CommandType: Application` with a real
+# `.Source`, exactly like a genuine python3.exe. Nothing before this point
+# tells the two apart, and invoking one does not fail cleanly -- see
+# verify-gate.ps1's own copy of this function for the measured hang. Only
+# trust a candidate Windows' own CreateProcess can run directly: an extension
+# listed in $env:PATHEXT. Duplicated inline rather than dot-sourced for the
+# same reason Resolve-CrewPython below is: invisible to
+# scripts/check-powershell.ps1's static check otherwise.
+function Test-CrewWindowsExecutable([string]$Path) {
+  if (-not $Path) { return $false }
+  $ext = [System.IO.Path]::GetExtension($Path)
+  if (-not $ext) { return $false }
+  $pathExt = $env:PATHEXT -split ';' | Where-Object { $_ }
+  return ($pathExt -contains $ext.ToUpperInvariant())
+}
+
 function Resolve-CrewPython {
   # BYTE-FOR-BYTE the resolver in verify-gate.ps1, and duplicated inline for
   # the reason that file's own header gives: a function arriving by
@@ -52,12 +72,19 @@ function Resolve-CrewPython {
   # The WindowsApps App Execution Alias fails the other way: it is a real
   # Application with a real .Source, so it resolved and was INVOKED, and the
   # Store stub does not run pm_pulse.py.
+  #
+  # THIRD failure mode, added to restore parity with verify-gate.ps1 after
+  # that file's own extensionless-PATH-shim guard (rule[8]'s non-terminating
+  # hang) landed there without this copy -- the exact "one hook hardened, its
+  # byte-pinned twin left behind" defect the parity test below exists to
+  # catch. See Test-CrewWindowsExecutable above for the measurement.
   $names = @('python3', 'python')
   foreach ($name in $names) {
     $candidates = Get-Command $name -All -ErrorAction SilentlyContinue
     foreach ($cmd in $candidates) {
       if ($cmd.CommandType -ne 'Application' -or -not $cmd.Source) { continue }
       if ($cmd.Source -match 'WindowsApps') { continue }
+      if (-not (Test-CrewWindowsExecutable $cmd.Source)) { continue }
       return $cmd.Source
     }
   }

@@ -143,6 +143,7 @@ import re
 import shutil
 import subprocess
 import sys
+from typing import NoReturn
 
 import pytest
 
@@ -167,6 +168,27 @@ _FLAVOURS = [
         not sys.platform.startswith("win") or _PWSH is None,
         reason="the .ps1 gate is the native-Windows flavour")),
 ]
+
+# rule[8] does not terminate - OPEN 2026-09-24 (TODO.md): a spawn of the real
+# gate here had no timeout at all, so a hung gate (verify-gate.ps1's python
+# resolver returning an unrunnable PATH shim, see verify-gate.ps1's
+# Test-CrewWindowsExecutable) turned into a non-terminating `pytest
+# plugin/crew/tests/ -q` - .crew/verify.json rule[8] verbatim - instead of one
+# red test. Every fixture rule in this file runs in well under a second
+# (echo/test/exit); 120s matches the headroom this suite already uses for a
+# full gate invocation elsewhere (test_gate_command.py, test_docs_routing.py,
+# test_promote_merge_gate.py) rather than inventing a new number, and is
+# still short enough that a real hang fails fast instead of stalling rule[8].
+_GATE_TIMEOUT = 120
+
+
+def _fail_on_gate_timeout(flavour, exc) -> NoReturn:
+    pytest.fail(
+        f"verify-gate [{flavour}] did not terminate within "
+        f"{_GATE_TIMEOUT}s - the gate hung instead of exiting "
+        f"(rule[8] non-terminating repro). {exc}"
+    )
+    raise AssertionError("unreachable - pytest.fail always raises")
 
 
 def _git(root, *args):
@@ -194,11 +216,15 @@ def _run(flavour, root, *extra):
     else:
         cmd = [_PWSH, "-NoProfile", "-NonInteractive", "-File", _PS1,
                *[a.replace("--all", "-All") for a in extra]]
-    return subprocess.run(
-        cmd, input="{}", cwd=str(root),
-        env=dict(os.environ, CLAUDE_PROJECT_DIR=str(root)),
-        capture_output=True, text=True, check=False,
-    )
+    try:
+        return subprocess.run(
+            cmd, input="{}", cwd=str(root),
+            env=dict(os.environ, CLAUDE_PROJECT_DIR=str(root)),
+            capture_output=True, text=True, check=False,
+            timeout=_GATE_TIMEOUT,
+        )
+    except subprocess.TimeoutExpired as exc:
+        _fail_on_gate_timeout(flavour, exc)
 
 
 def _record(root):
@@ -476,8 +502,12 @@ def test_1_crlf_from_native_python_does_not_leak_an_inherited_credential(
         cmd = [_BASH, _SH]
     else:
         cmd = [_PWSH, "-NoProfile", "-NonInteractive", "-File", _PS1]
-    result = subprocess.run(cmd, input="{}", cwd=str(root), env=env,
-                            capture_output=True, text=True, check=False)
+    try:
+        result = subprocess.run(cmd, input="{}", cwd=str(root), env=env,
+                                capture_output=True, text=True, check=False,
+                                timeout=_GATE_TIMEOUT)
+    except subprocess.TimeoutExpired as exc:
+        _fail_on_gate_timeout(flavour, exc)
     assert result.returncode == 0, (
         "AWS_PROFILE was not actually unset under a CRLF-corrupted "
         "env-pin read. " + result.stderr

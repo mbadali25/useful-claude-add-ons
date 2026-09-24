@@ -523,6 +523,42 @@ def test_a_native_windows_sys_executable_path_is_accepted_and_works(tmp_path):
     )
 
 
+@pytest.mark.skipif(
+    sys.platform.startswith("win"),
+    reason=(
+        "On Git for Windows, this test's own PATH-scoping technique cannot "
+        "actually isolate cygpath, and the one way found to fix that breaks "
+        "the test a different way. crew_fixtures.resolve_bash() resolves to "
+        "bin/bash.exe, the launcher shim, which unconditionally prepends "
+        "its own /mingw64/bin and /usr/bin (holding a REAL cygpath.exe) "
+        "ahead of ANY PATH this test supplies - measured directly: a "
+        "restricted PATH of exactly one directory still comes back as "
+        "'/mingw64/bin:/usr/bin:...:<that directory>' inside the shim. So "
+        "the fake cygpath here is never reached; the real one is, and its "
+        "real translation of the fake 'C:\\fakepy\\python.exe' target lands "
+        "on a path that does not exist, so the gate fails closed with 'no "
+        "python ... resolves' instead of exercising the branch this test "
+        "names. The only bash that does NOT add anything to a supplied "
+        "PATH is the OTHER one Git for Windows ships, usr/bin/bash.exe "
+        "(confirmed empirically: PATH survives through it unchanged) - but "
+        "that binary, launched fresh from a non-MSYS parent process such as "
+        "pytest's own python.exe, cannot exec any native Windows "
+        "executable at all: dirname.exe placed on its PATH, both "
+        "symlinked and plain-copied alongside its own msys-2.0.dll, still "
+        "fails with 'No such file or directory' even invoked by absolute "
+        "path, because it never bootstraps the POSIX-to-Windows mount table "
+        "that MSYS's exec path depends on (the same limitation "
+        "crew_fixtures.resolve_bash() already documents for running a "
+        "script at a Windows path). Every external tool verify-gate.sh "
+        "needs - git, sed, grep, stat, and the rest of _NEEDED_TOOLS - is a "
+        "native executable, so that bash cannot run this gate at all, let "
+        "alone reach the cygpath branch. Testing this for real would need a "
+        "bash process spawned from an already-MSYS-bootstrapped parent "
+        "(e.g. another bash), which pytest's subprocess-per-test harness "
+        "does not provide. Not skipped on other platforms, where there is "
+        "no such shim and the test's own PATH scoping is not compromised."
+    ),
+)
 def test_the_cygpath_branch_is_taken_when_cygpath_is_present(tmp_path):
     """NIT from review round 4, corrected in round 5. This host has no real
     `cygpath`, so `test_a_native_windows_sys_executable_path_is_accepted_
