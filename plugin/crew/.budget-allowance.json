@@ -24,7 +24,7 @@
     "reason": "T8: to trim"
   },
   "plugin/crew/commands/review.md": {
-    "lines": 552,
+    "lines": 551,
     "reason": "T8: to trim"
   },
   "plugin/crew/commands/upgrade.md": {
@@ -32,7 +32,7 @@
     "reason": "T8: to trim"
   },
   "plugin/crew/commands/verify.md": {
-    "lines": 212,
+    "lines": 211,
     "reason": "T8: to trim"
   }
 }

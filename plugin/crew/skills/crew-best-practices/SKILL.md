@@ -26,7 +26,7 @@ this skill says so rather than picking a side and presenting it as consensus.
 |---|---|
 | Asked "how should I use Claude Code" | Answer from `references/practices.md`, not from memory |
 | Auditing a repo's CLAUDE.md | `references/claude-md.md` has the size limits and the anti-patterns |
-| Asked why crew has 55 agents or 36 commands<!-- claim: plugin-commands:crew --> | `docs/adr/0003-crew-departs-from-three-community-best-practices.md` |
+| Asked why crew has 4 agents or 33 commands<!-- claim: plugin-commands:crew --> | `docs/adr/0003-crew-departs-from-three-community-best-practices.md` |
 | Tempted to "fix" crew to match the document | Read the ADR first. Three departures are deliberate |
 | Adding a hook, skill or command | `references/practices.md` §Hooks, §Skills, §Commands |
 
@@ -50,7 +50,7 @@ That last row is the document's §4.3.2 and crew reached it independently.
 ## Where crew departs, on purpose
 
 Three of the document's rules call crew's architecture an anti-pattern:
-specialised subagents (crew has 55), a large slash-command surface (30), and
+specialised subagents (crew has 4), a large slash-command surface (33), and
 being a multi-agent system at all.
 
 **These are recorded decisions, not oversights.** The reasoning, and the cost
