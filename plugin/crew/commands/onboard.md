@@ -196,13 +196,7 @@ repo also has:
    var each lands in. Names and retrieval commands only, never values. See the
    `crew-verification` skill.
 4. `e2e/` specs if this repo has a UI — write them in this session.
-5. `context.autoClear` configured — run `crew_autoclear_setup.py
-   plan-windows-default` (`${CLAUDE_PLUGIN_ROOT}/hooks/scripts/`; the same
-   helper `/crew:init`'s Phase 1 uses, so a repo onboarded standalone gets the
-   identical question). `status: already-configured` means stop, nothing to
-   ask. Otherwise, on native Windows propose `method: "notify"` and write it
-   only on yes; elsewhere describe the tmux path and write nothing. Enabling
-   it at all, and `sendkeys`, each need their own separate explicit yes.
+5. `context.autoClear` configured — run `crew_autoclear_setup.py plan-windows-default` (`${CLAUDE_PLUGIN_ROOT}/hooks/scripts/`; the same helper `/crew:init`'s Phase 1 uses, so a repo onboarded standalone gets the identical question). `status: unreadable` (parse failure) means say so and stop, fix by hand first. `status: already-configured` means stop, nothing to ask — a retained pre-1.0 `method: "windows"` is proposed for conversion instead, never already-configured. Otherwise, on native Windows propose `method: "notify"` and write it only on yes; elsewhere describe the tmux path and write nothing. Enabling it at all, and `sendkeys`, each need their own separate explicit yes.
 
 Report which of the five are missing when you finish. A codemap on its own is
 the least useful of the six artifacts.

@@ -9,7 +9,7 @@ which resolves to a tmux pane on Linux/macOS/WSL, to `notify` on native
 Windows with no tmux pane, and never to `sendkeys` -- that is opt-in only,
 requested by name.
 
-Four things this module exists to make impossible by construction rather than
+Things this module exists to make impossible by construction rather than
 by prompt discipline:
 
   * writing `sendkeys` to the global file without an explicit yes
@@ -22,6 +22,16 @@ by prompt discipline:
   * a machine-global `enabled: true` with `onlyRepos: null` arming every
     crew repo on the box without that widening ever being said out loud
     (`detect_onlyRepos_widening`)
+  * converting only one of `.crew/config.json` (what every autoClear sender
+    reads) and `.crew/crew.json` (what `crew_migrate.py` also writes,
+    unconverted) and leaving the other one's legacy value live
+    (`apply_migrate_to_repo`)
+  * a malformed machine-global file being merged onto crew_config's
+    intentional `{}` collapse and overwritten with only the proposed keys
+    (`_require_global_readable`, called by every function that writes there)
+  * a failed global `onlyRepos` write leaving a repo's opt-in already
+    stripped with no record of the widening anywhere
+    (`apply_migrate_to_repo`'s write ordering)
 
 Every message-producing function here is covered by
 `test_no_forbidden_words` in `tests/test_autoclear_setup.py`: nothing this
@@ -42,6 +52,58 @@ import sys
 import crew_config
 
 FORBIDDEN_WORDS = ("cleared", "compacted")
+
+
+class GlobalConfigUnreadable(RuntimeError):
+    """The machine-global config file exists but does not parse as a JSON
+    object. Distinct from "absent" (which every write below treats as an
+    empty file to build on) and from the read-only merge collapse
+    `crew_config.read_global_config` performs on purpose for
+    `resolve_config`'s never-raise contract (see that function's
+    docstring). Writing over an unreadable file through that collapse
+    would silently replace it with just the keys this run proposed,
+    discarding whatever else the file held -- this exception is how every
+    write path here refuses that instead."""
+
+
+def _global_file_problem(path=None):
+    """`None` when the machine-global file at `path` (default
+    `crew_config.GLOBAL_CONFIG_PATH`) is absent or parses as a JSON object;
+    otherwise a human-readable reason it does not.
+
+    Deliberately NOT `crew_config.read_global_config`, whose own docstring
+    states it collapses "absent" and "malformed" to the identical `{}` --
+    correct for `resolve_config`, reached from a SessionStart hook that
+    must never raise, but wrong for a WRITE: `plan_global_write`/
+    `write_global_config` merge updates onto whatever `read_global_config`
+    returns, so a malformed file reaching them unflagged means "apply the
+    proposed default" replaces the file with only the proposed keys.
+    """
+    real_path = crew_config.GLOBAL_CONFIG_PATH if path is None else path
+    try:
+        with open(real_path, "r", encoding="utf-8-sig") as handle:
+            text = handle.read()
+    except FileNotFoundError:
+        return None
+    except OSError as exc:
+        return f"could not read {real_path} ({type(exc).__name__})"
+    try:
+        parsed = json.loads(text)
+    except ValueError as exc:
+        return f"{real_path} does not parse as JSON ({exc})"
+    if not isinstance(parsed, dict):
+        return f"{real_path} holds a JSON {type(parsed).__name__}, not an object"
+    return None
+
+
+def _require_global_readable(path=None):
+    """Raise `GlobalConfigUnreadable` when `_global_file_problem` finds one;
+    every function that writes to the global file calls this first."""
+    problem = _global_file_problem(path)
+    if problem is not None:
+        raise GlobalConfigUnreadable(
+            f"machine-global config is unreadable, refusing to write over "
+            f"it: {problem}")
 
 _SENDKEYS_NOTE = (
     "sendkeys is available as an explicit opt-in: it drives real keystrokes "
@@ -76,6 +138,17 @@ def describe_notify():
             "written and verified.")
 
 
+def describe_global_windows_conversion():
+    """The note printed when the machine-global file still carries the
+    pre-1.0 `"windows"` method literal and is being converted to `"notify"`.
+    Its own function so `check_no_forbidden_words` can sample it without
+    writing a scratch file to disk to reach it through
+    `plan_windows_notify_default`."""
+    return ("context.autoClear.method is \"windows\" (SendKeys-armed by "
+            "default pre-1.0) in the machine-global config. Proposing "
+            "\"notify\", the 1.0 default, in its place. " + _SENDKEYS_NOTE)
+
+
 def describe_tmux_path():
     """The Linux/macOS/WSL story: describe only, never propose a write."""
     return ("On Linux, macOS and WSL, 'auto' types the configured command "
@@ -88,8 +161,11 @@ def describe_tmux_path():
 
 def already_configured_global(path=None):
     """The RAW (unmerged) global file's own `context.autoClear.method`, as a
-    one-line report, or `None` when that key is simply absent -- the signal
-    that nothing has decided this yet.
+    one-line report, or `None` when that key is simply absent OR still
+    carries the pre-1.0 `"windows"` literal -- both read as "nothing has
+    decided this yet", since `"windows"` is not a value 1.0 accepts and
+    still needs converting (see `plan_windows_notify_default`'s windows
+    branch).
 
     Read from the file as written, not through `resolve_config`'s merge:
     idempotence has to ask "did a previous run already write this key",
@@ -98,10 +174,11 @@ def already_configured_global(path=None):
     """
     raw = crew_config.read_global_config(path)
     auto = _dig_dict(_dig_dict(raw, "context"), "autoClear")
-    if "method" not in auto:
+    method = auto.get("method")
+    if method is None or method == "windows":
         return None
     target = crew_config.GLOBAL_CONFIG_PATH if path is None else path
-    return (f"context.autoClear.method is already `{json.dumps(auto['method'])}` "
+    return (f"context.autoClear.method is already `{json.dumps(method)}` "
             f"in {target} (machine-global); nothing to change")
 
 
@@ -110,22 +187,43 @@ def already_configured_global(path=None):
 
 def plan_windows_notify_default(path=None):
     """What `/crew:init` (or `/crew:onboard`) should propose on native
-    Windows: `{"status": "already-configured"|"proposed", "message": str,
-    "updates": dict}`. Writes nothing -- `write_autoclear_method` does that,
-    after a yes.
+    Windows: `{"status": "already-configured"|"proposed"|"unreadable",
+    "message": str, "updates": dict}`. Writes nothing --
+    `write_autoclear_method` does that, after a yes.
+
+    `"unreadable"` is its own status, not folded into either of the other
+    two: a malformed global file must stop here and say so, rather than
+    `crew_config.read_global_config`'s read-side collapse making it look
+    like a clean, unconfigured machine that this function then proposes a
+    default write onto.
     """
+    problem = _global_file_problem(path)
+    if problem is not None:
+        return {"status": "unreadable", "message": (
+            f"could not read the machine-global config, nothing proposed: "
+            f"{problem}. Fix or remove the file by hand before this can run."
+        ), "updates": {}}
+
+    raw = crew_config.read_global_config(path)
+    auto = _dig_dict(_dig_dict(raw, "context"), "autoClear")
+    legacy_windows = auto.get("method") == "windows"
+
     already = already_configured_global(path)
     if already is not None:
         return {"status": "already-configured", "message": already, "updates": {}}
+
     updates = {"context.autoClear.method": "notify"}
     merged, changes = crew_config.plan_global_write(updates, path)
     del merged
-    message = (
-        "Proposing context.autoClear.method = \"notify\" in the "
-        "machine-global config (the value 'auto' already resolves to on "
-        "native Windows with no tmux pane, written explicitly so the file "
-        "says what will happen). " + describe_notify()
-    )
+    if legacy_windows:
+        message = describe_global_windows_conversion()
+    else:
+        message = (
+            "Proposing context.autoClear.method = \"notify\" in the "
+            "machine-global config (the value 'auto' already resolves to on "
+            "native Windows with no tmux pane, written explicitly so the file "
+            "says what will happen). " + describe_notify()
+        )
     return {"status": "proposed", "message": message, "updates": updates,
             "changes": changes}
 
@@ -137,7 +235,12 @@ def write_autoclear_method(method, *, consent, path=None):
     owner requirements forbid arming without an explicit yes. Every other
     value writes normally; this is the one guard `sendkeys` needs, not a
     generic write lock.
+
+    Raises `GlobalConfigUnreadable` first, before the consent check, when
+    the file is present but malformed -- a bad `path` argument should not
+    depend on which consent branch got there first.
     """
+    _require_global_readable(path)
     if method == "sendkeys" and not consent:
         raise PermissionError(
             "sendkeys is opt-in only; pass consent=True after an explicit yes"
@@ -147,7 +250,9 @@ def write_autoclear_method(method, *, consent, path=None):
 
 def write_autoclear_enabled(enabled, *, consent, path=None):
     """Turn auto-clear on (or off) machine-wide. `consent` must be `True` to
-    turn it ON; turning it off never needs consent."""
+    turn it ON; turning it off never needs consent. See
+    `write_autoclear_method` for why the readability check runs first."""
+    _require_global_readable(path)
     if enabled and not consent:
         raise PermissionError(
             "enabling auto-clear machine-wide needs an explicit yes; "
@@ -272,7 +377,11 @@ def apply_onlyRepos_narrowing(only_repos, *, consent, path=None):
     """Write the proposed `onlyRepos` narrowing. `consent` must be `True` --
     narrowing what fires changes behaviour on every OTHER repo on this
     machine too, not just this one, and that needs the same explicit yes any
-    other global write does."""
+    other global write does. Raises `GlobalConfigUnreadable` before the
+    consent check, same as `write_autoclear_method` -- a malformed global
+    file must not silently drop the narrowing signal onto a `{}` collapse
+    either."""
+    _require_global_readable(path)
     if not consent:
         raise PermissionError(
             "narrowing onlyRepos changes what fires on other repos too; "
@@ -321,17 +430,59 @@ def _atomic_write_json(path, obj):
         raise
 
 
+def _read_json_if_present(path):
+    """The parsed JSON object at `path`, or `None` when it does not exist.
+    Any other read/parse failure is left to raise -- a present-but-broken
+    repo file is not the same "nothing to convert" signal as an absent
+    one, and swallowing it here would silently skip the conversion."""
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            return json.load(handle)
+    except FileNotFoundError:
+        return None
+
+
 def apply_migrate_to_repo(root, global_path=None, repo_label=None, yes_widen=False):
-    """Read `<root>/.crew/crew.json`'s `context` block, apply
-    `plan_migrate_context` to it, and write it back in place.
+    """Convert `context.autoClear` in whichever of `<root>/.crew/config.json`
+    and `<root>/.crew/crew.json` are present, and write each one back in
+    place.
+
+    **Both, when both exist, because they can disagree about what fires.**
+    `crew_migrate.py --apply` copies `config.json`'s `context` block into a
+    new `crew.json` UNCONVERTED and keeps the original -- `config.json` is
+    marked "retireable", not deleted (`commands/migrate.md`'s own table).
+    Every autoClear SENDER (`auto-clear.sh`, `auto-clear.ps1`,
+    `crew_autocycle.py`'s `_load`) reads `.crew/config.json` only; nothing
+    in this plugin's runtime reads `crew.json` for autoClear behaviour --
+    `crew_status.py` reads it only to report the migration schema. So
+    converting `crew.json` alone (the previous behaviour here) left a
+    retained legacy method like `"windows"` live in `config.json`, where
+    every sender still reads it and then refuses it as unsupported --
+    migration looked complete and autoClear was silently dead. Converting
+    `config.json` alone would leave `crew.json`'s copy stale for
+    `/crew:status`'s own report. So both are read, the plan is computed
+    once (from whichever exists; their `context` blocks are identical
+    immediately after `crew_migrate.py --apply`, before this function has
+    touched either), and both are rewritten when there is something to
+    convert.
 
     Returns the plan (see `plan_migrate_context`) plus `alreadyConfigured`
-    (no notes -> nothing to convert -> the file is not touched at all, so a
+    (no notes -> nothing to convert -> neither file is touched, so a
     repeat run is byte-idempotent) and `wideningApplied`. The ONLY global
     write this makes is the `onlyRepos` narrowing, and only when
     `plan["widening"]["widening"]` is true AND `yes_widen` is true -- the
     explicit-yes gate `detect_onlyRepos_widening`'s docstring describes.
-    Everything else this function does stays inside `root`.
+
+    **The global write happens BEFORE either repo file is touched.**
+    `apply_onlyRepos_narrowing` raises (`GlobalConfigUnreadable`, an
+    `OSError` from a read-only global directory, etc.) rather than
+    returning a failure code, so if it raises, this function has not yet
+    written anything to `root` -- the repo files stay exactly as they were
+    and the caller sees a non-zero exit with the reason. The previous
+    ordering wrote the repo copy first: a failed global write then left
+    the repo's opt-in already stripped with nothing on the machine-global
+    side recording the widening, and no way to retell which repos had
+    opted in.
 
     **Decide `yes_widen` on THIS call, not a follow-up one.** The widening
     proposal's `proposedOnlyRepos` reads this repo's pre-migration
@@ -343,25 +494,38 @@ def apply_migrate_to_repo(root, global_path=None, repo_label=None, yes_widen=Fal
     calling this at all, or accept `--yes-widen` up front on the one call
     that also does the stripping.
     """
+    config_path = os.path.join(root, ".crew", "config.json")
     crew_json_path = os.path.join(root, ".crew", "crew.json")
-    with open(crew_json_path, "r", encoding="utf-8") as handle:
-        crew_json = json.load(handle)
-    context = crew_json.get("context")
+    config_doc = _read_json_if_present(config_path)
+    crew_doc = _read_json_if_present(crew_json_path)
+    if config_doc is None and crew_doc is None:
+        raise FileNotFoundError(
+            f"neither {config_path} nor {crew_json_path} exists -- nothing "
+            "to migrate")
+
+    source_doc = config_doc if config_doc is not None else crew_doc
+    context = source_doc.get("context")
     context = context if isinstance(context, dict) else {}
     global_cfg = crew_config.read_global_config(global_path)
     label = repo_label or os.path.basename(os.path.abspath(root))
     plan = plan_migrate_context(context, global_cfg, root, label)
     already_configured = not plan["notes"]
     plan["alreadyConfigured"] = already_configured
-    if not already_configured:
-        crew_json["context"] = plan["context"]
-        _atomic_write_json(crew_json_path, crew_json)
 
     widening_applied = False
     if plan["widening"]["widening"] and yes_widen:
         apply_onlyRepos_narrowing(
             plan["widening"]["proposedOnlyRepos"], consent=True, path=global_path)
         widening_applied = True
+
+    if not already_configured:
+        if config_doc is not None:
+            config_doc["context"] = plan["context"]
+            _atomic_write_json(config_path, config_doc)
+        if crew_doc is not None:
+            crew_doc["context"] = plan["context"]
+            _atomic_write_json(crew_json_path, crew_doc)
+
     plan["wideningApplied"] = widening_applied
     return plan
 
@@ -376,6 +540,7 @@ def check_no_forbidden_words():
     every function here and forgetting the next one that's added."""
     samples = [
         describe_notify(), describe_tmux_path(), _SENDKEYS_NOTE,
+        describe_global_windows_conversion(),
         plan_windows_notify_default(path="/nonexistent")["message"],
     ]
     widening = detect_onlyRepos_widening(
@@ -422,7 +587,8 @@ def main(argv=None):
     p_conv.add_argument("--repo-label", default=None)
 
     p_am = sub.add_parser("apply-migrate",
-                          help="rewrite .crew/crew.json's context block in place")
+                          help=("rewrite context.autoClear in .crew/config.json and "
+                                ".crew/crew.json in place, whichever exist"))
     p_am.add_argument("--repo-label", default=None)
     p_am.add_argument("--yes-widen", action="store_true",
                       help="also apply the proposed onlyRepos narrowing")
@@ -437,7 +603,7 @@ def main(argv=None):
         try:
             _, changes = write_autoclear_method(
                 args.method, consent=args.yes, path=args.global_path)
-        except PermissionError as exc:
+        except (PermissionError, GlobalConfigUnreadable) as exc:
             print(str(exc), file=sys.stderr)
             return 2
         print(json.dumps(changes, indent=2))
@@ -447,7 +613,7 @@ def main(argv=None):
         try:
             _, changes = write_autoclear_enabled(
                 args.value == "true", consent=args.yes, path=args.global_path)
-        except PermissionError as exc:
+        except (PermissionError, GlobalConfigUnreadable) as exc:
             print(str(exc), file=sys.stderr)
             return 2
         print(json.dumps(changes, indent=2))
@@ -463,8 +629,12 @@ def main(argv=None):
         return 0
 
     if args.cmd == "apply-migrate":
-        plan = apply_migrate_to_repo(
-            args.root, args.global_path, args.repo_label, args.yes_widen)
+        try:
+            plan = apply_migrate_to_repo(
+                args.root, args.global_path, args.repo_label, args.yes_widen)
+        except (GlobalConfigUnreadable, OSError, ValueError) as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
         print(json.dumps(plan, indent=2))
         return 0
 

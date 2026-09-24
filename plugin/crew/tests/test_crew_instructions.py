@@ -358,6 +358,83 @@ def test_codex_trust_fallback_scanner_still_trusts_a_clean_file(tmp_path, monkey
     assert state == ci.TRUST_OK and "trusted" in detail
 
 
+# --- Codex review (gpt-5.6-sol) findings #5/#6: fallback scanner grammar ----
+
+def test_codex_trust_multiline_array_is_not_misread_as_malformed(tmp_path, monkeypatch):
+    """A legal multi-line array's continuation lines carry no `=` at all --
+    the previous fallback scanner (`_GENERIC_KV_RE`) required one on every
+    line and reported the whole file UNKNOWN despite it being valid TOML.
+    Checked against tomllib (the real parser, which already accepted this
+    shape) and then again with tomllib forced unavailable, so the fallback
+    scanner is shown to independently agree rather than merely not being
+    exercised."""
+    root = _big_repo(tmp_path)
+    path = os.path.abspath(str(root))
+    body = (
+        '[hooks]\n'
+        'args = [\n'
+        '  "one",\n'
+        '  "two",\n'
+        ']\n'
+        f'[projects."{path}"]\n'
+        'trust_level = "trusted"\n'
+    )
+    _write_config_toml(tmp_path, monkeypatch, body)
+
+    state, detail = ci.codex_trust(str(root))
+    assert state == ci.TRUST_OK and "trusted" in detail
+
+    monkeypatch.setattr(ci, "_tomllib", None)
+    state, detail = ci.codex_trust(str(root))
+    assert state == ci.TRUST_OK and "trusted" in detail
+
+
+def test_codex_trust_fallback_scanner_rejects_an_unterminated_string_value(tmp_path, monkeypatch):
+    """`broken = "unterminated` has an `=` and *something* non-blank right
+    after it -- exactly the shape the old `_GENERIC_KV_RE` (`\\S.*$`)
+    accepted as a complete value, even though the string is never closed
+    and a real parser rejects the file outright. A genuine trust entry
+    sits earlier in the same file, so the previous scanner reported
+    TRUST_OK regardless -- the false "trusted" this fix closes, the same
+    way `broken =` (fix #2, above) already does for an empty RHS."""
+    root = _big_repo(tmp_path)
+    path = os.path.abspath(str(root))
+    body = (f'[projects."{path}"]\ntrust_level = "trusted"\n\n'
+            'broken = "unterminated\n')
+    _write_config_toml(tmp_path, monkeypatch, body)
+
+    state, detail = ci.codex_trust(str(root))
+    assert state == ci.TRUST_UNKNOWN
+    assert "not valid TOML" in detail
+
+    monkeypatch.setattr(ci, "_tomllib", None)
+    state, detail = ci.codex_trust(str(root))
+    assert state == ci.TRUST_UNKNOWN
+    assert "unterminated" in detail
+
+
+def test_scan_project_trust_accepts_a_multiline_array_directly(monkeypatch):
+    text = ('args = [\n'
+            '  "one",\n'
+            '  "two",\n'
+            ']\n'
+            '[projects."/repo"]\n'
+            'trust_level = "trusted"\n')
+
+    level, matched, bad_line = ci._scan_project_trust(text, ["/repo"])
+
+    assert (level, matched, bad_line) == ("trusted", "/repo", None)
+
+
+def test_scan_project_trust_rejects_an_unterminated_string_value_directly():
+    text = ('[projects."/repo"]\ntrust_level = "trusted"\n\n'
+            'broken = "unterminated\n')
+
+    level, matched, bad_line = ci._scan_project_trust(text, ["/repo"])
+
+    assert bad_line is not None and "unterminated" in bad_line
+
+
 # --- W8 review fix #3: canonical (realpath) beats literal, Codex's own order
 
 def test_codex_trust_prefers_the_canonical_path_over_a_symlinked_literal(tmp_path, monkeypatch):

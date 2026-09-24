@@ -186,8 +186,13 @@ python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autoclear_setup.py \
   --root <repo> plan-windows-default
 ```
 
-A `status: already-configured` result means the machine-global file already has
-an opinion — read its `message` back and stop; write nothing. On a
+A `status: unreadable` result means the machine-global file exists but does not
+parse — read its `message` back, say the file needs fixing or removing by
+hand, and stop; write nothing (`apply-method`/`apply-enabled` refuse the same
+way if run anyway). A `status: already-configured` result means the
+machine-global file already has an opinion — read its `message` back and stop;
+write nothing. A pre-1.0 `method: "windows"` is NOT already-configured; it is
+reported as `proposed` with a note that it is being converted to `notify`. On a
 `status: proposed` result, on **native Windows** (`platform.os == "windows"`),
 show the plan (`method: "notify"` — nothing typed, a message saying it is safe
 to run the configured command yourself, never that anything was cleared or
