@@ -112,21 +112,40 @@ liar_stub() {
 # arguments it was actually given, so the hook's own behaviour would be the
 # stub's hard-coded exit, not a real run. `exec "$PY" "$@"` makes it behave
 # as a genuinely working interpreter no matter how it is invoked (probed
-# with `-c ...`, or launched against the real script), while its path still
-# lives under a directory literally named WindowsApps - the one thing a
-# path-substring reject would still have caught. `prefix` (the caller's
-# per-hook probe token) is no longer needed once the stub actually runs a
-# real interpreter instead of echoing a canned answer - kept as a parameter
-# so call sites do not need to change.
+# with `-c ...`, or launched against the real script).
+#
+# TWO path components matter, and both are exercised here, same reasoning
+# as test_vault_guard_sh.sh's own copy of this fixture (see that file's
+# header): the call sites used to pass a label like "WindowsAppsRealBridge"
+# / "WindowsAppsRealCapture", NOT a directory literally named WindowsApps -
+# which happens to satisfy a bare substring reject (it CONTAINS
+# "WindowsApps") but not a reintroduced EXACT PATH-SEGMENT reject
+# (`*/WindowsApps/*`), the shape role-write-guard.sh's own resolver comment
+# says was actually removed. Separately, `exec "$PY" "$@"` alone forwards
+# straight through to this test's real system interpreter, whose own
+# `sys.executable` is never under WindowsApps either, so a reintroduced
+# reject on the RESOLVED path (not just the candidate) went untested too.
+# Fixed the same way: the alias lives under a directory named exactly
+# WindowsApps, and it execs a COPY (not a symlink) of the interpreter
+# placed under a SECOND directory that also carries a literal WindowsApps
+# segment. `$1` is now a LABEL used to keep each call site's fixture
+# directories from colliding, not the leaf directory name itself - the leaf
+# is always exactly "WindowsApps". `prefix` (the caller's per-hook probe
+# token, `$3`) is still unused, kept as a parameter so call sites do not
+# need to change their argument COUNT.
 real_windowsapps_stub() {
-  local dir="$work/$1" name="$2"
-  mkdir -p "$dir"
-  cat > "$dir/$name" <<STUB
+  local label="$1" name="$2"
+  local alias_dir="$work/$label/WindowsApps"
+  local real_dir_path="$work/$label-target/WindowsApps/PythonSoftwareFoundation.Python.3.x_hash"
+  mkdir -p "$alias_dir" "$real_dir_path"
+  cp "$PY" "$real_dir_path/python.exe"
+  chmod 755 "$real_dir_path/python.exe"
+  cat > "$alias_dir/$name" <<STUB
 #!/bin/sh
-exec "$PY" "\$@"
+exec "$real_dir_path/python.exe" "\$@"
 STUB
-  chmod 755 "$dir/$name"
-  printf '%s' "$dir"
+  chmod 755 "$alias_dir/$name"
+  printf '%s' "$alias_dir"
 }
 
 # -------------------------------------------------------- HOME + isolation --
@@ -233,8 +252,8 @@ realpath_dir="$(real_dir realpy python3)"
 store_dir="$(store_stub WindowsApps python3)"
 silent_dir="$(silent_stub silentstub python3)"
 liar_dir="$(liar_stub liarstub python3)"
-real_winapps_bridge_dir="$(real_windowsapps_stub WindowsAppsRealBridge python3 bridge-status-python:)"
-real_winapps_capture_dir="$(real_windowsapps_stub WindowsAppsRealCapture python3 vault-capture-python:)"
+real_winapps_bridge_dir="$(real_windowsapps_stub winapps-bridge python3 bridge-status-python:)"
+real_winapps_capture_dir="$(real_windowsapps_stub winapps-capture python3 vault-capture-python:)"
 
 # ================================================================ bridge-status.sh
 echo "== bridge-status.sh: must run, with a working interpreter =="

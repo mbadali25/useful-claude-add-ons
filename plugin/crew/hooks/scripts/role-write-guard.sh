@@ -209,42 +209,196 @@ _role_write_is_restricted() {
   esac
 }
 
-# Best-effort `agent_type` extraction from the raw JSON -- never fails, and
-# a value this cannot find or parse answers empty (unrestricted). Mirrors
-# role-write-guard.ps1's `Get-FallbackRole`: consulted whenever python
-# cannot be used to reach a real decision, so this never needs to be more
-# than "good enough to fail closed for pm/deny".
+# Best-effort `agent_type` extraction from the raw JSON, PURE BASH -- no
+# `grep`/`head`/`sed`/`tr` at all. Reported 2026-09-24: the previous version
+# of this function piped through exactly those four tools, so on a PATH that
+# supplies python-resolution's own coreutils (`dirname`, `cat`) but not
+# those four, every one of those pipes failed silently (`command not
+# found`), `role` came back empty, and a `pm` write went through UNJUDGED
+# even though nothing here needed python at all to see `agent_type: "pm"`
+# sitting in the raw JSON. Bash's own `[[ =~ ]]` regex engine is a builtin,
+# never an external process, so it works whether or not ANY of those tools
+# are on PATH.
+#
+# `_ROLE_WRITE_FALLBACK_ROLE` / `_ROLE_WRITE_FALLBACK_DETERMINED` are
+# GLOBALS this function sets directly, NOT a printed return value captured
+# via `$(...)` -- that command-substitution form runs the function in a
+# SUBSHELL, and a subshell's variable assignments (`_ROLE_WRITE_FALLBACK_
+# DETERMINED=0` included) never escape back to the caller. An earlier draft
+# of this function printed the role and left the determined-flag as a
+# "global" set the same way `_resolve_role_write_python` sets `PY` via
+# `PY=$(...)` -- which works for a value returned on stdout, but silently
+# discarded the flag every single time, so the caller always saw
+# `_ROLE_WRITE_FALLBACK_DETERMINED` unset/empty regardless of what this
+# function actually decided. Direct assignment with NO command substitution
+# around the call is what makes the flag visible to the caller at all.
+#
+# The flag distinguishes two shapes this used to conflate: genuinely NO
+# `agent_type` key at all (this hook fired outside a subagent --
+# unrestricted, matching role_write_guard.py's own "no agent_type at all"
+# case) from a key that IS present in some form this best-effort parse
+# could not read a value out of (a non-string value, a `\"`-escaped quote
+# inside the string, ...). The second is "cannot tell", not "not a
+# subagent", and CLAUDE.md's named recurring bug is exactly an unknown
+# wearing the safe-looking value's label -- so the caller fails closed on
+# it rather than falling through to the unrestricted branch.
 _role_write_fallback_role() {
-  role=$(printf '%s' "$1" | grep -o '"agent_type"[[:space:]]*:[[:space:]]*"[^"]*"' \
-         | head -n 1 | sed -E 's/.*:[[:space:]]*"([^"]*)"/\1/')
-  role=$(printf '%s' "$role" | tr '[:upper:]' '[:lower:]')
-  case "$role" in
-    crew:*) role="${role#crew:}" ;;
+  local payload="$1"
+  _ROLE_WRITE_FALLBACK_ROLE=""
+  _ROLE_WRITE_FALLBACK_DETERMINED=1
+  if [[ "$payload" =~ \"agent_type\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
+    _ROLE_WRITE_FALLBACK_ROLE="${BASH_REMATCH[1]}"
+  elif [[ "$payload" == *'"agent_type"'* ]]; then
+    _ROLE_WRITE_FALLBACK_DETERMINED=0
+  fi
+  _ROLE_WRITE_FALLBACK_ROLE="${_ROLE_WRITE_FALLBACK_ROLE,,}"
+  case "$_ROLE_WRITE_FALLBACK_ROLE" in
+    crew:*) _ROLE_WRITE_FALLBACK_ROLE="${_ROLE_WRITE_FALLBACK_ROLE#crew:}" ;;
   esac
-  printf '%s' "$role"
+}
+
+# Best-effort `tool_input.file_path` extraction, same pure-bash technique --
+# used ONLY to WIDEN an already-restricted `pm` decision (its own scoped
+# patterns below), never to narrow one, so a value this cannot find costs
+# nothing: `pm` is then judged exactly as it was before this check existed.
+_role_write_fallback_file_path() {
+  local payload="$1"
+  if [[ "$payload" =~ \"file_path\"[[:space:]]*:[[:space:]]*\"((\\\"|[^\"])*)\" ]]; then
+    printf '%s' "${BASH_REMATCH[1]}"
+  fi
+}
+
+# Mirrors role_write_guard.py's `_PM_ALLOWED_PATTERNS` (agents/pm.md:49-53's
+# prose, made mechanical) -- REPO-RELATIVE and LEXICAL only, unlike the real
+# classifier's symlink-resolved `scope_path`: this fallback exists only for
+# the brief window before python becomes available again, so a degraded,
+# string-only check that can occasionally be wrong in `pm`'s FAVOUR (a
+# symlink escape it does not catch) is an acceptable cost -- python's own
+# classifier still catches every other time this hook runs. `*` in a bash
+# `case` pattern already matches across `/`, so `.crew/**` and `.crew/*`
+# collapse to the same pattern here.
+_role_write_pm_path_allowed() {
+  local root="$1" rel="$2"
+  [ -n "$rel" ] || return 1
+  case "$rel" in
+    "$root"/*) rel="${rel#"$root"/}" ;;
+  esac
+  case "$rel" in
+    .crew|.crew/*|TODO.md|.work|.work/*|docs/diagrams|docs/diagrams/*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# `guards.roleWrites` for ONE config layer, read WITHOUT python -- crude on
+# purpose, same technique cloud-guard.sh's `_cloud_guard_armed` uses (`grep
+# -o` / `head` / `sed` / `tr`), not a JSON parser. Prints "off"/"report"/
+# "block" when this could read the value with confidence, or "off" when the
+# file is simply ABSENT (every repo that has never set this key defaults to
+# `off`, same as crew_guards.ROLE_WRITE_DEFAULT). Prints "block" -- the
+# floor, never "off" -- for anything this cannot confidently read: `grep`/
+# `sed`/`tr` missing from PATH, the path is a directory or a dangling
+# symlink, unreadable, more than one match, or a value this regex could not
+# cleanly lift -- matching crew_config.layer_state's own "corrupt" answer
+# forcing `block`.
+_role_write_layer_policy() {
+  local cfg="$1"
+  if [ ! -e "$cfg" ]; then
+    [ -L "$cfg" ] && { printf 'block'; return 0; }  # dangling symlink
+    printf 'off'; return 0
+  fi
+  [ -f "$cfg" ] || { printf 'block'; return 0; }  # a directory, etc.
+  if ! command -v grep >/dev/null 2>&1 || ! command -v sed >/dev/null 2>&1 \
+     || ! command -v tr >/dev/null 2>&1; then
+    printf 'block'; return 0
+  fi
+  local content matches count value
+  content=$(cat "$cfg" 2>/dev/null) || { printf 'block'; return 0; }
+  matches=$(printf '%s' "$content" | grep -o '"roleWrites"[[:space:]]*:[[:space:]]*[^,}]*')
+  if [ -z "$matches" ]; then printf 'block'; return 0; fi
+  count=$(printf '%s\n' "$matches" | grep -c .)
+  if [ "$count" -ne 1 ]; then printf 'block'; return 0; fi
+  value=$(printf '%s' "$matches" | sed -E 's/.*:[[:space:]]*//' | tr -d '"[:space:]\r')
+  value="${value,,}"
+  case "$value" in
+    off|report|block) printf '%s' "$value" ;;
+    *) printf 'block' ;;
+  esac
+}
+
+# Ratchets the two layers exactly as `crew_guards.role_writes_rank` does: the
+# MORE RESTRICTIVE of the two wins (block < report < off), so a repo cloned
+# with `guards.roleWrites: off` cannot widen past a stricter machine-global
+# value, and a layer this fallback could not confidently read (above) forces
+# `block` the same way `role_write_guard.py`'s own corruption check does,
+# regardless of what the OTHER layer says.
+_role_write_effective_policy() {
+  local root="$1" repo_policy global_policy rp gp
+  repo_policy=$(_role_write_layer_policy "$root/.crew/config.json")
+  global_policy=$(_role_write_layer_policy "${HOME:-}/.claude/crew/config.json")
+  case "$repo_policy" in block) rp=0 ;; report) rp=1 ;; off) rp=2 ;; esac
+  case "$global_policy" in block) gp=0 ;; report) gp=1 ;; off) gp=2 ;; esac
+  if [ "$rp" -le "$gp" ]; then printf '%s' "$repo_policy"; else printf '%s' "$global_policy"; fi
+}
+
+# The one decision both no-python fallbacks below reach for. Reported
+# 2026-09-24 alongside the pure-bash role extraction above: the fallback
+# used to fail closed for `pm`/`_DENY_ROLES` UNCONDITIONALLY, ignoring
+# `guards.roleWrites: off`/`report` and `pm`'s own path allowances entirely
+# -- so a repo that had explicitly turned this guard off, or scoped it to
+# `report`, still had its writes refused the moment python was unavailable,
+# which is the opposite failure from the role-extraction one above (an
+# armed guard that should have blocked did not; this is a disarmed or
+# advisory-only guard that still did). `$1` is the raw JSON payload; `$2` is
+# why this fallback is being consulted at all, for the stderr message.
+_role_write_fallback_decision() {
+  local input="$1" why="$2" root role policy file_path
+  root="${CLAUDE_PROJECT_DIR:-$PWD}"
+  # NOT `role=$(_role_write_fallback_role "$input")` -- see that function's
+  # own comment: calling it through command substitution would run it in a
+  # subshell and silently discard `_ROLE_WRITE_FALLBACK_DETERMINED`.
+  _role_write_fallback_role "$input"
+  role="$_ROLE_WRITE_FALLBACK_ROLE"
+
+  if [ "$_ROLE_WRITE_FALLBACK_DETERMINED" != "1" ]; then
+    echo "role-write-guard: $why; the hook payload names an agent_type this fallback could not read a value out of - failing closed rather than treating an unknown role as unrestricted." >&2
+    exit 2
+  fi
+
+  policy=$(_role_write_effective_policy "$root")
+
+  if [ "$policy" = "off" ]; then
+    echo "role-write-guard: $why; guards.roleWrites is off - allowing unjudged." >&2
+    exit 0
+  fi
+
+  if ! _role_write_is_restricted "$role"; then
+    echo "role-write-guard: $why; allowing it unjudged (role '$role' is not restricted)." >&2
+    exit 0
+  fi
+
+  if [ "$role" = "pm" ]; then
+    file_path=$(_role_write_fallback_file_path "$input")
+    if _role_write_pm_path_allowed "$root" "$file_path"; then
+      echo "role-write-guard: $why; allowing - '$file_path' is inside pm's permitted patterns." >&2
+      exit 0
+    fi
+  fi
+
+  if [ "$policy" = "report" ]; then
+    echo "role-write-guard: $why; guards.roleWrites is report - allowing, but this write would be blocked under guards.roleWrites: block for role '$role'." >&2
+    exit 0
+  fi
+
+  echo "role-write-guard: $why - cannot judge this write; failing closed for role '$role'." >&2
+  exit 2
 }
 
 PY=$(_resolve_role_write_python) || {
   # No candidate resolved at all -- a DIFFERENT failure than the
   # launch-failure fallback further down (a candidate that resolved, was
   # proven executable, and then still failed to launch
-  # role_write_guard.py). Reported 2026-09-24: an unconditional "allow it
-  # unjudged" here throws away a decision that needs no python at all for a
-  # role this table ALREADY knows is restricted -- a `_DENY_ROLES` role may
-  # not write ANY file regardless of path, and `pm` is refused outside its
-  # own patterns often enough that collapsing "cannot judge" into "allow"
-  # for either is CLAUDE.md's named recurring bug ("an unknown collapsing
-  # into the safe-looking value"), not a neutral default. Mirrors the
-  # launch-failure fallback's own `_role_write_is_restricted` /
-  # `_role_write_fallback_role` exactly, so both failure modes agree on
-  # which roles fail closed.
-  fallback_role=$(_role_write_fallback_role "$INPUT")
-  if _role_write_is_restricted "$fallback_role"; then
-    echo "role-write-guard: no usable python found - cannot judge this write; failing closed for role '$fallback_role'." >&2
-    exit 2
-  fi
-  echo "role-write-guard: no usable python found - cannot judge this write; allowing it unjudged." >&2
-  exit 0
+  # role_write_guard.py).
+  _role_write_fallback_decision "$INPUT" "no usable python found"
 }
 
 # PYTHONUTF8=1 / PYTHONIOENCODING=utf-8 in the CHILD's environment only --
@@ -272,13 +426,7 @@ if [ "$status" -ne 0 ] && [ "$status" -ne 2 ]; then
   # guard.ps1's own header already promised this hook fails closed for a
   # restricted role; this closes the same gap on the bash side. Reported
   # and fixed 2026-09-19.
-  fallback_role=$(_role_write_fallback_role "$INPUT")
-  if _role_write_is_restricted "$fallback_role"; then
-    echo "role-write-guard: could not launch the python interpreter ($PY) to judge this write (exit $status); failing closed for role '$fallback_role'." >&2
-    exit 2
-  fi
-  echo "role-write-guard: could not launch the python interpreter ($PY) to judge this write (exit $status); allowing it unjudged." >&2
-  exit 0
+  _role_write_fallback_decision "$INPUT" "could not launch the python interpreter ($PY) to judge this write (exit $status)"
 fi
 
 exit "$status"

@@ -148,18 +148,41 @@ liar_stub() {
 # exit code would be the stub's hard-coded 0, not a real judgement. `exec
 # "$PY" "$@"` makes it behave as a genuinely working interpreter no matter
 # how it is invoked (probed with `-c ...`, or launched against
-# vault_guard.py), while its path still lives under a directory literally
-# named WindowsApps - the one thing a path-substring reject would still
-# have caught.
+# vault_guard.py).
+#
+# TWO path components matter, and this fixture must exercise BOTH, because
+# the 2026-09-24 regression removed TWO separate rejects, not one (see
+# role-write-guard.sh's own resolver comment: "used to sit here on both
+# $candidate above and $real here"). Before 2026-09-24 this called with a
+# label like "WindowsAppsReal", NOT a directory literally named
+# WindowsApps - "WindowsAppsReal" happens to satisfy a bare substring reject
+# too (it contains "WindowsApps"), so the gap was invisible to a substring
+# sabotage test, but a reintroduced `*/WindowsApps/*` EXACT PATH-SEGMENT
+# reject - which is the shape role-write-guard.sh's own comment describes
+# as the one actually removed - does not match "WindowsAppsReal" as a
+# component, and would have passed the old fixture untested. Separately,
+# `exec "$PY" "$@"` alone forwards to THIS TEST'S real system interpreter,
+# whose own `sys.executable` is never under WindowsApps either - so a
+# reintroduced reject on the RESOLVED ("real") path, not just the candidate
+# one, was equally untested. Fixed by making BOTH literal: the alias lives
+# under a directory named exactly WindowsApps, and it execs a COPY (not a
+# symlink, which resolves straight through to wherever this test's real
+# python actually lives) of the interpreter placed under a SECOND directory
+# that also carries a literal WindowsApps segment - modelling the genuine
+# Store shape where the alias forwards to another WindowsApps-rooted path.
 real_windowsapps_stub() {
-  local dir="$work/$1" name="$2"
-  mkdir -p "$dir"
-  cat > "$dir/$name" <<STUB
+  local label="$1" name="$2"
+  local alias_dir="$work/$label/WindowsApps"
+  local real_dir_path="$work/$label-target/WindowsApps/PythonSoftwareFoundation.Python.3.x_hash"
+  mkdir -p "$alias_dir" "$real_dir_path"
+  cp "$PY" "$real_dir_path/python.exe"
+  chmod 755 "$real_dir_path/python.exe"
+  cat > "$alias_dir/$name" <<STUB
 #!/bin/sh
-exec "$PY" "\$@"
+exec "$real_dir_path/python.exe" "\$@"
 STUB
-  chmod 755 "$dir/$name"
-  printf '%s' "$dir"
+  chmod 755 "$alias_dir/$name"
+  printf '%s' "$alias_dir"
 }
 
 # ghost-python: answers the interpreter probe correctly but names an
@@ -344,7 +367,7 @@ echo "== vault-guard.sh: a working interpreter under a WindowsApps path is ACCEP
 # The regression this fixes: a genuine Store Python install answers the probe
 # correctly, but a resolver that also rejects on a WindowsApps path substring
 # throws it out anyway. Only the probe's own failure may reject a candidate.
-real_winapps_dir="$(real_windowsapps_stub WindowsAppsReal python3)"
+real_winapps_dir="$(real_windowsapps_stub winapps-case python3)"
 run_sh "$real_winapps_dir:$TOOLS" "$bad_canvas_payload"
 check_exit "a working interpreter under WindowsApps still blocks the write" 2
 check_err_has "and the violation is named on stderr" "DOES NOT PARSE"
