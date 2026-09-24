@@ -52,8 +52,20 @@ if ($env:OS -ne 'Windows_NT') { exit 0 }
 
 $where = if ($Root) { $Root } elseif ($env:CLAUDE_PROJECT_DIR) { $env:CLAUDE_PROJECT_DIR } else { "." }
 Set-Location $where -ErrorAction SilentlyContinue
-if (-not (Test-Path ".crew/config.json")) { exit 0 }
 
+# NOT a `Test-Path ".crew/config.json") { exit 0 }` guard -- that used to sit
+# here and stood this whole script down, silently, before Write-CrewAutoClearNote
+# even exists to be called, on the ONE thing that matters most to prove: a
+# fresh checkout has no repo config at all (.crew/config.json is git-ignored in
+# this very repo), and "only the machine may opt in" (test_only_the_machine_
+# can_opt_in_and_a_repo_can_only_opt_out) already means a repo need not have
+# ANY config to be armed by the machine's global enabled:true. A present-but-
+# empty repo config and an absent one are the same input to Read-CrewJsonFile
+# (both come back as "no repo autoClear block"), and only one of them used to
+# get evaluated. Read-CrewJsonFile already returns $null for a missing file
+# (caught inside its own try/catch), and every consumer of $repoAuto is
+# already null-safe (Get-CrewChild), so nothing below needs this repo's own
+# config.json to exist at all.
 $log = ".crew/.autoclear.log"
 
 function Write-CrewAutoClearNote([string]$Message) {
@@ -133,6 +145,48 @@ function Join-CrewParts([string]$RootPath, $Parts) {
   return $joined
 }
 
+function Resolve-CrewLinkRoot([string]$LinkNorm) {
+  # Classifies a symlink target (backslashes already replaced with slashes)
+  # by REGEX, not [System.IO.Path]::GetPathRoot: that call's answer for a
+  # drive letter or a UNC share depends on the ACTUAL OS the .NET runtime is
+  # on -- Linux/macOS recognise neither -- so it cannot be driven from a
+  # non-Windows test and cannot be reasoned about the same way on both.
+  #
+  # Review (Codex FIX|auto-clear.ps1:211): GetPathRoot answered a BARE "/"
+  # (one character -- truthy in PowerShell) for a drive-root-relative target
+  # like `\repo`, which the old code then treated as "already fully
+  # qualified" and used AS the new root, throwing the alias's own drive away
+  # -- `C:\alias -> \repo` resolved to `\repo`, not `C:\repo`. A target is
+  # fully qualified only with a REAL drive letter or a UNC share; a single
+  # leading slash is rooted, but only relative to WHATEVER drive the link
+  # making the reference lives on.
+  #
+  # Returns $null for an ordinary relative target (no root at all --
+  # unchanged by this fix). Otherwise a hashtable: `Remainder` is always the
+  # component text still to walk; `Rootless` true means "keep the caller's
+  # OWN current root, discard only what was resolved under it so far" (the
+  # drive-root-relative case); `Rootless` false means `Root` names the new
+  # root outright (a real drive letter, or a UNC share, which stays UNC).
+  $uncMatch = [regex]::Match($LinkNorm, '^//[^/]+/[^/]+/?')
+  if ($uncMatch.Success) {
+    # The MATCHED length, not the (possibly longer, always-trailing-slash)
+    # normalised root's length: a target that IS exactly the share with no
+    # trailing slash ("//srv/share", nothing after it) matched without one,
+    # and Substring on the normalised root's length would run past the end
+    # of $LinkNorm.
+    $root = $uncMatch.Value.TrimEnd('/') + '/'
+    return @{ Root = $root; Remainder = $LinkNorm.Substring($uncMatch.Value.Length); Rootless = $false }
+  }
+  if ($LinkNorm -match '^[A-Za-z]:/') {
+    $root = $LinkNorm.Substring(0, 3)
+    return @{ Root = $root; Remainder = $LinkNorm.Substring($root.Length); Rootless = $false }
+  }
+  if ($LinkNorm.StartsWith('/')) {
+    return @{ Root = $null; Remainder = $LinkNorm.Substring(1); Rootless = $true }
+  }
+  return $null
+}
+
 function Resolve-CrewRealPath([string]$Path) {
   # POSIX-style, one path component at a time. When a component is itself a
   # symlink, its OWN target components go back at the FRONT of the queue of
@@ -208,17 +262,23 @@ function Resolve-CrewRealPath([string]$Path) {
     # so a chained relative symlink resolves each hop against the link that
     # names it.
     $linkNorm = $link.Replace('\', '/')
-    $linkRoot = [System.IO.Path]::GetPathRoot($linkNorm)
+    $classified = Resolve-CrewLinkRoot $linkNorm
     $insertAt = 0
-    if ($linkRoot) {
-      $root = $linkRoot
-      $resolved.Clear()
-      foreach ($p in (Split-CrewRawComponents $linkNorm.Substring($linkRoot.Length))) {
+    if ($null -eq $classified) {
+      foreach ($p in (Split-CrewRawComponents $linkNorm)) {
         $queue.Insert($insertAt, $p)
         $insertAt++
       }
     } else {
-      foreach ($p in (Split-CrewRawComponents $linkNorm)) {
+      # Rootless (drive-root-relative, e.g. `\repo`): $root is left exactly
+      # as this hop's parent stood -- computed above, before $part (the
+      # symlink itself) was added -- so a target with no drive/share of its
+      # own inherits whichever one the link making the reference lives on,
+      # rather than losing it. Otherwise Root names a real drive letter or a
+      # UNC share, which fully replaces it.
+      if (-not $classified.Rootless) { $root = $classified.Root }
+      $resolved.Clear()
+      foreach ($p in (Split-CrewRawComponents $classified.Remainder)) {
         $queue.Insert($insertAt, $p)
         $insertAt++
       }

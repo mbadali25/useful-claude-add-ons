@@ -24,7 +24,10 @@ developer's real opt-in, enumerate a real window, or send a keystroke.
 """
 import json
 import os
+import pathlib
+import shutil
 import subprocess
+import tempfile
 import time
 
 import pytest
@@ -429,6 +432,83 @@ def test_resolve_target_table(case, windows, title, expect):
     assert expect.rstrip("]") in (found.get("how", "") if found["ok"] else found["reason"])
 
 
+# --- Resolve-CrewLinkRoot: drive/UNC/rootless symlink targets ----------------
+#
+# auto-clear.ps1 has its own hand-rolled symlink walker (crew_autocycle.py
+# uses os.path.realpath and has no equivalent code at all), and the piece
+# that classifies a symlink TARGET's root cannot be integration-tested here:
+# [System.IO.Path]::GetPathRoot's answer for a drive letter or a UNC share
+# depends on the ACTUAL OS the .NET runtime is on, and Get-Item's own
+# `.LinkTarget` lookup needs the component to exist for REAL on THIS
+# filesystem at every hop -- neither is true on Linux/macOS for a Windows
+# drive letter. So this extracts and runs the live function directly
+# (never a hand-copied duplicate) rather than driving it through a real
+# symlink chain, which only a real Windows host can do end to end.
+
+def _extract_ps1_function(source, name):
+    """Pull `function <name>(...) { ... }`'s exact text out of a .ps1 file by
+    brace-counting. The rest of auto-clear.ps1 is a live Stop hook and every
+    path through it ends in `exit`, which would kill the whole pwsh process
+    if the file were dot-sourced whole just to reach one function."""
+    marker = f"function {name}("
+    start = source.index(marker)
+    brace_start = source.index("{", start)
+    depth = 0
+    for i in range(brace_start, len(source)):
+        if source[i] == "{":
+            depth += 1
+        elif source[i] == "}":
+            depth -= 1
+            if depth == 0:
+                return source[start:i + 1]
+    raise AssertionError(f"unbalanced braces extracting {name} from the source")
+
+
+_RESOLVE_CREW_LINK_ROOT_CASES = [
+    ("C:/repo", "C:/", "repo", False),
+    ("//srv/share/repo", "//srv/share/", "repo", False),
+    ("//srv/share", "//srv/share/", "", False),
+    ("/repo", None, "repo", True),
+    ("repo", None, None, None),
+    ("../rel", None, None, None),
+]
+
+
+@pytest.mark.skipif(_PWSH is None, reason="needs pwsh")
+@pytest.mark.parametrize("target,root,remainder,rootless", _RESOLVE_CREW_LINK_ROOT_CASES,
+                         ids=[c[0] for c in _RESOLVE_CREW_LINK_ROOT_CASES])
+def test_resolve_crew_link_root_classifies_drive_unc_and_rootless_targets(
+        target, root, remainder, rootless):
+    """Regression, Codex FIX|auto-clear.ps1:211: a drive-root-relative target
+    (`\\repo`, i.e. `/repo` once backslashes are replaced) used to be read
+    as fully qualified and become the WHOLE new root, throwing the alias's
+    own drive away -- `C:\\alias -> \\repo` resolved to `\\repo`, not
+    `C:\\repo`. A rootless target must instead take the link's OWN drive
+    (Rootless=True, Root=$null, and the caller keeps its current root); a
+    real drive letter or a UNC share stays fully qualified as itself
+    (Rootless=False); an ordinary relative target gets no classification at
+    all (None)."""
+    # `target` is interpolated as a single-quoted literal, not passed as an
+    # argument: `pwsh -Command <script> <arg>...` joins every extra arg onto
+    # the SAME command line rather than binding them to $args, so a leading
+    # "/" in `target` parses as a second, unrelated command.
+    assert "'" not in target
+    source = pathlib.Path(_script("ps1", "auto-clear")).read_text(encoding="utf-8")
+    func = _extract_ps1_function(source, "Resolve-CrewLinkRoot")
+    script = (func + f"\n$r = Resolve-CrewLinkRoot '{target}'\n"
+              "if ($null -eq $r) { Write-Output 'NONE' } "
+              "else { Write-Output \"$($r.Root)|$($r.Remainder)|$($r.Rootless)\" }\n")
+    result = subprocess.run(
+        [_PWSH, "-NoProfile", "-NonInteractive", "-Command", script],
+        capture_output=True, text=True, check=False, timeout=30, stdin=subprocess.DEVNULL)
+    out = result.stdout.strip()
+
+    if root is None and remainder is None:
+        assert out == "NONE", result.stderr
+    else:
+        assert out == f"{root or ''}|{remainder}|{rootless}", result.stderr
+
+
 @pytest.mark.skipif(_BASH is None, reason="needs bash")
 # A fixed id for this process's pid: under pytest-xdist each worker has its
 # own pid, and ids that differ between workers abort the whole run.
@@ -488,6 +568,56 @@ def _armed_or_silent(result, root):
     return "silent"
 
 
+# A "silent" case never reaches method/window resolution -- in_scope refuses
+# first -- so only the "armed" cases below depend on a REAL capability this
+# host may not have, whatever `_sendable`'s fake tmux/window stands in for.
+# Detect the capability directly rather than trusting the OS name: burn-in
+# saw both `method tmux but tmux is not on PATH` and `no window whose title
+# ...` on a real, opted-in Windows host, which is exactly what a host with
+# neither capability produces even when the narrowing decision is correct.
+
+
+def _real_tmux_on_path():
+    """The REAL PATH's tmux, never `_sendable`'s injected shim: if this host
+    truly has no tmux, `resolve_method` refuses by design and no "armed"
+    sh-flavour case can ever be proved here."""
+    return shutil.which("tmux") is not None
+
+
+_OWNER_WINDOW_CAPABLE = None
+
+
+def _pwsh_can_resolve_an_owner_window():
+    """Probes the REAL (non-stubbed) window walk once: does any window on
+    this host belong to an ancestor of this process? A non-interactive
+    runner -- a scheduled task, a headless CI agent -- has none, and no
+    "armed" ps1-flavour case can be proved there either, independent of
+    whether the narrowing decision itself is right. Memoized: this spawns a
+    real pwsh and is not free."""
+    global _OWNER_WINDOW_CAPABLE  # pylint: disable=global-statement
+    if _OWNER_WINDOW_CAPABLE is not None:
+        return _OWNER_WINDOW_CAPABLE
+    if _PWSH is None:
+        _OWNER_WINDOW_CAPABLE = False
+        return False
+    scratch = tempfile.mkdtemp(prefix="crew-owner-window-probe-")
+    try:
+        base = pathlib.Path(scratch)
+        root = crew_fixtures.make_repo(base, config={"context": {"warnAt": 0.8}}, git=False)
+        _machine(root)
+        env = dict(os.environ, HOME=str(base / "home"), USERPROFILE=str(base / "home"),
+                   CLAUDE_PROJECT_DIR=str(root), CREW_AUTOCLEAR_INHIBIT="1", OS="Windows_NT")
+        result = subprocess.run(
+            [_PWSH, "-NoProfile", "-NonInteractive", "-File", _script("ps1", "auto-clear"),
+             "-Force", "-DryRun", "-Root", str(root)],
+            cwd=str(root), env=env, stdin=subprocess.DEVNULL,
+            capture_output=True, text=True, check=False, timeout=30)
+        _OWNER_WINDOW_CAPABLE = "would send" in result.stdout
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+    return _OWNER_WINDOW_CAPABLE
+
+
 _ROOT_TOKEN = "{root}"
 _SCOPE_CASES = [
     ("absent", {}, "armed"),
@@ -542,11 +672,51 @@ def test_the_machine_can_narrow_auto_clear_to_listed_repos_and_sessions(
     del case
     if isinstance(expect, dict):
         expect = expect[flavor]
+    if expect == "armed":
+        # Only an "armed" case reaches method/window resolution -- in_scope
+        # refuses every "silent" one first -- so only these depend on a
+        # capability this host may genuinely lack.
+        if flavor == "sh" and not _real_tmux_on_path():
+            pytest.skip("tmux is not on PATH on this host, so this case can "
+                        "only be PROVED armed by actually resolving a method "
+                        "- see test_in_scope_decides_the_scope_matrix_with_"
+                        "no_subprocess_on_every_os for the narrowing decision "
+                        "itself, which does not need tmux")
+        if flavor == "ps1" and not _pwsh_can_resolve_an_owner_window():
+            pytest.skip("no window on this host belongs to any ancestor of "
+                        "this process (a non-interactive runner), so this "
+                        "case can only be PROVED armed by actually resolving "
+                        "one - see test_in_scope_decides_the_scope_matrix_"
+                        "with_no_subprocess_on_every_os for the narrowing "
+                        "decision itself, which does not need a window")
     root = _repo(tmp_path)
 
     result = _scoped(flavor, tmp_path, root, **{k: _fill(v, root) for k, v in scope.items()})
 
     assert _armed_or_silent(result, root) == expect
+
+
+@pytest.mark.parametrize("case,scope,expect", _SCOPE_CASES, ids=[c[0] for c in _SCOPE_CASES])
+def test_in_scope_decides_the_scope_matrix_with_no_subprocess_on_every_os(
+        case, scope, expect, tmp_path):
+    """The exact `_SCOPE_CASES` table the wrapper test above drives through a
+    real bash/pwsh, proved here straight against `crew_autocycle.in_scope` --
+    no subprocess, no tmux, no window system, so this runs identically on a
+    host that has neither and would otherwise skip every "armed" case above.
+    POSIX only (`windows=False`): the "sh" expectation applies, since that is
+    the branch a real POSIX `tmp_path` exercises; the Windows branch already
+    has its own dedicated in-process cases (`test_in_scope_on_windows_is_
+    case_insensitive_for_repos_only` and neighbours)."""
+    del case
+    if isinstance(expect, dict):
+        expect = expect["sh"]
+    root = tmp_path / "repo"
+    root.mkdir()
+    cfg = {key: _fill(value, root) for key, value in scope.items()}
+
+    result = crew_autocycle.in_scope(cfg, str(root), SESSION_A, windows=False)
+
+    assert result == (expect == "armed")
 
 
 @by_flavor

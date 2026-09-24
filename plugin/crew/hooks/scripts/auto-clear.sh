@@ -58,8 +58,17 @@ while [ $# -gt 0 ]; do
 done
 
 cd "$ROOT" 2>/dev/null || exit 0
-[ -f .crew/config.json ] || exit 0
 
+# NOT a `[ -f .crew/config.json ] || exit 0` guard -- that used to sit here and
+# stood this whole script down, silently, before note() even exists to be
+# called, on the ONE thing that matters most to prove: a fresh checkout has no
+# repo config at all (.crew/config.json is git-ignored in this very repo), and
+# "only the machine may opt in" (test_only_the_machine_can_opt_in_and_a_repo_
+# can_only_opt_out) already means a repo need not have ANY config to be armed
+# by the machine's global enabled:true. crew_autocycle._load() already returns
+# {} for a missing file -- the same value a present-but-empty repo config
+# produces -- so settings()/plan() already treat "absent" and "empty" alike;
+# only the guard that used to sit here treated them differently.
 LOG=".crew/.autoclear.log"
 
 note() {  # one line to the log and to stderr; the log is the one anybody reads

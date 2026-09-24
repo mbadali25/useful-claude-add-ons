@@ -33,6 +33,7 @@ CREW = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SCRIPTS = os.path.join(CREW, "hooks", "scripts")
 WATCH_SH = os.path.join(SCRIPTS, "context-watch.sh")
 WATCH_PS1 = os.path.join(SCRIPTS, "context-watch.ps1")
+CLEAR_SH = os.path.join(SCRIPTS, "auto-clear.sh")
 CLEAR_PS1 = os.path.join(SCRIPTS, "auto-clear.ps1")
 READ_SH = os.path.join(SCRIPTS, "handoff-read.sh")
 READ_PS1 = os.path.join(SCRIPTS, "handoff-read.ps1")
@@ -215,36 +216,38 @@ AUTOCYCLE_MUTATIONS = (
     # SAME per-component queue as '..', rather than a GetFullPath-collapsed
     # string split once) -- these two mutations are re-anchored onto that new
     # shape, same bug, same target test.
+    # Review round 4 (crew-1.0-w2-autoclear, Item 2): the drive-letter/UNC
+    # classification that used to live inline was pulled into its own
+    # function, Resolve-CrewLinkRoot, so the "relative target, no root at
+    # all" case is now `$null -eq $classified` rather than the tail of a
+    # `$linkRoot`-truthy if/else. These three anchors are re-pointed at that
+    # new shape; the bug and the test each one proves are unchanged.
     ("PowerShell chases a chained relative symlink from the first hop's parent", CLEAR_PS1,
-     "    } else {\n"
+     "    if ($null -eq $classified) {\n"
      "      foreach ($p in (Split-CrewRawComponents $linkNorm)) {\n"
      "        $queue.Insert($insertAt, $p)\n"
      "        $insertAt++\n"
      "      }\n"
-     "    }\n"
-     "  }\n"
-     "  return Join-CrewParts $root $resolved\n",
-     "    } else {\n"
+     "    } else {\n",
+     "    if ($null -eq $classified) {\n"
      "      $resolved.Clear()\n"
      "      foreach ($p in (Split-CrewRawComponents $linkNorm)) {\n"
      "        $queue.Insert($insertAt, $p)\n"
      "        $insertAt++\n"
      "      }\n"
-     "    }\n"
-     "  }\n"
-     "  return Join-CrewParts $root $resolved\n",
+     "    } else {\n",
      _T + "test_a_chained_relative_symlink_in_only_repos_resolves_from_its_own_parent[ps1]"),
     # --- review round 2 (crew-1.0-r3-autocycle): a symlinked component
     # INSIDE a substituted target, and the raised/explicit-fail hop bound --
     ("PowerShell does not re-resolve a symlinked component inside a substituted target", CLEAR_PS1,
-     "    } else {\n"
+     "    if ($null -eq $classified) {\n"
      "      foreach ($p in (Split-CrewRawComponents $linkNorm)) {\n"
      "        $queue.Insert($insertAt, $p)\n"
      "        $insertAt++\n"
      "      }\n"
-     "    }\n",
-     "    } else {\n"
-     "    }\n",
+     "    } else {\n",
+     "    if ($null -eq $classified) {\n"
+     "    } else {\n",
      _T + "test_a_symlinked_component_inside_a_substituted_target_still_resolves[ps1]"),
     ("PowerShell's symlink hop bound silently keeps a partial path instead of failing closed",
      CLEAR_PS1,
@@ -255,20 +258,48 @@ AUTOCYCLE_MUTATIONS = (
     # a symlinked component inside a substituted target is even looked up --
     ("PowerShell collapses '..' before resolving a symlink inside a substituted target again",
      CLEAR_PS1,
-     "    } else {\n"
+     "    if ($null -eq $classified) {\n"
      "      foreach ($p in (Split-CrewRawComponents $linkNorm)) {\n"
      "        $queue.Insert($insertAt, $p)\n"
      "        $insertAt++\n"
      "      }\n"
-     "    }\n",
-     "    } else {\n"
+     "    } else {\n",
+     "    if ($null -eq $classified) {\n"
      "      $targetFull = [System.IO.Path]::GetFullPath((Join-Path (Join-CrewParts $root $resolved) $linkNorm))\n"
      "      foreach ($p in (Split-CrewRawComponents $targetFull.Substring($root.Length))) {\n"
      "        $queue.Insert($insertAt, $p)\n"
      "        $insertAt++\n"
      "      }\n"
-     "    }\n",
+     "    } else {\n",
      _T + "test_a_dotdot_after_a_symlinked_component_resolves_before_it_collapses[ps1]"),
+    # --- review round 4 (crew-1.0-w2-autoclear, Item 2): a drive-root-
+    # relative symlink target ("\repo") used to be taken as fully qualified --
+    ("PowerShell treats a drive-root-relative symlink target as fully qualified again",
+     CLEAR_PS1,
+     "  if ($LinkNorm.StartsWith('/')) {\n"
+     "    return @{ Root = $null; Remainder = $LinkNorm.Substring(1); Rootless = $true }\n"
+     "  }\n",
+     "  if ($LinkNorm.StartsWith('/')) {\n"
+     "    return @{ Root = $LinkNorm; Remainder = ''; Rootless = $false }\n"
+     "  }\n",
+     "tests/test_auto_cycle.py::"
+     "test_resolve_crew_link_root_classifies_drive_unc_and_rootless_targets[/repo]"),
+    # --- a missing repo config used to stand the whole script down silently --
+    ("auto-clear.sh exits before note() if the repo has no config.json", CLEAR_SH,
+     "cd \"$ROOT\" 2>/dev/null || exit 0\n\n"
+     "# NOT a `[ -f .crew/config.json ] || exit 0` guard -- that used to sit here and\n",
+     "cd \"$ROOT\" 2>/dev/null || exit 0\n"
+     "[ -f .crew/config.json ] || exit 0\n\n"
+     "# NOT a `[ -f .crew/config.json ] || exit 0` guard -- that used to sit here and\n",
+     "tests/test_auto_clear.py::test_a_missing_repo_config_still_logs_the_no_session_refusal_sh"),
+    ("auto-clear.ps1 exits before Write-CrewAutoClearNote if the repo has no config.json",
+     CLEAR_PS1,
+     "Set-Location $where -ErrorAction SilentlyContinue\n\n"
+     "# NOT a `Test-Path \".crew/config.json\") { exit 0 }` guard -- that used to sit\n",
+     "Set-Location $where -ErrorAction SilentlyContinue\n"
+     "if (-not (Test-Path \".crew/config.json\")) { exit 0 }\n\n"
+     "# NOT a `Test-Path \".crew/config.json\") { exit 0 }` guard -- that used to sit\n",
+     "tests/test_auto_clear.py::test_a_missing_repo_config_still_logs_the_no_session_refusal_ps1"),
     # --- resume --------------------------------------------------------------
     ("the resume cuts the next action off a long handoff", CONTEXT,
      "                lead = f\"Next action: {action}\\n\" if action else \"\"\n",
