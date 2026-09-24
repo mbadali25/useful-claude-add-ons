@@ -193,7 +193,13 @@ def read(path: str) -> str:
 
 
 def rel(path: str) -> str:
-    return os.path.relpath(path, ROOT)
+    """Repo-relative path, always forward-slash-separated -- every
+    path-keyed lookup this script does (`.budget-allowance.json`'s keys,
+    `LEGACY_STALE_NAME_FILES`) is written and committed with `/`, so a
+    backslash-joined `os.path.relpath` result on Windows silently misses
+    every lookup instead of raising: a file that IS exempt reads as not
+    exempt, and a ceiling that IS recorded reads as absent."""
+    return os.path.relpath(path, ROOT).replace(os.sep, "/")
 
 
 def load_allowance(fail) -> dict:
@@ -306,7 +312,9 @@ def _allowance_at(ref: str) -> dict | None:
     not answer at all (no binary, not a repository, unreadable JSON); {} means
     git answered and the file did not exist at that commit yet, which is a
     real, checkable "no prior ceilings" rather than a failure to read one."""
-    allowance_rel = os.path.relpath(ALLOWANCE_PATH, ROOT)
+    # A git tree path is always forward-slash, on every platform including
+    # Windows -- `rel()` (not a bare os.path.relpath) is what guarantees that.
+    allowance_rel = rel(ALLOWANCE_PATH)
     done = subprocess.run(
         ["git", "-C", ROOT, "show", f"{ref}:{allowance_rel}"],
         capture_output=True, text=True, check=False,

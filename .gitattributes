@@ -1,4 +1,16 @@
 # Shell scripts must keep LF endings. Without this, a clone on Windows gets CRLF and
 # bash fails on the shebang with "bad interpreter: /usr/bin/env bash^M".
 *.sh text eol=lf
+# .py/.ps1/.psm1 need the same rule: a Windows autocrlf checkout otherwise gets
+# them as CRLF too, which is what plugin/crew/tests/test_approval_hook.py,
+# test_completion_audit.py and test_crew_context_wrappers.py's
+# `*_is_lf_only` tests assert against (committed blobs already carry 0 CR;
+# this pins the checkout, not just the blob). Deliberately NOT extended to
+# *.cmd/*.bat -- cmd.exe prefers CRLF, and
+# plugin/crew/tests/test_crew_fixtures.py builds a deliberately-CRLF
+# `xdotool.cmd` fixture, so forcing LF there would fight a real requirement
+# rather than fix one.
+*.py text eol=lf
+*.ps1 text eol=lf
+*.psm1 text eol=lf
 graphify-out/graph.json merge=graphify
