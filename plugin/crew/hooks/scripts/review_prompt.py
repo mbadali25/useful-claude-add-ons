@@ -20,7 +20,9 @@ has none" from "nobody passed it"; a line saying which is the difference.
     results `review_patch.py` listed in the manifest (bounded there), and the
     healer-skip rows `webtest_guard.py skips` wrote to
     `.work/tickets/<id>/webtest/findings.json`. Each open row is handed to the
-    reviewer as a FINDING to carry, never as context to weigh.
+    reviewer as a FINDING to carry, never as context to weigh. Every row is
+    handed over: past WEBTEST_FINDINGS_MAX the full list goes to
+    `webtest-findings.txt` beside `--out`, with its own READ acknowledgement.
 
 The codemap landmines are gathered by `review.md` itself (its existing step)
 and are not repeated here.
@@ -36,6 +38,7 @@ import sys
 
 SPEC_SECTIONS = ("Intent", "Exclusions", "Evidence", "Unknowns", "Acceptance checks")
 WEBTEST_FINDINGS_MAX = 50
+WEBTEST_FINDINGS_FILE = "webtest-findings.txt"
 _HEADING = re.compile(r"^(#{1,6})\s+(.+?)\s*#*\s*$")
 
 
@@ -174,8 +177,28 @@ def _artifact_lines(listing):
     return out
 
 
-def _webtest_block(root, ticket, manifest):
-    """Empty when this is not a Playwright repository and no skip check ran."""
+def _finding_row(row):
+    tag = "EXCLUDED" if row.get("excluded") else "FINDING"
+    return (f"{tag}|{row.get('severity', 'FIX')}|{row.get('kind', 'healer-skip')}|"
+            f"{row.get('path')}:{row.get('line')}|{row.get('text', '')}")
+
+
+def _write_file(path, text):
+    tmp = f"{path}.{os.getpid()}.tmp"
+    with open(tmp, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write(text)
+    os.replace(tmp, path)
+
+
+def _webtest_block(root, ticket, manifest, out_dir=None):
+    """Empty when this is not a Playwright repository and no skip check ran.
+    Every row reaches the reviewer: up to WEBTEST_FINDINGS_MAX inline, and
+    past that ALL of them in `<out_dir>/webtest-findings.txt`, which the
+    reviewer must READ like a bundle part (review_run.py expects it). With no
+    out_dir, every row is inline."""
+    overflow = os.path.join(out_dir, WEBTEST_FINDINGS_FILE) if out_dir else None
+    if overflow and os.path.exists(overflow):
+        os.remove(overflow)  # a previous round's list must not be read as this one's
     listing = manifest.get("webtest")
     path = os.path.join(root, ".work", "tickets", ticket, "webtest", "findings.json")
     raw = _read(path)
@@ -194,24 +217,27 @@ def _webtest_block(root, ticket, manifest):
         out.append(f"UNREADABLE: {os.path.relpath(path, root)}; whether a skip was added "
                    "is UNKNOWN.")
         return out
-    shown = rows[:WEBTEST_FINDINGS_MAX]
-    for row in shown:
-        tag = "EXCLUDED" if row.get("excluded") else "FINDING"
-        out.append(f"{tag}|{row.get('severity', 'FIX')}|{row.get('kind', 'healer-skip')}|"
-                   f"{row.get('path')}:{row.get('line')}|{row.get('text', '')}")
-    if len(rows) > len(shown):
-        out.append(f"  ... {len(rows) - len(shown)} more row(s) in {os.path.relpath(path, root)}")
+    every = [_finding_row(row) for row in rows]
+    if overflow and len(every) > WEBTEST_FINDINGS_MAX:
+        _write_file(overflow, "\n".join(every) + "\n")
+        out += every[:WEBTEST_FINDINGS_MAX]
+        out.append(f"  ... and {len(every) - WEBTEST_FINDINGS_MAX} more. ALL {len(every)} rows "
+                   f"are in {overflow}: read that file in full, carry every FINDING row in it, "
+                   f"and output READ|{WEBTEST_FINDINGS_FILE} on its own line. Without that "
+                   "READ line the review is INCOMPLETE.")
+    else:
+        out += every
     out.append("Carry every FINDING row into your findings as FIX: a healer skip is a "
                "finding, never accepted. EXCLUDED rows are named in the spec's Exclusions."
                if rows else "Healer-skip check: no skip added since the ticket's base.")
     return out
 
 
-def build(root, ticket, manifest):
+def build(root, ticket, manifest, out_dir=None):
     lines = []
     for block in (_bundle_block(manifest), _spec_block(root, ticket),
                   _plan_block(root, ticket), _receipts_block(root, manifest),
-                  _webtest_block(root, ticket, manifest)):
+                  _webtest_block(root, ticket, manifest, out_dir)):
         if not block:
             continue
         lines += block + [""]
@@ -229,7 +255,7 @@ def main(argv):
     with open(args.manifest, encoding="utf-8") as fh:
         manifest = json.load(fh)
     manifest.setdefault("manifest_path", os.path.abspath(args.manifest))
-    text = build(root, args.ticket, manifest)
+    text = build(root, args.ticket, manifest, os.path.dirname(os.path.abspath(args.out)))
     with open(args.out, "w", encoding="utf-8", newline="\n") as fh:
         fh.write(text)
     return 0

@@ -30,5 +30,8 @@ def test_powershell_driver_passes_every_must_block_and_must_allow_case():
                           capture_output=True, text=True, check=False, timeout=300,
                           stdin=subprocess.DEVNULL)
 
-    assert (done.returncode, "RESULT: 9 passed, 0 failed" in done.stdout) == (0, True), (
+    # 19 cases, or 20 on a host with no container marker, where the
+    # env-alone visual case is asserted too; the driver says which.
+    want = 19 if "SKIP: webtest-guard env-alone" in done.stdout else 20
+    assert (done.returncode, f"RESULT: {want} passed, 0 failed" in done.stdout) == (0, True), (
         done.stdout + done.stderr)
