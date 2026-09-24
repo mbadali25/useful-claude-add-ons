@@ -244,6 +244,44 @@ def test_the_forced_continuation_hands_over_to_auto_clear(flavor, tmp_path):
     assert "would have sent" in _log(root), _log(root) + result.stderr
 
 
+@pytest.mark.skipif(_BASH is None, reason="needs bash")
+def test_context_watch_stdout_reaches_eof_promptly_even_with_a_long_delay(tmp_path):
+    """FIX (Codex): auto-clear.sh's detached tmux/xdotool sender used to
+    inherit fd 3 -- the real hook stdout `cw_run_auto_clear` dup's onto it
+    before handing over -- so the sender held that pipe open for the whole
+    `sleep $DELAY`, and whoever reads the hook's stdout (Claude Code; here,
+    this test's own subprocess pipe) never saw EOF until the sender woke up
+    and exited. delaySeconds=30 against a 5s read deadline proves the fix
+    without the test itself waiting out the delay: the OLD code would still
+    be sleeping, well past the deadline.
+
+    Deliberately NOT `_invoke` (which always sets CREW_AUTOCLEAR_INHIBIT):
+    inhibit skips the spawn entirely and would prove nothing here. The fake
+    `tmux` is genuinely invoked by the real (harmless) detached sender."""
+    root = _repo(tmp_path, method="tmux", delaySeconds=30)
+    _machine(root)
+    _write_marker(root)
+    _write_handoff(root)
+    bindir = tmp_path / "fakebin"
+    crew_fixtures.write_shim(bindir, "tmux", f"#!/bin/sh\necho {os.getpid()}\n")
+    home = tmp_path / "home"  # `_machine` writes to root.parent/"home" == tmp_path/"home"
+    env = dict(os.environ, HOME=str(home), USERPROFILE=str(home),
+               CLAUDE_PROJECT_DIR=str(root),
+               PATH=crew_fixtures.shell_path("sh", [bindir]),
+               TMUX="/tmp/fake,1,0", TMUX_PANE="%7")
+    payload = _stop(root, root / ".work" / "irrelevant.jsonl", active=True)
+
+    started = time.time()
+    result = subprocess.run([_BASH, _script("sh", "context-watch")], cwd=str(root), env=env,
+                            input=json.dumps(payload), capture_output=True, text=True,
+                            timeout=5, check=False)
+    elapsed = time.time() - started
+
+    assert result.returncode == 0, result.stderr
+    assert elapsed < 5, elapsed
+    assert "sent - method tmux" in _log(root), _log(root) + result.stderr
+
+
 @by_flavor
 def test_the_forced_continuation_reaches_auto_clear_with_no_repo_config_json(flavor, tmp_path):
     """crew 1.0 F4 reachability fix. Before it, `context-watch.sh:81` /
@@ -611,6 +649,129 @@ def test_auto_resolves_to_notify_on_native_windows_and_never_to_sendkeys(flavor,
     assert "would send" in result.stdout, result.stdout + result.stderr
     assert "method: notify" in result.stdout, result.stdout
     assert "sendkeys" not in result.stdout
+
+
+@by_flavor
+def test_notify_dry_run_never_reports_a_delay_number(flavor, tmp_path):
+    """`notify` types nothing, so `delaySeconds` buys it no wait -- printing
+    the configured number (or, as `auto-clear.ps1` used to, a hardcoded `0`)
+    would read as a real delay `notify` never takes. Both flavours print the
+    identical `n/a` text instead; `_repo`'s configured delaySeconds (9, not
+    the default 3) proves the printed text is not simply the default."""
+    root = _repo(tmp_path, delaySeconds=9)
+    _machine(root)
+    _write_marker(root)
+    _write_handoff(root)
+    env = dict(_NO_CAPABILITY_ENV, OS="Windows_NT")
+
+    result = _invoke(flavor, "auto-clear", root, args=("--session", SESSION_A, "--dry-run"),
+                     env_extra=env)
+
+    assert "method: notify" in result.stdout, result.stdout
+    assert "delay: n/a (notify sends no keystroke)" in result.stdout, result.stdout
+    assert "delay: 9s" not in result.stdout
+    assert "delay: 0s" not in result.stdout
+
+
+@by_flavor
+def test_notifys_dry_run_plan_has_no_target_line(flavor, tmp_path):
+    """PARITY (item 3): `notify` identifies no window, so LABEL/target is
+    always empty for it. `auto-clear.ps1` has never printed a `target:` line
+    there; `auto-clear.sh` used to print an empty one (`target: ` with
+    nothing after it) regardless. Both now omit the line entirely."""
+    root = _repo(tmp_path)
+    _machine(root)
+    _write_marker(root)
+    _write_handoff(root)
+    env = dict(_NO_CAPABILITY_ENV, OS="Windows_NT")
+
+    result = _invoke(flavor, "auto-clear", root, args=("--session", SESSION_A, "--dry-run"),
+                     env_extra=env)
+
+    assert "method: notify" in result.stdout, result.stdout
+    assert "target" not in result.stdout, result.stdout
+
+
+# --- the configured delay, at several values, on the keystroke methods -----
+#
+# `notify` types nothing, so its own delay handling is covered above; a
+# keystroke method (tmux/sendkeys) has a real wait, and it is this value --
+# not the schema default of 3 -- that must reach both the dry-run plan and
+# the sent-log line. Several values, none of them 3, so a hard-coded
+# fallback would fail every one of them, not merely the ones that happen to
+# differ from the default.
+
+
+@pytest.mark.parametrize("delay", [1, 4, 6, 9])
+@by_flavor
+def test_the_configured_delay_reaches_the_dry_run_plan_at_several_values(flavor, tmp_path, delay):
+    root = _repo(tmp_path, delaySeconds=delay)
+    env = _sendable(flavor, tmp_path, root)
+    _write_marker(root)
+    _write_handoff(root)
+
+    result = _invoke(flavor, "auto-clear", root, args=("--session", SESSION_A, "--dry-run"),
+                     env_extra=env)
+
+    assert "would send" in result.stdout, result.stdout + result.stderr
+    assert f"delay: {delay}s" in result.stdout, result.stdout
+    assert "delay: 3s" not in result.stdout, result.stdout
+
+
+@pytest.mark.skipif(_BASH is None, reason="needs bash")
+@pytest.mark.parametrize("delay", [1, 4, 6, 9])
+def test_the_configured_delay_reaches_the_detached_senders_own_sleep_argument(tmp_path, delay):
+    """The value handed to the DETACHED sender -- not merely echoed by the
+    dry-run plan -- must be the configured delaySeconds. Captures the
+    argument itself, never wall-clock elapsed time: a hard-coded `sleep 3`
+    still finishes in well under a second regardless of what is configured,
+    and a wall-clock assertion could not tell that apart from the real fix.
+
+    A fake `sleep` on PATH would ALSO intercept `_common.sh`'s unrelated
+    python-probe watchdog (`crew_py_strict`'s `sleep "$probe_timeout"`),
+    which fires at least once per script in this chain and is capped at 3s
+    regardless of `delaySeconds` -- confirmed by hand: a naive `sleep` shim
+    here logs several extra "3"s that have nothing to do with this delay.
+    So this shims `bash` instead, on the ONE call shape unique to the
+    generated sender (`setsid/nohup bash "$send_script"`, the only `bash
+    SCRIPT` invocation in this chain whose script is NOT named
+    `auto-clear.sh` itself -- `context-watch.sh`'s own `bash
+    ".../auto-clear.sh" ...` call is the other one, and must run for real or
+    nothing downstream happens): reads its `sleep N` line and never actually
+    launches it. Everything else execs straight through to the real bash
+    unchanged."""
+    root = _repo(tmp_path, method="tmux", delaySeconds=delay)
+    _machine(root)
+    _write_marker(root)
+    _write_handoff(root)
+    bindir = tmp_path / "fakebin"
+    crew_fixtures.write_shim(bindir, "tmux", f"#!/bin/sh\necho {os.getpid()}\n")
+    sleep_log = tmp_path / "sleep-calls.log"
+    crew_fixtures.write_shim(bindir, "bash", (
+        "#!/bin/sh\n"
+        'case "$1" in\n'
+        "  */auto-clear.sh) exec \"$CREW_TEST_REAL_BASH\" \"$@\" ;;\n"
+        "esac\n"
+        f'grep "^sleep " "$1" | head -1 | cut -d" " -f2 >> "{sleep_log}"\n'
+        "exit 0\n"))
+    home = tmp_path / "home"  # `_machine` writes to root.parent/"home" == tmp_path/"home"
+    env = dict(os.environ, HOME=str(home), USERPROFILE=str(home),
+               CLAUDE_PROJECT_DIR=str(root),
+               PATH=crew_fixtures.shell_path("sh", [bindir]),
+               CREW_TEST_REAL_BASH=_BASH,
+               TMUX="/tmp/fake,1,0", TMUX_PANE="%7")
+    payload = _stop(root, root / ".work" / "irrelevant.jsonl", active=True)
+
+    result = subprocess.run([_BASH, _script("sh", "context-watch")], cwd=str(root), env=env,
+                            input=json.dumps(payload), capture_output=True, text=True,
+                            timeout=5, check=False)
+    deadline = time.time() + 5
+    while time.time() < deadline and not sleep_log.exists():
+        time.sleep(0.02)
+
+    assert result.returncode == 0, result.stderr
+    assert sleep_log.exists(), "the detached sender's bash was never invoked"
+    assert sleep_log.read_text(encoding="utf-8").strip() == str(delay)
 
 
 @by_flavor

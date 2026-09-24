@@ -378,8 +378,8 @@ AUTOCYCLE_MUTATIONS = (
      "test_config_present_only_repos_excludes_writes_no_log_ps1"),
     # --- Codex review FIXes (gpt-5.6-sol, 485a1b08..3f347d52) ----------------
     ("an unresolvable sendkeys window owner is assumed safe again", CLEAR_PS1,
-     "if (-not $ownerKnown -or $ownerProcessName -eq \"WindowsTerminal\") {\n",
-     "if ($ownerProcessName -eq \"WindowsTerminal\") {\n",
+     "if (-not $ownerKnown) {\n",
+     "if ($false) {\n",
      "tests/test_auto_clear_review_fixes.py::"
      "test_sendkeys_declines_when_the_window_owner_cannot_be_determined"),
     ("ConvertTo-CrewWin32Arg stops quoting Start-Process's arguments", CLEAR_PS1,
@@ -387,6 +387,62 @@ AUTOCYCLE_MUTATIONS = (
      "  return $Arg\n  $sb = New-Object System.Text.StringBuilder\n",
      "tests/test_auto_clear_review_fixes.py::"
      "test_convert_to_crew_win32_arg_round_trips_through_the_real_argv_algorithm[root-with-space]"),
+    # --- notify's dry-run delay must never echo a number (Windows relay,
+    # 2f7f71f7, item 3): `notify` types nothing, so `delaySeconds` buys it no
+    # wait, and echoing the configured number (or a hardcoded 0) reads as a
+    # real delay it never takes. ---
+    ("auto-clear.sh's notify dry-run echoes the configured delay again", CLEAR_SH,
+     '  [ "$RESOLVED" = "notify" ] && DELAY_LINE="delay: n/a (notify sends no keystroke)"\n',
+     "",
+     _T + "test_notify_dry_run_never_reports_a_delay_number[sh]"),
+    ("auto-clear.ps1's notify dry-run hardcodes delay: 0s again", CLEAR_PS1,
+     '    Write-Output "  delay: n/a (notify sends no keystroke)"\n',
+     '    Write-Output "  delay: 0s"\n',
+     _T + "test_notify_dry_run_never_reports_a_delay_number[ps1]"),
+    # --- item 1 (crew-1.0-wd-sendkeys): the keystroke sender's own delay
+    # argument, not merely the dry-run plan's print statement, must be the
+    # configured value ---
+    ("auto-clear.sh's detached sender hardcodes its own sleep again", CLEAR_SH,
+     'echo "sleep $DELAY"\n',
+     'echo "sleep 3"\n',
+     "tests/test_auto_cycle.py::"
+     "test_the_configured_delay_reaches_the_detached_senders_own_sleep_argument[9]"),
+    # --- item 3 (crew-1.0-wd-sendkeys): notify's empty target line reappears
+    ("auto-clear.sh prints an empty target line for notify again", CLEAR_SH,
+     '  if [ -n "$LABEL" ]; then\n'
+     "    printf 'autoclear: would send\\n  method: %s\\n  target: %s\\n  command: %s\\n  %s\\n' \\\n"
+     '      "$RESOLVED" "$LABEL" "$COMMAND" "$DELAY_LINE"\n'
+     "  else\n"
+     "    printf 'autoclear: would send\\n  method: %s\\n  command: %s\\n  %s\\n' \\\n"
+     '      "$RESOLVED" "$COMMAND" "$DELAY_LINE"\n'
+     "  fi\n",
+     "  printf 'autoclear: would send\\n  method: %s\\n  target: %s\\n  command: %s\\n  %s\\n' \\\n"
+     '    "$RESOLVED" "$LABEL" "$COMMAND" "$DELAY_LINE"\n',
+     "tests/test_auto_cycle.py::test_notifys_dry_run_plan_has_no_target_line[sh]"),
+    # --- fd 3 leaking into the detached tmux/xdotool sender (Codex FIX, item
+    # 4): held context-watch.sh's own stdout pipe open for the whole
+    # `sleep $DELAY`, which is what let a slow /clear hit the hook's 20s
+    # timeout even though context-watch.sh itself had long since exited. ---
+    ("auto-clear.sh's detached sender inherits fd 3 again", CLEAR_SH,
+     'setsid bash "$send_script" 3>&- >/dev/null 2>&1 &',
+     'setsid bash "$send_script" >/dev/null 2>&1 &',
+     _T + "test_context_watch_stdout_reaches_eof_promptly_even_with_a_long_delay"),
+    # --- Item 2 (crew-1.0-wd-sendkeys): the Windows Terminal tab check must
+    # never send on an unknown tab state ---------------------------------
+    ("Get-CrewSendKeysTabDecision sends when UIA is unavailable", CLEAR_PS1,
+     "  if (-not $UiaAvailable) {\n"
+     "    return @{ Decision = \"decline\"; Reason = (\n",
+     "  if (-not $UiaAvailable) {\n"
+     "    return @{ Decision = \"send\"; Reason = (\n",
+     "tests/test_auto_clear_review_fixes.py::"
+     "test_get_crew_send_keys_tab_decision_never_sends_when_uia_is_unavailable"),
+    # --- Item 1 (crew-1.0-wd-sendkeys): the value handed to the detached
+    # sendkeys child must be the CONFIGURED delay, not a hard-coded 3 ------
+    ("Get-CrewSendKeysChildArgs hardcodes the delay again", CLEAR_PS1,
+     '    "-Delay", "$Delay", "-Root", (ConvertTo-CrewWin32Arg $Root)\n',
+     '    "-Delay", "3", "-Root", (ConvertTo-CrewWin32Arg $Root)\n',
+     "tests/test_auto_clear_review_fixes.py::"
+     "test_get_crew_send_keys_child_args_carries_the_configured_delay[4]"),
     ("context-watch.sh swallows auto-clear's stdout when mktemp fails again", WATCH_SH,
      "  exec 3>&1\n"
      "  err=$(bash \"$(dirname \"${BASH_SOURCE[0]}\")/auto-clear.sh\" --root \"$PWD\" --session \"$SESSION_ID\" 2>&1 1>&3)\n"

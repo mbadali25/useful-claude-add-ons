@@ -948,7 +948,7 @@ for.
 | `"xdotool"` | Types into the one X11 window owned by an ancestor process (or matching `windowTitle`). | Linux with `xdotool` installed |
 | `"wtype"` | Refused outright — see `unsafeFocus`, above. | Wayland (declared, never granted) |
 | `"notify"` | Types nothing. Prints a `systemMessage` saying the handoff is written and verified and it is safe to run the configured `command` yourself. Never claims anything was cleared or compacted, because nothing was. | everywhere |
-| `"sendkeys"` | `System.Windows.Forms.SendKeys` against the one window owned by an ancestor process (or matching `windowTitle`), confirmed still foreground at send time. **Opt-in only — `auto` never chooses it.** Declines and falls back to `notify`, logging why to `.crew/.autoclear.log`, when the target window is owned by Windows Terminal: that host puts every tab in one window, and nothing short of UI Automation (not a dependency here) can confirm which tab is active from outside it, so a Windows-Terminal-owned target is never typed into. | native Windows only |
+| `"sendkeys"` | `System.Windows.Forms.SendKeys` against the one window owned by an ancestor process (or matching `windowTitle`), confirmed still foreground at send time. **Opt-in only — `auto` never chooses it.** Windows Terminal hosts every tab in ONE OS window, so the foreground-window check alone cannot tell which tab is showing: when the target window is owned by Windows Terminal, `auto-clear.ps1` also asks UI Automation how many tabs it has and, when there is more than one, whether the selected tab is uniquely this session's (its title matching `windowTitle`). It types only when that check finds exactly one tab, or proves the selected one; otherwise — UI Automation unavailable, an exception, zero tab elements found, or several tabs with no provable selection — it **declines and falls back to `notify`**, logging why to `.crew/.autoclear.log`. Never falls back to sending regardless. A non-Windows-Terminal console host (e.g. `conhost`) has no tabs to disambiguate and is unaffected by any of this. | native Windows only |
 | `"none"` | Refused outright, deliberately. | everywhere |
 
 **`auto`'s per-platform pick, an OWNER DECISION:** a tmux pane if `$TMUX` names
@@ -968,6 +968,15 @@ without it. Machine-global is the right home for it — a terminal's title is a
 property of the machine — but **a wrong global value now aims keystrokes at the
 wrong window in every repo on that machine rather than in one.** That is the
 trade, taken deliberately.
+
+**`--dry-run`'s delay line never states a number for `notify`.** `notify`
+types nothing, so `delaySeconds` buys it nothing; both `auto-clear.sh` and
+`auto-clear.ps1` print `delay: n/a (notify sends no keystroke)` there instead
+of echoing the configured value (or a hardcoded `0`, which `auto-clear.ps1`
+did until this was fixed) — either would read as a real wait that
+`delaySeconds` controls, which for `notify` it never does. A keystroke
+method (`tmux`, `xdotool`, `sendkeys`) still echoes the configured delay
+verbatim.
 
 Its default is `null` where the scripts fall back to `""`. The two are
 behaviourally identical (`if ($a.windowTitle)` is false for either, and

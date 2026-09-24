@@ -119,8 +119,27 @@ fi
 
 if [ "$DRY_RUN" -eq 1 ]; then
   # Deterministic, and the same shape the .ps1 prints. The test suite reads this.
-  printf 'autoclear: would send\n  method: %s\n  target: %s\n  command: %s\n  delay: %ss\n' \
-    "$RESOLVED" "$LABEL" "$COMMAND" "$DELAY"
+  # `notify` types nothing, so there is no delay to report -- printing the
+  # configured number there (crew_autocycle.plan zeroes it, which is right for
+  # ITS purpose but wrong to echo as if it were a real wait) would contradict
+  # context.autoClear.delaySeconds in .crew/config.json for no reason a reader
+  # could infer from the number alone. Decided by RESOLVED, the method that
+  # actually ran, never by the numeric value of $DELAY itself: a keystroke
+  # method configured with delaySeconds: 0 is a real (if instant) wait, not "no
+  # delay applies here".
+  DELAY_LINE="delay: ${DELAY}s"
+  [ "$RESOLVED" = "notify" ] && DELAY_LINE="delay: n/a (notify sends no keystroke)"
+  # PARITY: `notify` identifies no window, so LABEL is empty -- printing an
+  # empty `target: ` line there said nothing a reader could use, and
+  # auto-clear.ps1's own notify dry-run never prints one at all. Matched here
+  # by omitting the line, rather than adding an empty one to the .ps1 twin.
+  if [ -n "$LABEL" ]; then
+    printf 'autoclear: would send\n  method: %s\n  target: %s\n  command: %s\n  %s\n' \
+      "$RESOLVED" "$LABEL" "$COMMAND" "$DELAY_LINE"
+  else
+    printf 'autoclear: would send\n  method: %s\n  command: %s\n  %s\n' \
+      "$RESOLVED" "$COMMAND" "$DELAY_LINE"
+  fi
   exit 0
 fi
 
@@ -191,10 +210,22 @@ send_script=$(mktemp) || { note "refusing - could not create the sender script";
 } > "$send_script"
 chmod +x "$send_script" 2>/dev/null
 
+# `3>&-`: when context-watch.sh invoked this script, it dup'd its OWN stdout
+# onto fd 3 first so this script's real stdout (fd 1) could be temporarily
+# aimed at a capture pipe and handed back afterward -- see
+# context-watch.sh:~120's `cw_run_auto_clear`. `>/dev/null 2>&1` only
+# redirects fd 0/1/2 for this detached child; fd 3 is inherited unchanged
+# from THIS process and stays open in the grandchild long after
+# context-watch.sh has closed its own copy and exited, because closing a
+# fd in a parent never closes the duplicate a forked child already holds.
+# A long delaySeconds then held context-watch.sh's stdout pipe open for
+# that whole wait, which is what let a slow /clear hit the hook's own 20s
+# timeout even though context-watch.sh itself had long since finished.
+# Closed here, explicitly, for the one process that must not inherit it.
 if command -v setsid >/dev/null 2>&1; then
-  setsid bash "$send_script" >/dev/null 2>&1 &
+  setsid bash "$send_script" 3>&- >/dev/null 2>&1 &
 else
-  nohup bash "$send_script" >/dev/null 2>&1 &
+  nohup bash "$send_script" 3>&- >/dev/null 2>&1 &
 fi
 disown 2>/dev/null || true
 

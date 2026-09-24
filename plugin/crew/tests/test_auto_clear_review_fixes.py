@@ -304,3 +304,136 @@ def test_context_watch_forwards_the_notify_json_even_when_mktemp_fails(tmp_path)
     log_path = root / ".crew" / ".autoclear.log"
     assert log_path.exists()
     assert "sent - method notify" in log_path.read_text(encoding="utf-8")
+
+
+# ============================================================================
+# ITEM 2 -- sendkeys must confirm the Windows Terminal tab it would type into
+# is the active or only one, not decline blanket-fashion for every WT window.
+#
+# The decision is split in two: Get-CrewSendKeysTabDecision is a PURE
+# function of (uiaAvailable, tabCount, selectedMatches) and is fully
+# unit-tested here, on Linux. Get-CrewWindowsTerminalTabState -- the real UI
+# Automation probe that feeds it -- is NOT: there is no live Windows Terminal
+# window and no UIAutomationClient assembly on this platform, and nothing in
+# this suite can create either. That probe's own fail-closed behaviour (any
+# exception -> UiaAvailable=$false) is exercised indirectly by
+# test_auto_cycle.py's WindowsTerminal-owner case, which runs on real pwsh
+# and observes UIA genuinely being unavailable there.
+# ============================================================================
+
+
+def _extract_ps1_function(source, name):
+    """Same brace-balance extraction test_convert_to_crew_win32_arg_... above
+    uses, duplicated locally so this section has no ordering dependency on
+    the rest of the file."""
+    marker = f"function {name}("
+    start = source.index(marker)
+    brace = source.index("{", start)
+    depth = 0
+    i = brace
+    while i < len(source):
+        if source[i] == "{":
+            depth += 1
+        elif source[i] == "}":
+            depth -= 1
+            if depth == 0:
+                return source[start:i + 1]
+        i += 1
+    raise AssertionError(f"unbalanced braces extracting {name}")
+
+
+def _ps1_source():
+    with open(_PS1, encoding="utf-8") as handle:
+        return handle.read()
+
+
+def _run_tab_decision(uia_available, tab_count, selected_matches):
+    func = _extract_ps1_function(_ps1_source(), "Get-CrewSendKeysTabDecision")
+    tab_count_expr = "$null" if tab_count is None else str(tab_count)
+    script = (
+        func + "\n"
+        f"$r = Get-CrewSendKeysTabDecision -UiaAvailable ${str(bool(uia_available)).lower()} "
+        f"-TabCount {tab_count_expr} -SelectedMatches ${str(bool(selected_matches)).lower()}\n"
+        "Write-Output ($r | ConvertTo-Json -Compress)")
+    result = subprocess.run(
+        [_PWSH_ANY, "-NoProfile", "-NonInteractive", "-Command", script],
+        capture_output=True, text=True, check=False)
+    assert result.returncode == 0, result.stderr
+    return json.loads(result.stdout.strip())
+
+
+@pytest.mark.skipif(_PWSH_ANY is None, reason="needs pwsh")
+@pytest.mark.parametrize("uia_available,tab_count,selected_matches,expect_send", [
+    # UIA unavailable declines regardless of what tabCount/selectedMatches
+    # would otherwise say -- "could not tell" is never folded into "safe".
+    (False, 1, True, False),
+    (False, None, False, False),
+    (False, 5, True, False),
+    # UIA available, but no tab elements found at all -- also unknown.
+    (True, 0, False, False),
+    (True, None, False, False),
+    # Exactly one tab: always safe, whatever selectedMatches says.
+    (True, 1, False, True),
+    (True, 1, True, True),
+    # Several tabs: only a PROVEN selection sends; otherwise decline.
+    (True, 2, False, False),
+    (True, 2, True, True),
+    (True, 7, False, False),
+], ids=[
+    "uia-unavailable-one-tab", "uia-unavailable-unknown-count", "uia-unavailable-many-tabs",
+    "zero-tabs-found", "zero-tabs-null-count",
+    "one-tab-unmatched", "one-tab-matched",
+    "many-tabs-unmatched", "many-tabs-matched", "many-tabs-unmatched-7",
+])
+def test_get_crew_send_keys_tab_decision_covers_every_branch(
+        uia_available, tab_count, selected_matches, expect_send):
+    decision = _run_tab_decision(uia_available, tab_count, selected_matches)
+    if expect_send:
+        assert decision["Decision"] == "send", decision
+    else:
+        assert decision["Decision"] == "decline", decision
+        assert "cannot verify the active tab" in decision["Reason"], decision
+
+
+@pytest.mark.skipif(_PWSH_ANY is None, reason="needs pwsh")
+def test_get_crew_send_keys_tab_decision_never_sends_when_uia_is_unavailable(tmp_path):
+    """Isolates the ONE property item 2's brief calls out by name: an unknown
+    tab state must never resolve to "send", however tabCount/selectedMatches
+    happen to be set. Sabotage flips exactly this branch's Decision literal
+    from "decline" to "send" and must turn this test red."""
+    for tab_count, selected in [(1, True), (1, False), (5, True), (None, False)]:
+        decision = _run_tab_decision(False, tab_count, selected)
+        assert decision["Decision"] == "decline", (
+            f"tabCount={tab_count} selectedMatches={selected}: {decision}")
+
+
+# ============================================================================
+# ITEM 1 (part 2) -- the DELAY value handed to the detached sendkeys child,
+# asserted as the literal argv entry Get-CrewSendKeysChildArgs builds -- not
+# by measuring how long anything takes. A hard-coded `-Delay 3` finishes in
+# well under a second regardless of what is configured; only reading the
+# argument itself tells the two apart.
+# ============================================================================
+
+
+@pytest.mark.skipif(_PWSH_ANY is None, reason="needs pwsh")
+@pytest.mark.parametrize("delay", [1, 4, 6, 9])
+def test_get_crew_send_keys_child_args_carries_the_configured_delay(delay):
+    source = _ps1_source()
+    func = (_extract_ps1_function(source, "ConvertTo-CrewWin32Arg") + "\n" +
+            _extract_ps1_function(source, "Get-CrewSendKeysChildArgs"))
+    script = (
+        func + "\n"
+        f"$a = Get-CrewSendKeysChildArgs -ChildPath 'C:/tmp/child.ps1' -Hwnd 42 "
+        f"-Command '/clear' -Delay {delay} -Root 'C:/repo'\n"
+        "Write-Output ($a | ConvertTo-Json -Compress)")
+    result = subprocess.run(
+        [_PWSH_ANY, "-NoProfile", "-NonInteractive", "-Command", script],
+        capture_output=True, text=True, check=False)
+    assert result.returncode == 0, result.stderr
+    args = json.loads(result.stdout.strip())
+    assert "-Delay" in args, args
+    # None of the parametrized values is 3 (the schema default): a
+    # hard-coded "-Delay 3" would fail every case here, not merely the ones
+    # that happen to differ from the default.
+    assert args[args.index("-Delay") + 1] == str(delay), args
