@@ -4017,3 +4017,7 @@ Enforced by the same hooks (approval receipts, scope guard, cloud guard, review 
 - `skills/obsidian-canvas/SKILL.md:18` points skill-only installs at `obsidian-memory-contract`, which ships only with the obsidian-vault plugin (repo-plugins row); say so or inline the minimal conventions.
 - NIT `plugin/crew/tests/test_docs_routing.py:941` docstring says four guide artifacts; `_GUIDES` has one.
 - NIT `scripts/install-prerequisites.sh:2430` comment says 36-skill (now 34); fix in both scripts only if the .ps1 has the same comment.
+
+### crew 1.0 web integration deferrals (filed 2026-09-23) - OPEN
+- `plugin/crew/README.md` command table: 32 rows vs 34 claimed; add `/crew:debug`, `/crew:split`.
+- `scripts/install-prerequisites.sh:1050` / `.ps1:887` "25-skill item" comment: unclear referent; verify or remove (both scripts).
