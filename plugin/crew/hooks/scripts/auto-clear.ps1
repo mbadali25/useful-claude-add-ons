@@ -654,11 +654,30 @@ function Get-CrewWindowsTerminalTabState([IntPtr]$Hwnd, [string]$Title) {
 # distinguishes "confirmed some other process" from "could not confirm
 # anything" so the two failure reasons are not conflated in the log a human
 # reads afterward.
+# CREW_AUTOCLEAR_OWNER_STUB names a JSON object mapping pid (as a string key)
+# to a process name, for tests that stub a window (CREW_AUTOCLEAR_WINDOW_STUB)
+# whose pid is fake and so has no real process for Get-Process to find. Only
+# consulted for a pid it names -- anything else still goes to the real
+# Get-Process below, so an unstubbed unknown pid still declines exactly as
+# before. This is a test seam, not a relaxation of the decline rule: a pid
+# the stub does not mention is exactly as unknown as it was without it.
 $ownerProcessName = $null
 $ownerKnown = $false
+if ($env:CREW_AUTOCLEAR_OWNER_STUB) {
+  try {
+    $ownerStub = Get-Content -LiteralPath $env:CREW_AUTOCLEAR_OWNER_STUB -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+    $stubName = $ownerStub.($target.Pid.ToString())
+    if ($null -ne $stubName) {
+      $ownerProcessName = [string]$stubName
+      $ownerKnown = $true
+    }
+  } catch { }
+}
 try {
-  $ownerProcessName = (Get-Process -Id $target.Pid -ErrorAction Stop).ProcessName
-  $ownerKnown = $true
+  if (-not $ownerKnown) {
+    $ownerProcessName = (Get-Process -Id $target.Pid -ErrorAction Stop).ProcessName
+    $ownerKnown = $true
+  }
 } catch { }
 
 $declineReason = $null

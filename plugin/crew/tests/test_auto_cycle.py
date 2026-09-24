@@ -161,6 +161,18 @@ def _windows(tmp_path, windows):
     return {"CREW_AUTOCLEAR_WINDOW_STUB": str(path)}
 
 
+def _owner_stub(tmp_path, windows):
+    """Maps every stubbed window's (fake) pid to a made-up, non-WindowsTerminal
+    process name, so the ps1 flavour's owner-safety check (which calls the
+    real `Get-Process`, unstubbable on a pid nothing is running under) can
+    resolve a window's uniqueness without also exercising that unrelated
+    safety check -- a pid this stub does not name still falls through to the
+    real `Get-Process` and still declines if that lookup fails, unchanged."""
+    path = tmp_path / "owners.json"
+    path.write_text(json.dumps({str(w["pid"]): "notepad" for w in windows}), encoding="utf-8")
+    return {"CREW_AUTOCLEAR_OWNER_STUB": str(path)}
+
+
 def _sendable(flavor, tmp_path, root):
     """A target each flavour can identify uniquely: a tmux pane whose pid is
     this test process (an ancestor of the script) for bash, and one stubbed
@@ -488,7 +500,7 @@ def test_the_window_is_identified_uniquely_or_not_at_all(flavor, case, windows, 
         env = _xdotool_env(tmp_path, windows)
         _machine(root, method="xdotool", windowTitle=title or None)
     else:
-        env = _windows(tmp_path, windows)
+        env = {**_windows(tmp_path, windows), **_owner_stub(tmp_path, windows)}
         # Explicit: `auto` now resolves to `notify` on native Windows and
         # never touches window resolution at all, so this window-targeting
         # matrix has to request `sendkeys` by name to exercise it.
