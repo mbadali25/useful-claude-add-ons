@@ -183,6 +183,27 @@ def _stub(path):
     return path
 
 
+def _working_stub(path):
+    """Unlike `_stub`, this candidate IS invoked. `Resolve-CrewPython` here
+    is a byte-for-byte copy of role-write-guard.ps1's (three parity tests in
+    this file assert that), which -- unlike pm-pulse.ps1's/verify-gate.ps1's
+    metadata-only resolver -- actually executes each candidate with
+    `-c 'import sys; print(sys.executable)'` and only accepts one that
+    prints something back with exit 0. A plain placeholder file is rejected
+    by that probe regardless of its name or directory, so a candidate meant
+    to be ACCEPTED needs to be a real, invokable Windows command. A `.cmd`
+    batch file qualifies -- PowerShell's `Get-Command` classifies it
+    `Application`, same as a real `.exe`, and it is found by base name alone
+    through `$env:PATHEXT` -- and it answers with its own path (`%~f0`),
+    which exists as a leaf file and names no WindowsApps directory, so it
+    clears every check `Resolve-CrewPython` makes before returning a value.
+    """
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="ascii") as fh:
+        fh.write("@echo off\r\necho %~f0\r\nexit /b 0\r\n")
+    return path
+
+
 @_WINDOWS_ONLY
 @pytest.mark.parametrize("ps1_path", [_PM_BRIEF_PS1, _PLATFORM_SYNC_PS1])
 def test_windowsapps_stub_is_never_returned(ps1_path, tmp_path):
@@ -199,12 +220,32 @@ def test_windowsapps_stub_is_never_returned(ps1_path, tmp_path):
 @_WINDOWS_ONLY
 @pytest.mark.parametrize("ps1_path", [_PM_BRIEF_PS1, _PLATFORM_SYNC_PS1])
 def test_a_real_python_beside_a_stub_still_resolves(ps1_path, tmp_path):
+    """Must-allow: a WindowsApps stub earlier on PATH must not silence the
+    whole resolver -- a real interpreter under a DIFFERENT name must still
+    be found.
+
+    NOT the same shape as `test_pm_pulse_python_resolver.py`'s version of
+    this test (a second `python3.exe` further down PATH): pm-pulse.ps1's
+    resolver walks every PATH match for one name (`Get-Command $name
+    -All`), but `Resolve-CrewPython` here is a byte-for-byte copy of
+    role-write-guard.ps1's -- asserted by three parity tests in this same
+    file -- and THAT resolver deliberately takes only the FIRST match per
+    name, to agree with bash's `command -v` on the same PATH. Rejecting the
+    first `python3` match there moves to the next NAME, never a second
+    search of the same name (role-write-guard.ps1's own header names the
+    bug this fixed: two shells judging the same write differently), so a
+    second `python3.exe` further down PATH would never be reached here
+    either -- that shape would pass by accident only if the parity had
+    already broken. Putting the real interpreter under `python` instead is
+    the case this resolver's design is actually meant to still allow.
+    """
     apps = tmp_path / "WindowsApps"
     real = tmp_path / "tools"
     _stub(str(apps / "python3.exe"))
-    _stub(str(real / "python3.exe"))
+    _working_stub(str(real / "python.cmd"))
 
     resolved = _print_python(ps1_path, [str(apps), str(real)])
     assert resolved.lower().startswith(str(real).lower()), (
-        "the real python3.exe must win over the WindowsApps stub. got: "
+        "a real interpreter under a different name must still be found "
+        "after a WindowsApps stub under an earlier name is rejected. got: "
         + resolved)

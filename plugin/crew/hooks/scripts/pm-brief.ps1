@@ -34,11 +34,22 @@ function Resolve-CrewPython {
   # PATH match for one name before moving to the next rather than taking
   # only the first. `tests/test_pm_brief_platform_sync_python_resolver.py` asserts this
   # copy still agrees with role-write-guard.ps1's.
+  #
+  # Re-synced 2026-09-24 with role-write-guard.ps1's own third fix: this
+  # copy still had the blanket "reject anything whose .Source or resolved
+  # sys.executable merely CONTAINS the substring WindowsApps" check, which
+  # is a location guess, not a stub detector. On a machine where python is
+  # installed through the Microsoft Store, every candidate's real
+  # interpreter genuinely lives under a WindowsApps-rooted path, so the
+  # blanket reject fired on all three names and this hook fell through to
+  # "no usable python" on a machine where python plainly works. Removed
+  # here for the same reason role-write-guard.ps1's header gives: the
+  # execute-and-probe below already proves real-vs-stub without needing to
+  # know WHERE the interpreter lives.
   $names = @('python3', 'python', 'py')
   foreach ($name in $names) {
     $cmd = Get-Command $name -ErrorAction SilentlyContinue | Select-Object -First 1
     if (-not $cmd -or $cmd.CommandType -ne 'Application' -or -not $cmd.Source) { continue }
-    if ($cmd.Source -match 'WindowsApps') { continue }
     $real = $null
     $global:LASTEXITCODE = $null
     try {
@@ -50,7 +61,7 @@ function Resolve-CrewPython {
       $real = $null
     }
     if ($real) { $real = $real.ToString().Trim() }
-    if (-not $real -or $real -match 'WindowsApps') { continue }
+    if (-not $real) { continue }
     if (-not (Test-Path -LiteralPath $real -PathType Leaf)) { continue }
     return $real
   }
