@@ -517,6 +517,8 @@ sh_suite "bridge-status.sh/.ps1 + vault-capture.sh/.ps1: stubs, absence, must-ru
   test_bridge_capture_sh.sh
 sh_suite "the three .ps1 probes under \$PSNativeCommandArgumentPassing='Legacy'" \
   test_ps1_legacy_args.sh
+py_suite "all six probes: proof of Python 3.8+, bounded, process tree killed" \
+  test_python_probe_proof.py
 
 # --- the PowerShell flavour guard ------------------------------------------
 # hooks.json registers every event TWICE, once per flavour. On a host with

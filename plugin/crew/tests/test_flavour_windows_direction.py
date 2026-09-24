@@ -186,11 +186,14 @@ def test_the_two_ps1_emitters_carry_the_one_claim_function_byte_for_byte():
 # --- event_claim.py itself ------------------------------------------------------
 
 def test_the_first_caller_emits_and_the_second_does_not(tmp_path):
+    """Once the first reports "sent". Before that the second waits -- see
+    test_event_claim_crash_safety.py for the unsent cases."""
     root = str(init_repo(tmp_path / "r"))
     raw = b'{"session_id":"s","hook_event_name":"Notification"}'
+    first, token = event_claim.decide(root, "notify", raw)
+    event_claim.mark_sent(token)
 
-    assert (event_claim.claim(root, "notify", raw), event_claim.claim(root, "notify", raw)) \
-        == (True, False)
+    assert (first, event_claim.claim(root, "notify", raw)) == (True, False)
 
 
 def test_a_trailing_newline_or_bom_does_not_split_one_event_into_two(tmp_path):
@@ -198,7 +201,7 @@ def test_a_trailing_newline_or_bom_does_not_split_one_event_into_two(tmp_path):
     BOM. Both flavours must land on the same key."""
     root = str(init_repo(tmp_path / "r"))
     raw = b'{"session_id":"s"}'
-    event_claim.claim(root, "notify", raw + b"\n")
+    event_claim.mark_sent(event_claim.decide(root, "notify", raw + b"\n")[1])
 
     assert event_claim.claim(root, "notify", b"\xef\xbb\xbf" + raw) is False
 
@@ -207,10 +210,11 @@ def test_an_identical_event_after_the_window_is_a_new_event(tmp_path):
     root = str(init_repo(tmp_path / "r"))
     raw = b'{"session_id":"s","message":"waiting"}'
     now = time.time()
-    event_claim.claim(root, "notify", raw, now=now)
+    event_claim.mark_sent(event_claim.decide(root, "notify", raw, now=now)[1])
     later = now + event_claim.WINDOW + 1
 
-    first = event_claim.claim(root, "notify", raw, now=later)
+    first, token = event_claim.decide(root, "notify", raw, now=later)
+    event_claim.mark_sent(token)
     second = event_claim.claim(root, "notify", raw, now=later + 0.5)
 
     assert (first, second) == (True, False)
@@ -231,11 +235,16 @@ def test_claims_live_in_the_git_common_dir_not_the_working_tree(tmp_path):
 
 def test_a_lost_claim_exits_10_through_the_cli(tmp_path):
     root = init_repo(tmp_path / "r")
-    cmd = [os.environ.get("PYTHON", "python3"), str(SCRIPTS / "event_claim.py"), "notify", "."]
-    codes = [subprocess.run(cmd, input=b'{"session_id":"s"}', cwd=str(root), check=False,
-                            capture_output=True, timeout=30).returncode for _ in range(2)]
+    py = os.environ.get("PYTHON", "python3")
+    cmd = [py, str(SCRIPTS / "event_claim.py"), "notify", "."]
+    first = subprocess.run(cmd, input='{"session_id":"s"}', cwd=str(root), check=False,
+                           capture_output=True, text=True, timeout=30)
+    subprocess.run([py, str(SCRIPTS / "event_claim.py"), "--sent", first.stdout.strip()],
+                   cwd=str(root), check=True, timeout=30)
+    second = subprocess.run(cmd, input=b'{"session_id":"s"}', cwd=str(root), check=False,
+                            capture_output=True, timeout=30)
 
-    assert codes == [0, event_claim.LOST]
+    assert [first.returncode, second.returncode] == [0, event_claim.LOST]
 
 
 # --- blocking hooks: both flavours, same verdict --------------------------------

@@ -123,14 +123,19 @@ liar_stub() {
 }
 
 # ghost-python: answers the interpreter probe correctly but names an
-# executable that does not exist, so resolution succeeds and the LAUNCH then
-# fails. This is what the wrapper's exit-status check exists for; under the
-# old `exec` form it was a bare numeric exit.
+# executable that cannot run the guard, so resolution succeeds and the LAUNCH
+# then fails. This is what the wrapper's exit-status check exists for; under
+# the old `exec` form it was a bare numeric exit. The named executable EXISTS:
+# since the crew 1.0 burn-in (FAIL 3) the resolver refuses a sys.executable
+# that does not, so a nonexistent one no longer gets as far as a launch -
+# _test/test_python_probe_proof.py pins that refusal.
 ghost_dir="$work/ghost"
 mkdir -p "$ghost_dir"
-cat > "$ghost_dir/python3" <<'STUB'
+printf '#!/bin/sh\nexit 7\n' > "$ghost_dir/not-an-interpreter"
+chmod 755 "$ghost_dir/not-an-interpreter"
+cat > "$ghost_dir/python3" <<STUB
 #!/bin/sh
-printf 'vault-guard-python:%s' "/nonexistent/python-that-was-deleted"
+printf 'vault-guard-python:3:12:cpython:%s' "$ghost_dir/not-an-interpreter"
 exit 0
 STUB
 chmod 755 "$ghost_dir/python3"

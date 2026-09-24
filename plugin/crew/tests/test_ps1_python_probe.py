@@ -189,11 +189,9 @@ def test_a_broken_alias_falls_through_to_a_real_python_of_the_same_name(tmp_path
 
 @needs_pwsh
 @needs_bash
-@pytest.mark.xfail(strict=True, reason=(
-    "KNOWN divergence, not fixed here: bash's `command -v` takes only the first "
-    "match per name, so crew_py_strict never reaches a same-named interpreter "
-    "behind a broken alias. Filed in TODO.md; strict, so fixing bash flips it."))
 def test_bash_strict_agrees_on_a_same_named_python_behind_a_broken_alias(tmp_path):
+    """Was a strict xfail: `command -v` took only the first match per name.
+    crew_py_strict now walks every match (`type -ap`), as the .ps1 does."""
     apps = tmp_path / "Microsoft" / "WindowsApps"
     _broken(apps)
     real = tmp_path / "AppData" / "Local" / "Python" / "bin"

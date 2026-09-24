@@ -30,8 +30,15 @@ INPUT=$(cat)
 # instead -- the bash twin of `role-write-guard.ps1`'s
 # `Resolve-CrewPython`, not a shared one.
 _resolve_role_write_python() {
-  for name in python3 python py; do
-    candidate=$(command -v "$name" 2>/dev/null) || continue
+  # EVERY PATH match of every name, in order -- `type -ap` lists them all,
+  # where `command -v` stops at the first. Windows burn-in 2026-09-23 (FAIL
+  # 3): a broken WindowsApps python3 ahead of a real python3 made this
+  # function give up while role-write-guard.ps1's Resolve-CrewPython, which
+  # tries every match, found the real one -- so the two flavours disagreed
+  # about whether python existed, and notify.sh failed open and sent a ping
+  # its PowerShell twin then sent again.
+  while IFS= read -r candidate; do
+    [ -n "$candidate" ] || continue
     # `command -v` finding a name on PATH is not enough -- the WindowsApps
     # alias IS a real, executable file, so `command -v python3` resolves it
     # cleanly. Running it and reading back `sys.executable` is what
@@ -39,7 +46,37 @@ _resolve_role_write_python() {
     # parseable stdout (it either does nothing or launches the Store, which
     # cannot happen in this non-interactive pipe) rather than a real
     # interpreter path.
-    real=$("$candidate" -c 'import sys; print(sys.executable)' 2>/dev/null) || continue
+    # BOUNDED, and the whole process tree dies with it. A candidate that
+    # never exits would otherwise hang the hook forever, and one that spawns
+    # a child holding stdout (a py.exe-style launcher) would hang this `$()`
+    # even after the candidate itself was killed. `timeout` is absent on Git
+    # Bash, so a watchdog kills at 3s instead; `wait` returns the moment the
+    # candidate exits, so a working interpreter costs no added latency.
+    # `set -m` puts the candidate in its own process group, which the kill
+    # takes whole -- on a timeout, and after a normal exit too, for any child
+    # it left behind. Under MSYS a native child is outside that group, so
+    # `taskkill /T` takes the Windows tree when /proc exposes its winpid
+    # (MODELLED, not observed on a Windows host). No `sleep` at all means no
+    # watchdog: unbounded, as before, rather than killing every candidate.
+    # stdin is /dev/null: the candidate must not read the hook payload or
+    # this loop's own input.
+    real=$(
+      set -m
+      "$candidate" -c 'import sys; print(sys.executable)' </dev/null 2>/dev/null &
+      pid=$!
+      (
+        sleep 3 2>/dev/null || exit 0
+        if [ -r "/proc/$pid/winpid" ] && read -r winpid < "/proc/$pid/winpid"; then
+          MSYS2_ARG_CONV_EXCL='*' taskkill /F /T /PID "$winpid"
+        fi
+        kill -9 -- "-$pid" || kill -9 "$pid"
+      ) </dev/null >/dev/null 2>&1 &
+      watchdog=$!
+      wait "$pid"
+      status=$?
+      kill -9 -- "-$watchdog" "-$pid" 2>/dev/null
+      exit "$status"
+    ) || continue
     # A trailing CR must not survive into the `-x` test below: a real native
     # Windows interpreter run under Git Bash can leave one on its stdout, and
     # `-x "$real"` on a path with a stray \r appended never matches an actual
@@ -108,7 +145,7 @@ _resolve_role_write_python() {
     # asking python where it actually lives.
     printf '%s\n' "$real"
     return 0
-  done
+  done < <(type -ap python3 python py 2>/dev/null)
   return 1
 }
 

@@ -18,9 +18,13 @@ cd "${CWD:-${CLAUDE_PROJECT_DIR:-.}}" 2>/dev/null || exit 0
 # transcript copies in one second race one name, and two skeleton writers can
 # both see no handoff. event_claim.py lets exactly one flavour write for this
 # event, keyed on the payload, so the next compaction is a new event. Exit 10
-# is the only "the other flavour has it"; anything else writes.
+# is the only "the other flavour has it"; anything else writes. A token back
+# means this flavour holds the claim and reports "sent" once both writes are
+# done; until then the twin waits, and takes over if this process dies.
+CLAIM_TOKEN=""
+CLAIM_SCRIPT="$(dirname "${BASH_SOURCE[0]}")/event_claim.py"
 if CLAIM_PY=$(crew_py_strict); then
-  printf '%s' "$INPUT" | "$CLAIM_PY" "$(dirname "${BASH_SOURCE[0]}")/event_claim.py" handoff-write . ; [ $? -eq 10 ] && exit 0
+  CLAIM_TOKEN=$(printf '%s' "$INPUT" | "$CLAIM_PY" "$CLAIM_SCRIPT" handoff-write . sh); [ $? -eq 10 ] && exit 0
 fi
 
 mkdir -p .crew/transcripts .work
@@ -57,4 +61,5 @@ if [ ! -f "$HANDOFF" ]; then
     echo "Verify against the diff before continuing."
   } > "$HANDOFF"
 fi
+[ -z "$CLAIM_TOKEN" ] || "$CLAIM_PY" "$CLAIM_SCRIPT" --sent "$CLAIM_TOKEN" >/dev/null 2>&1
 exit 0

@@ -59,6 +59,27 @@ _HANDOFF_MARKER = "write the handoff note to"
 _MARKER_REL = os.path.join(".crew", ".handoff-requested-nosession")
 
 
+def _python_free_path(base):
+    """The host's /usr/bin and /bin as symlinks, MINUS anything named
+    python*/py*. The resolvers walk EVERY PATH match of every name since the
+    burn-in FAIL 3 fix, so a stub fixture can no longer shadow the host's
+    real interpreter by merely sitting ahead of it on PATH -- the walk would
+    carry on past the stub and find it. Cases that mean "no working python"
+    append this instead of the real PATH."""
+    tools = pathlib.Path(base) / "python-free-bin"
+    if tools.is_dir():
+        return str(tools)
+    tools.mkdir(parents=True)
+    for source in ("/usr/bin", "/bin"):
+        if not os.path.isdir(source):
+            continue
+        for name in os.listdir(source):
+            if name.startswith(("python", "py")) or (tools / name).exists():
+                continue
+            os.symlink(os.path.join(source, name), tools / name)
+    return str(tools)
+
+
 def _real_python_dir():
     real = shutil.which("python3") or shutil.which("python")
     assert real, "this test needs a real python3/python on PATH to prove against"
@@ -118,7 +139,7 @@ def _run(root, path_entries, transcript_bytes, isolate_path=False,
     env = dict(os.environ, HOME=str(root), CREW_AUTOCLEAR_INHIBIT="1")
     entries = list(path_entries)
     if not isolate_path:
-        entries.append(env.get("PATH", ""))
+        entries.append(_python_free_path(root.parent))
     env["PATH"] = os.pathsep.join(entries)
     return subprocess.run(
         [_BASH, _SH], input=payload, cwd=str(root), env=env,
@@ -478,7 +499,7 @@ def test_resolver_rejects_a_real_but_non_executable_target(tmp_path, path, heade
     # The real PATH stays behind the stubs -- `tr` (used unconditionally by
     # the CR-strip step) must resolve, and the stubs still win as the first
     # match for every name either way.
-    env["PATH"] = os.pathsep.join([str(stub_dir), env.get("PATH", "")])
+    env["PATH"] = os.pathsep.join([str(stub_dir), _python_free_path(tmp_path)])
     proc = subprocess.run(
         [_BASH, str(driver)], capture_output=True, text=True,
         check=False, env=env)
@@ -634,7 +655,7 @@ def test_resolver_rejects_a_windowsapps_alias_stub_with_no_real_python(
         encoding="utf-8", newline="\n")
 
     env = os.environ.copy()
-    env["PATH"] = os.pathsep.join([str(apps_dir), env.get("PATH", "")])
+    env["PATH"] = os.pathsep.join([str(apps_dir), _python_free_path(tmp_path)])
     proc = subprocess.run(
         [_BASH, str(driver)], capture_output=True, text=True,
         check=False, env=env)
@@ -751,7 +772,7 @@ def test_resolver_rejects_a_native_windows_path_with_no_real_target(tmp_path, pa
         encoding="utf-8", newline="\n")
 
     env = os.environ.copy()
-    env["PATH"] = os.pathsep.join([str(stub_dir), env.get("PATH", "")])
+    env["PATH"] = os.pathsep.join([str(stub_dir), _python_free_path(tmp_path)])
     proc = subprocess.run(
         [_BASH, str(driver)], capture_output=True, text=True,
         check=False, env=env)

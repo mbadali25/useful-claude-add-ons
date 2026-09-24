@@ -1804,9 +1804,9 @@ def test_windowsapps_stub_with_only_one_name_present_walks_on_to_the_real_one(tm
     (docs/review/06-windows-burn-in.md, 2c) showed where that leads: a host
     whose every name hits WindowsApps first never reaches the real python
     further down PATH. The one shared probe now walks every match of every
-    name and executes each, so the real python3 resolves here. bash still
-    stops at the first match -- that divergence is pinned, strict-xfail, in
-    tests/test_ps1_python_probe.py and filed in TODO.md."""
+    name and executes each, so the real python3 resolves here. bash now
+    walks every match too (`type -ap`); the parity case in
+    tests/test_ps1_python_probe.py was a strict xfail and is a passing test."""
     apps = tmp_path / "WindowsApps"
     real = tmp_path / "tools"
     real_exe = str(real / "python3.cmd")
@@ -1822,9 +1822,11 @@ def test_windowsapps_stub_with_only_one_name_present_walks_on_to_the_real_one(tm
 @needs_bash
 def test_bash_agrees_it_finds_nothing_in_the_same_layout(tmp_path):
     """bash's side of the same layout, driven through the actual .sh end to
-    end. Since crew 1.0 the .ps1 resolves the second python3 here and bash
-    does not: the KNOWN divergence pinned strict-xfail in
-    tests/test_ps1_python_probe.py and filed in TODO.md."""
+    end. The name is historical: since the burn-in fix3 round 2 bash walks
+    every match and resolves the second python3 here, as the .ps1 does. The
+    stub it resolves only echoes, so the guard still exits 0 -- this pins
+    that the .sh does not block or crash in this layout; the resolver
+    parity itself is asserted in tests/test_ps1_python_probe.py."""
     apps = tmp_path / "WindowsApps"
     real = tmp_path / "tools"
     apps.mkdir(parents=True)
@@ -1859,9 +1861,9 @@ def test_bash_agrees_it_finds_nothing_in_the_same_layout(tmp_path):
         input=_write_payload("Write", str(root / "src" / "app.py"), "pm", str(root)),
         capture_output=True, text=True, check=False, env=env, cwd=str(root))
     assert proc.returncode == 0, (
-        "bash must ALSO find nothing usable in this exact layout -- if "
-        "this ever fails while the .ps1 test above still passes, the two "
-        "shells have re-diverged. stdout: " + proc.stdout + " stderr: "
+        "the .sh must not block or crash in this layout, where it now "
+        "resolves the second python3 as the .ps1 does. stdout: "
+        + proc.stdout + " stderr: "
         + proc.stderr)
 
 

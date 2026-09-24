@@ -78,7 +78,7 @@ function Resolve-VaultGuardPython {
       try {
         $psi = New-Object System.Diagnostics.ProcessStartInfo
         $psi.FileName = $cmd.Source
-        $psi.Arguments = '-c "import sys; sys.stdout.write(''vault-guard-python:'' + sys.executable)"'
+        $psi.Arguments = '-c "import sys; v = sys.version_info; sys.stdout.write(''vault-guard-python:'' + ''%d:%d:%s:'' % (v[0], v[1], sys.implementation.name) + sys.executable)"'
         $psi.UseShellExecute = $false
         $psi.RedirectStandardOutput = $true
         $psi.RedirectStandardError = $true
@@ -87,7 +87,16 @@ function Resolve-VaultGuardPython {
         $outTask = $proc.StandardOutput.ReadToEndAsync()
         $null = $proc.StandardError.ReadToEndAsync()
         if (-not $proc.WaitForExit(3000)) {
-          try { $proc.Kill() } catch { }
+          # The whole tree, not the candidate: a py.exe-style launcher's child
+          # inherits the redirected handles and outlives a plain Kill().
+          # Kill($true) is PowerShell 7 (.NET Core 3+); 5.1 has no such
+          # overload and falls back to taskkill /T /F.
+          try {
+            $proc.Kill($true)
+          } catch {
+            try { & taskkill.exe /T /F /PID $proc.Id 2>&1 | Out-Null } catch { }
+            try { $proc.Kill() } catch { }
+          }
           $reason = "$($cmd.Source) (did not answer the interpreter probe within 3s, and was killed)"
         } elseif ($proc.ExitCode -ne 0) {
           $reason = "$($cmd.Source) (ran, but exited $($proc.ExitCode) instead of answering the interpreter probe)"
@@ -106,11 +115,35 @@ function Resolve-VaultGuardPython {
         $script:VaultGuardRejected += "$($cmd.Source) (ran, but did not answer the interpreter probe)"
         continue
       }
-      $real = $probe.Substring('vault-guard-python:'.Length)
+      # `<major>:<minor>:<implementation>:<executable>` after the prefix, and
+      # all four are checked: Python 3.8 or later, CPython or PyPy, and an
+      # executable that exists -- the proof crew's Resolve-CrewPython
+      # demands, and the one vault-guard.sh applies to the same answer.
+      $answer = $probe.Substring('vault-guard-python:'.Length)
+      if ($answer -notmatch '^(\d{1,4}):(\d{1,4}):([^:]*):(.*)$') {
+        $script:VaultGuardRejected += "$($cmd.Source) (answered the probe without a version, implementation and executable)"
+        continue
+      }
+      $major = [int]$Matches[1]
+      $minor = [int]$Matches[2]
+      $impl = $Matches[3]
+      $real = $Matches[4]
+      if ($major -lt 3 -or ($major -eq 3 -and $minor -lt 8)) {
+        $script:VaultGuardRejected += "$($cmd.Source) (answered the probe as Python $major.$minor; 3.8 or later is required)"
+        continue
+      }
+      if ($impl -notin @('cpython', 'pypy')) {
+        $script:VaultGuardRejected += "$($cmd.Source) (answered the probe as implementation '$impl', not cpython or pypy)"
+        continue
+      }
       if (-not $real) {
         # An embedded or frozen interpreter can report an empty sys.executable.
         # It answered honestly, and the answer is still unusable here.
         $script:VaultGuardRejected += "$($cmd.Source) (answered the probe with an empty sys.executable)"
+        continue
+      }
+      if (-not (Test-Path -LiteralPath $real -PathType Leaf)) {
+        $script:VaultGuardRejected += "$($cmd.Source) (answered the probe with a sys.executable that does not exist: $real)"
         continue
       }
       # sys.executable, not Source: the PATH-found name may be a shim that
