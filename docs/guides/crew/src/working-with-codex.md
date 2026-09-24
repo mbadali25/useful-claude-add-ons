@@ -38,16 +38,28 @@ python3 "$S/crew_instructions.py" codex --check
   (`HOOK_TABLE` in `crew_instructions.py`). Each entry has a `command` (bash) and a
   `commandWindows` (PowerShell, `-Harness codex`). The paths inside are absolute and belong to one
   machine, so regenerate the file on each machine rather than committing it.
-- `.codex/config.toml` sets `project_doc_fallback_filenames = ["CLAUDE.md"]` and two profiles:
-  `review` (`sandbox_mode = "read-only"`, `approval_policy = "never"`) and `work`
-  (`workspace-write`). Codex reads project config only for a **trusted** project.
+- `.codex/config.toml` sets `project_doc_fallback_filenames = ["CLAUDE.md"]` only. **No
+  `[profiles.*]` table** -- MEASURED on codex-cli 0.154.0: `profiles` is on Codex's own
+  project-local config denylist and is stripped from this file every time it loads, trusted or
+  not, so a `review`/`work` profile defined here would never apply. Codex reads project config
+  only for a **trusted** project, and only that project-config subset survives the strip.
 
 ## Review and work
 
+There are no project-scoped `review`/`work` profiles to select with `--profile` -- pass the
+settings explicitly instead:
+
 ```bash
-codex exec --profile review --json --sandbox read-only "<review prompt>"   # the reviewer
-codex exec --profile work "<task>"                                         # only if you choose Codex to implement
+codex exec --json --sandbox read-only "<review prompt>"   # the reviewer (review_run.py's command_for)
+codex exec --sandbox workspace-write "<task>"              # only if you choose Codex to implement
 ```
+
+If you want named `review`/`work` profiles for convenience, they are a **user-level** concept, not
+a project one: `codex exec --help` (codex-cli 0.155.1) documents `--profile NAME` as layering
+`$CODEX_HOME/NAME.config.toml` on top of the base user config -- a file under `$CODEX_HOME`, never
+this project's `.codex/config.toml`. Create `$CODEX_HOME/review.config.toml` /
+`$CODEX_HOME/work.config.toml` yourself and pass `--profile review`/`--profile work` against
+those.
 
 A review that exits non-zero or prints nothing is INCOMPLETE, never CLEAN.
 

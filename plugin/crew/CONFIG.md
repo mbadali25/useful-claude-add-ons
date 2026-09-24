@@ -882,6 +882,33 @@ accept a keystroke is a fact about the machine, in the same sense provider
 availability is — `crew_platform.py::concerns` validates `method` against what
 *this* platform can actually deliver and reports one it cannot honour.
 
+**Crew neither causes nor tunes Claude Code's own auto-compact.** That
+built-in behaviour fires whenever Claude Code itself decides to; nothing in
+this block, in `context-watch`, or in auto-clear influences when or whether
+it happens. This block only decides what happens *after* a handoff is
+written and verified — whether, and how, to act on it.
+
+### `method`
+
+| Value | What it does | Where it can run |
+|---|---|---|
+| `"auto"` *(default)* | Picks per platform, below. | everywhere |
+| `"tmux"` | Types into the `$TMUX_PANE` that is an ancestor of the hook. Exact — no focus involved. | Linux, macOS, WSL, Git Bash on Windows |
+| `"xdotool"` | Types into the one X11 window owned by an ancestor process (or matching `windowTitle`). | Linux with `xdotool` installed |
+| `"wtype"` | Refused outright — see `unsafeFocus`, above. | Wayland (declared, never granted) |
+| `"notify"` | Types nothing. Prints a `systemMessage` saying the handoff is written and verified and it is safe to run the configured `command` yourself. Never claims anything was cleared or compacted, because nothing was. | everywhere |
+| `"sendkeys"` | `System.Windows.Forms.SendKeys` against the one window owned by an ancestor process (or matching `windowTitle`), confirmed still foreground at send time. **Opt-in only — `auto` never chooses it.** Declines and falls back to `notify`, logging why to `.crew/.autoclear.log`, when the target window is owned by Windows Terminal: that host puts every tab in one window, and nothing short of UI Automation (not a dependency here) can confirm which tab is active from outside it, so a Windows-Terminal-owned target is never typed into. | native Windows only |
+| `"none"` | Refused outright, deliberately. | everywhere |
+
+**`auto`'s per-platform pick, an OWNER DECISION:** a tmux pane if `$TMUX` names
+one and `tmux` is on PATH; else an X11 window if `$DISPLAY` is set and
+`xdotool` is on PATH; else **`notify`** on native Windows (`$OS` is
+`Windows_NT`, present in every process tree there — cmd, PowerShell, Git
+Bash alike — and absent inside WSL, which has its own init); else refused
+(`"no usable method"`). `auto` **never** resolves to `sendkeys`: typing into
+a window this hook found itself is a risk `auto` does not get to accept on
+your behalf. Request `sendkeys` by name to opt in to it.
+
 ### What the widening costs
 
 `windowTitle` is the guard that stops SendKeys typing into whatever happens to

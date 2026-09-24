@@ -286,6 +286,42 @@ finish itself cleanly, clear, and pick up where it stopped — what wrap-up, aut
 each do, the machine-global keys that turn auto-clear on, and every reason a clear can refuse
 (logged to `.crew/.autoclear.log`).
 
+### "auto-clear did nothing on Windows"
+
+**Symptom:** auto-clear is on, a handoff is written and verified, and nothing types the configured
+command — no keystrokes appear at all.
+
+- **Check `context.autoClear.method`** with `/crew:config --explain` or `crew_config.py --explain`.
+  On native Windows with no tmux pane, `"auto"` (the default) resolves to `"notify"`, not to any
+  keystroke method — **this is not a bug**, it is the 1.0 owner decision: `auto` never arms
+  SendKeys on your behalf. `"notify"` types nothing at all; instead the `Stop` hook prints a
+  `systemMessage` telling you the handoff is written and verified and it is safe to run the
+  configured command yourself.
+- **If you want keystrokes typed for you**, ask for `sendkeys` by name — it is opt-in only, and
+  `/crew:init`, `/crew:migrate` and `/crew:onboard` all refuse to write it without an explicit yes.
+  It declines and falls back to `notify` (logged to `.crew/.autoclear.log`) inside Windows
+  Terminal specifically, because that host puts every tab in one window and nothing outside it can
+  confirm which tab is active — this is also not a bug, and switching terminal hosts is the only
+  fix.
+- **Fix:** either treat the `notify` message as the intended behaviour, or run
+  `crew_autoclear_setup.py apply-method sendkeys --yes` (`${CLAUDE_PLUGIN_ROOT}/hooks/scripts/`)
+  to opt in, after reading what SendKeys does. See `plugin/crew/CONFIG.md` §14.
+
+### "Claude Code compacted by itself"
+
+**Symptom:** the session cleared or summarised itself with no `/clear` or `/compact` typed, and no
+message about auto-clear ran first.
+
+That is Claude Code's own **built-in auto-compact**, not this plugin. Crew neither causes nor
+tunes it — `context.autoClear` and `context-watch.sh` only ever act *after* a handoff is written
+and verified, and nothing in this plugin can trigger a compaction on its own. There is no crew
+setting that changes when Claude Code's auto-compact fires.
+
+**The one thing crew does around either kind of reset:** on the next `SessionStart` after any
+`/clear` or `/compact` — self-initiated or Claude Code's own auto-compact — `handoff-read.sh`
+reloads `.work/HANDOFF.md` back into context automatically, so a compaction you did not ask for
+still resumes from the last written handoff rather than from nothing.
+
 ## Turning things off
 
 Every switch named above, in one place. "Off" for a guard means the `PreToolUse` hook still fires

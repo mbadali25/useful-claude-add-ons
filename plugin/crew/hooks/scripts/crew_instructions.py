@@ -69,6 +69,11 @@ import re
 import subprocess
 import sys
 
+try:
+    import tomllib as _tomllib  # Python 3.11+, stdlib
+except ImportError:  # pragma: no cover - exercised only on 3.8-3.10
+    _tomllib = None
+
 import crew_context
 from crew_common import read_text
 
@@ -484,18 +489,47 @@ def _project_trust_lookup_keys(root):
     return ([canonical] if canonical != literal else []) + [literal]
 
 
+# Any table header other than the two `[projects...]` shapes above, and any
+# ordinary `key = value` line -- both legal TOML the fallback line-scanner
+# below does not need to understand for this one lookup, but must still
+# recognise as WELL-FORMED so it does not mistake ordinary content elsewhere
+# in the file for the malformed line that makes the whole read untrustworthy.
+_TABLE_HEADER_RE = re.compile(r'^\[[^\[\]]*\]$')
+_GENERIC_KV_RE = re.compile(r'^[^\s=][^=]*=\s*\S.*$')
+
+
 def _scan_project_trust(text, keys):
-    """(level, matched_key), or (None, None) when no entry for `keys` is
-    found. A narrow section-scanner, not a full TOML parser -- it reads only
-    the `[projects]` table's two documented shapes and ignores everything
-    else, which is sufficient for this one lookup and does not attempt to
-    validate the rest of the file."""
+    """(level, matched_key, bad_line). `bad_line` is the first line this
+    narrow scanner could not classify at all -- not a comment, not blank, not
+    a table header, not an ordinary `key = value` pair, and not one of the
+    two documented `[projects]` shapes -- which is this scanner's only signal
+    that the file might not be valid TOML at all (Codex review fix #2: a
+    malformed file used to report whatever trust entry the regex still
+    happened to match, which is the "unknown collapsing into the
+    safe-looking value" bug CLAUDE.md names). `None` means every line was
+    recognised, though that is still not a claim that the file is valid TOML
+    end to end -- `_project_trust` below prefers a real parser
+    (`tomllib`) precisely because this scanner cannot make that claim.
+
+    `(level, matched_key)` alone are `(None, None)` when no entry for `keys`
+    is found -- `keys` is tried in order (canonical before literal, per
+    `_project_trust_lookup_keys`), fixing Codex review fix #3: the previous
+    version returned whichever matching entry happened to come FIRST IN THE
+    FILE, not the canonical one Codex itself would prefer."""
     fold = (lambda s: s.lower()) if os.name == "nt" else (lambda s: s)
-    wanted = {fold(k) for k in keys}
     mode = None  # None | "bare" | ("entry", key)
     found = {}
+    bad_line = None
+
+    def _mark_bad(raw):
+        nonlocal bad_line
+        if bad_line is None:
+            bad_line = raw
+
     for raw_line in text.splitlines():
         line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
         entry = _PROJECTS_ENTRY_RE.match(line)
         if entry:
             mode = ("entry", _unescape_toml_key(entry.group(1)))
@@ -505,6 +539,8 @@ def _scan_project_trust(text, keys):
             continue
         if line.startswith("["):
             mode = None
+            if not _TABLE_HEADER_RE.match(line):
+                _mark_bad(raw_line)
             continue
         if mode == "bare":
             inline = _PROJECTS_INLINE_RE.match(line)
@@ -512,14 +548,74 @@ def _scan_project_trust(text, keys):
                 level = _INLINE_TRUST_LEVEL_RE.search(inline.group(2))
                 if level:
                     found[_unescape_toml_key(inline.group(1))] = level.group(1)
-        elif isinstance(mode, tuple):
+                continue
+            if not _GENERIC_KV_RE.match(line):
+                _mark_bad(raw_line)
+            continue
+        if isinstance(mode, tuple):
             level = _TRUST_LEVEL_RE.match(line)
             if level:
                 found[mode[1]] = level.group(1)
-    for key, level in found.items():
-        if fold(key) in wanted:
-            return level, key
+                continue
+            if not _GENERIC_KV_RE.match(line):
+                _mark_bad(raw_line)
+            continue
+        if not _GENERIC_KV_RE.match(line):
+            _mark_bad(raw_line)
+
+    for key in keys:
+        ck = fold(key)
+        for found_key, level in found.items():
+            if fold(found_key) == ck:
+                return level, found_key, bad_line
+    return None, None, bad_line
+
+
+def _trust_from_toml_document(doc, keys):
+    """Same `(level, matched_key)` contract as `_scan_project_trust`, read
+    from an already-parsed `tomllib` document instead of a regex. Both
+    accepted shapes (`[projects."<path>"]` and the bare-table inline-table
+    form) land as the identical `{path: {"trust_level": "..."}}` structure
+    once parsed, so one reader covers both."""
+    projects = doc.get("projects") if isinstance(doc, dict) else None
+    if not isinstance(projects, dict):
+        return None, None
+    found = {
+        key: value.get("trust_level")
+        for key, value in projects.items()
+        if isinstance(value, dict) and value.get("trust_level") in ("trusted", "untrusted")
+    }
+    fold = (lambda s: s.lower()) if os.name == "nt" else (lambda s: s)
+    for key in keys:
+        ck = fold(key)
+        for found_key, level in found.items():
+            if fold(found_key) == ck:
+                return level, found_key
     return None, None
+
+
+def _project_trust(text, keys):
+    """(level, matched_key, malformed). `malformed` is a human-readable
+    reason the file's trust could not be established, or `None` when it
+    could. Prefers `tomllib` (Python 3.11+, stdlib) as the ground truth --
+    the closest thing available here to Codex's own TOML reader -- and
+    reports a `TOMLDecodeError` as `malformed` rather than falling back to a
+    regex that would happily read a trust entry out of an otherwise-broken
+    file (Codex review fix #2). On 3.8-3.10, where `tomllib` does not exist,
+    falls back to `_scan_project_trust`'s line scanner, whose own `bad_line`
+    is treated the same way: unclassifiable is reported as unknown, never as
+    a trusted match."""
+    if _tomllib is not None:
+        try:
+            doc = _tomllib.loads(text)
+        except _tomllib.TOMLDecodeError as exc:
+            return None, None, f"is not valid TOML: {exc}"
+        level, matched = _trust_from_toml_document(doc, keys)
+        return level, matched, None
+    level, matched, bad_line = _scan_project_trust(text, keys)
+    if bad_line is not None:
+        return None, None, f"has a line this scanner cannot classify: {bad_line!r}"
+    return level, matched, None
 
 
 def codex_trust(root):
@@ -537,7 +633,9 @@ def codex_trust(root):
     text = read_text(path)
     if text is None:
         return TRUST_UNKNOWN, f"could not read {path}"
-    level, matched = _scan_project_trust(text, _project_trust_lookup_keys(root))
+    level, matched, malformed = _project_trust(text, _project_trust_lookup_keys(root))
+    if malformed:
+        return TRUST_UNKNOWN, f"{path} {malformed}"
     if level == TRUST_OK:
         return TRUST_OK, f'trust_level = "trusted" for {matched} in {path}'
     if level == "untrusted":

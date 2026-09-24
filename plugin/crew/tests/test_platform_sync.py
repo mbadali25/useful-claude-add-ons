@@ -338,6 +338,39 @@ def test_auto_is_valid_everywhere(tmp_path, monkeypatch):
         assert not crew_platform.concerns(cfg, crew_platform.detect(str(root)))
 
 
+def test_notify_is_valid_everywhere_and_sendkeys_is_windows_only(tmp_path, monkeypatch):
+    """`notify` types nothing, so every flavour implements it. `sendkeys` is
+    auto-clear.ps1's SendKeys mechanism -- the renamed `"windows"` literal --
+    and does not exist on the POSIX flavour, which has no equivalent."""
+    for method, systems_ok in (
+        ("notify", ("Linux", "Darwin", "Windows")),
+        ("sendkeys", ("Windows",)),
+    ):
+        root = _repo(tmp_path / method, context={
+            "autoClear": {"enabled": True, "method": method}})
+        cfg, _ = crew_platform.load(str(root))
+        for system, release in (("Linux", "6.8.0\n"), ("Darwin", None),
+                                ("Windows", None)):
+            _fake(monkeypatch, system, osrelease=release)
+            found = crew_platform.concerns(cfg, crew_platform.detect(str(root)))
+            if system in systems_ok:
+                assert not found, (method, system, found)
+            else:
+                assert any("does not exist" in c for c in found), (method, system, found)
+
+
+def test_the_old_windows_literal_is_no_longer_a_valid_method_anywhere(tmp_path, monkeypatch):
+    """`"windows"` was renamed to `"sendkeys"` -- see auto-clear.ps1. A config
+    still carrying the old literal must be reported everywhere, including on
+    the platform it used to mean, not silently accepted as a synonym."""
+    root = _repo(tmp_path, context={
+        "autoClear": {"enabled": True, "method": "windows"}})
+    cfg, _ = crew_platform.load(str(root))
+    _fake(monkeypatch, "Windows", osrelease=None)
+    found = crew_platform.concerns(cfg, crew_platform.detect(str(root)))
+    assert any("does not exist on windows" in c for c in found), found
+
+
 def test_a_windows_mount_clone_is_reported(tmp_path, monkeypatch):
     root = _repo(tmp_path, platform_block={"os": "linux"})
     _fake(monkeypatch, "Linux", osrelease="5.15.0-microsoft-standard-WSL2\n")

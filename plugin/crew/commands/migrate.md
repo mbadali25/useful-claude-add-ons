@@ -70,6 +70,26 @@ other.
 
 Print the `backup:` line apply ends with. That path is the only way to undo it.
 
+Then convert `context.autoClear` — the one helper `/crew:init` and
+`/crew:onboard` also call, so relay its output rather than restating this.
+Run it **once**: a second run cannot see this repo's pre-migration opt-in.
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autoclear_setup.py" --root . apply-migrate
+```
+
+It rewrites `.crew/crew.json`'s `context.autoClear` and prints a `notes` line per conversion, never
+silently: pre-1.0 `"windows"` becomes `"notify"` (sendkeys is an explicit opt-in); a duplicated repo
+`enabled: true` (0.20.17's read-only-the-repo-file workaround) is dropped since 1.0 gives it no
+effect (`enabled: false` opt-outs are kept); repo-copied `onlyRepos`/`onlySessions` are dropped too,
+being global-only under 1.0. `alreadyConfigured: true` means nothing to convert.
+
+A `widening: true` means the global file arms every crew repo on this machine (`enabled: true`,
+`onlyRepos: null`) — show `proposedOnlyRepos` and ask; only on yes, apply it with the generic
+writer, never by re-running the command above: `crew_config.py --set
+'context.autoClear.onlyRepos=<the list>' --apply`. Without a yes, say the widening is still in
+effect and leave it.
+
 Then generate the rules the preview listed, and show the output verbatim:
 
 ```bash

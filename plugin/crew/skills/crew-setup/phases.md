@@ -177,6 +177,29 @@ Say plainly that **you cannot clear the session yourself** — a hook runs as a
 child process and cannot reset its parent. The `/clear` stays manual, which is
 the right place for it to stay.
 
+**Auto-clear.** `crew_autoclear_setup.py` (`${CLAUDE_PLUGIN_ROOT}/hooks/scripts/`)
+is the one place this decision lives; run its `plan-windows-default` command and
+relay what it prints rather than restating the logic here:
+
+```
+python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autoclear_setup.py \
+  --root <repo> plan-windows-default
+```
+
+A `status: already-configured` result means the machine-global file already has
+an opinion — read its `message` back and stop; write nothing. On a
+`status: proposed` result, on **native Windows** (`platform.os == "windows"`),
+show the plan (`method: "notify"` — nothing typed, a message saying it is safe
+to run the configured command yourself, never that anything was cleared or
+compacted) and write it, `apply-method notify --yes`, only after they say yes.
+On **Linux, macOS, WSL or Git Bash**, describe the tmux path instead
+(`describe_tmux_path()` in the same module) and write nothing — there is no
+method to propose there, `auto` already resolves to it. Either way, **enabling**
+auto-clear (`context.autoClear.enabled: true`) is a separate question with its
+own yes: never bundle it into the method question, and never write `sendkeys`
+without being asked for it by name (`apply-method sendkeys --yes` refuses
+without `--yes`).
+
 Tell them the threshold is read from the transcript's own usage records, not
 estimated, and that the window is derived from the model (Claude 5 family 1M,
 Haiku and 4.x 200k) and corrected by the session's peak. Leave `budgetTokens`

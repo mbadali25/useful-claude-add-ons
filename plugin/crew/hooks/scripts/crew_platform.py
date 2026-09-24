@@ -364,15 +364,17 @@ def diff(cfg, facts):
     return changes
 
 
-# Methods each platform can actually deliver a keystroke with. auto-clear.sh
-# owns the POSIX ones, auto-clear.ps1 owns the Windows one; a config naming the
-# other platform's method is a preference this machine cannot honour, so it is
-# reported rather than rewritten.
+# Methods each platform can actually deliver. `notify` types nothing anywhere
+# and every flavour implements it, so it is valid everywhere. auto-clear.sh
+# owns the POSIX keystroke methods, auto-clear.ps1 owns `sendkeys` (the
+# renamed "windows" literal -- SendKeys is a Windows-only mechanism); a config
+# naming the other platform's method is a preference this machine cannot
+# honour, so it is reported rather than rewritten.
 _AUTOCLEAR_METHODS = {
-    "linux": ("auto", "none", "tmux", "xdotool", "wtype"),
-    "macos": ("auto", "none", "tmux"),
-    "windows": ("auto", "none", "windows"),
-    "windows-bash": ("auto", "none", "tmux", "windows"),
+    "linux": ("auto", "none", "notify", "tmux", "xdotool", "wtype"),
+    "macos": ("auto", "none", "notify", "tmux"),
+    "windows": ("auto", "none", "notify", "sendkeys"),
+    "windows-bash": ("auto", "none", "notify", "tmux", "sendkeys"),
 }
 
 

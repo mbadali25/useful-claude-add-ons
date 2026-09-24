@@ -1484,7 +1484,8 @@ every repo. The other keys layer normally, repo over machine.
 |---|---|---|
 | `tmux` | `$TMUX_PANE`, and only when that pane's pid is an ancestor of the hook | **Exact.** No focus involved. Use this if you can. |
 | `xdotool` | the one window owned by the nearest ancestor process; `windowTitle` narrows or, failing that, is a fallback that must match exactly one window | Activates that window id, re-checks it is active, then types. |
-| `windows` | the same rule through `EnumWindows`; at send time that exact window handle must have focus | Windows Terminal hosts every tab in one window — set `windowTitle`. |
+| `notify` | no window — types nothing | Prints a `systemMessage` saying the handoff is written and verified and it is safe to run the configured command yourself. Never claims anything was cleared or compacted, because nothing was. `auto` resolves here on native Windows with no tmux pane. |
+| `sendkeys` | the same rule through `EnumWindows` (renamed from the pre-1.0 `"windows"` literal); at send time that exact window handle must have foreground | **Opt-in only — `auto` never resolves here.** Windows Terminal hosts every tab in one window and nothing outside UI Automation can tell which tab is active, so a Windows-Terminal-owned target declines and falls back to `notify`, logged to `.crew/.autoclear.log`. Request it by name after reading what it does. |
 | `wtype` | cannot identify a window | **Refused**, whatever `unsafeFocus` says. |
 
 #### What has to be true before it types anything
@@ -1500,7 +1501,8 @@ every repo. The other keys layer normally, repo over machine.
 4. The handoff exists, is **newer** than the request, has at least
    `minHandoffLines` non-blank lines, and is not PreCompact's automatic skeleton.
 5. The target window is identified uniquely (the table above). Zero or several
-   candidates is a refusal, never a guess.
+   candidates is a refusal, never a guess — this step does not apply to
+   `notify`, which identifies no window because it types nothing.
 6. Nothing has claimed this session's one attempt (`.crew/.autoclear-sent-<session_id>`).
 
 Fail any of those and it writes a line to `.crew/.autoclear.log` saying which,

@@ -23,6 +23,20 @@ Three rules, each one a bug that shipped:
    hook), and a configured `windowTitle` is only a fallback that refuses on
    zero or several matches. `wtype` identifies nothing and is refused outright.
 
+Two methods never type anything at all. **`notify`** prints a `systemMessage`
+saying the handoff is written and verified and it is safe to run the
+configured command yourself -- never that anything was cleared or compacted,
+because nothing was. It needs no window and is never refused for lack of one.
+`auto` resolves to it on native Windows with no tmux pane, which is an OWNER
+DECISION, not a capability gap: `sendkeys` (auto-clear.ps1's
+`System.Windows.Forms.SendKeys`) still exists and still works, but `auto` may
+never choose it -- typing into a window it found itself is a risk `auto`
+does not get to accept on your behalf. Request `sendkeys` by name to opt in.
+**`sendkeys` is refused here outright**, whatever `cfg["method"]` says: that
+mechanism is `auto-clear.ps1`'s, and this module carries no window-typing code
+of its own beyond `tmux`/`xdotool`, which are POSIX-only in the other
+direction.
+
 Also: `enabled` is a MACHINE opt-in. It is read from the machine-global
 `~/.claude/crew/config.json`; a repo may switch it off but cannot switch it
 on, because the thing it drives is this machine's keyboard.
@@ -369,12 +383,34 @@ def resolve_method(cfg, env=None):
             method = "tmux"
         elif env.get("DISPLAY") and shutil.which("xdotool"):
             method = "xdotool"
+        # `OS=Windows_NT` is a Windows-kernel-set variable, present in every
+        # process tree on a Windows box (cmd, PowerShell, Git Bash alike) and
+        # absent inside WSL, which has its own init and does not inherit it.
+        # That is what makes it the right test for "this hook is running on
+        # native Windows" rather than `os.name`, which would also be "nt" for
+        # a native-Windows python invoked from a POSIX-flavoured wrapper.
+        # OWNER DECISION: `auto` never resolves to `sendkeys` here, even when
+        # this flavour's own `sendkeys`-equivalent does not exist -- there is
+        # no bash SendKeys, so this branch exists only to give the same
+        # "handoff written, safe to run it yourself" notice a Windows user
+        # gets from auto-clear.ps1, when THIS flavour is the one that won the
+        # Stop hook race on that machine.
+        elif env.get("OS") == "Windows_NT":
+            method = "notify"
         else:
             method = "none"
     if method == "none":
         return {"ok": False, "reason": (
             "no usable method. Inside tmux this works with no configuration; on X11 "
-            "install xdotool")}
+            "install xdotool; on native Windows 'notify' works with no configuration")}
+    if method == "notify":
+        # Never refused: it identifies no window and types nothing, so none
+        # of the capability checks below apply to it.
+        return {"ok": True, "method": "notify", "target": "", "label": ""}
+    if method == "sendkeys":
+        return {"ok": False, "reason": (
+            "method sendkeys is auto-clear.ps1's job; this is the POSIX flavour. Both are "
+            "registered, so the Windows one will have handled it")}
     if method == "wtype":
         return {"ok": False, "reason": (
             "method wtype types into whatever has focus and cannot identify a window, so it "
@@ -407,7 +443,9 @@ def resolve_method(cfg, env=None):
         return {"ok": True, "method": "xdotool", "target": str(win.get("id")),
                 "label": (f"{win.get('title') or ''} [window {win.get('id')}, "
                           f"pid {win.get('pid')}, {found['how']}]")}
-    return {"ok": False, "reason": f"unknown method '{cfg['method']}' (tmux, xdotool, none, auto)"}
+    return {"ok": False, "reason": (
+        f"unknown method '{cfg['method']}' (tmux, xdotool, notify, none, auto -- sendkeys is "
+        "auto-clear.ps1's)")}
 
 
 def plan(root, session_id, force=False, global_path=None, env=None):
@@ -433,6 +471,11 @@ def plan(root, session_id, force=False, global_path=None, env=None):
     if not got["ok"]:
         out["reason"] = got["reason"]
         return out
+    if got["method"] == "notify":
+        # Nothing to wait for: there is no prompt to type into, so the delay
+        # that exists for tmux/xdotool (the turn is still ending when this
+        # runs) buys nothing here.
+        out["delay"] = "0"
     out.update(status="send", method=got["method"], target=got["target"], label=got["label"])
     return out
 
