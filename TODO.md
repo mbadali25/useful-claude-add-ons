@@ -3961,3 +3961,24 @@ Found while deleting the PM, pulse, journal and retired roles; none blocked T2.
 - **`INSTALLATION.md:269` hooks table lists `guard.sh`** (removed in 0.19.52) and omits cloud-guard, approval-hook, scope-guard, completion-audit, role-write-guard, platform-sync. Pre-existing.
 - **PM-only state with no consumer**: `crew_state.collect` still emits `schemaDeclared`/`schemaKeyPresent` (`crew_state.py:3008`), and `pm.*` / `context.autoResume` config keys are read only so `/crew:migrate` can carry them to `retired.*`. Kept deliberately for migrate; drop after the 1.0 migration window.
 - **`.crew/codemap/crew.md` and `docs/diagrams/`** still describe pm-brief/pm-pulse and the 54-agent roster: `/crew:onboard --refresh crew`. Rendered guide HTML (`docs/guides/crew/*.html`) likewise - T10/owner decision.
+
+### crew-1.0 T8 fix round deferrals (filed 2026-09-23) - OPEN
+- `python3 scripts/check-marketplace.py` fails `check_versions` on this branch: "crew: plugin/crew/ has
+  changed since version 0.20.25 was set (8dacc525 2026-09-23), but the version was not bumped." Confirmed
+  pre-existing on the T8 lane base commit (3244a37e) - reproduces with `git status --short` showing no
+  changes under `plugin/crew/` from this fix round. Out of scope here (this round only touched
+  `scripts/check_instructions.py`, `scripts/check-marketplace.py`'s `crew-markdown-lines` claim code, and
+  `scripts/_test/instruction-budgets.py`); whoever lands the next `plugin/crew/` content change on this
+  lane needs to bump crew's version in `marketplace.json`.
+- `scripts/check_instructions.py:517-528` (`_body_after_frontmatter`)'s `text.find("\n---", 3)` has the
+  same imprecise-substring-match shape as the `_has_frontmatter` bug fixed this round (matches "\n----" or
+  "\n--- trailing text" as a closing delimiter) - not fixed here because the finding handed to this round
+  named only `_has_frontmatter` (`:180` at the time), and no fixture in this repo currently trips it
+  (frontmatter blocks here don't contain a stray "---"-prefixed body line before the real close).
+
+### crew 1.0.1: T2 removal review FIXes (filed 2026-09-23) - OPEN
+Codex r1 on ed91114d..c3bd8dfd (modified files), 0 BLOCK:
+- `plugin/crew/commands/upgrade.md:314` offers provider pins for deleted `infrastructure-architect`/`planner`.
+- `plugin/crew/hooks/scripts/crew_context.py:138` unreadable config or non-boolean `memory.inject` (e.g. `"false"`) runs injection; decide: malformed -> off with a one-line warning.
+- `plugin/crew/hooks/scripts/role_write_guard.py:243` retired `pm` still a path-scoped role; an unrelated agent named `pm` is denied ordinary writes.
+- `plugin/crew/skills/crew-verification/SKILL.md:37` example assigns SQL changes to the deleted `dba` agent (use `security` or none; stack-sql skill).
