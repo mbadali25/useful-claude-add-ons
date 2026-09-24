@@ -410,3 +410,39 @@ def test_rollback_refuses_to_remove_through_a_symlinked_dir(repo, tmp_path, caps
     code = crew_migrate.main(["--root", repo, "--rollback", backup])
 
     assert (code, sorted(os.listdir(outside))) == (1, ["provenance.json", "ticket.md"])
+
+
+def test_autonomous_pm_authority_is_noted_in_report_and_crew_json(repo, capsys):
+    crew_migrate.main(["--root", repo, "--apply"])
+
+    crew = json.loads(_load(repo, ".crew/crew.json"))
+    out = capsys.readouterr().out
+    assert (crew["notes"], "note   pm.authority: autonomous - autopilot arrives in 1.1.0" in out,
+            crew["retired"]["pm"]["authority"]) == (
+        [crew_migrate.AUTOPILOT_NOTE], True, "autonomous")
+
+
+@pytest.mark.parametrize("pm", [{"authority": "act"}, {"authority": "report-only"}, {}, None])
+def test_non_autonomous_pm_authority_adds_no_note(repo, pm, capsys):
+    cfg = json.loads(_load(repo, ".crew/config.json"))
+    if pm is None:
+        cfg.pop("pm")
+    else:
+        cfg["pm"] = pm
+    with open(os.path.join(repo, ".crew", "config.json"), "w", encoding="utf-8") as fh:
+        fh.write(json.dumps(cfg))
+
+    crew_migrate.main(["--root", repo, "--apply"])
+
+    crew = json.loads(_load(repo, ".crew/crew.json"))
+    assert ("notes" in crew, "autopilot" in capsys.readouterr().out) == (False, False)
+
+
+def test_autopilot_note_survives_preview_and_round_trip(repo, capsys):
+    original = json.loads(_load(repo, ".crew/config.json"))
+
+    code = crew_migrate.main(["--root", repo, "--preview"])
+
+    crew, _unmapped = crew_migrate.to_crew(original)
+    assert (code, "autopilot arrives in 1.1.0" in capsys.readouterr().out,
+            crew_migrate.to_legacy(crew) == original) == (0, True, True)

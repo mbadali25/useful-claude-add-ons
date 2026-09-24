@@ -20,7 +20,10 @@ Preview writes nothing. Show me its output verbatim and point out:
 - every `CONFLICT` line - apply refuses while any exist;
 - every `unmapped` key - carried into `crew.json` under `unmapped`, never dropped;
 - every `skip` line - a file that was not imported, and why;
-- every `retireable` line - an original left in place that 1.0 no longer reads.
+- every `retireable` line - an original left in place that 1.0 no longer reads;
+- every `note` line - notably `pm.authority: autonomous`, which 1.0 keeps under
+  `retired.pm` and records in `crew.json` `notes` as "autopilot arrives in
+  1.1.0". Say plainly that nothing will dispatch on its own until then.
 
 Then ask whether to apply. Do not apply in the same turn as the preview.
 
