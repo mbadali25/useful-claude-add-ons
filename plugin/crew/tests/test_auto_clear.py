@@ -450,3 +450,62 @@ def test_the_windows_flavour_stands_down_entirely_off_windows(tmp_path):
     assert result.stdout.strip() == ""
     assert not (root / ".crew" / SENT).exists()
     assert not (root / ".crew" / ".autoclear.log").exists()
+
+
+# --- A repo with NO .crew/config.json at all --------------------------------
+
+
+def _repo_with_no_config(tmp_path, machine_enabled=True):
+    """A repo directory that has never run `/crew:init` -- no `.crew/config.json`
+    at all, matching a fresh checkout: `.crew/config.json` is git-ignored in
+    this very repo (`.gitignore:292`), so every clone or worktree starts this
+    way until something writes one. The MACHINE is opted in regardless --
+    `test_only_the_machine_can_opt_in_and_a_repo_can_only_opt_out` already
+    proves a repo need not enable anything for the machine's global config to
+    arm it, and an absent repo config is not a different input to that check
+    than a present-but-empty one.
+    """
+    root = crew_fixtures.make_repo(tmp_path, config=None, git=False)
+    _write_machine(root, machine_enabled)
+    return root
+
+
+def test_a_missing_repo_config_still_logs_the_no_session_refusal_sh(tmp_path):
+    """Regression: `[ -f .crew/config.json ] || exit 0` used to sit before
+    `note()` is even defined, so a repo that never ran `/crew:init` stood down
+    with 0 bytes on stdout AND stderr and no `.crew/.autoclear.log` line ever
+    written, whatever `--session`/`--force` said -- the exact Windows burn-in
+    symptom, reproduced here without any repo config at all.
+    """
+    root = _repo_with_no_config(tmp_path)
+    assert not (root / ".crew" / "config.json").exists()
+    result = _run("sh", root, session=None)
+    assert result.returncode == 0
+    assert "no session id" in result.stderr, result.stderr
+    log = (root / ".crew" / ".autoclear.log").read_text(encoding="utf-8")
+    assert "no session id" in log
+
+
+@pytest.mark.skipif(_PWSH_ANY is None, reason="needs pwsh")
+def test_a_missing_repo_config_still_logs_the_no_session_refusal_ps1(tmp_path):
+    """The `.ps1` twin of the case above, run the way hooks.json's registered
+    scripts are invoked (`pwsh -NoProfile ... -File script.ps1 <args>`), with
+    no `-Session` -- byte-for-byte the Windows burn-in repro. `OS=Windows_NT`
+    is the same test seam `scope_fixtures.py`/`test_context_watch.py` use to
+    drive this flavour on a non-Windows host; nothing here reaches the send
+    path, so it is safe off real Windows too.
+    """
+    root = _repo_with_no_config(tmp_path)
+    assert not (root / ".crew" / "config.json").exists()
+    home = str(root.parent / "home")
+    env = dict(os.environ, CLAUDE_PROJECT_DIR=str(root), OS="Windows_NT",
+               CREW_AUTOCLEAR_INHIBIT="1", HOME=home, USERPROFILE=home)
+    result = subprocess.run(
+        [_PWSH_ANY, "-NoProfile", "-NonInteractive", "-File", _PS1,
+         "-Root", str(root)],
+        cwd=str(root), env=env, stdin=subprocess.DEVNULL,
+        capture_output=True, text=True, check=False)
+    assert result.returncode == 0
+    assert "no session id" in result.stderr, result.stderr
+    log = (root / ".crew" / ".autoclear.log").read_text(encoding="utf-8")
+    assert "no session id" in log
