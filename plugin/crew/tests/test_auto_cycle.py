@@ -539,7 +539,17 @@ _WINDOW_CASES = [
 
 @by_flavor_matrix
 @pytest.mark.parametrize("case,windows,title,expect", _WINDOW_CASES, ids=[c[0] for c in _WINDOW_CASES])
-def test_the_window_is_identified_uniquely_or_not_at_all(flavor, case, windows, title, expect, tmp_path):
+def test_the_window_is_identified_uniquely_or_not_at_all(flavor, case, windows, title, expect, tmp_path, request):
+    if flavor == "ps1" and case == "title-one":
+        # The CREW_AUTOCLEAR_OWNER_STUB seam that let this case reach a fake
+        # pid's owner-safety check without exercising it was reverted
+        # (a5008632): Codex found it lets any environment falsify the window
+        # owner and bypass the WT tab-safety check. See TODO.md - win-repo
+        # needs a test-only seam that production auto-clear.ps1 cannot honour.
+        request.node.add_marker(pytest.mark.xfail(
+            strict=True,
+            reason="owner lookup seam: tracked for win-repo, see TODO",
+        ))
     del case
     root = _repo(tmp_path)
     if flavor == "sh":
