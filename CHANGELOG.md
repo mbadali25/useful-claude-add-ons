@@ -6,7 +6,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Changed
 
-- **`crew` 1.0.3: Windows burn-in fixes merged - in-process test decision
+- **`crew` 1.0.4: Windows burn-in fixes merged - in-process test decision
   logic with a default parity sample and the full per-shell matrix marked
   `slow` (run on windows-latest CI); per-flavour PATH fixtures for shim
   tests plus `autoClear` `onlyRepos`/`onlySessions` scope narrowing;
@@ -14,7 +14,7 @@ All notable changes to this repository are documented here. Format follows [Keep
   with a timeout, and Python probes that prove CPython/PyPy and kill the
   process tree.** Three burn-in lanes (`crew-1.0-burnin-fix1`,
   `crew-1.0-burnin-fix4`, `crew-1.0-burnin-fix3b`) merged into `crew-1.0`;
-  `obsidian-vault` 0.4.7 picks up the same proven-Python-probe resolver in
+  `obsidian-vault` 0.4.8 picks up the same proven-Python-probe resolver in
   its bash wrappers from the fix3b lane. `plugin/crew/BUDGETS.md`'s
   Markdown line-count claim re-measured against the merged tree.
   Review-round-3 fixes: fail-closed `autoClear` scoping, including `.ps1`
@@ -25,6 +25,40 @@ All notable changes to this repository are documented here. Format follows [Keep
   in `event_claim`, the probe wait clamped to the overall resolver
   deadline, a dead bash memo removed, and `obsidian-vault`'s `.ps1`
   wrappers launching `.cmd`/`.bat` Pythons.
+
+### Fixed
+
+- `check_instructions.py` returns POSIX relpaths, so budget allowances and
+  stale-name exemptions match on Windows; `.gitattributes` pins
+  `*.py`/`*.ps1`/`*.psm1` to `eol=lf`.
+- `auto-clear`: a crew repo with `.crew/` but no `config.json` now reaches
+  the machine opt-in instead of standing down; repos without `.crew/` stay
+  silent. `onlyRepos`/`onlySessions` matrix skips by capability (tmux,
+  owner window) instead of failing; drive-root-relative symlink targets
+  keep the link's drive.
+- Windows fixtures: tests resolve bash via `crew_fixtures.resolve_bash`
+  instead of bare `bash` or `/bin/bash`.
+- Python probes: no `%` reaches `cmd.exe` when a `.cmd`/`.bat` Python shim
+  is launched; timed-out probes are reaped and disposed.
+- `event_claim`: sent claims written by the previous release are honoured
+  after upgrade; `notify`/`handoff-write` `.ps1` build python argv with
+  Windows quoting.
+- Fixed context-watch silently swallowing a crashing/refusing auto-clear on
+  both flavours - its exit code and stderr are now captured and logged to
+  `.crew/.autoclear.log` (also present in 0.20.17; not backported).
+- `crew`: `.codex/config.toml` no longer generates a no-op `[profiles.*]`
+  table (codex-cli 0.154.0 ignores project-local profiles); the reviewer's
+  read-only sandbox is enforced on the command line (`--sandbox read-only`,
+  `review_run.py`), the only Codex launch site.
+- `obsidian-vault`: refuse to queue an unparseable "?" session capture with
+  no transcript (logged, not silent); dedupe transcript-only captures by
+  trigger+transcript hash.
+
+### Added
+
+- `crew`: `codex-probe` reads Codex project trust from `~/.codex/config.toml`
+  (`CODEX_HOME`-aware) and reports trusted / missing trust (CLOSED) /
+  unknown.
 
 - **`obsidian-canvas` 1.1.2: says plainly that `obsidian-memory-contract`
   ships only with the `obsidian-vault` plugin.** A skill-only install was
