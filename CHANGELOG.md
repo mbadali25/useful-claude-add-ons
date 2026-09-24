@@ -6,6 +6,16 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Changed
 
+- **Retired `claude-memories-vault` and `claude-memories-canvas` (their
+  conventions ship as obsidian-vault portable profiles) and the unregistered
+  `vault-automation/` scripts (replaced by obsidian-vault's capture and
+  bounded gardener).** `obsidian-vault` 0.4.4: two prose sites
+  (`README.md`, `obsidian-memory-contract/SKILL.md`) that named the retired
+  skills now point at `profiles/memory-vault.md` /
+  `profiles/canvas-maps.md`. `obsidian-canvas` 1.1.1: its cross-reference to
+  `claude-memories-canvas` now points at the same profile. Marketplace
+  skill count 36 -> 34.
+
 - **`crew` 1.0.0: one session owns a ticket.** The interactive session carries
   a ticket through brainstorm → spec → plan → implement → tests → docs →
   review → done (`/crew:brainstorm`, `/crew:spec`, `/crew:plan`,

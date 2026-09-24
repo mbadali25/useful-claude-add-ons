@@ -6,13 +6,9 @@ description: The frontmatter contract, tag discipline, and canvas-vs-note rule f
 # Obsidian memory contract
 
 A generic starting contract for a vault used as Claude Code's durable memory.
-If this marketplace already has a vault-specific skill installed (this repo
-ships `claude-memories-vault` and `claude-memories-canvas` for one particular
-vault), **that skill wins** - it is tuned to the actual vault's real
-conventions, where this one is a starting shape for a vault that has none yet.
 
-Two portable profiles carry those vault-specific conventions without the one
-vault's paths, so any primary vault can adopt them:
+Two portable profiles carry one particular vault's tuned conventions without
+that vault's own paths baked in, so any primary vault can adopt them:
 [`profiles/memory-vault.md`](profiles/memory-vault.md) (folder layout,
 frontmatter, filenames, wikilink resolution including the Linux case trap,
 commit-by-path) and [`profiles/canvas-maps.md`](profiles/canvas-maps.md)

@@ -49,7 +49,7 @@ The menu is a cursor picker — **↑/↓ to move, Space to tick, Enter to start
   ----------------------
     [x] Prerequisites: git, nodejs, npm, python3, pip3 (needs root or sudo)
     [x] Claude Code CLI (@anthropic-ai/claude-code) + PATH export
-  > [x] This repo's marketplace + 36 of 36 skills  >
+  > [x] This repo's marketplace + 34 of 34 skills  >
     [x] Team plugins: superpowers, frontend-design, excalidraw-generator
     ...
   ↑↓ move   Space toggle   Enter start   A all   N none   D defaults   Q cancel
@@ -151,7 +151,7 @@ For this repo's own skills, [`scripts/check-marketplace.py`](scripts/check-marke
 |---|---|---|
 | 1 Prerequisites | Chocolatey + git, awscli, nodejs, python (Windows) / git, nodejs, npm, python3, pip3 via apt/dnf/yum/pacman/zypper/apk (Linux) | package manager |
 | 2 Claude Code CLI | `@anthropic-ai/claude-code`, a persistent `PATH` entry for the npm global bin, and an update to the latest published version if one already exists | npm |
-| 3 This repo | The `useful-claude-add-ons` marketplace and, by default, all 36 skills<!-- claim: skills-count --> in [`skills/`](skills/) — narrow it with → in the menu or `--skills` | this repo |
+| 3 This repo | The `useful-claude-add-ons` marketplace and, by default, all 34 skills<!-- claim: skills-count --> in [`skills/`](skills/) — narrow it with → in the menu or `--skills` | this repo |
 | 4 Team plugins | `superpowers`, `frontend-design`, `excalidraw-generator` | 3 marketplaces (only the ones behind a ticked plugin) |
 | 5 find-skills | The `find-skills` skill, into the user skills dir | `vercel-labs/skills` |
 | 6 Community | `adhd-output-style`, `azure-tools`, `anthropic-office-skills`, `agent-browser`, `ppt-master`, `voltagent-infra`, `voltagent-qa-sec` | 4 marketplaces (only the ones behind a ticked plugin) |
@@ -770,20 +770,7 @@ On Windows they also fix four things that otherwise break claude-obsidian silent
 
 ### Vault automation — the vault that feeds itself
 
-**New setups:** prefer the cross-platform [`obsidian-vault`](plugin/obsidian-vault) plugin (`claude plugin install obsidian-vault@useful-claude-add-ons`, then `/obsidian-vault:init`) over the Windows-only installer below - same capture/gardener idea as a proper plugin, with a committed test suite and no vault path baked in. The installer below still works and is documented here for anyone already using it.
-
-Once a vault exists, [**`vault-automation/`**](vault-automation/) installs the layer that makes it learn on its own: `SessionEnd`/`PreCompact` hooks queue every Claude session into the vault inbox, a nightly **gardener** task runs headless Claude to distill queued sessions into source-cited concept pages and daily digests, and a `HOME.md` Dataview dashboard surfaces what needs attention. Works with Obsidian Sync alone (no git required) or with an optional git history layer. Dry-run by default:
-
-```powershell
-# Preview, then apply against the default vault (C:\repos\claude-memories)
-.\vault-automation\setup-vault-automation.ps1
-.\vault-automation\setup-vault-automation.ps1 -Apply
-
-# With the optional git history layer
-.\vault-automation\setup-vault-automation.ps1 -Apply -UseGit -GitRemote git@github.com:you/claude-memories.git
-```
-
-Run the gardener on **one machine only**; details and safety notes in [`vault-automation/README.md`](vault-automation/README.md).
+Use the cross-platform [`obsidian-vault`](plugin/obsidian-vault) plugin (`claude plugin install obsidian-vault@useful-claude-add-ons`, then `/obsidian-vault:init`): capture hooks queue every session into the vault inbox, a gardener distills queued sessions into source-cited concept pages and daily digests, and portable conventions profiles under `plugin/obsidian-vault/skills/obsidian-memory-contract/profiles/` replace the vault-specific `claude-memories-vault`/`claude-memories-canvas` skills this repo used to ship. The Windows-only `vault-automation/` installer that predated the plugin has been retired.
 
 ## Microsoft MCP servers
 
@@ -830,8 +817,6 @@ See [`Skill-Authoring-Standard.md`](Skill-Authoring-Standard.md) for how a skill
 | [`cisco-meraki`](skills/cisco-meraki) | Cloud / Networking | Cisco Meraki Dashboard API v1 for a single org — inventory and device status, event and config-change logs, security/IDS events, Air Marshal, live diagnostics, and MX/MS/MR config changes gated behind snapshot → diff → confirm with rollback. | "Which APs are offline?"; "Who changed the firewall rules?"; cycling a flapping switch port; adding a VLAN; confirming a branch VPN came back up. | Automatic |
 | [`claude-code-defaults`](skills/claude-code-defaults) | Claude Code / Config | Configures how Claude Code itself behaves by default — `CLAUDE.md` instructions vs `settings.json` enforcement, permission allow/deny/ask rules and modes, hooks, default model, and which scope (user, project, local, managed) each belongs in. Inventories existing config and merges rather than clobbering. | "Stop asking me for permission every time"; "Why is Claude ignoring my `CLAUDE.md`?"; standardizing Claude Code across a team or an MDM-managed fleet. | Automatic |
 | [`claude-code-tuneup`](skills/claude-code-tuneup) | Claude Code / Config | Audits an installation for what is making it slow or bloated — the same skill installed twice, hooks spawning a process on every tool call, `SessionStart` hooks injecting context, plugins installed but disabled, overlapping MCP servers, oversized `CLAUDE.md` and unscoped rules — and returns a ranked cleanup plan with the exact command per item. Read-only until you approve. | "Claude Code feels slow"; startup or every Bash call lagging; compacting far too early; a skill firing twice or the wrong one firing; tidying up after an install script added a dozen plugins at once. | Automatic |
-| [`claude-memories-canvas`](skills/claude-memories-canvas) | Knowledge / Obsidian | Canvas (`.canvas`) conventions for the `claude-memories` Obsidian vault at `C:\repos\claude-memories\wiki\maps` (Windows) / `/repos/claude-memories/wiki/maps` (Linux) — the node/edge schema actually in use, colour and id styles, the column-and-group geometry, and the two rules that keep a canvas findable: facts live in notes, and every canvas is linked from its `Project - *.md`. | Adding a box to an existing vault map without regenerating it; "show me the shape of" a system already written up in the vault; a new architecture or data-flow map under `wiki/maps`; a canvas that renders empty because the JSON stopped parsing. | Automatic |
-| [`claude-memories-vault`](skills/claude-memories-vault) | Knowledge / Obsidian | Note conventions for the `claude-memories` Obsidian vault at `C:\repos\claude-memories` (Windows) / `/repos/claude-memories` (Linux) — folder layout, the six required frontmatter fields, the `type`/`status` value sets, the `wiki/templates` templates, how wikilinks resolve on Windows, the write lock the gardener respects, and when a fact belongs in the vault versus Claude Code auto-memory. | "Write this down so I do not lose it"; distilling a session into `wiki/concepts`; a page that fails the frontmatter lint or shows as unsourced in `/recall`; deciding between the vault and auto-memory; touching `inbox/pending-reflect.md`. | Automatic |
 | [`cloudflare`](skills/cloudflare) | Cloud / Networking | Cloudflare v4 API — DNS, zones, cache purge, WAF/rulesets, page rules, SSL/TLS, Workers/KV/R2, Zero Trust, analytics. | Adding or correcting a DNS record; purging cache after a deploy; a WAF rule blocking legitimate traffic; auditing Zero Trust access policies. | Automatic |
 | [`doc-builder`](skills/doc-builder) | Docs / Reporting | Finished documents as DOCX and PDF through Word, or LibreOffice where Word is absent, in the house style of whichever brand pack is installed. Two pipelines behind one routing rule: findings and tabular content go HTML-to-Word; step-by-step procedures with screenshots go python-docx OOXML, which is the only path that survives Word's `wp:effectExtent` border clipping. Also install [`solomon-doc-builder`](skills/solomon-doc-builder) for automatic Solomon branding; `--brand neutral` (or `DOC_BUILDER_BRAND=neutral`) always turns it back off. | "Write this up for management"; an SOP for setting up the VPN with screenshots; a findings report that came out unstyled black-on-white; "turn this into a Word doc I can send to the client". | Automatic |
 | [`drata`](skills/drata) | Compliance | Drata Public API — controls, monitoring tests, evidence, personnel, policies, frameworks, risks, vendors, assets across US/EU/APAC regions. | SOC 2 or ISO 27001 audit prep; exporting evidence or a personnel roster for an auditor; chasing a failing monitor; a CI compliance gate. | Automatic |

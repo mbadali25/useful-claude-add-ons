@@ -301,13 +301,10 @@ individually-stated decision rather than a blanket "not touched":
   `obsidian-skills` marketplace) is already wired into
   `scripts/install-prerequisites.sh` item 18, and the two can now coexist
   with no ambiguity in prose, README rows, or menu labels.
-- **`vault-automation/`** at the repo root (Windows-only PowerShell: capture
-  hooks, a scheduled gardener, a `HOME.md` dashboard) is marked superseded for
-  new setups in its own README, pointing here. Its scripts are left in place
-  rather than deleted, because the root `README.md` still documents them as a
-  runnable quickstart - retiring that path is a separate, deliberate change.
-  The one thing it does that this plugin does not yet do is generate a
-  `HOME.md` Dataview dashboard; `/obsidian-vault:init` offers the same starter
+- **`vault-automation/`** (Windows-only PowerShell: capture hooks, a
+  scheduled gardener, a `HOME.md` dashboard) has been retired now that this
+  plugin covers the same ground cross-platform, with a committed test suite
+  and no vault path baked in. `/obsidian-vault:init` offers the same starter
   plugin set it used to pre-enable (Dataview, Obsidian Git, Excalidraw,
   Omnisearch, Kanban), one at a time, confirmed.
 - **`claude-obsidian-setup/`** at the repo root targets a different thing: it
@@ -323,8 +320,11 @@ individually-stated decision rather than a blanket "not touched":
   than reimplementing it; the vault-server skill was not otherwise
   cross-referenced.
 - **`skills/claude-memories-vault`** and **`skills/claude-memories-canvas`**
-  are vault-specific tuned versions of what `obsidian-memory-contract` teaches
-  generically - that skill explicitly yields to them where installed.
+  are retired: their vault-specific conventions now ship as
+  `obsidian-memory-contract`'s portable profiles
+  (`profiles/memory-vault.md`, `profiles/canvas-maps.md`), adopted by naming
+  the profile in a vault's own `CLAUDE.md` rather than installing a
+  vault-specific skill.
 
 ## Uninstall
 

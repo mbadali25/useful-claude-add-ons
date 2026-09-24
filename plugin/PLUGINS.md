@@ -586,7 +586,7 @@ Nothing keeps running afterwards — there were no hooks. Ollama, the models it 
 | | |
 |---|---|
 | **Source** | [`obsidian-vault/`](obsidian-vault) |
-| **Version** | 0.4.3<!-- claim: plugin-version:obsidian-vault --> |
+| **Version** | 0.4.4<!-- claim: plugin-version:obsidian-vault --> |
 | **Install** | `claude plugin install obsidian-vault@useful-claude-add-ons` |
 | **Registers** | 2 agents, 11 commands, 3 skills, 8 hook entries (3 scripts × `.sh`/`.ps1`) across 4 events |
 | **Upstream guide** | [`obsidian-vault/README.md`](obsidian-vault/README.md) |
@@ -669,7 +669,7 @@ script comment.
 | Skill | For |
 |---|---|
 | `obsidian-setup` | The full per-OS install, per-vault Local REST API configuration, and per-vault MCP registration steps `/obsidian-vault:init` follows, plus the `enableInsecureServer`/HTTPS-port and "Obsidian looks up but isn't" troubleshooting that a wrong guess here silently breaks |
-| `obsidian-memory-contract` | The six-key frontmatter contract, evidence rules, tag discipline, canvas-holds-no-facts rule, and the filesystem-over-MCP performance rule at scale (~50k+ notes) - and explicitly does not apply one vault's contract to another. Yields to a vault-specific skill (this repo ships `claude-memories-vault`/`claude-memories-canvas` for one particular vault) or the vault's own `CLAUDE.md` wherever either exists |
+| `obsidian-memory-contract` | The six-key frontmatter contract, evidence rules, tag discipline, canvas-holds-no-facts rule, and the filesystem-over-MCP performance rule at scale (~50k+ notes) - and explicitly does not apply one vault's contract to another. Ships two portable profiles (`profiles/memory-vault.md`, `profiles/canvas-maps.md`) carrying those conventions without one vault's paths baked in; the vault's own `CLAUDE.md` still wins wherever either differs |
 | `obsidian-scheduling` | Cross-platform reference for scheduling the gardener/reflector unattended - Task Scheduler, cron, systemd user timers |
 
 ### What it creates
@@ -696,12 +696,13 @@ already-set-up vault with none of its own install steps run.
 
 ### Related tooling this plugin does not absorb
 
-`vault-automation/` (Windows-only capture/gardener scripts) is marked
-superseded in its own README rather than deleted, since the root `README.md`
-still documents it as a runnable quickstart. `claude-obsidian-setup/` targets
-a different thing entirely - vault creation for the third-party
-`claude-obsidian` plugin's own conventions - and was left untouched. See
-`obsidian-vault/README.md`'s "Related" section for the full accounting.
+`vault-automation/` (Windows-only capture/gardener scripts) has been retired
+now that this plugin covers the same ground cross-platform; the root
+`README.md` no longer documents it as a runnable quickstart.
+`claude-obsidian-setup/` targets a different thing entirely - vault creation
+for the third-party `claude-obsidian` plugin's own conventions - and was left
+untouched. See `obsidian-vault/README.md`'s "Related" section for the full
+accounting.
 
 ### Uninstall
 

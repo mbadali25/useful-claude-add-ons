@@ -16,7 +16,7 @@ One script per OS. Both are idempotent (safe to re-run) and, by default, also bo
   ----------------------
     [x] Prerequisites: git, nodejs, npm, python3, pip3 (needs root or sudo)
     [x] Claude Code CLI (@anthropic-ai/claude-code) + PATH export + update check
-  > [x] This repo's marketplace + 36 of 36 skills  >
+  > [x] This repo's marketplace + 34 of 34 skills  >
     [x] Team plugins: superpowers, frontend-design, excalidraw-generator
     ...
     [ ] Strix AI pentesting CLI (needs Docker + an LLM API key)
@@ -42,7 +42,7 @@ One script per OS. Both are idempotent (safe to re-run) and, by default, also bo
 
 | Row | What → picks | Non-interactive equivalent |
 |---|---|---|
-| 3 | the 36 skills<!-- claim: skills-count --> in this repo | `--skills` / `-Skills` |
+| 3 | the 34 skills<!-- claim: skills-count --> in this repo | `--skills` / `-Skills` |
 | 4 | superpowers, frontend-design, excalidraw-generator | `--team` / `-Team` |
 | 6 | the 5 community plugins | `--community` / `-Community` |
 | 19 | this repo's own plugins (`crew`, `gizmoduck`, `localgpu`, `obsidian-vault`) | `--plugins` / `-Plugins` |
@@ -251,7 +251,7 @@ Six more rows, also off by default. None of them are MCP servers.
 
 - **This repo's plugins** (19) - installs everything under [`plugin/`](plugin/) from this repo's own marketplace: [`crew`](plugin/crew) (4 subagents, 33 slash commands, 28 bundled skills<!-- claim: plugin-skills:crew -->, 34 hook entries across 8 events), [`gizmoduck`](plugin/gizmoduck) (6 slash commands, 1 bundled skill, no agents and no hooks), [`localgpu`](plugin/localgpu) (6 slash commands, 1 bundled skill, one local MCP server, no agents and no hooks), and [`obsidian-vault`](plugin/obsidian-vault) (2 subagents, 8 slash commands, 3 bundled skills, 8 hook entries across 4 events). It adds the marketplace itself first, so the item works whether or not item 3 ran; both steps are no-ops when they are already present.
 
-  **`obsidian-vault` (this repo's plugin) is a different thing from item 18** below, which installs Obsidian the desktop app plus two *third-party* marketplace plugins also touching Obsidian (`claude-obsidian@agricidaniel-claude-obsidian`, and a plugin literally named `obsidian` from the `obsidian-skills` marketplace) - it is named `obsidian-vault`, not `obsidian`, precisely so it does not collide with that third-party plugin's name. The two are meant to be complementary - item 18 gets Obsidian itself and upstream syntax skills onto the machine, this repo's `obsidian-vault` plugin is the memory/gardening layer on top, supporting multiple named vaults on one machine. Read [`plugin/obsidian-vault/README.md`](plugin/obsidian-vault/README.md)'s "Related" section before assuming either one supersedes the other, or before assuming this plugin replaces [`claude-obsidian-setup/`](claude-obsidian-setup/) (a different target: vault creation for the third-party `claude-obsidian` plugin's own conventions) or [`vault-automation/`](vault-automation/) (marked superseded in its own README, but not deleted - the quickstart above documents it as still runnable).
+  **`obsidian-vault` (this repo's plugin) is a different thing from item 18** below, which installs Obsidian the desktop app plus two *third-party* marketplace plugins also touching Obsidian (`claude-obsidian@agricidaniel-claude-obsidian`, and a plugin literally named `obsidian` from the `obsidian-skills` marketplace) - it is named `obsidian-vault`, not `obsidian`, precisely so it does not collide with that third-party plugin's name. The two are meant to be complementary - item 18 gets Obsidian itself and upstream syntax skills onto the machine, this repo's `obsidian-vault` plugin is the memory/gardening layer on top, supporting multiple named vaults on one machine. Read [`plugin/obsidian-vault/README.md`](plugin/obsidian-vault/README.md)'s "Related" section before assuming either one supersedes the other, or before assuming this plugin replaces [`claude-obsidian-setup/`](claude-obsidian-setup/) (a different target: vault creation for the third-party `claude-obsidian` plugin's own conventions). The Windows-only `vault-automation/` installer this plugin superseded has been retired.
 
   **`localgpu` downloads nothing at install time.** Ticking it copies six commands, one bundled skill and the MCP server's Python onto the machine and stops there. Ollama, the virtualenv and roughly 5 GB of model weights are installed by `/localgpu:setup`, per repository, after it has shown the plan and asked - so a bootstrap run cannot put multi-gigabyte models on a laptop by accident. It registers no hooks, so nothing starts running when it is enabled.
 

@@ -1046,8 +1046,6 @@ $script:SkillCatalog = @(
     [pscustomobject]@{ Key = 'cisco-meraki';            Selected = $true; Name = 'cisco-meraki            - Meraki Dashboard API: inventory, events, config changes' }
     [pscustomobject]@{ Key = 'claude-code-defaults';    Selected = $true; Name = 'claude-code-defaults    - Claude Code config: settings.json, permissions, hooks' }
     [pscustomobject]@{ Key = 'claude-code-tuneup';      Selected = $true; Name = 'claude-code-tuneup      - Audit a slow Claude Code setup: dupes, hooks, context' }
-    [pscustomobject]@{ Key = 'claude-memories-canvas';  Selected = $true; Name = 'claude-memories-canvas  - claude-memories vault: wiki/maps .canvas conventions' }
-    [pscustomobject]@{ Key = 'claude-memories-vault';   Selected = $true; Name = 'claude-memories-vault   - claude-memories vault: layout, frontmatter, write lock' }
     [pscustomobject]@{ Key = 'cloudflare';              Selected = $true; Name = 'cloudflare              - Cloudflare v4: DNS, WAF, cache, Workers, Zero Trust' }
     [pscustomobject]@{ Key = 'doc-builder';             Selected = $true; Name = 'doc-builder             - Reports + SOPs -> DOCX/PDF via Word or LibreOffice, brand pack sets the style' }
     [pscustomobject]@{ Key = 'drata';                   Selected = $true; Name = 'drata                   - Drata: controls, monitors, evidence, audit prep' }
