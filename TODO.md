@@ -3807,6 +3807,8 @@ only other clone at `/root/.claude/plugins/marketplaces/useful-claude-add-ons`).
 `9aab4d38` (`gizmoduck-ci-f2`); the ref moved to 81b347ba without a reflog entry. All 24 empty objects have mtimes within
 one ~3 s window (1790224088-1790224091), so this looks like a single batch truncation, cause not investigated. `git fetch
 origin` still fails (exit 1) with or without `--negotiation-tip`. The ref delete is waiting on the owner's direct confirmation.
+Update 2026-09-24: the owner chose "recover, then delete"; with no copy found, the ref was deleted (`git update-ref -d`),
+and `git fetch origin` then exited 0. Still OPEN: the 24 empty objects remain and their cause is uninvestigated; there has been no gc/prune.
 
 ### Stopped PM left 15 uncommitted edits in worktree `crew-1.0-burnin-fix4` - OPEN (filed 2026-09-24, PM)
 
