@@ -452,38 +452,60 @@ def test_the_windows_flavour_stands_down_entirely_off_windows(tmp_path):
     assert not (root / ".crew" / ".autoclear.log").exists()
 
 
-# --- The `.crew/` directory gate ---------------------------------------------
+# --- The `.crew/config.json` gate --------------------------------------------
 #
-# The gate is on the DIRECTORY, never on config.json, and never on nothing:
+# OWNER DECISION (standing): auto-clear runs only in an initialised crew
+# repo, and "initialised" means `.crew/config.json` exists -- the same file
+# `context-watch.sh:81` / `context-watch.ps1:25` gate on, and the same one
+# `crew_state.is_crew` names (`bool(load_config)`). This gate has moved
+# before: a `.crew/`-DIRECTORY-only gate sat here briefly, reasoned that a
+# present-but-empty repo config and an absent one are the same input to the
+# machine/repo merge -- true of the MERGE, but "is this a crew repo at all"
+# is answered here the same way every other hook in this family answers it,
+# not by a bespoke directory check nobody else uses.
 #
-#   (a) `.crew/` present, no config.json, machine opted in -- ARMED. Reaches
-#       the session check (the no-session refusal is logged), because a
-#       present-but-empty repo config and an absent one are the same input to
-#       Read-CrewJsonFile/crew_autocycle._load (both come back as "no repo
-#       autoClear block"), and 1.0 already merges: machine opts in, repo may
-#       only opt out.
-#   (b) NO `.crew/` at all, machine opted in -- SILENT. Exit 0, nothing on
-#       stdout or stderr, and `.crew/` must not spring into existence as a
-#       side effect of a hook that only ever reads -- crew never creates
-#       `.crew/` from a read.
-#   (c) `.crew/` present, no config.json, machine opted in but `onlyRepos`
-#       excludes this repo -- SILENT, no log line either (a narrowing that
-#       does not match this repo is the same as never having opted in).
+#   (a) `.crew/config.json` present (even with no `autoClear` block at all),
+#       machine opted in -- ARMED. Reaches the session check (the
+#       no-session refusal is logged), because a present-but-empty repo
+#       config is the same input to Read-CrewJsonFile/crew_autocycle._load
+#       as an absent `autoClear` block, and 1.0 already merges: machine
+#       opts in, repo may only opt out.
+#   (b) NO `.crew/config.json` -- SILENT. Exit 0, nothing on stdout or
+#       stderr, and neither `.crew/` nor `.crew/.autoclear.log` may spring
+#       into existence as a side effect of a hook that only ever reads --
+#       crew never creates `.crew/` from a read. Covers a repo with no
+#       `.crew/` at all AND one whose `.crew/` directory exists (partially
+#       initialised, or copied into a worktree) but carries no config.json:
+#       the directory's presence must not matter, which is exactly the
+#       regression a directory-only gate reintroduces.
+#   (c) `.crew/config.json` present (empty), machine opted in but
+#       `onlyRepos` excludes this repo -- SILENT, no log line either (a
+#       narrowing that does not match this repo is the same as never
+#       having opted in).
 #   (d) `.crew/config.json` opts this repo OUT while the machine is on --
 #       SILENT (a repo may only narrow the machine's opt-in, never widen it).
 
 
+def _repo_with_empty_config(tmp_path, machine_enabled=True):
+    """`.crew/config.json` present but empty -- no `autoClear` block at
+    all -- matching a repo that ran `/crew:init` for something else and
+    never touched this feature. The MACHINE is opted in regardless --
+    `test_only_the_machine_can_opt_in_and_a_repo_can_only_opt_out` already
+    proves a repo need not enable anything for the machine's global config
+    to arm it."""
+    root = crew_fixtures.make_repo(tmp_path, config={}, git=False)
+    _write_machine(root, machine_enabled)
+    return root
+
+
 def _repo_with_no_config(tmp_path, machine_enabled=True):
     """A repo directory that HAS `.crew/` (so it has been through
-    `/crew:init` or equivalent) but no `.crew/config.json` -- matching a fresh
-    checkout: `.crew/config.json` is git-ignored in this very repo
-    (`.gitignore:292`), so every clone or worktree starts this way until
-    something writes one. The MACHINE is opted in regardless --
-    `test_only_the_machine_can_opt_in_and_a_repo_can_only_opt_out` already
-    proves a repo need not enable anything for the machine's global config to
-    arm it, and an absent repo config is not a different input to that check
-    than a present-but-empty one.
-    """
+    `/crew:init` or equivalent, or is a worktree that copied the directory)
+    but no `.crew/config.json` -- matching a fresh checkout: the file is
+    git-ignored in this very repo (`.gitignore:292`), so every clone or
+    worktree starts this way until something writes one. Proves the gate is
+    on the FILE, not the directory: a directory-only gate lets this one
+    through."""
     root = crew_fixtures.make_repo(tmp_path, config=None, git=False)
     _write_machine(root, machine_enabled)
     return root
@@ -527,21 +549,18 @@ def _run_ps1_forced_windows(root, *extra_args):
         capture_output=True, text=True, check=False)
 
 
-# (a) `.crew/` present, no config.json, machine on -- armed, reaches the
-#     session check.
+# (a) `.crew/config.json` present, machine on -- armed, reaches the session
+#     check.
 
 
-def test_a_missing_repo_config_still_logs_the_no_session_refusal_sh(tmp_path):
-    """Regression: `[ -f .crew/config.json ] || exit 0` used to sit right
-    after `cd`, before `note()` is even defined, so a repo that never ran
-    `/crew:init` stood down with 0 bytes on stdout AND stderr and no
-    `.crew/.autoclear.log` line ever written, whatever `--session`/`--force`
-    said -- the exact Windows burn-in symptom, reproduced here without any
-    repo config at all. `.crew/` itself IS present (this fixture's whole
-    point), so the current directory-only gate does not stand this down.
-    """
-    root = _repo_with_no_config(tmp_path)
-    assert not (root / ".crew" / "config.json").exists()
+def test_a_present_but_empty_repo_config_is_armed_sh(tmp_path):
+    """Regression: this used to be tested the other way -- an ABSENT
+    config.json read as armed -- while the gate briefly lived on the
+    `.crew/` DIRECTORY instead of this file. The gate is the file: an
+    initialised repo with a present-but-empty config.json is armed by the
+    machine's global enabled:true."""
+    root = _repo_with_empty_config(tmp_path)
+    assert (root / ".crew" / "config.json").exists()
     result = _run("sh", root, session=None)
     assert result.returncode == 0
     assert "no session id" in result.stderr, result.stderr
@@ -550,10 +569,10 @@ def test_a_missing_repo_config_still_logs_the_no_session_refusal_sh(tmp_path):
 
 
 @pytest.mark.skipif(_PWSH_ANY is None, reason="needs pwsh")
-def test_a_missing_repo_config_still_logs_the_no_session_refusal_ps1(tmp_path):
+def test_a_present_but_empty_repo_config_is_armed_ps1(tmp_path):
     """The `.ps1` twin of the case above."""
-    root = _repo_with_no_config(tmp_path)
-    assert not (root / ".crew" / "config.json").exists()
+    root = _repo_with_empty_config(tmp_path)
+    assert (root / ".crew" / "config.json").exists()
     result = _run_ps1_forced_windows(root)
     assert result.returncode == 0
     assert "no session id" in result.stderr, result.stderr
@@ -561,8 +580,34 @@ def test_a_missing_repo_config_still_logs_the_no_session_refusal_ps1(tmp_path):
     assert "no session id" in log
 
 
-# (b) NO `.crew/` at all, machine on -- silent, and `.crew/` must not be
-#     created as a side effect.
+# (b) NO `.crew/config.json` -- silent, and nothing may be created as a
+#     side effect, whether or not the `.crew/` directory itself exists.
+
+
+def test_a_crew_directory_with_no_config_json_stays_silent_and_creates_nothing_sh(tmp_path):
+    """The regression this gate exists to prevent: a `.crew/` directory
+    present with no config.json used to be read as armed while the gate
+    briefly lived on the directory. Byte-for-byte the Windows burn-in
+    symptom this gate reproduces on purpose: 0 bytes on stdout AND stderr,
+    no log line, whatever `--session`/`--force` said."""
+    root = _repo_with_no_config(tmp_path)
+    assert not (root / ".crew" / "config.json").exists()
+    result = _run("sh", root, session=None)
+    assert result.returncode == 0
+    assert result.stdout == ""
+    assert result.stderr == ""
+    assert not (root / ".crew" / ".autoclear.log").exists()
+
+
+@pytest.mark.skipif(_PWSH_ANY is None, reason="needs pwsh")
+def test_a_crew_directory_with_no_config_json_stays_silent_and_creates_nothing_ps1(tmp_path):
+    root = _repo_with_no_config(tmp_path)
+    assert not (root / ".crew" / "config.json").exists()
+    result = _run_ps1_forced_windows(root)
+    assert result.returncode == 0
+    assert result.stdout.strip() == ""
+    assert result.stderr.strip() == ""
+    assert not (root / ".crew" / ".autoclear.log").exists()
 
 
 def test_no_crew_directory_at_all_stays_silent_and_creates_nothing_sh(tmp_path):
@@ -586,15 +631,15 @@ def test_no_crew_directory_at_all_stays_silent_and_creates_nothing_ps1(tmp_path)
     assert not (root / ".crew").exists()
 
 
-# (c) `.crew/` present, no config.json, machine on but `onlyRepos` excludes
-#     this repo -- silent, no log line either.
+# (c) `.crew/config.json` present (empty), machine on but `onlyRepos`
+#     excludes this repo -- silent, no log line either.
 
 
-def test_only_repos_excluding_this_repo_stays_silent_with_no_config_sh(tmp_path):
-    root = crew_fixtures.make_repo(tmp_path, config=None, git=False)
+def test_only_repos_excluding_this_repo_stays_silent_sh(tmp_path):
+    root = crew_fixtures.make_repo(tmp_path, config={}, git=False)
     _write_machine_autoclear(root, {"enabled": True,
                                      "onlyRepos": [str(tmp_path / "elsewhere")]})
-    assert not (root / ".crew" / "config.json").exists()
+    assert (root / ".crew" / "config.json").exists()
     result = _run("sh", root, session=None)
     assert result.returncode == 0
     assert result.stdout.strip() == ""
@@ -602,11 +647,11 @@ def test_only_repos_excluding_this_repo_stays_silent_with_no_config_sh(tmp_path)
 
 
 @pytest.mark.skipif(_PWSH_ANY is None, reason="needs pwsh")
-def test_only_repos_excluding_this_repo_stays_silent_with_no_config_ps1(tmp_path):
-    root = crew_fixtures.make_repo(tmp_path, config=None, git=False)
+def test_only_repos_excluding_this_repo_stays_silent_ps1(tmp_path):
+    root = crew_fixtures.make_repo(tmp_path, config={}, git=False)
     _write_machine_autoclear(root, {"enabled": True,
                                      "onlyRepos": [str(tmp_path / "elsewhere")]})
-    assert not (root / ".crew" / "config.json").exists()
+    assert (root / ".crew" / "config.json").exists()
     result = _run_ps1_forced_windows(root)
     assert result.returncode == 0
     assert result.stdout.strip() == ""
@@ -614,7 +659,8 @@ def test_only_repos_excluding_this_repo_stays_silent_with_no_config_ps1(tmp_path
 
 
 # (d) repo-local `enabled: false` while the machine is on -- silent (a repo
-#     may only narrow the opt-in, never widen it).
+#     may only narrow the opt-in, never widen it). This fixture already
+#     writes a real config.json, so the gate change does not touch it.
 
 
 def _repo_opted_out(tmp_path):

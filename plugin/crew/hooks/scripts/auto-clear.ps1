@@ -6,11 +6,20 @@
 #
 # It does not clear the conversation. A hook runs as a child process and cannot
 # reset its parent's state - that part of the crew-context skill is still true.
-# What it does is drive the TERMINAL, typing `/clear` at the prompt the way a
-# human would. Different mechanism, different failure mode, and the reason this
-# can work at all.
+# What it does, for method `sendkeys`, is drive the TERMINAL, typing `/clear`
+# at the prompt the way a human would. Different mechanism, different failure
+# mode, and the reason that one can work at all.
 #
-# ## What has to be true before it types anything
+# `method: "notify"` -- the default `auto` resolves to on native Windows --
+# does neither. It never identifies a window and never types anything: it
+# prints a systemMessage saying the handoff is written and verified and it is
+# safe to run the configured command yourself. This is an OWNER DECISION, not
+# a capability gap -- `sendkeys` still works and is still here, opt in to it
+# by name. Nothing in this script may say "cleared" or "compacted" unless a
+# keystroke was actually sent and its delivery verified; the notify path says
+# only what it did.
+#
+# ## What has to be true before `sendkeys` types anything
 #
 # The same rules as crew_autocycle.py, carried natively so this flavour needs no
 # python to refuse. Every one is a refusal:
@@ -26,6 +35,9 @@
 #      nearest ancestor of this hook, or -- only when that finds nothing -- the
 #      one window whose title contains windowTitle. Zero or several: refuse.
 #   5. At send time, after the delay, that exact window handle has focus.
+#
+# `notify` needs none of #4/#5 -- it identifies no window, so it is never
+# refused for lack of one.
 #
 # If you run Claude Code inside a tmux pane in WSL, use auto-clear.sh instead.
 #
@@ -53,26 +65,25 @@ if ($env:OS -ne 'Windows_NT') { exit 0 }
 $where = if ($Root) { $Root } elseif ($env:CLAUDE_PROJECT_DIR) { $env:CLAUDE_PROJECT_DIR } else { "." }
 Set-Location $where -ErrorAction SilentlyContinue
 
-# Gated on the `.crew/` DIRECTORY, never on config.json. A repo with no
-# `.crew/` at all must stay completely silent and must NEVER get a `.crew/`
-# directory or `.crew/.autoclear.log` created as a side effect of this hook
-# running -- crew never creates `.crew/` from a read, and this check has to
-# run before Write-CrewAutoClearNote ever gets a chance to call
-# New-Item/Add-Content. An EARLIER version of this gate checked
-# `Test-Path ".crew/config.json"` instead and stood the whole script down,
-# silently, on the ONE thing that matters most to prove: a fresh checkout has
-# no repo config at all (.crew/config.json is git-ignored in this very repo),
-# and "only the machine may opt in" (test_only_the_machine_can_opt_in_and_a_
-# repo_can_only_opt_out) already means a repo need not have ANY config to be
-# armed by the machine's global enabled:true. That version was removed
-# outright, which went too far the other way: a repo with NO `.crew/` at all
-# then reached this far and got one created. A `.crew/` directory present
-# with no config.json falls through to the merge below exactly like a
-# present-but-empty repo config would -- Read-CrewJsonFile already returns
-# $null for a missing file (caught inside its own try/catch), and every
-# consumer of $repoAuto is already null-safe (Get-CrewChild) -- so gating on
-# the directory rather than the file loses nothing this script needs.
-if (-not (Test-Path ".crew" -PathType Container)) { exit 0 }
+# Gated on `.crew/config.json`, not on the `.crew/` directory. OWNER DECISION
+# (standing, journaled): auto-clear runs only in an initialised crew repo, and
+# "initialised" means this file exists -- the same test context-watch.sh:81
+# and context-watch.ps1:25 use, and the same one `crew_state.is_crew` names
+# (`bool(load_config)`). This has been the gate before: a directory-only gate
+# sat here briefly, reasoned that "only the machine may opt in"
+# (test_only_the_machine_can_opt_in_and_a_repo_can_only_opt_out) means a repo
+# need not have ANY config to be armed by the machine's global enabled:true,
+# so a `.crew/` directory with no config.json should still reach the merge
+# below. That is true of the MERGE, but the PM's ruling is that "is this a
+# crew repo at all" is a separate question from "did this repo opt out", and
+# this script answers the first one the same way every other hook in this
+# family does -- consistently, not by a bespoke directory check nobody else
+# uses. A repo with NO `.crew/config.json` at all -- a fresh checkout, since
+# it is git-ignored in this very repo -- must stay completely silent and must
+# NEVER get `.crew/` or `.crew/.autoclear.log` created as a side effect of
+# this hook running, so this check runs before Write-CrewAutoClearNote ever
+# gets a chance to call New-Item/Add-Content.
+if (-not (Test-Path ".crew/config.json" -PathType Leaf)) { exit 0 }
 
 $log = ".crew/.autoclear.log"
 
@@ -417,12 +428,45 @@ if (-not $Force) {
 }
 
 # --- Resolve a method ------------------------------------------------------
+#
+# OWNER DECISION: `auto` resolves to `notify`, never to `sendkeys` -- typing
+# into a window this hook found itself is a risk `auto` does not get to
+# accept on your behalf. `sendkeys` (the SendKeys mechanism below, the
+# renamed "windows" literal) is opt-in only: request it by name.
 switch ($method) {
-  "windows" { }
-  "auto"    { }
-  "none"    { Stop-CrewAutoClear "method none" }
-  "tmux"    { Stop-CrewAutoClear "method tmux is auto-clear.sh's job; this is the native-Windows flavour. Both are registered, so the bash one will have handled it" }
-  default   { Stop-CrewAutoClear "method '$method' is not supported here (windows, none, auto)" }
+  "sendkeys" { }
+  "notify"   { }
+  "auto"     { $method = "notify" }
+  "none"     { Stop-CrewAutoClear "method none" }
+  "tmux"     { Stop-CrewAutoClear "method tmux is auto-clear.sh's job; this is the native-Windows flavour. Both are registered, so the bash one will have handled it" }
+  default    { Stop-CrewAutoClear "method '$method' is not supported here (auto, notify, sendkeys, none)" }
+}
+
+if ($method -eq "notify") {
+  # Types nothing anywhere, so none of the window-identification or focus
+  # rules below apply: no window to find, no focus to keep, no delay to
+  # wait out (there is no turn-ending race to lose, because nothing types).
+  # Printed and logged synchronously, from THIS process, never a detached
+  # child. Never claims the handoff was cleared or compacted -- only that
+  # it is safe to run the configured command yourself.
+  if ($DryRun) {
+    Write-Output "autoclear: would send"
+    Write-Output "  method: notify"
+    Write-Output "  command: $command"
+    Write-Output "  delay: 0s"
+    exit 0
+  }
+  if (-not $Force) {
+    try {
+      $claim = [System.IO.File]::Open(
+        (Join-Path (Get-Location).Path $sentMarker), [System.IO.FileMode]::CreateNew)
+      $claim.Close()
+    } catch { exit 0 }
+  }
+  $msg = "crew: handoff written and verified for this session - it is safe to run $command now (auto-clear will not type it for you)."
+  Write-Output (@{ systemMessage = $msg } | ConvertTo-Json -Compress)
+  Write-CrewAutoClearNote "sent - method notify, command '$command'"
+  exit 0
 }
 
 # --- Resolve the target window ---------------------------------------------
@@ -516,10 +560,39 @@ if ($null -eq $target) {
 }
 $label = "$($target.Title) [window $($target.Id), pid $($target.Pid), $how]"
 
+# `sendkeys` may still not be safe to use even once a window is uniquely
+# identified: Windows Terminal hosts every tab in ONE window, and nothing
+# short of UI Automation (not a dependency here) can ask that window which
+# tab is active or how many it has. So a target window OWNED by Windows
+# Terminal can never be confirmed as the session's ONLY tab from outside
+# it -- this declines rather than guess, exactly as an unresolvable target
+# would, and falls back to `notify` instead of typing nowhere useful.
+$ownerProcessName = ""
+try { $ownerProcessName = (Get-Process -Id $target.Pid -ErrorAction Stop).ProcessName } catch { }
+if ($ownerProcessName -eq "WindowsTerminal") {
+  $declineReason = "cannot verify the active tab - Windows Terminal hosts multiple tabs in one window, and that cannot be confirmed from outside it"
+  if ($DryRun) {
+    Write-Output "autoclear: would decline sendkeys - $declineReason"
+    Write-Output "  falling back to notify: would say it is safe to run $command yourself"
+    exit 0
+  }
+  if (-not $Force) {
+    try {
+      $claim = [System.IO.File]::Open(
+        (Join-Path (Get-Location).Path $sentMarker), [System.IO.FileMode]::CreateNew)
+      $claim.Close()
+    } catch { exit 0 }
+  }
+  $msg = "crew: declined to type into $label ($declineReason) - it is safe to run $command yourself."
+  Write-Output (@{ systemMessage = $msg } | ConvertTo-Json -Compress)
+  Write-CrewAutoClearNote "declined sendkeys - $declineReason - sent notify instead"
+  exit 0
+}
+
 if ($DryRun) {
   # Deterministic, and the same shape auto-clear.sh prints. The suite reads it.
   Write-Output "autoclear: would send"
-  Write-Output "  method: windows"
+  Write-Output "  method: sendkeys"
   Write-Output "  target: $label"
   Write-Output "  command: $command"
   Write-Output "  delay: ${delay}s"
@@ -547,12 +620,24 @@ if (-not $Force) {
   } catch { exit 0 }
 }
 
+$sendRoot = (Get-Location).Path
 $child = @'
-param([long]$Hwnd, [string]$Text, [int]$Delay)
+param([long]$Hwnd, [string]$Text, [int]$Delay, [string]$Root)
 # Delete self first: every exit below is an early return, and a temp script left
 # in %TEMP% on each of them accumulates one file per session forever. The file
 # is already open and read by the interpreter, so removing it now is safe.
 try { Remove-Item -LiteralPath $PSCommandPath -Force -ErrorAction SilentlyContinue } catch { }
+function Write-CrewChildNote([string]$Message) {
+  # The parent has already exited by the time this runs, so its own
+  # Write-CrewAutoClearNote is gone -- a Stop hook's stderr is invisible on
+  # exit 0 regardless, and this is well past that exit. The log is the only
+  # channel left, and never claims a keystroke was sent unless it was.
+  try {
+    $stamp = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
+    Add-Content -Path (Join-Path $Root ".crew/.autoclear.log") -Value "$stamp`t$Message" `
+      -Encoding utf8 -ErrorAction SilentlyContinue
+  } catch { }
+}
 Start-Sleep -Seconds $Delay
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -Namespace CrewAC -Name Win -MemberDefinition @"
@@ -561,8 +646,12 @@ Add-Type -Namespace CrewAC -Name Win -MemberDefinition @"
 # Checked HERE, not in the parent: focus at send time is the only focus that
 # matters. The exact window handle resolved above, not a title: if the user
 # alt-tabbed during the delay, this is what stops "/clear" being typed into
-# their mail client.
-if ([CrewAC.Win]::GetForegroundWindow().ToInt64() -ne $Hwnd) { exit 0 }
+# their mail client. Logged, not silent: "nothing happened" and "it worked"
+# must not look the same in the one place anybody can check afterwards.
+if ([CrewAC.Win]::GetForegroundWindow().ToInt64() -ne $Hwnd) {
+  Write-CrewChildNote "declined sendkeys - the target window lost focus during the ${Delay}s delay, so nothing was typed - run $Text yourself"
+  exit 0
+}
 # SendKeys treats + ^ % ~ ( ) { } [ ] as syntax. Escape them so a configured
 # command is sent as itself.
 $escaped = [regex]::Replace($Text, '[+^%~(){}\[\]]', { param($m) "{$($m.Value)}" })
@@ -588,8 +677,8 @@ if (-not $exe) { $exe = "pwsh" }
 Start-Process -FilePath $exe -WindowStyle Hidden -ArgumentList @(
   "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
   "-File", $childPath, "-Hwnd", "$($target.Id)", "-Text", $command,
-  "-Delay", "$delay"
+  "-Delay", "$delay", "-Root", $sendRoot
 ) | Out-Null
 
-Write-CrewAutoClearNote "sent - method windows, target $label, command '$command' in ${delay}s (only if that window still has focus)"
+Write-CrewAutoClearNote "sent - method sendkeys, target $label, command '$command' in ${delay}s (only if that window still has focus)"
 exit 0

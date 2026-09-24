@@ -25,7 +25,9 @@ developer's real opt-in, enumerate a real window, or send a keystroke.
 import json
 import os
 import pathlib
+import shutil
 import subprocess
+import tempfile
 import time
 
 import pytest
@@ -152,14 +154,19 @@ def _windows(tmp_path, windows):
 def _sendable(flavor, tmp_path, root):
     """A target each flavour can identify uniquely: a tmux pane whose pid is
     this test process (an ancestor of the script) for bash, and one stubbed
-    window owned by this test process for PowerShell."""
+    window owned by this test process for PowerShell.
+
+    `method="sendkeys"` is explicit for ps1: since `auto` now resolves to
+    `notify` on native Windows (the owner decision this method never
+    exercises), a helper whose whole job is a WINDOW target has to ask for
+    the method that still uses one."""
     if flavor == "sh":
         bindir = tmp_path / "fakebin"
         crew_fixtures.write_shim(bindir, "tmux", f"#!/bin/sh\necho {os.getpid()}\n",
                                  f"@echo off\r\necho {os.getpid()}\r\n")
         _machine(root, method="tmux")
         return crew_fixtures.shim_env("sh", bindir, TMUX="/tmp/fake,1,0", TMUX_PANE="%7")
-    _machine(root)
+    _machine(root, method="sendkeys")
     return _windows(tmp_path, [{"id": 4242, "pid": os.getpid(), "title": "Claude Code"}])
 
 
@@ -410,7 +417,10 @@ def test_the_window_is_identified_uniquely_or_not_at_all(flavor, case, windows, 
         _machine(root, method="xdotool", windowTitle=title or None)
     else:
         env = _windows(tmp_path, windows)
-        _machine(root, windowTitle=title or None)
+        # Explicit: `auto` now resolves to `notify` on native Windows and
+        # never touches window resolution at all, so this window-targeting
+        # matrix has to request `sendkeys` by name to exercise it.
+        _machine(root, method="sendkeys", windowTitle=title or None)
     _write_marker(root)
     _write_handoff(root)
 
@@ -542,6 +552,163 @@ def test_wtype_is_refused_even_with_unsafe_focus(tmp_path):
     assert "cannot identify a window" in result.stderr
 
 
+# --- OWNER DECISION: `auto` resolves to `notify` on native Windows, never to
+# `sendkeys` -------------------------------------------------------------
+
+_NO_CAPABILITY_ENV = {"TMUX": "", "DISPLAY": "", "TMUX_PANE": ""}
+
+
+@by_flavor
+def test_auto_resolves_to_notify_on_native_windows_and_never_to_sendkeys(flavor, tmp_path):
+    """Both senders: `auto` with no tmux pane and no X11 must choose `notify`,
+    never the SendKeys-equivalent method, on native Windows. ps1 is always
+    told OS=Windows_NT by `_invoke`; sh is told the same here explicitly --
+    this is the one place a bash session can legitimately be "native
+    Windows" (Git Bash), and the owner decision applies there too."""
+    root = _repo(tmp_path)  # method left at the default, "auto"
+    _machine(root)
+    _write_marker(root)
+    _write_handoff(root)
+    env = dict(_NO_CAPABILITY_ENV, OS="Windows_NT")
+
+    result = _invoke(flavor, "auto-clear", root, args=("--session", SESSION_A, "--dry-run"),
+                     env_extra=env)
+
+    assert "would send" in result.stdout, result.stdout + result.stderr
+    assert "method: notify" in result.stdout, result.stdout
+    assert "sendkeys" not in result.stdout
+
+
+@by_flavor
+def test_auto_does_not_resolve_to_notify_off_windows_with_no_capability(flavor, tmp_path):
+    """The mirror case: off native Windows (no `OS=Windows_NT`), with no tmux
+    and no X11, `auto` still refuses outright -- it must not paper over a
+    genuinely headless Linux/macOS host by notifying instead."""
+    root = _repo(tmp_path)
+    _machine(root)
+    _write_marker(root)
+    _write_handoff(root)
+
+    result = _invoke(flavor, "auto-clear", root, args=("--session", SESSION_A, "--dry-run"),
+                     env_extra=dict(_NO_CAPABILITY_ENV))
+
+    if flavor == "sh":
+        # The .sh flavour has no forced OS -- it genuinely reads whatever
+        # $OS this test process happens to have, which is never Windows_NT
+        # in this suite's own environment.
+        assert "would send" not in result.stdout
+        assert "no usable method" in result.stderr
+    else:
+        # `_invoke` always forces OS=Windows_NT for ps1 -- that IS this
+        # flavour's native platform, so `auto` resolves to `notify` here
+        # regardless, and that is the correct answer, not a refusal.
+        assert "method: notify" in result.stdout, result.stdout
+
+
+@by_flavor
+def test_notify_never_claims_the_session_was_cleared_or_compacted(flavor, tmp_path):
+    """Wording: the notify path must say what it did (the handoff is
+    written and verified, and it is safe to run the command yourself) and
+    never claim success it cannot verify -- no "cleared" or "compacted"
+    anywhere in what it prints or logs."""
+    root = _repo(tmp_path)
+    _machine(root)
+    _write_marker(root)
+    _write_handoff(root)
+    env = dict(_NO_CAPABILITY_ENV, OS="Windows_NT")
+
+    result = _invoke(flavor, "auto-clear", root, args=("--session", SESSION_A), env_extra=env)
+
+    assert result.returncode == 0
+    combined = (result.stdout + result.stderr + _log(root)).lower()
+    assert "cleared" not in combined, combined
+    assert "compacted" not in combined, combined
+    assert "safe to run" in combined, combined
+    payload = json.loads(result.stdout)
+    assert payload == {"systemMessage": payload["systemMessage"]}, result.stdout
+    assert (root / ".crew" / (".autoclear-sent-" + SESSION_A)).exists()
+
+
+@by_flavor
+def test_notify_is_not_suppressed_by_the_test_suites_own_inhibit_flag(flavor, tmp_path):
+    """CREW_AUTOCLEAR_INHIBIT exists so a test suite never drives the real
+    keyboard -- notify never touches a keyboard or a window at all, so it
+    fires for real even with the flag set (every `_invoke` call sets it),
+    and this is what proves that rather than assuming it."""
+    root = _repo(tmp_path)
+    _machine(root)
+    _write_marker(root)
+    _write_handoff(root)
+    env = dict(_NO_CAPABILITY_ENV, OS="Windows_NT")
+
+    result = _invoke(flavor, "auto-clear", root, args=("--session", SESSION_A), env_extra=env)
+
+    assert "CREW_AUTOCLEAR_INHIBIT" not in result.stdout + _log(root)
+    assert "sent - method notify" in _log(root), _log(root)
+
+
+@pytest.mark.skipif(_PWSH is None, reason="needs pwsh")
+@pytest.mark.skipif(not os.path.isdir("/proc"), reason=(
+    "proves the fake process's name via /proc/<pid>/comm, which only exists on Linux -- "
+    "real Windows Terminal needs no rename trick, and this is not the place to test that"))
+def test_sendkeys_declines_and_falls_back_to_notify_when_the_owner_is_windows_terminal(tmp_path):
+    """requirement: `sendkeys` must resolve the owning window, then decline
+    rather than type when it cannot verify the window is showing the ONLY
+    tab -- Windows Terminal hosts every tab in one window and nothing short
+    of UI Automation (not a dependency here) can ask it which tab is
+    active, so a window OWNED BY Windows Terminal always declines. Proved
+    against a REAL process whose executable is literally named
+    `WindowsTerminal` (a renamed `bash`, invoked so it does not exec-replace
+    itself away) -- `Get-Process -Id ...).ProcessName` reads that name from
+    the OS, not from a stub, so this is not the window-list fake and is the
+    one thing in this file that has to run a real subprocess to prove."""
+    exe = shutil.which("bash")
+    if exe is None:
+        pytest.skip("needs bash to build the fake WindowsTerminal process")
+    root = _repo(tmp_path)
+    wtbin = tmp_path / "wtbin" / "WindowsTerminal"
+    wtbin.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy(exe, wtbin)
+    wtbin.chmod(0o755)
+    proc = subprocess.Popen([str(wtbin), "-c", "trap : TERM; sleep 30 & wait"])
+    try:
+        deadline = time.time() + 5
+        while time.time() < deadline and _proc_comm(proc.pid) != "WindowsTerminal":
+            time.sleep(0.05)
+        assert _proc_comm(proc.pid) == "WindowsTerminal", (
+            "the renamed process never reported comm=WindowsTerminal on this host")
+        _machine(root, method="sendkeys", windowTitle="Claude")
+        env = _windows(tmp_path, [{"id": 1, "pid": proc.pid, "title": "Claude - a tab"}])
+        _write_marker(root)
+        _write_handoff(root)
+
+        dry = _invoke("ps1", "auto-clear", root, args=("--session", SESSION_A, "--dry-run"),
+                     env_extra=env)
+        result = _invoke("ps1", "auto-clear", root, args=("--session", SESSION_A), env_extra=env)
+    finally:
+        proc.terminate()
+        proc.wait(timeout=5)
+
+    assert "would decline" in dry.stdout, dry.stdout + dry.stderr
+    assert "cannot verify the active tab" in dry.stdout
+    assert result.returncode == 0
+    log = _log(root)
+    assert "declined sendkeys" in log, log
+    assert "cannot verify the active tab" in log
+    assert "sent notify instead" in log
+    payload = json.loads(result.stdout)
+    assert "safe to run" in payload["systemMessage"]
+    assert "cleared" not in payload["systemMessage"]
+
+
+def _proc_comm(pid):
+    try:
+        with open(f"/proc/{pid}/comm", encoding="ascii") as handle:
+            return handle.read().strip()
+    except OSError:
+        return ""
+
+
 # --- narrowing: onlyRepos / onlySessions -------------------------------------
 #
 # `enabled: true` in the machine file arms every Claude session on the host.
@@ -567,18 +734,66 @@ def _armed_or_silent(result, root):
 
 
 # A "silent" case never reaches method/window resolution -- in_scope refuses
-# first -- so only the "armed" cases below would depend on a REAL capability
-# this host may lack. But every case in `_SCOPE_CASES` is driven through
-# `_scoped`, which always calls `_sendable` first -- and `_sendable` injects
-# a FAKE tmux (sh) or a FAKE window stub (ps1) unconditionally, for every
-# case, before `resolve_method`/window resolution ever runs. So no case here
-# ever reaches the real, non-stubbed capability at all, and a probe for it
-# (Codex review, W8: "the new capability checks skip armed wrapper cases even
-# though _sendable injects a fake tmux/window") was skipping "armed" cases on
-# a CI host that has no real tmux or no real ancestor-owned window, even
-# though the fake substitute those cases actually exercise works fine there.
-# A capability check only belongs on a test whose fixture does NOT inject the
-# fake; nothing in this table qualifies, so nothing here skips on that basis.
+# first -- so only the "armed" cases below depend on a REAL capability this
+# host may not have, whatever `_sendable`'s fake tmux/window stands in for.
+# Detect the capability directly rather than trusting the OS name: burn-in
+# saw both `method tmux but tmux is not on PATH` and `no window whose title
+# ...` on a real, opted-in Windows host, which is exactly what a host with
+# neither capability produces even when the narrowing decision is correct.
+# W8 removed this probe arguing `_sendable` injects a fake tmux/window
+# unconditionally, so no case here could reach a real capability at all -- but
+# `_sendable`'s FAKE window/pane only replaces the ENUMERATED window/pane
+# list; the ANCESTOR-PID lookup used to decide whether the fake target is
+# "owned" (`ancestors()`/`Get-CrewParentId`, real `/proc`, `ps`, `Get-Process`
+# or WMI calls) is never faked, and WMI/process introspection can genuinely be
+# unavailable on a real Windows host -- a locked-down CI runner with WMI
+# disabled by policy is still Windows, so this cannot be an OS-name check
+# either. Restored (owner ruling, journaled): the "silent" cases below still
+# never skip -- only "armed" ones, which are the only ones this affects.
+
+
+def _real_tmux_on_path():
+    """The REAL PATH's tmux, never `_sendable`'s injected shim: if this host
+    truly has no tmux, `resolve_method` refuses by design and no "armed"
+    sh-flavour case can ever be proved here."""
+    return shutil.which("tmux") is not None
+
+
+_OWNER_WINDOW_CAPABLE = None
+
+
+def _pwsh_can_resolve_an_owner_window():
+    """Probes the REAL (non-stubbed) window walk once: does any window on
+    this host belong to an ancestor of this process? A non-interactive
+    runner -- a scheduled task, a headless CI agent -- has none, and no
+    "armed" ps1-flavour case can be proved there either, independent of
+    whether the narrowing decision itself is right. Memoized: this spawns a
+    real pwsh and is not free. Requests `sendkeys` explicitly: `auto` no
+    longer reaches window resolution at all (it resolves to `notify` on
+    native Windows), so a probe of the WINDOW capability has to ask for the
+    method that still uses one."""
+    global _OWNER_WINDOW_CAPABLE  # pylint: disable=global-statement
+    if _OWNER_WINDOW_CAPABLE is not None:
+        return _OWNER_WINDOW_CAPABLE
+    if _PWSH is None:
+        _OWNER_WINDOW_CAPABLE = False
+        return False
+    scratch = tempfile.mkdtemp(prefix="crew-owner-window-probe-")
+    try:
+        base = pathlib.Path(scratch)
+        root = crew_fixtures.make_repo(base, config={"context": {"warnAt": 0.8}}, git=False)
+        _machine(root, method="sendkeys")
+        env = dict(os.environ, HOME=str(base / "home"), USERPROFILE=str(base / "home"),
+                   CLAUDE_PROJECT_DIR=str(root), CREW_AUTOCLEAR_INHIBIT="1", OS="Windows_NT")
+        result = subprocess.run(
+            [_PWSH, "-NoProfile", "-NonInteractive", "-File", _script("ps1", "auto-clear"),
+             "-Force", "-DryRun", "-Root", str(root)],
+            cwd=str(root), env=env, stdin=subprocess.DEVNULL,
+            capture_output=True, text=True, check=False, timeout=30)
+        _OWNER_WINDOW_CAPABLE = "would send" in result.stdout
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+    return _OWNER_WINDOW_CAPABLE
 
 
 _ROOT_TOKEN = "{root}"
@@ -635,6 +850,23 @@ def test_the_machine_can_narrow_auto_clear_to_listed_repos_and_sessions(
     del case
     if isinstance(expect, dict):
         expect = expect[flavor]
+    if expect == "armed":
+        # Only an "armed" case reaches method/window resolution -- in_scope
+        # refuses every "silent" one first -- so only these depend on a
+        # capability this host may genuinely lack.
+        if flavor == "sh" and not _real_tmux_on_path():
+            pytest.skip("tmux is not on PATH on this host, so this case can "
+                        "only be PROVED armed by actually resolving a method "
+                        "- see test_in_scope_decides_the_scope_matrix_with_"
+                        "no_subprocess_on_every_os for the narrowing decision "
+                        "itself, which does not need tmux")
+        if flavor == "ps1" and not _pwsh_can_resolve_an_owner_window():
+            pytest.skip("no window on this host belongs to any ancestor of "
+                        "this process (a non-interactive runner), so this "
+                        "case can only be PROVED armed by actually resolving "
+                        "one - see test_in_scope_decides_the_scope_matrix_"
+                        "with_no_subprocess_on_every_os for the narrowing "
+                        "decision itself, which does not need a window")
     root = _repo(tmp_path)
 
     result = _scoped(flavor, tmp_path, root, **{k: _fill(v, root) for k, v in scope.items()})
@@ -965,9 +1197,13 @@ def test_normalise_repo_path_resolves_a_dotdot_after_a_symlinked_component(tmp_p
 # --- the whole cycle: wrap-up -> handoff -> clear -> resume ----------------
 
 @by_flavor
-def test_write_clear_resume_carries_the_next_action_end_to_end(flavor, tmp_path):
+@pytest.mark.parametrize("source", ["clear", "compact"])
+def test_write_clear_resume_carries_the_next_action_end_to_end(flavor, source, tmp_path):
     """The handoff's next action is its LAST section, after a body longer than
-    the whole resume budget -- the shape a truncating resume used to lose."""
+    the whole resume budget -- the shape a truncating resume used to lose.
+    Parametrized over BOTH SessionStart sources auto-clear can trigger a
+    reload from -- `/clear` and `/compact` -- so the reload path is proved
+    for each, not assumed from the other."""
     root = context_fixtures.make_repo(tmp_path, config={"context": _context_cfg()})
     env = _sendable(flavor, tmp_path, root)
     transcript = _transcript(root, 950_000)
@@ -976,7 +1212,7 @@ def test_write_clear_resume_carries_the_next_action_end_to_end(flavor, tmp_path)
     _write_handoff(root, "# Handoff\nticket: T-1\n\n## In flight\n" + "- detail line\n" * 400
                    + "\n## Next action\nRun the NEXT-ACTION-TOKEN migration.\n")
     _invoke(flavor, "context-watch", root, _stop(root, transcript, active=True), env_extra=env)
-    start = {"session_id": SESSION_B, "source": "clear", "cwd": str(root), "hook_event_name": "SessionStart",
+    start = {"session_id": SESSION_B, "source": source, "cwd": str(root), "hook_event_name": "SessionStart",
              "transcript_path": str(root / "fresh.jsonl")}
     _invoke(flavor, "handoff-read", root, start, env_extra=env)
     resumed = _invoke(flavor, "crew-context", root, start, env_extra=env)

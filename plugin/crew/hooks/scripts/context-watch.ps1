@@ -55,9 +55,11 @@ $sentMarker = ".crew/.autoclear-sent-$sessionKey"
 # duplicate line on an ordinary refusal costs nothing a human reading the log
 # would notice, and a MISSING line is the whole defect this closes.
 #
-# Must never throw itself and must never touch THIS hook's own stdout, which
-# Claude Code reads as the Stop hook's protocol -- the fallback, if the log
-# cannot be written (an unwritable .crew/), is this hook's own stderr.
+# Must never throw itself. auto-clear's stdout IS forwarded onto this hook's
+# own stdout, which Claude Code reads as the Stop hook's protocol -- see
+# `Invoke-ContextWatchAutoClear`'s own comment for why that is now safe; the
+# fallback, if the log cannot be written (an unwritable .crew/), is this
+# hook's own stderr.
 function Write-ContextWatchAutoClearTrouble([string]$Message) {
   $clean = ($Message -replace "[`r`n`t]", " ")
   try {
@@ -74,12 +76,14 @@ function Invoke-ContextWatchAutoClear([string]$SessionId) {
   $sw = New-Object System.IO.StringWriter
   $threw = $null
   $rc = $null
+  $stdout = $null
   try {
     [Console]::SetError($sw)
     try {
-      & "$PSScriptRoot/auto-clear.ps1" -Session $SessionId -Root (Get-Location).Path 2>&1 |
+      $stdout = & "$PSScriptRoot/auto-clear.ps1" -Session $SessionId -Root (Get-Location).Path 2>&1 |
         ForEach-Object {
           if ($_ -is [System.Management.Automation.ErrorRecord]) { $sw.WriteLine($_.ToString()) }
+          else { $_ }
         }
       $rc = $LASTEXITCODE
     } catch {
@@ -89,6 +93,13 @@ function Invoke-ContextWatchAutoClear([string]$SessionId) {
     [Console]::SetError($origErr)
   }
   $captured = $sw.ToString().Trim()
+  # Forwarded, not discarded: `method notify` (and a `sendkeys` decline that
+  # falls back to it) is the ONE real, non-dry-run path that writes anything
+  # to auto-clear's stdout -- a single line of JSON, `{"systemMessage": ...}`
+  # -- and this hook never writes to its OWN stdout on any other path, so
+  # there is nothing here for it to collide with. Every other auto-clear
+  # path still writes nothing to stdout, exactly as before.
+  foreach ($line in @($stdout)) { if ($line) { Write-Output $line } }
   if ($threw) {
     Write-ContextWatchAutoClearTrouble "auto-clear threw: $threw"
   } elseif (($null -ne $rc -and $rc -ne 0) -or $captured) {

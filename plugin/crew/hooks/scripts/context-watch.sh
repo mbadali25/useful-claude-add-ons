@@ -67,20 +67,18 @@ session_markers "$SESSION_ID"
 # `.crew/.autoclear.log` was reported to exist nowhere on the affected Windows
 # host, which is what a total silence there looks like.
 #
-# This wraps every call instead: capture the child's exit code and stderr
-# (never its stdout, which stays discarded exactly as before -- dry-run's
-# "would send" plan is not a path this hook ever takes) and independently
-# append a line to the SAME log whenever the child looks unhealthy, so this
-# hook's own record of the attempt survives however badly the child behaved.
-# Deliberately unconditional rather than trying to detect whether auto-clear
-# ALREADY logged the same thing -- that would mean parsing its own log, which
-# is exactly the kind of cleverness that breaks first. A duplicate line on an
-# ordinary refusal costs nothing a human reading the log would notice; a
-# MISSING line is the whole defect this exists to close.
+# This wraps every call instead: capture the child's exit code and stderr,
+# and independently append a line to the SAME log whenever the child looks
+# unhealthy, so this hook's own record of the attempt survives however badly
+# the child behaved. Deliberately unconditional rather than trying to detect
+# whether auto-clear ALREADY logged the same thing -- that would mean parsing
+# its own log, which is exactly the kind of cleverness that breaks first. A
+# duplicate line on an ordinary refusal costs nothing a human reading the log
+# would notice; a MISSING line is the whole defect this exists to close.
 #
 # Must never throw and must never change this hook's own exit code or leak
-# anything onto ITS OWN stdout, which Claude Code reads as the Stop hook's
-# protocol -- the fallback, if the log itself cannot be written (an
+# anything unexpected onto ITS OWN stdout, which Claude Code reads as the Stop
+# hook's protocol -- the fallback, if the log itself cannot be written (an
 # unwritable .crew/), is this hook's own stderr, never stdout.
 cw_log_autoclear_trouble() {
   local msg
@@ -94,9 +92,26 @@ cw_log_autoclear_trouble() {
 }
 
 cw_run_auto_clear() {
-  local err rc
-  err=$(bash "$(dirname "${BASH_SOURCE[0]}")/auto-clear.sh" --root "$PWD" --session "$SESSION_ID" 2>&1 1>/dev/null)
-  rc=$?
+  local err rc out_file out
+  # Stdout is forwarded, not discarded: `method notify` (and a `sendkeys`
+  # decline that falls back to it) is the ONE real, non-dry-run path that
+  # writes anything there -- a single line of JSON, `{"systemMessage": ...}`
+  # -- and this hook never writes to its OWN stdout on any other path, so
+  # there is nothing here for it to collide with. Every other auto-clear
+  # path (a refusal, a tmux/xdotool/sendkeys send) still writes nothing to
+  # stdout, exactly as before; only `notify`'s message is new here.
+  out_file=$(mktemp 2>/dev/null) || out_file=""
+  if [ -n "$out_file" ]; then
+    err=$(bash "$(dirname "${BASH_SOURCE[0]}")/auto-clear.sh" --root "$PWD" --session "$SESSION_ID" \
+          2>&1 1>"$out_file")
+    rc=$?
+    out=$(cat "$out_file" 2>/dev/null)
+    rm -f "$out_file"
+    [ -n "$out" ] && printf '%s\n' "$out"
+  else
+    err=$(bash "$(dirname "${BASH_SOURCE[0]}")/auto-clear.sh" --root "$PWD" --session "$SESSION_ID" 2>&1 1>/dev/null)
+    rc=$?
+  fi
   if [ "$rc" -ne 0 ] || [ -n "$err" ]; then
     cw_log_autoclear_trouble "auto-clear exited $rc${err:+ - stderr: $err}"
   fi

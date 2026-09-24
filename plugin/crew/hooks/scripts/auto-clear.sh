@@ -10,7 +10,12 @@
 #
 # What it does is drive the TERMINAL: it types `/clear` at the prompt the way a
 # human would. That is a different mechanism with a different failure mode, and
-# it is why this can work at all.
+# it is why this can work at all -- except for method `notify`, which types
+# nothing: it prints a systemMessage saying the handoff is written and it is
+# safe to run the command yourself. `auto` resolves to `notify` on native
+# Windows with no tmux pane (an owner decision, not a capability gap -- typing
+# into a window this hook found itself is a risk `auto` does not get to accept
+# on your behalf), and `notify` can also be requested by name on any platform.
 #
 # ## What has to be true before it types anything
 #
@@ -59,26 +64,25 @@ done
 
 cd "$ROOT" 2>/dev/null || exit 0
 
-# Gated on the `.crew/` DIRECTORY, never on config.json. A repo with no
-# `.crew/` at all must stay completely silent and must NEVER get a `.crew/`
-# directory or `.crew/.autoclear.log` created as a side effect of this hook
-# running -- crew never creates `.crew/` from a read, and this check has to
-# run before note() ever gets a chance to `mkdir -p .crew`. An EARLIER
-# version of this gate checked `[ -f .crew/config.json ]` instead and stood
-# the whole script down, silently, on the ONE thing that matters most to
-# prove: a fresh checkout has no repo config at all (.crew/config.json is
-# git-ignored in this very repo), and "only the machine may opt in"
-# (test_only_the_machine_can_opt_in_and_a_repo_can_only_opt_out) already
-# means a repo need not have ANY config to be armed by the machine's global
-# enabled:true. That version was removed outright, which went too far the
-# other way: a repo with NO `.crew/` at all then reached this far and got
-# one created. A `.crew/` directory present with no config.json falls
-# through to the merge below exactly like a present-but-empty repo config
-# would -- crew_autocycle._load() already returns {} for a missing file, the
-# same value a present-but-empty repo config produces, so settings()/plan()
-# already treat "absent" and "empty" alike -- so gating on the directory
-# rather than the file loses nothing this script needs.
-[ -d .crew ] || exit 0
+# Gated on `.crew/config.json`, not on the `.crew/` directory. OWNER DECISION
+# (standing, journaled): auto-clear runs only in an initialised crew repo, and
+# "initialised" means this file exists -- the same test context-watch.sh:81
+# and context-watch.ps1:25 use, and the same one `crew_state.is_crew` names
+# (`bool(load_config)`). This has been the gate before: a directory-only gate
+# sat here briefly, reasoned that "only the machine may opt in"
+# (test_only_the_machine_can_opt_in_and_a_repo_can_only_opt_out) means a repo
+# need not have ANY config to be armed by the machine's global enabled:true,
+# so a `.crew/` directory with no config.json should still reach the merge
+# below. That is true of the MERGE, but the PM's ruling is that "is this a
+# crew repo at all" is a separate question from "did this repo opt out", and
+# this script answers the first one the same way every other hook in this
+# family does -- consistently, not by a bespoke directory check nobody else
+# uses. A repo with NO `.crew/config.json` at all -- a fresh checkout, since
+# it is git-ignored in this very repo -- must stay completely silent and must
+# NEVER get `.crew/` or `.crew/.autoclear.log` created as a side effect of
+# this hook running, so this check runs before note() ever gets a chance to
+# `mkdir -p .crew`.
+[ -f .crew/config.json ] || exit 0
 LOG=".crew/.autoclear.log"
 
 note() {  # one line to the log and to stderr; the log is the one anybody reads
@@ -141,6 +145,18 @@ fi
 # another's.
 if [ "$FORCE" -ne 1 ]; then
   ( set -o noclobber; : > "$SENT_MARKER" ) 2>/dev/null || exit 0
+fi
+
+# `notify` types nothing anywhere, so none of the safety rules below apply to
+# it -- there is no keyboard to keep a test suite off of, and no turn-ending
+# race to wait out with a delay. Printed and logged synchronously, from THIS
+# process, never a detached child. Never claims the handoff was cleared or
+# compacted: only that it is safe to run the configured command yourself.
+if [ "$RESOLVED" = "notify" ]; then
+  MSG="crew: handoff written and verified for this session - it is safe to run ${COMMAND} now (auto-clear will not type it for you)."
+  "$PY" -c 'import json,sys; print(json.dumps({"systemMessage": sys.argv[1]}))' "$MSG" 2>/dev/null
+  note "sent - method notify, command '$COMMAND'"
+  exit 0
 fi
 
 # A test suite must never drive the real keyboard. Checked HERE, immediately

@@ -284,39 +284,26 @@ AUTOCYCLE_MUTATIONS = (
      "  }\n",
      "tests/test_auto_cycle.py::"
      "test_resolve_crew_link_root_classifies_drive_unc_and_rootless_targets[/repo]"),
-    # --- a missing repo config used to stand the whole script down silently --
-    ("auto-clear.sh exits before note() if the repo has no config.json", CLEAR_SH,
-     "cd \"$ROOT\" 2>/dev/null || exit 0\n\n"
-     "# Gated on the `.crew/` DIRECTORY, never on config.json. A repo with no\n",
-     "cd \"$ROOT\" 2>/dev/null || exit 0\n"
-     "[ -f .crew/config.json ] || exit 0\n\n"
-     "# Gated on the `.crew/` DIRECTORY, never on config.json. A repo with no\n",
-     "tests/test_auto_clear.py::test_a_missing_repo_config_still_logs_the_no_session_refusal_sh"),
-    ("auto-clear.ps1 exits before Write-CrewAutoClearNote if the repo has no config.json",
-     CLEAR_PS1,
-     "Set-Location $where -ErrorAction SilentlyContinue\n\n"
-     "# Gated on the `.crew/` DIRECTORY, never on config.json. A repo with no\n",
-     "Set-Location $where -ErrorAction SilentlyContinue\n"
-     "if (-not (Test-Path \".crew/config.json\")) { exit 0 }\n\n"
-     "# Gated on the `.crew/` DIRECTORY, never on config.json. A repo with no\n",
-     "tests/test_auto_clear.py::test_a_missing_repo_config_still_logs_the_no_session_refusal_ps1"),
-    # --- the directory gate itself removed entirely: a repo with NO `.crew/`
-    # at all must stay silent, not fall through to the merge below --
-    ("auto-clear.sh's .crew/ directory gate removed entirely", CLEAR_SH,
-     "[ -d .crew ] || exit 0\nLOG=\".crew/.autoclear.log\"\n",
+    # --- the `.crew/config.json` gate removed entirely: a `.crew/` directory
+    # present with no config.json (or none at all) must stay silent, not fall
+    # through to the merge below -- the regression a directory-only gate
+    # reintroduces. OWNER DECISION reverted the gate from the directory back
+    # to this file; these two mutations replace the directory-gate ones.
+    ("auto-clear.sh's .crew/config.json gate removed entirely", CLEAR_SH,
+     "[ -f .crew/config.json ] || exit 0\nLOG=\".crew/.autoclear.log\"\n",
      "LOG=\".crew/.autoclear.log\"\n",
      "tests/test_auto_clear.py::"
-     "test_no_crew_directory_at_all_stays_silent_and_creates_nothing_sh"),
-    ("auto-clear.ps1's .crew/ directory gate removed entirely", CLEAR_PS1,
-     "if (-not (Test-Path \".crew\" -PathType Container)) { exit 0 }\n\n$log = \".crew/.autoclear.log\"\n",
+     "test_a_crew_directory_with_no_config_json_stays_silent_and_creates_nothing_sh"),
+    ("auto-clear.ps1's .crew/config.json gate removed entirely", CLEAR_PS1,
+     "if (-not (Test-Path \".crew/config.json\" -PathType Leaf)) { exit 0 }\n\n$log = \".crew/.autoclear.log\"\n",
      "$log = \".crew/.autoclear.log\"\n",
      "tests/test_auto_clear.py::"
-     "test_no_crew_directory_at_all_stays_silent_and_creates_nothing_ps1"),
+     "test_a_crew_directory_with_no_config_json_stays_silent_and_creates_nothing_ps1"),
     # --- resume --------------------------------------------------------------
     ("the resume cuts the next action off a long handoff", CONTEXT,
      "                lead = f\"Next action: {action}\\n\" if action else \"\"\n",
      "                lead = \"\"\n",
-     _T + "test_write_clear_resume_carries_the_next_action_end_to_end[sh]"),
+     _T + "test_write_clear_resume_carries_the_next_action_end_to_end[clear-sh]"),
 )
 
 
