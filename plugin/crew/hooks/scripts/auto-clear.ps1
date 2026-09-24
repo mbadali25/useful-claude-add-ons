@@ -124,8 +124,14 @@ function Resolve-CrewRealPath([string]$Path) {
       if ($item.PSObject.Properties['LinkTarget']) { $link = $item.LinkTarget }
       elseif ($item.PSObject.Properties['Target']) { $link = @($item.Target)[0] }
       if (-not $link) { break }
+      # THIS hop's parent, not the outer loop's: a chained relative symlink
+      # (link1 -> ../B/link2, link2 -> inner/target) resolves each hop
+      # against the link that names it, or a later hop in the SAME chain
+      # silently resolves against the first hop's directory instead of its
+      # own.
+      $hopParent = Split-Path -Parent $next
       if ([System.IO.Path]::IsPathRooted($link)) { $next = [System.IO.Path]::GetFullPath($link) }
-      else { $next = [System.IO.Path]::GetFullPath((Join-Path $cur $link)) }
+      else { $next = [System.IO.Path]::GetFullPath((Join-Path $hopParent $link)) }
     }
     $cur = $next
   }

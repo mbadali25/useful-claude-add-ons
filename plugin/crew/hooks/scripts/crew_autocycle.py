@@ -128,24 +128,30 @@ def normalise_repo_path(path, windows=None):
     """The form `onlyRepos` entries and the repo root are compared in, or ""
     for anything that is not an absolute path.
 
-    Backslashes become slashes, trailing separators go, symlinks are resolved
-    (`realpath`), and on Windows the Git Bash `/c/x` shape becomes `c:/x` and
-    the whole path is case-folded. A RELATIVE entry is refused rather than
-    resolved: it would resolve against the repo being asked about, so `.`
-    would match every repository on the machine. `windows` lets a Linux test
-    drive the Windows rules; realpath runs only on the platform it describes."""
+    On Windows, backslashes become slashes; on POSIX a backslash is a legal
+    filename character and is left alone, or two distinct paths collapse into
+    one and an unlisted repo passes `onlyRepos`. Trailing separators go,
+    symlinks are resolved (`realpath`), and on Windows the Git Bash `/c/x`
+    shape becomes `c:/x` and the whole path is case-folded. A RELATIVE entry
+    is refused rather than resolved: it would resolve against the repo being
+    asked about, so `.` would match every repository on the machine.
+    `windows` lets a Linux test drive the Windows rules; realpath runs only
+    on the platform it describes."""
     windows = os.name == "nt" if windows is None else windows
     if not isinstance(path, str) or not path.strip():
         return ""
-    text = os.path.expanduser(path.strip()).replace("\\", "/")
+    text = os.path.expanduser(path.strip())
     if windows:
+        text = text.replace("\\", "/")
         text = _WIN_DRIVE_SLASH.sub(lambda m: m.group(1) + ":", text, count=1)
         if re.fullmatch(r"[A-Za-z]:", text):
             text += "/"
     if not _ABSOLUTE.match(text.lower() if windows else text):
         return ""
     if windows == (os.name == "nt"):
-        text = os.path.realpath(text).replace("\\", "/")
+        text = os.path.realpath(text)
+        if windows:
+            text = text.replace("\\", "/")
     text = text.rstrip("/") or "/"
     if windows:
         if re.fullmatch(r"[A-Za-z]:", text):

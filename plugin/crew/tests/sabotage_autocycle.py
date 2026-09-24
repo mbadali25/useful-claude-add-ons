@@ -181,6 +181,28 @@ AUTOCYCLE_MUTATIONS = (
      "$onlySessions = Get-CrewScopeList $globalAuto \"onlySessions\"\n",
      "$onlySessions = Get-CrewScopeList $repoAuto \"onlySessions\"\n",
      _T + "test_a_repo_config_cannot_widen_the_machines_narrowing[onlySessions-ps1]"),
+    # --- backslash/slash collapse on POSIX (review round 1, fix4) -----------
+    ("bash normalises a POSIX backslash into a slash again (pre-check)", CYCLE,
+     "    text = os.path.expanduser(path.strip())\n"
+     "    if windows:\n"
+     "        text = text.replace(\"\\\\\", \"/\")\n",
+     "    text = os.path.expanduser(path.strip()).replace(\"\\\\\", \"/\")\n"
+     "    if windows:\n",
+     _T + "test_in_scope_does_not_collapse_backslash_and_slash_on_posix"),
+    ("bash normalises a POSIX backslash into a slash again (post-realpath)", CYCLE,
+     "        text = os.path.realpath(text)\n"
+     "        if windows:\n"
+     "            text = text.replace(\"\\\\\", \"/\")\n",
+     "        text = os.path.realpath(text).replace(\"\\\\\", \"/\")\n",
+     _T + "test_in_scope_does_not_collapse_backslash_and_slash_on_posix"),
+    # --- chained relative symlink resolves from the wrong parent (fix4) -----
+    ("PowerShell chases a chained relative symlink from the first hop's parent", CLEAR_PS1,
+     "      $hopParent = Split-Path -Parent $next\n"
+     "      if ([System.IO.Path]::IsPathRooted($link)) { $next = [System.IO.Path]::GetFullPath($link) }\n"
+     "      else { $next = [System.IO.Path]::GetFullPath((Join-Path $hopParent $link)) }\n",
+     "      if ([System.IO.Path]::IsPathRooted($link)) { $next = [System.IO.Path]::GetFullPath($link) }\n"
+     "      else { $next = [System.IO.Path]::GetFullPath((Join-Path $cur $link)) }\n",
+     _T + "test_a_chained_relative_symlink_in_only_repos_resolves_from_its_own_parent[ps1]"),
     # --- resume --------------------------------------------------------------
     ("the resume cuts the next action off a long handoff", CONTEXT,
      "                lead = f\"Next action: {action}\\n\" if action else \"\"\n",
