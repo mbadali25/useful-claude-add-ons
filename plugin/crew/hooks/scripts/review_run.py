@@ -35,7 +35,9 @@ reviewer could have read an emptied part while the receipt still vouched for
 the untouched tree.
 
 Writes `<work-dir>/review.json` (default `.work/tickets/<id>/review.json`)
-and records the round in the ledger; a CLEAN round writes the receipt.
+and records the round in the ledger; a CLEAN round writes the receipt. Its
+`webtest_findings` is the open healer-skip rows `webtest_guard.py skips` wrote
+(None when that check never ran for the ticket).
 
 Exit codes: 0 CLEAN; 1 FINDINGS; 3 INCOMPLETE; 4 budget refused
 (NEEDS_REPLAN); 2 usage or setup error.
@@ -143,6 +145,19 @@ def bundle_problems(manifest):
     return problems
 
 
+def webtest_findings(root, ticket):
+    """The healer-skip rows not excused by the spec, from
+    `webtest_guard.py skips`; None when that check never ran for the ticket."""
+    path = os.path.join(root, ".work", "tickets", ticket, "webtest", "findings.json")
+    try:
+        rows = json.loads(_read(path)).get("findings")
+    except (OSError, ValueError, AttributeError):
+        return None
+    if not isinstance(rows, list):
+        return None
+    return [r for r in rows if isinstance(r, dict) and not r.get("excluded")]
+
+
 def finish(args, number, output, exit_code, timed_out, extra_reasons=()):
     """Verdict -> ledger -> review.json. Returns the process exit code."""
     manifest = json.loads(_read(args.manifest))
@@ -162,6 +177,7 @@ def finish(args, number, output, exit_code, timed_out, extra_reasons=()):
         "bundle_sha256": manifest.get("bundle_sha256"),
         "base": manifest.get("base"), "head": manifest.get("head"),
         "exit_code": exit_code, "timed_out": timed_out,
+        "webtest_findings": webtest_findings(args.root, args.ticket),
         "written_at": datetime.datetime.now(datetime.timezone.utc).isoformat(
             timespec="seconds"),
     }

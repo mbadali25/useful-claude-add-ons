@@ -350,6 +350,9 @@ npx playwright install --with-deps chromium
 npx playwright test --list
 ```
 
+For a web project, `/crew:init`'s web phase (`webtest_scaffold.py`) does the
+scaffolding in one confirmed step; run it instead of hand-writing the config.
+
 Chromium alone unless there is evidence of a browser-specific bug. Then write specs
 for the two or three flows where breakage is expensive, plus visual baselines
 for the pages that matter. Tag `@visual` and `@flow`, then add the rules to

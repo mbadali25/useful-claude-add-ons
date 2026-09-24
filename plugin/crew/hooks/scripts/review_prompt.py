@@ -16,6 +16,12 @@ Anything missing is written as `MISSING: ...` naming the path looked at. A
 reviewer handed a prompt with no acceptance section cannot tell "this ticket
 has none" from "nobody passed it"; a line saying which is the difference.
 
+  - web tests, only in a Playwright repository: the trace zips and axe
+    results `review_patch.py` listed in the manifest (bounded there), and the
+    healer-skip rows `webtest_guard.py skips` wrote to
+    `.work/tickets/<id>/webtest/findings.json`. Each open row is handed to the
+    reviewer as a FINDING to carry, never as context to weigh.
+
 The codemap landmines are gathered by `review.md` itself (its existing step)
 and are not repeated here.
 
@@ -29,6 +35,7 @@ import subprocess
 import sys
 
 SPEC_SECTIONS = ("Intent", "Exclusions", "Evidence", "Unknowns", "Acceptance checks")
+WEBTEST_FINDINGS_MAX = 50
 _HEADING = re.compile(r"^(#{1,6})\s+(.+?)\s*#*\s*$")
 
 
@@ -150,10 +157,63 @@ def _receipts_block(root, manifest):
     return out
 
 
+def _artifact_lines(listing):
+    out = ["Open these; they are not in the patch. A trace opens with "
+           "`npx playwright show-trace <zip>`."]
+    for kind, label in (("traces", "TRACE"), ("axe", "AXE")):
+        rows = listing.get(kind) or []
+        if not rows:
+            out.append(f"MISSING: no {label.lower()} artefact under {listing.get('root')}/ -- "
+                       "say that you reviewed without it.")
+        out += [f"{label}: {r['path']} ({r['bytes']} bytes, sha256 {r['sha256'][:12]})"
+                for r in rows]
+        omitted = (listing.get("omitted") or {}).get(kind)
+        if omitted:
+            out.append(f"  ... {omitted} older {label.lower()} artefact(s) not listed "
+                       f"(limit {listing.get('limit')})")
+    return out
+
+
+def _webtest_block(root, ticket, manifest):
+    """Empty when this is not a Playwright repository and no skip check ran."""
+    listing = manifest.get("webtest")
+    path = os.path.join(root, ".work", "tickets", ticket, "webtest", "findings.json")
+    raw = _read(path)
+    if listing is None and raw is None:
+        return []
+    out = ["== Web tests =="] + (_artifact_lines(listing) if listing else [])
+    if raw is None:
+        out.append(f"MISSING: no {os.path.relpath(path, root)} -- the healer-skip check "
+                   "(webtest_guard.py skips) has not run for this ticket.")
+        return out
+    try:
+        rows = json.loads(raw).get("findings")
+    except (ValueError, AttributeError):
+        rows = None
+    if not isinstance(rows, list):
+        out.append(f"UNREADABLE: {os.path.relpath(path, root)}; whether a skip was added "
+                   "is UNKNOWN.")
+        return out
+    shown = rows[:WEBTEST_FINDINGS_MAX]
+    for row in shown:
+        tag = "EXCLUDED" if row.get("excluded") else "FINDING"
+        out.append(f"{tag}|{row.get('severity', 'FIX')}|{row.get('kind', 'healer-skip')}|"
+                   f"{row.get('path')}:{row.get('line')}|{row.get('text', '')}")
+    if len(rows) > len(shown):
+        out.append(f"  ... {len(rows) - len(shown)} more row(s) in {os.path.relpath(path, root)}")
+    out.append("Carry every FINDING row into your findings as FIX: a healer skip is a "
+               "finding, never accepted. EXCLUDED rows are named in the spec's Exclusions."
+               if rows else "Healer-skip check: no skip added since the ticket's base.")
+    return out
+
+
 def build(root, ticket, manifest):
     lines = []
     for block in (_bundle_block(manifest), _spec_block(root, ticket),
-                  _plan_block(root, ticket), _receipts_block(root, manifest)):
+                  _plan_block(root, ticket), _receipts_block(root, manifest),
+                  _webtest_block(root, ticket, manifest)):
+        if not block:
+            continue
         lines += block + [""]
     return "\n".join(lines)
 

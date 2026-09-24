@@ -938,6 +938,49 @@ printf '{}' > "$CG/repo/.crew/config.json"
 cexpect allow Bash 'terraform destroy -auto-approve'
 rm -rf "$CG"
 
+# --- webtest guard (crew 1.0 web testing) ----------------------------------
+# webtest_guard.py is not a hook; it is a check the verify rules call, and the
+# gate runs every rule command through `bash -c` from both flavours. So these
+# run it the same way. Must-block and must-allow for each check; the pwsh twin
+# is _test/webtest-guard.ps1.
+WT=$(mktemp -d) || exit 1
+WG="$SCRIPTS/webtest_guard.py"
+wt_git() { git -C "$WT" "$@" >/dev/null 2>&1; }
+wt_git init -q -b main
+wt_git config user.email t@example.invalid
+wt_git config user.name t
+mkdir -p "$WT/tests" "$WT/.work/tickets/T-0007" "$WT/playwright/.auth" "$WT/nogit"
+printf '.work/\n/playwright/.auth/\n/nogit/\n' > "$WT/.gitignore"
+printf "test('a', async () => {});\n" > "$WT/tests/a.spec.ts"
+printf '{}' > "$WT/playwright/.auth/user.json"
+printf '# s\n\n## Exclusions\n- none\n' > "$WT/.work/tickets/T-0007/spec.md"
+wt_git add -A
+wt_git commit -qm base
+WT_BASE=$(git -C "$WT" rev-parse HEAD)
+wexpect() {  # $1 = want rc, $2 = label, $3 = root, $4.. = guard args
+  local want="$1" label="$2" root="$3"; shift 3
+  local rc
+  bash -c "\"$PY\" \"$WG\" $* --root \"$root\"" >/dev/null 2>&1 </dev/null; rc=$?
+  if [ "$rc" -eq "$want" ]; then pass; else fail "webtest-guard want=$want got=$rc  $label"; fi
+}
+wexpect 0 "skips: no change allows" "$WT" skips --ticket T-0007 --base "$WT_BASE"
+printf "test.skip('flaky', async () => {});\n" >> "$WT/tests/a.spec.ts"
+wexpect 1 "skips: added test.skip blocks" "$WT" skips --ticket T-0007 --base "$WT_BASE"
+printf '# s\n\n## Exclusions\n- skip: tests/a.spec.ts "flaky"\n' > "$WT/.work/tickets/T-0007/spec.md"
+wexpect 0 "skips: skip named in Exclusions allows" "$WT" skips --ticket T-0007 --base "$WT_BASE"
+printf "test.fixme();\n" > "$WT/tests/b.spec.ts"
+wexpect 1 "skips: fixme in a new untracked spec blocks" "$WT" skips --ticket T-0007 --base "$WT_BASE"
+wexpect 0 "auth-leak: ignored .auth allows" "$WT" auth-leak
+wt_git add -f playwright/.auth/user.json
+wexpect 1 "auth-leak: tracked .auth blocks" "$WT" auth-leak
+unset CREW_PLAYWRIGHT_IMAGE
+wexpect 77 "visual: off the pinned image is SKIP" "$WT" visual
+CREW_PLAYWRIGHT_IMAGE=mcr.microsoft.com/playwright:v1.62.0-noble \
+  wexpect 77 "visual: a different image is SKIP" "$WT" visual
+GIT_CEILING_DIRECTORIES="$WT" \
+  wexpect 2 "auth-leak outside git is UNKNOWN, not a pass" "$WT/nogit" auth-leak
+rm -rf "$WT"
+
 # --- the PowerShell flavour guard ------------------------------------------
 # hooks.json registers every event TWICE, once per flavour. On a host with
 # BOTH interpreters both would run unless each .ps1 stands down off Windows.

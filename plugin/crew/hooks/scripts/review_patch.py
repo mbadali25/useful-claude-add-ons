@@ -79,6 +79,8 @@ import subprocess
 import sys
 import tempfile
 
+import webtest_guard
+
 GIT_TIMEOUT = 30
 
 EXIT_OK = 0
@@ -345,6 +347,11 @@ def compute(root, base, max_part_bytes=DEFAULT_MAX_PART_BYTES):
         "max_part_bytes": max_part_bytes,
         "bundle_sha256": bundle_sha256(parts) if parts else None,
     }
+    # Playwright repositories only: the trace zips and axe results the
+    # reviewer opens beside the patch, bounded by webtest_guard.MAX_ARTIFACTS.
+    listing = webtest_guard.artifacts(root)
+    if listing is not None:
+        manifest["webtest"] = listing
     return manifest, patch, parts
 
 

@@ -16,6 +16,7 @@ the input to the redesign in `04-redesign.md`. The owner has accepted their reco
 | `03-codex-review.md` | Codex gpt-6-astra, effort `max` | independent review of the plugin code against both research reports |
 | `04-redesign.md` | Claude Fable 5.1 and Codex gpt-6-astra, merged | the accepted crew 1.0 design and the owner's decisions; `04a`, `04b` and `04c` hold the two designs and their cross-reviews |
 | `05-setup-audit.md` | Claude Fable 5.1 auditor | machine-wide plugins, skills, hooks, MCP servers and Codex config, with keep/remove/add tables and the missing hooks |
+| `07-web-testing-research.md` | Claude Fable 5.1 researcher | Playwright Test Agents, Playwright and Chrome DevTools MCP, axe and visual regression; the design `/crew:webtest` follows |
 
 A published summary of 01 lives at https://claude.ai/artifact/DxYFsqXexjqW1CAe1xMLgq (private).
 

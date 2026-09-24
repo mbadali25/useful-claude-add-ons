@@ -31,6 +31,10 @@ key the 1.0 layout no longer reads is carried whole under `retired.<key>`.
 Nothing is dropped, and `to_legacy()` rebuilds the original dict exactly from
 crew.json alone -- that inverse is what the round-trip test asserts.
 
+A setting 1.0 carries but no longer acts on is also said out loud: crew.json
+gains a `notes` list and the report a `note` line. Today that is one case,
+`pm.authority: autonomous` -> "autopilot arrives in 1.1.0".
+
 | config.json (<= 7) | crew.json (1)            | Note |
 |--------------------|--------------------------|------|
 | `schema`           | `migratedFrom.schema`    | crew.json's own `schema` is 1 |
@@ -114,6 +118,11 @@ MAPPING = (
 # The 1.0 roster (docs/review/04-redesign.md, "Roster: 54 agents -> 4").
 ROSTER = ("explorer", "reviewer", "security", "researcher")
 RENAMED = {"qa-reviewer": "reviewer"}
+# `pm.authority: autonomous` moves under `retired.pm` with the rest of the PM
+# block, and nothing in 1.0 dispatches on its own. Said in the report and in
+# crew.json, never dropped silently.
+AUTOPILOT_NOTE = ("pm.authority: autonomous - autopilot arrives in 1.1.0; until then "
+                  "nothing dispatches without you (kept under retired.pm)")
 
 # `LETTERS-digits`, the shape the rest of crew recognises as a ticket id
 # (crew_state._TICKET_RE). Anchored, so it doubles as a path-safety check: an
@@ -271,7 +280,19 @@ def to_crew(legacy):
     unmapped = [key for key in legacy if key not in known]
     if unmapped:
         crew["unmapped"] = {key: legacy[key] for key in unmapped}
+    notes = migration_notes(legacy)
+    if notes:
+        crew["notes"] = notes
     return crew, unmapped
+
+
+def migration_notes(legacy):
+    """Settings 1.0 carries but does not act on, said out loud. `to_legacy`
+    never reads `notes`, so the round trip is unaffected."""
+    pm = legacy.get("pm")
+    if isinstance(pm, dict) and pm.get("authority") == "autonomous":
+        return [AUTOPILOT_NOTE]
+    return []
 
 
 def to_legacy(crew):
@@ -443,6 +464,7 @@ def build_plan(root):
         if to_legacy(crew) != cfg:
             raise MigrateError("internal: config mapping does not round-trip; refusing")
         plan["unmapped"] = unmapped
+        plan["notes"].extend(crew.get("notes", []))
         tracker = cfg.get("tracker") if isinstance(cfg.get("tracker"), str) else "files"
         want(os.path.join(".crew", "crew.json"), _json_bytes(crew),
              f"config schema {cfg['schema']} -> crew.json schema {CREW_SCHEMA}")
