@@ -74,6 +74,9 @@
       "onlySessions": null
     }
   },
+  "resume": {
+    "auto": null
+  },
   "docs": {
     "theme": null,
     "reportTheme": null

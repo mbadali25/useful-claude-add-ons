@@ -298,6 +298,11 @@ def default_config():
                    "recall": {"vaults": [], "maxChars": 800}},
         "verifyGate": True,
         "context": copy.deepcopy(crew_state.CONTEXT_DEFAULTS),
+        # T-0006. In both layers, but only the MACHINE layer can arm it:
+        # `crew_resume.settings` reads `true` from the global file alone and
+        # treats a repo value as a veto (`false`) or nothing. Declared here so
+        # a repo can say `false` and `leaf_paths` can see the key.
+        "resume": copy.deepcopy(crew_state.RESUME_DEFAULTS),
         "emergency": {
             "standDown": True,
             "ttlMinutes": 120,
@@ -490,6 +495,10 @@ def default_global_config():
             for key, value in crew_state.AUTOCLEAR_DEFAULTS.items()
             if key not in crew_state.AUTOCLEAR_CONSENT_KEYS
         }},
+        # T-0006's auto-resume switch. The one place it can be switched ON
+        # (`crew_resume.settings`): it starts work in this machine's session,
+        # so, like `autoClear.enabled`, it is the machine owner's answer.
+        "resume": copy.deepcopy(crew_state.RESUME_DEFAULTS),
         "docs": copy.deepcopy(crew_upgrade.DOCS_BLOCK),
         "bitbucket": copy.deepcopy(crew_upgrade.BITBUCKET_BLOCK),
         "github": copy.deepcopy(crew_upgrade.GITHUB_BLOCK),

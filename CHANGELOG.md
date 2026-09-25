@@ -6,6 +6,60 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
+- **`crew` 1.0.40: auto-resume after `/clear`, reduced form (T-0006).** Bumped
+  `1.0.37 -> 1.0.40`, the owner's land-order assignment of 2026-09-25
+  (1.0.38 and 1.0.39 are not used here). New key
+  `resume.auto`, **default off (`null`)**, which only
+  `~/.claude/crew/config.json` can switch on; a `false` in `.crew/crew.json`
+  or `.crew/config.json` vetoes it and a repo `true` does nothing.
+  `context.autoResume` stays unread. `/crew:handoff` now writes a
+  machine-readable `resume:` line (`resume: /crew:done T-0001`, or
+  `resume: none`), and the new `crew_resume.py` owns its grammar, the closed
+  allowlist `RESUME_COMMANDS` (`/crew:spec`, `/crew:plan`, `/crew:implement`,
+  `/crew:review`, `/crew:done`, `/crew:autopilot`, `/crew:status`), and the
+  read-only `decide`. On a SessionStart after `/clear` or a manual `/compact`
+  (both `handoff-write` flavours now record the PreCompact trigger per
+  session), the context hook names the exact command re-rendered from the
+  parsed tokens, or the reason it will not: wrong source, an automatic
+  compact, no or stale handoff, a refused `resume:` line, a `branch:`/`head:`
+  mismatch, a missing ticket or goal, a command not installed, a handoff
+  already resumed, an uncomputable progress fingerprint, or the same command
+  with no progress since. **Nothing starts on its own**: the spike on Claude
+  Code 2.1.282 showed an interactive SessionStart drops `initialUserMessage`
+  (only `claude -p` honours it), so crew never emits it and the human presses
+  Enter; T-0013 is the typing fallback and the one caller of `record_run`
+  (the consumed-once and loop-guard record). No gate changes. Must-fire and
+  must-not-fire cases in `test_crew_resume.py` and, through both wrappers,
+  `test_crew_resume_hook.py`; an unarmed or `startup` SessionStart is compared
+  WHOLE against base f2bb919b's output (a stored golden, and live against
+  that commit's code where it is reachable). Review round 1 (1 BLOCK, 3 FIX,
+  5 NIT) fixed: a later PreCompact removes the session's old record first,
+  in shell, so a compact whose record never lands is not manual; an
+  unreadable INDEX.md or unlistable ticket directory is an unknown
+  fingerprint, not progress; an opt-in that cannot be confirmed is `off`;
+  PreCompact records older than a day are pruned; a `.crew/crew.json`-only
+  repo still gets its PreCompact record; the CLI `decide` applies the
+  staleness rule; the wait line only points at a handoff when one is there.
+  Review round 2 (1 FIX, 2 NIT) fixed: the hook passes the staleness
+  VERDICT to `decide`, not whether archiving succeeded, so a stale note that
+  cannot be moved waits (and a staleness rule that raises counts as stale);
+  a PreCompact record that cannot be removed is emptied in place, and one
+  that neither its file nor its directory lets anyone replace is not read as
+  manual; `write_precompact_record` removes its own `.tmp` on a failed write
+  and SessionStart prunes orphaned `precompact-*.tmp` files by the same age
+  rule. `/crew:handoff` no longer names `/crew:autopilot`, a command this
+  plugin does not ship (`validate-prompts.py` failed on it); it points at
+  the allowlist in the `crew-context` skill. Its `.crew/verify.json` rule is
+  appended last (rule 24), so no existing rule's index moves. Rebased onto
+  1.0.37 (T-0003, T-0008) without behaviour change to either.
+  Sabotage run: all 36 `sabotage_resume.py` mutations RED on their named
+  tests (among them allowlisting `/crew:approve`, arming on a repo `true`,
+  dropping the repo veto, the head or branch check, consumed-once or the
+  loop guard, counting an unknown fingerprint as progress, firing on
+  `startup`, accepting an automatic compact, rendering from the raw line,
+  emitting `initialUserMessage`, and an extra line on an unarmed `/clear`).
+  Config leaf count 116 -> 117.
+
 - **`crew` 1.0.37: the code maps, diagrams and code graph a ticket's changes
   reach must be current before `/crew:done` (T-0008).** Bumped
   `1.0.35 -> 1.0.37`. New read-only

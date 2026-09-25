@@ -4,6 +4,13 @@ Findings queued for a later PR. Each carries the `path:line` it came from so it
 can be re-verified rather than re-discovered — and so an item that turns out to
 be wrong can be closed on evidence.
 
+- **Not done, follow-up to T-0006**: `resume.auto` has no narrowing. `context.autoClear` can be
+  narrowed on the machine to `onlyRepos` / `onlySessions` (`crew_autocycle.in_scope`);
+  `resume.auto` arms every crew repo the machine file reaches, and a repo can only veto it
+  (`plugin/crew/hooks/scripts/crew_resume.py::settings`). A machine-only `resume.onlyRepos`
+  list, read the way `autoClear.onlyRepos` is, would let an owner arm it for chosen repos only.
+  Excluded from T-0006 by its spec. There is deliberately no `startup` trigger and no flag for
+  one (owner decision 2026-09-25), so that is not a follow-up.
 - `plugin/crew/tests/test_auto_cycle.py` (24 failures, measured both
   before and after crew-1.0-win-ps1-ac's fix, identical set both times):
   bash/tmux/symlink-flavour tests fail on this Windows dev host for

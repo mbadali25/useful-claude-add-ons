@@ -127,10 +127,11 @@ both directions:
 `is_global_path` agrees with `filter_global` by construction — both stop
 descending at a template **leaf**.
 
-**Measured, not argued.** `leaf_paths(default_global_config())` yields **65**
-leaves. `leaf_paths(default_config())` yields **116**, so **51** are repo-only.
-For all 116, `filter_global` and `plan_global_write` agree on whether the path is
-settable. (63 / 114 before the Windows burn-in added
+**Measured, not argued.** `leaf_paths(default_global_config())` yields **66**
+leaves. `leaf_paths(default_config())` yields **117**, so **51** are repo-only.
+For all 117, `filter_global` and `plan_global_write` agree on whether the path is
+settable. (65 / 116 before T-0006 added `resume.auto` to both layers, §14a;
+63 / 114 before the Windows burn-in added
 `context.autoClear.onlyRepos` and `onlySessions` to both layers; this paragraph
 still said 60 / 106 at that point, so the cloud-guard and scope-guard keys had
 moved the counts without it. 45 / 86 before schema 6 added the six `guards.*`, the two
@@ -627,7 +628,11 @@ them:
 
 ---
 
-## 10. Global-settable keys — all 60
+## 10. Global-settable keys — 66
+
+66 measured (`leaf_paths(default_global_config())`, crew 1.0.31); the table
+below lists 63 of them. `guards.cloudGuard`, `guards.cloudDestructive` and
+`guards.sqlDestructive` are global-settable and not tabled here.
 
 Settable in **either** layer; repo wins — **except `install.policy`, the
 seven `guards.*` and `change.requireForProduction`, where the narrower of the
@@ -704,6 +709,7 @@ they are repo-only, and §16 says why. Defaults are identical in `default_config
 | `change.sdpTemplate` | string, see §17 | `"Change Management Request"` |
 | `change.jiraIssueType` | string, see §17 | `"Change"` |
 | `change.category` | string or `null`, see §17 | `null` |
+| `resume.auto` | `true` or `null`; **only the machine layer can arm it**, a repo `false` vetoes it (§14a) | `null` |
 
 `crew_state.QA_PROVIDERS` and `DEV_PROVIDERS` are both
 `["claude", "codex", "copilot"]` (dumped by execution). `qa.provider`
@@ -1023,6 +1029,57 @@ Implemented as an `AUTOCLEAR_CONSENT_KEYS` exclusion over the one
 the block, and covered by a test that goes red if the exclusion is dropped —
 because dropping it is the tidy-up a future reader will reach for.
 
+
+## 14a. `resume.auto` — auto-resume after `/clear`, armed by the machine only
+
+T-0006. When it is armed, a SessionStart after `/clear` or a manual
+`/compact` reads the handoff's `resume:` line and works out whether that
+command may be resumed (`crew_resume.py::decide`). **Nothing starts on its
+own yet**: the 2026-09-25 spike (Claude Code 2.1.282) proved an interactive
+session drops SessionStart `initialUserMessage`, so the context hook names
+the exact command and the reason it did not start, and the human presses
+Enter or types it. T-0013 is the typing fallback.
+
+| Where | Value | Effect |
+|---|---|---|
+| `~/.claude/crew/config.json` | `"resume": {"auto": true}` (the boolean) | arms it — the ONLY place it can be switched on |
+| `~/.claude/crew/config.json` | absent, `null`, `false`, `"true"` (a string), anything else | off |
+| `.crew/crew.json` **or** `.crew/config.json` | `false` | vetoes a machine `true`, from either file |
+| `.crew/crew.json` or `.crew/config.json` | `true` | **nothing** — a repo can veto, never grant |
+
+A cloned repo must not be able to start unattended work on someone else's
+machine, so `crew_resume.py::settings` reads the arming value from the
+machine file alone and the repo files only for a veto — the rule
+`context.autoClear.enabled` follows (`crew_autocycle.py::settings`).
+`resolve_config`'s repo-over-global precedence is deliberately not used.
+Both repo files are read because the hooks' config split is real: the guards
+read `.crew/config.json` and `/crew:migrate` writes `.crew/crew.json`. A
+malformed machine file is off; a malformed repo file vetoes nothing.
+
+**`context.autoResume` stays unread.** It defaulted `true` historically and is
+still `true` in old configs; reviving it would have armed every one of them.
+`resume.auto` is a new key so that no existing config can arm it.
+
+When armed, a `startup` or `resume` source is `off` and adds nothing to the
+injected context. On `clear` and `compact`, `decide` returns `wait` — with
+the reason in the injected context — for: a `compact` whose PreCompact was not a typed `/compact` (both `handoff-write`
+flavours record the trigger per session, in a repo with either
+`.crew/config.json` or `.crew/crew.json`, and remove the session's previous
+record first, without needing python, so a compact whose own record never
+lands is not manual; absent, unreadable, older than 600 s, or not replaceable is not manual,
+and records and orphaned `.tmp` files older than a day are pruned); no handoff, or one archived
+as stale, or one judged stale that could not be archived; no `resume:`
+line, `resume: none`, or a line the grammar refuses; a `branch:` or `head:`
+that does not match the checkout; a missing `.work/tickets/<id>/` or
+`.work/autopilot/<slug>.json`; a command not installed in the plugin; a
+handoff already passed to `record_run`; a progress fingerprint that cannot be
+computed (an unreadable `.work/INDEX.md` or an unlistable ticket directory
+counts as "cannot be computed", never as progress); and the same command a
+second time with no progress since. The `crew_resume.py decide` CLI applies
+`crew_state.handoff_staleness` itself, read-only, and waits on a stale note.
+If the opt-in cannot even be confirmed (the module or the machine file cannot
+be read), the answer is `off`, so an unarmed machine sees exactly the
+pre-T-0006 output.
 
 ## 15. `install.policy`
 
