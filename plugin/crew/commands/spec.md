@@ -39,7 +39,8 @@ Each with how it will be resolved before implement, or "accepted as risk".
    plan step whose Files: are not covered here needs this section amended
    first, not a plan that quietly reaches outside it. `/crew:approve` reads it
    one bullet at a time - one path or glob per bullet, and a bullet that
-   carries a note after the path keeps the path in backticks.
+   carries a note after the path keeps the path in backticks and the note
+   free of backticks (a second backtick span is refused as a second path).
 
 4. Append `.work/INDEX.md`: `$1 | spec | <risk> | <this-repo> | <title>`
    (files and Obsidian modes) or push the tracker item to the equivalent state

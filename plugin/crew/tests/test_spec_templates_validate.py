@@ -50,6 +50,18 @@ def test_no_required_section_is_empty_in_the_template(command):
     assert not empty, f"commands/{command}'s spec template leaves ## {empty} empty"
 
 
+@pytest.mark.parametrize("note, ok", [
+    ("landmine: _write_json must stay temp-then-replace", True),
+    ("landmine: `_write_json` must stay temp-then-replace", False),
+])
+def test_a_touch_note_parses_only_when_it_carries_no_backticks(note, ok):
+    """The prose in fix.md and spec.md says a note after the path must carry
+    no backticks; this pins the parser behaviour that rule describes."""
+    entries, problems = crew_ticket.parse_touch(f"## Touch\n- `src/x.py` {note}\n")
+
+    assert (bool(entries) and not problems) is ok
+
+
 @pytest.mark.parametrize("command", ["spec.md", "fix.md"])
 def test_the_template_touch_section_parses_as_crew_approve_reads_it(command):
     entries, problems = crew_ticket.parse_touch(_template(command))

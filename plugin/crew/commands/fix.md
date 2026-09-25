@@ -57,8 +57,9 @@ its own line - `## Intent      one sentence` on one line is read as a heading
 named `Intent      one sentence`, not as `Intent`. Touch takes one path or
 glob per bullet. If `crew:explorer` or `/crew:debug` surfaced a landmine, add
 it after the path on that bullet, keeping the path in backticks
-(`` - `src/x.py` landmine: ... ``) - an unquoted path followed by a note is
-refused as "not one path".
+(`` - `src/x.py` landmine: ... ``) and writing the note itself WITHOUT
+backticks - an unquoted path followed by a note is refused as "not one path",
+and a second backtick span in the note is refused as "one path per bullet".
 
 ## 3. Plan — one step
 

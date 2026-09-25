@@ -6,9 +6,9 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Changed
 
-- **`crew` 1.0.26: a spec written from the `/crew:spec` or `/crew:fix`
-  template now passes `/crew:approve`.** Bumped `1.0.25 -> 1.0.26`. The
-  approval check requires six headings named exactly Intent, Exclusions,
+- **`crew` 1.0.27: a spec written from the `/crew:spec` or `/crew:fix`
+  template now passes `/crew:approve`.** Bumped `1.0.25 -> 1.0.27` (1.0.26 was
+  never released). The approval check requires six headings named exactly Intent, Exclusions,
   Evidence, Unknowns, Touch and Acceptance checks; `/crew:spec`'s template
   wrote `## Acceptance`, and `/crew:fix`'s put three headings on one line
   each with their text (`## Intent      one sentence`) and left out
