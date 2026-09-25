@@ -1,6 +1,6 @@
 # skills-security-ops
-anchor: useful-claude-add-ons@bc6a3a09
-verified: 2026-09-24
+anchor: useful-claude-add-ons@6c497a14
+verified: 2026-09-25
 
 ## Does
 Two read-and-remediate skills pointed at live infrastructure: `cisco-meraki` drives the Meraki
@@ -236,3 +236,20 @@ re-resolved by crew:explorer against HEAD; the redaction/`cmd_diff`/`cmd_fetch` 
 re-resolved by the PM by grep. Claims about `meraki_*`, `wazuh_client.py` and the two `SKILL.md`
 files were not re-read: their paths did not move. The test-coverage landmine still holds -
 `skills/wazuh-onprem/` still has no `tests/` directory.
+
+**Re-anchor provenance (2026-09-25, anchor bc6a3a09 -> 6c497a14, after crew 1.0
+/ PR #225).** Per-path check:
+
+```
+git diff --name-only bc6a3a09..6c497a14 -- skills/cisco-meraki/scripts/meraki_client.py \
+  skills/cisco-meraki/scripts/meraki_config.py skills/cisco-meraki/scripts/meraki_diff.py \
+  skills/cisco-meraki/scripts/meraki_http.py skills/cisco-meraki/SKILL.md \
+  skills/infra-work-ticketing/SKILL.md skills/intune-graph/scripts/export_report.py \
+  skills/intune-graph/scripts/graph.py skills/wazuh-onprem/references/indexer-api.md \
+  skills/wazuh-onprem/scripts/manager_config.py skills/wazuh-onprem/scripts/wazuh_client.py \
+  skills/wazuh-onprem/SKILL.md .gitignore
+```
+returns nothing. Zero of the paths this note cites changed between `bc6a3a09`
+and `6c497a14` - crew 1.0 (the lifecycle redesign, 4-role roster and Windows
+burn-in work in PR #225) did not touch either skill. Current despite the
+anchor lag; no claim was re-read and none of the body above was rewritten.
