@@ -14,6 +14,36 @@ be wrong can be closed on evidence.
   script defect. Not fixed here: it is not in the one file
   crew-1.0-win-ps1-ac owns (`auto-clear.ps1` + its tests), and the
   before/after comparison is exactly what shows it predates that change.
+- **Root cause, refining the entry above**: `plugin/crew/hooks/scripts/crew_autocycle.py:360-365`
+  (`_ppid`, `subprocess.run(["ps", "-o", "ppid=", "-p", str(pid)], ...)`) always fails on this
+  Windows dev host — its `/usr/bin/ps` is cygwin `ps` 3.6.10, whose own `--help` lists only
+  `[-aefls] [-u UID] [-p PID]`, no `-o` at all (`ps: unknown option -- o`). `_ppid` swallows that
+  as `int(out.strip() or 0)` → `0`, so `ancestors()` (`:368-374`) always returns just `[self]` for
+  every caller, regardless of what invoked it. That is why the tmux-method ownership check
+  (`:502`, `pane_pid not in ancestors()`) always refuses here, and hence part of the 24-failure
+  set above — measured directly (`ca.ancestors()` from a plain `py -c` returns `[<own pid>]`,
+  nothing else). Not fixed here: `crew_autocycle.py` is under `plugin/crew/hooks/scripts/`, out of
+  scope for a test-harness ticket (lane C2), and likely belongs with whichever ticket owns the
+  bash/tmux flavour of this suite.
+- `plugin/crew/tests/test_auto_cycle.py`'s `test_the_detached_sender_does_not_outlive_
+  kill_process_group` (added by lane C2) proves the real detached sender is reaped on Windows via
+  a Job Object, `skipif`'d to Windows only. **Not closed on POSIX**: `auto-clear.sh:225-229`
+  launches the sender with `setsid bash "$send_script" ... & disown`, which moves it into a NEW
+  process group — `kill_process_group`'s POSIX branch signals `os.killpg(proc.pgid)` on the
+  LEADER's own recorded pgid, which `setsid` has already left by the time the sender runs, so the
+  signal cannot reach it there the way the Windows Job Object does (job membership and POSIX
+  sessions are unrelated concepts; a session escape does not exempt a process from a Windows job).
+  Closing this on Linux CI (`.github/workflows/pytest-crew.yml`'s `crew-shell-matrix` /
+  `ubuntu-latest`) needs a different mechanism — reading the sender's own pid and reaping it
+  directly, or bounding `delaySeconds` in the test — and is out of scope for this Windows-lane
+  ticket.
+- `test_verify_gate_stop_gate_record.py::test_34d_a_second_mktemp_failure_refuses_rather_than_wedges`
+  failed twice in a row on this shared, concurrently-loaded machine (returncode assertion the first
+  time, `elapsed < 10` at `10.3s` the second, immediately re-run alone) — consistent with the
+  10s bound being genuinely tight under load rather than a regression from lane C2's diff (which
+  never touches this rule's code path). Not investigated further: outside lane C2's two items, and
+  a borderline timing assertion under concurrent load is exactly the shape CLAUDE.md's own
+  "Run the states; do not reason about them" lesson warns against over-diagnosing from one host.
 - `plugin/crew/tests/sabotage_autocycle.py` has no per-mutation CLI filter
   (`argparse` only exposes `--scratch`), so a newly registered mutation
   can only be proven through the full run (slow, and the bash-flavour

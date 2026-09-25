@@ -141,11 +141,17 @@ if os.name == "nt":
     _kernel32.TerminateJobObject.argtypes = (wintypes.HANDLE, wintypes.UINT)
     _kernel32.CloseHandle.restype = wintypes.BOOL
     _kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
+    _kernel32.QueryInformationJobObject.restype = wintypes.BOOL
+    _kernel32.QueryInformationJobObject.argtypes = (
+        wintypes.HANDLE, ctypes.c_int, wintypes.LPVOID, wintypes.DWORD,
+        ctypes.POINTER(wintypes.DWORD))
 
     _JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x00002000
     _JOBOBJECTINFOCLASS_EXTENDED_LIMIT = 9  # JobObjectExtendedLimitInformation
+    _JOBOBJECTINFOCLASS_BASIC_PROCESS_ID_LIST = 3
     _PROCESS_TERMINATE = 0x0001
     _PROCESS_SET_QUOTA = 0x0100
+    _JOB_PID_LIST_MAX = 1024
 
     class _JOBOBJECT_BASIC_LIMIT_INFORMATION(ctypes.Structure):
         _fields_ = [
@@ -173,6 +179,17 @@ if os.name == "nt":
             ("JobMemoryLimit", ctypes.c_size_t),
             ("PeakProcessMemoryUsed", ctypes.c_size_t),
             ("PeakJobMemoryUsed", ctypes.c_size_t),
+        ]
+
+    class _JOBOBJECT_BASIC_PROCESS_ID_LIST(ctypes.Structure):
+        # Variable-length in the real Win32 struct (`ProcessIdList[1]`,
+        # meant to be over-allocated); fixed at `_JOB_PID_LIST_MAX` here
+        # and `NumberOfProcessIdsInList` says how many of that fixed
+        # buffer are actually populated.
+        _fields_ = [
+            ("NumberOfAssignedProcesses", wintypes.DWORD),
+            ("NumberOfProcessIdsInList", wintypes.DWORD),
+            ("ProcessIdList", ctypes.c_size_t * _JOB_PID_LIST_MAX),
         ]
 
 
@@ -235,6 +252,39 @@ def _win_job_for(pid):
     finally:
         _kernel32.CloseHandle(proc_handle)
     return job
+
+
+def job_pids(proc):
+    """Every pid CURRENTLY assigned to `proc`'s Windows Job Object (see
+    `_win_job_for`), or `[]` on POSIX / when `proc` carries no job.
+
+    For a test that needs to prove WHICH pids `kill_process_group` is
+    about to reach, rather than re-derive that set some other way: a
+    `tasklist`/`ParentProcessId` walk built AFTER the fact is fragile on a
+    machine running unrelated suites concurrently (a pid that merely
+    appeared between two snapshots is not evidence of descent -- measured
+    directly, that shape attributed five pids from an entirely unrelated
+    session to a test that never touched them) and unreliable even for
+    genuine descendants once a short-lived INTERMEDIATE hop in the chain
+    has already exited by query time, breaking the parent-pid walk at the
+    gap even though the surviving leaf's own recorded `ParentProcessId`
+    is correct. Querying the job directly has neither problem: only pids
+    this fixture itself assigned or that Windows cascaded into the same
+    job are ever members, and membership does not depend on any
+    intermediate hop still being alive to be walked through.
+    """
+    job = getattr(proc, "job", None)
+    if not job:
+        return []
+    info = _JOBOBJECT_BASIC_PROCESS_ID_LIST()
+    returned = wintypes.DWORD(0)
+    ok = _kernel32.QueryInformationJobObject(
+        job, _JOBOBJECTINFOCLASS_BASIC_PROCESS_ID_LIST, ctypes.byref(info),
+        ctypes.sizeof(info), ctypes.byref(returned))
+    if not ok:
+        return []
+    count = min(info.NumberOfProcessIdsInList, _JOB_PID_LIST_MAX)
+    return [int(info.ProcessIdList[i]) for i in range(count)]
 
 
 def popen_gate(cmd, **kwargs):

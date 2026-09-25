@@ -278,7 +278,29 @@ def test_context_watch_stdout_reaches_eof_promptly_even_with_a_long_delay(tmp_pa
 
     Deliberately NOT `_invoke` (which always sets CREW_AUTOCLEAR_INHIBIT):
     inhibit skips the spawn entirely and would prove nothing here. The fake
-    `tmux` is genuinely invoked by the real (harmless) detached sender."""
+    `tmux` is genuinely invoked by the real (harmless) detached sender.
+
+    `crew_fixtures.run_gate`, not a bare `subprocess.run`, for the SAME
+    reason every other real spawn in this suite goes through it: the direct
+    child here (context-watch.sh) returns in well under the 5s deadline
+    this test proves, but auto-clear.sh's own sender deliberately outlives
+    it -- `setsid ... & disown` (auto-clear.sh's own comment on why: so a
+    slow /clear does not get cut off by the hook's own death in real use).
+    A bare `subprocess.run` leaves that sender running for the rest of its
+    `delaySeconds` with nothing tracking it; measured directly (a
+    throwaway repro of this exact scenario) it is still alive 12+ seconds
+    after this call returns and self-exits only once its 30s is up.
+    `run_gate` registers with the autouse `gate_processes` fixture
+    (conftest.py), whose teardown calls `kill_process_group` on every
+    process it tracked -- reaching the detached sender via the Windows Job
+    Object `popen_gate` now assigns at spawn (crew_fixtures.py), which
+    Windows keeps every process the leader creates inside REGARDLESS of
+    the POSIX session `setsid` starts (job membership and POSIX sessions
+    are unrelated concepts); confirmed directly, same repro, 0 survivors
+    after `kill_process_group`. On POSIX this is NOT closed the same way:
+    `setsid` deliberately moves the sender into a NEW process group, so
+    `killpg` on the leader's own recorded pgid cannot reach it either --
+    see TODO.md."""
     root = _repo(tmp_path, method="tmux", delaySeconds=30)
     _machine(root)
     _write_marker(root)
@@ -293,14 +315,86 @@ def test_context_watch_stdout_reaches_eof_promptly_even_with_a_long_delay(tmp_pa
     payload = _stop(root, root / ".work" / "irrelevant.jsonl", active=True)
 
     started = time.time()
-    result = subprocess.run([_BASH, _script("sh", "context-watch")], cwd=str(root), env=env,
-                            input=json.dumps(payload), capture_output=True, text=True,
-                            timeout=5, check=False)
+    result = crew_fixtures.run_gate(
+        [_BASH, _script("sh", "context-watch")], cwd=str(root), env=env,
+        input=json.dumps(payload), capture_output=True, text=True,
+        timeout=5, check=False)
     elapsed = time.time() - started
 
     assert result.returncode == 0, result.stderr
     assert elapsed < 5, elapsed
     assert "sent - method tmux" in _log(root), _log(root) + result.stderr
+
+
+@pytest.mark.skipif(os.name != "nt" or _BASH is None,
+                     reason="Windows job-object tree kill only, needs bash")
+def test_the_detached_sender_does_not_outlive_kill_process_group(tmp_path):
+    """The leak `crew_fixtures.popen_gate`/`kill_process_group` (fix 1)
+    exists to close, proven against the REAL sender rather than a
+    synthetic stand-in: `context-watch.sh` -> `auto-clear.sh` really
+    spawns `setsid bash $send_script ... & disown` (auto-clear.sh's own
+    comment: deliberately detached so a slow send survives the hook's own
+    death), and this test proves `kill_process_group` still reaches it.
+
+    `method="xdotool"` with a `windowTitle` that matches exactly one
+    stubbed window, not `method="tmux"`: the tmux path's ownership check
+    (`crew_autocycle.py:502`, `pane_pid not in ancestors()`) depends on
+    `ps -o ppid=` to walk this process's own ancestry, which this
+    machine's bundled `ps` (cygwin 3.6.10) does not support -- confirmed
+    directly, `ancestors()` always returns only `[self]` here, so the
+    tmux-flavoured test above cannot even reach a real spawn on this host
+    (see TODO.md). The title-fallback branch of `resolve_target`
+    (`crew_autocycle.py:431-440`) does not consult `ancestors()` at all
+    once exactly one stubbed window's title matches, so it reaches the
+    real spawn regardless of that gap -- same "real (harmless) detached
+    sender" shape as the tmux test, still fully PATH-shadowed
+    (`write_shim`'s default no-op stub) and still window-stubbed
+    (`CREW_AUTOCLEAR_WINDOW_STUB`), never a real xdotool call.
+    """
+    root = _repo(tmp_path, method="xdotool", windowTitle="LaneC2Marker", delaySeconds=30)
+    _machine(root)
+    _write_marker(root)
+    _write_handoff(root)
+    env = _xdotool_env(tmp_path, [{"id": 1, "pid": 999999, "title": "LaneC2Marker"}])
+    home = tmp_path / "home"
+    env = dict(os.environ, **env, HOME=str(home), USERPROFILE=str(home),
+               CLAUDE_PROJECT_DIR=str(root))
+    payload = _stop(root, root / ".work" / "irrelevant.jsonl", active=True)
+
+    proc = crew_fixtures.popen_gate(
+        [_BASH, _script("sh", "context-watch")], cwd=str(root), env=env,
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    out, err = proc.communicate(input=json.dumps(payload), timeout=5)
+    # Queried right after `communicate()` returns, via the SAME Windows Job
+    # Object `kill_process_group` is about to terminate -- not a
+    # `tasklist`/before-after pid diff: this machine runs other lanes'
+    # suites concurrently, each spawning and reaping their own `bash.exe`,
+    # so a pid that merely appeared between two snapshots is not evidence
+    # it descends from anything THIS test spawned (measured directly, that
+    # shape attributed five pids from an entirely unrelated Codex/SRL
+    # session to this test). Job membership has neither problem: only
+    # pids this fixture itself assigned or that Windows cascaded into the
+    # same job are ever members, regardless of what else is running.
+    ours = set(crew_fixtures.job_pids(proc))
+
+    assert proc.returncode == 0, err
+    assert "sent - method xdotool" in _log(root), _log(root) + err
+    assert len(ours) > 1, (
+        f"sanity: only the direct child ({sorted(ours)}) was ever in the "
+        "job -- the sender was not actually spawned, so this test would "
+        "prove nothing"
+    )
+
+    crew_fixtures.kill_process_group(proc)
+
+    deadline = time.time() + 10
+    survivors = {pid for pid in ours if crew_fixtures.pid_alive(pid)}
+    while survivors and time.time() < deadline:
+        time.sleep(0.2)
+        survivors = {pid for pid in ours if crew_fixtures.pid_alive(pid)}
+    assert not survivors, (
+        f"the detached sender survived kill_process_group: {sorted(survivors)} "
+        "-- the Windows job object did not reach it despite setsid")
 
 
 @by_flavor
