@@ -89,6 +89,55 @@ All notable changes to this repository are documented here. Format follows [Keep
     now builds its own `python3` shim from the resolved interpreter and
     puts it on PATH first, so the calibration holds on every host.
 
+- **`crew` 1.0.14: independent review of the 1.0.13 merge - six fixes,
+  all in the hooks-gate test harness and `verify-gate.sh` itself.**
+  - **`crew_fixtures.kill_process_group` could still SIGKILL an unrelated
+    process group.** The 1.0.13 fix recorded `proc.pgid` at spawn to avoid
+    a stale `os.getpgid(proc.pid)` re-lookup, but the recorded NUMBER
+    itself is not immune to reuse: once every member of that pgid has
+    exited (the common case for a short-lived gate command with no
+    lingering grandchild), the OS can hand that same number to a
+    brand-new, unrelated `setsid` leader, and teardown signals every
+    tracked proc regardless of whether it already exited. `popen_gate` now
+    also records the process's start time (`/proc/<pid>/stat` field 22,
+    Linux only); `kill_process_group` re-reads it before signalling and
+    skips - with a named warning, not a guess - on a mismatch. New tests
+    force the collision deterministically (winning the real pid-reuse race
+    is not something a test can do on demand).
+  - **A killed-but-unreaped zombie read as "still alive" forever on a host
+    whose PID 1 does not reap orphans (containers).** `crew_fixtures.py`
+    and `test_verify_gate_stop_gate_record.py` both polled liveness with a
+    bare `os.kill(pid, 0)`, which keeps succeeding for a zombie. New shared
+    `crew_fixtures.pid_alive` checks `/proc/<pid>/stat`'s state field
+    first and treats `Z` as dead; both test files now delegate to it.
+  - **`test_34e`'s liveness probe used `os.kill(pid, 0)` on a pid that, on
+    native Windows, is an MSYS pid, not a Win32 pid** - signal 0 there is
+    not a harmless probe (CPython's Windows `os.kill` opens the pid via
+    `TerminateProcess`), so a coincidental Win32-pid collision could
+    terminate an unrelated process. `test_34e` now skips outright on
+    native Windows, with the reason named.
+  - **The 0.2s TERM-then-KILL grace sleep ran for every rule, including
+    ones with nothing left in their process group to wait out** - ~0.2s
+    per rule regardless, unconditionally. Now gated on `kill -0` against
+    the same process group first; a rule that DOES leave something
+    running still gets the grace period. New test proves ten passing
+    rules add no `sleep 0.2` (via `bash -x` trace, not wall-clock timing).
+  - **`CREW_VERIFY_GATE_TEST_RULE_OUT_CAP` (test-only) accepted `0`
+    (disables the read cap entirely) or any value over 1 MiB (silently
+    raises the real cap)** - the old validation only rejected empty or
+    non-digit values. Now clamped to `1..1048576`; out-of-range values
+    fall back to the real default. New parametrized test proves both ends.
+  - **`test_34b`'s rule string double-quoted `$!` at the JSON level**,
+    which the gate's own shell expands one parse layer too early (to
+    empty), leaving `bg.pid` blank and its cleanup unable to reach the
+    backgrounded process it leaks on every run of this test.
+    Single-quoted to match `test_34e`'s already-correct pattern; the test
+    now also asserts `bg.pid` is non-empty and numeric.
+  - Two stale doc comments: `shell-suites.yml`'s obsidian-vault step no
+    longer restates the suite's own assertion count (it drifted once
+    already); `mcp-preflight-catalog.sh` and `uv-install.sh` now document
+    the exit-77-on-skip case their header previously omitted.
+
 - **`obsidian-vault` 0.4.13 / `jira-manager` 1.0.3: ported PR #212's
   exit-77-on-skip convention and CI wiring from `origin/item8-ps1-parity`.**
   A missing `pwsh` used to let `scripts/_test/uv-install.sh` (5 cases),
