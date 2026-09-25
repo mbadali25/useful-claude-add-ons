@@ -67,6 +67,23 @@ def popen_gate(cmd, **kwargs):
     else:
         kwargs.setdefault("start_new_session", True)
     proc = subprocess.Popen(cmd, **kwargs)  # pylint: disable=consider-using-with
+    if os.name != "nt":
+        # Recorded HERE, once, from a pid that has not had a chance to be
+        # reaped yet -- never re-derived later via `os.getpgid(proc.pid)`
+        # at kill time. `start_new_session=True` runs `setsid()` in the
+        # child before exec, which POSIX guarantees makes the new process
+        # GROUP's id equal the child's own pid -- so this is not a
+        # measurement that could race, it is the id `Popen` already fixed
+        # the moment it forked. `kill_process_group` used to call
+        # `os.getpgid(proc.pid)` at the point of killing instead: if the
+        # leader had ALREADY exited and been reaped by then (a `.poll()`/
+        # `.wait()` elsewhere between spawn and cleanup), the OS is free to
+        # hand that exact pid to a brand new, unrelated process, and
+        # `getpgid` on THAT pid returns THAT process' group -- `killpg`
+        # would then signal something this test never started. Storing the
+        # id at spawn removes the reuse window entirely: it is correct for
+        # as long as `proc` exists, reaped or not.
+        proc.pgid = proc.pid
     # Auto-tracked by whichever test's `gate_processes` fixture is
     # currently active (autouse, see below) -- a caller that ALSO does its
     # own explicit `gate_processes(proc)` registration (the pre-existing
@@ -86,13 +103,25 @@ def popen_gate(cmd, **kwargs):
 def kill_process_group(proc):
     """Kill `proc` and everything it started (see `popen_gate`). Best-effort:
     a process that already exited, or one this user cannot signal, is not an
-    error here -- the caller is about to give up on it either way."""
+    error here -- the caller is about to give up on it either way.
+
+    Uses `proc.pgid` -- recorded by `popen_gate` at spawn time -- in
+    preference to a fresh `os.getpgid(proc.pid)` here. A caller that built
+    `proc` some other way (bypassing `popen_gate`) has no such attribute, so
+    the live lookup remains as a fallback for that case only; see
+    `popen_gate`'s comment on `proc.pgid` for why the fresh lookup is the
+    one with the reuse race and should not be reached for anything spawned
+    through here.
+    """
     if os.name == "nt":
         subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)],
                         capture_output=True, timeout=30, check=False)
     else:
+        pgid = getattr(proc, "pgid", None)
         try:
-            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+            if pgid is None:
+                pgid = os.getpgid(proc.pid)
+            os.killpg(pgid, signal.SIGKILL)
         except (ProcessLookupError, PermissionError, OSError):
             pass
     try:

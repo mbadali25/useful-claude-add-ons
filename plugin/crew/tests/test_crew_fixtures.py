@@ -273,3 +273,79 @@ def test_gate_processes_kills_a_still_running_child_at_teardown():
         time.sleep(0.1)
     assert not _pid_alive(proc.pid), (
         "gate_processes's finalizer did not kill the tracked child")
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX process-group signalling only")
+def test_kill_process_group_uses_the_pgid_recorded_at_spawn_not_a_fresh_lookup(
+        monkeypatch, tmp_path):
+    """A PID this test's own child once held can be handed to an unrelated
+    process the moment the child is reaped -- `os.getpgid(proc.pid)` called
+    AFTER that point answers for whichever process holds the pid NOW, not
+    for the child this test actually wants killed. `popen_gate` records
+    `proc.pgid` once, at spawn, before any reuse window can open; this
+    proves `kill_process_group` actually USES that recorded value rather
+    than re-deriving it from `proc.pid` at kill time.
+
+    Not testable with a single, childless process: `kill_process_group`'s
+    OWN fallback (`proc.kill()`, unconditional, at the bottom) kills the
+    DIRECT child regardless of whether the group signal landed, so a
+    process with no grandchild of its own would read as "killed" either
+    way and this test would prove nothing. The direct child here
+    backgrounds a GRANDCHILD (writing its own pid to a file first) and
+    never waits on it -- only a correct `killpg` reaches that grandchild;
+    `proc.kill()` alone does not.
+
+    `os.getpgid` is monkeypatched to return an obviously wrong group (a
+    reserved, always-invalid one) for the whole test -- standing in for
+    "the pid was reused and a live lookup would now be wrong" without
+    needing to actually win an OS pid-reuse race, which is not something a
+    test can force deterministically. If `kill_process_group` ever called
+    the real lookup instead of trusting `proc.pgid`, `killpg` would target
+    that wrong group (or raise and be swallowed) and the grandchild would
+    survive.
+    """
+    monkeypatch.setattr(os, "getpgid", lambda pid: -1)
+
+    pidfile = tmp_path / "grandchild.pid"
+    proc = crew_fixtures.popen_gate(
+        ["sh", "-c",
+         f"( sleep 120 & echo $! > {pidfile} ) ; sleep 120"],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    assert proc.pgid == proc.pid, (
+        "popen_gate must record proc.pgid at spawn, equal to the session "
+        "leader's own pid (start_new_session=True guarantees this)"
+    )
+    assert _pid_alive(proc.pid), "sanity: the direct child never started"
+
+    deadline = time.time() + 10
+    while not pidfile.exists() and time.time() < deadline:
+        time.sleep(0.1)
+    assert pidfile.exists(), "the grandchild never recorded its own pid"
+    grandchild_pid = int(pidfile.read_text(encoding="utf-8").strip())
+    assert _pid_alive(grandchild_pid), "sanity: the grandchild never started"
+
+    crew_fixtures.kill_process_group(proc)
+    # SIGKILL only ends execution -- the pid stays a ZOMBIE, still
+    # answering `os.kill(pid, 0)` (what `_pid_alive` checks) as though it
+    # were running, until something reaps it. `gate_processes`'s own
+    # teardown does this same `wait()` right after its `kill_process_group`
+    # call, for the same reason.
+    try:
+        proc.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        pass
+
+    deadline = time.time() + 5
+    while _pid_alive(grandchild_pid) and time.time() < deadline:
+        time.sleep(0.1)
+    try:
+        assert not _pid_alive(grandchild_pid), (
+            "the grandchild survived kill_process_group - it must have "
+            "consulted the monkeypatched os.getpgid instead of proc.pgid, "
+            "or relied on proc.kill() alone, which never reaches it"
+        )
+    finally:
+        try:
+            os.kill(grandchild_pid, 9)
+        except OSError:
+            pass
