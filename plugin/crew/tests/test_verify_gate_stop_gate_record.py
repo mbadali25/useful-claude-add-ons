@@ -1819,6 +1819,135 @@ def test_34d_ps1_a_temp_dir_failure_falls_back_to_crew_not_a_pipe(
     )
 
 
+@pytest.mark.skipif(
+    not sys.platform.startswith("win") or _PWSH is None,
+    reason="the .ps1 gate is the native-Windows flavour",
+)
+def test_34c_ps1_a_large_rule_output_is_capped_not_read_in_full(tmp_path):
+    """The .ps1 twin of test_34c (B3, BLOCKER) - the cap half of the same
+    fix as test_34b[ps1] going green (the redirect half). Reading a
+    rule's own output back must be BOUNDED, not proportional to however
+    much was written, proven deterministically and cheaply via
+    `CREW_VERIFY_GATE_TEST_RULE_OUT_CAP` - the .ps1 twin of the .sh seam
+    of the same name (test-only, undocumented; see verify-gate.ps1's own
+    comment beside it). Identical fixture and assertions to test_34c,
+    just aimed at the .ps1 gate.
+    """
+    vmap = {
+        "version": 1,
+        "rules": [{"paths": ["a.py"], "reach": "local", "run": [
+            "sh -c \"head -c 5000 /dev/zero | tr '\\\\0' 'Q'; exit 1\""
+        ]}],
+        "default": [], "unmapped": "ignore",
+    }
+    root = _repo(tmp_path, vmap)
+    (root / "a.py").write_text("x", encoding="utf-8")
+
+    env = dict(os.environ, CLAUDE_PROJECT_DIR=str(root),
+               CREW_VERIFY_GATE_TEST_RULE_OUT_CAP="200")
+    started = time.time()
+    result = crew_fixtures.run_gate(
+        [_PWSH, "-NoProfile", "-NonInteractive", "-File", _PS1],
+        input="{}", cwd=str(root), env=env,
+        capture_output=True, text=True, check=False,
+        timeout=_GATE_TIMEOUT)
+    elapsed = time.time() - started
+    assert result.returncode != 0, (
+        "the fixture rule deliberately exits 1; the gate must fail too. "
+        + result.stderr
+    )
+    assert elapsed < 10, (
+        f"the gate took {elapsed:.1f}s to return on a 5000-byte rule "
+        f"output with a 200-byte test cap. stderr: {result.stderr}"
+    )
+    runs = re.findall(r"Q+", result.stderr)
+    longest_run = max((len(r) for r in runs), default=0)
+    assert longest_run == 200, (
+        f"the longest run of 'Q' in stderr was {longest_run}, not the "
+        "200-byte test cap - the rule's output was read back beyond (or "
+        f"short of) the cap instead of being snapshotted at exactly it. "
+        f"stderr: {result.stderr}"
+    )
+
+
+@pytest.mark.skipif(
+    not sys.platform.startswith("win") or _PWSH is None,
+    reason="the .ps1 gate is the native-Windows flavour",
+)
+def test_34h_ps1_a_backgrounded_unbounded_writer_does_not_wedge_or_balloon(
+        tmp_path):
+    """The B3 (BLOCKER) regression itself, verbatim to the ticket's own
+    repro shape (`sh -c 'yes &'`): a rule that backgrounds a writer whose
+    SOURCE is unbounded must leave the gate returning promptly, with the
+    captured output still bounded to the 1 MiB cap.
+
+    Before this fix, two separate things wedged or ballooned here, and
+    this test's own two assertions (elapsed time, capped output) map to
+    them directly:
+
+    1. `& $bashExe -c $c > $ruleOutFile 2>&1` (PowerShell's own
+       file-redirect operators) relay the child's output through a PIPE
+       PowerShell itself manages, not a raw OS file handle - so a
+       backgrounded grandchild that merely inherits that pipe wedges the
+       GATE's own invocation for as long as it lives, independent of
+       whether it writes anything (test_34b[ps1] proves this half alone,
+       with a silent `sleep`).
+    2. A plain, uncapped `Get-Content` has no static end position: while
+       the file is still growing, the next line it reads is simply
+       whatever showed up next, so it keeps going for as long as the
+       writer does rather than stopping at a snapshot (measured by hand:
+       an uncapped read chased a real `yes &` past 1 GiB in the first
+       five seconds without returning).
+
+    The writer here is `head -c 3000000 /dev/zero | tr '\\0' 'Q'`, not a
+    truly endless `yes &` - bounded for CI/disk safety (it terminates on
+    its own well under a second, needing no process to be killed and
+    leaving nothing to fill a disk), while still exceeding the 1 MiB cap
+    comfortably enough that a failure to cap is provable. That the writer
+    happens to stop on its own is a test-safety choice, not a property
+    the gate relies on: the crew is deliberately dropping the per-rule
+    process-group kill (see verify-gate.ps1's comment beside this fix and
+    TODO.md), so a rule's own truly-unbounded `yes &` is still left
+    running after the gate returns - what must not happen, and is proven
+    here, is the GATE wedging on it or reading it unboundedly.
+    """
+    vmap = {
+        "version": 1,
+        "rules": [{"paths": ["a.py"], "reach": "local", "run": [
+            "sh -c \"head -c 3000000 /dev/zero | tr '\\\\0' 'Q' & "
+            "sleep 0.1; exit 1\""
+        ]}],
+        "default": [], "unmapped": "ignore",
+    }
+    root = _repo(tmp_path, vmap)
+    (root / "a.py").write_text("x", encoding="utf-8")
+
+    started = time.time()
+    result = crew_fixtures.run_gate(
+        [_PWSH, "-NoProfile", "-NonInteractive", "-File", _PS1],
+        input="{}", cwd=str(root),
+        env=dict(os.environ, CLAUDE_PROJECT_DIR=str(root)),
+        capture_output=True, text=True, check=False,
+        timeout=_GATE_TIMEOUT)
+    elapsed = time.time() - started
+    assert result.returncode != 0, (
+        "the fixture rule deliberately exits 1; the gate must fail too. "
+        + result.stderr
+    )
+    assert elapsed < 10, (
+        f"the gate took {elapsed:.1f}s to return with a backgrounded, "
+        "unbounded-source writer ('yes'-shaped: head -c N /dev/zero | "
+        f"tr) still producing output. stderr: {result.stderr}"
+    )
+    runs = re.findall(r"Q+", result.stderr)
+    longest_run = max((len(r) for r in runs), default=0)
+    assert 0 < longest_run <= 1048576, (
+        f"the longest run of 'Q' in stderr was {longest_run} - either "
+        "nothing was read back at all, or the read exceeded the 1 MiB "
+        f"cap. stderr tail: {result.stderr[-500:]}"
+    )
+
+
 @pytest.mark.skipif(_BASH is None, reason="needs bash")
 @pytest.mark.skipif(
     os.name == "nt",

@@ -1597,10 +1597,44 @@ foreach ($ident in $cmds) {
     # EVERY process holding its write end has closed it - so a rule that
     # backgrounds something and does not itself wait for it inherits that
     # same write end, and the grandchild holding it open wedges THIS
-    # process forever, the same way as the bash side. A file has no such
-    # rule: `Get-Content` reads whatever is on disk right now and hits EOF
-    # at the file's current size regardless of who else still has it open
-    # for writing.
+    # process forever, the same way as the bash side.
+    #
+    # A REDIRECT TARGET FILE alone does not close that gap, and the comment
+    # this replaces said it did - wrong, measured wrong (`test_34b[ps1]`,
+    # a rule that only backgrounds a silent `sleep` and writes nothing,
+    # still took the gate ~20s to return under `& $bashExe -c $c >
+    # $ruleOutFile 2>&1`, the exact shape here before this fix). PowerShell
+    # does not hand the child a raw OS file handle for `>`/`2>&1` on a
+    # native command - it gives the child a PIPE and relays what it reads
+    # into the target file itself, so a grandchild that merely HOLDS that
+    # inherited pipe open (no writing required) keeps PowerShell's own
+    # relay from ever reaching EOF, wedging THIS process the same way a
+    # bare `$out = & ... 2>&1` would, just one layer further in. Below,
+    # `$c` is handed to bash through an ENV VAR (`CREW_VERIFY_RULE_CMD`,
+    # never interpolated into the wrapper text - see the `New-Object
+    # System.Text.UTF8Encoding` python-shim block above for why
+    # interpolating an arbitrary value into a script string is the thing
+    # to avoid) and bash's OWN `eval "$CREW_VERIFY_RULE_CMD" >
+    # "$CREW_VERIFY_RULE_OUT" 2>&1 </dev/null` does the redirect - a real
+    # file handle, the same thing verify-gate.sh's `( eval "$c" )
+    # >"$RULE_OUT_FILE" 2>&1 </dev/null &` already gets for free by running
+    # natively under bash. Measured: the sabotage-relevant repro above
+    # returns in well under 200ms this way, unaffected by how long the
+    # backgrounded sleep lives.
+    #
+    # That still leaves the READ side: a plain `Get-Content` has no static
+    # end position either - a backgrounded grandchild that keeps WRITING
+    # (not just holding the fd open - `sh -c 'yes &'`) makes the file grow
+    # WHILE Get-Content is still reading it, and the next line it reads is
+    # simply whatever showed up next, not a stop at "the file's current
+    # size" the earlier version of this comment claimed. Measured: with
+    # only the redirect fixed and a plain uncapped `Get-Content` left in
+    # place, a `sh -c 'yes &'` rule grew the file past 1 GiB in the first
+    # five seconds of reading and Get-Content had not returned. The read
+    # below is therefore a single Length snapshot (filesystem metadata,
+    # not a content read, so it cannot itself be made to wait on the
+    # writer) plus a bounded, capped tail read - the .ps1 twin of
+    # verify-gate.sh's `stat`+`tail -c` pair.
     # `$null |` on every call below hands the child a closed stdin - the
     # same fix as everywhere else in this file (see the interpreter probe
     # and the git call sites above); without it a rule that reads stdin
@@ -1639,9 +1673,64 @@ foreach ($ident in $cmds) {
       $out = @("verify-gate: no usable bash resolved (Resolve-CrewBash found no natively-launchable candidate) - refusing rather than invoking a name that would re-resolve to the same rejected shim and hang")
       $rc = 1
     } elseif ($ruleOutFile) {
-      $null | & $bashExe -c $c > $ruleOutFile 2>&1
+      # No positional args passed to $bashExe here on purpose: `eval`
+      # inherits the CURRENT positional parameters, and a wrapper script
+      # invoked with args would make $1/$2/... visible inside the evaled
+      # rule command too, which a plain `bash -c $c` (both args empty)
+      # never had. Two env vars instead, both scoped to this rule only and
+      # restored/cleared immediately after.
+      $prevRuleCmd = $env:CREW_VERIFY_RULE_CMD
+      $prevRuleOut = $env:CREW_VERIFY_RULE_OUT
+      $env:CREW_VERIFY_RULE_CMD = $c
+      $env:CREW_VERIFY_RULE_OUT = ($ruleOutFile -replace '\\', '/')
+      $wrapperScript = 'eval "$CREW_VERIFY_RULE_CMD" > "$CREW_VERIFY_RULE_OUT" 2>&1 </dev/null'
+      $null | & $bashExe -c $wrapperScript
       $rc = $LASTEXITCODE
-      $out = @(Get-Content -Path $ruleOutFile -ErrorAction SilentlyContinue)
+      if ($null -eq $prevRuleCmd) { Remove-Item Env:\CREW_VERIFY_RULE_CMD -ErrorAction SilentlyContinue } else { $env:CREW_VERIFY_RULE_CMD = $prevRuleCmd }
+      if ($null -eq $prevRuleOut) { Remove-Item Env:\CREW_VERIFY_RULE_OUT -ErrorAction SilentlyContinue } else { $env:CREW_VERIFY_RULE_OUT = $prevRuleOut }
+      # 1 MiB; twin of RULE_OUT_CAP in verify-gate.sh. The env override is
+      # test-only (proving the cap is enforced without writing gigabytes to
+      # prove it) - no operator-facing doc names it, and it must never be
+      # set outside a test process. Same twin as verify-gate.sh's own
+      # CREW_VERIFY_GATE_TEST_RULE_OUT_CAP seam.
+      $ruleOutCap = 1048576
+      $capOverride = $env:CREW_VERIFY_GATE_TEST_RULE_OUT_CAP
+      if ($capOverride) {
+        $parsedCap = 0
+        if ([int]::TryParse($capOverride, [ref]$parsedCap) -and $parsedCap -ge 1 -and $parsedCap -le 1048576) {
+          $ruleOutCap = $parsedCap
+        }
+      }
+      $out = @()
+      try {
+        $fi = Get-Item -Path $ruleOutFile -ErrorAction Stop
+        # Snapshot the size the moment we look, then read exactly that many
+        # bytes (capped) - never the whole file as it stands whenever the
+        # read gets around to finishing. `.Length` is filesystem metadata,
+        # not a content read.
+        $size = [int64]$fi.Length
+        $readLen = [int][Math]::Min($size, [int64]$ruleOutCap)
+        if ($readLen -gt 0) {
+          $fs = [System.IO.File]::Open($ruleOutFile, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+          try {
+            # Tail, not head: the last lines are what a failing rule needs
+            # downstream (`Select-Object -Last 25` below) - a rule that
+            # prints megabytes of noise before its one real failure line
+            # must not have that line cut off by reading from byte 0
+            # instead of the end. `Seek` from the end is a single seek on
+            # a regular file, not a scan of everything before it.
+            $fs.Seek(-$readLen, [System.IO.SeekOrigin]::End) | Out-Null
+            $buffer = [byte[]]::new($readLen)
+            $bytesRead = $fs.Read($buffer, 0, $readLen)
+            if ($bytesRead -lt $readLen) { $buffer = $buffer[0..($bytesRead - 1)] }
+            $out = @([System.Text.Encoding]::UTF8.GetString($buffer) -split "`r?`n")
+          } finally {
+            $fs.Dispose()
+          }
+        }
+      } catch {
+        $out = @("verify-gate: could not read the rule's output file ($($_.Exception.Message))")
+      }
       Remove-Item -Path $ruleOutFile -Force -ErrorAction SilentlyContinue
     } else {
       # Neither the system temp dir nor .crew/ is writable: refuse this
