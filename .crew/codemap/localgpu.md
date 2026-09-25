@@ -1,5 +1,5 @@
-anchor: useful-claude-add-ons@5d1fc5fd
-verified: 2026-09-22
+anchor: useful-claude-add-ons@6c497a14
+verified: 2026-09-25
 
 # localgpu
 
@@ -512,16 +512,40 @@ file's frontmatter, not previously listed in this note.** `plugin.json`'s
   **Checked against the code, corrected after QA:**
   `plugin/crew/hooks/scripts/crew_config.py:126-127` only re-exports
   (`DEV_PROVIDERS = crew_state.DEV_PROVIDERS`); the tuples are actually
-  *defined* at `plugin/crew/hooks/scripts/crew_state.py:1503-1504`.
+  *defined* at `plugin/crew/hooks/scripts/crew_state.py:1411-1412` (re-numbered
+  from `:1503-1504` by crew 1.0 - see the 2026-09-25 re-anchor below; same two
+  lines, `DEV_PROVIDERS = ("claude", "codex", "copilot")` /
+  `QA_PROVIDERS = ("claude", "codex", "copilot")`, byte-identical).
   So `crew.md`'s own attribution to `crew_config.py` names the re-export, not
   the definition — true as far as it goes (that file does hold those names),
   but not where the literals live. This command also states it "writes
   nothing — not `.crew/config.json`, not an environment variable, not a shim
   on `PATH`" (`plugin/localgpu/commands/crew.md:9-10`).
-  **Narrowed after QA, not "Unknown":** this note read `crew.md` through line
-  40 (Step 0 and the opening of Step 1, including the provider-tuple block).
-  The rest of its 229 lines — its account of which specific crew roles a 7B
-  can and cannot take over — was not read at this pass.
+  **Read in full at the 2026-09-25 pass (previously narrowed to line 40,
+  "not Unknown").** `plugin/localgpu/commands/crew.md` is itself unchanged
+  since `5d1fc5fd` (`git diff --name-only 5d1fc5fd..6c497a14 --
+  plugin/localgpu/commands/crew.md` is empty), but its Step 2 table (`:99-107`)
+  names eleven crew roles by name - `scribe`, `docs-writer`, `analyst`,
+  `planner`, `developer`, `qa-reviewer`, `dba`, `infrastructure-architect`,
+  `smoke-author`, `browser-tester`, `pm` - and **crew 1.0 (`6c497a14`) deleted
+  every one of their agent definitions.** `git show --diff-filter=DR
+  --name-status 6c497a14 -- plugin/crew/agents/` lists all eleven among fifty
+  `D` (deleted) files; `plugin/crew/agents/` now holds only four:
+  `explorer.md`, `researcher.md`, `reviewer.md`, `security.md` (`ls
+  plugin/crew/agents/`), matching `.claude-plugin/marketplace.json`'s `crew`
+  entry, which now describes "4 context-isolated agents (explorer, reviewer,
+  security, researcher)" in place of the old tiered roster. **JUDGEMENT:** this
+  makes most of `crew.md`'s Step 2 table stale documentation about a roster
+  that no longer exists in this repo - not a broken citation (the file and its
+  line numbers are exactly where this note says), but a claim whose subject
+  matter was deleted out from under it. `explorer` and `researcher` still map
+  to real agent files; `qa-reviewer`'s successor is `reviewer`, unnamed as such
+  in the table; the other eight rows describe roles this repo no longer has.
+  Whether `crew.md` should be rewritten for the 4-role roster is outside this
+  note's scope (that file lives in `plugin/localgpu/`, not `plugin/crew/`, and
+  fixing it is a decision, not a fact this codemap records) - flagged here
+  because a reader trusting this note's summary of "which crew roles a 7B can
+  take over" would be reasoning about roles this repo has removed.
 
 `plugin.json`'s own description also states "No hooks and no agents; nothing
 leaves 127.0.0.1" (`plugin/localgpu/.claude-plugin/plugin.json:4`); confirmed
@@ -955,3 +979,67 @@ No content correction was needed. Not re-verified at this pass: nothing
 beyond the two files above was read, and nothing was executed - no Ollama
 server contacted, no index built, no bootstrap script or test suite run. The
 `cli/anthropic_proxy.py` end-to-end gap noted above still stands.
+
+## Re-anchor provenance - 5d1fc5fd -> 6c497a14, 2026-09-25 (after crew 1.0, PR #225)
+
+**Re-derive provenance.** Per-path check over every backtick-quoted
+repo-relative path this note cites (the same cited-path list used at the
+previous re-anchor, plus `plugin/localgpu/commands/crew.md`,
+`plugin/localgpu/commands/doctor.md` and `plugin/crew/hooks/scripts/crew_state.py`,
+which the previous list already carried):
+
+```
+git diff --name-only 5d1fc5fd..6c497a14 -- <every path this note cites>
+```
+returns three files: `plugin/crew/hooks/scripts/crew_config.py`,
+`plugin/crew/hooks/scripts/crew_state.py`, `scripts/check-marketplace.py`.
+**Few paths moved, as expected** - crew 1.0 did not touch `plugin/localgpu/`
+itself (`git diff --name-only 5d1fc5fd..6c497a14 -- plugin/localgpu/` is
+empty), so every `plugin/localgpu/**` citation in this note - `mcp/*.py`,
+`cli/*.py`, `bootstrap.sh`/`.ps1`, `commands/*.md`, `_test/*.py`,
+`.claude-plugin/plugin.json`, `pyproject.toml` - is untouched and was not
+re-read.
+
+**Existence check, because the task that requested this pass expected many
+gone.** Every cited path was checked with a plain existence test
+(`[ -e "$p" ]`) against the working tree at `6c497a14`. All exist except
+`skills/localgpu/SKILL.md` - which this note has already recorded, since the
+2026-09-06 pass, as not a real path (the real one is
+`plugin/localgpu/skills/localgpu/SKILL.md`). No newly-missing *file* turned
+up. What crew 1.0 actually removed is not a path this note cites by
+`path:line` - it is the **content** one of those paths describes:
+`plugin/localgpu/commands/crew.md` is byte-identical at both commits, but its
+Step 2 role table names eleven crew roles whose agent definitions crew 1.0
+deleted wholesale. See the correction inside the "Six slash commands" section
+above for the full finding, established with `git show --diff-filter=DR
+--name-status 6c497a14 -- plugin/crew/agents/` (fifty deletions) cross-checked
+against `ls plugin/crew/agents/` (four files remain) and
+`.claude-plugin/marketplace.json`'s rewritten `crew` entry.
+
+**The three moved files, checked line by line:**
+
+- `scripts/check-marketplace.py` grew from 1627 to 1678 lines
+  (`wc -l`); `grep -n "def check_plugin_manifests\|declared != entry\[.version.\]"`
+  still returns `160:` and `169:` - both citations this note makes into that
+  file are byte-identical. Nothing to correct.
+- `plugin/crew/hooks/scripts/crew_config.py`: `git diff --stat` reports
+  +173/-that file between the two commits, but the two lines this note cites,
+  `:126-127` (`DEV_PROVIDERS = crew_state.DEV_PROVIDERS` /
+  `QA_PROVIDERS = crew_state.QA_PROVIDERS`), are byte-identical at the same
+  line numbers. Nothing to correct.
+- `plugin/crew/hooks/scripts/crew_state.py`: `git diff --stat` reports
+  238 lines changed. The one line pair this note cites moved -
+  `DEV_PROVIDERS = ("claude", "codex", "copilot")` /
+  `QA_PROVIDERS = ("claude", "codex", "copilot")` shifted from `:1503-1504` to
+  `:1411-1412` (confirmed by `grep -n "^DEV_PROVIDERS\|^QA_PROVIDERS"`), text
+  unchanged. Corrected in the "Six slash commands" section above; the
+  historical QA-block entries further up this file that quote the old
+  `:1503-1504` number are left as written, as records of what an earlier pass
+  verified at its own anchor, not live citations.
+
+Not re-verified at this pass: nothing under `plugin/localgpu/` was rebuilt,
+installed, executed or imported - no Ollama server contacted, no index built,
+neither bootstrap script run, no test suite executed. `cli/anthropic_proxy.py`
+still has not been read end to end. The crew-roster finding above was
+established entirely from `git show`/`git diff`/`ls`, not from opening every
+deleted agent file's prior content.
