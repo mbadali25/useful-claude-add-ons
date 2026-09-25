@@ -125,13 +125,27 @@ def test_dotdot_traversal_out_of_touch_is_blocked(flavour, repo):
 
 @pytest.mark.parametrize("flavour", FLAVOUR_MATRIX)
 def test_dotdot_through_a_symlink_resolves_where_the_os_does(flavour, repo):
+    # The title is literal, not just flavour text: `role_write_guard.
+    # _resolve_real_target` (which this guard reuses) is DELIBERATELY
+    # platform-dependent here, and its own module docstring plus
+    # test_role_write_guard.py's `@needs_windows` cases
+    # (test_resolve_real_target_windows_collapses_dotdot_before_symlink,
+    # test_windows_link_pointing_out_of_scope_with_dotdot_still_allows_bash)
+    # already establish the Windows answer for this exact shape. POSIX
+    # resolves the symlink FIRST, so `src/hop/../x.py` (hop -> secret/deep)
+    # pops against the RESOLVED secret/deep, landing in secret/x.py -- out
+    # of the ticket's src/** scope, block. Windows collapses the literal
+    # `..` LEXICALLY first, before the symlink is ever consulted, so
+    # `hop/..` cancels back to `src` without following it at all, landing
+    # in src/x.py -- still in scope, allow. A single cross-platform
+    # `assert code == 2` was asserting the POSIX answer on both hosts.
     ready(repo)
     (repo / "secret" / "deep").mkdir()
     os.symlink(repo / "secret" / "deep", repo / "src" / "hop")
 
     code, _, _ = _guard(flavour, repo, edit(repo, str(repo / "src" / "hop") + "/../x.py"))
 
-    assert code == 2
+    assert code == (0 if os.name == "nt" else 2)
 
 
 @pytest.mark.parametrize("flavour", FLAVOUR_MATRIX)

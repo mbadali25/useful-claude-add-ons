@@ -56,6 +56,18 @@ def test_build_falls_back_to_the_files_mode_ticket(repo):
     assert "from the ticket file" in text and "(from .work/tickets/T9.md)" in text
 
 
+def test_relpath_is_forward_slash_even_when_os_sep_is_a_backslash(monkeypatch):
+    # Host-independent: real ntpath.relpath semantics can't be exercised on a
+    # POSIX runner, so the Windows shape is modelled directly -- a relpath
+    # that already came back with backslashes (what ntpath.relpath returns),
+    # with os.sep forced to match so `_relpath`'s conversion step is the one
+    # under test, not `os.path.relpath` itself.
+    monkeypatch.setattr(rp.os.path, "relpath", lambda path, root: "tickets\\T9.md")
+    monkeypatch.setattr(rp.os, "sep", "\\")
+
+    assert rp._relpath("root\\tickets\\T9.md", "root") == "tickets/T9.md"
+
+
 def test_sections_keeps_nested_headings_inside_their_parent():
     found = rp.sections("# T\n## Intent\nfoo\n### detail\nbar\n## Exclusions\nnone\n")
 

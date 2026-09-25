@@ -61,6 +61,7 @@ import hashlib
 import json
 import os
 import shutil
+import signal
 import subprocess
 import sys
 
@@ -116,18 +117,43 @@ def command_for(provider, exe, root, prompt, model, effort):
 
 
 def launch(cmd, root, timeout):
-    """(stdout, stderr, exit_code, timed_out). stdin is always closed."""
+    """(stdout, stderr, exit_code, timed_out). stdin is always closed.
+
+    Spawned in its own process group/session so a timeout can kill the whole
+    tree, not just the direct child. A provider CLI installed as an npm
+    `.cmd` shim on Windows runs as `cmd.exe /c <shim>`, with the real work in
+    a grandchild -- a bare `Popen.kill()` (what a plain `subprocess.run(...,
+    timeout=...)` does on `TimeoutExpired`) only reaches `cmd.exe`. Left
+    un-reaped, that grandchild keeps this process's stdout pipe open past the
+    kill, and reading it blocks well past `timeout` -- observed as the
+    caller's own outer safety timeout firing instead of this one.
+    """
+    popen_kwargs = {}
+    if os.name == "nt":
+        popen_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+    else:
+        popen_kwargs["start_new_session"] = True
     try:
-        done = subprocess.run(cmd, cwd=root, stdin=subprocess.DEVNULL, capture_output=True,
-                              text=True, encoding="utf-8", errors="replace",
-                              timeout=timeout, check=False)
-    except subprocess.TimeoutExpired as exc:
-        out = exc.stdout if isinstance(exc.stdout, str) else (exc.stdout or b"").decode(
-            "utf-8", "replace")
-        return out, "", None, True
+        proc = subprocess.Popen(  # pylint: disable=consider-using-with
+            cmd, cwd=root, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace",
+            **popen_kwargs)
     except OSError as exc:
         return "", f"could not start {cmd[0]}: {exc}", None, False
-    return done.stdout, done.stderr, done.returncode, False
+    try:
+        stdout, stderr = proc.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        if os.name == "nt":
+            subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)],
+                           capture_output=True, timeout=30, check=False)
+        else:
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        stdout, stderr = proc.communicate()
+        return stdout, stderr, None, True
+    return stdout, stderr, proc.returncode, False
 
 
 def bundle_problems(manifest):

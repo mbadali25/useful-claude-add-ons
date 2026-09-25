@@ -50,6 +50,16 @@ def _read(path):
         return None
 
 
+def _relpath(path, root):
+    """`os.path.relpath`, forced to forward slashes. This text is read by a
+    reviewer model, not a shell -- `os.path.relpath` alone renders as
+    `.work\\tickets\\T9.md` on Windows, inconsistent with every literal
+    forward-slash path this file writes elsewhere (`.work/tickets/{ticket}.md`
+    at :106, `webtest-findings.txt`'s own `<out_dir>/...` lines) and with the
+    manifest's own path fields, which are always POSIX-style."""
+    return os.path.relpath(path, root).replace(os.sep, "/")
+
+
 def sections(markdown):
     """{lowercased heading: body} for every markdown heading at any level. A
     body runs to the next heading of the same or a higher level, so nested
@@ -96,7 +106,7 @@ def _spec_block(root, ticket):
         out.append(f"MISSING: no spec at {spec_path} (nor .work/tickets/{ticket}.md). "
                    "Review against the diff alone and say that you had no spec.")
         return out
-    out.append(f"(from {os.path.relpath(source, root)})")
+    out.append(f"(from {_relpath(source, root)})")
     found = sections(text)
     for name in SPEC_SECTIONS:
         body = found.get(name.lower())
@@ -104,7 +114,7 @@ def _spec_block(root, ticket):
             out += [f"-- {name} --", body]
         else:
             out.append(f"-- {name} -- MISSING: no '{name}' section in "
-                       f"{os.path.relpath(source, root)}")
+                       f"{_relpath(source, root)}")
     return out
 
 
@@ -112,7 +122,7 @@ def _plan_block(root, ticket):
     path = os.path.join(root, ".work", "tickets", ticket, "plan.md")
     text = _read(path)
     if text is None or not text.strip():
-        return ["== Plan ==", f"MISSING: no plan at {os.path.relpath(path, root)}."]
+        return ["== Plan ==", f"MISSING: no plan at {_relpath(path, root)}."]
     return ["== Plan ==", text.strip()]
 
 
@@ -206,7 +216,7 @@ def _webtest_block(root, ticket, manifest, out_dir=None):
         return []
     out = ["== Web tests =="] + (_artifact_lines(listing) if listing else [])
     if raw is None:
-        out.append(f"MISSING: no {os.path.relpath(path, root)} -- the healer-skip check "
+        out.append(f"MISSING: no {_relpath(path, root)} -- the healer-skip check "
                    "(webtest_guard.py skips) has not run for this ticket.")
         return out
     try:
@@ -214,7 +224,7 @@ def _webtest_block(root, ticket, manifest, out_dir=None):
     except (ValueError, AttributeError):
         rows = None
     if not isinstance(rows, list):
-        out.append(f"UNREADABLE: {os.path.relpath(path, root)}; whether a skip was added "
+        out.append(f"UNREADABLE: {_relpath(path, root)}; whether a skip was added "
                    "is UNKNOWN.")
         return out
     every = [_finding_row(row) for row in rows]

@@ -342,7 +342,17 @@ check_err_has "and the message is the ABSENCE one, distinct from the stub one" \
 # ============================================================== .ps1 flavour
 PWSH="$(command -v pwsh 2>/dev/null || true)"
 if [ -n "$PWSH" ]; then
-  PWSH_DIR="$(dirname "$PWSH")"
+  # Isolated, not $(dirname "$PWSH") directly: on GitHub's ubuntu-latest image
+  # pwsh lives at /usr/bin/pwsh, which is also where the system's real
+  # python3 lives - appending that whole directory to a fixture PATH meant to
+  # simulate "no usable interpreter" leaks a real, working python3 into every
+  # such case, so the guard finds it, runs for real, and every must-refuse
+  # case turns into a false PASS-through instead of the expected stand-down.
+  # A directory holding nothing but a symlink to pwsh keeps the fixture PATH
+  # able to launch pwsh without also handing it a real interpreter.
+  PWSH_DIR="$work/pwsh-only"
+  mkdir -p "$PWSH_DIR"
+  ln -sf "$PWSH" "$PWSH_DIR/pwsh"
 
   echo "== bridge-status.ps1: the same verdicts, PowerShell flavour =="
 

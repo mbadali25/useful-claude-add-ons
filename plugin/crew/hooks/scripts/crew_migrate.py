@@ -176,7 +176,11 @@ def _rel(root, path):
 def _is_link(path):
     """A symlink, or a Windows directory junction (which `islink` misses)."""
     isjunction = getattr(os.path, "isjunction", None)
-    return os.path.islink(path) or bool(isjunction and isjunction(path))
+    # pylint on 3.11 infers `isjunction` as Optional[None] (the attribute
+    # doesn't exist there) and flags the call below as not-callable even
+    # though it is guarded by `isjunction and`; os.path.isjunction only
+    # exists on 3.12+.
+    return os.path.islink(path) or bool(isjunction and isjunction(path))  # pylint: disable=not-callable
 
 
 def _within(path, real_root):

@@ -181,7 +181,21 @@ def fake_codex(tmp_path, monkeypatch):
                     "echo 'hooks                                    stable             true'\n",
                     encoding="utf-8")
     path.chmod(path.stat().st_mode | stat.S_IEXEC)
-    monkeypatch.setenv("CREW_CODEX_BIN", str(path))
+    # A bare POSIX shebang script has no extension Windows can execute at
+    # all -- and `_codex_bin()` returns CREW_CODEX_BIN verbatim when it is
+    # set (the PATH/PATHEXT search it does otherwise never runs), so
+    # every `_run()` call against `path` on a real Windows host fails with
+    # an OSError the probe correctly reports as "could not run", not a
+    # defect in the probe. A `.cmd` companion, the same shape
+    # review_fixtures.fake_reviewer_bin already uses for the same reason,
+    # makes this fixture runnable on Windows too.
+    cmd_path = tmp_path / "codex.cmd"
+    cmd_path.write_text(
+        '@echo off\r\n'
+        'if "%1"=="--version" (echo codex-cli 9.9.9 & exit /b 0)\r\n'
+        'echo hooks                                    stable             true\r\n',
+        encoding="utf-8", newline="")
+    monkeypatch.setenv("CREW_CODEX_BIN", str(cmd_path if os.name == "nt" else path))
     return path
 
 
