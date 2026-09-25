@@ -4692,3 +4692,16 @@ From the Codex delta reviews of integ-ps1 (gpt-5.6-sol, high, read-only). None b
 - `plugin/crew/hooks/scripts/auto-clear.ps1` - the parent claims the one-shot `.crew/.autoclear-sent-<key>` marker BEFORE it spawns the sendkeys child, so a child that fails to start or to bind its parameters consumes the session's only attempt without typing anything. Pre-existing; claim in the child after it has verified and typed, or release the claim on child failure.
 - `plugin/crew/tests/test_auto_clear_review_fixes.py:730` (Windows-only test) - the binding test's false case uses `Hwnd=0`, which equals `GetForegroundWindow()` when Windows returns NULL (locked/headless session), so the child reaches a real `SendWait` and could type `/clear` into another application. Use a real, known non-foreground window handle (or skip the false case when GetForegroundWindow() is 0).
 - `plugin/crew/tests/test_verify_gate_stop_gate_record.py:1803` - the no-bash skip uses `crew_fixtures.resolve_bash()`, a different discovery algorithm from verify-gate.ps1's `Resolve-CrewBash` (which walks up from git.exe), so a Git for Windows install with only its `cmd` dir on PATH silently skips this test. Skip based on the gate's own `-PrintBash` result instead.
+
+## sabotage.py's own aggregate run has the same SKIPPED-vs-PASSED gap (filed 2026-09-25)
+
+`plugin/crew/tests/sabotage.py:2928` folds `AUTOCYCLE_MUTATIONS` into its own `MUTATIONS` tuple and
+re-runs every entry through its own independent `run_test`/`main` (`plugin/crew/tests/sabotage.py:2945-3253`),
+which still checks only `done.returncode` and has no SKIPPED-vs-PASSED distinction. So the
+"Get-CrewChildTabRecheck skips the post-delay tab check again" entry (Windows-only target test) would
+still misreport as "STILL GREEN -- TEST IS VACUOUS" under `python3 plugin/crew/tests/sabotage.py` on a
+non-Windows host, the same bug this ticket fixed in `sabotage_autocycle.py`'s own harness. Not fixed here:
+`sabotage_autocycle.py` does not import `sabotage.py`'s harness code (no shared function, only the
+`AUTOCYCLE_MUTATIONS` tuple is imported the other way), so the ticket's "if sabotage_autocycle uses it"
+condition for touching `sabotage.py` was not met, and running the full `sabotage.py` suite was outside this
+ticket's required checks (only `sabotage_autocycle.py` was named). Left open for whoever owns `sabotage.py`.
