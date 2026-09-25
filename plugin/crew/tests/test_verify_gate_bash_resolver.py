@@ -205,3 +205,42 @@ def test_tier_b_skips_a_bash_defined_as_a_powershell_function(tmp_path):
     assert result.returncode == 0, f"stderr: {result.stderr}"
     assert result.stdout.strip() == str(real_bash)
     assert result.stderr == "", f"unexpected stderr: {result.stderr}"
+
+
+def _touch_extensionless(path):
+    """A `bash` candidate CreateProcess cannot launch directly -- no
+    recognised extension. Confirmed by direct probe on this host that
+    `Get-Command bash -All` (Resolve-CrewBash's tier-b call, which unlike
+    Resolve-CrewPython's carries no `-CommandType Application` filter) DOES
+    return this as CommandType Application with a real, non-WindowsApps
+    .Source: it reaches the native-extension gate and is rejected there, not
+    silently invisible to Get-Command the way Resolve-CrewPython's fixtures
+    are."""
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="ascii") as f:
+        f.write("#!/bin/sh\nwhile true; do sleep 1; done\n")
+    return path
+
+
+def test_prints_nothing_not_the_bare_name_when_every_candidate_is_rejected(tmp_path):
+    """The defect this module exists to catch (B2): every PATH candidate is
+    an extensionless shim the native-extension gate rejects, and no git is
+    resolvable either (tier a never runs). The old fallback returned the
+    bare string 'bash' here -- which `& $bashExe` then re-resolves through
+    PowerShell's OWN command lookup, landing back on the exact shim this
+    loop just rejected, and hangs (this fixture's body would spin forever if
+    it were ever actually invoked). Resolve-CrewBash must return an empty
+    string instead, so every caller can tell "nothing usable" apart from "an
+    actual path" and refuse by name rather than invoke."""
+    only_dir = tmp_path / "only"
+    _touch_extensionless(str(only_dir / "bash"))
+
+    # No git anywhere on this PATH -- forces tier a's git-relative walk-up
+    # to find nothing and fall through to tier b, exactly like
+    # test_falls_back_to_path_excluding_windowsapps_when_no_git_found above.
+    resolved = _print_bash([str(only_dir)])
+
+    assert resolved == "", (
+        f"Resolve-CrewBash returned {resolved!r} instead of '' when every "
+        "candidate was rejected -- a non-empty, non-path value here is "
+        "exactly the bare-'bash' regression this test exists to catch")
