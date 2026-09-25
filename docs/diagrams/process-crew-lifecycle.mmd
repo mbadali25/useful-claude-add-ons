@@ -25,8 +25,9 @@
 %%     plugin/crew/hooks/hooks.json:14 (approval-hook.sh, UserPromptSubmit).
 %%   plugin/crew/commands/implement.md:15-18 refuses unless `crew_ticket.py validate`
 %%     reports the plan approved; :31 scope_base --record; :37 steps in order,
-%%     test first; :55 changed-file list; :65 verify; :85-88 tests, then docs,
-%%     then /crew:review last; :94 spec.md header `status: review`.
+%%     test first; :55 changed-file list; :65 verify; :85-90 step 6: tests, then
+%%     docs, then /crew:review last (:88); :92-94 step 7, AFTER the review:
+%%     spec.md header `status: review`.
 %%     Scope guard: plugin/crew/hooks/hooks.json:31 (scope-guard.sh, PreToolUse).
 %%   plugin/crew/commands/review.md:25-29 two rounds per ticket, a third is refused
 %%     -> NEEDS_REPLAN; :440 exit codes 0 CLEAN / 1 FINDINGS / 3 INCOMPLETE /
@@ -93,12 +94,12 @@ flowchart TB
         im0 -- "no / stale" --> imx([refuse: /crew:plan id --approve])
         im0 -- yes --> im1["scope_base --record<br/>:31"]
         im1 --> im2["steps in order, test first<br/>:37; scope-guard on every write<br/>hooks.json:31 (PreToolUse, Touch)"]
-        im2 --> im3["changed-file list, verify,<br/>tests then docs<br/>:55, :65, :85"]
-        im3 --> im4["spec.md header 'status: review'<br/>:94"]
+        im2 --> im3a["changed-file list, verify<br/>:55, :65"]
+        im3a --> im3["step 6: tests, then docs,<br/>then /crew:review last<br/>:85-90"]
     end
 
     subgraph review["/crew:review - two rounds per ticket"]
-        im4 --> rv1["reserve a round, run Codex / Copilot /<br/>crew:reviewer fallback on one bundle<br/>review.md:25-29, :449"]
+        im3 --> rv1["reserve a round, run Codex / Copilot /<br/>crew:reviewer fallback on one bundle<br/>review.md:25-29, :449"]
         rv1 --> rv2{"verdict (the script's)<br/>:440, :481"}
         rv2 -- CLEAN --> rcpt["receipt written<br/>:511"]
         rv2 -- FINDINGS --> rv3{"fix, or<br/>user accepts?<br/>:504, :508"}
@@ -108,8 +109,10 @@ flowchart TB
         rv2 -- "third round refused" --> replan([NEEDS_REPLAN:<br/>back to /crew:plan])
     end
 
+    rcpt --> im4["implement.md step 7, after the review:<br/>spec.md header 'status: review'<br/>implement.md:92-94"]
+
     subgraph done["/crew:done - all three or nothing"]
-        rcpt --> dn1{"1 review receipt<br/>--check-receipt<br/>done.md:10-13"}
+        im4 --> dn1{"1 review receipt<br/>--check-receipt<br/>done.md:10-13"}
         dn1 -- pass --> dn2{"2 verify gate all pass<br/>crew_status.py<br/>:21-27"}
         dn2 -- pass --> dn3{"3 completion audit<br/>:35-38"}
         dn3 -- pass --> dn4["spec.md 'status: done', INDEX,<br/>crew_metrics record<br/>:46-56"]

@@ -68,12 +68,12 @@ one, which meant the map lived on one machine and reached nobody who cloned.
 - **`.crew/codemap/`** — the prose map: one file per subsystem, every claim marked DERIVED (with a
   `path:line` to re-check) or JUDGEMENT, each carrying an `anchor:` commit. `INDEX.md` is the table
   of contents. Refresh with `/crew:onboard --refresh <subsystem>`. Anchor length does not matter:
-  `_ANCHOR_RE` accepts 7-40 and `plugin/crew/hooks/scripts/crew_freshness.py:430` compares
+  `_ANCHOR_RE` accepts 7-40 and `plugin/crew/hooks/scripts/crew_freshness.py:429` compares
   `sha[:7] == head[:7]`, truncating **both** sides, so 8 and 40-char anchors match
-  exactly as well as 7. The same comparison appears again at `:513` for diagrams — grep the
+  exactly as well as 7. The same comparison appears again at `:512` for diagrams — grep the
   expression rather than trusting either number, both moved when `crew_state.py` was split, and
   moved file as well as line on 2026-09-14 when the anchor-freshness slice left it for
-  `crew_freshness.py`. Grepping `[:7] == head[:7]` returns a **third** hit, `:333`: that is
+  `crew_freshness.py`. Grepping `[:7] == head[:7]` returns a **third** hit, `:332`: that is
   `_read_graph`'s fast path against graphify's `built_at_commit`, the same comparison on a third
   artefact, and it is not the codemap one.
   (This line previously warned that an 8-char anchor "parses fine and then never matches". It was

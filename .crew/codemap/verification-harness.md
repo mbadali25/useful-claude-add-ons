@@ -1,5 +1,6 @@
 anchor: useful-claude-add-ons@f2bb919b
 verified: 2026-09-25
+paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
 **Re-derive provenance.** Full re-derivation, not a re-verify. The previous
 anchor (`5d1fc5fd`) predates crew 1.0's role/PM-removal rewrite
@@ -207,11 +208,14 @@ that changed shape or are newly documented here:
   interpreter slips past `crew_py_strict` the same way.
 - **`.ps1`'s own stdin guard: `$null |` on every subprocess call.**
   `verify-gate.ps1:1638-1641` and repeated at every `git`/interpreter-probe
-  call site (`:452-523`, `:1434`, `:1700`, `:1898`, `:1907`; the last three
-  were `:1687`, `:1859`, `:1868` at `6c497a14`) — a closed stdin
+  call site (`:452-523`, `:1434`, `:1700`, `:1898`; the last two
+  were `:1687`, `:1859` at `6c497a14`) — a closed stdin
   handed to the child, the PowerShell twin of `verify-gate.sh`'s `</dev/null`
   redirect (`:1571-1572`, `:1640`). Without it, a rule or a git call that reads
   stdin parks the whole gate the same way an unclosed pipe does.
+  Not `:1907` (the record sync): it pipes `$payloadJson` into
+  `verify_record.py sync`, which reads it, so its stdin is the payload,
+  not `$null` — a `grep '\$null |'` hit there is the `2>$null |` redirect.
 - **`Resolve-CrewBash` refuses rather than invoking a name that would
   re-resolve to the same rejected shim.** `verify-gate.ps1:822-832` (the smoke
   step) and `:1665-1674` (per-rule): when `Resolve-CrewBash` finds no

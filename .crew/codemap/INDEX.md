@@ -93,8 +93,8 @@ that edited this table by hand, so **re-derive this column mechanically or not a
 all** - a hand-written anchor here is indistinguishable from a measured one and has
 been wrong three times running.
 
-Re-derived 2026-09-25 after crew 1.0 (PR #225): every note's `anchor:` line reads
-`useful-claude-add-ons@6c497a14`, and the column below was filled from
+Re-derived 2026-09-25 after crew 1.0 (PR #225): every note's `anchor:` line then read
+`useful-claude-add-ons@6c497a14` (superseded by the T-0015 re-anchor below), and the column below was filled from
 `grep -m1 '^anchor:' .crew/codemap/*.md`, not typed. "Last pass" is what each
 note's own provenance section says it got: **re-derived** (claims re-read from
 source) or **re-anchored** (per-path diff run, changed citations re-read).

@@ -95,13 +95,13 @@ still carries PM-specific logic and a docstring that names removed roles:
   because no shipped agent writes.
 - `_PM_ROLE = "pm"` (`:243`) and `_PM_ALLOWED_PATTERNS` (`:250-259`,
   `.crew/**`, `TODO.md`, `.work/**`, `docs/diagrams/**`) are still live code,
-  and `classify` (`:539-588`) still special-cases `role == "pm"` at `:576-582`
+  and `classify` (`:539-592`) still special-cases `role == "pm"` at `:582-589`
   — but nothing in this checkout ever sets `agent_type` to `"pm"` any more:
   the unnamed interactive session sends no `agent_type` at all, and
   `classify`'s own first branch, `if role is None: return True, "no-agent-type"`
-  (`:570-571`), is what actually governs it — unconditionally allowed,
+  (`:572-573`), is what actually governs it — unconditionally allowed,
   never reaching the `pm`-scoped branch. The module's own docstring at
-  `:63-64` still reads "`crew`'s own agents are registered as `crew:pm`,
+  `:62-63` still reads "`crew`'s own agents are registered as `crew:pm`,
   `crew:analyst`, etc." — both names are agents this release does not ship.
   This is either intentional back-compat (an external caller or a
   hand-typed `agent_type` could still say `pm`) or dead code the 1.0 cutover
@@ -284,7 +284,7 @@ they disagree:
   docstring at `:1` — "Owns the single definition of a fresh
   `.crew/config.json`").
 - `crew_context.py`'s `load_crew_config`
-  (`plugin/crew/hooks/scripts/crew_context.py:120-129`) tries `.crew/crew.json`
+  (`plugin/crew/hooks/scripts/crew_context.py:121-132`) tries `.crew/crew.json`
   **first**, falling back to `.crew/config.json` only if `crew.json` is
   absent — its own docstring: "1.0's `.crew/crew.json`, else 0.x's
   `config.json`".
@@ -302,7 +302,8 @@ they disagree:
   consumers (the context/handoff hooks) read `crew.json` first;
   everything routed through `crew_config.py` (the guards, the verify gate,
   `/crew:config`, `/crew:model`) still reads `config.json` only, and
-  `crew_migrate.py`'s own comment (`crew_autoclear_setup.py:501-507`) names
+  `apply_migrate_to_repo`'s own docstring
+  (`plugin/crew/hooks/scripts/crew_autoclear_setup.py:501-507`) names
   the specific consequence for auto-clear: "`crew_status.py` reads it
   [`crew.json`] only to report the migration schema... converting
   `crew.json` alone [does nothing for autoClear behaviour, which
@@ -339,8 +340,9 @@ and gets nothing created.
 - **`method: "notify"` is the native-Windows default**, resolving from
   `"auto"` "on native Windows with no tmux pane"
   (`crew_autoclear_setup.py:223-232`). **`sendkeys` is opt-in only** and
-  needs an explicit yes (`plan_windows_default`'s docstring, `:9`,
-  `apply_migrate`'s consent gate at `:242-254`) — because it "drives real
+  needs an explicit yes (the module docstring, `:9`, and
+  `write_autoclear_method`'s consent gate at `:252-255`, in the function
+  spanning `:239-256`) — because it "drives real
   keystrokes... cannot confirm which tab of its own inside Windows Terminal"
   it is typing into (`:117-120`), a concern distinct from, and in addition
   to, the machine-global gate above.
@@ -474,7 +476,7 @@ T-0015 against this refresh.
 - `plugin/crew/hooks/scripts/event_claim.py` — no single entry point read
   this pass beyond the module docstring; called from `notify.sh` and
   `handoff-write.sh` only.
-- `plugin/crew/hooks/scripts/crew_context.py:120` — `load_crew_config`, the
+- `plugin/crew/hooks/scripts/crew_context.py:121` — `load_crew_config`, the
   one function that reads `crew.json` before `config.json`.
 - `plugin/crew/hooks/scripts/crew_autoclear_setup.py` — no single `main()`
   confirmed at a specific line this pass; called with subcommands
@@ -582,15 +584,15 @@ frontmatter and the sections cited above. `crew:reference` and `crew:roster`
 are the tools for the finer grain. Config is covered here only in outline —
 `plugin/crew/CONFIG.md` is the full reference and the authority where the
 two disagree. The other subsystem notes in `.crew/codemap/` cover their own
-areas; `INDEX.md` is the table of contents (not edited by this pass, per
-this pass's own instructions — its anchor column is the integrator's to
-update).
+areas; `INDEX.md` is the table of contents. The `6c497a14` re-derivation left
+its anchor column to the integrator; T-0015 re-filled that column from
+`grep -m1 '^anchor:'` when it re-anchored every note to `f2bb919b`.
 
 ## Re-anchor provenance - `6c497a14` -> `f2bb919b`, 2026-09-25 (T-0015)
 
-`git diff --name-only 6c497a14 f2bb919b -- <the 39 tracked paths this note cites>` returns five:
+`git diff --name-only 6c497a14 f2bb919b -- <the 39 tracked paths this note cites>` returns six:
 `.claude-plugin/marketplace.json`, `.crew/verify.json`, `README.md`, `TODO.md`,
-`plugin/crew/commands/spec.md`. No hook script this note cites changed (`verify-gate.ps1` and
+`plugin/crew/commands/fix.md`, `plugin/crew/commands/spec.md`. No hook script this note cites changed (`verify-gate.ps1` and
 `auto-clear.ps1` did, and this note names them only in the `Resolve-CrewPython` copy list, which
 still holds: `grep -rl "function Resolve-CrewPython" plugin/crew/hooks/scripts` returns the same 11).
 Each changed file:
@@ -598,6 +600,9 @@ Each changed file:
 - `plugin/crew/commands/spec.md` - T-0001 (1.0.26/1.0.27) rewrote the Touch template and added the
   one-path-per-bullet paragraph (`:38-43`). The `:8-9` citation was off by one before that change
   too - the "Replaces `/crew:ticket`" sentence is `:7-8` at both anchors - and is corrected.
+- `plugin/crew/commands/fix.md` - T-0001 rewrote the step-2 spec template (the `## 2. Spec` heading
+  at `:31` and the sections below it); the one citation here, `:2` (the `description:` line), did
+  not move.
 - `TODO.md` - 30 lines inserted after `:16`; the one live citation moved `:3854` -> `:3884` (re-read,
   same bullet).
 - `.claude-plugin/marketplace.json` - crew `version` (`:218`) only; `:217`'s 4/34/29 counts are

@@ -1,5 +1,6 @@
 anchor: useful-claude-add-ons@f2bb919b
 verified: 2026-09-25
+paths: scripts/**, plugin/PLUGINS.md
 
 **Re-derive provenance.** Full re-derivation, not a re-verify. The previous
 anchor (`5d1fc5fd`) predates crew 1.0's four-role rewrite
@@ -266,15 +267,17 @@ against synthetic fixtures and never reads this repo's own docs.
 
 ## Re-anchor provenance - `6c497a14` -> `f2bb919b`, 2026-09-25 (T-0015)
 
-`git diff --name-only 6c497a14 f2bb919b -- <the 23 tracked paths this note cites>` returns seven:
+`git diff --name-only 6c497a14 f2bb919b -- <the 23 tracked paths this note cites>` returns eight:
 `.claude-plugin/marketplace.json`, `.crew/verify.json`, `CHANGELOG.md`, `README.md`, `TODO.md`,
-`plugin/PLUGINS.md`, `plugin/crew/BUDGETS.md`. `scripts/check-marketplace.py` and both install
+`plugin/PLUGINS.md`, `plugin/crew/.claude-plugin/plugin.json`, `plugin/crew/BUDGETS.md`. `scripts/check-marketplace.py` and both install
 scripts are not in it, so every function line number and catalog-array citation above stands.
 Each changed file, re-read:
 
 - `.claude-plugin/marketplace.json` - crew's `version` on `:218` only (`1.0.25` -> `1.0.28`),
   corrected above. `:217`, the description this note's count table checks, is unchanged; the
   4/34/29/34 figures were re-measured from disk at `f2bb919b` and still hold.
+- `plugin/crew/.claude-plugin/plugin.json` - `version` only (`1.0.25` -> `1.0.28`); the crew
+  version statement above already reads 1.0.28 from it.
 - `plugin/PLUGINS.md` - crew's version row `:14` only; the `:17` count row is unchanged.
 - `plugin/crew/BUDGETS.md` - `:11` figure moved (17,788 -> 17,811); now checked, see Unverified.
 - `.crew/verify.json` - one new rule appended at `:243` (the `.claude/rules/` sync check,

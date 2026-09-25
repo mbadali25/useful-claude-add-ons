@@ -1,6 +1,7 @@
 # mcp-servers
 anchor: useful-claude-add-ons@f2bb919b
 verified: 2026-09-25
+paths: mcp-servers/packages/**, mcp-servers/scripts/**
 
 ## Does
 An npm workspace monorepo shipping four thin stdio MCP servers for Microsoft Graph, Intune and

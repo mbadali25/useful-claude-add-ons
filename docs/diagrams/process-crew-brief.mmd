@@ -73,7 +73,7 @@ flowchart TB
         cc3 -- off --> cc4[incident banner only]
         cc3 -- on --> cc5["branch@HEAD, incident banner,<br/>codemap-behind line<br/>:737-748"]
         cc5 --> stale{"handoff stale?<br/>72h / 3 commits / branch<br/>crew_state.py:643, :846-901"}
-        stale -- yes --> arch["archive to .crew/handoffs/<br/>never delete (:761, :967)"]
+        stale -- yes --> arch["archive to .crew/handoffs/<br/>never delete<br/>crew_state.py:761, :967"]
         stale -- no --> src{"source?"}
         src -- startup --> ptr["pointer + next action<br/>:755-757"]
         src -- "resume/clear/compact/fork" --> full["full note, next action first<br/>:758-768"]
