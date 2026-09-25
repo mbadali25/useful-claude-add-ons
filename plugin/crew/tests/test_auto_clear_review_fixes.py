@@ -26,6 +26,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import time
 
 import pytest
@@ -38,6 +39,22 @@ _PS1 = _ROOT + "/hooks/scripts/auto-clear.ps1"
 _WATCH_SH = _ROOT + "/hooks/scripts/context-watch.sh"
 _BASH = crew_fixtures.resolve_bash()
 _PWSH_ANY = shutil.which("pwsh")
+
+
+def _resolve_ps51():
+    """Windows PowerShell 5.1 (powershell.exe), or None. Only relevant on
+    win32 -- there is no Windows PowerShell build for any other platform,
+    and `shutil.which` alone would find nothing there anyway."""
+    if sys.platform != "win32":
+        return None
+    found = shutil.which("powershell.exe")
+    if found:
+        return found
+    guess = r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe"
+    return guess if os.path.isfile(guess) else None
+
+
+_PS51 = _resolve_ps51()
 
 
 # ============================================================================
@@ -549,7 +566,12 @@ def test_child_tab_functions_have_not_drifted_from_the_parents_copies():
         assert parent_fn == child_fn, f"{name} has drifted between the parent and child copies"
 
 
-@pytest.mark.skipif(_PWSH_ANY is None, reason="needs pwsh")
+@pytest.mark.skipif(
+    _PWSH_ANY is None or sys.platform != "win32",
+    reason="needs pwsh AND Windows (System.Windows.Forms/UIAutomation are "
+           "Windows-only -- Ubuntu CI has pwsh but not the assemblies, so "
+           "the pwsh-only guard alone still fails there)",
+)
 def test_child_rechecks_tab_safety_after_the_delay_before_typing(tmp_path):
     """Drives the child's own Get-CrewChildTabRecheck (extracted from inside
     the heredoc, see _child_heredoc_source) against a REAL window handle: a
@@ -616,3 +638,153 @@ def test_child_recheck_is_skipped_for_a_non_windows_terminal_owner(tmp_path):
     assert result.returncode == 0, result.stderr
     decision = json.loads(result.stdout.strip())
     assert decision["Decision"] == "send", decision
+
+
+# ============================================================================
+# FINDING 3 (Codex round 2, FIX): the B1 test above
+# (test_child_rechecks_tab_safety_after_the_delay_before_typing) calls
+# Get-CrewChildTabRecheck DIRECTLY -- it proves the function behaves
+# correctly in isolation but never proves the CHILD SCRIPT actually calls
+# it in the right place. Codex verified by hand: deleting the call and its
+# guarding if-block at auto-clear.ps1:967-971 leaves that test GREEN,
+# because nothing in it inspects the child's control flow at all. This is
+# a pure text/structural check on the heredoc SOURCE (no execution, no
+# pwsh needed) that asserts the three markers appear in the one order that
+# makes the recheck load-bearing.
+# ============================================================================
+
+
+def test_child_calls_the_recheck_between_the_delay_and_typing_structural_order():
+    """Sabotage (verified by hand, not wired into sabotage_autocycle.py):
+    deleting the `$recheck = Get-CrewChildTabRecheck ...` assignment and
+    its `if ($recheck.Decision -ne "send") { ...; exit 0 }` guard turns
+    this test RED with a hard failure (the markers vanish from the source
+    entirely, so `.index()` raises) -- not a silent pass, which is what
+    made the B1 test above vacuous for this exact defect."""
+    child_source = _child_heredoc_source()
+
+    sleep_idx = child_source.index("Start-Sleep -Seconds $Delay")
+    call_idx = child_source.index("$recheck = Get-CrewChildTabRecheck")
+    guard_idx = child_source.index('if ($recheck.Decision -ne "send")')
+    sendwait_idx = child_source.index(
+        "[System.Windows.Forms.SendKeys]::SendWait($escaped)")
+
+    assert sleep_idx < call_idx, (
+        "the recheck call must run AFTER Start-Sleep -- rechecking tab "
+        "state before the delay proves nothing about state after it")
+    assert call_idx < guard_idx < sendwait_idx, (
+        "the recheck's result must be CHECKED (the if-guard) and that "
+        "check must sit strictly between the call and SendWait, or a "
+        "declined recheck can no longer stop the keystroke -- this is "
+        "the exact historical bug (child had no tab awareness once focus "
+        "matched) this ordering guards against")
+
+
+# ============================================================================
+# FINDING 1 (Codex round 2, BLOCK): a real `-File` invocation of the
+# detached sendkeys child, driven by the ACTUAL argv
+# Get-CrewSendKeysChildArgs builds -- not an inspection of the array as
+# strings. The historical bug: a SPACE-separated
+# ("-IsWindowsTerminal", "$IsWindowsTerminal") pair stringifies the bool
+# into its own argv entry ("True"/"False"), which a [bool]-typed script
+# parameter rejects under `-File` -- and, measured directly, EVERY string
+# spelling of a boolean rejects under `-File` on Windows PowerShell 5.1,
+# including the colon-attached `-IsWindowsTerminal:$true` form pwsh 7
+# alone accepts. So the child's param() block never finishes binding and
+# NOTHING in its body runs, not even its own self-delete
+# (`Remove-Item -LiteralPath $PSCommandPath`, the first statement).
+# ============================================================================
+
+
+def _run_real_dash_file_binding(engine, tmp_path, is_windows_terminal):
+    """Builds the REAL argv via the REAL Get-CrewSendKeysChildArgs (run
+    through `engine` itself -- the function is plain PowerShell with no
+    engine-specific syntax, and using the SAME engine to build the argv
+    and to spawn the child means this test has no dependency on pwsh
+    being present to exercise the 5.1 case) and spawns the REAL child
+    heredoc through it via `-File`, joined into ONE command-line string
+    exactly the way `Start-Process -ArgumentList` joins its array and the
+    child's own CommandLineToArgvW re-splits it -- no shell, no
+    re-quoting on the Python side that would double what
+    ConvertTo-CrewWin32Arg already applied.
+
+    Returns (returncode, child_script_still_exists, log_text, stderr).
+    child_script_still_exists=False is the proof the body ran PAST the
+    param() block (the self-delete is the first statement that can throw,
+    right after param() finishes binding); the log text
+    proves it ran the INTENDED logic (the "lost focus" decline, since
+    Hwnd=0 can never equal a real GetForegroundWindow() result), not
+    merely that it exited without error."""
+    source = _ps1_source()
+    func = (_extract_ps1_function(source, "ConvertTo-CrewWin32Arg") + "\n" +
+            _extract_ps1_function(source, "Get-CrewSendKeysChildArgs"))
+
+    child_path = tmp_path / "child.ps1"
+    child_path.write_text(_child_heredoc_source(), encoding="utf-8")
+
+    crew_dir = tmp_path / ".crew"
+    crew_dir.mkdir(exist_ok=True)
+
+    build_script = (
+        func + "\n"
+        f"$a = Get-CrewSendKeysChildArgs -ChildPath '{child_path}' -Hwnd 0 "
+        f"-Command '/clear' -Delay 0 -Root '{tmp_path}' -WindowTitle 'Claude' "
+        f"-IsWindowsTerminal ${str(bool(is_windows_terminal)).lower()}\n"
+        "Write-Output ($a | ConvertTo-Json -Compress)")
+    built = subprocess.run(
+        [engine, "-NoProfile", "-NonInteractive", "-Command", build_script],
+        capture_output=True, text=True, check=False)
+    assert built.returncode == 0, f"building the argv itself failed: {built.stderr}"
+    args = json.loads(built.stdout.strip())
+
+    cmdline = f'"{engine}" ' + " ".join(args)
+    result = subprocess.run(cmdline, capture_output=True, text=True, check=False)
+
+    still_exists = child_path.exists()
+    log_path = crew_dir / ".autoclear.log"
+    log_text = log_path.read_text(encoding="utf-8") if log_path.exists() else ""
+    return result.returncode, still_exists, log_text, result.stderr
+
+
+def _assert_real_binding_ran(rc, still_exists, log_text, stderr, engine_label):
+    assert rc == 0, f"child failed to run under -File on {engine_label}: {stderr}"
+    assert not still_exists, (
+        f"the temp child script was not deleted on {engine_label} -- its "
+        "body never ran past the param() block, which is exactly what a "
+        f"[bool]-under-`-File` binding failure looks like. stderr: {stderr}")
+    assert "declined sendkeys - the target window lost focus" in log_text, (
+        f"the child did not log the expected decline on {engine_label}: "
+        f"{log_text!r} (stderr: {stderr})")
+
+
+@pytest.mark.skipif(
+    _PWSH_ANY is None or sys.platform != "win32",
+    reason="needs pwsh AND Windows -- the real child heredoc this spawns "
+           "uses System.Windows.Forms/user32.dll, both Windows-only, so "
+           "Ubuntu CI (which has pwsh) would collect and fail this, not "
+           "skip it, without the platform half of this guard",
+)
+@pytest.mark.parametrize("is_windows_terminal", [True, False])
+def test_child_binds_and_runs_under_dash_file_on_pwsh7(tmp_path, is_windows_terminal):
+    rc, still_exists, log_text, stderr = _run_real_dash_file_binding(
+        _PWSH_ANY, tmp_path, is_windows_terminal)
+    _assert_real_binding_ran(rc, still_exists, log_text, stderr, "pwsh 7")
+
+
+@pytest.mark.skipif(
+    _PS51 is None, reason="needs Windows PowerShell 5.1 (powershell.exe)")
+@pytest.mark.parametrize("is_windows_terminal", [True, False])
+def test_child_binds_and_runs_under_dash_file_on_windows_powershell_51(
+        tmp_path, is_windows_terminal):
+    """The 5.1 twin of the pwsh 7 test above. REQUIRED, not optional: the
+    parent resolves its own child's engine from `(Get-Process -Id
+    $PID).Path` -- whatever engine is running the PARENT is the engine
+    that spawns the CHILD too, so a Stop hook that ever executes under
+    Windows PowerShell 5.1 (rather than the pwsh 7 it is nominally
+    registered for) must still bind, and 5.1 is measurably stricter here
+    than pwsh 7 (it rejects every single-argv-token spelling pwsh 7
+    accepts)."""
+    rc, still_exists, log_text, stderr = _run_real_dash_file_binding(
+        _PS51, tmp_path, is_windows_terminal)
+    _assert_real_binding_ran(
+        rc, still_exists, log_text, stderr, "Windows PowerShell 5.1")

@@ -827,15 +827,29 @@ if (-not $Force) {
 $sendRoot = (Get-Location).Path
 $child = @'
 param([long]$Hwnd, [string]$Text, [int]$Delay, [string]$Root, [string]$WindowTitle = "",
-      [bool]$IsWindowsTerminal = $true)
-# IsWindowsTerminal defaults to $true, not $false: an argv that somehow omits
+      [int]$IsWindowsTerminal = 1)
+# [int], not [bool]: this parameter is bound by the CHILD PROCESS's OWN
+# command-line parser under `-File`, not by an in-process function call --
+# and measured directly (both engines, real `-File` invocations, see
+# auto-clear.ps1 tests), [bool] parameter binding under `-File` REJECTS
+# every string form tried, "True", "1", and even the colon-attached
+# PowerShell-literal syntax `-IsWindowsTerminal:$true` -- on Windows
+# PowerShell 5.1. pwsh 7 accepts the colon+literal form but not `:1`/`:0`
+# or a space-separated value either. [int] with a plain "1"/"0" argv value
+# is the one form that binds on BOTH engines, so the child casts it back to
+# [bool] itself ($IsWindowsTerminal -ne 0) wherever a boolean is needed.
+# IsWindowsTerminal defaults to 1 (true), not 0: an argv that somehow omits
 # it must recheck rather than skip the recheck -- the unknown collapsing into
 # the PERMISSIVE value is exactly the bug this file exists to fix. The real
 # parent below always passes it explicitly; this default only matters to a
 # caller that does not.
-# Delete self first: every exit below is an early return, and a temp script left
-# in %TEMP% on each of them accumulates one file per session forever. The file
-# is already open and read by the interpreter, so removing it now is safe.
+$IsWindowsTerminalBool = ($IsWindowsTerminal -ne 0)
+# Delete self next, right after binding: every exit below is an early
+# return, and a temp script left in %TEMP% on each of them accumulates one
+# file per session forever. The file is already open and read by the
+# interpreter, so removing it now is safe. The one statement ahead of this
+# (casting IsWindowsTerminal to bool) cannot throw, so it does not change
+# which exit paths still leave the file behind.
 try { Remove-Item -LiteralPath $PSCommandPath -Force -ErrorAction SilentlyContinue } catch { }
 function Write-CrewChildNote([string]$Message) {
   # The parent has already exited by the time this runs, so its own
@@ -964,7 +978,7 @@ if ([CrewAC.Win]::GetForegroundWindow().ToInt64() -ne $Hwnd) {
 # it is showing. A tab switch inside that window during the delay changes
 # nothing GetForegroundWindow can see, so this is the only check left that
 # can catch it. Decline exactly like the focus check: log, never type.
-$recheck = Get-CrewChildTabRecheck -Hwnd $Hwnd -Title $WindowTitle -IsWindowsTerminal $IsWindowsTerminal
+$recheck = Get-CrewChildTabRecheck -Hwnd $Hwnd -Title $WindowTitle -IsWindowsTerminal $IsWindowsTerminalBool
 if ($recheck.Decision -ne "send") {
   Write-CrewChildNote "declined sendkeys - $($recheck.Reason), re-checked after the ${Delay}s delay - run $Text yourself"
   exit 0
@@ -1046,15 +1060,44 @@ function ConvertTo-CrewWin32Arg([string]$Arg) {
 # directly -- the exact argv entry, not how long the child takes to run --
 # without spawning anything. Pure: only calls the already-pure
 # ConvertTo-CrewWin32Arg above.
+#
+# Review (Codex round 2|auto-clear.ps1:~1057): a SPACE-separated
+# "-IsWindowsTerminal", "$IsWindowsTerminal" pair stringifies the bool to
+# the literal text "True"/"False" as its OWN argv entry. Under `-File`
+# (the real parent invocation below, and the only one that matters -- the
+# child is always launched via `-File`), PowerShell's parameter binder
+# does NOT accept that bare word for a [bool] parameter and throws
+# "Cannot convert value System.String to type System.Boolean". The
+# child's `param()` block never finishes binding, so NOTHING in its body
+# runs: not the self-delete (`Remove-Item -LiteralPath $PSCommandPath`,
+# the first statement in the body -- the temp script leaks), not
+# `Get-CrewChildTabRecheck`, not `SendWait`. The parent has already
+# exited 0 and already claimed the one-shot marker before spawning, so
+# this fails completely silently.
+#
+# Measured directly on BOTH engines with real `-File` child processes
+# (not merely inspected as strings) before picking a fix: NO string form
+# of a [bool] parameter binds on Windows PowerShell 5.1 under `-File` --
+# not "True", not "1", not even the colon-attached PowerShell-literal
+# syntax `-IsWindowsTerminal:$true`, which pwsh 7 alone accepts (pwsh 7
+# also rejects `:1`/`:0` and any space-separated form). There is no
+# single-argv-token spelling of a BOOLEAN value that binds on both
+# engines. An [int] parameter with a plain "1"/"0" value, by contrast,
+# binds on both engines in every form tried (space-separated included),
+# so the child parameter is [int] and casts itself back to [bool]
+# (`$IsWindowsTerminal -ne 0`, see the param block above) wherever a
+# boolean is actually needed. "1"/"0" contain no spaces, so there is
+# nothing for Start-Process's plain-space join to split apart either.
 function Get-CrewSendKeysChildArgs([string]$ChildPath, [long]$Hwnd, [string]$Command,
                                     [int]$Delay, [string]$Root, [string]$WindowTitle = "",
                                     [bool]$IsWindowsTerminal = $true) {
+  $isWindowsTerminalArg = if ($IsWindowsTerminal) { "1" } else { "0" }
   return @(
     "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
     "-File", (ConvertTo-CrewWin32Arg $ChildPath), "-Hwnd", "$Hwnd",
     "-Text", (ConvertTo-CrewWin32Arg $Command),
     "-WindowTitle", (ConvertTo-CrewWin32Arg $WindowTitle),
-    "-IsWindowsTerminal", "$IsWindowsTerminal",
+    "-IsWindowsTerminal", $isWindowsTerminalArg,
     "-Delay", "$Delay", "-Root", (ConvertTo-CrewWin32Arg $Root)
   )
 }

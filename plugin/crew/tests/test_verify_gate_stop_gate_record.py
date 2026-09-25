@@ -1799,8 +1799,11 @@ def test_34d_a_second_mktemp_failure_refuses_rather_than_wedges(tmp_path):
 
 
 @pytest.mark.skipif(
-    not sys.platform.startswith("win") or _PWSH is None,
-    reason="the .ps1 gate is the native-Windows flavour",
+    not sys.platform.startswith("win") or _PWSH is None
+    or crew_fixtures.resolve_bash() is None,
+    reason="the .ps1 gate is the native-Windows flavour, and its fixture "
+           "rule below shells out via `sh -c` -- a host with no usable "
+           "bash fails on that, not on anything this test means to cover",
 )
 def test_34d_ps1_a_temp_dir_failure_falls_back_to_crew_not_a_pipe(
         tmp_path):
