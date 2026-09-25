@@ -147,31 +147,44 @@ def test_a_rule_longer_than_the_ttl_keeps_its_lock(flavour, tmp_path):
         holder.stdin.write("{}")
         holder.stdin.close()
         # Past the 3s TTL, comfortably inside the 16s window, and while the
-        # 6s rule is still running. A fixed sleep(4) raced gate startup on a
-        # slow run -- fork/exec overhead launching bash.exe/pwsh plus the
-        # rule-matcher subprocess can push the first deadline write past 4s
-        # real time, same mechanism noted in e0278bc9 for the sibling test.
-        # Poll for the deadline instead, but keep the >=4s floor so the
-        # challenger still arrives past the TTL, which is the property under
-        # test.
+        # 6s rule is still running. Timed from the TOKEN's own recorded
+        # mtime, not from `time.monotonic()` read shortly after this test
+        # called `popen_gate` -- a fixed `time.monotonic() + 4` floor is
+        # timing the wrong event: it measures elapsed time since THIS
+        # process started the holder, not since the holder actually
+        # acquired the lock. Fork/exec overhead launching bash.exe/pwsh plus
+        # the rule-matcher subprocess can itself eat a chunk of that margin
+        # on a slow run before the holder ever writes `token`, same
+        # mechanism noted in e0278bc9 for the sibling test -- so a floor
+        # anchored to Popen() can still land short of 3s past the token's
+        # OWN age even though it read as ">= 4s" by the wrong clock. Wait
+        # for `token` to exist, read ITS mtime, and require real elapsed
+        # time to clear the TTL measured from THAT.
         deadline_file = _lock(root) / "deadline"
-        min_wait = time.monotonic() + 4
+        token_file = _lock(root) / "token"
         bound = time.monotonic() + 12
         while True:
             assert holder.poll() is None, (
                 "the holder finished too early to test "
                 f"(exit code {holder.returncode!r})"
             )
-            now = time.monotonic()
-            if now >= min_wait and deadline_file.exists():
+            if token_file.exists() and deadline_file.exists():
                 break
-            assert now < bound, (
-                "the holder published no deadline within " +
-                str(bound - min_wait + 4) + "s, so the challenger has only "
-                "the age window and will reclaim a live lock"
+            assert time.monotonic() < bound, (
+                "the holder published no token/deadline within 12s, so "
+                "the challenger has only the age window and will reclaim "
+                "a live lock"
             )
             time.sleep(0.1)
         assert holder.poll() is None, "the holder finished too early to test"
+
+        token_age_deadline = token_file.stat().st_mtime + float(_TTL)
+        while time.time() < token_age_deadline:
+            assert holder.poll() is None, (
+                "the holder finished too early to test "
+                f"(exit code {holder.returncode!r})"
+            )
+            time.sleep(0.1)
 
         challenger = _run(flavour, root)
         assert "backed off" in challenger.stderr, (
