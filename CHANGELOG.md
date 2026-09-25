@@ -6,6 +6,73 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Changed
 
+- **`crew` 1.0.17: independent review of the 1.0.16 merge - a rule's own
+  escaped process group can no longer outlive a killed gate, plus three
+  smaller test-harness fixes.** Bumped `1.0.16 -> 1.0.17` after all five
+  below.
+  - **`verify-gate.sh`: a rule's own process group escaped cancellation of
+    the GATE's process group.** Each rule already runs inside its own
+    group (`set -m` in a dedicated subshell, since 1.0.13) so a
+    backgrounded leftover survives the rule's own foreground command
+    returning - but the SAME isolation also escapes the gate's own group,
+    so a caller that killed the gate's whole process group (a timeout, an
+    interrupted Stop) left a still-running rule behind, unbounded.
+    Reproduced exactly as filed: a rule sleeping 600s, the gate started in
+    its own session, `kill -- -$gate_pid` - the gate died, the sleep
+    survived. Fixed with a shared cleanup registry (a function every
+    stage - the lock's own release, the python3 shim's temp dir, and now
+    a rule's current process group - appends to, dispatched by one
+    `trap ... TERM INT HUP EXIT`) rather than a third `trap -p`-spliced
+    layer, which an earlier attempt at exactly this reaping had already
+    tried and reverted (see that revert's own comment, still in the
+    file, for why splicing breaks a third time). The rule loop's own
+    subshell now also communicates its process group(s) to the gate via
+    a sidecar file next to `RULE_OUT_FILE`, since a subshell's variables
+    are otherwise invisible to its parent; and the outer `wait` on that
+    subshell is now the `wait` BUILTIN on a backgrounded job, not a plain
+    foreground compound command - bash defers a trapped signal until a
+    foreground command completes, but `wait` returns immediately on one,
+    which is what lets a bare `kill $gate_pid` (not just a whole-group
+    kill) interrupt a long-running rule promptly. New parametrized test,
+    `test_34h`, covers both repro shapes named above; sabotage removing
+    either the trap wiring or the rule-pgid registration turns it red.
+  - **The rule-output cap override's validation glob rejected every valid
+    7-digit value, not just over-long ones.** `???????*` matches length
+    >= 7, so an in-range override like `1000000` was silently clamped to
+    the 1048576 default exactly like an out-of-range one. Widened to
+    `????????*` (8+ digits - no valid value needs more than 7) so the
+    numeric `-lt`/`-gt` compare right below decides every 7-digit string
+    on its actual magnitude. New parametrized test, `test_34c3`.
+  - **`crew_fixtures.kill_process_group` treated a REAPED leader the same
+    as a REUSED pgid.** `_proc_start_ticks(pgid)` reads `None` once the
+    leader itself has been waited on (its `/proc` entry is gone entirely,
+    not merely changed), and `None != start_ticks` read as a mismatch
+    exactly like a genuine reuse - so a rule whose foreground command
+    finished fast but left a grandchild running (the ordinary shape
+    `run_gate`'s own `communicate()` already reaps) skipped `killpg` and
+    leaked it. New `_pgid_has_live_member_since` scans `/proc` for a
+    process group member with a start time at or after the recorded
+    leader's before giving up; two new tests prove the leak is fixed and
+    that a genuinely-gone group still refuses to signal.
+  - **A test's own cleanup SIGKILLed an unverified bare pid after already
+    observing it dead.** `test_34e`'s `finally` block re-read the orphan's
+    pid from disk and signalled it unconditionally, even on the path
+    where the pid was already confirmed dead earlier in the same test -
+    by the time cleanup ran, that exact number could have been reused by
+    an unrelated process. Factored into `_kill_if_still_same_process`,
+    which re-verifies identity via start ticks recorded when the pid was
+    first observed before signalling anything; two new unit tests prove
+    the skip and the still-signals cases.
+  - **`TODO.md`'s family-E entry misstated its own mechanism.** It read as
+    though `windows=False` selects the Windows branch on a real Windows
+    host; the actual defect is the opposite - `windows=False` forces the
+    POSIX branch regardless of host, so these five tests run POSIX rules
+    against inputs production would only ever reach through the Windows
+    branch. Corrected; the entry's fix shape (derive `windows` from the
+    real host) was already right and is unchanged.
+  - `CHANGELOG.md`'s crew headings were out of order (1.0.16, 1.0.15,
+    1.0.13, 1.0.14); reordered descending.
+
 - **`crew` 1.0.16: two post-1.0.15 corrections found while running this
   release's verification gates - neither changes behaviour.** Bumped
   `1.0.15 -> 1.0.16` because both land under `plugin/crew/` after the
@@ -63,6 +130,55 @@ All notable changes to this repository are documented here. Format follows [Keep
     `test_the_notify_plan_says_the_delay_is_not_applicable`'s assertion is
     tightened from an "n/a" substring to the exact wording.
   - Both branches: `win-repo-2`, off `85dfa4a7`.
+
+- **`crew` 1.0.14: independent review of the 1.0.13 merge - six fixes,
+  all in the hooks-gate test harness and `verify-gate.sh` itself.**
+  - **`crew_fixtures.kill_process_group` could still SIGKILL an unrelated
+    process group.** The 1.0.13 fix recorded `proc.pgid` at spawn to avoid
+    a stale `os.getpgid(proc.pid)` re-lookup, but the recorded NUMBER
+    itself is not immune to reuse: once every member of that pgid has
+    exited (the common case for a short-lived gate command with no
+    lingering grandchild), the OS can hand that same number to a
+    brand-new, unrelated `setsid` leader, and teardown signals every
+    tracked proc regardless of whether it already exited. `popen_gate` now
+    also records the process's start time (`/proc/<pid>/stat` field 22,
+    Linux only); `kill_process_group` re-reads it before signalling and
+    skips - with a named warning, not a guess - on a mismatch. New tests
+    force the collision deterministically (winning the real pid-reuse race
+    is not something a test can do on demand).
+  - **A killed-but-unreaped zombie read as "still alive" forever on a host
+    whose PID 1 does not reap orphans (containers).** `crew_fixtures.py`
+    and `test_verify_gate_stop_gate_record.py` both polled liveness with a
+    bare `os.kill(pid, 0)`, which keeps succeeding for a zombie. New shared
+    `crew_fixtures.pid_alive` checks `/proc/<pid>/stat`'s state field
+    first and treats `Z` as dead; both test files now delegate to it.
+  - **`test_34e`'s liveness probe used `os.kill(pid, 0)` on a pid that, on
+    native Windows, is an MSYS pid, not a Win32 pid** - signal 0 there is
+    not a harmless probe (CPython's Windows `os.kill` opens the pid via
+    `TerminateProcess`), so a coincidental Win32-pid collision could
+    terminate an unrelated process. `test_34e` now skips outright on
+    native Windows, with the reason named.
+  - **The 0.2s TERM-then-KILL grace sleep ran for every rule, including
+    ones with nothing left in their process group to wait out** - ~0.2s
+    per rule regardless, unconditionally. Now gated on `kill -0` against
+    the same process group first; a rule that DOES leave something
+    running still gets the grace period. New test proves ten passing
+    rules add no `sleep 0.2` (via `bash -x` trace, not wall-clock timing).
+  - **`CREW_VERIFY_GATE_TEST_RULE_OUT_CAP` (test-only) accepted `0`
+    (disables the read cap entirely) or any value over 1 MiB (silently
+    raises the real cap)** - the old validation only rejected empty or
+    non-digit values. Now clamped to `1..1048576`; out-of-range values
+    fall back to the real default. New parametrized test proves both ends.
+  - **`test_34b`'s rule string double-quoted `$!` at the JSON level**,
+    which the gate's own shell expands one parse layer too early (to
+    empty), leaving `bg.pid` blank and its cleanup unable to reach the
+    backgrounded process it leaks on every run of this test.
+    Single-quoted to match `test_34e`'s already-correct pattern; the test
+    now also asserts `bg.pid` is non-empty and numeric.
+  - Two stale doc comments: `shell-suites.yml`'s obsidian-vault step no
+    longer restates the suite's own assertion count (it drifted once
+    already); `mcp-preflight-catalog.sh` and `uv-install.sh` now document
+    the exit-77-on-skip case their header previously omitted.
 
 - **`crew` 1.0.13: a backgrounded rule can no longer wedge disk space, a
   full-branch merge of the 1.0.12 bump, and seven review fixes.**
@@ -146,55 +262,6 @@ All notable changes to this repository are documented here. Format follows [Keep
     EXTRA `mktemp` call the stub's counter never accounted for. The test
     now builds its own `python3` shim from the resolved interpreter and
     puts it on PATH first, so the calibration holds on every host.
-
-- **`crew` 1.0.14: independent review of the 1.0.13 merge - six fixes,
-  all in the hooks-gate test harness and `verify-gate.sh` itself.**
-  - **`crew_fixtures.kill_process_group` could still SIGKILL an unrelated
-    process group.** The 1.0.13 fix recorded `proc.pgid` at spawn to avoid
-    a stale `os.getpgid(proc.pid)` re-lookup, but the recorded NUMBER
-    itself is not immune to reuse: once every member of that pgid has
-    exited (the common case for a short-lived gate command with no
-    lingering grandchild), the OS can hand that same number to a
-    brand-new, unrelated `setsid` leader, and teardown signals every
-    tracked proc regardless of whether it already exited. `popen_gate` now
-    also records the process's start time (`/proc/<pid>/stat` field 22,
-    Linux only); `kill_process_group` re-reads it before signalling and
-    skips - with a named warning, not a guess - on a mismatch. New tests
-    force the collision deterministically (winning the real pid-reuse race
-    is not something a test can do on demand).
-  - **A killed-but-unreaped zombie read as "still alive" forever on a host
-    whose PID 1 does not reap orphans (containers).** `crew_fixtures.py`
-    and `test_verify_gate_stop_gate_record.py` both polled liveness with a
-    bare `os.kill(pid, 0)`, which keeps succeeding for a zombie. New shared
-    `crew_fixtures.pid_alive` checks `/proc/<pid>/stat`'s state field
-    first and treats `Z` as dead; both test files now delegate to it.
-  - **`test_34e`'s liveness probe used `os.kill(pid, 0)` on a pid that, on
-    native Windows, is an MSYS pid, not a Win32 pid** - signal 0 there is
-    not a harmless probe (CPython's Windows `os.kill` opens the pid via
-    `TerminateProcess`), so a coincidental Win32-pid collision could
-    terminate an unrelated process. `test_34e` now skips outright on
-    native Windows, with the reason named.
-  - **The 0.2s TERM-then-KILL grace sleep ran for every rule, including
-    ones with nothing left in their process group to wait out** - ~0.2s
-    per rule regardless, unconditionally. Now gated on `kill -0` against
-    the same process group first; a rule that DOES leave something
-    running still gets the grace period. New test proves ten passing
-    rules add no `sleep 0.2` (via `bash -x` trace, not wall-clock timing).
-  - **`CREW_VERIFY_GATE_TEST_RULE_OUT_CAP` (test-only) accepted `0`
-    (disables the read cap entirely) or any value over 1 MiB (silently
-    raises the real cap)** - the old validation only rejected empty or
-    non-digit values. Now clamped to `1..1048576`; out-of-range values
-    fall back to the real default. New parametrized test proves both ends.
-  - **`test_34b`'s rule string double-quoted `$!` at the JSON level**,
-    which the gate's own shell expands one parse layer too early (to
-    empty), leaving `bg.pid` blank and its cleanup unable to reach the
-    backgrounded process it leaks on every run of this test.
-    Single-quoted to match `test_34e`'s already-correct pattern; the test
-    now also asserts `bg.pid` is non-empty and numeric.
-  - Two stale doc comments: `shell-suites.yml`'s obsidian-vault step no
-    longer restates the suite's own assertion count (it drifted once
-    already); `mcp-preflight-catalog.sh` and `uv-install.sh` now document
-    the exit-77-on-skip case their header previously omitted.
 
 - **`obsidian-vault` 0.4.13 / `jira-manager` 1.0.3: ported PR #212's
   exit-77-on-skip convention and CI wiring from `origin/item8-ps1-parity`.**
