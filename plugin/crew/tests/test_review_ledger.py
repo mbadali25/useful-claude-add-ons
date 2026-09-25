@@ -19,6 +19,7 @@ import context  # noqa: F401  pylint: disable=unused-import
 import crew_fixtures
 import review_fixtures
 import review_ledger as rl
+import review_run
 from review_fixtures import env_with_path, fake_reviewer_bin, git, init_repo
 
 _SCRIPTS = os.path.join(context._ROOT, "hooks", "scripts")  # pylint: disable=protected-access
@@ -263,39 +264,77 @@ def test_run_timeout_survives_an_escaped_descendant_holding_the_pipe(repo, tmp_p
     so the fixture's own timing assumption is checked here rather than
     just assumed): this test only waits for it to exit within that bound
     plus headroom, and FAILS if it has not.
+
+    FIX (Codex): the elapsed-time assertion used to be a bare `< 20`
+    ceiling, which the escaped grandchild's own (then-shorter) lifetime
+    already cleared regardless of whether the second, post-kill
+    `communicate()` was actually bounded -- a `communicate()` with no
+    timeout at all still returns well under 20s once the grandchild itself
+    exits, so that ceiling could not tell the bounded path from the
+    regression it exists to catch. `review_fixtures.ESCAPE_CHILD_LIFETIME_S`
+    is now sized to comfortably outlive `--timeout + POST_KILL_TIMEOUT`, and
+    the assertion is tightened to that same bound (plus a small margin) --
+    the bounded path meets it, and an unbounded second `communicate()` (which
+    would instead wait out the grandchild's now much longer lifetime) cannot.
     """
     (repo / "change.txt").write_text("change\n", encoding="utf-8")
     scratch, work = tmp_path / "scratch", tmp_path / "work"
     _bundle(repo, scratch)
     fakes = fake_reviewer_bin(tmp_path / "bin")
     pidfile = tmp_path / "escape.pid"
+    timeout_s = 1
 
     started = time.monotonic()
-    result = _run(repo, scratch, fakes, "escape", "--timeout", "1", "--work-dir", str(work),
-                  FAKE_REVIEWER_ESCAPE_PIDFILE=str(pidfile))
+    result = _run(repo, scratch, fakes, "escape", "--timeout", str(timeout_s),
+                  "--work-dir", str(work), FAKE_REVIEWER_ESCAPE_PIDFILE=str(pidfile))
     elapsed = time.monotonic() - started
 
+    # Read, and its identity recorded, in the same breath the pid is first
+    # available -- not later, once more of this test has already run and the
+    # pid has had longer to be reaped and reused by something unrelated. On a
+    # host with no /proc (`_PROC_SUPPORTED` is Linux-only), there is no start
+    # time to record, so the identity-based wait below is skipped with a
+    # named reason rather than trusting a bare pid.
     grandchild_pid = (int(pidfile.read_text(encoding="utf-8").strip())
                        if pidfile.exists() else None)
+    grandchild_start_ticks = (
+        crew_fixtures._proc_start_ticks(grandchild_pid)  # pylint: disable=protected-access
+        if grandchild_pid is not None else None)
 
     review = json.loads((work / "review.json").read_text(encoding="utf-8"))
-    assert elapsed < 20, (
-        f"review-run took {elapsed:.1f}s - it must not block on a "
+    bound = timeout_s + review_run.POST_KILL_TIMEOUT + 3
+    assert elapsed < bound, (
+        f"review-run took {elapsed:.1f}s (bound {bound}s) - it must not block on a "
         "descendant that escaped the kill and outlived --timeout"
     )
     assert (result.returncode, review["verdict"], review["timed_out"]) == (
         3, "INCOMPLETE", True)
 
-    bound = review_fixtures.ESCAPE_CHILD_LIFETIME_S + 5
-    deadline = time.monotonic() + bound
-    while grandchild_pid is not None and crew_fixtures.pid_alive(grandchild_pid) and (
-            time.monotonic() < deadline):
+    if not crew_fixtures._PROC_SUPPORTED:  # pylint: disable=protected-access
+        # No /proc on this host (non-Linux POSIX): a bare pid cannot prove
+        # identity here, so waiting on it risks following a pid the kernel
+        # already handed to an unrelated process. The assertions above
+        # already proved review-run itself did not block; skipped rather
+        # than guessed.
+        return
+
+    def _still_our_grandchild():
+        if grandchild_pid is None or grandchild_start_ticks is None:
+            return False
+        if not crew_fixtures.pid_alive(grandchild_pid):
+            return False
+        return crew_fixtures._proc_start_ticks(  # pylint: disable=protected-access
+            grandchild_pid) == grandchild_start_ticks
+
+    liveness_bound = review_fixtures.ESCAPE_CHILD_LIFETIME_S + 5
+    deadline = time.monotonic() + liveness_bound
+    while _still_our_grandchild() and time.monotonic() < deadline:
         time.sleep(0.2)
-    assert grandchild_pid is None or not crew_fixtures.pid_alive(grandchild_pid), (
-        f"the escaped grandchild (pid {grandchild_pid}) was still alive {bound}s after "
-        "it should have exited on its own -- it is never signalled by this test, since "
-        "by the time it is read this pid may already have been handed to an unrelated "
-        "process"
+    assert not _still_our_grandchild(), (
+        f"the escaped grandchild (pid {grandchild_pid}) was still alive "
+        f"{liveness_bound}s after it should have exited on its own -- it is never "
+        "signalled by this test, since by the time it is read this pid may already "
+        "have been handed to an unrelated process"
     )
 
 

@@ -6,6 +6,33 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Changed
 
+- **`crew` 1.0.22: the escaped-descendant review test now actually proves
+  the post-kill `communicate()` is bounded, its own liveness wait no longer
+  trusts a bare recyclable pid, and the fixture stops letting an ambient
+  environment variable override the derived timing it exists to check.**
+  Bumped `1.0.21 -> 1.0.22`.
+  - **FIX: `review_fixtures.py`'s `env_with_path` forced
+    `FAKE_REVIEWER_ESCAPE_LIFETIME` from the derived value
+    (`review_run.POST_KILL_TIMEOUT + 15`, up from `+ 3`), not
+    `setdefault`.** `setdefault` left an inherited ambient value in place
+    over the value sized against the real constant, silently defeating the
+    coverage it exists for.
+  - **FIX: `test_run_timeout_survives_an_escaped_descendant_holding_the_pipe`
+    tightened its elapsed-time ceiling from a bare `< 20s` to `< --timeout +
+    POST_KILL_TIMEOUT + 3`.** The old ceiling passed whether or not the
+    second `communicate()` after a kill carried its `POST_KILL_TIMEOUT`
+    bound, because the escaped grandchild's own (then-shorter) lifetime
+    cleared it either way. Sabotage-tested: with the second
+    `communicate(timeout=POST_KILL_TIMEOUT)` in `review_run.py` reverted to
+    a bare `communicate()`, this test goes red (20.1s against a 9s bound);
+    restored, it is green.
+  - **FIX: that same test's teardown wait for the escaped grandchild now
+    captures its `/proc` start time the moment the pid is first read, and
+    treats the pid as gone once its start time no longer matches or it is
+    gone/zombie** (`crew_fixtures.pid_alive` / `_proc_start_ticks`), rather
+    than following a bare numeric pid the kernel may already have handed to
+    an unrelated process. Never signals it either way. Skipped, with a
+    named reason, on a host with no `/proc`.
 - **`crew` 1.0.21: descopes the per-rule process-group kill in
   `verify-gate.sh`, and drops a discard-and-close-pipes regression in
   `review_run.py`'s own timeout cleanup.** Bumped `1.0.20 -> 1.0.21`.
