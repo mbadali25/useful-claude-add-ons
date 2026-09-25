@@ -37,8 +37,12 @@
 # points into that temp dir, and the end-to-end cases run the real script with a stub
 # 'claude' that only records what it was asked to do.
 #     ./scripts/_test/mcp-preflight-catalog.sh
-# Exit status is 0 when every case passes, 1 otherwise. The run prints its own totals;
-# re-measure from that line rather than trusting a count written into a comment.
+# Exit status is 0 when every case passes, 1 when any FAILED, and 77 when
+# nothing failed but case 24 (the .ps1 parity case) SKIPPED for a missing
+# pwsh - a run that did not check everything it claims to, which 0 would
+# not distinguish from a genuinely complete pass. The run prints its own
+# totals; re-measure from that line rather than trusting a count written
+# into a comment.
 
 set -uo pipefail
 

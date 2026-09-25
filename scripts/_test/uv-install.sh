@@ -36,8 +36,12 @@
 # in a temp dir, and PATH and HOME are pointed at that dir, so neither the host's
 # package manager, its Python, nor astral.sh is ever reached.
 #     ./scripts/_test/uv-install.sh
-# Exit status is 0 when every case passes, 1 otherwise. The run prints its own totals;
-# re-measure from that line rather than trusting a count written into a comment.
+# Exit status is 0 when every case passes, 1 when any FAILED, and 77 when
+# nothing failed but cases 21-25 (the .ps1 parity cases) SKIPPED for a
+# missing pwsh - a run that did not check everything it claims to, which 0
+# would not distinguish from a genuinely complete pass. The run prints its
+# own totals; re-measure from that line rather than trusting a count
+# written into a comment.
 
 set -uo pipefail
 

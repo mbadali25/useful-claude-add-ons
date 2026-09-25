@@ -35,9 +35,13 @@ jobs:
       - name: doc-builder -- emitted-report checklist
         run: bash skills/doc-builder/scripts/_test/checklist.sh
       # vault_guard.py (this plugin's one blocking hook) plus the vault-resolution
-      # and REST-bridge suites, all driven through this one entrypoint. 69
-      # assertions, 16.8s measured here 2026-09-22, own temp HOME, no live
-      # Obsidian, no sockets. Its own .ps1 sub-cases (test_vault_guard_sh.sh,
+      # and REST-bridge suites, all driven through this one entrypoint.
+      # 16.8s measured here 2026-09-22, own temp HOME, no live Obsidian, no
+      # sockets. The suite's own final "RESULT: N passed" line is the count
+      # to trust - a number restated here would drift out from under this
+      # comment the next time a case is added, so it is deliberately not
+      # restated (CLAUDE.md's "a self-referential count changes itself").
+      # Its own .ps1 sub-cases (test_vault_guard_sh.sh,
       # test_bridge_capture_sh.sh, test_ps1_legacy_args.sh, the flavour guard)
       # resolve pwsh via a bare `command -v pwsh`; GitHub's ubuntu-latest image
       # ships pwsh at /usr/bin/pwsh (see the "PowerShell static checks" step in
