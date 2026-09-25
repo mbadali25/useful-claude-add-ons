@@ -4381,6 +4381,14 @@ burn-in; the failures themselves need their own triage by whoever has the Window
   switching tabs during the delay window (after the check passed, before `/clear` actually sends) can send
   `/clear` to whatever tab is now focused rather than the one the check verified. Re-check tab ownership AFTER
   the delay, immediately before sending, not only before it.
+  Re-checked after merging `263e33ce` (`crew-1.0-win-tabcheck`, 2026-09-24): still open. The tab-count/UIA
+  decision (`Get-CrewWindowsTerminalTabState` / `Get-CrewSendKeysTabDecision`, `auto-clear.ps1:718-720`) runs in
+  the parent, before `Start-Sleep -Seconds $Delay` (`:794`) hands off to the detached child. The child re-checks
+  only `[CrewAC.Win]::GetForegroundWindow().ToInt64() -ne $Hwnd` against the exact window handle (`:804`) -
+  a per-WINDOW check, not per-tab. A tab switch inside the same Windows Terminal window during the delay leaves
+  the foreground window handle unchanged, so this re-check cannot catch it; 263e33ce hardened the pre-delay
+  decision (multi-tab now never sends) but did not add a post-delay tab re-check, so the gap this entry names is
+  unchanged.
 - `test_ps1_python_probe.py:~93` - the `.cmd` stubs this test builds make the bash-parity cases hand a POSIX
   `/c/...`-style path to a native Windows `CreateProcess` call, which cannot resolve it. Needs either a
   path-translation step before the native call, or a test-only seam that supplies the Windows-native form to
@@ -4395,3 +4403,49 @@ burn-in; the failures themselves need their own triage by whoever has the Window
   (measured there: an uncapped read of a multi-GiB file took double-digit seconds and several GiB of RSS). Same
   fix shape likely applies - snapshot a size, cap the read - but is win-repo's to implement and verify on a real
   Windows host per the OWNER RULE.
+
+### Windows burn-in families A and C - CLOSED, already fixed at `85dfa4a7` (filed 2026-09-24)
+
+Searched this file's full history (`git log --all -p -- TODO.md`) and found no entry ever filed under the
+literal names "family A" or "family C" - the letters name mechanisms in a burn-in report
+(`docs/review/06-windows-burn-in.md` at `84f32325`, branch `crew-1.0-burnin-win-485a1b08`, never merged into
+`crew-1.0`) rather than tracked TODO items here. Recorded here so nobody re-opens either as new:
+
+- **Family A** (the auto-clear log armed whenever `.crew/` exists, independent of opt-in): the current tree
+  gates on `enabled` FIRST and silently (`plugin/crew/hooks/scripts/auto-clear.ps1:137-141`, `Off is checked
+  FIRST and silently`); the underlying home-directory bug that produced the burn-in's false read of "armed"
+  (`[Environment]::GetFolderPath('UserProfile')` ignoring an overridden `$env:USERPROFILE`/`$env:HOME` on
+  native Windows and reading the real machine config instead of the test's isolated one) is fixed at
+  `auto-clear.ps1:132` and already present at `85dfa4a7`. A static regression tripwire (no env-var trick can
+  reproduce the original bug on a Linux `pwsh` host) guards it:
+  `test_auto_clear_ps1_resolves_home_from_the_env_not_the_shell_api`, `plugin/crew/tests/test_auto_clear.py:220`.
+- **Family C** ("no matching terminal window" under pytest - the harness has no such window, not a product
+  defect): not separately tracked, and correctly so per the burn-in report's own read (`Under pytest there is no
+  such window, so this is the harness, not the product`).
+
+### crew 1.0.x deferral: tests hardcode `windows=` against `crew_autocycle.normalise_repo_path`, contradicting the real host - OPEN (filed 2026-09-24, measured by win-repo-2)
+
+Family E (win-repo-2's own burn-in triage, not the lettering in `docs/review/06-windows-burn-in.md` above).
+Five tests call `crew_autocycle.normalise_repo_path` (and, through it, `in_scope`) with `windows=False`
+literally, hardcoding POSIX rules regardless of the host the suite actually runs on:
+`test_posix_repo_paths_normalise_to_one_form` (`test_auto_cycle.py:1409`),
+`test_in_scope_does_not_collapse_backslash_and_slash_on_posix` (`:1427`/`:1428`),
+`test_a_trailing_space_in_an_only_repos_entry_does_not_authorise_the_bare_path` (`:1444`/`:1445`),
+`test_a_drive_letter_path_is_not_absolute_on_posix` (`:1455`/`:1456`), and
+`test_normalise_repo_path_resolves_a_dotdot_after_a_symlinked_component` (`:1500`, `:1502`-`:1503`). On a real Windows
+host these get `""` back: `normalise_repo_path` only resolves `os.name == "nt"` when its caller leaves `windows`
+at the default `None` (`crew_autocycle.py:223`, `windows = os.name == "nt" if windows is None else windows`),
+and every POSIX-shaped input these tests assert on (`/srv/repo`, a leading-slash path, a symlink target) fails
+the Windows branch's own absolute-path check.
+
+**Not a product defect.** Production never passes `windows=` at all: `plan()` (`crew_autocycle.py:526`) calls
+`in_scope(cfg, root, session_id)` with no `windows` argument, so it always resolves against the real host via
+the same `os.name == "nt"` default, and `in_scope` fails CLOSED on the `""` `normalise_repo_path` returns for an
+unresolvable path (`if not here or here not in listed: return False`) - the narrowing simply declines rather
+than misbehaving. The defect is entirely in the five tests asserting a platform contract they then contradict
+by fixing the platform flag to the wrong value for the host they're run on.
+
+Fix shape: these tests must derive `windows` from the real host (`os.name == "nt"`, matching production's own
+default) rather than hardcoding `False`, or run the POSIX-shaped assertions only under a POSIX-forcing fixture
+that also verifies the host actually is POSIX. Not designed here - the fixture shape is a test-suite call, not
+a merge-caused defect, and is why this is filed as its own deferral rather than fixed inline.
