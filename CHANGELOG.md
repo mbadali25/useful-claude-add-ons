@@ -6,6 +6,89 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Changed
 
+- **`crew` 1.0.13: a backgrounded rule can no longer wedge disk space, a
+  full-branch merge of the 1.0.12 bump, and seven review fixes.**
+  Reconciled the two independent `1.0.12` bump commits (this branch's
+  `a46a333f`+`9b8f32bd`, origin's `85dfa4a7`) - both bumped the same three
+  files to the same byte-identical content, so the merge is a clean
+  `--no-ff` with no conflicts. Bumped `1.0.12 -> 1.0.13` after every other
+  change below.
+
+  - **`verify-gate.sh`: a rule's own backgrounded grandchild used to
+    survive the rule being recorded PASSED**, appending to the gate's
+    (already-unlinked) capture file until disk exhaustion (`sh -c 'yes &'`
+    left running past the gate's own return). Each rule now runs in its
+    own process group (`set -m` inside a dedicated subshell); once the
+    rule's foreground command returns, the gate signals that whole group
+    (TERM, then KILL after a grace period). Documented as a behaviour
+    change in `plugin/crew/CONFIG.md` §19 - a rule that intentionally
+    starts a long-lived background helper no longer can from inside
+    `"run"`. Proven with a small, slow (50ms-interval) sabotage fixture,
+    never a disk-filling one - see `test_34e` in
+    `test_verify_gate_stop_gate_record.py`.
+  - **The 3GiB read-cap test now proves the same cap in kilobytes, not
+    gigabytes.** `test_34c` used to write 3GiB via `yes | head -c` to time
+    the capped read; it now sets the cap itself via a test-only env seam
+    (`CREW_VERIFY_GATE_TEST_RULE_OUT_CAP`, never read outside a test
+    process) and proves the exact byte count read back, deterministically
+    and in milliseconds.
+  - **The capture read the wrong end of an oversized rule's output.**
+    `head -c` on the capped read kept the START of the file; what a
+    failing rule needs downstream (`tail -25`) is almost always at the
+    END. Changed to `tail -c`, which seeks near EOF on a regular file
+    rather than reading from the start, so this keeps the same
+    bounded-cost property, just from the other end. New test: `test_34f`.
+  - **`.github/workflows/instruction-budgets.yml`: the no-silent-raise
+    check compared a push-to-main's allowance file against itself.**
+    `check_allowance_no_silent_raise`'s default base (`merge-base HEAD
+    origin/main`) is HEAD itself once a push has already advanced the
+    remote's `main` ref - so a ceiling raised in that very push was
+    checked against a copy of the file that already carried the same
+    raise, and could never fail. The workflow now passes `--base
+    ${{ github.event.before }}` (falling back to `HEAD~1` when `before` is
+    the all-zero sha) on a `push` to `main` only; `pull_request` runs are
+    unchanged, since there `origin/main` genuinely has not merged the PR
+    yet. Verified by direct reproduction (a synthetic repo with `origin/main
+    == HEAD`): the default base misses a silent raise, the explicit
+    `before` base catches it.
+  - **`crew_autocycle.py`'s best-effort log write could raise past its own
+    `except`.** `log_autoclear` opened its log file with a strict
+    `encoding="utf-8"`; a message carrying a lone UTF-16 surrogate (from an
+    unknown JSON key's `\ud800` escape, which `json.loads` decodes without
+    complaint) then raised `UnicodeEncodeError` - a `ValueError`, not the
+    `OSError` the `except` caught - aborting whatever planning call invoked
+    it. Fixed with `errors="backslashreplace"` and a broadened `except
+    (OSError, UnicodeError)`. New test:
+    `test_log_autoclear_survives_a_lone_surrogate_in_the_message`; new
+    sabotage case in `sabotage_autocycle.py`.
+  - **`crew_fixtures.py`'s `kill_process_group` could kill an unrelated
+    process group.** It called `os.getpgid(proc.pid)` at KILL time; if the
+    leader had already been reaped elsewhere, the OS is free to hand that
+    exact pid to a brand-new, unrelated process, and `getpgid` on THAT pid
+    answers for its group instead. `popen_gate` now records `proc.pgid`
+    once, at spawn (`start_new_session=True` guarantees it equals the
+    child's own pid), and `kill_process_group` uses that recorded value.
+    New test proves it with a grandchild only a correct group-kill can
+    reach, `os.getpgid` monkeypatched to a wrong value for the whole test.
+  - **`test_verify_gate_lock_window.py`'s TTL-window test timed its "past
+    the TTL" floor from `time.monotonic()` read shortly after launching the
+    holder subprocess, not from the lock token's own age.** Fork/exec
+    overhead before the holder even acquires the lock could eat into that
+    margin without the test noticing. Now waits for the token file to
+    exist and computes the remaining wait from ITS OWN `mtime` plus the
+    TTL, matching what the test's own docstring already claimed to do.
+  - **Two cleanup paths referenced `signal.SIGKILL`, which does not exist
+    on native Windows**, inside `except` clauses that did not catch
+    `AttributeError` - a leftover pidfile there crashed the test's own
+    teardown. Both now use a module-level `_PORTABLE_SIGKILL =
+    getattr(signal, "SIGKILL", signal.SIGTERM)`.
+  - **`test_34d`'s mktemp-counting stub assumed bare `python3` already
+    resolves on PATH.** On a host where only `python`/`py` does (Git Bash,
+    some CI images), `verify-gate.sh`'s own python-shim path makes an
+    EXTRA `mktemp` call the stub's counter never accounted for. The test
+    now builds its own `python3` shim from the resolved interpreter and
+    puts it on PATH first, so the calibration holds on every host.
+
 - **`obsidian-vault` 0.4.13 / `jira-manager` 1.0.3: ported PR #212's
   exit-77-on-skip convention and CI wiring from `origin/item8-ps1-parity`.**
   A missing `pwsh` used to let `scripts/_test/uv-install.sh` (5 cases),
