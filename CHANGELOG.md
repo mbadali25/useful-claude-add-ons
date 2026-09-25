@@ -6,6 +6,26 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Changed
 
+- **`crew` 1.0.16: two post-1.0.15 corrections found while running this
+  release's verification gates - neither changes behaviour.** Bumped
+  `1.0.15 -> 1.0.16` because both land under `plugin/crew/` after the
+  1.0.15 bump commit, which `check-marketplace.py`'s version-drift check
+  (correctly) treats as unshipped without a further bump.
+  - **`BUDGETS.md`'s `crew-markdown-lines` claim was measured mid-merge and
+    was wrong by 2 files / 72 lines.** `git ls-files` lists a conflicted
+    path once per merge stage until the merge commits; counting during the
+    `win-tabcheck` merge's `BUDGETS.md` conflict (before resolving it)
+    counted that one file three times instead of once. Recomputed on the
+    clean, committed tree with `check-marketplace.py`'s own method (the
+    git index via `git ls-files -z`, `splitlines()` per file): 120 files,
+    17,790 lines, not 122/17,862.
+  - **pylint: `test_auto_cycle.py`'s new `_real_foreign_pid` fixture
+    (from `crew-1.0-win-tabcheck`) spawned a `subprocess.Popen` without a
+    `with` block** (R1732, `consider-using-with`). Wrapped in `with`;
+    the fixture's own `try`/`finally` termination and reaping is
+    unchanged, and `pylint $(git ls-files '*.py')` is exit 0, 10.00/10
+    again.
+
 - **`crew` 1.0.15: two win-repo-2 branches merged - the multi-tab
   sendkeys decline is now unconditional, and the dry-run notify wording is
   exact.** Bumped `1.0.14 -> 1.0.15` after both merges below.
