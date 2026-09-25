@@ -18,10 +18,12 @@ verify-gate.ps1's `-PrintBash` switch exists solely so the resolution can
 be probed without touching stdin, .crew/, or running any real check -- it
 prints the path Resolve-CrewBash would use and exits 0.
 """
+import json
 import os
 import shutil
 import subprocess
 import sys
+import time
 
 import pytest
 
@@ -244,3 +246,76 @@ def test_prints_nothing_not_the_bare_name_when_every_candidate_is_rejected(tmp_p
         f"Resolve-CrewBash returned {resolved!r} instead of '' when every "
         "candidate was rejected -- a non-empty, non-path value here is "
         "exactly the bare-'bash' regression this test exists to catch")
+
+
+def test_gate_refuses_by_name_instead_of_hanging_on_an_all_rejected_path(tmp_path):
+    """The full gate (not just -PrintBash) exercising the actual defect:
+    every rule's bash invocation must refuse by name, never invoke a
+    bare-name re-resolution of the shim this module's sibling test above
+    proves gets rejected.
+
+    This needs a WORKING git (the gate's own `git diff`/`ls-files` calls,
+    made before the rule loop is ever reached, would otherwise fail and
+    take a different code path than a real Stop hook run) while still
+    forcing Resolve-CrewBash's tier a to fall through -- and a real Git for
+    Windows install always has a real bash.exe two directories from
+    git.exe, which would rescue tier a and defeat the fixture. Wrapping
+    `git` as a PowerShell FUNCTION closes that gap exactly the way
+    test_falls_through_when_git_is_a_powershell_function proves above:
+    `Get-Command git` then returns CommandType Function, not Application,
+    so tier a's `.Source`-Application check never matches and falls
+    straight to tier b -- while the function itself still runs the real
+    git.exe by absolute path, so the gate's OWN git calls keep working."""
+    git_exe = shutil.which("git")
+    assert git_exe, "need a real git on PATH to build this fixture"
+
+    root = tmp_path / "repo"
+    root.mkdir()
+    for args in (["init", "-q"], ["config", "user.email", "t@example.invalid"],
+                 ["config", "user.name", "t"]):
+        subprocess.run(["git", *args], cwd=root, check=True, timeout=30,
+                       capture_output=True, text=True)
+    (root / "README.md").write_text("fixture\n", encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=root, check=True, timeout=30,
+                   capture_output=True, text=True)
+    subprocess.run(["git", "commit", "-q", "-m", "fixture"], cwd=root, check=True,
+                   timeout=30, capture_output=True, text=True)
+
+    vmap = {"version": 1,
+            "rules": [{"paths": ["a.py"], "reach": "local", "run": ["echo ok"]}],
+            "default": [], "unmapped": "ignore"}
+    (root / ".crew").mkdir()
+    (root / ".crew" / "verify.json").write_text(json.dumps(vmap), encoding="utf-8")
+    (root / "a.py").write_text("x", encoding="utf-8")  # untracked, matches the rule
+
+    only_dir = tmp_path / "only"
+    # Spins forever if ever actually invoked -- proves the gate never
+    # reached it rather than merely returning fast by luck.
+    _touch_extensionless(str(only_dir / "bash"))
+
+    command = ("$env:PATH = '%s'\n"
+               "$env:CLAUDE_PROJECT_DIR = '%s'\n"
+               "function git { & '%s' @args }\n"
+               "& '%s'\n"
+               "exit $LASTEXITCODE\n"
+               % (only_dir, root, git_exe, _PS1))
+
+    started = time.time()
+    result = crew_fixtures.run_gate(
+        [_PWSH, "-NoProfile", "-NonInteractive", "-Command", command],
+        input="{}", capture_output=True, text=True, check=False,
+        timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S,
+    )
+    elapsed = time.time() - started
+
+    assert elapsed < 15, (
+        f"the gate took {elapsed:.1f}s to return -- it may have invoked "
+        f"the rejected shim through a re-resolved bare name instead of "
+        f"refusing. stdout: {result.stdout}\nstderr: {result.stderr}"
+    )
+    assert result.returncode != 0, (
+        "a rule refused for lack of a usable bash must not read as "
+        f"verified. stdout: {result.stdout}\nstderr: {result.stderr}"
+    )
+    assert "no usable bash resolved" in result.stderr, (
+        "the gate did not name the refusal reason. stderr: " + result.stderr)

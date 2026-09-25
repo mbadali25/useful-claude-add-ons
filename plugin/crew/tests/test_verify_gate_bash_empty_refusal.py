@@ -14,14 +14,17 @@ resolved bash (the smoke lane and the per-rule loop; the third call site,
 -PrintBash, only echoes the value back and never invokes it) check for an
 empty result and refuse instead of calling through it.
 
-Behavioural coverage for the smoke lane and the rule loop is not
-practical here: both run after this gate's own `git diff`/`git ls-files`
-calls, which need a REAL git on PATH -- and a real git for Windows install
-always has a real bash.exe two directories from git.exe, so any PATH
-built to exercise tier b (no usable bash) also breaks the gate's own git
-calls before either lane is ever reached. -PrintBash exits before any of
-that runs, which is why it is the one call site with a true behavioural
-test.
+The rule loop ALSO has a true behavioural test now:
+test_verify_gate_bash_resolver.py's
+test_gate_refuses_by_name_instead_of_hanging_on_an_all_rejected_path runs
+the real gate end to end, with `git` wrapped as a PowerShell function so
+the gate's own `git diff`/`git ls-files` calls (needed before the rule
+loop is ever reached) keep working while Resolve-CrewBash's tier a still
+falls through to tier b -- the same technique
+test_falls_through_when_git_is_a_powershell_function already validates in
+that file. The smoke lane has no behavioural twin: it only runs when
+.crew/verify.json is ABSENT, which is a distinct fixture shape from the
+rule-loop test above, so its coverage here stays string-level.
 """
 import pathlib
 
