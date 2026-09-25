@@ -404,3 +404,88 @@ def test_kill_process_group_still_signals_when_start_time_matches(
     crew_fixtures.kill_process_group(_FakePgidProc())
 
     assert calls == [(999999, signal.SIGKILL)]
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX process-group signalling only")
+@pytest.mark.skipif(not os.path.isdir("/proc"),
+                     reason="start-time verification needs /proc")
+def test_kill_process_group_reaches_a_grandchild_after_its_reaped_leader(
+        tmp_path):
+    """FIX (review): a REAPED leader used to read identically to a REUSED
+    pgid. `sh -c 'sleep 60 & echo $!'` backgrounds `sleep 60` and exits
+    immediately itself -- the ordinary shape of a rule whose foreground
+    command finishes fast but leaves something running. `proc.communicate()`
+    below reaps the leader (`sh`) the same way `run_gate`'s own non-timeout
+    path already does, so by the time `kill_process_group` runs,
+    `_proc_start_ticks(pgid)` reads `None` (the leader's `/proc` entry is
+    gone, not merely stale) exactly as it would for a genuinely reused
+    pgid. The old check treated both the same and skipped `killpg`,
+    leaking `sleep 60`. Sabotage: reverting `kill_process_group`'s `None`
+    branch to a bare skip (as it read before this fix) turns this red.
+    """
+    pidfile = tmp_path / "grandchild.pid"
+    proc = crew_fixtures.popen_gate(
+        ["sh", "-c", f"( sleep 60 & echo $! > {pidfile} ) ; echo started"],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    assert proc.pgid == proc.pid
+
+    deadline = time.time() + 10
+    while not pidfile.exists() and time.time() < deadline:
+        time.sleep(0.1)
+    assert pidfile.exists(), "the grandchild never recorded its own pid"
+    grandchild_pid = int(pidfile.read_text(encoding="utf-8").strip())
+    assert _pid_alive(grandchild_pid), "sanity: the grandchild never started"
+
+    # Reaps the leader (the shell already exited on its own) before this
+    # test's own kill_process_group call -- the exact ordering `run_gate`
+    # produces on any rule shaped like this one.
+    proc.communicate(timeout=10)
+    assert crew_fixtures._proc_start_ticks(proc.pgid) is None, (
+        "sanity: the leader must actually be reaped (not merely exited-"
+        "but-zombie) for this test to exercise the None branch"
+    )
+
+    crew_fixtures.kill_process_group(proc)
+
+    deadline = time.time() + 5
+    while _pid_alive(grandchild_pid) and time.time() < deadline:
+        time.sleep(0.1)
+    try:
+        assert not _pid_alive(grandchild_pid), (
+            "the grandchild survived kill_process_group after its leader "
+            "was reaped - a reaped leader must not be treated the same as "
+            "a reused pgid"
+        )
+    finally:
+        try:
+            os.kill(grandchild_pid, 9)
+        except OSError:
+            pass
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX process-group signalling only")
+@pytest.mark.skipif(not os.path.isdir("/proc"),
+                     reason="start-time verification needs /proc")
+def test_kill_process_group_skips_a_reaped_leader_with_no_surviving_member(
+        monkeypatch):
+    """Sabotage pair for the test above: a reaped leader (`_proc_start_ticks`
+    reading `None`) whose group genuinely has NO surviving member (forced
+    via `_pgid_has_live_member_since` returning `False`, since winning that
+    race for real is not something a test can force on demand) must still
+    refuse to signal - proving the fix does not simply always signal on
+    `None`, only when a real member is actually found.
+    """
+    calls = []
+    monkeypatch.setattr(os, "killpg",
+                         lambda pgid, sig: calls.append((pgid, sig)))
+    monkeypatch.setattr(crew_fixtures, "_proc_start_ticks", lambda pid: None)
+    monkeypatch.setattr(
+        crew_fixtures, "_pgid_has_live_member_since",
+        lambda pgid, floor: False)
+
+    crew_fixtures.kill_process_group(_FakePgidProc())
+
+    assert calls == [], (
+        "kill_process_group signalled a pgid with a reaped leader and no "
+        "live member found - it must skip, not guess"
+    )
