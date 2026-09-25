@@ -31,7 +31,7 @@ Each with how it will be resolved before implement, or "accepted as risk".
 Globs. This feeds the scope guard (PreToolUse) and `/crew:plan`'s validation
 - a plan step whose Files: are not covered here needs this section amended
 first, not a plan that quietly reaches outside it.
-## Acceptance
+## Acceptance checks
 - [ ] observable checks, naming the `.crew/verify.json` rule(s) they map to
 - [ ] the new test this ticket adds, by name (add one if none exists)
 ```
