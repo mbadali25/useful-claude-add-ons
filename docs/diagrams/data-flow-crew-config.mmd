@@ -66,18 +66,13 @@
 %%     require python to take effect; a restricted role's write is ALWAYS
 %%     blocked with no python on PATH.
 %% --
-%% METHODOLOGY, and a DISCREPANCY flagged rather than hidden: leaf counts
-%% below (116 / 65 / 51) come from executing
+%% METHODOLOGY: leaf counts below (116 / 65 / 51) come from executing
 %% `crew_config.leaf_paths(crew_config.default_config())` and the same for
 %% `default_global_config()` in THIS worktree (module resolution confirmed
 %% local: `crew_config.__file__` resolves under this checkout, not an
 %% installed plugin cache) - not from reading the dict literals by eye.
-%% `.crew/codemap/crew.md` states 114/63/51 for the IDENTICAL functions at the
-%% IDENTICAL anchor (6c497a14); this pass's own execution disagrees on the
-%% first two numbers and agrees on the third (repo-only, 51). Not reconciled
-%% here - both counts cannot be right, and re-running the exact same pure
-%% function should not be able to disagree with itself, so this is named for a
-%% human rather than silently overwritten with either figure.
+%% `.crew/codemap/crew.md` agrees (its table was corrected from 114/63 to the
+%% executed 116/65 on 2026-09-25) and carries the one-line re-measure command.
 %% --
 %% NOT re-verified this pass: no SVG/PNG was previously tracked for this
 %% diagram (`git ls-files docs/diagrams/` shows only the .mmd); CONFIG.md's
@@ -222,7 +217,7 @@ flowchart TB
         direction TB
         S1["<b>65 global-settable</b> leaves, across fourteen<br/>blocks: qa, dev, worktree, secondOpinion, memory,<br/>notify, pm, context.autoClear, docs, bitbucket,<br/>github, install, guards (all TEN), change"]
         S2["<b>51 repo-only</b> leaves (set difference, executed).<br/>Whole blocks absent from the global template:<br/>cloud, emergency, graph, jira, obsidian, platform,<br/>production, roles, schema, scope, sdp, tier,<br/>tracker, verifyGate - <b>cloud and scope are NEW<br/>repo-only blocks since the previous anchor</b><br/>(cloud identity pins, the T3 scope guard)"]
-        S3["<b>DISCREPANCY, named rather than hidden:</b><br/>.crew/codemap/crew.md states 114/63/51 for these<br/>SAME functions at this SAME anchor; executing them<br/>in this worktree this pass gives 116/65/51. Not<br/>reconciled here."]
+        S3["<b>Counts are executed, not read by eye.</b><br/>116 repo-template / 65 global / 51 repo-only at<br/>6c497a14; .crew/codemap/crew.md agrees and gives<br/>the re-measure command."]
         S4["<b>Consent is not capability.</b><br/>context.autoClear.unsafeFocus is excluded from the<br/>global template on purpose (AUTOCLEAR_CONSENT_KEYS,<br/>crew_state.py:695) - a Wayland focus-typing risk<br/>accepted once must not arm for every repo."]
         S1 --- S2 --- S3 --- S4
     end

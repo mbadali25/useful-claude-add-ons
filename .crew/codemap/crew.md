@@ -211,13 +211,26 @@ the previous note's account of it** — see "Unverified at this anchor").
 ## Config, the guard vocabulary, and the ratchet
 
 **DERIVED at this anchor by importing `crew_config` and executing both
-default functions.**
+default functions.** Measured 2026-09-25 at 6c497a14 (plugin code
+byte-identical at the refresh merge), module resolved from this checkout,
+not an installed plugin cache:
 
 | | Leaves | Source |
 |---|---|---|
-| `default_config()` | **114** | `plugin/crew/hooks/scripts/crew_config.py:239` |
-| `default_global_config()` | **63** | `plugin/crew/hooks/scripts/crew_config.py:367` |
+| `default_config()` | **116** | `plugin/crew/hooks/scripts/crew_config.py:239` |
+| `default_global_config()` | **65** | `plugin/crew/hooks/scripts/crew_config.py:367` |
 | repo-only | **51** | the set difference |
+
+Treat these as a fact about one commit, not a standing figure. Re-measure
+from `plugin/crew/hooks/scripts/` rather than trusting the table:
+
+```
+python3 -c "import crew_config as c; r=set(c.leaf_paths(c.default_config())); g=set(c.leaf_paths(c.default_global_config())); print(len(r), len(g), len(r-g), len(g-r))"
+```
+
+The fourth figure (global leaves absent from the repo template) should be
+0. This table previously read 114/63 at the same anchor; executing the same
+functions gives 116/65, so the earlier figures were a miscount, not drift.
 
 These are new counts, not the pre-1.0 note's 103/60/43 carried forward —
 `change.*`, `guards.cloudGuard` and the memory/recall keys (`TODO.md`'s
