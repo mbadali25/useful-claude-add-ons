@@ -200,6 +200,26 @@ def test_flavors_are_discoverable():
     assert FLAVORS, "neither bash nor pwsh is available - nothing here ran"
 
 
+def test_log_autoclear_survives_a_lone_surrogate_in_the_message(tmp_path):
+    """`log_autoclear` is documented as best-effort - a write failure here
+    must never abort the caller's planning. `json.loads` will happily decode
+    a `\\ud800` escape from an unknown key into a lone UTF-16 surrogate with
+    no complaint, and a STRICT `handle.write()` under `encoding="utf-8"` then
+    raises `UnicodeEncodeError` - a `ValueError`, not an `OSError`, so a
+    narrower `except OSError:` does not catch it and the "best-effort" call
+    aborts whatever planning step invoked it. Sabotaged by hand: reverting
+    the open() call to plain `encoding="utf-8"` (no `errors=`) reproduces
+    this directly - confirmed red before the fix, green after."""
+    root = tmp_path / "repo"
+    (root / ".crew").mkdir(parents=True)
+
+    surrogate = "unknown key: \ud800 (lone surrogate)"
+    crew_autocycle.log_autoclear(str(root), surrogate)  # must not raise
+
+    log = (root / ".crew" / ".autoclear.log").read_text(encoding="utf-8")
+    assert "unknown key:" in log and "lone surrogate" in log, log
+
+
 # --- wrap-up: once per crossing, stop_hook_active, session keys -------------
 
 @by_flavor

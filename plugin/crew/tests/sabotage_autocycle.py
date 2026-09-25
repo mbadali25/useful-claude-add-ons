@@ -464,6 +464,15 @@ AUTOCYCLE_MUTATIONS = (
      "  fi\n",
      "tests/test_auto_clear_review_fixes.py::"
      "test_context_watch_forwards_the_notify_json_even_when_mktemp_fails"),
+    ("log_autoclear's write is strict again (a lone surrogate raises)", CYCLE,
+     '        with open(os.path.join(root, ".crew", ".autoclear.log"), "a",\n'
+     '                  encoding="utf-8", errors="backslashreplace") as handle:\n'
+     '            handle.write(f"{stamp}\\t{message}\\n")\n'
+     '    except (OSError, UnicodeError):\n',
+     '        with open(os.path.join(root, ".crew", ".autoclear.log"), "a", encoding="utf-8") as handle:\n'
+     '            handle.write(f"{stamp}\\t{message}\\n")\n'
+     '    except OSError:\n',
+     _T + "test_log_autoclear_survives_a_lone_surrogate_in_the_message"),
 )
 
 

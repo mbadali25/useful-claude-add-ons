@@ -192,9 +192,20 @@ def log_autoclear(root, message):
     `2>/dev/null`."""
     try:
         stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-        with open(os.path.join(root, ".crew", ".autoclear.log"), "a", encoding="utf-8") as handle:
+        # errors="backslashreplace", not the default strict encoder:
+        # `message` can carry a lone UTF-16 surrogate (a `\ud800` escape from
+        # an unknown JSON key, decoded by `json.loads` without complaint but
+        # unencodable as UTF-8), and a strict `handle.write()` then raises
+        # `UnicodeEncodeError` -- a `ValueError`, not an `OSError`, so the
+        # `except` below never caught it and this "best-effort" logger
+        # aborted the planning call it was meant never to interrupt.
+        # `backslashreplace` keeps the line readable (`\ud800` in the log)
+        # instead of losing the character; the broadened `except` is the
+        # other half of the same fix.
+        with open(os.path.join(root, ".crew", ".autoclear.log"), "a",
+                  encoding="utf-8", errors="backslashreplace") as handle:
             handle.write(f"{stamp}\t{message}\n")
-    except OSError:
+    except (OSError, UnicodeError):
         pass
 
 
