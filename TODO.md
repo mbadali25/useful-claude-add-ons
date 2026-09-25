@@ -4712,3 +4712,180 @@ From the Codex delta review of 3299d386..b780563d (gpt-5.6-sol, high, read-only)
 - `plugin/crew/tests/sabotage_autocycle.py:~607` - by design (1.0.25), a mutation whose target test SKIPS on this host is reported SKIPPED and does not fail the run. Cost: on Linux the Windows-only child-tab-recheck mutation is unproven while the suite still prints PASS. Make the aggregate line say how many mutations were SKIPPED (e.g. "PASS (1 skipped: unproven on this host)") so an unproven mutation is visible, never silent.
 - `plugin/crew/tests/test_auto_clear_child_tab_recheck_structure.py:~57` - the Linux structural twin only asserts the IsWindowsTerminal guard is the first statement; an unconditional `return @{ Decision = 'send'; Reason = '' }` placed right AFTER the guard stays green. Assert that the only `Decision = 'send'` return in Get-CrewChildTabRecheck is the tab-count == 1 branch (parse returns, not one literal spelling), and add that mutation to sabotage_autocycle.
 - `plugin/crew/tests/test_verify_gate_bash_empty_refusal.py:~138` - the branch-order check still raises a bare ValueError (from `chain.index(..., guard_pos)`) before its explanatory assertion when the `elseif ($ruleOutFile)` marker moves before the guard; check presence/order with an assertion first.
+---
+
+## Deferred by the PM, assign pass 2026-09-24 (10 dispatches, authority autonomous)
+
+### `/crew:verify --all` and the stale verify marker - DEFERRED (cost + standing veto)
+Marker is 75 commits behind HEAD. NOT run this pass: `rule[8]` alone measured 1928s and
+`test_verify_gate_stop_gate_record.py` about 750s; a full pass would consume the session. Independently,
+the PM's standing file already records the user's 2026-09-24 ruling that the marker is never written over
+the two known-red host-specific tests. So this stays deferred until those two are fixed AND a session has
+the budget for a >2000s run.
+
+### `ticketsTooLarge` trigger (health.rate 5.33 over 6 tickets) - DEFERRED, not actionable as stated
+The metric counts BLOCK+FIX per ticket, which rises with review thoroughness as readily as with scope, and
+`health.rate` is a REPO-WIDE average that is not evidence about any individual ticket. Splitting an old
+ticket would not clear the trigger either - the rate falls when future tickets are smaller. No action taken.
+Revisit if the rate keeps climbing across the next several tickets.
+
+### Per-path triage of the 7 `knowledgeBehind` codemap notes - BLOCKED on a tool gap, not on the work
+Two `crew:explorer` dispatches could not run `git diff --name-only <anchor>..HEAD -- <paths>` at all:
+that role has no `Bash` and no `ctx_*` tools ("Bash is disabled for this session, in subagents as well as
+here"). Re-dispatch to a shell-capable role. Groundwork already done and worth reusing:
+- Every codemap anchor is written `useful-claude-add-ons@<sha>`. Passing the whole token to `git diff`
+  returns a SILENT FALSE ZERO. Strip to the bare sha.
+- Six of the seven share anchor `5d1fc5fd`; only `obsidian-vault.md` differs (`60c79407`). So this is TWO
+  diffs, not seven.
+- Cited-path sets were already extracted per note (see the PM journal entry for this pass).
+- `verification-harness.md` has 31 citations into `.crew/verify.json`, which is gitignored and absent from
+  the checkout, so a path diff on it comes out empty regardless - roughly a third of that note is not
+  verifiable by this method at all.
+
+### `INDEX.md` anchor column has drifted again - OPEN (filed 2026-09-24, PM)
+`.crew/codemap/INDEX.md:104` lists `skills-security-ops.md` as `ea8a014`; that note's own `anchor:` line
+(`.crew/codemap/skills-security-ops.md:2`) reads `bc6a3a09`. Relayed by crew:explorer, not re-read by the PM.
+INDEX.md itself says this column must be re-derived mechanically or not at all. Fourth recurrence.
+
+### Per-path verify of the 2 stale diagrams - BLOCKED on the same tool gap
+Both `data-flow-crew-config` and `process-crew-brief` ARE anchored (`useful-claude-add-ons@60c79407`,
+2026-09-22) - neither is unanchored. `crew_freshness.py:129` strips the `<repo>@` prefix itself, so the tool
+is immune to the trap a human pasting the raw token is not. Line-citation spot-checks came back clean for
+`process-crew-brief` (hypothesis: CURRENT DESPITE THE LAG, do not redraw) and clean for
+`data-flow-crew-config` EXCEPT `role_write_guard.py`'s force-block citation, which shifted by one
+(diagram says :811-812, actual :812-813) - commit `25c6b9d4` sits between the anchor and HEAD. Likely a
+targeted edit to one node in the `Corrupt` subgraph, not a redraw.
+
+### Item 3 (Windows Terminal tab check) - the ticket changed shape mid-pass, needs a FRESH brief
+`origin/crew-1.0` advanced `2afa08df` -> `85dfa4a7` during this pass. Upstream commit `d12670c7` already
+contains nearly the whole agreed design. The remaining delta is a CONFLICT, not an absence: upstream also
+sends into a multi-tab window when a shell-set tab name matches `windowTitle` and reads as selected, which
+the settled design explicitly forbids (tab names are shell-set; there is no tab-to-pid mapping). Prepared
+patches are in the session scratchpad under `item3/`. Do not re-run the UIA investigation - it is done.
+
+### Family C production fix - OPEN, highest-value unstarted item
+`auto-clear.ps1:114` uses `[Environment]::GetFolderPath('UserProfile')`, which ignores an overridden
+`USERPROFILE`/`HOME`, so the hook reads the real machine's `~/.claude/crew/config.json` under test. Accounts
+for burn-in families A and C (21+ tests). Sibling `cloud-guard.ps1:162` already does the correct
+`$env:USERPROFILE`-else-`$env:HOME` fallback; `crew_autocycle.py:70` does too. Measured, not relayed.
+Already fixed on `origin/crew-1.0` (`562d13a1`, `394a98f3`) but NOT on `main`.
+
+### Third auto-clear bug, distinct from families A-E - OPEN
+`crew_autocycle.normalise_repo_path` (`crew_autocycle.py:192`) returns `''` for a real Windows directory;
+5 tests in `test_auto_cycle.py` fail on pure in-process calls to it and `in_scope` (`:134`) with no
+subprocess, window or config involved. Needs its own root-cause pass - it was hidden inside the burn-in's
+"no terminal window" umbrella.
+
+### Two new burn-in families, sha `3f347d52` - OPEN
+Report at the session scratchpad, `burnin-3f347d52.md` (55 failures over 19 files). Family F: a
+`subprocess.communicate(timeout=2)` that does not actually bound the call on Windows/Python 3.14 (verbatim
+thread-join trace in the report). Family G: 10 assorted first-hand failures - `npx`/`cmd` wrapping, a
+terraform/PSScriptAnalyzer rule not enforcing its own exit code, missing ticket content in a built prompt,
+and a python-probe resolver returning empty in several fallback scenarios.
+
+### Five new burn-in families, sha `2f7f71f7` - OPEN
+Report at the session scratchpad, `burnin-2f7f71f7.md` (51 failures, every one attributed by nodeid).
+F: a test fixture writes an unescaped Windows backslash path into TOML (verified with a `tomllib` repro).
+G: `.ps1 -PrintPython` returns empty, including its own regression-guard test. G2: the resolver returns a
+different real interpreter than the test's ground truth. H: `npx` wrapped in `cmd /c`. I: auto-clear
+scope-matrix path normalisation. Plus 12 measured failures whose mechanism is not confidently diagnosed.
+Family A is absent at this sha; family E did not reproduce.
+
+### Exit-127 group is NOT one root cause - OPEN
+`test_stack_skills.py:93` uses a bare, unproven `shutil.which("sh")` - the only one of the five files with
+that pattern - reproduced live as `rc=127` where `77` was intended. `test_crew_instructions.py` has zero
+subprocess calls, so a whole-file 127 there can only be the outer pytest launcher. The relayed
+gizmoduck `test_powershell_rule_exits_nonzero_on_a_real_analyzer_violation` rc=0 claim is CONFIRMED, but it
+is a different test node and does NOT explain the 127s.
+
+### Stray file in the repo root - NEEDS AN EXPLICIT YES BEFORE DELETION
+A dispatched role wrote a file whose NAME is a literal Windows path
+(`D<colon>tempclaude...item3_base-auto-clear.ps1`) into the repo root - a path-quoting bug in that role, not
+a repo defect. It is untracked. The PM did not delete it; deletion needs the operator's yes.
+
+---
+
+## PM assign wave 2, 2026-09-24 - status corrections and new deferrals
+
+### `repospersonalcrew-1.0-win-fixtures/` is NOT debris - DO NOT REMOVE
+`git worktree list` confirms it is a REGISTERED git worktree on branch `crew-1.0-win-fixtures` @ `2afa08df`,
+whose path lost its drive separators (`C:\repos\personal\...` collapsed to `repospersonalcrew-...`). It reads
+as an untracked directory in `git status --porcelain` and is not. Removing it is a git-destruction stop and
+needs its own explicit yes from the operator. No role may touch it. Filed at the operator's instruction.
+
+### A crew version bump is OWED and is not ours to make - RELAY TO THE CREW SESSION
+After the item-2 rebase, `py scripts/check-marketplace.py` reports:
+`crew: plugin/crew/ has changed since version 1.0.12 was set (85dfa4a7)... Bump it in marketplace.json.`
+Standing constraint: the crew session owns bumping and Codex review, so this must be relayed rather than
+fixed here. Per this repo's own CLAUDE.md the cost of shipping without the bump is invisible locally -
+`claude plugin update` compares the declared version, so every machine that already installed it keeps the
+old copy forever and reports "already at the latest version".
+
+### CORRECTION to the wave-1 entry above: `.crew/verify.json` is TRACKED, not gitignored
+Measured by an analyst via `git ls-files`, refuting a claim the PM put in its own brief. CLAUDE.md's
+un-ignore list carries `!.crew/verify.json`. It changed +2/-2 between the anchor and HEAD (`seconds` 185 ->
+1928, `why` text rewritten). So the earlier note that "roughly a third of verification-harness.md is not
+verifiable by this method" is FALSE - a per-path diff does see that file. Do not repeat the caveat.
+
+### CORRECTION to the wave-1 entry above: the `data-flow-crew-config` off-by-one is PRE-EXISTING
+The stale citation is real - node `FORCE`, diagram line 157, says `role_write_guard.py:811-812` where the
+actual is `:812-813`. But it was NOT caused by commit `25c6b9d4`: that commit touched only
+`role-write-guard.ps1` and `.sh`, never `role_write_guard.py`, which has ZERO diff to HEAD. Measured. The
+fix is a one-line citation edit, not a redraw, and it does not need a codemap pass first.
+
+### Codemap re-derive budget - only ONE note is actually worth it
+Measured per-path diffs against bare `5d1fc5fd` / `60c79407` (the `<repo>@<sha>` prefix stripped - passing
+the whole token returns a silent false zero):
+- CURRENT, do NOT re-derive: `install-scripts.md`, `mcp-servers.md` (both empty diffs).
+- NEEDS RE-DERIVING, ranked by lines changed: `crew.md` (5890 over 51 files) > `verification-harness.md`
+  (2252, `.crew/verify.json` + 20 test files; `check-marketplace.py` itself unchanged) > `repo-docs.md`
+  (1685, but dominated by generated docx/pdf/html - the real prose delta is CHANGELOG.md, 3 `.mmd`
+  diagrams, 7 new `docs/review/*.md` and `docs/runbooks/rollback.md`) > `obsidian-vault.md` (279) >
+  `marketplace-registration.md` (8 lines, `plugin/PLUGINS.md` only).
+`crew.md` is the only one where the re-derive cost is clearly justified. `marketplace-registration.md` is an
+8-line touch-up.
+
+### `process-crew-brief` diagram - CONFIRMED CURRENT, do not redraw
+Per-path diff against bare `60c79407` touches only `role-write-guard.sh`/`.ps1` and `.crew/verify.json`, and
+the diagram's own lines 9-10 pre-declare those as resolver hardening with `hooks.json` unchanged - confirmed,
+`hooks.json` is not in the diff. Close the `diagramsStale` trigger for this one without work.
+
+### Windows review owed on the 11-way ps1 resolver copy - NOT YET ACTIONABLE
+While integrating win-stdin, the crew copied the `RedirectStandardInput` + `Close` probe change VERBATIM into
+the other 10 `.ps1` hook scripts to keep the resolver block byte-identical across all 11. It was validated on
+Linux only (`test_ps1_python_probe` 47/47 there). Needs a Windows review once it is on origin. Held, not
+dispatched - 6 PM dispatch slots reserved for this and the Codex BLOCKs.
+
+### Four Codex PowerShell BLOCKs at `85dfa4a7` - AWAITING DETAILS
+Crew reports Codex found four PowerShell BLOCKs attributable to this session's work. Details not forwarded
+yet, so nothing dispatched. A lane is held free.
+
+### Self-disclosed constraint breach, recorded not punished
+The item-2 rebase role used `git checkout --` once to revert a sabotage, against an explicit brief
+constraint. The tree was clean beforehand and an empty diff confirmed nothing was lost; the role corrected
+itself to `sed` for the second sabotage and disclosed both. Recorded because a self-disclosed breach only
+stays cheap if it is written down.
+
+### Orphaned pytest process on this machine - flagged, not killed
+The family-A/C lane left a pytest run alive after its own Bash-timeout wrapper expired, producing two
+contended suite summaries (24F/110P then 29F/105P, plus a `git init` `STATUS_DLL_NOT_FOUND`). Both numbers
+were correctly discarded as noise. The role declined to kill blindly among ~37 unrelated `python.exe`
+processes on this shared machine. Someone with the context should reap it.
+
+### Deferred to crew 1.0.x - four test-harness defects, deliberately NOT fixed tonight
+Ruled by the crew during the 1.0 ship pass, 2026-09-25. Each is a harness defect, not a product defect;
+none blocks 1.0. No lane was spent on any of them. Recorded here so the deferral is distinguishable from
+nobody having noticed.
+
+1. `sabotage.py`'s 13 pwsh-dependent mutations are still GREEN at `ad18172b` - the mutations do not bite,
+   so that slice of the sabotage harness is currently vacuous.
+2. `test_ps1_python_probe.py:~93` - the `.cmd` stubs pass a POSIX `/c/...` path to `CreateProcess`, which
+   cannot open it. The stub branch is therefore not exercising what it claims to.
+3. `crew_fixtures.py:~69` - the `taskkill` teardown loses descendants, so a spawned tree survives the
+   fixture and contends with the next test.
+4. `test_auto_cycle.py:~287` - leaks a 30s detached sender per run.
+
+### Deferred by the 1.0 ship pass - triggers left standing
+`verifyMarkerStale`, `knowledgeBehind` (7 subsystems), `diagramsStale` (`data-flow-crew-config`,
+`process-crew-brief`) and `ticketsTooLarge` were all live during the 1.0 pass and were deliberately not
+worked - every lane went to a Windows BLOCKER instead. They are unchanged, not resolved.

@@ -214,6 +214,12 @@
       "reach": "local",
       "why": "1s. reach: local - checklist.sh checks doc-builder's own output files already in this checkout." },
 
+    { "paths": [".claude/rules/**", ".crew/codemap/**"],
+      "seconds": 1,
+      "run": ["python3 plugin/crew/hooks/scripts/crew_instructions.py rules --root . --check"],
+      "reach": "local",
+      "why": "0.2s (measured 3x, 2026-09-25). .claude/rules/*.md are GENERATED from .crew/codemap/ by crew_instructions.py, and they change what Claude does in this repo; --check exits non-zero when any rule is missing, stale or orphaned against the codemap it was derived from. It lists .crew/codemap/** so that editing a note without regenerating its rule fails here too. That is a sync check between two artifacts, not a correctness check on the prose, so it does not contradict the DELIBERATELY UNCHECKED rule below, whose reasoning is about the prose itself and still holds. reach: local - --check reads the codemap and the rules directory in this checkout and writes nothing." },
+
     { "paths": ["skills/mermaid-svg-bitbucket/**", "skills/notify/**",
                 "skills/cisco-meraki/**"],
       "seconds": 12,
