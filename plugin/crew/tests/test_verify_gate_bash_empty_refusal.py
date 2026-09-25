@@ -78,40 +78,71 @@ def test_the_smoke_lane_refuses_named_before_invoking(tmp_path):  # pylint: disa
 
 def test_the_rule_loop_refuses_named_before_invoking():
     body = _src()
-    # The per-rule invocation inside the try/finally block, guarded by
-    # $ruleOutFile (temp-file capture) succeeding.
-    invoke_marker = "& $bashExe -c $c > $ruleOutFile"
-    invoke_pos = body.index(invoke_marker)
-    # Back up to the start of the enclosing if/elseif/else chain that
-    # decides whether to invoke at all (the closest preceding
-    # '$ruleOutFile = $null' resets the capture-file state for this rule).
-    chain_start = body.rindex("$ruleOutFile = $null", 0, invoke_pos)
-    between = body[chain_start:invoke_pos]
 
-    assert "if (-not $bashExe)" in between, (
-        "the per-rule loop has no empty-bash guard between resetting "
-        "$ruleOutFile and invoking '& $bashExe -c $c' - an empty $bashExe "
-        "(every PATH candidate rejected) falls straight through to that "
-        "invocation, which PowerShell resolves right back to the "
-        "rejected shim and hangs. Text in between:\n" + between)
+    # B3 changed the per-rule invocation shape: bash now does its own
+    # redirect via a wrapper script (`eval "$CMD" > "$OUT" 2>&1 </dev/null`,
+    # driven by CREW_VERIFY_RULE_CMD/CREW_VERIFY_RULE_OUT env vars) rather
+    # than PowerShell redirecting bash's own stdout with
+    # `& $bashExe -c $c > $ruleOutFile`. That older shape no longer exists
+    # in the file - anchor on the real invocation instead of the comment
+    # text near it, and fail loudly (not with a bare ValueError) if either
+    # anchor is missing or ambiguous.
+    reset_marker = "$ruleOutFile = $null\n"
+    invoke_marker = "$null | & $bashExe -c $wrapperScript"
+
+    reset_count = body.count(reset_marker)
+    assert reset_count == 1, (
+        f"expected exactly one {reset_marker!r} (the per-rule capture-file "
+        f"reset) in verify-gate.ps1, found {reset_count} - cannot anchor "
+        "the rule-loop region unambiguously. Either the reset was "
+        "duplicated/removed, or this marker needs updating for a new "
+        "shape of the reset line.")
+    reset_pos = body.index(reset_marker)
+
+    invoke_count = body.count(invoke_marker)
+    assert invoke_count == 1, (
+        f"expected exactly one {invoke_marker!r} (B3's per-rule bash "
+        f"invocation) in verify-gate.ps1, found {invoke_count} - cannot "
+        "anchor the rule loop's invocation. If the invocation shape "
+        "changed again, update this marker to match it.")
+    invoke_pos = body.find(invoke_marker, reset_pos)
+    assert invoke_pos != -1, (
+        f"found {invoke_marker!r} in verify-gate.ps1, but not after the "
+        f"{reset_marker!r} reset - the reset and the invocation are out "
+        "of order (or belong to unrelated code), so the region between "
+        "them cannot be trusted to be the per-rule loop.")
+
+    chain = body[reset_pos:invoke_pos]
+
+    guard_marker = "if (-not $bashExe)"
+    guard_count = chain.count(guard_marker)
+    assert guard_count == 1, (
+        f"expected exactly one {guard_marker!r} empty-bash refusal between "
+        f"the {reset_marker!r} reset and the invocation, found "
+        f"{guard_count} - the guard may be missing, duplicated, or moved "
+        "outside this region. Region:\n" + chain)
+    guard_pos = chain.index(guard_marker)
 
     # The guard must be an EARLIER branch of the SAME if/elseif chain that
     # gates the invocation, not an unrelated check elsewhere that happens
     # to contain the same substring - the invocation itself must be
     # reached only via 'elseif', proving it is mutually exclusive with the
-    # empty-bash refusal branch. `between` ends mid-line (right before the
-    # invocation text itself), so look for the 'elseif' that opens the
-    # invocation's own branch rather than the last whole line, which is
-    # only the invocation's own leading pipe.
-    guard_pos = between.index("if (-not $bashExe)")
-    assert "} elseif ($ruleOutFile) {" in between[guard_pos:], (
-        "the invocation is not reached via an 'elseif' following the "
-        "empty-bash refusal branch, so both could run, or the refusal "
-        "could be bypassed entirely. Text after the guard:\n"
-        + between[guard_pos:])
+    # empty-bash refusal branch.
+    elseif_marker = "} elseif ($ruleOutFile) {"
+    elseif_count = chain.count(elseif_marker)
+    assert elseif_count == 1, (
+        f"expected exactly one {elseif_marker!r} following the empty-bash "
+        f"guard in this region, found {elseif_count} - the invocation's "
+        "branch may not be exclusive with the refusal branch. Region:\n"
+        + chain)
+    elseif_pos = chain.index(elseif_marker, guard_pos)
+    assert elseif_pos > guard_pos, (
+        "the '} elseif ($ruleOutFile) {' branch that gates the invocation "
+        "comes before the empty-bash refusal guard, not after - the "
+        "invocation is not proven mutually exclusive with refusal. "
+        "Region:\n" + chain)
 
-    guard_pos = between.index("if (-not $bashExe)")
-    guard_body = between[guard_pos:]
+    guard_body = chain[guard_pos:elseif_pos]
     assert "$rc = 1" in guard_body or "$rc=1" in guard_body, (
         "the rule-loop's empty-bash guard does not set a non-zero $rc, so "
         "the rule would be recorded as passing with no output rather than "
