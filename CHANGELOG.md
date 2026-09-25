@@ -6,6 +6,81 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Changed
 
+- **`crew` 1.0.19: an independent review of `verify-gate.sh`'s rule-pgid
+  cleanup found one more gap in the 1.0.18 fix, plus a CI-only pylint false
+  positive and two CI review-runner hardenings.** Bumped `1.0.18 -> 1.0.19`.
+  - **BLOCK: a `p`-mode (bare pid) sidecar entry could outlive the process
+    it named and be signalled after reuse.** 1.0.18 taught the rule loop to
+    record its own dedicated subshell as a bare pid, not a process group,
+    whenever `set -m` did not make it its own group leader - correct, but
+    the sidecar was only cleared (truncate, then clear the guard variable)
+    a few statements after the rule loop's own `wait` reaped that subshell,
+    and by the moment `wait` returns the subshell's pid is already free for
+    the OS to reuse. A TERM/INT/HUP/EXIT landing in that window read a
+    stale sidecar and could `kill` whatever unrelated process the OS had
+    since handed that exact pid number to - a plain, un-negated `kill`,
+    since `p`-mode never signals a group. Fixed two ways: the GUARD
+    VARIABLE (`_CREW_GATE_RULE_PGID_FILE`) is now cleared as the very next
+    statement after the rule loop captures its subshell's exit status,
+    closing the window itself to one assignment; and new
+    `_crew_gate_pid_is_our_child` is now required before any bare pid is
+    ever signalled at all (TERM, the aliveness recheck, and the follow-up
+    KILL all go through it) - it reads the candidate's own `ppid` via `ps`
+    and refuses unless that `ppid` is this shell's own `$$`, the one
+    relationship a genuine `p`-mode id is guaranteed to have; `ps`
+    unavailable, or the pid already gone, reads as "cannot tell" and also
+    refuses, never a guess. Group-mode (a verified process-group id) is
+    unchanged. New `test_verify_gate_rule_pgid_ownership.py` proves both a
+    real owned child is still signalled and an unrelated process (started
+    outside the gate, so its `ppid` cannot be the gate's `$$`) is not;
+    sabotage stripping the ownership guard back out turns the second case
+    red - the unrelated process is signalled again.
+  - **CI: `crew_migrate.py`'s `_is_link` false-flagged not-callable under
+    pylint on Python 3.11.** `os.path.isjunction` does not exist before
+    3.12, so pylint infers the `getattr` fallback as `Optional[None]` and
+    flags the guarded call (`isjunction and isjunction(path)`) anyway.
+    Targeted `# pylint: disable=not-callable` on that line; the guard
+    itself is unchanged.
+  - **CI: `review_run.py`'s provider-CLI timeout only killed the direct
+    child, not its process tree.** A provider CLI installed as an npm
+    `.cmd` shim on Windows runs as `cmd.exe /c <shim>` with the real work
+    in a grandchild; a bare `Popen.kill()` on `TimeoutExpired` only reached
+    `cmd.exe`, leaving the grandchild holding this process's stdout pipe
+    open past the kill and turning the timeout into a much longer hang
+    downstream. `launch()` now starts the process in its own group/session
+    (`start_new_session=True` on POSIX, `CREATE_NEW_PROCESS_GROUP` on
+    Windows) and kills the whole tree on timeout (`os.killpg` /
+    `taskkill /T /F`), then finishes draining stdout/stderr before
+    returning.
+  - **CI: `review_prompt.py` wrote Windows-style path separators into
+    reviewer-facing text.** `os.path.relpath` alone renders
+    `.work\tickets\T9.md` on a Windows host, inconsistent with every
+    literal forward-slash path this file writes elsewhere and with the
+    manifest's own path fields. New `_relpath` forces forward slashes at
+    every call site.
+  - Test-only: `test_approval_hook.py`, `test_crew_instructions.py`,
+    `test_review_prompt.py`, `test_scope_guard.py` and
+    `test_webtest_scaffold.py` gained coverage for the above alongside
+    unrelated Windows-shell-matrix fixture corrections carried over from
+    the same CI pass.
+
+- **`obsidian-vault` 0.4.14: the `.ps1`-flavour shell suites' pwsh fixture
+  leaked a real python3 into every must-refuse case, on one CI image
+  only.** Bumped `0.4.13 -> 0.4.14`.
+  - **Root cause: on GitHub's `ubuntu-latest` image, `pwsh` lives at
+    `/usr/bin/pwsh`, the same directory as the system's real `python3`.**
+    `test_vault_guard_sh.sh` and `test_bridge_capture_sh.sh` both built
+    their `.ps1`-flavour fixture PATH from `$(dirname "$PWSH")` so pwsh
+    itself would resolve - but appending that whole directory handed every
+    "no usable interpreter" case a real, working `python3` too, so the
+    guard ran for real instead of standing down, and every must-refuse
+    case in that job turned into a false pass-through. Reproduced and
+    confirmed fixed against both a clean `pwsh` and one deliberately
+    co-located with a real `python3`: both suites now isolate `pwsh` into
+    its own directory (a symlink, nothing else) before adding it to the
+    fixture PATH, so pwsh still resolves without also handing the fixture
+    a working interpreter.
+
 - **`crew` 1.0.18: independent review of the 1.0.16 -> 1.0.17 range - the
   cleanup registry and rule-cancellation fixes had two more gaps.** Bumped
   `1.0.17 -> 1.0.18` after all four below.
