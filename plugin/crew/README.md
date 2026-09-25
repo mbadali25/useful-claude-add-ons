@@ -784,6 +784,43 @@ A `.crew/config.json` that exists but does not parse, or a value outside those f
 
 **What this does not do.** The edit guard judges only the four editing tools against Touch; the Stop audit is what catches `sed -i`, redirects and formatters, after the fact. The audit sees what git sees: gitignored files (`.crew/*` among them) and `.work/` are outside it.
 
+### Autopilot: one ticket, driven until a person is needed
+
+`/crew:autopilot [<id>]` (since 1.0.32, **off by default**) drives one ticket through spec, plan, approval, implement, refresh artifacts, review and done, following each phase command's own procedure in the same session. It does not decide the order itself: every turn it runs `hooks/scripts/crew_autopilot.py next --root . --ticket <id>`, which names the next phase from files on disk only, so a skipped phase is visible and a phase that cannot be told stops.
+
+| On disk | Phase | |
+|---|---|---|
+| no `direction.md`, or INDEX status `direction` | `brainstorm` / `direction-approval` | stop — a human dialogue |
+| no INDEX table row for the ticket (or no INDEX) | `direction-approval` | stop — cannot tell whether the direction was approved (Jira and ServiceDesk Plus modes write no row) |
+| spec header `status: done` | `closed` | stop — never re-driven |
+| an item under `## Open questions` in direction.md, spec.md or plan.md | `open-questions` | stop — answered by writing `none - <answer>` or checking it `[x]` |
+| no `spec.md` / no `plan.md` | `spec` / `plan` | runs `/crew:spec` / `/crew:plan` |
+| `crew_ticket.validate` refuses | `spec` / `plan` | stop, with the problems |
+| approval not accepted (none, stale, or `cli`) | `approve` | stop — **you** type `/crew:approve <id>` |
+| review ledger `UNKNOWN` / `NEEDS_REPLAN` | `review` / `replan` | stop |
+| no review round under the current plan | `implement` | runs `/crew:implement` (its step 6 runs tests, docs, the refresh check, then review) |
+| latest round reserved with no result | `review` | stop — another run would spend a round |
+| latest round FINDINGS, not owner-accepted | `accept-review` | stop — acceptance is the owner's |
+| no receipt stands and no review round is left | `review` | stop — `/crew:review` would reserve a third round and write NEEDS_REPLAN, which only a new approved plan leaves; revert the edit that staled the receipt, or replan |
+| latest round INCOMPLETE | `accept-review` | stop — it cannot be accepted; a human reruns review or replans |
+| receipt not current, artifacts stale | `refresh` | runs the command T-0008's check names |
+| receipt not current, an artifact unknown for a cause a refresh cannot settle | `refresh` | stop |
+| receipt not current, artifacts fresh | `review` | runs `/crew:review` |
+| receipt current, artifacts not fresh | `stale-after-review` | stop, nothing written — a refresh now would stale the receipt |
+| receipt current, artifacts fresh | `done` | runs `/crew:done` |
+
+**Every implement ends in an approval stop.** `/crew:implement` step 7 writes `status: review` into spec.md's header, and the approval receipt hashes the whole file, so after implement the approval is stale and `next` stops at `approve`. When changing only that `status:` word back makes spec.md hash to the approved bytes (and plan.md is unchanged), the reason says exactly that and names T-0026, so a header-only re-approval reads differently from a Touch widened mid-implement.
+
+**A review phase ends at its verdict.** Whether reached as `/crew:review` or inside `/crew:implement` step 6, autopilot stops following `review.md` once the round is recorded: it never runs step 3.2's fix-and-rerun itself. The next `next` stops at FINDINGS or INCOMPLETE, and any later round goes back through `next`, which puts a refresh before it.
+
+**Refresh sits between implement and review, every round.** A review bundle excludes only `.work/`, so a refresh written after an accepted review stales its receipt and `/crew:done` refuses; autopilot therefore never refreshes after review. The freshness judgement is T-0008's `crew_refresh_check.ticket_freshness`. A `stale` artifact is refreshed with the command it names. An `unknown` one is refreshed only in T-0008's orphaned-anchor case — the anchor names no commit (a squash merge dropped it), T-0008 marks it refreshable and names the command; every other `unknown` (graphify missing, no or a fallback scope base, a check that raised) stops, as `/crew:implement` step 6 does. When the module cannot be imported the phase stops as "refresh-artifacts unavailable (T-0008 not landed)" rather than being skipped.
+
+**Which ticket** (`crew_autopilot.py resume [--ticket <id>]`): the id you gave; else the handoff's `resume:` line, parsed by T-0006's `crew_resume.parse_resume` and used only when the handoff's `branch:` and `head:` match this checkout and the ticket folder exists; then this worktree's active ticket; then `.work/INDEX.md`, **only when exactly one** open ticket has a folder — several open tickets and no pointer stop and list them. A handoff that cannot be used (no line, `resume: none`, unparseable, branch or head mismatch, no folder, T-0006 not installed) falls through with its reason printed; `## Next action` prose is never guessed from. When the handoff names a different command from the one disk names, disk wins and the disagreement is printed. `resume: /crew:autopilot --goal <slug>` stops until T-0012. **A ticket that is not this worktree's active one stops**, naming both — the scope guard and the completion audit judge edits by the active pointer; with no pointer set, autopilot activates the ticket it drives (`crew_ticket.py activate`). When context runs low, autopilot writes `resume: /crew:autopilot <id>` into the handoff and stops.
+
+**Stops.** Always a person in this version: `brainstorm`, `plan-approval`, `review-acceptance`, `open-questions`. Enforced by `next` from disk: `needs-replan`, `needs-replan-or-revert`, `unknown-ledger`, `failed-validate`, `direction-unknown`, `unsettled-artifact`, `ticket-mismatch`, `max-phases`, `no-progress` (the command just run is named again). Enforced by the command's procedure, not by `next` — which sees them only as `no-progress` if the same command comes round again: `review-verdict`, `failed-done-check`, `failed-phase`. And every `AUTONOMOUS_STOPS` entry — `offboard-role`, `delete-map`, `rewrite-metrics`, `git-destruction` — which `commands/autopilot.md` names and a test pins against `crew_state.AUTONOMOUS_STOPS`. `crew_autopilot.py stops` lists them all from code. No deploy, merge, PR or new ticket: T-0005, T-0011, T-0012.
+
+**Settings** (`.crew/config.json`, repo only): `autopilot.mode` — `off` (default) or `plan`; only the exact string `plan` arms it, and any other value reads as `off` with a warning. `autopilot.maxPhases` — phases one invocation may run, default 12; anything but a positive integer reads as 12 with a warning. An `autopilot` block only in `.crew/crew.json` is reported, not silently ignored. `crew_autopilot.py settings --root .` shows what is in force.
+
 ### Measuring 1.0
 
 `.crew/metrics.jsonl` (append-only; `.crew/metrics.md` from 0.20 becomes this via `/crew:migrate`, with every historical value it cannot recover marked `UNKNOWN`, never `0`) is where crew 1.0's own validation claim gets checked: at least 30% lower median active time or cost against the 0.20 baseline, 100% review-budget enforcement, zero unapproved scope changes, and no rise in escaped defects, over 10–20 matched tickets (docs/review/04-redesign.md, "Validation").
@@ -1590,6 +1627,11 @@ the last auto-resume. The allowlist is `crew_resume.RESUME_COMMANDS`:
 `/crew:autopilot` and `/crew:status`. No gate changes: the resumed command's
 own approval, scope, verify and review gates still decide.
 
+A handoff written while `/crew:autopilot` drives a ticket carries
+`resume: /crew:autopilot <id>`; typing `/crew:autopilot` with no argument in
+the next session reads that line and recomputes the phase from disk (see
+"Autopilot").
+
 ### Housekeeping
 
 `/crew:done` deletes `HANDOFF.md` on ticket completion — do that yourself
@@ -2181,6 +2223,7 @@ CONFIG.md §17 has the table and the reasoning.
 | `/crew:implement <id>` | Implement an approved plan, then tests, docs, artifact refresh and review; refuses without a current approval |
 | `/crew:done <id>` | Close a ticket: accepted review receipt, clean verify gate, passing completion audit and current artifacts, or no close |
 | `/crew:fix <one sentence>` | The light path — every lifecycle phase present, each compressed to one step |
+| `/crew:autopilot [<id>]` | Drive one ticket through the lifecycle until a person is needed; with no id, resume from the handoff's `resume:` line, the active ticket, or the one open ticket. Off until `autopilot.mode: plan` — see "Autopilot" |
 | `/crew:review` | Independent QA — Codex, then Copilot, then Claude: the first that probes clean |
 | `/crew:onboard [--refresh <area>]` | Build or refresh the code map |
 | `/crew:reference [--api\|--features\|--audit]` | Enumerate the API and features into `docs/reference/`, anchored to `file:line` |
@@ -2206,7 +2249,7 @@ CONFIG.md §17 has the table and the reasoning.
 | `/crew:gate <disable\|enable\|status> <github\|bitbucket>` | Take a repository's merge gate down and put it back **from the export**. Gated by `guards.mergeGate`, which ships as `block` |
 | `/crew:change <new\|status <id>\|close <id>\|list>` | File a change request into SDP, Jira or `.work/changes/`, one process either way. `new` refuses to file while any of the template's questions 1–9 is unanswered or a placeholder and names which; `close` refuses without the post-change validation results — see §24b |
 
-34 commands.<!-- claim: plugin-commands:crew -->
+35 commands.<!-- claim: plugin-commands:crew -->
 
 ### Agents
 

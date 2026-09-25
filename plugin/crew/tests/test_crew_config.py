@@ -270,7 +270,9 @@ def test_the_ten_keys_crew_read_but_never_declared_are_declared():
     # `context.autoClear.onlyRepos` and `context.autoClear.onlySessions`.
     # 117 with T-0006's `resume.auto`, the auto-resume machine switch.
     assert "resume.auto" in declared
-    assert len(declared) == 117
+    # 119 with /crew:autopilot (T-0004): `autopilot.mode` and
+    # `autopilot.maxPhases`, re-measured after rebasing onto T-0006.
+    assert len(declared) == 119
 
 
 def test_autoclear_is_global_and_its_siblings_are_not():

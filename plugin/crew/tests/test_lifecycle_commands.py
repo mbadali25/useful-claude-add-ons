@@ -26,7 +26,7 @@ SKILLS = os.path.join(CREW, "skills")
 MAX_LINES = 120
 
 NEW_COMMANDS = ("brainstorm.md", "spec.md", "plan.md", "implement.md",
-                "done.md", "fix.md", "approve.md")
+                "done.md", "fix.md", "approve.md", "autopilot.md")
 NEW_SKILLS = ("crew-brainstorm", "crew-plan", "crew-execute")
 
 
@@ -85,6 +85,9 @@ EXPECTED_CLI = {
                 'crew_metrics.py record --ticket "$1"'),
     "fix.md": ("`/crew:approve <id>`",),
     "approve.md": ("Never run `crew_ticket.py approve` yourself",),
+    "autopilot.md": ("crew_autopilot.py settings --root .",
+                     "crew_autopilot.py resume --root .",
+                     "crew_autopilot.py next --root ."),
 }
 
 
