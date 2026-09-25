@@ -6,6 +6,23 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Changed
 
+- **`crew` 1.0.23: native-Windows PowerShell BLOCKs B1, B2, B4 and FIXes
+  F1-F3, from win-repo-2 (`crew-1.0-win-ps1-ac`, `crew-1.0-win-ps1-gate`).**
+  Bumped `1.0.22 -> 1.0.23`.
+  - **B1: `auto-clear.ps1`'s detached sendkeys child re-checks tab safety
+    (Windows Terminal tab count == 1) after the delay, not only focus**, so a
+    tab opened during the delay declines the keystroke (016f312b).
+  - **B2: `verify-gate.ps1`'s `Resolve-CrewBash` refuses instead of
+    re-invoking a rejected bare `bash` shim** (9e57868d, regression 735c225d).
+  - **B4: `verify-gate.ps1` never falls back to a pipe capture when the
+    temp file cannot be created**; it uses the `.crew/` fallback or refuses
+    by name, mirroring `verify-gate.sh` (ae0c3473).
+  - **F1-F3: `auto-clear.ps1` validates an empty-array or negative
+    `delaySeconds`, and the tab-decline message no longer reads as
+    ambiguous** (97f83cba).
+  - Still open for 1.0: **B3**, the uncapped `Get-Content` of a rule's
+    output in `verify-gate.ps1` (`test_34b[ps1]`).
+
 - **`crew` 1.0.22: the escaped-descendant review test now actually proves
   the post-kill `communicate()` is bounded, its own liveness wait no longer
   trusts a bare recyclable pid, and the fixture stops letting an ambient
