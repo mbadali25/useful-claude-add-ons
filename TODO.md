@@ -4449,3 +4449,87 @@ Fix shape: these tests must derive `windows` from the real host (`os.name == "nt
 default) rather than hardcoding `False`, or run the POSIX-shaped assertions only under a POSIX-forcing fixture
 that also verifies the host actually is POSIX. Not designed here - the fixture shape is a test-suite call, not
 a merge-caused defect, and is why this is filed as its own deferral rather than fixed inline.
+
+## crew 1.0.x: Windows-only CI fixture failures (windows-latest, run 36086569186)
+
+Filed from a full classification pass over all 48 failed node ids in that run. Fixed inline (non-.ps1,
+cheap, safe, each with a test, all re-verified green on this pass): `review_run.py:118`'s `launch()` now
+spawns in its own process group/session and kills the WHOLE tree on
+timeout (`CREATE_NEW_PROCESS_GROUP` + `taskkill /T /F` on Windows), closing the same
+"kills the direct child only, not the grandchild holding the pipe" shape already fixed for
+`crew_fixtures.run_gate` - this is what made `test_run_timeout_is_incomplete` block until the *test
+harness's* own 120s safety timeout instead of `review_run.py`'s own `--timeout 2`; `review_prompt.py`'s
+five `os.path.relpath` call sites now go through a new `_relpath()` that forces forward slashes, closing
+`test_build_falls_back_to_the_files_mode_ticket`'s `os.sep`-dependent `"(from .work\\tickets\\T9.md)"` vs
+`"(from .work/tickets/T9.md)"` mismatch (prompt text is read by a reviewer model, not a shell, so a
+platform-native separator was never the right shape on either host); `test_scope_guard.py`'s
+`test_dotdot_through_a_symlink_resolves_where_the_os_does[module]` now asserts `0 if os.name == "nt" else
+2` instead of a bare `2` - `role_write_guard._resolve_real_target` is DELIBERATELY platform-dependent for
+this exact symlink+`..` shape (its own docstring, and `test_role_write_guard.py`'s
+`@needs_windows`-guarded `test_windows_link_pointing_out_of_scope_with_dotdot_still_allows_bash` already
+assert the Windows answer is ALLOW), and the test had never branched on host, so the failure was a test
+bug, not the security regression it looked like; `test_webtest_scaffold.py`'s two default-behaviour tests
+now force `os.name = "posix"` before calling `main()` - `--windows`'s own default is `os.name == "nt"`
+(deliberate, confirmed by forcing `os.name = "nt"` locally and reading `.mcp.json`: it really does wrap
+every MCP entry in `cmd /c` on that host, exactly what the CI failure showed), and these two tests were
+asserting the un-wrapped shape unconditionally; `test_approval_hook.py`'s `[sh]` case used a hardcoded
+`"/bin/bash"`, which doesn't exist on Windows at all (`FileNotFoundError [WinError 2]`) - now resolves
+through the same `crew_fixtures.resolve_bash()` the rest of this suite already uses, with the same
+skip-if-none guard the `ps1` case already has; `test_crew_instructions.py`'s `fake_codex` fixture wrote
+only a bare POSIX shebang script with no extension, which Windows cannot execute at all (`CREW_CODEX_BIN`
+names it verbatim - `_codex_bin()` only searches PATH/PATHEXT when the env var is unset), so
+`codex_probe` correctly reported "unknown (could not run \`codex features list\`)" instead of "enabled" -
+now also writes a `.cmd` companion (`review_fixtures.fake_reviewer_bin`'s already-established shape) and
+points `CREW_CODEX_BIN` at whichever one `os.name` says will run.
+
+**Not fixed, deferred** (Windows-only, or requires touching a file this ticket does not own):
+
+- `test_review_ledger.py::test_run_reserves_before_launch_so_a_crash_still_spends_the_round` - the fake
+  reviewer's crash simulation (`review_fixtures.py`'s `_FAKE`, mode `"crash"`) signals
+  `os.kill(os.getppid(), SIGTERM)`, assuming its parent IS `review_run.py`. On Windows, launching the
+  `codex.cmd` shim makes `cmd.exe` the direct child and the fake reviewer a GRANDCHILD, so
+  `os.getppid()` names `cmd.exe`, not `review_run.py` - killing it never reaches the orchestrator, which
+  then runs to completion and records `"completed"` instead of leaving the round `"reserved"`. Fixing
+  `review_run.py`'s own timeout handling (done above) does not touch this: it is the crash-simulation IPC
+  itself that targets the wrong process on Windows, not `review_run.py` behaving incorrectly. Needs
+  `review_fixtures.py` to hand the fake reviewer `review_run.py`'s own PID some other way (an env var set
+  before spawn, not `getppid()`).
+- `test_approval_hook.py::_no_python_env` still hardcodes `/usr/bin`/`/bin` when assembling a "bash's own
+  tools, no python" PATH (`test_approval_hook.py:145-151`) - real on POSIX, but Git-for-Windows' coreutils
+  live under its own install tree, not those paths, so this fixture may still misbehave on Windows even
+  after the `/bin/bash` fix above. No shared "find bash's sibling coreutils dir on Windows" helper exists
+  in this codebase yet (the natural home, `crew_fixtures.py`, is outside this ticket's file list); needs a
+  test-only Git-for-Windows install-tree locator, not attempted here.
+- `test_completion_audit.py::test_a_filename_with_newlines_cannot_add_lines[module]` - creates a real file
+  whose NAME contains `\n`/`\r`. NTFS's own filesystem API rejects that at `write_text()` time
+  (`OSError: [Errno 22] Invalid argument`) - there is no code fix; the scenario this test reproduces
+  (a maliciously newline-named path, which git itself can track) cannot be materialised as a real file on
+  Windows at all. Windows-only, permanently, not a fixture bug to chase.
+- The whole `test_auto_clear.py`/`test_auto_cycle.py` `[sh]` family (`tmux is not on PATH`, `xdotool is not
+  on PATH`, and the knock-on `"the detached sender's bash was never invoked"` /
+  `"could not be confirmed as the pane running this session"` failures downstream of that refusal):
+  windows-latest carries neither `tmux` nor `xdotool`, and these tests exercise the POSIX-only `tmux`/
+  `xdotool` auto-clear delivery methods specifically (the `ps1`/WindowsTerminal method is covered by its
+  own, separate cases). Environment gap on the runner image, not a code defect; not something to fix by
+  editing test assertions.
+- `test_auto_cycle.py::test_in_scope_decides_the_scope_matrix_with_no_subprocess_on_every_os` - a NEW
+  instance of the already-filed "Windows burn-in family E" entry above (hardcoded `windows=False` fed to
+  `crew_autocycle.in_scope`, contradicting the real host), not previously named in that entry's five-test
+  list. Same root cause, same fix shape, same owner (win-repo-2); not re-filed as a separate entry.
+- `test_ps1_python_probe.py` (`test_a_working_windowsapps_alias_is_accepted_like_bash_accepts_it`,
+  `test_a_broken_alias_falls_through_to_a_real_python_of_another_name`,
+  `test_bash_strict_agrees_on_a_same_named_python_behind_a_broken_alias`,
+  `test_the_burn_in_host_audits_in_both_flavours_instead_of_blocking_in_one`) - already filed above
+  (`test_ps1_python_probe.py:~93`, this file, "Blast radius" section preceding the burn-in families): the
+  `.cmd` stubs this test builds hand a POSIX `/c/...`-style path to a native Windows `CreateProcess` call,
+  which cannot resolve it. Not re-filed.
+- `test_verify_gate_stop_gate_record.py::test_34b_a_backgrounded_grandchild_holding_stdout_does_not_wedge_the_gate[ps1]` -
+  already-known PRODUCT (verify-gate.ps1 B3), win-repo-2's, `.ps1`, not touched here.
+- `test_verify_gate_stop_gate_record.py::test_34d_a_second_mktemp_failure_refuses_rather_than_wedges` and
+  `::test_run_gate_kills_the_whole_group_on_timeout_not_just_the_direct_child` - both live in files this
+  ticket was told not to edit (`test_verify_gate_stop_gate_record.py`, and the latter exercises
+  `crew_fixtures.run_gate`/`kill_process_group`). Not investigated past reading the failure text; the
+  second one's own assertion message contains a literal un-interpolated `{elapsed:.1f}s` (missing an `f`
+  prefix), which is itself a small test bug in a file this ticket cannot touch. Reported for win-repo-2 to
+  triage on a real Windows host - both may be real product gaps in `verify-gate.sh`/`crew_fixtures.py`'s
+  Windows process-group handling, not confirmed either way here.

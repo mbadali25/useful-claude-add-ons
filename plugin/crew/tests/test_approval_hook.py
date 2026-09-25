@@ -14,6 +14,7 @@ import pytest
 
 import context  # noqa: F401  pylint: disable=unused-import
 import approval_hook
+import crew_fixtures
 import crew_ticket
 from scope_fixtures import (FLAVOUR_MATRIX, FLAVOURS, PWSH, SCRIPTS, common_dir, make_repo,
                             make_ticket, prompt, run_hook)
@@ -161,9 +162,16 @@ def test_without_python_only_an_approve_prompt_is_blocked(tmp_path, repo, shell,
                                                           expected):
     if shell == "ps1" and PWSH is None:
         pytest.skip("pwsh not installed - the .ps1 flavour was NOT run")
+    # A hardcoded "/bin/bash" doesn't exist on Windows at all (WinError 2,
+    # FileNotFoundError) -- resolve_bash() is the same proven lookup
+    # run_hook()/scope_fixtures.py already use for the "sh" flavour
+    # elsewhere in this suite.
+    bash = crew_fixtures.resolve_bash()
+    if shell == "sh" and bash is None:
+        pytest.skip("no working bash on PATH - the sh flavour was NOT run")
     make_ticket(repo)
     cmd = ([PWSH, "-NoProfile", "-File", os.path.join(SCRIPTS, "approval-hook.ps1")]
-           if shell == "ps1" else ["/bin/bash", os.path.join(SCRIPTS, "approval-hook.sh")])
+           if shell == "ps1" else [bash, os.path.join(SCRIPTS, "approval-hook.sh")])
 
     done = subprocess.run(cmd, input=json.dumps(prompt(repo, text)).encode(), cwd=str(repo),
                           capture_output=True, env=_no_python_env(tmp_path, repo),
