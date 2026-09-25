@@ -133,9 +133,18 @@ function Resolve-CrewBash {
     return $src
   }
 
-  # Nothing better found (non-Windows, or no WSL/WindowsApps shadowing):
-  # unchanged behaviour, let the shell resolve it.
-  return 'bash'
+  # Nothing found: either no candidate at all, or (real Windows) every
+  # candidate was rejected by the native-extension gate above - e.g. only an
+  # extensionless bash-style shim on PATH, no git, no WSL/WindowsApps
+  # shadowing. Returning the bare string 'bash' here used to be "let the
+  # shell resolve it", but PowerShell's own command resolution for a bare
+  # `& 'bash'` finds PATH candidates the SAME way `Get-Command bash -All`
+  # just did - so a bare return handed the caller back the exact shim this
+  # loop just rejected, `& $bashExe` invoked it anyway, and it hung (the
+  # defect this function's own G1 guard comment above describes but did not,
+  # by itself, prevent). An empty string is unambiguous: every caller below
+  # must treat it as "no usable bash", not as "fall back to a default".
+  return ''
 }
 
 function Resolve-CrewPython {
@@ -811,6 +820,15 @@ if (-not (Test-Path .crew/verify.json)) {
   $smoke = @("_verify/smoke.sh", "scripts/smoke.sh") | Where-Object { Test-Path $_ } | Select-Object -First 1
   if ($smoke) {
     $bashExe = Resolve-CrewBash
+    if (-not $bashExe) {
+      # Every bash candidate Resolve-CrewBash found was rejected (or none
+      # exist) - refuse the smoke check by name rather than invoking a bare
+      # 'bash' that PowerShell would only re-resolve to the same rejected
+      # candidate and hang on.
+      [Console]::Error.WriteLine("Smoke FAILED. Work is not complete.")
+      [Console]::Error.WriteLine("verify-gate: no usable bash resolved (Resolve-CrewBash found no natively-launchable candidate) - refusing rather than invoking a name that would re-resolve to the same rejected shim")
+      exit 2
+    }
     $out = $null | & $bashExe $smoke 2>&1
     if ($LASTEXITCODE -ne 0) {
       [Console]::Error.WriteLine("Smoke FAILED. Work is not complete.")
@@ -1587,19 +1605,53 @@ foreach ($ident in $cmds) {
     # same fix as everywhere else in this file (see the interpreter probe
     # and the git call sites above); without it a rule that reads stdin
     # parks forever the same way an unclosed pipe does.
+    # TEMP/TMP is not the only place this can be written, and it must
+    # never fall back to the pipe form again if it is unwritable:
+    # `$out = $null | & $bashExe -c $c 2>&1` (the old else-branch here)
+    # reopens exactly the wedge the file capture above exists to close -
+    # a rule that backgrounds something and does not wait on it hangs
+    # THIS process forever on a host where TEMP/TMP is unwritable, e.g.
+    # `sh -c "sleep 60 &"`. `.crew/` already exists (verify.json lives
+    # there) and is inside $root, which this gate is already running
+    # against, so it is tried as a second, repo-local location before
+    # refusing the rule outright. Twin of the same fix in verify-gate.sh
+    # (commit be439290); does NOT port that lineage's later process-group
+    # kill (commit 1bba9725) - the crew is dropping that behaviour, not
+    # carrying it to this flavour.
     $ruleOutFile = $null
     try { $ruleOutFile = [System.IO.Path]::GetTempFileName() } catch { $ruleOutFile = $null }
-    if ($ruleOutFile) {
+    if (-not $ruleOutFile) {
+      try {
+        if (-not (Test-Path ".crew")) { New-Item -ItemType Directory -Path ".crew" -Force -ErrorAction Stop | Out-Null }
+        $candidate = Join-Path ".crew" (".verify-rule-out." + [System.IO.Path]::GetRandomFileName())
+        New-Item -ItemType File -Path $candidate -ErrorAction Stop | Out-Null
+        $ruleOutFile = $candidate
+      } catch { $ruleOutFile = $null }
+    }
+    if (-not $bashExe) {
+      # Resolve-CrewBash found no natively-launchable candidate for THIS
+      # rule (re-checked above, per-rule, in case PATH changed mid-run) -
+      # refuse by name instead of invoking a bare 'bash' that PowerShell
+      # would only re-resolve to the same rejected shim and hang on. Same
+      # rc-ne-0 / "VERIFY FAILED" branch below as any other rule failure, so
+      # this reason is what prints, not a hang with no output at all.
+      if ($ruleOutFile) { Remove-Item -Path $ruleOutFile -Force -ErrorAction SilentlyContinue }
+      $out = @("verify-gate: no usable bash resolved (Resolve-CrewBash found no natively-launchable candidate) - refusing rather than invoking a name that would re-resolve to the same rejected shim and hang")
+      $rc = 1
+    } elseif ($ruleOutFile) {
       $null | & $bashExe -c $c > $ruleOutFile 2>&1
       $rc = $LASTEXITCODE
       $out = @(Get-Content -Path $ruleOutFile -ErrorAction SilentlyContinue)
       Remove-Item -Path $ruleOutFile -Force -ErrorAction SilentlyContinue
     } else {
-      # No writable temp dir: fall back to the old capture form rather
-      # than skipping the rule outright - a check that still runs,
-      # carrying the original wedge risk, beats one silently skipped.
-      $out = $null | & $bashExe -c $c 2>&1
-      $rc = $LASTEXITCODE
+      # Neither the system temp dir nor .crew/ is writable: refuse this
+      # rule with a named reason instead of running it through the pipe
+      # form. A check that cannot capture its own output safely is not a
+      # check that ran. This goes through the same rc-ne-0 branch below
+      # as every other rule failure, so "VERIFY FAILED: $c" and this
+      # message both print.
+      $out = @("verify-gate: cannot create an output-capture file (temp dir and .crew/ both unwritable) - refusing rather than falling back to a pipe capture that a backgrounded grandchild can wedge forever")
+      $rc = 1
     }
   } finally {
     Pop-Location
