@@ -6,6 +6,21 @@ import subprocess
 import sys
 import textwrap
 
+# conftest.py imports `context` (which puts hooks/scripts on sys.path) before
+# any test module in this directory is collected, so this resolves whether or
+# not the caller of THIS module happened to import `context` itself first.
+import review_run
+
+# FIX (Codex): the escaped grandchild used to sleep a bare 4s, one second
+# under review_run.POST_KILL_TIMEOUT (5s) -- so the pipe it held open always
+# closed before the bounded follow-up `communicate()` in review_run.launch
+# could time out a second time, and
+# test_run_timeout_survives_an_escaped_descendant_holding_the_pipe never
+# exercised that second-TimeoutExpired path at all. Derived from the real
+# constant and set comfortably past it instead, so the pipe is still open
+# when the bound expires.
+ESCAPE_CHILD_LIFETIME_S = review_run.POST_KILL_TIMEOUT + 3
+
 
 def git(root, *args, check=True):
     return subprocess.run(
@@ -47,11 +62,14 @@ def init_repo(root):
 #             used -- that version left the grandchild running, detached
 #             from the whole test's process tree, for up to a minute past
 #             every test that exercised this mode, with nothing in the test
-#             file reaping or even naming its pid. Bounded here so a test
-#             that forgets to clean up still only leaks a few seconds, and
-#             the pid is written to FAKE_REVIEWER_ESCAPE_PIDFILE (when a
-#             caller sets it) so a test that wants deterministic cleanup can
-#             kill it by identity rather than guessing.
+#             file reaping or even naming its pid. Bounded here -- sized
+#             against review_run.POST_KILL_TIMEOUT (ESCAPE_CHILD_LIFETIME_S,
+#             above) rather than a bare guess, so it actually outlives the
+#             bounded follow-up `communicate()` it exists to hold open --
+#             so a test that forgets to clean up still only leaks a handful
+#             of seconds, and the pid is written to
+#             FAKE_REVIEWER_ESCAPE_PIDFILE (when a caller sets it) so a test
+#             that wants to confirm cleanup can watch it by identity.
 _FAKE = r'''
 import json, os, re, signal, subprocess, sys, time
 prompt = sys.argv[-1]
@@ -67,7 +85,8 @@ if mode == "fail":
     sys.stderr.write("boom\n")
     sys.exit(1)
 if mode == "escape":
-    grandchild = subprocess.Popen(["setsid", "sh", "-c", "sleep 4"])
+    lifetime = os.environ["FAKE_REVIEWER_ESCAPE_LIFETIME"]
+    grandchild = subprocess.Popen(["setsid", "sh", "-c", "sleep " + lifetime])
     pidfile = os.environ.get("FAKE_REVIEWER_ESCAPE_PIDFILE")
     if pidfile:
         with open(pidfile, "w", encoding="utf-8") as fh:
@@ -100,5 +119,10 @@ def fake_reviewer_bin(directory, name="codex"):
 def env_with_path(directory, **extra):
     env = dict(os.environ)
     env["PATH"] = str(directory) + os.pathsep + env.get("PATH", "")
+    # Only read by the fake reviewer's `escape` mode; harmless for every
+    # other mode. Set as a default (not unconditionally) so a caller that
+    # deliberately wants a different lifetime can still override it via
+    # `extra`.
+    env.setdefault("FAKE_REVIEWER_ESCAPE_LIFETIME", str(ESCAPE_CHILD_LIFETIME_S))
     env.update(extra)
     return env

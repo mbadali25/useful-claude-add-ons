@@ -9,7 +9,6 @@ import json
 import multiprocessing
 import os
 import shutil
-import signal
 import subprocess
 import sys
 import time
@@ -18,6 +17,7 @@ import pytest
 
 import context  # noqa: F401  pylint: disable=unused-import
 import crew_fixtures
+import review_fixtures
 import review_ledger as rl
 from review_fixtures import env_with_path, fake_reviewer_bin, git, init_repo
 
@@ -247,10 +247,22 @@ def test_run_timeout_survives_an_escaped_descendant_holding_the_pipe(repo, tmp_p
     FIX: this test's own earlier version left that grandchild (a detached
     `setsid` process, outside the whole test's process tree) running for up
     to a minute after the test itself had finished, with nothing reaping or
-    even identifying it. The pidfile below, plus the `finally` block's
-    identity-verified kill (never a bare `os.kill` on a possibly-reused pid
-    -- see `crew_fixtures._proc_start_ticks`), makes sure nothing survives
-    this test regardless of how long review_run.py itself takes to return.
+    even identifying it. The pidfile below lets this test watch it exit on
+    its own, bounded.
+
+    BLOCK (Codex): a still-earlier version of THIS fix read the pidfile only
+    after `_run` had already returned, then signalled that pid in a
+    `finally` block once an identity snapshot (`crew_fixtures.
+    _proc_start_ticks`) taken at that same late point matched. That
+    snapshot only proves identity at the moment it is taken -- it cannot
+    prove the pid still names the same process by the time the signal is
+    sent, and on a busy host a short-lived unrelated process can be handed
+    that exact pid in the gap between the two. So this never signals the
+    grandchild at all. It is bounded by construction (`review_fixtures.
+    ESCAPE_CHILD_LIFETIME_S`, sized against `review_run.POST_KILL_TIMEOUT`
+    so the fixture's own timing assumption is checked here rather than
+    just assumed): this test only waits for it to exit within that bound
+    plus headroom, and FAILS if it has not.
     """
     (repo / "change.txt").write_text("change\n", encoding="utf-8")
     scratch, work = tmp_path / "scratch", tmp_path / "work"
@@ -258,46 +270,33 @@ def test_run_timeout_survives_an_escaped_descendant_holding_the_pipe(repo, tmp_p
     fakes = fake_reviewer_bin(tmp_path / "bin")
     pidfile = tmp_path / "escape.pid"
 
-    grandchild_pid = None
-    grandchild_start_ticks = None
-    try:
-        started = time.monotonic()
-        result = _run(repo, scratch, fakes, "escape", "--timeout", "1", "--work-dir", str(work),
-                      FAKE_REVIEWER_ESCAPE_PIDFILE=str(pidfile))
-        elapsed = time.monotonic() - started
+    started = time.monotonic()
+    result = _run(repo, scratch, fakes, "escape", "--timeout", "1", "--work-dir", str(work),
+                  FAKE_REVIEWER_ESCAPE_PIDFILE=str(pidfile))
+    elapsed = time.monotonic() - started
 
-        if pidfile.exists():
-            grandchild_pid = int(pidfile.read_text(encoding="utf-8").strip())
-            grandchild_start_ticks = crew_fixtures._proc_start_ticks(  # pylint: disable=protected-access
-                grandchild_pid)
+    grandchild_pid = (int(pidfile.read_text(encoding="utf-8").strip())
+                       if pidfile.exists() else None)
 
-        review = json.loads((work / "review.json").read_text(encoding="utf-8"))
-        assert elapsed < 20, (
-            f"review-run took {elapsed:.1f}s - it must not block on a "
-            "descendant that escaped the kill and outlived --timeout"
-        )
-        assert (result.returncode, review["verdict"], review["timed_out"]) == (
-            3, "INCOMPLETE", True)
+    review = json.loads((work / "review.json").read_text(encoding="utf-8"))
+    assert elapsed < 20, (
+        f"review-run took {elapsed:.1f}s - it must not block on a "
+        "descendant that escaped the kill and outlived --timeout"
+    )
+    assert (result.returncode, review["verdict"], review["timed_out"]) == (
+        3, "INCOMPLETE", True)
 
-        deadline = time.monotonic() + 10
-        while grandchild_pid is not None and crew_fixtures.pid_alive(grandchild_pid) and (
-                time.monotonic() < deadline):
-            time.sleep(0.2)
-        assert grandchild_pid is None or not crew_fixtures.pid_alive(grandchild_pid), (
-            f"the escaped grandchild (pid {grandchild_pid}) was still alive up to 10s "
-            "after this test's own bounded sleep should have ended it"
-        )
-    finally:
-        # Identity-verified, never a bare `os.kill` on a pid this test may
-        # already have watched die above (or that the OS has since handed to
-        # an unrelated process) - see `crew_fixtures._proc_start_ticks`.
-        if grandchild_pid is not None and grandchild_start_ticks is not None and (
-                crew_fixtures._proc_start_ticks(grandchild_pid) ==  # pylint: disable=protected-access
-                grandchild_start_ticks):
-            try:
-                os.kill(grandchild_pid, getattr(signal, "SIGKILL", signal.SIGTERM))
-            except ProcessLookupError:
-                pass
+    bound = review_fixtures.ESCAPE_CHILD_LIFETIME_S + 5
+    deadline = time.monotonic() + bound
+    while grandchild_pid is not None and crew_fixtures.pid_alive(grandchild_pid) and (
+            time.monotonic() < deadline):
+        time.sleep(0.2)
+    assert grandchild_pid is None or not crew_fixtures.pid_alive(grandchild_pid), (
+        f"the escaped grandchild (pid {grandchild_pid}) was still alive {bound}s after "
+        "it should have exited on its own -- it is never signalled by this test, since "
+        "by the time it is read this pid may already have been handed to an unrelated "
+        "process"
+    )
 
 
 def test_run_missing_provider_spends_no_round(repo, tmp_path):
