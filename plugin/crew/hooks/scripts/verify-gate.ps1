@@ -1683,7 +1683,20 @@ foreach ($ident in $cmds) {
       $prevRuleOut = $env:CREW_VERIFY_RULE_OUT
       $env:CREW_VERIFY_RULE_CMD = $c
       $env:CREW_VERIFY_RULE_OUT = ($ruleOutFile -replace '\\', '/')
-      $wrapperScript = 'eval "$CREW_VERIFY_RULE_CMD" > "$CREW_VERIFY_RULE_OUT" 2>&1 </dev/null'
+      # Being SCOPED to this rule (restored/cleared after, above) only
+      # protects the NEXT rule - it does nothing about THIS one: bash
+      # inherits its whole environment at spawn, so CREW_VERIFY_RULE_CMD
+      # and CREW_VERIFY_RULE_OUT are both still visible to the RULE'S OWN
+      # eval'd command (and anything it shells out to) for the entire time
+      # it runs, e.g. a rule that does `env | grep CREW_VERIFY` sees its
+      # own source text and output-capture path as if they were legitimate
+      # target-selection input. Copied into local (non-exported) shell
+      # variables first, then unset from bash's own environment, BEFORE
+      # eval runs - the same shape verify-gate.sh's RULE_OUT_FILE already
+      # has for free there (a plain shell variable, never exported), so
+      # this is parity with that twin, not a new leak this flavour alone
+      # has to carry.
+      $wrapperScript = 'c="$CREW_VERIFY_RULE_CMD"; o="$CREW_VERIFY_RULE_OUT"; unset CREW_VERIFY_RULE_CMD CREW_VERIFY_RULE_OUT; eval "$c" > "$o" 2>&1 </dev/null'
       $null | & $bashExe -c $wrapperScript
       $rc = $LASTEXITCODE
       if ($null -eq $prevRuleCmd) { Remove-Item Env:\CREW_VERIFY_RULE_CMD -ErrorAction SilentlyContinue } else { $env:CREW_VERIFY_RULE_CMD = $prevRuleCmd }
@@ -1718,8 +1731,19 @@ foreach ($ident in $cmds) {
             # prints megabytes of noise before its one real failure line
             # must not have that line cut off by reading from byte 0
             # instead of the end. `Seek` from the end is a single seek on
-            # a regular file, not a scan of everything before it.
-            $fs.Seek(-$readLen, [System.IO.SeekOrigin]::End) | Out-Null
+            # a regular file, not a scan of everything before it -- but
+            # SeekOrigin::End seeks from the file's CURRENT (live) end, not
+            # the $size snapshot taken above: a rule that keeps writing
+            # after the snapshot (the same background-grandchild shape the
+            # snapshot exists to guard against elsewhere in this block)
+            # moves the live end past $size between the snapshot and this
+            # seek, and `-$readLen` from THAT end lands short of the window
+            # the snapshot promised, or past EOF entirely. Seeking from
+            # Begin by an offset computed from the snapshot itself
+            # ($size - $readLen) is anchored to the same instant $size and
+            # $readLen were computed from, regardless of what the file
+            # grows to afterward.
+            $fs.Seek($size - $readLen, [System.IO.SeekOrigin]::Begin) | Out-Null
             $buffer = [byte[]]::new($readLen)
             # `FileStream.Read` is not guaranteed to fill the buffer in one
             # call - looping to either $readLen or a 0-byte (EOF) result is
@@ -1733,7 +1757,22 @@ foreach ($ident in $cmds) {
               if ($n -le 0) { break }
               $totalRead += $n
             }
-            if ($totalRead -lt $readLen) { $buffer = $buffer[0..($totalRead - 1)] }
+            # $totalRead -eq 0 is its own case, not folded into the -lt
+            # branch below: PowerShell's `..` range operator treats a
+            # negative upper bound as a DESCENDING range rather than an
+            # empty one, so `0..($totalRead - 1)` with $totalRead=0 is
+            # `0..-1`, which is the two-element sequence 0,-1 -- indexing
+            # $buffer with THAT picks $buffer[0] and $buffer[-1] (its own
+            # last element), two bytes, not the empty slice a 0-byte read
+            # needs. A 0-byte read is reachable without any race: $readLen
+            # is always >0 here (the enclosing `if ($readLen -gt 0)`
+            # guards it), but the file itself can still be truncated or
+            # replaced between the $size snapshot and this read.
+            if ($totalRead -eq 0) {
+              $buffer = [byte[]]::new(0)
+            } elseif ($totalRead -lt $readLen) {
+              $buffer = $buffer[0..($totalRead - 1)]
+            }
             # TrimEnd the trailing newline(s), matching bash's `$(...)`
             # command substitution (which the .sh twin's OUT=$(tail -c...)
             # relies on) - otherwise a file ending in a newline (the

@@ -3,6 +3,7 @@
 A fixture is a real git repository with a real commit, because the code under
 test asks git for HEAD and comparing against a mocked sha would test the mock.
 """
+import ctypes
 import json
 import os
 import pathlib
@@ -116,6 +117,189 @@ def pid_alive(pid):
     return True
 
 
+if os.name == "nt":
+    from ctypes import wintypes  # pylint: disable=ungrouped-imports
+
+    # kernel32, bound once with explicit argtypes/restype: ctypes defaults
+    # every function's restype to c_int (32 bits), which silently truncates
+    # a HANDLE on 64-bit Windows -- a wrong handle from a truncated
+    # CreateJobObjectW/OpenProcess return is worse than a loud failure, so
+    # every signature used below is pinned rather than left to the default.
+    _kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    _kernel32.CreateJobObjectW.restype = wintypes.HANDLE
+    _kernel32.CreateJobObjectW.argtypes = (wintypes.LPVOID, wintypes.LPCWSTR)
+    _kernel32.OpenProcess.restype = wintypes.HANDLE
+    _kernel32.OpenProcess.argtypes = (
+        wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+    _kernel32.SetInformationJobObject.restype = wintypes.BOOL
+    _kernel32.SetInformationJobObject.argtypes = (
+        wintypes.HANDLE, ctypes.c_int, wintypes.LPVOID, wintypes.DWORD)
+    _kernel32.AssignProcessToJobObject.restype = wintypes.BOOL
+    _kernel32.AssignProcessToJobObject.argtypes = (
+        wintypes.HANDLE, wintypes.HANDLE)
+    _kernel32.TerminateJobObject.restype = wintypes.BOOL
+    _kernel32.TerminateJobObject.argtypes = (wintypes.HANDLE, wintypes.UINT)
+    _kernel32.CloseHandle.restype = wintypes.BOOL
+    _kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
+    _kernel32.QueryInformationJobObject.restype = wintypes.BOOL
+    _kernel32.QueryInformationJobObject.argtypes = (
+        wintypes.HANDLE, ctypes.c_int, wintypes.LPVOID, wintypes.DWORD,
+        ctypes.POINTER(wintypes.DWORD))
+
+    _JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x00002000
+    _JOBOBJECTINFOCLASS_EXTENDED_LIMIT = 9  # JobObjectExtendedLimitInformation
+    _JOBOBJECTINFOCLASS_BASIC_PROCESS_ID_LIST = 3
+    _PROCESS_TERMINATE = 0x0001
+    _PROCESS_SET_QUOTA = 0x0100
+    _JOB_PID_LIST_MAX = 1024
+
+    class _JOBOBJECT_BASIC_LIMIT_INFORMATION(ctypes.Structure):
+        _fields_ = [
+            ("PerProcessUserTimeLimit", ctypes.c_longlong),
+            ("PerJobUserTimeLimit", ctypes.c_longlong),
+            ("LimitFlags", wintypes.DWORD),
+            ("MinimumWorkingSetSize", ctypes.c_size_t),
+            ("MaximumWorkingSetSize", ctypes.c_size_t),
+            ("ActiveProcessLimit", wintypes.DWORD),
+            ("Affinity", ctypes.c_size_t),
+            ("PriorityClass", wintypes.DWORD),
+            ("SchedulingClass", wintypes.DWORD),
+        ]
+
+    class _IO_COUNTERS(ctypes.Structure):
+        _fields_ = [(name, ctypes.c_uint64) for name in (
+            "ReadOperationCount", "WriteOperationCount", "OtherOperationCount",
+            "ReadTransferCount", "WriteTransferCount", "OtherTransferCount")]
+
+    class _JOBOBJECT_EXTENDED_LIMIT_INFORMATION(ctypes.Structure):
+        _fields_ = [
+            ("BasicLimitInformation", _JOBOBJECT_BASIC_LIMIT_INFORMATION),
+            ("IoInfo", _IO_COUNTERS),
+            ("ProcessMemoryLimit", ctypes.c_size_t),
+            ("JobMemoryLimit", ctypes.c_size_t),
+            ("PeakProcessMemoryUsed", ctypes.c_size_t),
+            ("PeakJobMemoryUsed", ctypes.c_size_t),
+        ]
+
+    class _JOBOBJECT_BASIC_PROCESS_ID_LIST(ctypes.Structure):
+        # Variable-length in the real Win32 struct (`ProcessIdList[1]`,
+        # meant to be over-allocated); fixed at `_JOB_PID_LIST_MAX` here
+        # and `NumberOfProcessIdsInList` says how many of that fixed
+        # buffer are actually populated.
+        _fields_ = [
+            ("NumberOfAssignedProcesses", wintypes.DWORD),
+            ("NumberOfProcessIdsInList", wintypes.DWORD),
+            ("ProcessIdList", ctypes.c_size_t * _JOB_PID_LIST_MAX),
+        ]
+
+
+def _win_job_for(pid):
+    """A Windows Job Object with `pid` assigned to it, or `None` if creation
+    or assignment failed. `stdlib ctypes` only -- no pywin32. This repo does
+    not declare pywin32 as a test dependency anywhere (grep confirms), and
+    it is only present on a developer machine as a side effect of unrelated
+    tools (docker/mcp/portalocker/semgrep); `pytest-crew.yml`'s Windows job
+    installs exactly `pytest`, `pytest-xdist`, `pyyaml` and nothing else, so
+    importing `win32job` there would collect-error the whole file.
+
+    Chosen over "record descendants while the parent is alive" (the other
+    option the ticket offered): a live scan can only enumerate what has
+    already been spawned by the time it runs, so it still loses a
+    grandchild that appears in the gap between scans, and gets more likely
+    to miss one the longer the parent lives before dying. A Job Object has
+    no such gap -- once a process is assigned to a job, Windows itself adds
+    every process THAT process (or anything IT spawns) creates to the same
+    job automatically, at creation time, with no polling and no window to
+    miss through. That is also exactly what fixes the bug: `taskkill /T`
+    finds descendants by walking the LIVE tree from the parent pid, so once
+    the parent has exited there is nothing left to walk from. Measured on
+    native Windows by the lane that wrote this (throwaway repro scripts,
+    not kept): a parent that backgrounds a grandchild and exits, then
+    `taskkill /T /F /PID <parent>` errors "process not found" and the
+    grandchild survives, while `TerminateJobObject` on a job the grandchild
+    was auto-added to (via its already-job-member parent) kills it even
+    though the parent that spawned it is long gone. The tracked, re-runnable
+    form of that evidence is
+    `test_crew_fixtures.py::test_kill_process_group_reaches_a_grandchild_after_the_direct_child_has_exited`
+    (Windows-only).
+
+    Assignment happens here, immediately after `Popen` returns in
+    `popen_gate` -- before anything waits on or communicates with the
+    child -- which is as early as a caller of the public `subprocess`
+    module can act on a freshly spawned pid. A process that spawns and
+    orphans a grandchild inside the few milliseconds between `CreateProcess`
+    returning and this call running would still be missed; nothing observed
+    in this suite does that, and closing the gap entirely needs
+    `CREATE_SUSPENDED` plus manually resuming the primary thread, which
+    `subprocess.Popen` does not expose a handle for.
+    """
+    # pylint: disable=possibly-used-before-assignment
+    # The names below are defined only inside the module-level
+    # `if os.name == "nt":` block above -- pylint cannot see that this
+    # function is itself only ever CALLED from `popen_gate`'s own
+    # `if os.name == "nt":` branch, so it cannot prove that block already
+    # ran. It always has, by the time this function can be reached.
+    job = _kernel32.CreateJobObjectW(None, None)
+    if not job:
+        return None
+    info = _JOBOBJECT_EXTENDED_LIMIT_INFORMATION()
+    info.BasicLimitInformation.LimitFlags = _JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+    if not _kernel32.SetInformationJobObject(
+            job, _JOBOBJECTINFOCLASS_EXTENDED_LIMIT, ctypes.byref(info),
+            ctypes.sizeof(info)):
+        _kernel32.CloseHandle(job)
+        return None
+    proc_handle = _kernel32.OpenProcess(
+        _PROCESS_TERMINATE | _PROCESS_SET_QUOTA, False, pid)
+    if not proc_handle:
+        _kernel32.CloseHandle(job)
+        return None
+    try:
+        if not _kernel32.AssignProcessToJobObject(job, proc_handle):
+            _kernel32.CloseHandle(job)
+            return None
+    finally:
+        _kernel32.CloseHandle(proc_handle)
+    return job
+
+
+def job_pids(proc):
+    """Every pid CURRENTLY assigned to `proc`'s Windows Job Object (see
+    `_win_job_for`), or `[]` on POSIX / when `proc` carries no job.
+
+    For a test that needs to prove WHICH pids `kill_process_group` is
+    about to reach, rather than re-derive that set some other way: a
+    `tasklist`/`ParentProcessId` walk built AFTER the fact is fragile on a
+    machine running unrelated suites concurrently (a pid that merely
+    appeared between two snapshots is not evidence of descent -- measured
+    directly, that shape attributed five pids from an entirely unrelated
+    session to a test that never touched them) and unreliable even for
+    genuine descendants once a short-lived INTERMEDIATE hop in the chain
+    has already exited by query time, breaking the parent-pid walk at the
+    gap even though the surviving leaf's own recorded `ParentProcessId`
+    is correct. Querying the job directly has neither problem: only pids
+    this fixture itself assigned or that Windows cascaded into the same
+    job are ever members, and membership does not depend on any
+    intermediate hop still being alive to be walked through.
+    """
+    # pylint: disable=possibly-used-before-assignment
+    # Same reasoning as `_win_job_for`'s: `job` truthy implies `proc.job`
+    # was set, which only ever happens inside `popen_gate`'s own
+    # `if os.name == "nt":` branch -- pylint cannot see that correlation.
+    job = getattr(proc, "job", None)
+    if not job:
+        return []
+    info = _JOBOBJECT_BASIC_PROCESS_ID_LIST()
+    returned = wintypes.DWORD(0)
+    ok = _kernel32.QueryInformationJobObject(
+        job, _JOBOBJECTINFOCLASS_BASIC_PROCESS_ID_LIST, ctypes.byref(info),
+        ctypes.sizeof(info), ctypes.byref(returned))
+    if not ok:
+        return []
+    count = min(info.NumberOfProcessIdsInList, _JOB_PID_LIST_MAX)
+    return [int(info.ProcessIdList[i]) for i in range(count)]
+
+
 def popen_gate(cmd, **kwargs):
     """`subprocess.Popen`, but the child is made killable as a whole GROUP.
 
@@ -146,6 +330,17 @@ def popen_gate(cmd, **kwargs):
     else:
         kwargs.setdefault("start_new_session", True)
     proc = subprocess.Popen(cmd, **kwargs)  # pylint: disable=consider-using-with
+    if os.name == "nt":
+        # See `_win_job_for`'s docstring for why this replaces a `taskkill
+        # /T` walk at kill time: it has to be captured NOW, at spawn, for
+        # the same reason `proc.pgid` below is -- the tree/group this
+        # fixture will need to reach has to be recorded while there is
+        # still something to record it from. `None` means creation or
+        # assignment failed (job objects unsupported or denied, or `proc`
+        # already exited before `OpenProcess` could open it); `kill_
+        # process_group` falls back to the old best-effort tree walk in
+        # that case, unchanged from before this fix.
+        proc.job = _win_job_for(proc.pid)
     if os.name != "nt":
         # Recorded HERE, once, from a pid that has not had a chance to be
         # reaped yet -- never re-derived later via `os.getpgid(proc.pid)`
@@ -249,8 +444,30 @@ def kill_process_group(proc):
     group this call can no longer prove it started.
     """
     if os.name == "nt":
-        subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)],
-                        capture_output=True, timeout=30, check=False)
+        job = getattr(proc, "job", None)
+        if job:
+            # Reaches every descendant regardless of whether the direct
+            # child (`proc.pid`) is still alive -- see `_win_job_for`'s
+            # docstring. `TerminateJobObject` kills every process currently
+            # assigned to the job in one call; `KILL_ON_JOB_CLOSE` (set at
+            # job creation) would do the same on `CloseHandle` alone, but
+            # calling `TerminateJobObject` explicitly first makes the kill
+            # happen HERE rather than whenever the handle happens to be
+            # collected. `proc.job = None` makes this idempotent: a proc
+            # double-registered into `gate_processes` (see `popen_gate`'s
+            # docstring) reaches this twice, and the second call must not
+            # re-terminate an already-closed handle.
+            _kernel32.TerminateJobObject(job, 1)
+            _kernel32.CloseHandle(job)
+            proc.job = None
+        else:
+            # No job to fall back on (creation/assignment failed at spawn,
+            # or `proc` was built some other way than `popen_gate`) -- the
+            # old tree walk, unchanged. Still correct for the ordinary case
+            # (direct child still alive); still loses an already-orphaned
+            # descendant, which is the exact gap a job object closes.
+            subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)],
+                            capture_output=True, timeout=30, check=False)
     else:
         pgid = getattr(proc, "pgid", None)
         start_ticks = getattr(proc, "pgid_start_ticks", None)
