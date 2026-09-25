@@ -1939,3 +1939,18 @@ losing only history, never fabricating a clean rule that never ran (see
 read leaves `verify.stopBudgetSeconds` at its compiled default (60) rather
 than removing the budget. See `commands/verify.md` for the full mechanism and
 `hooks/scripts/verify_record.py` / `verify_price.py` for the code.
+
+**A rule may not leave background processes running past its own return —
+`verify-gate.sh` now kills the whole group.** A rule that backgrounds
+something and never waits on it itself (`sh -c 'yes &'`, a lock-extend-style
+loop, anything left with `disown`) used to be recorded PASSED while the
+orphaned process kept writing to the gate's own (already-unlinked) capture
+file, unbounded, until the disk filled. Each rule now runs inside its own
+process group; once the rule's own foreground command returns, the gate
+signals that whole group (TERM, then KILL after a short grace period) before
+moving to the next rule. A rule that is well-behaved — nothing left running
+once its foreground command exits — is unaffected. A rule that intentionally
+starts a long-lived background helper and expects it to outlive the gate is
+the one thing this changes: that helper is now killed with the rest of the
+group, so such a rule needs a different mechanism (a systemd unit, `nohup`
+from outside the gate, etc.), not a bare `&` inside `"run"`.

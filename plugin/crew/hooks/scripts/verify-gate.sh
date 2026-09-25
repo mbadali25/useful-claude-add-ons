@@ -1581,7 +1581,40 @@ for v in ("ENV", "AWS_PROFILE", "AWS_DEFAULT_REGION", "KUBECONFIG", "TF_WORKSPAC
     # gate mid-loop instead of just failing the one rule. Caught by this
     # suite's own exit-77/exit-1 rule fixtures going from a named assertion
     # to a bare wrong-returncode failure, not by inspection.
-    ( eval "$c" ) >"$RULE_OUT_FILE" 2>&1 </dev/null
+    #
+    # Wrapped in its own `( set -m; ... & wait ...)` subshell so the rule
+    # runs in its OWN process group, not this script's: a rule that
+    # backgrounds something and never waits on it itself (`sh -c 'yes &'`)
+    # used to be recorded as PASSED (the foreground part of the rule can
+    # exit 0 in under a second) while the orphaned background process kept
+    # appending to $RULE_OUT_FILE's fd long after RC below was captured and
+    # the file itself unlinked - an unlinked inode a backgrounded `yes`
+    # can grow without bound, exhausting disk with nothing left in the
+    # directory listing to show for it. `set -m` (job control) inside this
+    # subshell only, not the whole script, makes bash give the backgrounded
+    # job its own process group whose id equals its own pid - see the kill
+    # below, which targets exactly that group and never the calling
+    # script's own. A rule this well-behaved (nothing left running once its
+    # own foreground command exits) is unaffected: the kill below finds
+    # nothing left to signal.
+    (
+      set -m
+      ( eval "$c" ) >"$RULE_OUT_FILE" 2>&1 </dev/null &
+      RULE_PID=$!
+      wait "$RULE_PID" 2>/dev/null
+      RC=$?
+      # TERM the whole group first, then a short grace period, then KILL
+      # anything that ignored it (some fixtures do this on purpose, e.g.
+      # `trap '' TERM`). `-$RULE_PID` is a process-GROUP id here (the
+      # negative-pid form of `kill`), never the direct pid alone - a lone
+      # `kill "$RULE_PID"` only reaches the rule's own foreground process,
+      # which has usually already exited by the time we get here, and does
+      # nothing about a grandchild it backgrounded.
+      kill -TERM -- "-$RULE_PID" 2>/dev/null
+      sleep 0.2
+      kill -KILL -- "-$RULE_PID" 2>/dev/null
+      exit "$RC"
+    )
     RC=$?
     # Snapshot the size the moment the rule's OWN process exits, then read
     # exactly that many bytes -- never the whole file as it stands when
@@ -1596,12 +1629,27 @@ for v in ("ENV", "AWS_PROFILE", "AWS_DEFAULT_REGION", "KUBECONFIG", "TF_WORKSPAC
     # Capped as well, independent of the grandchild: nothing downstream
     # needs more than a `tail -25` of this, and a rule that legitimately
     # writes megabytes of its own output before backgrounding anything
-    # should not turn a bounded gate into an unbounded read either.
+    # should not turn a bounded gate into an unbounded read either. The
+    # env override exists for this suite's own tests only (proving the cap
+    # is enforced without writing gigabytes to prove it) - no operator-facing
+    # doc names it, and it must never be set outside a test process.
     RULE_OUT_SIZE=$(stat -c%s "$RULE_OUT_FILE" 2>/dev/null || stat -f%z "$RULE_OUT_FILE" 2>/dev/null || echo 0)
     case "$RULE_OUT_SIZE" in ''|*[!0-9]*) RULE_OUT_SIZE=0 ;; esac
-    RULE_OUT_CAP=1048576
+    RULE_OUT_CAP=${CREW_VERIFY_GATE_TEST_RULE_OUT_CAP:-1048576}
+    case "$RULE_OUT_CAP" in ''|*[!0-9]*) RULE_OUT_CAP=1048576 ;; esac
     if [ "$RULE_OUT_SIZE" -gt "$RULE_OUT_CAP" ]; then RULE_OUT_SIZE=$RULE_OUT_CAP; fi
-    OUT=$(head -c "$RULE_OUT_SIZE" "$RULE_OUT_FILE" 2>/dev/null)
+    # `tail -c`, not `head -c`: what a failing rule needs downstream is its
+    # LAST `tail -25` lines - the actual error, which for any rule producing
+    # more than the cap is at the END of the file, not the start. Reading
+    # the first $RULE_OUT_SIZE bytes instead (the old `head -c` form)
+    # discarded exactly the diagnostic this capture exists to preserve: a
+    # rule that prints megabytes of build noise before its one real failure
+    # line read as an opaque, truncated wall of noise with the actual error
+    # cut off. `tail -c N` on a REGULAR file seeks near EOF directly rather
+    # than reading the whole file to get there, so this keeps the same
+    # bounded-cost property `stat`+cap already established - it is not a
+    # return to an unbounded read.
+    OUT=$(tail -c "$RULE_OUT_SIZE" "$RULE_OUT_FILE" 2>/dev/null)
     rm -f "$RULE_OUT_FILE"
   else
     # Neither TMPDIR nor .crew/ is writable: refuse this rule with a named

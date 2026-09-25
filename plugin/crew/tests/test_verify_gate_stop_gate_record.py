@@ -160,6 +160,17 @@ _SH = os.path.join(_ROOT, "hooks", "scripts", "verify-gate.sh")
 _PS1 = os.path.join(_ROOT, "hooks", "scripts", "verify-gate.ps1")
 _PRICE_PY = os.path.join(_ROOT, "hooks", "scripts", "verify_price.py")
 
+# `signal.SIGKILL` does not exist on native Windows - a bare reference to it
+# raises AttributeError, not something the ValueError/OSError-shaped except
+# clauses beside these cleanup calls catch, so a leftover bg/orphan pidfile
+# on that platform crashed the test's OWN teardown instead of best-effort
+# killing the stray process. `os.kill(pid, signal.SIGTERM)` still terminates
+# the process there (CPython's Windows os.kill() calls TerminateProcess for
+# any signal number it does not special-case), so SIGTERM is a real,
+# portable fallback here, not a downgrade to a request the process could
+# ignore.
+_PORTABLE_SIGKILL = getattr(signal, "SIGKILL", signal.SIGTERM)
+
 _BASH = crew_fixtures.resolve_bash()
 _PWSH = shutil.which("pwsh")
 _PY = sys.executable
@@ -1480,7 +1491,7 @@ def test_34b_a_backgrounded_grandchild_holding_stdout_does_not_wedge_the_gate(
         if pidfile.exists():
             try:
                 bg_pid = int(pidfile.read_text(encoding="utf-8").strip())
-                os.kill(bg_pid, signal.SIGKILL)
+                os.kill(bg_pid, _PORTABLE_SIGKILL)
             except (ValueError, ProcessLookupError, PermissionError, OSError):
                 pass
 
@@ -1491,39 +1502,64 @@ def test_34c_a_large_rule_output_is_capped_not_read_in_full(tmp_path):
     must be BOUNDED, not proportional to however much a rule (or a stray
     background process inheriting its fd) actually wrote.
 
-    NOT a hang: measured directly, a regular file's read() never blocks
-    waiting for a writer that has not closed - only a pipe does that - so
-    the earlier draft of this test (a backgrounded `yes`, asserting the
-    gate returns quickly) passed even against the UNCAPPED code, and would
-    have stayed green through a regression to it. Vacuous the same way
-    this repo's CLAUDE.md already warns a lock-window test can be. What IS
-    real and measurable is the cost of reading a large amount of output
-    into a shell variable: 3GiB written by `yes | head -c` (deterministic,
-    not timing-dependent - the SAME size on any host) took 16s and several
-    GiB of RSS to `cat` whole, against under a second to read a 1MiB cap.
-    Bounded at 10s: comfortably above the capped read's real cost
-    (write + head -c, well under a second) and comfortably below the
-    uncapped one on any host fast enough to write 3GiB in a few seconds at
-    all.
+    Proven deterministically and cheaply via `CREW_VERIFY_GATE_TEST_RULE_OUT_CAP`,
+    a test-only env seam verify-gate.sh reads instead of the hardcoded
+    1MiB cap (see verify-gate.sh's own comment beside it - no operator-facing
+    doc names this variable, and nothing outside a test process should set
+    it). An earlier version of this test proved the same cap by writing
+    3GiB via `yes | head -c` and timing the read; that write alone is slow
+    and disk-heavy on a constrained or slow-storage CI host, which is
+    exactly the failure mode this rewrite avoids - the cap itself, not the
+    time it takes to exercise it at real scale, is what must be proven.
+
+    The rule below writes 5000 repeats of `Q` (a character this suite's own
+    diagnostic text never emits, so counting it in stderr cannot pick up
+    something the gate printed itself) and then fails, so `verify-gate.sh`'s
+    existing `echo "$OUT" | tail -25 >&2` path prints the (capped) output
+    read back from the file. With the cap set to 200, at most 200 `Q`
+    characters must reach stderr - not 5000 - which is only true if the
+    read was actually bounded to the cap rather than reading the whole file
+    and truncating for display afterward.
     """
     vmap = {
         "version": 1,
         "rules": [{"paths": ["a.py"], "reach": "local", "run": [
-            "yes | head -c 3221225472"
+            "sh -c \"head -c 5000 /dev/zero | tr '\\\\0' 'Q'; exit 1\""
         ]}],
         "default": [], "unmapped": "ignore",
     }
     root = _repo(tmp_path, vmap)
     (root / "a.py").write_text("x", encoding="utf-8")
 
+    env = dict(os.environ, CLAUDE_PROJECT_DIR=str(root),
+               CREW_VERIFY_GATE_TEST_RULE_OUT_CAP="200")
     started = time.time()
-    result = _run("sh", root)
+    result = crew_fixtures.run_gate(
+        [_BASH, _SH], input="{}", cwd=str(root), env=env,
+        capture_output=True, text=True, check=False,
+        timeout=_GATE_TIMEOUT)
     elapsed = time.time() - started
-    assert result.returncode == 0, result.stderr
+    assert result.returncode != 0, (
+        "the fixture rule deliberately exits 1; the gate must fail too. "
+        + result.stderr
+    )
     assert elapsed < 10, (
-        f"the gate took {elapsed:.1f}s to return - a rule producing a "
-        "large amount of its own output was read back in full instead of "
-        f"a size snapshotted and capped at 1MiB. stderr: {result.stderr}"
+        f"the gate took {elapsed:.1f}s to return on a 5000-byte rule "
+        f"output with a 200-byte test cap. stderr: {result.stderr}"
+    )
+    # The command string itself (`tr '\0' 'Q'`) contains one literal 'Q'
+    # and is echoed a few times regardless of the cap (the cost-unstated
+    # notice, the FAILED header, the per-rule timing line) - counting every
+    # 'Q' in stderr would conflate those incidental singles with the
+    # capped OUTPUT block. The output block is the one contiguous RUN of
+    # 'Q' characters; its length is what the cap actually bounds.
+    runs = re.findall(r"Q+", result.stderr)
+    longest_run = max((len(r) for r in runs), default=0)
+    assert longest_run == 200, (
+        f"the longest run of 'Q' in stderr was {longest_run}, not the "
+        "200-byte test cap - the rule's output was read back beyond (or "
+        f"short of) the cap instead of being snapshotted at exactly it. "
+        f"stderr: {result.stderr}"
     )
 
 
@@ -1547,6 +1583,18 @@ def test_34d_a_second_mktemp_failure_refuses_rather_than_wedges(tmp_path):
     distinguishing argument the stub could otherwise key on. This is
     root-safe and deterministic where a permissions-based fixture is
     neither.
+
+    The counter's calibration ("exactly two plain `mktemp` calls before the
+    per-rule loop") is only true when bare `python3` already resolves on
+    PATH - `verify-gate.sh`'s own `crew_py_strict`/shim-building path makes
+    an EXTRA `mktemp` call to build `SHIM_DIR` when it does not, which
+    would shift every later count by one and break this test's "succeeds
+    for call 1 only" assumption on any host where only `python`/`py` is on
+    PATH (Git Bash, some CI images). Rather than assume the AMBIENT
+    environment happens to have bare `python3`, this test builds its own
+    tiny `python3` shim from the resolved interpreter and puts it on PATH
+    ahead of everything else, so `command -v python3` always succeeds here
+    and the calibration holds on every host, not just this one.
     """
     vmap = {
         "version": 1,
@@ -1560,12 +1608,20 @@ def test_34d_a_second_mktemp_failure_refuses_rather_than_wedges(tmp_path):
 
     real_mktemp = shutil.which("mktemp")
     assert real_mktemp, "need a real mktemp on PATH to build the stub"
+    real_py = shutil.which("python3") or shutil.which("python") or sys.executable
+    py3_dir = tmp_path / "py3stub"
+    py3_dir.mkdir()
+    (py3_dir / "python3").write_text(
+        "#!/bin/sh\n"
+        f'exec "{real_py}" "$@"\n',
+        encoding="utf-8", newline="\n")
+    (py3_dir / "python3").chmod(0o755)
     stub_dir = tmp_path / "mktempstub"
     stub_dir.mkdir()
     counter = tmp_path / "mktemp.count"
     counter.write_text("0", encoding="utf-8")
     # Succeeds for the FIRST call only (CHANGED_FILE - measured directly:
-    # a single-rule map with python3 already on PATH, so the python-shim
+    # a single-rule map with python3 resolvable on PATH, so the python-shim
     # SHIM_DIR branch is never entered, makes exactly two plain `mktemp`
     # calls total before this stub) and fails every call after that, which
     # is exactly where the per-rule loop's RULE_OUT_FILE attempts (both
@@ -1583,7 +1639,8 @@ def test_34d_a_second_mktemp_failure_refuses_rather_than_wedges(tmp_path):
     (stub_dir / "mktemp").chmod(0o755)
 
     env = dict(os.environ, CLAUDE_PROJECT_DIR=str(root),
-               PATH=str(stub_dir) + os.pathsep + os.environ.get("PATH", ""))
+               PATH=str(py3_dir) + os.pathsep + str(stub_dir) + os.pathsep
+               + os.environ.get("PATH", ""))
     started = time.time()
     result = crew_fixtures.run_gate(
         [_BASH, _SH], input="{}", cwd=str(root), env=env,
@@ -1603,6 +1660,148 @@ def test_34d_a_second_mktemp_failure_refuses_rather_than_wedges(tmp_path):
     assert "cannot create an output-capture file" in result.stderr, (
         "the refusal must name why, not fail silently or generically. "
         + result.stderr
+    )
+
+
+@pytest.mark.skipif(_BASH is None, reason="needs bash")
+def test_34e_a_backgrounded_writer_is_killed_with_the_rule_not_orphaned(
+        tmp_path):
+    """A rule's own PASSING foreground command can background a writer and
+    never wait on it (`sh -c 'yes >>out &'`) -- test_34b/c already prove the
+    gate does not WEDGE or over-read on this shape, and this is the third:
+    the orphan must not be left running, appending to a file the gate has
+    already recorded a verdict for, after the gate itself has returned.
+    Left alive, that process can grow that file without bound until the
+    disk fills, with the gate having already reported PASS.
+
+    A small, slow writer (one byte every 50ms), never a fast one like `yes`:
+    the point is to prove the process is GONE, not to race a large write
+    against a deadline. The fixture's own rule ignores SIGTERM
+    (`trap '' TERM`) so the assertion also exercises the grace-period KILL,
+    not just the initial TERM.
+    """
+    vmap = {
+        "version": 1,
+        "rules": [{"paths": ["a.py"], "reach": "local", "run": [
+            # Single-quoted at the OUTER (JSON/python) level, not double: the
+            # gate's own `eval "$c"` re-parses this whole string in ITS
+            # shell, so a double-quoted `$!` here (test_34b's pattern) is
+            # expanded by the GATE's shell before the inner `sh -c` ever
+            # sees it - always empty, since the gate has not backgrounded
+            # anything of its own yet. Single-quoting the body defers every
+            # expansion, including `$!`, to the inner `sh` this test
+            # actually needs it from.
+            "sh -c 'trap \"\" TERM; "
+            "( while :; do printf x >> orphan.out; sleep 0.05; done & "
+            "echo $! > orphan.pid ) ; echo started'"
+        ]}],
+        "default": [], "unmapped": "ignore",
+    }
+    root = _repo(tmp_path, vmap)
+    (root / "a.py").write_text("x", encoding="utf-8")
+
+    try:
+        result = _run("sh", root)
+        assert result.returncode == 0, result.stderr
+
+        pidfile = root / "orphan.pid"
+        assert pidfile.exists(), (
+            "the fixture rule never recorded the orphan's pid. "
+            + result.stderr
+        )
+        orphan_pid = int(pidfile.read_text(encoding="utf-8").strip())
+
+        # Give a killed-but-still-exiting process a moment, then confirm it
+        # is gone -- os.kill with signal 0 raises ProcessLookupError once
+        # the pid is reaped, and raises nothing (no signal sent) while it
+        # is still alive.
+        deadline = time.time() + 5
+        alive = True
+        while time.time() < deadline:
+            try:
+                os.kill(orphan_pid, 0)
+            except ProcessLookupError:
+                alive = False
+                break
+            time.sleep(0.1)
+        assert not alive, (
+            f"pid {orphan_pid} (the rule's backgrounded writer) was still "
+            "alive up to 5s after the gate returned - it was orphaned "
+            f"instead of being killed with the rest of its rule. "
+            f"stderr: {result.stderr}"
+        )
+
+        out = root / "orphan.out"
+        size_after_dead = out.stat().st_size if out.exists() else 0
+        time.sleep(0.5)
+        size_later = out.stat().st_size if out.exists() else 0
+        assert size_later == size_after_dead, (
+            f"orphan.out grew from {size_after_dead} to {size_later} bytes "
+            "after its writer was reported dead - a second process "
+            "(reparented, or missed by the group kill) kept writing."
+        )
+    finally:
+        pidfile = root / "orphan.pid"
+        if pidfile.exists():
+            try:
+                stray_pid = int(pidfile.read_text(encoding="utf-8").strip())
+                os.kill(stray_pid, _PORTABLE_SIGKILL)
+            except (ValueError, ProcessLookupError, PermissionError, OSError):
+                pass
+
+
+@pytest.mark.skipif(_BASH is None, reason="needs bash")
+def test_34f_the_tail_of_an_oversized_rule_output_survives_the_cap(tmp_path):
+    """The capture must keep the END of an oversized rule's output, not the
+    START - what a failing rule needs downstream is its LAST `tail -25`
+    lines, which is where the actual error usually is. Reading the first
+    $RULE_OUT_CAP bytes (the old `head -c` form) instead kept whatever noise
+    the rule printed FIRST and discarded the one line this whole capture
+    path exists to preserve.
+
+    The fixture rule prints 2000 filler lines, then one clearly-marked
+    failure line, then exits 1 - with the cap set (via the same test-only
+    env seam test_34c uses) to something well under the filler's own size
+    but comfortably bigger than the marker line, so the marker can only
+    survive if the read came from the END of the file.
+
+    The marker is assembled at RUNTIME (`printf 'THE-ACTUAL-FAILURE-%s\\n'
+    MARKER`), not written as one contiguous literal in the rule's own
+    command text: verify-gate.sh echoes that command text to stderr on its
+    own account (the "VERIFY FAILED: $c" header, the per-rule timing line),
+    so a marker spelled out whole in the command would show up in stderr
+    via those echoes regardless of what OUT actually captured, making the
+    assertion pass either way. Split across a format string and an argument,
+    the contiguous marker exists only in the rule's actual OUTPUT.
+    """
+    vmap = {
+        "version": 1,
+        "rules": [{"paths": ["a.py"], "reach": "local", "run": [
+            "sh -c 'i=0; while [ \"$i\" -lt 2000 ]; do "
+            "echo \"noise line $i padding padding padding padding\"; "
+            "i=$((i + 1)); done; "
+            "printf \"THE-ACTUAL-FAILURE-%s\\n\" MARKER; exit 1'"
+        ]}],
+        "default": [], "unmapped": "ignore",
+    }
+    root = _repo(tmp_path, vmap)
+    (root / "a.py").write_text("x", encoding="utf-8")
+
+    env = dict(os.environ, CLAUDE_PROJECT_DIR=str(root),
+               CREW_VERIFY_GATE_TEST_RULE_OUT_CAP="2000")
+    result = crew_fixtures.run_gate(
+        [_BASH, _SH], input="{}", cwd=str(root), env=env,
+        capture_output=True, text=True, check=False,
+        timeout=_GATE_TIMEOUT)
+    assert result.returncode != 0, result.stderr
+    assert "THE-ACTUAL-FAILURE-MARKER" in result.stderr, (
+        "the rule's actual failure line did not reach stderr - the capture "
+        "kept the head of the oversized output instead of its tail. "
+        f"stderr: {result.stderr}"
+    )
+    assert "noise line 0 " not in result.stderr, (
+        "the very first filler line reached stderr - the cap did not "
+        f"actually bound the read to the tail. stderr: {result.stderr}"
     )
 
 
