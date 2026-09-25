@@ -6,6 +6,22 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Changed
 
+- **`crew` 1.0.24: native-Windows PowerShell B3 and round-2 fixes, from
+  win-repo-2 (`crew-1.0-win-ps1-gate` 7d8a0002/1958292d, `crew-1.0-win-ps1-r2`).**
+  Bumped `1.0.23 -> 1.0.24`.
+  - **B3: `verify-gate.ps1` reads back at most the last 1 MiB of a rule's
+    output**, from a `.Length` snapshot with a bounded looped tail, and bash
+    does its own redirect to the capture file, so a backgrounded grandchild
+    holding PowerShell's pipe no longer wedges the gate (`test_34b[ps1]`).
+  - **`auto-clear.ps1`'s sendkeys child now binds on both Windows
+    PowerShell 5.1 and pwsh 7.** 1.0.23 passed `"True"`/`"False"` to a
+    `[bool]` parameter through `-File`, which fails binding on both editions
+    (and `-Name:$true` fails on 5.1), so the child never typed. The
+    parameter is now `[int]` 1/0.
+  - Tests: the WinForms tab-recheck test skips off Windows; a structural
+    test proves the child rechecks tab safety between `Start-Sleep` and
+    `SendWait`; `test_34d_ps1` skips without bash.
+
 - **`crew` 1.0.23: native-Windows PowerShell BLOCKs B1, B2, B4 and FIXes
   F1-F3, from win-repo-2 (`crew-1.0-win-ps1-ac`, `crew-1.0-win-ps1-gate`).**
   Bumped `1.0.22 -> 1.0.23`.
