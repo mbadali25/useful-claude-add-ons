@@ -1587,19 +1587,43 @@ foreach ($ident in $cmds) {
     # same fix as everywhere else in this file (see the interpreter probe
     # and the git call sites above); without it a rule that reads stdin
     # parks forever the same way an unclosed pipe does.
+    # TEMP/TMP is not the only place this can be written, and it must
+    # never fall back to the pipe form again if it is unwritable:
+    # `$out = $null | & $bashExe -c $c 2>&1` (the old else-branch here)
+    # reopens exactly the wedge the file capture above exists to close -
+    # a rule that backgrounds something and does not wait on it hangs
+    # THIS process forever on a host where TEMP/TMP is unwritable, e.g.
+    # `sh -c "sleep 60 &"`. `.crew/` already exists (verify.json lives
+    # there) and is inside $root, which this gate is already running
+    # against, so it is tried as a second, repo-local location before
+    # refusing the rule outright. Twin of the same fix in verify-gate.sh
+    # (commit be439290); does NOT port that lineage's later process-group
+    # kill (commit 1bba9725) - the crew is dropping that behaviour, not
+    # carrying it to this flavour.
     $ruleOutFile = $null
     try { $ruleOutFile = [System.IO.Path]::GetTempFileName() } catch { $ruleOutFile = $null }
+    if (-not $ruleOutFile) {
+      try {
+        if (-not (Test-Path ".crew")) { New-Item -ItemType Directory -Path ".crew" -Force -ErrorAction Stop | Out-Null }
+        $candidate = Join-Path ".crew" (".verify-rule-out." + [System.IO.Path]::GetRandomFileName())
+        New-Item -ItemType File -Path $candidate -ErrorAction Stop | Out-Null
+        $ruleOutFile = $candidate
+      } catch { $ruleOutFile = $null }
+    }
     if ($ruleOutFile) {
       $null | & $bashExe -c $c > $ruleOutFile 2>&1
       $rc = $LASTEXITCODE
       $out = @(Get-Content -Path $ruleOutFile -ErrorAction SilentlyContinue)
       Remove-Item -Path $ruleOutFile -Force -ErrorAction SilentlyContinue
     } else {
-      # No writable temp dir: fall back to the old capture form rather
-      # than skipping the rule outright - a check that still runs,
-      # carrying the original wedge risk, beats one silently skipped.
-      $out = $null | & $bashExe -c $c 2>&1
-      $rc = $LASTEXITCODE
+      # Neither the system temp dir nor .crew/ is writable: refuse this
+      # rule with a named reason instead of running it through the pipe
+      # form. A check that cannot capture its own output safely is not a
+      # check that ran. This goes through the same rc-ne-0 branch below
+      # as every other rule failure, so "VERIFY FAILED: $c" and this
+      # message both print.
+      $out = @("verify-gate: cannot create an output-capture file (temp dir and .crew/ both unwritable) - refusing rather than falling back to a pipe capture that a backgrounded grandchild can wedge forever")
+      $rc = 1
     }
   } finally {
     Pop-Location

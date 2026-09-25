@@ -1742,6 +1742,83 @@ def test_34d_a_second_mktemp_failure_refuses_rather_than_wedges(tmp_path):
     )
 
 
+@pytest.mark.skipif(
+    not sys.platform.startswith("win") or _PWSH is None,
+    reason="the .ps1 gate is the native-Windows flavour",
+)
+def test_34d_ps1_a_temp_dir_failure_falls_back_to_crew_not_a_pipe(
+        tmp_path):
+    """The .ps1 twin of test_34d (B4, BLOCKER). verify-gate.ps1 has no
+    external `mktemp` to shadow the way the .sh side's stub does -
+    `[System.IO.Path]::GetTempFileName()` is a .NET call resolved from
+    the TMP/TEMP env vars, and what reliably fails it (measured by hand
+    on this host) is pointing TMP/TEMP at a path that already exists as
+    a plain FILE, not a directory - a path that is merely absent gets
+    silently auto-created by the surrounding process tree here and the
+    call then SUCCEEDS, which would make the sabotage below inert.
+
+    This does NOT assert on elapsed time. Measured directly (`git
+    stash` against this same fixture shape, unmodified HEAD): the ps1
+    gate's PRIMARY (working) temp-file capture already waits out a
+    backgrounded grandchild's full lifetime on this host before this
+    change touched anything - elapsed time cannot discriminate the
+    `.crew/` fallback from the old bare-pipe fallback here, since both
+    would show the same bounded wait. That is a separate, pre-existing
+    limitation (filed in TODO.md, not fixed by this ticket, and not
+    fixable without the per-rule process-group kill this ticket
+    forbids porting) - see this file's own module docstring linked
+    TODO entry.
+
+    What this test proves instead: which CODE PATH ran. The rule lists
+    `.crew` (with `-a` - the fallback file's name is a DOTFILE,
+    `.verify-rule-out.*`, which a bare `ls` hides even though it is
+    right there; the first draft of this test used bare `ls` and got a
+    false negative from exactly that) and then fails, so its own
+    (capped) output - printed via the `VERIFY FAILED` / tail-25 path
+    every rule failure goes through - is the fallback capture file's
+    own directory listing. Under the fix, that listing names the
+    `.crew/.verify-rule-out.*` file the fallback created; under the old
+    bare-pipe fallback there is no such file (nothing was ever written
+    under `.crew/`) and this string cannot appear. No backgrounding, no
+    timing dependency - deterministic either way.
+    """
+    vmap = {
+        "version": 1,
+        "rules": [{"paths": ["a.py"], "reach": "local", "run": [
+            "sh -c 'ls -a .crew; exit 1'"
+        ]}],
+        "default": [], "unmapped": "ignore",
+    }
+    root = _repo(tmp_path, vmap)
+    (root / "a.py").write_text("x", encoding="utf-8")
+
+    # An EXISTING regular file, not a missing directory - see the
+    # docstring above for why a missing directory does not reliably
+    # fail GetTempFileName() on this host.
+    bogus_temp = tmp_path / "not-a-directory"
+    bogus_temp.write_text("blocking TMP/TEMP", encoding="utf-8")
+    env = dict(os.environ, CLAUDE_PROJECT_DIR=str(root),
+               TMP=str(bogus_temp), TEMP=str(bogus_temp))
+
+    result = crew_fixtures.run_gate(
+        [_PWSH, "-NoProfile", "-NonInteractive", "-File", _PS1],
+        input="{}", cwd=str(root), env=env,
+        capture_output=True, text=True, check=False,
+        timeout=_GATE_TIMEOUT)
+    assert result.returncode != 0, (
+        "the fixture rule deliberately exits 1; the gate must fail too. "
+        + result.stderr
+    )
+    refused = "cannot create an output-capture file" in result.stderr
+    assert refused or ".verify-rule-out." in result.stderr, (
+        "neither a named refusal nor the .crew/ fallback file's own "
+        "name appeared in the rule's captured output - the temp-file "
+        "failure may not have taken effect, or (if it did) the gate "
+        "fell back to something other than the .crew/ file or a named "
+        f"refusal. stderr: {result.stderr}"
+    )
+
+
 @pytest.mark.skipif(_BASH is None, reason="needs bash")
 @pytest.mark.skipif(
     os.name == "nt",

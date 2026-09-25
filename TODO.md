@@ -4449,3 +4449,37 @@ Fix shape: these tests must derive `windows` from the real host (`os.name == "nt
 default) rather than hardcoding `False`, or run the POSIX-shaped assertions only under a POSIX-forcing fixture
 that also verifies the host actually is POSIX. Not designed here - the fixture shape is a test-suite call, not
 a merge-caused defect, and is why this is filed as its own deferral rather than fixed inline.
+
+### verify-gate.ps1 B4 fix (pipe-fallback): three pre-existing test failures on this host, unrelated to the fix - OPEN (filed 2026-09-25, win-repo)
+
+Fixing B4 (`plugin/crew/hooks/scripts/verify-gate.ps1:1601`-area: a failed temp-file creation fell back to a
+bare pipe capture, restoring the background-grandchild hang) surfaced three tests that are RED on this host at
+**unmodified** `836a6646` too - confirmed by `git stash`-ing the fix and re-running each in isolation, same
+failures, same numbers:
+
+- `test_34b_a_backgrounded_grandchild_holding_stdout_does_not_wedge_the_gate[ps1]` -
+  `plugin/crew/tests/test_verify_gate_stop_gate_record.py:1433`. Took 21.9s against its own 10s bound for a 20s
+  background sleep. The PRIMARY (working) temp-file capture path - unrelated to the pipe-fallback branch this
+  ticket fixed - already waits out a backgrounded grandchild's full lifetime on this host; a minimal repro
+  (`& $bashExe -c $c > file 2>&1` with no fallback logic in play at all) reproduced the same bounded wait, so
+  this is not the pipe wedge - it looks like a console/process-group inheritance quirk in how PowerShell here
+  invokes `bash.exe`, orthogonal to file-vs-pipe capture. Not diagnosed further or fixed - the mechanism that
+  would fix it is the per-rule process-group kill (`verify-gate.sh`'s `1bba9725`), which this ticket's brief
+  explicitly forbade porting to `.ps1`.
+- `test_34d_a_second_mktemp_failure_refuses_rather_than_wedges` - `:1646`. sh-flavour only
+  (`@pytest.mark.skipif(_BASH is None...)`, no `flavour` parametrization, never touches `.ps1`); red before and
+  after this ticket's `.ps1`-only change, so unrelated to it by construction.
+- `test_run_gate_kills_the_whole_group_on_timeout_not_just_the_direct_child` - `:2063`, in
+  `crew_fixtures.run_gate` itself (test harness code, not `verify-gate.ps1` or `.sh`). Also red unmodified.
+
+None of the three block B4: the regression test added for this ticket
+(`test_34d_ps1_a_temp_dir_failure_falls_back_to_crew_not_a_pipe`, same file, immediately after `test_34d`) is
+green and was sabotage-confirmed red on the reverted code. Filed rather than fixed because root-causing the
+console/process-group behaviour behind `test_34b[ps1]` is exactly the class of work this ticket's brief
+excluded.
+
+Also noted, not fixed: `verify-gate.ps1:814` (the legacy `_verify/smoke.sh`/`scripts/smoke.sh` fallback, used
+only when `.crew/verify.json` does not exist) captures via an unconditional bare pipe
+(`$out = $null | & $bashExe $smoke 2>&1`) with no temp-file attempt and no `.crew/` fallback at all - a
+different, unscoped pipe-capture site from the per-rule loop this ticket fixed. Same wedge shape, no
+mitigation, not touched here.
