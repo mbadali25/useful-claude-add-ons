@@ -6,6 +6,81 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Fixed
 
+- **`crew` 1.0.35: the endpoint ledger fails closed instead of silently losing
+  a declaration, under an OS advisory lock (T-0003) — the defect reproduced on
+  windows-latest as a 20-thread concurrent-declare run keeping 19 of 20
+  endpoints.** Bumped `1.0.29 -> 1.0.35`. All in
+  `plugin/crew/hooks/scripts/crew_endpoints.py` unless named.
+  - **A lock that could not be taken used to let `declare_endpoint` and
+    `record_scan_artifact` proceed UNLOCKED**, a lost update under
+    contention. Both now return `{"error": ...}` and write nothing; the
+    ledger is byte-identical on every error path. The error says which
+    failure it was: the lock held by another writer for the whole wait, a
+    filesystem that cannot lock, an identity re-check that never passed, or
+    another `OSError` that did not clear.
+  - **A failed write used to be ignored by both callers**, which returned
+    the record/path as if it had landed. Both now check `_write_endpoints`.
+    `crew_state.py`'s `--record-scan-artifact` exits non-zero on an error
+    result; `--declare-endpoint` already did.
+  - **`os.replace` retries `PermissionError`**, at most
+    `_REPLACE_RETRY_ATTEMPTS` (20) tries 0.05s apart, bounded by an attempt
+    count rather than a clock because it runs while the lock is held.
+  - **The lock is now an OS advisory lock** — `fcntl.flock(LOCK_EX|LOCK_NB)`
+    on POSIX, `msvcrt.locking(LK_NBLCK)` on byte 0 on Windows — on a
+    persistent file, `.crew/endpoints.json.oslock`, that crew never deletes,
+    renames or reads. It replaces the create-exclusive `endpoints.json.lock`
+    and its 30s stale-lock removal: no staleness, takeover or owner token
+    exists any more, and a holder that dies loses its lock when the kernel
+    closes its files. `flock` rather than POSIX record locks, because
+    record locks belong to the process and were measured granting a second
+    thread in the same process.
+  - **A per-lock-file `threading.Lock` is taken before the OS lock**, so
+    threads of one process exclude each other even where the filesystem's
+    lock does not (Linux emulates `flock` over NFS with per-process locks).
+  - **A grant is kept only if the descriptor is still the file at the path**
+    (`st_dev`, `st_ino` of `os.fstat` against `os.stat`); otherwise it is
+    unlocked and retried. A re-check that never passes is reported as that,
+    not as another writer holding the lock.
+  - **The lock file is created `0o644` (less the umask) and opened
+    read-write, falling back to read-only when read-write is refused**, so a
+    lock file another user created (sudo, a root container on a bind-mounted
+    repo) does not wedge every later write. Read-write stays first because
+    an exclusive `flock` over NFS needs a descriptor open for writing.
+  - **A `fork()` child starts with fresh in-process mutexes**
+    (`os.register_at_fork`), so one forked while a parent thread held the
+    lock is not refused forever. It still shares the parent's lock
+    descriptor until it closes it or exits.
+  - **A filesystem that cannot lock fails closed at once** (`ENOLCK`,
+    `EOPNOTSUPP`/`ENOTSUP`, `EINVAL`). Busy polls every 0.05s; any other
+    `OSError`, including a failed open of the lock file, is retried until
+    the deadline. The wait is one 5s deadline on `time.monotonic()`.
+  - **Release unlocks, then closes, then releases the mutex, each in its
+    own `finally`**, so a failing unlock cannot skip the close that frees
+    the OS lock.
+  - **Known limits.** A crew older than 1.0.35 writing the same repo at the
+    same moment is not excluded: it uses the old `endpoints.json.lock`. The
+    new file has a new name on purpose, because those versions remove any
+    `.lock` older than 30s, and a persistent file always is. Deleting
+    `.crew/endpoints.json.oslock` by hand while a writer holds it lets a
+    second writer lock a fresh file beside it. On NFS, a lock file this user
+    cannot open for writing still fails closed at the deadline, since the
+    read-only fallback cannot take an exclusive lock there. SMB mounts are
+    untested.
+  - **Measured on Linux only** (kernel 7.0, Python 3.14, ext4): thread and
+    process exclusion, release of a SIGKILLed holder's lock, 8 processes x 5
+    threads x 5 declares through `declare_endpoint` keeping 200 of 200, and
+    a second uid declaring into a lock file root created.
+    **Not yet measured on Windows:** that `msvcrt.locking` excludes a second
+    handle in the same process, that a held byte raises `EACCES` (the busy
+    errno is taken from the CRT documentation), that a terminated holder's
+    lock is released promptly, that a read-only handle can take the lock,
+    and that `os.fstat` and `os.stat` agree on `st_ino` there. The Windows branch is unit-tested on every OS against a
+    fake `msvcrt`; the native checks are in `test_endpoints.py` and run on
+    windows-latest CI and win-repo-2.
+  - Tests in `plugin/crew/tests/test_endpoints.py` cover each path with
+    must-fail cases; the ones that can hang on a regression run under a
+    bounded worker stopped before it can write. `plugin/crew/tests/sabotage.py`
+    carries a mutation for each, each seen red on Linux.
 - **`crew` 1.0.29: the PATH stubs in `test_34d` and `test_1` are reached on
   native Windows, from win-repo-2 (T-0007).** Bumped `1.0.28 -> 1.0.29`. Test
   harness only - no hook script changes. Two of win-repo-2's commits,
