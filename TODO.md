@@ -4682,3 +4682,13 @@ only when `.crew/verify.json` does not exist) captures via an unconditional bare
 (`$out = $null | & $bashExe $smoke 2>&1`) with no temp-file attempt and no `.crew/` fallback at all - a
 different, unscoped pipe-capture site from the per-rule loop this ticket fixed. Same wedge shape, no
 mitigation, not touched here.
+
+## crew 1.0.x: deferred review findings at crew 1.0.24 (filed 2026-09-25, PM)
+
+From the Codex delta reviews of integ-ps1 (gpt-5.6-sol, high, read-only). None blocked the 1.0 merge gate; handoff detail in `.work/ps1-blocks-for-win-repo-2-round3.md` (local).
+- `plugin/crew/hooks/scripts/verify-gate.ps1:1684` - the transport variables that carry the rule command/output path into bash (`CREW_VERIFY_RULE_*`) stay visible to every rule, so a rule inspecting them behaves differently under the .ps1 flavour than under verify-gate.sh. Unset them inside the bash command before `eval`; add a parity test.
+- `plugin/crew/hooks/scripts/verify-gate.ps1:1722` - the capped tail read seeks from the LIVE end of file (`Seek(-$readLen, End)`), not from the snapshotted `.Length`, so a leftover background writer still appending replaces the snapshot window with newer bytes. Still bounded (not a hang). Seek to `$snapshotLen - $readLen` from Begin, mirroring the .sh size snapshot + `tail -c`.
+- `plugin/crew/hooks/scripts/verify-gate.ps1:1736` - a zero-byte partial read produces two NUL bytes because `$buffer[0..($totalRead - 1)]` with `$totalRead = 0` is `0..-1`. Special-case 0; check the file for the same idiom elsewhere.
+- `plugin/crew/hooks/scripts/auto-clear.ps1` - the parent claims the one-shot `.crew/.autoclear-sent-<key>` marker BEFORE it spawns the sendkeys child, so a child that fails to start or to bind its parameters consumes the session's only attempt without typing anything. Pre-existing; claim in the child after it has verified and typed, or release the claim on child failure.
+- `plugin/crew/tests/test_auto_clear_review_fixes.py:730` (Windows-only test) - the binding test's false case uses `Hwnd=0`, which equals `GetForegroundWindow()` when Windows returns NULL (locked/headless session), so the child reaches a real `SendWait` and could type `/clear` into another application. Use a real, known non-foreground window handle (or skip the false case when GetForegroundWindow() is 0).
+- `plugin/crew/tests/test_verify_gate_stop_gate_record.py:1803` - the no-bash skip uses `crew_fixtures.resolve_bash()`, a different discovery algorithm from verify-gate.ps1's `Resolve-CrewBash` (which walks up from git.exe), so a Git for Windows install with only its `cmd` dir on PATH silently skips this test. Skip based on the gate's own `-PrintBash` result instead.
