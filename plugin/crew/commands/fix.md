@@ -28,21 +28,34 @@ Mint the ticket the way `/crew:brainstorm` does: next free `T-####`, create
 `.work/tickets/<id>/direction.md` as one line: `Fix: $ARGUMENTS`. Show it,
 get a yes, move on — no options table, no multi-question round.
 
-## 2. Spec — six lines
+## 2. Spec — six short sections
 
 Write `.work/tickets/<id>/spec.md`:
 
 ```
 # <id> <title>          status: spec   risk: low
-## Intent      one sentence
-## Touch       globs, from crew:explorer if not obvious
-## Acceptance  - [ ] the existing verify.json rule this maps to
+## Intent
+one sentence
+## Exclusions
+none - light path
+## Evidence
+none - light path
+## Unknowns
+none - light path
+## Touch
+- globs, from crew:explorer if not obvious
+## Acceptance checks
+- [ ] the existing verify.json rule this maps to
 ```
 
-Exclusions, Evidence and Unknowns are omitted deliberately for this path, not
-forgotten — a known cause and one subsystem leave little to exclude or leave
-unknown. If `crew:explorer` or `/crew:debug` surfaced a landmine, put it in
-Touch's line as a comment rather than adding a section back.
+Exclusions, Evidence and Unknowns carry a one-line `none - light path`
+rather than real content: a known cause and one subsystem leave little to
+exclude or leave unknown. They are written, not omitted, because
+`/crew:approve` validates all six headings (`crew_ticket.py` `SECTIONS`) and
+refuses a spec missing or leaving empty any one of them. Each heading goes on
+its own line - `## Intent      one sentence` on one line is read as a heading
+named `Intent      one sentence`, not as `Intent`. If `crew:explorer` or
+`/crew:debug` surfaced a landmine, put it in Touch's line as a comment.
 
 ## 3. Plan — one step
 
