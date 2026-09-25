@@ -128,6 +128,51 @@ def load_endpoints(root):
     return _load_endpoint_doc(root)["records"]
 
 
+# A Windows `os.replace` onto a path another process/thread has open for a
+# moment (a reader mid-`read_text`, a virus scanner, a still-closing handle
+# from the previous write) raises `PermissionError` rather than succeeding --
+# a transient condition, not a real permission problem, and the only fix
+# CLAUDE.md's Windows landmines already anticipate: retry briefly instead of
+# giving up on the first attempt. Not gated on `os.name == "nt"`: retrying a
+# handful of times over well under a second costs nothing on POSIX, where a
+# `PermissionError` here almost always means the same transient condition (a
+# reader with the file open) and, on the rare occasion it is a REAL
+# permission problem, still fails -- just after `_REPLACE_RETRY_ATTEMPTS`
+# tries (~1s of sleeps) instead of at once. Made this way so the Windows
+# behaviour is exercised directly by a Linux test (monkeypatch `os.replace`
+# to raise `PermissionError` N times then succeed) rather than only under a
+# `os.name` patch layered on top of it.
+#
+# Bounded by an attempt COUNT, never by a clock. This loop runs while the
+# ledger lock is held, and the previous `time.time()` deadline let a wall
+# clock stepped backwards (NTP, a manual change) -- or a test that pins
+# `time.time` to a constant -- keep it retrying forever, holding the lock
+# the whole time. A count terminates whatever any clock does.
+_REPLACE_RETRY_ATTEMPTS = 20
+_REPLACE_RETRY_SLEEP_SECONDS = 0.05
+
+
+def _replace_with_retry(tmp_path, path):
+    """`os.replace(tmp_path, path)`, retrying a `PermissionError` with a
+    short sleep, at most `_REPLACE_RETRY_ATTEMPTS` tries in total; the last
+    `PermissionError` is re-raised. Any other `OSError` propagates
+    immediately -- only `PermissionError` is the transient-on-Windows shape
+    this exists for; a `FileNotFoundError` or a cross-device `OSError`
+    retrying would not fix. No clock is consulted (see the comment above).
+    """
+    # max(1, ...): a count of 0 must still TRY once -- an empty loop would
+    # fall through and return as if the replace had landed.
+    attempts = max(1, _REPLACE_RETRY_ATTEMPTS)
+    for attempt in range(1, attempts + 1):
+        try:
+            os.replace(tmp_path, path)
+            return
+        except PermissionError:
+            if attempt >= attempts:
+                raise
+            time.sleep(_REPLACE_RETRY_SLEEP_SECONDS)
+
+
 def _write_endpoints(root, doc):
     """Atomic replace of the ledger file. Best-effort; returns False (never
     raises) on any OSError, same failure posture as `_write_slot` below.
@@ -144,10 +189,18 @@ def _write_endpoints(root, doc):
     `_write_slot`, `_append_dispatch`), for the same reason -- a reader must
     never be able to observe a half-written file, and a write that fails
     partway through must leave the ORIGINAL intact. `os.replace` is atomic
-    on both POSIX and Windows.
+    on both POSIX and Windows -- retried briefly on `PermissionError` via
+    `_replace_with_retry` above, since the target may be momentarily open by
+    another reader on Windows.
 
-    What this does NOT do: stop two writers from losing each other's
-    updates. Atomic replace only guarantees each individual WRITE is
+    A caller MUST treat a `False` return as "nothing was written" and never
+    hand back a record as if it had landed -- `declare_endpoint` and
+    `record_scan_artifact` both check this return value for exactly that
+    reason (BLOCK 6: fail-open write reproduced under a monkeypatched
+    `os.replace` that always raises).
+
+    What this does NOT do on its own: stop two writers from losing each
+    other's updates. Atomic replace only guarantees each individual WRITE is
     all-or-nothing -- it says nothing about two callers who both read the
     document, each add their own record to their own in-memory copy, and
     then each atomically replace the file with THEIR copy. The second
@@ -155,8 +208,10 @@ def _write_endpoints(root, doc):
     error raised on either side (BLOCK 2, reproduced: 8 concurrent processes
     declaring 8 distinct endpoints kept 2; 20 threads kept 1). That is a
     lost update, a different failure from corruption, and this function does
-    not address it -- see `_endpoints_lock`, which `declare_endpoint` holds
-    for the entire read-modify-write cycle for that reason.
+    not address it -- see `_acquire_endpoints_lock`, which `declare_endpoint`
+    and `record_scan_artifact` hold for the entire read-modify-write cycle
+    for that reason, and which now itself refuses to let a caller proceed
+    unlocked on a timeout (BLOCK 6).
     """
     path = _endpoints_path(root)
     tmp_path = f"{path}.{os.getpid()}.{uuid.uuid4().hex[:8]}.tmp"
@@ -170,7 +225,7 @@ def _write_endpoints(root, doc):
             handle.write("\n")
             handle.flush()
             os.fsync(handle.fileno())
-        os.replace(tmp_path, path)
+        _replace_with_retry(tmp_path, path)
     except OSError:
         try:
             if os.path.exists(tmp_path):
@@ -202,54 +257,204 @@ _ENDPOINTS_LOCK_RETRY_SECONDS = 0.05
 _ENDPOINTS_LOCK_TIMEOUT_SECONDS = 5
 
 
-def _acquire_endpoints_lock(root):
-    """Best-effort exclusive lock over the endpoint ledger file. Returns the
-    lock path to release, or None if it could not be acquired -- callers
-    proceed unlocked rather than hanging a hook forever on a stuck lock.
+def _remove_quietly(path):
+    try:
+        os.remove(path)
+    except OSError:
+        pass
 
+
+def _read_lock_token(path):
+    """The owner token written into a lock file, or None when it cannot be
+    read (gone, unreadable, not text). A lock left by a pre-1.0.29 writer,
+    or by one that died between creating the file and writing its token,
+    reads as the empty string -- a value, not None, so it can still be
+    judged stale and taken over."""
+    try:
+        with open(path, "r", encoding="ascii") as handle:
+            return handle.read().strip()
+    except (OSError, ValueError):
+        return None
+
+
+def _lock_is_stale(path):
+    """True when the lock file at `path` is older than
+    `_ENDPOINTS_LOCK_STALE_SECONDS` by the wall clock.
+
+    The clock-skew limit, stated rather than solved: this compares
+    `time.time()` against the file's mtime, and nothing here can tell a
+    crashed holder from a live one whose mtime merely READS old -- a wall
+    clock stepped forward more than the stale window while a writer holds
+    the lock, or a network share whose server clock runs ahead of this
+    host's. In that case a waiter takes over a LIVE lock and two writers
+    are inside the read-modify-write at once, which can lose an update.
+    What the owner token (`_acquire_endpoints_lock`) does guarantee even
+    then is that the displaced holder's release cannot free the new
+    holder's lock for a third writer, so a skew costs at most that one
+    overlap rather than cascading. A holder keeps the lock for one small
+    JSON rewrite, so a live lock older than 30s needs the skew, not a slow
+    writer."""
+    try:
+        return (time.time() - os.path.getmtime(path)
+                > _ENDPOINTS_LOCK_STALE_SECONDS)
+    except OSError:
+        return False
+
+
+def _restore_lock(tomb, path):
+    """Put a lock that was moved aside by mistake back at `path`, without
+    overwriting whatever may have been created there since -- `os.link`
+    fails with FileExistsError rather than replacing, which `os.rename`
+    does not promise on POSIX. Where hard links are unsupported, Windows'
+    `os.rename` refuses an existing target too, so it is the fallback
+    there. If `path` was re-created meanwhile the moved lock is dropped:
+    its holder's release then finds a token that is not its own and leaves
+    the new holder's lock alone."""
+    try:
+        os.link(tomb, path)
+    except FileExistsError:
+        pass
+    except OSError:
+        if os.name == "nt":
+            try:
+                os.rename(tomb, path)
+                return
+            except OSError:
+                pass
+    _remove_quietly(tomb)
+
+
+def _remove_lock_if(path, owns):
+    """Remove the lock at `path` only if `owns(moved_path)` holds for the
+    file actually removed. Returns True when it removed one.
+
+    A check of `path` followed by `os.remove(path)` is the race round 1 of
+    review reproduced: between the check and the remove, the file at `path`
+    can be replaced by another writer's live lock, and the remove deletes
+    THAT. So the lock is first renamed to a name only this call knows --
+    atomic, and the rename captures exactly one file -- and the check runs
+    on the captured file, which nobody else can swap out any more. A
+    capture that fails the check is put back (`_restore_lock`)."""
+    tomb = f"{path}.{os.getpid()}.{uuid.uuid4().hex}.tomb"
+    try:
+        os.rename(path, tomb)
+    except OSError:
+        return False
+    if owns(tomb):
+        _remove_quietly(tomb)
+        return True
+    _restore_lock(tomb, path)
+    return False
+
+
+def _take_over_stale_lock(path):
+    """Remove the lock at `path` if it is stale; True only when this call
+    removed the stale lock it judged, never a live one that replaced it.
+
+    The token is read BEFORE the mtime, on purpose: once a lock file is
+    removed it never comes back under the same token, so a token read
+    earlier than the mtime can only belong to the same file or an older
+    one. The captured file must then carry that same token AND still be
+    stale on its own mtime -- a fresh lock another waiter created in the
+    meantime fails the second test even when its token is still empty."""
+    observed = _read_lock_token(path)
+    if observed is None or not _lock_is_stale(path):
+        return False
+    return _remove_lock_if(
+        path, lambda moved: (_read_lock_token(moved) == observed
+                             and _lock_is_stale(moved)))
+
+
+def _acquire_endpoints_lock(root):
+    """Best-effort exclusive lock over the endpoint ledger file. Returns
+    `(lock, None)` on success, where `lock` is the handle to pass to
+    `_release_endpoints_lock`, or `(None, reason)` when it could not be
+    acquired within `_ENDPOINTS_LOCK_TIMEOUT_SECONDS`; `reason` says which
+    of the two ways that happened.
+
+    Every failure is retried within that one deadline -- a lock another
+    writer holds, and any other `OSError` from creating the lock file. The
+    second used to return at once, so a single transient Windows
+    `PermissionError` on the create failed the declare outright (review
+    round 1) -- the same transient-on-Windows shape `_replace_with_retry`
+    exists for.
+
+    Ownership is verifiable. The file is created with `O_CREAT|O_EXCL` and
+    this holder's token (pid plus a uuid) is written into it; release
+    removes the lock only if it still carries that token, and a stale-lock
+    takeover removes only the stale file it judged (`_take_over_stale_lock`).
     A lock older than `_ENDPOINTS_LOCK_STALE_SECONDS` is assumed to be left
-    by a process that crashed before releasing it, and is removed so one
-    dead process cannot wedge every future `declare_endpoint` call in the
-    repo. Spins with a short sleep rather than blocking: this runs from a
-    short-lived CLI call and a SessionStart hook, neither of which should
-    ever wait long, so giving up after `_ENDPOINTS_LOCK_TIMEOUT_SECONDS`
-    (falling back to the old, race-prone behaviour rather than never
-    returning) is the safer failure than hanging a session open.
+    by a process that crashed before releasing it, so one dead process
+    cannot wedge every future `declare_endpoint` call in the repo -- see
+    `_lock_is_stale` for the clock-skew limit of that assumption.
+
+    BLOCK 6: a failure here used to mean "proceed unlocked" at both call
+    sites. Both callers now return `{"error": ...}` instead of writing.
+
+    Two clocks, on purpose. The WAIT is bounded by `time.monotonic()`: a
+    `time.time()` deadline never expires if the wall clock stands still or
+    is stepped backwards while another process holds the lock. The STALE
+    check stays on `time.time()`, because it compares against the lock
+    file's mtime, which is wall-clock.
     """
     path = _endpoints_path(root) + ".lock"
-    deadline = time.time() + _ENDPOINTS_LOCK_TIMEOUT_SECONDS
+    deadline = time.monotonic() + _ENDPOINTS_LOCK_TIMEOUT_SECONDS
+    token = f"{os.getpid()}.{uuid.uuid4().hex}"
+    create_error = None
     while True:
         try:
             os.makedirs(os.path.dirname(path), exist_ok=True)
             fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
-            os.close(fd)
-            return path
         except FileExistsError:
-            try:
-                stale = (time.time() - os.path.getmtime(path)
-                          > _ENDPOINTS_LOCK_STALE_SECONDS)
-            except OSError:
-                stale = False
-            if stale:
-                try:
-                    os.remove(path)
-                except OSError:
-                    pass
+            create_error = None
+            # A stale lock is retried at once only when this call removed
+            # it AND the deadline has not passed. Every other path -- a live
+            # lock, a stale one that could not be removed, a stale one
+            # another waiter got to first -- falls through to the deadline
+            # check and the sleep, so no path back to the top of this loop
+            # skips the monotonic deadline.
+            removed = _take_over_stale_lock(path)
+            if removed and time.monotonic() <= deadline:
                 continue
-            if time.time() > deadline:
-                return None
-            time.sleep(_ENDPOINTS_LOCK_RETRY_SECONDS)
-        except OSError:
-            return None
+        except OSError as exc:
+            create_error = exc
+        else:
+            try:
+                try:
+                    os.write(fd, token.encode("ascii"))
+                finally:
+                    os.close(fd)
+            except OSError as exc:
+                # A lock that does not carry our token could never be
+                # released by us, and would wedge every writer until it went
+                # stale. It was created by this call a moment ago, so it is
+                # ours to remove.
+                create_error = exc
+                _remove_quietly(path)
+            else:
+                return (path, token), None
+        if time.monotonic() > deadline:
+            if create_error is not None:
+                return None, (
+                    "could not create the endpoints lock "
+                    f"({type(create_error).__name__}: {create_error}), "
+                    f"retried for {_ENDPOINTS_LOCK_TIMEOUT_SECONDS}s; "
+                    "nothing was written")
+            return None, (
+                "the endpoints lock was held by another writer for "
+                f"{_ENDPOINTS_LOCK_TIMEOUT_SECONDS}s; nothing was written")
+        time.sleep(_ENDPOINTS_LOCK_RETRY_SECONDS)
 
 
-def _release_endpoints_lock(lock_path):
-    if not lock_path:
+def _release_endpoints_lock(lock):
+    """Remove this holder's lock -- only if it still carries this holder's
+    token. A lock that was taken over (see `_lock_is_stale` for how a live
+    one can be) now belongs to someone else, and removing it would let a
+    third writer in alongside them."""
+    if not lock:
         return
-    try:
-        os.remove(lock_path)
-    except OSError:
-        pass
+    path, token = lock
+    _remove_lock_if(path, lambda moved: _read_lock_token(moved) == token)
 
 
 def declare_endpoint(root, endpoint, location, ticket=None, endpoint_id=None):
@@ -286,11 +491,19 @@ def declare_endpoint(root, endpoint, location, ticket=None, endpoint_id=None):
 
     Returns `{"error": ...}` -- never raises -- when a caller-supplied
     `endpoint_id` fails `_valid_endpoint_id`; nothing may mint or re-target a
-    record under an id that is not safe to use in a filesystem path.
+    record under an id that is not safe to use in a filesystem path. Also
+    returns `{"error": ...}`, rather than a record, when the ledger lock
+    could not be acquired within `_ENDPOINTS_LOCK_TIMEOUT_SECONDS` (BLOCK 6a)
+    or when the write itself failed (BLOCK 6b) -- in both cases nothing was
+    persisted, so handing back a record here would claim a fact that is not
+    on disk. A caller must check for an `"error"` key rather than assuming
+    any dict this returns is a landed record.
     """
     if endpoint_id is not None and not _valid_endpoint_id(endpoint_id):
         return {"error": f"refusing to declare an unsafe endpoint id: {endpoint_id!r}"}
-    lock = _acquire_endpoints_lock(root)
+    lock, failure = _acquire_endpoints_lock(root)
+    if lock is None:
+        return {"error": failure}
     try:
         doc = _load_endpoint_doc(root)
         records = doc["records"]
@@ -303,7 +516,9 @@ def declare_endpoint(root, endpoint, location, ticket=None, endpoint_id=None):
                     record.update(endpoint=endpoint, source="declared",
                                   location=location, ticket=ticket,
                                   updatedAt=now)
-                    _write_endpoints(root, doc)
+                    if not _write_endpoints(root, doc):
+                        return {"error": "failed to write "
+                                          f"{os.path.join(*_ENDPOINTS_PATH_PARTS)}"}
                     return record
             new_id = endpoint_id
         else:
@@ -315,7 +530,9 @@ def declare_endpoint(root, endpoint, location, ticket=None, endpoint_id=None):
             "createdAt": now,
         }
         records.append(record)
-        _write_endpoints(root, doc)
+        if not _write_endpoints(root, doc):
+            return {"error": "failed to write "
+                              f"{os.path.join(*_ENDPOINTS_PATH_PARTS)}"}
         return record
     finally:
         _release_endpoints_lock(lock)
@@ -740,10 +957,18 @@ def record_scan_artifact(root, endpoint_id):
     native-separator freeze breaks on a clone using a different OS. Holds
     the same lock `declare_endpoint` does, for the same reason: this is a
     read-modify-write over the same shared, hand-editable file.
+
+    Returns `{"error": ...}` -- never a path that was not actually frozen --
+    when the lock could not be acquired (BLOCK 6a) or the write failed
+    (BLOCK 6b); `None` is reserved for the two "there is nothing to freeze"
+    cases above (unknown or unsafe id) and must not be confused with either
+    error case by a caller.
     """
     if not _valid_endpoint_id(endpoint_id):
         return None
-    lock = _acquire_endpoints_lock(root)
+    lock, failure = _acquire_endpoints_lock(root)
+    if lock is None:
+        return {"error": failure}
     try:
         doc = _load_endpoint_doc(root)
         for record in doc["records"]:
@@ -755,7 +980,9 @@ def record_scan_artifact(root, endpoint_id):
                 if record.get("artifactPath") == path:
                     return path
                 record["artifactPath"] = path
-                _write_endpoints(root, doc)
+                if not _write_endpoints(root, doc):
+                    return {"error": "failed to write "
+                                      f"{os.path.join(*_ENDPOINTS_PATH_PARTS)}"}
                 return path
         return None
     finally:

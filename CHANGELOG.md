@@ -4,6 +4,57 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Fixed
+
+- **`crew` 1.0.29: the endpoint ledger fails closed instead of silently losing
+  a declaration — reproduced on windows-latest as a 20-thread
+  concurrent-declare run keeping 19 of 20 endpoints.** Bumped
+  `1.0.28 -> 1.0.29`. All in
+  `plugin/crew/hooks/scripts/crew_endpoints.py` unless named.
+  - **A lock that could not be acquired used to let `declare_endpoint` and
+    `record_scan_artifact` proceed UNLOCKED** — a lost update under
+    contention. Both now return `{"error": ...}` and write nothing, and the
+    error says which failure it was: the lock held by another writer for
+    the whole wait, or the lock file itself failing to be created (with the
+    `OSError`).
+  - **A failed write used to be ignored by both callers**, which returned
+    the record/path as if it had landed. Both now check `_write_endpoints`
+    and surface `{"error": ...}`. `crew_state.py`'s `--record-scan-artifact`
+    now exits non-zero on an error result; `--declare-endpoint` already did.
+  - **`os.replace` retries `PermissionError`**, at most
+    `_REPLACE_RETRY_ATTEMPTS` (20) tries 0.05s apart. Bounded by an attempt
+    count, not a clock, because it runs while holding the lock.
+  - **The lock wait is bounded by `time.monotonic()`**, not `time.time()`,
+    so a wall clock that stands still or steps backwards cannot hold
+    `declare_endpoint` in the wait forever.
+  - **Every failure to create the lock file is retried within that one
+    deadline.** An `OSError` other than `FileExistsError` used to give up on
+    the first try, so a single transient Windows `PermissionError` failed
+    the declare.
+  - **No path back to the top of the wait loop skips the deadline.** A stale
+    lock that could not be removed used to `continue` without the deadline
+    check or the sleep and busy-spin forever. A stale lock that WAS removed
+    is retried at once only while the deadline has not passed.
+  - **Lock ownership is verifiable.** Each holder writes a token (pid plus
+    uuid) into the lock file. Release removes the lock only if it still
+    carries that token. A stale-lock takeover renames the lock to a unique
+    tombstone and keeps it removed only if the captured file is the stale
+    one it judged (same token, still stale). Otherwise it puts the file back
+    without overwriting. Before this, two waiters could both hold the lock
+    (the second deleting the first's fresh lock), and a holder's release
+    could free someone else's lock for a third writer.
+  - **Known limit, documented at `_lock_is_stale`:** staleness is still the
+    lock's mtime against `time.time()`. A live lock whose mtime reads more
+    than 30s old — a wall clock stepped forward, or a skewed network-share
+    clock — can still be taken over, and the two writers can overlap once.
+    The token stops that from cascading to a third.
+  - Tests in `plugin/crew/tests/test_endpoints.py` cover every path above
+    with must-fail cases. The ones that can hang on a regression run under a
+    bounded worker that is stopped before it can write, so a regression
+    fails its own test without writing into a later one.
+    `plugin/crew/tests/sabotage.py` carries a mutation for each fix, each
+    verified red on the reintroduced bug.
+
 ### Changed
 
 - **`crew` 1.0.28: native-Windows round 3 from win-repo-2 — the sendkeys

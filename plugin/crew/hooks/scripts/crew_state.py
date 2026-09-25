@@ -3267,6 +3267,12 @@ def main(argv=None):
         return 0
     if args.record_scan_artifact:
         path = record_scan_artifact(root, args.record_scan_artifact)
+        if isinstance(path, dict):
+            # A lock timeout or a failed write (crew_endpoints.BLOCK 6) --
+            # never printed as if the freeze had landed.
+            print(f"scan artifact for {args.record_scan_artifact!r} was NOT "
+                  f"recorded: {path.get('error')}", file=sys.stderr)
+            return 3
         if path is None:
             print(f"no ledger record with id {args.record_scan_artifact!r}, "
                   "or its id is not safe to use in a path", file=sys.stderr)

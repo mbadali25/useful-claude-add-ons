@@ -1604,13 +1604,105 @@ MUTATIONS = (
         'encoding="utf-8", newline="\\n") as handle:\n            json.dump'
         '(doc, handle, indent=2, sort_keys=True)\n            handle.write'
         '("\\n")\n            handle.flush()\n            os.fsync(handle.'
-        'fileno())\n        os.replace(tmp_path, path)',
+        'fileno())\n        _replace_with_retry(tmp_path, path)',
         '        with open(path, "w", encoding="utf-8", newline="\\n") as '
         'handle:\n            json.dump(doc, handle, indent=2, '
         'sort_keys=True)\n            handle.write("\\n")\n            '
         'handle.flush()\n            os.fsync(handle.fileno())',
         ("tests/test_endpoints.py::"
          "test_write_endpoints_leaves_the_original_intact_if_replace_fails"),
+    ),
+    (
+        # Codex BLOCK: the PermissionError retry was bounded by `time.time()`,
+        # so a clock that stood still or stepped back kept it spinning while
+        # holding the ledger lock. The test pins the clock and joins with a
+        # timeout, so this mutation fails it rather than hanging the run.
+        "the replace retry is bounded by the wall clock again",
+        ENDPOINTS,
+        "    attempts = max(1, _REPLACE_RETRY_ATTEMPTS)\n    for attempt in "
+        "range(1, attempts + 1):\n        try:\n            os.replace("
+        "tmp_path, path)\n            return\n        except PermissionError:"
+        "\n            if attempt >= attempts:\n                raise",
+        "    deadline = time.time() + 1.0\n    while True:\n        try:\n"
+        "            os.replace(tmp_path, path)\n            return\n"
+        "        except PermissionError:\n            if time.time() >= "
+        "deadline:\n                raise",
+        ("tests/test_endpoints.py::"
+         "test_replace_retry_terminates_when_the_wall_clock_stands_still"),
+    ),
+    (
+        # The neighbouring case: the wait for the ledger lock was bounded by a
+        # `time.time()` deadline, so a frozen or rolled-back wall clock while
+        # another process held the lock kept declare_endpoint spinning
+        # forever. The test pins `time.time` and joins with a timeout, so this
+        # mutation fails it rather than hanging the run.
+        "the ledger lock wait is bounded by the wall clock again",
+        ENDPOINTS,
+        "    deadline = time.monotonic() + _ENDPOINTS_LOCK_TIMEOUT_SECONDS\n",
+        "    deadline = time.time() + _ENDPOINTS_LOCK_TIMEOUT_SECONDS\n",
+        ("tests/test_endpoints.py::"
+         "test_lock_wait_terminates_when_the_wall_clock_stands_still"),
+    ),
+    (
+        # Codex BLOCK: a stale lock whose remove FAILED still took `continue`,
+        # skipping the deadline check and the sleep, so declare_endpoint
+        # busy-spun forever. The test makes os.remove refuse the lock and
+        # joins with a timeout, so this mutation fails it rather than hanging.
+        "a failed stale-lock remove retries without a deadline check",
+        ENDPOINTS,
+        "            if removed and time.monotonic() <= deadline:\n",
+        "            if removed or _lock_is_stale(path):\n",
+        ("tests/test_endpoints.py::"
+         "test_lock_wait_terminates_when_a_stale_lock_cannot_be_removed"),
+    ),
+    (
+        # Review round 1: the deadline conjunct on the SUCCESSFUL-takeover
+        # `continue` had no failing control -- this exact mutation left the
+        # suite green. Stale locks that keep reappearing loop forever
+        # without it; the test's bounded worker turns that into a failure.
+        "a successful stale-lock takeover retries without a deadline check",
+        ENDPOINTS,
+        "            if removed and time.monotonic() <= deadline:\n",
+        "            if removed:\n",
+        ("tests/test_endpoints.py::"
+         "test_lock_wait_terminates_when_stale_locks_keep_reappearing"),
+    ),
+    (
+        # Review round 1: an OSError from the lock create other than
+        # FileExistsError gave up at once instead of retrying within the
+        # deadline, so one transient Windows PermissionError failed the
+        # declare.
+        "a lock-create OSError gives up at once again",
+        ENDPOINTS,
+        "        except OSError as exc:\n            create_error = exc\n"
+        "        else:\n",
+        "        except OSError as exc:\n            return None, str(exc)\n"
+        "        else:\n",
+        ("tests/test_endpoints.py::"
+         "test_declare_endpoint_retries_a_transient_lock_create_error"),
+    ),
+    (
+        # Review round 1: the stale-lock takeover removed whatever sat at
+        # the lock path by then -- possibly another waiter's fresh, live
+        # lock -- so two writers both held the ledger lock.
+        "a stale-lock takeover removes a lock it did not judge stale",
+        ENDPOINTS,
+        "        path, lambda moved: (_read_lock_token(moved) == observed\n"
+        "                             and _lock_is_stale(moved)))",
+        "        path, lambda moved: True)",
+        ("tests/test_endpoints.py::"
+         "test_stale_lock_takeover_race_leaves_at_most_one_holder"),
+    ),
+    (
+        # Review round 1: release removed the lock without checking it still
+        # owned it, freeing a new holder's lock for a third writer.
+        "release removes a lock another writer now holds",
+        ENDPOINTS,
+        "    _remove_lock_if(path, lambda moved: _read_lock_token(moved) "
+        "== token)",
+        "    _remove_lock_if(path, lambda moved: True)",
+        ("tests/test_endpoints.py::"
+         "test_release_leaves_a_lock_another_writer_now_holds"),
     ),
     (
         # A gate that stops running still has to be REMOVABLE -- a mutation
@@ -1879,11 +1971,49 @@ MUTATIONS = (
         "declare_endpoint no longer holds the endpoints lock",
         ENDPOINTS,
         '    """\n    path = _endpoints_path(root) + ".lock"\n    deadline'
-        " = time.time() + _ENDPOINTS_LOCK_TIMEOUT_SECONDS",
-        '    """\n    return None\n    path = _endpoints_path(root) + '
-        '".lock"\n    deadline = time.time() + _ENDPOINTS_LOCK_TIMEOUT_SECONDS',
+        " = time.monotonic() + _ENDPOINTS_LOCK_TIMEOUT_SECONDS",
+        '    """\n    return ("", ""), None\n    path = _endpoints_path(root) + '
+        '".lock"\n    deadline = time.monotonic() + '
+        '_ENDPOINTS_LOCK_TIMEOUT_SECONDS',
         ("tests/test_endpoints.py::"
          "test_concurrent_threads_declaring_distinct_endpoints_all_survive"),
+    ),
+    (
+        # BLOCK 6a: a lock timeout used to mean "proceed unlocked" here --
+        # the fail-open half of the windows-latest defect (19 of 20
+        # endpoints survived a 20-thread concurrent declare). Refusing to
+        # write, rather than writing unlocked, is what the fix actually is.
+        "declare_endpoint proceeds unlocked on a lock timeout",
+        ENDPOINTS,
+        '    if endpoint_id is not None and not _valid_endpoint_id('
+        'endpoint_id):\n        return {"error": f"refusing to declare an '
+        'unsafe endpoint id: {endpoint_id!r}"}\n    lock, failure = '
+        '_acquire_endpoints_lock(root)\n    if lock is None:\n        '
+        'return {"error": failure}\n    try:',
+        '    if endpoint_id is not None and not _valid_endpoint_id('
+        'endpoint_id):\n        return {"error": f"refusing to declare an '
+        'unsafe endpoint id: {endpoint_id!r}"}\n    lock, failure = '
+        '_acquire_endpoints_lock(root)\n    try:',
+        ("tests/test_endpoints.py::"
+         "test_declare_endpoint_returns_error_on_lock_timeout"),
+    ),
+    (
+        # BLOCK 6b: a failed write used to be silently ignored here, and
+        # the freshly-minted record handed back as if it had landed -- the
+        # other half of the same defect, reached through _write_endpoints
+        # returning False instead of _acquire_endpoints_lock returning None.
+        "declare_endpoint returns a record even when the write failed",
+        ENDPOINTS,
+        '        records.append(record)\n        if not _write_endpoints('
+        'root, doc):\n            return {"error": "failed to write "\n'
+        '                              f"{os.path.join(*'
+        '_ENDPOINTS_PATH_PARTS)}"}\n        return record\n    finally:\n'
+        '        _release_endpoints_lock(lock)',
+        '        records.append(record)\n        _write_endpoints(root, '
+        'doc)\n        return record\n    finally:\n        '
+        '_release_endpoints_lock(lock)',
+        ("tests/test_endpoints.py::"
+         "test_declare_endpoint_returns_error_on_write_failure"),
     ),
     (
         # Nit 15: `--declare-endpoint ""` is falsy and must not silently

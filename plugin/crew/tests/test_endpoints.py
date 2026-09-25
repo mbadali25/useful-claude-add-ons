@@ -9,9 +9,12 @@ and read time), gizmoduck_installed's scope precedence, and inferred hits
 surfacing as EPHEMERAL candidates -- computed fresh on every read, never
 persisted -- rather than declared facts.
 """
+import contextlib
 import hashlib
 import json
 import os
+import threading
+import time
 
 import context  # noqa: F401  pylint: disable=unused-import
 import crew_fixtures
@@ -1082,8 +1085,6 @@ def test_concurrent_threads_declaring_distinct_endpoints_all_survive(tmp_path):
     """Reproduced without the fix: 20 in-process threads declaring 20
     distinct endpoints kept 1, with 0 errors raised. The lock has to make
     every one of them land."""
-    import threading
-
     root = crew_fixtures.make_repo(tmp_path)
     n = 20
     barrier = threading.Barrier(n)
@@ -1102,3 +1103,477 @@ def test_concurrent_threads_declaring_distinct_endpoints_all_survive(tmp_path):
     records = crew_endpoints.load_endpoints(str(root))
     assert len(records) == n
     assert len({r["id"] for r in records}) == n
+
+
+# --- BLOCK 6: a lock timeout or a failed write must never hand back a
+# record (or a frozen path) that did not actually land ----------------------
+
+def _hold_endpoints_lock(root):
+    """Creates the ledger's lock file by hand, the same primitive
+    `_acquire_endpoints_lock` uses, so a call made against `root` while this
+    is held cannot acquire it -- reproducing "another process/thread is
+    holding the lock" without a second thread or process."""
+    lock_path = crew_endpoints._endpoints_path(str(root)) + ".lock"  # pylint: disable=protected-access
+    os.makedirs(os.path.dirname(lock_path), exist_ok=True)
+    fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+    os.close(fd)
+    return lock_path
+
+
+class _WorkerStopped(BaseException):
+    """Raised inside an abandoned worker thread so it cannot outlive its
+    test. A BaseException, so no `except OSError`/`except Exception` in the
+    code under test can swallow it."""
+
+
+@contextlib.contextmanager
+def _bounded_worker(monkeypatch, target):
+    """Runs `target()` in a daemon thread and yields `(worker, outcome)`.
+
+    Review round 1 NIT: a regressed worker that outlived its 5s join kept
+    running after `monkeypatch.undo()` restored the real functions, took the
+    lock and wrote a second record into the ledger while later tests ran.
+    Here, once the with-block exits, `stop` is set and the worker's next
+    `os.open`/`os.rename`/`os.remove`/`os.replace`/`os.link`/`time.sleep`
+    raises `_WorkerStopped` -- before any write can land, because the ledger
+    only ever changes through `os.replace`. The guards wrap whatever the
+    test already patched, fire on the worker thread only, and are removed
+    by monkeypatch only after the worker has been told to stop."""
+    stop = threading.Event()
+    outcome = {}
+    holder = {}
+
+    def guarded(real):
+        def call(*args, **kwargs):
+            if stop.is_set() and threading.current_thread() is holder["t"]:
+                raise _WorkerStopped()
+            return real(*args, **kwargs)
+        return call
+    for name in ("open", "rename", "remove", "replace", "link"):
+        monkeypatch.setattr(crew_endpoints.os, name,
+                            guarded(getattr(crew_endpoints.os, name)))
+    monkeypatch.setattr(crew_endpoints.time, "sleep",
+                        guarded(crew_endpoints.time.sleep))
+
+    def run():
+        try:
+            outcome["result"] = target()
+        except _WorkerStopped:
+            outcome["stopped"] = True
+    holder["t"] = threading.Thread(target=run, daemon=True)
+    holder["t"].start()
+    try:
+        yield holder["t"], outcome
+    finally:
+        stop.set()
+        holder["t"].join(timeout=5)
+
+
+def _age_lock(lock_path, seconds=3600):
+    """Backdates a lock file's mtime so `_lock_is_stale` sees it as left by
+    a crashed holder."""
+    expired = os.path.getmtime(lock_path) - seconds
+    os.utime(lock_path, (expired, expired))
+
+
+def test_declare_endpoint_returns_error_on_lock_timeout(tmp_path, monkeypatch):
+    """Reproduced: hold the lock past the (monkeypatched small, so the test
+    does not take the real 5s) timeout. The old behaviour fell through and
+    wrote anyway, unlocked -- exactly the lost-update shape BLOCK 2 already
+    covers, reached a different way. Nothing may be written when this
+    happens, and the caller must get an error, not a record."""
+    root = crew_fixtures.make_repo(tmp_path)
+    monkeypatch.setattr(crew_endpoints, "_ENDPOINTS_LOCK_TIMEOUT_SECONDS", 0.05)
+    lock_path = _hold_endpoints_lock(root)
+    try:
+        result = crew_endpoints.declare_endpoint(
+            str(root), "https://a.example/x", "a.py:1")
+        assert "held by another writer" in result["error"]
+        assert not (root / ".crew" / "endpoints.json").exists()
+    finally:
+        os.remove(lock_path)
+
+
+def test_declare_endpoint_returns_error_on_write_failure(tmp_path, monkeypatch):
+    """BLOCK 6b: a failed write (os.replace raising) must never be handed
+    back as a landed record."""
+    root = crew_fixtures.make_repo(tmp_path)
+
+    def boom(*_a, **_kw):
+        raise OSError("simulated replace failure")
+    monkeypatch.setattr(crew_endpoints.os, "replace", boom)
+
+    result = crew_endpoints.declare_endpoint(
+        str(root), "https://a.example/x", "a.py:1")
+    assert "error" in result
+    assert not (root / ".crew" / "endpoints.json").exists()
+
+
+def test_declare_endpoint_retries_a_windows_permission_error_then_lands(
+        tmp_path, monkeypatch):
+    """Simulates Windows semantics on Linux: os.replace raises
+    PermissionError a couple of times (the target momentarily open by
+    another reader) then succeeds. Not gated on os.name -- see
+    _replace_with_retry's docstring -- so this is exercised directly here
+    rather than needing an os.name patch layered on top."""
+    root = crew_fixtures.make_repo(tmp_path)
+    real_replace = os.replace
+    calls = {"n": 0}
+
+    def flaky(*a, **kw):
+        calls["n"] += 1
+        if calls["n"] <= 2:
+            raise PermissionError("simulated transient lock")
+        return real_replace(*a, **kw)
+    monkeypatch.setattr(crew_endpoints.os, "replace", flaky)
+
+    result = crew_endpoints.declare_endpoint(
+        str(root), "https://a.example/x", "a.py:1")
+    assert "error" not in result
+    assert result["endpoint"] == "https://a.example/x"
+    assert calls["n"] == 3
+    assert crew_endpoints.load_endpoints(str(root)) == [result]
+
+
+def test_declare_endpoint_gives_up_after_persistent_permission_errors(
+        tmp_path, monkeypatch):
+    """The retry is bounded -- a PermissionError that never clears must
+    still surface as a failure rather than hang or silently succeed."""
+    root = crew_fixtures.make_repo(tmp_path)
+    monkeypatch.setattr(crew_endpoints, "_REPLACE_RETRY_ATTEMPTS", 3)
+    monkeypatch.setattr(crew_endpoints, "_REPLACE_RETRY_SLEEP_SECONDS", 0.02)
+
+    def always_denied(*_a, **_kw):
+        raise PermissionError("simulated persistent lock")
+    monkeypatch.setattr(crew_endpoints.os, "replace", always_denied)
+
+    result = crew_endpoints.declare_endpoint(
+        str(root), "https://a.example/x", "a.py:1")
+    assert "error" in result
+    assert not (root / ".crew" / "endpoints.json").exists()
+
+
+
+def test_replace_retry_terminates_when_the_wall_clock_stands_still(
+        tmp_path, monkeypatch):
+    """Codex BLOCK: the retry used to be bounded by `time.time()`, which a
+    clock stepped backwards -- or pinned to a constant, as here -- never
+    lets reach its deadline, so a PermissionError that never clears spun
+    forever while holding the ledger lock. Bounded by an attempt count it
+    must give up, return an error, and leave the existing ledger byte for
+    byte as it was.
+
+    Run under `_bounded_worker` so a regression FAILS here rather than
+    hanging the suite, and cannot write after it has failed."""
+    root = crew_fixtures.make_repo(tmp_path)
+    first = crew_endpoints.declare_endpoint(
+        str(root), "https://a.example/x", "a.py:1")
+    assert "error" not in first
+    ledger = root / ".crew" / "endpoints.json"
+    before = ledger.read_bytes()
+
+    monkeypatch.setattr(crew_endpoints, "_REPLACE_RETRY_SLEEP_SECONDS", 0.001)
+    monkeypatch.setattr(crew_endpoints.time, "time", lambda: 1_000_000.0)
+    monkeypatch.setattr(crew_endpoints.time, "monotonic", lambda: 1_000_000.0)
+    calls = {"n": 0}
+
+    def always_denied(*_a, **_kw):
+        calls["n"] += 1
+        raise PermissionError("simulated persistent lock")
+    monkeypatch.setattr(crew_endpoints.os, "replace", always_denied)
+
+    with _bounded_worker(monkeypatch, lambda: crew_endpoints.declare_endpoint(
+            str(root), "https://b.example/y", "b.py:1")) as (worker, outcome):
+        worker.join(timeout=5)
+
+        assert not worker.is_alive(), (
+            f"_replace_with_retry still retrying after 5s ({calls['n']} "
+            "attempts) with a frozen clock")
+        assert "error" in outcome["result"]
+        assert calls["n"] == crew_endpoints._REPLACE_RETRY_ATTEMPTS  # pylint: disable=protected-access
+        assert ledger.read_bytes() == before
+
+
+def test_lock_wait_terminates_when_the_wall_clock_stands_still(
+        tmp_path, monkeypatch):
+    """The neighbour of the replace-retry case above: the wait for the
+    ledger lock was bounded by a `time.time()` deadline, so while another
+    holder kept the lock a wall clock that stood still (pinned to a
+    constant, as here) or stepped backwards never reached it, and
+    declare_endpoint spun forever instead of returning `{"error": ...}`.
+    Bounded by `time.monotonic()` it must give up, leave the ledger byte for
+    byte as it was, and leave the other holder's lock alone.
+
+    The frozen value is the lock file's own mtime, so the stale-lock check
+    (which rightly stays on the wall clock, against mtime) sees a fresh lock
+    and cannot "win" by deleting it. Run under `_bounded_worker` so a
+    regression FAILS rather than hanging the suite."""
+    root = crew_fixtures.make_repo(tmp_path)
+    first = crew_endpoints.declare_endpoint(
+        str(root), "https://a.example/x", "a.py:1")
+    assert "error" not in first
+    ledger = root / ".crew" / "endpoints.json"
+    before = ledger.read_bytes()
+
+    lock_path = _hold_endpoints_lock(root)
+    frozen = os.path.getmtime(lock_path)
+    monkeypatch.setattr(crew_endpoints, "_ENDPOINTS_LOCK_TIMEOUT_SECONDS", 0.3)
+    monkeypatch.setattr(crew_endpoints, "_ENDPOINTS_LOCK_RETRY_SECONDS", 0.01)
+    monkeypatch.setattr(crew_endpoints.time, "time", lambda: frozen)
+
+    with _bounded_worker(monkeypatch, lambda: crew_endpoints.declare_endpoint(
+            str(root), "https://b.example/y", "b.py:1")) as (worker, outcome):
+        worker.join(timeout=5)
+
+        assert not worker.is_alive(), (
+            "declare_endpoint still waiting for the ledger lock after 5s "
+            "with a frozen wall clock")
+        assert "error" in outcome["result"]
+        assert os.path.exists(lock_path)
+        assert ledger.read_bytes() == before
+
+
+def test_lock_wait_terminates_when_a_stale_lock_cannot_be_removed(
+        tmp_path, monkeypatch):
+    """Codex BLOCK: a stale lock that could not be removed (PermissionError
+    on Windows, a read-only directory) took `continue` anyway, skipping both
+    the deadline check and the sleep, so declare_endpoint busy-spun forever.
+    It must give up within the (patched small) timeout, return
+    `{"error": ...}`, and leave the ledger byte for byte as it was. The
+    takeover moves the lock aside with `os.rename`, so that is what refuses
+    here."""
+    root = crew_fixtures.make_repo(tmp_path)
+    first = crew_endpoints.declare_endpoint(
+        str(root), "https://a.example/x", "a.py:1")
+    assert "error" not in first
+    ledger = root / ".crew" / "endpoints.json"
+    before = ledger.read_bytes()
+
+    lock_path = _hold_endpoints_lock(root)
+    _age_lock(lock_path)
+    real_rename = os.rename
+
+    def refuse_lock(src, dst, *args, **kwargs):
+        if os.path.abspath(src) == os.path.abspath(lock_path):
+            raise PermissionError("simulated undeletable stale lock")
+        return real_rename(src, dst, *args, **kwargs)
+    monkeypatch.setattr(crew_endpoints.os, "rename", refuse_lock)
+    monkeypatch.setattr(crew_endpoints, "_ENDPOINTS_LOCK_TIMEOUT_SECONDS", 0.3)
+    monkeypatch.setattr(crew_endpoints, "_ENDPOINTS_LOCK_RETRY_SECONDS", 0.01)
+
+    with _bounded_worker(monkeypatch, lambda: crew_endpoints.declare_endpoint(
+            str(root), "https://b.example/y", "b.py:1")) as (worker, outcome):
+        worker.join(timeout=5)
+
+        assert not worker.is_alive(), (
+            "declare_endpoint still spinning on an undeletable stale lock "
+            "after 5s")
+        assert "error" in outcome["result"]
+        assert ledger.read_bytes() == before
+
+
+def test_lock_wait_terminates_when_stale_locks_keep_reappearing(
+        tmp_path, monkeypatch):
+    """Review round 1: the deadline conjunct on the SUCCESSFUL-takeover
+    `continue` had no failing control -- `if removed:` alone left the suite
+    green. Here every takeover succeeds and a fresh stale lock is back
+    before the next create, so only that conjunct can end the loop: it must
+    return `{"error": ...}` within the deadline, ledger byte-identical."""
+    root = crew_fixtures.make_repo(tmp_path)
+    first = crew_endpoints.declare_endpoint(
+        str(root), "https://a.example/x", "a.py:1")
+    assert "error" not in first
+    ledger = root / ".crew" / "endpoints.json"
+    before = ledger.read_bytes()
+    lock_path = crew_endpoints._endpoints_path(str(root)) + ".lock"  # pylint: disable=protected-access
+    real_open = os.open
+
+    def reappearing(path, *args, **kwargs):
+        if os.path.abspath(path) == os.path.abspath(lock_path):
+            if not os.path.exists(lock_path):
+                with open(lock_path, "w", encoding="ascii") as handle:
+                    handle.write("crashed.holder")
+                _age_lock(lock_path)
+        return real_open(path, *args, **kwargs)
+    monkeypatch.setattr(crew_endpoints.os, "open", reappearing)
+    monkeypatch.setattr(crew_endpoints, "_ENDPOINTS_LOCK_TIMEOUT_SECONDS", 0.3)
+
+    with _bounded_worker(monkeypatch, lambda: crew_endpoints.declare_endpoint(
+            str(root), "https://b.example/y", "b.py:1")) as (worker, outcome):
+        worker.join(timeout=5)
+
+        assert not worker.is_alive(), (
+            "declare_endpoint still taking over reappearing stale locks "
+            "after 5s")
+        assert "error" in outcome["result"]
+        assert ledger.read_bytes() == before
+
+
+def test_declare_endpoint_retries_a_transient_lock_create_error(
+        tmp_path, monkeypatch):
+    """Review round 1: any OSError from creating the lock file other than
+    FileExistsError returned at once, so a single transient Windows
+    PermissionError failed the declare although the next try would have
+    succeeded. It is retried within the same deadline and the record
+    lands."""
+    root = crew_fixtures.make_repo(tmp_path)
+    real_open = os.open
+    calls = {"n": 0}
+
+    def denied_once(path, *args, **kwargs):
+        if str(path).endswith(".lock") and calls["n"] == 0:
+            calls["n"] += 1
+            raise PermissionError(13, "simulated transient lock-create denial")
+        return real_open(path, *args, **kwargs)
+    monkeypatch.setattr(crew_endpoints.os, "open", denied_once)
+
+    result = crew_endpoints.declare_endpoint(
+        str(root), "https://a.example/x", "a.py:1")
+
+    assert crew_endpoints.load_endpoints(str(root)) == [result]
+
+
+def test_lock_create_error_that_never_clears_fails_at_the_deadline(
+        tmp_path, monkeypatch):
+    """The retry above is bounded: a lock-create PermissionError that never
+    clears returns `{"error": ...}` once the deadline passes -- not at once,
+    not never -- names what failed rather than blaming another holder, and
+    leaves the ledger byte for byte as it was."""
+    root = crew_fixtures.make_repo(tmp_path)
+    first = crew_endpoints.declare_endpoint(
+        str(root), "https://a.example/x", "a.py:1")
+    assert "error" not in first
+    ledger = root / ".crew" / "endpoints.json"
+    before = ledger.read_bytes()
+    real_open = os.open
+
+    def always_denied(path, *args, **kwargs):
+        if str(path).endswith(".lock"):
+            raise PermissionError(13, "simulated persistent lock-create denial")
+        return real_open(path, *args, **kwargs)
+    monkeypatch.setattr(crew_endpoints.os, "open", always_denied)
+    monkeypatch.setattr(crew_endpoints, "_ENDPOINTS_LOCK_TIMEOUT_SECONDS", 0.3)
+    monkeypatch.setattr(crew_endpoints, "_ENDPOINTS_LOCK_RETRY_SECONDS", 0.01)
+
+    started = time.monotonic()
+    with _bounded_worker(monkeypatch, lambda: crew_endpoints.declare_endpoint(
+            str(root), "https://b.example/y", "b.py:1")) as (worker, outcome):
+        worker.join(timeout=5)
+        elapsed = time.monotonic() - started
+
+        assert not worker.is_alive()
+        assert elapsed >= 0.3
+        assert "could not create the endpoints lock (PermissionError" in (
+            outcome["result"]["error"])
+        assert ledger.read_bytes() == before
+
+
+def test_stale_lock_takeover_race_leaves_at_most_one_holder(
+        tmp_path, monkeypatch):
+    """Review round 1, reproduced: waiter B judges the lock stale; before B
+    acts, waiter A takes the stale lock over and creates a live one. B's
+    remove used to delete A's LIVE lock and B then created its own, so both
+    held the ledger lock. `os.path.getmtime` is wrapped so that B's first
+    call runs A's whole acquire before returning the stale mtime B read."""
+    root = crew_fixtures.make_repo(tmp_path)
+    lock_path = _hold_endpoints_lock(root)
+    _age_lock(lock_path)
+    real_getmtime = os.path.getmtime
+    state = {"interleaved": False, "a": None}
+
+    def interleave(path):
+        value = real_getmtime(path)
+        if not state["interleaved"]:
+            state["interleaved"] = True
+            state["a"] = crew_endpoints._acquire_endpoints_lock(str(root))  # pylint: disable=protected-access
+        return value
+    monkeypatch.setattr(crew_endpoints.os.path, "getmtime", interleave)
+    monkeypatch.setattr(crew_endpoints, "_ENDPOINTS_LOCK_TIMEOUT_SECONDS", 0.3)
+    monkeypatch.setattr(crew_endpoints, "_ENDPOINTS_LOCK_RETRY_SECONDS", 0.01)
+
+    b_lock, _ = crew_endpoints._acquire_endpoints_lock(str(root))  # pylint: disable=protected-access
+    a_lock, _ = state["a"]
+
+    assert [lock is not None for lock in (a_lock, b_lock)].count(True) <= 1
+
+
+def test_release_leaves_a_lock_another_writer_now_holds(tmp_path):
+    """Review round 1: release removed the lock path without checking it
+    still owned it, so a holder whose lock had been taken over freed the new
+    holder's lock for a third writer. Release must leave a lock carrying
+    someone else's token in place."""
+    root = crew_fixtures.make_repo(tmp_path)
+    lock, _ = crew_endpoints._acquire_endpoints_lock(str(root))  # pylint: disable=protected-access
+    lock_path = lock[0]
+    with open(lock_path, "w", encoding="ascii") as handle:
+        handle.write("another.writer")
+
+    crew_endpoints._release_endpoints_lock(lock)  # pylint: disable=protected-access
+
+    with open(lock_path, encoding="ascii") as handle:
+        assert handle.read() == "another.writer"
+
+
+def test_record_scan_artifact_returns_error_on_lock_timeout(
+        tmp_path, monkeypatch):
+    root = crew_fixtures.make_repo(tmp_path)
+    record = crew_endpoints.declare_endpoint(
+        str(root), "https://a.example/x", "a.py:1")
+    monkeypatch.setattr(crew_endpoints, "_ENDPOINTS_LOCK_TIMEOUT_SECONDS", 0.05)
+    lock_path = _hold_endpoints_lock(root)
+    try:
+        result = crew_endpoints.record_scan_artifact(str(root), record["id"])
+        assert isinstance(result, dict) and "error" in result
+        assert crew_endpoints.load_endpoints(str(root))[0].get(
+            "artifactPath") is None
+    finally:
+        os.remove(lock_path)
+
+
+def test_record_scan_artifact_returns_error_on_write_failure(
+        tmp_path, monkeypatch):
+    root = crew_fixtures.make_repo(tmp_path)
+    record = crew_endpoints.declare_endpoint(
+        str(root), "https://a.example/x", "a.py:1")
+
+    def boom(*_a, **_kw):
+        raise OSError("simulated replace failure")
+    monkeypatch.setattr(crew_endpoints.os, "replace", boom)
+
+    result = crew_endpoints.record_scan_artifact(str(root), record["id"])
+    assert isinstance(result, dict) and "error" in result
+    assert crew_endpoints.load_endpoints(str(root))[0].get(
+        "artifactPath") is None
+
+
+def test_declare_endpoint_cli_reports_failure_on_lock_timeout(
+        tmp_path, monkeypatch, capsys):
+    """The CLI already checked `record.get("error")` for the unsafe-id
+    case; this confirms the same check catches a lock timeout too, non-zero
+    exit and all."""
+    root = crew_fixtures.make_repo(tmp_path)
+    monkeypatch.setattr(crew_endpoints, "_ENDPOINTS_LOCK_TIMEOUT_SECONDS", 0.05)
+    lock_path = _hold_endpoints_lock(root)
+    try:
+        code = crew_state.main(["--root", str(root), "--declare-endpoint",
+                                "https://a.example/x", "--location", "a.py:1"])
+        assert code != 0
+        assert "error" in capsys.readouterr().out
+    finally:
+        os.remove(lock_path)
+
+
+def test_record_scan_artifact_cli_reports_failure_on_write_failure(
+        tmp_path, monkeypatch, capsys):
+    root = crew_fixtures.make_repo(tmp_path)
+    record = crew_endpoints.declare_endpoint(
+        str(root), "https://a.example/x", "a.py:1")
+
+    def boom(*_a, **_kw):
+        raise OSError("simulated replace failure")
+    monkeypatch.setattr(crew_endpoints.os, "replace", boom)
+
+    code = crew_state.main(["--root", str(root), "--record-scan-artifact",
+                            record["id"]])
+    assert code != 0
+    assert "NOT recorded" in capsys.readouterr().err
