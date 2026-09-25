@@ -1731,8 +1731,19 @@ foreach ($ident in $cmds) {
             # prints megabytes of noise before its one real failure line
             # must not have that line cut off by reading from byte 0
             # instead of the end. `Seek` from the end is a single seek on
-            # a regular file, not a scan of everything before it.
-            $fs.Seek(-$readLen, [System.IO.SeekOrigin]::End) | Out-Null
+            # a regular file, not a scan of everything before it -- but
+            # SeekOrigin::End seeks from the file's CURRENT (live) end, not
+            # the $size snapshot taken above: a rule that keeps writing
+            # after the snapshot (the same background-grandchild shape the
+            # snapshot exists to guard against elsewhere in this block)
+            # moves the live end past $size between the snapshot and this
+            # seek, and `-$readLen` from THAT end lands short of the window
+            # the snapshot promised, or past EOF entirely. Seeking from
+            # Begin by an offset computed from the snapshot itself
+            # ($size - $readLen) is anchored to the same instant $size and
+            # $readLen were computed from, regardless of what the file
+            # grows to afterward.
+            $fs.Seek($size - $readLen, [System.IO.SeekOrigin]::Begin) | Out-Null
             $buffer = [byte[]]::new($readLen)
             # `FileStream.Read` is not guaranteed to fill the buffer in one
             # call - looping to either $readLen or a 0-byte (EOF) result is
