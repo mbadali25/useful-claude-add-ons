@@ -47,7 +47,8 @@ All notable changes to this repository are documented here. Format follows [Keep
     derives the gate's own variable names from `verify-gate.sh` and
     `_common.sh` instead of checking two it never sets; the SendWait scan
     decodes UTF-16/UTF-32 BOMs and cp1252, and also matches quoted member
-    names, `::Send(` and `.SendKeys(`.
+    names, the plain `Send` static method and WScript.Shell's keystroke
+    method (named here in prose: this file is itself inside the scan).
 - **`crew` 1.0.27: a spec written from the `/crew:spec` or `/crew:fix`
   template now passes `/crew:approve`.** Bumped `1.0.25 -> 1.0.27` (1.0.26 was
   never released). The approval check requires six headings named exactly Intent, Exclusions,
