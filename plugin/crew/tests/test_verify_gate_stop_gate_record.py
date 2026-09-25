@@ -1764,10 +1764,14 @@ def test_34d_ps1_a_temp_dir_failure_falls_back_to_crew_not_a_pipe(
     change touched anything - elapsed time cannot discriminate the
     `.crew/` fallback from the old bare-pipe fallback here, since both
     would show the same bounded wait. That is a separate, pre-existing
-    limitation (filed in TODO.md, not fixed by this ticket, and not
-    fixable without the per-rule process-group kill this ticket
-    forbids porting) - see this file's own module docstring linked
-    TODO entry.
+    limitation, filed in TODO.md at the time and since FIXED by B3
+    (test_34b[ps1] and test_34h_ps1, this file) - the "not fixable
+    without the per-rule process-group kill" belief in that filing was
+    wrong: the wedge was in PowerShell's own redirect operators on the
+    invocation, not in anything a process kill would reach, and needed
+    none. See verify-gate.ps1's comment beside the `elseif
+    ($ruleOutFile)` branch. Left un-asserted here regardless, since
+    this test's own job (which code path ran) does not need timing.
 
     What this test proves instead: which CODE PATH ran. The rule lists
     `.crew` (with `-a` - the fallback file's name is a DOTFILE,

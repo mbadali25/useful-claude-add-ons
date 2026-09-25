@@ -1721,9 +1721,25 @@ foreach ($ident in $cmds) {
             # a regular file, not a scan of everything before it.
             $fs.Seek(-$readLen, [System.IO.SeekOrigin]::End) | Out-Null
             $buffer = [byte[]]::new($readLen)
-            $bytesRead = $fs.Read($buffer, 0, $readLen)
-            if ($bytesRead -lt $readLen) { $buffer = $buffer[0..($bytesRead - 1)] }
-            $out = @([System.Text.Encoding]::UTF8.GetString($buffer) -split "`r?`n")
+            # `FileStream.Read` is not guaranteed to fill the buffer in one
+            # call - looping to either $readLen or a 0-byte (EOF) result is
+            # the difference between "the whole capped window" and quietly
+            # dropping the NEWEST bytes off a partial read, which is
+            # exactly the diagnostic the seek-from-end above exists to
+            # keep.
+            $totalRead = 0
+            while ($totalRead -lt $readLen) {
+              $n = $fs.Read($buffer, $totalRead, $readLen - $totalRead)
+              if ($n -le 0) { break }
+              $totalRead += $n
+            }
+            if ($totalRead -lt $readLen) { $buffer = $buffer[0..($totalRead - 1)] }
+            # TrimEnd the trailing newline(s), matching bash's `$(...)`
+            # command substitution (which the .sh twin's OUT=$(tail -c...)
+            # relies on) - otherwise a file ending in a newline (the
+            # common case) reads back one more, empty, trailing element
+            # than the sh side does for the same bytes.
+            $out = @(([System.Text.Encoding]::UTF8.GetString($buffer)).TrimEnd("`r", "`n") -split "`r?`n")
           } finally {
             $fs.Dispose()
           }
