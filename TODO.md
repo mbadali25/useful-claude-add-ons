@@ -4433,10 +4433,13 @@ literally, hardcoding POSIX rules regardless of the host the suite actually runs
 `test_a_trailing_space_in_an_only_repos_entry_does_not_authorise_the_bare_path` (`:1444`/`:1445`),
 `test_a_drive_letter_path_is_not_absolute_on_posix` (`:1455`/`:1456`), and
 `test_normalise_repo_path_resolves_a_dotdot_after_a_symlinked_component` (`:1500`, `:1502`-`:1503`). On a real Windows
-host these get `""` back: `normalise_repo_path` only resolves `os.name == "nt"` when its caller leaves `windows`
-at the default `None` (`crew_autocycle.py:223`, `windows = os.name == "nt" if windows is None else windows`),
-and every POSIX-shaped input these tests assert on (`/srv/repo`, a leading-slash path, a symlink target) fails
-the Windows branch's own absolute-path check.
+host these do not take the Windows branch at all: `normalise_repo_path` only resolves `os.name == "nt"` when its
+caller leaves `windows` at the default `None` (`crew_autocycle.py:223`, `windows = os.name == "nt" if windows is
+None else windows`), and every one of these five tests passes `windows=False` explicitly - so on a real Windows
+host the POSIX rules run anyway, against path shapes and a filesystem that production would only ever have
+reached through the Windows branch. That host/flag mismatch is what returns `""` (or an unresolved path,
+for the symlink test) instead of the value each test asserts, not the Windows branch misreading a POSIX-shaped
+input.
 
 **Not a product defect.** Production never passes `windows=` at all: `plan()` (`crew_autocycle.py:526`) calls
 `in_scope(cfg, root, session_id)` with no `windows` argument, so it always resolves against the real host via
