@@ -27,6 +27,7 @@ _SG = "tests/test_scope_guard.py::"
 _CA = "tests/test_completion_audit.py::"
 _CT = "tests/test_crew_ticket.py::"
 _AH = "tests/test_approval_hook.py::"
+_AD = "tests/test_approval_digest.py::"
 
 SCOPE_MUTATIONS = (
     ("the scope guard allows an edit with no approved plan", GUARD,
@@ -266,4 +267,67 @@ SCOPE_MUTATIONS = (
      "no usable python to validate the plan.\" >&2\n  exit 2\n",
      "no usable python to validate the plan.\" >&2\n  exit 0\n",
      _AH + "test_without_python_only_an_approve_prompt_is_blocked[/crew:approve T-1-2-sh]"),
+    # --- T-0026: the approval digest normalises the header's status value only ---
+    ("APPROVAL DIGEST: the whole first line is normalised", TICKET,
+     "    return head[:start] + _STATUS_PLACEHOLDER + head[end:] + rest, True\n",
+     "    return _STATUS_PLACEHOLDER + rest, True\n",
+     _AD + "test_risk_change_stales_approval"),
+    ("APPROVAL DIGEST: every line's status value is normalised", TICKET,
+     "    return head[:start] + _STATUS_PLACEHOLDER + head[end:] + rest, True\n",
+     ('    return re.sub(rb"(?m)((?<=[ \\t])status:[ \\t]+)(?:" + _STATUS_ALTERNATION\n'
+      '                  + rb")(?=[ \\t\\r]|$)", rb"\\1<status>", data), True\n'),
+     _AD + "test_second_status_line_in_body_stales_approval[value-changed]"),
+    ("APPROVAL DIGEST: the bytes after line 1 are dropped", TICKET,
+     "    return head[:start] + _STATUS_PLACEHOLDER + head[end:] + rest, True\n",
+     "    return head[:start] + _STATUS_PLACEHOLDER + head[end:], True\n",
+     _AD + "test_body_line_change_stales_approval"),
+    ("APPROVAL DIGEST: line endings are normalised", TICKET,
+     '    cut = data.find(b"\\n")\n',
+     '    data = data.replace(b"\\r\\n", b"\\n")\n    cut = data.find(b"\\n")\n',
+     _AD + "test_crlf_to_lf_stales_approval"),
+    ("APPROVAL DIGEST: leading blank lines are skipped to find the header", TICKET,
+     ('    cut = data.find(b"\\n")\n'
+      '    head, rest = (data, b"") if cut < 0 else (data[:cut], data[cut:])\n'),
+     ('    lead = len(data) - len(data.lstrip(b"\\n"))\n'
+      '    cut = data.find(b"\\n", lead)\n'
+      '    head, rest = (data[lead:], b"") if cut < 0 else (data[lead:cut], data[cut:])\n'),
+     _AD + "test_header_not_on_line_one_is_not_normalised[blank-first-line]"),
+    ("APPROVAL DIGEST: any value is normalised, not the closed list", TICKET,
+     '(" + _STATUS_ALTERNATION + rb")',
+     '(" + rb"\\S+" + rb")',
+     _AD + "test_status_value_outside_vocabulary_stales_approval[unknown-value]"),
+    ("APPROVAL DIGEST: the value needs no boundary after it", TICKET,
+     'rb")(?=[ \\t\\r]|\\Z)")',
+     'rb")")',
+     _AD + "test_status_value_outside_vocabulary_stales_approval[suffixed-value]"),
+    ("APPROVAL DIGEST: the token needs no boundary before it", TICKET,
+     'rb"(?<=[ \\t])status:',
+     'rb"status:',
+     _AD + "test_status_token_glued_to_a_word_is_not_normalised"),
+    ("APPROVAL DIGEST: line 1 need not be a # header", TICKET,
+     '    if not body.startswith(b"# "):\n',
+     "    if False:\n",
+     _AD + "test_header_not_on_line_one_is_not_normalised[no-hash]"),
+    ("APPROVAL DIGEST: a header with two status tokens is normalised", TICKET,
+     '    if head.lower().count(b"status:") != 1:\n',
+     "    if False:\n",
+     _AD + "test_second_status_token_in_header_stales_approval[present-at-approval]"),
+    ("APPROVAL DIGEST: the preimage drops the normalised/raw flag", TICKET,
+     '    flag = b"normalised" if normalised else b"raw"\n',
+     '    flag = b"raw"\n',
+     _AD + "test_placeholder_literal_does_not_match_normalised"),
+    ("APPROVAL DIGEST: a receipt with no digest is read as /2", TICKET,
+     '    scheme = receipt.get("digest", _V1)\n',
+     '    scheme = receipt.get("digest", DIGEST_SCHEME)\n',
+     _AD + "test_receipt_without_digest_verifies_unchanged_files"),
+    ("APPROVAL DIGEST: an unknown digest scheme is read as /2", TICKET,
+     "    elif scheme == DIGEST_SCHEME:\n",
+     "    elif True:\n",
+     _AD + "test_unknown_digest_scheme_is_stale[crew-approval/9]"),
+    ("APPROVAL DIGEST: a /2 receipt missing a digest falls back to raw", TICKET,
+     ('            return {"status": "stale", "receipt": receipt, "touch": [],\n'
+      '                    "why": (f"the approval receipt has no usable {\' or \'.join(unusable)}; "\n'
+      '                            "approve again")}\n'),
+     '            measure, keys = _sha, ("plan_sha256", "spec_sha256")\n',
+     _AD + "test_a_v2_receipt_without_a_usable_digest_is_stale_not_raw[missing]"),
 )

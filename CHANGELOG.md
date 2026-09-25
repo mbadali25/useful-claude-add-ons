@@ -6,6 +6,34 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Fixed
 
+- **`crew` 1.0.33: an approval survives the lifecycle status edits (T-0026).**
+  Bumped `1.0.29 -> 1.0.33` (the number is re-set at merge). `/crew:done`,
+  `/crew:implement` and `/crew:plan` each rewrite `spec.md`'s header
+  `status:`, and the approval receipt bound the whole file's sha256, so each
+  of those edits staled the approval the ticket had just been given
+  (TODO.md, "`/crew:done` stales its own approval receipt").
+  - **`crew_ticket.approval_digest`** hashes each file with only the header's
+    status VALUE normalised: line 1 must start with `# `, hold exactly one
+    `status:` (counted case-insensitively), and carry a value from the closed
+    `STATUS_VALUES` list. Anything else normalises nothing and stales as
+    before: `risk:`, the title, any body line, a second status token, an
+    unknown value, a header that moved. The preimage is domain-separated
+    (`crew-approval/2`, then `normalised` or `raw`), so a file holding the
+    placeholder text literally can never match a normalised one.
+  - **Dual-read.** A receipt keeps the raw `plan_sha256`/`spec_sha256` and adds
+    `plan_digest`, `spec_digest` and `digest: "crew-approval/2"`. A receipt with
+    no `digest` field is compared raw, so it still verifies on unchanged files
+    and stales once on its first status edit. An unknown scheme, or a `/2`
+    receipt missing a digest, reads `stale`, never a raw fallback. The review
+    ledger's successor-plan identity still reads the raw hash.
+  - **Lifecycle prose.** `/crew:plan` sets `status: planned` on `spec.md`'s
+    header, no longer adding a status token to `plan.md`. `/crew:implement`,
+    `/crew:done` and `/crew:approve` say the status edit keeps the approval.
+  - New `test_approval_digest.py` (must-allow/must-block pairs, the dual-read,
+    and the scope guard, completion audit and metrics end to end). Fourteen
+    `APPROVAL DIGEST` mutations in `sabotage_scope.py`, each turning its named
+    test red. A `.crew/verify.json` rule maps `crew_ticket.py` to them.
+
 - **`crew` 1.0.35: the endpoint ledger fails closed instead of silently losing
   a declaration, under an OS advisory lock (T-0003) — the defect reproduced on
   windows-latest as a 20-thread concurrent-declare run keeping 19 of 20
@@ -81,6 +109,7 @@ All notable changes to this repository are documented here. Format follows [Keep
     must-fail cases; the ones that can hang on a regression run under a
     bounded worker stopped before it can write. `plugin/crew/tests/sabotage.py`
     carries a mutation for each, each seen red on Linux.
+
 - **`crew` 1.0.29: the PATH stubs in `test_34d` and `test_1` are reached on
   native Windows, from win-repo-2 (T-0007).** Bumped `1.0.28 -> 1.0.29`. Test
   harness only - no hook script changes. Two of win-repo-2's commits,

@@ -45,7 +45,8 @@ per-turn block. A non-zero exit names the out-of-scope path; file it to
 
 ## On all three passing
 
-1. Set `.work/tickets/$1/spec.md`'s header to `status: done`. Update
+1. Set `.work/tickets/$1/spec.md`'s header to `status: done`; changing only
+   that value keeps the approval, so the checks above stay true. Update
    `.work/INDEX.md`'s row to match (files and Obsidian modes), or push the
    tracker item to its closed state (Jira, ServiceDesk Plus) the way
    `/crew:work`'s old step 13 did. <!-- deliberate -->

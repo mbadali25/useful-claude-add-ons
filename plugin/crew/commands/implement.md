@@ -91,6 +91,7 @@ that later edits move out from under it.
 
 ## 7. Update status
 
-Set `spec.md`'s header to `status: review`. `/crew:done $1` moves it to `done`
-once the review receipt, the gate and the completion audit all pass — this
-command does not set `done` itself.
+Set `spec.md`'s header to `status: review`. That edit keeps the approval: the
+digest normalises only the header's status value. `/crew:done $1` moves it to
+`done` once the review receipt, the gate and the completion audit all pass —
+this command does not set `done` itself.
