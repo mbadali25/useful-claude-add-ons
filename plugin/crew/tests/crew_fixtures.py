@@ -36,6 +36,85 @@ GATE_SUBPROCESS_TIMEOUT_S = 120
 # under, and `popen_gate` treats `None` as "nothing to auto-register with".
 _AMBIENT_GATE_TRACKER = None
 
+# Whether /proc exists on this host at all (Linux; not macOS/BSD). Read
+# once at import time and treated as a constant everywhere below: a host
+# that has no /proc can never verify a pgid by start time, so the
+# verification in `kill_process_group` is skipped there and the old
+# best-effort signal-by-number behaviour is unchanged. On a host that DOES
+# have it, a `None` result from `_proc_start_ticks` always means "this
+# specific read failed" (pid gone, or gone-and-reused), never "no /proc".
+_PROC_SUPPORTED = os.path.isdir("/proc")
+
+
+def _proc_start_ticks(pid):
+    """The kernel's process-start-time field for `pid`, as a string, or
+    `None` if it cannot be read (no /proc, pid does not exist, or the stat
+    line does not parse).
+
+    This is `/proc/<pid>/stat` field 22 (starttime, in clock ticks since
+    boot) -- monotonic, assigned once at fork, and never reused for a
+    DIFFERENT process while THIS pid is: a fresh process reusing a
+    recycled pid always gets a fresh, later starttime. Comparing it is how
+    `kill_process_group` tells "the process I recorded at spawn" from "some
+    unrelated process that now happens to hold the same numeric pid",
+    which a bare pid alone cannot do once the original has been reaped.
+
+    `comm` (field 2) is parenthesised and may itself contain spaces or a
+    literal `)`, so this splits on the LAST `)` rather than by field
+    position, matching how `ps`/`procps` parse the same file.
+    """
+    try:
+        with open(f"/proc/{pid}/stat", encoding="ascii") as handle:
+            raw = handle.read()
+    except OSError:
+        return None
+    try:
+        after_comm = raw.rsplit(")", 1)[1].split()
+        return after_comm[19]  # field 22; state (field 3) is after_comm[0]
+    except (IndexError, ValueError):
+        return None
+
+
+def pid_alive(pid):
+    """Is `pid` still alive, in the sense every caller here actually means
+    -- "would a fresh signal still land", not "does the kernel still have
+    a task struct for it".
+
+    A killed child that has not yet been WAITed on is a ZOMBIE: it cannot
+    be signalled again and holds no real resources, but its pid is not
+    freed until something reaps it, so a bare `os.kill(pid, 0)` keeps
+    succeeding for it exactly as it would for a genuinely running process.
+    On a host whose PID 1 is not a real init (common in containers,
+    nothing reaps orphans), a killed and reparented grandchild can sit in
+    that state forever -- a liveness loop built on `os.kill(pid, 0)` alone
+    never converges even though the kill already landed. Checking
+    `/proc/<pid>/stat`'s state field first (Linux-only) catches this: state
+    `Z` reads as dead here.
+
+    Falls back to a bare `os.kill(pid, 0)` when /proc is unavailable (any
+    non-Linux POSIX host) or the read fails for some other reason -- the
+    zombie-forever case this exists for is Linux/container-specific, not
+    general, and a bare kill(0) is still correct everywhere else.
+    """
+    if os.name == "nt":
+        done = subprocess.run(
+            ["tasklist", "/FI", f"PID eq {pid}"], capture_output=True,
+            text=True, check=False, timeout=30)
+        return str(pid) in done.stdout
+    if _PROC_SUPPORTED:
+        try:
+            with open(f"/proc/{pid}/stat", encoding="ascii") as handle:
+                state = handle.read().rsplit(")", 1)[1].split()[0]
+            if state == "Z":
+                return False
+        except (OSError, IndexError):
+            pass
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+    return True
+
 
 def popen_gate(cmd, **kwargs):
     """`subprocess.Popen`, but the child is made killable as a whole GROUP.
@@ -84,6 +163,13 @@ def popen_gate(cmd, **kwargs):
         # id at spawn removes the reuse window entirely: it is correct for
         # as long as `proc` exists, reaped or not.
         proc.pgid = proc.pid
+        # Recorded in the same breath, for the same reason: a `None` here
+        # (process already gone, or no /proc) means kill-time verification
+        # is not possible either, and `kill_process_group` falls back to
+        # the old unverified signal rather than refusing to clean up at
+        # all.
+        proc.pgid_start_ticks = (
+            _proc_start_ticks(proc.pid) if _PROC_SUPPORTED else None)
     # Auto-tracked by whichever test's `gate_processes` fixture is
     # currently active (autouse, see below) -- a caller that ALSO does its
     # own explicit `gate_processes(proc)` registration (the pre-existing
@@ -112,16 +198,44 @@ def kill_process_group(proc):
     `popen_gate`'s comment on `proc.pgid` for why the fresh lookup is the
     one with the reuse race and should not be reached for anything spawned
     through here.
+
+    A recorded `proc.pgid` is not itself immune to reuse: once the whole
+    group this pgid names has exited (the ordinary case for a short-lived
+    gate command -- `run_gate` reaps the direct child via `communicate()`
+    on every non-timeout call, and a command with no lingering grandchild
+    takes the rest of the group with it), the kernel is free to hand that
+    exact number to a brand new, unrelated `setsid` leader, and this
+    function can be called on the stale `proc` well after that -- teardown
+    iterates every tracked proc regardless of whether it already exited.
+    So when `proc.pgid_start_ticks` was recorded (non-`None`, meaning
+    `_PROC_SUPPORTED` and the read succeeded at spawn), this re-reads the
+    SAME field for the pgid now and refuses to signal on a mismatch --
+    that pgid no longer names the process this call is trying to clean up,
+    and guessing would kill whatever unrelated thing holds it now. No
+    recorded start time (no /proc, or the `getpgid` fallback path, which
+    never had one to record) falls back to the old, unverified signal --
+    the only thing possible there, and no worse than before this check
+    existed.
     """
     if os.name == "nt":
         subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)],
                         capture_output=True, timeout=30, check=False)
     else:
         pgid = getattr(proc, "pgid", None)
+        start_ticks = getattr(proc, "pgid_start_ticks", None)
         try:
             if pgid is None:
                 pgid = os.getpgid(proc.pid)
-            os.killpg(pgid, signal.SIGKILL)
+            elif _PROC_SUPPORTED and start_ticks is not None:
+                if _proc_start_ticks(pgid) != start_ticks:
+                    print(
+                        f"crew_fixtures: skipping killpg({pgid}) - its "
+                        "process start time no longer matches what was "
+                        "recorded at spawn, so this pgid may have been "
+                        "reused by an unrelated process", file=sys.stderr)
+                    pgid = None
+            if pgid is not None:
+                os.killpg(pgid, signal.SIGKILL)
         except (ProcessLookupError, PermissionError, OSError):
             pass
     try:

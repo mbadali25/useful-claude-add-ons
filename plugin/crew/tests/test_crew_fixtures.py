@@ -9,6 +9,7 @@ instead of "no tests collected" (pytest exit code 5).
 import json
 import os
 import re
+import signal
 import subprocess
 import sys
 import time
@@ -234,16 +235,11 @@ def test_a_posix_shim_is_executable_and_has_no_cmd_twin(tmp_path):
 # --- gate_processes: hygiene, not a check --------------------------------
 
 def _pid_alive(pid):
-    if os.name == "nt":
-        done = subprocess.run(
-            ["tasklist", "/FI", f"PID eq {pid}"], capture_output=True,
-            text=True, check=False, timeout=30)
-        return str(pid) in done.stdout
-    try:
-        os.kill(pid, 0)
-    except OSError:
-        return False
-    return True
+    """Delegates to `crew_fixtures.pid_alive`, which is zombie-aware on
+    POSIX (a killed-but-unreaped grandchild would otherwise read as
+    "still alive" forever on a host whose PID 1 does not reap orphans --
+    see that function's docstring)."""
+    return crew_fixtures.pid_alive(pid)
 
 
 def test_gate_processes_kills_a_still_running_child_at_teardown():
@@ -349,3 +345,62 @@ def test_kill_process_group_uses_the_pgid_recorded_at_spawn_not_a_fresh_lookup(
             os.kill(grandchild_pid, 9)
         except OSError:
             pass
+
+
+class _FakePgidProc:
+    """Stands in for a `Popen` already carrying the attributes `popen_gate`
+    records at spawn, without spawning anything real -- the collision this
+    guards against (a pgid recycled to an unrelated live process) is not
+    something a test can force by actually winning the race, so the two
+    tests below force it by monkeypatching `_proc_start_ticks` instead.
+    """
+    pid = 999999
+    pgid = 999999
+    pgid_start_ticks = "111"
+
+    def kill(self):
+        pass
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX process-group signalling only")
+@pytest.mark.skipif(not os.path.isdir("/proc"),
+                     reason="start-time verification needs /proc")
+def test_kill_process_group_skips_a_pgid_whose_start_time_no_longer_matches(
+        monkeypatch):
+    """The reaped-leader shape the review flagged: `proc.pgid` was recorded
+    at spawn, the leader has since been reaped, and the OS has handed that
+    same number to an unrelated process (a different start time). Signalling
+    it anyway would SIGKILL a process group `kill_process_group` never
+    started. Forced deterministically via `_proc_start_ticks`, since winning
+    the real pid-reuse race is not something a test can do on demand.
+    """
+    calls = []
+    monkeypatch.setattr(os, "killpg",
+                         lambda pgid, sig: calls.append((pgid, sig)))
+    monkeypatch.setattr(crew_fixtures, "_proc_start_ticks", lambda pid: "222")
+
+    crew_fixtures.kill_process_group(_FakePgidProc())
+
+    assert calls == [], (
+        "kill_process_group signalled a pgid whose recorded start time no "
+        "longer matches - it must skip signalling, not guess")
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX process-group signalling only")
+@pytest.mark.skipif(not os.path.isdir("/proc"),
+                     reason="start-time verification needs /proc")
+def test_kill_process_group_still_signals_when_start_time_matches(
+        monkeypatch):
+    """Sabotage pair for the test above: with the start time UNCHANGED (the
+    ordinary case -- nothing was reused), `kill_process_group` must still
+    signal. Proves the previous test is not passing because signalling was
+    disabled altogether.
+    """
+    calls = []
+    monkeypatch.setattr(os, "killpg",
+                         lambda pgid, sig: calls.append((pgid, sig)))
+    monkeypatch.setattr(crew_fixtures, "_proc_start_ticks", lambda pid: "111")
+
+    crew_fixtures.kill_process_group(_FakePgidProc())
+
+    assert calls == [(999999, signal.SIGKILL)]
