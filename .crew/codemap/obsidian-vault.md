@@ -1,6 +1,6 @@
 # obsidian-vault
-anchor: useful-claude-add-ons@60c79407
-verified: 2026-09-22
+anchor: useful-claude-add-ons@f2bb919b
+verified: 2026-09-25
 
 ## Does
 Turns one or more Obsidian vaults into Claude Code's durable memory: a PostToolUse guard that
@@ -50,28 +50,75 @@ violation visible at all. (JUDGEMENT.)
   names the design constraint: HTTP and
   HTTPS ports both come from the vault's own `data.json` and neither is derived from the other, and
   "down" is deliberately four distinguishable states. (DERIVED.)
-- `plugin/obsidian-vault/hooks/scripts/vault_ops.py:1059-1089` - `register_commands`, builds the
-  `claude mcp add` invocation per vault. Driven by `/obsidian-vault:install` and `:init`.
-  (DERIVED, range by `ast.parse`.)
-- `plugin/obsidian-vault/hooks/scripts/obsidian_common.py:286-294` - `resolve_vault_path`, the
-  single entry point every hook uses to answer "which vault am I acting on". (DERIVED.)
+- `plugin/obsidian-vault/hooks/scripts/vault_ops.py:1074-1103` - `register_commands`, builds the
+  `claude mcp add` invocation per vault. Driven by `/obsidian-vault:install` and `:init`. (Was
+  `:1059-1089`; re-numbered by crew 1.0-era insertions earlier in the file - see the 2026-09-25
+  re-anchor below. Content unchanged.) (DERIVED, range by `ast.parse`.)
+- `plugin/obsidian-vault/hooks/scripts/obsidian_common.py:321-329` - `resolve_vault_path`, the
+  READ entry point every hook except capture/import/gardening uses to answer "which vault am I
+  acting on" (was `:286-294`, re-numbered - see below). **It is no longer the only resolver.**
+  `writer_vault()` (`plugin/obsidian-vault/hooks/scripts/obsidian_common.py:332-389`, new this pass)
+  is the WRITE entry point: capture, import, ack and the gardener call it instead, because
+  `resolve_vault_path` silently promotes a survivor when the configured default is unmounted, which
+  is right for a reader and wrong for a writer (own docstring, `:333-339`). (DERIVED.)
 - `plugin/obsidian-vault/hooks/scripts/bridge_status.py:385` — module entry point (`main()`), from the graph
-- `plugin/obsidian-vault/hooks/scripts/vault_capture.py:35` — module entry point (`main()`), from the graph
+- `plugin/obsidian-vault/hooks/scripts/vault_capture.py:85` — `main()` (was cited as `:35` for the
+  module; `main()` itself starts at `:85`, re-confirmed this pass since capture's body changed
+  substantially - see Landmines)
 - `plugin/obsidian-vault/hooks/scripts/vault_guard.py:229` — module entry point (`main()`), from the graph
-- `plugin/obsidian-vault/hooks/scripts/vault_ops.py:1821` — module entry point (`main()`), from the graph
+  (file byte-identical to the previous anchor - not re-read this pass beyond confirming the diff is
+  empty)
+- `plugin/obsidian-vault/hooks/scripts/vault_ops.py:1841` — `main()` (was `:1821`, re-numbered - see
+  below). `build_parser()` (`:1749-1839`) now also calls
+  `vault_setup.add_parsers(sub)`, `vault_import.add_parsers(sub)`, `vault_recall.add_parsers(sub)`
+  and `vault_garden.add_parsers(sub)` (`:1833-1836`), so `vault_ops.py` stays the single CLI entry
+  point while the setup/import/recall/garden subcommands live in their own new modules. (DERIVED.)
+- `plugin/obsidian-vault/hooks/scripts/vault_setup.py:428` - `add_parsers`, registers
+  `detect-obsidian`, `install-obsidian`, `create-vault`, `adopt` (new module this pass; module
+  docstring at `:1-20`). (DERIVED, not read beyond the docstring and this signature - see Unverified.)
+- `plugin/obsidian-vault/hooks/scripts/vault_import.py:330` - `add_parsers`, registers `import` (new
+  module this pass; module docstring at `:1-20`). (DERIVED, not read beyond the docstring - see
+  Unverified.)
+- `plugin/obsidian-vault/hooks/scripts/vault_recall.py:222` - `add_parsers`, registers `recall` - "the
+  contract crew's context hook calls" per its own module docstring (`:1`), read-only, no network, no
+  bridge, no writes, no cache (new module this pass). (DERIVED, not read beyond the docstring - see
+  Unverified.)
+- `plugin/obsidian-vault/hooks/scripts/vault_garden.py:1095` - `add_parsers`, registers `queue`,
+  `ack`, `garden-run`, `drain`, `reconcile`, `schedule` (new module this pass, 1137 lines - the
+  largest of the four; module docstring at `:1-20` states per-host queue files, a legacy-file
+  fallback, and hard bounds: at most 5 items and 600 seconds per run). (DERIVED, not read beyond the
+  docstring and this signature - see Unverified.)
 
 ## Owns data
 - The vault contents themselves, written by the gardener - outside this repo, at the path
   `resolve_vault_path` returns
-  (`plugin/obsidian-vault/hooks/scripts/obsidian_common.py:286-294`).
-- The session queue `inbox/pending-reflect.md` inside that vault
-  (`plugin/obsidian-vault/hooks/scripts/vault_capture.py:31-32`). (DERIVED.)
+  (`plugin/obsidian-vault/hooks/scripts/obsidian_common.py:321-329`, re-numbered from `:286-294`).
+- **The session queue is now per-host, not one shared file.** `vault_capture.py` writes
+  `inbox/pending-reflect.<host>.md` - one file PER HOST - via `inbox_path`
+  (`plugin/obsidian-vault/hooks/scripts/vault_capture.py:41-42`), where `<host>` is
+  `obsidian_common.host_id()` (`plugin/obsidian-vault/hooks/scripts/obsidian_common.py:105-115`:
+  `OBSIDIAN_VAULT_HOST` env override, else `platform.node()`, lowercased and cleaned to
+  `[a-z0-9-]`, falling back to `unknown-host` rather than producing `pending-reflect..md`). The
+  legacy single `inbox/pending-reflect.md` (`legacy_inbox_path`, `plugin/obsidian-vault/hooks/scripts/vault_capture.py:37-38`)
+  is no longer WRITTEN by this script, only read - for de-duplication (`already_queued`,
+  `plugin/obsidian-vault/hooks/scripts/vault_capture.py:58-82`, checks both files) and as a queue the
+  gardener still drains (`plugin/obsidian-vault/hooks/scripts/vault_garden.py`'s own docstring,
+  `:9-14`). **This is why two machines syncing one vault no longer collide on one queue file - the
+  gap this pass's per-host split closes.** (DERIVED.)
 - Machine-global vault registry `~/.claude/obsidian/config.json`, named by
-  `obsidian_common.config_path` (`plugin/obsidian-vault/hooks/scripts/obsidian_common.py:62-63`)
-  and read by `read_config` (`:66-73`); each vault's HTTP port lives there. Shape documented at
-  `plugin/obsidian-vault/README.md:36-44`. (DERIVED. The note previously cited
-  `plugin/obsidian-vault/README.md:39`, which is one row *inside* that JSON block rather than the
-  block.)
+  `obsidian_common.config_path` (`plugin/obsidian-vault/hooks/scripts/obsidian_common.py:62-72`)
+  and read by `read_config` (`:75-82`); each vault's HTTP port lives there, and - new this pass - each
+  vault's `role` (`primary`, `recall` or `ignore`; `ROLES = ("primary", "recall", "ignore")` at
+  `plugin/obsidian-vault/hooks/scripts/obsidian_common.py:102`). The pre-roles multi-vault example
+  at `plugin/obsidian-vault/README.md:36-42` is unchanged and still has no `"role"` key (roles are
+  optional, per `writer_vault`'s own fallback path); the role-bearing shape is documented separately
+  at `plugin/obsidian-vault/README.md:221`: `{ "vaults": { "<name>": { "path": "...", "role": "primary|recall|ignore",
+  "default": true } } }`. (DERIVED.)
+- **New this pass:** an acknowledgement file per host, `inbox/reflected.<host>.md` - "every file
+  here therefore has exactly one writer" per `vault_garden.py`'s own docstring
+  (`plugin/obsidian-vault/hooks/scripts/vault_garden.py:12-14`); a `- [x]` check-off in the legacy
+  file (the pre-this-pass gardening mechanism) also still counts as done. (DERIVED from the
+  docstring, not from reading `ack`'s body - see Unverified.)
 
 ## Calls out to
 - Obsidian's Local REST API plugin, one MCP server per vault on its own port, registered via
@@ -277,6 +324,98 @@ violation visible at all. (JUDGEMENT.)
   (188 lines), run from the main suite at `plugin/obsidian-vault/hooks/scripts/_test/run-tests.sh:516-517`. **Like the WindowsApps stub, this
   reproduction is MODELLED under a forced setting, not observed on a real legacy-mode Windows
   PowerShell 5.1 host** - the script's own header says so. (DERIVED.)
+- **Crew 1.0 retired two adjacent memory systems this note used to reference by name; both are
+  gone from the marketplace.** `claude-memories-vault` and `claude-memories-canvas` no longer exist
+  as skills (`.claude-plugin/marketplace.json` no longer lists either; `git show --diff-filter=D
+  6c497a14 --name-status -- skills/claude-memories-vault skills/claude-memories-canvas` is empty
+  because they were never tracked as files at all - they were marketplace-only entries removed in
+  the same commit). `vault-automation` never existed as a path in this repo either (`git log
+  --diff-filter=D --all -- '*vault-automation*'` finds nothing) - if it was a real thing, it left no
+  trace under that name here, and this note does not assert it existed. What *is* still here and
+  unchanged: this repo's `CLAUDE.md` "Two vault systems on one host" memory entry, describing
+  `obsidian-vault` (this plugin) and a separate personal vault tooling as different systems on the
+  same machine - that boundary still stands; only the two named skills were removed. (DERIVED for
+  the removal; the "vault-automation" non-finding is a negative result, not a confirmed prior
+  existence.)
+- **A refused capture is now a distinct, named outcome, not a queued garbage line.** `main()`
+  (`plugin/obsidian-vault/hooks/scripts/vault_capture.py:119-146`) refuses to queue anything when
+  BOTH the session id and the transcript path come back unusable
+  (`usable_sid is None and usable_transcript is None`, `:136`) - previously a bare `sid="?"` would
+  still queue a line the gardener could never resolve to anything and could never dedupe (`sid="?"`
+  never matched itself). It now says so on stderr and returns (`:143-146`) rather than writing. When
+  a transcript exists but the session id does not, `transcript_key` hashes `trigger+transcript`
+  (`plugin/obsidian-vault/hooks/scripts/vault_capture.py:45-55`) into a `key=` field so the SAME
+  event firing twice - the `.sh`/`.ps1` twins both registered on one Windows host, or a hook that
+  simply fires twice - dedupes against itself; `already_queued` (`:58-82`) checks the key against
+  both the new per-host file and the legacy shared one. (DERIVED; pinned in
+  `plugin/obsidian-vault/hooks/scripts/_test/test_memory_ops.py`, sabotage-tested per its own header
+  - not read in depth, see Unverified.)
+- **All six wrappers (three `.sh`, three `.ps1`) now share one resolver shape, not three
+  independently-drifting ones.** Each walks EVERY PATH match of `python3`/`python`/`py` (bash:
+  `type -aP`, `plugin/obsidian-vault/hooks/scripts/vault-guard.sh:88-95`; PowerShell: the
+  `Get-Command -All` equivalent) rather than the first match per name - crew 1.0's Windows burn-in
+  found a path-rule-plus-first-match version discarded three WORKING WindowsApps aliases before
+  reaching the real `python.exe` behind them. Each candidate is run and must answer a probe of the
+  shape `vault-guard-python:<major>:<minor>:<impl>:<executable>` (bash:
+  `plugin/obsidian-vault/hooks/scripts/vault-guard.sh:126-128`; PowerShell:
+  `plugin/obsidian-vault/hooks/scripts/vault-guard.ps1:115`), checked for Python >= 3.8, `cpython` or
+  `pypy`, and a non-empty, existing `sys.executable` - a plain path with no version/impl check (the
+  previous anchor's shape) accepted a Python 2 or a fake printing a missing path. (DERIVED, and
+  pinned by the new `plugin/obsidian-vault/hooks/scripts/_test/test_python_probe_proof.py`, run
+  standalone with `python3 hooks/scripts/_test/test_python_probe_proof.py`; its own header names
+  three Codex-round-1 FAILs this closed.)
+  - **An overall deadline, not just a per-candidate timeout.** Each candidate probe is bounded at
+    3 seconds, but an 8-second OVERALL deadline (`_vault_guard_deadline=$((SECONDS + 8))`,
+    `plugin/obsidian-vault/hooks/scripts/vault-guard.sh:86`; PowerShell's `$deadline` `Stopwatch`
+    equivalent) stops the PATH walk once spent, because several near-3s-but-under candidates
+    followed by one hung one could otherwise blow past the hook's own timeout even with every
+    single probe individually bounded. (DERIVED.)
+  - **The probe string was rebuilt to contain no literal `%`, because it now has to survive
+    `cmd.exe` - and this fix is `.ps1`-only.** The three `.sh` wrappers still build their probe with
+    Python's `%`-formatting (confirmed unchanged: `plugin/obsidian-vault/hooks/scripts/vault-guard.sh:128`
+    still reads `"%d:%d:%s:" % (v[0], v[1], sys.implementation.name)`) - bash never routes a
+    candidate through `cmd.exe`, so the trap below does not apply to it, and
+    `check_no_percent_reaches_cmd` in `test_python_probe_proof.py` only reads the three `.ps1` files
+    for this reason (confirmed by re-reading that function). A `.cmd`/`.bat`-shimmed Python (a
+    pyenv-win install) cannot be launched with
+    `UseShellExecute=false` directly - .NET's `CreateProcess` only starts a real PE executable - so a
+    `.cmd`/`.bat` candidate is routed through `cmd.exe /d /c` instead
+    (`plugin/obsidian-vault/hooks/scripts/vault-guard.ps1:116-129`). `cmd.exe` expands `%...%` pairs
+    in the command line before python ever sees them, and the old probe built its answer with
+    Python's `'%d:%d:%s:' % (...)` formatting - three `%` that a `.cmd`-only Python always failed on.
+    Rebuilt with `str(...)` and string concatenation instead (same
+    `<major>:<minor>:<impl>:<executable>` output shape, zero `%`), matching how crew's own
+    `Resolve-CrewPython` (`plugin/crew/hooks/scripts/role-write-guard.ps1`) already avoided the same
+    trap by printing a `json.dumps(...)` line, which likewise never contains a bare `%`. Pinned by
+    `check_no_percent_reaches_cmd` and `check_cmd_bat_routing_present` in
+    `test_python_probe_proof.py`, which check the source statically (whether a `%` reaches `cmd.exe`
+    is a fact about the string, not something the sandbox executes end to end). (DERIVED.)
+  - **A timed-out probe is killed and reaped, whole tree, with its own bound.** On timeout,
+    PowerShell tries `$proc.Kill($true)` (recursive kill, .NET Core 3+/PowerShell 7) and falls back
+    to `taskkill /T /F /PID` on Windows PowerShell 5.1, which has no such overload
+    (`plugin/obsidian-vault/hooks/scripts/vault-guard.ps1:141-151`); either way the kill is followed
+    by its own bounded `WaitForExit(2000)` so a killed tree is waited on rather than left torn down
+    indefinitely. Bash's twin gives the candidate its own process group (`set -m`) and a watchdog
+    subshell that tries `taskkill /F /T /PID` under MSYS (via `/proc/$pid/winpid`) before falling
+    back to `kill -9` on the group
+    (`plugin/obsidian-vault/hooks/scripts/vault-guard.sh:126-141`). **MODELLED, not observed on
+    Windows** - same caveat this note has carried for the WindowsApps stub since the previous
+    anchor. (DERIVED.)
+- **New this pass: vault roles (`primary`/`recall`/`ignore`) via `vault_setup.py adopt`, layered
+  under three new CLI modules `vault_ops.py` now dispatches to.** `vault_setup.py`'s own docstring
+  (`plugin/obsidian-vault/hooks/scripts/vault_setup.py:1-20`) states the contract: exactly one
+  `primary` (receives captures and imports, also `default`); any number of `recall` (read for
+  injection, never written); `ignore` (answered "no" during setup, kept in config so the question is
+  not asked again, never recalled, written, or included in `--all`). `vault_ops.py`'s own `select()`
+  now drops `ignore`-role vaults from `--all` (`plugin/obsidian-vault/hooks/scripts/vault_ops.py:406-409`,
+  new this pass). `vault_recall.py` is, per its own docstring, "the contract crew's context hook
+  calls" - a pure read (no network, no bridge, no writes, no cache) that scores hits by
+  title/heading/body and orders results by vault priority then score, budgeted by `--max-chars`
+  (`plugin/obsidian-vault/hooks/scripts/vault_recall.py:1-20`). `vault_import.py` copies notes from
+  another vault or a plain Markdown folder into the primary, dry-run by default, never overwriting,
+  stamping `imported_from`/`imported_at` frontmatter so a re-run is a no-op
+  (`plugin/obsidian-vault/hooks/scripts/vault_import.py:1-20`). None of these four modules' internals
+  were read past the module docstring and `add_parsers` signature - see Unverified. (DERIVED.)
 - **`bridge-status.sh`/`.ps1` and `vault-capture.sh`/`.ps1` now carry their own proven-interpreter
   resolvers, closing the gap the previous version of this note flagged as open risk.** Each is an
   independently-copied near-twin of `vault-guard.sh`'s `_vault_guard_resolve_python` (bash) or
@@ -290,9 +429,28 @@ violation visible at all. (JUDGEMENT.)
   two remaining naive wrappers ... still carry the naive one-liner". Run from the main suite at
   `plugin/obsidian-vault/hooks/scripts/_test/run-tests.sh:514-515`. (DERIVED.)
 
+- **The two retired `claude-memories-*` skills' conventions did not disappear - they moved into
+  this plugin as portable "profiles".** New this pass:
+  `plugin/obsidian-vault/skills/obsidian-memory-contract/profiles/memory-vault.md` (78 lines) states
+  in its own opening line that it "carries the conventions the `claude-memories-vault` skill
+  documents for one specific vault, with that vault's paths, counts and host-local tooling taken
+  out, so any primary vault can adopt them"; `profiles/canvas-maps.md` (48 lines) does the same for
+  `claude-memories-canvas`. Both apply to "the `primary` vault, and any `recall` vault that says it
+  follows this profile"
+  (`plugin/obsidian-vault/skills/obsidian-memory-contract/profiles/memory-vault.md:9`) - tying the
+  new profile mechanism to the new role
+  mechanism above. Neither profile file's full body was read past its opening section - see
+  Unverified. (DERIVED.)
+
 ## Measured this pass
 - `env -u MSYS_NO_PATHCONV bash plugin/obsidian-vault/hooks/scripts/_test/run-tests.sh` re-run at
-  `60c79407`, on **Linux**, checkout
+  `6c497a14`, on **Linux**, checkout `/repos/personal/uca-k4`, branch `crew-refresh-k4`:
+  **RESULT: 71 passed, 0 failed, 0 skipped.** `pwsh` present at `/snap/bin/pwsh`. Grew from 69 (at
+  `60c79407`) to 71 exactly because `run-tests.sh` gained two new folded cases, each counting as one
+  pass/fail regardless of how many assertions it makes internally: `py_suite ... test_memory_ops.py`
+  (`plugin/obsidian-vault/hooks/scripts/_test/run-tests.sh:480-481`) and `py_suite ... test_python_probe_proof.py`
+  (`:520-521`) - confirmed by reading `run-tests.sh` itself, not inferred from the count alone.
+- Previous run, kept for its own record: at `60c79407`, on **Linux**, checkout
   `/repos/personal/useful-claude-add-ons/.claude/worktrees/agent-a13e59fa14639e19c`, branch
   `codemap/obsidian-vault-refresh`: **RESULT: 69 passed, 0 failed, 0 skipped.** (DERIVED - run, not
   inferred. The ref and the platform are stated because a count without them can only be believed:
@@ -313,29 +471,52 @@ violation visible at all. (JUDGEMENT.)
   (`66 passed, 1 skip`, pre-dating the three-way `sh_suite` split and the new `SKIP` counter) was
   **not re-measured this pass** - re-running it needs `pwsh` actually absent from PATH, not merely
   reasoned about, and that was not done here.
-- Plugin version is `0.3.16` in both places that must agree:
+- Plugin version is `0.4.14` in both places that must agree:
   `plugin/obsidian-vault/.claude-plugin/plugin.json:3` and the `obsidian-vault` entry in
-  `.claude-plugin/marketplace.json:248`. (DERIVED - `0.3.14` -> `0.3.16` between anchors; both
-  places still agree, checked byte-for-byte against `git diff 5d1fc5fd..60c79407`, not offset.)
+  `.claude-plugin/marketplace.json:234-237` (was `:248`; re-numbered by the marketplace-wide catalog
+  changes in crew 1.0, including the removal of the `claude-memories-canvas` and
+  `claude-memories-vault` entries above it - see Landmines). (DERIVED - `0.3.16` -> `0.4.14` between
+  anchors; both places still agree, checked byte-for-byte.)
 
 ## Unverified
-- `plugin/obsidian-vault/agents/gardener.md` and `plugin/obsidian-vault/agents/reflector.md` were
-  not opened. Their existence is confirmed by listing the directory; what they do is taken from the
-  README command table and from `vault_capture.py`'s HEADER text
-  (`plugin/obsidian-vault/hooks/scripts/vault_capture.py:24-28`), not from reading the agents.
+- `plugin/obsidian-vault/agents/gardener.md` (modified this pass, per the whole-tree diff below) and
+  `plugin/obsidian-vault/agents/reflector.md` were not opened. Their existence is confirmed by
+  listing the directory; what they do is taken from the README command table and from
+  `vault_capture.py`'s `HEADER` constant (`plugin/obsidian-vault/hooks/scripts/vault_capture.py:30-34`,
+  re-numbered from `:24-28` by this pass's rewrite of the surrounding module docstring), not
+  from reading the agents.
 - Eleven command files exist under `plugin/obsidian-vault/commands/` - canvas, doctor, garden,
-  graph, init, install, map, note, optimize, reflect, repair (DERIVED, directory listing). None
-  were opened. The plugin also ships three skills (`obsidian-memory-contract`,
-  `obsidian-scheduling`, `obsidian-setup`) that the previous version of this note did not mention
-  at all; none were opened.
+  graph, init, install, map, note, optimize, reflect, repair (DERIVED, directory listing).
+  `commands/garden.md` and `commands/init.md` were modified this pass (whole-tree diff below); none
+  of the eleven were opened. The plugin also ships three skills (`obsidian-memory-contract`,
+  `obsidian-scheduling`, `obsidian-setup`); `obsidian-memory-contract/SKILL.md` and
+  `obsidian-scheduling/SKILL.md` and `obsidian-setup/SKILL.md` all changed this pass; none were
+  opened beyond the two new profile files noted above.
 - `plugin/obsidian-vault/hooks/scripts/vault_profiles.py` internals are still inferred from its
-  test file rather than read. `bridge_status.py` has now been read at the docstring and
-  function-boundary level (`ast.parse`), but no function body beyond that was read - treat any
-  claim about its per-state wording as unverified.
+  test file rather than read (this file did not change this pass, per the diff below).
+  `bridge_status.py` has now been read at the docstring and function-boundary level (`ast.parse`),
+  but no function body beyond that was read - treat any claim about its per-state wording as
+  unverified.
+- **New this pass, module docstring and signature only:** `vault_setup.py` (454 lines),
+  `vault_import.py` (341 lines), `vault_recall.py` (231 lines), `vault_garden.py` (1137 lines - the
+  largest of the four). None of the four was read past its opening docstring and `add_parsers`
+  definition. Every claim this note makes about them (the role contract, the import
+  never-overwrites rule, recall's read-only scope, the gardener's bounds) is taken from those
+  docstrings, not from tracing the implementation, and none was executed - `test_memory_ops.py`
+  (1368 lines, new this pass) is the regression suite for all four, run only as one folded case
+  inside `run-tests.sh`'s 71-case total above, not read or run standalone.
+- `plugin/obsidian-vault/hooks/scripts/vault_capture.py`'s new `already_queued`/`transcript_key`
+  logic (documented above) was read in full and is DERIVED from the source; it was not additionally
+  confirmed by running `test_memory_ops.py`'s specific dedup cases in isolation.
 - Nothing in this pass touched a live vault, a live bridge port, or `~/.claude/obsidian/config.json`.
   Every guard fact above comes from reading the source or from the suite's own throwaway fixtures.
 - Whether anything in a SKILL.md or command markdown *contradicts* the code above is unknown: those
-  files are prose instructions to a model, not mechanism, and none were read this pass.
+  files are prose instructions to a model, not mechanism, and none were read this pass beyond the
+  two new profile files.
+- The bounded-reap mechanism for a timed-out interpreter probe (`Kill($true)` / `taskkill /T /F`,
+  bash's process-group `kill -9`) is, like the WindowsApps stub before it, **MODELLED, not observed
+  on a real Windows host** - this note repeats that caveat rather than treating the source reading
+  as equivalent to a Windows run.
 
 ## Re-anchor provenance
 The per-path diff `a02331ee..1f97e51c` over the paths this note cites showed **documentation churn
@@ -634,3 +815,121 @@ from the twelve-file list above, not assumed); nothing touched a live vault, a l
 `~/.claude/obsidian/config.json`; the `.ps1` twins' bodies were read in full this pass (unlike the
 previous anchor, which explicitly declined to), but still only against their own `.sh` twins and
 this note's claims about them, not against a real Windows host.
+
+## Re-anchor provenance — 60c79407 -> 6c497a14, 2026-09-25 (crew 1.0, PR #225). Re-derive provenance.
+
+**Wide diff first, as the previous three re-anchors above all learned to do.**
+`git diff --name-status 60c79407..6c497a14 -- plugin/obsidian-vault/` (the whole plugin tree, not
+a per-path check over this note's prior citations, for the same reason the `ea8a014 -> 84976536`
+and `2b337296 -> 5d1fc5fd` sections above give: a path this note never cited cannot appear in its
+own freshness check):
+
+```
+M  plugin/obsidian-vault/.claude-plugin/plugin.json
+M  plugin/obsidian-vault/README.md
+M  plugin/obsidian-vault/agents/gardener.md
+M  plugin/obsidian-vault/commands/garden.md
+M  plugin/obsidian-vault/commands/init.md
+M  plugin/obsidian-vault/hooks/scripts/_test/run-tests.sh
+M  plugin/obsidian-vault/hooks/scripts/_test/test_bridge_capture_sh.sh
+A  plugin/obsidian-vault/hooks/scripts/_test/test_memory_ops.py
+M  plugin/obsidian-vault/hooks/scripts/_test/test_ps1_legacy_args.sh
+A  plugin/obsidian-vault/hooks/scripts/_test/test_python_probe_proof.py
+M  plugin/obsidian-vault/hooks/scripts/_test/test_vault_guard_sh.sh
+M  plugin/obsidian-vault/hooks/scripts/bridge-status.ps1
+M  plugin/obsidian-vault/hooks/scripts/bridge-status.sh
+M  plugin/obsidian-vault/hooks/scripts/obsidian_common.py
+M  plugin/obsidian-vault/hooks/scripts/vault-capture.ps1
+M  plugin/obsidian-vault/hooks/scripts/vault-capture.sh
+M  plugin/obsidian-vault/hooks/scripts/vault-guard.ps1
+M  plugin/obsidian-vault/hooks/scripts/vault-guard.sh
+M  plugin/obsidian-vault/hooks/scripts/vault_capture.py
+A  plugin/obsidian-vault/hooks/scripts/vault_garden.py
+A  plugin/obsidian-vault/hooks/scripts/vault_import.py
+M  plugin/obsidian-vault/hooks/scripts/vault_ops.py
+A  plugin/obsidian-vault/hooks/scripts/vault_recall.py
+A  plugin/obsidian-vault/hooks/scripts/vault_setup.py
+M  plugin/obsidian-vault/skills/obsidian-memory-contract/SKILL.md
+A  plugin/obsidian-vault/skills/obsidian-memory-contract/profiles/canvas-maps.md
+A  plugin/obsidian-vault/skills/obsidian-memory-contract/profiles/memory-vault.md
+M  plugin/obsidian-vault/skills/obsidian-scheduling/SKILL.md
+M  plugin/obsidian-vault/skills/obsidian-setup/SKILL.md
+```
+
+24 files (17 modified, 7 added), against twelve modified at the previous re-anchor - this is by far
+the largest single-pass change this note has tracked. **`plugin/obsidian-vault/hooks/scripts/vault_guard.py`
+and `plugin/obsidian-vault/hooks/scripts/hooks.json` are NOT in this list** - both are
+byte-identical to the previous anchor (`git diff --name-only 60c79407..6c497a14 -- <each>` empty),
+confirmed directly rather than assumed from their absence above. Every `## Landmines` claim about
+`vault_guard.py`'s contract logic (the three checks, the exemption sets, `notesPrefix` scoping, the
+stdin decode-then-parse split) therefore still holds unchanged and was not re-read this pass.
+
+**What changed, grouped by the task that requested this pass:**
+
+- **Per-host capture, dedup, and a named refusal.** `vault_capture.py` (+121/-, see diff stat) -
+  covered above in Owns data and Landmines. Pinned by the new `test_memory_ops.py`.
+- **All six wrappers converged on one resolver shape: walk every PATH match, verify with a
+  version/impl/executable probe, an 8s overall deadline on top of each 3s per-candidate bound, a
+  `%`-free probe string routed through `cmd.exe` for a `.cmd`/`.bat` shim, and a whole-process-tree
+  kill-and-reap on timeout.** `vault-guard.sh` (+171/-), `vault-guard.ps1` (+242/-),
+  `bridge-status.sh` (+156/-), `bridge-status.ps1` (+221/-), `vault-capture.sh` (+157/-),
+  `vault-capture.ps1` (+222/-) - covered above in Landmines. Pinned by the new
+  `test_python_probe_proof.py`, and by updates to the three existing `_test/*.sh` suites
+  (`test_vault_guard_sh.sh`, `test_bridge_capture_sh.sh`, `test_ps1_legacy_args.sh`).
+- **A test-fixture bug in the same burn-in: `PWSH_DIR`, an isolated symlink-only directory, replaces
+  appending `$(dirname "$PWSH")` to a fixture PATH.** On GitHub's `ubuntu-latest` image, `pwsh` and
+  the system's real `python3` both live in `/usr/bin`, so a fixture PATH meant to simulate "no
+  usable interpreter" was leaking a real, working `python3` into every such case - every must-refuse
+  case became a false PASS-through instead of the expected stand-down. Fixed by creating
+  `$work/pwsh-only` holding nothing but a symlink to the real `pwsh`
+  (`plugin/obsidian-vault/hooks/scripts/_test/test_vault_guard_sh.sh:692-704`, and the identical
+  pattern in `plugin/obsidian-vault/hooks/scripts/_test/test_bridge_capture_sh.sh:351-355`).
+  (DERIVED, read in full - not merely inferred from the task's own summary of it.)
+- **Roles and profiles.** `writer_vault()`, `ROLES`, `host_id()` in `obsidian_common.py` (+102/-);
+  `vault_setup.py`, `vault_import.py`, `vault_recall.py`, `vault_garden.py` (all new); `select()`'s
+  `ignore`-role filter and the four modules' `add_parsers` wiring in `vault_ops.py` (+22/-); the two
+  new profile files under `obsidian-memory-contract/profiles/` - all covered above in Entry points,
+  Owns data and Landmines.
+- **Retired: `claude-memories-vault` and `claude-memories-canvas`** removed from
+  `.claude-plugin/marketplace.json` in the same commit (covered above in Landmines); their
+  conventions are what the two new profile files carry forward in portable form.
+- **Not investigated further, low materiality:** `agents/gardener.md` (+31/-23, likely updated for
+  the per-host queue and role concepts above - not opened, per Unverified), `commands/garden.md`
+  (+20/-, probably documents `garden-run`/`drain`/`reconcile` - not opened),
+  `commands/init.md` (+23/-, probably documents `adopt` - not opened), the three `SKILL.md` files
+  (not opened beyond the two profile files), and `README.md` (+153/-13 - read only at the specific
+  lines cited above: `:20-23`, `:33-44`, `:218-222`).
+
+**Every `path:line` citation in this note that pointed into a file NOT in the 24-file list above is
+unaffected and was not re-read**, per the same logic the previous three re-anchors used: `hooks.json`,
+`vault_guard.py`, `bridge_status.py`, `vault_profiles.py`, `CLAUDE.md`, `README.md` (outside the
+cited ranges), `AGENTS.md`, and `plugin/crew/hooks/hooks.json` all resolve into an empty diff for
+their own path and were left as written.
+
+**The regression suite was re-run, not assumed.** See "Measured this pass" above: 71 passed, 0
+failed, 0 skipped, on Linux with `pwsh` present, in this worktree (`/repos/personal/uca-k4`) at
+`6c497a14`.
+
+**Existence check, since the task that requested this pass expected the plugin's other codemap-cited
+paths (crew's role-write-guard.sh, TODO.md-adjacent citations) to show real changes elsewhere in
+this repo.** Nothing under `plugin/obsidian-vault/` disappeared; every file this note has ever cited
+still exists at `6c497a14` (`vault_guard.py:243`'s three copies of a since-corrected stale citation,
+recorded at the previous anchor, were not re-checked this pass since `vault_guard.py` did not
+change).
+
+Not re-verified at this pass, beyond what "Unverified" above already states: `agents/gardener.md`,
+`agents/reflector.md`, all eleven command files, and all three skills remain unopened even though
+five of those eight paths changed this pass (`gardener.md`, `garden.md`, `init.md`, and two of the
+three `SKILL.md` files); `vault_setup.py`, `vault_import.py`, `vault_recall.py` and `vault_garden.py`
+were read only at their module docstrings and top-level signatures, not end to end; nothing touched
+a live vault, a live bridge port, or `~/.claude/obsidian/config.json`; the bounded process-tree kill
+on Windows remains MODELLED, not observed.
+
+**Re-anchored `6c497a14` -> `f2bb919b` on 2026-09-25 (T-0015).** `git diff --name-only 6c497a14
+f2bb919b -- <the 45 tracked paths this note cites>` returns `.claude-plugin/marketplace.json`,
+`CHANGELOG.md` and `README.md`, and nothing under `plugin/obsidian-vault/`. None of the three
+carries a live claim here: the marketplace hunk is crew's `version` on `:218` alone, so the
+`obsidian-vault` entry at `.claude-plugin/marketplace.json:234-237` still reads `0.4.14` (re-read);
+`README.md` changed only its two install-URL pins (`:12`, `:18`), and this note names it only as an
+exempt basename; `CHANGELOG.md` gained crew 1.0.26-1.0.28 entries, and no `CHANGELOG.md:<n>`
+citation appears in this note. No claim moved.

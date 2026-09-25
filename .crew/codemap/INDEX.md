@@ -1,12 +1,13 @@
 # Code map — index
 
-Not counted as a subsystem by `crew_state.py` (`read_knowledge` at
-`plugin/crew/hooks/scripts/crew_state.py:692`; `_NOT_SUBSYSTEMS` at
-`plugin/crew/hooks/scripts/crew_state.py:539` lists `INDEX.md`). It exists purely
-as a table of contents.
+Not counted as a subsystem by the freshness reader (`read_knowledge` at
+`plugin/crew/hooks/scripts/crew_freshness.py:374`; `_NOT_SUBSYSTEMS` at
+`plugin/crew/hooks/scripts/crew_freshness.py:68` lists `INDEX.md`, `UPGRADE.md`
+and `MIGRATION.md`, so `UPGRADE.md` in this directory is not a subsystem either).
+It exists purely as a table of contents.
 
 Every subsystem file below carries an `anchor:` line
-(`_ANCHOR_RE`, `plugin/crew/hooks/scripts/crew_state.py:534`, is the regex that
+(`_ANCHOR_RE`, `plugin/crew/hooks/scripts/crew_freshness.py:63`, is the regex that
 reads it) naming the short commit hash the file's claims were checked against.
 
 **Since crew 0.19.13 that read has three outcomes, not two**, and the difference
@@ -32,7 +33,7 @@ matching and puts the note straight into `unresolvable`. Commentary goes on the
 next line.
 
 **That prompt is much coarser than the real test, and treating the two as the
-same thing is how the trigger stops meaning anything.** `crew_state.py` compares
+same thing is how the trigger stops meaning anything.** `crew_freshness.py` compares
 the anchor to HEAD as a *string*, so any commit at all — including one that
 touches only this directory — marks every note behind. The test that actually
 decides is the path diff:
@@ -68,12 +69,13 @@ looks measured.
 Diagrams under `docs/diagrams/` carry the same contract via a
 `%% Anchors: <comma-separated paths>` header. All three were missing one, which
 left them permanently unfalsifiable — "stale by default" is the honest answer
-to an unanswerable question, but it is not a useful one. **All four now carry
-one** (`data-flow-crew-config.mmd` was added 2026-09-12), so each is
-hand-re-verifiable via the path diff.
+to an unanswerable question, but it is not a useful one. **All seven now carry
+one** (`grep -c '^%% Anchors:' docs/diagrams/*.mmd` returns 1 for each; the seventh,
+`process-crew-lifecycle.mmd`, was added by T-0015), so
+each is hand-re-verifiable via the path diff.
 
 Diagrams are read by a *different* regex — `_DIAGRAM_ANCHOR_RE`,
-`plugin/crew/hooks/scripts/crew_state.py:598`. It cannot be the same one: a bare
+`plugin/crew/hooks/scripts/crew_freshness.py:127`. It cannot be the same one: a bare
 `anchor:` line is a syntax error in a Mermaid source, so the provenance has to
 live inside a `%%` comment. Both `%% anchor: <sha>` and
 `%% Generated from <repo>@<sha> on <date>.` are accepted.
@@ -91,22 +93,34 @@ that edited this table by hand, so **re-derive this column mechanically or not a
 all** - a hand-written anchor here is indistinguishable from a measured one and has
 been wrong three times running.
 
+Re-derived 2026-09-25 after crew 1.0 (PR #225): every note's `anchor:` line then read
+`useful-claude-add-ons@6c497a14` (superseded by the T-0015 re-anchor below), and the column below was filled from
+`grep -m1 '^anchor:' .crew/codemap/*.md`, not typed. "Last pass" is what each
+note's own provenance section says it got: **re-derived** (claims re-read from
+source) or **re-anchored** (per-path diff run, changed citations re-read).
+
+Re-anchored 2026-09-25 by T-0015 to `f2bb919b` (origin/main after crew 1.0.26-1.0.28 and
+#226-#230). Each note ran `git diff --name-only 6c497a14 f2bb919b -- <its cited paths>` and records
+the result in its own closing provenance section; changed citations were re-read and corrected,
+unchanged ones stand. The column was again filled from `grep -m1 '^anchor:' .crew/codemap/*.md`.
+
 | File | Anchor | Last pass | Covers |
 |---|---|---|---|
-| [`marketplace-registration.md`](marketplace-registration.md) | `5d1fc5fd` | re-verified 2026-09-12 | The marketplace itself: what registers a skill vs. a plugin, the two install scripts, and the two separate version-check paths (`check-marketplace.py` vs. `_verify/smoke.sh`). |
-| [`localgpu.md`](localgpu.md) | `5d1fc5fd` | unchanged | The `localgpu` plugin: its two independent process trees, the shared-Ollama constraint that drives `OLLAMA_MAX_LOADED_MODELS=1`, the embed-model mismatch guard, `.mcp.json` provisioning, and the bootstrap.sh/bootstrap.ps1 parity verdict. |
-| [`crew.md`](crew.md) | `5d1fc5fd` | **re-derived** 2026-09-12 | The `crew` plugin: hooks, agents, commands, skills inventory, and how `crew_state.py` reads this very directory. |
-| [`verification-harness.md`](verification-harness.md) | `5d1fc5fd` | re-verified 2026-09-12 | `_verify/smoke.sh`, `_verify/run-all.sh`, `scripts/check-marketplace.py`, and `.crew/verify.json` — what each actually runs, and where they overlap or don't. **`.crew/verify.json` does not exist**; see below. |
-| [`obsidian-vault.md`](obsidian-vault.md) | `60c79407` | **re-derived** 2026-09-22 | The `obsidian-vault` plugin: four hook events registered as bash+PowerShell pairs, the three guard checks and their **unequal defaults**, the two differently-sized exemption sets, and per-vault MCP registration. PR #210 added a proven-interpreter resolver to the two remaining "naive" wrappers, a loud stdin-decode failure mode, and a PowerShell legacy-argument-passing fix. |
-| [`mcp-servers.md`](mcp-servers.md) | `5d1fc5fd` | unchanged | The TypeScript monorepo — four stdio MCP servers over one shared `core`. Holds the two recorded `adminAuth.ts` defects (TODO #2 and #3), re-verified unchanged. Not a marketplace plugin; nothing registers it. |
-| [`install-scripts.md`](install-scripts.md) | `5d1fc5fd` | re-verified 2026-09-12 | The `install-prerequisites.{sh,ps1}` matched pair: catalog parity (confirmed in sync), the `pick_fit`/`Format-PickerLine` no-bypass rule, idempotency branches, and hook-plugins-default-off on both sides. |
-| [`skills-itsm.md`](skills-itsm.md) | `089a04b9` | unchanged | `infra-work-ticketing` + `notify`. Records that **`SKILL.md:209-211` instructs an unconfirmed ticket creation** against a live service desk, and that its `:213` list is missing-fact questions, not write confirmation. |
-| [`skills-security-ops.md`](skills-security-ops.md) | `ea8a014` | unchanged | `cisco-meraki` + `wazuh-onprem`. Records that **Wazuh's generic `post`/`put`/`delete` have no gate in code** — only prose — and that the skill with the ungated verbs is the one with no tests. |
-| [`repo-docs.md`](repo-docs.md) | `5d1fc5fd` | re-verified 2026-09-12 | `docs/` and `CHANGELOG.md`. Records that **`docs/adr/` does not exist** despite two documents citing it, and that TODO.md's `render.sh` entry is stale — the `cygpath -w` fix is in source. |
+| [`marketplace-registration.md`](marketplace-registration.md) | `f2bb919b` | **re-derived** 2026-09-25 at `6c497a14`; re-anchored to `f2bb919b` (T-0015) | The marketplace itself: what registers a skill vs. a plugin, the two install scripts, and the two separate version-check paths (`check-marketplace.py` vs. `_verify/smoke.sh`). |
+| [`localgpu.md`](localgpu.md) | `f2bb919b` | re-anchored 2026-09-25 at `6c497a14`; re-anchored to `f2bb919b` (T-0015) | The `localgpu` plugin: its two independent process trees, the shared-Ollama constraint that drives `OLLAMA_MAX_LOADED_MODELS=1`, the embed-model mismatch guard, `.mcp.json` provisioning, and the bootstrap.sh/bootstrap.ps1 parity verdict. Records that `plugin/localgpu/commands/crew.md`'s role table names eleven crew roles that crew 1.0 deleted. |
+| [`crew.md`](crew.md) | `f2bb919b` | **re-derived** 2026-09-25 at `6c497a14`; re-anchored to `f2bb919b` (T-0015) | The `crew` plugin after 1.0: hooks, the four agents, commands, skills inventory, config layering and leaf counts, and how `crew_freshness.py` reads this very directory. |
+| [`verification-harness.md`](verification-harness.md) | `f2bb919b` | **re-derived** 2026-09-25 at `6c497a14`; re-anchored to `f2bb919b` (T-0015) | `_verify/smoke.sh`, `_verify/run-all.sh`, `scripts/check-marketplace.py`, and `.crew/verify.json` — what each actually runs, and where they overlap or don't. `.crew/verify.json` is tracked; its own `anchor` field (`:3`) is stale at `5238be3d`, independent of this note's anchor. |
+| [`obsidian-vault.md`](obsidian-vault.md) | `f2bb919b` | **re-derived** 2026-09-25 at `6c497a14`; re-anchored to `f2bb919b` (T-0015) | The `obsidian-vault` plugin: four hook events registered as bash+PowerShell pairs, the three guard checks and their **unequal defaults**, the two differently-sized exemption sets, and per-vault MCP registration. The guard is PostToolUse, so it reports a bad write rather than blocking it. |
+| [`mcp-servers.md`](mcp-servers.md) | `f2bb919b` | re-anchored 2026-09-25 at `6c497a14`; re-anchored to `f2bb919b` (T-0015) | The TypeScript monorepo — four stdio MCP servers over one shared `core`. Holds the two recorded `adminAuth.ts` defects (TODO items 2 and 3), still open. Not a marketplace plugin; nothing registers it. `mcp-servers/` is untouched by crew 1.0. |
+| [`install-scripts.md`](install-scripts.md) | `f2bb919b` | **re-derived** 2026-09-25 at `6c497a14`; re-anchored to `f2bb919b` (T-0015) | The `install-prerequisites.{sh,ps1}` matched pair: catalog parity, the `pick_fit`/`Format-PickerLine` no-bypass rule, idempotency branches, and hook-plugins-default-off on both sides. |
+| [`skills-itsm.md`](skills-itsm.md) | `f2bb919b` | re-anchored 2026-09-25 at `6c497a14`; re-anchored to `f2bb919b` (T-0015) | `infra-work-ticketing` + `notify`. Records that **`SKILL.md:209-211` still instructs an unconfirmed ticket creation by default** against a live service desk; a scanner-batch carve-out at `:213-231` narrows that, and the missing-fact list moved to `:233`. |
+| [`skills-security-ops.md`](skills-security-ops.md) | `f2bb919b` | re-anchored 2026-09-25 at `6c497a14`; re-anchored to `f2bb919b` (T-0015) | `cisco-meraki` + `wazuh-onprem`. Records that **Wazuh's generic `post`/`put`/`delete` have no gate in code** — only prose — and that the skill with the ungated verbs is the one with no tests. |
+| [`repo-docs.md`](repo-docs.md) | `f2bb919b` | **re-derived** 2026-09-25 at `6c497a14`; re-anchored to `f2bb919b` (T-0015) | `docs/` and `CHANGELOG.md`. Records that `docs/adr/` holds three ADRs while accepted decisions under `docs/review/` were never promoted to it, and that TODO.md's `render.sh` entry is still open though the `cygpath -w` fix is in source. |
 
 ## Coverage — and what is still unmapped
 
-Ten subsystems, covering 76% of graph nodes at `a02331ee` (5056 of 6614 with a `source_file`).
+Ten subsystems. At `a02331ee` they covered 76% of graph nodes (5056 of 6614 with a
+`source_file`); that figure was **not** re-measured at the 2026-09-25 pass.
 What remains unmapped is almost entirely the single-skill directories under `skills/` — the largest
 are `work-log-reporter`, `web-testing-playwright`, `visio-diagrams`, `intune-graph`,
 `aws-opensearch`, `claude-code-tuneup`, `sophos-central` and `repo-docs`, none individually large.
@@ -132,6 +146,11 @@ citations from another; `marketplace-registration.md`'s count finding had **inve
 four places it named as correct now wrong; and `verification-harness.md` has 31 citations into
 `.crew/verify.json`, which is gitignored and absent from this checkout and therefore unverifiable
 by anyone cloning the repo.
+
+**Superseded by the 2026-09-25 pass:** `.crew/verify.json` is now tracked (the
+`!.crew/verify.json` negation in `.gitignore`), so those citations are checkable from a
+clone; and `docs/adr/` exists with three ADRs. Both earlier findings are kept above as
+history, not as current state.
 
 ## How to read these files
 

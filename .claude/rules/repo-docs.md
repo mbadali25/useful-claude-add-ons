@@ -2,15 +2,21 @@
 paths:
   - "plugin/crew/**"
 ---
-<!-- crew:generated source=.crew/codemap/repo-docs.md sha256=df8136f7624d5d89 -- do not hand-edit; regenerate with crew_instructions.py rules -->
+<!-- crew:generated source=.crew/codemap/repo-docs.md sha256=a3ada8994082a9ce -- do not hand-edit; regenerate with crew_instructions.py rules -->
 # repo-docs
-Code map anchor `5d1fc5fd`; if it is behind HEAD, re-check with `git diff --name-only 5d1fc5fd..HEAD -- <cited paths>`.
-Covers: docs/ and CHANGELOG.md. Records that docs/adr/ does not exist despite two documents citing it, and that TODO.md's render.sh entry is stale — the cygpath -w fix is in source.
+Code map anchor `f2bb919b`; if it is behind HEAD, re-check with `git diff --name-only f2bb919b..HEAD -- <cited paths>`.
+Covers: docs/ and CHANGELOG.md. Records that docs/adr/ holds three ADRs while accepted decisions under docs/review/ were never promoted to it, and that TODO.md's render.sh entry is still open though the cygpath -w fix is in source.
 ## Landmines
-- The machine-read diagram header is line 1, and line 2 is also read, by code that exists but was previously missed.
-- `/crew:handoff` does not write `docs/HANDOFF.md`.
-- `TODO.md`'s `render.sh` entry is still at `TODO.md:1061` — re-located by grepping the heading at this anchor and found not to have moved, even though `TODO.md` is in this range's changed set; the edits landed elsewher...
-- The regression test for that fix is no longer misdocumented — this landmine is resolved, not carried forward.
-- `docs/runbooks/INDEX.md` does not exist — unchanged.
-- A count written into a file under `docs/` changes that count.
+- `INSTALLATION.md`'s "Eight MCP servers" section describes a menu row that no longer exists, and this is new at this anchor — not carried forward from a previous pass.
+- `README.md`'s install-URL pin is current at this anchor; it was stale at `6c497a14`, and its history says it will be again.
+- `docs/runbooks/rollback.md`'s only change in this range is a path-rename fix, and it is correct.
+- `docs/HANDOFF.md` — unchanged file, closed by the per-path check.
+- `docs/runbooks/INDEX.md` still does not exist.
+- `/crew:handoff` still does not write `docs/HANDOFF.md`; unrelated to it.
+- `docs/adr/` still exists, unchanged in count (three) since it was first found.
+- `docs/review/`'s existence is itself a mild instance of the same gap `docs/adr/` used to be.
+- The diagram anchor-freshness mechanism is unchanged in logic, only in line numbers, confirmed by direct re-read rather than assumed.
+- `TODO.md`'s `render.sh` entry is still open, still un-CLOSED, re-located rather than assumed at its old line.
+- `crew-docs/SKILL.md`'s CHANGELOG rule is unchanged; its surrounding prose lost every reference to retired roles.
+- `.crew/verify.json` changed substantively in this range, not merely in wording — corrected from what would otherwise be assumed by analogy to a previous pass's finding about a different range.
 Full note: `.crew/codemap/repo-docs.md`.

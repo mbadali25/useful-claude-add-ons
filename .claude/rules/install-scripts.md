@@ -2,20 +2,19 @@
 paths:
   - "scripts/**"
 ---
-<!-- crew:generated source=.crew/codemap/install-scripts.md sha256=b11e390235867c3a -- do not hand-edit; regenerate with crew_instructions.py rules -->
+<!-- crew:generated source=.crew/codemap/install-scripts.md sha256=dbe8ce71709eaaf4 -- do not hand-edit; regenerate with crew_instructions.py rules -->
 # install-scripts
-Code map anchor `5d1fc5fd`; if it is behind HEAD, re-check with `git diff --name-only 5d1fc5fd..HEAD -- <cited paths>`.
-Covers: The install-prerequisites.{sh,ps1} matched pair: catalog parity (confirmed in sync), the pick_fit/Format-PickerLine no-bypass rule, idempotency branches, and hook-plugins-default-off on both sides.
+Code map anchor `f2bb919b`; if it is behind HEAD, re-check with `git diff --name-only f2bb919b..HEAD -- <cited paths>`.
+Covers: The install-prerequisites.{sh,ps1} matched pair: catalog parity, the pick_fit/Format-PickerLine no-bypass rule, idempotency branches, and hook-plugins-default-off on both sides.
 ## Landmines
-- Matched pair, and confirmed in sync at this anchor - by mechanical diff, not by eye.
-- The parity checker guards keys, not text - so agreeing descriptions can be jointly wrong.
-- The README's install URLs are STALE again at this anchor — the previous pass's "now CURRENT" finding rotted within the same commit range that produced this pass.
-- `claude mcp add` writes config and never invokes the command, so six rows reported success for servers that could not start.
-- `ensure_uv` is a chain of rungs, it is memoised, and the two scripts' middle rungs are NOT the same.
-- The skill preflights are REPORT-ONLY and must stay that way.
-- Nothing may bypass `pick_fit` / `Format-PickerLine` - `scripts/install-prerequisites.sh:1715-1725` and `scripts/install-prerequisites.ps1:1325-1333`.
-- Idempotent on both sides, and both sides re-checked.
-- The `repo-plugins` menu row defaults to OFF; the five plugins inside it are pre-ticked.
-- `json_query` resolves `jq` then `python3` and nothing else, with stderr discarded.
-- The `pwsh`-not-on-PATH landmine does not live here.
+- `README.md`'s install-URL pin is current at this anchor - and current is a state it leaves on the next script-touching merge.
+- The five-way crew count disagreement this note tracked for several anchors is fully resolved and re-confirmed independently correct, not merely re-synced.
+- `mcp_launcher_resolves` is unchanged; `add_or_refresh_mcp_server` is a new and stricter sibling, not a replacement.
+- Nothing may bypass `pick_fit` / `Format-PickerLine`.
+- `Test-PickerSupported` still refuses strictly more cases than bash's `picker_supported`, re-read at this anchor (`scripts/install-prerequisites.ps1:1371-1384` vs `scripts/install-prerequisites.sh:1715-1724`): redirect...
+- The skill preflights are still REPORT-ONLY, unchanged in every particular this note checks.
+- `ensure_uv`'s chain and memoisation are unchanged.
+- `json_query` is still the one silent-collapse path.
+- The `repo-plugins` menu row still defaults to OFF; its five plugins are still pre-ticked.
+- `claude-memories-vault` / `claude-memories-canvas` are gone from both catalogs, replacing a landmine this note no longer needs to track.
 Full note: `.crew/codemap/install-scripts.md`.

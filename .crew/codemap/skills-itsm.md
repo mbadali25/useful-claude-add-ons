@@ -1,6 +1,6 @@
 # skills-itsm
-anchor: useful-claude-add-ons@089a04b9
-verified: 2026-09-22
+anchor: useful-claude-add-ons@f2bb919b
+verified: 2026-09-25
 
 ## Does
 `infra-work-ticketing` gets infrastructure work logged to ServiceDesk Plus or Jira through an MCP
@@ -95,8 +95,14 @@ the paper trail, the other pages the person.
 - No `references/*.md` under either skill was opened.
 - Whether an agent actually *honours* the `:213-231` carve-out is not verified and cannot be from
   this repo: it is prose instruction to a model, not an enforced gate. The enforced half lives
-  upstream in `plugin/gizmoduck/` (documented in the gizmoduck codemap note, not here). What is
-  verified here is only that the instruction exists and what it says.
+  upstream in `plugin/gizmoduck/scripts/gizmoduck.py` (`--yes DIGEST` / `_records_digest`, cited
+  above in "Re-anchor provenance"). **Correction, 2026-09-25:** this line previously said that half
+  was "documented in the gizmoduck codemap note, not here" - no such note exists in
+  `.crew/codemap/` at `6c497a14` (`ls .crew/codemap/` lists no `gizmoduck.md`; the one that once
+  existed, added in `af802150`, lives only on the unmerged branch `docs/codemap-and-diagrams` and
+  was never on `main`). What is verified here is only that the instruction exists and what it says;
+  whether the gate is honoured is undocumented anywhere in this repo's codemap, not merely
+  documented elsewhere.
 
 ## Re-anchor provenance
 Re-anchored a02331ee -> 1f97e51c on 2026-09-06. Every `path:line` above was re-resolved by reading
@@ -177,3 +183,32 @@ pass believed, and rewriting it would hide the gap instead of showing it. This p
 Not re-verified at this pass: everything cited under `skills/infra-work-ticketing/`,
 `skills/notify/scripts/` and `plugin/gizmoduck/scripts/` - the path diff shows none of those files
 changed, and none was re-opened. The `## Unverified` section above stands unchanged.
+
+**Re-anchor provenance (2026-09-25, anchor 089a04b9 -> 6c497a14, after crew 1.0 / PR #225).**
+Per-path check:
+
+```
+git diff --name-only 089a04b9..6c497a14 -- .config/notify/config.json \
+  plugin/gizmoduck/.claude-plugin/plugin.json plugin/gizmoduck/scripts/gizmoduck.py \
+  plugin/gizmoduck/scripts/_test/labtarget/labtarget_server.py scripts/notifyd.py scripts/notify.py \
+  skills/infra-work-ticketing/scripts/ticketctl.py skills/infra-work-ticketing/SKILL.md \
+  skills/notify/scripts/inbox.py skills/notify/scripts/notifyd.py skills/notify/scripts/notify.py \
+  skills/notify/scripts/telegram_get_chat_id.py skills/notify/scripts/tg.py skills/notify/SKILL.md \
+  state/offset.json
+```
+returns nothing - 0 of the 15 tokens above changed. `scripts/notifyd.py`, `scripts/notify.py`,
+`.config/notify/config.json` and `state/offset.json` are not real repo paths (they are the
+by-hand invocation form relative to `skills/notify/` when run, and runtime config/spool locations
+under `~/` or a project root); the real citations are the `skills/`- and `plugin/`-prefixed forms,
+and all of those exist at `6c497a14` with every cited line still in range (checked by `wc -l`
+against each `:N`/`:N-M` in this note). **0 cited paths moved, but 1 cited reference did not
+resolve**: the "gizmoduck codemap note" named in `## Unverified` (no line number, so it did not
+show up in the mechanical path-extraction above) does not exist in `.crew/codemap/` on `main` -
+fixed in place above rather than left pointing at nothing. Nothing else in this note changed;
+`skills/infra-work-ticketing/`, `skills/notify/` and `plugin/gizmoduck/scripts/` were not re-read
+beyond confirming line ranges, matching the empty per-path diff.
+
+**Re-anchored `6c497a14` -> `f2bb919b` on 2026-09-25 (T-0015).** The same 11 tracked paths this
+note cites, run through `git diff --name-only 6c497a14 f2bb919b -- <those paths>`, return nothing,
+and `git diff --name-only 6c497a14 f2bb919b -- skills/ plugin/gizmoduck` is empty too: crew
+1.0.26-1.0.28 and #226-#228 did not touch either skill. Current despite the lag; no claim re-read.
