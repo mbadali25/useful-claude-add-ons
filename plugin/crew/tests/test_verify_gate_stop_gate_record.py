@@ -1643,6 +1643,62 @@ def test_34c2_an_out_of_range_cap_override_is_ignored(tmp_path, bogus_cap):
 
 
 @pytest.mark.skipif(_BASH is None, reason="needs bash")
+@pytest.mark.parametrize("cap,expected", [
+    # Every valid override is at most 7 digits (1048576 itself is 7), but
+    # the old length-only glob (`???????*`, matching length >= 7) rejected
+    # ALL 7-digit strings, in range or not - clamping 1000000 to the
+    # default 1048576 instead of honouring it.
+    ("1000000", 1000000),
+    ("1048576", 1048576),
+    # One over the real max: still must fall back, numeric range compare
+    # rather than length is what decides this now.
+    ("1048577", 1048576),
+])
+def test_34c3_a_seven_digit_cap_override_is_validated_numerically(
+        tmp_path, cap, expected):
+    """The 7-`?` glob this replaced rejected every 7-digit override on
+    LENGTH alone, so an in-range value like 1000000 was silently clamped
+    to the 1048576 default exactly like an out-of-range one - the two
+    were indistinguishable downstream. Fixed to only pre-reject 8+ digit
+    strings (no valid value needs more than 7) and let the numeric
+    `-lt`/`-gt` compare decide every 7-digit string on its actual
+    magnitude. Proven the same way as test_34c2: a rule writes one cap's
+    worth of output plus 5000 bytes, then fails, and the capped read-back
+    is exactly `expected` bytes only if the override reached the numeric
+    compare rather than being clamped by length first.
+    """
+    output_bytes = expected + 5000
+    vmap = {
+        "version": 1,
+        "rules": [{"paths": ["a.py"], "reach": "local", "run": [
+            "sh -c \"head -c " + str(output_bytes)
+            + " /dev/zero | tr '\\\\0' 'Q'; exit 1\""
+        ]}],
+        "default": [], "unmapped": "ignore",
+    }
+    root = _repo(tmp_path, vmap)
+    (root / "a.py").write_text("x", encoding="utf-8")
+
+    env = dict(os.environ, CLAUDE_PROJECT_DIR=str(root),
+               CREW_VERIFY_GATE_TEST_RULE_OUT_CAP=cap)
+    result = crew_fixtures.run_gate(
+        [_BASH, _SH], input="{}", cwd=str(root), env=env,
+        capture_output=True, text=True, check=False, timeout=_GATE_TIMEOUT)
+    assert result.returncode != 0, (
+        "the fixture rule deliberately exits 1; the gate must fail too. "
+        + result.stderr
+    )
+    runs = re.findall(r"Q+", result.stderr)
+    longest_run = max((len(r) for r in runs), default=0)
+    assert longest_run == expected, (
+        f"CREW_VERIFY_GATE_TEST_RULE_OUT_CAP={cap!r} produced a longest "
+        f"run of {longest_run} 'Q's, not the expected {expected} - a "
+        "valid 7-digit override was not honoured numerically. "
+        f"stderr tail: {result.stderr[-500:]}"
+    )
+
+
+@pytest.mark.skipif(_BASH is None, reason="needs bash")
 def test_34d_a_second_mktemp_failure_refuses_rather_than_wedges(tmp_path):
     """When the rule-output capture file cannot be created ANYWHERE - not
     TMPDIR, not the .crew/ fallback - the gate must refuse the rule with a
@@ -1742,6 +1798,63 @@ def test_34d_a_second_mktemp_failure_refuses_rather_than_wedges(tmp_path):
     )
 
 
+def _kill_if_still_same_process(pid, start_ticks, sig):
+    """Signal `pid` only if it still names the SAME process `start_ticks`
+    was recorded for (via `crew_fixtures._proc_start_ticks`) - never a bare
+    `os.kill(pid, sig)` on a pid observed once and possibly reused since.
+    FIX (review): a test's own cleanup used to re-read a pid from disk and
+    SIGKILL it unconditionally, even on the path where the pid was already
+    observed dead earlier in the same test - by the time cleanup ran, that
+    exact number could have been handed to an unrelated process. `pid is
+    None` (nothing was ever observed) or `start_ticks is None` (no /proc,
+    or the read failed at observation time - nothing to re-verify against)
+    both skip rather than guess, the same fail-closed choice
+    `crew_fixtures.kill_process_group` makes for an unverifiable pgid.
+    """
+    if pid is None or start_ticks is None:
+        return
+    if crew_fixtures._proc_start_ticks(pid) != start_ticks:
+        return
+    try:
+        os.kill(pid, sig)
+    except (ProcessLookupError, PermissionError, OSError):
+        pass
+
+
+@pytest.mark.skipif(not os.path.isdir("/proc"),
+                     reason="start-time verification needs /proc")
+def test_kill_if_still_same_process_skips_a_pid_whose_start_time_changed(
+        monkeypatch):
+    """A reused pid (start ticks no longer match what was recorded when the
+    pid was first observed) must not be signalled."""
+    calls = []
+    monkeypatch.setattr(os, "kill", lambda pid, sig: calls.append((pid, sig)))
+    monkeypatch.setattr(crew_fixtures, "_proc_start_ticks", lambda pid: "999")
+
+    _kill_if_still_same_process(12345, "111", _PORTABLE_SIGKILL)
+
+    assert calls == [], (
+        "signalled a pid whose recorded start time no longer matches - "
+        "it must skip, not guess"
+    )
+
+
+@pytest.mark.skipif(not os.path.isdir("/proc"),
+                     reason="start-time verification needs /proc")
+def test_kill_if_still_same_process_signals_when_start_time_matches(
+        monkeypatch):
+    """Sabotage pair for the test above: with the start time UNCHANGED,
+    the signal must still go out - proves the previous test is not
+    passing because signalling was disabled altogether."""
+    calls = []
+    monkeypatch.setattr(os, "kill", lambda pid, sig: calls.append((pid, sig)))
+    monkeypatch.setattr(crew_fixtures, "_proc_start_ticks", lambda pid: "111")
+
+    _kill_if_still_same_process(12345, "111", _PORTABLE_SIGKILL)
+
+    assert calls == [(12345, _PORTABLE_SIGKILL)]
+
+
 @pytest.mark.skipif(_BASH is None, reason="needs bash")
 @pytest.mark.skipif(
     os.name == "nt",
@@ -1789,6 +1902,11 @@ def test_34e_a_backgrounded_writer_is_killed_with_the_rule_not_orphaned(
     root = _repo(tmp_path, vmap)
     (root / "a.py").write_text("x", encoding="utf-8")
 
+    # Set before the pidfile is even read, so `finally` below always has a
+    # defined (if `None`) identity to re-verify against, however early an
+    # assertion in the try block raises.
+    orphan_pid = None
+    orphan_start_ticks = None
     try:
         result = _run("sh", root)
         assert result.returncode == 0, result.stderr
@@ -1799,6 +1917,10 @@ def test_34e_a_backgrounded_writer_is_killed_with_the_rule_not_orphaned(
             + result.stderr
         )
         orphan_pid = int(pidfile.read_text(encoding="utf-8").strip())
+        # Captured the moment this pid is first observed - see the
+        # `finally` block below for why cleanup re-verifies against this
+        # rather than trusting the bare number alone.
+        orphan_start_ticks = crew_fixtures._proc_start_ticks(orphan_pid)
 
         # Give a killed-but-still-exiting process a moment, then confirm it
         # is gone. `crew_fixtures.pid_alive` rather than a bare
@@ -1830,13 +1952,106 @@ def test_34e_a_backgrounded_writer_is_killed_with_the_rule_not_orphaned(
             "(reparented, or missed by the group kill) kept writing."
         )
     finally:
-        pidfile = root / "orphan.pid"
-        if pidfile.exists():
-            try:
-                stray_pid = int(pidfile.read_text(encoding="utf-8").strip())
-                os.kill(stray_pid, _PORTABLE_SIGKILL)
-            except (ValueError, ProcessLookupError, PermissionError, OSError):
-                pass
+        # See `_kill_if_still_same_process`'s own docstring: this used to
+        # re-read the pid from disk and SIGKILL it unconditionally, even
+        # on the path where the try block above already observed it dead
+        # via `crew_fixtures.pid_alive` - by the time this runs, that exact
+        # numeric pid can have been reused by an entirely unrelated
+        # process. `orphan_start_ticks`, captured the moment `orphan_pid`
+        # was first observed above, is what lets this re-verify identity
+        # instead of guessing.
+        _kill_if_still_same_process(
+            orphan_pid, orphan_start_ticks, _PORTABLE_SIGKILL)
+
+
+@pytest.mark.skipif(_BASH is None, reason="needs bash")
+@pytest.mark.skipif(os.name == "nt", reason="POSIX process-group signalling only")
+@pytest.mark.parametrize("target", ["group", "bare_pid"])
+def test_34h_a_signalled_gate_kills_its_current_rules_process_group(
+        tmp_path, target):
+    """BLOCK (review): each rule runs inside its own process group (`set -m`
+    in a dedicated subshell, per that subshell's own comment) precisely so
+    a backgrounded leftover the rule never waits on can still be reaped
+    once the rule's foreground command returns - but the SAME isolation
+    escapes the GATE's own process group too, on some hosts (job-control
+    shells commonly re-group themselves once `set -m` runs, needed or
+    not). Signalling the gate's whole group from outside (a caller's
+    timeout, an interrupted Stop) used to kill the gate while a still-
+    running rule survived it, unbounded - reproduced exactly as filed:
+    start the gate in its own session, wait for a long rule to actually
+    start, signal it, and confirm the rule's own process is gone within a
+    bound instead of orphaned. Parametrized over BOTH repro shapes the
+    review named: signalling the gate's whole process GROUP, and
+    signalling only the gate's OWN bare pid (which needs no group
+    reasoning at all - the gate's own trap handler runs directly).
+
+    Sabotage: removing the TERM/INT trap (or the rule-pgid cleanup it
+    dispatches to) turns this red - see git history for the fix this
+    proves.
+    """
+    pidfile = tmp_path / "started.pid"
+    vmap = {
+        "version": 1,
+        "rules": [{"paths": ["a.py"], "reach": "local", "run": [
+            "sh -c 'echo $$ > "
+            + str(pidfile).replace("\\", "/")
+            + "; sleep 60'"
+        ]}],
+        "default": [], "unmapped": "ignore",
+    }
+    root = _repo(tmp_path, vmap)
+    (root / "a.py").write_text("x", encoding="utf-8")
+
+    env = dict(os.environ, CLAUDE_PROJECT_DIR=str(root))
+    proc = crew_fixtures.popen_gate(
+        [_BASH, _SH], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE, text=True, cwd=str(root), env=env)
+    try:
+        proc.stdin.write("{}")
+        proc.stdin.close()
+
+        deadline = time.time() + 15
+        while not pidfile.exists() and time.time() < deadline:
+            if proc.poll() is not None:
+                pytest.fail(
+                    "the gate exited before the rule even started - "
+                    "stderr: " + (proc.stderr.read() if proc.stderr else "")
+                )
+            time.sleep(0.1)
+        assert pidfile.exists(), "the rule never recorded its own pid"
+        rule_pid = int(pidfile.read_text(encoding="utf-8").strip())
+        assert crew_fixtures.pid_alive(rule_pid), (
+            "sanity: the rule's own process never started"
+        )
+
+        if target == "group":
+            os.killpg(proc.pgid, signal.SIGTERM)
+        else:
+            os.kill(proc.pid, signal.SIGTERM)
+
+        deadline = time.time() + 10
+        alive = True
+        while time.time() < deadline:
+            if not crew_fixtures.pid_alive(rule_pid):
+                alive = False
+                break
+            time.sleep(0.1)
+        assert not alive, (
+            f"pid {rule_pid} (the rule's own process) was still alive up "
+            f"to 10s after signalling the gate's {target!r} - it escaped "
+            "cancellation instead of being killed along with the gate."
+        )
+    finally:
+        try:
+            rule_pid = int(pidfile.read_text(encoding="utf-8").strip())
+            os.kill(rule_pid, _PORTABLE_SIGKILL)
+        except (OSError, ValueError, FileNotFoundError):
+            pass
+        crew_fixtures.kill_process_group(proc)
+        try:
+            proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            pass
 
 
 @pytest.mark.skipif(_BASH is None, reason="needs bash")

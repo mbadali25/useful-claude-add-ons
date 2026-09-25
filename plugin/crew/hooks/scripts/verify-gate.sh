@@ -585,11 +585,58 @@ if ! mkdir "$LOCK" 2>/dev/null; then
   fi
 fi
 if [ "$UNLOCKED" -eq 0 ]; then
+  # --- shared cleanup registry ---------------------------------------
+  # Every exit-path cleanup from here on (this lock's own release, the
+  # python3 shim's temp dir below, and a still-running rule's escaped
+  # process group further down) registers a FUNCTION here instead of
+  # splicing `trap -p` text - two chained `trap -p`-based layers already
+  # sit at the edge of what that idiom can do: `trap -p` re-quotes its
+  # output as a single-quoted string literal, escaping any embedded `'`
+  # as `'\''`, and splicing that ALREADY-escaped text into a third trap's
+  # own double-quoted body leaves the escape unresolved - not valid
+  # shell, and a mid-run `unexpected EOF` at whichever signal fires it. A
+  # third stage was tried exactly that way once (to reap a rule's
+  # backgrounded jobs on every exit) and reverted for this reason - see
+  # the rule loop's own comment, below, for the fuller account and the
+  # test that caught it (test_shim_cleanup_does_not_clobber_the_lock_release_trap).
+  # A function registered by NAME has nothing to re-quote at all, at any
+  # depth: every stage just appends its own cleanup function to this
+  # array, and the dispatcher below calls each in turn at signal time,
+  # reading whatever variables that function closes over fresh, not a
+  # frozen string captured at registration time.
+  _CREW_GATE_CLEANUP_FNS=()
+  _crew_gate_register_cleanup() { _CREW_GATE_CLEANUP_FNS+=("$1"); }
+  _crew_gate_run_cleanup() {
+    local _crew_gate_cleanup_i
+    for (( _crew_gate_cleanup_i=${#_CREW_GATE_CLEANUP_FNS[@]} - 1;
+           _crew_gate_cleanup_i >= 0; _crew_gate_cleanup_i-- )); do
+      "${_CREW_GATE_CLEANUP_FNS[_crew_gate_cleanup_i]}" 2>/dev/null
+    done
+  }
+  # Installed ONCE, here - the first point this script has anything to
+  # clean up. INT/TERM/HUP each run the dispatcher and then exit with the
+  # conventional 128+signal status: an asynchronous signal this script has
+  # trapped no longer terminates it on its own, so without an explicit
+  # `exit` here a rule stuck mid-command would run its cleanup and then
+  # simply CONTINUE running - not what sent the signal wanted, and the
+  # exact gap that let a rule's own escaped process group outlive this
+  # whole gate being killed. EXIT needs no explicit exit of its own - the
+  # script is already on its way out with whatever code got it there.
+  trap '_crew_gate_run_cleanup; exit $((128 + 15))' TERM
+  trap '_crew_gate_run_cleanup; exit $((128 + 2))' INT
+  trap '_crew_gate_run_cleanup; exit $((128 + 1))' HUP
+  trap '_crew_gate_run_cleanup' EXIT
+
   # A token of our own, so a SECOND reclaimer that deleted our fresh lock and
   # took its own is detectable: whoever's token is on disk once both have
   # written owns the turn, and the other backs off instead of both running.
   LOCK_TOKEN="sh-$$-$(date +%s)-${RANDOM:-0}"
-  trap 'if [ "$(cat "$LOCK/token" 2>/dev/null)" = "$LOCK_TOKEN" ]; then rm -rf "$LOCK" 2>/dev/null; fi' EXIT INT TERM
+  _crew_gate_cleanup_lock() {
+    if [ "$(cat "$LOCK/token" 2>/dev/null)" = "$LOCK_TOKEN" ]; then
+      rm -rf "$LOCK" 2>/dev/null
+    fi
+  }
+  _crew_gate_register_cleanup _crew_gate_cleanup_lock
   printf '%s\n' "$LOCK_TOKEN" > "$LOCK/token" 2>/dev/null
   # Only the reclaim path can race another reclaimer; the plain-mkdir winner
   # cannot be clobbered, since its lock is far too young for anyone to reclaim.
@@ -1390,24 +1437,14 @@ if ! command -v python3 >/dev/null 2>&1; then
          && chmod +x "$SHIM_DIR/python3" 2>/dev/null; then
         PATH="$SHIM_DIR:$PATH"
         export PATH
-        # Cleaned up on EVERY exit path (EXIT INT TERM), CHAINED onto
-        # whatever is already trapped for those signals rather than
-        # replacing it - a bare `trap ... EXIT` here would silently drop
-        # the lock's own release trap (see the lock's trap comment above,
-        # and its own note at :637 about a second `trap ... EXIT`
-        # replacing rather than adding). `trap -p SIG` reproduces a full,
-        # valid `trap -- '...' SIG` statement for whatever is currently
-        # registered, or nothing at all if nothing is - both are handled.
-        for _crew_shim_sig in EXIT INT TERM; do
-          _crew_shim_prior=$(trap -p "$_crew_shim_sig" 2>/dev/null \
-            | sed -e "s/^trap -- '//" -e "s/' $_crew_shim_sig\$//")
-          if [ -n "$_crew_shim_prior" ]; then
-            trap "rm -rf '$SHIM_DIR' 2>/dev/null
-$_crew_shim_prior" "$_crew_shim_sig"
-          else
-            trap "rm -rf '$SHIM_DIR' 2>/dev/null" "$_crew_shim_sig"
-          fi
-        done
+        # Cleaned up on EVERY exit path (EXIT INT TERM HUP), via the shared
+        # cleanup registry above rather than a `trap -p`-spliced string -
+        # see that registry's own comment for why: this is the SECOND
+        # stage registered into it (the lock's release is the first), and
+        # a naive splice-based chain breaks on exactly a stage this deep.
+        # Registering a function has no such depth limit at all.
+        _crew_gate_cleanup_shim() { rm -rf "$SHIM_DIR" 2>/dev/null; }
+        _crew_gate_register_cleanup _crew_gate_cleanup_shim
       else
         rm -rf "$SHIM_DIR" 2>/dev/null
         echo "verify-gate: could not build the python3 shim (temp dir not writable) - a rule hardcoding python3 may fail where python3 itself is absent" >&2
@@ -1445,31 +1482,69 @@ CMD_LOG=""
 # deadline at all.
 lock_extend
 # A THIRD chained trap layer (on top of the lock's own release trap and,
-# when it fires, the python3 shim's) was tried here to `kill $(jobs -p)`
-# on every exit path - reaping whatever a rule's own command left
-# backgrounded in THIS shell's job table. Reverted: `trap -p SIG` re-quotes
-# its output as a single-quoted string literal, escaping any embedded `'`
-# as `'\''` (see the shim's own `SHIM_DIR` fragment two screens up, which
-# is itself wrapped in literal quotes) - correct as a self-contained
+# when it fires, the python3 shim's) was tried here once, spliced the same
+# way the shim splices onto the lock, to `kill $(jobs -p)` on every exit
+# path - reaping whatever a rule's own command left backgrounded in THIS
+# shell's job table. Reverted at the time: `trap -p SIG` re-quotes its
+# output as a single-quoted string literal, escaping any embedded `'` as
+# `'\''` (see the shim's own `SHIM_DIR` fragment two screens up, which is
+# itself wrapped in literal quotes) - correct as a self-contained
 # `trap -- '...' SIG` statement, but the shim's sed-based extraction (copied
-# here) only strips the outer quoting and never un-escapes what is left, so
-# splicing that text into a THIRD trap's double-quoted body leaves a bare
-# `'\''` behind - not valid shell, and `bash: exit trap: ... unexpected EOF`
-# at whichever signal actually fires it. Caught by
+# there) only strips the outer quoting and never un-escapes what is left,
+# so splicing that text into a THIRD trap's double-quoted body left a bare
+# `'\''` behind - not valid shell, and `bash: exit trap: ... unexpected
+# EOF` at whichever signal actually fired it. Caught by
 # test_shim_cleanup_does_not_clobber_the_lock_release_trap going from a
-# clean EXIT to exactly that error the moment this ran after the shim.
-# Two links of this chain (lock -> shim) survive today only because the
-# LOCK's own trap body has no embedded single quotes for the shim's
-# extraction to mis-handle; a third link exposes the same idiom's actual
-# limit. Fixing this generally (a single registered cleanup FUNCTION that
-# every stage appends to, instead of splicing `trap -p` text) touches the
-# lock's and the shim's trap-setting too, which is a larger and riskier
-# change than reaping alone justifies - left for a dedicated pass rather
-# than attempted here. RULE_OUT_FILE below is the fix that actually
-# matters for the class of bug this was reaching for: it keeps a
-# backgrounded grandchild from wedging THIS script's own read of a rule's
-# output at all, independent of whether that grandchild is ever reaped
-# afterward.
+# clean EXIT to exactly that error the moment it ran after the shim. Two
+# links of that chain (lock -> shim) survived only because the LOCK's own
+# trap body had no embedded single quotes for the shim's extraction to
+# mis-handle; a third link exposed the idiom's actual limit.
+#
+# Fixed generally since (BLOCK finding: a rule's own escaped process group
+# outlived the whole gate being killed, because RULE_OUT_FILE alone - see
+# its own comment two screens up - only ever protected this script's OWN
+# read of a rule's output, never reached a rule still running when the
+# gate itself is interrupted or times out): the lock's and the shim's
+# trap-setting both now register a FUNCTION into the shared cleanup array
+# declared just above the lock (`_crew_gate_register_cleanup`), and this
+# rule loop registers a third stage there too, `_crew_gate_cleanup_rule_pgid`
+# below, to kill whatever this rule's process group currently is on TERM,
+# INT, HUP or EXIT - see that function's own comment for how it learns the
+# right pgid despite the rule running inside its own subshell.
+#
+# `_CREW_GATE_RULE_PGID_FILE` names a file the CURRENTLY running rule's
+# subshell writes its own pgid(s) into - a plain shell variable set inside
+# that subshell would never be visible out here, since a subshell's
+# assignments do not propagate to its parent, but a file both can read and
+# write does. Reset to empty by the rule loop itself once a rule's
+# subshell returns normally (nothing left to chase); this function only
+# ever reads whatever is on disk RIGHT NOW, so it needs no coordination
+# beyond that.
+_CREW_GATE_RULE_PGID_FILE=""
+_crew_gate_cleanup_rule_pgid() {
+  [ -n "$_CREW_GATE_RULE_PGID_FILE" ] || return 0
+  [ -f "$_CREW_GATE_RULE_PGID_FILE" ] || return 0
+  local _crew_pg _crew_pg_any_alive=0
+  while IFS= read -r _crew_pg; do
+    case "$_crew_pg" in ''|*[!0-9]*) continue ;; esac
+    kill -TERM -- "-$_crew_pg" 2>/dev/null
+  done < "$_CREW_GATE_RULE_PGID_FILE"
+  # Same "only pay the grace sleep when something is actually left" rule
+  # the ordinary post-rule cleanup already follows, just below - never an
+  # unconditional sleep on the signal path either.
+  while IFS= read -r _crew_pg; do
+    case "$_crew_pg" in ''|*[!0-9]*) continue ;; esac
+    if kill -0 -- "-$_crew_pg" 2>/dev/null; then _crew_pg_any_alive=1; fi
+  done < "$_CREW_GATE_RULE_PGID_FILE"
+  if [ "$_crew_pg_any_alive" -eq 1 ]; then
+    sleep 0.2
+    while IFS= read -r _crew_pg; do
+      case "$_crew_pg" in ''|*[!0-9]*) continue ;; esac
+      kill -KILL -- "-$_crew_pg" 2>/dev/null
+    done < "$_CREW_GATE_RULE_PGID_FILE"
+  fi
+}
+_crew_gate_register_cleanup _crew_gate_cleanup_rule_pgid
 while IFS= read -r IDENT; do
   [ -z "$IDENT" ] && continue
   # IDENT is a matcher IDENTITY: the literal command text, and - only when
@@ -1572,6 +1647,14 @@ for v in ("ENV", "AWS_PROFILE", "AWS_DEFAULT_REGION", "KUBECONFIG", "TF_WORKSPAC
     RULE_OUT_FILE=$(mktemp ".crew/.verify-rule-out.XXXXXX" 2>/dev/null) || RULE_OUT_FILE=""
   fi
   if [ -n "$RULE_OUT_FILE" ]; then
+    # Sidecar to RULE_OUT_FILE, same directory, so it is writable wherever
+    # RULE_OUT_FILE already proved writable - the rule's subshell (below)
+    # writes its own pgid(s) into this the moment each becomes known, and
+    # `_crew_gate_cleanup_rule_pgid` (registered above, before this loop
+    # started) is what reads it back if TERM/INT/HUP/EXIT lands while this
+    # rule is still running.
+    _CREW_GATE_RULE_PGID_FILE="$RULE_OUT_FILE.pgid"
+    : > "$_CREW_GATE_RULE_PGID_FILE" 2>/dev/null
     # `( ... )`, not a bare `eval "$c"`: `$(...)` (the old form) forks a
     # subshell IMPLICITLY, which is why a rule command calling `exit N`
     # (`.crew/verify.json` rules do this routinely - "run": ["exit 1"]) only
@@ -1597,10 +1680,23 @@ for v in ("ENV", "AWS_PROFILE", "AWS_DEFAULT_REGION", "KUBECONFIG", "TF_WORKSPAC
     # script's own. A rule this well-behaved (nothing left running once its
     # own foreground command exits) is unaffected: the kill below finds
     # nothing left to signal.
+    #
+    # `set -m` also takes THIS subshell itself out of the gate's own
+    # process group on some hosts (job-control shells that enable it
+    # commonly re-group themselves, needed or not, to manage a controlling
+    # terminal) - measured directly: signalling the gate's own group from
+    # outside left this subshell (and everything backgrounded from it)
+    # running, because by then it belonged to a group that signal never
+    # reached. `$BASHPID` (this subshell's own pid, hence its own pgid if
+    # it re-grouped) is recorded FIRST, before anything is backgrounded,
+    # so `_crew_gate_cleanup_rule_pgid` has a target even if the gate is
+    # signalled before `RULE_PID` exists at all.
     (
       set -m
+      printf '%s\n' "$BASHPID" >> "$_CREW_GATE_RULE_PGID_FILE" 2>/dev/null
       ( eval "$c" ) >"$RULE_OUT_FILE" 2>&1 </dev/null &
       RULE_PID=$!
+      printf '%s\n' "$RULE_PID" >> "$_CREW_GATE_RULE_PGID_FILE" 2>/dev/null
       wait "$RULE_PID" 2>/dev/null
       RC=$?
       # TERM the whole group first, then a short grace period, then KILL
@@ -1626,8 +1722,33 @@ for v in ("ENV", "AWS_PROFILE", "AWS_DEFAULT_REGION", "KUBECONFIG", "TF_WORKSPAC
         kill -KILL -- "-$RULE_PID" 2>/dev/null
       fi
       exit "$RC"
-    )
+    ) &
+    # Backgrounded and `wait`-ed on by PID, rather than run as a plain
+    # foreground compound command (which is what this was before this
+    # fix) - NOT to change what this subshell does, only how THIS shell,
+    # the gate itself, blocks on it. A signal for which a trap is set is
+    # deferred, by bash's own documented behaviour, until whatever
+    # FOREGROUND command is currently running completes - so a bare
+    # `kill $gate_pid` (as opposed to a whole-process-GROUP kill, which
+    # reaches this subshell directly too) landed on the gate alone used to
+    # sit unactioned for as long as the rule itself ran, defeating the
+    # TERM/INT/HUP trap above entirely for that one repro shape. The
+    # `wait` BUILTIN is the documented exception: interrupted immediately
+    # by a trapped signal, trap runs, `wait` returns >128 right away -
+    # exactly the promptness `_crew_gate_cleanup_rule_pgid` needs to act
+    # on a rule that is still running.
+    RULE_SUBSHELL_PID=$!
+    wait "$RULE_SUBSHELL_PID" 2>/dev/null
     RC=$?
+    # The subshell above has already returned, taking with it every group
+    # it could have made for itself or for RULE_PID (see the comment
+    # beside `set -m` above) - nothing is left for
+    # `_crew_gate_cleanup_rule_pgid` to chase for THIS rule, and a LATER
+    # signal must not try. Cleared before the (potentially slower) output
+    # read below, not after: a signal arriving during that read has
+    # nothing to do with this already-finished rule either.
+    : > "$_CREW_GATE_RULE_PGID_FILE" 2>/dev/null
+    _CREW_GATE_RULE_PGID_FILE=""
     # Snapshot the size the moment the rule's OWN process exits, then read
     # exactly that many bytes -- never the whole file as it stands when
     # `cat` gets around to it. A backgrounded grandchild that keeps writing
@@ -1652,13 +1773,17 @@ for v in ("ENV", "AWS_PROFILE", "AWS_DEFAULT_REGION", "KUBECONFIG", "TF_WORKSPAC
     # override is test-only, but an out-of-range value here is not a
     # hypothetical - 0 disables the cap entirely (every rule's full
     # output, unbounded) and anything past 1 MiB defeats the reason this
-    # cap exists at all. The 7-`?` glob rejects an over-long digit string
+    # cap exists at all. The 8-`?` glob rejects an over-long digit string
     # BEFORE the numeric compare below - `[ -lt ]` on a huge digit string
     # can itself error ("integer expression expected") rather than compare
-    # cleanly, and any in-range value never needs more than 7 digits
-    # (1048576 itself is 7).
+    # cleanly - without rejecting a valid 7-digit value first: every
+    # in-range value is at most 7 digits (1048576 itself is 7), so the
+    # glob only needs to catch 8 OR MORE, and the numeric compare right
+    # below still does the actual 1..1048576 validation. A 7-`?` glob
+    # (matching length >= 7, not > 7) used to reject every valid 7-digit
+    # value too, including in-range ones like 1000000.
     case "$RULE_OUT_CAP" in
-      ''|*[!0-9]*|???????*) RULE_OUT_CAP=1048576 ;;
+      ''|*[!0-9]*|????????*) RULE_OUT_CAP=1048576 ;;
     esac
     if [ "$RULE_OUT_CAP" -lt 1 ] || [ "$RULE_OUT_CAP" -gt 1048576 ]; then
       RULE_OUT_CAP=1048576
@@ -1676,7 +1801,7 @@ for v in ("ENV", "AWS_PROFILE", "AWS_DEFAULT_REGION", "KUBECONFIG", "TF_WORKSPAC
     # bounded-cost property `stat`+cap already established - it is not a
     # return to an unbounded read.
     OUT=$(tail -c "$RULE_OUT_SIZE" "$RULE_OUT_FILE" 2>/dev/null)
-    rm -f "$RULE_OUT_FILE"
+    rm -f "$RULE_OUT_FILE" "$RULE_OUT_FILE.pgid"
   else
     # Neither TMPDIR nor .crew/ is writable: refuse this rule with a named
     # reason instead of running it through the pipe form. A check that
