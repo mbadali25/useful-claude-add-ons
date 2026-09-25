@@ -570,15 +570,15 @@ def _real_foreign_pid():
     $target is ever resolved, so they never reach Get-Process and do not
     need this.
     """
-    proc = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
-    try:
-        yield proc.pid
-    finally:
-        proc.terminate()
+    with subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"]) as proc:
         try:
-            proc.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            proc.kill()
+            yield proc.pid
+        finally:
+            proc.terminate()
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                proc.kill()
 
 
 @by_flavor_matrix
