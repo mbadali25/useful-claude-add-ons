@@ -4,6 +4,37 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Added
+
+- **`crew` 1.0.30: the code maps, diagrams and code graph a ticket's changes
+  reach must be current before `/crew:done` (T-0008).** Bumped
+  `1.0.28 -> 1.0.30` (1.0.29 is assigned to another lane). New read-only
+  `hooks/scripts/crew_refresh_check.py --root . --ticket <id> [--json]`
+  answers per artifact `fresh`, `stale` (naming `/crew:onboard --refresh
+  <subsystem>`, `/crew:diagram refresh` or `graphify update .`) or `unknown`,
+  and `not applicable` for a repo with no graph file; it exits 0 only when
+  everything is `fresh`. It reuses `crew_freshness`'s anchor readers,
+  `scope_base.resolve` and `completion_audit.changed_paths`, and diffs each
+  anchor against the WORKING TREE over only the paths the ticket changed and
+  the artifact cites: an anchor lag from commits elsewhere does not refuse,
+  an uncommitted edit in a cited path reads `stale` ("commit, then
+  refresh"), and a missing anchor, a sha this clone lacks, a graph with no
+  `built_at_commit` or graphify missing on this machine are `unknown`, never
+  `fresh`. Documents are `not measured`.
+  - `/crew:implement` step 6 is now tests, `/crew:docs`, the refresh check
+    and the commands it names, then `/crew:review`, so the review receipt
+    covers the refreshed artifacts.
+  - `/crew:done` gains check 4, which runs the same check and refuses on
+    `stale` or `unknown` without running a refresh (a write there would stale
+    check 1's receipt).
+  - `tests/test_refresh_check.py` (must-refuse and must-allow cases in real
+    git repositories, plus the implement/done ordering tests) and
+    `tests/sabotage_refresh.py`, registered in `sabotage.py`: forcing the
+    overall status to `fresh`, mapping `unknown` to `fresh`, and diffing
+    `<anchor>..HEAD` instead of the working tree each go red on their named
+    test. `.crew/verify.json` maps the check, its tests and the two commands
+    to `python3 -m pytest plugin/crew/tests/test_refresh_check.py -q`.
+
 ### Changed
 
 - **`crew` 1.0.28: native-Windows round 3 from win-repo-2 — the sendkeys
