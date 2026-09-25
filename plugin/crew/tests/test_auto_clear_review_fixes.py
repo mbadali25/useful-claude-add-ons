@@ -372,18 +372,27 @@ def _run_tab_decision(uia_available, tab_count, selected_matches):
     # UIA available, but no tab elements found at all -- also unknown.
     (True, 0, False, False),
     (True, None, False, False),
-    # Exactly one tab: always safe, whatever selectedMatches says.
+    # Exactly one tab: always safe, whatever selectedMatches says -- a
+    # window with one tab has that tab selected by definition.
     (True, 1, False, True),
     (True, 1, True, True),
-    # Several tabs: only a PROVEN selection sends; otherwise decline.
+    # Several tabs: NEVER sends, even when selectedMatches is proven. Tab
+    # names are shell-set text with no tab-to-pid mapping, so a "proven"
+    # match is still a guess about which tab is this session's. Decided
+    # 2026-09-24, narrower than an earlier version of this function that
+    # sent when selectedMatches was true -- this parametrize case is what
+    # would have caught that: flip selected_matches back to a send-when-true
+    # branch and case "many-tabs-matched" goes red.
     (True, 2, False, False),
-    (True, 2, True, True),
+    (True, 2, True, False),
     (True, 7, False, False),
+    (True, 7, True, False),
 ], ids=[
     "uia-unavailable-one-tab", "uia-unavailable-unknown-count", "uia-unavailable-many-tabs",
     "zero-tabs-found", "zero-tabs-null-count",
     "one-tab-unmatched", "one-tab-matched",
-    "many-tabs-unmatched", "many-tabs-matched", "many-tabs-unmatched-7",
+    "many-tabs-unmatched", "many-tabs-matched-still-declines",
+    "many-tabs-unmatched-7", "many-tabs-matched-7-still-declines",
 ])
 def test_get_crew_send_keys_tab_decision_covers_every_branch(
         uia_available, tab_count, selected_matches, expect_send):

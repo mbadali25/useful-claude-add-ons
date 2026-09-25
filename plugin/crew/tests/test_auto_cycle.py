@@ -27,6 +27,7 @@ import os
 import pathlib
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
 
@@ -537,19 +538,44 @@ _WINDOW_CASES = [
 ]
 
 
+@pytest.fixture
+def _real_foreign_pid():
+    """A PID that (a) really backs a running process, so ps1's owner-safety
+    Get-Process check can resolve it for real, and (b) is not an ancestor of
+    this test process, so it still exercises the title-fallback path rather
+    than owner-pid matching. Spawned and killed by the test -- this is what
+    _WINDOW_CASES' fabricated 999999 should have been for the one case that
+    needs its pid to survive a REAL Get-Process call (title-one); the other
+    fake-999999 cases (title-none, title-two, nothing) all decline BEFORE
+    $target is ever resolved, so they never reach Get-Process and do not
+    need this.
+    """
+    proc = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+    try:
+        yield proc.pid
+    finally:
+        proc.terminate()
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+
+
 @by_flavor_matrix
 @pytest.mark.parametrize("case,windows,title,expect", _WINDOW_CASES, ids=[c[0] for c in _WINDOW_CASES])
 def test_the_window_is_identified_uniquely_or_not_at_all(flavor, case, windows, title, expect, tmp_path, request):
     if flavor == "ps1" and case == "title-one":
-        # The CREW_AUTOCLEAR_OWNER_STUB seam that let this case reach a fake
-        # pid's owner-safety check without exercising it was reverted
-        # (a5008632): Codex found it lets any environment falsify the window
-        # owner and bypass the WT tab-safety check. See TODO.md - win-repo
-        # needs a test-only seam that production auto-clear.ps1 cannot honour.
-        request.node.add_marker(pytest.mark.xfail(
-            strict=True,
-            reason="owner lookup seam: tracked for win-repo, see TODO",
-        ))
+        # Fixed 2026-09-24, closing the TODO.md deferral: the fabricated pid
+        # 999999 never backed a real process, so ps1's owner-safety check
+        # (a REAL Get-Process call) correctly declined it -- that check was
+        # right, the fixture was not. No seam was added to auto-clear.ps1;
+        # this swaps the fake pid for one that genuinely backs a running,
+        # non-ancestor process, which is exactly what owner-one/owner-two-
+        # title already do with os.getpid(). CREW_AUTOCLEAR_OWNER_STUB
+        # (a5008632) is NOT reused here -- it was reverted for letting any
+        # environment falsify a window's owner at runtime, in production.
+        real_pid = request.getfixturevalue("_real_foreign_pid")
+        windows = [dict(w, pid=real_pid) if w["pid"] == 999999 else w for w in windows]
     del case
     root = _repo(tmp_path)
     if flavor == "sh":
