@@ -409,19 +409,24 @@ def test_kill_process_group_still_signals_when_start_time_matches(
 @pytest.mark.skipif(os.name == "nt", reason="POSIX process-group signalling only")
 @pytest.mark.skipif(not os.path.isdir("/proc"),
                      reason="start-time verification needs /proc")
-def test_kill_process_group_reaches_a_grandchild_after_its_reaped_leader(
+def test_kill_process_group_refuses_a_reaped_leader_rather_than_guess(
         tmp_path):
-    """FIX (review): a REAPED leader used to read identically to a REUSED
-    pgid. `sh -c 'sleep 60 & echo $!'` backgrounds `sleep 60` and exits
-    immediately itself -- the ordinary shape of a rule whose foreground
-    command finishes fast but leaves something running. `proc.communicate()`
-    below reaps the leader (`sh`) the same way `run_gate`'s own non-timeout
-    path already does, so by the time `kill_process_group` runs,
-    `_proc_start_ticks(pgid)` reads `None` (the leader's `/proc` entry is
-    gone, not merely stale) exactly as it would for a genuinely reused
-    pgid. The old check treated both the same and skipped `killpg`,
-    leaking `sleep 60`. Sabotage: reverting `kill_process_group`'s `None`
-    branch to a bare skip (as it read before this fix) turns this red.
+    """BLOCK (review): a start-time LOWER BOUND used to sit here (a reaped
+    leader whose group still had a live member with a start time at or
+    after the leader's own was treated as "ours, safe to killpg"). That
+    bound cannot actually distinguish a genuine surviving grandchild from a
+    FULLY reused pgid: every member of a truly reused group also started
+    after our leader did (reuse cannot happen before our leader existed to
+    be reaped), so the bound is satisfied by both cases equally, and
+    teardown could `killpg` a process group it never started. Dropped
+    entirely: a reaped leader is now always "cannot prove this is ours",
+    full stop, at the cost of leaking a grandchild in exactly the one
+    shape this test builds (`sh -c 'sleep 60 & echo $!'`, its leader
+    reaped by `proc.communicate()` before cleanup runs, the ordinary shape
+    `run_gate`'s own non-timeout path produces for any rule like this).
+    Sabotage: restoring a start-time-bound check in place of the bare
+    `current is None` skip turns this red (the leftover `sleep 60` would
+    then be killed instead of surviving).
     """
     pidfile = tmp_path / "grandchild.pid"
     proc = crew_fixtures.popen_gate(
@@ -438,23 +443,25 @@ def test_kill_process_group_reaches_a_grandchild_after_its_reaped_leader(
 
     # Reaps the leader (the shell already exited on its own) before this
     # test's own kill_process_group call -- the exact ordering `run_gate`
-    # produces on any rule shaped like this one.
+    # produces on any rule shaped like this one, and the one contract
+    # `kill_process_group` depends on but cannot itself enforce: the
+    # leader must stay UN-REAPED for as long as it is this function's job
+    # to signal it. This test deliberately breaks that contract to prove
+    # the function refuses rather than guesses once it is broken.
     proc.communicate(timeout=10)
     assert crew_fixtures._proc_start_ticks(proc.pgid) is None, (
         "sanity: the leader must actually be reaped (not merely exited-"
         "but-zombie) for this test to exercise the None branch"
     )
 
-    crew_fixtures.kill_process_group(proc)
-
-    deadline = time.time() + 5
-    while _pid_alive(grandchild_pid) and time.time() < deadline:
-        time.sleep(0.1)
     try:
-        assert not _pid_alive(grandchild_pid), (
-            "the grandchild survived kill_process_group after its leader "
-            "was reaped - a reaped leader must not be treated the same as "
-            "a reused pgid"
+        crew_fixtures.kill_process_group(proc)
+
+        time.sleep(0.3)
+        assert _pid_alive(grandchild_pid), (
+            "the grandchild was signalled after its leader was reaped - "
+            "this pgid was no longer provably ours, so it must be left "
+            "alone, not killed on a guess"
         )
     finally:
         try:
@@ -466,26 +473,23 @@ def test_kill_process_group_reaches_a_grandchild_after_its_reaped_leader(
 @pytest.mark.skipif(os.name == "nt", reason="POSIX process-group signalling only")
 @pytest.mark.skipif(not os.path.isdir("/proc"),
                      reason="start-time verification needs /proc")
-def test_kill_process_group_skips_a_reaped_leader_with_no_surviving_member(
+def test_kill_process_group_does_not_killpg_a_reaped_leaders_pgid(
         monkeypatch):
-    """Sabotage pair for the test above: a reaped leader (`_proc_start_ticks`
-    reading `None`) whose group genuinely has NO surviving member (forced
-    via `_pgid_has_live_member_since` returning `False`, since winning that
-    race for real is not something a test can force on demand) must still
-    refuse to signal - proving the fix does not simply always signal on
-    `None`, only when a real member is actually found.
+    """Unit-level pair for the end-to-end test above, forcing the reaped-
+    leader branch deterministically (via `_proc_start_ticks` returning
+    `None`) rather than relying on a real reap: `os.killpg` must never be
+    called at all once the leader reads as reaped, regardless of whether
+    anything in that group happens to still be alive.
     """
     calls = []
     monkeypatch.setattr(os, "killpg",
                          lambda pgid, sig: calls.append((pgid, sig)))
     monkeypatch.setattr(crew_fixtures, "_proc_start_ticks", lambda pid: None)
-    monkeypatch.setattr(
-        crew_fixtures, "_pgid_has_live_member_since",
-        lambda pgid, floor: False)
 
     crew_fixtures.kill_process_group(_FakePgidProc())
 
     assert calls == [], (
-        "kill_process_group signalled a pgid with a reaped leader and no "
-        "live member found - it must skip, not guess"
+        "kill_process_group signalled a pgid whose leader has already "
+        "been reaped - it can no longer be proven to be ours, so it must "
+        "skip, not guess"
     )

@@ -75,63 +75,6 @@ def _proc_start_ticks(pid):
         return None
 
 
-def _pgid_has_live_member_since(pgid, min_start_ticks):
-    """Is there a process ALIVE RIGHT NOW whose process group is `pgid` and
-    whose own start time is at or after `min_start_ticks` (the leader's own
-    start ticks, recorded at spawn)?
-
-    Exists for the case `_proc_start_ticks(pgid)` cannot answer at all: the
-    group LEADER has already been reaped (`/proc/<pgid>/stat` no longer
-    exists, so that helper returns `None`), but a grandchild the leader
-    backgrounded and never waited on can still be alive in the SAME group
-    -- a process group survives its leader's exit for as long as any member
-    does. Treating a bare `None` as "this pgid was reused, do not signal"
-    (what the mismatch check below used to do for every non-matching
-    read, `None` included) skipped `killpg` on exactly the leak this
-    function exists to still catch.
-
-    A live member's own start time can never be EARLIER than the group
-    leader's -- every member was forked into this group after the leader
-    already existed to make the group in the first place -- so scanning
-    for one at or after `min_start_ticks` distinguishes a genuine surviving
-    grandchild from an unrelated process that merely happens to sit in a
-    group numbered the same as ours after full reuse (whose own members,
-    if the number really was handed to a brand new session, could not have
-    started before the reuse, which is itself after our own leader's
-    recorded start -- the same bound, from the other direction).
-    """
-    if not _PROC_SUPPORTED:
-        return False
-    try:
-        floor = int(min_start_ticks)
-    except (TypeError, ValueError):
-        return False
-    try:
-        entries = os.listdir("/proc")
-    except OSError:
-        return False
-    target = str(pgid)
-    for entry in entries:
-        if not entry.isdigit():
-            continue
-        try:
-            with open(f"/proc/{entry}/stat", encoding="ascii") as handle:
-                raw = handle.read()
-            after_comm = raw.rsplit(")", 1)[1].split()
-            member_pgrp = after_comm[2]  # field 5
-            member_start = after_comm[19]  # field 22
-        except (OSError, IndexError, ValueError):
-            continue
-        if member_pgrp != target:
-            continue
-        try:
-            if int(member_start) >= floor:
-                return True
-        except ValueError:
-            continue
-    return False
-
-
 def pid_alive(pid):
     """Is `pid` still alive, in the sense every caller here actually means
     -- "would a fresh signal still land", not "does the kernel still have
@@ -274,17 +217,36 @@ def kill_process_group(proc):
     the only thing possible there, and no worse than before this check
     existed.
 
-    A REAPED leader is not the same thing as a REUSED pgid, and used to be
-    treated identically: `_proc_start_ticks(pgid)` reads `None` once the
-    leader itself has been waited on (its `/proc` entry is gone entirely,
-    not merely stale), and `None != start_ticks` is true exactly the same
-    way a genuine mismatch is -- so a rule that backgrounded a grandchild
-    and exited itself (the ordinary shape `run_gate`'s own `communicate()`
-    already reaps) fell into the "may have been reused" branch and skipped
-    `killpg`, leaking that grandchild. `None` now falls to
-    `_pgid_has_live_member_since` instead of an immediate skip: only when
-    NO member of this exact pgid is still alive with a start time at or
-    after the leader's recorded one does this refuse to signal.
+    A REAPED leader (`_proc_start_ticks(pgid)` reads `None` -- its `/proc`
+    entry is gone entirely, not merely stale) is deliberately treated as
+    "cannot signal", not distinguished from a genuinely reused pgid by any
+    further heuristic. A start-time LOWER BOUND was tried here once (scan
+    `/proc` for any live process in this pgid whose own start ticks are at
+    or after the leader's recorded start, on the theory that a genuine
+    surviving grandchild can only have started after its leader made the
+    group) and reverted: the bound cannot actually tell the two cases
+    apart. Once a pgid IS fully reused by an unrelated `setsid` leader,
+    every member of that brand-new group necessarily started AFTER our own
+    leader did too -- reuse cannot happen before our leader existed to be
+    reaped in the first place -- so the same lower bound that is supposed
+    to prove "this is our surviving grandchild" is satisfied by "this is
+    someone else's group that happens to reuse our old number" just as
+    reliably. A heuristic that cannot discriminate the case it exists to
+    rule out is not a heuristic, it is a guess wearing one, and this
+    function `killpg`s a group other code may not own -- so the guess costs
+    an unrelated process, not merely a wrong test assertion. The safe
+    property this file keeps instead: the leader stays UN-REAPED (nothing
+    here calls `wait`/`communicate`/`poll` on it) for as long as it is this
+    function's job to signal it, so `pgid` cannot have been recycled out
+    from under a call that has not yet reaped it -- `killpg` happens first,
+    the reap (in `gate_processes`'s teardown, or `run_gate`'s post-timeout
+    `communicate()`) always happens after. If the leader was ALREADY reaped
+    by the time this runs -- some other code called `communicate()`/`wait()`
+    on it first, the one contract this function depends on and cannot
+    itself enforce -- the pgid is no longer provably ours, and this skips
+    `killpg` entirely rather than guess: a grandchild left behind by that
+    one caller may leak, which is a smaller cost than signalling a process
+    group this call can no longer prove it started.
     """
     if os.name == "nt":
         subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)],
@@ -298,14 +260,14 @@ def kill_process_group(proc):
             elif _PROC_SUPPORTED and start_ticks is not None:
                 current = _proc_start_ticks(pgid)
                 if current is None:
-                    if not _pgid_has_live_member_since(pgid, start_ticks):
-                        print(
-                            f"crew_fixtures: skipping killpg({pgid}) - its "
-                            "leader has been reaped and no process group "
-                            "member with a start time at or after the "
-                            "recorded leader start remains",
-                            file=sys.stderr)
-                        pgid = None
+                    print(
+                        f"crew_fixtures: skipping killpg({pgid}) - its "
+                        "leader has already been reaped, so this pgid "
+                        "cannot be proven to still be ours; a surviving "
+                        "grandchild in this group may leak rather than "
+                        "risk signalling a group we do not own",
+                        file=sys.stderr)
+                    pgid = None
                 elif current != start_ticks:
                     print(
                         f"crew_fixtures: skipping killpg({pgid}) - its "

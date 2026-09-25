@@ -584,49 +584,59 @@ if ! mkdir "$LOCK" 2>/dev/null; then
     fi
   fi
 fi
-if [ "$UNLOCKED" -eq 0 ]; then
-  # --- shared cleanup registry ---------------------------------------
-  # Every exit-path cleanup from here on (this lock's own release, the
-  # python3 shim's temp dir below, and a still-running rule's escaped
-  # process group further down) registers a FUNCTION here instead of
-  # splicing `trap -p` text - two chained `trap -p`-based layers already
-  # sit at the edge of what that idiom can do: `trap -p` re-quotes its
-  # output as a single-quoted string literal, escaping any embedded `'`
-  # as `'\''`, and splicing that ALREADY-escaped text into a third trap's
-  # own double-quoted body leaves the escape unresolved - not valid
-  # shell, and a mid-run `unexpected EOF` at whichever signal fires it. A
-  # third stage was tried exactly that way once (to reap a rule's
-  # backgrounded jobs on every exit) and reverted for this reason - see
-  # the rule loop's own comment, below, for the fuller account and the
-  # test that caught it (test_shim_cleanup_does_not_clobber_the_lock_release_trap).
-  # A function registered by NAME has nothing to re-quote at all, at any
-  # depth: every stage just appends its own cleanup function to this
-  # array, and the dispatcher below calls each in turn at signal time,
-  # reading whatever variables that function closes over fresh, not a
-  # frozen string captured at registration time.
-  _CREW_GATE_CLEANUP_FNS=()
-  _crew_gate_register_cleanup() { _CREW_GATE_CLEANUP_FNS+=("$1"); }
-  _crew_gate_run_cleanup() {
-    local _crew_gate_cleanup_i
-    for (( _crew_gate_cleanup_i=${#_CREW_GATE_CLEANUP_FNS[@]} - 1;
-           _crew_gate_cleanup_i >= 0; _crew_gate_cleanup_i-- )); do
-      "${_CREW_GATE_CLEANUP_FNS[_crew_gate_cleanup_i]}" 2>/dev/null
-    done
-  }
-  # Installed ONCE, here - the first point this script has anything to
-  # clean up. INT/TERM/HUP each run the dispatcher and then exit with the
-  # conventional 128+signal status: an asynchronous signal this script has
-  # trapped no longer terminates it on its own, so without an explicit
-  # `exit` here a rule stuck mid-command would run its cleanup and then
-  # simply CONTINUE running - not what sent the signal wanted, and the
-  # exact gap that let a rule's own escaped process group outlive this
-  # whole gate being killed. EXIT needs no explicit exit of its own - the
-  # script is already on its way out with whatever code got it there.
-  trap '_crew_gate_run_cleanup; exit $((128 + 15))' TERM
-  trap '_crew_gate_run_cleanup; exit $((128 + 2))' INT
-  trap '_crew_gate_run_cleanup; exit $((128 + 1))' HUP
-  trap '_crew_gate_run_cleanup' EXIT
+# --- shared cleanup registry -----------------------------------------
+# Every exit-path cleanup from here on (this lock's own release when a lock
+# is actually held, the python3 shim's temp dir below, and a still-running
+# rule's escaped process group further down) registers a FUNCTION here
+# instead of splicing `trap -p` text - two chained `trap -p`-based layers
+# already sit at the edge of what that idiom can do: `trap -p` re-quotes its
+# output as a single-quoted string literal, escaping any embedded `'`
+# as `'\''`, and splicing that ALREADY-escaped text into a third trap's
+# own double-quoted body leaves the escape unresolved - not valid
+# shell, and a mid-run `unexpected EOF` at whichever signal fires it. A
+# third stage was tried exactly that way once (to reap a rule's
+# backgrounded jobs on every exit) and reverted for this reason - see
+# the rule loop's own comment, below, for the fuller account and the
+# test that caught it (test_shim_cleanup_does_not_clobber_the_lock_release_trap).
+# A function registered by NAME has nothing to re-quote at all, at any
+# depth: every stage just appends its own cleanup function to this
+# array, and the dispatcher below calls each in turn at signal time,
+# reading whatever variables that function closes over fresh, not a
+# frozen string captured at registration time.
+#
+# UNCONDITIONAL, unlike the lock registration below it: the shim (further
+# down this file) and the rule-pgid stage both register into this array
+# regardless of whether a lock was ever acquired - an UNLOCKED run (the
+# lock path is a regular file, or otherwise unwritable) still has to clean
+# up its own shim tempdir and kill its own rule's process group on
+# TERM/INT/HUP. Defining the registry only inside the locked branch left
+# both calls below hitting "command not found" on stderr on every unlocked
+# run, and an interrupted rule's process group outliving the gate entirely,
+# because neither the array nor the traps existed for it to register into.
+_CREW_GATE_CLEANUP_FNS=()
+_crew_gate_register_cleanup() { _CREW_GATE_CLEANUP_FNS+=("$1"); }
+_crew_gate_run_cleanup() {
+  local _crew_gate_cleanup_i
+  for (( _crew_gate_cleanup_i=${#_CREW_GATE_CLEANUP_FNS[@]} - 1;
+         _crew_gate_cleanup_i >= 0; _crew_gate_cleanup_i-- )); do
+    "${_CREW_GATE_CLEANUP_FNS[_crew_gate_cleanup_i]}" 2>/dev/null
+  done
+}
+# Installed ONCE, here - the first point this script has anything to
+# clean up. INT/TERM/HUP each run the dispatcher and then exit with the
+# conventional 128+signal status: an asynchronous signal this script has
+# trapped no longer terminates it on its own, so without an explicit
+# `exit` here a rule stuck mid-command would run its cleanup and then
+# simply CONTINUE running - not what sent the signal wanted, and the
+# exact gap that let a rule's own escaped process group outlive this
+# whole gate being killed. EXIT needs no explicit exit of its own - the
+# script is already on its way out with whatever code got it there.
+trap '_crew_gate_run_cleanup; exit $((128 + 15))' TERM
+trap '_crew_gate_run_cleanup; exit $((128 + 2))' INT
+trap '_crew_gate_run_cleanup; exit $((128 + 1))' HUP
+trap '_crew_gate_run_cleanup' EXIT
 
+if [ "$UNLOCKED" -eq 0 ]; then
   # A token of our own, so a SECOND reclaimer that deleted our fresh lock and
   # took its own is detectable: whoever's token is on disk once both have
   # written owns the turn, and the other backs off instead of both running.
@@ -1513,34 +1523,75 @@ lock_extend
 # right pgid despite the rule running inside its own subshell.
 #
 # `_CREW_GATE_RULE_PGID_FILE` names a file the CURRENTLY running rule's
-# subshell writes its own pgid(s) into - a plain shell variable set inside
-# that subshell would never be visible out here, since a subshell's
-# assignments do not propagate to its parent, but a file both can read and
-# write does. Reset to empty by the rule loop itself once a rule's
-# subshell returns normally (nothing left to chase); this function only
-# ever reads whatever is on disk RIGHT NOW, so it needs no coordination
-# beyond that.
+# subshell writes its own target(s) into - a plain shell variable set
+# inside that subshell would never be visible out here, since a
+# subshell's assignments do not propagate to its parent, but a file both
+# can read and write does. Reset to empty by the rule loop itself once a
+# rule's subshell returns normally (nothing left to chase); this function
+# only ever reads whatever is on disk RIGHT NOW, so it needs no
+# coordination beyond that.
+#
+# Each line is "MODE ID": MODE is `g` (ID is a verified process-GROUP id,
+# signalled via the negative-pid form) or `p` (ID is a bare pid, signalled
+# directly, never negated). See `_crew_gate_pgid_of` and the writer below
+# for why a single unconditional `g` is not safe for every line here.
 _CREW_GATE_RULE_PGID_FILE=""
+# Portable pgid lookup for THIS OWN process (never another user's, so no
+# `ps -p` privilege gap applies): tries `/proc/<pid>/stat` first (no
+# subprocess, Linux), falling back to `ps -o pgid=` (macOS's BSD ps and
+# Git Bash's bundled ps both accept it) when /proc is absent or unreadable
+# -- rather than branching on `uname`/`$OSTYPE`, per this repo's own rule
+# to branch on what the tool actually does, not what OS it claims to be.
+# Prints nothing (not a guess) when neither source yields a clean digit
+# string, which the caller below treats as "cannot verify" and takes the
+# safe branch accordingly.
+_crew_gate_pgid_of() {
+  local _crew_pid="$1" _crew_stat _crew_after _crew_pgid=""
+  if [ -r "/proc/$_crew_pid/stat" ]; then
+    _crew_stat=$(cat "/proc/$_crew_pid/stat" 2>/dev/null)
+    # Field 5 (process group) is the 3rd field after `comm`'s closing
+    # paren - split on the LAST `)`, not the first, since `comm` itself
+    # may contain one; matches crew_fixtures.py's `_proc_start_ticks`.
+    _crew_after=${_crew_stat##*\)}
+    set -- $_crew_after
+    _crew_pgid="${3:-}"
+    case "$_crew_pgid" in ''|*[!0-9]*) _crew_pgid="" ;; esac
+  fi
+  if [ -z "$_crew_pgid" ]; then
+    _crew_pgid=$(ps -o pgid= -p "$_crew_pid" 2>/dev/null | tr -d '[:space:]')
+    case "$_crew_pgid" in ''|*[!0-9]*) _crew_pgid="" ;; esac
+  fi
+  printf '%s' "$_crew_pgid"
+}
 _crew_gate_cleanup_rule_pgid() {
   [ -n "$_CREW_GATE_RULE_PGID_FILE" ] || return 0
   [ -f "$_CREW_GATE_RULE_PGID_FILE" ] || return 0
-  local _crew_pg _crew_pg_any_alive=0
-  while IFS= read -r _crew_pg; do
-    case "$_crew_pg" in ''|*[!0-9]*) continue ;; esac
-    kill -TERM -- "-$_crew_pg" 2>/dev/null
+  local _crew_mode _crew_id _crew_pg_any_alive=0
+  while IFS=' ' read -r _crew_mode _crew_id; do
+    case "$_crew_id" in ''|*[!0-9]*) continue ;; esac
+    case "$_crew_mode" in
+      g) kill -TERM -- "-$_crew_id" 2>/dev/null ;;
+      p) kill -TERM -- "$_crew_id" 2>/dev/null ;;
+    esac
   done < "$_CREW_GATE_RULE_PGID_FILE"
   # Same "only pay the grace sleep when something is actually left" rule
   # the ordinary post-rule cleanup already follows, just below - never an
   # unconditional sleep on the signal path either.
-  while IFS= read -r _crew_pg; do
-    case "$_crew_pg" in ''|*[!0-9]*) continue ;; esac
-    if kill -0 -- "-$_crew_pg" 2>/dev/null; then _crew_pg_any_alive=1; fi
+  while IFS=' ' read -r _crew_mode _crew_id; do
+    case "$_crew_id" in ''|*[!0-9]*) continue ;; esac
+    case "$_crew_mode" in
+      g) kill -0 -- "-$_crew_id" 2>/dev/null && _crew_pg_any_alive=1 ;;
+      p) kill -0 -- "$_crew_id" 2>/dev/null && _crew_pg_any_alive=1 ;;
+    esac
   done < "$_CREW_GATE_RULE_PGID_FILE"
   if [ "$_crew_pg_any_alive" -eq 1 ]; then
     sleep 0.2
-    while IFS= read -r _crew_pg; do
-      case "$_crew_pg" in ''|*[!0-9]*) continue ;; esac
-      kill -KILL -- "-$_crew_pg" 2>/dev/null
+    while IFS=' ' read -r _crew_mode _crew_id; do
+      case "$_crew_id" in ''|*[!0-9]*) continue ;; esac
+      case "$_crew_mode" in
+        g) kill -KILL -- "-$_crew_id" 2>/dev/null ;;
+        p) kill -KILL -- "$_crew_id" 2>/dev/null ;;
+      esac
     done < "$_CREW_GATE_RULE_PGID_FILE"
   fi
 }
@@ -1687,16 +1738,40 @@ for v in ("ENV", "AWS_PROFILE", "AWS_DEFAULT_REGION", "KUBECONFIG", "TF_WORKSPAC
     # terminal) - measured directly: signalling the gate's own group from
     # outside left this subshell (and everything backgrounded from it)
     # running, because by then it belonged to a group that signal never
-    # reached. `$BASHPID` (this subshell's own pid, hence its own pgid if
-    # it re-grouped) is recorded FIRST, before anything is backgrounded,
-    # so `_crew_gate_cleanup_rule_pgid` has a target even if the gate is
+    # reached. `$BASHPID` (this subshell's own pid, hence its own pgid IF
+    # it re-grouped) is recorded FIRST, before anything is backgrounded, so
+    # `_crew_gate_cleanup_rule_pgid` has a target even if the gate is
     # signalled before `RULE_PID` exists at all.
+    #
+    # BLOCK (review): recording `$BASHPID` as a GROUP id used to be
+    # unconditional - correct only on hosts where `set -m` actually did
+    # re-group this subshell. Where it did NOT (the "some hosts" above is
+    # not every host), `$BASHPID`'s real process group is still whatever
+    # this subshell inherited - almost certainly the GATE's own - and
+    # `kill -TERM -- "-$BASHPID"` at that exact window either signals a
+    # process group that does not happen to be numbered `$BASHPID` (a
+    # silent no-op: the rule survives, uncancelled) or, worse, the gate's
+    # own group, by coincidence of numbering. `_crew_gate_pgid_of` proves
+    # which case this is BEFORE anything is recorded: verified as its own
+    # leader, `$BASHPID` is written in `g` (group) mode exactly as before;
+    # otherwise it is written in `p` (plain pid) mode instead, so cleanup
+    # signals this ONE subshell process directly rather than guessing at
+    # a group it cannot prove exists.
     (
       set -m
-      printf '%s\n' "$BASHPID" >> "$_CREW_GATE_RULE_PGID_FILE" 2>/dev/null
+      if [ "$(_crew_gate_pgid_of "$BASHPID")" = "$BASHPID" ]; then
+        printf 'g %s\n' "$BASHPID" >> "$_CREW_GATE_RULE_PGID_FILE" 2>/dev/null
+      else
+        printf 'p %s\n' "$BASHPID" >> "$_CREW_GATE_RULE_PGID_FILE" 2>/dev/null
+      fi
       ( eval "$c" ) >"$RULE_OUT_FILE" 2>&1 </dev/null &
       RULE_PID=$!
-      printf '%s\n' "$RULE_PID" >> "$_CREW_GATE_RULE_PGID_FILE" 2>/dev/null
+      # RULE_PID needs no such verification: `set -m` (enabled just above,
+      # in THIS subshell) is what makes bash give a background job its own
+      # process group whose id equals its own pid in the first place -
+      # documented job-control behaviour, not a per-host implementation
+      # detail the way this subshell's OWN re-grouping is.
+      printf 'g %s\n' "$RULE_PID" >> "$_CREW_GATE_RULE_PGID_FILE" 2>/dev/null
       wait "$RULE_PID" 2>/dev/null
       RC=$?
       # TERM the whole group first, then a short grace period, then KILL

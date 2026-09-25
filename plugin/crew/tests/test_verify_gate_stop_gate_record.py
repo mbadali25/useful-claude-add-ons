@@ -2006,6 +2006,8 @@ def test_34h_a_signalled_gate_kills_its_current_rules_process_group(
     proc = crew_fixtures.popen_gate(
         [_BASH, _SH], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
         stderr=subprocess.PIPE, text=True, cwd=str(root), env=env)
+    rule_pid = None
+    rule_start_ticks = None
     try:
         proc.stdin.write("{}")
         proc.stdin.close()
@@ -2023,6 +2025,11 @@ def test_34h_a_signalled_gate_kills_its_current_rules_process_group(
         assert crew_fixtures.pid_alive(rule_pid), (
             "sanity: the rule's own process never started"
         )
+        # Recorded now, while the rule is known-alive, so `finally` below
+        # can re-verify identity instead of SIGKILLing a bare pid it has
+        # already watched die (or that has since been reused by something
+        # unrelated) -- see `_kill_if_still_same_process`'s own docstring.
+        rule_start_ticks = crew_fixtures._proc_start_ticks(rule_pid)
 
         if target == "group":
             os.killpg(proc.pgid, signal.SIGTERM)
@@ -2042,11 +2049,112 @@ def test_34h_a_signalled_gate_kills_its_current_rules_process_group(
             "cancellation instead of being killed along with the gate."
         )
     finally:
+        # Never a bare `os.kill(rule_pid, ...)` on a pid this test may have
+        # already watched die above -- by cleanup time that exact number
+        # could have been handed to an unrelated process; re-verify via its
+        # recorded start ticks first (see `_kill_if_still_same_process`'s
+        # own docstring for the mismatch it exists to prevent).
+        _kill_if_still_same_process(
+            rule_pid, rule_start_ticks, _PORTABLE_SIGKILL)
+        crew_fixtures.kill_process_group(proc)
         try:
-            rule_pid = int(pidfile.read_text(encoding="utf-8").strip())
-            os.kill(rule_pid, _PORTABLE_SIGKILL)
-        except (OSError, ValueError, FileNotFoundError):
+            proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:
             pass
+
+
+@pytest.mark.skipif(_BASH is None, reason="needs bash")
+@pytest.mark.skipif(os.name == "nt", reason="POSIX process-group signalling only")
+def test_34i_an_unlocked_run_still_cleans_up_and_cancels_its_rule(tmp_path):
+    """BLOCK (review): the shared cleanup registry (`_CREW_GATE_CLEANUP_FNS`,
+    `_crew_gate_register_cleanup`, `_crew_gate_run_cleanup`) and the
+    TERM/INT/HUP/EXIT traps that dispatch to it used to be defined only
+    INSIDE `if [ "$UNLOCKED" -eq 0 ]` - so a run that never took the lock at
+    all (this test's own repro: `.crew/.verify-gate.lock` pre-created as a
+    REGULAR file, which `mkdir` can never turn into a directory) had no
+    registry and no traps to catch a signal with. The shim registration
+    call and the rule-pgid registration call further down are UNCONDITIONAL
+    - they run whether or not a lock was ever held - so on an unlocked run
+    they called `_crew_gate_register_cleanup`, a function that was never
+    defined, and bash printed "command not found" on stderr for each. Worse
+    than the noise: with no trap installed at all, TERM landing on an
+    unlocked gate never ran any cleanup, and a still-running rule's process
+    group outlived the gate being killed, exactly as it did before the lock
+    existed at all.
+
+    Sabotage: re-indenting the registry/trap block back inside
+    `if [ "$UNLOCKED" -eq 0 ]` turns this red on both assertions - the
+    stderr check and the liveness check.
+    """
+    pidfile = tmp_path / "started.pid"
+    vmap = {
+        "version": 1,
+        "rules": [{"paths": ["a.py"], "reach": "local", "run": [
+            "sh -c 'echo $$ > "
+            + str(pidfile).replace("\\", "/")
+            + "; sleep 60'"
+        ]}],
+        "default": [], "unmapped": "ignore",
+    }
+    root = _repo(tmp_path, vmap)
+    (root / "a.py").write_text("x", encoding="utf-8")
+    # Forces UNLOCKED=1: `mkdir` on a path that is already a regular file
+    # always fails with ENOTDIR, the same collapse
+    # test_a_lock_path_that_is_a_file_does_not_stand_the_gate_down proves
+    # does not stand the gate down -- the checks still run, WITHOUT ever
+    # taking the lock.
+    (root / ".crew" / ".verify-gate.lock").write_text(
+        "not a directory\n", encoding="utf-8")
+
+    env = dict(os.environ, CLAUDE_PROJECT_DIR=str(root))
+    proc = crew_fixtures.popen_gate(
+        [_BASH, _SH], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE, text=True, cwd=str(root), env=env)
+    rule_pid = None
+    rule_start_ticks = None
+    try:
+        proc.stdin.write("{}")
+        proc.stdin.close()
+
+        deadline = time.time() + 15
+        while not pidfile.exists() and time.time() < deadline:
+            if proc.poll() is not None:
+                pytest.fail(
+                    "the gate exited before the rule even started - "
+                    "stderr: " + (proc.stderr.read() if proc.stderr else "")
+                )
+            time.sleep(0.1)
+        assert pidfile.exists(), "the rule never recorded its own pid"
+        rule_pid = int(pidfile.read_text(encoding="utf-8").strip())
+        assert crew_fixtures.pid_alive(rule_pid), (
+            "sanity: the rule's own process never started"
+        )
+        rule_start_ticks = crew_fixtures._proc_start_ticks(rule_pid)
+
+        os.kill(proc.pid, signal.SIGTERM)
+
+        deadline = time.time() + 10
+        alive = True
+        while time.time() < deadline:
+            if not crew_fixtures.pid_alive(rule_pid):
+                alive = False
+                break
+            time.sleep(0.1)
+        assert not alive, (
+            f"pid {rule_pid} (the rule's own process) was still alive up "
+            "to 10s after TERMinating an UNLOCKED gate - it escaped "
+            "cancellation because the cleanup registry/traps were never "
+            "installed for a run that took no lock."
+        )
+
+        _, stderr = proc.communicate(timeout=10)
+        assert "command not found" not in stderr, (
+            "the cleanup registry/trap dispatcher was referenced before it "
+            "was defined on this unlocked run: " + stderr
+        )
+    finally:
+        _kill_if_still_same_process(
+            rule_pid, rule_start_ticks, _PORTABLE_SIGKILL)
         crew_fixtures.kill_process_group(proc)
         try:
             proc.wait(timeout=10)

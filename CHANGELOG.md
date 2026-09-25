@@ -6,6 +6,69 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Changed
 
+- **`crew` 1.0.18: independent review of the 1.0.16 -> 1.0.17 range - the
+  cleanup registry and rule-cancellation fixes had two more gaps.** Bumped
+  `1.0.17 -> 1.0.18` after all four below.
+  - **`verify-gate.sh`: the shared cleanup registry and its TERM/INT/HUP/EXIT
+    traps were defined only inside `if [ "$UNLOCKED" -eq 0 ]`.** The shim's
+    and the rule-pgid stage's own registration calls, a few screens further
+    down, are unconditional - they run whether or not a lock was ever taken -
+    so an UNLOCKED run (`.crew/.verify-gate.lock` a regular file, or
+    otherwise unwritable) called `_crew_gate_register_cleanup` before it was
+    ever defined, printing "command not found" on stderr, and installed no
+    trap at all - a still-running rule outlived a TERM landing on an
+    unlocked gate exactly as it did before the registry existed. Registry
+    and traps now install unconditionally; only the lock's own release
+    callback still registers inside the locked branch, since there is
+    nothing to release otherwise. New test, `test_34i`, reproduces the
+    regular-file-lock repro end to end (no "command not found", the rule is
+    gone within 10s of TERM); sabotage re-indenting the block back inside
+    the locked branch turns it red on both assertions.
+  - **`verify-gate.sh`: the rule loop's own `$BASHPID` was recorded as a
+    process-GROUP id without proof.** `set -m` re-groups the rule's dedicated
+    subshell into its own process group on some hosts, not on others; the
+    old code assumed the re-group always happened and wrote `$BASHPID`
+    unverified, so on a host where it did not, `kill -TERM -- "-$BASHPID"`
+    at the exact window before the rule itself starts either signals a
+    process group that does not exist (a silent no-op) or, by coincidence of
+    numbering, one this script never started. New `_crew_gate_pgid_of`
+    proves which case holds (`/proc/<pid>/stat` field 5, falling back to
+    `ps -o pgid=` where /proc is unavailable) before anything is recorded:
+    verified as its own leader, `$BASHPID` is written in group mode as
+    before; otherwise in plain-pid mode, so cleanup signals the one process
+    it can prove exists instead of guessing at a group. `RULE_PID` itself
+    needs no such proof - job control guarantees a backgrounded job's own
+    group equals its own pid. New `test_verify_gate_rule_pgid_mode.py`
+    proves the helper on both real shapes (a `setsid` leader and an
+    ordinary inherited-group child), extracted straight out of the live
+    file rather than hand-copied; sabotaged and confirmed red on both a
+    broken helper and an unconditional group-mode write.
+  - **`crew_fixtures.kill_process_group`'s reaped-leader heuristic could not
+    tell a surviving grandchild from a fully reused pgid.** The 1.0.17 fix
+    scanned for a live process-group member with a start time at or after
+    the leader's own recorded start, on the theory that only a genuine
+    grandchild could satisfy it - but every member of a FULLY reused pgid
+    also started after our leader did (reuse cannot happen before our
+    leader existed to be reaped), so the bound is satisfied by both cases
+    equally, and teardown could `killpg` a process group it never started.
+    Dropped entirely: a reaped leader is now always "cannot prove this is
+    ours" and `kill_process_group` skips it with a warning, at the cost of
+    leaking a grandchild in the one shape this trades away deliberately -
+    the safe direction, matching the fail-closed choice this same function
+    already makes for a start-time mismatch. Two tests rewritten for the
+    new contract (a real end-to-end reap proving the grandchild now
+    survives, and a monkeypatched unit test proving `killpg` is never
+    called); both go red under the dropped heuristic.
+  - **Two tests SIGKILLed a bare pid in `finally` after already observing it
+    dead.** `test_kill_process_group_reaches_a_grandchild_after_its_reaped_leader`
+    (rewritten above) and `test_34h`'s pgid-race sibling both re-read a pid
+    from disk and signalled it unconditionally in cleanup, even on the path
+    where it had already been confirmed dead - by cleanup time that exact
+    number could have been reused. The `test_34h` file's own
+    `_kill_if_still_same_process` (added in 1.0.17 for a different test) is
+    now used here too: start ticks recorded the moment the pid was first
+    observed alive, re-verified before any signal.
+
 - **`crew` 1.0.17: independent review of the 1.0.16 merge - a rule's own
   escaped process group can no longer outlive a killed gate, plus three
   smaller test-harness fixes.** Bumped `1.0.16 -> 1.0.17` after all five
