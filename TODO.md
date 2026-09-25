@@ -23,6 +23,21 @@ be wrong can be closed on evidence.
   was. Not fixed here: adding a filter is a change to the harness itself,
   not to `auto-clear.ps1`.
 
+- `plugin/crew/tests/crew_fixtures.py:450` (`resolve_bash`) prefers Git for
+  Windows' `bin/bash.exe` wrapper over `usr/bin/bash.exe`, by design (its own
+  docstring: `usr/bin/bash.exe` "cannot resolve its own mount table when
+  launched from python.exe"). That wrapper unconditionally prepends
+  `/mingw64/bin:/usr/bin:$HOME/bin` to PATH on every fresh spawn, ahead of
+  anything the caller supplies — confirmed by direct measurement (both a
+  literal `os.pathsep`-joined PATH and a `crew_fixtures.shell_path`-built one
+  end up with that triple prepended first, on this host). `/usr/bin` bundles
+  a real `mktemp.exe`, so
+  `test_verify_gate_stop_gate_record.py::test_34d_a_second_mktemp_failure_refuses_rather_than_wedges`
+  cannot ever shadow `mktemp` via PATH through this bash — the stub is never
+  reached, regardless of separator correctness. Not fixed here: the file is
+  owned by a concurrent lane (crew-1.0-win-34dsh's brief forbade editing it),
+  and the preference for the wrapper is a deliberate, documented choice with
+  its own tradeoff, not an obvious bug to reverse unilaterally.
 - `scripts/_test/web-testing.sh:97` lifts `load_mcp_servers` out of
   `scripts/install-prerequisites.sh` without its `claude_available` dependency
   (defined at `scripts/install-prerequisites.sh:508`, outside the lifted awk

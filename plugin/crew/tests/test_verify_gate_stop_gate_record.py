@@ -519,7 +519,7 @@ def test_1_crlf_from_native_python_does_not_leak_an_inherited_credential(
     root = _repo(tmp_path, vmap)
     (root / "a.py").write_text("x", encoding="utf-8")
     env = dict(os.environ, AWS_PROFILE="prod",
-               PATH=str(stub_dir) + os.pathsep + os.environ.get("PATH", ""),
+               PATH=crew_fixtures.shell_path(flavour, [stub_dir]),
                CLAUDE_PROJECT_DIR=str(root))
     if flavour == "sh":
         cmd = [_BASH, _SH]
@@ -1774,8 +1774,7 @@ def test_34d_a_second_mktemp_failure_refuses_rather_than_wedges(tmp_path):
     (stub_dir / "mktemp").chmod(0o755)
 
     env = dict(os.environ, CLAUDE_PROJECT_DIR=str(root),
-               PATH=str(py3_dir) + os.pathsep + str(stub_dir) + os.pathsep
-               + os.environ.get("PATH", ""))
+               PATH=crew_fixtures.shell_path("sh", [py3_dir, stub_dir]))
     started = time.time()
     result = crew_fixtures.run_gate(
         [_BASH, _SH], input="{}", cwd=str(root), env=env,
