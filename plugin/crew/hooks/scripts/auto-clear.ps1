@@ -382,13 +382,26 @@ function Get-CrewAutoClearValue([string]$Key, $Default) {
   return $value
 }
 
-function Get-CrewAutoClearInt($Value, [int]$Default) {
+function Get-CrewAutoClearInt($Value, [int]$Default, [switch]$RejectNegative) {
   if ($null -eq $Value -or $Value -is [bool]) { return $Default }
-  try { return [int]$Value } catch { return $Default }
+  # Castable is not usable: [int]-1 succeeds, so a bare try/catch here would
+  # accept a negative delaySeconds, hand it straight to Start-Sleep in the
+  # detached sender, and kill that process AFTER the parent has already
+  # logged "sent" for a send that can never happen. -RejectNegative is
+  # opt-in, not a blanket floor on every caller: minHandoffLines has no
+  # Start-Sleep, and a negative there has always meant "disable the minimum
+  # line count" (`$lines -lt -1` is never true) -- flooring it to the
+  # default here would silently turn that off-switch into an enabled gate
+  # at 5, with no warning path covering minHandoffLines to say so.
+  try {
+    $n = [int]$Value
+    if ($RejectNegative -and $n -lt 0) { return $Default }
+    return $n
+  } catch { return $Default }
 }
 
 $method      = [string](Get-CrewAutoClearValue "method" "auto")
-$delay       = Get-CrewAutoClearInt (Get-CrewAutoClearValue "delaySeconds" 3) 3
+$delay       = Get-CrewAutoClearInt (Get-CrewAutoClearValue "delaySeconds" 3) 3 -RejectNegative
 $command     = [string](Get-CrewAutoClearValue "command" "/clear")
 $windowTitle = [string](Get-CrewAutoClearValue "windowTitle" "")
 $minLines    = Get-CrewAutoClearInt (Get-CrewAutoClearValue "minHandoffLines" 5) 5
@@ -404,9 +417,15 @@ if (-not $handoffRel) { $handoffRel = ".work/HANDOFF.md" }
 # opted-out machine must still get no log file at all): every KEY in either
 # layer that this resolver does not recognise, and `delaySeconds` present but
 # not usable as a number. Both name the effective value actually used.
-# `Get-CrewAutoClearValue ... $null` is the probe: it returns $null only when
-# NEITHER layer set the key at all, so a $null result here means "absent",
-# not "misconfigured" -- absence is the ordinary, silent default path.
+# The probe below reads $repoAuto/$globalAuto directly with `.delaySeconds`,
+# NOT via Get-CrewAutoClearValue/Get-CrewChild: those use `return`, and
+# PowerShell unrolls an EMPTY ARRAY through a function's output stream into
+# zero pipeline objects, so `delaySeconds: []` comes back as plain $null --
+# indistinguishable from the key never having been set, and this guard would
+# never fire for it. Direct property access does not go through that
+# stream, so an empty array stays a present (and unusable) empty array. A
+# $null result here still means "absent" in either layer -- absence, and an
+# explicit JSON `null`, are still the ordinary, silent default path.
 $_crewAutoClearKnownKeys = @('method', 'windowTitle', 'command', 'delaySeconds',
                              'minHandoffLines', 'enabled', 'onlyRepos', 'onlySessions',
                              'unsafeFocus')
@@ -419,11 +438,20 @@ foreach ($layer in @(@{Label = 'repo'; Node = $repoAuto}, @{Label = 'machine'; N
     }
   }
 }
-$_crewDelayRaw = Get-CrewAutoClearValue "delaySeconds" $null
+$_crewDelayRaw = $null
+if ($null -ne $repoAuto) { $_crewDelayRaw = $repoAuto.delaySeconds }
+if ($null -eq $_crewDelayRaw -and $null -ne $globalAuto) { $_crewDelayRaw = $globalAuto.delaySeconds }
 if ($null -ne $_crewDelayRaw) {
   $_crewDelayOk = $false
   if (-not ($_crewDelayRaw -is [bool])) {
-    try { [void][int]$_crewDelayRaw; $_crewDelayOk = $true } catch { }
+    # Castable is not usable: [int]-1 succeeds, so this must reject negative
+    # the same way Get-CrewAutoClearInt now does above -- otherwise the
+    # warning text below ("using the default $delay") would lie about a
+    # $delay that actually went through unchanged and is still negative.
+    try {
+      $_crewDelayInt = [int]$_crewDelayRaw
+      if ($_crewDelayInt -ge 0) { $_crewDelayOk = $true }
+    } catch { }
   }
   if (-not $_crewDelayOk) {
     Write-CrewAutoClearNote ("context.autoClear.delaySeconds is set to '$_crewDelayRaw', not a " +
@@ -624,7 +652,7 @@ $label = "$($target.Title) [window $($target.Id), pid $($target.Pid), $how]"
 # must decline exactly like a KNOWN multi-tab window with no provable
 # selection -- never folded into "safe to send" (the same rule CLAUDE.md
 # states for a probe that can fail).
-function Get-CrewSendKeysTabDecision([bool]$UiaAvailable, $TabCount, [bool]$SelectedMatches) {
+function Get-CrewSendKeysTabDecision([bool]$UiaAvailable, $TabCount, [bool]$SelectedMatches, $TitleMatches = $null) {
   if (-not $UiaAvailable) {
     return @{ Decision = "decline"; Reason = (
       "cannot verify the active tab - Windows Terminal hosts multiple tabs in one window and " +
@@ -649,8 +677,15 @@ function Get-CrewSendKeysTabDecision([bool]$UiaAvailable, $TabCount, [bool]$Sele
   # sent on a proven selection -- but it is still surfaced in the decline
   # Reason as diagnostic detail, so a log reader can tell "a tab's title
   # matched and was selected, and we STILL declined" from "nothing matched
-  # at all" without re-deriving it from the UIA probe.
-  $selectedNote = if ($SelectedMatches) {
+  # at all" without re-deriving it from the UIA probe. $SelectedMatches alone
+  # cannot distinguish THAT from "more than one tab's title matched, so no
+  # single one could be proven active" -- both read as SelectedMatches=$false
+  # -- which is why $TitleMatches (when the caller has it) picks the wording
+  # for the ambiguous case instead; text only, same as $SelectedMatches this
+  # plays no part in the DECISION.
+  $selectedNote = if ($null -ne $TitleMatches -and $TitleMatches -gt 1) {
+    "windowTitle matched $TitleMatches of the $TabCount tabs, so no single one could be proven active"
+  } elseif ($SelectedMatches) {
     "a tab's title matched windowTitle and read as selected"
   } else {
     "no tab's title was both matched and selected"
@@ -673,7 +708,7 @@ function Get-CrewWindowsTerminalTabState([IntPtr]$Hwnd, [string]$Title) {
     Add-Type -AssemblyName UIAutomationTypes -ErrorAction Stop
     $elem = [System.Windows.Automation.AutomationElement]::FromHandle($Hwnd)
     if ($null -eq $elem) {
-      return @{ UiaAvailable = $false; TabCount = 0; SelectedMatches = $false }
+      return @{ UiaAvailable = $false; TabCount = 0; SelectedMatches = $false; TitleMatches = 0 }
     }
     $cond = New-Object System.Windows.Automation.PropertyCondition(
       [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
@@ -694,9 +729,9 @@ function Get-CrewWindowsTerminalTabState([IntPtr]$Hwnd, [string]$Title) {
     }
     $selectedMatches = $needle -and $titleMatches -eq 1 -and $selectedName -and
                        $selectedName.ToLowerInvariant().Contains($needle)
-    return @{ UiaAvailable = $true; TabCount = $tabs.Count; SelectedMatches = [bool]$selectedMatches }
+    return @{ UiaAvailable = $true; TabCount = $tabs.Count; SelectedMatches = [bool]$selectedMatches; TitleMatches = $titleMatches }
   } catch {
-    return @{ UiaAvailable = $false; TabCount = 0; SelectedMatches = $false }
+    return @{ UiaAvailable = $false; TabCount = 0; SelectedMatches = $false; TitleMatches = 0 }
   }
 }
 
@@ -732,7 +767,8 @@ if (-not $ownerKnown) {
 } elseif ($isWindowsTerminal) {
   $tabState = Get-CrewWindowsTerminalTabState -Hwnd $target.Id -Title $windowTitle
   $decision = Get-CrewSendKeysTabDecision -UiaAvailable $tabState.UiaAvailable `
-                -TabCount $tabState.TabCount -SelectedMatches $tabState.SelectedMatches
+                -TabCount $tabState.TabCount -SelectedMatches $tabState.SelectedMatches `
+                -TitleMatches $tabState.TitleMatches
   if ($decision.Decision -ne "send") { $declineReason = $decision.Reason }
 }
 # else: a non-Windows-Terminal console host (conhost) has no tabs to
@@ -828,7 +864,7 @@ function Get-CrewWindowsTerminalTabState([IntPtr]$Hwnd, [string]$Title) {
     Add-Type -AssemblyName UIAutomationTypes -ErrorAction Stop
     $elem = [System.Windows.Automation.AutomationElement]::FromHandle($Hwnd)
     if ($null -eq $elem) {
-      return @{ UiaAvailable = $false; TabCount = 0; SelectedMatches = $false }
+      return @{ UiaAvailable = $false; TabCount = 0; SelectedMatches = $false; TitleMatches = 0 }
     }
     $cond = New-Object System.Windows.Automation.PropertyCondition(
       [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
@@ -849,12 +885,12 @@ function Get-CrewWindowsTerminalTabState([IntPtr]$Hwnd, [string]$Title) {
     }
     $selectedMatches = $needle -and $titleMatches -eq 1 -and $selectedName -and
                        $selectedName.ToLowerInvariant().Contains($needle)
-    return @{ UiaAvailable = $true; TabCount = $tabs.Count; SelectedMatches = [bool]$selectedMatches }
+    return @{ UiaAvailable = $true; TabCount = $tabs.Count; SelectedMatches = [bool]$selectedMatches; TitleMatches = $titleMatches }
   } catch {
-    return @{ UiaAvailable = $false; TabCount = 0; SelectedMatches = $false }
+    return @{ UiaAvailable = $false; TabCount = 0; SelectedMatches = $false; TitleMatches = 0 }
   }
 }
-function Get-CrewSendKeysTabDecision([bool]$UiaAvailable, $TabCount, [bool]$SelectedMatches) {
+function Get-CrewSendKeysTabDecision([bool]$UiaAvailable, $TabCount, [bool]$SelectedMatches, $TitleMatches = $null) {
   if (-not $UiaAvailable) {
     return @{ Decision = "decline"; Reason = (
       "cannot verify the active tab - Windows Terminal hosts multiple tabs in one window and " +
@@ -879,8 +915,15 @@ function Get-CrewSendKeysTabDecision([bool]$UiaAvailable, $TabCount, [bool]$Sele
   # sent on a proven selection -- but it is still surfaced in the decline
   # Reason as diagnostic detail, so a log reader can tell "a tab's title
   # matched and was selected, and we STILL declined" from "nothing matched
-  # at all" without re-deriving it from the UIA probe.
-  $selectedNote = if ($SelectedMatches) {
+  # at all" without re-deriving it from the UIA probe. $SelectedMatches alone
+  # cannot distinguish THAT from "more than one tab's title matched, so no
+  # single one could be proven active" -- both read as SelectedMatches=$false
+  # -- which is why $TitleMatches (when the caller has it) picks the wording
+  # for the ambiguous case instead; text only, same as $SelectedMatches this
+  # plays no part in the DECISION.
+  $selectedNote = if ($null -ne $TitleMatches -and $TitleMatches -gt 1) {
+    "windowTitle matched $TitleMatches of the $TabCount tabs, so no single one could be proven active"
+  } elseif ($SelectedMatches) {
     "a tab's title matched windowTitle and read as selected"
   } else {
     "no tab's title was both matched and selected"
@@ -898,7 +941,8 @@ function Get-CrewChildTabRecheck([IntPtr]$Hwnd, [string]$Title, [bool]$IsWindows
   if (-not $IsWindowsTerminal) { return @{ Decision = "send"; Reason = "" } }
   $tabState = Get-CrewWindowsTerminalTabState -Hwnd $Hwnd -Title $Title
   return Get-CrewSendKeysTabDecision -UiaAvailable $tabState.UiaAvailable `
-           -TabCount $tabState.TabCount -SelectedMatches $tabState.SelectedMatches
+           -TabCount $tabState.TabCount -SelectedMatches $tabState.SelectedMatches `
+           -TitleMatches $tabState.TitleMatches
 }
 Start-Sleep -Seconds $Delay
 Add-Type -AssemblyName System.Windows.Forms

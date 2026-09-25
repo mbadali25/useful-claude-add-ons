@@ -440,11 +440,11 @@ AUTOCYCLE_MUTATIONS = (
     # keeps this mutation aimed at the copy the named test actually reads.
     ("Get-CrewSendKeysTabDecision sends when UIA is unavailable", CLEAR_PS1,
      "# states for a probe that can fail).\n"
-     "function Get-CrewSendKeysTabDecision([bool]$UiaAvailable, $TabCount, [bool]$SelectedMatches) {\n"
+     "function Get-CrewSendKeysTabDecision([bool]$UiaAvailable, $TabCount, [bool]$SelectedMatches, $TitleMatches = $null) {\n"
      "  if (-not $UiaAvailable) {\n"
      "    return @{ Decision = \"decline\"; Reason = (\n",
      "# states for a probe that can fail).\n"
-     "function Get-CrewSendKeysTabDecision([bool]$UiaAvailable, $TabCount, [bool]$SelectedMatches) {\n"
+     "function Get-CrewSendKeysTabDecision([bool]$UiaAvailable, $TabCount, [bool]$SelectedMatches, $TitleMatches = $null) {\n"
      "  if (-not $UiaAvailable) {\n"
      "    return @{ Decision = \"send\"; Reason = (\n",
      "tests/test_auto_clear_review_fixes.py::"

@@ -526,6 +526,51 @@ def test_an_unusable_delay_seconds_is_logged_and_the_default_still_applies(flavo
     assert "delaySeconds" in log and "not a usable number" in log, log
 
 
+@pytest.mark.skipif("ps1" not in FLAVORS, reason="needs pwsh")
+def test_an_empty_delay_seconds_array_is_logged_and_the_default_still_applies(tmp_path):
+    """F1 (crew-1.0-win-ps1-ac): `delaySeconds: []` is a present, unusable
+    value, not an absent one -- but the old probe (Get-CrewAutoClearValue,
+    which returns via `return`) let PowerShell unroll that empty array
+    through the function's output stream into zero pipeline objects, so it
+    arrived back as plain $null: indistinguishable from the key never
+    having been set, and the guard below never fired. .sh is not this
+    ticket's file and is not asserted here."""
+    root = _repo(tmp_path)
+    env = _sendable("ps1", tmp_path, root)
+    _machine(root, method="sendkeys", delaySeconds=[])
+    _write_marker(root)
+    _write_handoff(root)
+
+    result = _invoke("ps1", "auto-clear", root, args=("--session", SESSION_A, "--dry-run"), env_extra=env)
+
+    assert "delay: 3s" in result.stdout, result.stdout + result.stderr
+    log = _log(root)
+    assert "delaySeconds" in log and "not a usable number" in log, log
+
+
+@pytest.mark.skipif("ps1" not in FLAVORS, reason="needs pwsh")
+def test_a_negative_delay_seconds_is_logged_and_the_default_still_applies(tmp_path):
+    """F2 (crew-1.0-win-ps1-ac): `delaySeconds: -1` casts to [int] cleanly
+    in PowerShell, so a bare try/[int]$Value/catch reads it as usable --
+    castable is not usable. Uncaught, that lets the parent log "sent" for a
+    delay whose detached child dies at `Start-Sleep -Seconds -1`, after the
+    parent has already committed. The fix floors the EFFECTIVE $delay to
+    the default here, not just the warning text, so the value that reaches
+    Start-Sleep can never be negative. .sh is not this ticket's file and is
+    not asserted here."""
+    root = _repo(tmp_path)
+    env = _sendable("ps1", tmp_path, root)
+    _machine(root, method="sendkeys", delaySeconds=-1)
+    _write_marker(root)
+    _write_handoff(root)
+
+    result = _invoke("ps1", "auto-clear", root, args=("--session", SESSION_A, "--dry-run"), env_extra=env)
+
+    assert "delay: 3s" in result.stdout, result.stdout + result.stderr
+    log = _log(root)
+    assert "delaySeconds" in log and "not a usable number" in log, log
+
+
 @by_flavor_matrix
 @pytest.mark.parametrize("machine,repo", [(None, True), (True, False), ("true", None), (False, True)])
 def test_only_the_machine_can_opt_in_and_a_repo_can_only_opt_out(flavor, machine, repo, tmp_path):

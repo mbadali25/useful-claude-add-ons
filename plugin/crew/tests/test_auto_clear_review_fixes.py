@@ -347,13 +347,16 @@ def _ps1_source():
         return handle.read()
 
 
-def _run_tab_decision(uia_available, tab_count, selected_matches):
+def _run_tab_decision(uia_available, tab_count, selected_matches, title_matches=None):
     func = _extract_ps1_function(_ps1_source(), "Get-CrewSendKeysTabDecision")
     tab_count_expr = "$null" if tab_count is None else str(tab_count)
+    title_matches_arg = (
+        "" if title_matches is None else f" -TitleMatches {title_matches}")
     script = (
         func + "\n"
         f"$r = Get-CrewSendKeysTabDecision -UiaAvailable ${str(bool(uia_available)).lower()} "
-        f"-TabCount {tab_count_expr} -SelectedMatches ${str(bool(selected_matches)).lower()}\n"
+        f"-TabCount {tab_count_expr} -SelectedMatches ${str(bool(selected_matches)).lower()}"
+        f"{title_matches_arg}\n"
         "Write-Output ($r | ConvertTo-Json -Compress)")
     result = subprocess.run(
         [_PWSH_ANY, "-NoProfile", "-NonInteractive", "-Command", script],
@@ -414,6 +417,54 @@ def test_get_crew_send_keys_tab_decision_never_sends_when_uia_is_unavailable(tmp
         decision = _run_tab_decision(False, tab_count, selected)
         assert decision["Decision"] == "decline", (
             f"tabCount={tab_count} selectedMatches={selected}: {decision}")
+
+
+# ============================================================================
+# F3 (crew-1.0-win-ps1-ac): the decline Reason conflated "no tab matched"
+# with "several tabs matched, so none could be proven active" -- both read
+# as SelectedMatches=$false, since that flag can only ever be true for
+# EXACTLY one title match that was also selected. TEXT ONLY: TitleMatches
+# plays no part in the DECISION, same as SelectedMatches -- every case below
+# still declines, proving F3 did not reintroduce a send path for a multi-tab
+# window.
+# ============================================================================
+
+
+@pytest.mark.skipif(_PWSH_ANY is None, reason="needs pwsh")
+def test_decline_reason_distinguishes_ambiguous_match_from_no_match():
+    """Reaches the actual decline-reason construction (TabCount > 1, UIA
+    available) -- not the owner-unknown short-circuit the TEST TRAP note
+    warns about, since this drives Get-CrewSendKeysTabDecision directly,
+    with no owner/window layer in the way at all."""
+    no_match = _run_tab_decision(True, 3, False, title_matches=0)
+    ambiguous = _run_tab_decision(True, 3, False, title_matches=2)
+
+    assert no_match["Decision"] == "decline", no_match
+    assert ambiguous["Decision"] == "decline", ambiguous
+    assert no_match["Reason"] != ambiguous["Reason"], (
+        "no-match and ambiguous-match must not read the same: "
+        f"{no_match!r} vs {ambiguous!r}")
+    assert "no tab's title was both matched and selected" in no_match["Reason"], no_match
+    # The ambiguous case must name the count that makes it ambiguous (2 of
+    # the 3 tabs), not reuse the no-match wording -- that count is the only
+    # thing telling a log reader "several titles matched" apart from
+    # "nothing matched at all".
+    assert "2" in ambiguous["Reason"], ambiguous
+    assert "no tab's title was both matched and selected" not in ambiguous["Reason"], ambiguous
+
+
+@pytest.mark.skipif(_PWSH_ANY is None, reason="needs pwsh")
+def test_decline_reason_ambiguous_wording_never_flips_the_decision_to_send():
+    """The narrower, sabotage-shaped assertion: whatever TitleMatches says,
+    a window with more than one tab NEVER sends -- $TitleMatches, like
+    $SelectedMatches, is diagnostic TEXT only. Covers TitleMatches values a
+    real UIA probe could report (0, 1, and several), each against multiple
+    tab counts."""
+    for tab_count in (2, 3, 7):
+        for title_matches in (0, 1, tab_count):
+            decision = _run_tab_decision(True, tab_count, False, title_matches=title_matches)
+            assert decision["Decision"] == "decline", (
+                f"tabCount={tab_count} titleMatches={title_matches}: {decision}")
 
 
 # ============================================================================
