@@ -230,6 +230,12 @@ def _win_job_for(pid):
     `CREATE_SUSPENDED` plus manually resuming the primary thread, which
     `subprocess.Popen` does not expose a handle for.
     """
+    # pylint: disable=possibly-used-before-assignment
+    # The names below are defined only inside the module-level
+    # `if os.name == "nt":` block above -- pylint cannot see that this
+    # function is itself only ever CALLED from `popen_gate`'s own
+    # `if os.name == "nt":` branch, so it cannot prove that block already
+    # ran. It always has, by the time this function can be reached.
     job = _kernel32.CreateJobObjectW(None, None)
     if not job:
         return None
@@ -273,6 +279,10 @@ def job_pids(proc):
     job are ever members, and membership does not depend on any
     intermediate hop still being alive to be walked through.
     """
+    # pylint: disable=possibly-used-before-assignment
+    # Same reasoning as `_win_job_for`'s: `job` truthy implies `proc.job`
+    # was set, which only ever happens inside `popen_gate`'s own
+    # `if os.name == "nt":` branch -- pylint cannot see that correlation.
     job = getattr(proc, "job", None)
     if not job:
         return []

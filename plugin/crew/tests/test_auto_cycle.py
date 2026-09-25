@@ -338,13 +338,13 @@ def test_the_detached_sender_does_not_outlive_kill_process_group(tmp_path):
 
     `method="xdotool"` with a `windowTitle` that matches exactly one
     stubbed window, not `method="tmux"`: the tmux path's ownership check
-    (`crew_autocycle.py:502`, `pane_pid not in ancestors()`) depends on
+    (`plugin/crew/hooks/scripts/crew_autocycle.py:502`, `pane_pid not in ancestors()`) depends on
     `ps -o ppid=` to walk this process's own ancestry, which this
     machine's bundled `ps` (cygwin 3.6.10) does not support -- confirmed
     directly, `ancestors()` always returns only `[self]` here, so the
     tmux-flavoured test above cannot even reach a real spawn on this host
     (see TODO.md). The title-fallback branch of `resolve_target`
-    (`crew_autocycle.py:431-440`) does not consult `ancestors()` at all
+    (`plugin/crew/hooks/scripts/crew_autocycle.py:431-440`) does not consult `ancestors()` at all
     once exactly one stubbed window's title matches, so it reaches the
     real spawn regardless of that gap -- same "real (harmless) detached
     sender" shape as the tmux test, still fully PATH-shadowed
@@ -364,7 +364,7 @@ def test_the_detached_sender_does_not_outlive_kill_process_group(tmp_path):
     proc = crew_fixtures.popen_gate(
         [_BASH, _script("sh", "context-watch")], cwd=str(root), env=env,
         stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    out, err = proc.communicate(input=json.dumps(payload), timeout=5)
+    _, err = proc.communicate(input=json.dumps(payload), timeout=5)
     # Queried right after `communicate()` returns, via the SAME Windows Job
     # Object `kill_process_group` is about to terminate -- not a
     # `tasklist`/before-after pid diff: this machine runs other lanes'
