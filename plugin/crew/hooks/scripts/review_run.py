@@ -75,6 +75,11 @@ import webtest_guard
 
 EXIT_CLEAN, EXIT_FINDINGS, EXIT_USAGE, EXIT_INCOMPLETE, EXIT_REFUSED = 0, 1, 2, 3, 4
 DEFAULT_TIMEOUT = 1800
+# Bound on the follow-up `communicate()` after a kill, below. Not the same
+# knob as --timeout: this one exists so a descendant that escaped the kill
+# (still holding the pipe open) cannot itself defeat --timeout by keeping
+# this call blocked - see `launch`'s own comment for the full reproduction.
+POST_KILL_TIMEOUT = 5
 # Windows' CreateProcess limit is 32767 characters for the whole command line.
 INLINE_PROMPT_LIMIT = 24000
 LAUNCHED = ("codex", "copilot")
@@ -127,6 +132,30 @@ def launch(cmd, root, timeout):
     un-reaped, that grandchild keeps this process's stdout pipe open past the
     kill, and reading it blocks well past `timeout` -- observed as the
     caller's own outer safety timeout firing instead of this one.
+
+    BLOCK (Codex): the leader's pid/pgid is only safe to signal by bare
+    number while the leader is STILL ALIVE AND UNREAPED -- once `proc.poll()`
+    shows it has exited, that number is free for the OS to hand to a brand
+    new, entirely unrelated process, and `os.killpg(proc.pid, ...)` at that
+    point can reach whatever the OS gave it to next instead of anything this
+    process started. `proc.poll()` is checked immediately before either the
+    POSIX `killpg` or the Windows `taskkill` -- both by pid -- and skipped
+    entirely when the leader has already exited; a provider that forks a
+    detached grandchild (`setsid sh -c '...' &`) and exits itself is exactly
+    that shape, and is left alone here rather than guessed at.
+
+    BLOCK (Codex): the follow-up `communicate()` after a kill used to carry
+    no timeout of its own, so a descendant that escaped the kill (still
+    holding the stdout/stderr pipe open -- the leader-already-exited case
+    above is exactly when this can happen) kept it blocked past --timeout
+    with nothing bounding the wait. Reproduced with a provider that runs
+    `setsid sh -c "sleep 60" &` and exits: the leader is gone before this
+    function ever gets to kill anything, the grandchild keeps sleeping and
+    keeps the pipe open, and an unbounded second `communicate()` returns only
+    after the full sleep. Bounded by `POST_KILL_TIMEOUT`; on a second
+    `TimeoutExpired`, this closes its own end of the pipes and reports the
+    run as timed out with whatever output had already arrived (typically
+    none) rather than waiting on a descendant that is not coming back.
     """
     popen_kwargs = {}
     if os.name == "nt":
@@ -143,15 +172,37 @@ def launch(cmd, root, timeout):
     try:
         stdout, stderr = proc.communicate(timeout=timeout)
     except subprocess.TimeoutExpired:
-        if os.name == "nt":
-            subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)],
-                           capture_output=True, timeout=30, check=False)
+        escaped = False
+        if proc.poll() is None:
+            if os.name == "nt":
+                subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)],
+                               capture_output=True, timeout=30, check=False)
+            else:
+                try:
+                    os.killpg(proc.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
         else:
-            try:
-                os.killpg(proc.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
-        stdout, stderr = proc.communicate()
+            # Leader already exited and been reaped: its pid (and any pgid
+            # numbered the same) is free for reuse, so no bare-number signal
+            # is safe here. Whatever kept the pipe open is on its own.
+            escaped = True
+        try:
+            stdout, stderr = proc.communicate(timeout=POST_KILL_TIMEOUT)
+        except subprocess.TimeoutExpired:
+            escaped = True
+            stdout, stderr = "", ""
+            for stream in (proc.stdout, proc.stderr):
+                try:
+                    if stream:
+                        stream.close()
+                except OSError:
+                    pass
+        if escaped:
+            stderr = (stderr or "") + (
+                "\nreview-run: a descendant process may have escaped the "
+                f"{timeout}s timeout and is still holding the output pipe "
+                "open; proceeding with whatever output had already arrived\n")
         return stdout, stderr, None, True
     return stdout, stderr, proc.returncode, False
 

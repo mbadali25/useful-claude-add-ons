@@ -244,4 +244,27 @@ REVIEW_FIX_MUTATIONS = (
         ("tests/test_review_receipt.py::"
          "test_check_receipt_fails_when_the_latest_round_is_not_clean_or_accepted"),
     ),
+    (
+        # `launch`'s timeout-cleanup killpgs an already-exited leader again:
+        # the `proc.poll() is None` gate removed, so the bare-pid signal
+        # fires whether or not that pid could have been recycled.
+        "review_run.launch killpgs an already-exited leader again",
+        REVIEW_RUN,
+        "        escaped = False\n"
+        "        if proc.poll() is None:\n",
+        "        escaped = False\n"
+        "        if True:\n",
+        ("tests/test_review_run_launch.py::"
+         "test_killpg_is_skipped_once_the_leader_has_already_exited"),
+    ),
+    (
+        # The follow-up `communicate()` after a kill loses its bound again:
+        # a descendant that escaped the kill can block it indefinitely.
+        "review_run.launch's post-kill communicate() loses its timeout bound",
+        REVIEW_RUN,
+        "            stdout, stderr = proc.communicate(timeout=POST_KILL_TIMEOUT)\n",
+        "            stdout, stderr = proc.communicate()\n",
+        ("tests/test_review_run_launch.py::"
+         "test_post_kill_communicate_is_bounded_and_closes_the_pipes"),
+    ),
 )

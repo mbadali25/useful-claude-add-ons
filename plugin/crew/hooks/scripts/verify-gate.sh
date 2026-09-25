@@ -1583,6 +1583,62 @@ _crew_gate_pid_is_our_child() {
   case "$_crew_ppid" in ''|*[!0-9]*) return 1 ;; esac
   [ "$_crew_ppid" = "$$" ]
 }
+# Portable session-id lookup for an arbitrary pid, mirroring
+# `_crew_gate_pgid_of`'s own two-source strategy: `/proc/<pid>/stat` first
+# (no subprocess, Linux; session id is the 4th field after `comm`'s closing
+# paren, one past the pgrp field that function already reads), `ps` as the
+# fallback (`-o sid=` is the POSIX/GNU keyword; BSD ps - macOS, and the ps
+# Git Bash bundles - accepts it too, but falls back to the BSD-only `sess`
+# keyword if `sid` itself comes back empty, the same dual-flavour shape this
+# file already uses for `stat -c%s` vs `stat -f%z`). Prints nothing (not a
+# guess) when no source yields a clean digit string, which the caller below
+# treats as "cannot verify" and refuses to signal.
+_crew_gate_sid_of() {
+  local _crew_pid="$1" _crew_stat _crew_after _crew_sid=""
+  if [ -r "/proc/$_crew_pid/stat" ]; then
+    _crew_stat=$(cat "/proc/$_crew_pid/stat" 2>/dev/null)
+    _crew_after=${_crew_stat##*\)}
+    set -- $_crew_after
+    _crew_sid="${4:-}"
+    case "$_crew_sid" in ''|*[!0-9]*) _crew_sid="" ;; esac
+  fi
+  if [ -z "$_crew_sid" ]; then
+    _crew_sid=$(ps -o sid= -p "$_crew_pid" 2>/dev/null | tr -d '[:space:]')
+    case "$_crew_sid" in ''|*[!0-9]*) _crew_sid="" ;; esac
+  fi
+  if [ -z "$_crew_sid" ]; then
+    _crew_sid=$(ps -o sess= -p "$_crew_pid" 2>/dev/null | tr -d '[:space:]')
+    case "$_crew_sid" in ''|*[!0-9]*) _crew_sid="" ;; esac
+  fi
+  printf '%s' "$_crew_sid"
+}
+# BLOCK finding (Codex): a `g`-mode sidecar entry names a process-GROUP id -
+# unlike the `p` lines above, verified before this fix only by the ownership
+# check just above, a `g` line was signalled unconditionally. A rule's own
+# group can empty naturally the instant `wait "$RULE_PID"` returns inside
+# its subshell (every member has exited), which frees that PGID for the OS
+# to hand to a brand-new, entirely unrelated process - concretely, anything
+# that calls `setsid`, which always becomes both session leader AND group
+# leader of a FRESH session distinct from this gate's own. A stale sidecar
+# entry plus that reuse means this trap would TERM/KILL a group this gate
+# never started. Proof of ownership before any `g`-mode id is signalled:
+# its session id (read the same portable way `_crew_gate_pid_is_our_child`
+# reads a ppid) must equal THIS shell's own session id - every group this
+# gate ever creates (job-control `set -m` re-groups a subshell or a
+# backgrounded rule into a new process GROUP, never a new SESSION) stays in
+# the same session throughout, so a `setsid`-created replacement is exactly
+# the shape this rejects, and no genuine target of this gate's own is ever
+# refused by it. Returns false (never a guess) when either session id could
+# not be read at all, and the caller skips signalling rather than trust a
+# check that could not run.
+_crew_gate_group_is_ours() {
+  local _crew_id="$1" _crew_sid _crew_own_sid
+  _crew_sid=$(_crew_gate_sid_of "$_crew_id")
+  [ -n "$_crew_sid" ] || return 1
+  _crew_own_sid=$(_crew_gate_sid_of "$$")
+  [ -n "$_crew_own_sid" ] || return 1
+  [ "$_crew_sid" = "$_crew_own_sid" ]
+}
 _crew_gate_cleanup_rule_pgid() {
   [ -n "$_CREW_GATE_RULE_PGID_FILE" ] || return 0
   [ -f "$_CREW_GATE_RULE_PGID_FILE" ] || return 0
@@ -1590,7 +1646,7 @@ _crew_gate_cleanup_rule_pgid() {
   while IFS=' ' read -r _crew_mode _crew_id; do
     case "$_crew_id" in ''|*[!0-9]*) continue ;; esac
     case "$_crew_mode" in
-      g) kill -TERM -- "-$_crew_id" 2>/dev/null ;;
+      g) _crew_gate_group_is_ours "$_crew_id" && kill -TERM -- "-$_crew_id" 2>/dev/null ;;
       p) _crew_gate_pid_is_our_child "$_crew_id" && kill -TERM -- "$_crew_id" 2>/dev/null ;;
     esac
   done < "$_CREW_GATE_RULE_PGID_FILE"
@@ -1600,7 +1656,7 @@ _crew_gate_cleanup_rule_pgid() {
   while IFS=' ' read -r _crew_mode _crew_id; do
     case "$_crew_id" in ''|*[!0-9]*) continue ;; esac
     case "$_crew_mode" in
-      g) kill -0 -- "-$_crew_id" 2>/dev/null && _crew_pg_any_alive=1 ;;
+      g) _crew_gate_group_is_ours "$_crew_id" && kill -0 -- "-$_crew_id" 2>/dev/null && _crew_pg_any_alive=1 ;;
       p) _crew_gate_pid_is_our_child "$_crew_id" && kill -0 -- "$_crew_id" 2>/dev/null && _crew_pg_any_alive=1 ;;
     esac
   done < "$_CREW_GATE_RULE_PGID_FILE"
@@ -1609,7 +1665,7 @@ _crew_gate_cleanup_rule_pgid() {
     while IFS=' ' read -r _crew_mode _crew_id; do
       case "$_crew_id" in ''|*[!0-9]*) continue ;; esac
       case "$_crew_mode" in
-        g) kill -KILL -- "-$_crew_id" 2>/dev/null ;;
+        g) _crew_gate_group_is_ours "$_crew_id" && kill -KILL -- "-$_crew_id" 2>/dev/null ;;
         p) _crew_gate_pid_is_our_child "$_crew_id" && kill -KILL -- "$_crew_id" 2>/dev/null ;;
       esac
     done < "$_CREW_GATE_RULE_PGID_FILE"

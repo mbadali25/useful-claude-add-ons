@@ -6,6 +6,47 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Changed
 
+- **`crew` 1.0.20: a further independent review found the `g`-mode half of
+  1.0.19's rule-pgid fix missing, plus two of the same "signal a recycled
+  id" and "block past --timeout" shapes in `review_run.py`'s own reviewer
+  timeout.** Bumped `1.0.19 -> 1.0.20`.
+  - **BLOCK: `verify-gate.sh`'s stale-ID ownership fix guarded only
+    `p`-mode sidecar entries.** 1.0.19 proved a bare pid before signalling
+    it, but a `g`-mode entry (a verified process-group id) was still
+    signalled unconditionally. A rule's own group can empty naturally the
+    instant its `wait` returns, freeing that PGID for the OS to hand to a
+    brand-new, entirely unrelated process - concretely, anything that calls
+    `setsid`, which always becomes both session leader and group leader of
+    a session distinct from this gate's own. New `_crew_gate_group_is_ours`
+    is now required before any `g`-mode id is signalled: it compares that
+    group's session id (`_crew_gate_sid_of`, read the same portable way
+    `_crew_gate_pid_is_our_child` reads a ppid) against this shell's own -
+    every group this gate ever creates stays in the same session, so a
+    `setsid`-created replacement is exactly what this rejects. New
+    `test_verify_gate_rule_pgid_group_ownership.py` proves a genuinely owned
+    group is still signalled and an unrelated `setsid` group is not;
+    sabotage stripping the guard back out turns the second case red again.
+  - **BLOCK: `review_run.py`'s timeout cleanup killed a leader's process
+    group by bare pid without checking it was still alive.** Once
+    `proc.poll()` shows the leader has exited and been reaped, its pid (and
+    any group numbered the same) is free for reuse, so an unconditional
+    `os.killpg(proc.pid, ...)` could reach whatever the OS gave it to next.
+    `launch()` now checks `proc.poll() is None` before signalling at all
+    (POSIX `killpg` and the Windows `taskkill` tree-kill alike); a leader
+    already gone is left alone.
+  - **BLOCK: the same function's post-kill `communicate()` had no timeout,
+    so a descendant that escaped the kill and kept holding the pipe open
+    blocked it past `--timeout` with nothing bounding the wait.** Bounded
+    by new `POST_KILL_TIMEOUT` (5s); on a second `TimeoutExpired`, `launch`
+    closes its own stdout/stderr ends and returns with whatever output had
+    already arrived, marked timed out, instead of waiting on a descendant
+    that is not coming back. New `test_review_run_launch.py` (a fake-Popen
+    unit test for both `review_run.py` fixes) and
+    `test_review_ledger.py::test_run_timeout_survives_an_escaped_descendant_holding_the_pipe`
+    (a real `setsid`-detached grandchild, end to end) prove `launch`
+    returns in a small multiple of `--timeout` rather than blocking for as
+    long as the escaped process runs; both fixes carry sabotage mutations
+    in `sabotage_review.py` that turn red when either guard is removed.
 - **`crew` 1.0.19: an independent review of `verify-gate.sh`'s rule-pgid
   cleanup found one more gap in the 1.0.18 fix, plus a CI-only pylint false
   positive and two CI review-runner hardenings.** Bumped `1.0.18 -> 1.0.19`.

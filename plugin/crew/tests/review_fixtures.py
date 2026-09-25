@@ -34,8 +34,17 @@ def init_repo(root):
 #   hang      sleep far past any test timeout
 #   crash     kill the parent (review_run.py) -- an orchestrator crash
 #   turnfail  a JSON stream whose turn failed, exit 0
+#   escape    fork a detached `setsid` grandchild that inherits this
+#             process's stdout/stderr and outlives it, then exit immediately
+#             -- the leader-already-gone shape review_run.py's `launch` BLOCK
+#             fix guards against: the grandchild keeps the pipe open long
+#             after the leader (this process) has exited and been reaped, so
+#             a bare `os.killpg(proc.pid, ...)` at that point would target a
+#             pid the OS is free to have handed to something else, and an
+#             unbounded follow-up `communicate()` would block on the pipe
+#             for as long as the grandchild keeps running.
 _FAKE = r'''
-import json, os, re, signal, sys, time
+import json, os, re, signal, subprocess, sys, time
 prompt = sys.argv[-1]
 sys.stdin.read()
 mode = os.environ.get("FAKE_REVIEWER_MODE", "clean")
@@ -48,6 +57,9 @@ if mode == "crash":
 if mode == "fail":
     sys.stderr.write("boom\n")
     sys.exit(1)
+if mode == "escape":
+    subprocess.Popen(["setsid", "sh", "-c", "sleep 60"])
+    sys.exit(0)
 parts = sorted(set(re.findall(r"part-\d{3}-of-\d{3}\.patch", prompt)))
 body = "\n".join("READ|" + p for p in parts)
 body += "\nFIX|seed.txt:1|breaks|repro" if mode == "findings" else "\nCLEAN"

@@ -8,8 +8,10 @@ under tmp_path; the ledger lands in THAT repo's git-common-dir.
 import json
 import multiprocessing
 import os
+import shutil
 import subprocess
 import sys
+import time
 
 import pytest
 
@@ -222,6 +224,34 @@ def test_run_timeout_is_incomplete(repo, tmp_path):
     result = _run(repo, scratch, fakes, "hang", "--timeout", "2", "--work-dir", str(work))
 
     review = json.loads((work / "review.json").read_text(encoding="utf-8"))
+    assert (result.returncode, review["verdict"], review["timed_out"]) == (3, "INCOMPLETE", True)
+
+
+@pytest.mark.skipif(shutil.which("setsid") is None, reason="needs setsid")
+@pytest.mark.skipif(os.name == "nt", reason="POSIX process semantics only")
+def test_run_timeout_survives_an_escaped_descendant_holding_the_pipe(repo, tmp_path):
+    """BLOCK (Codex): the fake reviewer's `escape` mode exits immediately
+    after forking a detached `setsid` grandchild that inherits its
+    stdout/stderr and sleeps for 60s -- the leader is gone (and reaped) long
+    before `launch` gets to kill anything, so a bare `os.killpg(proc.pid,
+    ...)` would target a recycled pid, and an unbounded follow-up
+    `communicate()` would block on the grandchild's pipe for the full 60s.
+    review_run.py must return in a small multiple of --timeout (bounded by
+    POST_KILL_TIMEOUT), not ~60s, and still report INCOMPLETE/timed_out."""
+    (repo / "change.txt").write_text("change\n", encoding="utf-8")
+    scratch, work = tmp_path / "scratch", tmp_path / "work"
+    _bundle(repo, scratch)
+    fakes = fake_reviewer_bin(tmp_path / "bin")
+
+    started = time.monotonic()
+    result = _run(repo, scratch, fakes, "escape", "--timeout", "1", "--work-dir", str(work))
+    elapsed = time.monotonic() - started
+
+    review = json.loads((work / "review.json").read_text(encoding="utf-8"))
+    assert elapsed < 20, (
+        f"review-run took {elapsed:.1f}s - it must not block on a "
+        "descendant that escaped the kill and outlived --timeout"
+    )
     assert (result.returncode, review["verdict"], review["timed_out"]) == (3, "INCOMPLETE", True)
 
 
