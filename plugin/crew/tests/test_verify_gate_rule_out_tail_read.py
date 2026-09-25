@@ -146,3 +146,78 @@ def test_the_tail_read_no_longer_seeks_from_the_live_end(tmp_path):
     assert "$size" in seek_line, (
         "the seek offset must be computed from the $size snapshot, not a "
         f"live re-read of the file's length: {seek_line!r}")
+
+
+# ============================================================================
+# ITEM 4 -- $buffer[0..-1] on a 0-byte read
+#
+# `$totalRead -lt $readLen` used to be the ONLY special case for a partial
+# read, covering $totalRead 0 through $readLen-1 alike. PowerShell's `..`
+# range operator does not treat a negative upper bound as empty: it counts
+# DOWN, so `0..($totalRead - 1)` with $totalRead=0 is `0..-1`, the
+# two-element sequence 0,-1 -- indexing $buffer with that picks
+# $buffer[0] and $buffer[-1] (its last element), not an empty slice. A
+# 0-byte read is reachable without any race ($readLen is always >0 inside
+# this block; only the file being truncated/replaced between the $size
+# snapshot and the read can make $totalRead come back 0), so this is fixed
+# with its own `$totalRead -eq 0` case rather than folded into the -lt one.
+#
+# Driven directly against the EXTRACTED guard (isolated PowerShell text, no
+# FileStream, no gate spawn) with $buffer/$totalRead/$readLen set by hand --
+# this is the one deterministic way to exercise $totalRead=0 without
+# engineering a real truncation race, which is exactly the kind of
+# timing-dependent reproduction this ticket says not to build.
+# ============================================================================
+
+
+def _extract_zero_read_guard():
+    with open(_VERIFY_PS1, encoding="utf-8") as handle:
+        source = handle.read()
+    start = source.index("if ($totalRead -eq 0) {")
+    end = source.index("# TrimEnd the trailing newline", start)
+    return source[start:end]
+
+
+@pytest.mark.parametrize("total_read,expected", [
+    (0, []),                    # the bug case: must be an EMPTY buffer
+    (1, [1]),
+    (3, [1, 2, 3]),
+    (5, [1, 2, 3, 4, 5]),       # totalRead == readLen: neither branch fires
+], ids=["zero-read", "one-byte", "partial", "full"])
+def test_the_zero_read_guard_produces_the_correct_length_buffer(total_read, expected):
+    guard = _extract_zero_read_guard()
+    script = (
+        "$readLen = 5\n"
+        "$buffer = [byte[]]@(1,2,3,4,5)\n"
+        f"$totalRead = {total_read}\n"
+        + guard + "\n"
+        "Write-Output ($buffer.Length)\n"
+        "Write-Output (($buffer -join ','))\n"
+    )
+    result = subprocess.run(
+        [_PWSH, "-NoProfile", "-NonInteractive", "-Command", script],
+        capture_output=True, text=True, check=False)
+    assert result.returncode == 0, result.stderr
+    lines = result.stdout.strip().splitlines()
+    length = int(lines[0])
+    joined = lines[1] if len(lines) > 1 else ""
+    assert length == len(expected), (
+        f"totalRead={total_read}: expected buffer length {len(expected)}, "
+        f"got {length} (content {joined!r})")
+    assert joined == ",".join(str(b) for b in expected), (
+        f"totalRead={total_read}: expected content {expected}, got {joined!r}")
+
+
+def test_the_zero_read_case_is_its_own_branch_not_folded_into_lt():
+    """Structural: the revert-catcher. Sabotage: collapsing back to a bare
+    `if ($totalRead -lt $readLen) { $buffer = $buffer[0..($totalRead - 1)] }`
+    (no `-eq 0` special case) makes `.index()` below raise -- a hard RED,
+    and the behavioural zero-read case above would also fail (`0..-1`
+    produces a 2-byte buffer, not an empty one)."""
+    guard = _extract_zero_read_guard()
+    assert "$totalRead -eq 0" in guard, guard
+    eq0_idx = guard.index("$totalRead -eq 0")
+    new_byte_array_idx = guard.index("[byte[]]::new(0)")
+    assert eq0_idx < new_byte_array_idx, (
+        "the $totalRead -eq 0 check must guard the empty-array assignment: "
+        f"{guard!r}")

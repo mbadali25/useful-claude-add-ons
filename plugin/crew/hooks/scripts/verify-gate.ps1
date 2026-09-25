@@ -1757,7 +1757,22 @@ foreach ($ident in $cmds) {
               if ($n -le 0) { break }
               $totalRead += $n
             }
-            if ($totalRead -lt $readLen) { $buffer = $buffer[0..($totalRead - 1)] }
+            # $totalRead -eq 0 is its own case, not folded into the -lt
+            # branch below: PowerShell's `..` range operator treats a
+            # negative upper bound as a DESCENDING range rather than an
+            # empty one, so `0..($totalRead - 1)` with $totalRead=0 is
+            # `0..-1`, which is the two-element sequence 0,-1 -- indexing
+            # $buffer with THAT picks $buffer[0] and $buffer[-1] (its own
+            # last element), two bytes, not the empty slice a 0-byte read
+            # needs. A 0-byte read is reachable without any race: $readLen
+            # is always >0 here (the enclosing `if ($readLen -gt 0)`
+            # guards it), but the file itself can still be truncated or
+            # replaced between the $size snapshot and this read.
+            if ($totalRead -eq 0) {
+              $buffer = [byte[]]::new(0)
+            } elseif ($totalRead -lt $readLen) {
+              $buffer = $buffer[0..($totalRead - 1)]
+            }
             # TrimEnd the trailing newline(s), matching bash's `$(...)`
             # command substitution (which the .sh twin's OUT=$(tail -c...)
             # relies on) - otherwise a file ending in a newline (the
