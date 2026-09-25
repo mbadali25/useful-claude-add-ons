@@ -347,13 +347,16 @@ def _ps1_source():
         return handle.read()
 
 
-def _run_tab_decision(uia_available, tab_count, selected_matches):
+def _run_tab_decision(uia_available, tab_count, selected_matches, title_matches=None):
     func = _extract_ps1_function(_ps1_source(), "Get-CrewSendKeysTabDecision")
     tab_count_expr = "$null" if tab_count is None else str(tab_count)
+    title_matches_arg = (
+        "" if title_matches is None else f" -TitleMatches {title_matches}")
     script = (
         func + "\n"
         f"$r = Get-CrewSendKeysTabDecision -UiaAvailable ${str(bool(uia_available)).lower()} "
-        f"-TabCount {tab_count_expr} -SelectedMatches ${str(bool(selected_matches)).lower()}\n"
+        f"-TabCount {tab_count_expr} -SelectedMatches ${str(bool(selected_matches)).lower()}"
+        f"{title_matches_arg}\n"
         "Write-Output ($r | ConvertTo-Json -Compress)")
     result = subprocess.run(
         [_PWSH_ANY, "-NoProfile", "-NonInteractive", "-Command", script],
@@ -417,6 +420,54 @@ def test_get_crew_send_keys_tab_decision_never_sends_when_uia_is_unavailable(tmp
 
 
 # ============================================================================
+# F3 (crew-1.0-win-ps1-ac): the decline Reason conflated "no tab matched"
+# with "several tabs matched, so none could be proven active" -- both read
+# as SelectedMatches=$false, since that flag can only ever be true for
+# EXACTLY one title match that was also selected. TEXT ONLY: TitleMatches
+# plays no part in the DECISION, same as SelectedMatches -- every case below
+# still declines, proving F3 did not reintroduce a send path for a multi-tab
+# window.
+# ============================================================================
+
+
+@pytest.mark.skipif(_PWSH_ANY is None, reason="needs pwsh")
+def test_decline_reason_distinguishes_ambiguous_match_from_no_match():
+    """Reaches the actual decline-reason construction (TabCount > 1, UIA
+    available) -- not the owner-unknown short-circuit the TEST TRAP note
+    warns about, since this drives Get-CrewSendKeysTabDecision directly,
+    with no owner/window layer in the way at all."""
+    no_match = _run_tab_decision(True, 3, False, title_matches=0)
+    ambiguous = _run_tab_decision(True, 3, False, title_matches=2)
+
+    assert no_match["Decision"] == "decline", no_match
+    assert ambiguous["Decision"] == "decline", ambiguous
+    assert no_match["Reason"] != ambiguous["Reason"], (
+        "no-match and ambiguous-match must not read the same: "
+        f"{no_match!r} vs {ambiguous!r}")
+    assert "no tab's title was both matched and selected" in no_match["Reason"], no_match
+    # The ambiguous case must name the count that makes it ambiguous (2 of
+    # the 3 tabs), not reuse the no-match wording -- that count is the only
+    # thing telling a log reader "several titles matched" apart from
+    # "nothing matched at all".
+    assert "2" in ambiguous["Reason"], ambiguous
+    assert "no tab's title was both matched and selected" not in ambiguous["Reason"], ambiguous
+
+
+@pytest.mark.skipif(_PWSH_ANY is None, reason="needs pwsh")
+def test_decline_reason_ambiguous_wording_never_flips_the_decision_to_send():
+    """The narrower, sabotage-shaped assertion: whatever TitleMatches says,
+    a window with more than one tab NEVER sends -- $TitleMatches, like
+    $SelectedMatches, is diagnostic TEXT only. Covers TitleMatches values a
+    real UIA probe could report (0, 1, and several), each against multiple
+    tab counts."""
+    for tab_count in (2, 3, 7):
+        for title_matches in (0, 1, tab_count):
+            decision = _run_tab_decision(True, tab_count, False, title_matches=title_matches)
+            assert decision["Decision"] == "decline", (
+                f"tabCount={tab_count} titleMatches={title_matches}: {decision}")
+
+
+# ============================================================================
 # ITEM 1 (part 2) -- the DELAY value handed to the detached sendkeys child,
 # asserted as the literal argv entry Get-CrewSendKeysChildArgs builds -- not
 # by measuring how long anything takes. A hard-coded `-Delay 3` finishes in
@@ -446,3 +497,122 @@ def test_get_crew_send_keys_child_args_carries_the_configured_delay(delay):
     # hard-coded "-Delay 3" would fail every case here, not merely the ones
     # that happen to differ from the default.
     assert args[args.index("-Delay") + 1] == str(delay), args
+
+
+# ============================================================================
+# B1 (BLOCKER, crew-1.0-win-ps1-ac): the parent decides tab-count == 1
+# BEFORE Start-Sleep. The detached child only re-checked GetForegroundWindow
+# -ne $Hwnd, which is the SAME window whether the user is still on the
+# matching tab or switched to a different one inside it -- Windows Terminal
+# hosts every tab in one window. Fix: the child now re-runs the tab-count
+# predicate itself, after the delay, immediately before typing.
+#
+# A vacuous version of this test is a known trap: `_sendable`'s fixture (in
+# test_auto_cycle.py) uses owner pid 999999, which declines at the
+# OWNER-UNKNOWN branch before any tab check is reached, so a test built on
+# it would pass whether or not the recheck exists. These tests instead pull
+# the CHILD's own copy of the predicate out of the `$child = @'...'@`
+# heredoc (never the parent's, which appears earlier in the file and is
+# what `_extract_ps1_function` would find first if handed the whole
+# source) and drive it with REAL UI Automation IO against a REAL window
+# handle, so the assertion can only pass if the child's IO path actually ran.
+# ============================================================================
+
+
+def _child_heredoc_source():
+    """The detached sender is a separate process, built as a literal
+    here-string and spawned via a temp file -- it cannot call back into the
+    parent's in-memory functions. Slicing out just this block means
+    `_extract_ps1_function` below finds the CHILD's copies of
+    Get-CrewWindowsTerminalTabState / Get-CrewSendKeysTabDecision, not the
+    parent's, which is the one substitution that makes the tests in this
+    section non-vacuous."""
+    source = _ps1_source()
+    marker = "$child = @'\n"
+    start = source.index(marker) + len(marker)
+    end = source.index("\n'@", start)
+    return source[start:end]
+
+
+@pytest.mark.skipif(_PWSH_ANY is None, reason="needs pwsh")
+def test_child_tab_functions_have_not_drifted_from_the_parents_copies():
+    """The child duplicates Get-CrewWindowsTerminalTabState and
+    Get-CrewSendKeysTabDecision byte-for-byte (it has to -- separate
+    process, no shared memory). This is the check that stops the two
+    copies silently drifting apart instead of merely trusting the
+    duplication by inspection."""
+    parent_source = _ps1_source()
+    child_source = _child_heredoc_source()
+    for name in ("Get-CrewWindowsTerminalTabState", "Get-CrewSendKeysTabDecision"):
+        parent_fn = _extract_ps1_function(parent_source, name)
+        child_fn = _extract_ps1_function(child_source, name)
+        assert parent_fn == child_fn, f"{name} has drifted between the parent and child copies"
+
+
+@pytest.mark.skipif(_PWSH_ANY is None, reason="needs pwsh")
+def test_child_rechecks_tab_safety_after_the_delay_before_typing(tmp_path):
+    """Drives the child's own Get-CrewChildTabRecheck (extracted from inside
+    the heredoc, see _child_heredoc_source) against a REAL window handle: a
+    throwaway WinForms Form, forced into existence via `.Handle` so the Hwnd
+    is genuine, not a fake. It is not Windows Terminal, so it has zero
+    TabItem descendants -- UiaAvailable comes back $true (proving the real
+    UI Automation probe actually ran, the same assembly this host measures
+    working under both engines) and the decline reason is specifically
+    "no tab elements could be found", which only that real, empty-tabs probe
+    produces. Any OTHER decline reason (UIA unavailable, an unresolvable
+    window) would make this assertion pass without the probe having run for
+    real, so the reason string is asserted, not just the Decision.
+
+    Sabotage (see plugin/crew/tests/sabotage_autocycle.py): short-circuiting
+    Get-CrewChildTabRecheck to always return "send" reproduces the exact
+    historical bug -- the child had no tab awareness at all once focus
+    matched -- and turns this test red.
+    """
+    child_source = _child_heredoc_source()
+    func = "\n".join([
+        _extract_ps1_function(child_source, "Get-CrewWindowsTerminalTabState"),
+        _extract_ps1_function(child_source, "Get-CrewSendKeysTabDecision"),
+        _extract_ps1_function(child_source, "Get-CrewChildTabRecheck"),
+    ])
+    script = (
+        "Add-Type -AssemblyName System.Windows.Forms\n"
+        "$f = New-Object System.Windows.Forms.Form\n"
+        "$h = $f.Handle\n"
+        + func + "\n"
+        "$r = Get-CrewChildTabRecheck -Hwnd $h -Title '' -IsWindowsTerminal $true\n"
+        "$f.Close()\n"
+        "Write-Output (@{ Handle = $h.ToInt64(); Decision = $r } | ConvertTo-Json -Compress -Depth 5)")
+    result = subprocess.run(
+        [_PWSH_ANY, "-NoProfile", "-NonInteractive", "-Command", script],
+        capture_output=True, text=True, check=False)
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout.strip())
+    assert payload["Handle"] != 0, "the throwaway Form never got a real window handle"
+    decision = payload["Decision"]
+    assert decision["Decision"] == "decline", decision
+    assert "no tab elements could be found" in decision["Reason"], decision
+
+
+@pytest.mark.skipif(_PWSH_ANY is None, reason="needs pwsh")
+def test_child_recheck_is_skipped_for_a_non_windows_terminal_owner(tmp_path):
+    """IsWindowsTerminal=$false (a conhost owner, no tabs to disambiguate)
+    must fall straight through to "send" without touching UI Automation at
+    all -- the same fallthrough the parent's own check has for a non-WT
+    owner. Proves the new parameter actually gates the recheck rather than
+    running it unconditionally."""
+    child_source = _child_heredoc_source()
+    func = "\n".join([
+        _extract_ps1_function(child_source, "Get-CrewWindowsTerminalTabState"),
+        _extract_ps1_function(child_source, "Get-CrewSendKeysTabDecision"),
+        _extract_ps1_function(child_source, "Get-CrewChildTabRecheck"),
+    ])
+    script = (
+        func + "\n"
+        "$r = Get-CrewChildTabRecheck -Hwnd 12345 -Title '' -IsWindowsTerminal $false\n"
+        "Write-Output ($r | ConvertTo-Json -Compress)")
+    result = subprocess.run(
+        [_PWSH_ANY, "-NoProfile", "-NonInteractive", "-Command", script],
+        capture_output=True, text=True, check=False)
+    assert result.returncode == 0, result.stderr
+    decision = json.loads(result.stdout.strip())
+    assert decision["Decision"] == "send", decision

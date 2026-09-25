@@ -4,6 +4,25 @@ Findings queued for a later PR. Each carries the `path:line` it came from so it
 can be re-verified rather than re-discovered — and so an item that turns out to
 be wrong can be closed on evidence.
 
+- `plugin/crew/tests/test_auto_cycle.py` (24 failures, measured both
+  before and after crew-1.0-win-ps1-ac's fix, identical set both times):
+  bash/tmux/symlink-flavour tests fail on this Windows dev host for
+  environment reasons unrelated to that ticket -- no tmux on PATH, no
+  window belongs to a non-interactive runner's ancestor chain, and
+  `test_write_clear_resume_carries_the_next_action_end_to_end[*-sh]`'s
+  `tmux pane %7 could not be confirmed` reads as a real host gap, not a
+  script defect. Not fixed here: it is not in the one file
+  crew-1.0-win-ps1-ac owns (`auto-clear.ps1` + its tests), and the
+  before/after comparison is exactly what shows it predates that change.
+- `plugin/crew/tests/sabotage_autocycle.py` has no per-mutation CLI filter
+  (`argparse` only exposes `--scratch`), so a newly registered mutation
+  can only be proven through the full run (slow, and the bash-flavour
+  mutations hit the same tmux/symlink gap above on this host) or through
+  a manual sabotage/revert cycle done by hand, as crew-1.0-win-ps1-ac's
+  `Get-CrewChildTabRecheck skips the post-delay tab check again` entry
+  was. Not fixed here: adding a filter is a change to the harness itself,
+  not to `auto-clear.ps1`.
+
 - `scripts/_test/web-testing.sh:97` lifts `load_mcp_servers` out of
   `scripts/install-prerequisites.sh` without its `claude_available` dependency
   (defined at `scripts/install-prerequisites.sh:508`, outside the lifted awk

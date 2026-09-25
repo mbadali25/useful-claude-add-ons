@@ -429,13 +429,41 @@ AUTOCYCLE_MUTATIONS = (
      _T + "test_context_watch_stdout_reaches_eof_promptly_even_with_a_long_delay"),
     # --- Item 2 (crew-1.0-wd-sendkeys): the Windows Terminal tab check must
     # never send on an unknown tab state ---------------------------------
+    # `find`/`replace` are anchored on the PARENT's copy of the function
+    # (the "states for a probe that can fail)." comment immediately above
+    # it is unique to that copy) -- crew-1.0-win-ps1-ac duplicated this
+    # function byte-for-byte into the detached child's heredoc, so the bare
+    # signature + body text this mutation used to match now appears twice
+    # in the file, and `.count(find) != 1` would refuse to apply it at all.
+    # `_run_tab_decision` in test_auto_clear_review_fixes.py always extracts
+    # the FIRST occurrence (the parent's), so anchoring here is also what
+    # keeps this mutation aimed at the copy the named test actually reads.
     ("Get-CrewSendKeysTabDecision sends when UIA is unavailable", CLEAR_PS1,
+     "# states for a probe that can fail).\n"
+     "function Get-CrewSendKeysTabDecision([bool]$UiaAvailable, $TabCount, [bool]$SelectedMatches, $TitleMatches = $null) {\n"
      "  if (-not $UiaAvailable) {\n"
      "    return @{ Decision = \"decline\"; Reason = (\n",
+     "# states for a probe that can fail).\n"
+     "function Get-CrewSendKeysTabDecision([bool]$UiaAvailable, $TabCount, [bool]$SelectedMatches, $TitleMatches = $null) {\n"
      "  if (-not $UiaAvailable) {\n"
      "    return @{ Decision = \"send\"; Reason = (\n",
      "tests/test_auto_clear_review_fixes.py::"
      "test_get_crew_send_keys_tab_decision_never_sends_when_uia_is_unavailable"),
+    # --- crew-1.0-win-ps1-ac (B1, BLOCKER): the detached child must re-run
+    # the tab-count == 1 predicate AFTER the delay, immediately before
+    # typing -- a tab switch inside the SAME Windows Terminal window during
+    # the delay leaves GetForegroundWindow() unchanged, so only a check made
+    # in the child itself, post-delay, can catch it. Sabotage reproduces the
+    # exact historical defect: the child treats every owner as safe to type
+    # into once focus matches, with no tab awareness at all. ---------------
+    ("Get-CrewChildTabRecheck skips the post-delay tab check again", CLEAR_PS1,
+     "function Get-CrewChildTabRecheck([IntPtr]$Hwnd, [string]$Title, [bool]$IsWindowsTerminal) {\n"
+     "  if (-not $IsWindowsTerminal) { return @{ Decision = \"send\"; Reason = \"\" } }\n",
+     "function Get-CrewChildTabRecheck([IntPtr]$Hwnd, [string]$Title, [bool]$IsWindowsTerminal) {\n"
+     "  return @{ Decision = \"send\"; Reason = \"\" }\n"
+     "  if (-not $IsWindowsTerminal) { return @{ Decision = \"send\"; Reason = \"\" } }\n",
+     "tests/test_auto_clear_review_fixes.py::"
+     "test_child_rechecks_tab_safety_after_the_delay_before_typing"),
     # --- Item 1 (crew-1.0-wd-sendkeys): the value handed to the detached
     # sendkeys child must be the CONFIGURED delay, not a hard-coded 3 ------
     ("Get-CrewSendKeysChildArgs hardcodes the delay again", CLEAR_PS1,
