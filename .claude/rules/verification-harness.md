@@ -1,18 +1,22 @@
 ---
 paths:
   - "plugin/crew/**"
-  - "_verify/smoke.sh"
-  - "scripts/check-marketplace.py"
 ---
-<!-- crew:generated source=.crew/codemap/verification-harness.md sha256=1537283dbaa94067 -- do not hand-edit; regenerate with crew_instructions.py rules -->
+<!-- crew:generated source=.crew/codemap/verification-harness.md sha256=580c816a8330ec36 -- do not hand-edit; regenerate with crew_instructions.py rules -->
 # verification-harness
-Code map anchor `5d1fc5fd`; if it is behind HEAD, re-check with `git diff --name-only 5d1fc5fd..HEAD -- <cited paths>`.
-Covers: _verify/smoke.sh, _verify/run-all.sh, scripts/check-marketplace.py, and .crew/verify.json — what each actually runs, and where they overlap or don't. .crew/verify.json does not exist; see below.
+Code map anchor `f2bb919b`; if it is behind HEAD, re-check with `git diff --name-only f2bb919b..HEAD -- <cited paths>`.
+Covers: _verify/smoke.sh, _verify/run-all.sh, scripts/check-marketplace.py, and .crew/verify.json — what each actually runs, and where they overlap or don't. .crew/verify.json is tracked; its own anchor field (:3) is stale at 5238be3d, independent of this note's anchor.
 ## Entry points
-- `plugin/crew/tests/test_crew_config.py:1491` (moved from `:1488`) — `test_resolve_config_inherits_a_global_through_the_init_template`, the END-TO-END null-shadow test.
-- `plugin/crew/tests/test_crew_state.py:1291` (moved from `:1016`) — `test_a_backslash_in_a_branch_name_is_flattened_too`, which catches the `[\/]+` character class that matched `/` alone.
-- `plugin/crew/tests/test_crew_state.py:1325` (moved from `:1050`) — `test_two_repos_with_the_same_basename_do_not_share_a_leaf`, the cross-repo worktree collision the security review raised.
-- `scripts/check-marketplace.py:929` (moved from `:780`) — `check_crew_ignore_policy`: the `.crew/` ignore-policy gate, sabotage-tested by `scripts/_test/crew-ignore-policy.py` (see above).
-- `scripts/check-marketplace.py:579` (moved from `:430`) — `check_self_claims`, whose scope is unchanged beyond the `plugin-skills:<name>` marker type `f9bb78a6` (#169) added (see above).
-- `plugin/crew/tests/sabotage.py:3265` (moved from `:2484`) — module entry point (`main()`).
+- `.crew/verify.json:151-156` (rule 8) — the whole-suite pytest rule and its 377s pricing.
+- `.crew/verify.json:173-178` (rule 11) — the crew-diagrams `render.sh` exit-77 port.
+- `plugin/crew/hooks/scripts/verify-gate.sh:63-66` — the bounded single-read stdin gate.
+- `plugin/crew/hooks/scripts/verify-gate.sh:1600-1705` / `verify-gate.ps1:1655-1789` — temp-file rule-output capture, 1 MiB tail cap, no-pipe fallback refusal.
+- `.crew/verify.json:243` (rule 22) — the `.claude/rules/` sync check.
+- `plugin/crew/hooks/scripts/verify-gate.sh:1493-1502` / `plugin/crew/CONFIG.md:1959-1966` — the descoped per-rule process-group kill, documented as a standing limitation.
+- `plugin/crew/hooks/scripts/verify-gate.ps1:822-832`, `:1665-1674` — `Resolve-CrewBash` refusal rather than a re-resolving hang.
+- `scripts/check-marketplace.py:1639` — `main()`, sixteen checks.
+- `scripts/check-marketplace.py:518` — `check_versions`.
+- `scripts/check-marketplace.py:564`, `:673` — `count_crew_markdown_lines`, `check_self_claims`.
+- `scripts/check_instructions.py:685` — `main()`, nine checks.
+- `.github/workflows/instruction-budgets.yml:40-62` — the `github.event.before` base-sha fix for a `push` to `main`.
 Full note: `.crew/codemap/verification-harness.md`.

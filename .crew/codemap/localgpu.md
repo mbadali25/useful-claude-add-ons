@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@6c497a14
+anchor: useful-claude-add-ons@f2bb919b
 verified: 2026-09-25
 
 # localgpu
@@ -1043,3 +1043,10 @@ neither bootstrap script run, no test suite executed. `cli/anthropic_proxy.py`
 still has not been read end to end. The crew-roster finding above was
 established entirely from `git show`/`git diff`/`ls`, not from opening every
 deleted agent file's prior content.
+
+**Re-anchored `6c497a14` -> `f2bb919b` on 2026-09-25 (T-0015).** `git diff --name-only 6c497a14
+f2bb919b -- <the 32 tracked paths this note cites>` returns one file,
+`.claude-plugin/marketplace.json`, whose only hunk is crew's `version` (`1.0.25` -> `1.0.28`,
+`:218`). The `crew` entry's description, which this note quotes ("4 context-isolated agents
+(explorer, reviewer, security, researcher)"), is on `:217` and unchanged, and `localgpu`'s own
+entry is untouched (still `0.1.20`). Nothing under `plugin/localgpu/` changed. No claim moved.

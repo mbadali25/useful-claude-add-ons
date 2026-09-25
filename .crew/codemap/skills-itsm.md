@@ -1,5 +1,5 @@
 # skills-itsm
-anchor: useful-claude-add-ons@6c497a14
+anchor: useful-claude-add-ons@f2bb919b
 verified: 2026-09-25
 
 ## Does
@@ -207,3 +207,8 @@ show up in the mechanical path-extraction above) does not exist in `.crew/codema
 fixed in place above rather than left pointing at nothing. Nothing else in this note changed;
 `skills/infra-work-ticketing/`, `skills/notify/` and `plugin/gizmoduck/scripts/` were not re-read
 beyond confirming line ranges, matching the empty per-path diff.
+
+**Re-anchored `6c497a14` -> `f2bb919b` on 2026-09-25 (T-0015).** The same 11 tracked paths this
+note cites, run through `git diff --name-only 6c497a14 f2bb919b -- <those paths>`, return nothing,
+and `git diff --name-only 6c497a14 f2bb919b -- skills/ plugin/gizmoduck` is empty too: crew
+1.0.26-1.0.28 and #226-#228 did not touch either skill. Current despite the lag; no claim re-read.

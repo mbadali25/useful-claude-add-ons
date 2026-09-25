@@ -1,5 +1,5 @@
 # skills-security-ops
-anchor: useful-claude-add-ons@6c497a14
+anchor: useful-claude-add-ons@f2bb919b
 verified: 2026-09-25
 
 ## Does
@@ -253,3 +253,7 @@ returns nothing. Zero of the paths this note cites changed between `bc6a3a09`
 and `6c497a14` - crew 1.0 (the lifecycle redesign, 4-role roster and Windows
 burn-in work in PR #225) did not touch either skill. Current despite the
 anchor lag; no claim was re-read and none of the body above was rewritten.
+
+**Re-anchored `6c497a14` -> `f2bb919b` on 2026-09-25 (T-0015).** The same path list, run as
+`git diff --name-only 6c497a14 f2bb919b -- <the paths above>`, returns nothing, and nothing under
+`skills/` changed in that range. Current despite the lag; no claim re-read.

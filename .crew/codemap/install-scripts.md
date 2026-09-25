@@ -1,5 +1,5 @@
 # install-scripts
-anchor: useful-claude-add-ons@6c497a14
+anchor: useful-claude-add-ons@f2bb919b
 verified: 2026-09-25
 
 ## Re-derive provenance
@@ -195,26 +195,22 @@ through their own package managers.
 
 ## Landmines
 
-- **`README.md`'s install-URL pin is STALE at this anchor, and a fix is
-  already in flight.** `README.md:12` and `:18` still read
-  `5d1fc5fd8b08cbfff639de25bf69359125d335d1` — confirmed by direct read, and
-  `README.md` does **not** appear in the 10-file changed set the per-path
-  check above lists, so it was not touched in this range at all. Both install
-  scripts changed substantially in the same range
-  (`git diff --name-only 5d1fc5fd..6c497a14 -- scripts/install-prerequisites.sh
-  scripts/install-prerequisites.ps1` is non-empty — both files, confirmed
-  above), so a `curl | bash` taken from the README at `6c497a14` still runs
-  the `5d1fc5fd` script, missing the merged `web-testing` row, `lsp-plugins`,
-  `stack-tools`, the 4-agent/34-command crew catalog line, and
-  `add_or_refresh_mcp_server`. **PR #226 is the re-pin for this exact gap** —
-  named directly by the task that produced this pass, not independently
-  discovered here; do not cite a specific target sha for it, since the pin's
-  whole history (documented at length in this note's pre-1.0 revisions) is
-  that it goes stale again on the very next script-touching merge. Re-run
+- **`README.md`'s install-URL pin is current at this anchor - and current is
+  a state it leaves on the next script-touching merge.** `README.md:12` and
+  `:18` read `6c497a14fc06612732241d2b13eee4fea41996f5` (re-read at
+  `f2bb919b`), re-pinned by #226 (`86931b29`, "README: re-pin install URLs to
+  crew 1.0 merge (6c497a14)"), and `git log --oneline 6c497a14..f2bb919b --
+  scripts/install-prerequisites.sh scripts/install-prerequisites.ps1` is
+  empty, so a `curl | bash` taken from the README runs the scripts this note
+  describes. At `6c497a14` this bullet recorded the pin as STALE at
+  `5d1fc5fd`, missing the merged `web-testing` row, `lsp-plugins`,
+  `stack-tools`, the 4-agent/34-command crew catalog line and
+  `add_or_refresh_mcp_server`; #226 was the named fix and it landed. The
+  pin's whole history (this note's pre-1.0 revisions) is that it goes stale
+  again on the very next merge touching either script, so re-run
   `git log --oneline <pinned-sha>..HEAD -- scripts/install-prerequisites.sh
-  scripts/install-prerequisites.ps1` against whatever HEAD is current when
-  reading this, rather than trusting this bullet or the existence of a
-  named fix PR.
+  scripts/install-prerequisites.ps1` against whatever HEAD is current rather
+  than trusting this bullet.
 
 - **The five-way crew count disagreement this note tracked for several
   anchors is fully resolved and re-confirmed independently correct, not
@@ -381,3 +377,26 @@ through their own package managers.
 - `skill_preflight_path` / `Get-SkillPreflightPath`'s recursive search for an
   installed skill's `preflight.py` was not re-read at this pass; no installed
   skill directory was inspected.
+
+## Re-anchor provenance - `6c497a14` -> `f2bb919b`, 2026-09-25 (T-0015)
+
+`git diff --name-only 6c497a14 f2bb919b -- <the 13 tracked paths this note cites>` returns six:
+`.claude-plugin/marketplace.json`, `README.md`, `TODO.md`, `plugin/PLUGINS.md`,
+`plugin/crew/BUDGETS.md`, `plugin/crew/README.md`. Both install scripts and
+`scripts/check-marketplace.py` are **not** in it, so every `scripts/install-prerequisites.*` and
+`scripts/check-marketplace.py` citation above stands without a re-read. Each changed file:
+
+- `README.md` - only `:12` and `:18` changed, the two install-URL pins, now `6c497a14` (#226).
+  The Landmines bullet was rewritten from STALE to current; `:736`, cited as outside scope, did not
+  move.
+- `.claude-plugin/marketplace.json` - crew's `version` (`:218`) only; the `crew` description this
+  note checks the four-count claim against is `:217`, unchanged.
+- `plugin/PLUGINS.md` - crew's version row (`:14`) only; `:17`, the "4 agents, 34 commands, 29
+  skills ... 34 hook entries" row cited above, is unchanged.
+- `plugin/crew/BUDGETS.md` - the claim marker is still `:10`; the figure on `:11` moved from 17,788
+  to 17,811 lines (120 files), which `check-marketplace.py` verifies.
+- `plugin/crew/README.md` - one command-table cell (`:2145`, "Acceptance" -> "Acceptance checks");
+  this note cites the file without a line.
+- `TODO.md` - cited only in the historical pathspec above; no live `TODO.md:<n>` claim here.
+
+Not re-verified at this pass: neither install script was executed; `drift-detection.sh` was not run.

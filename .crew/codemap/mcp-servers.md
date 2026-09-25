@@ -1,5 +1,5 @@
 # mcp-servers
-anchor: useful-claude-add-ons@6c497a14
+anchor: useful-claude-add-ons@f2bb919b
 verified: 2026-09-25
 
 ## Does
@@ -43,16 +43,16 @@ registers it. (DERIVED: `grep -c mcp-servers .claude-plugin/marketplace.json` re
   `this.resolved` and never retries an earlier, higher-priority link. Deliberate - the comment at
   `:44-46` says so - but fixing `MS_ADMIN_CLIENT_SECRET` after `cli` or `device` has won changes
   nothing until restart, and nothing tells you that. Re-verified unchanged 2026-09-06 at
-  `1f97e51c`; still open as `TODO.md:80` (item 2, re-numbered from `:51` by insertions earlier in
-  the file - re-read at HEAD on 2026-09-25, same heading and body).
+  `1f97e51c`; still open as `TODO.md:110` (item 2; was `:80` at `6c497a14` and `:51` before that, each
+  move an insertion earlier in the file - re-read at `f2bb919b` on 2026-09-25, same heading and body).
 - **`scopesOverride` silently broadens a narrow scope request.**
   `mcp-servers/packages/core/src/adminAuth.ts:29-36` (the field and its doc comment), `:127`
   (`secret`) and `:144` (`cli`) force `.default` regardless of what the caller asked for. Only
   `device` (`mcp-servers/packages/core/src/adminAuth.ts:149-158` - no `scopesOverride` key, and the
   comment at `:155-158` says why) honours caller-supplied delegated scopes. Code that requests a
   narrow scope and receives `.default` did not fail - it was never asked. Re-verified unchanged
-  2026-09-06 at `1f97e51c`; still open as `TODO.md:91` (item 3, re-numbered from `:62` - re-read at
-  HEAD on 2026-09-25, same heading and body).
+  2026-09-06 at `1f97e51c`; still open as `TODO.md:121` (item 3; was `:91`, and `:62` before that - re-read at
+  `f2bb919b` on 2026-09-25, same heading and body).
 - **`dist/` is what runs, `src/` is what you edit.** Editing a `.ts` file and then *starting a
   server* leaves the stale compiled JS in place and the change does not take effect. Nothing guards
   that path - the guard below is a `pretest`, so it fires on `npm test` and on nothing else.
@@ -65,7 +65,7 @@ registers it. (DERIVED: `grep -c mcp-servers .claude-plugin/marketplace.json` re
     `core/dist` is still stale.
   - **Equal mtimes are stale, not fresh** (`:96-97`, reasoning at `:82-94`). The commit message for
     `4e2bfb78` states the opposite ("Equal timestamps count as fresh"); the shipped code and
-    `TODO.md:172-179` (re-numbered from `:143-150`, re-read at HEAD on 2026-09-25, same reasoning)
+    `TODO.md:202-209` (was `:172-179`, and `:143-150` before that; re-read at `f2bb919b` on 2026-09-25, same reasoning)
     are the later, correct account. Trust the code.
   - An unreadable directory throws rather than returning mtime `0` (`:44-51`), because `0` compares
     older than everything and would read as fresh.
@@ -278,3 +278,21 @@ Landmines could have moved, and none was re-read.
 Not re-verified at this pass: nothing under `mcp-servers/` was rebuilt,
 installed or executed; the `## Unverified` section's dist-staleness measurement
 is now nineteen days old and still describes one machine, not this checkout.
+
+**Re-anchored `6c497a14` -> `f2bb919b` on 2026-09-25 (T-0015; origin/main after crew 1.0.26-1.0.28,
+#226-#230).** Per-path check over the same cited paths:
+
+```
+git diff --name-only 6c497a14 f2bb919b -- mcp-servers/ .claude-plugin/marketplace.json TODO.md
+```
+returns `.claude-plugin/marketplace.json` and `TODO.md`; `mcp-servers/` is untouched again.
+
+- `.claude-plugin/marketplace.json`: the only hunk is crew's `version` (`1.0.25` -> `1.0.28`,
+  `:218`). `grep -c mcp-servers .claude-plugin/marketplace.json` still returns **0**.
+- `TODO.md`: 30 lines were inserted after `:16` (the header block) and 177 more near the end, so
+  every live citation above moved by exactly +30. Each was re-read at its new line rather than
+  offset: `:110` and `:121` are the item 2 and item 3 headings, `:202-209` the unreadable-directory
+  and equal-timestamps paragraph inside item 5 (item 5's CLOSED heading is now `:172`). Historical
+  provenance entries above keep the numbers they recorded.
+
+Not re-verified at this pass: nothing under `mcp-servers/` was built, installed or executed.

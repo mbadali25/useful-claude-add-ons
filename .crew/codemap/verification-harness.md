@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@6c497a14
+anchor: useful-claude-add-ons@f2bb919b
 verified: 2026-09-25
 
 **Re-derive provenance.** Full re-derivation, not a re-verify. The previous
@@ -36,11 +36,12 @@ including the slow version-drift walk `_verify/smoke.sh` skips), and
 them and is wired into CI but not into the local Stop gate: see
 "`scripts/check_instructions.py`" below.
 
-## `.crew/verify.json` — 22 rules, up from 21
+## `.crew/verify.json` — 23 rules, up from 22
 
-**DERIVED, read in full via `json.load` at this anchor.** 247 lines, **22**
-rules (was 21 at `5d1fc5fd`) plus a `default` (`["bash _verify/smoke.sh"]`,
-`:245`) and `unmapped: "fail"` (`:246`). The rule set was restructured, not
+**DERIVED, read in full via `json.load` at this anchor.** 248 lines, **23**
+rules (22 at `6c497a14`, 21 at `5d1fc5fd`) plus a `default` (`["bash _verify/smoke.sh"]`,
+`:246`) and `unmapped: "fail"` (`:247`). Rule 22 is the only addition since
+`6c497a14` (#228); see below. The rule set was restructured, not
 just grown: the broad `plugin/crew/hooks/**` / `plugin/crew/tests/**` shape
 this note previously described is gone, replaced by per-subsystem rules that
 name a handful of test files each — `crew_guards.py` (rule 5), `crew_config.py`
@@ -112,6 +113,17 @@ Notable rules, re-read directly:
   `.serena/**` and others deliberately unchecked) are unchanged. Both declare
   `"reach": "local"` on the reading that an empty `run` cannot reach off this
   machine — `verify_record.scan_reach([])` already returns that.
+- **Rule 22**, new at `f2bb919b` (`.crew/verify.json:243`, #228): `paths`
+  `.claude/rules/**` and `.crew/codemap/**` → `python3
+  plugin/crew/hooks/scripts/crew_instructions.py rules --root . --check`, priced
+  1s. Its `why` calls it a SYNC check between the two artifacts, not a
+  correctness check on the codemap prose: it passes whenever the rules match
+  the codemap, even a stale codemap. **`.crew/codemap/**` is now in two rules**
+  - rule 21's deliberately-unchecked `run: []` and rule 22 - and the gate runs
+  every matched rule (`verify-gate.sh:920`, `rule_order`, "matched rule
+  indices"), so rule 21's "DELIBERATELY UNCHECKED" `why` no longer describes
+  what happens to a codemap edit: any `.crew/codemap/` change without a
+  regenerated `.claude/rules/` now fails the Stop gate.
 
 **Still unresolved at this anchor:** a declared `seconds` figure is only
 overwritten by measurement when the rule carries *no* `seconds` at all
@@ -124,8 +136,9 @@ measurements, except where a command was actually re-run above.
 
 ## `verify-gate.sh` / `verify-gate.ps1` — the rule runner
 
-**DERIVED, read directly at this anchor.** 1863 lines (`.sh`) / 1917 lines
-(`.ps1`), both grown substantially since `5d1fc5fd` (+269/+522 net). Landmarks
+**DERIVED, read directly at this anchor.** 1863 lines (`.sh`) / 1956 lines
+(`.ps1`, 1917 at `6c497a14`; the +39 is T-0002's three fixes below), both grown
+substantially since `5d1fc5fd`. Landmarks
 that changed shape or are newly documented here:
 
 - **Bounded stdin, not unbounded.** The Stop hook's JSON payload is read with
@@ -153,12 +166,25 @@ that changed shape or are newly documented here:
   at `RULE_OUT_CAP` (env-overridable for tests only, clamped to `1..1048576`,
   `:1663-1682`), and read with `tail -c`, not `head -c` (`:1684-1695`) — a
   failing rule's diagnostic is at the *end* of its output, and the old
-  `head -c` form discarded exactly that. `verify-gate.ps1:1655-1712` is the
+  `head -c` form discarded exactly that. `verify-gate.ps1:1655-1789` (through
+  its `Remove-Item` cleanup; cited as `:1655-1712` at `6c497a14`) is the
   documented twin: `[System.IO.Path]::GetTempFileName()`, the same `.crew/`
   fallback, a `Length` snapshot instead of a streaming `Get-Content` (which the
   comment at `:1624-1637` says was measured to grow past 1 GiB in five seconds
   against a `sh -c 'yes &'` rule before this fix), and the same 1 MiB cap
-  (`:1691-1696`).
+  (`:1704-1709`, was `:1691-1696`). **Three fixes landed in this block in crew
+  1.0.28 (T-0002, `f2bb919b`)**, each with its own new test file: the bash
+  wrapper now copies `CREW_VERIFY_RULE_CMD`/`CREW_VERIFY_RULE_OUT` into shell
+  locals and `unset`s both before `eval` (`:1699`, reasoning `:1687-1698`), so
+  the rule no longer sees its own source text and capture path in its
+  environment (`plugin/crew/tests/test_verify_gate_rule_env_leak.py`); the
+  capped tail read seeks from `Begin` by `$size - $readLen` instead of from
+  the live `End` (`:1746`, reasoning `:1735-1745`), so a rule still writing
+  after the size snapshot cannot move the window; and a 0-byte read is its own
+  branch (`:1771`, reasoning `:1760-1770`), because `0..($totalRead - 1)` is
+  the descending range `0,-1` in PowerShell, not an empty one
+  (`plugin/crew/tests/test_verify_gate_rule_out_tail_read.py`). Neither new
+  test file is named in rule 4's `run`; only rule 8's whole suite runs them.
 - **Per-rule process-group tracking and kill-on-signal was DESCOPED from crew
   1.0, and it is a documented limitation, not a silent gap.**
   `verify-gate.sh:1493-1502` and `plugin/crew/CONFIG.md:1959-1966` both state
@@ -181,7 +207,8 @@ that changed shape or are newly documented here:
   interpreter slips past `crew_py_strict` the same way.
 - **`.ps1`'s own stdin guard: `$null |` on every subprocess call.**
   `verify-gate.ps1:1638-1641` and repeated at every `git`/interpreter-probe
-  call site (`:452-523`, `:1434`, `:1687`, `:1859`, `:1868`) — a closed stdin
+  call site (`:452-523`, `:1434`, `:1700`, `:1898`, `:1907`; the last three
+  were `:1687`, `:1859`, `:1868` at `6c497a14`) — a closed stdin
   handed to the child, the PowerShell twin of `verify-gate.sh`'s `</dev/null`
   redirect (`:1571-1572`, `:1640`). Without it, a rule or a git call that reads
   stdin parks the whole gate the same way an unclosed pipe does.
@@ -325,8 +352,9 @@ set on Ubuntu.
 - `plugin/crew/hooks/scripts/verify-gate.sh:63-66` — the bounded single-read
   stdin gate.
 - `plugin/crew/hooks/scripts/verify-gate.sh:1600-1705` /
-  `verify-gate.ps1:1655-1712` — temp-file rule-output capture, 1 MiB tail cap,
+  `verify-gate.ps1:1655-1789` — temp-file rule-output capture, 1 MiB tail cap,
   no-pipe fallback refusal.
+- `.crew/verify.json:243` (rule 22) — the `.claude/rules/` sync check.
 - `plugin/crew/hooks/scripts/verify-gate.sh:1493-1502` /
   `plugin/crew/CONFIG.md:1959-1966` — the descoped per-rule process-group kill,
   documented as a standing limitation.
@@ -392,3 +420,27 @@ set on Ubuntu.
   was silently dropped from `.crew/verify.json`'s `paths` lists during the
   crew 1.0 restructuring (as opposed to renamed/consolidated) was not traced
   commit by commit — only the current file's shape was read.
+
+## Re-anchor provenance - `6c497a14` -> `f2bb919b`, 2026-09-25 (T-0015)
+
+`git diff --name-only 6c497a14 f2bb919b -- <the 31 tracked paths this note cites>` returns
+`.claude-plugin/marketplace.json`, `.crew/verify.json`, `TODO.md` and
+`plugin/crew/hooks/scripts/verify-gate.ps1`; the bare `crew_fixtures.py` (rule 8's `paths`) also
+changed. `verify-gate.sh`, `_verify/*`, `scripts/check-marketplace.py`,
+`scripts/check_instructions.py` and the CI workflows did not, so their citations stand unread.
+
+- `.crew/verify.json` - one rule appended (`:243`); every earlier line keeps its number, so
+  `:3`, `:39-49`, `:69-78`, `:151-156` and `:173-178` stand (re-read); `default`/`unmapped` moved
+  `:245`/`:246` -> `:246`/`:247`. Rule count and the rule-21/22 overlap corrected above.
+- `verify-gate.ps1` - three hunks, all inside the rule-output block (`:1686`, `:1721`, `:1736` at
+  `6c497a14`). Every citation before `:1686` is unmoved (`:22-30`, `:452-523`, `:822-832`, `:1434`,
+  `:1624-1641`, `:1665-1674`, each re-read); the ones after it were re-taken by content and
+  corrected above.
+- `crew_fixtures.py` - +219 lines of new fixture helpers; this note cites it only as a rule 8
+  path, which it still is.
+- `.claude-plugin/marketplace.json` - crew's `version` only (`:218`); cited here as a rule 0 path.
+- `TODO.md` - cited only as a cross-reference in Unverified.
+
+Commands run at this pass: `python3 scripts/check-marketplace.py` (`marketplace: 34 skills, 5
+plugins`, `all checks passed`). The two new verify-gate test files were not executed; they
+exercise the `.ps1` flavour and need `pwsh`.

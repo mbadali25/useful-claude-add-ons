@@ -1,5 +1,5 @@
 # obsidian-vault
-anchor: useful-claude-add-ons@6c497a14
+anchor: useful-claude-add-ons@f2bb919b
 verified: 2026-09-25
 
 ## Does
@@ -924,3 +924,12 @@ three `SKILL.md` files); `vault_setup.py`, `vault_import.py`, `vault_recall.py` 
 were read only at their module docstrings and top-level signatures, not end to end; nothing touched
 a live vault, a live bridge port, or `~/.claude/obsidian/config.json`; the bounded process-tree kill
 on Windows remains MODELLED, not observed.
+
+**Re-anchored `6c497a14` -> `f2bb919b` on 2026-09-25 (T-0015).** `git diff --name-only 6c497a14
+f2bb919b -- <the 45 tracked paths this note cites>` returns `.claude-plugin/marketplace.json`,
+`CHANGELOG.md` and `README.md`, and nothing under `plugin/obsidian-vault/`. None of the three
+carries a live claim here: the marketplace hunk is crew's `version` on `:218` alone, so the
+`obsidian-vault` entry at `.claude-plugin/marketplace.json:234-237` still reads `0.4.14` (re-read);
+`README.md` changed only its two install-URL pins (`:12`, `:18`), and this note names it only as an
+exempt basename; `CHANGELOG.md` gained crew 1.0.26-1.0.28 entries, and no `CHANGELOG.md:<n>`
+citation appears in this note. No claim moved.

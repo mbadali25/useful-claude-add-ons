@@ -1,5 +1,5 @@
 # repo-docs
-anchor: useful-claude-add-ons@6c497a14
+anchor: useful-claude-add-ons@f2bb919b
 verified: 2026-09-25
 
 ## Re-derive provenance
@@ -128,28 +128,33 @@ listing the directory.
   by the per-path check; the other two are not in this note's tracked
   pathspec, so their unchanged status is read directly rather than closed by
   diff). Both provenance shapes are still accepted by `_DIAGRAM_ANCHOR_RE`.
-- `docs/diagrams/data-flow-crew-config.mmd:1-2` and
-  `process-crew-brief.mmd:1-2` — **both changed in this range**, and their
-  new line 1 reads `%% Generated from useful-claude-add-ons@60c79407 on
-  2026-09-22`, an EARLIER commit than `5d1fc5fd`. This is not staleness: both
-  files' own new provenance comments explain it as a deliberate re-anchor
-  onto a commit that is actually on `main` (`60c79407`, from PR #210), after
-  discovering the prior anchor (`84976536`) was a commit that only ever
-  existed on a since-squash-merged PR branch. Read directly, not re-verified
-  independently at this pass — `INDEX.md` and this repo's diagram tooling
-  (`crew.md`'s territory) own the mechanics of that re-anchor; this note only
-  confirms the files exist and their headers read as described.
+- `docs/diagrams/data-flow-crew-config.mmd:1-2`, `process-crew-brief.mmd:1`
+  and `process-crew-lifecycle.mmd:1` - the three crew diagrams, each on the
+  `%% Generated from <repo>@<sha> on <date>.` form, all at `f2bb919b` after
+  T-0015. `data-flow-crew-config` was redrawn for crew 1.0 at `6c497a14`
+  (`5e937837`, the refresh branch) and re-anchored, its `%% Anchors:` paths
+  unchanged in `6c497a14..f2bb919b`. `process-crew-brief` was **redrawn**:
+  at `6c497a14` it still drew the 0.20 PM brief through `pm_brief.py` /
+  `pm-brief.sh`, both deleted in 1.0, and now draws the three SessionStart
+  hooks and `/crew:status`. `process-crew-lifecycle` is **new**: brainstorm ->
+  spec -> plan -> approve -> implement -> review -> done, drawn from
+  `plugin/crew/commands/`. `process-bitbucket-svg.mmd` stays at `60c79407`;
+  its `%% Anchors:` paths are all under `skills/mermaid-svg-bitbucket/`,
+  untouched since. Both provenance shapes are still accepted by
+  `_DIAGRAM_ANCHOR_RE`.
 - `plugin/crew/skills/crew-diagrams/scripts/render.sh:74-75` — unchanged
   (closed by the per-path check): `shopt -s nullglob; FILES=("$DIR"/*.mmd)`,
-  a glob over the whole directory. `git ls-files docs/diagrams/` still
-  returns exactly **six** `.mmd` sources.
+  a glob over the whole directory. `git ls-files docs/diagrams/` returns
+  **seven** `.mmd` sources after T-0015 (six at `6c497a14`; the new one is
+  `process-crew-lifecycle.mmd`).
 - `scripts/sync-updates.py:147` — module entry point (`main()`), unchanged
   file, closed by the per-path check, position not re-read.
 
 ## Owns data
 
-- `docs/diagrams/out/*.svg`/`*.png` — twelve files, six names × two formats,
-  produced by `render.sh`. Unchanged file, closed by the per-path check;
+- `docs/diagrams/out/*.svg`/`*.png` — six names × two formats at `6c497a14`,
+  seven names once `render.sh` is re-run after T-0015 (not re-rendered by it;
+  `out/` is machine-local), produced by `render.sh`. Unchanged file, closed by the per-path check;
   `docs/diagrams/out/` is still gitignored (`.gitignore`, not re-read this
   pass, previously confirmed at `:409` and not itself a tracked path here).
 - `docs/superpowers/` — `plans/` and `specs/`, hand-written. Unchanged,
@@ -248,35 +253,17 @@ listing the directory.
   held. Not fixed here — outside this note's write scope; reported so the
   fix targets the right passage.
 
-- **`README.md`'s install-URL pin is STALE at this anchor, and the diff shows
-  exactly why — it was fixed once early in this range, then left behind.**
-  `README.md` IS in the 21-file changed set (corrected from an earlier draft
-  of this note, which wrongly read it as untouched). Its diff in this range
-  is `7f83c812` — "README: re-pin install URLs to 5d1fc5fd after PR #208
-  changed both install scripts" — the very next commit after this note's
-  previous (`5d1fc5fd`) anchor: `README.md:12`/`:18` moved
-  `d541ee5708481fbf18c3a5fda050c9e40a40a2d9` ->
-  `5d1fc5fd8b08cbfff639de25bf69359125d335d1`, and the same commit corrected
-  the picker screenshot's skill count (`36 of 36 skills` -> `34 of 34
-  skills`, `:52`), the skills-total row (`:154`), and the crew
-  agent/command/skill/hook-entry figures in the menu table (`:168`), plus a
-  documentation-link fix (`vault-automation/` -> `plugin/obsidian-vault/`,
-  since the former is retired). **That was the
-  only touch `README.md` got in the whole `5d1fc5fd..6c497a14` range.** Both
-  install scripts kept changing after `7f83c812` (the +480/+463 lines
-  `install-scripts.md` covers in full — the merged `web-testing` row,
-  `lsp-plugins`, `stack-tools`, `add_or_refresh_mcp_server`, none of which
-  existed yet at `5d1fc5fd`), so the pin that was genuinely current the
-  moment `7f83c812` landed is stale again at `6c497a14` — re-read directly:
-  `README.md:12`/`:18` still pin `5d1fc5fd8b08...`, and
-  `git diff --name-only 5d1fc5fd8b08cbfff639de25bf69359125d335d1..6c497a14 --
+- **`README.md`'s install-URL pin is current at this anchor; it was stale
+  at `6c497a14`, and its history says it will be again.** `README.md:12`/`:18`
+  read `6c497a14fc06612732241d2b13eee4fea41996f5` at `f2bb919b` (re-read), set
+  by #226 (`86931b29`), and `git log --oneline 6c497a14..f2bb919b --
   scripts/install-prerequisites.sh scripts/install-prerequisites.ps1` is
-  non-empty (both files). `install-scripts.md` records that PR #226 is the
-  named fix in flight; this note does not re-state a target sha, since this
-  pin's own history (recorded at length in this note's pre-1.0 revisions) is
-  that it goes stale again on the very next script-touching merge — this is
-  now the pattern's third or fourth documented recurrence, not a new kind of
-  failure.
+  empty. At `6c497a14` this bullet recorded the pin at `5d1fc5fd8b08...`,
+  current only for the moment after `7f83c812` re-pinned it and stale again
+  once both install scripts kept changing through the rest of that range -
+  the pattern's third or fourth documented recurrence. `install-scripts.md`
+  owns the re-pin mechanics; re-run the `git log` above against the live
+  HEAD rather than trusting "current".
   `docs/guides/exchange-mailbox/Running-a-Mailbox-Job.json:18` (the renamed
   destination of the site this note has tracked since discovering it) was
   **not** independently re-checked against the current pin at this pass —
@@ -353,8 +340,10 @@ listing the directory.
   resolves to stale.
 
 - **`TODO.md`'s `render.sh` entry is still open, still un-CLOSED, re-located
-  rather than assumed at its old line.** Now at `TODO.md:1092` (was `:1061`;
-  the file grew 3645 -> 4714 lines, +1069, in this range, and this note's own
+  rather than assumed at its old line.** Now at `TODO.md:1122` (`:1092` at
+  `6c497a14`, `:1061` before that; the file grew 3645 -> 4714 lines, +1069,
+  in the `5d1fc5fd..6c497a14` range, and 30 more lines landed after its
+  `:16` by `f2bb919b`, and this note's own
   standing rule treats any `TODO.md` citation as provisional the moment the
   file is known to have grown). The heading, content (six-for-six failure on
   2026-09-05, the same three sources rendering cleanly when `mmdc` is invoked
@@ -400,7 +389,9 @@ listing the directory.
   `.crew/endpoints.json` and `.crew/verify.json` — CLAUDE.md's own gitignore
   policy, not re-verified again at this pass) and is present in this fresh
   worktree. `verification-harness.md` owns this file's full contents; this
-  note only records what changed in its own tracked citations.
+  note only records what changed in its own tracked citations. Since
+  `6c497a14` one rule was appended (`:243`, #228): `.claude/rules/**` and
+  `.crew/codemap/**` now run `crew_instructions.py rules --root . --check`.
 
 ## Unverified
 
@@ -443,3 +434,26 @@ listing the directory.
   makes were not read; both changed substantially in this range and
   `crew.md`/`marketplace-registration.md`/`verification-harness.md` own
   them.
+
+## Re-anchor provenance - `6c497a14` -> `f2bb919b`, 2026-09-25 (T-0015)
+
+`git diff --name-only 6c497a14 f2bb919b -- <the 39 tracked paths this note cites>` returns seven:
+`.claude-plugin/marketplace.json`, `.crew/verify.json`, `CHANGELOG.md`, `README.md`, `TODO.md`,
+`plugin/PLUGINS.md`, `plugin/crew/README.md`. Nothing under `docs/` changed on main in that range;
+the diagram changes recorded above are this ticket's own. Each changed file:
+
+- `README.md` - the two install-URL pins (`:12`, `:18`) only; the pin landmine is rewritten.
+  `:46`, `:52`, `:154`, `:168` and `:736` did not move.
+- `TODO.md` - the `render.sh` entry moved `:1092` -> `:1122` (re-read: same heading, still no
+  CLOSED marker). The refresh's own follow-up (f), that `process-crew-brief` drew the removed PM
+  flow, is resolved by T-0015's redraw.
+- `.crew/verify.json` - rule 22 appended, noted above.
+- `CHANGELOG.md` - crew 1.0.26-1.0.28 and #227/#228 entries added at the top (`:9` onward, +59
+  lines). This note cites the file without a line number.
+- `plugin/crew/README.md` - one cell at `:2145`; `:1725` (the `docs/runbooks/INDEX.md` mention) is
+  unchanged.
+- `plugin/PLUGINS.md` - crew's version row `:14`; `:17`'s counts are unchanged.
+- `.claude-plugin/marketplace.json` - crew `version` only; the description is unchanged.
+
+`docs/HANDOFF.md`'s age and `docs/runbooks/rollback.md`'s `last verified` are not re-measured; both
+figures above are as of the 2026-09-25 re-derivation, the same day.

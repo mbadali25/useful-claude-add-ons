@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@6c497a14
+anchor: useful-claude-add-ons@f2bb919b
 verified: 2026-09-25
 
 ## Re-derive provenance
@@ -118,14 +118,17 @@ still carries PM-specific logic and a docstring that names removed roles:
 
 ## Lifecycle commands
 
-Crew 1.0's lifecycle is `brainstorm -> spec -> plan -> implement -> review ->
-done`, one command per phase:
+Crew 1.0's lifecycle is `brainstorm -> spec -> plan -> approve -> implement ->
+review -> done`, one command per phase (`/crew:fix` is the same phases, each
+compressed to one step, `plugin/crew/commands/fix.md:2`). `docs/diagrams/process-crew-lifecycle.mmd`
+draws it:
 
 | Command | Does | Replaces |
 |---|---|---|
 | `/crew:brainstorm` (`plugin/crew/commands/brainstorm.md`) | Mints a ticket and settles an approved direction; loads `crew-brainstorm` (method adapted from `superpowers:brainstorming`, notice in `plugin/crew/NOTICE.md`) | new in 1.0 |
-| `/crew:spec` (`plugin/crew/commands/spec.md:8-9`) | Fills the ticket contract (Intent/Exclusions/Evidence/Unknowns/Touch/Acceptance) from an approved direction | `/crew:ticket` |
+| `/crew:spec` (`plugin/crew/commands/spec.md:7-8`) | Fills the ticket contract (Intent/Exclusions/Evidence/Unknowns/Touch/Acceptance checks) from an approved direction; Touch is one path or glob per bullet, because `/crew:approve` reads it a bullet at a time (`:38-43`, since crew 1.0.27) | `/crew:ticket` |
 | `/crew:plan` (`plugin/crew/commands/plan.md:8-9`) | Turns an approved spec into a step plan; the old standalone second-opinion step is now step 3, optional, inside this phase | redefined |
+| `/crew:approve` (`plugin/crew/commands/approve.md:5`, `disable-model-invocation: true`) | Typed by the user only: the UserPromptSubmit `approval-hook` records `<git-common-dir>/crew/tickets/<id>/approval.json`, bound to the sha256 of `spec.md` and `plan.md` (`:7-16`); the command body only relays the result | new in 1.0 |
 | `/crew:implement` (`plugin/crew/commands/implement.md:8-9`) | Implements an approved plan, then tests/docs/review; loads `crew-execute` (adapted from `superpowers:executing-plans`) | `/crew:work` |
 | `/crew:review` (`plugin/crew/commands/review.md`) | Independent QA review of the working diff (Codex, Copilot, or the `crew:reviewer` Claude fallback) | (unchanged name; internals rewritten) |
 | `/crew:done` (`plugin/crew/commands/done.md:7-8`) | Closes a ticket; three checks (review receipt, clean verify gate, passing completion audit), any one failing refuses the close, no partial close | new in 1.0 |
@@ -287,8 +290,8 @@ they disagree:
   `config.json`".
 - Only `/crew:migrate` (`crew_migrate.py`, `--apply`) ever writes
   `.crew/crew.json`; `/crew:init` still writes only `.crew/config.json`
-  (`TODO.md:3854`, "T2 (lane D, additive) deferred items", filed
-  2026-09-23, still open at this anchor). `crew_migrate.py`'s own module
+  (`TODO.md:3884`, "T2 (lane D, additive) deferred items", filed
+  2026-09-23, still open at this anchor; it was `:3854` at `6c497a14`). `crew_migrate.py`'s own module
   docstring (`:1-4`) frames this as "one-time move of a 0.20 crew setup onto
   the 1.0 layout" and its schema table (`:11,26-40`) treats `crew.json`
   schema 1 as the target, `config.json` schema <= 7 as "kept, retireable".
@@ -440,6 +443,21 @@ subsystem. `.crew/endpoints.json` still does not exist in this checkout;
 `git ls-files .crew/` still returns only the codemap `.md` files plus
 `.crew/verify.json`.
 
+## `.claude/rules/` - generated from this directory, and gated against it
+
+New on main since `6c497a14` (#227, #228). `python3 plugin/crew/hooks/scripts/crew_instructions.py
+rules --root .` writes one `.claude/rules/<subsystem>.md` per code-map note that yields any paths
+(`expected_rules`, `plugin/crew/hooks/scripts/crew_instructions.py:169`; `render_rule`, `:123`):
+a `paths:` frontmatter derived from the note's own citations, a `crew:generated` marker carrying
+the sha256 of everything the rule is rendered from (`rule_digest`, `:105`), the note's anchor,
+INDEX.md's Covers cell for it, and the note's Landmines headlines (else its Entry points), capped at
+`RULES_MAX_LINES` = 30 (`:81`). `--check` (`rules`, `:191`) writes nothing and reports each rule
+file missing, stale or orphaned; a hand-written file at a generated path is never overwritten and
+fails `--check`. `.crew/verify.json` rule 22 runs `--check` for any change under
+`.claude/rules/**` or `.crew/codemap/**`, so **a code-map edit without a regeneration fails the Stop
+gate** - see `verification-harness.md`. DERIVED from the source above; the command was run by
+T-0015 against this refresh.
+
 ## Entry points
 
 - `plugin/crew/hooks/scripts/crew_state.py:983` — `TRIGGERS`, a 15-entry
@@ -567,3 +585,26 @@ two disagree. The other subsystem notes in `.crew/codemap/` cover their own
 areas; `INDEX.md` is the table of contents (not edited by this pass, per
 this pass's own instructions — its anchor column is the integrator's to
 update).
+
+## Re-anchor provenance - `6c497a14` -> `f2bb919b`, 2026-09-25 (T-0015)
+
+`git diff --name-only 6c497a14 f2bb919b -- <the 39 tracked paths this note cites>` returns five:
+`.claude-plugin/marketplace.json`, `.crew/verify.json`, `README.md`, `TODO.md`,
+`plugin/crew/commands/spec.md`. No hook script this note cites changed (`verify-gate.ps1` and
+`auto-clear.ps1` did, and this note names them only in the `Resolve-CrewPython` copy list, which
+still holds: `grep -rl "function Resolve-CrewPython" plugin/crew/hooks/scripts` returns the same 11).
+Each changed file:
+
+- `plugin/crew/commands/spec.md` - T-0001 (1.0.26/1.0.27) rewrote the Touch template and added the
+  one-path-per-bullet paragraph (`:38-43`). The `:8-9` citation was off by one before that change
+  too - the "Replaces `/crew:ticket`" sentence is `:7-8` at both anchors - and is corrected.
+- `TODO.md` - 30 lines inserted after `:16`; the one live citation moved `:3854` -> `:3884` (re-read,
+  same bullet).
+- `.claude-plugin/marketplace.json` - crew `version` (`:218`) only; `:217`'s 4/34/29 counts are
+  unchanged and still match disk (re-counted).
+- `.crew/verify.json` - rule 22 appended; the `.claude/rules/` section above is new for it.
+- `README.md` - two install-URL pins only; cited here in the Unverified sweep list.
+
+Also added, not caused by the diff: `/crew:approve`'s row and the `approve` phase in the lifecycle
+line. `approve.md` is unchanged since `6c497a14`; the `6c497a14` table omitted it.
+

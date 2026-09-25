@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@6c497a14
+anchor: useful-claude-add-ons@f2bb919b
 verified: 2026-09-25
 
 **Re-derive provenance.** Full re-derivation, not a re-verify. The previous
@@ -46,7 +46,9 @@ consistent with `web-testing-playwright` and other single-skill entries
 either being removed or consolidated during the crew 1.0 rewrite; flagged as
 an open question rather than asserted either way. The **plugin** count is
 unchanged at **5**: `crew`, `gizmoduck`, `localgpu`, `obsidian-vault`,
-`rule-of-two`. `crew` is now **1.0.25** (was 0.20.11 at `5d1fc5fd`);
+`rule-of-two`. `crew` is now **1.0.28** (`.claude-plugin/marketplace.json:218`, `plugin/crew/.claude-plugin/plugin.json`
+and the `plugin-version:crew` claim at `plugin/PLUGINS.md:14` all agree, re-read at `f2bb919b`; it
+was 1.0.25 at `6c497a14` and 0.20.11 at `5d1fc5fd`);
 `obsidian-vault` is **0.4.14** (was 0.3.14); `gizmoduck` (0.5.3) and
 `rule-of-two` (0.1.3) are unchanged; `localgpu` moved to 0.1.20.
 
@@ -245,9 +247,10 @@ against synthetic fixtures and never reads this repo's own docs.
   plugins), not reasoned about further — this note tracks the registration
   mechanism, not the skill catalog's editorial history.
 - **`plugin/crew/BUDGETS.md`'s own `<!-- claim: crew-markdown-lines -->` site**
-  was not opened or re-derived this pass; only the checker mechanism that
-  reads it (`check_self_claims`, `count_crew_markdown_lines`) was confirmed
-  from `scripts/check-marketplace.py` directly.
+  was not opened at `6c497a14`. Closed at `f2bb919b`: the marker is `:10`, the
+  figure on `:11` reads 17,811 lines across 120 files, and
+  `git ls-files 'plugin/crew/*.md' | xargs cat | wc -l` returns 17811 over 120
+  files, matching; `check-marketplace.py` passes it.
 - **`MARKETPLACE.md`** was not re-read for a community-plugin or marketplace
   count of its own; only `README.md:231`'s prose was checked and found to no
   longer state a specific number.
@@ -260,3 +263,25 @@ against synthetic fixtures and never reads this repo's own docs.
 - **The install scripts' full array contents** (every `SKILL_KEYS` entry, not
   just the crew/plugin rows) were not diffed line by line against `5d1fc5fd`;
   only the catalog *mechanism* and the crew-specific rows were re-measured.
+
+## Re-anchor provenance - `6c497a14` -> `f2bb919b`, 2026-09-25 (T-0015)
+
+`git diff --name-only 6c497a14 f2bb919b -- <the 23 tracked paths this note cites>` returns seven:
+`.claude-plugin/marketplace.json`, `.crew/verify.json`, `CHANGELOG.md`, `README.md`, `TODO.md`,
+`plugin/PLUGINS.md`, `plugin/crew/BUDGETS.md`. `scripts/check-marketplace.py` and both install
+scripts are not in it, so every function line number and catalog-array citation above stands.
+Each changed file, re-read:
+
+- `.claude-plugin/marketplace.json` - crew's `version` on `:218` only (`1.0.25` -> `1.0.28`),
+  corrected above. `:217`, the description this note's count table checks, is unchanged; the
+  4/34/29/34 figures were re-measured from disk at `f2bb919b` and still hold.
+- `plugin/PLUGINS.md` - crew's version row `:14` only; the `:17` count row is unchanged.
+- `plugin/crew/BUDGETS.md` - `:11` figure moved (17,788 -> 17,811); now checked, see Unverified.
+- `.crew/verify.json` - one new rule appended at `:243` (the `.claude/rules/` sync check,
+  `verification-harness.md` owns it). The doc rule cited at `:69-78` is unchanged and still runs
+  `check-marketplace.py` first.
+- `README.md` - the two install-URL pins (`:12`, `:18`) only; `:168`, `:231` and `:874` did not
+  move. `CHANGELOG.md` and `TODO.md` appear here only as members of the doc rule's path list.
+
+`python3 scripts/check-marketplace.py` at `f2bb919b`: `marketplace: 34 skills, 5 plugins`,
+`all checks passed`.
