@@ -1464,10 +1464,23 @@ def test_34b_a_backgrounded_grandchild_holding_stdout_does_not_wedge_the_gate(
     # and the sleep has been reparented away from that group. Recording its
     # own pid lets the test reap it directly instead of leaving a 20s
     # orphan behind every time this test runs.
+    #
+    # Single-quoted at the OUTER (JSON/python) level, not double: `$c` is
+    # re-parsed once - by the gate's own shell (`eval "$c"` under the "sh"
+    # flavour; `& $bashExe -c $c` under "ps1" spawns a fresh bash that
+    # parses it exactly once too) - before the NESTED `sh -c` this test
+    # actually wants `$!` evaluated by ever runs. A double-quoted `$!` at
+    # this level sits inside the gate's own double-quoted argument and is
+    # expanded THERE, always empty (the gate has not backgrounded
+    # anything of its own yet); single-quoting defers every expansion,
+    # `$!` included, to the nested `sh` this test needs it from. See
+    # test_34e's identical fix and CLAUDE.md / review item 6 - this
+    # exact double-quoted shape used to be test_34e's own cautionary
+    # counter-example, still present here until now.
     vmap = {
         "version": 1,
         "rules": [{"paths": ["a.py"], "reach": "local", "run": [
-            "sh -c \"trap '' TERM; sleep 20 & echo $! > bg.pid\""
+            "sh -c 'trap \"\" TERM; sleep 20 & echo $! > bg.pid'"
         ]}],
         "default": [], "unmapped": "ignore",
     }
@@ -1485,6 +1498,16 @@ def test_34b_a_backgrounded_grandchild_holding_stdout_does_not_wedge_the_gate(
             "the gate's own read of that rule's output, instead of the read "
             "coming from a file that does not care who else still has it "
             f"open. stderr: {result.stderr}"
+        )
+
+        pidfile = root / "bg.pid"
+        bg_pid_text = (pidfile.read_text(encoding="utf-8").strip()
+                       if pidfile.exists() else "")
+        assert bg_pid_text and bg_pid_text.isdigit(), (
+            f"bg.pid was {bg_pid_text!r}, not a real pid - `$!` was expanded "
+            "one parse layer too early (by the gate's own shell) instead of "
+            "by the nested `sh -c` that actually backgrounded the sleep, so "
+            "this test's own cleanup below cannot reach it either."
         )
     finally:
         pidfile = root / "bg.pid"
@@ -1560,6 +1583,62 @@ def test_34c_a_large_rule_output_is_capped_not_read_in_full(tmp_path):
         "200-byte test cap - the rule's output was read back beyond (or "
         f"short of) the cap instead of being snapshotted at exactly it. "
         f"stderr: {result.stderr}"
+    )
+
+
+# One byte over the real 1 MiB cap: big enough that "the override was
+# accepted literally instead of clamped" and "the override was ignored and
+# the real default applied" are DISTINGUISHABLE outcomes (a rule under
+# 1 MiB, like test_34c's 5000 bytes, can't tell those apart - neither cap
+# would truncate it).
+_OVERSIZE_RULE_OUTPUT_BYTES = 1048576 + 5000
+
+
+@pytest.mark.skipif(_BASH is None, reason="needs bash")
+@pytest.mark.parametrize("bogus_cap", [
+    "0",  # in range of the old digits-only check, but disables the cap
+    "2000000",  # digits-only and >1 MiB - would silently raise the real cap
+    "9" * 40,  # too long to even pass through `[ -lt ]` without erroring
+])
+def test_34c2_an_out_of_range_cap_override_is_ignored(tmp_path, bogus_cap):
+    """`CREW_VERIFY_GATE_TEST_RULE_OUT_CAP` is test-only and undocumented
+    (see test_34c), but verify-gate.sh still validates it: the old check
+    only rejected empty or non-digit values, so `0` (no cap at all - the
+    unbounded read this whole mechanism exists to prevent) and any
+    digit string over 1 MiB (silently RAISING the real cap) both passed
+    through unclamped. Every value here must fall back to the real 1 MiB
+    default instead - proven by a rule that writes one byte more than
+    1 MiB: accepting `0` literally reads back nothing, accepting `2000000`
+    literally reads back the whole thing uncapped, and only the clamped
+    default reads back exactly 1048576 bytes.
+    """
+    vmap = {
+        "version": 1,
+        "rules": [{"paths": ["a.py"], "reach": "local", "run": [
+            "sh -c \"head -c " + str(_OVERSIZE_RULE_OUTPUT_BYTES)
+            + " /dev/zero | tr '\\\\0' 'Q'; exit 1\""
+        ]}],
+        "default": [], "unmapped": "ignore",
+    }
+    root = _repo(tmp_path, vmap)
+    (root / "a.py").write_text("x", encoding="utf-8")
+
+    env = dict(os.environ, CLAUDE_PROJECT_DIR=str(root),
+               CREW_VERIFY_GATE_TEST_RULE_OUT_CAP=bogus_cap)
+    result = crew_fixtures.run_gate(
+        [_BASH, _SH], input="{}", cwd=str(root), env=env,
+        capture_output=True, text=True, check=False, timeout=_GATE_TIMEOUT)
+    assert result.returncode != 0, (
+        "the fixture rule deliberately exits 1; the gate must fail too. "
+        + result.stderr
+    )
+    runs = re.findall(r"Q+", result.stderr)
+    longest_run = max((len(r) for r in runs), default=0)
+    assert longest_run == 1048576, (
+        f"CREW_VERIFY_GATE_TEST_RULE_OUT_CAP={bogus_cap!r} produced a "
+        f"longest run of {longest_run} 'Q's, not the real 1 MiB default - "
+        "an out-of-range override must be ignored, not honoured. "
+        f"stderr tail: {result.stderr[-500:]}"
     )
 
 
@@ -1664,6 +1743,16 @@ def test_34d_a_second_mktemp_failure_refuses_rather_than_wedges(tmp_path):
 
 
 @pytest.mark.skipif(_BASH is None, reason="needs bash")
+@pytest.mark.skipif(
+    os.name == "nt",
+    reason="orphan_pid here comes from bash's $! under the 'sh' flavour, "
+           "which on native Windows is an MSYS pid, not a Win32 pid -- "
+           "os.kill(pid, 0) there is not a liveness probe (CPython's "
+           "Windows os.kill opens the pid via TerminateProcess even for "
+           "signal 0) and can terminate an unrelated process that happens "
+           "to hold that Win32 pid. Skipped rather than probed unsafely; "
+           "see CLAUDE.md / review item 2.",
+)
 def test_34e_a_backgrounded_writer_is_killed_with_the_rule_not_orphaned(
         tmp_path):
     """A rule's own PASSING foreground command can background a writer and
@@ -1712,15 +1801,15 @@ def test_34e_a_backgrounded_writer_is_killed_with_the_rule_not_orphaned(
         orphan_pid = int(pidfile.read_text(encoding="utf-8").strip())
 
         # Give a killed-but-still-exiting process a moment, then confirm it
-        # is gone -- os.kill with signal 0 raises ProcessLookupError once
-        # the pid is reaped, and raises nothing (no signal sent) while it
-        # is still alive.
+        # is gone. `crew_fixtures.pid_alive` rather than a bare
+        # `os.kill(pid, 0)`: this orphan is reparented once its rule's `sh`
+        # exits, and on a host whose PID 1 does not reap orphans it would
+        # sit as a zombie -- still alive by `os.kill(pid, 0)`'s reckoning,
+        # forever -- even though the kill already landed.
         deadline = time.time() + 5
         alive = True
         while time.time() < deadline:
-            try:
-                os.kill(orphan_pid, 0)
-            except ProcessLookupError:
+            if not crew_fixtures.pid_alive(orphan_pid):
                 alive = False
                 break
             time.sleep(0.1)
@@ -1748,6 +1837,49 @@ def test_34e_a_backgrounded_writer_is_killed_with_the_rule_not_orphaned(
                 os.kill(stray_pid, _PORTABLE_SIGKILL)
             except (ValueError, ProcessLookupError, PermissionError, OSError):
                 pass
+
+
+@pytest.mark.skipif(_BASH is None, reason="needs bash")
+def test_34g_ordinary_rules_never_pay_the_grace_period_sleep(tmp_path):
+    """The 0.2s grace sleep between TERM and KILL (verify-gate.sh, the
+    block right after `wait "$RULE_PID"`) is only useful when something is
+    still in that rule's process group to wait out - an ordinary rule
+    (nothing backgrounded, or a backgrounded child that already exited
+    with its own foreground command, which is every rule in this fixture)
+    has an empty group the instant `wait` returns, and TERM/KILL against an
+    empty group are already no-ops. Charging the sleep anyway adds ~0.2s
+    PER RULE regardless - ~2s for the ten rules here, on every gate run.
+
+    Asserted via `bash -x` (xtrace) rather than a `sleep` shim on PATH or
+    wall-clock timing: a shim replacing `sleep` globally also intercepts
+    the UNRELATED `sleep` calls `crew_py_strict`'s own interpreter-probe
+    watchdog makes (`_common.sh`), which made every python candidate look
+    dead and the gate itself fail before reaching any rule -- discovered
+    while writing this test. xtrace prints each command AFTER expansion,
+    so the literal `sleep 0.2` argument in verify-gate.sh (the only such
+    literal in the file - confirmed by grep) appears verbatim in the trace
+    if and only if that line actually runs; wall-clock timing would also
+    work but is flaky under host load in a way a trace line is not.
+    """
+    vmap = {
+        "version": 1,
+        "rules": [{"paths": ["a.py"], "run": ["true"]} for _ in range(10)],
+        "default": [], "unmapped": "ignore",
+    }
+    root = _repo(tmp_path, vmap)
+    (root / "a.py").write_text("x", encoding="utf-8")
+
+    env = dict(os.environ, CLAUDE_PROJECT_DIR=str(root))
+    result = crew_fixtures.run_gate(
+        [_BASH, "-x", _SH], input="{}", cwd=str(root), env=env,
+        capture_output=True, text=True, check=False, timeout=_GATE_TIMEOUT,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "sleep 0.2" not in result.stderr, (
+        "the grace-period sleep ran for rules with nothing left in their "
+        "process group after TERM - it must be skipped, not charged "
+        "unconditionally to every rule. trace: " + result.stderr
+    )
 
 
 @pytest.mark.skipif(_BASH is None, reason="needs bash")

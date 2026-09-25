@@ -1611,8 +1611,20 @@ for v in ("ENV", "AWS_PROFILE", "AWS_DEFAULT_REGION", "KUBECONFIG", "TF_WORKSPAC
       # which has usually already exited by the time we get here, and does
       # nothing about a grandchild it backgrounded.
       kill -TERM -- "-$RULE_PID" 2>/dev/null
-      sleep 0.2
-      kill -KILL -- "-$RULE_PID" 2>/dev/null
+      # Only pay the grace period when TERM had something left to reach:
+      # an ordinary rule (nothing backgrounded, or a backgrounded child
+      # that already exited with its foreground command) has an empty
+      # group the instant `wait` above returns, so both `kill`s here are
+      # already no-ops against a group with no members left - `kill -0`
+      # on that same negative pid reports exactly that, and this skips
+      # the fixed 0.2s otherwise charged to every rule regardless. A rule
+      # that DOES leave something running (this suite's own `trap ''
+      # TERM` fixtures) still sees a member alive here and still gets the
+      # grace period before KILL.
+      if kill -0 -- "-$RULE_PID" 2>/dev/null; then
+        sleep 0.2
+        kill -KILL -- "-$RULE_PID" 2>/dev/null
+      fi
       exit "$RC"
     )
     RC=$?
@@ -1636,7 +1648,21 @@ for v in ("ENV", "AWS_PROFILE", "AWS_DEFAULT_REGION", "KUBECONFIG", "TF_WORKSPAC
     RULE_OUT_SIZE=$(stat -c%s "$RULE_OUT_FILE" 2>/dev/null || stat -f%z "$RULE_OUT_FILE" 2>/dev/null || echo 0)
     case "$RULE_OUT_SIZE" in ''|*[!0-9]*) RULE_OUT_SIZE=0 ;; esac
     RULE_OUT_CAP=${CREW_VERIFY_GATE_TEST_RULE_OUT_CAP:-1048576}
-    case "$RULE_OUT_CAP" in ''|*[!0-9]*) RULE_OUT_CAP=1048576 ;; esac
+    # Digits only, and (once digits are confirmed) actually in range: the
+    # override is test-only, but an out-of-range value here is not a
+    # hypothetical - 0 disables the cap entirely (every rule's full
+    # output, unbounded) and anything past 1 MiB defeats the reason this
+    # cap exists at all. The 7-`?` glob rejects an over-long digit string
+    # BEFORE the numeric compare below - `[ -lt ]` on a huge digit string
+    # can itself error ("integer expression expected") rather than compare
+    # cleanly, and any in-range value never needs more than 7 digits
+    # (1048576 itself is 7).
+    case "$RULE_OUT_CAP" in
+      ''|*[!0-9]*|???????*) RULE_OUT_CAP=1048576 ;;
+    esac
+    if [ "$RULE_OUT_CAP" -lt 1 ] || [ "$RULE_OUT_CAP" -gt 1048576 ]; then
+      RULE_OUT_CAP=1048576
+    fi
     if [ "$RULE_OUT_SIZE" -gt "$RULE_OUT_CAP" ]; then RULE_OUT_SIZE=$RULE_OUT_CAP; fi
     # `tail -c`, not `head -c`: what a failing rule needs downstream is its
     # LAST `tail -25` lines - the actual error, which for any rule producing
