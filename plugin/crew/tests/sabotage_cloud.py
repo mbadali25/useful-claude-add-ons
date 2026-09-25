@@ -275,3 +275,285 @@ CLOUD_GUARD_MUTATIONS = (
      '"AZURE_SUBSCRIPTION_ID",\n                   ',
      _T + "test_pinned_vars_are_one_list_in_all_three_places"),
 )
+
+# T-0005 (crew 1.0.36): the environment layer and the destroy rule. Each entry
+# names the case it must turn red, and every aimed case was built so that the
+# value the mutation collapses to would ALLOW -- a must-block whose collapsed
+# value also denies cannot go red. Each was run alone by hand first (target
+# copied aside, mutated, aimed test run, restored, compared with `cmp`), then
+# through this harness.
+GUARDS = os.path.join(SCRIPTS, "crew_guards.py")
+TFPLAN = os.path.join(SCRIPTS, "crew_tfplan.py")
+_E = "tests/test_cloud_guard_environments.py::"
+_EB = _E + "test_must_block_env_python"
+_EP = _E + "test_must_block_allow_policy_python"
+_EA = _E + "test_must_allow_env_python"
+
+CLOUD_GUARD_MUTATIONS += (
+    ("cloud guard env: every environment classifies nonProd", GUARD,
+     "    return ENV_NONPROD if _matches(value, globs) else ENV_PROD\n",
+     "    return ENV_NONPROD\n", _EB + "[prod-saved-plan]"),
+    ("cloud guard env: the destroy check is gone (saved-plan deletes)", GUARD,
+     '    if destroy != "no":\n        return "ask", (f"{head}, and this is',
+     '    if False:\n        return "ask", (f"{head}, and this is',
+     _EB + "[nonprod-plan-deletes]"),
+    ("cloud guard env: the destroy check is gone (terraform destroy)", GUARD,
+     '    if destroy != "no":\n        return "ask", (f"{head}, and this is',
+     '    if False:\n        return "ask", (f"{head}, and this is',
+     _EB + "[nonprod-destroy]"),
+    ("cloud guard env: a destroy under `allow` runs (pre-1.0.36)", GUARD,
+     '        if destroy in ("yes", "unknown"):\n',
+     "        if False:\n", _EP + "[allow-destroy]"),
+    ("cloud guard env: destroy unknown read as no under `allow`", GUARD,
+     '        if destroy in ("yes", "unknown"):\n',
+     '        if destroy in ("yes",):\n', _EP + "[allow-no-plan-apply]"),
+    ("cloud guard env: an unknown environment collapses to prod", GUARD,
+     '        return ENV_UNKNOWN, None, "; ".join(unknown)\n',
+     '        return ENV_PROD, None, "; ".join(unknown)\n',
+     _EB + "[unknown-no-signal]"),
+    ("cloud guard env: an unknown environment collapses to nonProd", GUARD,
+     '        return ENV_UNKNOWN, None, "; ".join(unknown)\n',
+     '        return ENV_NONPROD, None, "; ".join(unknown)\n',
+     _EB + "[unknown-variable]"),
+    ("cloud guard env: a missing workspace file reads as `default`", GUARD,
+     '    except FileNotFoundError:\n'
+     '        return "workspace file", None, (f"{path} does not exist',
+     '    except FileNotFoundError:\n'
+     '        return "workspace file", "default", (f"{path} does not exist',
+     _EB + "[unknown-no-signal]"),
+    ("cloud guard env: a cd no longer turns the file fallback off", GUARD,
+     '    if state.get("cd"):\n        return None, ("a cd/pushd',
+     '    if False:\n        return None, ("a cd/pushd', _EB + "[unknown-cd]"),
+    ("cloud guard env: conflicting signals resolve as nonProd", GUARD,
+     "    if len(classes) > 1:\n        return ENV_UNKNOWN, None,",
+     "    if len(classes) > 1:\n        return ENV_NONPROD, None,",
+     _EB + "[unknown-conflict]"),
+    ("cloud guard env: a missing sidecar reads as no deletes", GUARD,
+     '    except FileNotFoundError:\n'
+     '        return DESTROY_UNKNOWN, (f"no summary exists',
+     '    except FileNotFoundError:\n'
+     '        return DESTROY_NO, "", {}\n'
+     '        return DESTROY_UNKNOWN, (f"no summary exists',
+     _EB + "[nonprod-no-sidecar]"),
+    ("cloud guard env: a malformed sidecar reads as no deletes", GUARD,
+     "    problem = sidecar_problem(sidecar)\n    if problem:\n",
+     "    problem = sidecar_problem(sidecar)\n    if False:\n",
+     _EB + "[nonprod-malformed-sidecar]"),
+    ("cloud guard env: the sidecar is found without its sha256", GUARD,
+     '    sidecar_path = os.path.join(root, ".crew", "tfplan", digest + ".json")\n',
+     '    sidecar_path = os.path.join(root, ".crew", "tfplan", sorted(\n'
+     '        os.listdir(os.path.join(root, ".crew", "tfplan")))[0])\n',
+     _EB + "[nonprod-stale-sidecar]"),
+    ("cloud guard env: an apply with no saved plan destroys nothing", GUARD,
+     '    if not operands:\n        return DESTROY_UNKNOWN, ("no saved plan',
+     '    if not operands:\n        return DESTROY_NO, ("no saved plan',
+     _EB + "[nonprod-no-plan-apply]"),
+    ("cloud guard env: `apply -replace` is not a destroy", GUARD,
+     '    if "replace" in flags:\n', "    if False:\n",
+     _EB + "[nonprod-replace]"),
+    ("cloud guard env: `workspace delete` is not a destroy", GUARD,
+     '    if op == "ws-delete":\n        return DESTROY_YES,',
+     '    if op == "ws-delete":\n        return DESTROY_NO,',
+     _EB + "[nonprod-workspace-delete]"),
+    ("cloud guard env: `workspace` read-only again behind xargs", GUARD,
+     '                           "state", "test", "login", "logout"))\n',
+     '                           "state", "test", "login", "logout",\n'
+     '                           "workspace"))\n', _EB + "[prod-xargs]"),
+    ("cloud guard env: the environment layer loosens `block`", GUARD,
+     '    if out["policy"] == "block":\n        return "deny"',
+     '    if out["policy"] == "block-x":\n        return "deny"',
+     _EB + "[block-not-loosened]"),
+    ("cloud guard env: prodUnattended read from the repo alone", GUARD,
+     '    out["prodUnattended"] = crew_config.resolve_ratcheted(\n'
+     '        root, "environments.prodUnattended")["effective"] is True\n',
+     '    out["prodUnattended"] = crew_state.load_config(root).get(\n'
+     '        "environments", {}).get("prodUnattended") is True\n',
+     _EB + "[prod-repo-only-unattended]"),
+    ("crew_guards: the ratchet takes the WIDER layer (prodUnattended)", GUARDS,
+     "    return tiers[min(rank(repo_value), rank(global_value))]",
+     "    return tiers[max(rank(repo_value), rank(global_value))]",
+     "tests/test_crew_config.py::test_prod_unattended_ratchets"),
+    ("crew_guards: prodUnattended normalised by truthiness", GUARDS,
+     "    return value if isinstance(value, bool) else False\n",
+     "    return bool(value)\n", _EB + "[prod-unattended-string]"),
+    ("cloud guard env: a malformed environments block reads as empty", GUARD,
+     '            out = {"nonProd": [], "problem": problem}\n',
+     '            out = {"nonProd": [], "problem": ""}\n',
+     _EB + "[unknown-malformed-block]"),
+    ("cloud guard env: no payload cwd falls back to the project root", GUARD,
+     '    envs["cwd"] = cwd if isinstance(cwd, str) and cwd else None\n',
+     '    envs["cwd"] = cwd if isinstance(cwd, str) and cwd else root\n',
+     _EB + "[unknown-no-cwd]"),
+    ("cloud guard env: workspace creation judged with the layer off", GUARD,
+     '                and (op == "ws-delete" or engaged):\n',
+     '                and True:\n',
+     _E + "test_workspace_new_is_not_judged_until_environments_is_configured"),
+    ("cloud guard env: a malformed environments block leaves report as is",
+     GUARD,
+     '    if mode != "off" and crew_config.layer_state(\n'
+     '            repo_path, environments=True) == "corrupt":\n',
+     '    if False and crew_config.layer_state(\n'
+     '            repo_path, environments=True) == "corrupt":\n',
+     _E + "test_a_malformed_environments_block_forces_block_mode"),
+    ("crew_tfplan: a failed `show` is summarised as no deletes", TFPLAN,
+     "    if show.returncode != 0:\n"
+     '        return 2, f"`{binary} show -json {plan}` exited {show.returncode}"\n',
+     "    if show.returncode != 0:\n"
+     "        show.stdout = b'{\"resource_changes\": []}'\n",
+     "tests/test_crew_tfplan.py::test_show_failure_writes_nothing"),
+    # The must-allow side: a suite that allows nothing passes every
+    # must-block, so these prove the allows are real.
+    ("cloud guard env: the sidecar sha never matches", GUARD,
+     '    sidecar_path = os.path.join(root, ".crew", "tfplan", digest + ".json")\n',
+     '    sidecar_path = os.path.join(root, ".crew", "tfplan", digest + "x.json")\n',
+     _EA + "[nonprod-saved-plan]"),
+    ("cloud guard env: every `workspace new` read as a destroy", GUARD,
+     '    if op in ("ws-new", "ws-create"):\n        return DESTROY_NO, "", None\n',
+     '    if op in ("ws-new", "ws-create"):\n        return DESTROY_YES, "", None\n',
+     _EA + "[nonprod-workspace-new]"),
+)
+
+# T-0005 review round 1 (T-0005-Wajyct): three BLOCK and three FIX, each a
+# measured bypass. Every entry was run alone by hand first, then here.
+_R1 = _E + "test_round1_must_block_python"
+_CH = _E + "test_chdir_forms_mark_the_directory_unknown"
+_OP = _E + "test_an_environment_change_crew_cannot_read_is_unknown"
+_WB = _E + "test_wrapper_value_options_do_not_hide_the_command"
+_SP = _E + "test_a_special_file_is_unknown_not_a_hang"
+_TP = "tests/test_crew_tfplan.py::"
+
+CLOUD_GUARD_MUTATIONS += (
+    # BLOCK :1222 -- the plan rewritten in the same command.
+    ("cloud guard r1: a saved plan trusted beside other commands", GUARD,
+     '    if state.get("commands", 0) != 1 or state.get("writes"):\n',
+     '    if state.get("writes"):\n', _R1 + "[rewrite-plan-destroy]"),
+    ("cloud guard r1: an output redirect no longer distrusts the plan", GUARD,
+     '    if state.get("commands", 0) != 1 or state.get("writes"):\n',
+     '    if state.get("commands", 0) != 1:\n',
+     _R1 + "[rewrite-redirect-append]"),
+    ("cloud guard r1: a redirect-only command is dropped", GUARD,
+     "        return bool(self.words) or self.stdin is not None or self.writes\n",
+     "        return bool(self.words) or self.stdin is not None\n",
+     _R1 + "[rewrite-redirect-only]"),
+    # Red on the REASON: before the fix `>&file` left the file as a second
+    # operand, which was already refused as "not one literal path".
+    ("cloud guard r1: `>&file` read as an fd duplication", GUARD,
+     '                elif i == j and op == ">&":\n'
+     '                    state["redirect"] = ">"\n',
+     '                elif False:\n'
+     '                    state["redirect"] = ">"\n',
+     _R1 + "[rewrite-redirect-both]"),
+    ("cloud guard r1: a PowerShell redirect is not a write", GUARD,
+     '                if word.lower() != "$null":\n'
+     "                    cmd.writes = True\n",
+     '                if False:\n'
+     "                    cmd.writes = True\n",
+     _R1 + "[rewrite-ps-redirect]"),
+    # BLOCK :841 / :1514 -- directory changes the hook did not see.
+    ("cloud guard r1: env -C/-CDIR no longer moves the directory", GUARD,
+     '                elif name in ("C", "chdir"):\n',
+     '                elif name in ("chdir",):\n', _R1 + "[env-C-attached]"),
+    ("cloud guard r1: env --chdir=DIR no longer moves the directory", GUARD,
+     '                elif name in ("C", "chdir"):\n',
+     '                elif name in ("C",):\n', _R1 + "[env-chdir-equals]"),
+    ("cloud guard r1: sudo -D no longer moves the directory", GUARD,
+     '_SUDO_MOVES = frozenset(("D", "chdir", "R", "chroot", "i", "login"))\n',
+     '_SUDO_MOVES = frozenset(("chdir", "R", "chroot", "i", "login"))\n',
+     _R1 + "[sudo-D-attached]"),
+    ("cloud guard r1: sudo -R no longer moves the directory", GUARD,
+     '_SUDO_MOVES = frozenset(("D", "chdir", "R", "chroot", "i", "login"))\n',
+     '_SUDO_MOVES = frozenset(("D", "chdir", "chroot", "i", "login"))\n',
+     _R1 + "[sudo-chroot]"),
+    ("cloud guard r1: sudo -R/-T values read as the command", GUARD,
+     '_SUDO_SHORT = dict({letter: "req" for letter in "aCcDgpRrTtUu"}, h="opt")\n',
+     '_SUDO_SHORT = dict({letter: "req" for letter in "aCcDgprtUu"}, h="opt")\n',
+     _WB + "[sudo-timeout-value]"),
+    ("cloud guard r1: env -S'cmd' hides the command again", GUARD,
+     '                elif name in ("S", "split-string"):\n'
+     '                    split = (value or "").split()\n',
+     '                elif False:\n'
+     '                    split = (value or "").split()\n',
+     _WB + "[env-S-attached]"),
+    ("cloud guard r1: env -a VALUE read as the command", GUARD,
+     '_ENV_SHORT = {"C": "req", "S": "req", "u": "req", "a": "req",\n',
+     '_ENV_SHORT = {"C": "req", "S": "req", "u": "req",\n',
+     _WB + "[env-argv0]"),
+    ("cloud guard r1: wsl --cd / ~ no longer move the directory", GUARD,
+     '            if flag == "~" or flag.split("=", 1)[0] == "--cd":\n',
+     "            if False:\n", _CH + "[wsl-cd-infra-terraform-apply-p-tfplan]"),
+    ("cloud guard r1: pwsh -WorkingDirectory no longer moves it", GUARD,
+     "        if ctx is not None and _pwsh_moves(args):\n",
+     "        if False:\n",
+     _CH + "[powershell-wd-infra-c-terraform-apply-p-tfpl]"),
+    ("cloud guard r1: parallel --wd no longer moves the directory", GUARD,
+     '                        rest[0].split("=", 1)[0] in ("--wd", "--workdir"):\n',
+     '                        rest[0].split("=", 1)[0] in ():\n',
+     _CH + "[parallel-wd-infra-terraform-apply-p-tfplan]"),
+    ("cloud guard r1: .NET CurrentDirectory no longer moves it", GUARD,
+     '    if head in _CD_HEADS or "currentdirectory" in low:\n',
+     '    if head in _CD_HEADS:\n',
+     _CH + "[IO-Directory-SetCurrentDirectory-infra-terra]"),
+    ("cloud guard r1: `source` no longer moves the directory", GUARD,
+     '    if argv[0] in ("source", ".") or (shell == "powershell"\n',
+     '    if False or (shell == "powershell"\n',
+     _CH + "[source-env-sh-terraform-apply-p-tfplan]"),
+    # FIX crew_tfplan.py:103 -- the plan's own workspace, and the hook's
+    # reading of an environment it cannot see.
+    ("crew_tfplan r1: the workspace is not read from the plan", TFPLAN,
+     "    name = plan_workspace(data)\n", '    name = "staging"\n',
+     _TP + "test_the_workspace_comes_from_the_plan_not_the_selected_one"),
+    ("cloud guard r1: a summary naming no workspace is no signal", GUARD,
+     '                signals.append(("the saved plan\'s workspace", None,\n'
+     '                                "the plan summary names no workspace the "\n'
+     '                                "plan is bound to"))\n',
+     "                pass\n", _EB + "[sidecar-unbound]"),
+    ("cloud guard r1: an unreadable environment keeps TF_WORKSPACE", GUARD,
+     '    if state.get("opaque"):\n        return "TF_WORKSPACE", None,',
+     '    if False:\n        return "TF_WORKSPACE", None,',
+     # Not the `source` case: a sourced file also moves the directory, so
+     # the file fallback is off there anyway -- measured green.
+     _OP + "[export-cat-prod-env-terraform-apply-p-tfplan]"),
+    ("cloud guard r1: an `||` chain no longer makes it unknown", GUARD,
+     "    if cmd.or_next:\n        ctx[\"opaque\"] = True\n",
+     "    if False:\n        ctx[\"opaque\"] = True\n",
+     _OP + "[terraform-workspace-select-qa-true-terraform]"),
+    ("cloud guard r1: an env: provider write is read as nothing", GUARD,
+     '        w.lower().lstrip("${").startswith("env:") for w in argv)\n',
+     '        w.lower().lstrip("${").startswith("\\0") for w in argv)\n',
+     _OP + "[Set-Item-env-TF-WORKSPACE-production-terrafo]"),
+    ("cloud guard r1: SetEnvironmentVariable is read as nothing", GUARD,
+     '    if "setenvironmentvariable" in low:\n', "    if False:\n",
+     _OP + "[Environment-SetEnvironmentVariable-TF-WORKSP]"),
+    ("cloud guard r1: a dynamic export is read as nothing", GUARD,
+     '                    if ctx is not None and ("$" in word or "`" in word):\n',
+     "                    if False:\n",
+     _OP + "[export-cat-prod-env-terraform-apply-p-tfplan]"),
+    # FIX :1218 -- only regular files are opened.
+    ("cloud guard r1: a FIFO or device is opened as a plan", GUARD,
+     "    return stat.S_ISREG(mode)\n", "    return True\n",
+     # Not the FIFO case: the non-blocking open makes a FIFO read as empty
+     # (so unknown) even without the type check -- measured green. A device
+     # that never ends is what only the type check stops.
+     _SP + "[plan-dev-zero]"),
+    # FIX :1535 -- `workspace delete` in every armed state.
+    ("cloud guard r1: workspace delete judged only when engaged", GUARD,
+     '                and (op == "ws-delete" or engaged):\n',
+     "                and engaged:\n", _R1 + "[delete-block]"),
+    ("cloud guard r1: xargs workspace delete judged only when engaged",
+     GUARD,
+     '            if wsub in ("new", "select") and not (ctx or {}).get("engaged"):\n',
+     '            if not (ctx or {}).get("engaged"):\n',
+     _R1 + "[delete-xargs-allow]"),
+    # Neighbours: PowerShell's eval fed from the pipeline, and the other file
+    # the command can point the hook at (AZURE_CONFIG_DIR).
+    ("cloud guard r1: pipeline-fed iex no longer unknown", GUARD,
+     '            if ctx is not None and not payload.strip():\n',
+     "            if False:\n",
+     _OP + "[Get-Content-prod-ps1-iex-terraform-apply-p-t]"),
+    ("cloud guard r1: azureProfile.json opened whatever it is", GUARD,
+     "        data = json.loads(_read_small(path, _AZ_PROFILE_MAX_BYTES)\n"
+     '                          .decode("utf-8-sig"))\n',
+     '        with open(path, encoding="utf-8-sig") as handle:\n'
+     "            data = json.load(handle)\n",
+     _E + "test_a_special_azure_profile_is_unknown_not_a_hang[zero]"),
+)

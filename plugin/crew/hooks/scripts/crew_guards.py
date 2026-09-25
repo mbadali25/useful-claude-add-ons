@@ -237,6 +237,38 @@ PRODUCTION_DEFAULTS = {"databases": [], "hosts": []}
 # never allowed unattended.
 CLOUD_DEFAULTS = {"awsProfiles": [], "awsRegions": [], "azureSubscriptions": []}
 
+# Which target environments the cloud guard may let terraform write to with
+# nobody attending (T-0005). Two keys, two layering rules:
+#
+#   nonProd         REPO ONLY, for `production`'s reason: `staging` names one
+#                   workspace in one checkout. Globs, fnmatch, case-insensitive.
+#   prodUnattended  RATCHETS, and is true only when BOTH layers say the JSON
+#                   literal `true` -- see `normalise_prod_unattended`.
+#
+# At these defaults nothing is nonProd and production is never unattended, so
+# an upgraded repo decides every apply exactly as before.
+ENVIRONMENTS_DEFAULTS = {"nonProd": [], "prodUnattended": False}
+
+# Least to most permissive, like every tier tuple here: letting production be
+# written unattended is the capability, so `True` ranks above `False`.
+PROD_UNATTENDED_TIERS = (False, True)
+
+
+def normalise_prod_unattended(value):
+    """`value` as a bool, where only the JSON literal `true` is true.
+
+    `isinstance(value, bool)` rather than truthiness, for
+    `normalise_require_for_production`'s reason in the opposite direction:
+    here `True` is the WIDE value, so `"true"`, `1` and `null` must read as
+    `False` -- a value crew cannot read never grants unattended production.
+    """
+    return value if isinstance(value, bool) else False
+
+
+def prod_unattended_rank(value):
+    """`value`'s position in `PROD_UNATTENDED_TIERS`; higher is wider."""
+    return PROD_UNATTENDED_TIERS.index(normalise_prod_unattended(value))
+
 # Whether promoting to production needs an APPROVED change request for the sha
 # being promoted. `change.requireForProduction`, and it ratchets by the same
 # table as every key above -- with one thing worth stating plainly, because it
@@ -506,6 +538,13 @@ RATCHETED_KEYS["change.requireForProduction"] = (
     CHANGE_REQUIREMENTS,
     normalise_require_for_production,
     require_change_rank,
+)
+# T-0005. Registering it is again the whole cost: `min` means production is
+# unattended only when the repo AND the machine owner both said `true`.
+RATCHETED_KEYS["environments.prodUnattended"] = (
+    PROD_UNATTENDED_TIERS,
+    normalise_prod_unattended,
+    prod_unattended_rank,
 )
 
 

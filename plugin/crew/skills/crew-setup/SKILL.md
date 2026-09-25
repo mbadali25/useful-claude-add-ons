@@ -162,6 +162,7 @@ still writes only the repo file.
               "prodDatabase": "none", "prodServer": "none", "roleWrites": "off", "cloudGuard": "off" },
   "production": { "databases": [], "hosts": [] },
   "cloud": { "awsProfiles": [], "awsRegions": [], "azureSubscriptions": [] },
+  "environments": { "nonProd": [], "prodUnattended": false },
   "change": { "requester": null, "implementor": null, "requireForProduction": false,
               "sdpTemplate": "Change Management Request", "jiraIssueType": "Change", "category": null },
   "scope": { "mode": "off", "allowCliApproval": false }

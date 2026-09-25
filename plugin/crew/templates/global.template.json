@@ -106,6 +106,9 @@
     "roleWrites": "off",
     "cloudGuard": "off"
   },
+  "environments": {
+    "prodUnattended": false
+  },
   "change": {
     "requester": null,
     "implementor": null,

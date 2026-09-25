@@ -4,6 +4,69 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Changed — `crew` 1.0.36: environment-scoped terraform in the cloud guard (T-0005) — **BREAKING**
+
+- **BREAKING: a destroy is never applied unattended, `guards.terraformApply:
+  allow` included.** While `guards.cloudGuard` is armed, a destroy —
+  `terraform|tofu destroy`, `apply -destroy`, `apply -replace`, `workspace
+  delete`, a saved plan whose summary lists a delete, and any apply whose plan
+  crew cannot read (**including `terraform apply -auto-approve` with no saved
+  plan**, any terragrunt apply, and a plan with no, a stale or a malformed
+  summary) — now **asks** under `allow`, and is **denied** when nobody is
+  attending. Before 1.0.36 each of these ran without a word under `allow`.
+  Approve one command with the `.approved-guard-terraformApply-<hash>` marker
+  the refusal names (15 minutes, that command only), or summarise a saved plan
+  with `hooks/scripts/crew_tfplan.py summarize PLANFILE` and apply that plan.
+  Bumped `1.0.29 -> 1.0.36`.
+- **New `environments` block** (`environments.nonProd`, repo-only globs;
+  `environments.prodUnattended`, ratcheted, true only when **both** config
+  layers say the JSON literal `true`). Under `terraformApply: ask`, an apply of
+  a non-destroying saved plan and `workspace new` / `workspace select
+  -or-create` aimed at a `nonProd` target run unattended and are logged as
+  `env:nonProd:<name>`; production does too only under `prodUnattended` in
+  both layers, logged and said on screen. The environment is read from
+  `TF_WORKSPACE`, an earlier literal `workspace select|new`, the
+  `.terraform/environment` file under the payload's `cwd`, `-var
+  environment=` / `TF_VAR_environment`, and the plan summary — all of which
+  must agree. An environment crew cannot identify (no signal, a non-literal, a
+  conflict, a directory change in any spelling — `cd`, `env -C`/`--chdir=`,
+  `sudo -D`, `wsl --cd`, `pwsh -WorkingDirectory`/`-wd` and the rest — no
+  workspace file — never read as `default` — an environment change crew
+  cannot read such as `source`, `export $(...)`, a PowerShell `env:` write or
+  an `||` chain, or an unreadable block) is `unknown`, which nothing allows
+  unattended, `prodUnattended` included. A malformed block forces an armed
+  guard to `block` mode. The hook never runs terraform, and never opens a
+  plan, sidecar, workspace file or `azureProfile.json` that is not a regular
+  file (a FIFO or device reads as unknown instead of hanging the hook).
+- **A saved plan is trusted only when its apply is the only command.** The
+  hook hashes the plan before the command runs, so `terraform plan -out p &&
+  terraform apply p`, a `cp` onto the plan, a nested shell or an output
+  redirect beside the apply makes the destroy question unknown.
+- **`workspace delete` is a destroy in every armed state**, `environments`
+  configured or not. **Once `environments` is configured**, `terraform
+  workspace new|select -or-create` become findings under
+  `guards.terraformApply` — denied under `block`, and under `ask` denied
+  unattended for a production or unknown target. With `environments` at its
+  defaults they are not judged, as before.
+- **New `hooks/scripts/crew_tfplan.py summarize`** writes
+  `.crew/tfplan/<sha256 of the plan bytes>.json` (the workspace the plan file
+  is bound to, read from the plan itself and `null` when unreadable,
+  `environment` variable, every address whose actions include `delete`) via a temp file and
+  `os.replace`; it writes nothing when `show` fails or times out and never
+  creates `.crew/`. **New `crew_config.py --check`** warns when a `nonProd`
+  glob covers a `.crew/verify.json` environment with `requireHuman: true`.
+  `prodUnattended` does not stand down `promote-gate.sh`'s `requireHuman`.
+- Tests: `test_cloud_guard_environments.py` (30 must-block, 6 must-block under
+  `allow`, 12 must-allow, 4 attended-ask, the unchanged-at-defaults reruns,
+  the resolver and destroy unit tables, and review round 1's 37 must-block
+  reproductions with the chdir-form, wrapper-option, unreadable-environment
+  and special-file tables), `test_crew_tfplan.py` (including a real 1.16.3
+  plan bound to `production`), the `environments` config tests in
+  `test_crew_config.py`; 57 new mutations in `sabotage_cloud.py`, each red. `.crew/verify.json` gains a rule running the
+  three cloud-guard suites. Not in scope: `gh workflow run` deploys (T-0009)
+  and TFC/HCP workspaces or runs driven over HTTP (`curl`, `gh api`), which
+  the guard does not recognise.
+
 ### Added
 
 - **`crew` 1.0.37: the code maps, diagrams and code graph a ticket's changes

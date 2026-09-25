@@ -180,6 +180,10 @@
     "awsRegions": [],
     "azureSubscriptions": []
   },
+  "environments": {
+    "nonProd": [],
+    "prodUnattended": false
+  },
   "change": {
     "requester": null,
     "implementor": null,
