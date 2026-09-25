@@ -271,6 +271,65 @@ def test_gate_processes_kills_a_still_running_child_at_teardown():
         "gate_processes's finalizer did not kill the tracked child")
 
 
+@pytest.mark.skipif(os.name != "nt", reason="Windows job-object tree kill only")
+def test_kill_process_group_reaches_a_grandchild_after_the_direct_child_has_exited(
+        tmp_path):
+    """The bug this proves fixed: `taskkill /T` walks the LIVE process tree
+    from the direct child's own pid, so once that child has already exited
+    there is nothing left to walk from, and a grandchild it backgrounded
+    survives -- reproduced directly against the pre-fix mechanism (a bare
+    `taskkill /T /F /PID <parent>` on this exact shape errors "process not
+    found" and leaves the grandchild running).
+
+    The parent here backgrounds a grandchild (`DETACHED_PROCESS |
+    CREATE_NEW_PROCESS_GROUP`, writing its own pid to a file) and exits
+    almost immediately -- the shape `test_auto_cycle.py`'s SendWait sender
+    takes. Only a `kill_process_group` that can reach a job object assigned
+    at spawn time, rather than one that walks the tree from `proc.pid` at
+    kill time, can still reach that grandchild once the direct child is
+    long dead.
+    """
+    pidfile = tmp_path / "grandchild.pid"
+    parent_script = tmp_path / "parent.py"
+    parent_script.write_text(
+        "import subprocess, sys\n"
+        f"pidfile = {str(pidfile)!r}\n"
+        "g = subprocess.Popen(\n"
+        "    [sys.executable, '-c', 'import time; time.sleep(120)'],\n"
+        "    creationflags=subprocess.DETACHED_PROCESS "
+        "| subprocess.CREATE_NEW_PROCESS_GROUP)\n"
+        "with open(pidfile, 'w') as f:\n"
+        "    f.write(str(g.pid))\n"
+        "sys.exit(0)\n",
+        encoding="utf-8", newline="\n")
+
+    proc = crew_fixtures.popen_gate(
+        [sys.executable, str(parent_script)],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    proc.wait(timeout=10)
+    assert not _pid_alive(proc.pid), (
+        "sanity: the direct child must have already exited")
+
+    deadline = time.time() + 10
+    while not pidfile.exists() and time.time() < deadline:
+        time.sleep(0.1)
+    assert pidfile.exists(), "the grandchild never recorded its own pid"
+    gpid = int(pidfile.read_text(encoding="utf-8").strip())
+    assert _pid_alive(gpid), "sanity: the grandchild never started"
+
+    crew_fixtures.kill_process_group(proc)
+
+    deadline = time.time() + 10
+    while _pid_alive(gpid) and time.time() < deadline:
+        time.sleep(0.1)
+    assert not _pid_alive(gpid), (
+        "the grandchild survived kill_process_group after its direct "
+        "parent had already exited -- taskkill /T has nothing left to "
+        "walk once the parent is gone, which is exactly the gap the "
+        "job object closes")
+
+
 @pytest.mark.skipif(os.name == "nt", reason="POSIX process-group signalling only")
 def test_kill_process_group_uses_the_pgid_recorded_at_spawn_not_a_fresh_lookup(
         monkeypatch, tmp_path):

@@ -6,6 +6,48 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Changed
 
+- **`crew` 1.0.28: native-Windows round 3 from win-repo-2 — the sendkeys
+  child cannot reach a real `SendWait` from a test, and three
+  `verify-gate.ps1` read-path fixes.** Bumped `1.0.27 -> 1.0.28`. Seven of win-repo-2's
+  eight round-3 commits, cherry-picked with `-x`:
+  - **SAFETY (`crew-1.0-win-ps1-r3` e9b88060): `auto-clear.ps1`'s sendkeys
+    child declines when `GetForegroundWindow()` returns 0** (a locked or
+    headless session), not only when it differs from `$Hwnd`, and re-checks
+    `CREW_AUTOCLEAR_INHIBIT` as its last statement before `SendWait`, so the
+    real `-File` binding tests' `-Hwnd 0` placeholder can no longer reach a
+    genuine keystroke. New `test_sendkeys_structural_gate.py`.
+  - **`verify-gate.ps1` unsets `CREW_VERIFY_RULE_CMD`/`CREW_VERIFY_RULE_OUT`
+    before a rule's eval** (67f9c094), matching the `.sh` twin, so a rule
+    no longer sees its own source text and capture path in its environment.
+  - **The capped tail read seeks from the size snapshot, not the live end**
+    (6326a561), and **a 0-byte read takes its own branch** (c4e19d0f)
+    instead of `$buffer[0..-1]` picking two unread bytes. New
+    `test_verify_gate_rule_env_leak.py` and
+    `test_verify_gate_rule_out_tail_read.py`.
+  - **Test fixtures (`crew-1.0-win-procreap`)**: `popen_gate` assigns each
+    spawn to a Windows Job Object so `kill_process_group` reaches a
+    grandchild after its direct parent has exited (221c321d);
+    `test_auto_cycle.py`'s detached sender no longer leaks 30s past its
+    test (3a9e0ffd); pylint fixes (bd53920d).
+  - **Deferred: f7b70aae** (`crew-1.0-win-34dsh`, `shell_path` in the
+    PATH-shadow fixtures) is not shipped. win-repo-2's native run showed the
+    separator fix is correct but not sufficient — Git's `bin\bash.exe`
+    prepends `/usr/bin` to `PATH`, so the stub `mktemp` is never reached.
+    Tracked as T-0007.
+  - Two fixes to the shipped commits' own tests, from win-repo-2's native
+    run: the detached-sender test's `communicate()` budget is 20s, not 5s
+    (measured 2.0-4.5s isolated, timed out at 5s under load), and
+    `test_only_two_sendwait_call_sites_exist_and_both_are_inside_the_gated_child`
+    now scans every file `git ls-files` reports, as its docstring claimed,
+    instead of `auto-clear.ps1` alone — and fails if it scanned nothing.
+  - Review round 1 (crew:reviewer) hardened the gate's own tests, each
+    proven by the reviewer's mutation going red: the focus-decision and
+    inhibit-gate tests now execute the child's decision slice in pwsh
+    (keystroke-free) instead of matching its text; the sh env-leak test
+    derives the gate's own variable names from `verify-gate.sh` and
+    `_common.sh` instead of checking two it never sets; the SendWait scan
+    decodes UTF-16/UTF-32 BOMs and cp1252, and also matches quoted member
+    names, `::Send(` and `.SendKeys(`.
 - **`crew` 1.0.27: a spec written from the `/crew:spec` or `/crew:fix`
   template now passes `/crew:approve`.** Bumped `1.0.25 -> 1.0.27` (1.0.26 was
   never released). The approval check requires six headings named exactly Intent, Exclusions,
