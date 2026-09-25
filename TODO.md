@@ -4507,11 +4507,19 @@ points `CREW_CODEX_BIN` at whichever one `os.name` says will run.
   Windows at all. Windows-only, permanently, not a fixture bug to chase.
 - The whole `test_auto_clear.py`/`test_auto_cycle.py` `[sh]` family (`tmux is not on PATH`, `xdotool is not
   on PATH`, and the knock-on `"the detached sender's bash was never invoked"` /
-  `"could not be confirmed as the pane running this session"` failures downstream of that refusal):
-  windows-latest carries neither `tmux` nor `xdotool`, and these tests exercise the POSIX-only `tmux`/
-  `xdotool` auto-clear delivery methods specifically (the `ps1`/WindowsTerminal method is covered by its
-  own, separate cases). Environment gap on the runner image, not a code defect; not something to fix by
-  editing test assertions.
+  `"could not be confirmed as the pane running this session"` failures downstream of that refusal): these
+  tests exercise the `tmux`/`xdotool` auto-clear delivery methods (the `ps1`/WindowsTerminal method has
+  its own, separate cases). **Root cause NOT confirmed here, flagged rather than guessed at**: the stub
+  mechanism these tests use (`test_auto_clear.py:_stub` -> `crew_fixtures.write_shim`) already writes a
+  `.cmd` twin specifically so a native Windows python can find it via `shutil.which`, so a naive
+  "the stub has no Windows form" explanation (the shape of every OTHER fixture bug fixed in this pass)
+  does not fit here without reading further - either windows-latest genuinely has neither tool on PATH
+  (plausible, not checked against the runner image), or `auto-clear.sh`'s own tmux/xdotool
+  availability check does not accept a `.cmd` shim the way `crew_py_strict`/`vault-guard.sh`/
+  `role-write-guard.sh` were each hardened to accept one (in which case this is `auto-clear.sh`, not a
+  test fixture, and NOT owned by the excluded-file list). Left uninvestigated under this ticket's time
+  budget rather than mischaracterised either way; win-repo-2 should confirm on a real runner before
+  assuming which.
 - `test_auto_cycle.py::test_in_scope_decides_the_scope_matrix_with_no_subprocess_on_every_os` - a NEW
   instance of the already-filed "Windows burn-in family E" entry above (hardcoded `windows=False` fed to
   `crew_autocycle.in_scope`, contradicting the real host), not previously named in that entry's five-test
