@@ -20,6 +20,15 @@ value) and once-per-crossing (the marker check, then a noclobber claim). The
 single-guard .ps1 twin carries the stop_hook_active mutation, and the
 once-per-crossing mutations aim at the re-arm condition instead -- re-arming
 on a reading that never dropped is the way that rule actually breaks.
+
+A target test can be `skipif`'d off this host entirely (needs pwsh, needs
+Windows) -- pytest exits 0 for an all-skipped run, the same code it uses for
+an all-PASSED run, so a bare exit-code check cannot tell "the test never ran"
+from "the test ran and the mutation slipped past it". `run_test` reads the
+run's own `--junitxml` report to tell the two apart: a target whose only
+collected testcase carries a `<skipped>` element is reported as SKIPPED and
+never fails the run; a target that genuinely PASSED under mutation still
+fails it (STILL GREEN).
 """
 import argparse
 import filecmp
@@ -28,6 +37,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import xml.etree.ElementTree as ET
 
 CREW = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SCRIPTS = os.path.join(CREW, "hooks", "scripts")
@@ -440,11 +450,13 @@ AUTOCYCLE_MUTATIONS = (
     # keeps this mutation aimed at the copy the named test actually reads.
     ("Get-CrewSendKeysTabDecision sends when UIA is unavailable", CLEAR_PS1,
      "# states for a probe that can fail).\n"
-     "function Get-CrewSendKeysTabDecision([bool]$UiaAvailable, $TabCount, [bool]$SelectedMatches, $TitleMatches = $null) {\n"
+     "function Get-CrewSendKeysTabDecision([bool]$UiaAvailable, $TabCount, "
+     "[bool]$SelectedMatches, $TitleMatches = $null) {\n"
      "  if (-not $UiaAvailable) {\n"
      "    return @{ Decision = \"decline\"; Reason = (\n",
      "# states for a probe that can fail).\n"
-     "function Get-CrewSendKeysTabDecision([bool]$UiaAvailable, $TabCount, [bool]$SelectedMatches, $TitleMatches = $null) {\n"
+     "function Get-CrewSendKeysTabDecision([bool]$UiaAvailable, $TabCount, "
+     "[bool]$SelectedMatches, $TitleMatches = $null) {\n"
      "  if (-not $UiaAvailable) {\n"
      "    return @{ Decision = \"send\"; Reason = (\n",
      "tests/test_auto_clear_review_fixes.py::"
@@ -464,6 +476,22 @@ AUTOCYCLE_MUTATIONS = (
      "  if (-not $IsWindowsTerminal) { return @{ Decision = \"send\"; Reason = \"\" } }\n",
      "tests/test_auto_clear_review_fixes.py::"
      "test_child_rechecks_tab_safety_after_the_delay_before_typing"),
+    # --- the test above is skipif'd off any host that is not Windows AND
+    # does not have pwsh (System.Windows.Forms/UIAutomation are Windows-only),
+    # so it never runs on Linux CI at all. This is the same find/replace
+    # against the same target, aimed at a structural test that reads the
+    # heredoc SOURCE rather than executing it -- no pwsh, no Windows Forms,
+    # runs everywhere -- so the mutation still has a Linux-runnable target
+    # that goes RED for it.
+    ("Get-CrewChildTabRecheck skips the post-delay tab check again "
+     "(Linux structural)", CLEAR_PS1,
+     "function Get-CrewChildTabRecheck([IntPtr]$Hwnd, [string]$Title, [bool]$IsWindowsTerminal) {\n"
+     "  if (-not $IsWindowsTerminal) { return @{ Decision = \"send\"; Reason = \"\" } }\n",
+     "function Get-CrewChildTabRecheck([IntPtr]$Hwnd, [string]$Title, [bool]$IsWindowsTerminal) {\n"
+     "  return @{ Decision = \"send\"; Reason = \"\" }\n"
+     "  if (-not $IsWindowsTerminal) { return @{ Decision = \"send\"; Reason = \"\" } }\n",
+     "tests/test_auto_clear_child_tab_recheck_structure.py::"
+     "test_get_crew_child_tab_recheck_cannot_short_circuit_to_send"),
     # --- Item 1 (crew-1.0-wd-sendkeys): the value handed to the detached
     # sendkeys child must be the CONFIGURED delay, not a hard-coded 3 ------
     ("Get-CrewSendKeysChildArgs hardcodes the delay again", CLEAR_PS1,
@@ -504,14 +532,50 @@ AUTOCYCLE_MUTATIONS = (
 )
 
 
+def _junit_outcome(junit_path):
+    """Read back a `--junitxml` report and say whether the one testcase it
+    collected was SKIPPED, rather than passed or failed.
+
+    Returns `(True, reason)` when the report holds exactly one testcase and it
+    carries a `<skipped>` child; `(False, None)` for every other shape --
+    passed, failed, errored, no report at all (the run crashed before writing
+    one), or zero/more than one testcase. `False` is the safe default: it
+    falls through to the plain exit-code verdict below, which is the
+    behaviour this function is not changing for anything but a genuine skip.
+    """
+    try:
+        root = ET.parse(junit_path).getroot()
+    except (ET.ParseError, OSError):
+        return False, None
+    cases = list(root.iter("testcase"))
+    if len(cases) != 1:
+        return False, None
+    skipped = cases[0].find("skipped")
+    if skipped is None:
+        return False, None
+    reason = (skipped.get("message") or skipped.text or "").strip()
+    return True, reason
+
+
 def run_test(target):
     env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1")
-    # --run-slow: a target naming a bash/pwsh case is deselected by default
-    # (conftest.py) and would exit 5, not 1, however the mutation behaved.
-    done = subprocess.run([sys.executable, "-m", "pytest", target, "-q", "--no-header", "-x",
-                           "-p", "no:cacheprovider", "--run-slow"],
-                          cwd=CREW, capture_output=True, text=True, check=False, env=env)
-    return done.returncode
+    fd, junit_path = tempfile.mkstemp(prefix="sabotage-autocycle-junit-", suffix=".xml")
+    os.close(fd)
+    try:
+        # --run-slow: a target naming a bash/pwsh case is deselected by
+        # default (conftest.py) and would exit 5, not 1, however the
+        # mutation behaved.
+        done = subprocess.run(
+            [sys.executable, "-m", "pytest", target, "-q", "--no-header", "-x",
+             "-p", "no:cacheprovider", "--run-slow", f"--junitxml={junit_path}"],
+            cwd=CREW, capture_output=True, text=True, check=False, env=env)
+        skipped, reason = _junit_outcome(junit_path)
+    finally:
+        try:
+            os.remove(junit_path)
+        except OSError:
+            pass
+    return done.returncode, skipped, reason
 
 
 def main(argv=None):
@@ -534,14 +598,18 @@ def main(argv=None):
         try:
             with open(target, "w", encoding="utf-8", newline="") as handle:
                 handle.write(mutated)
-            code = run_test(test)
+            code, skipped, reason = run_test(test)
         finally:
             shutil.copyfile(copy, target)
         if not filecmp.cmp(copy, target, shallow=False):
             print(f"RESTORE FAILED for {target} - the scratch copy is {copy}")
             return 3
-        verdict = {0: "STILL GREEN - VACUOUS", 1: "RED (good)"}.get(code, f"RED BUT UNPROVEN - exit {code}")
-        ok = ok and code == 1
+        if skipped:
+            verdict = f"SKIPPED (not runnable on this host: {reason})"
+        else:
+            verdict = {0: "STILL GREEN - VACUOUS", 1: "RED (good)"}.get(
+                code, f"RED BUT UNPROVEN - exit {code}")
+            ok = ok and code == 1
         print(f"{verdict:32} {label}")
     print("\nAUTOCYCLE SABOTAGE:", "PASS" if ok else "FAIL")
     return 0 if ok else 1
