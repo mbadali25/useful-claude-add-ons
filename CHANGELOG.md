@@ -6,6 +6,44 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Changed
 
+- **`crew` 1.0.15: two win-repo-2 branches merged - the multi-tab
+  sendkeys decline is now unconditional, and the dry-run notify wording is
+  exact.** Bumped `1.0.14 -> 1.0.15` after both merges below.
+  - **`auto-clear.ps1`'s Windows Terminal tab-safety check no longer sends
+    on a "proven" multi-tab selection.** The previous rule sent when a
+    tab's title both matched `windowTitle` and read as selected; a tab
+    name is shell-set text with no tab-to-pid mapping, so that was still a
+    guess about which tab is this session's. Two or more tabs now always
+    declines, whatever `selectedMatches` says - only a window with exactly
+    one tab (which has that tab selected by definition) can send. The
+    decline reason now names which sub-case applied ("a tab's title
+    matched windowTitle and read as selected" vs. "no tab's title was both
+    matched and selected") so a log reader does not have to re-derive it
+    from the UIA probe. `CONFIG.md`'s `windowTitle` section gained a
+    measured note: Windows Terminal hosts every WINDOW (not just every
+    tab) of one desktop in a single process, so `windowTitle` is
+    effectively mandatory as soon as a second Windows Terminal window is
+    open anywhere on the desktop - not a rare fallback. Closed the
+    `title-one-ps1` `xfail(strict=True)` left by the reverted
+    `CREW_AUTOCLEAR_OWNER_STUB` seam: a new `_real_foreign_pid` pytest
+    fixture spawns a real, short-lived, non-ancestor process so the
+    owner-safety `Get-Process` call in that one case resolves a real pid
+    instead of a fabricated one that never backed a process - no
+    production seam reintroduced.
+  - **Test-only: the dry-run notify-delay test was vacuous.**
+    `test_the_dry_run_plan_reports_the_configured_command_and_delay` forced
+    the `.ps1` flavour onto `sendkeys`, which the test's own window stub
+    (pid 999999) actually declines - so the assertion it built never ran
+    against emitted output at all. It now reads the resolved method back
+    out of the plan and asserts per method (sendkeys/tmux -> the configured
+    9s; notify -> the exact "delay: n/a (notify sends no keystroke)" text,
+    already byte-identical between `auto-clear.ps1` and `auto-clear.sh`),
+    and fails loudly if no plan is emitted rather than passing on an empty
+    capture.
+    `test_the_notify_plan_says_the_delay_is_not_applicable`'s assertion is
+    tightened from an "n/a" substring to the exact wording.
+  - Both branches: `win-repo-2`, off `85dfa4a7`.
+
 - **`crew` 1.0.13: a backgrounded rule can no longer wedge disk space, a
   full-branch merge of the 1.0.12 bump, and seven review fixes.**
   Reconciled the two independent `1.0.12` bump commits (this branch's
