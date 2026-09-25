@@ -1563,6 +1563,26 @@ _crew_gate_pgid_of() {
   fi
   printf '%s' "$_crew_pgid"
 }
+# BLOCK finding: a bare `p`-mode id names the RULE SUBSHELL itself, not a
+# verified process group - unlike the `g` lines, signalling it is a direct
+# `kill` on a single pid number, never negated. That subshell can already
+# have exited (and been reaped by the rule loop's own `wait`, below) by the
+# time this trap fires, and once reaped its pid is free for the OS to hand
+# to a brand-new, entirely unrelated process. A stale sidecar plus that
+# reuse means this trap would TERM/KILL a process this gate never started.
+# Proof of ownership before any bare-pid signal: the id's OWN ppid, read via
+# `ps` (portable across Linux/macOS/Git Bash, unlike a `/proc` read which
+# assumes Linux), must equal this shell's own `$$` - every `p`-mode id is a
+# direct child of this same top-level script, forked with a bare `&`, never
+# a grandchild. Returns "unknown" (never a guess) when `ps` itself is
+# unavailable or the pid is already gone, and the caller skips signalling
+# rather than trust a check that could not run.
+_crew_gate_pid_is_our_child() {
+  local _crew_pid="$1" _crew_ppid
+  _crew_ppid=$(ps -o ppid= -p "$_crew_pid" 2>/dev/null | tr -d '[:space:]')
+  case "$_crew_ppid" in ''|*[!0-9]*) return 1 ;; esac
+  [ "$_crew_ppid" = "$$" ]
+}
 _crew_gate_cleanup_rule_pgid() {
   [ -n "$_CREW_GATE_RULE_PGID_FILE" ] || return 0
   [ -f "$_CREW_GATE_RULE_PGID_FILE" ] || return 0
@@ -1571,7 +1591,7 @@ _crew_gate_cleanup_rule_pgid() {
     case "$_crew_id" in ''|*[!0-9]*) continue ;; esac
     case "$_crew_mode" in
       g) kill -TERM -- "-$_crew_id" 2>/dev/null ;;
-      p) kill -TERM -- "$_crew_id" 2>/dev/null ;;
+      p) _crew_gate_pid_is_our_child "$_crew_id" && kill -TERM -- "$_crew_id" 2>/dev/null ;;
     esac
   done < "$_CREW_GATE_RULE_PGID_FILE"
   # Same "only pay the grace sleep when something is actually left" rule
@@ -1581,7 +1601,7 @@ _crew_gate_cleanup_rule_pgid() {
     case "$_crew_id" in ''|*[!0-9]*) continue ;; esac
     case "$_crew_mode" in
       g) kill -0 -- "-$_crew_id" 2>/dev/null && _crew_pg_any_alive=1 ;;
-      p) kill -0 -- "$_crew_id" 2>/dev/null && _crew_pg_any_alive=1 ;;
+      p) _crew_gate_pid_is_our_child "$_crew_id" && kill -0 -- "$_crew_id" 2>/dev/null && _crew_pg_any_alive=1 ;;
     esac
   done < "$_CREW_GATE_RULE_PGID_FILE"
   if [ "$_crew_pg_any_alive" -eq 1 ]; then
@@ -1590,7 +1610,7 @@ _crew_gate_cleanup_rule_pgid() {
       case "$_crew_id" in ''|*[!0-9]*) continue ;; esac
       case "$_crew_mode" in
         g) kill -KILL -- "-$_crew_id" 2>/dev/null ;;
-        p) kill -KILL -- "$_crew_id" 2>/dev/null ;;
+        p) _crew_gate_pid_is_our_child "$_crew_id" && kill -KILL -- "$_crew_id" 2>/dev/null ;;
       esac
     done < "$_CREW_GATE_RULE_PGID_FILE"
   fi
@@ -1819,11 +1839,21 @@ for v in ("ENV", "AWS_PROFILE", "AWS_DEFAULT_REGION", "KUBECONFIG", "TF_WORKSPAC
     # it could have made for itself or for RULE_PID (see the comment
     # beside `set -m` above) - nothing is left for
     # `_crew_gate_cleanup_rule_pgid` to chase for THIS rule, and a LATER
-    # signal must not try. Cleared before the (potentially slower) output
-    # read below, not after: a signal arriving during that read has
-    # nothing to do with this already-finished rule either.
-    : > "$_CREW_GATE_RULE_PGID_FILE" 2>/dev/null
+    # signal must not try. The GUARD VARIABLE is cleared first, as the very
+    # next statement after RC is captured (nothing may go between them
+    # besides that capture itself, or a signal landing in the gap would see
+    # a not-yet-cleared guard) - the trap checks this variable before ever
+    # reading the file, so clearing it is what actually closes the window,
+    # not the file truncation that follows. Truncating the file first and
+    # the variable second (the previous order) left exactly that window
+    # open: the subshell's own pid had already been reaped by the `wait`
+    # above, freeing it for OS reuse, while the sidecar still named it and
+    # the trap's own check still passed. See `_crew_gate_pid_is_our_child`
+    # above for the second half of this fix - the proof required before a
+    # `p`-mode id already past this point is ever signalled at all.
+    _CREW_GATE_RULE_PGID_DONE_FILE="$_CREW_GATE_RULE_PGID_FILE"
     _CREW_GATE_RULE_PGID_FILE=""
+    : > "$_CREW_GATE_RULE_PGID_DONE_FILE" 2>/dev/null
     # Snapshot the size the moment the rule's OWN process exits, then read
     # exactly that many bytes -- never the whole file as it stands when
     # `cat` gets around to it. A backgrounded grandchild that keeps writing
