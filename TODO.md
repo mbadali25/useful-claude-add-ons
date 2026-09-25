@@ -4523,6 +4523,28 @@ points `CREW_CODEX_BIN` at whichever one `os.name` says will run.
   test fixture, and NOT owned by the excluded-file list). Left uninvestigated under this ticket's time
   budget rather than mischaracterised either way; win-repo-2 should confirm on a real runner before
   assuming which.
+
+  **Narrowed (runs 36106846833/36106851305), classified FIXTURE, still not confirmed on a real Windows
+  host**: `test_config_values_survive_a_crlf_writing_python[sh]` (both `--session`-flavoured `tmux`
+  cases) and `test_a_window_title_containing_spaces_survives_config_parsing[sh]` both fail with
+  completely empty stdout, and the check that decides `tmux`/`xdotool` availability is NOT in
+  `auto-clear.sh` at all - it is `crew_autocycle.py:497`/`:510`'s bare `shutil.which("tmux"/"xdotool")`,
+  run inside the native-Windows python child `auto-clear.sh:103` execs, not by bash. So "auto-clear.sh's
+  own check doesn't accept a `.cmd` shim" (this entry's second guess above) does not apply - there is no
+  separate check to harden. The remaining candidate is the PATH itself: `crew_fixtures.shell_path("sh",
+  [bindir])` builds a POSIX (`/c/...`), colon-joined PATH for bash to search, correctly and provably (bash
+  itself resolves stubs built this way elsewhere in this same file without issue) - but `shutil.which` in
+  this case runs in a python.exe CHILD process bash execs, which needs PATH back in native `;`-joined,
+  backslash form to search it at all. Whether Git Bash's process-exec boundary reconverts a POSIX PATH
+  back to native form for that child is exactly the open question this entry could not settle from a
+  Linux sandbox; `test_a_method_that_cannot_verify_its_target_refuses_without_a_title[sh]` failing in the
+  SAME two runs with the literal stderr `"method xdotool but xdotool is not on PATH"` - despite building
+  its stub through the identical, already-correct `shell_path`/`write_shim` pair - corroborates that the
+  shim is not reaching that child on this runner image, but does not distinguish "PATH round-trips
+  wrong" from "the runner image lacks the tool" without a real Windows host to test against. Both named
+  tests reproduce (pass) cleanly on Linux, which is consistent with a Windows-only PATH-propagation gap
+  and inconsistent with either test asserting a live product regression in the tab-parsing or CRLF
+  handling each claims to cover.
 - `test_auto_cycle.py::test_in_scope_decides_the_scope_matrix_with_no_subprocess_on_every_os` - a NEW
   instance of the already-filed "Windows burn-in family E" entry above (hardcoded `windows=False` fed to
   `crew_autocycle.in_scope`, contradicting the real host), not previously named in that entry's five-test
@@ -4536,14 +4558,23 @@ points `CREW_CODEX_BIN` at whichever one `os.name` says will run.
   which cannot resolve it. Not re-filed.
 - `test_verify_gate_stop_gate_record.py::test_34b_a_backgrounded_grandchild_holding_stdout_does_not_wedge_the_gate[ps1]` -
   already-known PRODUCT (verify-gate.ps1 B3), win-repo-2's, `.ps1`, not touched here.
-- `test_verify_gate_stop_gate_record.py::test_34d_a_second_mktemp_failure_refuses_rather_than_wedges` and
-  `::test_run_gate_kills_the_whole_group_on_timeout_not_just_the_direct_child` - both live in files this
-  ticket was told not to edit (`test_verify_gate_stop_gate_record.py`, and the latter exercises
-  `crew_fixtures.run_gate`/`kill_process_group`). Not investigated past reading the failure text; the
-  second one's own assertion message contains a literal un-interpolated `{elapsed:.1f}s` (missing an `f`
-  prefix), which is itself a small test bug in a file this ticket cannot touch. Reported for win-repo-2 to
-  triage on a real Windows host - both may be real product gaps in `verify-gate.sh`/`crew_fixtures.py`'s
-  Windows process-group handling, not confirmed either way here.
+- `test_verify_gate_stop_gate_record.py::test_34d_a_second_mktemp_failure_refuses_rather_than_wedges` -
+  **root cause now confirmed FIXTURE, not product** (runs 36106846833/36106851305). The test shadows
+  `mktemp` on PATH with a counting stub by building its own env as
+  `PATH=str(py3_dir) + os.pathsep + str(stub_dir) + os.pathsep + os.environ.get("PATH", "")` -
+  `os.pathsep` is `;` on Windows, and this is the ONLY PATH-shimming construction in this file (or in
+  `test_auto_clear.py`) that does not route through `crew_fixtures.shell_path("sh", [...])`, the
+  POSIX-converting helper every other Windows-covering test in this suite uses for exactly this reason.
+  Reproduced directly on Linux: `bash -c 'PATH="/a;/b" command -v x'` never finds a stub in either `/a`
+  or `/b`, because bash's own PATH search always splits on `:`, never `;`, regardless of host OS - a
+  raw semicolon-joined PATH is one bogus directory to it. CI corroborates: the gate ran to completion in
+  1s with `env pinned` and the rule output logged normally, as if every `mktemp` call succeeded - not
+  the named refusal (`cannot create an output-capture file`) the sabotage is supposed to force. The
+  product code this test targets (`verify-gate.sh:1600-1703`, the TMPDIR-then-`.crew/`-fallback-then-
+  refuse sequence) matches its own docstring's description exactly, so there is no source-level gap to
+  fix - only the test's own PATH construction. `test_run_gate_kills_the_whole_group_on_timeout_not_just_the_direct_child`
+  was not re-investigated this pass (unrelated mechanism, no new evidence gathered) and remains as filed
+  above - its assertion message's missing `f` prefix is still a live, separate test bug in the same file.
 
 ## verify-gate: own and reap each rule's descendants (job object / cgroup / process-group with a verifiable owner) - descoped from 1.0 after 5 review rounds; see CHANGELOG 1.0.21
 
