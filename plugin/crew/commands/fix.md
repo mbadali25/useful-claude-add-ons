@@ -43,7 +43,7 @@ none - light path
 ## Unknowns
 none - light path
 ## Touch
-- globs, from crew:explorer if not obvious
+- `path/or/glob/**` - one per bullet, from crew:explorer if not obvious
 ## Acceptance checks
 - [ ] the existing verify.json rule this maps to
 ```
@@ -54,8 +54,11 @@ exclude or leave unknown. They are written, not omitted, because
 `/crew:approve` validates all six headings (`crew_ticket.py` `SECTIONS`) and
 refuses a spec missing or leaving empty any one of them. Each heading goes on
 its own line - `## Intent      one sentence` on one line is read as a heading
-named `Intent      one sentence`, not as `Intent`. If `crew:explorer` or
-`/crew:debug` surfaced a landmine, put it in Touch's line as a comment.
+named `Intent      one sentence`, not as `Intent`. Touch takes one path or
+glob per bullet. If `crew:explorer` or `/crew:debug` surfaced a landmine, add
+it after the path on that bullet, keeping the path in backticks
+(`` - `src/x.py` landmine: ... ``) - an unquoted path followed by a note is
+refused as "not one path".
 
 ## 3. Plan — one step
 
@@ -84,5 +87,5 @@ fallback still applies if Codex is unreachable, announced the same way
 short path. A fix that skipped its own gate is not a fix, it is an edit.
 
 If at any point the change grows past "one subsystem, known cause, no new
-behaviour", stop, say so, and hand off to `/crew:spec <id>` to fill in the
-sections this path omitted before continuing.
+behaviour", stop, say so, and hand off to `/crew:spec <id>` to replace the
+`none - light path` sections with real content before continuing.

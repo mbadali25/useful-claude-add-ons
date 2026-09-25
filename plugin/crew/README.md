@@ -2142,7 +2142,7 @@ CONFIG.md §17 has the table and the reasoning.
 | `/crew:ticket` | Removed in 1.0 — a stub that says to use `/crew:brainstorm` then `/crew:spec` |
 | `/crew:work` | Removed in 1.0 — a stub that says to use `/crew:implement` |
 | `/crew:brainstorm <what needs doing>` | crew 1.0 lifecycle: brainstorm a request into an approved direction, before it becomes a spec |
-| `/crew:spec <id>` | Fill the ticket contract — Intent, Exclusions, Evidence, Unknowns, Touch, Acceptance |
+| `/crew:spec <id>` | Fill the ticket contract — Intent, Exclusions, Evidence, Unknowns, Touch, Acceptance checks |
 | `/crew:approve <id>` | **Typed by you only** (`disable-model-invocation`): the UserPromptSubmit hook records the plan approval from your own prompt — see "Scope and approval" |
 | `/crew:implement <id>` | Implement an approved plan, then tests, docs and review; refuses without a current approval |
 | `/crew:done <id>` | Close a ticket: accepted review receipt, clean verify gate and passing completion audit, or no close |

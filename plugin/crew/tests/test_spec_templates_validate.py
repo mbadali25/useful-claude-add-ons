@@ -48,3 +48,13 @@ def test_no_required_section_is_empty_in_the_template(command):
     empty = [name for name in crew_ticket.SECTIONS if not found.get(name.casefold())]
 
     assert not empty, f"commands/{command}'s spec template leaves ## {empty} empty"
+
+
+@pytest.mark.parametrize("command", ["spec.md", "fix.md"])
+def test_the_template_touch_section_parses_as_crew_approve_reads_it(command):
+    entries, problems = crew_ticket.parse_touch(_template(command))
+
+    assert entries and not problems, (
+        f"commands/{command}'s ## Touch fails crew_ticket.parse_touch (part of "
+        f"/crew:approve's validate): entries={entries} problems={problems}"
+    )
