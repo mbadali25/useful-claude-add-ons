@@ -4705,3 +4705,10 @@ non-Windows host, the same bug this ticket fixed in `sabotage_autocycle.py`'s ow
 `AUTOCYCLE_MUTATIONS` tuple is imported the other way), so the ticket's "if sabotage_autocycle uses it"
 condition for touching `sabotage.py` was not met, and running the full `sabotage.py` suite was outside this
 ticket's required checks (only `sabotage_autocycle.py` was named). Left open for whoever owns `sabotage.py`.
+
+## crew 1.0.x: sabotage/structural coverage gaps found reviewing crew 1.0.25 (filed 2026-09-25, PM)
+
+From the Codex delta review of 3299d386..b780563d (gpt-5.6-sol, high, read-only). Test coverage only; the product code these tests guard is correct at 1.0.25.
+- `plugin/crew/tests/sabotage_autocycle.py:~607` - by design (1.0.25), a mutation whose target test SKIPS on this host is reported SKIPPED and does not fail the run. Cost: on Linux the Windows-only child-tab-recheck mutation is unproven while the suite still prints PASS. Make the aggregate line say how many mutations were SKIPPED (e.g. "PASS (1 skipped: unproven on this host)") so an unproven mutation is visible, never silent.
+- `plugin/crew/tests/test_auto_clear_child_tab_recheck_structure.py:~57` - the Linux structural twin only asserts the IsWindowsTerminal guard is the first statement; an unconditional `return @{ Decision = 'send'; Reason = '' }` placed right AFTER the guard stays green. Assert that the only `Decision = 'send'` return in Get-CrewChildTabRecheck is the tab-count == 1 branch (parse returns, not one literal spelling), and add that mutation to sabotage_autocycle.
+- `plugin/crew/tests/test_verify_gate_bash_empty_refusal.py:~138` - the branch-order check still raises a bare ValueError (from `chain.index(..., guard_pos)`) before its explanatory assertion when the `elseif ($ruleOutFile)` marker moves before the guard; check presence/order with an assertion first.
