@@ -175,6 +175,18 @@ _BASH = crew_fixtures.resolve_bash()
 _PWSH = shutil.which("pwsh")
 _PY = sys.executable
 
+# For tests that shadow a real tool (mktemp) with a stub placed first on
+# PATH: `_BASH` (Git for Windows' bin/bash.exe launcher shim, when that is
+# what resolved) silently prepends /mingw64/bin:/usr/bin ahead of ANY PATH
+# handed to it, so the real tool always wins and the stub is never reached.
+# See `crew_fixtures.resolve_bash_no_prepend`'s docstring for the proof and
+# for why this is safe here (PATH built by prepending onto the inherited
+# PATH, never scoped to symlinks only). Windows only: off Windows `_BASH`
+# prepends nothing, so it is used as-is and resolve_bash_no_prepend (which
+# returns None there) is never called.
+_BASH_NO_PREPEND = (crew_fixtures.resolve_bash_no_prepend() if os.name == "nt"
+                    else _BASH)
+
 _FLAVOURS = [
     pytest.param("sh", marks=pytest.mark.skipif(_BASH is None,
                                                  reason="needs bash")),
@@ -519,7 +531,7 @@ def test_1_crlf_from_native_python_does_not_leak_an_inherited_credential(
     root = _repo(tmp_path, vmap)
     (root / "a.py").write_text("x", encoding="utf-8")
     env = dict(os.environ, AWS_PROFILE="prod",
-               PATH=str(stub_dir) + os.pathsep + os.environ.get("PATH", ""),
+               PATH=crew_fixtures.shell_path(flavour, [stub_dir]),
                CLAUDE_PROJECT_DIR=str(root))
     if flavour == "sh":
         cmd = [_BASH, _SH]
@@ -1698,7 +1710,17 @@ def test_34c3_a_seven_digit_cap_override_is_validated_numerically(
     )
 
 
-@pytest.mark.skipif(_BASH is None, reason="needs bash")
+@pytest.mark.skipif(
+    _BASH_NO_PREPEND is None,
+    reason=(
+        "needs a bash whose launcher does not prepend /mingw64/bin:/usr/"
+        "bin ahead of a supplied PATH (Git for Windows' usr/bin/bash.exe "
+        "on Windows) - resolve_bash()'s bin/bash.exe shim always finds "
+        "the real mktemp first regardless of this test's stub, per "
+        "crew_fixtures.resolve_bash_no_prepend's docstring"
+        if os.name == "nt" else "needs bash"
+    ),
+)
 def test_34d_a_second_mktemp_failure_refuses_rather_than_wedges(tmp_path):
     """When the rule-output capture file cannot be created ANYWHERE - not
     TMPDIR, not the .crew/ fallback - the gate must refuse the rule with a
@@ -1718,6 +1740,26 @@ def test_34d_a_second_mktemp_failure_refuses_rather_than_wedges(tmp_path):
     distinguishing argument the stub could otherwise key on. This is
     root-safe and deterministic where a permissions-based fixture is
     neither.
+
+    **Windows shadowing fix (2026-09-25).** This test used to launch the
+    gate via `_BASH` (`crew_fixtures.resolve_bash()`), which on Windows is
+    Git for Windows' `bin/bash.exe` launcher shim. That shim unconditionally
+    prepends `/mingw64/bin:/usr/bin` ahead of ANY PATH handed to a child
+    process, so `command -v mktemp` inside the gate always resolved to the
+    real `/usr/bin/mktemp` no matter where this stub sat on the PATH this
+    test built - the stub was never invoked, the counter stayed "0", and
+    the test still failed, but on a 10s elapsed-time assertion (the gate
+    fell back to the pipe form and waited on the backgrounded `sleep 60`)
+    rather than on anything that named the real cause. Proven directly:
+    `bin/bash.exe` given a PATH with the stub dir first still reports
+    `${PATH%%:*}` as `/mingw64/bin`. Fixed by launching through
+    `crew_fixtures.resolve_bash_no_prepend()` instead (Git for Windows'
+    OTHER bash, `usr/bin/bash.exe`, which does not prepend anything) and by
+    asserting the counter is nonzero before trusting anything else this
+    test checks - see that guard below and `resolve_bash_no_prepend`'s own
+    docstring for why usr/bin/bash.exe can run this gate correctly even
+    though a sibling test (`test_the_cygpath_branch_is_taken_when_cygpath_
+    is_present`) found it cannot for a differently-scoped PATH.
 
     The counter's calibration ("exactly two plain `mktemp` calls before the
     per-rule loop") is only true when bare `python3` already resolves on
@@ -1774,14 +1816,32 @@ def test_34d_a_second_mktemp_failure_refuses_rather_than_wedges(tmp_path):
     (stub_dir / "mktemp").chmod(0o755)
 
     env = dict(os.environ, CLAUDE_PROJECT_DIR=str(root),
-               PATH=str(py3_dir) + os.pathsep + str(stub_dir) + os.pathsep
-               + os.environ.get("PATH", ""))
+               PATH=crew_fixtures.shell_path("sh", [py3_dir, stub_dir]))
     started = time.time()
     result = crew_fixtures.run_gate(
-        [_BASH, _SH], input="{}", cwd=str(root), env=env,
+        [_BASH_NO_PREPEND, _SH], input="{}", cwd=str(root), env=env,
         capture_output=True, text=True, check=False,
         timeout=_GATE_TIMEOUT)
     elapsed = time.time() - started
+
+    # Guard: prove the stub was actually reached before trusting anything
+    # below. `_BASH` (bin/bash.exe's launcher shim) prepends /mingw64/bin:
+    # /usr/bin ahead of any PATH handed to it, so the real mktemp always
+    # wins there and this counter stays "0" forever - the failure mode
+    # that made this whole test pass or fail without ever exercising its
+    # target (see crew_fixtures.resolve_bash_no_prepend). `_BASH_NO_
+    # PREPEND` is chosen specifically to avoid that, but a future change
+    # to either bash's behaviour, or to how PATH is threaded through
+    # `run_gate`, should fail HERE with a clear reason rather than pass
+    # vacuously three assertions down.
+    reached = int(counter.read_text().strip())
+    assert reached > 0, (
+        "the stub mktemp was never invoked (counter stayed at 0) - this "
+        "test proves nothing about verify-gate.sh's refuse path. Likely "
+        "cause: the launching bash prepended its own PATH ahead of the "
+        "stub dir (see crew_fixtures.resolve_bash_no_prepend)."
+    )
+
     assert elapsed < 10, (
         f"the gate took {elapsed:.1f}s to return with mktemp failing from "
         "the per-rule loop onward - it fell back to the pipe form and "

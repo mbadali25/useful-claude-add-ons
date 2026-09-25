@@ -4,6 +4,36 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Fixed
+
+- **`crew` 1.0.38: `test_34d`'s stub `mktemp` is reached on native Windows,
+  from win-repo-2 (T-0007).** Bumped `1.0.28 -> 1.0.38`, the version T-0007's
+  plan assigned. Test harness only - no hook script changes. Two of
+  win-repo-2's commits, cherry-picked with `-x`:
+  - **f7b70aae (`crew-1.0-win-34dsh`)**: `test_1` and `test_34d` in
+    `test_verify_gate_stop_gate_record.py` build their stub `PATH` with
+    `crew_fixtures.shell_path`, not `os.pathsep` - bash splits `PATH` on `:`,
+    so a `;`-joined stub dir was never searched. Deferred from 1.0.28 because
+    it was not sufficient on its own.
+  - **fba0049c (`crew-1.0-win-34d-shadow`)**: the other half. Git's
+    `bin\bash.exe`, which `resolve_bash()` prefers, prepends
+    `/mingw64/bin:/usr/bin` to `PATH`, so the real `/usr/bin/mktemp` won and
+    the stub's counter stayed 0 - the test failed on a timing assertion
+    without ever exercising the gate's refuse path. New
+    `crew_fixtures.resolve_bash_no_prepend()` resolves Git's
+    `usr\bin\bash.exe`, which keeps the caller's `PATH` head; `test_34d`
+    uses it on Windows only, and now asserts the stub counter is nonzero
+    before anything else. win-repo-2's native run: PASS, counter 3, the gate
+    refuses with `cannot create an output-capture file`; the old launcher
+    goes red at `assert 0 > 0`.
+  - Off Windows `resolve_bash_no_prepend()` returns None and nothing calls
+    it - `test_34d` uses `resolve_bash()`'s bash there, which prepends
+    nothing. `resolve_bash()` stays the default for every other `sh` test.
+  - `TODO.md`: the `test_34d` entries are closed. The python3-shim
+    `cygpath` entry stays open and now says this fix does not cover it -
+    win-repo-2 measured that its symlink-only `PATH` is a case
+    `usr\bin\bash.exe` cannot run.
+
 ### Changed
 
 - **`crew` 1.0.28: native-Windows round 3 from win-repo-2 — the sendkeys

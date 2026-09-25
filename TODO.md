@@ -53,6 +53,32 @@ be wrong can be closed on evidence.
   was. Not fixed here: adding a filter is a change to the harness itself,
   not to `auto-clear.ps1`.
 
+- CLOSED 2026-09-25 (T-0007, crew 1.0.38; fix by win-repo-2, cherry-picked from
+  `fba0049c`): `test_34d` launches the gate through
+  `crew_fixtures.resolve_bash_no_prepend()` - Git for Windows' `usr/bin/bash.exe`,
+  which keeps the caller's PATH head - on Windows only (off Windows that returns
+  None and the test uses `resolve_bash()`'s bash, which prepends nothing), and
+  asserts the stub counter is nonzero before any other assertion. `resolve_bash()`
+  stays the default for every other `sh` test. win-repo-2's native run of
+  `fba0049c`, `-k 34d` only: PASS, counter 3, refuse path taken; the old launcher
+  goes red at `assert 0 > 0`. The native run of the whole file on the T-0007
+  commit is still outstanding. Was:
+  `plugin/crew/tests/crew_fixtures.py:450` (`resolve_bash`) prefers Git for
+  Windows' `bin/bash.exe` wrapper over `usr/bin/bash.exe`, by design (its own
+  docstring: `usr/bin/bash.exe` "cannot resolve its own mount table when
+  launched from python.exe"). That wrapper unconditionally prepends
+  `/mingw64/bin:/usr/bin:$HOME/bin` to PATH on every fresh spawn, ahead of
+  anything the caller supplies — confirmed by direct measurement (both a
+  literal `os.pathsep`-joined PATH and a `crew_fixtures.shell_path`-built one
+  end up with that triple prepended first, on this host). `/usr/bin` bundles
+  a real `mktemp.exe`, so
+  `test_verify_gate_stop_gate_record.py::test_34d_a_second_mktemp_failure_refuses_rather_than_wedges`
+  cannot ever shadow `mktemp` via PATH through this bash — the stub is never
+  reached, regardless of separator correctness. Not fixed here: the file is
+  owned by a concurrent lane (crew-1.0-win-34dsh's brief forbade editing it),
+  and the preference for the wrapper is a deliberate, documented choice with
+  its own tradeoff, not an obvious bug to reverse unilaterally.
+
 - `scripts/_test/web-testing.sh:97` lifts `load_mcp_servers` out of
   `scripts/install-prerequisites.sh` without its `claude_available` dependency
   (defined at `scripts/install-prerequisites.sh:508`, outside the lifted awk
@@ -4238,7 +4264,7 @@ FIX: host-relative slack, or measure the interval rather than wall-clock.
 
 Separate mechanism again, and not a race - it reproduces serially.
 `test_the_cygpath_branch_is_taken_when_cygpath_is_present`
-(`plugin/crew/tests/test_verify_gate_python3_shim.py:618`) puts a fake `cygpath`
+(`plugin/crew/tests/test_verify_gate_python3_shim.py:584`) puts a fake `cygpath`
 on PATH, but Git Bash/MSYS unconditionally prepends `/usr/bin` - which holds the
 real `cygpath.exe` - ahead of the override, so the test exercises the real
 binary and never reaches its own branch. Proven by direct `subprocess.run`
@@ -4246,6 +4272,17 @@ repro.
 
 FIX: PATH isolation that survives the MSYS prepend, or invoke the shim with an
 explicit interpreter path rather than relying on lookup order.
+
+**Not covered by T-0007 (crew 1.0.38) - re-scoped 2026-09-25, still OPEN.**
+T-0007 fixed the same prepend for `test_34d` by launching through Git's
+`usr/bin/bash.exe` (`crew_fixtures.resolve_bash_no_prepend()`). That does not
+carry over here, per win-repo-2's measurement: this test scopes PATH to a
+symlink-only directory (`_scoped_tools_dir`/`_NEEDED_TOOLS`), and
+`usr/bin/bash.exe` launched from python.exe cannot resolve a tool reachable only
+through such a symlink, so it cannot run this gate at all. `test_34d` prepends
+onto the inherited PATH instead, which is why the same bash works there. The
+test still skips under the MSYS shim (`_BASH_IS_MSYS_SHIM`); the FIX line above
+stands, minus the non-prepending-bash route.
 
 ## rule[8] does not terminate: one test hangs the gate, and the harness has no timeout - OPEN 2026-09-24
 
@@ -4624,6 +4661,9 @@ points `CREW_CODEX_BIN` at whichever one `os.name` says will run.
   fix - only the test's own PATH construction. `test_run_gate_kills_the_whole_group_on_timeout_not_just_the_direct_child`
   was not re-investigated this pass (unrelated mechanism, no new evidence gathered) and remains as filed
   above - its assertion message's missing `f` prefix is still a live, separate test bug in the same file.
+  CLOSED 2026-09-25 for `test_34d` (T-0007, crew 1.0.38): the separator was half of it (`f7b70aae`); the
+  other half was Git's `bin/bash.exe` prepending `/usr/bin`, fixed by `fba0049c` - see the CLOSED entry
+  near the top of this file. The `test_run_gate_kills_...` note above is untouched by that.
 
 ## verify-gate: own and reap each rule's descendants (job object / cgroup / process-group with a verifiable owner) - descoped from 1.0 after 5 review rounds; see CHANGELOG 1.0.21
 
@@ -4694,7 +4734,9 @@ failures, same numbers:
   full mechanism and measurements.
 - `test_34d_a_second_mktemp_failure_refuses_rather_than_wedges` - `:1646`. sh-flavour only
   (`@pytest.mark.skipif(_BASH is None...)`, no `flavour` parametrization, never touches `.ps1`); red before and
-  after this ticket's `.ps1`-only change, so unrelated to it by construction.
+  after this ticket's `.ps1`-only change, so unrelated to it by construction. CLOSED 2026-09-25 (T-0007,
+  crew 1.0.38): the stub `mktemp` was never reached through Git's `bin/bash.exe` - see the CLOSED entry near
+  the top of this file.
 - `test_run_gate_kills_the_whole_group_on_timeout_not_just_the_direct_child` - `:2063`, in
   `crew_fixtures.run_gate` itself (test harness code, not `verify-gate.ps1` or `.sh`). Also red unmodified.
 
