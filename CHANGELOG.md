@@ -6,6 +6,22 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Changed
 
+- **`crew` 1.0.27: a spec written from the `/crew:spec` or `/crew:fix`
+  template now passes `/crew:approve`.** Bumped `1.0.25 -> 1.0.27` (1.0.26 was
+  never released). The approval check requires six headings named exactly Intent, Exclusions,
+  Evidence, Unknowns, Touch and Acceptance checks; `/crew:spec`'s template
+  wrote `## Acceptance`, and `/crew:fix`'s put three headings on one line
+  each with their text (`## Intent      one sentence`) and left out
+  Exclusions, Evidence and Unknowns; and both templates' `## Touch` failed
+  `parse_touch` (prose where one-path-per-bullet was required, and an
+  instruction to append an unquoted comment). Either template produced a spec
+  that `/crew:approve` refused, so no ticket could get past plan approval.
+  Both templates now carry all six headings on their own lines (`/crew:fix`
+  fills the three it does not need with `none - light path`) and a Touch
+  list in the bullet shape the parser reads, and a new test reads the
+  templates themselves and runs them through `crew_ticket.sections` and
+  `parse_touch`, the two halves of the spec check.
+
 - **`crew` 1.0.25: re-anchor B2's structural test on B3's invocation shape,
   and tell SKIPPED apart from PASSED in the sabotage harness.**
   Bumped `1.0.24 -> 1.0.25`.
