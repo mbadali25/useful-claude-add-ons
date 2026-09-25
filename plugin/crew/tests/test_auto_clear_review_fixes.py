@@ -711,10 +711,16 @@ def _run_real_dash_file_binding(engine, tmp_path, is_windows_terminal):
     Returns (returncode, child_script_still_exists, log_text, stderr).
     child_script_still_exists=False is the proof the body ran PAST the
     param() block (the self-delete is the first statement that can throw,
-    right after param() finishes binding); the log text
-    proves it ran the INTENDED logic (the "lost focus" decline, since
-    Hwnd=0 can never equal a real GetForegroundWindow() result), not
-    merely that it exited without error."""
+    right after param() finishes binding); the log text proves it ran the
+    INTENDED logic (the "lost focus" decline -- ordinarily true because
+    Hwnd=0 does not equal a real GetForegroundWindow() result, though a
+    locked or headless session makes GetForegroundWindow() return 0 too, in
+    which case the child's own $fg -eq 0 check declines it instead), not
+    merely that it exited without error. CREW_AUTOCLEAR_INHIBIT is also set
+    on the spawn below as a deterministic backstop (see auto-clear.ps1's
+    child heredoc, the LAST gate before SendWait) so this call can never
+    reach a real SendWait regardless of which of those two decline paths
+    this host happens to take."""
     source = _ps1_source()
     func = (_extract_ps1_function(source, "ConvertTo-CrewWin32Arg") + "\n" +
             _extract_ps1_function(source, "Get-CrewSendKeysChildArgs"))
@@ -738,7 +744,16 @@ def _run_real_dash_file_binding(engine, tmp_path, is_windows_terminal):
     args = json.loads(built.stdout.strip())
 
     cmdline = f'"{engine}" ' + " ".join(args)
-    result = subprocess.run(cmdline, capture_output=True, text=True, check=False)
+    # CREW_AUTOCLEAR_INHIBIT is the LAST gate the child heredoc checks,
+    # immediately before SendWait (see auto-clear.ps1, just above the
+    # escape/SendWait lines) -- set here as a deterministic backstop so this
+    # test can never reach a real SendWait regardless of this host's actual
+    # foreground-window/session-lock state. Every assertion below is
+    # unaffected: on an ordinary interactive host the focus check (fg != a
+    # placeholder Hwnd of 0) declines first, same as before this var was
+    # added, and this env var never even gets reached.
+    env = dict(os.environ, CREW_AUTOCLEAR_INHIBIT="1")
+    result = subprocess.run(cmdline, env=env, capture_output=True, text=True, check=False)
 
     still_exists = child_path.exists()
     log_path = crew_dir / ".autoclear.log"

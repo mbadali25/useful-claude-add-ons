@@ -968,7 +968,15 @@ Add-Type -Namespace CrewAC -Name Win -MemberDefinition @"
 # alt-tabbed during the delay, this is what stops "/clear" being typed into
 # their mail client. Logged, not silent: "nothing happened" and "it worked"
 # must not look the same in the one place anybody can check afterwards.
-if ([CrewAC.Win]::GetForegroundWindow().ToInt64() -ne $Hwnd) {
+# $fg -eq 0 is its own decline, not folded into the -ne comparison: a
+# locked or headless session makes GetForegroundWindow() return 0, which
+# would otherwise equal an unresolved/placeholder $Hwnd of 0 and read as
+# "still focused" when nothing is actually in the foreground to be typed
+# into. Unknown must decline here exactly as it does for the owner-pid
+# check above (FIX 1's "cannot determine the process" case) -- this is the
+# same shape of bug, not a new one.
+$fg = [CrewAC.Win]::GetForegroundWindow().ToInt64()
+if ($fg -eq 0 -or $fg -ne $Hwnd) {
   Write-CrewChildNote "declined sendkeys - the target window lost focus during the ${Delay}s delay, so nothing was typed - run $Text yourself"
   exit 0
 }
@@ -981,6 +989,21 @@ if ([CrewAC.Win]::GetForegroundWindow().ToInt64() -ne $Hwnd) {
 $recheck = Get-CrewChildTabRecheck -Hwnd $Hwnd -Title $WindowTitle -IsWindowsTerminal $IsWindowsTerminalBool
 if ($recheck.Decision -ne "send") {
   Write-CrewChildNote "declined sendkeys - $($recheck.Reason), re-checked after the ${Delay}s delay - run $Text yourself"
+  exit 0
+}
+# A test suite must never drive the real keyboard -- see the parent's own
+# CREW_AUTOCLEAR_INHIBIT check above, right before Start-Process. That
+# check only stops the PARENT from ever reaching this file: a test that
+# spawns this heredoc directly via `-File` (the argv-binding regression
+# tests, which must drive a REAL `-File` invocation of this exact script to
+# prove [int]-not-[bool] binds under both engines) never passes through the
+# parent at all, and nothing above this line is guaranteed to decline in
+# every host environment -- see the $fg -eq 0 comment just above. This gate
+# is placed as the LAST check before SendWait, after every decision branch
+# above it, specifically so it cannot be bypassed by whichever branch a
+# test happens to take.
+if ($env:CREW_AUTOCLEAR_INHIBIT) {
+  Write-CrewChildNote "declined sendkeys - CREW_AUTOCLEAR_INHIBIT is set, no keystroke sent"
   exit 0
 }
 # SendKeys treats + ^ % ~ ( ) { } [ ] as syntax. Escape them so a configured
