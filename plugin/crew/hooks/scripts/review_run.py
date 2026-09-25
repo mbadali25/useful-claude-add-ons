@@ -90,6 +90,22 @@ def _read(path):
         return fh.read()
 
 
+def _decode_partial(value):
+    """CPython raises `TimeoutExpired` from INSIDE the read loop, before the
+    text-mode translation `Popen.communicate` normally applies -- so
+    `exc.output`/`exc.stderr` on a `communicate(timeout=...)` timeout are
+    raw bytes even though this `Popen` was constructed with `text=True`,
+    never the decoded str every other return path here already is. Decoded
+    with the same utf-8/replace policy the Popen itself uses, so a partial
+    capture from a second, bounded timeout is usable text rather than either
+    bytes leaking into a str-typed return or silently discarded."""
+    if value is None:
+        return ""
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    return value
+
+
 def _write_atomic(path, text):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     tmp = f"{path}.{os.getpid()}.tmp"
@@ -153,9 +169,16 @@ def launch(cmd, root, timeout):
     function ever gets to kill anything, the grandchild keeps sleeping and
     keeps the pipe open, and an unbounded second `communicate()` returns only
     after the full sleep. Bounded by `POST_KILL_TIMEOUT`; on a second
-    `TimeoutExpired`, this closes its own end of the pipes and reports the
-    run as timed out with whatever output had already arrived (typically
-    none) rather than waiting on a descendant that is not coming back.
+    `TimeoutExpired`, CPython's own exception already carries whatever bytes
+    were read before that bound (`exc.output`/`exc.stderr`), so this keeps
+    and decodes that partial capture (`_decode_partial`) rather than
+    discarding it -- an earlier version of this fix threw the partial output
+    away and closed the process's own stdout/stderr streams to unblock
+    itself; on Windows, closing a pipe still being read by CPython's own
+    reader thread for that stream can itself block, trading one hang for
+    another. Reports the run as timed out either way, with whatever output
+    had already arrived, rather than waiting on a descendant that is not
+    coming back.
     """
     popen_kwargs = {}
     if os.name == "nt":
@@ -189,15 +212,10 @@ def launch(cmd, root, timeout):
             escaped = True
         try:
             stdout, stderr = proc.communicate(timeout=POST_KILL_TIMEOUT)
-        except subprocess.TimeoutExpired:
+        except subprocess.TimeoutExpired as exc:
             escaped = True
-            stdout, stderr = "", ""
-            for stream in (proc.stdout, proc.stderr):
-                try:
-                    if stream:
-                        stream.close()
-                except OSError:
-                    pass
+            stdout = _decode_partial(exc.output)
+            stderr = _decode_partial(exc.stderr)
         if escaped:
             stderr = (stderr or "") + (
                 "\nreview-run: a descendant process may have escaped the "

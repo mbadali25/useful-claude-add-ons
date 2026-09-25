@@ -265,6 +265,23 @@ REVIEW_FIX_MUTATIONS = (
         "            stdout, stderr = proc.communicate(timeout=POST_KILL_TIMEOUT)\n",
         "            stdout, stderr = proc.communicate()\n",
         ("tests/test_review_run_launch.py::"
-         "test_post_kill_communicate_is_bounded_and_closes_the_pipes"),
+         "test_post_kill_communicate_is_bounded_and_keeps_the_partial_output"),
+    ),
+    (
+        # 1.0.21: the discard-and-close-the-pipes shape this ticket removed,
+        # restored -- a second TimeoutExpired throws away whatever partial
+        # output CPython's own exception already carried instead of decoding
+        # and keeping it.
+        "review_run.launch discards partial output on a second timeout again",
+        REVIEW_RUN,
+        "        except subprocess.TimeoutExpired as exc:\n"
+        "            escaped = True\n"
+        "            stdout = _decode_partial(exc.output)\n"
+        "            stderr = _decode_partial(exc.stderr)\n",
+        "        except subprocess.TimeoutExpired:\n"
+        "            escaped = True\n"
+        "            stdout, stderr = \"\", \"\"\n",
+        ("tests/test_review_run_launch.py::"
+         "test_post_kill_communicate_is_bounded_and_keeps_the_partial_output"),
     ),
 )

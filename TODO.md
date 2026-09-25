@@ -4544,3 +4544,45 @@ points `CREW_CODEX_BIN` at whichever one `os.name` says will run.
   prefix), which is itself a small test bug in a file this ticket cannot touch. Reported for win-repo-2 to
   triage on a real Windows host - both may be real product gaps in `verify-gate.sh`/`crew_fixtures.py`'s
   Windows process-group handling, not confirmed either way here.
+
+## verify-gate: own and reap each rule's descendants (job object / cgroup / process-group with a verifiable owner) - descoped from 1.0 after 5 review rounds; see CHANGELOG 1.0.21
+
+Per-rule process-group tracking and kill-on-signal shipped across
+1bba9725/71021c7f/4d235881/671832f1/484eeebf/af5cadd2, and five consecutive
+review rounds each found the previous round's fix one case short. Removed
+from crew 1.0 rather than attempted a sixth time; `CONFIG.md`'s
+`verify.stopBudgetSeconds` section states the resulting limitation in one
+line. The failure modes those rounds found, so whoever picks this back up
+does not re-discover them one at a time:
+
+- **Disk fill by an orphan writer.** A rule that backgrounds something and
+  never waits on it itself kept appending to the gate's own (already
+  unlinked) capture file after the rule was recorded PASSED, unbounded,
+  until the disk filled.
+- **Escape on gate kill.** Job-control shells commonly re-group themselves
+  once `set -m` runs, which can take the rule's own tracking subshell out
+  of the gate's process group too - signalling the gate's whole group from
+  outside then killed the gate while a still-running rule survived it,
+  unbounded.
+- **An unlocked registry.** The shared cleanup registry and its
+  TERM/INT/HUP/EXIT traps were defined only inside the locked branch, so a
+  run that never took the lock at all had no registry and no traps to
+  catch a signal with - "command not found" on stderr, and no cleanup ran.
+- **pid/pgid reuse in both p- and g-mode.** A bare pid or process-group id
+  recorded once can be freed by the OS and handed to an unrelated process
+  by the time the cleanup trap fires; signalling it by bare number without
+  re-proving ownership first can reach whatever the OS gave it to next.
+- **A session-id proof that is not ownership.** Proving a `g`-mode id
+  shares this gate's own session id rules out a `setsid`-created
+  replacement, but a session id is a weaker claim than "this gate created
+  this specific group," and the five rounds never closed that gap fully.
+- **Leader-exited groups.** A rule's own process group can empty the
+  instant its tracking subshell's `wait` returns (every member already
+  exited), which frees that pgid for reuse before the cleanup trap even
+  runs.
+
+Whoever reopens this should reach for something with a verifiable owner
+from the start - a Windows job object, a Linux cgroup, or a process group
+whose creator can be re-proven at signal time by more than a session id -
+rather than re-deriving pid/pgid ownership proofs from `/proc` and `ps` by
+hand, which is what cost five rounds here.

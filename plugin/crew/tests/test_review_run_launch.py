@@ -18,9 +18,15 @@ carried no timeout of its own, so a descendant that escaped the kill and
 kept holding the pipe open blocked that call indefinitely -- unbounded by
 `--timeout` and unbounded by anything else. The fix: that second call is
 now bounded by `POST_KILL_TIMEOUT`; on a second `TimeoutExpired`, `launch`
-closes its own end of the pipes and returns with whatever output had
-already arrived rather than waiting on a descendant that is not coming
-back.
+keeps and decodes whatever partial output CPython's own exception already
+carries (`exc.output`/`exc.stderr`, raw bytes since the text-mode
+translation never runs on this path) rather than waiting on a descendant
+that is not coming back. An earlier version of this fix discarded that
+partial output and closed the process's own stdout/stderr streams instead
+-- reverted (crew 1.0.21): on Windows, closing a pipe still being read by
+CPython's own reader thread for that stream can itself block, trading one
+hang for another, and the discard threw away a diagnosis a caller may
+actually need.
 
 See test_review_ledger.py::
 test_run_timeout_survives_an_escaped_descendant_holding_the_pipe for the
@@ -40,14 +46,6 @@ pytestmark = pytest.mark.skipif(
     os.name == "nt", reason="review_run.launch's POSIX killpg branch only")
 
 
-class _FakeStream:
-    def __init__(self):
-        self.closed = False
-
-    def close(self):
-        self.closed = True
-
-
 class _FakeProc:
     """Stands in for `subprocess.Popen`. The first `communicate()` call
     always times out (that is what puts `launch` on the kill path at all);
@@ -60,8 +58,6 @@ class _FakeProc:
         self.poll_result = poll_result
         self.second_raises = second_raises
         self.communicate_calls = 0
-        self.stdout = _FakeStream()
-        self.stderr = _FakeStream()
 
     def communicate(self, timeout=None):
         self.communicate_calls += 1
@@ -77,7 +73,14 @@ class _FakeProc:
                 "post-kill path - a real escaped descendant would block "
                 "this call forever")
         if self.second_raises:
-            raise subprocess.TimeoutExpired(cmd="fake", timeout=timeout)
+            # Real CPython raises TimeoutExpired with whatever it already
+            # read attached as raw BYTES, even on a text-mode Popen (the
+            # text-mode translation never runs on this path) - see
+            # review_run._decode_partial's own docstring for why launch()
+            # must decode this rather than trust it as already-str.
+            raise subprocess.TimeoutExpired(
+                cmd="fake", timeout=timeout,
+                output=b"partial stdout bytes", stderr=b"partial stderr bytes")
         return "partial stdout", "partial stderr"
 
     def poll(self):
@@ -117,16 +120,23 @@ def test_killpg_is_skipped_once_the_leader_has_already_exited(monkeypatch):
     assert "escaped" in stderr
 
 
-def test_post_kill_communicate_is_bounded_and_closes_the_pipes(monkeypatch):
+def test_post_kill_communicate_is_bounded_and_keeps_the_partial_output(monkeypatch):
     """A descendant that escaped the kill keeps holding the pipe open, so
     the bounded follow-up `communicate()` also times out -- `launch` must
-    still return (not hang), close its own stream ends, and say so."""
+    still return (not hang), keep and decode whatever partial output
+    CPython's own TimeoutExpired already captured, and say the run
+    escaped. FIX (crew 1.0.21): an earlier version of this discarded that
+    partial output and closed the process's own stdout/stderr streams
+    instead -- reverted, since closing a pipe still being read by
+    CPython's own reader thread for that stream can itself block on
+    Windows, trading one hang for another."""
     fake = _FakeProc(poll_result=None, second_raises=True)
     _patch_popen(monkeypatch, fake)
     monkeypatch.setattr(review_run.os, "killpg", lambda pid, sig: None)
 
     stdout, stderr, code, timed_out = review_run.launch(["fake"], ".", 1)
 
-    assert (stdout, code, timed_out) == ("", None, True)
-    assert fake.stdout.closed and fake.stderr.closed
+    assert (code, timed_out) == (None, True)
+    assert stdout == "partial stdout bytes"
+    assert "partial stderr bytes" in stderr
     assert "escaped" in stderr

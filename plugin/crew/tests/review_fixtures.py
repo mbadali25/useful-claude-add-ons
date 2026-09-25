@@ -42,7 +42,16 @@ def init_repo(root):
 #             a bare `os.killpg(proc.pid, ...)` at that point would target a
 #             pid the OS is free to have handed to something else, and an
 #             unbounded follow-up `communicate()` would block on the pipe
-#             for as long as the grandchild keeps running.
+#             for as long as the grandchild keeps running. Sleeps a bounded
+#             few seconds, not the 60s an earlier version of this fixture
+#             used -- that version left the grandchild running, detached
+#             from the whole test's process tree, for up to a minute past
+#             every test that exercised this mode, with nothing in the test
+#             file reaping or even naming its pid. Bounded here so a test
+#             that forgets to clean up still only leaks a few seconds, and
+#             the pid is written to FAKE_REVIEWER_ESCAPE_PIDFILE (when a
+#             caller sets it) so a test that wants deterministic cleanup can
+#             kill it by identity rather than guessing.
 _FAKE = r'''
 import json, os, re, signal, subprocess, sys, time
 prompt = sys.argv[-1]
@@ -58,7 +67,11 @@ if mode == "fail":
     sys.stderr.write("boom\n")
     sys.exit(1)
 if mode == "escape":
-    subprocess.Popen(["setsid", "sh", "-c", "sleep 60"])
+    grandchild = subprocess.Popen(["setsid", "sh", "-c", "sleep 4"])
+    pidfile = os.environ.get("FAKE_REVIEWER_ESCAPE_PIDFILE")
+    if pidfile:
+        with open(pidfile, "w", encoding="utf-8") as fh:
+            fh.write(str(grandchild.pid))
     sys.exit(0)
 parts = sorted(set(re.findall(r"part-\d{3}-of-\d{3}\.patch", prompt)))
 body = "\n".join("READ|" + p for p in parts)

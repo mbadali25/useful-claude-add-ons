@@ -6,6 +6,70 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Changed
 
+- **`crew` 1.0.21: descopes the per-rule process-group kill in
+  `verify-gate.sh`, and drops a discard-and-close-pipes regression in
+  `review_run.py`'s own timeout cleanup.** Bumped `1.0.20 -> 1.0.21`.
+  - **DESCOPE: per-rule process-group tracking and kill-on-signal is
+    removed from `verify-gate.sh`.** It shipped across
+    1bba9725/71021c7f/4d235881/671832f1/484eeebf/af5cadd2 and produced a new
+    review BLOCK in five consecutive rounds, each fix one case short of the
+    next: disk fill by an orphan writer, escape on gate kill, an unlocked
+    registry, pid/pgid reuse in both p- and g-mode, a session-id proof that
+    is not ownership, and a leader-exited group. Removed rather than
+    attempted a sixth time - see `TODO.md` for the failure modes, listed so
+    a future attempt does not re-discover them one at a time, and
+    `CONFIG.md`'s `verify.stopBudgetSeconds` section for the resulting
+    limitation stated in one line: the gate does not reap what a rule
+    leaves running in the background. KEPT: rule output is still captured
+    through a temp file, not a pipe, so a backgrounded grandchild cannot
+    wedge the gate's own read of that rule's output (`test_34b`); the 1 MiB
+    tail cap and its test-only env seam; the no-pipe fallback (a named
+    refusal when neither `TMPDIR` nor `.crew/` is writable); and the
+    `wait` builtin's prompt-signal behaviour, so the lock's release and the
+    shim's tempdir cleanup still run promptly on a signalled gate even
+    while a rule is running. REMOVED: the per-rule `set -m`/pgid subshell
+    layer, the rule-pgid sidecar file, `_crew_gate_pgid_of`,
+    `_crew_gate_pid_is_our_child`, `_crew_gate_sid_of`,
+    `_crew_gate_group_is_ours`, `_crew_gate_cleanup_rule_pgid` and its
+    registration, and the TERM-then-grace-then-KILL of a rule's group.
+    The shared cleanup registry (`_CREW_GATE_CLEANUP_FNS`,
+    `_crew_gate_register_cleanup`, `_crew_gate_run_cleanup`) is kept for
+    the lock's release and the python3 shim's tempdir cleanup only - the
+    rule-pgid stage's registration is what is gone. Tests removed as
+    exercising only the removed feature:
+    `test_verify_gate_rule_pgid_mode.py`,
+    `test_verify_gate_rule_pgid_ownership.py`,
+    `test_verify_gate_rule_pgid_group_ownership.py`, and from
+    `test_verify_gate_stop_gate_record.py`: `test_34e` (a backgrounded
+    writer killed with its rule), `test_34h` (a signalled gate kills its
+    current rule's group), `test_34i` (an unlocked run still cancels its
+    rule) and `test_34g` (ordinary rules never pay the grace-period
+    sleep - there is no grace period left to charge). Kept:
+    `test_34b`/`test_34c`/`test_34c2`/`test_34c3`/`test_34d`/`test_34f`
+    (temp-file capture, the tail cap, the no-pipe fallback) and the
+    lock/shim regression `test_shim_cleanup_does_not_clobber_the_lock_release_trap`.
+    No `sabotage.py`/`sabotage_autocycle.py` mutation targeted the removed
+    feature, so none needed removing there.
+  - **FIX: `review_run.py`'s post-kill timeout handler discarded whatever
+    output CPython had already captured and closed the process's own
+    stdout/stderr streams to unblock itself.** On Windows, closing a pipe
+    still being read by CPython's own reader thread for that stream can
+    itself block - trading the hang this cleanup exists to avoid for
+    another one. `launch()` now decodes and keeps that partial capture
+    (`exc.output`/`exc.stderr` off the second `TimeoutExpired`, raw bytes
+    since the text-mode translation never runs on this path - new
+    `_decode_partial`) instead, and no longer touches the streams directly.
+    The bounded post-timeout wait and the "kill only while the leader is
+    alive" (`proc.poll() is None`) checks are unchanged.
+    `test_review_run_launch.py` renamed and updated to assert the kept,
+    decoded output rather than closed streams; `sabotage_review.py` gained
+    a mutation reverting to the discard-and-close shape.
+  - **FIX: `review_fixtures.py`'s `escape` reviewer mode left a detached
+    `setsid` grandchild sleeping 60s with nothing reaping it.** Bounded to
+    a few seconds and its pid is written to
+    `FAKE_REVIEWER_ESCAPE_PIDFILE` when a caller sets it;
+    `test_review_ledger.py`'s escape test now kills it by verified identity
+    in a `finally` block and asserts nothing survives.
 - **`crew` 1.0.20: a further independent review found the `g`-mode half of
   1.0.19's rule-pgid fix missing, plus two of the same "signal a recycled
   id" and "block past --timeout" shapes in `review_run.py`'s own reviewer

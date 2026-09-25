@@ -9,6 +9,7 @@ import json
 import multiprocessing
 import os
 import shutil
+import signal
 import subprocess
 import sys
 import time
@@ -16,6 +17,7 @@ import time
 import pytest
 
 import context  # noqa: F401  pylint: disable=unused-import
+import crew_fixtures
 import review_ledger as rl
 from review_fixtures import env_with_path, fake_reviewer_bin, git, init_repo
 
@@ -167,12 +169,12 @@ def _bundle(repo, scratch):
         encoding="utf-8")
 
 
-def _run(repo, scratch, fakes, mode, *extra):
+def _run(repo, scratch, fakes, mode, *extra, **env_extra):
     return subprocess.run(
         [sys.executable, _RUN, "--root", str(repo), "--ticket", "T1",
          "--scratch", str(scratch), "--provider", "codex"] + list(extra),
         capture_output=True, text=True, stdin=subprocess.DEVNULL, check=False,
-        env=env_with_path(fakes, FAKE_REVIEWER_MODE=mode), timeout=120)
+        env=env_with_path(fakes, FAKE_REVIEWER_MODE=mode, **env_extra), timeout=120)
 
 
 def test_run_reserves_before_launch_so_a_crash_still_spends_the_round(repo, tmp_path):
@@ -232,27 +234,70 @@ def test_run_timeout_is_incomplete(repo, tmp_path):
 def test_run_timeout_survives_an_escaped_descendant_holding_the_pipe(repo, tmp_path):
     """BLOCK (Codex): the fake reviewer's `escape` mode exits immediately
     after forking a detached `setsid` grandchild that inherits its
-    stdout/stderr and sleeps for 60s -- the leader is gone (and reaped) long
-    before `launch` gets to kill anything, so a bare `os.killpg(proc.pid,
-    ...)` would target a recycled pid, and an unbounded follow-up
-    `communicate()` would block on the grandchild's pipe for the full 60s.
-    review_run.py must return in a small multiple of --timeout (bounded by
-    POST_KILL_TIMEOUT), not ~60s, and still report INCOMPLETE/timed_out."""
+    stdout/stderr and outlives it (bounded to a few seconds, not the 60s an
+    earlier version of this fixture left running -- see review_fixtures.py's
+    own comment) -- the leader is gone (and reaped) long before `launch`
+    gets to kill anything, so a bare `os.killpg(proc.pid, ...)` would target
+    a recycled pid, and an unbounded follow-up `communicate()` would block
+    on the grandchild's pipe for as long as it kept running. review_run.py
+    must return in a small multiple of --timeout (bounded by
+    POST_KILL_TIMEOUT), not however long the grandchild lives, and still
+    report INCOMPLETE/timed_out.
+
+    FIX: this test's own earlier version left that grandchild (a detached
+    `setsid` process, outside the whole test's process tree) running for up
+    to a minute after the test itself had finished, with nothing reaping or
+    even identifying it. The pidfile below, plus the `finally` block's
+    identity-verified kill (never a bare `os.kill` on a possibly-reused pid
+    -- see `crew_fixtures._proc_start_ticks`), makes sure nothing survives
+    this test regardless of how long review_run.py itself takes to return.
+    """
     (repo / "change.txt").write_text("change\n", encoding="utf-8")
     scratch, work = tmp_path / "scratch", tmp_path / "work"
     _bundle(repo, scratch)
     fakes = fake_reviewer_bin(tmp_path / "bin")
+    pidfile = tmp_path / "escape.pid"
 
-    started = time.monotonic()
-    result = _run(repo, scratch, fakes, "escape", "--timeout", "1", "--work-dir", str(work))
-    elapsed = time.monotonic() - started
+    grandchild_pid = None
+    grandchild_start_ticks = None
+    try:
+        started = time.monotonic()
+        result = _run(repo, scratch, fakes, "escape", "--timeout", "1", "--work-dir", str(work),
+                      FAKE_REVIEWER_ESCAPE_PIDFILE=str(pidfile))
+        elapsed = time.monotonic() - started
 
-    review = json.loads((work / "review.json").read_text(encoding="utf-8"))
-    assert elapsed < 20, (
-        f"review-run took {elapsed:.1f}s - it must not block on a "
-        "descendant that escaped the kill and outlived --timeout"
-    )
-    assert (result.returncode, review["verdict"], review["timed_out"]) == (3, "INCOMPLETE", True)
+        if pidfile.exists():
+            grandchild_pid = int(pidfile.read_text(encoding="utf-8").strip())
+            grandchild_start_ticks = crew_fixtures._proc_start_ticks(  # pylint: disable=protected-access
+                grandchild_pid)
+
+        review = json.loads((work / "review.json").read_text(encoding="utf-8"))
+        assert elapsed < 20, (
+            f"review-run took {elapsed:.1f}s - it must not block on a "
+            "descendant that escaped the kill and outlived --timeout"
+        )
+        assert (result.returncode, review["verdict"], review["timed_out"]) == (
+            3, "INCOMPLETE", True)
+
+        deadline = time.monotonic() + 10
+        while grandchild_pid is not None and crew_fixtures.pid_alive(grandchild_pid) and (
+                time.monotonic() < deadline):
+            time.sleep(0.2)
+        assert grandchild_pid is None or not crew_fixtures.pid_alive(grandchild_pid), (
+            f"the escaped grandchild (pid {grandchild_pid}) was still alive up to 10s "
+            "after this test's own bounded sleep should have ended it"
+        )
+    finally:
+        # Identity-verified, never a bare `os.kill` on a pid this test may
+        # already have watched die above (or that the OS has since handed to
+        # an unrelated process) - see `crew_fixtures._proc_start_ticks`.
+        if grandchild_pid is not None and grandchild_start_ticks is not None and (
+                crew_fixtures._proc_start_ticks(grandchild_pid) ==  # pylint: disable=protected-access
+                grandchild_start_ticks):
+            try:
+                os.kill(grandchild_pid, getattr(signal, "SIGKILL", signal.SIGTERM))
+            except ProcessLookupError:
+                pass
 
 
 def test_run_missing_provider_spends_no_round(repo, tmp_path):
