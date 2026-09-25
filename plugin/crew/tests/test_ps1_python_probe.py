@@ -21,11 +21,37 @@ would skip it even if it did -- CreateProcess cannot launch it either way,
 by design (see the resolver's own comment). `_stub` therefore writes a
 `.cmd` file with a `win_body` translation when actually running on Windows,
 so a "working"/"broken" candidate is something the real resolver can find
-and probe, exactly as a real WindowsApps alias or `python.exe` is. Left
-untranslated on Windows (still POSIX-only): `_slow_fail`, `_hang_forever`
-and `_spoofed_version` -- none of their tests assert that a candidate is
-*found*, only that resolution ends in `""`, which an unrecognised `.cmd`
-body still reaches, just by a different (fail-closed) path.
+and probe, exactly as a real WindowsApps alias or `python.exe` is.
+
+**The mirror-image gap sits on the bash side, and it is why this module used
+to pass for the wrong reason.** MEASURED on this host: `type -ap` (what
+`_common.sh`'s `crew_py`/`crew_py_strict` walk PATH with) never matches a
+`.cmd` file at all -- not by bare name, not by the full `name.cmd` form, chmod
+or no chmod -- so a `.cmd`-only fixture is invisible to bash exactly the way
+an extensionless one is invisible to `Get-Command`. `_stub` now delegates to
+`crew_fixtures.write_shim`, which writes BOTH forms on Windows: the
+extensionless POSIX shim (which bash's `type -ap` finds and execs by its
+shebang) and the `.cmd` (which `Get-Command`/CreateProcess find), so each
+flavour has a candidate it can actually reach. That also means
+`_slow_fail`, `_hang_forever` and `_spoofed_version` -- which pass no
+`win_body`, so their `.cmd` content stays the inert POSIX `body` text CMD
+cannot run -- are no longer untranslated on the bash side either: bash now
+finds and genuinely executes their POSIX shim, which is what their own
+resolvers are supposed to bound or reject. Their tests still only assert
+`""`, but for the real reason now (timeout or version-floor rejection)
+rather than "bash found nothing to run".
+
+**A found bash candidate answers in POSIX form, never `REAL`'s native
+one.** `crew_py_strict`'s own DECIDED CONTRACT (`_common.sh`) returns the
+probed interpreter path the way bash itself would exec it --
+`/c/Users/...`, converted from the candidate's own `sys.executable` -- and
+`crew_py` returns the raw PATH-hit candidate, unconverted. Comparing either
+directly against `REAL`'s native form is comparing two different string
+shapes to a bug that happens to look latent when nothing is found on either
+side. `REAL_POSIX` (`crew_fixtures.windows_to_posix(REAL)`) is the fixed
+point for the strict comparisons; `crew_py`'s raw candidate is meant to be
+exec'd by the SAME bash, not handed to CreateProcess, which is what `_runs`
+does on Windows now.
 """
 import json
 import os
@@ -43,6 +69,10 @@ SCRIPTS = pathlib.Path(__file__).resolve().parent.parent / "hooks" / "scripts"
 PWSH = crew_fixtures.resolve_pwsh()
 BASH = crew_fixtures.resolve_bash()
 REAL = os.path.realpath(sys.executable)
+# MEASURED: `crew_py_strict` never returns `REAL`'s native `C:\...` form --
+# its own DECIDED CONTRACT (`_common.sh`) converts to POSIX before printing.
+# This is the fixed point every strict-resolver comparison compares against.
+REAL_POSIX = crew_fixtures.windows_to_posix(REAL)
 
 needs_pwsh = pytest.mark.skipif(PWSH is None, reason="pwsh not installed - the .ps1 probe was NOT run")
 needs_bash = pytest.mark.skipif(BASH is None, reason="bash not installed - the parity half was NOT run")
@@ -73,17 +103,19 @@ def _stub(directory, name, body, win_body=None):
     shim). `win_body` is the batch translation of `body`; when the caller has
     none, the sh `body` is still written into a `.cmd` on Windows -- inert,
     not silently wrong, since every caller that omits `win_body` only asserts
-    non-resolution, which an unrunnable batch file still produces."""
-    directory.mkdir(parents=True, exist_ok=True)
-    if os.name == "nt":
-        path = directory / (name + ".cmd")
-        path.write_text("@echo off\r\n" + (win_body if win_body is not None else body) + "\r\n",
-                        encoding="ascii", newline="\r\n")
-        return path
-    path = directory / name
-    path.write_text("#!/bin/sh\n" + body + "\n", encoding="ascii", newline="\n")
-    path.chmod(0o755)
-    return path
+    non-resolution, which an unrunnable batch file still produces.
+
+    MEASURED: the mirror-image gap is on the bash side -- `type -ap` (what
+    `crew_py`/`crew_py_strict` walk PATH with) never matches a `.cmd` file at
+    all on this host, so a `.cmd`-only fixture is invisible to bash exactly
+    the way an extensionless one is invisible to `Get-Command`. Delegating to
+    `crew_fixtures.write_shim` writes BOTH forms on Windows -- the
+    extensionless POSIX shim bash finds by its shebang, and the `.cmd`
+    `Get-Command`/CreateProcess find -- so a candidate this function writes
+    is reachable by whichever flavour asks."""
+    sh_body = "#!/bin/sh\n" + body + "\n"
+    cmd_body = "@echo off\r\n" + (win_body if win_body is not None else body) + "\r\n"
+    return pathlib.Path(crew_fixtures.write_shim(directory, name, sh_body=sh_body, cmd_body=cmd_body))
 
 
 def _working(directory, names=_NAMES):
@@ -142,6 +174,19 @@ def _bash_resolver(fn, path_entries):
 
 
 def _runs(interpreter):
+    """True when `interpreter` answers `-c "print(1)"` with `1`.
+
+    MEASURED: `crew_py`'s own DECIDED CONTRACT (`_common.sh`) is that its
+    answer is POSIX-shaped and meant to be exec'd by the SAME bash ("a
+    caller that only does `"$py" ...` needs nothing further") -- handing that
+    string straight to `subprocess.run` on Windows hands CreateProcess a
+    path it cannot open (`WinError 2`/`87`, reproduced against this exact
+    shape while diagnosing this fix). Route through bash there, which is
+    what every real caller of `crew_py` does."""
+    if os.name == "nt" and BASH is not None:
+        done = subprocess.run([BASH, "-c", f'"{interpreter}" -c "print(1)"'],
+                              capture_output=True, text=True, check=False, timeout=30)
+        return done.returncode == 0 and done.stdout.strip() == "1"
     done = subprocess.run([interpreter, "-c", "print(1)"], capture_output=True,
                           text=True, check=False, timeout=30)
     return done.returncode == 0 and done.stdout.strip() == "1"
@@ -257,7 +302,7 @@ def test_a_working_windowsapps_alias_is_accepted_like_bash_accepts_it(tmp_path):
     loose = _bash_resolver("crew_py", path)
     strict = _bash_resolver("crew_py_strict", path)
 
-    assert (ps1, strict, bool(loose), _runs(loose)) == (REAL, REAL, True, True)
+    assert (ps1, strict, bool(loose), _runs(loose)) == (REAL, REAL_POSIX, True, True)
 
 
 # --- (b) a broken alias first, a real interpreter later on PATH ----------------
@@ -271,7 +316,7 @@ def test_a_broken_alias_falls_through_to_a_real_python_of_another_name(tmp_path)
     _working(real, ("python",))
     path = [apps, real, _tools(tmp_path)]
 
-    assert (_print_python(path), _bash_resolver("crew_py_strict", path)) == (REAL, REAL)
+    assert (_print_python(path), _bash_resolver("crew_py_strict", path)) == (REAL, REAL_POSIX)
 
 
 @needs_pwsh
@@ -290,14 +335,19 @@ def test_a_broken_alias_falls_through_to_a_real_python_of_the_same_name(tmp_path
 @needs_bash
 def test_bash_strict_agrees_on_a_same_named_python_behind_a_broken_alias(tmp_path):
     """Was a strict xfail: `command -v` took only the first match per name.
-    crew_py_strict now walks every match (`type -ap`), as the .ps1 does."""
+    crew_py_strict now walks every match (`type -ap`), as the .ps1 does.
+
+    Both sides resolve to REAL here, but never in the same string shape --
+    `crew_py_strict` answers POSIX (`_common.sh`'s DECIDED CONTRACT),
+    `_print_python` answers native. `windows_to_posix` on the ps1 side is
+    the fixed point, same as `REAL_POSIX` elsewhere in this module."""
     apps = tmp_path / "Microsoft" / "WindowsApps"
     _broken(apps)
     real = tmp_path / "AppData" / "Local" / "Python" / "bin"
     _working(real, ("python",))
     path = [apps, real, _tools(tmp_path)]
 
-    assert _bash_resolver("crew_py_strict", path) == _print_python(path)
+    assert _bash_resolver("crew_py_strict", path) == crew_fixtures.windows_to_posix(_print_python(path))
 
 
 # --- (c) no python at all ------------------------------------------------------
