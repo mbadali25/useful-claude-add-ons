@@ -41,7 +41,29 @@ fi
 # shells they race for the same turn's gate, and a short-lived per-turn lock
 # right before the expensive part lets whichever gets there first do the
 # real work while the other backs off (see LOCK below).
-INPUT=$(cat 2>/dev/null)
+#
+# Bounded, and the twin of verify-gate.ps1's read below. A Stop hook always
+# pipes JSON here, but nothing enforces that the pipe is ever actually
+# closed, and a bare `cat` blocks the WHOLE script on it -- the same
+# parked-process shape a hung interpreter probe produces, for a different
+# cause. `[ -t 0 ]` is true only for an interactive terminal (nothing was
+# ever going to arrive), so nothing is read at all in that case.
+#
+# THE BOUND IS TOTAL, NOT PER LINE. A `while read -t 5` loop gives EACH read
+# call its own fresh 5s, so a producer that trickles bytes slowly enough to
+# keep completing one read just under the wire (without ever closing the
+# pipe) resets the clock forever and parks the whole script -- the same
+# hang this bound exists to prevent, just spread across more reads. A
+# single `read -t 5 -d ''` has one deadline for the WHOLE operation: it
+# reads everything that arrives (embedded newlines included, since the
+# delimiter is NUL, not newline) until either EOF or the 5s bound, whichever
+# comes first, and preserves whatever partial input arrived either way. The
+# Stop hook's payload is one line and arrives immediately in every real
+# invocation, so this never differs from the old behaviour on the real path.
+INPUT=""
+if [ ! -t 0 ]; then
+  IFS= read -r -t 5 -d '' INPUT || true
+fi
 
 # Claude Code re-fires Stop after a blocking Stop hook. Without this check the
 # gate blocks its own retry forever, and a failing check becomes a stuck session.
@@ -332,8 +354,7 @@ BUDGET_FLAG=""
 #
 # Stop fires once per TURN, so a turn that changed nothing the gate cares
 # about re-runs the whole map to reach the answer it reached a minute ago.
-# The event is not the gate; the STATE is -- pm_pulse.py makes the same
-# argument in its own header for the same reason.
+# The event is not the gate; the STATE is.
 #
 # The digest comes from verify_fingerprint.py, shared with the .ps1 so the
 # two cannot drift, and covers HEAD, the changed paths AND their bytes,
@@ -563,12 +584,68 @@ if ! mkdir "$LOCK" 2>/dev/null; then
     fi
   fi
 fi
+# --- shared cleanup registry -----------------------------------------
+# Every exit-path cleanup from here on (this lock's own release when a lock
+# is actually held, and the python3 shim's temp dir below) registers a
+# FUNCTION here instead of splicing `trap -p` text - a chained `trap -p`-
+# based layer already sits at the edge of what that idiom can do: `trap -p`
+# re-quotes its output as a single-quoted string literal, escaping any
+# embedded `'` as `'\''`, and splicing that ALREADY-escaped text into a
+# second trap's own double-quoted body leaves the escape unresolved - not
+# valid shell, and a mid-run `unexpected EOF` at whichever signal fires it.
+# A third stage was tried exactly that way once, to reap a rule's own
+# escaped process group on every exit, and reverted for this reason - see
+# the test that caught it (test_shim_cleanup_does_not_clobber_the_lock_release_trap).
+# That third stage (per-rule process-group tracking and kill) was later
+# descoped from crew 1.0 entirely - see CHANGELOG 1.0.21 and CONFIG.md's
+# limitations entry - so only the two stages below exist now. A function
+# registered by NAME has nothing to re-quote at all, at any depth: every
+# stage just appends its own cleanup function to this array, and the
+# dispatcher below calls each in turn at signal time, reading whatever
+# variables that function closes over fresh, not a frozen string captured
+# at registration time.
+#
+# UNCONDITIONAL, unlike the lock registration below it: the shim (further
+# down this file) registers into this array regardless of whether a lock
+# was ever acquired - an UNLOCKED run (the lock path is a regular file, or
+# otherwise unwritable) still has to clean up its own shim tempdir.
+# Defining the registry only inside the locked branch left that call
+# hitting "command not found" on stderr on every unlocked run, because
+# neither the array nor the traps existed for it to register into.
+_CREW_GATE_CLEANUP_FNS=()
+_crew_gate_register_cleanup() { _CREW_GATE_CLEANUP_FNS+=("$1"); }
+_crew_gate_run_cleanup() {
+  local _crew_gate_cleanup_i
+  for (( _crew_gate_cleanup_i=${#_CREW_GATE_CLEANUP_FNS[@]} - 1;
+         _crew_gate_cleanup_i >= 0; _crew_gate_cleanup_i-- )); do
+    "${_CREW_GATE_CLEANUP_FNS[_crew_gate_cleanup_i]}" 2>/dev/null
+  done
+}
+# Installed ONCE, here - the first point this script has anything to
+# clean up. INT/TERM/HUP each run the dispatcher and then exit with the
+# conventional 128+signal status: an asynchronous signal this script has
+# trapped no longer terminates it on its own, so without an explicit
+# `exit` here a rule stuck mid-command would run its cleanup and then
+# simply CONTINUE running - not what sent the signal wanted, and the
+# exact gap that let a rule's own escaped process group outlive this
+# whole gate being killed. EXIT needs no explicit exit of its own - the
+# script is already on its way out with whatever code got it there.
+trap '_crew_gate_run_cleanup; exit $((128 + 15))' TERM
+trap '_crew_gate_run_cleanup; exit $((128 + 2))' INT
+trap '_crew_gate_run_cleanup; exit $((128 + 1))' HUP
+trap '_crew_gate_run_cleanup' EXIT
+
 if [ "$UNLOCKED" -eq 0 ]; then
   # A token of our own, so a SECOND reclaimer that deleted our fresh lock and
   # took its own is detectable: whoever's token is on disk once both have
   # written owns the turn, and the other backs off instead of both running.
   LOCK_TOKEN="sh-$$-$(date +%s)-${RANDOM:-0}"
-  trap 'if [ "$(cat "$LOCK/token" 2>/dev/null)" = "$LOCK_TOKEN" ]; then rm -rf "$LOCK" 2>/dev/null; fi' EXIT INT TERM
+  _crew_gate_cleanup_lock() {
+    if [ "$(cat "$LOCK/token" 2>/dev/null)" = "$LOCK_TOKEN" ]; then
+      rm -rf "$LOCK" 2>/dev/null
+    fi
+  }
+  _crew_gate_register_cleanup _crew_gate_cleanup_lock
   printf '%s\n' "$LOCK_TOKEN" > "$LOCK/token" 2>/dev/null
   # Only the reclaim path can race another reclaimer; the plain-mkdir winner
   # cannot be clobbered, since its lock is far too young for anyone to reclaim.
@@ -592,8 +669,8 @@ fi
 # `|| true` and the explicit `:` -- a python that dies, is missing, or writes
 # nothing must leave this gate exactly as it found it.
 #
-# The logic lives in scope_report.py, not here, for the reason pm-pulse.sh
-# gives: the bash and PowerShell flavours must not drift, and the ticket is
+# The logic lives in scope_report.py, not here, because the bash and
+# PowerShell flavours must not drift, and the ticket is
 # resolved by crew_state.read_work, whose rules (done markers, table status,
 # None rather than a guess) are not worth re-deriving twice in two shells.
 # $DIR is NOT defined in this script -- only `dirname` inline at the top. An
@@ -1369,24 +1446,14 @@ if ! command -v python3 >/dev/null 2>&1; then
          && chmod +x "$SHIM_DIR/python3" 2>/dev/null; then
         PATH="$SHIM_DIR:$PATH"
         export PATH
-        # Cleaned up on EVERY exit path (EXIT INT TERM), CHAINED onto
-        # whatever is already trapped for those signals rather than
-        # replacing it - a bare `trap ... EXIT` here would silently drop
-        # the lock's own release trap (see the lock's trap comment above,
-        # and its own note at :637 about a second `trap ... EXIT`
-        # replacing rather than adding). `trap -p SIG` reproduces a full,
-        # valid `trap -- '...' SIG` statement for whatever is currently
-        # registered, or nothing at all if nothing is - both are handled.
-        for _crew_shim_sig in EXIT INT TERM; do
-          _crew_shim_prior=$(trap -p "$_crew_shim_sig" 2>/dev/null \
-            | sed -e "s/^trap -- '//" -e "s/' $_crew_shim_sig\$//")
-          if [ -n "$_crew_shim_prior" ]; then
-            trap "rm -rf '$SHIM_DIR' 2>/dev/null
-$_crew_shim_prior" "$_crew_shim_sig"
-          else
-            trap "rm -rf '$SHIM_DIR' 2>/dev/null" "$_crew_shim_sig"
-          fi
-        done
+        # Cleaned up on EVERY exit path (EXIT INT TERM HUP), via the shared
+        # cleanup registry above rather than a `trap -p`-spliced string -
+        # see that registry's own comment for why: this is the SECOND
+        # stage registered into it (the lock's release is the first), and
+        # a naive splice-based chain breaks on exactly a stage this deep.
+        # Registering a function has no such depth limit at all.
+        _crew_gate_cleanup_shim() { rm -rf "$SHIM_DIR" 2>/dev/null; }
+        _crew_gate_register_cleanup _crew_gate_cleanup_shim
       else
         rm -rf "$SHIM_DIR" 2>/dev/null
         echo "verify-gate: could not build the python3 shim (temp dir not writable) - a rule hardcoding python3 may fail where python3 itself is absent" >&2
@@ -1423,6 +1490,16 @@ CMD_LOG=""
 # exceed the TTL as any later one, and until this ran the lock carried no
 # deadline at all.
 lock_extend
+# Per-rule process-group tracking and kill-on-signal (a third registry
+# stage, `_crew_gate_cleanup_rule_pgid`, plus its pgid/sid ownership-proof
+# helpers) was descoped from crew 1.0 after five consecutive review rounds
+# each found the previous round's fix one case short - see CHANGELOG 1.0.21
+# and TODO.md for the failure modes those rounds found (disk fill by an
+# orphan writer, escape on gate kill, an unlocked registry, pid/pgid reuse
+# in both p- and g-mode, a session-id proof that is not ownership, and a
+# leader-exited group). CONFIG.md states the resulting limitation: this gate
+# does not reap what a rule leaves running in the background: a rule must
+# not background work.
 while IFS= read -r IDENT; do
   [ -z "$IDENT" ] && continue
   # IDENT is a matcher IDENTITY: the literal command text, and - only when
@@ -1448,7 +1525,7 @@ print(text + "\x1e" + (envjson if sep else ""), end="")
   c="${SPLIT%%$'\x1e'*}"
   ENV_JSON="${SPLIT#*$'\x1e'}"
   # --- env pinning ---------------------------------------------------
-  # ENV, AWS_PROFILE, AWS_DEFAULT_REGION, KUBECONFIG and TF_WORKSPACE are
+  # Every PINNED_VARS name (verify_record.py: ENV, AWS_PROFILE, ... TF_VAR_environment) is
   # unset for every rule command UNLESS the owning rule declares "env" for
   # it, in which case exactly those declared values are exported instead.
   # A gate whose target is chosen by whatever the calling shell happened to
@@ -1463,7 +1540,9 @@ try:
     spec = json.loads(sys.stdin.read() or "{}")
 except ValueError:
     spec = {}
-for v in ("ENV", "AWS_PROFILE", "AWS_DEFAULT_REGION", "KUBECONFIG", "TF_WORKSPACE"):
+for v in ("ENV", "AWS_PROFILE", "AWS_DEFAULT_REGION", "KUBECONFIG", "TF_WORKSPACE",
+          "AWS_REGION", "AWS_DEFAULT_PROFILE", "AZURE_SUBSCRIPTION_ID",
+          "ARM_SUBSCRIPTION_ID", "TF_VAR_environment"):
     val = spec.get(v)
     if isinstance(val, str):
         print("SET\x1f" + v + "\x1f" + val)
@@ -1472,7 +1551,9 @@ for v in ("ENV", "AWS_PROFILE", "AWS_DEFAULT_REGION", "KUBECONFIG", "TF_WORKSPAC
 ' 2>/dev/null | tr -d '\r')
   else
     ENV_LINES=""
-    for v in ENV AWS_PROFILE AWS_DEFAULT_REGION KUBECONFIG TF_WORKSPACE; do
+    for v in ENV AWS_PROFILE AWS_DEFAULT_REGION KUBECONFIG TF_WORKSPACE \
+             AWS_REGION AWS_DEFAULT_PROFILE AZURE_SUBSCRIPTION_ID \
+             ARM_SUBSCRIPTION_ID TF_VAR_environment; do
       ENV_LINES="${ENV_LINES}UNSET"$'\x1f'"$v"$'\n'
     done
   fi
@@ -1490,8 +1571,138 @@ for v in ("ENV", "AWS_PROFILE", "AWS_DEFAULT_REGION", "KUBECONFIG", "TF_WORKSPAC
   # </dev/null: a check that reads stdin (some test runners do) would otherwise
   # consume the rest of $CMDS from the here-string and silently skip those checks.
   RULE_START=$(date +%s)
-  OUT=$(eval "$c" 2>&1 </dev/null)
-  RC=$?
+  # Captured through a REGULAR FILE, not the `$(...)` pipe this used before
+  # (kept as the fallback below for the one case a temp file cannot be
+  # made). `$(...)` only reports EOF once EVERY process holding its
+  # write end has closed it, not just the one command this line is
+  # waiting on - so a rule that backgrounds something and does not itself
+  # wait for it (`long-thing &`, a lock-extend-style loop, anything left
+  # with `disown`) hands that write end to the grandchild too, and the
+  # grandchild holding it open wedges THIS shell forever: not bounded by
+  # anything the rule declared, and not something an external caller's own
+  # timeout can fix by killing the direct child alone, since the
+  # grandchild keeps the pipe open regardless. See
+  # test_verify_gate_stop_gate_record.py's account of test_34 for the run
+  # that first exposed a version of this. Reading a regular file has no
+  # such rule: a read returns whatever bytes are on disk right now and
+  # hits EOF at the file's current size regardless of who else still has
+  # it open for writing, so a background grandchild can no longer hold
+  # this shell's own read hostage.
+  #
+  # TMPDIR is not the only place this can be written, and it must never be
+  # the pipe form again if it is unwritable: falling back to `$(eval "$c"
+  # 2>&1 </dev/null)` re-opens exactly the wedge this file capture exists to
+  # close (a rule that backgrounds something and does not wait on it hangs
+  # THIS shell forever on a TMPDIR-unwritable host, e.g. `sh -c "sleep 60
+  # &"`). `.crew/` already exists (verify.json lives there) and is inside
+  # the repo this gate is already running against, so it is tried as a
+  # second, repo-local location before refusing the rule outright.
+  RULE_OUT_FILE=$(mktemp 2>/dev/null) || RULE_OUT_FILE=""
+  if [ -z "$RULE_OUT_FILE" ]; then
+    RULE_OUT_FILE=$(mktemp ".crew/.verify-rule-out.XXXXXX" 2>/dev/null) || RULE_OUT_FILE=""
+  fi
+  if [ -n "$RULE_OUT_FILE" ]; then
+    # `( ... )`, not a bare `eval "$c"`: `$(...)` (the old form) forks a
+    # subshell IMPLICITLY, which is why a rule command calling `exit N`
+    # (`.crew/verify.json` rules do this routinely - "run": ["exit 1"]) only
+    # ever exited THAT subshell rather than this whole script. Dropping the
+    # pipe without also keeping an explicit subshell here loses that
+    # isolation silently: `exit 77` in a rule would `exit 77` this entire
+    # gate mid-loop instead of just failing the one rule. Caught by this
+    # suite's own exit-77/exit-1 rule fixtures going from a named assertion
+    # to a bare wrong-returncode failure, not by inspection.
+    #
+    # Backgrounded and `wait`-ed on by PID, rather than run as a plain
+    # foreground compound command - NOT to change what this subshell does,
+    # only how THIS shell, the gate itself, blocks on it. A signal for
+    # which a trap is set is deferred, by bash's own documented behaviour,
+    # until whatever FOREGROUND command is currently running completes -
+    # so a bare `kill $gate_pid` landed on the gate alone used to sit
+    # unactioned for as long as the rule itself ran, defeating the
+    # TERM/INT/HUP trap above entirely for that one repro shape. The
+    # `wait` BUILTIN is the documented exception: interrupted immediately
+    # by a trapped signal, trap runs, `wait` returns >128 right away - so
+    # the lock's release and the shim's tempdir cleanup still run
+    # promptly on a signalled gate even while a rule is still running.
+    #
+    # DESCOPED FROM CREW 1.0: this used to also run the rule inside its
+    # own process group (`set -m` in a nested subshell) and record that
+    # group's id so a signalled gate could TERM/KILL whatever the rule
+    # left running - see the note above this loop (and CHANGELOG 1.0.21)
+    # for why that tracking and kill were removed. What is left here is
+    # exactly the isolation and prompt-signal properties this file's own
+    # tests (test_34b, the exit-77/exit-1 fixtures) still require: a rule
+    # that backgrounds something and never waits on it no longer wedges
+    # THIS shell's own read of $RULE_OUT_FILE (that is what the file
+    # capture above already guarantees, independent of anything below),
+    # but a rule's own escaped background work is no longer reaped by
+    # this gate - see CONFIG.md's limitation entry.
+    ( eval "$c" ) >"$RULE_OUT_FILE" 2>&1 </dev/null &
+    RULE_SUBSHELL_PID=$!
+    wait "$RULE_SUBSHELL_PID" 2>/dev/null
+    RC=$?
+    # Snapshot the size the moment the rule's OWN process exits, then read
+    # exactly that many bytes -- never the whole file as it stands when
+    # `cat` gets around to it. A backgrounded grandchild that keeps writing
+    # after RC is captured (`sh -c 'yes &'`, continuously appending to the
+    # same fd) keeps a bare `cat`/`$(<file)` read chasing a file that never
+    # stops growing, which is the same non-terminating shape the pipe
+    # capture produced, moved from "EOF never arrives on a pipe" to "EOF
+    # never arrives on a file being appended to concurrently". `stat` is one
+    # syscall against the size on disk right now; it does not read the
+    # file's growing content and so cannot itself be made to wait on it.
+    # Capped as well, independent of the grandchild: nothing downstream
+    # needs more than a `tail -25` of this, and a rule that legitimately
+    # writes megabytes of its own output before backgrounding anything
+    # should not turn a bounded gate into an unbounded read either. The
+    # env override exists for this suite's own tests only (proving the cap
+    # is enforced without writing gigabytes to prove it) - no operator-facing
+    # doc names it, and it must never be set outside a test process.
+    RULE_OUT_SIZE=$(stat -c%s "$RULE_OUT_FILE" 2>/dev/null || stat -f%z "$RULE_OUT_FILE" 2>/dev/null || echo 0)
+    case "$RULE_OUT_SIZE" in ''|*[!0-9]*) RULE_OUT_SIZE=0 ;; esac
+    RULE_OUT_CAP=${CREW_VERIFY_GATE_TEST_RULE_OUT_CAP:-1048576}
+    # Digits only, and (once digits are confirmed) actually in range: the
+    # override is test-only, but an out-of-range value here is not a
+    # hypothetical - 0 disables the cap entirely (every rule's full
+    # output, unbounded) and anything past 1 MiB defeats the reason this
+    # cap exists at all. The 8-`?` glob rejects an over-long digit string
+    # BEFORE the numeric compare below - `[ -lt ]` on a huge digit string
+    # can itself error ("integer expression expected") rather than compare
+    # cleanly - without rejecting a valid 7-digit value first: every
+    # in-range value is at most 7 digits (1048576 itself is 7), so the
+    # glob only needs to catch 8 OR MORE, and the numeric compare right
+    # below still does the actual 1..1048576 validation. A 7-`?` glob
+    # (matching length >= 7, not > 7) used to reject every valid 7-digit
+    # value too, including in-range ones like 1000000.
+    case "$RULE_OUT_CAP" in
+      ''|*[!0-9]*|????????*) RULE_OUT_CAP=1048576 ;;
+    esac
+    if [ "$RULE_OUT_CAP" -lt 1 ] || [ "$RULE_OUT_CAP" -gt 1048576 ]; then
+      RULE_OUT_CAP=1048576
+    fi
+    if [ "$RULE_OUT_SIZE" -gt "$RULE_OUT_CAP" ]; then RULE_OUT_SIZE=$RULE_OUT_CAP; fi
+    # `tail -c`, not `head -c`: what a failing rule needs downstream is its
+    # LAST `tail -25` lines - the actual error, which for any rule producing
+    # more than the cap is at the END of the file, not the start. Reading
+    # the first $RULE_OUT_SIZE bytes instead (the old `head -c` form)
+    # discarded exactly the diagnostic this capture exists to preserve: a
+    # rule that prints megabytes of build noise before its one real failure
+    # line read as an opaque, truncated wall of noise with the actual error
+    # cut off. `tail -c N` on a REGULAR file seeks near EOF directly rather
+    # than reading the whole file to get there, so this keeps the same
+    # bounded-cost property `stat`+cap already established - it is not a
+    # return to an unbounded read.
+    OUT=$(tail -c "$RULE_OUT_SIZE" "$RULE_OUT_FILE" 2>/dev/null)
+    rm -f "$RULE_OUT_FILE"
+  else
+    # Neither TMPDIR nor .crew/ is writable: refuse this rule with a named
+    # reason instead of running it through the pipe form. A check that
+    # cannot capture its own output safely is not a check that ran. The
+    # "VERIFY FAILED: $c" header and this message both print below, through
+    # the same RC-ne-0 branch every other rule failure goes through.
+    OUT="verify-gate: cannot create an output-capture file (TMPDIR and .crew/ both unwritable) - refusing rather than falling back to a pipe capture that a backgrounded grandchild can wedge forever"
+    RC=1
+  fi
   # Exit 77 is SKIP, the _verify/smoke.sh and GNU automake convention for
   # "skipped, environment absent" -- not a pass, not a fail. It must not
   # fail the turn, and it must not be recorded as verified either: it is

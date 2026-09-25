@@ -38,7 +38,7 @@ half and withholds the useful one. The last line of that block is the answer:
 either `-> \`copilot\` answers for any role barred above`, or
 
 > `NO INDEPENDENT REVIEWER` — every candidate is unreachable or speaks as the
-> family that wrote the diff. `/crew:review` falls back to the `qa-reviewer`
+> family that wrote the diff. `/crew:review` falls back to the `reviewer`
 > subagent and **labels the result same-family**. It runs; it does not count as
 > an independent review.
 
@@ -123,9 +123,9 @@ and this same command's role table says `developer` is `No — code lands. A
 7B's failures are fluent and pass a skim.` A provider slot that contradicts
 that row is the defect from the other direction. Where a local model earns
 its keep is the ROLE-TOOLING level, one layer down: `mcp__localgpu__
-search_code` on `explorer`, `scribe`, `docs-writer`, and the mechanical
+search_code` on `explorer`, and the mechanical
 capture in `/crew:onboard` and `/crew:diagram` — never as a `provider` value,
-and never for `qa-reviewer`. See `plugin/localgpu/commands/crew.md`. The
+and never for `reviewer`. See `plugin/localgpu/commands/crew.md`. The
 refusal here, as everywhere else in this table, is a raised `ProviderError`
 naming the key, not a silent drop.
 | `dev.copilot.model` | required when `dev.provider` is `copilot` — the review interlock in step 3 cannot work without knowing which family wrote the code |
@@ -198,8 +198,8 @@ QA rungs it just disqualified:
 
 | Author family | Disqualified from QA | What review drops to |
 |---|---|---|
-| `claude` | `claude` (the `qa-reviewer` fallback) | unchanged — Codex or Copilot |
-| `gpt` (any codex model) | every codex pin, whichever model | Copilot pinned off Claude, else `qa-reviewer` |
+| `claude` | `claude` (the `reviewer` fallback) | unchanged — Codex or Copilot |
+| `gpt` (any codex model) | every codex pin, whichever model | Copilot pinned off Claude, else `reviewer` |
 | `kimi` (a Kimi Copilot pin) | that Copilot pin | the next family in `qa.order` |
 
 The family comes from `model.split("-")[0]`. That is why **`gpt-5.6-sol` and

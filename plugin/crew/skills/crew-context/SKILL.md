@@ -25,7 +25,7 @@ You do not need it to. The lifecycle already provides the whole cycle:
 | Approaching the limit | `Stop` | Estimate usage; ask for a handoff note before the turn ends |
 | Auto-compaction about to run | `PreCompact` | Snapshot the transcript, write a skeleton handoff if none exists |
 | After `/clear`, `/compact`, or resume | `SessionStart` | Print the handoff — its stdout is injected as context |
-| Any session start, including plain `startup` | `SessionStart` | `pm-brief` prints the PM's brief (triggers like `upgradeNeeded`, `handoffPending`, `graphStale`) so crew says something even on a fresh session, not only after a clear or compact |
+| Any session start, including plain `startup` | `SessionStart` | the context hook (`crew-context.sh`) injects branch/HEAD, code-map anchor state and a pointer to the handoff, so crew says something even on a fresh session, not only after a clear or compact |
 
 So the flow is: crew tells you it is time, you type `/clear` or `/compact`, and
 the next session opens already holding the handoff. The one manual step is the
@@ -40,22 +40,29 @@ twin read that - see "How the reading is taken" below. `/context` should agree
 with the watcher to within a turn; if it does not, the budget is wrong, not
 the reading, and the warning prints both numbers so you can see which.
 
-The watcher fires **once per session**. It writes `.crew/.handoff-requested` and
-stays quiet afterwards; `SessionStart` clears the marker. Without that gate a
-`Stop` hook returning exit 2 will fire on every turn and trap the session in a
-loop.
+The watcher fires **once per threshold crossing per session**. It writes
+`.crew/.handoff-requested-<session_id>` (the payload's `session_id`, reduced to
+`[A-Za-z0-9_-]`) and stays quiet afterwards; that session's next `SessionStart`
+clears it, and so does a measured reading back under the threshold. Without
+that gate a `Stop` hook returning exit 2 will fire on every turn and trap the
+session in a loop. It never blocks on a `stop_hook_active` continuation, but
+that continuation is the turn it hands to auto-clear.
 
 The claim is taken atomically - `set -o noclobber` in bash, `FileMode::CreateNew`
 in PowerShell - because on Windows with Git Bash installed **both** flavours
 really do run on the same `Stop`, and a test-then-create lets both through and
 prints the warning twice.
 
-**The marker is per repository, not per session.** Two sessions open in the same
-repo share it: the first to cross the threshold claims it and the second is not
-warned, and either one's `SessionStart` clears it for both. That is pre-existing
-behaviour and it is wrong, not deliberate - the fix is to key the marker on the
-hook payload's `session_id`. Worth knowing before concluding the watcher is
-broken in a two-terminal workflow.
+**The marker is per session.** It used to be one file per repository, so two
+terminals in one repo shared it: the first to cross the threshold silenced the
+other, and either one's `SessionStart` re-armed both. It is now keyed on the
+payload's `session_id`, and `SessionStart` clears only its own session's marker
+(other sessions' markers age out after seven days).
+
+The marker also records the reading that caused it, and whether that reading
+can be trusted. Auto-clear (opt-in per machine; see
+`docs/guides/crew/src/auto-cycle.md`) never clears on an estimate, an unknown
+window, a pre-compaction reading, or an empty marker.
 
 ## The handoff note
 
@@ -108,10 +115,11 @@ want here.
 ### Auto-resume
 
 `SessionStart` can return JSON with an `additionalContext` payload. With
-`context.autoResume: true` and a handoff on disk, `pm_brief` folds the
-handoff text plus its extracted next action into `additionalContext`, so the
-new session opens already holding that context — the human presses Enter
-rather than typing. It does not start working on its own.
+`memory.inject` on (the default since 1.0.0) and a handoff on disk, the context
+hook (`crew_context.py`) injects the handoff text into `additionalContext` on
+`clear`/`compact`/`resume`, and a pointer plus its extracted next action on
+`startup` — the human presses Enter rather than typing. It does not start
+working on its own. `context.autoResume` is no longer read.
 
 `SessionStart` can also return `initialUserMessage`, which starts the new
 session working with no human turn at all. It is confirmed working only for
@@ -120,28 +128,26 @@ PTY was available to prove it in an interactive session, so interactive
 behavior is unproven. Crew does not use it. Reproduce the `-p` test before
 relying on it interactively.
 
-Off by default, and it should stay off unless you have a specific reason. It
-removes the one moment where a human reads what the previous session claimed
-before work continues on top of it. If a handoff is subtly wrong, auto-resume is
-how that error compounds unattended.
+The injected note is framed as project information that the working tree
+overrides, so a subtly wrong handoff is read against `git diff` before anyone
+acts on it.
 
-Turn it on with `context.autoResume: true` only after you have watched a dozen
-handoffs and trust their accuracy.
-
-When it is on, `handoff-read` stands down on `clear`/`compact`/`resume`/`fork`
-so `pm_brief` is the handoff's only emitter — otherwise the same handoff would
-be injected twice.
+When `memory.inject` is on, `handoff-read` stops printing on
+`clear`/`compact`/`resume`/`fork` so the context hook is the handoff's only
+emitter — otherwise the same handoff would be injected twice. It still resets
+its once-per-session markers either way. Set `memory.inject: false` and
+`handoff-read` prints the note instead.
 
 ### Staleness and archiving
 
-`pm_brief`'s `handoffPending` finding only ever asked whether `HANDOFF.md`
+The old `handoffPending` finding only ever asked whether `HANDOFF.md`
 exists — it fires the same way for a note written five minutes ago and one
 written before a gate closed and two more commits landed on top of it. The
 second case is a note describing a state that no longer exists, and injecting
 it as though it were current is how a session ends up "resuming" work that a
 different session already finished.
 
-`handoff-read` (and, under `autoResume`, `pm_brief` itself) now judges the
+`handoff-read` and the context hook both judge the
 note before printing or injecting it, on two signals — see
 `crew_state.handoff_staleness` for the full reasoning:
 
@@ -180,7 +186,6 @@ existed.
   "reserveTokens": 100000,
   "handoffPath": ".work/HANDOFF.md",
   "autoWrapUp": false,
-  "autoResume": false,
   "keepTranscripts": 5,
   "staleHandoff": {
     "maxAgeHours": 72,
@@ -196,8 +201,8 @@ survives no more than a commit or two, or raise `maxAgeHours` for one where a
 session reasonably picks a handoff back up after a quiet weekend.
 
 `keepTranscripts` is honoured by `PreCompact`: that many `.jsonl` snapshots are
-kept under `.crew/transcripts/` and older ones are deleted. `autoWrapUp` and
-`autoResume` are both off by default - see above. So is `autoClear`, which is
+kept under `.crew/transcripts/` and older ones are deleted. `autoWrapUp` is
+off by default. So is `autoClear`, which is
 experimental and presses a key on the user's behalf; its own block is
 `context.autoClear` and it refuses rather than guessing whenever it cannot
 identify what it would be typing into.
@@ -287,7 +292,7 @@ including any secret that reached it.
 ## Housekeeping
 
 Delete `HANDOFF.md` yourself when the work it describes is finished, rather
-than waiting on the staleness check above to catch it later. `/crew:work`
+than waiting on the staleness check above to catch it later. `/crew:done`
 clears it on ticket completion for this reason, and that is still a real
 delete — the work is done, the note has nothing left to record, and there is
 nothing there worth archiving.

@@ -23,6 +23,7 @@ import re
 import pytest
 
 import context  # noqa: F401  pylint: disable=unused-import
+import crew_autocycle
 import crew_config
 import crew_fixtures
 import crew_platform
@@ -258,7 +259,16 @@ def test_the_ten_keys_crew_read_but_never_declared_are_declared():
     # 102 at schema 7: the six `change` keys.
     # 103 since crew 0.19.92: `guards.roleWrites`, the role-write PreToolUse
     # guard's config key.
-    assert len(declared) == 103
+    # 106 since crew 0.20.19: the context hook's `memory.inject`,
+    # `memory.recall.vaults` and `memory.recall.maxChars`.
+    # 112 with the cloud guard: `guards.cloudDestructive`,
+    # `guards.sqlDestructive`, the `guards.cloudGuard` switch, and the three
+    # repo-only `cloud.*` identity-pin lists.
+    # 114 with crew 1.0 T3: `scope.mode`, the scope guard's key, and
+    # `scope.allowCliApproval` from the T3 fix round.
+    # 116 with the Windows burn-in's autoClear narrowing:
+    # `context.autoClear.onlyRepos` and `context.autoClear.onlySessions`.
+    assert len(declared) == 116
 
 
 def test_autoclear_is_global_and_its_siblings_are_not():
@@ -279,7 +289,9 @@ def test_autoclear_is_global_and_its_siblings_are_not():
     for dotted in ("context.autoClear.enabled", "context.autoClear.method",
                    "context.autoClear.windowTitle", "context.autoClear.command",
                    "context.autoClear.delaySeconds",
-                   "context.autoClear.minHandoffLines"):
+                   "context.autoClear.minHandoffLines",
+                   "context.autoClear.onlyRepos",
+                   "context.autoClear.onlySessions"):
         assert crew_config.is_global_path(dotted), dotted
 
     # The siblings, refused -- and refused BY NAME, not by the block name.
@@ -658,8 +670,19 @@ def test_the_model_table_still_layers_globally(tmp_path, monkeypatch):
     assert resolved["dev"]["roles"]["developer"]["model"] == "gpt-6-astra"
     # BOTH memory keys are global as of 0.16.0 -- one vault per person, and a
     # person who keeps their memory in a vault keeps it there everywhere.
+    # The context hook's keys beside them come from the repo defaults.
     assert resolved["memory"] == {"mode": "vault",
-                                  "vaultPath": "/home/me/vault"}
+                                  "vaultPath": "/home/me/vault",
+                                  "inject": True,
+                                  "recall": {"vaults": [], "maxChars": 800}}
+
+
+@pytest.mark.parametrize("dotted", ["memory.inject", "memory.recall.vaults",
+                                    "memory.recall.maxChars"])
+def test_the_context_hook_memory_keys_are_repo_only(dotted):
+    """crew_context.py reads the repo's file and no other layer, so a global
+    value for these would be accepted and then do nothing."""
+    assert crew_config.is_global_path(dotted) is False
 
 
 def test_memory_mode_is_globally_settable_and_the_template_ships_it():
@@ -1528,7 +1551,9 @@ def test_only_autoclear_is_in_scope_for_null_shadowing_under_context():
                               "context.autoClear.windowTitle",
                               "context.autoClear.command",
                               "context.autoClear.delaySeconds",
-                              "context.autoClear.minHandoffLines"]
+                              "context.autoClear.minHandoffLines",
+                              "context.autoClear.onlyRepos",
+                              "context.autoClear.onlySessions"]
     assert "context.autoClear.unsafeFocus" not in leaves
     assert not [p for p in leaves if p.startswith("emergency.")]
 
@@ -1605,3 +1630,37 @@ def test_explain_config_credits_global_not_repo_for_an_inherited_null(
 
     assert row["value"] == "G:" + os.sep + "shared"
     assert row["source"] == "global", row
+
+
+def test_explain_config_reports_autoclear_only_repos_from_the_global_layer_only(
+        tmp_path):
+    """Review round 2 (crew-1.0-r3-autocycle, lane fix4 finding 4).
+
+    `crew_autocycle.settings` and `auto-clear.ps1` read onlyRepos /
+    onlySessions from the machine-global file ONLY -- a repo's own copy is
+    never consulted. `explain_config` applied the same repo-over-global
+    precedence as every other key, so a repo that listed itself was
+    credited `source: repo`, and `/crew:config --show` could claim
+    auto-clear was restricted to that repo while the hooks left it armed
+    everywhere the machine opt-in reaches. The report must agree with the
+    run: source is never `repo`, the value is the global one, and a
+    repo-level value is flagged rather than folded in."""
+    global_path = tmp_path / "global-config.json"
+    global_path.write_text(
+        json.dumps({"context": {"autoClear": {"enabled": True}}}), encoding="utf-8")
+    root = tmp_path / "repo"
+    root_cfg = {"schema": crew_state.SCHEMA_CURRENT,
+                "context": {"autoClear": {"onlyRepos": [str(root)]}}}
+    crew_fixtures.make_repo(tmp_path, config=root_cfg, git=False)
+
+    rows = {r["path"]: r for r in
+            crew_config.explain_config(str(root), path=str(global_path))}
+    row = rows["context.autoClear.onlyRepos"]
+
+    assert row["source"] != "repo" and row["source"] != "repo+global"
+    assert row["value"] is None
+    assert row["repoIgnored"] == [str(root)]
+
+    settings = crew_autocycle.settings(str(root), global_path=str(global_path))
+    assert settings["onlyRepos"] is None
+    assert settings["onlyRepos"] == row["value"]

@@ -140,6 +140,31 @@ def run(
             CHECKER.ROOT = saved
 
 
+def run_markdown_lines(docs: dict[str, str], crew_files: dict[str, str]) -> list[str]:
+    """Run check_self_claims against a fixture carrying `plugin/crew/*.md`
+    files, for the `crew-markdown-lines` claim -- the one kind `run()`'s
+    fixture (a `plugin/widget` with no `plugin/crew` at all) cannot exercise,
+    since `count_crew_markdown_lines` reads `plugin/crew/*.md` by a hardcoded
+    path rather than from `ENTRIES`.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        build(tmp, docs)
+        for rel, body in crew_files.items():
+            path = os.path.join(tmp, "plugin", "crew", rel)
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w", encoding="utf-8", newline="\n") as fh:
+                fh.write(body)
+        subprocess.run(["git", "-C", tmp, "add", "-A"], check=False, capture_output=True)
+        saved = CHECKER.ROOT
+        CHECKER.ROOT = tmp
+        try:
+            problems: list[str] = []
+            CHECKER.check_self_claims(ENTRIES, problems.append)
+            return problems
+        finally:
+            CHECKER.ROOT = saved
+
+
 def run_description(
     description: str,
     description_claims: dict,
@@ -1163,10 +1188,61 @@ CASES_DESCRIPTION: list[tuple[str, dict, int, str]] = [
 ]
 
 
+# `crew-markdown-lines` -- the plugin/crew/*.md total, distinct from
+# `skills-count` (marketplace.json) and `plugin-skills:`/`plugin-commands:`
+# (filesystem counts scoped by ENTRIES): this one reads `plugin/crew/*.md`
+# directly, so its fixture needs real files under that path, not `ENTRIES`.
+CASES_MARKDOWN_LINES: list[tuple[str, dict, dict, int, str]] = [
+    (
+        "a marked total that disagrees with plugin/crew/*.md",
+        {"README.md": "<!-- claim: crew-markdown-lines -->\n9 lines\n"},
+        {"a.md": "one\ntwo\nthree\n"},
+        1,
+        "currently totals 3",
+    ),
+    (
+        "a marked total that is correct",
+        {"README.md": "<!-- claim: crew-markdown-lines -->\n3 lines\n"},
+        {"a.md": "one\ntwo\nthree\n"},
+        0,
+        "",
+    ),
+    (
+        "a file with no trailing newline is not undercounted by one",
+        {"README.md": "<!-- claim: crew-markdown-lines -->\n2 lines\n"},
+        {"a.md": "one\ntwo"},  # no trailing newline -- still 2 lines
+        0,
+        "",
+    ),
+    (
+        "an unmarked wrong total is not the checker's business",
+        {"README.md": "plugin/crew is 9 lines today.\n"},
+        {"a.md": "one\ntwo\nthree\n"},
+        0,
+        "",
+    ),
+]
+
+
 def main() -> int:
     passed = failed = 0
     for name, docs, expected, needle in CASES:
         problems = run(docs)
+        ok = len(problems) == expected
+        if ok and needle:
+            ok = any(needle in p for p in problems)
+        if ok:
+            passed += 1
+            print(f"  ok   {name}")
+        else:
+            failed += 1
+            print(f"  FAIL {name}")
+            print(f"       expected {expected} problem(s)"
+                  + (f" containing {needle!r}" if needle else ""))
+            print(f"       got {len(problems)}: {problems}")
+
+    for name, docs, crew_files, expected, needle in CASES_MARKDOWN_LINES:
+        problems = run_markdown_lines(docs, crew_files)
         ok = len(problems) == expected
         if ok and needle:
             ok = any(needle in p for p in problems)

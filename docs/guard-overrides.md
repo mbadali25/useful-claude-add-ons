@@ -29,7 +29,7 @@ sides before ranking.
 
 ```
 guards.terraformApply   block | ask | allow   — terraform/tofu apply, incl. -chdir forms
-guards.forcePush        block | ask | allow   — git push --force / -f / --force-with-lease to a protected branch
+guards.forcePush        block | ask | allow   — git push --force / -f / --force-with-lease to any branch, protected or not
 guards.adminMerge       block | ask | allow   — gh pr merge --admin and equivalents
 guards.mergeGate        block | ask | allow   — may crew disable/re-enable a live merge gate
 install.policy          manual | ask | auto   — already shipped; unchanged

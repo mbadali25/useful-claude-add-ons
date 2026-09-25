@@ -1,0 +1,800 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Troubleshooting</title>
+<style>
+body { font-family:'Segoe UI',Calibri,Arial,sans-serif; font-size:11pt;
+       color:#ECEFF4; background:#2E3440; margin:2cm; line-height:1.45; }
+.wrap { max-width:none; margin:0; padding:0; }
+
+h1 { font-size:22pt; margin:0 0 4pt; color:#88C0D0; }
+h2 { font-size:16pt; margin:24pt 0 8pt; padding-bottom:3pt;
+     border-bottom:1px solid #4C566A; color:#88C0D0; }
+h3 { font-size:13pt; margin:16pt 0 6pt; color:#88C0D0; }
+p  { margin:6pt 0; }
+ul, ol { margin:4pt 0 8pt 18pt; }
+li { margin:3pt 0; }
+code { font-family:Consolas,'Courier New',monospace; font-size:9.5pt; }
+.sub    { color:#D8DEE9; font-size:10pt; margin:0 0 10pt; }
+.muted  { color:#D8DEE9; font-size:9.5pt; }
+.warn { color:#EBCB8B; }
+.fail { color:#FFB3B8; }
+a { color:#88C0D0; }
+.footer { color:#D8DEE9; font-size:9.5pt; margin-top:26pt;
+          border-top:1px solid #4C566A; padding-top:8pt; }
+.box { background:#3B4252; border:1px solid #88C0D0;
+        padding:8pt 10pt; margin:10pt 0; }
+.plain { background:#3B4252; border-left:4px solid #88C0D0;
+          padding:4pt 10pt; margin:8pt 0; }
+
+/* Every table: real grid, real thead. Both required. */
+table { border-collapse:collapse; width:100%; table-layout:auto;
+             margin:8px 0 4px; }
+th, td { border:1px solid #6B7A94; padding:7px 10px;
+             text-align:left; vertical-align:top; overflow-wrap:break-word; }
+th { background:#434C5E; color:#ECEFF4; font-weight:700;
+             letter-spacing:0.02em; padding:8px 10px; }
+/* Every body cell carries its own fill. Word keeps it when a print drops the
+   page colour; LibreOffice keeps it only in the guide profile's bare `td`
+   (it drops the report's scoped selector - word-traps.md). */
+td { background:#2E3440; color:#ECEFF4; }
+/* Zebra is an explicit class, written per row by the builder. */
+tr.alt td { background:#3B4252; }
+
+table.meta { border-collapse:collapse; width:100%; margin:0 0 14px; }
+table.meta td { border:1px solid #6B7A94; padding:7px 10px; font-size:12px;
+             background:#2E3440; color:#ECEFF4; }
+table.meta td.k { background:#3B4252; font-weight:600; width:17%; }
+
+.lede { background:#3B4252; border-left:4px solid #88C0D0;
+        padding:10px 14px; margin:10px 0 4px; }
+.handling { background:#4A2C33; border-left:4px solid #A3303A;
+            padding:8px 14px; margin:10px 0; font-size:12px; color:#FFD7DB; }
+
+/* Cards are a table on purpose; the number and label are real block
+   elements rather than styled spans. */
+table.cards { border-collapse:separate; border-spacing:8px 0; width:100%;
+              margin:6px 0 2px; }
+td.card { background:#3B4252; border:1px solid #6B7A94; padding:10px 12px;
+          text-align:center; }
+div.n { font-size:22px; font-weight:700; color:#88C0D0; }
+div.l { font-size:11px; color:#D8DEE9; }
+
+.chip-critical, .chip-high, .chip-medium, .chip-low, .chip-info, .chip-unverified { display:inline-block; padding:2px 8px; font-weight:700; font-size:11px; white-space:nowrap; }
+.chip-critical { background:#FDE8E6; color:#A01B12; }
+.chip-high { background:#FFEDD5; color:#9A3412; }
+.chip-medium { background:#FDF3D7; color:#8A6100; }
+.chip-low { background:#E3F4EA; color:#1C6B3F; }
+.chip-info { background:#E8EFF8; color:#2F4B7C; }
+.chip-unverified { background:#EDEEF1; color:#5C5F6B; }
+
+@media print {
+  body { font-size:11pt; }
+  .wrap { padding:0; max-width:none; }
+  h2, h3 { page-break-after:avoid; }
+  tr { page-break-inside:avoid; }
+  thead { display:table-header-group; }
+}
+pre { background:#3B4252; border:1px solid #6B7A94; border-radius:3px;
+      padding:8pt 10pt; margin:8pt 0; overflow-x:auto; white-space:pre; }
+</style>
+<meta name="doc-builder-page" content="#2E3440">
+</head>
+<body bgcolor="#2E3440">
+<h1 id="troubleshooting">Troubleshooting</h1>
+<p>Every entry below is symptom -&gt; check -&gt; fix, grounded in the code that ships in this repo, not in
+how a hook is supposed to behave. Where a command is shown as <code>&lt;crew&gt;/hooks/scripts/...</code>, that is
+<code>${CLAUDE_PLUGIN_ROOT}/hooks/scripts/...</code> inside a command file, or the plugin's cache directory
+when you run it by hand — see the shorthand in <a href="memory-and-obsidian.md">Memory and Obsidian</a>.</p>
+<h2 id="stale-install">Stale Install</h2>
+<p><strong>Symptom:</strong> a command from this guide ("<code>/crew:status</code>", a new hook, a config key) does not exist,
+or behaves like an older release.</p>
+<ul>
+<li><strong>Check the installed version against the repo.</strong></li>
+</ul>
+<pre><code class="language-bash">cat ~/.claude/plugins/installed_plugins.json | grep -A3 '&quot;crew&quot;'
+</code></pre>
+<p>Compare the commit or version it records against <code>plugin/crew/.claude-plugin/plugin.json</code>'s
+  <code>version</code> in the marketplace clone. <code>claude plugin update</code> decides whether to re-copy a plugin by
+  comparing the <strong>declared version</strong>, not its content — a content change that ships with no version
+  bump means every already-installed copy reports "already at the latest version" forever, holding
+  the old code, with nothing in the repo itself looking wrong (<code>CLAUDE.md</code>, "Stop and ask"). This
+  class of bug is why <code>/crew:status</code>'s absence, or a hook that clearly predates a documented fix, is
+  worth checking here before assuming the fix is wrong.</p>
+<p>A related, sharper case: on a <code>directory</code>-source install (a dev checkout registered as a local
+  plugin path rather than pulled from a marketplace), <code>installed_plugins.json</code> can name a version
+  string with <strong>no relationship to the code that actually executes</strong> — the tree runs whatever is on
+  disk regardless of what that file says (<code>TODO.md</code>, "<code>installed_plugins.json</code> records 0.19.56 while
+  0.19.63 executes"). On that install shape, trust the code over the version string.</p>
+<ul>
+<li><strong>Fix:</strong></li>
+</ul>
+<pre><code class="language-bash">claude plugin update crew@useful-claude-add-ons
+</code></pre>
+<p>then <strong>restart</strong> <code>claude</code> — a running session does not pick up a re-copied plugin. If the update
+  reports "already at the latest version" and you can see the fix in the marketplace repo's <code>main</code>,
+  the version was not bumped when it should have been; that is a defect to file against the plugin,
+  not something a client-side retry fixes.</p>
+<ul>
+<li><strong>Check it worked:</strong></li>
+</ul>
+<pre><code>/crew:status
+</code></pre>
+<p>Read-only, at most 40 lines, dispatches nothing. Its <code>config</code> line names which config file it
+  read (<code>.crew/crew.json</code> for 1.0, <code>.crew/config.json</code> for 0.20); <code>codemap</code> reports <code>behind:
+  &lt;subsystem&gt;</code> when a map's anchor and the path diff both say it is stale.</p>
+<h2 id="hook-noise">Hook Noise</h2>
+<p>Every hook crew registers, from <code>plugin/crew/hooks/hooks.json</code>, and the config key that turns its
+behaviour up or down. All events are registered once for bash and once for PowerShell (<code>shell:
+"powershell"</code>), so a Windows machine with both <code>bash</code> and <code>pwsh</code> on <code>PATH</code> fires both halves of
+every pair — that is what "even counts" in the file means, not a bug.</p>
+<table>
+<thead>
+<tr>
+<th>Event</th>
+<th>Script</th>
+<th>What it does</th>
+<th>Switch</th>
+<th>Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>SessionStart</code></td>
+<td><code>handoff-read.sh</code></td>
+<td>resets its once-per-session markers; reads back <code>.work/HANDOFF.md</code> only when <code>memory.inject</code> is false</td>
+<td>— (always runs)</td>
+<td>on</td>
+</tr>
+<tr>
+<td><code>SessionStart</code></td>
+<td><code>platform-sync.sh</code></td>
+<td>detects/repairs <code>platform.{os,wsl,shell,windowsHostIp}</code></td>
+<td>— (always runs)</td>
+<td>on</td>
+</tr>
+<tr>
+<td><code>SessionStart</code> / <code>UserPromptSubmit</code> / <code>PostToolUse</code> / <code>SubagentStart</code></td>
+<td><code>crew-context.sh</code></td>
+<td>injects code-map slices and vault recall, tracks the token budget</td>
+<td><code>context.enabled</code> (whole hook), <code>memory.inject</code> (codemap, handoff and vault injection — on by default since 1.0.0)</td>
+<td><code>context.enabled: true</code>, <code>memory.inject: true</code></td>
+</tr>
+<tr>
+<td><code>UserPromptSubmit</code></td>
+<td><code>approval-hook.sh</code></td>
+<td>records or refuses a <code>/crew:approve &lt;id&gt;</code> receipt</td>
+<td>always records; enforcement depends on <code>scope.mode</code></td>
+<td>n/a</td>
+</tr>
+<tr>
+<td><code>PreToolUse</code> (<code>Bash</code>/<code>PowerShell</code>)</td>
+<td><code>promote-gate.sh</code></td>
+<td>the six command/production guards plus <code>mergeGate</code></td>
+<td><code>guards.terraformApply</code>, <code>guards.forcePush</code>, <code>guards.adminMerge</code>, <code>guards.mergeGate</code>, <code>guards.cloudDestructive</code>, <code>guards.sqlDestructive</code>, <code>guards.prodDatabase</code>, <code>guards.prodServer</code></td>
+<td><code>block</code> / <code>none</code> (the strictest tier)</td>
+</tr>
+<tr>
+<td><code>PreToolUse</code> (<code>Write</code>|<code>Edit</code>)</td>
+<td><code>role-write-guard.sh</code></td>
+<td>refuses a write outside the dispatched role's declared scope</td>
+<td><code>guards.roleWrites</code> (<code>block</code>/<code>report</code>/<code>off</code>)</td>
+<td><code>off</code></td>
+</tr>
+<tr>
+<td><code>PreToolUse</code> (<code>Bash</code>|<code>PowerShell</code>)</td>
+<td><code>cloud-guard.sh</code></td>
+<td>destructive <code>aws</code>/<code>az</code> commands and wrong-identity commands</td>
+<td><code>guards.cloudGuard</code> (<code>block</code>/<code>report</code>/<code>off</code>)</td>
+<td><code>off</code></td>
+</tr>
+<tr>
+<td><code>PreToolUse</code> (<code>Write</code>|<code>Edit</code>|<code>MultiEdit</code>|<code>NotebookEdit</code>|<code>Bash</code>|<code>PowerShell</code>)</td>
+<td><code>scope-guard.sh</code></td>
+<td>plan-approval + ticket scope guard</td>
+<td><code>scope.mode</code> (<code>off</code>/<code>report</code>/<code>block</code>/<code>auto</code>), <code>scope.allowCliApproval</code></td>
+<td><code>off</code>, <code>false</code></td>
+</tr>
+<tr>
+<td><code>PreCompact</code></td>
+<td><code>handoff-write.sh</code></td>
+<td>writes the handoff note before compaction</td>
+<td><code>context.autoWrapUp</code>, <code>context.handoffPath</code></td>
+<td>on</td>
+</tr>
+<tr>
+<td><code>Notification</code></td>
+<td><code>notify.sh</code></td>
+<td>pings an external channel</td>
+<td><code>notify.provider</code> (<code>none</code> disables it), <code>notify.events</code></td>
+<td><code>none</code></td>
+</tr>
+<tr>
+<td><code>Stop</code></td>
+<td><code>verify-gate.sh</code></td>
+<td>runs <code>.crew/verify.json</code>'s checks</td>
+<td><code>verifyGate</code> (boolean)</td>
+<td><code>true</code></td>
+</tr>
+<tr>
+<td><code>Stop</code></td>
+<td><code>context-watch.sh</code></td>
+<td>nags for a handoff near the context budget, drives auto-clear</td>
+<td><code>context.enabled</code>, <code>context.warnAt</code>, <code>context.budgetTokens</code>, <code>context.reserveTokens</code>, <code>context.autoClear.*</code></td>
+<td>on, <code>warnAt: 0.5</code></td>
+</tr>
+<tr>
+<td><code>Stop</code></td>
+<td><code>completion-audit.sh</code></td>
+<td>diffs the whole tree against the ticket's scope base</td>
+<td><code>scope.mode</code></td>
+<td><code>off</code></td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li><strong>Silence one hook without touching the rest:</strong> set its own key. <code>guards.roleWrites: off</code>,
+  <code>guards.cloudGuard: off</code> and <code>scope.mode: off</code> are already the shipped defaults — a noisy session
+  usually means one of these was turned on somewhere (repo or machine-global) and forgotten, not
+  that the default changed.</li>
+<li><strong>Silence the SessionStart context specifically:</strong> <code>{"memory": {"inject": false}}</code> stops the
+  context hook; <code>handoff-read.sh</code> then prints the handoff on resume instead.</li>
+<li><strong>See what the context hook is actually doing:</strong></li>
+</ul>
+<pre><code class="language-bash">python3 &quot;&lt;crew plugin root&gt;/hooks/scripts/crew_context.py&quot; --stats
+</code></pre>
+<p>Reports emissions, injected characters, dedup hits, and vault-recall hit/miss/skip counts with a
+  reason breakdown (see "Obsidian" below). The log itself is
+  <code>&lt;git-common-dir&gt;/crew/context-log.jsonl</code> (or <code>.work/crew/context-log.jsonl</code> outside git), shared
+  across every worktree of the repo.
+- <strong>A hook fails and you cannot tell why:</strong> every wrapper here resolves its own Python
+  (<code>python3</code>/<code>python</code>/<code>py</code>) rather than assuming one is present, and every one that can block fails
+  <strong>closed</strong> — never silently — when no interpreter resolves. See "no-python fail-closed" under
+  Scope, below; the same shape applies to <code>scope-guard.sh</code>, <code>role-write-guard.sh</code>, <code>cloud-guard.sh</code>
+  and <code>verify-gate.sh</code>.</p>
+<h2 id="review-loops">Review Loops</h2>
+<p>Each ticket gets <strong>two</strong> review rounds, reserved before the reviewer runs, tracked in
+<code>&lt;git-common-dir&gt;/crew/review/&lt;ticket&gt;.json</code> — shared by every worktree of the repo, so a second
+worktree of the same repo spends the same budget (<code>review_ledger.py</code>).</p>
+<ul>
+<li><strong>Symptom: review keeps re-running / "budget exhausted".</strong>
+  <strong>Check:</strong></li>
+</ul>
+<pre><code class="language-bash">python3 &quot;&lt;crew&gt;/hooks/scripts/review_ledger.py&quot; --root . --ticket &lt;id&gt; --status
+</code></pre>
+<p>A round's outcome is <code>CLEAN</code>, <code>FINDINGS</code> or <code>INCOMPLETE</code>. A completed round 2 — either <code>FINDINGS</code>
+  or <code>INCOMPLETE</code> — leaves the ticket state <code>REVIEWED</code>, so its <code>FINDINGS</code> can still be accepted. A
+  <strong>third</strong> reservation attempt is refused outright and the state becomes <code>NEEDS_REPLAN</code>; that
+  refusal, and an explicit <code>--reject</code>, are the only two ways into <code>NEEDS_REPLAN</code>.
+  <strong>Fix:</strong> own the FINDINGS with <code>--accept --by &lt;who&gt;</code> (only the most recent completed round, only
+  once, never once <code>NEEDS_REPLAN</code>), or write a new plan and get it approved — <code>crew_ticket.py
+  approve</code> on a <code>NEEDS_REPLAN</code> ticket opens a fresh budget of two rounds counted from the successor
+  plan; the rounds already spent stay in the ledger and are not erased.</p>
+<ul>
+<li><strong>Symptom: <code>/crew:done</code> refuses with a receipt error.</strong>
+  <strong>Check:</strong></li>
+</ul>
+<pre><code class="language-bash">python3 &quot;&lt;crew&gt;/hooks/scripts/review_ledger.py&quot; --root . --ticket &lt;id&gt; --check-receipt
+</code></pre>
+<p>A <code>CLEAN</code> verdict writes a receipt automatically; a <code>FINDINGS</code> verdict only becomes one through
+  <code>--accept</code>. <code>--check-receipt</code> rebuilds the review bundle from the receipt's recorded base and
+  fails unless the hash still matches, the receipt is for the <strong>latest</strong> recorded round, and the
+  state is not <code>NEEDS_REPLAN</code> — so editing a file after the reviewer read it, or after the receipt
+  was written, invalidates the receipt even though nothing about the ledger itself looks wrong.
+  <strong>Fix:</strong> if the edit was deliberate, get the ticket reviewed again (spends the next round); if it
+  was accidental, revert the edit and re-check.</p>
+<ul>
+<li><strong>Symptom: you want to send a ticket back without spending the third round.</strong></li>
+</ul>
+<pre><code class="language-bash">python3 &quot;&lt;crew&gt;/hooks/scripts/review_ledger.py&quot; --root . --ticket &lt;id&gt; --reject --by &lt;who&gt;
+</code></pre>
+<p>Refuses on a ticket already <code>ACCEPTED</code> or already <code>NEEDS_REPLAN</code>.</p>
+<h2 id="scope-approval-and-the-completion-audit">Scope: Approval and the Completion Audit</h2>
+<p>A ticket's contract lives in <code>.work/tickets/&lt;id&gt;/</code>: <code>spec.md</code>'s <code>## Touch</code> section names every path
+the ticket may change; <code>plan.md</code>'s <code>Files:</code> lines must each fall inside Touch. Two hooks hold a
+session to that contract — see <a href="daily-workflow-scope.md">Daily workflow: scope and approval</a> for the
+contract itself. This section is what goes wrong with the approval and the audit.</p>
+<ul>
+<li><strong>Symptom: an edit inside Touch is still refused.</strong>
+  <strong>Check:</strong> approval status.</li>
+</ul>
+<pre><code class="language-bash">python3 &quot;&lt;crew&gt;/hooks/scripts/crew_ticket.py&quot; status --ticket &lt;id&gt;
+</code></pre>
+<p>Returns <code>approved</code> (both <code>spec.md</code> and <code>plan.md</code> hash to what was approved), <code>stale</code> (either
+  file changed since), or <code>none</code>. <strong>Editing spec.md or plan.md after approval makes the approval
+  stale immediately</strong> — that is deliberate: an edited spec cannot silently widen what the guard
+  accepts. Only a receipt from the user's own prompt counts by default; a <code>cli</code>-sourced receipt
+  (written by <code>crew_ticket.py approve</code> directly, for tests/CI) is accepted only when
+  <code>.crew/config.json</code> sets <code>scope.allowCliApproval: true</code>.
+  <strong>Fix:</strong> re-approve. The user types <code>/crew:approve &lt;id&gt;</code> again — nothing else can write the
+  receipt; <code>scope_guard.py</code> refuses a Write/Edit under <code>&lt;git-common-dir&gt;/crew/</code> in every mode but
+  <code>off</code>, so a session cannot forge or refresh its own approval.</p>
+<ul>
+<li>
+<p><strong>Symptom: you need to touch one more path mid-ticket.</strong>
+  <strong>Fix:</strong> amend <code>spec.md</code>'s <code>## Touch</code> (widen it), then approve again. There is no partial-approve;
+  amending scope is edit-then-approve, same as any other spec change.</p>
+</li>
+<li>
+<p><strong>Symptom: <code>/crew:done</code> refuses on "out of scope" for a file the edit guard never saw.</strong>
+  This is the Stop-time completion audit (<code>completion_audit.py</code>), not the edit guard. The edit guard
+  only sees <code>Write</code>/<code>Edit</code>/<code>MultiEdit</code>/<code>NotebookEdit</code> tool calls; a <code>sed -i</code>, a redirect, a
+  formatter or a <code>git mv</code> never reaches it. The audit instead diffs the <strong>whole working tree</strong>
+  against the ticket's scope base (<code>scope_base.resolve</code> — the commit the ticket started from) across
+  committed, staged, unstaged and untracked changes, so a shell-made write is caught here even
+  though nothing blocked it at the time.
+  <strong>Check it directly, without waiting for a Stop:</strong></p>
+</li>
+</ul>
+<pre><code class="language-bash">python3 &quot;&lt;crew&gt;/hooks/scripts/completion_audit.py&quot; --check --ticket &lt;id&gt;
+</code></pre>
+<p><strong>Fix:</strong> either the path genuinely needs to be in scope (widen Touch and re-approve), or revert
+  the out-of-scope change. Files git ignores (including everything under <code>.crew/</code>) and <code>.work/</code>
+  itself are outside what the audit can see at all — that is by design, not a gap to work around.</p>
+<ul>
+<li>
+<p><strong><code>scope.mode</code> values, and what "auto" means:</strong> <code>off</code> (hooks do nothing, the default), <code>report</code>
+  (allows everything, logs the row to <code>.crew/guard.log</code>), <code>block</code> (refuses out-of-scope writes and
+  fails the completion audit), <code>auto</code> (<code>report</code> for the first ten tickets approved in this repo,
+  then <code>block</code>). A config file that exists but fails to parse, or names an unknown mode, resolves to
+  <code>block</code> and says so — the unknown never collapses into the permissive value.</p>
+</li>
+<li>
+<p><strong>No-python fail-closed, and why it is not a bug:</strong> if none of <code>python3</code>/<code>python</code>/<code>py</code> resolves to
+  a <em>proved</em> working interpreter, <code>scope-guard.sh</code> (and <code>completion-audit.sh</code>, byte-for-byte the same
+  logic) does <strong>not</strong> silently allow the write. It checks whether <code>.crew/config.json</code> <strong>provably</strong>
+  sets <code>scope.mode</code> to <code>off</code> — a crude, non-JSON textual check, because it runs in exactly the
+  situation where python cannot parse the file for it — and only then exits 0. Anything it cannot
+  prove <code>off</code> (a corrupt file, <code>report</code>, <code>auto</code>, <code>block</code>, or no <code>scope</code> key at all) fails <strong>closed</strong>
+  with exit 2: "no usable python ... failing closed". Fix by installing a real Python 3, not by
+  reading the closed refusal as a false positive.</p>
+</li>
+</ul>
+<h2 id="cloud-guard-false-positives">Cloud Guard False Positives</h2>
+<p><code>cloud-guard.sh</code> / <code>cloud_guard.py</code>, a <code>PreToolUse</code> hook on <code>Bash</code> and <code>PowerShell</code>. <strong>Ships off</strong>
+(<code>guards.cloudGuard: off</code>); turn it on with <code>{"guards": {"cloudGuard": "report"}}</code> first to see what
+it <em>would</em> refuse before enforcing with <code>"block"</code>.</p>
+<ul>
+<li>
+<p><strong>SQL text that merely looks destructive is not blocked.</strong> <code>DROP</code>/<code>TRUNCATE</code> inside a string
+  literal or a comment does not count: the guard strips literals and comments before matching, read
+  both as standard SQL and as MySQL, because the two dialects disagree about what <code>\'</code> and <code>--</code> mean
+  — a payload is flagged only if <strong>either</strong> reading still shows the keyword outside a literal. So
+  <code>psql -c "SELECT 'DROP TABLE x' AS s"</code> and <code>psql -c 'SELECT 1 -- DROP TABLE x'</code> are both allowed
+  (<code>plugin/crew/tests/test_cloud_guard.py</code>, cases <code>sql-literal</code>/<code>sql-comment</code>/<code>sql-block-comment</code>).
+  If a query like this is still blocked, the reason (<code>[sqlDestructive]</code> in the deny message) is worth
+  reading closely — the keyword may genuinely sit outside every literal reading.</p>
+</li>
+<li>
+<p><strong>A dry-run, help, or <code>-WhatIf</code> invocation is still classified as destructive.</strong> The guard matches
+  on the <em>subcommand</em>, not on flags that make it a no-op: <code>terraform destroy --help</code>, <code>aws ec2
+  terminate-instances --dry-run</code> and <code>Remove-AzResourceGroup -WhatIf</code> are all judged exactly like
+  the command they simulate, because nothing in <code>_terraform_destructive</code>/<code>_aws_destructive</code>/the
+  <code>Remove-Az*</code> matcher inspects those flags. This is a known gap, not a config bug — there is no key
+  that special-cases them. If you need to run one of these unattended, use <code>report</code> mode while
+  testing, or approve the one-shot marker the deny message names.</p>
+</li>
+<li>
+<p><strong>An "unpinned" repo makes an ordinary destructive command ask or deny, even when it is obviously
+  fine.</strong> With no <code>cloud.*</code> pins, a read-only command (<code>aws s3 ls</code>, <code>az group list</code>) runs unchecked
+  — but <em>any</em> destructive command has an identity the guard cannot vouch for, which is <strong>unknown</strong>,
+  and unknown is never allowed unattended: it <strong>asks</strong> when a person is there to answer and is
+  <strong>denied</strong> when not (<code>CREW_UNATTENDED=1</code>, <code>CI</code>, or a non-interactive session). This is the rule
+  most likely to surprise a first-time user, because it fires even in a repo that has never
+  configured anything cloud-related.
+  <strong>Fix — pin the identity this repo may act as</strong>, in <code>.crew/config.json</code> (repo-only; a
+  machine-global <code>cloud</code> block is ignored):</p>
+</li>
+</ul>
+<pre><code class="language-json">{ &quot;cloud&quot;: {
+    &quot;awsProfiles&quot;: [&quot;acme-dev&quot;, &quot;acme-sandbox-*&quot;],
+    &quot;awsRegions&quot;: [&quot;eu-west-1&quot;],
+    &quot;azureSubscriptions&quot;: [&quot;00000000-0000-0000-0000-000000000000&quot;, &quot;Acme Dev&quot;] } }
+</code></pre>
+<p>A profile/region/subscription outside the pins is denied outright (<code>[cloudIdentity]</code>). Static
+  <code>AWS_ACCESS_KEY_ID</code> credentials and <code>Remove-Az*</code>'s saved PowerShell context are <strong>always</strong>
+  unknown — the guard has no way to read either — so pinning does not silence those; only removing
+  the static keys or naming the account through <code>--profile</code>/<code>--subscription</code> does.</p>
+<h2 id="obsidian">Obsidian</h2>
+<p>See <a href="memory-and-obsidian.md">Memory and Obsidian</a> for setup. What goes wrong day to day:</p>
+<ul>
+<li>
+<p><strong>Symptom: nothing is being captured / gardened.</strong>
+  <strong>Check:</strong> is the <em>primary</em> vault reachable? Capture, import and the gardener write to the primary
+  vault only, and <strong>never</strong> fall back to a recall vault. If the primary is unavailable — an
+  unmounted drive, a renamed folder — they write nothing and say why on stderr; the session itself
+  is never blocked. <code>$VO adopt</code> shows which vault is currently <code>primary</code>.</p>
+</li>
+<li>
+<p><strong>Symptom: recall never surfaces anything you know is in the vault.</strong>
+  <strong>Check:</strong></p>
+</li>
+</ul>
+<pre><code class="language-bash">python3 &quot;&lt;crew plugin root&gt;/hooks/scripts/crew_context.py&quot; --stats
+</code></pre>
+<p>Read the <code>miss reasons</code> line. <code>cli-missing</code> means <code>obsidian-vault</code> is not installed where crew can
+  find it; <code>cli-exit-N</code>, <code>cli-timeout</code>, <code>cli-bad-json</code> mean the CLI ran and failed; <code>no-vaults</code> means
+  no vault is currently <code>primary</code> or <code>recall</code>; <code>no-hits</code> means the search itself found nothing. Only
+  <code>no-hits</code> means "the vault genuinely has nothing relevant" — every other reason is a setup problem.
+  Also confirm <code>memory.inject</code> is not <code>false</code> in <code>.crew/config.json</code> — recall and code-map injection
+  are on by default since 1.0.0, so "no recall ever appears" with the key set to <code>false</code> is expected.
+  <strong>Fix:</strong> <code>$VO recall --query "&lt;words you expect&gt;"</code> directly, to separate "the CLI can't find it"
+  from "the hook isn't calling the CLI".</p>
+<ul>
+<li>
+<p><strong>Symptom: the gardener seems to be falling behind.</strong>
+  It runs in bounded passes on purpose, not continuously: <strong>at most 5 items or 10 minutes per run</strong>,
+  whichever comes first, on <strong>one designated host</strong>, one run at a time. A session whose transcript
+  lives on another machine is left queued for that machine and does not spend one of the five slots.
+  <strong>Check:</strong> <code>$VO queue</code> (what is waiting) and <code>~/.claude/obsidian/gardener.log</code> for lines starting
+  <code>left queued</code>. <strong>Fix:</strong> run a bounded pass by hand (<code>/obsidian-vault:garden</code> or <code>$VO garden-run</code>),
+  or drain a large backlog in batches: <code>$VO drain --apply --batches 4</code>.</p>
+</li>
+<li>
+<p><strong>Symptom: two machines sharing one vault seem to be racing each other.</strong>
+  They are not writing the same file: each host appends to its own
+  <code>inbox/pending-reflect.&lt;host&gt;.md</code> and acknowledges to its own <code>inbox/reflected.&lt;host&gt;.md</code>, so two
+  machines syncing one vault never contend for the same queue file. An older
+  <code>inbox/pending-reflect.md</code> (no host suffix) is still read if present, so an old backlog drains
+  rather than being stranded — it is just never written again.</p>
+</li>
+</ul>
+<h2 id="auto-wrap-up-clear-and-resume">Auto Wrap-Up, Clear and Resume</h2>
+<p>See <a href="auto-cycle.md">Auto wrap-up, clear and resume</a> for the full cycle that lets a long session
+finish itself cleanly, clear, and pick up where it stopped — what wrap-up, auto-clear and resume
+each do, the machine-global keys that turn auto-clear on, and every reason a clear can refuse
+(logged to <code>.crew/.autoclear.log</code>).</p>
+<h2 id="turning-things-off">Turning Things Off</h2>
+<p>Every switch named above, in one place. "Off" for a guard means the <code>PreToolUse</code> hook still fires
+but returns immediately without judging anything; "off" for <code>verifyGate</code> means the
+<code>Stop</code> hook does nothing at all that turn.</p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Lives in</th>
+<th>Values</th>
+<th>What "off"/floor means</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>memory.inject</code></td>
+<td>repo only</td>
+<td>bool</td>
+<td><code>false</code>: no code-map, handoff or vault text is injected (default <code>true</code> since 1.0.0)</td>
+</tr>
+<tr>
+<td><code>guards.cloudGuard</code></td>
+<td>both layers, ratchets</td>
+<td><code>block</code>/<code>report</code>/<code>off</code></td>
+<td><code>off</code>: the hook reads this key and exits</td>
+</tr>
+<tr>
+<td><code>guards.roleWrites</code></td>
+<td>both layers, ratchets</td>
+<td><code>block</code>/<code>report</code>/<code>off</code></td>
+<td><code>off</code>: every Write/Edit is allowed unconditionally</td>
+</tr>
+<tr>
+<td><code>guards.terraformApply</code>, <code>forcePush</code>, <code>adminMerge</code>, <code>mergeGate</code>, <code>cloudDestructive</code>, <code>sqlDestructive</code></td>
+<td>both layers, ratchets</td>
+<td><code>block</code>/<code>ask</code>/<code>allow</code></td>
+<td>there is no "off" — <code>allow</code> is the most permissive tier, still logged</td>
+</tr>
+<tr>
+<td><code>guards.prodDatabase</code>, <code>guards.prodServer</code></td>
+<td>both layers, ratchets</td>
+<td><code>none</code>/<code>read</code>/<code>full</code></td>
+<td><code>none</code> is both the default and the floor</td>
+</tr>
+<tr>
+<td><code>scope.mode</code></td>
+<td>repo only</td>
+<td><code>off</code>/<code>report</code>/<code>block</code>/<code>auto</code></td>
+<td><code>off</code>: neither the edit guard nor the completion audit runs</td>
+</tr>
+<tr>
+<td><code>scope.allowCliApproval</code></td>
+<td>repo only</td>
+<td>bool</td>
+<td><code>false</code>: only a <code>/crew:approve</code> typed by the user counts</td>
+</tr>
+<tr>
+<td><code>verifyGate</code></td>
+<td>repo only</td>
+<td>bool</td>
+<td><code>false</code>: the Stop verify gate does not run at all</td>
+</tr>
+<tr>
+<td><code>context.enabled</code></td>
+<td>both layers</td>
+<td>bool</td>
+<td><code>false</code>: <code>context-watch.sh</code> (the Stop nag) does nothing</td>
+</tr>
+<tr>
+<td><code>context.autoClear.enabled</code>, <code>autoWrapUp</code></td>
+<td>both layers</td>
+<td>bool</td>
+<td>each independently disables one leg of the wrap-up/clear loop</td>
+</tr>
+<tr>
+<td><code>notify.provider</code></td>
+<td>both layers</td>
+<td>provider name / <code>none</code></td>
+<td><code>none</code>: the <code>Notification</code> hook sends nothing</td>
+</tr>
+<tr>
+<td><code>change.requireForProduction</code></td>
+<td>both layers, ratchets (may only turn ON)</td>
+<td>bool</td>
+<td><code>false</code>: promoting needs no approved change request</td>
+</tr>
+<tr>
+<td><code>install.policy</code></td>
+<td>both layers, ratchets</td>
+<td>see <code>plugin/crew/CONFIG.md</code> §"install"</td>
+<td>narrowest tier refuses more install actions</td>
+</tr>
+</tbody>
+</table>
+<p><code>~/.claude/crew/config.json</code> is the machine-global layer; <code>.crew/config.json</code> is per-repo and wins
+where both speak. A <strong>ratcheted</strong> key (marked above) can only be <em>narrowed</em> by the repo relative to
+the machine-global value, never widened — a repo cloned from someone else cannot silently loosen a
+guard the machine owner set to <code>block</code>. <code>/crew:config</code> shows where each setting actually came from.</p>
+<h2 id="web-testing">Web Testing</h2>
+<p><strong>Symptom:</strong> <code>--select web-testing</code> (or the ticked default row) fails, or Playwright
+runs but the visual rule never passes.</p>
+<ul>
+<li><strong>Node too old.</strong> <code>install-prerequisites.{sh,ps1}</code> checks for Node &gt;= 20.19 (or<blockquote>
+<p>= 22.12) itself and refuses rather than installing or upgrading Node for you —
+  <code>node -v</code>, install a newer one, and re-run <code>--select web-testing</code>.</p>
+</blockquote>
+</li>
+<li><strong>Browsers missing system dependencies.</strong> <code>npx playwright install --with-deps
+  chromium</code> is what the installer runs; a bare <code>npx playwright install</code> (no
+  <code>--with-deps</code>) skips the OS packages Chromium needs and produces a browser that
+  launches, then crashes on first navigation.</li>
+<li><strong>Docker absent -&gt; visual UNVERIFIED, not a fail.</strong> <code>toHaveScreenshot</code> baselines are
+  only meaningful when generated inside <code>mcr.microsoft.com/playwright:v1.63.0-noble</code> —
+  the installer warns rather than blocking when Docker is missing, and the visual
+  <code>verify.json</code> rule is written to skip (report UNVERIFIED) outside that image rather
+  than compare against a baseline that can never match.</li>
+<li><strong>MCP server won't connect on Windows.</strong> Both <code>@playwright/mcp</code> and
+  <code>chrome-devtools-mcp</code> are launched with <code>npx</code>, which the MCP host cannot invoke
+  directly on Windows — wrap the entry as <code>"command": "cmd", "args": ["/c", "npx",
+  ...]</code> in <code>.mcp.json</code> (documented in chrome-devtools-mcp's own troubleshooting for
+  the "Connection closed" failure); the <code>stack-web</code> skill's <code>.mcp.json</code> example
+  already shows this.</li>
+</ul>
+<h2 id="windows-notes">Windows Notes</h2>
+<ul>
+<li><strong><code>pwsh</code> is not on Git Bash's <code>PATH</code>.</strong> Every script that shells out to PowerShell names it by an
+  absolute path or resolves it explicitly; a bare <code>pwsh</code> in a hand-typed command fails as "command
+  not found", which is easy to misread as PowerShell itself being broken.</li>
+<li><strong>Git Bash ships without <code>python3</code>.</strong> Every hook wrapper here resolves <code>python3</code>, then <code>python</code>,
+  then <code>py</code>, and fails loudly on stderr rather than silently standing down when none resolves (see
+  "no-python fail-closed", above). If a hook you expect to run says nothing at all, check for a
+  usable Python on <code>PATH</code> first.</li>
+<li><strong>Both flavours are always registered.</strong> <code>hooks.json</code> pairs every bash command with a <code>shell:
+  "powershell"</code> sibling on the same event, so a machine with both <code>bash</code> and <code>pwsh</code> present runs
+  both. This is not double-firing to fix — it is how the same hook reaches both shells; each
+  PowerShell twin stands itself down on the wrong platform (<code>$env:OS -ne 'Windows_NT'</code>) rather than
+  the bash twin doing that job.</li>
+</ul>
+<h2 id="auto-wrap-up-auto-clear-and-auto-resume">Auto Wrap-Up, Auto-Clear and Auto-Resume</h2>
+<p>This section is folded into the troubleshooting guide (<code>troubleshooting.md</code>), linked from it as
+"Auto wrap-up, clear and resume". It covers the cycle that lets a long session finish itself
+cleanly, clear, and pick up where it stopped.</p>
+<h3 id="what-the-cycle-does">What the Cycle Does</h3>
+<ol>
+<li><strong>Wrap-up.</strong> When the context window crosses its threshold, the <code>Stop</code> hook blocks once. It asks
+   the session to finish or park the change in flight, write <code>.work/HANDOFF.md</code>, and update the
+   ticket. This happens once for each threshold crossing in each session. It never happens on the
+   forced continuation that follows a block.</li>
+<li><strong>Clear.</strong> After the handoff is written, auto-clear types <code>/clear</code> into the terminal that runs this
+   session. It does this only when all four of these hold:
+   - this machine opted in;
+   - the handoff was written by this session after the wrap-up request, is longer than a stub, and
+     is not the automatic PreCompact skeleton;
+   - the context reading that caused the wrap-up was a real measurement (see "When it will not
+     clear");
+   - the target window can be identified exactly.</li>
+<li><strong>Resume.</strong> The new session starts with the handoff and its next action already in context,
+   within the 3,000-character resume budget. Nothing starts working unprompted: crew does not use
+   <code>initialUserMessage</code>, so you press Enter to continue.</li>
+</ol>
+<h3 id="turning-it-on-and-off">Turning It on and Off</h3>
+<p>Wrap-up and resume are on by default. Auto-clear is <strong>off</strong> by default. You turn it on per machine,
+in the machine-global config, because it drives this machine's keyboard:</p>
+<table>
+<thead>
+<tr>
+<th>Where</th>
+<th>Key</th>
+<th>Value</th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>~/.claude/crew/config.json</code> (Windows: <code>%USERPROFILE%\.claude\crew\config.json</code>)</td>
+<td><code>context.autoClear.enabled</code></td>
+<td><code>true</code></td>
+<td>turns auto-clear on for every crew repo on this machine</td>
+</tr>
+<tr>
+<td>same</td>
+<td><code>context.autoClear.method</code></td>
+<td><code>"auto"</code> (default), <code>"tmux"</code>, <code>"xdotool"</code>, <code>"windows"</code>, <code>"none"</code></td>
+<td>how the keystroke is delivered</td>
+</tr>
+<tr>
+<td>same</td>
+<td><code>context.autoClear.windowTitle</code></td>
+<td>a substring of the terminal's title</td>
+<td>fallback when the window cannot be found by process id</td>
+</tr>
+<tr>
+<td>same</td>
+<td><code>context.autoClear.delaySeconds</code></td>
+<td><code>3</code></td>
+<td>wait before typing, so the prompt exists</td>
+</tr>
+<tr>
+<td>same</td>
+<td><code>context.autoClear.minHandoffLines</code></td>
+<td><code>5</code></td>
+<td>a shorter handoff counts as a stub</td>
+</tr>
+<tr>
+<td><code>.crew/config.json</code> (the repo)</td>
+<td><code>context.autoClear.enabled</code></td>
+<td><code>false</code></td>
+<td>switches auto-clear off in this repo. A repo can switch it off, but <code>true</code> here does not switch it on.</td>
+</tr>
+<tr>
+<td><code>.crew/config.json</code></td>
+<td><code>context.autoWrapUp</code></td>
+<td><code>false</code></td>
+<td>replaces the wrap-up instruction with a plain handoff request. It still blocks once.</td>
+</tr>
+<tr>
+<td><code>.crew/config.json</code></td>
+<td><code>context.enabled</code></td>
+<td><code>false</code></td>
+<td>turns off the whole context watcher, wrap-up included</td>
+</tr>
+<tr>
+<td><code>.crew/config.json</code></td>
+<td><code>memory.inject</code></td>
+<td><code>false</code></td>
+<td><code>handoff-read</code> prints the handoff for you to read, without extracting the next action. <code>context.autoResume</code> is no longer read.</td>
+</tr>
+</tbody>
+</table>
+<p><code>/crew:config</code> shows where each value comes from and walks you through the global file. To turn the
+cycle off on a machine, set <code>context.autoClear.enabled</code> to <code>false</code> or delete the key.</p>
+<h4 id="arming-one-scratch-repo-while-other-sessions-are-live">Arming one scratch repo while other sessions are live</h4>
+<p><code>enabled: true</code> arms auto-clear in <strong>every</strong> Claude session on the machine, not just the one you
+are testing. If other sessions are running, one of them can get <code>/clear</code> typed into its terminal
+when its own handoff lands. To limit auto-clear to one repo or one session, add these keys to the
+same machine file. They can only narrow what <code>enabled</code> turns on:</p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Value</th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>context.autoClear.onlyRepos</code></td>
+<td>list of absolute repo paths</td>
+<td>auto-clear runs only in these repos</td>
+</tr>
+<tr>
+<td><code>context.autoClear.onlySessions</code></td>
+<td>list of session ids</td>
+<td>auto-clear runs only in these sessions</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li>A missing key or <code>null</code> does not narrow anything. An empty list <code>[]</code> turns auto-clear off
+  everywhere. If a key holds anything other than a list, auto-clear is off everywhere too.</li>
+<li>When both keys are set, a session must match both.</li>
+<li>Paths are compared after symlinks are resolved. Backslashes and trailing separators do not
+  matter. On Windows, case does not matter and <code>/c/repos/x</code> means <code>C:\repos\x</code>. A relative path such
+  as <code>.</code> never matches.</li>
+<li>Session ids must match exactly, including case.</li>
+<li>These keys are read <strong>only</strong> from the machine file. If a repo's <code>.crew/config.json</code> sets them, they
+  are ignored, so a repo cannot add itself. A repo's <code>enabled: false</code> still turns auto-clear off.</li>
+<li>In any other repo or session, auto-clear stays silent. It does not write a log line, just as it
+  does when <code>enabled</code> is off.</li>
+</ul>
+<p>To arm one scratch repo safely:</p>
+<pre><code class="language-json">{
+  &quot;context&quot;: {
+    &quot;autoClear&quot;: {
+      &quot;enabled&quot;: true,
+      &quot;onlyRepos&quot;: [&quot;C:\\repos\\autoclear-scratch&quot;]
+    }
+  }
+}
+</code></pre>
+<p>On Linux, use a path such as <code>"/home/you/autoclear-scratch"</code>. When you are done testing, remove
+<code>enabled</code> or set it to <code>false</code>. Also delete <code>onlyRepos</code>, so that a later <code>enabled: true</code> does not
+arm only that repo without anyone noticing.</p>
+<h3 id="when-it-will-not-clear">When It Will Not Clear</h3>
+<p>Each refusal is logged with its reason to <code>.crew/.autoclear.log</code>. A Stop hook's stderr is not shown
+to you, so check that log first.</p>
+<table>
+<thead>
+<tr>
+<th>Log says</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>not trustworthy (estimated-from-transcript-size)</code></td>
+<td>no usage record was found, so the reading was an estimate</td>
+</tr>
+<tr>
+<td><code>not trustworthy (unknown-window)</code></td>
+<td>the model's context window is unknown and <code>context.budgetTokens</code> is not set</td>
+</tr>
+<tr>
+<td><code>not trustworthy (stale-reading-before-compaction)</code></td>
+<td>the last reading came from before a compaction</td>
+</tr>
+<tr>
+<td><code>the wrap-up marker is empty or not JSON</code></td>
+<td>the marker was not written by this version of the hook. Nothing clears on it.</td>
+</tr>
+<tr>
+<td><code>predates this session's wrap-up request</code></td>
+<td>the handoff on disk is older than the request, probably left by an earlier session</td>
+</tr>
+<tr>
+<td><code>automatic PreCompact skeleton</code></td>
+<td>only the compaction skeleton exists, not a real handoff</td>
+</tr>
+<tr>
+<td><code>N windows have a title containing ...</code> / <code>has N windows</code></td>
+<td>the window is ambiguous, so nothing is typed</td>
+</tr>
+<tr>
+<td><code>no window belongs to any ancestor of this hook</code></td>
+<td>the terminal's window could not be found by process id, and no <code>windowTitle</code> is set</td>
+</tr>
+<tr>
+<td><code>tmux pane %N could not be confirmed</code></td>
+<td><code>$TMUX_PANE</code> is not the pane that runs this session</td>
+</tr>
+<tr>
+<td><code>method wtype ... is refused</code></td>
+<td>Wayland's <code>wtype</code> cannot target a window. Use tmux instead.</td>
+</tr>
+</tbody>
+</table>
+<p>Two sessions in one repository no longer interfere with each other. Wrap-up markers are
+<code>.crew/.handoff-requested-&lt;session_id&gt;</code>, and a SessionStart clears only its own session's marker.</p>
+<h3 id="which-window-gets-the-keystroke">Which Window Gets the Keystroke</h3>
+<ul>
+<li><strong>tmux (Linux, macOS, WSL):</strong> the pane in <code>$TMUX_PANE</code>, and only when that pane's process is an
+  ancestor of the hook. No title is needed. This is the most reliable method.</li>
+<li><strong>X11 (<code>xdotool</code>):</strong> the one visible window owned by the nearest ancestor process of the hook. If
+  that process owns more than one window, <code>windowTitle</code> has to narrow the choice to one. If no
+  ancestor owns a window, exactly one window must match <code>windowTitle</code>. The keystroke goes to that
+  window id after it is activated and confirmed active.</li>
+<li><strong>Windows (SendKeys):</strong> chosen the same way, by owner process first and then by title. After the
+  delay, <code>/clear</code> is sent only when that exact window handle has focus.</li>
+</ul>
+<p>Windows Terminal runs every tab in one window. A process-id match cannot tell which tab is active,
+so on Windows Terminal set <code>windowTitle</code> to something only this session's tab shows.</p>
+</body>
+</html>

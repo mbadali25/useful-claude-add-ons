@@ -251,7 +251,7 @@ def default_config():
     return {
         "schema": crew_state.SCHEMA_CURRENT,
         "tier": 0,
-        "roles": ["explorer", "qa-reviewer"],
+        "roles": ["explorer", "reviewer"],
         "qa": copy.deepcopy(crew_state.QA_DEFAULTS),
         "dev": copy.deepcopy(crew_state.DEV_DEFAULTS),
         "worktree": copy.deepcopy(crew_state.WORKTREE_DEFAULTS),
@@ -289,7 +289,13 @@ def default_config():
                 "done": "Done",
             },
         },
-        "memory": {"mode": "repo", "vaultPath": None},
+        # `inject` and `recall` are the context hook's (crew_context.py,
+        # crew_recall.py). Repo-only on purpose: that hook reads the repo's
+        # file and nothing else, so a machine-global value would be accepted
+        # and then do nothing. `inject` is on by default since 1.0.0; see
+        # crew_context.inject_enabled.
+        "memory": {"mode": "repo", "vaultPath": None, "inject": True,
+                   "recall": {"vaults": [], "maxChars": 800}},
         "verifyGate": True,
         "context": copy.deepcopy(crew_state.CONTEXT_DEFAULTS),
         "emergency": {
@@ -335,6 +341,10 @@ def default_config():
         # `filter_global` prunes it out of a global file and reports it --
         # one repo's hostnames must never become every repo's.
         "production": copy.deepcopy(crew_state.PRODUCTION_DEFAULTS),
+        # REPO ONLY, for `production`'s reason: which AWS profile/region and
+        # Azure subscription THIS checkout's commands are pinned to is a fact
+        # about the checkout. Read by `cloud_guard.py` alone.
+        "cloud": copy.deepcopy(crew_state.CLOUD_DEFAULTS),
         # `/crew:change`. Both layers, like `install` and `guards` and for the
         # same two reasons: `requireForProduction` ratchets across them, and a
         # key that existed only globally would fail `is_global_path`'s rule
@@ -343,6 +353,14 @@ def default_config():
         # never off -- which is a property of the tier ORDER in
         # `crew_state.CHANGE_REQUIREMENTS`, not of a second mechanism.
         "change": copy.deepcopy(crew_upgrade.CHANGE_BLOCK),
+        # crew 1.0 T3: the plan-approval + scope guard and the Stop-time
+        # completion audit (scope_guard.py, completion_audit.py). `off` by
+        # default -- a new blocking hook starts disarmed. `auto` is `report`
+        # for the first ten tickets, then `block` (crew_ticket.effective_mode).
+        # REPO ONLY: it is read from `.crew/config.json` and nothing else.
+        # `allowCliApproval` false: only an approval the user typed as
+        # `/crew:approve <id>` satisfies the guard (crew_ticket.accepted).
+        "scope": {"mode": "off", "allowCliApproval": False},
     }
 
 
@@ -465,8 +483,8 @@ def default_global_config():
         # The siblings stay repo-only and are refused by name, which is
         # measured rather than assumed -- see `test_autoclear_is_global_and_
         # its_siblings_are_not`. `_prune` and `is_global_path` both descend
-        # structurally, so naming `context` here grants exactly the six
-        # `autoClear` leaves and nothing beside them.
+        # structurally, so naming `context` here grants exactly the
+        # `autoClear` leaves (all but `unsafeFocus`) and nothing beside them.
         "context": {"autoClear": {
             key: copy.deepcopy(value)
             for key, value in crew_state.AUTOCLEAR_DEFAULTS.items()
@@ -843,7 +861,7 @@ def install_plan_for(root, name, path=None):
     return plan
 
 
-def layer_state(path):
+def layer_state(path, cloud=False):
     """One config FILE, classified as `"absent"`, `"ok"` or `"corrupt"` --
     the one rule every caller that needs to distinguish "nobody set this"
     from "something here is unreadable" derives from, for EITHER config
@@ -895,6 +913,11 @@ def layer_state(path):
         this function's; duplicating it here would be two mechanisms for
         one rule).
 
+    `cloud=True` -- the cloud guard's read, and only its -- also classifies
+    a present `cloud` block that `cloud_block_problem` rejects as
+    `"corrupt"`. Off by default so a malformed `cloud` block cannot arm
+    `roleWrites`, which never reads it.
+
     Never touches `load_config`, `read_global_config`, `resolve_ratcheted`
     or any of the other eight ratcheted keys, which keep their existing
     fail-open behaviour on a bad file exactly as before -- this is a
@@ -931,7 +954,28 @@ def layer_state(path):
         return "corrupt"
     if "guards" in parsed and not isinstance(parsed["guards"], dict):
         return "corrupt"
+    if cloud and "cloud" in parsed and cloud_block_problem(parsed["cloud"]):
+        return "corrupt"
     return "ok"
+
+
+def cloud_block_problem(block):
+    """Why a PRESENT `cloud` block cannot be read as identity pins, or `""`.
+
+    The one rule for "is this a `cloud` block", shared by `layer_state(...,
+    cloud=True)` and `cloud_guard.cloud_pins`. `"cloud": null`, a string, or
+    any of the three keys holding something other than a list of non-blank
+    strings is a malformed block -- never "nothing pinned", which would let a
+    read-only command through in the one repo whose owner tried to pin it.
+    """
+    if not isinstance(block, dict):
+        return "`cloud` is not an object"
+    for key in crew_state.CLOUD_DEFAULTS:
+        value = block.get(key, [])
+        if not isinstance(value, list) or not all(
+                isinstance(v, str) and v.strip() for v in value):
+            return f"`cloud.{key}` is not a list of glob strings"
+    return ""
 
 
 def resolve_guard(root, name, path=None):
@@ -1410,9 +1454,8 @@ def layered_state(root):
     computing `resolve_config` here unconditionally costs nothing on a plain
     repo and needs no `isCrew` check of its own.
 
-    Every caller that wants a config-layered brief -- `pm_brief.py`, and
-    anything else that would otherwise call `crew_state.collect` directly --
-    should call this instead.
+    Every caller that wants config-layered state -- anything that would
+    otherwise call `crew_state.collect` directly -- should call this instead.
     """
     return crew_state.collect(root, cfg_override=resolve_config(root))
 
@@ -1473,6 +1516,10 @@ def _layer_supplies(layer, parts, defaults):
     return False
 
 
+_AUTOCLEAR_MACHINE_ONLY_PATHS = tuple(
+    "context.autoClear." + key for key in crew_state.AUTOCLEAR_MACHINE_ONLY_KEYS)
+
+
 def explain_config(root, path=None):
     """Every globally-settable key, with its effective value and its source.
 
@@ -1495,6 +1542,16 @@ def explain_config(root, path=None):
     `resolve_config` prunes it. Explaining an effective value from a layer the
     resolver would have discarded is how a source column comes to name a key
     that does nothing.
+
+    `context.autoClear.onlyRepos` / `.onlySessions` are a second exception to
+    plain precedence, for the opposite reason a ratchet is: the hooks that
+    actually read them (`crew_autocycle.settings`, `auto-clear.ps1`) consult
+    the machine file ONLY, never a repo's own copy. Their rows carry `source`
+    of `"global"` or `"default"` and never `"repo"`/`"repo+global"`, and a
+    row gets `"repoIgnored"` (the repo's raw value) when a repo config
+    supplies one anyway -- so a repo that sets these sees them named as not
+    in effect, rather than this table claiming a narrowing the run does not
+    apply.
     """
     defaults = default_config()
     repo_cfg = crew_state.load_config(root)
@@ -1512,6 +1569,29 @@ def explain_config(root, path=None):
         from_repo = _layer_supplies(repo_cfg, parts, defaults)
         from_global = _layer_supplies(global_cfg, parts, defaults)
         value = _dig(resolved, parts)
+        if dotted in _AUTOCLEAR_MACHINE_ONLY_PATHS:
+            # `crew_autocycle.settings` and `auto-clear.ps1` read onlyRepos
+            # / onlySessions from the machine file ONLY -- a repo's own copy
+            # is never consulted (AUTOCLEAR_DEFAULTS's comment: a narrowing a
+            # repo could write for itself would be a widening). The generic
+            # repo-over-global precedence below is therefore the WRONG rule
+            # for these two leaves: it would report a repo-level value as
+            # `source: repo` (or merge it into `repo+global`), claiming
+            # auto-clear is narrowed to a repo the hooks never actually
+            # restrict it to. Report the global layer alone, and flag a
+            # repo-level value as ignored rather than folding it in.
+            global_only = crew_state.merge_defaults(defaults, global_cfg)
+            only_value = _dig(global_only, parts)
+            row = {
+                "path": dotted,
+                "value": None if only_value is _MISSING else only_value,
+                "source": "global" if from_global else "default",
+            }
+            if from_repo:
+                repo_value = _dig(repo_cfg, parts)
+                row["repoIgnored"] = None if repo_value is _MISSING else repo_value
+            rows.append(row)
+            continue
         if crew_state.ratchet_spec(dotted) is not None:
             # A ratcheted key does not resolve by precedence, so the merged
             # result is the WRONG value to print for it. This table said
@@ -1995,7 +2075,7 @@ def _print_models(report):
     else:
         print("\nNO INDEPENDENT REVIEWER -- every candidate is unreachable or "
               "speaks as the family that wrote the diff. /crew:review falls "
-              "back to the qa-reviewer subagent and LABELS the result "
+              "back to the reviewer subagent and LABELS the result "
               "same-family. It runs; it does not count as an independent "
               "review.")
     print()
@@ -2115,6 +2195,11 @@ _GUARD_ACTIONS = {
     "roleWrites": "a Write or Edit outside the calling role's declared scope, "
                   "per the policy table in "
                   "hooks/scripts/role_write_guard.py",
+    "cloudDestructive": "aws delete-*/terminate-*/purge-*, s3 rm/rb and "
+                        "sync --delete, az ... delete/purge, and Remove-Az*",
+    "sqlDestructive": "DROP or TRUNCATE handed to psql, mysql, sqlcmd, "
+                      "sqlite3 or Invoke-Sqlcmd, by flag, heredoc or pipe",
+    "cloudGuard": "the Bash/PowerShell cloud guard's per-rule policies",
 }
 
 
@@ -2189,6 +2274,18 @@ def _role_write_widening_notes(name, what):
     So the widening direction a reader most needs warned about is the same
     one every fresh repo already sits at: nothing narrows FROM `off`, because
     nothing narrower has been chosen yet.
+
+    `off` and `report` both carry a Python caveat `block` does not need:
+    only `role_write_guard.py` (Python) can actually evaluate this policy.
+    `role-write-guard.sh`'s no-python fallback (its own "THE NO-PYTHON
+    CONTRACT" comment) reads only the deny-list floor and fails CLOSED on a
+    restricted role or one it cannot read at all -- so a repo set to `off`
+    or `report` still gets `block`'s behaviour for a restricted role the
+    moment python is unavailable. Printing `off`/`report` here with no
+    mention of that would tell a reader those tiers apply unconditionally,
+    which is the "unknown collapsing into the safe-looking value" shape
+    CLAUDE.md names, worn the other way: not a guard that fails open, but a
+    note that describes a WIDER guarantee than the fallback actually keeps.
     """
     del name
     return {
@@ -2200,13 +2297,44 @@ def _role_write_widening_notes(name, what):
             f"crew allows {what}, and appends a row to "
             f"`{crew_state.GUARD_LOG_PATH}` for every decision, not only "
             "the ones outside scope -- so the record exists, but nothing "
-            "stops it at the time."
+            "stops it at the time. Requires Python: without a usable "
+            "interpreter, role-write-guard.sh/.ps1 cannot evaluate `report` "
+            "at all and falls back to blocking a restricted role's write "
+            "instead of logging it."
         ),
         "off": (
             f"crew's role-write guard does not run its policy check at all. "
             f"{what.capitalize()} is not refused and nothing is logged. "
             "This is the WIDEST tier and it is also the default -- every "
-            "repo that has never set `guards.roleWrites` is already here."
+            "repo that has never set `guards.roleWrites` is already here. "
+            "Requires Python: without a usable interpreter, the fallback "
+            "cannot evaluate `off` either, so a restricted role's write is "
+            "blocked anyway rather than let through."
+        ),
+    }
+
+
+def _cloud_guard_widening_notes(name, what):
+    """The `! widens to` note for `guards.cloudGuard`, total over
+    `crew_state.ROLE_WRITE_POLICIES` -- the vocabulary it shares with
+    `roleWrites`, and the same split default (`off`) for the same reason.
+    """
+    del name
+    return {
+        "block": (
+            f"crew enforces {what}: `block` denies, `ask` prompts (or denies "
+            "when nobody is attending), `allow` lets through and logs. This is "
+            "the narrowest tier and nothing widens into it."
+        ),
+        "report": (
+            f"crew evaluates {what} and appends what it WOULD have done to "
+            f"`{crew_state.GUARD_LOG_PATH}`, but refuses and prompts for "
+            "nothing -- so the record exists, but nothing stops it at the time."
+        ),
+        "off": (
+            "the cloud guard does not judge any command. This is the WIDEST "
+            "tier and it is also the default -- every repo that has never set "
+            "`guards.cloudGuard` is already here."
         ),
     }
 
@@ -2257,6 +2385,16 @@ _RATCHETED.update({
         _role_write_widening_notes(_name, _GUARD_ACTIONS[_name]),
     )
     for _name in crew_state.ROLE_WRITE_GUARD_NAMES
+})
+# The cloud guard's switch: `roleWrites`' vocabulary and functions, its own
+# words.
+_RATCHETED.update({
+    f"guards.{_name}": (
+        crew_state.role_writes_rank,
+        crew_state.normalise_role_writes,
+        _cloud_guard_widening_notes(_name, _GUARD_ACTIONS[_name]),
+    )
+    for _name in crew_state.CLOUD_GUARD_NAMES
 })
 
 
@@ -2430,12 +2568,14 @@ def write_global_config(updates, path=None):
 def _print_explain(rows):
     width = max((len(r["path"]) for r in rows), default=4)
     print(f"{'key'.ljust(width)}  source    value")
-    narrowed = []
+    narrowed, ignored = [], []
     for row in rows:
         print(f"{row['path'].ljust(width)}  {row['source'].ljust(8)}  "
               f"{json.dumps(row['value'])}")
         if row.get("heldDownBy"):
             narrowed.append(row)
+        if "repoIgnored" in row:
+            ignored.append(row)
     # THE NARROWING SOURCE, named, on its own lines. A ratcheted key is the one
     # place in this table where the value shown is not the value either layer
     # asked for, and a `source` column alone cannot say so -- it has one slot
@@ -2452,6 +2592,15 @@ def _print_explain(rows):
         print("  layers, never the repo's: a cloned repo may ask for less "
               "than your machine allows")
         print("  and be obeyed, and may ask for more and be refused.")
+    # A repo-level onlyRepos/onlySessions is not merely lower precedence --
+    # the hooks that narrow auto-clear never read it at all, so printing it
+    # unlabelled would claim a restriction that is not in force.
+    for row in ignored:
+        print()
+        print(f"! {row['path']}: repo asks `{row['repoIgnored']}`, but only "
+              "the machine-global file's value is ever read for this key")
+        print(f"  -> `{row['value']}` is in force. A repo cannot narrow or "
+              "widen auto-clear's onlyRepos/onlySessions for itself.")
     # Say what this table is NOT, or it reads as the whole resolved config and
     # a reader concludes their `tracker` or `jira.project` is unset.
     print()

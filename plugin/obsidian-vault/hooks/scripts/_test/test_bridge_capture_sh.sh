@@ -106,16 +106,46 @@ liar_stub() {
 # install's sys.executable actually lives. See test_vault_guard_sh.sh's header
 # for the 2026-09-24 regression this models: a resolver that rejects on a
 # WindowsApps path SUBSTRING throws this out even though it works.
+# A hand-written canned probe answer (main's original shape here) cannot
+# ALSO run the real hook script when it launches the resolved interpreter a
+# second time - it would print the same canned probe text regardless of the
+# arguments it was actually given, so the hook's own behaviour would be the
+# stub's hard-coded exit, not a real run. `exec "$PY" "$@"` makes it behave
+# as a genuinely working interpreter no matter how it is invoked (probed
+# with `-c ...`, or launched against the real script).
+#
+# TWO path components matter, and both are exercised here, same reasoning
+# as test_vault_guard_sh.sh's own copy of this fixture (see that file's
+# header): the call sites used to pass a label like "WindowsAppsRealBridge"
+# / "WindowsAppsRealCapture", NOT a directory literally named WindowsApps -
+# which happens to satisfy a bare substring reject (it CONTAINS
+# "WindowsApps") but not a reintroduced EXACT PATH-SEGMENT reject
+# (`*/WindowsApps/*`), the shape role-write-guard.sh's own resolver comment
+# says was actually removed. Separately, `exec "$PY" "$@"` alone forwards
+# straight through to this test's real system interpreter, whose own
+# `sys.executable` is never under WindowsApps either, so a reintroduced
+# reject on the RESOLVED path (not just the candidate) went untested too.
+# Fixed the same way: the alias lives under a directory named exactly
+# WindowsApps, and it execs a COPY (not a symlink) of the interpreter
+# placed under a SECOND directory that also carries a literal WindowsApps
+# segment. `$1` is now a LABEL used to keep each call site's fixture
+# directories from colliding, not the leaf directory name itself - the leaf
+# is always exactly "WindowsApps". `prefix` (the caller's per-hook probe
+# token, `$3`) is still unused, kept as a parameter so call sites do not
+# need to change their argument COUNT.
 real_windowsapps_stub() {
-  local dir="$work/$1" name="$2" prefix="$3"
-  mkdir -p "$dir"
-  cat > "$dir/$name" <<STUB
+  local label="$1" name="$2"
+  local alias_dir="$work/$label/WindowsApps"
+  local real_dir_path="$work/$label-target/WindowsApps/PythonSoftwareFoundation.Python.3.x_hash"
+  mkdir -p "$alias_dir" "$real_dir_path"
+  cp "$PY" "$real_dir_path/python.exe"
+  chmod 755 "$real_dir_path/python.exe"
+  cat > "$alias_dir/$name" <<STUB
 #!/bin/sh
-printf '$prefix%s' "$dir/$name"
-exit 0
+exec "$real_dir_path/python.exe" "\$@"
 STUB
-  chmod 755 "$dir/$name"
-  printf '%s' "$dir"
+  chmod 755 "$alias_dir/$name"
+  printf '%s' "$alias_dir"
 }
 
 # -------------------------------------------------------- HOME + isolation --
@@ -222,8 +252,8 @@ realpath_dir="$(real_dir realpy python3)"
 store_dir="$(store_stub WindowsApps python3)"
 silent_dir="$(silent_stub silentstub python3)"
 liar_dir="$(liar_stub liarstub python3)"
-real_winapps_bridge_dir="$(real_windowsapps_stub WindowsAppsRealBridge python3 bridge-status-python:)"
-real_winapps_capture_dir="$(real_windowsapps_stub WindowsAppsRealCapture python3 vault-capture-python:)"
+real_winapps_bridge_dir="$(real_windowsapps_stub winapps-bridge python3 bridge-status-python:)"
+real_winapps_capture_dir="$(real_windowsapps_stub winapps-capture python3 vault-capture-python:)"
 
 # ================================================================ bridge-status.sh
 echo "== bridge-status.sh: must run, with a working interpreter =="
@@ -312,7 +342,17 @@ check_err_has "and the message is the ABSENCE one, distinct from the stub one" \
 # ============================================================== .ps1 flavour
 PWSH="$(command -v pwsh 2>/dev/null || true)"
 if [ -n "$PWSH" ]; then
-  PWSH_DIR="$(dirname "$PWSH")"
+  # Isolated, not $(dirname "$PWSH") directly: on GitHub's ubuntu-latest image
+  # pwsh lives at /usr/bin/pwsh, which is also where the system's real
+  # python3 lives - appending that whole directory to a fixture PATH meant to
+  # simulate "no usable interpreter" leaks a real, working python3 into every
+  # such case, so the guard finds it, runs for real, and every must-refuse
+  # case turns into a false PASS-through instead of the expected stand-down.
+  # A directory holding nothing but a symlink to pwsh keeps the fixture PATH
+  # able to launch pwsh without also handing it a real interpreter.
+  PWSH_DIR="$work/pwsh-only"
+  mkdir -p "$PWSH_DIR"
+  ln -sf "$PWSH" "$PWSH_DIR/pwsh"
 
   echo "== bridge-status.ps1: the same verdicts, PowerShell flavour =="
 

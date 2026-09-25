@@ -24,7 +24,7 @@ import crew_incident
 # The endpoint ledger is its own module now, the three shared readers are a
 # third, the install/guard policies are a fourth and the anchor-freshness
 # readers a fifth. Every import line here
-# re-exports as well as imports: `crew_config`, `pm_brief` and `crew_upgrade`
+# re-exports as well as imports: `crew_config` and `crew_upgrade`
 # reach `read_text`, `git_out`, `dict_or_empty`, `INSTALLABLE` and the whole
 # ratchet through `crew_state`, and those spellings keep working.
 #
@@ -44,7 +44,7 @@ from crew_endpoints import (
 )
 # pylint: disable=unused-import
 # Every name below is unused IN THIS MODULE and that is the whole point: they
-# are re-exported for `crew_config`, `crew_upgrade`, `pm_brief` and the test
+# are re-exported for `crew_config`, `crew_upgrade` and the test
 # suite, which already spell them `crew_state.<name>`. The two imports above
 # need no such disable only because this module happens to call those functions
 # itself. `tests/test_module_split.py` is what actually asserts each one
@@ -69,6 +69,8 @@ from crew_guards import (
     ALL_GUARD_NAMES,  # noqa: F401
     CHANGE_REQUIREMENTS,  # noqa: F401
     CHANGE_REQUIREMENT_DEFAULT,  # noqa: F401
+    CLOUD_DEFAULTS,  # noqa: F401
+    CLOUD_GUARD_NAMES,  # noqa: F401
     GUARD_APPROVAL_PREFIX,  # noqa: F401
     GUARD_APPROVAL_TTL,  # noqa: F401
     GUARD_DEFAULTS,  # noqa: F401
@@ -182,7 +184,7 @@ SCHEMA_CURRENT = 7
 GLOBAL_CONFIG_PATH = os.path.join(
     os.path.expanduser("~"), ".claude", "crew", "config.json")
 
-# Verbatim from crew-scaling/SKILL.md. Below the floor the review is broken
+# Carried from the retired crew-scaling skill. Below the floor the review is broken
 # rather than thorough; above the ceiling the tickets are too large.
 HEALTHY_LOW = 0.3
 HEALTHY_HIGH = 2.0
@@ -587,7 +589,7 @@ def read_verify_health(root):
 # --- Handoff staleness ------------------------------------------------------
 #
 # read_work() above only asks whether a handoff exists -- enough to warn once
-# per session (pm_brief's `handoffPending` finding), not enough to say a note
+# per session (the `handoffPending` trigger), not enough to say a note
 # is describing a past state rather than the present one. That needs a second
 # question: does what it claims about the repository still hold. Two
 # independent signals answer it, and each is written down here because the
@@ -628,9 +630,9 @@ _HANDOFF_HEAD_RE = re.compile(
 )
 
 # Where a handoff lives when config does not say -- kept in sync by eye with
-# pm_brief._DEFAULT_HANDOFF_PATH and handoff-read.sh's own fallback, the same
-# way crew_state.read_work's hard-coded ".work/HANDOFF.md" already is; see
-# pm_brief's constant for why a single shared literal cannot reach all three
+# crew_context._handoff and handoff-read.sh's own fallback, the same
+# way crew_state.read_work's hard-coded ".work/HANDOFF.md" already is; a
+# single shared literal cannot reach a bash script, which is why all three
 # languages this runs in.
 _DEFAULT_HANDOFF_PATH = ".work/HANDOFF.md"
 
@@ -650,12 +652,15 @@ STALE_HANDOFF_DEFAULTS = {"maxAgeHours": 72, "maxCommitsBehind": 3}
 # "not set" (`if ($a.windowTitle)` is false for either), and null is what
 # "not set" means everywhere else in this file, so null is the honest default.
 AUTOCLEAR_DEFAULTS = {
-    # 0.19.52: ON by default. It still refuses unless the handoff note
-    # exists, is newer than the request and clears `minHandoffLines`,
-    # and on Windows it refuses without `windowTitle` because SendKeys
-    # types into whatever has focus. So "enabled" means "allowed to act
-    # once everything is wrapped up", not "will type into your terminal".
-    "enabled": True,
+    # OFF by default, and a MACHINE opt-in: the scripts
+    # (`crew_autocycle.settings`, `auto-clear.ps1`) act only when the
+    # machine-global file says exactly `true`, and a repo may switch it
+    # off but never on -- what it drives is this machine's keyboard.
+    # null rather than false so the /crew:init template, which writes
+    # every key, does not veto a machine opt-in (`null_shadows`).
+    # 0.19.52 made this `true` in every template, which is why a repo
+    # value of `true` alone no longer counts.
+    "enabled": None,
     "method": "auto",
     "windowTitle": None,
     "command": "/clear",
@@ -666,6 +671,14 @@ AUTOCLEAR_DEFAULTS = {
     # read it, and the first pass read the Windows scripts -- a default set
     # from one platform's consumer is a default half-derived.
     "unsafeFocus": False,
+    # NARROWING-ONLY, and read from the machine file only
+    # (`crew_autocycle.in_scope`, `auto-clear.ps1`'s twin): null arms every
+    # repo and session the machine opt-in already covers; a list arms only
+    # the listed repo paths / session ids; an empty list arms nothing. A
+    # repo's own value is never read -- a repo that could list itself would
+    # be widening, which is exactly what `enabled` forbids.
+    "onlyRepos": None,
+    "onlySessions": None,
 }
 
 # Keys inside `autoClear` that are CONSENT rather than capability, and so are
@@ -680,6 +693,18 @@ AUTOCLEAR_DEFAULTS = {
 # `filter_global` because consent to act outside the repo is not a capability
 # a guided flow may hand over. Same reasoning, same treatment.
 AUTOCLEAR_CONSENT_KEYS = ("unsafeFocus",)
+
+# Keys inside `autoClear` that are machine-only in a STRONGER sense than the
+# ordinary repo-over-global precedence every other key here resolves by:
+# `crew_autocycle.settings` and `auto-clear.ps1` read these from the machine
+# file ONLY and never consult a repo's own copy (see the comment on
+# `onlyRepos`/`onlySessions` above -- a narrowing a repo could write for
+# itself would be a widening). `crew_config.explain_config` uses this set to
+# report the two from the global layer alone and flag a repo-level value as
+# ignored, rather than crediting `repo` the way the generic precedence walk
+# would -- crediting it made `/crew:config --show` claim auto-clear was
+# restricted to a repo the hooks do not actually restrict it to.
+AUTOCLEAR_MACHINE_ONLY_KEYS = ("onlyRepos", "onlySessions")
 
 # The whole `context` block, defined HERE rather than in
 # `crew_config.default_config()` where it used to live, for one
@@ -791,7 +816,7 @@ def handoff_path(root, cfg):
     contained_path's own docstring for the exfiltration risk a bad config
     value carries). Shared by handoff_staleness / archive_stale_handoff so the
     file they judge and archive is the same one handoff-read.sh prints and
-    pm_brief's `_resume_context` injects -- not a second path convention.
+    crew_context.py injects -- not a second path convention.
     """
     context_cfg = dict_or_empty(cfg.get("context"))
     configured = context_cfg.get("handoffPath")
@@ -909,9 +934,8 @@ def archive_stale_handoff(root, cfg, now=None):
     ARCHIVES, never deletes: the note moves to HANDOFF_ARCHIVE_DIR, timestamped
     and never overwritten (see _archived_handoff_name). A stale note is
     visibly wrong and recoverable; a deleted one is invisibly gone -- it was
-    the only record of where a session stopped. pm_brief and pm_pulse both
-    already tell the model "it still asks before removing a role or deleting
-    anything"; this is the automatic action that rule still allows, because
+    the only record of where a session stopped. crew's rule is "ask before
+    deleting anything"; this is the automatic action that rule still allows, because
     moving a file sideways into a dated archive is not deleting it.
 
     Returns a dict describing what happened and never raises. Every failure
@@ -953,8 +977,8 @@ def archive_stale_handoff(root, cfg, now=None):
     return {"archived": True, "path": path, "archivedPath": dest, **verdict}
 
 
-# Priority order. pm_brief truncates from the bottom when it hits the line cap,
-# so the most actionable finding has to sort first. upgradeNeeded leads because
+# Priority order. A reader that truncates from the bottom at a line cap loses
+# the last items, so the most actionable finding sorts first. upgradeNeeded leads because
 # every other finding may be an artifact of a pre-upgrade layout.
 TRIGGERS = (
     # An open incident outranks everything: the gates are down right now, and
@@ -1061,8 +1085,8 @@ PM_DEFAULTS = {
     "ticketGranularity": GRANULARITY_DEFAULT,
     # Guardrail. The PM stops dispatching after this many roles in one pass and
     # says what it did not get to, rather than working a queue until the context
-    # runs out. Blockers found mid-task do not count against it -- see the
-    # crew-pm skill; unblocking the current job is finishing the job, not new
+    # runs out. Blockers found mid-task do not count against it --
+    # unblocking the current job is finishing the job, not new
     # work.
     "maxDispatches": 3,
 }
@@ -1117,7 +1141,7 @@ DEV_DEFAULTS = {
 }
 
 # Where `git worktree add` puts a crew worktree. `/crew:emergency` runs two
-# candidate fixes in a worktree each, and tier 3 in `/crew:scale` is parallel
+# candidate fixes in a worktree each, and tier 3 is parallel
 # sessions across worktrees, so the directory they land in is a real question
 # and until 0.16.26 there was no answer but git's own habit of the checkout's
 # parent -- which on a machine whose repos live on a small system disk is the
@@ -1187,111 +1211,33 @@ def _repo_digest(repo_root, length=6):
 # by default, so an unset role is visible as "runs on claude" rather than
 # being invisible because nobody wrote it down.
 QA_ROLE_KINDS = ("phase1", "smoke", "review", "gate")
-DEV_ROLE_KINDS = ("developer", "security", "infrastructure-architect",
-                  "planner")
+DEV_ROLE_KINDS = ("developer", "security")
 
-# The role ladder, in code, because `/crew:upgrade` has to compute a tier from
-# a role list and a tier from a role list is arithmetic, not prose. Two markdown
-# tables describe the same ladder for humans -- `skills/crew-scaling/SKILL.md`
-# and `skills/crew-pm/onboarding.md` -- and both are checked against THIS dict
-# by a committed test rather than being parsed at runtime. Parsing a heading in
-# a skill file to decide what an upgrade writes would make the doc load-bearing
-# and the code advisory, which is backwards; a drift test keeps all three honest
-# without giving prose a vote at runtime.
+# The crew 1.0 roster (docs/review/04-redesign.md, "Roster: 54 agents -> 4"):
+# `explorer` and `reviewer` at 0, `security` at 1, `researcher` at 2. Stack
+# knowledge that used to be specialist agents now lives in the `stack-*`
+# skills, which load on demand and are never a role. `tier_for_roles` still
+# reads a 0.20 config's `roles` list, so a retired name contributes nothing
+# rather than raising -- `/crew:migrate` is what carries such a config forward.
 #
 # Insertion order is ladder order: `roles_for_tier` returns roles in this
-# sequence, so a migrated config's `roles` list reads the way the tier table
-# does rather than in whatever order a set iteration produced.
+# sequence, so a config's `roles` list reads the way the tier table does.
 ROLE_TIERS = {
     "explorer": 0,
-    "qa-reviewer": 0,
+    "reviewer": 0,
     "security": 1,
-    "smoke-author": 1,
-    "developer": 1,
-    "dba": 2,
-    "docs-writer": 2,
-    "browser-tester": 2,
-    "analyst": 2,
-    "planner": 2,
-    # Added in 0.15.x and off the ladder until 0.16.0. Each sits at 2 for the
-    # same reason `dba` does: it closes a defect class that only shows up once
-    # the repo is doing enough of that kind of work to have the evidence.
-    "infrastructure-architect": 2,
-    "scribe": 2,
     "researcher": 2,
 }
 
 # The tier that is about parallelism rather than about roles -- no role lives
 # here, so `tier_for_roles` can never return it and a config that declares it
-# keeps it. See `crew-scaling/SKILL.md`.
+# keeps it.
 TIER_PARALLEL = 3
 
-# Domain specialists: known roles with no tier, never granted automatically.
-#
-# Every ROLE_TIERS entry closes a defect class ANY repo can have, and its
-# "add when" is evidence-shaped -- "migrations are routine", "a UI regression
-# reached users". `roles_for_tier` then grants every rung up to the declared
-# tier, which is why a repo with no database is handed `dba` on upgrade.
-#
-# "This repo does SharePoint" is not a defect class; it is a fact about one
-# checkout. Putting these on the ladder would hand a SharePoint developer to
-# every tier-2 repo on the machine, and the tier table would stop meaning
-# anything. So they are opted into per repo -- `/crew:pm onboard <role>` --
-# and no tier ever grants one.
-#
-# This is the OPPOSITE of the 0.15.x bug that `infrastructure-architect`,
-# `scribe` and `researcher` had: those were general-purpose roles that had
-# simply been forgotten off the ladder, and being unreachable was the defect.
-# Here it is the design, which is why a test asserts it rather than a comment.
-#
-# Two kinds of justification live in this set. Most entries are a stack, and
-# the agent file names the file that proves it -- a `composer.json` for
-# `php-pro`, a `*.tf` for `terraform-engineer`. `qa-researcher` is the other
-# kind: what it needs present is the Perplexity MCP server, not a language.
-# Both are facts about one checkout rather than defect classes every repo can
-# have, which is the property that keeps them all off the ladder.
-SPECIALIST_ROLES = frozenset({
-    "sharepoint-developer",
-    "power-automate-specialist",
-    "node-developer",
-    "php-pro",
-    "python-pro",
-    "dotnet-core-expert",
-    "dotnet-framework-4.8-expert",
-    "angular-architect",
-    "react-specialist",
-    "rust-engineer",
-    "sql-pro",
-    "terraform-engineer",
-    "network-engineer",
-    "windows-infra-admin",
-    "qa-researcher",
-    "ad-security-reviewer",
-    "ai-writing-auditor",
-    "api-designer",
-    "architect-reviewer",
-    "backend-developer",
-    "code-reviewer",
-    "compliance-auditor",
-    "database-administrator",
-    "design-bridge",
-    "fintech-engineer",
-    "git-workflow-manager",
-    "graphql-architect",
-    "kimi-consult",
-    "legacy-modernizer",
-    "microservices-architect",
-    "multi-agent-coordinator",
-    "payment-integration",
-    "penetration-tester",
-    "platform-engineer",
-    "powershell-security-hardening",
-    "powershell-5.1-expert",
-    "powershell-7-expert",
-    "exchange-online-specialist",
-    "skill-author",
-    "workflow-orchestrator",
-})
+# Known roles with no tier. Empty in 1.0: every domain specialist was retired
+# in favour of the `stack-*` skills. Kept as a name so `known_role` and
+# `crew_upgrade` keep one vocabulary rather than special-casing its absence.
+SPECIALIST_ROLES = frozenset()
 
 
 def known_role(name):
@@ -1299,9 +1245,9 @@ def known_role(name):
 
     The distinction that needs a name: `tier_for_roles` and `roles_for_tier`
     both key off `ROLE_TIERS`, so a specialist looks identical to a typo
-    there. Without this, a repo that deliberately onboarded `node-developer`
-    is told on every upgrade that crew does not recognise it -- which trains
-    people to ignore the line that exists to catch real typos.
+    there. Without this, a deliberately configured off-ladder role would be
+    reported as unrecognised on every upgrade -- which trains people to
+    ignore the line that exists to catch real typos.
     """
     return name in ROLE_TIERS or name in SPECIALIST_ROLES
 
@@ -1361,44 +1307,6 @@ def normalise_granularity(value):
         if cleaned in TICKET_GRANULARITIES:
             return cleaned
     return GRANULARITY_DEFAULT
-
-
-def can_act(state):
-    """True when the PM may act on its findings rather than just report them.
-
-    Reads from a full state dict so callers cannot disagree about where the
-    field lives or what an absent one means.
-
-    Rank, not equality. This tested `== "act"` while there were two tiers,
-    which silently made `autonomous` -- the WIDER tier -- unable to act at all.
-    A gate that says "at least this rung" keeps working when a rung is added
-    above it; one that names a rung does not.
-    """
-    pm = dict_or_empty(state.get("pm"))
-    return authority_rank(pm.get("authority")) >= authority_rank("act")
-
-
-def can_autodecide(state):
-    """True when the PM picks its own recommended option instead of asking.
-
-    Deliberately a SECOND predicate rather than a wider `can_act`. "May
-    dispatch without asking" and "may settle an open decision without asking"
-    are different questions, and folding them into one gate would have changed
-    `act`'s behaviour as a side effect of adding a tier above it -- an `act`
-    repo would have stopped emitting `**Decision needed:**` blocks that its
-    user is relying on. `act` still asks; only `autonomous` decides.
-
-    `AUTONOMOUS_STOPS` is not overridden by this. Those need an explicit yes at
-    every tier.
-    """
-    pm = dict_or_empty(state.get("pm"))
-    return authority_rank(pm.get("authority")) >= authority_rank("autonomous")
-
-
-def ticket_granularity(state):
-    """The configured ticket granularity, normalised."""
-    pm = dict_or_empty(state.get("pm"))
-    return normalise_granularity(pm.get("ticketGranularity"))
 
 
 def merge_defaults(defaults, supplied, discarded=None, _path=""):
@@ -2514,8 +2422,8 @@ def _prune_dispatch_dir(root):
 # dispatch ANYONE this pass, for ANY role -- `security`, `scribe`, `dba`,
 # `analyst`, `docs-writer`, `researcher`, all of it, not only `dev`. Nothing
 # here feeds the same-family interlock; `author_families` never reads this
-# directory. `pm_pulse.py` is the reader -- see its `_dispatch_gap_note` --
-# which is what keeps this from being the exact flag CLAUDE.md warns against:
+# directory. Its only reader was the PM pulse, deleted in crew 1.0, so today
+# this IS the exact flag CLAUDE.md warns against (TODO.md tracks retiring it):
 # "a `--record-dispatch qa` flag whose output no code ever consults is state
 # written to nowhere".
 #
@@ -2526,7 +2434,7 @@ def _prune_dispatch_dir(root):
 # a committed copy should carry to another machine.
 DISPATCH_LOG_DIR = (".work", "dispatch-log.d")
 
-# Far above what one PM pass produces. This log is skimmed by `pm_pulse`, not
+# Far above what one PM pass produced. This log was skimmed, not
 # read for security provenance, so pruning the oldest entries once the
 # directory grows past this is safe -- unlike `DISPATCH_FILES_MAX`, nothing
 # here needs to protect a specific entry from deletion.
@@ -2553,7 +2461,7 @@ def log_dispatch(root, role, brief, result, branch=None):
 
     A failed write is reported to the caller (`None`) rather than silently
     dropped, the same asymmetry `record_dispatch` draws for the dev slot: a
-    dispatch this store could not take is not a dispatch `pm_pulse` can ever
+    dispatch this store could not take is not a dispatch any reader can ever
     see, so the caller has to know while it can still say so.
     """
     if result not in DISPATCH_LOG_RESULTS:
@@ -2614,7 +2522,7 @@ def read_dispatch_log(root, since=None):
     file that cannot be read or parsed is skipped rather than aborting the
     whole read, the same "a bad neighbour costs only itself" property
     `_dispatch_entries` gives the dev-slot store, and for the same reason --
-    one hand-edited or half-written entry must not blind `pm_pulse` to every
+    one hand-edited or half-written entry must not blind a reader to every
     OTHER dispatch that happened this pass.
     """
     directory = os.path.join(root, *DISPATCH_LOG_DIR)
@@ -3149,8 +3057,8 @@ def collect(root, cfg_override=None):
     }
     # A directory with no crew has no findings. evaluate_triggers would
     # otherwise report graphStale for every plain git repo on the machine,
-    # because _read_graph correctly finds no graph -- and /crew:pm and the
-    # crew:pm agent call collect() directly, with no isCrew gate of their own.
+    # because _read_graph correctly finds no graph -- and callers of
+    # collect() have no isCrew gate of their own.
     state["triggers"] = evaluate_triggers(state) if state["isCrew"] else []
     return state
 
@@ -3313,8 +3221,8 @@ def main(argv=None):
                              args.dispatch_result, args.branch)
         if entry is None:
             # Loud, non-zero, same reasoning as --record-dispatch's failure
-            # path: a dispatch this store could not take is one pm_pulse can
-            # never report on, so the caller has to know while it can still
+            # path: a dispatch this store could not take is one nothing can
+            # ever report on, so the caller has to know while it can still
             # say so.
             print(f"dispatch-log entry for {args.log_dispatch!r} was NOT "
                   f"recorded: {os.path.join(*DISPATCH_LOG_DIR)} could not "

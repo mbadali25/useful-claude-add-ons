@@ -21,12 +21,16 @@ questions no one is there to answer.
    frontmatter contract, tag vocabulary, and folder layout in THIS vault. The
    `obsidian-memory-contract` skill teaches the general shape; the vault's own
    file overrides it wherever they differ.
-3. **Read `inbox/pending-reflect.md`.** Take up to 5 unchecked entries, oldest
-   first. If none, skip to step 6.
-4. **For each entry**, read its transcript (the `transcript=` path in the
-   line). If the transcript is gone, check the entry off with a "transcript
-   gone" note and move on - do not fabricate content for a session you cannot
-   read.
+3. **Read the queue through the script, never by hand.** Captures land in one
+   file per host (`inbox/pending-reflect.<host>.md`) plus the legacy
+   `inbox/pending-reflect.md`; run
+   `python "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/vault_ops.py" queue --max 5 --json`
+   and take what it returns - at most 5 items, oldest first. If none, skip to
+   step 6.
+4. **For each item**, read its transcript (the `transcript=` path). If the
+   transcript is not readable on this host, leave the item queued and say so -
+   it was probably captured on another machine, and the host that has it will
+   garden it. Do not fabricate content for a session you cannot read.
    - Distill durable knowledge only: decisions, root causes, runbooks,
      gotchas, architecture, patterns. Not routine back-and-forth.
    - Create or update `concept`/`decision` notes with full frontmatter per the
@@ -40,7 +44,13 @@ questions no one is there to answer.
      correction as a note in the existing page (a visible "correction worth
      keeping" passage), never a silent overwrite that erases what was
      previously believed.
-5. **Check off each processed entry** in `pending-reflect.md`.
+5. **Acknowledge each item only after its notes are written**:
+   `vault_ops.py ack --id <id> --wrote <vault-relative path> [--wrote ...]`.
+   The script refuses unless every named file exists, is inside the vault, is
+   non-empty and was modified after the session was captured - naming a note
+   that was already there proves nothing. If it refuses, the item stays queued
+   and you report why.
+   Never edit a queue file or `inbox/reflected.*.md` yourself.
 6. **Structural pass.** If distilled work changed something a canvas or map
    depicts, update it via the same rules `/obsidian-vault:canvas` and `/obsidian-vault:map`
    follow - surgical edits, not regeneration.
@@ -52,7 +62,12 @@ questions no one is there to answer.
 8. **Version control, only if the vault already has it.** Check
    `<vault>/.git` before touching git at all - a vault relying on Obsidian Sync
    alone has no `.git`, and this step does nothing there. If `.git` exists,
-   `git add -A && git commit`; push only if a remote is configured. Never
+   stage and commit **only the files you wrote this run** plus
+   `inbox/reflected.<host>.md` - `git add -- <paths>` then
+   `git commit -m "gardener: ..." -- <paths>`. Never `git add -A`, `git add .`
+   or `git commit -a`: another writer's staged work is not yours to commit. If
+   the vault's own `CLAUDE.md` says another process owns commits, skip this
+   step. Push only if a remote is configured. Never
    `git init` here - that is `/obsidian-vault:doctor`'s call to make, with
    confirmation, not this agent's to decide silently on a nightly run.
 

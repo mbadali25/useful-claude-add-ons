@@ -33,6 +33,7 @@ import pathlib
 import re
 import shutil
 import subprocess
+import time
 
 import pytest
 
@@ -54,7 +55,30 @@ _NO_PYTHON = "no usable python"
 # both now write the handoff instruction and claim the same marker.
 _HANDOFF_MARKER = "write the handoff note to"
 
-_MARKER_REL = os.path.join(".crew", ".handoff-requested")
+# Keyed on the session since the auto-cycle fix; these payloads carry no
+# session_id, so this is the documented fallback key.
+_MARKER_REL = os.path.join(".crew", ".handoff-requested-nosession")
+
+
+def _python_free_path(base):
+    """The host's /usr/bin and /bin as symlinks, MINUS anything named
+    python*/py*. The resolvers walk EVERY PATH match of every name since the
+    burn-in FAIL 3 fix, so a stub fixture can no longer shadow the host's
+    real interpreter by merely sitting ahead of it on PATH -- the walk would
+    carry on past the stub and find it. Cases that mean "no working python"
+    append this instead of the real PATH."""
+    tools = pathlib.Path(base) / "python-free-bin"
+    if tools.is_dir():
+        return str(tools)
+    tools.mkdir(parents=True)
+    for source in ("/usr/bin", "/bin"):
+        if not os.path.isdir(source):
+            continue
+        for name in os.listdir(source):
+            if name.startswith(("python", "py")) or (tools / name).exists():
+                continue
+            os.symlink(os.path.join(source, name), tools / name)
+    return str(tools)
 
 
 def _real_python_dir():
@@ -113,10 +137,10 @@ def _run(root, path_entries, transcript_bytes, isolate_path=False,
         "transcript_path": str(transcript), "cwd": str(root),
         "stop_hook_active": stop_hook_active,
     })
-    env = os.environ.copy()
+    env = dict(os.environ, HOME=str(root), CREW_AUTOCLEAR_INHIBIT="1")
     entries = list(path_entries)
     if not isolate_path:
-        entries.append(env.get("PATH", ""))
+        entries.append(_python_free_path(root.parent))
     env["PATH"] = os.pathsep.join(entries)
     return subprocess.run(
         [_BASH, _SH], input=payload, cwd=str(root), env=env,
@@ -369,10 +393,11 @@ def test_context_watch_does_not_call_the_unhardened_resolver():
         "a WindowsApps stub. Found: " + repr(calls))
 
 
-@pytest.mark.parametrize("script", ["pm-brief.sh", "platform-sync.sh"])
+@pytest.mark.parametrize("script", ["platform-sync.sh", "crew-context.sh"])
 def test_thin_wrapper_hooks_do_not_call_the_unhardened_resolver(script):
-    """Same tripwire, the two other scripts converted alongside
-    context-watch.sh in the same pass. Both `exec` what they resolve, so a
+    """Same tripwire, for the thin wrappers converted alongside
+    context-watch.sh (pm-brief.sh was the other one until crew 1.0 deleted
+    it; crew-context.sh took its SessionStart slot). Both hand off what they resolve, so a
     revert to `crew_py` is a one-word edit this static check catches on any
     machine, not only one where a stub happens to exist."""
     path = os.path.join(_ROOT, "hooks", "scripts", script)
@@ -413,6 +438,30 @@ def _function_raw_source(path, header):
     return src[start:end + 3]
 
 
+def _bash_has_cygpath():
+    """Whether `_BASH` ITSELF can find `cygpath` -- asked by running
+    `command -v cygpath` inside that bash, never by `shutil.which` in this
+    python process. Burn-in FAIL 3/4: those two answers can genuinely
+    differ under Git Bash on native Windows. `bash.exe` is an MSYS program
+    and prepends its own compiled-in `/usr/bin`-equivalent to whatever PATH
+    it inherits before resolving any command, so it finds `cygpath.exe`
+    there even when the PARENT process's PATH (what a native `python.exe`
+    running pytest sees, and all `shutil.which` can ever consult) does not
+    list that directory at all -- Git for Windows' installer adds `<git>\\
+    cmd` and `<git>\\bin` to the system PATH, not `<git>\\usr\\bin`, on
+    purpose, specifically so it does not expose the full unix toolchain to
+    native Windows programs. Asking bash directly is what keeps this
+    process's notion of "cygpath exists" in sync with the resolver's own."""
+    if _BASH is None:
+        return False
+    proc = subprocess.run([_BASH, "-c", "command -v cygpath"],
+                           capture_output=True, text=True, check=False)
+    return proc.returncode == 0 and proc.stdout.strip() != ""
+
+
+_HAS_CYGPATH = _bash_has_cygpath()
+
+
 def _posix_form(path_str):
     """The path string the resolver's OWN shell would see, mirroring
     MSYS/Cygwin's path translation (mount table included) instead of
@@ -429,15 +478,39 @@ def _posix_form(path_str):
     where the string is already POSIX-shaped (no drive letter -- Linux,
     macOS, or when `_BASH` is not a Windows Git Bash), there is no
     translation layer to account for and the string is returned unchanged.
+
+    Two things burn-in FAIL 3/4 got wrong about the previous version of this
+    function, both now fixed:
+
+    1. It asked `shutil.which("cygpath")`, this process's own view of PATH,
+       rather than `_bash_has_cygpath()` -- see that function's docstring
+       for why those two can disagree on the exact host this test exists
+       to cover.
+    2. When cygpath was NOT found, it gave up and returned the path
+       UNCHANGED (native-shaped) -- but the resolver's own fallback, run
+       through `_BASH` here via `cygpath`, DOES NOT give up: `_common.sh`'s
+       `crew_py_strict` and `role-write-guard.sh`'s
+       `_resolve_role_write_python` both hand-roll the identical conversion
+       (lower-case the drive letter, drop the colon, backslash to forward
+       slash, leading `/`) when `command -v cygpath` fails, and STILL
+       return a POSIX-shaped path. An expectation that quietly reverts to
+       "no conversion" in that branch is exactly backwards from what the
+       resolver under test actually does, and the mismatch this produced
+       (resolver: POSIX; test expectation: native) is FAIL 3/4 verbatim.
     """
     if not (len(path_str) >= 2 and path_str[1] == ":"):
         return path_str
-    cygpath = shutil.which("cygpath")
-    if not cygpath:
-        return path_str
-    out = subprocess.run([cygpath, "-u", path_str], capture_output=True,
-                          text=True, check=False).stdout.strip()
-    return out or path_str
+    if _bash_has_cygpath():
+        out = subprocess.run([_BASH, "-c", 'cygpath -u "$1"', "_", path_str],
+                              capture_output=True, text=True,
+                              check=False).stdout.strip()
+        return out or path_str
+    # Mirror the resolver's own no-cygpath fallback exactly (see the case
+    # statement in `_common.sh:crew_py_strict` / `role-write-guard.sh:
+    # _resolve_role_write_python`): "C:\\fakepy\\python.exe" -> "/c/fakepy/python.exe".
+    drive = path_str[0].lower()
+    rest = path_str[2:].replace("\\", "/")
+    return "/" + drive + rest
 
 
 def _is_executable_via_shell(path):
@@ -448,7 +521,7 @@ def _is_executable_via_shell(path):
     whether the SAME bash that runs the resolver under test would reject the
     file with `[ -x ... ]` -- which it reliably does even when Python's own
     `os.access` cannot tell the difference -- so ask that bash directly
-    instead of trusting the Windows-side os.access` result."""
+    instead of trusting the Windows-side `os.access` result."""
     if _BASH is None:
         return os.access(path, os.X_OK)
     proc = subprocess.run([_BASH, "-c", '[ -x "$1" ]', "_", str(path)],
@@ -464,6 +537,119 @@ def test_crew_py_strict_and_role_write_guard_still_agree_after_tightening():
         "_resolve_role_write_python have drifted after the `-x` tightening."
         + "\n_common.sh:          " + repr(shared)
         + "\nrole-write-guard.sh: " + repr(guard))
+
+
+# --- FIX (Codex review of crew-1.0, item 1): the "memoized within this
+#     process" caching crew 1.0 r3 added never survives a caller -- every
+#     call site resolves these functions as `PY=$(crew_py...)`, and a
+#     `$(...)` command substitution runs the function in a SUBSHELL, so
+#     whatever cache variable it set is discarded the instant that subshell
+#     exits. Reproduced by hand: `source _common.sh; p=$(crew_py_strict);
+#     [ -n "$_CREW_PY_STRICT_MEMO_DONE" ]` is FALSE in the caller's own
+#     shell -- the cache never once did anything. Removed rather than made
+#     real: doing that would mean rewriting every `$(crew_py...)` call site
+#     in this directory (and role-write-guard.sh's own single subshelled
+#     call) to avoid a subshell, for a saving that never actually happened.
+#     STATIC, not behavioural: there is nothing a caching optimisation that
+#     never fires can be proven to do at runtime -- the claim itself is
+#     what must be gone.
+
+def test_crew_py_no_longer_claims_a_dead_memo():
+    body = _function_raw_source(_COMMON_SH, "crew_py() {")
+    assert "MEMO" not in body, (
+        "crew_py() still carries memoization variables that cannot survive "
+        "its own call site (`PY=$(crew_py)`, a subshell): " + body)
+
+
+@pytest.mark.parametrize("path,header", [
+    (_COMMON_SH, "crew_py_strict() {"),
+    (_GUARD_SH, "_resolve_role_write_python() {"),
+])
+def test_crew_py_strict_and_its_byte_copy_no_longer_claim_a_dead_memo(path, header):
+    body = _function_raw_source(path, header)
+    assert "MEMO" not in body, (
+        f"{path} still carries a memoization for `{header}` that cannot "
+        f"survive its own call site (a `$(...)` subshell): {body!r}")
+
+
+# --- FIX (Codex review of crew-1.0, item 2): the overall 8s deadline was
+#     only checked before LAUNCHING a candidate; the probe itself then
+#     waited a flat 3s regardless of how much budget was left, so several
+#     candidates that each fail just under that per-candidate bound --
+#     summing to just under the 8s deadline -- followed by one that hangs
+#     could still overrun both the 8s deadline and the 10s hook timeout
+#     that calls this (bridge-status.ps1's twin). The fix caps each probe's
+#     wait to whatever budget remains, not a flat 3s, and gives up outright
+#     once nothing remains.
+
+def _slow_failing_stub(directory, delay_seconds):
+    """A real, executable `python3` that ignores whatever it is asked and
+    just sleeps `delay_seconds` before exiting 1 -- modelling a PATH entry
+    that answers, eventually, but never as a usable interpreter."""
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / "python3"
+    path.write_text(f"#!/bin/sh\nsleep {delay_seconds}\nexit 1\n",
+                     encoding="ascii", newline="\n")
+    os.chmod(path, 0o755)
+    return path
+
+
+def _hung_stub(directory):
+    """Never exits on its own -- only the resolver's own 3s watchdog (or,
+    with the fix, a shorter one bounded by the remaining deadline) kills
+    it."""
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / "python3"
+    path.write_text("#!/bin/sh\nsleep 60\n", encoding="ascii", newline="\n")
+    os.chmod(path, 0o755)
+    return path
+
+
+@needs_bash
+@pytest.mark.parametrize("path,header,fn", [
+    (_COMMON_SH, "crew_py_strict() {", "crew_py_strict"),
+    (_GUARD_SH, "_resolve_role_write_python() {", "_resolve_role_write_python"),
+])
+def test_the_final_probes_wait_is_capped_to_the_remaining_deadline(tmp_path, path, header, fn):
+    """The review's own reproduction, sized for a fast test: four
+    candidates that each fail after 1.8s (7.2s total, comfortably under the
+    8s deadline) followed by one that hangs. Before the fix the hung
+    candidate's wait was a flat 3s regardless, pushing the total past
+    10s -- past the 10s hook timeout this deadline exists to stay inside.
+    With the fix the hung candidate's wait is capped to whatever remains of
+    the 8s budget, so the whole run finishes well under 10s. (Three
+    candidates at 2.5s -- closer to the 8s boundary -- was tried first and
+    is measurably flakier: bash's own per-candidate overhead can tip the
+    deadline check before the final candidate is even launched, passing
+    either way regardless of whether the fix is present.)"""
+    slow_dirs = [_slow_failing_stub(tmp_path / f"slow{i}", 1.8) for i in range(4)]
+    hang_dir = _hung_stub(tmp_path / "hang")
+
+    driver = tmp_path / "driver.sh"
+    driver.write_text(
+        _function_raw_source(path, header) + "\n"
+        f"{fn}\n"
+        'printf "EXIT:%s\\n" "$?"\n',
+        encoding="utf-8", newline="\n")
+
+    env = os.environ.copy()
+    env["PATH"] = os.pathsep.join(
+        [str(d.parent) for d in slow_dirs] + [str(hang_dir.parent),
+                                               _python_free_path(tmp_path)])
+    began = time.monotonic()
+    proc = subprocess.run(
+        [_BASH, str(driver)], capture_output=True, text=True,
+        check=False, env=env, timeout=30)
+    elapsed = time.monotonic() - began
+    lines = proc.stdout.splitlines()
+    exit_line = next((l for l in lines if l.startswith("EXIT:")), "EXIT:?")
+    assert exit_line == "EXIT:1", (
+        "none of these candidates is a usable interpreter; must report "
+        f"failure. stdout={proc.stdout!r} stderr={proc.stderr!r}")
+    assert elapsed < 10, (
+        f"the run took {elapsed:.1f}s -- the final (hung) candidate's wait "
+        "must be capped to what remains of the 8s deadline, not a flat 3s, "
+        "or the total overruns the 10s hook timeout this bounds against")
 
 
 # --- BLOCK item: the `-x` check needs a BEHAVIOURAL test, not just a
@@ -518,7 +704,7 @@ def test_resolver_rejects_a_real_but_non_executable_target(tmp_path, path, heade
     # The real PATH stays behind the stubs -- `tr` (used unconditionally by
     # the CR-strip step) must resolve, and the stubs still win as the first
     # match for every name either way.
-    env["PATH"] = os.pathsep.join([str(stub_dir), env.get("PATH", "")])
+    env["PATH"] = os.pathsep.join([str(stub_dir), _python_free_path(tmp_path)])
     proc = subprocess.run(
         [_BASH, str(driver)], capture_output=True, text=True,
         check=False, env=env)
@@ -674,7 +860,7 @@ def test_resolver_rejects_a_windowsapps_alias_stub_with_no_real_python(
         encoding="utf-8", newline="\n")
 
     env = os.environ.copy()
-    env["PATH"] = os.pathsep.join([str(apps_dir), env.get("PATH", "")])
+    env["PATH"] = os.pathsep.join([str(apps_dir), _python_free_path(tmp_path)])
     proc = subprocess.run(
         [_BASH, str(driver)], capture_output=True, text=True,
         check=False, env=env)
@@ -718,7 +904,6 @@ def test_resolver_rejects_a_windowsapps_alias_stub_with_no_real_python(
 #     the filesystem, false and therefore skipped everywhere else, including
 #     in this container).
 
-_HAS_CYGPATH = shutil.which("cygpath") is not None
 _cygpath_absent = pytest.mark.skipif(
     _HAS_CYGPATH, reason="cygpath present -- these fixtures assume the tr fallback")
 
@@ -791,7 +976,7 @@ def test_resolver_rejects_a_native_windows_path_with_no_real_target(tmp_path, pa
         encoding="utf-8", newline="\n")
 
     env = os.environ.copy()
-    env["PATH"] = os.pathsep.join([str(stub_dir), env.get("PATH", "")])
+    env["PATH"] = os.pathsep.join([str(stub_dir), _python_free_path(tmp_path)])
     proc = subprocess.run(
         [_BASH, str(driver)], capture_output=True, text=True,
         check=False, env=env)
@@ -855,6 +1040,105 @@ def test_resolver_accepts_a_native_windows_path_to_a_real_target_under_c(tmp_pat
             f"must return the normalised absolute path. got {printed!r}")
     finally:
         shutil.rmtree(target_dir, ignore_errors=True)
+
+
+# --- FIX (Codex r1 finding 3): the version floor bash was missing --------
+#     bash's crew_py_strict/`_resolve_role_write_python` used to accept ANY
+#     candidate that printed a real, executable sys.executable, regardless
+#     of its actual version, while the PowerShell Resolve-CrewPython already
+#     required >= 3.8. A real Python 3.7 (or older) is what this looks like
+#     -- monkeypatching sys.version_info before running the probe's own code
+#     is the only way to prove this without an actual old CPython installed.
+
+def _spoofed_version_stub(directory, version_tuple, names=("python3", "python", "py")):
+    real = shutil.which("python3") or shutil.which("python")
+    assert real, "need a real python3/python for this fixture"
+    # DOUBLE-quoted release level ("final", not 'final'): repr()'s default
+    # single quotes would close the shell's own single-quoted `-c` argument
+    # early, corrupting the embedded code -- caught by hand running this
+    # exact stub before trusting the test.
+    major, minor, micro, level, serial = version_tuple
+    tuple_text = f'({major}, {minor}, {micro}, "{level}", {serial})'
+    directory.mkdir(parents=True, exist_ok=True)
+    body = (
+        "#!/bin/sh\n"
+        'if [ "$1" = "-c" ]; then\n'
+        f'  exec "{real}" -c \'import sys; sys.version_info={tuple_text}; '
+        "exec(sys.argv[1])' \"$2\"\n"
+        "fi\n"
+        f'exec "{real}" "$@"\n'
+    )
+    for name in names:
+        path = directory / name
+        path.write_text(body, encoding="ascii", newline="\n")
+        os.chmod(path, 0o755)
+
+
+@needs_bash
+@pytest.mark.parametrize("path,header,fn", [
+    (_COMMON_SH, "crew_py_strict() {", "crew_py_strict"),
+    (_GUARD_SH, "_resolve_role_write_python() {", "_resolve_role_write_python"),
+])
+def test_resolver_rejects_a_proven_python_37(tmp_path, path, header, fn):
+    """Codex r1 finding 3's own reproduction: only CPython 3.7 on PATH."""
+    stub_dir = tmp_path / "stubs"
+    _spoofed_version_stub(stub_dir, (3, 7, 9, "final", 0))
+
+    driver = tmp_path / "driver.sh"
+    driver.write_text(
+        _function_raw_source(path, header) + "\n"
+        f"{fn}\n"
+        'printf "EXIT:%s\\n" "$?"\n',
+        encoding="utf-8", newline="\n")
+
+    env = os.environ.copy()
+    env["PATH"] = os.pathsep.join([str(stub_dir), _python_free_path(tmp_path)])
+    proc = subprocess.run(
+        [_BASH, str(driver)], capture_output=True, text=True,
+        check=False, env=env)
+    lines = proc.stdout.splitlines()
+    exit_line = next((l for l in lines if l.startswith("EXIT:")), "EXIT:?")
+    printed = [l for l in lines if not l.startswith("EXIT:")]
+    assert exit_line == "EXIT:1", (
+        f"a proven Python 3.7 must be REJECTED (return 1) -- the version "
+        f"floor must match the PowerShell probe's >= 3.8. "
+        f"stdout={proc.stdout!r} stderr={proc.stderr!r}")
+    assert not printed, "must print nothing when rejecting: " + repr(printed)
+
+
+@needs_bash
+@pytest.mark.parametrize("path,header,fn", [
+    (_COMMON_SH, "crew_py_strict() {", "crew_py_strict"),
+    (_GUARD_SH, "_resolve_role_write_python() {", "_resolve_role_write_python"),
+])
+def test_resolver_accepts_a_proven_python_38(tmp_path, path, header, fn):
+    """Must-allow companion: the same spoofing machinery at exactly the
+    floor must still be ACCEPTED, proving the rejection above is about the
+    version and not an accidental side effect of the spoofing stub itself."""
+    real = shutil.which("python3") or shutil.which("python")
+    assert real, "need a real python3/python for this fixture"
+    stub_dir = tmp_path / "stubs"
+    _spoofed_version_stub(stub_dir, (3, 8, 0, "final", 0))
+
+    driver = tmp_path / "driver.sh"
+    driver.write_text(
+        _function_raw_source(path, header) + "\n"
+        f"{fn}\n"
+        'printf "EXIT:%s\\n" "$?"\n',
+        encoding="utf-8", newline="\n")
+
+    env = os.environ.copy()
+    env["PATH"] = os.pathsep.join([str(stub_dir), _python_free_path(tmp_path)])
+    proc = subprocess.run(
+        [_BASH, str(driver)], capture_output=True, text=True,
+        check=False, env=env)
+    lines = proc.stdout.splitlines()
+    exit_line = next((l for l in lines if l.startswith("EXIT:")), "EXIT:?")
+    printed = [l for l in lines if not l.startswith("EXIT:")]
+    assert exit_line == "EXIT:0", (
+        f"a proven Python 3.8 must be ACCEPTED. "
+        f"stdout={proc.stdout!r} stderr={proc.stderr!r}")
+    assert printed == [_posix_form(real)], f"must return the real interpreter's path. got {printed!r}"
 
 
 # --- FIX (round-3 review): context.enabled must be honoured even when

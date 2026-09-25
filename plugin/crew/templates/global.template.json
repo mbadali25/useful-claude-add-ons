@@ -64,12 +64,14 @@
   },
   "context": {
     "autoClear": {
-      "enabled": true,
+      "enabled": null,
       "method": "auto",
       "windowTitle": null,
       "command": "/clear",
       "delaySeconds": 3,
-      "minHandoffLines": 5
+      "minHandoffLines": 5,
+      "onlyRepos": null,
+      "onlySessions": null
     }
   },
   "docs": {
@@ -97,9 +99,12 @@
     "forcePush": "block",
     "adminMerge": "block",
     "mergeGate": "block",
+    "cloudDestructive": "block",
+    "sqlDestructive": "block",
     "prodDatabase": "none",
     "prodServer": "none",
-    "roleWrites": "off"
+    "roleWrites": "off",
+    "cloudGuard": "off"
   },
   "change": {
     "requester": null,

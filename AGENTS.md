@@ -22,6 +22,28 @@ that each plugin's declared licence matches the repo's `LICENSE`), then
 `python3 -m pylint $(git ls-files '*.py')`. Read the exit code, not the
 printed score — pylint can print `10.00/10` and still exit 4 on a warning.
 
+`python3 -m pytest plugin/crew/tests/ -q` is the DEFAULT set, not the whole
+suite: `plugin/crew/tests/conftest.py` deselects everything marked `slow`
+(the full per-shell `bash`/`pwsh` driver matrix for a hook) unless asked
+for, and it deselects a lot — `--collect-only -q` on that same command
+prints how many. What is left is a per-shell PARITY SAMPLE (one case per
+decision, per flavour) plus the full python-driven decision table, which is
+what most local runs and most changes need. To run the full matrix too, use
+`python3 -m pytest plugin/crew/tests -m slow` (only the slow set) or
+`--run-slow` (everything, slow and default together) — see
+`plugin/crew/tests/conftest.py`'s own header comment for the three forms.
+
+The two CI jobs in `.github/workflows/pytest-crew.yml` split the same way:
+the `test` job runs the DEFAULT command above (no `-m`, no `--run-slow`),
+on `ubuntu-latest` across three Python versions, alongside gizmoduck's and
+several skills' suites. The `crew-shell-matrix` job runs `-m slow` on both
+`ubuntu-latest` and `windows-latest` — the full hook matrix the `test` job
+deselects — and, Windows only, also re-runs the plain default command
+(`test` already covers that set, but only on ubuntu, so the PowerShell
+parity-sample cases never run natively anywhere else). Neither job
+substitutes for the other: a change to `conftest.py`'s slow-marker logic,
+or to a hook only the matrix exercises, can pass one and still be wrong.
+
 ## The rule that bites every change
 
 A content change needs a version bump everywhere that entry's version is

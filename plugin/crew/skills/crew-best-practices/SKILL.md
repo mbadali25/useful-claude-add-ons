@@ -26,7 +26,7 @@ this skill says so rather than picking a side and presenting it as consensus.
 |---|---|
 | Asked "how should I use Claude Code" | Answer from `references/practices.md`, not from memory |
 | Auditing a repo's CLAUDE.md | `references/claude-md.md` has the size limits and the anti-patterns |
-| Asked why crew has 54 agents or 28 commands<!-- claim: plugin-commands:crew --> | `docs/adr/0003-crew-departs-from-three-community-best-practices.md` |
+| Asked why crew has 4 agents or 34 commands<!-- claim: plugin-commands:crew --> | `docs/adr/0003-crew-departs-from-three-community-best-practices.md` |
 | Tempted to "fix" crew to match the document | Read the ADR first. Three departures are deliberate |
 | Adding a hook, skill or command | `references/practices.md` §Hooks, §Skills, §Commands |
 
@@ -36,12 +36,12 @@ Claiming these as gaps wastes a session. Each is checked, with where it lives:
 
 | Practice | Crew |
 |---|---|
-| Plan before coding | `/crew:plan`, the `planner` role |
+| Plan before coding | `/crew:plan`, with an approval receipt before edits |
 | Aggressive context clearing | `context-watch` hook, `context.warnAt` 0.5 since 0.19.52 |
 | "Document & Clear" pattern | `handoff-write` (PreCompact) + `handoff-read` (SessionStart) |
 | Quality-gate hooks | `verify-gate` on Stop, over `.crew/verify.json` |
 | Multi-instance review | `/crew:review` — prefers a different model family, not a clone |
-| Dev docs system | `.work/`, `/crew:ticket`, `/crew:handoff` |
+| Dev docs system | `.work/tickets/<id>/`, `/crew:spec`, `/crew:handoff` |
 | Utility scripts in skills | every `skills/*/scripts/` directory |
 | Don't block at write time | 0.19.52 removed the PreToolUse command guard, kept the Stop gate |
 
@@ -50,7 +50,7 @@ That last row is the document's §4.3.2 and crew reached it independently.
 ## Where crew departs, on purpose
 
 Three of the document's rules call crew's architecture an anti-pattern:
-specialised subagents (crew has 54), a large slash-command surface (26), and
+specialised subagents (crew has 4), a large slash-command surface (33), and
 being a multi-agent system at all.
 
 **These are recorded decisions, not oversights.** The reasoning, and the cost

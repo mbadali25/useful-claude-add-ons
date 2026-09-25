@@ -497,7 +497,12 @@ function Add-McpServer {
         [string]$Url,
         [hashtable]$EnvVars,
         [hashtable]$Headers,
-        [string]$Note
+        [string]$Note,
+        # Lets a caller that must land at a fixed scope regardless of the
+        # global -InstallScope default (Add-OrRefreshMcpServer, below) reuse
+        # this one 'claude mcp add' call site instead of duplicating it -
+        # empty means "use the global default", exactly today's behaviour.
+        [string]$Scope
     )
     if (-not (Test-ClaudeAvailable)) {
         throw "claude not found on PATH in this session - open a new shell and re-run this script."
@@ -531,8 +536,9 @@ function Add-McpServer {
         Write-Skip "MCP server '$Name' already registered"
         return
     }
+    $effectiveScope = if ($Scope) { $Scope } else { $InstallScope }
     if ($Url) {
-        $addArgs = @('mcp', 'add', '--scope', $InstallScope, '--transport', 'http', $Name, $Url)
+        $addArgs = @('mcp', 'add', '--scope', $effectiveScope, '--transport', 'http', $Name, $Url)
         # Headers go after the URL. Used for endpoints that authenticate with a
         # bearer token rather than launching a command, e.g. the Obsidian vault
         # server's Local REST API.
@@ -540,7 +546,7 @@ function Add-McpServer {
             foreach ($k in $Headers.Keys) { $addArgs += @('--header', "${k}: $($Headers[$k])") }
         }
     } else {
-        $addArgs = @('mcp', 'add', '--scope', $InstallScope, $Name)
+        $addArgs = @('mcp', 'add', '--scope', $effectiveScope, $Name)
         if ($EnvVars) {
             foreach ($k in $EnvVars.Keys) { $addArgs += @('--env', "$k=$($EnvVars[$k])") }
         }
@@ -553,6 +559,86 @@ function Add-McpServer {
     $script:Summary.Installed++
     Write-Ok "added MCP server '$Name'"
     if ($Note) { Write-Ok $Note }
+}
+
+function Get-McpRegistrationCommand {
+    # Full 'cmd arg arg...' string 'claude mcp get <name>' reports for an
+    # already-registered server, or $null when it cannot be read or parsed.
+    # 'claude mcp list' (Get-ClaudeMcpServers) only gives the name - this is
+    # the only way to compare an existing registration's command/args against
+    # the exact form a row requires. $null is its own value here, never read
+    # as a match or a mismatch.
+    param([string]$Name)
+    if (-not (Test-ClaudeAvailable)) { return $null }
+    try {
+        $out = (claude mcp get $Name 2>$null) -join "`n"
+    } catch {
+        return $null
+    }
+    if ($LASTEXITCODE -ne 0) { return $null }
+    $cmd = $null; $cargs = $null
+    foreach ($line in ($out -split "`n")) {
+        if ($line -match '^\s*Command:\s*(.*)$') { $cmd = $Matches[1].Trim() }
+        if ($line -match '^\s*Args:\s*(.*)$') { $cargs = $Matches[1].Trim() }
+    }
+    if (-not $cmd) { return $null }
+    return ("$cmd $cargs").Trim()
+}
+
+function Add-OrRefreshMcpServer {
+    # Same detect-then-act contract as Add-McpServer, but for a row that must
+    # land at a fixed scope regardless of the global -InstallScope default,
+    # and that must notice when an earlier run (or a hand-added registration)
+    # left different command/args behind rather than trusting the registered
+    # name alone - Add-McpServer's plain 'already registered' skip treats any
+    # registration under the name as current, which is exactly wrong once the
+    # required flags change. The actual 'claude mcp add' still happens inside
+    # Add-McpServer itself (via its own -Scope parameter) rather than here, so
+    # this is not a second call site for it.
+    param(
+        [string]$Scope,
+        [string]$Name,
+        [string[]]$CommandArgs,
+        [string]$Note
+    )
+    if (-not (Test-ClaudeAvailable)) {
+        throw "claude not found on PATH in this session - open a new shell and re-run this script."
+    }
+    $launcher = @($CommandArgs) | Select-Object -First 1
+    if ($launcher -and -not (Get-Command $launcher -ErrorAction SilentlyContinue)) {
+        Write-WarnErr "not registering MCP server '$Name': its launch command '$launcher' does not resolve on PATH in this session. 'claude mcp add' records a command without running it, so registering now would report success for a server that cannot start."
+        throw "MCP server '$Name' not registered - '$launcher' is not on PATH."
+    }
+    $required = ($CommandArgs -join ' ').Trim()
+    if (Test-McpServerRegistered $Name) {
+        $current = Get-McpRegistrationCommand -Name $Name
+        if ($null -eq $current) {
+            Write-Skip "MCP server '$Name' already registered (could not read its command/args back from 'claude mcp get' to compare against the required form)"
+            return
+        }
+        if ($current -eq $required) {
+            Write-Skip "MCP server '$Name' already registered with the required form"
+            return
+        }
+        if ($NonInteractive -or $All -or $Select) {
+            Write-Warn2 "MCP server '$Name' is registered as '$current', not the required '$required' - outdated registration left; run with -Select web-testing interactively to be asked to migrate it."
+            return
+        }
+        Write-Host ""
+        Write-Host "  MCP server '$Name' is already registered as:" -ForegroundColor Yellow
+        Write-Host "    $current" -ForegroundColor DarkGray
+        Write-Host "  This row requires:" -ForegroundColor Yellow
+        Write-Host "    $required" -ForegroundColor DarkGray
+        $answer = "$(Read-Host "  Remove and re-register '$Name' with the required form? [y/N]")".Trim()
+        if ($answer -match '^(?i)y(es)?$') {
+            try { claude mcp remove $Name 2>&1 | Out-Null } catch { }
+            Get-ClaudeMcpServers -Refresh | Out-Null
+        } else {
+            Write-Skip "leaving the existing registration for '$Name' as it is"
+            return
+        }
+    }
+    Add-McpServer -Name $Name -CommandArgs $CommandArgs -Scope $Scope -Note $Note
 }
 
 function Get-ClaudeSkillsDir {
@@ -989,11 +1075,10 @@ $script:Catalog = @(
     [pscustomobject]@{ Key = 'task-observer';     Default = $true;  Name = 'task-observer skill (rebelytics/one-skill-to-rule-them-all)' }
     [pscustomobject]@{ Key = 'aws-mcp';           Default = $false; Name = 'MCP server: AWS (awslabs.aws-api-mcp-server)' }
     [pscustomobject]@{ Key = 'azure-mcp';         Default = $false; Name = 'MCP server: Azure (@azure/mcp)' }
-    [pscustomobject]@{ Key = 'playwright-mcp';    Default = $false; Name = 'MCP server: Playwright (@playwright/mcp)' }
+    [pscustomobject]@{ Key = 'web-testing';       Default = $true;  Name = 'Web testing: Playwright (@playwright/test + axe-core) + MCP + Test Agents - project-local, needs Node >= 20.19' }
     [pscustomobject]@{ Key = 'obsidian-mcp';      Default = $false; Name = 'MCP server: Obsidian vault server (Local REST API over an SSH tunnel)' }
     [pscustomobject]@{ Key = 'supabase';          Default = $false; Name = 'Supabase plugin (supabase@claude-plugins-official)' }
     [pscustomobject]@{ Key = 'context7';          Default = $false; Name = 'Context7 up-to-date library docs (npx ctx7 setup)' }
-    [pscustomobject]@{ Key = 'playwright-cli';    Default = $false; Name = 'Playwright CLI (@playwright/cli) - browser automation from the shell' }
     [pscustomobject]@{ Key = 'skillui';           Default = $false; Name = 'SkillUI (npm) + Playwright/Chromium - extract a design system from a URL' }
     [pscustomobject]@{ Key = 'strix';             Default = $false; Name = 'Strix AI pentesting CLI (needs Docker + an LLM API key)' }
     [pscustomobject]@{ Key = 'obsidian';          Default = $false; Name = 'Obsidian desktop + claude-obsidian + obsidian-skills plugins' }
@@ -1004,6 +1089,8 @@ $script:Catalog = @(
     [pscustomobject]@{ Key = 'aws-pricing-mcp';   Default = $false; Name = 'MCP server: AWS Pricing (Price List API - needs AWS creds with pricing:*)' }
     [pscustomobject]@{ Key = 'ms-learn-mcp';      Default = $false; Name = 'MCP server: Microsoft Learn (Azure, SharePoint and Power Automate docs, no credentials)' }
     [pscustomobject]@{ Key = 'perplexity-mcp';    Default = $false; Name = 'MCP server: Perplexity (web-grounded search for the web-research skill - needs an API key)' }
+    [pscustomobject]@{ Key = 'lsp-plugins';       Default = $false; Name = 'LSP plugins: csharp-lsp, pyright-lsp, typescript-lsp (claude-plugins-official) + Angular language server (npm) - needs dotnet/npm' }
+    [pscustomobject]@{ Key = 'stack-tools';       Default = $false; Name = 'Stack tooling: tflint, ruff, sqlfluff (uv), shellcheck, PSScriptAnalyzer (Windows PowerShell 5.1 and 7; pwsh only on non-Windows)' }
 )
 
 $script:Selected = @{}
@@ -1044,8 +1131,6 @@ $script:SkillCatalog = @(
     [pscustomobject]@{ Key = 'cisco-meraki';            Selected = $true; Name = 'cisco-meraki            - Meraki Dashboard API: inventory, events, config changes' }
     [pscustomobject]@{ Key = 'claude-code-defaults';    Selected = $true; Name = 'claude-code-defaults    - Claude Code config: settings.json, permissions, hooks' }
     [pscustomobject]@{ Key = 'claude-code-tuneup';      Selected = $true; Name = 'claude-code-tuneup      - Audit a slow Claude Code setup: dupes, hooks, context' }
-    [pscustomobject]@{ Key = 'claude-memories-canvas';  Selected = $true; Name = 'claude-memories-canvas  - claude-memories vault: wiki/maps .canvas conventions' }
-    [pscustomobject]@{ Key = 'claude-memories-vault';   Selected = $true; Name = 'claude-memories-vault   - claude-memories vault: layout, frontmatter, write lock' }
     [pscustomobject]@{ Key = 'cloudflare';              Selected = $true; Name = 'cloudflare              - Cloudflare v4: DNS, WAF, cache, Workers, Zero Trust' }
     [pscustomobject]@{ Key = 'doc-builder';             Selected = $true; Name = 'doc-builder             - Reports + SOPs -> DOCX/PDF via Word or LibreOffice, brand pack sets the style' }
     [pscustomobject]@{ Key = 'drata';                   Selected = $true; Name = 'drata                   - Drata: controls, monitors, evidence, audit prep' }
@@ -1086,7 +1171,7 @@ foreach ($sk in $script:SkillCatalog) {
 # whether or not Claude agrees with it, so it is opted into explicitly. 'Spec' is
 # 'plugin@marketplace|marketplace-source|marketplace-name'.
 $script:PluginCatalog = @(
-    [pscustomobject]@{ Key = 'crew'; Selected = $true; Name = 'crew                    - Virtual dev team: 54 agents, 28 commands, safety hooks'; Spec = 'crew@useful-claude-add-ons|mbadali25/useful-claude-add-ons|useful-claude-add-ons' }
+    [pscustomobject]@{ Key = 'crew'; Selected = $true; Name = 'crew                    - Virtual dev team: 4 agents, 34 commands, safety hooks'; Spec = 'crew@useful-claude-add-ons|mbadali25/useful-claude-add-ons|useful-claude-add-ons' }
     [pscustomobject]@{ Key = 'gizmoduck'; Selected = $true; Name = 'gizmoduck               - Nuclei scans: diff, triaged reports, SDP tickets. No hooks'; Spec = 'gizmoduck@useful-claude-add-ons|mbadali25/useful-claude-add-ons|useful-claude-add-ons' }
     [pscustomobject]@{ Key = 'localgpu'; Selected = $true; Name = 'localgpu                - Local models via Ollama: index, search, ask. MCP, no hooks'; Spec = 'localgpu@useful-claude-add-ons|mbadali25/useful-claude-add-ons|useful-claude-add-ons' }
     [pscustomobject]@{ Key = 'obsidian-vault'; Selected = $true; Name = 'obsidian-vault          - Multi-vault memory: gardener/reflector agents, bridge+guard hooks'; Spec = 'obsidian-vault@useful-claude-add-ons|mbadali25/useful-claude-add-ons|useful-claude-add-ons' }
@@ -2295,11 +2380,106 @@ if (Test-Selected 'ms-learn-mcp') {
     }
 }
 
-if (Test-Selected 'playwright-mcp') {
-    Invoke-Step "Install Playwright MCP server" {
-        Add-McpServer -Name 'playwright' `
-            -CommandArgs @('npx', '@playwright/mcp@latest') `
-            -Note "Playwright downloads its browsers on first use; 'npx playwright install' does it ahead of time."
+# Folds the old separate 'playwright-mcp' and 'playwright-cli' rows into one: a
+# modern Playwright setup is the test runner, the browsers, both MCP servers and
+# the Test Agents together, not three things a user ticks separately. Default ON
+# (see $script:Catalog above), so '-NonInteractive' now installs this row unless
+# the user excludes it with '-Select' naming other keys.
+if (Test-Selected 'web-testing') {
+    Invoke-Step "Install web testing (Playwright test runner, browsers, MCP servers, Test Agents)" {
+        if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
+            throw "node not found on PATH - select the prerequisites item (or install Node.js >= 20.19) and re-run '-Select web-testing'."
+        }
+        # Told, not fixed: this script does not install or upgrade Node for any row.
+        $nodeVer = (node -v 2>$null) -replace '^v', ''
+        $parts = $nodeVer -split '\.'
+        $major = [int]$parts[0]; $minor = [int]$parts[1]
+        if ($major -lt 20 -or ($major -eq 20 -and $minor -lt 19)) {
+            throw "node $nodeVer found, but Playwright 1.63 needs Node >= 20.19 (or >= 22.12). Install a newer Node yourself and re-run '-Select web-testing'."
+        }
+        if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
+            throw "npm not found on PATH - select the prerequisites item (or install Node.js) and re-run '-Select web-testing'."
+        }
+
+        # @playwright/test and @axe-core/playwright are project devDependencies, not
+        # global tools: the pinned version travels with the repo's package.json and
+        # has to match what CI runs. This installer does not run 'npm init' for you.
+        if (-not (Test-Path 'package.json')) {
+            throw "no package.json in $(Get-Location) - Playwright installs as a project devDependency, not globally. cd into the project's root (or run 'npm init -y' first) and re-run '-Select web-testing'."
+        }
+        $pkg = Get-Content 'package.json' -Raw | ConvertFrom-Json
+        # Skip the reinstall entirely when both pinned versions are already exact -
+        # without this a rerun against an already-installed project ran 'npm
+        # install' again every time, so two runs looked identical to one that
+        # only checked.
+        if ($pkg.devDependencies.'@playwright/test' -eq '1.63.0' -and $pkg.devDependencies.'@axe-core/playwright' -eq '4.13.0') {
+            Write-Skip "@playwright/test@1.63.0 and @axe-core/playwright@4.13.0 already pinned in package.json"
+        } else {
+            if ($pkg.devDependencies.'@playwright/test') {
+                Write-Ok "@playwright/test already a devDependency here - reinstalling the pinned versions to pick up updates"
+            }
+            npm install -D '@playwright/test@1.63.0' '@axe-core/playwright@4.13.0'
+            if ($LASTEXITCODE -ne 0) { throw "'npm install -D @playwright/test@1.63.0 @axe-core/playwright@4.13.0' failed - see the output above." }
+            $script:Summary.Installed++
+            Write-Ok "@playwright/test@1.63.0 and @axe-core/playwright@4.13.0 added as devDependencies"
+        }
+
+        # 'install --dry-run' prints each browser's cache directory without
+        # touching the network, whether or not it is already there - its own
+        # text never says "already installed", so the directory on disk is what
+        # detects it, not the dry-run output's wording.
+        $chromiumLoc = (npx --no-install playwright install --dry-run chromium 2>$null |
+            Select-String -Pattern '^\s*Install location:\s*(.*)$' |
+            ForEach-Object { $_.Matches[0].Groups[1].Value.Trim() } |
+            Select-Object -First 1)
+        if ($chromiumLoc -and (Test-Path $chromiumLoc)) {
+            Write-Skip "Chromium already installed at $chromiumLoc"
+        } else {
+            # Unlike the Linux/macOS row, Windows browser installs never shell
+            # out to a system package manager, so there is no sudo/root case
+            # to branch on here - '--with-deps' is always safe to pass.
+            npx playwright install --with-deps chromium
+            if ($LASTEXITCODE -ne 0) {
+                Write-Warn2 "'npx playwright install --with-deps chromium' failed - browsers or system deps may be missing; see https://playwright.dev/docs/browsers"
+                throw "Chromium install failed."
+            }
+            Write-Ok "Chromium installed for Playwright"
+        }
+
+        if (Test-Path '.claude/agents/playwright-test-planner.md') {
+            Write-Skip "Playwright Test Agents already scaffolded (.claude/agents/playwright-test-planner.md exists)"
+        } else {
+            # Report OK only when every requested loop actually succeeded - a run
+            # where one loop failed and the other did not used to warn for the
+            # failed one and then print an unconditional OK right after it.
+            $failedLoops = @()
+            npx playwright init-agents --loop=claude
+            if ($LASTEXITCODE -ne 0) { $failedLoops += 'claude' }
+            npx playwright init-agents --loop=codex
+            if ($LASTEXITCODE -ne 0) { $failedLoops += 'codex' }
+            if ($failedLoops.Count -eq 0) {
+                Write-Ok "Playwright Test Agents scaffolded (planner/generator/healer; claude + codex loops)"
+            } else {
+                Write-Warn2 "Playwright Test Agents scaffolding failed for: $($failedLoops -join ', ') - run 'npx playwright init-agents --loop=<name>' by hand for each."
+            }
+        }
+
+        # Registered at project scope regardless of the global -InstallScope
+        # default - stack-web's SKILL.md documents this row's wiring as a
+        # per-project .mcp.json, not a machine-wide registration - migrated
+        # rather than trusted on name alone, and launched as 'cmd /c npx ...'
+        # because the MCP host cannot execute npx's .cmd shim directly on
+        # Windows ('Connection closed' at connect time otherwise).
+        Add-OrRefreshMcpServer -Scope 'project' -Name 'playwright' `
+            -CommandArgs @('cmd', '/c', 'npx', '@playwright/mcp@latest', '--isolated', '--headless', '--caps', 'testing') `
+            -Note "Playwright downloads its browsers on first use if skipped above; 'npx playwright install' does it ahead of time."
+        Add-OrRefreshMcpServer -Scope 'project' -Name 'chrome-devtools' -CommandArgs @('cmd', '/c', 'npx', 'chrome-devtools-mcp@latest')
+
+        if (Get-Command docker -ErrorAction SilentlyContinue) {
+            Write-Ok "Docker found - visual baselines can be captured in mcr.microsoft.com/playwright:v1.63.0-noble, the only image guaranteed to match CI's rendering."
+        } else {
+            Write-Warn2 "Docker not found - this is a warning, not a blocker: everything else in this row still works. Visual regression baselines (toHaveScreenshot) must be generated inside mcr.microsoft.com/playwright:v1.63.0-noble or they will not match CI's font hinting and subpixel rendering."
+        }
     }
 }
 
@@ -2382,34 +2562,6 @@ if (Test-Selected 'context7') {
         if ($LASTEXITCODE -ne 0) { throw "'npx ctx7 setup' failed - see the output above." }
         $script:Summary.Installed++
         Write-Ok "Context7 configured. Free tier works without a key; higher limits: https://context7.com"
-    }
-}
-
-# --- 15. Playwright CLI ------------------------------------------------------ ---
-if (Test-Selected 'playwright-cli') {
-    Invoke-Step "Install Playwright CLI (@playwright/cli)" {
-        # Detection is on the binary the package provides ('playwright-cli'), which is
-        # what a user actually cares about - it can also arrive via another manager.
-        $existing = Get-Command playwright-cli -ErrorAction SilentlyContinue
-        if ($existing -and $NoUpdate) {
-            Write-Skip "playwright-cli already installed at $($existing.Source) (-NoUpdate set)"
-            return
-        }
-        if ($existing) {
-            Write-Ok "playwright-cli already installed - reinstalling @latest to pick up updates"
-        }
-        if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
-            throw "npm not found on PATH - select the prerequisites item (or install Node.js) and re-run."
-        }
-        npm install -g '@playwright/cli@latest'
-        if ($LASTEXITCODE -ne 0) { throw "'npm install -g @playwright/cli@latest' failed - see the output above." }
-        Sync-SessionEnvironment
-        $cmd = Get-Command playwright-cli -ErrorAction SilentlyContinue
-        if (-not $cmd) {
-            throw "@playwright/cli installed but 'playwright-cli' is not resolvable in this session - open a new shell and try again."
-        }
-        $script:Summary.Installed++
-        Write-Ok "playwright-cli installed at $($cmd.Source)"
     }
 }
 
@@ -2788,6 +2940,235 @@ if (Test-Selected 'ms-mcp') {
             throw "$mcpFailures Microsoft MCP server(s) were not registered - see the WARN lines above."
         }
     }
+}
+
+# --- 22. LSP plugins (C#, Python, TypeScript) + Angular language server ------ ---
+# Anthropic's official language-server plugins register an LSP client entry each,
+# but Claude Code's native LSP support only starts whatever binary the plugin's
+# 'command' names - it does not vendor the language server itself. This step
+# installs both halves: the plugin (via Install-ClaudePlugin, same as every other
+# plugin row here) and the binary Claude Code will actually launch. There is no
+# official Angular plugin to install - checked directly against
+# anthropics/claude-plugins-official's own marketplace.json on 2026-09-23, which
+# lists csharp-lsp/pyright-lsp/typescript-lsp (and eleven other languages) but no
+# 'angular' entry - so Angular's language server goes in as a plain npm package
+# instead, the same way skillui's Playwright/Chromium install is above.
+function Install-LspBinary {
+    # $Label for messages, $Probe the command Claude Code will actually run,
+    # $Install a scriptblock run directly - never a string that gets invoked.
+    param([string]$Label, [string]$Probe, [scriptblock]$Install)
+    $existing = Get-Command $Probe -ErrorAction SilentlyContinue
+    if ($existing) {
+        Write-Skip "$Label already installed ($($existing.Source))"
+        return
+    }
+    Write-Step "Installing $Label"
+    & $Install
+    if ($LASTEXITCODE -ne 0) {
+        throw "$Label install command failed (exit $LASTEXITCODE) - install it by hand, then re-run."
+    }
+    Sync-SessionEnvironment
+    $cmd = Get-Command $Probe -ErrorAction SilentlyContinue
+    if (-not $cmd) {
+        throw "$Label installed but '$Probe' is not resolvable in this session - open a new shell and re-run."
+    }
+    $script:Summary.Installed++
+    Write-Ok "$Label installed at $($cmd.Source)"
+}
+if (Test-Selected 'lsp-plugins') {
+    Invoke-Step "Marketplace: anthropics/claude-plugins-official" {
+        Add-ClaudeMarketplace -Source 'anthropics/claude-plugins-official' -Name 'claude-plugins-official'
+    }
+    Invoke-Step "Plugin: csharp-lsp@claude-plugins-official" {
+        Install-ClaudePlugin 'csharp-lsp@claude-plugins-official'
+    }
+    Invoke-Step "csharp-ls (dotnet tool)" {
+        # Detect the binary BEFORE requiring its prerequisite: a csharp-ls already on
+        # PATH must not be reported as a failure just because dotnet is absent now.
+        if (-not (Get-Command csharp-ls -ErrorAction SilentlyContinue)) {
+            if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) {
+                throw "dotnet not found on PATH - csharp-ls (a dotnet tool) needs the .NET SDK; install it (https://dotnet.microsoft.com) and re-run."
+            }
+        }
+        Install-LspBinary -Label 'csharp-ls' -Probe 'csharp-ls' -Install { dotnet tool install --global csharp-ls }
+    }
+    Invoke-Step "Plugin: pyright-lsp@claude-plugins-official" {
+        Install-ClaudePlugin 'pyright-lsp@claude-plugins-official'
+    }
+    Invoke-Step "pyright-langserver (npm)" {
+        if (-not (Get-Command pyright-langserver -ErrorAction SilentlyContinue)) {
+            if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
+                throw "npm not found on PATH - select the prerequisites item (or install Node.js) and re-run."
+            }
+        }
+        Install-LspBinary -Label 'pyright-langserver' -Probe 'pyright-langserver' -Install { npm install -g pyright }
+    }
+    Invoke-Step "Plugin: typescript-lsp@claude-plugins-official" {
+        Install-ClaudePlugin 'typescript-lsp@claude-plugins-official'
+    }
+    Invoke-Step "typescript-language-server (npm)" {
+        if (-not (Get-Command typescript-language-server -ErrorAction SilentlyContinue)) {
+            if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
+                throw "npm not found on PATH - select the prerequisites item (or install Node.js) and re-run."
+            }
+        }
+        Install-LspBinary -Label 'typescript-language-server' -Probe 'typescript-language-server' -Install { npm install -g typescript-language-server typescript }
+    }
+    Invoke-Step "Angular language server (npm; no official Claude plugin)" {
+        if (-not (Get-Command ngserver -ErrorAction SilentlyContinue)) {
+            if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
+                throw "npm not found on PATH - select the prerequisites item (or install Node.js) and re-run."
+            }
+        }
+        Install-LspBinary -Label 'Angular language server (ngserver)' -Probe 'ngserver' -Install { npm install -g '@angular/language-server' }
+    }
+}
+
+# --- 23. Stack tooling: tflint, ruff, sqlfluff, shellcheck, PSScriptAnalyzer - ---
+# The lint/format tools the stack-* skills write into verify.json's rules, per
+# docs/review/04-redesign.md - installed here, never inside a skill, so a missing
+# tool is a bounded warning at install time rather than a silent UNVERIFIED result
+# the first time a ticket touches that stack. dotnet format, eslint and prettier
+# are deliberately NOT here: dotnet/node are prerequisites this script already
+# tells the user to install by hand rather than installing itself, and
+# eslint/prettier are project-local (npm devDependencies), not a global tool this
+# script would own.
+function Install-Tflint {
+    if (Get-Command tflint -ErrorAction SilentlyContinue) {
+        Write-Skip "tflint already installed"
+    } elseif (Get-Command choco -ErrorAction SilentlyContinue) {
+        if (-not (Test-Admin)) {
+            throw "tflint needs an elevated prompt to install via Chocolatey - re-run this script as Administrator."
+        }
+        choco install tflint -y --no-progress
+        if ($LASTEXITCODE -ne 0) { throw "choco install tflint failed with exit code $LASTEXITCODE - see the output above." }
+        Sync-SessionEnvironment
+        $cmd = Get-Command tflint -ErrorAction SilentlyContinue
+        if (-not $cmd) { throw "tflint installed via Chocolatey but not resolvable in this session - open a new shell and re-run." }
+        $script:Summary.Installed++
+        Write-Ok "tflint installed via Chocolatey at $($cmd.Source)"
+    } elseif (Get-Command winget -ErrorAction SilentlyContinue) {
+        winget install -e --id TerraformLinters.tflint --accept-source-agreements --accept-package-agreements
+        if ($LASTEXITCODE -ne 0) { throw "winget install TerraformLinters.tflint failed with exit code $LASTEXITCODE - see the output above." }
+        Sync-SessionEnvironment
+        $cmd = Get-Command tflint -ErrorAction SilentlyContinue
+        if (-not $cmd) { throw "tflint installed via winget but not resolvable in this session - open a new shell and re-run." }
+        $script:Summary.Installed++
+        Write-Ok "tflint installed via winget at $($cmd.Source)"
+    } else {
+        throw "no Chocolatey or winget found - install tflint from https://github.com/terraform-linters/tflint#installation and re-run."
+    }
+}
+function Install-Ruff {
+    $existing = Get-Command ruff -ErrorAction SilentlyContinue
+    if ($existing) {
+        Write-Skip "ruff already installed ($($existing.Source))"
+    } else {
+        try { Install-Uv } catch {
+            throw "not installing ruff - 'uv tool install ruff' needs uv. $($_.Exception.Message)"
+        }
+        # ruff needs uv itself, not just uvx: Install-Uv is satisfied by either.
+        if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
+            throw "uv still not found after attempting to install it - install it manually (https://docs.astral.sh/uv) and re-run."
+        }
+        uv tool install ruff
+        if ($LASTEXITCODE -ne 0) { throw "'uv tool install ruff' failed - see the output above." }
+        Sync-SessionEnvironment
+        $cmd = Get-Command ruff -ErrorAction SilentlyContinue
+        if (-not $cmd) { throw "ruff installed but not resolvable in this session - open a new shell and re-run." }
+        $script:Summary.Installed++
+        Write-Ok "ruff installed at $($cmd.Source)"
+    }
+}
+function Install-Sqlfluff {
+    $existing = Get-Command sqlfluff -ErrorAction SilentlyContinue
+    if ($existing) {
+        Write-Skip "sqlfluff already installed ($($existing.Source))"
+    } else {
+        try { Install-Uv } catch {
+            throw "not installing sqlfluff - 'uv tool install sqlfluff' needs uv. $($_.Exception.Message)"
+        }
+        # sqlfluff needs uv itself, not just uvx: Install-Uv is satisfied by either.
+        if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
+            throw "uv still not found after attempting to install it - install it manually (https://docs.astral.sh/uv) and re-run."
+        }
+        uv tool install sqlfluff
+        if ($LASTEXITCODE -ne 0) { throw "'uv tool install sqlfluff' failed - see the output above." }
+        Sync-SessionEnvironment
+        $cmd = Get-Command sqlfluff -ErrorAction SilentlyContinue
+        if (-not $cmd) { throw "sqlfluff installed but not resolvable in this session - open a new shell and re-run." }
+        $script:Summary.Installed++
+        Write-Ok "sqlfluff installed at $($cmd.Source)"
+    }
+}
+function Install-Shellcheck {
+    if (Get-Command shellcheck -ErrorAction SilentlyContinue) {
+        Write-Skip "shellcheck already installed"
+    } elseif (Get-Command choco -ErrorAction SilentlyContinue) {
+        if (-not (Test-Admin)) {
+            throw "shellcheck needs an elevated prompt to install via Chocolatey - re-run this script as Administrator."
+        }
+        choco install shellcheck -y --no-progress
+        if ($LASTEXITCODE -ne 0) { throw "choco install shellcheck failed with exit code $LASTEXITCODE - see the output above." }
+        Sync-SessionEnvironment
+        $cmd = Get-Command shellcheck -ErrorAction SilentlyContinue
+        if (-not $cmd) { throw "shellcheck installed via Chocolatey but not resolvable in this session - open a new shell and re-run." }
+        $script:Summary.Installed++
+        Write-Ok "shellcheck installed via Chocolatey at $($cmd.Source)"
+    } elseif (Get-Command winget -ErrorAction SilentlyContinue) {
+        winget install --id koalaman.shellcheck --accept-source-agreements --accept-package-agreements
+        if ($LASTEXITCODE -ne 0) { throw "winget install koalaman.shellcheck failed with exit code $LASTEXITCODE - see the output above." }
+        Sync-SessionEnvironment
+        $cmd = Get-Command shellcheck -ErrorAction SilentlyContinue
+        if (-not $cmd) { throw "shellcheck installed via winget but not resolvable in this session - open a new shell and re-run." }
+        $script:Summary.Installed++
+        Write-Ok "shellcheck installed via winget at $($cmd.Source)"
+    } else {
+        throw "no Chocolatey or winget found - install shellcheck from https://github.com/koalaman/shellcheck#installing and re-run."
+    }
+}
+function Install-PSScriptAnalyzer {
+    # -Scope CurrentUser installs into a DIFFERENT module path per host
+    # (Documents\WindowsPowerShell\Modules for 5.1, Documents\PowerShell\Modules
+    # for 7), so each host needs its own Install-Module run - one is not visible
+    # to the other. Every 64-bit Windows since 7/8.1 ships powershell.exe; pwsh.exe
+    # only exists once PowerShell 7 has been installed separately.
+    $hosts = @()
+    if (Get-Command powershell.exe -ErrorAction SilentlyContinue) { $hosts += 'powershell.exe' }
+    if (Get-Command pwsh.exe -ErrorAction SilentlyContinue)       { $hosts += 'pwsh.exe' }
+    if ($hosts.Count -eq 0) {
+        throw "neither powershell.exe nor pwsh.exe found on PATH - nothing to install PSScriptAnalyzer into."
+    }
+    $failures = 0
+    foreach ($h in $hosts) {
+        $already = & $h -NoProfile -Command "if (Get-Module -ListAvailable -Name PSScriptAnalyzer) { 'yes' }"
+        if ($already -match 'yes') {
+            Write-Skip "PSScriptAnalyzer already installed for $h"
+            continue
+        }
+        & $h -NoProfile -Command "Install-Module -Name PSScriptAnalyzer -Scope CurrentUser -Force -ErrorAction Stop"
+        if ($LASTEXITCODE -ne 0) {
+            Write-Warn2 "Install-Module PSScriptAnalyzer failed under $h (exit $LASTEXITCODE) - see the output above."
+            $failures++
+            continue
+        }
+        $verify = & $h -NoProfile -Command "if (Get-Module -ListAvailable -Name PSScriptAnalyzer) { 'yes' }"
+        if ($verify -notmatch 'yes') {
+            Write-Warn2 "Install-Module reported success but PSScriptAnalyzer is not resolvable under $h."
+            $failures++
+            continue
+        }
+        $script:Summary.Installed++
+        Write-Ok "PSScriptAnalyzer installed for $h"
+    }
+    if ($failures -gt 0) { throw "PSScriptAnalyzer install failed for $failures of $($hosts.Count) PowerShell host(s) - see the WARN lines above." }
+}
+if (Test-Selected 'stack-tools') {
+    Invoke-Step "tflint (Terraform linter)" { Install-Tflint }
+    Invoke-Step "ruff (uv tool install ruff)" { Install-Ruff }
+    Invoke-Step "sqlfluff (uv tool install sqlfluff)" { Install-Sqlfluff }
+    Invoke-Step "shellcheck" { Install-Shellcheck }
+    Invoke-Step "PSScriptAnalyzer (Windows PowerShell 5.1 and PowerShell 7)" { Install-PSScriptAnalyzer }
 }
 
 # --- Summary -----------------------------------------------------------------

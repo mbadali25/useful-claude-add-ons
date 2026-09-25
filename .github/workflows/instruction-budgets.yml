@@ -1,0 +1,70 @@
+name: Instruction budgets
+
+# push alone tests the branch tip, never the merge result a PR would produce.
+# Matches marketplace.yml and mcp-servers.yml, which already declare both.
+on: [push, pull_request]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    strategy:
+      # Don't cancel the other versions the moment one fails -- when a check is
+      # version-specific, seeing the whole matrix is what tells you that.
+      fail-fast: false
+      matrix:
+        # Matches the pylint and pytest jobs. Both scripts are stdlib-only.
+        python-version: ["3.11", "3.12", "3.13"]
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        # check_allowance_no_silent_raise needs a default-branch ref
+        # (origin/main) to diff .budget-allowance.json against. actions/checkout
+        # defaults to a 1-commit shallow clone with no other refs fetched, so
+        # _resolve_default_branch() finds neither origin/main nor main and the
+        # checker fails closed with "could not resolve a default branch" --
+        # correctly, since it genuinely could not answer. fetch-depth: 0 gets
+        # the full history and every remote ref instead of hand-picking one
+        # (git fetch --no-tags origin main:refs/remotes/origin/main), which
+        # would silently stop working the day the default branch is renamed.
+        fetch-depth: 0
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+    - name: Check instruction budgets, stale names, references and policy IDs
+      # Wired in at crew 1.0.0, once T2's deletions cleared the intentional red
+      # findings it carried; running it here earlier would only have taught
+      # people to ignore a red job. The allowance file (plugin/crew/.budget-allowance.json)
+      # is the only exception to the command budget, and growth even there fails.
+      #
+      # On a `push` to `main`, `--base` is passed explicitly rather than left
+      # to check_allowance_no_silent_raise's own default: that default
+      # resolves `origin/main` and diffs against `merge-base HEAD origin/main`,
+      # but by the time this job's checkout has fetched refs, the push
+      # already advanced the remote's `main` -- so `origin/main` IS this same
+      # commit, the merge-base is HEAD itself, and a raised ceiling is
+      # compared against a copy of the allowance file with the SAME raise
+      # already in it, which can never fail. `github.event.before` is the sha
+      # `main` pointed to immediately before this push, which is what the
+      # comparison actually needs; `HEAD~1` is the fallback for the one case
+      # `before` cannot answer (a new branch's first push reports it as all
+      # zeros). A `pull_request` run is untouched -- there, `origin/main`
+      # genuinely has not merged the PR's commits yet, so the existing
+      # merge-base default already compares against the right point.
+      run: |
+        if [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref }}" = "refs/heads/main" ]; then
+          BEFORE="${{ github.event.before }}"
+          if [ -n "$BEFORE" ] && [ "$BEFORE" != "0000000000000000000000000000000000000000" ]; then
+            BASE="$BEFORE"
+          else
+            BASE="HEAD~1"
+          fi
+          python3 scripts/check_instructions.py --base "$BASE"
+        else
+          python3 scripts/check_instructions.py
+        fi
+    - name: Budget checker regression suite
+      # The checker's fail-open paths each have a must-fail case here; a checker
+      # that went silent would otherwise look exactly like a clean repo. Builds
+      # throwaway git repos under a temp dir and sets their identity itself.
+      run: python3 scripts/_test/instruction-budgets.py

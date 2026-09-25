@@ -24,9 +24,9 @@ Ask before writing anything; this touches version control.
 
 ## Reference
 
-The sections below are the detail behind Phases 0-2. Phases 3-7 delegate to
-`crew:smoke-author`, `/crew:onboard`, `/crew:verify`, `crew:browser-tester`, and
-the normal ticket loop.
+The sections below are the detail behind Phases 0-2. Phases 3-7 cover the smoke
+harness, `/crew:onboard`, `/crew:verify`, browser specs, and the normal ticket
+loop — written in this session; crew 1.0 ships no writing agents.
 
 ## 1. Detect, do not assume
 
@@ -123,7 +123,7 @@ still writes only the repo file.
 {
   "schema": 7,
   "tier": 0,
-  "roles": ["explorer", "qa-reviewer"],
+  "roles": ["explorer", "reviewer"],
   "qa": {
     "provider": "auto",
     "order": ["codex", "copilot", "claude"],
@@ -145,9 +145,9 @@ still writes only the repo file.
   "jira": { "project": null, "cloudId": null },
   "sdp": { "portal": null, "noteVisibility": "private", "closeOnDone": false },
   "obsidian": { "vaultPath": null, "boardDir": null, "board": "Board.md", "columns": { "backlog": "Backlog", "ready": "Ready", "inProgress": "In Progress", "review": "Review", "done": "Done" } },
-  "memory": { "mode": "repo", "vaultPath": null },
+  "memory": { "mode": "repo", "vaultPath": null, "inject": true, "recall": { "vaults": [], "maxChars": 800 } },
   "verifyGate": true,
-  "context": { "enabled": true, "warnAt": 0.5, "budgetTokens": null, "reserveTokens": 0, "handoffPath": ".work/HANDOFF.md", "keepTranscripts": 5, "autoClear": { "enabled": true, "method": "auto", "windowTitle": null, "command": "/clear", "delaySeconds": 3, "minHandoffLines": 5, "unsafeFocus": false }, "autoWrapUp": true, "autoResume": true, "staleHandoff": { "maxAgeHours": 72, "maxCommitsBehind": 3 } },
+  "context": { "enabled": true, "warnAt": 0.5, "budgetTokens": null, "reserveTokens": 0, "handoffPath": ".work/HANDOFF.md", "keepTranscripts": 5, "autoClear": { "enabled": null, "method": "auto", "windowTitle": null, "command": "/clear", "delaySeconds": 3, "minHandoffLines": 5, "unsafeFocus": false, "onlyRepos": null, "onlySessions": null }, "autoWrapUp": true, "autoResume": true, "staleHandoff": { "maxAgeHours": 72, "maxCommitsBehind": 3 } },
   "emergency": { "standDown": true, "ttlMinutes": 120, "maxTtlMinutes": 480 },
   "notify": { "provider": "none", "urlEnv": null, "tokenEnv": null, "chatId": null, "events": ["phase", "gate", "waiting"] },
   "platform": { "os": null, "wsl": null, "shell": null, "windowsHostIp": null },
@@ -158,12 +158,19 @@ still writes only the repo file.
   "github": { "mergeGate": { "enabled": false, "branch": null } },
   "install": {"policy": "manual"},
   "guards": { "terraformApply": "block", "forcePush": "block", "adminMerge": "block", "mergeGate": "block",
-              "prodDatabase": "none", "prodServer": "none", "roleWrites": "off" },
+              "cloudDestructive": "block", "sqlDestructive": "block",
+              "prodDatabase": "none", "prodServer": "none", "roleWrites": "off", "cloudGuard": "off" },
   "production": { "databases": [], "hosts": [] },
+  "cloud": { "awsProfiles": [], "awsRegions": [], "azureSubscriptions": [] },
   "change": { "requester": null, "implementor": null, "requireForProduction": false,
-              "sdpTemplate": "Change Management Request", "jiraIssueType": "Change", "category": null }
+              "sdpTemplate": "Change Management Request", "jiraIssueType": "Change", "category": null },
+  "scope": { "mode": "off", "allowCliApproval": false }
 }
 ```
+
+`scope.mode` above is the shipped default, `off`; `/crew:init` changes it to `auto`
+(report for ten tickets, then block) in a **new** repo's file only — see Phase 1 in
+`phases.md`. An existing `config.json` is never given a `scope` it did not have.
 
 `schema: 7` — this repo is born current. It never trips `upgradeNeeded`, which fires on
 any config predating the `pm` and `graph` blocks, the per-role provider table, the
@@ -281,7 +288,7 @@ be refused; `/crew:config --explain` names which layer is holding a key down.
 
 ### Offer the per-role table — do not leave the user to find the keys
 
-Ask this during Phase 1, alongside the QA-reviewer question, and read the consequence
+Ask this during Phase 1, alongside the reviewer question, and read the consequence
 out loud rather than writing it silently. A setup that ships pins nobody was told about
 is the failure `pm.authority` already taught us. Verified available on this machine
 2026-09-05; probe before offering, since these names churn:
@@ -290,8 +297,6 @@ is the failure `pm.authority` already taught us. Verified available on this mach
 |---|---|---|
 | `dev.roles.developer` | `codex` / `gpt-6-astra` | gpt |
 | `dev.roles.security` | `codex` / `gpt-6-astra` | gpt |
-| `dev.roles.infrastructure-architect` | `codex` / `gpt-6-astra` | gpt |
-| `dev.roles.planner` | `claude`, with a `codex` / `gpt-5.6-sol` alternate | claude |
 | `qa.roles.phase1`, `qa.roles.smoke` | `codex` / `gpt-5.6-sol` | gpt |
 | `qa.roles.review`, `qa.roles.gate` | `codex` / `gpt-5.6-luna` | gpt |
 | a Copilot alternative | Kimi 2.7 (`kimi-k2.7-code`), or Kimi 3 (`kimi-k3`) | kimi |
@@ -418,7 +423,7 @@ when the repo already has a CLAUDE.md, and the files to read first.
 The setup is not usable yet. `_verify/smoke.sh` has no checks in it, so the
 gate passes vacuously and the crew has no safety net.
 
-Tell the user: the next step is `@crew:smoke-author build the smoke harness`,
+Tell the user: the next step is building the smoke harness (`/crew:init --phase 3`),
 and nothing else should happen in this repo until that script runs green from a
 clean checkout. Offer to start it now.
 
@@ -434,9 +439,9 @@ half-finished.
 
 If they would rather go manually, the order is:
 
-1. `@crew:smoke-author build the smoke harness` — nothing else until it is green
+1. Build the smoke harness — nothing else until it is green
 2. `/crew:onboard` — learn the code
 3. `/crew:verify` — learn which checks each kind of change requires
-4. `@crew:browser-tester` if this repo has a UI
+4. Browser specs if this repo has a UI
 5. `/crew:survey` once the above exist — a survey before the safety net just
    produces a list of things nobody can safely act on

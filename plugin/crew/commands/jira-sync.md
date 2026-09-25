@@ -37,7 +37,7 @@ comments.
 custom fields, attachments, changelog, full comment history, rendered ADF.
 
 This is the whole game with Jira. A single Jira issue payload can run several
-thousand tokens and roughly forty of them affect what you build. `/crew:work`
+thousand tokens and roughly forty of them affect what you build. `/crew:implement`
 reads the cache, never the API, so that payload gets paid once instead of on
 every pickup, retry, and context reset.
 

@@ -864,7 +864,7 @@ def test_the_cited_lines_of_the_generator_hold_what_crew_says_they_hold():
             f"from it.\n  quoted: {expected!r}\n  line:   {cited_line!r}")
 
 
-# The four documents the defect was reported against. Named one by one rather
+# The documents the defect was reported against. Named one by one rather
 # than globbed: a glob asserts a rule about whatever happens to be in the
 # directory, so deleting the file that shipped broken would turn the test
 # green by removing its subject.
@@ -876,16 +876,20 @@ def test_the_cited_lines_of_the_generator_hold_what_crew_says_they_hold():
 # artefacts are the only place the rule can be observed holding. The previous
 # author deferred this to TODO.md as "coupling crew's suite to repo docs";
 # that is true of this whole file by design (see the module docstring), and
-# three tests asserting crew's PROSE while the four files the user complained
-# about went unchecked is the exact shape this suite exists to refuse. They
-# skip when the repo is not in the checkout, like every other cross-entry
-# check here.
+# three tests asserting crew's PROSE while the files the user complained about
+# went unchecked is the exact shape this suite exists to refuse. They skip
+# when the repo is not in the checkout, like every other cross-entry check
+# here.
+#
+# `crew-overview.html`, `crew-capabilities.html` and `crew-technical-reference`
+# were retired in favour of the `crew-1.0-*` guide family (which has a
+# generator -- `docs/guides/crew/src/build.py` -- and its own coverage) and
+# removed from this tuple along with them. The dated progress report was
+# archived, not deleted, so it stays here at its new path: it still has no
+# generator, and archiving is not regenerating.
 _GUIDES_DIR = os.path.join(_REPO, "docs", "guides", "crew")
 _GUIDES = (
-    "crew-overview.html",
-    "crew-capabilities.html",
-    "crew-technical-reference.html",
-    "crew-progress-report-2026-09-20.html",
+    "archive/crew-progress-report-2026-09-20.html",
 )
 
 
@@ -935,8 +939,9 @@ def test_every_shipped_guide_carries_the_print_block(name):
     """The artefact, not the prose that describes it.
 
     Nothing else in this suite looks at a produced document. Regenerate or
-    hand-edit these four without the block and every other test here stays
-    green, which is how the defect reached a reader in the first place.
+    hand-edit the one guide left in `_GUIDES` without the block and every
+    other test here stays green, which is how the defect reached a reader in
+    the first place.
 
     Asserted per declaration and inside the print block, so reformatting the
     CSS passes, moving a declaration out to the screen stylesheet fails, and

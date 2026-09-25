@@ -281,17 +281,18 @@ def test_upgrade_config_does_not_alias_the_shared_docs_block():
         "enabled": False, "branch": None, "preset": "standard"}
 
 
-def test_a_specialist_role_is_kept_and_not_reported_as_unknown():
+def test_a_retired_specialist_is_kept_and_reported_as_unknown():
     """`rolesUnknown` drives a report line reading "kept, not on this
-    release's ladder", which is true of a typo and false of a specialist.
-    A repo that deliberately onboarded `node-developer` would otherwise be
-    told on every single upgrade that crew does not recognise it.
+    release's ladder". crew 1.0 retired every specialist, so a 0.20 config
+    that onboarded `node-developer` is told exactly that -- the same line a
+    typo gets -- and the role is kept for `/crew:migrate` to filter.
     """
-    _out, notes = crew_upgrade.upgrade_config(
+    out, notes = crew_upgrade.upgrade_config(
         {"roles": ["explorer", "node-developer", "wharrgarbl"], "tier": 0})
 
-    assert "node-developer" not in notes["rolesUnknown"]
+    assert "node-developer" in notes["rolesUnknown"]
     assert "wharrgarbl" in notes["rolesUnknown"]
+    assert "node-developer" in out["roles"]
 
 
 def test_a_specialist_survives_the_upgrade_it_did_not_ask_for():
@@ -680,36 +681,31 @@ def test_upgrade_adds_roles_the_declared_tier_already_entitles():
     """Adding, not reporting: the decision the spec records. A repo already at
     tier 2 gets the tier-2 roles later releases added."""
     got, notes = crew_upgrade.upgrade_config(
-        {"tier": 2, "roles": ["explorer", "qa-reviewer", "developer",
-                              "docs-writer", "planner"]})
-    for role in ("dba", "browser-tester", "analyst", "security",
-                 "smoke-author", "infrastructure-architect", "scribe",
-                 "researcher"):
+        {"tier": 2, "roles": ["explorer", "reviewer"]})
+    for role in ("security", "researcher"):
         assert role in got["roles"], role
-    assert notes["rolesAdded"] == [
-        "security", "smoke-author", "dba", "browser-tester", "analyst",
-        "infrastructure-architect", "scribe", "researcher"]
+    assert notes["rolesAdded"] == ["security", "researcher"]
     assert notes["tierFrom"] == 2 and notes["tierTo"] == 2
 
 
 def test_upgrade_never_grows_a_crew_past_its_declared_tier():
     """The guard that keeps "add the new roles" from meaning "add every role".
-    Moving UP a tier is /crew:scale's job and needs evidence."""
+    Nothing moves a repo UP a tier."""
     got, notes = crew_upgrade.upgrade_config(
-        {"tier": 0, "roles": ["explorer", "qa-reviewer"]})
-    assert got["roles"] == ["explorer", "qa-reviewer"]
+        {"tier": 0, "roles": ["explorer", "reviewer"]})
+    assert got["roles"] == ["explorer", "reviewer"]
     assert not notes["rolesAdded"]
     assert notes["tierTo"] == 0
 
 
 def test_upgrade_recomputes_tier_from_the_roles_actually_listed():
-    """A config claiming tier 0 while listing `planner` is at tier 2 whatever
-    the number says -- and the report has to name the move."""
+    """A config claiming tier 0 while listing `researcher` is at tier 2
+    whatever the number says -- and the report has to name the move."""
     got, notes = crew_upgrade.upgrade_config(
-        {"tier": 0, "roles": ["explorer", "planner"]})
+        {"tier": 0, "roles": ["explorer", "researcher"]})
     assert got["tier"] == 2
     assert notes["tierFrom"] == 0 and notes["tierTo"] == 2
-    assert "dba" in got["roles"]
+    assert "security" in got["roles"]
 
 
 def test_upgrade_keeps_a_role_this_release_does_not_know():
@@ -763,12 +759,12 @@ def test_run_reports_unmigrated_blocks_in_its_status(tmp_path):
 
 def test_the_report_states_roles_added_and_the_tier_move(tmp_path):
     root = crew_fixtures.make_repo(
-        tmp_path, config={"tier": 2, "roles": ["explorer", "qa-reviewer"]},
+        tmp_path, config={"tier": 2, "roles": ["explorer", "reviewer"]},
         codemap={"auth": V1_MAP})
     out = crew_upgrade.run(str(root), {})
     assert "## Config" in out["report"]
     assert "roles added: security" in out["report"]
-    assert "planner" in out["report"]
+    assert "researcher" in out["report"]
     written = (root / ".crew" / "codemap" / "UPGRADE.md").read_text(encoding="utf-8")
     assert written == out["report"]
 
@@ -920,7 +916,7 @@ def test_the_report_says_so_when_nothing_was_added(tmp_path):
     """Stated every run, including when the answer is none -- a report that
     only speaks up on change cannot be trusted when it is silent."""
     root = crew_fixtures.make_repo(
-        tmp_path, config={"tier": 0, "roles": ["explorer", "qa-reviewer"]},
+        tmp_path, config={"tier": 0, "roles": ["explorer", "reviewer"]},
         codemap={"auth": V1_MAP})
     out = crew_upgrade.run(str(root), {})
     assert "roles added: none" in out["report"]
@@ -1443,3 +1439,14 @@ def test_global_whole_blocks_mirror_stays_in_parity_with_crew_config():
         "_GLOBAL_WHOLE_BLOCKS nor the documented context.autoClear "
         "special case"
     )
+
+
+def test_upgrade_md_documents_the_current_migration():
+    """`commands/upgrade.md` section 5 says what each schema hop does. Carried
+    from test_pm_brief.py's agreement test when crew 1.0 deleted the brief
+    that named the hop: a SCHEMA_CURRENT bump that forgets its section-5
+    entry still has to fail somewhere."""
+    current = crew_state.SCHEMA_CURRENT
+    doc = (pathlib.Path(__file__).resolve().parents[1] / "commands" / "upgrade.md"
+           ).read_text(encoding="utf-8")
+    assert f"**Schema {current - 1} → {current}**" in doc

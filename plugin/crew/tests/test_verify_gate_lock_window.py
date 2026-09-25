@@ -88,12 +88,12 @@ def _repo(tmp_path, verify_map=None):
     for args in (("init", "-q"), ("config", "user.email", "t@example.invalid"),
                  ("config", "user.name", "t")):
         subprocess.run(("git",) + args, cwd=root, check=True,
-                       capture_output=True, text=True)
+                       capture_output=True, text=True, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
     (root / "README.md").write_text("committed", encoding="utf-8")
     subprocess.run(("git", "add", "-A"), cwd=root, check=True,
-                   capture_output=True, text=True)
+                   capture_output=True, text=True, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
     subprocess.run(("git", "commit", "-q", "-m", "fixture"), cwd=root,
-                   check=True, capture_output=True, text=True)
+                   check=True, capture_output=True, text=True, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
     (root / "a.py").write_text("x = 1", encoding="utf-8")
     (root / ".crew" / "verify.json").write_text(
         json.dumps(verify_map if verify_map is not None else _LONG_RULE),
@@ -113,9 +113,9 @@ def _env(root):
 
 
 def _run(flavour, root):
-    return subprocess.run(
+    return crew_fixtures.run_gate(
         _cmd(flavour), input="{}", cwd=str(root), env=_env(root),
-        capture_output=True, text=True, check=False)
+        capture_output=True, text=True, check=False, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
 
 
 def _lock(root):
@@ -126,40 +126,65 @@ def _lock(root):
 def test_a_rule_longer_than_the_ttl_keeps_its_lock(flavour, tmp_path):
     """MUST-ALLOW, and the defect itself: the holder is still working, well
     past the TTL, and the challenger must stand down rather than run a second
-    gate over the same turn."""
+    gate over the same turn.
+
+    Synchronised on the lock's own files, not a fixed sleep: a `sleep(4)`
+    here flaked 1/5 on a loaded Windows host, because it was really guessing
+    two things at once -- how long process start-up plus the mkdir-and-write
+    that acquires the lock takes on THIS machine (pwsh alone was measured at
+    0.8-1.4s a case elsewhere in this suite, see
+    docs/review/06-windows-burn-in.md, and that is before the lock is even
+    touched), and that 4s would land past the 3s TTL once it had. A slow
+    enough start-up made the first guess wrong before the second guess's
+    margin mattered. Waiting for `token`/`deadline` to exist removes the
+    first guess; computing the remaining wait from the token's own recorded
+    `mtime` removes the second."""
     root = _repo(tmp_path)
-    holder = subprocess.Popen(  # pylint: disable=consider-using-with
+    holder = crew_fixtures.popen_gate(
         _cmd(flavour), stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL, cwd=str(root), env=_env(root), text=True)
     try:
         holder.stdin.write("{}")
         holder.stdin.close()
         # Past the 3s TTL, comfortably inside the 16s window, and while the
-        # 6s rule is still running. A fixed sleep(4) raced gate startup on a
-        # slow run -- fork/exec overhead launching bash.exe/pwsh plus the
-        # rule-matcher subprocess can push the first deadline write past 4s
-        # real time, same mechanism noted in e0278bc9 for the sibling test.
-        # Poll for the deadline instead, but keep the >=4s floor so the
-        # challenger still arrives past the TTL, which is the property under
-        # test.
+        # 6s rule is still running. Timed from the TOKEN's own recorded
+        # mtime, not from `time.monotonic()` read shortly after this test
+        # called `popen_gate` -- a fixed `time.monotonic() + 4` floor is
+        # timing the wrong event: it measures elapsed time since THIS
+        # process started the holder, not since the holder actually
+        # acquired the lock. Fork/exec overhead launching bash.exe/pwsh plus
+        # the rule-matcher subprocess can itself eat a chunk of that margin
+        # on a slow run before the holder ever writes `token`, same
+        # mechanism noted in e0278bc9 for the sibling test -- so a floor
+        # anchored to Popen() can still land short of 3s past the token's
+        # OWN age even though it read as ">= 4s" by the wrong clock. Wait
+        # for `token` to exist, read ITS mtime, and require real elapsed
+        # time to clear the TTL measured from THAT.
         deadline_file = _lock(root) / "deadline"
-        min_wait = time.monotonic() + 4
+        token_file = _lock(root) / "token"
         bound = time.monotonic() + 12
         while True:
             assert holder.poll() is None, (
                 "the holder finished too early to test "
                 f"(exit code {holder.returncode!r})"
             )
-            now = time.monotonic()
-            if now >= min_wait and deadline_file.exists():
+            if token_file.exists() and deadline_file.exists():
                 break
-            assert now < bound, (
-                "the holder published no deadline within " +
-                str(bound - min_wait + 4) + "s, so the challenger has only "
-                "the age window and will reclaim a live lock"
+            assert time.monotonic() < bound, (
+                "the holder published no token/deadline within 12s, so "
+                "the challenger has only the age window and will reclaim "
+                "a live lock"
             )
             time.sleep(0.1)
         assert holder.poll() is None, "the holder finished too early to test"
+
+        token_age_deadline = token_file.stat().st_mtime + float(_TTL)
+        while time.time() < token_age_deadline:
+            assert holder.poll() is None, (
+                "the holder finished too early to test "
+                f"(exit code {holder.returncode!r})"
+            )
+            time.sleep(0.1)
 
         challenger = _run(flavour, root)
         assert "backed off" in challenger.stderr, (
@@ -174,7 +199,7 @@ def test_a_rule_longer_than_the_ttl_keeps_its_lock(flavour, tmp_path):
         try:
             holder.wait(timeout=30)
         except subprocess.TimeoutExpired:
-            holder.kill()
+            crew_fixtures.kill_process_group(holder)
 
 
 @pytest.mark.parametrize("flavour", _FLAVOURS)
@@ -431,9 +456,9 @@ def _published_window(flavour, tmp_path, env_ttl):
         env.pop("CREW_VERIFY_LOCK_TTL", None)
     else:
         env["CREW_VERIFY_LOCK_TTL"] = env_ttl
-    result = subprocess.run(
+    result = crew_fixtures.run_gate(
         _cmd(flavour), input="{}", cwd=str(root), env=env,
-        capture_output=True, text=True, check=False)
+        capture_output=True, text=True, check=False, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
     assert result.returncode == 0, (
         f"the probe rule should pass. stdout: {result.stdout} "
         f"stderr: {result.stderr}"
@@ -607,6 +632,7 @@ def test_both_flavours_read_the_same_deadline_the_same_way(value, tmp_path):
 _TTL_PROBE_RULE = {
     "version": 1,
     "rules": [{"paths": ["a.py"], "reach": "local", "run": [
+        "date +%s > now.txt",
         "cat .crew/.verify-gate.lock/deadline > seen.txt 2>&1 "
         "|| echo ABSENT > seen.txt",
     ], "why": "reads the published deadline from inside the run"}],
@@ -618,12 +644,11 @@ _TTL_PROBE_RULE = {
 def test_a_zero_prefixed_ttl_is_decimal_and_still_publishes_a_deadline(
         flavour, tmp_path):
     root = _repo(tmp_path, _TTL_PROBE_RULE)
-    before = int(time.time())
-    result = subprocess.run(
+    result = crew_fixtures.run_gate(
         _cmd(flavour), input="{}", cwd=str(root),
         env=dict(os.environ, CLAUDE_PROJECT_DIR=str(root),
                  CREW_VERIFY_LOCK_TTL="08"),
-        capture_output=True, text=True, check=False)
+        capture_output=True, text=True, check=False, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
 
     assert "value too great for base" not in result.stderr, (
         "`08` reached shell arithmetic as an octal literal. " + result.stderr
@@ -643,27 +668,33 @@ def test_a_zero_prefixed_ttl_is_decimal_and_still_publishes_a_deadline(
     # published deadline is what pins the value rather than the absence of an
     # error message.
     #
-    # NOT asserted here: a tight upper bound on how many seconds out the
-    # deadline lands. Measured on this Windows/Git-Bash host, the first
-    # lock_extend fires several real seconds after process start (fork/exec
-    # overhead launching bash.exe and every rule-matcher subprocess, not a
-    # calculation bug), so a bound sized to "8 plus a little slack" flaked at
-    # 12-16s. What the octal-vs-decimal question actually predicts, and what
-    # stays true regardless of host speed, is DIRECTION: the deadline is
-    # published (checked above) and it sits in the future relative to when
-    # the gate started (monotonic), nowhere near the untouched 180s compiled
-    # default -- which is what a silent fallback (the failure mode a broken
-    # decimal parse would actually produce, once the "value too great for
-    # base" crash is ruled out above) would look like instead.
-    window = int(seen) - before
+    # A bound of "< 170" (ported from e0278bc9) proved only "not the untouched
+    # 180s default" -- it also passed a TTL misread as, say, 80 (10x the
+    # requested 8, exactly the shape an octal/base misparse or a stray
+    # multiplier would produce), which is precisely the silent-wrong-value
+    # failure this test exists to catch. window must be MONOTONIC (checked
+    # first) and DERIVED FROM 8, not merely "somewhere under 180".
+    #
+    # NOT wall-clock-speed-dependent: `before` used to be read by the TEST,
+    # ahead of spawning the subprocess, so a slow host's fork/exec overhead
+    # (launching bash.exe or pwsh and every rule-matcher subprocess, not a
+    # calculation bug -- up to 12-16s observed on a slow Windows/Git-Bash
+    # host) counted against the same 40s budget meant to catch a misparse.
+    # A host slow enough to delay startup past 32s flaked this even though
+    # the TTL was read correctly. `now.txt` is instead the gate's OWN
+    # published start time: `date +%s`, run from INSIDE the rule, by the
+    # same process that computed the deadline, so the difference is pure
+    # TTL arithmetic with no process-spawn overhead in it at all.
+    now = int((root / "now.txt").read_text(encoding="utf-8").strip())
+    window = int(seen) - now
     assert window > 0, (
         "the published deadline is not after the moment the gate started, "
         "so lock_extend did not actually publish a forward-moving deadline. "
         "window=" + str(window) + "s " + result.stderr
     )
-    assert window < 170, (
+    assert window < 40, (
         "`CREW_VERIFY_LOCK_TTL=08` produced a window of " + str(window)
-        + "s, indistinguishable from a silent fallback to the untouched "
-        "180s compiled default rather than the requested eight seconds. "
-        + result.stderr
+        + "s -- not close enough to a decimal-8 TTL (max(8, 2*0)) to rule "
+        "out a silent misparse to 80 (an octal/base error) or a fallback to "
+        "the untouched 180s compiled default. " + result.stderr
     )

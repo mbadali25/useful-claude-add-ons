@@ -106,28 +106,6 @@ missing precondition. Obsidian's gate is a vault directory that exists on this
 machine rather than a connector, so ask for the path and check it before
 offering the option.
 
-**Then ask the fourth: how much authority the PM gets in this repo.** Default
-`report-only` on any hesitation - a repo that gets autonomy by accident is worse
-than one that has to be asked twice.
-
-> The crew manager can either recommend work and wait for you, or dispatch the
-> crew itself when it spots something. Which do you want here?
-> - `report-only` (default) - it tells you what it would do, you decide.
-> - `act` - it dispatches roles and refreshes diagrams on its own, reports
->   after. It stays on the findings it was working: a problem it stumbles on
->   gets fixed only if it BLOCKS one of them, and anything else becomes a ticket
->   or a `TODO.md` line rather than a detour. It still asks you to choose when a
->   decision is genuinely open.
-> - `autonomous` - everything `act` does, and it settles its own open
->   decisions: it takes the option it would have recommended and tells you
->   which, rather than stopping to ask.
-
-Write the answer to `pm.authority`. Say that `/crew:pm authority <value>`
-changes it later, so this is not a decision they are stuck with - and that at
-every tier, `autonomous` included, four things still stop for a yes:
-offboarding a role, deleting a codemap or diagram, rewriting
-`.crew/metrics.md`, and destroying git history or tracked work.
-
 **Then offer the machine-global config, once.** Run:
 
 ```
@@ -136,8 +114,7 @@ python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_config.py --root <repo> --expla
 
 and show the table. It names, per setting, the layer that decided it - `repo`,
 `global`, or `default`. If anything the user just chose is already coming from
-a global file, or if `pm.authority` resolves to something other than what they
-answered, say so now rather than letting them find out when the PM behaves
+a global file, say so now rather than letting them find out when crew behaves
 differently from what they set up.
 
 Then offer `/crew:config` in one line: it walks the machine-global file at
@@ -153,6 +130,14 @@ copying `${CLAUDE_PLUGIN_ROOT}/templates/config.template.json` and filling in
 the answers above — do not hand-write the JSON; that file (and the heal path
 that recreates it if it ever goes missing) both come from the same
 `crew_config.py`, and a hand-typed copy is a fourth place for it to drift.
+
+**Then set `scope.mode` to `"auto"` in that new file** — the one value you
+change from the template unasked. A new crew repo gets the ticket contract:
+the scope guard and the completion audit *report* for the first ten tickets,
+then *block*. The template and the shipped default stay `off`, so a repo whose
+`.crew/config.json` already exists keeps whatever `scope` it has (none means
+`off`); never add or change `scope` on an existing file. Tell the user in one
+line, and that `"off"` turns it back off.
 
 **The CLAUDE.md, whether or not one already exists.** Run:
 
@@ -191,6 +176,34 @@ in one breath, per the `crew-context` skill:
 Say plainly that **you cannot clear the session yourself** — a hook runs as a
 child process and cannot reset its parent. The `/clear` stays manual, which is
 the right place for it to stay.
+
+**Auto-clear.** `crew_autoclear_setup.py` (`${CLAUDE_PLUGIN_ROOT}/hooks/scripts/`)
+is the one place this decision lives; run its `plan-windows-default` command and
+relay what it prints rather than restating the logic here:
+
+```
+python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autoclear_setup.py \
+  --root <repo> plan-windows-default
+```
+
+A `status: unreadable` result means the machine-global file exists but does not
+parse — read its `message` back, say the file needs fixing or removing by
+hand, and stop; write nothing (`apply-method`/`apply-enabled` refuse the same
+way if run anyway). A `status: already-configured` result means the
+machine-global file already has an opinion — read its `message` back and stop;
+write nothing. A pre-1.0 `method: "windows"` is NOT already-configured; it is
+reported as `proposed` with a note that it is being converted to `notify`. On a
+`status: proposed` result, on **native Windows** (`platform.os == "windows"`),
+show the plan (`method: "notify"` — nothing typed, a message saying it is safe
+to run the configured command yourself, never that anything was cleared or
+compacted) and write it, `apply-method notify --yes`, only after they say yes.
+On **Linux, macOS, WSL or Git Bash**, describe the tmux path instead
+(`describe_tmux_path()` in the same module) and write nothing — there is no
+method to propose there, `auto` already resolves to it. Either way, **enabling**
+auto-clear (`context.autoClear.enabled: true`) is a separate question with its
+own yes: never bundle it into the method question, and never write `sendkeys`
+without being asked for it by name (`apply-method sendkeys --yes` refuses
+without `--yes`).
 
 Tell them the threshold is read from the transcript's own usage records, not
 estimated, and that the window is derived from the model (Claude 5 family 1M,
@@ -241,7 +254,7 @@ Run `providers.sh`. Then, per the `crew-providers` skill:
   `claude`, and set `secondOpinion` to `none`. Do **not** write `none` into
   `qa.provider` or `dev.provider` - `/crew:model` rejects it, and `/crew:review`
   would find no rung by that name. Say what declining means for the loop: review
-  falls to the same-family `qa-reviewer`, announced as such every run.
+  falls to the same-family `reviewer`, announced as such every run.
 
 **Notifications.** Offer them, do not assume them. Per the `crew-notify` skill:
 
@@ -281,8 +294,8 @@ Checks live in `_verify/`. Look for it first, along with `qa/`, `spec/` and
 second home for checks beside an existing one.
 
 If none exists, create `_verify/` from `templates/_verify/`: `README.md`,
-`smoke.sh`, `run-all.sh`, and an empty `cases/`. Then delegate to
-`crew:smoke-author` to fill it. Nothing else happens in this repo until
+`smoke.sh`, `run-all.sh`, and an empty `cases/`. Then fill it, in this
+session. Nothing else happens in this repo until
 `bash _verify/smoke.sh` runs green from a clean checkout.
 
 `_verify/README.md` is part of the deliverable, not an afterthought. Its layout
@@ -365,8 +378,10 @@ npx playwright install --with-deps chromium
 npx playwright test --list
 ```
 
-Chromium alone unless there is evidence of a browser-specific bug. Then delegate
-to `crew:browser-tester`
+For a web project, `/crew:init`'s web phase (`webtest_scaffold.py`) does the
+scaffolding in one confirmed step; run it instead of hand-writing the config.
+
+Chromium alone unless there is evidence of a browser-specific bug. Then write specs
 for the two or three flows where breakage is expensive, plus visual baselines
 for the pages that matter. Tag `@visual` and `@flow`, then add the rules to
 `verify.json`.
@@ -428,8 +443,8 @@ carries the §3c block (`.crew/*`, the un-ignore list, `.crew/.approved-*` and
 
 ## Phase 7 — First real ticket
 
-Run one small, real piece of work end to end: `/crew:ticket` → `/crew:plan` if
-the design is not obvious → `/crew:work` → `/crew:review`.
+Run one small, real piece of work end to end: `/crew:brainstorm` → `/crew:spec`
+→ `/crew:plan` → `/crew:implement` → `/crew:review` → `/crew:done`.
 
 Pick something genuinely small. The purpose is to test the loop, not the code.
 
@@ -452,5 +467,5 @@ Say this plainly:
 - Write the first runbook for whatever this repo's deploy or rollback actually
   is, then `/crew:runbook --verify` it. An unverified runbook is a guess
   formatted as instructions.
-- Run `/crew:scale` after about ten tickets, and believe the numbers over the
+- Run `/crew:status` after about ten tickets, and believe the numbers over the
   ambition.

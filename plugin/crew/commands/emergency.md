@@ -23,12 +23,10 @@ gate that does not run is recorded, the lane expires on its own, and
 | anything else | **Declaring**, below, with the argument as the summary. |
 
 Every python call below is written as `python3`, matching every other command
-file. It is **not** resolved through `python` or `py` the way the hook scripts
-are — `crew_py()` lives in `hooks/scripts/_common.sh` and these are instructions
-to you, not scripts that source it. This file said the opposite while invoking
-bare `python`, which is the combination that breaks on a default Ubuntu or WSL
-box where only `python3` exists. If `python3` is genuinely absent, substitute
-whatever does resolve and say in your reply that you did. The module is standard
+file — it is **not** resolved through `python`/`py` the way hook scripts are,
+because `crew_py()` lives in `hooks/scripts/_common.sh` and these are
+instructions to you, not scripts that source it. If `python3` is genuinely
+absent, substitute whatever does resolve and say so in your reply. Standard
 library only.
 
 ## Declaring
@@ -56,9 +54,9 @@ library only.
    |---|---|---|
    | change | `crew:explorer` | What shipped or changed in the window before the symptom? Commits, deploys, config, feature flags, migrations, dependency bumps. |
    | blast radius | `crew:explorer` | What calls the failing path, and what else uses the same resource? Who else is already broken and does not know it yet. |
-   | cause | `crew:analyst` | Given the symptom and the change list, the two or three most probable causes, each with the one cheap observation that would confirm or kill it. |
+   | cause | `crew:explorer` | Given the symptom and the change list, the two or three most probable causes, each with the one cheap observation that would confirm or kill it. |
    | exposure | `crew:security` | Only when the symptom could be an incident of a different kind: auth, data exposure, injection, an unexpected 200. Skip it for a plain outage and say you skipped it. |
-   | data | `crew:dba` | Only when a database is in the picture: locks, a long transaction, a migration mid-flight, replica lag, a table that grew. |
+   | data | `crew:explorer` | Only when a database is in the picture: locks, a long transaction, a migration mid-flight, replica lag, a table that grew. |
 
    Lanes are **read-only investigators**. They do not fix anything. If two
    plausible fixes need trying at once, that is a separate call with
@@ -96,31 +94,27 @@ paraphrase it differently here.
 Close as soon as the environment is stable — not when the follow-up work is
 done, which is what the debt list is for.
 
-1. `python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_incident.py" end`
-   It writes `.work/INCIDENT-<id>.md`, archives the record under
-   `.crew/incidents/`, and deletes the state file, which is what puts the gates
-   back.
-2. **Pay what can be paid now.** Run the checks that did not run — `/crew:verify`
-   knows which ones the changed files need — and record the result. If a deploy
-   went out ungated, add its row to `.work/PROMOTIONS.md` with the real result
-   of each gate, failures included.
+1. `python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_incident.py" end` — writes
+   `.work/INCIDENT-<id>.md`, archives the record under `.crew/incidents/`, and
+   deletes the state file, which is what puts the gates back.
+2. **Pay what can be paid now.** Run the checks that did not run (`/crew:verify`
+   knows which the changed files need) and record the result; if a deploy went
+   out ungated, add its row to `.work/PROMOTIONS.md`, failures included.
 3. **Turn the rest into tickets**, one per item still owed, referencing the
-   incident id. `/crew:ticket` for each. A debt list in a markdown file that
+   incident id. `/crew:brainstorm` then `/crew:spec` for each. A debt list in a markdown file that
    nobody has a ticket for is a debt nobody will pay.
 4. **Update the runbook**, per `crew-runbooks`. The runbook change is worth more
    than the postmortem: it is what makes the next occurrence boring.
 
 ## What it cannot do
 
-- **Enforcement is session-local.** These are Claude Code hooks. An incident
-  stands down the gates for sessions in this repository on this machine; it
-  does nothing to CI, to another engineer's machine, or to a branch protection
-  rule. If CI is what is blocking the fix, this is not the tool.
+- **Enforcement is session-local.** These are Claude Code hooks: an incident
+  stands down the gates for sessions in this repo on this machine, and does
+  nothing to CI, another engineer's machine, or a branch protection rule.
 - **It cannot skip a gate retroactively.** A gate that already blocked a turn
   before the incident was declared stays blocked; declare first.
-- **It expires whether or not anyone is watching.** That is the point. If the
-  gates come back mid-incident, extend it — do not work around it.
+- **It expires whether or not anyone is watching** — if the gates come back
+  mid-incident, extend it, do not work around it.
 - **`emergency.standDown: false`** in `.crew/config.json` means the gates never
-  stand down here. The incident is still declared, recorded and briefed, and
-  the lanes still run. Say so plainly rather than appearing to have relaxed
-  something you did not.
+  stand down here; declare, record and brief anyway, and say so plainly rather
+  than appearing to have relaxed something you did not.

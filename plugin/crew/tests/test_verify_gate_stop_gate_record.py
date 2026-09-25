@@ -141,8 +141,11 @@ import json
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
+import threading
+import time
 from typing import NoReturn
 
 import pytest
@@ -156,6 +159,17 @@ _ROOT = context._ROOT  # pylint: disable=protected-access
 _SH = os.path.join(_ROOT, "hooks", "scripts", "verify-gate.sh")
 _PS1 = os.path.join(_ROOT, "hooks", "scripts", "verify-gate.ps1")
 _PRICE_PY = os.path.join(_ROOT, "hooks", "scripts", "verify_price.py")
+
+# `signal.SIGKILL` does not exist on native Windows - a bare reference to it
+# raises AttributeError, not something the ValueError/OSError-shaped except
+# clauses beside these cleanup calls catch, so a leftover bg/orphan pidfile
+# on that platform crashed the test's OWN teardown instead of best-effort
+# killing the stray process. `os.kill(pid, signal.SIGTERM)` still terminates
+# the process there (CPython's Windows os.kill() calls TerminateProcess for
+# any signal number it does not special-case), so SIGTERM is a real,
+# portable fallback here, not a downgrade to a request the process could
+# ignore.
+_PORTABLE_SIGKILL = getattr(signal, "SIGKILL", signal.SIGTERM)
 
 _BASH = crew_fixtures.resolve_bash()
 _PWSH = shutil.which("pwsh")
@@ -193,7 +207,7 @@ def _fail_on_gate_timeout(flavour, exc) -> NoReturn:
 
 def _git(root, *args):
     subprocess.run(("git",) + args, cwd=root, check=True,
-                    capture_output=True, text=True)
+                    capture_output=True, text=True, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
 
 
 def _repo(tmp_path, verify_map):
@@ -210,14 +224,19 @@ def _repo(tmp_path, verify_map):
     return root
 
 
-def _run(flavour, root, *extra):
+def _run(flavour, root, *extra, scripts=None):
+    """`scripts`: run the gate from that copy of hooks/scripts instead of the
+    real one (the gate finds every sibling relative to itself)."""
+    sh, ps1 = ((_SH, _PS1) if scripts is None else
+               (os.path.join(scripts, "verify-gate.sh"),
+                os.path.join(scripts, "verify-gate.ps1")))
     if flavour == "sh":
-        cmd = [_BASH, _SH, *extra]
+        cmd = [_BASH, sh, *extra]
     else:
-        cmd = [_PWSH, "-NoProfile", "-NonInteractive", "-File", _PS1,
+        cmd = [_PWSH, "-NoProfile", "-NonInteractive", "-File", ps1,
                *[a.replace("--all", "-All") for a in extra]]
     try:
-        return subprocess.run(
+        return crew_fixtures.run_gate(
             cmd, input="{}", cwd=str(root),
             env=dict(os.environ, CLAUDE_PROJECT_DIR=str(root)),
             capture_output=True, text=True, check=False,
@@ -299,8 +318,9 @@ def test_c_price_writes_integers_never_zero_never_overwrites(tmp_path):
     target = tmp_path / "fixture.json"
     target.write_text(json.dumps(vmap), encoding="utf-8")
 
-    result = subprocess.run([_PY, _PRICE_PY, str(target)],
-                            capture_output=True, text=True, check=False)
+    result = crew_fixtures.run_gate([_PY, _PRICE_PY, str(target)],
+                            capture_output=True, text=True, check=False,
+                            timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
     assert result.returncode == 0, result.stderr
     written = json.loads(target.read_text(encoding="utf-8"))
     assert written["rules"][0]["seconds"] >= 1, written
@@ -310,8 +330,9 @@ def test_c_price_writes_integers_never_zero_never_overwrites(tmp_path):
         + json.dumps(written)
     )
 
-    forced = subprocess.run([_PY, _PRICE_PY, str(target), "--force"],
-                            capture_output=True, text=True, check=False)
+    forced = crew_fixtures.run_gate([_PY, _PRICE_PY, str(target), "--force"],
+                            capture_output=True, text=True, check=False,
+                            timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
     assert forced.returncode == 0, forced.stderr
     reforced = json.loads(target.read_text(encoding="utf-8"))
     assert reforced["rules"][1]["seconds"] >= 1, reforced
@@ -376,8 +397,9 @@ def test_e_reach_host_is_stop_excluded_all_included_price_skipped(flavour, tmp_p
 
     target = tmp_path / "price_fixture.json"
     target.write_text(json.dumps(vmap), encoding="utf-8")
-    priced = subprocess.run([_PY, _PRICE_PY, str(target)],
-                            capture_output=True, text=True, check=False)
+    priced = crew_fixtures.run_gate([_PY, _PRICE_PY, str(target)],
+                            capture_output=True, text=True, check=False,
+                            timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
     assert "SKIPPED" in priced.stdout, priced.stdout
     assert "seconds" not in json.loads(target.read_text(encoding="utf-8"))["rules"][0]
 
@@ -404,8 +426,9 @@ def test_f_undeclared_reach_verb_is_stop_deferred_and_price_refused(flavour, tmp
 
     target = tmp_path / "price_fixture2.json"
     target.write_text(json.dumps(vmap), encoding="utf-8")
-    priced = subprocess.run([_PY, _PRICE_PY, str(target)],
-                            capture_output=True, text=True, check=False)
+    priced = crew_fixtures.run_gate([_PY, _PRICE_PY, str(target)],
+                            capture_output=True, text=True, check=False,
+                            timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
     assert "REFUSED" in priced.stdout, priced.stdout
     assert "seconds" not in json.loads(target.read_text(encoding="utf-8"))["rules"][0]
 
@@ -503,7 +526,7 @@ def test_1_crlf_from_native_python_does_not_leak_an_inherited_credential(
     else:
         cmd = [_PWSH, "-NoProfile", "-NonInteractive", "-File", _PS1]
     try:
-        result = subprocess.run(cmd, input="{}", cwd=str(root), env=env,
+        result = crew_fixtures.run_gate(cmd, input="{}", cwd=str(root), env=env,
                                 capture_output=True, text=True, check=False,
                                 timeout=_GATE_TIMEOUT)
     except subprocess.TimeoutExpired as exc:
@@ -839,8 +862,9 @@ def test_15_price_refuses_a_wrapper_that_reaches_ssh_and_never_runs_it(tmp_path)
     }
     target = tmp_path / "price_wrapper.json"
     target.write_text(json.dumps(vmap), encoding="utf-8")
-    priced = subprocess.run([_PY, _PRICE_PY, str(target)], cwd=str(tmp_path),
-                            capture_output=True, text=True, check=False)
+    priced = crew_fixtures.run_gate([_PY, _PRICE_PY, str(target)], cwd=str(tmp_path),
+                            capture_output=True, text=True, check=False,
+                            timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
     assert priced.returncode == 0, priced.stderr
     assert "REFUSED" in priced.stdout, priced.stdout
     assert "interpreter given a script argument 'wrapper.sh'" in priced.stdout, priced.stdout
@@ -964,8 +988,9 @@ def test_19_price_records_rc77_as_skip_with_no_seconds(tmp_path):
     }
     target = tmp_path / "price_77.json"
     target.write_text(json.dumps(vmap), encoding="utf-8")
-    priced = subprocess.run([_PY, _PRICE_PY, str(target)],
-                            capture_output=True, text=True, check=False)
+    priced = crew_fixtures.run_gate([_PY, _PRICE_PY, str(target)],
+                            capture_output=True, text=True, check=False,
+                            timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
     assert priced.returncode == 0, priced.stderr
     assert "SKIP" in priced.stdout, priced.stdout
     assert "77" in priced.stdout, priced.stdout
@@ -993,8 +1018,9 @@ def test_20_price_pins_declared_env_and_strips_undeclared_pinned_vars(tmp_path):
     target = tmp_path / "price_env.json"
     target.write_text(json.dumps(vmap), encoding="utf-8")
     env = dict(os.environ, ENV="prod", AWS_PROFILE="caller-profile")
-    priced = subprocess.run([_PY, _PRICE_PY, str(target)], cwd=str(tmp_path),
-                            env=env, capture_output=True, text=True, check=False)
+    priced = crew_fixtures.run_gate([_PY, _PRICE_PY, str(target)], cwd=str(tmp_path),
+                            env=env, capture_output=True, text=True, check=False,
+                            timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
     assert priced.returncode == 0, priced.stderr
     seen = (tmp_path / "seen.txt").read_text(encoding="utf-8")
     assert "ENV=test" in seen, seen
@@ -1061,8 +1087,13 @@ def test_22_a_missing_verify_record_refuses_to_sync_and_advances_nothing(
     file's own verify_record.py renamed away on .sh) before writing this
     in. A DECLARED reach is used so classification itself needs no python
     call and the notice reliably prints on both flavours regardless."""
-    verify_record_path = os.path.join(_ROOT, "hooks", "scripts", "verify_record.py")
-    hidden_path = verify_record_path + ".hidden-for-test"
+    # A copy of hooks/scripts with verify_record.py removed -- never the real
+    # file renamed away, which every other test (and, under pytest-xdist,
+    # every other worker) running meanwhile would find missing too.
+    scripts = tmp_path / "scripts"
+    shutil.copytree(os.path.join(_ROOT, "hooks", "scripts"), scripts,
+                    ignore=shutil.ignore_patterns("_test", "__pycache__"))
+    (scripts / "verify_record.py").unlink()
     vmap = {
         "version": 1,
         "rules": [{"paths": ["a.py"], "reach": "network", "run": ["echo remote"]}],
@@ -1070,11 +1101,7 @@ def test_22_a_missing_verify_record_refuses_to_sync_and_advances_nothing(
     }
     root = _repo(tmp_path, vmap)
     (root / "a.py").write_text("x", encoding="utf-8")
-    os.replace(verify_record_path, hidden_path)
-    try:
-        result = _run(flavour, root)
-    finally:
-        os.replace(hidden_path, verify_record_path)
+    result = _run(flavour, root, scripts=str(scripts))
     assert result.returncode == 0, result.stderr
     assert "declared reach: network" in result.stderr, result.stderr
     assert "could not sync the record" in result.stderr, (
@@ -1403,6 +1430,753 @@ def test_34_a_skip_beside_a_failure_still_deletes_the_fingerprint(
 
 
 @pytest.mark.parametrize("flavour", _FLAVOURS)
+def test_34b_a_backgrounded_grandchild_holding_stdout_does_not_wedge_the_gate(
+        flavour, tmp_path):
+    """A rule's OWN command can background something and never wait on it
+    (a stray `long-thing &`, a detached daemon) without wedging the GATE
+    ITSELF - independent of whatever timeout an external caller sets.
+
+    This is the class of bug behind test_34 wedging past
+    GATE_SUBPROCESS_TIMEOUT_S on Windows/Git Bash: before the fix,
+    `OUT=$(eval "$c" 2>&1 </dev/null)` (verify-gate.sh) / `$out = &
+    $bashExe -c $c 2>&1` (verify-gate.ps1) captured a rule's output through
+    a PIPE, and a pipe only ever reports EOF once every process holding its
+    write end has closed it - not just the one command the gate is
+    actually waiting on. The rule below backgrounds a `sleep` that ignores
+    SIGTERM (`trap '' TERM`, a disposition that survives the fork,
+    unlike a trap HANDLER) and inherits the rule's own stdout/stderr, so
+    the foreground part returns in well under a second while the
+    grandchild alone would keep a pipe-based capture blocked for its whole
+    20s sleep.
+
+    Bounded tight (10s), not at GATE_SUBPROCESS_TIMEOUT_S: the fix makes
+    this return in a fraction of a second. Sabotaged by hand against
+    verify-gate.sh's old `OUT=$(eval "$c" 2>&1 </dev/null)` (reverting only
+    that one line, nothing else) and confirmed red - this test's own
+    10s bound is comfortably under the sleep's 20s, so a regression back to
+    the old pipe capture fails loudly rather than merely running slow.
+    """
+    # The backgrounded `sleep 20 &` outlives the gate's own return (that is
+    # the point of the test - the gate must not wait on it) and ignores
+    # SIGTERM by inheriting the parent shell's disposition, so it is not
+    # reachable through run_gate's own process-group cleanup: by the time
+    # the gate returns, the shell that backgrounded it has already exited
+    # and the sleep has been reparented away from that group. Recording its
+    # own pid lets the test reap it directly instead of leaving a 20s
+    # orphan behind every time this test runs.
+    #
+    # Single-quoted at the OUTER (JSON/python) level, not double: `$c` is
+    # re-parsed once - by the gate's own shell (`eval "$c"` under the "sh"
+    # flavour; `& $bashExe -c $c` under "ps1" spawns a fresh bash that
+    # parses it exactly once too) - before the NESTED `sh -c` this test
+    # actually wants `$!` evaluated by ever runs. A double-quoted `$!` at
+    # this level sits inside the gate's own double-quoted argument and is
+    # expanded THERE, always empty (the gate has not backgrounded
+    # anything of its own yet); single-quoting defers every expansion,
+    # `$!` included, to the nested `sh` this test needs it from. See
+    # test_34e's identical fix and CLAUDE.md / review item 6 - this
+    # exact double-quoted shape used to be test_34e's own cautionary
+    # counter-example, still present here until now.
+    vmap = {
+        "version": 1,
+        "rules": [{"paths": ["a.py"], "reach": "local", "run": [
+            "sh -c 'trap \"\" TERM; sleep 20 & echo $! > bg.pid'"
+        ]}],
+        "default": [], "unmapped": "ignore",
+    }
+    root = _repo(tmp_path, vmap)
+    (root / "a.py").write_text("x", encoding="utf-8")
+
+    started = time.time()
+    try:
+        result = _run(flavour, root)
+        elapsed = time.time() - started
+        assert result.returncode == 0, result.stderr
+        assert elapsed < 10, (
+            f"the gate took {elapsed:.1f}s to return - a backgrounded, "
+            "SIGTERM-ignoring grandchild inheriting the rule's stdout wedged "
+            "the gate's own read of that rule's output, instead of the read "
+            "coming from a file that does not care who else still has it "
+            f"open. stderr: {result.stderr}"
+        )
+
+        pidfile = root / "bg.pid"
+        bg_pid_text = (pidfile.read_text(encoding="utf-8").strip()
+                       if pidfile.exists() else "")
+        assert bg_pid_text and bg_pid_text.isdigit(), (
+            f"bg.pid was {bg_pid_text!r}, not a real pid - `$!` was expanded "
+            "one parse layer too early (by the gate's own shell) instead of "
+            "by the nested `sh -c` that actually backgrounded the sleep, so "
+            "this test's own cleanup below cannot reach it either."
+        )
+    finally:
+        pidfile = root / "bg.pid"
+        if pidfile.exists():
+            try:
+                bg_pid = int(pidfile.read_text(encoding="utf-8").strip())
+                os.kill(bg_pid, _PORTABLE_SIGKILL)
+            except (ValueError, ProcessLookupError, PermissionError, OSError):
+                pass
+
+
+@pytest.mark.skipif(_BASH is None, reason="needs bash")
+def test_34c_a_large_rule_output_is_capped_not_read_in_full(tmp_path):
+    """The other half of test_34b's fix: reading the rule's own output back
+    must be BOUNDED, not proportional to however much a rule (or a stray
+    background process inheriting its fd) actually wrote.
+
+    Proven deterministically and cheaply via `CREW_VERIFY_GATE_TEST_RULE_OUT_CAP`,
+    a test-only env seam verify-gate.sh reads instead of the hardcoded
+    1MiB cap (see verify-gate.sh's own comment beside it - no operator-facing
+    doc names this variable, and nothing outside a test process should set
+    it). An earlier version of this test proved the same cap by writing
+    3GiB via `yes | head -c` and timing the read; that write alone is slow
+    and disk-heavy on a constrained or slow-storage CI host, which is
+    exactly the failure mode this rewrite avoids - the cap itself, not the
+    time it takes to exercise it at real scale, is what must be proven.
+
+    The rule below writes 5000 repeats of `Q` (a character this suite's own
+    diagnostic text never emits, so counting it in stderr cannot pick up
+    something the gate printed itself) and then fails, so `verify-gate.sh`'s
+    existing `echo "$OUT" | tail -25 >&2` path prints the (capped) output
+    read back from the file. With the cap set to 200, at most 200 `Q`
+    characters must reach stderr - not 5000 - which is only true if the
+    read was actually bounded to the cap rather than reading the whole file
+    and truncating for display afterward.
+    """
+    vmap = {
+        "version": 1,
+        "rules": [{"paths": ["a.py"], "reach": "local", "run": [
+            "sh -c \"head -c 5000 /dev/zero | tr '\\\\0' 'Q'; exit 1\""
+        ]}],
+        "default": [], "unmapped": "ignore",
+    }
+    root = _repo(tmp_path, vmap)
+    (root / "a.py").write_text("x", encoding="utf-8")
+
+    env = dict(os.environ, CLAUDE_PROJECT_DIR=str(root),
+               CREW_VERIFY_GATE_TEST_RULE_OUT_CAP="200")
+    started = time.time()
+    result = crew_fixtures.run_gate(
+        [_BASH, _SH], input="{}", cwd=str(root), env=env,
+        capture_output=True, text=True, check=False,
+        timeout=_GATE_TIMEOUT)
+    elapsed = time.time() - started
+    assert result.returncode != 0, (
+        "the fixture rule deliberately exits 1; the gate must fail too. "
+        + result.stderr
+    )
+    assert elapsed < 10, (
+        f"the gate took {elapsed:.1f}s to return on a 5000-byte rule "
+        f"output with a 200-byte test cap. stderr: {result.stderr}"
+    )
+    # The command string itself (`tr '\0' 'Q'`) contains one literal 'Q'
+    # and is echoed a few times regardless of the cap (the cost-unstated
+    # notice, the FAILED header, the per-rule timing line) - counting every
+    # 'Q' in stderr would conflate those incidental singles with the
+    # capped OUTPUT block. The output block is the one contiguous RUN of
+    # 'Q' characters; its length is what the cap actually bounds.
+    runs = re.findall(r"Q+", result.stderr)
+    longest_run = max((len(r) for r in runs), default=0)
+    assert longest_run == 200, (
+        f"the longest run of 'Q' in stderr was {longest_run}, not the "
+        "200-byte test cap - the rule's output was read back beyond (or "
+        f"short of) the cap instead of being snapshotted at exactly it. "
+        f"stderr: {result.stderr}"
+    )
+
+
+# One byte over the real 1 MiB cap: big enough that "the override was
+# accepted literally instead of clamped" and "the override was ignored and
+# the real default applied" are DISTINGUISHABLE outcomes (a rule under
+# 1 MiB, like test_34c's 5000 bytes, can't tell those apart - neither cap
+# would truncate it).
+_OVERSIZE_RULE_OUTPUT_BYTES = 1048576 + 5000
+
+
+@pytest.mark.skipif(_BASH is None, reason="needs bash")
+@pytest.mark.parametrize("bogus_cap", [
+    "0",  # in range of the old digits-only check, but disables the cap
+    "2000000",  # digits-only and >1 MiB - would silently raise the real cap
+    "9" * 40,  # too long to even pass through `[ -lt ]` without erroring
+])
+def test_34c2_an_out_of_range_cap_override_is_ignored(tmp_path, bogus_cap):
+    """`CREW_VERIFY_GATE_TEST_RULE_OUT_CAP` is test-only and undocumented
+    (see test_34c), but verify-gate.sh still validates it: the old check
+    only rejected empty or non-digit values, so `0` (no cap at all - the
+    unbounded read this whole mechanism exists to prevent) and any
+    digit string over 1 MiB (silently RAISING the real cap) both passed
+    through unclamped. Every value here must fall back to the real 1 MiB
+    default instead - proven by a rule that writes one byte more than
+    1 MiB: accepting `0` literally reads back nothing, accepting `2000000`
+    literally reads back the whole thing uncapped, and only the clamped
+    default reads back exactly 1048576 bytes.
+    """
+    vmap = {
+        "version": 1,
+        "rules": [{"paths": ["a.py"], "reach": "local", "run": [
+            "sh -c \"head -c " + str(_OVERSIZE_RULE_OUTPUT_BYTES)
+            + " /dev/zero | tr '\\\\0' 'Q'; exit 1\""
+        ]}],
+        "default": [], "unmapped": "ignore",
+    }
+    root = _repo(tmp_path, vmap)
+    (root / "a.py").write_text("x", encoding="utf-8")
+
+    env = dict(os.environ, CLAUDE_PROJECT_DIR=str(root),
+               CREW_VERIFY_GATE_TEST_RULE_OUT_CAP=bogus_cap)
+    result = crew_fixtures.run_gate(
+        [_BASH, _SH], input="{}", cwd=str(root), env=env,
+        capture_output=True, text=True, check=False, timeout=_GATE_TIMEOUT)
+    assert result.returncode != 0, (
+        "the fixture rule deliberately exits 1; the gate must fail too. "
+        + result.stderr
+    )
+    runs = re.findall(r"Q+", result.stderr)
+    longest_run = max((len(r) for r in runs), default=0)
+    assert longest_run == 1048576, (
+        f"CREW_VERIFY_GATE_TEST_RULE_OUT_CAP={bogus_cap!r} produced a "
+        f"longest run of {longest_run} 'Q's, not the real 1 MiB default - "
+        "an out-of-range override must be ignored, not honoured. "
+        f"stderr tail: {result.stderr[-500:]}"
+    )
+
+
+@pytest.mark.skipif(_BASH is None, reason="needs bash")
+@pytest.mark.parametrize("cap,expected", [
+    # Every valid override is at most 7 digits (1048576 itself is 7), but
+    # the old length-only glob (`???????*`, matching length >= 7) rejected
+    # ALL 7-digit strings, in range or not - clamping 1000000 to the
+    # default 1048576 instead of honouring it.
+    ("1000000", 1000000),
+    ("1048576", 1048576),
+    # One over the real max: still must fall back, numeric range compare
+    # rather than length is what decides this now.
+    ("1048577", 1048576),
+])
+def test_34c3_a_seven_digit_cap_override_is_validated_numerically(
+        tmp_path, cap, expected):
+    """The 7-`?` glob this replaced rejected every 7-digit override on
+    LENGTH alone, so an in-range value like 1000000 was silently clamped
+    to the 1048576 default exactly like an out-of-range one - the two
+    were indistinguishable downstream. Fixed to only pre-reject 8+ digit
+    strings (no valid value needs more than 7) and let the numeric
+    `-lt`/`-gt` compare decide every 7-digit string on its actual
+    magnitude. Proven the same way as test_34c2: a rule writes one cap's
+    worth of output plus 5000 bytes, then fails, and the capped read-back
+    is exactly `expected` bytes only if the override reached the numeric
+    compare rather than being clamped by length first.
+    """
+    output_bytes = expected + 5000
+    vmap = {
+        "version": 1,
+        "rules": [{"paths": ["a.py"], "reach": "local", "run": [
+            "sh -c \"head -c " + str(output_bytes)
+            + " /dev/zero | tr '\\\\0' 'Q'; exit 1\""
+        ]}],
+        "default": [], "unmapped": "ignore",
+    }
+    root = _repo(tmp_path, vmap)
+    (root / "a.py").write_text("x", encoding="utf-8")
+
+    env = dict(os.environ, CLAUDE_PROJECT_DIR=str(root),
+               CREW_VERIFY_GATE_TEST_RULE_OUT_CAP=cap)
+    result = crew_fixtures.run_gate(
+        [_BASH, _SH], input="{}", cwd=str(root), env=env,
+        capture_output=True, text=True, check=False, timeout=_GATE_TIMEOUT)
+    assert result.returncode != 0, (
+        "the fixture rule deliberately exits 1; the gate must fail too. "
+        + result.stderr
+    )
+    runs = re.findall(r"Q+", result.stderr)
+    longest_run = max((len(r) for r in runs), default=0)
+    assert longest_run == expected, (
+        f"CREW_VERIFY_GATE_TEST_RULE_OUT_CAP={cap!r} produced a longest "
+        f"run of {longest_run} 'Q's, not the expected {expected} - a "
+        "valid 7-digit override was not honoured numerically. "
+        f"stderr tail: {result.stderr[-500:]}"
+    )
+
+
+@pytest.mark.skipif(_BASH is None, reason="needs bash")
+def test_34d_a_second_mktemp_failure_refuses_rather_than_wedges(tmp_path):
+    """When the rule-output capture file cannot be created ANYWHERE - not
+    TMPDIR, not the .crew/ fallback - the gate must refuse the rule with a
+    named reason, never fall back to the pipe form. That fallback is
+    exactly the shape (a backgrounded grandchild holding the read open
+    forever) test_34b's fix exists to close, so silently re-opening it here
+    on a mktemp failure would undo that fix on this one path.
+
+    Root cannot be made to see an unwritable TMPDIR or .crew/ by chmod
+    alone (this sandbox runs as root, which bypasses DAC permission
+    checks), so the failure is induced by shadowing `mktemp` on PATH
+    instead: a counting stub that runs the REAL mktemp for the gate's
+    earlier, unrelated calls (CHANGED_FILE's temp file, and the python-shim
+    directory when no bare `python3` is on PATH) and starts failing only
+    once the per-rule loop is reached - covering BOTH the TMPDIR attempt
+    and this fix's own `.crew/` fallback attempt, since neither takes a
+    distinguishing argument the stub could otherwise key on. This is
+    root-safe and deterministic where a permissions-based fixture is
+    neither.
+
+    The counter's calibration ("exactly two plain `mktemp` calls before the
+    per-rule loop") is only true when bare `python3` already resolves on
+    PATH - `verify-gate.sh`'s own `crew_py_strict`/shim-building path makes
+    an EXTRA `mktemp` call to build `SHIM_DIR` when it does not, which
+    would shift every later count by one and break this test's "succeeds
+    for call 1 only" assumption on any host where only `python`/`py` is on
+    PATH (Git Bash, some CI images). Rather than assume the AMBIENT
+    environment happens to have bare `python3`, this test builds its own
+    tiny `python3` shim from the resolved interpreter and puts it on PATH
+    ahead of everything else, so `command -v python3` always succeeds here
+    and the calibration holds on every host, not just this one.
+    """
+    vmap = {
+        "version": 1,
+        "rules": [{"paths": ["a.py"], "reach": "local", "run": [
+            "sh -c \"trap '' TERM; sleep 60 &\""
+        ]}],
+        "default": [], "unmapped": "ignore",
+    }
+    root = _repo(tmp_path, vmap)
+    (root / "a.py").write_text("x", encoding="utf-8")
+
+    real_mktemp = shutil.which("mktemp")
+    assert real_mktemp, "need a real mktemp on PATH to build the stub"
+    real_py = shutil.which("python3") or shutil.which("python") or sys.executable
+    py3_dir = tmp_path / "py3stub"
+    py3_dir.mkdir()
+    (py3_dir / "python3").write_text(
+        "#!/bin/sh\n"
+        f'exec "{real_py}" "$@"\n',
+        encoding="utf-8", newline="\n")
+    (py3_dir / "python3").chmod(0o755)
+    stub_dir = tmp_path / "mktempstub"
+    stub_dir.mkdir()
+    counter = tmp_path / "mktemp.count"
+    counter.write_text("0", encoding="utf-8")
+    # Succeeds for the FIRST call only (CHANGED_FILE - measured directly:
+    # a single-rule map with python3 resolvable on PATH, so the python-shim
+    # SHIM_DIR branch is never entered, makes exactly two plain `mktemp`
+    # calls total before this stub) and fails every call after that, which
+    # is exactly where the per-rule loop's RULE_OUT_FILE attempts (both
+    # the TMPDIR one and this fix's own `.crew/` fallback) begin.
+    (stub_dir / "mktemp").write_text(
+        "#!/bin/sh\n"
+        f'n=$(cat "{counter}")\n'
+        "n=$((n + 1))\n"
+        f'echo "$n" > "{counter}"\n'
+        "if [ \"$n\" -le 1 ]; then\n"
+        f'  exec "{real_mktemp}" "$@"\n'
+        "fi\n"
+        "exit 1\n",
+        encoding="utf-8", newline="\n")
+    (stub_dir / "mktemp").chmod(0o755)
+
+    env = dict(os.environ, CLAUDE_PROJECT_DIR=str(root),
+               PATH=str(py3_dir) + os.pathsep + str(stub_dir) + os.pathsep
+               + os.environ.get("PATH", ""))
+    started = time.time()
+    result = crew_fixtures.run_gate(
+        [_BASH, _SH], input="{}", cwd=str(root), env=env,
+        capture_output=True, text=True, check=False,
+        timeout=_GATE_TIMEOUT)
+    elapsed = time.time() - started
+    assert elapsed < 10, (
+        f"the gate took {elapsed:.1f}s to return with mktemp failing from "
+        "the per-rule loop onward - it fell back to the pipe form and "
+        f"waited on the backgrounded sleep instead of refusing. "
+        f"stderr: {result.stderr}"
+    )
+    assert result.returncode != 0, (
+        "a rule refused for lack of a capture location must not read "
+        "as verified. " + result.stderr
+    )
+    assert "cannot create an output-capture file" in result.stderr, (
+        "the refusal must name why, not fail silently or generically. "
+        + result.stderr
+    )
+
+
+@pytest.mark.skipif(
+    not sys.platform.startswith("win") or _PWSH is None
+    or crew_fixtures.resolve_bash() is None,
+    reason="the .ps1 gate is the native-Windows flavour, and its fixture "
+           "rule below shells out via `sh -c` -- a host with no usable "
+           "bash fails on that, not on anything this test means to cover",
+)
+def test_34d_ps1_a_temp_dir_failure_falls_back_to_crew_not_a_pipe(
+        tmp_path):
+    """The .ps1 twin of test_34d (B4, BLOCKER). verify-gate.ps1 has no
+    external `mktemp` to shadow the way the .sh side's stub does -
+    `[System.IO.Path]::GetTempFileName()` is a .NET call resolved from
+    the TMP/TEMP env vars, and what reliably fails it (measured by hand
+    on this host) is pointing TMP/TEMP at a path that already exists as
+    a plain FILE, not a directory - a path that is merely absent gets
+    silently auto-created by the surrounding process tree here and the
+    call then SUCCEEDS, which would make the sabotage below inert.
+
+    This does NOT assert on elapsed time. Measured directly (`git
+    stash` against this same fixture shape, unmodified HEAD): the ps1
+    gate's PRIMARY (working) temp-file capture already waits out a
+    backgrounded grandchild's full lifetime on this host before this
+    change touched anything - elapsed time cannot discriminate the
+    `.crew/` fallback from the old bare-pipe fallback here, since both
+    would show the same bounded wait. That is a separate, pre-existing
+    limitation, filed in TODO.md at the time and since FIXED by B3
+    (test_34b[ps1] and test_34h_ps1, this file) - the "not fixable
+    without the per-rule process-group kill" belief in that filing was
+    wrong: the wedge was in PowerShell's own redirect operators on the
+    invocation, not in anything a process kill would reach, and needed
+    none. See verify-gate.ps1's comment beside the `elseif
+    ($ruleOutFile)` branch. Left un-asserted here regardless, since
+    this test's own job (which code path ran) does not need timing.
+
+    What this test proves instead: which CODE PATH ran. The rule lists
+    `.crew` (with `-a` - the fallback file's name is a DOTFILE,
+    `.verify-rule-out.*`, which a bare `ls` hides even though it is
+    right there; the first draft of this test used bare `ls` and got a
+    false negative from exactly that) and then fails, so its own
+    (capped) output - printed via the `VERIFY FAILED` / tail-25 path
+    every rule failure goes through - is the fallback capture file's
+    own directory listing. Under the fix, that listing names the
+    `.crew/.verify-rule-out.*` file the fallback created; under the old
+    bare-pipe fallback there is no such file (nothing was ever written
+    under `.crew/`) and this string cannot appear. No backgrounding, no
+    timing dependency - deterministic either way.
+    """
+    vmap = {
+        "version": 1,
+        "rules": [{"paths": ["a.py"], "reach": "local", "run": [
+            "sh -c 'ls -a .crew; exit 1'"
+        ]}],
+        "default": [], "unmapped": "ignore",
+    }
+    root = _repo(tmp_path, vmap)
+    (root / "a.py").write_text("x", encoding="utf-8")
+
+    # An EXISTING regular file, not a missing directory - see the
+    # docstring above for why a missing directory does not reliably
+    # fail GetTempFileName() on this host.
+    bogus_temp = tmp_path / "not-a-directory"
+    bogus_temp.write_text("blocking TMP/TEMP", encoding="utf-8")
+    env = dict(os.environ, CLAUDE_PROJECT_DIR=str(root),
+               TMP=str(bogus_temp), TEMP=str(bogus_temp))
+
+    result = crew_fixtures.run_gate(
+        [_PWSH, "-NoProfile", "-NonInteractive", "-File", _PS1],
+        input="{}", cwd=str(root), env=env,
+        capture_output=True, text=True, check=False,
+        timeout=_GATE_TIMEOUT)
+    assert result.returncode != 0, (
+        "the fixture rule deliberately exits 1; the gate must fail too. "
+        + result.stderr
+    )
+    refused = "cannot create an output-capture file" in result.stderr
+    assert refused or ".verify-rule-out." in result.stderr, (
+        "neither a named refusal nor the .crew/ fallback file's own "
+        "name appeared in the rule's captured output - the temp-file "
+        "failure may not have taken effect, or (if it did) the gate "
+        "fell back to something other than the .crew/ file or a named "
+        f"refusal. stderr: {result.stderr}"
+    )
+
+
+def _kill_if_still_same_process(pid, start_ticks, sig):
+    """Signal `pid` only if it still names the SAME process `start_ticks`
+    was recorded for (via `crew_fixtures._proc_start_ticks`) - never a bare
+    `os.kill(pid, sig)` on a pid observed once and possibly reused since.
+    FIX (review): a test's own cleanup used to re-read a pid from disk and
+    SIGKILL it unconditionally, even on the path where the pid was already
+    observed dead earlier in the same test - by the time cleanup ran, that
+    exact number could have been handed to an unrelated process. `pid is
+    None` (nothing was ever observed) or `start_ticks is None` (no /proc,
+    or the read failed at observation time - nothing to re-verify against)
+    both skip rather than guess, the same fail-closed choice
+    `crew_fixtures.kill_process_group` makes for an unverifiable pgid.
+    """
+    if pid is None or start_ticks is None:
+        return
+    if crew_fixtures._proc_start_ticks(pid) != start_ticks:
+        return
+    try:
+        os.kill(pid, sig)
+    except (ProcessLookupError, PermissionError, OSError):
+        pass
+
+
+@pytest.mark.skipif(not os.path.isdir("/proc"),
+                     reason="start-time verification needs /proc")
+def test_kill_if_still_same_process_skips_a_pid_whose_start_time_changed(
+        monkeypatch):
+    """A reused pid (start ticks no longer match what was recorded when the
+    pid was first observed) must not be signalled."""
+    calls = []
+    monkeypatch.setattr(os, "kill", lambda pid, sig: calls.append((pid, sig)))
+    monkeypatch.setattr(crew_fixtures, "_proc_start_ticks", lambda pid: "999")
+
+    _kill_if_still_same_process(12345, "111", _PORTABLE_SIGKILL)
+
+    assert calls == [], (
+        "signalled a pid whose recorded start time no longer matches - "
+        "it must skip, not guess"
+    )
+
+
+@pytest.mark.skipif(not os.path.isdir("/proc"),
+                     reason="start-time verification needs /proc")
+def test_kill_if_still_same_process_signals_when_start_time_matches(
+        monkeypatch):
+    """Sabotage pair for the test above: with the start time UNCHANGED,
+    the signal must still go out - proves the previous test is not
+    passing because signalling was disabled altogether."""
+    calls = []
+    monkeypatch.setattr(os, "kill", lambda pid, sig: calls.append((pid, sig)))
+    monkeypatch.setattr(crew_fixtures, "_proc_start_ticks", lambda pid: "111")
+
+    _kill_if_still_same_process(12345, "111", _PORTABLE_SIGKILL)
+
+    assert calls == [(12345, _PORTABLE_SIGKILL)]
+
+
+@pytest.mark.skipif(
+    not sys.platform.startswith("win") or _PWSH is None,
+    reason="the .ps1 gate is the native-Windows flavour",
+)
+def test_34c_ps1_a_large_rule_output_is_capped_not_read_in_full(tmp_path):
+    """The .ps1 twin of test_34c (B3, BLOCKER) - the cap half of the same
+    fix as test_34b[ps1] going green (the redirect half). Reading a
+    rule's own output back must be BOUNDED, not proportional to however
+    much was written, proven deterministically and cheaply via
+    `CREW_VERIFY_GATE_TEST_RULE_OUT_CAP` - the .ps1 twin of the .sh seam
+    of the same name (test-only, undocumented; see verify-gate.ps1's own
+    comment beside it). Identical fixture and assertions to test_34c,
+    just aimed at the .ps1 gate.
+    """
+    vmap = {
+        "version": 1,
+        "rules": [{"paths": ["a.py"], "reach": "local", "run": [
+            "sh -c \"head -c 5000 /dev/zero | tr '\\\\0' 'Q'; exit 1\""
+        ]}],
+        "default": [], "unmapped": "ignore",
+    }
+    root = _repo(tmp_path, vmap)
+    (root / "a.py").write_text("x", encoding="utf-8")
+
+    env = dict(os.environ, CLAUDE_PROJECT_DIR=str(root),
+               CREW_VERIFY_GATE_TEST_RULE_OUT_CAP="200")
+    started = time.time()
+    result = crew_fixtures.run_gate(
+        [_PWSH, "-NoProfile", "-NonInteractive", "-File", _PS1],
+        input="{}", cwd=str(root), env=env,
+        capture_output=True, text=True, check=False,
+        timeout=_GATE_TIMEOUT)
+    elapsed = time.time() - started
+    assert result.returncode != 0, (
+        "the fixture rule deliberately exits 1; the gate must fail too. "
+        + result.stderr
+    )
+    assert elapsed < 10, (
+        f"the gate took {elapsed:.1f}s to return on a 5000-byte rule "
+        f"output with a 200-byte test cap. stderr: {result.stderr}"
+    )
+    runs = re.findall(r"Q+", result.stderr)
+    longest_run = max((len(r) for r in runs), default=0)
+    assert longest_run == 200, (
+        f"the longest run of 'Q' in stderr was {longest_run}, not the "
+        "200-byte test cap - the rule's output was read back beyond (or "
+        f"short of) the cap instead of being snapshotted at exactly it. "
+        f"stderr: {result.stderr}"
+    )
+
+
+@pytest.mark.skipif(
+    not sys.platform.startswith("win") or _PWSH is None,
+    reason="the .ps1 gate is the native-Windows flavour",
+)
+def test_34h_ps1_a_backgrounded_unbounded_writer_does_not_wedge_or_balloon(
+        tmp_path):
+    """The B3 (BLOCKER) regression itself, verbatim to the ticket's own
+    repro shape (`sh -c 'yes &'`): a rule that backgrounds a writer whose
+    SOURCE is unbounded must leave the gate returning promptly, with the
+    captured output still bounded to the 1 MiB cap.
+
+    Before this fix, two separate things wedged or ballooned here, and
+    this test's own two assertions (elapsed time, capped output) map to
+    them directly:
+
+    1. `& $bashExe -c $c > $ruleOutFile 2>&1` (PowerShell's own
+       file-redirect operators) relay the child's output through a PIPE
+       PowerShell itself manages, not a raw OS file handle - so a
+       backgrounded grandchild that merely inherits that pipe wedges the
+       GATE's own invocation for as long as it lives, independent of
+       whether it writes anything (test_34b[ps1] proves this half alone,
+       with a silent `sleep`).
+    2. A plain, uncapped `Get-Content` has no static end position: while
+       the file is still growing, the next line it reads is simply
+       whatever showed up next, so it keeps going for as long as the
+       writer does rather than stopping at a snapshot (measured by hand:
+       an uncapped read chased a real `yes &` past 1 GiB in the first
+       five seconds without returning).
+
+    The writer here is `head -c 3000000 /dev/zero | tr '\\0' 'Q'`, not a
+    truly endless `yes &` - bounded for CI/disk safety (it terminates on
+    its own well under a second, needing no process to be killed and
+    leaving nothing to fill a disk), while still exceeding the 1 MiB cap
+    comfortably enough that a failure to cap is provable. That the writer
+    happens to stop on its own is a test-safety choice, not a property
+    the gate relies on: the crew is deliberately dropping the per-rule
+    process-group kill (see verify-gate.ps1's comment beside this fix and
+    TODO.md), so a rule's own truly-unbounded `yes &` is still left
+    running after the gate returns - what must not happen, and is proven
+    here, is the GATE wedging on it or reading it unboundedly.
+    """
+    vmap = {
+        "version": 1,
+        "rules": [{"paths": ["a.py"], "reach": "local", "run": [
+            "sh -c \"head -c 3000000 /dev/zero | tr '\\\\0' 'Q' & "
+            "sleep 0.1; exit 1\""
+        ]}],
+        "default": [], "unmapped": "ignore",
+    }
+    root = _repo(tmp_path, vmap)
+    (root / "a.py").write_text("x", encoding="utf-8")
+
+    started = time.time()
+    result = crew_fixtures.run_gate(
+        [_PWSH, "-NoProfile", "-NonInteractive", "-File", _PS1],
+        input="{}", cwd=str(root),
+        env=dict(os.environ, CLAUDE_PROJECT_DIR=str(root)),
+        capture_output=True, text=True, check=False,
+        timeout=_GATE_TIMEOUT)
+    elapsed = time.time() - started
+    assert result.returncode != 0, (
+        "the fixture rule deliberately exits 1; the gate must fail too. "
+        + result.stderr
+    )
+    assert elapsed < 10, (
+        f"the gate took {elapsed:.1f}s to return with a backgrounded, "
+        "unbounded-source writer ('yes'-shaped: head -c N /dev/zero | "
+        f"tr) still producing output. stderr: {result.stderr}"
+    )
+    runs = re.findall(r"Q+", result.stderr)
+    longest_run = max((len(r) for r in runs), default=0)
+    assert 0 < longest_run <= 1048576, (
+        f"the longest run of 'Q' in stderr was {longest_run} - either "
+        "nothing was read back at all, or the read exceeded the 1 MiB "
+        f"cap. stderr tail: {result.stderr[-500:]}"
+    )
+
+
+@pytest.mark.skipif(_BASH is None, reason="needs bash")
+def test_34f_the_tail_of_an_oversized_rule_output_survives_the_cap(tmp_path):
+    """The capture must keep the END of an oversized rule's output, not the
+    START - what a failing rule needs downstream is its LAST `tail -25`
+    lines, which is where the actual error usually is. Reading the first
+    $RULE_OUT_CAP bytes (the old `head -c` form) instead kept whatever noise
+    the rule printed FIRST and discarded the one line this whole capture
+    path exists to preserve.
+
+    The fixture rule prints 2000 filler lines, then one clearly-marked
+    failure line, then exits 1 - with the cap set (via the same test-only
+    env seam test_34c uses) to something well under the filler's own size
+    but comfortably bigger than the marker line, so the marker can only
+    survive if the read came from the END of the file.
+
+    The marker is assembled at RUNTIME (`printf 'THE-ACTUAL-FAILURE-%s\\n'
+    MARKER`), not written as one contiguous literal in the rule's own
+    command text: verify-gate.sh echoes that command text to stderr on its
+    own account (the "VERIFY FAILED: $c" header, the per-rule timing line),
+    so a marker spelled out whole in the command would show up in stderr
+    via those echoes regardless of what OUT actually captured, making the
+    assertion pass either way. Split across a format string and an argument,
+    the contiguous marker exists only in the rule's actual OUTPUT.
+    """
+    vmap = {
+        "version": 1,
+        "rules": [{"paths": ["a.py"], "reach": "local", "run": [
+            "sh -c 'i=0; while [ \"$i\" -lt 2000 ]; do "
+            "echo \"noise line $i padding padding padding padding\"; "
+            "i=$((i + 1)); done; "
+            "printf \"THE-ACTUAL-FAILURE-%s\\n\" MARKER; exit 1'"
+        ]}],
+        "default": [], "unmapped": "ignore",
+    }
+    root = _repo(tmp_path, vmap)
+    (root / "a.py").write_text("x", encoding="utf-8")
+
+    env = dict(os.environ, CLAUDE_PROJECT_DIR=str(root),
+               CREW_VERIFY_GATE_TEST_RULE_OUT_CAP="2000")
+    result = crew_fixtures.run_gate(
+        [_BASH, _SH], input="{}", cwd=str(root), env=env,
+        capture_output=True, text=True, check=False,
+        timeout=_GATE_TIMEOUT)
+    assert result.returncode != 0, result.stderr
+    assert "THE-ACTUAL-FAILURE-MARKER" in result.stderr, (
+        "the rule's actual failure line did not reach stderr - the capture "
+        "kept the head of the oversized output instead of its tail. "
+        f"stderr: {result.stderr}"
+    )
+    assert "noise line 0 " not in result.stderr, (
+        "the very first filler line reached stderr - the cap did not "
+        f"actually bound the read to the tail. stderr: {result.stderr}"
+    )
+
+
+@pytest.mark.skipif(_BASH is None, reason="needs bash")
+def test_run_gate_kills_the_whole_group_on_timeout_not_just_the_direct_child(
+        tmp_path):
+    """crew_fixtures.run_gate must turn a hung grandchild into a named
+    TimeoutExpired within the bound, not a hang that wedges the whole test
+    session. This is the harness-level twin of test_34b above: a synthetic
+    script stands in for verify-gate.sh so the case does not depend on the
+    product fix at all.
+
+    NOTE on what this reproduces and what it does not: CPython's own
+    `subprocess.run` on POSIX does not actually hang on this scenario -
+    reading its source (3.14), the POSIX branch of its TimeoutExpired
+    handler calls `process.wait()`, not `communicate()` again, and its
+    internal `_communicate` loop already collected whatever output existed
+    before raising. The unconditional, unbounded second `communicate()`
+    this class of bug depends on is real, but it is CPython's `_mswindows`
+    branch only - confirmed here by reading `inspect.getsource(subprocess.run)`
+    rather than assumed. `run_gate` does not rely on that platform split:
+    it always kills the whole process GROUP first (`kill_process_group`),
+    so the orphan is dead before the bounded post-kill drain runs, on
+    either platform.
+
+    Sabotaged by hand: temporarily reducing `kill_process_group` to a bare
+    `proc.kill()` (no `os.killpg`) reproduces the wedge even on Linux,
+    because `run_gate`'s own post-kill drain (`communicate(timeout=30)`,
+    mirroring what CPython's Windows branch does unconditionally) then
+    blocks on the still-open pipe until the orphaned `sleep 20` exits on
+    its own - elapsed measured at 20.0s against this test's 15s bound.
+    Confirmed red that way, restored, confirmed green again.
+    """
+    script = tmp_path / "hang.sh"
+    script.write_text(
+        "#!/bin/sh\n"
+        "trap '' TERM\n"
+        "sleep 20 &\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    os.chmod(script, 0o755)
+
+    started = time.time()
+    with pytest.raises(subprocess.TimeoutExpired):
+        crew_fixtures.run_gate(
+            [_BASH, str(script)], capture_output=True, text=True, timeout=3,
+        )
+    elapsed = time.time() - started
+    assert elapsed < 15, (
+        f"run_gate took {elapsed:.1f}s to report the timeout - the "
+        "grandchild's held-open pipe still wedged the drain instead of "
+        "being killed as a group before it. elapsed={elapsed:.1f}s"
+    )
+
+
+@pytest.mark.parametrize("flavour", _FLAVOURS)
 def test_39_subshell_parentheses_still_defer(flavour, tmp_path):
     """(39, round 6 BLOCK verify_record.py:352) `(./check.sh)` - the
     subshell parentheses stayed glued to the path under every earlier
@@ -1646,8 +2420,10 @@ def test_48_a_corrupt_record_holds_the_marker_until_all_rebuilds_it(flavour, tmp
     assert marker.exists(), first.stderr
     before = marker.read_text(encoding="utf-8").strip()
     # a new commit, then corrupt the record, then an unrelated change
-    subprocess.run(["git", "add", "-A"], cwd=str(root), check=True, capture_output=True)
-    subprocess.run(["git", "commit", "-qm", "advance"], cwd=str(root), check=True, capture_output=True)
+    subprocess.run(["git", "add", "-A"], cwd=str(root), check=True,
+                   capture_output=True, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
+    subprocess.run(["git", "commit", "-qm", "advance"], cwd=str(root),
+                   check=True, capture_output=True, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
     (root / ".crew" / ".verify-gate.record.json").write_text("not json", encoding="utf-8")
     (root / "a.py").write_text("x2", encoding="utf-8")
     second = _run(flavour, root)
@@ -1683,8 +2459,10 @@ def test_49_editing_a_deferred_rules_paths_keeps_its_obligation(flavour, tmp_pat
     # advance the marker past it - so the NEXT turn's changed set is only
     # verify.json, which the widened rule does not match (Codex's repro:
     # "Next Stop runs zero commands").
-    subprocess.run(["git", "add", "-A"], cwd=str(root), check=True, capture_output=True)
-    subprocess.run(["git", "commit", "-qm", "a.txt"], cwd=str(root), check=True, capture_output=True)
+    subprocess.run(["git", "add", "-A"], cwd=str(root), check=True,
+                   capture_output=True, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
+    subprocess.run(["git", "commit", "-qm", "a.txt"], cwd=str(root),
+                   check=True, capture_output=True, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
     mid = _run(flavour, root)
     assert mid.returncode == 0, mid.stderr
     marker = root / ".crew" / ".verify-verified-at"
@@ -1692,8 +2470,10 @@ def test_49_editing_a_deferred_rules_paths_keeps_its_obligation(flavour, tmp_pat
     # commit ONLY an expansion of the rule's paths list
     vmap["rules"][0]["paths"] = ["a.txt", "b.txt"]
     (root / ".crew" / "verify.json").write_text(json.dumps(vmap), encoding="utf-8")
-    subprocess.run(["git", "add", "-A"], cwd=str(root), check=True, capture_output=True)
-    subprocess.run(["git", "commit", "-qm", "widen the rule"], cwd=str(root), check=True, capture_output=True)
+    subprocess.run(["git", "add", "-A"], cwd=str(root), check=True,
+                   capture_output=True, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
+    subprocess.run(["git", "commit", "-qm", "widen the rule"], cwd=str(root),
+                   check=True, capture_output=True, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
     second = _run(flavour, root)
     assert "NOT VERIFIED ON THIS TREE" in second.stderr, second.stderr
     assert "rule edited or removed since" in second.stderr, second.stderr
@@ -1741,3 +2521,260 @@ def test_28_the_real_verify_json_scans_clean_for_every_rule():
         "the REAL .crew/verify.json - the merged gate would defer them, "
         "on every Stop: " + json.dumps(non_local, indent=2)
     )
+
+
+# --- bounded stdin: an open, never-closed pipe must not park the gate ------
+#
+# win-repo's parked process (pwsh -NonInteractive, 1.94s CPU, no children,
+# lock held, no record written) disproved an undrained-pipe deadlock theory
+# specifically, so this is NOT a re-test of that theory - it is independent
+# hardening for the same unconditional-read shape, verbatim from the brief:
+# `[Console]::In.ReadToEnd()` (.ps1) and `INPUT=$(cat 2>/dev/null)` (.sh) both
+# block forever on a pipe that is open but never closed and never sends
+# stop_hook_active. Both gates now bound that read; this proves the bound
+# actually fires rather than merely existing in a comment.
+_STDIN_BOUND_DEADLINE_S = 20  # generous over the ~5s read bound each flavour declares
+
+
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+def test_40_an_open_never_closed_stdin_does_not_park_the_gate(flavour, tmp_path):
+    """Neither flavour may hang waiting on stdin that is open (a real pipe,
+    not a terminal - `[ -t 0 ]` / IsInputRedirected both read this as
+    "redirected") but never written to and never closed. Nothing is ever
+    sent, so the ONLY way this returns is the bounded read timing out and
+    the gate proceeding with no payload - exactly like a plain Stop event
+    with an empty body."""
+    vmap = {
+        "version": 1,
+        "rules": [{"paths": ["a.py"], "run": ["exit 0"]}],
+        "default": [], "unmapped": "ignore",
+    }
+    root = _repo(tmp_path, vmap)
+    (root / "a.py").write_text("x", encoding="utf-8")
+    env = dict(os.environ, CLAUDE_PROJECT_DIR=str(root))
+    if flavour == "sh":
+        cmd = [_BASH, _SH]
+    else:
+        cmd = [_PWSH, "-NoProfile", "-NonInteractive", "-File", _PS1]
+    proc = subprocess.Popen(  # pylint: disable=consider-using-with
+        cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE, text=True, cwd=str(root), env=env)
+    started = time.time()
+    try:
+        # Deliberately NOT communicate(): it closes stdin the instant it is
+        # called even with input=None, which would hand the gate a normal
+        # closed pipe and prove nothing about an OPEN one. wait() alone
+        # touches neither stdin nor stdout/stderr, so the pipe genuinely
+        # stays open, unwritten-to, for the whole timeout.
+        proc.wait(timeout=_STDIN_BOUND_DEADLINE_S)
+    except subprocess.TimeoutExpired as exc:
+        proc.kill()
+        proc.wait(timeout=10)
+        raise AssertionError(
+            f"the {flavour} gate did not return within "
+            f"{_STDIN_BOUND_DEADLINE_S}s with stdin open and never closed - "
+            "the unbounded read was not actually bounded") from exc
+    finally:
+        if proc.stdin:
+            proc.stdin.close()
+    elapsed = time.time() - started
+    out = proc.stdout.read() if proc.stdout else ""
+    err = proc.stderr.read() if proc.stderr else ""
+    assert elapsed < _STDIN_BOUND_DEADLINE_S, (
+        f"the {flavour} gate returned but took {elapsed:.1f}s - "
+        f"stderr: {err}")
+    assert proc.returncode == 0, (
+        f"stdout: {out} stderr: {err}"
+    )
+
+
+@pytest.mark.skipif(_PWSH is None, reason="needs pwsh")
+def test_40b_the_ps1_gate_bounds_stdin_on_linux_too(tmp_path):
+    """The .ps1 half of test_40, exercised for real rather than skipped: pwsh
+    is cross-platform, so `OS=Windows_NT` (the same override
+    test_ps1_python_probe.py uses to reach this file's guarded body on a
+    Linux runner) lets `[Console]::IsInputRedirected` / `ReadToEndAsync`
+    actually run here, on the real interpreter, instead of only being read
+    as source."""
+    vmap = {
+        "version": 1,
+        "rules": [{"paths": ["a.py"], "run": ["exit 0"]}],
+        "default": [], "unmapped": "ignore",
+    }
+    root = _repo(tmp_path, vmap)
+    (root / "a.py").write_text("x", encoding="utf-8")
+    env = dict(os.environ, CLAUDE_PROJECT_DIR=str(root), OS="Windows_NT")
+    proc = subprocess.Popen(  # pylint: disable=consider-using-with
+        [_PWSH, "-NoProfile", "-NonInteractive", "-File", _PS1],
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE, text=True, cwd=str(root), env=env)
+    started = time.time()
+    try:
+        proc.wait(timeout=_STDIN_BOUND_DEADLINE_S)
+    except subprocess.TimeoutExpired as exc:
+        proc.kill()
+        proc.wait(timeout=10)
+        raise AssertionError(
+            f"the ps1 gate did not return within {_STDIN_BOUND_DEADLINE_S}s "
+            "with stdin open and never closed - the unbounded read was not "
+            "actually bounded") from exc
+    finally:
+        if proc.stdin:
+            proc.stdin.close()
+    elapsed = time.time() - started
+    out = proc.stdout.read() if proc.stdout else ""
+    err = proc.stderr.read() if proc.stderr else ""
+    assert elapsed < _STDIN_BOUND_DEADLINE_S, f"took {elapsed:.1f}s - {err}"
+    assert proc.returncode == 0, f"stdout: {out} stderr: {err}"
+
+
+# --- G1 review round: the stop_hook_active retry must not re-block, and the
+#     bound on stdin must be TOTAL rather than per-read -------------------
+#
+# Two distinct defects, one shared cause: both gates used to read stdin in a
+# way that only worked correctly when the bound and "did the data actually
+# arrive" happened to line up. They can disagree.
+#
+# (1) `.ps1` discarded whatever had already arrived if `CopyToAsync` had not
+#     reached EOF within the 5s `Wait`, so a complete
+#     `{"stop_hook_active": true}` payload sitting in a pipe the caller kept
+#     open past the bound was thrown away -- the retry hook then ran the
+#     gate again and blocked again on a check it had already reported this
+#     turn.
+# (2) `.sh` bounded EACH LINE with its own fresh `read -t 5`, not the whole
+#     read, so a producer sending complete lines slower than 5s apart -- but
+#     never closing the pipe -- kept the loop's per-call timeout from ever
+#     firing and parked the gate exactly as an unbounded read would.
+
+
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+def test_50_stop_hook_active_is_honoured_despite_a_pipe_held_open(
+        flavour, tmp_path):
+    """A complete `stop_hook_active: true` payload must be read and acted
+    on even if the sender keeps the pipe open well past the ~5s stdin
+    bound. The one rule here fails unconditionally, so exit 0 can only
+    come from the stop_hook_active short-circuit -- never from the checks
+    themselves passing."""
+    vmap = {
+        "version": 1,
+        "rules": [{"paths": ["a.py"], "run": ["exit 1"]}],
+        "default": [], "unmapped": "ignore",
+    }
+    root = _repo(tmp_path, vmap)
+    (root / "a.py").write_text("x", encoding="utf-8")
+    env = dict(os.environ, CLAUDE_PROJECT_DIR=str(root))
+    cmd = ([_BASH, _SH] if flavour == "sh"
+           else [_PWSH, "-NoProfile", "-NonInteractive", "-File", _PS1])
+    proc = subprocess.Popen(  # pylint: disable=consider-using-with
+        cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE, text=True, cwd=str(root), env=env)
+    proc.stdin.write('{"stop_hook_active": true}')
+    proc.stdin.flush()
+    # Deliberately not closed: the payload is complete, but EOF never
+    # arrives, which is exactly what a held-open retry pipe looks like.
+    try:
+        proc.wait(timeout=_STDIN_BOUND_DEADLINE_S)
+    except subprocess.TimeoutExpired as exc:
+        proc.kill()
+        proc.wait(timeout=10)
+        raise AssertionError(
+            f"the {flavour} gate did not return within "
+            f"{_STDIN_BOUND_DEADLINE_S}s with a complete stop_hook_active "
+            "payload sitting in a held-open pipe") from exc
+    finally:
+        if proc.stdin:
+            proc.stdin.close()
+    out = proc.stdout.read() if proc.stdout else ""
+    err = proc.stderr.read() if proc.stderr else ""
+    assert proc.returncode == 0, (
+        f"a held-open pipe carrying a complete stop_hook_active payload "
+        f"should short-circuit to exit 0 without running the checks, got "
+        f"{proc.returncode}. stdout: {out} stderr: {err}"
+    )
+
+
+@pytest.mark.skipif(_PWSH is None, reason="needs pwsh")
+def test_50b_the_ps1_gate_honours_stop_hook_active_on_linux_too(tmp_path):
+    """The .ps1 half of test_50, exercised for real via the `OS=Windows_NT`
+    override (see test_40b)."""
+    vmap = {
+        "version": 1,
+        "rules": [{"paths": ["a.py"], "run": ["exit 1"]}],
+        "default": [], "unmapped": "ignore",
+    }
+    root = _repo(tmp_path, vmap)
+    (root / "a.py").write_text("x", encoding="utf-8")
+    env = dict(os.environ, CLAUDE_PROJECT_DIR=str(root), OS="Windows_NT")
+    proc = subprocess.Popen(  # pylint: disable=consider-using-with
+        [_PWSH, "-NoProfile", "-NonInteractive", "-File", _PS1],
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE, text=True, cwd=str(root), env=env)
+    proc.stdin.write('{"stop_hook_active": true}')
+    proc.stdin.flush()
+    try:
+        proc.wait(timeout=_STDIN_BOUND_DEADLINE_S)
+    except subprocess.TimeoutExpired as exc:
+        proc.kill()
+        proc.wait(timeout=10)
+        raise AssertionError(
+            f"the ps1 gate did not return within {_STDIN_BOUND_DEADLINE_S}s "
+            "with a complete stop_hook_active payload sitting in a "
+            "held-open pipe") from exc
+    finally:
+        if proc.stdin:
+            proc.stdin.close()
+    out = proc.stdout.read() if proc.stdout else ""
+    err = proc.stderr.read() if proc.stderr else ""
+    assert proc.returncode == 0, f"stdout: {out} stderr: {err}"
+
+
+def _trickle(stdin, lines, interval_s):
+    try:
+        for i in range(lines):
+            stdin.write('{"partial": %d}\n' % i)
+            stdin.flush()
+            time.sleep(interval_s)
+    except (BrokenPipeError, ValueError, OSError):
+        pass  # the gate returned (or was killed) before the trickle finished
+
+
+@pytest.mark.skipif(_BASH is None, reason="needs bash")
+def test_51_a_trickling_sh_stdin_producer_does_not_park_the_gate(tmp_path):
+    """MUST-BLOCK the per-line-timeout shape. A producer that sends complete
+    lines every 3s -- comfortably under the 5s a `while read -t 5` loop
+    would re-arm on every iteration -- and never closes the pipe must not
+    keep the gate parked: the bound has to cover the WHOLE read, not just
+    each individual line. 8 lines at 3s apart is 24s of trickle, well past
+    both the ~5s bound this proves and the 20s ceiling below -- a version
+    that re-arms per line would still be blocked reading stdin when that
+    ceiling is hit."""
+    vmap = {
+        "version": 1,
+        "rules": [{"paths": ["a.py"], "run": ["exit 0"]}],
+        "default": [], "unmapped": "ignore",
+    }
+    root = _repo(tmp_path, vmap)
+    (root / "a.py").write_text("x", encoding="utf-8")
+    env = dict(os.environ, CLAUDE_PROJECT_DIR=str(root))
+    proc = subprocess.Popen(  # pylint: disable=consider-using-with
+        [_BASH, _SH], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE, text=True, cwd=str(root), env=env)
+    trickler = threading.Thread(
+        target=_trickle, args=(proc.stdin, 8, 3), daemon=True)
+    trickler.start()
+    try:
+        proc.wait(timeout=_STDIN_BOUND_DEADLINE_S)
+    except subprocess.TimeoutExpired as exc:
+        proc.kill()
+        proc.wait(timeout=10)
+        raise AssertionError(
+            f"the sh gate did not return within {_STDIN_BOUND_DEADLINE_S}s "
+            "against a stdin producer trickling complete lines slower than "
+            "the per-line timeout -- the read bound is re-arming per line "
+            "instead of covering the whole read") from exc
+    finally:
+        if proc.stdin:
+            proc.stdin.close()
+    out = proc.stdout.read() if proc.stdout else ""
+    err = proc.stderr.read() if proc.stderr else ""
+    assert proc.returncode == 0, f"stdout: {out} stderr: {err}"

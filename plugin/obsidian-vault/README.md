@@ -43,7 +43,7 @@ named map in config:
 }
 ```
 
-Only the **default** vault gets the contract guard, session-capture hook, and
+Only the **default** vault (the `primary`, once roles are set - see below) gets the contract guard, session-capture hook, and
 env-var/detection fallback - a second, machine-generated vault is
 deliberately not held to a hand-authored vault's frontmatter contract (see
 `obsidian-memory-contract`'s "Multiple vaults" section). `layout` is free-form
@@ -76,7 +76,7 @@ to be asked; hooks do not.
 |---|---|---|
 | `bridge-status.sh`/`.ps1` | `SessionStart` | Probes **every** configured vault's Local REST API bridge and states plainly whether each `mcp__obsidian-<name>__*` will work this session. Both ports come from that vault's own `data.json` (`insecurePort` HTTP, `port` HTTPS), never derived from each other. It checks for a port collision across every vault **before** blaming any per-vault setting - `enableInsecureServer` is not the cause when the losing vault never started a server at all. Not-installed ("there is no bridge") and wrong-vault-answering (authenticates, serves someone else's files) are separate verdicts from down and rejected-key, each with its own fix. Never blocks. |
 | `vault-guard.sh`/`.ps1` | `PostToolUse` on `Edit`/`Write`/`MultiEdit` | Enforces the *default* vault's frontmatter contract, ASCII rule, and canvas well-formedness - **the frontmatter and ASCII rules are OFF by default; the canvas shape check is ON** (`checkCanvas` defaults true - a `.canvas` that does not parse opens blank with no error, and checking costs nothing). `/obsidian-vault:init` turns one of the other two on only when it finds the matching rule stated in the target vault's own `CLAUDE.md`. Can block (exit 2) with the specific fix on stderr. Does not apply to a non-default vault. Four basenames - `CLAUDE.md`, `README.md`, `AGENTS.md`, `GEMINI.md` - are excused from *having* frontmatter, and from nothing else: if one of them does carry frontmatter it is still held to the required keys, the title/filename match and the updated date. The ASCII rule still applies to three of the four, because `CLAUDE.md` is separately ASCII-exempt by an older decision. The canvas rule never enters into it: all four are `.md`, and the canvas checks run only on a `.canvas` file. |
-| `vault-capture.sh`/`.ps1` | `SessionEnd`, `PreCompact` | Appends one line (session id, cwd, transcript path) to the default vault's `inbox/pending-reflect.md`. Costs nothing, cannot break a session. |
+| `vault-capture.sh`/`.ps1` | `SessionEnd`, `PreCompact` | Appends one line (session id, cwd, transcript path) to the primary (default) vault's `inbox/pending-reflect.<host>.md` - one queue file per host, so two machines never append to one synced file. The legacy `inbox/pending-reflect.md` is no longer written but is still read, for de-duplication and by the gardener, so an old backlog drains. A payload with no usable session id AND no transcript path (an unparseable hook payload) is refused rather than queued, with the reason on stderr; a payload with a transcript but no session id is still queued, deduped on a hash of trigger+transcript so it is queued once, not once per invocation. This is the only capture owner. Costs nothing, cannot break a session. |
 
 Every script delegates to one Python module shared by both the bash and
 PowerShell wrapper, so the two flavours cannot drift from each other - the
@@ -86,7 +86,7 @@ docstring: env var and Obsidian's own registry apply only to the default
 vault; a named non-default vault is only ever what config says it is.
 
 **`vault-guard` is the one hook that can block**, and it ships a committed,
-sabotage-tested regression suite: `hooks/scripts/_test/run-tests.sh` (65
+sabotage-tested regression suite: `hooks/scripts/_test/run-tests.sh` (70
 assertions, must-block and must-allow, including a case proving the config
 toggles actually gate the checks, and three that hold the defaults above to a
 config with no `guard` key at all).
@@ -145,14 +145,135 @@ Two things that mislead here:
 `~/.claude/obsidian/config.json` the key `port` means the *HTTP* port, the
 opposite of the same word in `data.json`.
 
+## Vault roles, import and gardening
+
+Every vault `scan` finds gets one role, stored per vault in config as `"role"`:
+
+| Role | Meaning |
+|---|---|
+| `primary` | Receives captures, gardening and imports. **Exactly one**; it is also `default`. |
+| `recall` | Read by `recall` for injection into sessions. Never written. |
+| `ignore` | Answered "no". Kept so a re-run does not ask again; never recalled, written, or included in `--all`. SessionStart's bridge report still lists it. |
+
+`vault_ops.py adopt` lists them; `adopt --role NAME=ROLE ... --apply` writes
+them, and refuses any result with zero or two primaries, or with any
+discovered vault still unassigned, before writing a byte. A re-run with the
+same roles changes nothing. A config with no roles at all still works exactly
+as before: the default vault is the primary.
+
+Writers - capture, import, `ack`, `garden-run`, `drain` - target the primary
+and nothing else. If the primary is not on disk (an unmounted drive), they
+refuse and say so; capture logs that on stderr and exits 0. No other vault,
+recall or otherwise, is ever written in its place.
+
+`vault_ops.py import --source <dir|vault>` copies Markdown notes into the
+primary vault under `imported/<source name>/`, adding `imported_from` (absolute
+source path) and `imported_at` (UTC date) to each note's frontmatter. Dry run
+by default. It never overwrites: an existing destination is skipped and
+reported as a collision, or written beside it as `<name> (imported).md` only
+with `--suffix-collisions`. A re-run recognises its own earlier imports -
+including suffixed ones with the same source and content - and writes nothing.
+A destination reached through a symlinked folder, or resolving outside the
+vault, is refused as `outside-vault`.
+
+Gardening runs on **one designated host**, daily, through
+`vault_ops.py garden-run`: at most 5 items or 10 minutes per run, each item
+acknowledged (in `inbox/reflected.<host>.md`) only after its processor exited 0
+and a before/after snapshot of the vault shows a file it created or changed -
+wherever that file ended up, not the path the processor reported, since
+Obsidian's auto-note-mover can move a note before the processor exits. A
+failure keeps the processor's bounded stdout and stderr in the reason and the
+log. An item whose session page (`session_id:` under `wiki/sessions/`) already
+exists is acknowledged without being distilled again, and
+`vault_ops.py reconcile` (dry run until `--apply`) does the same for the whole
+queue. The processor runs `claude -p --settings '{"disableAllHooks":true}'`
+with `CREW_HOOKS=off` and `OBSIDIAN_VAULT_GARDENER=1` in its environment, so no
+hook - crew's, or this plugin's own capture - runs inside the vault. `drain`
+works a backlog in the same bounded batches, dry run first.
+`schedule --os cron|systemd|windows` prints the unit; nothing here installs
+one. See the `obsidian-scheduling` skill.
+
+**Finding and clearing pre-existing unusable `?` queue entries.** Before this
+fix, a capture whose hook payload had neither a usable `session_id` nor a
+`transcript_path` (both read as `?`) was queued anyway - one such line per
+trigger per host, that the gardener can never distil since there is nothing
+to read a session from and no transcript to fall back to. To find them in a
+vault: `grep -n 'session=? .*transcript=?$' inbox/pending-reflect.*.md
+inbox/pending-reflect.md` (a line matching this has *both* fields unusable;
+a line with `session=?` but a real `transcript=` path is not one of these -
+it is still gardenable from its transcript and this fix leaves it queued).
+Each matched line is a checklist item (`- [ ] ...`); deleting the line removes
+it from the queue, same as checking it off. This fix does not touch any
+existing vault - it only stops new ones of this shape from being written -
+so a live vault's current backlog needs this done by hand, once, per vault.
+
+## Recall contract (for crew's context hook)
+
+Stable read interface for any caller that injects vault context - crew's
+context hook is the first. It is read-only: no network, no REST bridge, no
+writes, no cache.
+
+**Config.** `~/.claude/obsidian/config.json` (`%USERPROFILE%\.claude\obsidian\config.json`
+on Windows; `HOME` is honoured first on every OS). `OBSIDIAN_VAULT_CONFIG=<path>`
+overrides the whole path. The fields a caller may rely on:
+
+```json
+{ "vaults": { "<name>": { "path": "<abs path>", "role": "primary|recall|ignore", "default": true } } }
+```
+
+A vault whose `path` is not on disk is treated as absent. With no `role` on
+any vault, the default vault is the only one read.
+
+**CLI.**
+
+```
+python <plugin>/hooks/scripts/vault_ops.py recall --query "<text>" [--vaults A,B] [--max-chars N] [--timeout-ms MS] --json
+```
+
+- `--vaults` is priority order. Omitted: the primary, then every `recall`
+  vault in config order. `ignore` vaults are never read.
+- Ranking is vault priority first, then score, so when the budget runs out
+  the lower-priority vault is the one that loses. Score is plain text matching
+  per query term: title (frontmatter `title`, else filename) 6, each heading 3
+  (max 3), each body line 1 (max 5).
+- `--max-chars` (default 4000) bounds `sum(len(line) + 1)` over the results;
+  the last result may be cut short to fit.
+- `--timeout-ms` (default 1500) and 20,000 notes per vault bound the walk.
+- Exit 0 on success (including zero results), 1 when any requested vault
+  could not be read, 2 on a usage error. JSON is printed in every non-usage case.
+
+**Output** (`--json`):
+
+```json
+{
+  "query": "port collision",
+  "terms": ["port", "collision"],
+  "vaults": ["memory", "work"],
+  "results": [
+    { "vault": "memory", "path": "wiki/concepts/Port collisions break the bridge.md",
+      "title": "Port collisions break the bridge", "score": 23,
+      "snippet": "Two vaults on one port: the loser never binds.",
+      "line": "[memory] wiki/concepts/Port collisions break the bridge.md: Two vaults on one port: the loser never binds." }
+  ],
+  "chars": 104, "max_chars": 4000, "truncated": false,
+  "errors": [ { "vault": "nosuch", "error": "not a configured vault (or its path is not on disk)" } ]
+}
+```
+
+`path` is vault-relative with forward slashes. `line` is the text to inject.
+`truncated` is true when the budget, the timeout or the file cap cut anything.
+A requested vault that is unknown or `ignore` is always named in `errors`,
+never silently skipped.
+
 ## Agents
 
 `obsidian-vault:gardener` distills queued sessions into concept/decision/daily
-notes with provenance, never fabricating a citation. `obsidian-vault:reflector`
+notes with provenance, never fabricating a citation, and acknowledges each item
+through `vault_ops.py ack` only once its note exists. `obsidian-vault:reflector`
 is read-only recall plus contradiction-finding. Neither is scheduled by this
-plugin - see the `obsidian-scheduling` skill for wiring one to Task Scheduler,
-cron, or a systemd user timer, with the unattended-permissions tradeoff stated
-plainly rather than buried in a script comment.
+plugin - `vault_ops.py schedule` prints a cron, systemd-timer or Task Scheduler
+unit for `garden-run`, and the `obsidian-scheduling` skill covers the
+unattended-permissions tradeoff.
 
 ## Skills
 
@@ -194,13 +315,10 @@ individually-stated decision rather than a blanket "not touched":
   `obsidian-skills` marketplace) is already wired into
   `scripts/install-prerequisites.sh` item 18, and the two can now coexist
   with no ambiguity in prose, README rows, or menu labels.
-- **`vault-automation/`** at the repo root (Windows-only PowerShell: capture
-  hooks, a scheduled gardener, a `HOME.md` dashboard) is marked superseded for
-  new setups in its own README, pointing here. Its scripts are left in place
-  rather than deleted, because the root `README.md` still documents them as a
-  runnable quickstart - retiring that path is a separate, deliberate change.
-  The one thing it does that this plugin does not yet do is generate a
-  `HOME.md` Dataview dashboard; `/obsidian-vault:init` offers the same starter
+- **`vault-automation/`** (Windows-only PowerShell: capture hooks, a
+  scheduled gardener, a `HOME.md` dashboard) has been retired now that this
+  plugin covers the same ground cross-platform, with a committed test suite
+  and no vault path baked in. `/obsidian-vault:init` offers the same starter
   plugin set it used to pre-enable (Dataview, Obsidian Git, Excalidraw,
   Omnisearch, Kanban), one at a time, confirmed.
 - **`claude-obsidian-setup/`** at the repo root targets a different thing: it
@@ -216,8 +334,11 @@ individually-stated decision rather than a blanket "not touched":
   than reimplementing it; the vault-server skill was not otherwise
   cross-referenced.
 - **`skills/claude-memories-vault`** and **`skills/claude-memories-canvas`**
-  are vault-specific tuned versions of what `obsidian-memory-contract` teaches
-  generically - that skill explicitly yields to them where installed.
+  are retired: their vault-specific conventions now ship as
+  `obsidian-memory-contract`'s portable profiles
+  (`profiles/memory-vault.md`, `profiles/canvas-maps.md`), adopted by naming
+  the profile in a vault's own `CLAUDE.md` rather than installing a
+  vault-specific skill.
 
 ## Uninstall
 

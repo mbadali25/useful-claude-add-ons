@@ -96,24 +96,26 @@ SKILLS = {os.path.basename(os.path.dirname(f)) for f in glob.glob("skills/*/SKIL
 
 # Roles that are deliberately NOT on the default tier. Anything absent from this
 # map must declare `sonnet`; see check_agents for why each exception exists.
-MODEL_TIER = {"pm": "opus", "qa-reviewer": "opus"}
+# `reviewer` (qa-reviewer until crew 1.0) was the only one until `explorer`
+# joined it (owner decision, 2026-09-24): it maps unfamiliar code for every
+# other role, and with the `localgpu` semantic index disabled or unavailable
+# it has only Read/Grep/Glob, so a wrong map is inherited by everything built
+# on it -- see CHANGELOG.md's 1.0.9 entry and README's model-tiers section.
+MODEL_TIER = {"reviewer": "opus", "explorer": "opus"}
 
 KNOWN_TOOLS = {
     "Read", "Write", "Edit", "MultiEdit", "Bash", "PowerShell", "Grep", "Glob",
     "Agent", "Task", "Skill", "WebSearch", "WebFetch", "ToolSearch", "NotebookEdit",
-    # The PM is spawned unnamed and resumed by id, not by name -- SendMessage
-    # to a held id is how `/crew:pm` continues the same plain subagent
-    # in-session. ListAgents stays valid here for any role that still needs
-    # to check what else is live (see agents/pm.md "Reap what is idle"); it
-    # is no longer how the PM itself is found, since there is no addressable
-    # `crew-pm` teammate to list.
+    # Real Claude Code tools. The 0.20 PM used both (SendMessage to resume a
+    # held id, ListAgents to reap idle roles); crew 1.0 deleted it, but a
+    # tool that exists is still a valid name to grant.
     "ListAgents", "SendMessage",
     # A crew SUBAGENT cannot prompt -- `AskUserQuestion` is documented as
     # unavailable in agents spawned via the Task tool, and a subagent blocking
     # on a prompt would stall a dispatch nobody is watching. So a role that
     # needs a decision ends its report with a `**Decision needed:**` block, and
     # the main session RENDERS it. That renderer is a command, not an agent,
-    # which is why this name belongs here: `/crew:pm` carries it in
+    # which is why this name belongs here: `/crew:brainstorm` carries it in
     # `allowed-tools`, and without it the command is told to ask and has no
     # tool to ask with -- it does not error, it quietly does something else.
     "AskUserQuestion",
@@ -262,8 +264,7 @@ def check_agents():
         if model not in ("inherit", "opus", "sonnet", "haiku"):
             bad(f"{name}: unrecognised model '{model}'")
         elif model != MODEL_TIER.get(name[:-3], "sonnet"):
-            # The tiering is a design decision, not a default: the PM holds the
-            # project picture every dispatch derives from, qa-reviewer is the
+            # The tiering is a design decision, not a default: reviewer is the
             # same-family fallback and the model tier is the only compensation
             # left when Codex is absent, and every other role has a narrow brief
             # a fast model does well. `inherit` is not an option for any of them

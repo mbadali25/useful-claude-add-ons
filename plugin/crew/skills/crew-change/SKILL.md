@@ -165,7 +165,7 @@ local".
 **The backend's own state is the truth. The local cache is a cache.**
 
 `.work/changes/<id>.md` is written for every backend, so `/crew:change status`
-and `/crew:work` can read a change back without an API call. It records what
+and `/crew:implement` can read a change back without an API call. It records what
 was filed. It does **not** record whether the change was APPROVED — a change
 board approves in the desk, and nothing crew writes locally can know that has
 happened.

@@ -1,104 +1,98 @@
 ---
 name: obsidian-scheduling
-description: How to schedule the obsidian-vault:gardener and obsidian-vault:reflector agents to run unattended on Windows and Linux. Use when the user wants nightly gardening, a recurring reflection pass, or asks why the gardener only ran when they typed /obsidian-vault:garden.
+description: How to schedule the obsidian-vault gardener to run unattended, daily, on one designated host - generated cron, systemd-timer and Task Scheduler units, bounded runs, and draining a backlog. Use when the user wants nightly gardening, asks why the gardener only ran when they typed /obsidian-vault:garden, or has a large pending-reflect backlog.
 ---
 
-# Scheduling the gardener and reflector
+# Scheduling the gardener
 
-**This plugin never schedules anything itself.** No hook here installs a
-recurring task - a plugin silently registering a scheduled task on someone's
-machine is the kind of thing that should require the user's own action, using
-their own OS's own scheduler, which they can see and remove without needing to
-know this plugin exists. This skill is the reference for doing that by hand,
-or scripting it once with informed consent.
+**This plugin never installs a scheduled task itself.** `vault_ops.py schedule`
+generates the unit and prints the exact commands; the user runs them, with
+their own OS's scheduler, where they can see and remove it without knowing this
+plugin exists.
 
-## What actually runs
-
-A headless Claude Code call:
+## What runs: one bounded pass
 
 ```
-claude -p "<the gardener's own steps, or: run the obsidian-vault:gardener agent>" \
-  --dangerously-skip-permissions --max-turns 80
+python "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/vault_ops.py" garden-run
 ```
 
-`--dangerously-skip-permissions` is what makes an unattended run possible at
-all - there is no one present to click "allow". Scope this deliberately: run
-it as a user whose only local capability is this vault, or accept that the
-gardener can act with the full permissions of whoever's account runs it. Say
-this to the user before setting it up; do not bury it in a script comment.
+The bounds are enforced in code, not asked of a model:
 
-Cap turns and run frequency - this is maintenance, not an open-ended agent.
-Once nightly is normally enough; twice is rarely useful.
+- **At most 5 items per run**, oldest first. `--max` can lower it, never raise it.
+- **At most 10 minutes per run.** Each item's processor gets only the time left;
+  nothing starts once it is spent.
+- **Acknowledge only after a successful write.** The processor (by default
+  `claude -p` limited to Read/Write/Edit/Grep/Glob in the vault) must exit 0
+  and print `GARDENER-WROTE: <path>` for each note; the item is acknowledged
+  only if every such file exists inside the vault, is non-empty, and is new or
+  changed against a snapshot taken just before that item ran - naming a note
+  that was already there proves nothing. Anything else leaves it queued for
+  the next run.
+- **One designated host.** `garden-run` refuses on any host other than config
+  `gardener.host`. Two schedules on two machines syncing one vault would
+  distil the same sessions twice.
+- **One run at a time** (`inbox/.garden.lock`, treated as stale after 15 minutes).
+- **Only owned files committed**, and only with `--commit`: the notes this run
+  wrote plus its own `inbox/reflected.<host>.md`, via `git commit -- <paths>`.
+  git and the repository's own hooks run inside the same 10-minute bound; a
+  hook still running then is stopped and the commit reported as not made.
+  Leave `--commit` off when something else (Obsidian Git) owns commits.
+- A queued session whose transcript is not on this host is left queued as
+  "unresolved here" and does not use up a slot.
 
-## Windows: Task Scheduler
+Log: `~/.claude/obsidian/gardener.log`, one line per item acknowledged or left queued.
 
-```powershell
-$action = New-ScheduledTaskAction -Execute (Get-Command claude).Source `
-    -Argument '-p "run the obsidian-vault:gardener agent now" --dangerously-skip-permissions --max-turns 80' `
-    -WorkingDirectory '<vault path>'
-$trigger = New-ScheduledTaskTrigger -Daily -At '02:23'
-Register-ScheduledTask -TaskName 'Obsidian Gardener' -Action $action -Trigger $trigger `
-    -Settings (New-ScheduledTaskSettingsSet -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Hours 2))
+## Generate the unit
+
+Run on the host that should garden, and designate it in the same step:
+
+```
+python "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/vault_ops.py" schedule --os cron --designate
+python "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/vault_ops.py" schedule --os cron --designate --apply
 ```
 
-`-StartWhenAvailable` catches a run missed because the machine was asleep at
-02:23. Verify with `Start-ScheduledTask 'Obsidian Gardener'` and read the log
-the gardener writes for itself, rather than trusting Task Scheduler's own
-success/failure flag - a run that "succeeded" by exiting 0 after doing nothing
-useful looks identical to Task Scheduler.
+`--apply` writes only `gardener.host` into `~/.claude/obsidian/config.json`.
+The unit itself is printed, never installed. `--os` is one of:
 
-## Linux / macOS: cron or a systemd user timer
+| `--os` | Output | Install command it prints |
+|---|---|---|
+| `cron` | one crontab line, daily at `--time` (default 02:23) | `( crontab -l ...; echo "<line>" ) \| crontab -` |
+| `systemd` | `obsidian-gardener.service` + `.timer` (`Persistent=true`) for `~/.config/systemd/user/` | `systemctl --user daemon-reload` and `systemctl --user enable --now obsidian-gardener.timer` |
+| `windows` | `Register-ScheduledTask` block, `-StartWhenAvailable`, 15-minute limit | the PowerShell block itself |
 
-cron, simplest:
+Pick cron where there is no systemd user bus - for example a root shell or a
+container, where `systemctl --user` fails with "Failed to connect to bus".
+
+The unit embeds the plugin's versioned install path, so **re-run `schedule`
+after a plugin update**, or the scheduled command points at a directory the
+update removed.
+
+## Drain a backlog
 
 ```
-23 2 * * * cd '<vault path>' && claude -p "run the obsidian-vault:gardener agent now" \
-  --dangerously-skip-permissions --max-turns 80 >> <vault path>/.claude/gardener.log 2>&1
+python "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/vault_ops.py" drain
+python "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/vault_ops.py" drain --apply --batches 4
 ```
 
-systemd user timer, if the machine runs systemd and the user wants restart-on-
-failure semantics cron does not give:
+The dry run prints the backlog, how many items this host can read, the number
+of 5-item batches, and the first batch. `--apply` runs up to `--batches`
+bounded passes back to back and stops early when a pass acknowledges nothing.
+A 95-item backlog is 19 batches; run a few, read the notes they wrote, then
+continue.
 
-```ini
-# ~/.config/systemd/user/obsidian-gardener.service
-[Unit]
-Description=Obsidian vault gardener
+## Unattended permissions
 
-[Service]
-Type=oneshot
-WorkingDirectory=%h/vault-path
-ExecStart=claude -p "run the obsidian-vault:gardener agent now" --dangerously-skip-permissions --max-turns 80
-```
-
-```ini
-# ~/.config/systemd/user/obsidian-gardener.timer
-[Timer]
-OnCalendar=*-*-* 02:23:00
-Persistent=true
-
-[Install]
-WantedBy=timers.target
-```
-
-`Persistent=true` is the cron `StartWhenAvailable` equivalent - a run missed
-while the machine was off fires once it is back. Enable with
-`systemctl --user enable --now obsidian-gardener.timer`.
-
-## Run it on exactly one machine
-
-If the vault syncs across machines (Obsidian Sync, or a synced folder), two
-scheduled gardeners on two machines distill the same `inbox/pending-reflect.md`
-queue independently and produce duplicate concepts. Pick one machine for the
-schedule; the others can still run `/obsidian-vault:garden` on demand without
-conflict, since an on-demand run processes whatever is left in the queue at
-that moment rather than racing a concurrent one.
+The default processor is `claude -p ... --permission-mode acceptEdits
+--allowedTools Read,Write,Edit,Grep,Glob`, run with the vault as its working
+directory and the transcript's folder added with `--add-dir`. It has no Bash,
+so it cannot commit, push or edit the queue; the runner does those. Say this
+to the user before scheduling it: the job edits notes in the vault with
+nobody present.
 
 ## Verify a schedule is actually working
 
-Do not assume a registered task runs correctly. Check:
-1. The task/timer exists and is enabled (`Get-ScheduledTask` /
-   `systemctl --user list-timers`).
-2. It has actually fired at least once (`Get-ScheduledTaskInfo` /
-   `journalctl --user -u obsidian-gardener`).
-3. The gardener's own log shows a real pass, not just a process that started
-   and exited immediately from a config error.
+1. The task/timer exists (`crontab -l`, `systemctl --user list-timers`,
+   `Get-ScheduledTask 'Obsidian Gardener'`).
+2. It has fired (`journalctl --user -u obsidian-gardener`, `Get-ScheduledTaskInfo`).
+3. `gardener.log` shows items acknowledged - not just a process that started
+   and exited on "not the designated gardener host".

@@ -38,11 +38,11 @@
 #
 # Both the bare name and the `.*` glob are listed so submodule imports
 # (reportlab.platypus, urllib3.exceptions) are covered too.
-ignored-modules=botocore,botocore.*,conftest,docx,docx.*,fcntl,mcp,mcp.*,
-                msvcrt,numpy,numpy.*,PIL,PIL.*,playwright,playwright.*,
-                pymupdf,pymupdf.*,pytest,pytest.*,reportlab,reportlab.*,
-                requests,requests.*,urllib3,urllib3.*,vsdx,vsdx.*,
-                weasyprint,weasyprint.*,yaml,yaml.*
+ignored-modules=botocore,botocore.*,conftest,docx,docx.*,fcntl,markdown,
+                markdown.*,mcp,mcp.*,msvcrt,numpy,numpy.*,PIL,PIL.*,
+                playwright,playwright.*,pymupdf,pymupdf.*,pytest,pytest.*,
+                reportlab,reportlab.*,requests,requests.*,urllib3,urllib3.*,
+                vsdx,vsdx.*,weasyprint,weasyprint.*,yaml,yaml.*
 # `mcp` and `numpy` arrived with the localgpu plugin and are exactly the
 # CI-only failure the regeneration script above warns about: both are installed
 # in localgpu's own venv, so a local run is clean while CI - which deliberately
@@ -55,6 +55,13 @@ ignored-modules=botocore,botocore.*,conftest,docx,docx.*,fcntl,mcp,mcp.*,
 # `docx` is python-docx, `PIL` is Pillow and `pymupdf` is PyMuPDF; the import
 # name is what goes here, never the distribution name. The measurement that
 # matters is CI, not a local run: a local run was green with the bug present.
+#
+# `markdown` (python-markdown, imported unconditionally at
+# `docs/guides/crew/src/build.py:52`) is the same failure a third time -- the
+# guide builder's own venv has it, CI's pylint job does not. Same fix: the
+# import name goes in this list, not the distribution name, and it is not
+# installed in the pylint job because the job's whole point is to lint every
+# skill's scripts without needing each skill's own dependencies present.
 #
 # TWO BLIND SPOTS IN THE REGENERATION SCRIPT ABOVE, both measured. Run on the
 # doc-builder tree it produced five candidates and only three were real. Do not

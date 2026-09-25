@@ -86,12 +86,12 @@ def _repo(tmp_path, verify_map=None, config=None):
     for args in (("init", "-q"), ("config", "user.email", "t@example.invalid"),
                  ("config", "user.name", "t")):
         subprocess.run(("git",) + args, cwd=root, check=True,
-                       capture_output=True, text=True)
+                       capture_output=True, text=True, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
     (root / "README.md").write_text("committed", encoding="utf-8")
     subprocess.run(("git", "add", "-A"), cwd=root, check=True,
-                   capture_output=True, text=True)
+                   capture_output=True, text=True, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
     subprocess.run(("git", "commit", "-q", "-m", "fixture"), cwd=root,
-                   check=True, capture_output=True, text=True)
+                   check=True, capture_output=True, text=True, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
     # Untracked, so the gate has a changed file and reaches the rule loop.
     (root / "a.py").write_text("x = 1", encoding="utf-8")
     (root / ".crew" / "verify.json").write_text(
@@ -108,10 +108,10 @@ def _run(flavour, root, *extra):
     else:
         cmd = [_PWSH, "-NoProfile", "-NonInteractive", "-File", _PS1,
                *[a.replace("--all", "-All") for a in extra]]
-    return subprocess.run(
+    return crew_fixtures.run_gate(
         cmd, input="{}", cwd=str(root),
         env=dict(os.environ, CLAUDE_PROJECT_DIR=str(root)),
-        capture_output=True, text=True, check=False,
+        capture_output=True, text=True, check=False, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S,
     )
 
 

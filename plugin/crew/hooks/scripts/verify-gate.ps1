@@ -61,58 +61,6 @@ param(
 # that bug once - the guard stood down on Windows and blocked nothing there.
 if ($env:OS -ne 'Windows_NT') { exit 0 }
 
-# A PATH entry matching a bare command name is not necessarily something
-# Windows can actually launch. `Get-Command python3 -All` returns an
-# EXTENSIONLESS file (a pyenv/conda/direnv-style POSIX shim, or - as the
-# regression test for this reproduces it - a shebang script planted ahead of
-# the real interpreter) as `CommandType: Application` with a real `.Source`,
-# exactly like a genuine python3.exe. Nothing before this point tells the two
-# apart. The failure is not a clean error either: `& $badPath ...` with piped
-# stdin does not throw "not a valid Win32 application" the way a bare
-# double-click would - it BLOCKS forever, and killing the PowerShell process
-# does not reliably reap whatever it half-started. Measured directly against
-# this exact shape (an extensionless PATH shim ahead of a real interpreter,
-# invoked as `$payload | & $stub $script sync`), 2026-09-24: 0% CPU, still
-# parked after 90s, and Stop-Process on the parent needed its own manual
-# child-process cleanup. That is rule[8]'s non-terminating hang - the CRLF
-# env-pin regression test plants exactly this shape on PATH, and the crash
-# is downstream in the record-sync call, not in the stdin read the first
-# read of this bug blamed.
-# Only trust a candidate Windows' own CreateProcess can run directly: an
-# extension listed in $env:PATHEXT. Every real interpreter here already
-# qualifies (.exe); nothing legitimate is excluded by requiring it.
-function Test-CrewWindowsExecutable([string]$Path) {
-  if (-not $Path) { return $false }
-  $ext = [System.IO.Path]::GetExtension($Path)
-  if (-not $ext) { return $false }
-  $pathExt = $env:PATHEXT -split ';' | Where-Object { $_ }
-  return ($pathExt -contains $ext.ToUpperInvariant())
-}
-
-if ($Price) {
-  $root0 = if ($env:CLAUDE_PROJECT_DIR) { $env:CLAUDE_PROJECT_DIR } else { "." }
-  Set-Location $root0
-  function Resolve-CrewPythonEarly {
-    foreach ($name in @('python3', 'python')) {
-      $c = Get-Command $name -All -ErrorAction SilentlyContinue |
-        Where-Object { $_.CommandType -eq 'Application' -and $_.Source -and $_.Source -notmatch 'WindowsApps' -and (Test-CrewWindowsExecutable $_.Source) } |
-        Select-Object -First 1
-      if ($c) { return $c.Source }
-    }
-    return ''
-  }
-  $py0 = Resolve-CrewPythonEarly
-  if (-not $py0) {
-    [Console]::Error.WriteLine("verify-gate -Price: no python available")
-    exit 1
-  }
-  $script0 = Join-Path $PSScriptRoot 'verify_price.py'
-  $priceArgs = @($script0, $PriceTarget)
-  if ($PriceForce) { $priceArgs += '--force' }
-  & $py0 @priceArgs
-  exit $LASTEXITCODE
-}
-
 # Resolve a real bash.exe, not WSL's launcher. With WSL installed, unqualified
 # `bash` on PATH normally resolves to C:\Windows\System32\bash.exe or the
 # WindowsApps shim ahead of Git for Windows' bash -- inside WSL none of a
@@ -150,6 +98,19 @@ function Resolve-CrewBash {
   # No usable git, or no bash found near it: fall back to PATH, filtering out
   # the WSL launcher and the WindowsApps App Execution Alias shim.
   $sysRoot = $env:SystemRoot
+  # Same native-extension gate as Resolve-CrewPython's G1 guard below, and for
+  # the identical reason: an extensionless PATH entry named bare `bash` (a
+  # pyenv/conda/direnv-style POSIX shim) is CommandType Application with a
+  # real, non-WindowsApps .Source -- indistinguishable from bash.exe by either
+  # filter above it. CreateProcess cannot launch it directly; invoking it
+  # anyway is exactly the non-terminating hang PR #224 measured against
+  # Resolve-CrewPython, not a bounded failure this resolver has any timeout
+  # to survive. Gated on real-OS detection ($IsWindows, not the $env:OS seam)
+  # for the same reason Resolve-CrewPython gates it there: this suite's own
+  # bash-resolver fixtures are real, valid extensionless shims run under a
+  # faked $env:OS on Linux, and gating on that seam would reject them all.
+  $crewBashRealWindows = if (Test-Path variable:IsWindows) { $IsWindows } else { $true }
+  $crewBashNativeExts = @('.exe', '.com', '.cmd', '.bat')
   $candidates = Get-Command bash -All -ErrorAction SilentlyContinue
   foreach ($cmd in $candidates) {
     # Same guard as the git walk-up above, for the same reason. A `bash`
@@ -162,59 +123,212 @@ function Resolve-CrewBash {
     $src = $cmd.Source
     if ($sysRoot -and $src.StartsWith($sysRoot, [System.StringComparison]::OrdinalIgnoreCase)) { continue }
     if ($src -match 'WindowsApps') { continue }
-    # Same extensionless-shim guard as Resolve-CrewPython below (see
-    # Test-CrewWindowsExecutable) -- a PATH entry named bare `bash` with no
-    # extension is exactly as invokable-and-hangs as one named `python3`.
-    if (-not (Test-CrewWindowsExecutable $src)) { continue }
+    if ($crewBashRealWindows) {
+      $crewBashExt = [System.IO.Path]::GetExtension($src)
+      if ($crewBashNativeExts -notcontains $crewBashExt) {
+        Write-Verbose "Resolve-CrewBash: skipping '$src' - not natively launchable on Windows (extension '$crewBashExt' outside .exe/.com/.cmd/.bat)"
+        continue
+      }
+    }
     return $src
   }
 
-  # Nothing better found (non-Windows, or no WSL/WindowsApps shadowing):
-  # unchanged behaviour, let the shell resolve it.
-  return 'bash'
+  # Nothing found: either no candidate at all, or (real Windows) every
+  # candidate was rejected by the native-extension gate above - e.g. only an
+  # extensionless bash-style shim on PATH, no git, no WSL/WindowsApps
+  # shadowing. Returning the bare string 'bash' here used to be "let the
+  # shell resolve it", but PowerShell's own command resolution for a bare
+  # `& 'bash'` finds PATH candidates the SAME way `Get-Command bash -All`
+  # just did - so a bare return handed the caller back the exact shim this
+  # loop just rejected, `& $bashExe` invoked it anyway, and it hung (the
+  # defect this function's own G1 guard comment above describes but did not,
+  # by itself, prevent). An empty string is unambiguous: every caller below
+  # must treat it as "no usable bash", not as "fall back to a default".
+  return ''
 }
 
 function Resolve-CrewPython {
-  # THE SAME GUARD AS Resolve-CrewBash ABOVE, and it is here because this
-  # file already contained that guard and the scope report's resolver did
-  # not -- one file, two resolvers, one of them hardened.
+  # Every python3/python/py candidate found anywhere on PATH is executed
+  # once against one fixed -c probe below; cwd is never searched unless it
+  # is itself on PATH. No behaviour change from this comment.
+  # Memoized within this process: verify-gate.ps1 alone calls this up to
+  # seven times in one run, and each call would otherwise re-walk and
+  # re-probe PATH from scratch. Cached only for the life of THIS process --
+  # a fresh hook invocation gets a fresh probe.
+  if ($script:CrewPythonMemoDone) {
+    return $script:CrewPythonMemoResult
+  }
+  # ONE probe, byte for byte in every crew .ps1 that runs python, asserted by
+  # tests/test_ps1_python_probe.py. Inline rather than dot-sourced for the
+  # reason verify-gate.ps1's emergency-lane note gives: a dot-sourced
+  # function is invisible to scripts/check-powershell.ps1's static check.
   #
-  # Two live failure modes, both of which `Get-Command python3, python |
-  # Select-Object -First 1` walks straight into:
+  # EVERY PATH match of every name is a candidate, and each is EXECUTED
+  # before it is believed; where it lives never decides. A WindowsApps App
+  # Execution Alias is tried like anything else: it forwards to a working
+  # interpreter when Python is installed and fails the probe when it is not.
+  # Windows burn-in 2026-09-23 (docs/review/06-windows-burn-in.md, 2c): the
+  # previous copy skipped WindowsApps by path and took only the first match
+  # per name, so on a host whose python, python3 and py were all working
+  # WindowsApps aliases it discarded all three untested, never reached the
+  # real python.exe further down PATH, and completion-audit.ps1 blocked
+  # every Stop while its bash twin proceeded.
   #
-  #   1. A `function python { ... }` in a PowerShell profile is returned
-  #      AHEAD of any python.exe and its .Source is empty. hooks.json passes
-  #      no -NoProfile, so the profile is loaded and this is a live vector
-  #      rather than a theoretical one. The empty .Source then failed the
-  #      `if ($scopePy)` test and the gate reported "no python" on a machine
-  #      with python installed -- an unknown wearing the label of a check.
-  #   2. The Store's python.exe App Execution Alias in WindowsApps is a real
-  #      Application with a real .Source, so it resolves and is INVOKED; the
-  #      stub opens the Store instead of running the script.
+  # PROOF, not a printed line. The candidate must answer one JSON object
+  # only a Python can build: {"v": [major, minor], "exe": sys.executable,
+  # "impl": sys.implementation.name}. Accepted only when it exits 0, the
+  # JSON parses, impl is cpython or pypy (the two implementations the hooks
+  # are run under; anything else is rejected rather than guessed at), v is
+  # at least [3, 8] (the floor crew's python targets), and exe exists as a
+  # file. A program that ignores -c and prints some existing path -- which
+  # the previous "print(sys.executable)" probe accepted -- fails the parse.
   #
-  # Only real executables, never the WindowsApps shim. Unlike the bash
-  # resolver there is no System32 shim to exclude -- WSL ships a bash
-  # launcher there, nothing ships a python one -- so that filter is
-  # deliberately absent rather than forgotten.
+  # The probe is bounded: it runs to completion or its WHOLE PROCESS TREE is
+  # killed at 3s, with stdout and stderr read asynchronously so a chatty
+  # candidate cannot fill a pipe and hang. The tree, not the candidate: a
+  # py.exe-style launcher starts a child interpreter that inherits the
+  # redirected handles, and killing only the launcher leaves that child
+  # running. Kill($true) is the tree kill on PowerShell 7 (.NET Core 3+);
+  # Windows PowerShell 5.1 has no such overload, so it falls back to
+  # taskkill /T /F. No `continue` inside try/catch: loop control across that
+  # boundary differs between PowerShell versions, so the verdict is carried
+  # out in $real and acted on after it.
+  # An OVERALL deadline on top of each candidate's own 3s probe bound: a
+  # PATH with several hung candidates would otherwise cost 3s EACH, adding
+  # up past the shortest hook timeout that calls this (bridge-status.ps1's
+  # twin, 10s) even though every individual probe is bounded. Kept well
+  # inside that.
   #
-  # THIRD failure mode, found chasing rule[8]'s non-terminating hang: an
-  # extensionless PATH shim (pyenv/conda/direnv-style, or the CRLF env-pin
-  # regression test's stub) is CommandType Application with a real, non-
-  # WindowsApps .Source -- indistinguishable from a real interpreter by
-  # either guard above. Invoking it hangs rather than erroring; see
-  # Test-CrewWindowsExecutable's header comment for the measurement. Reject
-  # anything Windows itself would not treat as directly runnable.
-  $names = @('python3', 'python')
-  foreach ($name in $names) {
-    $candidates = Get-Command $name -All -ErrorAction SilentlyContinue
+  # REAL Windows only, never the flavour-guard seam: $env:OS -eq 'Windows_NT'
+  # is also true in this suite's own fixtures, which run REAL pwsh on Linux
+  # with that variable set to get past the guard at the top of this file --
+  # their candidates are ordinary extensionless Linux shim scripts, valid
+  # executables here, and gating on the seam would reject every one of them
+  # and break the fixtures that exist to prove this resolver works. $IsWindows
+  # (PowerShell 6+) reports the actual OS regardless of $env:OS; it does not
+  # exist in Windows PowerShell 5.1, which never runs anywhere but Windows, so
+  # its absence is itself a true answer.
+  $crewPythonRealWindows = if (Test-Path variable:IsWindows) { $IsWindows } else { $true }
+  # Only .exe/.com/.cmd/.bat (PATHEXT's launchable core) can be started
+  # without going through shell association. An extensionless file --
+  # anything else, including no extension at all -- CreateProcess cannot
+  # launch directly, and reaching it here is the same failure mode this
+  # probe's own bounded wait/kill exists to survive from a HUNG candidate,
+  # not from one Windows cannot start in the first place. Skipped before
+  # Process.Start is ever called, not caught after: a WindowsApps alias
+  # already carries `.exe`, so it is untouched by this and still tried like
+  # any other candidate, per the comment above.
+  $crewPythonNativeExts = @('.exe', '.com', '.cmd', '.bat')
+  $crewPythonDeadline = [System.Diagnostics.Stopwatch]::StartNew()
+  foreach ($name in @('python3', 'python', 'py')) {
+    $candidates = @(Get-Command $name -All -CommandType Application -ErrorAction SilentlyContinue)
     foreach ($cmd in $candidates) {
-      if ($cmd.CommandType -ne 'Application' -or -not $cmd.Source) { continue }
-      if ($cmd.Source -match 'WindowsApps') { continue }
-      if (-not (Test-CrewWindowsExecutable $cmd.Source)) { continue }
-      return $cmd.Source
+      if (-not $cmd.Source) { continue }
+      if ($crewPythonRealWindows) {
+        $crewPythonExt = [System.IO.Path]::GetExtension($cmd.Source)
+        if ($crewPythonNativeExts -notcontains $crewPythonExt) {
+          Write-Verbose "Resolve-CrewPython: skipping '$($cmd.Source)' - not natively launchable on Windows (extension '$crewPythonExt' outside .exe/.com/.cmd/.bat)"
+          continue
+        }
+      }
+      # The remaining budget, not a flat 3000ms, bounds THIS candidate's
+      # wait: checking the deadline only before launch and then waiting the
+      # full 3s regardless can still overrun the deadline by up to 3s once
+      # a candidate is entered, which on a run of several near-8s-but-under
+      # candidates followed by one hung one can overrun both this deadline
+      # and the 10s hook timeout it exists to stay inside.
+      $crewPythonRemainingMs = 8000 - [int]$crewPythonDeadline.Elapsed.TotalMilliseconds
+      if ($crewPythonRemainingMs -le 0) {
+        $script:CrewPythonMemoDone = $true
+        $script:CrewPythonMemoResult = ''
+        return ''
+      }
+      $crewPythonWaitMs = [Math]::Min(3000, $crewPythonRemainingMs)
+      $real = $null
+      try {
+        $psi = New-Object System.Diagnostics.ProcessStartInfo
+        $probeArgs = '-c "import sys,json;print(json.dumps({''v'':list(sys.version_info[:2]),''exe'':sys.executable,''impl'':sys.implementation.name}))"'
+        if ($cmd.Source -match '\.(cmd|bat)$') {
+          # UseShellExecute=false hands FileName straight to CreateProcess,
+          # which can only launch a real PE executable -- not a .cmd/.bat
+          # shim (a pyenv-win install is exactly this shape). Route it
+          # through cmd.exe /d /c instead of flipping UseShellExecute to
+          # $true, which would resolve by shell file association rather
+          # than run it as a command. Wrapping the whole command line in
+          # one more pair of quotes defeats cmd's "exactly two quotes"
+          # special case, so both the quoted shim path and the quoted -c
+          # argument survive intact.
+          $psi.FileName = Join-Path $env:SystemRoot 'System32\cmd.exe'
+          $psi.Arguments = '/d /c "' + '"' + $cmd.Source + '" ' + $probeArgs + '"'
+        } else {
+          $psi.FileName = $cmd.Source
+          $psi.Arguments = $probeArgs
+        }
+        $psi.UseShellExecute = $false
+        $psi.RedirectStandardInput = $true
+        $psi.RedirectStandardOutput = $true
+        $psi.RedirectStandardError = $true
+        $psi.CreateNoWindow = $true
+        $proc = [System.Diagnostics.Process]::Start($psi)
+        # Closed at once: the probe never reads stdin, and an OPEN inherited
+        # stdin parks a child forever, which would make a healthy candidate
+        # look dead and get it rejected.
+        $proc.StandardInput.Close()
+        $outTask = $proc.StandardOutput.ReadToEndAsync()
+        $null = $proc.StandardError.ReadToEndAsync()
+        if (-not $proc.WaitForExit($crewPythonWaitMs)) {
+          try {
+            $proc.Kill($true)
+          } catch {
+            try { & taskkill.exe /T /F /PID $proc.Id 2>&1 | Out-Null } catch { }
+            try { $proc.Kill() } catch { }
+          }
+          # Reap the killed tree with its own bound, rather than leaving it
+          # torn down but never waited on for however long that takes.
+          try { $null = $proc.WaitForExit(2000) } catch { }
+        } elseif ($proc.ExitCode -eq 0 -and $outTask.Wait(1000)) {
+          $line = @(($outTask.Result -split "`r?`n") | Where-Object { $_.Trim() })[-1]
+          $probe = $line | ConvertFrom-Json
+          $v = @($probe.v)
+          if ($probe.impl -in @('cpython', 'pypy') -and $v.Count -ge 2 -and
+              ($v[0] -is [long] -or $v[0] -is [int]) -and ($v[1] -is [long] -or $v[1] -is [int]) -and
+              ([int]$v[0] -gt 3 -or ([int]$v[0] -eq 3 -and [int]$v[1] -ge 8)) -and
+              $probe.exe -is [string]) {
+            $real = $probe.exe
+          }
+        }
+        try { $proc.Dispose() } catch { }
+      } catch {
+        $real = $null
+      }
+      if ($real) { $real = $real.ToString().Trim() }
+      if (-not $real) { continue }
+      if (-not (Test-Path -LiteralPath $real -PathType Leaf)) { continue }
+      $script:CrewPythonMemoDone = $true
+      $script:CrewPythonMemoResult = $real
+      return $real
     }
   }
+  $script:CrewPythonMemoDone = $true
+  $script:CrewPythonMemoResult = ''
   return ''
+}
+
+# -Price resolves python with the same probe as everything else here, so it
+# sits below Resolve-CrewPython rather than above it with a copy of its own.
+if ($Price) {
+  $root0 = if ($env:CLAUDE_PROJECT_DIR) { $env:CLAUDE_PROJECT_DIR } else { "." }
+  Set-Location $root0
+  $py0 = Resolve-CrewPython
+  if (-not $py0) {
+    [Console]::Error.WriteLine("verify-gate -Price: no python available")
+    exit 1
+  }
+  $script0 = Join-Path $PSScriptRoot 'verify_price.py'
+  $priceArgs = @($script0, $PriceTarget)
+  if ($PriceForce) { $priceArgs += '--force' }
+  & $py0 @priceArgs
+  exit $LASTEXITCODE
 }
 
 if ($PrintBash) {
@@ -273,7 +387,46 @@ function Write-CrewIncidentSkip([string]$Gate, [string]$Detail) {
   Add-Content -Path $log -Value "$epoch`t$row" -Encoding utf8
 }
 
-$raw = [Console]::In.ReadToEnd()
+# Bounded, and the twin of verify-gate.sh's read above. A Stop hook always
+# pipes JSON here, but nothing enforces that the pipe is ever actually
+# closed, and an unconditional read blocks the WHOLE script on it -- the
+# same parked-process shape a hung interpreter probe produces, for a
+# different cause. IsInputRedirected is false for an interactive terminal
+# (nothing was ever going to arrive), so nothing is read at all in that
+# case.
+#
+# NOT [Console]::In (a TextReader): measured directly, `[Console]::In`'s
+# lazy first access probes the stream synchronously (encoding/BOM
+# detection) before `ReadToEndAsync()` returns a Task at all, so on a pipe
+# with no data yet queued that probe itself blocks -- the bound below never
+# gets a Task to wait on, and the process hangs exactly as before. Reading
+# the RAW stream from `OpenStandardInput()` has no such lazy probe: opening
+# it is synchronous and instant regardless of what has arrived, and only
+# the actual byte copy is asynchronous, so the bound covers the one thing
+# that can be slow. Confirmed both ways against a pipe that never sends
+# anything: `[Console]::In.ReadToEndAsync()` itself never returns,
+# `OpenStandardInput()` returns immediately every time.
+#
+# THE BOUND IS TOTAL, NOT "did it reach EOF". A complete
+# `{"stop_hook_active":true}` payload sitting in the buffer, with the pipe
+# held open past the 5s bound, used to be discarded outright -- the retry
+# hook then ran the gate again and blocked again on a failing check it had
+# already reported this turn. `CopyToAsync` still only completes at EOF, so
+# `Wait(5000)` still times out on a held-open pipe; what changed is that the
+# buffer is read regardless of whether the Task finished. Whatever arrived
+# within the bound is what gets parsed -- a complete JSON object is enough,
+# EOF is not required. Garbage or a half-written object still fails
+# `ConvertFrom-Json` below and is caught exactly as an empty `$raw` always
+# was, so a producer that never sends anything parseable keeps today's
+# behaviour.
+$raw = ""
+if ([Console]::IsInputRedirected) {
+  $crewStdinStream = [Console]::OpenStandardInput()
+  $crewStdinBuffer = New-Object System.IO.MemoryStream
+  $crewStdinTask = $crewStdinStream.CopyToAsync($crewStdinBuffer)
+  $crewStdinTask.Wait(5000) | Out-Null
+  $raw = [System.Text.Encoding]::UTF8.GetString($crewStdinBuffer.ToArray())
+}
 
 # Claude Code re-fires Stop after a blocking Stop hook. Without this check the
 # gate blocks its own retry forever and a failing check becomes a stuck session.
@@ -296,8 +449,8 @@ if (Test-Path .crew/config.json) {
 # instead, and /crew:emergency end reports the debt.
 if (Test-CrewIncidentActive) {
   $n = @(
-    (git -c core.quotePath=false diff --name-only HEAD 2>$null)
-    (git -c core.quotePath=false ls-files --others --exclude-standard 2>$null)
+    ($null | git -c core.quotePath=false diff --name-only HEAD 2>$null)
+    ($null | git -c core.quotePath=false ls-files --others --exclude-standard 2>$null)
   ) | Where-Object { $_ -and $_.Trim() }
   Write-CrewIncidentSkip "verify" "stop gate stood down with $($n.Count) changed file(s) unverified"
   exit 0
@@ -306,7 +459,7 @@ if (Test-CrewIncidentActive) {
 # Records the commit this gate has proven clean. Mirrors record_verified in
 # verify-gate.sh; called on every exit-0 path and on none that exit nonzero.
 function Write-CrewVerified {
-  $verified = (git rev-parse HEAD 2>$null)
+  $verified = ($null | git rev-parse HEAD 2>$null)
   if ($verified) {
     if (-not (Test-Path .crew)) { New-Item -ItemType Directory .crew -Force | Out-Null }
     Set-Content -Path .crew/.verify-verified-at -Value $verified.Trim() -Encoding ascii
@@ -323,14 +476,14 @@ if (Test-Path .crew/.verify-verified-at) {
   $cand = (Get-Content .crew/.verify-verified-at -TotalCount 1 -ErrorAction SilentlyContinue)
   if ($cand) { $cand = $cand.Trim() }
   if ($cand) {
-    git cat-file -e "$cand^{commit}" 2>$null
+    $null | git cat-file -e "$cand^{commit}" 2>$null
     if ($LASTEXITCODE -eq 0) { $base = $cand }
   }
 }
 if (-not $base) {
-  $def = (git symbolic-ref --short refs/remotes/origin/HEAD 2>$null)
+  $def = ($null | git symbolic-ref --short refs/remotes/origin/HEAD 2>$null)
   if ($def) { $def = $def -replace '^origin/', '' } else { $def = "main" }
-  $base = (git merge-base HEAD $def 2>$null)
+  $base = ($null | git merge-base HEAD $def 2>$null)
 }
 if (-not $base) { $base = "HEAD" }
 
@@ -356,18 +509,18 @@ if ($All) {
   # the twin of the same fix in verify-gate.sh. `--name-status -M
   # --diff-filter=R` names both columns per rename (status, old, new);
   # split each line on tab and take columns 1 and 2.
-  $changed += (git -c core.quotePath=false ls-files 2>$null)
-  $changed += (git -c core.quotePath=false diff --name-only --cached --diff-filter=D 2>$null)
-  $changed += (git -c core.quotePath=false diff --name-only HEAD 2>$null)
-  $renameLines = (git -c core.quotePath=false diff --name-status --cached -M --diff-filter=R 2>$null)
+  $changed += ($null | git -c core.quotePath=false ls-files 2>$null)
+  $changed += ($null | git -c core.quotePath=false diff --name-only --cached --diff-filter=D 2>$null)
+  $changed += ($null | git -c core.quotePath=false diff --name-only HEAD 2>$null)
+  $renameLines = ($null | git -c core.quotePath=false diff --name-status --cached -M --diff-filter=R 2>$null)
   foreach ($line in @($renameLines)) {
     $cols = $line -split "`t"
     if ($cols.Count -ge 3) { $changed += $cols[1]; $changed += $cols[2] }
   }
-  $changed += (git -c core.quotePath=false ls-files --others --exclude-standard 2>$null)
+  $changed += ($null | git -c core.quotePath=false ls-files --others --exclude-standard 2>$null)
 } else {
-  $changed += (git -c core.quotePath=false diff --name-only $base 2>$null)
-  $changed += (git -c core.quotePath=false ls-files --others --exclude-standard 2>$null)
+  $changed += ($null | git -c core.quotePath=false diff --name-only $base 2>$null)
+  $changed += ($null | git -c core.quotePath=false ls-files --others --exclude-standard 2>$null)
 }
 $changed = $changed | Where-Object { $_ -and $_.Trim() } | Sort-Object -Unique
 if (-not $changed) {
@@ -636,7 +789,7 @@ if (-not $unlocked) {
 # nothing there. try/catch because this gate can exit 2 and the scope layer
 # must not be able to.
 try {
-  # Same resolver pm-pulse.ps1 uses. verify-gate.ps1 had NO python dependency
+  # Same resolver the other thin .ps1 wrappers use. verify-gate.ps1 had NO python dependency
   # before this -- it reads verify.json with ConvertFrom-Json -- so the
   # resolver is introduced here rather than assumed. An invented
   # Resolve-CrewPython would have thrown into the catch below and printed
@@ -667,7 +820,16 @@ if (-not (Test-Path .crew/verify.json)) {
   $smoke = @("_verify/smoke.sh", "scripts/smoke.sh") | Where-Object { Test-Path $_ } | Select-Object -First 1
   if ($smoke) {
     $bashExe = Resolve-CrewBash
-    $out = & $bashExe $smoke 2>&1
+    if (-not $bashExe) {
+      # Every bash candidate Resolve-CrewBash found was rejected (or none
+      # exist) - refuse the smoke check by name rather than invoking a bare
+      # 'bash' that PowerShell would only re-resolve to the same rejected
+      # candidate and hang on.
+      [Console]::Error.WriteLine("Smoke FAILED. Work is not complete.")
+      [Console]::Error.WriteLine("verify-gate: no usable bash resolved (Resolve-CrewBash found no natively-launchable candidate) - refusing rather than invoking a name that would re-resolve to the same rejected shim")
+      exit 2
+    }
+    $out = $null | & $bashExe $smoke 2>&1
     if ($LASTEXITCODE -ne 0) {
       [Console]::Error.WriteLine("Smoke FAILED. Work is not complete.")
       [Console]::Error.WriteLine("bash: $bashExe")
@@ -1269,7 +1431,7 @@ $bashExe = Resolve-CrewBash
 $shimDir = $null
 if ($bashExe) {
   $global:LASTEXITCODE = 0
-  & $bashExe -c 'command -v python3' 1>$null 2>$null
+  $null | & $bashExe -c 'command -v python3' 1>$null 2>$null
   $python3Already = ($LASTEXITCODE -eq 0)
   if (-not $python3Already) {
     $shimPy = Resolve-CrewPython
@@ -1303,14 +1465,14 @@ if ($bashExe) {
         # confined here to a single, simple command.
         $candidateForward = $candidateDir -replace '\\', '/'
         $global:LASTEXITCODE = 0
-        $chmodOut = & $bashExe -c "chmod +x '$candidateForward/python3'" 2>&1
+        $chmodOut = $null | & $bashExe -c "chmod +x '$candidateForward/python3'" 2>&1
         if ($LASTEXITCODE -ne 0) {
           [Console]::Error.WriteLine("verify-gate: could not make the python3 shim executable: $chmodOut")
         } else {
           # PROBE before PATH - run it once and check it actually behaves
           # like python, through the same bash rule commands use.
           $global:LASTEXITCODE = 0
-          $probeOut = & $bashExe -c "'$candidateForward/python3' -c 'import sys'" 2>&1
+          $probeOut = $null | & $bashExe -c "'$candidateForward/python3' -c 'import sys'" 2>&1
           if ($LASTEXITCODE -eq 0) {
             $shimDir = $candidateDir
           } else {
@@ -1401,13 +1563,15 @@ foreach ($ident in $cmds) {
     } catch { $spec = @{} }
   }
   # --- env pinning -------------------------------------------------------
-  # ENV, AWS_PROFILE, AWS_DEFAULT_REGION, KUBECONFIG, TF_WORKSPACE are unset
+  # Every PINNED_VARS name (verify_record.py) is unset
   # for every rule command unless its OWN rule declared "env" for it, in
   # which case exactly those values are set instead. The twin of the same
   # block in verify-gate.sh; see that file for why an inherited value must
   # not silently ride along into a check.
   $pinned = @()
-  foreach ($v in @("ENV", "AWS_PROFILE", "AWS_DEFAULT_REGION", "KUBECONFIG", "TF_WORKSPACE")) {
+  foreach ($v in @("ENV", "AWS_PROFILE", "AWS_DEFAULT_REGION", "KUBECONFIG", "TF_WORKSPACE",
+                   "AWS_REGION", "AWS_DEFAULT_PROFILE", "AZURE_SUBSCRIPTION_ID",
+                   "ARM_SUBSCRIPTION_ID", "TF_VAR_environment")) {
     if ($spec.ContainsKey($v)) {
       Set-Item -Path "env:$v" -Value $spec[$v]
       $pinned += "$v=(declared)"
@@ -1425,8 +1589,175 @@ foreach ($ident in $cmds) {
   $global:LASTEXITCODE = 0
   Push-Location $root
   try {
-    $out = & $bashExe -c $c 2>&1
-    $rc = $LASTEXITCODE
+    # Captured through a REGULAR FILE, not `$out = & ... 2>&1` (kept as the
+    # fallback below for the one case a temp file cannot be made) - the
+    # twin of the same fix in verify-gate.sh, where the full rationale
+    # lives. Capturing to a variable reads the child's output through a
+    # pipe PowerShell itself manages, and a pipe only ever reports EOF once
+    # EVERY process holding its write end has closed it - so a rule that
+    # backgrounds something and does not itself wait for it inherits that
+    # same write end, and the grandchild holding it open wedges THIS
+    # process forever, the same way as the bash side.
+    #
+    # A REDIRECT TARGET FILE alone does not close that gap, and the comment
+    # this replaces said it did - wrong, measured wrong (`test_34b[ps1]`,
+    # a rule that only backgrounds a silent `sleep` and writes nothing,
+    # still took the gate ~20s to return under `& $bashExe -c $c >
+    # $ruleOutFile 2>&1`, the exact shape here before this fix). PowerShell
+    # does not hand the child a raw OS file handle for `>`/`2>&1` on a
+    # native command - it gives the child a PIPE and relays what it reads
+    # into the target file itself, so a grandchild that merely HOLDS that
+    # inherited pipe open (no writing required) keeps PowerShell's own
+    # relay from ever reaching EOF, wedging THIS process the same way a
+    # bare `$out = & ... 2>&1` would, just one layer further in. Below,
+    # `$c` is handed to bash through an ENV VAR (`CREW_VERIFY_RULE_CMD`,
+    # never interpolated into the wrapper text - see the `New-Object
+    # System.Text.UTF8Encoding` python-shim block above for why
+    # interpolating an arbitrary value into a script string is the thing
+    # to avoid) and bash's OWN `eval "$CREW_VERIFY_RULE_CMD" >
+    # "$CREW_VERIFY_RULE_OUT" 2>&1 </dev/null` does the redirect - a real
+    # file handle, the same thing verify-gate.sh's `( eval "$c" )
+    # >"$RULE_OUT_FILE" 2>&1 </dev/null &` already gets for free by running
+    # natively under bash. Measured: the sabotage-relevant repro above
+    # returns in well under 200ms this way, unaffected by how long the
+    # backgrounded sleep lives.
+    #
+    # That still leaves the READ side: a plain `Get-Content` has no static
+    # end position either - a backgrounded grandchild that keeps WRITING
+    # (not just holding the fd open - `sh -c 'yes &'`) makes the file grow
+    # WHILE Get-Content is still reading it, and the next line it reads is
+    # simply whatever showed up next, not a stop at "the file's current
+    # size" the earlier version of this comment claimed. Measured: with
+    # only the redirect fixed and a plain uncapped `Get-Content` left in
+    # place, a `sh -c 'yes &'` rule grew the file past 1 GiB in the first
+    # five seconds of reading and Get-Content had not returned. The read
+    # below is therefore a single Length snapshot (filesystem metadata,
+    # not a content read, so it cannot itself be made to wait on the
+    # writer) plus a bounded, capped tail read - the .ps1 twin of
+    # verify-gate.sh's `stat`+`tail -c` pair.
+    # `$null |` on every call below hands the child a closed stdin - the
+    # same fix as everywhere else in this file (see the interpreter probe
+    # and the git call sites above); without it a rule that reads stdin
+    # parks forever the same way an unclosed pipe does.
+    # TEMP/TMP is not the only place this can be written, and it must
+    # never fall back to the pipe form again if it is unwritable:
+    # `$out = $null | & $bashExe -c $c 2>&1` (the old else-branch here)
+    # reopens exactly the wedge the file capture above exists to close -
+    # a rule that backgrounds something and does not wait on it hangs
+    # THIS process forever on a host where TEMP/TMP is unwritable, e.g.
+    # `sh -c "sleep 60 &"`. `.crew/` already exists (verify.json lives
+    # there) and is inside $root, which this gate is already running
+    # against, so it is tried as a second, repo-local location before
+    # refusing the rule outright. Twin of the same fix in verify-gate.sh
+    # (commit be439290); does NOT port that lineage's later process-group
+    # kill (commit 1bba9725) - the crew is dropping that behaviour, not
+    # carrying it to this flavour.
+    $ruleOutFile = $null
+    try { $ruleOutFile = [System.IO.Path]::GetTempFileName() } catch { $ruleOutFile = $null }
+    if (-not $ruleOutFile) {
+      try {
+        if (-not (Test-Path ".crew")) { New-Item -ItemType Directory -Path ".crew" -Force -ErrorAction Stop | Out-Null }
+        $candidate = Join-Path ".crew" (".verify-rule-out." + [System.IO.Path]::GetRandomFileName())
+        New-Item -ItemType File -Path $candidate -ErrorAction Stop | Out-Null
+        $ruleOutFile = $candidate
+      } catch { $ruleOutFile = $null }
+    }
+    if (-not $bashExe) {
+      # Resolve-CrewBash found no natively-launchable candidate for THIS
+      # rule (re-checked above, per-rule, in case PATH changed mid-run) -
+      # refuse by name instead of invoking a bare 'bash' that PowerShell
+      # would only re-resolve to the same rejected shim and hang on. Same
+      # rc-ne-0 / "VERIFY FAILED" branch below as any other rule failure, so
+      # this reason is what prints, not a hang with no output at all.
+      if ($ruleOutFile) { Remove-Item -Path $ruleOutFile -Force -ErrorAction SilentlyContinue }
+      $out = @("verify-gate: no usable bash resolved (Resolve-CrewBash found no natively-launchable candidate) - refusing rather than invoking a name that would re-resolve to the same rejected shim and hang")
+      $rc = 1
+    } elseif ($ruleOutFile) {
+      # No positional args passed to $bashExe here on purpose: `eval`
+      # inherits the CURRENT positional parameters, and a wrapper script
+      # invoked with args would make $1/$2/... visible inside the evaled
+      # rule command too, which a plain `bash -c $c` (both args empty)
+      # never had. Two env vars instead, both scoped to this rule only and
+      # restored/cleared immediately after.
+      $prevRuleCmd = $env:CREW_VERIFY_RULE_CMD
+      $prevRuleOut = $env:CREW_VERIFY_RULE_OUT
+      $env:CREW_VERIFY_RULE_CMD = $c
+      $env:CREW_VERIFY_RULE_OUT = ($ruleOutFile -replace '\\', '/')
+      $wrapperScript = 'eval "$CREW_VERIFY_RULE_CMD" > "$CREW_VERIFY_RULE_OUT" 2>&1 </dev/null'
+      $null | & $bashExe -c $wrapperScript
+      $rc = $LASTEXITCODE
+      if ($null -eq $prevRuleCmd) { Remove-Item Env:\CREW_VERIFY_RULE_CMD -ErrorAction SilentlyContinue } else { $env:CREW_VERIFY_RULE_CMD = $prevRuleCmd }
+      if ($null -eq $prevRuleOut) { Remove-Item Env:\CREW_VERIFY_RULE_OUT -ErrorAction SilentlyContinue } else { $env:CREW_VERIFY_RULE_OUT = $prevRuleOut }
+      # 1 MiB; twin of RULE_OUT_CAP in verify-gate.sh. The env override is
+      # test-only (proving the cap is enforced without writing gigabytes to
+      # prove it) - no operator-facing doc names it, and it must never be
+      # set outside a test process. Same twin as verify-gate.sh's own
+      # CREW_VERIFY_GATE_TEST_RULE_OUT_CAP seam.
+      $ruleOutCap = 1048576
+      $capOverride = $env:CREW_VERIFY_GATE_TEST_RULE_OUT_CAP
+      if ($capOverride) {
+        $parsedCap = 0
+        if ([int]::TryParse($capOverride, [ref]$parsedCap) -and $parsedCap -ge 1 -and $parsedCap -le 1048576) {
+          $ruleOutCap = $parsedCap
+        }
+      }
+      $out = @()
+      try {
+        $fi = Get-Item -Path $ruleOutFile -ErrorAction Stop
+        # Snapshot the size the moment we look, then read exactly that many
+        # bytes (capped) - never the whole file as it stands whenever the
+        # read gets around to finishing. `.Length` is filesystem metadata,
+        # not a content read.
+        $size = [int64]$fi.Length
+        $readLen = [int][Math]::Min($size, [int64]$ruleOutCap)
+        if ($readLen -gt 0) {
+          $fs = [System.IO.File]::Open($ruleOutFile, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+          try {
+            # Tail, not head: the last lines are what a failing rule needs
+            # downstream (`Select-Object -Last 25` below) - a rule that
+            # prints megabytes of noise before its one real failure line
+            # must not have that line cut off by reading from byte 0
+            # instead of the end. `Seek` from the end is a single seek on
+            # a regular file, not a scan of everything before it.
+            $fs.Seek(-$readLen, [System.IO.SeekOrigin]::End) | Out-Null
+            $buffer = [byte[]]::new($readLen)
+            # `FileStream.Read` is not guaranteed to fill the buffer in one
+            # call - looping to either $readLen or a 0-byte (EOF) result is
+            # the difference between "the whole capped window" and quietly
+            # dropping the NEWEST bytes off a partial read, which is
+            # exactly the diagnostic the seek-from-end above exists to
+            # keep.
+            $totalRead = 0
+            while ($totalRead -lt $readLen) {
+              $n = $fs.Read($buffer, $totalRead, $readLen - $totalRead)
+              if ($n -le 0) { break }
+              $totalRead += $n
+            }
+            if ($totalRead -lt $readLen) { $buffer = $buffer[0..($totalRead - 1)] }
+            # TrimEnd the trailing newline(s), matching bash's `$(...)`
+            # command substitution (which the .sh twin's OUT=$(tail -c...)
+            # relies on) - otherwise a file ending in a newline (the
+            # common case) reads back one more, empty, trailing element
+            # than the sh side does for the same bytes.
+            $out = @(([System.Text.Encoding]::UTF8.GetString($buffer)).TrimEnd("`r", "`n") -split "`r?`n")
+          } finally {
+            $fs.Dispose()
+          }
+        }
+      } catch {
+        $out = @("verify-gate: could not read the rule's output file ($($_.Exception.Message))")
+      }
+      Remove-Item -Path $ruleOutFile -Force -ErrorAction SilentlyContinue
+    } else {
+      # Neither the system temp dir nor .crew/ is writable: refuse this
+      # rule with a named reason instead of running it through the pipe
+      # form. A check that cannot capture its own output safely is not a
+      # check that ran. This goes through the same rc-ne-0 branch below
+      # as every other rule failure, so "VERIFY FAILED: $c" and this
+      # message both print.
+      $out = @("verify-gate: cannot create an output-capture file (temp dir and .crew/ both unwritable) - refusing rather than falling back to a pipe capture that a backgrounded grandchild can wedge forever")
+      $rc = 1
+    }
   } finally {
     Pop-Location
   }
@@ -1525,7 +1856,7 @@ try {
   $syncPy = Resolve-CrewPython
   $syncScript = Join-Path $PSScriptRoot 'verify_record.py'
   if ($syncPy -and (Test-Path $syncScript)) {
-    $syncSha = (git rev-parse HEAD 2>$null)
+    $syncSha = ($null | git rev-parse HEAD 2>$null)
     $payload = [ordered]@{
       sha = $syncSha
       all = [bool]$All

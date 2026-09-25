@@ -4,10 +4,19 @@
 # threshold, asks Claude to write a handoff note before ending the turn.
 # Exit 2 sends control back to the model with the reason on stderr.
 #
-# NOTHING HERE RUNS until a repository has .crew/config.json - crew is
-# per-repository and its hooks are inert until `/crew:init`. That is deliberate
-# (a gate that fires in every repo you open would be hostile), but it does mean
-# installing the plugin is not enough on its own.
+# NOTHING HERE RUNS until a repository at least has a `.crew/` directory -
+# crew is per-repository and its hooks are inert until something (`/crew:init`
+# or a worktree copy) has made that much true. That is deliberate (a gate that
+# fires in every repo you open would be hostile), but it does mean installing
+# the plugin is not enough on its own.
+#
+# Two gates below, not one, since crew 1.0 F4: this hook's own handover to
+# auto-clear.sh (the forced-continuation branch, just past the `.crew/`
+# check) reaches it on `.crew/` existing alone, matching auto-clear.sh's own
+# directory gate - `context.autoClear` is a machine-global switch and must
+# work in any crew repo (CONFIG.md sec 14). This hook's OWN context-window
+# measurement and nagging, further down, is a separate question and keeps
+# requiring a real `.crew/config.json` underneath, unchanged.
 INPUT=$(cat)
 
 # Loop safety, layer 1, checked FIRST -- before the config check, before
@@ -23,13 +32,110 @@ INPUT=$(cat)
 # prevent. Same idiom verify-gate.sh:48 uses for the same reason, deliberately
 # NOT a python-based read: it must work even when the interpreter that would
 # parse the JSON properly is the very thing that is broken.
-case "$INPUT" in *'"stop_hook_active": true'*|*'"stop_hook_active":true'*) exit 0 ;; esac
+#
+# stop_hook_active is also the ONE turn on which auto-clear matters: the block
+# below sends Claude back to write the handoff, and the Stop that follows that
+# forced continuation is the first moment the note exists. This hook used to
+# exit here unconditionally, so auto-clear only ran on the NEXT user turn's
+# Stop -- a cleared session needed the user to type something first, which is
+# most of why the cycle "worked when it worked". So this turn hands over to
+# auto-clear.sh (never blocks, never asks again) when THIS session has a
+# wrap-up marker, and does nothing else.
+STOP_ACTIVE=0
+case "$INPUT" in *'"stop_hook_active": true'*|*'"stop_hook_active":true'*) STOP_ACTIVE=1 ;; esac
 
-# `.crew/config.json`'s existence decides whether this hook does ANYTHING,
-# so it is checked BEFORE resolving python, not after -- a non-crew
-# repository must not pay for spinning up an interpreter (or, before the
-# WindowsApps fix below, for launching a stub) to run a hook that was always
-# going to exit 0.
+# The session this Stop belongs to. Every marker is keyed on it: the wrap-up
+# marker used to be one `.crew/.handoff-requested` per REPOSITORY, so two
+# terminals in one repo shared it -- the first to cross the threshold silenced
+# the other, and either one's SessionStart re-armed both. Same cheap
+# extraction as cwd below, for the same reason; the key keeps only
+# [A-Za-z0-9_-], matching crew_autocycle.session_key and the .ps1 twins.
+# Pure bash on purpose: nothing beyond grep/sed/awk may be needed before
+# python is resolved (test_context_watch_python_resolver's coreutils-only PATH).
+session_markers() {
+  local key="${1//[^A-Za-z0-9_-]/_}"
+  key="${key:0:100}"
+  SESSION_KEY="${key:-nosession}"
+  MARKER=".crew/.handoff-requested-${SESSION_KEY}"
+  SENT_MARKER=".crew/.autoclear-sent-${SESSION_KEY}"
+}
+SESSION_ID=""
+SESSION_RE='"session_id"[[:space:]]*:[[:space:]]*"([^"]*)"'
+if [[ "$INPUT" =~ $SESSION_RE ]]; then
+  SESSION_ID="${BASH_REMATCH[1]}"
+fi
+session_markers "$SESSION_ID"
+
+# auto-clear.sh logs its own refusals/sends to .crew/.autoclear.log (see its
+# own `note()`) and echoes the same line to ITS stderr -- but only on paths
+# that reach that function. A crash before that point (an unbound variable,
+# a missing interpreter that is not the *documented* no-python stand-down,
+# anything that dies before `note` ever runs) used to vanish completely: both
+# call sites below discarded the child's stderr and never looked at its exit
+# code, so nothing anywhere recorded that auto-clear was even asked to run.
+# `.crew/.autoclear.log` was reported to exist nowhere on the affected Windows
+# host, which is what a total silence there looks like.
+#
+# This wraps every call instead: capture the child's exit code and stderr,
+# and independently append a line to the SAME log whenever the child looks
+# unhealthy, so this hook's own record of the attempt survives however badly
+# the child behaved. Deliberately unconditional rather than trying to detect
+# whether auto-clear ALREADY logged the same thing -- that would mean parsing
+# its own log, which is exactly the kind of cleverness that breaks first. A
+# duplicate line on an ordinary refusal costs nothing a human reading the log
+# would notice; a MISSING line is the whole defect this exists to close.
+#
+# Must never throw and must never change this hook's own exit code or leak
+# anything unexpected onto ITS OWN stdout, which Claude Code reads as the Stop
+# hook's protocol -- the fallback, if the log itself cannot be written (an
+# unwritable .crew/), is this hook's own stderr, never stdout.
+cw_log_autoclear_trouble() {
+  local msg
+  msg=$(printf '%s' "$1" | tr '\n\r\t' '   ')
+  if mkdir -p .crew 2>/dev/null &&
+     printf '%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$msg" >> .crew/.autoclear.log 2>/dev/null
+  then
+    return 0
+  fi
+  echo "context-watch: $msg" >&2
+}
+
+cw_run_auto_clear() {
+  local err rc
+  # Stdout is forwarded, not discarded: `method notify` (and a `sendkeys`
+  # decline that falls back to it) is the ONE real, non-dry-run path that
+  # writes anything there -- a single line of JSON, `{"systemMessage": ...}`
+  # -- and this hook never writes to its OWN stdout on any other path, so
+  # there is nothing here for it to collide with. Every other auto-clear
+  # path (a refusal, a tmux/xdotool/sendkeys send) still writes nothing to
+  # stdout, exactly as before; only `notify`'s message is new here.
+  #
+  # Review (Codex FIX|context-watch.sh:~103): this used to capture stdout
+  # through a `mktemp` file and, ONLY when mktemp failed, redirect that same
+  # stdout to /dev/null -- silently dropping the notify JSON on the one path
+  # where mktemp is unavailable. That was also unrecoverable: auto-clear.sh
+  # had already claimed the one-per-session SENT_MARKER inside that same
+  # call, so a retry would find its attempt already spent and refuse before
+  # printing anything again. The fix removes the mktemp dependency (and
+  # therefore its failure mode) entirely: fd 3 holds this hook's own real
+  # stdout before auto-clear.sh's fd 1 is temporarily aimed at fd 2's
+  # capture pipe by `2>&1`, then handed back to fd 1 by `1>&3` -- so
+  # auto-clear.sh's stdout streams straight through to wherever THIS
+  # process's stdout already goes (unconditionally, not behind a
+  # mktemp-shaped maybe), and only its stderr lands in $err.
+  exec 3>&1
+  err=$(bash "$(dirname "${BASH_SOURCE[0]}")/auto-clear.sh" --root "$PWD" --session "$SESSION_ID" 2>&1 1>&3)
+  rc=$?
+  exec 3>&-
+  if [ "$rc" -ne 0 ] || [ -n "$err" ]; then
+    cw_log_autoclear_trouble "auto-clear exited $rc${err:+ - stderr: $err}"
+  fi
+}
+
+# `.crew/`'s existence decides whether this hook does ANYTHING at all, so it
+# is checked BEFORE resolving python, not after -- a non-crew repository must
+# not pay for spinning up an interpreter (or, before the WindowsApps fix
+# below, for launching a stub) to run a hook that was always going to exit 0.
 #
 # The JSON payload's own "cwd" -- NOT $CLAUDE_PROJECT_DIR -- is still the
 # PRIMARY source, restoring the priority order this hook always used: a crew
@@ -46,13 +152,33 @@ case "$INPUT" in *'"stop_hook_active": true'*|*'"stop_hook_active":true'*) exit 
 # do better at this point in the script.
 CWD_RAW=$(printf '%s' "$INPUT" | grep -o '"cwd"[[:space:]]*:[[:space:]]*"[^"]*"' | sed -E 's/.*:[[:space:]]*"([^"]*)"/\1/')
 cd "${CWD_RAW:-${CLAUDE_PROJECT_DIR:-.}}" 2>/dev/null || exit 0
+# crew 1.0 F4 reachability fix: this gate is `.crew/` the DIRECTORY, not
+# `.crew/config.json` -- so the forced-continuation handover to auto-clear.sh
+# just below is never blocked purely by a repo lacking a config.json, which
+# would otherwise stand this hook down before auto-clear's own (now equally
+# directory-gated) logic ever got a chance to run. See CONFIG.md sec 14.
+[ -d .crew ] || exit 0
+
+if [ "$STOP_ACTIVE" = 1 ]; then
+  if [ -f "$MARKER" ]; then
+    cw_run_auto_clear
+  fi
+  exit 0
+fi
+
+# From here down: this hook's OWN context-window measurement and nagging --
+# as distinct from the auto-clear handover above, which needed only `.crew/`
+# -- still requires a fully initialised crew repo. Unchanged from before F4:
+# a `.crew/` directory with no config.json gets no warnings and writes no
+# marker, exactly as a repo that never ran `/crew:init` always has.
 [ -f .crew/config.json ] || exit 0
 
-# Loop safety, layer 2: once-per-session, cleared by handoff-read.sh at the
-# next SessionStart. Owned entirely by the REAL over-threshold nag further
-# down this file -- the no-python branch immediately below does NOT read or
-# write this, on purpose; see its own header comment for why.
-MARKER=".crew/.handoff-requested"
+# Loop safety, layer 2: once per session per threshold crossing ($MARKER,
+# keyed above), cleared by handoff-read.sh at this session's next
+# SessionStart and re-armed below when a trustworthy reading drops back under
+# the threshold. Owned entirely by the REAL over-threshold nag further down
+# this file -- the no-python branch immediately below does NOT read or write
+# it, on purpose; see its own header comment for why.
 
 # `crew_py_strict`, NOT `crew_py`. `crew_py`'s bare `command -v` accepts the
 # Windows Store App Execution Alias stub (a real, executable file that
@@ -147,6 +273,14 @@ fi
 
 read_json() { "$PY" -c 'import sys,json;d=json.load(sys.stdin);print(d.get(sys.argv[1],""))' "$1" <<< "$INPUT" 2>/dev/null; }
 TRANSCRIPT=$(read_json transcript_path)
+# The properly-parsed id wins over the grep above for what is RECORDED in the
+# marker; the key is recomputed from it so the two can never name different
+# files.
+PARSED_SESSION=$(read_json session_id | tr -d '\r')
+if [ -n "$PARSED_SESSION" ]; then
+  SESSION_ID="$PARSED_SESSION"
+  session_markers "$SESSION_ID"
+fi
 STOP_HOOK_ACTIVE=$(read_json stop_hook_active)
 [ -f "$TRANSCRIPT" ] || exit 0
 
@@ -216,15 +350,6 @@ fi
 read -r WARN_AT BUDGET HANDOFF ENABLED AUTO_WRAP_UP RESERVE <<< "$CFG"
 [ "$ENABLED" = "false" ] && exit 0
 
-if [ -f "$MARKER" ]; then
-  # The nag already happened. This is the turn on which the handoff may have
-  # just been written, which is the only moment auto-clear is interested in.
-  # It is off unless context.autoClear.enabled is true, and it decides for
-  # itself whether the note is complete enough to act on.
-  bash "$(dirname "${BASH_SOURCE[0]}")/auto-clear.sh" 2>/dev/null
-  exit 0
-fi
-
 # Read the ACTUAL window occupancy, not a guess at it.
 #
 # Every assistant turn in the transcript carries message.usage, and the last one
@@ -264,7 +389,11 @@ WINDOWS = (
 TIERS = (200_000, 500_000, 1_000_000, 2_000_000)
 
 SIDECHAIN = re.compile(r'"isSidechain"\s*:\s*true')
+# A compaction writes a boundary record; a usage record from before it
+# describes a window that no longer exists. See `trusted` below.
+BOUNDARY = re.compile(r'"compact_boundary"|"isCompactSummary"\s*:\s*true')
 last, model, peak, main_bytes = None, "", 0, 0
+last_at, boundary_at, lineno = -1, -1, 0
 try:
     with open(path, encoding="utf-8", errors="replace") as fh:
         for line in fh:
@@ -279,7 +408,10 @@ try:
             # count them either.
             if SIDECHAIN.search(line):
                 continue
+            lineno += 1
             main_bytes += len(line.encode("utf-8")) + 1
+            if BOUNDARY.search(line):
+                boundary_at = lineno
             if '"usage"' not in line:
                 continue
             try:
@@ -290,7 +422,7 @@ try:
             usage = msg.get("usage")
             if not isinstance(usage, dict) or "cache_read_input_tokens" not in usage:
                 continue
-            last = usage
+            last, last_at = usage, lineno
             if msg.get("model") and not msg["model"].startswith("<"):
                 model = msg["model"]
             peak = max(peak, usage.get("input_tokens", 0)
@@ -308,9 +440,10 @@ else:
     used, source = int(main_bytes / 4 * 0.75), "estimated"
 
 if configured > 0:
-    budget, how = configured, "configured"
+    budget, how, known = configured, "configured", True
 else:
     low = model.lower()
+    known = any(key in low for key, _ in WINDOWS)
     budget = next((w for key, w in WINDOWS if key in low), 200_000)
     how = f"auto:{model or 'unknown'}"
 
@@ -351,22 +484,57 @@ threshold = int(threshold)
 
 over = 1 if budget > 0 and used >= threshold else 0
 pct = int(used / budget * 100) if budget > 0 else 0
+
+# Whether this reading may license a /clear. It still drives the nag either
+# way -- asking for a handoff on a doubtful reading costs a paragraph -- but
+# auto-clear acts only on a reading that is a measurement of THIS window.
+# Unknown is its own value here, never folded into "fine".
+if source != "exact":
+    why = "estimated-from-transcript-size"
+elif not known:
+    why = "unknown-window"
+elif boundary_at > last_at:
+    why = "stale-reading-before-compaction"
+elif used <= 0 or used > budget:
+    why = "implausible-reading"
+else:
+    why = "measured"
+trusted = 1 if why == "measured" else 0
 fmt = lambda n: format(int(n), ",d")  # noqa: E731  pylint: disable=unnecessary-lambda-assignment
 print(used, source, budget, how, over, pct, fmt(used), fmt(budget),
       fmt(max(0, budget - used)), fmt(threshold), int(warn_at * 100),
-      fmt(reserve))
+      fmt(reserve), trusted, why)
 PY
 )
 [ -z "$READ" ] && exit 0
-read -r USED SOURCE BUDGET HOW OVER PCT_H USED_H BUDGET_H REMAIN_H THRESH_H WARN_PCT RESERVE_H <<< "$READ"
+read -r USED SOURCE BUDGET HOW OVER PCT_H USED_H BUDGET_H REMAIN_H THRESH_H WARN_PCT RESERVE_H TRUSTED WHY <<< "$READ"
 [ -z "$USED" ] || [ -z "$BUDGET" ] && exit 0
+
+if [ -f "$MARKER" ]; then
+  if [ "${OVER:-0}" -eq 0 ] && [ "$SOURCE" = "exact" ]; then
+    # A measured reading back under the threshold means the window shrank
+    # (a compaction) since the wrap-up: that crossing is over, so re-arm for
+    # the next one. Measured only -- an estimate must not re-arm a nag.
+    rm -f "$MARKER" "$SENT_MARKER"
+    exit 0
+  fi
+  # This crossing was already asked about. Never block twice for it; the
+  # handoff may have been written since, which is all auto-clear wants to
+  # know. It is off unless this machine opted in, and it decides for itself
+  # whether the note and the reading are good enough to act on.
+  cw_run_auto_clear
+  exit 0
+fi
 [ "${OVER:-0}" -eq 0 ] && exit 0
 
-# Claim the once-per-session gate ATOMICALLY. Both flavours are registered for
+# Claim the once-per-crossing gate ATOMICALLY. Both flavours are registered for
 # Stop and, on Windows with Git Bash installed, both actually run - a
 # test-then-touch would let both pass the check and emit the same warning
-# twice. noclobber makes the create fail for whichever loses.
-( set -o noclobber; : > "$MARKER" ) 2>/dev/null || exit 0
+# twice. noclobber makes the create fail for whichever loses. The marker
+# records WHICH session asked and the reading that caused it, so auto-clear
+# can refuse a reading nobody should trust.
+MARKER_JSON=$("$PY" -c 'import json,sys,time; print(json.dumps({"session_id": sys.argv[1], "requested_at": time.time(), "used": int(sys.argv[2]), "budget": int(sys.argv[3]), "source": sys.argv[4], "trusted": sys.argv[5] == "1", "why": sys.argv[6]}))' "$SESSION_ID" "$USED" "$BUDGET" "$SOURCE" "$TRUSTED" "$WHY" 2>/dev/null)
+( set -o noclobber; printf '%s\n' "$MARKER_JSON" > "$MARKER" ) 2>/dev/null || exit 0
 
 bash "$(dirname "$0")/notify.sh" waiting "context ${PCT_H}% - writing handoff" 2>/dev/null
 

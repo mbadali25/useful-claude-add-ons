@@ -141,27 +141,64 @@ liar_stub() {
 # and this probe succeeds. This is the 2026-09-24 regression: reproduced
 # against a real PreToolUse Write payload where a working Python 3.14 was
 # discarded untested because its path matched WindowsApps.
+# A hand-written canned probe answer (main's original shape here) cannot
+# ALSO run vault_guard.py when the guard launches it a second time as the
+# resolved interpreter - it would print the same canned probe text
+# regardless of the arguments it was actually given, so the guard's own
+# exit code would be the stub's hard-coded 0, not a real judgement. `exec
+# "$PY" "$@"` makes it behave as a genuinely working interpreter no matter
+# how it is invoked (probed with `-c ...`, or launched against
+# vault_guard.py).
+#
+# TWO path components matter, and this fixture must exercise BOTH, because
+# the 2026-09-24 regression removed TWO separate rejects, not one (see
+# role-write-guard.sh's own resolver comment: "used to sit here on both
+# $candidate above and $real here"). Before 2026-09-24 this called with a
+# label like "WindowsAppsReal", NOT a directory literally named
+# WindowsApps - "WindowsAppsReal" happens to satisfy a bare substring reject
+# too (it contains "WindowsApps"), so the gap was invisible to a substring
+# sabotage test, but a reintroduced `*/WindowsApps/*` EXACT PATH-SEGMENT
+# reject - which is the shape role-write-guard.sh's own comment describes
+# as the one actually removed - does not match "WindowsAppsReal" as a
+# component, and would have passed the old fixture untested. Separately,
+# `exec "$PY" "$@"` alone forwards to THIS TEST'S real system interpreter,
+# whose own `sys.executable` is never under WindowsApps either - so a
+# reintroduced reject on the RESOLVED ("real") path, not just the candidate
+# one, was equally untested. Fixed by making BOTH literal: the alias lives
+# under a directory named exactly WindowsApps, and it execs a COPY (not a
+# symlink, which resolves straight through to wherever this test's real
+# python actually lives) of the interpreter placed under a SECOND directory
+# that also carries a literal WindowsApps segment - modelling the genuine
+# Store shape where the alias forwards to another WindowsApps-rooted path.
 real_windowsapps_stub() {
-  local dir="$work/$1" name="$2"
-  mkdir -p "$dir"
-  cat > "$dir/$name" <<STUB
+  local label="$1" name="$2"
+  local alias_dir="$work/$label/WindowsApps"
+  local real_dir_path="$work/$label-target/WindowsApps/PythonSoftwareFoundation.Python.3.x_hash"
+  mkdir -p "$alias_dir" "$real_dir_path"
+  cp "$PY" "$real_dir_path/python.exe"
+  chmod 755 "$real_dir_path/python.exe"
+  cat > "$alias_dir/$name" <<STUB
 #!/bin/sh
-printf 'vault-guard-python:%s' "$dir/$name"
-exit 0
+exec "$real_dir_path/python.exe" "\$@"
 STUB
-  chmod 755 "$dir/$name"
-  printf '%s' "$dir"
+  chmod 755 "$alias_dir/$name"
+  printf '%s' "$alias_dir"
 }
 
 # ghost-python: answers the interpreter probe correctly but names an
-# executable that does not exist, so resolution succeeds and the LAUNCH then
-# fails. This is what the wrapper's exit-status check exists for; under the
-# old `exec` form it was a bare numeric exit.
+# executable that cannot run the guard, so resolution succeeds and the LAUNCH
+# then fails. This is what the wrapper's exit-status check exists for; under
+# the old `exec` form it was a bare numeric exit. The named executable EXISTS:
+# since the crew 1.0 burn-in (FAIL 3) the resolver refuses a sys.executable
+# that does not, so a nonexistent one no longer gets as far as a launch -
+# _test/test_python_probe_proof.py pins that refusal.
 ghost_dir="$work/ghost"
 mkdir -p "$ghost_dir"
-cat > "$ghost_dir/python3" <<'STUB'
+printf '#!/bin/sh\nexit 7\n' > "$ghost_dir/not-an-interpreter"
+chmod 755 "$ghost_dir/not-an-interpreter"
+cat > "$ghost_dir/python3" <<STUB
 #!/bin/sh
-printf 'vault-guard-python:%s' "/nonexistent/python-that-was-deleted"
+printf 'vault-guard-python:3:12:cpython:%s' "$ghost_dir/not-an-interpreter"
 exit 0
 STUB
 chmod 755 "$ghost_dir/python3"
@@ -330,7 +367,7 @@ echo "== vault-guard.sh: a working interpreter under a WindowsApps path is ACCEP
 # The regression this fixes: a genuine Store Python install answers the probe
 # correctly, but a resolver that also rejects on a WindowsApps path substring
 # throws it out anyway. Only the probe's own failure may reject a candidate.
-real_winapps_dir="$(real_windowsapps_stub WindowsAppsReal python3)"
+real_winapps_dir="$(real_windowsapps_stub winapps-case python3)"
 run_sh "$real_winapps_dir:$TOOLS" "$bad_canvas_payload"
 check_exit "a working interpreter under WindowsApps still blocks the write" 2
 check_err_has "and the violation is named on stderr" "DOES NOT PARSE"
@@ -339,25 +376,28 @@ check_err_lacks "and it is NOT rejected as an unusable candidate" \
 
 echo "== vault-guard.sh: a real interpreter behind a stub still wins =="
 
-# Name order, not PATH order: bash's `command -v python3` takes the FIRST
-# python3 and then moves to the NEXT NAME. So a real `python` after a stub
-# `python3` is found...
+# A real `python` after a stub `python3` is found...
 mixed_real="$(real_dir mixedreal python)"
 run_sh "$store_dir:$mixed_real:$TOOLS" "$bad_canvas_payload"
 check_exit "stub python3 + real python: the real one runs and blocks" 2
 check_err_has "and the violation is named" "DOES NOT PARSE"
 
-# ...while a second python3 further down PATH is NOT, because `command -v`
-# never searches the same name twice. That is bash's behaviour, mirrored on
-# purpose so the two shell flavours cannot reach different verdicts on one
-# machine (crew shipped that divergence once). It is a limitation, and the
-# thing that makes it acceptable is that it is LOUD.
+# ...and so, since the crew 1.0 Windows burn-in, is a second python3 further
+# down PATH. The resolver walks EVERY match of a name (`type -aP`), and
+# vault-guard.ps1 walks the same order, so the two flavours still reach one
+# verdict. This case used to assert a stand-down: on a host whose every name
+# hits WindowsApps first, that rule never reached the real python.exe.
 shadowed_real="$(real_dir shadowedreal python3)"
 run_sh "$store_dir:$shadowed_real:$TOOLS" "$bad_canvas_payload"
-check_exit "stub python3 shadowing a real python3: stands down" 0
-check_err_nonempty "and says so rather than failing silently"
-check_err_has "and names it as an unusable candidate, not as absence" \
-  "no candidate is a usable interpreter"
+check_exit "stub python3 ahead of a real python3: the real one runs and blocks" 2
+check_err_has "and the violation is named" "DOES NOT PARSE"
+
+# A WindowsApps alias that WORKS (Python installed behind it) is an
+# interpreter. Where it lives never decides; the probe does.
+working_alias="$(real_dir aliases/WindowsApps python3)"
+run_sh "$working_alias:$TOOLS" "$bad_canvas_payload"
+check_exit "a working WindowsApps alias is used, and blocks" 2
+check_err_has "and the violation is named" "DOES NOT PARSE"
 
 echo "== vault-guard.sh: nothing named python at all =="
 
@@ -651,7 +691,17 @@ diff -q "$vg_pristine" "$DIR/vault_guard.py" >/dev/null \
 # =============================================================== vault-guard.ps1
 PWSH="$(command -v pwsh 2>/dev/null || true)"
 if [ -n "$PWSH" ]; then
-  PWSH_DIR="$(dirname "$PWSH")"
+  # Isolated, not $(dirname "$PWSH") directly: on GitHub's ubuntu-latest image
+  # pwsh lives at /usr/bin/pwsh, which is also where the system's real
+  # python3 lives - appending that whole directory to a fixture PATH meant to
+  # simulate "no usable interpreter" leaks a real, working python3 into every
+  # such case, so the guard finds it, runs for real, and every must-refuse
+  # case turns into a false PASS-through instead of the expected stand-down.
+  # A directory holding nothing but a symlink to pwsh keeps the fixture PATH
+  # able to launch pwsh without also handing it a real interpreter.
+  PWSH_DIR="$work/pwsh-only"
+  mkdir -p "$PWSH_DIR"
+  ln -sf "$PWSH" "$PWSH_DIR/pwsh"
   echo "== vault-guard.ps1: the same three verdicts, PowerShell flavour =="
 
   run_ps1 "$realpath_dir:$TOOLS" "$bad_canvas_payload"
@@ -679,6 +729,15 @@ if [ -n "$PWSH" ]; then
   check_exit "ps1: a working interpreter under WindowsApps still blocks" 2
   check_err_has "ps1: and the violation is named" "DOES NOT PARSE"
 
+  # The two crew 1.0 burn-in cases, same verdicts as the .sh above: a
+  # second python3 behind a stub is reached, and a WORKING WindowsApps alias
+  # is used rather than skipped by its path.
+  run_ps1 "$store_dir:$shadowed_real:$TOOLS" "$bad_canvas_payload"
+  check_exit "ps1: stub python3 ahead of a real python3: the real one blocks" 2
+
+  run_ps1 "$working_alias:$TOOLS" "$bad_canvas_payload"
+  check_exit "ps1: a working WindowsApps alias is used, and blocks" 2
+
   run_ps1 "$TOOLS" "$bad_canvas_payload"
   check_exit "ps1: nothing named python: stand down" 0
   check_err_has "ps1: and the ABSENCE message is the distinct one" \
@@ -688,10 +747,10 @@ else
   # test_bridge_capture_sh.sh's twin of this branch: run-tests.sh's
   # `sh_suite` folds this whole file into one PASS on a clean exit and only
   # shows this script's OWN stdout when it FAILS, so a host with no pwsh
-  # silently never runs any of the 6 .ps1 cases below and the parent's
+  # silently never runs any of the 9 .ps1 cases below and the parent's
   # RESULT line reads no differently than a run where they all passed.
   SKIP=$((SKIP+1))
-  echo "SKIP: vault-guard.ps1 - no pwsh on PATH (7 cases not run)"
+  echo "SKIP: vault-guard.ps1 - no pwsh on PATH (9 cases not run)"
 fi
 
 echo

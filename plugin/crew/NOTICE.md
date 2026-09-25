@@ -71,6 +71,59 @@ in the upstream-reproduction list.
 
 ### MIT License
 
+Full text below, under "MIT License" after the next section — identical for
+both, reproduced once rather than twice.
+
+---
+
+## `plugin/crew/skills/crew-brainstorm/`, `crew-plan/`, `crew-execute/`
+
+Adapted from the `brainstorming`, `writing-plans` and `executing-plans` skills
+in **superpowers** by Jesse Vincent.
+
+- **Upstream:** <https://github.com/obra/superpowers>
+- **Taken from:** the `superpowers` plugin, version `6.4.1`, at
+  `skills/brainstorming/SKILL.md`, `skills/writing-plans/SKILL.md` and
+  `skills/executing-plans/SKILL.md` — a different upstream version than
+  `crew-debugging` above (`6.3.0`), because that is the version installed on
+  this machine when each was adapted; the licence text is identical between
+  the two (`diff` confirmed).
+- **Licence:** MIT
+
+**What was copied:** no file verbatim. Each of these three, unlike
+`crew-debugging`, is a condensed rewrite, not a copy with an attribution
+header added — the ≤120-line budget crew 1.0 sets for a vendored skill
+(`docs/review/04-redesign.md`) is smaller than any of the three upstream
+files (285, 192 and 373 lines respectively), so reproducing the wording
+intact and fitting the budget were not both possible. What travelled is the
+**method**: one question per message with recommendation-first options
+(`crew-brainstorm`), task right-sizing and the no-placeholder list
+(`crew-plan`), and the TDD-per-step discipline with the four stop conditions
+(`crew-execute`) — reworded to fit each file's budget and cited as upstream's
+in the file's own attribution paragraph, not claimed as original.
+
+**What crew changed, beyond length:** each skill drops upstream's own
+supporting apparatus in favour of crew's existing machinery, named inline in
+each file rather than restated here — `crew-brainstorm` collapses upstream's
+three request classes (spike/bounded/architectural) into one, since crew
+already splits light from full work at the command layer (`/crew:fix` versus
+`/crew:brainstorm`); `crew-plan` cites the spec by path instead of copying its
+constraints into the plan header, and checks each step's Files: against the
+spec's Touch globs, which upstream has no equivalent of; `crew-execute` defers
+to crew's scope-base record and changed-file print instead of keeping its own
+progress ledger file.
+
+**What was deliberately not copied:** upstream's Visual Companion section
+(`brainstorming/SKILL.md`, no browser-based mockup tool in crew), the
+Execution Handoff prompt for choosing subagent-driven vs. inline execution
+(`writing-plans/SKILL.md` — crew's session always executes inline, per
+`docs/review/04-redesign.md`'s "the interactive Claude session implements"
+decision), and the worktree/ledger setup machinery
+(`executing-plans/SKILL.md` — crew's `scope_base.py` record serves the same
+purpose without a second directory of state).
+
+### MIT License
+
 ```
 MIT License
 

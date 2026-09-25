@@ -477,6 +477,8 @@ py_suite "obsidian_common: multi-vault resolution" test_obsidian_common.py
 py_suite "ports, collisions, identity, vault_ops CLI" test_vault_ops.py
 py_suite "profiles: the three sets, detection, the 50k line, split breakage" test_vault_profiles.py
 py_suite "the four bridge states, told apart" test_bridge_states.py
+py_suite "adopt roles, import, recall, gardener bounds, schedule units, per-host capture" \
+  test_memory_ops.py
 
 echo "== the guard WRAPPERS: python resolution (own PATH, own HOME) =="
 
@@ -515,6 +517,8 @@ sh_suite "bridge-status.sh/.ps1 + vault-capture.sh/.ps1: stubs, absence, must-ru
   test_bridge_capture_sh.sh
 sh_suite "the three .ps1 probes under \$PSNativeCommandArgumentPassing='Legacy'" \
   test_ps1_legacy_args.sh
+py_suite "all six probes: proof of Python 3.8+, bounded, process tree killed" \
+  test_python_probe_proof.py
 
 # --- the PowerShell flavour guard ------------------------------------------
 # hooks.json registers every event TWICE, once per flavour. On a host with
@@ -533,4 +537,12 @@ esac
 
 echo
 echo "RESULT: $PASS passed, $FAIL failed, $SKIP skipped"
-[ "$FAIL" -eq 0 ]
+[ "$FAIL" -eq 0 ] || exit 1
+# A missing pwsh degrades some sub-cases to SKIP without failing anything -
+# that used to exit 0 here, and the Stop gate (and any CI step reading this
+# script's exit code) reads 0 as PASS whether or not every check actually
+# ran. Exit 77 instead, this repo's SKIP convention (render.sh does the
+# same for a missing mmdc): "some of this suite did not run" must never
+# read as "this suite ran and passed".
+[ "$SKIP" -eq 0 ] || exit 77
+exit 0

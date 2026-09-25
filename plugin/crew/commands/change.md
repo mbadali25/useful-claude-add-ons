@@ -90,8 +90,8 @@ Use the id the backend returned. For SDP that is `CHG-<id>`, in crew's usual
 `LETTERS-digits` shape — the bare number the desk returns is invisible to the
 rest of crew. For files mode, the next free `CHG-####`.
 
-**The id exists before the work does**, for the same reasons `/crew:ticket`
-gives: a change filed after the change is a record of the outcome, not of the
+**The id exists before the work does**, for the same reasons `/crew:brainstorm`
+mints one first: a change filed after the change is a record of the outcome, not of the
 ask.
 
 ## 2. `status <id>`

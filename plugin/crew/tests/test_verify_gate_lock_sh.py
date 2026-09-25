@@ -67,7 +67,8 @@ pytestmark = pytest.mark.skipif(_BASH is None, reason="needs bash")
 
 def _git(root, *args):
     subprocess.run(("git",) + args, cwd=root, check=True,
-                   capture_output=True, text=True, stdin=subprocess.DEVNULL)
+                   capture_output=True, text=True, stdin=subprocess.DEVNULL,
+                   timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
 
 
 def _repo(tmp_path):
@@ -107,11 +108,11 @@ def _seed_lock(root, age_seconds):
 
 
 def _run_verify(root):
-    return subprocess.run(
+    return crew_fixtures.run_gate(
         [_BASH, _VERIFY_SH],
         input=json.dumps({}), cwd=str(root),
         env=dict(os.environ, CLAUDE_PROJECT_DIR=str(root)),
-        capture_output=True, text=True, check=False,
+        capture_output=True, text=True, check=False, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S,
     )
 
 

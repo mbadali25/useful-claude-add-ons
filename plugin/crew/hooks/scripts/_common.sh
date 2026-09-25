@@ -42,17 +42,76 @@ crew_strip_cr() { printf '%s' "$1" | tr -d '\r'; }
 
 # Resolve a usable Python. Echoes nothing when there is none.
 #
-# DELIBERATELY NOT hardened against a WindowsApps App Execution Alias. Most
-# callers of this are mitigated downstream -- they check the status of the
-# python they invoked and fail closed with a named message (verify-gate.sh,
-# promote-gate.sh) -- and widening this one would change the behaviour of
-# every hook that calls it for a bug that only matters where the caller
-# `exec`s the interpreter and has nothing left to check afterwards. Those
-# callers use `crew_py_strict` below instead.
+# Prefers the first PATH match of python3/python/py -- EVERY match, not the
+# first per name -- that actually RUNS (`-c pass`, exit 0, bounded at 3s with
+# its process tree killed, exactly as `crew_py_strict` bounds its probe). The
+# Windows burn-in (FAIL 3) had a failing WindowsApps python3 ahead of a real
+# one: the first-match version handed hooks the stub, so handoff-write.sh
+# read no payload fields, while the PowerShell twin found the real python.
+#
+# When NOTHING runs it still returns the first match, as it always did,
+# rather than nothing. That is the fail-closed half of its contract: callers
+# like promote-gate.sh and verify-gate.sh invoke what this returns, check the
+# status and refuse with a named message, and "no python at all" means
+# something else to them (promote-gate.sh stands down). Returning nothing
+# for a broken stub would turn a refusal into a stand-down. Callers that
+# `exec` the interpreter and have nothing left to check use `crew_py_strict`.
 crew_py() {
-  command -v python3 2>/dev/null && return 0
-  command -v python  2>/dev/null && return 0
-  command -v py      2>/dev/null && return 0
+  # NOT memoized. An earlier version of this function cached its result in
+  # process-global variables, but every call site invokes it as
+  # `PY=$(crew_py)` -- a `$(...)` command substitution runs the function in
+  # a SUBSHELL, so any variable it set was discarded the moment that
+  # subshell exited and the next call started from nothing regardless. The
+  # cache never once survived a caller; reported 2026-09-24 and removed
+  # rather than repaired, because making it real would mean rewriting every
+  # `$(crew_py...)` call site across this directory to avoid a subshell --
+  # a change to the whole hook layer to speed up a function nothing here
+  # calls more than once or twice per process anyway.
+  local candidate first=""
+  # An OVERALL deadline on top of each candidate's own 3s probe bound: a
+  # PATH with several hung candidates would otherwise cost 3s EACH, adding
+  # up past the shortest hook timeout that calls this (bridge-status.ps1's
+  # twin, 10s) even though every individual probe is bounded. Kept well
+  # inside that: the walk gives up on the probing (falling back to the
+  # first PATH match, as it always did when nothing runs) once this much of
+  # the budget is spent.
+  local deadline=$((SECONDS + 8))
+  while IFS= read -r candidate; do
+    [ -n "$candidate" ] || continue
+    [ -n "$first" ] || first=$candidate
+    # The remaining budget, not a flat 3s, bounds THIS candidate's probe: a
+    # fixed 3s watchdog checked only before launch can still overrun the
+    # deadline by up to 3s once it is entered, which on a run of several
+    # near-8s-but-under candidates followed by one hung one can overrun both
+    # this deadline and the 10s hook timeout it exists to stay inside.
+    local remaining=$((deadline - SECONDS))
+    [ "$remaining" -gt 0 ] || break
+    local probe_timeout=$remaining
+    [ "$probe_timeout" -le 3 ] || probe_timeout=3
+    (
+      set -m
+      "$candidate" -c pass </dev/null >/dev/null 2>&1 &
+      pid=$!
+      (
+        sleep "$probe_timeout" 2>/dev/null || exit 0
+        if [ -r "/proc/$pid/winpid" ] && read -r winpid < "/proc/$pid/winpid"; then
+          MSYS2_ARG_CONV_EXCL='*' taskkill /F /T /PID "$winpid"
+        fi
+        kill -9 -- "-$pid" || kill -9 "$pid"
+      ) </dev/null >/dev/null 2>&1 &
+      watchdog=$!
+      wait "$pid"
+      status=$?
+      kill -9 -- "-$watchdog" "-$pid" 2>/dev/null
+      exit "$status"
+    ) || continue
+    printf '%s\n' "$candidate"
+    return 0
+  done < <(type -ap python3 python py 2>/dev/null)
+  if [ -n "$first" ]; then
+    printf '%s\n' "$first"
+    return 0
+  fi
   return 1
 }
 
@@ -65,8 +124,8 @@ crew_py() {
 # file, so `command -v python3` resolves it, the non-empty test passes, and
 # the stub gets run -- producing no output and a nonzero status that a caller
 # which already `exec`ed has no way left to report. Reported 2026-09-19
-# against role-write-guard.sh and again 2026-09-22 against pm-pulse.sh, where
-# it cost the PM's findings, blocking ones included, in total silence.
+# against role-write-guard.sh and again 2026-09-22 against the since-deleted
+# PM pulse hook, where it cost blocking findings in total silence.
 #
 # The probe, not the path, is what decides: a candidate is only accepted once
 # it has run `print(sys.executable)` and handed back a path. `sys.executable`
@@ -76,19 +135,101 @@ crew_py() {
 # BYTE-FOR-BYTE the body of `_resolve_role_write_python` in
 # role-write-guard.sh, which keeps its own copy for the reason its header
 # records (that hook is the one that can BLOCK a tool call, and its test
-# suite patches that file textually). `tests/test_pm_pulse_bash_resolver.py`
+# suite patches that file textually). `tests/test_context_watch_python_resolver.py`
 # asserts the two copies still agree -- a hand-copy with no guard is this
 # repository's most repeated defect.
 crew_py_strict() {
-  for name in python3 python py; do
-    candidate=$(command -v "$name" 2>/dev/null) || continue
-    real=$("$candidate" -c 'import sys; print(sys.executable)' 2>/dev/null) || continue
+  # NOT memoized. An earlier version of this function cached its result in
+  # process-global variables, but every call site invokes it as
+  # `PY=$(crew_py_strict)` -- a `$(...)` command substitution runs the
+  # function in a SUBSHELL, so any variable it set was discarded the moment
+  # that subshell exited and verify-gate.sh's second call (PY, then
+  # SHIM_PY) started from nothing regardless of the cache. Reported
+  # 2026-09-24 and removed rather than repaired: making it real would mean
+  # rewriting every `$(crew_py_strict)` call site in this directory to avoid
+  # a subshell, for a saving that never actually happened.
+  # EVERY PATH match of every name, in order -- `type -ap` lists them all,
+  # where `command -v` stops at the first. Windows burn-in 2026-09-23 (FAIL
+  # 3): a broken WindowsApps python3 ahead of a real python3 made this
+  # function give up while role-write-guard.ps1's Resolve-CrewPython, which
+  # tries every match, found the real one -- so the two flavours disagreed
+  # about whether python existed, and notify.sh failed open and sent a ping
+  # its PowerShell twin then sent again.
+  #
+  # An OVERALL deadline on top of each candidate's own 3s probe bound: a
+  # PATH with several hung candidates would otherwise cost 3s EACH, adding
+  # up past the shortest hook timeout that calls this (bridge-status.ps1's
+  # twin, 10s) even though every individual probe is bounded. Kept well
+  # inside that: the walk gives up and reports "no python" rather than keep
+  # trying once this much of the budget is spent.
+  local _crew_py_strict_deadline=$((SECONDS + 8))
+  while IFS= read -r candidate; do
+    [ -n "$candidate" ] || continue
+    # The remaining budget, not a flat 3s, bounds THIS candidate's probe: a
+    # fixed 3s watchdog checked only before launch can still overrun the
+    # deadline by up to 3s once it is entered, which on a run of several
+    # near-8s-but-under candidates followed by one hung one can overrun both
+    # this deadline and the 10s hook timeout it exists to stay inside.
+    local _crew_py_strict_remaining=$((_crew_py_strict_deadline - SECONDS))
+    [ "$_crew_py_strict_remaining" -gt 0 ] || break
+    local _crew_py_strict_probe_timeout=$_crew_py_strict_remaining
+    [ "$_crew_py_strict_probe_timeout" -le 3 ] || _crew_py_strict_probe_timeout=3
+    # BOUNDED, and the whole process tree dies with it. A candidate that
+    # never exits would otherwise hang the hook forever, and one that spawns
+    # a child holding stdout (a py.exe-style launcher) would hang this `$()`
+    # even after the candidate itself was killed. `timeout` is absent on Git
+    # Bash, so a watchdog kills at 3s instead; `wait` returns the moment the
+    # candidate exits, so a working interpreter costs no added latency.
+    # `set -m` puts the candidate in its own process group, which the kill
+    # takes whole -- on a timeout, and after a normal exit too, for any child
+    # it left behind. Under MSYS a native child is outside that group, so
+    # `taskkill /T` takes the Windows tree when /proc exposes its winpid
+    # (MODELLED, not observed on a Windows host). No `sleep` at all means no
+    # watchdog: unbounded, as before, rather than killing every candidate.
+    # stdin is /dev/null: the candidate must not read the hook payload or
+    # this loop's own input.
+    real=$(
+      set -m
+      "$candidate" -c 'import sys; sys.version_info>=(3,8) and print(sys.executable)' </dev/null 2>/dev/null &
+      pid=$!
+      (
+        sleep "$_crew_py_strict_probe_timeout" 2>/dev/null || exit 0
+        if [ -r "/proc/$pid/winpid" ] && read -r winpid < "/proc/$pid/winpid"; then
+          MSYS2_ARG_CONV_EXCL='*' taskkill /F /T /PID "$winpid"
+        fi
+        kill -9 -- "-$pid" || kill -9 "$pid"
+      ) </dev/null >/dev/null 2>&1 &
+      watchdog=$!
+      wait "$pid"
+      status=$?
+      kill -9 -- "-$watchdog" "-$pid" 2>/dev/null
+      exit "$status"
+    ) || continue
     # A trailing CR must not survive into the `-x` test below: a real native
     # Windows interpreter run under Git Bash can leave one on its stdout, and
     # `-x "$real"` on a path with a stray \r appended never matches an actual
     # file, rejecting every real interpreter on that combination.
     real=$(printf '%s' "$real" | tr -d '\r')
     [ -n "$real" ] || continue
+    # The `sys.version_info>=(3,8) and print(...)` guard above is the version
+    # floor: a genuine, working Python 3.7 answers `-c` correctly but prints
+    # NOTHING, so `$real` comes back empty and is rejected right here by the
+    # check above, same as a broken candidate. Reported 2026-09-24: this
+    # function had no version floor at all while role-write-guard.ps1's
+    # Resolve-CrewPython already required >= 3.8, so a host with nothing but
+    # a real Python 3.7 on PATH had the two flavours disagree about whether
+    # python existed at all. Deliberately NOT the .ps1 probe's full
+    # JSON-proof-of-implementation shape (CPython/PyPy, major/minor as a
+    # structured object): that would need the candidate to answer a SECOND,
+    # differently-shaped probe, and dozens of fixtures across this suite are
+    # narrow shell stubs that only ever answer the exact single `-c` string
+    # this function has always sent -- a second probe would reject all of
+    # them regardless of their fixture's own intent (TODO.md's
+    # "crew_py_strict not proving Python 3" entry, closed by this narrower
+    # form). Folding the floor into the SAME `-c` argument costs nothing
+    # extra: a delegating stub falls through to a real interpreter, which
+    # answers correctly either way, and a stub that special-cases the exact
+    # OLD command still matches, since only the printed CONTENT changed.
     # NOT a blanket "reject anything containing WindowsApps" -- that used to
     # sit here (on both $candidate above and $real here) and rejected a
     # genuine Microsoft Store Python install, which runs from EXACTLY that
@@ -124,6 +265,25 @@ crew_py_strict() {
     # that string is RELATIVE, so `-x` on it silently depends on the
     # resolver's own cwd, and any `cd` between here and the caller breaks it
     # -- `-x` on the absolute `/c/...` form does not.
+    #
+    # DECIDED CONTRACT (PM, Windows burn-in FAIL 3/4): this function returns
+    # the interpreter path in the form THIS bash itself execs as "$py" --
+    # POSIX-shaped under Git Bash/MSYS, whatever `sys.executable` printed.
+    # A caller that only does `"$PY" ...` (execs it, bash-to-bash) needs
+    # nothing further; a caller that hands this path to a DIFFERENT
+    # interpreter as DATA -- embedded in a python/pwsh argument, a JSON
+    # payload, a file a python script will `open()` -- must convert it at
+    # THAT boundary with `cygpath -w`, guarded (`command -v cygpath` first;
+    # do nothing if absent, same fail-open shape as the conversion above).
+    # `tests/test_context_watch_python_resolver.py`'s
+    # `test_resolver_accepts_a_crlf_terminated_real_interpreter` asserts the
+    # POSIX-vs-native side of this by asking `_BASH` the same question this
+    # function asks (`command -v cygpath`), not by asking the test's own
+    # python process -- FAIL 3/4 was exactly that asymmetry: bash's own MSYS
+    # runtime finds `cygpath.exe` under its compiled-in `/usr/bin`
+    # regardless of what the PARENT (a native python.exe running pytest)
+    # was given, so the two can disagree about whether cygpath exists at
+    # all on the very host this combination is meant to cover.
     case "$real" in
       [A-Za-z]:\\*|[A-Za-z]:/*)
         if command -v cygpath >/dev/null 2>&1; then
@@ -148,7 +308,7 @@ crew_py_strict() {
     [ -x "$real" ] || continue
     printf '%s\n' "$real"
     return 0
-  done
+  done < <(type -ap python3 python py 2>/dev/null)
   return 1
 }
 

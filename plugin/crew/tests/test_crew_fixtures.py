@@ -7,8 +7,14 @@ later tasks build on them, and so this harness lands with a green pytest run
 instead of "no tests collected" (pytest exit code 5).
 """
 import json
+import os
 import re
+import signal
 import subprocess
+import sys
+import time
+
+import pytest
 
 import context  # noqa: F401  pylint: disable=unused-import
 import crew_fixtures
@@ -17,7 +23,6 @@ SHA_RE = re.compile(r"^[0-9a-f]{7}$")
 
 
 def test_context_puts_script_dirs_on_sys_path():
-    import sys  # pylint: disable=import-outside-toplevel
     assert any(p.endswith("hooks\\scripts") or p.endswith("hooks/scripts")
                for p in sys.path)
     assert any(p.endswith("crew-graph\\scripts")
@@ -161,3 +166,330 @@ def test_git_calls_never_inherit_the_parent_stdin(tmp_path, monkeypatch):
             "a git subprocess.run call is missing stdin=subprocess.DEVNULL "
             f"-- kwargs were: {kwargs}"
         )
+
+
+# --- per-flavour PATH shims (the Windows conversion, driven from Linux) -----
+
+
+@pytest.mark.parametrize("native,posix", [
+    ("C:\\Users\\me\\AppData\\Local\\Temp\\fakebin", "/c/Users/me/AppData/Local/Temp/fakebin"),
+    ("D:/a/b/", "/d/a/b"),
+    ("C:\\x\\y\\\\", "/c/x/y"),
+    ("C:\\", "/c"),
+    ("C:", "/c"),
+    ("/usr/bin", "/usr/bin"),
+    ("relative\\dir", "relative/dir"),
+])
+def test_windows_to_posix_matches_cygpath_shape(native, posix):
+    assert crew_fixtures.windows_to_posix(native) == posix
+
+
+def test_bash_on_windows_gets_a_colon_joined_posix_path():
+    base = "C:\\Windows\\system32;C:\\Program Files\\Tools\\bin;"
+
+    got = crew_fixtures.shell_path("sh", ["C:\\t\\fakebin"], base=base, windows=True,
+                                   cygpath=False)
+
+    assert got == "/c/t/fakebin:/c/Windows/system32:/c/Program Files/Tools/bin"
+
+
+def test_pwsh_on_windows_keeps_a_semicolon_joined_native_path():
+    got = crew_fixtures.shell_path("ps1", ["C:\\t\\fakebin"], base="C:\\Windows;C:\\x",
+                                   windows=True)
+
+    assert got == "C:\\t\\fakebin;C:\\Windows;C:\\x"
+
+
+@pytest.mark.parametrize("flavor", ["sh", "ps1"])
+def test_posix_path_is_colon_joined_and_untouched(flavor):
+    got = crew_fixtures.shell_path(flavor, ["/tmp/fakebin"], base="/usr/bin:/bin", windows=False)
+
+    assert got == "/tmp/fakebin:/usr/bin:/bin"
+
+
+def test_a_cygpath_that_fails_falls_back_to_the_manual_conversion(tmp_path):
+    missing = str(tmp_path / "no-such-cygpath")
+
+    got = crew_fixtures.shell_path("sh", ["E:\\bin"], base="", windows=True, cygpath=missing)
+
+    assert got == "/e/bin"
+
+
+def test_a_windows_shim_gets_a_cmd_twin_the_native_which_can_find(tmp_path):
+    crew_fixtures.write_shim(tmp_path, "xdotool", windows=True)
+
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["xdotool", "xdotool.cmd"]
+    assert (tmp_path / "xdotool").read_bytes().startswith(b"#!/bin/sh\n")
+    assert (tmp_path / "xdotool.cmd").read_bytes() == b"@echo off\r\nexit /b 0\r\n"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="the POSIX branch: chmod is what makes it runnable")
+def test_a_posix_shim_is_executable_and_has_no_cmd_twin(tmp_path):
+    path = crew_fixtures.write_shim(tmp_path, "tmux", "#!/bin/sh\necho 7\n", windows=False)
+
+    assert os.access(path, os.X_OK)
+    assert [p.name for p in tmp_path.iterdir()] == ["tmux"]
+    assert subprocess.run([path], capture_output=True, text=True, check=False).stdout == "7\n"
+
+
+# --- gate_processes: hygiene, not a check --------------------------------
+
+def _pid_alive(pid):
+    """Delegates to `crew_fixtures.pid_alive`, which is zombie-aware on
+    POSIX (a killed-but-unreaped grandchild would otherwise read as
+    "still alive" forever on a host whose PID 1 does not reap orphans --
+    see that function's docstring)."""
+    return crew_fixtures.pid_alive(pid)
+
+
+def test_gate_processes_kills_a_still_running_child_at_teardown():
+    """Drives `gate_processes` as a plain generator (`__wrapped__` is the
+    undecorated function every `@pytest.fixture` carries) rather than
+    through pytest's own fixture machinery -- the finalizer under test IS
+    the code after `yield`, and a generator's `next()` past that point runs
+    it, with no need to spin up a second pytest session just to observe a
+    teardown.
+
+    A REAL child (through `popen_gate`, killable as a whole group the same
+    way a real gate spawn is), sleeping far longer than this test, proves
+    the finalizer actually reaches it rather than merely not raising."""
+    gen = crew_fixtures.gate_processes.__wrapped__()
+    track = next(gen)
+    proc = crew_fixtures.popen_gate(
+        [sys.executable, "-c", "import time; time.sleep(120)"],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    track(proc)
+    assert _pid_alive(proc.pid), "sanity: the child never actually started"
+
+    assert next(gen, "exhausted") == "exhausted", (
+        "gate_processes's body must contain exactly one yield")
+
+    deadline = time.time() + 10
+    while _pid_alive(proc.pid) and time.time() < deadline:
+        time.sleep(0.1)
+    assert not _pid_alive(proc.pid), (
+        "gate_processes's finalizer did not kill the tracked child")
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX process-group signalling only")
+def test_kill_process_group_uses_the_pgid_recorded_at_spawn_not_a_fresh_lookup(
+        monkeypatch, tmp_path):
+    """A PID this test's own child once held can be handed to an unrelated
+    process the moment the child is reaped -- `os.getpgid(proc.pid)` called
+    AFTER that point answers for whichever process holds the pid NOW, not
+    for the child this test actually wants killed. `popen_gate` records
+    `proc.pgid` once, at spawn, before any reuse window can open; this
+    proves `kill_process_group` actually USES that recorded value rather
+    than re-deriving it from `proc.pid` at kill time.
+
+    Not testable with a single, childless process: `kill_process_group`'s
+    OWN fallback (`proc.kill()`, unconditional, at the bottom) kills the
+    DIRECT child regardless of whether the group signal landed, so a
+    process with no grandchild of its own would read as "killed" either
+    way and this test would prove nothing. The direct child here
+    backgrounds a GRANDCHILD (writing its own pid to a file first) and
+    never waits on it -- only a correct `killpg` reaches that grandchild;
+    `proc.kill()` alone does not.
+
+    `os.getpgid` is monkeypatched to return an obviously wrong group (a
+    reserved, always-invalid one) for the whole test -- standing in for
+    "the pid was reused and a live lookup would now be wrong" without
+    needing to actually win an OS pid-reuse race, which is not something a
+    test can force deterministically. If `kill_process_group` ever called
+    the real lookup instead of trusting `proc.pgid`, `killpg` would target
+    that wrong group (or raise and be swallowed) and the grandchild would
+    survive.
+    """
+    monkeypatch.setattr(os, "getpgid", lambda pid: -1)
+
+    pidfile = tmp_path / "grandchild.pid"
+    proc = crew_fixtures.popen_gate(
+        ["sh", "-c",
+         f"( sleep 120 & echo $! > {pidfile} ) ; sleep 120"],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    assert proc.pgid == proc.pid, (
+        "popen_gate must record proc.pgid at spawn, equal to the session "
+        "leader's own pid (start_new_session=True guarantees this)"
+    )
+    assert _pid_alive(proc.pid), "sanity: the direct child never started"
+
+    deadline = time.time() + 10
+    while not pidfile.exists() and time.time() < deadline:
+        time.sleep(0.1)
+    assert pidfile.exists(), "the grandchild never recorded its own pid"
+    grandchild_pid = int(pidfile.read_text(encoding="utf-8").strip())
+    assert _pid_alive(grandchild_pid), "sanity: the grandchild never started"
+
+    crew_fixtures.kill_process_group(proc)
+    # SIGKILL only ends execution -- the pid stays a ZOMBIE, still
+    # answering `os.kill(pid, 0)` (what `_pid_alive` checks) as though it
+    # were running, until something reaps it. `gate_processes`'s own
+    # teardown does this same `wait()` right after its `kill_process_group`
+    # call, for the same reason.
+    try:
+        proc.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        pass
+
+    deadline = time.time() + 5
+    while _pid_alive(grandchild_pid) and time.time() < deadline:
+        time.sleep(0.1)
+    try:
+        assert not _pid_alive(grandchild_pid), (
+            "the grandchild survived kill_process_group - it must have "
+            "consulted the monkeypatched os.getpgid instead of proc.pgid, "
+            "or relied on proc.kill() alone, which never reaches it"
+        )
+    finally:
+        try:
+            os.kill(grandchild_pid, 9)
+        except OSError:
+            pass
+
+
+class _FakePgidProc:
+    """Stands in for a `Popen` already carrying the attributes `popen_gate`
+    records at spawn, without spawning anything real -- the collision this
+    guards against (a pgid recycled to an unrelated live process) is not
+    something a test can force by actually winning the race, so the two
+    tests below force it by monkeypatching `_proc_start_ticks` instead.
+    """
+    pid = 999999
+    pgid = 999999
+    pgid_start_ticks = "111"
+
+    def kill(self):
+        pass
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX process-group signalling only")
+@pytest.mark.skipif(not os.path.isdir("/proc"),
+                     reason="start-time verification needs /proc")
+def test_kill_process_group_skips_a_pgid_whose_start_time_no_longer_matches(
+        monkeypatch):
+    """The reaped-leader shape the review flagged: `proc.pgid` was recorded
+    at spawn, the leader has since been reaped, and the OS has handed that
+    same number to an unrelated process (a different start time). Signalling
+    it anyway would SIGKILL a process group `kill_process_group` never
+    started. Forced deterministically via `_proc_start_ticks`, since winning
+    the real pid-reuse race is not something a test can do on demand.
+    """
+    calls = []
+    monkeypatch.setattr(os, "killpg",
+                         lambda pgid, sig: calls.append((pgid, sig)))
+    monkeypatch.setattr(crew_fixtures, "_proc_start_ticks", lambda pid: "222")
+
+    crew_fixtures.kill_process_group(_FakePgidProc())
+
+    assert calls == [], (
+        "kill_process_group signalled a pgid whose recorded start time no "
+        "longer matches - it must skip signalling, not guess")
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX process-group signalling only")
+@pytest.mark.skipif(not os.path.isdir("/proc"),
+                     reason="start-time verification needs /proc")
+def test_kill_process_group_still_signals_when_start_time_matches(
+        monkeypatch):
+    """Sabotage pair for the test above: with the start time UNCHANGED (the
+    ordinary case -- nothing was reused), `kill_process_group` must still
+    signal. Proves the previous test is not passing because signalling was
+    disabled altogether.
+    """
+    calls = []
+    monkeypatch.setattr(os, "killpg",
+                         lambda pgid, sig: calls.append((pgid, sig)))
+    monkeypatch.setattr(crew_fixtures, "_proc_start_ticks", lambda pid: "111")
+
+    crew_fixtures.kill_process_group(_FakePgidProc())
+
+    assert calls == [(999999, signal.SIGKILL)]
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX process-group signalling only")
+@pytest.mark.skipif(not os.path.isdir("/proc"),
+                     reason="start-time verification needs /proc")
+def test_kill_process_group_refuses_a_reaped_leader_rather_than_guess(
+        tmp_path):
+    """BLOCK (review): a start-time LOWER BOUND used to sit here (a reaped
+    leader whose group still had a live member with a start time at or
+    after the leader's own was treated as "ours, safe to killpg"). That
+    bound cannot actually distinguish a genuine surviving grandchild from a
+    FULLY reused pgid: every member of a truly reused group also started
+    after our leader did (reuse cannot happen before our leader existed to
+    be reaped), so the bound is satisfied by both cases equally, and
+    teardown could `killpg` a process group it never started. Dropped
+    entirely: a reaped leader is now always "cannot prove this is ours",
+    full stop, at the cost of leaking a grandchild in exactly the one
+    shape this test builds (`sh -c 'sleep 60 & echo $!'`, its leader
+    reaped by `proc.communicate()` before cleanup runs, the ordinary shape
+    `run_gate`'s own non-timeout path produces for any rule like this).
+    Sabotage: restoring a start-time-bound check in place of the bare
+    `current is None` skip turns this red (the leftover `sleep 60` would
+    then be killed instead of surviving).
+    """
+    pidfile = tmp_path / "grandchild.pid"
+    proc = crew_fixtures.popen_gate(
+        ["sh", "-c", f"( sleep 60 & echo $! > {pidfile} ) ; echo started"],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    assert proc.pgid == proc.pid
+
+    deadline = time.time() + 10
+    while not pidfile.exists() and time.time() < deadline:
+        time.sleep(0.1)
+    assert pidfile.exists(), "the grandchild never recorded its own pid"
+    grandchild_pid = int(pidfile.read_text(encoding="utf-8").strip())
+    assert _pid_alive(grandchild_pid), "sanity: the grandchild never started"
+
+    # Reaps the leader (the shell already exited on its own) before this
+    # test's own kill_process_group call -- the exact ordering `run_gate`
+    # produces on any rule shaped like this one, and the one contract
+    # `kill_process_group` depends on but cannot itself enforce: the
+    # leader must stay UN-REAPED for as long as it is this function's job
+    # to signal it. This test deliberately breaks that contract to prove
+    # the function refuses rather than guesses once it is broken.
+    proc.communicate(timeout=10)
+    assert crew_fixtures._proc_start_ticks(proc.pgid) is None, (
+        "sanity: the leader must actually be reaped (not merely exited-"
+        "but-zombie) for this test to exercise the None branch"
+    )
+
+    try:
+        crew_fixtures.kill_process_group(proc)
+
+        time.sleep(0.3)
+        assert _pid_alive(grandchild_pid), (
+            "the grandchild was signalled after its leader was reaped - "
+            "this pgid was no longer provably ours, so it must be left "
+            "alone, not killed on a guess"
+        )
+    finally:
+        try:
+            os.kill(grandchild_pid, 9)
+        except OSError:
+            pass
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX process-group signalling only")
+@pytest.mark.skipif(not os.path.isdir("/proc"),
+                     reason="start-time verification needs /proc")
+def test_kill_process_group_does_not_killpg_a_reaped_leaders_pgid(
+        monkeypatch):
+    """Unit-level pair for the end-to-end test above, forcing the reaped-
+    leader branch deterministically (via `_proc_start_ticks` returning
+    `None`) rather than relying on a real reap: `os.killpg` must never be
+    called at all once the leader reads as reaped, regardless of whether
+    anything in that group happens to still be alive.
+    """
+    calls = []
+    monkeypatch.setattr(os, "killpg",
+                         lambda pgid, sig: calls.append((pgid, sig)))
+    monkeypatch.setattr(crew_fixtures, "_proc_start_ticks", lambda pid: None)
+
+    crew_fixtures.kill_process_group(_FakePgidProc())
+
+    assert calls == [], (
+        "kill_process_group signalled a pgid whose leader has already "
+        "been reaped - it can no longer be proven to be ours, so it must "
+        "skip, not guess"
+    )

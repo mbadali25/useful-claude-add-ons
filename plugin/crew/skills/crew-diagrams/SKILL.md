@@ -36,7 +36,7 @@ diagram that rots into confident inaccuracy.
 
 **The header is machine-read, so its shape matters.** `crew_state.read_diagrams`
 parses the short sha out of that first line to decide whether a diagram is
-current, and the PM acts on the answer. A source file with no parseable
+current, and `/crew:status` and the context hook report the answer. A source file with no parseable
 provenance counts as *behind*, not as *unknown* — unknown resolving to stale is
 the honest direction, and it is the same call `_read_graph` makes about a graph
 with no `built_at_commit`. The cost of being wrong that way is one unnecessary

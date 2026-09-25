@@ -29,7 +29,7 @@ is `SDP-<id>` — `SDP-40219` — and that is what goes in `.work/INDEX.md`, in 
 cache filename, and in branch names and commit messages. Two reasons: a bare
 number in an index line is unreadable a week later, and the rest of crew
 recognises a ticket by the `LETTERS-digits` shape, so a bare number is invisible
-to the session brief and to `/crew:work`.
+to `/crew:status` and to `/crew:implement`.
 
 Accept either form as `$1`. Write `SDP-<id>`.
 
@@ -48,7 +48,7 @@ approval chains, SLA and OLA timers, every UDF the desk has ever defined, the
 audit trail, and the account/site metadata.
 
 This is the whole game. A single SDP request payload runs several thousand tokens
-and about forty of them affect what you build. `/crew:work` reads the cache,
+and about forty of them affect what you build. `/crew:implement` reads the cache,
 never the API, so that payload is paid for once instead of on every pickup,
 retry, and context reset.
 

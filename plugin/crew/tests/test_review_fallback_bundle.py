@@ -36,8 +36,8 @@ def _review_raw():
     return (PLUGIN / "commands" / "review.md").read_text(encoding="utf-8")
 
 
-def _qa_reviewer_raw():
-    return (PLUGIN / "agents" / "qa-reviewer.md").read_text(encoding="utf-8")
+def _reviewer_raw():
+    return (PLUGIN / "agents" / "reviewer.md").read_text(encoding="utf-8")
 
 
 def _step_2c(body_raw):
@@ -49,7 +49,7 @@ def _step_2c(body_raw):
     return _norm(body_raw[start:end])
 
 
-def test_step_2c_hands_qa_reviewer_the_manifest_built_patch():
+def test_step_2c_hands_reviewer_the_manifest_built_patch():
     """The fix: 2c must reference the SAME three scratch paths 2a/2b's shared
     prompt is built from -- prompt.txt, diff.txt and manifest.json -- so the
     fallback reviewer reads the manifest-built patch rather than re-deriving
@@ -80,60 +80,52 @@ def test_step_2c_hands_qa_reviewer_the_manifest_built_patch():
     )
 
 
-def test_qa_reviewer_uses_the_supplied_patch_instead_of_git_diff():
-    """qa-reviewer.md must prefer a supplied patch path over its own
-    `git diff`, and the git-diff procedure must survive only as a fallback
-    for the no-patch case, not as the unconditional first step. Sabotage:
-    restore "Start with `git diff` against the base branch" as the
-    unconditional first step and this goes red."""
-    body = _norm(_qa_reviewer_raw())
+def test_reviewer_uses_the_supplied_patch_instead_of_git_diff():
+    """reviewer.md (qa-reviewer's crew 1.0 successor) must prefer a supplied
+    patch path over its own `git diff`, and the git-diff procedure must
+    survive only as a fallback for the no-patch case, not as the
+    unconditional first step."""
+    body = _norm(_reviewer_raw())
 
-    assert "review that patch file only" in body, (
-        "qa-reviewer.md no longer tells the agent to review a supplied "
-        "patch path when it is given one"
+    assert "review that patch only" in body, (
+        "reviewer.md no longer tells the agent to review a supplied patch "
+        "path when it is given one"
     )
-    assert "Do NOT re-derive your own diff with `git diff`" in body, (
-        "qa-reviewer.md no longer forbids re-deriving the diff when a patch "
+    assert "Do not re-derive with `git diff`" in body, (
+        "reviewer.md no longer forbids re-deriving the diff when a patch "
         "was supplied"
     )
 
-    guard_marker = "invoked with no patch path at all"
-    git_diff_marker = "start with `git diff` against the base branch"
-    guard_index = body.find(guard_marker)
-    git_diff_index = body.find(git_diff_marker)
+    guard_index = body.find("With no patch path")
+    git_diff_index = body.find("fall back to `git diff` against the base branch")
     assert guard_index != -1, (
-        "qa-reviewer.md dropped the no-patch guard clause entirely, so the "
+        "reviewer.md dropped the no-patch guard clause entirely, so the "
         "git diff fallback reads as unconditional again"
     )
     assert git_diff_index != -1, (
-        "qa-reviewer.md dropped the git-diff fallback procedure outright -- "
+        "reviewer.md dropped the git-diff fallback procedure outright -- "
         "it must still exist for the no-patch case"
     )
     assert guard_index < git_diff_index, (
         "'git diff against the base branch' appears before the no-patch "
-        "guard that conditions it, which is the unconditional-first-step "
-        "shape this fix removed"
+        "guard that conditions it"
     )
 
 
-def test_qa_reviewer_self_derived_fallback_says_so_in_its_output():
-    """When qa-reviewer falls back to its own git diff, its own-diff
-    procedure must say so as part of the defect-line output -- the only
-    channel its strict output contract allows -- rather than silently
-    returning CLEAN on a diff that may have missed untracked content."""
-    body = _norm(_qa_reviewer_raw())
+def test_reviewer_self_derived_fallback_says_so_in_its_output():
+    """When reviewer falls back to its own git diff, it must say so as a
+    defect line -- the only channel its strict output contract allows --
+    rather than silently returning CLEAN on a diff that may have missed
+    untracked content."""
+    body = _norm(_reviewer_raw())
     assert "NIT|self-derived|" in body, (
-        "qa-reviewer.md no longer emits a self-derived marker line, so a "
-        "fallback run that missed untracked files looks identical to a run "
-        "that read the full manifest-built patch"
+        "reviewer.md no longer emits a self-derived marker line"
     )
     assert "may miss staged, unstaged or untracked changes" in body, (
-        "qa-reviewer.md dropped the caveat naming what a self-derived git "
+        "reviewer.md dropped the caveat naming what a self-derived git "
         "diff can miss"
     )
-    # The strict CLEAN-only contract must carry the same exception, or the
-    # two instructions contradict each other.
-    assert "never `CLEAN` alone" in body or "never CLEAN alone" in body, (
+    assert "`CLEAN` (after the self-derived line, on that fallback)" in body, (
         "the CLEAN-only output contract was not updated to allow the "
         "self-derived marker line ahead of it"
     )

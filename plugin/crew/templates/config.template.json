@@ -3,7 +3,7 @@
   "tier": 0,
   "roles": [
     "explorer",
-    "qa-reviewer"
+    "reviewer"
   ],
   "qa": {
     "provider": "auto",
@@ -68,7 +68,12 @@
   },
   "memory": {
     "mode": "repo",
-    "vaultPath": null
+    "vaultPath": null,
+    "inject": true,
+    "recall": {
+      "vaults": [],
+      "maxChars": 800
+    }
   },
   "verifyGate": true,
   "context": {
@@ -79,13 +84,15 @@
     "handoffPath": ".work/HANDOFF.md",
     "keepTranscripts": 5,
     "autoClear": {
-      "enabled": true,
+      "enabled": null,
       "method": "auto",
       "windowTitle": null,
       "command": "/clear",
       "delaySeconds": 3,
       "minHandoffLines": 5,
-      "unsafeFocus": false
+      "unsafeFocus": false,
+      "onlyRepos": null,
+      "onlySessions": null
     },
     "autoWrapUp": true,
     "autoResume": true,
@@ -157,13 +164,21 @@
     "forcePush": "block",
     "adminMerge": "block",
     "mergeGate": "block",
+    "cloudDestructive": "block",
+    "sqlDestructive": "block",
     "prodDatabase": "none",
     "prodServer": "none",
-    "roleWrites": "off"
+    "roleWrites": "off",
+    "cloudGuard": "off"
   },
   "production": {
     "databases": [],
     "hosts": []
+  },
+  "cloud": {
+    "awsProfiles": [],
+    "awsRegions": [],
+    "azureSubscriptions": []
   },
   "change": {
     "requester": null,
@@ -172,5 +187,9 @@
     "sdpTemplate": "Change Management Request",
     "jiraIssueType": "Change",
     "category": null
+  },
+  "scope": {
+    "mode": "off",
+    "allowCliApproval": false
   }
 }

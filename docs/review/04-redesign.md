@@ -90,14 +90,15 @@ IDs. Semantic contradictions go to review.
 
 | Hook | Event | Blocks | Notes |
 |---|---|---|---|
-| context | SessionStart; UserPromptSubmit; PostToolUse Read/Edit/Write | no | SessionStart ≤12 lines / 1,500 chars on startup, ≤3,000 chars when resuming a handoff; per-turn slices ≤2,000 chars combined; hard cap 6,000 chars per emission; deduplicated per subsystem and compaction epoch. Also routes selected vault recall. The low-context warning becomes a one-time non-blocking note. |
+| context | SessionStart; UserPromptSubmit; PostToolUse Read/Edit/Write | no | SessionStart ≤12 lines / 1,500 chars on startup, ≤3,000 chars when resuming a handoff; per-turn slices ≤2,000 chars combined; hard cap 6,000 chars per emission; deduplicated per subsystem and compaction epoch. Also routes selected vault recall. The low-context warning becomes a one-time non-blocking note. After a `clear`/`compact`/`resume` it injects the handoff with its next action leading, inside the 3,000 chars. |
+| auto wrap-up (context-watch) | Stop | yes, once per threshold crossing per session | **Documented exception, owner's call (2026-09-23): kept, overriding "retire auto-clear".** The one sanctioned blocking Stop besides the verify gate. Blocks once to have the session finish or park the change and write `.work/HANDOFF.md`; keyed on the payload `session_id`; never blocks on `stop_hook_active`. Auto-clear then types `/clear` only after a verified handoff, a trustworthy reading and a uniquely identified window, and only on a machine that opted in (`context.autoClear.enabled` in `~/.claude/crew/config.json`, off by default). See `docs/guides/crew/src/auto-cycle.md`. |
 | plan-approval + scope guard | PreToolUse Write/Edit/MultiEdit/NotebookEdit | yes | no blanket exemption for crew's own policy or approval files; handles canonical paths, renames and symlinks |
 | completion scope audit | Stop | yes | diffs the whole tree against the scope base, catching shell-made writes too, and refuses `done` on out-of-scope paths |
 | cloud/destructive guard | PreToolUse Bash/PowerShell | yes/ask | wires crew's existing but unenforced `guards.*` (`terraformApply`, `forcePush`, `prodDatabase`). Covers `terraform apply`/`destroy`, `aws` delete/terminate, `az` delete/purge, and SQL `DROP`/`TRUNCATE`. Checks the effective AWS profile/region and Azure subscription; an unknown identity is never allowed unattended. |
 | verify gate | Stop | yes | 0 lines on pass, ≤6 on fail; deferred checks stay UNVERIFIED |
 | handoff capture | PreCompact | no | kept |
 | notify | Notification | no | opt-in |
-| removed | the pulse, pm-brief, handoff-read (folded into context), auto-clear, and context-watch as a Stop blocker | | |
+| removed | the pulse, pm-brief, handoff-read (folded into context) | | auto-clear and context-watch were on this list; the owner reversed that, see the auto wrap-up row |
 
 Format-on-edit lives in the owner's **global** settings, not crew, with one formatter owner. crew's
 `stack-*` skills write the lint rules into `verify.json`. A missing tool gives a bounded warning and
@@ -146,6 +147,9 @@ and a sabotage mutation.
 
 Each row is "Ahead" only once its proof in `04a` §14 or `04b` passes:
 - Stop-pulse removal alone reaches **Par**; the row is Ahead only through the verify gate's receipts.
+  The Stop row carries one documented exception: the auto wrap-up block (once per threshold
+  crossing per session, never on `stop_hook_active`), kept at the owner's request. It counts
+  against the "no blocking Stop but the verify gate" claim rather than being hidden from it.
 - The dual-hook row is **Par** until single-invocation parity is proven on Windows and Linux.
 - Every other "Ahead" claim needs a benchmark against a named alternative. File counts and internal
   tests are not enough.

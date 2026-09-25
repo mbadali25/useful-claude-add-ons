@@ -3,8 +3,17 @@
 # handoff note before ending the turn. Exit 2 returns control to the model with
 # the reason on stderr.
 #
-# NOTHING HERE RUNS until a repository has .crew/config.json - crew is
-# per-repository and its hooks are inert until `/crew:init`.
+# NOTHING HERE RUNS until a repository at least has a `.crew/` directory -
+# crew is per-repository and its hooks are inert until something (`/crew:init`
+# or a worktree copy) has made that much true.
+#
+# Two gates below, not one, since crew 1.0 F4: this hook's own handover to
+# auto-clear.ps1 (the forced-continuation branch) reaches it on `.crew/`
+# existing alone, matching auto-clear.ps1's own directory gate -
+# `context.autoClear` is a machine-global switch and must work in any crew
+# repo (CONFIG.md sec 14). This hook's OWN context-window measurement and
+# nagging, further down, is a separate question and keeps requiring a real
+# `.crew/config.json` underneath, unchanged.
 
 # Flavour guard. Both flavours are registered for every event, so on a host
 # that has BOTH interpreters both would otherwise run. Stand down only when
@@ -22,19 +31,121 @@ try { $d = $raw | ConvertFrom-Json } catch { exit 0 }
 $cwd = if ($d.cwd) { $d.cwd } elseif ($env:CLAUDE_PROJECT_DIR) { $env:CLAUDE_PROJECT_DIR } else { "." }
 Set-Location $cwd -ErrorAction SilentlyContinue
 
-if (-not (Test-Path ".crew/config.json")) { exit 0 }
-if (-not $d.transcript_path -or -not (Test-Path $d.transcript_path)) { exit 0 }
+if (-not (Test-Path ".crew" -PathType Container)) { exit 0 }
+
+# Every marker is keyed on this Stop's session. It used to be one
+# .crew/.handoff-requested per REPOSITORY, so two terminals in one repo shared
+# it. The key keeps only [A-Za-z0-9_-], matching context-watch.sh and
+# crew_autocycle.session_key.
+$sessionId  = if ($d.session_id) { [string]$d.session_id } else { "" }
+$sessionKey = [regex]::Replace($sessionId, '[^A-Za-z0-9_-]', '_')
+if ($sessionKey.Length -gt 100) { $sessionKey = $sessionKey.Substring(0, 100) }
+if (-not $sessionKey) { $sessionKey = "nosession" }
+$marker     = ".crew/.handoff-requested-$sessionKey"
+$sentMarker = ".crew/.autoclear-sent-$sessionKey"
+
+# auto-clear.ps1 logs its own refusals/sends to .crew/.autoclear.log (see its
+# own Write-CrewAutoClearNote) and writes the same line to [Console]::Error --
+# but only on paths that reach that function, and [Console]::Error bypasses
+# PowerShell's own error STREAM (stream 2) entirely, so the `2>$null` below
+# never actually redirected it. What DID work, and what made a crash totally
+# silent, was `| Out-Null` eating the success stream and the empty `catch {}`
+# eating a genuine terminating exception -- together covering every remaining
+# way out. `.crew/.autoclear.log` was reported to exist nowhere on the
+# affected Windows host, which is what that total silence looks like.
+#
+# This captures both signals instead of discarding them: the PowerShell error
+# stream (`2>&1`, for the rare case auto-clear ever emits through it) AND the
+# raw Console error stream, by swapping [Console]::Error for a StringWriter
+# for the DURATION of the call only, then independently appends a line to the
+# SAME log whenever the child looks unhealthy -- exited non-zero, wrote
+# anything to either stream, or threw. Deliberately unconditional rather than
+# trying to detect whether auto-clear ALREADY logged the same thing; a
+# duplicate line on an ordinary refusal costs nothing a human reading the log
+# would notice, and a MISSING line is the whole defect this closes.
+#
+# Must never throw itself. auto-clear's stdout IS forwarded onto this hook's
+# own stdout, which Claude Code reads as the Stop hook's protocol -- see
+# `Invoke-ContextWatchAutoClear`'s own comment for why that is now safe; the
+# fallback, if the log cannot be written (an unwritable .crew/), is this
+# hook's own stderr.
+function Write-ContextWatchAutoClearTrouble([string]$Message) {
+  $clean = ($Message -replace "[`r`n`t]", " ")
+  try {
+    if (-not (Test-Path ".crew")) { New-Item -ItemType Directory -Path ".crew" -Force -ErrorAction Stop | Out-Null }
+    $stamp = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
+    Add-Content -Path ".crew/.autoclear.log" -Value "$stamp`t$clean" -Encoding utf8 -ErrorAction Stop
+  } catch {
+    [Console]::Error.WriteLine("context-watch: $clean")
+  }
+}
+
+function Invoke-ContextWatchAutoClear([string]$SessionId) {
+  $origErr = [Console]::Error
+  $sw = New-Object System.IO.StringWriter
+  $threw = $null
+  $rc = $null
+  $stdout = $null
+  try {
+    [Console]::SetError($sw)
+    try {
+      $stdout = & "$PSScriptRoot/auto-clear.ps1" -Session $SessionId -Root (Get-Location).Path 2>&1 |
+        ForEach-Object {
+          if ($_ -is [System.Management.Automation.ErrorRecord]) { $sw.WriteLine($_.ToString()) }
+          else { $_ }
+        }
+      $rc = $LASTEXITCODE
+    } catch {
+      $threw = $_.Exception.Message
+    }
+  } finally {
+    [Console]::SetError($origErr)
+  }
+  $captured = $sw.ToString().Trim()
+  # Forwarded, not discarded: `method notify` (and a `sendkeys` decline that
+  # falls back to it) is the ONE real, non-dry-run path that writes anything
+  # to auto-clear's stdout -- a single line of JSON, `{"systemMessage": ...}`
+  # -- and this hook never writes to its OWN stdout on any other path, so
+  # there is nothing here for it to collide with. Every other auto-clear
+  # path still writes nothing to stdout, exactly as before.
+  foreach ($line in @($stdout)) { if ($line) { Write-Output $line } }
+  if ($threw) {
+    Write-ContextWatchAutoClearTrouble "auto-clear threw: $threw"
+  } elseif (($null -ne $rc -and $rc -ne 0) -or $captured) {
+    $suffix = if ($captured) { " - stderr: $captured" } else { "" }
+    Write-ContextWatchAutoClearTrouble "auto-clear exited $rc$suffix"
+  }
+}
 
 # Loop safety, layer 1: Claude Code is already continuing because of a stop
-# hook -- do not pile on more feedback. Layer 2 is the once-per-session
+# hook -- do not pile on more feedback. Layer 2 is the once-per-crossing
 # marker below. Layer 3 is Claude Code's own 8-consecutive-block backstop.
-if ($d.stop_hook_active -eq $true) { exit 0 }
+#
+# This forced continuation is also the one turn on which auto-clear matters:
+# it is the turn the handoff gets written. Exiting here unconditionally meant
+# auto-clear only ran after the NEXT user turn. So hand over to it -- never
+# block, never ask again -- when THIS session has a wrap-up marker.
+if ($d.stop_hook_active -eq $true) {
+  if (Test-Path $marker) {
+    Invoke-ContextWatchAutoClear $sessionId
+  }
+  exit 0
+}
+
+# From here down: this hook's OWN context-window measurement and nagging --
+# as distinct from the auto-clear handover above, which needed only `.crew/`
+# -- still requires a fully initialised crew repo. Unchanged from before F4:
+# a `.crew/` directory with no config.json gets no warnings and writes no
+# marker, exactly as a repo that never ran `/crew:init` always has.
+if (-not (Test-Path ".crew/config.json")) { exit 0 }
+
+if (-not $d.transcript_path -or -not (Test-Path $d.transcript_path)) { exit 0 }
 
 # No hook_once claim here on purpose: Stop fires once per TURN against a
 # stable session id, so a session-scoped claim taken on turn 1 would suppress
-# the context nag for the rest of the session. $marker below (.handoff-requested)
-# is the real once-per-session gate for this hook, reset by handoff-read.ps1 at
-# the next SessionStart -- that stays.
+# the context nag for the rest of the session. $marker above is the real
+# once-per-crossing gate for this hook, reset by handoff-read.ps1 at this
+# session's next SessionStart -- that stays.
 
 $cfg = (Get-Content .crew/config.json -Raw | ConvertFrom-Json).context
 if ($null -eq $cfg -or $cfg.enabled -eq $false) { exit 0 }
@@ -55,16 +166,6 @@ if ($cfg.PSObject.Properties['reserveTokens']) {
   $rt = $cfg.reserveTokens
   [long]$reserve = if ($null -eq $rt) { 0 } else { [long]$rt }
   if ($reserve -lt 0) { $reserve = 0 }
-}
-
-$marker = ".crew/.handoff-requested"
-if (Test-Path $marker) {
-  # The nag already happened. This is the turn on which the handoff may have
-  # just been written, which is the only moment auto-clear is interested in. It
-  # is off unless context.autoClear.enabled is true, and it decides for itself
-  # whether the note is complete enough to act on.
-  try { & "$PSScriptRoot/auto-clear.ps1" 2>$null | Out-Null } catch { }
-  exit 0
 }
 
 # Read the ACTUAL window occupancy, not a guess at it.
@@ -98,6 +199,9 @@ $windows = @(
 $tiers = @(200000, 500000, 1000000, 2000000)
 
 $last = $null; $model = ""; [long]$peak = 0; [long]$mainBytes = 0
+# A compaction writes a boundary record; a usage record from before it
+# describes a window that no longer exists. See $why below.
+[long]$lineNo = 0; [long]$lastAt = -1; [long]$boundaryAt = -1
 try {
   foreach ($line in [System.IO.File]::ReadLines($d.transcript_path)) {
     if (-not $line) { continue }
@@ -107,14 +211,16 @@ try {
     # them inline flagged isSidechain. Skip those - from the byte count too, so
     # the size fallback below does not count them either.
     if ($line -match '"isSidechain"\s*:\s*true') { continue }
+    $lineNo++
     $mainBytes += [System.Text.Encoding]::UTF8.GetByteCount($line) + 1
+    if ($line -match '"compact_boundary"|"isCompactSummary"\s*:\s*true') { $boundaryAt = $lineNo }
     if ($line.IndexOf('"usage"') -lt 0) { continue }
     try { $rec = $line | ConvertFrom-Json -ErrorAction Stop } catch { continue }
     $msg = $rec.message
     if ($null -eq $msg) { continue }
     $usage = $msg.usage
     if ($null -eq $usage -or -not $usage.PSObject.Properties['cache_read_input_tokens']) { continue }
-    $last = $usage
+    $last = $usage; $lastAt = $lineNo
     if ($msg.model -and -not ([string]$msg.model).StartsWith("<")) { $model = [string]$msg.model }
     [long]$tot = [long]$usage.input_tokens + [long]$usage.cache_read_input_tokens + [long]$usage.cache_creation_input_tokens
     if ($tot -gt $peak) { $peak = $tot }
@@ -134,12 +240,13 @@ function Next-Tier([long]$above) {
   return [long]($above * 2)
 }
 
+$known = $false
 if ($configured -gt 0) {
-  [long]$budget = $configured; $how = "configured"
+  [long]$budget = $configured; $how = "configured"; $known = $true
 } else {
   $low = $model.ToLowerInvariant()
   [long]$budget = 200000
-  foreach ($w in $windows) { if ($low.IndexOf($w[0]) -ge 0) { $budget = [long]$w[1]; break } }
+  foreach ($w in $windows) { if ($low.IndexOf($w[0]) -ge 0) { $budget = [long]$w[1]; $known = $true; break } }
   $label = if ($model) { $model } else { "unknown" }
   $how = "auto:$label"
 }
@@ -179,18 +286,52 @@ if ($warnAt -le 0) {
     [long]$threshold = $budget - $reserve
   }
 }
+# Whether this reading may license a /clear -- the same rules, in the same
+# order, as context-watch.sh. It still drives the nag either way; auto-clear
+# acts only on a measurement of THIS window. Unknown is its own value.
+if ($source -ne "exact") { $why = "estimated-from-transcript-size" }
+elseif (-not $known) { $why = "unknown-window" }
+elseif ($boundaryAt -gt $lastAt) { $why = "stale-reading-before-compaction" }
+elseif ($used -le 0 -or $used -gt $budget) { $why = "implausible-reading" }
+else { $why = "measured" }
+$trusted = ($why -eq "measured")
+
+if (Test-Path $marker) {
+  if ($used -lt $threshold -and $source -eq "exact") {
+    # A measured reading back under the threshold: the window shrank since the
+    # wrap-up, so that crossing is over. Re-arm for the next one.
+    # -Force: pwsh on Linux/macOS treats dotfiles as hidden and will not
+    # remove them without it; harmless on Windows.
+    Remove-Item -LiteralPath $marker, $sentMarker -Force -ErrorAction SilentlyContinue
+    exit 0
+  }
+  # This crossing was already asked about. Never block twice for it; the
+  # handoff may have been written since, which is all auto-clear wants to know.
+  Invoke-ContextWatchAutoClear $sessionId
+  exit 0
+}
 if ($used -lt $threshold) { exit 0 }
 
-# Claim the once-per-session gate ATOMICALLY. Both flavours are registered for
+# Claim the once-per-crossing gate ATOMICALLY. Both flavours are registered for
 # Stop and, on Windows with Git Bash installed, both actually run - a
 # test-then-create would let both pass the check and emit the same warning
-# twice. CreateNew throws for whichever loses.
+# twice. CreateNew throws for whichever loses. The marker records which
+# session asked and the reading behind it, so auto-clear can refuse a reading
+# nobody should trust.
 # Absolute path deliberately: [System.IO.File] resolves a relative path against
 # [Environment]::CurrentDirectory, which Set-Location does NOT update, so a
 # relative claim would land in whatever directory the hook was spawned from.
 try {
   $claimPath = Join-Path (Get-Location).Path $marker
   $claim = [System.IO.File]::Open($claimPath, [System.IO.FileMode]::CreateNew)
+  $markerJson = [ordered]@{
+    session_id   = $sessionId
+    requested_at = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds() / 1000.0
+    used = $used; budget = $budget; source = $source
+    trusted = $trusted; why = $why
+  } | ConvertTo-Json -Compress
+  $bytes = [System.Text.UTF8Encoding]::new($false).GetBytes($markerJson + "`n")
+  $claim.Write($bytes, 0, $bytes.Length)
   $claim.Close()
 } catch { exit 0 }
 

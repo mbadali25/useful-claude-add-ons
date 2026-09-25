@@ -60,6 +60,15 @@ def _home():
 
 
 def config_path():
+    """~/.claude/obsidian/config.json, or OBSIDIAN_VAULT_CONFIG when set.
+
+    The override exists for callers that must not read the real config - a
+    test fixture, or a second tool (crew's context hook) pointed at a scratch
+    config - without having to fake a whole HOME.
+    """
+    override = os.environ.get("OBSIDIAN_VAULT_CONFIG")
+    if override:
+        return override
     return os.path.join(_home(), ".claude", "obsidian", "config.json")
 
 
@@ -74,11 +83,36 @@ def read_config():
 
 
 def write_config(data):
+    """Serialize first, then replace atomically.
+
+    `open(path, "w")` truncates before json.dump has produced a byte, so a
+    dump that raises (a non-serializable value) used to leave a zero-byte
+    config behind - every vault unconfigured at once. The text is built in
+    memory, written to a sibling temp file, and swapped in with os.replace.
+    """
     path = config_path()
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w", encoding="utf-8") as fh:
-        json.dump(data, fh, indent=2, sort_keys=True)
-        fh.write("\n")
+    text = json.dumps(data, indent=2, sort_keys=True) + "\n"
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    tmp = f"{path}.tmp-{os.getpid()}"
+    with open(tmp, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write(text)
+    os.replace(tmp, path)
+
+
+ROLES = ("primary", "recall", "ignore")
+
+
+def host_id():
+    """This machine's name as used in per-host file names: lowercase, [a-z0-9-].
+
+    OBSIDIAN_VAULT_HOST overrides it - for a machine whose hostname changes
+    (DHCP-assigned names, a renamed laptop) and for tests. An empty result
+    falls back to "unknown-host" rather than producing `pending-reflect..md`.
+    """
+    raw = os.environ.get("OBSIDIAN_VAULT_HOST") or platform.node() or ""
+    raw = raw.split(".")[0].lower()
+    cleaned = re.sub(r"[^a-z0-9-]+", "-", raw).strip("-")
+    return cleaned or "unknown-host"
 
 
 def obsidian_app_json_path():
@@ -196,6 +230,7 @@ def list_vaults():
                 "port": _valid_port(entry.get("port", DEFAULT_PORT), f"vaults.{name}.port"),
                 "layout": entry.get("layout"),
                 "default": entry.get("default") is True,
+                "role": entry.get("role") if entry.get("role") in ROLES else None,
             }
         if out and not any(v["default"] for v in out.values()):
             # No surviving vault explicitly marked default (either none was,
@@ -292,6 +327,65 @@ def resolve_vault_path(name=None):
     """
     entry = resolve_vault(name)
     return entry["path"] if entry else None
+
+
+def writer_vault():
+    """(name, path, problem) for the ONE vault writers may touch.
+
+    Capture, import, ack and the gardener write here and nowhere else. This is
+    deliberately not resolve_vault_path(): list_vaults() drops a vault that is
+    not on disk and promotes the first survivor to default, which is right for
+    a reader and wrong for a writer - an unmounted primary would silently turn
+    a read-only recall vault into the capture target.
+
+    With roles in config, the target is the single role-`primary` entry, read
+    from the raw config so an unmounted primary is reported rather than
+    replaced. Without roles (the pre-roles shape), it is the vault config
+    declares default (explicit `default: true`, else the first declared), or
+    the legacy `vaultPath`. OBSIDIAN_VAULT_PATH still relocates that vault, as
+    everywhere else. Only when config names no vault at all does detection
+    from Obsidian's registry apply, exactly as before.
+
+    `path` is None whenever the target is not available; `problem` then says
+    why, or is None when nothing is configured at all (stay silent).
+    """
+    cfg = read_config()
+    raw = cfg.get("vaults")
+    env = os.environ.get("OBSIDIAN_VAULT_PATH")
+    env = env if env and os.path.isdir(env) else None
+
+    if isinstance(raw, dict) and raw:
+        entries = {n: e for n, e in raw.items() if isinstance(e, dict)}
+        if any(e.get("role") for e in entries.values()):
+            found = [n for n, e in entries.items() if e.get("role") == "primary"]
+            if not found:
+                return None, None, ("no vault has role primary - nothing is written to a "
+                                    "recall or ignore vault; run `adopt` to name one")
+            if len(found) > 1:
+                return None, None, (f"{len(found)} vaults have role primary "
+                                    f"({', '.join(sorted(found))}) - refusing to guess")
+            name = found[0]
+        else:
+            name = next((n for n, e in entries.items() if e.get("default") is True),
+                        next(iter(entries), None))
+            if name is None:
+                return None, None, None
+        path = env or entries[name].get("path")
+        if path and os.path.isdir(path):
+            return name, path, None
+        return name, None, (f"primary vault {name!r} is not available at {path!r} (not "
+                            "mounted?) - nothing written; no other vault is used instead")
+
+    legacy = cfg.get("vaultPath")
+    if legacy:
+        path = env or legacy
+        if os.path.isdir(path):
+            return "memory", path, None
+        return "memory", None, (f"vault {path!r} is not available (not mounted?) - "
+                                "nothing written")
+
+    path = resolve_vault_path()
+    return (default_vault_name() or "memory", path, None) if path else (None, None, None)
 
 
 def rest_api_data_path(vault_path):

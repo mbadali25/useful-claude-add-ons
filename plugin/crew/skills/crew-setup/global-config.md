@@ -121,8 +121,7 @@ short-circuits before validation, so the probe needs a real one). Verified
 
 | Slot | Suggested pin | Family |
 |---|---|---|
-| `dev.roles.developer`, `dev.roles.security`, `dev.roles.infrastructure-architect` | `codex` / `gpt-6-astra` | gpt |
-| `dev.roles.planner` | `claude`, with a `codex` / `gpt-5.6-sol` alternate | claude |
+| `dev.roles.developer`, `dev.roles.security` | `codex` / `gpt-6-astra` | gpt |
 | `qa.roles.phase1`, `qa.roles.smoke` | `codex` / `gpt-5.6-sol` | gpt |
 | `qa.roles.review`, `qa.roles.gate` | `codex` / `gpt-5.6-luna` | gpt |
 | a Copilot alternative | Kimi 2.7 (`kimi-k2.7-code`), or Kimi 3 (`kimi-k3`) | kimi |
@@ -186,15 +185,13 @@ not a bug to route around.
 - It did not touch any `.crew/config.json`. The repo layer still wins over
   everything written here.
 - It did not change `schema`, `tier` or `roles` anywhere — those are repo
-  facts, and the tier ladder moves only through `/crew:scale`.
-- If `pm.authority` changed, say the new value and that `/crew:pm authority
-  <value>` overrides it per repo.
+  facts.
 - If any per-role pin changed, run `--models` once more and read the resulting
   table back. Name which fallbacks are now armed, whether the family guard is
   barring anything, and — always alongside the bars — the `qa.order`
   fall-through line saying what reviews the diff instead. If it reads `NO
   INDEPENDENT REVIEWER`, say so in full: the review still runs, on the
-  `qa-reviewer` subagent, labelled same-family. A config change nobody
+  `reviewer` subagent, labelled same-family. A config change nobody
   verified is a claim, not a change.
 - If the `repo-keys` finding fired in step 1, say the keys are still sitting in
   the file doing nothing, and that this walkthrough did not delete them.

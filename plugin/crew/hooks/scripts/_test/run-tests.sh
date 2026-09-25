@@ -4,6 +4,9 @@
 # The command guard (guard.sh / guard.ps1) was REMOVED in 0.19.52 - it blocked
 # development work, and the two gates below are what crew still enforces. Its
 # cases went with it; do not re-add them without re-adding the hook.
+# Its successor, cloud-guard.sh (crew 1.0 T5, off unless guards.cloudGuard is
+# set), has its own section near the end: it judges only the command a
+# segment RUNS, never a word inside an argument, which is what sank the old one.
 # promote-gate.sh and verify-gate.sh keep their coverage here, and both have
 # had real regressions found by running them rather than reading them. This
 # file exists so the next edit has a safety net.
@@ -255,16 +258,26 @@ unset CLAUDE_PROJECT_DIR
 # config - the same observable shape as the E2BIG exec failure this fix was for.
 #
 # The stubs must answer crew_py_strict's OWN proof (`-c 'import sys;
-# print(sys.executable)'`) with their own absolute path and exit 0 - only then
-# does crew_py_strict accept one of them as $PY, past the top-level check at
-# verify-gate.sh's `PY=$(crew_py_strict) || ...`, so it is the MATCHER
-# invocation (a different shape - `"$PY" - args << script`) that fails, which
-# is the actual code path this case exists to exercise. A stub that exits 9
+# sys.version_info>=(3,8) and print(sys.executable)'`) with their own
+# absolute path and exit 0 - only then does crew_py_strict accept one of
+# them as $PY, past the top-level check at verify-gate.sh's
+# `PY=$(crew_py_strict) || ...`, so it is the MATCHER invocation (a
+# different shape - `"$PY" - args << script`) that fails, which is the
+# actual code path this case exists to exercise. A stub that exits 9
 # unconditionally (the previous shape) fails crew_py_strict's proof too, so it
 # never resolves to $PY at all and the matcher is never even reached - the
 # hollow shape review round 6 caught: it was quietly testing "no python
 # resolves", not "the matcher could not run", and a case arm was added here to
-# paper over that instead of fixing the fixture.
+# paper over that instead of fixing the fixture. The proof text itself
+# changed again when crew_py_strict grew its own >=3.8 floor check
+# (`_common.sh`'s `crew_py_strict`): a stub answering the OLD text no longer
+# matches, so crew_py_strict silently falls through it to the real system
+# python further down PATH, and the matcher then actually runs (against a
+# real interpreter) instead of exercising the "could not run" branch this
+# case means to hit. Measured 2026-09-24: with the stale text this case's
+# $OUT was a fully-successful matcher run ("0 rule command(s)" / "UNMAPPED
+# CHANGES"), not "could not RUN the matcher" - the fixture had gone stale
+# against the product, not the other way around.
 UNRUNNABLE=$(mktemp -d) || exit 1
 (
   cd "$UNRUNNABLE" || exit 1
@@ -282,7 +295,7 @@ UNRUNNABLE=$(mktemp -d) || exit 1
   # this fix is for, and deliberately NOT 3, which is the parse status.
   cat > fakebin/python3 <<STUB
 #!/bin/sh
-if [ "\$1" = "-c" ] && [ "\$2" = "import sys; print(sys.executable)" ]; then
+if [ "\$1" = "-c" ] && [ "\$2" = "import sys; sys.version_info>=(3,8) and print(sys.executable)" ]; then
   printf '%s\n' "$UNRUNNABLE/fakebin/python3"
   exit 0
 fi
@@ -290,7 +303,7 @@ exit 9
 STUB
   cat > fakebin/python <<STUB
 #!/bin/sh
-if [ "\$1" = "-c" ] && [ "\$2" = "import sys; print(sys.executable)" ]; then
+if [ "\$1" = "-c" ] && [ "\$2" = "import sys; sys.version_info>=(3,8) and print(sys.executable)" ]; then
   printf '%s\n' "$UNRUNNABLE/fakebin/python"
   exit 0
 fi
@@ -298,7 +311,7 @@ exit 9
 STUB
   cat > fakebin/py <<STUB
 #!/bin/sh
-if [ "\$1" = "-c" ] && [ "\$2" = "import sys; print(sys.executable)" ]; then
+if [ "\$1" = "-c" ] && [ "\$2" = "import sys; sys.version_info>=(3,8) and print(sys.executable)" ]; then
   printf '%s\n' "$UNRUNNABLE/fakebin/py"
   exit 0
 fi
@@ -725,238 +738,6 @@ echo "$OUT" | grep -qE '^sqlcmd '    && pass || fail "resolve-tools: bash -x \"q
 rm -rf "$RD"
 
 # ---------------------------------------------------------------------------
-# pm_pulse.py -- a BLOCKING Stop hook, so it owes must-block/must-allow cases.
-#
-# The failure that matters most is not a missed finding, it is a LOOP: a Stop
-# hook that blocks unconditionally never lets a turn end, and the user cannot
-# fix it from inside the session. stop_hook_active is tested first for that
-# reason.
-#
-# SABOTAGE-TEST: delete the `if payload.get("stop_hook_active")` guard in
-# pm_pulse.py and confirm the first case below goes red.
-# ---------------------------------------------------------------------------
-echo "== pm_pulse.py: Stop hook =="
-
-pulse_payload() {  # $1 = cwd, $2 = session id, $3 = stop_hook_active (true/false)
-  "$PY" - "$1" "$2" "$3" <<'PYEOF'
-import sys, json
-print(json.dumps({
-    "cwd": sys.argv[1],
-    "session_id": sys.argv[2],
-    "stop_hook_active": sys.argv[3] == "true",
-}))
-PYEOF
-}
-
-pulse() {  # $1 = cwd, $2 = session, $3 = active -> echoes exit code
-  pulse_payload "$1" "$2" "$3" | "$PY" "$SCRIPTS/pm_pulse.py" >/dev/null 2>&1
-  echo $?
-}
-
-expect_pulse() {  # $1 = wanted exit, $2..$4 = cwd session active, $5 = label
-  local got; got=$(pulse "$2" "$3" "$4")
-  if [ "$got" = "$1" ]; then pass; else fail "pm_pulse: want=$1 got=$got  $5"; fi
-}
-
-PD=$(mktemp -d) || exit 1
-mkdir -p "$PD/.crew"
-# schema 2 keeps upgradeNeeded quiet; the absent graph is what fires graphStale,
-# which is a real, non-quiet trigger and therefore a legitimate reason to block.
-#
-# authority=act because the stderr-content assertions below are about the
-# work-order directive specifically. The exit-code cases above it are
-# authority-agnostic -- both directives block -- so this does not weaken them.
-printf '{"schema":2,"tier":1,"roles":["explorer"],"pm":{"authority":"act"}}\n' \
-  > "$PD/.crew/config.json"
-
-# MUST ALLOW: the loop guard. Same state that blocks below, but on a turn that
-# only exists because a Stop hook already blocked -- blocking again never ends.
-expect_pulse 0 "$PD" sess-loop true "stop_hook_active must never block"
-
-# MUST BLOCK: a crew repo with a real finding, first time this state is seen.
-expect_pulse 2 "$PD" sess-a false "graphStale should block once"
-
-# MUST ALLOW: the identical state a second time. This is the state-change gate
-# AND the cross-flavour de-duplicator -- .sh and .ps1 both fire on Stop, and
-# exactly one of them may speak per changed state.
-expect_pulse 0 "$PD" sess-a false "unchanged state must not block twice"
-
-# MUST ALLOW: not a crew repo at all. Every plain git checkout on the machine
-# would otherwise block on graphStale, because there is genuinely no graph.
-ND=$(mktemp -d) || exit 1
-expect_pulse 0 "$ND" sess-b false "non-crew directory must not block"
-rm -rf "$ND"
-
-# MUST ALLOW: the PM switched off in config. An off switch that still blocks
-# the end of every turn is not an off switch.
-DD=$(mktemp -d) || exit 1
-mkdir -p "$DD/.crew"
-printf '{"schema":2,"pm":{"enabled":false}}\n' > "$DD/.crew/config.json"
-expect_pulse 0 "$DD" sess-c false "pm.enabled false must not block"
-rm -rf "$DD"
-
-# MUST ALLOW: no session id. claim() fails CLOSED here (unlike hook_once), so
-# an unkeyable pulse stays silent rather than blocking every turn forever.
-expect_pulse 0 "$PD" "" false "missing session id must not block"
-
-# The per-session cap. Standing down has to MEAN standing down: the notice is
-# said once and then the hook is quiet, however many times the state changes
-# afterwards. Keying that claim on the state fingerprint instead of on a fixed
-# marker is the bug this pair exists to catch -- every later change would be a
-# new fingerprint, would claim cleanly, and would block the turn again to
-# repeat the same "standing down" line, which is not a cap.
-#
-# SABOTAGE-TEST: key the over-cap claim on `digest` in pm_pulse.py's main() and
-# confirm the second case below goes red.
-CAPS=sess-cap
-for _n in $(seq 1 12); do
-  : > "$PD/.crew/.pm-pulse-$CAPS-filler$_n"
-done
-# MUST BLOCK: the pulse that trips the cap says so, once.
-expect_pulse 2 "$PD" "$CAPS" false "over the cap, the stand-down notice is given"
-# MUST ALLOW: a genuinely new state afterwards. It has to move a field the
-# FINGERPRINT actually covers -- tier and roles are not among them, so a config
-# edit alone would leave the digest identical and the case would pass for the
-# wrong reason. A pending handoff is one of the five that count.
-mkdir -p "$PD/.work"
-: > "$PD/.work/HANDOFF.md"
-expect_pulse 0 "$PD" "$CAPS" false "past the cap, a new state must not block again"
-rm -rf "$PD/.work"
-rm -f "$PD/.crew/.pm-pulse-$CAPS-"*
-
-# A block with empty stderr is a block that says nothing: the turn fails and
-# the model is told to continue with no reason. Exit code alone cannot catch
-# that, so assert the content -- through the WRAPPER, which is the path
-# hooks.json actually uses and the only one that proves `exec` propagates the 2.
-PERR="$PD/pulse-stderr.txt"
-pulse_payload "$PD" sess-stderr false | bash "$SCRIPTS/pm-pulse.sh" \
-  >/dev/null 2>"$PERR"
-PRC=$?
-[ "$PRC" = 2 ] && pass || fail "pm_pulse: wrapper must propagate exit 2 (got $PRC)"
-grep -q 'Crew PM' "$PERR" && pass || fail "pm_pulse: blocking stderr must name the PM"
-grep -q 'priorit' "$PERR" && pass \
-  || fail "pm_pulse: stderr must carry the user-priority override"
-grep -q 'graph' "$PERR" && pass \
-  || fail "pm_pulse: stderr must carry the actual finding, not just the directive"
-
-# pm.authority gates what the pulse TELLS the model to do. Leaking the `act`
-# directive into a report-only repo makes the switch a lie: config says "ask
-# me", hook says "go". Asserted through the wrapper, on real config files.
-AD=$(mktemp -d); mkdir -p "$AD/.crew"
-printf '{"schema":2,"pm":{"authority":"act"}}\n' > "$AD/.crew/config.json"
-pulse_payload "$AD" auth-act false | bash "$SCRIPTS/pm-pulse.sh" \
-  >/dev/null 2>"$AD/err.txt"
-grep -q 'Act on them' "$AD/err.txt" && pass \
-  || fail "pm_pulse: authority=act must send the work-order directive"
-grep -qv 'do NOT dispatch' "$AD/err.txt" && pass \
-  || fail "pm_pulse: authority=act must not send the report-only directive"
-
-RD2=$(mktemp -d); mkdir -p "$RD2/.crew"
-printf '{"schema":2,"pm":{"authority":"report-only"}}\n' > "$RD2/.crew/config.json"
-pulse_payload "$RD2" auth-ro false | bash "$SCRIPTS/pm-pulse.sh" \
-  >/dev/null 2>"$RD2/err.txt"
-grep -q 'do NOT dispatch' "$RD2/err.txt" && pass \
-  || fail "pm_pulse: authority=report-only must forbid dispatching"
-grep -q 'Act on them in the order given' "$RD2/err.txt" \
-  && fail "pm_pulse: report-only leaked the act directive" || pass
-
-# A config with NO authority key at all must behave as report-only -- this is
-# the upgrade path, where an existing install gains the pulse without ever
-# having opted into autonomy.
-UD=$(mktemp -d); mkdir -p "$UD/.crew"
-printf '{"schema":2,"tier":1}\n' > "$UD/.crew/config.json"
-pulse_payload "$UD" auth-absent false | bash "$SCRIPTS/pm-pulse.sh" \
-  >/dev/null 2>"$UD/err.txt"
-grep -q 'do NOT dispatch' "$UD/err.txt" && pass \
-  || fail "pm_pulse: absent authority must default to report-only"
-
-# And a typo must fail closed rather than widening permissions.
-TD=$(mktemp -d); mkdir -p "$TD/.crew"
-printf '{"schema":2,"pm":{"authority":"acr"}}\n' > "$TD/.crew/config.json"
-pulse_payload "$TD" auth-typo false | bash "$SCRIPTS/pm-pulse.sh" \
-  >/dev/null 2>"$TD/err.txt"
-grep -q 'do NOT dispatch' "$TD/err.txt" && pass \
-  || fail "pm_pulse: a typo'd authority must fail closed to report-only"
-rm -rf "$AD" "$RD2" "$UD" "$TD"
-
-# The cap is a backstop against a repo whose state oscillates every turn. If
-# `pulses_taken`'s marker prefix ever drifts it silently returns 0 forever and
-# the cap stops existing -- which is invisible without a test.
-"$PY" - "$SCRIPTS" "$PD" <<'PYEOF' && pass || fail "pm_pulse: session cap"
-import os, sys
-sys.path.insert(0, sys.argv[1])
-root = sys.argv[2]
-import pm_pulse
-
-before = pm_pulse.pulses_taken(root, "cap-sess")
-for i in range(3):
-    pm_pulse.claim(root, "cap-sess", f"{i:016x}")
-after = pm_pulse.pulses_taken(root, "cap-sess")
-if before != 0 or after != 3:
-    print(f"  unit FAIL: pulses_taken {before} -> {after}, want 0 -> 3")
-    sys.exit(1)
-# A marker for a different session must not be counted against this one.
-pm_pulse.claim(root, "other-sess", "ffffffffffffffff")
-if pm_pulse.pulses_taken(root, "cap-sess") != 3:
-    print("  unit FAIL: another session's markers leaked into the count")
-    sys.exit(1)
-# The same digest twice is one pulse, not two -- this is the de-duplicator.
-if pm_pulse.claim(root, "cap-sess", "0000000000000000"):
-    print("  unit FAIL: re-claiming the same digest must return False")
-    sys.exit(1)
-sys.exit(0)
-PYEOF
-
-# Pure-function cases: cheaper and sharper than driving the hook for each.
-"$PY" - "$SCRIPTS" <<'PYEOF' && pass || fail "pm_pulse: unit cases"
-import sys
-sys.path.insert(0, sys.argv[1])
-import pm_pulse
-
-ok = True
-
-def check(cond, label):
-    global ok
-    if not cond:
-        print(f"  unit FAIL: {label}")
-        ok = False
-
-# A finding that is a standing condition is not worth interrupting a turn for.
-check(not pm_pulse.should_pulse({
-    "isCrew": True, "triggers": ["ticketsTooLarge", "reviewNotWorking"]}),
-    "quiet-only triggers must not pulse")
-# ...but a real one alongside them is.
-check(pm_pulse.should_pulse({
-    "isCrew": True, "triggers": ["ticketsTooLarge", "graphStale"]}),
-    "a real trigger alongside quiet ones must pulse")
-# A healthy crew says nothing.
-check(not pm_pulse.should_pulse({"isCrew": True, "triggers": []}),
-    "no triggers must not pulse")
-
-# The fingerprint is the state-change gate: equal states must agree, and a
-# changed trigger set must not. If this stops holding, the hook either never
-# fires again or fires every turn.
-a = {"isCrew": True, "triggers": ["graphStale"],
-     "work": {"ticket": "T-1"}, "health": {"verdict": "ok"}}
-b = dict(a, triggers=["graphStale", "diagramsStale"])
-c = dict(a, work={"ticket": "T-2"})
-check(pm_pulse.fingerprint(a) == pm_pulse.fingerprint(dict(a)),
-      "same state must fingerprint equal")
-check(pm_pulse.fingerprint(a) != pm_pulse.fingerprint(b),
-      "changed triggers must fingerprint differently")
-check(pm_pulse.fingerprint(a) != pm_pulse.fingerprint(c),
-      "changed ticket must fingerprint differently")
-# health.rate deliberately excluded -- it moves on every review and would fire
-# the hook on changes nobody asked to hear about.
-check(pm_pulse.fingerprint(a) == pm_pulse.fingerprint(
-      dict(a, health={"verdict": "ok", "rate": 1.7})),
-      "health.rate must not move the fingerprint")
-
-sys.exit(0 if ok else 1)
-PYEOF
-rm -rf "$PD"
-
-# ---------------------------------------------------------------------------
 # crew_state.py -- diagram freshness. Anchor-based, never mtime-based.
 # ---------------------------------------------------------------------------
 echo "== crew_state.py: diagrams =="
@@ -1037,6 +818,225 @@ check(crew_state.read_diagrams(root, {"docs": "nonsense"})["total"] == 3,
 
 sys.exit(0 if ok else 1)
 PYEOF
+
+# --- cloud-guard.sh: the cloud/destructive guard ---------------------------
+# The bash flavour, end to end, through the real wrapper. The full matrix -
+# every case through python, bash AND pwsh - is tests/test_cloud_guard.py;
+# this is the must-block / must-allow floor that runs wherever bash does.
+# A decision is PreToolUse JSON on stdout with exit 0: `deny` or `ask` in
+# `permissionDecision`, or NO output at all, which is the only spelling of
+# allow (the guard never prints `allow`).
+echo "== cloud-guard.sh =="
+CG=$(mktemp -d) || exit 1
+mkdir -p "$CG/repo/.crew" "$CG/home"
+printf '{"guards":{"cloudGuard":"block"}}' > "$CG/repo/.crew/config.json"
+cguard_raw() {  # $1 = raw stdin -> the wrapper's stdout
+  # `-u OS`: on Windows, Git Bash inherits OS=Windows_NT, and there the bash
+  # flavour stands down for PowerShell CALLS, which its twin judges -- which
+  # would make every PowerShell case below an allow. Bash calls it judges
+  # whatever OS says; the Windows_NT cases after this list prove that.
+  printf '%s' "$1" | env -u AWS_PROFILE -u AWS_DEFAULT_PROFILE \
+        -u AWS_ACCESS_KEY_ID -u CI -u CREW_UNATTENDED -u AZURE_SUBSCRIPTION_ID \
+        -u OS HOME="$CG/home" CLAUDE_PROJECT_DIR="$CG/repo" \
+        bash "$SCRIPTS/cloud-guard.sh" 2>/dev/null
+}
+cguard() {  # $1 = tool, $2 = command -> echoes deny|ask|allow
+  local out
+  out=$(cguard_raw "$(json_cmd "$1" "$2")")
+  # A `systemMessage` with no decision (report mode, the one-time unpinned
+  # note) is an allow. A printed `allow` is not: it would skip the user's own
+  # prompt, so it is reported as unparsed and fails the case.
+  case "$out" in
+    *'"permissionDecision": "deny"'*) echo deny ;;
+    *'"permissionDecision": "ask"'*)  echo ask ;;
+    *'"permissionDecision"'*) echo "unparsed:$out" ;;
+    '{"systemMessage": '*) echo allow ;;
+    '') echo allow ;;
+    *) echo "unparsed:$out" ;;
+  esac
+}
+cexpect() {  # $1 = want, $2 = tool, $3 = command
+  local got; got=$(cguard "$2" "$3")
+  if [ "$got" = "$1" ]; then pass; else fail "cloud-guard want=$1 got=$got  [$2] $3"; fi
+}
+cexpect deny  Bash 'terraform apply -auto-approve'
+cexpect deny  Bash 'cd infra && sudo -E env TF_LOG=1 tofu destroy'
+cexpect deny  Bash 'aws ec2 terminate-instances --instance-ids i-1'
+cexpect deny  Bash 'aws s3 rm s3://bucket --recursive'
+cexpect deny  Bash 'az group delete -n rg --yes'
+cexpect deny  Bash "psql -h db -c 'DROP TABLE users'"
+cexpect deny  Bash "$(printf 'psql <<SQL\nTRUNCATE t;\nSQL')"
+cexpect deny  Bash 'git push --force origin main'
+cexpect deny  PowerShell 'Invoke-Sqlcmd -Query "DROP TABLE t" -ServerInstance s'
+cexpect deny  PowerShell "& 'C:\\tools\\terraform.exe' destroy"
+cexpect allow Bash 'terraform plan'
+cexpect allow Bash 'aws s3 ls'
+cexpect allow Bash 'az group list'
+cexpect allow Bash "psql -c \"SELECT 'DROP TABLE x'\""
+cexpect allow Bash 'git push'
+cexpect allow Bash 'git commit -m "terraform destroy; DROP TABLE t; git push --force"'
+cexpect allow PowerShell 'Get-ChildItem; terraform plan'
+# Review round 1 (Codex): each of these was the other answer before its fix.
+cexpect deny  Bash "echo 'DROP TABLE t;' | tee /tmp/q | psql"
+cexpect deny  Bash 'echo destroy | xargs terraform'
+cexpect deny  Bash 'echo --force | xargs git push'
+cexpect deny  Bash 'az group --subscription prod delete -n rg'
+cexpect deny  Bash "bash -c -- 'terraform destroy'"
+cexpect deny  Bash 'echo $(echo $(echo $(echo $(echo $(echo $(echo $(echo $(ls))))))))'
+cexpect deny  PowerShell '(((((((((Get-Date)))))))))'
+cexpect deny  PowerShell "Write-Output 'DROP TABLE t' | Tee-Object -FilePath q | mysql app"
+cexpect allow Bash 'aws ec2 terminate-instances --instance-ids i-1 --dry-run'
+cexpect allow Bash 'terraform apply -help'
+cexpect allow PowerShell 'Remove-AzResourceGroup -Name rg -WhatIf'
+cexpect allow Bash 'git ls-files -m | xargs git add'
+# Review round 2 (Codex): each of these was the other answer before its fix.
+# The psql case was an allow in round 1; with standard_conforming_strings off
+# the server reads `\'` as an escape and the DROP as live, so it is refused.
+cexpect deny  Bash "psql -c \"SELECT 'C:\\' AS p, 'DROP TABLE x' AS s\""
+cexpect deny  Bash "mysql -e \"SELECT 'a\\' ; DROP TABLE t; -- '\""
+cexpect deny  PowerShell "Remove-AzResourceGroup -Name '-WhatIf'"
+cexpect deny  Bash 'xargs -a input -I CMD CMD destroy'
+cexpect deny  Bash 'aws ec2 terminate-instances --dry-run --no-dry-run'
+cexpect deny  Bash "terraform destroy -auto-approve -var-file '--help'"
+cexpect allow Bash "mysql -e 'SELECT 1 -- DROP TABLE t'"
+cexpect allow Bash 'aws ec2 terminate-instances --no-dry-run --dry-run'
+cexpect allow Bash 'terraform apply -var-file x.tfvars -help'
+cexpect allow PowerShell 'Remove-AzResourceGroup -Name rg -Force -WhatIf'
+# By the TOOL, not the OS: under OS=Windows_NT this flavour still judges a
+# Bash call, and stands down only for a PowerShell one, which the .ps1 judges.
+cg_windows() {  # $1 = tool, $2 = command -> the wrapper's stdout
+  json_cmd "$1" "$2" | env -u AWS_PROFILE -u AWS_DEFAULT_PROFILE \
+      -u AWS_ACCESS_KEY_ID -u CI -u CREW_UNATTENDED OS=Windows_NT \
+      HOME="$CG/home" CLAUDE_PROJECT_DIR="$CG/repo" \
+      bash "$SCRIPTS/cloud-guard.sh" 2>/dev/null
+}
+case "$(cg_windows Bash 'terraform destroy')" in
+  *'"permissionDecision": "deny"'*) pass ;;
+  *) fail "cloud-guard: OS=Windows_NT stood the bash flavour down for a Bash call" ;;
+esac
+if [ -z "$(cg_windows PowerShell 'terraform destroy')" ]; then pass; else
+  fail "cloud-guard: OS=Windows_NT, the bash flavour judged a PowerShell call its twin judges"
+fi
+# Malformed input is refused while armed.
+case "$(cguard_raw '{not json')" in
+  *'"permissionDecision": "deny"'*) pass ;;
+  *) fail "cloud-guard: malformed input was not refused while armed" ;;
+esac
+# A pin configured anywhere makes an unnameable identity unknown, read-only
+# included; unattended, unknown is refused.
+printf '{"guards":{"cloudGuard":"block"},"cloud":{"awsRegions":["eu-*"]}}' \
+  > "$CG/repo/.crew/config.json"
+out=$(json_cmd Bash 'aws s3 ls --region eu-west-1' | env -u AWS_PROFILE \
+      -u AWS_DEFAULT_PROFILE -u AWS_ACCESS_KEY_ID -u OS CI=true \
+      HOME="$CG/home" CLAUDE_PROJECT_DIR="$CG/repo" \
+      bash "$SCRIPTS/cloud-guard.sh" 2>/dev/null)
+case "$out" in
+  *'"permissionDecision": "deny"'*'[cloudIdentity]'*) pass ;;
+  *) fail "cloud-guard: unknown identity with a region pinned passed in CI: $out" ;;
+esac
+# A malformed `cloud` block is an invalid layer: armed, it fails closed.
+printf '{"guards":{"cloudGuard":"report"},"cloud":null}' > "$CG/repo/.crew/config.json"
+cexpect deny  Bash 'terraform destroy'
+# Report mode prints NO decision, only a visible note of what block would do.
+printf '{"guards":{"cloudGuard":"report"}}' > "$CG/repo/.crew/config.json"
+case "$(cguard_raw "$(json_cmd Bash 'terraform destroy')")" in
+  '{"systemMessage": '*'report mode'*) pass ;;
+  *) fail "cloud-guard: report mode printed a decision or no note" ;;
+esac
+# Off is the default: the same destroy with no `cloudGuard` key is not judged.
+printf '{}' > "$CG/repo/.crew/config.json"
+cexpect allow Bash 'terraform destroy -auto-approve'
+rm -rf "$CG"
+
+# --- webtest guard (crew 1.0 web testing) ----------------------------------
+# webtest_guard.py is not a hook; it is a check the verify rules call, and the
+# gate runs every rule command through `bash -c` from both flavours. So these
+# run it the same way. Must-block and must-allow for each check; the pwsh twin
+# is _test/webtest-guard.ps1.
+WT=$(mktemp -d) || exit 1
+WG="$SCRIPTS/webtest_guard.py"
+wt_git() { git -C "$WT" "$@" >/dev/null 2>&1; }
+wt_git init -q -b main
+wt_git config user.email t@example.invalid
+wt_git config user.name t
+mkdir -p "$WT/tests" "$WT/.work/tickets/T-0007" "$WT/playwright/.auth" "$WT/nogit"
+printf '.work/\n/playwright/.auth/\n/nogit/\n' > "$WT/.gitignore"
+printf "test('a', async () => {});\n" > "$WT/tests/a.spec.ts"
+printf '{}' > "$WT/playwright/.auth/user.json"
+printf '# s\n\n## Exclusions\n- none\n' > "$WT/.work/tickets/T-0007/spec.md"
+wt_git add -A
+wt_git commit -qm base
+WT_BASE=$(git -C "$WT" rev-parse HEAD)
+wexpect() {  # $1 = want rc, $2 = label, $3 = root, $4.. = guard args
+  local want="$1" label="$2" root="$3"; shift 3
+  local rc
+  bash -c "\"$PY\" \"$WG\" $* --root \"$root\"" >/dev/null 2>&1 </dev/null; rc=$?
+  if [ "$rc" -eq "$want" ]; then pass; else fail "webtest-guard want=$want got=$rc  $label"; fi
+}
+wexpect 0 "skips: no change allows" "$WT" skips --ticket T-0007 --base "$WT_BASE"
+printf "test.skip('flaky', async () => {});\n" >> "$WT/tests/a.spec.ts"
+wexpect 1 "skips: added test.skip blocks" "$WT" skips --ticket T-0007 --base "$WT_BASE"
+printf '# s\n\n## Exclusions\n- skip: tests/a.spec.ts "flaky"\n' > "$WT/.work/tickets/T-0007/spec.md"
+wexpect 0 "skips: skip named in Exclusions allows" "$WT" skips --ticket T-0007 --base "$WT_BASE"
+printf "test.fixme();\n" > "$WT/tests/b.spec.ts"
+wexpect 1 "skips: fixme in a new untracked spec blocks" "$WT" skips --ticket T-0007 --base "$WT_BASE"
+wexpect 0 "auth-leak: ignored .auth allows" "$WT" auth-leak
+wt_git add -f playwright/.auth/user.json
+wexpect 1 "auth-leak: tracked .auth blocks" "$WT" auth-leak
+unset CREW_PLAYWRIGHT_IMAGE
+wexpect 77 "visual: off the pinned image is SKIP" "$WT" visual
+CREW_PLAYWRIGHT_IMAGE=mcr.microsoft.com/playwright:v1.62.0-noble \
+  wexpect 77 "visual: a different image is SKIP" "$WT" visual
+GIT_CEILING_DIRECTORIES="$WT" \
+  wexpect 2 "auth-leak outside git is UNKNOWN, not a pass" "$WT/nogit" auth-leak
+# Full-content skip scan (round-1 fixes): helpers, renames, prose exclusions,
+# multiline and computed forms. A fresh base with the tracked .auth file gone.
+wt_git rm -q --cached playwright/.auth/user.json
+rm -f "$WT/tests/b.spec.ts"
+printf 'export const u = 1;\n' > "$WT/tests/util.ts"
+printf "test.skip(true, 'disabled');\n" > "$WT/tests/skipper.ts"
+mkdir -p "$WT/.work/tickets/T-0008"
+printf '# s\n\n## Exclusions\nDo not add skip: tests/util.ts\n' > "$WT/.work/tickets/T-0008/spec.md"
+wt_git add -A
+wt_git commit -qm base2
+WT_BASE2=$(git -C "$WT" rev-parse HEAD)
+wexpect 0 "skips: an unchanged tree allows" "$WT" skips --ticket T-0008 --base "$WT_BASE2"
+printf "test.skip(true, 'disabled');\n" >> "$WT/tests/util.ts"
+wexpect 1 "skips: a helper skip blocks; prose under Exclusions excuses nothing" "$WT" skips --ticket T-0008 --base "$WT_BASE2"
+printf 'export const u = 1;\n' > "$WT/tests/util.ts"
+wt_git mv tests/skipper.ts tests/skipper.spec.ts
+wexpect 1 "skips: renaming a skipping helper into a spec blocks" "$WT" skips --ticket T-0008 --base "$WT_BASE2"
+wt_git mv tests/skipper.spec.ts tests/skipper.ts
+printf "test('c', {\n  annotation: {\n    type:\n      'fixme' },\n}, async () => {});\n" > "$WT/tests/c.spec.ts"
+wexpect 1 "skips: an annotation split across lines blocks" "$WT" skips --ticket T-0008 --base "$WT_BASE2"
+rm -f "$WT/tests/c.spec.ts"
+printf "test['skip']('d', () => {});\n" > "$WT/tests/d.spec.cts"
+wexpect 1 "skips: a computed skip in a .cts spec blocks" "$WT" skips --ticket T-0008 --base "$WT_BASE2"
+rm -f "$WT/tests/d.spec.cts"
+printf "// test.skip('only a comment');\n" > "$WT/tests/e.spec.ts"
+wexpect 0 "skips: a skip inside a comment allows" "$WT" skips --ticket T-0008 --base "$WT_BASE2"
+rm -f "$WT/tests/e.spec.ts"
+mkdir -p "$WT/sessions"
+printf "const state = 'sessions/user.json';\nexport default { use: { storageState: state } };\n" > "$WT/playwright.config.ts"
+printf '{}' > "$WT/sessions/user.json"
+wt_git add -f sessions/user.json
+wexpect 1 "auth-leak: a tracked storageState named through a const blocks" "$WT" auth-leak
+wt_git rm -q --cached sessions/user.json
+wexpect 0 "auth-leak: the same const-bound storageState, untracked, allows" "$WT" auth-leak
+printf 'export default { use: { storageState: process.env.STATE } };\n' > "$WT/playwright.config.ts"
+wexpect 1 "auth-leak: an unresolvable storageState fails closed" "$WT" auth-leak
+mkdir -p "$WT/.crew"
+printf '{"webtest":{"storageState":"sessions/user.json"}}' > "$WT/.crew/config.json"
+wexpect 0 "auth-leak: a declared storageState resolves it" "$WT" auth-leak
+# The env var alone is not evidence of the pinned image. Only asserted on a
+# host with no container marker and no /ms-playwright, where it must SKIP.
+if [ ! -e /.dockerenv ] && [ ! -e /run/.containerenv ] && [ ! -d /ms-playwright ]; then
+  CREW_PLAYWRIGHT_IMAGE=mcr.microsoft.com/playwright:v1.63.0-noble \
+    wexpect 77 "visual: the pinned image named by env alone is SKIP" "$WT" visual
+else
+  echo "SKIP: webtest-guard env-alone visual case -- this host carries a container marker"
+fi
+rm -rf "$WT"
 
 # --- the PowerShell flavour guard ------------------------------------------
 # hooks.json registers every event TWICE, once per flavour. On a host with

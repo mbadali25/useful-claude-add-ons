@@ -48,108 +48,171 @@ $dir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $script:VaultGuardRejected = @()
 
 function Resolve-VaultGuardPython {
-  # The PowerShell twin of vault-guard.sh's `_vault_guard_resolve_python`,
-  # itself a near-copy of crew's `_resolve_role_write_python`
-  # (plugin/crew/hooks/scripts/role-write-guard.sh:32-57). Why it is copied
-  # rather than shared is argued in the .sh; the short form is that crew and
-  # obsidian-vault install independently, so there is no file this one could
-  # dot-source.
+  # Memoized within this process: a resolved (or exhausted) answer is not
+  # re-derived by a second call in the same run, which would otherwise
+  # re-walk and re-probe PATH from scratch. Cached only for the life of
+  # THIS process -- a fresh hook invocation gets a fresh probe.
+  if ($script:VaultGuardPyMemoDone) {
+    $script:VaultGuardRejected = $script:VaultGuardPyMemoRejected
+    return $script:VaultGuardPyMemoResult
+  }
+  # The PowerShell twin of vault-guard.sh's resolver, and the same algorithm as
+  # crew's one shared Resolve-CrewPython: EVERY PATH match of every name is a
+  # candidate, and each is EXECUTED (bounded, 3s) before it is believed.
+  # Where it lives never decides. A WindowsApps App Execution Alias is tried
+  # like anything else: it forwards to a working interpreter when Python is
+  # installed and fails the probe when it is not. crew 1.0's Windows burn-in
+  # found the old path rule plus first-match-per-name discarding three
+  # WORKING aliases and never reaching the real python.exe behind them.
   #
-  # `Get-Command $name | Select-Object -First 1`, never `-All`: bash's
-  # `command -v` takes only the first match for a name and then moves to the
-  # NEXT NAME. `-All` walks past a WindowsApps stub to a same-named real
-  # python further down PATH, which bash never does - and the two flavours
-  # then enforce different decisions on one machine. That is a reported crew
-  # bug, not a hypothetical.
+  # Launched as a Process, not `& $cmd.Source -c ...`: the argument string
+  # reaches the OS as written, so legacy native-argument passing (5.1, pwsh
+  # <=7.2) has nothing to strip, and the probe can be timed out. The python
+  # literal stays single-quoted all the same (_test/test_ps1_legacy_args.sh).
+  # No `continue` inside try/catch: loop control across that boundary
+  # differs between PowerShell versions, so the verdict leaves in variables.
+  #
+  # An OVERALL deadline on top of each candidate's own 3s probe bound: a
+  # PATH with several hung candidates would otherwise cost 3s EACH, adding
+  # up past this hook's own 10s timeout even though every individual probe
+  # is bounded. Kept well inside that.
+  $deadline = [System.Diagnostics.Stopwatch]::StartNew()
   $names = @('python3', 'python', 'py')
   foreach ($name in $names) {
-    $cmd = Get-Command $name -ErrorAction SilentlyContinue | Select-Object -First 1
-    if (-not $cmd) { continue }
-    if ($cmd.CommandType -ne 'Application' -or -not $cmd.Source) {
-      # hooks.json registers this hook with no -NoProfile, so a
-      # `function python { ... }` in a user profile is loaded and wins here.
-      # Its Source is empty; saying so beats reporting "no python found" on a
-      # machine that has python installed.
-      $script:VaultGuardRejected += "$name (resolved to a $($cmd.CommandType), not an executable - a profile function or alias is shadowing it)"
-      continue
+    # hooks.json registers this hook with no -NoProfile, so a `function
+    # python { ... }` in a user profile is loaded. It is reported, never run;
+    # the executables behind it are still candidates.
+    foreach ($shadow in @(Get-Command $name -All -ErrorAction SilentlyContinue | Where-Object { $_.CommandType -ne 'Application' })) {
+      $script:VaultGuardRejected += "$name (resolved to a $($shadow.CommandType), not an executable - a profile function or alias is shadowing it)"
     }
-    # NOT a blanket "reject anything whose Source contains WindowsApps" - that
-    # used to sit here (on both $cmd.Source above and $real below) and is a
-    # location guess, not a stub detector. On a host where Python is installed
-    # through the Microsoft Store, EVERY candidate's real interpreter genuinely
-    # lives under
-    # ...\WindowsApps\PythonSoftwareFoundation.Python.3.x_<hash>\python.exe -
-    # so the blanket reject fired on a working Python 3.14 too, this resolver
-    # returned '', and the caller's "no usable python" fallback stood the
-    # guard down on a machine where python plainly works. Reported 2026-09-24
-    # against a real PreToolUse-shaped Write payload; role-write-guard.ps1 hit
-    # and fixed the identical bug the same day (see its Resolve-CrewPython
-    # comment). Metadata alone is exactly what the Store alias ALSO passes:
-    # Get-Command reports it as a real Application with a real Source. Launch
-    # it and read back a token this script chose - only a python that parsed
-    # and ran the -c program can emit the prefix; that proof does not need to
-    # know WHERE the interpreter lives.
-    #
-    # No `continue` from inside the try/catch below: the loop-control
-    # keywords behave inconsistently across PowerShell versions when they
-    # cross a try/catch boundary, so the rejection reason is carried out in a
-    # variable and acted on after it.
-    $probe = $null
-    $reason = ''
-    $global:LASTEXITCODE = $null
-    try {
-      # Captured WHOLE, not piped through `Select-Object -First 1`: that
-      # cmdlet can close the pipeline as soon as it has one object, racing
-      # the native process's exit and leaving $LASTEXITCODE reflecting an
-      # early termination rather than the candidate's real status.
-      # Single-quoted python string literal, escaped for PowerShell's outer
-      # single-quoted argument as `''...''` - NOT the double-quoted form this
-      # line carried until this fix. Windows PowerShell 5.1 and pwsh <=7.2
-      # (also pwsh 7.6 under `$PSNativeCommandArgumentPassing = 'Legacy'`,
-      # which is how this was reproduced without a Windows machine) pass
-      # native arguments the legacy way and STRIP embedded double quotes
-      # before python ever sees them - `sys.stdout.write("vault-guard-python:"
-      # + sys.executable)` arrived as `sys.stdout.write(vault-guard-python: +
-      # sys.executable)`, a SyntaxError, exit 1, and every real interpreter
-      # was rejected as "did not answer the interpreter probe". Single quotes
-      # are not special to that legacy reconstruction, so this form has none
-      # left to strip. See _test/test_ps1_legacy_args.sh.
-      $output = & $cmd.Source -c 'import sys; sys.stdout.write(''vault-guard-python:'' + sys.executable)' 2>$null
-      if ($LASTEXITCODE -ne 0) {
-        $reason = "$($cmd.Source) (ran, but exited $LASTEXITCODE instead of answering the interpreter probe)"
-      } elseif ($output) {
-        $probe = @($output)[0]
+    foreach ($cmd in @(Get-Command $name -All -CommandType Application -ErrorAction SilentlyContinue)) {
+      if (-not $cmd.Source) { continue }
+      # The remaining budget, not a flat 3000ms, bounds THIS candidate's
+      # wait: checking the deadline only before launch and then waiting the
+      # full 3s regardless can still overrun the deadline by up to 3s once
+      # a candidate is entered, which on a run of several near-8s-but-under
+      # candidates followed by one hung one can overrun both this deadline
+      # and the 10s hook timeout it exists to stay inside.
+      $vaultGuardRemainingMs = 8000 - [int]$deadline.Elapsed.TotalMilliseconds
+      if ($vaultGuardRemainingMs -le 0) {
+        $script:VaultGuardRejected += "PATH walk stopped: the overall resolver deadline was reached before every candidate could be probed"
+        $script:VaultGuardPyMemoDone = $true
+        $script:VaultGuardPyMemoResult = ''
+        $script:VaultGuardPyMemoRejected = $script:VaultGuardRejected
+        return ''
       }
-    } catch {
-      $reason = "$($cmd.Source) (could not be launched: $($_.Exception.Message))"
+      $vaultGuardWaitMs = [Math]::Min(3000, $vaultGuardRemainingMs)
+      $probe = $null
+      $reason = ''
+      try {
+        $psi = New-Object System.Diagnostics.ProcessStartInfo
+        # No literal `%` anywhere in this string: it is passed through
+        # `cmd.exe /d /c` below for a .cmd/.bat shim, and cmd.exe expands
+        # `%...%` pairs in the command line before python ever sees it -
+        # the old `'%d:%d:%s:' % (...)` form put three of them here and
+        # cmd's expansion corrupted the program, so a .cmd-only Python
+        # (a pyenv-win install, for instance) always failed the probe.
+        $probeArgs = '-c "import sys; v = sys.version_info; sys.stdout.write(''vault-guard-python:'' + str(v[0]) + '':'' + str(v[1]) + '':'' + sys.implementation.name + '':'' + sys.executable)"'
+        if ($cmd.Source -match '\.(cmd|bat)$') {
+          # UseShellExecute=false hands FileName straight to CreateProcess,
+          # which can only launch a real PE executable -- not a .cmd/.bat
+          # shim (a pyenv-win install is exactly this shape). Route it
+          # through cmd.exe /d /c instead of flipping UseShellExecute to
+          # $true, which would resolve by shell file association rather
+          # than run it as a command. Wrapping the whole command line in
+          # one more pair of quotes defeats cmd's "exactly two quotes"
+          # special case, so both the quoted shim path and the quoted -c
+          # argument survive intact. Ported from crew's role-write-guard.ps1
+          # (commit a39ac347), which fixed the same gap on the same
+          # machines first.
+          $psi.FileName = Join-Path $env:SystemRoot 'System32\cmd.exe'
+          $psi.Arguments = '/d /c "' + '"' + $cmd.Source + '" ' + $probeArgs + '"'
+        } else {
+          $psi.FileName = $cmd.Source
+          $psi.Arguments = $probeArgs
+        }
+        $psi.UseShellExecute = $false
+        $psi.RedirectStandardOutput = $true
+        $psi.RedirectStandardError = $true
+        $psi.CreateNoWindow = $true
+        $proc = [System.Diagnostics.Process]::Start($psi)
+        $outTask = $proc.StandardOutput.ReadToEndAsync()
+        $null = $proc.StandardError.ReadToEndAsync()
+        if (-not $proc.WaitForExit($vaultGuardWaitMs)) {
+          # The whole tree, not the candidate: a py.exe-style launcher's child
+          # inherits the redirected handles and outlives a plain Kill().
+          # Kill($true) is PowerShell 7 (.NET Core 3+); 5.1 has no such
+          # overload and falls back to taskkill /T /F.
+          try {
+            $proc.Kill($true)
+          } catch {
+            try { & taskkill.exe /T /F /PID $proc.Id 2>&1 | Out-Null } catch { }
+            try { $proc.Kill() } catch { }
+          }
+          # Reap the killed tree with its own bound, rather than leaving it
+          # torn down but never waited on for however long that takes.
+          try { $null = $proc.WaitForExit(2000) } catch { }
+          $reason = "$($cmd.Source) (did not answer the interpreter probe within 3s, and was killed)"
+        } elseif ($proc.ExitCode -ne 0) {
+          $reason = "$($cmd.Source) (ran, but exited $($proc.ExitCode) instead of answering the interpreter probe)"
+        } elseif ($outTask.Wait(1000)) {
+          $probe = $outTask.Result
+        }
+        try { $proc.Dispose() } catch { }
+      } catch {
+        $reason = "$($cmd.Source) (could not be launched: $($_.Exception.Message))"
+      }
+      if ($reason) {
+        $script:VaultGuardRejected += $reason
+        continue
+      }
+      if ($probe) { $probe = $probe.ToString().Trim() }
+      if (-not $probe -or -not $probe.StartsWith('vault-guard-python:')) {
+        $script:VaultGuardRejected += "$($cmd.Source) (ran, but did not answer the interpreter probe)"
+        continue
+      }
+      # `<major>:<minor>:<implementation>:<executable>` after the prefix, and
+      # all four are checked: Python 3.8 or later, CPython or PyPy, and an
+      # executable that exists -- the proof crew's Resolve-CrewPython
+      # demands, and the one vault-guard.sh applies to the same answer.
+      $answer = $probe.Substring('vault-guard-python:'.Length)
+      if ($answer -notmatch '^(\d{1,4}):(\d{1,4}):([^:]*):(.*)$') {
+        $script:VaultGuardRejected += "$($cmd.Source) (answered the probe without a version, implementation and executable)"
+        continue
+      }
+      $major = [int]$Matches[1]
+      $minor = [int]$Matches[2]
+      $impl = $Matches[3]
+      $real = $Matches[4]
+      if ($major -lt 3 -or ($major -eq 3 -and $minor -lt 8)) {
+        $script:VaultGuardRejected += "$($cmd.Source) (answered the probe as Python $major.$minor; 3.8 or later is required)"
+        continue
+      }
+      if ($impl -notin @('cpython', 'pypy')) {
+        $script:VaultGuardRejected += "$($cmd.Source) (answered the probe as implementation '$impl', not cpython or pypy)"
+        continue
+      }
+      if (-not $real) {
+        # An embedded or frozen interpreter can report an empty sys.executable.
+        # It answered honestly, and the answer is still unusable here.
+        $script:VaultGuardRejected += "$($cmd.Source) (answered the probe with an empty sys.executable)"
+        continue
+      }
+      if (-not (Test-Path -LiteralPath $real -PathType Leaf)) {
+        $script:VaultGuardRejected += "$($cmd.Source) (answered the probe with a sys.executable that does not exist: $real)"
+        continue
+      }
+      # sys.executable, not Source: the PATH-found name may be a shim that
+      # re-execs elsewhere, and the probe already asked python where it lives.
+      $script:VaultGuardPyMemoDone = $true
+      $script:VaultGuardPyMemoResult = $real
+      $script:VaultGuardPyMemoRejected = $script:VaultGuardRejected
+      return $real
     }
-    if ($reason) {
-      $script:VaultGuardRejected += $reason
-      continue
-    }
-    if ($probe) { $probe = $probe.ToString().Trim() }
-    if (-not $probe -or -not $probe.StartsWith('vault-guard-python:')) {
-      $script:VaultGuardRejected += "$($cmd.Source) (ran, but did not answer the interpreter probe)"
-      continue
-    }
-    $real = $probe.Substring('vault-guard-python:'.Length)
-    if (-not $real) {
-      # An embedded or frozen interpreter can report an empty sys.executable.
-      # It answered honestly, and the answer is still unusable here.
-      $script:VaultGuardRejected += "$($cmd.Source) (answered the probe with an empty sys.executable)"
-      continue
-    }
-    # No post-execution WindowsApps check either, for the same reason: a real
-    # Store-installed interpreter's OWN sys.executable lives under that path
-    # too. The launch itself is already the proof that matters - a candidate
-    # that could not be exec'd or did not answer the probe was already
-    # rejected above; a printed, non-empty sys.executable came from an
-    # interpreter that just ran successfully, which a path substring adds
-    # nothing to.
-    # sys.executable, not Source: the PATH-found name may be a shim that
-    # re-execs elsewhere, and the probe already asked python where it lives.
-    return $real
   }
+  $script:VaultGuardPyMemoDone = $true
+  $script:VaultGuardPyMemoResult = ''
+  $script:VaultGuardPyMemoRejected = $script:VaultGuardRejected
   return ''
 }
 

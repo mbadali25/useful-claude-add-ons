@@ -1,0 +1,38 @@
+{
+  "plugin/crew/commands/change.md": {
+    "lines": 167,
+    "reason": "T8: to trim"
+  },
+  "plugin/crew/commands/gate.md": {
+    "lines": 163,
+    "reason": "T8: to trim"
+  },
+  "plugin/crew/commands/model.md": {
+    "lines": 249,
+    "reason": "T8: to trim"
+  },
+  "plugin/crew/commands/obsidian-sync.md": {
+    "lines": 176,
+    "reason": "T8: to trim"
+  },
+  "plugin/crew/commands/onboard.md": {
+    "lines": 255,
+    "reason": "raised: item 5 under 'Then make the knowledge executable' runs crew_autoclear_setup.py so a standalone /crew:onboard configures context.autoClear the same way /crew:init does"
+  },
+  "plugin/crew/commands/promote.md": {
+    "lines": 335,
+    "reason": "T8: to trim"
+  },
+  "plugin/crew/commands/review.md": {
+    "lines": 551,
+    "reason": "T8: to trim"
+  },
+  "plugin/crew/commands/upgrade.md": {
+    "lines": 375,
+    "reason": "T8: to trim"
+  },
+  "plugin/crew/commands/verify.md": {
+    "lines": 211,
+    "reason": "T8: to trim"
+  }
+}

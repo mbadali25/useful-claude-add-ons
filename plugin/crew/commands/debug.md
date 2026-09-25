@@ -7,7 +7,7 @@ allowed-tools: Read, Bash, Grep, Glob, Skill
 Find the root cause of: $1
 
 **You are not fixing it in this command.** This command ends with a cause and
-the evidence for it. The fix is `/crew:work`'s job, or the developer's, and it
+the evidence for it. The fix is `/crew:implement`'s job, or the developer's, and it
 starts from what you hand them. A command that diagnoses and patches in one
 breath is one nobody can audit, because the evidence that justified the patch
 was never written down separately from the patch.

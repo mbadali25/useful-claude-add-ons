@@ -51,7 +51,7 @@ Only if the user chose ServiceDesk Plus.
    `sdp.portal` stays `null` unless the connector serves more than one instance.
 
 Tell them the local key is `SDP-<id>`, not the bare request number: the rest of
-crew - the session brief, `/crew:work`, the index - recognises a ticket by its
+crew - `/crew:status`, `/crew:implement`, the index - recognises a ticket by its
 `LETTERS-digits` shape, and a bare number is invisible to all of it.
 
 ## 3d. Obsidian Kanban only — resolve the vault, then create the board

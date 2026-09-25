@@ -12,7 +12,7 @@
 # elsewhere: a hook that WRITES config must not have two implementations that
 # disagree about what it writes.
 #
-# `crew_py_strict`, NOT `crew_py`. Same defect as pm-pulse.sh/pm-brief.sh: a
+# `crew_py_strict`, NOT `crew_py`. Same defect the old PM hooks had: a
 # WindowsApps stub resolves under `command -v`, `exec` launches it, and it
 # produces no output -- nothing left behind to notice or report the failure.
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

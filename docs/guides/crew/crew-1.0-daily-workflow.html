@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Daily Workflow</title>
+<style>
+body { font-family:'Segoe UI',Calibri,Arial,sans-serif; font-size:11pt;
+       color:#ECEFF4; background:#2E3440; margin:2cm; line-height:1.45; }
+.wrap { max-width:none; margin:0; padding:0; }
+
+h1 { font-size:22pt; margin:0 0 4pt; color:#88C0D0; }
+h2 { font-size:16pt; margin:24pt 0 8pt; padding-bottom:3pt;
+     border-bottom:1px solid #4C566A; color:#88C0D0; }
+h3 { font-size:13pt; margin:16pt 0 6pt; color:#88C0D0; }
+p  { margin:6pt 0; }
+ul, ol { margin:4pt 0 8pt 18pt; }
+li { margin:3pt 0; }
+code { font-family:Consolas,'Courier New',monospace; font-size:9.5pt; }
+.sub    { color:#D8DEE9; font-size:10pt; margin:0 0 10pt; }
+.muted  { color:#D8DEE9; font-size:9.5pt; }
+.warn { color:#EBCB8B; }
+.fail { color:#FFB3B8; }
+a { color:#88C0D0; }
+.footer { color:#D8DEE9; font-size:9.5pt; margin-top:26pt;
+          border-top:1px solid #4C566A; padding-top:8pt; }
+.box { background:#3B4252; border:1px solid #88C0D0;
+        padding:8pt 10pt; margin:10pt 0; }
+.plain { background:#3B4252; border-left:4px solid #88C0D0;
+          padding:4pt 10pt; margin:8pt 0; }
+
+/* Every table: real grid, real thead. Both required. */
+table { border-collapse:collapse; width:100%; table-layout:auto;
+             margin:8px 0 4px; }
+th, td { border:1px solid #6B7A94; padding:7px 10px;
+             text-align:left; vertical-align:top; overflow-wrap:break-word; }
+th { background:#434C5E; color:#ECEFF4; font-weight:700;
+             letter-spacing:0.02em; padding:8px 10px; }
+/* Every body cell carries its own fill. Word keeps it when a print drops the
+   page colour; LibreOffice keeps it only in the guide profile's bare `td`
+   (it drops the report's scoped selector - word-traps.md). */
+td { background:#2E3440; color:#ECEFF4; }
+/* Zebra is an explicit class, written per row by the builder. */
+tr.alt td { background:#3B4252; }
+
+table.meta { border-collapse:collapse; width:100%; margin:0 0 14px; }
+table.meta td { border:1px solid #6B7A94; padding:7px 10px; font-size:12px;
+             background:#2E3440; color:#ECEFF4; }
+table.meta td.k { background:#3B4252; font-weight:600; width:17%; }
+
+.lede { background:#3B4252; border-left:4px solid #88C0D0;
+        padding:10px 14px; margin:10px 0 4px; }
+.handling { background:#4A2C33; border-left:4px solid #A3303A;
+            padding:8px 14px; margin:10px 0; font-size:12px; color:#FFD7DB; }
+
+/* Cards are a table on purpose; the number and label are real block
+   elements rather than styled spans. */
+table.cards { border-collapse:separate; border-spacing:8px 0; width:100%;
+              margin:6px 0 2px; }
+td.card { background:#3B4252; border:1px solid #6B7A94; padding:10px 12px;
+          text-align:center; }
+div.n { font-size:22px; font-weight:700; color:#88C0D0; }
+div.l { font-size:11px; color:#D8DEE9; }
+
+.chip-critical, .chip-high, .chip-medium, .chip-low, .chip-info, .chip-unverified { display:inline-block; padding:2px 8px; font-weight:700; font-size:11px; white-space:nowrap; }
+.chip-critical { background:#FDE8E6; color:#A01B12; }
+.chip-high { background:#FFEDD5; color:#9A3412; }
+.chip-medium { background:#FDF3D7; color:#8A6100; }
+.chip-low { background:#E3F4EA; color:#1C6B3F; }
+.chip-info { background:#E8EFF8; color:#2F4B7C; }
+.chip-unverified { background:#EDEEF1; color:#5C5F6B; }
+
+@media print {
+  body { font-size:11pt; }
+  .wrap { padding:0; max-width:none; }
+  h2, h3 { page-break-after:avoid; }
+  tr { page-break-inside:avoid; }
+  thead { display:table-header-group; }
+}
+pre { background:#3B4252; border:1px solid #6B7A94; border-radius:3px;
+      padding:8pt 10pt; margin:8pt 0; overflow-x:auto; white-space:pre; }
+</style>
+<meta name="doc-builder-page" content="#2E3440">
+</head>
+<body bgcolor="#2E3440">
+<h1 id="daily-workflow">Daily Workflow</h1>
+<p>One interactive session owns a ticket through eight phases: brainstorm, spec,
+plan, implement, tests, docs, review, done. Every phase but the light one below
+writes a file under <code>.work/tickets/&lt;id&gt;/</code>, and two of them cannot be skipped
+by accident — <code>/crew:implement</code> refuses without an approved plan, and
+<code>/crew:done</code> refuses without a clean review receipt, a clean verify gate, and
+a passing completion audit.</p>
+<p>For how the scope guard decides what a ticket may touch and what a report
+looks like when it refuses a write, see
+<a href="daily-workflow-scope.md"><code>daily-workflow-scope.md</code></a> (T3).</p>
+<h2 id="full-path-worked-example">Full Path — Worked Example</h2>
+<p><strong>1. Brainstorm.</strong> You type:</p>
+<pre><code class="language-text">/crew:brainstorm add a --dry-run flag to the migrate command
+</code></pre>
+<p>The session mints <code>T-0091</code>, creates <code>.work/tickets/T-0091/</code>, and asks <strong>one
+question at a time</strong>:</p>
+<blockquote>
+<p>Should <code>--dry-run</code> also print what it would do to files that already match
+(no-op writes), or only the ones that would actually change?</p>
+</blockquote>
+<p>You answer. It proposes two approaches, recommendation first, then writes
+<code>.work/tickets/T-0091/direction.md</code> and stops. You say yes.</p>
+<p><strong>2. Spec.</strong> You type <code>/crew:spec T-0091</code>. The session reads the direction,
+uses <code>crew:explorer</code> to pin down <code>path:line</code> evidence, and writes
+<code>spec.md</code> with Intent, Exclusions, Evidence, Unknowns, Touch and Acceptance.
+<code>.work/INDEX.md</code> gets a row.</p>
+<p><strong>3. Plan.</strong> You type <code>/crew:plan T-0091</code>. The session reads <code>spec.md</code>, writes
+one step per unit of work in <code>plan.md</code> (Files/Test/Risk each), checks every
+Files: entry against the spec's Touch globs, and enters <strong>plan mode</strong> to show
+you the whole thing. You review it. On your yes, it asks you to type
+<code>/crew:approve T-0091</code>. crew's prompt hook sees that you typed it and writes
+the approval receipt, bound to this plan's exact contents — edit <code>plan.md</code> after this and
+the receipt no longer matches.</p>
+<p><strong>4. Implement.</strong> You type <code>/crew:implement T-0091</code>. First thing it does:
+checks the receipt. If you skipped step 3, or edited the plan after
+approving it, it refuses here and tells you which. Assuming it passes, it
+records the scope base (<code>scope_base.py --record</code>), works the plan step by
+step — test first, watch it fail, implement, watch it pass — and the
+<strong>plan-approval + scope guard hook</strong> blocks any write outside the spec's
+Touch globs before it happens, not after.</p>
+<p><strong>5–6. Tests and docs.</strong> Coverage lands as part of implementing the plan's
+steps. <code>/crew:docs</code> runs next and usually says "none" — most tickets touch no
+document that needs updating.</p>
+<p><strong>7. Review.</strong> <code>/crew:implement</code> calls <code>/crew:review T-0091</code> last, after tests
+and docs. Codex reviews the bundle (or Copilot, or the Claude fallback,
+whichever survives the author-family strike), reports BLOCK/FIX/NIT lines,
+and you fix the BLOCKs. Two rounds total, ticket-wide — a third is refused and
+the ticket becomes <code>NEEDS_REPLAN</code>.</p>
+<p><strong>8. Done.</strong> You type <code>/crew:done T-0091</code>. Three checks, all required: the
+review receipt rebuilds clean, the verify gate is clean, and the completion
+audit (the whole tree diffed against the scope base) finds nothing outside
+scope. Any one failing refuses the close and names what to fix. On success it
+appends a metrics row, marks the ticket done, and clears a stale handoff.</p>
+<h2 id="what-each-hook-does-in-order">What Each Hook Does, in Order</h2>
+<table>
+<thead>
+<tr>
+<th>When</th>
+<th>Hook</th>
+<th>Does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Every write</td>
+<td>plan-approval + scope guard (<code>PreToolUse</code>)</td>
+<td>refuses an edit with no approval receipt, or outside the spec's Touch</td>
+</tr>
+<tr>
+<td>End of turn</td>
+<td>verify gate (<code>Stop</code>)</td>
+<td>refuses to end the turn on a red check</td>
+</tr>
+<tr>
+<td>End of turn</td>
+<td>completion scope audit (<code>Stop</code>)</td>
+<td>diffs the whole tree against the scope base, catches shell-made writes too</td>
+</tr>
+<tr>
+<td>Session start</td>
+<td>context</td>
+<td>brief on branch, open ticket, gate state, codemap freshness</td>
+</tr>
+</tbody>
+</table>
+<p>None of these ask you anything mid-turn — a blocked write or a red gate shows
+up as a refusal with a reason, not a prompt.</p>
+<h2 id="light-path-crewfix">Light Path — <code>/crew:fix</code></h2>
+<p>For a small, well-understood change (one subsystem, no new behaviour, known
+cause, nothing touching auth/SQL/IaC/secrets/migrations):</p>
+<pre><code class="language-text">/crew:fix the changed-file list in implement.md prints nothing on an empty diff
+</code></pre>
+<p>Every phase still runs, compressed:</p>
+<ul>
+<li><strong>Direction:</strong> one line, not a question round — <code>Fix: &lt;what you typed&gt;</code>.</li>
+<li><strong>Spec:</strong> six lines — Intent, Touch, Acceptance — Exclusions, Evidence and
+  Unknowns omitted, not forgotten.</li>
+<li><strong>Plan:</strong> exactly one step, still shown, still needing the approval receipt.</li>
+<li><strong>Implement, tests, docs:</strong> same as the full path, sized to one step.</li>
+<li><strong>Review:</strong> one Codex round instead of two.</li>
+<li><strong>Done:</strong> the same three checks — the light path does not skip its own gate.</li>
+</ul>
+<p>If the change turns out to be bigger than it looked — a second subsystem
+shows up, the cause wasn't what you thought — the session says so and hands
+off to <code>/crew:spec &lt;id&gt;</code> to fill in what the light path left out, rather than
+forcing the rest of the ticket through a path that no longer fits it.</p>
+<h2 id="web-testing-crewwebtest">Web Testing — <code>/crew:webtest</code></h2>
+<p>For a ticket whose acceptance criteria describe UI behaviour (the <code>stack-web</code> skill
+triggers on <code>playwright.config.*</code>, <code>@playwright/test</code>, or an Angular e2e suite),
+<code>/crew:webtest</code> sits inside the normal eight phases rather than replacing them:</p>
+<ol>
+<li><strong>Planner.</strong> <code>playwright-test-planner</code> reads the ticket's acceptance criteria and
+   writes <code>specs/&lt;ticket&gt;.md</code> — what to test, not code yet.</li>
+<li><strong>Plan.</strong> crew's own <code>/crew:plan</code> reads that spec the same way it reads any other
+   Files/Test/Risk plan, and needs the same approval receipt before implement starts.</li>
+<li><strong>Generator.</strong> <code>/crew:implement</code> calls <code>playwright-test-generator</code> against the
+   approved spec to write the actual <code>*.spec.ts</code> files.</li>
+<li><strong>Healer.</strong> A failing generated test goes to <code>playwright-test-healer</code> for
+   locator/wait repairs only. <strong>A Healer "skip" is a finding, not a pass</strong> — it means
+   the healer decided the feature itself is broken, and review is where that surfaces
+   rather than sailing through as a green suite.</li>
+<li><strong>Review.</strong> The reviewer gets the trace zip (<code>trace: 'on-first-retry'</code>) and the axe
+   accessibility attachment alongside the diff, the same way it gets the completion
+   audit today.</li>
+</ol>
+<p>Visual regression (<code>toHaveScreenshot</code>) only runs inside
+<code>mcr.microsoft.com/playwright:v1.63.0-noble</code> — a baseline captured on a bare host does
+not match CI's font hinting and subpixel rendering, and fails every later run for
+reasons unrelated to the change under test. Outside that image the visual rule reports
+<strong>UNVERIFIED</strong>, not a pass; see <a href="troubleshooting.md">Troubleshooting</a>.</p>
+<h2 id="if-something-refuses">If Something Refuses</h2>
+<table>
+<thead>
+<tr>
+<th>Refusal</th>
+<th>Means</th>
+<th>Do</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>/crew:implement</code> says no approved plan</td>
+<td>step 3 was skipped, or <code>plan.md</code> changed after approval</td>
+<td><code>/crew:plan &lt;id&gt;</code>, then type <code>/crew:approve &lt;id&gt;</code></td>
+</tr>
+<tr>
+<td>a write is blocked outside Touch</td>
+<td>the file isn't in the spec's declared scope</td>
+<td>amend <code>spec.md</code>'s Touch and re-approve the plan, or don't make the edit</td>
+</tr>
+<tr>
+<td><code>/crew:done</code> reports <code>NEEDS_REPLAN</code></td>
+<td>the review budget (two rounds) is spent</td>
+<td><code>/crew:plan &lt;id&gt;</code> for a successor plan; no third round</td>
+</tr>
+<tr>
+<td><code>/crew:done</code> fails the completion audit</td>
+<td>a path outside scope changed, including one a shell command wrote</td>
+<td>file it to <code>TODO.md</code>, not to this ticket, then rerun</td>
+</tr>
+</tbody>
+</table>
+<p>See <a href="troubleshooting.md">Troubleshooting</a> for the rest.</p>
+<h2 id="scope-and-approval">Scope and Approval</h2>
+<p>Every crew 1.0 ticket has a contract: the spec says which files it may touch, the plan says which
+of those each step changes, and you approve both. Two hooks then hold the session to that
+contract. This section explains what they do, what they print, and how to change scope while you
+work.</p>
+<h3 id="the-contract">The Contract</h3>
+<p>A ticket lives in <code>.work/tickets/&lt;id&gt;/</code>:</p>
+<ul>
+<li><code>spec.md</code> has six sections: <code>## Intent</code>, <code>## Exclusions</code>, <code>## Evidence</code>, <code>## Unknowns</code>,
+  <code>## Touch</code> and <code>## Acceptance checks</code>. <code>## Touch</code> lists one repo-relative glob or path per
+  bullet:</li>
+</ul>
+<pre><code class="language-markdown">## Touch
+- `src/export/**`
+- `tests/test_export.py`
+- `docs/export.md`
+</code></pre>
+<ul>
+<li><code>plan.md</code> is a list of steps. Each step has a <code>Files:</code> line, a <code>Test:</code> line and a <code>Risk:</code> line.
+  Every <code>Files:</code> entry must fall inside Touch. A plan cannot add a path the spec does not list.</li>
+</ul>
+<p>Check the contract at any time:</p>
+<pre><code class="language-bash">python3 &lt;crew&gt;/hooks/scripts/crew_ticket.py validate --ticket T-0042
+</code></pre>
+<p>A plan path outside Touch is reported as <code>INVALID: plan Files entry '...' is outside spec ## Touch</code>. To fix it, add the path to Touch. crew never widens Touch for you.</p>
+<h3 id="approval">Approval</h3>
+<p>When the plan is ready, the session asks you to approve it. Type this yourself:</p>
+<pre><code>/crew:approve T-0042
+</code></pre>
+<p>crew's UserPromptSubmit hook sees the prompt you typed, validates the contract, then records the
+sha256 of <code>spec.md</code> and <code>plan.md</code> in <code>&lt;git-common-dir&gt;/crew/tickets/T-0042/approval.json</code>, marked
+<code>approved_via: "user-prompt"</code>. If the contract does not validate, the hook blocks the prompt and
+says why. That file is outside the worktree, and the scope guard refuses any Write or Edit to it
+and any shell command that runs <code>crew_ticket.py approve</code>, so the session cannot approve its own
+plan. The approval is a step you take, not a lock.</p>
+<p><code>crew_ticket.py status --ticket T-0042</code> prints one of three states:</p>
+<ul>
+<li><code>approved</code>: both files match the receipt.</li>
+<li><code>stale</code>: <code>spec.md</code> or <code>plan.md</code> changed since approval.</li>
+<li><code>none</code>: the ticket has never been approved.</li>
+</ul>
+<h3 id="while-you-implement-the-scope-guard">While You Implement: The Scope Guard</h3>
+<p>Before every Write, Edit, MultiEdit or NotebookEdit, the guard checks the target file:</p>
+<ul>
+<li>The ticket's own <code>.work/tickets/&lt;id&gt;/</code> files are always allowed, so you can amend the spec and
+  plan.</li>
+<li>Any other file needs a current approval and a path inside Touch.</li>
+<li>Nothing else is exempt, including <code>.crew/</code>, <code>TODO.md</code>, <code>.claude/</code> and crew's own policy files.
+  If the ticket changes one of them, list it in Touch.</li>
+<li>Approval receipts, the review ledger and the scope base are always refused.</li>
+</ul>
+<p>The guard checks the real file a symlink points to and the path as written, so a link cannot
+move a write into or out of scope. <code>..</code> is resolved the way the operating system resolves it.
+Refusals look like this:</p>
+<pre><code>SCOPE GUARD: refused Edit on other/keep.py.
+  Reason: other/keep.py is outside T-0042's spec ## Touch.
+  To widen scope: amend .work/tickets/T-0042/spec.md ## Touch (and plan.md), then ask the user to type
+  `/crew:approve T-0042`. (scope.mode is block)
+</code></pre>
+<h3 id="at-the-end-of-a-turn-the-completion-audit">At the End of a Turn: The Completion Audit</h3>
+<p>The guard only sees the editing tools. A <code>sed -i</code>, a shell redirect or a formatter can still
+change files. So when the session stops, the completion audit compares the whole tree with the
+commit the ticket started from. It covers committed, staged, unstaged and untracked changes, and
+both ends of a rename. If any changed path is outside Touch, the audit blocks the stop and lists
+the paths in six lines or fewer. It never blocks the continuation it caused. <code>/crew:done</code> runs
+the same check:</p>
+<pre><code class="language-bash">python3 &lt;crew&gt;/hooks/scripts/completion_audit.py --check --ticket T-0042
+</code></pre>
+<p>The audit sees what git sees. Gitignored files, including everything under <code>.crew/</code>, and <code>.work/</code>
+are outside it.</p>
+<h3 id="amending-scope">Amending Scope</h3>
+<ol>
+<li>Edit <code>spec.md</code> <code>## Touch</code> to add the path. Update <code>plan.md</code> if a step now changes it.</li>
+<li>Run <code>crew_ticket.py validate --ticket &lt;id&gt;</code>.</li>
+<li>Type <code>/crew:approve &lt;id&gt;</code> yourself.</li>
+</ol>
+<p>Between steps 1 and 3 the approval is stale. The guard refuses edits outside the ticket directory
+until you approve again.</p>
+<h3 id="after-two-review-rounds-a-successor-plan">After Two Review Rounds: A Successor Plan</h3>
+<p>If a ticket uses both review rounds without an accepted receipt, it moves to <code>NEEDS_REPLAN</code>.
+Write a different plan and approve it. <code>approve</code> reports <code>review may continue</code>, and the ledger
+gives the new plan two fresh rounds. Approving the same plan again is refused and exits with
+status 3.</p>
+<h3 id="modes">Modes</h3>
+<p>Set <code>scope.mode</code> in <code>.crew/config.json</code>:</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>What happens</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>off</code></td>
+<td>Default. Neither hook does anything.</td>
+</tr>
+<tr>
+<td><code>report</code></td>
+<td>Everything is allowed. Would-be refusals go to <code>.crew/guard.log</code> and appear as a system message.</td>
+</tr>
+<tr>
+<td><code>block</code></td>
+<td>Refusals block.</td>
+</tr>
+<tr>
+<td><code>auto</code></td>
+<td><code>report</code> for the first ten tickets approved in the repository, then <code>block</code>.</td>
+</tr>
+</tbody>
+</table>
+<p>If the config file does not parse, or <code>scope.mode</code> has an unknown value, crew treats it as
+<code>block</code> and says so.</p>
+<h3 id="which-ticket-is-active">Which Ticket Is Active</h3>
+<p><code>crew_ticket.py activate --ticket &lt;id&gt;</code> sets the active ticket for the current worktree.
+<code>deactivate</code> clears it, and <code>active</code> prints it. Without a setting, crew uses the open ticket in
+<code>.work/INDEX.md</code> if <code>.work/tickets/&lt;id&gt;/</code> exists. With no active ticket, the edit guard only
+protects approval and ledger state, and the completion audit does nothing.</p>
+</body>
+</html>

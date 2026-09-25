@@ -68,13 +68,27 @@ def _stub(path):
     return path
 
 
+def _launchable(path):
+    """A stub that RUNS and answers like an interpreter: it prints the JSON
+    proof object Resolve-CrewPython requires -- {"v": [major, minor],
+    "exe": sys.executable, "impl": sys.implementation.name} -- rather than a
+    bare path. Since crew 1.0 every candidate is executed and its answer is
+    parsed as that JSON, so a plain `echo <path>`, as `print(sys.executable)`
+    would produce, no longer stands in for a real python."""
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    proof = '{"v": [3, 9], "exe": "' + path.replace("\\", "\\\\") + '", "impl": "cpython"}'
+    with open(path, "w", encoding="ascii") as fh:
+        fh.write("@echo off" + chr(13) + chr(10) + "echo " + proof + chr(13) + chr(10))
+    return path
+
+
 def _print_python(path_entries):
     env = os.environ.copy()
     env["PATH"] = os.pathsep.join(path_entries)
-    result = subprocess.run(
+    result = crew_fixtures.run_gate(
         [_PWSH, "-NoProfile", "-NonInteractive", "-File", _PS1, "-PrintPython"],
         env=env, stdin=subprocess.DEVNULL, capture_output=True, text=True,
-        check=False,
+        check=False, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S,
     )
     assert result.returncode == 0, (
         "the probe must exit 0. stderr: " + result.stderr
@@ -113,7 +127,7 @@ def test_a_real_python_beside_a_stub_still_resolves(tmp_path):
     apps = tmp_path / "WindowsApps"
     real = tmp_path / "tools"
     _stub(str(apps / "python3.exe"))
-    _stub(str(real / "python3.exe"))
+    _launchable(str(real / "python3.cmd"))
 
     resolved = _print_python([str(apps), str(real)])
     assert resolved.lower().startswith(str(real).lower()), (
@@ -150,7 +164,7 @@ def test_a_profile_function_named_python_does_not_shadow_the_interpreter(tmp_pat
     test here may do.
     """
     real = tmp_path / "tools"
-    _stub(str(real / "python3.exe"))
+    _launchable(str(real / "python3.cmd"))
 
     script = (
         _resolver_source() + chr(10) +
@@ -163,10 +177,10 @@ def test_a_profile_function_named_python_does_not_shadow_the_interpreter(tmp_pat
 
     env = os.environ.copy()
     env["PATH"] = str(real)
-    result = subprocess.run(
+    result = crew_fixtures.run_gate(
         [_PWSH, "-NoProfile", "-NonInteractive", "-File", str(script_path)],
         env=env, stdin=subprocess.DEVNULL, capture_output=True, text=True,
-        check=False,
+        check=False, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S,
     )
     assert result.returncode == 0, result.stderr
     resolved = result.stdout.strip()
@@ -186,12 +200,12 @@ def _fixture_repo(tmp_path):
     for args in (("init", "-q"), ("config", "user.email", "t@example.invalid"),
                  ("config", "user.name", "t")):
         subprocess.run(("git",) + args, cwd=repo, check=True,
-                       capture_output=True, text=True)
+                       capture_output=True, text=True, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
     (repo / "README.md").write_text("committed", encoding="utf-8")
     subprocess.run(("git", "add", "-A"), cwd=repo, check=True,
-                   capture_output=True, text=True)
+                   capture_output=True, text=True, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
     subprocess.run(("git", "commit", "-q", "-m", "fixture"), cwd=repo,
-                   check=True, capture_output=True, text=True)
+                   check=True, capture_output=True, text=True, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
     (repo / "unverified.py").write_text("x = 1", encoding="utf-8")
     return repo
 
@@ -224,10 +238,10 @@ def test_the_scope_report_call_site_actually_uses_the_hardened_resolver(tmp_path
         [str(apps), os.path.dirname(shutil.which("git"))])
     env["CLAUDE_PROJECT_DIR"] = str(repo)
 
-    result = subprocess.run(
+    result = crew_fixtures.run_gate(
         [_PWSH, "-NoProfile", "-NonInteractive", "-File", _PS1],
         input="{}", cwd=str(repo), env=env,
-        capture_output=True, text=True, check=False,
+        capture_output=True, text=True, check=False, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S,
     )
     assert "(no python; scope not checked)" in result.stderr, (
         "the scope report did not go through Resolve-CrewPython: with only a "
@@ -278,19 +292,19 @@ def test_a_missing_scope_report_says_so_instead_of_a_python_error(tmp_path):
     for args in (("init", "-q"), ("config", "user.email", "t@example.invalid"),
                  ("config", "user.name", "t")):
         subprocess.run(("git",) + args, cwd=repo, check=True,
-                       capture_output=True, text=True)
+                       capture_output=True, text=True, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
     (repo / "README.md").write_text("committed", encoding="utf-8")
     subprocess.run(("git", "add", "-A"), cwd=repo, check=True,
-                   capture_output=True, text=True)
+                   capture_output=True, text=True, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
     subprocess.run(("git", "commit", "-q", "-m", "fixture"), cwd=repo,
-                   check=True, capture_output=True, text=True)
+                   check=True, capture_output=True, text=True, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
     (repo / "unverified.py").write_text("x = 1", encoding="utf-8")
 
-    result = subprocess.run(
+    result = crew_fixtures.run_gate(
         [_PWSH, "-NoProfile", "-NonInteractive", "-File", str(copied)],
         input="{}", cwd=str(repo),
         env=dict(os.environ, CLAUDE_PROJECT_DIR=str(repo)),
-        capture_output=True, text=True, check=False,
+        capture_output=True, text=True, check=False, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S,
     )
     assert "scope_report.py not found" in result.stderr, (
         "a missing scope_report.py must produce the uniform fallback line, "
@@ -316,10 +330,10 @@ def test_the_bash_flavour_also_names_a_missing_scope_report(tmp_path):
     copied = lonely / "verify-gate.sh"
 
     repo = _fixture_repo(tmp_path)
-    result = subprocess.run(
+    result = crew_fixtures.run_gate(
         [_BASH, str(copied)], input="{}", cwd=str(repo),
         env=dict(os.environ, CLAUDE_PROJECT_DIR=str(repo)),
-        capture_output=True, text=True, check=False,
+        capture_output=True, text=True, check=False, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S,
     )
     assert "scope_report.py not found" in result.stderr, (
         "verify-gate.sh must name the missing scope script rather than "

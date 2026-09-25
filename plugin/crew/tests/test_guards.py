@@ -295,7 +295,13 @@ def test_the_ratchet_is_one_table_covering_install_policy_and_all_four_guards():
         "install.policy", "guards.terraformApply", "guards.forcePush",
         "guards.adminMerge", "guards.mergeGate", "guards.prodDatabase",
         "guards.prodServer", "guards.roleWrites",
+        "guards.cloudDestructive", "guards.sqlDestructive",
+        "guards.cloudGuard",
         "change.requireForProduction"}
+    # The cloud guard's switch shares `roleWrites`' vocabulary and split
+    # default; it must never be normalised through `block`/`ask`/`allow`.
+    assert crew_state.RATCHETED_KEYS["guards.cloudGuard"][0] == (
+        crew_state.ROLE_WRITE_POLICIES)
     # Three vocabularies, one table. The production guards ratchet by
     # `none` < `read` < `full`, `roleWrites` by `block` < `report` < `off`,
     # and neither may ever be normalised through the other's tiers -- that
@@ -322,6 +328,21 @@ def test_every_ratcheted_key_has_a_widening_note_for_every_one_of_its_tiers():
         for tier in tiers:
             assert tier in notes, (dotted, tier)
             assert notes[tier], (dotted, tier)
+
+
+def test_role_writes_off_and_report_name_the_python_requirement_block_does_not():
+    """Windows burn-in owner decision: with no Python,
+    role-write-guard.sh/.ps1 cannot evaluate `guards.roleWrites` at all (its
+    own "THE NO-PYTHON CONTRACT" comment) and falls back to blocking a
+    restricted role's write regardless of what the repo asked for. `off` and
+    `report` both promise something WIDER than `block` -- silence about the
+    no-python fallback would tell a reader that promise always holds. `block`
+    needs no such caveat: it is what the fallback already does."""
+    _rank_fn, _norm, notes = crew_config._RATCHETED["guards.roleWrites"]  # pylint: disable=protected-access
+    assert "Python" in notes["off"]
+    assert "blocked" in notes["off"]
+    assert "Python" in notes["report"]
+    assert "Python" not in notes["block"]
 
 
 @pytest.mark.parametrize("dotted", sorted(crew_state.RATCHETED_KEYS))

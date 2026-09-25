@@ -7,8 +7,20 @@ read_json() { crew_json_field "$INPUT" "$1"; }
 SOURCE=$(read_json source); CWD=$(read_json cwd); SESSION=$(read_json session_id)
 cd "${CWD:-${CLAUDE_PROJECT_DIR:-.}}" 2>/dev/null || exit 0
 
-rm -f .crew/.handoff-requested   # reset the once-per-session gate
-rm -f .crew/.autoclear-sent      # ditto for auto-clear's own once-per-session claim
+# Reset THIS session's wrap-up gate and auto-clear claim, and nobody else's.
+# Both used to be one file per repository, so any terminal's SessionStart --
+# a plain `startup` in a second window included -- re-armed every other
+# session in the repo. Keyed exactly as context-watch.sh keys them. The
+# unkeyed names are the pre-fix layout and are still removed, so a marker
+# left by an older version cannot sit there forever.
+KEY="${SESSION//[^A-Za-z0-9_-]/_}"
+KEY="${KEY:0:100}"
+KEY="${KEY:-nosession}"
+rm -f ".crew/.handoff-requested-${KEY}" ".crew/.autoclear-sent-${KEY}"
+rm -f .crew/.handoff-requested .crew/.autoclear-sent
+# Another session's markers are never touched here, so the ones a cleared
+# session leaves behind (its id is gone for good) are aged out instead.
+find .crew -maxdepth 1 \( -name '.handoff-requested-*' -o -name '.autoclear-sent-*' \) -mtime +7 -exec rm -f {} + 2>/dev/null
 rm -f .crew/.deploy-in-flight    # a deploy from a dead session cannot be recorded now
 
 # SessionStart fires once per SOURCE EVENT (startup, clear, compact, resume,
@@ -22,20 +34,16 @@ rm -f .crew/.deploy-in-flight    # a deploy from a dead session cannot be record
 case "$SOURCE" in clear|compact|resume|fork) ;; *) exit 0 ;; esac
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PY=$(crew_py) || { echo "crew handoff-read: no usable python - the handoff note will not print" >&2; exit 0; }
+# `memory.inject` on (the default since 1.0.0) hands the handoff to
+# crew-context.sh, which injects it inside its own SessionStart budget --
+# printing it here too would put it in the session twice. Same reader as that hook (crew_context.inject_enabled).
+# After the resets above, which other hooks' once-per-session gates rely on.
+"$PY" -c 'import sys; sys.path.insert(0, sys.argv[1]); import crew_context as c; sys.exit(0 if c.inject_enabled(c.find_root(sys.argv[2])) else 1)' "$DIR" "$PWD" 2>/dev/null && exit 0
 "$PY" "$DIR/hook_once.py" handoff-read "${SESSION}-${SOURCE}" || exit 0
 
 [ -f .crew/config.json ] || exit 0
 
 PY=$(crew_py) || exit 0
-
-# When context.autoResume is exactly true, pm_brief._resume_context() owns
-# the handoff in this mode: it folds the same text plus the extracted next
-# action into its additionalContext payload. Standing down here keeps the
-# handoff to a single emitter -- printing it here too would inject it twice.
-# Absent means TRUE since 0.19.52. `get(...) is True` would read an unset
-# key as false and leave every pre-0.19.52 config on the old emitter.
-AUTO_RESUME=$("$PY" -c 'import json;print(json.load(open(".crew/config.json")).get("context",{}).get("autoResume", True) is True)' 2>/dev/null)
-[ "$AUTO_RESUME" = "True" ] && exit 0
 
 HANDOFF=$("$PY" -c 'import json;print(json.load(open(".crew/config.json")).get("context",{}).get("handoffPath",".work/HANDOFF.md"))' 2>/dev/null)
 HANDOFF="${HANDOFF:-.work/HANDOFF.md}"

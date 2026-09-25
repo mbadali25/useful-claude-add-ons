@@ -57,6 +57,24 @@ _SH = os.path.join(_ROOT, "hooks", "scripts", "verify-gate.sh")
 _BASH = crew_fixtures.resolve_bash()
 pytestmark = pytest.mark.skipif(_BASH is None, reason="needs bash")
 
+# True only when the bash this suite will actually launch is Git for
+# Windows' bin/bash.exe SHIM (not usr/bin/bash.exe directly, and not a
+# WSL/other bash on some other Windows setup). `crew_fixtures.resolve_bash`
+# prefers that shim -- see its own comment -- and it is specifically the
+# shim's launcher that unconditionally prepends its own mingw64/bin:/usr/bin
+# ahead of any PATH a subprocess is given, which is the one thing
+# `test_the_cygpath_branch_is_taken_when_cygpath_is_present` below cannot
+# route around. `sys.platform.startswith("win")` cannot draw this line: it
+# is also true when the resolved bash is usr/bin/bash.exe (a different,
+# narrower failure -- that bash cannot exec native Windows tools at all, so
+# it cannot run the gate to begin with) or when there is no Git-for-Windows
+# bash in play at all.
+_BASH_IS_MSYS_SHIM = (
+    sys.platform.startswith("win")
+    and _BASH is not None
+    and "usr" not in [p.lower() for p in pathlib.Path(_BASH).parts]
+)
+
 # Every EXTERNAL (non-builtin) command verify-gate.sh and _common.sh invoke,
 # found by grepping both files - printf/read/local/export/eval/case etc. are
 # bash builtins and need nothing on PATH.
@@ -90,7 +108,7 @@ def _scoped_tools_dir(tmp_path, python_names, real_py=None):
 
 def _git(root, *args):
     subprocess.run(("git",) + args, cwd=root, check=True,
-                   capture_output=True, text=True)
+                   capture_output=True, text=True, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
 
 
 def _repo(tmp_path, verify_map):
@@ -109,9 +127,9 @@ def _repo(tmp_path, verify_map):
 
 def _run(root, tools_dir):
     env = dict(os.environ, PATH=tools_dir, CLAUDE_PROJECT_DIR=str(root))
-    return subprocess.run(
+    return crew_fixtures.run_gate(
         [_BASH, _SH], input="{}", cwd=str(root), env=env,
-        capture_output=True, text=True, check=False,
+        capture_output=True, text=True, check=False, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S,
     )
 
 
@@ -250,7 +268,7 @@ def test_a_command_v_hit_that_fails_the_proved_check_fails_loudly(tmp_path):
     MATCHER script (`py - args << script`), but it rejects `-c`
     specifically (a narrow but real shape: a policy-wrapped launcher that
     permits running a script but not inline code), which is exactly what
-    crew_py_strict's proof (`py -c "import sys; print(sys.executable)"`)
+    crew_py_strict's proof (`py -c "import sys; sys.version_info>=(3,8) and print(sys.executable)"`)
     needs.
 
     **Architecture note, round 6.** This test used to reach the SHIM's own
@@ -463,13 +481,14 @@ def test_a_native_windows_sys_executable_path_is_accepted_and_works(tmp_path):
     # otherwise a real, working interpreter, so the MATCHER's own
     # `python - args << script` invocation (which crew_py, not
     # crew_py_strict, resolves to this SAME file) still works. Only the
-    # EXACT crew_py_strict probe (`-c 'import sys; print(sys.executable)'`)
+    # EXACT crew_py_strict probe (`-c 'import sys; sys.version_info>=(3,8) and print(sys.executable)'`)
     # gets the fake answer.
     stub = os.path.join(tools_dir, "python")
     with open(stub, "w", encoding="utf-8", newline="\n") as fh:
         fh.write(
             "#!/bin/sh\n"
-            "if [ \"$1\" = \"-c\" ] && [ \"$2\" = \"import sys; print(sys.executable)\" ]; then\n"
+            "if [ \"$1\" = \"-c\" ] && "
+            "[ \"$2\" = \"import sys; sys.version_info>=(3,8) and print(sys.executable)\" ]; then\n"
             # printf, not echo - some /bin/sh implementations (dash's
             # builtin echo among them) interpret XSI backslash escapes by
             # default, so `echo 'C:\<token>\...'` silently eats the `\<`
@@ -524,7 +543,7 @@ def test_a_native_windows_sys_executable_path_is_accepted_and_works(tmp_path):
 
 
 @pytest.mark.skipif(
-    sys.platform.startswith("win"),
+    _BASH_IS_MSYS_SHIM,
     reason=(
         "On Git for Windows, this test's own PATH-scoping technique cannot "
         "actually isolate cygpath, and the one way found to fix that breaks "
@@ -555,8 +574,11 @@ def test_a_native_windows_sys_executable_path_is_accepted_and_works(tmp_path):
         "alone reach the cygpath branch. Testing this for real would need a "
         "bash process spawned from an already-MSYS-bootstrapped parent "
         "(e.g. another bash), which pytest's subprocess-per-test harness "
-        "does not provide. Not skipped on other platforms, where there is "
-        "no such shim and the test's own PATH scoping is not compromised."
+        "does not provide. Scoped to the MSYS shim specifically (not "
+        "`sys.platform.startswith(\"win\")`), because that check alone is "
+        "also true when the resolved bash is usr/bin/bash.exe -- a "
+        "different failure -- or when no Git-for-Windows bash is in play "
+        "at all; on Linux/WSL-without-the-shim this test runs for real."
     ),
 )
 def test_the_cygpath_branch_is_taken_when_cygpath_is_present(tmp_path):
@@ -617,7 +639,8 @@ def test_the_cygpath_branch_is_taken_when_cygpath_is_present(tmp_path):
     with open(stub, "w", encoding="utf-8", newline="\n") as fh:
         fh.write(
             "#!/bin/sh\n"
-            "if [ \"$1\" = \"-c\" ] && [ \"$2\" = \"import sys; print(sys.executable)\" ]; then\n"
+            "if [ \"$1\" = \"-c\" ] && "
+            "[ \"$2\" = \"import sys; sys.version_info>=(3,8) and print(sys.executable)\" ]; then\n"
             "  printf '%s\\n' 'C:\\fakepy\\python.exe'\n"
             "  exit 0\n"
             "fi\n"
@@ -715,9 +738,9 @@ def test_a_windowsapps_stub_fails_closed_with_zero_rules_run(tmp_path):
     combined_path = windows_apps_dir + os.pathsep + tools_dir
 
     env = dict(os.environ, PATH=combined_path, CLAUDE_PROJECT_DIR=str(root))
-    result = subprocess.run(
+    result = crew_fixtures.run_gate(
         [_BASH, _SH], input="{}", cwd=str(root), env=env,
-        capture_output=True, text=True, check=False,
+        capture_output=True, text=True, check=False, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S,
     )
     assert result.returncode == 2, (
         "a WindowsApps-only environment must fail closed (exit 2), not run "
@@ -733,7 +756,7 @@ def test_a_windowsapps_stub_fails_closed_with_zero_rules_run(tmp_path):
 def test_matcher_producing_no_output_fails_closed_even_past_crew_py_strict(tmp_path):
     """The SECOND, independent line of defence added alongside the fix
     above: even a python that PASSES crew_py_strict's own proof (a real,
-    working `-c "import sys; print(sys.executable)"` response, `-x` and
+    working `-c "import sys; sys.version_info>=(3,8) and print(sys.executable)"` response, `-x` and
     all) can still behave differently when invoked the OTHER way this gate
     needs it - as the MATCHER's own interpreter, reading a script from
     stdin with `-` as the first argument. This stub deliberately has that
@@ -774,9 +797,9 @@ def test_matcher_producing_no_output_fails_closed_even_past_crew_py_strict(tmp_p
     os.chmod(stub, 0o755)
 
     env = dict(os.environ, PATH=tools_dir, CLAUDE_PROJECT_DIR=str(root))
-    result = subprocess.run(
+    result = crew_fixtures.run_gate(
         [_BASH, _SH], input="{}", cwd=str(root), env=env,
-        capture_output=True, text=True, check=False,
+        capture_output=True, text=True, check=False, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S,
     )
     assert result.returncode == 2, (
         "an interpreter that PASSES crew_py_strict but prints nothing when "

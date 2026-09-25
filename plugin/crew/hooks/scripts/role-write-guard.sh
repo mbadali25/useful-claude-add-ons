@@ -2,7 +2,7 @@
 #
 # PreToolUse gate on Write/Edit, keyed on `agent_type`. Thin wrapper: the
 # whole decision lives in role_write_guard.py so bash and PowerShell cannot
-# drift -- same shape as pm-brief.sh -> pm_brief.py.
+# drift -- same shape as crew-context.sh -> crew_context.py.
 #
 # Registered on matcher `Write|Edit`, not branched by tool_name the way
 # promote-gate.sh branches on Bash vs PowerShell: Write and Edit are the same
@@ -11,6 +11,17 @@
 # be the flavour that actually runs on a given machine.
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$DIR/_common.sh"
+
+# Case-insensitive `case`/`[[ ]]` pattern matching for the rest of this
+# script, so the no-python role check below can compare `agent_type`
+# against `_role_write_is_restricted`'s deny list and the `crew:` prefix
+# without lower-casing the string first -- see that function's own
+# comment for why lower-casing was the wrong tool. `shopt` itself has
+# been in bash since long before 3.2, so no guard is needed for its
+# presence; `2>/dev/null` only covers a `nocasematch` spelling this
+# particular bash build might not recognise, in which case matching
+# quietly stays case-sensitive rather than erroring out.
+shopt -s nocasematch 2>/dev/null
 
 INPUT=$(cat)
 
@@ -30,8 +41,38 @@ INPUT=$(cat)
 # instead -- the bash twin of `role-write-guard.ps1`'s
 # `Resolve-CrewPython`, not a shared one.
 _resolve_role_write_python() {
-  for name in python3 python py; do
-    candidate=$(command -v "$name" 2>/dev/null) || continue
+  # NOT memoized. This hook has one call site (`PY=$(_resolve_role_write_python)`
+  # below), itself a `$(...)` subshell, so a cache set here never survives
+  # even that one caller -- an earlier version carried the cache anyway,
+  # copied from `crew_py_strict`'s own (equally dead) memo. Removed for the
+  # same reason `_common.sh`'s copy was: see that copy's comment for the
+  # full account.
+  # EVERY PATH match of every name, in order -- `type -ap` lists them all,
+  # where `command -v` stops at the first. Windows burn-in 2026-09-23 (FAIL
+  # 3): a broken WindowsApps python3 ahead of a real python3 made this
+  # function give up while role-write-guard.ps1's Resolve-CrewPython, which
+  # tries every match, found the real one -- so the two flavours disagreed
+  # about whether python existed, and notify.sh failed open and sent a ping
+  # its PowerShell twin then sent again.
+  #
+  # An OVERALL deadline on top of each candidate's own 3s probe bound: a
+  # PATH with several hung candidates would otherwise cost 3s EACH, adding
+  # up past the shortest hook timeout that calls this (bridge-status.ps1's
+  # twin, 10s) even though every individual probe is bounded. Kept well
+  # inside that: the walk gives up and reports "no python" rather than keep
+  # trying once this much of the budget is spent.
+  local _crew_py_strict_deadline=$((SECONDS + 8))
+  while IFS= read -r candidate; do
+    [ -n "$candidate" ] || continue
+    # The remaining budget, not a flat 3s, bounds THIS candidate's probe: a
+    # fixed 3s watchdog checked only before launch can still overrun the
+    # deadline by up to 3s once it is entered, which on a run of several
+    # near-8s-but-under candidates followed by one hung one can overrun both
+    # this deadline and the 10s hook timeout it exists to stay inside.
+    local _crew_py_strict_remaining=$((_crew_py_strict_deadline - SECONDS))
+    [ "$_crew_py_strict_remaining" -gt 0 ] || break
+    local _crew_py_strict_probe_timeout=$_crew_py_strict_remaining
+    [ "$_crew_py_strict_probe_timeout" -le 3 ] || _crew_py_strict_probe_timeout=3
     # `command -v` finding a name on PATH is not enough -- the WindowsApps
     # alias IS a real, executable file, so `command -v python3` resolves it
     # cleanly. Running it and reading back `sys.executable` is what
@@ -39,13 +80,48 @@ _resolve_role_write_python() {
     # parseable stdout (it either does nothing or launches the Store, which
     # cannot happen in this non-interactive pipe) rather than a real
     # interpreter path.
-    real=$("$candidate" -c 'import sys; print(sys.executable)' 2>/dev/null) || continue
+    # BOUNDED, and the whole process tree dies with it. A candidate that
+    # never exits would otherwise hang the hook forever, and one that spawns
+    # a child holding stdout (a py.exe-style launcher) would hang this `$()`
+    # even after the candidate itself was killed. `timeout` is absent on Git
+    # Bash, so a watchdog kills at 3s instead; `wait` returns the moment the
+    # candidate exits, so a working interpreter costs no added latency.
+    # `set -m` puts the candidate in its own process group, which the kill
+    # takes whole -- on a timeout, and after a normal exit too, for any child
+    # it left behind. Under MSYS a native child is outside that group, so
+    # `taskkill /T` takes the Windows tree when /proc exposes its winpid
+    # (MODELLED, not observed on a Windows host). No `sleep` at all means no
+    # watchdog: unbounded, as before, rather than killing every candidate.
+    # stdin is /dev/null: the candidate must not read the hook payload or
+    # this loop's own input.
+    real=$(
+      set -m
+      "$candidate" -c 'import sys; sys.version_info>=(3,8) and print(sys.executable)' </dev/null 2>/dev/null &
+      pid=$!
+      (
+        sleep "$_crew_py_strict_probe_timeout" 2>/dev/null || exit 0
+        if [ -r "/proc/$pid/winpid" ] && read -r winpid < "/proc/$pid/winpid"; then
+          MSYS2_ARG_CONV_EXCL='*' taskkill /F /T /PID "$winpid"
+        fi
+        kill -9 -- "-$pid" || kill -9 "$pid"
+      ) </dev/null >/dev/null 2>&1 &
+      watchdog=$!
+      wait "$pid"
+      status=$?
+      kill -9 -- "-$watchdog" "-$pid" 2>/dev/null
+      exit "$status"
+    ) || continue
     # A trailing CR must not survive into the `-x` test below: a real native
     # Windows interpreter run under Git Bash can leave one on its stdout, and
     # `-x "$real"` on a path with a stray \r appended never matches an actual
     # file, rejecting every real interpreter on that combination.
     real=$(printf '%s' "$real" | tr -d '\r')
     [ -n "$real" ] || continue
+    # The `sys.version_info>=(3,8) and print(...)` guard above is the version
+    # floor, BYTE-FOR-BYTE the same fix `_common.sh`'s `crew_py_strict` got
+    # (see that copy's comment for the full reasoning): a genuine Python 3.7
+    # answers `-c` correctly but prints NOTHING, so `$real` is empty and is
+    # rejected right here, matching role-write-guard.ps1's own >= 3.8 floor.
     # NOT a blanket "reject anything containing WindowsApps" -- that used to
     # sit here (on both $candidate above and $real here) and rejected a
     # genuine Microsoft Store Python install, which runs from EXACTLY that
@@ -81,6 +157,25 @@ _resolve_role_write_python() {
     # that string is RELATIVE, so `-x` on it silently depends on the
     # resolver's own cwd, and any `cd` between here and the caller breaks it
     # -- `-x` on the absolute `/c/...` form does not.
+    #
+    # DECIDED CONTRACT (PM, Windows burn-in FAIL 3/4): this function returns
+    # the interpreter path in the form THIS bash itself execs as "$py" --
+    # POSIX-shaped under Git Bash/MSYS, whatever `sys.executable` printed.
+    # A caller that only does `"$PY" ...` (execs it, bash-to-bash) needs
+    # nothing further; a caller that hands this path to a DIFFERENT
+    # interpreter as DATA -- embedded in a python/pwsh argument, a JSON
+    # payload, a file a python script will `open()` -- must convert it at
+    # THAT boundary with `cygpath -w`, guarded (`command -v cygpath` first;
+    # do nothing if absent, same fail-open shape as the conversion above).
+    # `tests/test_context_watch_python_resolver.py`'s
+    # `test_resolver_accepts_a_crlf_terminated_real_interpreter` asserts the
+    # POSIX-vs-native side of this by asking `_BASH` the same question this
+    # function asks (`command -v cygpath`), not by asking the test's own
+    # python process -- FAIL 3/4 was exactly that asymmetry: bash's own MSYS
+    # runtime finds `cygpath.exe` under its compiled-in `/usr/bin`
+    # regardless of what the PARENT (a native python.exe running pytest)
+    # was given, so the two can disagree about whether cygpath exists at
+    # all on the very host this combination is meant to cover.
     case "$real" in
       [A-Za-z]:\\*|[A-Za-z]:/*)
         if command -v cygpath >/dev/null 2>&1; then
@@ -108,7 +203,7 @@ _resolve_role_write_python() {
     # asking python where it actually lives.
     printf '%s\n' "$real"
     return 0
-  done
+  done < <(type -ap python3 python py 2>/dev/null)
   return 1
 }
 
@@ -120,49 +215,142 @@ _resolve_role_write_python() {
 # from `agents/*.md` on every run and asserts this list matches it.
 _role_write_is_restricted() {
   case "$1" in
-    analyst|compliance-auditor|dba|explorer|infrastructure-architect| \
-    kimi-consult|penetration-tester|planner|qa-researcher|qa-reviewer| \
-    researcher|security|pm) return 0 ;;
+    explorer|researcher|reviewer|security|pm) return 0 ;;
     *) return 1 ;;
   esac
 }
 
-# Best-effort `agent_type` extraction from the raw JSON -- never fails, and
-# a value this cannot find or parse answers empty (unrestricted). Mirrors
-# role-write-guard.ps1's `Get-FallbackRole`: consulted whenever python
-# cannot be used to reach a real decision, so this never needs to be more
-# than "good enough to fail closed for pm/deny".
+# Best-effort `agent_type` extraction from the raw JSON, PURE BASH -- no
+# `grep`/`head`/`sed`/`tr` at all. Reported 2026-09-24: the previous version
+# of this function piped through exactly those four tools, so on a PATH that
+# supplies python-resolution's own coreutils (`dirname`, `cat`) but not
+# those four, every one of those pipes failed silently (`command not
+# found`), `role` came back empty, and a `pm` write went through UNJUDGED
+# even though nothing here needed python at all to see `agent_type: "pm"`
+# sitting in the raw JSON. Bash's own `[[ =~ ]]` regex engine is a builtin,
+# never an external process, so it works whether or not ANY of those tools
+# are on PATH.
+#
+# `_ROLE_WRITE_FALLBACK_ROLE` / `_ROLE_WRITE_FALLBACK_DETERMINED` are
+# GLOBALS this function sets directly, NOT a printed return value captured
+# via `$(...)` -- that command-substitution form runs the function in a
+# SUBSHELL, and a subshell's variable assignments (`_ROLE_WRITE_FALLBACK_
+# DETERMINED=0` included) never escape back to the caller. An earlier draft
+# of this function printed the role and left the determined-flag as a
+# "global" set the same way `_resolve_role_write_python` sets `PY` via
+# `PY=$(...)` -- which works for a value returned on stdout, but silently
+# discarded the flag every single time, so the caller always saw
+# `_ROLE_WRITE_FALLBACK_DETERMINED` unset/empty regardless of what this
+# function actually decided. Direct assignment with NO command substitution
+# around the call is what makes the flag visible to the caller at all.
+#
+# The flag distinguishes two shapes this used to conflate: genuinely NO
+# `agent_type` key at all (this hook fired outside a subagent --
+# unrestricted, matching role_write_guard.py's own "no agent_type at all"
+# case) from a key that IS present in some form this best-effort parse
+# could not read a value out of (a non-string value, a `\"`-escaped quote
+# inside the string, ...). The second is "cannot tell", not "not a
+# subagent", and CLAUDE.md's named recurring bug is exactly an unknown
+# wearing the safe-looking value's label -- so the caller fails closed on
+# it rather than falling through to the unrestricted branch.
 _role_write_fallback_role() {
-  role=$(printf '%s' "$1" | grep -o '"agent_type"[[:space:]]*:[[:space:]]*"[^"]*"' \
-         | head -n 1 | sed -E 's/.*:[[:space:]]*"([^"]*)"/\1/')
-  role=$(printf '%s' "$role" | tr '[:upper:]' '[:lower:]')
-  case "$role" in
-    crew:*) role="${role#crew:}" ;;
+  local payload="$1"
+  _ROLE_WRITE_FALLBACK_ROLE=""
+  _ROLE_WRITE_FALLBACK_DETERMINED=1
+  if [[ "$payload" =~ \"agent_type\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
+    _ROLE_WRITE_FALLBACK_ROLE="${BASH_REMATCH[1]}"
+  elif [[ "$payload" == *'"agent_type"'* ]]; then
+    _ROLE_WRITE_FALLBACK_DETERMINED=0
+  fi
+  # NOT lower-cased here. Bash 3.2 (macOS's shipped /bin/bash) has no
+  # `${var,,}` -- that is a bash-4-only case-conversion expansion, and
+  # using it here made this function itself die with "bad substitution"
+  # on exactly the platform this pure-bash rewrite was meant to make MORE
+  # portable, not less: a syntax error in a sourced/executed script is a
+  # non-2 exit, which the hook's own contract at the bottom of this file
+  # treats as "python never ran" and routes into this SAME fallback for a
+  # second, sourceless time. Piping through `tr` instead re-added the
+  # exact external-tool dependency this pure-bash rewrite exists to drop
+  # -- measured directly: a PATH carrying only `dirname`/`cat` (this
+  # file's own FIX-1 repro, no `tr` either) made `tr` itself
+  # "command not found" and silently emptied the role right back out.
+  # `shopt -s nocasematch`, set once near the top of this script, makes
+  # every `case`/`[[ ]]` match below (this prefix strip, and
+  # `_role_write_is_restricted`'s deny-list check) case-insensitive
+  # instead, so the raw, un-lowered value can be compared directly.
+  #
+  # NOT `${_ROLE_WRITE_FALLBACK_ROLE#crew:}`. `nocasematch` governs `case`
+  # and `[[ ]]` pattern matching only -- it does NOT extend to `#`/`%`
+  # parameter-expansion pattern removal, which stays case-sensitive
+  # regardless. So `case "CREW:PM" in crew:*)` matched (nocasematch), but
+  # `${role#crew:}` on that same value found no case-sensitive `crew:`
+  # prefix and left the string untouched -- `_ROLE_WRITE_FALLBACK_ROLE`
+  # stayed `"CREW:PM"`, which `_role_write_is_restricted` (an exact
+  # `pm`/`explorer`/... match) then read as an unrecognised, unrestricted
+  # role and the write was ALLOWED. Fixed 2026-09-24: since the `case`
+  # above already proved (case-insensitively) that the first 5 characters
+  # spell `crew:`, a fixed-length substring removes exactly those 5
+  # characters regardless of their case -- no second case-sensitive match
+  # is involved. Pure bash 3.2-compatible substring expansion (`${var:N}`),
+  # no `${var,,}`, no `tr`.
+  case "$_ROLE_WRITE_FALLBACK_ROLE" in
+    crew:*) _ROLE_WRITE_FALLBACK_ROLE="${_ROLE_WRITE_FALLBACK_ROLE:5}" ;;
   esac
-  printf '%s' "$role"
+}
+
+# THE NO-PYTHON CONTRACT (PM decision, superseding an earlier fallback that
+# parsed `guards.roleWrites` and pm's path allowances without python at
+# all -- removed here along with `_role_write_layer_policy`,
+# `_role_write_effective_policy`, `_role_write_pm_path_allowed` and
+# `_role_write_fallback_file_path`, none of which survive this rewrite).
+#
+# That policy-honouring fallback carried its own defects (F1 review): a
+# dangling config symlink read as absent rather than corrupt; the lexical
+# `pm`-scope check accepted `..` traversal and symlink escapes; the
+# grep-based policy reader accepted truncated/corrupt JSON as a clean
+# "off"; and it read the CURRENT PROCESS's cwd rather than the hook
+# payload's own `cwd`, so a policy read could come from the wrong repo
+# entirely. Removing the class is simpler than re-fixing each one: without
+# python, this hook cannot actually EVALUATE `guards.roleWrites` (off,
+# report, or pm's own allowed patterns) at all -- role_write_guard.py is
+# the only thing that reads that policy correctly -- so it no longer
+# pretends to. It only tells a restricted role from an unrestricted one
+# (the deny-list mirror above, `_role_write_is_restricted`, is a floor
+# that needs no config to apply) and fails CLOSED on the restricted side,
+# or on any role it cannot read at all. `off`/`report`/pm's allowances
+# need python; without it, a restricted role's write is always blocked.
+# See `plugin/crew/CONFIG.md`, next to `guards.roleWrites`.
+#
+# `$1` is the raw JSON payload; `$2` is why this fallback is being
+# consulted at all, for the stderr message.
+_role_write_fallback_decision() {
+  local input="$1" why="$2" role
+  # NOT `role=$(_role_write_fallback_role "$input")` -- see that function's
+  # own comment: calling it through command substitution would run it in a
+  # subshell and silently discard `_ROLE_WRITE_FALLBACK_DETERMINED`.
+  _role_write_fallback_role "$input"
+  role="$_ROLE_WRITE_FALLBACK_ROLE"
+
+  if [ "$_ROLE_WRITE_FALLBACK_DETERMINED" != "1" ]; then
+    echo "role-write-guard: $why; the hook payload names an agent_type this fallback could not read a value out of - install python so guards.roleWrites can be evaluated, or the write is blocked." >&2
+    exit 2
+  fi
+
+  if ! _role_write_is_restricted "$role"; then
+    echo "role-write-guard: $why; allowing it unjudged (role '$role' is not restricted)." >&2
+    exit 0
+  fi
+
+  echo "role-write-guard: $why - python is unavailable, so guards.roleWrites (off/report/allowances) cannot be evaluated for restricted role '$role' - install python, or the write is blocked." >&2
+  exit 2
 }
 
 PY=$(_resolve_role_write_python) || {
   # No candidate resolved at all -- a DIFFERENT failure than the
   # launch-failure fallback further down (a candidate that resolved, was
   # proven executable, and then still failed to launch
-  # role_write_guard.py). Reported 2026-09-24: an unconditional "allow it
-  # unjudged" here throws away a decision that needs no python at all for a
-  # role this table ALREADY knows is restricted -- a `_DENY_ROLES` role may
-  # not write ANY file regardless of path, and `pm` is refused outside its
-  # own patterns often enough that collapsing "cannot judge" into "allow"
-  # for either is CLAUDE.md's named recurring bug ("an unknown collapsing
-  # into the safe-looking value"), not a neutral default. Mirrors the
-  # launch-failure fallback's own `_role_write_is_restricted` /
-  # `_role_write_fallback_role` exactly, so both failure modes agree on
-  # which roles fail closed.
-  fallback_role=$(_role_write_fallback_role "$INPUT")
-  if _role_write_is_restricted "$fallback_role"; then
-    echo "role-write-guard: no usable python found - cannot judge this write; failing closed for role '$fallback_role'." >&2
-    exit 2
-  fi
-  echo "role-write-guard: no usable python found - cannot judge this write; allowing it unjudged." >&2
-  exit 0
+  # role_write_guard.py).
+  _role_write_fallback_decision "$INPUT" "no usable python found"
 }
 
 # PYTHONUTF8=1 / PYTHONIOENCODING=utf-8 in the CHILD's environment only --
@@ -190,13 +378,7 @@ if [ "$status" -ne 0 ] && [ "$status" -ne 2 ]; then
   # guard.ps1's own header already promised this hook fails closed for a
   # restricted role; this closes the same gap on the bash side. Reported
   # and fixed 2026-09-19.
-  fallback_role=$(_role_write_fallback_role "$INPUT")
-  if _role_write_is_restricted "$fallback_role"; then
-    echo "role-write-guard: could not launch the python interpreter ($PY) to judge this write (exit $status); failing closed for role '$fallback_role'." >&2
-    exit 2
-  fi
-  echo "role-write-guard: could not launch the python interpreter ($PY) to judge this write (exit $status); allowing it unjudged." >&2
-  exit 0
+  _role_write_fallback_decision "$INPUT" "could not launch the python interpreter ($PY) to judge this write (exit $status)"
 fi
 
 exit "$status"

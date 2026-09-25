@@ -871,7 +871,7 @@ def _artifact_confirms_scan(root, artifact, record):
 def _unscanned_hit(root, record):
     """One `unscanned` entry for `record`, or None once it is confirmed
     scanned (see _artifact_confirms_scan). `status` travels on the hit
-    alongside `source`, and is the field pm_brief's declared/candidate split
+    alongside `source`, and is the field any declared/candidate split
     must key on -- `status` is what the design makes authoritative, and a
     record whose `source` and `status` disagree (a bug elsewhere writing
     `source="declared", status="candidate"`) must still read as a candidate,

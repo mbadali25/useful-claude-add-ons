@@ -6,6 +6,1346 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Changed
 
+- **`crew` 1.0.25: re-anchor B2's structural test on B3's invocation shape,
+  and tell SKIPPED apart from PASSED in the sabotage harness.**
+  Bumped `1.0.24 -> 1.0.25`.
+  - `test_verify_gate_bash_empty_refusal.py`'s rule-loop test anchored on
+    the pre-B3 `& $bashExe -c $c > $ruleOutFile` invocation shape, which B3
+    replaced with a wrapper script bash runs itself
+    (`$null | & $bashExe -c $wrapperScript`); the old markers raised a bare
+    `ValueError`. Re-anchored on the real invocation and the `$ruleOutFile
+    = $null` reset, each asserted to occur exactly once before use. Test
+    fixup only — the guard itself (`verify-gate.ps1:1665-1674`) was already
+    correct and unchanged.
+  - `sabotage_autocycle.py`'s `run_test` now reads its own `--junitxml`
+    report to tell a skipped testcase from a passed one, so a mutation
+    targeting `Get-CrewChildTabRecheck` (whose regression test is
+    Windows-only) no longer reads as "STILL GREEN - VACUOUS" when the
+    target test never ran at all.
+  - New Linux-runnable structural test,
+    `test_auto_clear_child_tab_recheck_structure.py`, asserting the
+    `IsWindowsTerminal` guard is `Get-CrewChildTabRecheck`'s first
+    statement, with a matching `sabotage_autocycle.py` entry so the same
+    mutation has a target that goes red on every host, not only Windows.
+
+- **`crew` 1.0.24: native-Windows PowerShell B3 and round-2 fixes, from
+  win-repo-2 (`crew-1.0-win-ps1-gate` 7d8a0002/1958292d, `crew-1.0-win-ps1-r2`).**
+  Bumped `1.0.23 -> 1.0.24`.
+  - **B3: `verify-gate.ps1` reads back at most the last 1 MiB of a rule's
+    output**, from a `.Length` snapshot with a bounded looped tail, and bash
+    does its own redirect to the capture file, so a backgrounded grandchild
+    holding PowerShell's pipe no longer wedges the gate (`test_34b[ps1]`).
+  - **`auto-clear.ps1`'s sendkeys child now binds on both Windows
+    PowerShell 5.1 and pwsh 7.** 1.0.23 passed `"True"`/`"False"` to a
+    `[bool]` parameter through `-File`, which fails binding on both editions
+    (and `-Name:$true` fails on 5.1), so the child never typed. The
+    parameter is now `[int]` 1/0.
+  - Tests: the WinForms tab-recheck test skips off Windows; a structural
+    test proves the child rechecks tab safety between `Start-Sleep` and
+    `SendWait`; `test_34d_ps1` skips without bash.
+
+- **`crew` 1.0.23: native-Windows PowerShell BLOCKs B1, B2, B4 and FIXes
+  F1-F3, from win-repo-2 (`crew-1.0-win-ps1-ac`, `crew-1.0-win-ps1-gate`).**
+  Bumped `1.0.22 -> 1.0.23`.
+  - **B1: `auto-clear.ps1`'s detached sendkeys child re-checks tab safety
+    (Windows Terminal tab count == 1) after the delay, not only focus**, so a
+    tab opened during the delay declines the keystroke (016f312b).
+  - **B2: `verify-gate.ps1`'s `Resolve-CrewBash` refuses instead of
+    re-invoking a rejected bare `bash` shim** (9e57868d, regression 735c225d).
+  - **B4: `verify-gate.ps1` never falls back to a pipe capture when the
+    temp file cannot be created**; it uses the `.crew/` fallback or refuses
+    by name, mirroring `verify-gate.sh` (ae0c3473).
+  - **F1-F3: `auto-clear.ps1` validates an empty-array or negative
+    `delaySeconds`, and the tab-decline message no longer reads as
+    ambiguous** (97f83cba).
+  - Still open for 1.0: **B3**, the uncapped `Get-Content` of a rule's
+    output in `verify-gate.ps1` (`test_34b[ps1]`).
+
+- **`crew` 1.0.22: the escaped-descendant review test now actually proves
+  the post-kill `communicate()` is bounded, its own liveness wait no longer
+  trusts a bare recyclable pid, and the fixture stops letting an ambient
+  environment variable override the derived timing it exists to check.**
+  Bumped `1.0.21 -> 1.0.22`.
+  - **FIX: `review_fixtures.py`'s `env_with_path` forced
+    `FAKE_REVIEWER_ESCAPE_LIFETIME` from the derived value
+    (`review_run.POST_KILL_TIMEOUT + 15`, up from `+ 3`), not
+    `setdefault`.** `setdefault` left an inherited ambient value in place
+    over the value sized against the real constant, silently defeating the
+    coverage it exists for.
+  - **FIX: `test_run_timeout_survives_an_escaped_descendant_holding_the_pipe`
+    tightened its elapsed-time ceiling from a bare `< 20s` to `< --timeout +
+    POST_KILL_TIMEOUT + 3`.** The old ceiling passed whether or not the
+    second `communicate()` after a kill carried its `POST_KILL_TIMEOUT`
+    bound, because the escaped grandchild's own (then-shorter) lifetime
+    cleared it either way. Sabotage-tested: with the second
+    `communicate(timeout=POST_KILL_TIMEOUT)` in `review_run.py` reverted to
+    a bare `communicate()`, this test goes red (20.1s against a 9s bound);
+    restored, it is green.
+  - **FIX: that same test's teardown wait for the escaped grandchild now
+    captures its `/proc` start time the moment the pid is first read, and
+    treats the pid as gone once its start time no longer matches or it is
+    gone/zombie** (`crew_fixtures.pid_alive` / `_proc_start_ticks`), rather
+    than following a bare numeric pid the kernel may already have handed to
+    an unrelated process. Never signals it either way. Skipped, with a
+    named reason, on a host with no `/proc`.
+- **`crew` 1.0.21: descopes the per-rule process-group kill in
+  `verify-gate.sh`, and drops a discard-and-close-pipes regression in
+  `review_run.py`'s own timeout cleanup.** Bumped `1.0.20 -> 1.0.21`.
+  - **DESCOPE: per-rule process-group tracking and kill-on-signal is
+    removed from `verify-gate.sh`.** It shipped across
+    1bba9725/71021c7f/4d235881/671832f1/484eeebf/af5cadd2 and produced a new
+    review BLOCK in five consecutive rounds, each fix one case short of the
+    next: disk fill by an orphan writer, escape on gate kill, an unlocked
+    registry, pid/pgid reuse in both p- and g-mode, a session-id proof that
+    is not ownership, and a leader-exited group. Removed rather than
+    attempted a sixth time - see `TODO.md` for the failure modes, listed so
+    a future attempt does not re-discover them one at a time, and
+    `CONFIG.md`'s `verify.stopBudgetSeconds` section for the resulting
+    limitation stated in one line: the gate does not reap what a rule
+    leaves running in the background. KEPT: rule output is still captured
+    through a temp file, not a pipe, so a backgrounded grandchild cannot
+    wedge the gate's own read of that rule's output (`test_34b`); the 1 MiB
+    tail cap and its test-only env seam; the no-pipe fallback (a named
+    refusal when neither `TMPDIR` nor `.crew/` is writable); and the
+    `wait` builtin's prompt-signal behaviour, so the lock's release and the
+    shim's tempdir cleanup still run promptly on a signalled gate even
+    while a rule is running. REMOVED: the per-rule `set -m`/pgid subshell
+    layer, the rule-pgid sidecar file, `_crew_gate_pgid_of`,
+    `_crew_gate_pid_is_our_child`, `_crew_gate_sid_of`,
+    `_crew_gate_group_is_ours`, `_crew_gate_cleanup_rule_pgid` and its
+    registration, and the TERM-then-grace-then-KILL of a rule's group.
+    The shared cleanup registry (`_CREW_GATE_CLEANUP_FNS`,
+    `_crew_gate_register_cleanup`, `_crew_gate_run_cleanup`) is kept for
+    the lock's release and the python3 shim's tempdir cleanup only - the
+    rule-pgid stage's registration is what is gone. Tests removed as
+    exercising only the removed feature:
+    `test_verify_gate_rule_pgid_mode.py`,
+    `test_verify_gate_rule_pgid_ownership.py`,
+    `test_verify_gate_rule_pgid_group_ownership.py`, and from
+    `test_verify_gate_stop_gate_record.py`: `test_34e` (a backgrounded
+    writer killed with its rule), `test_34h` (a signalled gate kills its
+    current rule's group), `test_34i` (an unlocked run still cancels its
+    rule) and `test_34g` (ordinary rules never pay the grace-period
+    sleep - there is no grace period left to charge). Kept:
+    `test_34b`/`test_34c`/`test_34c2`/`test_34c3`/`test_34d`/`test_34f`
+    (temp-file capture, the tail cap, the no-pipe fallback) and the
+    lock/shim regression `test_shim_cleanup_does_not_clobber_the_lock_release_trap`.
+    No `sabotage.py`/`sabotage_autocycle.py` mutation targeted the removed
+    feature, so none needed removing there.
+  - **FIX: `review_run.py`'s post-kill timeout handler discarded whatever
+    output CPython had already captured and closed the process's own
+    stdout/stderr streams to unblock itself.** On Windows, closing a pipe
+    still being read by CPython's own reader thread for that stream can
+    itself block - trading the hang this cleanup exists to avoid for
+    another one. `launch()` now decodes and keeps that partial capture
+    (`exc.output`/`exc.stderr` off the second `TimeoutExpired`, raw bytes
+    since the text-mode translation never runs on this path - new
+    `_decode_partial`) instead, and no longer touches the streams directly.
+    The bounded post-timeout wait and the "kill only while the leader is
+    alive" (`proc.poll() is None`) checks are unchanged.
+    `test_review_run_launch.py` renamed and updated to assert the kept,
+    decoded output rather than closed streams; `sabotage_review.py` gained
+    a mutation reverting to the discard-and-close shape.
+  - **FIX: `review_fixtures.py`'s `escape` reviewer mode left a detached
+    `setsid` grandchild sleeping 60s with nothing reaping it.** Bounded to
+    a few seconds and its pid is written to
+    `FAKE_REVIEWER_ESCAPE_PIDFILE` when a caller sets it;
+    `test_review_ledger.py`'s escape test now kills it by verified identity
+    in a `finally` block and asserts nothing survives.
+- **`crew` 1.0.20: a further independent review found the `g`-mode half of
+  1.0.19's rule-pgid fix missing, plus two of the same "signal a recycled
+  id" and "block past --timeout" shapes in `review_run.py`'s own reviewer
+  timeout.** Bumped `1.0.19 -> 1.0.20`.
+  - **BLOCK: `verify-gate.sh`'s stale-ID ownership fix guarded only
+    `p`-mode sidecar entries.** 1.0.19 proved a bare pid before signalling
+    it, but a `g`-mode entry (a verified process-group id) was still
+    signalled unconditionally. A rule's own group can empty naturally the
+    instant its `wait` returns, freeing that PGID for the OS to hand to a
+    brand-new, entirely unrelated process - concretely, anything that calls
+    `setsid`, which always becomes both session leader and group leader of
+    a session distinct from this gate's own. New `_crew_gate_group_is_ours`
+    is now required before any `g`-mode id is signalled: it compares that
+    group's session id (`_crew_gate_sid_of`, read the same portable way
+    `_crew_gate_pid_is_our_child` reads a ppid) against this shell's own -
+    every group this gate ever creates stays in the same session, so a
+    `setsid`-created replacement is exactly what this rejects. New
+    `test_verify_gate_rule_pgid_group_ownership.py` proves a genuinely owned
+    group is still signalled and an unrelated `setsid` group is not;
+    sabotage stripping the guard back out turns the second case red again.
+  - **BLOCK: `review_run.py`'s timeout cleanup killed a leader's process
+    group by bare pid without checking it was still alive.** Once
+    `proc.poll()` shows the leader has exited and been reaped, its pid (and
+    any group numbered the same) is free for reuse, so an unconditional
+    `os.killpg(proc.pid, ...)` could reach whatever the OS gave it to next.
+    `launch()` now checks `proc.poll() is None` before signalling at all
+    (POSIX `killpg` and the Windows `taskkill` tree-kill alike); a leader
+    already gone is left alone.
+  - **BLOCK: the same function's post-kill `communicate()` had no timeout,
+    so a descendant that escaped the kill and kept holding the pipe open
+    blocked it past `--timeout` with nothing bounding the wait.** Bounded
+    by new `POST_KILL_TIMEOUT` (5s); on a second `TimeoutExpired`, `launch`
+    closes its own stdout/stderr ends and returns with whatever output had
+    already arrived, marked timed out, instead of waiting on a descendant
+    that is not coming back. New `test_review_run_launch.py` (a fake-Popen
+    unit test for both `review_run.py` fixes) and
+    `test_review_ledger.py::test_run_timeout_survives_an_escaped_descendant_holding_the_pipe`
+    (a real `setsid`-detached grandchild, end to end) prove `launch`
+    returns in a small multiple of `--timeout` rather than blocking for as
+    long as the escaped process runs; both fixes carry sabotage mutations
+    in `sabotage_review.py` that turn red when either guard is removed.
+- **`crew` 1.0.19: an independent review of `verify-gate.sh`'s rule-pgid
+  cleanup found one more gap in the 1.0.18 fix, plus a CI-only pylint false
+  positive and two CI review-runner hardenings.** Bumped `1.0.18 -> 1.0.19`.
+  - **BLOCK: a `p`-mode (bare pid) sidecar entry could outlive the process
+    it named and be signalled after reuse.** 1.0.18 taught the rule loop to
+    record its own dedicated subshell as a bare pid, not a process group,
+    whenever `set -m` did not make it its own group leader - correct, but
+    the sidecar was only cleared (truncate, then clear the guard variable)
+    a few statements after the rule loop's own `wait` reaped that subshell,
+    and by the moment `wait` returns the subshell's pid is already free for
+    the OS to reuse. A TERM/INT/HUP/EXIT landing in that window read a
+    stale sidecar and could `kill` whatever unrelated process the OS had
+    since handed that exact pid number to - a plain, un-negated `kill`,
+    since `p`-mode never signals a group. Fixed two ways: the GUARD
+    VARIABLE (`_CREW_GATE_RULE_PGID_FILE`) is now cleared as the very next
+    statement after the rule loop captures its subshell's exit status,
+    closing the window itself to one assignment; and new
+    `_crew_gate_pid_is_our_child` is now required before any bare pid is
+    ever signalled at all (TERM, the aliveness recheck, and the follow-up
+    KILL all go through it) - it reads the candidate's own `ppid` via `ps`
+    and refuses unless that `ppid` is this shell's own `$$`, the one
+    relationship a genuine `p`-mode id is guaranteed to have; `ps`
+    unavailable, or the pid already gone, reads as "cannot tell" and also
+    refuses, never a guess. Group-mode (a verified process-group id) is
+    unchanged. New `test_verify_gate_rule_pgid_ownership.py` proves both a
+    real owned child is still signalled and an unrelated process (started
+    outside the gate, so its `ppid` cannot be the gate's `$$`) is not;
+    sabotage stripping the ownership guard back out turns the second case
+    red - the unrelated process is signalled again.
+  - **CI: `crew_migrate.py`'s `_is_link` false-flagged not-callable under
+    pylint on Python 3.11.** `os.path.isjunction` does not exist before
+    3.12, so pylint infers the `getattr` fallback as `Optional[None]` and
+    flags the guarded call (`isjunction and isjunction(path)`) anyway.
+    Targeted `# pylint: disable=not-callable` on that line; the guard
+    itself is unchanged.
+  - **CI: `review_run.py`'s provider-CLI timeout only killed the direct
+    child, not its process tree.** A provider CLI installed as an npm
+    `.cmd` shim on Windows runs as `cmd.exe /c <shim>` with the real work
+    in a grandchild; a bare `Popen.kill()` on `TimeoutExpired` only reached
+    `cmd.exe`, leaving the grandchild holding this process's stdout pipe
+    open past the kill and turning the timeout into a much longer hang
+    downstream. `launch()` now starts the process in its own group/session
+    (`start_new_session=True` on POSIX, `CREATE_NEW_PROCESS_GROUP` on
+    Windows) and kills the whole tree on timeout (`os.killpg` /
+    `taskkill /T /F`), then finishes draining stdout/stderr before
+    returning.
+  - **CI: `review_prompt.py` wrote Windows-style path separators into
+    reviewer-facing text.** `os.path.relpath` alone renders
+    `.work\tickets\T9.md` on a Windows host, inconsistent with every
+    literal forward-slash path this file writes elsewhere and with the
+    manifest's own path fields. New `_relpath` forces forward slashes at
+    every call site.
+  - Test-only: `test_approval_hook.py`, `test_crew_instructions.py`,
+    `test_review_prompt.py`, `test_scope_guard.py` and
+    `test_webtest_scaffold.py` gained coverage for the above alongside
+    unrelated Windows-shell-matrix fixture corrections carried over from
+    the same CI pass.
+
+- **`obsidian-vault` 0.4.14: the `.ps1`-flavour shell suites' pwsh fixture
+  leaked a real python3 into every must-refuse case, on one CI image
+  only.** Bumped `0.4.13 -> 0.4.14`.
+  - **Root cause: on GitHub's `ubuntu-latest` image, `pwsh` lives at
+    `/usr/bin/pwsh`, the same directory as the system's real `python3`.**
+    `test_vault_guard_sh.sh` and `test_bridge_capture_sh.sh` both built
+    their `.ps1`-flavour fixture PATH from `$(dirname "$PWSH")` so pwsh
+    itself would resolve - but appending that whole directory handed every
+    "no usable interpreter" case a real, working `python3` too, so the
+    guard ran for real instead of standing down, and every must-refuse
+    case in that job turned into a false pass-through. Reproduced and
+    confirmed fixed against both a clean `pwsh` and one deliberately
+    co-located with a real `python3`: both suites now isolate `pwsh` into
+    its own directory (a symlink, nothing else) before adding it to the
+    fixture PATH, so pwsh still resolves without also handing the fixture
+    a working interpreter.
+
+- **`crew` 1.0.18: independent review of the 1.0.16 -> 1.0.17 range - the
+  cleanup registry and rule-cancellation fixes had two more gaps.** Bumped
+  `1.0.17 -> 1.0.18` after all four below.
+  - **`verify-gate.sh`: the shared cleanup registry and its TERM/INT/HUP/EXIT
+    traps were defined only inside `if [ "$UNLOCKED" -eq 0 ]`.** The shim's
+    and the rule-pgid stage's own registration calls, a few screens further
+    down, are unconditional - they run whether or not a lock was ever taken -
+    so an UNLOCKED run (`.crew/.verify-gate.lock` a regular file, or
+    otherwise unwritable) called `_crew_gate_register_cleanup` before it was
+    ever defined, printing "command not found" on stderr, and installed no
+    trap at all - a still-running rule outlived a TERM landing on an
+    unlocked gate exactly as it did before the registry existed. Registry
+    and traps now install unconditionally; only the lock's own release
+    callback still registers inside the locked branch, since there is
+    nothing to release otherwise. New test, `test_34i`, reproduces the
+    regular-file-lock repro end to end (no "command not found", the rule is
+    gone within 10s of TERM); sabotage re-indenting the block back inside
+    the locked branch turns it red on both assertions.
+  - **`verify-gate.sh`: the rule loop's own `$BASHPID` was recorded as a
+    process-GROUP id without proof.** `set -m` re-groups the rule's dedicated
+    subshell into its own process group on some hosts, not on others; the
+    old code assumed the re-group always happened and wrote `$BASHPID`
+    unverified, so on a host where it did not, `kill -TERM -- "-$BASHPID"`
+    at the exact window before the rule itself starts either signals a
+    process group that does not exist (a silent no-op) or, by coincidence of
+    numbering, one this script never started. New `_crew_gate_pgid_of`
+    proves which case holds (`/proc/<pid>/stat` field 5, falling back to
+    `ps -o pgid=` where /proc is unavailable) before anything is recorded:
+    verified as its own leader, `$BASHPID` is written in group mode as
+    before; otherwise in plain-pid mode, so cleanup signals the one process
+    it can prove exists instead of guessing at a group. `RULE_PID` itself
+    needs no such proof - job control guarantees a backgrounded job's own
+    group equals its own pid. New `test_verify_gate_rule_pgid_mode.py`
+    proves the helper on both real shapes (a `setsid` leader and an
+    ordinary inherited-group child), extracted straight out of the live
+    file rather than hand-copied; sabotaged and confirmed red on both a
+    broken helper and an unconditional group-mode write.
+  - **`crew_fixtures.kill_process_group`'s reaped-leader heuristic could not
+    tell a surviving grandchild from a fully reused pgid.** The 1.0.17 fix
+    scanned for a live process-group member with a start time at or after
+    the leader's own recorded start, on the theory that only a genuine
+    grandchild could satisfy it - but every member of a FULLY reused pgid
+    also started after our leader did (reuse cannot happen before our
+    leader existed to be reaped), so the bound is satisfied by both cases
+    equally, and teardown could `killpg` a process group it never started.
+    Dropped entirely: a reaped leader is now always "cannot prove this is
+    ours" and `kill_process_group` skips it with a warning, at the cost of
+    leaking a grandchild in the one shape this trades away deliberately -
+    the safe direction, matching the fail-closed choice this same function
+    already makes for a start-time mismatch. Two tests rewritten for the
+    new contract (a real end-to-end reap proving the grandchild now
+    survives, and a monkeypatched unit test proving `killpg` is never
+    called); both go red under the dropped heuristic.
+  - **Two tests SIGKILLed a bare pid in `finally` after already observing it
+    dead.** `test_kill_process_group_reaches_a_grandchild_after_its_reaped_leader`
+    (rewritten above) and `test_34h`'s pgid-race sibling both re-read a pid
+    from disk and signalled it unconditionally in cleanup, even on the path
+    where it had already been confirmed dead - by cleanup time that exact
+    number could have been reused. The `test_34h` file's own
+    `_kill_if_still_same_process` (added in 1.0.17 for a different test) is
+    now used here too: start ticks recorded the moment the pid was first
+    observed alive, re-verified before any signal.
+
+- **`crew` 1.0.17: independent review of the 1.0.16 merge - a rule's own
+  escaped process group can no longer outlive a killed gate, plus three
+  smaller test-harness fixes.** Bumped `1.0.16 -> 1.0.17` after all five
+  below.
+  - **`verify-gate.sh`: a rule's own process group escaped cancellation of
+    the GATE's process group.** Each rule already runs inside its own
+    group (`set -m` in a dedicated subshell, since 1.0.13) so a
+    backgrounded leftover survives the rule's own foreground command
+    returning - but the SAME isolation also escapes the gate's own group,
+    so a caller that killed the gate's whole process group (a timeout, an
+    interrupted Stop) left a still-running rule behind, unbounded.
+    Reproduced exactly as filed: a rule sleeping 600s, the gate started in
+    its own session, `kill -- -$gate_pid` - the gate died, the sleep
+    survived. Fixed with a shared cleanup registry (a function every
+    stage - the lock's own release, the python3 shim's temp dir, and now
+    a rule's current process group - appends to, dispatched by one
+    `trap ... TERM INT HUP EXIT`) rather than a third `trap -p`-spliced
+    layer, which an earlier attempt at exactly this reaping had already
+    tried and reverted (see that revert's own comment, still in the
+    file, for why splicing breaks a third time). The rule loop's own
+    subshell now also communicates its process group(s) to the gate via
+    a sidecar file next to `RULE_OUT_FILE`, since a subshell's variables
+    are otherwise invisible to its parent; and the outer `wait` on that
+    subshell is now the `wait` BUILTIN on a backgrounded job, not a plain
+    foreground compound command - bash defers a trapped signal until a
+    foreground command completes, but `wait` returns immediately on one,
+    which is what lets a bare `kill $gate_pid` (not just a whole-group
+    kill) interrupt a long-running rule promptly. New parametrized test,
+    `test_34h`, covers both repro shapes named above; sabotage removing
+    either the trap wiring or the rule-pgid registration turns it red.
+  - **The rule-output cap override's validation glob rejected every valid
+    7-digit value, not just over-long ones.** `???????*` matches length
+    >= 7, so an in-range override like `1000000` was silently clamped to
+    the 1048576 default exactly like an out-of-range one. Widened to
+    `????????*` (8+ digits - no valid value needs more than 7) so the
+    numeric `-lt`/`-gt` compare right below decides every 7-digit string
+    on its actual magnitude. New parametrized test, `test_34c3`.
+  - **`crew_fixtures.kill_process_group` treated a REAPED leader the same
+    as a REUSED pgid.** `_proc_start_ticks(pgid)` reads `None` once the
+    leader itself has been waited on (its `/proc` entry is gone entirely,
+    not merely changed), and `None != start_ticks` read as a mismatch
+    exactly like a genuine reuse - so a rule whose foreground command
+    finished fast but left a grandchild running (the ordinary shape
+    `run_gate`'s own `communicate()` already reaps) skipped `killpg` and
+    leaked it. New `_pgid_has_live_member_since` scans `/proc` for a
+    process group member with a start time at or after the recorded
+    leader's before giving up; two new tests prove the leak is fixed and
+    that a genuinely-gone group still refuses to signal.
+  - **A test's own cleanup SIGKILLed an unverified bare pid after already
+    observing it dead.** `test_34e`'s `finally` block re-read the orphan's
+    pid from disk and signalled it unconditionally, even on the path
+    where the pid was already confirmed dead earlier in the same test -
+    by the time cleanup ran, that exact number could have been reused by
+    an unrelated process. Factored into `_kill_if_still_same_process`,
+    which re-verifies identity via start ticks recorded when the pid was
+    first observed before signalling anything; two new unit tests prove
+    the skip and the still-signals cases.
+  - **`TODO.md`'s family-E entry misstated its own mechanism.** It read as
+    though `windows=False` selects the Windows branch on a real Windows
+    host; the actual defect is the opposite - `windows=False` forces the
+    POSIX branch regardless of host, so these five tests run POSIX rules
+    against inputs production would only ever reach through the Windows
+    branch. Corrected; the entry's fix shape (derive `windows` from the
+    real host) was already right and is unchanged.
+  - `CHANGELOG.md`'s crew headings were out of order (1.0.16, 1.0.15,
+    1.0.13, 1.0.14); reordered descending.
+
+- **`crew` 1.0.16: two post-1.0.15 corrections found while running this
+  release's verification gates - neither changes behaviour.** Bumped
+  `1.0.15 -> 1.0.16` because both land under `plugin/crew/` after the
+  1.0.15 bump commit, which `check-marketplace.py`'s version-drift check
+  (correctly) treats as unshipped without a further bump.
+  - **`BUDGETS.md`'s `crew-markdown-lines` claim was measured mid-merge and
+    was wrong by 2 files / 72 lines.** `git ls-files` lists a conflicted
+    path once per merge stage until the merge commits; counting during the
+    `win-tabcheck` merge's `BUDGETS.md` conflict (before resolving it)
+    counted that one file three times instead of once. Recomputed on the
+    clean, committed tree with `check-marketplace.py`'s own method (the
+    git index via `git ls-files -z`, `splitlines()` per file): 120 files,
+    17,790 lines, not 122/17,862.
+  - **pylint: `test_auto_cycle.py`'s new `_real_foreign_pid` fixture
+    (from `crew-1.0-win-tabcheck`) spawned a `subprocess.Popen` without a
+    `with` block** (R1732, `consider-using-with`). Wrapped in `with`;
+    the fixture's own `try`/`finally` termination and reaping is
+    unchanged, and `pylint $(git ls-files '*.py')` is exit 0, 10.00/10
+    again.
+
+- **`crew` 1.0.15: two win-repo-2 branches merged - the multi-tab
+  sendkeys decline is now unconditional, and the dry-run notify wording is
+  exact.** Bumped `1.0.14 -> 1.0.15` after both merges below.
+  - **`auto-clear.ps1`'s Windows Terminal tab-safety check no longer sends
+    on a "proven" multi-tab selection.** The previous rule sent when a
+    tab's title both matched `windowTitle` and read as selected; a tab
+    name is shell-set text with no tab-to-pid mapping, so that was still a
+    guess about which tab is this session's. Two or more tabs now always
+    declines, whatever `selectedMatches` says - only a window with exactly
+    one tab (which has that tab selected by definition) can send. The
+    decline reason now names which sub-case applied ("a tab's title
+    matched windowTitle and read as selected" vs. "no tab's title was both
+    matched and selected") so a log reader does not have to re-derive it
+    from the UIA probe. `CONFIG.md`'s `windowTitle` section gained a
+    measured note: Windows Terminal hosts every WINDOW (not just every
+    tab) of one desktop in a single process, so `windowTitle` is
+    effectively mandatory as soon as a second Windows Terminal window is
+    open anywhere on the desktop - not a rare fallback. Closed the
+    `title-one-ps1` `xfail(strict=True)` left by the reverted
+    `CREW_AUTOCLEAR_OWNER_STUB` seam: a new `_real_foreign_pid` pytest
+    fixture spawns a real, short-lived, non-ancestor process so the
+    owner-safety `Get-Process` call in that one case resolves a real pid
+    instead of a fabricated one that never backed a process - no
+    production seam reintroduced.
+  - **Test-only: the dry-run notify-delay test was vacuous.**
+    `test_the_dry_run_plan_reports_the_configured_command_and_delay` forced
+    the `.ps1` flavour onto `sendkeys`, which the test's own window stub
+    (pid 999999) actually declines - so the assertion it built never ran
+    against emitted output at all. It now reads the resolved method back
+    out of the plan and asserts per method (sendkeys/tmux -> the configured
+    9s; notify -> the exact "delay: n/a (notify sends no keystroke)" text,
+    already byte-identical between `auto-clear.ps1` and `auto-clear.sh`),
+    and fails loudly if no plan is emitted rather than passing on an empty
+    capture.
+    `test_the_notify_plan_says_the_delay_is_not_applicable`'s assertion is
+    tightened from an "n/a" substring to the exact wording.
+  - Both branches: `win-repo-2`, off `85dfa4a7`.
+
+- **`crew` 1.0.14: independent review of the 1.0.13 merge - six fixes,
+  all in the hooks-gate test harness and `verify-gate.sh` itself.**
+  - **`crew_fixtures.kill_process_group` could still SIGKILL an unrelated
+    process group.** The 1.0.13 fix recorded `proc.pgid` at spawn to avoid
+    a stale `os.getpgid(proc.pid)` re-lookup, but the recorded NUMBER
+    itself is not immune to reuse: once every member of that pgid has
+    exited (the common case for a short-lived gate command with no
+    lingering grandchild), the OS can hand that same number to a
+    brand-new, unrelated `setsid` leader, and teardown signals every
+    tracked proc regardless of whether it already exited. `popen_gate` now
+    also records the process's start time (`/proc/<pid>/stat` field 22,
+    Linux only); `kill_process_group` re-reads it before signalling and
+    skips - with a named warning, not a guess - on a mismatch. New tests
+    force the collision deterministically (winning the real pid-reuse race
+    is not something a test can do on demand).
+  - **A killed-but-unreaped zombie read as "still alive" forever on a host
+    whose PID 1 does not reap orphans (containers).** `crew_fixtures.py`
+    and `test_verify_gate_stop_gate_record.py` both polled liveness with a
+    bare `os.kill(pid, 0)`, which keeps succeeding for a zombie. New shared
+    `crew_fixtures.pid_alive` checks `/proc/<pid>/stat`'s state field
+    first and treats `Z` as dead; both test files now delegate to it.
+  - **`test_34e`'s liveness probe used `os.kill(pid, 0)` on a pid that, on
+    native Windows, is an MSYS pid, not a Win32 pid** - signal 0 there is
+    not a harmless probe (CPython's Windows `os.kill` opens the pid via
+    `TerminateProcess`), so a coincidental Win32-pid collision could
+    terminate an unrelated process. `test_34e` now skips outright on
+    native Windows, with the reason named.
+  - **The 0.2s TERM-then-KILL grace sleep ran for every rule, including
+    ones with nothing left in their process group to wait out** - ~0.2s
+    per rule regardless, unconditionally. Now gated on `kill -0` against
+    the same process group first; a rule that DOES leave something
+    running still gets the grace period. New test proves ten passing
+    rules add no `sleep 0.2` (via `bash -x` trace, not wall-clock timing).
+  - **`CREW_VERIFY_GATE_TEST_RULE_OUT_CAP` (test-only) accepted `0`
+    (disables the read cap entirely) or any value over 1 MiB (silently
+    raises the real cap)** - the old validation only rejected empty or
+    non-digit values. Now clamped to `1..1048576`; out-of-range values
+    fall back to the real default. New parametrized test proves both ends.
+  - **`test_34b`'s rule string double-quoted `$!` at the JSON level**,
+    which the gate's own shell expands one parse layer too early (to
+    empty), leaving `bg.pid` blank and its cleanup unable to reach the
+    backgrounded process it leaks on every run of this test.
+    Single-quoted to match `test_34e`'s already-correct pattern; the test
+    now also asserts `bg.pid` is non-empty and numeric.
+  - Two stale doc comments: `shell-suites.yml`'s obsidian-vault step no
+    longer restates the suite's own assertion count (it drifted once
+    already); `mcp-preflight-catalog.sh` and `uv-install.sh` now document
+    the exit-77-on-skip case their header previously omitted.
+
+- **`crew` 1.0.13: a backgrounded rule can no longer wedge disk space, a
+  full-branch merge of the 1.0.12 bump, and seven review fixes.**
+  Reconciled the two independent `1.0.12` bump commits (this branch's
+  `a46a333f`+`9b8f32bd`, origin's `85dfa4a7`) - both bumped the same three
+  files to the same byte-identical content, so the merge is a clean
+  `--no-ff` with no conflicts. Bumped `1.0.12 -> 1.0.13` after every other
+  change below.
+
+  - **`verify-gate.sh`: a rule's own backgrounded grandchild used to
+    survive the rule being recorded PASSED**, appending to the gate's
+    (already-unlinked) capture file until disk exhaustion (`sh -c 'yes &'`
+    left running past the gate's own return). Each rule now runs in its
+    own process group (`set -m` inside a dedicated subshell); once the
+    rule's foreground command returns, the gate signals that whole group
+    (TERM, then KILL after a grace period). Documented as a behaviour
+    change in `plugin/crew/CONFIG.md` §19 - a rule that intentionally
+    starts a long-lived background helper no longer can from inside
+    `"run"`. Proven with a small, slow (50ms-interval) sabotage fixture,
+    never a disk-filling one - see `test_34e` in
+    `test_verify_gate_stop_gate_record.py`.
+  - **The 3GiB read-cap test now proves the same cap in kilobytes, not
+    gigabytes.** `test_34c` used to write 3GiB via `yes | head -c` to time
+    the capped read; it now sets the cap itself via a test-only env seam
+    (`CREW_VERIFY_GATE_TEST_RULE_OUT_CAP`, never read outside a test
+    process) and proves the exact byte count read back, deterministically
+    and in milliseconds.
+  - **The capture read the wrong end of an oversized rule's output.**
+    `head -c` on the capped read kept the START of the file; what a
+    failing rule needs downstream (`tail -25`) is almost always at the
+    END. Changed to `tail -c`, which seeks near EOF on a regular file
+    rather than reading from the start, so this keeps the same
+    bounded-cost property, just from the other end. New test: `test_34f`.
+  - **`.github/workflows/instruction-budgets.yml`: the no-silent-raise
+    check compared a push-to-main's allowance file against itself.**
+    `check_allowance_no_silent_raise`'s default base (`merge-base HEAD
+    origin/main`) is HEAD itself once a push has already advanced the
+    remote's `main` ref - so a ceiling raised in that very push was
+    checked against a copy of the file that already carried the same
+    raise, and could never fail. The workflow now passes `--base
+    ${{ github.event.before }}` (falling back to `HEAD~1` when `before` is
+    the all-zero sha) on a `push` to `main` only; `pull_request` runs are
+    unchanged, since there `origin/main` genuinely has not merged the PR
+    yet. Verified by direct reproduction (a synthetic repo with `origin/main
+    == HEAD`): the default base misses a silent raise, the explicit
+    `before` base catches it.
+  - **`crew_autocycle.py`'s best-effort log write could raise past its own
+    `except`.** `log_autoclear` opened its log file with a strict
+    `encoding="utf-8"`; a message carrying a lone UTF-16 surrogate (from an
+    unknown JSON key's `\ud800` escape, which `json.loads` decodes without
+    complaint) then raised `UnicodeEncodeError` - a `ValueError`, not the
+    `OSError` the `except` caught - aborting whatever planning call invoked
+    it. Fixed with `errors="backslashreplace"` and a broadened `except
+    (OSError, UnicodeError)`. New test:
+    `test_log_autoclear_survives_a_lone_surrogate_in_the_message`; new
+    sabotage case in `sabotage_autocycle.py`.
+  - **`crew_fixtures.py`'s `kill_process_group` could kill an unrelated
+    process group.** It called `os.getpgid(proc.pid)` at KILL time; if the
+    leader had already been reaped elsewhere, the OS is free to hand that
+    exact pid to a brand-new, unrelated process, and `getpgid` on THAT pid
+    answers for its group instead. `popen_gate` now records `proc.pgid`
+    once, at spawn (`start_new_session=True` guarantees it equals the
+    child's own pid), and `kill_process_group` uses that recorded value.
+    New test proves it with a grandchild only a correct group-kill can
+    reach, `os.getpgid` monkeypatched to a wrong value for the whole test.
+  - **`test_verify_gate_lock_window.py`'s TTL-window test timed its "past
+    the TTL" floor from `time.monotonic()` read shortly after launching the
+    holder subprocess, not from the lock token's own age.** Fork/exec
+    overhead before the holder even acquires the lock could eat into that
+    margin without the test noticing. Now waits for the token file to
+    exist and computes the remaining wait from ITS OWN `mtime` plus the
+    TTL, matching what the test's own docstring already claimed to do.
+  - **Two cleanup paths referenced `signal.SIGKILL`, which does not exist
+    on native Windows**, inside `except` clauses that did not catch
+    `AttributeError` - a leftover pidfile there crashed the test's own
+    teardown. Both now use a module-level `_PORTABLE_SIGKILL =
+    getattr(signal, "SIGKILL", signal.SIGTERM)`.
+  - **`test_34d`'s mktemp-counting stub assumed bare `python3` already
+    resolves on PATH.** On a host where only `python`/`py` does (Git Bash,
+    some CI images), `verify-gate.sh`'s own python-shim path makes an
+    EXTRA `mktemp` call the stub's counter never accounted for. The test
+    now builds its own `python3` shim from the resolved interpreter and
+    puts it on PATH first, so the calibration holds on every host.
+
+- **`obsidian-vault` 0.4.13 / `jira-manager` 1.0.3: ported PR #212's
+  exit-77-on-skip convention and CI wiring from `origin/item8-ps1-parity`.**
+  A missing `pwsh` used to let `scripts/_test/uv-install.sh` (5 cases),
+  `scripts/_test/mcp-preflight-catalog.sh` (1 case) and
+  `plugin/obsidian-vault/hooks/scripts/_test/run-tests.sh` (its own `.ps1`
+  sub-cases) skip silently and still exit 0 - "PASSED" even though the
+  `.ps1` half was never behaviourally verified. All three now exit 77
+  (this repo's SKIP convention, matching `render.sh`'s missing-`mmdc`
+  case) when nothing failed but something was skipped for a missing tool.
+  `skills/jira-manager/scripts/_test/jq_absence.sh` gets the same
+  77-not-127 fix, plus a HOME repoint for its "nojq" fixture (`_jira_jq()`
+  also tries a Scoop-relative candidate that PATH-scrubbing alone does not
+  close - the Chocolatey/Program-Files candidates are absolute paths with
+  no HOME-relative form, so that gap stays open, documented in place).
+  `.github/workflows/marketplace.yml` and `shell-suites.yml` gain the CI
+  step for each of the four suites, none previously run by any workflow.
+  Two of the four files (`uv-install.sh`, `mcp-preflight-catalog.sh`)
+  applied unchanged from origin/main (pre-image hashes matched exactly);
+  `run-tests.sh` had diverged elsewhere during T7/PR #210 but its final
+  exit line had not, so the same replacement still applied by hand.
+  Directly verified, not just `bash -n`'d: 162/0, 122/0, 31/0 and 71/0/0
+  skipped respectively, all exit 0 (pwsh present at `/snap/bin/pwsh` on
+  this host, so the 77 path itself is exercised by the suites' own
+  fixtures rather than by this run).
+
+- **`crew` 1.0.12: verify-gate.ps1 closed-stdin fix (win-repo), and a pylint
+  clean-up to exit 0.**
+  Merged `origin/crew-1.0-win-stdin` (`1fa70a47`) onto 1.0.11. win-repo
+  bisected a Windows-only hang in `test_40[ps1]`/`test_40b` to the gate's
+  child processes inheriting its own open stdin: once the bounded stdin
+  read gives up, the pipe is still open and unwritten, and a child that
+  itself reads stdin then parks forever with the gate waiting on it.
+  PowerShell has no `<` redirection operator, so the fix is `$null | ...`
+  on all 14 git invocations and the five bare `$bashExe` calls (including
+  the rule loop), plus `RedirectStandardInput = $true` and an immediate
+  `StandardInput.Close()` on the interpreter probe's `ProcessStartInfo`.
+  Conflict: 1.0's temp-file rule-output capture (see the 1.0.11 entry
+  below) touched the same rule-loop call site win-stdin's `$null |`
+  change did; kept both, so the temp-file capture (and its
+  no-writable-temp-dir fallback) now launch through
+  `$null | & $bashExe ...`.
+
+  The probe hardening is the shared `Resolve-CrewPython` function, byte-
+  identical across 11 `.ps1` hooks and asserted so by
+  `test_ps1_python_probe.py`; win-stdin's diff only touched `verify-gate.ps1`'s
+  copy, which reproduced locally as that test's byte-identical check going
+  red for `verify-gate`. Propagated the identical two-line change (no new
+  PowerShell logic authored — win-repo's own diff, copied verbatim) to the
+  other 10 carriers (`role-write-guard`, `completion-audit`, `scope-guard`,
+  `approval-hook`, `crew-context`, `platform-sync`, `cloud-guard`,
+  `handoff-read`, `notify`, `handoff-write`). All 11 `.ps1` files
+  parse-checked clean; `test_ps1_python_probe.py` 47/47.
+
+  `pylint $(git ls-files '*.py')` now exits 0 (was exit 30, 35 findings: 25
+  C0301, 4 W0612, 2 E1135, 2 W1514, 1 R1732, 1 W0603). Long lines wrapped
+  without changing any embedded fixture string (verified by comparing every
+  `ast.Constant` string in the affected sabotage/shim fixtures before and
+  after); unused tuple-unpacked variables underscored; `encoding="utf-8"`
+  added to a bare `Path.read_text()`; a bare `Popen` moved under `with`
+  alongside its existing `try/finally` terminate-and-wait; the module-level
+  `global` in `crew_fixtures.gate_processes` is a save/restore of an ambient
+  tracker for the fixture's own duration, not a persistent mutation, so it
+  keeps a targeted disable rather than a rewrite. The two remaining E1135s
+  (`test_crew_instructions.py`) are `_scan_project_trust`'s `bad_line`
+  reassigned via `nonlocal` inside a nested closure — astroid does not
+  trace that reassignment into the function's inferred return type, so it
+  infers `None` regardless of an `is not None` or `isinstance` guard at the
+  call site (reproduced in isolation before disabling); targeted disables,
+  not a rewrite of a security-relevant TOML trust scanner for lint
+  cosmetics.
+
+- **`crew` 1.0.11: merge origin/main (crew 0.20.25/0.20.26, PRs #220/#224)
+  onto 1.0.10, plus two verify-gate.sh hardening fixes and test-hygiene
+  follow-ups found doing it.**
+  Merged `origin/main` at `3c68ebaf` (#224 "make rule[8] terminate, and
+  green" plus #220). Conflict resolutions: `pm-pulse.ps1` stays deleted (1.0
+  dropped it); `marketplace.json`/`plugin.json`/`PLUGINS.md` keep 1.0's
+  4-agent `crew` description and version (main's is the pre-1.0, 54-agent
+  description); `.crew/verify.json` keeps 1.0's rule[8] (377s, measured
+  serial on Linux) — main introduced no rule 1.0 lacked, only extra paths
+  for modules (`pm_brief.py`/`pm_pulse.py`) 1.0 no longer has;
+  `verify-gate.ps1` keeps 1.0's version entirely — main's is strictly
+  older (no shared extensionless-shim guard across both resolvers, no
+  bounded stdin read, no temp-file rule-output capture, a shorter
+  `PINNED_VARS` list); `test_verify_gate_lock_window.py` takes main's
+  polling for both fixed-sleep races (`test_a_rule_longer_than_the_ttl_
+  keeps_its_lock`'s `sleep(4)`, `test_each_flavour_honours_a_deadline_the_
+  other_published`'s `sleep(6)`) while keeping 1.0's tighter,
+  spawn-overhead-independent TTL-window bound;
+  `test_verify_gate_python3_shim.py` keeps 1.0's more precise
+  `_BASH_IS_MSYS_SHIM` skip scoping over main's blanket platform check;
+  `test_verify_gate_stop_gate_record.py` combines both sides —
+  1.0's `run_gate`/`popen_gate` process-group-cleanup harness with main's
+  `_GATE_TIMEOUT`/named-failure wrapping — and reaps `test_34b`'s
+  previously-leaked `sleep 20`. Swept `plugin/crew/tests` for other fixed
+  `time.sleep(N)` races against gate startup: none found outside the
+  window-lock file (the rest are already poll-loops, timestamp-granularity
+  spacers between two already-completed blocking calls, or deliberate long
+  sleeps inside a stub/fake process that gets killed rather than waited
+  on).
+
+  Two BLOCK-class fixes to `verify-gate.sh`, both sabotage-confirmed
+  (reverted, red; restored, green): (1) when the per-rule output-capture
+  temp file cannot be created, the gate now tries a second, repo-local
+  location (`.crew/.verify-rule-out.XXXXXX`) before refusing the rule with
+  a named reason, rather than falling back to the old pipe-form capture a
+  backgrounded grandchild can hold open forever; (2) the rule's own output
+  is read back through a size snapshotted the moment the rule's process
+  exits, capped at 1MiB, rather than the whole file — not a hang fix (a
+  regular file's `read()` cannot block on a writer that has not closed,
+  unlike a pipe), but a real time/memory one: a 3GiB file took 16s and
+  several GiB of RSS to read whole, under a second capped.
+
+  Test hygiene: `crew_fixtures.gate_processes` is now autouse (previously
+  requestable but nothing in the verify-gate test modules requested it),
+  and `popen_gate` auto-registers every spawn with whichever instance is
+  active; its teardown now `killpg`s the whole POSIX process group
+  regardless of whether the tracked leader process has already exited —
+  gated on that before, which is exactly the state a rule that backgrounds
+  a grandchild and returns immediately leaves it in (Windows' `taskkill`
+  path is unchanged, filed to `TODO.md`). `test_verify_gate_bash_resolver_
+  extension_guard.py` gained an assertion that the extensionless-file check
+  is actually conditioned on its own guard variable, not merely declared
+  and checked somewhere in the right order — sabotage-confirmed against a
+  `$crewBashRealWindows` → `$false` mutation that the previous assertions
+  missed. `.ps1`-side counterparts of both `verify-gate.sh` fixes, and a
+  platform-native routing proposal for this kind of `.sh`/`.ps1` hand-off,
+  filed to `TODO.md` for win-repo per the OWNER RULE.
+
+- **`crew` 1.0.10: release integration of four review-round branches plus a CI
+  fix, and six follow-ups found while merging them.**
+  Four `--no-ff` merges onto 1.0.9, in order: **W-a** (verify-gate.sh/.ps1: a
+  backgrounded rule's grandchild can no longer wedge the gate or the test
+  harness — rule output now goes through a temp file, `crew_fixtures.run_gate`/
+  `popen_gate` kill the whole process GROUP on a timeout instead of only the
+  direct child, and the lock-window TTL test is now deterministic). **W-d**
+  (sendkeys: a real Windows Terminal tab check via UIA, driven by a pure
+  decision function so it is unit-testable without a live WT window; delay
+  regression tests; dry-run target parity — carries **W-b**, `ab0b8679`:
+  `notify`'s dry-run no longer echoes a fake delay it never takes, and the
+  detached sender no longer holds context-watch's stdout open by inheriting
+  fd 3). **W-c** (Windows-only fixture bugs fixed in
+  `test_ps1_python_probe.py`/`test_crew_instructions.py`/
+  `test_event_claim_crash_safety.py`/`test_stack_skills.py`; `crew_config.py`
+  notes that `guards.roleWrites` of `off`/`report` needs Python). **CI1**
+  (`instruction-budgets.yml` fetches full history so `check_instructions.py`
+  can diff; `.pylintrc` ignores markdown; the `stack-powershell` skill's
+  PSScriptAnalyzer severity filter now matches `-Severity Error,ParseError`;
+  `test_stack_skills.py` skips the Windows absolute-fallback case where it
+  cannot run). All four merged clean — the only overlap, `test_stack_skills.py`
+  between W-c and CI1, auto-resolved with both sides' changes intact. The 11
+  byte-pinned `Resolve-CrewPython` copies remained byte-identical throughout.
+
+  Six follow-ups, found integrating the above:
+  (a) `test_the_window_is_identified_uniquely_or_not_at_all[title-one-ps1]`
+  failed in CI — the window-matrix fixture stubs `Get-CrewWindows` but not
+  `Get-Process`, so a uniquely-resolved *fake* pid hit the real owner-safety
+  check and declined with "cannot determine the process that owns window pid
+  ...". That check is correct and untouched (an unresolvable owner must still
+  decline); added `CREW_AUTOCLEAR_OWNER_STUB`, consulted only for a pid it
+  names, so an unstubbed pid still declines exactly as before.
+  (b) pylint W0707 (raise-missing-from) fixed on five identical
+  except/raise blocks in `test_verify_gate_stop_gate_record.py` (moved from
+  the CI-cited line numbers after the W-a merge); each now chains
+  `from exc`. Also fixed R1735 (`use-dict-literal`) in `crew_fixtures.py`,
+  a genuinely NEW finding from the W-a merge (confirmed clean immediately
+  before it). Five other pre-existing pylint findings were left alone.
+  (c) Ported PR #224's (`origin/todo/xdist-and-codex-profile-tickets`,
+  `31e1451c`) extensionless-PATH-shim guard to `Resolve-CrewBash`'s PATH
+  fallback loop in `verify-gate.ps1` — `Resolve-CrewPython` already carries
+  the equivalent guard here; `Resolve-CrewBash` did not, and is exactly as
+  vulnerable to a PATH shim `CreateProcess` cannot launch directly (hangs,
+  rather than errors, when invoked anyway). One further fix from that PR
+  (a sibling test's fixed `time.sleep(6)` racing gate startup,
+  `test_each_flavour_honours_a_deadline_the_other_published`) is still
+  missing from this tree — filed in `TODO.md`, out of scope for this item.
+  (d) `context.autoClear`'s `delaySeconds` was already correctly honoured
+  (win-repo's report of a 3s wait against a configured 4/6 was a different,
+  already-fixed issue) — but an unrecognised key (e.g. `delay`, typed
+  instead of `delaySeconds`) or a `delaySeconds` present but not a usable
+  number both silently fell through to the compiled default with no record
+  it happened. Both flavours now log a warning to `.crew/.autoclear.log`
+  naming the problem and the effective value used, once past the
+  enabled/onlyRepos/onlySessions silent-exit gates (an opted-out machine
+  still gets no log file at all). A numeric STRING (`"4"`) is still
+  accepted silently — decided that is not a misconfiguration.
+  (e) Measured the G1 stdin-bound tests
+  (`test_40`/`test_40b`/`test_50`/`test_50b`/`test_51` in
+  `test_verify_gate_stop_gate_record.py`) with `--durations=0`: each takes
+  ~5.0-5.9s, against a `_STDIN_BOUND_DEADLINE_S` of 20. All five are
+  deliberately waiting out the product's own ~5s stdin-read bound (a pipe
+  that is never closed, held open with a complete payload, or trickled
+  slower than the per-line timeout) — that IS the scenario each test
+  exists to prove is still bounded, so none of them has a fixture that
+  could close stdin earlier without testing something else. No fixture or
+  product change made.
+  (f) Added `crew_fixtures.gate_processes`, a pytest fixture (re-exported
+  from `conftest.py`) that tracks any `Popen` a test hands it and kills its
+  whole process group — then reaps it, so a killed process does not
+  linger as a zombie — at teardown regardless of pass/fail/error. Purely
+  additive: no existing verify-gate test was rewired to use it.
+
+- **`crew` 1.0.9: integration merge of the explorer/opus owner decision plus a
+  second independent-review round on the 1.0.8 no-python fallback and
+  `crew_autoclear_setup` fixes.**
+  `explorer` now runs on `opus` instead of `sonnet` (owner decision,
+  2026-09-24): it maps unfamiliar code for every other role, and with the
+  `localgpu` semantic index disabled or unavailable it has only
+  Read/Grep/Glob, so a wrong map is inherited by everything built on it. Cost:
+  every explorer dispatch now runs on the stronger, pricier tier. The other
+  read-only roles stay on `sonnet`. README's tier table and rationale, the
+  agent frontmatter and its snapshot test, and this entry are updated to
+  match.
+  `role-write-guard.sh`'s no-python fallback had a case-sensitivity gap: with
+  `nocasematch` set, `case ... crew:*)` matched a `crew:` prefix in any case
+  (`CREW:PM`, `Crew:pm`, ...), but the `${role#crew:}` prefix-removal
+  expansion that followed does not honour `nocasematch` at all and left the
+  prefix on the string — `_role_write_is_restricted`'s exact-match deny list
+  then read the un-stripped role as unrecognised and allowed the write
+  unjudged. Fixed with a fixed-length substring removal (`${role:5}`) that
+  needs no second, case-sensitive match, since the `case` above already
+  proved the first 5 characters spell `crew:` regardless of case.
+  `crew_autoclear_setup.py`'s `apply_migrate_to_repo` commit loop (both
+  repo files already staged into temp files) had no cleanup of its own: an
+  `os.replace` failure partway through left every unconsumed staged temp file
+  behind. Now wrapped in `try`/`finally` so any staged temp not yet renamed
+  away is removed on any failure, without touching files already committed.
+
+- **`crew` 1.0.8: independent-review round on the 1.0.7 merge (role-write-guard
+  no-python contract, verify-gate stdin bound, crew_autoclear_setup divergent-
+  file and staging fixes, a TOML fallback-scanner grammar gap, lint/test
+  fixes).**
+  `role-write-guard.sh`/`.ps1`'s no-python fallback no longer parses
+  `guards.roleWrites` or pm's own path allowances itself (that class carried
+  its own defects: a dangling config symlink read as absent rather than
+  corrupt, a lexical pm-scope check that accepted `..` traversal and symlink
+  escapes, and a policy reader that accepted corrupt JSON as a clean "off").
+  It now only determines whether the acting role is restricted and fails
+  CLOSED unconditionally without python -- `off`/`report`/pm's allowances
+  need python to be evaluated at all (`plugin/crew/CONFIG.md` sec 18). The
+  bash role-extraction kept its grep-free pure-bash form but dropped the
+  bash-4-only `${var,,}`, using `shopt -s nocasematch` instead so Bash 3.2
+  (macOS) does not die on it.
+  `verify-gate.sh`/`.ps1`'s stdin read is now bounded by TOTAL time, not per
+  read/line: `.ps1` used to discard a complete `stop_hook_active` payload if
+  the pipe stayed open past the 5s bound (the retry hook then re-ran the
+  gate and blocked again); `.sh`'s `while read -t 5` loop re-armed a fresh
+  5s on every line, so a producer trickling complete lines slower than 5s
+  apart, without closing the pipe, was never actually bounded. `.sh` now
+  uses a single `read -t 5 -d ''`.
+  `crew_autoclear_setup.py`'s `apply_migrate_to_repo` no longer computes one
+  plan from whichever of `.crew/config.json` / `.crew/crew.json` it reads
+  first and copies that context onto both -- each file converts from and
+  writes back only its own prior content, so a divergent setting in either
+  file is never silently overwritten by the other's. The two repo writes
+  are staged into temp files before either real file is replaced (a staging
+  failure now leaves both untouched); a crash between the two `os.replace`
+  calls can still leave one file converted and the other not, but a retry
+  detects and repairs exactly the file that did not make it. Also: a
+  non-object repo config file ([], a string) now fails in a controlled way
+  instead of crashing with `AttributeError`, and invalid UTF-8 in the
+  machine-global file is reported as the unreadable-config result instead
+  of raising `UnicodeDecodeError`.
+  `crew_instructions.py`'s Python 3.8-3.10 TOML fallback scanner (used only
+  when stdlib `tomllib` is unavailable) now rejects a missing comma between
+  two array elements spread across lines -- a bare trailing scalar used to
+  be accepted unconditionally as "still open", so two elements with nothing
+  between them but whitespace read as an ordinary array; it is now valid
+  only when the very next line is nothing but the closing `]`.
+  Lint: removed an unused `import sys` from two test files. Test fixes: the
+  four bash-flavour tests in `test_auto_clear_order.py` now skip cleanly
+  when no bash is on PATH instead of crashing; `test_verify_gate_lock_
+  window.py`'s TTL-window bound now reads the gate's own published start
+  time instead of a test-side wall clock, removing a flake on a host slow
+  enough to delay process startup.
+
+- **`crew` 1.0.7 / `obsidian-vault` 0.4.12: release-integration merge of F1-F4
+  and G1 (role-write-guard fallback hardening, autoClear setup review
+  fixes, sendkeys/context-watch review fixes, the `.crew/`-directory gate
+  reversal, and verify-gate stdin/probe hardening).**
+  F1: `role-write-guard`'s no-python fallback now determines the role
+  without piping through `grep`/`head`/`sed`/`tr` (pure bash/PowerShell
+  string matching instead, so a PATH missing those coreutils no longer lets
+  an unjudged write through), fails closed whenever it cannot determine a
+  role or read `guards.roleWrites` rather than assuming safe, and honours
+  `guards.roleWrites: off`/`report` and `pm`'s own path allowances in that
+  fallback the same way the python path already did. The `obsidian-vault`
+  WindowsApps regression fixtures now model the real Store layout (a
+  directory literally named `WindowsApps`, forwarding to a copy of the
+  interpreter under a second `WindowsApps`-rooted path) instead of a
+  same-host real interpreter that never exercised the `*/WindowsApps/*`
+  path check at all.
+  F2: `crew_autoclear_setup`'s migrate path now converts `context.autoClear`
+  in both `.crew/config.json` (what every sender actually reads) and
+  `.crew/crew.json` (kept, not deleted); the global `onlyRepos` narrowing is
+  now written before either repo file is touched, so a failed global write
+  cannot strip a repo's opt-in with no record; every global-file writer now
+  refuses outright rather than silently merging onto a malformed
+  machine-global JSON; and a retained global legacy `"windows"` method is
+  now proposed for conversion to `"notify"` like the repo-side literal. The
+  Python 3.8-3.10 TOML fallback scanner for Codex trust now uses a strict
+  grammar instead of a blanket key/value regex, so a legal multi-line array
+  and an unterminated string value are both read correctly.
+  F3: `sendkeys` now declines when the target window's owner process cannot
+  be determined (an empty catch used to read that as safe); `Start-Process`
+  argument quoting now round-trips a `-Root`/`-Text` value containing a
+  space instead of splitting it across argv; and `context-watch.sh` no
+  longer loses the `notify` `systemMessage` when `mktemp` fails mid-handoff.
+  F4: auto-clear's gate reverts to `.crew/` the directory (not
+  `.crew/config.json`): absent `.crew/` stays silent and creates nothing,
+  present-but-not-enabled stays silent with no log line, and the
+  machine-global switch now works in any crew repo without a per-repo copy
+  of its own - the 0.20.17 repo-local duplication workaround is no longer
+  needed. `context-watch` hands the forced continuation over to auto-clear
+  on `.crew/` alone, while its own context-window warnings still require a
+  real `.crew/config.json` underneath. Two test files' bare `bash`/`cp`/
+  `diff` subprocess calls are replaced with `crew_fixtures.resolve_bash()`
+  and `shutil.copyfile`/text comparison. `.crew/verify.json` rule[8] is
+  re-priced to a measured 377s serial run on Linux, replacing an
+  unannotated Windows figure with no host or load recorded.
+  G1: `verify-gate`'s stdin read is now bounded in both flavours (a
+  line-at-a-time `read -t 5` loop in `.sh`, an `OpenStandardInput()` +
+  `CopyToAsync().Wait(5000)` in `.ps1`) instead of blocking the whole script
+  on a pipe that is never closed, and every `verify-gate` test's subprocess
+  spawn now carries an explicit timeout -- these two stand on their own.
+  `Resolve-CrewPython` also now skips an extensionless candidate before
+  `ProcessStartInfo` is ever built when running on real Windows (gated on
+  `$IsWindows`, never the flavour-guard's `$env:OS` seam, so the suite's own
+  extensionless-shim fixtures on Linux are untouched) -- this is defence in
+  depth, not a defect fix: the resolver already executes every candidate
+  before believing it (see `Resolve-CrewPython`'s own comment,
+  `verify-gate.ps1:138-144`), so an extensionless stub was never accepted
+  blindly here; the skip only avoids a launch attempt Windows cannot honour
+  in the first place.
+
+- **`crew` 1.0.6: notify-by-default auto-clear on native Windows (R1), setup
+  wiring for it (R2), and the Windows-burn-in W8/W9 review fixes that landed
+  alongside.** `auto-clear`'s `auto` method never resolves to a keystroke
+  method on native Windows; it resolves to a new `notify` method instead,
+  which types nothing and prints a Stop-hook `systemMessage` saying the
+  handoff is written and verified and it is safe to run `/clear` (or
+  `/compact`) yourself - no toast. The old SendKeys mechanism is renamed
+  `sendkeys` and becomes opt-in only: it declines (falling back to `notify`,
+  logged) against a window owned by Windows Terminal, where nothing outside
+  the process can confirm which tab is active, and against a window that has
+  lost focus by send time. `context-watch.sh`/`.ps1` now forward
+  auto-clear's stdout onto their own, which is the only path that makes
+  `notify`'s `systemMessage` visible in production. `crew_platform.py`'s
+  `_AUTOCLEAR_METHODS` gains `notify` everywhere and `sendkeys` (renamed
+  from `"windows"`) on Windows. `config.json`'s gate is kept: `notify` is
+  never suppressed by `CREW_AUTOCLEAR_INHIBIT` since it never touches a
+  keyboard, and neither method ever prints "cleared"/"compacted" without a
+  verified keystroke behind it.
+  `/crew:init`, `/crew:migrate` and `/crew:onboard` now configure this
+  through one helper, `crew_autoclear_setup.py`: on native Windows, init
+  proposes writing `method: "notify"` to the machine-global config layer
+  explicitly, and shows exactly what was set; migrate rewrites a repo's
+  pre-1.0 `"windows"` to `"notify"` (naming `sendkeys` as the opt-in) and
+  drops the repo-local duplicate block the 0.20.17 workaround left behind;
+  no `sendkeys`, `enabled: true`, or `onlyRepos`/`onlySessions` widening is
+  ever written without a separate explicit yes; everything is idempotent
+  (an already-set global method, or nothing left to convert, leaves the
+  file byte-identical). Codex review round on the same lane (W8) fixed the
+  Codex-profile docs (`--profile` is user-level, not a project-config
+  concept - `profiles` is on Codex's own project-config denylist and never
+  applies), hardened the TOML trust scanner with `tomllib` ground truth and
+  canonical-then-literal key resolution, removed a capability-check
+  overreach that was skipping armed test cases it never needed to skip, and
+  restored a README heading a previous merge had folded away.
+  Windows burn-in W9 then fixed two more real defects and two test-fixture
+  gaps found on a real Windows/Git-Bash host: `auto-clear.ps1` resolved its
+  home directory via the Shell API (ignoring an overridden
+  `$env:USERPROFILE`) instead of matching `cloud-guard.ps1`'s
+  `$env:USERPROFILE`-then-`$env:HOME` convention; a CRLF-writing-python test
+  fixture gap that made a real `tr -d '\r'` regression invisible on Linux;
+  and a resolver-contract test that asked the wrong process whether
+  `cygpath` exists (its own, not the bash that will actually run it), fixed
+  alongside a new DECIDED CONTRACT comment on both `crew_py_strict`
+  (`_common.sh`) and `_resolve_role_write_python`
+  (`role-write-guard.sh`, kept byte-identical per policy): each returns the
+  interpreter path in the POSIX form bash itself execs; a caller that hands
+  it to a different interpreter as data converts at that boundary with
+  `cygpath -w`. A consumer audit found no such caller today - guidance for
+  the future, not a live fix.
+
+- **`crew` 1.0.5: Windows burn-in fixes merged - in-process test decision
+  logic with a default parity sample and the full per-shell matrix marked
+  `slow` (run on windows-latest CI); per-flavour PATH fixtures for shim
+  tests plus `autoClear` `onlyRepos`/`onlySessions` scope narrowing;
+  crash-safe per-event claims, bash resolvers that try every PATH match
+  with a timeout, and Python probes that prove CPython/PyPy and kill the
+  process tree.** Three burn-in lanes (`crew-1.0-burnin-fix1`,
+  `crew-1.0-burnin-fix4`, `crew-1.0-burnin-fix3b`) merged into `crew-1.0`;
+  `obsidian-vault` 0.4.9 picks up the same proven-Python-probe resolver in
+  its bash wrappers from the fix3b lane. `plugin/crew/BUDGETS.md`'s
+  Markdown line-count claim re-measured against the merged tree.
+  Review-round-3 fixes: fail-closed `autoClear` scoping, including `.ps1`
+  whitespace parity with `crew_autocycle`; a nonce check on `mark_sent`;
+  `.cmd`/`.bat` shim launch; an overall resolver deadline; JSON-proof
+  Windows fixtures; and a `:Z` bind mount. Review-round-4 fixes: `onlyRepos`
+  resolves symlinks before `..` (`.ps1`), an atomic nonce-keyed sent marker
+  in `event_claim`, the probe wait clamped to the overall resolver
+  deadline, a dead bash memo removed, and `obsidian-vault`'s `.ps1`
+  wrappers launching `.cmd`/`.bat` Pythons.
+- **`crew` 1.0.5 / `obsidian-vault` 0.4.9: main's #221 and #222 fixes
+  merged in.** `main`'s crew 0.20.19/0.20.20 (#221) closed a gap 1.0's own
+  resolver hardening had not reached: when `role-write-guard.sh`/`.ps1`
+  resolve NO usable python at all, a restricted role (a `_DENY_ROLES`
+  member, or `pm`) now fails closed (exit 2) instead of being allowed
+  unjudged - ported onto 1.0's own resolvers and role list, which already
+  had the WindowsApps-rejection fix main's #221 also carried. `main`'s
+  obsidian-vault 0.3.17 (#222) removed the same WindowsApps path-substring
+  rejection from vault-guard/vault-capture/bridge-status; 1.0's
+  execute-and-verify resolvers never had that rejection to begin with, so
+  nothing to port there. `test_role_write_guard.py` also gained #221's
+  CI-only PATH-fixture fix (a coreutils-stripped `$PATH` used to hide the
+  guard's own "no usable python" decision behind a `command not found`
+  fall-through to allow).
+
+### Fixed
+
+- `check_instructions.py` returns POSIX relpaths, so budget allowances and
+  stale-name exemptions match on Windows; `.gitattributes` pins
+  `*.py`/`*.ps1`/`*.psm1` to `eol=lf`.
+- `auto-clear`: a crew repo with `.crew/` but no `config.json` now reaches
+  the machine opt-in instead of standing down; repos without `.crew/` stay
+  silent. `onlyRepos`/`onlySessions` matrix skips by capability (tmux,
+  owner window) instead of failing; drive-root-relative symlink targets
+  keep the link's drive.
+- Windows fixtures: tests resolve bash via `crew_fixtures.resolve_bash`
+  instead of bare `bash` or `/bin/bash`.
+- Python probes: no `%` reaches `cmd.exe` when a `.cmd`/`.bat` Python shim
+  is launched; timed-out probes are reaped and disposed.
+- `event_claim`: sent claims written by the previous release are honoured
+  after upgrade; `notify`/`handoff-write` `.ps1` build python argv with
+  Windows quoting.
+- Fixed context-watch silently swallowing a crashing/refusing auto-clear on
+  both flavours - its exit code and stderr are now captured and logged to
+  `.crew/.autoclear.log` (also present in 0.20.17; not backported).
+- `crew`: `.codex/config.toml` no longer generates a no-op `[profiles.*]`
+  table (codex-cli 0.154.0 ignores project-local profiles); the reviewer's
+  read-only sandbox is enforced on the command line (`--sandbox read-only`,
+  `review_run.py`), the only Codex launch site.
+- `obsidian-vault`: refuse to queue an unparseable "?" session capture with
+  no transcript (logged, not silent); dedupe transcript-only captures by
+  trigger+transcript hash.
+- `crew`: two test-only fixes ported from `e0278bc9`, the only two failures
+  in a full serial run of `plugin/crew/tests/` (2 failed, 2018 passed, 10
+  skipped in 1928s). `test_verify_gate_lock_window.py`'s zero-prefixed-TTL
+  case asserted the published deadline landed inside a 10s window; on a
+  Windows/Git-Bash host the first `lock_extend` fires several real seconds
+  after process start (fork/exec overhead, not a calculation bug), so the
+  assertion now checks direction and order of magnitude instead - the
+  deadline is published and monotonic (`window > 0`), and nowhere near the
+  untouched 180s compiled default (`window < 170`) - rather than a tight
+  wall-clock bound; the octal-vs-decimal subject itself (a 0-prefixed TTL
+  parsing as decimal) is unchanged. `test_verify_gate_python3_shim.py`'s
+  cygpath-branch case is now skipped specifically when the resolved bash is
+  Git for Windows' `bin/bash.exe` shim (not on any `sys.platform ==
+  "win*"`, which is also true for the narrower `usr/bin/bash.exe` case and
+  for a plain WSL bash, neither of which has this problem): that shim
+  unconditionally prepends its own `mingw64/bin:/usr/bin` (holding a real
+  `cygpath.exe`) ahead of any PATH the test supplies, so its fake `cygpath`
+  is never reached and the branch cannot be exercised there. Confirmed the
+  branch is genuinely reached elsewhere: unskipped and passing on this
+  Linux host.
+- `crew`: `.crew/verify.json`'s `rules[8]` (the whole-suite
+  `python3 -m pytest plugin/crew/tests/ -q` rule) re-priced from a stale 185s
+  to the measured 1928s full-serial cost, and documented as an `--all`-only
+  rule rather than a Stop-budget one - it has no separate `--all`-only flag
+  in this schema; being priced far above `verify.stopBudgetSeconds` (60) is
+  what makes `verify-gate.sh` classify it CHRONIC and defer it to
+  `/crew:verify --all` on every Stop run. Priced at the serial figure on
+  purpose, not at the faster 427s `-n auto` (pytest-xdist) number also on
+  record, because xdist is not yet a provisioned tool in 1.0 (see TODO.md's
+  1.1.x tool-provisioning entry).
+
+### Added
+
+- `crew`: `codex-probe` reads Codex project trust from `~/.codex/config.toml`
+  (`CODEX_HOME`-aware) and reports trusted / missing trust (CLOSED) /
+  unknown.
+- `crew`: `crew-diagrams/scripts/_test/render.sh` now exits 77 (this
+  repo's SKIP convention, `verify-gate.sh`'s `skip77`) instead of 0 when
+  `mmdc` is absent from PATH, so a host with no mermaid-cli reports "did
+  not run" rather than a false pass; matching `.crew/verify.json` rule
+  added for `plugin/crew/skills/crew-diagrams/**`. Ported from PR #212
+  (`origin/item8-ps1-parity`).
+
+- **`obsidian-canvas` 1.1.2: says plainly that `obsidian-memory-contract`
+  ships only with the `obsidian-vault` plugin.** A skill-only install was
+  pointed at a profile that is not on the machine; it now says where the
+  profile comes from and to ask about vault conventions when it is absent.
+  `README.md`'s Documentation table stops linking the deleted
+  `vault-automation/` and points at `plugin/obsidian-vault/`.
+
+- **Retired `claude-memories-vault` and `claude-memories-canvas` (their
+  conventions ship as obsidian-vault portable profiles) and the unregistered
+  `vault-automation/` scripts (replaced by obsidian-vault's capture and
+  bounded gardener).** `obsidian-vault` 0.4.4: two prose sites
+  (`README.md`, `obsidian-memory-contract/SKILL.md`) that named the retired
+  skills now point at `profiles/memory-vault.md` /
+  `profiles/canvas-maps.md`. `obsidian-canvas` 1.1.1: its cross-reference to
+  `claude-memories-canvas` now points at the same profile. Marketplace
+  skill count 36 -> 34.
+
+- **`crew` 1.0.0: retired the 0.20 overview, capabilities and
+  technical-reference guide families; archived the dated progress report.**
+  `docs/guides/crew/crew-overview*`, `crew-capabilities*` and
+  `crew-technical-reference*` (HTML, DOCX, PDF, and their `-solomon`
+  variants) are removed, superseded by the `crew-1.0-*` guides, which have a
+  generator (`docs/guides/crew/src/build.py`) and their own test coverage;
+  `crew-progress-report-2026-09-20*` moved to `docs/guides/crew/archive/` as
+  historical record. `plugin/crew/tests/test_docs_routing.py`'s `_GUIDES` and
+  `sabotage.py`'s `GUIDE_HTML` now point at the archived progress report,
+  the one guide in this set with no generator of its own.
+
+- **`crew` 1.0.0: web testing is core.** `/crew:webtest` runs Playwright
+  Test Agents inside crew's lifecycle; a healer skip is a finding, and the
+  trace and axe results go to the reviewer. New `stack-web` skill. Verify
+  rules: blob reporter, merge-reports, axe zero violations, no committed auth
+  state, and visual diffs only inside the pinned Playwright image, otherwise
+  UNVERIFIED. `/crew:init` gains a web phase. The installer gains a
+  default-on web-testing row (Node >=20.19, `@playwright/test` 1.63.0,
+  `@axe-core/playwright` 4.13.0, chromium, Test Agents, MCP, and a Docker
+  warning). `/crew:migrate` notes that autopilot arrives in 1.1.0. Web
+  testing guard: skip detection over full file content, renames and helpers;
+  exclusions only as `- skip:` list items; storageState resolved or
+  fail-closed; visual checks need container evidence; open webtest findings
+  make a review FINDINGS; web-testing install row is idempotent, avoids sudo
+  when unavailable, reports init-agents/MCP failures honestly, and registers
+  MCP servers at project scope with `cmd /c` on Windows. Crew counts: 34
+  commands, 29 bundled skills, 4 agents, 34 hook entries.
+
+- **`crew` 1.0.0: `/crew:onboard` and `/crew:migrate` generate
+  `.claude/rules/<subsystem>.md` from the codemap; CI checks them for
+  drift.** `crew_instructions.py rules` previously had no caller. Onboard
+  runs it after writing or refreshing a note; migrate lists the rules in its
+  preview and writes them after `--apply`. `scripts/check_instructions.py`
+  reports a hand-written file at a generated rule's path under its own label,
+  not as drift.
+
+- **`crew` 1.0.0: one session owns a ticket.** The interactive session carries
+  a ticket through brainstorm → spec → plan → implement → tests → docs →
+  review → done (`/crew:brainstorm`, `/crew:spec`, `/crew:plan`,
+  `/crew:approve`, `/crew:implement`, `/crew:review`, `/crew:done`, with
+  `/crew:fix` as the compressed light path and `/crew:status` read-only).
+  Roster 54 → 4 agents (`explorer`, `reviewer`, `security`, `researcher`)
+  plus on-demand `stack-*` skills. Hooks: the context hook (on by default),
+  plan-approval, scope guard and completion audit, the cloud/destructive
+  guard (off by default), and the verify gate. `/crew:migrate` is the
+  upgrade path from 0.20: preview, backup, atomic apply, rollback.
+
+  **Breaking changes:**
+  - The PM agent, `/crew:pm`, the `pm-brief` SessionStart brief, the
+    `pm-pulse` Stop hook and `pm_journal.py` are removed. Nothing dispatches
+    work on its own; `pm.*` config is read only so `/crew:migrate` can carry
+    it to `retired.pm`, and `.crew/pm-journal.md` is archived by migrate.
+  - `/crew:roster` and `/crew:scale` are removed (use `/crew:status`); the
+    `crew-pm` and `crew-scaling` skills are removed.
+  - 51 agents are deleted, including every domain specialist, `developer`,
+    `planner`, `smoke-author`, `dba`, `scribe` and `docs-writer`.
+    `crew_state.SPECIALIST_ROLES` is empty and `ROLE_TIERS` is the four.
+  - `qa-reviewer` is renamed `reviewer`; `/crew:review`'s Claude rung
+    dispatches `crew:reviewer`.
+  - `/crew:work` and `/crew:ticket` are removal stubs, not aliases: they say
+    to use `/crew:implement` and `/crew:brainstorm` + `/crew:spec`.
+  - `memory.inject` defaults to `true`: the context hook injects code-map
+    state and the handoff unless a repo sets it `false`.
+    `context.autoResume` is no longer read; `handoff-read` stays registered
+    for its once-per-session marker resets and prints the handoff only when
+    `memory.inject` is `false`.
+  - `/crew:upgrade` now only brings a pre-0.20 config up to the 0.20 schema;
+    a 0.20 repo runs `/crew:migrate`.
+  - The role-write guard's deny list is the four read-only agents; no
+    shipped agent is unrestricted.
+
+  **Also in 1.0.0:**
+  - Auto wrap-up, clear and resume: session-keyed markers; clear only after
+    a verified handoff and a trusted reading; unique window targeting;
+    `context.autoClear.enabled` is a machine opt-in, default off.
+  - `crew_metrics.py` carries UNKNOWN through every field and criterion; an
+    unknown never collapses into 0 or a pass.
+  - Budget checker hardening: `check_instructions.py` closes its fail-open
+    paths (stale-name scan by default with an explicit opt-out list, strict
+    frontmatter detection); it now runs in CI.
+  - Install-step fixes for the optional LSP and stack-tool steps, in both
+    install scripts.
+  - The context hook announces an open or expired-unclosed incident at
+    SessionStart (id, minutes left or expired, gates stood down), inside the
+    startup budget and whatever `memory.inject` says. It replaces the
+    announcement the removed `pm-brief` used to make.
+
+- **`crew` 0.20.28: registration.** Metrics harness (`crew_metrics.py
+  record|baseline|compare|escaped`; UNKNOWN never 0; 10-ticket floor);
+  instruction budget checker `scripts/check_instructions.py` with BUDGETS.md
+  and an explicit allowance list; optional LSP (C#, Python, TypeScript,
+  Angular language service) and stack-tool install steps (default off).
+  `/crew:done` now records its metrics row with `crew_metrics.py record
+  --ticket <id>`.
+
+- **obsidian-vault 0.4.3: the gardener acks only files whose frontmatter
+  carries the item's `session_id`; bounded (64 KiB) processor output
+  capture; stat-first snapshots counted against the run deadline.** (0.4.2
+  never shipped; folded into this entry.) The gardener acks an item on what
+  it actually changed in the vault, not on the path it reported; acks
+  already-distilled sessions without re-running them; new `reconcile`; runs
+  `claude -p` with every hook off (`--settings '{"disableAllHooks":true}'`,
+  `CREW_HOOKS=off`). Acks only a changed file whose frontmatter names the
+  item's `session_id`, so a change without it is not counted as that item's
+  work; the processor's stdout and stderr are captured into bounded (64 KiB)
+  buffers; vault snapshots are stat-first and count against the run's
+  deadline, leaving an item queued rather than overrunning.
+
+- **`crew` 0.20.27: registration.** Cloud guard: fails closed on nesting depth
+  and malformed input/config; every pipeline stage and xargs/parallel heads
+  are judged; az verbs found in any position; bash -c -- parsed; SQL scanned
+  under every server-mode reading per client (backslash literals may now be
+  refused); --dry-run/--no-dry-run last wins; -help and -WhatIf exempt only
+  when they own their position; report mode never emits allow; bash judges
+  Bash calls and the .ps1 judges PowerShell calls. forcePush applies to every
+  branch (docs corrected). Troubleshooting guide source.
+- **`crew` 0.20.26: T3 fail-closed fixes.** Scope guard and completion audit
+  fail closed when python is unavailable and the config is not provably off;
+  successor-plan continuation requires an accepted (user-prompt) approval; a
+  malformed /crew:approve payload is reported, not ignored.
+- **`crew` 0.20.25: register approval, scope guard, completion audit;
+  `/crew:approve`.** Ticket contract enforcement (off by default; `/crew:init`
+  sets scope.mode auto = report for 10 tickets then block): `crew_ticket.py`
+  validate/status/activate; approval recorded only from the user's own
+  `/crew:approve <id>` prompt (UserPromptSubmit), bound to the plan and spec
+  hashes; scope guard on Write/Edit/MultiEdit/NotebookEdit and on shell
+  attempts to approve or write crew state; Stop-time completion audit over the
+  whole tree. Lifecycle commands /crew:brainstorm, /crew:spec, /crew:plan
+  (redefined), /crew:implement, /crew:done, /crew:fix, /crew:approve; vendored
+  crew-brainstorm/plan/execute skills (MIT, credited in NOTICE.md);
+  daily-workflow guide. Old /crew:work and /crew:ticket remain until 1.0.
+
+- **`crew` 0.20.24: registration.** Stack skills corrected against tool docs:
+  eslint/prettier probes fail closed and prettier is scoped to Angular files;
+  git ls-files -z for shell files; .NET 4.8 LangVersion and EF6 AsNoTracking
+  wording, dotnet format subcommand probe and project-file triggers;
+  PSScriptAnalyzer rules check the module, pass -Settings once and exit
+  non-zero on findings; .pyi, *.tf.json/*.tfvars.json triggers; tflint
+  --recursive; PostgreSQL/MySQL DDL caveats. The skill test executes each
+  rule's missing-tool branch.
+
+- **`crew` 0.20.23: registration.** Context hook: recalled vault text wrapped
+  as labelled reference data, not instructions; vault allow-list and
+  single-line vault/note names; memory.inject honoured by
+  --slice-for-subagent, and pm-brief/handoff-read stand down when it is on;
+  per-session lock and fail-closed budgets; 1 MB log rotation; SubagentStart
+  attribution by tool_use_id else generic slice only; generators refuse to
+  overwrite hand-written files, --check fails on them, source hash covers
+  paths/anchor, rules capped at 30 lines.
+
+- **`crew` 0.20.22: Cloud/destructive guard (PreToolUse Bash|PowerShell, off by
+  default via guards.cloudGuard: off|report|block): terraform/tofu
+  apply/destroy, aws delete/terminate/rm --recursive, az delete/purge, SQL
+  DROP/TRUNCATE, force push; effective AWS profile/region and Azure
+  subscription checked against pinned values, unknown identity never allowed
+  unattended; never emits allow. Verify-gate env pinning extended (AWS_REGION,
+  AWS_DEFAULT_PROFILE, AZURE_SUBSCRIPTION_ID, ARM_SUBSCRIPTION_ID,
+  TF_VAR_environment).**
+
+- **`crew` 0.20.21: `/crew:migrate` refuses symlinked/junction targets and
+  paths outside the repo, never clobbers temp files, re-verifies each target
+  before replacing (stale plan aborts and rolls back), and rollback validates
+  every manifest path; review ledger: reservations after NEEDS_REPLAN are
+  refused without writing, and `--check-receipt` passes only for the latest
+  round when CLEAN or accepted; `/crew:status` ignores `core.fsmonitor`,
+  reports a corrupt `crew.json`, and reads leading-pipe INDEX rows.**
+
+- **obsidian-vault 0.4.1: writers use only the primary vault; gardener acks
+  only a file it changed; git steps inside the run deadline; safe quoting in
+  scheduler units; import refuses symlinked destinations and re-imports
+  idempotently; adopt refuses unassigned vaults.**
+
+- **`crew` 0.20.20: seven on-demand stack skills (terraform, dotnet incl. .NET
+  Framework 4.8, angular incl. AngularJS, python, sql for SQL Server/MySQL/
+  PostgreSQL, powershell with separate 5.1 and 7 checks, bash), each proposing
+  verify.json rules where a missing tool is UNVERIFIED, never PASS.** The
+  skill count is now 27, was 20.
+
+- **`crew` 0.20.19: one budgeted context hook, off by default until 1.0.**
+  One budgeted context hook (SessionStart/UserPromptSubmit/PostToolUse/SubagentStart)
+  with vault-labelled recall that reaches subagents (measured via SubagentStart),
+  emission log + `--stats`; generators for `.claude/rules`, `AGENTS.md`,
+  `.codex/hooks.json`. Off by default until 1.0 (`memory.inject`).
+  `crew-context.sh` / `.ps1` is registered on all four events in both
+  flavours (30 hook entries, was 20), and emits and logs nothing unless the
+  repo's crew config sets `memory.inject: true`: `pm-brief` and
+  `handoff-read` stay registered through 0.20.x, and both on at once would
+  inject the same state twice. The default flips on at the 1.0.0 cut together
+  with unregistering those two. `memory.inject`, `memory.recall.vaults` and
+  `memory.recall.maxChars` are declared repo-only keys (106 repo leaves, was
+  103). `/crew:status --memory` now passes `--root` to `crew_context.py
+  --stats`, so it reads the named repo's log rather than `CLAUDE_PROJECT_DIR`'s.
+
+- **`crew` 0.20.18: T1 ledger fixes, and the additive half of T2 -
+  `/crew:status`, `/crew:migrate`, the `reviewer` agent and the quickstart
+  guide source.** Nothing is removed or renamed in this release.
+  T1 fixes: once a ticket is `NEEDS_REPLAN`, `review_ledger.py --accept` is
+  refused and no state changes, and a review bundle with an empty parts list
+  is INCOMPLETE rather than CLEAN. Round 2's FINDINGS can be accepted
+  (`--accept --by`, latest round only, once): only a refused third reservation
+  or the new `review_ledger.py --reject --by <who>` enters `NEEDS_REPLAN`.
+  New `/crew:status` (`crew_status.py`) is read-only - no dispatch, no config
+  edit, no file written - and prints at most 40 lines covering config, roster,
+  tickets, review budget, gate, codemap and handoff; `--memory` adds the context
+  hook's numbers or says the hook is not installed.
+  New `/crew:migrate` (`crew_migrate.py`) moves a 0.20 setup onto the 1.0
+  layout: `--preview` (the default, writes nothing), `--apply` (backup, then
+  atomic writes of `.crew/crew.json` schema 1, `.work/tickets/<ID>/ticket.md`
+  with provenance, and `.crew/metrics.jsonl` with missing values `UNKNOWN`),
+  and `--rollback <backup-dir>`. Originals are kept.
+  New `reviewer` agent, the 1.0 successor of `qa-reviewer`; `qa-reviewer` stays
+  until the roster cut. The agent count is now 55 and the command count 30.
+  New `docs/guides/crew/src/quickstart.md`, the Markdown source of the crew
+  quickstart guide.
+
+- **obsidian-vault 0.4.0: vault roles (primary/recall/ignore) with an
+  exactly-one-primary check, import with provenance that never overwrites,
+  read-only `recall` CLI for crew's context hook, per-host capture queues, a
+  bounded gardener (5 items / 10 min, acknowledge only after a write, one
+  designated host) with `drain` and generated cron/systemd/Task Scheduler
+  units, and portable memory-vault/canvas profiles.**
+
+- **`crew` 0.20.17 (T1): the review adapter - a computed verdict, a two-round
+  ledger, and a receipt bound to the bundle.** `review_patch.py` now records
+  renames, mode changes, binary files (git's marker plus both blob ids and
+  sizes) and submodules in the manifest, splits an oversized bundle into
+  ordered parts instead of truncating it, hashes the parts (sha256), reads the
+  patch as bytes rather than decoding it lossily, and leaves `.work/` out of
+  the bundle (recorded as `excluded`). New `review_verdict.py` turns reviewer
+  output into CLEAN / FINDINGS / INCOMPLETE: a non-zero exit, timeout, empty
+  or unparseable output, or an unacknowledged part is INCOMPLETE, never CLEAN.
+  New `review_ledger.py` keeps two rounds per ticket at
+  `<git-common-dir>/crew/review/<id>.json` (shared across worktrees), reserved
+  under an O_EXCL lock before launch so a crashed round still counts; a third
+  is refused and the ticket is `NEEDS_REPLAN`, with nothing that raises or
+  resets the budget. A CLEAN round, or FINDINGS accepted with `--accept --by`,
+  writes a receipt carrying the bundle hash, and `--check-receipt` fails once
+  the tree changes. New `review_run.py` runs Codex as `codex exec --json
+  --sandbox read-only` with stdin closed and writes
+  `.work/tickets/<id>/review.json`; new `review_prompt.py` adds the ticket's
+  spec sections, plan and verify receipts to the shared prompt, writing
+  `MISSING` for what is absent. `/crew:work` now reviews after tests and docs.
+  `/crew:review` needs a ticket id.
+  Review fixes before release: the bundle builds in a repo that gitignores
+  `.work/` (the exclude pathspec on `git add` failed there), and `.work` paths
+  already in the index stay out of it; the ledger records a result only for
+  the latest reserved round, once, from the reviewer it was reserved for, and
+  never after `NEEDS_REPLAN`; a bundle part that no longer matches its
+  manifest, a code fence, a finding with an empty field, or an unreadable
+  Codex event line is INCOMPLETE; `/crew:review` bundles from the ticket's
+  recorded start (`scope_base.py`), the merge-base only as a named fallback.
+
 - **`doc-builder` 1.7.2: built-in themes, a compact density, and a theme gallery.**
   Eight themes (`professional`, `corporate`, `blue`, `red`, `modern`, `dark`, `midnight`,
   `high-contrast`) in `assets/themes/`, chosen with `--theme` or `DOC_BUILDER_THEME` on

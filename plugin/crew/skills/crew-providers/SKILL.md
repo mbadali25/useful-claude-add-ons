@@ -27,7 +27,7 @@ not that such a review is bad; it is that it looks exactly like a good one.
 
 | Family | Reached via |
 |---|---|
-| Anthropic | the `qa-reviewer` fallback, or Copilot pinned to `claude-*` |
+| Anthropic | the `reviewer` fallback, or Copilot pinned to `claude-*` |
 | OpenAI | Codex, or Copilot pinned to `gpt-*` |
 | **Google** | Copilot pinned to `gemini-*` |
 | **Microsoft MAI** | Copilot pinned to `mai-*` |
@@ -48,8 +48,6 @@ Crew fills every role with Claude except these:
 |---|---|---|---|
 | `developer` (senior) | `dev.roles.developer` | codex | `gpt-6-astra` |
 | `security` | `dev.roles.security` | codex | `gpt-6-astra` |
-| `infrastructure-architect` | `dev.roles.infrastructure-architect` | codex | `gpt-6-astra` |
-| `planner` | `dev.roles.planner` | **claude** | `model` stays null — codex `gpt-5.6-sol` sits in `alternate` |
 | QA phase-1 review, and the smoke test | `qa.roles.phase1`, `qa.roles.smoke` | codex | `gpt-5.6-sol` |
 | QA review, and gating | `qa.roles.review`, `qa.roles.gate` | codex | `gpt-5.6-luna` |
 
@@ -72,32 +70,6 @@ display name with the wire id, deliberately: the id is a debugging detail, not
 a name. Everywhere else, say "Kimi 2.7" to a person and write `kimi-k2.7-code`
 into config. See "Pin the model, always" in the Copilot section below for why
 the suffix is not optional.
-
-### `planner` stays an alternate, not a swap
-
-`gpt-5.6-sol` is offered **alongside** Claude for `planner`, never in place of
-it. The schema says so structurally: `dev.roles.planner.provider` stays
-`claude` and `dev.roles.planner.model` stays null, while the codex option lives
-under a separate `alternate` key.
-
-```json
-"planner": {
-  "provider": "claude",
-  "model": null,
-  "alternate": { "provider": "codex", "model": "gpt-5.6-sol" }
-}
-```
-
-A reader who only sees the model string cannot tell an alternate from a pin.
-The key name is the difference. Two things about `planner` do not change when
-the alternate is offered:
-
-- It works from an **abstracted brief**, never source code.
-- `secondOpinion.sendsCode` stays `false`.
-
-Both exist because `planner`'s design assumes a brief, not a diff — see "Free
-tier reality" below. Pinning a codex model onto `planner` does not relax
-either constraint.
 
 ### Fallback: configurable, and announced when it fires
 
@@ -127,8 +99,8 @@ is the single thing this interlock exists to prevent. Never document it, or
 build it, the other way round.
 
 The consequence is concrete. `gpt-5.6-sol` and `gpt-5.6-luna` are the same `gpt`
-family as `gpt-6-astra`, so when `developer`, `security`, or
-`infrastructure-architect` are pinned to `gpt-6-astra` and codex writes the
+family as `gpt-6-astra`, so when `developer` or `security` are pinned to
+`gpt-6-astra` and codex writes the
 diff, the guard bars **all** `gpt` models from reviewing it — including both QA
 pins above. QA falls to `claude` or to Copilot pinned to Kimi 2.7. **The Sol and
 Luna pins therefore apply to work codex did not write.**
@@ -176,7 +148,7 @@ re-enters your context.
 
 Codex is not free. This is the one place worth paying, because review is where
 defects get caught and a different model family is what makes the review
-independent. If the budget is zero, the `qa-reviewer` agent is the fallback and
+independent. If the budget is zero, the `reviewer` agent is the fallback and
 `/crew:review` will tell you every time it runs.
 
 ---
@@ -382,7 +354,8 @@ a hot path. Rate limits are per-minute and per-day and will not bite you here.
 
 The cost is data. Free tiers are funded by prompts and generally train on them.
 That is acceptable for an abstracted brief and unacceptable for source code,
-which is why `planner` works from a brief and shows it to you before sending.
+which is why `/crew:plan`'s second opinion works from a brief and shows it to you
+before sending.
 
 If your organisation prohibits sending anything to an unpaid third party, set
 `secondOpinion.provider` to `local` and point it at Ollama, or to `none` and
@@ -426,7 +399,7 @@ existing codebase.
 **The interlock is the whole cost of this feature.** The family that wrote the
 diff is struck from the QA walk — `/crew:review` does it from `dev.provider` at
 review time, without consulting `qa.order`. So setting `dev.provider` to `codex`
-on a machine with no Copilot and no Gemini leaves only the `qa-reviewer`
+on a machine with no Copilot and no Gemini leaves only the `reviewer`
 fallback, and setting it to `copilot` with a `claude-*` model leaves the review
 to Codex or to nothing. Check what is left *before* you switch, with
 `/crew:model`, which prints exactly that.
@@ -452,7 +425,7 @@ strike nothing or strike everything — both wrong.
 `provider`: `gemini`, `local`, or `none`.
 `mode`: `cli` or `api`.
 `sendsCode`: must stay `false` for any provider on a free tier. If someone sets
-it true, the `planner` agent still refuses — the brief is the interface.
+it true, `/crew:plan` still sends only the brief — the brief is the interface.
 
 ---
 

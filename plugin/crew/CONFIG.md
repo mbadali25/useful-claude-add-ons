@@ -127,14 +127,18 @@ both directions:
 `is_global_path` agrees with `filter_global` by construction — both stop
 descending at a template **leaf**.
 
-**Measured, not argued.** `leaf_paths(default_global_config())` yields **60**
-leaves. `leaf_paths(default_config())` yields **103**, so **43** are repo-only.
-For all 103, `filter_global` and `plan_global_write` agree on whether the path is
-settable. (45 / 86 before schema 6 added the six `guards.*`, the two
+**Measured, not argued.** `leaf_paths(default_global_config())` yields **65**
+leaves. `leaf_paths(default_config())` yields **116**, so **51** are repo-only.
+For all 116, `filter_global` and `plan_global_write` agree on whether the path is
+settable. (63 / 114 before the Windows burn-in added
+`context.autoClear.onlyRepos` and `onlySessions` to both layers; this paragraph
+still said 60 / 106 at that point, so the cloud-guard and scope-guard keys had
+moved the counts without it. 45 / 86 before schema 6 added the six `guards.*`, the two
 `github.mergeGate` keys and the repo-only `production.databases` /
 `production.hosts`; 44 / 85 before schema 5 added `install.policy`; 59 / 102
 before crew 0.19.92 added the seventh guard, `guards.roleWrites`, in both
-layers.
+layers; 60 / 103 before crew 0.20.19 added the context hook's three repo-only
+`memory.*` keys.
 All six of schema 6's keys are settable in both layers, so they moved the first
 two numbers and not the third — the same shape `install.policy` and
 `guards.roleWrites` had. Re-measure rather than trusting these: they are a
@@ -245,12 +249,17 @@ This is the only key in the file handled outside the merge.
 
 ## 5. `pm.authority`
 
+**Retired in crew 1.0.** The PM agent that honoured this key was deleted;
+`crew_config.py` still reads and ratchets it so a 0.20 config resolves and
+`/crew:migrate` can carry it to `crew.json`'s `retired.pm`. Nothing dispatches
+on it any more.
+
 | | |
 |---|---|
 | Type | string enum |
 | Values | `report-only` (default), `act`, `autonomous` |
 | Layer | global-settable |
-| Consumer | `crew_state.normalise_authority` / `authority_rank`; `pm_brief.py`; `crew_config.py` |
+| Consumer | `crew_state.normalise_authority` / `authority_rank`; `crew_config.py`; `/crew:migrate` (carries it to `retired.pm`) |
 
 `crew_state.AUTHORITIES` is `["report-only", "act", "autonomous"]` (dumped by
 execution). `authority_rank` returns `report-only` 0, `act` 1, `autonomous` 2 —
@@ -576,7 +585,7 @@ settling the default in the same diff.
 The `graph` block's **only** key any crew code reads is `graph.out`, at
 `crew_state.py`. Verified by grepping every tracked `.py`, `.sh` and `.ps1`
 for `get("graph")` and `["graph"]`: the other hits are `crew_state.py` and
-`pm_brief.py`, which read `knowledge["graph"]` — the *state* dict
+the since-deleted `pm_brief.py`, which read `knowledge["graph"]` — the *state* dict
 `read_knowledge` builds, not the config block — and `crew_upgrade.py`,
 which drops the removed `obsidian` sub-block.
 
@@ -667,12 +676,14 @@ they are repo-only, and §16 says why. Defaults are identical in `default_config
 | `pm.authority` | see §5 | `"report-only"` |
 | `pm.ticketGranularity` | see §6 | `"system"` |
 | `pm.maxDispatches` | integer | `3` |
-| `context.autoClear.enabled` | boolean, see §14 | `true` |
+| `context.autoClear.enabled` | boolean or `null`; **only this global layer can turn it on** — a repo `false` switches it off, a repo `true` does nothing (`docs/guides/crew/src/auto-cycle.md`) | `null` (off) |
 | `context.autoClear.method` | string, see §14 | `"auto"` |
 | `context.autoClear.windowTitle` | string or `null`, see §14 | `null` |
 | `context.autoClear.command` | string | `"/clear"` |
 | `context.autoClear.delaySeconds` | integer | `3` |
 | `context.autoClear.minHandoffLines` | integer | `5` |
+| `context.autoClear.onlyRepos` | list of absolute repo paths, or `null`. **Narrowing only, read from this global layer only** (`crew_autocycle.in_scope`, `auto-clear.ps1`): `null` narrows nothing, a list arms only those repos (compared realpath-resolved, separator- and trailing-slash-insensitive, case-insensitive on Windows; a relative entry never matches), `[]` or a non-list arms nothing. A repo's own value is never read (`docs/guides/crew/src/auto-cycle.md`) | `null` |
+| `context.autoClear.onlySessions` | list of session ids, or `null`. Same rules as `onlyRepos`, matched exactly and case-sensitively; with both set, both must match | `null` |
 | `docs.theme` | string or `null`, see §7 | `null` |
 | `docs.reportTheme` | string or `null`, see §7 | `null` |
 | `bitbucket.mergeGate.enabled` | boolean, see §8 | `false` |
@@ -725,8 +736,8 @@ repository or one checkout.
 |---|---|---|---|
 | `schema` | integer | `7` | see §4 |
 | `tier` | integer | `0` | `crew_state.collect` |
-| `roles` | list (a leaf) | `["explorer", "qa-reviewer"]` | `crew_state.collect` |
-| `tracker` | string | `"files"` | `crew_state.py`, `pm_brief.py`, `commands/ticket.md` |
+| `roles` | list (a leaf) | `["explorer", "reviewer"]` | `crew_state.collect` |
+| `tracker` | string | `"files"` | `crew_state.py`, `commands/brainstorm.md`, `commands/spec.md` |
 | `jira.project` | string or `null` | `null` | **no consumer found**, §9 |
 | `jira.cloudId` | string or `null` | `null` | written by `commands/jira-sync.md`; **read by nothing**, §9 |
 | `sdp.portal` | string or `null` | `null` | prose, §9 |
@@ -748,11 +759,14 @@ repository or one checkout.
 | `context.reserveTokens` | integer or `null` | `0` | `context-watch.ps1` |
 | `context.handoffPath` | path | `".work/HANDOFF.md"` | `auto-clear.ps1` |
 | `context.keepTranscripts` | integer | `5` | `handoff-write.ps1` |
-| `context.autoClear.unsafeFocus` | boolean | `false` | `auto-clear.sh`, gating `wtype` — **consent, not capability**, see §14 |
+| `context.autoClear.unsafeFocus` | boolean | `false` | no longer read: `wtype` cannot identify a window, so `auto-clear.sh` refuses it whatever this says — **consent, not capability**, see §14 |
 | `context.autoWrapUp` | boolean | `true` | `context-watch.ps1`, `context-watch.sh` |
-| `context.autoResume` | boolean | `true` | `handoff-read.ps1`, `handoff-read.sh` |
+| `context.autoResume` | boolean | `true` | nothing since 1.0.0 — the context hook injects the handoff on resume whenever `memory.inject` is on; kept so `/crew:migrate` carries it |
 | `context.staleHandoff.maxAgeHours` | integer | `72` | `crew_state.STALE_HANDOFF_DEFAULTS` |
 | `context.staleHandoff.maxCommitsBehind` | integer | `3` | `crew_state.STALE_HANDOFF_DEFAULTS` |
+| `memory.inject` | boolean | `true` | `crew_context.run` — **on by default since 1.0.0**: only an explicit `false` stops the context hook, which then emits and logs nothing. `handoff-read` stops printing the handoff while it is on, so a session never gets it from both |
+| `memory.recall.vaults` | list (a leaf) | `[]` | `crew_recall.vault_order` — the repo's vault priority for recall; empty falls back to `~/.claude/obsidian/config.json` roles (`primary`, then `recall`; `ignore` never asked) |
+| `memory.recall.maxChars` | integer | `800` | `crew_recall.max_chars` — the recall CLI's `--max-chars`; a non-positive or non-integer value falls back to 800 |
 | `emergency.standDown` | boolean | `true` | `hooks/scripts/_common.sh` |
 | `emergency.ttlMinutes` | integer | `120` | `crew_incident.py` |
 | `emergency.maxTtlMinutes` | integer | `480` | `crew_incident.py` |
@@ -868,14 +882,117 @@ accept a keystroke is a fact about the machine, in the same sense provider
 availability is — `crew_platform.py::concerns` validates `method` against what
 *this* platform can actually deliver and reports one it cannot honour.
 
+**Crew neither causes nor tunes Claude Code's own auto-compact.** That
+built-in behaviour fires whenever Claude Code itself decides to; nothing in
+this block, in `context-watch`, or in auto-clear influences when or whether
+it happens. This block only decides what happens *after* a handoff is
+written and verified — whether, and how, to act on it.
+
+### `context.autoClear` is machine-global by design, and reaches every crew repo
+
+`context.autoClear` lives in `crew_config.py`'s machine-global layer because
+*how a terminal is driven to accept a keystroke* is a fact about the machine,
+not the repository — the same reasoning `method` gets above. Since it is a
+machine-wide switch, the OWNER DECISION (crew 1.0 F4, reversing the file-based
+gate this section used to describe) is that it works in *any* crew repo, not
+only ones that have run `/crew:init` far enough to have written a
+`.crew/config.json` of their own. "Crew repo" is read the same way both
+senders now agree: `.crew/` the DIRECTORY exists. `auto-clear.sh`/
+`auto-clear.ps1` gate on it directly; `context-watch.sh`/`.ps1` gate their OWN
+handover to auto-clear the same way, while their OWN context-window warnings
+and wrap-up prompts keep requiring a real `.crew/config.json` underneath —
+sizing a token budget against nothing is not a warning worth printing, so that
+half of each hook stays exactly as strict as before.
+
+**The never-create rule holds regardless.** A repo with no `.crew/` at all —
+a fresh checkout, since the directory itself is git-ignored in this very repo
+— gets nothing: no `.crew/`, no `.crew/.autoclear.log`, not even a silent
+read that could be observed. Nothing here creates `.crew/`; the directory
+gate only ever widens what happens once something else (`/crew:init`, a
+worktree copy, or any other hook) has already made it exist.
+
+**Required order in both senders, unchanged from before F4:** is `.crew/` a
+directory at all → is auto-clear armed (the machine's `enabled`, then
+`onlyRepos`/`onlySessions`) → only then may anything be written, even a log
+line. `.crew/config.json`'s presence or absence plays no part in that order
+any more. The ordering matters for a second reason beyond "is this a crew
+repo": the enabled/narrowing check must ALSO run before anything is written,
+or a disabled or narrowed-out repo stops being silent — it starts leaving a
+`.crew/.autoclear.log` behind (even one line saying "refusing") the moment it
+falls through to a refusal path instead of the silent `off` one. Both
+`auto-clear.sh` and `auto-clear.ps1` special-case `off` (the enabled check,
+then the `onlyRepos`/`onlySessions` narrowing) as an unconditional, silent
+`exit 0` reached *before* the log file or its logging function is armed —
+never a `note()`/`Write-CrewAutoClearNote` call. See `plugin/crew/tests/test_auto_clear_order.py`
+for the regression tests pinning this order in both flavours.
+
+**What this replaces.** The previous account here described a "deliberate
+trade-off": the machine's `enabled: true` armed nothing in a repository until
+it had run `/crew:init` far enough to gain a `.crew/config.json`, and a repo
+that wanted the machine switch to reach it before that point had no option
+but to write one anyway — a minimal, otherwise-pointless per-repo
+`context.autoClear` stanza duplicated into a config that existed only to
+satisfy the file gate (`solomon/aws-managed-services` carried exactly this
+workaround). That duplication is no longer needed: the directory alone is
+enough, and a repo's own `context.autoClear` config is back to doing only
+what it always meant to do — narrow or switch OFF what the machine turned
+on, never manufacture a "not initialised" refusal the machine did not ask
+for.
+
+### `method`
+
+| Value | What it does | Where it can run |
+|---|---|---|
+| `"auto"` *(default)* | Picks per platform, below. | everywhere |
+| `"tmux"` | Types into the `$TMUX_PANE` that is an ancestor of the hook. Exact — no focus involved. | Linux, macOS, WSL, Git Bash on Windows |
+| `"xdotool"` | Types into the one X11 window owned by an ancestor process (or matching `windowTitle`). | Linux with `xdotool` installed |
+| `"wtype"` | Refused outright — see `unsafeFocus`, above. | Wayland (declared, never granted) |
+| `"notify"` | Types nothing. Prints a `systemMessage` saying the handoff is written and verified and it is safe to run the configured `command` yourself. Never claims anything was cleared or compacted, because nothing was. | everywhere |
+| `"sendkeys"` | `System.Windows.Forms.SendKeys` against the one window owned by an ancestor process (or matching `windowTitle`), confirmed still foreground at send time. **Opt-in only — `auto` never chooses it.** Windows Terminal hosts every tab in ONE OS window, so the foreground-window check alone cannot tell which tab is showing: when the target window is owned by Windows Terminal, `auto-clear.ps1` also asks UI Automation how many tabs it has. It types only when that check finds **exactly one tab** — a window with one tab has that tab selected by definition, so that case needs no further proof. Two or more tabs **always declines**, however confidently a tab's shell-set name matches `windowTitle` or reads as selected: there is no tab-to-pid mapping, so a "proven" match is still a guess about which tab is this session's, and a wrong guess types into someone else's work. UI Automation being unavailable, throwing, or finding zero tab elements declines the same way and for the same reason — "could not tell" is never treated as safe. Every decline **falls back to `notify`**, logging why to `.crew/.autoclear.log`; it never falls back to sending regardless. A non-Windows-Terminal console host (e.g. `conhost`) has no tabs to disambiguate and is unaffected by any of this. | native Windows only |
+| `"none"` | Refused outright, deliberately. | everywhere |
+
+**`auto`'s per-platform pick, an OWNER DECISION:** a tmux pane if `$TMUX` names
+one and `tmux` is on PATH; else an X11 window if `$DISPLAY` is set and
+`xdotool` is on PATH; else **`notify`** on native Windows (`$OS` is
+`Windows_NT`, present in every process tree there — cmd, PowerShell, Git
+Bash alike — and absent inside WSL, which has its own init); else refused
+(`"no usable method"`). `auto` **never** resolves to `sendkeys`: typing into
+a window this hook found itself is a risk `auto` does not get to accept on
+your behalf. Request `sendkeys` by name to opt in to it.
+
 ### What the widening costs
 
-`windowTitle` is the guard that stops SendKeys typing into whatever happens to
-have focus: `auto-clear.ps1` calls it REQUIRED and the SendKeys call refuses to send
-without it. Machine-global is the right home for it — a terminal's title is a
-property of the machine — but **a wrong global value now aims keystrokes at the
-wrong window in every repo on that machine rather than in one.** That is the
-trade, taken deliberately.
+`windowTitle` narrows SendKeys down to one window when owner-pid resolution
+alone cannot: `auto-clear.ps1` tries the ancestor terminal process's own pid
+first, and only reaches for `windowTitle` when that pid owns zero or several
+windows (the exact decline text is "the terminal that owns this session (pid
+N) has N windows and nothing narrows them to one - set
+context.autoClear.windowTitle"). On Windows Terminal specifically, this is
+not a rare fallback — **it is effectively mandatory as soon as more than one
+Windows Terminal window is open on the desktop.** Windows Terminal hosts
+every WINDOW (not just every tab) on one desktop inside a single process, so
+every one of a user's open Windows Terminal windows reports the SAME owning
+pid. The owner-pid walk then matches all of them, not just this session's,
+and declines unless `windowTitle` narrows the match to one — measured
+2026-09-24: four Windows Terminal windows open on one desktop all reported
+pid 14164. A repo that never sets `windowTitle` will work the day someone
+tests it with exactly one Windows Terminal window open, and silently stop
+working (declining, never sending into the wrong window — but doing nothing
+either) the day a second one opens.
+
+Machine-global is the right home for `windowTitle` — a terminal's title is a
+property of the machine — but **a wrong global value now aims keystrokes at
+the wrong window in every repo on that machine rather than in one.** That is
+the trade, taken deliberately.
+
+**`--dry-run`'s delay line never states a number for `notify`.** `notify`
+types nothing, so `delaySeconds` buys it nothing; both `auto-clear.sh` and
+`auto-clear.ps1` print `delay: n/a (notify sends no keystroke)` there instead
+of echoing the configured value (or a hardcoded `0`, which `auto-clear.ps1`
+did until this was fixed) — either would read as a real wait that
+`delaySeconds` controls, which for `notify` it never does. A keystroke
+method (`tmux`, `xdotool`, `sendkeys`) still echoes the configured delay
+verbatim.
 
 Its default is `null` where the scripts fall back to `""`. The two are
 behaviourally identical (`if ($a.windowTitle)` is false for either, and
@@ -998,15 +1115,21 @@ earn its own section: see §18, not the tables immediately below.
 
 | Key | Type | Default | Layer | Read by |
 |---|---|---|---|---|
-| `guards.terraformApply` | `block` \| `ask` \| `allow` | `"block"` | both, **narrower wins** | `hooks/scripts/guard.sh`, `guard.ps1` |
-| `guards.forcePush` | `block` \| `ask` \| `allow` | `"block"` | both, **narrower wins** | `hooks/scripts/guard.sh`, `guard.ps1` |
-| `guards.adminMerge` | `block` \| `ask` \| `allow` | `"block"` | both, **narrower wins** | `hooks/scripts/guard.sh`, `guard.ps1` |
+| `guards.terraformApply` | `block` \| `ask` \| `allow` | `"block"` | both, **narrower wins** | `hooks/scripts/cloud_guard.py` (while `guards.cloudGuard` is on) |
+| `guards.forcePush` | `block` \| `ask` \| `allow` | `"block"` | both, **narrower wins** | `hooks/scripts/cloud_guard.py` (while `guards.cloudGuard` is on) |
+| `guards.adminMerge` | `block` \| `ask` \| `allow` | `"block"` | both, **narrower wins** | `hooks/scripts/cloud_guard.py` (while `guards.cloudGuard` is on) |
 | `guards.mergeGate` | `block` \| `ask` \| `allow` | `"block"` | both, **narrower wins** | `commands/gate.md`, `commands/promote.md` |
-| `guards.prodDatabase` | `none` \| `read` \| `full` | `"none"` | both, **narrower wins** | `hooks/scripts/guard.sh`, `guard.ps1` |
-| `guards.prodServer` | `none` \| `read` \| `full` | `"none"` | both, **narrower wins** | `hooks/scripts/guard.sh`, `guard.ps1` |
+| `guards.prodDatabase` | `none` \| `read` \| `full` | `"none"` | both, **narrower wins** | `hooks/scripts/cloud_guard.py` (while `guards.cloudGuard` is on) |
+| `guards.prodServer` | `none` \| `read` \| `full` | `"none"` | both, **narrower wins** | `hooks/scripts/cloud_guard.py` (while `guards.cloudGuard` is on) |
 | `guards.roleWrites` | `block` \| `report` \| `off` | `"off"` | both, **narrower wins** | `hooks/scripts/role-write-guard.sh`, `.ps1` |
+| `guards.cloudDestructive` | `block` \| `ask` \| `allow` | `"block"` | both, **narrower wins** | `hooks/scripts/cloud_guard.py` (while `guards.cloudGuard` is on) |
+| `guards.sqlDestructive` | `block` \| `ask` \| `allow` | `"block"` | both, **narrower wins** | `hooks/scripts/cloud_guard.py` (while `guards.cloudGuard` is on) |
+| `guards.cloudGuard` | `block` \| `report` \| `off` | `"off"` | both, **narrower wins** | `hooks/scripts/cloud-guard.sh`, `.ps1` -> `cloud_guard.py` |
 | `production.databases` | list of globs | `[]` | **repo only** | `crew_config.py::production_patterns` |
 | `production.hosts` | list of globs | `[]` | **repo only** | `crew_config.py::production_patterns` |
+| `cloud.awsProfiles` | list of globs | `[]` | **repo only** | `cloud_guard.py::cloud_pins` |
+| `cloud.awsRegions` | list of globs | `[]` | **repo only** | `cloud_guard.py::cloud_pins` |
+| `cloud.azureSubscriptions` | list of globs (id or name) | `[]` | **repo only** | `cloud_guard.py::cloud_pins` |
 
 Read one with `crew_config.py --guard <name> [--json]`, which prints the
 decision, both layers' values and which one is holding it down. The two shell
@@ -1463,16 +1586,15 @@ buckets, decided by that file's own `tools:` frontmatter — not by its prose,
 which is exactly the gap this hook exists to close:
 
 - a role whose `tools:` line names neither `Write` nor `Edit` may not write
-  anywhere, regardless of path (`analyst`, `compliance-auditor`, `dba`,
-  `explorer`, `infrastructure-architect`, `kimi-consult`,
-  `penetration-tester`, `planner`, `qa-researcher`, `qa-reviewer`,
-  `researcher`, `security` as of 2026-09-19 — re-derive rather than trusting
+  anywhere, regardless of path (`explorer`, `researcher`, `reviewer`,
+  `security` — the whole crew 1.0 roster; re-derive rather than trusting
   this list, and `tests/test_role_write_guard.py` does exactly that on every
   run);
 - `pm` may write only under `.crew/**`, `TODO.md`, `.work/**` and
-  `docs/diagrams/**` — `agents/pm.md`'s own stated scope, made mechanical;
+  `docs/diagrams/**`. crew 1.0 ships no `pm` agent; the branch stays for a
+  repo-local agent of that name until the guard is retired (`TODO.md`);
   everyone else whose `tools:` line grants both Write and Edit is
-  unrestricted by this hook.
+  unrestricted by this hook — no shipped agent does, since 1.0.
 
 `tests/test_role_write_guard.py::test_policy_table_matches_the_agent_files`
 parses every agent file's `tools:` line and asserts the script's three sets
@@ -1693,6 +1815,31 @@ header states — "one mechanism can be wrong; two can disagree, and then only
 one of them gets fixed." Adding `"roleWrites"` to `crew_guards.ALL_GUARD_NAMES`
 and one branch to `crew_guards.guard_tiers` was the whole cost of reusing it.
 
+### Without Python, a restricted role's write is always blocked
+
+`role_write_guard.py` is what actually reads `guards.roleWrites` (both
+layers, ratcheted) and pm's own path allowances. `role-write-guard.sh` /
+`.ps1` are thin wrappers around it, and when no python interpreter can be
+found or launched, neither wrapper falls back to re-implementing that
+policy read itself — an earlier fallback tried to (parsing `roleWrites`
+per layer with a bare regex, and pm's path allowances lexically), and
+carried its own defects doing it: a dangling config symlink read as
+absent rather than corrupt, bypassing fail-closed; the lexical pm-scope
+check accepted `..` traversal and symlink escapes a real filesystem walk
+would have caught; and the regex policy reader accepted truncated or
+otherwise corrupt JSON as a clean `"off"`.
+
+Rather than re-fix each of those, the no-python fallback in both flavours
+now does less: it tells a restricted role (`explorer`, `researcher`,
+`reviewer`, `security`, `pm`) from an unrestricted one — a floor that
+needs no config to apply — and fails **closed** on the restricted side,
+or on any role it cannot read at all (an unparseable payload, a non-string
+`agent_type`, ...). It never reads `guards.roleWrites` and never applies
+pm's path allowances. **Practically:** `off` and `report` only take
+effect when python is available; without it, a restricted role's write is
+refused regardless of what either config layer says, until python is
+installed and the real classifier can run.
+
 ## 19. `verify.stopBudgetSeconds` and the Stop gate's per-rule record
 
 `verifyGate` and `verify.stopBudgetSeconds` are the only two config keys this
@@ -1793,8 +1940,9 @@ on every Stop. `verify-gate.sh --price [path] [--force]` /
 by typing the flag; the Stop hook (`hooks.json`) never passes it.
 
 **Environment pinning is unconditional, not a config key either.** Every rule
-command the gate runs gets `ENV`, `AWS_PROFILE`, `AWS_DEFAULT_REGION`,
-`KUBECONFIG` and `TF_WORKSPACE` unset, unless that rule's own `"env"` object
+command the gate runs gets `ENV`, `AWS_PROFILE`, `AWS_DEFAULT_PROFILE`, `AWS_DEFAULT_REGION`,
+`AWS_REGION`, `AZURE_SUBSCRIPTION_ID`, `ARM_SUBSCRIPTION_ID`, `KUBECONFIG`,
+`TF_WORKSPACE` and `TF_VAR_environment` unset, unless that rule's own `"env"` object
 declares values for them — in which case exactly those are set instead, and
 the gate prints what it pinned. There is no `verify.envPinning: false` escape
 hatch; a rule that genuinely needs a variable declares it, in the map, next
@@ -1807,3 +1955,16 @@ losing only history, never fabricating a clean rule that never ran (see
 read leaves `verify.stopBudgetSeconds` at its compiled default (60) rather
 than removing the budget. See `commands/verify.md` for the full mechanism and
 `hooks/scripts/verify_record.py` / `verify_price.py` for the code.
+
+**Limitation (1.0): the gate does not reap background processes a rule
+leaves behind; a rule must not background work — a rule that does can keep
+running (and writing) after the gate returns.** Per-rule process-group
+tracking and kill-on-signal shipped, then was descoped from crew 1.0 after
+five consecutive review rounds each found the previous round's fix one case
+short (disk fill by an orphan writer, escape on gate kill, an unlocked
+registry, pid/pgid reuse in both p- and g-mode, a session-id proof that is
+not ownership, a leader-exited group) — see CHANGELOG 1.0.21 and TODO.md.
+Rule output is still captured through a temp file rather than a pipe, so a
+backgrounded grandchild cannot wedge the gate's own read of that rule's
+output (see `verify-gate.sh`'s rule-loop comment) — what is gone is the
+gate reaching in afterward to kill what a rule left running.

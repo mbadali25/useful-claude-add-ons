@@ -27,8 +27,115 @@ Three rules, and `crew-setup` should enforce them by asking:
 3. **Start with the documentation and pricing servers**, which touch no account
    at all, and only add account-reaching servers when a task actually needs one.
 
-`guard.sh` already blocks `aws`/`az` commands mentioning prod, but a guard on the
-shell does not cover an MCP tool call. The credential is the real boundary.
+crew's cloud guard (below) can refuse destructive `aws`/`az` commands and
+commands run as the wrong identity, but a guard on the shell does not cover an
+MCP tool call. The credential is the real boundary.
+
+---
+
+## The cloud guard and identity pinning
+
+`hooks/scripts/cloud_guard.py`, a PreToolUse hook on the Bash **and** PowerShell
+tools. **It ships off.** Turn it on per machine or per repo:
+
+```json
+{ "guards": { "cloudGuard": "report" } }
+```
+
+`report` logs to `.crew/guard.log` what it *would* have refused, shows you the
+same as a message, and refuses nothing — it answers with **no** permission
+decision, so your normal prompts run exactly as they would without it (it never
+answers `allow`). Run it for a few days first. `block` enforces. A repo can
+never turn off a machine-global `block` (the `guards` ratchet).
+
+What each recognised command gets is the existing per-rule key, `block` by
+default: `guards.cloudDestructive` for `aws … delete-*/terminate-*/purge-*`,
+`aws s3 rm|rb`, `aws s3 sync --delete`, `az … delete|purge` and `Remove-Az*`;
+`guards.sqlDestructive` for `DROP`/`TRUNCATE` sent to `psql`, `mysql`, `sqlcmd`,
+`sqlite3` or `Invoke-Sqlcmd`; `guards.terraformApply` for `terraform`/`tofu`
+`apply`/`destroy`; `guards.forcePush` and `guards.adminMerge` for git and gh.
+`ask` prompts; `allow` lets it through and logs it.
+
+Not destructive, so not refused: `aws … --dry-run` / `--dryrun`, `Remove-Az*
+-WhatIf`, and `terraform apply -help`. SQL is read in the client's own dialect —
+PostgreSQL for `psql` (a backslash is a plain character except in `E'…'`),
+MySQL for `mysql`/`mariadb` (`#` comments, `\'` escapes, `/*! … */` runs),
+T-SQL for `sqlcmd`/`Invoke-Sqlcmd` — so a correct literal is not misread as a
+statement.
+
+Refused whatever the policy, as `[cloudGuard]`, because crew could not read
+them: a command nested more than six shells or substitutions deep, and hook
+input that is not a readable Bash/PowerShell call. A destructive-capable tool
+(`terraform`, `aws`, `az`, a SQL client, `git push`) run through `xargs` or
+`parallel`, whose arguments come from stdin, is judged under that tool's own
+rule as if it were destructive — `echo destroy | xargs terraform` is a
+`terraformApply` refusal. A pipe is followed through every stage:
+`echo 'DROP TABLE t;' | tee q | psql` is a `sqlDestructive` refusal.
+
+### Pin the identity this repo may act as
+
+In the repo's `.crew/config.json` (repo-only — a machine-global `cloud` block is
+ignored, like `production`):
+
+```json
+{ "cloud": {
+    "awsProfiles": ["acme-dev", "acme-sandbox-*"],
+    "awsRegions": ["eu-west-1"],
+    "azureSubscriptions": ["00000000-0000-0000-0000-000000000000", "Acme Dev"] } }
+```
+
+**AWS.** Every `aws` command's profile is read from `--profile`, then the
+environment it inherits (`AWS_PROFILE=… aws`, `env AWS_PROFILE=…`, an earlier
+`export`, `$env:AWS_PROFILE = …` in PowerShell, then the session's own), then
+`AWS_DEFAULT_PROFILE`; the region from `--region`, `AWS_REGION`,
+`AWS_DEFAULT_REGION`. A profile or region outside the pins is **denied**.
+Static `AWS_ACCESS_KEY_ID` keys override any profile, so with those set the
+account is **unknown**.
+
+**Azure.** The subscription is read from `--subscription`, then
+`AZURE_SUBSCRIPTION_ID`, then the az CLI's own default in
+`~/.azure/azureProfile.json` (or `$AZURE_CONFIG_DIR`), matched by id or name.
+The hook never runs `az account show` — it can hang on a token refresh.
+`Remove-Az*` cmdlets act as Az PowerShell's saved context, which the guard does
+not read, so their identity is always **unknown**.
+
+**Unknown is never allowed unattended.** An identity the guard cannot name —
+nothing set, static keys, an Az PowerShell context, or any *destructive* command
+in a repo that pinned nothing — **asks** when someone is there to answer and is
+**denied** when not (`CREW_UNATTENDED=1`, `CI`, or a `bypassPermissions` /
+`dontAsk` session). The denial names a one-shot approval file,
+`.crew/.approved-guard-cloudIdentity-<hash>`, good for 15 minutes and for that
+one command.
+
+**Read-only calls follow the same rule once anything is pinned.** With any of
+the three lists non-empty, an `aws s3 ls` or `az group list` whose identity the
+guard cannot name is unknown too — asked when attended, denied when not. Only a
+repo that pins **nothing at all** lets a read-only call with an unnamed identity
+through, because there is nothing to check it against and refusing would make
+arming the guard refuse every `aws s3 ls` in CI. That pass is reported, once per
+repo: a message and a `cloudIdentity unpinned allow` row in `.crew/guard.log`,
+then silence until you delete `.crew/.cloud-guard-unpinned-noted`.
+
+A `cloud` block that is not an object of glob lists (`"cloud": null`, a string
+where a list belongs) is an invalid config layer, not "nothing pinned": an armed
+guard — `report` included — escalates to `block`, and every cloud identity is
+unknown.
+
+### What pinning does in the verify gate
+
+Separately, the Stop gate unsets `AWS_PROFILE`, `AWS_DEFAULT_PROFILE`,
+`AWS_REGION`, `AWS_DEFAULT_REGION`, `AZURE_SUBSCRIPTION_ID`,
+`ARM_SUBSCRIPTION_ID`, `TF_WORKSPACE`, `TF_VAR_environment`, `ENV` and
+`KUBECONFIG` for every check it runs, unless that rule declares them in
+`.crew/verify.json` — so a check never inherits the account your shell happened
+to be pointed at.
+
+### What it cannot see
+
+A command named through a variable (`$TF apply`), a script file
+(`bash deploy.sh`, `psql -f x.sql`), SQL built at runtime, a splatted
+hashtable, Terraform's own provider credentials, and anything an MCP server
+does. It is a tripwire in front of scoped credentials, not a substitute.
 
 ---
 
@@ -45,7 +152,7 @@ claude mcp add aws-pricing uvx awslabs.aws-pricing-mcp-server@latest
 ```
 
 Documentation and pricing lookups, no credentials involved. Genuinely useful for
-the `analyst` and `planner` roles, and risk-free.
+the `researcher` role and for planning, and risk-free.
 
 **Account-reaching servers — deliberate choice:**
 

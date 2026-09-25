@@ -957,10 +957,15 @@ add_mcp_server() {
     skip "MCP server '$name' already registered"
     return 0
   fi
+  # MCP_SCOPE_OVERRIDE lets a caller that must land at a fixed scope regardless
+  # of the global --scope/INSTALL_SCOPE default (add_or_refresh_mcp_server,
+  # below) reuse this one 'claude mcp add' call site instead of duplicating
+  # it - empty means "use the global default", exactly today's behaviour.
+  local scope="${MCP_SCOPE_OVERRIDE:-$INSTALL_SCOPE}"
   if [ "$env_spec" = "-" ]; then
-    claude mcp add --scope "$INSTALL_SCOPE" "$name" -- "$@" || return 1
+    claude mcp add --scope "$scope" "$name" -- "$@" || return 1
   else
-    claude mcp add --scope "$INSTALL_SCOPE" "$name" --env "$env_spec" -- "$@" || return 1
+    claude mcp add --scope "$scope" "$name" --env "$env_spec" -- "$@" || return 1
   fi
   load_mcp_servers
   COUNT_INSTALLED=$((COUNT_INSTALLED+1))
@@ -994,6 +999,72 @@ add_mcp_http_server() {
   load_mcp_servers
   COUNT_INSTALLED=$((COUNT_INSTALLED+1))
   ok "added MCP server '$name'"
+}
+
+# Full 'cmd arg arg...' string 'claude mcp get <name>' reports for an already-
+# registered server, or nothing with return 2 when it cannot be read or
+# parsed. 'claude mcp list' (load_mcp_servers) only gives the name off the
+# front of each line - this is the only way to compare an existing
+# registration's command/args against the exact form a row requires. Return 2
+# rather than treating a read failure as either a match or a mismatch: an
+# unknown here must stay its own value, not collapse into whichever looks
+# safe.
+mcp_registration_command() {
+  local name="$1" out cmd args
+  have claude || return 2
+  out="$(claude mcp get "$name" 2>/dev/null)" || return 2
+  cmd="$(printf '%s\n' "$out" | sed -n 's/^[[:space:]]*Command:[[:space:]]*//p' | sed -n '1p')"
+  [ -n "$cmd" ] || return 2
+  args="$(printf '%s\n' "$out" | sed -n 's/^[[:space:]]*Args:[[:space:]]*//p' | sed -n '1p')"
+  printf '%s %s' "$cmd" "$args"
+  return 0
+}
+
+# add_or_refresh_mcp_server <scope> <name> <command...>
+# Same detect-then-act contract as add_mcp_server, but for a row that must
+# land at a fixed scope regardless of the global --scope/INSTALL_SCOPE
+# default, and that must notice when an earlier run (or a hand-added
+# registration) left different command/args behind rather than trusting the
+# registered name alone - add_mcp_server's plain 'already registered' skip
+# treats any registration under the name as current, which is exactly wrong
+# once the required flags change. The actual 'claude mcp add' still happens
+# inside add_mcp_server itself (via MCP_SCOPE_OVERRIDE below) rather than
+# here, so this is not a second call site for it.
+add_or_refresh_mcp_server() {
+  local scope="$1" name="$2"; shift 2
+  if ! have claude; then
+    warn "claude not found on PATH in this shell - run 'source ~/.bashrc' and re-run this script."
+    return 1
+  fi
+  mcp_launcher_resolves "$name" "$1" || return 1
+  local required="$*"
+  if mcp_server_registered "$name"; then
+    local current rc
+    current="$(mcp_registration_command "$name")"; rc=$?
+    if [ "$rc" -eq 2 ]; then
+      skip "MCP server '$name' already registered (could not read its command/args back from 'claude mcp get' to compare against the required form)"
+      return 0
+    fi
+    if [ "$current" = "$required" ]; then
+      skip "MCP server '$name' already registered with the required form"
+      return 0
+    fi
+    if [ "$NON_INTERACTIVE" -eq 1 ] || [ "$SELECT_ALL" -eq 1 ] || [ -n "$SELECT_SPEC" ]; then
+      warn "MCP server '$name' is registered as '$current', not the required '$required' - outdated registration left; run with --select web-testing interactively to be asked to migrate it."
+      return 0
+    fi
+    printf '\n\033[33m  MCP server '\''%s'\'' is already registered as:\033[0m\n' "$name" >&2
+    printf '\033[90m    %s\033[0m\n' "$current" >&2
+    printf '\033[33m  This row requires:\033[0m\n' >&2
+    printf '\033[90m    %s\033[0m\n' "$required" >&2
+    local answer
+    read -r -p "  Remove and re-register '$name' with the required form? [y/N] " answer <&"$TTY_FD"
+    case "${answer:-N}" in
+      [Yy]*) claude mcp remove "$name" >/dev/null 2>&1; load_mcp_servers ;;
+      *) skip "leaving the existing registration for '$name' as it is"; return 0 ;;
+    esac
+  fi
+  MCP_SCOPE_OVERRIDE="$scope" add_mcp_server "$name" "-" "$@"
 }
 
 # --- Detection: user-level skills --------------------------------------------
@@ -1137,12 +1208,13 @@ install_plugin() {
 MENU_KEYS=(
   "prereqs" "cli" "own-skills" "team" "find-skills" "community"
   "claude-code-setup" "task-observer"
-  "aws-mcp" "azure-mcp" "playwright-mcp" "obsidian-mcp"
-  "supabase" "context7" "playwright-cli" "skillui" "strix" "obsidian"
+  "aws-mcp" "azure-mcp" "web-testing" "obsidian-mcp"
+  "supabase" "context7" "skillui" "strix" "obsidian"
   "repo-plugins" "graphify" "ms-mcp"
   "aws-docs-mcp" "aws-pricing-mcp" "ms-learn-mcp" "perplexity-mcp"
+  "lsp-plugins" "stack-tools"
 )
-MENU_DEFAULT=(1 1 1 1 1 1 1 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+MENU_DEFAULT=(1 1 1 1 1 1 1 1 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
 MENU_NAME=(
   "Prerequisites: git, nodejs, npm, python3, pip3 (needs root or sudo)"
   "Claude Code CLI (@anthropic-ai/claude-code) + PATH export + update check"
@@ -1154,11 +1226,10 @@ MENU_NAME=(
   "task-observer skill (rebelytics/one-skill-to-rule-them-all)"
   "MCP server: AWS (awslabs.aws-api-mcp-server)"
   "MCP server: Azure (@azure/mcp)"
-  "MCP server: Playwright (@playwright/mcp)"
+  "Web testing: Playwright (@playwright/test + axe-core) + MCP + Test Agents - project-local, needs Node >= 20.19"
   "MCP server: Obsidian vault server (Local REST API over an SSH tunnel)"
   "Supabase plugin (supabase@claude-plugins-official)"
   "Context7 up-to-date library docs (npx ctx7 setup)"
-  "Playwright CLI (@playwright/cli) - browser automation from the shell"
   "SkillUI (npm) + Playwright/Chromium - extract a design system from a URL"
   "Strix AI pentesting CLI (needs Docker + an LLM API key)"
   "Obsidian desktop + claude-obsidian + obsidian-skills plugins"
@@ -1169,6 +1240,8 @@ MENU_NAME=(
   "MCP server: AWS Pricing (Price List API - needs AWS creds with pricing:*)"
   "MCP server: Microsoft Learn (Azure, SharePoint and Power Automate docs, no credentials)"
   "MCP server: Perplexity (web-grounded search for the web-research skill - needs an API key)"
+  "LSP plugins: csharp-lsp, pyright-lsp, typescript-lsp (claude-plugins-official) + Angular language server (npm) - needs dotnet/npm"
+  "Stack tooling: tflint, ruff, sqlfluff (uv), shellcheck, PSScriptAnalyzer (Windows PowerShell 5.1 and 7; pwsh only on non-Windows)"
 )
 
 SELECTED=""
@@ -1229,8 +1302,6 @@ SKILL_KEYS=(
   "cisco-meraki"
   "claude-code-defaults"
   "claude-code-tuneup"
-  "claude-memories-canvas"
-  "claude-memories-vault"
   "cloudflare"
   "doc-builder"
   "drata"
@@ -1267,8 +1338,6 @@ SKILL_NAME=(
   "cisco-meraki            - Meraki Dashboard API: inventory, events, config changes"
   "claude-code-defaults    - Claude Code config: settings.json, permissions, hooks"
   "claude-code-tuneup      - Audit a slow Claude Code setup: dupes, hooks, context"
-  "claude-memories-canvas  - claude-memories vault: wiki/maps .canvas conventions"
-  "claude-memories-vault   - claude-memories vault: layout, frontmatter, write lock"
   "cloudflare              - Cloudflare v4: DNS, WAF, cache, Workers, Zero Trust"
   "doc-builder             - Reports + SOPs -> DOCX/PDF via Word or LibreOffice, brand pack sets the style"
   "drata                   - Drata: controls, monitors, evidence, audit prep"
@@ -1319,7 +1388,7 @@ PLUGIN_KEYS=(
   "rule-of-two"
 )
 PLUGIN_NAME=(
-  "crew                    - Virtual dev team: 54 agents, 28 commands, safety hooks"
+  "crew                    - Virtual dev team: 4 agents, 34 commands, safety hooks"
   "gizmoduck               - Nuclei scans: diff, triaged reports, SDP tickets. No hooks"
   "localgpu                - Local models via Ollama: index, search, ask. MCP, no hooks"
   "obsidian-vault          - Multi-vault memory: gardener/reflector agents, bridge+guard hooks"
@@ -2428,7 +2497,7 @@ run_skill_preflights() {
       3)
         # preflight.py's own exit code for "packages are missing and I did not
         # install them". Its report goes to stderr with the skill named, because the
-        # alternative - a line on stdout in the middle of a 36-skill install - is the
+        # alternative - a line on stdout in the middle of a 34-skill install - is the
         # silence this step exists to end.
         preflight_warn "$key: Python dependencies are MISSING. This script does not install them; see reason 1 and 2 in the comment above run_skill_preflights."
         sed -n 's/^  MISSING */        missing: /p' "$out" >&2
@@ -2666,12 +2735,117 @@ if is_selected "ms-learn-mcp"; then
   run_step "Register the Microsoft Learn MCP endpoint" install_ms_learn_mcp
 fi
 
-install_playwright_mcp() {
-  add_mcp_server "playwright" "-" npx @playwright/mcp@latest || return 1
-  ok "Playwright downloads its browsers on first use; 'npx playwright install' does it ahead of time."
+# Folds the old separate 'playwright-mcp' and 'playwright-cli' rows into one:
+# a modern Playwright setup is the test runner, the browsers, both MCP servers and
+# the Test Agents together, not three things a user ticks separately. Default ON
+# (see MENU_DEFAULT), so '--non-interactive' now installs this row unless the user
+# excludes it with '--select' naming other keys.
+install_web_testing() {
+  if ! have node; then
+    warn "node not found on PATH - select the prerequisites item (or install Node.js >= 20.19) and re-run '--select web-testing'."
+    return 1
+  fi
+  # Told, not fixed: this script does not install or upgrade Node for any row.
+  local node_ver major minor
+  node_ver="$(node -v 2>/dev/null | sed 's/^v//')"
+  major="${node_ver%%.*}"; minor="${node_ver#*.}"; minor="${minor%%.*}"
+  if [ -z "$major" ] || [ "$major" -lt 20 ] || { [ "$major" -eq 20 ] && [ "$minor" -lt 19 ]; }; then
+    warn "node $node_ver found, but Playwright 1.63 needs Node >= 20.19 (or >= 22.12). Install a newer Node yourself and re-run '--select web-testing'."
+    return 1
+  fi
+  if ! have npm; then
+    warn "npm not found on PATH - select the prerequisites item (or install Node.js) and re-run '--select web-testing'."
+    return 1
+  fi
+
+  # @playwright/test and @axe-core/playwright are project devDependencies, not
+  # global tools: the pinned version travels with the repo's package.json and has
+  # to match what CI runs. This installer does not run 'npm init' for you.
+  if [ ! -f package.json ]; then
+    warn "no package.json in $(pwd) - Playwright installs as a project devDependency, not globally. cd into the project's root (or run 'npm init -y' first) and re-run '--select web-testing'."
+    return 1
+  fi
+  # Skip the reinstall entirely when both pinned versions are already exact -
+  # without this a rerun against an already-installed project ran 'npm install'
+  # again every time, so two runs looked identical to one that only checked.
+  if node -e "
+    var d=(require('./package.json').devDependencies||{});
+    process.exit(d['@playwright/test']==='1.63.0' && d['@axe-core/playwright']==='4.13.0' ? 0 : 1);
+  " 2>/dev/null; then
+    skip "@playwright/test@1.63.0 and @axe-core/playwright@4.13.0 already pinned in package.json"
+  else
+    if node -e "process.exit((require('./package.json').devDependencies||{})['@playwright/test'] ? 0 : 1)" 2>/dev/null; then
+      ok "@playwright/test already a devDependency here - reinstalling the pinned versions to pick up updates"
+    fi
+    npm install -D "@playwright/test@1.63.0" "@axe-core/playwright@4.13.0" || return 1
+    COUNT_INSTALLED=$((COUNT_INSTALLED+1))
+    ok "@playwright/test@1.63.0 and @axe-core/playwright@4.13.0 added as devDependencies"
+  fi
+
+  # 'install --dry-run' prints each browser's cache directory without touching
+  # the network, whether or not it is already there - its own text never says
+  # "already installed" (checked against 1.63.0 directly), so the directory on
+  # disk is what detects it, not the dry-run output's wording.
+  local chromium_loc=""
+  chromium_loc="$(npx --no-install playwright install --dry-run chromium 2>/dev/null | sed -n 's/^[[:space:]]*Install location:[[:space:]]*//p' | sed -n '1p')"
+  if [ -n "$chromium_loc" ] && [ -d "$chromium_loc" ]; then
+    skip "Chromium already installed at $chromium_loc"
+  else
+    # '--with-deps' shells out to apt/sudo for system packages, which either
+    # prompts for a password or fails outright without one - wrong in both
+    # directions under '--non-interactive'. 'sudo -n' itself never prompts
+    # (that is what -n means), so probing it is safe unconditionally rather
+    # than branching on NON_INTERACTIVE.
+    if [ "$(id -u)" -eq 0 ] || sudo -n true 2>/dev/null; then
+      if ! npx playwright install --with-deps chromium; then
+        warn "'npx playwright install --with-deps chromium' failed - browsers or system deps may be missing; see https://playwright.dev/docs/browsers"
+        return 1
+      fi
+    else
+      if ! npx playwright install chromium; then
+        warn "'npx playwright install chromium' failed - see https://playwright.dev/docs/browsers"
+        return 1
+      fi
+      warn "installed Chromium without its system dependencies - '--with-deps' needs root or passwordless sudo, and neither is available in this shell. Run 'sudo npx playwright install-deps chromium' by hand to install them."
+    fi
+    ok "Chromium installed for Playwright"
+  fi
+
+  if [ -f ".claude/agents/playwright-test-planner.md" ]; then
+    skip "Playwright Test Agents already scaffolded (.claude/agents/playwright-test-planner.md exists)"
+  else
+    # Report OK only when every requested loop actually succeeded - a run where
+    # one loop failed and the other did not used to print a warning for the
+    # failed one and then an unconditional OK right after it, so the OK read as
+    # "scaffolding worked" over a partial failure.
+    local -a failed_loops=()
+    npx playwright init-agents --loop=claude || failed_loops+=("claude")
+    npx playwright init-agents --loop=codex || failed_loops+=("codex")
+    if [ "${#failed_loops[@]}" -eq 0 ]; then
+      ok "Playwright Test Agents scaffolded (planner/generator/healer; claude + codex loops)"
+    else
+      warn "Playwright Test Agents scaffolding failed for: ${failed_loops[*]} - run 'npx playwright init-agents --loop=<name>' by hand for each."
+    fi
+  fi
+
+  # Registered at project scope regardless of the global --scope/INSTALL_SCOPE
+  # default - stack-web's SKILL.md documents this row's wiring as a per-project
+  # .mcp.json, not a machine-wide registration - and migrated rather than
+  # trusted on name alone: add_mcp_server's plain 'already registered' skip
+  # would leave an old registration (missing --isolated --headless --caps
+  # testing, or a stale package) in place forever.
+  add_or_refresh_mcp_server "project" "playwright" npx @playwright/mcp@latest --isolated --headless --caps testing || return 1
+  add_or_refresh_mcp_server "project" "chrome-devtools" npx chrome-devtools-mcp@latest || return 1
+  ok "Playwright downloads its browsers on first use if skipped above; 'npx playwright install' does it ahead of time."
+
+  if have docker; then
+    ok "Docker found - visual baselines can be captured in mcr.microsoft.com/playwright:v1.63.0-noble, the only image guaranteed to match CI's rendering."
+  else
+    warn "Docker not found - this is a warning, not a blocker: everything else in this row still works. Visual regression baselines (toHaveScreenshot) must be generated inside mcr.microsoft.com/playwright:v1.63.0-noble or they will not match CI's font hinting and subpixel rendering."
+  fi
 }
-if is_selected "playwright-mcp"; then
-  run_step "Install Playwright MCP server" install_playwright_mcp
+if is_selected "web-testing"; then
+  run_step "Install web testing (Playwright test runner, browsers, MCP servers, Test Agents)" install_web_testing
 fi
 
 install_obsidian_mcp() {
@@ -2758,33 +2932,6 @@ install_context7() {
 }
 if is_selected "context7"; then
   run_step "Configure Context7 (npx ctx7 setup)" install_context7
-fi
-
-# --- 15. Playwright CLI -------------------------------------------------------
-install_playwright_cli() {
-  # Detection is on the binary the package provides ('playwright-cli'), which is what
-  # a user actually cares about - the package can also arrive via another manager.
-  if have playwright-cli; then
-    if [ "$NO_UPDATE" -eq 1 ]; then
-      skip "playwright-cli already installed ($(command -v playwright-cli))"
-      return 0
-    fi
-    ok "playwright-cli already installed - reinstalling @latest to pick up updates"
-  fi
-  if ! have npm; then
-    warn "npm not found on PATH - select the prerequisites item (or install Node.js) and re-run."
-    return 1
-  fi
-  npm install -g @playwright/cli@latest || return 1
-  if ! have playwright-cli; then
-    warn "@playwright/cli installed but 'playwright-cli' is not resolvable in this shell - run 'source ~/.bashrc' and try again."
-    return 1
-  fi
-  COUNT_INSTALLED=$((COUNT_INSTALLED+1))
-  ok "playwright-cli installed at $(command -v playwright-cli)"
-}
-if is_selected "playwright-cli"; then
-  run_step "Install Playwright CLI (@playwright/cli)" install_playwright_cli
 fi
 
 # --- 16. SkillUI --------------------------------------------------------------
@@ -3119,6 +3266,249 @@ install_ms_mcp() {
 }
 if is_selected "ms-mcp"; then
   run_step "Register Microsoft MCP servers (mcp-servers/)" install_ms_mcp
+fi
+
+# --- 22. LSP plugins (C#, Python, TypeScript) + Angular language server ------
+# Anthropic's official language-server plugins register an LSP client entry each,
+# but Claude Code's native LSP support only starts whatever binary the plugin's
+# 'command' names - it does not vendor the language server itself. This step
+# installs both halves: the plugin (via 'claude plugin install', same as every
+# other plugin row here) and the binary Claude Code will actually launch. There
+# is no official Angular plugin to install - checked directly against
+# anthropics/claude-plugins-official's own marketplace.json on 2026-09-23, which
+# lists csharp-lsp/pyright-lsp/typescript-lsp (and eleven other languages) but no
+# 'angular' entry - so Angular's language server goes in as a plain npm package
+# instead, the same way skillui's Playwright/Chromium install is above.
+install_lsp_binary() {
+  # $1 label (for messages), $2 the command Claude Code will actually run, the
+  # rest is the install command's own argv - run directly, never eval'd.
+  local label="$1" probe="$2"; shift 2
+  if have "$probe"; then
+    skip "$label already installed ($(command -v "$probe"))"
+    return 0
+  fi
+  step "Installing $label"
+  if ! "$@"; then
+    warn "$label install command failed - install it by hand, then re-run."
+    return 1
+  fi
+  if ! have "$probe"; then
+    warn "$label installed but '$probe' is not resolvable in this shell - open a new shell (or 'source ~/.bashrc') and re-run."
+    return 1
+  fi
+  COUNT_INSTALLED=$((COUNT_INSTALLED+1))
+  ok "$label installed at $(command -v "$probe")"
+}
+install_csharp_ls_binary() {
+  # Detect the binary BEFORE requiring its prerequisite: a csharp-ls already on
+  # PATH (installed by some other means, or dotnet removed after the fact) must
+  # not be reported as a failure just because dotnet is absent now.
+  if have csharp-ls; then
+    skip "csharp-ls already installed ($(command -v csharp-ls))"
+    return 0
+  fi
+  if ! have dotnet; then
+    warn "dotnet not found on PATH - csharp-ls (a dotnet tool) needs the .NET SDK; install it (https://dotnet.microsoft.com) and re-run."
+    return 1
+  fi
+  # 'dotnet tool install --global' writes into $HOME/.dotnet/tools and never adds
+  # that directory to PATH itself - export it for this session before the shared
+  # helper's post-install probe runs, or a successful install always reports
+  # "not resolvable".
+  export PATH="$HOME/.dotnet/tools:$PATH"
+  install_lsp_binary "csharp-ls" "csharp-ls" dotnet tool install --global csharp-ls || return 1
+  warn "csharp-ls is on PATH for this session only - add \$HOME/.dotnet/tools to your shell profile (e.g. ~/.bashrc: export PATH=\"\$HOME/.dotnet/tools:\$PATH\") to keep it there in new shells."
+}
+install_pyright_binary() {
+  if have pyright-langserver; then
+    skip "pyright-langserver already installed ($(command -v pyright-langserver))"
+    return 0
+  fi
+  if ! have npm; then
+    warn "npm not found on PATH - select the prerequisites item (or install Node.js) and re-run. ('pip install pyright' also works if Python is on PATH instead.)"
+    return 1
+  fi
+  install_lsp_binary "pyright-langserver" "pyright-langserver" npm install -g pyright
+}
+install_typescript_lsp_binary() {
+  if have typescript-language-server; then
+    skip "typescript-language-server already installed ($(command -v typescript-language-server))"
+    return 0
+  fi
+  if ! have npm; then
+    warn "npm not found on PATH - select the prerequisites item (or install Node.js) and re-run."
+    return 1
+  fi
+  install_lsp_binary "typescript-language-server" "typescript-language-server" npm install -g typescript-language-server typescript
+}
+install_angular_language_server() {
+  if have ngserver; then
+    skip "Angular language server (ngserver) already installed ($(command -v ngserver))"
+    return 0
+  fi
+  if ! have npm; then
+    warn "npm not found on PATH - select the prerequisites item (or install Node.js) and re-run."
+    return 1
+  fi
+  install_lsp_binary "Angular language server (ngserver)" "ngserver" npm install -g @angular/language-server
+}
+if is_selected "lsp-plugins"; then
+  run_step "Marketplace: anthropics/claude-plugins-official" \
+    add_marketplace "anthropics/claude-plugins-official" "claude-plugins-official"
+  run_step "Plugin: csharp-lsp@claude-plugins-official" install_plugin "csharp-lsp@claude-plugins-official"
+  run_step "csharp-ls (dotnet tool)" install_csharp_ls_binary
+  run_step "Plugin: pyright-lsp@claude-plugins-official" install_plugin "pyright-lsp@claude-plugins-official"
+  run_step "pyright-langserver (npm)" install_pyright_binary
+  run_step "Plugin: typescript-lsp@claude-plugins-official" install_plugin "typescript-lsp@claude-plugins-official"
+  run_step "typescript-language-server (npm)" install_typescript_lsp_binary
+  run_step "Angular language server (npm; no official Claude plugin)" install_angular_language_server
+fi
+
+# --- 23. Stack tooling: tflint, ruff, sqlfluff, shellcheck, PSScriptAnalyzer --
+# The lint/format tools the stack-* skills write into verify.json's rules, per
+# docs/review/04-redesign.md - installed here, never inside a skill, so a missing
+# tool is a bounded warning at install time rather than a silent UNVERIFIED result
+# the first time a ticket touches that stack. dotnet format, eslint and prettier
+# are deliberately NOT here: dotnet/node are prerequisites this script already
+# tells the user to install by hand rather than installing itself, and
+# eslint/prettier are project-local (npm devDependencies), not a global tool this
+# script would own.
+install_tflint() {
+  if have tflint; then
+    skip "tflint already installed ($(command -v tflint))"
+    return 0
+  fi
+  if have brew; then
+    brew install terraform-linters/tap/tflint || return 1
+  else
+    warn "tflint has no unpinned auto-install path here (no brew on PATH) - install from https://github.com/terraform-linters/tflint#installation (download the release archive, verify it, and put the binary on PATH), then re-run."
+    return 1
+  fi
+  if ! have tflint; then
+    warn "tflint installed but not resolvable in this shell - open a new shell and try again."
+    return 1
+  fi
+  COUNT_INSTALLED=$((COUNT_INSTALLED+1))
+  ok "tflint installed at $(command -v tflint)"
+}
+install_ruff() {
+  if have ruff; then
+    skip "ruff already installed ($(command -v ruff))"
+    return 0
+  fi
+  ensure_uv || {
+    uv_warn "not installing ruff - 'uv tool install ruff' needs uv."
+    return 1
+  }
+  # ruff needs `uv` itself, not just `uvx`: ensure_uv is satisfied by either.
+  if ! have uv; then
+    uv_warn "uv still not found after attempting to install it - install it manually (https://docs.astral.sh/uv) and re-run."
+    return 1
+  fi
+  uv tool install ruff || return 1
+  export PATH="$HOME/.local/bin:$PATH"
+  if ! have ruff; then
+    warn "ruff installed but not resolvable in this shell - uv tool installs land in ~/.local/bin; run 'source ~/.bashrc' and re-run."
+    return 1
+  fi
+  COUNT_INSTALLED=$((COUNT_INSTALLED+1))
+  ok "ruff installed at $(command -v ruff)"
+}
+install_sqlfluff() {
+  if have sqlfluff; then
+    skip "sqlfluff already installed ($(command -v sqlfluff))"
+    return 0
+  fi
+  ensure_uv || {
+    uv_warn "not installing sqlfluff - 'uv tool install sqlfluff' needs uv."
+    return 1
+  }
+  # sqlfluff needs `uv` itself, not just `uvx`: ensure_uv is satisfied by either.
+  if ! have uv; then
+    uv_warn "uv still not found after attempting to install it - install it manually (https://docs.astral.sh/uv) and re-run."
+    return 1
+  fi
+  uv tool install sqlfluff || return 1
+  export PATH="$HOME/.local/bin:$PATH"
+  if ! have sqlfluff; then
+    warn "sqlfluff installed but not resolvable in this shell - uv tool installs land in ~/.local/bin; run 'source ~/.bashrc' and re-run."
+    return 1
+  fi
+  COUNT_INSTALLED=$((COUNT_INSTALLED+1))
+  ok "sqlfluff installed at $(command -v sqlfluff)"
+}
+install_shellcheck() {
+  if have shellcheck; then
+    skip "shellcheck already installed ($(command -v shellcheck))"
+    return 0
+  fi
+  local mgr=""
+  if   have apt-get; then mgr=apt
+  elif have dnf;     then mgr=dnf
+  elif have yum;     then mgr=yum
+  elif have pacman;  then mgr=pacman
+  elif have zypper;  then mgr=zypper
+  elif have apk;     then mgr=apk
+  elif have brew;    then mgr=brew
+  else
+    warn "No supported package manager found (apt-get/dnf/yum/pacman/zypper/apk/brew) - install shellcheck manually (https://github.com/koalaman/shellcheck#installing) and re-run."
+    return 1
+  fi
+  case "$mgr" in
+    apt)    as_root apt-get update -y && as_root apt-get install -y shellcheck ;;
+    dnf)    as_root dnf install -y shellcheck ;;
+    yum)    as_root yum install -y shellcheck ;;
+    # Never `pacman -Sy <pkg>`: syncing the database for a single package is a
+    # partial upgrade (Arch guidance: sync and upgrade together, or not at all).
+    # `-S --needed` installs against whatever database is already there.
+    pacman) as_root pacman -S --needed --noconfirm shellcheck ;;
+    zypper) as_root zypper install -y shellcheck ;;
+    apk)    as_root apk add --no-cache shellcheck ;;
+    brew)   brew install shellcheck ;;
+  esac
+  local rc=$?
+  if [ "$rc" -ne 0 ]; then
+    if [ "$mgr" = "pacman" ]; then
+      warn "shellcheck install via pacman failed (exit $rc). This script never runs 'pacman -Sy <pkg>' (a partial upgrade) - if the local package database is stale or does not have shellcheck, run 'sudo pacman -Syu' to fully refresh it, then re-run this script."
+    else
+      warn "shellcheck install via $mgr failed (exit $rc)."
+    fi
+    return 1
+  fi
+  if ! have shellcheck; then
+    warn "shellcheck installed but not resolvable in this shell - open a new shell and try again."
+    return 1
+  fi
+  COUNT_INSTALLED=$((COUNT_INSTALLED+1))
+  ok "shellcheck installed at $(command -v shellcheck)"
+}
+install_psscriptanalyzer() {
+  # PSScriptAnalyzer is a PowerShell module, not a shell tool - it needs a
+  # PowerShell host to install into. pwsh (PowerShell 7) runs cross-platform;
+  # Windows PowerShell 5.1 does not exist on this side of the matched pair, so
+  # there is only one rung here, unlike the .ps1 side which covers both.
+  if ! have pwsh; then
+    warn "pwsh (PowerShell 7) not found on PATH - PSScriptAnalyzer needs a PowerShell host to install into. Install PowerShell (https://aka.ms/powershell) and re-run, or run the .ps1 script on Windows, which covers both 5.1 and 7."
+    return 1
+  fi
+  if pwsh -NoProfile -Command "Get-Module -ListAvailable -Name PSScriptAnalyzer" 2>/dev/null | grep -q PSScriptAnalyzer; then
+    skip "PSScriptAnalyzer already installed for pwsh"
+    return 0
+  fi
+  pwsh -NoProfile -Command "Install-Module -Name PSScriptAnalyzer -Scope CurrentUser -Force -ErrorAction Stop" || return 1
+  if ! pwsh -NoProfile -Command "Get-Module -ListAvailable -Name PSScriptAnalyzer" 2>/dev/null | grep -q PSScriptAnalyzer; then
+    warn "Install-Module reported success but PSScriptAnalyzer is not resolvable under pwsh - check the pwsh output above."
+    return 1
+  fi
+  COUNT_INSTALLED=$((COUNT_INSTALLED+1))
+  ok "PSScriptAnalyzer installed for pwsh (PowerShell 7)"
+}
+if is_selected "stack-tools"; then
+  run_step "tflint (Terraform linter)" install_tflint
+  run_step "ruff (uv tool install ruff)" install_ruff
+  run_step "sqlfluff (uv tool install sqlfluff)" install_sqlfluff
+  run_step "shellcheck" install_shellcheck
+  run_step "PSScriptAnalyzer (pwsh, if present)" install_psscriptanalyzer
 fi
 
 # --- Summary -----------------------------------------------------------------

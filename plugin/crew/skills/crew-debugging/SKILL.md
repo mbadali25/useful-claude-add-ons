@@ -258,8 +258,8 @@ finding and has to survive into the report rather than collapsing into silence.
    - One-off test script if no framework
    - MUST have before fixing
    - `superpowers:test-driven-development` covers writing the failing test. If
-     the repository has no harness to hang the test on, that is
-     `crew:smoke-author`'s job - say so rather than improvising one.
+     the repository has no harness to hang the test on, say so and propose a
+     smoke-harness ticket rather than improvising one.
 
 2. **Implement Single Fix**
    - Address the root cause identified

@@ -16,6 +16,14 @@ that writes.
     add-vault       --name N --path P [--apply]       name a vault so --vault N resolves
     graph-health    [--vault NAME] [--fix]            codegraph vault layout and staleness
 
+Setup, memory and gardening subcommands live in their own modules and are
+registered here, so there is still one CLI:
+
+    detect-obsidian / install-obsidian / create-vault / adopt   vault_setup.py
+    import                                                      vault_import.py
+    recall                                                      vault_recall.py
+    queue / ack / garden-run / drain / reconcile / schedule     vault_garden.py
+
 Exit codes: 0 healthy or applied, 1 problems found, 2 usage or structural error.
 
 Three rules this file exists to enforce, each learned from a fault that shipped:
@@ -63,6 +71,10 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import obsidian_common  # noqa: E402  pylint: disable=wrong-import-position
 import vault_profiles  # noqa: E402  pylint: disable=wrong-import-position
+import vault_garden  # noqa: E402  pylint: disable=wrong-import-position
+import vault_import  # noqa: E402  pylint: disable=wrong-import-position
+import vault_recall  # noqa: E402  pylint: disable=wrong-import-position
+import vault_setup  # noqa: E402  pylint: disable=wrong-import-position
 
 EXIT_OK = 0
 EXIT_PROBLEMS = 1
@@ -391,8 +403,11 @@ def select(vaults, name=None, all_vaults=False, require_choice=False):
     if require_choice and not all_vaults:
         return None, "one of --vault NAME or --all is required"
     if all_vaults:
+        # A vault given role "ignore" in config was answered "no" during setup:
+        # configured so the question is not asked again, never acted on in bulk.
         known = configured_names()
-        return {n: v for n, v in vaults.items() if n in known}, None
+        return {n: v for n, v in vaults.items()
+                if n in known and v.get("role") != "ignore"}, None
     return dict(vaults), None
 
 
@@ -1815,6 +1830,11 @@ def build_parser():
     s.add_argument("--vault")
     s.add_argument("--fix", action="store_true")
     s.set_defaults(func=cmd_graph_health)
+
+    vault_setup.add_parsers(sub)
+    vault_import.add_parsers(sub)
+    vault_recall.add_parsers(sub)
+    vault_garden.add_parsers(sub)
     return p
 
 

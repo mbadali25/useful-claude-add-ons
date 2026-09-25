@@ -3,8 +3,7 @@
 # drift from the other. See role-write-guard.sh for why this is NOT branched
 # by tool_name the way promote-gate.ps1 is.
 param(
-  # Probe seam, the twin of verify-gate.ps1's -PrintPython and
-  # pm-pulse.ps1's: prints the interpreter Resolve-CrewPython would use and
+  # Probe seam, the twin of verify-gate.ps1's -PrintPython: prints the interpreter Resolve-CrewPython would use and
   # exits 0 without touching stdin or running the guard. This hook's only
   # consumer is Claude Code's PreToolUse hook, which pipes JSON on stdin and
   # has no interactive path to probe resolution.
@@ -25,98 +24,169 @@ if ($env:OS -ne 'Windows_NT') { exit 0 }
 $dir = Split-Path -Parent $MyInvocation.MyCommand.Path
 
 function Resolve-CrewPython {
-  # NOT byte-for-byte with verify-gate.ps1's/pm-pulse.ps1's copies any more
-  # -- see tests/test_role_write_guard.py for why the parity discipline
-  # changed shape rather than being dropped. Those two files' resolver only
-  # needs to match `_common.sh`'s bare `crew_py()`; this one needs to match
-  # role-write-guard.sh's OWN resolver, which does more than `crew_py()`
-  # does, so this copy has to as well.
-  #
-  # Two bugs, reported together 2026-09-19 by a PowerShell-focused review of
-  # THIS file specifically, on top of the WindowsApps/profile-shadow guards
-  # this function already had:
-  #
-  #   1. Metadata alone (`.CommandType` / `.Source`) is exactly what a
-  #      WindowsApps stub already passes -- `Get-Command` reports it as a
-  #      real Application with a real Source. role-write-guard.sh's own
-  #      resolver does not trust that either: it EXECUTES the candidate
-  #      (`$cand -c "import sys;print(sys.executable)"`) and reads back
-  #      what actually ran. This copy now does the same, rejecting a
-  #      candidate that produces no output when actually launched.
-  #   2. `Get-Command $name -All` walked every match for ONE name before
-  #      moving to the next name -- so on `PATH=WindowsApps;RealDir` with
-  #      only `python3` present anywhere (no `python`/`py` at all), the old
-  #      code walked PAST the WindowsApps `python3` stub and found
-  #      RealDir's `python3` further down PATH. Bash's `command -v
-  #      python3` (role-write-guard.sh's resolver) takes only the FIRST
-  #      match for a name; rejecting it moves to the NEXT NAME, never a
-  #      second search of the same one -- so the .sh abandoned `python3`
-  #      after the stub and never found a `python`/`py` that did not
-  #      exist either. Same PATH, same machine: one shell flavour
-  #      enforced `guards.roleWrites: block` and the other silently
-  #      allowed the write unjudged. This copy now takes only the first
-  #      match per name too, mirroring the .sh's name-order exactly.
-  #
-  # A third bug, reported 2026-09-24: this function used to ALSO reject any
-  # candidate whose `.Source` (pre-execution) or resolved `sys.executable`
-  # (post-execution) merely contained the substring "WindowsApps", untested.
-  # That is not a stub detector, it is a location guess, and on a host where
-  # Python is installed through the Microsoft Store, EVERY candidate's real
-  # interpreter genuinely lives under
-  # `...\WindowsApps\PythonSoftwareFoundation.Python.3.x_<hash>\python.exe`
-  # -- so the blanket reject fired on all three names, `Resolve-CrewPython`
-  # returned '', and the caller's "no usable python" fallback let every write
-  # through unjudged on a machine where python plainly works (confirmed here:
-  # all three names launch fine, reporting Python 3.14.6). role-write-
-  # guard.sh's OWN resolver hit and fixed this exact bug on 2026-09-22 (see
-  # its comment on `_resolve_role_write_python`); this copy had not been
-  # brought back into parity until now. The execute-and-probe checks below
-  # already prove real-vs-stub without needing to know WHERE the interpreter
-  # lives: a placeholder App Execution Alias run non-interactively via `-c`
-  # produces no usable stdout (rejected below) rather than a real
-  # interpreter path, and `Test-Path -PathType Leaf` further down still
-  # requires whatever path IS printed to be a real, existing file. Trust
-  # that proof instead of a path substring that happens to reject the
-  # working case too.
-  $names = @('python3', 'python', 'py')
-  foreach ($name in $names) {
-    $cmd = Get-Command $name -ErrorAction SilentlyContinue | Select-Object -First 1
-    if (-not $cmd -or $cmd.CommandType -ne 'Application' -or -not $cmd.Source) { continue }
-    $real = $null
-    $global:LASTEXITCODE = $null
-    try {
-      # Captured WHOLE, not piped through `Select-Object -First 1` --
-      # that cmdlet can stop reading (and signal the pipeline to close)
-      # as soon as it has one object, which races the native process's
-      # own exit and can leave `$LASTEXITCODE` reflecting an early
-      # termination rather than the candidate's real exit status. Letting
-      # the candidate run to completion first is what makes the exit-code
-      # check below trustworthy.
-      $output = & $cmd.Source -c 'import sys; print(sys.executable)' 2>$null
-      # NOT just "did it print something" -- a wrapper that prints a
-      # plausible interpreter path and then exits nonzero must be
-      # rejected too, matching role-write-guard.sh's own
-      # `real=$(...) || continue`, which checks the candidate's exit
-      # status. Reported 2026-09-19: this check was absent, so a
-      # candidate bash correctly rejected (nonzero exit) was still
-      # ACCEPTED here on output alone.
-      if ($LASTEXITCODE -eq 0 -and $output) {
-        $real = @($output)[0]
-      }
-    } catch {
-      $real = $null
-    }
-    if ($real) { $real = $real.ToString().Trim() }
-    if (-not $real) { continue }
-    # Exit 0 and non-empty output is still not proof: a wrapper could print a
-    # plausible-looking path to something that is not actually there. Confirm
-    # the path EXISTS as a file before trusting it -- the bash-side parity
-    # check is `[ -x "$real" ]`; Test-Path has no executable-bit concept on
-    # Windows (an .exe's "executability" is its extension, not a mode bit),
-    # so -PathType Leaf is the equivalent proof here.
-    if (-not (Test-Path -LiteralPath $real -PathType Leaf)) { continue }
-    return $real
+  # Every python3/python/py candidate found anywhere on PATH is executed
+  # once against one fixed -c probe below; cwd is never searched unless it
+  # is itself on PATH. No behaviour change from this comment.
+  # Memoized within this process: verify-gate.ps1 alone calls this up to
+  # seven times in one run, and each call would otherwise re-walk and
+  # re-probe PATH from scratch. Cached only for the life of THIS process --
+  # a fresh hook invocation gets a fresh probe.
+  if ($script:CrewPythonMemoDone) {
+    return $script:CrewPythonMemoResult
   }
+  # ONE probe, byte for byte in every crew .ps1 that runs python, asserted by
+  # tests/test_ps1_python_probe.py. Inline rather than dot-sourced for the
+  # reason verify-gate.ps1's emergency-lane note gives: a dot-sourced
+  # function is invisible to scripts/check-powershell.ps1's static check.
+  #
+  # EVERY PATH match of every name is a candidate, and each is EXECUTED
+  # before it is believed; where it lives never decides. A WindowsApps App
+  # Execution Alias is tried like anything else: it forwards to a working
+  # interpreter when Python is installed and fails the probe when it is not.
+  # Windows burn-in 2026-09-23 (docs/review/06-windows-burn-in.md, 2c): the
+  # previous copy skipped WindowsApps by path and took only the first match
+  # per name, so on a host whose python, python3 and py were all working
+  # WindowsApps aliases it discarded all three untested, never reached the
+  # real python.exe further down PATH, and completion-audit.ps1 blocked
+  # every Stop while its bash twin proceeded.
+  #
+  # PROOF, not a printed line. The candidate must answer one JSON object
+  # only a Python can build: {"v": [major, minor], "exe": sys.executable,
+  # "impl": sys.implementation.name}. Accepted only when it exits 0, the
+  # JSON parses, impl is cpython or pypy (the two implementations the hooks
+  # are run under; anything else is rejected rather than guessed at), v is
+  # at least [3, 8] (the floor crew's python targets), and exe exists as a
+  # file. A program that ignores -c and prints some existing path -- which
+  # the previous "print(sys.executable)" probe accepted -- fails the parse.
+  #
+  # The probe is bounded: it runs to completion or its WHOLE PROCESS TREE is
+  # killed at 3s, with stdout and stderr read asynchronously so a chatty
+  # candidate cannot fill a pipe and hang. The tree, not the candidate: a
+  # py.exe-style launcher starts a child interpreter that inherits the
+  # redirected handles, and killing only the launcher leaves that child
+  # running. Kill($true) is the tree kill on PowerShell 7 (.NET Core 3+);
+  # Windows PowerShell 5.1 has no such overload, so it falls back to
+  # taskkill /T /F. No `continue` inside try/catch: loop control across that
+  # boundary differs between PowerShell versions, so the verdict is carried
+  # out in $real and acted on after it.
+  # An OVERALL deadline on top of each candidate's own 3s probe bound: a
+  # PATH with several hung candidates would otherwise cost 3s EACH, adding
+  # up past the shortest hook timeout that calls this (bridge-status.ps1's
+  # twin, 10s) even though every individual probe is bounded. Kept well
+  # inside that.
+  #
+  # REAL Windows only, never the flavour-guard seam: $env:OS -eq 'Windows_NT'
+  # is also true in this suite's own fixtures, which run REAL pwsh on Linux
+  # with that variable set to get past the guard at the top of this file --
+  # their candidates are ordinary extensionless Linux shim scripts, valid
+  # executables here, and gating on the seam would reject every one of them
+  # and break the fixtures that exist to prove this resolver works. $IsWindows
+  # (PowerShell 6+) reports the actual OS regardless of $env:OS; it does not
+  # exist in Windows PowerShell 5.1, which never runs anywhere but Windows, so
+  # its absence is itself a true answer.
+  $crewPythonRealWindows = if (Test-Path variable:IsWindows) { $IsWindows } else { $true }
+  # Only .exe/.com/.cmd/.bat (PATHEXT's launchable core) can be started
+  # without going through shell association. An extensionless file --
+  # anything else, including no extension at all -- CreateProcess cannot
+  # launch directly, and reaching it here is the same failure mode this
+  # probe's own bounded wait/kill exists to survive from a HUNG candidate,
+  # not from one Windows cannot start in the first place. Skipped before
+  # Process.Start is ever called, not caught after: a WindowsApps alias
+  # already carries `.exe`, so it is untouched by this and still tried like
+  # any other candidate, per the comment above.
+  $crewPythonNativeExts = @('.exe', '.com', '.cmd', '.bat')
+  $crewPythonDeadline = [System.Diagnostics.Stopwatch]::StartNew()
+  foreach ($name in @('python3', 'python', 'py')) {
+    $candidates = @(Get-Command $name -All -CommandType Application -ErrorAction SilentlyContinue)
+    foreach ($cmd in $candidates) {
+      if (-not $cmd.Source) { continue }
+      if ($crewPythonRealWindows) {
+        $crewPythonExt = [System.IO.Path]::GetExtension($cmd.Source)
+        if ($crewPythonNativeExts -notcontains $crewPythonExt) {
+          Write-Verbose "Resolve-CrewPython: skipping '$($cmd.Source)' - not natively launchable on Windows (extension '$crewPythonExt' outside .exe/.com/.cmd/.bat)"
+          continue
+        }
+      }
+      # The remaining budget, not a flat 3000ms, bounds THIS candidate's
+      # wait: checking the deadline only before launch and then waiting the
+      # full 3s regardless can still overrun the deadline by up to 3s once
+      # a candidate is entered, which on a run of several near-8s-but-under
+      # candidates followed by one hung one can overrun both this deadline
+      # and the 10s hook timeout it exists to stay inside.
+      $crewPythonRemainingMs = 8000 - [int]$crewPythonDeadline.Elapsed.TotalMilliseconds
+      if ($crewPythonRemainingMs -le 0) {
+        $script:CrewPythonMemoDone = $true
+        $script:CrewPythonMemoResult = ''
+        return ''
+      }
+      $crewPythonWaitMs = [Math]::Min(3000, $crewPythonRemainingMs)
+      $real = $null
+      try {
+        $psi = New-Object System.Diagnostics.ProcessStartInfo
+        $probeArgs = '-c "import sys,json;print(json.dumps({''v'':list(sys.version_info[:2]),''exe'':sys.executable,''impl'':sys.implementation.name}))"'
+        if ($cmd.Source -match '\.(cmd|bat)$') {
+          # UseShellExecute=false hands FileName straight to CreateProcess,
+          # which can only launch a real PE executable -- not a .cmd/.bat
+          # shim (a pyenv-win install is exactly this shape). Route it
+          # through cmd.exe /d /c instead of flipping UseShellExecute to
+          # $true, which would resolve by shell file association rather
+          # than run it as a command. Wrapping the whole command line in
+          # one more pair of quotes defeats cmd's "exactly two quotes"
+          # special case, so both the quoted shim path and the quoted -c
+          # argument survive intact.
+          $psi.FileName = Join-Path $env:SystemRoot 'System32\cmd.exe'
+          $psi.Arguments = '/d /c "' + '"' + $cmd.Source + '" ' + $probeArgs + '"'
+        } else {
+          $psi.FileName = $cmd.Source
+          $psi.Arguments = $probeArgs
+        }
+        $psi.UseShellExecute = $false
+        $psi.RedirectStandardInput = $true
+        $psi.RedirectStandardOutput = $true
+        $psi.RedirectStandardError = $true
+        $psi.CreateNoWindow = $true
+        $proc = [System.Diagnostics.Process]::Start($psi)
+        # Closed at once: the probe never reads stdin, and an OPEN inherited
+        # stdin parks a child forever, which would make a healthy candidate
+        # look dead and get it rejected.
+        $proc.StandardInput.Close()
+        $outTask = $proc.StandardOutput.ReadToEndAsync()
+        $null = $proc.StandardError.ReadToEndAsync()
+        if (-not $proc.WaitForExit($crewPythonWaitMs)) {
+          try {
+            $proc.Kill($true)
+          } catch {
+            try { & taskkill.exe /T /F /PID $proc.Id 2>&1 | Out-Null } catch { }
+            try { $proc.Kill() } catch { }
+          }
+          # Reap the killed tree with its own bound, rather than leaving it
+          # torn down but never waited on for however long that takes.
+          try { $null = $proc.WaitForExit(2000) } catch { }
+        } elseif ($proc.ExitCode -eq 0 -and $outTask.Wait(1000)) {
+          $line = @(($outTask.Result -split "`r?`n") | Where-Object { $_.Trim() })[-1]
+          $probe = $line | ConvertFrom-Json
+          $v = @($probe.v)
+          if ($probe.impl -in @('cpython', 'pypy') -and $v.Count -ge 2 -and
+              ($v[0] -is [long] -or $v[0] -is [int]) -and ($v[1] -is [long] -or $v[1] -is [int]) -and
+              ([int]$v[0] -gt 3 -or ([int]$v[0] -eq 3 -and [int]$v[1] -ge 8)) -and
+              $probe.exe -is [string]) {
+            $real = $probe.exe
+          }
+        }
+        try { $proc.Dispose() } catch { }
+      } catch {
+        $real = $null
+      }
+      if ($real) { $real = $real.ToString().Trim() }
+      if (-not $real) { continue }
+      if (-not (Test-Path -LiteralPath $real -PathType Leaf)) { continue }
+      $script:CrewPythonMemoDone = $true
+      $script:CrewPythonMemoResult = $real
+      return $real
+    }
+  }
+  $script:CrewPythonMemoDone = $true
+  $script:CrewPythonMemoResult = ''
   return ''
 }
 
@@ -162,56 +232,115 @@ $raw = [System.Text.Encoding]::UTF8.GetString($stdinBytes)
 # parity test re-derives the python side from `agents/*.md` on every run
 # and asserts this list matches it.
 $RestrictedRolesForFallback = @(
-  'analyst', 'compliance-auditor', 'dba', 'explorer',
-  'infrastructure-architect', 'kimi-consult', 'penetration-tester',
-  'planner', 'qa-researcher', 'qa-reviewer', 'researcher', 'security',
-  'pm'
+  'explorer', 'researcher', 'reviewer', 'security', 'pm'
 )
 
 function Get-FallbackRole {
   # Consulted whenever python cannot be used to reach a real decision --
   # either no candidate resolves at all, or a resolved candidate fails to
-  # launch role_write_guard.py. Never throws: an unparseable payload
-  # answers $null, the same permissive fallback role_write_guard.py itself
-  # gives one.
+  # launch role_write_guard.py.
+  #
+  # Returns @{ Role = <string-or-$null>; Determined = <bool>; Obj =
+  # <parsed-object-or-$null> } rather than a bare role string. Reported
+  # 2026-09-24 alongside role-write-guard.sh's own FIX 1/2: the OLD
+  # contract collapsed "unparseable JSON" and "a JSON array/scalar with no
+  # `agent_type` to read" into the SAME `$null` this function ALSO returns
+  # for "a well-formed object that genuinely has no `agent_type` key" --
+  # three different facts wearing one answer. The first two are "cannot
+  # tell", not "not a subagent", and CLAUDE.md's named recurring bug is
+  # exactly an unknown wearing the safe-looking value's label -- a `pm`
+  # write on a payload this could not read used to go through unjudged the
+  # same way a genuinely subagent-free write does. `Determined` is $false
+  # only for the first two; the caller fails closed on that regardless of
+  # what role a guess might have produced.
   param([string]$RawJson)
   try {
     $obj = $RawJson | ConvertFrom-Json -ErrorAction Stop
   } catch {
-    return $null
+    return @{ Role = $null; Determined = $false; Obj = $null }
+  }
+  if ($obj -isnot [System.Management.Automation.PSCustomObject]) {
+    # A JSON array or scalar parses cleanly but is not an object this can
+    # read an `agent_type` property from at all -- same "cannot tell" shape
+    # as unparseable JSON, not "no agent_type field" (which needs an
+    # OBJECT that simply omits it).
+    return @{ Role = $null; Determined = $false; Obj = $null }
+  }
+  $hasAgentType = Get-Member -InputObject $obj -Name 'agent_type' -MemberType NoteProperty -ErrorAction SilentlyContinue
+  if (-not $hasAgentType) {
+    # No `agent_type` KEY at all -- this hook fired outside a subagent.
+    # Confidently "no role", not "cannot tell".
+    return @{ Role = $null; Determined = $true; Obj = $obj }
   }
   $agentType = $obj.agent_type
-  if (-not $agentType) { return $null }
-  $role = ([string]$agentType).Trim().ToLowerInvariant()
+  if ($agentType -isnot [string]) {
+    # The key IS present but not as a string (null, a number, a bool, an
+    # array, ...) -- the bash twin's `_role_write_fallback_role` fails
+    # closed on this exact shape (its string-only regex cannot match it
+    # either), and parity between the two flavours matters more here than
+    # matching role_write_guard.py's own looser real-python behaviour
+    # (which treats any non-string `agent_type` as `None`, same as absent)
+    # -- a fallback that CANNOT confirm what real python would decide must
+    # not guess in the permissive direction.
+    return @{ Role = $null; Determined = $false; Obj = $obj }
+  }
+  $role = $agentType.Trim().ToLowerInvariant()
   if ($role.StartsWith('crew:')) { $role = $role.Substring(5).Trim() }
-  if (-not $role) { return $null }
-  return $role
+  if (-not $role) {
+    # A blank/whitespace-only string -- confidently read, and confidently
+    # empty; not the same "cannot tell" as a non-string value above.
+    return @{ Role = $null; Determined = $true; Obj = $obj }
+  }
+  return @{ Role = $role; Determined = $true; Obj = $obj }
+}
+
+# THE NO-PYTHON CONTRACT (PM decision, superseding an earlier fallback that
+# read `guards.roleWrites` per layer -- `Get-RoleWriteLayerPolicy` and
+# `Get-RoleWriteEffectivePolicy`, both removed here -- and pm's own path
+# allowances -- `Test-RoleWritePmPathAllowed`, also removed).
+#
+# `Get-RoleWriteLayerPolicy` classified a dangling config symlink the same
+# as a genuinely absent file (`Test-Path` returns $false for both), so a
+# corrupt config bypassed fail-closed and read as an unset "off" (F1
+# review). Rather than re-fix that one case, the class is gone: without
+# python this hook cannot actually EVALUATE `guards.roleWrites` (off,
+# report, or pm's own allowed patterns) at all -- role_write_guard.py is
+# the only thing that reads that policy correctly -- so it no longer
+# pretends to. The ps1 twin of role-write-guard.sh's own
+# `_role_write_fallback_decision`: it only tells a restricted role from an
+# unrestricted one (`$RestrictedRolesForFallback` above is a floor that
+# needs no config to apply) and fails CLOSED on the restricted side, or on
+# any role it cannot read at all. `off`/`report`/pm's allowances need
+# python; without it, a restricted role's write is always blocked. See
+# `plugin/crew/CONFIG.md`, next to `guards.roleWrites`.
+#
+# `$Why` is the reason this fallback is being consulted at all, for the
+# stderr message.
+function Resolve-RoleWriteFallback {
+  param([string]$RawJson, [string]$Why)
+  $fallback = Get-FallbackRole $RawJson
+
+  if (-not $fallback.Determined) {
+    [Console]::Error.WriteLine("role-write-guard: $Why; the hook payload could not be read to determine the acting role - install python so guards.roleWrites can be evaluated, or the write is blocked.")
+    exit 2
+  }
+
+  $role = $fallback.Role
+  if ($RestrictedRolesForFallback -notcontains $role) {
+    [Console]::Error.WriteLine("role-write-guard: $Why; allowing it unjudged (role '$role' is not restricted).")
+    exit 0
+  }
+
+  [Console]::Error.WriteLine("role-write-guard: $Why - python is unavailable, so guards.roleWrites (off/report/allowances) cannot be evaluated for restricted role '$role' - install python, or the write is blocked.")
+  exit 2
 }
 
 $py = Resolve-CrewPython
 if (-not $py) {
   # No candidate resolved at all -- a DIFFERENT failure than BLOCK-1 below
   # (which is a candidate that resolved, was proven executable, and then
-  # still failed to launch). Reported 2026-09-24 alongside the WindowsApps
-  # resolver fix: fixing the resolver alone still leaves a genuinely
-  # python-less host (or any other total-resolution failure) falling
-  # through to an unconditional "allow it unjudged" -- which for a role
-  # this table ALREADY knows is restricted (`pm`, or a `_DENY_ROLES`
-  # member) throws away a decision that needed no python at all. A
-  # `_DENY_ROLES` role may not write ANY file regardless of path; `pm` is
-  # refused for anything outside its own patterns often enough that
-  # collapsing "cannot judge" into "allow" for either is exactly CLAUDE.md's
-  # named recurring bug ("an unknown collapsing into the safe-looking
-  # value"), not a neutral default. Mirrors BLOCK-1's own
-  # $RestrictedRolesForFallback / Get-FallbackRole exactly, so both failure
-  # modes agree on which roles fail closed.
-  $fallbackRole = Get-FallbackRole $raw
-  if ($RestrictedRolesForFallback -contains $fallbackRole) {
-    [Console]::Error.WriteLine("role-write-guard: no usable python found - cannot judge this write; failing closed for role ``$fallbackRole``.")
-    exit 2
-  }
-  [Console]::Error.WriteLine("role-write-guard: no usable python found - cannot judge this write; allowing it unjudged.")
-  exit 0
+  # still failed to launch).
+  Resolve-RoleWriteFallback $raw "no usable python found"
 }
 
 $scriptPath = Join-Path $dir 'role_write_guard.py'
@@ -282,13 +411,7 @@ if ($null -eq $exitCode) {
   # permissions, antivirus, ...) -- rare, but not nonexistent, and not
   # evidence a write from a role this table already knows is restricted
   # is safe to let through.
-  $fallbackRole = Get-FallbackRole $raw
-  if ($RestrictedRolesForFallback -contains $fallbackRole) {
-    [Console]::Error.WriteLine("role-write-guard: could not launch the python interpreter ($py) to judge this write; failing closed for role ``$fallbackRole``. $launchFailure")
-    exit 2
-  }
-  [Console]::Error.WriteLine("role-write-guard: could not launch the python interpreter ($py) to judge this write; allowing it unjudged. $launchFailure")
-  exit 0
+  Resolve-RoleWriteFallback $raw "could not launch the python interpreter ($py) to judge this write. $launchFailure"
 }
 
 exit $exitCode

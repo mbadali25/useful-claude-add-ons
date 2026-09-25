@@ -167,6 +167,19 @@ join between the schema and the code map: it answers "if I change this column,
 what breaks", which is the question a migration review turns on. Derive it from
 the graph where the graph can see it, and from grep where it cannot.
 
+## 6. Generate the path-scoped rules
+
+After any codemap note is written or refreshed, `--refresh` included, run:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_instructions.py" rules --root .
+```
+
+It writes `.claude/rules/<subsystem>.md` (≤30 lines, `paths:`-scoped, source hash) from each
+note. Report every `wrote` and `removed` line. A `hand-written, left alone` line is a collision:
+report it, never overwrite or rename it yourself. Commit the rules with the notes; CI checks them
+for drift.
+
 ## Then make the knowledge executable
 
 A code map describes; it does not verify. Onboarding is not finished until the
@@ -182,10 +195,11 @@ repo also has:
 3. `.crew/secrets.md` — record where test credentials come from and which env
    var each lands in. Names and retrieval commands only, never values. See the
    `crew-verification` skill.
-4. `e2e/` specs if this repo has a UI — delegate to `crew:browser-tester`.
+4. `e2e/` specs if this repo has a UI — write them in this session.
+5. `context.autoClear` configured — run `crew_autoclear_setup.py plan-windows-default` (`${CLAUDE_PLUGIN_ROOT}/hooks/scripts/`; the same helper `/crew:init`'s Phase 1 uses, so a repo onboarded standalone gets the identical question). `status: unreadable` (parse failure) means say so and stop, fix by hand first. `status: already-configured` means stop, nothing to ask — a retained pre-1.0 `method: "windows"` is proposed for conversion instead, never already-configured. Otherwise, on native Windows propose `method: "notify"` and write it only on yes; elsewhere describe the tmux path and write nothing. Enabling it at all, and `sendkeys`, each need their own separate explicit yes.
 
-Report which of the four are missing when you finish. A codemap on its own is
-the least useful of the five artifacts.
+Report which of the five are missing when you finish. A codemap on its own is
+the least useful of the six artifacts.
 
 ## `--refresh <subsystem>`
 
@@ -232,4 +246,4 @@ consequences before running it, not after:
   stale anchors) instead of repeating that status verbatim.
 
 Report any conflicts and any anchor left stale on purpose exactly as
-`/crew:upgrade` does — surfaced, not resolved.
+`/crew:upgrade` does — surfaced, not resolved. Then run step 6.

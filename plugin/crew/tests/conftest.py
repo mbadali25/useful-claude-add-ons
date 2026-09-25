@@ -9,11 +9,17 @@ that specifically exercises the global layer overrides it again with its own
 scratch file; `monkeypatch` allows a later `setattr` to win within the same
 test and undoes everything at teardown regardless of ordering.
 """
+import re
+
 import pytest
 
 import context  # noqa: F401  pylint: disable=unused-import
 import crew_config
 import crew_state
+# Re-exported so pytest discovers it as a fixture package-wide (fixture
+# discovery is by name in a conftest module's namespace, not by definition
+# site) -- see crew_fixtures.gate_processes's own docstring for what it does.
+from crew_fixtures import gate_processes  # noqa: F401  pylint: disable=unused-import
 
 
 @pytest.fixture(autouse=True)
@@ -53,3 +59,56 @@ def _no_real_global_config(tmp_path, monkeypatch):
     # afterwards (`monkeypatch.setenv`, or an explicit `env=` for a subprocess)
     # and that still wins; this only removes the ambient value nobody declared.
     monkeypatch.delenv("CLAUDE_PROJECT_DIR", raising=False)
+
+
+# --- the `slow` marker: the full per-shell hook matrix ------------------------
+#
+# A conftest hook rather than `addopts = -m "not slow"`: this repo has no
+# pytest ini, and one at the root would reach every suite CI collects in the
+# same process (gizmoduck, the skills), while a `-m` given on the command line
+# REPLACES an addopts `-m` rather than combining with it. The hook touches only
+# items that carry the marker, and only crew's tests carry it.
+#
+#   pytest plugin/crew/tests               the slow set is deselected
+#   pytest plugin/crew/tests -m slow       only the slow set
+#   pytest plugin/crew/tests --run-slow    everything
+#
+# `-n auto` (pytest-xdist: optional, not a dependency) works with all three.
+
+
+def pytest_addoption(parser):
+    parser.addoption(
+        "--run-slow", action="store_true", default=False,
+        help="crew: also run tests marked `slow` (the full bash/pwsh hook "
+             "matrix). `-m slow` runs only those.")
+
+
+def pytest_configure(config):
+    config.addinivalue_line(
+        "markers",
+        "slow: the full bash/pwsh driver matrix for a hook; deselected by "
+        "default, run with -m slow or --run-slow")
+
+
+_SLOW_TOKEN_RE = re.compile(r"(?<!\w)slow(?!\w)")
+
+
+def pytest_collection_modifyitems(config, items):
+    """Deselect `slow` unless asked for, by `--run-slow` or by any `-m`
+    expression naming it -- so `-m slow` and `-m "slow and not pwsh"` both
+    select from the full set rather than from an already-emptied one.
+
+    `_SLOW_TOKEN_RE` is a WORD match, not `"slow" in markexpr`: a bare
+    substring check reads `slow` inside `slowfoo` too, so `-m "not slowfoo"`
+    -- a marker that has nothing to do with this one -- read as "slow was
+    named" and returned early, collecting the full set (including the
+    deselected-by-default matrix) instead of applying the expression the
+    caller actually asked for."""
+    if config.getoption("--run-slow") or _SLOW_TOKEN_RE.search(config.option.markexpr or ""):
+        return
+    keep, drop = [], []
+    for item in items:
+        (drop if item.get_closest_marker("slow") else keep).append(item)
+    if drop:
+        config.hook.pytest_deselected(items=drop)
+        items[:] = keep

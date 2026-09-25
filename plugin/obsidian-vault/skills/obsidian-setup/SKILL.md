@@ -24,6 +24,14 @@ is a successful diagnosis, not a crash.
 | Register or re-register MCP servers | `register [--vault NAME \| --all] [--apply]` |
 | Install the REST plugin into a vault that lacks it | `enable-plugin [--vault NAME \| --all] [--apply]` |
 | Check a code-graph vault's graph output | `graph-health [--vault NAME] [--fix]` |
+| Is Obsidian installed (installed / missing / unknown) | `detect-obsidian [--json]` |
+| Install Obsidian only when absent | `install-obsidian [--method snap\|flatpak\|deb\|appimage] [--apply]` |
+| Create a new vault and name it | `create-vault --name N --path P [--apply]` |
+| Give every vault a role: primary / recall / ignore | `adopt [--role NAME=ROLE ...] [--apply]` |
+| Import a folder or vault into the primary vault | `import --source DIR\|VAULT [--apply]` |
+| Read-only recall (the context-hook contract) | `recall --query TEXT [--vaults A,B] [--max-chars N] --json` |
+| Gardener queue, one bounded run, backlog | `queue`, `garden-run`, `drain [--apply]` |
+| Print (never install) a daily gardener unit | `schedule --os cron\|systemd\|windows [--designate --apply]` |
 
 `--json` is available on the read-only subcommands only. `graph-health` takes
 `--fix`, not `--apply`.
@@ -62,7 +70,54 @@ A vault that `scan` lists but config does not is a real vault with real bound
 ports and no name this plugin can pass to `--vault`. Give it one with
 `/obsidian-vault:init <name> <path>` before anything else can address it.
 
+### 1a. Give every vault a role
+
+```
+python "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/vault_ops.py" adopt
+```
+
+lists every vault `scan` finds with its current role. Ask about **each vault
+separately** - one question, one answer - and offer three roles:
+
+- `primary` - receives captures, gardening and imports. **Exactly one.**
+- `recall` - read by `recall` for injection into sessions; never written.
+- `ignore` - recorded so a re-run does not ask again; never recalled, written, or
+  included in `--all`.
+
+Then write all the answers in one call, dry run first:
+
+```
+python "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/vault_ops.py" adopt --role memory=primary --role work=recall --role journal=ignore
+python "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/vault_ops.py" adopt --role memory=primary --role work=recall --role journal=ignore --apply
+```
+
+The result is refused, and nothing is written, when it would leave zero or two
+primaries - so moving the primary means demoting the old one in the same call
+(`--role old=recall --role new=primary`). The primary is also made `default`,
+which is what the capture hook and the guard have always followed. A re-run
+with the same answers prints "Nothing to change" and does not touch the file.
+
 ## 2. Install Obsidian if missing
+
+Detect first; install only on `missing`, and only after a yes:
+
+```
+python "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/vault_ops.py" detect-obsidian
+python "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/vault_ops.py" install-obsidian
+python "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/vault_ops.py" install-obsidian --apply
+```
+
+`detect-obsidian` checks winget and the usual install paths on Windows, and
+snap (`/snap/bin/obsidian`), Flatpak, the `obsidian` deb and AppImage locations
+on Linux. It answers `installed`, `missing` or `unknown`; `unknown` means no
+probe could run, and `install-obsidian` refuses it rather than risk a second
+copy. The dry run prints the exact command (`winget install --id
+Obsidian.Obsidian -e ...`, `sudo snap install obsidian --classic`, `flatpak
+install -y flathub md.obsidian.Obsidian`); a deb or AppImage is a manual
+download it describes and never fetches. When nothing exists yet, `create-vault
+--name N --path P` makes the folder and its config entry, dry run first.
+
+The per-OS notes below are the background for that choice.
 
 **Windows:** `winget install Obsidian.Obsidian` (winget is on PATH by default
 on Windows 10 2004+ / Windows 11).

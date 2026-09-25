@@ -92,12 +92,12 @@ def _repo(tmp_path, verify_map=None, config=None):
     for args in (("init", "-q"), ("config", "user.email", "t@example.invalid"),
                  ("config", "user.name", "t")):
         subprocess.run(("git",) + args, cwd=root, check=True,
-                       capture_output=True, text=True)
+                       capture_output=True, text=True, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
     (root / "README.md").write_text("committed", encoding="utf-8")
     subprocess.run(("git", "add", "-A"), cwd=root, check=True,
-                   capture_output=True, text=True)
+                   capture_output=True, text=True, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
     subprocess.run(("git", "commit", "-q", "-m", "fixture"), cwd=root,
-                   check=True, capture_output=True, text=True)
+                   check=True, capture_output=True, text=True, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
     (root / "a.py").write_text("x = 1", encoding="utf-8")
     (root / ".crew" / "verify.json").write_text(
         json.dumps(verify_map if verify_map is not None else _GREEN),
@@ -113,10 +113,10 @@ def _run(flavour, root, *extra):
     else:
         cmd = [_PWSH, "-NoProfile", "-NonInteractive", "-File", _PS1,
                *[a.replace("--all", "-All") for a in extra]]
-    return subprocess.run(
+    return crew_fixtures.run_gate(
         cmd, input="{}", cwd=str(root),
         env=dict(os.environ, CLAUDE_PROJECT_DIR=str(root)),
-        capture_output=True, text=True, check=False,
+        capture_output=True, text=True, check=False, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S,
     )
 
 
@@ -435,21 +435,21 @@ def _staged_mode_repo(tmp_path):
     for args in (("init", "-q"), ("config", "user.email", "t@example.invalid"),
                  ("config", "user.name", "t")):
         subprocess.run(("git",) + args, cwd=root, check=True,
-                       capture_output=True, text=True)
+                       capture_output=True, text=True, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
     script = root / "s.sh"
     script.write_text("#!/bin/sh" + chr(10) + "echo hi" + chr(10),
                       encoding="utf-8")
     subprocess.run(("git", "add", "s.sh"), cwd=root, check=True,
-                   capture_output=True, text=True)
+                   capture_output=True, text=True, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
     subprocess.run(("git", "commit", "-q", "-m", "add"), cwd=root, check=True,
-                   capture_output=True, text=True)
+                   capture_output=True, text=True, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
     return root
 
 
 def _head(root):
     return subprocess.run(("git", "rev-parse", "HEAD"), cwd=root,
                           capture_output=True, text=True,
-                          check=True).stdout.strip()
+                          check=True, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S).stdout.strip()
 
 
 def test_a_staged_mode_change_moves_the_digest(tmp_path):
@@ -467,7 +467,7 @@ def test_a_staged_mode_change_moves_the_digest(tmp_path):
     before = verify_fingerprint.fingerprint(str(root), ["s.sh"])
 
     subprocess.run(("git", "update-index", "--chmod=+x", "s.sh"), cwd=root,
-                   check=True, capture_output=True, text=True)
+                   check=True, capture_output=True, text=True, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
 
     assert _head(root) == head_before, (
         "this case is about an UNCOMMITTED mode change; if HEAD moved, the "
@@ -579,12 +579,12 @@ def _invariant_repo(tmp_path, name, rule_path, command):
     for args in (("init", "-q"), ("config", "user.email", "t@example.invalid"),
                  ("config", "user.name", "t")):
         subprocess.run(("git",) + args, cwd=root, check=True,
-                       capture_output=True, text=True)
+                       capture_output=True, text=True, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
     (root / "README.md").write_text("committed", encoding="utf-8")
     subprocess.run(("git", "add", "-A"), cwd=root, check=True,
-                   capture_output=True, text=True)
+                   capture_output=True, text=True, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
     subprocess.run(("git", "commit", "-q", "-m", "fixture"), cwd=root,
-                   check=True, capture_output=True, text=True)
+                   check=True, capture_output=True, text=True, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
     (root / ".crew" / "verify.json").write_text(json.dumps({
         "version": 1,
         # reach: local - these fixtures test fingerprint-digest coverage,
@@ -621,14 +621,14 @@ def _state_staged_contents(tmp_path):
                            "git show :a.txt | grep -q GOOD")
     (root / "a.txt").write_text("GOOD", encoding="utf-8")
     subprocess.run(("git", "add", "a.txt"), cwd=root, check=True,
-                   capture_output=True, text=True)
+                   capture_output=True, text=True, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
 
     def break_it():
         # Stage FAILING contents, then put the PASSING contents back on disk.
         # Every byte the digest used to look at ends up where it was.
         (root / "a.txt").write_text("BAD", encoding="utf-8")
         subprocess.run(("git", "add", "a.txt"), cwd=root, check=True,
-                       capture_output=True, text=True)
+                       capture_output=True, text=True, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
         (root / "a.txt").write_text("GOOD", encoding="utf-8")
     return root, break_it
 
@@ -673,23 +673,23 @@ def _submodule_repo(root):
     for args in (("init", "-q"), ("config", "user.email", "t@example.invalid"),
                  ("config", "user.name", "t")):
         subprocess.run(("git",) + args, cwd=inner, check=True,
-                       capture_output=True, text=True)
+                       capture_output=True, text=True, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
     (inner / "a.txt").write_text("good", encoding="utf-8")
     for args in (("add", "-A"), ("commit", "-q", "-m", "inner")):
         subprocess.run(("git",) + args, cwd=inner, check=True,
-                       capture_output=True, text=True)
+                       capture_output=True, text=True, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
 
     added = subprocess.run(
         ("git", "-c", "protocol.file.allow=always", "submodule", "add", "-q",
          "../" + inner.name, "sub"),
-        cwd=root, capture_output=True, text=True, check=False)
+        cwd=root, capture_output=True, text=True, check=False, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
     if added.returncode != 0 or not (root / "sub" / "a.txt").exists():
         pytest.skip("MEASURED: `git submodule add` exited "
                     + str(added.returncode) + " here -- stderr: "
                     + repr(added.stderr.strip()) + "; sub/a.txt present: "
                     + str((root / "sub" / "a.txt").exists()))
     subprocess.run(("git", "commit", "-q", "-m", "add submodule"), cwd=root,
-                   check=True, capture_output=True, text=True)
+                   check=True, capture_output=True, text=True, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
     # DIRTY, and still passing. Writing back the committed bytes leaves the
     # submodule CLEAN, and a clean submodule is not in `git diff --name-only`
     # at all -- so the rule on `sub` would never match, the seeding run would
@@ -706,7 +706,7 @@ def _submodule_repo(root):
     (root / "sub" / "a.txt").write_text("good and dirty", encoding="utf-8")
     changed = subprocess.run(("git", "diff", "--name-only", "HEAD"), cwd=root,
                              capture_output=True, text=True,
-                             check=True).stdout.split()
+                             check=True, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S).stdout.split()
     assert "sub" in changed, (
         "the fixture must leave the submodule DIRTY, or `sub` is not in the "
         "changed set and every case built on it is vacuous. git reported: "
@@ -718,7 +718,7 @@ def _submodule_repo(root):
 def _gitlink(root):
     return subprocess.run(("git", "ls-files", "-s", "sub"), cwd=root,
                           capture_output=True, text=True,
-                          check=True).stdout.strip()
+                          check=True, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S).stdout.strip()
 
 
 def _state_submodule_contents(tmp_path):
@@ -798,19 +798,19 @@ def test_staged_contents_move_the_digest(tmp_path):
     for args in (("init", "-q"), ("config", "user.email", "t@example.invalid"),
                  ("config", "user.name", "t")):
         subprocess.run(("git",) + args, cwd=root, check=True,
-                       capture_output=True, text=True)
+                       capture_output=True, text=True, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
     target = root / "a.txt"
     target.write_text("GOOD", encoding="utf-8")
     subprocess.run(("git", "add", "a.txt"), cwd=root, check=True,
-                   capture_output=True, text=True)
+                   capture_output=True, text=True, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
     subprocess.run(("git", "commit", "-q", "-m", "fixture"), cwd=root,
-                   check=True, capture_output=True, text=True)
+                   check=True, capture_output=True, text=True, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
     head_before = _head(root)
     before = verify_fingerprint.fingerprint(str(root), ["a.txt"])
 
     target.write_text("BAD", encoding="utf-8")
     subprocess.run(("git", "add", "a.txt"), cwd=root, check=True,
-                   capture_output=True, text=True)
+                   capture_output=True, text=True, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
     target.write_text("GOOD", encoding="utf-8")
 
     assert _head(root) == head_before, (
@@ -845,7 +845,7 @@ def test_the_path_list_is_not_trimmed(tmp_path):
     def digest_for(stdin_text):
         out = subprocess.run((sys.executable, script, str(root)),
                              input=stdin_text, capture_output=True, text=True,
-                             check=True)
+                             check=True, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
         return out.stdout.strip()
 
     spaced = digest_for(_LEADING + chr(10))
@@ -873,11 +873,11 @@ def test_a_dirty_submodule_moves_the_digest(tmp_path):
     for args in (("init", "-q"), ("config", "user.email", "t@example.invalid"),
                  ("config", "user.name", "t")):
         subprocess.run(("git",) + args, cwd=root, check=True,
-                       capture_output=True, text=True)
+                       capture_output=True, text=True, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
     (root / "README.md").write_text("committed", encoding="utf-8")
     for args in (("add", "-A"), ("commit", "-q", "-m", "fixture")):
         subprocess.run(("git",) + args, cwd=root, check=True,
-                       capture_output=True, text=True)
+                       capture_output=True, text=True, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
     target = _submodule_repo(root)
 
     link_before = _gitlink(root)
@@ -910,11 +910,11 @@ def test_a_clean_submodule_hashes_the_same_twice(tmp_path):
     for args in (("init", "-q"), ("config", "user.email", "t@example.invalid"),
                  ("config", "user.name", "t")):
         subprocess.run(("git",) + args, cwd=root, check=True,
-                       capture_output=True, text=True)
+                       capture_output=True, text=True, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
     (root / "README.md").write_text("committed", encoding="utf-8")
     for args in (("add", "-A"), ("commit", "-q", "-m", "fixture")):
         subprocess.run(("git",) + args, cwd=root, check=True,
-                       capture_output=True, text=True)
+                       capture_output=True, text=True, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
     _submodule_repo(root)
 
     first = verify_fingerprint.fingerprint(str(root), ["sub"])

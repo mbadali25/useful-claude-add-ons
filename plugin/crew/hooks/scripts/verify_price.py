@@ -31,9 +31,9 @@ UNDERPRICES the real cost the next time the environment IS present and the
 command actually executes.
 
 ENV PINNING, shared with the gates via verify_record.pinned_env: a rule
-declaring `env` is timed under exactly those values; the five variables the
-gate always pins (ENV, AWS_PROFILE, AWS_DEFAULT_REGION, KUBECONFIG,
-TF_WORKSPACE) are otherwise unset. Without this, an operator's own
+declaring `env` is timed under exactly those values; the variables the
+gate always pins (verify_record.PINNED_VARS: ENV, AWS_PROFILE, AWS_REGION,
+the Azure subscription ids, TF_WORKSPACE and more) are otherwise unset. Without this, an operator's own
 AWS_PROFILE=prod rode straight into a `seconds` measurement meant to be
 reusable by everyone who reads the map afterward - not by the person who
 happened to run --price.
