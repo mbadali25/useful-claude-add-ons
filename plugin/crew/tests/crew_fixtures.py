@@ -720,6 +720,79 @@ def resolve_bash():
     return _BASH
 
 
+_BASH_NO_PREPEND = "unprobed"
+
+
+def resolve_bash_no_prepend():
+    """A bash that does NOT silently prepend `/mingw64/bin:/usr/bin` ahead
+    of whatever PATH a caller hands the subprocess -- for tests that
+    shadow a real tool (mktemp, cygpath, ...) with a stub placed first on
+    PATH, where `resolve_bash()`'s ordinary pick (Git for Windows' `bin/
+    bash.exe` launcher shim) always finds the REAL tool first regardless
+    of what PATH the test built.
+
+    Proven directly: `bin/bash.exe` handed a PATH with a stub dir first
+    still reports `${PATH%%:*}` as `/mingw64/bin` and `command -v mktemp`
+    as `/usr/bin/mktemp` -- the stub is never reached, so a test relying
+    on it (counting invocations, or failing on demand) silently exercises
+    nothing.
+
+    On Windows this returns Git for Windows' OTHER bash, `usr/bin/
+    bash.exe` (confirmed empirically: PATH survives through it
+    unchanged). This is narrower than it sounds and does not contradict
+    `test_the_cygpath_branch_is_taken_when_cygpath_is_present`'s finding
+    that usr/bin/bash.exe "cannot exec any native Windows executable at
+    all": that test scopes PATH down to ONLY a symlink-only directory
+    (`_scoped_tools_dir`/`_NEEDED_TOOLS`), which is exactly the case usr/
+    bin/bash.exe cannot resolve, because nothing bootstraps its POSIX-to-
+    Windows mount table for a tool reachable ONLY via a symlink placed
+    outside its own install tree. A caller here instead PREPENDS a stub
+    dir onto this process's own INHERITED PATH (via `shell_path`), so
+    every real external tool the gate needs (git, sed, mktemp, ...) stays
+    reachable exactly where usr/bin/bash.exe's own fstab already mounts
+    it -- verified directly for this repo's gate: `git --version` and a
+    real `mktemp` both resolve and exec fine under usr/bin/bash.exe with
+    an inherited-plus-prepended PATH, and a full verify-gate.sh run
+    completes and reaches a stubbed `mktemp` (counter advances) instead
+    of silently using the real one. Use this ONLY for a PATH built by
+    prepending onto the inherited PATH, never for one scoped to symlinks
+    only -- that case stays on `resolve_bash()`'s shim (or a `skipif`
+    naming this file's docstring, per the cygpath test above) instead.
+
+    Returns None -- skip the test, not fail it -- when this machine has
+    no Git for Windows `usr/bin/bash.exe`, or it fails the same
+    executability probe `resolve_bash()` uses (`_usable`).
+
+    Windows only. Off Windows it returns None without probing anything:
+    there is no prepending launcher to route around, so a caller uses
+    `resolve_bash()` there and never calls this at all. None, rather than
+    a quiet alias of `resolve_bash()`, so a caller that forgets the
+    `os.name` branch skips visibly instead of silently testing the wrong
+    bash.
+    """
+    global _BASH_NO_PREPEND  # pylint: disable=global-statement
+    if _BASH_NO_PREPEND != "unprobed":
+        return _BASH_NO_PREPEND
+
+    if os.name != "nt":
+        _BASH_NO_PREPEND = None
+        return _BASH_NO_PREPEND
+
+    for guess in (r"C:\Program Files\Git\usr\bin\bash.exe",
+                  r"C:\Program Files (x86)\Git\usr\bin\bash.exe"):
+        if os.path.isfile(guess) and _usable(guess):
+            _BASH_NO_PREPEND = guess
+            return _BASH_NO_PREPEND
+
+    print(
+        "crew tests: no usable non-prepending bash (Git for Windows' "
+        "usr/bin/bash.exe) - a PATH-shadowing 'sh' test is SKIPPED, not "
+        "failed.", file=sys.stderr,
+    )
+    _BASH_NO_PREPEND = None
+    return _BASH_NO_PREPEND
+
+
 _PWSH = "unprobed"
 
 
