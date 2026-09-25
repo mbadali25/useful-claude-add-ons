@@ -948,7 +948,7 @@ for.
 | `"xdotool"` | Types into the one X11 window owned by an ancestor process (or matching `windowTitle`). | Linux with `xdotool` installed |
 | `"wtype"` | Refused outright — see `unsafeFocus`, above. | Wayland (declared, never granted) |
 | `"notify"` | Types nothing. Prints a `systemMessage` saying the handoff is written and verified and it is safe to run the configured `command` yourself. Never claims anything was cleared or compacted, because nothing was. | everywhere |
-| `"sendkeys"` | `System.Windows.Forms.SendKeys` against the one window owned by an ancestor process (or matching `windowTitle`), confirmed still foreground at send time. **Opt-in only — `auto` never chooses it.** Windows Terminal hosts every tab in ONE OS window, so the foreground-window check alone cannot tell which tab is showing: when the target window is owned by Windows Terminal, `auto-clear.ps1` also asks UI Automation how many tabs it has and, when there is more than one, whether the selected tab is uniquely this session's (its title matching `windowTitle`). It types only when that check finds exactly one tab, or proves the selected one; otherwise — UI Automation unavailable, an exception, zero tab elements found, or several tabs with no provable selection — it **declines and falls back to `notify`**, logging why to `.crew/.autoclear.log`. Never falls back to sending regardless. A non-Windows-Terminal console host (e.g. `conhost`) has no tabs to disambiguate and is unaffected by any of this. | native Windows only |
+| `"sendkeys"` | `System.Windows.Forms.SendKeys` against the one window owned by an ancestor process (or matching `windowTitle`), confirmed still foreground at send time. **Opt-in only — `auto` never chooses it.** Windows Terminal hosts every tab in ONE OS window, so the foreground-window check alone cannot tell which tab is showing: when the target window is owned by Windows Terminal, `auto-clear.ps1` also asks UI Automation how many tabs it has. It types only when that check finds **exactly one tab** — a window with one tab has that tab selected by definition, so that case needs no further proof. Two or more tabs **always declines**, however confidently a tab's shell-set name matches `windowTitle` or reads as selected: there is no tab-to-pid mapping, so a "proven" match is still a guess about which tab is this session's, and a wrong guess types into someone else's work. UI Automation being unavailable, throwing, or finding zero tab elements declines the same way and for the same reason — "could not tell" is never treated as safe. Every decline **falls back to `notify`**, logging why to `.crew/.autoclear.log`; it never falls back to sending regardless. A non-Windows-Terminal console host (e.g. `conhost`) has no tabs to disambiguate and is unaffected by any of this. | native Windows only |
 | `"none"` | Refused outright, deliberately. | everywhere |
 
 **`auto`'s per-platform pick, an OWNER DECISION:** a tmux pane if `$TMUX` names
@@ -962,12 +962,28 @@ your behalf. Request `sendkeys` by name to opt in to it.
 
 ### What the widening costs
 
-`windowTitle` is the guard that stops SendKeys typing into whatever happens to
-have focus: `auto-clear.ps1` calls it REQUIRED and the SendKeys call refuses to send
-without it. Machine-global is the right home for it — a terminal's title is a
-property of the machine — but **a wrong global value now aims keystrokes at the
-wrong window in every repo on that machine rather than in one.** That is the
-trade, taken deliberately.
+`windowTitle` narrows SendKeys down to one window when owner-pid resolution
+alone cannot: `auto-clear.ps1` tries the ancestor terminal process's own pid
+first, and only reaches for `windowTitle` when that pid owns zero or several
+windows (the exact decline text is "the terminal that owns this session (pid
+N) has N windows and nothing narrows them to one - set
+context.autoClear.windowTitle"). On Windows Terminal specifically, this is
+not a rare fallback — **it is effectively mandatory as soon as more than one
+Windows Terminal window is open on the desktop.** Windows Terminal hosts
+every WINDOW (not just every tab) on one desktop inside a single process, so
+every one of a user's open Windows Terminal windows reports the SAME owning
+pid. The owner-pid walk then matches all of them, not just this session's,
+and declines unless `windowTitle` narrows the match to one — measured
+2026-09-24: four Windows Terminal windows open on one desktop all reported
+pid 14164. A repo that never sets `windowTitle` will work the day someone
+tests it with exactly one Windows Terminal window open, and silently stop
+working (declining, never sending into the wrong window — but doing nothing
+either) the day a second one opens.
+
+Machine-global is the right home for `windowTitle` — a terminal's title is a
+property of the machine — but **a wrong global value now aims keystrokes at
+the wrong window in every repo on that machine rather than in one.** That is
+the trade, taken deliberately.
 
 **`--dry-run`'s delay line never states a number for `notify`.** `notify`
 types nothing, so `delaySeconds` buys it nothing; both `auto-clear.sh` and

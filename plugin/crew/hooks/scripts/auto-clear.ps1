@@ -630,14 +630,28 @@ function Get-CrewSendKeysTabDecision([bool]$UiaAvailable, $TabCount, [bool]$Sele
       "no tab elements could be found to confirm which one is active") }
   }
   if ($TabCount -eq 1) {
+    # A window with exactly one tab has that tab selected by definition --
+    # this is the ONLY case this function may ever return "send".
     return @{ Decision = "send"; Reason = "" }
   }
-  if ($SelectedMatches) {
-    return @{ Decision = "send"; Reason = "" }
+  # Multi-tab can NEVER be proven safe, however confidently $SelectedMatches
+  # reads: tab names are shell-set text, there is no tab-to-pid mapping, and
+  # a wrong guess types into a tab that is not this session's (measured
+  # desktop: a 4-tab window whose tabs included two sessions under standing
+  # orders not to disturb). $SelectedMatches plays no part in the DECISION --
+  # decided 2026-09-24, narrower than an earlier draft of this function that
+  # sent on a proven selection -- but it is still surfaced in the decline
+  # Reason as diagnostic detail, so a log reader can tell "a tab's title
+  # matched and was selected, and we STILL declined" from "nothing matched
+  # at all" without re-deriving it from the UIA probe.
+  $selectedNote = if ($SelectedMatches) {
+    "a tab's title matched windowTitle and read as selected"
+  } else {
+    "no tab's title was both matched and selected"
   }
   return @{ Decision = "decline"; Reason = (
     "cannot verify the active tab - Windows Terminal has $TabCount tabs and the active one " +
-    "could not be proven to be this session's") }
+    "could not be proven to be this session's ($selectedNote)") }
 }
 
 # Real IO against a live Windows Terminal window -- NOT unit-tested on Linux,
