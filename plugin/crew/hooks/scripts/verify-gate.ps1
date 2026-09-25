@@ -1683,7 +1683,20 @@ foreach ($ident in $cmds) {
       $prevRuleOut = $env:CREW_VERIFY_RULE_OUT
       $env:CREW_VERIFY_RULE_CMD = $c
       $env:CREW_VERIFY_RULE_OUT = ($ruleOutFile -replace '\\', '/')
-      $wrapperScript = 'eval "$CREW_VERIFY_RULE_CMD" > "$CREW_VERIFY_RULE_OUT" 2>&1 </dev/null'
+      # Being SCOPED to this rule (restored/cleared after, above) only
+      # protects the NEXT rule - it does nothing about THIS one: bash
+      # inherits its whole environment at spawn, so CREW_VERIFY_RULE_CMD
+      # and CREW_VERIFY_RULE_OUT are both still visible to the RULE'S OWN
+      # eval'd command (and anything it shells out to) for the entire time
+      # it runs, e.g. a rule that does `env | grep CREW_VERIFY` sees its
+      # own source text and output-capture path as if they were legitimate
+      # target-selection input. Copied into local (non-exported) shell
+      # variables first, then unset from bash's own environment, BEFORE
+      # eval runs - the same shape verify-gate.sh's RULE_OUT_FILE already
+      # has for free there (a plain shell variable, never exported), so
+      # this is parity with that twin, not a new leak this flavour alone
+      # has to carry.
+      $wrapperScript = 'c="$CREW_VERIFY_RULE_CMD"; o="$CREW_VERIFY_RULE_OUT"; unset CREW_VERIFY_RULE_CMD CREW_VERIFY_RULE_OUT; eval "$c" > "$o" 2>&1 </dev/null'
       $null | & $bashExe -c $wrapperScript
       $rc = $LASTEXITCODE
       if ($null -eq $prevRuleCmd) { Remove-Item Env:\CREW_VERIFY_RULE_CMD -ErrorAction SilentlyContinue } else { $env:CREW_VERIFY_RULE_CMD = $prevRuleCmd }
