@@ -6,6 +6,28 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Changed
 
+- **`crew` 1.0.25: re-anchor B2's structural test on B3's invocation shape,
+  and tell SKIPPED apart from PASSED in the sabotage harness.**
+  Bumped `1.0.24 -> 1.0.25`.
+  - `test_verify_gate_bash_empty_refusal.py`'s rule-loop test anchored on
+    the pre-B3 `& $bashExe -c $c > $ruleOutFile` invocation shape, which B3
+    replaced with a wrapper script bash runs itself
+    (`$null | & $bashExe -c $wrapperScript`); the old markers raised a bare
+    `ValueError`. Re-anchored on the real invocation and the `$ruleOutFile
+    = $null` reset, each asserted to occur exactly once before use. Test
+    fixup only — the guard itself (`verify-gate.ps1:1665-1674`) was already
+    correct and unchanged.
+  - `sabotage_autocycle.py`'s `run_test` now reads its own `--junitxml`
+    report to tell a skipped testcase from a passed one, so a mutation
+    targeting `Get-CrewChildTabRecheck` (whose regression test is
+    Windows-only) no longer reads as "STILL GREEN - VACUOUS" when the
+    target test never ran at all.
+  - New Linux-runnable structural test,
+    `test_auto_clear_child_tab_recheck_structure.py`, asserting the
+    `IsWindowsTerminal` guard is `Get-CrewChildTabRecheck`'s first
+    statement, with a matching `sabotage_autocycle.py` entry so the same
+    mutation has a target that goes red on every host, not only Windows.
+
 - **`crew` 1.0.24: native-Windows PowerShell B3 and round-2 fixes, from
   win-repo-2 (`crew-1.0-win-ps1-gate` 7d8a0002/1958292d, `crew-1.0-win-ps1-r2`).**
   Bumped `1.0.23 -> 1.0.24`.
