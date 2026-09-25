@@ -4652,17 +4652,30 @@ failures, same numbers:
   invokes `bash.exe`, orthogonal to file-vs-pipe capture. Not diagnosed further or fixed - the mechanism that
   would fix it is the per-rule process-group kill (`verify-gate.sh`'s `1bba9725`), which this ticket's brief
   explicitly forbade porting to `.ps1`.
+
+  **CORRECTED 2026-09-25 (B3, sha `7d8a0002`, then amended): the paragraph above was wrong about there being
+  no fix without the kill.** The wedge was never in the pipe-vs-file choice - it is that PowerShell's own
+  `>`/`2>&1` redirect operators on a native command relay the child's output through a PIPE PowerShell itself
+  manages (not a raw OS file handle), so a grandchild that merely inherits that pipe wedges the relay
+  regardless of file-vs-pipe capture. Handing the rule command to bash through an env var and letting bash's
+  own `eval "$CMD" > "$OUT" 2>&1 </dev/null` do the redirect gives the child a real file handle - measured
+  8073ms -> 90ms on the identical repro this entry used, no process-group kill involved. `test_34b[ps1]` is
+  green as of that commit. See `verify-gate.ps1`'s comment beside the `elseif ($ruleOutFile)` branch for the
+  full mechanism and measurements.
 - `test_34d_a_second_mktemp_failure_refuses_rather_than_wedges` - `:1646`. sh-flavour only
   (`@pytest.mark.skipif(_BASH is None...)`, no `flavour` parametrization, never touches `.ps1`); red before and
   after this ticket's `.ps1`-only change, so unrelated to it by construction.
 - `test_run_gate_kills_the_whole_group_on_timeout_not_just_the_direct_child` - `:2063`, in
   `crew_fixtures.run_gate` itself (test harness code, not `verify-gate.ps1` or `.sh`). Also red unmodified.
 
-None of the three block B4: the regression test added for this ticket
+None of the three blocked B4: the regression test added for that ticket
 (`test_34d_ps1_a_temp_dir_failure_falls_back_to_crew_not_a_pipe`, same file, immediately after `test_34d`) is
-green and was sabotage-confirmed red on the reverted code. Filed rather than fixed because root-causing the
-console/process-group behaviour behind `test_34b[ps1]` is exactly the class of work this ticket's brief
-excluded.
+green and was sabotage-confirmed red on the reverted code. Filed rather than fixed at the time because
+root-causing the console/process-group behaviour behind `test_34b[ps1]` was excluded from that ticket's scope -
+it was B3's, and is now fixed there (see the correction above). The other two bullets
+(`test_34d_a_second_mktemp_failure_refuses_rather_than_wedges`, sh-only;
+`test_run_gate_kills_the_whole_group_on_timeout_not_just_the_direct_child`, test-harness code) are unaffected
+by B3 and remain open, unrelated to either ticket by construction.
 
 Also noted, not fixed: `verify-gate.ps1:814` (the legacy `_verify/smoke.sh`/`scripts/smoke.sh` fallback, used
 only when `.crew/verify.json` does not exist) captures via an unconditional bare pipe
