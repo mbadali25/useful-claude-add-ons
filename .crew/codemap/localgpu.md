@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@f2bb919b
+anchor: useful-claude-add-ons@6ffd48fa
 verified: 2026-09-25
 
 # localgpu
@@ -512,13 +512,18 @@ file's frontmatter, not previously listed in this note.** `plugin.json`'s
   **Checked against the code, corrected after QA:**
   `plugin/crew/hooks/scripts/crew_config.py:126-127` only re-exports
   (`DEV_PROVIDERS = crew_state.DEV_PROVIDERS`); the tuples are actually
-  *defined* at `plugin/crew/hooks/scripts/crew_state.py:1411-1412` (re-numbered
-  from `:1503-1504` by crew 1.0 - see the 2026-09-25 re-anchor below; same two
-  lines, `DEV_PROVIDERS = ("claude", "codex", "copilot")` /
-  `QA_PROVIDERS = ("claude", "codex", "copilot")`, byte-identical).
-  So `crew.md`'s own attribution to `crew_config.py` names the re-export, not
-  the definition — true as far as it goes (that file does hold those names),
-  but not where the literals live. This command also states it "writes
+  *defined* at `plugin/crew/hooks/scripts/crew_state.py:1421-1422` (re-numbered
+  from `:1503-1504` by crew 1.0 and from `:1411-1412` by T-0028 - see the
+  re-anchor sections below). **Since T-0028 the tuples carry a fourth name:**
+  `DEV_PROVIDERS = ("claude", "codex", "copilot", "kimi")` /
+  `QA_PROVIDERS = ("claude", "codex", "copilot", "kimi")`. So the literals
+  `plugin/localgpu/commands/crew.md:33-34` quotes, and its "same three names on
+  both sides" prose at `:29-30`, are now **stale** - that command (outside
+  T-0028's Touch, unchanged) omits `kimi`. **JUDGEMENT:** the boundary it
+  states still holds - `localgpu` is not a crew provider - but its enumeration
+  of what IS one is one short. And `crew.md`'s own attribution to
+  `crew_config.py` names the re-export, not the definition — true as far as it
+  goes (that file does hold those names), but not where the literals live. This command also states it "writes
   nothing — not `.crew/config.json`, not an environment variable, not a shim
   on `PATH`" (`plugin/localgpu/commands/crew.md:9-10`).
   **Read in full at the 2026-09-25 pass (previously narrowed to line 40,
@@ -1050,3 +1055,28 @@ f2bb919b -- <the 32 tracked paths this note cites>` returns one file,
 `:218`). The `crew` entry's description, which this note quotes ("4 context-isolated agents
 (explorer, reviewer, security, researcher)"), is on `:217` and unchanged, and `localgpu`'s own
 entry is untouched (still `0.1.20`). Nothing under `plugin/localgpu/` changed. No claim moved.
+
+**Re-anchored `f2bb919b` -> `6ffd48fa` on 2026-09-26 (T-0028, Kimi Code as a crew provider).**
+`git diff --name-only f2bb919b 6ffd48fa -- <cited paths>` returns the three files below.
+Between `f2bb919b` and `main` (`3c1f94a9`) only `crew_state.py` and `marketplace.json` changed,
+neither at a cited line (the tuples were still `:1411-1412` at `3c1f94a9`; marketplace moved
+only crew's `version`); T-0028 (`3c1f94a9..6ffd48fa`) changed all three. Each re-read at
+`6ffd48fa`:
+
+- `plugin/crew/hooks/scripts/crew_state.py` - `grep -n "^DEV_PROVIDERS\|^QA_PROVIDERS"` returns
+  `:1421-1422` (was `:1411-1412`), and the tuples now end in `"kimi"`. Corrected in the "Six
+  slash commands" section above, which now also records that
+  `plugin/localgpu/commands/crew.md:29-34` still states three providers. The historical QA
+  entries quoting `:1503-1504` are left as written, as records of their own anchor.
+- `plugin/crew/hooks/scripts/crew_config.py` - `:126-127` are still the re-export
+  (`DEV_PROVIDERS = crew_state.DEV_PROVIDERS` / `QA_PROVIDERS = crew_state.QA_PROVIDERS`),
+  byte-identical at the same lines.
+- `.claude-plugin/marketplace.json` - the only hunk is crew's `version` (`1.0.38` -> `1.0.44`,
+  `:218`); the `crew` description on `:217` ("4 context-isolated agents (explorer, reviewer,
+  security, researcher)") and `localgpu`'s own entry (`0.1.20`, `:230`) are unchanged.
+
+Nothing under `plugin/localgpu/` changed (`git diff --name-only 3c1f94a9 6ffd48fa --
+plugin/localgpu/` is empty) and none of it was re-read, built or run at this pass.
+The anchor is `6ffd48fa`, one commit past the tree read here: `git diff --name-only b45f71eb
+6ffd48fa` returns only `.crew/verify.json`, which this note does not cite, so every read above
+stands at `6ffd48fa`.

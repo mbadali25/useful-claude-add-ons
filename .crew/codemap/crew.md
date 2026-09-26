@@ -1,5 +1,5 @@
-anchor: useful-claude-add-ons@c35edda5
-verified: 2026-09-25
+anchor: useful-claude-add-ons@6ffd48fa
+verified: 2026-09-26
 
 ## Re-derive provenance
 
@@ -11,7 +11,7 @@ entirely (`pm_brief.py`, `pm-pulse.sh`, `pm-brief.sh`, `agents/pm.md`, and the
 line numbers describing a crew that no longer exists. Read in full this pass:
 `plugin/crew/hooks/hooks.json`, `_common.sh`, `role_write_guard.py`,
 `role-write-guard.sh`, `auto-clear.sh`, `crew_autoclear_setup.py`,
-`crew_state.py`'s roster/config block (:983-1350), `crew_guards.py`'s guard
+`crew_state.py`'s roster/config block (:983-1357 at `6ffd48fa`; :983-1350 when read), `crew_guards.py`'s guard
 vocabulary block (:91-505), `crew_context.py`, `event_claim.py`'s module
 docstring, and the four agent files. Read in part (specific functions/ranges
 only, cited in place below): `crew_config.py`, `crew_endpoints.py`,
@@ -24,8 +24,8 @@ agent/command prose beyond their frontmatter and the sections cited below;
 `crew_platform.py`; any `.ps1` file's body past its `Resolve-CrewPython`
 definition; any test file's contents (existence and size only).
 Re-verified per-path from `f2bb919b` to `adf8d1dd` for T-0008, from
-`adf8d1dd` to `8d447a7d` for its review round 3, and to `c35edda5` for
-T-0034; see the last three sections.
+`adf8d1dd` to `8d447a7d` for its review round 3, to `c35edda5` for
+T-0034, and to `6ffd48fa` for T-0028; see the last four sections.
 
 # crew
 
@@ -56,16 +56,16 @@ count-disagreement sweep across `README.md`/`plugin/README.md`/
 Crew 0.x shipped 54 agents (13 tiered roles + 40 specialists) plus a standing
 `pm` agent that dispatched them. Crew 1.0 (`docs/review/04-redesign.md`,
 "Roster: 54 agents -> 4", cited in comment at
-`plugin/crew/hooks/scripts/crew_state.py:1216-1221`) replaces that with:
+`plugin/crew/hooks/scripts/crew_state.py:1223-1228`) replaces that with:
 
 - **Four read-only subagents on a tier ladder**, `ROLE_TIERS`
-  (`plugin/crew/hooks/scripts/crew_state.py:1225-1230`): `explorer` and
+  (`plugin/crew/hooks/scripts/crew_state.py:1232-1237`): `explorer` and
   `reviewer` at tier 0, `security` at tier 1, `researcher` at tier 2. None of
   the four grants `Write` or `Edit` — confirmed by reading each agent file's
   frontmatter (`explorer.md`, `researcher.md`, `reviewer.md`, `security.md`,
   all `tools: Read, Grep, Glob, Bash, Skill`).
 - **No specialist roles.** `SPECIALIST_ROLES` is now `frozenset()`
-  (`plugin/crew/hooks/scripts/crew_state.py:1240`) — domain knowledge that
+  (`plugin/crew/hooks/scripts/crew_state.py:1247`) — domain knowledge that
   used to be a specialist agent now lives in the on-demand `stack-*` skills
   (`stack-angular`, `stack-bash`, `stack-dotnet`, `stack-powershell`,
   `stack-python`, `stack-sql`, `stack-terraform`, `stack-web`), which are
@@ -76,13 +76,13 @@ Crew 0.x shipped 54 agents (13 tiered roles + 40 specialists) plus a standing
   and is never itself given an `agent_type`. `PM_DEFAULTS`
   (`plugin/crew/hooks/scripts/crew_state.py:1079-1092`) and `pm.authority`
   (`AUTHORITY_DEFAULT = "report-only"`, `:1049`; three values —
-  `report-only`/`act`/`autonomous`, `normalise_authority` at `:1272-1283`)
+  `report-only`/`act`/`autonomous`, `normalise_authority` at `:1279-1290`)
   still exist as config that governs how far that unnamed session may act
   without asking, and `AUTONOMOUS_STOPS`
   (`plugin/crew/hooks/scripts/crew_state.py:1062-1069`) still names the four
   things even `autonomous` may not do unasked (`offboard-role`, `delete-map`,
   `rewrite-metrics`, `git-destruction`).
-- `known_role` (`plugin/crew/hooks/scripts/crew_state.py:1243-1252`) still
+- `known_role` (`plugin/crew/hooks/scripts/crew_state.py:1250-1259`) still
   distinguishes a deliberately-onboarded off-ladder role from a typo, even
   though `SPECIALIST_ROLES` is empty today.
 
@@ -133,7 +133,7 @@ draws it:
 | `/crew:plan` (`plugin/crew/commands/plan.md:8-9`) | Turns an approved spec into a step plan; the old standalone second-opinion step is now step 3, optional, inside this phase | redefined |
 | `/crew:approve` (`plugin/crew/commands/approve.md:5`, `disable-model-invocation: true`) | Typed by the user only: the UserPromptSubmit `approval-hook` records `<git-common-dir>/crew/tickets/<id>/approval.json`, bound to the sha256 of `spec.md` and `plan.md` (`:7-16`); the command body only relays the result | new in 1.0 |
 | `/crew:implement` (`plugin/crew/commands/implement.md:8-9`) | Implements an approved plan, then tests/docs/review; loads `crew-execute` (adapted from `superpowers:executing-plans`) | `/crew:work` |
-| `/crew:review` (`plugin/crew/commands/review.md`) | Independent QA review of the working diff (Codex, Copilot, or the `crew:reviewer` Claude fallback) | (unchanged name; internals rewritten) |
+| `/crew:review` (`plugin/crew/commands/review.md`) | Independent QA review of the working diff (Codex, Kimi, Copilot, or the `crew:reviewer` Claude fallback - first that probes clean, since crew 1.0.44) | (unchanged name; internals rewritten) |
 | `/crew:done` (`plugin/crew/commands/done.md:7-8`) | Closes a ticket; four checks (review receipt, clean verify gate, passing completion audit, current artifacts), any one failing refuses the close, no partial close. Check 4 (`:46-57`, since crew 1.0.36) runs `crew_refresh_check.py` and refuses on any `stale` or `unknown` line **without refreshing** - a write there would stale check 1's receipt (`:52-55`) | new in 1.0 |
 
 `/crew:ticket` and `/crew:work` are now **removal stubs with no behaviour**
@@ -142,7 +142,7 @@ draws it:
 — confirmed by reading both files in full, not merely their frontmatter.
 
 `review.md` dispatches `crew:reviewer` at this anchor
-(`plugin/crew/commands/review.md:449,464`), **not** the pre-1.0
+(`plugin/crew/commands/review.md:444,459`), **not** the pre-1.0
 `qa-reviewer` — `TODO.md`'s "T2 (lane D) deferred items" entry recorded this
 as an open item ("`review.md` still dispatches `qa-reviewer`; switch to
 `reviewer` in T4") but the code at `6c497a14` shows it already done; a
@@ -217,14 +217,15 @@ the previous note's account of it** — see "Unverified at this anchor").
 ## Config, the guard vocabulary, and the ratchet
 
 **DERIVED at this anchor by importing `crew_config` and executing both
-default functions.** Measured 2026-09-25 at 6c497a14 (plugin code
-byte-identical at the refresh merge), module resolved from this checkout,
-not an installed plugin cache:
+default functions.** Re-measured 2026-09-26 at `6ffd48fa` with the command
+below, module resolved from this checkout, not an installed plugin cache.
+T-0028 added `qa.kimi.model` and `dev.kimi.model` to both defaults, so each
+count rose by 2 from the 116/65 measured at 6c497a14:
 
 | | Leaves | Source |
 |---|---|---|
-| `default_config()` | **116** | `plugin/crew/hooks/scripts/crew_config.py:239` |
-| `default_global_config()` | **65** | `plugin/crew/hooks/scripts/crew_config.py:367` |
+| `default_config()` | **118** | `plugin/crew/hooks/scripts/crew_config.py:240` |
+| `default_global_config()` | **67** | `plugin/crew/hooks/scripts/crew_config.py:368` |
 | repo-only | **51** | the set difference |
 
 Treat these as a fact about one commit, not a standing figure. Re-measure
@@ -264,7 +265,7 @@ is: a switch, not a policy — turning it on is what makes the six
 since the pre-1.0 command guard was removed) mean something again for the
 `Bash`/`PowerShell` `PreToolUse` matcher.
 
-**The ratchet registry (`_RATCHETED`, `plugin/crew/hooks/scripts/crew_config.py:2342-2431`)
+**The ratchet registry (`_RATCHETED`, `plugin/crew/hooks/scripts/crew_config.py:2343-2432`)
 now holds 13 keys**, built in five steps (a literal dict of two, then four
 `.update()`/assignment calls) rather than one table, exactly the shape the
 previous anchor's note described for a smaller version of the same table:
@@ -272,7 +273,7 @@ previous anchor's note described for a smaller version of the same table:
 `PROD_GUARD_NAMES` keys, `guards.roleWrites`, `guards.cloudGuard` (new), and
 `change.requireForProduction` = 2 + 6 + 2 + 1 + 1 + 1 = 13. Counted by
 reading the five construction sites, not by trusting the literal alone —
-the literal at `:2342-2353` holds only 2.
+the literal at `:2343-2354` holds only 2.
 
 ## `.crew/config.json` vs `.crew/crew.json` — the open 1.0.x authority question
 
@@ -283,7 +284,7 @@ they disagree:
 - `crew_config.py` (used by `verify-gate.sh`, `promote-gate.sh`,
   `role-write-guard.ps1`'s config lookups, and everything the ratchet/guard
   machinery above touches) reads **only** `.crew/config.json`
-  (`plugin/crew/hooks/scripts/crew_config.py:1158`, and the module's own
+  (`plugin/crew/hooks/scripts/crew_config.py:1159`, and the module's own
   docstring at `:1` — "Owns the single definition of a fresh
   `.crew/config.json`").
 - `crew_context.py`'s `load_crew_config`
@@ -293,9 +294,9 @@ they disagree:
   `config.json`".
 - Only `/crew:migrate` (`crew_migrate.py`, `--apply`) ever writes
   `.crew/crew.json`; `/crew:init` still writes only `.crew/config.json`
-  (`TODO.md:3945`, "T2 (lane D, additive) deferred items", filed
-  2026-09-23, still open at this anchor; it was `:3854` at `6c497a14` and
-  `:3884` at `f2bb919b`). `crew_migrate.py`'s own module
+  (`TODO.md:3955`, "T2 (lane D, additive) deferred items", filed
+  2026-09-23, still open at this anchor; it was `:3854` at `6c497a14`,
+  `:3884` at `f2bb919b` and `:3945` at `c35edda5`). `crew_migrate.py`'s own module
   docstring (`:1-4`) frames this as "one-time move of a 0.20 crew setup onto
   the 1.0 layout" and its schema table (`:11,26-40`) treats `crew.json`
   schema 1 as the target, `config.json` schema <= 7 as "kept, retireable".
@@ -450,7 +451,7 @@ a persistent `.crew/endpoints.json.oslock` across the whole cycle (comment at
 `:258-290`; `_acquire_endpoints_lock`, `:510`), and a lock or write failure is
 returned as an error rather than reported as a landed write -
 `crew_state.py`'s `--record-scan-artifact` exits 3 on it
-(`plugin/crew/hooks/scripts/crew_state.py:3270-3276`). Function bodies past
+(`plugin/crew/hooks/scripts/crew_state.py:3294-3300`). Function bodies past
 those lines were not read. `.crew/endpoints.json` still does not exist in this
 checkout; `git ls-files .crew/` still returns only the codemap `.md` files
 plus `.crew/verify.json`.
@@ -517,10 +518,10 @@ or nothing" at `adf8d1dd`; T-0008's refresh commit `b7b02842` redrew it as
 
 - `plugin/crew/hooks/scripts/crew_state.py:983` — `TRIGGERS`, a 15-entry
   tuple, unchanged in membership and order from the previous anchor.
-- `plugin/crew/hooks/scripts/crew_state.py:2880` — `evaluate_triggers`.
-- `plugin/crew/hooks/scripts/crew_config.py:239` / `:367` —
+- `plugin/crew/hooks/scripts/crew_state.py:2904` — `evaluate_triggers`.
+- `plugin/crew/hooks/scripts/crew_config.py:240` / `:368` —
   `default_config()` / `default_global_config()`.
-- `plugin/crew/hooks/scripts/crew_config.py:2342` — `_RATCHETED`, the
+- `plugin/crew/hooks/scripts/crew_config.py:2343` — `_RATCHETED`, the
   13-key ratchet table (five construction steps).
 - `plugin/crew/hooks/scripts/role_write_guard.py:539` — `classify`, the
   decision function; `:684` — `main()`.
@@ -556,7 +557,7 @@ or nothing" at `adf8d1dd`; T-0008's refresh commit `b7b02842` redrew it as
   whole story.
 - `.crew/crew.json` — the schema-1 format only `/crew:migrate` writes and
   only `crew_context.py`'s consumers prefer.
-- `crew_state.ROLE_TIERS` (`plugin/crew/hooks/scripts/crew_state.py:1225-1230`)
+- `crew_state.ROLE_TIERS` (`plugin/crew/hooks/scripts/crew_state.py:1232-1237`)
   — 4 roles, all tiered, none a specialist.
 - `crew_state.PM_DEFAULTS` (`:1079-1092`) and `crew_state.AUTHORITY_DEFAULT`
   (`:1049`) — the unnamed session's own dispatch authority.
@@ -602,7 +603,11 @@ or nothing" at `adf8d1dd`; T-0008's refresh commit `b7b02842` redrew it as
   no sabotage test was run against either.
 - `review_ledger.py`, `review_patch.py`, `review_prompt.py`, `review_run.py`,
   `review_verdict.py` — the review pipeline `/crew:review` and `/crew:done`
-  depend on — were located but not opened.
+  depend on — were located but not opened. Nor was `kimi_probe.py`, new in
+  T-0028 (the Kimi Code pre-reserve probe `review_run.py --provider kimi`
+  runs), nor its tests (`test_kimi_probe.py`, `test_review_run_kimi.py`,
+  `test_kimi_docs.py`, `sabotage_kimi.py`) or the captured stream fixture
+  under `plugin/crew/tests/fixtures/kimi-stream-2.1.1/`.
 - `webtest_guard.py`, `webtest_rules.py`, `webtest_scaffold.py` — new
   scripts since the previous anchor, backing `/crew:webtest` — were located
   but not opened.
@@ -735,3 +740,39 @@ re-read with `grep -n`/`sed -n`:
 `crew_upgrade.py --root . --derived <one-entry json> --force` printed `not a crew repo`: this
 worktree has no `.crew/config.json`, so it reconciled nothing and wrote nothing. This pass is the
 per-path re-verify above, re-anchored by hand.
+
+## Re-anchor provenance - `c35edda5` -> `6ffd48fa`, 2026-09-26 (T-0028)
+
+`c35edda5` is on `main`, and `git diff --name-only c35edda5 3c1f94a9` returns only code-map,
+diagram, rule and graph files, so `3c1f94a9` (T-0028's base) stands in for it.
+`git diff --name-only 3c1f94a9 6ffd48fa` returns T-0028's change; of the paths this note cites,
+`.claude-plugin/marketplace.json`, `.crew/verify.json`, `TODO.md`, `README.md`,
+`plugin/crew/CONFIG.md`, `plugin/crew/commands/review.md`, `crew_config.py`, `crew_state.py`,
+`review_run.py` and `review_verdict.py` changed. Each line citation into them was re-read at
+`6ffd48fa` with `grep -n`/`sed -n`:
+
+- `crew_state.py` - T-0028 inserted lines at `:1126-1146` (QA/DEV defaults), `:1386-1389`,
+  `:1449-1461` (`family`) and `:1493-1496`, and `DEV_PROVIDERS`/`QA_PROVIDERS` (`:1421-1422`)
+  gained `kimi`. Moved: roster comment `:1216-1221` -> `:1223-1228`,
+  `ROLE_TIERS` `:1225-1230` -> `:1232-1237`, `SPECIALIST_ROLES` `:1240` -> `:1247`, `known_role`
+  `:1243-1252` -> `:1250-1259`, `normalise_authority` `:1272-1283` -> `:1279-1290`,
+  `evaluate_triggers` `:2880` -> `:2904`, the `--record-scan-artifact` exit 3 `:3270-3276` ->
+  `:3294-3300`. Held: `SCHEMA_CURRENT` `:175`, `TRIGGERS` `:983`, `AUTHORITY_DEFAULT` `:1049`,
+  `AUTONOMOUS_STOPS` `:1062-1069`, `PM_DEFAULTS` `:1079-1092`.
+- `crew_config.py` - one line inserted at `:132`. Moved by one: `default_config` `:239` -> `:240`,
+  `default_global_config` `:367` -> `:368`, the `.crew/config.json` read `:1158` -> `:1159`,
+  `_RATCHETED` `:2342-2431` -> `:2343-2432` (literal `:2342-2353` -> `:2343-2354`). The leaf
+  table was re-executed: 118/67/51/0, up 2/2/0/0 (the two `kimi.model` leaves).
+- `review.md` - `crew:reviewer` dispatch `:449,464` -> `:444,459`; the `/crew:review` row now
+  names Kimi, matching `review.md:2`'s description.
+- `.crew/verify.json` - the Kimi rule appended as rule 24 at `:263-272` (`6ffd48fa` moved it there
+  from index 8, where `b45f71eb` had inserted it); rule 22 `:244` and rule 23 `:245-261` hold.
+- `TODO.md` - the T2 (lane D) bullet `:3945` -> `:3955`. `:5000-5001` in an older section below
+  is a record of that pass and is left as written.
+- `marketplace.json` - crew `version` `:218` (now 1.0.44) only; `:217`'s 4/34/29 counts are
+  unchanged, and T-0028 added no agent, command or skill.
+- `README.md`, `CONFIG.md`, `review_run.py`, `review_verdict.py` - cited by name only, not by
+  line. The two review scripts, and the new `kimi_probe.py`, remain unopened by this note.
+
+No suite was run by this note, and `crew_upgrade.py` was not run; this pass is the per-path
+re-verify above, re-anchored by hand.

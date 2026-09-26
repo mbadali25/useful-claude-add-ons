@@ -1,6 +1,6 @@
 # install-scripts
-anchor: useful-claude-add-ons@8d447a7d
-verified: 2026-09-25
+anchor: useful-claude-add-ons@6ffd48fa
+verified: 2026-09-26
 
 ## Re-derive provenance
 
@@ -407,3 +407,20 @@ Re-verified per-path from `adf8d1dd` to `8d447a7d` for T-0008's review round 3: 
 only `plugin/crew/README.md` changed, two lines reworded in place at `:764` and `:766`; the
 `34 commands` claim at `:2178` and `4 agents` at `:2189` did not move and still hold. Both install
 scripts, `README.md` and `scripts/check-marketplace.py` did not change.
+
+Re-verified per-path from `8d447a7d` to `6ffd48fa` for T-0028 (2026-09-26). `8d447a7d` was
+rebase-merged to `main` as `95120430` and is not an ancestor of `6ffd48fa`, so the diff is taken
+between the two commits directly: `git diff --name-only 8d447a7d 6ffd48fa -- <the cited paths>`
+returns `.claude-plugin/marketplace.json`, `TODO.md`, `plugin/PLUGINS.md`, `plugin/crew/BUDGETS.md`,
+`plugin/crew/README.md` and two files under `plugin/crew/commands/` (`model.md`, `review.md`). Both
+install scripts, `README.md` and `scripts/check-marketplace.py` did not change, so every
+`scripts/install-prerequisites.*` citation (including the crew `PLUGIN_NAME` rows `:1391` / `:1174`)
+and the README install-URL pins stand without a re-read. Re-read at `6ffd48fa`:
+`.claude-plugin/marketplace.json` changed crew's `version` only (now 1.0.44), the description is
+unchanged; `plugin/PLUGINS.md` changed the `:14` version row only, `:17` unchanged;
+`plugin/crew/BUDGETS.md`'s marker is still `:10`; `plugin/crew/README.md`'s `34 commands` claim moved
+`:2178` -> `:2180` and `4 agents` `:2189` -> `:2191` (the Kimi paragraph near `:1083` grew it), both
+still hold; `ls plugin/crew/commands/*.md` = 34, `ls plugin/crew/agents/*.md` = 4,
+`ls -d plugin/crew/skills/*/` = 29, and `hooks.json` = 34 entries across 8 events, re-measured.
+`TODO.md` is cited only in the historical pathspec. Neither install script was executed and
+`drift-detection.sh` was not run.

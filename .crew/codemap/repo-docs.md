@@ -1,6 +1,6 @@
 # repo-docs
-anchor: useful-claude-add-ons@c35edda5
-verified: 2026-09-25
+anchor: useful-claude-add-ons@6ffd48fa
+verified: 2026-09-26
 
 ## Re-derive provenance
 
@@ -287,7 +287,7 @@ listing the directory.
 - **`docs/runbooks/INDEX.md` still does not exist.** `docs/runbooks/`
   contains `rollback.md` alone (re-confirmed by `ls`).
   `plugin/crew/skills/crew-runbooks/SKILL.md:80` and
-  `plugin/crew/README.md:1728` (`:1725` at `f2bb919b`, `:1604` before that,
+  `plugin/crew/README.md:1730` (`:1728` at `c35edda5`, `:1725` at `f2bb919b`, `:1604` before that,
   that file having changed in each range — re-grepped, not offset) both still describe
   `docs/runbooks/INDEX.md` as a symptom-keyed index that would live there.
   JUDGEMENT, unchanged: costs nothing with one runbook, becomes a real gap at
@@ -339,8 +339,8 @@ listing the directory.
   resolves to stale.
 
 - **`TODO.md`'s `render.sh` entry is still open, still un-CLOSED, re-located
-  rather than assumed at its old line.** Now at `TODO.md:1183` (`:1122` at
-  `f2bb919b`, `:1092` at `6c497a14`, `:1061` before that; the file grew 3645 -> 4714 lines, +1069,
+  rather than assumed at its old line.** Now at `TODO.md:1193` (`:1183` at
+  `c35edda5`, `:1122` at `f2bb919b`, `:1092` at `6c497a14`, `:1061` before that; the file grew 3645 -> 4714 lines, +1069,
   in the `5d1fc5fd..6c497a14` range, and 30 more lines landed after its
   `:16` by `f2bb919b`, and this note's own
   standing rule treats any `TODO.md` citation as provisional the moment the
@@ -486,3 +486,29 @@ version row; `:17`'s Registers row unchanged and still `:17`), `CHANGELOG.md` (a
 added under `[Unreleased]`; cited without a line) and `crew_refresh_check.py` (cited by name
 only). `test_completion_audit.py` is cited by name only, as a rule 23 test file, and still is one.
 `.gitattributes` is not cited. No citation moved.
+
+Re-verified per-path from `c35edda5` to `6ffd48fa` for T-0028 (2026-09-26). `c35edda5` is an
+ancestor of `6ffd48fa` (T-0028 rebased onto `main` at `3c1f94a9`). `git diff --name-only c35edda5
+6ffd48fa -- <the cited paths>` returns, outside this note's own map/diagram siblings (refreshed by
+T-0034's `5c59395d`), `.claude-plugin/marketplace.json`, `.crew/verify.json`, `CHANGELOG.md`,
+`TODO.md`, `plugin/PLUGINS.md`, `plugin/crew/.claude-plugin/plugin.json`, `plugin/crew/README.md`,
+`plugin/crew/commands/model.md`, `plugin/crew/commands/review.md` and
+`plugin/crew/hooks/scripts/crew_state.py`. Each citation into them was re-read with `grep -n` /
+`sed -n` at `6ffd48fa`:
+
+- `plugin/crew/README.md` - `:1728` -> `:1730` (T-0028 grew the `qa.order` paragraph near `:1083` by two lines); the
+  `docs/runbooks/INDEX.md` sentence is unchanged. Corrected above.
+- `TODO.md` - the `render.sh` entry `:1183` -> `:1193` (T-0028's follow-up list landed at the top);
+  still open, heading unchanged. Corrected above.
+- `.crew/verify.json` - T-0028 appended the Kimi rule at the end of `rules` (`:263-272`; `6ffd48fa`
+  moved it there from `:149-159`, where `b45f71eb` had inserted it). The `.claude/rules/` sync rule
+  (`:244`), the refresh-check rule (`:245-261`) and the doc rule (`:69-78`) did not move.
+- `plugin/crew/hooks/scripts/crew_state.py` - the re-exports `:129`/`:133`/`:136`/`:139`
+  (`_ANCHOR_RE`, `_DIAGRAM_ANCHOR_RE`, `_NOT_SUBSYSTEMS`, `_diagram_paths`) hold; T-0028's hunks
+  start at `:1123`.
+- `.claude-plugin/marketplace.json` - crew `version` only (now 1.0.44); the description is
+  unchanged. `plugin/PLUGINS.md` - `:14` version row only; `:17`'s Registers row unchanged.
+  `plugin/crew/.claude-plugin/plugin.json` - `version` only.
+- `plugin/crew/commands/` - `model.md` and `review.md` edited for the Kimi provider;
+  `ls plugin/crew/commands/*.md` still 34.
+- `CHANGELOG.md` - a crew 1.0.44 entry added under `[Unreleased]`; cited without a line.

@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@c35edda5 on 2026-09-25. Verify before trusting.
+%% Generated from useful-claude-add-ons@6ffd48fa on 2026-09-26. Verify before trusting.
 %% Anchors: plugin/crew/commands/brainstorm.md, plugin/crew/commands/spec.md, plugin/crew/commands/plan.md, plugin/crew/commands/approve.md, plugin/crew/commands/implement.md, plugin/crew/commands/review.md, plugin/crew/commands/done.md, plugin/crew/commands/fix.md, plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/crew_ticket.py, plugin/crew/hooks/scripts/completion_audit.py, plugin/crew/hooks/scripts/crew_refresh_check.py
 %% The crew 1.0 ticket lifecycle: brainstorm -> spec -> plan -> approve -> implement -> refresh artifacts -> review -> done.
 %% --
@@ -14,6 +14,14 @@
 %% Re-anchored for T-0034 at c35edda5: 8d447a7d was rebase-merged as 95120430, and
 %% of the anchored paths only crew_refresh_check.py changed after it (:363, one
 %% line reworded in place, line count unchanged); no node cites a line in it.
+%% Re-anchored for T-0028 at 6ffd48fa: of the anchored paths only review.md changed
+%% since c35edda5 (`git diff --name-only c35edda5 6ffd48fa -- <Anchors>`). Its Kimi
+%% text shifted every cited line past :25-29 up; each was re-read with grep -n and
+%% renumbered (440->438, 449->444, 481->476, 504->499, 508->503, 511->506), and rv1
+%% now names Kimi (step 2d, :430). review.md now carries two "Step 2d" headings
+%% (:430 Kimi, :481 re-run the failing control); neither node cites :481.
+%% b45f71eb -> 6ffd48fa is .crew/verify.json only (`git diff --name-only b45f71eb 6ffd48fa`),
+%% which this diagram does not cite; the reads made at b45f71eb stand at 6ffd48fa.
 %% Every node cites the command file's own line; files are named repo-relative
 %% here and by basename in the nodes (all under plugin/crew/commands/ unless
 %% named otherwise):
@@ -41,9 +49,10 @@
 %%     :106-108 step 7, AFTER the review: spec.md header `status: review`.
 %%     Scope guard: plugin/crew/hooks/hooks.json:31 (scope-guard.sh, PreToolUse).
 %%   plugin/crew/commands/review.md:25-29 two rounds per ticket, a third is refused
-%%     -> NEEDS_REPLAN; :440 exit codes 0 CLEAN / 1 FINDINGS / 3 INCOMPLETE /
-%%     4 NEEDS_REPLAN / 2 not run; :449 Claude fallback; :481 the verdict is the
-%%     script's; :504 round 2 is the last; :508 --accept --by <who>; :511 a CLEAN
+%%     -> NEEDS_REPLAN; :430 step 2a Codex, 2b Copilot, 2d Kimi via review_run.py;
+%%     :438 exit codes 0 CLEAN / 1 FINDINGS / 3 INCOMPLETE /
+%%     4 NEEDS_REPLAN / 2 not run; :444 Claude fallback; :476 the verdict is the
+%%     script's; :499 round 2 is the last; :503 --accept --by <who>; :506 a CLEAN
 %%     round writes its receipt itself.
 %%   plugin/crew/commands/done.md:7 all four checks must pass; :10-13 check 1
 %%     review receipt (--check-receipt); :21-27 check 2 verify gate via
@@ -117,10 +126,10 @@ flowchart TB
     end
 
     subgraph review["/crew:review - two rounds per ticket"]
-        im5 --> rv1["reserve a round, run Codex / Copilot /<br/>crew:reviewer fallback on one bundle<br/>review.md:25-29, :449"]
-        rv1 --> rv2{"verdict (the script's)<br/>:440, :481"}
-        rv2 -- CLEAN --> rcpt["receipt written<br/>:511"]
-        rv2 -- FINDINGS --> rv3{"fix, or<br/>user accepts?<br/>:504, :508"}
+        im5 --> rv1["reserve a round, run Codex / Kimi / Copilot /<br/>crew:reviewer fallback on one bundle<br/>review.md:25-29, :430, :444"]
+        rv1 --> rv2{"verdict (the script's)<br/>:438, :476"}
+        rv2 -- CLEAN --> rcpt["receipt written<br/>:506"]
+        rv2 -- FINDINGS --> rv3{"fix, or<br/>user accepts?<br/>:499, :503"}
         rv3 -- accept --> rcpt
         rv3 -- "fix, round 2" --> rv1
         rv2 -- "INCOMPLETE" --> rv1

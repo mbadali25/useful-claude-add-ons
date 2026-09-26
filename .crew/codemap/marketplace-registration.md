@@ -1,5 +1,5 @@
-anchor: useful-claude-add-ons@8d447a7d
-verified: 2026-09-25
+anchor: useful-claude-add-ons@6ffd48fa
+verified: 2026-09-26
 paths: scripts/**, plugin/PLUGINS.md
 
 **Re-derive provenance.** Full re-derivation, not a re-verify. The previous
@@ -47,9 +47,9 @@ consistent with `web-testing-playwright` and other single-skill entries
 either being removed or consolidated during the crew 1.0 rewrite; flagged as
 an open question rather than asserted either way. The **plugin** count is
 unchanged at **5**: `crew`, `gizmoduck`, `localgpu`, `obsidian-vault`,
-`rule-of-two`. `crew` is now **1.0.36** (`.claude-plugin/marketplace.json:218`, `plugin/crew/.claude-plugin/plugin.json`
-and the `plugin-version:crew` claim at `plugin/PLUGINS.md:14` all agree, re-read at `adf8d1dd`; it
-was 1.0.28 at `f2bb919b`, 1.0.25 at `6c497a14` and 0.20.11 at `5d1fc5fd`);
+`rule-of-two`. `crew` is now **1.0.44** (`.claude-plugin/marketplace.json:218`, `plugin/crew/.claude-plugin/plugin.json`
+and the `plugin-version:crew` claim at `plugin/PLUGINS.md:14` all agree, re-read at `6ffd48fa`; it
+was 1.0.38 at `3c1f94a9`, 1.0.36 at `adf8d1dd`, 1.0.28 at `f2bb919b`, 1.0.25 at `6c497a14` and 0.20.11 at `5d1fc5fd`);
 `obsidian-vault` is **0.4.14** (was 0.3.14); `gizmoduck` (0.5.3) and
 `rule-of-two` (0.1.3) are unchanged; `localgpu` moved to 0.1.20.
 
@@ -253,7 +253,9 @@ against synthetic fixtures and never reads this repo's own docs.
   `git ls-files 'plugin/crew/*.md' | xargs cat | wc -l` returns 17811 over 120
   files, matching; `check-marketplace.py` passes it. Re-measured for T-0008: the marker
   is still `:10`, the figure on `:11` reads 17,841 lines across 120 files, and the
-  same measurement returns 17841 over 120 files, matching.
+  same measurement returns 17841 over 120 files, matching. Re-measured for T-0028 at `6ffd48fa`:
+  marker still `:10`, `:11` reads 17,922 lines across 121 files, and the same measurement returns
+  17922 over 121 files, matching.
 - **`MARKETPLACE.md`** was not re-read for a community-plugin or marketplace
   count of its own; only `README.md:231`'s prose was checked and found to no
   longer state a specific number.
@@ -298,3 +300,28 @@ only `.crew/verify.json` changed (one path added to rule 7, rule 23 grown); the 
 is above both and unchanged. `python3 scripts/check-marketplace.py` at `8d447a7d` reports one
 problem, the version-drift check: `plugin/crew/` changed after `1.0.36` was set at `adf8d1dd`, with
 no bump.
+
+## Re-verify provenance - `8d447a7d` -> `6ffd48fa`, 2026-09-26 (T-0028)
+
+`8d447a7d` was rebase-merged to `main` as `95120430` and is not an ancestor of `6ffd48fa`; the diff
+is taken between the two commits directly. `git diff --name-only 8d447a7d 6ffd48fa -- <the cited
+paths>` returns, apart from the generated `.claude/rules/*.md` files, `.claude-plugin/marketplace.json`,
+`.crew/verify.json`, `CHANGELOG.md`, `TODO.md`, `plugin/PLUGINS.md`,
+`plugin/crew/.claude-plugin/plugin.json`, `plugin/crew/BUDGETS.md` and, through the
+`plugin/crew/` directory cited in the section above, T-0034's and T-0028's crew changes.
+`scripts/check-marketplace.py`, both install scripts, `skills/README.md` and `CLAUDE.md` are not
+in it, so every function line number, catalog-array citation and `CLAUDE.md:5`/`:47` citation
+stands without a re-read. Each changed file, re-read at `6ffd48fa`:
+
+- `.claude-plugin/marketplace.json` - crew's `version` on `:218` only (now 1.0.44), corrected
+  above; `:217`, the description the count table checks, is unchanged. The other plugin versions
+  (gizmoduck 0.5.3, localgpu 0.1.20, obsidian-vault 0.4.14, rule-of-two 0.1.3) did not move.
+- `plugin/crew/.claude-plugin/plugin.json`, `plugin/PLUGINS.md` - `version` and the `:14` row
+  only; the `:17` count row is unchanged.
+- `plugin/crew/BUDGETS.md` - marker still `:10`; the `:11` figure re-measured, see Unverified.
+- `.crew/verify.json` - T-0028 appended a Kimi rule at the end of `rules` (`:263-272`); the doc
+  rule at `:69-78` is unchanged and still runs `check-marketplace.py` first.
+- `CHANGELOG.md`, `TODO.md` - cited only as members of the doc rule's path list.
+
+`python3 scripts/check-marketplace.py` at `6ffd48fa`: `marketplace: 34 skills, 5 plugins`,
+`all checks passed`.
