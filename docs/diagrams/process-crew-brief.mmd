@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@7b667587 on 2026-09-26. Verify before trusting.
+%% Generated from useful-claude-add-ons@385eadd5 on 2026-09-26. Verify before trusting.
 %% Anchors: plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/handoff-read.sh, plugin/crew/hooks/scripts/platform-sync.sh, plugin/crew/hooks/scripts/crew_platform.py, plugin/crew/hooks/scripts/crew-context.sh, plugin/crew/hooks/scripts/crew_context.py, plugin/crew/hooks/scripts/crew_state.py, plugin/crew/hooks/scripts/crew_status.py, plugin/crew/commands/status.md, plugin/crew/hooks/scripts/crew_tracker.py
 %% Re-anchored 86931b29 -> f2bb919b (T-0015): `git diff --name-only 86931b29 f2bb919b --`
 %% over every path on the Anchors line returns nothing, so no citation below moved. Spot
@@ -13,6 +13,9 @@
 %% check :200 -> :207, the report lines :185-209 -> :192-216; its tracker line now comes
 %% from crew_tracker.resolve (crew_status.py:63), which reads crew.json AND config.json
 %% and prints `could not tell` when they disagree.
+%% Re-anchored 7b667587 -> 385eadd5 (T-0021 review round 1): of the Anchors paths only
+%% crew_tracker.py changed, and no node cites a line in it; crew_status.py:63 (the
+%% tracker line through crew_tracker.resolve) did not change.
 %% The body below keeps the drawing's own shorthand (basename:line); the Anchors line
 %% names each basename's full path.
 %% Drawn in the diagrams-crew-1.0 worktree, uncommitted there; committed on T-0015-refresh.

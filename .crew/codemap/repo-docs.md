@@ -1,5 +1,5 @@
 # repo-docs
-anchor: useful-claude-add-ons@7b667587
+anchor: useful-claude-add-ons@385eadd5
 verified: 2026-09-26
 
 ## Re-derive provenance
@@ -288,7 +288,7 @@ listing the directory.
 - **`docs/runbooks/INDEX.md` still does not exist.** `docs/runbooks/`
   contains `rollback.md` alone (re-confirmed by `ls`).
   `plugin/crew/skills/crew-runbooks/SKILL.md:80` and
-  `plugin/crew/README.md:1762` (`:1728` at `c35edda5`, `:1725` at `f2bb919b`, `:1604` before that,
+  `plugin/crew/README.md:1769` (`:1762` at `7b667587`, `:1728` at `c35edda5`, `:1725` at `f2bb919b`, `:1604` before that,
   that file having changed in each range — re-grepped, not offset) both still describe
   `docs/runbooks/INDEX.md` as a symptom-keyed index that would live there.
   JUDGEMENT, unchanged: costs nothing with one runbook, becomes a real gap at
@@ -497,3 +497,10 @@ diagram, `graphify-out/`) and T-0021's code, prose and release files. Of those t
 under `[Unreleased]`), `TODO.md` (T-0021 follow-ups appended at the end; `:1183` holds),
 `plugin/PLUGINS.md` (`:14` version row; `:17` unchanged) and `marketplace.json` (crew `version`
 only). The root `README.md` citations (`:12`, `:46`, `:736`) are to a file not in the diff.
+
+Re-verified per-path from `7b667587` to `385eadd5` for T-0021's review round 1. `git diff --name-only 7b667587 385eadd5` returns T-0021's refresh (`bc6432b1`), the version step-back (`764c2244`) and review round 1's fix commit (`385eadd5`): `CHANGELOG.md`, `TODO.md`, `plugin/crew/BUDGETS.md`, `plugin/crew/README.md`, `brainstorm.md`, `obsidian-sync.md`, `crew_tracker.py` and three test files, plus the refresh's own artifacts. The version files net to no change (1.0.46 stepped back and re-set).
+Of those this note cites `plugin/crew/README.md` (the tracker paragraph grew by 7 lines, so the
+runbook-index citation moved `:1762` -> `:1769`, re-grepped), the three crew diagrams
+(re-anchored to `385eadd5`), `CHANGELOG.md` (a round-1 paragraph inside the 1.0.46 entry),
+`TODO.md` (the brainstorm follow-up struck and one `obsidian.columns` item added, both at the end
+of the T-0021 block; `:1183` holds). The root `README.md` citations are to a file not in the diff.

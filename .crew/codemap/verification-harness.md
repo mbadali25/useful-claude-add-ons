@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@7b667587
+anchor: useful-claude-add-ons@385eadd5
 verified: 2026-09-26
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -561,3 +561,9 @@ commits. Of the paths this note cites with a line:
 - `CHANGELOG.md`, `TODO.md`, `marketplace.json`, `implement.md`, `done.md` - cited by name only.
 
 No suite was executed by this note; T-0021's suite results live in its commits.
+
+Re-verified per-path from `7b667587` to `385eadd5` for T-0021's review round 1. `git diff --name-only 7b667587 385eadd5` returns T-0021's refresh (`bc6432b1`), the version step-back (`764c2244`) and review round 1's fix commit (`385eadd5`): `CHANGELOG.md`, `TODO.md`, `plugin/crew/BUDGETS.md`, `plugin/crew/README.md`, `brainstorm.md`, `obsidian-sync.md`, `crew_tracker.py` and three test files, plus the refresh's own artifacts. The version files net to no change (1.0.46 stepped back and re-set).
+This note cites `crew_tracker.py`, `test_crew_tracker.py` and `sabotage_tracker.py` by name only,
+as rule 24's paths; the rule itself (`.crew/verify.json:262-269`) and `sabotage.py:76`/`:3048`
+did not change. `sabotage_tracker.py` now holds 42 mutations, two of which go RED only as root
+(their tests skip, by name, without it). `CHANGELOG.md` and `TODO.md` are cited by name only.

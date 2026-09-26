@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@7b667587
+anchor: useful-claude-add-ons@385eadd5
 verified: 2026-09-26
 paths: scripts/**, plugin/PLUGINS.md
 
@@ -256,7 +256,8 @@ against synthetic fixtures and never reads this repo's own docs.
   same measurement returns 17841 over 120 files, matching. Re-measured for T-0021 at `7b667587`:
   the figure on `:11` reads 17,989 lines across 125 files (T-0021 added five tracked board
   fixtures under `plugin/crew/tests/tracker_fixtures/`), and the measurement returns 17989 over
-  125, matching.
+  125, matching. Re-measured at `385eadd5` (T-0021 review round 1): the figure reads 18,007
+  lines across 125 files and the measurement returns 18007 over 125, matching.
 - **`MARKETPLACE.md`** was not re-read for a community-plugin or marketplace
   count of its own; only `README.md:231`'s prose was checked and found to no
   longer state a specific number.
@@ -312,3 +313,12 @@ end; the doc rule at `:69-78` is unchanged), `CHANGELOG.md` and `TODO.md` change
 changed (section 13c) but this note does not cite it.
 `python3 scripts/check-marketplace.py` at `7b667587`: `marketplace: 34 skills, 5 plugins`,
 `all checks passed`.
+
+Re-verified per-path from `7b667587` to `385eadd5` for T-0021's review round 1. `git diff --name-only 7b667587 385eadd5` returns T-0021's refresh (`bc6432b1`), the version step-back (`764c2244`) and review round 1's fix commit (`385eadd5`): `CHANGELOG.md`, `TODO.md`, `plugin/crew/BUDGETS.md`, `plugin/crew/README.md`, `brainstorm.md`, `obsidian-sync.md`, `crew_tracker.py` and three test files, plus the refresh's own artifacts. The version files net to no change (1.0.46 stepped back and re-set).
+Of the cited paths: `plugin/crew/BUDGETS.md` (`:11` figure, re-measured and matching, see
+Unverified), `CHANGELOG.md` and `TODO.md` changed; `.claude-plugin/marketplace.json`,
+`plugin/PLUGINS.md` and `plugin/crew/.claude-plugin/plugin.json` were stepped back to 1.0.45 in
+`764c2244` and re-set to 1.0.46 in `385eadd5`, so the version-drift check's bump commit for
+1.0.46 is now `385eadd5`. The root `README.md` this note cites is not in the diff.
+`python3 scripts/check-marketplace.py` was run for this refresh; its result is in the refresh
+commit's message.

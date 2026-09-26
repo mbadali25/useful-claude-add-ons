@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@7b667587 on 2026-09-26. Verify before trusting.
+%% Generated from useful-claude-add-ons@385eadd5 on 2026-09-26. Verify before trusting.
 %% Anchors: plugin/crew/commands/brainstorm.md, plugin/crew/commands/spec.md, plugin/crew/commands/plan.md, plugin/crew/commands/approve.md, plugin/crew/commands/implement.md, plugin/crew/commands/review.md, plugin/crew/commands/done.md, plugin/crew/commands/fix.md, plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/crew_ticket.py, plugin/crew/hooks/scripts/completion_audit.py, plugin/crew/hooks/scripts/crew_refresh_check.py, plugin/crew/hooks/scripts/crew_tracker.py
 %% The crew 1.0 ticket lifecycle: brainstorm -> spec -> plan -> approve -> implement -> refresh artifacts -> review -> done.
 %% --
@@ -20,13 +20,19 @@
 %% command-file line below was re-mapped with `git diff -U0 c35edda5 7b667587` and
 %% the moved or rewritten ones re-read; crew_tracker.py is cited by name only. A
 %% failed tracker write (exit 1) never undoes the transition it follows.
+%% Re-anchored for T-0021 review round 1 at 385eadd5: of the anchored paths only
+%% brainstorm.md and crew_tracker.py changed. brainstorm.md's approval step now calls
+%% crew_tracker.py move --to ready (:80) instead of hand-editing INDEX (was :77), and
+%% the /crew:fix suggestion moved :81-82 -> :89-90 (`git diff -U0 7b667587 385eadd5`,
+%% re-read); :15-39, :44, :53, :62-72 hold. crew_tracker.py is cited by name only.
 %% Every node cites the command file's own line; files are named repo-relative
 %% here and by basename in the nodes (all under plugin/crew/commands/ unless
 %% named otherwise):
 %%   plugin/crew/commands/brainstorm.md:15-39 mint ticket: crew_tracker.py resolve (:22),
 %%     then crew_tracker.py create (:29) - INDEX row `direction`, Obsidian card + note;
 %%     :44 one question per message; :53 propose 2-3 options; :62-70 direction.md;
-%%     :72 show and stop; :77 INDEX -> `ready`; :81-82 suggest /crew:fix when small.
+%%     :72 show and stop; :80 crew_tracker.py move --to ready (INDEX `ready`, card
+%%     stays in Backlog); :89-90 suggest /crew:fix when small.
 %%   plugin/crew/commands/spec.md:10 refuses without direction.md; :15 writes spec.md;
 %%     :38-43 Touch feeds the scope guard, one path per bullet; :45-48
 %%     crew_tracker.py move --to spec;
@@ -79,7 +85,7 @@
 %% since approval"); the other two are inferred from the same hash, not observed.
 flowchart TB
     ask([A request])
-    ask --> small{"small? one subsystem, known cause,<br/>no new behaviour, no auth/SQL/IaC<br/>brainstorm.md:81-82"}
+    ask --> small{"small? one subsystem, known cause,<br/>no new behaviour, no auth/SQL/IaC<br/>brainstorm.md:89-90"}
     small -- yes --> fix["/crew:fix - same phases,<br/>one step each, one review round<br/>fix.md:2, :71, :87"]
     small -- no --> BR
 
@@ -90,7 +96,7 @@ flowchart TB
 
     br3 --> ok1{user approves<br/>the direction?}
     ok1 -- no --> br2
-    ok1 -- yes --> rdy["INDEX -> 'ready'<br/>brainstorm.md:77"]
+    ok1 -- yes --> rdy["crew_tracker.py move --to ready<br/>(INDEX 'ready', card stays in Backlog)<br/>brainstorm.md:80"]
 
     subgraph spec["/crew:spec"]
         rdy --> sp1{"direction.md?<br/>spec.md:10"}

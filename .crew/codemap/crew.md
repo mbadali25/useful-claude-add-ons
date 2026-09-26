@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@7b667587
+anchor: useful-claude-add-ons@385eadd5
 verified: 2026-09-26
 
 ## Re-derive provenance
@@ -25,7 +25,8 @@ agent/command prose beyond their frontmatter and the sections cited below;
 definition; any test file's contents (existence and size only).
 Re-verified per-path from `f2bb919b` to `adf8d1dd` for T-0008, from
 `adf8d1dd` to `8d447a7d` for its review round 3, to `c35edda5` for
-T-0034, and to `7b667587` for T-0021; see the last four sections.
+T-0034, to `7b667587` for T-0021, and to `385eadd5` for its review round 1;
+see the last five sections.
 
 # crew
 
@@ -472,42 +473,58 @@ T-0015 against this refresh.
 
 ## The tracker interface (T-0021, crew 1.0.46)
 
-DERIVED at `7b667587`. `plugin/crew/hooks/scripts/crew_tracker.py` is the one
-module that writes a tracker, and the only crew code that writes outside the
-repository (an Obsidian vault). A CLI the commands call, not a hook.
+DERIVED at `385eadd5` (review round 1's fixes; first derived at `7b667587`).
+`plugin/crew/hooks/scripts/crew_tracker.py` is the one module that writes a
+tracker, and the only crew code that writes outside the repository (an
+Obsidian vault). A CLI the commands call, not a hook.
 
-- `resolve` (`:150`) reads BOTH config shapes - `.crew/crew.json`
-  `tracker.kind` and `.crew/config.json` `tracker` (`_side`, `:113`) - and
+- `resolve` (`:157`) reads BOTH config shapes - `.crew/crew.json`
+  `tracker.kind` and `.crew/config.json` `tracker` (`_side`, `:120`) - and
   answers `could not tell` when both state a kind and they differ, or agree on
   the kind but not its settings block; `not configured` when neither states
-  one. Every write refuses on `could not tell` (`_gate`, `:205`).
-- Status -> lane is the table `LANE_FOR_STATUS` (`:67`); a status absent from
-  it is refused with nothing written (`move`, `:763`).
+  one. Every write refuses on `could not tell` (`_gate`, `:212`).
+- Status -> lane is the table `LANE_FOR_STATUS` (`:73`), `ready` (brainstorm's
+  approval) included, mapped to the backlog lane; a status absent from it is
+  refused with nothing written (`move`, `:931`).
 - Files backend: the `.work/INDEX.md` row whose id cell matches exactly
-  (`_files_create` `:326`, `_files_move` `:347`, `_files_read` `:369`).
-  Obsidian = files + the board (`_obsidian_create` `:688`, `_obsidian_move`
-  `:706`, `_obsidian_read` `:726`); Jira/SDP answer `delegated` with the sync
-  command (`_delegated`, `:742`); CLI exit codes 0/1/3/2 (`exit_code` `:199`,
-  `main` `:814`).
-- Every write goes through `_atomic_update` (`:234`): temp file, re-read the
-  target (`:255`), `os.replace`, at most `WRITE_TRIES` (`:83`) recomputes.
-- Vault confinement is `_vault_paths` (`:594`): realpath, `.obsidian/`
-  required, relative `boardDir` without `..`, bare `board`, `commonpath`
-  inside the vault (`:620`), and an in-worktree vault only when
-  `git check-ignore` says ignored (`:626`). It runs before either half writes.
-- The board is edited, never regenerated: `parse_board` (`:437`),
-  `find_card` (`:488`; a card is the first id on its first line),
-  `move_card` (`:536`), `add_card` (`:560`). The ticket note is an exclusive
-  create (`:679`).
-- Called by `brainstorm.md:29`, `spec.md:46`, `plan.md:60`,
+  (`_files_create` `:412`, `_files_move` `:436`, `_files_read` `:461`); a row
+  with no status cell is `could not update` / `could not read`. `title_ok`
+  (`:402`) refuses `|` and every break `str.splitlines` honours. Obsidian =
+  files + the board (`_obsidian_create` `:840`, `_obsidian_move` `:864`,
+  `_obsidian_read` `:890`); Jira/SDP answer `delegated` with the sync command
+  (`_delegated`, `:910`); CLI exit codes 0/1/3/2 (`exit_code` `:206`, `main`
+  `:982`).
+- Every write goes through `_atomic_update` (`:310`): the temp is created by
+  `_write_temp` (`:290`) with `_TEMP_FLAGS` (`:247`, `O_EXCL|O_NOFOLLOW`) under
+  a random name, so a planted link is never followed; `_carry` (`:274`) gives it
+  the target's owner and mode from `_ownership` (`:258`) - a new file takes its
+  directory's owner only as root; then re-read the target (`:330`),
+  `os.replace`, at most `WRITE_TRIES` (`:90`) recomputes.
+- Vault confinement is `_vault_paths` (`:700`): realpath, `.obsidian/`
+  required, relative `boardDir` without `..`, a string bare `board`,
+  `commonpath` inside the vault (`:728`), and each board or note file inside
+  the worktree only when `git check-ignore` says ignored (`:737`, per file, so
+  a vault that contains the repo is covered). It runs before either half
+  writes.
+- Card ownership on a shared board (`boardDir` unset): the ticket note's
+  `- repo:` line (`_card_owner` `:817`); `_foreign` (`:830`) refuses create,
+  move and read when it names another repo. `create` also refuses a card no
+  note claims; `move` needs this repo's INDEX row and prints `whose card could
+  not tell` when no note names one.
+- The board is edited, never regenerated: `parse_board` (`:543`, lines split
+  on LF alone by `_board_lines` `:502`), `find_card` (`:594`; a card is the
+  first id on its first line), `move_card` (`:642`), `add_card` (`:666`). The
+  ticket note is an exclusive create (`:793`).
+- Called by `brainstorm.md:29` and `:80`, `spec.md:46`, `plan.md:60`,
   `implement.md:36` and `:112`, `done.md:62` and `fix.md:28`, `:69`, `:77`,
   `:84-85` (all under `plugin/crew/commands/`); `crew_status.py` prints its
   tracker line from `resolve` (`plugin/crew/hooks/scripts/crew_status.py:63`).
 - Tests: `plugin/crew/tests/test_crew_tracker.py`, fixtures under
-  `plugin/crew/tests/tracker_fixtures/`, 24 mutations in
-  `plugin/crew/tests/sabotage_tracker.py`; one `.crew/verify.json` rule
-  (`:262-269`). JUDGEMENT: the Kanban plugin's acceptance of the edited board
-  was checked by byte comparison only, never by opening Obsidian.
+  `plugin/crew/tests/tracker_fixtures/`, 42 mutations in
+  `plugin/crew/tests/sabotage_tracker.py` (two of them RED only as root: the
+  owner tests skip without it); one `.crew/verify.json` rule (`:262-269`).
+  JUDGEMENT: the Kanban plugin's acceptance of the edited board was checked by
+  byte comparison only, never by opening Obsidian.
 
 ## The artifact refresh check (T-0008, crew 1.0.36)
 
@@ -790,3 +807,15 @@ its commits). This note cites five of them with a line; each was re-read with `g
 - `TODO.md:3945` - T-0021 appended at the end of the file; holds.
 
 New this pass: the "tracker interface" section above, read from source at `7b667587`.
+
+## Re-anchor provenance - `7b667587` -> `385eadd5`, 2026-09-26 (T-0021 review round 1)
+
+`git diff --name-only 7b667587 385eadd5` returns T-0021's refresh (`bc6432b1`), the version step-back (`764c2244`) and review round 1's fix commit (`385eadd5`): `CHANGELOG.md`, `TODO.md`, `plugin/crew/BUDGETS.md`, `plugin/crew/README.md`, `brainstorm.md`, `obsidian-sync.md`, `crew_tracker.py` and three test files, plus the refresh's own artifacts. The version files net to no change (1.0.46 stepped back and re-set). This note cites `crew_tracker.py` and `brainstorm.md` with lines; both were re-read:
+
+- `crew_tracker.py` - every line in the tracker-interface section was re-grepped at `385eadd5`
+  (`def`/assignment lines) and rewritten; the section also gains the temp-file, ownership and
+  card-owner mechanics the fix added. Mutation count 24 -> 42, counted from
+  `TRACKER_MUTATIONS`.
+- `brainstorm.md` - `:29` holds; the approval step now calls the tracker at `:80`.
+- `marketplace.json:217` and `TODO.md:3945` - not in the diff's net change / above the T-0021
+  edit at the end of `TODO.md`; hold.
