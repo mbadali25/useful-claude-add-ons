@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@4ff7e764
+anchor: useful-claude-add-ons@29a987b0
 verified: 2026-09-26
 
 ## Re-derive provenance
@@ -417,7 +417,7 @@ routes its whole argument string, single-quoted (`## 0. Route`, `:12-26`), then 
 prints `status` (`## 1. status`, `:28-35`, read-only, armed or not) or drives
 one ticket through the phase commands **in-session**, following each
 command's own procedure; the run refuses unless armed (`:45-46`). The reader
-behind it, `plugin/crew/hooks/scripts/crew_autopilot.py` (956 lines), is
+behind it, `plugin/crew/hooks/scripts/crew_autopilot.py` (994 lines), is
 read-only (module docstring, `:1-16`) with six subcommands: `next`,
 `resume`, `settings`, `stops`, `route`, `status`. `next_phase` (`:465`) names
 the next phase from files on disk, first match wins (the table at `:17-39`);
@@ -439,12 +439,15 @@ the subcommand: `SUBCOMMANDS` (`:152`), of which only `status` and `run` are
 bare INDEX-shaped id or existing `.work/tickets/<id>/` is `run`; any other
 word, a second word that is not a ticket, or a third word stops (`run --goal`
 stops naming T-0012); `route --first <token>` routes one token alone. `status`
-(`:802`) composes `settings`, `resume_target` or `next_phase`,
-`review_ledger.status` and `crew_resume`, and `status_text` (`:837`) caps it
+(`:838`) composes `settings`, `resume_target` or `next_phase`,
+`review_ledger.status` and `crew_resume`, and `status_text` (`:875`) caps it
 at 12 lines; what it cannot tell reads `unknown`. Its `resume:` line reads usable
-only where `_handoff_ticket` would take it (`_resume_line`, `:766`), and a `next` stop made
+only where bare `/crew:autopilot` - `resume_target` itself - would take it (`_resume_line`,
+`:793`; `_takes`, `:729`), and says `unknown` when `resume_target` raised. A `next` stop made
 on the active-ticket pointer rather than the phase waits on re-pointing it (`_repoint`,
-`:740`), never on the owner typing the phase's command. Defaults live in
+`:759`), never on the owner typing the phase's command, and offers driving the active ticket
+only while it is not closed; a `stop=0` phase names bare `/crew:autopilot` only when that
+drives the same ticket (`_waiting`, `:735`). Defaults live in
 `crew_state.AUTOPILOT_DEFAULTS` (`plugin/crew/hooks/scripts/crew_state.py:1087`,
 `{"mode": "off", "maxPhases": 12}`), deep-copied into `default_config()`
 (`plugin/crew/hooks/scripts/crew_config.py:374`). It registers no hook -
@@ -643,7 +646,7 @@ or nothing" at `adf8d1dd`; T-0008's refresh commit `b7b02842` redrew it as
 - `plugin/crew/hooks/scripts/crew_refresh_check.py:576` — `ticket_freshness`,
   the library entry point; `main()` at `:676`.
 - `plugin/crew/hooks/scripts/crew_autopilot.py:465` — `next_phase`, read-only;
-  `main()` at `:875` is the `next` / `resume` / `settings` / `stops` /
+  `main()` at `:913` is the `next` / `resume` / `settings` / `stops` /
   `route` / `status` CLI `plugin/crew/commands/autopilot.md` calls.
 - `plugin/crew/hooks/scripts/crew_endpoints.py:566` — `declare_endpoint`,
   the only writer of *declared* records. Not the only writer of
@@ -1016,3 +1019,23 @@ was re-read with `grep -n`/`sed -n` at `4ff7e764`:
   `:24-31` -> `:28-35`, the arming refusal `:41-42` -> `:45-46`, the branch/head rule `:43-44`
   -> `:47-48`; `allowed-tools` `:4` holds.
 - `README.md`, `CHANGELOG.md` and the tests - cited by name only here.
+
+## Re-anchor provenance - `4ff7e764` -> `29a987b0`, 2026-09-26 (T-0018 review round 2)
+
+`crew_refresh_check.py --root . --ticket T-0018` named this note after the round-2 fix commit. Of
+the paths it cites, `git diff --name-only 4ff7e764 29a987b0` returns `.crew/verify.json`,
+`CHANGELOG.md`, `plugin/crew/hooks/scripts/crew_autopilot.py` and the autopilot tests. Each
+citation into them was re-read with `grep -n`/`sed -n` at `29a987b0`:
+
+- `crew_autopilot.py` - every change sits below `_reserved_round` (`:711`), so every T-0004 and
+  `route` citation above it holds (`:1-16`, `:119`, `:136`, `:142`, `:152`, `:465`, `:536`,
+  `:606`, `:626-630`, `:635`, `:651`, `:680`). `_bare` (`:720`), `_takes` (`:729`) and `_waiting`
+  (`:735`) are newly cited; `_repoint` `:740` -> `:759`, `_resume_line` `:766` -> `:793`,
+  `status` `:802` -> `:838`, `status_text` `:837` -> `:875`, `main` `:875` -> `:913`. 994 lines.
+  The `_resume_line` claim is rewritten: it now defers to `resume_target`, not
+  `_handoff_ticket`.
+- `.crew/verify.json` - rule 26's `seconds` and `why` changed in place; `:281-289` holds, 294
+  lines.
+- `CHANGELOG.md` and the tests - cited by name only here, except `CHANGELOG.md:65` (the config
+  key count paragraph), which did not match "116 -> 118" at `4ff7e764` either and is left as it
+  was, outside this refresh.

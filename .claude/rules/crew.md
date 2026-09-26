@@ -2,9 +2,9 @@
 paths:
   - "plugin/crew/**"
 ---
-<!-- crew:generated source=.crew/codemap/crew.md sha256=bd356ab9f8bb1b5a -- do not hand-edit; regenerate with crew_instructions.py rules -->
+<!-- crew:generated source=.crew/codemap/crew.md sha256=236a42a93e5d95c9 -- do not hand-edit; regenerate with crew_instructions.py rules -->
 # crew
-Code map anchor `4ff7e764`; if it is behind HEAD, re-check with `git diff --name-only 4ff7e764..HEAD -- <cited paths>`.
+Code map anchor `29a987b0`; if it is behind HEAD, re-check with `git diff --name-only 29a987b0..HEAD -- <cited paths>`.
 Covers: The crew plugin after 1.0: hooks, the four agents, commands, skills inventory, config layering and leaf counts, and how crew_freshness.py reads this very directory.
 ## Entry points
 - `plugin/crew/hooks/scripts/crew_state.py:993` — `TRIGGERS`, a 15-entry tuple, unchanged in membership and order from the previous anchor.
@@ -18,6 +18,6 @@ Covers: The crew plugin after 1.0: hooks, the four agents, commands, skills inve
 - `plugin/crew/hooks/scripts/crew_autoclear_setup.py` — no single `main()` confirmed at a specific line this pass; called with subcommands (`plan-windows-default`, `apply-migrate`) from the three sites named above.
 - `plugin/crew/hooks/scripts/crew_resume.py:411` — `decide`, read-only; `main()` is the `decide` / `record` / `precompact` CLI.
 - `plugin/crew/hooks/scripts/crew_refresh_check.py:576` — `ticket_freshness`, the library entry point; `main()` at `:676`.
-- `plugin/crew/hooks/scripts/crew_autopilot.py:465` — `next_phase`, read-only; `main()` at `:875` is the `next` / `resume` / `settings` / `stops` / `route` / `status` CLI `plugin/crew/commands/autopilot.md` calls.
+- `plugin/crew/hooks/scripts/crew_autopilot.py:465` — `next_phase`, read-only; `main()` at `:913` is the `next` / `resume` / `settings` / `stops` / `route` / `status` CLI `plugin/crew/commands/autopilot.md` calls.
 - `plugin/crew/hooks/scripts/crew_endpoints.py:566` — `declare_endpoint`, the only writer of *declared* records.
 Full note: `.crew/codemap/crew.md`.

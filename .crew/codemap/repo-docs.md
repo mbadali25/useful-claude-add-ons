@@ -1,5 +1,5 @@
 # repo-docs
-anchor: useful-claude-add-ons@4ff7e764
+anchor: useful-claude-add-ons@29a987b0
 verified: 2026-09-26
 
 ## Re-derive provenance
@@ -579,3 +579,10 @@ paragraph; cited without a line) and `plugin/crew/README.md` (two lines edited i
 so the `docs/runbooks/INDEX.md` mention holds at `:1818`, re-grepped). `README.md`, `TODO.md`,
 `plugin/README.md` and both install scripts did not change. `python3 scripts/check-marketplace.py`
 at `4ff7e764`: `marketplace: 34 skills, 5 plugins` / `all checks passed`.
+
+Re-verified per-path from `4ff7e764` to `29a987b0` (T-0018 review round 2). Of the cited paths,
+`git diff --name-only 4ff7e764..29a987b0` returns `.crew/verify.json` (rule 26's `seconds` and
+`why` changed in place; no line moved, so every `.crew/verify.json:<n>` citation here holds) and
+`CHANGELOG.md` (the 1.0.42 entry gained its round-2 paragraph; cited without a line).
+`plugin/crew/README.md`, `README.md`, `TODO.md`, `plugin/README.md` and both install scripts did
+not change.

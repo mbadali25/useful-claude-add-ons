@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@5536c2c8
+anchor: useful-claude-add-ons@29a987b0
 verified: 2026-09-26
 paths: scripts/**, plugin/PLUGINS.md
 
@@ -373,3 +373,11 @@ rules; the doc rule at `:69-78` is unchanged) and `CHANGELOG.md` changed. Both i
 `skills/README.md` did not. No command, agent or skill was added or removed.
 `python3 scripts/check-marketplace.py` at `5536c2c8`: `marketplace: 34 skills, 5 plugins`,
 `all checks passed`.
+
+Re-verified per-path from `5536c2c8` to `29a987b0` for T-0018's review rounds 1 and 2: of the
+cited paths, `git diff --name-only 5536c2c8 29a987b0` returns `.crew/verify.json` (rule 26's
+`seconds` and `why` only; 27 rules; the doc rule at `:69-78` is unchanged) and `CHANGELOG.md`. The
+version files (`.claude-plugin/marketplace.json:218`, `plugin/PLUGINS.md:14`,
+`plugin/crew/.claude-plugin/plugin.json`) are at 1.0.42 on both sides. Both install scripts,
+`README.md`, `plugin/README.md`, `INSTALLATION.md`, `scripts/check-marketplace.py`, `CLAUDE.md`
+and `skills/README.md` did not change. No command, agent or skill was added or removed.
