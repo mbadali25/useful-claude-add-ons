@@ -2152,6 +2152,18 @@ R5_MUST_BLOCK = _normalise([
      _unseen()),
     ("r5-container-image", "Bash",
      f"docker run --rm hashicorp/terraform:1.9 {_ADESTROY}", _unseen()),
+    # A data command's exemption must not cover what it runs: `git bisect
+    # run`, `rg --pre`; and a copy made inside `bash -c` still renames.
+    ("r5-git-bisect-run", "Bash", "git bisect run terraform destroy",
+     _unseen()),
+    ("r5-git-dash-c-bisect-run", "Bash",
+     "git -C infra bisect run terraform destroy", _unseen()),
+    ("r5-git-dash-c-value-is-a-subcommand", "Bash",
+     "git -C add bisect run terraform destroy", _unseen()),
+    ("r5-rg-pre", "Bash", "rg --pre terraform destroy .", _unseen()),
+    ("r5-nested-copy-bare-name", "Bash",
+     "bash -c 'cp /usr/bin/terraform ./ls' && PATH=.:/usr/bin ls "
+     f"{_ADESTROY}", _gate()),
     # FIX 1: wrappers the lexer does not strip.
     ("r5-flock", "Bash", "flock /tmp/l terraform destroy", _unseen()),
     ("r5-strace", "Bash", "strace -f terraform destroy", _unseen()),
@@ -2236,6 +2248,8 @@ R5_MUST_ALLOW = _normalise([
     ("r5a-cp-dir", "Bash", 'cp -r terraform "$BACKUP_DIR"', _o(**_STAGING)),
     ("r5a-mv-dir", "Bash", 'mv terraform "$HOME/old"', _o(**_STAGING)),
     ("r5a-git-add", "Bash", 'git add terraform "$f"', _o(**_STAGING)),
+    ("r5a-git-dash-c-add", "Bash", 'git -C terraform add main.tf "$f"',
+     _o(**_STAGING)),
     ("r5a-ls-dir", "Bash", "ls terraform $HOME", _o(**_STAGING)),
     ("r5a-find-dir", "Bash", "find terraform -name *.tf", _o(**_STAGING)),
     ("r5a-echo-next", "Bash", 'echo Next: terraform apply in "$dir"',

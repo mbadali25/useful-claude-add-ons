@@ -60,7 +60,8 @@ All notable changes to this repository are documented here. Format follows [Keep
   word) and not an `xargs -I` placeholder — are judged by the parser as before
   Step 8, so `terraform plan -var 'environment=staging'` runs under `block` and
   unattended again. Nor are the arguments of programs that never run one
-  (`cp`, `mv`, `ls`, `git` without `-c`, `find` without `-exec`, `echo`, ...):
+  (`cp`, `mv`, `ls`, `git add|commit|log|...` - not `git bisect run` or
+  `git -c`, `find` without `-exec`, `echo`, ...; not `rg`, for `--pre`):
   `cp -r terraform "$BACKUP_DIR"` is not refused. A script file run by a shell
   (`bash build.sh`) and a `source`d file stay unread, as documented, rather
   than refusing every line beside them. PowerShell lines keep the any-word
@@ -137,7 +138,7 @@ All notable changes to this repository are documented here. Format follows [Keep
   plan bound to `production`), the `environments` config tests in
   `test_crew_config.py`; the must-block and must-allow tables for review
   rounds 2 and 3, the literal-word gate, the command-word trigger and review
-  round 5 (`R5_MUST_BLOCK`, `R5_MUST_ALLOW`); 129 new mutations in
+  round 5 (`R5_MUST_BLOCK`, `R5_MUST_ALLOW`); 133 new mutations in
   `sabotage_cloud.py`, each red. `.crew/verify.json` gains a rule running the
   three cloud-guard suites. Not in scope: `gh workflow run` deploys (T-0009)
   and TFC/HCP workspaces or runs driven over HTTP (`curl`, `gh api`), which

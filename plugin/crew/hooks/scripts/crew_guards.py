@@ -1528,12 +1528,21 @@ _TF_READ_ONLY_PAIRS = {"workspace": frozenset(("list", "show")),
 # Programs that never run an argument as a program, so a word naming
 # terraform among their arguments is data (`cp -r terraform "$BACKUP_DIR"`).
 # Only a bare command word counts: a path may be a copy of terraform. `git`
-# counts unless `-c`/`--exec-path` could make it run something.
+# counts only for the subcommands in `_GIT_DATA` (`git bisect run`, `rebase
+# -x` and `submodule foreach` run programs) and never with `-c`/`--exec-path`;
+# `rg` is left out for `--pre`.
 _GATE_DATA = frozenset((
     "cp", "mv", "rm", "ls", "mkdir", "rmdir", "touch", "cat", "head", "tail",
-    "wc", "grep", "egrep", "fgrep", "rg", "echo", "printf", "stat", "du",
-    "file", "cmp", "chmod", "chown", "chgrp", "ln", "readlink", "realpath",
+    "wc", "grep", "egrep", "fgrep", "echo", "printf", "stat", "du", "file",
+    "cmp", "chmod", "chown", "chgrp", "ln", "readlink", "realpath",
     "basename", "dirname", "tree", "cd", "pushd", "git", "jq", "find"))
+_GIT_DATA = frozenset((
+    "add", "commit", "status", "log", "diff", "show", "mv", "rm", "checkout",
+    "switch", "restore", "branch", "tag", "fetch", "pull", "push", "stash",
+    "grep", "blame", "ls-files", "clone", "init", "remote", "reset", "apply",
+    "am", "cherry-pick", "revert", "merge", "describe", "shortlog",
+    "rev-parse", "ls-tree", "cat-file"))
+_GIT_VALUE_OPTS = frozenset(("-C", "--git-dir", "--work-tree", "--namespace"))
 # Commands that can put terraform under another name for a later command on
 # the same line (`ln -sf /usr/bin/terraform tf && ./tf destroy`).
 _GATE_COPIERS = frozenset(("ln", "cp", "install", "link", "mv", "rsync"))
@@ -1580,11 +1589,21 @@ def _first_operand(args):
     return next((a for a in args if not a.startswith("-")), None)
 
 
+def _git_subcommand(args):
+    """git's subcommand, past its global options, or None when an option
+    could make git run a program (`-c`, `--exec-path`, `--config-env`)."""
+    index = 0
+    while index < len(args) and args[index].startswith("-"):
+        if args[index].startswith(("-c", "--exec-path", "--config-env")):
+            return None
+        index += 2 if args[index] in _GIT_VALUE_OPTS else 1
+    return args[index] if index < len(args) else None
+
+
 def _is_data(head, first, args):
     if head not in _GATE_DATA or "/" in first or "\\" in first:
         return False
-    return head != "git" or not any(
-        a.startswith(("-c", "--exec-path", "--config-env")) for a in args)
+    return head != "git" or _git_subcommand(args) in _GIT_DATA
 
 
 def _find_exec_trigger(args, top, helpers, depth, line):
@@ -1628,14 +1647,15 @@ def _argv_trigger(argv, top, helpers, depth, line):
         return None if _tf_read_only(argv, fed) else (first, False)
     if any(c in first for c in " \t\n"):
         # `watch "terraform destroy"`: the command word is itself a script.
-        return _bash_trigger(" ".join(argv), top, helpers, depth + 1)
+        return _bash_trigger(" ".join(argv), top, helpers, depth + 1, line)
     head = head_name(first)
     if head == "busybox" and args and head_name(args[0]) in _GATE_SHELLS:
         head, args = head_name(args[0]), args[1:]
     if head in _GATE_SHELLS:
         has_c, positional = shell_args(args)
         if has_c and positional and _HOLE not in positional[0]:
-            return _bash_trigger(positional[0], top, helpers, depth + 1)
+            return _bash_trigger(positional[0], top, helpers, depth + 1,
+                                 line)
         if not has_c and positional and _HOLE not in positional[0] \
                 and not _names_tool(positional[0]):
             # `bash build.sh`: a script file, which crew does not read
@@ -1654,7 +1674,7 @@ def _argv_trigger(argv, top, helpers, depth, line):
     if head == "eval":
         # An expansion in the script is `_HOLE`, a control character, so the
         # reader gives up on it and the line-wide name decides.
-        return _bash_trigger(" ".join(args), top, helpers, depth + 1)
+        return _bash_trigger(" ".join(args), top, helpers, depth + 1, line)
     if head == "find" and any(a in _FIND_EXEC for a in args):
         # What find runs is read as commands of their own; find runs
         # nothing else.
@@ -1693,9 +1713,11 @@ def _copies_terraform(cmds, head_name):
         for argv in cmds if argv)
 
 
-def _bash_trigger(text, top, helpers, depth):
+def _bash_trigger(text, top, helpers, depth, line=None):
     """`(word, unseen)` for the first command in `text` that runs
-    terraform, with `unseen` true when ANY such command is unseen."""
+    terraform, with `unseen` true when ANY such command is unseen. `line`
+    is shared with every nested script, so a copy of terraform made inside
+    `bash -c` still counts for the commands after it."""
     try:
         if _GATE_CONTROL_RE.search(text):
             raise _Unsure("a control character")
@@ -1704,7 +1726,8 @@ def _bash_trigger(text, top, helpers, depth):
     except _Unsure:
         named = names_terraform(text, "bash") or names_terraform(top, "bash")
         return None if named is None else (named, True)
-    line = {"copies": _copies_terraform(cmds, helpers[4])}
+    line = {"copies": False} if line is None else line
+    line["copies"] = line["copies"] or _copies_terraform(cmds, helpers[4])
     found, unseen = None, False
     for argv in cmds:
         hit = _argv_trigger(argv, top, helpers, depth, line)
