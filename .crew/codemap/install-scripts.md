@@ -1,6 +1,6 @@
 # install-scripts
-anchor: useful-claude-add-ons@8d447a7d
-verified: 2026-09-25
+anchor: useful-claude-add-ons@6d35ef8c
+verified: 2026-09-26
 
 ## Re-derive provenance
 
@@ -407,3 +407,15 @@ Re-verified per-path from `adf8d1dd` to `8d447a7d` for T-0008's review round 3: 
 only `plugin/crew/README.md` changed, two lines reworded in place at `:764` and `:766`; the
 `34 commands` claim at `:2178` and `4 agents` at `:2189` did not move and still hold. Both install
 scripts, `README.md` and `scripts/check-marketplace.py` did not change.
+
+Re-verified per-path from `8d447a7d` to `6d35ef8c` for T-0006 (`8d447a7d` is T-0008's pre-rebase
+commit, tree-identical to `origin/main` `768a747a` for these paths): of the cited paths
+`.claude-plugin/marketplace.json` (crew `version` `:218`, now 1.0.40; `:217` unchanged),
+`plugin/PLUGINS.md` (`:14` version; `:17` Registers row unchanged), `plugin/crew/BUDGETS.md` (marker
+still `:10`; the `:11` figure is now 17,959 lines across 120 files, and
+`git ls-files 'plugin/crew/*.md' | xargs cat | wc -l` returns 17959), `plugin/crew/README.md` (28
+lines of auto-resume prose added above the command table, so the `34 commands` claim moved
+`:2178` -> `:2206` and `4 agents` `:2189` -> `:2217`; both re-read and still hold,
+`ls plugin/crew/commands/*.md` is 34 and `ls plugin/crew/agents/*.md` is 4) and `TODO.md`
+changed. Both install scripts, `README.md` and `scripts/check-marketplace.py` did not, so their
+citations stand.

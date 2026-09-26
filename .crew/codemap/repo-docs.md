@@ -1,6 +1,6 @@
 # repo-docs
-anchor: useful-claude-add-ons@8d447a7d
-verified: 2026-09-25
+anchor: useful-claude-add-ons@6d35ef8c
+verified: 2026-09-26
 
 ## Re-derive provenance
 
@@ -287,7 +287,7 @@ listing the directory.
 - **`docs/runbooks/INDEX.md` still does not exist.** `docs/runbooks/`
   contains `rollback.md` alone (re-confirmed by `ls`).
   `plugin/crew/skills/crew-runbooks/SKILL.md:80` and
-  `plugin/crew/README.md:1728` (`:1725` at `f2bb919b`, `:1604` before that,
+  `plugin/crew/README.md:1756` (`:1725` at `f2bb919b`, `:1604` before that,
   that file having changed in each range — re-grepped, not offset) both still describe
   `docs/runbooks/INDEX.md` as a symptom-keyed index that would live there.
   JUDGEMENT, unchanged: costs nothing with one runbook, becomes a real gap at
@@ -339,7 +339,7 @@ listing the directory.
   resolves to stale.
 
 - **`TODO.md`'s `render.sh` entry is still open, still un-CLOSED, re-located
-  rather than assumed at its old line.** Now at `TODO.md:1183` (`:1122` at
+  rather than assumed at its old line.** Now at `TODO.md:1190` (`:1122` at
   `f2bb919b`, `:1092` at `6c497a14`, `:1061` before that; the file grew 3645 -> 4714 lines, +1069,
   in the `5d1fc5fd..6c497a14` range, and 30 more lines landed after its
   `:16` by `f2bb919b`, and this note's own
@@ -474,3 +474,16 @@ Re-verified per-path from `adf8d1dd` to `8d447a7d` for T-0008's review round 3: 
 move), `TODO.md` (two version strings at `:5000-5001`; the `render.sh` entry at `:1183` did not
 move), `CHANGELOG.md` (cited without a line) and
 `plugin/crew/hooks/scripts/crew_refresh_check.py` (cited by name only) changed.
+
+Re-verified per-path from `8d447a7d` to `6d35ef8c` for T-0006 (`8d447a7d` is T-0008's pre-rebase
+commit, tree-identical to `origin/main` `768a747a` for these paths): of the cited paths,
+`.crew/verify.json` (rule 24 appended last; `:244` and `:245-261` hold), `plugin/crew/README.md`
+(auto-resume prose added, so the `docs/runbooks/INDEX.md` mention moved `:1728` -> `:1756`,
+re-read), `TODO.md` (one entry added at the top, so the `render.sh` entry moved `:1183` -> `:1190`,
+re-read, same heading), `plugin/crew/commands/handoff.md` (a `resume:` step added as item 5;
+`:7` still reads "Write `.work/HANDOFF.md` following the `crew-context` skill.", so the
+"unchanged file" remark above is true of its own pass, not of this one),
+`plugin/crew/skills/crew-context/SKILL.md` (the `resume:` line and the auto-resume paragraph added;
+`:69` still says to write `.work/HANDOFF.md`), `plugin/crew/hooks/scripts/crew_state.py`
+(`RESUME_DEFAULTS` inserted at `:684`; the `:129`-`:139` re-exports are above it and hold),
+`docs/guides/crew/src/auto-cycle.md` and `CHANGELOG.md` (cited without a line) changed.
