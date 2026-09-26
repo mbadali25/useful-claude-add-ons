@@ -78,8 +78,20 @@ All notable changes to this repository are documented here. Format follows [Keep
     printed; `--ticket <id>` suffices, and a given `<repo>` must match.
     **Breaking for 1.0.43 callers:** a free-text `<repo>` is refused. The
     README names `coord-identity.json.lock`.
-  - 137 cases in `tests/test_crew_coord.py` against a local bare remote;
-    57 mutations in `tests/sabotage_coord.py`, registered in `sabotage.py`.
+  - Review round 3 fixes. Recovery's deciding signal is now the heartbeat:
+    `recover` adopts only a claim whose `heartbeat_at` is older than the TTL,
+    so a live holder's claim never qualifies, whatever its pid reads; the pid
+    check can only refuse, and one that cannot tell still reads alive. A
+    claim records its PID namespace only when `CLAUDE_PID` was visible from
+    it, because bubblewrap reuses namespace ids and a sandbox's namespace
+    would vouch for a `gone` that means nothing (tested with a real `bwrap`).
+    The heartbeat lock is keyed by every field of the holder, worktree
+    included. The ticket half of a key is upper-cased, so `t-0030` and
+    `T-0030` are one key. Azure DevOps https (`<project>/_git/<repo>`) and
+    ssh (`v3/<org>/<project>/<repo>`) origins both give `project.repo`. A
+    `coord.ttlMinutes` of `NaN` or `Infinity` warns and uses 30.
+  - 162 cases in `tests/test_crew_coord.py` against a local bare remote;
+    65 mutations in `tests/sabotage_coord.py`, registered in `sabotage.py`.
     The `/crew:autopilot` resume-step line is pending T-0004; until then the
     README says to run `crew_coord.py status` first after `/clear`.
 

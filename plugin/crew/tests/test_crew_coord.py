@@ -1114,17 +1114,24 @@ def test_a_second_heartbeat_loop_for_the_same_claim_exits(capsys, monkeypatch, w
 _UNSET = object()
 
 
-def _claim_as_old(capsys, monkeypatch, root, pid, machine=None, start=None, pidns=_UNSET):
+def _claim_as_old(capsys, monkeypatch, root, pid, machine=None, start=None, pidns=_UNSET, fresh=False):
+    """sess-old claims with `pid`, then sess-new is the caller. By default the
+    claim records this process's PID namespace, as it does when the pid was
+    visible at claim time and has died since (`pidns` overrides it), and the
+    clock then moves past the TTL, so the heartbeat is stale and only the
+    check under test can refuse (`fresh=True` keeps it fresh)."""
     _session(monkeypatch, "sess-old", pid=pid)
+    recorded = crew_coord.pid_namespace() if pidns is _UNSET else pidns
     with monkeypatch.context() as patch:
         if machine is not None:
             patch.setattr(crew_coord, "machine", lambda: machine)
         if start is not None:
             patch.setattr(crew_coord, "process_start", lambda _pid: start)
-        if pidns is not _UNSET:
-            patch.setattr(crew_coord, "pid_namespace", lambda: pidns, raising=False)
+        patch.setattr(crew_coord, "holder_pidns", lambda _pid: recorded)
         code, out = _run(capsys, root, "claim")
     assert code == 0, out
+    if not fresh:
+        _shift_clock(monkeypatch, 31)
     _session(monkeypatch, "sess-new")
 
 
@@ -1390,7 +1397,10 @@ def test_recover_on_windows_refuses_access_denied(capsys, monkeypatch, wt, remot
 def test_recover_passes_the_parsed_ticket_to_the_heartbeat(capsys, monkeypatch, wt, remote, spawned):
     _set_origin(wt, remote, "https://example.test/owner/a_.git")
     _session(monkeypatch, "sess-old", pid=_dead_pid())
-    assert _run(capsys, wt, "claim", ticket="owner.a_:T-1")[0] == 0
+    with monkeypatch.context() as patch:
+        patch.setattr(crew_coord, "holder_pidns", lambda _pid: crew_coord.pid_namespace())
+        assert _run(capsys, wt, "claim", ticket="owner.a_:T-1")[0] == 0
+    _shift_clock(monkeypatch, 31)
     _session(monkeypatch, "sess-new", pid=os.getpid())
 
     code = crew_coord.main(["recover", "--root", str(wt), "--remote", "origin", "--channel", CHANNEL,
@@ -1452,9 +1462,12 @@ def test_status_lists_presented_claims_first_with_one_recommended_action(capsys,
     _session(monkeypatch, "sess-peer")
     _run(capsys, wt_b, "claim", ticket=f"{REPO}:T-0")
     _session(monkeypatch, "sess-old", pid=_dead_pid())
-    _run(capsys, wt, "claim", ticket=f"{REPO}:T-5")
+    with monkeypatch.context() as patch:
+        patch.setattr(crew_coord, "holder_pidns", lambda _pid: crew_coord.pid_namespace())
+        _run(capsys, wt, "claim", ticket=f"{REPO}:T-5")
     _session(monkeypatch, "sess-old2", pid=live_pid)
     _run(capsys, wt, "claim", ticket=f"{REPO}:T-6")
+    _shift_clock(monkeypatch, 31)
     _session(monkeypatch, "sess-new")
 
     code, out = _run(capsys, wt, "status")
@@ -1597,6 +1610,7 @@ def test_recover_by_the_same_session_from_another_process_refuses_while_the_old_
                                                                                            remote, live_pid):
     _session(monkeypatch, "sess-old", pid=live_pid)
     _run(capsys, wt, "claim")
+    _shift_clock(monkeypatch, 31)
     _session(monkeypatch, "sess-old", pid=_dead_pid())
 
     code, out = _run(capsys, wt, "recover")
@@ -1702,6 +1716,9 @@ def test_heartbeat_loop_exits_when_the_watched_pid_is_reused(capsys, monkeypatch
     top = os.path.realpath(wt)
     recorded = crew_coord.process_start(live_pid)
     monkeypatch.setattr(crew_coord, "process_start", lambda _pid: recorded)
+    # holder_pidns probes the pid too; keep it off the scripted sequence, which
+    # is the loop's alone.
+    monkeypatch.setattr(crew_coord, "holder_pidns", lambda _pid: None)
     probes = iter([crew_coord.PidProbe("alive", "100", True), crew_coord.PidProbe("alive", "200", True)])
     monkeypatch.setattr(crew_coord, "probe_pid", lambda _pid: next(probes, crew_coord.PidProbe("gone", None, True)))
 
@@ -1709,3 +1726,171 @@ def test_heartbeat_loop_exits_when_the_watched_pid_is_reused(capsys, monkeypatch
 
     assert code == 0
     assert [e["event"] for e in _log(remote)] == ["claim"]
+
+
+# --- Step 7 successor: review round 3 (T-0030-coord--fBUyjd) --------------------
+
+@pytest.mark.parametrize("minutes", [0, 29], ids=["0m", "29m"])
+def test_recover_refuses_a_fresh_heartbeat_whose_pid_reads_gone(capsys, monkeypatch, wt, remote, minutes):
+    _claim_as_old(capsys, monkeypatch, wt, _dead_pid(), fresh=True)
+    _shift_clock(monkeypatch, minutes)
+    monkeypatch.setattr(crew_coord, "probe_holder", lambda _holder: crew_coord.PidProbe("gone", None, True))
+
+    code, out = _run(capsys, wt, "recover")
+
+    _assert_presented_not_adopted(code, out, remote, "heartbeat is fresh")
+
+
+def test_recover_adopts_a_stale_heartbeat_whose_pid_is_gone(capsys, monkeypatch, wt, remote):
+    _linux_only()
+    old = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(120)"],  # pylint: disable=consider-using-with
+                           stdin=subprocess.DEVNULL)
+    _session(monkeypatch, "sess-old", pid=old.pid)
+    assert _run(capsys, wt, "claim")[0] == 0
+    old.kill()
+    old.wait()
+    _shift_clock(monkeypatch, 31)
+    _session(monkeypatch, "sess-new")
+
+    code, out = _run(capsys, wt, "recover")
+
+    assert code == 0, out
+    assert _claim_file(remote)["holder"]["session"] == "sess-new"
+
+
+def test_claim_records_no_pid_namespace_when_its_pid_is_invisible(capsys, monkeypatch, wt, remote):
+    _linux_only()
+    _session(monkeypatch, "sess-a", pid=_dead_pid())
+
+    _run(capsys, wt, "claim")
+
+    assert _claim_file(remote)["holder"]["pidns"] is None
+
+
+def test_recover_refuses_a_stale_claim_whose_pid_was_invisible_at_claim_time(capsys, monkeypatch, wt, remote):
+    _linux_only()
+    _session(monkeypatch, "sess-old", pid=_dead_pid())
+    assert _run(capsys, wt, "claim")[0] == 0
+    _shift_clock(monkeypatch, 31)
+    _session(monkeypatch, "sess-new")
+
+    code, out = _run(capsys, wt, "recover")
+
+    _assert_presented_not_adopted(code, out, remote, "cannot tell")
+
+
+@pytest.mark.parametrize("heartbeat", ["fresh", "stale"])
+def test_recover_never_adopts_across_two_sandboxes_sharing_a_pid_namespace_id(tmp_path, wt, remote, live_pid,
+                                                                              heartbeat):
+    """Review round 3's repro: claim and recover each run under bubblewrap's
+    --unshare-pid with an equal namespace id, while the holder's pid lives.
+    Both run in ONE sandbox here, which makes the ids equal every time rather
+    than when the kernel happens to recycle one. `stale` is the neighbour: a
+    sandboxed heartbeat cannot see its pid and dies, so the claim goes stale
+    while its holder lives."""
+    _linux_only()
+    if not shutil.which("bwrap"):
+        pytest.skip("bwrap is not installed; the sandbox's own namespace was NOT exercised")
+    if heartbeat == "stale":
+        (wt / ".crew").mkdir()
+        (wt / ".crew" / "config.json").write_text(json.dumps({"coord": {"ttlMinutes": 0.01}}), encoding="utf-8")
+    flags = f"--root {wt} --remote origin --channel {CHANNEL} --ticket {TICKET} --no-heartbeat"
+    script = (f"CLAUDE_CODE_SESSION_ID=sess-a {sys.executable} {SCRIPT} claim {flags}; echo claim=$?; "
+              f"readlink /proc/self/ns/pid; sleep {2 if heartbeat == 'stale' else 0}; "
+              f"CLAUDE_CODE_SESSION_ID=sess-b {sys.executable} {SCRIPT} recover {flags}; echo recover=$?")
+    env = dict(os.environ, CLAUDECODE="1", CLAUDE_PID=str(live_pid))
+    env.pop("CLAUDE_CODE_SESSION_ID", None)
+    done = subprocess.run(["bwrap", "--unshare-pid", "--dev-bind", "/", "/", "--proc", "/proc", "sh", "-c", script],
+                          capture_output=True, text=True, env=env, check=False, stdin=subprocess.DEVNULL)
+    if "claim=" not in done.stdout:
+        pytest.skip(f"bwrap could not start here ({done.stderr.strip()[:120]}); NOT exercised")
+
+    assert "claim=0" in done.stdout, done.stdout + done.stderr
+    assert "recover=0" not in done.stdout, done.stdout
+    assert "needs the owner" in done.stdout
+    assert _claim_file(remote)["holder"]["session"] == "sess-a"
+    assert "adopt" not in [e["event"] for e in _log(remote)]
+    assert crew_coord.probe_pid(live_pid).state == "alive"
+
+
+def _beat_after_the_last_claim(remote):
+    log = _log(remote)
+    last = max(i for i, e in enumerate(log) if e["event"] == "claim")
+    return any(e["event"] == "heartbeat" for e in log[last:])
+
+
+def test_heartbeat_loop_of_the_same_session_and_pid_in_another_worktree_is_not_stopped_by_the_old_loop(
+        capsys, monkeypatch, wt, wt_b, remote, live_pid):
+    _session(monkeypatch, "sess-c", pid=live_pid)
+    _run(capsys, wt, "claim")
+    old = _loop(wt, live_pid, interval="60")
+    new = None
+    try:
+        assert _wait_for(lambda: any(e["event"] == "heartbeat" for e in _log(remote)))
+        _run(capsys, wt, "release")
+        assert _run(capsys, wt_b, "claim")[0] == 0
+
+        new = _loop(wt_b, live_pid)
+
+        assert _wait_for(lambda: _beat_after_the_last_claim(remote), timeout=10)
+    finally:
+        for proc in (old, new):
+            if proc is not None:
+                proc.kill()
+                proc.communicate()
+
+
+@pytest.mark.parametrize("spelling", ["t-0030", f"{REPO}:t-0030", "Owner.Repo-A:t-0030"])
+def test_ticket_id_is_one_key_whatever_its_case(capsys, monkeypatch, wt, wt_b, remote, spelling):
+    _session(monkeypatch, "sess-1")
+    assert _run(capsys, wt, "claim", ticket="T-0030")[0] == 0
+    _session(monkeypatch, "sess-2")
+
+    code, out = _run(capsys, wt_b, "claim", ticket=spelling)
+
+    assert code == crew_coord.EXIT_REFUSED, out
+    assert sorted(_remote_files(remote)) == [f"claims/{REPO}__T-0030.json", "log.jsonl"]
+
+
+@pytest.mark.parametrize("url, expected", [
+    ("https://dev.azure.com/Org/Proj/_git/Repo", "proj.repo"),
+    ("https://Org@dev.azure.com/Org/Proj/_git/Repo", "proj.repo"),
+    ("https://org.visualstudio.com/Proj/_git/Repo", "proj.repo"),
+    ("https://org.visualstudio.com/DefaultCollection/Proj/_git/Repo", "proj.repo"),
+    ("https://server/tfs/Collection/Proj/_git/Repo", "proj.repo"),
+    ("git@ssh.dev.azure.com:v3/Org/Proj/Repo", "proj.repo"),
+    ("org@vs-ssh.visualstudio.com:v3/Org/Proj/Repo", "proj.repo"),
+    ("ssh://git@ssh.dev.azure.com/v3/Org/Proj/Repo", "proj.repo"),
+    ("https://dev.azure.com/Org/My%20Project/_git/Repo", "my-project.repo"),
+    ("git@ssh.dev.azure.com:v3/Org/My%20Project/Repo", "my-project.repo"),
+], ids=["https", "https-user", "visualstudio", "default-collection", "server", "ssh", "vs-ssh", "ssh-url",
+        "https-encoded-space", "ssh-encoded-space"])
+def test_repo_key_is_one_for_azure_devops_https_and_ssh(url, expected):
+    assert crew_coord.owner_name(url) == (expected, None)
+
+
+def test_azure_devops_https_and_ssh_clones_share_the_claim_key(capsys, monkeypatch, wt, wt_b, remote):
+    _set_origin(wt, remote, "https://dev.azure.com/Org/Proj/_git/Repo")
+    _set_origin(wt_b, remote, "org@vs-ssh.visualstudio.com:v3/Org/Proj/Repo")
+    _session(monkeypatch, "sess-1")
+    assert _run(capsys, wt, "claim", ticket="T-1")[0] == 0
+    _session(monkeypatch, "sess-2")
+
+    code, out = _run(capsys, wt_b, "claim", ticket="T-1")
+
+    assert code == crew_coord.EXIT_REFUSED, out
+    assert sorted(_remote_files(remote)) == ["claims/proj.repo__T-1.json", "log.jsonl"]
+
+
+@pytest.mark.parametrize("value", ["NaN", "Infinity", "-Infinity"])
+def test_ttl_that_is_not_finite_warns_and_uses_30(capsys, monkeypatch, wt, live_pid, spawned, value):
+    (wt / ".crew").mkdir()
+    (wt / ".crew" / "config.json").write_text('{"coord": {"ttlMinutes": %s}}' % value, encoding="utf-8")
+
+    code = _claim_with_heartbeat(monkeypatch, wt, live_pid)
+
+    out = capsys.readouterr()
+    assert code == 0, out.out + out.err
+    assert "using 30" in out.err
+    [(argv, _)] = spawned
+    assert argv[argv.index("--interval") + 1] == "600"

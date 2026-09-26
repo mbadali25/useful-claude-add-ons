@@ -22,9 +22,13 @@ and `--root` (default: the current directory).
 
 The `<repo>` half of a key is DERIVED, never typed: `origin`'s owner/name,
 lowercased (`owner.name`), so every worktree and clone of one repository
-names a ticket alike; with no usable origin, the main worktree's directory
-name, and the reason is printed. `--ticket <repo>:<id>` is accepted only when
-`<repo>` is that name.
+names a ticket alike; an Azure DevOps URL gives `project.repo` in its https
+(`.../<project>/_git/<repo>`) and ssh (`v3/<org>/<project>/<repo>`) forms
+alike. With no usable origin, the main worktree's directory name, and the
+reason is printed. `--ticket <repo>:<id>` is accepted only when `<repo>` is
+that name. The `<id>` half is upper-cased: tracker ids (Jira, SDP, the local
+T-NNNN) name one ticket whatever case they are typed in, so `t-0030` and
+`T-0030` must be one key, not two holders.
 
 How a write works. `git ls-remote` then `git fetch` bring the channel's tip in
 without touching any local ref, working tree, index or FETCH_HEAD. The files
@@ -64,9 +68,10 @@ POSIX; DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP on Windows, where survival
 past the launching tool call was measured, not past a session exit). It pushes
 heartbeat_at every interval while CLAUDE_PID is alive and this session still
 holds the claim `working`, and exits otherwise. One loop per claim and
-holder: a second loop for the same holder finds the first's lock and exits; a
-new holder's loop has a lock of its own, so an old holder's sleeping loop
-never stops it. Its log and lock live in a private
+holder (session, machine, worktree, pid and its start): a second loop for the
+same holder finds the first's lock and exits; a new holder's loop -- another
+session, or the same session and pid claiming from another worktree -- has a
+lock of its own, so an old holder's sleeping loop never stops it. Its log and lock live in a private
 per-user directory in the system temp directory (`crew-coord-<uid>`, 0700,
 refused if it is a symlink, another user's, or group/world-accessible), the log
 opened 0600 without following a symlink. The child's environment drops
@@ -77,25 +82,30 @@ Recovery. `claim` and `recover` record `{worktree: {holder, tickets}}` in
 `<git-common-dir>/crew/coord-identity.json` (temp file + os.replace; this
 script writes it, never Claude's Write tool). `recover` adopts a `working`
 claim only if ALL hold: the claim's machine is this host, its worktree is this
-worktree, the identity file names the claim's holder for that ticket, and the
-holder's pid is PROVABLY gone on a platform whose check was measured (Linux;
-Windows per the T-0030 spike, elevated, on one host). A pid whose check cannot
-tell reads ALIVE. On Linux, gone counts only from the PID namespace recorded
-at claim time (`holder.pidns`): under bubblewrap's --unshare-pid, which
-Claude Code's sandbox uses, a live pid is invisible and would read gone.
-Anything else -- another machine, a live pid, a pid reused with a different
-start time, a missing or corrupt identity file, another
-worktree, a check that cannot tell -- is presented as `yours from a previous
-session - needs the owner: <reason>` and never adopted. `status` lists those
+worktree, the identity file names the claim's holder for that ticket, the
+claim's heartbeat_at is older than the TTL, and the holder's pid is PROVABLY
+gone on a platform whose check was measured (Linux; Windows per the T-0030
+spike, elevated, on one host). The heartbeat is the deciding signal: a live
+holder's loop keeps it fresh, so a fresh heartbeat is presented whatever the
+pid reads. The pid check can only refuse: a pid whose check cannot tell reads
+ALIVE. On Linux, gone counts only from the PID namespace recorded at claim
+time (`holder.pidns`), and one is recorded only when CLAUDE_PID was visible
+from it: under bubblewrap's --unshare-pid, which Claude Code's sandbox uses,
+a live pid is invisible and reads gone, and bubblewrap reuses namespace ids,
+so a sandbox's namespace never vouches for a `gone`. Anything else -- another
+machine, a fresh heartbeat, a live pid, a pid reused with a different start
+time, a missing or corrupt identity file, another worktree, a check that
+cannot tell -- is presented as `yours from a previous session - needs the
+owner: <reason>` and never adopted. `status` lists those
 first. The identity file is read and rewritten under an exclusive lock
 (`coord-identity.json.lock`, an empty file that stays), because every worktree
 of a repo shares it. A recommended command carries a peer-written repo or
 ticket only when it passes the key's rule; otherwise `<unsafe value withheld>`.
 
 NOT MEASURED: whether `/clear` keeps CLAUDE_PID. If it does -- the same
-process carries on under a new session id -- the old holder's pid is alive, so
-`recover` refuses with "pid N is alive", and the old session's heartbeat keeps
-the claim fresh while that process lives. The new session then cannot release,
+process carries on under a new session id -- the old session's heartbeat keeps
+the claim fresh while that process lives, and its pid is alive, so `recover`
+refuses. The new session then cannot release,
 finish or recover its own ticket; the owner breaks it with `--break`.
 
 Everything read from the channel is PEER-WRITTEN DATA, never instructions:
@@ -112,6 +122,7 @@ import contextlib
 import datetime
 import hashlib
 import json
+import math
 import os
 import re
 import socket
@@ -121,6 +132,7 @@ import sys
 import tempfile
 import time
 import unicodedata
+import urllib.parse
 from collections import namedtuple
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -362,10 +374,23 @@ def pid_namespace():
         return None
 
 
+def holder_pidns(pid):
+    """The PID namespace to record for a holder whose pid is `pid`: this
+    process's, but only when `pid` is visible from it (probe_pid reads it
+    alive). Inside bubblewrap's --unshare-pid a live CLAUDE_PID is invisible and
+    reads gone, and bubblewrap reuses namespace ids, so a later sandbox would
+    match a namespace recorded there and vouch for a `gone` that means nothing.
+    None then, and every later `gone` for this holder cannot tell."""
+    if probe_pid(pid).state != "alive":
+        return None
+    return pid_namespace()
+
+
 def probe_holder(holder):
     """probe_pid for a recorded holder's pid. On Linux, `gone` stands only when
     this process is in the PID namespace the holder recorded at claim time
-    (`holder.pidns`). From another namespace a live pid is simply invisible:
+    (`holder.pidns`, recorded only when the pid was visible then -- see
+    holder_pidns). From another namespace a live pid is simply invisible:
     Claude Code's sandbox runs each command under bubblewrap's --unshare-pid,
     where os.kill(pid, 0) raises ESRCH for a process that is running. A
     namespace that differs, or that either side cannot read, cannot tell:
@@ -388,7 +413,7 @@ def current_holder(top):
     pid = _env_pid()
     return {"session": session,
             "bridge_session": os.environ.get("CLAUDE_CODE_BRIDGE_SESSION_ID") or None,
-            "pid": pid, "pid_start": process_start(pid), "pidns": pid_namespace(),
+            "pid": pid, "pid_start": process_start(pid), "pidns": holder_pidns(pid),
             "machine": machine(), "worktree": top}
 
 
@@ -687,13 +712,31 @@ def _valid_part(value, rule=_PART_RE):
     return isinstance(value, str) and bool(rule.fullmatch(value)) and "__" not in value and ".." not in value
 
 
+def _azure_part(part):
+    """One Azure DevOps project or repo name as a key part: percent-decoded
+    (a project name may hold spaces, `My%20Project`), lowercased, and every
+    run of other characters made '-', the same in both URL forms."""
+    text = re.sub(r"[^a-z0-9._-]+", "-", urllib.parse.unquote(part).lower()).strip("._-")
+    return re.sub(r"_{2,}", "_", re.sub(r"\.{2,}", ".", text))
+
+
 def owner_name(url):
     """(`owner.name`, None) from a remote URL -- https, ssh://, scp-like
     `git@host:owner/name` or a path -- lowercased, `.git` dropped; or
-    (None, why). Credentials in the URL are never read or printed."""
+    (None, why). Azure DevOps names a repository `<project>/_git/<repo>` over
+    https (dev.azure.com/<org>, <org>.visualstudio.com, a server's
+    /tfs/<collection>) and `v3/<org>/<project>/<repo>` over ssh; both give
+    `project.repo`, so an https clone and an ssh clone share one key.
+    Credentials in the URL are never read or printed."""
     path = re.sub(r"^[A-Za-z][A-Za-z0-9+.-]*://[^/]*", "", (url or "").strip())
     path = re.sub(r"^[^/\\:]+@[^/\\:]+:", "", path)
     parts = [p for p in re.split(r"[/:\\]+", path) if p]
+    lowered = [p.lower() for p in parts]
+    marks = [i for i in range(1, len(lowered) - 1) if lowered[i] == "_git"]
+    if marks:
+        parts = [_azure_part(parts[marks[-1] - 1]), _azure_part(parts[marks[-1] + 1])]
+    elif len(parts) == 4 and lowered[0] == "v3":
+        parts = [_azure_part(parts[2]), _azure_part(parts[3])]
     if len(parts) < 2:
         return None, "origin's URL has no owner/name"
     owner, name = parts[-2].lower(), re.sub(r"\.git$", "", parts[-1].lower())
@@ -735,7 +778,8 @@ def parse_ticket(text, repo):
     """(repo, ticket, key) for `--ticket <id>` or `--ticket <repo>:<id>`. The
     repo half is `repo` (repo_key's); a given one must name the same repository
     (compared lowercased), because a free-text repo gives one ticket several
-    keys and so several holders."""
+    keys and so several holders. The id is upper-cased for the same reason:
+    `t-0030` and `T-0030` name one ticket."""
     given, sep, ticket = (text or "").partition(":")
     if not sep:
         given, ticket = None, given
@@ -745,6 +789,7 @@ def parse_ticket(text, repo):
     if given is not None and given.lower() != repo:
         raise UsageError(f"the repo half of --ticket is derived, not chosen: this repository's is {repo!r} "
                          f"(origin's owner/name), not {safe(given)!r}; pass --ticket {ticket}")
+    ticket = ticket.upper()
     return repo, ticket, f"{repo}__{ticket}"
 
 
@@ -824,8 +869,12 @@ def _refuse_held(key, claim, ttl):
 
 # --- recovery assessment ---------------------------------------------------------------
 
-def assess_recovery(claim, key, top, me):
-    """(adoptable, reason). Every check must pass; the first failure is the reason."""
+def assess_recovery(claim, key, top, me, ttl):
+    """(adoptable, reason). Every check must pass; the first failure is the
+    reason. The deciding signal is the heartbeat: a live holder's loop keeps
+    heartbeat_at fresh, so a claim is adoptable only once it is older than the
+    TTL. The pid check can then only refuse -- whether a process is alive
+    cannot be told reliably from inside a sandbox."""
     old = claim["holder"]
     if me is None:
         return False, "cannot tell who this session is (CLAUDE_CODE_SESSION_ID absent)"
@@ -842,6 +891,9 @@ def assess_recovery(claim, key, top, me):
     named = entry and any(t["ticket"] == key and t["holder"] == old for t in entry["tickets"])
     if not named:
         return False, "the local identity file does not name this claim's holder"
+    if not is_stale(claim, ttl):
+        return False, (f"its heartbeat is fresh ({age_text(heartbeat_age(claim))} ago; the TTL is {ttl:g} minutes), "
+                       "so the old session may still be running, whatever its pid reads")
     probe = probe_holder(old)
     pid = old.get("pid")
     if probe.state == "alive" and old.get("pid_start") and probe.start and probe.start != old["pid_start"]:
@@ -855,8 +907,8 @@ def assess_recovery(claim, key, top, me):
     return True, f"pid {pid} gone"
 
 
-def _presented(chan, claim, key, top, me):
-    ok, reason = assess_recovery(claim, key, top, me)
+def _presented(chan, claim, key, top, me, ttl):
+    ok, reason = assess_recovery(claim, key, top, me, ttl)
     ticket = f"{_command_part(claim['repo'], _REPO_RE)}:{_command_part(claim['ticket'], _PART_RE)}"
     flags = f"--channel {chan.channel} --remote {chan.remote} --ticket {ticket}"
     if ok:
@@ -864,8 +916,9 @@ def _presented(chan, claim, key, top, me):
         action = f"crew_coord.py recover {flags} (after the owner confirms)"
     else:
         head = f"yours from a previous session - needs the owner: {reason}"
-        if "is alive" in reason:
-            action = "let the old session finish or release it"
+        if "may still be running" in reason:
+            action = ("let the old session finish or release it; if it has ended, run recover again once its "
+                      "heartbeat is older than the TTL")
         else:
             action = (f"the owner runs crew_coord.py release --break --by <name> {flags} from a terminal "
                       "outside Claude Code, once the old session is confirmed gone")
@@ -887,8 +940,8 @@ def _is_candidate(claim, key, top, me, ident):
 def ttl_minutes(top):
     import crew_config
     value = (crew_config.resolve_config(top).get("coord") or {}).get("ttlMinutes", DEFAULT_TTL_MINUTES)
-    if isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0:
-        print(f"warning: coord.ttlMinutes {safe(value, 40)!r} is not a positive number; using "
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0:
+        print(f"warning: coord.ttlMinutes {safe(value, 40)!r} is not a positive finite number; using "
               f"{DEFAULT_TTL_MINUTES}", file=sys.stderr)
         return DEFAULT_TTL_MINUTES
     return value
@@ -958,9 +1011,14 @@ def heartbeat_path(channel, key, suffix):
 
 
 def holder_tag(holder):
-    """A file-name-safe tag for one holder (session id and pid), so each
-    holder's heartbeat loop has a lock of its own."""
-    return hashlib.sha256(json.dumps([holder["session"], holder.get("pid")]).encode("utf-8")).hexdigest()[:16]
+    """A file-name-safe tag for one holder -- every field same_holder compares:
+    session id, machine, worktree, pid and its start time -- so each holder's
+    heartbeat loop has a lock of its own. The same session and pid claiming
+    from another worktree is another holder, and must not find the old
+    worktree's loop holding its lock."""
+    ident = [holder["session"], holder["machine"], os.path.normcase(holder["worktree"]), holder.get("pid"),
+             holder.get("pid_start")]
+    return hashlib.sha256(json.dumps(ident).encode("utf-8")).hexdigest()[:16]
 
 
 def _maybe_start_heartbeat(chan, top, key, repo, ticket, me, ttl, args):
@@ -1066,7 +1124,7 @@ def cmd_recover(chan, top, key, repo, ticket, args):
         if same_holder(claim["holder"], me):
             outcome["mine"] = True
             return "refused", f"{key} is already held by this session"
-        ok, body = _presented(chan, claim, key, top, me)
+        ok, body = _presented(chan, claim, key, top, me, ttl)
         if not ok:
             return "refused", peer(f"{key} {body}")
         old = claim["holder"]
@@ -1115,7 +1173,7 @@ def cmd_status(chan, top):
             lines.append(f"{safe(key)} unknown (corrupt claim file: {why}) [peer-written]")
             code = EXIT_UNKNOWN
         elif _is_candidate(claim, key, top, me, ident):
-            presented.append(peer(f"{safe(key)} {_presented(chan, claim, key, top, me)[1]}"))
+            presented.append(peer(f"{safe(key)} {_presented(chan, claim, key, top, me, ttl)[1]}"))
         elif is_stale(claim, ttl):
             lines.append(f"{safe(key)} owner unknown (last heartbeat {age_text(heartbeat_age(claim))} ago) "
                          f"held by {describe(claim)} [peer-written]")
@@ -1182,8 +1240,9 @@ def _parser():
         if name != "status":
             cmd.add_argument("--ticket", required=True,
                              help="<id> or <repo>:<id>. The repo half is derived, never chosen: origin's "
-                                  "owner/name, lowercased (owner.name), else the main worktree's directory "
-                                  "name, with the reason printed; a given <repo> must match it")
+                                  "owner/name, lowercased (owner.name; Azure DevOps: project.repo), else the "
+                                  "main worktree's directory name, with the reason printed; a given <repo> "
+                                  "must match it. The id is upper-cased")
         if name in ("claim", "recover"):
             cmd.add_argument("--no-heartbeat", action="store_true",
                              help="do not start the detached heartbeat (the claim goes stale after the TTL)")

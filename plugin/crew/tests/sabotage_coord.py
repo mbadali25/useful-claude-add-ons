@@ -8,8 +8,12 @@ cover the retry and the identity-file check, which the list does not name but
 which the claim and recovery guarantees rest on. The rest are review round 1's
 findings (T-0030-coord--r8XvAI), one per guard branch the fixes added: each
 reintroduces the defect the finding reproduced, and names the test that
-reproduces it. The last block does the same for review round 2's
-(T-0030-coord--81NGuE), plus the three branches its NITs found untested.
+reproduces it. The next block does the same for review round 2's
+(T-0030-coord--81NGuE), plus the three branches its NITs found untested, and
+the last for review round 3's (T-0030-coord--fBUyjd): the heartbeat-stale
+condition recovery now rests on, the namespace recorded only for a visible
+pid, the holder lock keyed by worktree, the upper-cased ticket id, both Azure
+DevOps URL forms, and a TTL that is not finite.
 """
 import os
 
@@ -272,4 +276,37 @@ COORD_MUTATIONS = (
      '        if probe.state == "gone" or (first.start and probe.start and probe.start != first.start):\n',
      '        if probe.state == "gone":\n',
      _T + "test_heartbeat_loop_exits_when_the_watched_pid_is_reused"),
+    # --- review round 3 ---
+    ("crew_coord adopts a claim whose heartbeat is fresh", COORD,
+     "    if not is_stale(claim, ttl):\n",
+     "    if False:\n",
+     _T + "test_recover_refuses_a_fresh_heartbeat_whose_pid_reads_gone[29m]"),
+    ("crew_coord records the pid namespace when CLAUDE_PID is invisible", COORD,
+     '    if probe_pid(pid).state != "alive":\n        return None\n    return pid_namespace()\n',
+     "    return pid_namespace()\n",
+     _T + "test_recover_refuses_a_stale_claim_whose_pid_was_invisible_at_claim_time"),
+    ("crew_coord keys the heartbeat lock without the worktree", COORD,
+     '    ident = [holder["session"], holder["machine"], os.path.normcase(holder["worktree"]), holder.get("pid"),\n',
+     '    ident = [holder["session"], holder["machine"], holder.get("pid"),\n',
+     _T + "test_heartbeat_loop_of_the_same_session_and_pid_in_another_worktree_is_not_stopped_by_the_old_loop"),
+    ("crew_coord keeps the ticket id's case", COORD,
+     "    ticket = ticket.upper()\n",
+     "",
+     _T + "test_ticket_id_is_one_key_whatever_its_case[t-0030]"),
+    ("crew_coord reads Azure DevOps https's _git as the owner", COORD,
+     "    if marks:\n",
+     "    if False:\n",
+     _T + "test_azure_devops_https_and_ssh_clones_share_the_claim_key"),
+    ("crew_coord reads Azure DevOps ssh v3 raw", COORD,
+     '    elif len(parts) == 4 and lowered[0] == "v3":\n',
+     "    elif False:\n",
+     _T + "test_repo_key_is_one_for_azure_devops_https_and_ssh[ssh-encoded-space]"),
+    ("crew_coord keeps an Azure DevOps name percent-encoded", COORD,
+     '    text = re.sub(r"[^a-z0-9._-]+", "-", urllib.parse.unquote(part).lower()).strip("._-")\n',
+     '    text = re.sub(r"[^a-z0-9._-]+", "-", part.lower()).strip("._-")\n',
+     _T + "test_repo_key_is_one_for_azure_devops_https_and_ssh[https-encoded-space]"),
+    ("crew_coord accepts a TTL that is not finite", COORD,
+     "not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0:",
+     "not isinstance(value, (int, float)) or value <= 0:",
+     _T + "test_ttl_that_is_not_finite_warns_and_uses_30[NaN]"),
 )
