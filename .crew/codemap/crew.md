@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@d2085450
+anchor: useful-claude-add-ons@a26ad8c0
 verified: 2026-09-26
 
 ## Re-derive provenance
@@ -268,7 +268,7 @@ paragraph (`plugin/crew/hooks/scripts/cloud_guard.py:33-55`) states it: a terraf
 also judged by its target environment (`nonProd`, `prod` or `unknown`, from `TF_WORKSPACE`, an
 in-sequence literal `workspace select|new`, `.terraform/environment`, `-var environment=` /
 `TF_VAR_environment`, or a saved plan's sidecar) and by whether it destroys (`yes`, `no`,
-`unknown`, and `unknown` counts as `yes`); `_terraform_verdict` (`:2980`) decides. The sidecar
+`unknown`, and `unknown` counts as `yes`); `_terraform_verdict` (`:2993`) decides. The sidecar
 is `.crew/tfplan/<sha256>.json`, written outside the hook by
 `plugin/crew/hooks/scripts/crew_tfplan.py` (`summarize`, `:174`; `main`, `:237`), which reads
 the plan's workspace out of the plan file itself (`plan_workspace`, `:123`). The config is
@@ -277,32 +277,37 @@ the plan's workspace out of the plan file itself (`plan_workspace`, `:123`). The
 the docstrings and definitions cited; the verdict table itself is `plugin/crew/CONFIG.md`'s
 `environments.*` section, not re-derived here.
 
-**The literal-word allowlist (T-0005 Steps 8-9, review round 5).** Before the lexer reads
+**The literal-word allowlist (T-0005 Steps 8-10).** Before the lexer reads
 anything, `scan` calls
-`_literal_gate` (`plugin/crew/hooks/scripts/cloud_guard.py:2789`, called at `:2840`, and only at
+`_literal_gate` (`plugin/crew/hooks/scripts/cloud_guard.py:2802`, called at `:2851`, and only at
 depth 0 - the raw command, never the lexer's own nested extractions): a line that RUNS terraform,
 terragrunt or tofu and holds a word that is not a plain literal (`crew_guards.first_non_literal`,
 `plugin/crew/hooks/scripts/crew_guards.py:1206`) yields one `terraformApply` finding whose scope
 `op` is `OP_UNREADABLE_LINE`; `_terraform_verdict` answers it before reading any plan or
 environment (ask, denied unattended; `block` denies). "Runs" is Step 9's trigger,
-`crew_guards.command_trigger` (`:1778`; `command_names_terraform` `:1789` returns its word): its
-own bash reader, `_GateReader` (`:1252`), splits the raw text into argv lists, and `_argv_trigger`
-(`:1625`) fires on a command word that dequotes to one of the three after `_unwrap`'s wrappers, on
+`crew_guards.command_trigger` (`:1802`; `command_names_terraform` `:1813` returns its word): its
+own bash reader, `_GateReader` (`:1251`), splits the raw text into argv lists, and `_argv_trigger`
+(`:1585`) fires on a command word that dequotes to one of the three after `_unwrap`'s wrappers, on
 a `bash -c`/`eval`/`pwsh -c` payload or substitution that does, or on an unreadable command word
 when the line names terraform, `destroy`, `apply` or `workspace`. Anything the reader does not
 read with certainty falls back to Step 8's any-word trigger, `crew_guards.names_terraform`
-(`:1194`), which PowerShell lines still use. Since review round 5 the trigger returns `(word,
-unseen)`: `unseen` marks a command the lexer is not known to read (an opaque script runner whose
-own words name terraform, an unknown wrapper, `find -exec`, zsh's `=terraform`, a container image,
-the reader's give-up, a command run with a destroy/apply/workspace operand on a line naming
-terraform), and an unseen line is could-not-tell even when every word is plain; PowerShell's
-equivalent is `crew_guards.ps_unseen` (`:1750`, wrapped by `cloud_guard._ps_unseen` `:2780`). A
-read-only terraform/tofu subcommand (`_tf_read_only`, `:1552`) and a bare data command's arguments
-(`_is_data`: `git` only for `_GIT_DATA` subcommands, never `rg`) do not trigger at all. The helpers live in `crew_guards.py` because `cloud_guard.py` sits at
-`.pylintrc`'s max-module-lines; `cloud_guard._GATE_HELPERS` (`:2785`) passes the lexer's `_unwrap`,
-`_shell_args`, `_pwsh_payload`, `_ps_normalise`, `_head_name` and `_ps_unseen` in, so
-`crew_guards` still imports nothing from it (`ps_unseen` takes `_lex_ps` as an argument). DERIVED
-from the code cited.
+(`:1194`). PowerShell lines use the same command-word rule since Step 10, `crew_guards.ps_trigger`
+(`:1778`, per command `_ps_argv_trigger` `:1725`), read with the lexer's `_lex_ps`: `&`, `.`,
+`terraform.exe`, a path, `Start-Process`, `pwsh -c`, `bash -c`, `Invoke-Expression`, `$(...)`.
+The trigger returns `(word, unseen)`: `unseen` marks a command the lexer is not known to read (an
+opaque script runner such as `flock` or `ssh` whose own words name terraform, `find -exec`'s found
+path, zsh's `=terraform`, the reader's give-up, an alias, and the name a line copies or links
+terraform to, run with a destroy/apply/workspace operand - `_copies_terraform` `:1662`), and an
+unseen line is could-not-tell even when every word is plain. Since Step 10 there is no
+unknown-wrapper fallback and no data-command exemption: an argument naming terraform is data
+unless the command word is terraform (README "What the guard does not catch" lists what that
+leaves out). A read-only terraform/tofu subcommand (`_tf_read_only`, `:1533`) does not trigger.
+The helpers live in `crew_guards.py` because `cloud_guard.py` sits at `.pylintrc`'s
+max-module-lines (3400 of 3400 at `a26ad8c0`); `cloud_guard._GATE_HELPERS` (`:2798`) passes the
+lexer's `_unwrap`, `_shell_args`, `_pwsh_payload`, `_ps_normalise`, `_head_name` and `_lex_ps` in,
+so `crew_guards` still imports nothing from it. The lexer's own terraform reading skips options
+before the subcommand (`_tf_skip_options` `:1547`, used by `_terraform_destructive` `:1559`), so
+`terragrunt --working-dir infra destroy` is a destroy. DERIVED from the code cited.
 
 **The ratchet registry (`_RATCHETED`, `plugin/crew/hooks/scripts/crew_config.py:2418-2530`)
 now holds 14 keys**, built in seven steps (a literal dict of two at `:2418`, four `.update()`
@@ -849,3 +854,18 @@ the round-5 tests. `cloud_guard.py` did not change. `_tf_read_only` moved `:1543
 `_argv_trigger` `:1606` -> `:1625`, `ps_unseen` `:1727` -> `:1750`, `command_trigger` `:1755` ->
 `:1778`, `command_names_terraform` `:1766` -> `:1789`; everything above `:1531` holds. Re-taken by
 content, corrected above.
+
+Then `d2085450` -> `a26ad8c0` (T-0005 Step 10, direct use only): `git diff --name-only d2085450
+a26ad8c0 -- <the paths this note cites>` returns `cloud_guard.py`, `crew_guards.py`,
+`plugin/crew/CONFIG.md` (cited by name and section only), the version files (crew stepped back to
+1.0.37 in `2602e4ad` and re-set to 1.0.41 in `a26ad8c0`, byte-identical to `d2085450`) and, under
+`plugin/crew/**`, the Step 10 tests, README, BUDGETS and the crew-cloud skill. In `cloud_guard.py`
+the first change is at `:57`, so `:1-6` and `:33-55` hold; `_literal_gate` moved `:2789` ->
+`:2802`, its call `:2840` -> `:2851`, `_terraform_verdict` `:2980` -> `:2993`, `_GATE_HELPERS`
+`:2785` -> `:2798`. In `crew_guards.py` the first change is at `:1249`, so `ALL_GUARD_NAMES`
+`:195-196`, the guard table, `ENVIRONMENTS_DEFAULTS` `:251`,
+`RATCHETED_KEYS["environments.prodUnattended"]` `:545-549`, `names_terraform` `:1194` and
+`first_non_literal` `:1206` hold (re-read); `_GateReader` `:1252` -> `:1251`, `_tf_read_only`
+`:1552` -> `:1533`, `_argv_trigger` `:1625` -> `:1585`, `command_trigger` `:1778` -> `:1802`,
+`command_names_terraform` `:1789` -> `:1813`; `ps_unseen` and `cloud_guard._ps_unseen` are gone,
+`ps_trigger` and `_ps_argv_trigger` are new. Re-taken by content, corrected above.

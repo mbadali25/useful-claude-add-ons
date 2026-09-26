@@ -1,5 +1,5 @@
 # repo-docs
-anchor: useful-claude-add-ons@aa7f9841
+anchor: useful-claude-add-ons@a26ad8c0
 verified: 2026-09-25
 
 ## Re-derive provenance
@@ -287,7 +287,7 @@ listing the directory.
 - **`docs/runbooks/INDEX.md` still does not exist.** `docs/runbooks/`
   contains `rollback.md` alone (re-confirmed by `ls`).
   `plugin/crew/skills/crew-runbooks/SKILL.md:80` and
-  `plugin/crew/README.md:1810` (`:1795` at `1e210476`, `:1788` at `3a57b2d2`, `:1767` at `2170d72e`, `:1728` at `8d447a7d`, `:1725` at `f2bb919b`, `:1604` before that,
+  `plugin/crew/README.md:1854` (`:1810` at `aa7f9841`, `:1795` at `1e210476`, `:1788` at `3a57b2d2`, `:1767` at `2170d72e`, `:1728` at `8d447a7d`, `:1725` at `f2bb919b`, `:1604` before that,
   that file having changed in each range — re-grepped, not offset) both still describe
   `docs/runbooks/INDEX.md` as a symptom-keyed index that would live there.
   JUDGEMENT, unchanged: costs nothing with one runbook, becomes a real gap at
@@ -516,3 +516,12 @@ did not change.
 `:12`, `:15`, `:46`, `:414` and `:736` are above the hunk and hold) and `CHANGELOG.md` (the 1.0.41
 entry gained the round-5 bullet and its Tests bullet was corrected; cited by name only).
 `.crew/verify.json` did not change.
+
+## Re-anchor provenance - `aa7f9841` -> `a26ad8c0`, 2026-09-26 (T-0005 Step 10)
+
+`git diff --name-only aa7f9841 a26ad8c0 -- <the paths this note cites>` returns
+`plugin/crew/README.md` (the cloud-guard section rewritten in part and a "What the guard does not
+catch" subsection added, 44 lines net, so the `docs/runbooks/INDEX.md` mention moved `:1810` ->
+`:1854`, re-read, same text; corrected above; `:12`, `:15`, `:46`, `:414` and `:736` are above the
+first hunk and hold) and `CHANGELOG.md` (the 1.0.41 entry gained the Step 10 bullet; cited by
+name only). `.crew/verify.json` did not change.

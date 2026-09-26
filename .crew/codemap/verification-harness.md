@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@aa7f9841
+anchor: useful-claude-add-ons@a26ad8c0
 verified: 2026-09-25
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -212,7 +212,7 @@ that changed shape or are newly documented here:
   test file is named in rule 4's `run`; only rule 9's whole suite runs them.
 - **Per-rule process-group tracking and kill-on-signal was DESCOPED from crew
   1.0, and it is a documented limitation, not a silent gap.**
-  `verify-gate.sh:1493-1502` and `plugin/crew/CONFIG.md:2114-2121` both state
+  `verify-gate.sh:1493-1502` and `plugin/crew/CONFIG.md:2129-2136` both state
   it: a third registry stage (`_crew_gate_cleanup_rule_pgid`) shipped, then was
   removed after five consecutive review rounds each found the previous
   round's fix one case short (disk fill by an orphan writer, escape on gate
@@ -388,7 +388,7 @@ set on Ubuntu.
   `plugin/crew/tests/sabotage.py:75`, `:3046` — `sabotage_refresh.py`'s
   registration.
 - `plugin/crew/hooks/scripts/verify-gate.sh:1493-1502` /
-  `plugin/crew/CONFIG.md:2114-2121` — the descoped per-rule process-group kill,
+  `plugin/crew/CONFIG.md:2129-2136` — the descoped per-rule process-group kill,
   documented as a standing limitation.
 - `plugin/crew/hooks/scripts/verify-gate.ps1:822-832`, `:1665-1674` —
   `Resolve-CrewBash` refusal rather than a re-resolving hang.
@@ -579,3 +579,13 @@ text; corrected above) and under `plugin/crew/**` `cloud_guard.py`, `crew_guards
 `BUDGETS.md` and the version files. `.crew/verify.json`, the gate scripts, `_verify/*` and
 `scripts/check-marketplace.py` did not change; rule count still 25. No suite was executed by this
 note.
+
+## Re-anchor provenance - `aa7f9841` -> `a26ad8c0`, 2026-09-26 (T-0005 Step 10)
+
+`git diff --name-only aa7f9841 a26ad8c0 -- <the paths this note cites>` returns
+`plugin/crew/CONFIG.md` (the `environments.*` section's allowlist paragraph rewritten and a "What
+the guard does not catch" paragraph added, 15 lines net, all above the verification chapter, so
+the descoping limitation moved `:2114-2121` -> `:2129-2136`, re-read with `diff`, same text;
+corrected above), the version files (stepped back and re-set, byte-identical to `aa7f9841`) and,
+under `plugin/crew/**`, the Step 10 code, tests, README, BUDGETS and the crew-cloud skill, none
+cited here at a line. `_verify/smoke.sh` and `scripts/check-marketplace.py` did not change.
