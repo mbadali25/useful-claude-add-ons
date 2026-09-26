@@ -37,11 +37,12 @@ cleanly, clear, and pick up where it stopped.
    `Auto-resume did not start: <reason>.` when a check refuses it. It still does not start on its
    own: you press Enter or type it, until T-0013 types it where the terminal can be identified. The
    refusal reasons are: compact was not a manual /compact; no handoff note, or it was archived as
-   stale; no resume line, `resume: none`, or a line the grammar refuses (a second line, trailing
+   stale, or is stale and could not be archived; no resume line, `resume: none`, or a line the grammar refuses (a second line, trailing
    text, an unknown command, or an excluded one such as `/crew:approve`); the note's `branch:` or
    `head:` does not match the checkout; the ticket directory or goal file is missing; the command is
-   not installed; this handoff was already resumed; the progress fingerprint could not be computed;
-   the same command with no progress since the last auto-resume. Never on a plain `startup`.
+   not installed; the record of past auto-resumes (`resume-state.json`) exists and could not be
+   read; this handoff was already resumed; the progress fingerprint could not be computed; the same
+   command with no progress since the last auto-resume. Never on a plain `startup`.
 
 ## Turning it on and off
 

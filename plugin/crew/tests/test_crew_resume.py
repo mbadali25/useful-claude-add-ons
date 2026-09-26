@@ -10,6 +10,7 @@ answer is only ever NAMED to the human (crew_context) until T-0013 types it.
 Every fixture is a throwaway repo under tmp_path with its own machine file;
 no test reads the real `~/.claude`.
 """
+import concurrent.futures
 import json
 import os
 import subprocess
@@ -468,13 +469,32 @@ def test_unknown_fingerprint_waits(fx):
     assert (got["action"], "fingerprint" in got["reason"]) == ("wait", True)
 
 
-def test_record_run_write_failure_reports(fx):
+def test_record_run_write_failure_reports(fx, monkeypatch):
+    """The write itself fails (os.replace refused); a directory in the state
+    file's place is refused earlier, as unreadable (round 3), so it no longer
+    reaches the write."""
+    decision = fx.decide()
+
+    def refuse(*_args, **_kwargs):
+        raise PermissionError(13, "Permission denied")
+
+    monkeypatch.setattr(os, "replace", refuse)
+
+    ok, reason = crew_resume.record_run(str(fx.root), decision)
+
+    state = crew_resume.state_path(str(fx.root))
+    assert (ok, "was not written" in reason, os.path.exists(state),
+            [n for n in os.listdir(os.path.dirname(state)) if n.endswith(".tmp")]) == (False, True, False, [])
+
+
+def test_record_run_refuses_a_directory_in_the_state_files_place(fx):
+    decision = fx.decide()
     state = crew_resume.state_path(str(fx.root))
     os.makedirs(state)
 
-    ok, reason = crew_resume.record_run(str(fx.root), fx.decide())
+    ok, reason = crew_resume.record_run(str(fx.root), decision)
 
-    assert (ok, bool(reason), os.path.isdir(state)) == (False, True, True)
+    assert (ok, "resume-state.json" in reason, os.path.isdir(state)) == (False, True, True)
 
 
 def test_record_run_refuses_a_decision_that_is_not_run(fx):
@@ -499,7 +519,8 @@ def test_record_run_writes_the_state_file(fx):
 def test_record_run_keeps_the_last_fifty_handoffs(fx):
     base = fx.decide()
     for index in range(55):
-        crew_resume.record_run(str(fx.root), dict(base, handoff_sha256=f"{index:064x}"))
+        crew_resume.record_run(str(fx.root), dict(base, handoff_sha256=f"{index:064x}",
+                                                  fingerprint=f"{index:064x}"))
 
     with open(crew_resume.state_path(str(fx.root)), encoding="utf-8") as handle:
         (entry,) = json.load(handle)["worktrees"].values()
@@ -744,3 +765,191 @@ def test_precompact_tmp_files_older_than_a_day_are_pruned(fx):
     crew_resume.write_precompact_record(str(fx.root), {"session_id": "s1", "trigger": "manual"})
 
     assert sorted(n for n in os.listdir(state) if n.endswith(".tmp")) == ["precompact-fresh.json.456.tmp"]
+
+
+# --- round 3 review fixes --------------------------------------------------
+
+def _write_state(fx, content):
+    """Replace resume-state.json with `content`: bytes, "dir" for a
+    directory in its place, or "dangling" for a symlink to nothing."""
+    path = crew_resume.state_path(str(fx.root))
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    if os.path.lexists(path):
+        os.unlink(path)
+    if content == "dir":
+        os.makedirs(path)
+    elif content == "dangling":
+        try:
+            os.symlink(path + ".nowhere", path)
+        except (OSError, NotImplementedError) as exc:
+            pytest.skip(f"cannot create a symlink here: {exc}")
+    else:
+        with open(path, "wb") as handle:
+            handle.write(content)
+    return path
+
+
+_UNREADABLE_STATE = [
+    pytest.param(b'{"worktrees": ', id="truncated"),
+    pytest.param(b"", id="empty"),
+    pytest.param(b"[]", id="not-an-object"),
+    pytest.param(b'{"worktrees": []}', id="worktrees-not-an-object"),
+    pytest.param(b'\xff\xfe{"worktrees": {}}', id="not-utf8"),
+    pytest.param("dir", id="a-directory"),
+    pytest.param("dangling", id="a-dangling-symlink"),
+]
+
+
+@pytest.mark.parametrize("content", _UNREADABLE_STATE)
+def test_an_unreadable_resume_state_waits_rather_than_runs(fx, content):
+    """Review round 3 FIX :417. A state file that exists and cannot be read
+    used to load as {}, the same as no file, so an already-resumed handoff
+    came back `run`."""
+    ok, _ = crew_resume.record_run(str(fx.root), fx.decide())
+    _write_state(fx, content)
+
+    got = fx.decide()
+
+    assert (ok, got["action"], "resume-state.json" in got["reason"]) == (True, "wait", True), got
+
+
+def _mangle_entry(fx, field, value):
+    path = crew_resume.state_path(str(fx.root))
+    with open(path, encoding="utf-8") as handle:
+        state = json.load(handle)
+    (key,) = state["worktrees"]
+    if field is None:
+        state["worktrees"][key] = value
+    else:
+        state["worktrees"][key][field] = value
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write(json.dumps(state))
+
+
+@pytest.mark.parametrize("field,value", [
+    pytest.param(None, [], id="entry-not-an-object"),
+    pytest.param("consumed", "abc", id="consumed-not-a-list"),
+    pytest.param("last", "abc", id="last-not-an-object"),
+])
+def test_a_resume_state_entry_of_the_wrong_shape_waits(fx, field, value):
+    """Review round 3 FIX :417, the neighbour: this worktree's entry, or a
+    field of it, in a shape record_run never writes is as unknown as a file
+    that does not parse."""
+    ok, _ = crew_resume.record_run(str(fx.root), fx.decide())
+    _mangle_entry(fx, field, value)
+
+    got = fx.decide()
+
+    assert (ok, got["action"], "resume-state.json" in got["reason"]) == (True, "wait", True), got
+
+
+def test_an_entry_for_another_worktree_does_not_block(fx):
+    state = {"worktrees": {"/some/other/worktree": {"consumed": ["x" * 64], "last": {}}}}
+    _write_state(fx, json.dumps(state).encode("utf-8"))
+
+    assert fx.decide()["action"] == "run"
+
+
+def _snapshot(path):
+    if os.path.islink(path):
+        return os.readlink(path)
+    with open(path, "rb") as handle:
+        return handle.read()
+
+
+@pytest.mark.parametrize("content", [c for c in _UNREADABLE_STATE if c.id != "a-directory"])
+def test_record_run_never_overwrites_an_unreadable_resume_state(fx, content):
+    """Review round 3 FIX :417, the writer half: record_run used to read the
+    same {} and write over the file, losing the consumed-once history."""
+    decision = fx.decide()
+    path = _write_state(fx, content)
+    before = _snapshot(path)
+
+    ok, reason = crew_resume.record_run(str(fx.root), decision)
+
+    after = _snapshot(path)
+    assert (ok, "resume-state.json" in reason, after == before) == (False, True, True), reason
+
+
+def test_record_run_never_overwrites_an_entry_of_the_wrong_shape(fx):
+    decision = fx.decide()
+    crew_resume.record_run(str(fx.root), dict(decision, handoff_sha256="1" * 64, fingerprint="f"))
+    _mangle_entry(fx, "consumed", "abc")
+    with open(crew_resume.state_path(str(fx.root)), "rb") as handle:
+        before = handle.read()
+
+    ok, reason = crew_resume.record_run(str(fx.root), decision)
+
+    with open(crew_resume.state_path(str(fx.root)), "rb") as handle:
+        after = handle.read()
+    assert (ok, "resume-state.json" in reason, after == before) == (False, True, True), reason
+
+
+def test_record_run_refuses_a_handoff_already_recorded(fx):
+    """Review round 3 FIX :450, the reviewer's repro: decide, then record
+    twice. The second record must not say "you may type"."""
+    decision = fx.decide()
+
+    first = crew_resume.record_run(str(fx.root), decision)
+    second = crew_resume.record_run(str(fx.root), decision)
+
+    assert (first, second[0], "already resumed" in second[1]) == ((True, ""), False, True), second
+
+
+def test_record_run_refuses_the_same_command_with_no_progress(fx):
+    """Review round 3 FIX :450, the neighbour: a different handoff (new sha)
+    whose prompt and fingerprint equal the last run's is the loop guard's
+    case, and record_run must refuse it too."""
+    decision = fx.decide()
+    crew_resume.record_run(str(fx.root), decision)
+
+    ok, reason = crew_resume.record_run(str(fx.root), dict(decision, handoff_sha256="2" * 64))
+
+    assert (ok, "no progress" in reason) == (False, True), reason
+
+
+def test_record_run_refusal_leaves_the_state_unchanged(fx):
+    decision = fx.decide()
+    crew_resume.record_run(str(fx.root), decision)
+    _mangle_entry(fx, "last", {"prompt": decision["prompt"], "fingerprint": decision["fingerprint"], "at": 1})
+    with open(crew_resume.state_path(str(fx.root)), "rb") as handle:
+        before = handle.read()
+
+    crew_resume.record_run(str(fx.root), decision)
+
+    with open(crew_resume.state_path(str(fx.root)), "rb") as handle:
+        assert handle.read() == before
+
+
+@pytest.mark.parametrize("fingerprint", [None, "", 7])
+def test_record_run_refuses_a_run_with_no_fingerprint(fx, fingerprint):
+    """Review round 3 FIX :450, the neighbour: a `last` recorded without a
+    fingerprint can never match one, so it would switch the loop guard off."""
+    ok, reason = crew_resume.record_run(str(fx.root), dict(fx.decide(), fingerprint=fingerprint))
+
+    assert (ok, "fingerprint" in reason, os.path.exists(crew_resume.state_path(str(fx.root)))) == \
+        (False, True, False)
+
+
+def test_concurrent_records_of_one_decision_let_exactly_one_through(fx):
+    """Review round 3 FIX :450 under real concurrency: several senders that
+    each got `run` race to record it; exactly one may type."""
+    decision = json.dumps(fx.decide())
+    with concurrent.futures.ThreadPoolExecutor(max_workers=6) as pool:
+        outs = [json.loads(out) for _code, out in pool.map(
+            lambda _i: _cli("record", "--root", str(fx.root), "--decision-json", decision), range(6))]
+
+    assert sorted(o["ok"] for o in outs) == [False] * 5 + [True], outs
+
+
+@pytest.mark.parametrize("ticket", [
+    pytest.param("T-\u0661\u0662", id="arabic-indic"),
+    pytest.param("T-\uff11\uff12", id="fullwidth"),
+    pytest.param("T-\u0967\u0968", id="devanagari"),
+    pytest.param("T-1\u0662", id="mixed"),
+])
+def test_a_ticket_id_with_non_ascii_digits_is_refused(ticket):
+    """Review round 3 NIT :75: `\\d` matched any Unicode decimal digit."""
+    parsed = crew_resume.parse_resume(f"resume: /crew:done {ticket}\n")
+
+    assert (parsed["ok"], "ABC-123" in parsed["reason"]) == (False, True), parsed

@@ -1580,8 +1580,9 @@ archived as stale (or is stale and could not be archived); no resume line, `resu
 refuses (two lines, trailing text, an unknown or excluded command such as
 `/crew:approve`); the `branch:` or `head:` line does not match the checkout;
 the ticket's `.work/tickets/<id>/` (or the goal file) does not exist; the
-command is not installed; this handoff was already resumed; the progress
-fingerprint could not be computed; or the same command with no progress since
+command is not installed; the record of past auto-resumes
+(`resume-state.json`) exists and could not be read; this handoff was already
+resumed; the progress fingerprint could not be computed; or the same command with no progress since
 the last auto-resume. The allowlist is `crew_resume.RESUME_COMMANDS`:
 `/crew:spec`, `/crew:plan`, `/crew:implement`, `/crew:review`, `/crew:done`,
 `/crew:autopilot` and `/crew:status`. No gate changes: the resumed command's

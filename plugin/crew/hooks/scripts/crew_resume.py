@@ -72,7 +72,8 @@ STATE_FILE = "resume-state.json"
 PRECOMPACT_MAX_AGE = 600
 
 _RESUME_LINE_RE = re.compile(r"^resume:[ \t]*(.*?)[ \t]*$", re.MULTILINE)
-_TICKET_ID_RE = re.compile(r"^[A-Z][A-Z0-9]*-\d+$")
+# [0-9], not \d: in a str pattern \d is any Unicode decimal digit.
+_TICKET_ID_RE = re.compile(r"^[A-Z][A-Z0-9]*-[0-9]+$")
 _GOAL_SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
 
 
@@ -187,13 +188,49 @@ def _worktree_key(root):
 
 
 def _read_state(root):
-    return _load(state_path(root))
+    """The resume-state object: {} when there is no file, None when there is
+    one that cannot be read, does not parse, or is not the shape record_run
+    writes. None is an unknown -- never "nothing was resumed" -- because the
+    consumed-once and loop guards read their history from here (review
+    round 3, T-0006)."""
+    path = state_path(root)
+    if not os.path.lexists(path):
+        return {}
+    try:
+        with open(path, encoding="utf-8-sig") as handle:
+            state = json.loads(handle.read())
+    except (OSError, ValueError):
+        return None
+    if not isinstance(state, dict) or not isinstance(state.get("worktrees", {}), dict):
+        return None
+    return state
 
 
 def _entry(state, key):
-    worktrees = state.get("worktrees")
-    entry = worktrees.get(key) if isinstance(worktrees, dict) else None
-    return entry if isinstance(entry, dict) else {}
+    """This worktree's entry: {} when it has none, None when `state` is
+    unknown or the entry is not the shape record_run writes."""
+    if state is None:
+        return None
+    entry = state.get("worktrees", {}).get(key, {})
+    if not isinstance(entry, dict) or not isinstance(entry.get("consumed", []), list) \
+            or not isinstance(entry.get("last", {}), dict):
+        return None
+    return entry
+
+
+_UNREADABLE_STATE = "resume-state.json exists and could not be read - move it aside to reset auto-resume"
+
+
+def _already(entry, sha, prompt, fingerprint):
+    """The reason `entry` forbids running (sha, prompt, fingerprint) again,
+    or "" when it does not. The one statement of both guards, asked by
+    `decide` and again by `record_run` under its lock."""
+    if sha in entry.get("consumed", []):
+        return "this handoff was already resumed"
+    last = entry.get("last", {})
+    if last.get("prompt") == prompt and last.get("fingerprint") == fingerprint:
+        return "same command, no progress since the last auto-resume - waiting for a human"
+    return ""
 
 
 # --------------------------------------------------------------------------
@@ -415,16 +452,14 @@ def decide(root, payload, handoff_text, plugin_root, global_path=None, archived=
     if not os.path.isfile(os.path.join(plugin_root, "commands", name + ".md")):
         return _decision("wait", f"{parsed['command']} is not installed", prompt, sha)
     entry = _entry(_read_state(root), _worktree_key(root))
-    consumed = entry.get("consumed") if isinstance(entry.get("consumed"), list) else []
-    if sha in consumed:
-        return _decision("wait", "this handoff was already resumed", prompt, sha)
+    if entry is None:
+        return _decision("wait", _UNREADABLE_STATE, prompt, sha)
     fingerprint = progress_fingerprint(root, ticket, goal)
+    reason = _already(entry, sha, prompt, fingerprint)
+    if reason:
+        return _decision("wait", reason, prompt, sha, fingerprint)
     if fingerprint is None:
         return _decision("wait", "the progress fingerprint could not be computed", prompt, sha)
-    last = entry.get("last") if isinstance(entry.get("last"), dict) else {}
-    if last.get("prompt") == prompt and last.get("fingerprint") == fingerprint:
-        return _decision("wait", "same command, no progress since the last auto-resume - "
-                         "waiting for a human", prompt, sha, fingerprint)
     return _decision("run", "", prompt, sha, fingerprint)
 
 
@@ -436,26 +471,38 @@ def record_run(root, decision):
     called by whatever actually STARTS the command (T-0013) -- nothing in
     T-0006 does. Temp file then `os.replace` under a lock. A False return
     means the record did not land, and the caller must then not type: an
-    unrecorded run is one the consumed-once and loop guards cannot see."""
+    unrecorded run is one the consumed-once and loop guards cannot see.
+
+    Both guards are asked AGAIN here, under the lock, so decide-then-record
+    is not a check-then-act race: of two senders holding the same `run`,
+    only the first record is ok (review round 3, T-0006). A state file that
+    cannot be read is refused, never overwritten."""
     if not isinstance(decision, dict) or decision.get("action") != "run":
         return False, "the decision is not a run"
     sha, prompt = decision.get("handoff_sha256"), decision.get("prompt")
+    fingerprint = decision.get("fingerprint")
     if not isinstance(sha, str) or not sha or not isinstance(prompt, str) or not prompt:
         return False, "the decision carries no handoff hash or prompt"
+    if not isinstance(fingerprint, str) or not fingerprint:
+        return False, "the decision carries no progress fingerprint"
     path = state_path(root)
     lock = path + ".lock"
     if not crew_context.acquire_lock(lock):
         return False, "could not take the resume-state lock"
     try:
         state = _read_state(root)
-        worktrees = state.get("worktrees") if isinstance(state.get("worktrees"), dict) else {}
         key = _worktree_key(root)
         entry = _entry(state, key)
-        consumed = [c for c in (entry.get("consumed") or []) if isinstance(c, str) and c != sha]
+        if entry is None:
+            return False, _UNREADABLE_STATE
+        refused = _already(entry, sha, prompt, fingerprint)
+        if refused:
+            return False, refused
+        worktrees = state.get("worktrees", {})
+        consumed = [c for c in entry.get("consumed", []) if isinstance(c, str)]
         consumed = (consumed + [sha])[-CONSUMED_KEEP:]
         worktrees[key] = {"consumed": consumed,
-                          "last": {"prompt": prompt, "fingerprint": decision.get("fingerprint"),
-                                   "at": int(time.time())}}
+                          "last": {"prompt": prompt, "fingerprint": fingerprint, "at": int(time.time())}}
         text = json.dumps({"worktrees": worktrees}, sort_keys=True)
         tmp = f"{path}.{os.getpid()}.tmp"
         try:

@@ -52,7 +52,7 @@ RESUME_MUTATIONS = (
      "    if False:" + _OFF,
      _T + "test_branch_mismatch_waits"),
     ("a handoff already resumed can be resumed again (consumed-once dropped)", RESUME,
-     "    if sha in consumed:\n",
+     '    if sha in entry.get("consumed", []):\n',
      "    if False:" + _OFF,
      _T + "test_same_handoff_never_fires_twice"),
     ("the same command with no progress resumes again (loop guard dropped)", RESUME,
@@ -100,7 +100,7 @@ RESUME_MUTATIONS = (
      _H + "test_precompact_record_same_in_both_flavours"),
     # --- review round 1 ----------------------------------------------------
     # BLOCK: the reviewer's own mutation. An extra line on every UNARMED
-    # /clear must fail the whole-output comparison with base f2bb919b.
+    # /clear must fail the whole-output comparison with base 768a747a.
     ("an unarmed /clear gains an extra line", CONTEXT,
      "        resume_text = resume_line(resume, bool(handoff and handoff.strip()))\n",
      "        resume_text = resume_line(resume, bool(handoff and handoff.strip()))\n"
@@ -199,6 +199,43 @@ RESUME_MUTATIONS = (
      '        tail = "Read the handoff and continue by hand." if has_handoff else "Continue by hand."\n',
      '        tail = "Read the handoff and continue by hand."\n',
      _H + "test_armed_with_no_handoff_says_why[sh]"),
+    # --- review round 3 ----------------------------------------------------
+    ("an unparseable resume-state.json reads as no history again", RESUME,
+     "            state = json.loads(handle.read())\n    except (OSError, ValueError):\n        return None\n",
+     "            state = json.loads(handle.read())\n    except (OSError, ValueError):\n        return {}\n",
+     _T + "test_an_unreadable_resume_state_waits_rather_than_runs[truncated]"),
+    ("a resume-state.json of the wrong shape reads as no history", RESUME,
+     '    if not isinstance(state, dict) or not isinstance(state.get("worktrees", {}), dict):\n'
+     "        return None\n",
+     '    if not isinstance(state, dict) or not isinstance(state.get("worktrees", {}), dict):\n'
+     "        return {}\n",
+     _T + "test_an_unreadable_resume_state_waits_rather_than_runs[worktrees-not-an-object]"),
+    ("a worktree entry of the wrong shape reads as no history", RESUME,
+     '            or not isinstance(entry.get("last", {}), dict):\n        return None\n',
+     '            or not isinstance(entry.get("last", {}), dict):\n        return {}\n',
+     _T + "test_a_resume_state_entry_of_the_wrong_shape_waits[consumed-not-a-list]"),
+    ("decide reads an unknown resume state as no history", RESUME,
+     "    if entry is None:\n        return _decision(\"wait\", _UNREADABLE_STATE, prompt, sha)\n",
+     "    entry = {} if entry is None else entry\n",
+     _T + "test_an_unreadable_resume_state_waits_rather_than_runs[truncated]"),
+    ("record_run overwrites a resume state it could not read", RESUME,
+     "        if entry is None:\n            return False, _UNREADABLE_STATE\n",
+     "        if entry is None:\n            entry, state = {}, {}\n",
+     _T + "test_record_run_never_overwrites_an_unreadable_resume_state[truncated]"),
+    ("record_run no longer asks the guards again under its lock", RESUME,
+     "        refused = _already(entry, sha, prompt, fingerprint)\n        if refused:\n"
+     "            return False, refused\n",
+     "",
+     _T + "test_record_run_refuses_a_handoff_already_recorded"),
+    ("record_run records a run that carries no fingerprint", RESUME,
+     "    if not isinstance(fingerprint, str) or not fingerprint:\n"
+     '        return False, "the decision carries no progress fingerprint"\n',
+     "",
+     _T + "test_record_run_refuses_a_run_with_no_fingerprint[None]"),
+    ("a ticket id matches any Unicode decimal digit again", RESUME,
+     '_TICKET_ID_RE = re.compile(r"^[A-Z][A-Z0-9]*-[0-9]+$")\n',
+     '_TICKET_ID_RE = re.compile(r"^[A-Z][A-Z0-9]*-\\d+$")\n',
+     _T + "test_a_ticket_id_with_non_ascii_digits_is_refused[arabic-indic]"),
 )
 
 

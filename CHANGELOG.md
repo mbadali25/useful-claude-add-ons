@@ -31,7 +31,7 @@ All notable changes to this repository are documented here. Format follows [Keep
   (the consumed-once and loop-guard record). No gate changes. Must-fire and
   must-not-fire cases in `test_crew_resume.py` and, through both wrappers,
   `test_crew_resume_hook.py`; an unarmed or `startup` SessionStart is compared
-  WHOLE against base f2bb919b's output (a stored golden, and live against
+  WHOLE against base 768a747a's output (a stored golden, and live against
   that commit's code where it is reachable). Review round 1 (1 BLOCK, 3 FIX,
   5 NIT) fixed: a later PreCompact removes the session's old record first,
   in shell, so a compact whose record never lands is not manual; an
@@ -52,7 +52,14 @@ All notable changes to this repository are documented here. Format follows [Keep
   the allowlist in the `crew-context` skill. Its `.crew/verify.json` rule is
   appended last (rule 24), so no existing rule's index moves. Rebased onto
   1.0.37 (T-0003, T-0008) without behaviour change to either.
-  Sabotage run: all 36 `sabotage_resume.py` mutations RED on their named
+  Review round 3 (2 FIX, 5 NIT) fixed: a `resume-state.json` that exists and
+  cannot be read, or is not the shape `record_run` writes, is an unknown -
+  `decide` waits and `record_run` refuses rather than overwriting the
+  history; `record_run` asks the consumed-once and loop guards again under
+  its lock (and refuses a run with no fingerprint), so of two senders
+  holding the same `run` only the first gets `ok`; a ticket id's digits are
+  ASCII `[0-9]`, not any Unicode `\d`; the golden's base is `768a747a`.
+  Sabotage run: all 44 `sabotage_resume.py` mutations RED on their named
   tests (among them allowlisting `/crew:approve`, arming on a repo `true`,
   dropping the repo veto, the head or branch check, consumed-once or the
   loop guard, counting an unknown fingerprint as progress, firing on

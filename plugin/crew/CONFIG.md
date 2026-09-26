@@ -630,7 +630,7 @@ them:
 
 ## 10. Global-settable keys — 66
 
-66 measured (`leaf_paths(default_global_config())`, crew 1.0.31); the table
+66 measured (`leaf_paths(default_global_config())`, crew 1.0.40); the table
 below lists 63 of them. `guards.cloudGuard`, `guards.cloudDestructive` and
 `guards.sqlDestructive` are global-settable and not tabled here.
 
@@ -1072,11 +1072,17 @@ as stale, or one judged stale that could not be archived; no `resume:`
 line, `resume: none`, or a line the grammar refuses; a `branch:` or `head:`
 that does not match the checkout; a missing `.work/tickets/<id>/` or
 `.work/autopilot/<slug>.json`; a command not installed in the plugin; a
-handoff already passed to `record_run`; a progress fingerprint that cannot be
+`<git-common-dir>/crew/resume-state.json` that exists and cannot be read or
+is not the shape `record_run` writes (an unknown, never "nothing resumed"; move
+it aside to reset); a handoff already passed to `record_run`; a progress fingerprint that cannot be
 computed (an unreadable `.work/INDEX.md` or an unlistable ticket directory
 counts as "cannot be computed", never as progress); and the same command a
 second time with no progress since. The `crew_resume.py decide` CLI applies
 `crew_state.handoff_staleness` itself, read-only, and waits on a stale note.
+`record_run` asks the consumed-once and loop guards again under its lock and
+refuses (`ok: false`) a handoff already recorded, the same command with no
+progress, a run with no fingerprint, or a state file it cannot read, which it
+never overwrites: of two senders holding the same `run`, only the first may type.
 If the opt-in cannot even be confirmed (the module or the machine file cannot
 be read), the answer is `off`, so an unarmed machine sees exactly the
 pre-T-0006 output.

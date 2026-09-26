@@ -151,7 +151,8 @@ type it (T-0013 types it) — or says `Auto-resume did not start: <reason>.`
 The reasons: compact was not a manual /compact; no handoff note, or it was
 archived as stale, or is stale and could not be archived; no resume line, `resume: none`, or a refused line; the
 `branch:`/`head:` line does not match the checkout; the ticket directory or
-goal file is missing; the command is not installed; this handoff was already
+goal file is missing; the command is not installed; `resume-state.json` exists
+and could not be read; this handoff was already
 resumed; the progress fingerprint could not be computed; the same command
 with no progress since the last auto-resume. Never on `startup`.
 

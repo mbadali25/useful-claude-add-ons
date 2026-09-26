@@ -231,7 +231,7 @@ def _context(flavor, root, source="clear", session="s1"):
 
 def _todays_handoff_item(root):
     """The handoff item exactly as crew_context built it before T-0006
-    (`crew_context.py` SessionStart branch, origin/main f2bb919b)."""
+    (`crew_context.py` SessionStart branch, origin/main 768a747a)."""
     import crew_context  # pylint: disable=import-outside-toplevel
     with open(root / ".work" / "HANDOFF.md", encoding="utf-8") as handle:
         handoff = handle.read()
@@ -391,17 +391,17 @@ def test_decide_raising_becomes_an_internal_error_wait_and_keeps_the_handoff(tmp
             "## Handoff from the previous session" in text) == (True, True), text
 
 
-# --- round 1 BLOCK: unarmed output is f2bb919b's output, WHOLE --------------
+# --- round 1 BLOCK: unarmed output is 768a747a's output, WHOLE --------------
 #
-# `_GOLDEN` is the whole additionalContext base f2bb919b's crew_context.py
+# `_GOLDEN` is the whole additionalContext base 768a747a's crew_context.py
 # produced for `_golden_repo`, captured by running that commit's
-# hooks/scripts (`git archive f2bb919b plugin/crew/hooks/scripts`) against the
+# hooks/scripts (`git archive 768a747a plugin/crew/hooks/scripts`) against the
 # fixture, with the two facts that differ per run replaced by placeholders:
 # {HEAD8} (`git rev-parse --short=8 HEAD`) and {HEAD7} (the handoff's head:).
 # `test_unarmed_output_matches_base_code_live` re-captures it from the base
 # code itself wherever that commit is reachable (skipped in a shallow clone).
 
-_BASE = "f2bb919b"
+_BASE = "768a747a"
 _GOLDEN_HANDOFF = ("# Handoff\nticket: T-0001\nbranch: golden\nhead: {HEAD7}\nresume: /crew:done T-0001\n\n"
                    "## Done\n- the spec\n\n## Next action\nClose T-0001 with /crew:done.\n")
 _GOLDEN_RESUMED = (
