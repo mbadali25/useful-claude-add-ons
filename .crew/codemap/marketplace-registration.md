@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@09285d6e
+anchor: useful-claude-add-ons@486bc674
 verified: 2026-09-25
 paths: scripts/**, plugin/PLUGINS.md
 
@@ -326,3 +326,13 @@ as the two paragraphs above say: `:269` is the rules array's closing `],`, at ev
 paragraphs are left as written. The crew version in `.claude-plugin/marketplace.json`,
 `plugin/PLUGINS.md` and `plugin.json` is 1.0.43 as before (stepped back to 1.0.42 in `f7bc12d1` and
 `c198c551`, re-set in `c8a1be2c` and `c0bd5ced`, the last commit that changes `plugin/crew/`).
+
+Re-verified per-path from `09285d6e` to `486bc674` for T-0030 review round 4: of the cited paths
+`.crew/verify.json` changed (rule 24's `seconds` and `why` only; the doc rule at `:69-78` is
+unchanged, re-read with `awk`), `CHANGELOG.md` (the 1.0.43 entry gained a round-4 bullet; cited
+only as a doc-rule path) and `plugin/crew/BUDGETS.md` (marker still `:10`; the figure on `:11`
+moved 17,988 -> 18,004 lines across 120 files, re-measured with
+`git ls-files 'plugin/crew/*.md' | xargs cat | wc -l`). The crew version in
+`.claude-plugin/marketplace.json`, `plugin/PLUGINS.md` and `plugin.json` is 1.0.43 as before
+(stepped back to 1.0.42 in `278eb5e2`, re-set in `18629adc`, the last commit that changes
+`plugin/crew/`). `python3 scripts/check-marketplace.py` at `486bc674` reports no problems.

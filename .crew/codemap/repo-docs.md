@@ -1,5 +1,5 @@
 # repo-docs
-anchor: useful-claude-add-ons@09285d6e
+anchor: useful-claude-add-ons@486bc674
 verified: 2026-09-25
 
 ## Re-derive provenance
@@ -287,7 +287,7 @@ listing the directory.
 - **`docs/runbooks/INDEX.md` still does not exist.** `docs/runbooks/`
   contains `rollback.md` alone (re-confirmed by `ls`).
   `plugin/crew/skills/crew-runbooks/SKILL.md:80` and
-  `plugin/crew/README.md:1875` (`:1854` at `c8a1be2c`, `:1817` at `40eb1792`, `:1788` at `3b977289`, `:1728` at `8d447a7d`, `:1725` at `f2bb919b`, `:1604` before that,
+  `plugin/crew/README.md:1891` (`:1875` at `09285d6e`, `:1854` at `c8a1be2c`, `:1817` at `40eb1792`, `:1788` at `3b977289`, `:1728` at `8d447a7d`, `:1725` at `f2bb919b`, `:1604` before that,
   that file having changed in each range — re-grepped, not offset) both still describe
   `docs/runbooks/INDEX.md` as a symptom-keyed index that would live there.
   JUDGEMENT, unchanged: costs nothing with one runbook, becomes a real gap at
@@ -512,3 +512,9 @@ Re-verified per-path from `c8a1be2c` to `09285d6e` for T-0030 review round 3: of
 and `CHANGELOG.md` (the 1.0.43 entry gained a round-3 bullet; cited without a line) changed.
 Rule 24's span is corrected above from `:262-269` to `:262-268`: `:269` is the rules array's
 closing `],`, and it was that at every earlier anchor too. Nothing under `docs/` changed.
+
+Re-verified per-path from `09285d6e` to `486bc674` for T-0030 review round 4: of the cited paths
+`plugin/crew/README.md` (the "Cross-session claims" section grew by 16 lines, so `:1875` moved to
+`:1891`, re-grepped; corrected above), `.crew/verify.json` (rule 24's `seconds` and `why` only;
+still `:262-268`) and `CHANGELOG.md` (the 1.0.43 entry gained a round-4 bullet; cited without a
+line) changed. Nothing under `docs/` changed.

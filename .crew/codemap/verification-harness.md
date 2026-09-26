@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@09285d6e
+anchor: useful-claude-add-ons@486bc674
 verified: 2026-09-25
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -587,3 +587,14 @@ not `:262-269` as this note said since `3b977289`: `:269` is the rules array's c
 paragraphs are left as they were written. `default`/`unmapped` are still `:271`/`:272`.
 `plugin/crew/tests/sabotage.py` did not change: `sabotage_coord.py` grew from 57 to 65
 mutations, still registered at `:72` and `:3048`.
+
+Re-verified per-path from `09285d6e` to `486bc674` for T-0030 review round 4
+(`T-0030-coord--DKzIYN`): `git diff --name-only 09285d6e 486bc674` over this note's cited paths
+returns `.crew/verify.json`, `CHANGELOG.md`, `plugin/crew/hooks/scripts/crew_coord.py`,
+`plugin/crew/tests/test_crew_coord.py` and `plugin/crew/tests/sabotage_coord.py`; the version
+files are net-unchanged. Rule 24's `seconds` went 35 -> 55 and its `why` names the 197 cases,
+re-measured with the rule's own command at 44.1s and 52.7s (load average 5.7-6.8): the fixture now
+reaches the bare remote through a stand-in ssh, one python process per fetch and push. Its span is
+still `:262-268`; `default`/`unmapped` are still `:271`/`:272`. `plugin/crew/tests/sabotage.py`
+did not change: `sabotage_coord.py` grew from 65 to 73 mutations, still registered at `:72` and
+`:3048`.

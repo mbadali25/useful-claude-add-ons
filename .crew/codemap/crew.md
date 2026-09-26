@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@09285d6e
+anchor: useful-claude-add-ons@486bc674
 verified: 2026-09-25
 
 ## Re-derive provenance
@@ -530,9 +530,14 @@ at claim time. A holder is session + machine + worktree + pid (+ start),
 compared by `same_holder`; the heartbeat lock is keyed by every one of those
 fields (`holder_tag`); `Channel.fetch` takes only the exact channel ref from
 `ls-remote`; the `<repo>` half of a key is derived (`repo_key`, `owner_name`:
-origin's owner/name, lowercased, Azure DevOps https and ssh both giving
-`project.repo` through `_azure_part`, else the main worktree's directory
-name) and `parse_ticket` upper-cases the id; a recommended command withholds
+origin's URL from `git remote get-url origin`, so insteadOf applies, split by
+`_split_url` into host and every path segment, lowercased; every Azure DevOps
+form gives `dev.azure.com.<org>.<project>.<repo>` through `_azure_parts` and
+`_azure_part`; a URL the key cannot be told from raises `UnknownKey`, exit 3,
+and only a missing origin URL falls back to the main worktree's directory
+name) and `parse_ticket` upper-cases the id; `ttl_minutes` refuses a
+`coord.ttlMinutes` outside 0 to `MAX_TTL_MINUTES` (10080) as a usage error in
+`main` before any fetch; a recommended command withholds
 peer values that fail the key rule (`_command_part`). Tests in
 `plugin/crew/tests/test_crew_coord.py`, mutations in
 `plugin/crew/tests/sabotage_coord.py`, both mapped by `.crew/verify.json:262-268`
@@ -795,3 +800,11 @@ net-unchanged at 1.0.43 (stepped back to 1.0.42 in `c198c551`, re-set in `c0bd5c
 `crew_coord.py` section above is updated for the round-3 fixes, and its rule-24 citation corrected
 from `:262-269` to `:262-268` (`:269` is the rules array's closing `],`, re-read with
 `awk 'NR>=262 && NR<=269' .crew/verify.json`); every other citation holds.
+
+Re-verified per-path from `09285d6e` to `486bc674` for T-0030 review round 4
+(`T-0030-coord--DKzIYN`): of the cited paths `plugin/crew/hooks/scripts/crew_coord.py`,
+`plugin/crew/tests/test_crew_coord.py`, `plugin/crew/tests/sabotage_coord.py`, `CHANGELOG.md` and
+`.crew/verify.json` (rule 24's `seconds` and `why` text only; still `:262-268`) changed; the
+version files are net-unchanged at 1.0.43 (stepped back to 1.0.42 in `278eb5e2`, re-set in
+`18629adc`). The `crew_coord.py` section above is updated for the round-4 fixes; every other
+citation holds.
