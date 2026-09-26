@@ -53,6 +53,20 @@ All notable changes to this repository are documented here. Format follows [Keep
   was not a finding at all before). A backslash-newline is joined before the
   delimiter is matched, so `E\` + newline + `OF` ends a heredoc delimited by
   `EOF`; a delimiter line ending in CR is read both as the end and not.
+- **The cloud guard delimits quoting as bash does, and fails closed where it
+  cannot.** `${...}` and `$( )` end where bash ends them — nested quotes,
+  `$'...'`, backslashes and `#` comments included — so `"${x:-"'"}"` is one
+  word and no longer hides the `$( )` or the `terraform destroy` after it.
+  Wherever crew still cannot be sure it split a line as the shell will
+  (quoting inside `${...}`, a quote or substitution that never closes, a
+  heredoc or `case` inside `$( )`, a redirection with no target, a control
+  character), it counts one command more — so a saved plan's apply is
+  refused unattended — and re-reads the rest of the line from scratch, so a
+  command the shell would run is judged either way. A line holding a CR is
+  read three ways: CR as a blank, as a word character (bash: `\r#` is not a
+  comment) and dropped. PowerShell's typographic quotes and a bare CR are
+  read as its tokenizer reads them. A terragrunt option whose value is the
+  word `workspace` no longer hides `workspace delete`.
 - **`workspace delete` is a destroy in every armed state**, `environments`
   configured or not, terragrunt's included — behind `run-all`, `run --` and
   `run --all --`, and after a terragrunt option that takes a value. **Once `environments` is configured**, `terraform

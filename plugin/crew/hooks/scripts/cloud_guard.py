@@ -211,8 +211,146 @@ _BASH_RESERVED = frozenset(("{", "}", "!", "if", "then", "else", "elif", "fi",
 _BASH_WRITES = frozenset((">", ">>", ">|", "<>"))
 
 
-def _read_bash_double(text, i, subs):
-    """A "..." word starting at `text[i]`; returns (value, next index)."""
+# --- reading bash the way bash reads it, and saying when it cannot ----------
+#
+# Round 3 of T-0005's review: a lexer that disagrees with bash about where a
+# quote or a substitution ends does not merely misread one word -- the
+# disagreement swallows everything after it, commands included. So three
+# things, not one:
+#
+#   * `_bash_close` finds the end of `${ }` / `$( )` as bash does, nested
+#     quoting, `$'...'`, backslashes and comments included;
+#   * wherever crew still cannot be sure it split the line as bash will --
+#     quoting inside `${...}`, a quote or substitution that never closes, a
+#     heredoc or `case` inside `$( )`, a control character, `\r#` -- the
+#     lexer DOUBTS, and `scan` counts one command more for it, so the saved
+#     plan's apply is never "the only command" (fail closed);
+#   * the first doubt in each reading also hands the text after it to
+#     `subs`, read again from scratch -- the other way the shell might split
+#     it -- so a command bash would run is judged under either reading.
+
+# Control characters other than tab and newline. Bash reads them as word
+# characters; crew reads `\r` as a blank (a shell that drops CR sees
+# `destroy\r` as `destroy`). The readings differ, and crew cannot tell which
+# shell will run the line.
+_CONTROL_RE = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
+# Inside `${...}`: quoting whose meaning bash decides by the operator, the
+# quoting context around it and posix mode.
+_PARAM_HARD_RE = re.compile(r"['\"\\`]")
+# Inside `$( )` or backticks: what `_bash_close` does not model -- a heredoc
+# body, whose `)` bash does not count, and `case` patterns -- and, in
+# backticks, backslash escaping, which bash applies twice there.
+_SUBST_HARD_RE = re.compile(r"<<|\bcase\b")
+# Nesting deeper than this inside one `${ }` / `$( )` is not followed (it is
+# reported as unclosed, so it doubts and fails closed) -- the bound keeps a
+# hostile payload from exhausting the stack.
+_CLOSE_MAX_NEST = 64
+
+
+def _skip_ansi_c(text, i):
+    """The index after the $'...' starting at `text[i]`, or None if open."""
+    j, n = i + 2, len(text)
+    while j < n:
+        if text[j] == "\\":
+            j += 2
+            continue
+        if text[j] == "'":
+            return j + 1
+        j += 1
+    return None
+
+
+def _skip_backtick(text, i):
+    """The index after the backtick string at `text[i]`, or None if open."""
+    j, n = i + 1, len(text)
+    while j < n:
+        if text[j] == "\\":
+            j += 2
+            continue
+        if text[j] == "`":
+            return j + 1
+        j += 1
+    return None
+
+
+def _skip_bash_double(text, i, nest=0):
+    """The index after the "..." at `text[i]`, or None if it never closes.
+    Inside it only `\\`, `$( )`, `${ }` and backticks are special."""
+    j, n = i + 1, len(text)
+    while j < n:
+        c = text[j]
+        if c == "\\":
+            j += 2
+            continue
+        if c == '"':
+            return j + 1
+        if text.startswith("$(", j) or text.startswith("${", j):
+            k, closed = _bash_close(text, j + 1, nest=nest + 1)
+            if not closed:
+                return None
+            j = k + 1
+            continue
+        if c == "`":
+            j = _skip_backtick(text, j)
+            if j is None:
+                return None
+            continue
+        j += 1
+    return None
+
+
+def _bash_close(text, start, nest=0):
+    """`(index, closed)` for the bracket closing the `(` or `{` at
+    `text[start]`, read as bash reads it: `\\x`, '...', $'...', "..." with
+    its own substitutions, backticks, nested `${ }` and `$( )`, and -- in
+    parentheses -- a `#` comment at the start of a word. Unclosed, or nested
+    past `_CLOSE_MAX_NEST`: `(len(text), False)`."""
+    n = len(text)
+    if nest > _CLOSE_MAX_NEST:
+        return n, False
+    open_ch = text[start]
+    close_ch = "}" if open_ch == "{" else ")"
+    depth, i = 0, start
+    while i < n:
+        c = text[i]
+        skip = None
+        if c == "\\":
+            skip = i + 2
+        elif text.startswith("$'", i):
+            skip = _skip_ansi_c(text, i)
+        elif c == "'":
+            end = text.find("'", i + 1)
+            skip = end + 1 if end >= 0 else None
+        elif c == '"':
+            skip = _skip_bash_double(text, i, nest)
+        elif c == "`":
+            skip = _skip_backtick(text, i)
+        elif text.startswith("${", i) or text.startswith("$(", i):
+            k, closed = _bash_close(text, i + 1, nest + 1)
+            skip = k + 1 if closed else None
+        elif open_ch == "(" and c == "#" and text[i - 1] in " \t\n;&|()<>":
+            end = text.find("\n", i)
+            skip = end if end >= 0 else None
+        else:
+            if c == open_ch:
+                depth += 1
+            elif c == close_ch:
+                depth -= 1
+                if depth == 0:
+                    return i, True
+            i += 1
+            continue
+        if skip is None:
+            return n, False
+        i = skip
+    return n, False
+
+
+def _read_bash_double(text, i, subs, doubt=None):
+    """A "..." word starting at `text[i]`; returns (value, next index).
+    `doubt(reason, alt)` is told wherever this cannot be sure it reads the
+    string as bash will."""
+    doubt = doubt or (lambda reason, alt=None: None)
     buf, j, n = [], i + 1, len(text)
     while j < n and text[j] != '"':
         c = text[j]
@@ -222,20 +360,39 @@ def _read_bash_double(text, i, subs):
             j += 2
             continue
         if text.startswith("$(", j):
-            k = _match_close(text, j + 1)
+            k, closed = _bash_close(text, j + 1)
             subs.append(text[j + 2:k])
+            if not closed or _SUBST_HARD_RE.search(text[j + 2:k]):
+                # Unclosed, the substitution already IS the rest.
+                doubt("a `$( )` crew cannot delimit as bash does",
+                      text[j + 2:] if closed else None)
+            buf.append(text[j:k + 1])
+            j = k + 1
+            continue
+        if text.startswith("${", j):
+            # Its own quotes do not end the string: `"${x:-"'"}"` is ONE
+            # word to bash, and the `'` inside quotes nothing.
+            k, closed = _bash_close(text, j + 1)
+            _expansion_subs(text[j + 2:k], subs)
+            if not closed or _PARAM_HARD_RE.search(text[j + 2:k]):
+                doubt("quoting inside `${...}`", text[j + 2:])
             buf.append(text[j:k + 1])
             j = k + 1
             continue
         if c == "`":
-            k = text.find("`", j + 1)
-            k = n - 1 if k < 0 else k
+            end = _skip_backtick(text, j)
+            k = n if end is None else end - 1
             subs.append(text[j + 1:k])
+            if end is None or "\\" in text[j + 1:k]:
+                doubt("a backtick substitution crew cannot delimit",
+                      None if end is None else text[j + 1:])
             buf.append(text[j:k + 1])
             j = k + 1
             continue
         buf.append(c)
         j += 1
+    if j >= n:
+        doubt("a double quote that never closes", text[i + 1:])
     return "".join(buf), j + 1
 
 
@@ -268,13 +425,13 @@ def _expansion_subs(text, subs):
             j += 3
             continue
         if text.startswith("$(", j):
-            close = _match_close(text, j + 1)
+            close, _closed = _bash_close(text, j + 1)
             subs.append(text[j + 2:close])
             j = close + 1
             continue
         if c == "`":
-            close = text.find("`", j + 1)
-            close = n if close < 0 else close
+            end = _skip_backtick(text, j)
+            close = n if end is None else end - 1
             subs.append(text[j + 1:close])
             j = close + 1
             continue
@@ -285,7 +442,7 @@ def _is_arith(text, i):
     """True when the `$((` at `text[i]` is arithmetic. Bash reads it as
     `$( (subshell) ... )` -- a command -- unless the inner `(` closes
     straight onto the outer `)`: `$((echo a); (echo b))` runs both echoes."""
-    m = _match_close(text, i + 2)
+    m, _closed = _bash_close(text, i + 2)
     return text[m + 1:m + 2] == ")"
 
 
@@ -345,10 +502,22 @@ def _read_heredocs(text, i, pending, subs):
     return i
 
 
-def _lex_bash(text):
-    """`text` as a list of `_Cmd`, plus every substitution found in it."""
+def _lex_bash(text, unsure=None):
+    """`text` as a list of `_Cmd`, plus every substitution found in it.
+    Every place it cannot be sure it reads `text` as bash will is appended
+    to `unsure` (see `_bash_close`'s section)."""
     cmds, subs, pending = [], [], []
-    state = {"cur": _Cmd(), "word": None, "redirect": None, "quoted": False}
+    unsure = [] if unsure is None else unsure
+    state = {"cur": _Cmd(), "word": None, "redirect": None, "quoted": False,
+             "reread": False}
+
+    def doubt(reason, alt=None):
+        unsure.append(reason)
+        # One re-read per reading: it covers everything after the doubt,
+        # later doubts included, and a hostile line cannot fan it out.
+        if alt and alt.strip() and not state["reread"]:
+            state["reread"] = True
+            subs.append(alt)
 
     def end_word():
         word = state["word"]
@@ -376,6 +545,12 @@ def _lex_bash(text):
 
     def finish(pipe=False):
         end_word()
+        if state["redirect"] is not None:
+            # A redirection with no target: bash found a word here that
+            # crew did not (`<<<\r;`). Left pending, the NEXT command's
+            # head would be taken as its target and the command never read.
+            doubt("a redirection with no target")
+            state["redirect"] = None
         cur = state["cur"]
         if cur.has_content():
             cmds.append(cur)
@@ -399,22 +574,26 @@ def _lex_bash(text):
             continue
         if c == "'":
             j = text.find("'", i + 1)
-            j = n if j < 0 else j
+            if j < 0:
+                doubt("a single quote that never closes", text[i + 1:])
+                j = n
             add(text[i + 1:j], quoted=True)
             i = j + 1
             continue
         if text.startswith("$'", i):
+            if _skip_ansi_c(text, i) is None:
+                doubt("a $'...' that never closes", text[i + 2:])
             value, i = _read_ansi_c(text, i)
             add(value, quoted=True)
             continue
         if c == '"':
-            value, i = _read_bash_double(text, i, subs)
+            value, i = _read_bash_double(text, i, subs, doubt)
             add(value, quoted=True)
             continue
         if text.startswith("$((", i) and _is_arith(text, i):
             # Arithmetic runs nothing itself, but a substitution inside it
             # does: `$(( $(cp evil p.tfplan) 10 ))`.
-            k = _match_close(text, i + 1)
+            k, _closed = _bash_close(text, i + 1)
             _expansion_subs(text[i + 3:k], subs)
             add(text[i:k + 1])
             i = k + 1
@@ -423,21 +602,30 @@ def _lex_bash(text):
                 or text.startswith(">(", i):
             # `$((cp a b) )` and `<((cmd))` are a subshell inside, not
             # arithmetic: the whole inside is a command.
-            k = _match_close(text, i + 1)
+            k, closed = _bash_close(text, i + 1)
             subs.append(text[i + 2:k])
+            if not closed or _SUBST_HARD_RE.search(text[i + 2:k]):
+                # Unclosed, the substitution already IS the rest.
+                doubt("a `$( )` crew cannot delimit as bash does",
+                      text[i + 2:] if closed else None)
             add(text[i:k + 1])
             i = k + 1
             continue
         if text.startswith("${", i):
-            k = _match_close(text, i + 1, "{", "}")
+            k, closed = _bash_close(text, i + 1)
             _expansion_subs(text[i + 2:k], subs)
+            if not closed or _PARAM_HARD_RE.search(text[i + 2:k]):
+                doubt("quoting inside `${...}`", text[i + 2:])
             add(text[i:k + 1])
             i = k + 1
             continue
         if c == "`":
-            k = text.find("`", i + 1)
-            k = n - 1 if k < 0 else k
+            end = _skip_backtick(text, i)
+            k = n if end is None else end - 1
             subs.append(text[i + 1:k])
+            if end is None or "\\" in text[i + 1:k]:
+                doubt("a backtick substitution crew cannot delimit",
+                      None if end is None else text[i + 1:])
             add(text[i:k + 1])
             i = k + 1
             continue
@@ -590,6 +778,22 @@ def _read_ps_herestring(text, i, subs):
             k = _match_close(body, match.start() + 1, ps=True)
             subs.append(body[match.start() + 2:k])
     return body, (len(text) if close < 0 else close + 3)
+
+
+# What PowerShell's tokenizer reads as a quote or a line end and crew's
+# ASCII lexer would not: the typographic quotes (any single-quote character
+# opens or closes a '...' string, any double one a "..." string) and a bare
+# CR, which ends a line -- and a `#` comment -- exactly as LF does.
+_PS_QUOTES = str.maketrans({"\u2018": "'", "\u2019": "'", "\u201a": "'",
+                            "\u201b": "'", "\u201c": '"', "\u201d": '"',
+                            "\u201e": '"'})
+
+
+def _ps_normalise(text):
+    """`text` with PowerShell's other quote and newline spellings mapped to
+    the ones `_lex_ps` reads, and whether anything was mapped."""
+    out = text.replace("\r\n", "\n").replace("\r", "\n").translate(_PS_QUOTES)
+    return out, out != text
 
 
 def _lex_ps(text):
@@ -1411,13 +1615,31 @@ def _tf_workspace(args, head=None):
     Terragrunt hands what follows `run-all`, `run --` and `run --all --` to
     terraform in every module, as `_terraform_destructive` reads them, and
     its own options may take a value (`--working-dir infra`), so for it --
-    and behind either wrapper -- the first `workspace` word is the
-    subcommand."""
+    and behind either wrapper -- any `workspace` word may be the
+    subcommand, and the most destructive reading wins."""
     _chdir, sub, rest = _tf_split(args)
-    if sub != "workspace" and "workspace" in args and (
+    if "workspace" in args and (
             head == "terragrunt" or sub in ("run-all", "run")):
-        sub, rest = "workspace", list(args[args.index("workspace") + 1:])
-    if sub != "workspace" or not rest or _tf_help_requested(rest[1:]):
+        # An option VALUE may be the word `workspace` too (`--working-dir
+        # workspace`), and which words are values crew cannot know for
+        # every terragrunt option. Read every `workspace` as the subcommand
+        # and keep the worst: a delete over a create over the rest.
+        found = [_tf_workspace_rest(args[index + 1:])
+                 for index, word in enumerate(args) if word == "workspace"]
+        return min(found, key=lambda got: _WS_RANK.get(got[0], 9))
+    if sub != "workspace":
+        return None, None
+    return _tf_workspace_rest(rest)
+
+
+# Which `workspace` reading `_tf_workspace` keeps when a terragrunt line
+# has several: the one that would do the most.
+_WS_RANK = {"ws-delete": 0, "ws-create": 1, "ws-new": 2, "select": 3}
+
+
+def _tf_workspace_rest(rest):
+    """`_tf_workspace` for the words after `workspace`."""
+    if not rest or _tf_help_requested(rest[1:]):
         return None, None
     wsub, wrest = rest[0], rest[1:]
     names = _tf_operands(wrest)
@@ -1578,12 +1800,15 @@ def _tf_destroy(scope, cwd, root, state):
     # saved plan is trusted only when its apply is the ONE command here and
     # nothing writes output anywhere but the null device.
     if state.get("commands", 0) != 1 or state.get("writes"):
+        doubts = state.get("unsure")
+        read = (f"; crew could not read it as bash will ({doubts[0]}), so "
+                "it counts one command more") if doubts else ""
         return DESTROY_UNKNOWN, (
             "this invocation runs more than the apply, or redirects output "
             "to a file, and either could rewrite the saved plan or its "
             "summary after crew hashes it -- a saved plan is trusted only "
             "when its apply is the only command (run the plan and summarize "
-            "steps first, then the apply on its own)"), None
+            f"steps first, then the apply on its own){read}"), None
     workdir, why = _tf_workdir(chdir, cwd, state)
     if workdir is None:
         return DESTROY_UNKNOWN, f"the saved plan cannot be located: {why}", None
@@ -2542,8 +2767,31 @@ def scan(shell, text, env=None, depth=0, ctx=None, seq=None):
     seq = dict(seq or {})
     variables = {}
     exported = set()
-    lexer = _lex_ps if shell == "powershell" else _lex_bash
-    cmds, subs = lexer(text)
+    unsure = []
+    if shell == "powershell":
+        normal, mapped = _ps_normalise(text)
+        if mapped:
+            unsure.append("PowerShell's typographic quotes or a bare CR")
+        cmds, subs = _lex_ps(normal)
+    else:
+        cmds, subs = _lex_bash(text, unsure)
+        if "\r" in text:
+            # The lexer reads CR as a blank. Bash without igncr reads it as
+            # a word character (`\r#` is a word, not a comment, and `X=\r`
+            # is one assignment); a shell that drops CR reads it as nothing.
+            # Read the whole text both of those ways too. `\x01` is a word
+            # character to the lexer and to bash, and not a CR, so neither
+            # re-read recurses.
+            subs.extend((text.replace("\r", "\x01"), text.replace("\r", "")))
+    if _CONTROL_RE.search(text):
+        unsure.append("a control character")
+    if unsure and ctx is not None:
+        # Fail closed. Crew could not be sure it split this text as the
+        # shell will, so it does not know how many commands it holds: count
+        # one more than it saw, and the saved plan's apply is never the only
+        # command (`_tf_destroy`).
+        ctx["commands"] = 1 + ctx.get("commands", 0)
+        ctx.setdefault("unsure", []).extend(unsure)
     findings = []
     for sub in subs:
         findings.extend(scan(shell, sub, env, depth + 1, ctx, seq))

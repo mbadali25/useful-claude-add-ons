@@ -1400,3 +1400,235 @@ def test_the_command_count_covers_heredoc_substitutions():
 def test_powershell_fd_merge_is_a_redirection(command, want):
     cmds, _subs = cloud_guard._lex_ps(command)  # pylint: disable=protected-access
     assert [c.words for c in cmds] == want
+
+
+# --- review round 3 (T-0005-env-terraform--ICP8KT) ---------------------------
+#
+# BLOCK/FIX :214. `"${x:-"'"}"` -- a double-quoted `${...}` holding its own
+# double quotes -- ended the guard's string at the inner quote, and the `'`
+# inside opened a single-quoted string that swallowed the rest of the
+# command: a substitution after it was never counted (BLOCK) and a command
+# after it was never judged (FIX). FIX :444: `\r#` read as a comment, which
+# bash without igncr does not. FIX :1419: an option value `workspace` taken
+# as terragrunt's workspace subcommand.
+#
+# The class, not the instance: wherever the lexer cannot be sure it read a
+# command line the way bash will -- quoting inside `${...}`, an unterminated
+# quote or substitution, a control character -- it counts one command more,
+# so an unattended saved-plan apply is refused, and it re-reads the text the
+# other way so nothing that bash would run goes unjudged.
+_R3_FIXTURE = _o(sidecar={"workspace": "staging"}, wsfiles={".": "staging"},
+                 why="rewrite")
+_APPLY = f"terraform apply {PLAN}"
+
+# (id, command). Every one would be ALLOWED if the fail-closed count were
+# gone: most carry no substitution at all, so the only thing wrong with them
+# is that crew cannot be sure how bash splits them.
+HOSTILE_QUOTING = [
+    ("r3q-sq-in-param-dq", f'{_APPLY} <<<"${{x:-"\'"}}"'),
+    ("r3q-sq-in-param-dq-subst", f'{_APPLY} <<<"${{x:-"\'"}}$({_SWAP})"'),
+    ("r3q-sq-pair-in-param-dq", f"{_APPLY} <<<\"${{x:-'}}'}}\""),
+    ("r3q-sq-in-param-bare", f"{_APPLY} <<<${{x:-'a'}}"),
+    ("r3q-dq-in-param-bare", f'{_APPLY} <<<${{x:-"a"}}'),
+    ("r3q-escaped-dq-in-param", f'{_APPLY} <<<"${{x:-\\"}}"'),
+    ("r3q-ansi-c-in-param", f"{_APPLY} <<<${{x:-$'\\''}}"),
+    ("r3q-ansi-c-in-param-dq", f"{_APPLY} <<<\"${{x:-$'\\''}}\""),
+    ("r3q-backslash-in-param", f"{_APPLY} <<<${{x:-\\}}}}"),
+    ("r3q-nested-param-quote", f'{_APPLY} <<<"${{x:-${{y:-"\'"}}}}"'),
+    ("r3q-nested-comsub", f'{_APPLY} <<<"$( echo "$( echo a )" )"'),
+    ("r3q-herestring-sq-then-dq", f"{_APPLY} <<<'a'\"${{x:-\"'\"}}\""),
+    ("r3q-herestring-ansi-c", f"{_APPLY} <<<$'\\''\"${{x:-'}}'}}\""),
+    ("r3q-unterminated-sq", f"{_APPLY} <<<'abc"),
+    ("r3q-unterminated-dq", f'{_APPLY} <<<"abc'),
+    ("r3q-unterminated-ansi-c", f"{_APPLY} <<<$'abc"),
+    ("r3q-unterminated-param", f"{_APPLY} <<<${{x:-abc"),
+    ("r3q-cr-before-hash", f"true \r# ; {_APPLY}"),
+    ("r3q-cr-before-semicolon", f"{_APPLY}\r;"),
+    ("r3q-vt-before-hash", f"{_APPLY} <<<a\v#b"),
+    ("r3q-vt-before-semicolon", f"{_APPLY} <<<a\v;"),
+    ("r3q-cr-in-herestring", f'{_APPLY} <<<"a\r# b"'),
+    ("r3q-nul-in-herestring", f'{_APPLY} <<<"a\0b"'),
+    ("r3q-escape-char", f"{_APPLY} <<<a\x1b[0m"),
+    ("r3q-comsub-ansi-c-paren", f"{_APPLY} <<<$(echo $'\\')')"),
+    ("r3q-comsub-heredoc", f"{_APPLY} <<<\"$(cat <<E\n)\nE\n)\""),
+]
+HOSTILE_QUOTING_CASES = _normalise(
+    [(case_id, "Bash", command, dict(_R3_FIXTURE))
+     for case_id, command in HOSTILE_QUOTING])
+
+# Commands the round-3 shapes hid from the guard entirely: each is a destroy
+# that must be denied even under `terraformApply: allow`. Every one was run
+# through bash 5.3 with `echo PWN` in place of terraform and printed PWN.
+_DESTROY = "terraform destroy -auto-approve"
+HIDDEN_DESTROY = _normalise(
+    [(case_id, "Bash", command, _o(why="destroy", **ALLOW_POLICY))
+     for case_id, command in (
+         ("r3-param-dq-assignment", f'X="${{x:-"\'"}}" {_DESTROY}'),
+         ("r3-param-ansi-c", f"X=${{x:-$'\\''}}; {_DESTROY}"),
+         ("r3-param-ansi-c-balanced", f"X=${{x:-$'\\''}}; {_DESTROY}; echo '}}'"),
+         ("r3-comsub-ansi-c", f"X=$(echo $'\\')'; {_DESTROY}; echo )"),
+         # A heredoc inside `$( )`: bash does not count the body's `)`, the
+         # matcher does, and the `'` after it then quotes the destroy.
+         ("r3-comsub-heredoc-paren",
+          f"X=$(cat <<E\n)'\nE\n); {_DESTROY} #'"),
+         ("r3-cr-hash-destroy", f"true \r# ; {_DESTROY}"),
+         ("r3-cr-hash-workspace-delete",
+          "true \r# ; terraform workspace delete production"),
+         ("r3-cr-hash-no-plan-apply", "true \r# ; terraform apply -auto-approve"),
+         ("r3-cr-hash-next-line",
+          f"true \r# '\n{_DESTROY}\n'"),
+         ("r3-tg-working-dir-workspace",
+          "terragrunt --working-dir workspace run-all workspace delete staging"),
+         ("r3-tg-exclude-dir-workspace",
+          "terragrunt run-all --queue-exclude-dir workspace workspace delete "
+          "staging"),
+     )]
+    + [(case_id, "Bash", command, _o(why="destroy"))
+       for case_id, command in (
+           ("r3-param-dq-assignment-ask", f'X="${{x:-"\'"}}" {_DESTROY}'),
+           ("r3-cr-hash-destroy-ask", f"true \r# ; {_DESTROY}"),
+       )]
+    # The same class in PowerShell, whose tokenizer takes the typographic
+    # quotes as quotes and a bare CR as a line end (comments included).
+    # Each was run through pwsh 7 with `Write-Output PWN` and printed PWN.
+    + [(case_id, "PowerShell", command, _o(why="destroy", **ALLOW_POLICY))
+       for case_id, command in (
+           ("r3-ps-smart-single", f"Write-Output \u2018x' ; {_DESTROY} ; 'y\u2019"),
+           ("r3-ps-smart-double", f'Write-Output \u201cx" ; {_DESTROY} ; "y\u201d'),
+           ("r3-ps-cr-line", f"echo a\r{_DESTROY}"),
+           ("r3-ps-cr-ends-comment", f"echo a # x\r{_DESTROY}"),
+           ("r3-ps-cr-herestring", f"Write-Output @'\rabc\r'@\r{_DESTROY}"),
+       )])
+
+_ROUND3 = HOSTILE_QUOTING_CASES + HIDDEN_DESTROY
+
+# Ordinary, clean command lines: the fail-closed rule must not touch them.
+ROUND3_ALLOW = _normalise([
+    (case_id, "Bash", command,
+     _o(sidecar={"workspace": "staging"}, wsfiles={".": "staging"},
+        log=_R2_LOG))
+    for case_id, command in (
+        ("r3a-plain", _APPLY),
+        ("r3a-tf-workspace", f"{TFW}=staging {_APPLY}"),
+        ("r3a-herestring-dq", f'{_APPLY} <<<"yes"'),
+        ("r3a-herestring-sq", f"{_APPLY} <<<'yes'"),
+        ("r3a-herestring-ansi-c", f"{_APPLY} <<<$'yes\\n'"),
+        ("r3a-herestring-bare", f"{_APPLY} <<<yes"),
+        ("r3a-param-dq", f'terraform apply -lock-timeout="${{LOCK:-0s}}" {PLAN}'),
+        ("r3a-param-bare", f"terraform apply -lock-timeout=${{LOCK:-0s}} {PLAN}"),
+        ("r3a-quoted-plan-dq", f'terraform apply "{PLAN}"'),
+        ("r3a-quoted-plan-sq", f"terraform apply '{PLAN}'"),
+        ("r3a-comment", f"{_APPLY} # apply the reviewed plan"),
+        ("r3a-tab", f"{_APPLY}\t"),
+        ("r3a-trailing-newline", f"{_APPLY}\n"),
+        ("r3a-escaped-space", f"terraform apply -lock-timeout=0\\ s {PLAN}"),
+        ("r3a-sq-with-dq-inside", f"{_APPLY} <<<'say \"yes\"'"),
+        ("r3a-dq-with-sq-inside", f'{_APPLY} <<<"it\'s fine"'),
+        ("r3a-devnull", f"{_APPLY} > /dev/null 2>&1"),
+    )])
+
+
+@pytest.mark.parametrize("case", _ROUND3, ids=_ids(_ROUND3))
+def test_round3_must_block_python(tmp_path, case):
+    _deny("python", tmp_path, case)
+
+
+@pytest.mark.parametrize("case", _sample(
+    _ROUND3, ("r3q-sq-in-param-dq-subst", "r3-param-dq-assignment",
+              "r3-cr-hash-destroy"), (tcg.needs_bash,)))
+def test_round3_must_block_bash(tmp_path, case):
+    _deny("bash", tmp_path, case)
+
+
+@pytest.mark.parametrize("case", ROUND3_ALLOW, ids=_ids(ROUND3_ALLOW))
+def test_round3_must_allow_python(tmp_path, case):
+    _allow("python", tmp_path, case)
+
+
+@pytest.mark.parametrize("case", _sample(
+    ROUND3_ALLOW, ("r3a-plain", "r3a-herestring-dq"), (tcg.needs_bash,)))
+def test_round3_must_allow_bash(tmp_path, case):
+    _allow("bash", tmp_path, case)
+
+
+def test_round3_tables_are_big_enough_and_distinct():
+    """The owner asked for at least 15 hostile shapes; ids never repeat."""
+    assert len(HOSTILE_QUOTING) >= 15
+    ids = _ids(_ROUND3 + ROUND3_ALLOW)
+    assert len(ids) == len(set(ids))
+
+
+@pytest.mark.parametrize("command", [c for _i, c in HOSTILE_QUOTING],
+                         ids=[i for i, _c in HOSTILE_QUOTING])
+def test_hostile_quoting_counts_an_extra_command(command):
+    """The mechanism itself, independent of the hook: the saved plan's
+    apply is never the only command crew counts."""
+    ctx = {}
+    cloud_guard.scan("bash", command, ctx=ctx)
+    assert ctx.get("commands", 0) >= 2, ctx
+
+
+@pytest.mark.parametrize("command", [c for _i, _t, c, _o2 in ROUND3_ALLOW],
+                         ids=_ids(ROUND3_ALLOW))
+def test_clean_commands_count_one(command):
+    ctx = {}
+    cloud_guard.scan("bash", command, ctx=ctx)
+    assert ctx.get("commands") == 1, ctx
+
+
+@pytest.mark.parametrize("command, want", [
+    ("terragrunt --working-dir workspace run-all workspace delete staging",
+     ("ws-delete", "staging")),
+    ("terragrunt run-all --queue-exclude-dir workspace workspace delete qa",
+     ("ws-delete", "qa")),
+    ("terragrunt --working-dir workspace workspace select -or-create dev",
+     ("ws-create", "dev")),
+    ("terragrunt run-all workspace delete staging", ("ws-delete", "staging")),
+    ("terragrunt --working-dir workspace run-all workspace list",
+     (None, None)),
+])
+def test_terragrunt_workspace_after_an_option_value(command, want):
+    args = command.split()[1:]
+    assert cloud_guard._tf_workspace(args, "terragrunt") == want  # pylint: disable=protected-access
+
+
+@pytest.mark.parametrize("text, start, want", [
+    ("${x:-$'\\''}; y }", 1, (10, True)),
+    ('${x:-"}"}', 1, (8, True)),
+    ("${x:-'}'}", 1, (8, True)),
+    ("${x:-\\}}", 1, (7, True)),
+    ("${x:-${y:-}}}", 1, (11, True)),
+    ("$(echo \\))", 1, (9, True)),
+    ("$(echo ')')", 1, (10, True)),
+    ('$(echo "$(echo ")")")', 1, (20, True)),
+    ("$(echo `echo )`)", 1, (15, True)),
+    ("$(echo a # )\n)", 1, (13, True)),
+    ("$(echo a#b)", 1, (10, True)),
+    ("${x:-'}", 1, (7, False)),
+    ("$(echo $'\\')", 1, (12, False)),
+])
+def test_bash_close_reads_like_bash(text, start, want):
+    """Where `${ }` and `$( )` end, as bash 5.3 ends them."""
+    assert cloud_guard._bash_close(text, start) == want  # pylint: disable=protected-access
+
+
+def test_double_quoted_param_is_one_word():
+    """The BLOCK itself, at the lexer: `"${x:-"'"}$(cmd)"` is one word whose
+    substitution is a command, and the quoting inside `${}` is a doubt."""
+    unsure = []
+    cmds, subs = cloud_guard._lex_bash(  # pylint: disable=protected-access
+        f'cat <<<"${{x:-"\'"}}$({_SWAP})"', unsure)
+    assert [c.words for c in cmds] == [["cat"]]
+    assert cmds[0].stdin == f'${{x:-"\'"}}$({_SWAP})'
+    assert _SWAP in subs
+    assert unsure
+
+
+def test_a_redirection_without_a_target_does_not_take_the_next_command():
+    """`<<<\r;`: the lexer found no target where bash found `\r`. The next
+    command's head must stay a head, not become the missing target."""
+    unsure = []
+    cmds, _subs = cloud_guard._lex_bash(  # pylint: disable=protected-access
+        f"cat <<<\r; {_DESTROY}", unsure)
+    assert [c.words for c in cmds][-1] == _DESTROY.split()
+    assert unsure

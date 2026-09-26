@@ -63,9 +63,9 @@ CLOUD_GUARD_MUTATIONS = (
      '            if pending:\n                i = _read_heredocs(',
      '            if False:\n                i = _read_heredocs(', _BLOCK),
     ("cloud guard: bash $( ) inside quotes no longer scanned", GUARD,
-     '            k = _match_close(text, j + 1)\n'
+     '            k, closed = _bash_close(text, j + 1)\n'
      '            subs.append(text[j + 2:k])\n',
-     '            k = _match_close(text, j + 1)\n', _BLOCK),
+     '            k, closed = _bash_close(text, j + 1)\n', _BLOCK),
     ("cloud guard: bash ; & | no longer split commands", GUARD,
      '            finish(pipe=c == "|")\n',
      '            add(c)\n', _BLOCK),
@@ -609,4 +609,60 @@ CLOUD_GUARD_MUTATIONS += (
      '            if state["word"] is not None and state["bare"] \\\n',
      '            if state["word"] is not None \\\n',
      _R2 + "[r2-ps-quoted-redirect]"),
+)
+
+# T-0005 review round 3 (T-0005-env-terraform--ICP8KT): the lexer read
+# `"${x:-"'"}"` as a string ending at the inner quote (BLOCK + FIX :214),
+# `\r#` as a comment (FIX :444), and the first `workspace` word as
+# terragrunt's subcommand (FIX :1419). The fix is a class -- bash's own
+# delimiting, a fail-closed count wherever crew is unsure, a re-read of the
+# text the other way -- so each piece has its own mutation, aimed at the
+# case only that piece decides: the fail-closed count at a control
+# character (no re-read happens there), the re-read at a heredoc inside
+# `$( )` (the matcher cannot delimit it), the lexer pieces at the lexer.
+_R3 = _E + "test_round3_must_block_python"
+
+CLOUD_GUARD_MUTATIONS += (
+    ("cloud guard r3: a doubt no longer counts a command (fail-open)", GUARD,
+     "    if unsure and ctx is not None:\n",
+     "    if False:\n", _R3 + "[r3q-vt-before-semicolon]"),
+    ("cloud guard r3: a doubt no longer re-reads the rest", GUARD,
+     '        if alt and alt.strip() and not state["reread"]:\n',
+     "        if False:\n", _R3 + "[r3-comsub-heredoc-paren]"),
+    ("cloud guard r3: quoting inside ${...} is no doubt", GUARD,
+     '            if not closed or _PARAM_HARD_RE.search(text[i + 2:k]):\n',
+     "            if not closed:\n",
+     _E + "test_hostile_quoting_counts_an_extra_command[r3q-dq-in-param-bare]"),
+    ("cloud guard r3: \"${...}\" ends at its own inner quote", GUARD,
+     '        if text.startswith("${", j):\n'
+     "            # Its own quotes do not end the string",
+     "        if False:\n"
+     "            # Its own quotes do not end the string",
+     _E + "test_double_quoted_param_is_one_word"),
+    ("cloud guard r3: $'...' read as a plain '...' when delimiting", GUARD,
+     "        elif text.startswith(\"$'\", i):\n"
+     "            skip = _skip_ansi_c(text, i)\n",
+     "        elif False:\n"
+     "            skip = _skip_ansi_c(text, i)\n",
+     _E + "test_bash_close_reads_like_bash[${x:-$'\\\\''}; y }-1-want0]"),
+    ("cloud guard r3: a CR line read only with CR as a blank", GUARD,
+     '            subs.extend((text.replace("\\r", "\\x01"), '
+     'text.replace("\\r", "")))\n',
+     "            pass\n", _R3 + "[r3-cr-hash-destroy]"),
+    ("cloud guard r3: a target-less redirection takes the next head", GUARD,
+     '        if state["redirect"] is not None:\n'
+     "            # A redirection with no target",
+     "        if False:\n"
+     "            # A redirection with no target",
+     _E + "test_a_redirection_without_a_target_does_not_take_the_next_command"),
+    ("cloud guard r3: terragrunt reads only its first `workspace`", GUARD,
+     '                 for index, word in enumerate(args) if word == "workspace"]\n',
+     '                 for index, word in enumerate(args) if word == "workspace"]'
+     "[:1]\n", _R3 + "[r3-tg-working-dir-workspace]"),
+    ("cloud guard r3: PowerShell typographic quotes read as letters", GUARD,
+     '.replace("\\r", "\\n").translate(_PS_QUOTES)\n',
+     '.replace("\\r", "\\n")\n', _R3 + "[r3-ps-smart-single]"),
+    ("cloud guard r3: a PowerShell bare CR read as a blank", GUARD,
+     '    out = text.replace("\\r\\n", "\\n").replace("\\r", "\\n")',
+     '    out = text.replace("\\r\\n", "\\n")', _R3 + "[r3-ps-cr-line]"),
 )
