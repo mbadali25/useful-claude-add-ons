@@ -282,10 +282,10 @@
                 "plugin/crew/commands/autopilot.md",
                 "plugin/crew/tests/test_crew_autopilot.py",
                 "plugin/crew/tests/sabotage_autopilot.py"],
-      "seconds": 3,
+      "seconds": 5,
       "run": ["python3 -m pytest plugin/crew/tests/test_crew_autopilot.py plugin/crew/tests/test_lifecycle_commands.py -q"],
       "reach": "local",
-      "why": "2.1s measured twice 2026-09-25 on the Linux host (20 CPUs, load average 4-9); 3 is that rounded up, not an estimate. T-0004's /crew:autopilot: crew_autopilot.py names the next lifecycle phase from disk and picks the ticket to resume, and every branch that cannot tell must stop - so the suite carries one case per phase transition, every stop (approval, review acceptance, NEEDS_REPLAN, UNKNOWN ledger, failed validate, refresh unavailable, stale after review, maxPhases, no progress) and every resume source. sabotage_autopilot.py's six mutations each go red on their named test through sabotage.py. test_lifecycle_commands.py runs with it because it holds autopilot.md's 120-line budget and exact-CLI checks. reach: local - every case builds a throwaway git repository under pytest's tmp_path." }
+      "why": "4.6s wall (178 passed) measured 2026-09-26 on the Linux host (20 CPUs, load average 4.1) after the round-1 fixes; 5 is that rounded up, not an estimate (2.1s before them, 2026-09-25). T-0004's /crew:autopilot: crew_autopilot.py names the next lifecycle phase from disk and picks the ticket to resume, and every branch that cannot tell must stop - so the suite carries one case per phase transition, every stop (approval, review acceptance, NEEDS_REPLAN, UNKNOWN ledger, failed validate, refresh unavailable, stale after review, maxPhases, no progress) and every resume source. Every mutation in sabotage_autopilot.py (one per must-stop branch; count them there, not here) goes red on its named test through sabotage.py. test_lifecycle_commands.py runs with it because it holds autopilot.md's 120-line budget and exact-CLI checks. reach: local - every case builds a throwaway git repository under pytest's tmp_path." }
   ],
 
   "default": ["bash _verify/smoke.sh"],

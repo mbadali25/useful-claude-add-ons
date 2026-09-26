@@ -62,7 +62,7 @@ All notable changes to this repository are documented here. Format follows [Keep
     `.crew/verify.json` maps the new files to `python3 -m pytest
     plugin/crew/tests/test_crew_autopilot.py
     plugin/crew/tests/test_lifecycle_commands.py -q`. Config leaf count
-    116 -> 118; crew's command count 34 -> 35.
+    117 -> 119; crew's command count 34 -> 35.
 
 - **`crew` 1.0.40: auto-resume after `/clear`, reduced form (T-0006).** Bumped
   `1.0.39 -> 1.0.40`, the owner's land-order assignment of 2026-09-25
