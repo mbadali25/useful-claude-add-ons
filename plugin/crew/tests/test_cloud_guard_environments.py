@@ -1632,3 +1632,13 @@ def test_a_redirection_without_a_target_does_not_take_the_next_command():
         f"cat <<<\r; {_DESTROY}", unsure)
     assert [c.words for c in cmds][-1] == _DESTROY.split()
     assert unsure
+
+
+def test_a_cr_heredoc_delimiter_is_read_both_ways_by_the_lexer():
+    """Round 2's `EOF\\r` rule, pinned at the lexer. Since round 3 `scan`
+    also re-reads any CR line whole, which judges the hook-level case on its
+    own, so the heredoc rule needs a check that only it can pass: the text
+    after the next exact delimiter reaches `subs`."""
+    text = f"cat <<EOF\nEOF\r\n'\nEOF\n{_DESTROY}\n'\n"
+    _cmds, subs = cloud_guard._lex_bash(text)  # pylint: disable=protected-access
+    assert any(sub.startswith(_DESTROY) for sub in subs), subs

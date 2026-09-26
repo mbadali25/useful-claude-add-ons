@@ -585,7 +585,11 @@ CLOUD_GUARD_MUTATIONS += (
      '            if check.rstrip("\\r") == delim:\n'
      "                alt, j = [line], i\n",
      '            if check.rstrip("\\r") == delim:\n'
-     "                break\n", _BLOCK + "[heredoc-cr-delimiter]"),
+     "                break\n",
+     # Not the hook case any more: since round 3 `scan` re-reads every CR
+     # line whole, which judges `[heredoc-cr-delimiter]` without this rule
+     # -- measured STILL GREEN. The lexer-level check is this rule's alone.
+     _E + "test_a_cr_heredoc_delimiter_is_read_both_ways_by_the_lexer"),
     ("cloud guard r2: ${...} no longer scanned for substitutions", GUARD,
      "            _expansion_subs(text[i + 2:k], subs)\n", "",
      _R2 + "[r2-param-default]"),
