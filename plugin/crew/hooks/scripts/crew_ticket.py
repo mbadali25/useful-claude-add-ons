@@ -676,20 +676,40 @@ def _register_ramp(root, ticket):
         _write_json(path, {"tickets": tickets})
 
 
-def approve(root, ticket, by=None, via=CLI, session=None, prompt_id=None):
+def _expected_pair(expect):
+    if (not isinstance(expect, (tuple, list)) or len(expect) != 2
+            or not all(isinstance(v, str) and v for v in expect)):
+        raise TicketError(f"expect must be (plan_sha256, spec_sha256), not {expect!r}")
+    return expect
+
+
+def approve(root, ticket, by=None, via=CLI, session=None, prompt_id=None, expect=None):
     """Validate, then write the receipt. Returns `(receipt, successor)`;
     `successor` is None when the review ledger is not NEEDS_REPLAN, else
     `(allowed, reason)` from the ledger seam.
 
     spec.md and plan.md are read once; the bytes validated are the bytes
     hashed. `via` is `cli` (this module's CLI, tests, CI) or `user-prompt`
-    (`approval_hook.py`, which also passes the prompt's session and id)."""
+    (`approval_hook.py`, which also passes the prompt's session and id).
+
+    `expect`, when given, is the `(plan_sha256, spec_sha256)` the user
+    confirmed (T-0024's group confirm). Bytes that hash to anything else are
+    refused before anything is written: the receipt is bound to the version
+    the user saw, never to a later edit."""
     if via not in (CLI, USER_PROMPT):
         raise TicketError(f"approved_via {via!r} is not {CLI} or {USER_PROMPT}")
+    if expect is not None:
+        expect = _expected_pair(expect)
     top = toplevel(root)
     if not top:
         raise TicketError(f"{root} is not a git repository")
     contract = read_contract(top, ticket)
+    if expect is not None:
+        moved = [name for name, want in (("spec.md", expect[1]), ("plan.md", expect[0]))
+                 if _sha(contract[name]) != want]
+        if moved:
+            raise TicketError(f"{ticket}: {' and '.join(moved)} changed since the "
+                              "approval was requested")
     problems = validate(top, ticket, contract)
     if problems:
         raise TicketError("not approved -- the contract does not validate:\n  "
@@ -719,6 +739,62 @@ def approve(root, ticket, by=None, via=CLI, session=None, prompt_id=None):
     if ledger.get("state") == review_ledger.NEEDS_REPLAN:
         successor = review_ledger.continue_with_successor_plan(root, ticket, plan_sha)
     return receipt, successor
+
+
+def _index_closed(top, ticket):
+    """True when a `.work/INDEX.md` line closes `ticket` -- a table row whose
+    status cell is a `crew_state._TABLE_DONE_WORDS` word, or a prose line with
+    a done marker, the rule `crew_autopilot._is_open` applies. None when the
+    file exists and cannot be read: whether it is closed is then unknown."""
+    import crew_state  # pylint: disable=import-outside-toplevel
+    path = os.path.join(top, ".work", "INDEX.md")
+    text = crew_common.read_text(path)
+    if text is None:
+        return None if os.path.lexists(path) else False
+    for line in text.splitlines():
+        table = crew_state._table_status(line, ticket)  # pylint: disable=protected-access
+        if table:
+            return True
+        found = crew_state._TICKET_RE.search(line)  # pylint: disable=protected-access
+        if table is None and found and found.group(1) == ticket \
+                and crew_state._DONE_RE.search(line):  # pylint: disable=protected-access
+            return True
+    return False
+
+
+def precheck(root, ticket):
+    """`{"ticket", "problems", "plan_sha256", "spec_sha256"}`: whether `ticket`
+    could be approved now, from ONE `read_contract`. The hashes are of the
+    bytes checked, None when there is nothing to hash. Every problem is
+    listed, not the first: a group approval names each one (T-0024)."""
+    result = {"ticket": ticket, "problems": [], "plan_sha256": None, "spec_sha256": None}
+    problems = result["problems"]
+    try:
+        check_ticket(ticket)
+    except TicketError as exc:
+        problems.append(str(exc))
+        return result
+    top = toplevel(root)
+    if not top:
+        problems.append(f"{root} is not a git repository")
+        return result
+    if not os.path.isdir(ticket_dir(top, ticket)):
+        problems.append(f"no ticket folder .work/tickets/{ticket}/")
+        return result
+    contract = read_contract(top, ticket)
+    result["plan_sha256"], result["spec_sha256"] = _sha(contract["plan.md"]), \
+        _sha(contract["spec.md"])
+    problems.extend(validate(top, ticket, contract))
+    closed = _index_closed(top, ticket)
+    if closed is None:
+        problems.append(f"could not read .work/INDEX.md to tell whether {ticket} is closed")
+    elif closed:
+        problems.append(f"{ticket} is closed in .work/INDEX.md")
+    _, state = read_approval(root, ticket)
+    if state == "corrupt":
+        problems.append(f"the approval receipt at {approval_path(root, ticket)} is "
+                        "unreadable; inspect it and remove it by hand before approving")
+    return result
 
 
 def earlier_plan_hashes(root, ticket):
