@@ -1,5 +1,5 @@
 # repo-docs
-anchor: useful-claude-add-ons@29a987b0
+anchor: useful-claude-add-ons@c87ac3f4
 verified: 2026-09-26
 
 ## Re-derive provenance
@@ -584,5 +584,12 @@ Re-verified per-path from `4ff7e764` to `29a987b0` (T-0018 review round 2). Of t
 `git diff --name-only 4ff7e764..29a987b0` returns `.crew/verify.json` (rule 26's `seconds` and
 `why` changed in place; no line moved, so every `.crew/verify.json:<n>` citation here holds) and
 `CHANGELOG.md` (the 1.0.42 entry gained its round-2 paragraph; cited without a line).
+`plugin/crew/README.md`, `README.md`, `TODO.md`, `plugin/README.md` and both install scripts did
+not change.
+
+Re-verified per-path from `29a987b0` to `c87ac3f4` (T-0018 review round 3). Of the cited paths,
+`git diff --name-only 29a987b0 c87ac3f4` returns `.crew/verify.json` (rule 26's `seconds` and
+`why` changed in place; no line moved, so every `.crew/verify.json:<n>` citation here holds) and
+`CHANGELOG.md` (the 1.0.42 entry gained its round-3 paragraph; cited without a line).
 `plugin/crew/README.md`, `README.md`, `TODO.md`, `plugin/README.md` and both install scripts did
 not change.

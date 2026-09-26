@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@29a987b0
+anchor: useful-claude-add-ons@c87ac3f4
 verified: 2026-09-26
 paths: scripts/**, plugin/PLUGINS.md
 
@@ -378,6 +378,14 @@ Re-verified per-path from `5536c2c8` to `29a987b0` for T-0018's review rounds 1 
 cited paths, `git diff --name-only 5536c2c8 29a987b0` returns `.crew/verify.json` (rule 26's
 `seconds` and `why` only; 27 rules; the doc rule at `:69-78` is unchanged) and `CHANGELOG.md`. The
 version files (`.claude-plugin/marketplace.json:218`, `plugin/PLUGINS.md:14`,
+`plugin/crew/.claude-plugin/plugin.json`) are at 1.0.42 on both sides. Both install scripts,
+`README.md`, `plugin/README.md`, `INSTALLATION.md`, `scripts/check-marketplace.py`, `CLAUDE.md`
+and `skills/README.md` did not change. No command, agent or skill was added or removed.
+
+Re-verified per-path from `29a987b0` to `c87ac3f4` for T-0018's review round 3: of the cited
+paths, `git diff --name-only 29a987b0 c87ac3f4` returns `.crew/verify.json` (rule 26's `seconds`
+and `why` only; 27 rules; the doc rule at `:69-78` is unchanged) and `CHANGELOG.md`. The version
+files (`.claude-plugin/marketplace.json:218`, `plugin/PLUGINS.md:14`,
 `plugin/crew/.claude-plugin/plugin.json`) are at 1.0.42 on both sides. Both install scripts,
 `README.md`, `plugin/README.md`, `INSTALLATION.md`, `scripts/check-marketplace.py`, `CLAUDE.md`
 and `skills/README.md` did not change. No command, agent or skill was added or removed.
