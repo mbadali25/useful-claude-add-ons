@@ -1,5 +1,5 @@
 # repo-docs
-anchor: useful-claude-add-ons@bf5255c3
+anchor: useful-claude-add-ons@ddf8a8bd
 verified: 2026-09-26
 
 ## Re-derive provenance
@@ -542,3 +542,24 @@ net zero diff, so `marketplace.json`, `plugin.json` and `PLUGINS.md` are not in 
   changed on their own lines. Rules 22 `:244` and 23 `:245-261` hold.
 - `CHANGELOG.md` - the crew 1.0.44 entry under `[Unreleased]` gained the round-2 fixes; cited
   without a line. The `TODO.md` `render.sh` entry (`:1206`) is not in the diff and holds.
+
+## Re-anchor provenance - `bf5255c3` -> `ddf8a8bd`, 2026-09-26 (T-0028 review round 3)
+
+`git diff --name-only bf5255c3 ddf8a8bd` returns round 2's artifact refresh (`44eed691`) and T-0028's round-3 fixes: `.crew/verify.json`,
+`CHANGELOG.md`, `plugin/crew/BUDGETS.md` (the Markdown total re-measured, 17,929 -> 17,935), and
+under `plugin/crew/` `README.md`, `commands/review.md`, `hooks/scripts/review_run.py`,
+`skills/crew-providers/SKILL.md` and four test files (`review_fixtures.py`, `sabotage_kimi.py`,
+`test_kimi_docs.py`, `test_review_run_kimi.py`). crew's version was stepped back and re-set
+(`f945fdc5`, `ddf8a8bd`), a net zero diff, so `marketplace.json`, `plugin.json` and `PLUGINS.md`
+are not in the list. Each citation into them was re-read at `ddf8a8bd`:
+
+- `.crew/verify.json` gained one line at `:120` (`crew-setup/SKILL.md` in rule 6's `paths`),
+so every line from `:121` on moved down one (rule 22 `:244` -> `:245`, rule 23 `:245-261` ->
+`:246-262`, rule 24 `:263-281` -> `:264-282`, 287 lines, still 25 rules); this note cites no `.crew/verify.json` line past `:120`.
+- `commands/review.md` had three lines rewritten in place (`:241`, `:431`, `:432`: Kimi is step
+2e now, beside the failing-control Step 2d at `:482`), line count unchanged; `plugin/crew/README.md`
+one line in place (`:1085`, the Kimi paragraph), line count unchanged; `plugin/crew/README.md:1730` (the symptom-keyed runbook index) holds.
+- `CHANGELOG.md` - the crew 1.0.44 entry under `[Unreleased]` gained the round-3 fixes; cited
+  without a line. The `TODO.md` `render.sh` entry (`:1206`) is not in the diff and holds.
+
+No suite was run by this note; this pass is the per-path re-verify above, re-anchored by hand.

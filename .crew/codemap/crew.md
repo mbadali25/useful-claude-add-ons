@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@bf5255c3
+anchor: useful-claude-add-ons@ddf8a8bd
 verified: 2026-09-26
 
 ## Re-derive provenance
@@ -466,7 +466,7 @@ the sha256 of everything the rule is rendered from (`rule_digest`, `:105`), the 
 INDEX.md's Covers cell for it, and the note's Landmines headlines (else its Entry points), capped at
 `RULES_MAX_LINES` = 30 (`:81`). `--check` (`rules`, `:191`) writes nothing and reports each rule
 file missing, stale or orphaned; a hand-written file at a generated path is never overwritten and
-fails `--check`. `.crew/verify.json` rule 22 (`.crew/verify.json:244`) runs `--check` for any change under
+fails `--check`. `.crew/verify.json` rule 22 (`.crew/verify.json:245`) runs `--check` for any change under
 `.claude/rules/**` or `.crew/codemap/**`, so **a code-map edit without a regeneration fails the Stop
 gate** - see `verification-harness.md`. DERIVED from the source above; the command was run by
 T-0015 against this refresh.
@@ -504,7 +504,7 @@ commands call, not a hook - `plugin/crew/hooks/hooks.json` is unchanged since
 - Tests: `plugin/crew/tests/test_refresh_check.py`,
   `plugin/crew/tests/test_scope_guard_refresh_artifacts.py`,
   `plugin/crew/tests/test_completion_audit_refresh_artifacts.py`, with mutations in
-  `plugin/crew/tests/sabotage_refresh.py`; `.crew/verify.json:245-261` (rule
+  `plugin/crew/tests/sabotage_refresh.py`; `.crew/verify.json:246-262` (rule
   23) maps them, `implement.md`, `done.md`, and since review round 3
   `scope_guard.py`, `completion_audit.py`, `crew_freshness.py` and
   `scope_base.py` with their own suites, to one pytest rule. Confirmed
@@ -819,6 +819,32 @@ net zero diff, so `marketplace.json`, `plugin.json` and `PLUGINS.md` are not in 
   note: the round-2 fixes (graph.out resolved before the review, crew config never set aside,
   ignored tool caches set aside, no probe or round when the tree cannot be fingerprinted, PROBE_OK
   read before the rate-limit markers) are recorded in `CHANGELOG.md`, not re-derived here.
+- `CHANGELOG.md` - cited by name only.
+
+No suite was run by this note; this pass is the per-path re-verify above, re-anchored by hand.
+
+## Re-anchor provenance - `bf5255c3` -> `ddf8a8bd`, 2026-09-26 (T-0028 review round 3)
+
+`git diff --name-only bf5255c3 ddf8a8bd` returns round 2's artifact refresh (`44eed691`) and T-0028's round-3 fixes: `.crew/verify.json`,
+`CHANGELOG.md`, `plugin/crew/BUDGETS.md` (the Markdown total re-measured, 17,929 -> 17,935), and
+under `plugin/crew/` `README.md`, `commands/review.md`, `hooks/scripts/review_run.py`,
+`skills/crew-providers/SKILL.md` and four test files (`review_fixtures.py`, `sabotage_kimi.py`,
+`test_kimi_docs.py`, `test_review_run_kimi.py`). crew's version was stepped back and re-set
+(`f945fdc5`, `ddf8a8bd`), a net zero diff, so `marketplace.json`, `plugin.json` and `PLUGINS.md`
+are not in the list. Each citation into a changed path, re-read at `ddf8a8bd` with `grep -n`/`sed -n`:
+
+- `.crew/verify.json` gained one line at `:120` (`crew-setup/SKILL.md` in rule 6's `paths`),
+so every line from `:121` on moved down one (rule 22 `:244` -> `:245`, rule 23 `:245-261` ->
+`:246-262`, rule 24 `:263-281` -> `:264-282`, 287 lines, still 25 rules); corrected above.
+- `commands/review.md` had three lines rewritten in place (`:241`, `:431`, `:432`: Kimi is step
+2e now, beside the failing-control Step 2d at `:482`), line count unchanged; `plugin/crew/README.md`
+one line in place (`:1085`, the Kimi paragraph), line count unchanged; `review.md:2`, `:445,460` hold.
+- `review_run.py` - cited by name only. The round-3 fixes (every tracked file hashed whatever
+  `git status` says, nested repositories and submodules fingerprinted, a call's leftover process
+  group killed before the check, IDE state and crew hook logs set aside while ignored throughout)
+  are recorded in `CHANGELOG.md`. They REVERSE one round-2 fix recorded above: ignored tool caches
+  (`__pycache__`, `.pytest_cache`, ...) are no longer set aside, because a later run reads them
+  back.
 - `CHANGELOG.md` - cited by name only.
 
 No suite was run by this note; this pass is the per-path re-verify above, re-anchored by hand.

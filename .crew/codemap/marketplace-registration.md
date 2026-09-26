@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@bf5255c3
+anchor: useful-claude-add-ons@ddf8a8bd
 verified: 2026-09-26
 paths: scripts/**, plugin/PLUGINS.md
 
@@ -257,6 +257,8 @@ against synthetic fixtures and never reads this repo's own docs.
   marker still `:10`, `:11` reads 17,922 lines across 121 files, and the same measurement returns
   17922 over 121 files, matching. Re-measured at `514e4e0a` (T-0028 review round 1): `:11` reads
   17,929 lines across 121 files and the measurement returns 17929 over 121, matching.
+  Re-measured at `ddf8a8bd` (T-0028 review round 3): `:11` reads 17,935 lines across 121 files
+  and the measurement returns 17935 over 121, matching.
 - **`MARKETPLACE.md`** was not re-read for a community-plugin or marketplace
   count of its own; only `README.md:231`'s prose was checked and found to no
   longer state a specific number.
@@ -354,3 +356,20 @@ Re-read at `bf5255c3`: the doc rule `.crew/verify.json:69-78` is unchanged; rule
 `:263-281`; crew's `version` is 1.0.44 on `marketplace.json:218`, `plugin.json` and
 `PLUGINS.md:14`, set in the last `plugin/crew/` commit (`00b5913f`); `check-marketplace.py`
 passes at `bf5255c3`.
+
+## Re-anchor provenance - `bf5255c3` -> `ddf8a8bd`, 2026-09-26 (T-0028 review round 3)
+
+`git diff --name-only bf5255c3 ddf8a8bd` returns round 2's artifact refresh (`44eed691`) and T-0028's round-3 fixes: `.crew/verify.json`,
+`CHANGELOG.md`, `plugin/crew/BUDGETS.md` (the Markdown total re-measured, 17,929 -> 17,935), and
+under `plugin/crew/` `README.md`, `commands/review.md`, `hooks/scripts/review_run.py`,
+`skills/crew-providers/SKILL.md` and four test files (`review_fixtures.py`, `sabotage_kimi.py`,
+`test_kimi_docs.py`, `test_review_run_kimi.py`). crew's version was stepped back and re-set
+(`f945fdc5`, `ddf8a8bd`), a net zero diff, so `marketplace.json`, `plugin.json` and `PLUGINS.md`
+are not in the list. `scripts/check-marketplace.py`, both install scripts, `skills/README.md` and `CLAUDE.md` are
+not in it, so every function line number and catalog-array citation stands. Re-read at
+`ddf8a8bd`: the doc rule `.crew/verify.json:69-78` is unchanged (the inserted line is `:120`);
+`.crew/verify.json` gained one line at `:120` (`crew-setup/SKILL.md` in rule 6's `paths`),
+so every line from `:121` on moved down one (rule 22 `:244` -> `:245`, rule 23 `:245-261` ->
+`:246-262`, rule 24 `:263-281` -> `:264-282`, 287 lines, still 25 rules); crew's `version` is 1.0.44 on `marketplace.json:218`, `plugin.json` and `PLUGINS.md:14`,
+set in the last `plugin/crew/` commit (`ddf8a8bd`); `BUDGETS.md`'s claim is re-measured above;
+`check-marketplace.py` passes at `ddf8a8bd`.

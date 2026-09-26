@@ -1,5 +1,5 @@
 # install-scripts
-anchor: useful-claude-add-ons@514e4e0a
+anchor: useful-claude-add-ons@ddf8a8bd
 verified: 2026-09-26
 
 ## Re-derive provenance
@@ -434,3 +434,24 @@ files; marker still `:10`), `.claude-plugin/marketplace.json`, `plugin/PLUGINS.m
 re-set to 1.0.44 at `514e4e0a`; same lines), `CHANGELOG.md` and `TODO.md` changed. Both install
 scripts, `README.md` and `scripts/check-marketplace.py` did not, so their citations stand.
 Neither install script was executed.
+
+## Re-anchor provenance - `514e4e0a` -> `ddf8a8bd`, 2026-09-26 (T-0028 review round 3)
+
+`git diff --name-only 514e4e0a ddf8a8bd` returns round 1's and round 2's artifact refreshes (`0aab3a8f`, `44eed691`), round 2's
+fixes and T-0028's round-3 fixes: `.crew/verify.json`,
+`CHANGELOG.md`, `plugin/crew/BUDGETS.md` (the Markdown total re-measured, 17,929 -> 17,935), and
+under `plugin/crew/` `README.md`, `commands/review.md`, `hooks/scripts/review_run.py`,
+`skills/crew-providers/SKILL.md` and four test files (`review_fixtures.py`, `sabotage_kimi.py`,
+`test_kimi_docs.py`, `test_review_run_kimi.py`). crew's version was stepped back and re-set
+(`f945fdc5`, `ddf8a8bd`), a net zero diff, so `marketplace.json`, `plugin.json` and `PLUGINS.md`
+are not in the list. Round 2's fixes touched no path this note cites. Each citation into a changed path, re-read at
+`ddf8a8bd`:
+
+- `commands/review.md` had three lines rewritten in place (`:241`, `:431`, `:432`: Kimi is step
+2e now, beside the failing-control Step 2d at `:482`), line count unchanged; `plugin/crew/README.md`
+one line in place (`:1085`, the Kimi paragraph), line count unchanged; its `34 commands` claim `:2180` and `4 agents` `:2191` hold.
+- `plugin/crew/BUDGETS.md` - marker still `:10`; the `:11` figure is now 17,935 lines across 121
+  files, and `git ls-files 'plugin/crew/*.md' | xargs cat | wc -l` returns 17935, matching.
+- `CHANGELOG.md` - cited only by name.
+
+Neither install script changed or was executed; `drift-detection.sh` was not run.
