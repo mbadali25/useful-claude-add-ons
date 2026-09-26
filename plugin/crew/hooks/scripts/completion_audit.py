@@ -100,6 +100,15 @@ def _git_fields(top, args, data=None, literal=False):
     return done.stdout.decode("utf-8", errors="surrogateescape").split("\0")
 
 
+def _stdin_path(path):
+    """`path` as one `--stdin-paths` line. git C-unquotes a line that starts
+    with `"` and fails the whole call on one that is not valid C quoting, so
+    such a name is quoted to unquote back to itself (review round 3)."""
+    if not path.startswith('"'):
+        return path
+    return '"' + path.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
 def _unchanged(top, suspects):
     """The `{path: base blob id}` entries whose file on disk hashes to that
     id -- stat-dirty, content-identical. Hashed through `--stdin-paths`
@@ -110,7 +119,8 @@ def _unchanged(top, suspects):
              and not os.path.islink(os.path.join(top, p))]
     if not names:
         return set()
-    listing = "".join(p + "\n" for p in names).encode("utf-8", errors="surrogateescape")
+    listing = "".join(_stdin_path(p) + "\n" for p in names).encode(
+        "utf-8", errors="surrogateescape")
     hashes = _git_fields(top, ["hash-object", "--stdin-paths"], data=listing)[0].split()
     return {p for p, oid in zip(names, hashes) if oid == suspects[p]}
 

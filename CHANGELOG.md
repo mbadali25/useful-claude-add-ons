@@ -86,6 +86,25 @@ All notable changes to this repository are documented here. Format follows [Keep
     and that the refresh is committed before the review bundle is built.
     Each new branch has a test watched red first and a mutation in
     `sabotage_refresh.py`.
+  - **Review round 3 (T-0008-refresh-check--5uPdfQ): a recorded scope base
+    is doubted too, and nothing measured against a doubted base reads
+    `fresh`.** `scope_base.py --record` in a successor checkout whose earlier
+    commits already reached the default branch records HEAD, and check 4 read
+    `fresh` with the stale map unlisted; a recorded base with a commit behind
+    it naming the ticket is now `unknown` (`recorded base <sha> may hide
+    <ticket>'s commits`), whether the base is the default ref's tip or an
+    ancestor of it. Under any base that hides or may hide the change, every
+    artifact measured `fresh` or `stale` against it reads `unknown` with the
+    top line's stop as its reason, in the text and in `--json`'s
+    `artifacts[]`, where a `[fallback base]` line used to keep `fresh`. The
+    completion audit's hash of a stat-dirty file no longer fails on a name
+    starting with `"`, which `git hash-object --stdin-paths` C-unquotes
+    ("line is badly quoted"): such a name is quoted to unquote to itself.
+    `.crew/verify.json` maps `scope_guard.py`, `completion_audit.py`,
+    `crew_freshness.py` and `scope_base.py` to the refresh check's pytest
+    rule, which now also runs `test_scope_guard.py`,
+    `test_completion_audit.py` and `test_scope_base.py`; a test fails if any
+    of the five modules loses its pytest rule.
 
 ### Fixed
 

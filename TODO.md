@@ -4997,8 +4997,8 @@ nobody having noticed.
 `process-crew-brief`) and `ticketsTooLarge` were all live during the 1.0 pass and were deliberately not
 worked - every lane went to a Windows BLOCKER instead. They are unchanged, not resolved.
 
-### From T-0008 (crew 1.0.30) - the light path and the guide still say three `/crew:done` checks
-`/crew:done` has four checks since 1.0.30 (check 4: `crew_refresh_check.py`, artifacts current).
+### From T-0008 (crew 1.0.36) - the light path and the guide still say three `/crew:done` checks
+`/crew:done` has four checks since 1.0.36 (check 4: `crew_refresh_check.py`, artifacts current).
 Not fixed in T-0008: neither file is in its Touch.
 
 1. `plugin/crew/commands/fix.md:87` - "the same three checks"; it is four now.
