@@ -187,7 +187,8 @@ _KIMI_SUITE = ("test_kimi_probe.py", "test_review_run_kimi.py", "test_review_ver
         "tests/fixtures/kimi-stream-2.1.1/ok.jsonl",
         "tests/fixtures/kimi-stream-2.1.1/ok.exit",
         "commands/review.md", "skills/crew-setup/scripts/providers.sh",
-        "skills/crew-providers/SKILL.md")],
+        "skills/crew-providers/SKILL.md", "commands/model.md",
+        "skills/crew-providers/alternative-providers.md")],
     ("plugin/crew/hooks/scripts/crew_state.py", ("test_provider_table.py",)),
 ])
 def test_every_kimi_file_reaches_a_rule_that_runs_its_tests(path, needs):
@@ -201,3 +202,22 @@ def test_every_kimi_file_reaches_a_rule_that_runs_its_tests(path, needs):
                     for c in r["run"])
 
     assert [n for n in needs if n not in runs] == [], path
+
+
+def test_every_file_this_module_reads_is_mapped_to_it():
+    """Round 2 FIX (.crew/verify.json:275): model.md and
+    alternative-providers.md carried Kimi prose this module checks, yet no rule
+    that runs this module mapped them. Derived from this file's own `_read`
+    calls, so a new prose check cannot land without its mapping."""
+    with open(os.path.abspath(__file__), encoding="utf-8") as fh:
+        source = fh.read()
+    read = {"/".join(re.findall(r'"([^"]+)"', args))
+            for args in re.findall(r"_read\(((?:\s*\"[^\"]+\",?)+)\s*\)", source)}
+    with open(os.path.join(CREW, "..", "..", ".crew", "verify.json"), encoding="utf-8") as fh:
+        rules = json.load(fh)["rules"]
+
+    unmapped = [rel for rel in sorted(read)
+                if not any("test_kimi_docs.py" in " ".join(r["run"]) for r in rules
+                           if any(_gate_matches(f"plugin/crew/{rel}", p) for p in r["paths"]))]
+
+    assert (len(read) >= 4, unmapped) == (True, [])

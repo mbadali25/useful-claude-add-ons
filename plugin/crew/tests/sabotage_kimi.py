@@ -19,8 +19,12 @@ VERIFY = os.path.join(os.path.dirname(os.path.dirname(CREW)), ".crew", "verify.j
 _P = "tests/test_kimi_probe.py::"
 _R = "tests/test_review_run_kimi.py::"
 _D = "tests/test_kimi_docs.py::"
-_HEAD_CHECK = "    if not head:\n        return None\n"
-_STATUS_CHECK = "    if status is None or staged is None:\n        return None\n"
+_HEAD_CHECK = ('    if not head:\n'
+               '        unknown("HEAD could not be read (not a git repository?)")\n'
+               '        return None\n')
+_STATUS_CHECK = ('    if status is None or staged is None:\n'
+                 '        unknown("git status or git diff --cached failed or timed out")\n'
+                 '        return None\n')
 _SNAPSHOT_CALLS = (
     '    scope = ["--", ".", ":(exclude).work"]\n'
     '    status = _git_bytes(root, ["status", "--porcelain=v1", "-z", "--untracked-files=all",\n'
@@ -33,6 +37,13 @@ _GIT_CALL = (
     "                              check=False)\n"
     "    except (OSError, subprocess.SubprocessError):\n"
     "        return None\n")
+_OK_BRANCH = (
+    "    if code == 0 and error is None and message is not None and PROBE_MARKER in message:\n"
+    '        return "ok", "answered PROBE_OK"\n')
+_QUOTA_BRANCH = (
+    '    if _QUOTA_MARKERS.search(blob) or _QUOTA_STATUS.search(stderr or "") \\\n'
+    "            or '\"status_code\":429' in (stdout or \"\").replace(\" \", \"\"):\n"
+    '        return "rate-limited", "the Kimi CLI answered with a quota or rate limit"\n')
 
 KIMI_MUTATIONS = (
     # --- the probe: "could not tell" must never become `ok` ---------------
@@ -101,6 +112,17 @@ KIMI_MUTATIONS = (
      '    return _SECRETS.sub("[redacted]", text or "")',
      '    return text or ""',
      _P + "test_redact_masks_key_and_jwt_shapes"),
+    # --- round 2 NIT kimi_probe.py:223: PROBE_OK before the quota markers ----
+    ("kimi probe: the rate limit is checked before PROBE_OK again",
+     PROBE,
+     _OK_BRANCH + _QUOTA_BRANCH,
+     _QUOTA_BRANCH + _OK_BRANCH,
+     _P + "test_classify_a_retried_429_that_completed_is_ok"),
+    ("kimi probe: PROBE_OK beside a failed turn reads ok",
+     PROBE,
+     "    if code == 0 and error is None and message is not None",
+     "    if code == 0 and message is not None",
+     _P + "test_classify_probe_ok_beside_a_failed_turn_is_not_ok"),
     # --- the family: fixed by provider, so `k3` never parses as `k` --------
     ("family(kimi, k3) falls through to the model string",
      STATE,
@@ -171,13 +193,13 @@ KIMI_MUTATIONS = (
     # --- round 1 FIX review_run.py:464: the background graph rebuild ---------
     ("review_run: a graph rebuild is blamed on the reviewer again",
      RUN,
-     "                 if graph and not p.startswith(\":\") and _under(p, graph)]",
-     "                 if False]",
+     "        if graph and _under(path, graph):\n",
+     "        if False:\n",
      _R + "test_run_kimi_graph_rebuild_during_the_review_is_not_the_reviewers"),
     ("review_run: the graph exemption swallows every path",
      RUN,
-     "                 if graph and not p.startswith(\":\") and _under(p, graph)]",
-     "                 if graph]",
+     "        if graph and _under(path, graph):\n",
+     "        if graph:\n",
      _R + "test_run_kimi_a_write_beside_the_graph_is_still_incomplete"),
     ("review_run: the graph exemption matches by prefix, not by segment",
      RUN,
@@ -189,6 +211,56 @@ KIMI_MUTATIONS = (
      '    value = crew_common.dict_or_empty(crew_common.dict_or_empty(cfg).get("graph")).get("out")',
      '    value = None',
      _R + "test_run_kimi_honours_a_configured_graph_out"),
+    # --- round 2 FIX review_run.py:301: graph.out resolved before the review --
+    ("review_run: graph.out is resolved after the review again",
+     RUN,
+     "        changed, set_aside = reviewer_changes(before, after, args.graph_out)",
+     "        changed, set_aside = reviewer_changes(before, after, graph_out(args.root))",
+     _R + "test_run_kimi_a_reviewer_that_moves_graph_out_is_incomplete"),
+    ("review_run: crew config under graph.out is set aside",
+     RUN,
+     '        if path.startswith(":") or path in CREW_CONFIG_PATHS:',
+     '        if path.startswith(":"):',
+     _R + "test_run_kimi_a_crew_config_write_counts_even_under_graph_out"),
+    # --- round 2 FIX review_run.py:623: no before fingerprint, nothing spent --
+    ("review_run: an unfingerprintable tree still probes and reserves",
+     RUN,
+     "            if before is None:\n"
+     '                sys.stderr.write("review-run: kimi: unknown - cannot fingerprint',
+     "            if False:\n"
+     '                sys.stderr.write("review-run: kimi: unknown - cannot fingerprint',
+     _R + "test_run_kimi_unreadable_file_spends_no_probe_and_no_round"),
+    ("review_run: the unreadable path is not named",
+     RUN,
+     '            unknown(f"{rel} exists and cannot be read")\n',
+     "",
+     _R + "test_run_kimi_unreadable_file_spends_no_probe_and_no_round"),
+    # --- round 2 FIX review_run.py:221: ignored tool caches -------------------
+    ("review_run: a concurrent __pycache__ write is the reviewer's again",
+     RUN,
+     "        elif _ignored_throughout(before, after, path) and _tool_cache(path):",
+     "        elif False:",
+     _R + "test_run_kimi_a_concurrent_tool_cache_write_is_not_the_reviewers"),
+    ("review_run: every ignored path is set aside, .env included",
+     RUN,
+     "        elif _ignored_throughout(before, after, path) and _tool_cache(path):",
+     "        elif _ignored_throughout(before, after, path):",
+     _R + "test_run_kimi_an_ignored_secret_or_config_edit_still_counts"),
+    ("review_run: a non-ignored cache path is set aside",
+     RUN,
+     "        elif _ignored_throughout(before, after, path) and _tool_cache(path):",
+     "        elif _tool_cache(path):",
+     _R + "test_run_kimi_a_cache_path_that_is_not_ignored_still_counts"),
+    ("review_run: the tool-cache tuple widens",
+     RUN,
+     '               "node_modules/.cache")',
+     '               "node_modules/.cache", "build")',
+     _R + "test_tool_caches_are_the_fixed_tuple"),
+    ("review_run: a bare cache directory name counts as under it",
+     RUN,
+     "for i in range(len(parts) - len(stem))):",
+     "for i in range(len(parts) - len(stem) + 1)):",
+     _R + "test_tool_cache_matches_by_whole_segment"),
     # --- round 1 FIX kimi_probe.py:219: the probe is read-only and watched ---
     ("kimi probe: launched without the read-only agent file again",
      PROBE,
@@ -272,6 +344,12 @@ KIMI_MUTATIONS = (
      '                "plugin/crew/tests/fixtures/kimi-stream-2.1.1/*",\n',
      "",
      _D + "test_every_kimi_file_reaches_a_rule_that_runs_its_tests"),
+    ("verify.json: model.md reaches no rule that runs test_kimi_docs.py again",
+     VERIFY,
+     '                "plugin/crew/commands/model.md",\n'
+     '                "plugin/crew/skills/crew-providers/alternative-providers.md"],',
+     '                "plugin/crew/skills/crew-providers/alternative-providers.md"],',
+     _D + "test_every_file_this_module_reads_is_mapped_to_it"),
     # --- the stream parser ---------------------------------------------------
     ("kimi_final_message: no assistant text is not an error",
      VERDICT,

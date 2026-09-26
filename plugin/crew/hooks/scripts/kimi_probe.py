@@ -211,20 +211,27 @@ def _run(cmd, env, timeout, cwd=None):
 
 
 def classify(stdout, stderr, code, timed_out, timeout=DEFAULT_TIMEOUT):
-    """(state, reason) for one live probe call. Pure. Auth, then quota, then
-    PROBE_OK; anything else is `unknown`."""
+    """(state, reason) for one live probe call. Pure. Auth, then PROBE_OK,
+    then quota; anything else is `unknown`.
+
+    PROBE_OK is read BEFORE the quota markers (round 2 of T-0028): the CLI
+    retries a transient 429 (a `turn.step.retrying` record) and may then
+    finish the turn, which `review_verdict.kimi_final_message` reads as a
+    clean answer -- so must the probe. It counts only at exit 0 from a stream
+    that carried no failure record; a 429 that ended the call still reads
+    `rate-limited`."""
     if timed_out:
         return "unknown", f"the probe did not answer within {timeout}s"
-    message, _ = review_verdict.kimi_final_message(stdout)
+    message, error = review_verdict.kimi_final_message(stdout)
     blob = f"{stdout}\n{stderr}"
     if _AUTH_MARKERS.search(blob) or _AUTH_STATUS.search(stderr or "") \
             or '"status_code":401' in (stdout or "").replace(" ", ""):
         return "not-authenticated", "the Kimi CLI refused the credential - run `kimi login`"
+    if code == 0 and error is None and message is not None and PROBE_MARKER in message:
+        return "ok", "answered PROBE_OK"
     if _QUOTA_MARKERS.search(blob) or _QUOTA_STATUS.search(stderr or "") \
             or '"status_code":429' in (stdout or "").replace(" ", ""):
         return "rate-limited", "the Kimi CLI answered with a quota or rate limit"
-    if code == 0 and message is not None and PROBE_MARKER in message:
-        return "ok", "answered PROBE_OK"
     detail = redact((stderr or "").strip())[:200]
     return "unknown", (f"exit {code}, no {PROBE_MARKER}"
                        + (f"; stderr: {detail}" if detail else ""))

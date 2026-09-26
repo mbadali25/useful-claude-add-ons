@@ -26,8 +26,10 @@ PROVIDERS.
            stand in, for the probe call as for the review: the agent file
            allows Read, Grep and Glob and disallows Write, Edit and Bash, and
            the working tree is fingerprinted BEFORE THE PROBE and after the
-           review exits. A probe that changed it exits 2 with no round
-           spent; a review that changed it is INCOMPLETE, naming the paths.
+           review exits. A tree that cannot be fingerprinted before the probe
+           exits 2 (`unknown`) with no probe request and no round spent. A
+           probe that changed it exits 2 with no round spent; a review that
+           changed it is INCOMPLETE, naming the paths.
            See `tree_fingerprint` and `reviewer_changes` for what is and is
            not seen. A write OUTSIDE the repository is caught by neither. The
            final message is read from the stream
@@ -117,6 +119,16 @@ CHANGED_SHOWN = 10
 SNAPSHOT_GIT_TIMEOUT = 120
 KIMI_TREE_UNKNOWN = ("kimi: the working tree could not be fingerprinted, so a write by the "
                      "reviewer cannot be ruled out")
+# IGNORED paths under these directories are tool caches another process (a
+# background pytest, ruff, mypy, a bundler) rewrites at any moment; a change
+# there is not attributed to the reviewer. Fixed on purpose -- never read from
+# config the reviewer could write -- and pinned by
+# test_review_run_kimi.py::test_tool_caches_are_the_fixed_tuple.
+TOOL_CACHES = (".pytest_cache", "__pycache__", ".ruff_cache", ".mypy_cache",
+               "node_modules/.cache")
+# Crew config: a reviewer write here always counts, even under graph.out -- it
+# is where graph.out itself is configured.
+CREW_CONFIG_PATHS = (".crew/crew.json", ".crew/config.json")
 
 
 def _read(path):
@@ -192,7 +204,7 @@ def _path_digest(path):
         return None
 
 
-def tree_fingerprint(root):
+def tree_fingerprint(root, problems=None):
     """The working tree's state as `{path: "<XY> <content digest>"}`, plus
     `:HEAD` and `:index` -- or None when it cannot be taken.
 
@@ -211,16 +223,23 @@ def tree_fingerprint(root):
     NOT SEEN: a write outside the repository, and a change inside `.git`
     other than HEAD and the index (a hook, a config). None when any git call
     fails or times out, or a listed file cannot be read: "could not tell" is
-    its own answer, never a value two failures would compare equal on."""
+    its own answer, never a value two failures would compare equal on. When
+    `problems` is a list, the reason for a None is appended to it."""
+    def unknown(reason):
+        if problems is not None:
+            problems.append(reason)
+
     env = dict(os.environ, GIT_OPTIONAL_LOCKS="0")
     head = crew_common.git_out(root, "rev-parse", "HEAD")
     if not head:
+        unknown("HEAD could not be read (not a git repository?)")
         return None
     scope = ["--", ".", ":(exclude).work"]
     status = _git_bytes(root, ["status", "--porcelain=v1", "-z", "--untracked-files=all",
                                "--ignored=traditional", *scope], env)
     staged = _git_bytes(root, ["diff", "--cached", "--binary", *scope], env)
     if status is None or staged is None:
+        unknown("git status or git diff --cached failed or timed out")
         return None
     snapshot = {":HEAD": head, ":index": hashlib.sha256(staged).hexdigest()}
     fields = iter(status.split(b"\0"))
@@ -233,6 +252,7 @@ def tree_fingerprint(root):
         rel = os.fsdecode(entry[3:]).rstrip("/")
         digest = _path_digest(os.path.join(root, rel))
         if digest is None:
+            unknown(f"{rel} exists and cannot be read")
             return None
         snapshot[rel] = f"{code} {digest}"
     return snapshot
@@ -279,10 +299,43 @@ def _under(rel, directory):
     return len(parts) > len(stem) and parts[:len(stem)] == stem
 
 
-def reviewer_changes(root, before, after):
-    """(changed, generated): the paths whose state differs between two
+def _tool_cache(rel):
+    """True when `rel` lies strictly under a TOOL_CACHES directory, matched by
+    whole segments at any depth: `pkg/__pycache__/m.pyc` is, `my__pycache__/x`
+    and a bare `__pycache__` are not."""
+    parts = rel.split("/")
+    for cache in TOOL_CACHES:
+        stem = cache.split("/")
+        if any(parts[i:i + len(stem)] == stem for i in range(len(parts) - len(stem))):
+            return True
+    return False
+
+
+def _ignored_throughout(before, after, rel):
+    """True when every state `rel` has in the two fingerprints is IGNORED
+    (`!!`); a path that was or became tracked or untracked is not."""
+    states = [s for s in (before.get(rel), after.get(rel)) if s is not None]
+    return bool(states) and all(s.startswith("!! ") for s in states)
+
+
+def reviewer_changes(before, after, graph):
+    """(changed, set_aside): the paths whose state differs between two
     `tree_fingerprint`s, split into those the reviewer is answerable for and
-    those under `graph.out`.
+    those set aside -- under `graph`, or an ignored tool cache.
+
+    `graph` is graph.out as resolved BEFORE the reviewer ran (`run` does it
+    once, beside the "before" fingerprint). Round 2 of T-0028 found it read
+    after the review, from the tree the reviewer could write: writing
+    `.crew/crew.json` = {"graph":{"out":".crew"}} then excused every other
+    write under `.crew/`. `.crew/crew.json` and `.crew/config.json`
+    (CREW_CONFIG_PATHS) are never set aside, whatever `graph` is.
+
+    WHY IGNORED TOOL CACHES ARE SET ASIDE. The fingerprint hashes ignored
+    files (round 1), so a background pytest writing `__pycache__/` spent the
+    round as INCOMPLETE with no reviewer write (round 2). Only an IGNORED path
+    under a TOOL_CACHES directory is set aside; a tracked or untracked one
+    there, and every other ignored path (`.env`, `.crew/config.json`), still
+    counts.
 
     WHY `graph.out` IS SET ASIDE, and nothing else. graphify's post-commit and
     post-checkout hooks rebuild it IN THE BACKGROUND, and the normal order is
@@ -298,10 +351,15 @@ def reviewer_changes(root, before, after):
     other path, the code map and the diagrams included, still counts, and
     `:HEAD` and `:index` always do."""
     changed = sorted(k for k in set(before) | set(after) if before.get(k) != after.get(k))
-    graph = graph_out(root)
-    generated = [p for p in changed
-                 if graph and not p.startswith(":") and _under(p, graph)]
-    return [p for p in changed if p not in generated], generated
+    set_aside = []
+    for path in changed:
+        if path.startswith(":") or path in CREW_CONFIG_PATHS:
+            continue
+        if graph and _under(path, graph):
+            set_aside.append(path)
+        elif _ignored_throughout(before, after, path) and _tool_cache(path):
+            set_aside.append(path)
+    return [p for p in changed if p not in set_aside], set_aside
 
 
 def _named(paths):
@@ -568,7 +626,7 @@ def _probe_kimi(args, before):
         return f"kimi probe: {probed['state']} - {probed['reason']}"
     mid = tree_fingerprint(args.root)
     if before is not None and mid is not None:
-        changed, _generated = reviewer_changes(args.root, before, mid)
+        changed, _set_aside = reviewer_changes(before, mid, args.graph_out)
         if changed:
             return f"{KIMI_PROBE_CHANGED}: {_named(changed)}"
     args.kimi_exe, args.launched_model = probed["exe"], probed["alias"]
@@ -586,12 +644,13 @@ def _run_kimi(args, number, prompt, before):
     if before is None or after is None:
         extra.append(KIMI_TREE_UNKNOWN)
     else:
-        changed, generated = reviewer_changes(args.root, before, after)
+        changed, set_aside = reviewer_changes(before, after, args.graph_out)
         if changed:
             extra.append(f"{KIMI_TREE_CHANGED}: {_named(changed)}")
-        if generated:
+        if set_aside:
             sys.stderr.write(f"review-run: not counted against the reviewer, under graph.out "
-                             f"(graphify's background rebuild): {_named(generated)}\n")
+                             f"(graphify's background rebuild) or an ignored tool cache: "
+                             f"{_named(set_aside)}\n")
     _write_atomic(os.path.join(args.scratch, "kimi-events.jsonl"), stdout)
     message_text, error = review_verdict.kimi_final_message(stdout)
     output = message_text or ""
@@ -617,10 +676,20 @@ def run(args):
             return EXIT_USAGE
         if args.provider == "kimi":
             # The fingerprint comes FIRST: the probe is a Kimi call too, so it
-            # is inside the watched window. Then the probe, BEFORE `reserve`:
-            # it is not a review, and a quota or auth wall found here must
-            # cost no round. Only `ok` goes on.
-            before = tree_fingerprint(args.root)
+            # is inside the watched window. graph.out is resolved with it, from
+            # the tree as it is BEFORE any Kimi call could write it. A "before"
+            # that could not be taken already decides the round (INCOMPLETE),
+            # so it stops here: no probe request, no reservation. Then the
+            # probe, BEFORE `reserve`: it is not a review, and a quota or auth
+            # wall found here must cost no round. Only `ok` goes on.
+            problems = []
+            before = tree_fingerprint(args.root, problems)
+            args.graph_out = graph_out(args.root)
+            if before is None:
+                sys.stderr.write("review-run: kimi: unknown - cannot fingerprint the tree: "
+                                 f"{'; '.join(problems) or 'no reason given'}; nothing "
+                                 "launched, no round spent\n")
+                return EXIT_USAGE
             if _round_available(args.root, args.ticket):
                 refusal = _probe_kimi(args, before)
                 if refusal:

@@ -258,3 +258,34 @@ def test_every_kimi_sabotage_anchor_is_present_exactly_once():
                 lost.append(label)
 
     assert sabotage_kimi.KIMI_MUTATIONS and not lost, lost
+
+
+# --- round 2 NIT kimi_probe.py:223: PROBE_OK is read before the rate limit ------
+
+_RETRY_429 = json.dumps({"role": "meta", "type": "turn.step.retrying", "status_code": 429,
+                         "error_message": "rate_limit_reached_error"})
+
+
+def test_classify_a_retried_429_that_completed_is_ok():
+    """The CLI retried a transient 429 and then finished the turn: the same
+    stream review_verdict.kimi_final_message reads as a clean answer."""
+    stdout = _RETRY_429 + "\n" + json.dumps({"role": "assistant", "content": "PROBE_OK"}) + "\n"
+
+    assert kimi_probe.classify(stdout, "retrying after 429\n", 0, False)[0] == "ok"
+
+
+def test_classify_a_final_429_after_retries_is_rate_limited():
+    stderr = "Error: 429 rate_limit_reached_error\n"
+
+    assert kimi_probe.classify(_RETRY_429 + "\n", stderr, 1, False)[0] == "rate-limited"
+
+
+def test_classify_probe_ok_beside_a_failed_turn_is_not_ok():
+    """PROBE_OK is read first only from a turn that did not fail: an assistant
+    line followed by a failure record is not a working reviewer."""
+    stdout = "\n".join(json.dumps(e) for e in (
+        {"role": "assistant", "content": "PROBE_OK"},
+        {"role": "meta", "type": "turn.failed",
+         "error": {"code": "provider.error", "message": "429 rate_limit_reached_error"}}))
+
+    assert kimi_probe.classify(stdout, "", 0, False)[0] == "rate-limited"

@@ -27,7 +27,9 @@ All notable changes to this repository are documented here. Format follows [Keep
     `ok` launches. `review_run.py --provider kimi` runs it BEFORE the round is
     reserved, so a quota or auth failure spends no round, and skips it when
     the ledger already shows no round left. The live stage spends one tiny
-    request; `review.md` no longer runs the probe a second time.
+    request; `review.md` no longer runs the probe a second time. A 429 the
+    CLI retried and then completed reads `ok`, as the review parser reads it;
+    a 429 that ended the call is still `rate-limited`.
   - **Read-only without a flag.** `kimi -p` forces permission mode `auto`, so
     every Kimi call - the probe too, in a throwaway directory - passes a
     Read/Grep/Glob-only `--agent-file` (Write, Edit, Bash disallowed) and an
@@ -37,7 +39,17 @@ All notable changes to this repository are documented here. Format follows [Keep
     one git could not fingerprint, or a git that fails or hangs - makes the
     round INCOMPLETE and names the paths, and a probe that changed it spends
     no round. `graph.out` is set aside: graphify's background rebuild
-    rewrites it mid-review, and a write there fixes no code. Not caught: a
+    rewrites it mid-review, and a write there fixes no code. It is resolved
+    once, before the probe, from the tree as it was - a reviewer that writes
+    `.crew/crew.json` can no longer move it - and a write to `.crew/crew.json`
+    or `.crew/config.json` always counts. Ignored files under the fixed
+    `TOOL_CACHES` (`.pytest_cache`, `__pycache__`, `.ruff_cache`,
+    `.mypy_cache`, `node_modules/.cache`) are set aside too, so a concurrent
+    pytest does not spend the round; every other ignored file, `.env`
+    included, still counts. A tree that cannot be fingerprinted before the
+    probe (an unreadable ignored file, say) stops there as
+    `unknown - cannot fingerprint the tree`, naming the path: no probe
+    request, no round. Not caught: a
     write outside the repository, or inside `.git` beyond HEAD and the index.
     Stream error text is redacted before it becomes a reason, and
     `review.json` records the alias actually launched as `model_launched`.

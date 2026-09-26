@@ -213,13 +213,20 @@ def test_tree_fingerprint_outside_a_repository_is_none(tmp_path):
 
 def test_run_kimi_unfingerprintable_tree_is_incomplete(repo, tmp_path, monkeypatch, capsys):
     """"Could not tell" whether the reviewer wrote must never read as "it
-    did not": a fingerprint that failed makes the round INCOMPLETE."""
+    did not": an AFTER fingerprint that failed makes the round INCOMPLETE. (A
+    failed BEFORE fingerprint stops earlier, spending nothing - round 2.)"""
     scratch, work = tmp_path / "scratch", tmp_path / "work"
     _bundle(repo, scratch)
     fakes = fake_kimi_bin(tmp_path / "bin")
     monkeypatch.setenv("PATH", str(fakes) + os.pathsep + os.environ.get("PATH", ""))
     monkeypatch.setenv("KIMI_CODE_HOME", str(kimi_home(tmp_path / "kimi-home")))
-    monkeypatch.setattr(review_run, "tree_fingerprint", lambda _root: None)
+    real, taken = review_run.tree_fingerprint, []
+
+    def fingerprint(root, problems=None):
+        taken.append(root)
+        return real(root, problems) if len(taken) <= 2 else None
+
+    monkeypatch.setattr(review_run, "tree_fingerprint", fingerprint)
 
     code = review_run.main(["--root", str(repo), "--ticket", "T1", "--scratch", str(scratch),
                             "--provider", "kimi", "--model", "k3", "--work-dir", str(work)])
@@ -430,3 +437,186 @@ def test_run_kimi_probes_after_the_reservation_when_the_status_was_stale(
 
     assert (code, review["verdict"]) == (3, "INCOMPLETE")
     assert any("rate-limited" in r for r in review["reasons"])
+
+
+# --- round 2 FIX review_run.py:301: graph.out is resolved before the review -----
+
+
+def _crew_repo(repo, crew_json=None):
+    """`.crew/config.json` gitignored and present, `.crew/verify.json` tracked
+    -- the shape of this repository -- and optionally a committed crew.json."""
+    (repo / ".gitignore").write_text(".crew/config.json\n", encoding="utf-8")
+    (repo / ".crew").mkdir()
+    (repo / ".crew" / "config.json").write_text('{"a": 1}\n', encoding="utf-8")
+    (repo / ".crew" / "verify.json").write_text('{"rules": []}\n', encoding="utf-8")
+    if crew_json is not None:
+        (repo / ".crew" / "crew.json").write_text(crew_json, encoding="utf-8")
+    git(repo, "add", ".gitignore", ".crew")
+    git(repo, "commit", "-qm", "crew")
+    return repo
+
+
+def test_run_kimi_a_reviewer_that_moves_graph_out_is_incomplete(repo, tmp_path):
+    """Round 2: graph.out was read AFTER the review, from the tree the reviewer
+    could write, so writing `.crew/crew.json` = {"graph":{"out":".crew"}}
+    excused every other write under `.crew/`."""
+    _crew_repo(repo)
+
+    result, review = _run(repo, tmp_path, FAKE_KIMI_PUT=json.dumps({
+        ".crew/crew.json": '{"graph": {"out": ".crew"}}\n',
+        ".crew/config.json": '{"a": 2}\n',
+        ".crew/verify.json": '{"rules": ["weakened"]}\n'}))
+
+    assert (result.returncode, review["verdict"]) == (3, "INCOMPLETE")
+    reason = next(r for r in review["reasons"] if "working tree changed" in r)
+    assert [p for p in (".crew/crew.json", ".crew/config.json", ".crew/verify.json")
+            if p not in reason] == []
+
+
+@pytest.mark.parametrize("name", ["config.json", "crew.json"])
+def test_run_kimi_a_crew_config_write_counts_even_under_graph_out(repo, tmp_path, name):
+    """A reviewer that writes crew config is itself a change, even when the
+    configured graph.out already contains `.crew/`."""
+    _crew_repo(repo, crew_json='{"graph": {"out": ".crew"}}\n')
+
+    result, review = _run(repo, tmp_path,
+                          FAKE_KIMI_PUT=json.dumps({f".crew/{name}": '{"b": 1}\n'}))
+
+    assert (result.returncode, review["verdict"]) == (3, "INCOMPLETE")
+    assert any(f".crew/{name}" in r for r in review["reasons"])
+
+
+def test_run_kimi_graph_out_is_resolved_once_before_the_probe(repo, tmp_path, monkeypatch,
+                                                              capsys):
+    scratch, work = tmp_path / "scratch", tmp_path / "work"
+    _bundle(repo, scratch)
+    fakes = fake_kimi_bin(tmp_path / "bin")
+    monkeypatch.setenv("PATH", str(fakes) + os.pathsep + os.environ.get("PATH", ""))
+    monkeypatch.setenv("KIMI_CODE_HOME", str(kimi_home(tmp_path / "kimi-home")))
+    real, resolved = review_run.graph_out, []
+    monkeypatch.setattr(review_run, "graph_out",
+                        lambda root: resolved.append(root) or real(root))
+
+    review_run.main(["--root", str(repo), "--ticket", "T1", "--scratch", str(scratch),
+                     "--provider", "kimi", "--model", "k3", "--work-dir", str(work)])
+    capsys.readouterr()
+
+    assert resolved == [str(repo)]
+
+
+# --- round 2 FIX review_run.py:623: no "before" fingerprint, nothing spent -------
+
+
+def _env_repo(repo):
+    (repo / ".gitignore").write_text(".env\n", encoding="utf-8")
+    (repo / ".env").write_text("TOKEN=placeholder\n", encoding="utf-8")
+    git(repo, "add", ".gitignore")
+    git(repo, "commit", "-qm", "env")
+    return repo
+
+
+def test_run_kimi_unreadable_file_spends_no_probe_and_no_round(repo, tmp_path, monkeypatch,
+                                                               capsys):
+    """A "before" fingerprint that could not be taken already decides the
+    round (INCOMPLETE), so the probe request and the reservation are both
+    waste - round 2 measured one root-owned `.env` spending every round."""
+    _env_repo(repo)
+    scratch, work, dump = tmp_path / "scratch", tmp_path / "work", tmp_path / "dump.jsonl"
+    _bundle(repo, scratch)
+    fakes = fake_kimi_bin(tmp_path / "bin")
+    monkeypatch.setenv("PATH", str(fakes) + os.pathsep + os.environ.get("PATH", ""))
+    monkeypatch.setenv("KIMI_CODE_HOME", str(kimi_home(tmp_path / "kimi-home")))
+    monkeypatch.setenv("FAKE_KIMI_DUMP", str(dump))
+    real = review_run._path_digest  # pylint: disable=protected-access
+    monkeypatch.setattr(review_run, "_path_digest",
+                        lambda p: None if os.path.basename(p) == ".env" else real(p))
+
+    code = review_run.main(["--root", str(repo), "--ticket", "T1", "--scratch", str(scratch),
+                            "--provider", "kimi", "--model", "k3", "--work-dir", str(work)])
+    err = capsys.readouterr().err
+
+    assert (code, dump.exists(), rl.status(str(repo), "T1")["rounds"]) == (2, False, [])
+    assert "unknown - cannot fingerprint the tree" in err and ".env" in err
+
+
+@pytest.mark.skipif(os.name == "nt" or os.geteuid() == 0,
+                    reason="root reads a mode-000 file, and NTFS has no mode bits: the "
+                           "file is not unreadable there")
+def test_run_kimi_mode_000_ignored_file_spends_no_round(repo, tmp_path):
+    _env_repo(repo)
+    os.chmod(repo / ".env", 0)
+    dump = tmp_path / "dump.jsonl"
+    try:
+        result, review = _run(repo, tmp_path, FAKE_KIMI_DUMP=str(dump))
+    finally:
+        os.chmod(repo / ".env", 0o600)
+
+    assert (result.returncode, review, dump.exists()) == (2, None, False)
+    assert rl.status(str(repo), "T1")["rounds"] == []
+
+
+# --- round 2 FIX review_run.py:221: tool caches are not the reviewer's ----------
+
+
+def test_tool_caches_are_the_fixed_tuple():
+    assert review_run.TOOL_CACHES == (".pytest_cache", "__pycache__", ".ruff_cache",
+                                      ".mypy_cache", "node_modules/.cache")
+
+
+_CACHE_WRITES = ",".join((".pytest_cache/v/cache/lastfailed", "pkg/__pycache__/m.cpython-314.pyc",
+                          ".ruff_cache/0.6/abc", "sub/.mypy_cache/3.12/m.json",
+                          "node_modules/.cache/babel/x.json"))
+
+
+def _cache_repo(repo, ignore=True):
+    lines = ["__pycache__/", ".pytest_cache/", ".ruff_cache/", ".mypy_cache/", "node_modules/",
+             ".env"] if ignore else [".env"]
+    (repo / ".gitignore").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    (repo / ".env").write_text("TOKEN=placeholder\n", encoding="utf-8")
+    git(repo, "add", ".gitignore")
+    git(repo, "commit", "-qm", "ignore caches")
+    return repo
+
+
+def test_run_kimi_a_concurrent_tool_cache_write_is_not_the_reviewers(repo, tmp_path):
+    """Round 2: a background pytest or ruff writing its ignored cache spent the
+    round as INCOMPLETE with no reviewer write at all."""
+    _cache_repo(repo)
+
+    result, review = _run(repo, tmp_path, FAKE_KIMI_WRITES=_CACHE_WRITES)
+
+    assert (result.returncode, review["verdict"]) == (0, "CLEAN"), review["reasons"]
+    assert "pkg/__pycache__/m.cpython-314.pyc" in result.stderr
+
+
+@pytest.mark.parametrize("path", [".env", ".crew/config.json"])
+def test_run_kimi_an_ignored_secret_or_config_edit_still_counts(repo, tmp_path, path):
+    _cache_repo(repo)
+    with open(repo / ".gitignore", "a", encoding="utf-8") as fh:
+        fh.write(".crew/config.json\n")
+    (repo / ".crew").mkdir()
+    (repo / ".crew" / "config.json").write_text('{"a": 1}\n', encoding="utf-8")
+
+    result, review = _run(repo, tmp_path, FAKE_KIMI_WRITES=path)
+
+    assert (result.returncode, review["verdict"]) == (3, "INCOMPLETE")
+    assert any(path in r for r in review["reasons"] if "working tree changed" in r)
+
+
+def test_run_kimi_a_cache_path_that_is_not_ignored_still_counts(repo, tmp_path):
+    """The exemption is for IGNORED caches: an untracked, non-ignored file in a
+    `__pycache__` directory is a reviewer write like any other."""
+    _cache_repo(repo, ignore=False)
+
+    result, review = _run(repo, tmp_path, FAKE_KIMI_WRITES="pkg/__pycache__/m.cpython-314.pyc")
+
+    assert (result.returncode, review["verdict"]) == (3, "INCOMPLETE")
+
+
+@pytest.mark.parametrize("rel,cache", [
+    ("pkg/__pycache__/m.pyc", True), ("node_modules/.cache/x", True),
+    (".pytest_cache/v/x", True), ("__pycache__", False), ("node_modules/x/.cache", False),
+    ("my__pycache__/x", False), ("node_modules/.cachex/y", False), (".env", False),
+])
+def test_tool_cache_matches_by_whole_segment(rel, cache):
+    assert review_run._tool_cache(rel) is cache  # pylint: disable=protected-access

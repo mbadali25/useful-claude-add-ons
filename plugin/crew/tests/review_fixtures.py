@@ -165,6 +165,9 @@ def env_with_path(directory, **extra):
 #                    | fail
 #   FAKE_KIMI_WRITES comma-separated repo-relative paths a review call appends
 #                    to (parent dirs created) before it answers
+#   FAKE_KIMI_PUT    a JSON object {repo-relative path: text}; a review call
+#                    overwrites each path with its text, in order, before
+#                    it answers (parent dirs created)
 #   FAKE_KIMI_PROBE_WRITE  an absolute path the PROBE call appends to
 #   FAKE_KIMI_DUMP   when set, each call appends {argv, env, stdin, cwd,
 #                    agent_file, skills} as one JSON line to this file --
@@ -235,6 +238,11 @@ for rel in filter(None, os.environ.get("FAKE_KIMI_WRITES", "").split(",")):
         os.makedirs(os.path.dirname(rel), exist_ok=True)
     with open(rel, "a", encoding="utf-8") as fh:
         fh.write("written during the review\n")
+for rel, body in json.loads(os.environ.get("FAKE_KIMI_PUT") or "{}").items():
+    if os.path.dirname(rel):
+        os.makedirs(os.path.dirname(rel), exist_ok=True)
+    with open(rel, "w", encoding="utf-8") as fh:
+        fh.write(body)
 text = prompt
 if prompt.startswith("Your complete instructions are in the file "):
     path = prompt[len("Your complete instructions are in the file "):].split(". Read", 1)[0]
