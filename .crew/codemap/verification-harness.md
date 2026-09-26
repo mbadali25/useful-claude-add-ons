@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@8ebbdedc
+anchor: useful-claude-add-ons@a0c0847e
 verified: 2026-09-26
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -37,7 +37,7 @@ including the slow version-drift walk `_verify/smoke.sh` skips), and
 them and is wired into CI but not into the local Stop gate: see
 "`scripts/check_instructions.py`" below.
 
-## `.crew/verify.json` — 25 rules, up from 24
+## `.crew/verify.json` — 26 rules, up from 25
 
 **DERIVED, read in full via `json.load` at this anchor.** 285 lines, **26**
 rules (25 at `8ebbdedc` and at T-0006's `2bb92f32`, 24 at `c35edda5`, 23 at `f2bb919b`, 22 at
@@ -616,3 +616,24 @@ end byte-identical). Each citation was re-mapped with a line diff and re-read wi
 - `CHANGELOG.md`, `BUDGETS.md` - cited by name only here.
 
 The suites named above were run for the round-3 code commits, not by this note.
+
+## Re-anchor provenance - `8ebbdedc` + `2bb92f32` -> `a0c0847e`, 2026-09-26 (T-0006 landing)
+
+`a0c0847e` is the crew 1.0.40 bump on top of `1cec9572`, the merge of T-0006 (`cb125d51`, note anchor
+`2bb92f32`) into main at `d3844c76` (note anchor `8ebbdedc`). The two lines' provenance is above,
+side by side.
+
+- `.crew/verify.json` - changed on both sides. Main inserted T-0026's rule at `:167-172` as rule
+  10; T-0006 appended its rule last. Merged: **26 rules, 285 lines**; rule 23 `:251`, rule 24
+  (T-0008) `:252-268`, **rule 25 (T-0006) `:270-280`**, `default` `:283`, `unmapped` `:284`.
+  Both sides had called their newest rule "rule 24"; the T-0006 one is renumbered 25 here, in the
+  rule list and in the entry points, so no index is claimed twice. Re-measured with `json.load`
+  and `grep -n`.
+- `plugin/crew/tests/sabotage.py` - changed on T-0006 only: `RESUME_MUTATIONS` imported at `:76`
+  and appended at `:3048`; `SCOPE_MUTATIONS` (`:71`, carrying T-0026's `APPROVAL DIGEST` entries
+  in `sabotage_scope.py`) and `REFRESH_MUTATIONS` (`:75`, `:3046`) hold.
+- `plugin/crew/CONFIG.md` - changed on T-0006 only; the process-group-kill limitation stays at
+  `:2022-2029`.
+- `marketplace.json` - `:218` is crew's `version` (1.0.40); still a rule 0 path.
+
+The landing's suite results are in its PR, not executed by this note.

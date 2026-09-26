@@ -1,5 +1,5 @@
 # repo-docs
-anchor: useful-claude-add-ons@8ebbdedc
+anchor: useful-claude-add-ons@a0c0847e
 verified: 2026-09-26
 
 ## Re-derive provenance
@@ -522,3 +522,13 @@ unreadable-state wait; `:69` still says to write `.work/HANDOFF.md`),
 `docs/guides/crew/src/auto-cycle.md` (the refusal list now names the stale-and-not-archived and
 unreadable-state waits) and `CHANGELOG.md` (cited without a line) changed. The two diagrams this
 note cites are refreshed in the same commit as this note.
+
+Re-verified per-path to `a0c0847e` for T-0006's landing (`a0c0847e` is the crew 1.0.40 bump on top of
+`1cec9572`, the merge of T-0006 `cb125d51` into main `d3844c76`, joining this note's `8ebbdedc`
+and `2bb92f32` lines). Of the cited paths, those changed on both sides were re-read at `a0c0847e`:
+`plugin/crew/README.md` (the `docs/runbooks/INDEX.md` mention is at `:1759`, main's two lines and
+T-0006's auto-resume prose both above it; corrected above), `.crew/verify.json` (rule 23 `:251`
+and rule 24 `:252-268` hold; T-0006's rule is rule 25 at `:270-280`), `TODO.md` (the `render.sh`
+entry still at `:1190`, same heading) and `CHANGELOG.md` (T-0006's 1.0.40 entry now sits above
+main's 1.0.39 and 1.0.38 entries; cited without a line). Files changed on one side only keep that
+side's re-verified citations.

@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@8ebbdedc
+anchor: useful-claude-add-ons@a0c0847e
 verified: 2026-09-26
 paths: scripts/**, plugin/PLUGINS.md
 
@@ -47,9 +47,9 @@ consistent with `web-testing-playwright` and other single-skill entries
 either being removed or consolidated during the crew 1.0 rewrite; flagged as
 an open question rather than asserted either way. The **plugin** count is
 unchanged at **5**: `crew`, `gizmoduck`, `localgpu`, `obsidian-vault`,
-`rule-of-two`. `crew` is now **1.0.39** (`.claude-plugin/marketplace.json:218`, `plugin/crew/.claude-plugin/plugin.json`
-and the `plugin-version:crew` claim at `plugin/PLUGINS.md:14` all agree, re-read at `8ebbdedc`; it
-was 1.0.38 at `c35edda5`, 1.0.36 at `adf8d1dd`, 1.0.28 at `f2bb919b`, 1.0.25 at `6c497a14` and 0.20.11 at `5d1fc5fd`);
+`rule-of-two`. `crew` is now **1.0.40** (`.claude-plugin/marketplace.json:218`, `plugin/crew/.claude-plugin/plugin.json`
+and the `plugin-version:crew` claim at `plugin/PLUGINS.md:14` all agree, re-read at `a0c0847e`; it
+was 1.0.39 at `8ebbdedc`, 1.0.38 at `c35edda5`, 1.0.37 at `768a747a`, 1.0.36 at `adf8d1dd`, 1.0.28 at `f2bb919b`, 1.0.25 at `6c497a14` and 0.20.11 at `5d1fc5fd`);
 `obsidian-vault` is **0.4.14** (was 0.3.14); `gizmoduck` (0.5.3) and
 `rule-of-two` (0.1.3) are unchanged; `localgpu` moved to 0.1.20.
 
@@ -258,7 +258,9 @@ against synthetic fixtures and never reads this repo's own docs.
   over `git ls-files 'plugin/crew/*.md'` returns 17847 over 120 files, matching. On T-0006's
   branch, re-measured at `6d35ef8c`: 17,959 on `:11`, and the measurement returns 17959 over 120 files, matching. Re-measured for
   T-0006 review round 3 at `2bb92f32`: 17,967 on `:11`, and the measurement returns 17967 over
-  120 files, matching.
+  120 files, matching. Re-measured at the T-0006 landing `a0c0847e`: 17,973 on `:11` (recomputed
+  from the merged tree, not taken from either side), and the measurement returns 17973 over 120
+  files, matching.
 - **`MARKETPLACE.md`** was not re-read for a community-plugin or marketplace
   count of its own; only `README.md:231`'s prose was checked and found to no
   longer state a specific number.
@@ -334,3 +336,13 @@ changed. `.claude-plugin/marketplace.json`, `plugin/PLUGINS.md` and
 `check_versions`' `version_set_at` walk needs; they end byte-identical to `6d35ef8c`. `CLAUDE.md`
 did not change. `python3 scripts/check-marketplace.py` at `2bb92f32`:
 `marketplace: 34 skills, 5 plugins`, `all checks passed`.
+
+Re-verified per-path to `a0c0847e` for T-0006's landing (`a0c0847e` is the crew 1.0.40 bump on top of
+`1cec9572`, the merge of T-0006 `cb125d51` into main `d3844c76`, joining this note's `8ebbdedc`
+and `2bb92f32` lines): of the cited paths, `.claude-plugin/marketplace.json`, `plugin/PLUGINS.md`
+and `plugin/crew/.claude-plugin/plugin.json` (version only: the merge carries main's 1.0.39,
+`a0c0847e` alone sets 1.0.40), `plugin/crew/BUDGETS.md` (`:11` figure, 17,973, re-measured and
+matching), `.crew/verify.json` (26 rules; the doc rule at `:69-78` is above both sides' changes
+and unchanged), `CHANGELOG.md` and `TODO.md` changed. `CLAUDE.md` and `README.md` did not.
+`python3 scripts/check-marketplace.py` at `a0c0847e`: `marketplace: 34 skills, 5 plugins`,
+`all checks passed`.

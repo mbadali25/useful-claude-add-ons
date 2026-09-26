@@ -1,5 +1,5 @@
 # install-scripts
-anchor: useful-claude-add-ons@8ebbdedc
+anchor: useful-claude-add-ons@a0c0847e
 verified: 2026-09-26
 
 ## Re-derive provenance
@@ -441,3 +441,15 @@ across 120 files, and `git ls-files 'plugin/crew/*.md' | xargs cat | wc -l` retu
 `.claude-plugin/marketplace.json` and `plugin/PLUGINS.md` were stepped to 1.0.37 and back, so
 they end byte-identical to `6d35ef8c`. Both install scripts, `README.md`, `TODO.md` and
 `scripts/check-marketplace.py` did not change, so their citations stand.
+
+Re-verified per-path to `a0c0847e` for T-0006's landing (`a0c0847e` is the crew 1.0.40 bump on top of
+`1cec9572`, the merge of T-0006 `cb125d51` into main `d3844c76`, joining this note's `8ebbdedc`
+and `2bb92f32` lines): of the cited paths `.claude-plugin/marketplace.json` (crew `version`
+`:218`, 1.0.40; `:217` unchanged), `plugin/PLUGINS.md` (`:14` version; `:17` Registers row
+unchanged), `plugin/crew/BUDGETS.md` (marker still `:10`; `:11` now reads 17,973 lines across 120
+files, recomputed from the merged tree and matching `check-marketplace.py`), `plugin/crew/README.md`
+(both sides' additions, so the `34 commands` claim is at `:2209` and `4 agents` at `:2220`,
+re-grepped, both still true: `ls plugin/crew/commands/*.md` is 34, `ls plugin/crew/agents/*.md`
+is 4) and `TODO.md` changed. Both install scripts, `README.md` and
+`scripts/check-marketplace.py` did not, so their citations stand. Neither install script was
+executed.

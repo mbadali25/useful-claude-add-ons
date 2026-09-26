@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@8ebbdedc
+anchor: useful-claude-add-ons@a0c0847e
 verified: 2026-09-26
 
 ## Re-derive provenance
@@ -27,7 +27,7 @@ Re-verified per-path from `f2bb919b` to `adf8d1dd` for T-0008, from
 `adf8d1dd` to `8d447a7d` for its review round 3, to `c35edda5` for
 T-0034, and to `8ebbdedc` for T-0026's landing; on T-0006's branch, from
 `8d447a7d` to `6d35ef8c` for T-0006 and from `6d35ef8c` to `2bb92f32` for its
-review round 3. The two lines meet at T-0006's landing; see the last sections.
+review round 3; and both to `a0c0847e` for T-0006's landing. See the last sections.
 
 # crew
 
@@ -391,7 +391,7 @@ return `None`): `decide` waits and `record_run` refuses rather than overwriting 
 the same `_already` (`:224`) `decide` uses, so of two senders holding one `run`
 only the first gets `ok`. Tests: `plugin/crew/tests/test_crew_resume.py`,
 `plugin/crew/tests/test_crew_resume_hook.py`; mutations
-`plugin/crew/tests/sabotage_resume.py`; `.crew/verify.json` rule 24, the last.
+`plugin/crew/tests/sabotage_resume.py`; `.crew/verify.json` rule 25 (`:270-280`), the last.
 
 ## verify-gate's temp-file rule capture
 
@@ -836,3 +836,30 @@ started, at 1.0.40. Every citation into them was re-mapped with a line diff and 
 - `.crew/verify.json` - rule 24's `seconds` and `why` only; it is still the last rule, and no
   rule's lines moved.
 - `CONFIG.md`, `README.md`, the test files - cited by name only.
+
+## Re-anchor provenance - `8ebbdedc` + `2bb92f32` -> `a0c0847e`, 2026-09-26 (T-0006 landing)
+
+`a0c0847e` is the crew 1.0.40 bump on top of `1cec9572`, the merge of T-0006 (`cb125d51`, whose
+code-map anchor was `2bb92f32`) into main at `d3844c76` (anchor `8ebbdedc`). Both anchors' notes
+were joined in the merge; the provenance sections above record each line separately. Of the paths
+this note cites, `git diff --name-only 8ebbdedc a0c0847e` returns T-0006's files and
+`git diff --name-only 2bb92f32 a0c0847e` returns T-0026's and T-0034's. A citation can only be wrong at
+the merge when the file changed on both sides, or when a line from one side cites a file the other
+side changed. Each such citation was re-read with `grep -n`/`sed -n` at `a0c0847e`:
+
+- `.crew/verify.json` - changed on both sides. T-0026's rule 10 (`:167-172`) and T-0006's rule
+  (appended last) both landed, so T-0006's rule is **rule 25** at `:270-280`, not rule 24 as its
+  branch numbered it; corrected in the auto-resume section above. Rule 23 `:251` and rule 24
+  `:252-268` hold. 26 rules, 285 lines.
+- `TODO.md` - changed on both sides; `:3952` still reads "`/crew:init` still writes
+  `.crew/config.json`...", unchanged, because T-0026's closure is below it (`:5025`, `:5018` on main before T-0006's seven lines above it).
+- `plan.md`, `approve.md`, `implement.md`, `done.md`, `crew_refresh_check.py`, `crew_ticket.py` -
+  changed on main only; T-0006 cites none of them, and main's citations (`:8-9`, `:5`, `:85-104`,
+  `:46-57`, `:168-173`, `:576`) stand at `a0c0847e`.
+- `crew_state.py`, `crew_config.py`, `crew_context.py`, `CONFIG.md`, `crew_resume.py` - changed on
+  T-0006 only; its round-3 citations stand, and main's lines citing them were already re-mapped on
+  T-0006's branch before the merge.
+- `marketplace.json` - crew `version` `:218` is 1.0.40; `:217`'s 4/34/29 counts are unchanged.
+
+`crew_refresh_check.py --root . --ticket T-0006` named this note; nothing was executed for it
+beyond the re-reads above.
