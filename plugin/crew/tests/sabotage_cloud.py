@@ -426,6 +426,10 @@ _R1 = _E + "test_round1_must_block_python"
 _CH = _E + "test_chdir_forms_mark_the_directory_unknown"
 _OP = _E + "test_an_environment_change_crew_cannot_read_is_unknown"
 _WB = _E + "test_wrapper_value_options_do_not_hide_the_command"
+# Two of those went STILL GREEN at review round 5: a misread wrapper value
+# now makes the line unseen and the gate denies it by itself, so they aim at
+# the lexer judged alone.
+_WBL = _E + "test_the_lexer_alone_reads_the_wrapped_command"
 _SP = _E + "test_a_special_file_is_unknown_not_a_hang"
 _TP = "tests/test_crew_tfplan.py::"
 
@@ -474,7 +478,7 @@ CLOUD_GUARD_MUTATIONS += (
     ("cloud guard r1: sudo -R/-T values read as the command", GUARD,
      '_SUDO_SHORT = dict({letter: "req" for letter in "aCcDgpRrTtUu"}, h="opt")\n',
      '_SUDO_SHORT = dict({letter: "req" for letter in "aCcDgprtUu"}, h="opt")\n',
-     _WB + "[sudo-timeout-value]"),
+     _WBL + "[sudo-timeout-value]"),
     ("cloud guard r1: env -S'cmd' hides the command again", GUARD,
      '                elif name in ("S", "split-string"):\n'
      '                    split = (value or "").split()\n',
@@ -484,7 +488,7 @@ CLOUD_GUARD_MUTATIONS += (
     ("cloud guard r1: env -a VALUE read as the command", GUARD,
      '_ENV_SHORT = {"C": "req", "S": "req", "u": "req", "a": "req",\n',
      '_ENV_SHORT = {"C": "req", "S": "req", "u": "req",\n',
-     _WB + "[env-argv0]"),
+     _WBL + "[env-argv0]"),
     ("cloud guard r1: wsl --cd / ~ no longer move the directory", GUARD,
      '            if flag == "~" or flag.split("=", 1)[0] == "--cd":\n',
      "            if False:\n", _CH + "[wsl-cd-infra-terraform-apply-p-tfplan]"),

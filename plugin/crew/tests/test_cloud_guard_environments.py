@@ -1101,6 +1101,20 @@ def test_wrapper_value_options_do_not_hide_the_command(tmp_path, case):
     assert "[terraformApply]" in reason, reason
 
 
+@pytest.mark.parametrize("case", WRAPPER_BYPASS,
+                         ids=[c[0] for c in WRAPPER_BYPASS])
+def test_the_lexer_alone_reads_the_wrapped_command(case):
+    """Since review round 5 a wrapper value misread as the command makes
+    the line UNSEEN, and the gate denies it on its own -- which would hide a
+    regression in `_unwrap`. So the lexer's own findings are checked too,
+    the gate's set aside."""
+    _id, command = case
+    ctx = {"cd": False, "switch": False, "engaged": False}
+    rules = {f.rule for f in cloud_guard.scan("bash", command, ctx=ctx)
+             if (f.scope or {}).get("op") != cloud_guard.OP_UNREADABLE_LINE}
+    assert "terraformApply" in rules, (command, rules)
+
+
 # FIX crew_tfplan.py:103, the hook's half: any environment change crew cannot
 # read makes TF_WORKSPACE unknown, even where a workspace file says `qa`.
 OPAQUE_RESOLVE = [
