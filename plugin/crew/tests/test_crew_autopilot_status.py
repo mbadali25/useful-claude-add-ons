@@ -22,7 +22,7 @@ import crew_autopilot
 import crew_ticket
 import review_ledger
 from scope_fixtures import make_repo
-from test_crew_autopilot import (_SCRIPT, _approved, _config, _handoff, _ledger, _round,
+from test_crew_autopilot import (_COMMAND, _SCRIPT, _approved, _config, _handoff, _ledger, _round,
                                  _snapshot, _ticket, _two_tickets, _write)
 
 T = "T-1"
@@ -334,3 +334,51 @@ def test_status_cli_that_raises_exits_zero_and_says_unknown(tmp_path, monkeypatc
 
     out = capsys.readouterr().out
     assert (code, out.startswith("status: unknown"), "disk on fire" in out) == (0, True, True)
+
+
+# --- step 3: the command -----------------------------------------------------
+
+def _command_text():
+    with open(_COMMAND, encoding="utf-8") as handle:
+        return handle.read()
+
+
+def _section(text, heading):
+    start = text.index(heading)
+    end = text.find("\n## ", start + len(heading))
+    return text[start:end if end >= 0 else len(text)]
+
+
+def test_every_subcommand_named_in_command():
+    text = _command_text()
+
+    assert [name for name in crew_autopilot.SUBCOMMANDS if f"`{name}`" not in text] == []
+
+
+def test_every_arriving_subcommand_names_its_ticket_in_command():
+    flat = " ".join(_command_text().split())
+
+    assert [ticket for ticket in crew_autopilot.ARRIVES.values() if ticket not in flat] == []
+
+
+def test_status_section_runs_nothing_else():
+    section = _section(_command_text(), "## 1. status")
+    fenced = [line.strip() for block in section.split("```")[1::2]
+              for line in block.splitlines()[1:] if line.strip()]
+
+    assert (len(fenced), "crew_autopilot.py status --root ." in fenced[0]) == (1, True)
+
+
+def test_command_routes_before_it_refuses_unarmed():
+    text = _command_text()
+
+    assert (text.index("crew_autopilot.py route --root .")
+            < text.index("## 1. status")
+            < text.index("crew_autopilot.py settings --root .")), \
+        "status is read-only and must not need autopilot armed"
+
+
+def test_command_stops_on_a_router_stop():
+    flat = " ".join(_section(_command_text(), "## 0. Route").split())
+
+    assert "`stop=1`: print the reason and stop" in flat
