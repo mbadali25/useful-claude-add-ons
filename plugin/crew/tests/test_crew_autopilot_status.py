@@ -382,3 +382,25 @@ def test_command_stops_on_a_router_stop():
     flat = " ".join(_section(_command_text(), "## 0. Route").split())
 
     assert "`stop=1`: print the reason and stop" in flat
+
+
+def test_status_text_caps_at_12_lines():
+    got = crew_autopilot.status_text({
+        "mode": "off", "warnings": [f"w{n}" for n in range(20)], "ticket": T,
+        "source": "argument", "phase": "implement", "command": "/crew:implement T-1",
+        "stop": False, "waiting": "autopilot", "review": "EMPTY", "resume_line": "r",
+        "fallthrough": [], "disagreement": ""}).splitlines()
+
+    assert (len(got), got[-1].startswith("(+15 more")) == (12, True)
+
+
+# --- step 4: sabotage anchors ------------------------------------------------
+
+def test_every_status_sabotage_anchor_is_present_exactly_once():
+    from sabotage_autopilot import STATUS_MUTATIONS  # pylint: disable=import-outside-toplevel
+    for label, target, find, _replace, test in STATUS_MUTATIONS:
+        with open(target, encoding="utf-8") as handle:
+            assert handle.read().count(find) == 1, label
+        prefix, name = test.split("::")
+        assert (prefix, callable(globals().get(name))) == (
+            "tests/test_crew_autopilot_status.py", True), label

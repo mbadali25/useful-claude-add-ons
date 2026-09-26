@@ -788,6 +788,20 @@ A `.crew/config.json` that exists but does not parse, or a value outside those f
 
 `/crew:autopilot [<id>]` (since 1.0.41, **off by default**) drives one ticket through spec, plan, approval, implement, refresh artifacts, review and done, following each phase command's own procedure in the same session. It does not decide the order itself: every turn it runs `hooks/scripts/crew_autopilot.py next --root . --ticket <id>`, which names the next phase from files on disk only, so a skipped phase is visible and a phase that cannot be told stops.
 
+**Subcommands** (since 1.0.42, T-0018). The first argument is routed by `crew_autopilot.py route --root . --first <word>`, in code, so a typo is refused rather than driven as a ticket id:
+
+| `/crew:autopilot ...` | Does |
+|---|---|
+| `status [<id>]` | Read-only report in at most 12 lines — below. Works whether or not autopilot is armed. |
+| `run [<id>]`, `<id>`, or nothing | Drives the ticket, as this section describes. `<id>` is an INDEX-shaped id (`T-0018`) or a folder under `.work/tickets/`. |
+| `assign` | Not yet: stops with "arrives with T-0019". |
+| `goal`, `--goal <slug>` | Not yet: stops with "arrives with T-0012". |
+| `focus` | Not yet: stops with "arrives with T-0020". |
+
+Any other word (`stauts`, `Status`, `rm`) stops with "unknown subcommand; one of status\|run\|assign\|goal\|focus, or a ticket id".
+
+**`status`** (`crew_autopilot.py status --root . [--ticket <id>]`) prints: the mode; the ticket and where that choice came from (the argument, the handoff, the active ticket or `.work/INDEX.md`); the phase `next` names and its command, or why it stopped; who it waits on — `owner` with the command they type, `autopilot`, `reviewer` for a round reserved with no result, `nobody` for a closed ticket; the review rounds left; and the handoff's `resume:` line with whether it is usable (`no .work/HANDOFF.md`, `unavailable (T-0006 not landed)`, `<line> (usable)` or `not usable: <crew_resume's own reason>`), then any `fell through:`, `disagreement:` and `warning:` lines. What it cannot tell reads `unknown`, never a safe-looking value: an unreadable review ledger prints `review: unknown (ledger unreadable)`, not a rounds count, and a phase name it does not map prints `waiting on: unknown`. It writes nothing — no file, no git index refresh, no ledger reservation, no active-ticket change — and exits 0.
+
 | On disk | Phase | |
 |---|---|---|
 | no `direction.md`, or INDEX status `direction` | `brainstorm` / `direction-approval` | stop — a human dialogue |
@@ -2226,7 +2240,7 @@ CONFIG.md §17 has the table and the reasoning.
 | `/crew:implement <id>` | Implement an approved plan, then tests, docs, artifact refresh and review; refuses without a current approval |
 | `/crew:done <id>` | Close a ticket: accepted review receipt, clean verify gate, passing completion audit and current artifacts, or no close |
 | `/crew:fix <one sentence>` | The light path — every lifecycle phase present, each compressed to one step |
-| `/crew:autopilot [<id>]` | Drive one ticket through the lifecycle until a person is needed; with no id, resume from the handoff's `resume:` line, the active ticket, or the one open ticket. Off until `autopilot.mode: plan` — see "Autopilot" |
+| `/crew:autopilot [status\|run] [<id>]` | `run` (or a bare id, or nothing): drive one ticket through the lifecycle until a person is needed; with no id, resume from the handoff's `resume:` line, the active ticket, or the one open ticket. Off until `autopilot.mode: plan`. `status`: a read-only 12-line report. `assign`, `goal`, `focus` arrive with T-0019, T-0012, T-0020 — see "Autopilot" |
 | `/crew:review` | Independent QA — Codex, then Copilot, then Claude: the first that probes clean |
 | `/crew:onboard [--refresh <area>]` | Build or refresh the code map |
 | `/crew:reference [--api\|--features\|--audit]` | Enumerate the API and features into `docs/reference/`, anchored to `file:line` |

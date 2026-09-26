@@ -6,6 +6,32 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
+- **`crew` 1.0.42: `/crew:autopilot status` and the subcommand router
+  (T-0018).** Bumped `1.0.41 -> 1.0.42`. `commands/autopilot.md` now routes
+  its first argument through the new `crew_autopilot.py route --root .
+  --first <word>`: `status` and `run` run; a bare ticket id (INDEX-shaped, or
+  an existing `.work/tickets/<id>/`) or nothing is `run`, as in 1.0.41;
+  `assign`, `goal` and `run --goal` stop with "arrives with T-0019|T-0012",
+  `focus` with "arrives with T-0020"; any other word (`stauts`, `Status`,
+  `rm`) is refused rather than read as a ticket id.
+  - `crew_autopilot.py status --root . [--ticket <id>]` is read-only and
+    prints at most 12 lines: mode, ticket and its source, the phase `next`
+    names and its command, who it waits on (`owner`, `autopilot`,
+    `reviewer`, `nobody`), review rounds left, and the handoff's `resume:`
+    line with whether it is usable, plus `resume`'s `fell through:` and
+    `disagreement:` lines. An unreadable ledger prints `review: unknown
+    (ledger unreadable)`, an unmapped phase `waiting on: unknown`, and a
+    missing `crew_resume` `unavailable (T-0006 not landed)`. It writes
+    nothing (tested: tree, `.work/`, `<git-common-dir>/crew/` and the
+    `.git/index` mtime are identical after it runs) and exits 0.
+  - `autopilot.md` is compressed from 120 to 100 lines, keeping every stop
+    id and exact CLI string T-0004's tests pin; `test_lifecycle_commands.py`
+    holds it to 100 so T-0010, T-0012, T-0019 and T-0020 have 20 lines.
+  - Six mutations in `tests/sabotage_autopilot.py`'s `STATUS_MUTATIONS`
+    each turn their named test red. They run through
+    `python3 plugin/crew/tests/sabotage_autopilot.py`, not yet through
+    `sabotage.py`, whose registration T-0018's Touch does not include.
+
 - **`crew` 1.0.41: `/crew:autopilot` resumes and drives one ticket
   (T-0004).** Bumped `1.0.40 -> 1.0.41`. New
   `commands/autopilot.md` follows each lifecycle command's procedure

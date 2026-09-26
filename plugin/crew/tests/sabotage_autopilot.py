@@ -6,8 +6,17 @@ apart. Run `sabotage.py`, not this file.
 
 Each one is a way autopilot could drive past a person, guess a ticket, or
 write where it must not.
+
+STATUS_MUTATIONS are T-0018's (`route` and `status`). They are not appended
+to AUTOPILOT_MUTATIONS, because test_crew_autopilot.py's anchor test holds
+every entry there to that file, and T-0018 may not edit it or sabotage.py.
+Until one of them registers these, run them on their own through
+sabotage.py's harness:
+
+    python3 plugin/crew/tests/sabotage_autopilot.py
 """
 import os
+import sys
 
 CREW = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SCRIPTS = os.path.join(CREW, "hooks", "scripts")
@@ -15,6 +24,7 @@ AUTOPILOT = os.path.join(SCRIPTS, "crew_autopilot.py")
 TICKET = os.path.join(SCRIPTS, "crew_ticket.py")
 COMMAND = os.path.join(CREW, "commands", "autopilot.md")
 _T = "tests/test_crew_autopilot.py::"
+_S = "tests/test_crew_autopilot_status.py::"
 
 AUTOPILOT_MUTATIONS = (
     ("an unknown spec risk reads as low", TICKET,
@@ -154,3 +164,41 @@ AUTOPILOT_MUTATIONS = (
      "",
      _T + "test_command_reads_no_answer_as_a_stop"),
 )
+
+STATUS_MUTATIONS = (
+    ("route reads an unknown word as a ticket to run", AUTOPILOT,
+     '        return {"sub": "", "stop": True, "reason": UNKNOWN_SUB}\n',
+     '        sub = "run"\n',
+     _S + "test_route_unknown_word_refuses"),
+    ("route runs a subcommand whose ticket has not landed", AUTOPILOT,
+     "    if sub not in AVAILABLE:\n",
+     "    if False:\n",
+     _S + "test_route_unavailable_names_its_ticket"),
+    ("status reads an UNKNOWN ledger's missing rounds_left as the budget", AUTOPILOT,
+     '    left = ledger.get("rounds_left")\n',
+     '    left = ledger.get("rounds_left", review_ledger.BUDGET)\n',
+     _S + "test_status_unknown_ledger_is_unknown"),
+    ("status reads an unmapped phase as waiting on autopilot", AUTOPILOT,
+     "    who = WAITING.get(phase, UNKNOWN)\n",
+     '    who = WAITING.get(phase, "autopilot")\n',
+     _S + "test_status_unmapped_phase_is_unknown"),
+    ("status calls a writer", AUTOPILOT,
+     "    conf = settings(top)\n    if ticket:\n",
+     "    conf = settings(top)\n    if ticket:\n        crew_ticket.activate(top, ticket)\n",
+     _S + "test_status_writes_nothing"),
+    ("status prints past its 12-line cap", AUTOPILOT,
+     "    if len(lines) > STATUS_MAX_LINES:\n",
+     "    if False:\n",
+     _S + "test_status_text_caps_at_12_lines"),
+)
+
+
+def main():
+    """STATUS_MUTATIONS alone, through sabotage.py's own apply/verify/restore."""
+    import sabotage  # pylint: disable=import-outside-toplevel
+    sabotage.MUTATIONS = STATUS_MUTATIONS
+    return sabotage.main()
+
+
+if __name__ == "__main__":
+    sys.exit(main())
