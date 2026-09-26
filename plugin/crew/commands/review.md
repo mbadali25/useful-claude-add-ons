@@ -1,5 +1,5 @@
 ---
-description: Independent QA review of the current diff (Codex, Copilot, or Claude - first that probes clean)
+description: Independent QA review of the current diff (Codex, Kimi, Copilot, or Claude - first that probes clean)
 argument-hint: "[ticket id]"
 allowed-tools: Bash, Read, Agent
 ---
@@ -229,7 +229,7 @@ What is forbidden is letting a same-family review be *recorded* as an independen
 one. Announce it, and never write it to `.crew/metrics.md` as though a different
 family had looked.
 
-Then, if `qa.provider` names a provider (`codex`, `copilot`, `claude`), use that one
+Then, if `qa.provider` names a provider (`codex`, `kimi`, `copilot`, `claude`), use that one
 and **hard-fail if its probe fails** — a pinned provider that cannot run is an error,
 not a cue to fall back. If `qa.provider` is `auto`, walk `qa.order` and take the
 first surviving provider that passes its probe:
@@ -237,6 +237,7 @@ first surviving provider that passes its probe:
 | Provider | Probe | Runs |
 |---|---|---|
 | `codex` | `command -v codex` | step 2a |
+| `kimi` | `kimi_probe.py`: state `ok` (`not-installed` / `not-authenticated` / `rate-limited` / `unknown` each skip, named) | step 2d |
 | `copilot` | `command -v copilot` **and** `qa.copilot.model` is set | step 2b |
 | `claude` | always passes | step 2c |
 
@@ -286,6 +287,7 @@ print(block.get(field) or "")
 QA_MODEL=$(qm codex model)
 QA_EFFORT=$(qm codex reasoningEffort)
 QA_COPILOT_MODEL=$(qm copilot model)
+QA_KIMI_MODEL=$(qm kimi model)
 
 # The author families to strike, from the same report -- never re-derived from
 # dev.provider, which is a default a per-role pin may already have overridden.
@@ -445,6 +447,22 @@ Codex rejects a wrong one with an HTTP 400. Copilot exiting non-zero with `Acces
 denied by policy settings` is org or enterprise policy — report that exact
 cause. Exit 2 means nothing launched (not on PATH) and no round was spent; walk
 to the next eligible provider.
+
+**Step 2d — Kimi.** `review_run.py` runs `kimi_probe.py` itself, BEFORE the
+round is reserved — the probe spends one tiny request, never a round. Kimi reads
+the same `$SCRATCH/prompt.txt` as 2a and 2b, byte-identical per this file's
+invariant. Empty `QA_KIMI_MODEL` means the CLI's own `default_model`.
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/review_run.py --root . --ticket "$TICKET" \
+  --scratch "$SCRATCH" --provider kimi --model "$QA_KIMI_MODEL"
+```
+
+Exit 2 from kimi names its probe state (`kimi probe: rate-limited - ...`). Any
+state but `ok` spent nothing: announce it and walk to the next eligible
+provider, exactly as for a provider not on PATH. `kimi -p` cannot be made
+read-only by a flag, so a working tree that changed during the run makes the
+round INCOMPLETE.
 
 **Step 2c — Claude fallback.** Invoke the `crew:reviewer` subagent with the
 SAME bundle 2a and 2b just read: the exact `$SCRATCH/prompt.txt` content —

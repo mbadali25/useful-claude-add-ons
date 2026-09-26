@@ -1,6 +1,6 @@
 ---
 name: crew-providers
-description: Set up, verify, and invoke external model providers - Codex or GitHub Copilot for QA review, Gemini for design second opinions. Use when the user says set up codex, set up copilot, set up gemini, add a reviewer, add a design partner, configure providers, wire up the API key, or asks about free tiers, rate limits, model families, which model to use for a role, or why a provider call is failing.
+description: Set up, verify, and invoke external model providers - Codex, Kimi Code or GitHub Copilot for QA review, Gemini for design second opinions. Use when the user says set up codex, set up kimi, set up copilot, set up gemini, add a reviewer, add a design partner, configure providers, wire up the API key, or asks about free tiers, rate limits, model families, which model to use for a role, or why a provider call is failing.
 ---
 
 # Providers
@@ -9,7 +9,7 @@ Two external roles, deliberately different in what they are allowed to see.
 
 | Role | Provider | Sees your code? | Why |
 |---|---|---|---|
-| QA review | Codex **or** Copilot | Yes — the diff | Review is worthless without the actual change |
+| QA review | Codex, Kimi Code **or** Copilot | Yes — the diff | Review is worthless without the actual change |
 | Design opinion | Gemini | **No** — brief only | Free tiers train on prompts |
 
 That asymmetry is the whole design. Do not collapse it for convenience.
@@ -31,6 +31,7 @@ not that such a review is bad; it is that it looks exactly like a good one.
 | OpenAI | Codex, or Copilot pinned to `gpt-*` |
 | **Google** | Copilot pinned to `gemini-*` |
 | **Microsoft MAI** | Copilot pinned to `mai-*` |
+| **Moonshot (`kimi`)** | the Kimi Code CLI (`kimi`), or Copilot pinned to `kimi-*` |
 
 ---
 
@@ -89,9 +90,11 @@ a different model family onto the diff.
 Evaluation happens in this order, and the order is the whole interlock:
 
 1. **The family guard runs first.** The family that wrote the diff is struck
-   from the QA walk. `family()` is `model.split("-")[0]`, so `gpt-6-astra`,
-   `gpt-5.6-sol` and `gpt-5.6-luna` are all `gpt`, and `kimi-k2.7-code` and
-   `kimi-k3` are both `kimi`.
+   from the QA walk. `family()` is the model's leading letters after any
+   `vendor/` prefix, lowercased, so `gpt-6-astra`, `gpt-5.6-sol` and
+   `gpt-5.6-luna` are all `gpt`, and `kimi-k2.7-code` and `kimi-k3` are both
+   `kimi`. `claude` and `kimi` are decided by provider instead: the Kimi Code
+   CLI is `kimi` whatever it is pinned to, because its id `k3` reads as `k`.
 2. **The pin applies second**, to whatever families survive step 1.
 
 A pin that beat the guard would let a model review its own family's diff, which
@@ -320,6 +323,33 @@ cleanly — a permanently-erroring provider is worse than an absent one.
 
 ---
 
+## Kimi Code (QA review, dev and role pins)
+
+The Kimi Code CLI is a first-class provider (`kimi` in `QA_PROVIDERS` and
+`DEV_PROVIDERS`), second in the default `qa.order`. Install with
+`curl -fsSL https://code.kimi.com/kimi-code/install.sh | bash` (Windows:
+`irm https://code.kimi.com/kimi-code/install.ps1 | iex`); the installer puts
+`~/.kimi-code/bin` on PATH through `~/.bashrc`, so a non-login shell may not see
+it. Then `kimi login` once (OAuth; crew never reads the credential).
+
+Model ids (owner-supplied): `k3`, `kimi-for-coding`, `kimi-for-coding-highspeed`.
+Set `qa.kimi.model` / `dev.kimi.model` to one, or leave it null for the CLI's
+`default_model`. `-m` takes a config.toml alias, so crew resolves the id to the
+alias served by a `type = "kimi"` provider. There is no `reasoningEffort`: effort
+lives in the alias's `default_effort` in `~/.kimi-code/config.toml`.
+
+**Probe before a round is spent.** `kimi_probe.py` answers `ok`,
+`not-installed`, `not-authenticated`, `rate-limited` or `unknown`; only `ok`
+launches, and `review_run.py` runs it before the round is reserved. The live
+stage spends one tiny request.
+
+**Read-only is not a flag here.** `kimi -p` forces permission mode `auto`. Crew
+passes an agent file allowing only Read, Grep and Glob (Write, Edit and Bash
+disallowed) and an empty `--skills-dir`, and fingerprints the working tree
+before and after: a changed tree makes the round INCOMPLETE.
+A write outside the repo is not caught by either control. Offered pins and the
+rest: `alternative-providers.md`.
+
 ## Gemini (design second opinion)
 
 ### Two paths
@@ -365,9 +395,9 @@ accept single-opinion planning. Both are legitimate. Say which one is in effect.
 
 ## Kimi, and local models
 
-Read `alternative-providers.md` for a fifth model family through
-Codex without adding a provider, and for running a private second
-opinion on local hardware.
+Read `alternative-providers.md` for Kimi through Codex (the API-key route),
+the offered Kimi Code pin table, and running a private second opinion on
+local hardware.
 
 ## An external implementer (`dev.provider`)
 

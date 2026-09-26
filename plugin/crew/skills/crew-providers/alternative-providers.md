@@ -6,6 +6,12 @@ move._
 
 ## Kimi through Codex (a fifth family, no new provider)
 
+**Prefer the first-class route** when you have a Kimi Code plan: the Kimi Code
+CLI is its own provider (`--provider kimi`, SKILL.md "Kimi Code"), which reads
+the bundle files itself and keeps the review prompt byte-identical. This Codex
+recipe is still the right one with a pay-as-you-go `MOONSHOT_API_KEY` and no
+Kimi Code plan.
+
 Moonshot's API is OpenAI-compatible, and the Codex CLI reads custom providers from
 its own `~/.codex/config.toml`. So Kimi reaches crew through the **existing** `codex`
 provider — a config recipe, not a code path. Nothing in `/crew:review` changes.
@@ -108,3 +114,19 @@ coder rather than letting the gate silently stop running.
 
 ---
 
+## Kimi Code: the pins crew offers, never applies
+
+Not shipped - the `roles` tables stay empty, and `/crew:model` writes a pin only
+when asked. The owner's three ids:
+
+| Slot | Provider | Model |
+|---|---|---|
+| `qa.roles.review` | kimi | `k3` |
+| `qa.roles.phase1`, `qa.roles.gate` | kimi | `kimi-for-coding` |
+| `qa.roles.smoke` | kimi | `kimi-for-coding-highspeed` |
+| `dev.roles.planner` | kimi | `k3` (valid and family-guarded; no command reads it yet) |
+
+`dev.provider: kimi` is recognised, validated, recorded and family-guarded, but
+crew launches no automated Kimi dev run - dispatch is the same prose
+`/crew:implement` uses for codex. A Kimi-authored diff bars both `kimi` QA and
+any Copilot `kimi-*` pin, and the reverse.
