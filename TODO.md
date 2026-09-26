@@ -14,6 +14,19 @@ be wrong can be closed on evidence.
   write check beyond their own flags. (d) `/crew:plan` dispatching to a `dev.roles.planner` pin -
   a follow-up ticket, id to be recorded here when it is filed. (e)
   `plugin/crew/agents/reviewer.md:27` still names the old order `(codex, copilot, claude)`.
+  (f) Review round 1 NIT, outside T-0028's Touch: `plugin/localgpu/README.md:275` and
+  `plugin/localgpu/commands/crew.md:30` still state crew's `qa.order` default as
+  `["codex", "copilot", "claude"]` and say `/crew:model` validates "exactly those three names";
+  both are false since crew 1.0.44 (`grep -n 'three names' plugin/localgpu/README.md
+  plugin/localgpu/commands/crew.md`). A localgpu version bump comes with the fix. (g) Review
+  round 1 NIT: `.crew/codemap/install-scripts.md`'s re-verify prose cites enough `plugin/crew`
+  files that `crew_context.derive_paths` returns `['scripts/**', 'plugin/crew/**']`, so
+  `.claude/rules/install-scripts.md:4` loads the install-script landmines in every
+  `plugin/crew/**` session; trim the citations at the next `/crew:onboard --refresh
+  install-scripts`. (h) `review_run.py`'s codex path puts a stream error into review.json
+  reasons unredacted (`extra.append(f"codex: {error}")`); the kimi path redacts since round 2.
+  (i) The kimi tree fingerprint does not see a write inside `.git` beyond HEAD and the index
+  (a hook, a config) - `review_run.tree_fingerprint`'s docstring says so.
 - `plugin/crew/tests/test_auto_cycle.py` (24 failures, measured both
   before and after crew-1.0-win-ps1-ac's fix, identical set both times):
   bash/tmux/symlink-flavour tests fail on this Windows dev host for

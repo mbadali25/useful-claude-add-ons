@@ -19,14 +19,20 @@ PROVIDERS.
            stdin closed, env from `kimi_probe.kimi_env` (no infinite retry, no
            KIMI_MODEL_* overrides). `kimi_probe.probe` runs BEFORE the round
            is reserved: any state but `ok` exits 2, names the state, and
-           spends nothing. Prompt mode FORCES Kimi's permission mode to
-           `auto` (2.1.1 refuses `-p` with --plan/--auto/--yolo), so no flag
-           makes it read-only. Two controls stand in: the agent file allows
-           Read, Grep and Glob and disallows Write, Edit and Bash, and the
-           working tree is fingerprinted before launch and after exit -- a
-           changed tree makes the round INCOMPLETE. A write OUTSIDE the
-           repository is caught by neither. The final message is read from
-           the stream (`review_verdict.kimi_final_message`).
+           spends nothing -- and is skipped when the ledger already shows no
+           round left, since the reservation would refuse anyway. Prompt mode
+           FORCES Kimi's permission mode to `auto` (2.1.1 refuses `-p` with
+           --plan/--auto/--yolo), so no flag makes it read-only. Two controls
+           stand in, for the probe call as for the review: the agent file
+           allows Read, Grep and Glob and disallows Write, Edit and Bash, and
+           the working tree is fingerprinted BEFORE THE PROBE and after the
+           review exits. A probe that changed it exits 2 with no round
+           spent; a review that changed it is INCOMPLETE, naming the paths.
+           See `tree_fingerprint` and `reviewer_changes` for what is and is
+           not seen. A write OUTSIDE the repository is caught by neither. The
+           final message is read from the stream
+           (`review_verdict.kimi_final_message`); its error text is redacted
+           before it becomes a reason.
   claude   the `reviewer` subagent runs inside the Claude session, not as a
            process this script can launch. So it is two calls: `--reserve-only`
            before the subagent is dispatched, then `--round N --output FILE
@@ -75,10 +81,12 @@ import json
 import os
 import shutil
 import signal
+import stat
 import subprocess
 import sys
 
 import crew_common
+import crew_freshness
 import crew_state
 import kimi_probe
 import review_ledger
@@ -97,10 +105,16 @@ POST_KILL_TIMEOUT = 5
 # Windows' CreateProcess limit is 32767 characters for the whole command line.
 INLINE_PROMPT_LIMIT = 24000
 LAUNCHED = ("codex", "copilot", "kimi")
-KIMI_AGENT_FILE = "kimi-reviewer.md"
-KIMI_NO_SKILLS = "kimi-no-skills"
 KIMI_TREE_CHANGED = ("kimi: the working tree changed during the review - a reviewer "
                      "that can write may have fixed instead of reported")
+KIMI_PROBE_CHANGED = "kimi probe: the working tree changed while the probe ran"
+# Named paths per reason; the rest are counted, so a mass write cannot bury
+# the review.json it is reported in.
+CHANGED_SHOWN = 10
+# `git status --ignored` walks every ignored file (node_modules and all), so
+# it gets longer than crew_common's 10s hook-path bound. A git that still does
+# not answer is "could not tell", never a hang after the round is reserved.
+SNAPSHOT_GIT_TIMEOUT = 120
 KIMI_TREE_UNKNOWN = ("kimi: the working tree could not be fingerprinted, so a write by the "
                      "reviewer cannot be ruled out")
 
@@ -144,54 +158,172 @@ def prompt_argument(prompt_path):
             "full first and follow it exactly; it is the whole task.")
 
 
-def kimi_agent_file(scratch):
-    """Write the read-only agent definition `kimi --agent-file` loads, and the
-    empty directory passed as `--skills-dir`; return the agent file's path.
-    The body is one fixed line: the review instructions travel in `-p`
-    exactly as they do for codex and copilot, never in here."""
-    os.makedirs(os.path.join(scratch, KIMI_NO_SKILLS), exist_ok=True)
-    path = os.path.join(scratch, KIMI_AGENT_FILE)
-    _write_atomic(path, "---\n"
-                        "name: crew-reviewer\n"
-                        "description: Read-only code reviewer for crew's review round.\n"
-                        "tools: [Read, Grep, Glob]\n"
-                        "disallowedTools: [Write, Edit, Bash]\n"
-                        "---\n"
-                        "You are a read-only code reviewer. Follow the user's message "
-                        "exactly; never modify files.\n")
-    return path
+def _git_bytes(root, args, env):
+    """Raw stdout of one git call, or None when git failed, could not start,
+    or did not answer within SNAPSHOT_GIT_TIMEOUT."""
+    try:
+        done = subprocess.run(["git", *args], cwd=root, env=env, capture_output=True,
+                              stdin=subprocess.DEVNULL, timeout=SNAPSHOT_GIT_TIMEOUT,
+                              check=False)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return done.stdout if done.returncode == 0 else None
+
+
+def _path_digest(path):
+    """What is at `path` now, without following a symlink: a content sha256,
+    `link:<target>`, `dir`, or `missing`. None when it exists and cannot be
+    read -- an unreadable file is "could not tell", and two of those must not
+    compare equal as "unchanged"."""
+    try:
+        mode = os.lstat(path).st_mode
+        if stat.S_ISLNK(mode):
+            return "link:" + os.readlink(path)
+        if stat.S_ISDIR(mode):
+            return "dir"
+        digest = hashlib.sha256()
+        with open(path, "rb") as fh:
+            for block in iter(lambda: fh.read(1 << 20), b""):
+                digest.update(block)
+        return digest.hexdigest()
+    except FileNotFoundError:
+        return "missing"
+    except OSError:
+        return None
 
 
 def tree_fingerprint(root):
-    """sha256 of the working tree's state -- HEAD, porcelain status including
-    untracked files, and the binary diff against HEAD -- with `.work/`
-    excluded (the scratch directory, review.json and the handoff live there).
-    HEAD is in it so a reviewer that COMMITTED its edit is seen too. Taken
-    without optional locks so taking it cannot itself change the index.
+    """The working tree's state as `{path: "<XY> <content digest>"}`, plus
+    `:HEAD` and `:index` -- or None when it cannot be taken.
 
-    None when any git call fails: "could not tell" is its own answer, never a
-    digest two failures would compare equal on."""
+    Every path `git status` lists is in it, with its CONTENTS hashed: modified
+    tracked files, untracked files and IGNORED files alike
+    (`--untracked-files=all --ignored=traditional` lists each file inside an
+    ignored directory, not the directory). Round 1 of T-0028 found the
+    earlier digest hashed only an untracked file's status LINE and skipped
+    ignored files, so a reviewer editing an already-untracked file, or a
+    gitignored `.crew/config.json`, left before == after. `:HEAD` is there so
+    a reviewer that COMMITTED its edit is seen, `:index` (the staged diff) so
+    one that only staged is. `.work/` is excluded -- the scratch directory,
+    review.json and the handoff live there. Taken with GIT_OPTIONAL_LOCKS=0
+    so taking it cannot itself change the index.
+
+    NOT SEEN: a write outside the repository, and a change inside `.git`
+    other than HEAD and the index (a hook, a config). None when any git call
+    fails or times out, or a listed file cannot be read: "could not tell" is
+    its own answer, never a value two failures would compare equal on."""
     env = dict(os.environ, GIT_OPTIONAL_LOCKS="0")
     head = crew_common.git_out(root, "rev-parse", "HEAD")
     if not head:
         return None
-    digest = hashlib.sha256(str(head).encode())
-    for args in (["status", "--porcelain=v1", "-z", "--untracked-files=all"],
-                 ["diff", "HEAD", "--binary"]):
-        done = subprocess.run(["git", *args, "--", ".", ":(exclude).work"], cwd=root,
-                              env=env, capture_output=True, stdin=subprocess.DEVNULL,
-                              check=False)
-        if done.returncode != 0:
+    scope = ["--", ".", ":(exclude).work"]
+    status = _git_bytes(root, ["status", "--porcelain=v1", "-z", "--untracked-files=all",
+                               "--ignored=traditional", *scope], env)
+    staged = _git_bytes(root, ["diff", "--cached", "--binary", *scope], env)
+    if status is None or staged is None:
+        return None
+    snapshot = {":HEAD": head, ":index": hashlib.sha256(staged).hexdigest()}
+    fields = iter(status.split(b"\0"))
+    for entry in fields:
+        if len(entry) < 4:
+            continue
+        code = entry[:2].decode("ascii", "replace")
+        if code[0] in "RC":
+            next(fields, None)  # -z puts a rename's source path in its own field
+        rel = os.fsdecode(entry[3:]).rstrip("/")
+        digest = _path_digest(os.path.join(root, rel))
+        if digest is None:
             return None
-        digest.update(done.stdout + b"\0")
-    return digest.hexdigest()
+        snapshot[rel] = f"{code} {digest}"
+    return snapshot
+
+
+def graph_out(root):
+    """`graph.out` as a repo-relative, `/`-separated directory, or None.
+
+    Resolved the way `crew_freshness._read_graph` and `crew_refresh_check`
+    resolve it: `.crew/crew.json`, else `.crew/config.json`; a missing or
+    wrong-typed value is `graphify-out`; `contained_path` keeps it inside the
+    repository. None when it lands on the root or in `.git`, or a symlink
+    moves it -- an exemption for one generated directory must never widen to
+    the tree."""
+    top = os.path.realpath(root)
+    cfg = {}
+    for name in ("crew.json", "config.json"):
+        text = crew_common.read_text(os.path.join(top, ".crew", name))
+        if text is None:
+            continue
+        try:
+            cfg = json.loads(text)
+        except ValueError:
+            cfg = {}
+        break
+    value = crew_common.dict_or_empty(crew_common.dict_or_empty(cfg).get("graph")).get("out")
+    if not isinstance(value, str) or not value:
+        value = crew_freshness.GRAPH_OUT_DEFAULT
+    real = crew_freshness.contained_path(top, value, crew_freshness.GRAPH_OUT_DEFAULT)
+    named = {os.path.normcase(os.path.normpath(os.path.join(top, v)))
+             for v in (value, crew_freshness.GRAPH_OUT_DEFAULT)}
+    if os.path.normcase(real) not in named:
+        return None
+    rel = os.path.relpath(real, top).replace("\\", "/")
+    if rel in ("", ".") or rel.split("/", 1)[0] in ("..", ".git"):
+        return None
+    return rel
+
+
+def _under(rel, directory):
+    """True when `rel` lies strictly under `directory`, segment by segment:
+    `graphify-outX/a` is not under `graphify-out`."""
+    parts, stem = rel.split("/"), directory.split("/")
+    return len(parts) > len(stem) and parts[:len(stem)] == stem
+
+
+def reviewer_changes(root, before, after):
+    """(changed, generated): the paths whose state differs between two
+    `tree_fingerprint`s, split into those the reviewer is answerable for and
+    those under `graph.out`.
+
+    WHY `graph.out` IS SET ASIDE, and nothing else. graphify's post-commit and
+    post-checkout hooks rebuild it IN THE BACKGROUND, and the normal order is
+    commit, then review -- so the rebuild routinely lands mid-review and spent
+    the round as INCOMPLETE with no reviewer write at all (round 1 of
+    T-0028). Waiting for the rebuild instead was rejected: the hooks are
+    machine-local (`.git/hooks` is untracked), write no lock and no pid
+    crew could wait on, and build first and write last, so a quiet tree before
+    launch proves nothing. Setting the directory aside is safe for the one
+    thing this fingerprint exists for -- a reviewer that FIXED instead of
+    reported: graph.out is generated, holds no code under review, and is
+    overwritten by the next rebuild, so a write there fixes nothing. Every
+    other path, the code map and the diagrams included, still counts, and
+    `:HEAD` and `:index` always do."""
+    changed = sorted(k for k in set(before) | set(after) if before.get(k) != after.get(k))
+    graph = graph_out(root)
+    generated = [p for p in changed
+                 if graph and not p.startswith(":") and _under(p, graph)]
+    return [p for p in changed if p not in generated], generated
+
+
+def _named(paths):
+    shown = ", ".join(paths[:CHANGED_SHOWN])
+    more = len(paths) - CHANGED_SHOWN
+    return shown + (f" and {more} more" if more > 0 else "")
+
+
+def _round_available(root, ticket):
+    """False when the ledger already shows the next reservation will be
+    refused -- no round left, NEEDS_REPLAN, or unreadable. A read without the
+    lock, so it only ever skips work `reserve` would refuse; `reserve` stays
+    the authority either way."""
+    status = review_ledger.status(root, ticket)
+    return (status.get("state") not in (review_ledger.NEEDS_REPLAN, review_ledger.UNKNOWN)
+            and status.get("rounds_left", 0) > 0)
 
 
 def command_for(provider, exe, root, prompt, model, effort, scratch=None):
     if provider == "kimi":
         return [exe, "-p", prompt, "-m", model, "--output-format", "stream-json",
-                "--agent-file", kimi_agent_file(scratch),
-                "--skills-dir", os.path.join(scratch, KIMI_NO_SKILLS)]
+                *kimi_probe.read_only_flags(scratch)]
     if provider == "codex":
         cmd = [exe, "exec", "--json", "--sandbox", "read-only", "--skip-git-repo-check",
                "-C", root]
@@ -398,6 +530,7 @@ def finish(args, number, output, exit_code, timed_out, extra_reasons=()):
         "reasons": result["reasons"], "parts_expected": parts,
         "parts_missing": result["parts_missing"],
         "provider": args.provider, "model": args.model or None,
+        "model_launched": getattr(args, "launched_model", None) or args.model or None,
         "model_family": crew_state.family(args.provider, args.model),
         "bundle_sha256": manifest.get("bundle_sha256"),
         "base": manifest.get("base"), "head": manifest.get("head"),
@@ -426,8 +559,52 @@ def finish(args, number, output, exit_code, timed_out, extra_reasons=()):
         result["verdict"], EXIT_INCOMPLETE)
 
 
+def _probe_kimi(args, before):
+    """Run the probe. None when the review may go on (the binary and alias it
+    resolved are then `args.kimi_exe` and `args.launched_model`); otherwise
+    the refusal message. A probe that changed the tree is refused too."""
+    probed = kimi_probe.probe(args.model or None)
+    if not kimi_probe.launchable(probed["state"]):
+        return f"kimi probe: {probed['state']} - {probed['reason']}"
+    mid = tree_fingerprint(args.root)
+    if before is not None and mid is not None:
+        changed, _generated = reviewer_changes(args.root, before, mid)
+        if changed:
+            return f"{KIMI_PROBE_CHANGED}: {_named(changed)}"
+    args.kimi_exe, args.launched_model = probed["exe"], probed["alias"]
+    return None
+
+
+def _run_kimi(args, number, prompt, before):
+    """Launch the reserved Kimi round and finish it."""
+    extra = []
+    cmd = command_for("kimi", args.kimi_exe, args.root, prompt, args.launched_model, "",
+                      args.scratch)
+    stdout, stderr, code, timed_out = launch(cmd, args.root, args.timeout,
+                                             env=kimi_probe.kimi_env())
+    after = tree_fingerprint(args.root)
+    if before is None or after is None:
+        extra.append(KIMI_TREE_UNKNOWN)
+    else:
+        changed, generated = reviewer_changes(args.root, before, after)
+        if changed:
+            extra.append(f"{KIMI_TREE_CHANGED}: {_named(changed)}")
+        if generated:
+            sys.stderr.write(f"review-run: not counted against the reviewer, under graph.out "
+                             f"(graphify's background rebuild): {_named(generated)}\n")
+    _write_atomic(os.path.join(args.scratch, "kimi-events.jsonl"), stdout)
+    message_text, error = review_verdict.kimi_final_message(stdout)
+    output = message_text or ""
+    if error and not timed_out:
+        extra.append(f"kimi: {kimi_probe.redact(error)}")
+    _write_atomic(os.path.join(args.scratch, "out.txt"), output)
+    _write_atomic(os.path.join(args.scratch, "stderr.txt"), kimi_probe.redact(stderr))
+    return finish(args, number, output, code, timed_out, extra)
+
+
 def run(args):
-    exe = prompt = kimi_alias = None
+    exe = prompt = before = None
+    probed = False
     if args.provider in LAUNCHED:
         if args.provider == "copilot" and not args.model:
             sys.stderr.write("review-run: copilot needs --model (qa.copilot.model); an "
@@ -439,14 +616,18 @@ def run(args):
                              "nothing launched, no round spent\n")
             return EXIT_USAGE
         if args.provider == "kimi":
-            # BEFORE `reserve`: the probe is not a review, and a quota or auth
-            # wall found here must cost no round. Only `ok` goes on.
-            probed = kimi_probe.probe(args.model or None)
-            if not kimi_probe.launchable(probed["state"]):
-                sys.stderr.write(f"review-run: kimi probe: {probed['state']} - "
-                                 f"{probed['reason']}; nothing launched, no round spent\n")
-                return EXIT_USAGE
-            exe, kimi_alias = probed["exe"], probed["alias"]
+            # The fingerprint comes FIRST: the probe is a Kimi call too, so it
+            # is inside the watched window. Then the probe, BEFORE `reserve`:
+            # it is not a review, and a quota or auth wall found here must
+            # cost no round. Only `ok` goes on.
+            before = tree_fingerprint(args.root)
+            if _round_available(args.root, args.ticket):
+                refusal = _probe_kimi(args, before)
+                if refusal:
+                    sys.stderr.write(f"review-run: {refusal}; nothing launched, no round "
+                                     "spent\n")
+                    return EXIT_USAGE
+                probed = True
         prompt = prompt_argument(os.path.join(args.scratch, "prompt.txt"))
 
     ok, number, message = review_ledger.reserve(args.root, args.ticket, args.provider,
@@ -458,25 +639,17 @@ def run(args):
         print(f"ROUND={number}")
         return EXIT_CLEAN
 
-    extra = []
     if args.provider == "kimi":
-        cmd = command_for("kimi", exe, args.root, prompt, kimi_alias, "", args.scratch)
-        before = tree_fingerprint(args.root)
-        stdout, stderr, code, timed_out = launch(cmd, args.root, args.timeout,
-                                                 env=kimi_probe.kimi_env())
-        after = tree_fingerprint(args.root)
-        if before is None or after is None:
-            extra.append(KIMI_TREE_UNKNOWN)
-        elif after != before:
-            extra.append(KIMI_TREE_CHANGED)
-        _write_atomic(os.path.join(args.scratch, "kimi-events.jsonl"), stdout)
-        message_text, error = review_verdict.kimi_final_message(stdout)
-        output = message_text or ""
-        if error and not timed_out:
-            extra.append(f"kimi: {error}")
-        _write_atomic(os.path.join(args.scratch, "out.txt"), output)
-        _write_atomic(os.path.join(args.scratch, "stderr.txt"), kimi_probe.redact(stderr))
-        return finish(args, number, output, code, timed_out, extra)
+        if not probed:
+            # The unlocked status said no round was left, yet one was granted
+            # (a successor plan landed in between). Never launch unprobed: the
+            # round is already spent, so a failing probe ends it INCOMPLETE.
+            refusal = _probe_kimi(args, before)
+            if refusal:
+                return finish(args, number, "", None, False,
+                              [f"{refusal} (probed after the reservation)"])
+        return _run_kimi(args, number, prompt, before)
+    extra = []
     cmd = command_for(args.provider, exe, args.root, prompt, args.model, args.effort)
     stdout, stderr, code, timed_out = launch(cmd, args.root, args.timeout)
     if args.provider == "codex":

@@ -160,17 +160,32 @@ def env_with_path(directory, **extra):
 #                    PROBE_OK") answers: ok | 401 | nomodel | quota:<marker>
 #                    | garbage | nomarker | hang
 #   FAKE_KIMI_MODE   how a review call answers: clean | findings | turnfail
-#                    | write (appends to seed.txt, then answers clean) | fail
-#   FAKE_KIMI_DUMP   when set, each call appends {argv, env, stdin} as one
-#                    JSON line to this file.
+#                    | turnfail-secret (the failure message carries a bearer
+#                    token) | write (appends to seed.txt, then answers clean)
+#                    | fail
+#   FAKE_KIMI_WRITES comma-separated repo-relative paths a review call appends
+#                    to (parent dirs created) before it answers
+#   FAKE_KIMI_PROBE_WRITE  an absolute path the PROBE call appends to
+#   FAKE_KIMI_DUMP   when set, each call appends {argv, env, stdin, cwd,
+#                    agent_file, skills} as one JSON line to this file --
+#                    `agent_file` is the text --agent-file named AT CALL TIME,
+#                    `skills` the listing of --skills-dir.
 _FAKE_KIMI = r'''
 import json, os, re, sys, time
 argv = sys.argv[1:]
 stdin_text = sys.stdin.read()
 dump = os.environ.get("FAKE_KIMI_DUMP")
+def flag(name):
+    return argv[argv.index(name) + 1] if name in argv else None
 if dump:
+    agent = flag("--agent-file")
+    skills = flag("--skills-dir")
     with open(dump, "a", encoding="utf-8") as fh:
-        fh.write(json.dumps({"argv": argv, "stdin": stdin_text,
+        fh.write(json.dumps({"argv": argv, "stdin": stdin_text, "cwd": os.getcwd(),
+                             "agent_file": open(agent, encoding="utf-8").read()
+                             if agent and os.path.isfile(agent) else None,
+                             "skills": sorted(os.listdir(skills))
+                             if skills and os.path.isdir(skills) else None,
                              "env": {k: v for k, v in os.environ.items()
                                      if k.startswith("KIMI_")}}) + "\n")
 prompt = argv[argv.index("-p") + 1] if "-p" in argv else ""
@@ -183,6 +198,9 @@ def say(*events):
     print("\n".join(json.dumps(e) for e in events))
 if prompt == "Reply with exactly: PROBE_OK":
     mode = os.environ.get("FAKE_KIMI_PROBE", "ok")
+    if os.environ.get("FAKE_KIMI_PROBE_WRITE"):
+        with open(os.environ["FAKE_KIMI_PROBE_WRITE"], "a", encoding="utf-8") as fh:
+            fh.write("the probe wrote this\n")
     if mode == "ok":
         say(VERSION, {"role": "assistant", "content": "PROBE_OK"}, RESUME)
     elif mode == "401":
@@ -212,6 +230,11 @@ if mode == "fail":
 if mode == "write":
     with open("seed.txt", "a", encoding="utf-8") as fh:
         fh.write("fixed it instead of reporting it\n")
+for rel in filter(None, os.environ.get("FAKE_KIMI_WRITES", "").split(",")):
+    if os.path.dirname(rel):
+        os.makedirs(os.path.dirname(rel), exist_ok=True)
+    with open(rel, "a", encoding="utf-8") as fh:
+        fh.write("written during the review\n")
 text = prompt
 if prompt.startswith("Your complete instructions are in the file "):
     path = prompt[len("Your complete instructions are in the file "):].split(". Read", 1)[0]
@@ -224,6 +247,11 @@ if mode == "turnfail":
     say({"role": "assistant", "content": body},
         {"role": "meta", "type": "turn.failed",
          "error": {"code": "provider.error", "message": "stream died"}})
+    sys.exit(0)
+if mode == "turnfail-secret":
+    say({"role": "assistant", "content": body},
+        {"role": "meta", "type": "turn.failed",
+         "message": "Bearer eyJhbGciOi.eyJzdWIiOi.c2lnbmF0dXJl rejected"})
     sys.exit(0)
 say(VERSION,
     {"role": "assistant", "content": None,

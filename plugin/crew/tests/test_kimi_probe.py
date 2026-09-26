@@ -4,11 +4,13 @@ Every case runs against a fake `kimi` from review_fixtures.fake_kimi_bin and a
 fixture KIMI_CODE_HOME under tmp_path. No test here calls the real Kimi CLI or
 reads the real `~/.kimi-code`.
 """
+import json
 import os
 import subprocess
 import sys
 
 import pytest
+import yaml
 
 import context  # noqa: F401  pylint: disable=unused-import
 import kimi_probe
@@ -177,14 +179,35 @@ def test_probe_launches_with_stdin_closed_and_a_scrubbed_env(fake, home, monkeyp
     monkeypatch.setenv("KIMI_MODEL_THINKING_EFFORT", "max")
 
     _probe(fake, home, monkeypatch)
-    record = __import__("json").loads(dump.read_text(encoding="utf-8").splitlines()[0])
+    record = json.loads(dump.read_text(encoding="utf-8").splitlines()[0])
 
-    assert record["argv"] == ["-p", "Reply with exactly: PROBE_OK", "-m", "kimi-code/k3",
-                              "--output-format", "stream-json"]
+    assert record["argv"][:6] == ["-p", "Reply with exactly: PROBE_OK", "-m", "kimi-code/k3",
+                                  "--output-format", "stream-json"]
     assert record["stdin"] == ""
     assert not [k for k in record["env"]
                 if k == "KIMI_CODE_INFINITE_RETRY" or k.startswith("KIMI_MODEL_")]
     assert record["env"].get("KIMI_CODE_NO_AUTO_UPDATE") == "1"
+
+
+def test_probe_runs_with_the_review_read_only_controls_outside_the_cwd(fake, home, monkeypatch,
+                                                                      tmp_path):
+    """Round 1 FIX (kimi_probe.py:219): the probe was the one unrestricted
+    Kimi call -- default agent (Write, Edit, Bash), auto-discovered skills,
+    in the repository under review. It now gets the review's agent file and
+    empty skills dir, in a throwaway directory that is gone afterwards."""
+    dump = tmp_path / "dump.jsonl"
+    monkeypatch.setenv("FAKE_KIMI_DUMP", str(dump))
+
+    _probe(fake, home, monkeypatch)
+    record = json.loads(dump.read_text(encoding="utf-8").splitlines()[0])
+    front = yaml.safe_load(record["agent_file"].split("---\n")[1])
+    argv = record["argv"]
+
+    assert (front["tools"], front["disallowedTools"], record["skills"]) == (
+        ["Read", "Grep", "Glob"], ["Write", "Edit", "Bash"], [])
+    assert os.path.dirname(argv[argv.index("--agent-file") + 1]) == record["cwd"]
+    assert os.path.realpath(record["cwd"]) != os.path.realpath(os.getcwd())
+    assert not os.path.exists(record["cwd"])
 
 
 def test_kimi_env_drops_retry_and_model_overrides():

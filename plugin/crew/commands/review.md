@@ -212,7 +212,8 @@ apply the same strike to the provider you are about to run. When the source is
 |---|---|
 | `claude` (default) | `claude` — the `reviewer` fallback |
 | `codex` | `codex` |
-| `copilot` | whichever family `dev.copilot.model` names — `gemini-*` strikes nothing here, `claude-*` strikes the fallback, `gpt-*` strikes Codex |
+| `kimi` | `kimi`, and any Copilot pin to a `kimi-*` model |
+| `copilot` | whichever family `dev.copilot.model` names — `gemini-*` strikes nothing here, `claude-*` strikes the fallback, `gpt-*` strikes Codex, `kimi-*` strikes Kimi |
 
 A family reviewing its own output agrees with itself, and that is the exact
 failure this command exists to catch. Apply the strike at review time. Do not
@@ -237,7 +238,7 @@ first surviving provider that passes its probe:
 | Provider | Probe | Runs |
 |---|---|---|
 | `codex` | `command -v codex` | step 2a |
-| `kimi` | `kimi_probe.py`: state `ok` (`not-installed` / `not-authenticated` / `rate-limited` / `unknown` each skip, named) | step 2d |
+| `kimi` | none here — `review_run.py` runs `kimi_probe.py` itself before reserving; do not run it separately (a second live request). Exit 2 names a state other than `ok`: skip | step 2d |
 | `copilot` | `command -v copilot` **and** `qa.copilot.model` is set | step 2b |
 | `claude` | always passes | step 2c |
 
@@ -428,7 +429,7 @@ EOF
 ```
 
 **Step 2a — Codex, 2b — Copilot, 2d — Kimi.** `review_run.py` reserves the round, then launches the reviewer with stdin closed (a real run hung on stdin), then computes the verdict and writes `.work/tickets/$TICKET/review.json`. Codex runs as `codex exec --json --sandbox read-only`, read from its event stream, so a failed turn is INCOMPLETE even at exit 0. Copilot keeps `--deny-tool write --deny-tool shell`: a reviewer that can edit the code can "fix" a defect instead of reporting it. Empty model/effort pass no flag.
-Kimi reads the same `$SCRATCH/prompt.txt`, byte-identical per this file's invariant; `review_run.py` runs `kimi_probe.py` BEFORE reserving (one tiny request, never a round), and since `kimi -p` cannot be made read-only by a flag, a working tree that changed during the run makes the round INCOMPLETE. Empty `QA_KIMI_MODEL` means the CLI's `default_model`.
+Kimi reads the same `$SCRATCH/prompt.txt`, byte-identical per this file's invariant; `review_run.py` runs `kimi_probe.py` BEFORE reserving (one tiny request, never a round), and since `kimi -p` cannot be made read-only by a flag, a working tree that changed from before the probe to after the review makes the round INCOMPLETE, naming the paths (`graph.out`, rewritten by graphify's background rebuild, is set aside). Empty `QA_KIMI_MODEL` means the CLI's `default_model`.
 
 ```bash
 python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/review_run.py --root . --ticket "$TICKET" \

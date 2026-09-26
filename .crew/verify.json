@@ -145,7 +145,7 @@
                 "plugin/crew/tests/test_auto_clear.py",
                 "plugin/crew/tests/test_verify_absent_and_diagram_kind.py"],
       "seconds": 52,
-      "run": ["python3 -m pytest plugin/crew/tests/test_crew_state.py plugin/crew/tests/test_module_split.py plugin/crew/tests/test_docs_routing.py plugin/crew/tests/test_endpoints.py plugin/crew/tests/test_incident.py plugin/crew/tests/test_platform_sync.py plugin/crew/tests/test_hook_once.py plugin/crew/tests/test_handoff_staleness.py plugin/crew/tests/test_context_watch.py plugin/crew/tests/test_auto_clear.py plugin/crew/tests/test_verify_absent_and_diagram_kind.py -q"],
+      "run": ["python3 -m pytest plugin/crew/tests/test_crew_state.py plugin/crew/tests/test_module_split.py plugin/crew/tests/test_docs_routing.py plugin/crew/tests/test_endpoints.py plugin/crew/tests/test_incident.py plugin/crew/tests/test_platform_sync.py plugin/crew/tests/test_hook_once.py plugin/crew/tests/test_handoff_staleness.py plugin/crew/tests/test_context_watch.py plugin/crew/tests/test_auto_clear.py plugin/crew/tests/test_verify_absent_and_diagram_kind.py plugin/crew/tests/test_provider_table.py -q"],
       "reach": "local",
       "why": "25s for the four-module core; PROVEN red by regrouping read_metrics on cells[0] instead of cells[1]. TWO MUTATIONS SURVIVED IT on 2026-09-13 and are open coverage holes, recorded here rather than left for someone to rediscover: (1) renaming `reportTracked` in crew_state.py leaves the whole suite green, because the since-deleted test_pm_brief.py hand-built the graph dict with that literal key and never calls crew_state._read_graph - so producer and consumer are only ever tested against a string the test itself supplies, and a rename degrades the pulse to the `--no-viz` form that this repo's CLAUDE.md forbids; (2) changing the anchor truncation `[:7]` to `[:40]` at all six sites leaves the ENTIRE 965-test crew suite green, so the comparison CLAUDE.md documents as load-bearing is tested nowhere. reach: local - pytest against this repo's own state/pm test modules, no network call." },
 
@@ -265,11 +265,18 @@
                 "plugin/crew/hooks/scripts/review_verdict.py",
                 "plugin/crew/tests/test_kimi_probe.py",
                 "plugin/crew/tests/test_review_run_kimi.py",
-                "plugin/crew/tests/sabotage_kimi.py"],
-      "seconds": 29,
-      "run": ["python3 -m pytest plugin/crew/tests/test_kimi_probe.py plugin/crew/tests/test_review_run_kimi.py plugin/crew/tests/test_review_verdict.py plugin/crew/tests/test_review_ledger.py -q"],
+                "plugin/crew/tests/test_review_verdict.py",
+                "plugin/crew/tests/test_kimi_docs.py",
+                "plugin/crew/tests/review_fixtures.py",
+                "plugin/crew/tests/fixtures/kimi-stream-2.1.1/*",
+                "plugin/crew/tests/sabotage_kimi.py",
+                "plugin/crew/commands/review.md",
+                "plugin/crew/skills/crew-setup/scripts/providers.sh",
+                "plugin/crew/skills/crew-providers/SKILL.md"],
+      "seconds": 33,
+      "run": ["python3 -m pytest plugin/crew/tests/test_kimi_probe.py plugin/crew/tests/test_review_run_kimi.py plugin/crew/tests/test_review_verdict.py plugin/crew/tests/test_kimi_docs.py plugin/crew/tests/test_review_ledger.py -q"],
       "reach": "local",
-      "why": "29s, timed 2026-09-25 on T-0028 (133 tests). The Kimi Code provider: the five-state probe (only ok launches), probe-before-reserve so a quota or auth wall spends no round, the read-only agent file, the working-tree fingerprint, and the stream-json parse; plus the codex/copilot launch and ledger tests it shares review_run.py with. PROVEN red by every entry of KIMI_MUTATIONS in sabotage_kimi.py. The parse and the probe's classify are also checked against fixtures/kimi-stream-2.1.1/ok.jsonl, the owner's one captured run (2026-09-25, session id redacted). reach: local - a fake `kimi` on PATH and a fixture KIMI_CODE_HOME under tmp_path, no network and no real Kimi call." }
+      "why": "32.6s, timed 2026-09-26 on T-0028 review round 2 (182 tests, Linux host, load average 4.3); 29s and 133 tests before it. Round 1 found the fake kimi (review_fixtures.py), the captured fixture, test_review_verdict.py and test_kimi_docs.py reaching no rule that runs this suite, so they are mapped here now, with review.md, providers.sh and crew-providers SKILL.md, whose Kimi prose test_kimi_docs.py checks; test_kimi_docs.py::test_every_kimi_file_reaches_a_rule_that_runs_its_tests fails if one drops off. The Kimi Code provider: the five-state probe (only ok launches), probe-before-reserve so a quota or auth wall spends no round, the read-only agent file on the probe and the review alike, the working-tree fingerprint (untracked and gitignored contents, HEAD and the index; graph.out set aside for graphify's background rebuild; taken before the probe), and the stream-json parse; plus the codex/copilot launch and ledger tests it shares review_run.py with. PROVEN red by every entry of KIMI_MUTATIONS in sabotage_kimi.py. The parse and the probe's classify are also checked against fixtures/kimi-stream-2.1.1/ok.jsonl, the owner's one captured run (2026-09-25, session id redacted). reach: local - a fake `kimi` on PATH and a fixture KIMI_CODE_HOME under tmp_path, no network and no real Kimi call." }
   ],
 
   "default": ["bash _verify/smoke.sh"],

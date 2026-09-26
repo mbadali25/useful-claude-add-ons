@@ -19,17 +19,28 @@ All notable changes to this repository are documented here. Format follows [Keep
   - **Family token `kimi`, fixed by provider.** `family("kimi", <any model>)`
     is `kimi` before the model is read - `k3` would otherwise parse as `k` and
     clear Kimi to review Kimi - and it equals a Copilot `kimi-*` pin's family,
-    so each bars the other.
+    so each bars the other. A bare Kimi Code id served by another provider
+    (`k3` through Codex or Copilot) is `kimi` too: a model whose leading
+    letters are exactly `k` followed by a digit.
   - **New probe, `hooks/scripts/kimi_probe.py`**: `ok`, `not-installed`,
     `not-authenticated`, `rate-limited` or `unknown`, each its own value; only
     `ok` launches. `review_run.py --provider kimi` runs it BEFORE the round is
-    reserved, so a quota or auth failure spends no round. The live stage spends
-    one tiny request.
+    reserved, so a quota or auth failure spends no round, and skips it when
+    the ledger already shows no round left. The live stage spends one tiny
+    request; `review.md` no longer runs the probe a second time.
   - **Read-only without a flag.** `kimi -p` forces permission mode `auto`, so
-    the launch passes a Read/Grep/Glob-only `--agent-file` (Write, Edit, Bash
-    disallowed) and an empty `--skills-dir`, and fingerprints the working tree
-    before and after; a changed tree - or one git could not fingerprint -
-    makes the round INCOMPLETE. A write outside the repository is not caught.
+    every Kimi call - the probe too, in a throwaway directory - passes a
+    Read/Grep/Glob-only `--agent-file` (Write, Edit, Bash disallowed) and an
+    empty `--skills-dir`. The working tree is fingerprinted before the probe
+    and after the review, hashing the contents of untracked and gitignored
+    files as well as tracked ones, HEAD and the index; a changed tree - or
+    one git could not fingerprint, or a git that fails or hangs - makes the
+    round INCOMPLETE and names the paths, and a probe that changed it spends
+    no round. `graph.out` is set aside: graphify's background rebuild
+    rewrites it mid-review, and a write there fixes no code. Not caught: a
+    write outside the repository, or inside `.git` beyond HEAD and the index.
+    Stream error text is redacted before it becomes a reason, and
+    `review.json` records the alias actually launched as `model_launched`.
   - `qa.kimi.model` / `dev.kimi.model` (default `null`); no
     `reasoningEffort` key. `review.md` step 2d, `model.md`, `crew-providers`
     and `providers.sh` (probe only with `--probe-kimi`) document it.

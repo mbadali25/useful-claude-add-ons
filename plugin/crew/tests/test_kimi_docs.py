@@ -4,8 +4,14 @@ review.md is the mechanism, not commentary: a probe row that said
 `command -v kimi` would put PATH-as-eligibility back, which is the exact thing
 `kimi_probe.py` exists to replace.
 """
+import fnmatch
+import json
 import os
 import re
+import shutil
+import subprocess
+
+import pytest
 
 CREW = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 KIMI_IDS = ("k3", "kimi-for-coding", "kimi-for-coding-highspeed")
@@ -94,11 +100,104 @@ def test_alternative_providers_points_to_the_first_class_kimi_route():
     assert "--provider kimi" in section or "Kimi Code CLI" in section
 
 
-def test_providers_sh_reports_kimi_and_probes_only_on_request():
-    text = _read("skills", "crew-setup", "scripts", "providers.sh")
+def _providers_sh(tmp_path, *args):
+    """Run providers.sh with a fake `kimi` and fake pythons on PATH; return
+    (stdout, every argv a python was invoked with)."""
+    fakes = tmp_path / "bin"
+    fakes.mkdir(parents=True)
+    log = tmp_path / "python-calls.txt"
+    (fakes / "kimi").write_text("#!/bin/sh\necho 'kimi 2.1.1'\n", encoding="utf-8",
+                                newline="\n")
+    for name in ("python3", "python", "py"):
+        (fakes / name).write_text(f'#!/bin/sh\necho "$*" >> "{log}"\n'
+                                  'echo "kimi: ok - fake"\n', encoding="utf-8", newline="\n")
+    for script in fakes.iterdir():
+        script.chmod(0o755)
+    env = dict(os.environ, PATH=f"{fakes}{os.pathsep}/usr/bin{os.pathsep}/bin",
+               HOME=str(tmp_path))
+    done = subprocess.run(["bash", os.path.join(CREW, "skills", "crew-setup", "scripts",
+                                                "providers.sh"), *args],
+                          env=env, capture_output=True, text=True, check=False,
+                          stdin=subprocess.DEVNULL, timeout=60)
+    calls = log.read_text(encoding="utf-8").splitlines() if log.exists() else []
+    return done.stdout, calls
 
-    assert "command -v kimi" in text and "kimi_probe.py" in text
-    probe_lines = [line for line in text.splitlines()
-                   if "kimi_probe.py" in line and not line.lstrip().startswith(("#", "say"))]
-    assert probe_lines and all("--probe-kimi" in text for _ in probe_lines)
-    assert 'if [ "$PROBE_KIMI" = 1 ]' in text
+
+@pytest.mark.skipif(shutil.which("bash") is None or os.name == "nt",
+                    reason="providers.sh is a bash script; runs where bash is /bin-rooted")
+def test_providers_sh_reports_kimi_and_probes_only_on_request(tmp_path):
+    """Round 1 FIX (test_kimi_docs.py:103): the old check never used its loop
+    variable, so an UNCONDITIONAL probe -- one Kimi request on every
+    providers.sh run -- passed. Run the script instead of reading it."""
+    quiet_out, quiet_calls = _providers_sh(tmp_path / "quiet")
+    asked_out, asked_calls = _providers_sh(tmp_path / "asked", "--probe-kimi")
+
+    assert "kimi 2.1.1" in quiet_out and "kimi: ok - fake" in asked_out
+    assert [c for c in quiet_calls if "kimi_probe.py" in c] == []
+    assert len([c for c in asked_calls if "kimi_probe.py" in c]) == 1
+
+
+def _step_1b_rows():
+    text = _read("commands", "review.md")
+    table = text.split("| `dev.provider` | Struck from QA |", 1)[1].split("\n\n", 1)[0]
+    return {line.split("|")[1].strip(): line for line in table.splitlines()
+            if line.startswith("| `")}
+
+
+def test_review_step_1b_strikes_kimi_for_a_kimi_author():
+    """Round 1 FIX (review.md:211): the strike table had no kimi row, so a
+    kimi-authored diff gave the agent nothing to strike."""
+    row = _step_1b_rows()["`kimi`"]
+
+    assert "`kimi`" in row.split("|")[2] and "`kimi-*`" in row
+
+
+def test_review_step_1b_copilot_kimi_pin_strikes_kimi():
+    assert "`kimi-*` strikes Kimi" in _step_1b_rows()["`copilot`"]
+
+
+def test_review_kimi_probe_row_spends_one_request_not_two():
+    """Round 1 NIT (review.md:240): the walk ran kimi_probe.py, and then
+    review_run.py ran it again -- two live requests per Kimi review."""
+    row = next(r for r in _probe_rows(_read("commands", "review.md"))
+               if r.startswith("| `kimi`"))
+
+    assert "review_run.py" in row and "do not run it separately" in row
+
+
+def _gate_matches(path, pat):
+    """verify-gate.sh's `matches()`, as written there."""
+    cands = {pat}
+    if pat.startswith("**/"):
+        cands.add(pat[3:])
+    cands.add(pat.replace("/**/", "/"))
+    return any(fnmatch.fnmatch(path, c) for c in cands)
+
+
+_KIMI_SUITE = ("test_kimi_probe.py", "test_review_run_kimi.py", "test_review_verdict.py",
+               "test_kimi_docs.py")
+
+
+@pytest.mark.parametrize("path,needs", [
+    *[(f"plugin/crew/{p}", _KIMI_SUITE) for p in (
+        "hooks/scripts/kimi_probe.py", "hooks/scripts/review_run.py",
+        "hooks/scripts/review_verdict.py", "tests/test_kimi_probe.py",
+        "tests/test_review_run_kimi.py", "tests/test_review_verdict.py",
+        "tests/test_kimi_docs.py", "tests/review_fixtures.py", "tests/sabotage_kimi.py",
+        "tests/fixtures/kimi-stream-2.1.1/ok.jsonl",
+        "tests/fixtures/kimi-stream-2.1.1/ok.exit",
+        "commands/review.md", "skills/crew-setup/scripts/providers.sh",
+        "skills/crew-providers/SKILL.md")],
+    ("plugin/crew/hooks/scripts/crew_state.py", ("test_provider_table.py",)),
+])
+def test_every_kimi_file_reaches_a_rule_that_runs_its_tests(path, needs):
+    """Round 1 FIX (.crew/verify.json:263): the fake kimi, the fixture and two
+    Kimi test files matched no rule running the Kimi suite, and crew_state.py's
+    rule never ran test_provider_table.py, which holds the family guard."""
+    with open(os.path.join(CREW, "..", "..", ".crew", "verify.json"), encoding="utf-8") as fh:
+        rules = json.load(fh)["rules"]
+
+    runs = " ".join(c for r in rules if any(_gate_matches(path, p) for p in r["paths"])
+                    for c in r["run"])
+
+    assert [n for n in needs if n not in runs] == [], path

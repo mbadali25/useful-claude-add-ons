@@ -1454,6 +1454,13 @@ def family(provider, model=None):
     to a Copilot-hosted Kimi pin (`kimi-k3` -> `kimi`) and would clear Kimi to
     review Kimi's own work. The CLI serves only Kimi models, so the provider
     alone is the proof.
+
+    The same trap waits wherever else a bare Kimi Code id is served -- the
+    documented Kimi-through-Codex route, or a Copilot pin -- so a model whose
+    leading letters are exactly `k` followed by a digit (`k3`, `K3`,
+    `kimi-code/k3`) is `kimi` whatever the provider. That is a SHAPE, not an
+    id list: it goes stale no faster than the leading-letters rule itself,
+    and `kimi-k3`, `keystone-1` and a bare `k` are untouched by it.
     """
     if provider == "claude":
         return "claude"
@@ -1465,6 +1472,8 @@ def family(provider, model=None):
         # `.`, and a bare digit boundary as in `gpt5`.
         bare = model.strip().lower().rsplit("/", 1)[-1]
         head = re.match(r"[a-z]+", bare)
+        if re.match(r"k\d", bare):
+            return "kimi"
         return head.group() if head else bare
     if provider == "codex":
         return "gpt"

@@ -340,15 +340,21 @@ lives in the alias's `default_effort` in `~/.kimi-code/config.toml`.
 
 **Probe before a round is spent.** `kimi_probe.py` answers `ok`,
 `not-installed`, `not-authenticated`, `rate-limited` or `unknown`; only `ok`
-launches, and `review_run.py` runs it before the round is reserved. The live
-stage spends one tiny request.
+launches, and `review_run.py` runs it before the round is reserved -- skipped
+when the ledger shows no round left. The live stage spends one tiny request;
+do not run it separately before `review_run.py`, which would spend two.
 
-**Read-only is not a flag here.** `kimi -p` forces permission mode `auto`. Crew
-passes an agent file allowing only Read, Grep and Glob (Write, Edit and Bash
-disallowed) and an empty `--skills-dir`, and fingerprints the working tree
-before and after: a changed tree makes the round INCOMPLETE.
-A write outside the repo is not caught by either control. Offered pins and the
-rest: `alternative-providers.md`.
+**Read-only is not a flag here.** `kimi -p` forces permission mode `auto`. Every
+`kimi` call crew makes, the probe included, passes an agent file allowing only
+Read, Grep and Glob (Write, Edit and Bash disallowed) and an empty
+`--skills-dir`; the probe runs in a throwaway directory. The working tree is
+fingerprinted before the probe and after the review, the CONTENTS of untracked
+and gitignored files included: a probe that changed it spends no round, and a
+review that changed it is INCOMPLETE, naming the paths. `graph.out` is set
+aside -- graphify's background rebuild rewrites it mid-review, and a write there
+fixes no code. Not caught by either control: a write outside the repo, or
+inside `.git` beyond HEAD and the index. Offered pins and the rest:
+`alternative-providers.md`.
 
 ## Gemini (design second opinion)
 

@@ -35,6 +35,14 @@ The id is resolved to the alias whose `model` equals it and whose provider has
 `type = "kimi"`; the provider type is what proves the family is Kimi. An id
 given AS an alias is accepted as that alias.
 
+READ-ONLY, LIKE THE REVIEW. The live call gets the same controls as the
+review launch (`review_run.py`): `--agent-file` naming the agent that allows
+Read, Grep and Glob and disallows Write, Edit and Bash, and an empty
+`--skills-dir`. It runs in a throwaway directory, removed afterwards, rather
+than in the caller's directory -- so it neither auto-loads that repository's
+AGENTS.md nor lands a stray relative write there. `write_agent_file` is the ONE
+definition of that agent; review_run.py calls it too.
+
 SECRETS. The static stage reads config.toml for STRUCTURE only: whether a key
 is present, never its value, and nothing under `credentials/` is opened --
 only counted. Anything echoed from the CLI's stderr goes through `redact`
@@ -49,6 +57,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 
 try:
     import tomllib as _tomllib  # Python 3.11+, stdlib
@@ -61,6 +70,8 @@ STATES = ("ok", "not-installed", "not-authenticated", "rate-limited", "unknown")
 PROBE_PROMPT = "Reply with exactly: PROBE_OK"
 PROBE_MARKER = "PROBE_OK"
 DEFAULT_TIMEOUT = 60
+AGENT_FILE = "kimi-reviewer.md"
+NO_SKILLS = "kimi-no-skills"
 
 _AUTH_MARKERS = re.compile(
     r"invalid_authentication_error|No model configured|kimi login|\bUnauthori[sz]ed\b",
@@ -96,6 +107,36 @@ def kimi_env(base=None):
            if k != "KIMI_CODE_INFINITE_RETRY" and not k.startswith("KIMI_MODEL_")}
     env["KIMI_CODE_NO_AUTO_UPDATE"] = "1"
     return env
+
+
+def write_agent_file(directory):
+    """Write the read-only agent definition `kimi --agent-file` loads, and the
+    empty directory passed as `--skills-dir`, into `directory`; return the
+    agent file's path. The body is one fixed line: the review instructions
+    travel in `-p` exactly as they do for codex and copilot, never in here."""
+    os.makedirs(os.path.join(directory, NO_SKILLS), exist_ok=True)
+    path = os.path.join(directory, AGENT_FILE)
+    text = ("---\n"
+            "name: crew-reviewer\n"
+            "description: Read-only code reviewer for crew's review round.\n"
+            "tools: [Read, Grep, Glob]\n"
+            "disallowedTools: [Write, Edit, Bash]\n"
+            "---\n"
+            "You are a read-only code reviewer. Follow the user's message "
+            "exactly; never modify files.\n")
+    tmp = f"{path}.{os.getpid()}.tmp"
+    with open(tmp, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write(text)
+    os.replace(tmp, path)
+    return path
+
+
+def read_only_flags(directory):
+    """`--agent-file <dir>/kimi-reviewer.md --skills-dir <dir>/kimi-no-skills`,
+    written into `directory` first. Every `kimi` launch crew makes carries
+    these: the probe and the review alike."""
+    return ["--agent-file", write_agent_file(directory),
+            "--skills-dir", os.path.join(directory, NO_SKILLS)]
 
 
 def kimi_home(env=None):
@@ -158,11 +199,11 @@ def _credential_present(config, alias, home):
         return False
 
 
-def _run(cmd, env, timeout):
+def _run(cmd, env, timeout, cwd=None):
     """(stdout, stderr, exit_code, timed_out), stdin closed."""
     try:
         done = subprocess.run(cmd, stdin=subprocess.DEVNULL, capture_output=True, text=True,
-                              encoding="utf-8", errors="replace", env=env,
+                              encoding="utf-8", errors="replace", env=env, cwd=cwd,
                               timeout=timeout, check=False)
     except subprocess.TimeoutExpired:
         return "", "", None, True
@@ -216,12 +257,16 @@ def probe(model_id=None, which=shutil.which, home=None, runner=None,
         return _result("not-authenticated", "the provider has no api_key and no stored "
                                             "OAuth credential - run `kimi login`",
                        alias=alias, exe=exe)
-    cmd = [exe, "-p", PROBE_PROMPT, "-m", alias, "--output-format", "stream-json"]
+    workdir = tempfile.mkdtemp(prefix="crew-kimi-probe-")
     try:
-        stdout, stderr, code, timed_out = (runner or _run)(cmd, kimi_env(), timeout)
+        cmd = [exe, "-p", PROBE_PROMPT, "-m", alias, "--output-format", "stream-json",
+               *read_only_flags(workdir)]
+        stdout, stderr, code, timed_out = (runner or _run)(cmd, kimi_env(), timeout, workdir)
     except Exception as exc:  # pylint: disable=broad-except  # any launch failure is `unknown`
         return _result("unknown", f"the probe could not run: {type(exc).__name__}",
                        alias=alias, exe=exe)
+    finally:
+        shutil.rmtree(workdir, ignore_errors=True)
     state, reason = classify(stdout, stderr, code, timed_out, timeout)
     return _result(state, reason, alias=alias, exe=exe)
 

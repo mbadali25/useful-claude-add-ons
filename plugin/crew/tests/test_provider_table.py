@@ -2408,6 +2408,23 @@ def test_family_kimi_is_provider_determined(model):
     assert crew_state.family("kimi", model) == "kimi"
 
 
+@pytest.mark.parametrize("provider,model", [("codex", "k3"), ("copilot", "k3"),
+                                            ("copilot", "K3"), ("codex", "kimi-code/k3"),
+                                            ("copilot", "k2.7-code")])
+def test_family_of_a_bare_kimi_code_id_is_kimi_whoever_serves_it(provider, model):
+    """Round 1 NIT (crew_state.py:1460): only provider `kimi` pinned `k3` to
+    the kimi family, so a Kimi Code id served through the documented
+    Kimi-through-Codex route authored as family `k` and cleared the kimi QA
+    provider to review Kimi's own work."""
+    assert crew_state.family(provider, model) == "kimi"
+
+
+@pytest.mark.parametrize("model,expected", [("kimi-k3", "kimi"), ("gpt5", "gpt"),
+                                            ("keystone-1", "keystone"), ("k", "k")])
+def test_the_kimi_code_id_rule_leaves_its_neighbours_alone(model, expected):
+    assert crew_state.family("copilot", model) == expected
+
+
 def test_copilot_kimi_author_bars_kimi_provider():
     author = crew_state.family("copilot", "kimi-k3")
     cfg = {"qa": {"provider": "auto", "order": ["kimi", "claude"],

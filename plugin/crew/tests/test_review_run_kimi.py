@@ -14,9 +14,10 @@ import pytest
 import yaml
 
 import context  # noqa: F401  pylint: disable=unused-import
+import kimi_probe
 import review_ledger as rl
 import review_run
-from review_fixtures import env_with_path, fake_kimi_bin, init_repo, kimi_home
+from review_fixtures import env_with_path, fake_kimi_bin, git, init_repo, kimi_home
 
 _SCRIPTS = os.path.join(context._ROOT, "hooks", "scripts")  # pylint: disable=protected-access
 _RUN = os.path.join(_SCRIPTS, "review_run.py")
@@ -175,7 +176,7 @@ def test_kimi_agent_file_is_read_only(tmp_path):
     scratch.mkdir()
     (scratch / "prompt.txt").write_text("Review this.\nREAD every part.\n", encoding="utf-8")
 
-    path = review_run.kimi_agent_file(str(scratch))
+    path = kimi_probe.write_agent_file(str(scratch))
     text = open(path, encoding="utf-8").read()  # pylint: disable=consider-using-with
     front = yaml.safe_load(text.split("---\n")[1])
     body = text.split("---\n", 2)[2]
@@ -227,3 +228,205 @@ def test_run_kimi_unfingerprintable_tree_is_incomplete(repo, tmp_path, monkeypat
 
     assert (code, review["verdict"]) == (3, "INCOMPLETE")
     assert any("could not be fingerprinted" in r for r in review["reasons"])
+
+
+# --- round 1 FIX review_run.py:179: untracked and ignored contents --------------
+
+
+def _ignored_repo(repo):
+    (repo / ".gitignore").write_text(".crew/config.json\ncache/\n", encoding="utf-8")
+    git(repo, "add", ".gitignore")
+    git(repo, "commit", "-qm", "ignore")
+    (repo / ".crew").mkdir()
+    (repo / ".crew" / "config.json").write_text('{"a": 1}\n', encoding="utf-8")
+    (repo / "cache").mkdir()
+    (repo / "cache" / "old.bin").write_text("old\n", encoding="utf-8")
+    (repo / "u.py").write_text("x = 1\n", encoding="utf-8")
+    return repo
+
+
+def _edit_untracked(repo):
+    (repo / "u.py").write_text("x = 2\n", encoding="utf-8")
+
+
+def _edit_ignored(repo):
+    (repo / ".crew" / "config.json").write_text('{"a": 2}\n', encoding="utf-8")
+
+
+def _new_file_in_ignored_dir(repo):
+    (repo / "cache" / "new.bin").write_text("new\n", encoding="utf-8")
+
+
+def _delete_untracked(repo):
+    (repo / "u.py").unlink()
+
+
+def _stage_untracked(repo):
+    git(repo, "add", "u.py")
+
+
+def _restage_under_the_same_status(repo):
+    """Status stays `MM` and the worktree bytes stay the same; only what is
+    staged changes -- the case the per-path entries cannot see."""
+    (repo / "seed.txt").write_text("staged by the reviewer\n", encoding="utf-8")
+    git(repo, "add", "seed.txt")
+    (repo / "seed.txt").write_text("worktree\n", encoding="utf-8")
+
+
+@pytest.mark.parametrize("edit", [_edit_untracked, _edit_ignored, _new_file_in_ignored_dir,
+                                  _delete_untracked, _stage_untracked,
+                                  _restage_under_the_same_status])
+def test_tree_fingerprint_sees_untracked_and_ignored_contents(repo, edit):
+    """Round 1: hashing only the porcelain LINE of an already-untracked file,
+    and skipping ignored files, let an edit to either leave before == after."""
+    _ignored_repo(repo)
+    (repo / "seed.txt").write_text("staged\n", encoding="utf-8")
+    git(repo, "add", "seed.txt")
+    (repo / "seed.txt").write_text("worktree\n", encoding="utf-8")
+    before = review_run.tree_fingerprint(str(repo))
+
+    edit(repo)
+
+    assert review_run.tree_fingerprint(str(repo)) != before
+
+
+@pytest.mark.parametrize("failure", [OSError("git vanished"),
+                                     review_run.subprocess.TimeoutExpired("git", 1)])
+def test_tree_fingerprint_git_that_fails_to_run_is_none(repo, monkeypatch, failure):
+    """Round 1 NIT: an OSError or a hung git must be "could not tell", never
+    a crash or a hang after the round is reserved."""
+    def boom(*_args, **_kwargs):
+        raise failure
+
+    monkeypatch.setattr(review_run.crew_common, "git_out", lambda *_a: "0" * 40)
+    monkeypatch.setattr(review_run.subprocess, "run", boom)
+
+    assert review_run.tree_fingerprint(str(repo)) is None
+
+
+# --- round 1 FIX review_run.py:464: a background graph rebuild ------------------
+
+
+def _graph_repo(repo):
+    (repo / ".gitignore").write_text("graphify-out/cache/\n", encoding="utf-8")
+    (repo / "graphify-out").mkdir()
+    (repo / "graphify-out" / "graph.json").write_text("{}\n", encoding="utf-8")
+    git(repo, "add", ".gitignore", "graphify-out")
+    git(repo, "commit", "-qm", "graph")
+    return repo
+
+
+def test_run_kimi_graph_rebuild_during_the_review_is_not_the_reviewers(repo, tmp_path):
+    """graphify's post-commit rebuild rewrites graph.json and its cache in the
+    background; that must not spoil and spend the round."""
+    _graph_repo(repo)
+
+    result, review = _run(repo, tmp_path, FAKE_KIMI_WRITES="graphify-out/graph.json,"
+                                                           "graphify-out/cache/ast.json")
+
+    assert (result.returncode, review["verdict"]) == (0, "CLEAN"), review["reasons"]
+    assert "graphify-out/graph.json" in result.stderr
+
+
+@pytest.mark.parametrize("writes,named", [
+    ("graphify-out/graph.json,seed.txt", "seed.txt"),
+    ("graphify-outX/graph.json", "graphify-outX/graph.json"),
+])
+def test_run_kimi_a_write_beside_the_graph_is_still_incomplete(repo, tmp_path, writes, named):
+    _graph_repo(repo)
+
+    result, review = _run(repo, tmp_path, FAKE_KIMI_WRITES=writes)
+
+    assert (result.returncode, review["verdict"]) == (3, "INCOMPLETE")
+    reason = next(r for r in review["reasons"] if "working tree changed" in r)
+    assert named in reason and "graphify-out/graph.json" not in reason.replace(named, "")
+
+
+def test_run_kimi_honours_a_configured_graph_out(repo, tmp_path):
+    (repo / ".crew").mkdir()
+    (repo / ".crew" / "config.json").write_text('{"graph": {"out": "docs/graph"}}\n',
+                                                encoding="utf-8")
+    git(repo, "add", ".crew")
+    git(repo, "commit", "-qm", "cfg")
+
+    result, review = _run(repo, tmp_path, FAKE_KIMI_WRITES="docs/graph/graph.json")
+
+    assert (result.returncode, review["verdict"]) == (0, "CLEAN"), review["reasons"]
+
+
+# --- round 1 FIX kimi_probe.py:219: the probe is watched and read-only ---------
+
+
+def test_run_kimi_probe_is_read_only_and_runs_outside_the_repo(repo, tmp_path):
+    dump = tmp_path / "dump.jsonl"
+
+    _run(repo, tmp_path, FAKE_KIMI_DUMP=str(dump))
+    probe = json.loads(dump.read_text(encoding="utf-8").splitlines()[0])
+    front = yaml.safe_load(probe["agent_file"].split("---\n")[1])
+
+    assert (front["tools"], front["disallowedTools"], probe["skills"]) == (
+        ["Read", "Grep", "Glob"], ["Write", "Edit", "Bash"], [])
+    assert os.path.realpath(probe["cwd"]) != os.path.realpath(repo)
+
+
+def test_run_kimi_probe_that_writes_the_tree_spends_no_round(repo, tmp_path):
+    """The `before` fingerprint is taken BEFORE the probe, so a probe call
+    that wrote into the repository is seen -- and refused before any round is
+    reserved."""
+    result, review = _run(repo, tmp_path, FAKE_KIMI_PROBE_WRITE=str(repo / "seed.txt"))
+
+    assert (result.returncode, review) == (2, None)
+    assert "seed.txt" in result.stderr
+    assert rl.status(str(repo), "T1")["rounds"] == []
+
+
+# --- round 1 NITs ------------------------------------------------------------------
+
+
+def test_run_kimi_stream_error_is_redacted_in_the_reasons(repo, tmp_path):
+    result, review = _run(repo, tmp_path, mode="turnfail-secret")
+
+    assert review["verdict"] == "INCOMPLETE"
+    assert "eyJzdWIiOi" not in json.dumps(review["reasons"]) + result.stdout
+
+
+@pytest.mark.parametrize("model,alias", [("", "kimi-code/kimi-for-coding"),
+                                         ("k3", "kimi-code/k3")])
+def test_run_kimi_records_the_alias_it_launched(repo, tmp_path, model, alias):
+    _result, review = _run(repo, tmp_path, model=model)
+
+    assert (review["model"], review["model_launched"]) == (model or None, alias)
+
+
+def test_run_kimi_with_the_budget_spent_spends_no_probe_request(repo, tmp_path):
+    for _ in range(rl.BUDGET):
+        rl.reserve(str(repo), "T1", "kimi", "k3")
+    dump = tmp_path / "dump.jsonl"
+
+    result, _review = _run(repo, tmp_path, FAKE_KIMI_DUMP=str(dump))
+
+    assert (result.returncode, dump.exists()) == (4, False)
+
+
+def test_run_kimi_probes_after_the_reservation_when_the_status_was_stale(
+        repo, tmp_path, monkeypatch, capsys):
+    """The neighbour of skipping the probe on a spent budget: the status read
+    is unlocked, so a round can still be granted. The probe then runs after the
+    reservation, and a failing one makes the round INCOMPLETE rather than
+    launching an unprobed reviewer."""
+    scratch, work = tmp_path / "scratch", tmp_path / "work"
+    _bundle(repo, scratch)
+    fakes = fake_kimi_bin(tmp_path / "bin")
+    monkeypatch.setenv("PATH", str(fakes) + os.pathsep + os.environ.get("PATH", ""))
+    monkeypatch.setenv("KIMI_CODE_HOME", str(kimi_home(tmp_path / "kimi-home")))
+    monkeypatch.setenv("FAKE_KIMI_PROBE", "quota:exceeded_current_quota_error")
+    monkeypatch.setattr(review_run.review_ledger, "status",
+                        lambda *_a: {"state": rl.NEEDS_REPLAN, "rounds_left": 0})
+
+    code = review_run.main(["--root", str(repo), "--ticket", "T1", "--scratch", str(scratch),
+                            "--provider", "kimi", "--model", "k3", "--work-dir", str(work)])
+    review = json.loads((work / "review.json").read_text(encoding="utf-8"))
+    capsys.readouterr()
+
+    assert (code, review["verdict"]) == (3, "INCOMPLETE")
+    assert any("rate-limited" in r for r in review["reasons"])
