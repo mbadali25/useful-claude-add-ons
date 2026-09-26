@@ -367,6 +367,189 @@ def _files_read(root, ticket):
     return _result("files", READ, None, status=cells[1] if len(cells) > 1 else "")
 
 
+# --- the Kanban board ------------------------------------------------------------
+#
+# An Obsidian Kanban board is markdown the plugin round-trips, and three parts
+# of it are load-bearing: `kanban-plugin: board` in the frontmatter, the
+# trailing `%% kanban:settings` block, and `**Complete**` in the done lane. An
+# archive is a `***` break followed by `## Archive`. A board that stops
+# parsing opens as plain text in the human's window, so nothing here
+# regenerates a board: it cuts one card's lines and inserts them elsewhere,
+# and every other byte is the byte it read.
+
+_HEADING = re.compile(r"## (.+?)[ \t]*\Z")
+_KANBAN_KEY = re.compile(r"kanban-plugin:\s*['\"]?board['\"]?\s*\Z")
+_CARD_START = re.compile(r"- ")
+_CHECKED = re.compile(r"- \[[xX]\]")
+_FIRST_ID = re.compile(r"\[\[([A-Z][A-Z0-9]*-\d+)(?:[|#][^\]]*)?\]\]"
+                       r"|(?<![A-Za-z0-9-])([A-Z][A-Z0-9]*-\d+)(?![A-Za-z0-9])")
+_COMPLETE = "**Complete**"
+
+
+def _bare(line):
+    return line.rstrip("\r\n")
+
+
+def _frontmatter_end(lines):
+    """Index of the closing `---`, or a problem."""
+    if not lines or _bare(lines[0]) != "---":
+        return None, "not a Kanban board: no 'kanban-plugin: board' in its frontmatter"
+    for index in range(1, len(lines)):
+        if _bare(lines[index]) == "---":
+            if any(_KANBAN_KEY.match(_bare(line)) for line in lines[1:index]):
+                return index, None
+            break
+    return None, "not a Kanban board: no 'kanban-plugin: board' in its frontmatter"
+
+
+def _region_end(lines, start):
+    """(end of the lanes region, problem): the archive break or the settings block."""
+    settings = next((i for i in range(start, len(lines))
+                     if _bare(lines[i]).startswith("%% kanban:settings")), None)
+    if settings is not None:
+        close = next((i for i in range(settings + 1, len(lines)) if _bare(lines[i]) == "%%"), None)
+        if close is None or any(_bare(line).strip() for line in lines[close + 1:]):
+            return None, "the %% kanban:settings block is not the last thing on the board"
+    end = len(lines) if settings is None else settings
+    for index in range(start, end):
+        if _bare(lines[index]).strip() == "***":
+            following = next((_bare(line) for line in lines[index + 1:end] if _bare(line).strip()), "")
+            if following == "## Archive":
+                return index, None
+    return end, None
+
+
+def parse_board(text, columns):
+    """`(board, None)` or `(None, problem)`. Never raises.
+
+    The board is its lines (endings kept), the lanes above any archive break
+    in order, and the configured lane names every lifecycle status needs.
+    """
+    lines = text.splitlines(keepends=True)
+    top, problem = _frontmatter_end(lines)
+    if problem:
+        return None, problem
+    end, problem = _region_end(lines, top + 1)
+    if problem:
+        return None, problem
+    headings = []
+    for index in range(top + 1, end):
+        found = _HEADING.match(_bare(lines[index]))
+        if found:
+            headings.append((found.group(1), index))
+    lanes = []
+    for position, (name, index) in enumerate(headings):
+        stop = headings[position + 1][1] if position + 1 < len(headings) else end
+        lanes.append({"name": name, "heading": index, "end": stop})
+    for key in sorted(set(LANE_FOR_STATUS.values()), key=list(DEFAULT_COLUMNS).index):
+        name = columns.get(key)
+        count = sum(1 for lane in lanes if lane["name"] == name)
+        if count == 0:
+            return None, f"lane {name!r} (obsidian.columns.{key}) is not on the board"
+        if count > 1:
+            return None, f"lane {name!r} appears {count} times on the board"
+    return {"lines": lines, "lanes": lanes, "columns": dict(columns)}, None
+
+
+def _cards(board):
+    """Every card above the archive: `{"start", "end", "lane", "id"}`."""
+    lines, found = board["lines"], []
+    for lane in board["lanes"]:
+        index = lane["heading"] + 1
+        while index < lane["end"]:
+            if not _CARD_START.match(lines[index]):
+                index += 1
+                continue
+            stop = index + 1
+            while stop < lane["end"] and lines[stop][:1] in (" ", "\t") and _bare(lines[stop]).strip():
+                stop += 1
+            ident = _FIRST_ID.search(_bare(lines[index]))
+            found.append({"start": index, "end": stop, "lane": lane["name"],
+                          "id": (ident.group(1) or ident.group(2)) if ident else None})
+            index = stop
+    return found
+
+
+def find_card(board, ticket):
+    """`(card, None)` or `(None, problem)`. A card is the ticket's when the first
+    id on its first line is the ticket's: `[[T-0009]] ... (depends on T-0005)` is
+    T-0009's card, not a second T-0005 card."""
+    matches = [card for card in _cards(board) if card["id"] == ticket]
+    if not matches:
+        return None, f"no card for {ticket} on the board"
+    if len(matches) > 1:
+        return None, (f"{len(matches)} cards for {ticket} on the board "
+                      f"({', '.join(card['lane'] for card in matches)})")
+    return matches[0], None
+
+
+def _lane(board, key):
+    name = board["columns"][key]
+    return next(lane for lane in board["lanes"] if lane["name"] == name)
+
+
+def _insertion(board, key):
+    """Where a card becomes the first item of lane `key` (after `**Complete**` in done)."""
+    lines, lane = board["lines"], _lane(board, key)
+    anchor = lane["heading"]
+    if key == "done":
+        anchor = next((i for i in range(lane["heading"] + 1, lane["end"])
+                       if _bare(lines[i]).strip() == _COMPLETE), anchor)
+    for index in range(anchor + 1, lane["end"]):
+        if _CARD_START.match(lines[index]):
+            return index
+    index = anchor + 1
+    if index < lane["end"] and not _bare(lines[index]).strip():
+        index += 1
+    return index
+
+
+def _ending(lines):
+    return "\r\n" if lines and lines[0].endswith("\r\n") else "\n"
+
+
+def _place(board, key, card_lines):
+    """The board text with `card_lines` inserted as lane `key`'s first item."""
+    lines = list(board["lines"])
+    at = _insertion(board, key)
+    if at > 0 and not lines[at - 1].endswith("\n"):
+        lines[at - 1] += _ending(lines)
+    lines[at:at] = card_lines
+    return "".join(lines)
+
+
+def move_card(board, ticket, key):
+    """`(new_text, lane_it_was_in, None)` or `(None, None, problem)`."""
+    card, problem = find_card(board, ticket)
+    if problem:
+        return None, None, problem
+    target = board["columns"][key]
+    lines = board["lines"]
+    if card["lane"] == target:
+        return "".join(lines), card["lane"], None
+    moved = list(lines[card["start"]:card["end"]])
+    ending = _ending(lines)
+    moved = [line if line.endswith("\n") else line + ending for line in moved]
+    first = moved[0]
+    if key == "done" and first.startswith("- [ ]"):
+        moved[0] = "- [x]" + first[5:]
+    elif key != "done" and _CHECKED.match(first):
+        moved[0] = "- [ ]" + first[5:]
+    remaining = lines[:card["start"]] + lines[card["end"]:]
+    rest, problem = parse_board("".join(remaining), board["columns"])
+    if problem:
+        return None, None, problem
+    return _place(rest, key, moved), card["lane"], None
+
+
+def add_card(board, ticket, title, key):
+    """`(new_text, None)`: `- [ ] [[<id>]] <title>` first in lane `key`; unchanged
+    when the ticket already has a card anywhere above the archive."""
+    if any(card["id"] == ticket for card in _cards(board)):
+        return "".join(board["lines"]), None
+    return _place(board, key, [f"- [ ] [[{ticket}]] {title}{_ending(board['lines'])}"]), None
+
+
 # --- the interface -------------------------------------------------------------
 
 def _delegated(kind, ticket, push):

@@ -258,3 +258,193 @@ def test_cli_rejects_a_malformed_ticket_id(tmp_path):
     done = _cli(root, "move", "--ticket", "../etc", "--to", "spec")
 
     assert done.returncode == 2
+
+
+# --- the Kanban board: parse and edit without disturbing it --------------------
+
+FIXTURES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tracker_fixtures")
+COLUMNS = dict(crew_tracker.DEFAULT_COLUMNS)
+RENAMED = {"backlog": "Icebox", "ready": "Todo", "inProgress": "Doing",
+           "review": "QA", "done": "Shipped"}
+
+
+def _fixture(name):
+    # LF by intent; a CRLF checkout of the fixture must not change what is tested.
+    with open(os.path.join(FIXTURES, name), "rb") as handle:
+        return handle.read().decode("utf-8").replace("\r\n", "\n")
+
+
+def _board(name, columns=None):
+    board, problem = crew_tracker.parse_board(_fixture(name), columns or COLUMNS)
+    assert problem is None, problem
+    return board
+
+
+def _lane_of(text, ticket, columns=None):
+    board, problem = crew_tracker.parse_board(text, columns or COLUMNS)
+    assert problem is None, problem
+    card, problem = crew_tracker.find_card(board, ticket)
+    assert problem is None, problem
+    return card["lane"]
+
+
+def test_parse_0_20_board():
+    board = _board("board_0_20.md")
+
+    card, problem = crew_tracker.find_card(board, "T-0042")
+
+    assert (card["lane"], problem) == ("Ready", None)
+
+
+def test_move_changes_only_the_card():
+    old = _fixture("board_with_archive.md")
+    card = "- [ ] [[T-0042]] Fix token refresh on 401\n"
+    expected = old.replace(card, "", 1).replace(
+        "## In Progress\n\n", "## In Progress\n\n" + card, 1)
+
+    new, moved_from, problem = crew_tracker.move_card(_board("board_with_archive.md"), "T-0042", "inProgress")
+
+    assert (new, moved_from, problem) == (expected, "Ready", None)
+
+
+def test_move_carries_continuation_lines():
+    old = _fixture("board_with_archive.md")
+    card = ("- [ ] [[T-0051]] a card with a body\n"
+            "\tcontinuation line one\n\tcontinuation line two\n")
+    expected = old.replace(card, "", 1).replace("## Review\n\n", "## Review\n\n" + card, 1)
+
+    new, _, _ = crew_tracker.move_card(_board("board_with_archive.md"), "T-0051", "review")
+
+    assert new == expected
+
+
+def test_move_to_done_checks_and_sits_below_complete():
+    old = _fixture("board_0_20.md")
+    expected = old.replace("- [ ] [[T-0042]] Fix token refresh on 401\n", "", 1).replace(
+        "**Complete**\n\n", "**Complete**\n\n- [x] [[T-0042]] Fix token refresh on 401\n", 1)
+
+    new, _, _ = crew_tracker.move_card(_board("board_0_20.md"), "T-0042", "done")
+
+    assert new == expected
+
+
+def test_leaving_done_unchecks_the_card():
+    new, moved_from, _ = crew_tracker.move_card(_board("board_0_20.md"), "T-0039", "review")
+
+    assert (moved_from, "## Review\n\n- [ ] [[T-0039]] Bump pinned deps\n" in new,
+            "[x] [[T-0039]]" in new) == ("Done", True, False)
+
+
+def test_move_to_the_lane_it_is_in_is_unchanged():
+    old = _fixture("board_0_20.md")
+
+    new, moved_from, problem = crew_tracker.move_card(_board("board_0_20.md"), "T-0042", "ready")
+
+    assert (new, moved_from, problem) == (old, "Ready", None)
+
+
+def test_archive_untouched():
+    old = _fixture("board_with_archive.md")
+    cut = old.index("***\n")
+
+    new, _, problem = crew_tracker.move_card(_board("board_with_archive.md"), "T-0042", "done")
+
+    assert (problem, new[new.index("***\n"):]) == (None, old[cut:])
+
+
+def test_card_identity_is_its_first_id():
+    """T-0043's card mentions T-0042 as a dependency; that is not a second T-0042 card."""
+    board = _board("board_with_archive.md")
+
+    card, problem = crew_tracker.find_card(board, "T-0042")
+
+    assert (card["lane"], problem) == ("Ready", None)
+
+
+def test_bare_id_card_is_found_but_a_longer_id_is_not():
+    text = _fixture("board_0_20.md").replace("[[T-0042]]", "T-0042")
+    board, _ = crew_tracker.parse_board(text, COLUMNS)
+
+    found, _ = crew_tracker.find_card(board, "T-0042")
+    longer, problem = crew_tracker.find_card(board, "T-004")
+
+    assert (found["lane"], longer, problem) == ("Ready", None, "no card for T-004 on the board")
+
+
+def test_renamed_lanes_from_columns():
+    board = _board("board_renamed_lanes.md", RENAMED)
+
+    new, moved_from, _ = crew_tracker.move_card(board, "T-0042", "inProgress")
+
+    assert (moved_from, _lane_of(new, "T-0042", RENAMED)) == ("Todo", "Doing")
+
+
+def test_default_columns_on_a_renamed_board_refused():
+    _, problem = crew_tracker.parse_board(_fixture("board_renamed_lanes.md"), COLUMNS)
+
+    assert problem == "lane 'Backlog' (obsidian.columns.backlog) is not on the board"
+
+
+def test_missing_frontmatter_refused():
+    _, problem = crew_tracker.parse_board(_fixture("board_no_frontmatter.md"), COLUMNS)
+
+    assert problem == "not a Kanban board: no 'kanban-plugin: board' in its frontmatter"
+
+
+def test_duplicate_lane_refused():
+    _, problem = crew_tracker.parse_board(_fixture("board_duplicate_lane.md"), COLUMNS)
+
+    assert problem == "lane 'Ready' appears 2 times on the board"
+
+
+def test_settings_block_not_last_refused():
+    text = _fixture("board_0_20.md") + "\n## Stray\n"
+
+    _, problem = crew_tracker.parse_board(text, COLUMNS)
+
+    assert problem == "the %% kanban:settings block is not the last thing on the board"
+
+
+def test_two_cards_same_id_refused():
+    text = _fixture("board_0_20.md").replace(
+        "## Review\n", "## Review\n\n- [ ] [[T-0042]] a copy\n", 1)
+    board, _ = crew_tracker.parse_board(text, COLUMNS)
+
+    card, problem = crew_tracker.find_card(board, "T-0042")
+
+    assert (card, problem) == (None, "2 cards for T-0042 on the board (Ready, Review)")
+
+
+def test_add_card_is_the_first_backlog_item():
+    old = _fixture("board_with_archive.md")
+    expected = old.replace("## Backlog\n\n", "## Backlog\n\n- [ ] [[T-0060]] new work\n", 1)
+
+    new, problem = crew_tracker.add_card(_board("board_with_archive.md"), "T-0060", "new work", "backlog")
+
+    assert (new, problem) == (expected, None)
+
+
+def test_add_card_into_an_empty_lane():
+    old = _fixture("board_0_20.md")
+    expected = old.replace("## Backlog\n\n", "## Backlog\n\n- [ ] [[T-0060]] new work\n", 1)
+
+    new, _ = crew_tracker.add_card(_board("board_0_20.md"), "T-0060", "new work", "backlog")
+
+    assert new == expected
+
+
+def test_add_card_already_present_is_unchanged():
+    old = _fixture("board_0_20.md")
+
+    new, problem = crew_tracker.add_card(_board("board_0_20.md"), "T-0042", "again", "backlog")
+
+    assert (new, problem) == (old, None)
+
+
+def test_crlf_board_keeps_its_line_endings():
+    old = _fixture("board_0_20.md").replace("\n", "\r\n")
+    board, _ = crew_tracker.parse_board(old, COLUMNS)
+
+    new, _, _ = crew_tracker.move_card(board, "T-0042", "review")
+
+    assert (new.count("\r\n"), new.count("\n")) == (old.count("\r\n"), old.count("\n"))
