@@ -49,6 +49,7 @@ import json
 import os
 import sys
 
+import crew_autocycle
 import crew_config
 
 FORBIDDEN_WORDS = ("cleared", "compacted")
@@ -161,10 +162,15 @@ def describe_tmux_path():
     """The Linux/macOS/WSL story: describe only, never propose a write."""
     return ("On Linux, macOS and WSL, 'auto' types the configured command "
             "into the tmux pane this session is already running in, when "
-            "$TMUX names one and tmux is on PATH. There is no keystroke "
-            "method to opt into here the way sendkeys is on Windows; nothing "
-            "is written without you saying yes to enabling auto-clear at "
-            "all.")
+            "$TMUX names one, tmux is on PATH, and tmux runs on the host "
+            "where Claude runs - the pane must be this session's own "
+            "terminal. Over ssh or inside WSL with no tmux on Claude's "
+            "side, and for a headless session (a claude -p or SDK child "
+            "with no terminal of its own), 'auto' is notify instead: it "
+            "types nothing and says it is safe to run the command yourself. "
+            "There is no keystroke method to opt into here the way sendkeys "
+            "is on Windows; nothing is written without you saying yes to "
+            "enabling auto-clear at all.")
 
 
 def already_configured_global(path=None):
@@ -678,6 +684,7 @@ def check_no_forbidden_words():
     every function here and forgetting the next one that's added."""
     samples = [
         describe_notify(), describe_tmux_path(), _SENDKEYS_NOTE,
+        crew_autocycle.restart_recipe(),
         describe_global_windows_conversion(),
         plan_windows_notify_default(path="/nonexistent")["message"],
     ]

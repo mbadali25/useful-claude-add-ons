@@ -4,6 +4,27 @@ Findings queued for a later PR. Each carries the `path:line` it came from so it
 can be re-verified rather than re-discovered — and so an item that turns out to
 be wrong can be closed on evidence.
 
+- OPEN 2026-09-25 (T-0016, crew 1.0.34 - not done, each needs a host this
+  one is not): auto-clear's session binding
+  (`plugin/crew/hooks/scripts/crew_autocycle.py` `session_owner`, and
+  `Get-CrewSessionOwner` in `plugin/crew/hooks/scripts/auto-clear.ps1`) was
+  measured on Linux only (Claude Code 2.1.282; `.work/tickets/T-0016/spike.md`,
+  local-only).
+  - **A Windows measurement of `~/.claude/sessions/<pid>.json`.** Its location
+    and shape on native Windows are unmeasured. If it is absent there,
+    `sendkeys` declines to `notify` on every run - breaking for explicit
+    `sendkeys` users, and the fail-closed direction.
+  - **The `procStart` check on Windows.** The ps1 twin skips it and logs that
+    it did, because what the field means there is unmeasured.
+  - **screen and zellij** stay `none`: only tmux is bound.
+  - **Where a relocated `CLAUDE_CONFIG_DIR` keeps the records.** Both
+    flavours read `$CLAUDE_CONFIG_DIR/sessions` and `~/.claude/sessions`, and
+    refuse when neither names the session. Measuring the real location would
+    let a missing record there read as headless again.
+  - Also unmeasured: macOS, ssh with X forwarding, WSL, an Agent SDK
+    `query()` session, and the `entrypoint` a `claude` inside an IDE terminal
+    writes.
+
 - `plugin/crew/tests/test_auto_cycle.py` (24 failures, measured both
   before and after crew-1.0-win-ps1-ac's fix, identical set both times):
   bash/tmux/symlink-flavour tests fail on this Windows dev host for

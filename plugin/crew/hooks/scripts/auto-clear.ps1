@@ -32,8 +32,12 @@
 #   3. The handoff was written after that request, is not a stub, and is not
 #      PreCompact's automatic skeleton.
 #   4. The target window is UNIQUELY identified: the one window owned by the
-#      nearest ancestor of this hook, or -- only when that finds nothing -- the
-#      one window whose title contains windowTitle. Zero or several: refuse.
+#      session's own process or its nearest ancestor, or -- only when that
+#      finds nothing -- the one window whose title contains windowTitle.
+#      Zero or several: refuse. The walk starts at the process Claude Code's
+#      session record binds to this session id (T-0016), never at this hook,
+#      so a `claude -p` child cannot reach its parent's window; with no such
+#      record, or an SDK/`-p` one, sendkeys declines to notify.
 #   5. At send time, after the delay, that exact window handle has focus, AND
 #      -- when that window is Windows Terminal -- it still has exactly one
 #      tab. Both are checked in the DETACHED CHILD, not the parent: the
@@ -610,11 +614,160 @@ while ($walk -gt 0 -and $ancestors.Count -lt 16 -and $ancestors -notcontains $wa
   $walk = Get-CrewParentId $walk
 }
 
+# --- Bind the target to THIS session (T-0016) ------------------------------
+#
+# The twin of crew_autocycle.session_owner. The window walk below must start
+# at the Claude Code process that owns this session -- never at $PID: a
+# `claude -p` child started from another session's shell has that session's
+# terminal among its ancestors, and walking from the hook hands it the
+# PARENT's window. The proof is Claude Code's own session record,
+# `~/.claude/sessions/<pid>.json`: exactly one names this session id, its
+# pid is alive and an ancestor of this hook, its kind is `interactive`, and
+# its entrypoint is not an SDK (`-p`) one. Anything that cannot be proven
+# types nothing. `Headless` separates "no terminal of its own" (declines to
+# notify with the restart recipe) from "wrong process" (refuses).
+# procStart is NOT compared here: what that field means on Windows is
+# unmeasured, and a guessed comparison would either refuse everywhere or
+# prove nothing. Said in the log every run, never skipped silently.
+$script:_CREW_OWNER_WAIT_MS = 2000
+$script:_CREW_OWNER_POLL_MS = 100
+
+function Get-CrewRestartRecipe {
+  $resume = Join-Path $PSScriptRoot "crew_resume.py"
+  $steps = "python3 $resume decide --source clear --json, then record, then claude -p `"<prompt>`""
+  if (Test-Path -LiteralPath $resume -PathType Leaf) {
+    return "a parent that started this session restarts it: $steps"
+  }
+  return ("a parent that started this session restarts it with a fresh claude -p `"<prompt>`" " +
+          "that points at the handoff (once crew_resume.py ships: $steps)")
+}
+
+# `~/.claude/sessions`, and `$CLAUDE_CONFIG_DIR/sessions` first when that
+# variable relocates Claude Code's config -- where a relocated config keeps
+# its records is unmeasured, so both are read. The twin of
+# crew_autocycle._session_folders.
+function Get-CrewSessionFolders {
+  $homeFolder = Join-Path $userHome ".claude/sessions"
+  $relocated = "$env:CLAUDE_CONFIG_DIR".Trim()
+  if (-not $relocated) { return @($homeFolder) }
+  $moved = Join-Path $relocated "sessions"
+  if ([System.IO.Path]::GetFullPath($moved) -eq [System.IO.Path]::GetFullPath($homeFolder)) { return @($homeFolder) }
+  return @($moved, $homeFolder)
+}
+
+# Every session record file as @{ Name; Record }, or @{ Bad = <name> } for
+# the first one that does not parse.
+function Get-CrewSessionRecords {
+  $out = @()
+  foreach ($folder in @(Get-CrewSessionFolders)) {
+    if (-not (Test-Path -LiteralPath $folder -PathType Container)) { continue }
+    $files = @(Get-ChildItem -LiteralPath $folder -Filter "*.json" -File -ErrorAction SilentlyContinue | Sort-Object Name)
+    foreach ($file in $files) {
+      $record = Read-CrewJsonFile $file.FullName
+      if ($null -eq $record) { return @{ Bad = $file.Name } }
+      $out += ,@{ Name = $file.Name; Record = $record }
+    }
+  }
+  return @{ Bad = $null; Records = $out }
+}
+
+function Get-CrewSessionOwner([string]$SessionId, $Chain) {
+  $headlessTail = " - it has no terminal of its own"
+  if (-not $SessionId) {
+    return @{ Ok = $false; Headless = $false; Reason = "no session id, so no session record can be matched to this hook" }
+  }
+  $deadline = [DateTime]::UtcNow.AddMilliseconds($script:_CREW_OWNER_WAIT_MS)
+  while ($true) {
+    $matched = @()
+    $read = Get-CrewSessionRecords
+    if ($read.Bad) {
+      return @{ Ok = $false; Headless = $false; Reason = "the Claude Code session record $($read.Bad) is unreadable, so it cannot be ruled out as this session's" }
+    }
+    foreach ($entry in $read.Records) {
+      if ([string](Get-CrewChild $entry.Record "sessionId") -ceq $SessionId) { $matched += $entry.Record }
+    }
+    if ($matched.Count -gt 0 -or [DateTime]::UtcNow -ge $deadline) { break }
+    Start-Sleep -Milliseconds $script:_CREW_OWNER_POLL_MS
+  }
+  if ($matched.Count -eq 0 -and "$env:CLAUDE_CONFIG_DIR".Trim()) {
+    # Could not tell, never "headless": that declines to a notify telling a
+    # user at their own window that a parent must restart it.
+    return @{ Ok = $false; Headless = $false; Reason = ("no Claude Code session record names this session in " +
+      "$((Get-CrewSessionFolders) -join ' or ') - CLAUDE_CONFIG_DIR is set, and where Claude Code keeps its " +
+      "session records under it is unmeasured, so a missing record cannot be read as a session with no terminal") }
+  }
+  if ($matched.Count -eq 0) {
+    return @{ Ok = $false; Headless = $true; Reason = "no Claude Code session record names this session$headlessTail" }
+  }
+  if ($matched.Count -gt 1) {
+    return @{ Ok = $false; Headless = $false; Reason = "$($matched.Count) Claude Code session records name this session" }
+  }
+  $record = $matched[0]
+  $rawPid = Get-CrewChild $record "pid"
+  # Only a JSON integer (Int32 or Int64 from ConvertFrom-Json). A 1234.0
+  # parses as Double and would cast to a matching pid; Python refuses it, so
+  # the twin refuses it too.
+  if (-not ($rawPid -is [int] -or $rawPid -is [long])) {
+    return @{ Ok = $false; Headless = $false; Reason = "the session record has no usable pid" }
+  }
+  if ($rawPid -le 1 -or $rawPid -gt [int]::MaxValue) {
+    return @{ Ok = $false; Headless = $false; Reason = "the session record has no usable pid" }
+  }
+  $ownerPid = [int]$rawPid
+  if ($null -eq (Get-Process -Id $ownerPid -ErrorAction SilentlyContinue)) {
+    return @{ Ok = $false; Headless = $false; Reason = "the session record's pid $ownerPid is not running" }
+  }
+  if ($Chain -notcontains $ownerPid) {
+    return @{ Ok = $false; Headless = $false; Reason = "the session's process (pid $ownerPid) is not an ancestor of this hook" }
+  }
+  $kind = Get-CrewChild $record "kind"
+  if ([string]$kind -cne "interactive") {
+    return @{ Ok = $false; Headless = $true; Reason = "the session record's kind '$kind', not interactive$headlessTail" }
+  }
+  $entrypoint = [string](Get-CrewChild $record "entrypoint")
+  if (-not $entrypoint) {
+    return @{ Ok = $false; Headless = $false; Reason = "the session record has no entrypoint, so it cannot say whether the session is headless" }
+  }
+  if ($entrypoint.StartsWith("sdk", [StringComparison]::Ordinal)) {
+    return @{ Ok = $false; Headless = $true; Reason = "the session record's entrypoint '$entrypoint' is a headless (-p or SDK) session$headlessTail" }
+  }
+  return @{ Ok = $true; Headless = $false; Reason = ""; Pid = $ownerPid }
+}
+
+$owner = Get-CrewSessionOwner $Session $ancestors
+if (-not $owner.Ok) {
+  if (-not $owner.Headless) { Stop-CrewAutoClear $owner.Reason }
+  # Headless: there is no window of its own to type into. Decline sendkeys
+  # and fall back to notify, the way every other sendkeys decline does.
+  $ownerReason = "$($owner.Reason); $(Get-CrewRestartRecipe)"
+  if ($DryRun) {
+    Write-Output "autoclear: would decline sendkeys - $ownerReason"
+    Write-Output "  falling back to notify: would say it is safe to run $command yourself"
+    exit 0
+  }
+  if (-not $Force) {
+    try {
+      $claim = [System.IO.File]::Open(
+        (Join-Path (Get-Location).Path $sentMarker), [System.IO.FileMode]::CreateNew)
+      $claim.Close()
+    } catch { exit 0 }
+  }
+  $msg = "crew: handoff written and verified for this session - it is safe to run $command now (auto-clear will not type it for you). Why: $ownerReason."
+  Write-Output (@{ systemMessage = $msg } | ConvertTo-Json -Compress)
+  Write-CrewAutoClearNote "declined sendkeys - $ownerReason - sent notify instead"
+  exit 0
+}
+Write-CrewAutoClearNote "session record bound to pid $($owner.Pid); procStart is not compared on Windows (its meaning there is unmeasured)"
+# The walk starts AT the owner and goes up. Everything below it -- the hook,
+# its shell, anything the owner spawned -- is not this session's terminal.
+$ownerIndex = [array]::IndexOf($ancestors, $owner.Pid)
+$ownerChain = @($ancestors[$ownerIndex..($ancestors.Count - 1)])
+
 try { $windows = @(Get-CrewWindows) } catch { Stop-CrewAutoClear "cannot list windows: $($_.Exception.Message)" }
 
 $needle = $windowTitle.ToLowerInvariant()
 $target = $null; $how = ""
-foreach ($ancestor in $ancestors) {
+foreach ($ancestor in $ownerChain) {
   $owned = @($windows | Where-Object { $_.Pid -eq $ancestor })
   if ($owned.Count -eq 0) { continue }
   if ($needle) {
@@ -631,7 +784,7 @@ foreach ($ancestor in $ancestors) {
 }
 if ($null -eq $target) {
   if (-not $needle) {
-    Stop-CrewAutoClear "no window belongs to any ancestor of this hook, and no context.autoClear.windowTitle is set to fall back on"
+    Stop-CrewAutoClear "no window belongs to any ancestor of the session's own process (itself included), and no context.autoClear.windowTitle is set to fall back on"
   }
   $hits = @($windows | Where-Object { $_.Title.ToLowerInvariant().Contains($needle) })
   if ($hits.Count -ne 1) {
@@ -640,6 +793,59 @@ if ($null -eq $target) {
   $target = $hits[0]; $how = "title fallback"
 }
 $label = "$($target.Title) [window $($target.Id), pid $($target.Pid), $how]"
+
+# Proving the owner does not prove the window is its own: the process that
+# owns the window may also sit above ANOTHER live session -- the parent a
+# child `claude` was started from (the walk climbs through the parent's
+# process to its window; on Windows this is the only thing that stops that,
+# since a -p child's entrypoint there is unmeasured), or a sibling tab under
+# one window-owning host. A session UNDER the owner reaches the window only
+# through it and does not count. procStart is not compared (see above), so
+# every live record counts. The twin of crew_autocycle._shared_window; a
+# shared window declines to notify like every other sendkeys decline.
+function Get-CrewProcessChain([int]$Id) {
+  $chain = @()
+  while ($Id -gt 0 -and $chain.Count -lt 16 -and $chain -notcontains $Id) {
+    $chain += $Id
+    $Id = Get-CrewParentId $Id
+  }
+  return ,$chain
+}
+
+function Get-CrewSharedWindowReason([string]$SessionId, [int]$OwnerPid, $Window) {
+  $read = Get-CrewSessionRecords
+  if ($read.Bad) {
+    return "the Claude Code session record $($read.Bad) is unreadable, so it cannot be ruled out as another session in window $($Window.Id)"
+  }
+  $holders = @()
+  foreach ($entry in $read.Records) {
+    if ([string](Get-CrewChild $entry.Record "sessionId") -ceq $SessionId) { continue }
+    $raw = Get-CrewChild $entry.Record "pid"
+    if (-not ($raw -is [int] -or $raw -is [long]) -or $raw -le 1 -or $raw -gt [int]::MaxValue) {
+      return "the Claude Code session record $($entry.Name) has no usable pid, so it cannot be ruled out as another session in window $($Window.Id)"
+    }
+    $other = [int]$raw
+    if ($other -eq $OwnerPid) { continue }
+    if ($null -eq (Get-Process -Id $other -ErrorAction SilentlyContinue)) { continue }
+    $chain = Get-CrewProcessChain $other
+    if ($chain -contains $OwnerPid) { continue }
+    $holders += ,@{ Pid = $other; Name = $entry.Name; Chain = $chain }
+  }
+  if ($holders.Count -eq 0) { return "" }
+  if ($Window.Pid -le 1) {
+    return "window $($Window.Id) has no owning process, so it cannot be ruled out as also hosting the live Claude Code session in $($holders[0].Name)"
+  }
+  foreach ($holder in $holders) {
+    if ($holder.Chain -contains $Window.Pid) {
+      return ("window $($Window.Id) (pid $($Window.Pid)) also hosts another live Claude Code session " +
+              "(pid $($holder.Pid), record $($holder.Name)) - a terminal that holds several sessions in one " +
+              "window types into whichever one is showing, so it cannot be proven to be this session's")
+    }
+  }
+  return ""
+}
+
+$sharedReason = Get-CrewSharedWindowReason $Session $owner.Pid $target
 
 # `sendkeys` may still not be safe to use even once a window is uniquely
 # identified: Windows Terminal hosts every tab in ONE window, so the
@@ -762,7 +968,9 @@ try {
 $isWindowsTerminal = $ownerKnown -and $ownerProcessName -eq "WindowsTerminal"
 
 $declineReason = $null
-if (-not $ownerKnown) {
+if ($sharedReason) {
+  $declineReason = $sharedReason
+} elseif (-not $ownerKnown) {
   $declineReason = "cannot determine the process that owns window pid $($target.Pid) - an unknown owner must decline, not assume it is safe to type into"
 } elseif ($isWindowsTerminal) {
   $tabState = Get-CrewWindowsTerminalTabState -Hwnd $target.Id -Title $windowTitle

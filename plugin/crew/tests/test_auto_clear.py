@@ -118,6 +118,11 @@ def _write_machine(root, enabled):
     crew.mkdir(parents=True, exist_ok=True)
     cfg = {} if enabled is _ABSENT else {"context": {"autoClear": {"enabled": enabled}}}
     (crew / "config.json").write_text(json.dumps(cfg), encoding="utf-8")
+    # T-0016: a keystroke goes only to a pane or window proven to be this
+    # session's own, starting from Claude Code's session record. SESSION is
+    # owned by this test process (an ancestor of every script it runs), with
+    # the fixture tty the tmux stubs report for the pane.
+    crew_fixtures.bind_sessions(root.parent / "home", (SESSION,))
 
 
 _ABSENT = object()
@@ -154,7 +159,8 @@ def _run(flavor, root, *args, env_extra=None, session=SESSION):
     # keystroke. See CREW_AUTOCLEAR_INHIBIT in auto-clear.{sh,ps1}.
     home = str(root.parent / "home")
     env = dict(os.environ, CLAUDE_PROJECT_DIR=str(root),
-               CREW_AUTOCLEAR_INHIBIT="1", HOME=home, USERPROFILE=home)
+               CREW_AUTOCLEAR_INHIBIT="1", HOME=home, USERPROFILE=home,
+               **crew_fixtures.tty_stub_env(home))
     if env_extra:
         env.update(env_extra)
     if session is not None:
@@ -185,8 +191,7 @@ def _sendable(flavor, tmp_path):
     the only match -- the title fallback, since no ancestor owns it."""
     if flavor == "sh":
         bindir = str(tmp_path / "fakebin")
-        _stub(bindir, "tmux", f"#!/bin/sh\necho {os.getpid()}\n",
-              f"@echo off\r\necho {os.getpid()}\r\n")
+        crew_fixtures.tmux_shim(bindir, os.getpid())
         return ({"enabled": True, "method": "tmux"},
                 {"PATH": crew_fixtures.shell_path("sh", [bindir]),
                  "TMUX": "/tmp/fake,1,0", "TMUX_PANE": "%9"})
@@ -518,8 +523,7 @@ def test_config_values_survive_a_crlf_writing_python(tmp_path):
     `_crlf_python_env`'s docstring for the sabotage check that proved it.
     """
     bindir = str(tmp_path / "fakebin")
-    _stub(bindir, "tmux", f"#!/bin/sh\necho {os.getpid()}\n",
-              f"@echo off\r\necho {os.getpid()}\r\n")
+    crew_fixtures.tmux_shim(bindir, os.getpid())
     root = _repo(tmp_path, auto_clear={"enabled": True, "method": "tmux"})
     env = {"PATH": crew_fixtures.shell_path("sh", [bindir]),
            "TMUX": "/tmp/fake,1,0", "TMUX_PANE": "%9"}

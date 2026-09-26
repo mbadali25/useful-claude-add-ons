@@ -60,6 +60,17 @@ def _no_real_global_config(tmp_path, monkeypatch):
     # and that still wins; this only removes the ambient value nobody declared.
     monkeypatch.delenv("CLAUDE_PROJECT_DIR", raising=False)
 
+    # Same rule, third channel: auto-clear refuses xdotool and resolves `auto`
+    # to notify across an ssh or WSL boundary (T-0016), so a maintainer who
+    # runs the suite over ssh, or inside WSL, would see every xdotool case
+    # refuse for a reason no test declared. The ambient markers are cleared
+    # and the WSLInterop probe pointed at a path that does not exist; a test
+    # that wants either sets it again, and that still wins.
+    for name in ("SSH_CONNECTION", "SSH_CLIENT", "SSH_TTY", "WSL_DISTRO_NAME",
+                 "WSL_INTEROP", "CREW_AUTOCLEAR_TTY_STUB"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("CREW_AUTOCLEAR_WSL_INTEROP_PATH", str(tmp_path / "no-wsl-interop"))
+
 
 # --- the `slow` marker: the full per-shell hook matrix ------------------------
 #

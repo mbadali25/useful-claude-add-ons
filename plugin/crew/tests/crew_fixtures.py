@@ -1061,3 +1061,97 @@ def commit_with_date(root, path, iso_date):
     subprocess.run(("git", "commit", "-q", "-m", f"backdated {path}"),
                    cwd=root, check=True, capture_output=True, text=True,
                    env=env, stdin=subprocess.DEVNULL, timeout=30)
+
+
+# --- auto-clear's session binding (T-0016) ---------------------------------
+#
+# auto-clear types only into a pane or window proven to be THIS session's,
+# and the proof starts at Claude Code's own `~/.claude/sessions/<pid>.json`.
+# Every auto-clear test already points HOME at its fixture, so these write
+# the record there -- never under the developer's real home.
+#
+# auto-clear also reads `$CLAUDE_CONFIG_DIR/sessions` when that variable is
+# set, and a maintainer who relocates Claude Code's config has it set in the
+# environment every test inherits -- so a HOME pointed at a fixture would no
+# longer be enough to keep the suite off the real records. It is cleared for
+# the whole run here, at import: conftest.py imports this module before any
+# test is collected. A test that wants the variable sets it again, in
+# `monkeypatch` or a subprocess `env=`, and that still wins.
+os.environ.pop("CLAUDE_CONFIG_DIR", None)
+
+# A pane tty no real process on the test host holds: the tmux shim reports
+# it for `#{pane_tty}` and the tty stub reports it for the owner, so the two
+# agree only because the fixture says so.
+FAKE_TTY = "/dev/pts/77"
+_AUTO = object()
+
+
+def write_session_record(home, session_id, pid=None, kind="interactive",
+                         entrypoint="cli", proc_start=_AUTO, name=None, sessions_dir=None):
+    """Claude Code's session record, in the shape measured on 2.1.282 (see
+    T-0016's spike): `pid`, `sessionId`, `kind`, `entrypoint`, and
+    `procStart` -- `/proc/<pid>/stat` field 22 as a string. `proc_start`
+    defaults to the real value for `pid` where /proc exists and is left out
+    where it does not; pass a string to forge one, or None to omit it.
+    `name` overrides the file name (default `<pid>.json`); `sessions_dir`
+    overrides the folder (default `<home>/.claude/sessions`, the one a
+    relocated `CLAUDE_CONFIG_DIR` replaces). Returns the path."""
+    pid = os.getpid() if pid is None else pid
+    record = {"pid": pid, "sessionId": session_id, "cwd": str(home),
+              "version": "2.1.282", "kind": kind, "entrypoint": entrypoint,
+              "status": "idle"}
+    if proc_start is _AUTO:
+        proc_start = _proc_start_ticks(pid)
+    if proc_start is not None:
+        record["procStart"] = str(proc_start)
+    sessions = pathlib.Path(sessions_dir) if sessions_dir else pathlib.Path(home) / ".claude" / "sessions"
+    sessions.mkdir(parents=True, exist_ok=True)
+    path = sessions / (name or f"{pid}.json")
+    path.write_text(json.dumps(record), encoding="utf-8")
+    return path
+
+
+def tty_stub(directory, mapping):
+    """`{"CREW_AUTOCLEAR_TTY_STUB": path}` for a JSON `{pid: tty}` that
+    replaces the real controlling-tty read. `""` or `"?"` means "has no
+    controlling tty"; a pid left out, or `None`, means "could not tell"."""
+    path = pathlib.Path(directory) / "ttys.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({str(pid): tty for pid, tty in mapping.items()}), encoding="utf-8")
+    return {"CREW_AUTOCLEAR_TTY_STUB": str(path)}
+
+
+def tmux_shim(bindir, pane_pid, pane_tty=FAKE_TTY):
+    """A fake `tmux` answering `display-message -p '#{pane_pid} #{pane_tty}'`
+    with `pane_pid pane_tty`, and doing nothing for anything else it is
+    asked (a detached sender's `send-keys` lands on this, never a pane)."""
+    line = f"{pane_pid} {pane_tty}".strip()
+    return write_shim(bindir, "tmux", f"#!/bin/sh\necho {line}\n",
+                      f"@echo off\r\necho {line}\r\n")
+
+
+def tty_stub_env(home):
+    """The env naming the tty stub `bind_session` / `bind_sessions` write for
+    `home`. Safe to set before the stub exists: a missing stub reads as
+    "could not tell", which refuses."""
+    return {"CREW_AUTOCLEAR_TTY_STUB": str(pathlib.Path(home).parent / "tty-stub" / "ttys.json")}
+
+
+def bind_session(home, session_id, pid=None, tty=FAKE_TTY, **record):
+    """The ordinary must-allow binding: a record naming `session_id` for
+    `pid` (default: this test process, an ancestor of every script it runs)
+    and a tty stub giving that pid `tty`. Returns the env to merge."""
+    pid = os.getpid() if pid is None else pid
+    write_session_record(home, session_id, pid=pid, **record)
+    return tty_stub(pathlib.Path(home).parent / "tty-stub", {pid: tty})
+
+
+def bind_sessions(home, session_ids, pid=None, tty=FAKE_TTY):
+    """`bind_session` for several session ids at once, all owned by `pid`
+    (default: this test process), one record file each. For the suites
+    older than the binding, whose send-expecting cases each run one of a
+    fixed set of session ids. Returns the env to merge."""
+    pid = os.getpid() if pid is None else pid
+    for index, session_id in enumerate(session_ids):
+        write_session_record(home, session_id, pid=pid, name=f"{pid}-{index}.json")
+    return tty_stub(pathlib.Path(home).parent / "tty-stub", {pid: tty})

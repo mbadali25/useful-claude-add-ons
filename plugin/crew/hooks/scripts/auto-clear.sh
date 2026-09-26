@@ -34,6 +34,12 @@
 #     of this hook, or exactly one X11 window owned by an ancestor (a
 #     windowTitle is a fallback that refuses on zero or several matches).
 #     wtype cannot identify anything and is refused.
+#   - the target is THIS session's (T-0016): Claude Code's session record
+#     for this session id names a live, interactive, non-SDK process above
+#     this hook, and -- for tmux -- that process's controlling terminal IS
+#     the pane's. A session with no terminal of its own (a `claude -p` child)
+#     gets notify under `auto`, a refusal under an explicit method; ssh or
+#     WSL with no tmux on this side gets notify, and xdotool is refused there.
 #
 # Every refusal is written to .crew/.autoclear.log, because a Stop hook's
 # stderr is invisible on exit 0.
@@ -140,6 +146,10 @@ if [ "$DRY_RUN" -eq 1 ]; then
     printf 'autoclear: would send\n  method: %s\n  command: %s\n  %s\n' \
       "$RESOLVED" "$COMMAND" "$DELAY_LINE"
   fi
+  # Why a `notify` was chosen over a keystroke (T-0016: a headless session,
+  # or an ssh/WSL boundary). Only ever present on notify; the plan leaves it
+  # empty for a keystroke method.
+  [ -n "$REASON" ] && printf '  reason: %s\n' "$REASON"
   exit 0
 fi
 
@@ -170,8 +180,15 @@ fi
 # compacted: only that it is safe to run the configured command yourself.
 if [ "$RESOLVED" = "notify" ]; then
   MSG="crew: handoff written and verified for this session - it is safe to run ${COMMAND} now (auto-clear will not type it for you)."
+  # T-0016: say WHY nothing is typed when the plan knows -- a headless
+  # session gets the parent-restart recipe, an ssh/WSL session the tmux route.
+  [ -n "$REASON" ] && MSG="$MSG Why: $REASON."
   "$PY" -c 'import json,sys; print(json.dumps({"systemMessage": sys.argv[1]}))' "$MSG" 2>/dev/null
-  note "sent - method notify, command '$COMMAND'"
+  if [ -n "$REASON" ]; then
+    note "sent - method notify, command '$COMMAND' - $REASON"
+  else
+    note "sent - method notify, command '$COMMAND'"
+  fi
   exit 0
 fi
 

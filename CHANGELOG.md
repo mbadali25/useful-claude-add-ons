@@ -6,6 +6,75 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Fixed
 
+- **`crew` 1.0.34: auto-clear binds its target to this session (T-0016).**
+  Bumped `1.0.29 -> 1.0.34`. A `claude -p` started from another session's
+  Bash tool inherits `$TMUX_PANE` and has that session's pane shell among its
+  ancestors, so auto-clear's ancestry check handed it the **parent's** pane:
+  measured on Claude Code 2.1.282 with `--dry-run` and
+  `CREW_AUTOCLEAR_INHIBIT`, the child's Stop planned `would send` into the
+  parent's `%0`. No keystroke was sent while measuring.
+  - **The binding.** `crew_autocycle.session_owner` reads Claude Code's
+    session record `~/.claude/sessions/<pid>.json`. Exactly one record must
+    name the payload's `session_id`. Its pid must be alive, match the recorded
+    `procStart` (`/proc/<pid>/stat` field 22), be an ancestor of the hook, be
+    `kind: interactive` with a non-SDK `entrypoint`, and hold a controlling
+    terminal. Then tmux needs that terminal to equal the pane's
+    `#{pane_tty}`, and xdotool walks windows up from the owner, not from the
+    hook. The measured `-p` record is `kind: interactive, entrypoint:
+    sdk-cli`, so the entrypoint and the tty are what mark it headless.
+    "Could not tell" (an unreadable record, an unreadable tty, two matching
+    records) refuses.
+  - **Headless sessions** (no record, an SDK entrypoint, no controlling tty)
+    are never typed into. Under `auto` they get `notify` naming the
+    parent-restart recipe (`crew_resume.py decide --source clear --json`,
+    `record`, a fresh `claude -p`). An explicit `tmux`/`xdotool` refuses with
+    the same text in `.crew/.autoclear.log`. `auto-clear.sh` appends the
+    reason to the notify message and its log line.
+  - **ssh and WSL** with no tmux on Claude's side: `auto` resolves to
+    `notify`, and an explicit `xdotool` refuses, because the X display is not
+    on this host. tmux running where Claude runs is unaffected.
+  - **The ps1 twin.** `Get-CrewSessionOwner` applies the same checks
+    except `procStart`, which is unmeasured on Windows and is logged as
+    skipped, and it refuses a non-integer `pid` (a `1234.0` would otherwise
+    cast to a match, where Python refuses it). The window walk starts at the
+    owner, never at `$PID`. A headless
+    record declines `sendkeys` to `notify`. The detached child is unchanged,
+    and `test_sendkeys_structural_gate.py` still counts two call sites.
+  - **The window must be no other session's.** Proving the owner does not
+    prove the window is its own: the walk from the owner reaches the nearest
+    process that owns a window, and that process can sit above another live
+    session too - the parent a child `claude` with its own pty was started
+    from (the walk climbs through the parent's process to the parent's
+    window), or a sibling tab of one gnome-terminal, konsole, xfce4-terminal
+    or VS Code window, where xdotool types into whichever tab is showing.
+    `crew_autocycle._shared_window` and its ps1 twin
+    `Get-CrewSharedWindowReason` read every other session record: a live
+    pid not under the owner whose ancestors include the window's owner makes
+    `xdotool` refuse and `sendkeys` decline to `notify`. A dead pid, or on
+    Linux a live pid whose start time is not the recorded `procStart`, names
+    nobody; a record with no `procStart`, an unreadable one or one with no
+    usable pid counts. On Windows this is also what stops a `-p` child
+    walking into its parent's window whatever `entrypoint` it writes there.
+  - **`CLAUDE_CONFIG_DIR`.** Both flavours read `$CLAUDE_CONFIG_DIR/sessions`
+    as well as `~/.claude/sessions` when it is set. Where Claude Code keeps
+    its records under a relocated config is unmeasured, so none found there
+    is "could not tell" and refuses, never the headless `notify`.
+    `crew_fixtures` clears the variable at import, so no test reads a
+    relocated real config.
+  - **Breaking if the record is absent.** The record is an undocumented
+    Claude Code internal. A release that drops or renames it makes every
+    keystroke refuse. On native Windows its presence is unmeasured, so
+    explicit `sendkeys` users may fall back to `notify` until it is measured
+    (`TODO.md`).
+  - Tests: `test_autoclear_binding.py` (94 cases: must-fire and must-not-fire
+    per link, a window owned by a strict ancestor of the owner, a window
+    shared with a parent or sibling session, `CLAUDE_CONFIG_DIR`, headless,
+    ssh/WSL, the ps1 twin on pwsh, sh/ps1 parity).
+    `sabotage_autoclear_binding.py` (39 mutations, all red) is registered in
+    `sabotage.py`. The older send-expecting suites carry the record fixture
+    through `crew_fixtures.bind_sessions`, with no `assert` line edited.
+    `.crew/verify.json` maps the binding's files to the three suites.
+
 - **`crew` 1.0.29: the PATH stubs in `test_34d` and `test_1` are reached on
   native Windows, from win-repo-2 (T-0007).** Bumped `1.0.28 -> 1.0.29`. Test
   harness only - no hook script changes. Two of win-repo-2's commits,

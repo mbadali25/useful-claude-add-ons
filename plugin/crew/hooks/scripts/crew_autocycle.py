@@ -23,6 +23,29 @@ Three rules, each one a bug that shipped:
    hook), and a configured `windowTitle` is only a fallback that refuses on
    zero or several matches. `wtype` identifies nothing and is refused outright.
 
+4. **The target is this SESSION's, not merely an ancestor's (T-0016).** A
+   `claude -p` started from another session's Bash tool inherits `$TMUX_PANE`
+   and has that session's pane shell among its ancestors, so rule 3 alone
+   handed it the PARENT's pane (measured on Claude Code 2.1.282). So a
+   keystroke method first binds the payload's `session_id` to the Claude Code
+   process that owns it, through Claude Code's session record
+   `~/.claude/sessions/<pid>.json` (`session_owner`): alive, the recorded
+   `procStart`, an ancestor of this hook, `kind: interactive`, an entrypoint
+   that is not an SDK/`-p` one, and a controlling terminal. tmux then needs
+   that process's tty to BE the pane's; xdotool walks windows from it, and
+   refuses a window whose owning process also sits above another live
+   session -- the parent a child with its own pty was started from, or a
+   sibling tab of one terminal window (`_shared_window`). The records are
+   read from `$CLAUDE_CONFIG_DIR/sessions` too when that is set, and none
+   found there is "could not tell", not headless. A
+   session with no terminal of its own (no record, a headless kind or
+   entrypoint, no controlling tty) is never typed into: `auto` tells it how a
+   parent restarts it (`notify`), an explicit method refuses. Across an ssh or
+   WSL boundary with no tmux on this side, `auto` is `notify` and xdotool is
+   refused -- the X display is not on this host. The record is an
+   undocumented Claude Code internal: if a release drops or renames it, every
+   keystroke refuses, which is the direction "could not tell" must fail in.
+
 Two methods never type anything at all. **`notify`** prints a `systemMessage`
 saying the handoff is written and verified and it is safe to run the
 configured command yourself -- never that anything was cleared or compacted,
@@ -60,6 +83,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 from datetime import datetime, timezone
 
 MARKER_PREFIX = ".handoff-requested-"
@@ -69,6 +93,24 @@ SENT_PREFIX = ".autoclear-sent-"
 # is not a handoff anybody wrote, and clearing on it loses the session.
 SKELETON_MARK = "UNKNOWN - this skeleton was written automatically"
 WINDOW_STUB_ENV = "CREW_AUTOCLEAR_WINDOW_STUB"
+# `{pid: tty}` JSON replacing the controlling-tty read, the WINDOW_STUB
+# pattern: a CI pytest process often has no tty at all, so "owner tty ==
+# pane tty" cannot be built from a real one. Whoever can set it already
+# controls this hook.
+TTY_STUB_ENV = "CREW_AUTOCLEAR_TTY_STUB"
+# Where WSL announces itself when neither WSL_DISTRO_NAME nor WSL_INTEROP
+# survived (sudo scrubs both). Overridable so a suite run inside WSL can
+# still exercise the non-WSL cases; it can only ADD a refusal.
+WSL_INTEROP_ENV = "CREW_AUTOCLEAR_WSL_INTEROP_PATH"
+_WSL_INTEROP_PATH = "/proc/sys/fs/binfmt_misc/WSLInterop"
+# How long `session_owner` waits for a record naming the session. Fixed, no
+# config key. The spike measured 0 ms after /clear (10 of 10 runs, the
+# record already rewritten when SessionStart began) and 74 ms at a `-p`
+# startup, so 2 s is a wide margin, not a guess at a slow machine.
+_OWNER_WAIT_SECONDS = 2.0
+_OWNER_POLL_SECONDS = 0.1
+# Linux Unix98 pty majors: /dev/pts/N lives on majors 136-143.
+_PTS_MAJOR_FIRST, _PTS_MAJOR_LAST = 136, 143
 _DEFAULTS = {"method": "auto", "windowTitle": "", "command": "/clear",
              "delaySeconds": 3, "minHandoffLines": 5}
 # Every key `settings()` actually reads from context.autoClear, in either
@@ -374,6 +416,278 @@ def ancestors(pid=None):
     return out
 
 
+# --- the session binding (T-0016) -------------------------------------------
+#
+# Rule 4 of the module docstring. Everything here answers ONE question -- is
+# there a live, interactive Claude Code process that owns this session, sits
+# above this hook, and has a terminal of its own -- and "could not tell" is
+# never a yes. `headless` separates "this session has no terminal of its own"
+# (no record, a headless kind or entrypoint, no controlling tty) from "wrong
+# process" (dead, reused pid, not an ancestor, two records): only the first
+# may become a `notify`, the second always refuses.
+
+def _proc_start(pid):
+    """`/proc/<pid>/stat` field 22 (starttime) as a string, or None."""
+    try:
+        with open(f"/proc/{pid}/stat", encoding="ascii", errors="replace") as handle:
+            return handle.read().rsplit(")", 1)[1].split()[19]
+    except (OSError, IndexError):
+        return None
+
+
+def _alive(pid):
+    # Never os.kill on Windows: there, any signal but the two console events
+    # is TerminateProcess. The ancestor check that follows proves liveness on
+    # its own; this only gives a dead owner its own reason.
+    if os.name == "nt":
+        return True
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except OSError:
+        return True
+    return True
+
+
+def _tty_from_nr(tty_nr):
+    """`/proc/<pid>/stat`'s tty_nr as tmux prints `#{pane_tty}`: "" for no
+    controlling tty, `/dev/pts/N` for a Unix98 pty, None for anything else
+    (left to `ps`)."""
+    if tty_nr == 0:
+        return ""
+    major = (tty_nr >> 8) & 0xFFF
+    minor = (tty_nr & 0xFF) | ((tty_nr >> 12) & 0xFFF00)
+    if _PTS_MAJOR_FIRST <= major <= _PTS_MAJOR_LAST:
+        return f"/dev/pts/{(major - _PTS_MAJOR_FIRST) * 256 + minor}"
+    return None
+
+
+def _tty_of(pid, env=None):
+    """The controlling terminal of `pid`: "" when it has none, a device path
+    when it has one, None when it could not be read. CREW_AUTOCLEAR_TTY_STUB
+    replaces the read (a pid missing from the stub is None)."""
+    env = os.environ if env is None else env
+    stub = env.get(TTY_STUB_ENV)
+    if stub:
+        try:
+            with open(stub, encoding="utf-8") as handle:
+                data = json.load(handle)
+        except (OSError, ValueError):
+            return None
+        value = data.get(str(pid)) if isinstance(data, dict) else None
+        if not isinstance(value, str):
+            return None
+        return "" if value in ("", "?") else value
+    try:
+        with open(f"/proc/{pid}/stat", encoding="ascii", errors="replace") as handle:
+            tty = _tty_from_nr(int(handle.read().rsplit(")", 1)[1].split()[4]))
+        if tty is not None:
+            return tty
+    except (OSError, IndexError, ValueError):
+        pass
+    try:
+        out = subprocess.run(["ps", "-o", "tty=", "-p", str(pid)], capture_output=True,
+                             text=True, timeout=5, check=False).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if not out:
+        return None
+    if out in ("?", "??", "-"):
+        return ""
+    return out if out.startswith("/") else "/dev/" + out
+
+
+def restart_recipe():
+    """The one thing a parent can do for a headless child: restart it."""
+    resume = os.path.join(os.path.dirname(os.path.abspath(__file__)), "crew_resume.py")
+    steps = (f"python3 {resume} decide --source clear --json, then record, "
+             'then claude -p "<prompt>"')
+    if os.path.isfile(resume):
+        return f"a parent that started this session restarts it: {steps}"
+    return ("a parent that started this session restarts it with a fresh "
+            'claude -p "<prompt>" that points at the handoff (once crew_resume.py '
+            f"ships: {steps})")
+
+
+def _headless(reason):
+    return {"ok": False, "headless": True,
+            "reason": f"{reason} - it has no terminal of its own"}
+
+
+def _wrong(reason):
+    return {"ok": False, "headless": False, "reason": reason}
+
+
+def _session_folders(env):
+    """Every folder Claude Code's session records may be in: `~/.claude/
+    sessions`, and `$CLAUDE_CONFIG_DIR/sessions` first when that variable
+    relocates Claude Code's config. Where a relocated config keeps its
+    records is unmeasured, so both are read."""
+    home = os.path.join(os.path.expanduser("~"), ".claude", "sessions")
+    relocated = (env.get("CLAUDE_CONFIG_DIR") or "").strip()
+    if not relocated:
+        return [home]
+    moved = os.path.join(os.path.expanduser(relocated), "sessions")
+    same = os.path.normcase(os.path.abspath(moved)) == os.path.normcase(os.path.abspath(home))
+    return [home] if same else [moved, home]
+
+
+def _session_records(session_id, env):
+    """(matches, others, unreadable_name) over every `_session_folders`
+    `*.json`. `others` is [(name, record)] for the records naming any
+    OTHER session."""
+    matches, others = [], []
+    for folder in _session_folders(env):
+        try:
+            names = sorted(n for n in os.listdir(folder) if n.endswith(".json"))
+        except OSError:
+            continue
+        for name in names:
+            try:
+                with open(os.path.join(folder, name), encoding="utf-8") as handle:
+                    record = json.load(handle)
+            except (OSError, ValueError):
+                return [], [], name
+            if not isinstance(record, dict):
+                return [], [], name
+            if record.get("sessionId") == session_id:
+                matches.append(record)
+            else:
+                others.append((name, record))
+    return matches, others, None
+
+
+def session_owner(session_id, env=None):
+    """{"ok", "headless", "reason", "pid", "tty"}: the Claude Code process
+    that owns `session_id`, proven through its session record."""
+    env = os.environ if env is None else env
+    if not session_id:
+        return _wrong("no session id, so no session record can be matched to this hook")
+    deadline = time.monotonic() + _OWNER_WAIT_SECONDS
+    while True:
+        matches, _others, bad = _session_records(session_id, env)
+        if bad:
+            return _wrong(f"the Claude Code session record {bad} is unreadable, so it "
+                          "cannot be ruled out as this session's")
+        if matches or time.monotonic() >= deadline:
+            break
+        time.sleep(_OWNER_POLL_SECONDS)
+    if not matches and (env.get("CLAUDE_CONFIG_DIR") or "").strip():
+        # Could not tell, never "headless": `auto` would turn that into a
+        # notify telling a user at their own pane that a parent must
+        # restart it.
+        return _wrong("no Claude Code session record names this session in "
+                      f"{' or '.join(_session_folders(env))} - CLAUDE_CONFIG_DIR is set, and "
+                      "where Claude Code keeps its session records under it is unmeasured, "
+                      "so a missing record cannot be read as a session with no terminal")
+    if not matches:
+        return _headless("no Claude Code session record names this session")
+    if len(matches) > 1:
+        return _wrong(f"{len(matches)} Claude Code session records name this session")
+    record = matches[0]
+    pid = record.get("pid")
+    if isinstance(pid, bool) or not isinstance(pid, int) or pid <= 1:
+        return _wrong("the session record has no usable pid")
+    if not _alive(pid):
+        return _wrong(f"the session record's pid {pid} is not running")
+    started = _proc_start(pid)
+    if started is not None and str(record.get("procStart")) != started:
+        return _wrong(f"the session record's procStart does not match pid {pid}'s start "
+                      "time - the pid was reused by another process")
+    if pid not in ancestors():
+        return _wrong(f"the session's process (pid {pid}) is not an ancestor of this hook")
+    kind = record.get("kind")
+    if kind != "interactive":
+        return _headless(f"the session record's kind {kind!r}, not interactive")
+    entrypoint = record.get("entrypoint")
+    if not isinstance(entrypoint, str) or not entrypoint:
+        return _wrong("the session record has no entrypoint, so it cannot say whether "
+                      "the session is headless")
+    if entrypoint.startswith("sdk"):
+        return _headless(f"the session record's entrypoint {entrypoint!r} is a "
+                         "headless (-p or SDK) session")
+    tty = _tty_of(pid, env)
+    if tty is None:
+        return _wrong(f"could not read the controlling terminal of the session's process "
+                      f"(pid {pid})")
+    if tty == "":
+        return _headless(f"the session's process (pid {pid}) has no controlling terminal")
+    return {"ok": True, "headless": False, "reason": "", "pid": pid, "tty": tty}
+
+
+def _shared_window(session_id, owner_pid, window, env):
+    """"" when no OTHER live Claude Code session sits under the process that
+    owns `window`; otherwise why it cannot be typed into.
+
+    Proving the owner does not prove the window is its own. The walk from
+    the owner climbs to the nearest process that owns a window, and that
+    process may sit above another session too: the parent session a child
+    `claude` with its own pty was started from (the walk climbs through the
+    parent's process to the parent's terminal), or a sibling tab of one
+    gnome-terminal / konsole / xfce4-terminal / VS Code window, where
+    xdotool types into whichever tab is showing. A session UNDER the owner
+    (a `claude -p` this session started) reaches the window only through
+    the owner, so it is not a second holder. A record whose live pid has
+    another start time is a reused pid and names nobody; a record with no
+    procStart, or no readable one, cannot be proven stale and counts."""
+    _matches, others, bad = _session_records(session_id, env)
+    wid = window.get("id")
+    if bad:
+        return (f"the Claude Code session record {bad} is unreadable, so it cannot be ruled "
+                f"out as another session in window {wid}")
+    holders = []
+    for name, record in others:
+        pid = record.get("pid")
+        if isinstance(pid, bool) or not isinstance(pid, int) or pid <= 1:
+            return (f"the Claude Code session record {name} has no usable pid, so it cannot "
+                    f"be ruled out as another session in window {wid}")
+        if pid == owner_pid or not _alive(pid):
+            continue
+        started = _proc_start(pid)
+        recorded = record.get("procStart")
+        if started is not None and recorded is not None and str(recorded) != started:
+            continue
+        chain = ancestors(pid)
+        if owner_pid in chain:
+            continue
+        holders.append((pid, name, chain))
+    if not holders:
+        return ""
+    window_pid = _num(window.get("pid"), 0)
+    if window_pid <= 1:
+        return (f"window {wid} has no owning process, so it cannot be ruled out as also "
+                f"hosting the live Claude Code session in {holders[0][1]}")
+    for pid, name, chain in holders:
+        if window_pid in chain:
+            return (f"window {wid} (pid {window_pid}) {_SHARED_WINDOW} (pid {pid}, record "
+                    f"{name}) - a terminal that holds several sessions in one window types "
+                    "into whichever one is showing, so it cannot be proven to be this "
+                    "session's")
+    return ""
+
+
+_SHARED_WINDOW = "also hosts another live Claude Code session"
+
+
+def _boundary(env):
+    """"ssh", "WSL" or "": the session runs across a boundary no keystroke
+    from here can cross."""
+    if any(env.get(k) for k in ("SSH_CONNECTION", "SSH_CLIENT", "SSH_TTY")):
+        return "ssh"
+    if any(env.get(k) for k in ("WSL_DISTRO_NAME", "WSL_INTEROP")):
+        return "WSL"
+    if os.path.exists(env.get(WSL_INTEROP_ENV) or _WSL_INTEROP_PATH):
+        return "WSL"
+    return ""
+
+
+def _boundary_reason(boundary):
+    where = "over ssh" if boundary == "ssh" else "inside WSL"
+    return (f"this session runs {where} with no tmux pane on this side, so no terminal "
+            "here can be proven to be its own - run tmux where Claude runs to have it typed")
+
+
 def _xdotool(*args):
     try:
         return subprocess.run(["xdotool", *args], capture_output=True, text=True,
@@ -430,8 +744,8 @@ def resolve_target(ancestor_pids, windows, title):
             "nothing narrows them to one - set context.autoClear.windowTitle")}
     if not needle:
         return {"ok": False, "reason": (
-            "no window belongs to any ancestor of this hook, and no "
-            "context.autoClear.windowTitle is set to fall back on")}
+            "no window belongs to any ancestor of the session's own process (itself "
+            "included), and no context.autoClear.windowTitle is set to fall back on")}
     hits = titled(windows)
     if len(hits) == 1:
         return {"ok": True, "window": hits[0], "how": "title fallback"}
@@ -440,22 +754,42 @@ def resolve_target(ancestor_pids, windows, title):
         "which one is this session")}
 
 
-def _tmux_pane_pid(pane):
+def _tmux_pane(pane):
+    """(pane pid or 0, pane tty or "") in one tmux call."""
     try:
-        out = subprocess.run(["tmux", "display-message", "-p", "-t", pane, "#{pane_pid}"],
+        out = subprocess.run(["tmux", "display-message", "-p", "-t", pane,
+                              "#{pane_pid} #{pane_tty}"],
                              capture_output=True, text=True, timeout=5, check=False).stdout
     except (OSError, subprocess.SubprocessError):
-        return 0
-    return _num(out.strip(), 0)
+        return 0, ""
+    fields = out.split()
+    return (_num(fields[0], 0) if fields else 0), (fields[1] if len(fields) > 1 else "")
 
 
-def resolve_method(cfg, env=None):
-    """{"ok", "method", "target", "label", "reason"}."""
+def _owner_refusal(cfg, owner):
+    """A failed binding under a keystroke method: `auto` turns a HEADLESS
+    session into a notify with the restart recipe; everything else refuses."""
+    if owner["headless"]:
+        reason = f"{owner['reason']}; {restart_recipe()}"
+        if cfg["method"] == "auto":
+            return {"ok": True, "method": "notify", "target": "", "label": "", "reason": reason}
+        return {"ok": False, "reason": reason}
+    return {"ok": False, "reason": owner["reason"]}
+
+
+def resolve_method(cfg, env=None, session_id=""):
+    """{"ok", "method", "target", "label", "reason"}. A keystroke method is
+    bound to `session_id`'s own process first (`session_owner`); with no
+    session id there is nothing to bind, so nothing is typed."""
     env = os.environ if env is None else env
     method = cfg["method"]
+    boundary = _boundary(env)
     if method == "auto":
         if env.get("TMUX") and shutil.which("tmux"):
             method = "tmux"
+        elif boundary:
+            return {"ok": True, "method": "notify", "target": "", "label": "",
+                    "reason": _boundary_reason(boundary)}
         elif env.get("DISPLAY") and shutil.which("xdotool"):
             method = "xdotool"
         # `OS=Windows_NT` is a Windows-kernel-set variable, present in every
@@ -474,6 +808,12 @@ def resolve_method(cfg, env=None):
             method = "notify"
         else:
             method = "none"
+    if method == "none" and cfg["method"] == "auto":
+        # No terminal method at all; a session that provably has no terminal
+        # of its own still gets the one thing a parent can act on.
+        owner = session_owner(session_id, env)
+        if owner["headless"]:
+            return _owner_refusal(cfg, owner)
     if method == "none":
         return {"ok": False, "reason": (
             "no usable method. Inside tmux this works with no configuration; on X11 "
@@ -498,22 +838,43 @@ def resolve_method(cfg, env=None):
         pane = env.get("TMUX_PANE") or ""
         if not pane:
             return {"ok": False, "reason": "$TMUX_PANE is unset, so there is no pane to target"}
-        pane_pid = _tmux_pane_pid(pane)
+        owner = session_owner(session_id, env)
+        if not owner["ok"]:
+            return _owner_refusal(cfg, owner)
+        pane_pid, pane_tty = _tmux_pane(pane)
         if not pane_pid or pane_pid not in ancestors():
             return {"ok": False, "reason": (
                 f"tmux pane {pane} could not be confirmed as the pane running this session "
                 f"(pane pid {pane_pid or 'unknown'} is not an ancestor of this hook)")}
+        if not pane_tty:
+            return {"ok": False, "reason": (
+                f"could not read tmux pane {pane}'s terminal, so it cannot be matched to "
+                "the session's own")}
+        if owner["tty"] != pane_tty:
+            return {"ok": False, "reason": (
+                f"the session's controlling terminal {owner['tty']} is not the pane's "
+                f"{pane_tty} - pane {pane} belongs to another session")}
         return {"ok": True, "method": "tmux", "target": pane,
                 "label": f"{pane} [pane pid {pane_pid}]"}
     if method == "xdotool":
         if not shutil.which("xdotool"):
             return {"ok": False, "reason": "method xdotool but xdotool is not on PATH"}
+        if boundary:
+            return {"ok": False, "reason": (
+                f"method xdotool across a{'n' if boundary == 'ssh' else ''} {boundary} "
+                "boundary - the X display is not on the host this session runs on")}
+        owner = session_owner(session_id, env)
+        if not owner["ok"]:
+            return _owner_refusal(cfg, owner)
         windows, why = list_windows()
         if windows is None:
             return {"ok": False, "reason": f"cannot list windows: {why}"}
-        found = resolve_target(ancestors(), windows, cfg["windowTitle"])
+        found = resolve_target(ancestors(owner["pid"]), windows, cfg["windowTitle"])
         if not found["ok"]:
             return {"ok": False, "reason": found["reason"]}
+        shared = _shared_window(session_id, owner["pid"], found["window"], env)
+        if shared:
+            return {"ok": False, "reason": shared}
         win = found["window"]
         return {"ok": True, "method": "xdotool", "target": str(win.get("id")),
                 "label": (f"{win.get('title') or ''} [window {win.get('id')}, "
@@ -548,7 +909,7 @@ def plan(root, session_id, force=False, global_path=None, env=None):
         if not ok:
             out["reason"] = why
             return out
-    got = resolve_method(cfg, env)
+    got = resolve_method(cfg, env, session_id)
     if not got["ok"]:
         out["reason"] = got["reason"]
         return out
@@ -557,7 +918,8 @@ def plan(root, session_id, force=False, global_path=None, env=None):
         # that exists for tmux/xdotool (the turn is still ending when this
         # runs) buys nothing here.
         out["delay"] = "0"
-    out.update(status="send", method=got["method"], target=got["target"], label=got["label"])
+    out.update(status="send", method=got["method"], target=got["target"], label=got["label"],
+               reason=got.get("reason", ""))
     return out
 
 

@@ -1482,11 +1482,48 @@ every repo. The other keys layer normally, repo over machine.
 
 | Method | How it finds the target | Confidence |
 |---|---|---|
-| `tmux` | `$TMUX_PANE`, and only when that pane's pid is an ancestor of the hook | **Exact.** No focus involved. Use this if you can. |
-| `xdotool` | the one window owned by the nearest ancestor process; `windowTitle` narrows or, failing that, is a fallback that must match exactly one window | Activates that window id, re-checks it is active, then types. |
+| `tmux` | `$TMUX_PANE`, and only when that pane's pid is an ancestor of the hook **and** the pane's tty is the controlling terminal of the process that owns this session | **Exact.** No focus involved. Use this if you can. |
+| `xdotool` | the one window owned by the session's own process or its nearest ancestor; `windowTitle` narrows or, failing that, is a fallback that must match exactly one window | Activates that window id, re-checks it is active, then types. Refused over ssh or inside WSL. |
 | `notify` | no window — types nothing | Prints a `systemMessage` saying the handoff is written and verified and it is safe to run the configured command yourself. Never claims anything was cleared or compacted, because nothing was. `auto` resolves here on native Windows with no tmux pane. |
 | `sendkeys` | the same rule through `EnumWindows` (renamed from the pre-1.0 `"windows"` literal); at send time that exact window handle must have foreground | **Opt-in only — `auto` never resolves here.** Windows Terminal hosts every tab in one window and nothing outside UI Automation can tell which tab is active, so a Windows-Terminal-owned target declines and falls back to `notify`, logged to `.crew/.autoclear.log`. Request it by name after reading what it does. |
 | `wtype` | cannot identify a window | **Refused**, whatever `unsafeFocus` says. |
+
+#### Whose terminal it types into
+
+A keystroke goes only to a pane or window that is provably this session's own.
+A `claude -p` started from another session's Bash tool inherits `$TMUX_PANE`
+and has that session's pane among its ancestors, so before crew 1.0.34 it
+would have typed `/clear` into its **parent's** pane.
+
+| Where this session runs | What auto-clear does |
+|---|---|
+| its own tmux pane, with tmux running on the host where Claude runs (locally, on the far end of ssh, or inside WSL) | types the command, once the session record proves the pane is its own |
+| its own X11 window (`xdotool`) or Windows window (`sendkeys`, opt-in) | types the command, walking windows up from the session's own process, never from the hook, and only when no other live Claude Code session sits under the process that owns that window |
+| one terminal window that hosts several sessions: tabs of one gnome-terminal, konsole, xfce4-terminal or VS Code window, or a child `claude` with its own pty under a parent session | types nothing into that window: `xdotool` refuses and `sendkeys` declines to `notify`, because the terminal types into whichever tab is showing, so the window cannot be proven to be this session's. Use tmux |
+| a headless child: a `claude -p` or SDK session started by another session, agent or script | types nothing, ever. `auto` resolves to `notify` and names the parent-restart recipe; an explicit `tmux` or `xdotool` refuses with the same text in the log; `sendkeys` declines to `notify` |
+| an Agent-tool subagent | never armed: `context-watch` runs on `Stop` only, not `SubagentStop`, so no wrap-up is requested for one |
+| ssh or WSL with no tmux on Claude's side | `auto` resolves to `notify`; an explicit `xdotool` refuses, because the X display is not on the host this session runs on |
+
+The proof is Claude Code's own session record, `~/.claude/sessions/<pid>.json`.
+Exactly one record must name this session id. Its process must be alive, have
+the recorded `procStart` (Linux), be an ancestor of the hook, be
+`kind: interactive` with an entrypoint that is not an SDK one (a `claude -p`
+child writes `sdk-cli`), and hold a controlling terminal. For `tmux`, that
+terminal must also *be* the pane's `#{pane_tty}`. The record is an
+undocumented Claude Code internal, measured on 2.1.282: if a release drops or
+renames it, every keystroke refuses, which is the direction "could not tell"
+has to fail in. A session with no terminal of its own gets no keystroke.
+When `CLAUDE_CONFIG_DIR` is set, `$CLAUDE_CONFIG_DIR/sessions` is read as
+well. Where Claude Code keeps its records under a relocated config is
+unmeasured, so finding none there refuses rather than reading the session
+as headless.
+
+The parent-restart recipe, for whatever started a headless child:
+`python3 <plugin>/hooks/scripts/crew_resume.py decide --source clear --json`,
+then `record`, then start a fresh `claude -p "<prompt>"`. Crew does not run
+that supervisor for you. `crew_resume.py` is T-0006's CLI: until it ships,
+the `notify` line says so and asks for a fresh `claude -p` that points at the
+handoff.
 
 #### What has to be true before it types anything
 
@@ -1500,7 +1537,7 @@ every repo. The other keys layer normally, repo over machine.
    the Windows low-context `/clear` — is unknown, and unknown never clears.
 4. The handoff exists, is **newer** than the request, has at least
    `minHandoffLines` non-blank lines, and is not PreCompact's automatic skeleton.
-5. The target window is identified uniquely (the table above). Zero or several
+5. The target is this session's own (the table above) and is identified uniquely. Zero or several
    candidates is a refusal, never a guess — this step does not apply to
    `notify`, which identifies no window because it types nothing.
 6. Nothing has claimed this session's one attempt (`.crew/.autoclear-sent-<session_id>`).

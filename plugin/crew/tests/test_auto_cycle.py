@@ -71,7 +71,8 @@ def _invoke(flavor, name, root, payload=None, args=(), env_extra=None):
     env = dict(os.environ, HOME=home, USERPROFILE=home, CREW_AUTOCLEAR_INHIBIT="1",
                CLAUDE_PROJECT_DIR=str(root),
                CREW_VAULT_OPS=str(root.parent / "absent-vault-ops.py"),
-               CREW_OBSIDIAN_CONFIG=str(root.parent / "absent-obsidian.json"))
+               CREW_OBSIDIAN_CONFIG=str(root.parent / "absent-obsidian.json"),
+               **crew_fixtures.tty_stub_env(home))
     if flavor == "ps1":
         env["OS"] = "Windows_NT"
         cmd = [_PWSH, "-NoProfile", "-NonInteractive", "-File", _script(flavor, name),
@@ -92,6 +93,11 @@ def _machine(root, enabled=True, **auto):
     if enabled is not None:
         block["enabled"] = enabled
     (crew / "config.json").write_text(json.dumps({"context": {"autoClear": block}}), encoding="utf-8")
+    # T-0016: auto-clear types only into a pane proven to be the session's
+    # own, starting from Claude Code's session record. Both session ids this
+    # file runs are owned by this test process (an ancestor of every script
+    # it starts) with the fixture tty the tmux shims report for the pane.
+    crew_fixtures.bind_sessions(root.parent / "home", (SESSION_A, SESSION_B))
 
 
 def _context_cfg(**auto):
@@ -173,8 +179,7 @@ def _sendable(flavor, tmp_path, root):
     the method that still uses one."""
     if flavor == "sh":
         bindir = tmp_path / "fakebin"
-        crew_fixtures.write_shim(bindir, "tmux", f"#!/bin/sh\necho {os.getpid()}\n",
-                                 f"@echo off\r\necho {os.getpid()}\r\n")
+        crew_fixtures.tmux_shim(bindir, os.getpid())
         _machine(root, method="tmux")
         return crew_fixtures.shim_env("sh", bindir, TMUX="/tmp/fake,1,0", TMUX_PANE="%7")
     _machine(root, method="sendkeys")
@@ -306,12 +311,12 @@ def test_context_watch_stdout_reaches_eof_promptly_even_with_a_long_delay(tmp_pa
     _write_marker(root)
     _write_handoff(root)
     bindir = tmp_path / "fakebin"
-    crew_fixtures.write_shim(bindir, "tmux", f"#!/bin/sh\necho {os.getpid()}\n")
+    crew_fixtures.tmux_shim(bindir, os.getpid())
     home = tmp_path / "home"  # `_machine` writes to root.parent/"home" == tmp_path/"home"
     env = dict(os.environ, HOME=str(home), USERPROFILE=str(home),
                CLAUDE_PROJECT_DIR=str(root),
                PATH=crew_fixtures.shell_path("sh", [bindir]),
-               TMUX="/tmp/fake,1,0", TMUX_PANE="%7")
+               TMUX="/tmp/fake,1,0", TMUX_PANE="%7", **crew_fixtures.tty_stub_env(home))
     payload = _stop(root, root / ".work" / "irrelevant.jsonl", active=True)
 
     started = time.time()
@@ -358,7 +363,7 @@ def test_the_detached_sender_does_not_outlive_kill_process_group(tmp_path):
     env = _xdotool_env(tmp_path, [{"id": 1, "pid": 999999, "title": "LaneC2Marker"}])
     home = tmp_path / "home"
     env = dict(os.environ, **env, HOME=str(home), USERPROFILE=str(home),
-               CLAUDE_PROJECT_DIR=str(root))
+               CLAUDE_PROJECT_DIR=str(root), **crew_fixtures.tty_stub_env(home))
     payload = _stop(root, root / ".work" / "irrelevant.jsonl", active=True)
 
     proc = crew_fixtures.popen_gate(
@@ -858,8 +863,7 @@ def test_resolve_crew_link_root_classifies_drive_unc_and_rootless_targets(
 def test_a_tmux_pane_must_be_the_one_running_this_session(pane_pid, sent, tmp_path):
     root = _repo(tmp_path)
     env = _sendable("sh", tmp_path, root)
-    crew_fixtures.write_shim(tmp_path / "fakebin", "tmux", f"#!/bin/sh\necho {pane_pid}\n",
-                             f"@echo off\r\necho {pane_pid}\r\n")
+    crew_fixtures.tmux_shim(tmp_path / "fakebin", pane_pid)
     _write_marker(root)
     _write_handoff(root)
 
@@ -1006,7 +1010,7 @@ def test_the_configured_delay_reaches_the_detached_senders_own_sleep_argument(tm
     _write_marker(root)
     _write_handoff(root)
     bindir = tmp_path / "fakebin"
-    crew_fixtures.write_shim(bindir, "tmux", f"#!/bin/sh\necho {os.getpid()}\n")
+    crew_fixtures.tmux_shim(bindir, os.getpid())
     sleep_log = tmp_path / "sleep-calls.log"
     crew_fixtures.write_shim(bindir, "bash", (
         "#!/bin/sh\n"
@@ -1020,7 +1024,7 @@ def test_the_configured_delay_reaches_the_detached_senders_own_sleep_argument(tm
                CLAUDE_PROJECT_DIR=str(root),
                PATH=crew_fixtures.shell_path("sh", [bindir]),
                CREW_TEST_REAL_BASH=_BASH,
-               TMUX="/tmp/fake,1,0", TMUX_PANE="%7")
+               TMUX="/tmp/fake,1,0", TMUX_PANE="%7", **crew_fixtures.tty_stub_env(home))
     payload = _stop(root, root / ".work" / "irrelevant.jsonl", active=True)
 
     result = subprocess.run([_BASH, _script("sh", "context-watch")], cwd=str(root), env=env,
@@ -1241,9 +1245,11 @@ def _pwsh_can_resolve_an_owner_window():
         _machine(root, method="sendkeys")
         env = dict(os.environ, HOME=str(base / "home"), USERPROFILE=str(base / "home"),
                    CLAUDE_PROJECT_DIR=str(root), CREW_AUTOCLEAR_INHIBIT="1", OS="Windows_NT")
+        # `-Session`: the window walk starts at the process Claude Code's
+        # session record binds to this id (T-0016); `_machine` wrote it.
         result = subprocess.run(
             [_PWSH, "-NoProfile", "-NonInteractive", "-File", _script("ps1", "auto-clear"),
-             "-Force", "-DryRun", "-Root", str(root)],
+             "-Force", "-DryRun", "-Root", str(root), "-Session", SESSION_A],
             cwd=str(root), env=env, stdin=subprocess.DEVNULL,
             capture_output=True, text=True, check=False, timeout=30)
         _OWNER_WINDOW_CAPABLE = "would send" in result.stdout

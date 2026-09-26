@@ -207,6 +207,25 @@ experimental and presses a key on the user's behalf; its own block is
 `context.autoClear` and it refuses rather than guessing whenever it cannot
 identify what it would be typing into.
 
+Auto-clear types only into a terminal that is provably this session's own,
+proven through Claude Code's session record `~/.claude/sessions/<pid>.json`,
+or `$CLAUDE_CONFIG_DIR/sessions` when that is set (an undocumented internal:
+if it is missing, nothing is typed):
+
+| Where this session runs | What auto-clear does |
+|---|---|
+| its own tmux pane, with tmux running on the host where Claude runs (locally, on the far end of ssh, or inside WSL) | types the command, once the session record proves the pane is its own |
+| its own X11 window (`xdotool`) or Windows window (`sendkeys`, opt-in) | types the command, walking windows up from the session's own process, never from the hook, and only when no other live Claude Code session sits under the process that owns that window |
+| one terminal window that hosts several sessions: tabs of one gnome-terminal, konsole, xfce4-terminal or VS Code window, or a child `claude` with its own pty under a parent session | types nothing into that window: `xdotool` refuses and `sendkeys` declines to `notify`, because the terminal types into whichever tab is showing, so the window cannot be proven to be this session's. Use tmux |
+| a headless child: a `claude -p` or SDK session started by another session, agent or script | types nothing, ever. `auto` resolves to `notify` and names the parent-restart recipe; an explicit `tmux` or `xdotool` refuses with the same text in the log; `sendkeys` declines to `notify` |
+| an Agent-tool subagent | never armed: `context-watch` runs on `Stop` only, not `SubagentStop`, so no wrap-up is requested for one |
+| ssh or WSL with no tmux on Claude's side | `auto` resolves to `notify`; an explicit `xdotool` refuses, because the X display is not on the host this session runs on |
+
+The parent-restart recipe for a headless child:
+`python3 <plugin>/hooks/scripts/crew_resume.py decide --source clear --json`,
+then `record`, then a fresh `claude -p "<prompt>"` (until T-0006 ships
+`crew_resume.py`, just the fresh `claude -p` pointed at the handoff).
+
 ## How the reading is taken
 
 The `Stop` watch reads the transcript's **last `message.usage` record** and adds

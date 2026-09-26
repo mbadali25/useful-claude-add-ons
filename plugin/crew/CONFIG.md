@@ -944,11 +944,11 @@ for.
 | Value | What it does | Where it can run |
 |---|---|---|
 | `"auto"` *(default)* | Picks per platform, below. | everywhere |
-| `"tmux"` | Types into the `$TMUX_PANE` that is an ancestor of the hook. Exact — no focus involved. | Linux, macOS, WSL, Git Bash on Windows |
-| `"xdotool"` | Types into the one X11 window owned by an ancestor process (or matching `windowTitle`). | Linux with `xdotool` installed |
+| `"tmux"` | Types into the `$TMUX_PANE` that is an ancestor of the hook and whose tty is the controlling terminal of the process that owns this session. Exact — no focus involved. | Linux, macOS, WSL, Git Bash on Windows, with tmux on the host where Claude runs |
+| `"xdotool"` | Types into the one X11 window owned by the session's own process or an ancestor of it (or matching `windowTitle`), and refuses it when that window's owner also sits above another live Claude Code session. | Linux with `xdotool` installed; refused over ssh or inside WSL |
 | `"wtype"` | Refused outright — see `unsafeFocus`, above. | Wayland (declared, never granted) |
 | `"notify"` | Types nothing. Prints a `systemMessage` saying the handoff is written and verified and it is safe to run the configured `command` yourself. Never claims anything was cleared or compacted, because nothing was. | everywhere |
-| `"sendkeys"` | `System.Windows.Forms.SendKeys` against the one window owned by an ancestor process (or matching `windowTitle`), confirmed still foreground at send time. **Opt-in only — `auto` never chooses it.** Windows Terminal hosts every tab in ONE OS window, so the foreground-window check alone cannot tell which tab is showing: when the target window is owned by Windows Terminal, `auto-clear.ps1` also asks UI Automation how many tabs it has. It types only when that check finds **exactly one tab** — a window with one tab has that tab selected by definition, so that case needs no further proof. Two or more tabs **always declines**, however confidently a tab's shell-set name matches `windowTitle` or reads as selected: there is no tab-to-pid mapping, so a "proven" match is still a guess about which tab is this session's, and a wrong guess types into someone else's work. UI Automation being unavailable, throwing, or finding zero tab elements declines the same way and for the same reason — "could not tell" is never treated as safe. Every decline **falls back to `notify`**, logging why to `.crew/.autoclear.log`; it never falls back to sending regardless. A non-Windows-Terminal console host (e.g. `conhost`) has no tabs to disambiguate and is unaffected by any of this. | native Windows only |
+| `"sendkeys"` | `System.Windows.Forms.SendKeys` against the one window owned by the session's own process or an ancestor of it (or matching `windowTitle`), confirmed still foreground at send time. **Opt-in only — `auto` never chooses it.** Windows Terminal hosts every tab in ONE OS window, so the foreground-window check alone cannot tell which tab is showing: when the target window is owned by Windows Terminal, `auto-clear.ps1` also asks UI Automation how many tabs it has. It types only when that check finds **exactly one tab** — a window with one tab has that tab selected by definition, so that case needs no further proof. Two or more tabs **always declines**, however confidently a tab's shell-set name matches `windowTitle` or reads as selected: there is no tab-to-pid mapping, so a "proven" match is still a guess about which tab is this session's, and a wrong guess types into someone else's work. UI Automation being unavailable, throwing, or finding zero tab elements declines the same way and for the same reason — "could not tell" is never treated as safe. Every decline **falls back to `notify`**, logging why to `.crew/.autoclear.log`; it never falls back to sending regardless. A non-Windows-Terminal console host (e.g. `conhost`) has no tabs to disambiguate and is unaffected by any of this. | native Windows only |
 | `"none"` | Refused outright, deliberately. | everywhere |
 
 **`auto`'s per-platform pick, an OWNER DECISION:** a tmux pane if `$TMUX` names
@@ -956,9 +956,50 @@ one and `tmux` is on PATH; else an X11 window if `$DISPLAY` is set and
 `xdotool` is on PATH; else **`notify`** on native Windows (`$OS` is
 `Windows_NT`, present in every process tree there — cmd, PowerShell, Git
 Bash alike — and absent inside WSL, which has its own init); else refused
-(`"no usable method"`). `auto` **never** resolves to `sendkeys`: typing into
+(`"no usable method"`). Two cases come before the X11 one: over ssh
+(`SSH_CONNECTION`/`SSH_CLIENT`/`SSH_TTY`) or inside WSL
+(`WSL_DISTRO_NAME`/`WSL_INTEROP`, else `/proc/sys/fs/binfmt_misc/WSLInterop`)
+with no tmux pane, `auto` is `notify`; and a headless session under `auto`
+is `notify` with the parent-restart recipe (below) wherever a keystroke
+method would otherwise have been picked or refused. `auto` **never** resolves to `sendkeys`: typing into
 a window this hook found itself is a risk `auto` does not get to accept on
 your behalf. Request `sendkeys` by name to opt in to it.
+
+### Whose terminal: the session binding (crew 1.0.34)
+
+Every keystroke method is bound to this session's own process before its own
+check runs, so a `claude -p` child that inherited its parent's `$TMUX_PANE`
+cannot type into the parent's pane.
+
+| Where this session runs | What auto-clear does |
+|---|---|
+| its own tmux pane, with tmux running on the host where Claude runs (locally, on the far end of ssh, or inside WSL) | types the command, once the session record proves the pane is its own |
+| its own X11 window (`xdotool`) or Windows window (`sendkeys`, opt-in) | types the command, walking windows up from the session's own process, never from the hook, and only when no other live Claude Code session sits under the process that owns that window |
+| one terminal window that hosts several sessions: tabs of one gnome-terminal, konsole, xfce4-terminal or VS Code window, or a child `claude` with its own pty under a parent session | types nothing into that window: `xdotool` refuses and `sendkeys` declines to `notify`, because the terminal types into whichever tab is showing, so the window cannot be proven to be this session's. Use tmux |
+| a headless child: a `claude -p` or SDK session started by another session, agent or script | types nothing, ever. `auto` resolves to `notify` and names the parent-restart recipe; an explicit `tmux` or `xdotool` refuses with the same text in the log; `sendkeys` declines to `notify` |
+| an Agent-tool subagent | never armed: `context-watch` runs on `Stop` only, not `SubagentStop`, so no wrap-up is requested for one |
+| ssh or WSL with no tmux on Claude's side | `auto` resolves to `notify`; an explicit `xdotool` refuses, because the X display is not on the host this session runs on |
+
+The proof is Claude Code's own session record, `~/.claude/sessions/<pid>.json`.
+Exactly one record must name this session id. Its process must be alive, have
+the recorded `procStart` (Linux), be an ancestor of the hook, be
+`kind: interactive` with an entrypoint that is not an SDK one (a `claude -p`
+child writes `sdk-cli`), and hold a controlling terminal. For `tmux`, that
+terminal must also *be* the pane's `#{pane_tty}`. The record is an
+undocumented Claude Code internal, measured on 2.1.282: if a release drops or
+renames it, every keystroke refuses, which is the direction "could not tell"
+has to fail in. A session with no terminal of its own gets no keystroke.
+When `CLAUDE_CONFIG_DIR` is set, `$CLAUDE_CONFIG_DIR/sessions` is read as
+well. Where Claude Code keeps its records under a relocated config is
+unmeasured, so finding none there refuses rather than reading the session
+as headless.
+
+The parent-restart recipe, for whatever started a headless child:
+`python3 <plugin>/hooks/scripts/crew_resume.py decide --source clear --json`,
+then `record`, then start a fresh `claude -p "<prompt>"`. Crew does not run
+that supervisor for you. `crew_resume.py` is T-0006's CLI: until it ships,
+the `notify` line says so and asks for a fresh `claude -p` that points at the
+handoff.
 
 ### What the widening costs
 

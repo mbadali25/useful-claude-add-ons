@@ -76,6 +76,10 @@ def _ps1_repo(tmp_path, method="sendkeys", window_title="Claude"):
     crew.mkdir(parents=True, exist_ok=True)
     (crew / "config.json").write_text(json.dumps({"context": {"autoClear": {
         "enabled": True, "method": method, "windowTitle": window_title}}}), encoding="utf-8")
+    # T-0016: the window walk starts at the process Claude Code's session
+    # record binds to this session -- here this test process, an ancestor of
+    # the script -- so the case reaches the owner check it is about.
+    crew_fixtures.bind_sessions(root.parent / "home", (session,))
     (root / ".crew" / (".handoff-requested-" + session)).write_text(json.dumps({
         "session_id": session, "requested_at": time.time() - 30,
         "trusted": True, "why": "measured"}), encoding="utf-8")
