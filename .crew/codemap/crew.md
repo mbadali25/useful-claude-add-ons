@@ -1,5 +1,5 @@
-anchor: useful-claude-add-ons@c35edda5
-verified: 2026-09-25
+anchor: useful-claude-add-ons@8ebbdedc
+verified: 2026-09-26
 
 ## Re-derive provenance
 
@@ -24,8 +24,8 @@ agent/command prose beyond their frontmatter and the sections cited below;
 `crew_platform.py`; any `.ps1` file's body past its `Resolve-CrewPython`
 definition; any test file's contents (existence and size only).
 Re-verified per-path from `f2bb919b` to `adf8d1dd` for T-0008, from
-`adf8d1dd` to `8d447a7d` for its review round 3, and to `c35edda5` for
-T-0034; see the last three sections.
+`adf8d1dd` to `8d447a7d` for its review round 3, to `c35edda5` for
+T-0034, and to `8ebbdedc` for T-0026's landing; see the last four sections.
 
 # crew
 
@@ -131,7 +131,7 @@ draws it:
 | `/crew:brainstorm` (`plugin/crew/commands/brainstorm.md`) | Mints a ticket and settles an approved direction; loads `crew-brainstorm` (method adapted from `superpowers:brainstorming`, notice in `plugin/crew/NOTICE.md`) | new in 1.0 |
 | `/crew:spec` (`plugin/crew/commands/spec.md:7-8`) | Fills the ticket contract (Intent/Exclusions/Evidence/Unknowns/Touch/Acceptance checks) from an approved direction; Touch is one path or glob per bullet, because `/crew:approve` reads it a bullet at a time (`:38-43`, since crew 1.0.27) | `/crew:ticket` |
 | `/crew:plan` (`plugin/crew/commands/plan.md:8-9`) | Turns an approved spec into a step plan; the old standalone second-opinion step is now step 3, optional, inside this phase | redefined |
-| `/crew:approve` (`plugin/crew/commands/approve.md:5`, `disable-model-invocation: true`) | Typed by the user only: the UserPromptSubmit `approval-hook` records `<git-common-dir>/crew/tickets/<id>/approval.json`, bound to the sha256 of `spec.md` and `plan.md` (`:7-16`); the command body only relays the result | new in 1.0 |
+| `/crew:approve` (`plugin/crew/commands/approve.md:5`, `disable-model-invocation: true`) | Typed by the user only: the UserPromptSubmit `approval-hook` records `<git-common-dir>/crew/tickets/<id>/approval.json`, bound to the digest of `spec.md` and `plan.md` (`:7-16`; since T-0026 a `crew-approval/2` digest that normalises only the header's status value, so the lifecycle's status edits keep the approval); the command body only relays the result | new in 1.0 |
 | `/crew:implement` (`plugin/crew/commands/implement.md:8-9`) | Implements an approved plan, then tests/docs/review; loads `crew-execute` (adapted from `superpowers:executing-plans`) | `/crew:work` |
 | `/crew:review` (`plugin/crew/commands/review.md`) | Independent QA review of the working diff (Codex, Copilot, or the `crew:reviewer` Claude fallback) | (unchanged name; internals rewritten) |
 | `/crew:done` (`plugin/crew/commands/done.md:7-8`) | Closes a ticket; four checks (review receipt, clean verify gate, passing completion audit, current artifacts), any one failing refuses the close, no partial close. Check 4 (`:46-57`, since crew 1.0.36) runs `crew_refresh_check.py` and refuses on any `stale` or `unknown` line **without refreshing** - a write there would stale check 1's receipt (`:52-55`) | new in 1.0 |
@@ -465,7 +465,7 @@ the sha256 of everything the rule is rendered from (`rule_digest`, `:105`), the 
 INDEX.md's Covers cell for it, and the note's Landmines headlines (else its Entry points), capped at
 `RULES_MAX_LINES` = 30 (`:81`). `--check` (`rules`, `:191`) writes nothing and reports each rule
 file missing, stale or orphaned; a hand-written file at a generated path is never overwritten and
-fails `--check`. `.crew/verify.json` rule 22 (`.crew/verify.json:244`) runs `--check` for any change under
+fails `--check`. `.crew/verify.json` rule 23 (`.crew/verify.json:251`) runs `--check` for any change under
 `.claude/rules/**` or `.crew/codemap/**`, so **a code-map edit without a regeneration fails the Stop
 gate** - see `verification-harness.md`. DERIVED from the source above; the command was run by
 T-0015 against this refresh.
@@ -503,8 +503,8 @@ commands call, not a hook - `plugin/crew/hooks/hooks.json` is unchanged since
 - Tests: `plugin/crew/tests/test_refresh_check.py`,
   `plugin/crew/tests/test_scope_guard_refresh_artifacts.py`,
   `plugin/crew/tests/test_completion_audit_refresh_artifacts.py`, with mutations in
-  `plugin/crew/tests/sabotage_refresh.py`; `.crew/verify.json:245-261` (rule
-  23) maps them, `implement.md`, `done.md`, and since review round 3
+  `plugin/crew/tests/sabotage_refresh.py`; `.crew/verify.json:252-268` (rule
+  24) maps them, `implement.md`, `done.md`, and since review round 3
   `scope_guard.py`, `completion_audit.py`, `crew_freshness.py` and
   `scope_base.py` with their own suites, to one pytest rule. Confirmed
   present, **not run and not read** by this note.
@@ -735,3 +735,25 @@ re-read with `grep -n`/`sed -n`:
 `crew_upgrade.py --root . --derived <one-entry json> --force` printed `not a crew repo`: this
 worktree has no `.crew/config.json`, so it reconciled nothing and wrote nothing. This pass is the
 per-path re-verify above, re-anchored by hand.
+
+## Re-anchor provenance - `c35edda5` -> `8ebbdedc`, 2026-09-26 (T-0026 landing)
+
+`8ebbdedc` is the crew 1.0.39 bump on top of the T-0026 merge (`563f54c3`). Of the paths this
+note cites, `git diff --name-only c35edda5 8ebbdedc` returns `.claude-plugin/marketplace.json`,
+`.crew/verify.json`, `TODO.md`, `plugin/crew/commands/approve.md`, `done.md`, `implement.md`,
+`plan.md` and `plugin/crew/hooks/scripts/crew_ticket.py`. Each citation into them was re-read
+with `grep -n`/`sed -n`:
+
+- `approve.md` - `:13` now says the receipt is bound to "the digest of both files", not their
+  sha256; `:5` and `:7-16` hold. The table row is corrected above.
+- `plan.md` - `:8-9` holds; `:59-61` now set `spec.md`'s status, not `plan.md`'s.
+- `implement.md` - step 7 (`:106-111`) gained one line saying the status edit keeps the
+  approval; `:8-9` and step 6 `:85-104` hold.
+- `done.md` - step 1 gained one line (`:61-62`); `:7-8`, check 4 `:46-57` and `:52-55` hold.
+- `.crew/verify.json` - T-0026's rule inserted at `:167-172` as rule 10, so rule 22 -> 23
+  (`:244` -> `:251`) and rule 23 -> 24 (`:245-261` -> `:252-268`); corrected above.
+- `crew_ticket.py` - read at its module docstring only, as before; the "approval receipt"
+  section now describes the `crew-approval/2` digest. No line of it is cited here.
+- `marketplace.json` - crew `version` `:218` (now 1.0.39) only; `:217`'s 4/34/29 counts are
+  unchanged.
+- `TODO.md` - one entry marked CLOSED by T-0026 at `:5018`; `:3945` holds.
