@@ -488,6 +488,33 @@ def validate(top, ticket, contract=None):
     return problems
 
 
+# --- the spec header --------------------------------------------------------------
+
+_RISK_RE = re.compile(r"\brisk:\s*(low|med|high)(?=\s|$)", re.IGNORECASE)
+
+
+def header_line(spec_text):
+    """The spec's first `# ` line -- the template's `# <id> <title>
+    status: spec   risk: low|med|high` (commands/spec.md) -- or ''."""
+    for line in (spec_text or "").splitlines():
+        if line.startswith("# "):
+            return line
+    return ""
+
+
+def parse_risk(spec_text):
+    """`{"risk", "known"}` from the header line ONLY; a `risk:` in the body
+    does not count. Absent, empty or unrecognised (`risk: lo`, `risk: LOW!`)
+    reads as `high` with `known` False, never `low`: the policy that will
+    trust this (T-0010) must not have an unknown collapse into the permissive
+    value -- root CLAUDE.md's recurring bug."""
+    header = header_line(spec_text)
+    found = _RISK_RE.search(header)
+    if found:
+        return {"risk": found.group(1).lower(), "known": True}
+    return {"risk": "high", "known": False}
+
+
 # --- approval --------------------------------------------------------------------
 
 def _sha(data):

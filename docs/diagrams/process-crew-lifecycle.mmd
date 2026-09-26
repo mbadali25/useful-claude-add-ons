@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@8ebbdedc on 2026-09-26. Verify before trusting.
+%% Generated from useful-claude-add-ons@6f96e627 on 2026-09-26. Verify before trusting.
 %% Anchors: plugin/crew/commands/brainstorm.md, plugin/crew/commands/spec.md, plugin/crew/commands/plan.md, plugin/crew/commands/approve.md, plugin/crew/commands/implement.md, plugin/crew/commands/review.md, plugin/crew/commands/done.md, plugin/crew/commands/fix.md, plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/crew_ticket.py, plugin/crew/hooks/scripts/completion_audit.py, plugin/crew/hooks/scripts/crew_refresh_check.py
 %% The crew 1.0 ticket lifecycle: brainstorm -> spec -> plan -> approve -> implement -> refresh artifacts -> review -> done.
 %% --
@@ -21,6 +21,12 @@
 %% crew_metrics record moved :69 -> :70; the receipt check moved crew_ticket.py
 %% :501-509 -> :592-599. The three '?' stale-receipt edges are gone: T-0026
 %% closed that defect (see the paragraph above the flowchart).
+%% Re-anchored for T-0004 at 07ca3972: of the anchored paths only crew_ticket.py
+%% changed - 27 lines (header_line, parse_risk) inserted at :491, so the
+%% approval_digest citation :503-544 -> :530-571 and status()'s compare
+%% :578-599 -> :605-626, both re-read with sed -n. parse_risk has no caller in
+%% any command file yet (its consumer is T-0010), so no node or edge changed.
+%% The crew_ticket.py lines in the T-0026 note above are that anchor's, kept as history.
 %% Every node cites the command file's own line; files are named repo-relative
 %% here and by basename in the nodes (all under plugin/crew/commands/ unless
 %% named otherwise):
@@ -69,9 +75,9 @@
 %% done.md:61 (`status: done`). Until T-0026 the receipt hashed both files whole,
 %% so each left it stale; the done.md case was seen live on 2026-09-25. A
 %% `crew-approval/2` receipt now binds approval_digest
-%% (plugin/crew/hooks/scripts/crew_ticket.py:503-544), which normalises only line
+%% (plugin/crew/hooks/scripts/crew_ticket.py:530-571), which normalises only line
 %% 1's single `status:` value from STATUS_VALUES, and status() compares that
-%% digest (:578-599); any other byte change still reads `stale`, and the
+%% digest (:605-626); any other byte change still reads `stale`, and the
 %% completion audit still refuses to judge scope on anything but `approved`
 %% (plugin/crew/hooks/scripts/completion_audit.py:204-215). A receipt with no
 %% `digest` field is compared raw and stales once on its first status edit.

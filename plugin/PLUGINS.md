@@ -11,10 +11,10 @@ Read the **Hooks** section of any plugin before installing it. Commands and agen
 | | |
 |---|---|
 | **Source** | [`crew/`](crew) |
-| **Version** | 1.0.40<!-- claim: plugin-version:crew --> |
+| **Version** | 1.0.41<!-- claim: plugin-version:crew --> |
 | **Install** | `claude plugin install crew@useful-claude-add-ons` |
 | **Menu item** | 21, `repo-plugins` — **off by default**. Menu item 22, `graphify`, is a separate, also-off-by-default install of the `graphify` CLI this plugin's graph feature depends on — see **The code graph** below. |
-| **Registers** | 4 agents, 34 commands, 29 skills<!-- claim: plugin-skills:crew -->, 34 hook entries (13 scripts × `.sh`/`.ps1`) across 8 events |
+| **Registers** | 4 agents, 35 commands, 29 skills<!-- claim: plugin-skills:crew -->, 34 hook entries (13 scripts × `.sh`/`.ps1`) across 8 events |
 | **Upstream guide** | [`crew/README.md`](crew/README.md) — 25 sections, the authoritative version |
 
 Built for the awkward case: several repositories, mixed stacks, legacy code, and almost no test coverage. The workflow is file-backed tickets, one implementation session, an independent reviewer, and deterministic gates that block on failure rather than offering an opinion.
@@ -120,11 +120,12 @@ Enforcement is session-local, like every other gate here: an incident stands
 the hooks down for sessions in this repository on this machine. It does nothing
 to CI or to branch protection.
 
-### Commands — 34, all explicit
+### Commands — 35, all explicit
 
 | Command | Purpose |
 |---|---|
 | `/crew:approve <ticket-id>` | Approve a ticket's plan - only you can, by typing this; the prompt hook records the receipt |
+| `/crew:autopilot [ticket id]` | Resume one ticket from the handoff and drive it through the lifecycle until a human is needed - off until `autopilot.mode: plan`; approval and review acceptance always stop |
 | `/crew:brainstorm <what needs doing>` | Brainstorm a request into an approved direction, before it becomes a spec |
 | `/crew:change <new \| status <id> \| close <id> \| list>` | File, check and close a change request — SDP, Jira or local |
 | `/crew:config [--show]` | Show where every crew setting comes from, and guide the machine-global config |

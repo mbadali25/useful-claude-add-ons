@@ -1078,6 +1078,14 @@ AUTONOMOUS_STOPS = (
      "history rewrite, or rm of a tracked file"),
 )
 
+# `/crew:autopilot` (T-0004): drives one ticket through the lifecycle phases
+# `crew_autopilot.py next` names from disk. `mode` is armed only by the exact
+# string `plan`; anything else -- a typo included -- is `off`
+# (crew_autopilot.settings). `maxPhases` bounds the phases one invocation runs.
+# Every AUTONOMOUS_STOPS entry above binds it too: commands/autopilot.md names
+# each one, and a test iterates this tuple against that file.
+AUTOPILOT_DEFAULTS = {"mode": "off", "maxPhases": 12}
+
 # How many tickets one session's work becomes. The default is `system`: one
 # session is one ticket, and a second ticket is opened only when the work
 # reaches into another system. Splitting per change was the pre-0.17.0

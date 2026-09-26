@@ -165,7 +165,8 @@ still writes only the repo file.
   "cloud": { "awsProfiles": [], "awsRegions": [], "azureSubscriptions": [] },
   "change": { "requester": null, "implementor": null, "requireForProduction": false,
               "sdpTemplate": "Change Management Request", "jiraIssueType": "Change", "category": null },
-  "scope": { "mode": "off", "allowCliApproval": false }
+  "scope": { "mode": "off", "allowCliApproval": false },
+  "autopilot": { "mode": "off", "maxPhases": 12 }
 }
 ```
 

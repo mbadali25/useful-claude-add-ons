@@ -6,6 +6,64 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
+- **`crew` 1.0.41: `/crew:autopilot` resumes and drives one ticket
+  (T-0004).** Bumped `1.0.40 -> 1.0.41`. New
+  `commands/autopilot.md` follows each lifecycle command's procedure
+  in-session, in the order the new read-only
+  `hooks/scripts/crew_autopilot.py next --root . --ticket <id>` names from
+  files on disk: brainstorm, direction-approval, open-questions, spec, plan,
+  approve, implement, refresh, review, accept-review, replan,
+  stale-after-review, done, closed. **Off by default** - new repo-only config
+  block `autopilot` (`mode: off|plan`, `maxPhases: 12`); only the exact string
+  `plan` arms it.
+  - `crew_autopilot.py resume [--ticket <id>]` picks the ticket: the id given;
+    else the handoff's `resume:` line through T-0006's
+    `crew_resume.parse_resume` (imported optionally; when absent the handoff
+    falls through with that reason), only when its `branch:`/`head:` match the
+    checkout; then this worktree's active ticket; then `.work/INDEX.md` only
+    when exactly one open ticket has a folder - several stop and are listed.
+    Disk beats the handoff's command, and the disagreement is printed. A
+    ticket other than this worktree's active one stops, naming both; with no
+    pointer set, autopilot activates the ticket it drives.
+  - Plan approval, review acceptance, brainstorm, direction approval (an
+    INDEX `direction` status, no INDEX row, or a status cell outside the
+    closed list that says it was approved) and any item under an
+    `Open questions` heading in direction.md, spec.md or plan.md always stop
+    for a person; `None of us has decided` is an open item, not an answer.
+    An INDEX `done`/`merged` row stops as `closed`. `next` also stops on NEEDS_REPLAN, an UNKNOWN ledger, a failed
+    `crew_ticket.validate`, a reserved round with no result, an INCOMPLETE
+    round, no review round left with no standing receipt (a review would write
+    NEEDS_REPLAN unattended), `maxPhases`, and the same command named twice.
+    A review phase ends at its verdict: autopilot never runs review.md's
+    fix-and-rerun itself. Every `crew_state.AUTONOMOUS_STOPS` id is named in
+    the command, pinned by a test iterating the tuple.
+  - Implement's `status: review` edit keeps the approval (T-0026's digest);
+    one that still stales it (a pre-T-0026 receipt) stops at `approve` with a
+    reason saying only the header changed, measured by hashing.
+  - `next` re-checks the ticket every turn: it stops before any phase that
+    would run while `crew_ticket.resolve_active` names another ticket, none,
+    or a broken pointer. An exception in `next` or `resume` prints `stop=1`,
+    and the command reads any answer but `stop=0` as a stop. The review
+    phase reports BLOCK and FIX lines and leaves `--accept` and
+    `gh pr review` to the human.
+  - Refresh (T-0008's `crew_refresh_check.ticket_freshness`) runs after
+    implement and before every review round, never after an accepted
+    receipt: a stale artifact then is `stale-after-review`, a stop that writes
+    nothing. An `unknown` artifact is refreshed only in T-0008's
+    orphaned-anchor case; any other `unknown`, or a check that raised, stops.
+    The module missing stops as "refresh-artifacts unavailable (T-0008 not
+    landed)".
+  - `crew_ticket.parse_risk` reads the spec header's `risk:`; absent or
+    unrecognised reads as `high`, never `low`.
+  - `crew_migrate.AUTOPILOT_NOTE` no longer promises autopilot "in 1.1.0".
+  - `tests/test_crew_autopilot.py` (one case per transition, stop and resume
+    source) and `tests/sabotage_autopilot.py`, registered in `sabotage.py`:
+    each must-stop branch is mutated and goes red on its named test.
+    `.crew/verify.json` maps the new files to `python3 -m pytest
+    plugin/crew/tests/test_crew_autopilot.py
+    plugin/crew/tests/test_lifecycle_commands.py -q`. Config leaf count
+    117 -> 119; crew's command count 34 -> 35.
+
 - **`crew` 1.0.40: auto-resume after `/clear`, reduced form (T-0006).** Bumped
   `1.0.39 -> 1.0.40`, the owner's land-order assignment of 2026-09-25
   (1.0.38 and 1.0.39 went to T-0034 and T-0026, which landed first). New key
