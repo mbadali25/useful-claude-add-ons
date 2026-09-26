@@ -144,6 +144,17 @@ HUMAN_STOPS = (
                        "by a person"),
 )
 
+# T-0018: the command's subcommands. A later ticket adds its name to AVAILABLE
+# and drops it from ARRIVES when it replaces the router's stop.
+SUBCOMMANDS = ("status", "run", "assign", "goal", "focus")
+AVAILABLE = frozenset({"status", "run"})
+ARRIVES = {"assign": "T-0019", "goal": "T-0012", "focus": "T-0020"}
+GOAL_FLAG = "--goal"
+UNKNOWN_SUB = ("unknown subcommand; one of " + "|".join(SUBCOMMANDS)
+               + ", or a ticket id")
+# The INDEX.md id shape, whole-string; [0-9], not \d, which is any Unicode digit.
+_INDEX_ID = re.compile(r"^[A-Z][A-Z0-9]*-[0-9]+$")
+
 
 def _rel(top, path):
     return os.path.relpath(path, top).replace("\\", "/")
@@ -626,6 +637,179 @@ def stops():
             "human": rows(HUMAN_STOPS), "procedure": rows(PROCEDURE_STOPS)}
 
 
+def _existing_ticket(top, token):
+    """Whether `token` is a plain ticket id naming a `.work/tickets/` folder."""
+    try:
+        return os.path.isdir(crew_ticket.ticket_dir(top, token))
+    except crew_ticket.TicketError:
+        return False
+
+
+def route(root, first):
+    """`{"sub", "stop", "reason"}` for the command's first argument. First
+    match, exact and case-sensitive: a SUBCOMMANDS name; nothing or `--goal`
+    (run); an INDEX-shaped id or an existing `.work/tickets/<token>/` (run).
+    Anything else stops: `crew_ticket` accepts `stauts` as an id, so a typo
+    is refused here rather than driven as a ticket."""
+    top = crew_ticket.toplevel(root) or os.path.abspath(root)
+    token = first or ""
+    if token in SUBCOMMANDS:
+        sub = token
+    elif token == "":
+        sub = "run"
+    elif token == GOAL_FLAG:
+        return {"sub": "run", "stop": True,
+                "reason": f"run {GOAL_FLAG} <slug> arrives with {ARRIVES['goal']}"}
+    elif _INDEX_ID.fullmatch(token) or _existing_ticket(top, token):
+        sub = "run"
+    else:
+        return {"sub": "", "stop": True, "reason": UNKNOWN_SUB}
+    if sub not in AVAILABLE:
+        return {"sub": sub, "stop": True,
+                "reason": f"{AUTOPILOT} {sub} arrives with {ARRIVES.get(sub, 'a later ticket')}"}
+    return {"sub": sub, "stop": False, "reason": ""}
+
+
+# Who acts when `next` stops at each phase it names. A phase not here -- a
+# rename, `invalid` from a crash -- reads `unknown`, never `autopilot`.
+WAITING = {phase: "owner" for phase in (
+    "brainstorm", "direction-approval", "open-questions", "spec", "plan", "approve",
+    "review", "replan", "implement", "accept-review", "refresh", "stale-after-review",
+    "done")}
+WAITING["closed"] = "nobody"
+STATUS_MAX_LINES = 12
+T0006_UNAVAILABLE = "unavailable (T-0006 not landed)"
+
+
+def _reserved_round(top, ticket):
+    """Whether the latest round under the current plan is reserved, unfinished."""
+    try:
+        rounds = _current_rounds(review_ledger.status(top, ticket))
+    except Exception:  # pylint: disable=broad-except
+        return False
+    return bool(rounds) and rounds[-1].get("status") != "completed"
+
+
+def _waiting(top, result):
+    phase, command = result.get("phase"), result.get("command")
+    who = WAITING.get(phase, UNKNOWN)
+    if who == UNKNOWN:
+        return f"unknown (phase {phase!r} is not one status maps)"
+    if who == "nobody":
+        return "nobody - the ticket is closed"
+    if phase == "review" and result.get("stop") and _reserved_round(top, result["ticket"]):
+        return "reviewer - a round is reserved with no result"
+    if not result.get("stop"):
+        return f"autopilot - run {AUTOPILOT} to continue"
+    return f"owner - types {command}" if command else "owner - see the phase reason"
+
+
+def _review(top, ticket):
+    """The ledger's rounds, or `unknown`: a corrupt ledger has no `rounds_left`,
+    and a missing count is never read as the budget."""
+    try:
+        ledger = review_ledger.status(top, ticket)
+    except Exception:  # pylint: disable=broad-except
+        return "unknown (ledger unreadable)"
+    left = ledger.get("rounds_left")
+    if isinstance(left, bool) or not isinstance(left, int):
+        return "unknown (ledger unreadable)"
+    return f"{ledger.get('state')}, {left} of {ledger.get('budget')} rounds left"
+
+
+def _resume_line(top):
+    """The handoff's `resume:` line and whether autopilot could use it. Only
+    `crew_resume`'s own fixed reasons and its re-rendered tokens are shown;
+    nothing is echoed from the file."""
+    text = read_text(os.path.join(top, ".work", "HANDOFF.md"))
+    if text is None:
+        return "no .work/HANDOFF.md"
+    try:
+        resume = importlib.import_module("crew_resume")
+    except ImportError:
+        return T0006_UNAVAILABLE
+    try:
+        parsed = resume.parse_resume(text)
+        rendered = resume.render(parsed) if parsed.get("ok") else ""
+    except Exception as exc:  # pylint: disable=broad-except
+        return f"not usable: crew_resume raised {type(exc).__name__}"
+    if not rendered:
+        return f"not usable: {parsed.get('reason') or 'no reason given'}"
+    if parsed.get("command") == AUTOPILOT and parsed.get("kind") == "goal":
+        return f"not usable: {rendered} - goal resume arrives with {ARRIVES['goal']}"
+    branch = crew_state._HANDOFF_BRANCH_RE.search(text)  # pylint: disable=protected-access
+    head = crew_state._HANDOFF_HEAD_RE.search(text)  # pylint: disable=protected-access
+    here_head = (git_out(top, "rev-parse", "HEAD") or "").lower()
+    if not branch or branch.group(1) != git_out(top, "rev-parse", "--abbrev-ref", "HEAD"):
+        return f"not usable: {rendered} - its branch: does not match this checkout"
+    if not head or not here_head or not here_head.startswith(head.group(1).lower()):
+        return f"not usable: {rendered} - its head: does not match this checkout"
+    return f"{rendered} (usable)"
+
+
+def status(root, ticket=None):
+    """`{"mode", "maxPhases", "warnings", "ticket", "source", "reason", "phase",
+    "command", "stop", "phase_reason", "waiting", "review", "resume_line",
+    "fallthrough", "disagreement"}`. Read-only: composes `settings`,
+    `resume_target` (or `next_phase` for an argument), `review_ledger.status`
+    and `crew_resume`. Whatever it cannot tell reads `unknown`."""
+    top = crew_ticket.toplevel(root) or os.path.abspath(root)
+    conf = settings(top)
+    if ticket:
+        crew_ticket.check_ticket(ticket)
+        if os.path.isdir(crew_ticket.ticket_dir(top, ticket)):
+            pick = {"ticket": ticket, "source": "argument", "reason": "", "fallthrough": [],
+                    "disagreement": "", "next": next_phase(top, ticket)}
+        else:
+            pick = {"ticket": None, "source": "argument", "fallthrough": [],
+                    "disagreement": "", "next": None,
+                    "reason": f"{ticket} has no .work/tickets/ folder"}
+    else:
+        pick = resume_target(top)
+    disk = pick.get("next") or {}
+    found = pick.get("ticket")
+    return {"mode": conf["mode"], "maxPhases": conf["maxPhases"], "warnings": conf["warnings"],
+            "ticket": found, "source": pick.get("source"), "reason": pick.get("reason", ""),
+            "phase": disk.get("phase") or UNKNOWN, "command": disk.get("command") or "",
+            "stop": bool(disk.get("stop", True)), "phase_reason": disk.get("reason", ""),
+            "waiting": _waiting(top, disk) if found else "owner - see the ticket line",
+            "review": _review(top, found) if found else "unknown (no ticket)",
+            "resume_line": _resume_line(top), "fallthrough": list(pick.get("fallthrough") or []),
+            "disagreement": pick.get("disagreement") or ""}
+
+
+def _one_line(value):
+    return " ".join(str(value).split())
+
+
+def status_text(result):
+    """At most STATUS_MAX_LINES lines; every field folded onto one line."""
+    lines = [f"mode: plan, maxPhases {result.get('maxPhases')}"
+             if result.get("mode") == "plan" else
+             "mode: off - `autopilot.mode: plan` in .crew/config.json arms it"]
+    if result.get("ticket"):
+        lines.append(f"ticket: {result['ticket']} (from {result.get('source')})")
+    else:
+        lines.append(f"ticket: none - {result.get('reason') or 'cannot tell'}")
+    if result.get("stop"):
+        lines.append(f"phase: {result.get('phase')}, stopped - "
+                     f"{result.get('phase_reason') or 'cannot tell'}")
+    else:
+        lines.append(f"phase: {result.get('phase')} - next: {result.get('command')}")
+    lines += [f"waiting on: {result.get('waiting')}", f"review: {result.get('review')}",
+              f"resume: {result.get('resume_line')}"]
+    lines += [f"fell through: {why}" for why in result.get("fallthrough") or [] if why]
+    if result.get("disagreement"):
+        lines.append(f"disagreement: {result['disagreement']}")
+    lines += [f"warning: {w}" for w in result.get("warnings") or []]
+    lines = [_one_line(line) for line in lines]
+    if len(lines) > STATUS_MAX_LINES:
+        extra = len(lines) - STATUS_MAX_LINES + 1
+        lines = lines[:STATUS_MAX_LINES - 1] + [
+            f"(+{extra} more: crew_autopilot.py resume / settings print them)"]
+    return "\n".join(lines)
+
+
 def _failure(exc):
     if isinstance(exc, crew_ticket.TicketError):
         return str(exc)
@@ -639,13 +823,15 @@ def _line(**fields):
 def main(argv):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = parser.add_subparsers(dest="action", required=True)
-    for name in ("next", "resume", "settings", "stops"):
+    for name in ("next", "resume", "settings", "stops", "route", "status"):
         action = sub.add_parser(name)
         action.add_argument("--json", action="store_true")
         if name != "stops":
             action.add_argument("--root", default=".")
     sub.choices["next"].add_argument("--ticket", required=True)
     sub.choices["resume"].add_argument("--ticket", default="")
+    sub.choices["status"].add_argument("--ticket", default="")
+    sub.choices["route"].add_argument("--first", default="")
     sub.choices["next"].add_argument("--phases-run", type=int, default=0)
     sub.choices["next"].add_argument("--last-command", default="")
     try:
@@ -654,7 +840,18 @@ def main(argv):
         return 0 if exc.code == 0 else 2
     # Read-only: git must not even refresh the index's stat cache.
     os.environ["GIT_OPTIONAL_LOCKS"] = "0"
-    if args.action == "stops":
+    if args.action == "status":
+        try:
+            result = status(args.root, args.ticket or None)
+            text = status_text(result)
+        except Exception as exc:  # pylint: disable=broad-except
+            # A crash cannot tell where the ticket stands: say so, never nothing.
+            result = {"status": UNKNOWN, "reason": _failure(exc)}
+            text = _one_line(f"status: unknown - {_failure(exc)}")
+    elif args.action == "route":
+        result = route(args.root, args.first)
+        text = _line(sub=result["sub"], stop=int(result["stop"]), reason=result["reason"])
+    elif args.action == "stops":
         result = stops()
         text = "\n".join(f"{kind} {row['id']}: {row['text']}"
                          for kind, rows in result.items() for row in rows)
