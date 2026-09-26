@@ -28,9 +28,10 @@ All notable changes to this repository are documented here. Format follows [Keep
     id and exact CLI string T-0004's tests pin; `test_lifecycle_commands.py`
     holds it to 100 so T-0010, T-0012, T-0019 and T-0020 have 20 lines.
   - Six mutations in `tests/sabotage_autopilot.py`'s `STATUS_MUTATIONS`
-    each turn their named test red. They run through
-    `python3 plugin/crew/tests/sabotage_autopilot.py`, not yet through
-    `sabotage.py`, whose registration T-0018's Touch does not include.
+    each turn their named test red. They are appended to
+    `AUTOPILOT_MUTATIONS`, so `sabotage.py` runs them with the rest, and
+    `test_crew_autopilot.py` asserts each one reaches `sabotage.MUTATIONS`.
+  - `BUDGETS.md` restates the measured `plugin/crew/*.md` total.
 
 - **`crew` 1.0.41: `/crew:autopilot` resumes and drives one ticket
   (T-0004).** Bumped `1.0.40 -> 1.0.41`. New

@@ -7,16 +7,12 @@ apart. Run `sabotage.py`, not this file.
 Each one is a way autopilot could drive past a person, guess a ticket, or
 write where it must not.
 
-STATUS_MUTATIONS are T-0018's (`route` and `status`). They are not appended
-to AUTOPILOT_MUTATIONS, because test_crew_autopilot.py's anchor test holds
-every entry there to that file, and T-0018 may not edit it or sabotage.py.
-Until one of them registers these, run them on their own through
-sabotage.py's harness:
-
-    python3 plugin/crew/tests/sabotage_autopilot.py
+STATUS_MUTATIONS are T-0018's (`route` and `status`). They are appended to
+AUTOPILOT_MUTATIONS, which sabotage.py already registers, so they run with
+the rest; test_crew_autopilot.py holds every anchor to exactly one match and
+asserts each one reaches sabotage.MUTATIONS.
 """
 import os
-import sys
 
 CREW = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SCRIPTS = os.path.join(CREW, "hooks", "scripts")
@@ -192,13 +188,4 @@ STATUS_MUTATIONS = (
      _S + "test_status_text_caps_at_12_lines"),
 )
 
-
-def main():
-    """STATUS_MUTATIONS alone, through sabotage.py's own apply/verify/restore."""
-    import sabotage  # pylint: disable=import-outside-toplevel
-    sabotage.MUTATIONS = STATUS_MUTATIONS
-    return sabotage.main()
-
-
-if __name__ == "__main__":
-    sys.exit(main())
+AUTOPILOT_MUTATIONS += STATUS_MUTATIONS
