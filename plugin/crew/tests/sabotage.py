@@ -1604,13 +1604,100 @@ MUTATIONS = (
         'encoding="utf-8", newline="\\n") as handle:\n            json.dump'
         '(doc, handle, indent=2, sort_keys=True)\n            handle.write'
         '("\\n")\n            handle.flush()\n            os.fsync(handle.'
-        'fileno())\n        os.replace(tmp_path, path)',
+        'fileno())\n        _replace_with_retry(tmp_path, path)',
         '        with open(path, "w", encoding="utf-8", newline="\\n") as '
         'handle:\n            json.dump(doc, handle, indent=2, '
         'sort_keys=True)\n            handle.write("\\n")\n            '
         'handle.flush()\n            os.fsync(handle.fileno())',
         ("tests/test_endpoints.py::"
          "test_write_endpoints_leaves_the_original_intact_if_replace_fails"),
+    ),
+    (   # Codex BLOCK: a wall-clock-bounded retry spins forever under a pinned clock.
+        "the replace retry is bounded by the wall clock again", ENDPOINTS,
+        "    attempts = max(1, _REPLACE_RETRY_ATTEMPTS)\n    for attempt in range(1, attempts + 1):\n"
+        "        try:\n            os.replace(tmp_path, path)\n            return\n"
+        "        except PermissionError:\n            if attempt >= attempts:\n                raise",
+        "    deadline = time.time() + 1.0\n    while True:\n        try:\n"
+        "            os.replace(tmp_path, path)\n            return\n"
+        "        except PermissionError:\n            if time.time() >= deadline:\n                raise",
+        "tests/test_endpoints.py::test_replace_retry_terminates_when_the_wall_clock_stands_still",
+    ),
+    (   # The lock wait on a `time.time()` deadline never ends under a pinned clock.
+        "the ledger lock wait is bounded by the wall clock again", ENDPOINTS,
+        "    deadline = time.monotonic() + _ENDPOINTS_LOCK_TIMEOUT_SECONDS\n",
+        "    deadline = time.time() + _ENDPOINTS_LOCK_TIMEOUT_SECONDS\n",
+        "tests/test_endpoints.py::test_lock_wait_terminates_when_the_wall_clock_stands_still",
+    ),
+    (   # Review round 1: one transient Windows PermissionError must not fail the declare.
+        "a lock-create OSError gives up at once again", ENDPOINTS,
+        "            # on the open is retried within the deadline, not fatal at once.\n"
+        '            last_failure = f"{type(exc).__name__}: {exc}"\n',
+        "            # on the open is retried within the deadline, not fatal at once.\n"
+        "            return None, str(exc)\n",
+        "tests/test_endpoints.py::test_declare_endpoint_retries_a_transient_lock_open_error",
+    ),
+    (   # T-0003: only the kernel lock excludes another PROCESS.
+        "the OS lock is never taken", ENDPOINTS,
+        "    if not _os_try_lock(fd):\n        return _BUSY\n    if _still_at_path(fd, path):",
+        "    if _still_at_path(fd, path):",
+        "tests/test_endpoints.py::test_a_second_process_is_refused_while_a_child_holds_the_ledger",
+    ),
+    (   # The mutex alone excludes threads where flock does not (NFS).
+        "the mutex is not taken", ENDPOINTS,
+        "    mutex = _process_mutex(path)\n", "    mutex = threading.Lock()\n",
+        "tests/test_endpoints.py::test_a_second_thread_is_refused_while_the_first_holds_the_ledger[mutex-only]",
+    ),
+    (   # A filesystem that cannot lock fails closed, never writes unlocked.
+        "an unsupported-lock error is swallowed and the write proceeds unlocked", ENDPOINTS,
+        "                if exc.errno in _LOCK_UNSUPPORTED_ERRNOS:\n                    return None, (",
+        "                if exc.errno in _LOCK_UNSUPPORTED_ERRNOS:\n                    outcome = _GRANTED\n"
+        "                    return fd, None\n                    return None, (",
+        "tests/test_endpoints.py::test_a_filesystem_that_cannot_lock_fails_closed_at_once[ENOLCK]",
+    ),
+    (   # A grant on a file no longer at the path lets two holders in.
+        "the inode re-check is skipped", ENDPOINTS,
+        "    if _still_at_path(fd, path):\n        return _GRANTED\n",
+        "    if True:\n        return _GRANTED\n",
+        "tests/test_endpoints.py::test_a_grant_on_a_file_no_longer_at_the_path_is_released_and_retried",
+    ),
+    (   # Round 3 FIX :456: a re-check that never passes was reported as contention.
+        "an identity re-check failure is reported as contention again", ENDPOINTS,
+        "                last_failure = _IDENTITY_FAILED if outcome == _MOVED else None\n",
+        "                last_failure = None\n",
+        "tests/test_endpoints.py::test_an_identity_check_that_never_passes_is_not_reported_as_contention",
+    ),
+    (   # Round 3 FIX :427: a lock file another user created wedged every later declare.
+        "a lock file crew may not write wedges every declare again", ENDPOINTS,
+        "            return os.open(path, os.O_RDONLY)\n", "            raise denied\n",
+        "tests/test_endpoints.py::test_a_lock_file_crew_may_not_write_still_lets_a_declare_land",
+    ),
+    (   # Round 3 FIX :427: a 0o600 lock file locks every other user out of it.
+        "the lock file is created owner-only again", ENDPOINTS,
+        "os.O_RDWR | os.O_CREAT, 0o644)", "os.O_RDWR | os.O_CREAT, 0o600)",
+        "tests/test_endpoints.py::test_the_lock_file_is_created_readable_by_other_users",
+    ),
+    (   # Round 2 BLOCK :457: a failed release must never leave the lock held.
+        "release skips close when unlock raises", ENDPOINTS,
+        "        try:\n            _os_unlock(fd)\n        except OSError:\n"
+        "            pass\n        finally:\n            _close_quietly(fd)\n",
+        "        try:\n            _os_unlock(fd)\n            _close_quietly(fd)\n"
+        "        except OSError:\n            pass\n",
+        "tests/test_endpoints.py::test_release_frees_the_lock_even_when_unlock_raises",
+    ),
+    (   # Platform branches, tested against fake fcntl/msvcrt modules on every OS.
+        "the POSIX lock blocks instead of polling", ENDPOINTS,
+        "        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)\n", "        fcntl.flock(fd, fcntl.LOCK_EX)\n",
+        "tests/test_endpoints.py::test_the_posix_primitive_asks_for_a_non_blocking_exclusive_flock",
+    ),
+    (
+        "the Windows lock blocks instead of polling", ENDPOINTS,
+        "        msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)\n", "        msvcrt.locking(fd, msvcrt.LK_LOCK, 1)\n",
+        "tests/test_endpoints.py::test_the_windows_primitive_locks_byte_zero_without_blocking",
+    ),
+    (
+        "the Windows lock skips the seek to byte 0", ENDPOINTS,
+        "    os.lseek(fd, 0, os.SEEK_SET)\n    try:\n        msvcrt.locking(", "    try:\n        msvcrt.locking(",
+        "tests/test_endpoints.py::test_the_windows_primitive_locks_byte_zero_without_blocking",
     ),
     (
         # A gate that stops running still has to be REMOVABLE -- a mutation
@@ -1878,12 +1965,42 @@ MUTATIONS = (
         # other's records with no error raised on either side.
         "declare_endpoint no longer holds the endpoints lock",
         ENDPOINTS,
-        '    """\n    path = _endpoints_path(root) + ".lock"\n    deadline'
-        " = time.time() + _ENDPOINTS_LOCK_TIMEOUT_SECONDS",
-        '    """\n    return None\n    path = _endpoints_path(root) + '
-        '".lock"\n    deadline = time.time() + _ENDPOINTS_LOCK_TIMEOUT_SECONDS',
+        '    lock, failure = _acquire_endpoints_lock(root)\n    if lock is '
+        'None:\n        return {"error": failure}\n    try:\n        doc = '
+        '_load_endpoint_doc(root)\n        records = doc["records"]',
+        '    lock, failure = None, None\n    try:\n        doc = '
+        '_load_endpoint_doc(root)\n        records = doc["records"]',
         ("tests/test_endpoints.py::"
          "test_concurrent_threads_declaring_distinct_endpoints_all_survive"),
+    ),
+    (
+        # BLOCK 6a: a lock that could not be taken meant "proceed unlocked".
+        "declare_endpoint proceeds unlocked on a lock timeout",
+        ENDPOINTS,
+        '    if endpoint_id is not None and not _valid_endpoint_id('
+        'endpoint_id):\n        return {"error": f"refusing to declare an '
+        'unsafe endpoint id: {endpoint_id!r}"}\n    lock, failure = '
+        '_acquire_endpoints_lock(root)\n    if lock is None:\n        '
+        'return {"error": failure}\n    try:',
+        '    if endpoint_id is not None and not _valid_endpoint_id('
+        'endpoint_id):\n        return {"error": f"refusing to declare an '
+        'unsafe endpoint id: {endpoint_id!r}"}\n    lock, failure = '
+        '_acquire_endpoints_lock(root)\n    try:',
+        "tests/test_endpoints.py::test_declare_endpoint_returns_error_on_lock_timeout",
+    ),
+    (
+        # BLOCK 6b: a failed write handed back the record as if it landed.
+        "declare_endpoint returns a record even when the write failed",
+        ENDPOINTS,
+        '        records.append(record)\n        if not _write_endpoints('
+        'root, doc):\n            return {"error": "failed to write "\n'
+        '                              f"{os.path.join(*'
+        '_ENDPOINTS_PATH_PARTS)}"}\n        return record\n    finally:\n'
+        '        _release_endpoints_lock(lock)',
+        '        records.append(record)\n        _write_endpoints(root, '
+        'doc)\n        return record\n    finally:\n        '
+        '_release_endpoints_lock(lock)',
+        "tests/test_endpoints.py::test_declare_endpoint_returns_error_on_write_failure",
     ),
     (
         # Nit 15: `--declare-endpoint ""` is falsy and must not silently
