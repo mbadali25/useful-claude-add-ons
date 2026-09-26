@@ -1,5 +1,5 @@
 # install-scripts
-anchor: useful-claude-add-ons@5536c2c8
+anchor: useful-claude-add-ons@4ff7e764
 verified: 2026-09-26
 
 ## Re-derive provenance
@@ -488,3 +488,10 @@ at `:2269` and `4 agents` at `:2280`, re-grepped) changed. `plugin/crew/commands
 edited and none added (`ls plugin/crew/commands/*.md` still 35). Both install scripts, `README.md`,
 `plugin/README.md`, `INSTALLATION.md` and `scripts/check-marketplace.py` did not change, so their
 citations stand. Neither install script was executed; `check-marketplace.py` passed at this pass.
+
+Re-verified per-path from `5536c2c8` to `4ff7e764` (T-0018 review round 1): of the cited paths only
+`plugin/crew/README.md` changed, two lines edited in place in the autopilot section, none added or
+removed, so the `35 commands` claim at `:2269` and `4 agents` at `:2280` hold (re-grepped), and
+`git ls-files 'plugin/crew/*.md' | xargs cat | wc -l` still returns 18170, as `BUDGETS.md:11` says.
+Both install scripts, `README.md`, `plugin/README.md`, `INSTALLATION.md` and
+`scripts/check-marketplace.py` did not change. `check-marketplace.py` passed at `4ff7e764`.

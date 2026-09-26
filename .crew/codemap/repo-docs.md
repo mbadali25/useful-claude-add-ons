@@ -1,5 +1,5 @@
 # repo-docs
-anchor: useful-claude-add-ons@5536c2c8
+anchor: useful-claude-add-ons@4ff7e764
 verified: 2026-09-26
 
 ## Re-derive provenance
@@ -572,3 +572,10 @@ mention moved `:1804` -> `:1818`, re-grepped). `README.md`, `TODO.md`, `plugin/R
 install scripts did not change, so the README pin is no staler than at `6f96e627`.
 `python3 scripts/check-marketplace.py` re-run at `5536c2c8`: `marketplace: 34 skills, 5 plugins` /
 `all checks passed`.
+
+Re-verified per-path from `5536c2c8` to `4ff7e764` (T-0018 review round 1). Of the cited paths,
+`git diff --name-only 5536c2c8..4ff7e764` returns `CHANGELOG.md` (the 1.0.42 entry gained its round-1
+paragraph; cited without a line) and `plugin/crew/README.md` (two lines edited in place, none added,
+so the `docs/runbooks/INDEX.md` mention holds at `:1818`, re-grepped). `README.md`, `TODO.md`,
+`plugin/README.md` and both install scripts did not change. `python3 scripts/check-marketplace.py`
+at `4ff7e764`: `marketplace: 34 skills, 5 plugins` / `all checks passed`.

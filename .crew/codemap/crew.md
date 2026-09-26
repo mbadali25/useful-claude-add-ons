@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@5536c2c8
+anchor: useful-claude-add-ons@4ff7e764
 verified: 2026-09-26
 
 ## Re-derive provenance
@@ -328,11 +328,11 @@ they disagree:
   `crew.json` alone [does nothing for autoClear behaviour, which
   `crew_config.py` still reads from `config.json`]". This is a real,
   present-tense inconsistency, not a hypothetical. T-0004's
-  `crew_autopilot.settings` (`plugin/crew/hooks/scripts/crew_autopilot.py:605`)
+  `crew_autopilot.settings` (`plugin/crew/hooks/scripts/crew_autopilot.py:606`)
   sides with `config.json` explicitly: it reads through
   `crew_config.resolve_config` and warns when `autopilot` is set in
   `crew.json` but not `config.json` ("crew does not read [it] for this key;
-  move it to .crew/config.json", `:625-629`). Flagging it is this
+  move it to .crew/config.json", `:626-630`). Flagging it is this
   note's job; **deciding which file should win, or whether `crew_config.py`
   should learn to read `crew.json` too, is a decision for scribe to record,
   not this note's to make.**
@@ -411,36 +411,40 @@ only the first gets `ok`. Tests: `plugin/crew/tests/test_crew_resume.py`,
 
 ## `/crew:autopilot` (T-0004, crew 1.0.41)
 
-DERIVED at `5536c2c8`. `plugin/crew/commands/autopilot.md` (100 lines since
+DERIVED at `4ff7e764`. `plugin/crew/commands/autopilot.md` (100 lines since
 T-0018, `allowed-tools: Read, Write, Edit, Bash, Agent, Skill`, `:4`) first
-routes its whole argument string (`## 0. Route`, `:13-22`), then either
-prints `status` (`## 1. status`, `:24-31`, read-only, armed or not) or drives
+routes its whole argument string, single-quoted (`## 0. Route`, `:12-26`), then either
+prints `status` (`## 1. status`, `:28-35`, read-only, armed or not) or drives
 one ticket through the phase commands **in-session**, following each
-command's own procedure; the run refuses unless armed (`:41-42`). The reader
-behind it, `plugin/crew/hooks/scripts/crew_autopilot.py` (916 lines), is
-read-only (module docstring, `:1-15`) with six subcommands: `next`,
-`resume`, `settings`, `stops`, `route`, `status`. `next_phase` (`:464`) names
+command's own procedure; the run refuses unless armed (`:45-46`). The reader
+behind it, `plugin/crew/hooks/scripts/crew_autopilot.py` (956 lines), is
+read-only (module docstring, `:1-16`) with six subcommands: `next`,
+`resume`, `settings`, `stops`, `route`, `status`. `next_phase` (`:465`) names
 the next phase from files on disk, first match wins (the table at `:17-39`);
-`resume_target` (`:535`) picks the ticket (the handoff's `resume:` line only
-when its branch and head match, per `plugin/crew/commands/autopilot.md:43-44`);
-`settings` (`:605`) arms only on the exact string `plan`, falls back to
+`resume_target` (`:536`) picks the ticket (the handoff's `resume:` line only
+when its branch and head match, per `plugin/crew/commands/autopilot.md:47-48`);
+`settings` (`:606`) arms only on the exact string `plan`, falls back to
 `maxPhases` 12 for anything not a positive int, and warns on each. `stops`
-(`:634`) lists every stop from code: `crew_state.AUTONOMOUS_STOPS`,
-`FIXED_STOPS` (`:118`, nine), `PROCEDURE_STOPS` (`:135`, three) and
-`HUMAN_STOPS` (`:141`, four - brainstorm, plan approval, review acceptance,
+(`:635`) lists every stop from code: `crew_state.AUTONOMOUS_STOPS`,
+`FIXED_STOPS` (`:119`, nine), `PROCEDURE_STOPS` (`:136`, three) and
+`HUMAN_STOPS` (`:142`, four - brainstorm, plan approval, review acceptance,
 open questions).
 
-T-0018 (crew 1.0.42) added the router and `status`. `route_args` (`:679`)
+T-0018 (crew 1.0.42) added the router and `status`. `route_args` (`:680`)
 takes the command's `$ARGUMENTS` whole - Claude Code 2.1.283 substitutes
 `$0` with the first argument and leaves an out-of-range `$N` literal, so a
-positional `$1`/`$2` never carried the ticket - and `route` (`:650`) decides
-the subcommand: `SUBCOMMANDS` (`:151`), of which only `status` and `run` are
+positional `$1`/`$2` never carried the ticket - and `route` (`:651`) decides
+the subcommand: `SUBCOMMANDS` (`:152`), of which only `status` and `run` are
 `AVAILABLE`; `assign`/`goal`/`focus` stop naming T-0019/T-0012/T-0020; a
 bare INDEX-shaped id or existing `.work/tickets/<id>/` is `run`; any other
-word, a second word that is not a ticket, or a third word stops. `status`
-(`:774`) composes `settings`, `resume_target` or `next_phase`,
-`review_ledger.status` and `crew_resume`, and `status_text` (`:809`) caps it
-at 12 lines; what it cannot tell reads `unknown`. Defaults live in
+word, a second word that is not a ticket, or a third word stops (`run --goal`
+stops naming T-0012); `route --first <token>` routes one token alone. `status`
+(`:802`) composes `settings`, `resume_target` or `next_phase`,
+`review_ledger.status` and `crew_resume`, and `status_text` (`:837`) caps it
+at 12 lines; what it cannot tell reads `unknown`. Its `resume:` line reads usable
+only where `_handoff_ticket` would take it (`_resume_line`, `:766`), and a `next` stop made
+on the active-ticket pointer rather than the phase waits on re-pointing it (`_repoint`,
+`:740`), never on the owner typing the phase's command. Defaults live in
 `crew_state.AUTOPILOT_DEFAULTS` (`plugin/crew/hooks/scripts/crew_state.py:1087`,
 `{"mode": "off", "maxPhases": 12}`), deep-copied into `default_config()`
 (`plugin/crew/hooks/scripts/crew_config.py:374`). It registers no hook -
@@ -638,8 +642,8 @@ or nothing" at `adf8d1dd`; T-0008's refresh commit `b7b02842` redrew it as
   `main()` is the `decide` / `record` / `precompact` CLI.
 - `plugin/crew/hooks/scripts/crew_refresh_check.py:576` — `ticket_freshness`,
   the library entry point; `main()` at `:676`.
-- `plugin/crew/hooks/scripts/crew_autopilot.py:464` — `next_phase`, read-only;
-  `main()` at `:847` is the `next` / `resume` / `settings` / `stops` /
+- `plugin/crew/hooks/scripts/crew_autopilot.py:465` — `next_phase`, read-only;
+  `main()` at `:875` is the `next` / `resume` / `settings` / `stops` /
   `route` / `status` CLI `plugin/crew/commands/autopilot.md` calls.
 - `plugin/crew/hooks/scripts/crew_endpoints.py:566` — `declare_endpoint`,
   the only writer of *declared* records. Not the only writer of
@@ -993,3 +997,22 @@ re-read with `grep -n`/`sed -n` at `5536c2c8`:
 - `.crew/verify.json` - rule 26 gained one path, `:281-288` -> `:281-289`; 27 rules, 294 lines.
 - `marketplace.json` `:218` and `plugin.json:3` - 1.0.42.
 - `README.md`, `CHANGELOG.md`, `BUDGETS.md`, `PLUGINS.md` - cited by name only here.
+
+## Re-anchor provenance - `5536c2c8` -> `4ff7e764`, 2026-09-26 (T-0018 review round 1)
+
+`crew_refresh_check.py --root . --ticket T-0018` named this note after the round-1 fix commit. Of
+the paths it cites, `git diff --name-only 5536c2c8 4ff7e764` returns `CHANGELOG.md`,
+`plugin/crew/README.md`, `plugin/crew/commands/autopilot.md`,
+`plugin/crew/hooks/scripts/crew_autopilot.py` and the autopilot tests. Each citation into them
+was re-read with `grep -n`/`sed -n` at `4ff7e764`:
+
+- `crew_autopilot.py` - one usage line added to the docstring (`:1-15` -> `:1-16`), so every
+  T-0004 citation moved by one: `FIXED_STOPS` `:119`, `PROCEDURE_STOPS` `:136`, `HUMAN_STOPS`
+  `:142`, `SUBCOMMANDS` `:152`, `next_phase` `:465`, `resume_target` `:536`, `settings` `:606`,
+  its crew.json warning `:626-630`, `stops` `:635`, `route` `:651`, `route_args` `:680`. The
+  round-1 additions pushed `status` `:774` -> `:802`, `status_text` `:809` -> `:837`, `main`
+  `:847` -> `:875`; `_repoint` (`:740`) and `_resume_line` (`:766`) are newly cited. 956 lines.
+- `autopilot.md` - still 100 lines; `## 0. Route` `:13-22` -> `:12-26`, `## 1. status`
+  `:24-31` -> `:28-35`, the arming refusal `:41-42` -> `:45-46`, the branch/head rule `:43-44`
+  -> `:47-48`; `allowed-tools` `:4` holds.
+- `README.md`, `CHANGELOG.md` and the tests - cited by name only here.

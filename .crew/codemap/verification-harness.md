@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@5536c2c8
+anchor: useful-claude-add-ons@4ff7e764
 verified: 2026-09-26
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -707,3 +707,19 @@ No suite or command was executed by this note; rule 26's suite and `sabotage.py`
 
 No suite or gate was executed by this note; rule 26's suite and `sabotage.py` were run for the
 ticket, not for this refresh.
+
+## Re-anchor provenance - `5536c2c8` -> `4ff7e764`, 2026-09-26 (T-0018 review round 1)
+
+`crew_refresh_check.py --root . --ticket T-0018` named this note. Of the paths it cites,
+`git diff --name-only 5536c2c8 4ff7e764` returns `CHANGELOG.md`, `plugin/crew/tests/sabotage_autopilot.py`
+and `plugin/crew/tests/test_crew_autopilot.py`; `plugin/crew/tests/sabotage.py` and
+`.crew/verify.json` did not change, so `sabotage.py:77`, `:3049` and rule 26 `:281-289` stand.
+
+- `sabotage_autopilot.py` - `AUTOPILOT_MUTATIONS` still `:25`; `STATUS_MUTATIONS` (`:164`) grew
+  from eight to 22 entries, one per round-1 guard branch, and is still appended to
+  `AUTOPILOT_MUTATIONS` on the file's last line (`:256`).
+- `test_crew_autopilot.py` - `test_status_sabotage_is_registered_with_sabotage_py` now expects 22.
+- `CHANGELOG.md` - cited by name only.
+
+The 22 `STATUS_MUTATIONS` were run through `sabotage.py`'s harness for the ticket, not for this
+refresh.
