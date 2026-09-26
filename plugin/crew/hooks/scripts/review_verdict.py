@@ -36,6 +36,7 @@ completed, so a Codex turn that failed is INCOMPLETE even when its process
 exited 0. A non-blank line of that stream that is not a JSON object is an
 error too: the stream is only trustworthy whole, and skipping what cannot be
 read would let a garbled stream with a final CLEAN still read as CLEAN.
+`kimi_final_message` does the same for the Kimi Code CLI's `stream-json`.
 """
 import json
 import re

@@ -14,6 +14,19 @@ PROVIDERS.
            `--effort` pass through from config, and nothing is passed when
            they are empty.
   copilot  `copilot -p ... --deny-tool write --deny-tool shell -s`, stdin closed.
+  kimi     `kimi -p ... -m <alias> --output-format stream-json --agent-file
+           <scratch>/kimi-reviewer.md --skills-dir <scratch>/kimi-no-skills`,
+           stdin closed, env from `kimi_probe.kimi_env` (no infinite retry, no
+           KIMI_MODEL_* overrides). `kimi_probe.probe` runs BEFORE the round
+           is reserved: any state but `ok` exits 2, names the state, and
+           spends nothing. Prompt mode FORCES Kimi's permission mode to
+           `auto` (2.1.1 refuses `-p` with --plan/--auto/--yolo), so no flag
+           makes it read-only. Two controls stand in: the agent file allows
+           Read, Grep and Glob and disallows Write, Edit and Bash, and the
+           working tree is fingerprinted before launch and after exit -- a
+           changed tree makes the round INCOMPLETE. A write OUTSIDE the
+           repository is caught by neither. The final message is read from
+           the stream (`review_verdict.kimi_final_message`).
   claude   the `reviewer` subagent runs inside the Claude session, not as a
            process this script can launch. So it is two calls: `--reserve-only`
            before the subagent is dispatched, then `--round N --output FILE
@@ -67,6 +80,7 @@ import sys
 
 import crew_common
 import crew_state
+import kimi_probe
 import review_ledger
 import review_patch
 import review_prompt
@@ -82,7 +96,11 @@ DEFAULT_TIMEOUT = 1800
 POST_KILL_TIMEOUT = 5
 # Windows' CreateProcess limit is 32767 characters for the whole command line.
 INLINE_PROMPT_LIMIT = 24000
-LAUNCHED = ("codex", "copilot")
+LAUNCHED = ("codex", "copilot", "kimi")
+KIMI_AGENT_FILE = "kimi-reviewer.md"
+KIMI_NO_SKILLS = "kimi-no-skills"
+KIMI_TREE_CHANGED = ("kimi: the working tree changed during the review - a reviewer "
+                     "that can write may have fixed instead of reported")
 
 
 def _read(path):
@@ -124,7 +142,46 @@ def prompt_argument(prompt_path):
             "full first and follow it exactly; it is the whole task.")
 
 
-def command_for(provider, exe, root, prompt, model, effort):
+def kimi_agent_file(scratch):
+    """Write the read-only agent definition `kimi --agent-file` loads, and the
+    empty directory passed as `--skills-dir`; return the agent file's path.
+    The body is one fixed line: the review instructions travel in `-p`
+    exactly as they do for codex and copilot, never in here."""
+    os.makedirs(os.path.join(scratch, KIMI_NO_SKILLS), exist_ok=True)
+    path = os.path.join(scratch, KIMI_AGENT_FILE)
+    _write_atomic(path, "---\n"
+                        "name: crew-reviewer\n"
+                        "description: Read-only code reviewer for crew's review round.\n"
+                        "tools: [Read, Grep, Glob]\n"
+                        "disallowedTools: [Write, Edit, Bash]\n"
+                        "---\n"
+                        "You are a read-only code reviewer. Follow the user's message "
+                        "exactly; never modify files.\n")
+    return path
+
+
+def tree_fingerprint(root):
+    """sha256 of the working tree's state -- HEAD, porcelain status including
+    untracked files, and the binary diff against HEAD -- with `.work/`
+    excluded (the scratch directory, review.json and the handoff live there).
+    HEAD is in it so a reviewer that COMMITTED its edit is seen too. Taken
+    without optional locks so taking it cannot itself change the index."""
+    env = dict(os.environ, GIT_OPTIONAL_LOCKS="0")
+    digest = hashlib.sha256(str(crew_common.git_out(root, "rev-parse", "HEAD")).encode())
+    for args in (["status", "--porcelain=v1", "-z", "--untracked-files=all"],
+                 ["diff", "HEAD", "--binary"]):
+        done = subprocess.run(["git", *args, "--", ".", ":(exclude).work"], cwd=root,
+                              env=env, capture_output=True, stdin=subprocess.DEVNULL,
+                              check=False)
+        digest.update(str(done.returncode).encode() + b"\0" + done.stdout + b"\0")
+    return digest.hexdigest()
+
+
+def command_for(provider, exe, root, prompt, model, effort, scratch=None):
+    if provider == "kimi":
+        return [exe, "-p", prompt, "-m", model, "--output-format", "stream-json",
+                "--agent-file", kimi_agent_file(scratch),
+                "--skills-dir", os.path.join(scratch, KIMI_NO_SKILLS)]
     if provider == "codex":
         cmd = [exe, "exec", "--json", "--sandbox", "read-only", "--skip-git-repo-check",
                "-C", root]
@@ -137,7 +194,7 @@ def command_for(provider, exe, root, prompt, model, effort):
             "--deny-tool", "shell", "-s"]
 
 
-def launch(cmd, root, timeout):
+def launch(cmd, root, timeout, env=None):
     """(stdout, stderr, exit_code, timed_out). stdin is always closed.
 
     Spawned in its own process group/session so a timeout can kill the whole
@@ -189,7 +246,7 @@ def launch(cmd, root, timeout):
         proc = subprocess.Popen(  # pylint: disable=consider-using-with
             cmd, cwd=root, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
             stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace",
-            **popen_kwargs)
+            env=env, **popen_kwargs)
     except OSError as exc:
         return "", f"could not start {cmd[0]}: {exc}", None, False
     try:
@@ -360,7 +417,7 @@ def finish(args, number, output, exit_code, timed_out, extra_reasons=()):
 
 
 def run(args):
-    exe = prompt = None
+    exe = prompt = kimi_alias = None
     if args.provider in LAUNCHED:
         if args.provider == "copilot" and not args.model:
             sys.stderr.write("review-run: copilot needs --model (qa.copilot.model); an "
@@ -368,9 +425,18 @@ def run(args):
             return EXIT_USAGE
         exe = shutil.which(args.provider)
         if not exe:
-            sys.stderr.write(f"review-run: {args.provider} is not on PATH; nothing launched, "
-                             "no round spent\n")
+            sys.stderr.write(f"review-run: {args.provider} is not on PATH (not-installed); "
+                             "nothing launched, no round spent\n")
             return EXIT_USAGE
+        if args.provider == "kimi":
+            # BEFORE `reserve`: the probe is not a review, and a quota or auth
+            # wall found here must cost no round. Only `ok` goes on.
+            probed = kimi_probe.probe(args.model or None)
+            if not kimi_probe.launchable(probed["state"]):
+                sys.stderr.write(f"review-run: kimi probe: {probed['state']} - "
+                                 f"{probed['reason']}; nothing launched, no round spent\n")
+                return EXIT_USAGE
+            exe, kimi_alias = probed["exe"], probed["alias"]
         prompt = prompt_argument(os.path.join(args.scratch, "prompt.txt"))
 
     ok, number, message = review_ledger.reserve(args.root, args.ticket, args.provider,
@@ -382,9 +448,24 @@ def run(args):
         print(f"ROUND={number}")
         return EXIT_CLEAN
 
+    extra = []
+    if args.provider == "kimi":
+        cmd = command_for("kimi", exe, args.root, prompt, kimi_alias, "", args.scratch)
+        before = tree_fingerprint(args.root)
+        stdout, stderr, code, timed_out = launch(cmd, args.root, args.timeout,
+                                                 env=kimi_probe.kimi_env())
+        if tree_fingerprint(args.root) != before:
+            extra.append(KIMI_TREE_CHANGED)
+        _write_atomic(os.path.join(args.scratch, "kimi-events.jsonl"), stdout)
+        message_text, error = review_verdict.kimi_final_message(stdout)
+        output = message_text or ""
+        if error and not timed_out:
+            extra.append(f"kimi: {error}")
+        _write_atomic(os.path.join(args.scratch, "out.txt"), output)
+        _write_atomic(os.path.join(args.scratch, "stderr.txt"), kimi_probe.redact(stderr))
+        return finish(args, number, output, code, timed_out, extra)
     cmd = command_for(args.provider, exe, args.root, prompt, args.model, args.effort)
     stdout, stderr, code, timed_out = launch(cmd, args.root, args.timeout)
-    extra = []
     if args.provider == "codex":
         _write_atomic(os.path.join(args.scratch, "codex-events.jsonl"), stdout)
         message_text, error = review_verdict.codex_final_message(stdout)
@@ -404,7 +485,7 @@ def main(argv):
     parser.add_argument("--ticket", required=True)
     parser.add_argument("--scratch", required=True)
     parser.add_argument("--manifest")
-    parser.add_argument("--provider", required=True, choices=("codex", "copilot", "claude"))
+    parser.add_argument("--provider", required=True, choices=("codex", "copilot", "kimi", "claude"))
     parser.add_argument("--model", default="")
     parser.add_argument("--effort", default="")
     parser.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT)
