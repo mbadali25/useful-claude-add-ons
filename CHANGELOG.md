@@ -6,12 +6,13 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Fixed
 
-- **`crew` 1.0.33: an approval survives the lifecycle status edits (T-0026).**
-  Bumped `1.0.29 -> 1.0.33` (the number is re-set at merge). `/crew:done`,
-  `/crew:implement` and `/crew:plan` each rewrite `spec.md`'s header
-  `status:`, and the approval receipt bound the whole file's sha256, so each
-  of those edits staled the approval the ticket had just been given
-  (TODO.md, "`/crew:done` stales its own approval receipt").
+- **`crew` 1.0.38: an approval survives the lifecycle status edits (T-0026).**
+  Bumped `1.0.35 -> 1.0.38` (the number is re-set at merge). `/crew:implement`
+  and `/crew:done` each rewrite `spec.md`'s header `status:`, and `/crew:plan`
+  set `status: planned` on `plan.md`'s header, a token its template never
+  carried. The approval receipt bound each whole file's sha256, so each of
+  those edits staled the approval the ticket had just been given (TODO.md,
+  "`/crew:done` stales its own approval receipt").
   - **`crew_ticket.approval_digest`** hashes each file with only the header's
     status VALUE normalised: line 1 must start with `# `, hold exactly one
     `status:` (counted case-insensitively), and carry a value from the closed
@@ -30,9 +31,11 @@ All notable changes to this repository are documented here. Format follows [Keep
     header, no longer adding a status token to `plan.md`. `/crew:implement`,
     `/crew:done` and `/crew:approve` say the status edit keeps the approval.
   - New `test_approval_digest.py` (must-allow/must-block pairs, the dual-read,
-    and the scope guard, completion audit and metrics end to end). Fourteen
+    and the scope guard, completion audit and metrics end to end). Seventeen
     `APPROVAL DIGEST` mutations in `sabotage_scope.py`, each turning its named
-    test red. A `.crew/verify.json` rule maps `crew_ticket.py` to them.
+    test red, pinned by label so deleting one fails the suite. Two cover
+    `approve` digesting the bytes it validated, not a later read. A
+    `.crew/verify.json` rule maps `crew_ticket.py` to them.
 
 - **`crew` 1.0.35: the endpoint ledger fails closed instead of silently losing
   a declaration, under an OS advisory lock (T-0003) — the defect reproduced on

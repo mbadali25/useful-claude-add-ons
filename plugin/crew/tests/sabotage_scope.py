@@ -330,4 +330,17 @@ SCOPE_MUTATIONS = (
       '                            "approve again")}\n'),
      '            measure, keys = _sha, ("plan_sha256", "spec_sha256")\n',
      _AD + "test_a_v2_receipt_without_a_usable_digest_is_stale_not_raw[missing]"),
+    # --- T-0026 review round 2 ---------------------------------------------------
+    ("APPROVAL DIGEST: nothing is normalised", TICKET,
+     '    cut = data.find(b"\\n")\n',
+     '    return data, False\n    cut = data.find(b"\\n")\n',
+     _AD + "test_metrics_reads_approval_after_status_done"),
+    ("APPROVAL DIGEST: approve digests a later read of plan.md than it validated", TICKET,
+     'approval_digest(contract["plan.md"])',
+     'approval_digest(read_contract(top, ticket)["plan.md"])',
+     _AD + "test_approve_digests_the_bytes_it_validated_not_a_later_version"),
+    ("APPROVAL DIGEST: approve digests a later read of spec.md than it validated", TICKET,
+     'approval_digest(contract["spec.md"])',
+     'approval_digest(read_contract(top, ticket)["spec.md"])',
+     _AD + "test_approve_digests_the_bytes_it_validated_not_a_later_version"),
 )

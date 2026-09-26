@@ -210,6 +210,26 @@ def test_raw_sha_fields_are_the_file_sha256(repo):
         hashlib.sha256((folder / "spec.md").read_bytes()).hexdigest())
 
 
+def test_approve_digests_the_bytes_it_validated_not_a_later_version(repo, monkeypatch):
+    folder = _ticket(repo)
+    validated = {n: (folder / n).read_bytes() for n in ("plan.md", "spec.md")}
+    real_validate = crew_ticket.validate
+
+    def validate_then_edit(top, ticket, contract=None):
+        problems = real_validate(top, ticket, contract)
+        _swap(folder / "plan.md", "Test: pytest", "Test: pytest -q")
+        _swap(folder / "spec.md", "Change the widget.", "Change every widget.")
+        return problems
+
+    monkeypatch.setattr(crew_ticket, "validate", validate_then_edit)
+
+    receipt, _ = crew_ticket.approve(str(repo), "T-1", by="owner")
+
+    assert (receipt["plan_digest"], receipt["spec_digest"]) == (
+        crew_ticket.approval_digest(validated["plan.md"]),
+        crew_ticket.approval_digest(validated["spec.md"]))
+
+
 def test_approve_records_the_digest_in_the_entry_and_its_history(repo):
     _approved(repo)
     receipt = json.loads(_receipt_path(repo).read_text(encoding="utf-8"))
@@ -293,12 +313,31 @@ def test_guard_refuses_touch_write_after_risk_change(repo):
     assert (code, "spec.md changed since approval" in err) == (2, True)
 
 
+def test_guard_refuses_touch_write_after_title_change(repo):
+    folder = _ready(repo)
+    _swap(folder / "spec.md", "widget change", "widget rewrite")
+
+    code, _, err = run_hook("module", "scope_guard", edit(repo, repo / "src" / "app.py"), repo)
+
+    assert (code, "spec.md changed since approval" in err) == (2, True)
+
+
 def test_audit_passes_after_status_done(repo):
     folder = _ready(repo)
     (repo / "src" / "app.py").write_text("x = 2\n", encoding="utf-8")
     _swap(folder / "spec.md", "status: spec", "status: done")
 
     assert _check(repo).returncode == 0
+
+
+def test_audit_refuses_after_risk_change(repo):
+    folder = _ready(repo)
+    (repo / "src" / "app.py").write_text("x = 2\n", encoding="utf-8")
+    _swap(folder / "spec.md", "risk: low", "risk: high")
+
+    done = _check(repo)
+
+    assert (done.returncode, "changed since approval" in done.stdout) == (1, True)
 
 
 def test_audit_refuses_after_title_change(repo):
@@ -317,7 +356,8 @@ def test_metrics_reads_approval_after_status_done(repo):
 
     phases = crew_metrics._phases(str(repo), "T-1")  # pylint: disable=protected-access
 
-    assert "specApproved" in [p["phase"] for p in phases]
+    assert ("specApproved" in [p["phase"] for p in phases],
+            crew_ticket.status(str(repo), "T-1")["status"]) == (True, "approved")
 
 
 # --- the sabotage table ------------------------------------------------------------
@@ -325,12 +365,39 @@ def test_metrics_reads_approval_after_status_done(repo):
 _DIGEST_MUTATIONS = [m for m in sabotage_scope.SCOPE_MUTATIONS
                      if m[0].startswith("APPROVAL DIGEST")]
 
+# The exact set, so deleting a mutation fails here rather than silently
+# dropping the rule it covered from sabotage coverage.
+_DIGEST_LABELS = {"APPROVAL DIGEST: " + label for label in (
+    "the whole first line is normalised",
+    "every line's status value is normalised",
+    "the bytes after line 1 are dropped",
+    "line endings are normalised",
+    "leading blank lines are skipped to find the header",
+    "any value is normalised, not the closed list",
+    "the value needs no boundary after it",
+    "the token needs no boundary before it",
+    "line 1 need not be a # header",
+    "a header with two status tokens is normalised",
+    "the preimage drops the normalised/raw flag",
+    "a receipt with no digest is read as /2",
+    "an unknown digest scheme is read as /2",
+    "a /2 receipt missing a digest falls back to raw",
+    "nothing is normalised",
+    "approve digests a later read of plan.md than it validated",
+    "approve digests a later read of spec.md than it validated",
+)}
+
+
+def test_the_approval_digest_mutations_are_exactly_the_pinned_set():
+    labels = [m[0] for m in _DIGEST_MUTATIONS]
+
+    assert (sorted(labels), len(set(labels))) == (sorted(_DIGEST_LABELS), len(labels))
+
 
 def test_every_approval_digest_sabotage_anchor_is_present_exactly_once():
     source = pathlib.Path(sabotage_scope.TICKET).read_text(encoding="utf-8")
 
-    assert (len(_DIGEST_MUTATIONS) >= 6
-            and [source.count(m[2]) for m in _DIGEST_MUTATIONS] == [1] * len(_DIGEST_MUTATIONS))
+    assert [source.count(m[2]) for m in _DIGEST_MUTATIONS] == [1] * len(_DIGEST_MUTATIONS)
 
 
 def test_every_approval_digest_mutation_names_a_test_in_this_file():

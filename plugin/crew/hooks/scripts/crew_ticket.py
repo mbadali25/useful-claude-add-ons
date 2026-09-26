@@ -57,7 +57,8 @@ with another read's scope.
 
 `status` is `approved` (both files match the receipt now), `stale` (either
 file changed since approval) or `none`. Editing spec.md or plan.md after
-approval makes it stale; amending scope is edit + approve again.
+approval makes it stale -- except the header's `status:` value, below;
+amending scope is edit + approve again.
 
 ## The approval digest (T-0026)
 
