@@ -414,13 +414,11 @@ def ship(root, ticket):
     """Push the branch, open its PR if none, then under `ship: merge` poll
     the required checks every POLL_SECONDS up to `ciTimeoutMinutes`, feeding
     `ship_decision`, and on `merge` run exactly `merge_argv`. Runs only when
-    `next` names `ship`. Every answer names the PR, the checks and the review
+    `next` names `ship` -- which it never does unarmed. Every answer names the PR, the checks and the review
     families it rested on."""
     top = crew_ticket.toplevel(root) or os.path.abspath(root)
     config = settings(top)
-    if not config["armed"]:
-        return _ship_result(ticket, "stop", True, "autopilot.mode is not plan: ship runs "
-                            "only under an armed /crew:autopilot")
+    # Unarmed, `next` names `closed` (see `_ship_phase`), so this refuses too.
     phase = next_phase(top, ticket)
     if phase["phase"] != "ship" or phase["stop"]:
         return _ship_result(ticket, "stop", True, f"next names {phase['phase']}"

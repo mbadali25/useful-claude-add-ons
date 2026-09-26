@@ -6,6 +6,46 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
+- **`crew` 1.0.42: `/crew:autopilot` ships a ticket after `/crew:done`
+  (T-0011).** Bumped `1.0.41 -> 1.0.42`. New `crew_autopilot.py ship --root .
+  --ticket <id>` and a `ship` phase in `next`, both only while autopilot is
+  armed; unarmed, a done ticket still reads `closed` and gh is never asked.
+  - New repo-only keys in the `autopilot` block: `ship` (`merge` default, or
+    `pr`; anything else reads as `pr` with a warning), `knownFailures` (`[]`;
+    check names matched exactly) and `ciTimeoutMinutes` (`60`). The config
+    leaf count goes from 119 to 122.
+  - `next` on a done ticket reads the branch's PR with `gh pr view <branch>
+    --json number,state,url,headRefOid`. MERGED reads `closed`, and so does an
+    open PR under `ship: pr` ("PR #n open, merge by hand"). A detached HEAD, a
+    gh failure, an answer that is not a PR state, a PR closed without merging,
+    or a review receipt that no longer stands stops. Only gh's exact "no pull
+    requests found for branch" answer reads as having no PR.
+  - `ship` refuses the default branch before it pushes, pushes with
+    `git push -u origin <branch>` (never with force) and opens the PR when
+    there is none. Under `merge` it polls `gh pr checks <n> --required` every
+    30 s and runs exactly `gh pr merge <n> --squash`, never `--admin`. That
+    happens only when every required check passes or fails under a name
+    listed exactly in `knownFailures`, the PR's head is this checkout's HEAD,
+    and afterwards the PR must read MERGED.
+  - Pending checks, or no required check reported yet, wait until the
+    timeout, then stop. A skipped, unknown or unreadable check, or a failure
+    not in the list, stops at once. gh 2.46's `gh pr checks` has no `--json`,
+    so its text output is parsed, and a line or exit code that does not fit
+    reads as unreadable.
+  - A `high`-risk ticket, or one with no risk in its header, never merges
+    when every completed review round is `claude` or has no `model_family`.
+    Codex is out until 2026-10-01, so until then every `high`-risk ticket
+    stops at `ship: merge` with its PR open.
+  - New `tests/test_crew_autopilot_ship.py` (93 cases, gh and push stubbed),
+    and `.crew/verify.json` gains a rule for it. `sabotage_autopilot.py`'s
+    new `SHIP_MUTATIONS` (42, one per refusing branch) all go red through
+    `sabotage.py`.
+  - `commands/autopilot.md` gains section 4, Ship, and stays within its
+    120-line budget.
+  - Known red, outside the ticket's Touch: `skills/crew-setup/SKILL.md`'s
+    inline config copy and `tests/test_crew_autopilot.py`'s pinned
+    autopilot block still hold the two-key block (see TODO.md).
+
 - **`crew` 1.0.41: `/crew:autopilot` resumes and drives one ticket
   (T-0004).** Bumped `1.0.40 -> 1.0.41`. New
   `commands/autopilot.md` follows each lifecycle command's procedure

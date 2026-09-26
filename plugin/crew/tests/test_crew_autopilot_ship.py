@@ -45,6 +45,13 @@ def test_decision_pr_policy_never_merges():
     assert got["action"] == "open-pr"
 
 
+@pytest.mark.parametrize("policy", ["Merge", "merge ", None, "squash"])
+def test_decision_policy_not_exactly_merge_opens_pr(policy):
+    got = _decide(policy=policy)
+
+    assert got["action"] == "open-pr"
+
+
 def test_decision_merge_all_green():
     got = _decide()
 
@@ -382,7 +389,8 @@ def test_phase_detached_head_stops(tmp_path, monkeypatch):
     root = _done_ticket(tmp_path)
     git(root, "checkout", "-q", "--detach")
     _receipt_ok(monkeypatch)
-    monkeypatch.setattr(crew_autopilot, "_run_gh", FakeGh(pr_view=(1, "", NO_PR)))
+    monkeypatch.setattr(crew_autopilot, "_run_gh", FakeGh(
+        pr_view=(1, "", 'no pull requests found for branch "HEAD"\n')))
 
     got = _next(root)
 
@@ -423,6 +431,7 @@ def test_adapter_checks_asks_for_required_checks_only(monkeypatch):
     (0, "check\tpending\t1m\turl\t\n", ""),
     (8, "check\tpass\t1m\turl\t\n", ""),
     (0, "no tabs here\n", ""),
+    (4, "check\tpass\t1m\turl\t\n", ""),
 ])
 def test_adapter_checks_that_cannot_be_read_are_none(monkeypatch, answer):
     monkeypatch.setattr(crew_autopilot, "_run_gh", FakeGh(pr_checks=answer))
@@ -591,12 +600,15 @@ def test_ship_push_failure_stops(tmp_path, monkeypatch):
 
 
 def test_ship_pr_create_failure_stops(tmp_path, monkeypatch):
-    fake = FakeGh(pr_view=(1, "", NO_PR), pr_create=(1, "", "GraphQL error\n"))
+    fake = FakeGh(pr_view=[(1, "", NO_PR), (1, "", NO_PR), _pr("OPEN")],
+                  pr_create=(1, "", "GraphQL error\n"), pr_checks=_checks(("check", "pass")),
+                  pr_merge=(0, "", ""))
     root, _, _ = _ship_env(tmp_path, monkeypatch, fake)
 
     got = crew_autopilot.ship(str(root), T)
 
-    assert got["stop"] is True
+    assert (got["stop"], "gh pr create failed: GraphQL error" in got["reason"],
+            fake.ran("pr", "merge")) == (True, True, [])
 
 
 def test_ship_head_moved_stops_without_merging(tmp_path, monkeypatch):
@@ -612,7 +624,8 @@ def test_ship_head_moved_stops_without_merging(tmp_path, monkeypatch):
 
 
 def test_ship_merge_failure_stops(tmp_path, monkeypatch):
-    fake = FakeGh(pr_view=_pr("OPEN"), pr_checks=_checks(("check", "pass")),
+    fake = FakeGh(pr_view=[_pr("OPEN"), _pr("OPEN"), _pr("OPEN"), _pr("MERGED")],
+                  pr_checks=_checks(("check", "pass")),
                   pr_merge=(1, "", "Pull request is not mergeable\n"))
     root, _, _ = _ship_env(tmp_path, monkeypatch, fake)
 
@@ -629,6 +642,19 @@ def test_ship_merge_that_does_not_read_merged_stops(tmp_path, monkeypatch):
     got = crew_autopilot.ship(str(root), T)
 
     assert (got["stop"], fake.ran("pr", "merge") != []) == (True, True)
+
+
+def test_ship_unreadable_ledger_stops_without_merging(tmp_path, monkeypatch):
+    fake = FakeGh(pr_view=_pr("OPEN"), pr_checks=_checks(("check", "pass")),
+                  pr_merge=(0, "", ""))
+    root, _, _ = _ship_env(tmp_path, monkeypatch, fake,
+                           header="status: done   risk: low")
+    _write(review_ledger.ledger_path(str(root), T), "{not json")
+
+    got = crew_autopilot.ship(str(root), T)
+
+    assert (got["stop"], "ledger" in got["reason"], fake.ran("pr", "merge")) == (
+        True, True, [])
 
 
 def test_ship_refuses_when_next_is_not_ship(tmp_path, monkeypatch):
@@ -734,3 +760,13 @@ def test_ci_timeout_bad_value_reads_60(tmp_path, value):
 
     assert (got["ciTimeoutMinutes"], any("ciTimeoutMinutes" in w for w in got["warnings"])) == (
         60, True)
+
+
+# --- step 4: sabotage anchors ------------------------------------------------------
+
+def test_every_ship_sabotage_anchor_is_present_exactly_once():
+    from sabotage_autopilot import SHIP_MUTATIONS  # pylint: disable=import-outside-toplevel
+    for label, target, find, _replace, test in SHIP_MUTATIONS:
+        with open(target, encoding="utf-8") as handle:
+            assert handle.read().count(find) == 1, label
+        assert test.startswith("tests/test_crew_autopilot_ship.py::"), label

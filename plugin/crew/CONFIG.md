@@ -792,6 +792,9 @@ repository or one checkout.
 | `graph.commitHook` | boolean | `false` | **no consumer found**, §9 |
 | `autopilot.mode` | `"off"` or `"plan"` | `"off"` | `crew_autopilot.settings` — only the exact string `plan` arms `/crew:autopilot`, §20 |
 | `autopilot.maxPhases` | positive integer | `12` | `crew_autopilot.settings`, read by `crew_autopilot.next_phase`, §20 |
+| `autopilot.ship` | `"pr"` or `"merge"` | `"merge"` | `crew_autopilot.settings`, read by `next_phase`'s ship rows and `crew_autopilot.ship`, §20 |
+| `autopilot.knownFailures` | list of check names | `[]` | `crew_autopilot.settings`, read by `crew_autopilot.ship_decision`, §20 |
+| `autopilot.ciTimeoutMinutes` | positive integer | `60` | `crew_autopilot.settings`, read by `crew_autopilot.ship`, §20 |
 
 `context.reserveTokens: null` means *off*, and survives as `null` — this is the
 case `null_shadows` is deliberately narrow to protect (§1).
@@ -2054,6 +2057,9 @@ driven is a fact about that checkout.
 |---|---|---|---|
 | `autopilot.mode` | `"off"` | `crew_autopilot.settings`, through `crew_config.resolve_config` | Only the exact string `"plan"` arms it. `"Plan"`, `"plan "`, `true`, `"on"`, `null` — anything else — reads as `off`, and `settings` prints which value it saw. A typo must not arm a driver. |
 | `autopilot.maxPhases` | `12` | `crew_autopilot.settings`; `next_phase` stops once the session's phase count reaches it | Anything but a positive integer (`0`, `-3`, `"12"`, `true`, `2.5`) reads as `12`, with a warning. |
+| `autopilot.ship` | `"merge"` | `crew_autopilot.settings`; `next_phase`'s ship rows and `crew_autopilot.ship` (T-0011, since 1.0.42) | After `/crew:done`: `pr` pushes the branch, opens the PR and stops; `merge` also runs exactly `gh pr merge <n> --squash` (never `--admin`) once the required checks allow. Anything but exactly `pr` or `merge` (`"Merge"`, `"squash"`, `true`, `null`) reads as `pr` - the non-merging direction - with a warning. |
+| `autopilot.knownFailures` | `[]` | `crew_autopilot.settings`; `crew_autopilot.ship_decision` | Required-check names whose `fail` does not block a merge, matched **exactly** - `crew-shell-matrix` does not excuse `crew-shell-matrix (windows-latest)`. Anything but a list of strings reads as `[]`, with a warning. |
+| `autopilot.ciTimeoutMinutes` | `60` | `crew_autopilot.settings`; `crew_autopilot.ship` polls the required checks every 30 s until it | A check still pending at the timeout stops; it never merges. Anything but a positive integer reads as `60`, with a warning. |
 
 **Which file.** `.crew/config.json`, through `resolve_config` — the file
 `crew_ticket.cli_approval_allowed` already reads, so the approval policy T-0010
@@ -2061,6 +2067,19 @@ adds reads the same one. `/crew:migrate` writes `.crew/crew.json`, which crew
 does not read for this key; an `autopilot` block found only there is reported
 by `settings` ("move it to .crew/config.json") rather than read as `off` with
 no word.
+
+**When `ship: merge` merges.** Every required check (`gh pr checks <n>
+--required`) reads `pass`, or `fail` with its name exactly in `knownFailures`.
+Pending, or no required check reported yet, waits until `ciTimeoutMinutes` and
+then stops; `skipping`, an unknown state, an unlisted failure or checks that
+could not be read stop at once. A `high`-risk ticket - or one whose spec header
+names no risk, which reads as `high` - never merges when every completed review
+round's `model_family` is `claude` or absent: an unrecorded family counts as the
+author's. **Until Codex returns on 2026-10-01 every review here is
+same-family, so every `high`-risk ticket stops at `ship: merge` with its PR open
+for a person to merge.** A merge also needs the PR's head to be this checkout's
+HEAD and the review receipt to still stand. Unarmed, a ticket `/crew:done`
+closed reads `closed` and nothing is pushed.
 
 **What arming it does not change.** Plan approval, review acceptance,
 brainstorm and open questions always stop for a person in this version; every
