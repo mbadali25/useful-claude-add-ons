@@ -158,7 +158,7 @@
       "seconds": 29,
       "run": ["python3 -m pytest plugin/crew/tests/test_kimi_probe.py plugin/crew/tests/test_review_run_kimi.py plugin/crew/tests/test_review_verdict.py plugin/crew/tests/test_review_ledger.py -q"],
       "reach": "local",
-      "why": "29s, timed 2026-09-25 on T-0028 (129 tests). The Kimi Code provider: the five-state probe (only ok launches), probe-before-reserve so a quota or auth wall spends no round, the read-only agent file, the working-tree fingerprint, and the stream-json parse; plus the codex/copilot launch and ledger tests it shares review_run.py with. PROVEN red by the 20 KIMI_MUTATIONS in sabotage_kimi.py. reach: local - a fake `kimi` on PATH and a fixture KIMI_CODE_HOME under tmp_path, no network and no real Kimi call." },
+      "why": "29s, timed 2026-09-25 on T-0028 (133 tests). The Kimi Code provider: the five-state probe (only ok launches), probe-before-reserve so a quota or auth wall spends no round, the read-only agent file, the working-tree fingerprint, and the stream-json parse; plus the codex/copilot launch and ledger tests it shares review_run.py with. PROVEN red by every entry of KIMI_MUTATIONS in sabotage_kimi.py. The parse and the probe's classify are also checked against fixtures/kimi-stream-2.1.1/ok.jsonl, the owner's one captured run (2026-09-25, session id redacted). reach: local - a fake `kimi` on PATH and a fixture KIMI_CODE_HOME under tmp_path, no network and no real Kimi call." },
 
     { "paths": ["plugin/crew/tests/conftest.py", "plugin/crew/tests/crew_fixtures.py",
                 "plugin/crew/tests/context.py", "plugin/crew/tests/sabotage.py"],

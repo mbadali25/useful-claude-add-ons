@@ -137,6 +137,22 @@ def test_probe_ok(fake, home, monkeypatch):
     assert (result["state"], result["alias"], result["exe"]) == ("ok", "kimi-code/k3", fake)
 
 
+def test_classify_the_captured_run_is_ok():
+    """The owner's real 2.1.1 run, stdout, stderr and exit status as captured:
+    its trailing resume-hint text must not trip an auth or quota marker."""
+    fixtures = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                            "fixtures", "kimi-stream-2.1.1")
+    captured = {}
+    for name in ("ok.jsonl", "ok.stderr.txt", "ok.exit"):
+        with open(os.path.join(fixtures, name), encoding="utf-8") as fh:
+            captured[name] = fh.read()
+
+    state, _reason = kimi_probe.classify(captured["ok.jsonl"], captured["ok.stderr.txt"],
+                                         int(captured["ok.exit"]), False)
+
+    assert state == "ok"
+
+
 def test_probe_resolves_the_default_model_when_no_id_is_given(fake, home, monkeypatch):
     assert _probe(fake, home, monkeypatch, model=None)["alias"] == "kimi-code/kimi-for-coding"
 

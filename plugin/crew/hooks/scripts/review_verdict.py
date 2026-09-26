@@ -195,8 +195,10 @@ def kimi_final_message(jsonl):
     `message` is the last assistant text, or None. `error` is None only when
     at least one assistant text arrived, every non-blank line parsed as a JSON
     object, and no event carried a failure. Written against the shape the
-    2.1.1 bundle's PromptJsonWriter emits (read as source, not yet captured --
-    see tests/fixtures/kimi-stream-2.1.1/README.md): the stream has NO
+    2.1.1 bundle's PromptJsonWriter emits, and checked against the owner's
+    one captured run (tests/fixtures/kimi-stream-2.1.1/ok.jsonl). Only a
+    `role: assistant` line is read: that run ends on a `session.resume_hint`
+    meta line whose `content` is a string too. The stream has NO
     turn-completed record, so completion cannot be proven from stdout alone,
     and a thrown turn failure reaches stderr and the exit status instead. The
     exit status is therefore still required: `parse` makes non-zero

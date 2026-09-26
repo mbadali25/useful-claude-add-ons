@@ -166,8 +166,8 @@ def test_codex_final_message_an_unparseable_event_line_is_an_error(garbage):
 
 # --- Kimi Code stream-json (T-0028) -----------------------------------------
 # Shapes from PromptJsonWriter in the Kimi Code 2.1.1 bundle, read as source
-# text. `fixtures/kimi-stream-2.1.1/` holds the captured run once the owner has
-# made it; until then `placeholder-ok.jsonl` there is SYNTHESISED, and says so.
+# text, and checked against `fixtures/kimi-stream-2.1.1/ok.jsonl`: the owner's
+# one real `kimi -p` run, captured 2026-09-25 with its session id redacted.
 _KIMI_FIXTURES = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                               "fixtures", "kimi-stream-2.1.1")
 
@@ -223,11 +223,21 @@ def test_kimi_final_message_joins_list_content_text_parts():
     assert rv.kimi_final_message(stream) == ("READ|a\nCLEAN", None)
 
 
-def test_kimi_final_message_parses_the_placeholder_fixture():
-    """Against the SYNTHESISED placeholder until the owner's captured run
-    replaces it -- see that directory's README."""
-    with open(os.path.join(_KIMI_FIXTURES, "placeholder-ok.jsonl"),
-              encoding="utf-8") as fh:
+def test_kimi_final_message_ignores_a_meta_line_carrying_string_content():
+    """The captured run ends on a `session.resume_hint` meta line whose
+    `content` is a string. Only a `role: assistant` line is the answer."""
+    stream = _kimi({"role": "assistant", "content": "CLEAN"},
+                   {"role": "meta", "type": "session.resume_hint",
+                    "session_id": "00000000-0000-0000-0000-fixture00001",
+                    "content": "To resume this session: kimi -r x"})
+
+    assert rv.kimi_final_message(stream) == ("CLEAN", None)
+
+
+def test_kimi_final_message_parses_the_captured_fixture():
+    """The owner's real 2.1.1 run: system.version, the assistant text, then
+    session.resume_hint -- see that directory's README."""
+    with open(os.path.join(_KIMI_FIXTURES, "ok.jsonl"), encoding="utf-8") as fh:
         stream = fh.read()
 
     assert rv.kimi_final_message(stream) == ("PROBE_OK", None)

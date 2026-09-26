@@ -145,4 +145,10 @@ KIMI_MUTATIONS = (
      "    if False:\n"
      '        error = "the Kimi event stream has no assistant message"',
      "tests/test_review_verdict.py::test_kimi_final_message_with_no_assistant_text_is_an_error"),
+    ("kimi_final_message: a meta line's string content is read as the answer",
+     VERDICT,
+     '        if event.get("role") == "assistant":',
+     '        if event.get("role") in ("assistant", "meta"):',
+     "tests/test_review_verdict.py::"
+     "test_kimi_final_message_ignores_a_meta_line_carrying_string_content"),
 )

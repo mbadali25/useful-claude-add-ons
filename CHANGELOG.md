@@ -33,9 +33,18 @@ All notable changes to this repository are documented here. Format follows [Keep
   - `qa.kimi.model` / `dev.kimi.model` (default `null`); no
     `reasoningEffort` key. `review.md` step 2d, `model.md`, `crew-providers`
     and `providers.sh` (probe only with `--probe-kimi`) document it.
-  - **Not yet verified against a real run:** the stream-json parser is tested
-    against a SYNTHESISED placeholder fixture until the owner captures one
-    real `kimi -p` run.
+  - **The stream-json parser is tested against a real run.**
+    `tests/fixtures/kimi-stream-2.1.1/ok.jsonl` is the owner's one captured
+    `kimi -p` call (2026-09-25, session id redacted): `system.version`, the
+    assistant text, then a `session.resume_hint` meta line whose `content` is
+    a string. Only the `role: assistant` line is read, and a test plus a
+    sabotage mutation hold that; the probe's `classify` is tested against the
+    captured stdout, stderr and exit status. The hand-written placeholder is
+    gone. Tool-call, retry, 401, quota and failed-turn records remain
+    uncaptured.
+  - `templates/config.template.json` and `global.template.json` are
+    regenerated from `default_config()` / `default_global_config()`, so
+    `/crew:init` writes the `kimi` blocks and the new order.
 
 ### Fixed
 

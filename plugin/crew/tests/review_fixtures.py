@@ -148,8 +148,11 @@ def env_with_path(directory, **extra):
 # The stream it prints follows the shape PromptJsonWriter in the Kimi Code
 # 2.1.1 bundle writes -- one JSON object per line, `{"role": "assistant",
 # "content": "<text>"}` for the assistant, `{"role": "meta", "type": ...}` for
-# retries -- READ FROM THE BUNDLE'S SOURCE TEXT, NOT CAPTURED FROM A REAL RUN.
-# `tests/fixtures/kimi-stream-2.1.1/` says which of its files are captured.
+# everything else. A successful call prints the three lines the owner's real
+# run printed (`tests/fixtures/kimi-stream-2.1.1/ok.jsonl`): system.version,
+# the assistant text, then a session.resume_hint whose `content` is a string.
+# The tool-call, tool-result, retry, 401, quota and turn-failure records are
+# NOT captured; that directory's README says which of its files are.
 #
 # Two knobs, because one review_run.py invocation calls `kimi` twice (the
 # probe, then the review) with one environment:
@@ -171,12 +174,17 @@ if dump:
                              "env": {k: v for k, v in os.environ.items()
                                      if k.startswith("KIMI_")}}) + "\n")
 prompt = argv[argv.index("-p") + 1] if "-p" in argv else ""
+VERSION = {"role": "meta", "type": "system.version", "version": "2.1.1"}
+RESUME = {"role": "meta", "type": "session.resume_hint",
+          "session_id": "00000000-0000-0000-0000-fixture00001",
+          "command": "kimi -r 00000000-0000-0000-0000-fixture00001",
+          "content": "To resume this session: kimi -r 00000000-0000-0000-0000-fixture00001"}
 def say(*events):
     print("\n".join(json.dumps(e) for e in events))
 if prompt == "Reply with exactly: PROBE_OK":
     mode = os.environ.get("FAKE_KIMI_PROBE", "ok")
     if mode == "ok":
-        say({"role": "assistant", "content": "PROBE_OK"})
+        say(VERSION, {"role": "assistant", "content": "PROBE_OK"}, RESUME)
     elif mode == "401":
         sys.stderr.write("Error: 401 invalid_authentication_error: Invalid Authentication\n")
         sys.exit(1)
@@ -217,12 +225,13 @@ if mode == "turnfail":
         {"role": "meta", "type": "turn.failed",
          "error": {"code": "provider.error", "message": "stream died"}})
     sys.exit(0)
-say({"role": "meta", "type": "system.version", "version": "2.1.1"},
+say(VERSION,
     {"role": "assistant", "content": None,
      "tool_calls": [{"type": "function", "id": "t1",
                      "function": {"name": "Read", "arguments": "{}"}}]},
     {"role": "tool", "tool_call_id": "t1", "content": "..."},
-    {"role": "assistant", "content": body})
+    {"role": "assistant", "content": body},
+    RESUME)
 '''
 
 
