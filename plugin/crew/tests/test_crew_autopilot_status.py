@@ -173,7 +173,7 @@ def test_status_reserved_round_waits_on_reviewer(tmp_path):
 
     got = crew_autopilot.status(str(root), T)
 
-    assert (got["phase"], got["waiting"].split(" - ")[0]) == ("review", "reviewer")
+    assert (got["phase"], got["waiting"].split(" - ", maxsplit=1)[0]) == ("review", "reviewer")
 
 
 def test_status_unknown_ledger_is_unknown(tmp_path):
