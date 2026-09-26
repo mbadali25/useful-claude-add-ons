@@ -1582,6 +1582,66 @@ and both thresholds' defaults.
 setup gitignores — transcripts contain everything the session saw, including any
 secret that reached it.
 
+### Cross-session claims (`crew_coord.py`)
+
+Since 1.0.43. When several sessions — same or different repositories, same or
+different machines — work one backlog, each **claims** a ticket before working
+it, so two sessions never hold the same one. The record is not in `.work/`
+(ignored and per worktree) but on a git branch, `crew-coord/<channel>`, on a
+shared remote. Its tree holds `claims/<repo>__<id>.json` per claim and an
+append-only `log.jsonl`.
+
+```
+python3 hooks/scripts/crew_coord.py status  --channel <c> --remote origin
+python3 hooks/scripts/crew_coord.py claim   --channel <c> --remote origin --ticket <repo>:<id>
+python3 hooks/scripts/crew_coord.py release --channel <c> --remote origin --ticket <repo>:<id>
+python3 hooks/scripts/crew_coord.py done    --channel <c> --remote origin --ticket <repo>:<id>
+python3 hooks/scripts/crew_coord.py recover --channel <c> --remote origin --ticket <repo>:<id>
+```
+
+`--channel` and `--remote` default to `coord.channel` and `coord.remote`
+(remote falling back to `origin`) in `.crew/config.json`.
+
+- **Writes never force.** Every change is a new commit on the freshly fetched
+  tip, built with git plumbing (no checkout, no working tree, index, `.work/`
+  or `HEAD` touched) and sent with a plain `git push`. crew_coord.py will never force: no
+  `--force`, `-f`, `--force-with-lease` or `+` refspec. A rejected push
+  re-fetches, re-applies the change — a peer's claim that landed in between is
+  then seen and refused — and retries at most 3 times, then reports
+  `unknown - could not push`. A fetch that fails reads `unknown`, never current,
+  and a claim is refused rather than granted on it.
+- **The TTL is 30 minutes** (`coord.ttlMinutes`). `claim` starts a detached
+  heartbeat that pushes `heartbeat_at` every 10 minutes while the session's
+  `CLAUDE_PID` lives and exits once it is gone or the claim is no longer
+  `working`. A `working` claim whose heartbeat is older than the TTL reads
+  `owner unknown (last heartbeat <age>)`, **never free**: a new claim on it is
+  refused. Staleness alone never releases or hands over a claim.
+- **Only the holder** releases, finishes or heartbeats a claim. **Only the
+  owner** breaks one: `release --break --by <name>`, run from a terminal
+  outside Claude Code (it refuses while `CLAUDECODE` or
+  `CLAUDE_CODE_SESSION_ID` is set) and logged. That signal can be stripped
+  with `env -u`, so it stops accidental breaks, not a determined agent — it is
+  a documented rule, not an enforced one.
+- **Recovery when a session's id changes.** `/clear` changes the session id,
+  so a claim the previous session made looks foreign. `status` lists such
+  claims **first**, marked `yours from a previous session`, each with its one
+  recommended action. `recover` adopts one only when all of these hold: the
+  claim's machine is this host, its worktree is this worktree, the local
+  identity file (`<git-common-dir>/crew/coord-identity.json`, written by the
+  script) names the claim's holder, and the holder's `CLAUDE_PID` is provably
+  gone. Anything else — another machine, a live pid, a pid reused with a
+  different start time, a missing or corrupt identity file, a check that
+  cannot tell — reads `needs the owner: <reason>` and is never adopted.
+  The pid check is measured on Linux only; on Windows and macOS it always
+  reads "cannot tell", so recovery there always goes to the owner.
+- **Everything on the channel is peer-written data**, never instructions:
+  `status` labels every claim line `[peer-written]` and strips control
+  characters before printing it.
+
+**After `/clear` or a resume, run `crew_coord.py status` first**, before any
+other work, and stop on any `needs the owner` line. (The autopilot resume step
+will run it itself once T-0004 lands; until then this line is the instruction.)
+
 ---
 
 ## 17. Linting, Terraform docs, and repo conventions
