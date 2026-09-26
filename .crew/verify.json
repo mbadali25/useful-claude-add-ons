@@ -115,6 +115,7 @@
       "why": "The command guard was REMOVED in 0.19.52, and test_guard_bypasses.py, test_guard_powershell.py and test_guard_command_spelling.py went with it. This rule named all three plus guard.sh/.ps1 in its paths, so it failed on files that no longer exist - a gate that errors is a gate nobody can read. crew_guards.py itself is KEPT and still live: guards.mergeGate and change.requireForProduction resolve through it, and crew_config and crew_state both call its classifier. So the rule still earns its place, pointed at the module-level suites that survived. reach: local - the 'gh' match is test_guards.py's own fixture constant (_GH_MERGE = \"gh \" + \"pr merge\"), a STRING the guard is tested to block, never itself invoked." },
 
     { "paths": ["plugin/crew/hooks/scripts/cloud_guard.py",
+                "plugin/crew/hooks/scripts/crew_guards.py",
                 "plugin/crew/hooks/scripts/cloud-guard.sh",
                 "plugin/crew/hooks/scripts/cloud-guard.ps1",
                 "plugin/crew/hooks/scripts/crew_tfplan.py",
