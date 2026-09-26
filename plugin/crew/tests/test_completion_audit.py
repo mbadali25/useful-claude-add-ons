@@ -309,6 +309,43 @@ def test_audit_diffs_from_the_tickets_recorded_base(repo):
     assert ok is True and crew_ticket.status(str(repo), "T-1")["status"] == "approved"
 
 
+
+def _stat_dirty(path):
+    later = os.stat(path).st_mtime + 5
+    os.utime(path, (later, later))
+
+
+def _index_state(repo):
+    index = repo / ".git" / "index"
+    return index.stat().st_mtime_ns, index.read_bytes()
+
+
+def test_a_stat_dirty_unchanged_file_is_not_a_change(repo):
+    ready(repo)
+    _stat_dirty(repo / "other" / "keep.py")
+
+    assert completion_audit.audit(str(repo), "T-1") == (True, [])
+
+
+def test_the_audit_never_rewrites_the_index(repo, monkeypatch):
+    ready(repo)
+    _stat_dirty(repo / "other" / "keep.py")
+    before = _index_state(repo)
+    monkeypatch.delenv("GIT_OPTIONAL_LOCKS", raising=False)
+
+    completion_audit.audit(str(repo), "T-1")
+
+    assert _index_state(repo) == before
+
+
+def test_a_mode_change_with_the_same_content_is_a_change(repo):
+    ready(repo)
+    os.chmod(repo / "other" / "keep.py", 0o755)
+
+    ok, lines = completion_audit.audit(str(repo), "T-1")
+
+    assert (ok, "other/keep.py" in "\n".join(lines)) == (False, True), lines
+
 # --- the wrappers, both hooks ---------------------------------------------------------
 
 _WRAPPERS = ("scope-guard", "completion-audit")

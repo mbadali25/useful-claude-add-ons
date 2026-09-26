@@ -9,13 +9,22 @@ A `sed -i`, a redirect, a formatter or a `git mv` never reaches it. This audit
 reads the result instead of the tool call: every path that differs from the
 ticket's scope base (`scope_base.resolve` -- the commit the ticket started
 from, falling back to MORE, never less) across committed, staged, unstaged
-and untracked changes. PATHS ONLY: `git diff --name-status -z -M <base>`
-(the base tree against the working tree, which folds in committed, staged and
-unstaged) plus `git ls-files --others --exclude-standard -z`. No file content
-is read, so a Stop costs a path listing, not the review bundle. Renames
-arrive with both ends and BOTH must be in scope: a rename moves a file out of
-one path as much as into another. Git runs with `GIT_OPTIONAL_LOCKS=0`, so
-the user's index is never rewritten.
+and untracked changes. PATHS: `git diff-index --raw -z -M <base>` (the base
+tree against the working tree, which folds in committed, staged and
+unstaged) plus `git ls-files --others --exclude-standard -z`. A Stop costs a
+path listing, not the review bundle. Renames arrive with both ends and BOTH
+must be in scope: a rename moves a file out of one path as much as into
+another.
+
+The user's index is never rewritten. `git diff` -- the porcelain this used
+until T-0008 -- refreshes the index's stat cache and WRITES `.git/index`
+whenever a tracked file is stat-dirty but unchanged, and neither
+`GIT_OPTIONAL_LOCKS=0` nor `--no-optional-locks` stops it (measured, git
+2.53). `diff-index` is plumbing and never refreshes, so it reports such a
+file as modified with a null worktree id; `worktree_changes` hashes exactly
+those files (`git hash-object`, no `-w`, filters applied as `git add` would)
+and drops the ones whose content and mode match the base. That is the only
+file content read, and it is what `git diff` read to decide the same thing.
 
 What it cannot see, stated rather than implied: files git ignores (`.crew/*`
 among them) and `.work/`, which is excluded on purpose (as the review bundle
@@ -25,12 +34,17 @@ Paths are printed with control characters escaped (`\n` in a filename would
 otherwise add lines), and the whole message is capped at six PHYSICAL lines.
 
 A path passes when it is inside the active ticket's `spec.md ## Touch`, read
-from the same bytes the approval hash was checked against. When the ticket's
+from the same bytes the approval hash was checked against -- or, for that
+same approved ticket, one of the refresh-artifact paths
+(`crew_refresh_check.REFRESH_ARTIFACT_PATHS`: the code map, the diagrams
+dir, `graph.out`, `.claude/rules/`), which `/crew:implement` step 6's
+refreshes write and no Touch names. When the ticket's
 approval is not current or did not come from the user's prompt
 (`crew_ticket.accepted`: stale, none, or a `cli` receipt without
 `scope.allowCliApproval`), Touch itself is unapproved, so every changed path
-fails: an edited spec cannot widen what the audit accepts until the user
-approves it again. A broken active-ticket pointer fails the audit too.
+fails -- a refresh artifact included, since the allowance is gated on the
+same approval: an edited spec cannot widen what the audit accepts until the
+user approves it again. A broken active-ticket pointer fails the audit too.
 
 ## As a Stop hook
 
@@ -62,12 +76,22 @@ GIT_TIMEOUT = 60
 _ONLY = ["--", ".", ":(exclude).work"]
 
 
-def _git_fields(top, args):
-    """`git -C top <args>` NUL-split. Raises RuntimeError with git's stderr."""
+_NULL_OID = frozenset("0")
+# Blob modes `git hash-object` can re-derive from a file on disk. A symlink
+# or a submodule stat-dirty entry is left reported as changed (MORE).
+_FILE_MODES = ("100644", "100755")
+
+
+def _git_fields(top, args, data=None, literal=False):
+    """`git -C top <args>` NUL-split. Raises RuntimeError with git's stderr.
+    `data` is fed on stdin; `literal` turns pathspec magic off."""
     env = dict(os.environ, GIT_OPTIONAL_LOCKS="0")
+    if literal:
+        env["GIT_LITERAL_PATHSPECS"] = "1"
     try:
         done = subprocess.run(["git", "-C", top] + args, capture_output=True, env=env,
-                              timeout=GIT_TIMEOUT, check=False, stdin=subprocess.DEVNULL)
+                              timeout=GIT_TIMEOUT, check=False, input=data,
+                              stdin=None if data is not None else subprocess.DEVNULL)
     except (OSError, subprocess.SubprocessError) as exc:
         raise RuntimeError(f"git {args[0]} could not run: {exc}") from exc
     if done.returncode != 0:
@@ -76,21 +100,52 @@ def _git_fields(top, args):
     return done.stdout.decode("utf-8", errors="surrogateescape").split("\0")
 
 
-def changed_paths(top, base):
-    """Every path the tree changed since `base`, both ends of a rename or
-    copy. Names only -- no blob or patch content is read."""
-    sha = _git_fields(top, ["rev-parse", "--verify", base + "^{commit}"])[0].strip()
-    fields = _git_fields(top, ["diff", "--name-status", "-z", "-M", "--no-ext-diff",
-                               sha] + _ONLY)
-    paths, i = set(), 0
+def _unchanged(top, suspects):
+    """The `{path: base blob id}` entries whose file on disk hashes to that
+    id -- stat-dirty, content-identical. Hashed through `--stdin-paths`
+    (no `-w`: nothing is written to the object store); a name holding a
+    newline cannot travel that way and stays reported as changed."""
+    names = [p for p in sorted(suspects) if "\n" not in p and "\r" not in p
+             and os.path.isfile(os.path.join(top, p))
+             and not os.path.islink(os.path.join(top, p))]
+    if not names:
+        return set()
+    listing = "".join(p + "\n" for p in names).encode("utf-8", errors="surrogateescape")
+    hashes = _git_fields(top, ["hash-object", "--stdin-paths"], data=listing)[0].split()
+    return {p for p, oid in zip(names, hashes) if oid == suspects[p]}
+
+
+def worktree_changes(top, sha, pathspec, literal=False):
+    """Every path that differs between commit `sha` and the working tree --
+    committed, staged or not -- both ends of a rename or copy, and never a
+    write to the index (module docstring). `pathspec` is everything after
+    `--`; `literal` reads it without pathspec magic."""
+    fields = _git_fields(top, ["diff-index", "--raw", "-z", "-M", sha, "--"] + pathspec,
+                         literal=literal)
+    paths, suspects, i = set(), {}, 0
     while i < len(fields):
         head = fields[i]
-        if not head:
+        if not head.startswith(":"):
             i += 1
             continue
-        width = 2 if head[:1] in ("R", "C") else 1
-        paths.update(p for p in fields[i + 1:i + 1 + width] if p)
+        src_mode, dst_mode, src_oid, dst_oid, status = head[1:].split()[:5]
+        width = 2 if status[:1] in ("R", "C") else 1
+        names = [p for p in fields[i + 1:i + 1 + width] if p]
         i += 1 + width
+        if (status == "M" and src_mode == dst_mode and src_mode in _FILE_MODES
+                and set(dst_oid) <= _NULL_OID and len(names) == 1):
+            suspects[names[0]] = src_oid
+        else:
+            paths.update(names)
+    return paths | (set(suspects) - _unchanged(top, suspects))
+
+
+def changed_paths(top, base):
+    """Every path the tree changed since `base`, both ends of a rename or
+    copy. Names, plus the hash of a stat-dirty file -- never the review
+    bundle, and never a write to the index."""
+    sha = _git_fields(top, ["rev-parse", "--verify", base + "^{commit}"])[0].strip()
+    paths = worktree_changes(top, sha, _ONLY[1:])
     paths.update(p for p in _git_fields(top, ["ls-files", "--others", "--exclude-standard",
                                               "-z"] + _ONLY) if p)
     return sorted(paths)
@@ -109,6 +164,19 @@ def physical(lines):
     return "\n".join(lines).splitlines()[:MAX_LINES]
 
 
+def _outside_refresh_artifacts(top, paths, approval):
+    """`paths` minus the refresh artifacts (`crew_refresh_check.
+    REFRESH_ARTIFACT_PATHS`) -- only when the ticket holds a current approval
+    from the user's prompt, the condition that gates Touch
+    (`crew_ticket.accepted`: a `cli` receipt only with
+    `scope.allowCliApproval`). Without that approval nothing is exempt."""
+    if approval["status"] != "approved":
+        return paths
+    import crew_refresh_check  # pylint: disable=import-outside-toplevel
+    dirs = crew_refresh_check.refresh_artifact_paths(top)
+    return [p for p in paths if not crew_refresh_check.is_refresh_artifact(p, dirs)]
+
+
 def audit(root, ticket):
     """(ok, lines). `lines` explains a failure; empty on a pass."""
     top = crew_ticket.toplevel(root)
@@ -121,10 +189,12 @@ def audit(root, ticket):
         paths = changed_paths(top, base)
     except RuntimeError as exc:
         return False, [f"completion audit: could not diff the tree: {shown(str(exc))}"]
+    # ONE read of spec.md: the hash check, the Touch below and the refresh
+    # allowance all share the bytes.
+    approval = crew_ticket.accepted(top, ticket)
+    paths = _outside_refresh_artifacts(top, paths, approval)
     if not paths:
         return True, []
-    # ONE read of spec.md: the hash check and the Touch below share the bytes.
-    approval = crew_ticket.accepted(top, ticket)
     note = "" if source == scope_base.RECORDED else " (base is a fallback: shows MORE)"
     if approval["status"] != "approved":
         return False, [f"COMPLETION AUDIT: {ticket}'s Touch is not approved "

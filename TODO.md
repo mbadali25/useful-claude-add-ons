@@ -4997,6 +4997,17 @@ nobody having noticed.
 `process-crew-brief`) and `ticketsTooLarge` were all live during the 1.0 pass and were deliberately not
 worked - every lane went to a Windows BLOCKER instead. They are unchanged, not resolved.
 
+### From T-0008 (crew 1.0.30) - the light path and the guide still say three `/crew:done` checks
+`/crew:done` has four checks since 1.0.30 (check 4: `crew_refresh_check.py`, artifacts current).
+Not fixed in T-0008: neither file is in its Touch.
+
+1. `plugin/crew/commands/fix.md:87` - "the same three checks"; it is four now.
+2. `docs/guides/crew/src/daily-workflow.md:15` and `:104` - both say three checks.
+3. `/crew:fix` never runs the refresh: its steps have no counterpart to `/crew:implement` step 6
+   (`crew_refresh_check.py`, then the command each `refresh with` line names, before review), so a
+   light-path ticket whose change reaches a code map, diagram or the graph is refused at `/crew:done`
+   check 4 with nothing in its own steps saying how to get past it.
+
 ## crew 1.0.x: findings from 2026-09-25 (T-0001..T-0005 session)
 
 Filed by T-0014. Each item below has no ticket of its own (T-0002..T-0013 carry the rest). Every anchor was re-checked against `origin/main` at `f2bb919b` (crew 1.0.28); where a line moved since the session measured it, the anchor gives the current line. Measurements are labelled with the commit they were taken at.

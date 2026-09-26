@@ -98,8 +98,8 @@ SCOPE_MUTATIONS = (
      "    outside = []\n",
      _CA + "test_a_shell_made_out_of_scope_file_blocks_the_stop[module]"),
     ("the audit drops the source end of a rename", AUDIT,
-     "        paths.update(p for p in fields[i + 1:i + 1 + width] if p)\n",
-     "        paths.update(p for p in fields[i + width:i + 1 + width] if p)\n",
+     "        names = [p for p in fields[i + 1:i + 1 + width] if p]\n",
+     "        names = [p for p in fields[i + width:i + 1 + width] if p]\n",
      _CA + "test_a_rename_from_out_of_scope_into_scope_blocks_too[module]"),
     ("the audit re-blocks a stop_hook_active continuation", AUDIT,
      '    if data.get("stop_hook_active") is True:\n        return 0\n',
@@ -197,8 +197,8 @@ SCOPE_MUTATIONS = (
      "",
      _CT + "test_the_successor_approval_is_rechecked_under_the_ledger_lock"),
     ("the Stop audit builds the whole review bundle", AUDIT,
-     "    copy. Names only -- no blob or patch content is read.\"\"\"\n",
-     "    copy. Names only -- no blob or patch content is read.\"\"\"\n"
+     "    bundle, and never a write to the index.\"\"\"\n",
+     "    bundle, and never a write to the index.\"\"\"\n"
      "    __import__(\"review_patch\").compute(top, base)\n",
      _CA + "test_the_audit_lists_paths_without_building_the_review_bundle"),
     ("a filename's newline reaches the hook message", AUDIT,

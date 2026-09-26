@@ -1,10 +1,10 @@
 ---
-description: Close a ticket - requires an accepted review receipt, a clean verify gate, and a passing completion audit
+description: Close a ticket - needs an accepted review receipt, a clean verify gate, a passing completion audit, current artifacts
 argument-hint: <ticket id>
 allowed-tools: Read, Write, Edit, Bash
 ---
 
-Close ticket $1. **All three checks below must pass. Any one failing refuses
+Close ticket $1. **All four checks below must pass. Any one failing refuses
 done** — there is no partial close.
 
 ## Check 1 — the review receipt
@@ -43,7 +43,20 @@ hook's scope audit does, but as a pre-close confirmation rather than a
 per-turn block. A non-zero exit names the out-of-scope path; file it to
 `TODO.md`, not to this ticket, and rerun.
 
-## On all three passing
+## Check 4 — artifacts are current
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_refresh_check.py --root . --ticket "$1"
+```
+
+Read-only. Any `stale` or `unknown` line refuses done: name the artifact and
+what the line says — `refresh with <command>`, or `stop` with its reason (a
+missing tool, or a scope base that hides the change). **Do not run the refresh here — a write now
+stales check 1's receipt.** Go back to `/crew:implement $1` step 6: refresh,
+commit, then `/crew:review $1` again, then rerun this command. Documents read
+`not measured`, which is `/crew:docs`'s judgement, not a pass or a refusal.
+
+## On all four passing
 
 1. Set `.work/tickets/$1/spec.md`'s header to `status: done`. Update
    `.work/INDEX.md`'s row to match (files and Obsidian modes), or push the
@@ -61,6 +74,6 @@ python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_metrics.py record --ticket "$1"
 4. If `notify.provider` is not `none`:
    `bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/notify.sh done "$1 complete"`
 
-Do not run step 4 before checks 1–3 pass. "Done" that means "I stopped typing"
+Do not run step 4 before checks 1–4 pass. "Done" that means "I stopped typing"
 is the reason nobody trusts a notification channel — the same line `/crew:work`
 opened with. <!-- deliberate -->

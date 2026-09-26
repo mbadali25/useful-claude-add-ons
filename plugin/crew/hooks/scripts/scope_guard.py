@@ -25,9 +25,25 @@ the payload in, so the two shells cannot disagree.
    (`crew_ticket.accepted`; a `cli` receipt only with
    `scope.allowCliApproval: true`) -- inside `spec.Touch`. The approval and
    the Touch it is judged against come from ONE read of spec.md
-   (`crew_ticket.status`). Nothing else is exempt: not `.crew/`, not
-   `TODO.md`, not `.claude/`, not crew's policy files. Put them in Touch if
-   the ticket is meant to change them.
+   (`crew_ticket.status`).
+6. With that SAME approval -- current, from the user's prompt, a `cli`
+   receipt only under `scope.allowCliApproval` -- the refresh-artifact paths
+   are writable too: `crew_refresh_check.REFRESH_ARTIFACT_PATHS`, the code
+   map (`.crew/codemap/`), the configured diagrams dir, `graph.out` and
+   `.claude/rules/`. Why: `/crew:implement` step 6 runs `/crew:onboard
+   --refresh`, `/crew:diagram` and graphify for every ticket whose changes
+   reach them, and `/crew:done` refuses until they are current, yet no
+   ticket's Touch names them -- without this, the refresh the lifecycle
+   demands is the write the guard refuses (T-0008, review round 1). The
+   match is whole path segments on the normalised path (`.crew/codemapX` is
+   not the code map, `..` is collapsed first), and BOTH the real and the
+   named path must be artifacts, so a link inside `.crew/codemap/` cannot
+   carry a write anywhere else. A configured dir resolving to the repository
+   root opens nothing. Config is already this guard's trust root --
+   `scope.mode` lives there -- so a configured dir is not a new way round it.
+   Nothing else is exempt: not the rest of `.crew/`, not `TODO.md`, not the
+   rest of `.claude/`, not crew's policy files. Put them in Touch if the
+   ticket is meant to change them.
 
 ## Bash and PowerShell
 
@@ -153,6 +169,8 @@ def classify(top, common, ticket, touch, approval, target, base):
         return True, "outside the worktree"
     if all(os.path.normcase(r).startswith(os.path.normcase(own)) for r in checks):
         return True, "the ticket's own files"
+    if _refresh_artifact(top, real_rel, checks, approval):
+        return True, "a refresh artifact of an approved ticket"
     if approval["status"] != "approved":
         return False, (f"{ticket}: {approval['why']}"
                        if approval["status"] in ("stale", "unaccepted")
@@ -163,6 +181,20 @@ def classify(top, common, ticket, touch, approval, target, base):
     if outside:
         return False, f"{outside[0]} is outside {ticket}'s spec ## Touch"
     return True, "in Touch"
+
+
+def _refresh_artifact(top, real_rel, checks, approval):
+    """Every judged path is a refresh artifact
+    (`crew_refresh_check.REFRESH_ARTIFACT_PATHS`) AND the approval is current
+    and from the user's prompt (module docstring, rule 6). A real path
+    outside the worktree is never one, whatever the name says."""
+    if approval["status"] != "approved":
+        return False
+    if real_rel is None:
+        return False
+    import crew_refresh_check  # pylint: disable=import-outside-toplevel
+    dirs = crew_refresh_check.refresh_artifact_paths(top)
+    return all(crew_refresh_check.is_refresh_artifact(r, dirs) for r in checks)
 
 
 def protected(top, state, target, base):

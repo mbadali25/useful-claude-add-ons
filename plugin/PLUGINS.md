@@ -11,7 +11,7 @@ Read the **Hooks** section of any plugin before installing it. Commands and agen
 | | |
 |---|---|
 | **Source** | [`crew/`](crew) |
-| **Version** | 1.0.35<!-- claim: plugin-version:crew --> |
+| **Version** | 1.0.36<!-- claim: plugin-version:crew --> |
 | **Install** | `claude plugin install crew@useful-claude-add-ons` |
 | **Menu item** | 21, `repo-plugins` — **off by default**. Menu item 22, `graphify`, is a separate, also-off-by-default install of the `graphify` CLI this plugin's graph feature depends on — see **The code graph** below. |
 | **Registers** | 4 agents, 34 commands, 29 skills<!-- claim: plugin-skills:crew -->, 34 hook entries (13 scripts × `.sh`/`.ps1`) across 8 events |
@@ -131,7 +131,7 @@ to CI or to branch protection.
 | `/crew:debug <the symptom, or a ticket id, e.g. "login 500s after deploy" or T-0042>` | Find the cause of a defect before anyone proposes a fix |
 | `/crew:diagram <architecture \| data-flow <area> \| process <name> \| sequence <flow> \| refresh>` | Create or refresh diagrams from the actual code |
 | `/crew:docs [--audit]` | Update the documents this change should touch — and only those |
-| `/crew:done <ticket id>` | Close a ticket - requires an accepted review receipt, a clean verify gate, and a passing completion audit |
+| `/crew:done <ticket id>` | Close a ticket - needs an accepted review receipt, a clean verify gate, a passing completion audit, current artifacts |
 | `/crew:emergency <what is broken> \| status \| extend [minutes] \| end` | Declare an incident - stand the gates down, spin up parallel investigation lanes, and record what was skipped |
 | `/crew:fix <one sentence - what is wrong and where>` | The light path - every lifecycle phase present, each compressed to one step |
 | `/crew:gate <disable \| enable \| status> <github \| bitbucket>` | Take a repository's merge gate down and put it back, from the export |
