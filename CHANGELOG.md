@@ -4,7 +4,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-### Changed — `crew` 1.0.36: environment-scoped terraform in the cloud guard (T-0005) — **BREAKING**
+### Changed — `crew` 1.0.41: environment-scoped terraform in the cloud guard (T-0005) — **BREAKING**
 
 - **BREAKING: a destroy is never applied unattended, `guards.terraformApply:
   allow` included.** While `guards.cloudGuard` is armed, a destroy —
@@ -13,11 +13,11 @@ All notable changes to this repository are documented here. Format follows [Keep
   crew cannot read (**including `terraform apply -auto-approve` with no saved
   plan**, any terragrunt apply, and a plan with no, a stale or a malformed
   summary) — now **asks** under `allow`, and is **denied** when nobody is
-  attending. Before 1.0.36 each of these ran without a word under `allow`.
+  attending. Before 1.0.41 each of these ran without a word under `allow`.
   Approve one command with the `.approved-guard-terraformApply-<hash>` marker
   the refusal names (15 minutes, that command only), or summarise a saved plan
   with `hooks/scripts/crew_tfplan.py summarize PLANFILE` and apply that plan.
-  Bumped `1.0.29 -> 1.0.36`.
+  Bumped `1.0.37 -> 1.0.41`.
 - **New `environments` block** (`environments.nonProd`, repo-only globs;
   `environments.prodUnattended`, ratcheted, true only when **both** config
   layers say the JSON literal `true`). Under `terraformApply: ask`, an apply of

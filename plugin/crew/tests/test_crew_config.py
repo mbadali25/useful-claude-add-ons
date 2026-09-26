@@ -269,7 +269,7 @@ def test_the_ten_keys_crew_read_but_never_declared_are_declared():
     # 116 with the Windows burn-in's autoClear narrowing:
     # `context.autoClear.onlyRepos` and `context.autoClear.onlySessions`.
     # 118 with T-0005: the repo-only `environments.nonProd` glob list and the
-    # ratcheted `environments.prodUnattended` (crew 1.0.36).
+    # ratcheted `environments.prodUnattended` (crew 1.0.41).
     assert len(declared) == 118
 
 

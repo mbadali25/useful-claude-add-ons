@@ -130,7 +130,7 @@ descending at a template **leaf**.
 **Measured, not argued.** `leaf_paths(default_global_config())` yields **66**
 leaves. `leaf_paths(default_config())` yields **118**, so **52** are repo-only.
 For all 118, `filter_global` and `plan_global_write` agree on whether the path is
-settable. (65 / 116 before crew 1.0.36 added `environments.prodUnattended` to
+settable. (65 / 116 before crew 1.0.41 added `environments.prodUnattended` to
 both layers and the repo-only `environments.nonProd`; 63 / 114 before the
 Windows burn-in added
 `context.autoClear.onlyRepos` and `onlySessions` to both layers; this paragraph
@@ -1317,7 +1317,7 @@ which is not on the command line, so crew genuinely cannot tell — and
 substituting a guess is the "unknown wearing the label of a check that
 happened" failure this file keeps returning to.
 
-### `environments.*` — which terraform targets may run unattended (crew 1.0.36)
+### `environments.*` — which terraform targets may run unattended (crew 1.0.41)
 
 Read by the cloud guard alone, and only while `guards.cloudGuard` is armed. It
 lets `terraform`/`tofu apply` of a **non-destroying saved plan**, and
@@ -1398,7 +1398,7 @@ refused, so its apply asks.
 | `block` | deny | deny | deny | deny | deny |
 | `ask`, no live marker | ask | **allow**, logged | **allow**, logged + on screen | ask | ask |
 | `ask`, live marker | allow (that command) | allow | allow | allow | allow |
-| `allow` | **ask — BREAKING in 1.0.36** | allow | allow | allow | allow |
+| `allow` | **ask — BREAKING in 1.0.41** | allow | allow | allow | allow |
 
 `ask` is denied when nobody is attending, as everywhere in this guard. The
 guard.log policy column says why: `env:nonProd:<name>`,
