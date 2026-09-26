@@ -19,15 +19,24 @@ same rule `commands/ticket.md` states ("the key exists before the branch
 does"), moved one phase earlier because 1.0 starts the ticket at brainstorm,
 not at spec.
 
-Read `.crew/crew.json` (or `.crew/config.json` on an unmigrated repo) for
-`tracker`. **Files and Obsidian Kanban tracker modes**: pick the next free
-`T-####`, create `.work/tickets/T-####/`, and append
-`T-#### | direction | - | <this-repo> | <title>` to `.work/INDEX.md`. Obsidian
-mode also adds the `[[T-####]]` card to the board's `backlog` lane, the way
-`/crew:ticket` does — a direction is not yet ready work. <!-- deliberate --> **Jira and
-ServiceDesk Plus modes**: create the tracker item now with a one-line
-placeholder summary, so the id exists before anything else does, and cache it
-at `.work/tickets/<KEY>/`.
+Read the tracker kind with `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_tracker.py resolve --root .`
+— it reads `.crew/crew.json` and `.crew/config.json` alike. `could not tell`
+means the two disagree: show me its line and stop; never pick one.
+**Files and Obsidian Kanban**: pick the next free `T-####`, create
+`.work/tickets/T-####/`, then run
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_tracker.py create --root . --ticket T-#### --title "<title>"
+```
+
+It appends `T-#### | direction | - | <this-repo> | <title>` to `.work/INDEX.md`
+and, for Obsidian, adds the `[[T-####]]` card to the board's backlog lane and
+the vault ticket note — a direction is not yet ready work. Print its lines
+verbatim. On exit 3 run the command it printed. On exit 1 tell me
+`tracker not updated: <reason>` and carry on — the ticket exists; nothing is
+undone. **Jira and ServiceDesk Plus**: create the tracker item now through MCP
+with a one-line placeholder summary, so the id exists before anything else
+does, and cache it at `.work/tickets/<KEY>/`.
 
 ## 2. Establish shared understanding
 

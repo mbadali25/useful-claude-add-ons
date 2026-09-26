@@ -8,7 +8,7 @@ Sync $ARGUMENTS.
 
 ## Preconditions
 
-1. `.crew/config.json` -> `tracker` must be `"sdp"`.
+1. `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_tracker.py resolve --root .` must say `sdp`.
 2. The ServiceDesk Plus MCP server must be connected. Check your available tools
    for `sdp_*` (`sdp_get`, `sdp_search`, `sdp_add_note`, ...). If tool search is
    active they will not be listed until you search for them, so search before

@@ -15,6 +15,7 @@ import sys
 import pytest
 
 import context  # noqa: F401  pylint: disable=unused-import
+import crew_status
 import crew_tracker
 from crew_fixtures import make_repo
 
@@ -787,3 +788,27 @@ def test_jira_create_is_delegated_to_mcp(tmp_path):
 
     assert (done.returncode, done.stdout) == (
         3, "jira: delegated: create the tracker item through MCP, as brainstorm.md step 1 says\n")
+
+
+# --- /crew:status reads the tracker through resolve ------------------------------
+
+def test_status_tracker_could_not_tell(tmp_path):
+    root = make_repo(tmp_path)
+    _crew_json(root, {"kind": "files"})
+    _config_json(root, "obsidian")
+
+    lines = crew_status.collect(str(root))
+
+    assert [line for line in lines if line.startswith("tracker")] == [
+        "tracker  could not tell - .crew/crew.json says tracker.kind 'files', "
+        ".crew/config.json says tracker 'obsidian'"]
+
+
+def test_status_tracker_names_its_source(tmp_path):
+    root = make_repo(tmp_path)
+    _config_json(root, "obsidian")
+
+    lines = crew_status.collect(str(root))
+
+    assert [line for line in lines if line.startswith("tracker")] == [
+        "tracker  obsidian (from .crew/config.json)"]

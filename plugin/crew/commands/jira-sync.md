@@ -8,7 +8,7 @@ Sync $ARGUMENTS.
 
 ## Preconditions
 
-1. `.crew/config.json` -> `tracker` must be `"jira"`.
+1. `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_tracker.py resolve --root .` must say `jira`.
 2. The Atlassian MCP server must be connected. Check your available tools for
    `mcp__atlassian__*`. If tool search is active you may need to search for them
    rather than seeing them listed.

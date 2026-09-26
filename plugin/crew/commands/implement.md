@@ -32,7 +32,10 @@ python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/scope_base.py --root . --record $1
 ```
 
 HEAD now, keyed by ticket, never moved by a later re-run. Every changed-file
-list below diffs from this, not from the verify gate's own marker.
+list below diffs from this, not from the verify gate's own marker. Then
+`python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_tracker.py move --root . --ticket $1 --to in-progress`:
+print its lines verbatim; on exit 3 run the command it printed; on exit 1 tell
+me `tracker not updated: <reason>` and keep going — a tracker never blocks work.
 
 ## 2. Work the plan's steps in order
 
@@ -105,6 +108,8 @@ the refresh before `/crew:review $1` builds its bundle. **Then, last,
 
 ## 7. Update status
 
-Set `spec.md`'s header to `status: review`. `/crew:done $1` moves it to `done`
+Set `spec.md`'s header to `status: review`, then
+`python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_tracker.py move --root . --ticket $1 --to review`,
+handled as in step 1. `/crew:done $1` moves it to `done`
 once the review receipt, the gate, the completion audit and the artifact check
 all pass — this command does not set `done` itself.

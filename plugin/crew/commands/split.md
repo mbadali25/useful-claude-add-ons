@@ -8,12 +8,12 @@ Split $ARGUMENTS.
 
 ## Preconditions — check all three, name the one that failed, stop
 
-1. `.crew/config.json` -> `tracker` must be `"jira"`. **This command is Jira
-   only, on purpose.** A files-mode ticket is a markdown file the user can
-   split with an editor; an Obsidian card is theirs to drag. Jira is the one
-   tracker where splitting means creating real issues other people will see,
-   which is exactly why it needs a command with a confirmation rather than an
-   improvised sequence of MCP calls.
+1. `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_tracker.py resolve --root .`
+   must say `jira`. **Jira only, on purpose.** A files-mode ticket is a markdown
+   file the user can split with an editor; an Obsidian card is theirs to drag.
+   Jira is the one tracker where splitting means creating real issues other
+   people will see, which is exactly why it needs a command with a confirmation
+   rather than an improvised sequence of MCP calls.
 2. The Atlassian MCP server must be connected. Check for `mcp__atlassian__*`
    in your available tools; with tool search active you may need to search
    rather than read a list.

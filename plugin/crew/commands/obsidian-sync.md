@@ -1,172 +1,101 @@
 ---
 description: Sync a ticket between an Obsidian Kanban board and the local cache
 argument-hint: <T-####> [--push]
-allowed-tools: Read, Write, Edit, Bash, Glob
+allowed-tools: Read, Bash
 ---
 
 Sync $ARGUMENTS.
 
+The lifecycle commands already move the card at every transition through
+`crew_tracker.py` — brainstorm creates it, spec, plan, implement and done move
+it. This command is for looking, and for repairing a board that fell behind.
+
 ## Preconditions
 
-1. `.crew/config.json` -> `tracker` must be `"obsidian"`.
-2. `obsidian.vaultPath` must resolve to a directory that exists. If it is
-   `null`, fall back to `memory.vaultPath`; if that is also null or missing,
-   stop.
-3. The board file must exist at
+1. `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_tracker.py resolve --root .`
+   must say `obsidian`. It reads `.crew/crew.json` (`tracker.kind`,
+   `tracker.obsidian`) and `.crew/config.json` (`tracker`, top-level
+   `obsidian`) alike; `could not tell` means the two disagree — show me its
+   line and stop, never pick one.
+2. `obsidian.vaultPath` (else `memory.vaultPath`) must be an existing
+   directory holding `.obsidian/`, and the board must exist at
    `<vaultPath>/<obsidian.boardDir>/<obsidian.board>`.
 
-If any of those is missing, say exactly which one and stop. Do not fall back to
-file tickets — a silent fallback splits the source of truth and you will not
-notice until two people have divergent ticket state. That hazard is *worse*
-here than with Jira, not absent: both sides are local markdown and both look
-equally authoritative.
+The script checks all of this and names what failed. Do not fall back to file
+tickets — a silent fallback splits the source of truth, and here both sides
+are local markdown that look equally authoritative.
 
 ## What is authoritative
 
-The board and the ticket note in the vault are the remote, exactly as Jira is.
-`.work/cache/T-####.md` is a terse local mirror that `/crew:implement` reads so the
-vault is touched at boundaries only.
+`.work/INDEX.md` is the session's view; the board is the human's. Both are
+written by the same `move`, and each half reports its own result.
 
 | | Wins |
 |---|---|
-| Status, on pull | The card's **lane**. Dragging a card in Obsidian is how a human changes status, and it has to mean something. |
-| Content, on pull | The ticket note. |
-| Both, on push | Crew. Push writes the lane and appends to the note. |
+| Status, on pull | Nothing is changed. `read` reports the board lane beside the INDEX status and says when they disagree — a human dragging a card is a question to put to me, not an instruction. |
+| Status, on push | Crew. `move` writes the lane the INDEX status maps to and reports the lane it moved the card from. |
+| The ticket note | Written once, at create, and never rewritten. |
 
-Never write the board and the note in one direction and the cache in the other.
-
-## The board file format — do not reconstruct it
-
-An Obsidian Kanban board is a markdown file the plugin round-trips. Three parts
-are load-bearing and a naive rewrite destroys them, after which the file
-silently stops rendering as a board and opens as plain text:
-
-````markdown
----
-
-kanban-plugin: board
-
----
-
-## Backlog
-
-
-## Ready
-
-- [ ] [[T-0042]] Fix token refresh on 401
-
-
-## In Progress
-
-
-## Review
-
-
-## Done
-
-**Complete**
-
-- [x] [[T-0039]] Bump pinned deps
-
-
-
-
-%% kanban:settings
-```
-{"kanban-plugin":"board"}
-```
-%%
-````
-
-- `kanban-plugin: board` in the frontmatter is what makes it a board.
-- The trailing `%% kanban:settings` block holds the board's own settings. Keep
-  it byte-for-byte and keep it last.
-- `**Complete**` is the marker the plugin looks for in the done lane. Removing
-  it turns finished cards back into open ones.
-- An archive, when one exists, is a `***` thematic break followed by
-  `## Archive`. Leave everything below that break alone.
-
-So: read the file, edit the one card or the one lane, write it back. Edit in
-place with `Edit`; never regenerate the whole board from the cache.
-
-## Lanes
-
-Read the names from `obsidian.columns` rather than hardcoding them — a user with
-an existing board renames lanes in config, not in the vault.
-
-| Config key | Default | Means |
-|---|---|---|
-| `backlog` | `Backlog` | Deferred or untriaged. Where a non-blocking finding is parked. |
-| `ready` | `Ready` | Scoped by `/crew:spec` and pickup-able. |
-| `inProgress` | `In Progress` | `/crew:implement` has it. |
-| `review` | `Review` | Implementation done, `/crew:review` outstanding. |
-| `done` | `Done` | Complete and verified. Carries `**Complete**`. |
-
-A lane named in config that does not exist on the board is a setup error. Say
-so and stop; do not create the lane, because the likelier cause is a typo than a
-missing column.
+There is no `.work/cache/` mirror: the ticket's content lives in
+`.work/tickets/$1/`, which no tracker writes.
 
 ## Pull (default)
 
-1. Find the card for $1 in the board — a list item whose text contains `[[$1]]`
-   or the bare key. Note which lane it is in.
-2. Read `<vaultPath>/<obsidian.boardDir>/$1.md`.
-3. Write `.work/cache/$1.md` in the same shape a files-mode ticket uses.
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_tracker.py read --root . --ticket $1
+```
 
-**Store only these fields:** key, title, status (derived from the lane), the
-Want / Scope / Done when sections, and the last 3 notes.
-
-**Discard everything else** — Dataview blocks, card metadata the plugin appends
-(dates, tags, per-card settings), backlink lists, and anything the vault's own
-templates injected. Those belong to Obsidian, not to the work.
-
-If no card exists for $1, say so and stop. A ticket note with no card is not
-tracked by anything, which is the failure this command is supposed to surface.
+Print its lines verbatim. When the board lane and the INDEX status disagree,
+say so and ask which is right. Do not move anything on a pull.
 
 ## Push (`--push`)
 
-**The cache names the destination.** `--push` does not take a lane and does not
-infer one from context: it reads `status:` from `.work/cache/$1.md` and maps
-that through `obsidian.columns`. So the caller changes the status in the cache
-first, then pushes. Without that rule the destination lane is whatever the
-session happened to be thinking about, which is how a card ends up in `Done`
-because the turn went well.
+The INDEX status names the destination; `--push` does not take a lane and does
+not infer one from context. Read `$1`'s status cell from `read`'s `files:` line,
+then:
 
-| `status:` in the cache | Lane |
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_tracker.py move --root . --ticket $1 --to <that status>
+```
+
+Print its lines verbatim. On exit 1 tell me `tracker not updated: <reason>`.
+
+| INDEX status | Lane (`obsidian.columns` key) |
 |---|---|
-| `open` | `ready` |
-| `deferred` | `backlog` |
+| `direction` | `backlog` |
+| `spec`, `planned` | `ready` |
 | `in-progress` | `inProgress` |
 | `review` | `review` |
-| `done` | `done` |
+| `done` | `done` (checked, below `**Complete**`) |
 
-A `status:` that maps to no lane is an error: say which value you found and
-stop. Guessing a lane moves a card a human is looking at.
+Any other status maps to no lane and is refused with nothing written: say which
+value you found and stop. Guessing a lane moves a card a human is looking at.
+The table lives in `crew_tracker.py` as `LANE_FOR_STATUS`; this is a copy.
 
-1. Move the card to that lane. Moving means cutting the one line and inserting
-   it under the target heading — not rewriting the file.
-2. If the target is the done lane, the card becomes `- [x]` and goes below
-   `**Complete**`.
-3. Update `.work/cache/$1.md` so its `status:` and the board agree. A push that
-   moves the card and leaves the mirror stale recreates the divergence this
-   command exists to prevent, in one file instead of two.
-4. When and only when the status is `done`, append exactly ONE note to the
-   ticket note in the vault:
+## The board file format — the module owns it
 
-> files touched, smoke result, reviewer used (Codex or Claude), BLOCK count.
-> Two sentences.
+An Obsidian Kanban board is markdown the plugin round-trips. `kanban-plugin:
+board` in the frontmatter, the trailing `%% kanban:settings` block and
+`**Complete**` in the done lane are load-bearing, and a naive rewrite leaves a
+file that opens as plain text. So never edit the board with `Edit` or `Write`:
+`crew_tracker.py` cuts the one card and inserts it under the target heading,
+leaves every other byte — archive included — as it was, and refuses a board
+that is missing its frontmatter key, a configured lane, or has one twice.
 
-Never paste diffs, review output, or agent reasoning into the note. That is
-what the repo and the PR are for, and it makes the note more expensive to read
-back later. Intermediate pushes move the card and write nothing — a note per
-lane change is noise, and the board already shows the movement.
+Lane names come from `obsidian.columns` rather than being hardcoded — a user
+with an existing board renames lanes in config, not in the vault. A lane named
+in config that is absent from the board is a setup error the script reports;
+do not create the lane.
 
-## Sync at boundaries only
+## Writes stay in the vault
 
-Pickup and completion. Never mid-task. The vault is a folder of files, so there
-is no rate limit to respect and no payload to amortise — the reason to hold the
-line is different and better: every mid-task write is a chance to corrupt a
-board that a human is looking at in another window.
+The script is the only crew code that writes outside the repository, and it
+refuses — writing nothing, INDEX included — when the vault is missing or has no
+`.obsidian/`, `boardDir` is absolute or contains `..`, `board` contains a
+separator, the board or note resolves outside the vault through a symlink, or
+the vault sits inside this worktree without git ignoring it (the board would
+enter the review bundle). Every board write is a temp file plus `os.replace`,
+re-reading the board first and recomputing if Obsidian saved it meanwhile.
 
 ## When the vault is a git repo of its own
 

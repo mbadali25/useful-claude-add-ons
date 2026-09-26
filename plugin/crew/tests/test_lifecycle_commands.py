@@ -13,11 +13,14 @@ goes red on the mutation, and diffs the scratch against the tracked file to
 prove the tracked file itself was never touched.
 """
 import os
+import re
 import shutil
 import tempfile
 
 import pytest
 import yaml
+
+import context  # noqa: F401  pylint: disable=unused-import
 
 CREW = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 COMMANDS = os.path.join(CREW, "commands")
@@ -175,3 +178,67 @@ def test_sabotage_drop_the_approval_check_from_implement_goes_red():
 def test_sabotage_drop_one_done_check_goes_red(missing):
     path = os.path.join(COMMANDS, "done.md")
     _sabotage(path, missing, _done_has_all_checks)
+
+
+# T-0021: every lifecycle transition moves the tracker through crew_tracker.py,
+# and every tracker command reads the kind through it rather than out of
+# `.crew/config.json`. A transition with no call is a card that never moves.
+_TRACKER = "crew_tracker.py"
+TRACKER_CALLS = {
+    "brainstorm.md": (f"{_TRACKER} create --root . --ticket",),
+    "spec.md": (f"{_TRACKER} move --root . --ticket $1 --to spec",),
+    "plan.md": (f"{_TRACKER} move --root . --ticket $1 --to planned",),
+    "implement.md": (f"{_TRACKER} move --root . --ticket $1 --to in-progress",
+                     f"{_TRACKER} move --root . --ticket $1 --to review"),
+    "done.md": (f'{_TRACKER} move --root . --ticket "$1" --to done',),
+    "fix.md": (f"{_TRACKER} create --root . --ticket",
+               f"{_TRACKER} move --root . --ticket <id> --to spec",
+               f"{_TRACKER} move --root . --ticket <id> --to planned",
+               f"{_TRACKER} move --root . --ticket <id> --to in-progress",
+               f"{_TRACKER} move --root . --ticket <id> --to review"),
+}
+TRACKER_FAILURE_RULE = "tracker not updated: <reason>"
+TRACKER_READERS = ("obsidian-sync.md", "jira-sync.md", "sdp-sync.md", "split.md", "change.md")
+_CONFIG_TRACKER = re.compile(r"\.crew/config\.json`?\s*(?:->|→)\s*`?tracker")
+
+
+@pytest.mark.parametrize("name,calls", TRACKER_CALLS.items())
+def test_every_transition_calls_the_tracker(name, calls):
+    text = _read(os.path.join(COMMANDS, name))
+
+    missing = [call for call in calls if call not in text]
+
+    assert (missing, TRACKER_FAILURE_RULE in text, "exit 3" in text) == ([], True, True)
+
+
+def test_every_transition_status_maps_to_a_lane():
+    import crew_tracker  # pylint: disable=import-outside-toplevel
+    used = set()
+    for name in TRACKER_CALLS:
+        used |= set(re.findall(r"crew_tracker\.py move [^\n]*--to ([a-z-]+)",
+                               _read(os.path.join(COMMANDS, name))))
+
+    assert sorted(used - set(crew_tracker.LANE_FOR_STATUS)) == []
+
+
+@pytest.mark.parametrize("name", TRACKER_READERS)
+def test_no_tracker_precondition_reads_config_json(name):
+    text = _read(os.path.join(COMMANDS, name))
+
+    assert (_CONFIG_TRACKER.search(text), f"{_TRACKER} resolve" in text) == (None, True)
+
+
+def test_obsidian_sync_fits_the_command_budget_without_an_allowance():
+    text = _read(os.path.join(COMMANDS, "obsidian-sync.md"))
+    allowance = _read(os.path.join(CREW, ".budget-allowance.json"))
+
+    assert (_line_count(text) <= MAX_LINES, "obsidian-sync.md" in allowance) == (True, False)
+
+
+def test_no_lifecycle_command_points_at_a_removed_command_for_tracker_writes():
+    stale = ("the way `/crew:ticket` does", "`/crew:work`'s old step 13")
+
+    found = [(name, s) for name in TRACKER_CALLS for s in stale
+             if s in _read(os.path.join(COMMANDS, name))]
+
+    assert found == []

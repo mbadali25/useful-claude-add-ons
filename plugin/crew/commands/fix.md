@@ -23,10 +23,15 @@ below; a feature does not. Feed its root-cause line into step 2.
 
 ## 1. Direction — one line
 
-Mint the ticket the way `/crew:brainstorm` does: next free `T-####`, create
-`.work/tickets/$1/`, append `.work/INDEX.md`. Write
-`.work/tickets/<id>/direction.md` as one line: `Fix: $ARGUMENTS`. Show it,
-get a yes, move on — no options table, no multi-question round.
+Mint the ticket the way `/crew:brainstorm` step 1 does: next free `T-####`,
+create `.work/tickets/<id>/`, then
+`python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_tracker.py create --root . --ticket <id> --title "<title>"`.
+Write `.work/tickets/<id>/direction.md` as one line: `Fix: $ARGUMENTS`. Show
+it, get a yes, move on — no options table, no multi-question round.
+
+**Every tracker call in this file**: print its lines verbatim; on exit 3 run
+the command it printed; on exit 1 tell me `tracker not updated: <reason>` and
+carry on — the phase stands, nothing is undone.
 
 ## 2. Spec — six short sections
 
@@ -61,19 +66,23 @@ it after the path on that bullet, keeping the path in backticks
 backticks - an unquoted path followed by a note is refused as "not one path",
 and a second backtick span in the note is refused as "one path per bullet".
 
+Then `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_tracker.py move --root . --ticket <id> --to spec`.
+
 ## 3. Plan — one step
 
 Write `.work/tickets/<id>/plan.md` with exactly one step: Files, Test, Risk.
 Show it. **Approval is still a receipt, not a nod**: ask me to type
 `/crew:approve <id>`. Never run `crew_ticket.py approve` yourself — same rule
-as the full `/crew:plan`.
+as the full `/crew:plan`. Once approved,
+`python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_tracker.py move --root . --ticket <id> --to planned`.
 
 ## 4. Implement, tests, docs
 
 Same as `/crew:implement` steps 0–6, compressed by the plan already being one
 step: refuse without the approval receipt, record scope base, implement,
 verify, print the changed-file list, `/crew:docs` (usually "none" at this
-scope).
+scope). The tracker moves as there: `crew_tracker.py move --root . --ticket <id> --to in-progress`
+when implementing starts, `crew_tracker.py move --root . --ticket <id> --to review` before step 5.
 
 ## 5. Review — one round
 
