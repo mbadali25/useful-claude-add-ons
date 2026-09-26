@@ -1,5 +1,5 @@
 # repo-docs
-anchor: useful-claude-add-ons@adf8d1dd
+anchor: useful-claude-add-ons@8d447a7d
 verified: 2026-09-25
 
 ## Re-derive provenance
@@ -389,12 +389,16 @@ listing the directory.
   policy, not re-verified again at this pass) and is present in this fresh
   worktree. `verification-harness.md` owns this file's full contents; this
   note only records what changed in its own tracked citations. Since
-  `6c497a14` one rule was appended (`:243`, #228): `.claude/rules/**` and
+  `6c497a14` one rule was appended (`:244` since T-0008's review round 3
+  added a path above it; `:243` when #228 added it): `.claude/rules/**` and
   `.crew/codemap/**` now run `crew_instructions.py rules --root . --check`.
-  Since `f2bb919b` another follows it (`:244`, T-0008): changes to
+  Since `f2bb919b` another follows it (`:245-261`, T-0008): changes to
   `plugin/crew/hooks/scripts/crew_refresh_check.py`, its tests,
-  `plugin/crew/commands/implement.md` or `plugin/crew/commands/done.md` run
-  the three refresh-artifact pytest files.
+  `plugin/crew/commands/implement.md` or `plugin/crew/commands/done.md` -
+  and since review round 3 `scope_guard.py`, `completion_audit.py`,
+  `crew_freshness.py` and `scope_base.py` - run the three refresh-artifact
+  pytest files plus `test_scope_guard.py`, `test_completion_audit.py` and
+  `test_scope_base.py`.
 
 ## Unverified
 
@@ -463,3 +467,10 @@ figures above are as of the 2026-09-25 re-derivation, the same day.
 Re-verified per-path from `f2bb919b` to `adf8d1dd` for T-0008: of the cited paths, the changed ones were
 re-grepped at HEAD and only `TODO.md`, `plugin/crew/README.md` and `.crew/verify.json` citations needed
 updating; `CLAUDE.md:147` was re-confirmed in passing.
+
+Re-verified per-path from `adf8d1dd` to `8d447a7d` for T-0008's review round 3: of the cited paths,
+`.crew/verify.json` (one path added to rule 7, so rule 22 moved `:243` -> `:244` and rule 23 grew to
+`:245-261`; corrected above), `plugin/crew/README.md` (two lines reworded in place; `:1728` did not
+move), `TODO.md` (two version strings at `:5000-5001`; the `render.sh` entry at `:1183` did not
+move), `CHANGELOG.md` (cited without a line) and
+`plugin/crew/hooks/scripts/crew_refresh_check.py` (cited by name only) changed.
