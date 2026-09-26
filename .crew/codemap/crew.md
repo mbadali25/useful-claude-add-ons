@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@40eb1792
+anchor: useful-claude-add-ons@c8a1be2c
 verified: 2026-09-25
 
 ## Re-derive provenance
@@ -522,7 +522,15 @@ and no URL reaches argv; recovery (`assess_recovery`) adopts only a
 same-machine, same-worktree claim the local
 `<git-common-dir>/crew/coord-identity.json` (rewritten under `_locked`) names,
 whose pid is provably gone on Linux (`_linux_probe`) or Windows
-(`_windows_probe`); a probe that cannot tell reads alive. Tests in
+(`_windows_probe`); a probe that cannot tell reads alive, and on Linux
+`probe_holder` reads gone only from the PID namespace the claim recorded
+(`holder.pidns`, `pid_namespace`). A holder is session + machine + worktree +
+pid (+ start), compared by `same_holder`; the heartbeat lock is keyed per
+holder (`holder_tag`); `Channel.fetch` takes only the exact channel ref from
+`ls-remote`; the `<repo>` half of a key is derived (`repo_key`, `owner_name`:
+origin's owner/name, lowercased, else the main worktree's directory name); a
+recommended command withholds peer values that fail the key rule
+(`_command_part`). Tests in
 `plugin/crew/tests/test_crew_coord.py`, mutations in
 `plugin/crew/tests/sabotage_coord.py`, both mapped by `.crew/verify.json:262-269`
 (rule 24). DERIVED from the source at this anchor. `/crew:autopilot`'s resume
@@ -768,3 +776,10 @@ Re-verified per-path from `3b977289` to `40eb1792` for T-0030 review round 1
 `CHANGELOG.md` changed; the version files are net-unchanged at 1.0.43 (stepped back to 1.0.42 in
 `e60563d1`, re-set in `40eb1792`). The `crew_coord.py` section above is updated for the round-1
 fixes; every other citation holds.
+
+Re-verified per-path from `40eb1792` to `c8a1be2c` for T-0030 review round 2
+(`T-0030-coord--81NGuE`): of the cited paths `plugin/crew/hooks/scripts/crew_coord.py`,
+`plugin/crew/tests/test_crew_coord.py`, `plugin/crew/tests/sabotage_coord.py` and `CHANGELOG.md`
+changed; `.crew/verify.json` did not (rule 24 still `:262-269`); the version files are
+net-unchanged at 1.0.43 (stepped back to 1.0.42 in `f7bc12d1`, re-set in `c8a1be2c`). The
+`crew_coord.py` section above is updated for the round-2 fixes; every other citation holds.

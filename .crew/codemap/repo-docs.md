@@ -1,5 +1,5 @@
 # repo-docs
-anchor: useful-claude-add-ons@40eb1792
+anchor: useful-claude-add-ons@c8a1be2c
 verified: 2026-09-25
 
 ## Re-derive provenance
@@ -287,7 +287,7 @@ listing the directory.
 - **`docs/runbooks/INDEX.md` still does not exist.** `docs/runbooks/`
   contains `rollback.md` alone (re-confirmed by `ls`).
   `plugin/crew/skills/crew-runbooks/SKILL.md:80` and
-  `plugin/crew/README.md:1817` (`:1788` at `3b977289`, `:1728` at `8d447a7d`, `:1725` at `f2bb919b`, `:1604` before that,
+  `plugin/crew/README.md:1854` (`:1817` at `40eb1792`, `:1788` at `3b977289`, `:1728` at `8d447a7d`, `:1725` at `f2bb919b`, `:1604` before that,
   that file having changed in each range — re-grepped, not offset) both still describe
   `docs/runbooks/INDEX.md` as a symptom-keyed index that would live there.
   JUDGEMENT, unchanged: costs nothing with one runbook, becomes a real gap at
@@ -500,3 +500,8 @@ Re-verified per-path from `3b977289` to `40eb1792` for T-0030 review round 1: of
 `:1817`, re-grepped; corrected above), `.crew/verify.json` (rule 24's `seconds` and `why` only,
 still `:262-269`) and `CHANGELOG.md` (the 1.0.43 entry rewritten; cited without a line) changed.
 Nothing under `docs/` changed.
+
+Re-verified per-path from `40eb1792` to `c8a1be2c` for T-0030 review round 2: of the cited paths
+`plugin/crew/README.md` (the "Cross-session claims" section grew by 37 lines, so `:1817` moved to
+`:1854`, re-grepped; corrected above) and `CHANGELOG.md` (the 1.0.43 entry gained a round-2
+bullet; cited without a line) changed; `.crew/verify.json` did not. Nothing under `docs/` changed.

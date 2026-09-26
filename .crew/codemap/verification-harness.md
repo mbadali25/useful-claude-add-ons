@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@40eb1792
+anchor: useful-claude-add-ons@c8a1be2c
 verified: 2026-09-25
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -566,3 +566,12 @@ are net-unchanged. Rule 24 is still `:262-269` (273 lines,
 `default`/`unmapped` still `:271`/`:272`); only its `seconds` (11 -> 16) and `why` changed.
 `plugin/crew/tests/sabotage.py` did not change: `sabotage_coord.py` grew from 10 to 44 mutations,
 still registered at `:72` and `:3048`.
+
+Re-verified per-path from `40eb1792` to `c8a1be2c` for T-0030 review round 2
+(`T-0030-coord--81NGuE`): `git diff --name-only 40eb1792 c8a1be2c` over this note's cited paths
+returns `CHANGELOG.md`, `plugin/crew/hooks/scripts/crew_coord.py`,
+`plugin/crew/tests/test_crew_coord.py` and `plugin/crew/tests/sabotage_coord.py`; the version
+files are net-unchanged. `.crew/verify.json` did not change: rule 24 is still `:262-269`, priced
+16s for the 110 cases it names, while the suite is now 137 cases (the price is not re-measured
+here). `plugin/crew/tests/sabotage.py` did not change: `sabotage_coord.py` grew from 44 to 57
+mutations, still registered at `:72` and `:3048`.
