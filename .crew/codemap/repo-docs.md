@@ -1,5 +1,5 @@
 # repo-docs
-anchor: useful-claude-add-ons@fc54def6
+anchor: useful-claude-add-ons@2170d72e
 verified: 2026-09-25
 
 ## Re-derive provenance
@@ -484,4 +484,10 @@ section, so the `docs/runbooks/INDEX.md` mention moved `:1728` -> `:1767`, re-re
 (three import lines, so the four re-exports moved `:129`/`:133`/`:136`/`:139` ->
 `:132`/`:136`/`:139`/`:142`, re-read), `TODO.md` (lines appended at the end; the `render.sh` entry
 at `:1183` did not move), `CHANGELOG.md` (cited without a line) and the version files.
+
+## Re-anchor provenance - `fc54def6` -> `2170d72e`, 2026-09-26 (T-0005 review round 2)
+
+`git diff --name-only fc54def6 2170d72e -- <the paths this note cites>` returns only what round 2
+changed: `plugin/crew/README.md` (one row rewritten in place at `:971`; `:1767` holds, re-read) and
+`CHANGELOG.md` (the 1.0.41 entry gained round 2's bullets; cited by name only).
 

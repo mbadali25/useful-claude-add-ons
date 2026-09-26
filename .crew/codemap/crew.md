@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@fc54def6
+anchor: useful-claude-add-ons@2170d72e
 verified: 2026-09-25
 
 ## Re-derive provenance
@@ -264,7 +264,7 @@ since the pre-1.0 command guard was removed) mean something again for the
 `Bash`/`PowerShell` `PreToolUse` matcher.
 
 **The environment layer (T-0005, crew 1.0.41).** `cloud_guard.py`'s ENVIRONMENTS docstring
-paragraph (`plugin/crew/hooks/scripts/cloud_guard.py:32-54`) states it: a terraform finding is
+paragraph (`plugin/crew/hooks/scripts/cloud_guard.py:33-55`) states it: a terraform finding is
 also judged by its target environment (`nonProd`, `prod` or `unknown`, from `TF_WORKSPACE`, an
 in-sequence literal `workspace select|new`, `.terraform/environment`, `-var environment=` /
 `TF_VAR_environment`, or a saved plan's sidecar) and by whether it destroys (`yes`, `no`,
@@ -756,4 +756,13 @@ the `crew-cloud`/`crew-setup` skills. Each citation into them was re-read at `fc
 - `TODO.md` - lines appended at `:5052-5059`; `:3945` holds. `CONFIG.md` - cited by name only.
 - The two skills - `crew-setup` gained the `environments` line in its config template; neither is
   cited at a line here.
+
+## Re-anchor provenance - `fc54def6` -> `2170d72e`, 2026-09-26 (T-0005 review round 2)
+
+`git diff --name-only fc54def6 2170d72e -- <the paths this note cites>` returns only what round 2
+changed: `plugin/crew/hooks/scripts/cloud_guard.py` (the WHAT IT RECOGNISES table gained one line, so
+the ENVIRONMENTS paragraph moved `:32-54` -> `:33-55`, re-read and byte-identical; the lexer
+and `_tf_workspace` changes are below every other citation into it, none of which this note
+states by line) and `plugin/crew/CONFIG.md` (three lines added inside the destroy paragraph;
+this note cites CONFIG.md by name and section only). Nothing else moved.
 

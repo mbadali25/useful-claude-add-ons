@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@fc54def6
+anchor: useful-claude-add-ons@2170d72e
 verified: 2026-09-25
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -212,7 +212,7 @@ that changed shape or are newly documented here:
   test file is named in rule 4's `run`; only rule 9's whole suite runs them.
 - **Per-rule process-group tracking and kill-on-signal was DESCOPED from crew
   1.0, and it is a documented limitation, not a silent gap.**
-  `verify-gate.sh:1493-1502` and `plugin/crew/CONFIG.md:2081-2088` both state
+  `verify-gate.sh:1493-1502` and `plugin/crew/CONFIG.md:2084-2091` both state
   it: a third registry stage (`_crew_gate_cleanup_rule_pgid`) shipped, then was
   removed after five consecutive review rounds each found the previous
   round's fix one case short (disk fill by an orphan writer, escape on gate
@@ -388,7 +388,7 @@ set on Ubuntu.
   `plugin/crew/tests/sabotage.py:75`, `:3046` — `sabotage_refresh.py`'s
   registration.
 - `plugin/crew/hooks/scripts/verify-gate.sh:1493-1502` /
-  `plugin/crew/CONFIG.md:2081-2088` — the descoped per-rule process-group kill,
+  `plugin/crew/CONFIG.md:2084-2091` — the descoped per-rule process-group kill,
   documented as a standing limitation.
 - `plugin/crew/hooks/scripts/verify-gate.ps1:822-832`, `:1665-1674` —
   `Resolve-CrewBash` refusal rather than a re-resolving hang.
@@ -538,4 +538,11 @@ unread.
 - `CHANGELOG.md`, `TODO.md`, `.claude-plugin/marketplace.json` - cited by name or as rule paths only.
 
 No suite was executed by this note; T-0005's suite results are in its commits and review, not here.
+
+## Re-anchor provenance - `fc54def6` -> `2170d72e`, 2026-09-26 (T-0005 review round 2)
+
+`git diff --name-only fc54def6 2170d72e -- <the paths this note cites>` returns only what round 2
+changed: `plugin/crew/CONFIG.md`, three lines added at `:1368-1373` (the saved-plan paragraph), so the
+descoping limitation moved `:2081-2088` -> `:2084-2091` (re-read, same text; corrected above).
+`.crew/verify.json`, the gate scripts and `_verify/*` did not change.
 

@@ -1,5 +1,5 @@
 # install-scripts
-anchor: useful-claude-add-ons@fc54def6
+anchor: useful-claude-add-ons@2170d72e
 verified: 2026-09-25
 
 ## Re-derive provenance
@@ -417,4 +417,12 @@ files), `plugin/crew/README.md` (the cloud-guard environments section added abov
 table; the `34 commands` claim moved `:2178` -> `:2217` and `4 agents` `:2189` -> `:2228`, both
 re-read and still true) and `TODO.md` changed. Both install scripts, `README.md` and
 `scripts/check-marketplace.py` did not change, so their citations stand.
+
+## Re-anchor provenance - `fc54def6` -> `2170d72e`, 2026-09-26 (T-0005 review round 2)
+
+`git diff --name-only fc54def6 2170d72e -- <the paths this note cites>` returns only what round 2
+changed: `plugin/crew/README.md` (one table row rewritten in place at `:971`, no line added or
+removed, so `:2217` and `:2228` hold; re-read) and `plugin/crew/BUDGETS.md` (the `:11`
+figure re-measured, now 18,009 lines, 120 files). The install scripts, `README.md` and
+`scripts/check-marketplace.py` did not change.
 
