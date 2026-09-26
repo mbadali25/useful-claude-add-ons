@@ -105,6 +105,7 @@ the refresh before `/crew:review $1` builds its bundle. **Then, last,
 
 ## 7. Update status
 
-Set `spec.md`'s header to `status: review`. `/crew:done $1` moves it to `done`
-once the review receipt, the gate, the completion audit and the artifact check
-all pass — this command does not set `done` itself.
+Set `spec.md`'s header to `status: review`. That edit keeps the approval: the
+digest normalises only the header's status value. `/crew:done $1` moves it to
+`done` once the review receipt, the gate, the completion audit and the artifact
+check all pass — this command does not set `done` itself.

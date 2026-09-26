@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@c35edda5 on 2026-09-25. Verify before trusting.
+%% Generated from useful-claude-add-ons@8ebbdedc on 2026-09-26. Verify before trusting.
 %% Anchors: plugin/crew/commands/brainstorm.md, plugin/crew/commands/spec.md, plugin/crew/commands/plan.md, plugin/crew/commands/approve.md, plugin/crew/commands/implement.md, plugin/crew/commands/review.md, plugin/crew/commands/done.md, plugin/crew/commands/fix.md, plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/crew_ticket.py, plugin/crew/hooks/scripts/completion_audit.py, plugin/crew/hooks/scripts/crew_refresh_check.py
 %% The crew 1.0 ticket lifecycle: brainstorm -> spec -> plan -> approve -> implement -> refresh artifacts -> review -> done.
 %% --
@@ -14,6 +14,13 @@
 %% Re-anchored for T-0034 at c35edda5: 8d447a7d was rebase-merged as 95120430, and
 %% of the anchored paths only crew_refresh_check.py changed after it (:363, one
 %% line reworded in place, line count unchanged); no node cites a line in it.
+%% Re-drawn for T-0026 at 8ebbdedc (its landing): of the anchored paths plan.md,
+%% approve.md, implement.md, done.md and crew_ticket.py changed. plan.md :59 now
+%% sets spec.md's status (was plan.md's); approve.md :13 binds the digest; the
+%% implement.md step 7 text is :108-111; done.md gained one line at :62, so
+%% crew_metrics record moved :69 -> :70; the receipt check moved crew_ticket.py
+%% :501-509 -> :592-599. The three '?' stale-receipt edges are gone: T-0026
+%% closed that defect (see the paragraph above the flowchart).
 %% Every node cites the command file's own line; files are named repo-relative
 %% here and by basename in the nodes (all under plugin/crew/commands/ unless
 %% named otherwise):
@@ -27,10 +34,11 @@
 %%   plugin/crew/commands/plan.md:16 refuses without spec.md; :22 optional second
 %%     opinion; :27 writes plan.md; :43 self-review (every Files: inside Touch);
 %%     :48 show and stop; :54 ask the user to type /crew:approve, never run
-%%     crew_ticket.py approve; :59 plan.md header `status: planned`.
+%%     crew_ticket.py approve; :59 spec.md header `status: planned`; :60 never
+%%     add a status: to plan.md (a token added where there was none stales it).
 %%   plugin/crew/commands/approve.md:5 disable-model-invocation; :9 the
 %%     UserPromptSubmit approval_hook decides before the model reads anything;
-%%     :12 recorded -> approval.json bound to sha256 of spec.md AND plan.md;
+%%     :12-13 recorded -> approval.json bound to the digest of spec.md AND plan.md;
 %%     :15 refused -> prompt blocked. Hook registered at
 %%     plugin/crew/hooks/hooks.json:14 (approval-hook.sh, UserPromptSubmit).
 %%   plugin/crew/commands/implement.md:15-18 refuses unless `crew_ticket.py validate`
@@ -38,7 +46,8 @@
 %%     test first; :55 changed-file list; :65 verify; :85-104 step 6: tests,
 %%     then docs, then crew_refresh_check.py (:92) and the commands its lines
 %%     name, committed, until `fresh` or a `stop`; then /crew:review last;
-%%     :106-108 step 7, AFTER the review: spec.md header `status: review`.
+%%     :106-111 step 7, AFTER the review: spec.md header `status: review`,
+%%     which keeps the approval (:108-109).
 %%     Scope guard: plugin/crew/hooks/hooks.json:31 (scope-guard.sh, PreToolUse).
 %%   plugin/crew/commands/review.md:25-29 two rounds per ticket, a third is refused
 %%     -> NEEDS_REPLAN; :440 exit codes 0 CLEAN / 1 FINDINGS / 3 INCOMPLETE /
@@ -49,20 +58,23 @@
 %%     review receipt (--check-receipt); :21-27 check 2 verify gate via
 %%     crew_status.py; :35-38 check 3 completion audit; :46-57 check 4
 %%     crew_refresh_check.py (:49), read-only, refuses on stale/unknown and never
-%%     refreshes; :59-61 all pass -> spec.md `status: done`; :69 crew_metrics record.
+%%     refreshes; :59-62 all pass -> spec.md `status: done`, keeping the approval;
+%%     :70 crew_metrics record.
 %%     Stop hooks: plugin/crew/hooks/hooks.json:58 (verify-gate.sh), :62 (completion-audit.sh).
 %%   plugin/crew/commands/fix.md:2 the light path - every phase, each compressed
 %%     to one step; :64 one-step plan, still /crew:approve; :78 one review round.
 %% --
-%% Dashed '?' edges: traced from source, NOT executed. The approval receipt
-%% hashes spec.md and plan.md whole (plugin/crew/hooks/scripts/crew_ticket.py:501-509,
-%% any byte change -> `stale`), and the completion audit refuses to judge scope
-%% on anything but `approved` (plugin/crew/hooks/scripts/completion_audit.py:204-215).
-%% Yet three steps edit a status header in one of those files AFTER approval:
-%% plan.md:59 (`status: planned`), implement.md:108 (`status: review`) and
-%% done.md:61 (`status: done`). Each would leave the receipt stale. The done.md
-%% case was seen live on 2026-09-25 (crew_metrics reported "spec.md changed
-%% since approval"); the other two are inferred from the same hash, not observed.
+%% Status edits after approval (T-0026): three steps edit spec.md's header status
+%% AFTER approval - plan.md:59 (`planned`), implement.md:108 (`review`) and
+%% done.md:61 (`status: done`). Until T-0026 the receipt hashed both files whole,
+%% so each left it stale; the done.md case was seen live on 2026-09-25. A
+%% `crew-approval/2` receipt now binds approval_digest
+%% (plugin/crew/hooks/scripts/crew_ticket.py:503-544), which normalises only line
+%% 1's single `status:` value from STATUS_VALUES, and status() compares that
+%% digest (:578-599); any other byte change still reads `stale`, and the
+%% completion audit still refuses to judge scope on anything but `approved`
+%% (plugin/crew/hooks/scripts/completion_audit.py:204-215). A receipt with no
+%% `digest` field is compared raw and stales once on its first status edit.
 flowchart TB
     ask([A request])
     ask --> small{"small? one subsystem, known cause,<br/>no new behaviour, no auth/SQL/IaC<br/>brainstorm.md:72-73"}
@@ -97,10 +109,10 @@ flowchart TB
         pl3 --> ap0["user types /crew:approve id<br/>approve.md:5 disable-model-invocation"]
         ap0 --> ap1{"approval-hook (UserPromptSubmit)<br/>hooks.json:14; approve.md:9"}
         ap1 -- refused --> apx([prompt blocked, reason shown<br/>:15])
-        ap1 -- recorded --> ap2["approval.json = sha256(spec.md, plan.md)<br/>approved_via user-prompt<br/>:12"]
+        ap1 -- recorded --> ap2["approval.json = digest(spec.md, plan.md),<br/>header status value normalised<br/>approved_via user-prompt<br/>:12-13"]
     end
 
-    ap2 --> planned["plan.md header 'status: planned'<br/>plan.md:59"]
+    ap2 --> planned["spec.md header 'status: planned'<br/>keeps the approval<br/>plan.md:59-60"]
 
     subgraph implement["/crew:implement"]
         planned --> im0{"crew_ticket.py validate:<br/>plan approved?<br/>implement.md:15-18"}
@@ -127,14 +139,14 @@ flowchart TB
         rv2 -- "third round refused" --> replan([NEEDS_REPLAN:<br/>back to /crew:plan])
     end
 
-    rcpt --> im4["implement.md step 7, after the review:<br/>spec.md header 'status: review'<br/>implement.md:106-108"]
+    rcpt --> im4["implement.md step 7, after the review:<br/>spec.md header 'status: review'<br/>keeps the approval<br/>implement.md:106-111"]
 
     subgraph done["/crew:done - all four or nothing<br/>done.md:7"]
         im4 --> dn1{"1 review receipt<br/>--check-receipt<br/>done.md:10-13"}
         dn1 -- pass --> dn2{"2 verify gate all pass<br/>crew_status.py<br/>:21-27"}
         dn2 -- pass --> dn3{"3 completion audit<br/>:35-38"}
         dn3 -- pass --> dn5{"4 artifacts current<br/>crew_refresh_check.py, read-only<br/>:46-57"}
-        dn5 -- fresh --> dn4["spec.md 'status: done', INDEX,<br/>crew_metrics record<br/>:59-69"]
+        dn5 -- fresh --> dn4["spec.md 'status: done' (keeps the approval),<br/>INDEX, crew_metrics record<br/>:59-70"]
         dn1 -- fail --> dnx([refuse done])
         dn2 -- fail --> dnx
         dn3 -- fail --> dnx
@@ -145,7 +157,3 @@ flowchart TB
     fix -. "same /crew:approve,<br/>/crew:review, /crew:done" .-> ap0
 
     stop["Stop hooks every turn:<br/>verify-gate, completion-audit<br/>hooks.json:58, :62"] -.- im2
-
-    planned -. "? edits plan.md after approval<br/>-> receipt stale (crew_ticket.py:501-509)" .-> im0
-    im4 -. "? edits spec.md after approval<br/>-> completion audit sees 'stale'<br/>(completion_audit.py:204-215)" .-> dn3
-    dn4 -. "? edits spec.md after the four checks<br/>-> approval stale (seen live 2026-09-25)" .-> met(["crew_metrics record:<br/>'spec.md changed since approval'"])

@@ -1,6 +1,6 @@
 # repo-docs
-anchor: useful-claude-add-ons@c35edda5
-verified: 2026-09-25
+anchor: useful-claude-add-ons@8ebbdedc
+verified: 2026-09-26
 
 ## Re-derive provenance
 
@@ -287,7 +287,7 @@ listing the directory.
 - **`docs/runbooks/INDEX.md` still does not exist.** `docs/runbooks/`
   contains `rollback.md` alone (re-confirmed by `ls`).
   `plugin/crew/skills/crew-runbooks/SKILL.md:80` and
-  `plugin/crew/README.md:1728` (`:1725` at `f2bb919b`, `:1604` before that,
+  `plugin/crew/README.md:1730` (`:1728` at `c35edda5`, `:1725` at `f2bb919b`, `:1604` before that,
   that file having changed in each range — re-grepped, not offset) both still describe
   `docs/runbooks/INDEX.md` as a symptom-keyed index that would live there.
   JUDGEMENT, unchanged: costs nothing with one runbook, becomes a real gap at
@@ -389,16 +389,19 @@ listing the directory.
   policy, not re-verified again at this pass) and is present in this fresh
   worktree. `verification-harness.md` owns this file's full contents; this
   note only records what changed in its own tracked citations. Since
-  `6c497a14` one rule was appended (`:244` since T-0008's review round 3
-  added a path above it; `:243` when #228 added it): `.claude/rules/**` and
+  `6c497a14` one rule was appended (`:251` since T-0026 inserted a rule above
+  it, `:244` after T-0008's review round 3 added a path above it; `:243` when #228 added it): `.claude/rules/**` and
   `.crew/codemap/**` now run `crew_instructions.py rules --root . --check`.
-  Since `f2bb919b` another follows it (`:245-261`, T-0008): changes to
+  Since `f2bb919b` another follows it (`:252-268`, T-0008): changes to
   `plugin/crew/hooks/scripts/crew_refresh_check.py`, its tests,
   `plugin/crew/commands/implement.md` or `plugin/crew/commands/done.md` -
   and since review round 3 `scope_guard.py`, `completion_audit.py`,
   `crew_freshness.py` and `scope_base.py` - run the three refresh-artifact
   pytest files plus `test_scope_guard.py`, `test_completion_audit.py` and
-  `test_scope_base.py`.
+  `test_scope_base.py`. Since `c35edda5` a third was inserted mid-list
+  (`:167-172`, T-0026): `plugin/crew/hooks/scripts/crew_ticket.py` and
+  `plugin/crew/tests/test_approval_digest.py` run that test file and
+  `test_crew_ticket.py`.
 
 ## Unverified
 
@@ -486,3 +489,15 @@ version row; `:17`'s Registers row unchanged and still `:17`), `CHANGELOG.md` (a
 added under `[Unreleased]`; cited without a line) and `crew_refresh_check.py` (cited by name
 only). `test_completion_audit.py` is cited by name only, as a rule 23 test file, and still is one.
 `.gitattributes` is not cited. No citation moved.
+
+Re-verified per-path from `c35edda5` to `8ebbdedc` for T-0026's landing (`8ebbdedc` is the crew
+1.0.39 bump on top of the merge `563f54c3`). Of the paths this note cites, `git diff --name-only
+c35edda5 8ebbdedc` returns `.claude-plugin/marketplace.json`, `.crew/verify.json`, `CHANGELOG.md`,
+`TODO.md`, `plugin/PLUGINS.md`, `plugin/crew/README.md`, `plugin/crew/commands/done.md` and
+`plugin/crew/commands/implement.md`. `plugin/crew/README.md` gained two lines above `:1728` (one
+approval-table cell reworded in place, and a new "The status edit keeps the approval" paragraph),
+so the `docs/runbooks/INDEX.md` mention moved `:1728` -> `:1730`, re-grepped. `.crew/verify.json`
+gained T-0026's rule at `:167-172`, moving the two rules cited above by seven lines; corrected
+above. `marketplace.json` and `plugin/PLUGINS.md` changed at crew's `version` only (1.0.39; `:17`
+unchanged). `TODO.md` changed at one entry (`:5018`, closed by T-0026); the `render.sh` entry at
+`:1183` did not move. `CHANGELOG.md`, `done.md` and `implement.md` are cited by name only.

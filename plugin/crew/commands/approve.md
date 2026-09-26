@@ -10,7 +10,7 @@ before you read this.** crew's UserPromptSubmit hook (`approval_hook.py`) saw
 that prompt, read `.work/tickets/$1/spec.md` and `plan.md` once, and either:
 
 - **recorded** the receipt at `<git-common-dir>/crew/tickets/$1/approval.json`,
-  bound to the sha256 of both files, `approved_via: "user-prompt"` - its
+  bound to the digest of both files, `approved_via: "user-prompt"` - its
   message says "the user approved $1 from their own prompt"; or
 - **refused** it and blocked the prompt, saying why ("/crew:approve was NOT
   recorded -- ...") - in which case you are probably not reading this at all.
@@ -18,8 +18,8 @@ that prompt, read `.work/tickets/$1/spec.md` and `plan.md` once, and either:
 Your whole job here is to relay that result in one or two sentences:
 
 - Recorded: say so, and that `/crew:implement $1` can start. Any later edit to
-  `spec.md` or `plan.md` makes this approval stale; the user re-approves by
-  typing `/crew:approve $1` again.
+  `spec.md` or `plan.md` other than the header's status value makes this
+  approval stale; the user re-approves by typing `/crew:approve $1` again.
 - Refused, or no hook message in context: say the approval was **not**
   recorded, quote the reason if one was given, and stop. Point at
   `crew_ticket.py validate --ticket $1` for the contract error.
