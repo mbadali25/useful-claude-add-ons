@@ -8,12 +8,38 @@
     python3 crew_autopilot.py route --root . --args "<the command's arguments>" [--json]
     python3 crew_autopilot.py route --root . --first <token> [--json]
     python3 crew_autopilot.py status --root . [--ticket <id>] [--json]
+    python3 crew_autopilot.py approve --root . --ticket <id>
+    python3 crew_autopilot.py questions-check --root . --ticket <id> [--json]
 
 T-0004. The lifecycle is prose commands (spec, plan, implement, review,
 done); `/crew:autopilot` follows each one's procedure in-session. This module
 is what names the NEXT one, from files on disk and nothing else, so a skipped
-phase is visible and a phase that cannot be told stops. Read-only: it never
-writes a file, never approves, never accepts a review.
+phase is visible and a phase that cannot be told stops. Read-only except
+`approve` (T-0010, below); it never accepts a review, at any setting.
+
+## approve and questions-check -- the two policies (T-0010)
+
+`autopilot.approval` and `autopilot.questions` are `human|self|risk`
+(default `risk`); any other value reads as `human`, with a warning.
+
+`approval_policy` allows only when `scope.allowCliApproval` is exactly
+`true` in `.crew/config.json` -- at every setting -- and the review ledger is
+neither NEEDS_REPLAN (a successor plan is the human's) nor unreadable; then
+`human` never allows, `self` allows any risk, `risk` only a spec header that
+says `risk: low`. An absent or unparseable risk is `high`
+(`crew_ticket.parse_risk`), never `low`. `approve` also needs autopilot
+armed, writes the receipt with `approved_via: "autopilot"` and prints
+`self-approved <id> under approval=<policy>, risk=<risk>`; a refusal exits 2
+with `refused: <why>`. `crew_ticket.accepted` re-asks `approval_policy` on
+every read, so an `autopilot` receipt stands only while the policy still says
+yes. `question_policy` is the same decision for an open question -- `take`
+the researched recommendation or `stop` -- with no `allowCliApproval` rule.
+
+`questions-check` validates `.work/tickets/<id>/questions.md` (the shape is
+QUESTIONS_SHAPE, printed when it fails) and prints `valid= action= policy=
+risk=`, then one `taken:` line per question autopilot answered. A `taken:`
+line is valid only for the recommended option, under the policy in force, and
+only when that policy says `take`. Exit 0 valid, 1 not.
 
 ## next -- the phase from disk, first match wins
 
@@ -138,13 +164,16 @@ PROCEDURE_STOPS = (
     ("failed-done-check", "a /crew:done check refused: it is not retried around"),
     ("failed-phase", "a phase's own procedure refused or stopped"),
 )
-# In this version these always wait for a person (T-0010 may add policies).
+# A person, unless the T-0010 policy named says otherwise; `human` always stops.
 HUMAN_STOPS = (
     ("brainstorm", "/crew:brainstorm and direction approval are a human dialogue"),
-    ("plan-approval", "plan approval: the human types /crew:approve <id>"),
-    ("review-acceptance", "accepting review FINDINGS is the owner's"),
+    ("plan-approval", "plan approval: the human types /crew:approve <id>, unless "
+                      "autopilot.approval allows `crew_autopilot.py approve` "
+                      "(needs scope.allowCliApproval: true)"),
+    ("review-acceptance", "accepting review FINDINGS is the owner's, at every setting"),
     ("open-questions", "an open question in direction.md, spec.md or plan.md is answered "
-                       "by a person"),
+                       "by a person, unless autopilot.questions takes the researched "
+                       "recommendation"),
 )
 
 # T-0018: the command's subcommands. A later ticket adds its name to AVAILABLE
@@ -368,7 +397,8 @@ def _phase(root, ticket):
     if questions:
         return answer("open-questions", True, "unanswered under ## Open questions: "
                       + "; ".join(f"{name}: {item}" for name, item in questions[:4])
-                      + " - a person answers (write `none - <answer>` or check it `[x]`)")
+                      + " - a person answers (write `none - <answer>` or check it `[x]`). "
+                      + _question_hint(top, ticket))
     if contract["spec.md"] is None:
         return answer("spec", False, "no spec.md", f"/crew:spec {ticket}")
     spec_only = crew_ticket.validate(top, ticket, {"spec.md": contract["spec.md"],
@@ -393,8 +423,7 @@ def _phase(root, ticket):
             f"`status: {_header_status(crew_ticket._text(contract['spec.md']))}`), an edit "  # pylint: disable=protected-access
             "T-0026's approval digest keeps only for a receipt written since T-0026 and a "
             "value in crew_ticket.STATUS_VALUES; this one is older or the value is not")
-        return answer("approve", True, f"{why}. Only the human types "
-                      f"/crew:approve {ticket}; autopilot never approves",
+        return answer("approve", True, f"{why}. {_approval_hint(top, ticket)}",
                       f"/crew:approve {ticket}")
     return _review_phase(top, ticket, evidence, answer)
 
@@ -622,10 +651,12 @@ def _read_json(path):
 
 
 def settings(root):
-    """`{"mode", "armed", "maxPhases", "saw", "warnings"}`. Read through
-    `crew_config.resolve_config` -- `.crew/config.json` over the defaults, the
-    file `crew_ticket.cli_approval_allowed` reads. `mode` arms only when it is
-    exactly the string `plan`; `maxPhases` must be a positive int, else 12."""
+    """`{"mode", "armed", "maxPhases", "approval", "questions", "saw",
+    "warnings"}`. Read through `crew_config.resolve_config` --
+    `.crew/config.json` over the defaults, the file
+    `crew_ticket.cli_approval_allowed` reads. `mode` arms only when it is
+    exactly the string `plan`; `maxPhases` must be a positive int, else 12;
+    `approval` and `questions` must be one of POLICIES, else `human`."""
     top = crew_ticket.toplevel(root) or os.path.abspath(root)
     block = crew_config.resolve_config(top).get("autopilot")
     block = block if isinstance(block, dict) else {}
@@ -646,8 +677,281 @@ def settings(root):
             and "autopilot" not in crew_state.load_config(top):
         warnings.append("autopilot is set in .crew/crew.json, which crew does not read "
                         "for this key; move it to .crew/config.json")
+    policies = {}
+    for key in ("approval", "questions"):
+        policies[key], warning = _policy_setting(block, key)
+        warnings += [warning] if warning else []
     return {"mode": "plan" if armed else "off", "armed": armed, "maxPhases": limit,
+            "approval": policies["approval"], "questions": policies["questions"],
             "saw": mode, "warnings": warnings}
+
+
+# --- T-0010: the approval and questions policies ------------------------------
+
+POLICIES = ("human", "self", "risk")
+HUMAN, SELF, RISK = POLICIES
+TAKE, STOP = "take", "stop"
+ALLOW_CLI = "scope.allowCliApproval"
+
+
+def _policy_setting(block, key):
+    """(policy, warning). Anything but one of POLICIES -- a typo, a bool, a
+    list -- is `human`, which always stops: an unreadable policy is never
+    read as permission."""
+    value = block.get(key, crew_state.AUTOPILOT_DEFAULTS[key])
+    if isinstance(value, str) and value in POLICIES:
+        return value, ""
+    return HUMAN, (f"autopilot.{key} is {value!r}, not one of {'|'.join(POLICIES)}; it "
+                   "reads as human, which always stops")
+
+
+def _ticket_risk(top, ticket):
+    """`crew_ticket.parse_risk` of the spec's header; a spec that is missing
+    or unreadable is `high`, unknown -- never `low`. So is a header naming
+    `risk:` more than once (`# T-9 cut risk: low paths  status: spec  risk:
+    high`): parse_risk takes the first, and which one the owner meant cannot
+    be told, so neither is trusted to grant anything."""
+    try:
+        spec = crew_ticket.read_contract(top, ticket)["spec.md"]
+        text = crew_ticket._text(spec) if spec is not None else ""  # pylint: disable=protected-access
+    except (crew_ticket.TicketError, OSError, ValueError):
+        text = ""
+    if len(re.findall(r"\brisk:", crew_ticket.header_line(text), re.IGNORECASE)) > 1:
+        return {"risk": "high", "known": False}
+    return crew_ticket.parse_risk(text)
+
+
+def _decision(top, ticket, key):
+    """(policy, risk, warnings), or raises when the settings cannot be read."""
+    conf = settings(top)
+    return conf[key], _ticket_risk(top, ticket), [
+        w for w in conf["warnings"] if f"autopilot.{key} " in w]
+
+
+def _risk_words(risk):
+    return (f"risk: {risk['risk']}" if risk["known"]
+            else "no risk: low|med|high in the spec header (reads as high)")
+
+
+def approval_policy(root, ticket):
+    """`{"allow", "policy", "risk", "known", "reason", "warnings"}` -- whether
+    autopilot may approve `ticket`'s plan itself. Never allows unless
+    `scope.allowCliApproval` is exactly true, at any setting; `human` never,
+    `self` at any risk, `risk` only on a known `risk: low`. A review ledger
+    that is NEEDS_REPLAN or unreadable refuses too: a successor plan after a
+    spent budget is the human's. Anything that cannot be told refuses."""
+    top = crew_ticket.toplevel(root) or os.path.abspath(root)
+    try:
+        policy, risk, warnings = _decision(top, ticket, "approval")
+        allowed = crew_ticket.cli_approval_allowed(top)
+        ledger = review_ledger.status(top, ticket).get("state")
+    except Exception as exc:  # pylint: disable=broad-except
+        return {"allow": False, "policy": UNKNOWN, "risk": "high", "known": False,
+                "warnings": [], "reason": (f"could not tell whether autopilot may approve "
+                                           f"({type(exc).__name__}: {exc})")}
+    result = {"allow": False, "policy": policy, "risk": risk["risk"],
+              "known": risk["known"], "warnings": warnings}
+    if not allowed:
+        why = (f"{ALLOW_CLI} is not exactly true in .crew/config.json, so no approval but "
+               "the human's counts")
+    elif policy == HUMAN:
+        why = "autopilot.approval is human: plan approval always waits for the owner"
+    elif ledger in (review_ledger.NEEDS_REPLAN, review_ledger.UNKNOWN):
+        why = (f"the review ledger is {ledger}: a plan after a spent or unreadable review "
+               "budget is the human's to approve")
+    elif policy == SELF:
+        return dict(result, allow=True, reason=f"autopilot.approval is self ({_risk_words(risk)})")
+    elif risk["known"] and risk["risk"] == "low":
+        return dict(result, allow=True, reason="autopilot.approval is risk and the spec "
+                    "header says risk: low")
+    else:
+        why = f"autopilot.approval is risk and the spec has {_risk_words(risk)}"
+    return dict(result, reason=why)
+
+
+def question_policy(root, ticket):
+    """`{"action": take|stop, "policy", "risk", "known", "reason", "warnings"}`
+    for an open question whose researched options are in questions.md. `human`
+    stops, `self` takes the recommendation, `risk` takes it only on a known
+    `risk: low`. No `allowCliApproval` rule; anything unreadable stops."""
+    top = crew_ticket.toplevel(root) or os.path.abspath(root)
+    try:
+        policy, risk, warnings = _decision(top, ticket, "questions")
+    except Exception as exc:  # pylint: disable=broad-except
+        return {"action": STOP, "policy": UNKNOWN, "risk": "high", "known": False,
+                "warnings": [], "reason": (f"could not tell the questions policy "
+                                           f"({type(exc).__name__}: {exc})")}
+    result = {"action": STOP, "policy": policy, "risk": risk["risk"],
+              "known": risk["known"], "warnings": warnings}
+    if policy == SELF:
+        return dict(result, action=TAKE, reason="autopilot.questions is self")
+    if policy == RISK and risk["known"] and risk["risk"] == "low":
+        return dict(result, action=TAKE, reason="autopilot.questions is risk and the "
+                    "spec header says risk: low")
+    if policy == HUMAN:
+        return dict(result, reason="autopilot.questions is human: a person answers")
+    return dict(result, reason=f"autopilot.questions is risk and the spec has "
+                               f"{_risk_words(risk)}")
+
+
+def _approval_hint(top, ticket):
+    """The approve phase's second sentence: which route approves, and why."""
+    got = approval_policy(top, ticket)
+    if got["allow"]:
+        return (f"{got['reason']}: autopilot runs crew_autopilot.py approve --root . "
+                f"--ticket {ticket}, and reports it")
+    return f"Only the human types /crew:approve {ticket} ({got['reason']})"
+
+
+def _question_hint(top, ticket):
+    got = question_policy(top, ticket)
+    return (f"autopilot.questions: action={got['action']} ({got['reason']}); research, "
+            f"write questions.md, then crew_autopilot.py questions-check --ticket {ticket}")
+
+
+def approve(root, ticket):
+    """(exit code, text). The one write this module makes: an `autopilot`
+    receipt, only when autopilot is armed and `approval_policy` allows.
+    `crew_ticket.approve` asks `approval_policy` again before it writes."""
+    crew_ticket.check_ticket(ticket)
+    top = crew_ticket.toplevel(root) or os.path.abspath(root)
+    human = f"the human types /crew:approve {ticket}"
+    if not settings(top)["armed"]:
+        return 2, (f"refused: autopilot.mode is not plan, so autopilot approves nothing; "
+                   f"{human}")
+    got = approval_policy(top, ticket)
+    if not got["allow"]:
+        return 2, f"refused: {got['reason']}; {human}"
+    receipt, successor = crew_ticket.approve(
+        top, ticket, by=f"autopilot:{got['policy']}", via=crew_ticket.AUTOPILOT)
+    text = (f"self-approved {ticket} under approval={got['policy']}, "
+            f"risk={got['risk'] if got['known'] else 'unknown (high)'}")
+    if successor is not None and not successor[0]:
+        return 3, f"{text}\nreview is still NEEDS_REPLAN -- {successor[1]}"
+    return 0, text
+
+
+QUESTIONS_SHAPE = (
+    "## Q1: <the question, one line>",
+    "Research: <what crew:explorer (repo) and crew:researcher (outside) found, sourced>",
+    "### Option A (recommended): <title>   <- the recommendation is always first",
+    "Cost: <what choosing it costs>",
+    "### Option B: <title>   <- 2 to 4 options, each with its Cost: line",
+    "Cost: <what choosing it costs>",
+    "taken: Option A by autopilot (<policy>)   <- only once autopilot took it",
+)
+RECOMMENDED = "(recommended)"
+_Q_RE = re.compile(r"^##[ \t]+Q([0-9]+)\b[ \t]*:?[ \t]*(.*)$")
+_OPTION_RE = re.compile(r"^###[ \t]+Option[ \t]+([A-Za-z0-9]+)\b(.*)$")
+_COST_RE = re.compile(r"^(?:[-*][ \t]+)?Cost:[ \t]*\S")
+_RESEARCH_RE = re.compile(r"^(?:[-*][ \t]+)?Research:[ \t]*\S")
+_TAKEN_RE = re.compile(r"^taken:[ \t]*(.*?)[ \t]*$")
+_TAKEN_FORM = re.compile(r"^Option[ \t]+([A-Za-z0-9]+)[ \t]+by autopilot[ \t]+\(([^()]*)\)$")
+
+
+def _question_blocks(text):
+    """[(number, title, preamble, options, taken)] -- each `## Q<n>` section;
+    `options` is [(id, rest, lines)], `taken` every `taken:` value in it. A
+    `#`/`##` heading that is not a question ends the section."""
+    blocks, current, option = [], None, None
+    for line in (text or "").splitlines():
+        found = _Q_RE.match(line)
+        if found:
+            current = (found.group(1), found.group(2).strip(), [], [], [])
+            blocks.append(current)
+            option = None
+            continue
+        if re.match(r"^#{1,2}[ \t]", line):
+            current = option = None
+            continue
+        if current is None:
+            continue
+        taken = _TAKEN_RE.match(line)
+        if taken:
+            current[4].append(taken.group(1))
+            continue
+        heading = _OPTION_RE.match(line)
+        if heading:
+            option = (heading.group(1), heading.group(2), [])
+            current[3].append(option)
+            continue
+        (option[2] if option is not None else current[2]).append(line)
+    return blocks
+
+
+def _question_problems(block, decision):
+    """(problems, taken) for one `## Q<n>` section, judged against the
+    questions policy in force (`decision`, from `question_policy`)."""
+    number, title, preamble, options, taken = block
+    name, problems = f"Q{number}", []
+    if not title:
+        problems.append(f"{name}: the heading states no question")
+    if not any(_RESEARCH_RE.match(line) for line in preamble):
+        problems.append(f"{name}: no Research: line before the options - research it first")
+    if not 2 <= len(options) <= 4:
+        problems.append(f"{name}: {len(options)} options; it needs 2-4")
+    marked = [oid for oid, rest, _lines in options if RECOMMENDED in rest]
+    if not options or RECOMMENDED not in options[0][1] or len(marked) != 1:
+        problems.append(f"{name}: the first option, and only it, must be marked "
+                        f"{RECOMMENDED}")
+    problems += [f"{name}: Option {oid} has no Cost: line" for oid, _rest, lines in options
+                 if not any(_COST_RE.match(line) for line in lines)]
+    reported = []
+    if len(taken) > 1:
+        problems.append(f"{name}: {len(taken)} taken: lines; at most one")
+    for value in taken[:1]:
+        form = _TAKEN_FORM.match(value)
+        if not form:
+            problems.append(f"{name}: taken: {value!r} is not "
+                            "`Option <id> by autopilot (<policy>)`")
+            continue
+        oid, policy = form.groups()
+        if not options or oid != options[0][0]:
+            problems.append(f"{name}: taken Option {oid}, not the recommended option")
+        if policy != decision["policy"]:
+            problems.append(f"{name}: taken under {policy}, but autopilot.questions is "
+                            f"{decision['policy']}")
+        if decision["action"] != TAKE:
+            problems.append(f"{name}: taken, but the questions policy says stop: "
+                            f"{decision['reason']}")
+        reported.append(f"{name}: {value}")
+    return problems, reported
+
+
+def questions_check(root, ticket):
+    """`{"valid", "action", "policy", "risk", "known", "reason", "warnings",
+    "questions", "taken", "problems"}` for `.work/tickets/<id>/questions.md`.
+    Valid only when every question has the QUESTIONS_SHAPE and every
+    `taken:` line is one the questions policy in force permits."""
+    crew_ticket.check_ticket(ticket)
+    top = crew_ticket.toplevel(root) or os.path.abspath(root)
+    decision = question_policy(top, ticket)
+    path = os.path.join(crew_ticket.ticket_dir(top, ticket), "questions.md")
+    blocks = _question_blocks(read_text(path))
+    problems, taken = [], []
+    if not blocks:
+        problems.append(f"{_rel(top, path)} has no `## Q<n>` question")
+    numbers = [block[0] for block in blocks]
+    problems += [f"Q{n}: numbered twice" for n in sorted(set(numbers)) if numbers.count(n) > 1]
+    for block in blocks:
+        found, reported = _question_problems(block, decision)
+        problems += found
+        taken += reported
+    return dict(decision, valid=not problems, questions=len(blocks), taken=taken,
+                problems=problems)
+
+
+def questions_text(result):
+    risk = result["risk"] if result.get("known") else "high(unknown)"
+    lines = [_line(valid=int(result["valid"]), action=result["action"],
+                   policy=result["policy"], risk=risk, questions=result["questions"],
+                   taken=len(result["taken"]), reason=result["reason"])]
+    lines += [f"problem: {p}" for p in result["problems"]]
+    lines += [f"taken: {t}" for t in result["taken"]]
+    lines += [f"warning: {w}" for w in result["warnings"]]
+    if not result["valid"]:
+        lines += ["shape:"] + [f"  {row}" for row in QUESTIONS_SHAPE]
+    return "\n".join(lines)
 
 
 def stops():
@@ -950,15 +1254,34 @@ def _line(**fields):
     return " ".join(f"{k}={v}" for k, v in fields.items())
 
 
+def _policy_main(args):
+    """`approve` and `questions-check`: exit 0 only on a yes. A crash is a
+    refusal (exit 1), never an approval or a valid file."""
+    try:
+        if args.action == "approve":
+            code, text = approve(args.root, args.ticket)
+            result = {"code": code, "text": text}
+        else:
+            result = questions_check(args.root, args.ticket)
+            code, text = (0 if result["valid"] else 1), questions_text(result)
+    except Exception as exc:  # pylint: disable=broad-except
+        code, text = 1, _one_line(f"refused: {_failure(exc)}")
+        result = {"code": code, "text": text}
+    sys.stdout.write((json.dumps(result, indent=2) if args.json else text) + "\n")
+    return code
+
+
 def main(argv):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = parser.add_subparsers(dest="action", required=True)
-    for name in ("next", "resume", "settings", "stops", "route", "status"):
+    for name in ("next", "resume", "settings", "stops", "route", "status", "approve",
+                 "questions-check"):
         action = sub.add_parser(name)
         action.add_argument("--json", action="store_true")
         if name != "stops":
             action.add_argument("--root", default=".")
-    sub.choices["next"].add_argument("--ticket", required=True)
+    for name in ("next", "approve", "questions-check"):
+        sub.choices[name].add_argument("--ticket", required=True)
     sub.choices["resume"].add_argument("--ticket", default="")
     sub.choices["status"].add_argument("--ticket", default="")
     given = sub.choices["route"].add_mutually_exclusive_group()
@@ -979,6 +1302,8 @@ def main(argv):
         return 0 if exc.code == 0 else 2
     # Read-only: git must not even refresh the index's stat cache.
     os.environ["GIT_OPTIONAL_LOCKS"] = "0"
+    if args.action in ("approve", "questions-check"):
+        return _policy_main(args)
     if args.action == "status":
         try:
             result = status(args.root, args.ticket or None)

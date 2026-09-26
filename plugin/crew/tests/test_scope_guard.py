@@ -316,6 +316,116 @@ def test_a_shell_write_to_the_absolute_state_path_is_refused(flavour, repo):
     assert code == 2
 
 
+# --- T-0010: the autopilot approval route -----------------------------------------
+
+_AUTOPILOT = "python3 hooks/scripts/crew_autopilot.py approve --root . --ticket T-1"
+
+
+def _policy_repo(repo, approval="risk", risk="low", allow=True):
+    """T-1 made and active, with a `risk:` header and the given policy."""
+    (repo / ".crew" / "config.json").write_text(json.dumps(
+        {"scope": {"mode": "block", "allowCliApproval": allow},
+         "autopilot": {"mode": "plan", "approval": approval}}), encoding="utf-8")
+    spec = make_ticket(repo) / "spec.md"
+    first, rest = spec.read_text(encoding="utf-8").split("\n", 1)
+    header = f"   risk: {risk}" if risk else ""
+    spec.write_text(f"{first} title   status: spec{header}\n{rest}", encoding="utf-8")
+    return repo
+
+
+def _shell(flavour, repo, command, tool="Bash"):
+    return _guard(flavour, repo, {"tool_name": tool, "cwd": str(repo),
+                                  "tool_input": {"command": command}})
+
+
+@pytest.mark.parametrize("flavour", FLAVOUR_MATRIX)
+@pytest.mark.parametrize("approval,risk,allow", [
+    ("human", "low", True), ("risk", "med", True), ("risk", "high", True),
+    ("risk", None, True), ("self", "low", False), ("risk", "low", "true")])
+def test_autopilot_approve_is_refused_when_the_policy_says_no(flavour, repo, approval, risk,
+                                                             allow):
+    _policy_repo(repo, approval, risk, allow)
+
+    code, _, err = _shell(flavour, repo, _AUTOPILOT)
+
+    assert (code, "autopilot.approval" in err or "allowCliApproval" in err) == (2, True)
+
+
+@pytest.mark.parametrize("flavour", FLAVOUR_MATRIX)
+@pytest.mark.parametrize("command", [
+    _AUTOPILOT + "; rm x",
+    _AUTOPILOT + " && echo done",
+    _AUTOPILOT + " | tee log",
+    _AUTOPILOT + "\nrm -rf src",
+    "cd /tmp && " + _AUTOPILOT,
+    "python3 hooks/scripts/crew_autopilot.py approve --root /elsewhere --ticket T-1",
+    "python3 hooks/scripts/crew_autopilot.py approve --ticket T-1 --root .",
+    "python3 $(touch x)crew_autopilot.py approve --ticket T-1",
+    "python3 `touch x`crew_autopilot.py approve --ticket T-1",
+    "python3 -m crew_autopilot approve --ticket T-1",
+    "python3 hooks/scripts/crew_autopilot.py approve --ticket T-1 --ticket T-2",
+    "python3 hooks/scripts/crew_autopilot.py approve --ticket 'T-1'",
+    "bash -c 'python3 hooks/scripts/crew_autopilot.py approve --ticket T-1'",
+])
+def test_autopilot_approve_that_is_not_the_bare_command_is_refused(flavour, repo, command):
+    _policy_repo(repo, "self")
+
+    code, _, err = _shell(flavour, repo, command)
+
+    assert (code, "bare command" in err) == (2, True)
+
+
+@pytest.mark.parametrize("flavour", FLAVOUR_MATRIX)
+def test_crew_ticket_approve_stays_refused_under_every_policy(flavour, repo):
+    _policy_repo(repo, "self")
+
+    code, _, _ = _shell(flavour, repo, "python3 hooks/scripts/crew_ticket.py approve "
+                                       "--ticket T-1")
+
+    assert code == 2
+
+
+@pytest.mark.parametrize("flavour", FLAVOUR_MATRIX)
+@pytest.mark.parametrize("approval,risk,command", [
+    ("risk", "low", _AUTOPILOT),
+    ("self", "high", _AUTOPILOT),
+    ("self", None, "python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py "
+                   "approve --root . --ticket T-1"),
+    ("risk", "low", "python3 hooks/scripts/crew_autopilot.py approve --ticket T-1"),
+])
+def test_autopilot_approve_bare_command_is_allowed_when_the_policy_says_yes(
+        flavour, repo, approval, risk, command):
+    _policy_repo(repo, approval, risk)
+
+    code, out, err = _shell(flavour, repo, command)
+
+    assert (code, out, err) == (0, "", "")
+
+
+def test_a_policy_that_cannot_be_told_is_refused(repo, monkeypatch):
+    import crew_autopilot  # pylint: disable=import-outside-toplevel
+    import scope_guard  # pylint: disable=import-outside-toplevel
+    _policy_repo(repo, "self")
+
+    def boom(_root, _ticket):
+        raise OSError("disk")
+    monkeypatch.setattr(crew_autopilot, "approval_policy", boom)
+
+    reason = scope_guard.shell_refusal(_AUTOPILOT, common_dir(repo), str(repo))
+
+    assert (reason is not None, "could not tell" in (reason or "")) == (True, True)
+
+
+@pytest.mark.parametrize("answer", [{"allow": "yes"}, {"allow": 1}, None])
+def test_a_policy_answer_that_is_not_a_plain_yes_is_refused(repo, monkeypatch, answer):
+    import crew_autopilot  # pylint: disable=import-outside-toplevel
+    import scope_guard  # pylint: disable=import-outside-toplevel
+    _policy_repo(repo, "self")
+    monkeypatch.setattr(crew_autopilot, "approval_policy", lambda _root, _ticket: answer)
+
+    assert scope_guard.shell_refusal(_AUTOPILOT, common_dir(repo), str(repo)) is not None
+
+
 # --- must-allow -------------------------------------------------------------------
 
 @pytest.mark.parametrize("flavour", FLAVOUR_MATRIX)

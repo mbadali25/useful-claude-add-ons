@@ -272,7 +272,10 @@ def test_the_ten_keys_crew_read_but_never_declared_are_declared():
     assert "resume.auto" in declared
     # 119 with /crew:autopilot (T-0004): `autopilot.mode` and
     # `autopilot.maxPhases`, re-measured after rebasing onto T-0006.
-    assert len(declared) == 119
+    # 121 with T-0010's `autopilot.approval` and `autopilot.questions`,
+    # re-measured on T-0018's router.
+    assert {"autopilot.approval", "autopilot.questions"} <= declared
+    assert len(declared) == 121
 
 
 def test_autoclear_is_global_and_its_siblings_are_not():

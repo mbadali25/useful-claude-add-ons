@@ -241,6 +241,104 @@ def test_a_receipt_from_before_approved_via_is_unaccepted(repo):
     assert crew_ticket.accepted(str(repo), "T-1")["status"] == "unaccepted"
 
 
+# --- T-0010: the autopilot receipt ----------------------------------------------
+
+def _autopilot_config(repo, approval="risk", allow=True):
+    (repo / ".crew" / "config.json").write_text(json.dumps(
+        {"scope": {"mode": "block", "allowCliApproval": allow},
+         "autopilot": {"mode": "plan", "approval": approval}}), encoding="utf-8")
+
+
+def _autopilot_approved(repo, risk="low"):
+    """T-1 with a `risk:` header, approved via autopilot; returns spec.md."""
+    spec = make_ticket(repo) / "spec.md"
+    first, rest = spec.read_text(encoding="utf-8").split("\n", 1)
+    spec.write_text(f"{first} title   status: spec   risk: {risk}\n{rest}", encoding="utf-8")
+    crew_ticket.approve(str(repo), "T-1", by="autopilot:risk", via=crew_ticket.AUTOPILOT)
+    return spec
+
+
+def test_autopilot_receipt_accepted_under_policy(repo):
+    _autopilot_config(repo)
+    _autopilot_approved(repo)
+
+    got = crew_ticket.accepted(str(repo), "T-1")
+
+    assert (got["status"], got["receipt"]["approved_via"]) == ("approved", "autopilot")
+
+
+def test_autopilot_receipt_demoted_when_spec_becomes_high(repo):
+    _autopilot_config(repo)
+    spec = _autopilot_approved(repo)
+    spec.write_text(spec.read_text(encoding="utf-8").replace("risk: low", "risk: high"),
+                    encoding="utf-8")
+
+    assert crew_ticket.accepted(str(repo), "T-1")["status"] in ("stale", "unaccepted")
+
+
+@pytest.mark.parametrize("approval", ["human", "bogus"])
+def test_autopilot_receipt_demoted_when_the_policy_no_longer_allows(repo, approval):
+    _autopilot_config(repo)
+    _autopilot_approved(repo)
+    _autopilot_config(repo, approval=approval)
+
+    got = crew_ticket.accepted(str(repo), "T-1")
+
+    assert (got["status"], got["touch"], "autopilot" in got["why"]) == (
+        "unaccepted", [], True)
+
+
+@pytest.mark.parametrize("allow", [False, "true", None])
+def test_autopilot_receipt_demoted_without_allow_cli(repo, allow):
+    _autopilot_config(repo)
+    _autopilot_approved(repo)
+    _autopilot_config(repo, allow=allow)
+
+    got = crew_ticket.accepted(str(repo), "T-1")
+
+    assert (got["status"], "allowCliApproval" in got["why"]) == ("unaccepted", True)
+
+
+def test_autopilot_receipt_needs_allow_cli_even_when_the_policy_says_yes(repo, monkeypatch):
+    _autopilot_config(repo)
+    _autopilot_approved(repo)
+    _autopilot_config(repo, allow=False)
+    monkeypatch.setattr(crew_ticket, "_autopilot_policy",
+                        lambda top, ticket: {"allow": True, "reason": "stub"})
+
+    got = crew_ticket.accepted(str(repo), "T-1")
+
+    assert (got["status"], "allowCliApproval" in got["why"]) == ("unaccepted", True)
+
+
+def test_autopilot_receipt_demoted_when_policy_module_missing(repo, monkeypatch):
+    _autopilot_config(repo)
+    _autopilot_approved(repo)
+    monkeypatch.setitem(sys.modules, "crew_autopilot", None)
+
+    got = crew_ticket.accepted(str(repo), "T-1")
+
+    assert (got["status"], "could not be told" in got["why"]) == ("unaccepted", True)
+
+
+@pytest.mark.parametrize("answer", [{"allow": "yes"}, {"allow": 1}, None, ["allow"]])
+def test_autopilot_receipt_demoted_when_the_answer_is_not_a_plain_yes(repo, monkeypatch,
+                                                                      answer):
+    _autopilot_config(repo)
+    _autopilot_approved(repo)
+    monkeypatch.setattr(crew_ticket, "_autopilot_policy", lambda top, ticket: answer)
+
+    assert crew_ticket.accepted(str(repo), "T-1")["status"] == "unaccepted"
+
+
+def test_a_cli_receipt_is_not_held_to_the_autopilot_policy(repo):
+    _autopilot_config(repo, approval="human")
+    make_ticket(repo)
+    crew_ticket.approve(str(repo), "T-1", by="ci")
+
+    assert crew_ticket.accepted(str(repo), "T-1")["status"] == "approved"
+
+
 def test_status_returns_touch_from_the_bytes_it_hashed(repo, monkeypatch):
     ready(repo)
     folder = repo / ".work" / "tickets" / "T-1"
