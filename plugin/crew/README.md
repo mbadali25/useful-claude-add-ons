@@ -1603,16 +1603,31 @@ python3 hooks/scripts/crew_coord.py recover --channel <c> --remote origin --tick
 (remote falling back to `origin`) in `.crew/config.json`.
 
 **The `<repo>` half of the key is derived, never typed:** it is the `origin`
-remote's owner/name, lowercased and joined with a dot
-(`https://github.com/Owner/Repo.git` gives `owner.repo`), so every worktree
-and clone of one repository names a ticket alike. An Azure DevOps origin
-gives `project.repo` in both its forms — `https://dev.azure.com/<org>/<project>/_git/<repo>`
-(and `<org>.visualstudio.com`, or a server's `/tfs/<collection>`) over https,
-`v3/<org>/<project>/<repo>` over ssh — with a percent-encoded name decoded
-and any other character made `-`, so an https clone and an ssh clone of one
-repository share a key. With no `origin`, or one
-whose URL has no usable owner/name, it falls back to the main worktree's
-directory name and prints why. `--ticket <repo>:<id>` is still accepted, but
+remote's URL as git resolves it — `git remote get-url origin`, so
+`url.<base>.insteadOf` applies and an alias names the repository it points
+at — reduced to its host and every path segment, lowercased and joined with a
+dot, with `.git`, any user or token and any port removed
+(`https://github.com/Owner/Repo.git`, `ssh://git@github.com/Owner/Repo.git`
+and `git@github.com:Owner/Repo.git` all give `github.com.owner.repo`;
+`https://gitlab.com/group/sub/repo.git` gives `gitlab.com.group.sub.repo`;
+a local path or `file://` URL gives its segments alone). So every worktree
+and clone of one repository names a ticket alike, and repositories on
+different hosts, or in different groups with the same last two names, never
+do. Every Azure DevOps form of one repository gives
+`dev.azure.com.<org>.<project>.<repo>`: `https://dev.azure.com/<org>/<project>/_git/<repo>`,
+`https://dev.azure.com/<org>/_git/<repo>` (a project's default repository,
+whose name is the project's, so project = repo),
+`<org>.visualstudio.com/[DefaultCollection/][<project>/]_git/<repo>` and
+`ssh.dev.azure.com:v3/<org>/<project>/<repo>` — with a percent-encoded name
+decoded and any other character made `-`. An origin the key cannot be told
+from reads `unknown` (exit 3) and nothing is written: an Azure DevOps URL that
+fits none of those forms, a path segment that is not letters, digits, `.`,
+`_`, `-` (a key over 128 characters counts), a URL with no path, or a
+`get-url` that fails. That includes an on-premises Azure DevOps Server URL
+(`https://server/tfs/<collection>/<project>/_git/<repo>`), whose `_git`
+segment is outside the rule. It never falls back to a directory name, which
+would give one ticket a second key. Only with no `origin` URL at all does it
+use the main worktree's directory name, and it prints why. `--ticket <repo>:<id>` is still accepted, but
 the `<repo>` given must be that derived name (compared lowercased); any other
 is refused, because a free-text repo gives one ticket several keys and so
 several holders. **The `<id>` half is upper-cased** for the same reason:
@@ -1637,9 +1652,10 @@ two holders.
   then seen and refused — and retries at most 3 times, then reports
   `unknown - could not push`. A fetch that fails reads `unknown`, never current,
   and a claim is refused rather than granted on it.
-- **The TTL is 30 minutes** (`coord.ttlMinutes`; a value that is not a
-  positive finite number — a string, `0`, `NaN`, `Infinity` — warns and uses
-  30). `claim` starts a detached
+- **The TTL is 30 minutes** (`coord.ttlMinutes`; anything but a number above
+  0 and at most 10080, 7 days — a string, `0`, `NaN`, `Infinity`, `1e308` — is
+  a config error: every command exits 2 naming the key before any fetch or
+  push, so nothing is written). `claim` starts a detached
   heartbeat that pushes `heartbeat_at` every 10 minutes while the session's
   `CLAUDE_PID` lives and exits once it is gone, is reused by another process
   (a different start time), or the claim is no longer `working` for it. One

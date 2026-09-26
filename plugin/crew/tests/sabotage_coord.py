@@ -10,10 +10,15 @@ findings (T-0030-coord--r8XvAI), one per guard branch the fixes added: each
 reintroduces the defect the finding reproduced, and names the test that
 reproduces it. The next block does the same for review round 2's
 (T-0030-coord--81NGuE), plus the three branches its NITs found untested, and
-the last for review round 3's (T-0030-coord--fBUyjd): the heartbeat-stale
+the next for review round 3's (T-0030-coord--fBUyjd): the heartbeat-stale
 condition recovery now rests on, the namespace recorded only for a visible
 pid, the holder lock keyed by worktree, the upper-cased ticket id, both Azure
-DevOps URL forms, and a TTL that is not finite.
+DevOps URL forms, and a TTL that is not finite. The last block is review
+round 4's (T-0030-coord--DKzIYN): origin read through insteadOf, the Azure
+DevOps default-repository form, the key keeping host and full path, the TTL's
+upper bound, and the three could-not-tell branches those fixes added (a URL the
+key rule refuses, an Azure DevOps URL that fits no form, a get-url that
+fails), none of which may fall back to the directory name.
 """
 import os
 
@@ -252,8 +257,8 @@ COORD_MUTATIONS = (
      "    ticket = f\"{claim['repo']}:{claim['ticket']}\"\n",
      _T + "test_recommended_command_withholds_unsafe_peer_values[shell]"),
     ("crew_coord takes the repo half per worktree", COORD,
-     "    if name:\n        return name, None\n",
-     "    if name:\n        return os.path.basename(top).lower(), None\n",
+     "        return name, None\n",
+     "        return os.path.basename(top).lower(), None\n",
      _T + "test_two_worktrees_of_one_repo_share_the_claim_key"),
     ("crew_coord takes a given repo half as free text", COORD,
      "    if given is not None and given.lower() != repo:\n",
@@ -294,19 +299,54 @@ COORD_MUTATIONS = (
      "",
      _T + "test_ticket_id_is_one_key_whatever_its_case[t-0030]"),
     ("crew_coord reads Azure DevOps https's _git as the owner", COORD,
-     "    if marks:\n",
-     "    if False:\n",
+     '        if len(low) == 4 and low[2] == "_git":\n',
+     "        if False:\n",
      _T + "test_azure_devops_https_and_ssh_clones_share_the_claim_key"),
     ("crew_coord reads Azure DevOps ssh v3 raw", COORD,
-     '    elif len(parts) == 4 and lowered[0] == "v3":\n',
-     "    elif False:\n",
-     _T + "test_repo_key_is_one_for_azure_devops_https_and_ssh[ssh-encoded-space]"),
+     '        return tuple(segments[1:]) if len(low) == 4 and low[0] == "v3" else None\n',
+     "        return None\n",
+     _T + "test_repo_key_is_one_for_every_azure_devops_form[ssh-encoded-space]"),
     ("crew_coord keeps an Azure DevOps name percent-encoded", COORD,
      '    text = re.sub(r"[^a-z0-9._-]+", "-", urllib.parse.unquote(part).lower()).strip("._-")\n',
      '    text = re.sub(r"[^a-z0-9._-]+", "-", part.lower()).strip("._-")\n',
-     _T + "test_repo_key_is_one_for_azure_devops_https_and_ssh[https-encoded-space]"),
+     _T + "test_repo_key_is_one_for_every_azure_devops_form[https-encoded-space]"),
     ("crew_coord accepts a TTL that is not finite", COORD,
-     "not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0:",
-     "not isinstance(value, (int, float)) or value <= 0:",
-     _T + "test_ttl_that_is_not_finite_warns_and_uses_30[NaN]"),
+     "not isinstance(value, (int, float)) or not math.isfinite(value)\n",
+     "not isinstance(value, (int, float))\n",
+     _T + "test_ttl_outside_0_to_10080_is_a_config_error_before_any_fetch[NaN]"),
+    # --- review round 4 ---
+    ("crew_coord reads remote.origin.url raw", COORD,
+     '        got = run_git(top, ["remote", "get-url", "origin"])\n',
+     '        got = run_git(top, ["config", "--get", "remote.origin.url"])\n',
+     _T + "test_claim_applies_insteadof_to_origin"),
+    ("crew_coord takes the segment before _git as the project of <org>/_git/<repo>", COORD,
+     "            return segments[0], segments[2], segments[2]\n",
+     "            return segments[0], segments[0], segments[2]\n",
+     _T + "test_every_azure_devops_form_of_a_default_repository_is_one_claim"),
+    ("crew_coord keys by the last two path segments", COORD,
+     "        parts = ([host] if host else []) + [s.lower() for s in segments]\n",
+     "        parts = [s.lower() for s in segments][-2:]\n",
+     _T + "test_repo_key_tells_different_repositories_apart[gitlab-groups]"),
+    ("crew_coord drops the ttlMinutes upper bound", COORD,
+     "            or value <= 0 or value > MAX_TTL_MINUTES):\n",
+     "            or value <= 0):\n",
+     _T + "test_ttl_outside_0_to_10080_is_a_config_error_before_any_fetch[10081]"),
+    ("crew_coord falls back to the directory name for an origin it cannot tell", COORD,
+     '            raise UnknownKey(f"cannot derive this repository\'s key: {why}; nothing was read or written")\n',
+     "            return _fallback_repo(top), why\n",
+     _T + "test_claim_is_could_not_tell_and_never_the_directory_name_for_an_unusable_origin[encoded]"),
+    ("crew_coord reads an Azure DevOps URL that fits no form generically", COORD,
+     ('            return None, f"origin\'s URL has the shape {_url_shape(host, segments)}, '
+      'which fits no Azure DevOps form"\n'),
+     "            parts = [host] + segments\n",
+     _T + "test_claim_is_could_not_tell_and_never_the_directory_name_for_an_unusable_origin[azure-short-v3]"),
+    ("crew_coord falls back when git cannot resolve origin", COORD,
+     '            raise UnknownKey(f"cannot derive this repository\'s key: `git remote get-url origin` failed: "\n'
+     '                             f"{_last_line(got.err)}")\n',
+     "            return _fallback_repo(top), None\n",
+     _T + "test_claim_is_could_not_tell_when_git_cannot_resolve_origin"),
+    ("crew_coord keys a URL with no path by its host", COORD,
+     "    if not segments:\n",
+     "    if False:\n",
+     _T + "test_repo_key_is_could_not_tell_for_a_segment_the_key_rule_refuses[no-path]"),
 )

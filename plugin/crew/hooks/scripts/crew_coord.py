@@ -20,13 +20,18 @@ Every command takes `--channel` and `--remote` (default: `coord.channel` and
 `coord.remote` in the resolved crew config, remote falling back to `origin`)
 and `--root` (default: the current directory).
 
-The `<repo>` half of a key is DERIVED, never typed: `origin`'s owner/name,
-lowercased (`owner.name`), so every worktree and clone of one repository
-names a ticket alike; an Azure DevOps URL gives `project.repo` in its https
-(`.../<project>/_git/<repo>`) and ssh (`v3/<org>/<project>/<repo>`) forms
-alike. With no usable origin, the main worktree's directory name, and the
-reason is printed. `--ticket <repo>:<id>` is accepted only when `<repo>` is
-that name. The `<id>` half is upper-cased: tracker ids (Jira, SDP, the local
+The `<repo>` half of a key is DERIVED, never typed: `origin`'s URL as git
+resolves it (`git remote get-url`, so url.<base>.insteadOf applies), its host
+and every path segment, lowercased and joined by '.'
+(`github.com.owner.repo`), so every worktree and clone of one repository
+names a ticket alike, and repositories on other hosts or in other groups never
+do; every Azure DevOps form of one repository (https with or without the
+project, <org>.visualstudio.com, ssh `v3/...`) gives
+`dev.azure.com.<org>.<project>.<repo>`. A URL it cannot tell a key from -- an
+Azure DevOps URL that fits no form, a segment outside the key's rule -- reads
+`unknown` and nothing is written; only with no origin at all is it the main
+worktree's directory name, with the reason printed. `--ticket <repo>:<id>` is
+accepted only when `<repo>` is that name. The `<id>` half is upper-cased: tracker ids (Jira, SDP, the local
 T-NNNN) name one ticket whatever case they are typed in, so `t-0030` and
 `T-0030` must be one key, not two holders.
 
@@ -114,8 +119,9 @@ claim, release, done, heartbeat and recover -- ends `[peer-written]`, and
 control, format (bidi) and line/paragraph-separator characters become '?'
 before printing, so a peer field cannot start a line of its own.
 
-Exit codes: 0 ok; 1 refused; 2 usage; 3 unknown (could not fetch, could not
-push, a corrupt record, or an identity that cannot be told).
+Exit codes: 0 ok; 1 refused; 2 usage (including coord.ttlMinutes outside 0 to
+10080); 3 unknown (could not fetch, could not push, a corrupt record, or an
+identity or repository key that cannot be told).
 """
 import argparse
 import contextlib
@@ -146,6 +152,7 @@ EXIT_UNKNOWN = 3
 
 MAX_RETRIES = 3
 DEFAULT_TTL_MINUTES = 30
+MAX_TTL_MINUTES = 10080
 HEARTBEAT_SECONDS = 600
 STATES = ("working", "done", "released")
 LOG = "log.jsonl"
@@ -153,7 +160,7 @@ CLAIMS = "claims/"
 IDENTITY_FILE = "coord-identity.json"
 _CHANNEL_RE = re.compile(r"[a-z0-9][a-z0-9-]{0,63}")
 _PART_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
-# The derived repo half of a key: origin's owner and name, lowercased, joined by '.'.
+# The derived repo half of a key: origin's host and path segments, lowercased, joined by '.'.
 _REPO_RE = re.compile(r"[a-z0-9][a-z0-9._-]{0,127}")
 _OWNER_NAME_PART_RE = re.compile(r"[a-z0-9][a-z0-9._-]{0,63}")
 UNSAFE = "<unsafe value withheld>"
@@ -181,6 +188,10 @@ GitRun = namedtuple("GitRun", "code out err")
 
 class UsageError(Exception):
     pass
+
+
+class UnknownKey(Exception):
+    """The repo half of the key cannot be told: exit 3, nothing written."""
 
 
 # --- small helpers -------------------------------------------------------------
@@ -720,29 +731,85 @@ def _azure_part(part):
     return re.sub(r"_{2,}", "_", re.sub(r"\.{2,}", ".", text))
 
 
+def _split_url(url):
+    """(host, path segments) of a remote URL -- https/ssh/file://, scp-like
+    `[user@]host:path` (read the same as `ssh://[user@]host/path`), or a local
+    path. The host is lowercased with userinfo and port dropped, and '' for a
+    local path or file://; the last segment loses a trailing `.git`.
+    Credentials in the URL are never kept."""
+    text = (url or "").strip()
+    found = re.match(r"^([A-Za-z][A-Za-z0-9+.-]*)://([^/]*)(.*)$", text)
+    scp = re.match(r"^(?:[^/\\@:]+@)?([^/\\@:]+):(.*)$", text)
+    if found:
+        scheme, authority, path = found.groups()
+        host = "" if scheme.lower() == "file" else re.sub(r":[0-9]*$", "", authority.rpartition("@")[2])
+    elif scp and not re.match(r"^[A-Za-z]:[/\\]", text):
+        host, path = scp.groups()
+    else:
+        host, path = "", re.sub(r"^([A-Za-z]):(?=[/\\])", r"\1", text)
+    segments = [p for p in re.split(r"[/\\]+", path) if p]
+    if segments:
+        segments[-1] = re.sub(r"\.git$", "", segments[-1], flags=re.IGNORECASE)
+    return host.lower(), segments
+
+
+def _url_shape(host, segments):
+    """The URL's shape for a could-not-tell message: the host, and each path
+    segment as `<name>` except the markers the key rules read."""
+    marks = ("_git", "v3", "defaultcollection")
+    return "/".join([safe(host, 80)] + [s if s.lower() in marks else "<name>" for s in segments])
+
+
+def _azure_parts(host, segments):
+    """(org, project, repo) of an Azure DevOps URL, or None when the URL is on
+    an Azure DevOps host but fits none of its forms. A project's default
+    repository leaves the project out (`<org>/_git/<repo>`, `_git/<repo>` on
+    <org>.visualstudio.com); it has the project's name, so project = repo."""
+    low = [s.lower() for s in segments]
+    if host == "dev.azure.com":
+        if len(low) == 3 and low[1] == "_git":
+            return segments[0], segments[2], segments[2]
+        if len(low) == 4 and low[2] == "_git":
+            return segments[0], segments[1], segments[3]
+        return None
+    if host in ("ssh.dev.azure.com", "vs-ssh.visualstudio.com"):
+        return tuple(segments[1:]) if len(low) == 4 and low[0] == "v3" else None
+    org = host[:-len(".visualstudio.com")]
+    rest = segments[1:] if low and low[0] == "defaultcollection" else segments
+    if len(rest) == 2 and rest[0].lower() == "_git":
+        return org, rest[1], rest[1]
+    if len(rest) == 3 and rest[1].lower() == "_git":
+        return org, rest[0], rest[2]
+    return None
+
+
 def owner_name(url):
-    """(`owner.name`, None) from a remote URL -- https, ssh://, scp-like
-    `git@host:owner/name` or a path -- lowercased, `.git` dropped; or
-    (None, why). Azure DevOps names a repository `<project>/_git/<repo>` over
-    https (dev.azure.com/<org>, <org>.visualstudio.com, a server's
-    /tfs/<collection>) and `v3/<org>/<project>/<repo>` over ssh; both give
-    `project.repo`, so an https clone and an ssh clone share one key.
-    Credentials in the URL are never read or printed."""
-    path = re.sub(r"^[A-Za-z][A-Za-z0-9+.-]*://[^/]*", "", (url or "").strip())
-    path = re.sub(r"^[^/\\:]+@[^/\\:]+:", "", path)
-    parts = [p for p in re.split(r"[/:\\]+", path) if p]
-    lowered = [p.lower() for p in parts]
-    marks = [i for i in range(1, len(lowered) - 1) if lowered[i] == "_git"]
-    if marks:
-        parts = [_azure_part(parts[marks[-1] - 1]), _azure_part(parts[marks[-1] + 1])]
-    elif len(parts) == 4 and lowered[0] == "v3":
-        parts = [_azure_part(parts[2]), _azure_part(parts[3])]
-    if len(parts) < 2:
-        return None, "origin's URL has no owner/name"
-    owner, name = parts[-2].lower(), re.sub(r"\.git$", "", parts[-1].lower())
-    if not (_valid_part(owner, _OWNER_NAME_PART_RE) and _valid_part(name, _OWNER_NAME_PART_RE)):
-        return None, "origin's owner/name is not letters, digits, '.', '_', '-'"
-    return f"{owner}.{name}", None
+    """(key, None) from a remote URL, or (None, why) when it cannot tell. The
+    key is the host and EVERY path segment, lowercased and joined by '.'
+    (`https://gitlab.com/groupA/sub/repo.git` gives `gitlab.com.groupa.sub.repo`),
+    so repositories that share a last two segments on different hosts or
+    groups never share a key, and the https, ssh and scp forms of one
+    repository do. A local path or file:// URL gives its segments alone.
+    Every Azure DevOps form of one repository -- https dev.azure.com and
+    <org>.visualstudio.com, with or without the project, and ssh `v3/...` --
+    gives `dev.azure.com.<org>.<project>.<repo>`; an Azure DevOps URL that fits
+    none of them is could-not-tell. So is a segment the key rule refuses: the
+    key is never a guess and never falls back to a directory name."""
+    host, segments = _split_url(url)
+    if host == "dev.azure.com" or host == "ssh.dev.azure.com" or host.endswith(".visualstudio.com"):
+        parts = _azure_parts(host, segments)
+        if parts is None:
+            return None, f"origin's URL has the shape {_url_shape(host, segments)}, which fits no Azure DevOps form"
+        parts = ["dev.azure.com"] + [_azure_part(p) for p in parts]
+    else:
+        parts = ([host] if host else []) + [s.lower() for s in segments]
+    if not segments:
+        return None, f"origin's URL has the shape {_url_shape(host, segments)}, which names no repository"
+    key = ".".join(parts)
+    if not (all(_valid_part(p, _OWNER_NAME_PART_RE) for p in parts) and _valid_part(key, _REPO_RE)):
+        return None, (f"origin's URL has the shape {_url_shape(host, segments)}, and a part of it is not "
+                      "letters, digits, '.', '_', '-' (or the key would pass 128 characters)")
+    return key, None
 
 
 def _fallback_repo(top):
@@ -756,17 +823,24 @@ def _fallback_repo(top):
 
 def repo_key(top):
     """(repo, note): the repo half of every claim key, DERIVED, never typed:
-    origin's owner/name, lowercased (`owner.name`), so every worktree and clone
-    of one repository names it alike. With no usable origin it falls back to
-    the main worktree's directory name, and `note` says why. UsageError when
-    neither gives a name."""
-    got = run_git(top, ["config", "--get", "remote.origin.url"])
-    if got.code == 0:
+    owner_name() of origin's URL as git resolves it (`git remote get-url`,
+    which applies url.<base>.insteadOf), so every worktree and clone of one
+    repository names it alike, however its origin is spelled. Only when there
+    is no origin URL at all does it fall back to the main worktree's directory
+    name, and `note` says why. UnknownKey when origin has a URL the key cannot
+    be told from -- never a fallback, which would give one ticket a second
+    key; UsageError when the fallback has no usable name either."""
+    has_url = run_git(top, ["config", "--get-all", "remote.origin.url"])
+    if has_url.code == 0 and has_url.out.strip():
+        got = run_git(top, ["remote", "get-url", "origin"])
+        if got.code != 0:
+            raise UnknownKey(f"cannot derive this repository's key: `git remote get-url origin` failed: "
+                             f"{_last_line(got.err)}")
         name, why = owner_name(got.out.decode("utf-8", "replace"))
-    else:
-        name, why = None, "there is no origin remote"
-    if name:
+        if not name:
+            raise UnknownKey(f"cannot derive this repository's key: {why}; nothing was read or written")
         return name, None
+    why = "there is no origin remote"
     fallback = _fallback_repo(top)
     if not fallback:
         raise UsageError(f"cannot derive this repository's name: {why}, and the main worktree's directory "
@@ -788,7 +862,7 @@ def parse_ticket(text, repo):
                          "no '__', no '..', no path separators)")
     if given is not None and given.lower() != repo:
         raise UsageError(f"the repo half of --ticket is derived, not chosen: this repository's is {repo!r} "
-                         f"(origin's owner/name), not {safe(given)!r}; pass --ticket {ticket}")
+                         f"(origin's host and path), not {safe(given)!r}; pass --ticket {ticket}")
     ticket = ticket.upper()
     return repo, ticket, f"{repo}__{ticket}"
 
@@ -938,12 +1012,16 @@ def _is_candidate(claim, key, top, me, ident):
 # --- commands ------------------------------------------------------------------------
 
 def ttl_minutes(top):
+    """coord.ttlMinutes (default 30). UsageError unless it is a finite number
+    above 0 and at most MAX_TTL_MINUTES -- checked before any fetch or push,
+    so a bad value writes nothing (1e308 minutes overflows to inf seconds)."""
     import crew_config
-    value = (crew_config.resolve_config(top).get("coord") or {}).get("ttlMinutes", DEFAULT_TTL_MINUTES)
-    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0:
-        print(f"warning: coord.ttlMinutes {safe(value, 40)!r} is not a positive finite number; using "
-              f"{DEFAULT_TTL_MINUTES}", file=sys.stderr)
-        return DEFAULT_TTL_MINUTES
+    coord = crew_config.resolve_config(top).get("coord") or {}
+    value = coord.get("ttlMinutes", DEFAULT_TTL_MINUTES) if isinstance(coord, dict) else DEFAULT_TTL_MINUTES
+    if (isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value)
+            or value <= 0 or value > MAX_TTL_MINUTES):
+        raise UsageError(f"coord.ttlMinutes {safe(value, 40)!r} must be a number of minutes above 0 and at most "
+                         f"{MAX_TTL_MINUTES} (7 days); nothing was read or written")
     return value
 
 
@@ -952,13 +1030,12 @@ def _exit(result):
     return {"ok": EXIT_OK, "refused": EXIT_REFUSED}.get(result.status, EXIT_UNKNOWN)
 
 
-def cmd_claim(chan, top, key, repo, ticket, args):
+def cmd_claim(chan, top, key, repo, ticket, args, ttl):
     me = current_holder(top)
     if me is None:
         print("unknown - cannot tell who is claiming: CLAUDE_CODE_SESSION_ID is absent. "
               "Claim from inside a Claude Code session.")
         return EXIT_UNKNOWN
-    ttl = ttl_minutes(top)
 
     def change(files):
         claim, why, present = _record(files, key)
@@ -1107,12 +1184,11 @@ def cmd_break(chan, top, key, repo, ticket, by):
     return _exit(result)
 
 
-def cmd_recover(chan, top, key, repo, ticket, args):
+def cmd_recover(chan, top, key, repo, ticket, args, ttl):
     me = current_holder(top)
     if me is None:
         print("unknown - cannot tell who is recovering: CLAUDE_CODE_SESSION_ID is absent")
         return EXIT_UNKNOWN
-    ttl = ttl_minutes(top)
     outcome = {}
 
     def change(files):
@@ -1150,7 +1226,7 @@ def cmd_recover(chan, top, key, repo, ticket, args):
     return _exit(result)
 
 
-def cmd_status(chan, top):
+def cmd_status(chan, top, ttl):
     tip, state, why = chan.fetch()
     if state == "failed":
         print(f"unknown - could not fetch {chan.ref} from {chan.remote}: {why}")
@@ -1159,7 +1235,6 @@ def cmd_status(chan, top):
     if files is None:
         print(f"unknown - could not read {chan.ref} at {tip}")
         return EXIT_UNKNOWN
-    ttl = ttl_minutes(top)
     me = current_holder(top)
     ident, _ = read_identity(top)
     print(f"channel crew-coord/{chan.channel} on {chan.remote}: "
@@ -1240,9 +1315,11 @@ def _parser():
         if name != "status":
             cmd.add_argument("--ticket", required=True,
                              help="<id> or <repo>:<id>. The repo half is derived, never chosen: origin's "
-                                  "owner/name, lowercased (owner.name; Azure DevOps: project.repo), else the "
-                                  "main worktree's directory name, with the reason printed; a given <repo> "
-                                  "must match it. The id is upper-cased")
+                                  "URL as git resolves it (insteadOf applied), its host and full path, "
+                                  "lowercased and joined by '.' (github.com.owner.repo; every Azure DevOps "
+                                  "form: dev.azure.com.org.project.repo); a URL it cannot tell from is "
+                                  "refused. With no origin, the main worktree's directory name, with the "
+                                  "reason printed. A given <repo> must match it. The id is upper-cased")
         if name in ("claim", "recover"):
             cmd.add_argument("--no-heartbeat", action="store_true",
                              help="do not start the detached heartbeat (the claim goes stale after the TTL)")
@@ -1286,8 +1363,9 @@ def main(argv=None):
     args = _parser().parse_args(argv)
     try:
         top, chan = _setup(args)
+        ttl = ttl_minutes(top)
         if args.command == "status":
-            return cmd_status(chan, top)
+            return cmd_status(chan, top, ttl)
         repo, note = repo_key(top)
         if note:
             print(f"note: {note}", file=sys.stderr)
@@ -1295,10 +1373,13 @@ def main(argv=None):
     except UsageError as exc:
         print(f"usage: {exc}")
         return EXIT_USAGE
+    except UnknownKey as exc:
+        print(f"unknown - {exc}")
+        return EXIT_UNKNOWN
     if args.command == "claim":
-        return cmd_claim(chan, top, key, repo, ticket, args)
+        return cmd_claim(chan, top, key, repo, ticket, args, ttl)
     if args.command == "recover":
-        return cmd_recover(chan, top, key, repo, ticket, args)
+        return cmd_recover(chan, top, key, repo, ticket, args, ttl)
     if args.command == "heartbeat-loop":
         return cmd_heartbeat_loop(chan, top, key, args.pid, max(0.05, args.interval))
     if args.command == "release" and args.brk:

@@ -90,8 +90,24 @@ All notable changes to this repository are documented here. Format follows [Keep
     `T-0030` are one key. Azure DevOps https (`<project>/_git/<repo>`) and
     ssh (`v3/<org>/<project>/<repo>`) origins both give `project.repo`. A
     `coord.ttlMinutes` of `NaN` or `Infinity` warns and uses 30.
-  - 162 cases in `tests/test_crew_coord.py` against a local bare remote;
-    65 mutations in `tests/sabotage_coord.py`, registered in `sabotage.py`.
+  - Review round 4 fixes. The `<repo>` half of a key is read with
+    `git remote get-url origin`, so `url.<base>.insteadOf` applies and an
+    alias clone shares the full-URL clone's key. The key is now the host and
+    every path segment (`github.com.owner.repo`, `gitlab.com.group.sub.repo`),
+    so repositories on different hosts or groups no longer share one, and
+    every Azure DevOps form of one repository — including a project's default
+    repository addressed without the project (`<org>/_git/<repo>`,
+    `<org>.visualstudio.com/[DefaultCollection/]_git/<repo>`) — gives
+    `dev.azure.com.<org>.<project>.<repo>`. An origin the key cannot be told
+    from (an Azure DevOps URL fitting no form, a segment outside the key's
+    rule, an on-premises `/tfs/` URL, a failing `get-url`) exits 3 with
+    nothing written, never a directory-name fallback. `coord.ttlMinutes`
+    outside 0 to 10080 is a config error (exit 2) before any fetch or push,
+    replacing round 3's warn-and-use-30. **Breaking against earlier builds of
+    this branch:** keys change from `owner.repo` to `host.owner.repo`, so a
+    claim written by one of them is not found under its new key.
+  - 197 cases in `tests/test_crew_coord.py` against a local bare remote;
+    73 mutations in `tests/sabotage_coord.py`, registered in `sabotage.py`.
     The `/crew:autopilot` resume-step line is pending T-0004; until then the
     README says to run `crew_coord.py status` first after `/clear`.
 

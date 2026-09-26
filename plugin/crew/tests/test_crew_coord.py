@@ -32,10 +32,13 @@ SCRIPT = os.path.join(os.path.dirname(os.path.abspath(crew_coord.__file__)), "cr
 CHANNEL = "test"
 REF = f"refs/heads/crew-coord/{CHANNEL}"
 TRACKING = f"refs/remotes/origin/crew-coord/{CHANNEL}"
-# The repo half of a key is derived from origin's owner/name, lowercased.
-# Every clone's origin reads ORIGIN; insteadOf routes it to the bare remote.
-ORIGIN = "https://example.test/Owner/Repo-A.git"
-REPO = "owner.repo-a"
+# The repo half of a key is derived from origin's URL as git resolves it
+# (`git remote get-url`, insteadOf applied): host and full path, lowercased.
+# Every clone's origin reads ORIGIN, an ssh URL, and core.sshCommand is a
+# stand-in ssh (FAKE_SSH) that serves the bare remote whatever host and path
+# it is asked for -- so `get-url` prints ORIGIN itself, not a rewritten path.
+ORIGIN = "git@example.test:Owner/Repo-A.git"
+REPO = "example.test.owner.repo-a"
 TICKET = f"{REPO}:T-1"
 KEY = f"{REPO}__T-1"
 # A working claim whose stamps are valid, so only its holder can refuse it.
@@ -79,20 +82,58 @@ def _configure(root):
     git(root, "config", "core.autocrlf", "false")
 
 
+# git runs `<sshCommand> [options] <host> "<program> '<path>'"`. This serves
+# <bare> (its first argument) for any host and path: `git-upload-pack` and
+# `git-receive-pack` run as `git upload-pack` / `git receive-pack`, and any
+# other program (a remote's receivepack) is run as given.
+FAKE_SSH = """import shlex, subprocess, sys
+program = shlex.split(sys.argv[-1])[0]
+argv = ["git", program[4:]] if program in ("git-upload-pack", "git-receive-pack") else [program]
+sys.exit(subprocess.call(argv + [sys.argv[1]]))
+"""
+
+
 def _clone(tmp_path, remote, name):
     path = tmp_path / name
     subprocess.run(["git", "clone", "-q", str(remote), str(path)], check=True,
                    capture_output=True, stdin=subprocess.DEVNULL)
     _configure(path)
-    _set_origin(path, remote, ORIGIN)
+    ssh = tmp_path / "fake-ssh.py"
+    if not ssh.exists():
+        ssh.write_text(FAKE_SSH, encoding="utf-8", newline="\n")
+    exe, script, bare = (os.fspath(p).replace("\\", "/") for p in (sys.executable, ssh, remote))
+    git(path, "config", "core.sshCommand", f'"{exe}" "{script}" "{bare}"')
+    git(path, "config", "ssh.variant", "ssh")
+    _set_origin(path, ORIGIN)
     return path
 
 
-def _set_origin(root, remote, url):
-    """origin's URL reads `url` (what the repo key is derived from), and git
-    reaches the bare remote through insteadOf."""
-    git(root, "config", f"url.{remote}.insteadOf", url)
+def _set_origin(root, url):
+    """origin's URL reads `url` (what the repo key is derived from). An ssh
+    or scp URL reaches the bare remote through the fake ssh; an https one
+    needs _route and _origin_reads."""
     git(root, "remote", "set-url", "origin", url)
+
+
+def _route(root, remote, url):
+    """git reaches the bare remote for `url` through insteadOf -- which
+    `git remote get-url` then prints in place of `url`."""
+    git(root, "config", f"url.{remote}.insteadOf", url)
+
+
+def _origin_reads(monkeypatch, urls):
+    """`git remote get-url origin` in the worktree `root` prints urls[root]:
+    what git prints for an https origin that nothing rewrites, which a test
+    can only reach the bare remote for through insteadOf (_route). Every
+    other git call runs for real."""
+    real = crew_coord.run_git
+    wanted = {os.path.realpath(root): url for root, url in urls.items()}
+
+    def fake(root, args, **kwargs):
+        if list(args) == ["remote", "get-url", "origin"] and os.path.realpath(root) in wanted:
+            return crew_coord.GitRun(0, (wanted[os.path.realpath(root)] + "\n").encode(), "")
+        return real(root, args, **kwargs)
+    monkeypatch.setattr(crew_coord, "run_git", fake)
 
 
 @pytest.fixture(name="wt")
@@ -476,8 +517,10 @@ def test_push_carries_the_remotes_receivepack_but_never_mirror(capsys, monkeypat
 def test_push_keeps_a_callers_git_config_environment(capsys, monkeypatch, wt, remote):
     monkeypatch.setenv("GIT_CONFIG_COUNT", "1")
     monkeypatch.setenv("GIT_CONFIG_KEY_0", f"url.{remote}.insteadOf")
-    monkeypatch.setenv("GIT_CONFIG_VALUE_0", "coordalias:")
-    git(wt, "config", "remote.origin.pushurl", "coordalias:")
+    # A file:// alias, not `coordalias:` -- that reads as an scp host, which
+    # the fake ssh would serve with or without the caller's insteadOf.
+    monkeypatch.setenv("GIT_CONFIG_VALUE_0", "file:///nonexistent-coordalias")
+    git(wt, "config", "remote.origin.pushurl", "file:///nonexistent-coordalias")
     _session(monkeypatch, "sess-a")
 
     code, out = _run(capsys, wt, "claim")
@@ -746,20 +789,16 @@ def test_fresh_working_claim_is_not_stale_at_29_minutes(capsys, monkeypatch, wt,
     assert "working held by sess-a" in status
 
 
-def test_ttl_comes_from_config_and_invalid_value_warns_and_uses_30(capsys, monkeypatch, wt, wt_b):
+def test_ttl_comes_from_config(capsys, monkeypatch, wt, wt_b):
     _session(monkeypatch, "sess-a")
     _run(capsys, wt, "claim")
     _shift_clock(monkeypatch, 11)
     (wt_b / ".crew").mkdir()
     (wt_b / ".crew" / "config.json").write_text(json.dumps({"coord": {"ttlMinutes": 10}}), encoding="utf-8")
-    _, short = _run(capsys, wt_b, "status")
-    (wt_b / ".crew" / "config.json").write_text(json.dumps({"coord": {"ttlMinutes": "soon"}}), encoding="utf-8")
 
-    _, invalid = _run(capsys, wt_b, "status")
+    _, short = _run(capsys, wt_b, "status")
 
     assert "owner unknown" in short
-    assert "ttlMinutes" in invalid and "using 30" in invalid
-    assert "owner unknown" not in invalid
 
 
 @pytest.mark.parametrize("blob", [b"{not json", b"[]", b'{"state": "working"}', BAD_HOLDER],
@@ -1395,20 +1434,20 @@ def test_recover_on_windows_refuses_access_denied(capsys, monkeypatch, wt, remot
 
 
 def test_recover_passes_the_parsed_ticket_to_the_heartbeat(capsys, monkeypatch, wt, remote, spawned):
-    _set_origin(wt, remote, "https://example.test/owner/a_.git")
+    _set_origin(wt, "git@example.test:owner/a_.git")
     _session(monkeypatch, "sess-old", pid=_dead_pid())
     with monkeypatch.context() as patch:
         patch.setattr(crew_coord, "holder_pidns", lambda _pid: crew_coord.pid_namespace())
-        assert _run(capsys, wt, "claim", ticket="owner.a_:T-1")[0] == 0
+        assert _run(capsys, wt, "claim", ticket="example.test.owner.a_:T-1")[0] == 0
     _shift_clock(monkeypatch, 31)
     _session(monkeypatch, "sess-new", pid=os.getpid())
 
     code = crew_coord.main(["recover", "--root", str(wt), "--remote", "origin", "--channel", CHANNEL,
-                            "--ticket", "owner.a_:T-1"])
+                            "--ticket", "example.test.owner.a_:T-1"])
 
     assert code == 0, capsys.readouterr().out
     [(argv, _)] = spawned
-    assert argv[argv.index("--ticket") + 1] == "owner.a_:T-1"
+    assert argv[argv.index("--ticket") + 1] == "example.test.owner.a_:T-1"
 
 
 def test_recover_retry_that_finds_itself_holding_records_the_identity(capsys, monkeypatch, wt, remote):
@@ -1498,7 +1537,7 @@ def test_readme_documents_channels_ttl_recovery_and_no_force():
     for needle in ("crew-coord/<channel>", "30 minutes", "owner unknown", "never force", "recover",
                    "crew_coord.py status", "release --break", "peer-written", "pre-push",
                    "whether `/clear` keeps `CLAUDE_PID`", "Windows", "coord-identity.json.lock",
-                   "owner/name", "PID namespace"):
+                   "host and every path segment", "git remote get-url", "10080", "PID namespace"):
         assert needle in section, needle
 
 
@@ -1647,11 +1686,53 @@ def test_recommended_command_withholds_unsafe_peer_values(capsys, monkeypatch, w
     assert "rm -rf" not in command and "touch" not in command
 
 
-@pytest.mark.parametrize("url", [ORIGIN, "git@example.test:Owner/Repo-A.git", "ssh://git@example.test:22/Owner/Repo-A",
-                                 "https://user:tok@example.test/Owner/Repo-A.git/", "/srv/git/Owner/Repo-A.git"],
-                         ids=["https", "scp", "ssh", "credentials", "path"])
-def test_repo_key_is_origins_owner_and_name_lowercased(url):
+@pytest.mark.parametrize("url", ["https://example.test/Owner/Repo-A.git", ORIGIN,
+                                 "ssh://git@example.test:22/Owner/Repo-A",
+                                 "https://user:tok@example.test/Owner/Repo-A.git/",
+                                 "ssh://Example.Test/Owner/Repo-A.git"],
+                         ids=["https", "scp", "ssh", "credentials", "ssh-no-user"])
+def test_repo_key_is_origins_host_and_path_lowercased(url):
     assert crew_coord.owner_name(url) == (REPO, None)
+
+
+@pytest.mark.parametrize("url, expected", [
+    ("/srv/git/Owner/Repo-A.git", "srv.git.owner.repo-a"),
+    ("file:///srv/git/Owner/Repo-A.git", "srv.git.owner.repo-a"),
+    ("https://gitlab.com/groupA/sub/repo.git", "gitlab.com.groupa.sub.repo"),
+    ("git@gitlab.com:groupA/sub/repo.git", "gitlab.com.groupa.sub.repo"),
+], ids=["path", "file-url", "gitlab-https", "gitlab-scp"])
+def test_repo_key_keeps_every_path_segment(url, expected):
+    assert crew_coord.owner_name(url) == (expected, None)
+
+
+@pytest.mark.parametrize("first, second", [
+    ("https://gitlab.com/groupA/sub/repo.git", "https://gitlab.com/groupB/sub/repo.git"),
+    ("https://github.com/Owner/Repo.git", "https://gitlab.com/Owner/Repo.git"),
+    ("https://dev.azure.com/OrgA/Proj/_git/Repo", "https://dev.azure.com/OrgB/Proj/_git/Repo"),
+], ids=["gitlab-groups", "hosts", "azure-orgs"])
+def test_repo_key_tells_different_repositories_apart(first, second):
+    one, two = crew_coord.owner_name(first), crew_coord.owner_name(second)
+
+    assert one[0] and two[0] and one != two
+
+
+@pytest.mark.parametrize("url", ["https://github.com/Owner/Repo.git", "ssh://git@github.com/Owner/Repo.git",
+                                 "git@github.com:Owner/Repo.git", "https://github.com/owner/repo"],
+                         ids=["https", "ssh", "scp", "lowercase"])
+def test_repo_key_is_one_for_every_form_of_a_github_repository(url):
+    assert crew_coord.owner_name(url) == ("github.com.owner.repo", None)
+
+
+@pytest.mark.parametrize("url, shape", [
+    ("https://example.test/Owner/Re%20po.git", "example.test/<name>/<name>"),
+    ("https://example.test/Owner/Re__po.git", "example.test/<name>/<name>"),
+    ("https://example.test/", "example.test"),
+    ("https://server/tfs/Collection/Proj/_git/Repo", "server/<name>/<name>/<name>/_git/<name>"),
+], ids=["encoded", "double-underscore", "no-path", "tfs-server"])
+def test_repo_key_is_could_not_tell_for_a_segment_the_key_rule_refuses(url, shape):
+    key, why = crew_coord.owner_name(url)
+
+    assert key is None and shape in why
 
 
 def test_two_worktrees_of_one_repo_share_the_claim_key(capsys, monkeypatch, tmp_path, wt, remote):
@@ -1667,7 +1748,7 @@ def test_two_worktrees_of_one_repo_share_the_claim_key(capsys, monkeypatch, tmp_
     assert sorted(_remote_files(remote)) == [f"claims/{KEY}.json", "log.jsonl"]
 
 
-@pytest.mark.parametrize("ticket, expected", [("Owner.Repo-A:T-1", 0), ("uca:T-1", crew_coord.EXIT_USAGE),
+@pytest.mark.parametrize("ticket, expected", [("Example.Test.Owner.Repo-A:T-1", 0), ("uca:T-1", crew_coord.EXIT_USAGE),
                                               ("useful-claude-add-ons:T-1", crew_coord.EXIT_USAGE)])
 def test_ticket_repo_half_must_be_this_repositorys(capsys, monkeypatch, wt, ticket, expected):
     _session(monkeypatch, "sess-a")
@@ -1694,7 +1775,7 @@ def test_help_says_the_repo_half_is_derived(capsys):
     with pytest.raises(SystemExit):
         crew_coord.main(["claim", "--help"])
 
-    assert "owner/name" in capsys.readouterr().out
+    assert "host and full path" in " ".join(capsys.readouterr().out.split())
 
 
 @pytest.mark.parametrize("present", ["CLAUDECODE", "CLAUDE_CODE_SESSION_ID"])
@@ -1840,7 +1921,7 @@ def test_heartbeat_loop_of_the_same_session_and_pid_in_another_worktree_is_not_s
                 proc.communicate()
 
 
-@pytest.mark.parametrize("spelling", ["t-0030", f"{REPO}:t-0030", "Owner.Repo-A:t-0030"])
+@pytest.mark.parametrize("spelling", ["t-0030", f"{REPO}:t-0030", "Example.Test.Owner.Repo-A:t-0030"])
 def test_ticket_id_is_one_key_whatever_its_case(capsys, monkeypatch, wt, wt_b, remote, spelling):
     _session(monkeypatch, "sess-1")
     assert _run(capsys, wt, "claim", ticket="T-0030")[0] == 0
@@ -1852,26 +1933,48 @@ def test_ticket_id_is_one_key_whatever_its_case(capsys, monkeypatch, wt, wt_b, r
     assert sorted(_remote_files(remote)) == [f"claims/{REPO}__T-0030.json", "log.jsonl"]
 
 
+AZURE = "dev.azure.com.org.proj.repo"
+AZURE_DEFAULT = "dev.azure.com.org.repo.repo"
+
+
 @pytest.mark.parametrize("url, expected", [
-    ("https://dev.azure.com/Org/Proj/_git/Repo", "proj.repo"),
-    ("https://Org@dev.azure.com/Org/Proj/_git/Repo", "proj.repo"),
-    ("https://org.visualstudio.com/Proj/_git/Repo", "proj.repo"),
-    ("https://org.visualstudio.com/DefaultCollection/Proj/_git/Repo", "proj.repo"),
-    ("https://server/tfs/Collection/Proj/_git/Repo", "proj.repo"),
-    ("git@ssh.dev.azure.com:v3/Org/Proj/Repo", "proj.repo"),
-    ("org@vs-ssh.visualstudio.com:v3/Org/Proj/Repo", "proj.repo"),
-    ("ssh://git@ssh.dev.azure.com/v3/Org/Proj/Repo", "proj.repo"),
-    ("https://dev.azure.com/Org/My%20Project/_git/Repo", "my-project.repo"),
-    ("git@ssh.dev.azure.com:v3/Org/My%20Project/Repo", "my-project.repo"),
-], ids=["https", "https-user", "visualstudio", "default-collection", "server", "ssh", "vs-ssh", "ssh-url",
+    ("https://dev.azure.com/Org/Proj/_git/Repo", AZURE),
+    ("https://Org@dev.azure.com/Org/Proj/_git/Repo", AZURE),
+    ("https://org.visualstudio.com/Proj/_git/Repo", AZURE),
+    ("https://org.visualstudio.com/DefaultCollection/Proj/_git/Repo", AZURE),
+    ("git@ssh.dev.azure.com:v3/Org/Proj/Repo", AZURE),
+    ("org@vs-ssh.visualstudio.com:v3/Org/Proj/Repo", AZURE),
+    ("ssh://git@ssh.dev.azure.com/v3/Org/Proj/Repo", AZURE),
+    ("https://dev.azure.com/Org/_git/Repo", AZURE_DEFAULT),
+    ("git@ssh.dev.azure.com:v3/Org/Repo/Repo", AZURE_DEFAULT),
+    ("https://org.visualstudio.com/_git/Repo", AZURE_DEFAULT),
+    ("https://org.visualstudio.com/DefaultCollection/_git/Repo", AZURE_DEFAULT),
+    ("https://dev.azure.com/Org/My%20Project/_git/Repo", "dev.azure.com.org.my-project.repo"),
+    ("git@ssh.dev.azure.com:v3/Org/My%20Project/Repo", "dev.azure.com.org.my-project.repo"),
+], ids=["https", "https-user", "visualstudio", "default-collection", "ssh", "vs-ssh", "ssh-url",
+        "https-no-project", "ssh-default-repo", "visualstudio-no-project", "default-collection-no-project",
         "https-encoded-space", "ssh-encoded-space"])
-def test_repo_key_is_one_for_azure_devops_https_and_ssh(url, expected):
+def test_repo_key_is_one_for_every_azure_devops_form(url, expected):
     assert crew_coord.owner_name(url) == (expected, None)
 
 
+@pytest.mark.parametrize("url, shape", [
+    ("https://dev.azure.com/Org/Proj/Repo", "dev.azure.com/<name>/<name>/<name>"),
+    ("https://dev.azure.com/Org/Proj/_git/Repo/extra", "dev.azure.com/<name>/<name>/_git/<name>/<name>"),
+    ("git@ssh.dev.azure.com:v3/Org/Repo", "ssh.dev.azure.com/v3/<name>/<name>"),
+    ("https://org.visualstudio.com/Repo", "org.visualstudio.com/<name>"),
+], ids=["no-_git", "extra-segment", "short-v3", "visualstudio-no-_git"])
+def test_an_azure_devops_url_that_fits_no_form_is_could_not_tell(url, shape):
+    key, why = crew_coord.owner_name(url)
+
+    assert key is None and shape in why and "Azure DevOps" in why
+
+
 def test_azure_devops_https_and_ssh_clones_share_the_claim_key(capsys, monkeypatch, wt, wt_b, remote):
-    _set_origin(wt, remote, "https://dev.azure.com/Org/Proj/_git/Repo")
-    _set_origin(wt_b, remote, "org@vs-ssh.visualstudio.com:v3/Org/Proj/Repo")
+    _route(wt, remote, "https://dev.azure.com/Org/Proj/_git/Repo")
+    _set_origin(wt, "https://dev.azure.com/Org/Proj/_git/Repo")
+    _set_origin(wt_b, "org@vs-ssh.visualstudio.com:v3/Org/Proj/Repo")
+    _origin_reads(monkeypatch, {wt: "https://dev.azure.com/Org/Proj/_git/Repo"})
     _session(monkeypatch, "sess-1")
     assert _run(capsys, wt, "claim", ticket="T-1")[0] == 0
     _session(monkeypatch, "sess-2")
@@ -1879,18 +1982,102 @@ def test_azure_devops_https_and_ssh_clones_share_the_claim_key(capsys, monkeypat
     code, out = _run(capsys, wt_b, "claim", ticket="T-1")
 
     assert code == crew_coord.EXIT_REFUSED, out
-    assert sorted(_remote_files(remote)) == ["claims/proj.repo__T-1.json", "log.jsonl"]
+    assert sorted(_remote_files(remote)) == [f"claims/{AZURE}__T-1.json", "log.jsonl"]
 
 
-@pytest.mark.parametrize("value", ["NaN", "Infinity", "-Infinity"])
-def test_ttl_that_is_not_finite_warns_and_uses_30(capsys, monkeypatch, wt, live_pid, spawned, value):
+def test_every_azure_devops_form_of_a_default_repository_is_one_claim(capsys, monkeypatch, tmp_path, wt, wt_b,
+                                                                      remote):
+    wt_c = _clone(tmp_path, remote, "wt-c")
+    _route(wt, remote, "https://dev.azure.com/Org/_git/Repo")
+    _set_origin(wt, "https://dev.azure.com/Org/_git/Repo")
+    _set_origin(wt_b, "git@ssh.dev.azure.com:v3/Org/Repo/Repo")
+    _route(wt_c, remote, "https://org.visualstudio.com/DefaultCollection/_git/Repo")
+    _set_origin(wt_c, "https://org.visualstudio.com/DefaultCollection/_git/Repo")
+    _origin_reads(monkeypatch, {wt: "https://dev.azure.com/Org/_git/Repo",
+                                wt_c: "https://org.visualstudio.com/DefaultCollection/_git/Repo"})
+    codes = []
+    for sid, root in (("s1", wt), ("s2", wt_b), ("s3", wt_c)):
+        _session(monkeypatch, sid)
+        codes.append(_run(capsys, root, "claim", ticket="T-1")[0])
+
+    _, status = _run(capsys, wt, "status")
+
+    assert codes == [0, crew_coord.EXIT_REFUSED, crew_coord.EXIT_REFUSED], status
+    assert [line.split()[0] for line in status.splitlines() if "__T-1" in line] == [f"{AZURE_DEFAULT}__T-1"]
+
+
+def test_claim_applies_insteadof_to_origin(capsys, monkeypatch, wt, wt_b, remote):
+    git(wt_b, "config", "url.git@example.test:Owner/.insteadOf", "ow:")
+    _set_origin(wt_b, "ow:Repo-A.git")
+    _session(monkeypatch, "sess-1")
+    assert _run(capsys, wt, "claim", ticket="T-1")[0] == 0
+    _session(monkeypatch, "sess-2")
+
+    code, out = _run(capsys, wt_b, "claim", ticket="T-1")
+
+    assert code == crew_coord.EXIT_REFUSED and "sess-1" in out, out
+    assert sorted(_remote_files(remote)) == [f"claims/{KEY}.json", "log.jsonl"]
+
+
+def test_claim_is_could_not_tell_when_git_cannot_resolve_origin(capsys, monkeypatch, wt, remote):
+    real = crew_coord.run_git
+
+    def failing(root, args, **kwargs):
+        if list(args) == ["remote", "get-url", "origin"]:
+            return crew_coord.GitRun(128, b"", "fatal: could not read config")
+        return real(root, args, **kwargs)
+    monkeypatch.setattr(crew_coord, "run_git", failing)
+    _session(monkeypatch, "sess-1")
+
+    code, out = _run(capsys, wt, "claim", ticket="T-1")
+
+    assert code == crew_coord.EXIT_UNKNOWN and "get-url" in out, out
+    assert _remote_files(remote) is None
+
+
+@pytest.mark.parametrize("url", ["git@ssh.dev.azure.com:v3/Org/Repo", "git@example.test:Owner/Re%20po.git"],
+                         ids=["azure-short-v3", "encoded"])
+def test_claim_is_could_not_tell_and_never_the_directory_name_for_an_unusable_origin(capsys, monkeypatch, wt,
+                                                                                    remote, url):
+    _set_origin(wt, url)
+    _session(monkeypatch, "sess-1")
+
+    code, out = _run(capsys, wt, "claim", ticket="T-1")
+
+    assert code == crew_coord.EXIT_UNKNOWN, out
+    assert "unknown -" in out and "wt-a" not in out
+    assert _remote_files(remote) is None
+
+
+@pytest.mark.parametrize("value", ["1e308", "0", "-1", '"nan"', "10081", "NaN", "Infinity", '"soon"', "true"])
+def test_ttl_outside_0_to_10080_is_a_config_error_before_any_fetch(capsys, monkeypatch, wt, remote, calls, value):
     (wt / ".crew").mkdir()
     (wt / ".crew" / "config.json").write_text('{"coord": {"ttlMinutes": %s}}' % value, encoding="utf-8")
+    _session(monkeypatch, "sess-1")
+
+    code, out = _run(capsys, wt, "claim")
+
+    assert code == crew_coord.EXIT_USAGE and "coord.ttlMinutes" in out, out
+    assert not [c for c in calls if c[0] in ("ls-remote", "fetch", "push")]
+    assert _remote_files(remote) is None
+
+
+def test_ttl_of_10080_is_accepted(capsys, monkeypatch, wt, live_pid, spawned):
+    (wt / ".crew").mkdir()
+    (wt / ".crew" / "config.json").write_text('{"coord": {"ttlMinutes": 10080}}', encoding="utf-8")
 
     code = _claim_with_heartbeat(monkeypatch, wt, live_pid)
 
-    out = capsys.readouterr()
-    assert code == 0, out.out + out.err
-    assert "using 30" in out.err
+    assert code == 0, capsys.readouterr().out
     [(argv, _)] = spawned
     assert argv[argv.index("--interval") + 1] == "600"
+
+
+def test_status_with_an_invalid_ttl_is_a_config_error(capsys, monkeypatch, wt, calls):
+    (wt / ".crew").mkdir()
+    (wt / ".crew" / "config.json").write_text('{"coord": {"ttlMinutes": 10081}}', encoding="utf-8")
+
+    code, out = _run(capsys, wt, "status")
+
+    assert code == crew_coord.EXIT_USAGE and "coord.ttlMinutes" in out, out
+    assert not [c for c in calls if c[0] in ("ls-remote", "fetch")]
