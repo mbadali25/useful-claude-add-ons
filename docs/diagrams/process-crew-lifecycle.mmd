@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@8d447a7d on 2026-09-25. Verify before trusting.
+%% Generated from useful-claude-add-ons@c35edda5 on 2026-09-25. Verify before trusting.
 %% Anchors: plugin/crew/commands/brainstorm.md, plugin/crew/commands/spec.md, plugin/crew/commands/plan.md, plugin/crew/commands/approve.md, plugin/crew/commands/implement.md, plugin/crew/commands/review.md, plugin/crew/commands/done.md, plugin/crew/commands/fix.md, plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/crew_ticket.py, plugin/crew/hooks/scripts/completion_audit.py, plugin/crew/hooks/scripts/crew_refresh_check.py
 %% The crew 1.0 ticket lifecycle: brainstorm -> spec -> plan -> approve -> implement -> refresh artifacts -> review -> done.
 %% --
@@ -11,6 +11,9 @@
 %% completion_audit.py and crew_refresh_check.py changed; no node's claim moved,
 %% and the two completion_audit.py citations below are re-read at :204-215
 %% (the :127-136 one was already stale at adf8d1dd, pointing into worktree_changes).
+%% Re-anchored for T-0034 at c35edda5: 8d447a7d was rebase-merged as 95120430, and
+%% of the anchored paths only crew_refresh_check.py changed after it (:363, one
+%% line reworded in place, line count unchanged); no node cites a line in it.
 %% Every node cites the command file's own line; files are named repo-relative
 %% here and by basename in the nodes (all under plugin/crew/commands/ unless
 %% named otherwise):

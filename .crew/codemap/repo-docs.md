@@ -1,5 +1,5 @@
 # repo-docs
-anchor: useful-claude-add-ons@8d447a7d
+anchor: useful-claude-add-ons@c35edda5
 verified: 2026-09-25
 
 ## Re-derive provenance
@@ -474,3 +474,15 @@ Re-verified per-path from `adf8d1dd` to `8d447a7d` for T-0008's review round 3: 
 move), `TODO.md` (two version strings at `:5000-5001`; the `render.sh` entry at `:1183` did not
 move), `CHANGELOG.md` (cited without a line) and
 `plugin/crew/hooks/scripts/crew_refresh_check.py` (cited by name only) changed.
+
+Re-verified per-path from `8d447a7d` to `c35edda5` for T-0034. `8d447a7d` was rebase-merged to `main` as `95120430`; `git diff --name-only 8d447a7d 768a747a`
+returns only code-map, diagram, rule and graph files plus the crew 1.0.37 release bookkeeping, so
+`768a747a` stands in for it. `git diff --name-only 768a747a c35edda5` returns
+`.claude-plugin/marketplace.json`, `.gitattributes`, `CHANGELOG.md`, `plugin/PLUGINS.md`,
+`plugin/crew/.claude-plugin/plugin.json`, `plugin/crew/hooks/scripts/crew_refresh_check.py` and
+`plugin/crew/tests/test_completion_audit.py`. Of those this note cites
+`marketplace.json` (crew `version` only; the description is unchanged), `plugin/PLUGINS.md` (`:14`
+version row; `:17`'s Registers row unchanged and still `:17`), `CHANGELOG.md` (a 1.0.38 entry
+added under `[Unreleased]`; cited without a line) and `crew_refresh_check.py` (cited by name
+only). `test_completion_audit.py` is cited by name only, as a rule 23 test file, and still is one.
+`.gitattributes` is not cited. No citation moved.

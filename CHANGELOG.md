@@ -4,6 +4,17 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Fixed
+
+- **`crew` 1.0.38: T-0008 follow-up (T-0034).** Bumped `1.0.37 -> 1.0.38`.
+  `crew_refresh_check.py` uses `split("/", maxsplit=1)` (pylint C0207; same
+  result). `.gitattributes` pins `.crew/verify.json` to LF, so the
+  sabotage-anchor test in `test_refresh_check.py` matches on a Windows
+  `core.autocrlf=true` checkout; an existing Windows clone runs
+  `git add --renormalize .` once. `test_a_mode_change_with_the_same_content_is_a_change`
+  is skipped on Windows: NTFS has no mode bit git can see. Test and lint only;
+  no behaviour change.
+
 ### Added
 
 - **`crew` 1.0.37: the code maps, diagrams and code graph a ticket's changes

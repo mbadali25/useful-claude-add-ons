@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@8d447a7d
+anchor: useful-claude-add-ons@c35edda5
 verified: 2026-09-25
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -516,3 +516,24 @@ No command or suite was executed at this pass; rule 23's suite and `sabotage.py`
 - `crew_refresh_check.py`, `CHANGELOG.md`, `TODO.md` - cited by name only.
 
 No suite was executed by this note; the round-3 suite results live in the commit, not here.
+
+## Re-anchor provenance - `8d447a7d` -> `c35edda5`, 2026-09-25 (T-0034)
+
+`8d447a7d` was rebase-merged to `main` as `95120430`; `git diff --name-only 8d447a7d 768a747a`
+returns only code-map, diagram, rule and graph files plus the crew 1.0.37 release bookkeeping, so
+`768a747a` stands in for it. `git diff --name-only 768a747a c35edda5` returns
+`.claude-plugin/marketplace.json`, `.gitattributes`, `CHANGELOG.md`, `plugin/PLUGINS.md`,
+`plugin/crew/.claude-plugin/plugin.json`, `plugin/crew/hooks/scripts/crew_refresh_check.py` and
+`plugin/crew/tests/test_completion_audit.py`.
+
+- `marketplace.json` - `:218` is still crew's `version` (now 1.0.38); still a rule 0 path.
+- `crew_refresh_check.py` - one line reworded in place at `:363`; cited by name only.
+- `test_completion_audit.py` - one `skipif` line added at `:375`, above
+  `test_a_mode_change_with_the_same_content_is_a_change` (skipped when `os.name == "nt"`); cited
+  by name only, as a rule 23 test file. `.crew/verify.json` did not change, so rule 23's paths,
+  `run` and `seconds` stand.
+- `CHANGELOG.md` - a 1.0.38 entry added at the top; the 1.0.21 descoping entry is still there.
+- `.gitattributes` - three lines added (`.crew/verify.json text eol=lf` and its comment); not
+  cited by this note.
+
+No suite was executed by this note.

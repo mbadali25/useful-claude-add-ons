@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@8d447a7d
+anchor: useful-claude-add-ons@c35edda5
 verified: 2026-09-25
 
 ## Re-derive provenance
@@ -23,8 +23,9 @@ agent/command prose beyond their frontmatter and the sections cited below;
 `webtest_scaffold.py`; `crew_change.py`, `crew_incident.py`,
 `crew_platform.py`; any `.ps1` file's body past its `Resolve-CrewPython`
 definition; any test file's contents (existence and size only).
-Re-verified per-path from `f2bb919b` to `adf8d1dd` for T-0008, and from
-`adf8d1dd` to `8d447a7d` for its review round 3; see the last two sections.
+Re-verified per-path from `f2bb919b` to `adf8d1dd` for T-0008, from
+`adf8d1dd` to `8d447a7d` for its review round 3, and to `c35edda5` for
+T-0034; see the last three sections.
 
 # crew
 
@@ -712,3 +713,25 @@ citation into them was re-read with `grep -n`:
 - `process-crew-lifecycle.mmd` - the "all three or nothing" sentence was already false after
   `b7b02842`; corrected above (review round 3 NIT).
 - `INDEX.md`, the two test files - cited by name only.
+
+## Re-anchor provenance - `8d447a7d` -> `c35edda5`, 2026-09-25 (T-0034)
+
+`8d447a7d` was rebase-merged to `main` as `95120430`; `git diff --name-only 8d447a7d 768a747a`
+returns only code-map, diagram, rule and graph files plus the crew 1.0.37 release bookkeeping, so
+`768a747a` stands in for it. `git diff --name-only 768a747a c35edda5` returns
+`.claude-plugin/marketplace.json`, `.gitattributes`, `CHANGELOG.md`, `plugin/PLUGINS.md`,
+`plugin/crew/.claude-plugin/plugin.json`, `plugin/crew/hooks/scripts/crew_refresh_check.py` and
+`plugin/crew/tests/test_completion_audit.py`. This note cites `marketplace.json` and `crew_refresh_check.py` of those; each citation was
+re-read with `grep -n`/`sed -n`:
+
+- `crew_refresh_check.py` - `:363` reworded in place (`rel.split("/", maxsplit=1)[0]`, pylint
+  C0207, same result), line count unchanged. `:1-8`, `:152-154`, `:168-173`, `:181`,
+  `_named_behind` `:537`, `_unconfirmed` `:554`, `ticket_freshness` `:576` and `main()` `:676`
+  all hold.
+- `marketplace.json` - crew `version` `:218` (now 1.0.38) only; `:217`'s 4/34/29 counts are
+  unchanged.
+- `.gitattributes`, `test_completion_audit.py` - not cited by this note.
+
+`crew_upgrade.py --root . --derived <one-entry json> --force` printed `not a crew repo`: this
+worktree has no `.crew/config.json`, so it reconciled nothing and wrote nothing. This pass is the
+per-path re-verify above, re-anchored by hand.
