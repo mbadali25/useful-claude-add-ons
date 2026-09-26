@@ -6,9 +6,9 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
-- **`crew` 1.0.36: the code maps, diagrams and code graph a ticket's changes
+- **`crew` 1.0.37: the code maps, diagrams and code graph a ticket's changes
   reach must be current before `/crew:done` (T-0008).** Bumped
-  `1.0.35 -> 1.0.36`. New read-only
+  `1.0.35 -> 1.0.37`. New read-only
   `hooks/scripts/crew_refresh_check.py --root . --ticket <id> [--json]`
   answers per artifact `fresh`, `stale` (naming `/crew:onboard --refresh
   <subsystem>`, `/crew:diagram refresh`, or for the graph `graphify update .`
