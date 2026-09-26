@@ -1,6 +1,6 @@
 # repo-docs
-anchor: useful-claude-add-ons@c35edda5
-verified: 2026-09-25
+anchor: useful-claude-add-ons@7b667587
+verified: 2026-09-26
 
 ## Re-derive provenance
 
@@ -130,8 +130,9 @@ listing the directory.
   diff). Both provenance shapes are still accepted by `_DIAGRAM_ANCHOR_RE`.
 - `docs/diagrams/data-flow-crew-config.mmd:1-2`, `process-crew-brief.mmd:1`
   and `process-crew-lifecycle.mmd:1` - the three crew diagrams, each on the
-  `%% Generated from <repo>@<sha> on <date>.` form, all at `f2bb919b` after
-  T-0015. `data-flow-crew-config` was redrawn for crew 1.0 at `6c497a14`
+  `%% Generated from <repo>@<sha> on <date>.` form, all at `7b667587` after
+  T-0021 (which added `crew_tracker.py` to each one's `%% Anchors:` line and
+  drew the tracker calls into the lifecycle). `data-flow-crew-config` was redrawn for crew 1.0 at `6c497a14`
   (`5e937837`, the refresh branch) and re-anchored, its `%% Anchors:` paths
   unchanged in `6c497a14..f2bb919b`. `process-crew-brief` was **redrawn**:
   at `6c497a14` it still drew the 0.20 PM brief through `pm_brief.py` /
@@ -287,7 +288,7 @@ listing the directory.
 - **`docs/runbooks/INDEX.md` still does not exist.** `docs/runbooks/`
   contains `rollback.md` alone (re-confirmed by `ls`).
   `plugin/crew/skills/crew-runbooks/SKILL.md:80` and
-  `plugin/crew/README.md:1728` (`:1725` at `f2bb919b`, `:1604` before that,
+  `plugin/crew/README.md:1762` (`:1728` at `c35edda5`, `:1725` at `f2bb919b`, `:1604` before that,
   that file having changed in each range — re-grepped, not offset) both still describe
   `docs/runbooks/INDEX.md` as a symptom-keyed index that would live there.
   JUDGEMENT, unchanged: costs nothing with one runbook, becomes a real gap at
@@ -486,3 +487,13 @@ version row; `:17`'s Registers row unchanged and still `:17`), `CHANGELOG.md` (a
 added under `[Unreleased]`; cited without a line) and `crew_refresh_check.py` (cited by name
 only). `test_completion_audit.py` is cited by name only, as a rule 23 test file, and still is one.
 `.gitattributes` is not cited. No citation moved.
+
+Re-verified per-path from `c35edda5` to `7b667587` for T-0021. `git diff --name-only c35edda5
+7b667587` returns T-0034's refresh (`5c59395d`: code maps, `.claude/rules/`, the lifecycle
+diagram, `graphify-out/`) and T-0021's code, prose and release files. Of those this note cites
+`plugin/crew/README.md` (section 13c rewritten, +34 lines, so the runbook-index citation moved
+`:1728` -> `:1762`, re-grepped), the three crew diagrams (re-anchored to `7b667587`, above),
+`.crew/verify.json` (one rule appended; cited without a line), `CHANGELOG.md` (a 1.0.46 entry
+under `[Unreleased]`), `TODO.md` (T-0021 follow-ups appended at the end; `:1183` holds),
+`plugin/PLUGINS.md` (`:14` version row; `:17` unchanged) and `marketplace.json` (crew `version`
+only). The root `README.md` citations (`:12`, `:46`, `:736`) are to a file not in the diff.

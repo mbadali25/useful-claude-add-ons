@@ -1,5 +1,5 @@
-%% Generated from useful-claude-add-ons@c35edda5 on 2026-09-25. Verify before trusting.
-%% Anchors: plugin/crew/commands/brainstorm.md, plugin/crew/commands/spec.md, plugin/crew/commands/plan.md, plugin/crew/commands/approve.md, plugin/crew/commands/implement.md, plugin/crew/commands/review.md, plugin/crew/commands/done.md, plugin/crew/commands/fix.md, plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/crew_ticket.py, plugin/crew/hooks/scripts/completion_audit.py, plugin/crew/hooks/scripts/crew_refresh_check.py
+%% Generated from useful-claude-add-ons@7b667587 on 2026-09-26. Verify before trusting.
+%% Anchors: plugin/crew/commands/brainstorm.md, plugin/crew/commands/spec.md, plugin/crew/commands/plan.md, plugin/crew/commands/approve.md, plugin/crew/commands/implement.md, plugin/crew/commands/review.md, plugin/crew/commands/done.md, plugin/crew/commands/fix.md, plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/crew_ticket.py, plugin/crew/hooks/scripts/completion_audit.py, plugin/crew/hooks/scripts/crew_refresh_check.py, plugin/crew/hooks/scripts/crew_tracker.py
 %% The crew 1.0 ticket lifecycle: brainstorm -> spec -> plan -> approve -> implement -> refresh artifacts -> review -> done.
 %% --
 %% NEW in T-0015. Drawn from the command files themselves, each read in full at
@@ -14,31 +14,42 @@
 %% Re-anchored for T-0034 at c35edda5: 8d447a7d was rebase-merged as 95120430, and
 %% of the anchored paths only crew_refresh_check.py changed after it (:363, one
 %% line reworded in place, line count unchanged); no node cites a line in it.
+%% Re-drawn for T-0021 at 7b667587: brainstorm, spec, plan, implement, done and fix
+%% now move the tracker through crew_tracker.py at each transition (INDEX row, and
+%% for Obsidian the board card; Jira/SDP delegated to their sync command). Every
+%% command-file line below was re-mapped with `git diff -U0 c35edda5 7b667587` and
+%% the moved or rewritten ones re-read; crew_tracker.py is cited by name only. A
+%% failed tracker write (exit 1) never undoes the transition it follows.
 %% Every node cites the command file's own line; files are named repo-relative
 %% here and by basename in the nodes (all under plugin/crew/commands/ unless
 %% named otherwise):
-%%   plugin/crew/commands/brainstorm.md:15-30 mint ticket, INDEX row `direction` (:25);
-%%     :35 one question per message; :44 propose 2-3 options; :53-61 direction.md;
-%%     :63 show and stop; :68 INDEX -> `ready`; :72-73 suggest /crew:fix when small.
+%%   plugin/crew/commands/brainstorm.md:15-39 mint ticket: crew_tracker.py resolve (:22),
+%%     then crew_tracker.py create (:29) - INDEX row `direction`, Obsidian card + note;
+%%     :44 one question per message; :53 propose 2-3 options; :62-70 direction.md;
+%%     :72 show and stop; :77 INDEX -> `ready`; :81-82 suggest /crew:fix when small.
 %%   plugin/crew/commands/spec.md:10 refuses without direction.md; :15 writes spec.md;
-%%     :38-43 Touch feeds the scope guard, one path per bullet; :45 INDEX -> `spec`;
+%%     :38-43 Touch feeds the scope guard, one path per bullet; :45-48
+%%     crew_tracker.py move --to spec;
 %%     :49 plan/implement/review/done all refuse without spec.md; :57 amending
 %%     scope needs a fresh plan approval.
 %%   plugin/crew/commands/plan.md:16 refuses without spec.md; :22 optional second
 %%     opinion; :27 writes plan.md; :43 self-review (every Files: inside Touch);
 %%     :48 show and stop; :54 ask the user to type /crew:approve, never run
-%%     crew_ticket.py approve; :59 plan.md header `status: planned`.
+%%     crew_ticket.py approve; :59-60 plan.md header `status: planned`, then
+%%     crew_tracker.py move --to planned.
 %%   plugin/crew/commands/approve.md:5 disable-model-invocation; :9 the
 %%     UserPromptSubmit approval_hook decides before the model reads anything;
 %%     :12 recorded -> approval.json bound to sha256 of spec.md AND plan.md;
 %%     :15 refused -> prompt blocked. Hook registered at
 %%     plugin/crew/hooks/hooks.json:14 (approval-hook.sh, UserPromptSubmit).
 %%   plugin/crew/commands/implement.md:15-18 refuses unless `crew_ticket.py validate`
-%%     reports the plan approved; :31 scope_base --record; :37 steps in order,
-%%     test first; :55 changed-file list; :65 verify; :85-104 step 6: tests,
-%%     then docs, then crew_refresh_check.py (:92) and the commands its lines
-%%     name, committed, until `fresh` or a `stop`; then /crew:review last;
-%%     :106-108 step 7, AFTER the review: spec.md header `status: review`.
+%%     reports the plan approved; :31 scope_base --record, then crew_tracker.py
+%%     move --to in-progress (:36); :40 steps in order, test first; :58
+%%     changed-file list; :68 verify; :88-107 step 6: tests, then docs, then
+%%     crew_refresh_check.py (:95) and the commands its lines name, committed,
+%%     until `fresh` or a `stop`; then /crew:review last; :109-112 step 7,
+%%     AFTER the review: spec.md header `status: review`, then crew_tracker.py
+%%     move --to review (:111).
 %%     Scope guard: plugin/crew/hooks/hooks.json:31 (scope-guard.sh, PreToolUse).
 %%   plugin/crew/commands/review.md:25-29 two rounds per ticket, a third is refused
 %%     -> NEEDS_REPLAN; :440 exit codes 0 CLEAN / 1 FINDINGS / 3 INCOMPLETE /
@@ -49,40 +60,43 @@
 %%     review receipt (--check-receipt); :21-27 check 2 verify gate via
 %%     crew_status.py; :35-38 check 3 completion audit; :46-57 check 4
 %%     crew_refresh_check.py (:49), read-only, refuses on stale/unknown and never
-%%     refreshes; :59-61 all pass -> spec.md `status: done`; :69 crew_metrics record.
+%%     refreshes; :59-64 all pass -> spec.md `status: done`, then crew_tracker.py
+%%     move --to done (:62); :69 crew_metrics record.
 %%     Stop hooks: plugin/crew/hooks/hooks.json:58 (verify-gate.sh), :62 (completion-audit.sh).
 %%   plugin/crew/commands/fix.md:2 the light path - every phase, each compressed
-%%     to one step; :64 one-step plan, still /crew:approve; :78 one review round.
+%%     to one step; :28 crew_tracker.py create, :69 --to spec, :77 --to planned,
+%%     :84-85 --to in-progress / --to review; :71 one-step plan, still
+%%     /crew:approve; :87 one review round.
 %% --
 %% Dashed '?' edges: traced from source, NOT executed. The approval receipt
 %% hashes spec.md and plan.md whole (plugin/crew/hooks/scripts/crew_ticket.py:501-509,
 %% any byte change -> `stale`), and the completion audit refuses to judge scope
 %% on anything but `approved` (plugin/crew/hooks/scripts/completion_audit.py:204-215).
 %% Yet three steps edit a status header in one of those files AFTER approval:
-%% plan.md:59 (`status: planned`), implement.md:108 (`status: review`) and
+%% plan.md:59 (`status: planned`), implement.md:110 (`status: review`) and
 %% done.md:61 (`status: done`). Each would leave the receipt stale. The done.md
 %% case was seen live on 2026-09-25 (crew_metrics reported "spec.md changed
 %% since approval"); the other two are inferred from the same hash, not observed.
 flowchart TB
     ask([A request])
-    ask --> small{"small? one subsystem, known cause,<br/>no new behaviour, no auth/SQL/IaC<br/>brainstorm.md:72-73"}
-    small -- yes --> fix["/crew:fix - same phases,<br/>one step each, one review round<br/>fix.md:2, :64, :78"]
+    ask --> small{"small? one subsystem, known cause,<br/>no new behaviour, no auth/SQL/IaC<br/>brainstorm.md:81-82"}
+    small -- yes --> fix["/crew:fix - same phases,<br/>one step each, one review round<br/>fix.md:2, :71, :87"]
     small -- no --> BR
 
     subgraph brainstorm["/crew:brainstorm"]
-        BR["mint T-####, INDEX row 'direction'<br/>brainstorm.md:15-30"] --> br2["one question per message,<br/>then 2-3 options, recommendation first<br/>:35, :44"]
-        br2 --> br3["write direction.md, show, STOP<br/>:53-63"]
+        BR["mint T-####: crew_tracker.py create<br/>INDEX row 'direction' (+ Obsidian card)<br/>brainstorm.md:15-39"] --> br2["one question per message,<br/>then 2-3 options, recommendation first<br/>:44, :53"]
+        br2 --> br3["write direction.md, show, STOP<br/>:62-72"]
     end
 
     br3 --> ok1{user approves<br/>the direction?}
     ok1 -- no --> br2
-    ok1 -- yes --> rdy["INDEX -> 'ready'<br/>brainstorm.md:68"]
+    ok1 -- yes --> rdy["INDEX -> 'ready'<br/>brainstorm.md:77"]
 
     subgraph spec["/crew:spec"]
         rdy --> sp1{"direction.md?<br/>spec.md:10"}
         sp1 -- missing --> spx([refuse: run /crew:brainstorm])
         sp1 -- yes --> sp2["write spec.md: Intent, Exclusions, Evidence,<br/>Unknowns, Touch, Acceptance checks<br/>:15; Touch one path per bullet :38-43"]
-        sp2 --> sp3["INDEX -> 'spec'<br/>:45"]
+        sp2 --> sp3["crew_tracker.py move --to spec<br/>(INDEX, board -> Ready)<br/>:45-48"]
     end
 
     subgraph plan["/crew:plan"]
@@ -100,20 +114,20 @@ flowchart TB
         ap1 -- recorded --> ap2["approval.json = sha256(spec.md, plan.md)<br/>approved_via user-prompt<br/>:12"]
     end
 
-    ap2 --> planned["plan.md header 'status: planned'<br/>plan.md:59"]
+    ap2 --> planned["plan.md header 'status: planned',<br/>crew_tracker.py move --to planned<br/>plan.md:59-60"]
 
     subgraph implement["/crew:implement"]
         planned --> im0{"crew_ticket.py validate:<br/>plan approved?<br/>implement.md:15-18"}
         im0 -- "no / stale" --> imx([refuse: /crew:plan id --approve])
-        im0 -- yes --> im1["scope_base --record<br/>:31"]
-        im1 --> im2["steps in order, test first<br/>:37; scope-guard on every write<br/>hooks.json:31 (PreToolUse, Touch)"]
-        im2 --> im3a["changed-file list, verify<br/>:55, :65"]
-        im3a --> im3["step 6: tests, then /crew:docs<br/>:85-90"]
-        im3 --> rf1{"crew_refresh_check.py<br/>:92"}
+        im0 -- yes --> im1["scope_base --record, then<br/>crew_tracker.py move --to in-progress<br/>:31, :36"]
+        im1 --> im2["steps in order, test first<br/>:40; scope-guard on every write<br/>hooks.json:31 (PreToolUse, Touch)"]
+        im2 --> im3a["changed-file list, verify<br/>:58, :68"]
+        im3a --> im3["step 6: tests, then /crew:docs<br/>:88-93"]
+        im3 --> rf1{"crew_refresh_check.py<br/>:95"}
         rf1 -- "refresh with ..." --> rf2["run the named refresh,<br/>commit, re-run"]
         rf2 --> rf1
         rf1 -- "stop" --> rfx([report the reason, stop])
-        rf1 -- fresh --> im5["then /crew:review last<br/>:102-104"]
+        rf1 -- fresh --> im5["then /crew:review last<br/>:105-107"]
     end
 
     subgraph review["/crew:review - two rounds per ticket"]
@@ -127,14 +141,14 @@ flowchart TB
         rv2 -- "third round refused" --> replan([NEEDS_REPLAN:<br/>back to /crew:plan])
     end
 
-    rcpt --> im4["implement.md step 7, after the review:<br/>spec.md header 'status: review'<br/>implement.md:106-108"]
+    rcpt --> im4["implement.md step 7, after the review:<br/>spec.md header 'status: review',<br/>crew_tracker.py move --to review<br/>implement.md:109-112"]
 
     subgraph done["/crew:done - all four or nothing<br/>done.md:7"]
         im4 --> dn1{"1 review receipt<br/>--check-receipt<br/>done.md:10-13"}
         dn1 -- pass --> dn2{"2 verify gate all pass<br/>crew_status.py<br/>:21-27"}
         dn2 -- pass --> dn3{"3 completion audit<br/>:35-38"}
         dn3 -- pass --> dn5{"4 artifacts current<br/>crew_refresh_check.py, read-only<br/>:46-57"}
-        dn5 -- fresh --> dn4["spec.md 'status: done', INDEX,<br/>crew_metrics record<br/>:59-69"]
+        dn5 -- fresh --> dn4["spec.md 'status: done',<br/>crew_tracker.py move --to done,<br/>crew_metrics record<br/>:59-69"]
         dn1 -- fail --> dnx([refuse done])
         dn2 -- fail --> dnx
         dn3 -- fail --> dnx

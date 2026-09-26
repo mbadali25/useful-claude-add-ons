@@ -1,5 +1,5 @@
-anchor: useful-claude-add-ons@c35edda5
-verified: 2026-09-25
+anchor: useful-claude-add-ons@7b667587
+verified: 2026-09-26
 
 ## Re-derive provenance
 
@@ -24,8 +24,8 @@ agent/command prose beyond their frontmatter and the sections cited below;
 `crew_platform.py`; any `.ps1` file's body past its `Resolve-CrewPython`
 definition; any test file's contents (existence and size only).
 Re-verified per-path from `f2bb919b` to `adf8d1dd` for T-0008, from
-`adf8d1dd` to `8d447a7d` for its review round 3, and to `c35edda5` for
-T-0034; see the last three sections.
+`adf8d1dd` to `8d447a7d` for its review round 3, to `c35edda5` for
+T-0034, and to `7b667587` for T-0021; see the last four sections.
 
 # crew
 
@@ -470,6 +470,45 @@ fails `--check`. `.crew/verify.json` rule 22 (`.crew/verify.json:244`) runs `--c
 gate** - see `verification-harness.md`. DERIVED from the source above; the command was run by
 T-0015 against this refresh.
 
+## The tracker interface (T-0021, crew 1.0.46)
+
+DERIVED at `7b667587`. `plugin/crew/hooks/scripts/crew_tracker.py` is the one
+module that writes a tracker, and the only crew code that writes outside the
+repository (an Obsidian vault). A CLI the commands call, not a hook.
+
+- `resolve` (`:150`) reads BOTH config shapes - `.crew/crew.json`
+  `tracker.kind` and `.crew/config.json` `tracker` (`_side`, `:113`) - and
+  answers `could not tell` when both state a kind and they differ, or agree on
+  the kind but not its settings block; `not configured` when neither states
+  one. Every write refuses on `could not tell` (`_gate`, `:205`).
+- Status -> lane is the table `LANE_FOR_STATUS` (`:67`); a status absent from
+  it is refused with nothing written (`move`, `:763`).
+- Files backend: the `.work/INDEX.md` row whose id cell matches exactly
+  (`_files_create` `:326`, `_files_move` `:347`, `_files_read` `:369`).
+  Obsidian = files + the board (`_obsidian_create` `:688`, `_obsidian_move`
+  `:706`, `_obsidian_read` `:726`); Jira/SDP answer `delegated` with the sync
+  command (`_delegated`, `:742`); CLI exit codes 0/1/3/2 (`exit_code` `:199`,
+  `main` `:814`).
+- Every write goes through `_atomic_update` (`:234`): temp file, re-read the
+  target (`:255`), `os.replace`, at most `WRITE_TRIES` (`:83`) recomputes.
+- Vault confinement is `_vault_paths` (`:594`): realpath, `.obsidian/`
+  required, relative `boardDir` without `..`, bare `board`, `commonpath`
+  inside the vault (`:620`), and an in-worktree vault only when
+  `git check-ignore` says ignored (`:626`). It runs before either half writes.
+- The board is edited, never regenerated: `parse_board` (`:437`),
+  `find_card` (`:488`; a card is the first id on its first line),
+  `move_card` (`:536`), `add_card` (`:560`). The ticket note is an exclusive
+  create (`:679`).
+- Called by `brainstorm.md:29`, `spec.md:46`, `plan.md:60`,
+  `implement.md:36` and `:112`, `done.md:62` and `fix.md:28`, `:69`, `:77`,
+  `:84-85` (all under `plugin/crew/commands/`); `crew_status.py` prints its
+  tracker line from `resolve` (`plugin/crew/hooks/scripts/crew_status.py:63`).
+- Tests: `plugin/crew/tests/test_crew_tracker.py`, fixtures under
+  `plugin/crew/tests/tracker_fixtures/`, 24 mutations in
+  `plugin/crew/tests/sabotage_tracker.py`; one `.crew/verify.json` rule
+  (`:262-269`). JUDGEMENT: the Kanban plugin's acceptance of the edited board
+  was checked by byte comparison only, never by opening Obsidian.
+
 ## The artifact refresh check (T-0008, crew 1.0.36)
 
 `plugin/crew/hooks/scripts/crew_refresh_check.py` answers one read-only
@@ -487,8 +526,8 @@ whole answer `unknown`, and every artifact measured against that base with it
 commands call, not a hook - `plugin/crew/hooks/hooks.json` is unchanged since
 `f2bb919b`.
 
-- `/crew:implement` step 6 (`plugin/crew/commands/implement.md:85-104`) runs
-  it after `/crew:docs` and before `/crew:review` (`:92`), runs each named
+- `/crew:implement` step 6 (`plugin/crew/commands/implement.md:88-107`) runs
+  it after `/crew:docs` and before `/crew:review` (`:95`), runs each named
   refresh, commits, and re-runs until `fresh`; a `stop` ends the loop.
 - `/crew:done` Check 4 (`plugin/crew/commands/done.md:46-57`) runs it again
   and refuses on `stale` or `unknown` without refreshing (`:52-55`).
@@ -735,3 +774,19 @@ re-read with `grep -n`/`sed -n`:
 `crew_upgrade.py --root . --derived <one-entry json> --force` printed `not a crew repo`: this
 worktree has no `.crew/config.json`, so it reconciled nothing and wrote nothing. This pass is the
 per-path re-verify above, re-anchored by hand.
+
+## Re-anchor provenance - `c35edda5` -> `7b667587`, 2026-09-26 (T-0021)
+
+`git diff --name-only c35edda5 7b667587` returns T-0021's code, prose and release files (listed in
+its commits). This note cites five of them with a line; each was re-read with `grep -n`/`sed -n`:
+
+- `implement.md` - the tracker call added to step 1 moved step 6 `:85-104` -> `:88-107` and its
+  review line `:92` -> `:95`. `:8-9` holds.
+- `.crew/verify.json` - one rule appended after rule 23 (now `:262-269`); rule 22 `:244` and rule
+  23 `:245-261` hold (only its closing line gained a comma).
+- `spec.md:7-8`, `plan.md:8-9`, `done.md:7-8` and `:46-57`, `fix.md:2` - above every T-0021 edit;
+  hold.
+- `marketplace.json:217` - the counts line, unchanged; crew's version (`:218`) is now 1.0.46.
+- `TODO.md:3945` - T-0021 appended at the end of the file; holds.
+
+New this pass: the "tracker interface" section above, read from source at `7b667587`.
