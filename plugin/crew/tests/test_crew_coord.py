@@ -1436,21 +1436,25 @@ def test_recover_on_windows_refuses_access_denied(capsys, monkeypatch, wt, remot
     _assert_presented_not_adopted(code, out, remote, "pid 4242 is alive")
 
 
-def test_recover_passes_the_parsed_ticket_to_the_heartbeat(capsys, monkeypatch, wt, remote, spawned):
-    _set_origin(wt, "git@example.test:owner/a_.git")
+def test_recover_passes_the_parsed_ticket_to_the_heartbeat(capsys, monkeypatch, tmp_path, remote, spawned):
+    """A key's repo half can end in '_' only through the directory-name
+    fallback (a derived origin key never holds a bare '_'), so the key
+    `a___T-1` is what re-splitting at the first '__' gets wrong."""
+    root = _clone(tmp_path, remote, "a_")
+    git(root, "remote", "rename", "origin", "upstream")
+    argv_of = ["--root", str(root), "--remote", "upstream", "--channel", CHANNEL, "--ticket", "a_:T-1"]
     _session(monkeypatch, "sess-old", pid=_dead_pid())
     with monkeypatch.context() as patch:
         patch.setattr(crew_coord, "holder_pidns", lambda _pid: crew_coord.pid_namespace())
-        assert _run(capsys, wt, "claim", ticket="example_2etest.owner.a_5f:T-1")[0] == 0
+        assert crew_coord.main(["claim"] + argv_of + ["--no-heartbeat"]) == 0, capsys.readouterr().out
     _shift_clock(monkeypatch, 31)
     _session(monkeypatch, "sess-new", pid=os.getpid())
 
-    code = crew_coord.main(["recover", "--root", str(wt), "--remote", "origin", "--channel", CHANNEL,
-                            "--ticket", "example_2etest.owner.a_5f:T-1"])
+    code = crew_coord.main(["recover"] + argv_of)
 
     assert code == 0, capsys.readouterr().out
     [(argv, _)] = spawned
-    assert argv[argv.index("--ticket") + 1] == "example_2etest.owner.a_5f:T-1"
+    assert argv[argv.index("--ticket") + 1] == "a_:T-1"
 
 
 def test_recover_retry_that_finds_itself_holding_records_the_identity(capsys, monkeypatch, wt, remote):
