@@ -1987,6 +1987,7 @@ S9_MUST_ALLOW = _normalise([
      _o(**_STAGING)),
 ])
 
+_TAINT = "taint aws_instance.a"
 S9_MUST_BLOCK = _normalise([
     # The thirteen the plan names.
     ("s9-quoted-name", "Bash", '"terraform" destroy', _gate()),
@@ -2051,13 +2052,15 @@ S9_MUST_BLOCK = _normalise([
      _gate()),
     ("s9-eval-variable", "Bash", f'eval "$PREFIX" terraform {_ADESTROY}',
      _gate()),
-    # Rows for one branch each: a verb-less `plan` behind a wrapper or a
+    # Rows for one branch each: a verb-less subcommand behind a wrapper or a
     # redirection, which the argument-pair fallback does not catch, so only
     # that branch gates it; a delimiter bash and a naive dequote end apart;
     # an expansion glued to the name where the reader gives up; a short glob.
-    ("s9-env-quoted-plan", "Bash", 'env -i "terraform" plan', _gate()),
-    ("s9-redirect-plan", "Bash", '>out.log "terraform" plan', _gate()),
-    ("s9-fd-redirect-plan", "Bash", '2>/dev/null "terraform" plan', _gate()),
+    # (`taint` since round 5: `plan` is read-only and no longer gated.)
+    ("s9-env-quoted-plan", "Bash", f'env -i "terraform" {_TAINT}', _gate()),
+    ("s9-redirect-plan", "Bash", f'>out.log "terraform" {_TAINT}', _gate()),
+    ("s9-fd-redirect-plan", "Bash", f'2>/dev/null "terraform" {_TAINT}',
+     _gate()),
     ("s9-heredoc-backslash-quoted-delim", "Bash",
      f"cat <<'E\\OF'\nE\\OF\n\"terraform\" {_ADESTROY}\nEOF", _gate()),
     ("s9-backquote-empty-prefix", "Bash",
@@ -2097,3 +2100,215 @@ def test_command_word_tables_are_distinct():
     ids = _ids(MUST_BLOCK_LITERAL + MUST_ALLOW_LITERAL + ASK_LITERAL
                + NOW_NOT_LITERAL + S9_MUST_ALLOW + S9_MUST_BLOCK)
     assert len(ids) == len(set(ids))
+
+
+# --- Review round 5 (kF0AM1): lines the lexer does not follow, and read-only
+# subcommands --------------------------------------------------------------
+#
+# Round 5 found two ways the gate's answer was thrown away. A line of plain
+# words that runs terraform where the lexer does not look -- an alias, `hash
+# -p`, a copied or linked binary, zsh's `=terraform`, a wrapper `_unwrap` does
+# not strip, PowerShell's `Set-Alias` or `Start-Process` -- was handed to the
+# lexer, which saw no terraform and allowed it. Such a command is now UNSEEN,
+# and an unseen command makes the line "could not tell" even when every word
+# is plain. And the other way: a read-only subcommand (`plan`, `show`,
+# `output`, `fmt`, ...) and a data command's arguments (`cp -r terraform
+# "$BACKUP_DIR"`) are no longer gated for their quoting, as before Step 8.
+#
+# Every must-block row is built so that the value the old reading collapsed
+# to is ALLOW (measured at eae90e9b): the clean staging plan, summary and
+# workspace file, under `ask`, unattended.
+UNSEEN_WHY = "does not follow"
+
+
+def _unseen(**kw):
+    return _o(**{**_STAGING, "why": UNSEEN_WHY, **kw})
+
+
+R5_MUST_BLOCK = _normalise([
+    # BLOCK 1: the gate named the line, the lexer could not follow it.
+    ("r5-hash-p", "Bash",
+     f"hash -p /usr/bin/terraform ls; ls {_ADESTROY}", _unseen()),
+    ("r5-alias", "Bash",
+     f"shopt -s expand_aliases\nalias tf=terraform\ntf {_ADESTROY}",
+     _unseen()),
+    ("r5-alias-tofu-ws-delete", "Bash",
+     "shopt -s expand_aliases\nalias tf=tofu\ntf workspace delete "
+     "production", _unseen()),
+    ("r5-ln-dot-slash", "Bash",
+     f"ln -sf /usr/bin/terraform tf && ./tf {_ADESTROY}", _unseen()),
+    # Neighbours: a copy under a data command's name, run from a PATH the
+    # line sets; and a followed apply beside an unseen destroy, which a
+    # line-wide "the lexer found a terraform command" check would pass.
+    ("r5-cp-bare-name", "Bash",
+     f"cp /usr/bin/terraform ./ls && PATH=.:/usr/bin ls {_ADESTROY}",
+     _unseen()),
+    ("r5-seen-apply-beside-unseen", "Bash",
+     f"terraform apply {PLAN} && strace -f terraform destroy", _unseen()),
+    ("r5-zsh-copy-bare-name", "Bash",
+     f"cp =terraform ./ls && PATH=.:/usr/bin ls {_ADESTROY}", _unseen()),
+    ("r5-sudo-ln-path", "Bash",
+     f"sudo ln -s /usr/bin/terraform /usr/local/bin/tf; tf {_ADESTROY}",
+     _unseen()),
+    ("r5-container-image", "Bash",
+     f"docker run --rm hashicorp/terraform:1.9 {_ADESTROY}", _unseen()),
+    # FIX 1: wrappers the lexer does not strip.
+    ("r5-flock", "Bash", "flock /tmp/l terraform destroy", _unseen()),
+    ("r5-strace", "Bash", "strace -f terraform destroy", _unseen()),
+    ("r5-aws-vault", "Bash", "aws-vault exec p -- terraform destroy",
+     _unseen()),
+    ("r5-unbuffer", "Bash", "unbuffer terraform destroy", _unseen()),
+    ("r5-systemd-run", "Bash", "systemd-run terraform destroy", _unseen()),
+    # FIX 4: zsh's `=terraform`, as the command word and behind wrappers.
+    ("r5-zsh-equals", "Bash", f"=terraform {_ADESTROY}", _unseen()),
+    ("r5-zsh-equals-tofu-ws-delete", "Bash",
+     "=tofu workspace delete production", _unseen()),
+    ("r5-zsh-equals-env", "Bash", "env =terraform destroy", _unseen()),
+    ("r5-zsh-equals-strace", "Bash", "strace =terraform destroy", _unseen()),
+    # With no verb on the line only the command-word branches gate these:
+    # a read-only-or-not subcommand crew does not judge, behind a name only
+    # zsh or a brace list makes.
+    ("r5-zsh-equals-taint", "Bash", f"=terraform {_TAINT}", _unseen()),
+    ("r5-brace-name-taint", "Bash", f"t{{erraform,x}} {_TAINT}", _gate()),
+    # BLOCK 2: PowerShell aliases and launchers.
+    ("r5-ps-set-alias", "PowerShell", "Set-Alias tf terraform; tf destroy",
+     _unseen()),
+    ("r5-ps-new-alias", "PowerShell", "New-Alias tf terraform; tf destroy",
+     _unseen()),
+    ("r5-ps-sal", "PowerShell", "sal tf terraform; tf destroy", _unseen()),
+    ("r5-ps-set-item-alias", "PowerShell",
+     "Set-Item alias:tf terraform; tf destroy", _unseen()),
+    ("r5-ps-ni-alias", "PowerShell",
+     "ni alias:tf -Value terraform; tf destroy", _unseen()),
+    ("r5-ps-start-process", "PowerShell", "Start-Process terraform destroy",
+     _unseen()),
+    ("r5-ps-saps", "PowerShell", "saps terraform destroy -Wait", _unseen()),
+    ("r5-ps-copied-binary", "PowerShell",
+     "Copy-Item /usr/bin/terraform ./tf; ./tf destroy", _unseen()),
+    ("r5-bash-pwsh-start-process", "Bash",
+     "pwsh -c Start-Process terraform destroy", _unseen()),
+    # FIX 2's neighbours: a subcommand spelled so it could be another one.
+    ("r5-xargs-replaced-subcommand", "Bash",
+     "echo destroy | xargs -I plan terraform plan -var 'x=1'", _gate()),
+    ("r5-terragrunt-option-before", "Bash",
+     "terragrunt --working-dir plan destroy -auto-approve "
+     '--terragrunt-log-level "info"', _gate()),
+    ("r5-find-exec-found-binary", "Bash",
+     "find . -name terraform -exec {} destroy ';'", _gate()),
+    # NIT 1: one row for each branch round 5 found no test for.
+    ("r5-busybox-shell", "Bash", 'busybox sh -c "terraform destroy"',
+     _gate()),
+    ("r5-pwsh-expansion-payload", "Bash", 'x=terraform; pwsh -c "$x destroy"',
+     _gate()),
+    ("r5-cr-heredoc-delimiter", "Bash",
+     f'cat <<EOF\nEOF\r\n"terraform" {_ADESTROY}\nEOF', _gate()),
+    ("r5-quoted-newline-before-body", "Bash",
+     f"cat <<EOF 'a\n\"terraform\" {_ADESTROY}\nEOF\n'\nEOF", _gate()),
+])
+
+R5_MUST_ALLOW = _normalise([
+    # FIX 2: read-only subcommands, quoted, under `ask` and `block`.
+    ("r5a-plan-var", "Bash", "terraform plan -var 'environment=staging'",
+     _o(**_STAGING)),
+    ("r5a-show-jq", "Bash",
+     "terraform show -json p.tfplan | jq '.resource_changes'",
+     _o(**_STAGING)),
+    ("r5a-output-raw", "Bash", 'terraform output -raw "db_url"',
+     _o(**_STAGING)),
+    ("r5a-plan-var-block", "Bash", "terraform plan -var 'environment=staging'",
+     _o(**_STAGING, **BLOCK_POLICY)),
+    ("r5a-show-jq-block", "Bash",
+     "terraform show -json p.tfplan | jq '.resource_changes'",
+     _o(**_STAGING, **BLOCK_POLICY)),
+    ("r5a-chdir-quoted", "Bash", 'terraform -chdir="envs/staging" plan',
+     _o(**_STAGING)),
+    ("r5a-init-backend", "Bash", 'terraform init -backend-config="key=$KEY"',
+     _o(**_STAGING)),
+    ("r5a-workspace-list-var", "Bash", 'terraform workspace list "$x"',
+     _o(**_STAGING)),
+    ("r5a-bash-c-plan", "Bash", "bash -c -- 'terraform plan'",
+     _o(**_STAGING)),
+    ("r5a-xargs-fmt-glob", "Bash", "ls *.tf | xargs terraform fmt",
+     _o(**_STAGING)),
+    ("r5a-terragrunt-plan-quoted", "Bash",
+     'terragrunt plan --terragrunt-log-level "info"', _o(**_STAGING)),
+    # FIX 3: data commands on a `terraform/` directory.
+    ("r5a-cp-dir", "Bash", 'cp -r terraform "$BACKUP_DIR"', _o(**_STAGING)),
+    ("r5a-mv-dir", "Bash", 'mv terraform "$HOME/old"', _o(**_STAGING)),
+    ("r5a-git-add", "Bash", 'git add terraform "$f"', _o(**_STAGING)),
+    ("r5a-ls-dir", "Bash", "ls terraform $HOME", _o(**_STAGING)),
+    ("r5a-find-dir", "Bash", "find terraform -name *.tf", _o(**_STAGING)),
+    ("r5a-echo-next", "Bash", 'echo Next: terraform apply in "$dir"',
+     _o(**_STAGING)),
+    ("r5a-find-exec-grep", "Bash",
+     "find . -name '*.tf' -exec grep -l terraform {} +", _o(**_STAGING)),
+    # The new unseen rule's edges: a script file, a sourced file, a data
+    # command whose operand is a verb.
+    ("r5a-bash-script-file", "Bash", "terraform fmt && bash build.sh",
+     _o(**_STAGING)),
+    ("r5a-source-then-plan", "Bash", "source .env && terraform plan",
+     _o(**_STAGING)),
+    ("r5a-git-apply", "Bash", "cd terraform && git apply fix.patch",
+     _o(**_STAGING)),
+    ("r5a-alias-other", "Bash", "alias ll=ls; terraform plan", _o(**_STAGING)),
+    ("r5a-hash-reset", "Bash", "hash -r; terraform plan", _o(**_STAGING)),
+    ("r5a-which", "Bash", "which terraform", _o(**_STAGING)),
+    ("r5a-container-plan", "Bash",
+     "docker run --rm -v /w:/w hashicorp/terraform:1.9 plan", _o(**_STAGING)),
+    ("r5a-ps-plan", "PowerShell", "Get-ChildItem; terraform plan",
+     _o(**_STAGING)),
+])
+
+
+@pytest.mark.parametrize("case", R5_MUST_BLOCK, ids=_ids(R5_MUST_BLOCK))
+def test_round5_must_block_python(tmp_path, case):
+    _deny("python", tmp_path, case)
+
+
+@pytest.mark.parametrize("case", _sample(
+    R5_MUST_BLOCK, ("r5-alias", "r5-flock"), (tcg.needs_bash,)))
+def test_round5_must_block_bash(tmp_path, case):
+    _deny("bash", tmp_path, case)
+
+
+@pytest.mark.parametrize("case", _sample(
+    R5_MUST_BLOCK, ("r5-ps-set-alias", "r5-ps-start-process"),
+    (tcg.needs_pwsh,)))
+def test_round5_must_block_pwsh(tmp_path, case):
+    _deny("pwsh", tmp_path, case)
+
+
+@pytest.mark.parametrize("case", R5_MUST_ALLOW, ids=_ids(R5_MUST_ALLOW))
+def test_round5_must_allow_python(tmp_path, case):
+    _allow_literal("python", tmp_path, case)
+
+
+@pytest.mark.parametrize("case", _sample(
+    R5_MUST_ALLOW, ("r5a-plan-var", "r5a-cp-dir"), (tcg.needs_bash,)))
+def test_round5_must_allow_bash(tmp_path, case):
+    _allow_literal("bash", tmp_path, case)
+
+
+@pytest.mark.parametrize("case", [
+    c for c in R5_MUST_BLOCK if c[3].get("why") == UNSEEN_WHY][:3],
+    ids=lambda c: c[0])
+def test_round5_unseen_asks_when_attended(tmp_path, case):
+    _ask("python", tmp_path, case)
+
+
+def test_round5_tables_are_distinct():
+    ids = _ids(MUST_BLOCK_LITERAL + MUST_ALLOW_LITERAL + ASK_LITERAL
+               + NOW_NOT_LITERAL + S9_MUST_ALLOW + S9_MUST_BLOCK
+               + R5_MUST_BLOCK + R5_MUST_ALLOW)
+    assert len(ids) == len(set(ids))
+
+
+def test_round5_unseen_reason_says_how_to_have_it_judged(tmp_path):
+    """An unseen line is plain words, so the reason must not tell the user
+    to 'spell it with plain words'; it names the way out that applies."""
+    case = next(c for c in R5_MUST_BLOCK if c[0] == "r5-flock")
+    _repo, result = _run("python", tmp_path, case)
+    decision, reason, code, err = result
+    assert (decision, code) == ("deny", 0), (reason, err)
+    assert "run terraform by its own name" in reason, reason
+    assert "plain words" not in reason, reason

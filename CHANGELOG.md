@@ -42,6 +42,29 @@ All notable changes to this repository are documented here. Format follows [Keep
   crew cannot split with certainty (a `case` arm, a function, a script piped
   into a shell, `ssh`, `source`) keeps the wider rule. PowerShell lines keep
   the wider rule too.
+- **A terraform command crew cannot follow is could not tell, however plainly
+  it is spelled.** An alias (`alias tf=terraform`, `hash -p`, PowerShell's
+  `Set-Alias`/`New-Alias`/`sal` and `alias:` drive), a copied or linked binary
+  run under another name (`ln -sf /usr/bin/terraform tf && ./tf destroy`), zsh's
+  `=terraform`, a container image (`hashicorp/terraform:1.9`), a wrapper crew
+  does not strip (`strace`, `flock`, `aws-vault exec`, `unbuffer`,
+  `systemd-run`, `find -exec`, `ssh`, `trap`) and PowerShell's
+  `Start-Process`/`saps`/`Invoke-Expression` are asked about when attended and
+  refused unattended and under `block` — before, a line of plain words was
+  handed to the parser, which could not see terraform in it, and a destroy ran
+  unattended. `ssh host terraform plan` is refused unattended too. The other
+  way, **a read-only subcommand is not gated for its quoting**:
+  `terraform|tofu plan`, `show`, `output`, `fmt`, `validate`, `init`,
+  `providers`, `graph`, `get`, `console`, `version`, `workspace list|show` and
+  `state list|show|pull` — first after `-chdir=` options (terragrunt: first
+  word) and not an `xargs -I` placeholder — are judged by the parser as before
+  Step 8, so `terraform plan -var 'environment=staging'` runs under `block` and
+  unattended again. Nor are the arguments of programs that never run one
+  (`cp`, `mv`, `ls`, `git` without `-c`, `find` without `-exec`, `echo`, ...):
+  `cp -r terraform "$BACKUP_DIR"` is not refused. A script file run by a shell
+  (`bash build.sh`) and a `source`d file stay unread, as documented, rather
+  than refusing every line beside them. PowerShell lines keep the any-word
+  rule, so a quoted read-only PowerShell line is still asked about.
 - **New `environments` block** (`environments.nonProd`, repo-only globs;
   `environments.prodUnattended`, ratcheted, true only when **both** config
   layers say the JSON literal `true`). Under `terraformApply: ask`, an apply of
@@ -112,7 +135,10 @@ All notable changes to this repository are documented here. Format follows [Keep
   reproductions with the chdir-form, wrapper-option, unreadable-environment
   and special-file tables), `test_crew_tfplan.py` (including a real 1.16.3
   plan bound to `production`), the `environments` config tests in
-  `test_crew_config.py`; 57 new mutations in `sabotage_cloud.py`, each red. `.crew/verify.json` gains a rule running the
+  `test_crew_config.py`; the must-block and must-allow tables for review
+  rounds 2 and 3, the literal-word gate, the command-word trigger and review
+  round 5 (`R5_MUST_BLOCK`, `R5_MUST_ALLOW`); 129 new mutations in
+  `sabotage_cloud.py`, each red. `.crew/verify.json` gains a rule running the
   three cloud-guard suites. Not in scope: `gh workflow run` deploys (T-0009)
   and TFC/HCP workspaces or runs driven over HTTP (`curl`, `gh api`), which
   the guard does not recognise.

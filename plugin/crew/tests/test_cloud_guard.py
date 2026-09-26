@@ -401,12 +401,14 @@ MUST_ALLOW = [
      "sqlcmd -S s -Q \"SELECT 'C:\\' AS p, 'DROP TABLE x' AS s\""),
     ("ps-invoke-sqlcmd-backslash", "PowerShell",
      "Invoke-Sqlcmd -Query \"SELECT 'C:\\' AS p, 'DROP' AS s\""),
-    ("bash-c-dashdash-plan", "Bash", "bash -c -- terraform plan"),
+    ("bash-c-dashdash-plan", "Bash", "bash -c -- 'terraform plan'"),
+    ("bash-c-dashdash-plan-plain", "Bash", "bash -c -- terraform plan"),
     ("az-option-before-read-verb", "Bash",
      "az group --subscription dev show -n rg"),
     ("xargs-git-add", "Bash", "git ls-files -m | xargs git add"),
     ("xargs-rm", "Bash", "find . -name '*.tmp' | xargs rm"),
-    ("xargs-terraform-fmt", "Bash", "ls main.tf | xargs terraform fmt"),
+    ("xargs-terraform-fmt", "Bash", "ls *.tf | xargs terraform fmt"),
+    ("xargs-terraform-fmt-plain", "Bash", "ls main.tf | xargs terraform fmt"),
     ("xargs-sh-literal-script", "Bash",
      "ls | xargs sh -c 'echo \"$@\"' _"),
     ("shallow-nesting", "Bash", "echo $(echo $(echo $(ls)))"),
@@ -443,12 +445,17 @@ MUST_ALLOW = [
 # carries a quote, a comment, a glob or a heredoc, so crew could not tell
 # what it runs: refused under the default `block`, asked about under `ask`.
 # MUST_ALLOW above keeps each shape with the terraform words swapped for
-# another rule's, so the lexer behaviour it pinned is still pinned.
+# another rule's, so the lexer behaviour it pinned is still pinned. Review
+# round 5 moved `bash-c-dashdash-plan` and `xargs-terraform-fmt` back to
+# MUST_ALLOW as they were: `plan` and `fmt` change nothing, so their quoting
+# is not gated. A PowerShell line keeps Step 8's any-word trigger.
 COULD_NOT_TELL = [
     ("was-ps-comment", "PowerShell",
      'Write-Output "terraform destroy" # then; terraform destroy'),
-    ("was-bash-c-dashdash-plan", "Bash", "bash -c -- 'terraform plan'"),
-    ("was-xargs-terraform-fmt", "Bash", "ls *.tf | xargs terraform fmt"),
+    # The same two shapes with a subcommand that is not read-only.
+    ("was-bash-c-dashdash-taint", "Bash",
+     "bash -c -- 'terraform taint aws_instance.a'"),
+    ("was-xargs-terraform-taint", "Bash", "ls *.tf | xargs terraform taint"),
 ]
 
 # Step 9 (T-0005): Step 8 refused these too, because a word on each dequoted

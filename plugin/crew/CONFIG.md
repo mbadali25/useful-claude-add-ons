@@ -1429,7 +1429,13 @@ and `could-not-tell` for a terraform line that is not all plain literals
 "A terraform line" means one that runs terraform, terragrunt or tofu as a
 command -- its command word, or a command inside `bash -c`, `eval`, `pwsh -c`
 or a substitution -- not one that mentions the word in a message, a search or
-a file name (README, "Cloud guard").
+a file name (README, "Cloud guard"). A line that runs terraform in a way the
+parser does not follow (an alias, a renamed or copied binary, zsh's
+`=terraform`, a wrapper crew does not strip, PowerShell's `Set-Alias` or
+`Start-Process`) is `could-not-tell` even when every word is plain; a
+read-only subcommand (`plan`, `show`, `output`, `fmt`, ...) and a data
+command's arguments (`cp -r terraform "$BACKUP_DIR"`) are not gated for their
+quoting.
 
 **The always-stops.** A destroy is never applied unattended at any setting —
 `terraformApply: allow` and `prodUnattended: true` included. So is an apply of

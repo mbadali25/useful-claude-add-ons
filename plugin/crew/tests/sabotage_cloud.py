@@ -702,12 +702,13 @@ CLOUD_GUARD_MUTATIONS += (
      _S8 + "[s8-r4-heredoc-locale-delim]"),
     # Retargeted at Step 9: the command-word reader now dequotes
     # `'terraform'` itself, so this reading matters where the trigger falls
-    # back to it -- behind `find -exec`, `ssh`, a script runner (measured:
-    # STILL GREEN on `s8-quoted-name-and-ansi` after Step 9).
+    # back to it (measured: STILL GREEN on `s8-quoted-name-and-ansi` after
+    # Step 9). Retargeted again at round 5, from `s9-find-exec` to the
+    # reader's give-up: `find -exec` is now read by the reader too.
     ("cloud guard step 8: a quote hides the terraform name", GUARDS,
      "                bare = re.sub(r\"['\\\"`]\", \"\", bare)\n",
      "                bare = bare\n",
-     _E + "test_command_word_must_block_python[s9-find-exec]"),
+     _E + "test_command_word_must_block_python[s9-case]"),
 )
 
 # T-0005 Step 9 (successor plan: gate on the command being run). The trigger
@@ -723,16 +724,15 @@ _S9A = _E + "test_command_word_must_allow_python"
 
 CLOUD_GUARD_MUTATIONS += (
     ("cloud guard step 9: the gate triggered by any word again", GUARD,
-     '        if shell == "powershell" else command_names_terraform(text,\n'
-     "                                                              "
-     "_GATE_HELPERS)\n",
-     '        if shell == "powershell" else names_terraform(text, shell)\n',
+     "        found = command_trigger(text, _GATE_HELPERS)\n",
+     "        named = names_terraform(text, shell)\n"
+     "        found = None if named is None else (named, False)\n",
      _S9A + "[s9a-commit-message]"),
     ("cloud guard step 9: the gate run at every depth again", GUARD,
      "    gated = _literal_gate(shell, text) if depth == 0 else None\n",
      "    gated = _literal_gate(shell, text)\n", _S9A + "[s9a-commit-heredoc]"),
     ("cloud guard step 9: wrapper stripping dropped", GUARDS,
-     '    argv = unwrap(argv, {}, None, {"cd": False})\n',
+     '    argv = unwrap(argv, {}, fed, {"cd": False})\n',
      "    argv = list(argv)\n", _S9 + "[s9-env-quoted-plan]"),
     ("cloud guard step 9: a redirection target read as a word", GUARDS,
      '                if state["target"]:\n'
@@ -745,20 +745,23 @@ CLOUD_GUARD_MUTATIONS += (
      r'_FD_WORD_RE = re.compile(r"^(?:\d+|\{[A-Za-z_][A-Za-z0-9_]*\})$")',
      r'_FD_WORD_RE = re.compile(r"^(?!)$")', _S9 + "[s9-fd-redirect-plan]"),
     ("cloud guard step 9: an unknown command word never gated", GUARDS,
-     "        return _verb_on_line(top)\n", "        return None\n",
-     _S9 + "[s9-variable-name]"),
+     "        named = _verb_on_line(top)\n"
+     "        return None if named is None else (named, True)\n",
+     "        return None\n", _S9 + "[s9-variable-name]"),
     ("cloud guard step 9: `bash -c` payload not read", GUARDS,
      "            return _bash_trigger(positional[0], top, helpers, "
      "depth + 1)\n", "            return None\n",
      _T + "test_could_not_tell_is_refused_under_block"
-     "[was-bash-c-dashdash-plan]"),
+     "[was-bash-c-dashdash-taint]"),
     ("cloud guard step 9: a shell reading stdin not gated", GUARDS,
-     "            return _bash_trigger(positional[0], top, helpers, "
-     "depth + 1)\n        return names_terraform(top, \"bash\")\n",
-     "            return _bash_trigger(positional[0], top, helpers, "
-     "depth + 1)\n        return None\n", _S9 + "[s9-pipe-to-shell]"),
+     '        named = names_terraform(top, "bash")\n'
+     "        return None if named is None else (named, True)\n"
+     "    if head in _GATE_PWSH:\n",
+     "        return None\n    if head in _GATE_PWSH:\n",
+     _S9 + "[s9-pipe-to-shell]"),
     ("cloud guard step 9: `pwsh -c` payload not read", GUARDS,
-     '        return names_terraform(ps_normalise(payload)[0], "powershell")\n',
+     '        named = names_terraform(normal, "powershell")\n'
+     "        return None if named is None else (named, ps_unseen(normal))\n",
      "        return None\n", _S9 + "[s9-pwsh-c]"),
     ("cloud guard step 9: `eval` payload not read", GUARDS,
      '        return _bash_trigger(" ".join(args), top, helpers, depth + 1)\n',
@@ -767,15 +770,15 @@ CLOUD_GUARD_MUTATIONS += (
      '        return _bash_trigger(" ".join(argv), top, helpers, depth + 1)\n',
      "        return None\n", _S9 + "[s9-watch-string]"),
     ("cloud guard step 9: script runners read as programs", GUARDS,
-     '    if head in _GATE_OPAQUE or head == "find" and any(',
-     '    if head == "find" and any(', _S9 + "[s9-ssh]"),
+     "    if head in _GATE_OPAQUE:\n", "    if False:\n", _S9 + "[s9-ssh]"),
     ("cloud guard step 9: an unknown wrapper's terraform argument ignored",
-     GUARDS, "            return arg\n", "            continue\n",
+     GUARDS, "            return arg, True\n", "            continue\n",
      _S9 + "[s9-unknown-wrapper]"),
     ("cloud guard step 9: the reader's give-up gates nothing", GUARDS,
-     '        return names_terraform(text, "bash") or '
-     'names_terraform(top, "bash")\n', "        return None\n",
-     _S9 + "[s9-case]"),
+     '        named = names_terraform(text, "bash") or '
+     'names_terraform(top, "bash")\n'
+     "        return None if named is None else (named, True)\n",
+     "        return None\n", _S9 + "[s9-case]"),
     ("cloud guard step 9: `$(...)` commands dropped", GUARDS,
      '            self.pos += 2\n            self.read(")")\n'
      "            return _HOLE\n",
@@ -800,8 +803,123 @@ CLOUD_GUARD_MUTATIONS += (
      _S9 + "[s9-short-glob-destroy]"),
     ("cloud guard step 9: a brace list read as a literal", GUARDS,
      '                if state["brace"] and value not in ("{", "}", "{}"):\n'
-     "                    value += _HOLE\n", "", _S8 + "[s8-brace-name]"),
+     "                    value += _HOLE\n", "",
+     _E + "test_round5_must_block_python[r5-brace-name-taint]"),
     ("cloud guard step 9: an expansion read only as a wildcard", GUARDS,
      '" ".join((wild, opened, emptied))', '" ".join((wild, opened))',
      _S9 + "[s9-backquote-empty-prefix]"),
+)
+
+# T-0005 review round 5 (kF0AM1): the gate's answer kept where the lexer
+# cannot follow the line (UNSEEN), and read-only subcommands and data
+# commands no longer gated for their quoting. One mutation per new branch,
+# plus the five Step 9 branches round 5 found untested (busybox, the `pwsh`
+# expansion fallback, the control-character give-up, `_no_body_across`, and
+# eval's expansion fallback -- removed as unreachable: an expansion is
+# `_HOLE`, a control character, so the reader gives up on it first). Each
+# aims at a row the mutation turns from deny to allow, or from allow to deny,
+# or -- where the lexer denies it too -- at a row whose `why` names the gate.
+_R5 = _E + "test_round5_must_block_python"
+_R5A = _E + "test_round5_must_allow_python"
+
+CLOUD_GUARD_MUTATIONS += (
+    ("cloud guard r5: an unseen command on a plain line handed on", GUARD,
+     "    elif unseen:\n", "    elif False:\n", _R5 + "[r5-flock]"),
+    ("cloud guard r5: the unseen reason replaced by the quoting one", GUARD,
+     '        if finding.scope.get("unseen"):\n', "        if False:\n",
+     _E + "test_round5_unseen_reason_says_how_to_have_it_judged"),
+    ("cloud guard r5: PowerShell never unseen", GUARD,
+     "        found = None if named is None else (named, _ps_unseen(normal))\n",
+     "        found = None if named is None else (named, False)\n",
+     _R5 + "[r5-ps-set-alias]"),
+    ("cloud guard r5: PowerShell launchers not read", GUARDS,
+     "        if head in _PS_LAUNCHERS or any(\n", "        if any(\n",
+     _R5 + "[r5-ps-start-process]"),
+    ("cloud guard r5: a PowerShell alias: drive write not read", GUARDS,
+     '                w.lower().startswith(("alias:", "function:"))\n',
+     "                False\n", _R5 + "[r5-ps-set-item-alias]"),
+    ("cloud guard r5: a PowerShell path run with a verb not read", GUARDS,
+     '        if verb is not None and verb.lower() in ("destroy", "apply",\n',
+     '        if False and verb.lower() in ("destroy", "apply",\n',
+     _R5 + "[r5-ps-copied-binary]"),
+    ("cloud guard r5: a bash command run with a verb not read", GUARDS,
+     "    if verb is not None and verb.lower() in _GATE_VERBS:\n",
+     "    if False:\n", _R5 + "[r5-ln-dot-slash]"),
+    ("cloud guard r5: a copied binary not noticed", GUARDS,
+     '    line = {"copies": _copies_terraform(cmds, helpers[4])}\n',
+     '    line = {"copies": False}\n', _R5 + "[r5-cp-bare-name]"),
+    ("cloud guard r5: a data command's arguments read as a wrapper's", GUARDS,
+     "    if _is_data(head, first, args):\n        return None\n", "",
+     _R5A + "[r5a-cp-dir]"),
+    ("cloud guard r5: a data command's verb operand read as a rename", GUARDS,
+     '    if _is_data(head, first, args) and not line["copies"]:\n'
+     "        return None\n", "", _R5A + "[r5a-git-apply]"),
+    ("cloud guard r5: read-only subcommands gated again", GUARDS,
+     "        return None if _tf_read_only(argv, fed) else (first, False)\n",
+     "        return first, False\n", _R5A + "[r5a-plan-var]"),
+    ("cloud guard r5: an xargs placeholder read as the subcommand", GUARDS,
+     '    if any(head != "xargs" or any(r in word for r in reps for word in '
+     "argv)\n",
+     '    if any(head != "xargs"\n', _R5 + "[r5-xargs-replaced-subcommand]"),
+    ("cloud guard r5: any option skipped before the subcommand", GUARDS,
+     '    if "terragrunt" not in _head_name(argv[0]):\n'
+     '        while rest and rest[0].startswith("-chdir="):\n',
+     "    if True:\n"
+     '        while rest and rest[0].startswith("-"):\n',
+     _R5 + "[r5-terragrunt-option-before]"),
+    ("cloud guard r5: zsh's =terraform as the command word ignored", GUARDS,
+     "    if _zsh_names_tool(first):\n        return first, True\n", "",
+     _R5 + "[r5-zsh-equals-taint]"),
+    ("cloud guard r5: zsh's =terraform as an argument ignored", GUARDS,
+     "    return _names_tool(word) or _zsh_names_tool(word) or "
+     "_names_tool(image)\n",
+     "    return _names_tool(word) or _names_tool(image)\n",
+     _R5 + "[r5-zsh-equals-strace]"),
+    ("cloud guard r5: a container image's tag hides terraform", GUARDS,
+     "    return _names_tool(word) or _zsh_names_tool(word) or "
+     "_names_tool(image)\n",
+     "    return _names_tool(word) or _zsh_names_tool(word)\n",
+     _R5 + "[r5-container-image]"),
+    ("cloud guard r5: find -exec not read", GUARDS,
+     "        return _find_exec_trigger(args, top, helpers, depth, line)\n",
+     "        return None\n", _R5 + "[r5-find-exec-found-binary]"),
+    ("cloud guard r5: find -exec read line-wide again", GUARDS,
+     "        return _find_exec_trigger(args, top, helpers, depth, line)\n",
+     '        named = names_terraform(top, "bash")\n'
+     "        return None if named is None else (named, True)\n",
+     _R5A + "[r5a-find-exec-grep]"),
+    ("cloud guard r5: a script runner read line-wide again", GUARDS,
+     "        own = names_terraform(top if any(_HOLE in a for a in args)\n"
+     '                              else " ".join(args), "bash")\n',
+     '        own = names_terraform(top, "bash")\n',
+     _R5A + "[r5a-source-then-plan]"),
+    ("cloud guard r5: a script runner's run-time words not read", GUARDS,
+     "        own = names_terraform(top if any(_HOLE in a for a in args)\n"
+     '                              else " ".join(args), "bash")\n',
+     '        own = names_terraform(" ".join(args), "bash")\n',
+     _S9 + "[s9-source-procsub]"),
+    ("cloud guard r5: a shell running a script file gated", GUARDS,
+     "        if not has_c and positional and _HOLE not in positional[0] \\\n"
+     "                and not _names_tool(positional[0]):\n",
+     "        if False:\n", _R5A + "[r5a-bash-script-file]"),
+    ("cloud guard r5: an unseen command after a followed one lost", GUARDS,
+     "            found = found or hit[0]\n"
+     "            unseen = unseen or hit[1]\n",
+     "            found, unseen = hit\n            break\n",
+     _R5 + "[r5-seen-apply-beside-unseen]"),
+    ("cloud guard r5: `busybox sh` read as busybox", GUARDS,
+     '    if head == "busybox" and args and head_name(args[0]) in '
+     "_GATE_SHELLS:\n"
+     "        head, args = head_name(args[0]), args[1:]\n", "",
+     _R5 + "[r5-busybox-shell]"),
+    ("cloud guard r5: a `pwsh -c` payload made at run time read", GUARDS,
+     "        if payload is None or _HOLE in payload:\n",
+     "        if payload is None:\n", _R5 + "[r5-pwsh-expansion-payload]"),
+    ("cloud guard r5: a control character read as bash reads it", GUARDS,
+     "        if _GATE_CONTROL_RE.search(text):\n"
+     '            raise _Unsure("a control character")\n', "",
+     _R5 + "[r5-cr-heredoc-delimiter]"),
+    ("cloud guard r5: a quoted newline before a heredoc body read", GUARDS,
+     '        if self.pending and "\\n" in self.text[start:end]:\n',
+     "        if False:\n", _R5 + "[r5-quoted-newline-before-body]"),
 )

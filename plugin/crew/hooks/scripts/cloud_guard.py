@@ -60,10 +60,17 @@ and `_unwrap`'s wrappers, or a command inside `bash -c`/`eval`/`pwsh -c`/a
 substitution (`crew_guards.command_names_terraform`, its own reader, falling
 back to any word naming one where it cannot split the line; a PowerShell line
 keeps that wider rule) -- is judged only when every word on it is a plain
-literal (`_PLAIN_WORD_RE`, joined by `_PLAIN_OPS`). Anything else on such a line is "could not tell": asked when
-attended, denied unattended and under `block`, never allowed. The check reads
-the raw text before the lexer does (`_literal_gate`, first thing in `scan`),
-so no lexer bug can turn a shape it misread into an allow.
+literal (`_PLAIN_WORD_RE`, joined by `_PLAIN_OPS`). Anything else on such a
+line is "could not tell": asked when attended, denied unattended and under
+`block`, never allowed. So is a line of plain words that runs terraform where
+the lexer does not look (review round 5: an alias, `hash -p`, a copied or
+linked binary run with a verb, zsh's `=terraform`, a container image, a
+wrapper `_unwrap` does not strip, PowerShell's `Set-Alias`/`Start-Process`;
+`crew_guards.command_trigger`'s `unseen`, `_ps_unseen`). A read-only
+subcommand (`crew_guards._tf_read_only`) and a data command's arguments are
+not gated. The check reads the raw text before the lexer does
+(`_literal_gate`, first thing in `scan`), so no lexer bug can turn a shape it
+misread into an allow.
 
 IDENTITY. Every `aws` and `az` command resolves the identity it would run as --
 `--profile`/`--region`/`--subscription` first, then the environment it would
@@ -121,8 +128,8 @@ import time
 import crew_config
 import crew_state
 from crew_guards import _head_name as _guards_head_name
-from crew_guards import command_names_terraform, first_non_literal, \
-    names_terraform
+from crew_guards import command_trigger, first_non_literal, \
+    names_terraform, ps_unseen
 
 
 def _head_name(token):
@@ -2770,25 +2777,45 @@ def _track(argv, ctx, seq, fed, shell="bash"):
 OP_UNREADABLE_LINE = "line-not-literal"
 
 
+def _ps_unseen(normal):
+    """`crew_guards.ps_unseen`, read with this module's PowerShell lexer."""
+    return ps_unseen(normal, _lex_ps)
+
+
 _GATE_HELPERS = (_unwrap, _shell_args, _pwsh_payload, _ps_normalise,
-                 _head_name)
+                 _head_name, _ps_unseen)
 
 
 def _literal_gate(shell, text):
     """A could-not-tell `terraformApply` finding for `text`, or None when it
-    runs no terraform/terragrunt/tofu or every word on it is plain (the
-    lexer then judges it as before). PowerShell keeps Step 8's trigger."""
-    named = names_terraform(_ps_normalise(text)[0], shell) \
-        if shell == "powershell" else command_names_terraform(text,
-                                                              _GATE_HELPERS)
-    word = first_non_literal(text, shell) if named is not None else None
-    if word is None:
+    runs no terraform/terragrunt/tofu, or runs it only in ways the lexer
+    reads and every word on it is plain (the lexer then judges it as
+    before). A word that is not plain comes first; else a command the lexer
+    is not known to read (`unseen`, review round 5) -- an alias, a wrapper
+    it does not strip, a renamed binary -- is could-not-tell on a line of
+    plain words too. PowerShell keeps Step 8's any-word trigger."""
+    if shell == "powershell":
+        normal = _ps_normalise(text)[0]
+        named = names_terraform(normal, shell)
+        found = None if named is None else (named, _ps_unseen(normal))
+    else:
+        found = command_trigger(text, _GATE_HELPERS)
+    if found is None:
         return None
-    shown = word if len(word) <= 40 else word[:37] + "..."
-    return Finding("terraformApply", text, "a terraform-family line with a "
-                   f"word that is not a plain literal: {shown!r}", None, True,
-                   None, {"op": OP_UNREADABLE_LINE, "named": named,
-                          "word": word})
+    named, unseen = found
+    word = first_non_literal(text, shell)
+    if word is not None:
+        shown = word if len(word) <= 40 else word[:37] + "..."
+        what = ("a terraform-family line with a word that is not a plain "
+                f"literal: {shown!r}")
+    elif unseen:
+        what = ("a terraform-family line that runs "
+                f"{named!r} in a way crew does not follow")
+    else:
+        return None
+    return Finding("terraformApply", text, what, None, True, None,
+                   {"op": OP_UNREADABLE_LINE, "named": named, "word": word,
+                    "unseen": word is None})
 
 
 def scan(shell, text, env=None, depth=0, ctx=None, seq=None):
@@ -2982,6 +3009,14 @@ def _terraform_verdict(root, finding, out, envs):
         # The wording avoids the words other rows' reasons are checked
         # for (destroy, unknown, rewrite, ...), so this finding can never
         # stand in for the one a test expects the lexer to make.
+        if finding.scope.get("unseen"):
+            return "ask", (f"{base} -- crew does not follow how this line "
+                           "runs terraform (an alias, a wrapper it does not "
+                           "strip, another name for the binary), so it could "
+                           "not tell what the line would change. Such a line "
+                           "is asked about and never allowed unattended; run "
+                           "terraform by its own name to have it judged"), \
+                "could-not-tell", marker
         return "ask", (f"{base} -- crew judges a terraform-family line only "
                        "when every word on it is a plain literal, so it "
                        "could not tell what this line would change. Unusual "

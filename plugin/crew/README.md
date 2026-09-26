@@ -1036,6 +1036,21 @@ notes.md` is not. Where crew cannot split a line with certainty — a `case`
 arm, a function definition, a script piped into `bash`, `ssh`, `source` — it
 falls back to the older, wider rule: any word naming terraform.
 
+**A terraform command crew cannot follow is could not tell even in plain
+words.** An alias (`alias tf=terraform`, `hash -p`, PowerShell's `Set-Alias`
+and `alias:` drive), a binary copied or linked under another name and run with
+`destroy`, `apply` or `workspace`, zsh's `=terraform`, a container image, a
+wrapper crew does not strip (`strace`, `flock`, `aws-vault exec`,
+`unbuffer`, `systemd-run`, `find -exec`, `ssh`) and PowerShell's
+`Start-Process` are asked about and refused unattended: the parser would not
+see terraform in them. Run terraform by its own name to have it judged. Two
+things are not gated for their quoting: a read-only subcommand (`plan`,
+`show`, `output`, `fmt`, `validate`, `init`, `workspace list`, ...) spelled
+where it cannot be another one, so `terraform plan -var 'environment=staging'`
+runs as before; and the arguments of a program that never runs one (`cp -r
+terraform "$BACKUP_DIR"`, `git add terraform "$f"`). A PowerShell line keeps
+the any-word rule.
+
 **The always-stops.** A destroy is never applied unattended, at any setting:
 `destroy`, `apply -destroy`, `apply -replace`, `workspace delete`, a saved plan
 that deletes, and any apply whose plan crew cannot read — including
