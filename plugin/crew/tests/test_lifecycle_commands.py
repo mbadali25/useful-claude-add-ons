@@ -185,7 +185,8 @@ def test_sabotage_drop_one_done_check_goes_red(missing):
 # `.crew/config.json`. A transition with no call is a card that never moves.
 _TRACKER = "crew_tracker.py"
 TRACKER_CALLS = {
-    "brainstorm.md": (f"{_TRACKER} create --root . --ticket",),
+    "brainstorm.md": (f"{_TRACKER} create --root . --ticket",
+                      f"{_TRACKER} move --root . --ticket <id> --to ready"),
     "spec.md": (f"{_TRACKER} move --root . --ticket $1 --to spec",),
     "plan.md": (f"{_TRACKER} move --root . --ticket $1 --to planned",),
     "implement.md": (f"{_TRACKER} move --root . --ticket $1 --to in-progress",
@@ -233,6 +234,12 @@ def test_obsidian_sync_fits_the_command_budget_without_an_allowance():
     allowance = _read(os.path.join(CREW, ".budget-allowance.json"))
 
     assert (_line_count(text) <= MAX_LINES, "obsidian-sync.md" in allowance) == (True, False)
+
+
+def test_brainstorm_approval_does_not_hand_edit_the_index():
+    text = _read(os.path.join(COMMANDS, "brainstorm.md"))
+
+    assert "Update `.work/INDEX.md`'s status cell" not in text
 
 
 def test_no_lifecycle_command_points_at_a_removed_command_for_tracker_writes():

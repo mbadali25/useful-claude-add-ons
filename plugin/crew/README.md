@@ -1230,7 +1230,7 @@ their status transitions — no sync command to remember:
 
 | Command | Call | Lane |
 |---|---|---|
-| `/crew:brainstorm` | `create` (INDEX row, card, ticket note) | Backlog |
+| `/crew:brainstorm` | `create` (INDEX row, card, ticket note); on approval `move --to ready` | Backlog |
 | `/crew:spec`, `/crew:plan` | `move --to spec`, `move --to planned` | Ready |
 | `/crew:implement` step 1 | `move --to in-progress` | In Progress |
 | `/crew:implement` step 7 | `move --to review` | Review |
@@ -1250,12 +1250,19 @@ updated" and the phase stands.
 **Confined to the vault, atomic, and loud.** Before anything is written —
 `INDEX.md` included — the vault must exist and hold `.obsidian/`, `boardDir`
 must be relative with no `..`, `board` a bare file name, the board and note must
-not resolve out of the vault through a symlink, and a vault inside the worktree
-must be ignored by git (otherwise the board would enter the review bundle). Any
-of those fails, the board lacks its frontmatter key, or a configured lane is
-missing or doubled: exit 1, nothing written anywhere. Board writes are a temp
-file plus `os.replace`, re-reading the board first and recomputing if Obsidian
-saved it meanwhile. The ticket note is written once and never rewritten.
+not resolve out of the vault through a symlink, and a board or note inside the
+worktree must be ignored by git (otherwise it would enter the review bundle) —
+checked per file, so a vault that *contains* the repo is caught too. Any of
+those fails, the board lacks its frontmatter key, or a configured lane is
+missing or doubled: exit 1, nothing written anywhere. Board writes are an
+exclusively created temp file (a link planted at its name is never followed)
+plus `os.replace`, keeping the board's mode and owner, re-reading the board
+first and recomputing if Obsidian saved it meanwhile. The ticket note is
+written once and never rewritten, and names the repo that made it: with
+`boardDir` unset every repo shares one board, so a note naming another repo
+refuses `create`, `move` and `read`, a card no note claims refuses `create`,
+and `move` needs this repo's own INDEX row and says `whose card could not tell`
+on its line when no note names the owner.
 
 **There is no `.work/cache/` mirror.** The ticket's content lives in
 `.work/tickets/<id>/` for every mode; the board carries status only. The key

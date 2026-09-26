@@ -62,7 +62,7 @@ Print its lines verbatim. On exit 1 tell me `tracker not updated: <reason>`.
 
 | INDEX status | Lane (`obsidian.columns` key) |
 |---|---|
-| `direction` | `backlog` |
+| `direction`, `ready` | `backlog` |
 | `spec`, `planned` | `ready` |
 | `in-progress` | `inProgress` |
 | `review` | `review` |
@@ -93,9 +93,12 @@ The script is the only crew code that writes outside the repository, and it
 refuses — writing nothing, INDEX included — when the vault is missing or has no
 `.obsidian/`, `boardDir` is absolute or contains `..`, `board` contains a
 separator, the board or note resolves outside the vault through a symlink, or
-the vault sits inside this worktree without git ignoring it (the board would
-enter the review bundle). Every board write is a temp file plus `os.replace`,
-re-reading the board first and recomputing if Obsidian saved it meanwhile.
+the board or note sits inside this worktree without git ignoring it (it would
+enter the review bundle), or the ticket's note names another repo (a shared
+board, `boardDir` unset). Every board write is an exclusively created temp file
+plus `os.replace`, keeping the board's mode and owner, re-reading it first and
+recomputing if Obsidian saved it meanwhile. A card no note claims moves with
+`whose card could not tell` on its line; `create` refuses one.
 
 ## When the vault is a git repo of its own
 

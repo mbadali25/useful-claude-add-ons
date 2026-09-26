@@ -74,8 +74,16 @@ direction I have not agreed to is not a direction.
 
 ## 5. On approval
 
-Update `.work/INDEX.md`'s status cell from `direction` to `ready`. Tell me to
-run `/crew:spec <id>` next; do not invoke it yourself.
+Move the ticket from `direction` to `ready` — never by editing `.work/INDEX.md`:
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_tracker.py move --root . --ticket <id> --to ready
+```
+
+Print its lines verbatim; the card stays in the backlog lane until a spec
+exists. On exit 3 run the command it printed; on exit 1 tell me
+`tracker not updated: <reason>`. Tell me to run `/crew:spec <id>` next; do not
+invoke it yourself.
 
 If this is genuinely small — one subsystem, no new behaviour, a known
 cause, nothing touching auth/SQL/IaC/secrets/migrations — say so and suggest

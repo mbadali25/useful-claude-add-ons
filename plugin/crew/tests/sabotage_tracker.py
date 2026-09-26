@@ -14,7 +14,9 @@ import os
 
 CREW = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TRACKER = os.path.join(CREW, "hooks", "scripts", "crew_tracker.py")
+BRAINSTORM = os.path.join(CREW, "commands", "brainstorm.md")
 _TESTS = "tests/test_crew_tracker.py::"
+_LIFECYCLE = "tests/test_lifecycle_commands.py::"
 
 TRACKER_MUTATIONS = (
     (
@@ -69,11 +71,26 @@ TRACKER_MUTATIONS = (
         _TESTS + "test_files_move_refuses_two_rows_for_one_ticket",
     ),
     (
-        "tracker accepts a title that breaks the INDEX row",
+        "tracker accepts a '|' in a title, breaking the INDEX row",
         TRACKER,
-        '    return bool(title) and not any(ch in title for ch in "|\\r\\n")\n',
-        "    return True\n",
+        '    return bool(title) and "|" not in title and title.splitlines() == [title]\n',
+        "    return bool(title) and title.splitlines() == [title]\n",
         _TESTS + "test_files_create_refuses_a_pipe_in_the_title",
+    ),
+    (
+        # Round 1 FIX: U+2028 and kin split the card on the next parse.
+        "tracker accepts a title holding a line separator splitlines splits on",
+        TRACKER,
+        '    return bool(title) and "|" not in title and title.splitlines() == [title]\n',
+        '    return bool(title) and "|" not in title and not any(ch in title for ch in "\\r\\n")\n',
+        _TESTS + "test_title_with_a_line_separator_is_refused",
+    ),
+    (
+        "tracker splits a board where Obsidian does not, cutting a card in two",
+        TRACKER,
+        "    lines = _board_lines(text)\n",
+        "    lines = text.splitlines(keepends=True)\n",
+        _TESTS + "test_a_human_card_holding_a_line_separator_moves_whole",
     ),
     (
         "tracker writes a vault with no .obsidian/",
@@ -129,15 +146,23 @@ TRACKER_MUTATIONS = (
         # The board would be staged into the review bundle.
         "tracker writes an in-worktree vault git does not ignore",
         TRACKER,
-        "    if _inside(repo, vault):\n",
-        "    if False:\n",
+        "        if not ignored:\n",
+        "        if False:\n",
         _TESTS + "test_vault_in_worktree_not_ignored",
+    ),
+    (
+        # Round 1 FIX: the neighbour -- a vault that CONTAINS the repo.
+        "tracker checks only the vault against the worktree, not the board",
+        TRACKER,
+        "        if not _inside(repo, found[label]):\n",
+        "        if not _inside(repo, vault):\n",
+        _TESTS + "test_board_inside_worktree_of_a_vault_that_contains_it_is_refused",
     ),
     (
         "tracker reads git failing as 'not ignored' instead of 'could not tell'",
         TRACKER,
-        "            if ignored is None:\n",
-        "            if False:\n",
+        "        if ignored is None:\n",
+        "        if False:\n",
         _TESTS + "test_vault_in_worktree_git_cannot_say_is_refused",
     ),
     (
@@ -189,5 +214,116 @@ TRACKER_MUTATIONS = (
         "    if len(matches) > 1:\n",
         "    if False:\n",
         _TESTS + "test_two_cards_same_id_refused",
+    ),
+    (
+        # Round 1 BLOCK: the temp opened through a planted symlink.
+        "tracker opens its temp file without exclusive create",
+        TRACKER,
+        "_TEMP_FLAGS = os.O_WRONLY | os.O_CREAT | os.O_EXCL | _NOFOLLOW | _BINARY\n",
+        "_TEMP_FLAGS = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | _BINARY\n",
+        _TESTS + "test_temp_name_collision_never_follows_a_link",
+    ),
+    (
+        "tracker replaces a board without keeping its mode",
+        TRACKER,
+        "        os.fchmod(fd, mode)\n",
+        "        pass\n",
+        _TESTS + "test_board_keeps_its_mode",
+    ),
+    (
+        # RED only as root: the test skips, by name, without root.
+        "tracker replaces a board without keeping its owner",
+        TRACKER,
+        "                os.fchown(fd, uid, gid)\n",
+        "                pass\n",
+        _TESTS + "test_board_keeps_its_owner",
+    ),
+    (
+        # RED only as root, as above.
+        "tracker creates a note as root instead of its directory's owner",
+        TRACKER,
+        '    if hasattr(os, "fchown") and (replaces or _is_root()):\n',
+        '    if hasattr(os, "fchown") and replaces:\n',
+        _TESTS + "test_new_note_takes_its_directory_owner_when_root",
+    ),
+    (
+        # Round 1 FIX: another repo's card on a shared board.
+        "tracker moves a card whose note names another repo",
+        TRACKER,
+        "    if owner is not None and owner != here:\n",
+        "    if False:\n",
+        _TESTS + "test_move_refuses_a_card_another_repo_owns",
+    ),
+    (
+        "tracker create adopts a card no note claims as 'unchanged'",
+        TRACKER,
+        "        if owner is None:\n",
+        "        if False:\n",
+        _TESTS + "test_create_refuses_a_card_on_a_shared_board_no_note_claims",
+    ),
+    (
+        "tracker move writes the board for a ticket this repo never minted",
+        TRACKER,
+        '    if not problem and _files_read(root, ticket)["state"] != READ:\n',
+        "    if False:\n",
+        _TESTS + "test_move_without_this_repos_index_row_writes_nothing",
+    ),
+    (
+        # 'could not tell' must survive onto the line, not read as ours.
+        "tracker move drops 'could not tell whose card' from its line",
+        TRACKER,
+        '    caveat = f" (whose card could not tell: {unknown})" if unknown else ""\n',
+        '    caveat = ""\n',
+        _TESTS + "test_move_says_when_no_note_names_the_cards_repo",
+    ),
+    (
+        "tracker move indexes a status cell an INDEX row does not have",
+        TRACKER,
+        "        if len(cells) < 2:\n            return None, _result(backend, FAILED, _no_status_cell(ticket))\n",
+        "        if False:\n            return None, _result(backend, FAILED, _no_status_cell(ticket))\n",
+        _TESTS + "test_index_row_without_a_status_cell_is_could_not_update",
+    ),
+    (
+        "tracker read indexes a status cell an INDEX row does not have",
+        TRACKER,
+        '    if len(cells) < 2:\n        return _result("files", UNREADABLE, _no_status_cell(ticket))\n',
+        '    if False:\n        return _result("files", UNREADABLE, _no_status_cell(ticket))\n',
+        _TESTS + "test_read_of_a_row_without_a_status_cell_is_could_not_read",
+    ),
+    (
+        "tracker create lets a failed .work mkdir escape as a traceback",
+        TRACKER,
+        '    except OSError as exc:\n        return _result(backend, FAILED, f".work: {exc.strerror or exc}")\n',
+        '    except KeyError as exc:\n        return _result(backend, FAILED, f".work: {exc.strerror or exc}")\n',
+        _TESTS + "test_create_with_work_a_file_is_could_not_update",
+    ),
+    (
+        "tracker takes a non-string obsidian.board as a file name",
+        TRACKER,
+        "        if not isinstance(name, str):\n",
+        "        if False:\n",
+        _TESTS + "test_non_string_board_name_is_refused",
+    ),
+    (
+        # Round 1 FIX: brainstorm's approval status had no lane.
+        "tracker maps brainstorm's 'ready' status to no lane",
+        TRACKER,
+        '    "ready": "backlog",\n',
+        "",
+        _TESTS + "test_ready_status_maps_to_the_backlog_lane",
+    ),
+    (
+        "brainstorm hand-edits INDEX on approval instead of moving the tracker",
+        BRAINSTORM,
+        "crew_tracker.py move --root . --ticket <id> --to ready",
+        "crew_tracker.py (no move on approval)",
+        _LIFECYCLE + "test_every_transition_calls_the_tracker",
+    ),
+    (
+        "tracker read drops 'could not tell whose card' from its line",
+        TRACKER,
+        '    notes += [f"whose card could not tell: {unknown}"] if unknown else []\n',
+        "",
+        _TESTS + "test_read_says_when_no_note_names_the_cards_repo",
     ),
 )

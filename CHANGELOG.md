@@ -34,10 +34,29 @@ All notable changes to this repository are documented here. Format follows [Keep
   `move` (176 -> 105 lines, budget allowance dropped); the sync commands,
   `/crew:split` and `/crew:change` read the kind through `resolve`; and
   `/crew:status` prints the tracker line from `resolve` with its source. There
-  is no `.work/cache/` mirror for Obsidian. 24 mutations in
+  is no `.work/cache/` mirror for Obsidian. 24 mutations (42 after review round 1) in
   `tests/sabotage_tracker.py`, each red on its named test. Follow-ups (Jira/SDP
   cache location, `jira.cloudId`, `scope_report.py`'s 0.20 locations,
   `heal_config`, crew-setup writing `config.json`) are filed in `TODO.md`.
+
+  Review round 1 fixes, same version (never shipped): the temp file is now
+  created exclusively (`O_EXCL|O_NOFOLLOW`) under a random name, so a symlink
+  planted at the old fixed `.<board>.crew-<pid>.tmp` name can no longer take
+  the board's text out of the vault or turn `Board.md` into a link (the BLOCK).
+  A replaced board or INDEX keeps its mode and owner, and a new file takes its
+  directory's owner when crew runs as root; a replacement that cannot keep its
+  owner is refused. The in-worktree check is per file, so a vault that
+  contains the repo with `boardDir` pointing into it is refused unless git
+  ignores the board. A title holding any line break `str.splitlines` honours
+  (U+2028, `\x85`, `\x0c`, ...) is refused, and the board is split on LF
+  alone so a human's card holding one moves whole. On a shared board the ticket
+  note is the card's owner: a note naming another repo refuses `create`, `move`
+  and `read`; a card no note claims refuses `create`; `move` needs this repo's
+  INDEX row and prints `whose card could not tell` when no note names one.
+  `/crew:brainstorm`'s approval runs `crew_tracker.py move --to ready`, and
+  `ready` maps to the backlog lane. An INDEX row with no status cell, a `.work`
+  that is a file, and a non-string `obsidian.board` each answer `could not
+  update` instead of a traceback. 42 mutations in `sabotage_tracker.py`.
 
 ### Fixed
 

@@ -632,7 +632,8 @@ def test_obsidian_move_updates_index_and_board(tmp_path):
     assert (done.returncode, done.stdout, _index(root), _lane_of(board, CARD)) == (
         0,
         "files: updated: .work/INDEX.md spec -> in-progress\n"
-        "obsidian: updated: Boards/repo/Board.md Ready -> In Progress\n",
+        "obsidian: updated: Boards/repo/Board.md Ready -> In Progress "
+        "(whose card could not tell: no Boards/repo/T-0042.md note names its repo)\n",
         ROW.replace("spec", "in-progress"), "In Progress")
 
 
@@ -729,12 +730,13 @@ def test_note_created_once_never_overwritten(tmp_path):
     root = _obsidian_repo(tmp_path, vault)
     _cli(root, "create", "--ticket", "T-0060", "--title", "new work")
     note = vault / "Boards" / "repo" / "T-0060.md"
-    note.write_text("a human edited this\n", encoding="utf-8")
+    edited = note.read_text(encoding="utf-8") + "a human edited this\n"
+    note.write_text(edited, encoding="utf-8")
 
     done = _cli(root, "create", "--ticket", "T-0060", "--title", "new work")
 
     assert (done.returncode, note.read_text(encoding="utf-8"), done.stdout.count("unchanged")) == (
-        0, "a human edited this\n", 3)
+        0, edited, 3)
 
 
 def test_read_reports_disagreement(tmp_path):
@@ -892,3 +894,282 @@ def test_an_unreadable_index_is_could_not_update_not_a_traceback(tmp_path):
 
     assert (done.returncode, done.stdout.startswith("files: could not update: .work/INDEX.md: "),
             done.stderr) == (1, True, "")
+
+
+# --- review round 1 (T-0021): each test is a reviewer repro, run first ---------
+
+def _needs_root():
+    if not hasattr(os, "geteuid") or os.geteuid() != 0:
+        pytest.skip("giving a file to another uid needs root")
+
+
+def test_planted_temp_symlink_is_never_followed(tmp_path):
+    """The round-1 BLOCK, verbatim: a link sitting at the temp name the old code
+    used must not receive the board, and Board.md must stay a regular file."""
+    vault = _make_vault(tmp_path / "vault")
+    root = _obsidian_repo(tmp_path, vault)
+    victim = tmp_path / "outside" / "victim.txt"
+    victim.parent.mkdir()
+    victim.write_text("victim\n", encoding="utf-8")
+    board = vault / "Boards" / "repo" / "Board.md"
+    _symlink(vault / "Boards" / "repo" / f".Board.md.crew-{os.getpid()}.tmp", victim)
+
+    got = crew_tracker.move(str(root), CARD, "review")
+
+    assert (got["results"][1]["state"], victim.read_text(encoding="utf-8"), board.is_symlink(),
+            _lane_of(board.read_text(encoding="utf-8"), CARD)) == ("updated", "victim\n", False, "Review")
+
+
+def test_temp_name_collision_never_follows_a_link(tmp_path, monkeypatch):
+    """Exclusive create is the guard, not an unguessable name: even when every
+    temp name tried is a planted link, nothing is written through it."""
+    vault = _make_vault(tmp_path / "vault")
+    root = _obsidian_repo(tmp_path, vault)
+    victim = tmp_path / "victim.txt"
+    victim.write_text("victim\n", encoding="utf-8")
+    board = vault / "Boards" / "repo" / "Board.md"
+    before = board.read_bytes()
+    _symlink(vault / "Boards" / "repo" / ".planted.tmp", victim)
+    monkeypatch.setattr(crew_tracker, "_temp_name", lambda name: ".planted.tmp")
+
+    got = crew_tracker.move(str(root), CARD, "review")
+
+    assert (got["results"][1]["state"], victim.read_text(encoding="utf-8"), board.is_symlink(),
+            board.read_bytes() == before) == ("could not update", "victim\n", False, True)
+
+
+def test_board_keeps_its_mode(tmp_path):
+    vault = _make_vault(tmp_path / "vault")
+    root = _obsidian_repo(tmp_path, vault)
+    board = vault / "Boards" / "repo" / "Board.md"
+    os.chmod(board, 0o664)
+
+    crew_tracker.move(str(root), CARD, "review")
+
+    assert (oct(board.stat().st_mode & 0o7777), _lane_of(board.read_text(encoding="utf-8"), CARD)) == (
+        "0o664", "Review")
+
+
+def test_board_keeps_its_owner(tmp_path):
+    _needs_root()
+    vault = _make_vault(tmp_path / "vault")
+    root = _obsidian_repo(tmp_path, vault)
+    board = vault / "Boards" / "repo" / "Board.md"
+    os.chown(board, 12345, 12346)
+
+    crew_tracker.move(str(root), CARD, "review")
+
+    assert (board.stat().st_uid, board.stat().st_gid, _lane_of(board.read_text(encoding="utf-8"), CARD)) == (
+        12345, 12346, "Review")
+
+
+def test_new_note_takes_its_directory_owner_when_root(tmp_path):
+    _needs_root()
+    vault = _make_vault(tmp_path / "vault")
+    root = _obsidian_repo(tmp_path, vault)
+    folder = vault / "Boards" / "repo"
+    os.chown(folder, 12345, 12346)
+    os.chown(folder / "Board.md", 12345, 12346)
+
+    crew_tracker.create(str(root), "T-0060", "new work")
+    note = folder / "T-0060.md"
+
+    assert (note.stat().st_uid, note.stat().st_gid, (folder / "Board.md").stat().st_uid) == (12345, 12346, 12345)
+
+
+def _vault_around_repo(tmp_path, board_dir, ignore=None):
+    """A vault at tmp_path that CONTAINS the repo at tmp_path/repo."""
+    root = make_repo(tmp_path)
+    (tmp_path / ".obsidian").mkdir()
+    (tmp_path / board_dir).mkdir(parents=True)
+    (tmp_path / board_dir / "Board.md").write_text(_fixture("board_0_20.md"), encoding="utf-8", newline="\n")
+    if ignore:
+        (root / ".gitignore").write_text(ignore, encoding="utf-8")
+    _crew_json(root, {"kind": "obsidian", "obsidian": {"vaultPath": str(tmp_path), "boardDir": board_dir}})
+    (root / ".work" / "INDEX.md").write_text(ROW, encoding="utf-8", newline="\n")
+    return root
+
+
+def test_board_inside_worktree_of_a_vault_that_contains_it_is_refused(tmp_path):
+    root = _vault_around_repo(tmp_path, "repo/boards")
+
+    done, untouched = _refused(tmp_path, root)
+
+    assert (done.returncode, untouched, "would enter the review bundle" in done.stdout) == (1, True, True)
+
+
+def test_board_inside_worktree_that_git_ignores_is_allowed(tmp_path):
+    root = _vault_around_repo(tmp_path, "repo/boards", ignore="boards/\n")
+
+    done = _cli(root, "move", "--ticket", CARD, "--to", "review")
+
+    assert (done.returncode, _lane_of((tmp_path / "repo/boards/Board.md").read_text(encoding="utf-8"), CARD)) == (
+        0, "Review")
+
+
+def test_board_outside_worktree_of_a_vault_that_contains_it_is_allowed(tmp_path):
+    root = _vault_around_repo(tmp_path, "Boards/repo")
+
+    done = _cli(root, "move", "--ticket", CARD, "--to", "review")
+
+    assert (done.returncode, _lane_of((tmp_path / "Boards/repo/Board.md").read_text(encoding="utf-8"), CARD)) == (
+        0, "Review")
+
+
+@pytest.mark.parametrize("sep", [" ", " ", "\x85", "\x0b", "\x0c", "\x1c", "\x1d", "\x1e"])
+def test_title_with_a_line_separator_is_refused(tmp_path, sep):
+    root = _files_repo(tmp_path, "T-0001 | done | low | repo | first\n")
+
+    got = crew_tracker.create(str(root), "T-0002", f"split{sep}tail")
+
+    assert (got["results"][0]["state"], _index(root)) == (
+        "could not update", "T-0001 | done | low | repo | first\n")
+
+
+def test_a_human_card_holding_a_line_separator_moves_whole():
+    """Obsidian keeps U+2028 inside a line; str.splitlines does not. Splitting
+    the board there would move half a card and strand the rest."""
+    text = _fixture("board_0_20.md").replace("Fix token refresh on 401", "Fix token refresh on 401", 1)
+    board, problem = crew_tracker.parse_board(text, COLUMNS)
+    assert problem is None, problem
+
+    moved, _, why = crew_tracker.move_card(board, CARD, "review")
+
+    assert (why, moved.count(" "), "- [ ] [[T-0042]] Fix token refresh on 401\n" in moved,
+            _lane_of(moved, CARD)) == (None, 1, True, "Review")
+
+
+def _named_repo(tmp_path, name, vault, rows=""):
+    """A repo whose git name is `name`, sharing `vault`'s top-level board."""
+    made = make_repo(tmp_path / name)
+    root = tmp_path / name / name
+    os.rename(made, root)
+    _crew_json(root, {"kind": "obsidian", "obsidian": {"vaultPath": str(vault)}})
+    (root / ".work" / "INDEX.md").write_text(rows, encoding="utf-8", newline="\n")
+    return root
+
+
+def test_create_refuses_a_card_on_a_shared_board_no_note_claims(tmp_path):
+    """The round-1 repro: repo A's T-0042 sits on the default (shared) board with
+    no note; repo B minting its own T-0042 must not adopt A's card."""
+    vault = _make_vault(tmp_path / "vault", board_dir=".")
+    other = _named_repo(tmp_path, "beta", vault)
+
+    done, untouched = _refused(tmp_path, other, ("create", "--ticket", CARD, "--title", "B's work"))
+
+    assert (done.returncode, untouched, "could not tell whose" in done.stdout) == (1, True, True)
+
+
+def test_create_refuses_a_ticket_another_repo_owns(tmp_path):
+    vault = _make_vault(tmp_path / "vault", board_dir=".")
+    first = _named_repo(tmp_path, "alpha", vault)
+    other = _named_repo(tmp_path, "beta", vault)
+    assert _cli(first, "create", "--ticket", "T-0060", "--title", "A's work").returncode == 0
+
+    done, untouched = _refused(tmp_path, other, ("create", "--ticket", "T-0060", "--title", "B's work"))
+
+    assert (done.returncode, untouched, "belongs to repo 'alpha'" in done.stdout) == (1, True, True)
+
+
+def test_move_refuses_a_card_another_repo_owns(tmp_path):
+    vault = _make_vault(tmp_path / "vault", board_dir=".")
+    first = _named_repo(tmp_path, "alpha", vault)
+    other = _named_repo(tmp_path, "beta", vault, rows="T-0060 | direction | - | beta | B's work\n")
+    assert _cli(first, "create", "--ticket", "T-0060", "--title", "A's work").returncode == 0
+
+    done, untouched = _refused(tmp_path, other, ("move", "--ticket", "T-0060", "--to", "done"))
+
+    assert (done.returncode, untouched, "belongs to repo 'alpha'" in done.stdout) == (1, True, True)
+
+
+def test_move_without_this_repos_index_row_writes_nothing(tmp_path):
+    vault = _make_vault(tmp_path / "vault", board_dir=".")
+    other = _named_repo(tmp_path, "beta", vault)
+
+    done, untouched = _refused(tmp_path, other, ("move", "--ticket", CARD, "--to", "done"))
+
+    assert (done.returncode, untouched, done.stdout) == (
+        1, True, "obsidian: could not update: no .work/INDEX.md row for T-0042 in this repo\n")
+
+
+def test_move_says_when_no_note_names_the_cards_repo(tmp_path):
+    vault = _make_vault(tmp_path / "vault")
+    root = _obsidian_repo(tmp_path, vault)
+
+    done = _cli(root, "move", "--ticket", CARD, "--to", "review")
+
+    assert (done.returncode, done.stdout.splitlines()[1]) == (
+        0, "obsidian: updated: Boards/repo/Board.md Ready -> Review "
+           "(whose card could not tell: no Boards/repo/T-0042.md note names its repo)")
+
+
+def test_read_refuses_a_card_another_repo_owns(tmp_path):
+    vault = _make_vault(tmp_path / "vault", board_dir=".")
+    first = _named_repo(tmp_path, "alpha", vault)
+    other = _named_repo(tmp_path, "beta", vault, rows="T-0060 | direction | - | beta | B's work\n")
+    assert _cli(first, "create", "--ticket", "T-0060", "--title", "A's work").returncode == 0
+
+    got = crew_tracker.read(str(other), "T-0060")
+
+    assert (got["results"][1]["state"], "belongs to repo 'alpha'" in got["results"][1]["reason"]) == (
+        "could not read", True)
+
+
+def test_ready_status_maps_to_the_backlog_lane(tmp_path):
+    vault = _make_vault(tmp_path / "vault")
+    root = _obsidian_repo(tmp_path, vault)
+    _cli(root, "create", "--ticket", "T-0060", "--title", "new work")
+
+    done = _cli(root, "move", "--ticket", "T-0060", "--to", "ready")
+    board = (vault / "Boards" / "repo" / "Board.md").read_text(encoding="utf-8")
+
+    assert (done.returncode, "T-0060 | ready |" in _index(root), _lane_of(board, "T-0060")) == (0, True, "Backlog")
+
+
+@pytest.mark.parametrize("row", ["| T-0001\n", "T-0001 |\n", "| T-0001 |\n"])
+def test_index_row_without_a_status_cell_is_could_not_update(tmp_path, row):
+    root = _files_repo(tmp_path, row)
+
+    done = _cli(root, "move", "--ticket", "T-0001", "--to", "spec")
+
+    assert (done.returncode, done.stdout, done.stderr, _index(root)) == (
+        1, "files: could not update: .work/INDEX.md row for T-0001 has no status cell\n", "", row)
+
+
+def test_read_of_a_row_without_a_status_cell_is_could_not_read(tmp_path):
+    root = _files_repo(tmp_path, "| T-0001\n")
+
+    got = crew_tracker.read(str(root), "T-0001")
+
+    assert got["results"][0] == {"backend": "files", "state": "could not read",
+                                 "reason": ".work/INDEX.md row for T-0001 has no status cell", "command": None}
+
+
+def test_create_with_work_a_file_is_could_not_update(tmp_path):
+    root = _files_repo(tmp_path)
+    (root / ".work").rmdir()
+    (root / ".work").write_text("", encoding="utf-8")
+
+    done = _cli(root, "create", "--ticket", "T-0001", "--title", "x")
+
+    assert (done.returncode, done.stdout.startswith("files: could not update: .work: "), done.stderr) == (1, True, "")
+
+
+@pytest.mark.parametrize("board", [5, ["Board.md"], None])
+def test_non_string_board_name_is_refused(tmp_path, board):
+    vault = _make_vault(tmp_path / "vault")
+    root = _obsidian_repo(tmp_path, vault, board=board)
+
+    done, untouched = _refused(tmp_path, root)
+
+    assert (done.returncode, untouched, "must be a bare file name" in done.stdout, done.stderr) == (1, True, True, "")
+
+
+def test_read_says_when_no_note_names_the_cards_repo(tmp_path):
+    vault = _make_vault(tmp_path / "vault")
+    root = _obsidian_repo(tmp_path, vault)
+
+    done = _cli(root, "read", "--ticket", CARD)
+
+    assert (done.returncode, done.stdout.splitlines()[1]) == (
+        0, "obsidian: Ready (whose card could not tell: no Boards/repo/T-0042.md note names its repo)")

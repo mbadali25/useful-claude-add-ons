@@ -33,17 +33,23 @@ collapses into a safe-looking value, and every write below refuses on it.
 Every write builds its full text first, writes a temp file beside the target,
 re-reads the target, and only then `os.replace`s -- recomputing, at most
 `WRITE_TRIES` times, when the target changed underneath it (another session
-appending to INDEX.md, Obsidian saving the board). A failed tracker write never
+appending to INDEX.md, Obsidian saving the board). The temp is created
+exclusively (`O_EXCL`), so a link planted at its name is never followed, and it
+carries the target's mode and owner before it replaces it: sessions here run as
+root, and a board handed to root 0644 is one Obsidian can no longer save. A failed tracker write never
 undoes the lifecycle transition that called it: it prints `could not update:
 <reason>` and exits 1, and the command's prose tells the human.
 """
 import argparse
 import datetime
+import errno
 import json
 import ntpath
 import os
 import pathlib
 import re
+import secrets
+import stat
 import subprocess
 import sys
 
@@ -63,9 +69,10 @@ UNREADABLE = "could not read"
 # `obsidian.columns` key of the lane each one lands in. Table-driven on
 # purpose: a new status is a row here, not a branch in the code. A status
 # absent from this table maps to no lane and is refused with nothing written.
-STATUS_ORDER = ("direction", "spec", "planned", "in-progress", "review", "done")
+STATUS_ORDER = ("direction", "ready", "spec", "planned", "in-progress", "review", "done")
 LANE_FOR_STATUS = {
     "direction": "backlog",
+    "ready": "backlog",
     "spec": "ready",
     "planned": "ready",
     "in-progress": "inProgress",
@@ -231,6 +238,75 @@ def _discard(path):
         pass
 
 
+# O_EXCL is the guard: with O_CREAT it refuses anything already at the name,
+# a symlink included (dangling or not), so a link planted at a temp name is
+# never followed. O_NOFOLLOW is belt and braces; O_BINARY stops Windows' CRT
+# turning each LF into CRLF underneath `os.fdopen(fd, "wb")`.
+_NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
+_BINARY = getattr(os, "O_BINARY", 0)
+_TEMP_FLAGS = os.O_WRONLY | os.O_CREAT | os.O_EXCL | _NOFOLLOW | _BINARY
+
+
+def _temp_name(name):
+    return f".{name}.crew-{os.getpid()}-{secrets.token_hex(6)}.tmp"
+
+
+def _is_root():
+    return hasattr(os, "geteuid") and os.geteuid() == 0
+
+
+def _ownership(path):
+    """What a file written at `path` must carry: `(mode, uid, gid, replaces)`.
+
+    An existing target's own mode and owner. A new file keeps the umask's mode
+    and, only when running as root, takes its directory's owner -- a user who
+    is not root cannot give a file away and creates it as themselves, which is
+    what every other file they create does.
+    """
+    try:
+        found = os.stat(path)
+        return stat.S_IMODE(found.st_mode), found.st_uid, found.st_gid, True
+    except FileNotFoundError:
+        found = os.stat(os.path.dirname(path) or ".")
+        return None, found.st_uid, found.st_gid, False
+
+
+def _carry(fd, ownership):
+    """Give the open file `ownership`'s owner, then its mode. A replacement
+    that cannot keep the old owner is refused rather than handed to whoever
+    ran crew; os.error's strerror carries why."""
+    mode, uid, gid, replaces = ownership
+    if hasattr(os, "fchown") and (replaces or _is_root()):
+        now = os.fstat(fd)
+        if (now.st_uid, now.st_gid) != (uid, gid):
+            try:
+                os.fchown(fd, uid, gid)
+            except PermissionError as exc:
+                raise OSError(exc.errno, f"cannot keep its owner {uid}:{gid} ({exc.strerror})") from exc
+    if mode is not None and hasattr(os, "fchmod"):
+        os.fchmod(fd, mode)
+
+
+def _write_temp(path, data, ownership):
+    """A new temp file beside `path` holding `data`, created exclusively."""
+    folder, name = os.path.split(path)
+    for _ in range(WRITE_TRIES):
+        tmp = os.path.join(folder, _temp_name(name))
+        try:
+            fd = os.open(tmp, _TEMP_FLAGS, 0o666)
+        except FileExistsError:
+            continue
+        try:
+            with os.fdopen(fd, "wb") as handle:
+                _carry(handle.fileno(), ownership)
+                handle.write(data)
+        except BaseException:
+            _discard(tmp)
+            raise
+        return tmp
+    raise OSError(errno.EEXIST, f"no free temp file name beside it after {WRITE_TRIES} tries")
+
+
 def _atomic_update(path, label, backend, compute):
     """Replace `path` with `compute(old_bytes)`'s text, re-reading before replace.
 
@@ -239,25 +315,25 @@ def _atomic_update(path, label, backend, compute):
     the read and the replace, the temp is dropped and the text recomputed from
     the new bytes, at most WRITE_TRIES times.
     """
-    folder, name = os.path.split(path)
-    tmp = os.path.join(folder, f".{name}.crew-{os.getpid()}.tmp")
     for _ in range(WRITE_TRIES):
         try:
             before = _read_bytes(path)
+            ownership = _ownership(path)
         except OSError as exc:
             return _result(backend, FAILED, f"{label}: {exc.strerror or exc}")
         new, result = compute(before)
         if new is None:
             return result
+        tmp = None
         try:
-            with open(tmp, "wb") as handle:
-                handle.write(new)
+            tmp = _write_temp(path, new, ownership)
             if _read_bytes(path) != before:
                 _discard(tmp)
                 continue
             os.replace(tmp, path)
         except OSError as exc:
-            _discard(tmp)
+            if tmp:
+                _discard(tmp)
             return _result(backend, FAILED, f"{label}: {exc.strerror or exc}")
         return result
     return _result(backend, FAILED, f"{label} changed during write")
@@ -276,8 +352,13 @@ def _rows(lines, ticket):
     return [i for i, line in enumerate(lines) if (_cells(line) or [None])[0] == ticket]
 
 
+def _no_status_cell(ticket):
+    return f"{INDEX_REL} row for {ticket} has no status cell"
+
+
 def _set_status(line, status):
-    """`line` with only its status cell's text replaced; padding and pipes kept."""
+    """`line` with only its status cell's text replaced; padding and pipes kept.
+    The caller has checked `_cells(line)` has a status cell."""
     body = line.rstrip("\r\n")
     ending = line[len(body):]
     parts = body.split("|")
@@ -319,8 +400,13 @@ def repo_name(root):
 
 
 def title_ok(title):
-    """A title fits one INDEX cell and one card line."""
-    return bool(title) and not any(ch in title for ch in "|\r\n")
+    """A title fits one INDEX cell and one card line.
+
+    One line by `str.splitlines`' own rule, which also splits on \x0b, \x0c,
+    \x1c-\x1e, \x85, U+2028 and U+2029 -- every INDEX reader in crew splits
+    that way, so a title holding one of them is two rows to them.
+    """
+    return bool(title) and "|" not in title and title.splitlines() == [title]
 
 
 def _files_create(root, ticket, title):
@@ -340,7 +426,10 @@ def _files_create(root, ticket, title):
         return (text + row).encode("utf-8"), _result(backend, UPDATED, f"{INDEX_REL} row added")
 
     path = os.path.join(root, ".work", "INDEX.md")
-    os.makedirs(os.path.dirname(path), exist_ok=True)
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+    except OSError as exc:
+        return _result(backend, FAILED, f".work: {exc.strerror or exc}")
     return _atomic_update(path, INDEX_REL, backend, compute)
 
 
@@ -357,7 +446,10 @@ def _files_move(root, ticket, status):
             return None, _result(backend, FAILED, f"no {INDEX_REL} row for {ticket}")
         if len(found) > 1:
             return None, _result(backend, FAILED, f"{INDEX_REL} has {len(found)} rows for {ticket}")
-        current = _cells(lines[found[0]])[1] if len(_cells(lines[found[0]])) > 1 else ""
+        cells = _cells(lines[found[0]])
+        if len(cells) < 2:
+            return None, _result(backend, FAILED, _no_status_cell(ticket))
+        current = cells[1]
         if current == status:
             return None, _result(backend, UNCHANGED, f"{INDEX_REL} already {status}")
         lines[found[0]] = _set_status(lines[found[0]], status)
@@ -379,7 +471,9 @@ def _files_read(root, ticket):
         why = f"no {INDEX_REL} row for {ticket}" if not found else f"{len(found)} rows for {ticket}"
         return _result("files", UNREADABLE, why)
     cells = _cells(text.splitlines()[found[0]])
-    return _result("files", READ, None, status=cells[1] if len(cells) > 1 else "")
+    if len(cells) < 2:
+        return _result("files", UNREADABLE, _no_status_cell(ticket))
+    return _result("files", READ, None, status=cells[1])
 
 
 # --- the Kanban board ------------------------------------------------------------
@@ -403,6 +497,18 @@ _COMPLETE = "**Complete**"
 
 def _bare(line):
     return line.rstrip("\r\n")
+
+
+def _board_lines(text):
+    """The board's lines with their endings, split on LF alone.
+
+    Not `str.splitlines`: it also splits on \x0b, \x0c, \x1c-\x1e, \x85,
+    U+2028 and U+2029, which a Markdown editor keeps inside a line, so a card a
+    human typed one of them into would be cut in two and moved by halves.
+    """
+    parts = text.split("\n")
+    lines = [part + "\n" for part in parts[:-1]]
+    return lines + [parts[-1]] if parts[-1] else lines
 
 
 def _frontmatter_end(lines):
@@ -440,7 +546,7 @@ def parse_board(text, columns):
     The board is its lines (endings kept), the lanes above any archive break
     in order, and the configured lane names every lifecycle status needs.
     """
-    lines = text.splitlines(keepends=True)
+    lines = _board_lines(text)
     top, problem = _frontmatter_end(lines)
     if problem:
         return None, problem
@@ -613,6 +719,8 @@ def _vault_paths(root, settings, names):
         return None, f"obsidian.boardDir {board_dir!r} may not contain '..'"
     found = {"vault": vault, "dir": board_dir.replace("\\", "/").strip("/")}
     for label, name in names:
+        if not isinstance(name, str):
+            return None, f"obsidian.{label} {name!r} must be a bare file name"
         if not name or name in (".", "..") or any(sep in name for sep in "/\\"):
             return None, f"obsidian.{label} {name!r} must be a bare file name"
         shown = f"{found['dir']}/{name}" if found["dir"] else name
@@ -622,15 +730,18 @@ def _vault_paths(root, settings, names):
         if os.path.lexists(real) and not os.path.isfile(real):
             return None, f"{label} {shown} is not a regular file"
         found[label], found[label + "Shown"] = real, shown
+    # Each file, not the vault: a vault that CONTAINS the repo, with boardDir
+    # pointing into it, puts the board in the worktree while the vault is not.
     repo = os.path.realpath(root)
-    if _inside(repo, vault):
-        for label, _ in names:
-            ignored = _git_ignored(repo, found[label])
-            if ignored is None:
-                return None, f"could not tell whether git ignores {found[label + 'Shown']} in this worktree"
-            if not ignored:
-                return None, (f"the vault is inside this worktree and git does not ignore "
-                              f"{found[label + 'Shown']}: the board would enter the review bundle")
+    for label, _ in names:
+        if not _inside(repo, found[label]):
+            continue
+        ignored = _git_ignored(repo, found[label])
+        if ignored is None:
+            return None, f"could not tell whether git ignores {found[label + 'Shown']} in this worktree"
+        if not ignored:
+            return None, (f"{found[label + 'Shown']} is inside this worktree and git does not ignore "
+                          f"it: the board would enter the review bundle")
     return found, None
 
 
@@ -674,22 +785,69 @@ def _note_text(root, ticket, title):
 def _create_note_once(paths, text):
     """The ticket note, written once and never rewritten. Exclusive create is the
     whole guard: the text is built before the open, and `x` refuses an existing
-    note (or a dangling link) instead of truncating it."""
+    note (or a dangling link) instead of truncating it. A note this call made
+    and could not finish is removed, never left half-written."""
+    data, created = text.encode("utf-8"), False
     try:
+        ownership = _ownership(paths["note"])
         with open(paths["note"], "xb") as handle:
-            handle.write(text.encode("utf-8"))
+            created = True
+            _carry(handle.fileno(), ownership)
+            handle.write(data)
     except FileExistsError:
         return _result("obsidian-note", UNCHANGED, f"{paths['noteShown']} exists; never rewritten")
     except OSError as exc:
+        if created:
+            _discard(paths["note"])
         return _result("obsidian-note", FAILED, f"{paths['noteShown']}: {exc.strerror or exc}")
     return _result("obsidian-note", UPDATED, f"{paths['noteShown']} created")
+
+
+# A card is `- [ ] [[T-0042]] <title>` and says nothing about which repo made
+# it, and with boardDir unset every repo writes one `<vault>/Board.md`. The
+# ticket note does say: `create` writes `- repo: <name>` into it. So the note is
+# the card's owner, and a note naming another repo stops create, move and read.
+# No note is `could not tell`, never "ours": create refuses on it (it is minting
+# a new id, so a card already there is someone's), and move -- which must still
+# work on a 0.20 board whose cards have no note -- says so on its line, after
+# requiring this repo's own INDEX row for the ticket.
+_NOTE_REPO = re.compile(r"^- repo: (.+?)[ \t]*$", re.M)
+
+
+def _card_owner(paths):
+    """`(repo name, None)` from the ticket note, or `(None, why it cannot be told)`."""
+    try:
+        raw = _read_bytes(paths["note"])
+    except OSError as exc:
+        return None, f"{paths['noteShown']}: {exc.strerror or exc}"
+    if raw is None:
+        return None, f"no {paths['noteShown']} note names its repo"
+    text, problem = _decode(raw, paths["noteShown"])
+    found = None if problem else _NOTE_REPO.search(text)
+    return (found.group(1), None) if found else (None, problem or f"{paths['noteShown']} names no repo")
+
+
+def _foreign(root, paths, ticket):
+    """The problem when another repo owns `ticket` on this board, else None."""
+    owner, _ = _card_owner(paths)
+    here = repo_name(root)
+    if owner is not None and owner != here:
+        return (f"{ticket} on {paths['boardShown']} belongs to repo {owner!r} ({paths['noteShown']}), "
+                f"not {here!r}: give this repo its own obsidian.boardDir")
+    return None
 
 
 def _obsidian_create(root, settings, ticket, title):
     columns = settings["columns"]
     paths, problem = _vault_paths(root, settings, [("board", settings["board"]), ("note", f"{ticket}.md")])
+    board, problem = (None, problem) if problem else _load_board(paths, columns)
     if not problem:
-        _, problem = _load_board(paths, columns)
+        problem = _foreign(root, paths, ticket)
+    if not problem and any(card["id"] == ticket for card in _cards(board)):
+        owner, unknown = _card_owner(paths)
+        if owner is None:
+            problem = (f"{paths['boardShown']} already has a {ticket} card and could not tell whose: "
+                       f"{unknown}")
     if problem:
         return [_result("obsidian", FAILED, problem)]
     files = _files_create(root, ticket, title)
@@ -705,36 +863,46 @@ def _obsidian_create(root, settings, ticket, title):
 
 def _obsidian_move(root, settings, ticket, status):
     columns, key = settings["columns"], LANE_FOR_STATUS[status]
-    paths, problem = _vault_paths(root, settings, [("board", settings["board"])])
+    paths, problem = _vault_paths(root, settings, [("board", settings["board"]), ("note", f"{ticket}.md")])
+    if not problem and _files_read(root, ticket)["state"] != READ:
+        problem = f"no {INDEX_REL} row for {ticket} in this repo"
     board, problem = (None, problem) if problem else _load_board(paths, columns)
     if not problem:
         _, _, problem = move_card(board, ticket, key)
+    if not problem:
+        problem = _foreign(root, paths, ticket)
     if problem:
         return [_result("obsidian", FAILED, problem)]
+    _, unknown = _card_owner(paths)
+    caveat = f" (whose card could not tell: {unknown})" if unknown else ""
 
     def edit(current):
         new, moved_from, why = move_card(current, ticket, key)
         if why:
             return None, _result("obsidian", FAILED, why)
         if moved_from == columns[key]:
-            return None, _result("obsidian", UNCHANGED, f"{paths['boardShown']} already in {moved_from}")
-        return new, _result("obsidian", UPDATED, f"{paths['boardShown']} {moved_from} -> {columns[key]}")
+            return None, _result("obsidian", UNCHANGED, f"{paths['boardShown']} already in {moved_from}{caveat}")
+        return new, _result("obsidian", UPDATED, f"{paths['boardShown']} {moved_from} -> {columns[key]}{caveat}")
 
     return [_files_move(root, ticket, status), _board_write(paths, columns, edit)]
 
 
 def _obsidian_read(root, settings, ticket):
     files = _files_read(root, ticket)
-    paths, problem = _vault_paths(root, settings, [("board", settings["board"])])
+    paths, problem = _vault_paths(root, settings, [("board", settings["board"]), ("note", f"{ticket}.md")])
     board, problem = (None, problem) if problem else _load_board(paths, settings["columns"])
     card, problem = (None, problem) if problem else find_card(board, ticket)
+    if not problem:
+        problem = _foreign(root, paths, ticket)
     if problem:
         return [files, _result("obsidian", UNREADABLE, problem)]
     status = files.get("status")
     expected = settings["columns"].get(LANE_FOR_STATUS.get(status, ""), None)
     disagree = card["lane"] != expected
-    why = f"INDEX status {status} expects {expected}" if disagree else None
-    return [files, _result("obsidian", READ, why, lane=card["lane"], disagree=disagree)]
+    _, unknown = _card_owner(paths)
+    notes = [f"INDEX status {status} expects {expected}"] if disagree else []
+    notes += [f"whose card could not tell: {unknown}"] if unknown else []
+    return [files, _result("obsidian", READ, "; ".join(notes) or None, lane=card["lane"], disagree=disagree)]
 
 
 # --- the interface -------------------------------------------------------------
