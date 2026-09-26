@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@c87ac3f4
+anchor: useful-claude-add-ons@4755ae1a
 verified: 2026-09-26
 
 ## Re-derive provenance
@@ -1072,3 +1072,9 @@ and the autopilot tests. Each citation into them was re-read with `grep -n`/`sed
 - `.crew/verify.json` - rule 26's `seconds` (9 -> 11) and `why` changed in place; `:281-289`
   holds, 294 lines.
 - `CHANGELOG.md` and the tests - cited by name only here.
+
+## Re-anchor provenance - `c87ac3f4` -> `4755ae1a`, 2026-09-26 (T-0018 round-3 mutation retarget)
+
+`git diff --name-only c87ac3f4 4755ae1a` returns only `plugin/crew/tests/sabotage_autopilot.py`
+and `plugin/crew/tests/test_crew_autopilot_status.py`, both cited by name only here, so every
+line citation above holds.

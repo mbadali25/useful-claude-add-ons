@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@c87ac3f4
+anchor: useful-claude-add-ons@4755ae1a
 verified: 2026-09-26
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -759,3 +759,10 @@ so `sabotage.py:77` and `:3049` stand.
 
 The 37 `STATUS_MUTATIONS` were run through `sabotage.py`'s harness for the ticket, not for this
 refresh.
+
+Re-verified per-path from `c87ac3f4` to `4755ae1a` (T-0018 round-3 mutation retarget).
+`git diff --name-only c87ac3f4 4755ae1a` returns `plugin/crew/tests/sabotage_autopilot.py` and
+`plugin/crew/tests/test_crew_autopilot_status.py`. `sabotage_autopilot.py` - `AUTOPILOT_MUTATIONS`
+still `:25`, `STATUS_MUTATIONS` still `:164`, still 37 entries; one round-1 entry was relabelled
+and pointed at a new test (a three-line comment added), so the append on the file's last line
+moved `:318` -> `:321`. `.crew/verify.json` and `sabotage.py` did not change.
