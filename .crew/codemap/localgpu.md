@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@f2bb919b
+anchor: useful-claude-add-ons@fc54def6
 verified: 2026-09-25
 
 # localgpu
@@ -510,10 +510,11 @@ file's frontmatter, not previously listed in this note.** `plugin.json`'s
   `DEV_PROVIDERS = ("claude", "codex", "copilot")` /
   `QA_PROVIDERS = ("claude", "codex", "copilot")` quoted at `:33-34`.
   **Checked against the code, corrected after QA:**
-  `plugin/crew/hooks/scripts/crew_config.py:126-127` only re-exports
+  `plugin/crew/hooks/scripts/crew_config.py:127-128` only re-exports
   (`DEV_PROVIDERS = crew_state.DEV_PROVIDERS`); the tuples are actually
-  *defined* at `plugin/crew/hooks/scripts/crew_state.py:1411-1412` (re-numbered
-  from `:1503-1504` by crew 1.0 - see the 2026-09-25 re-anchor below; same two
+  *defined* at `plugin/crew/hooks/scripts/crew_state.py:1414-1415` (`:1411-1412` before
+  T-0005's three import lines, re-numbered
+  from `:1503-1504` by crew 1.0 - see the 2026-09-25 re-anchors below; same two
   lines, `DEV_PROVIDERS = ("claude", "codex", "copilot")` /
   `QA_PROVIDERS = ("claude", "codex", "copilot")`, byte-identical).
   So `crew.md`'s own attribution to `crew_config.py` names the re-export, not
@@ -1050,3 +1051,17 @@ f2bb919b -- <the 32 tracked paths this note cites>` returns one file,
 `:218`). The `crew` entry's description, which this note quotes ("4 context-isolated agents
 (explorer, reviewer, security, researcher)"), is on `:217` and unchanged, and `localgpu`'s own
 entry is untouched (still `0.1.20`). Nothing under `plugin/localgpu/` changed. No claim moved.
+
+**Re-anchored `f2bb919b` -> `fc54def6` on 2026-09-25 (T-0005).** `git diff --name-only f2bb919b
+fc54def6 -- <the files this note cites>` returns `.claude-plugin/marketplace.json` (crew's
+`version` only, now `1.0.41`; `:217`'s description and `localgpu`'s own entry, still `0.1.20`,
+unchanged), `CLAUDE.md` (cited without a line; its `open(p, "w")` landmine still names
+`plugin/localgpu/mcp/store.py`), `plugin/crew/hooks/scripts/crew_config.py` and
+`plugin/crew/hooks/scripts/crew_state.py`. `plugin/crew/` and `plugin/crew/agents/` are named only
+as locations (still 4 agent files).
+Both crew files were re-read at the two live citations: the `crew_config.py` re-export moved
+`:126-127` -> `:127-128` (one import line added above it) and the `crew_state.py` definition
+`:1411-1412` -> `:1414-1415` (three import lines); both still read as quoted and are corrected
+above. The citations in the QA-history sections record what was true at their own passes and are
+left as written. Nothing under `plugin/localgpu/` changed.
+

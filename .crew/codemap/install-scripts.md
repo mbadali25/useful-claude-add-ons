@@ -1,5 +1,5 @@
 # install-scripts
-anchor: useful-claude-add-ons@8d447a7d
+anchor: useful-claude-add-ons@fc54def6
 verified: 2026-09-25
 
 ## Re-derive provenance
@@ -407,3 +407,14 @@ Re-verified per-path from `adf8d1dd` to `8d447a7d` for T-0008's review round 3: 
 only `plugin/crew/README.md` changed, two lines reworded in place at `:764` and `:766`; the
 `34 commands` claim at `:2178` and `4 agents` at `:2189` did not move and still hold. Both install
 scripts, `README.md` and `scripts/check-marketplace.py` did not change.
+
+Re-verified per-path from `8d447a7d` to `fc54def6` for T-0005 (`8d447a7d` is T-0008's pre-rebase
+commit; T-0008 landed as `95120430`/`768a747a`): of the cited paths only
+`.claude-plugin/marketplace.json` (crew `version` `:218`, now 1.0.41; the `:217` description is
+unchanged), `plugin/PLUGINS.md` (`:14` version; `:17` Registers row unchanged),
+`plugin/crew/BUDGETS.md` (marker still `:10`; the `:11` figure re-measured, now 18,006 lines, 120
+files), `plugin/crew/README.md` (the cloud-guard environments section added above the command
+table; the `34 commands` claim moved `:2178` -> `:2217` and `4 agents` `:2189` -> `:2228`, both
+re-read and still true) and `TODO.md` changed. Both install scripts, `README.md` and
+`scripts/check-marketplace.py` did not change, so their citations stand.
+

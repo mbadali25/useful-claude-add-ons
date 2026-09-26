@@ -1,5 +1,5 @@
 # repo-docs
-anchor: useful-claude-add-ons@8d447a7d
+anchor: useful-claude-add-ons@fc54def6
 verified: 2026-09-25
 
 ## Re-derive provenance
@@ -287,7 +287,7 @@ listing the directory.
 - **`docs/runbooks/INDEX.md` still does not exist.** `docs/runbooks/`
   contains `rollback.md` alone (re-confirmed by `ls`).
   `plugin/crew/skills/crew-runbooks/SKILL.md:80` and
-  `plugin/crew/README.md:1728` (`:1725` at `f2bb919b`, `:1604` before that,
+  `plugin/crew/README.md:1767` (`:1728` at `8d447a7d`, `:1725` at `f2bb919b`, `:1604` before that,
   that file having changed in each range — re-grepped, not offset) both still describe
   `docs/runbooks/INDEX.md` as a symptom-keyed index that would live there.
   JUDGEMENT, unchanged: costs nothing with one runbook, becomes a real gap at
@@ -332,7 +332,7 @@ listing the directory.
   `:273`, `read_diagrams` at `:472`, the `sha[:7] == head[:7]` comparisons at
   `:429` and `:512`, and the `_diagram_paths` call site inside `read_diagrams`
   at `:518` (was `:522`). Re-exported through
-  `plugin/crew/hooks/scripts/crew_state.py:129`/`:133`/`:136`/`:139`
+  `plugin/crew/hooks/scripts/crew_state.py:132`/`:136`/`:139`/`:142`
   (`_ANCHOR_RE`, `_DIAGRAM_ANCHOR_RE`, `_NOT_SUBSYSTEMS`, `_diagram_paths`).
   A diagram with no anchor header, or one whose anchor is old AND whose
   `%% Anchors:` paths have moved, still counts as `behind`; unknown still
@@ -389,10 +389,10 @@ listing the directory.
   policy, not re-verified again at this pass) and is present in this fresh
   worktree. `verification-harness.md` owns this file's full contents; this
   note only records what changed in its own tracked citations. Since
-  `6c497a14` one rule was appended (`:244` since T-0008's review round 3
+  `6c497a14` one rule was appended (`:255` since T-0005 inserted a rule above it; `:244` after T-0008's review round 3
   added a path above it; `:243` when #228 added it): `.claude/rules/**` and
   `.crew/codemap/**` now run `crew_instructions.py rules --root . --check`.
-  Since `f2bb919b` another follows it (`:245-261`, T-0008): changes to
+  Since `f2bb919b` another follows it (`:256-272`, T-0008): changes to
   `plugin/crew/hooks/scripts/crew_refresh_check.py`, its tests,
   `plugin/crew/commands/implement.md` or `plugin/crew/commands/done.md` -
   and since review round 3 `scope_guard.py`, `completion_audit.py`,
@@ -474,3 +474,14 @@ Re-verified per-path from `adf8d1dd` to `8d447a7d` for T-0008's review round 3: 
 move), `TODO.md` (two version strings at `:5000-5001`; the `render.sh` entry at `:1183` did not
 move), `CHANGELOG.md` (cited without a line) and
 `plugin/crew/hooks/scripts/crew_refresh_check.py` (cited by name only) changed.
+
+Re-verified per-path from `8d447a7d` to `fc54def6` for T-0005 (`8d447a7d` is T-0008's pre-rebase
+commit; T-0008 landed as `95120430`/`768a747a`). Of the cited paths T-0005 changed
+`.crew/verify.json` (a cloud-guard rule inserted at index 6, `:117-126`, so the `.claude/rules/`
+rule moved `:244` -> `:255` and the refresh-check rule `:245-261` -> `:256-272`; corrected above),
+`plugin/crew/README.md` (the cloud-guard environments section, 39 lines added above the runbooks
+section, so the `docs/runbooks/INDEX.md` mention moved `:1728` -> `:1767`, re-read), `crew_state.py`
+(three import lines, so the four re-exports moved `:129`/`:133`/`:136`/`:139` ->
+`:132`/`:136`/`:139`/`:142`, re-read), `TODO.md` (lines appended at the end; the `render.sh` entry
+at `:1183` did not move), `CHANGELOG.md` (cited without a line) and the version files.
+

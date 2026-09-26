@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@8d447a7d
+anchor: useful-claude-add-ons@fc54def6
 verified: 2026-09-25
 paths: scripts/**, plugin/PLUGINS.md
 
@@ -47,9 +47,9 @@ consistent with `web-testing-playwright` and other single-skill entries
 either being removed or consolidated during the crew 1.0 rewrite; flagged as
 an open question rather than asserted either way. The **plugin** count is
 unchanged at **5**: `crew`, `gizmoduck`, `localgpu`, `obsidian-vault`,
-`rule-of-two`. `crew` is now **1.0.36** (`.claude-plugin/marketplace.json:218`, `plugin/crew/.claude-plugin/plugin.json`
-and the `plugin-version:crew` claim at `plugin/PLUGINS.md:14` all agree, re-read at `adf8d1dd`; it
-was 1.0.28 at `f2bb919b`, 1.0.25 at `6c497a14` and 0.20.11 at `5d1fc5fd`);
+`rule-of-two`. `crew` is now **1.0.41** (`.claude-plugin/marketplace.json:218`, `plugin/crew/.claude-plugin/plugin.json`
+and the `plugin-version:crew` claim at `plugin/PLUGINS.md:14` all agree, re-read at `fc54def6`; it
+was 1.0.37 at `768a747a`, 1.0.36 at `adf8d1dd`, 1.0.28 at `f2bb919b`, 1.0.25 at `6c497a14` and 0.20.11 at `5d1fc5fd`);
 `obsidian-vault` is **0.4.14** (was 0.3.14); `gizmoduck` (0.5.3) and
 `rule-of-two` (0.1.3) are unchanged; `localgpu` moved to 0.1.20.
 
@@ -298,3 +298,16 @@ only `.crew/verify.json` changed (one path added to rule 7, rule 23 grown); the 
 is above both and unchanged. `python3 scripts/check-marketplace.py` at `8d447a7d` reports one
 problem, the version-drift check: `plugin/crew/` changed after `1.0.36` was set at `adf8d1dd`, with
 no bump.
+
+Re-verified per-path from `8d447a7d` to `fc54def6` for T-0005 (`8d447a7d` is T-0008's pre-rebase
+commit; T-0008 landed as `95120430`/`768a747a`): of the cited paths `.claude-plugin/marketplace.json`
+(`:218` version only; `:217`'s counts unchanged), `plugin/PLUGINS.md` (`:14` version only),
+`plugin/crew/.claude-plugin/plugin.json` (version only), `plugin/crew/BUDGETS.md` (`:11` figure,
+re-measured: 18,006 lines, 120 files), `.crew/verify.json` (a cloud-guard rule inserted at index 6,
+`:117-126`, below the doc rule at `:69-78`, which is unchanged), `CHANGELOG.md` and `TODO.md`
+changed, as did files under `plugin/crew/`, which this note cites as a directory for its counts:
+agents 4, commands 34, skills 29 and hook entries 34 re-counted from disk and unchanged. The other
+plugins' versions were re-read from `marketplace.json` and are unchanged.
+`python3 scripts/check-marketplace.py` at `fc54def6`: `marketplace: 34 skills, 5 plugins`,
+`all checks passed`.
+

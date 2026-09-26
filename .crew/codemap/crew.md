@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@8d447a7d
+anchor: useful-claude-add-ons@fc54def6
 verified: 2026-09-25
 
 ## Re-derive provenance
@@ -11,8 +11,8 @@ entirely (`pm_brief.py`, `pm-pulse.sh`, `pm-brief.sh`, `agents/pm.md`, and the
 line numbers describing a crew that no longer exists. Read in full this pass:
 `plugin/crew/hooks/hooks.json`, `_common.sh`, `role_write_guard.py`,
 `role-write-guard.sh`, `auto-clear.sh`, `crew_autoclear_setup.py`,
-`crew_state.py`'s roster/config block (:983-1350), `crew_guards.py`'s guard
-vocabulary block (:91-505), `crew_context.py`, `event_claim.py`'s module
+`crew_state.py`'s roster/config block (:986-1353), `crew_guards.py`'s guard
+vocabulary block (:91-537), `crew_context.py`, `event_claim.py`'s module
 docstring, and the four agent files. Read in part (specific functions/ranges
 only, cited in place below): `crew_config.py`, `crew_endpoints.py`,
 `context-watch.sh`, `verify-gate.sh`, `crew_migrate.py`, `crew_status.py`,
@@ -55,16 +55,16 @@ count-disagreement sweep across `README.md`/`plugin/README.md`/
 Crew 0.x shipped 54 agents (13 tiered roles + 40 specialists) plus a standing
 `pm` agent that dispatched them. Crew 1.0 (`docs/review/04-redesign.md`,
 "Roster: 54 agents -> 4", cited in comment at
-`plugin/crew/hooks/scripts/crew_state.py:1216-1221`) replaces that with:
+`plugin/crew/hooks/scripts/crew_state.py:1219-1224`) replaces that with:
 
 - **Four read-only subagents on a tier ladder**, `ROLE_TIERS`
-  (`plugin/crew/hooks/scripts/crew_state.py:1225-1230`): `explorer` and
+  (`plugin/crew/hooks/scripts/crew_state.py:1228-1233`): `explorer` and
   `reviewer` at tier 0, `security` at tier 1, `researcher` at tier 2. None of
   the four grants `Write` or `Edit` — confirmed by reading each agent file's
   frontmatter (`explorer.md`, `researcher.md`, `reviewer.md`, `security.md`,
   all `tools: Read, Grep, Glob, Bash, Skill`).
 - **No specialist roles.** `SPECIALIST_ROLES` is now `frozenset()`
-  (`plugin/crew/hooks/scripts/crew_state.py:1240`) — domain knowledge that
+  (`plugin/crew/hooks/scripts/crew_state.py:1243`) — domain knowledge that
   used to be a specialist agent now lives in the on-demand `stack-*` skills
   (`stack-angular`, `stack-bash`, `stack-dotnet`, `stack-powershell`,
   `stack-python`, `stack-sql`, `stack-terraform`, `stack-web`), which are
@@ -73,15 +73,15 @@ Crew 0.x shipped 54 agents (13 tiered roles + 40 specialists) plus a standing
   this anchor (`find . -iname pm.md` returns nothing). The interactive session
   itself is the "unnamed PM": it implements, dispatches the four subagents,
   and is never itself given an `agent_type`. `PM_DEFAULTS`
-  (`plugin/crew/hooks/scripts/crew_state.py:1079-1092`) and `pm.authority`
-  (`AUTHORITY_DEFAULT = "report-only"`, `:1049`; three values —
-  `report-only`/`act`/`autonomous`, `normalise_authority` at `:1272-1283`)
+  (`plugin/crew/hooks/scripts/crew_state.py:1082-1095`) and `pm.authority`
+  (`AUTHORITY_DEFAULT = "report-only"`, `:1052`; three values —
+  `report-only`/`act`/`autonomous`, `normalise_authority` at `:1275-1286`)
   still exist as config that governs how far that unnamed session may act
   without asking, and `AUTONOMOUS_STOPS`
-  (`plugin/crew/hooks/scripts/crew_state.py:1062-1069`) still names the four
+  (`plugin/crew/hooks/scripts/crew_state.py:1065-1072`) still names the four
   things even `autonomous` may not do unasked (`offboard-role`, `delete-map`,
   `rewrite-metrics`, `git-destruction`).
-- `known_role` (`plugin/crew/hooks/scripts/crew_state.py:1243-1252`) still
+- `known_role` (`plugin/crew/hooks/scripts/crew_state.py:1246-1255`) still
   distinguishes a deliberately-onboarded off-ladder role from a typo, even
   though `SPECIALIST_ROLES` is empty today.
 
@@ -216,15 +216,15 @@ the previous note's account of it** — see "Unverified at this anchor").
 ## Config, the guard vocabulary, and the ratchet
 
 **DERIVED at this anchor by importing `crew_config` and executing both
-default functions.** Measured 2026-09-25 at 6c497a14 (plugin code
-byte-identical at the refresh merge), module resolved from this checkout,
-not an installed plugin cache:
+default functions.** Re-measured 2026-09-25 at the T-0005 anchor (116 / 65 / 51 at
+6c497a14; T-0005 added `environments.prodUnattended` to both layers and the repo-only
+`environments.nonProd`), module resolved from this checkout, not an installed plugin cache:
 
 | | Leaves | Source |
 |---|---|---|
-| `default_config()` | **116** | `plugin/crew/hooks/scripts/crew_config.py:239` |
-| `default_global_config()` | **65** | `plugin/crew/hooks/scripts/crew_config.py:367` |
-| repo-only | **51** | the set difference |
+| `default_config()` | **118** | `plugin/crew/hooks/scripts/crew_config.py:240` |
+| `default_global_config()` | **66** | `plugin/crew/hooks/scripts/crew_config.py:374` |
+| repo-only | **52** | the set difference |
 
 Treat these as a fact about one commit, not a standing figure. Re-measure
 from `plugin/crew/hooks/scripts/` rather than trusting the table:
@@ -234,7 +234,7 @@ python3 -c "import crew_config as c; r=set(c.leaf_paths(c.default_config())); g=
 ```
 
 The fourth figure (global leaves absent from the repo template) should be
-0. This table previously read 114/63 at the same anchor; executing the same
+0. This table previously read 114/63 at 6c497a14; executing the same
 functions gives 116/65, so the earlier figures were a miscount, not drift.
 
 These are new counts, not the pre-1.0 note's 103/60/43 carried forward —
@@ -250,9 +250,9 @@ one ratchet table.** `plugin/crew/hooks/scripts/crew_guards.py`:
 
 | Group | Names | Vocabulary | Line |
 |---|---|---|---|
-| `GUARD_NAMES` | `terraformApply`, `forcePush`, `adminMerge`, `mergeGate`, `cloudDestructive`, `sqlDestructive` (6) | `block`/`ask`/`allow`, `guard_policy_rank` (`:378`) | `:104-105` |
-| `PROD_GUARD_NAMES` | `prodDatabase`, `prodServer` (2) | `none`/`read`/`full`, `prod_level_rank` (`:407`) | `:126` |
-| `ROLE_WRITE_GUARD_NAMES` | `roleWrites` (1) | `block`/`report`/`off`, default `off` not floor, `role_writes_rank` (`:443`) | `:149` |
+| `GUARD_NAMES` | `terraformApply`, `forcePush`, `adminMerge`, `mergeGate`, `cloudDestructive`, `sqlDestructive` (6) | `block`/`ask`/`allow`, `guard_policy_rank` (`:410`) | `:104-105` |
+| `PROD_GUARD_NAMES` | `prodDatabase`, `prodServer` (2) | `none`/`read`/`full`, `prod_level_rank` (`:439`) | `:126` |
+| `ROLE_WRITE_GUARD_NAMES` | `roleWrites` (1) | `block`/`report`/`off`, default `off` not floor, `role_writes_rank` (`:475`) | `:149` |
 | `CLOUD_GUARD_NAMES` | `cloudGuard` (1) — **new since the previous anchor** | same vocabulary and functions as `roleWrites`, its own words | `:188` |
 
 `ALL_GUARD_NAMES` (`plugin/crew/hooks/scripts/crew_guards.py:194-195`) is the
@@ -263,15 +263,32 @@ is: a switch, not a policy — turning it on is what makes the six
 since the pre-1.0 command guard was removed) mean something again for the
 `Bash`/`PowerShell` `PreToolUse` matcher.
 
-**The ratchet registry (`_RATCHETED`, `plugin/crew/hooks/scripts/crew_config.py:2342-2431`)
-now holds 13 keys**, built in five steps (a literal dict of two, then four
-`.update()`/assignment calls) rather than one table, exactly the shape the
-previous anchor's note described for a smaller version of the same table:
-`pm.authority`, `install.policy`, the 6 `GUARD_NAMES` keys, the 2
-`PROD_GUARD_NAMES` keys, `guards.roleWrites`, `guards.cloudGuard` (new), and
-`change.requireForProduction` = 2 + 6 + 2 + 1 + 1 + 1 = 13. Counted by
-reading the five construction sites, not by trusting the literal alone —
-the literal at `:2342-2353` holds only 2.
+**The environment layer (T-0005, crew 1.0.41).** `cloud_guard.py`'s ENVIRONMENTS docstring
+paragraph (`plugin/crew/hooks/scripts/cloud_guard.py:32-54`) states it: a terraform finding is
+also judged by its target environment (`nonProd`, `prod` or `unknown`, from `TF_WORKSPACE`, an
+in-sequence literal `workspace select|new`, `.terraform/environment`, `-var environment=` /
+`TF_VAR_environment`, or a saved plan's sidecar) and by whether it destroys (`yes`, `no`,
+`unknown`, and `unknown` counts as `yes`); `_terraform_verdict` (`:2549`) decides. The sidecar
+is `.crew/tfplan/<sha256>.json`, written outside the hook by
+`plugin/crew/hooks/scripts/crew_tfplan.py` (`summarize`, `:174`; `main`, `:237`), which reads
+the plan's workspace out of the plan file itself (`plan_workspace`, `:123`). The config is
+`crew_guards.ENVIRONMENTS_DEFAULTS` (`plugin/crew/hooks/scripts/crew_guards.py:250`):
+`environments.nonProd` is repo-only, `environments.prodUnattended` ratchets (below). DERIVED from
+the docstrings and definitions cited; the verdict table itself is `plugin/crew/CONFIG.md`'s
+`environments.*` section, not re-derived here.
+
+**The ratchet registry (`_RATCHETED`, `plugin/crew/hooks/scripts/crew_config.py:2418-2530`)
+now holds 14 keys**, built in seven steps (a literal dict of two at `:2418`, four `.update()`
+calls at `:2433`, `:2446`, `:2457` and `:2467`, and two single-key assignments at `:2503` and
+`:2526`) rather than one table: `pm.authority`, `install.policy`, the 6 `GUARD_NAMES` keys, the 2
+`PROD_GUARD_NAMES` keys, `guards.roleWrites`, `guards.cloudGuard`,
+`change.requireForProduction` and `environments.prodUnattended` (T-0005, crew 1.0.41) =
+2 + 6 + 2 + 1 + 1 + 1 + 1 = 14. Counted by reading the construction sites and confirmed with
+`len(crew_config._RATCHETED)` at the T-0005 anchor, not by trusting the literal alone — the
+literal at `:2418-2429` holds only 2. (Before T-0005 this said "five steps" for 13 keys; the
+sites were already six then — the literal, four `.update()` calls and one assignment.) The
+same key is registered in `crew_guards.RATCHETED_KEYS`
+(`plugin/crew/hooks/scripts/crew_guards.py:544-548`).
 
 ## `.crew/config.json` vs `.crew/crew.json` — the open 1.0.x authority question
 
@@ -282,7 +299,7 @@ they disagree:
 - `crew_config.py` (used by `verify-gate.sh`, `promote-gate.sh`,
   `role-write-guard.ps1`'s config lookups, and everything the ratchet/guard
   machinery above touches) reads **only** `.crew/config.json`
-  (`plugin/crew/hooks/scripts/crew_config.py:1158`, and the module's own
+  (`plugin/crew/hooks/scripts/crew_config.py:1234`, and the module's own
   docstring at `:1` — "Owns the single definition of a fresh
   `.crew/config.json`").
 - `crew_context.py`'s `load_crew_config`
@@ -317,7 +334,7 @@ they disagree:
   not this note's to make.**
 
 `SCHEMA_CURRENT` for `config.json` is still **7**
-(`plugin/crew/hooks/scripts/crew_state.py:175`) — unchanged by the 1.0
+(`plugin/crew/hooks/scripts/crew_state.py:178`) — unchanged by the 1.0
 redesign; the new `crew.json` format is a wholly separate schema (schema 1,
 `crew_migrate.py:26`), so the redesign shipped without bumping the format
 most of the codebase still actually reads.
@@ -449,7 +466,7 @@ a persistent `.crew/endpoints.json.oslock` across the whole cycle (comment at
 `:258-290`; `_acquire_endpoints_lock`, `:510`), and a lock or write failure is
 returned as an error rather than reported as a landed write -
 `crew_state.py`'s `--record-scan-artifact` exits 3 on it
-(`plugin/crew/hooks/scripts/crew_state.py:3270-3276`). Function bodies past
+(`plugin/crew/hooks/scripts/crew_state.py:3273-3279`). Function bodies past
 those lines were not read. `.crew/endpoints.json` still does not exist in this
 checkout; `git ls-files .crew/` still returns only the codemap `.md` files
 plus `.crew/verify.json`.
@@ -464,7 +481,7 @@ the sha256 of everything the rule is rendered from (`rule_digest`, `:105`), the 
 INDEX.md's Covers cell for it, and the note's Landmines headlines (else its Entry points), capped at
 `RULES_MAX_LINES` = 30 (`:81`). `--check` (`rules`, `:191`) writes nothing and reports each rule
 file missing, stale or orphaned; a hand-written file at a generated path is never overwritten and
-fails `--check`. `.crew/verify.json` rule 22 (`.crew/verify.json:244`) runs `--check` for any change under
+fails `--check`. `.crew/verify.json` rule 23 (`.crew/verify.json:255`) runs `--check` for any change under
 `.claude/rules/**` or `.crew/codemap/**`, so **a code-map edit without a regeneration fails the Stop
 gate** - see `verification-harness.md`. DERIVED from the source above; the command was run by
 T-0015 against this refresh.
@@ -502,8 +519,8 @@ commands call, not a hook - `plugin/crew/hooks/hooks.json` is unchanged since
 - Tests: `plugin/crew/tests/test_refresh_check.py`,
   `plugin/crew/tests/test_scope_guard_refresh_artifacts.py`,
   `plugin/crew/tests/test_completion_audit_refresh_artifacts.py`, with mutations in
-  `plugin/crew/tests/sabotage_refresh.py`; `.crew/verify.json:245-261` (rule
-  23) maps them, `implement.md`, `done.md`, and since review round 3
+  `plugin/crew/tests/sabotage_refresh.py`; `.crew/verify.json:256-272` (rule
+  24) maps them, `implement.md`, `done.md`, and since review round 3
   `scope_guard.py`, `completion_audit.py`, `crew_freshness.py` and
   `scope_base.py` with their own suites, to one pytest rule. Confirmed
   present, **not run and not read** by this note.
@@ -514,13 +531,13 @@ or nothing" at `adf8d1dd`; T-0008's refresh commit `b7b02842` redrew it as
 
 ## Entry points
 
-- `plugin/crew/hooks/scripts/crew_state.py:983` — `TRIGGERS`, a 15-entry
+- `plugin/crew/hooks/scripts/crew_state.py:986` — `TRIGGERS`, a 15-entry
   tuple, unchanged in membership and order from the previous anchor.
-- `plugin/crew/hooks/scripts/crew_state.py:2880` — `evaluate_triggers`.
-- `plugin/crew/hooks/scripts/crew_config.py:239` / `:367` —
+- `plugin/crew/hooks/scripts/crew_state.py:2883` — `evaluate_triggers`.
+- `plugin/crew/hooks/scripts/crew_config.py:240` / `:374` —
   `default_config()` / `default_global_config()`.
-- `plugin/crew/hooks/scripts/crew_config.py:2342` — `_RATCHETED`, the
-  13-key ratchet table (five construction steps).
+- `plugin/crew/hooks/scripts/crew_config.py:2418` — `_RATCHETED`, the
+  14-key ratchet table (six construction steps).
 - `plugin/crew/hooks/scripts/role_write_guard.py:539` — `classify`, the
   decision function; `:684` — `main()`.
 - `plugin/crew/hooks/scripts/role-write-guard.sh:348` — where the strict
@@ -555,10 +572,10 @@ or nothing" at `adf8d1dd`; T-0008's refresh commit `b7b02842` redrew it as
   whole story.
 - `.crew/crew.json` — the schema-1 format only `/crew:migrate` writes and
   only `crew_context.py`'s consumers prefer.
-- `crew_state.ROLE_TIERS` (`plugin/crew/hooks/scripts/crew_state.py:1225-1230`)
+- `crew_state.ROLE_TIERS` (`plugin/crew/hooks/scripts/crew_state.py:1228-1233`)
   — 4 roles, all tiered, none a specialist.
-- `crew_state.PM_DEFAULTS` (`:1079-1092`) and `crew_state.AUTHORITY_DEFAULT`
-  (`:1049`) — the unnamed session's own dispatch authority.
+- `crew_state.PM_DEFAULTS` (`:1082-1095`) and `crew_state.AUTHORITY_DEFAULT`
+  (`:1052`) — the unnamed session's own dispatch authority.
 - `crew_guards.ALL_GUARD_NAMES` (`plugin/crew/hooks/scripts/crew_guards.py:194-195`)
   — 10 guard names across 4 vocabularies.
 - `.crew/metrics.jsonl` — append-only, one JSON object per line, replacing
@@ -712,3 +729,31 @@ citation into them was re-read with `grep -n`:
 - `process-crew-lifecycle.mmd` - the "all three or nothing" sentence was already false after
   `b7b02842`; corrected above (review round 3 NIT).
 - `INDEX.md`, the two test files - cited by name only.
+
+## Re-anchor provenance - `8d447a7d` -> `fc54def6`, 2026-09-25 (T-0005)
+
+`8d447a7d` is T-0008's pre-rebase round-3 commit; T-0008 landed on main by rebase-merge as
+`95120430`/`768a747a`, so the anchor names a commit that is not an ancestor of HEAD.
+`git diff --name-only 8d447a7d fc54def6 -- <the paths this note cites>` returns T-0008's own
+refresh outputs (`.claude/rules/*`, `.crew/codemap/*`, `process-crew-lifecycle.mmd`), the
+version files, and T-0005's changes: `.crew/verify.json`, `TODO.md`, `plugin/crew/CONFIG.md`,
+`cloud_guard.py`, `crew_config.py`, `crew_guards.py`, `crew_state.py`, `crew_tfplan.py` (new) and
+the `crew-cloud`/`crew-setup` skills. Each citation into them was re-read at `fc54def6`:
+
+- `crew_state.py` - three import lines added (`:74`, `:102-103`); every citation below them moved
+  by +3 (`TRIGGERS` `:983` -> `:986`, `ROLE_TIERS` `:1225-1230` -> `:1228-1233`, and the rest).
+- `crew_guards.py` - `ENVIRONMENTS_DEFAULTS` and its rank functions inserted at `:240-271`; the
+  three rank functions moved (`:378` -> `:410`, `:407` -> `:439`, `:443` -> `:475`); the name
+  groups at `:104-195` did not. `RATCHETED_KEYS` gained `environments.prodUnattended`.
+- `crew_config.py` - `default_config`/`default_global_config` `:239`/`:367` -> `:240`/`:374`;
+  `_RATCHETED` `:2342` -> `:2418`, now 14 keys (the paragraph above, which also corrects the
+  step count); `:1158` -> `:1234`. The leaf table is re-measured: 118 / 66 / 52.
+- `.crew/verify.json` - one rule inserted at index 6 (the cloud-guard suites, `:117-126`), so
+  every rule from the old 6 on is one higher: the `.claude/rules/` check is rule 23 at `:255`, the
+  refresh-check suite rule 24 at `:256-272`. The history sections above keep the numbers true at
+  their own anchors.
+- `cloud_guard.py`, `crew_tfplan.py` - new section above, "The environment layer".
+- `TODO.md` - lines appended at `:5052-5059`; `:3945` holds. `CONFIG.md` - cited by name only.
+- The two skills - `crew-setup` gained the `environments` line in its config template; neither is
+  cited at a line here.
+
