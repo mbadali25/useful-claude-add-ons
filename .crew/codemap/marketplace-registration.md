@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@f2bb919b
+anchor: useful-claude-add-ons@adf8d1dd
 verified: 2026-09-25
 paths: scripts/**, plugin/PLUGINS.md
 
@@ -47,9 +47,9 @@ consistent with `web-testing-playwright` and other single-skill entries
 either being removed or consolidated during the crew 1.0 rewrite; flagged as
 an open question rather than asserted either way. The **plugin** count is
 unchanged at **5**: `crew`, `gizmoduck`, `localgpu`, `obsidian-vault`,
-`rule-of-two`. `crew` is now **1.0.28** (`.claude-plugin/marketplace.json:218`, `plugin/crew/.claude-plugin/plugin.json`
-and the `plugin-version:crew` claim at `plugin/PLUGINS.md:14` all agree, re-read at `f2bb919b`; it
-was 1.0.25 at `6c497a14` and 0.20.11 at `5d1fc5fd`);
+`rule-of-two`. `crew` is now **1.0.36** (`.claude-plugin/marketplace.json:218`, `plugin/crew/.claude-plugin/plugin.json`
+and the `plugin-version:crew` claim at `plugin/PLUGINS.md:14` all agree, re-read at `adf8d1dd`; it
+was 1.0.28 at `f2bb919b`, 1.0.25 at `6c497a14` and 0.20.11 at `5d1fc5fd`);
 `obsidian-vault` is **0.4.14** (was 0.3.14); `gizmoduck` (0.5.3) and
 `rule-of-two` (0.1.3) are unchanged; `localgpu` moved to 0.1.20.
 
@@ -251,7 +251,9 @@ against synthetic fixtures and never reads this repo's own docs.
   was not opened at `6c497a14`. Closed at `f2bb919b`: the marker is `:10`, the
   figure on `:11` reads 17,811 lines across 120 files, and
   `git ls-files 'plugin/crew/*.md' | xargs cat | wc -l` returns 17811 over 120
-  files, matching; `check-marketplace.py` passes it.
+  files, matching; `check-marketplace.py` passes it. Re-measured for T-0008: the marker
+  is still `:10`, the figure on `:11` reads 17,841 lines across 120 files, and the
+  same measurement returns 17841 over 120 files, matching.
 - **`MARKETPLACE.md`** was not re-read for a community-plugin or marketplace
   count of its own; only `README.md:231`'s prose was checked and found to no
   longer state a specific number.
@@ -288,3 +290,5 @@ Each changed file, re-read:
 
 `python3 scripts/check-marketplace.py` at `f2bb919b`: `marketplace: 34 skills, 5 plugins`,
 `all checks passed`.
+
+Re-verified per-path from `f2bb919b` to `adf8d1dd` for T-0008: of the cited paths, `.claude-plugin/marketplace.json` (`:218` version only), `plugin/PLUGINS.md` (`:14` version only), `plugin/crew/.claude-plugin/plugin.json` (version only), `plugin/crew/BUDGETS.md` (`:11` figure, re-measured and matching), `.crew/verify.json` (a new `crew_refresh_check` rule appended after the `.claude/rules/` rule; the doc rule at `:69-78` is unchanged), `CLAUDE.md` (lines `:5` and `:47` unchanged), `CHANGELOG.md`, `TODO.md` and two `plugin/crew/commands/` files changed, and the crew command count re-measured unchanged at 34.

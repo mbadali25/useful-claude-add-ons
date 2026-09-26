@@ -1,5 +1,5 @@
 # repo-docs
-anchor: useful-claude-add-ons@f2bb919b
+anchor: useful-claude-add-ons@adf8d1dd
 verified: 2026-09-25
 
 ## Re-derive provenance
@@ -287,8 +287,8 @@ listing the directory.
 - **`docs/runbooks/INDEX.md` still does not exist.** `docs/runbooks/`
   contains `rollback.md` alone (re-confirmed by `ls`).
   `plugin/crew/skills/crew-runbooks/SKILL.md:80` and
-  `plugin/crew/README.md:1725` (moved from `:1604`, that file having changed
-  substantially in this range — re-grepped, not offset) both still describe
+  `plugin/crew/README.md:1728` (`:1725` at `f2bb919b`, `:1604` before that,
+  that file having changed in each range — re-grepped, not offset) both still describe
   `docs/runbooks/INDEX.md` as a symptom-keyed index that would live there.
   JUDGEMENT, unchanged: costs nothing with one runbook, becomes a real gap at
   the second.
@@ -315,10 +315,9 @@ listing the directory.
   per-path check), `0002-no-chatgpt-mcp-server.md` (accepted 2026-09-14) and
   `0003-crew-departs-from-three-community-best-practices.md` (accepted
   2026-09-17) — the latter two were already present at the previous anchor
-  and are not new in this range. `CLAUDE.md:147` — outside this note's
-  narrow reading of that file (see Unverified) — was not re-confirmed to
-  still say "Decisions in `docs/adr/`," though `CLAUDE.md` did change in this
-  range.
+  and are not new in this range. `CLAUDE.md:147` still reads "Decisions in
+  `docs/adr/`" at `adf8d1dd` (re-grepped; `CLAUDE.md` changed in
+  `f2bb919b..adf8d1dd`, but only its `crew_freshness.py` line citations).
 - **`docs/review/`'s existence is itself a mild instance of the same gap
   `docs/adr/` used to be.** Several of its documents record accepted
   decisions (see "Owns data" above) that were never promoted into a numbered
@@ -340,8 +339,8 @@ listing the directory.
   resolves to stale.
 
 - **`TODO.md`'s `render.sh` entry is still open, still un-CLOSED, re-located
-  rather than assumed at its old line.** Now at `TODO.md:1122` (`:1092` at
-  `6c497a14`, `:1061` before that; the file grew 3645 -> 4714 lines, +1069,
+  rather than assumed at its old line.** Now at `TODO.md:1183` (`:1122` at
+  `f2bb919b`, `:1092` at `6c497a14`, `:1061` before that; the file grew 3645 -> 4714 lines, +1069,
   in the `5d1fc5fd..6c497a14` range, and 30 more lines landed after its
   `:16` by `f2bb919b`, and this note's own
   standing rule treats any `TODO.md` citation as provisional the moment the
@@ -392,6 +391,10 @@ listing the directory.
   note only records what changed in its own tracked citations. Since
   `6c497a14` one rule was appended (`:243`, #228): `.claude/rules/**` and
   `.crew/codemap/**` now run `crew_instructions.py rules --root . --check`.
+  Since `f2bb919b` another follows it (`:244`, T-0008): changes to
+  `plugin/crew/hooks/scripts/crew_refresh_check.py`, its tests,
+  `plugin/crew/commands/implement.md` or `plugin/crew/commands/done.md` run
+  the three refresh-artifact pytest files.
 
 ## Unverified
 
@@ -410,10 +413,9 @@ listing the directory.
 - `docs/review/*`'s nine documents were not read beyond their titles and the
   one quoted cross-review row; whether other rows record further
   never-filed decisions was not checked file by file.
-- Whether `CLAUDE.md:147`'s "Decisions in `docs/adr/`" line survived this
-  range's edit to that file was not re-confirmed directly (the file did
-  change; this note's business with it is narrow and was not re-derived
-  end to end).
+- `CLAUDE.md` beyond its `:147` "Decisions in `docs/adr/`" line (re-confirmed
+  at `adf8d1dd`) was not re-derived end to end; this note's business with it
+  is narrow.
 - `crew-docs/SKILL.md`'s retired-role references (`/crew:work`,
   `/crew:ticket`, `crew:docs-writer`) were read in this file alone, not
   cross-checked against `crew.md`'s own command/role inventory for
@@ -457,3 +459,7 @@ the diagram changes recorded above are this ticket's own. Each changed file:
 
 `docs/HANDOFF.md`'s age and `docs/runbooks/rollback.md`'s `last verified` are not re-measured; both
 figures above are as of the 2026-09-25 re-derivation, the same day.
+
+Re-verified per-path from `f2bb919b` to `adf8d1dd` for T-0008: of the cited paths, the changed ones were
+re-grepped at HEAD and only `TODO.md`, `plugin/crew/README.md` and `.crew/verify.json` citations needed
+updating; `CLAUDE.md:147` was re-confirmed in passing.
