@@ -1,0 +1,245 @@
+"""Can the Kimi Code CLI review right now? One of five states, never a guess.
+
+    python3 kimi_probe.py [--model ID] [--json]
+
+Prints `kimi: <state> - <reason>`. Exit 0 only for `ok`, 1 for every other
+state, 2 for a usage error. The live stage SPENDS ONE REQUEST.
+
+WHY IT EXISTS (T-0028). A provider on PATH is not a provider that can review:
+a logged-out or out-of-quota CLI resolves on PATH and then fails at the first
+call. `review_run.py` reserves a review round BEFORE it launches the reviewer,
+so a quota wall hit after reservation spends a round for nothing -- which is
+how a Codex quota error burned one. This probe runs BEFORE the round is
+reserved, and only `ok` may launch.
+
+THE STATES, each its own value:
+
+  ok                 a real `kimi -p` answered PROBE_OK, exit 0
+  not-installed      no `kimi` on PATH
+  not-authenticated  no config.toml; the resolved provider has neither an
+                     `api_key` nor an `oauth` block with a file under
+                     `<home>/credentials/`; no model given and no
+                     `default_model`; or the live call answered 401 /
+                     `invalid_authentication_error` / "No model configured"
+  rate-limited       the live call answered with a Moonshot 429 code
+                     (`exceeded_current_quota_error`, `rate_limit_reached_error`,
+                     `engine_overloaded_error`) or the 2.1.1 bundle's quota
+                     wording
+  unknown            EVERYTHING ELSE: unrecognised output, exit 0 without
+                     PROBE_OK, a timeout, an id no `type = "kimi"` alias serves,
+                     an unparseable config.toml, `tomllib` unavailable, a launch
+                     that raised. "Could not tell" never becomes `ok`.
+
+THE MODEL. `-m` takes a config.toml ALIAS (`kimi-code/k3`), not the id (`k3`).
+The id is resolved to the alias whose `model` equals it and whose provider has
+`type = "kimi"`; the provider type is what proves the family is Kimi. An id
+given AS an alias is accepted as that alias.
+
+SECRETS. The static stage reads config.toml for STRUCTURE only: whether a key
+is present, never its value, and nothing under `credentials/` is opened --
+only counted. Anything echoed from the CLI's stderr goes through `redact`
+first. The child environment drops `KIMI_CODE_INFINITE_RETRY` (a failed request
+would retry forever) and every `KIMI_MODEL_*` override, and sets
+`KIMI_CODE_NO_AUTO_UPDATE=1`.
+"""
+import argparse
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+
+try:
+    import tomllib as _tomllib  # Python 3.11+, stdlib
+except ImportError:  # pragma: no cover - exercised only on 3.8-3.10
+    _tomllib = None
+
+import review_verdict
+
+STATES = ("ok", "not-installed", "not-authenticated", "rate-limited", "unknown")
+PROBE_PROMPT = "Reply with exactly: PROBE_OK"
+PROBE_MARKER = "PROBE_OK"
+DEFAULT_TIMEOUT = 60
+
+_AUTH_MARKERS = re.compile(
+    r"invalid_authentication_error|No model configured|kimi login|\bUnauthori[sz]ed\b",
+    re.IGNORECASE)
+_AUTH_STATUS = re.compile(r'\b401\b|"status_code":\s*401\b')
+_QUOTA_MARKERS = re.compile(
+    r"exceeded_current_quota_error|rate_limit_reached_error|engine_overloaded_error"
+    r"|exceeded your current (?:token )?quota|check your account balance"
+    r"|insufficient balance|recharge your account|please recharge"
+    r"|account (?:is )?in arrears",
+    re.IGNORECASE)
+_QUOTA_STATUS = re.compile(r'"status_code":\s*429\b|\b429\b')
+_SECRETS = re.compile(
+    r"sk-[A-Za-z0-9_\-]{6,}|eyJ[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]*"
+    r"|(?i:bearer)\s+\S+")
+
+
+def launchable(state):
+    """True for `ok` alone. Every other state -- `unknown` above all -- is a
+    reason not to spend a round."""
+    return state == "ok"
+
+
+def redact(text):
+    """Mask `sk-...` keys, JWT-shaped tokens and bearer values."""
+    return _SECRETS.sub("[redacted]", text or "")
+
+
+def kimi_env(base=None):
+    """The environment a `kimi` child gets: the caller's, minus the infinite
+    retry switch and every `KIMI_MODEL_*` override, plus no auto-update."""
+    env = {k: v for k, v in (os.environ if base is None else base).items()
+           if k != "KIMI_CODE_INFINITE_RETRY" and not k.startswith("KIMI_MODEL_")}
+    env["KIMI_CODE_NO_AUTO_UPDATE"] = "1"
+    return env
+
+
+def kimi_home(env=None):
+    env = os.environ if env is None else env
+    return env.get("KIMI_CODE_HOME") or os.path.join(os.path.expanduser("~"), ".kimi-code")
+
+
+def _result(state, reason, alias=None, exe=None):
+    return {"state": state, "reason": reason, "alias": alias, "exe": exe}
+
+
+def _table(value):
+    return value if isinstance(value, dict) else {}
+
+
+def resolve_alias(config, model_id):
+    """(alias, None) or (None, (state, reason)). Pure."""
+    models = _table(config.get("models"))
+    providers = _table(config.get("providers"))
+    if model_id:
+        if model_id in models:
+            candidates = [model_id]
+        else:
+            candidates = sorted(a for a, row in models.items()
+                                if _table(row).get("model") == model_id)
+        if not candidates:
+            return None, ("unknown", f"no alias in config.toml serves model id "
+                                     f"`{model_id}`; nothing is guessed")
+    else:
+        default = config.get("default_model")
+        if not isinstance(default, str) or not default:
+            return None, ("not-authenticated", "no model given and no default_model in "
+                                               "config.toml - run `kimi login`")
+        if default not in models:
+            return None, ("unknown", "default_model names an alias config.toml does "
+                                     "not define")
+        candidates = [default]
+    types = []
+    for alias in candidates:
+        kind = _table(providers.get(_table(models[alias]).get("provider"))).get("type")
+        if kind == "kimi":
+            return alias, None
+        types.append(str(kind))
+    return None, ("unknown", "family cannot be proven: alias routes to provider type "
+                             + ", ".join(sorted(set(types))))
+
+
+def _credential_present(config, alias, home):
+    provider = _table(_table(config.get("providers")).get(
+        _table(_table(config.get("models")).get(alias)).get("provider")))
+    key = provider.get("api_key")
+    if isinstance(key, str) and key.strip():
+        return True
+    if not isinstance(provider.get("oauth"), dict):
+        return False
+    folder = os.path.join(home, "credentials")
+    try:
+        return any(os.path.isfile(os.path.join(folder, n)) for n in os.listdir(folder))
+    except OSError:
+        return False
+
+
+def _run(cmd, env, timeout):
+    """(stdout, stderr, exit_code, timed_out), stdin closed."""
+    try:
+        done = subprocess.run(cmd, stdin=subprocess.DEVNULL, capture_output=True, text=True,
+                              encoding="utf-8", errors="replace", env=env,
+                              timeout=timeout, check=False)
+    except subprocess.TimeoutExpired:
+        return "", "", None, True
+    return done.stdout, done.stderr, done.returncode, False
+
+
+def classify(stdout, stderr, code, timed_out, timeout=DEFAULT_TIMEOUT):
+    """(state, reason) for one live probe call. Pure. Auth, then quota, then
+    PROBE_OK; anything else is `unknown`."""
+    if timed_out:
+        return "unknown", f"the probe did not answer within {timeout}s"
+    message, _ = review_verdict.kimi_final_message(stdout)
+    blob = f"{stdout}\n{stderr}"
+    if _AUTH_MARKERS.search(blob) or _AUTH_STATUS.search(stderr or "") \
+            or '"status_code":401' in (stdout or "").replace(" ", ""):
+        return "not-authenticated", "the Kimi CLI refused the credential - run `kimi login`"
+    if _QUOTA_MARKERS.search(blob) or _QUOTA_STATUS.search(stderr or "") \
+            or '"status_code":429' in (stdout or "").replace(" ", ""):
+        return "rate-limited", "the Kimi CLI answered with a quota or rate limit"
+    if code == 0 and message is not None and PROBE_MARKER in message:
+        return "ok", "answered PROBE_OK"
+    detail = redact((stderr or "").strip())[:200]
+    return "unknown", (f"exit {code}, no {PROBE_MARKER}"
+                       + (f"; stderr: {detail}" if detail else ""))
+
+
+def probe(model_id=None, which=shutil.which, home=None, runner=None,
+          timeout=DEFAULT_TIMEOUT):
+    """`{"state", "reason", "alias", "exe"}`. See the module docstring."""
+    exe = which("kimi")
+    if not exe:
+        return _result("not-installed", "`kimi` is not on PATH")
+    home = home or kimi_home()
+    path = os.path.join(home, "config.toml")
+    if not os.path.isfile(path):
+        return _result("not-authenticated", "no config.toml in the Kimi Code home - "
+                                            "run `kimi login`", exe=exe)
+    if _tomllib is None:
+        return _result("unknown", "tomllib is unavailable (Python < 3.11), so "
+                                  "config.toml cannot be read", exe=exe)
+    try:
+        with open(path, "rb") as fh:
+            config = _tomllib.load(fh)
+    except (OSError, ValueError) as exc:
+        return _result("unknown", f"config.toml could not be parsed ({type(exc).__name__})",
+                       exe=exe)
+    alias, refusal = resolve_alias(config, model_id)
+    if refusal:
+        return _result(refusal[0], refusal[1], exe=exe)
+    if not _credential_present(config, alias, home):
+        return _result("not-authenticated", "the provider has no api_key and no stored "
+                                            "OAuth credential - run `kimi login`",
+                       alias=alias, exe=exe)
+    cmd = [exe, "-p", PROBE_PROMPT, "-m", alias, "--output-format", "stream-json"]
+    try:
+        stdout, stderr, code, timed_out = (runner or _run)(cmd, kimi_env(), timeout)
+    except Exception as exc:  # pylint: disable=broad-except  # any launch failure is `unknown`
+        return _result("unknown", f"the probe could not run: {type(exc).__name__}",
+                       alias=alias, exe=exe)
+    state, reason = classify(stdout, stderr, code, timed_out, timeout)
+    return _result(state, reason, alias=alias, exe=exe)
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--model", default=None,
+                        help="a Kimi Code model id (k3, kimi-for-coding, ...) or alias")
+    parser.add_argument("--json", action="store_true")
+    parser.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT)
+    args = parser.parse_args(argv)
+    result = probe(args.model or None, timeout=args.timeout)
+    if args.json:
+        print(json.dumps(result, sort_keys=True))
+    else:
+        print(f"kimi: {result['state']} - {result['reason']}")
+    return 0 if launchable(result["state"]) else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

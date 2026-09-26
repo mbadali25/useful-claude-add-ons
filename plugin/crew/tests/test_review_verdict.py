@@ -6,6 +6,7 @@ never CLEAN -- because an empty or failed reviewer output looks exactly like
 "no findings" to anyone skimming it (`review_verdict.py`'s docstring).
 """
 import json
+import os
 
 import pytest
 
@@ -161,3 +162,72 @@ def test_codex_final_message_an_unparseable_event_line_is_an_error(garbage):
     ) + "\n" + garbage + "\n" + _stream({"type": "turn.completed"})
 
     assert rv.codex_final_message(stream)[1] is not None
+
+
+# --- Kimi Code stream-json (T-0028) -----------------------------------------
+# Shapes from PromptJsonWriter in the Kimi Code 2.1.1 bundle, read as source
+# text. `fixtures/kimi-stream-2.1.1/` holds the captured run once the owner has
+# made it; until then `placeholder-ok.jsonl` there is SYNTHESISED, and says so.
+_KIMI_FIXTURES = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                              "fixtures", "kimi-stream-2.1.1")
+
+
+def _kimi(*events):
+    return "\n".join(json.dumps(e) for e in events)
+
+
+def test_kimi_final_message_reads_the_last_assistant_text():
+    stream = _kimi({"role": "meta", "type": "system.version", "version": "2.1.1"},
+                   {"role": "assistant", "content": "draft"},
+                   {"role": "assistant", "content": None,
+                    "tool_calls": [{"type": "function", "id": "t", "function": {}}]},
+                   {"role": "tool", "tool_call_id": "t", "content": "file body"},
+                   {"role": "assistant", "content": "CLEAN"})
+
+    assert rv.kimi_final_message(stream) == ("CLEAN", None)
+
+
+def test_kimi_final_message_with_no_assistant_text_is_an_error():
+    stream = _kimi({"role": "meta", "type": "system.version", "version": "2.1.1"})
+
+    assert rv.kimi_final_message(stream)[1] is not None
+
+
+def test_kimi_final_message_reports_a_failure_record():
+    stream = _kimi({"role": "assistant", "content": "CLEAN"},
+                   {"role": "meta", "type": "turn.failed",
+                    "error": {"code": "provider.error", "message": "stream died"}})
+
+    assert rv.kimi_final_message(stream)[1] == "provider.error: stream died"
+
+
+def test_kimi_final_message_unparseable_line_is_an_error():
+    stream = _kimi({"role": "assistant", "content": "CLEAN"}) + "\nnot json"
+
+    assert rv.kimi_final_message(stream)[1] is not None
+
+
+def test_kimi_final_message_a_retry_alone_is_not_a_failure():
+    stream = _kimi({"role": "meta", "type": "turn.step.retrying", "status_code": 500,
+                    "error_message": "transient"},
+                   {"role": "assistant", "content": "CLEAN"})
+
+    assert rv.kimi_final_message(stream) == ("CLEAN", None)
+
+
+def test_kimi_final_message_joins_list_content_text_parts():
+    stream = _kimi({"role": "assistant",
+                    "content": [{"type": "text", "text": "READ|a"},
+                                {"type": "text", "text": "\nCLEAN"}]})
+
+    assert rv.kimi_final_message(stream) == ("READ|a\nCLEAN", None)
+
+
+def test_kimi_final_message_parses_the_placeholder_fixture():
+    """Against the SYNTHESISED placeholder until the owner's captured run
+    replaces it -- see that directory's README."""
+    with open(os.path.join(_KIMI_FIXTURES, "placeholder-ok.jsonl"),
+              encoding="utf-8") as fh:
+        stream = fh.read()
+
+    assert rv.kimi_final_message(stream) == ("PROBE_OK", None)

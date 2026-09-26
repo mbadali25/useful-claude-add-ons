@@ -158,3 +158,68 @@ def codex_final_message(jsonl):
     if error is None and not completed:
         error = "the Codex event stream has no completed turn"
     return message, error
+
+
+def _kimi_text(content):
+    """Assistant `content` as text: a string, or a list of `{"type": "text",
+    "text": ...}` parts joined. Anything else is no text."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "".join(p.get("text") or "" for p in content
+                       if isinstance(p, dict) and p.get("type") == "text")
+    return ""
+
+
+def _kimi_error(event):
+    """The failure an event carries, or None. A `turn.step.retrying` meta
+    event is NOT one: the CLI retries and may still complete the turn."""
+    detail = event.get("error")
+    if isinstance(detail, dict):
+        code, text = detail.get("code"), detail.get("message")
+        return f"{code}: {text or ''}".rstrip(": ") if code else str(text or "error")
+    if isinstance(detail, str) and detail:
+        return detail
+    kind = str(event.get("type") or "")
+    if event.get("role") == "meta" and (kind.endswith((".failed", ".error"))
+                                        or kind in ("error", "failed")):
+        return str(event.get("error_message") or event.get("message") or kind)
+    return None
+
+
+def kimi_final_message(jsonl):
+    """From `kimi -p ... --output-format stream-json` stdout, return
+    (message, error), the same contract as `codex_final_message`.
+
+    `message` is the last assistant text, or None. `error` is None only when
+    at least one assistant text arrived, every non-blank line parsed as a JSON
+    object, and no event carried a failure. Written against the shape the
+    2.1.1 bundle's PromptJsonWriter emits (read as source, not yet captured --
+    see tests/fixtures/kimi-stream-2.1.1/README.md): the stream has NO
+    turn-completed record, so completion cannot be proven from stdout alone,
+    and a thrown turn failure reaches stderr and the exit status instead. The
+    exit status is therefore still required: `parse` makes non-zero
+    INCOMPLETE."""
+    message, error = None, None
+    for line in (jsonl or "").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            event = json.loads(line)
+        except ValueError:
+            event = None
+        if not isinstance(event, dict):
+            if error is None:
+                error = f"unparseable Kimi event line: {line[:120]!r}"
+            continue
+        failure = _kimi_error(event)
+        if failure and error is None:
+            error = failure
+        if event.get("role") == "assistant":
+            text = _kimi_text(event.get("content"))
+            if text.strip():
+                message = text
+    if error is None and message is None:
+        error = "the Kimi event stream has no assistant message"
+    return message, error

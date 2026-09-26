@@ -141,3 +141,134 @@ def env_with_path(directory, **extra):
     env["FAKE_REVIEWER_ESCAPE_LIFETIME"] = str(ESCAPE_CHILD_LIFETIME_S)
     env.update(extra)
     return env
+
+
+# A fake `kimi` (the Kimi Code CLI) for kimi_probe.py and review_run.py.
+#
+# The stream it prints follows the shape PromptJsonWriter in the Kimi Code
+# 2.1.1 bundle writes -- one JSON object per line, `{"role": "assistant",
+# "content": "<text>"}` for the assistant, `{"role": "meta", "type": ...}` for
+# retries -- READ FROM THE BUNDLE'S SOURCE TEXT, NOT CAPTURED FROM A REAL RUN.
+# `tests/fixtures/kimi-stream-2.1.1/` says which of its files are captured.
+#
+# Two knobs, because one review_run.py invocation calls `kimi` twice (the
+# probe, then the review) with one environment:
+#   FAKE_KIMI_PROBE  how the probe call (prompt == "Reply with exactly:
+#                    PROBE_OK") answers: ok | 401 | nomodel | quota:<marker>
+#                    | garbage | nomarker | hang
+#   FAKE_KIMI_MODE   how a review call answers: clean | findings | turnfail
+#                    | write (appends to seed.txt, then answers clean) | fail
+#   FAKE_KIMI_DUMP   when set, each call appends {argv, env, stdin} as one
+#                    JSON line to this file.
+_FAKE_KIMI = r'''
+import json, os, re, sys, time
+argv = sys.argv[1:]
+stdin_text = sys.stdin.read()
+dump = os.environ.get("FAKE_KIMI_DUMP")
+if dump:
+    with open(dump, "a", encoding="utf-8") as fh:
+        fh.write(json.dumps({"argv": argv, "stdin": stdin_text,
+                             "env": {k: v for k, v in os.environ.items()
+                                     if k.startswith("KIMI_")}}) + "\n")
+prompt = argv[argv.index("-p") + 1] if "-p" in argv else ""
+def say(*events):
+    print("\n".join(json.dumps(e) for e in events))
+if prompt == "Reply with exactly: PROBE_OK":
+    mode = os.environ.get("FAKE_KIMI_PROBE", "ok")
+    if mode == "ok":
+        say({"role": "assistant", "content": "PROBE_OK"})
+    elif mode == "401":
+        sys.stderr.write("Error: 401 invalid_authentication_error: Invalid Authentication\n")
+        sys.exit(1)
+    elif mode == "nomodel":
+        sys.stderr.write("Error: No model configured. Run `kimi` and use /login to sign in, then retry\n")
+        sys.exit(1)
+    elif mode.startswith("quota:"):
+        marker = mode.split(":", 1)[1]
+        say({"role": "meta", "type": "turn.step.retrying", "status_code": 429,
+             "error_message": marker})
+        sys.stderr.write("Error: 429 " + marker + "\n")
+        sys.exit(1)
+    elif mode == "garbage":
+        sys.stderr.write("something nobody has seen before\n")
+        sys.exit(3)
+    elif mode == "nomarker":
+        say({"role": "assistant", "content": "Sure! Here you go."})
+    elif mode == "hang":
+        time.sleep(60)
+    sys.exit(0)
+mode = os.environ.get("FAKE_KIMI_MODE", "clean")
+if mode == "fail":
+    sys.stderr.write("boom\n")
+    sys.exit(1)
+if mode == "write":
+    with open("seed.txt", "a", encoding="utf-8") as fh:
+        fh.write("fixed it instead of reporting it\n")
+text = prompt
+if prompt.startswith("Your complete instructions are in the file "):
+    path = prompt[len("Your complete instructions are in the file "):].split(". Read", 1)[0]
+    with open(path, encoding="utf-8") as fh:
+        text = fh.read()
+parts = sorted(set(re.findall(r"part-\d{3}-of-\d{3}\.patch", text)))
+body = "\n".join("READ|" + p for p in parts)
+body += "\nFIX|seed.txt:1|breaks|repro" if mode == "findings" else "\nCLEAN"
+if mode == "turnfail":
+    say({"role": "assistant", "content": body},
+        {"role": "meta", "type": "turn.failed",
+         "error": {"code": "provider.error", "message": "stream died"}})
+    sys.exit(0)
+say({"role": "meta", "type": "system.version", "version": "2.1.1"},
+    {"role": "assistant", "content": None,
+     "tool_calls": [{"type": "function", "id": "t1",
+                     "function": {"name": "Read", "arguments": "{}"}}]},
+    {"role": "tool", "tool_call_id": "t1", "content": "..."},
+    {"role": "assistant", "content": body})
+'''
+
+
+def fake_kimi_bin(directory):
+    """Write an executable fake `kimi` into `directory` (plus a .cmd shim for
+    Windows) and return the directory, for PATH."""
+    directory.mkdir(parents=True, exist_ok=True)
+    script = directory / "kimi"
+    script.write_text(f"#!{sys.executable}\n" + textwrap.dedent(_FAKE_KIMI),
+                      encoding="utf-8", newline="\n")
+    script.chmod(0o755)
+    (directory / "kimi.cmd").write_text(
+        f'@"{sys.executable}" "%~dp0kimi" %*\r\n', encoding="utf-8", newline="")
+    return directory
+
+
+# The owner's three ids and the alias each is served under in a real
+# `~/.kimi-code/config.toml` (Kimi Code 2.1.1, structure read 2026-09-25).
+KIMI_ALIASES = {"kimi-code/k3": "k3",
+                "kimi-code/kimi-for-coding": "kimi-for-coding",
+                "kimi-code/kimi-for-coding-highspeed": "kimi-for-coding-highspeed"}
+
+
+def kimi_home(directory, provider_type="kimi", credential=True, api_key="",
+              default_model="kimi-code/kimi-for-coding", config=True,
+              extra_models=None):
+    """A fixture KIMI_CODE_HOME: `config.toml` with one provider and the three
+    aliases, and (when `credential`) one file under `credentials/`. No value
+    in it is a real secret."""
+    directory.mkdir(parents=True, exist_ok=True)
+    if config:
+        lines = []
+        if default_model:
+            lines.append(f'default_model = "{default_model}"')
+        lines += ['', '[providers."managed:kimi-code"]', f'type = "{provider_type}"',
+                  f'api_key = "{api_key}"', 'base_url = "https://example.invalid/v1"',
+                  '', '[providers."managed:kimi-code".oauth]', 'storage = "file"',
+                  'key = "oauth/kimi-code"']
+        models = dict(KIMI_ALIASES, **(extra_models or {}))
+        for alias, model in models.items():
+            lines += ['', f'[models."{alias}"]', 'provider = "managed:kimi-code"',
+                      f'model = "{model}"']
+        (directory / "config.toml").write_text("\n".join(lines) + "\n", encoding="utf-8",
+                                               newline="\n")
+    if credential:
+        (directory / "credentials").mkdir(exist_ok=True)
+        (directory / "credentials" / "kimi-code.json").write_text(
+            '{"placeholder": true}\n', encoding="utf-8", newline="\n")
+    return directory
