@@ -186,6 +186,14 @@ STATUS_MUTATIONS = (
      "    if len(lines) > STATUS_MAX_LINES:\n",
      "    if False:\n",
      _S + "test_status_text_caps_at_12_lines"),
+    ("route takes any word after a subcommand as the ticket", AUTOPILOT,
+     "    if len(rest) > 1 or (rest and not (_INDEX_ID.fullmatch(rest[0])\n",
+     "    if len(rest) > 1 and (rest and not (_INDEX_ID.fullmatch(rest[0])\n",
+     _S + "test_route_args_refuses_what_is_not_a_ticket"),
+    ("the command hands route a positional argument", COMMAND,
+     'route --root . --args "$ARGUMENTS"\n',
+     'route --root . --first "$1"\n',
+     _S + "test_command_passes_its_arguments_whole"),
 )
 
 AUTOPILOT_MUTATIONS += STATUS_MUTATIONS

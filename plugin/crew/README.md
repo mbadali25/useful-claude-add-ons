@@ -788,7 +788,7 @@ A `.crew/config.json` that exists but does not parse, or a value outside those f
 
 `/crew:autopilot [<id>]` (since 1.0.41, **off by default**) drives one ticket through spec, plan, approval, implement, refresh artifacts, review and done, following each phase command's own procedure in the same session. It does not decide the order itself: every turn it runs `hooks/scripts/crew_autopilot.py next --root . --ticket <id>`, which names the next phase from files on disk only, so a skipped phase is visible and a phase that cannot be told stops.
 
-**Subcommands** (since 1.0.42, T-0018). The first argument is routed by `crew_autopilot.py route --root . --first <word>`, in code, so a typo is refused rather than driven as a ticket id:
+**Subcommands** (since 1.0.42, T-0018). The command hands its whole argument string to `crew_autopilot.py route --root . --args "$ARGUMENTS"`, which decides the subcommand and the ticket in code, so a typo is refused rather than driven as a ticket id. The whole string, not `$1`/`$2`: Claude Code numbers positional arguments from `$0` and leaves an out-of-range `$N` literal (measured on 2.1.283), so `$2` never reaches a command.
 
 | `/crew:autopilot ...` | Does |
 |---|---|
@@ -798,7 +798,7 @@ A `.crew/config.json` that exists but does not parse, or a value outside those f
 | `goal`, `--goal <slug>` | Not yet: stops with "arrives with T-0012". |
 | `focus` | Not yet: stops with "arrives with T-0020". |
 
-Any other word (`stauts`, `Status`, `rm`) stops with "unknown subcommand; one of status\|run\|assign\|goal\|focus, or a ticket id".
+Any other word (`stauts`, `Status`, `rm`) stops with "unknown subcommand; one of status\|run\|assign\|goal\|focus, or a ticket id". A second word that is not a ticket id (`status stauts`), or a third word, stops too: route never reads it as a ticket.
 
 **`status`** (`crew_autopilot.py status --root . [--ticket <id>]`) prints: the mode; the ticket and where that choice came from (the argument, the handoff, the active ticket or `.work/INDEX.md`); the phase `next` names and its command, or why it stopped; who it waits on — `owner` with the command they type, `autopilot`, `reviewer` for a round reserved with no result, `nobody` for a closed ticket; the review rounds left; and the handoff's `resume:` line with whether it is usable (`no .work/HANDOFF.md`, `unavailable (T-0006 not landed)`, `<line> (usable)` or `not usable: <crew_resume's own reason>`), then any `fell through:`, `disagreement:` and `warning:` lines. What it cannot tell reads `unknown`, never a safe-looking value: an unreadable review ledger prints `review: unknown (ledger unreadable)`, not a rounds count, and a phase name it does not map prints `waiting on: unknown`. It writes nothing — no file, no git index refresh, no ledger reservation, no active-ticket change — and exits 0.
 

@@ -670,6 +670,28 @@ def route(root, first):
     return {"sub": sub, "stop": False, "reason": ""}
 
 
+NOT_A_TICKET = ("not a ticket id: at most one, INDEX-shaped (T-0018) or naming an "
+                "existing .work/tickets/<id>/")
+
+
+def route_args(root, text):
+    """`route` for the command's whole argument string, plus `ticket`: the
+    word after a subcommand, or a bare ticket id itself. The command passes
+    `$ARGUMENTS` whole because Claude Code numbers positional arguments from
+    `$0` and leaves an out-of-range `$N` literal. A second word that is not a
+    ticket, or a third word, stops; it is never read as a ticket."""
+    top = crew_ticket.toplevel(root) or os.path.abspath(root)
+    words = (text or "").split()
+    got = dict(route(top, words[0] if words else ""), ticket="")
+    if got["stop"]:
+        return got
+    rest = words[1:] if words and words[0] in SUBCOMMANDS else words
+    if len(rest) > 1 or (rest and not (_INDEX_ID.fullmatch(rest[0])
+                                       or _existing_ticket(top, rest[0]))):
+        return dict(got, stop=True, reason=NOT_A_TICKET)
+    return dict(got, ticket=rest[0] if rest else "")
+
+
 # Who acts when `next` stops at each phase it names. A phase not here -- a
 # rename, `invalid` from a crash -- reads `unknown`, never `autopilot`.
 WAITING = {phase: "owner" for phase in (
@@ -831,7 +853,7 @@ def main(argv):
     sub.choices["next"].add_argument("--ticket", required=True)
     sub.choices["resume"].add_argument("--ticket", default="")
     sub.choices["status"].add_argument("--ticket", default="")
-    sub.choices["route"].add_argument("--first", default="")
+    sub.choices["route"].add_argument("--args", default="")
     sub.choices["next"].add_argument("--phases-run", type=int, default=0)
     sub.choices["next"].add_argument("--last-command", default="")
     try:
@@ -849,8 +871,9 @@ def main(argv):
             result = {"status": UNKNOWN, "reason": _failure(exc)}
             text = _one_line(f"status: unknown - {_failure(exc)}")
     elif args.action == "route":
-        result = route(args.root, args.first)
-        text = _line(sub=result["sub"], stop=int(result["stop"]), reason=result["reason"])
+        result = route_args(args.root, args.args)
+        text = _line(sub=result["sub"], stop=int(result["stop"]), ticket=result["ticket"],
+                     reason=result["reason"])
     elif args.action == "stops":
         result = stops()
         text = "\n".join(f"{kind} {row['id']}: {row['text']}"

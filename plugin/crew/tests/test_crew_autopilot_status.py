@@ -12,6 +12,7 @@ must-say-unknown branches to prove these tests can fail.
 """
 import json
 import os
+import re
 import subprocess
 import sys
 
@@ -102,14 +103,51 @@ def test_route_every_subcommand_is_available_or_names_its_ticket():
     assert unaccounted == []
 
 
-@pytest.mark.parametrize("token,line", [
-    ("status", "sub=status stop=0 reason="),
-    ("stauts", "sub= stop=1 reason=unknown subcommand"),
+@pytest.mark.parametrize("text,want", [
+    ("", ("run", False, "")),
+    ("run", ("run", False, "")),
+    ("T-0018", ("run", False, "T-0018")),
+    ("run T-0018", ("run", False, "T-0018")),
+    ("status", ("status", False, "")),
+    ("status T-0018", ("status", False, "T-0018")),
+    ("  status   T-0018  ", ("status", False, "T-0018")),
 ])
-def test_route_cli_prints_one_line(tmp_path, capsys, token, line):
+def test_route_args_names_the_ticket(tmp_path, text, want):
     root = make_repo(tmp_path, mode="off")
 
-    code = crew_autopilot.main(["route", "--root", str(root), "--first", token])
+    got = crew_autopilot.route_args(str(root), text)
+
+    assert (got["sub"], got["stop"], got["ticket"]) == want
+
+
+def test_route_args_takes_an_existing_folder_as_the_ticket(tmp_path):
+    root = make_repo(tmp_path, mode="off")
+    _ticket(root, ticket="fix-login")
+
+    got = crew_autopilot.route_args(str(root), "status fix-login")
+
+    assert (got["sub"], got["stop"], got["ticket"]) == ("status", False, "fix-login")
+
+
+@pytest.mark.parametrize("text", ["status stauts", "run rm", "run status", "status run",
+                                  "status ../..", "status T-1 T-2", "T-1 T-2", "stauts T-1"])
+def test_route_args_refuses_what_is_not_a_ticket(tmp_path, text):
+    root = make_repo(tmp_path, mode="off")
+
+    got = crew_autopilot.route_args(str(root), text)
+
+    assert (got["stop"], got["ticket"], bool(got["reason"])) == (True, "", True)
+
+
+@pytest.mark.parametrize("text,line", [
+    ("status", "sub=status stop=0 ticket= reason="),
+    ("status T-0018", "sub=status stop=0 ticket=T-0018 reason="),
+    ("stauts", "sub= stop=1 ticket= reason=unknown subcommand"),
+])
+def test_route_cli_prints_one_line(tmp_path, capsys, text, line):
+    root = make_repo(tmp_path, mode="off")
+
+    code = crew_autopilot.main(["route", "--root", str(root), "--args", text])
 
     out = capsys.readouterr().out
     assert (code, out.startswith(line), out.count("\n")) == (0, True, 1)
@@ -376,6 +414,16 @@ def test_command_routes_before_it_refuses_unarmed():
             < text.index("## 1. status")
             < text.index("crew_autopilot.py settings --root .")), \
         "status is read-only and must not need autopilot armed"
+
+
+def test_command_passes_its_arguments_whole():
+    # Claude Code substitutes `$0` with the FIRST argument and leaves an
+    # out-of-range `$N` literal (measured on 2.1.283), so a positional `$1`
+    # would hand route the ticket and `$2` would never arrive.
+    text = _command_text()
+
+    assert (re.findall(r"\$[0-9]", text), 'route --root . --args "$ARGUMENTS"' in text) == (
+        [], True)
 
 
 def test_command_stops_on_a_router_stop():

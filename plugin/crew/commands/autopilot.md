@@ -13,18 +13,18 @@ needs a person. Nothing here approves, accepts a review, or skips a phase.
 ## 0. Route
 
 ```bash
-python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py route --root . --first "$1"
+python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py route --root . --args "$ARGUMENTS"
 ```
 
-It prints `sub=<s> stop=<0|1> reason=<r>`. `stop=1`: print the reason and stop
+It prints `sub=<s> stop=<0|1> ticket=<t> reason=<r>`. `stop=1`: print the reason and stop
 (an unknown word is never read as a ticket; `assign`, `goal`, `focus` arrive
 with T-0019, T-0012, T-0020). `sub=status`: section 1 only. `sub=run`:
-sections 2 to 5, the ticket being `$2` when `$1` is `run`, else `$1`.
+sections 2 to 5. `<ticket>` below is route's `ticket=`, never re-read from the arguments.
 
 ## 1. status
 
 ```bash
-python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py status --root .  # add --ticket $2 when given
+python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py status --root .  # --ticket <ticket> if ticket= is set
 ```
 
 Print its lines as they are, then stop: read-only, armed or not, no other
@@ -34,8 +34,8 @@ command, no edit, no phase. `unknown` there means it could not tell.
 
 ```bash
 python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py settings --root .
-python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py resume --root .  # no ticket
-python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py resume --root . --ticket $1  # $2 after `run`
+python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py resume --root .  # ticket= empty
+python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py resume --root . --ticket <ticket>
 ```
 
 `settings`: anything but `mode=plan` - stop, print its `warning:` lines, and
