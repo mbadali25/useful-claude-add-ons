@@ -12,6 +12,8 @@ must-say-unknown branches to prove these tests can fail.
 """
 import os
 import re
+import shlex
+import shutil
 import subprocess
 import sys
 
@@ -23,7 +25,7 @@ import crew_ticket
 import review_ledger
 from scope_fixtures import approve_as_user, make_repo
 from test_crew_autopilot import (_COMMAND, _SCRIPT, _approved, _handoff, _index, _ledger, _round,
-                                 _snapshot, _ticket, _two_tickets, _write)
+                                 _snapshot, _spec_text, _ticket, _two_tickets, _write)
 
 T = "T-1"
 
@@ -264,6 +266,25 @@ def test_status_unknown_ledger_is_unknown(tmp_path):
     assert got["review"] == "unknown (ledger unreadable)"
 
 
+def test_status_ledger_that_says_unknown_prints_no_rounds_count(tmp_path):
+    root = _approved(tmp_path)
+    _ledger(root, [], state="UNKNOWN")
+
+    got = crew_autopilot.status(str(root), T)
+
+    assert got["review"] == "unknown (ledger unreadable)"
+
+
+@pytest.mark.parametrize("state", ["BOGUS", "reviewed", 7], ids=["word", "case", "number"])
+def test_status_ledger_state_review_ledger_never_writes_is_unknown(tmp_path, state):
+    root = _approved(tmp_path)
+    _ledger(root, [], state=state)
+
+    got = crew_autopilot.status(str(root), T)
+
+    assert got["review"] == "unknown (ledger state is not one review_ledger writes)"
+
+
 def test_status_unmapped_phase_is_unknown(tmp_path, monkeypatch):
     root = _approved(tmp_path)
     monkeypatch.setattr(crew_autopilot, "next_phase", lambda *a, **k: {
@@ -290,6 +311,45 @@ def test_status_resume_line_absent_handoff(tmp_path):
     got = crew_autopilot.status(str(root), T)
 
     assert got["resume_line"] == "no .work/HANDOFF.md"
+
+
+def _unreadable_handoff(root, monkeypatch, how):
+    """A `.work/HANDOFF.md` that exists and cannot be read. The session may
+    run as root, where chmod denies nothing, so the denial is injected into
+    the reader itself; a directory is a real one."""
+    if how == "directory":
+        os.makedirs(str(root / ".work" / "HANDOFF.md"))
+        return
+    _handoff(root, f"resume: /crew:autopilot {T}")
+    real = open
+
+    def deny(path, *args, **kwargs):
+        if str(path).endswith("HANDOFF.md"):
+            raise PermissionError(13, "Permission denied", str(path))
+        return real(path, *args, **kwargs)
+    monkeypatch.setattr(crew_autopilot, "open", deny, raising=False)
+
+
+@pytest.mark.parametrize("how", ["denied", "directory"])
+def test_status_resume_line_unknown_when_the_handoff_cannot_be_read(tmp_path, monkeypatch,
+                                                                    how):
+    root = _approved(tmp_path)
+    _unreadable_handoff(root, monkeypatch, how)
+
+    got = crew_autopilot.status(str(root), T)
+
+    assert got["resume_line"] == crew_autopilot.HANDOFF_UNREADABLE
+
+
+@pytest.mark.parametrize("how", ["denied", "directory"])
+def test_resume_falls_through_saying_the_handoff_could_not_be_read(tmp_path, monkeypatch, how):
+    root = _approved(tmp_path)
+    crew_ticket.activate(str(root), T)
+    _unreadable_handoff(root, monkeypatch, how)
+
+    got = crew_autopilot.resume_target(str(root))
+
+    assert (got["ticket"], got["fallthrough"][0]) == (T, crew_autopilot.HANDOFF_UNREADABLE)
 
 
 def test_status_resume_line_unavailable_without_crew_resume(tmp_path, monkeypatch):
@@ -542,16 +602,34 @@ def test_status_repoint_never_offers_a_closed_ticket(tmp_path):
             "/crew:autopilot T-2" in got["waiting"]) == (True, True, False)
 
 
+@pytest.mark.parametrize("closing", ["index", "header"])
+def test_status_repoint_never_offers_a_closed_ticket_without_a_direction(tmp_path, closing):
+    root = _two_tickets(tmp_path, activate="T-2")
+    approve_as_user(root, T)
+    if closing == "index":
+        _close_t2(root)
+    else:
+        _write(root / ".work" / "tickets" / "T-2" / "spec.md",
+               _spec_text("T-2", "status: done   risk: high"))
+    os.remove(str(root / ".work" / "tickets" / "T-2" / "direction.md"))
+
+    got = crew_autopilot.status(str(root), T)
+
+    assert (f"crew_ticket.py activate --ticket {T}" in got["waiting"],
+            "/crew:autopilot T-2" in got["waiting"],
+            "T-2 is closed" in got["waiting"]) == (True, False, True)
+
+
 def test_status_repoint_says_unknown_when_the_active_phase_raises(tmp_path, monkeypatch):
     root = _two_tickets(tmp_path, activate="T-2")
     approve_as_user(root, T)
-    real = crew_autopilot._phase  # pylint: disable=protected-access
+    real = crew_ticket.read_contract
 
-    def phase(top, ticket):
+    def contract(top, ticket):
         if ticket == "T-2":
             raise RuntimeError("disk on fire")
         return real(top, ticket)
-    monkeypatch.setattr(crew_autopilot, "_phase", phase)
+    monkeypatch.setattr(crew_ticket, "read_contract", contract)
 
     got = crew_autopilot.status(str(root), T)
 
@@ -575,6 +653,54 @@ def test_status_writes_nothing(tmp_path, args):
     code, lines = _lines(root, *args)
 
     assert (code, bool(lines), _git_state(root) == before) == (0, True, True)
+
+
+def _plugin_copy(tmp_path):
+    """A writable plugin installation with no bytecode cache: every script
+    the command runs, and `crew_upgrade`, which crew_config imports from
+    skills/crew-graph/scripts."""
+    crew = os.path.dirname(os.path.dirname(os.path.dirname(_SCRIPT)))
+    plugin = tmp_path / "plugin"
+    shutil.copytree(crew, str(plugin), ignore=shutil.ignore_patterns(
+        "__pycache__", "*.pyc", "tests", "evals", "docs", "_test"))
+    return plugin
+
+
+def _documented(heading, plugin, arguments):
+    """The command's fenced crew_autopilot.py line under `heading`, as argv,
+    with Claude Code's substitutions made and `python3` as this interpreter."""
+    section = _section(_command_text(), heading)
+    line = next(line.strip() for block in section.split("```")[1::2]
+                for line in block.splitlines()[1:] if "crew_autopilot.py" in line)
+    root = str(plugin).replace("\\", "/")
+    line = line.split("  #")[0].replace("${CLAUDE_PLUGIN_ROOT}", root)
+    argv = shlex.split(line.replace("$ARGUMENTS", arguments))
+    assert argv[0] == "python3", line
+    return [sys.executable] + argv[1:]
+
+
+def test_status_as_the_command_runs_it_writes_no_bytecode(tmp_path):
+    root = _approved(tmp_path / "repo")
+    plugin = _plugin_copy(tmp_path)
+    env = {k: v for k, v in os.environ.items()
+           if k not in ("PYTHONDONTWRITEBYTECODE", "PYTHONPYCACHEPREFIX")}
+    outs = [subprocess.run(_documented(heading, plugin, "status"), cwd=str(root), env=env,
+                           capture_output=True, text=True, check=False,
+                           stdin=subprocess.DEVNULL).stdout
+            for heading in ("## 0. Route", "## 1. status")]
+
+    written = [os.path.join(base, name) for base, dirs, files in os.walk(str(plugin))
+               for name in dirs + files if name == "__pycache__" or name.endswith(".pyc")]
+    assert (outs[0].startswith("sub=status stop=0"), "ticket: " in outs[1], written) == (
+        True, True, [])
+
+
+def test_every_autopilot_invocation_in_command_skips_bytecode():
+    lines = [line.strip() for line in _command_text().splitlines()
+             if "crew_autopilot.py " in line and "${CLAUDE_PLUGIN_ROOT}" in line]
+
+    assert (len(lines) >= 6, [line for line in lines
+                              if not line.lstrip("`").startswith("python3 -B ")]) == (True, [])
 
 
 def test_status_at_most_12_lines(tmp_path, monkeypatch, capsys):

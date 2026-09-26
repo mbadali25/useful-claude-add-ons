@@ -15,7 +15,7 @@ If the arguments hold a quote, `$`, a backtick or a backslash, stop without
 running anything: no subcommand or ticket id has one. Otherwise:
 
 ```bash
-python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py route --root . --args '$ARGUMENTS'
+python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py route --root . --args '$ARGUMENTS'
 ```
 
 It prints `sub=<s> stop=<0|1> ticket=<t> reason=<r>`. Anything but a `sub=` line - no output,
@@ -28,18 +28,18 @@ arguments; from `resume` on, `<ticket>` is the `ticket=` resume printed.
 ## 1. status
 
 ```bash
-python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py status --root .  # --ticket <ticket> if ticket= is set
+python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py status --root .  # --ticket <ticket> if ticket= is set
 ```
 
-Print its lines as they are, then stop: read-only, armed or not, no other
-command, no edit, no phase. `unknown` there means it could not tell.
+Print its lines as they are, then stop: read-only, armed or not (`-B`: not even a
+bytecode cache), no other command, no edit, no phase. `unknown` means it could not tell.
 
 ## 2. Arm, then pick the ticket
 
 ```bash
-python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py settings --root .
-python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py resume --root .  # ticket= empty
-python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py resume --root . --ticket <ticket>
+python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py settings --root .
+python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py resume --root .  # ticket= empty
+python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py resume --root . --ticket <ticket>
 ```
 
 `settings`: anything but `mode=plan` - stop, print its `warning:` lines, and say
@@ -55,7 +55,7 @@ so the scope guard judges edits by it. Never pick from `## Next action`.
 ## 3. The loop - keep `N` (phases run, from 0) and `LAST` (last command, empty)
 
 ```bash
-python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py next --root . \
+python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py next --root . \
   --ticket <ticket> --phases-run N --last-command "LAST"
 ```
 

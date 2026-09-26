@@ -492,12 +492,30 @@ def next_phase(root, ticket, phases_run=0, last_command=None, max_phases=None):
     return result
 
 
+HANDOFF_ABSENT = "no .work/HANDOFF.md"
+HANDOFF_UNREADABLE = "unknown - .work/HANDOFF.md exists but could not be read"
+
+
+def _read_handoff(top):
+    """(text, why_not): `.work/HANDOFF.md`'s text, or None with why. Only a
+    file that is not there is absent; one that is there and cannot be read
+    -- denied, a directory -- is unknown, never absent (read_text says None
+    for both)."""
+    try:
+        with open(os.path.join(top, ".work", "HANDOFF.md"), "r", encoding="utf-8-sig",
+                  errors="replace") as handle:
+            return handle.read(), ""
+    except FileNotFoundError:
+        return None, HANDOFF_ABSENT
+    except (OSError, ValueError):
+        return None, HANDOFF_UNREADABLE
+
+
 def _handoff_ticket(top):
     """(ticket, hint, stop_reason, why_not) from `.work/HANDOFF.md`."""
-    path = os.path.join(top, ".work", "HANDOFF.md")
-    text = read_text(path)
+    text, why = _read_handoff(top)
     if text is None:
-        return None, "", None, "no .work/HANDOFF.md"
+        return None, "", None, why
     try:
         resume = importlib.import_module("crew_resume")
         parsed = resume.parse_resume(text)
@@ -705,6 +723,10 @@ WAITING = {phase: "owner" for phase in (
     "done")}
 WAITING["closed"] = "nobody"
 STATUS_MAX_LINES = 12
+# The states `review_ledger.status` reports for a ledger it could read. Its
+# UNKNOWN is also a string a file can hold, with a count computed beside it.
+LEDGER_STATES = ("EMPTY", review_ledger.IN_REVIEW, review_ledger.REVIEWED,
+                 review_ledger.ACCEPTED, review_ledger.NEEDS_REPLAN)
 T0006_UNAVAILABLE = "unavailable (T-0006 not landed)"
 
 
@@ -767,7 +789,7 @@ def _repoint(top, ticket):
         return f"autopilot - run {AUTOPILOT} {ticket} to continue; it activates {ticket} first"
     repoint = f"owner - re-points this worktree: crew_ticket.py activate --ticket {ticket}"
     try:
-        closed = _phase(top, active)["phase"] == "closed"
+        closed = _closed(top, active)
     except Exception:  # pylint: disable=broad-except
         closed = None
     if closed is None:
@@ -777,17 +799,35 @@ def _repoint(top, ticket):
     return f"{repoint}, or runs {AUTOPILOT} {active}"
 
 
+def _closed(top, ticket):
+    """Whether either fact `next` closes a ticket on says so: INDEX.md's status
+    or spec.md's `status: done` header. Read directly, because `_phase` checks
+    direction.md first and a closed ticket without one reads `brainstorm`."""
+    if _index_status(top, ticket) in INDEX_DONE:
+        return True
+    spec = crew_ticket.read_contract(top, ticket)["spec.md"]
+    return spec is not None and _header_status(
+        crew_ticket._text(spec)) == "done"  # pylint: disable=protected-access
+
+
 def _review(top, ticket):
     """The ledger's rounds, or `unknown`: a corrupt ledger has no `rounds_left`,
-    and a missing count is never read as the budget."""
+    and a missing count is never read as the budget. A ledger whose state is
+    UNKNOWN, or one review_ledger never writes, still gets a count computed
+    from its rounds; that count is never printed."""
     try:
         ledger = review_ledger.status(top, ticket)
     except Exception:  # pylint: disable=broad-except
         return "unknown (ledger unreadable)"
+    state = ledger.get("state")
+    if state == review_ledger.UNKNOWN:
+        return "unknown (ledger unreadable)"
+    if state not in LEDGER_STATES:
+        return "unknown (ledger state is not one review_ledger writes)"
     left = ledger.get("rounds_left")
     if isinstance(left, bool) or not isinstance(left, int):
         return "unknown (ledger unreadable)"
-    return f"{ledger.get('state')}, {left} of {ledger.get('budget')} rounds left"
+    return f"{state}, {left} of {ledger.get('budget')} rounds left"
 
 
 def _resume_line(top, bare):
@@ -795,9 +835,9 @@ def _resume_line(top, bare):
     `bare`, `resume_target`'s answer -- takes it. Only `crew_resume`'s own
     fixed reasons, its re-rendered tokens and `resume_target`'s stop reason
     are shown; nothing is echoed from the file."""
-    text = read_text(os.path.join(top, ".work", "HANDOFF.md"))
+    text, why = _read_handoff(top)
     if text is None:
-        return "no .work/HANDOFF.md"
+        return why
     try:
         resume = importlib.import_module("crew_resume")
     except ImportError:

@@ -53,7 +53,16 @@ All notable changes to this repository are documented here. Format follows [Keep
     active ticket is not closed, and says it could not tell when that
     ticket's phase could not be read. `.crew/verify.json`'s autopilot rule
     is re-priced from a fresh measurement.
-  - Twenty-eight mutations in `tests/sabotage_autopilot.py`'s `STATUS_MUTATIONS`
+  - Review round 3's fixes: a ledger whose state is `UNKNOWN` prints
+    `review: unknown (ledger unreadable)` and one whose state review_ledger
+    never writes prints `unknown`, never a rounds count; a `.work/HANDOFF.md`
+    that exists but cannot be read prints `resume: unknown` (and `resume`
+    falls through saying so), never `no .work/HANDOFF.md`; a pointer stop
+    never offers a closed active ticket, whether INDEX.md or its spec header
+    closes it, even with no `direction.md`; every `crew_autopilot.py` line in
+    `autopilot.md` runs `python3 -B`, so `route` and `status` write no
+    bytecode cache into the plugin (tested against a writable copy).
+  - Thirty-seven mutations in `tests/sabotage_autopilot.py`'s `STATUS_MUTATIONS`
     each turn their named test red. They are appended to
     `AUTOPILOT_MUTATIONS`, so `sabotage.py` runs them with the rest, and
     `test_crew_autopilot.py` asserts each one reaches `sabotage.MUTATIONS`.
