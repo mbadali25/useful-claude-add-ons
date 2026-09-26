@@ -4,6 +4,89 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Added
+
+- **`crew` 1.0.36: the code maps, diagrams and code graph a ticket's changes
+  reach must be current before `/crew:done` (T-0008).** Bumped
+  `1.0.35 -> 1.0.36`. New read-only
+  `hooks/scripts/crew_refresh_check.py --root . --ticket <id> [--json]`
+  answers per artifact `fresh`, `stale` (naming `/crew:onboard --refresh
+  <subsystem>`, `/crew:diagram refresh`, or for the graph `graphify update .`
+  where the repo tracks `GRAPH_REPORT.md` beside `graph.json` and
+  `graphify . --no-viz --code-only` where it does not) or `unknown`,
+  and `not applicable` for a repo with no graph file; it exits 0 only when
+  everything is `fresh`. It reuses `crew_freshness`'s anchor readers,
+  `scope_base.resolve` and `completion_audit.changed_paths`, and diffs each
+  anchor against the WORKING TREE over only the paths the ticket changed and
+  the artifact cites: an anchor lag from commits elsewhere does not refuse,
+  an uncommitted edit in a cited path reads `stale` ("commit, then
+  refresh"), and a missing anchor, a sha this clone lacks, a graph with no
+  `built_at_commit` or graphify missing on this machine are `unknown`, never
+  `fresh`. Documents are `not measured`.
+  - `/crew:implement` step 6 is now tests, `/crew:docs`, the refresh check
+    and the commands it names, then `/crew:review`, so the review receipt
+    covers the refreshed artifacts.
+  - `/crew:done` gains check 4, which runs the same check and refuses on
+    `stale` or `unknown` without running a refresh (a write there would stale
+    check 1's receipt).
+  - **The scope guard and the completion audit allow the refresh-artifact
+    paths for an approved ticket.** `crew_refresh_check.REFRESH_ARTIFACT_PATHS`
+    — `.crew/codemap/`, the configured diagrams dir, `graph.out`,
+    `.claude/rules/` — is defined once and read by both, so the refresh step 6
+    demands is no longer the write they refuse. Only with a current approval
+    from the user's prompt (a `cli` receipt only under
+    `scope.allowCliApproval`); matched on whole path segments after `..` is
+    collapsed, on the real and the named path both; a configured dir
+    resolving to the repo root opens nothing. `scope_guard.py`'s docstring
+    states the allowance and why.
+  - **The completion audit no longer rewrites `.git/index`.** Its `git diff`
+    refreshed the stat cache and wrote the index whenever a file was
+    stat-dirty but unchanged, `GIT_OPTIONAL_LOCKS=0` notwithstanding
+    (measured, git 2.53). It now lists paths with `git diff-index` and hashes
+    only the stat-dirty files to drop the unchanged ones;
+    `crew_refresh_check` diffs through the same helper, so a library caller
+    of `ticket_freshness` writes nothing either.
+  - Release bookkeeping (`CHANGELOG.md`, `plugin/PLUGINS.md`, the marketplace
+    and plugin manifests, `plugin/*/BUDGETS.md`) never stales an artifact on
+    its own. Code-map citations parse `path:10-20` ranges and dot-directory
+    paths; a map citing no path is `unknown`, not out of scope; a cited or
+    Anchors directory reaches the files under it. A scope base that hides the
+    change (none, or a fallback equal to HEAD, the default-branch case) makes
+    the answer `unknown`; any other fallback is used, and each artifact line
+    says `[fallback base]`. An `unknown` a refresh settles
+    — an anchor naming no commit after a squash merge — prints `refresh with`
+    and `/crew:implement` step 6 runs it; the rest print `stop`.
+  - `tests/test_refresh_check.py`, `tests/test_scope_guard_refresh_artifacts.py`
+    and `tests/test_completion_audit_refresh_artifacts.py` (must-block and
+    must-allow cases in real git repositories, plus the implement/done
+    ordering tests) and `tests/sabotage_refresh.py`, registered in
+    `sabotage.py`: every mutation there goes red on its named test, among
+    them dropping the approval condition from the guard's and the audit's
+    allowance. `.crew/verify.json` maps the check and its tests to
+    `python3 -m pytest` over those three files.
+  - **Review round 2 (T-0008-TPCCYg): more `unknown`s, so `/crew:done`
+    check 4 refuses in cases that used to pass.** A fallback scope base is
+    trusted only when HEAD is on a branch that is not the default one and no
+    commit behind the base names the ticket in its subject; otherwise the
+    answer is `unknown` (`fallback base <sha> may hide <ticket>'s commits`),
+    which caught work pushed to main, and a branch fast-forwarded into main
+    and given one more commit, both reading `fresh` with the stale map
+    unlisted. A code-map or diagrams dir that cannot be listed, a map or
+    diagram that cannot be read, and a `.crew/crew.json` / `config.json` that
+    exists and does not parse (`config unreadable`) are `unknown` too, where
+    they used to read as no artifacts or as the default dirs. `--json` gains
+    `base_source` and `stop`. The renderer ends the top line with
+    `; stop - <reason>` when no refresh can settle the answer, and prints
+    `not measured - <reason>` instead of "no codemap, diagram or graph cites
+    a path this ticket changed" when nothing was measured. `TODO.md` joins
+    the release bookkeeping, so filing a finding no longer stales every map
+    citing it; a code path cited beside it still does. The untracked list is
+    read NUL-separated, so a name git would C-quote (`"`, `\`, a tab) is
+    matched. `/crew:implement` step 6 says a top-line `stop` ends the loop
+    and that the refresh is committed before the review bundle is built.
+    Each new branch has a test watched red first and a mutation in
+    `sabotage_refresh.py`.
+
 ### Fixed
 
 - **`crew` 1.0.35: the endpoint ledger fails closed instead of silently losing
