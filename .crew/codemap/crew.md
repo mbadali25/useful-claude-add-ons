@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@2170d72e
+anchor: useful-claude-add-ons@22adb579
 verified: 2026-09-25
 
 ## Re-derive provenance
@@ -766,3 +766,5 @@ and `_tf_workspace` changes are below every other citation into it, none of whic
 states by line) and `plugin/crew/CONFIG.md` (three lines added inside the destroy paragraph;
 this note cites CONFIG.md by name and section only). Nothing else moved.
 
+Then `2170d72e` -> `22adb579`: only `cloud_guard.py` changed (`_expansion_subs` renamed a local,
+below `:33-55`, which was re-read unchanged).
