@@ -101,6 +101,9 @@
       "maxCommitsBehind": 3
     }
   },
+  "resume": {
+    "auto": null
+  },
   "emergency": {
     "standDown": true,
     "ttlMinutes": 120,

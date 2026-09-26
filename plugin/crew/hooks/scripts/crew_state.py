@@ -681,6 +681,16 @@ AUTOCLEAR_DEFAULTS = {
     "onlySessions": None,
 }
 
+# The `resume` block (T-0006): auto-resume after /clear or a manual /compact.
+# OFF by default and a MACHINE opt-in, the `autoClear.enabled` rule:
+# `crew_resume.settings` arms it only when the machine-global file says
+# exactly `true`, and a repo `false` in `.crew/crew.json` or
+# `.crew/config.json` vetoes it -- a repo value can never switch it on. Null
+# rather than false so the /crew:init template, which writes every key, does
+# not veto a machine opt-in. `context.autoResume` is a different, retired key
+# and stays unread.
+RESUME_DEFAULTS = {"auto": None}
+
 # Keys inside `autoClear` that are CONSENT rather than capability, and so are
 # declared but never granted machine-wide. `unsafeFocus: true` accepts that
 # `wtype` types into whatever currently has focus, which Wayland offers no way

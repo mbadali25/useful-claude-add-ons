@@ -1,5 +1,5 @@
-anchor: useful-claude-add-ons@f2bb919b
-verified: 2026-09-25
+anchor: useful-claude-add-ons@6d35ef8c
+verified: 2026-09-26
 
 # localgpu
 
@@ -512,7 +512,7 @@ file's frontmatter, not previously listed in this note.** `plugin.json`'s
   **Checked against the code, corrected after QA:**
   `plugin/crew/hooks/scripts/crew_config.py:126-127` only re-exports
   (`DEV_PROVIDERS = crew_state.DEV_PROVIDERS`); the tuples are actually
-  *defined* at `plugin/crew/hooks/scripts/crew_state.py:1411-1412` (re-numbered
+  *defined* at `plugin/crew/hooks/scripts/crew_state.py:1421-1422` (re-numbered
   from `:1503-1504` by crew 1.0 - see the 2026-09-25 re-anchor below; same two
   lines, `DEV_PROVIDERS = ("claude", "codex", "copilot")` /
   `QA_PROVIDERS = ("claude", "codex", "copilot")`, byte-identical).
@@ -1050,3 +1050,13 @@ f2bb919b -- <the 32 tracked paths this note cites>` returns one file,
 `:218`). The `crew` entry's description, which this note quotes ("4 context-isolated agents
 (explorer, reviewer, security, researcher)"), is on `:217` and unchanged, and `localgpu`'s own
 entry is untouched (still `0.1.20`). Nothing under `plugin/localgpu/` changed. No claim moved.
+
+**Re-anchored `f2bb919b` -> `6d35ef8c` on 2026-09-26 (T-0006).** `git diff --name-only f2bb919b
+6d35ef8c -- <the paths this note cites>` returns `.claude-plugin/marketplace.json` (crew's
+`version` `:218` only; the `:217` description this note quotes is unchanged and `localgpu`'s own
+entry is still `0.1.20`), `plugin/crew/hooks/scripts/crew_config.py` and
+`plugin/crew/hooks/scripts/crew_state.py`. `crew_config.py`'s `:126-127` re-export is above its
+hunks (`:301`, `:498`) and holds. `crew_state.py` gained `RESUME_DEFAULTS` at `:684`, so the
+provider tuples moved `:1411-1412` -> `:1421-1422` (re-read: the same two lines,
+byte-identical), corrected in place above; the `:1503-1504` mentions are history of earlier
+passes and are left as written. Nothing under `plugin/localgpu/` changed.

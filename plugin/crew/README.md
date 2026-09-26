@@ -1561,6 +1561,35 @@ moment where a subtly wrong handoff gets caught before more work is built on
 top of it. `context.autoResume` is no longer read. Set `memory.inject: false`
 and `handoff-read` prints the note instead.
 
+#### Auto-resume (`resume.auto`, off by default)
+
+`/crew:handoff` writes one machine-readable line into the note's header,
+`resume: /crew:done T-0001` (or `resume: none`), and with `resume.auto: true`
+in `~/.claude/crew/config.json` the context hook works out, on the
+`SessionStart` after `/clear` or a manual `/compact`, whether that command may
+be resumed. Only the machine file can switch it on; a `false` in
+`.crew/crew.json` or `.crew/config.json` vetoes it, and a repo `true` does
+nothing (`CONFIG.md` §14a). Never on `startup`.
+
+**Nothing starts on its own yet.** Claude Code 2.1.282 drops a SessionStart
+`initialUserMessage` in an interactive session (spike, 2026-09-25), so crew
+never sends one. When the checks pass, the injected handoff carries
+`Auto-resume: ready to run /crew:done T-0001.` and says it did not start from
+the hook — press Enter or type it; T-0013 is the ticket that types it. When
+they do not, it carries `Auto-resume did not start: <reason>.` The reasons:
+compact was not a manual /compact; no handoff note, or the handoff was
+archived as stale (or is stale and could not be archived); no resume line, `resume: none`, or a line the grammar
+refuses (two lines, trailing text, an unknown or excluded command such as
+`/crew:approve`); the `branch:` or `head:` line does not match the checkout;
+the ticket's `.work/tickets/<id>/` (or the goal file) does not exist; the
+command is not installed; the record of past auto-resumes
+(`resume-state.json`) exists and could not be read; this handoff was already
+resumed; the progress fingerprint could not be computed; or the same command with no progress since
+the last auto-resume. The allowlist is `crew_resume.RESUME_COMMANDS`:
+`/crew:spec`, `/crew:plan`, `/crew:implement`, `/crew:review`, `/crew:done`,
+`/crew:autopilot` and `/crew:status`. No gate changes: the resumed command's
+own approval, scope, verify and review gates still decide.
+
 ### Housekeeping
 
 `/crew:done` deletes `HANDOFF.md` on ticket completion — do that yourself
