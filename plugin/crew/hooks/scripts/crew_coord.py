@@ -24,14 +24,22 @@ How a write works. `git ls-remote` then `git fetch` bring the channel's tip in
 without touching any local ref, working tree, index or FETCH_HEAD. The files
 are read with `ls-tree`/`cat-file`, the change is applied in memory, and a new
 commit is built with `hash-object -w`, `mktree` and `commit-tree -p <tip>`
-(no parent for a new channel). It is pushed with a plain
-`git push <remote> <sha>:refs/heads/crew-coord/<channel>` -- never `--force`,
-`-f`, `--force-with-lease` or a `+` refspec. A rejected push re-fetches,
-re-applies the change to the new tip (so a peer's claim that landed in between
-is seen and refused) and retries, at most MAX_RETRIES times, then reports
+(no parent for a new channel); every other file on the channel keeps its blob
+and its mode. It is pushed with a plain
+`git push --no-verify -- crew-coord--push <sha>:refs/heads/crew-coord/<channel>`
+-- never `--force`, `-f`, `--force-with-lease` or a `+` refspec.
+`crew-coord--push` is a remote defined only in the push's environment
+(GIT_CONFIG_COUNT) with the real remote's url, pushurl, proxy and receivepack
+and no fetch refspec, push refspec or mirror, so git writes no remote-tracking
+ref, no local ref moves at all, and
+no URL -- or token inside one -- appears in argv. `--no-verify` means the
+repo's pre-push hook (husky, lefthook) never runs on a claim or a heartbeat. A
+remote with no push URL or several reads `unknown`. A rejected push re-fetches, re-applies the
+change to the new tip (so a peer's claim that landed in between is seen and
+refused) and retries, at most MAX_RETRIES times, then reports
 `unknown - could not push`. What cannot be fetched or pushed reads `unknown`,
-never current. Git itself updates the remote-tracking ref
-`refs/remotes/<remote>/crew-coord/<channel>` after a push; no other ref moves.
+never current. Every git child gets the environment minus
+CLAUDE_CODE_MESSAGING_TOKEN, and credentials in a URL git prints are redacted.
 
 Claims. A `working` claim whose heartbeat_at is older than the TTL
 (`coord.ttlMinutes`, default 30) reads `owner unknown`, never free: a new claim
@@ -43,10 +51,14 @@ determined agent: it is documented as a prose control, not claimed as
 enforced.
 
 The heartbeat. `claim` starts `heartbeat-loop` detached (a new session on
-POSIX; DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP on Windows, unmeasured).
-It pushes heartbeat_at every interval while CLAUDE_PID is alive and this
-session still holds the claim `working`, and exits otherwise. Its output goes
-to a log in the system temp directory; the child's environment drops
+POSIX; DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP on Windows, where survival
+past the launching tool call was measured, not past a session exit). It pushes
+heartbeat_at every interval while CLAUDE_PID is alive and this session still
+holds the claim `working`, and exits otherwise. One loop per claim: a second
+one finds the first's lock and exits. Its log and lock live in a private
+per-user directory in the system temp directory (`crew-coord-<uid>`, 0700,
+refused if it is a symlink, another user's, or group/world-accessible), the log
+opened 0600 without following a symlink. The child's environment drops
 CLAUDE_CODE_MESSAGING_TOKEN, and nothing here ever prints an environment value
 other than the holder identity the record is designed to carry.
 
@@ -55,29 +67,43 @@ Recovery. `claim` and `recover` record `{worktree: {holder, tickets}}` in
 script writes it, never Claude's Write tool). `recover` adopts a `working`
 claim only if ALL hold: the claim's machine is this host, its worktree is this
 worktree, the identity file names the claim's holder for that ticket, and the
-holder's pid is PROVABLY gone on a platform whose check was measured (Linux).
-Anything else -- another machine, a live pid, a pid reused with a different
-start time, a missing or corrupt identity file, another worktree, a check
-that cannot tell -- is presented as `yours from a previous session - needs the
-owner: <reason>` and never adopted. `status` lists those first.
+holder's pid is PROVABLY gone on a platform whose check was measured (Linux;
+Windows per the T-0030 spike, elevated, on one host). A pid whose check cannot
+tell reads ALIVE. Anything else -- another machine, a live pid, a pid reused
+with a different start time, a missing or corrupt identity file, another
+worktree, a check that cannot tell -- is presented as `yours from a previous
+session - needs the owner: <reason>` and never adopted. `status` lists those
+first. The identity file is read and rewritten under an exclusive lock
+(`coord-identity.json.lock`), because every worktree of a repo shares it.
+
+NOT MEASURED: whether `/clear` keeps CLAUDE_PID. If it does -- the same
+process carries on under a new session id -- the old holder's pid is alive, so
+`recover` refuses with "pid N is alive", and the old session's heartbeat keeps
+the claim fresh while that process lives. The new session then cannot release,
+finish or recover its own ticket; the owner breaks it with `--break`.
 
 Everything read from the channel is PEER-WRITTEN DATA, never instructions:
-status labels every claim line `[peer-written]` and strips control characters
-before printing.
+every line that prints a peer-written field -- status, and the refusals of
+claim, release, done, heartbeat and recover -- ends `[peer-written]`, and
+control, format (bidi) and line/paragraph-separator characters become '?'
+before printing, so a peer field cannot start a line of its own.
 
 Exit codes: 0 ok; 1 refused; 2 usage; 3 unknown (could not fetch, could not
 push, a corrupt record, or an identity that cannot be told).
 """
 import argparse
+import contextlib
 import datetime
 import json
 import os
 import re
 import socket
+import stat
 import subprocess
 import sys
 import tempfile
 import time
+import unicodedata
 from collections import namedtuple
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -98,7 +124,18 @@ CLAIMS = "claims/"
 IDENTITY_FILE = "coord-identity.json"
 _CHANNEL_RE = re.compile(r"[a-z0-9][a-z0-9-]{0,63}")
 _PART_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
-_CONTROL_RE = re.compile(r"[\x00-\x1f\x7f-\x9f]")
+# Cc control (C0, C1), Cf format (bidi overrides and isolates, zero-width),
+# Zl/Zp (U+2028/U+2029, which str.splitlines() breaks on), Cs surrogates.
+_UNSAFE_CATEGORIES = frozenset(("Cc", "Cf", "Zl", "Zp", "Cs"))
+_URL_CREDENTIALS_RE = re.compile(r"(://)[^/@\s]+@")
+PEER = "[peer-written]"
+PUSH_REMOTE = "crew-coord--push"
+# The remote's settings PUSH_REMOTE carries over: where and how to push. Never
+# fetch, push, mirror or tagOpt -- a copied `mirror = true` would turn the push
+# into a mirror push, which force-updates and deletes.
+_PUSH_REMOTE_KEYS = ("url", "pushurl", "proxy", "proxyAuthMethod", "receivepack", "vcs")
+_PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+_ERROR_INVALID_PARAMETER = 87
 _GIT_ENV = {"GIT_TERMINAL_PROMPT": "0"}
 _COMMIT_ENV = {"GIT_AUTHOR_NAME": "crew-coord", "GIT_AUTHOR_EMAIL": "crew-coord@localhost",
                "GIT_COMMITTER_NAME": "crew-coord", "GIT_COMMITTER_EMAIL": "crew-coord@localhost"}
@@ -145,11 +182,17 @@ def age_text(seconds):
 
 
 def safe(value, limit=200):
-    """Peer-written text made printable: control characters (newlines, ANSI
-    escapes) become '?', and length is capped. For display only -- never used
-    in a comparison."""
-    text = _CONTROL_RE.sub("?", str(value))
+    """Peer-written text made printable: control, format (bidi) and line or
+    paragraph separator characters -- newlines, ANSI escapes, U+2028, U+202E --
+    become '?', and length is capped. For display only -- never used in a
+    comparison."""
+    text = "".join("?" if unicodedata.category(ch) in _UNSAFE_CATEGORIES else ch for ch in str(value))
     return text if len(text) <= limit else text[:limit] + "..."
+
+
+def peer(text):
+    """A message carrying peer-written fields, labelled as data."""
+    return f"{text} {PEER}"
 
 
 def machine():
@@ -159,7 +202,7 @@ def machine():
 def run_git(root, args, input_bytes=None, env=None):
     """One git call. `args` starts with the git subcommand; `-C root` is added
     here. Never raises: a git that cannot run is exit code 127."""
-    full_env = dict(os.environ)
+    full_env = child_env()
     full_env.update(_GIT_ENV)
     full_env.update(env or {})
     try:
@@ -172,8 +215,10 @@ def run_git(root, args, input_bytes=None, env=None):
 
 
 def _last_line(text):
+    """git's last stderr line, printable, with any credentials in a URL
+    (https://user:token@host) redacted."""
     lines = [line for line in (text or "").splitlines() if line.strip()]
-    return safe(lines[-1]) if lines else "no message"
+    return safe(_URL_CREDENTIALS_RE.sub(r"\1***@", lines[-1])) if lines else "no message"
 
 
 # --- identity and processes ------------------------------------------------------
@@ -195,9 +240,10 @@ def _linux_probe(pid):
     try:
         with open(f"/proc/{pid}/stat", encoding="utf-8", errors="replace") as handle:
             data = handle.read()
-    except FileNotFoundError:
-        return PidProbe("gone", None, True)
     except OSError:
+        # os.kill has just shown the pid exists (it returned, or refused with
+        # PermissionError), so an unreadable /proc -- not mounted in a sandbox,
+        # hidepid hiding another user -- cannot tell: ALIVE, never gone.
         return PidProbe("alive", None, True)
     try:
         rest = data[data.rindex(")") + 2:].split()
@@ -209,40 +255,62 @@ def _linux_probe(pid):
     return PidProbe("alive", start if start.isdigit() else None, True)
 
 
-def _windows_probe(pid):
-    """NOT MEASURED (T-0030 spike): every answer carries measured=False, so
-    recovery reads it as "cannot tell". The heartbeat loop may act on "gone",
-    because exiting early only makes a claim stale, never granted."""
-    import ctypes
-    from ctypes import wintypes
+def _filetime(value):
+    return (value.dwHighDateTime << 32) | value.dwLowDateTime
+
+
+def _kernel32():
+    import ctypes  # pylint: disable=import-outside-toplevel
+    from ctypes import wintypes  # pylint: disable=import-outside-toplevel
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel.OpenProcess.restype = wintypes.HANDLE
+    kernel.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+    kernel.GetProcessTimes.restype = wintypes.BOOL
+    kernel.GetProcessTimes.argtypes = (wintypes.HANDLE,) + (ctypes.POINTER(wintypes.FILETIME),) * 4
+    kernel.CloseHandle.argtypes = (wintypes.HANDLE,)
+    return kernel, ctypes.get_last_error
+
+
+def _windows_probe(pid, kernel=None, last_error=None):
+    """Measured in the T-0030 spike (section "4-5 (Windows)": Python 3.14.6,
+    elevated, one host). Open with PROCESS_QUERY_LIMITED_INFORMATION: a NULL
+    handle with error 87 is the only DEAD; any other error (5, access denied,
+    included) cannot tell and reads ALIVE. A handle that opens is not proof of
+    life -- a dead process whose handle someone still holds opens too -- so it
+    is DEAD only when GetProcessTimes gives a nonzero exit FILETIME; exit code
+    259 is not used, because 259 is a legal exit code. The creation FILETIME is
+    the start that assess_recovery compares with the recorded pid_start.
+    `kernel` and `last_error` are the ctypes seam the tests stub. NOT measured:
+    a non-elevated OpenProcess on another user's process; it can only fail,
+    and a failure other than 87 reads alive."""
+    import ctypes  # pylint: disable=import-outside-toplevel
+    from ctypes import wintypes  # pylint: disable=import-outside-toplevel
     try:
-        kernel = ctypes.WinDLL("kernel32", use_last_error=True)
-        handle = kernel.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+        if kernel is None:
+            kernel, last_error = _kernel32()
+        handle = kernel.OpenProcess(_PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
         if not handle:
-            error = ctypes.get_last_error()
-            if error == 87:  # ERROR_INVALID_PARAMETER: no such process
-                return PidProbe("gone", None, False)
-            return PidProbe("alive" if error == 5 else "unknown", None, False)
+            if last_error() == _ERROR_INVALID_PARAMETER:
+                return PidProbe("gone", None, True)
+            return PidProbe("alive", None, True)  # any other OpenProcess error cannot tell
         try:
-            code = wintypes.DWORD(0)
-            if not kernel.GetExitCodeProcess(handle, ctypes.byref(code)):
-                return PidProbe("unknown", None, False)
-            if code.value != 259:  # STILL_ACTIVE
-                return PidProbe("gone", None, False)
             times = [wintypes.FILETIME() for _ in range(4)]
-            start = None
-            if kernel.GetProcessTimes(handle, *[ctypes.byref(t) for t in times]):
-                start = str((times[0].dwHighDateTime << 32) | times[0].dwLowDateTime)
-            return PidProbe("alive", start, False)
+            if not kernel.GetProcessTimes(handle, *[ctypes.byref(t) for t in times]):
+                return PidProbe("alive", None, True)
+            created, exited = _filetime(times[0]), _filetime(times[1])
+            if exited:
+                return PidProbe("gone", None, True)
+            return PidProbe("alive", str(created) if created else None, True)
         finally:
             kernel.CloseHandle(handle)
-    except (OSError, AttributeError, ValueError):
+    except (OSError, AttributeError, ValueError, TypeError):
         return PidProbe("unknown", None, False)
 
 
 def probe_pid(pid):
     """PidProbe(state, start, measured): state is 'alive', 'gone' or 'unknown';
-    `measured` is True only where this method was measured (Linux)."""
+    `measured` is True only where this method was measured (Linux, Windows).
+    Where a measured check cannot tell, it reads 'alive'."""
     if not isinstance(pid, int) or pid <= 0:
         return PidProbe("unknown", None, False)
     if sys.platform.startswith("linux"):
@@ -320,32 +388,64 @@ def read_identity(top):
     return data, "ok"
 
 
+def _lock_fd(fd, wait):
+    """Exclusive lock on an open fd; OSError when it cannot be had."""
+    if os.name == "nt":
+        import msvcrt  # pylint: disable=import-outside-toplevel,import-error
+        msvcrt.locking(fd, msvcrt.LK_LOCK if wait else msvcrt.LK_NBLCK, 1)
+    else:
+        import fcntl  # pylint: disable=import-outside-toplevel
+        fcntl.flock(fd, fcntl.LOCK_EX if wait else fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+
+def _open_private(path, flags):
+    return os.open(path, flags | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0), 0o600)
+
+
+@contextlib.contextmanager
+def _locked(path):
+    """Hold an exclusive lock on `path` (created 0600) for the block. Every
+    worktree of a repo shares the identity file, so its read-modify-write runs
+    under this lock or two worktrees lose each other's entries."""
+    fd = _open_private(path, os.O_RDWR)
+    try:
+        _lock_fd(fd, wait=True)
+        yield
+    finally:
+        if os.name == "nt":
+            import msvcrt  # pylint: disable=import-outside-toplevel,import-error
+            with contextlib.suppress(OSError):
+                msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+        os.close(fd)
+
+
 def update_identity(top, key, holder):
-    """Record (holder given) or forget (holder None) `key` for this worktree.
-    A corrupt file is replaced rather than merged into. Returns a warning or
-    None."""
+    """Record (holder given) or forget (holder None) `key` for this worktree,
+    reading and replacing the file under its lock. A corrupt file is replaced
+    rather than merged into. Returns a warning or None."""
     path = identity_path(top)
     if not path:
         return "no git directory: the identity file was not written"
-    data, state = read_identity(top)
-    data = data if state == "ok" else {}
-    entry = data.get(top, {"holder": holder, "tickets": []})
-    tickets = [t for t in entry.get("tickets", []) if t["ticket"] != key]
-    if holder is not None:
-        tickets.append({"ticket": key, "holder": holder})
-        entry["holder"] = holder
-    entry["tickets"] = tickets
-    if not tickets and holder is None:
-        data.pop(top, None)
-    elif entry.get("holder") is not None:
-        data[top] = entry
-    text = json.dumps(data, indent=2, sort_keys=True) + "\n"
     try:
         os.makedirs(os.path.dirname(path), exist_ok=True)
-        tmp = f"{path}.{os.getpid()}.tmp"
-        with open(tmp, "w", encoding="utf-8", newline="\n") as handle:
-            handle.write(text)
-        os.replace(tmp, path)
+        with _locked(path + ".lock"):
+            data, state = read_identity(top)
+            data = data if state == "ok" else {}
+            entry = data.get(top, {"holder": holder, "tickets": []})
+            tickets = [t for t in entry.get("tickets", []) if t["ticket"] != key]
+            if holder is not None:
+                tickets.append({"ticket": key, "holder": holder})
+                entry["holder"] = holder
+            entry["tickets"] = tickets
+            if not tickets and holder is None:
+                data.pop(top, None)
+            elif entry.get("holder") is not None:
+                data[top] = entry
+            text = json.dumps(data, indent=2, sort_keys=True) + "\n"
+            tmp = f"{path}.{os.getpid()}.tmp"
+            with open(tmp, "w", encoding="utf-8", newline="\n") as handle:
+                handle.write(text)
+            os.replace(tmp, path)
     except OSError as exc:
         return f"the identity file was not updated ({type(exc).__name__})"
     return None
@@ -402,17 +502,19 @@ class Channel:
             if blob.code != 0:
                 return None
             files[path] = blob.out
-            self._known[path] = (blob.out, parts[2].decode())
+            self._known[path] = (blob.out, parts[2].decode(), parts[0].decode())
         return files
 
-    def _hash(self, path, data):
+    def _blob(self, path, data):
+        """(mode, sha): an unchanged file keeps its blob and its mode
+        (executable, symlink); a changed one keeps 100755, else 100644."""
         known = self._known.get(path)
         if known and known[0] == data:
-            return known[1]
+            return known[2], known[1]
         done = run_git(self.root, ["hash-object", "-w", "--stdin"], input_bytes=data)
         if done.code != 0:
             raise OSError(f"hash-object failed: {_last_line(done.err)}")
-        return done.out.decode().strip()
+        return ("100755" if known and known[2] == "100755" else "100644"), done.out.decode().strip()
 
     def _mktree(self, files, prefix=""):
         entries, subdirs = {}, {}
@@ -421,7 +523,8 @@ class Channel:
             if sep:
                 subdirs.setdefault(head, {})[rest] = data
             else:
-                entries[head] = ("100644", "blob", self._hash(prefix + head, data))
+                mode, sha = self._blob(prefix + head, data)
+                entries[head] = (mode, "blob", sha)
         for name, sub in subdirs.items():
             entries[name] = ("040000", "tree", self._mktree(sub, f"{prefix}{name}/"))
         text = "".join(f"{mode} {kind} {sha}\t{name}\n" for name, (mode, kind, sha) in sorted(entries.items()))
@@ -440,8 +543,42 @@ class Channel:
             raise OSError(f"commit-tree failed: {_last_line(done.err)}")
         return done.out.decode().strip()
 
+    def push_env(self):
+        """Config, as GIT_CONFIG_COUNT/KEY/VALUE environment entries, for a
+        remote of this script's own (PUSH_REMOTE) carrying `self.remote`'s raw
+        _PUSH_REMOTE_KEYS values (url, pushurl, proxy, receivepack...) and no
+        fetch refspec, push refspec or mirror setting. A push to it writes no
+        remote-tracking ref, and git still applies insteadOf, pushInsteadOf and
+        the credential helpers exactly as for the real remote. The URL travels
+        in the environment, never in argv, which other local users can read
+        (/proc/<pid>/cmdline) -- a CI remote often carries a token in its URL.
+        None when the remote has no push URL or several, or when PUSH_REMOTE
+        is a configured remote's name. Needs git 2.31 (GIT_CONFIG_COUNT); an
+        older git finds no such remote and the push reads `unknown`."""
+        listed = run_git(self.root, ["remote", "get-url", "--push", "--all", self.remote])
+        urls = [u for u in listed.out.decode("utf-8", "replace").splitlines() if u.strip()]
+        if listed.code != 0 or len(urls) != 1:
+            return None
+        remotes = run_git(self.root, ["remote"])
+        if remotes.code != 0 or PUSH_REMOTE in remotes.out.decode("utf-8", "replace").split():
+            return None
+        pairs = []
+        for key in _PUSH_REMOTE_KEYS:
+            got = run_git(self.root, ["config", "--get-all", f"remote.{self.remote}.{key}"])
+            pairs += [(f"remote.{PUSH_REMOTE}.{key}", value)
+                      for value in got.out.decode("utf-8", "replace").splitlines() if value]
+        if not any(key.endswith((".url", ".pushurl")) for key, _ in pairs):
+            return None
+        base = os.environ.get("GIT_CONFIG_COUNT", "0")
+        first = int(base) if base.isdigit() else 0
+        env = {"GIT_CONFIG_COUNT": str(first + len(pairs))}
+        for index, (key, value) in enumerate(pairs, first):
+            env[f"GIT_CONFIG_KEY_{index}"] = key
+            env[f"GIT_CONFIG_VALUE_{index}"] = value
+        return env
+
     def push_argv(self, sha):
-        return ["push", self.remote, f"{sha}:{self.ref}"]
+        return ["push", "--no-verify", "--", PUSH_REMOTE, f"{sha}:{self.ref}"]
 
     def write(self, change, message):
         """Apply `change(files) -> (status, message)` on the freshly fetched
@@ -449,6 +586,10 @@ class Channel:
         MAX_RETRIES more times. `change` mutates `files` in place and returns
         'ok' to write, or 'refused'/'unknown' to stop without writing."""
         last = ""
+        push_env = self.push_env()
+        if push_env is None:
+            return Result("unknown", f"unknown - {self.remote} does not have exactly one push URL (or "
+                                     f"{PUSH_REMOTE} is taken as a remote name); nothing was written")
         for _ in range(1 + MAX_RETRIES):
             tip, state, why = self.fetch()
             if state == "failed":
@@ -463,7 +604,7 @@ class Channel:
                 sha = self._commit(files, tip, message)
             except OSError as exc:
                 return Result("unknown", f"unknown - could not build the commit: {exc}")
-            pushed = run_git(self.root, self.push_argv(sha))
+            pushed = run_git(self.root, self.push_argv(sha), env=push_env)
             if pushed.code == 0:
                 return Result("ok", text)
             last = _last_line(pushed.err)
@@ -544,10 +685,10 @@ def _record(files, key):
 
 def _refuse_held(key, claim, ttl):
     if is_stale(claim, ttl):
-        return Result("refused", f"refused: {key} reads owner unknown (last heartbeat "
-                                 f"{age_text(heartbeat_age(claim))} ago), held by {describe(claim)}. "
-                                 "Staleness never frees a claim: the holder releases it, or the owner breaks it.")
-    return Result("refused", f"refused: {key} is held working by {describe(claim)}")
+        return Result("refused", peer(f"refused: {key} reads owner unknown (last heartbeat "
+                                      f"{age_text(heartbeat_age(claim))} ago). Staleness never frees a claim: "
+                                      f"the holder releases it, or the owner breaks it. Held by {describe(claim)}"))
+    return Result("refused", peer(f"refused: {key} is held working by {describe(claim)}"))
 
 
 # --- recovery assessment ---------------------------------------------------------------
@@ -661,6 +802,29 @@ def cmd_claim(chan, top, key, repo, ticket, args):
     return _exit(result)
 
 
+def heartbeat_dir():
+    """The private per-user directory for heartbeat logs and locks, created
+    0700. OSError when what is there is a symlink, not a directory, another
+    user's, or open to group or others -- a shared temp directory is where a
+    planted path would redirect the log."""
+    uid = os.getuid() if hasattr(os, "getuid") else None
+    base = os.path.join(tempfile.gettempdir(), "crew-coord" if uid is None else f"crew-coord-{uid}")
+    try:
+        os.mkdir(base, 0o700)
+    except FileExistsError:
+        pass
+    info = os.lstat(base)
+    if not stat.S_ISDIR(info.st_mode):
+        raise OSError(f"{base} is not a directory")
+    if uid is not None and (info.st_uid != uid or info.st_mode & 0o077):
+        raise OSError(f"{base} is not private to this user")
+    return base
+
+
+def heartbeat_path(channel, key, suffix):
+    return os.path.join(heartbeat_dir(), f"{channel}-{key}{suffix}")
+
+
 def _maybe_start_heartbeat(chan, top, key, repo, ticket, me, ttl, args):
     if args.no_heartbeat:
         return
@@ -669,13 +833,13 @@ def _maybe_start_heartbeat(chan, top, key, repo, ticket, me, ttl, args):
               f"{ttl} minutes", file=sys.stderr)
         return
     interval = max(1, min(HEARTBEAT_SECONDS, int(ttl * 60 // 3)))
-    log = os.path.join(tempfile.gettempdir(), f"crew-coord-heartbeat-{chan.channel}-{key}.log")
     argv = [sys.executable, os.path.abspath(__file__), "heartbeat-loop", "--root", top,
             "--remote", chan.remote, "--channel", chan.channel, "--ticket", f"{repo}:{ticket}",
             "--pid", str(me["pid"]), "--interval", str(interval)]
     kwargs = {"start_new_session": True} if os.name != "nt" else {"creationflags": 0x00000008 | 0x00000200}
     try:
-        with open(log, "a", encoding="utf-8") as out:
+        log = heartbeat_path(chan.channel, key, ".log")
+        with os.fdopen(_open_private(log, os.O_WRONLY | os.O_APPEND), "a", encoding="utf-8") as out:
             subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=out, stderr=out,  # pylint: disable=consider-using-with
                              env=child_env(), close_fds=True, **kwargs)
     except OSError as exc:
@@ -694,7 +858,7 @@ def _holder_change(key, me, new_state, event, detail=""):
             state = claim["state"] if claim else "unclaimed"
             return "refused", f"refused: {key} is not held working (it is {state})"
         if claim["holder"]["session"] != me["session"]:
-            return "refused", f"refused: only the holder may {event} {key}; it is held by {describe(claim)}"
+            return "refused", peer(f"refused: only the holder may {event} {key}; it is held by {describe(claim)}")
         if new_state == "working":
             claim["heartbeat_at"] = stamp()
         else:
@@ -739,7 +903,7 @@ def cmd_break(chan, top, key, repo, ticket, by):
                   "broken_by": by.strip()}
         files[claim_path(key)] = (json.dumps(record, indent=2, sort_keys=True) + "\n").encode("utf-8")
         log_line(files, "break", key, (old or {}).get("session"), f"broken by {by.strip()}")
-        return "ok", f"broke {key} (was held by {describe(claim) if claim else 'a corrupt record'})"
+        return "ok", peer(f"broke {key} (was held by {describe(claim) if claim else 'a corrupt record'})")
 
     result = chan.write(change, f"crew-coord: break {key}")
     if result.status == "ok":
@@ -747,7 +911,7 @@ def cmd_break(chan, top, key, repo, ticket, by):
     return _exit(result)
 
 
-def cmd_recover(chan, top, key, args):
+def cmd_recover(chan, top, key, repo, ticket, args):
     me = current_holder(top)
     if me is None:
         print("unknown - cannot tell who is recovering: CLAUDE_CODE_SESSION_ID is absent")
@@ -766,25 +930,27 @@ def cmd_recover(chan, top, key, args):
             return "refused", f"{key} is already held by this session"
         ok, body = _presented(chan, claim, key, top, me)
         if not ok:
-            return "refused", f"{key} {body}"
+            return "refused", peer(f"{key} {body}")
         old = claim["holder"]
         claim["holder"] = me
         claim["machine"], claim["worktree"] = me["machine"], me["worktree"]
         claim["heartbeat_at"] = stamp()
         files[claim_path(key)] = (json.dumps(claim, indent=2, sort_keys=True) + "\n").encode("utf-8")
         log_line(files, "adopt", key, me["session"], f"adopted from {old['session']} (pid {old.get('pid')} gone)")
-        return "ok", f"adopted {key} from {safe(old['session'], 80)} (pid {old.get('pid')} gone)"
+        return "ok", peer(f"adopted {key} from {safe(old['session'], 80)} (pid {old.get('pid')} gone)")
 
     result = chan.write(change, f"crew-coord: adopt {key}")
-    if outcome.get("mine"):
-        print(result.message)
-        return EXIT_OK
-    if result.status == "ok":
+    # "already held by this session" is also what the retry sees when an adopt
+    # push landed but reported failure, so it records the identity and starts
+    # the heartbeat too (a second loop for the claim exits on the lock).
+    if result.status == "ok" or outcome.get("mine"):
         warning = update_identity(top, key, me)
         if warning:
             print(f"warning: {warning}", file=sys.stderr)
-        repo, _, ticket = key.partition("__")
         _maybe_start_heartbeat(chan, top, key, repo, ticket, me, ttl, args)
+    if outcome.get("mine"):
+        print(result.message)
+        return EXIT_OK
     return _exit(result)
 
 
@@ -811,7 +977,7 @@ def cmd_status(chan, top):
             lines.append(f"{safe(key)} unknown (corrupt claim file: {why}) [peer-written]")
             code = EXIT_UNKNOWN
         elif _is_candidate(claim, key, top, me, ident):
-            presented.append(f"{safe(key)} {_presented(chan, claim, key, top, me)[1]} [peer-written]")
+            presented.append(peer(f"{safe(key)} {_presented(chan, claim, key, top, me)[1]}"))
         elif is_stale(claim, ttl):
             lines.append(f"{safe(key)} owner unknown (last heartbeat {age_text(heartbeat_age(claim))} ago) "
                          f"held by {describe(claim)} [peer-written]")
@@ -828,6 +994,18 @@ def cmd_heartbeat_loop(chan, top, key, pid, interval):
     if me is None:
         print("heartbeat-loop: cannot tell who holds the claim (CLAUDE_CODE_SESSION_ID absent); exiting")
         return EXIT_UNKNOWN
+    try:
+        lock = _open_private(heartbeat_path(chan.channel, key, ".lock"), os.O_RDWR)
+    except OSError as exc:
+        print(f"heartbeat-loop: the lock could not be opened ({type(exc).__name__}); running without it")
+        lock = None
+    if lock is not None:
+        try:
+            _lock_fd(lock, wait=False)
+        except OSError:
+            os.close(lock)
+            print(f"{stamp()} another heartbeat loop already runs for {key}; exiting")
+            return EXIT_OK
     first = probe_pid(pid)
     while True:
         probe = probe_pid(pid)
@@ -888,6 +1066,12 @@ def _setup(args):
 
 
 def main(argv=None):
+    # Out of this process's environment before anything runs, so no child --
+    # git, its hooks, credential helpers or ssh, crew_ticket's own git calls,
+    # the heartbeat -- inherits it. child_env() drops it again for the ones
+    # this module launches.
+    for name in _SECRET_NAMES:
+        os.environ.pop(name, None)
     args = _parser().parse_args(argv)
     try:
         top, chan = _setup(args)
@@ -900,7 +1084,7 @@ def main(argv=None):
     if args.command == "claim":
         return cmd_claim(chan, top, key, repo, ticket, args)
     if args.command == "recover":
-        return cmd_recover(chan, top, key, args)
+        return cmd_recover(chan, top, key, repo, ticket, args)
     if args.command == "heartbeat-loop":
         return cmd_heartbeat_loop(chan, top, key, args.pid, max(0.05, args.interval))
     if args.command == "release" and args.brk:

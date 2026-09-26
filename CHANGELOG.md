@@ -26,25 +26,44 @@ All notable changes to this repository are documented here. Format follows [Keep
   `heartbeat`, `release`, `done`, `release --break --by <name>`, `recover` and
   a read-only `status`.
   - Writes are git plumbing on the freshly fetched tip (`hash-object`,
-    `mktree`, `commit-tree -p <tip>`) and a plain `git push`: never `--force`,
-    `-f`, `--force-with-lease` or a `+` refspec. A rejected push re-fetches,
+    `mktree`, `commit-tree -p <tip>`; other files on the channel keep their
+    mode) and a plain `git push --no-verify` to `crew-coord--push`, a remote
+    defined only in the push's environment (`GIT_CONFIG_COUNT`) with the real
+    remote's URLs and no fetch refspec: never `--force`, `-f`,
+    `--force-with-lease` or a `+` refspec, no pre-push hook, no
+    remote-tracking ref written, and no URL in argv. A rejected push re-fetches,
     re-applies and retries at most 3 times, then reports
     `unknown - could not push`. No checkout, working tree, index, `.work/`,
-    `HEAD` or FETCH_HEAD is touched; a fetch that fails reads `unknown` and a
-    claim is refused on it.
+    `HEAD`, FETCH_HEAD or local ref is touched (tested); a fetch that fails
+    reads `unknown` and a claim is refused on it.
   - The TTL is 30 minutes (`coord.ttlMinutes`); `claim` starts a detached
     heartbeat that pushes every 10 minutes while `CLAUDE_PID` lives. A stale
     `working` claim reads `owner unknown (last heartbeat <age>)`, never free.
+    One heartbeat loop per claim; its log and lock sit in a private per-user
+    temp directory (0700, log 0600, no symlink followed).
     A corrupt claim reads `unknown`, never skipped. Only the holder releases;
     only the owner breaks, from a terminal outside Claude Code and with
     `--by` (a spoofable signal, documented as a rule, not enforcement).
   - Recovery after a session id change adopts only a claim from this machine
     and worktree whose holder the local identity file
     (`<git-common-dir>/crew/coord-identity.json`) names and whose pid is
-    provably gone - measured on Linux only; Windows and macOS always read
-    "cannot tell" and go to the owner. `status` lists such claims first.
-  - 60 cases in `tests/test_crew_coord.py` against a local bare remote;
-    10 mutations in `tests/sabotage_coord.py`, registered in `sabotage.py`.
+    provably gone. A check that cannot tell reads alive. Measured on Linux
+    (a live pid whose `/proc` cannot be read reads alive) and on Windows
+    (`OpenProcess` limited query: only error 87 is gone, an opened handle is
+    gone only with a nonzero exit time, creation time compared with the
+    recorded start; measured elevated, one host); macOS always reads
+    "cannot tell" and goes to the owner. The identity file is rewritten under
+    a lock. `status` lists such claims first.
+  - Not measured: whether `/clear` keeps `CLAUDE_PID`. If it does, `recover`
+    refuses (`pid <n> is alive`) and the old heartbeat keeps the claim fresh,
+    so the owner breaks it; the README says so.
+  - Peer-written fields print with `[peer-written]` on every line that carries
+    them, refusals included, and control, bidi-format and U+2028/U+2029
+    characters become `?`. The messaging token is removed from the process
+    environment at entry, so no git child, hook or credential helper sees it,
+    and URL credentials in git's errors are redacted.
+  - 110 cases in `tests/test_crew_coord.py` against a local bare remote;
+    44 mutations in `tests/sabotage_coord.py`, registered in `sabotage.py`.
     The `/crew:autopilot` resume-step line is pending T-0004; until then the
     README says to run `crew_coord.py status` first after `/clear`.
 
