@@ -10,7 +10,6 @@ repository is built under tmp_path; nothing touches the real one or
 ~/.claude. `sabotage_autopilot.STATUS_MUTATIONS` mutates the must-refuse and
 must-say-unknown branches to prove these tests can fail.
 """
-import json
 import os
 import re
 import subprocess
@@ -22,8 +21,8 @@ import context  # noqa: F401  pylint: disable=unused-import
 import crew_autopilot
 import crew_ticket
 import review_ledger
-from scope_fixtures import make_repo
-from test_crew_autopilot import (_COMMAND, _SCRIPT, _approved, _config, _handoff, _ledger, _round,
+from scope_fixtures import approve_as_user, make_repo
+from test_crew_autopilot import (_COMMAND, _SCRIPT, _approved, _handoff, _ledger, _round,
                                  _snapshot, _ticket, _two_tickets, _write)
 
 T = "T-1"
@@ -151,6 +150,48 @@ def test_route_cli_prints_one_line(tmp_path, capsys, text, line):
 
     out = capsys.readouterr().out
     assert (code, out.startswith(line), out.count("\n")) == (0, True, 1)
+
+
+def test_route_args_run_goal_arrives_with_its_ticket(tmp_path):
+    root = make_repo(tmp_path, mode="off")
+
+    got = crew_autopilot.route_args(str(root), "run --goal ship")
+
+    assert (got["sub"], got["stop"], got["ticket"], "arrives with T-0012" in got["reason"]) == (
+        "run", True, "", True)
+
+
+@pytest.mark.parametrize("argv,line", [
+    (["--first", "status"], "sub=status stop=0 reason="),
+    (["--first", "run"], "sub=run stop=0 reason="),
+    (["--first", ""], "sub=run stop=0 reason="),
+    (["--first", "T-0018"], "sub=run stop=0 reason="),
+    (["--first", "--goal"], "sub=run stop=1 reason=run --goal <slug> arrives with T-0012"),
+    (["--first", "stauts"], "sub= stop=1 reason=unknown subcommand; one of "
+                            "status|run|assign|goal|focus"),
+    (["--first", "assign"], "sub=assign stop=1 reason=/crew:autopilot assign arrives with "
+                            "T-0019"),
+    (["--args", "--goal"], "sub=run stop=1 ticket= reason=run --goal <slug> arrives with "
+                           "T-0012"),
+    (["--args", "-h"], "sub= stop=1 ticket= reason=unknown subcommand"),
+], ids=["first-status", "first-run", "first-empty", "first-id", "first-goal", "first-typo",
+        "first-assign", "args-goal", "args-dash"])
+def test_route_cli_takes_a_token_that_starts_with_a_dash(tmp_path, capsys, argv, line):
+    root = make_repo(tmp_path, mode="off")
+
+    code = crew_autopilot.main(["route", "--root", str(root), *argv])
+
+    out = capsys.readouterr().out
+    assert (code, out.startswith(line), out.count("\n")) == (0, True, 1)
+
+
+def test_route_cli_refuses_first_and_args_together(tmp_path, capsys):
+    root = make_repo(tmp_path, mode="off")
+
+    code = crew_autopilot.main(["route", "--root", str(root), "--first", "status",
+                                "--args", "status"])
+
+    assert (code, capsys.readouterr().out) == (2, "")
 
 
 # --- step 2: status ----------------------------------------------------------
@@ -286,6 +327,92 @@ def test_status_resume_line_mismatch_reason(tmp_path, line, head, reason):
             "EVIL" in got["resume_line"]) == (True, True, False)
 
 
+@pytest.mark.parametrize("line,reason", [
+    ("resume: /crew:autopilot T-9", "its ticket has no .work/tickets/ folder"),
+    ("resume: /crew:autopilot", "it names no ticket"),
+    ("resume: /crew:status", "it names no ticket"),
+], ids=["no-folder", "no-ticket", "other-command"])
+def test_status_resume_line_not_usable_where_resume_falls_through(tmp_path, line, reason):
+    root = _approved(tmp_path)
+    crew_ticket.activate(str(root), T)
+    _handoff(root, line)
+
+    got = crew_autopilot.status(str(root))
+
+    assert (got["resume_line"].startswith("not usable: "), got["resume_line"].endswith(reason),
+            bool(got["fallthrough"])) == (True, True, True)
+
+
+@pytest.mark.parametrize("line,head", [
+    (f"resume: /crew:autopilot {T}", None),
+    ("resume: /crew:autopilot T-9", None),
+    ("resume: /crew:autopilot", None),
+    ("resume: /crew:status", None),
+    (f"resume: /crew:plan {T}", None),
+    (f"resume: /crew:autopilot {T}", "0123456789"),
+    ("resume: /crew:autopilot --goal ship-it", None),
+    ("resume: none", None),
+], ids=["usable", "no-folder", "no-ticket", "other-command", "plan", "head", "goal", "none"])
+def test_status_resume_line_usable_only_where_resume_takes_it(tmp_path, line, head):
+    root = _approved(tmp_path)
+    _handoff(root, line, head=head)
+    top = crew_ticket.toplevel(str(root))
+
+    said_usable = crew_autopilot.status(str(root), T)["resume_line"].endswith("(usable)")
+
+    assert said_usable == bool(crew_autopilot._handoff_ticket(top)[0])  # pylint: disable=protected-access
+
+
+def test_status_ticket_mismatch_waits_on_repointing(tmp_path):
+    root = _two_tickets(tmp_path, activate="T-2")
+    approve_as_user(root, T)
+
+    got = crew_autopilot.status(str(root), T)
+
+    assert (got["stop"], got["waiting"].startswith("owner - "),
+            f"crew_ticket.py activate --ticket {T}" in got["waiting"],
+            "/crew:autopilot T-2" in got["waiting"], "/crew:implement" in got["waiting"]) == (
+        True, True, True, True, False)
+
+
+def test_status_unset_pointer_waits_on_autopilot_activating(tmp_path):
+    root = _two_tickets(tmp_path)
+    approve_as_user(root, "T-2")
+
+    got = crew_autopilot.status(str(root), "T-2")
+
+    assert (got["stop"], got["waiting"]) == (
+        True, "autopilot - run /crew:autopilot T-2 to continue; it activates T-2 first")
+
+
+def test_status_broken_pointer_waits_on_the_owner_fixing_it(tmp_path):
+    root = _two_tickets(tmp_path, activate="T-2")
+    approve_as_user(root, T)
+    for name in ("direction.md", "spec.md", "plan.md"):
+        (root / ".work" / "tickets" / "T-2" / name).unlink()
+    (root / ".work" / "tickets" / "T-2").rmdir()
+
+    got = crew_autopilot.status(str(root), T)
+
+    assert (got["stop"], got["waiting"].startswith("owner - "), "broken" in got["waiting"],
+            "/crew:implement" in got["waiting"]) == (True, True, True, False)
+
+
+def test_status_waiting_is_unknown_when_the_phase_check_raises(tmp_path, monkeypatch):
+    root = _approved(tmp_path)
+    monkeypatch.setattr(crew_autopilot, "next_phase", lambda *a, **k: {
+        "ticket": T, "phase": "implement", "stop": True, "reason": "r",
+        "command": f"/crew:implement {T}", "evidence": []})
+
+    def boom(*_a, **_k):
+        raise RuntimeError("disk on fire")
+    monkeypatch.setattr(crew_autopilot, "_phase", boom)
+
+    got = crew_autopilot.status(str(root), T)
+
+    assert got["waiting"].startswith("unknown")
+
+
 def test_status_several_open_tickets_names_them(tmp_path):
     root = _two_tickets(tmp_path)
 
@@ -339,16 +466,18 @@ def test_status_writes_nothing(tmp_path, args):
     assert (code, bool(lines), _git_state(root) == before) == (0, True, True)
 
 
-def test_status_at_most_12_lines(tmp_path):
+def test_status_at_most_12_lines(tmp_path, monkeypatch, capsys):
     root = _two_tickets(tmp_path)
-    _config(root, {"mode": "Plan", "maxPhases": 0})
-    _write(root / ".crew" / "crew.json", json.dumps({"autopilot": {"mode": "plan"}}))
     _handoff(root, "resume: /crew:autopilot T-1", head="0123456789")
+    monkeypatch.setattr(crew_autopilot, "settings", lambda _root: {
+        "mode": "off", "armed": False, "maxPhases": 12, "saw": None,
+        "warnings": [f"w{n}" for n in range(10)]})
 
-    code, lines = _lines(root)
+    code = crew_autopilot.main(["status", "--root", str(root)])
 
-    assert (code, len(lines) <= crew_autopilot.STATUS_MAX_LINES,
-            crew_autopilot.STATUS_MAX_LINES) == (0, True, 12)
+    lines = capsys.readouterr().out.splitlines()
+    assert (code, len(lines), lines[-1].startswith("(+")) == (
+        0, crew_autopilot.STATUS_MAX_LINES, True)
 
 
 def test_status_folds_a_multiline_reason_into_one_line(tmp_path):
@@ -422,7 +551,7 @@ def test_command_passes_its_arguments_whole():
     # would hand route the ticket and `$2` would never arrive.
     text = _command_text()
 
-    assert (re.findall(r"\$[0-9]", text), 'route --root . --args "$ARGUMENTS"' in text) == (
+    assert (re.findall(r"\$[0-9]", text), "route --root . --args '$ARGUMENTS'" in text) == (
         [], True)
 
 
@@ -430,6 +559,26 @@ def test_command_stops_on_a_router_stop():
     flat = " ".join(_section(_command_text(), "## 0. Route").split())
 
     assert "`stop=1`: print the reason and stop" in flat
+
+
+def test_command_stops_when_route_prints_no_answer():
+    flat = " ".join(_section(_command_text(), "## 0. Route").split())
+
+    assert "Anything but a `sub=` line - no output, a traceback, a non-zero exit - is a stop" \
+        in flat
+
+
+def test_command_takes_the_ticket_resume_printed():
+    flat = " ".join(_command_text().split())
+
+    assert "from `resume` on, `<ticket>` is the `ticket=` resume printed" in flat
+
+
+def test_command_never_hands_the_shell_an_expandable_argument():
+    flat = " ".join(_section(_command_text(), "## 0. Route").split())
+
+    assert ("--args '$ARGUMENTS'" in flat, '"$ARGUMENTS"' in flat,
+            "hold a quote, `$`, a backtick or a backslash, stop" in flat) == (True, False, True)
 
 
 def test_status_text_caps_at_12_lines():

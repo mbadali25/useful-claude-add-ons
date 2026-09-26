@@ -6,6 +6,7 @@
     python3 crew_autopilot.py settings --root . [--json]
     python3 crew_autopilot.py stops [--json]
     python3 crew_autopilot.py route --root . --args "<the command's arguments>" [--json]
+    python3 crew_autopilot.py route --root . --first <token> [--json]
     python3 crew_autopilot.py status --root . [--ticket <id>] [--json]
 
 T-0004. The lifecycle is prose commands (spec, plan, implement, review,
@@ -688,6 +689,8 @@ def route_args(root, text):
     if got["stop"]:
         return got
     rest = words[1:] if words and words[0] in SUBCOMMANDS else words
+    if words[:1] == ["run"] and rest[:1] == [GOAL_FLAG]:
+        return dict(route(top, GOAL_FLAG), ticket="")
     if len(rest) > 1 or (rest and not (_INDEX_ID.fullmatch(rest[0])
                                        or _existing_ticket(top, rest[0]))):
         return dict(got, stop=True, reason=NOT_A_TICKET)
@@ -725,7 +728,26 @@ def _waiting(top, result):
         return "reviewer - a round is reserved with no result"
     if not result.get("stop"):
         return f"autopilot - run {AUTOPILOT} to continue"
+    try:
+        guard = not _phase(top, result["ticket"])["stop"]
+    except Exception:  # pylint: disable=broad-except
+        return "unknown (could not tell which check stopped the phase)"
+    if guard:
+        return _repoint(top, result["ticket"])
     return f"owner - types {command}" if command else "owner - see the phase reason"
+
+
+def _repoint(top, ticket):
+    """Who clears a stop `next_phase` made on the active pointer, not the phase:
+    its `command` is what autopilot would run, never what the owner types."""
+    active, where, broken = crew_ticket.resolve_active(top)
+    if broken:
+        return ("owner - fixes the broken active-ticket pointer: "
+                f"crew_ticket.py activate --ticket {ticket}")
+    if where != "active-ticket":
+        return f"autopilot - run {AUTOPILOT} {ticket} to continue; it activates {ticket} first"
+    return (f"owner - re-points this worktree: crew_ticket.py activate --ticket {ticket}, "
+            f"or runs {AUTOPILOT} {active}")
 
 
 def _review(top, ticket):
@@ -761,6 +783,10 @@ def _resume_line(top):
         return f"not usable: {parsed.get('reason') or 'no reason given'}"
     if parsed.get("command") == AUTOPILOT and parsed.get("kind") == "goal":
         return f"not usable: {rendered} - goal resume arrives with {ARRIVES['goal']}"
+    # `_handoff_ticket`'s checks, in its order: a line it falls through is
+    # never shown as usable one line above the `fell through:` that says so.
+    if parsed.get("kind") != "ticket" or not parsed.get("arg"):
+        return f"not usable: {rendered} - it names no ticket"
     branch = crew_state._HANDOFF_BRANCH_RE.search(text)  # pylint: disable=protected-access
     head = crew_state._HANDOFF_HEAD_RE.search(text)  # pylint: disable=protected-access
     here_head = (git_out(top, "rev-parse", "HEAD") or "").lower()
@@ -768,6 +794,8 @@ def _resume_line(top):
         return f"not usable: {rendered} - its branch: does not match this checkout"
     if not head or not here_head or not here_head.startswith(head.group(1).lower()):
         return f"not usable: {rendered} - its head: does not match this checkout"
+    if not _existing_ticket(top, parsed["arg"]):
+        return f"not usable: {rendered} - its ticket has no .work/tickets/ folder"
     return f"{rendered} (usable)"
 
 
@@ -855,9 +883,18 @@ def main(argv):
     sub.choices["next"].add_argument("--ticket", required=True)
     sub.choices["resume"].add_argument("--ticket", default="")
     sub.choices["status"].add_argument("--ticket", default="")
-    sub.choices["route"].add_argument("--args", default="")
+    given = sub.choices["route"].add_mutually_exclusive_group()
+    given.add_argument("--args", default=None)
+    given.add_argument("--first", default=None)
     sub.choices["next"].add_argument("--phases-run", type=int, default=0)
     sub.choices["next"].add_argument("--last-command", default="")
+    argv = list(argv)
+    if argv[:1] == ["route"]:
+        # `--goal` or `-h` is a value here, never an option: `--args=<v>`.
+        for flag in ("--args", "--first"):
+            at = argv.index(flag) if flag in argv else -1
+            if 0 <= at < len(argv) - 1:
+                argv[at:at + 2] = [f"{flag}={argv[at + 1]}"]
     try:
         args = parser.parse_args(argv)
     except SystemExit as exc:
@@ -872,8 +909,11 @@ def main(argv):
             # A crash cannot tell where the ticket stands: say so, never nothing.
             result = {"status": UNKNOWN, "reason": _failure(exc)}
             text = _one_line(f"status: unknown - {_failure(exc)}")
+    elif args.action == "route" and args.first is not None:
+        result = route(args.root, args.first)
+        text = _line(sub=result["sub"], stop=int(result["stop"]), reason=result["reason"])
     elif args.action == "route":
-        result = route_args(args.root, args.args)
+        result = route_args(args.root, args.args or "")
         text = _line(sub=result["sub"], stop=int(result["stop"]), ticket=result["ticket"],
                      reason=result["reason"])
     elif args.action == "stops":

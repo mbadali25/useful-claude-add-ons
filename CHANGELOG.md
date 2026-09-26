@@ -9,7 +9,9 @@ All notable changes to this repository are documented here. Format follows [Keep
 - **`crew` 1.0.42: `/crew:autopilot status` and the subcommand router
   (T-0018).** Bumped `1.0.41 -> 1.0.42`. `commands/autopilot.md` now routes
   its whole argument string through the new `crew_autopilot.py route --root .
-  --args "$ARGUMENTS"`: `status` and `run` run; a bare ticket id (INDEX-shaped, or
+  --args '$ARGUMENTS'` (single-quoted; arguments holding a quote, `$`, a
+  backtick or a backslash stop before anything runs; `route --first <token>`
+  routes one token alone): `status` and `run` run; a bare ticket id (INDEX-shaped, or
   an existing `.work/tickets/<id>/`) or nothing is `run`, as in 1.0.41;
   `assign`, `goal` and `run --goal` stop with "arrives with T-0019|T-0012",
   `focus` with "arrives with T-0020"; any other word (`stauts`, `Status`,
@@ -32,7 +34,15 @@ All notable changes to this repository are documented here. Format follows [Keep
   - `autopilot.md` is compressed from 120 to 100 lines, keeping every stop
     id and exact CLI string T-0004's tests pin; `test_lifecycle_commands.py`
     holds it to 100 so T-0010, T-0012, T-0019 and T-0020 have 20 lines.
-  - Eight mutations in `tests/sabotage_autopilot.py`'s `STATUS_MUTATIONS`
+  - Review round 1's fixes: the handoff's `resume:` line reads usable only
+    where `resume` takes it (not for a line naming no ticket, or a ticket
+    with no folder); a `next` stop on the active-ticket pointer waits on the
+    owner re-pointing it (or on autopilot activating it when no pointer is
+    set), never on the owner typing the phase's command; `run --goal` stops
+    with "arrives with T-0012"; `--args --goal` and `--args -h` are values,
+    not options; the command treats a router crash or no output as a stop,
+    and from `resume` on drives the ticket `resume` printed.
+  - Twenty-two mutations in `tests/sabotage_autopilot.py`'s `STATUS_MUTATIONS`
     each turn their named test red. They are appended to
     `AUTOPILOT_MUTATIONS`, so `sabotage.py` runs them with the rest, and
     `test_crew_autopilot.py` asserts each one reaches `sabotage.MUTATIONS`.
