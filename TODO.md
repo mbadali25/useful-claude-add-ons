@@ -4140,7 +4140,7 @@ One setting, two levels, default `off`:
 Enforced by the same hooks (approval receipts, scope guard, cloud guard, review ledger, completion audit), not prose.
 1.0 part (folded into the web-testing lane): `/crew:migrate` maps `pm.authority: autonomous` to a visible note
 "autopilot arrives in 1.1.0" instead of dropping it silently.
-**Partly shipped in crew 1.0.32 (T-0004):** `/crew:autopilot [<id>]` drives ONE ticket with `autopilot.mode: plan`,
+**Partly shipped in crew 1.0.41 (T-0004):** `/crew:autopilot [<id>]` drives ONE ticket with `autopilot.mode: plan`,
 stopping for every approval, review acceptance, brainstorm and open question; the migrate note now points at it. Still
 open, each its own ticket depending on T-0004: **T-0010** approval/questions policies (`self|risk`, cli self-approval,
 `questions.md` research - `crew_ticket.parse_risk` is the reader it will trust); **T-0011** `ship: pr|merge`, the

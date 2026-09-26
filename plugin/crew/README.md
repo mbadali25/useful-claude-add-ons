@@ -786,14 +786,15 @@ A `.crew/config.json` that exists but does not parse, or a value outside those f
 
 ### Autopilot: one ticket, driven until a person is needed
 
-`/crew:autopilot [<id>]` (since 1.0.32, **off by default**) drives one ticket through spec, plan, approval, implement, refresh artifacts, review and done, following each phase command's own procedure in the same session. It does not decide the order itself: every turn it runs `hooks/scripts/crew_autopilot.py next --root . --ticket <id>`, which names the next phase from files on disk only, so a skipped phase is visible and a phase that cannot be told stops.
+`/crew:autopilot [<id>]` (since 1.0.41, **off by default**) drives one ticket through spec, plan, approval, implement, refresh artifacts, review and done, following each phase command's own procedure in the same session. It does not decide the order itself: every turn it runs `hooks/scripts/crew_autopilot.py next --root . --ticket <id>`, which names the next phase from files on disk only, so a skipped phase is visible and a phase that cannot be told stops.
 
 | On disk | Phase | |
 |---|---|---|
 | no `direction.md`, or INDEX status `direction` | `brainstorm` / `direction-approval` | stop — a human dialogue |
-| no INDEX table row for the ticket (or no INDEX) | `direction-approval` | stop — cannot tell whether the direction was approved (Jira and ServiceDesk Plus modes write no row) |
+| no INDEX table row for the ticket (or no INDEX), or a status cell that is not `ready`, `open`, `spec`, `planned`, `approved`, `in-progress`, `implement` or `review` | `direction-approval` | stop — cannot tell whether the direction was approved (Jira and ServiceDesk Plus modes write no row; a blank or unknown cell is not a yes) |
+| INDEX status `done`, `merged`, `closed`, `shipped`, `complete(d)` | `closed` | stop — never re-driven |
 | spec header `status: done` | `closed` | stop — never re-driven |
-| an item under `## Open questions` in direction.md, spec.md or plan.md | `open-questions` | stop — answered by writing `none - <answer>` or checking it `[x]` |
+| an item under an `Open questions` heading (any level, sub-headings included) in direction.md, spec.md or plan.md | `open-questions` | stop — answered by writing `none - <answer>` or checking it `[x]`; `None of us has decided` is still open |
 | no `spec.md` / no `plan.md` | `spec` / `plan` | runs `/crew:spec` / `/crew:plan` |
 | `crew_ticket.validate` refuses | `spec` / `plan` | stop, with the problems |
 | approval not accepted (none, stale, or `cli`) | `approve` | stop — **you** type `/crew:approve <id>` |
@@ -809,9 +810,11 @@ A `.crew/config.json` that exists but does not parse, or a value outside those f
 | receipt current, artifacts not fresh | `stale-after-review` | stop, nothing written — a refresh now would stale the receipt |
 | receipt current, artifacts fresh | `done` | runs `/crew:done` |
 
-**Every implement ends in an approval stop.** `/crew:implement` step 7 writes `status: review` into spec.md's header, and the approval receipt hashes the whole file, so after implement the approval is stale and `next` stops at `approve`. When changing only that `status:` word back makes spec.md hash to the approved bytes (and plan.md is unchanged), the reason says exactly that and names T-0026, so a header-only re-approval reads differently from a Touch widened mid-implement.
+**Implement's status edit keeps the approval.** `/crew:implement` step 7 writes `status: review` into spec.md's header, which T-0026's approval digest normalises, so `next` moves on. An approval that edit still stales — a receipt written before T-0026, or a value outside `crew_ticket.STATUS_VALUES` — stops at `approve`; when changing only that `status:` word back makes spec.md hash to the approved bytes (and plan.md is unchanged), the reason says only the header changed, so it reads differently from a Touch widened mid-implement.
 
-**A review phase ends at its verdict.** Whether reached as `/crew:review` or inside `/crew:implement` step 6, autopilot stops following `review.md` once the round is recorded: it never runs step 3.2's fix-and-rerun itself. The next `next` stops at FINDINGS or INCOMPLETE, and any later round goes back through `next`, which puts a refresh before it.
+**A review phase ends at its verdict.** Whether reached as `/crew:review` or inside `/crew:implement` step 6, autopilot stops following `review.md` once the round is recorded and its BLOCK and FIX lines are reported: step 3.2's fix-and-rerun, `review_ledger.py --accept` and `gh pr review` are the human's. The next `next` stops at FINDINGS or INCOMPLETE, and any later round goes back through `next`, which puts a refresh before it.
+
+**The ticket is re-checked every turn.** `next` stops (`ticket-mismatch`) before any phase that would run while `crew_ticket.resolve_active` — what the scope guard and the completion audit read — names another ticket, none, or a broken pointer. Anything `next` or `resume` raises prints `stop=1` with the exception, and the command treats any answer but a `stop=0` line as a stop.
 
 **Refresh sits between implement and review, every round.** A review bundle excludes only `.work/`, so a refresh written after an accepted review stales its receipt and `/crew:done` refuses; autopilot therefore never refreshes after review. The freshness judgement is T-0008's `crew_refresh_check.ticket_freshness`. A `stale` artifact is refreshed with the command it names. An `unknown` one is refreshed only in T-0008's orphaned-anchor case — the anchor names no commit (a squash merge dropped it), T-0008 marks it refreshable and names the command; every other `unknown` (graphify missing, no or a fallback scope base, a check that raised) stops, as `/crew:implement` step 6 does. When the module cannot be imported the phase stops as "refresh-artifacts unavailable (T-0008 not landed)" rather than being skipped.
 

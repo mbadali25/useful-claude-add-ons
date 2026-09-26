@@ -296,7 +296,7 @@ of that last sentence. Four entries, id and description verbatim:
 | `rewrite-metrics` | rewriting `.crew/metrics.md` |
 | `git-destruction` | destroying git history or tracked work - force-push, branch delete, history rewrite, or `rm` of a tracked file |
 
-Since 1.0.32 the list also binds `/crew:autopilot` (§20): `commands/autopilot.md`
+Since 1.0.41 the list also binds `/crew:autopilot` (§20): `commands/autopilot.md`
 names every id, and `test_crew_autopilot.py::test_command_names_every_autonomous_stop`
 iterates this tuple against that file, so an id added here without the command
 naming it fails the suite.
@@ -2043,7 +2043,7 @@ gate reaching in afterward to kill what a rule left running.
 
 ## 20. `autopilot` — `/crew:autopilot`, off until `plan`
 
-`/crew:autopilot` (T-0004, since 1.0.32) drives one ticket through the
+`/crew:autopilot` (T-0004, since 1.0.41) drives one ticket through the
 lifecycle phases `crew_autopilot.next_phase` names from disk, following each
 phase command's procedure in-session, and stops wherever a person is needed.
 Its block is **repo only**: absent from `default_global_config()`, so

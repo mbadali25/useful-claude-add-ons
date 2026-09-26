@@ -358,12 +358,16 @@ def test_next_closed(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize("refresh", ["fresh", "stale"])
-def test_next_budget_spent_without_a_receipt_stops(tmp_path, monkeypatch, refresh):
-    """Round 2 CLEAN, then its receipt went stale: a /crew:review now would
-    reserve a third round and write NEEDS_REPLAN, unattended."""
+@pytest.mark.parametrize("second,state,receipt", [
+    ("CLEAN", "ACCEPTED", _receipt(2)), ("INCOMPLETE", "REVIEWED", None)],
+    ids=["round-2-clean-gone-stale", "round-2-incomplete"])
+def test_next_budget_spent_without_a_receipt_stops(tmp_path, monkeypatch, refresh, second,
+                                                   state, receipt):
+    """Round 2 CLEAN whose receipt went stale, or round 2 INCOMPLETE (round
+    1's repro): a /crew:review now would reserve a third round and write
+    NEEDS_REPLAN, unattended."""
     root = _approved(tmp_path)
-    _ledger(root, [_round(1, "FINDINGS"), _round(2, "CLEAN")], state="ACCEPTED",
-            receipt=_receipt(2))
+    _ledger(root, [_round(1, "FINDINGS"), _round(2, second)], state=state, receipt=receipt)
     _receipt_ok(monkeypatch, False)
     _refresh(monkeypatch, refresh)
 
@@ -397,8 +401,34 @@ def _touch_edit(root):
     _write(folder / "spec.md", text)
 
 
-def test_next_post_implement_approval_stop_names_the_header_edit(tmp_path, monkeypatch):
+def _legacy_receipt(root):
+    """Rewrite the approval receipt the way crew wrote it before T-0026: no
+    `digest`, so it is compared on the raw sha256 of each file."""
+    path = crew_ticket.approval_path(str(root), T)
+    with open(path, encoding="utf-8") as handle:
+        receipt = json.load(handle)
+    for key in ("digest", "spec_digest", "plan_digest"):
+        receipt.pop(key, None)
+    _write(path, json.dumps(receipt))
+
+
+def test_next_header_status_edit_keeps_the_approval(tmp_path, monkeypatch):
+    """T-0026 (main): /crew:implement step 7's `status: review` no longer
+    stales the approval, so autopilot does not stop at `approve` after it."""
     root = _approved(tmp_path)
+    _ledger(root, [_round(1, "CLEAN")], state="ACCEPTED", receipt=_receipt(1))
+    _receipt_ok(monkeypatch, True)
+    _refresh(monkeypatch, "fresh")
+    _header_only_edit(root)
+
+    got = _next(root)
+
+    assert (got["phase"], got["stop"]) == ("done", False)
+
+
+def test_next_legacy_receipt_header_edit_names_the_header_edit(tmp_path, monkeypatch):
+    root = _approved(tmp_path)
+    _legacy_receipt(root)
     _ledger(root, [_round(1, "CLEAN")], state="ACCEPTED", receipt=_receipt(1))
     _receipt_ok(monkeypatch, True)
     _refresh(monkeypatch, "fresh")
@@ -433,7 +463,7 @@ def test_next_direction_approval_unknown_stops(tmp_path, index):
 
     got = _next(root)
 
-    assert (got["phase"], got["stop"], "cannot tell" in got["reason"]) == (
+    assert (got["phase"], got["stop"], "has no table row" in got["reason"]) == (
         "direction-approval", True, True)
 
 
@@ -450,13 +480,112 @@ def test_next_open_questions_stop(tmp_path, name):
 
 
 @pytest.mark.parametrize("body", ["none", "- none - decided by the owner", "- [x] which DB? postgres",
-                                  "- ~~which DB?~~ postgres", "None.", ""])
+                                  "- ~~which DB?~~ postgres", "None.", "", "N/A",
+                                  "- none (the owner chose postgres)"])
 def test_next_answered_open_questions_do_not_stop(tmp_path, body):
     root = _approved(tmp_path)
     path = root / ".work" / "tickets" / T / "direction.md"
     _write(path, f"go\n## Open questions\n{body}\n")
 
     assert _next(root)["phase"] == "implement"
+
+
+@pytest.mark.parametrize("text", [
+    "go\n## Open questions\n- None of the owners has picked a DB yet\n",
+    "go\n## Open questions\n- nonetheless, which DB?\n",
+    "go\n## Open questions\n### For the owner\n- which DB?\n",
+    "go\n### Open questions\n- which DB?\n",
+], ids=["starts-with-none", "starts-with-none-word", "under-a-subheading", "level-3-heading"])
+def test_next_open_question_that_only_looks_answered_stops(tmp_path, text):
+    root = _approved(tmp_path)
+    _write(root / ".work" / "tickets" / T / "direction.md", text)
+
+    got = _next(root)
+
+    assert (got["phase"], got["stop"]) == ("open-questions", True)
+
+
+def test_next_open_questions_section_ends_at_the_next_peer_heading(tmp_path):
+    root = _approved(tmp_path)
+    _write(root / ".work" / "tickets" / T / "direction.md",
+           "go\n## Open questions\n- none\n## Recommendation\n- use postgres\n")
+
+    assert _next(root)["phase"] == "implement"
+
+
+@pytest.mark.parametrize("status", ["", "brainstorm", "parked", "rejected", "**ready**"])
+def test_next_index_status_that_does_not_say_approved_stops(tmp_path, status):
+    root = make_repo(tmp_path, mode="off")
+    _ticket(root, spec=False, plan=False, status=status)
+
+    got = _next(root)
+
+    assert (got["phase"], got["stop"], "cannot tell" in got["reason"]) == (
+        "direction-approval", True, True)
+
+
+@pytest.mark.parametrize("status", ["ready", "open", "spec", "planned", "approved",
+                                    "in-progress", "review", "Ready"])
+def test_next_index_status_after_direction_approval_proceeds(tmp_path, status):
+    root = make_repo(tmp_path, mode="off")
+    _ticket(root, spec=False, plan=False, status=status)
+
+    assert (_next(root)["phase"], _next(root)["stop"]) == ("spec", False)
+
+
+@pytest.mark.parametrize("status", ["done", "merged", "closed", "shipped", "complete"])
+def test_next_index_status_done_stops_as_closed(tmp_path, status):
+    root = make_repo(tmp_path, mode="off")
+    _ticket(root, spec=False, plan=False, status=status)
+
+    got = _next(root)
+
+    assert (got["phase"], got["stop"], "INDEX.md" in got["reason"]) == ("closed", True, True)
+
+
+def test_next_stops_when_another_ticket_is_active(tmp_path):
+    root = _two_tickets(tmp_path, activate="T-2")
+    approve_as_user(root, "T-1")
+
+    got = crew_autopilot.next_phase(str(root), "T-1")
+
+    assert (got["phase"], got["stop"], "T-2" in got["reason"]) == ("implement", True, True)
+
+
+def test_next_stops_when_the_scope_guard_would_judge_another_ticket(tmp_path):
+    """No pointer: the scope guard falls back to INDEX.md's first open
+    ticket (crew_ticket.resolve_active), which is T-1, not T-2."""
+    root = _two_tickets(tmp_path)
+    approve_as_user(root, "T-2")
+
+    got = crew_autopilot.next_phase(str(root), "T-2")
+
+    assert (got["phase"], got["stop"], "T-1" in got["reason"]) == ("implement", True, True)
+
+
+def test_next_proceeds_when_its_ticket_is_the_active_one(tmp_path):
+    root = _two_tickets(tmp_path, activate="T-2")
+    approve_as_user(root, "T-2")
+
+    got = crew_autopilot.next_phase(str(root), "T-2")
+
+    assert (got["phase"], got["stop"]) == ("implement", False)
+
+
+@pytest.mark.parametrize("action", ["next", "resume"])
+def test_cli_that_raises_prints_a_stop(tmp_path, monkeypatch, capsys, action):
+    """A crash is `could not tell`: it prints `stop=1`, never nothing."""
+    root = make_repo(tmp_path, mode="off")
+    _ticket(root)
+
+    def boom(*_args, **_kwargs):
+        raise RuntimeError("disk on fire")
+
+    monkeypatch.setattr(crew_autopilot, "_phase", boom)
+    code = crew_autopilot.main([action, "--root", str(root), "--ticket", T])
+
+    out = capsys.readouterr().out
+    assert (code, "stop=1" in out, "disk on fire" in out) == (0, True, True)
 
 
 def test_cli_next_prints_one_line_and_exits_zero(tmp_path):
@@ -983,8 +1112,21 @@ def test_command_activates_the_ticket_only_without_a_pointer():
             "resume --root . --ticket $1" in text) == (True, True, True)
 
 
-def test_command_says_every_implement_ends_in_an_approval_stop():
-    assert "every implement ends in an approval stop" in " ".join(_command_text().split())
+def test_command_says_the_status_edit_keeps_the_approval():
+    text = " ".join(_command_text().split())
+    assert ("every implement ends in an approval stop" in text,
+            "keeps the approval" in text) == (False, True)
+
+
+def test_command_leaves_accept_and_pr_review_to_the_human():
+    text = " ".join(_command_text().split())
+    assert ("`review_ledger.py --accept`" in text, "`gh pr review`" in text,
+            "are the human's" in text) == (True, True, True)
+
+
+def test_command_reads_no_answer_as_a_stop():
+    text = " ".join(_command_text().split())
+    assert "Anything but a `stop=0` line" in text
 
 
 def test_code_enforced_stops_are_not_procedure_stops():

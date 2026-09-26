@@ -6,8 +6,8 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
-- **`crew` 1.0.32: `/crew:autopilot` resumes and drives one ticket
-  (T-0004).** Bumped `1.0.30 -> 1.0.32` (1.0.31 is T-0006's). New
+- **`crew` 1.0.41: `/crew:autopilot` resumes and drives one ticket
+  (T-0004).** Bumped `1.0.40 -> 1.0.41`. New
   `commands/autopilot.md` follows each lifecycle command's procedure
   in-session, in the order the new read-only
   `hooks/scripts/crew_autopilot.py next --root . --ticket <id>` names from
@@ -26,18 +26,26 @@ All notable changes to this repository are documented here. Format follows [Keep
     ticket other than this worktree's active one stops, naming both; with no
     pointer set, autopilot activates the ticket it drives.
   - Plan approval, review acceptance, brainstorm, direction approval (an
-    INDEX `direction` status, or no INDEX row to tell) and any item under
-    `## Open questions` in direction.md, spec.md or plan.md always stop for a
-    person. `next` also stops on NEEDS_REPLAN, an UNKNOWN ledger, a failed
+    INDEX `direction` status, no INDEX row, or a status cell outside the
+    closed list that says it was approved) and any item under an
+    `Open questions` heading in direction.md, spec.md or plan.md always stop
+    for a person; `None of us has decided` is an open item, not an answer.
+    An INDEX `done`/`merged` row stops as `closed`. `next` also stops on NEEDS_REPLAN, an UNKNOWN ledger, a failed
     `crew_ticket.validate`, a reserved round with no result, an INCOMPLETE
     round, no review round left with no standing receipt (a review would write
     NEEDS_REPLAN unattended), `maxPhases`, and the same command named twice.
     A review phase ends at its verdict: autopilot never runs review.md's
     fix-and-rerun itself. Every `crew_state.AUTONOMOUS_STOPS` id is named in
     the command, pinned by a test iterating the tuple.
-  - Every implement ends in an approval stop (`/crew:implement` step 7
-    rewrites spec.md's header after approval); when that header is the only
-    change, measured by hashing, the reason says so and names T-0026.
+  - Implement's `status: review` edit keeps the approval (T-0026's digest);
+    one that still stales it (a pre-T-0026 receipt) stops at `approve` with a
+    reason saying only the header changed, measured by hashing.
+  - `next` re-checks the ticket every turn: it stops before any phase that
+    would run while `crew_ticket.resolve_active` names another ticket, none,
+    or a broken pointer. An exception in `next` or `resume` prints `stop=1`,
+    and the command reads any answer but `stop=0` as a stop. The review
+    phase reports BLOCK and FIX lines and leaves `--accept` and
+    `gh pr review` to the human.
   - Refresh (T-0008's `crew_refresh_check.ticket_freshness`) runs after
     implement and before every review round, never after an accepted
     receipt: a stale artifact then is `stale-after-review`, a stop that writes

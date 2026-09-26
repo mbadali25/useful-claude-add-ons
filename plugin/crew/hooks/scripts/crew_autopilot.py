@@ -16,6 +16,8 @@ writes a file, never approves, never accepts a review.
 
   no direction.md                        brainstorm          stop
   INDEX status `direction`, or no row    direction-approval  stop (no row: cannot tell)
+  INDEX status done/merged/closed/...    closed              stop
+  INDEX status not in DIRECTION_APPROVED direction-approval  stop (cannot tell)
   spec header `status: done`             closed              stop
   `## Open questions` with an item       open-questions      stop
   no spec.md                             spec                /crew:spec <id>
@@ -36,9 +38,11 @@ writes a file, never approves, never accepts a review.
   receipt current, artifacts fresh       done                /crew:done <id>
 
 `closed` sits right after the spec is read, not last: a ticket `/crew:done`
-closed is never re-driven because a later commit staled its receipt. An
-approval staled only by the spec header's `status:` (what `/crew:implement`
-step 7 writes) still stops, with a reason saying so (T-0026).
+closed is never re-driven because a later commit staled its receipt. The
+header `status:` edits the lifecycle makes keep the approval (T-0026's
+digest); one that still stales it -- a receipt from before T-0026, or a value
+outside `crew_ticket.STATUS_VALUES` -- stops, with a reason saying only the
+header changed.
 
 Refresh runs after implement and before every review round, never after an
 accepted receipt: a review bundle excludes only `.work/`
@@ -68,7 +72,9 @@ A ticket that differs from this worktree's active-ticket pointer stops, naming
 both: the scope guard and the completion audit judge edits by the pointer.
 With no pointer, `activate` tells the command to set it to the ticket it drives.
 
-Exit 0 always; the answer is in the output.
+Exit 0 always; the answer is in the output. An exception inside `next` or
+`resume` prints `stop=1` with its reason: a crash is "cannot tell", never
+silence the command could read as permission.
 """
 import argparse
 import importlib
@@ -93,11 +99,18 @@ UNSETTLED = "unsettled"
 # commit here (a squash merge dropped it), and re-anchoring is the refresh.
 ORPHANED_ANCHOR = "names no commit"
 FALLBACK_BASE = "[fallback base]"
-# A status `/crew:implement` or `/crew:plan` may leave in the spec header; the
-# approval stop says so when that is the ONLY change since approval.
-HEADER_STATUSES = ("spec", "planned", "ready", "direction", "implement", "in-progress",
-                   "review")
+# Header statuses tried when naming a header-only approval change: T-0026's
+# STATUS_VALUES plus older words. Such a change stales only a pre-T-0026
+# receipt or a value outside STATUS_VALUES; the stop then says so.
+HEADER_STATUSES = crew_ticket.STATUS_VALUES + ("ready", "direction", "implement")
 REFRESH_UNAVAILABLE = "refresh-artifacts unavailable (T-0008 not landed)"
+# INDEX.md status cells that say direction.md was approved: `/crew:brainstorm`
+# step 5 writes `ready`, and every later phase's own word. Any other cell --
+# blank, a typo, `parked` -- cannot tell, so it stops (a closed list, not "not
+# `direction`").
+DIRECTION_APPROVED = ("ready", "open", "spec", "planned", "approved", "in-progress",
+                      "implement", "review")
+INDEX_DONE = ("done", "closed", "merged", "shipped", "complete", "completed")
 
 # Stops `next` enforces in code, beyond the ones the phase table names.
 FIXED_STOPS = (
@@ -187,26 +200,37 @@ def _header_status(spec_text):
 
 
 _BULLET = ("- ", "* ", "+ ")
+_HEADING = re.compile(r"^(#{1,6})\s+(.*)$")
+# An answered item: `none` or `n/a` alone or followed by a separator and the
+# answer (`none - postgres`), checked `[x]`, or struck `~~`. `None of the
+# owners has decided` is an open question, not an answer.
+_ANSWERED = re.compile(r"^(?:(?:none|n/a)(?:$|\s*[-:,(\u2013\u2014])|\[x\]|~~|-$)")
 
 
 def _open_items(text):
-    """Unanswered items under any `## Open questions` heading. An item is
-    answered when it is `none...`, checked (`[x]`) or struck (`~~`)."""
-    items, inside = [], False
+    """Unanswered items under any `Open questions` heading, at any level, down
+    to the next heading of the same or a higher level -- a sub-heading inside
+    the section stays inside it. See `_ANSWERED` for what counts as answered."""
+    items, depth = [], 0
     for line in (text or "").splitlines():
-        if line.startswith("#"):
-            title = line.lstrip("#").strip()
-            inside = line.startswith("## ") and title.lower().startswith("open questions")
-            line = title[len("open questions"):] if inside else ""
-        if not inside:
+        heading = _HEADING.match(line)
+        if heading:
+            level, title = len(heading.group(1)), heading.group(2).strip()
+            if depth and level > depth:
+                continue
+            if title.lower().startswith("open questions"):
+                depth, line = level, title[len("open questions"):]
+            else:
+                depth = 0
+        if not depth:
             continue
         item = line.strip()
         for mark in _BULLET:
             if item.startswith(mark):
                 item = item[len(mark):].strip()
         item = re.sub(r"^\d+[.)]\s*", "", item)
-        bare = item.strip("\"'`. ").lower()
-        if not bare or bare.startswith(("none", "[x]", "~~", "n/a")) or bare == "-":
+        bare = item.strip("\"'`.: ").lower()
+        if not bare or _ANSWERED.match(bare):
             continue
         items.append(item)
     return items
@@ -312,6 +336,14 @@ def _phase(root, ticket):
                       f"direction is approved: .work/INDEX.md has no table row for {ticket} "
                       "(Jira and ServiceDesk Plus modes write none). The human adds "
                       f"`{ticket} | ready | <risk> | <repo> | <title>` once it is agreed")
+    if status in INDEX_DONE:
+        return answer("closed", True, f".work/INDEX.md marks {ticket} `{status}`: never "
+                      "re-driven, whatever spec.md's header says")
+    if status not in DIRECTION_APPROVED:
+        return answer("direction-approval", True, f"cannot tell whether {ticket}'s "
+                      f"direction is approved: its .work/INDEX.md status is `{status}`, not one "
+                      f"of {', '.join(DIRECTION_APPROVED)}. The human sets it to `ready` once "
+                      "direction.md is agreed")
     contract = crew_ticket.read_contract(top, ticket)
     evidence.append(_rel(top, os.path.join(folder, "spec.md")))
     if contract["spec.md"] is not None and _header_status(
@@ -344,9 +376,9 @@ def _phase(root, ticket):
                if approval["status"] == "stale" else None)
         why = approval["why"] if not was else (
             f"only the header's status changed since approval (`status: {was}` -> "
-            f"`status: {_header_status(crew_ticket._text(contract['spec.md']))}`): every "  # pylint: disable=protected-access
-            "implement ends in an approval stop, because /crew:implement step 7 writes the "
-            "header and the approval hashes all of spec.md (T-0026)")
+            f"`status: {_header_status(crew_ticket._text(contract['spec.md']))}`), an edit "  # pylint: disable=protected-access
+            "T-0026's approval digest keeps only for a receipt written since T-0026 and a "
+            "value in crew_ticket.STATUS_VALUES; this one is older or the value is not")
         return answer("approve", True, f"{why}. Only the human types "
                       f"/crew:approve {ticket}; autopilot never approves",
                       f"/crew:approve {ticket}")
@@ -420,11 +452,21 @@ def next_phase(root, ticket, phases_run=0, last_command=None, max_phases=None):
     """`{"ticket", "phase", "stop", "reason", "command", "evidence"}`. A
     `stop` phase's `command` is what the HUMAN types, never run by autopilot.
     `max_phases` and `last_command` are the session's count and the command it
-    last ran: reaching the count, or being handed the same command again, stops."""
+    last ran: reaching the count, or being handed the same command again, stops.
+    So does a phase that would run while `crew_ticket.resolve_active` -- what
+    the scope guard reads -- names another ticket, none, or a broken pointer."""
     crew_ticket.check_ticket(ticket)
     result = _phase(root, ticket)
     if result["stop"]:
         return result
+    active, where, broken = crew_ticket.resolve_active(
+        crew_ticket.toplevel(root) or os.path.abspath(root))
+    if broken or active != ticket:
+        return dict(result, stop=True, reason=(
+            f"ticket mismatch: the scope guard and completion audit judge edits by "
+            f"{active or 'no ticket'} ({where}), not {ticket}, so {result['command']} would "
+            f"run under the wrong approval and Touch - run crew_autopilot.py resume, or the "
+            f"human runs crew_ticket.py activate --ticket {ticket}"))
     if max_phases is not None and phases_run >= max_phases:
         return dict(result, stop=True, reason=(
             f"autopilot.maxPhases ({max_phases}) reached after {phases_run} phases; next "
@@ -584,6 +626,12 @@ def stops():
             "human": rows(HUMAN_STOPS), "procedure": rows(PROCEDURE_STOPS)}
 
 
+def _failure(exc):
+    if isinstance(exc, crew_ticket.TicketError):
+        return str(exc)
+    return f"crew_autopilot raised {type(exc).__name__}: {exc} - cannot tell, so stop"
+
+
 def _line(**fields):
     return " ".join(f"{k}={v}" for k, v in fields.items())
 
@@ -617,9 +665,10 @@ def main(argv):
     elif args.action == "resume":
         try:
             result = resume_target(args.root, args.ticket or None)
-        except crew_ticket.TicketError as exc:
+        except Exception as exc:  # pylint: disable=broad-except
+            # A crash cannot tell which ticket: it is a stop, never no answer.
             result = {"ticket": None, "source": "argument", "stop": True, "hint": "",
-                      "disagreement": "", "reason": str(exc), "fallthrough": [],
+                      "disagreement": "", "reason": _failure(exc), "fallthrough": [],
                       "next": None, "activate": False}
         text = _line(ticket=result["ticket"] or "", source=result["source"],
                      stop=int(result["stop"]), activate=int(result["activate"]),
@@ -631,9 +680,10 @@ def main(argv):
             result = next_phase(args.root, args.ticket, args.phases_run,
                                 args.last_command or None,
                                 settings(args.root)["maxPhases"])
-        except crew_ticket.TicketError as exc:
+        except Exception as exc:  # pylint: disable=broad-except
+            # A crash cannot tell the phase: it is a stop, never no answer.
             result = {"ticket": args.ticket, "phase": "invalid", "stop": True,
-                      "command": "", "reason": str(exc), "evidence": []}
+                      "command": "", "reason": _failure(exc), "evidence": []}
         text = _line(phase=result["phase"], stop=int(result["stop"]),
                      command=result["command"], reason=result["reason"])
     sys.stdout.write((json.dumps(result, indent=2) if args.json else text) + "\n")
