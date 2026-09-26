@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@514e4e0a
+anchor: useful-claude-add-ons@bf5255c3
 verified: 2026-09-26
 paths: scripts/**, plugin/PLUGINS.md
 
@@ -340,3 +340,17 @@ changed file, re-read at `514e4e0a`: crew's `version` is on the same lines of `m
 to 1.0.44 at `514e4e0a` so the version is set in the last `plugin/crew/` commit, and
 `check-marketplace.py` passes at `514e4e0a`; `BUDGETS.md`'s claim is re-measured above;
 `verify.json`'s Kimi rule grew (rule 24, `:263-279`) and no rule this note cites moved.
+
+## Re-anchor provenance - `514e4e0a` -> `bf5255c3`, 2026-09-26 (T-0028 review round 2)
+
+`git diff --name-only 514e4e0a bf5255c3` returns round 1's artifact refresh (`0aab3a8f`) and
+T-0028's round-2 fixes: `.crew/verify.json`, `CHANGELOG.md`, and under `plugin/crew/` only
+`hooks/scripts/review_run.py`, `hooks/scripts/kimi_probe.py` and five test files
+(`review_fixtures.py`, `sabotage_kimi.py`, `test_kimi_docs.py`, `test_kimi_probe.py`,
+`test_review_run_kimi.py`). crew's version was stepped back and re-set (`eb08caa0`, `00b5913f`), a
+net zero diff, so `marketplace.json`, `plugin.json` and `PLUGINS.md` are not in the list. `scripts/check-marketplace.py`, both install scripts, `skills/README.md` and
+`CLAUDE.md` are not in it, so every function line number and catalog-array citation stands.
+Re-read at `bf5255c3`: the doc rule `.crew/verify.json:69-78` is unchanged; rule 24 grew to
+`:263-281`; crew's `version` is 1.0.44 on `marketplace.json:218`, `plugin.json` and
+`PLUGINS.md:14`, set in the last `plugin/crew/` commit (`00b5913f`); `check-marketplace.py`
+passes at `bf5255c3`.

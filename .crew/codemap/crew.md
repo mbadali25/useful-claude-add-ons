@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@514e4e0a
+anchor: useful-claude-add-ons@bf5255c3
 verified: 2026-09-26
 
 ## Re-derive provenance
@@ -800,5 +800,25 @@ both commits:
   `kimi_probe.py` remain unopened by this note: the round-1 fixes (content-hashing tree
   fingerprint, `graph.out` set aside, the probe inside the fingerprint window with the read-only
   agent file) are recorded in `CHANGELOG.md`, not re-derived here.
+
+No suite was run by this note; this pass is the per-path re-verify above, re-anchored by hand.
+
+## Re-anchor provenance - `514e4e0a` -> `bf5255c3`, 2026-09-26 (T-0028 review round 2)
+
+`git diff --name-only 514e4e0a bf5255c3` returns round 1's artifact refresh (`0aab3a8f`) and
+T-0028's round-2 fixes: `.crew/verify.json`, `CHANGELOG.md`, and under `plugin/crew/` only
+`hooks/scripts/review_run.py`, `hooks/scripts/kimi_probe.py` and five test files
+(`review_fixtures.py`, `sabotage_kimi.py`, `test_kimi_docs.py`, `test_kimi_probe.py`,
+`test_review_run_kimi.py`). crew's version was stepped back and re-set (`eb08caa0`, `00b5913f`), a
+net zero diff, so `marketplace.json`, `plugin.json` and `PLUGINS.md` are not in the list. Each citation into a changed path, re-read at `bf5255c3` with `grep -n`/`sed -n`:
+
+- `.crew/verify.json` - rule 24 gained two `paths` (`commands/model.md`,
+  `crew-providers/alternative-providers.md`) and now spans `:263-281`; its `seconds` and `why`
+  changed on their own lines. Rules 22 `:244` and 23 `:245-261` hold.
+- `review_run.py`, `kimi_probe.py` - cited by name only, not by line, and still unopened by this
+  note: the round-2 fixes (graph.out resolved before the review, crew config never set aside,
+  ignored tool caches set aside, no probe or round when the tree cannot be fingerprinted, PROBE_OK
+  read before the rate-limit markers) are recorded in `CHANGELOG.md`, not re-derived here.
+- `CHANGELOG.md` - cited by name only.
 
 No suite was run by this note; this pass is the per-path re-verify above, re-anchored by hand.

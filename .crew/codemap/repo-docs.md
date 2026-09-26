@@ -1,5 +1,5 @@
 # repo-docs
-anchor: useful-claude-add-ons@514e4e0a
+anchor: useful-claude-add-ons@bf5255c3
 verified: 2026-09-26
 
 ## Re-derive provenance
@@ -528,3 +528,17 @@ them was re-read with `grep -n` / `sed -n` at `514e4e0a`:
 - `review.md`, `crew_state.py` - cited by name or through the diagrams only; the diagrams carry
   their own renumbering.
 - `marketplace.json`, `PLUGINS.md`, `plugin.json` - crew `version` only, 1.0.44 on the same lines.
+
+Re-verified per-path from `514e4e0a` to `bf5255c3` for T-0028's review round 2 (2026-09-26).
+`git diff --name-only 514e4e0a bf5255c3` returns round 1's artifact refresh (`0aab3a8f`) and
+T-0028's round-2 fixes: `.crew/verify.json`, `CHANGELOG.md`, and under `plugin/crew/` only
+`hooks/scripts/review_run.py`, `hooks/scripts/kimi_probe.py` and five test files
+(`review_fixtures.py`, `sabotage_kimi.py`, `test_kimi_docs.py`, `test_kimi_probe.py`,
+`test_review_run_kimi.py`). crew's version was stepped back and re-set (`eb08caa0`, `00b5913f`), a
+net zero diff, so `marketplace.json`, `plugin.json` and `PLUGINS.md` are not in the list. Each citation into them was re-read at `bf5255c3`:
+
+- `.crew/verify.json` - rule 24 gained two `paths` (`commands/model.md`,
+  `crew-providers/alternative-providers.md`) and now spans `:263-281`; its `seconds` and `why`
+  changed on their own lines. Rules 22 `:244` and 23 `:245-261` hold.
+- `CHANGELOG.md` - the crew 1.0.44 entry under `[Unreleased]` gained the round-2 fixes; cited
+  without a line. The `TODO.md` `render.sh` entry (`:1206`) is not in the diff and holds.

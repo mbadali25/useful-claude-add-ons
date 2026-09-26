@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@514e4e0a
+anchor: useful-claude-add-ons@bf5255c3
 verified: 2026-09-25
 
 # localgpu
@@ -1094,3 +1094,16 @@ stands at `6ffd48fa`.
   re-set to 1.0.44); `localgpu`'s entry is untouched. Nothing under `plugin/localgpu/` changed,
   so `plugin/localgpu/commands/crew.md:29-34` still states three crew providers; filed to
   `TODO.md` as T-0028 follow-up (f). No claim moved.
+
+## Re-anchor provenance - `514e4e0a` -> `bf5255c3`, 2026-09-26 (T-0028 review round 2)
+
+`git diff --name-only 514e4e0a bf5255c3` returns round 1's artifact refresh (`0aab3a8f`) and
+T-0028's round-2 fixes: `.crew/verify.json`, `CHANGELOG.md`, and under `plugin/crew/` only
+`hooks/scripts/review_run.py`, `hooks/scripts/kimi_probe.py` and five test files
+(`review_fixtures.py`, `sabotage_kimi.py`, `test_kimi_docs.py`, `test_kimi_probe.py`,
+`test_review_run_kimi.py`). crew's version was stepped back and re-set (`eb08caa0`, `00b5913f`), a
+net zero diff, so `marketplace.json`, `plugin.json` and `PLUGINS.md` are not in the list. Of those, this note cites only `.crew/verify.json`, re-read at `bf5255c3`:
+
+- `.crew/verify.json` - rule 24 gained two `paths` (`commands/model.md`,
+  `crew-providers/alternative-providers.md`) and now spans `:263-281`; its `seconds` and `why`
+  changed on their own lines. Rules 22 `:244` and 23 `:245-261` hold. No line this note cites moved, and nothing under `plugin/localgpu/` changed.
