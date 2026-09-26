@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@fc54def6
+anchor: useful-claude-add-ons@3a57b2d2
 verified: 2026-09-25
 paths: scripts/**, plugin/PLUGINS.md
 
@@ -311,3 +311,10 @@ plugins' versions were re-read from `marketplace.json` and are unchanged.
 `python3 scripts/check-marketplace.py` at `fc54def6`: `marketplace: 34 skills, 5 plugins`,
 `all checks passed`.
 
+## Re-anchor provenance - `fc54def6` -> `3a57b2d2`, 2026-09-26 (T-0005 Step 8)
+
+`git diff --name-only fc54def6 3a57b2d2 -- <the paths this note cites>` returns `.crew/verify.json`
+(one path added to the cloud-guard rule at `:118`, below the doc rule, which stays at `:69-78`,
+re-read), `plugin/crew/BUDGETS.md` (the `:11` figure re-measured, now 18,050 lines, 120 files)
+and `CHANGELOG.md` (cited by name only). The version files are byte-identical to `fc54def6`'s
+crew entry.

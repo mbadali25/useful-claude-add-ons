@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@496ee9b4
+anchor: useful-claude-add-ons@3a57b2d2
 verified: 2026-09-26
 
 ## Re-derive provenance
@@ -250,12 +250,12 @@ one ratchet table.** `plugin/crew/hooks/scripts/crew_guards.py`:
 
 | Group | Names | Vocabulary | Line |
 |---|---|---|---|
-| `GUARD_NAMES` | `terraformApply`, `forcePush`, `adminMerge`, `mergeGate`, `cloudDestructive`, `sqlDestructive` (6) | `block`/`ask`/`allow`, `guard_policy_rank` (`:410`) | `:104-105` |
-| `PROD_GUARD_NAMES` | `prodDatabase`, `prodServer` (2) | `none`/`read`/`full`, `prod_level_rank` (`:439`) | `:126` |
-| `ROLE_WRITE_GUARD_NAMES` | `roleWrites` (1) | `block`/`report`/`off`, default `off` not floor, `role_writes_rank` (`:475`) | `:149` |
-| `CLOUD_GUARD_NAMES` | `cloudGuard` (1) — **new since the previous anchor** | same vocabulary and functions as `roleWrites`, its own words | `:188` |
+| `GUARD_NAMES` | `terraformApply`, `forcePush`, `adminMerge`, `mergeGate`, `cloudDestructive`, `sqlDestructive` (6) | `block`/`ask`/`allow`, `guard_policy_rank` (`:411`) | `:105-106` |
+| `PROD_GUARD_NAMES` | `prodDatabase`, `prodServer` (2) | `none`/`read`/`full`, `prod_level_rank` (`:440`) | `:127` |
+| `ROLE_WRITE_GUARD_NAMES` | `roleWrites` (1) | `block`/`report`/`off`, default `off` not floor, `role_writes_rank` (`:476`) | `:150` |
+| `CLOUD_GUARD_NAMES` | `cloudGuard` (1) — **new since the previous anchor** | same vocabulary and functions as `roleWrites`, its own words | `:189` |
 
-`ALL_GUARD_NAMES` (`plugin/crew/hooks/scripts/crew_guards.py:194-195`) is the
+`ALL_GUARD_NAMES` (`plugin/crew/hooks/scripts/crew_guards.py:195-196`) is the
 concatenation of all four — **ten** guard names in total.
 `cloud_guard.py`'s own docstring (`:1-6`) states what `cloudGuard` actually
 is: a switch, not a policy — turning it on is what makes the six
@@ -268,14 +268,23 @@ paragraph (`plugin/crew/hooks/scripts/cloud_guard.py:33-55`) states it: a terraf
 also judged by its target environment (`nonProd`, `prod` or `unknown`, from `TF_WORKSPACE`, an
 in-sequence literal `workspace select|new`, `.terraform/environment`, `-var environment=` /
 `TF_VAR_environment`, or a saved plan's sidecar) and by whether it destroys (`yes`, `no`,
-`unknown`, and `unknown` counts as `yes`); `_terraform_verdict` (`:2903`) decides. The sidecar
+`unknown`, and `unknown` counts as `yes`); `_terraform_verdict` (`:2942`) decides. The sidecar
 is `.crew/tfplan/<sha256>.json`, written outside the hook by
 `plugin/crew/hooks/scripts/crew_tfplan.py` (`summarize`, `:174`; `main`, `:237`), which reads
 the plan's workspace out of the plan file itself (`plan_workspace`, `:123`). The config is
-`crew_guards.ENVIRONMENTS_DEFAULTS` (`plugin/crew/hooks/scripts/crew_guards.py:250`):
+`crew_guards.ENVIRONMENTS_DEFAULTS` (`plugin/crew/hooks/scripts/crew_guards.py:251`):
 `environments.nonProd` is repo-only, `environments.prodUnattended` ratchets (below). DERIVED from
 the docstrings and definitions cited; the verdict table itself is `plugin/crew/CONFIG.md`'s
 `environments.*` section, not re-derived here.
+
+**The literal-word allowlist (T-0005 Step 8).** Before the lexer reads anything, `scan` calls
+`_literal_gate` (`plugin/crew/hooks/scripts/cloud_guard.py:2769`, called at `:2802`): a line that
+names terraform, terragrunt or tofu (`crew_guards.names_terraform`,
+`plugin/crew/hooks/scripts/crew_guards.py:1189`) and holds a word that is not a plain literal
+(`crew_guards.first_non_literal`, `:1201`) yields one `terraformApply` finding whose scope `op` is
+`OP_UNREADABLE_LINE`; `_terraform_verdict` answers it before reading any plan or environment
+(ask, denied unattended; `block` denies). The helpers live in `crew_guards.py` because
+`cloud_guard.py` sits at `.pylintrc`'s max-module-lines. DERIVED from the code cited.
 
 **The ratchet registry (`_RATCHETED`, `plugin/crew/hooks/scripts/crew_config.py:2418-2530`)
 now holds 14 keys**, built in seven steps (a literal dict of two at `:2418`, four `.update()`
@@ -288,7 +297,7 @@ calls at `:2433`, `:2446`, `:2457` and `:2467`, and two single-key assignments a
 literal at `:2418-2429` holds only 2. (Before T-0005 this said "five steps" for 13 keys; the
 sites were already six then — the literal, four `.update()` calls and one assignment.) The
 same key is registered in `crew_guards.RATCHETED_KEYS`
-(`plugin/crew/hooks/scripts/crew_guards.py:544-548`).
+(`plugin/crew/hooks/scripts/crew_guards.py:545-549`).
 
 ## `.crew/config.json` vs `.crew/crew.json` — the open 1.0.x authority question
 
@@ -481,7 +490,7 @@ the sha256 of everything the rule is rendered from (`rule_digest`, `:105`), the 
 INDEX.md's Covers cell for it, and the note's Landmines headlines (else its Entry points), capped at
 `RULES_MAX_LINES` = 30 (`:81`). `--check` (`rules`, `:191`) writes nothing and reports each rule
 file missing, stale or orphaned; a hand-written file at a generated path is never overwritten and
-fails `--check`. `.crew/verify.json` rule 23 (`.crew/verify.json:255`) runs `--check` for any change under
+fails `--check`. `.crew/verify.json` rule 23 (`.crew/verify.json:256`) runs `--check` for any change under
 `.claude/rules/**` or `.crew/codemap/**`, so **a code-map edit without a regeneration fails the Stop
 gate** - see `verification-harness.md`. DERIVED from the source above; the command was run by
 T-0015 against this refresh.
@@ -519,7 +528,7 @@ commands call, not a hook - `plugin/crew/hooks/hooks.json` is unchanged since
 - Tests: `plugin/crew/tests/test_refresh_check.py`,
   `plugin/crew/tests/test_scope_guard_refresh_artifacts.py`,
   `plugin/crew/tests/test_completion_audit_refresh_artifacts.py`, with mutations in
-  `plugin/crew/tests/sabotage_refresh.py`; `.crew/verify.json:256-272` (rule
+  `plugin/crew/tests/sabotage_refresh.py`; `.crew/verify.json:257-273` (rule
   24) maps them, `implement.md`, `done.md`, and since review round 3
   `scope_guard.py`, `completion_audit.py`, `crew_freshness.py` and
   `scope_base.py` with their own suites, to one pytest rule. Confirmed
@@ -576,7 +585,7 @@ or nothing" at `adf8d1dd`; T-0008's refresh commit `b7b02842` redrew it as
   — 4 roles, all tiered, none a specialist.
 - `crew_state.PM_DEFAULTS` (`:1082-1095`) and `crew_state.AUTHORITY_DEFAULT`
   (`:1052`) — the unnamed session's own dispatch authority.
-- `crew_guards.ALL_GUARD_NAMES` (`plugin/crew/hooks/scripts/crew_guards.py:194-195`)
+- `crew_guards.ALL_GUARD_NAMES` (`plugin/crew/hooks/scripts/crew_guards.py:195-196`)
   — 10 guard names across 4 vocabularies.
 - `.crew/metrics.jsonl` — append-only, one JSON object per line, replacing
   the pre-1.0 `.crew/metrics.md` (`crew_metrics.py`'s module docstring,
@@ -775,3 +784,14 @@ the CR re-reads, PowerShell quote/CR normalisation, every terragrunt `workspace`
 `:1-6` and `:33-55` were diffed against `22adb579` and are byte-identical. `_terraform_verdict`
 moved `:2655` -> `:2903`; this note said `:2549`, which was already wrong at `22adb579` (it read
 `:2655` there), so the citation was stale before this round and is corrected now.
+
+Then `496ee9b4` -> `3a57b2d2` (T-0005 Step 8, the literal-word allowlist): of the paths this note
+cites, `cloud_guard.py` (the allowlist gate in `scan`, its verdict branch, a docstring paragraph
+after `:55`), `crew_guards.py` (`import re` at `:30`, so every line below it moved +1, and the
+allowlist helpers appended at the end), `plugin/crew/CONFIG.md` (cited by name and section only)
+and `.crew/verify.json` (`crew_guards.py` added to the cloud-guard rule's paths, so rule 23 moved
+`:255` -> `:256` and rule 24 `:256-272` -> `:257-273`) changed. `:1-6` and `:33-55` of
+`cloud_guard.py` were diffed against `496ee9b4` and are byte-identical. Re-taken by content:
+`ALL_GUARD_NAMES` `:195-196`, the guard table's lines, `ENVIRONMENTS_DEFAULTS` `:251`,
+`RATCHETED_KEYS["environments.prodUnattended"]` `:545-549`, `_terraform_verdict` `:2942`. The
+historical re-verify notes above keep the numbers of their own anchors.

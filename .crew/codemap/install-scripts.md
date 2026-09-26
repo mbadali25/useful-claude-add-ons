@@ -1,5 +1,5 @@
 # install-scripts
-anchor: useful-claude-add-ons@2170d72e
+anchor: useful-claude-add-ons@3a57b2d2
 verified: 2026-09-25
 
 ## Re-derive provenance
@@ -426,3 +426,12 @@ removed, so `:2217` and `:2228` hold; re-read) and `plugin/crew/BUDGETS.md` (the
 figure re-measured, now 18,009 lines, 120 files). The install scripts, `README.md` and
 `scripts/check-marketplace.py` did not change.
 
+## Re-anchor provenance - `2170d72e` -> `3a57b2d2`, 2026-09-26 (T-0005 rounds 3-4 and Step 8)
+
+`git diff --name-only 2170d72e 3a57b2d2 -- <the paths this note cites>` returns only
+`plugin/crew/README.md` (the cloud-guard section gained the allowlist paragraph, 21 lines above
+the command table, so the `34 commands` claim moved `:2217` -> `:2238` and `4 agents` `:2228` ->
+`:2249`; both re-read and still true) and `plugin/crew/BUDGETS.md` (marker still `:10`; the `:11`
+figure re-measured, now 18,050 lines, 120 files). The version files are byte-identical to
+`2170d72e` (crew 1.0.41 was stepped back and re-set). The install scripts, `README.md` and
+`scripts/check-marketplace.py` did not change.

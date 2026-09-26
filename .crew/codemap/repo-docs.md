@@ -1,5 +1,5 @@
 # repo-docs
-anchor: useful-claude-add-ons@2170d72e
+anchor: useful-claude-add-ons@3a57b2d2
 verified: 2026-09-25
 
 ## Re-derive provenance
@@ -287,7 +287,7 @@ listing the directory.
 - **`docs/runbooks/INDEX.md` still does not exist.** `docs/runbooks/`
   contains `rollback.md` alone (re-confirmed by `ls`).
   `plugin/crew/skills/crew-runbooks/SKILL.md:80` and
-  `plugin/crew/README.md:1767` (`:1728` at `8d447a7d`, `:1725` at `f2bb919b`, `:1604` before that,
+  `plugin/crew/README.md:1788` (`:1767` at `2170d72e`, `:1728` at `8d447a7d`, `:1725` at `f2bb919b`, `:1604` before that,
   that file having changed in each range — re-grepped, not offset) both still describe
   `docs/runbooks/INDEX.md` as a symptom-keyed index that would live there.
   JUDGEMENT, unchanged: costs nothing with one runbook, becomes a real gap at
@@ -389,10 +389,10 @@ listing the directory.
   policy, not re-verified again at this pass) and is present in this fresh
   worktree. `verification-harness.md` owns this file's full contents; this
   note only records what changed in its own tracked citations. Since
-  `6c497a14` one rule was appended (`:255` since T-0005 inserted a rule above it; `:244` after T-0008's review round 3
+  `6c497a14` one rule was appended (`:256` since T-0005 Step 8 added a path above it; `:255` since T-0005 inserted a rule above it; `:244` after T-0008's review round 3
   added a path above it; `:243` when #228 added it): `.claude/rules/**` and
   `.crew/codemap/**` now run `crew_instructions.py rules --root . --check`.
-  Since `f2bb919b` another follows it (`:256-272`, T-0008): changes to
+  Since `f2bb919b` another follows it (`:257-273`, T-0008): changes to
   `plugin/crew/hooks/scripts/crew_refresh_check.py`, its tests,
   `plugin/crew/commands/implement.md` or `plugin/crew/commands/done.md` -
   and since review round 3 `scope_guard.py`, `completion_audit.py`,
@@ -491,3 +491,11 @@ at `:1183` did not move), `CHANGELOG.md` (cited without a line) and the version 
 changed: `plugin/crew/README.md` (one row rewritten in place at `:971`; `:1767` holds, re-read) and
 `CHANGELOG.md` (the 1.0.41 entry gained round 2's bullets; cited by name only).
 
+## Re-anchor provenance - `2170d72e` -> `3a57b2d2`, 2026-09-26 (T-0005 rounds 3-4 and Step 8)
+
+`git diff --name-only 2170d72e 3a57b2d2 -- <the paths this note cites>` returns
+`plugin/crew/README.md` (the allowlist paragraph and two sentences above the runbooks section, so
+the `docs/runbooks/INDEX.md` mention moved `:1767` -> `:1788`, re-read), `.crew/verify.json`
+(`crew_guards.py` added to the cloud-guard rule, so the `.claude/rules/` rule moved `:255` ->
+`:256` and the refresh-check rule `:256-272` -> `:257-273`; corrected above) and `CHANGELOG.md`
+(the 1.0.41 entry gained the allowlist bullet; cited by name only).
