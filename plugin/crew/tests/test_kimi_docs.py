@@ -190,11 +190,17 @@ _KIMI_SUITE = ("test_kimi_probe.py", "test_review_run_kimi.py", "test_review_ver
         "skills/crew-providers/SKILL.md", "commands/model.md",
         "skills/crew-providers/alternative-providers.md")],
     ("plugin/crew/hooks/scripts/crew_state.py", ("test_provider_table.py",)),
+    ("plugin/crew/skills/crew-setup/SKILL.md", ("test_crew_config.py",)),
+    ("plugin/crew/CONFIG.md", ("test_crew_config.py",)),
+    ("plugin/crew/templates/config.template.json", ("test_crew_config.py",)),
 ])
 def test_every_kimi_file_reaches_a_rule_that_runs_its_tests(path, needs):
     """Round 1 FIX (.crew/verify.json:263): the fake kimi, the fixture and two
     Kimi test files matched no rule running the Kimi suite, and crew_state.py's
-    rule never ran test_provider_table.py, which holds the family guard."""
+    rule never ran test_provider_table.py, which holds the family guard. Round
+    3 FIX (.crew/verify.json:168): crew-setup SKILL.md carries the Kimi
+    defaults test_crew_config.py compares, yet no rule that maps it ran that
+    module, so a broken template passed the Stop gate."""
     with open(os.path.join(CREW, "..", "..", ".crew", "verify.json"), encoding="utf-8") as fh:
         rules = json.load(fh)["rules"]
 
@@ -221,3 +227,26 @@ def test_every_file_this_module_reads_is_mapped_to_it():
                            if any(_gate_matches(f"plugin/crew/{rel}", p) for p in r["paths"]))]
 
     assert (len(read) >= 4, unmapped) == (True, [])
+
+
+def test_review_kimi_step_label_names_one_step():
+    """Round 3 NIT (review.md:431): Kimi was labelled 2d beside an existing
+    **Step 2d** heading, so the probe table's "step 2d" led to two steps."""
+    body = _read("commands", "review.md")
+    row = next(r for r in _probe_rows(body) if r.startswith("| `kimi`"))
+    label = re.search(r"\| step (2[a-z]) \|$", row).group(1)
+    headings = [h for h in re.findall(r"^\*\*Step ([^*]+)\*\*", body, re.M)
+                if re.search(rf"(^|, ){label} ", h)]
+
+    assert len(headings) == 1 and f"{label} — Kimi" in headings[0], headings
+
+
+def test_review_kimi_paragraph_names_what_is_set_aside():
+    """Round 3 NIT (review.md:432): the prose said only graph.out was set aside
+    while the code set aside more; it now names the same set as the code."""
+    body = _read("commands", "review.md")
+    para = next(line for line in body.splitlines()
+                if line.startswith("Kimi reads the same `$SCRATCH/prompt.txt`"))
+
+    assert [t for t in ("graph.out", ".idea/", ".vscode/", ".crew/guard.log",
+                        ".crew/.autoclear.log", "__pycache__") if t not in para] == []

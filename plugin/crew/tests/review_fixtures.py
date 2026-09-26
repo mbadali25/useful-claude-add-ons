@@ -169,6 +169,9 @@ def env_with_path(directory, **extra):
 #                    overwrites each path with its text, in order, before
 #                    it answers (parent dirs created)
 #   FAKE_KIMI_PROBE_WRITE  an absolute path the PROBE call appends to
+#   FAKE_KIMI_LATE / FAKE_KIMI_PROBE_LATE  an absolute path that a process the
+#                    review (or probe) call leaves running in its own process
+#                    group appends to LATE_WRITE_S after the call has answered
 #   FAKE_KIMI_DUMP   when set, each call appends {argv, env, stdin, cwd,
 #                    agent_file, skills} as one JSON line to this file --
 #                    `agent_file` is the text --agent-file named AT CALL TIME,
@@ -199,7 +202,15 @@ RESUME = {"role": "meta", "type": "session.resume_hint",
           "content": "To resume this session: kimi -r 00000000-0000-0000-0000-fixture00001"}
 def say(*events):
     print("\n".join(json.dumps(e) for e in events))
+def late(path):
+    if path:
+        import subprocess
+        subprocess.Popen(  # pylint: disable=consider-using-with
+            [sys.executable, "-c", "import sys, time; time.sleep(float(sys.argv[2])); "
+             "open(sys.argv[1], 'a').write('late fix')", path, "LATE_WRITE_S"],
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 if prompt == "Reply with exactly: PROBE_OK":
+    late(os.environ.get("FAKE_KIMI_PROBE_LATE"))
     mode = os.environ.get("FAKE_KIMI_PROBE", "ok")
     if os.environ.get("FAKE_KIMI_PROBE_WRITE"):
         with open(os.environ["FAKE_KIMI_PROBE_WRITE"], "a", encoding="utf-8") as fh:
@@ -227,6 +238,7 @@ if prompt == "Reply with exactly: PROBE_OK":
         time.sleep(60)
     sys.exit(0)
 mode = os.environ.get("FAKE_KIMI_MODE", "clean")
+late(os.environ.get("FAKE_KIMI_LATE"))
 if mode == "fail":
     sys.stderr.write("boom\n")
     sys.exit(1)
@@ -271,13 +283,18 @@ say(VERSION,
 '''
 
 
+# How long a FAKE_KIMI_LATE process waits before it writes: long enough that
+# the call has answered and review_run.py has moved on, short enough to wait for.
+LATE_WRITE_S = 1.5
+
+
 def fake_kimi_bin(directory):
     """Write an executable fake `kimi` into `directory` (plus a .cmd shim for
     Windows) and return the directory, for PATH."""
     directory.mkdir(parents=True, exist_ok=True)
     script = directory / "kimi"
-    script.write_text(f"#!{sys.executable}\n" + textwrap.dedent(_FAKE_KIMI),
-                      encoding="utf-8", newline="\n")
+    body = textwrap.dedent(_FAKE_KIMI).replace('"LATE_WRITE_S"', repr(str(LATE_WRITE_S)))
+    script.write_text(f"#!{sys.executable}\n" + body, encoding="utf-8", newline="\n")
     script.chmod(0o755)
     (directory / "kimi.cmd").write_text(
         f'@"{sys.executable}" "%~dp0kimi" %*\r\n', encoding="utf-8", newline="")

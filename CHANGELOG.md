@@ -42,11 +42,18 @@ All notable changes to this repository are documented here. Format follows [Keep
     rewrites it mid-review, and a write there fixes no code. It is resolved
     once, before the probe, from the tree as it was - a reviewer that writes
     `.crew/crew.json` can no longer move it - and a write to `.crew/crew.json`
-    or `.crew/config.json` always counts. Ignored files under the fixed
-    `TOOL_CACHES` (`.pytest_cache`, `__pycache__`, `.ruff_cache`,
-    `.mypy_cache`, `node_modules/.cache`) are set aside too, so a concurrent
-    pytest does not spend the round; every other ignored file, `.env`
-    included, still counts. A tree that cannot be fingerprinted before the
+    or `.crew/config.json` always counts. Every tracked file's contents are
+    hashed whatever `git status` says, so a skip-worktree or assume-unchanged
+    flag, or a `.git/config` that stops git trusting ctime, hides no edit.
+    Nested repositories and submodules are fingerprinted in turn, and any
+    other directory is walked. Whatever a Kimi call leaves running in its
+    process group is killed before the tree is checked. Set aside while
+    gitignored before and after: IDE state (`.idea/`, `.vscode/`),
+    `.crew/guard.log`, `.crew/.autoclear.log` and context-watch's markers,
+    which crew's own hooks write mid-review. Tool caches are NOT set aside:
+    a `__pycache__` .pyc, a lint cache or a bundler cache is read back by the
+    next run. Every other ignored file, `.env` and the verify gate's
+    `.crew/` files included, still counts. A tree that cannot be fingerprinted before the
     probe (an unreadable ignored file, say) stops there as
     `unknown - cannot fingerprint the tree`, naming the path: no probe
     request, no round. Not caught: a
@@ -54,7 +61,7 @@ All notable changes to this repository are documented here. Format follows [Keep
     Stream error text is redacted before it becomes a reason, and
     `review.json` records the alias actually launched as `model_launched`.
   - `qa.kimi.model` / `dev.kimi.model` (default `null`); no
-    `reasoningEffort` key. `review.md` step 2d, `model.md`, `crew-providers`
+    `reasoningEffort` key. `review.md` step 2e, `model.md`, `crew-providers`
     and `providers.sh` (probe only with `--probe-kimi`) document it.
   - **The stream-json parser is tested against a real run.**
     `tests/fixtures/kimi-stream-2.1.1/ok.jsonl` is the owner's one captured

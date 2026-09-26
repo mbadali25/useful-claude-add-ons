@@ -9,6 +9,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 
 import pytest
 import yaml
@@ -17,7 +18,8 @@ import context  # noqa: F401  pylint: disable=unused-import
 import kimi_probe
 import review_ledger as rl
 import review_run
-from review_fixtures import env_with_path, fake_kimi_bin, git, init_repo, kimi_home
+from review_fixtures import (LATE_WRITE_S, env_with_path, fake_kimi_bin, git, init_repo,
+                             kimi_home)
 
 _SCRIPTS = os.path.join(context._ROOT, "hooks", "scripts")  # pylint: disable=protected-access
 _RUN = os.path.join(_SCRIPTS, "review_run.py")
@@ -205,6 +207,20 @@ def test_tree_fingerprint_sees_a_committed_edit(repo):
                    capture_output=True)
 
     assert review_run.tree_fingerprint(str(repo)) != before
+
+
+def test_tree_fingerprint_sees_a_move_of_head_alone(repo):
+    """Every tracked file is hashed now (round 3), so a committed edit is seen
+    through its file too; `:HEAD` is what sees a commit that changes no file,
+    and a `reset --soft` that un-commits one."""
+    git(repo, "add", "-A")
+    git(repo, "commit", "-qm", "base")
+    before = review_run.tree_fingerprint(str(repo))
+
+    git(repo, "commit", "-q", "--allow-empty", "-m", "reviewer was here")
+
+    assert review_run.reviewer_changes(before, review_run.tree_fingerprint(str(repo)),
+                                       None)[0] == [":HEAD"]
 
 
 def test_tree_fingerprint_outside_a_repository_is_none(tmp_path):
@@ -555,47 +571,55 @@ def test_run_kimi_mode_000_ignored_file_spends_no_round(repo, tmp_path):
     assert rl.status(str(repo), "T1")["rounds"] == []
 
 
-# --- round 2 FIX review_run.py:221: tool caches are not the reviewer's ----------
+# --- round 2 FIX review_run.py:221, round 3 FIX :127 and NIT :360: what is set aside
 
 
-def test_tool_caches_are_the_fixed_tuple():
-    assert review_run.TOOL_CACHES == (".pytest_cache", "__pycache__", ".ruff_cache",
-                                      ".mypy_cache", "node_modules/.cache")
+def test_set_aside_names_are_the_fixed_tuples():
+    assert (review_run.IDE_DIRS, review_run.CREW_LOGS, review_run.CREW_MARKERS) == (
+        (".idea", ".vscode"), (".crew/guard.log", ".crew/.autoclear.log"),
+        (".crew/.handoff-requested", ".crew/.autoclear-sent"))
 
 
-_CACHE_WRITES = ",".join((".pytest_cache/v/cache/lastfailed", "pkg/__pycache__/m.cpython-314.pyc",
-                          ".ruff_cache/0.6/abc", "sub/.mypy_cache/3.12/m.json",
-                          "node_modules/.cache/babel/x.json"))
-
-
-def _cache_repo(repo, ignore=True):
-    lines = ["__pycache__/", ".pytest_cache/", ".ruff_cache/", ".mypy_cache/", "node_modules/",
-             ".env"] if ignore else [".env"]
+def _ignore_repo(repo, lines=(".crew/*", ".idea/", ".vscode/", "__pycache__/", ".pytest_cache/",
+                              ".ruff_cache/", ".mypy_cache/", "node_modules/", ".env",
+                              ".coverage", "*.swp")):
     (repo / ".gitignore").write_text("\n".join(lines) + "\n", encoding="utf-8")
     (repo / ".env").write_text("TOKEN=placeholder\n", encoding="utf-8")
     git(repo, "add", ".gitignore")
-    git(repo, "commit", "-qm", "ignore caches")
+    git(repo, "commit", "-qm", "ignore")
     return repo
 
 
-def test_run_kimi_a_concurrent_tool_cache_write_is_not_the_reviewers(repo, tmp_path):
-    """Round 2: a background pytest or ruff writing its ignored cache spent the
-    round as INCOMPLETE with no reviewer write at all."""
-    _cache_repo(repo)
+_NOT_THE_REVIEWERS = (".crew/guard.log", ".crew/.autoclear.log",
+                      ".crew/.handoff-requested", ".crew/.handoff-requested-a1b2",
+                      ".crew/.autoclear-sent-a1b2", ".idea/workspace.xml",
+                      ".vscode/settings.json", "sub/.idea/misc.xml")
 
-    result, review = _run(repo, tmp_path, FAKE_KIMI_WRITES=_CACHE_WRITES)
+
+def test_run_kimi_crew_hook_logs_and_ide_files_are_not_the_reviewers(repo, tmp_path):
+    """Round 3: crew's own hooks (guard.log, the auto-clear log and markers) and
+    an IDE write ignored files mid-review, and each one spent the round."""
+    _ignore_repo(repo)
+
+    result, review = _run(repo, tmp_path, FAKE_KIMI_WRITES=",".join(_NOT_THE_REVIEWERS))
 
     assert (result.returncode, review["verdict"]) == (0, "CLEAN"), review["reasons"]
-    assert "pkg/__pycache__/m.cpython-314.pyc" in result.stderr
+    assert [p for p in _NOT_THE_REVIEWERS if p not in result.stderr] == []
 
 
-@pytest.mark.parametrize("path", [".env", ".crew/config.json"])
-def test_run_kimi_an_ignored_secret_or_config_edit_still_counts(repo, tmp_path, path):
-    _cache_repo(repo)
-    with open(repo / ".gitignore", "a", encoding="utf-8") as fh:
-        fh.write(".crew/config.json\n")
-    (repo / ".crew").mkdir()
-    (repo / ".crew" / "config.json").write_text('{"a": 1}\n', encoding="utf-8")
+@pytest.mark.parametrize("path", [
+    "pkg/__pycache__/m.cpython-314.pyc", ".pytest_cache/v/cache/lastfailed", ".ruff_cache/0.6/abc",
+    "sub/.mypy_cache/3.12/m.json", "node_modules/.cache/babel/x.json",
+    ".crew/.verify-verified-at", ".crew/.verify-gate.fingerprint",
+    ".crew/.verify-gate.record.json", ".crew/.verify-gate.timings.json", ".crew/.scope-base",
+    ".crew/guard.log.1", ".crew/.handoff-requestedX", ".crew/.handoff-requested-a/b",
+    ".crew/config.json", ".env", ".coverage", ".seed.txt.swp", "x.idea/y", ".idea"])
+def test_run_kimi_a_cache_or_gate_input_write_still_counts(repo, tmp_path, path):
+    """Round 3 NIT :360: CPython runs a `__pycache__` .pyc whose header matches
+    its source, so a write there changes what the tests execute. Every tool
+    cache has that shape (a cached verdict or cached output a later run trusts),
+    and so does every crew file a gate reads -- the verify marker above all."""
+    _ignore_repo(repo)
 
     result, review = _run(repo, tmp_path, FAKE_KIMI_WRITES=path)
 
@@ -603,20 +627,379 @@ def test_run_kimi_an_ignored_secret_or_config_edit_still_counts(repo, tmp_path, 
     assert any(path in r for r in review["reasons"] if "working tree changed" in r)
 
 
-def test_run_kimi_a_cache_path_that_is_not_ignored_still_counts(repo, tmp_path):
-    """The exemption is for IGNORED caches: an untracked, non-ignored file in a
-    `__pycache__` directory is a reviewer write like any other."""
-    _cache_repo(repo, ignore=False)
+def test_run_kimi_an_ide_path_that_is_not_ignored_still_counts(repo, tmp_path):
+    """The exemption is for IGNORED paths: an untracked, non-ignored file under
+    `.idea/` is a reviewer write like any other."""
+    _ignore_repo(repo, lines=(".env",))
 
-    result, review = _run(repo, tmp_path, FAKE_KIMI_WRITES="pkg/__pycache__/m.cpython-314.pyc")
+    result, review = _run(repo, tmp_path, FAKE_KIMI_WRITES=".idea/workspace.xml")
 
     assert (result.returncode, review["verdict"]) == (3, "INCOMPLETE")
 
 
-@pytest.mark.parametrize("rel,cache", [
-    ("pkg/__pycache__/m.pyc", True), ("node_modules/.cache/x", True),
-    (".pytest_cache/v/x", True), ("__pycache__", False), ("node_modules/x/.cache", False),
-    ("my__pycache__/x", False), ("node_modules/.cachex/y", False), (".env", False),
+def test_a_rewrite_with_the_same_content_is_no_change(repo):
+    """The verify gate rewrites `.crew/.verify-verified-at` on every clean Stop
+    (verify-gate.sh:122); at an unchanged HEAD it writes the same sha, and the
+    fingerprint hashes CONTENT, so that rewrite is not a change."""
+    _ignore_repo(repo)
+    marker = repo / ".crew" / ".verify-verified-at"
+    marker.parent.mkdir()
+    marker.write_text(git(repo, "rev-parse", "HEAD") + "\n", encoding="utf-8")
+    before = review_run.tree_fingerprint(str(repo))
+
+    marker.write_text(git(repo, "rev-parse", "HEAD") + "\n", encoding="utf-8")
+
+    assert review_run.tree_fingerprint(str(repo)) == before
+
+
+# --- round 3 BLOCK review_run.py:317: "ignored THROUGHOUT" has a failing control --
+
+
+@pytest.mark.parametrize("rel", [".idea/workspace.xml", ".crew/guard.log"])
+@pytest.mark.parametrize("now_ignored", [True, False])
+def test_a_set_aside_path_whose_ignore_state_flipped_still_counts(repo, rel, now_ignored):
+    """A reviewer that adds a path to `.git/info/exclude` (which the fingerprint
+    does not hash) and then rewrites it moves it from `??` to `!!`; the reverse
+    edit moves it from `!!` to `??`. Neither state held throughout."""
+    target, exclude = repo / rel, repo / ".git" / "info" / "exclude"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    exclude.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("before\n", encoding="utf-8")
+    exclude.write_text("" if now_ignored else rel + "\n", encoding="utf-8")
+    before = review_run.tree_fingerprint(str(repo))
+
+    exclude.write_text(rel + "\n" if now_ignored else "", encoding="utf-8")
+    target.write_text("after\n", encoding="utf-8")
+
+    assert review_run.reviewer_changes(before, review_run.tree_fingerprint(str(repo)),
+                                       None) == ([rel], [])
+
+
+@pytest.mark.parametrize("rel,kept", [
+    ("pkg/.idea/x", True), (".vscode/a/b.json", True), (".idea", False), ("my.idea/x", False),
+    (".idea-old/x", False), (".crew/guard.log", True), ("sub/.crew/guard.log", False),
+    (".crew/.autoclear-sent", True), (".crew/.autoclear-sent-k", True),
+    (".crew/.autoclear-sent-k/x", False), (".crew/.autoclear-sentk", False),
+    ("pkg/__pycache__/m.pyc", False),
 ])
-def test_tool_cache_matches_by_whole_segment(rel, cache):
-    assert review_run._tool_cache(rel) is cache  # pylint: disable=protected-access
+def test_set_aside_matches_by_whole_segment_and_whole_name(rel, kept):
+    assert review_run._not_a_check_input(rel) is kept  # pylint: disable=protected-access
+
+
+# --- round 3 FIX review_run.py:246: every tracked file is hashed ------------------
+
+
+_OLD_NS = 1_600_000_000_000_000_000
+
+
+def _old_mtime(repo):
+    """seed.txt given a 2020 mtime and re-added, so the index records it."""
+    os.utime(repo / "seed.txt", ns=(_OLD_NS, _OLD_NS))
+    git(repo, "add", "seed.txt")
+
+
+def _index_flag(flag):
+    def hide(repo):
+        git(repo, "update-index", flag, "seed.txt")
+        (repo / "seed.txt").write_text("FIXED\n", encoding="utf-8")
+    return hide
+
+
+def _stat_config(key, value):
+    def hide(repo):
+        git(repo, "config", key, value)
+        size = (repo / "seed.txt").stat().st_size
+        (repo / "seed.txt").write_text("X" * (size - 1) + "\n", encoding="utf-8")
+        os.utime(repo / "seed.txt", ns=(_OLD_NS, _OLD_NS))
+    return hide
+
+
+@pytest.mark.parametrize("hide", [_index_flag("--skip-worktree"),
+                                  _index_flag("--assume-unchanged"),
+                                  _stat_config("core.trustctime", "false"),
+                                  _stat_config("core.checkStat", "minimal")],
+                         ids=["skip-worktree", "assume-unchanged", "trustctime", "checkStat"])
+def test_tree_fingerprint_sees_an_edit_git_status_does_not_report(repo, hide):
+    """Round 3: an index flag hides a tracked file's edit from `git status`,
+    and so (measured) does a same-size rewrite that restores the mtime once
+    `.git/config` -- which the fingerprint does not hash -- stops git trusting
+    ctime. Hashing every tracked file's contents does not ask git."""
+    _old_mtime(repo)
+    before = review_run.tree_fingerprint(str(repo))
+
+    hide(repo)
+
+    assert review_run.reviewer_changes(before, review_run.tree_fingerprint(str(repo)),
+                                       None)[0] == ["seed.txt"]
+
+
+@pytest.mark.parametrize("flag", ["--skip-worktree", "--assume-unchanged"])
+def test_tree_fingerprint_sees_an_edit_under_a_flag_set_before_the_review(repo, flag):
+    git(repo, "update-index", flag, "seed.txt")
+    before = review_run.tree_fingerprint(str(repo))
+
+    (repo / "seed.txt").write_text("FIXED\n", encoding="utf-8")
+
+    assert review_run.reviewer_changes(before, review_run.tree_fingerprint(str(repo)),
+                                       None)[0] == ["seed.txt"]
+
+
+# --- round 3 FIX review_run.py:194: a nested repository is hashed, not "dir" -------
+
+
+def _nested(repo, where):
+    inner = init_repo(repo / "vendor" / "lib")
+    if where == "ignored":
+        (repo / ".gitignore").write_text("vendor/\n", encoding="utf-8")
+        git(repo, "add", ".gitignore")
+        git(repo, "commit", "-qm", "ignore vendor")
+    return inner
+
+
+def _submodule(repo, tmp_path, ignore_all=False):
+    src = init_repo(tmp_path / "src")
+    git(repo, "-c", "protocol.file.allow=always", "submodule", "add", "-q", str(src), "lib")
+    git(repo, "commit", "-qm", "submodule")
+    if ignore_all:
+        git(repo, "config", "submodule.lib.ignore", "all")
+    return repo / "lib"
+
+
+@pytest.mark.parametrize("where", ["untracked", "ignored"])
+@pytest.mark.parametrize("dirty_before", [False, True])
+def test_tree_fingerprint_sees_an_edit_inside_a_nested_repository(repo, where, dirty_before):
+    inner = _nested(repo, where)
+    if dirty_before:
+        (inner / "seed.txt").write_text("dirty\n", encoding="utf-8")
+    before = review_run.tree_fingerprint(str(repo))
+
+    (inner / "seed.txt").write_text("FIXED\n", encoding="utf-8")
+
+    assert review_run.reviewer_changes(before, review_run.tree_fingerprint(str(repo)),
+                                       None)[0] == ["vendor/lib"]
+
+
+@pytest.mark.parametrize("ignore_all", [False, True])
+@pytest.mark.parametrize("dirty_before", [False, True])
+def test_tree_fingerprint_sees_an_edit_inside_a_submodule(repo, tmp_path, ignore_all,
+                                                          dirty_before):
+    """A dirty submodule stayed ` M lib` / `dir` whatever changed inside it;
+    `submodule.<name>.ignore=all` in `.git/config` hides it from status."""
+    inner = _submodule(repo, tmp_path, ignore_all)
+    if dirty_before:
+        (inner / "seed.txt").write_text("dirty\n", encoding="utf-8")
+    before = review_run.tree_fingerprint(str(repo))
+
+    (inner / "seed.txt").write_text("FIXED\n", encoding="utf-8")
+
+    assert review_run.reviewer_changes(before, review_run.tree_fingerprint(str(repo)),
+                                       None)[0] == ["lib"]
+
+
+def test_tree_fingerprint_of_a_nested_repository_with_no_commit(repo):
+    inner = repo / "scratch-clone"
+    inner.mkdir()
+    git(inner, "init", "-q")
+    (inner / "a.txt").write_text("a\n", encoding="utf-8")
+    before = review_run.tree_fingerprint(str(repo))
+
+    (inner / "a.txt").write_text("FIXED\n", encoding="utf-8")
+
+    assert before is not None
+    assert review_run.reviewer_changes(before, review_run.tree_fingerprint(str(repo)),
+                                       None)[0] == ["scratch-clone"]
+
+
+def test_tree_fingerprint_sees_a_write_into_an_uninitialised_submodule(repo, tmp_path):
+    """Neighbour of the nested-repository FIX, measured: after `git submodule
+    deinit`, a file written into the empty `lib/` is listed by no `git status`
+    mode. A directory is walked, never hashed as a constant."""
+    _submodule(repo, tmp_path)
+    git(repo, "submodule", "deinit", "-q", "-f", "lib")
+    before = review_run.tree_fingerprint(str(repo))
+
+    (repo / "lib" / "conftest.py").write_text("FIXED = True\n", encoding="utf-8")
+
+    assert review_run.reviewer_changes(before, review_run.tree_fingerprint(str(repo)),
+                                       None)[0] == ["lib"]
+
+
+def test_tree_fingerprint_a_broken_nested_git_file_is_walked_as_plain_files(repo):
+    """git lists a directory whose `.git` names no repository file by file;
+    those files are hashed like any untracked file (control)."""
+    inner = repo / "vendor" / "broken"
+    inner.mkdir(parents=True)
+    (inner / ".git").write_text("gitdir: /nonexistent/crew-test\n", encoding="utf-8")
+    (inner / "a.txt").write_text("a\n", encoding="utf-8")
+    before = review_run.tree_fingerprint(str(repo))
+
+    (inner / "a.txt").write_text("FIXED\n", encoding="utf-8")
+
+    assert review_run.reviewer_changes(before, review_run.tree_fingerprint(str(repo)),
+                                       None)[0] == ["vendor/broken/a.txt"]
+
+
+# --- round 3 NIT review_run.py:250: a worktree rename --------------------------------
+
+
+def test_tree_fingerprint_reads_a_worktree_rename_as_two_paths(repo):
+    """`git add -N` on a moved file gave ` R`, and its source path was parsed
+    as an entry of its own: a key `.txt` stat'ing a truncated path."""
+    (repo / "seed.txt").rename(repo / "moved.txt")
+    git(repo, "add", "-N", "moved.txt")
+
+    snapshot = review_run.tree_fingerprint(str(repo))
+
+    assert sorted(k for k in snapshot if not k.startswith(":")) == [
+        "change.txt", "moved.txt", "seed.txt"]
+    assert snapshot["seed.txt"].endswith(" missing")
+
+
+# --- round 3 NIT review_run.py:628: a probe fingerprint that failed ----------------
+
+
+def test_run_kimi_unfingerprintable_tree_after_the_probe_spends_no_round(repo, tmp_path,
+                                                                        monkeypatch, capsys):
+    scratch, work = tmp_path / "scratch", tmp_path / "work"
+    _bundle(repo, scratch)
+    fakes = fake_kimi_bin(tmp_path / "bin")
+    monkeypatch.setenv("PATH", str(fakes) + os.pathsep + os.environ.get("PATH", ""))
+    monkeypatch.setenv("KIMI_CODE_HOME", str(kimi_home(tmp_path / "kimi-home")))
+    real, taken = review_run.tree_fingerprint, []
+
+    def fingerprint(root, problems=None):
+        taken.append(root)
+        return real(root, problems) if len(taken) == 1 else None
+
+    monkeypatch.setattr(review_run, "tree_fingerprint", fingerprint)
+
+    code = review_run.main(["--root", str(repo), "--ticket", "T1", "--scratch", str(scratch),
+                            "--provider", "kimi", "--model", "k3", "--work-dir", str(work)])
+    err = capsys.readouterr().err
+
+    assert (code, (work / "review.json").exists()) == (2, False)
+    assert rl.status(str(repo), "T1")["rounds"] == []
+    assert "could not be fingerprinted after the probe" in err
+
+
+# --- round 3 NIT review_run.py:643: a process the reviewer left running ------------
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX process groups; see review_run's NOT SEEN")
+@pytest.mark.parametrize("knob", ["FAKE_KIMI_LATE", "FAKE_KIMI_PROBE_LATE"])
+def test_run_kimi_a_process_left_running_cannot_write_after_the_check(repo, tmp_path, knob):
+    """A background process the review (or probe) call started wrote the tree
+    a moment after the leader exited -- after the fingerprint was taken, so
+    the round read CLEAN and the write landed unreviewed."""
+    seed = (repo / "seed.txt").read_text(encoding="utf-8")
+
+    result, review = _run(repo, tmp_path, **{knob: str(repo / "seed.txt")})
+    time.sleep(LATE_WRITE_S + 1.5)
+
+    assert (repo / "seed.txt").read_text(encoding="utf-8") == seed
+    assert (result.returncode, review["verdict"]) == (0, "CLEAN"), review["reasons"]
+
+
+def test_a_git_dir_that_is_not_its_own_repository_is_could_not_tell(repo):
+    """A `.git` git does not accept (here an empty directory) makes git inside
+    it walk UP to the parent: that subtree must never be fingerprinted as if it
+    were a repository of its own. Driven through `_entry_digest` directly,
+    because a top-level `git status` over such a submodule already fails."""
+    (repo / "d" / ".git").mkdir(parents=True)
+    (repo / "d" / "a.txt").write_text("a\n", encoding="utf-8")
+    problems = []
+
+    assert review_run._entry_digest(str(repo), "d", problems, 0) is None  # pylint: disable=protected-access
+    assert any(p.startswith("d holds a .git") for p in problems), problems
+
+
+def test_tree_fingerprint_nested_deeper_than_the_cap_is_none(repo):
+    where = repo
+    for _ in range(review_run.NESTED_DEPTH + 1):
+        where = where / "n"
+        where.mkdir()
+        git(where, "init", "-q")
+        (where / "a.txt").write_text("a\n", encoding="utf-8")
+    problems = []
+
+    assert review_run.tree_fingerprint(str(repo), problems) is None
+    assert any("nested more than" in p for p in problems), problems
+
+
+@pytest.mark.skipif(not os.path.isdir("/proc/self"), reason="reads /proc")
+def test_group_alive_ignores_a_zombie_and_sees_a_live_member():
+    """A killed member stays a zombie until something reaps it, and a zombie
+    still answers signal 0: it must not read as a survivor."""
+    live = subprocess.Popen(["sleep", "30"], start_new_session=True)  # pylint: disable=consider-using-with
+    dead = subprocess.Popen(["true"], start_new_session=True)  # pylint: disable=consider-using-with
+    try:
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            with open(f"/proc/{dead.pid}/stat", encoding="ascii") as fh:
+                if fh.read().rsplit(")", 1)[1].split()[0] == "Z":
+                    break
+            time.sleep(0.05)
+
+        assert (review_run._group_alive(live.pid),  # pylint: disable=protected-access
+                review_run._group_alive(dead.pid)) == (True, False)  # pylint: disable=protected-access
+    finally:
+        live.kill()
+        live.wait()
+        dead.wait()
+
+
+def test_stop_survivors_that_will_not_die_is_could_not_tell(monkeypatch):
+    monkeypatch.setattr(review_run, "_group_alive", lambda _pgid: True)
+    monkeypatch.setattr(review_run.os, "killpg", lambda *_a: None)
+    monkeypatch.setattr(review_run, "POST_KILL_TIMEOUT", 0.2)
+    if os.name == "nt":
+        pytest.skip("no process group is probed on Windows")
+
+    assert review_run.stop_survivors([12345]) == (True, review_run.KIMI_SURVIVOR_UNKNOWN)
+
+
+def _main_with_survivor_unknown(repo, tmp_path, monkeypatch, capsys):
+    scratch, work = tmp_path / "scratch", tmp_path / "work"
+    _bundle(repo, scratch)
+    fakes = fake_kimi_bin(tmp_path / "bin")
+    monkeypatch.setenv("PATH", str(fakes) + os.pathsep + os.environ.get("PATH", ""))
+    monkeypatch.setenv("KIMI_CODE_HOME", str(kimi_home(tmp_path / "kimi-home")))
+    calls = []
+
+    def stop(started):
+        calls.append(started)
+        return (True, review_run.KIMI_SURVIVOR_UNKNOWN) if len(calls) == 2 else (False, None)
+
+    monkeypatch.setattr(review_run, "stop_survivors", stop)
+    code = review_run.main(["--root", str(repo), "--ticket", "T1", "--scratch", str(scratch),
+                            "--provider", "kimi", "--model", "k3", "--work-dir", str(work)])
+    capsys.readouterr()
+    review_path = work / "review.json"
+    return code, json.loads(review_path.read_text(encoding="utf-8")) \
+        if review_path.exists() else None
+
+
+def test_run_kimi_a_review_survivor_that_will_not_die_is_incomplete(repo, tmp_path, monkeypatch,
+                                                                   capsys):
+    code, review = _main_with_survivor_unknown(repo, tmp_path, monkeypatch, capsys)
+
+    assert (code, review["verdict"]) == (3, "INCOMPLETE")
+    assert review_run.KIMI_SURVIVOR_UNKNOWN in review["reasons"]
+
+
+def test_run_kimi_a_probe_survivor_that_will_not_die_spends_no_round(repo, tmp_path,
+                                                                    monkeypatch, capsys):
+    monkeypatch.setattr(review_run, "stop_survivors",
+                        lambda _started: (True, review_run.KIMI_SURVIVOR_UNKNOWN))
+    scratch, work = tmp_path / "scratch", tmp_path / "work"
+    _bundle(repo, scratch)
+    fakes = fake_kimi_bin(tmp_path / "bin")
+    monkeypatch.setenv("PATH", str(fakes) + os.pathsep + os.environ.get("PATH", ""))
+    monkeypatch.setenv("KIMI_CODE_HOME", str(kimi_home(tmp_path / "kimi-home")))
+
+    code = review_run.main(["--root", str(repo), "--ticket", "T1", "--scratch", str(scratch),
+                            "--provider", "kimi", "--model", "k3", "--work-dir", str(work)])
+    err = capsys.readouterr().err
+
+    assert (code, rl.status(str(repo), "T1")["rounds"]) == (2, [])
+    assert "kimi probe: unknown" in err

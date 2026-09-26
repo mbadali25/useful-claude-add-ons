@@ -29,7 +29,10 @@ PROVIDERS.
            review exits. A tree that cannot be fingerprinted before the probe
            exits 2 (`unknown`) with no probe request and no round spent. A
            probe that changed it exits 2 with no round spent; a review that
-           changed it is INCOMPLETE, naming the paths.
+           changed it is INCOMPLETE, naming the paths. Each call runs in a
+           process group of its own, and whatever it leaves running there
+           after it exits is killed before the tree is fingerprinted
+           (`stop_survivors`); one that cannot be stopped is "could not tell".
            See `tree_fingerprint` and `reviewer_changes` for what is and is
            not seen. A write OUTSIDE the repository is caught by neither. The
            final message is read from the stream
@@ -86,6 +89,7 @@ import signal
 import stat
 import subprocess
 import sys
+import time
 
 import crew_common
 import crew_freshness
@@ -119,13 +123,36 @@ CHANGED_SHOWN = 10
 SNAPSHOT_GIT_TIMEOUT = 120
 KIMI_TREE_UNKNOWN = ("kimi: the working tree could not be fingerprinted, so a write by the "
                      "reviewer cannot be ruled out")
-# IGNORED paths under these directories are tool caches another process (a
-# background pytest, ruff, mypy, a bundler) rewrites at any moment; a change
-# there is not attributed to the reviewer. Fixed on purpose -- never read from
-# config the reviewer could write -- and pinned by
-# test_review_run_kimi.py::test_tool_caches_are_the_fixed_tuple.
-TOOL_CACHES = (".pytest_cache", "__pycache__", ".ruff_cache", ".mypy_cache",
-               "node_modules/.cache")
+KIMI_SURVIVOR_UNKNOWN = ("kimi: a process the reviewer left running could not be stopped, so "
+                         "a write after the check cannot be ruled out")
+# What `reviewer_changes` sets aside when it is IGNORED both before and after:
+# paths something other than the reviewer writes mid-review AND that no check
+# crew runs reads back. Fixed on purpose -- never read from config the reviewer
+# could write -- and pinned by
+# test_review_run_kimi.py::test_set_aside_names_are_the_fixed_tuples.
+#   IDE_DIRS      an editor's own state: a directory of that name, any depth.
+#   CREW_LOGS     appended by crew's hooks in the DISPATCHING session:
+#                 `.crew/guard.log` by the scope, role-write and cloud guards
+#                 (crew_guards.py:313, crew_config.py:1074), and
+#                 `.crew/.autoclear.log` by auto-clear and context-watch
+#                 (crew_autocycle.py:205, context-watch.sh:96). A Kimi review
+#                 longer than the Bash tool's cap runs in the background, so
+#                 those hooks fire mid-review (round 3 of T-0028).
+#   CREW_MARKERS  context-watch's `.crew/.handoff-requested` and
+#                 `.crew/.autoclear-sent`, bare or `-<session key>`
+#                 (context-watch.sh:59-60), written the same way.
+IDE_DIRS = (".idea", ".vscode")
+CREW_LOGS = (".crew/guard.log", ".crew/.autoclear.log")
+CREW_MARKERS = (".crew/.handoff-requested", ".crew/.autoclear-sent")
+# `-c` settings on every fingerprint git call; a `-c` beats every config file.
+# `core.fsmonitor` would otherwise run whatever program `.git/config` names --
+# which the fingerprint does not hash -- and take its word for what changed
+# (judgement, not measured). Tracked files do not rely on git's answer at all:
+# every one is hashed (see `tree_fingerprint`).
+GIT_OVERRIDES = ("-c", "core.fsmonitor=false")
+# A nested repository is fingerprinted by recursion; deeper than this is
+# "could not tell".
+NESTED_DEPTH = 8
 # Crew config: a reviewer write here always counts, even under graph.out -- it
 # is where graph.out itself is configured.
 CREW_CONFIG_PATHS = (".crew/crew.json", ".crew/config.json")
@@ -174,7 +201,8 @@ def _git_bytes(root, args, env):
     """Raw stdout of one git call, or None when git failed, could not start,
     or did not answer within SNAPSHOT_GIT_TIMEOUT."""
     try:
-        done = subprocess.run(["git", *args], cwd=root, env=env, capture_output=True,
+        done = subprocess.run(["git", *GIT_OVERRIDES, *args], cwd=root, env=env,
+                              capture_output=True,
                               stdin=subprocess.DEVNULL, timeout=SNAPSHOT_GIT_TIMEOUT,
                               check=False)
     except (OSError, subprocess.SubprocessError):
@@ -204,21 +232,73 @@ def _path_digest(path):
         return None
 
 
-def tree_fingerprint(root, problems=None):
+def _walk_digest(path):
+    """A directory's contents, walked without following a symlink: a sha256
+    over each entry's relative path and `_path_digest`. None when an entry
+    cannot be read or the walk itself fails."""
+    rows, failed = [], []
+    for top, dirs, files in os.walk(path, onerror=failed.append):
+        dirs.sort()
+        for name in sorted(dirs + files):
+            full = os.path.join(top, name)
+            digest = _path_digest(full)
+            if digest is None:
+                return None
+            rows.append(f"{os.path.relpath(full, path)}\0{digest}")
+    if failed:
+        return None
+    return "walk:" + hashlib.sha256("\n".join(rows).encode("utf-8", "surrogateescape")).hexdigest()
+
+
+def _entry_digest(root, rel, problems, depth):
+    """`_path_digest` for one listed path, except that a DIRECTORY is never the
+    constant `dir` (round 3 of T-0028: a dirty submodule, or a nested clone,
+    stayed `dir` whatever changed inside it). A directory holding `.git` is
+    fingerprinted as the repository it is -- when git agrees it is one rooted
+    there -- and any other directory (an uninitialised submodule, whose files
+    no `git status` mode lists) is walked."""
+    path = os.path.join(root, rel)
+    digest = _path_digest(path)
+    if digest != "dir":
+        return digest
+    if not os.path.lexists(os.path.join(path, ".git")):
+        return _walk_digest(path)
+    top = crew_common.git_out(path, "rev-parse", "--show-toplevel")
+    if depth >= NESTED_DEPTH or not top or \
+            os.path.normcase(os.path.realpath(top)) != os.path.normcase(os.path.realpath(path)):
+        if problems is not None:
+            problems.append(f"{rel} holds a .git that is not a repository rooted there, "
+                            f"or is nested more than {NESTED_DEPTH} deep")
+        return None
+    inner = tree_fingerprint(path, problems, _depth=depth + 1)
+    if inner is None:
+        return None
+    return "repo:" + hashlib.sha256(json.dumps(inner, sort_keys=True).encode(
+        "utf-8", "surrogateescape")).hexdigest()
+
+
+def tree_fingerprint(root, problems=None, _depth=0):
     """The working tree's state as `{path: "<XY> <content digest>"}`, plus
     `:HEAD` and `:index` -- or None when it cannot be taken.
 
-    Every path `git status` lists is in it, with its CONTENTS hashed: modified
-    tracked files, untracked files and IGNORED files alike
-    (`--untracked-files=all --ignored=traditional` lists each file inside an
-    ignored directory, not the directory). Round 1 of T-0028 found the
-    earlier digest hashed only an untracked file's status LINE and skipped
-    ignored files, so a reviewer editing an already-untracked file, or a
-    gitignored `.crew/config.json`, left before == after. `:HEAD` is there so
-    a reviewer that COMMITTED its edit is seen, `:index` (the staged diff) so
-    one that only staged is. `.work/` is excluded -- the scratch directory,
-    review.json and the handoff live there. Taken with GIT_OPTIONAL_LOCKS=0
-    so taking it cannot itself change the index.
+    EVERY TRACKED FILE is in it, contents hashed, whatever `git status` says
+    of it (`git ls-files --stage`, code `--` when status did not list it).
+    Round 3 of T-0028 found an edit to a tracked file flagged skip-worktree or
+    assume-unchanged unseen, and (measured) so was a same-size rewrite that
+    restores the mtime once `.git/config` sets core.trustctime=false or
+    core.checkStat=minimal: git answered "clean" and nothing re-read the file.
+    Every path `git status` lists is in it too, CONTENTS hashed: modified,
+    untracked and IGNORED files alike (`--untracked-files=all
+    --ignored=traditional` lists each file inside an ignored directory, not
+    the directory; `--no-renames` keeps each entry one path). Round 1 found
+    the earlier digest hashed only an untracked file's status LINE and skipped
+    ignored files. A directory is fingerprinted as the nested repository or
+    submodule it is, or walked (`_entry_digest`). `:HEAD` is there so a
+    reviewer that COMMITTED its edit is seen, `:index` (every staged entry,
+    blob id included) so one that only staged is. `.work/` is excluded at the
+    top level -- the scratch directory, review.json and the handoff live
+    there. Taken with GIT_OPTIONAL_LOCKS=0 so taking it cannot itself change
+    the index.
 
     NOT SEEN: a write outside the repository, and a change inside `.git`
     other than HEAD and the index (a hook, a config). None when any git call
@@ -231,26 +311,29 @@ def tree_fingerprint(root, problems=None):
 
     env = dict(os.environ, GIT_OPTIONAL_LOCKS="0")
     head = crew_common.git_out(root, "rev-parse", "HEAD")
+    if not head and _depth and crew_common.git_out(root, "rev-parse", "--git-dir"):
+        head = "unborn"  # a nested repository with no commit yet
     if not head:
         unknown("HEAD could not be read (not a git repository?)")
         return None
-    scope = ["--", ".", ":(exclude).work"]
+    scope = ["--", "."] if _depth else ["--", ".", ":(exclude).work"]
     status = _git_bytes(root, ["status", "--porcelain=v1", "-z", "--untracked-files=all",
+                               "--no-renames",
                                "--ignored=traditional", *scope], env)
-    staged = _git_bytes(root, ["diff", "--cached", "--binary", *scope], env)
+    staged = _git_bytes(root, ["ls-files", "--stage", "-z", *scope], env)
     if status is None or staged is None:
-        unknown("git status or git diff --cached failed or timed out")
+        unknown("git status or git ls-files failed or timed out")
         return None
     snapshot = {":HEAD": head, ":index": hashlib.sha256(staged).hexdigest()}
-    fields = iter(status.split(b"\0"))
-    for entry in fields:
-        if len(entry) < 4:
-            continue
-        code = entry[:2].decode("ascii", "replace")
-        if code[0] in "RC":
-            next(fields, None)  # -z puts a rename's source path in its own field
-        rel = os.fsdecode(entry[3:]).rstrip("/")
-        digest = _path_digest(os.path.join(root, rel))
+    listed = [(entry[:2].decode("ascii", "replace"), entry[3:])
+              for entry in status.split(b"\0") if len(entry) >= 4]
+    listed += [("--", entry.split(b"\t", 1)[1]) for entry in staged.split(b"\0")
+               if b"\t" in entry]
+    for code, raw in listed:
+        rel = os.fsdecode(raw).rstrip("/")
+        if rel in snapshot:
+            continue  # status listed it first, with its code
+        digest = _entry_digest(root, rel, problems, _depth)
         if digest is None:
             unknown(f"{rel} exists and cannot be read")
             return None
@@ -299,16 +382,19 @@ def _under(rel, directory):
     return len(parts) > len(stem) and parts[:len(stem)] == stem
 
 
-def _tool_cache(rel):
-    """True when `rel` lies strictly under a TOOL_CACHES directory, matched by
-    whole segments at any depth: `pkg/__pycache__/m.pyc` is, `my__pycache__/x`
-    and a bare `__pycache__` are not."""
+def _not_a_check_input(rel):
+    """True when `rel` is one of the paths `reviewer_changes` may set aside:
+    strictly under an IDE_DIRS directory, matched by whole segment at any depth
+    (`pkg/.idea/x` is, `my.idea/x` and a bare `.idea` are not); exactly one of
+    CREW_LOGS; or a CREW_MARKERS name, bare or with a `-<session key>` that
+    holds no `/`."""
     parts = rel.split("/")
-    for cache in TOOL_CACHES:
-        stem = cache.split("/")
-        if any(parts[i:i + len(stem)] == stem for i in range(len(parts) - len(stem))):
-            return True
-    return False
+    if any(part in IDE_DIRS for part in parts[:-1]):
+        return True
+    if rel in CREW_LOGS or rel in CREW_MARKERS:
+        return True
+    return any(rel.startswith(marker + "-") and "/" not in rel[len(marker) + 1:]
+               for marker in CREW_MARKERS)
 
 
 def _ignored_throughout(before, after, rel):
@@ -321,7 +407,8 @@ def _ignored_throughout(before, after, rel):
 def reviewer_changes(before, after, graph):
     """(changed, set_aside): the paths whose state differs between two
     `tree_fingerprint`s, split into those the reviewer is answerable for and
-    those set aside -- under `graph`, or an ignored tool cache.
+    those set aside -- under `graph`, or ignored throughout and
+    `_not_a_check_input`.
 
     `graph` is graph.out as resolved BEFORE the reviewer ran (`run` does it
     once, beside the "before" fingerprint). Round 2 of T-0028 found it read
@@ -330,12 +417,26 @@ def reviewer_changes(before, after, graph):
     write under `.crew/`. `.crew/crew.json` and `.crew/config.json`
     (CREW_CONFIG_PATHS) are never set aside, whatever `graph` is.
 
-    WHY IGNORED TOOL CACHES ARE SET ASIDE. The fingerprint hashes ignored
-    files (round 1), so a background pytest writing `__pycache__/` spent the
-    round as INCOMPLETE with no reviewer write (round 2). Only an IGNORED path
-    under a TOOL_CACHES directory is set aside; a tracked or untracked one
-    there, and every other ignored path (`.env`, `.crew/config.json`), still
-    counts.
+    WHAT ELSE IS SET ASIDE, AND WHAT IS NOT. The fingerprint hashes ignored
+    files (round 1), so any other writer to an ignored path spends the round.
+    A path is set aside only when it is IGNORED in both fingerprints (a path
+    that was or became tracked or untracked -- `.git/info/exclude` is not
+    hashed, so a reviewer can flip it -- counts) AND no check crew runs reads
+    it back: an IDE's own directory, crew's hook logs and context markers
+    (IDE_DIRS, CREW_LOGS, CREW_MARKERS; round 3). Tool caches are NOT set
+    aside, whatever round 2 did: CPython runs a `__pycache__` .pyc whose header
+    matches its source, so a write there changes what the tests execute
+    (round 3), and every other cache has the same shape -- `.pytest_cache`
+    steers `--lf`/`--sw`, ruff and mypy trust a cached verdict, a bundler's
+    `node_modules/.cache` holds output it runs. The cost is smaller than
+    round 2 feared, measured: a second pytest run over an unchanged tree
+    rewrote no byte under `__pycache__/` or `.pytest_cache/`, and only a
+    CONTENT change counts. Nor are crew's gate inputs set aside
+    (`.crew/.verify-verified-at`, `.verify-gate.fingerprint`, `.record.json`,
+    `.timings.json`, `.scope-base`): a forged one narrows the verify gate. The
+    verify gate rewrites its marker on every clean Stop, but at an unchanged
+    HEAD with the same sha, which is no change (judgement from verify-gate.sh
+    :122 and its fingerprint skip; not measured end to end).
 
     WHY `graph.out` IS SET ASIDE, and nothing else. graphify's post-commit and
     post-checkout hooks rebuild it IN THE BACKGROUND, and the normal order is
@@ -357,7 +458,7 @@ def reviewer_changes(before, after, graph):
             continue
         if graph and _under(path, graph):
             set_aside.append(path)
-        elif _ignored_throughout(before, after, path) and _tool_cache(path):
+        elif _ignored_throughout(before, after, path) and _not_a_check_input(path):
             set_aside.append(path)
     return [p for p in changed if p not in set_aside], set_aside
 
@@ -394,8 +495,10 @@ def command_for(provider, exe, root, prompt, model, effort, scratch=None):
             "--deny-tool", "shell", "-s"]
 
 
-def launch(cmd, root, timeout, env=None):
-    """(stdout, stderr, exit_code, timed_out). stdin is always closed.
+def launch(cmd, root, timeout, env=None, started=None):
+    """(stdout, stderr, exit_code, timed_out). stdin is always closed. When
+    `started` is a list, the leader's pid -- its process group's id on POSIX
+    -- is appended to it once the process exists (see `stop_survivors`).
 
     Spawned in its own process group/session so a timeout can kill the whole
     tree, not just the direct child. A provider CLI installed as an npm
@@ -449,6 +552,8 @@ def launch(cmd, root, timeout, env=None):
             env=env, **popen_kwargs)
     except OSError as exc:
         return "", f"could not start {cmd[0]}: {exc}", None, False
+    if started is not None:
+        started.append(proc.pid)
     try:
         stdout, stderr = proc.communicate(timeout=timeout)
     except subprocess.TimeoutExpired:
@@ -480,6 +585,55 @@ def launch(cmd, root, timeout, env=None):
                 "open; proceeding with whatever output had already arrived\n")
         return stdout, stderr, None, True
     return stdout, stderr, proc.returncode, False
+
+
+def _group_alive(pgid):
+    """True when a process that is not a zombie is still in process group
+    `pgid`. Read from /proc where there is one -- a zombie is dead but still
+    answers signal 0 until something reaps it -- else signal 0."""
+    if os.path.isdir("/proc/self"):
+        for name in os.listdir("/proc"):
+            if not name.isdigit():
+                continue
+            try:
+                with open(f"/proc/{name}/stat", encoding="ascii", errors="replace") as fh:
+                    fields = fh.read().rsplit(")", 1)[1].split()
+            except (OSError, IndexError):
+                continue
+            if len(fields) > 2 and fields[2] == str(pgid) and fields[0] not in ("Z", "X"):
+                return True
+        return False
+    try:
+        os.killpg(pgid, 0)
+    except (ProcessLookupError, PermissionError):
+        return False
+    return True
+
+
+def stop_survivors(started):
+    """After a leader `launch` saw exit normally: SIGKILL whatever it left
+    running in its process group and wait for the group to empty, so nothing
+    it started can write after the "after" fingerprint (round 3 of T-0028: a
+    backgrounded `sleep 2; echo fix >> seed.txt` landed after a CLEAN round).
+
+    (killed, unknown_reason). The group is signalled only after `_group_alive`
+    has just found a live member: while a group has members its id is not
+    handed to a new process, so the bare number still names this group --
+    the hazard `launch`'s timeout path guards against is a group that has
+    already emptied. NOT SEEN: a descendant that left the group (`setsid`),
+    and anything on Windows, where no group is probed at all."""
+    if not started or os.name == "nt" or not _group_alive(started[0]):
+        return False, None
+    try:
+        os.killpg(started[0], signal.SIGKILL)
+    except (ProcessLookupError, PermissionError):
+        return False, None
+    deadline = time.monotonic() + POST_KILL_TIMEOUT
+    while _group_alive(started[0]):
+        if time.monotonic() >= deadline:
+            return True, KIMI_SURVIVOR_UNKNOWN
+        time.sleep(0.05)
+    return True, None
 
 
 def bundle_problems(manifest):
@@ -617,15 +771,34 @@ def finish(args, number, output, exit_code, timed_out, extra_reasons=()):
         result["verdict"], EXIT_INCOMPLETE)
 
 
+def _probe_runner(cmd, env, timeout, cwd):
+    """`kimi_probe.probe`'s runner: `launch`, in a process group of its own,
+    then `stop_survivors`, so the probe call cannot leave a writer running
+    past the fingerprint taken after it. A survivor that could not be stopped
+    answers as a call that never said PROBE_OK, which the probe reads as
+    `unknown`."""
+    started = []
+    stdout, stderr, code, timed_out = launch(cmd, cwd, timeout, env=env, started=started)
+    if not timed_out and stop_survivors(started)[1]:
+        return "", KIMI_SURVIVOR_UNKNOWN, None, False
+    return stdout, stderr, code, timed_out
+
+
 def _probe_kimi(args, before):
     """Run the probe. None when the review may go on (the binary and alias it
     resolved are then `args.kimi_exe` and `args.launched_model`); otherwise
     the refusal message. A probe that changed the tree is refused too."""
-    probed = kimi_probe.probe(args.model or None)
+    probed = kimi_probe.probe(args.model or None, runner=_probe_runner)
     if not kimi_probe.launchable(probed["state"]):
         return f"kimi probe: {probed['state']} - {probed['reason']}"
-    mid = tree_fingerprint(args.root)
-    if before is not None and mid is not None:
+    problems = []
+    mid = tree_fingerprint(args.root, problems)
+    if mid is None:
+        # Round 3 NIT: this used to fall through as "clean" and reserve, so
+        # the round was spent as INCOMPLETE when nothing had been launched.
+        return (f"kimi probe: unknown - the tree could not be fingerprinted after the probe: "
+                f"{'; '.join(problems) or 'no reason given'}")
+    if before is not None:
         changed, _set_aside = reviewer_changes(before, mid, args.graph_out)
         if changed:
             return f"{KIMI_PROBE_CHANGED}: {_named(changed)}"
@@ -638,8 +811,15 @@ def _run_kimi(args, number, prompt, before):
     extra = []
     cmd = command_for("kimi", args.kimi_exe, args.root, prompt, args.launched_model, "",
                       args.scratch)
+    started = []
     stdout, stderr, code, timed_out = launch(cmd, args.root, args.timeout,
-                                             env=kimi_probe.kimi_env())
+                                             env=kimi_probe.kimi_env(), started=started)
+    killed, survivor_unknown = stop_survivors(started) if not timed_out else (False, None)
+    if survivor_unknown:
+        extra.append(survivor_unknown)
+    elif killed:
+        sys.stderr.write("review-run: kimi left processes running after it exited; they were "
+                         "stopped before the tree was checked\n")
     after = tree_fingerprint(args.root)
     if before is None or after is None:
         extra.append(KIMI_TREE_UNKNOWN)
@@ -649,8 +829,8 @@ def _run_kimi(args, number, prompt, before):
             extra.append(f"{KIMI_TREE_CHANGED}: {_named(changed)}")
         if set_aside:
             sys.stderr.write(f"review-run: not counted against the reviewer, under graph.out "
-                             f"(graphify's background rebuild) or an ignored tool cache: "
-                             f"{_named(set_aside)}\n")
+                             f"(graphify's background rebuild), or ignored IDE state or crew "
+                             f"hook logs: {_named(set_aside)}\n")
     _write_atomic(os.path.join(args.scratch, "kimi-events.jsonl"), stdout)
     message_text, error = review_verdict.kimi_final_message(stdout)
     output = message_text or ""

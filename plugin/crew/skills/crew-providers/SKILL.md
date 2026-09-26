@@ -348,12 +348,18 @@ do not run it separately before `review_run.py`, which would spend two.
 `kimi` call crew makes, the probe included, passes an agent file allowing only
 Read, Grep and Glob (Write, Edit and Bash disallowed) and an empty
 `--skills-dir`; the probe runs in a throwaway directory. The working tree is
-fingerprinted before the probe and after the review, the CONTENTS of untracked
-and gitignored files included: a probe that changed it spends no round, and a
-review that changed it is INCOMPLETE, naming the paths. `graph.out` is set
-aside -- graphify's background rebuild rewrites it mid-review, and a write there
-fixes no code. Not caught by either control: a write outside the repo, or
-inside `.git` beyond HEAD and the index. Offered pins and the rest:
+fingerprinted before the probe and after the review: the CONTENTS of every
+tracked file (whatever `git status` says of it), of untracked and gitignored
+files, and of nested repositories and submodules. A probe that changed it spends
+no round, and a review that changed it is INCOMPLETE, naming the paths.
+Whatever a call leaves running in its process group is killed before the tree
+is checked. Set aside: `graph.out` (graphify's background rebuild), and, only
+while gitignored throughout, `.idea/`, `.vscode/`, `.crew/guard.log`,
+`.crew/.autoclear.log` and context-watch's markers. Tool caches such as
+`__pycache__` and the verify gate's `.crew/` files still count, because a later
+run reads them back. Not caught by either control: a write outside the repo,
+a change inside `.git` beyond HEAD and the index, a process that left its
+process group (`setsid`), and on Windows, any process left running. Offered pins and the rest:
 `alternative-providers.md`.
 
 ## Gemini (design second opinion)
