@@ -1,5 +1,5 @@
 # repo-docs
-anchor: useful-claude-add-ons@6f96e627
+anchor: useful-claude-add-ons@a2802526
 verified: 2026-09-26
 
 ## Re-derive provenance
@@ -298,7 +298,7 @@ listing the directory.
 - **`docs/runbooks/INDEX.md` still does not exist.** `docs/runbooks/`
   contains `rollback.md` alone (re-confirmed by `ls`).
   `plugin/crew/skills/crew-runbooks/SKILL.md:80` and
-  `plugin/crew/README.md:1804` (`:1759` at `a0c0847e`, `:1730` at `8ebbdedc`, `:1757` at T-0006's `2bb92f32`, `:1728` at `c35edda5`, `:1725` at `f2bb919b`, `:1604` before that,
+  `plugin/crew/README.md:1812` (`:1804` at `6f96e627`, `:1759` at `a0c0847e`, `:1730` at `8ebbdedc`, `:1757` at T-0006's `2bb92f32`, `:1728` at `c35edda5`, `:1725` at `f2bb919b`, `:1604` before that,
   that file having changed in each range — re-grepped, not offset) both still describe
   `docs/runbooks/INDEX.md` as a symptom-keyed index that would live there.
   JUDGEMENT, unchanged: costs nothing with one runbook, becomes a real gap at
@@ -416,7 +416,12 @@ listing the directory.
   and T-0004 appended a last one (`:281-288`): `crew_autopilot.py`,
   `commands/autopilot.md`, `test_crew_autopilot.py` and
   `sabotage_autopilot.py` run `test_crew_autopilot.py` plus
-  `test_lifecycle_commands.py`. The rules above it did not move.
+  `test_lifecycle_commands.py`. Since `6f96e627` T-0024 appended rule 27
+  (`:290-297`): `approval_hook.py`, both approval-hook wrappers,
+  `crew_ticket.py`, `test_approval_hook.py`, `test_approval_group.py` and
+  `sabotage_approval.py` run `test_approval_hook.py`,
+  `test_approval_group.py` and `test_crew_ticket.py`. The rules above it did
+  not move.
 
 ## Unverified
 
@@ -561,3 +566,14 @@ mention moved `:1759` -> `:1804`, re-grepped), `plugin/crew/hooks/scripts/crew_s
 `plugin/crew/hooks/scripts/crew_ticket.py` (cited by name only, as a rule's path) and both install
 scripts (crew catalog row count). `python3 scripts/check-marketplace.py` re-run at `07ca3972`:
 `marketplace: 34 skills, 5 plugins` / `all checks passed`.
+
+Re-verified per-path from `6f96e627` to `a2802526` for T-0024 (group approval, crew 1.0.42). Of the
+cited paths, `git diff --name-only 6f96e627..a2802526` returns `.claude-plugin/marketplace.json`
+(crew `version` only), `.crew/verify.json` (rule 27 appended at `:290-297`; `:167-172`, `:251`,
+`:252-268`, `:270-280`, `:281-288` hold), `CHANGELOG.md` (1.0.42 entry at the top; cited without a
+line), `plugin/PLUGINS.md` (`:14` version only), `plugin/crew/README.md` ("Scope and approval"
+gained the group forms, so the `docs/runbooks/INDEX.md` mention moved `:1804` -> `:1812`,
+re-grepped) and `plugin/crew/hooks/scripts/crew_ticket.py` (cited by name only, as a rule's path).
+`README.md`, `TODO.md`, `plugin/README.md` and both install scripts did not change.
+`python3 scripts/check-marketplace.py` re-run at `a2802526`: `marketplace: 34 skills, 5 plugins` /
+`all checks passed`.

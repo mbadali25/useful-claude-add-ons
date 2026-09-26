@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@6f96e627 on 2026-09-26. Verify before trusting.
+%% Generated from useful-claude-add-ons@a2802526 on 2026-09-26. Verify before trusting.
 %% Anchors: plugin/crew/commands/brainstorm.md, plugin/crew/commands/spec.md, plugin/crew/commands/plan.md, plugin/crew/commands/approve.md, plugin/crew/commands/implement.md, plugin/crew/commands/review.md, plugin/crew/commands/done.md, plugin/crew/commands/fix.md, plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/crew_ticket.py, plugin/crew/hooks/scripts/completion_audit.py, plugin/crew/hooks/scripts/crew_refresh_check.py
 %% The crew 1.0 ticket lifecycle: brainstorm -> spec -> plan -> approve -> implement -> refresh artifacts -> review -> done.
 %% --
@@ -27,6 +27,14 @@
 %% :578-599 -> :605-626, both re-read with sed -n. parse_risk has no caller in
 %% any command file yet (its consumer is T-0010), so no node or edge changed.
 %% The crew_ticket.py lines in the T-0026 note above are that anchor's, kept as history.
+%% Re-drawn for T-0024 at a2802526 (group approval, crew 1.0.42): of the anchored
+%% paths approve.md and crew_ticket.py changed. approve.md gained the group relay
+%% after :26 (:27-41); :5, :9, :12-13 and :15 hold. crew_ticket.py changed only
+%% from :676 down (approve(expect=) at :686, precheck at :765), so :530-571 and
+%% :605-626 hold. One node and two edges added: a group request (several ids, a
+%% range, or the plain-text form) is blocked as a PENDING list and recorded only
+%% by the user's own /crew:approve --confirm, all or none (approve.md:27-32;
+%% plugin/crew/hooks/scripts/approval_hook.py:313 pending, :369 confirm).
 %% Every node cites the command file's own line; files are named repo-relative
 %% here and by basename in the nodes (all under plugin/crew/commands/ unless
 %% named otherwise):
@@ -116,6 +124,8 @@ flowchart TB
         ap0 --> ap1{"approval-hook (UserPromptSubmit)<br/>hooks.json:14; approve.md:9"}
         ap1 -- refused --> apx([prompt blocked, reason shown<br/>:15])
         ap1 -- recorded --> ap2["approval.json = digest(spec.md, plan.md),<br/>header status value normalised<br/>approved_via user-prompt<br/>:12-13"]
+        ap1 -- "several ids, a range,<br/>or plain text" --> apg["PENDING list, nothing recorded;<br/>user's own /crew:approve --confirm<br/>records one receipt per ticket, or none<br/>approve.md:27-32"]
+        apg -- "confirmed, every hash unchanged" --> ap2
     end
 
     ap2 --> planned["spec.md header 'status: planned'<br/>keeps the approval<br/>plan.md:59-60"]
