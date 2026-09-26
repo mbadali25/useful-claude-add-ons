@@ -17,6 +17,37 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
+- **`crew` 1.0.43: cross-session claims on a git-backed coordination record
+  (T-0030).** Bumped `1.0.38 -> 1.0.43` (1.0.39-1.0.42 are left to the
+  lanes landing beside this one). New `hooks/scripts/crew_coord.py`: sessions
+  on one or several machines share a channel, the branch
+  `crew-coord/<channel>` on a shared remote, holding
+  `claims/<repo>__<id>.json` and an append-only `log.jsonl`. `claim`,
+  `heartbeat`, `release`, `done`, `release --break --by <name>`, `recover` and
+  a read-only `status`.
+  - Writes are git plumbing on the freshly fetched tip (`hash-object`,
+    `mktree`, `commit-tree -p <tip>`) and a plain `git push`: never `--force`,
+    `-f`, `--force-with-lease` or a `+` refspec. A rejected push re-fetches,
+    re-applies and retries at most 3 times, then reports
+    `unknown - could not push`. No checkout, working tree, index, `.work/`,
+    `HEAD` or FETCH_HEAD is touched; a fetch that fails reads `unknown` and a
+    claim is refused on it.
+  - The TTL is 30 minutes (`coord.ttlMinutes`); `claim` starts a detached
+    heartbeat that pushes every 10 minutes while `CLAUDE_PID` lives. A stale
+    `working` claim reads `owner unknown (last heartbeat <age>)`, never free.
+    A corrupt claim reads `unknown`, never skipped. Only the holder releases;
+    only the owner breaks, from a terminal outside Claude Code and with
+    `--by` (a spoofable signal, documented as a rule, not enforcement).
+  - Recovery after a session id change adopts only a claim from this machine
+    and worktree whose holder the local identity file
+    (`<git-common-dir>/crew/coord-identity.json`) names and whose pid is
+    provably gone - measured on Linux only; Windows and macOS always read
+    "cannot tell" and go to the owner. `status` lists such claims first.
+  - 60 cases in `tests/test_crew_coord.py` against a local bare remote;
+    10 mutations in `tests/sabotage_coord.py`, registered in `sabotage.py`.
+    The `/crew:autopilot` resume-step line is pending T-0004; until then the
+    README says to run `crew_coord.py status` first after `/clear`.
+
 - **`crew` 1.0.37: the code maps, diagrams and code graph a ticket's changes
   reach must be current before `/crew:done` (T-0008).** Bumped
   `1.0.35 -> 1.0.37`. New read-only
