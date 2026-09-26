@@ -87,7 +87,9 @@ EXPECTED_CLI = {
     "approve.md": ("Never run `crew_ticket.py approve` yourself",),
     "autopilot.md": ("crew_autopilot.py settings --root .",
                      "crew_autopilot.py resume --root .",
-                     "crew_autopilot.py next --root ."),
+                     "crew_autopilot.py next --root .",
+                     "crew_autopilot.py route --root .",
+                     "crew_autopilot.py status --root ."),
 }
 
 
@@ -96,6 +98,20 @@ def test_command_names_exact_cli(name, snippets):
     text = _read(os.path.join(COMMANDS, name))
     for snippet in snippets:
         assert snippet in text, f"{name}: missing exact CLI {snippet!r}"
+
+
+# T-0018: autopilot.md holds the router and `status` in 100 of the 120, so
+# T-0010's approval branch, T-0012's `goal`, T-0019's `assign` and T-0020's
+# `focus` have about 5 lines each. Past this, detail moves into
+# crew_autopilot.py output (or a backing skill, which is the owner's call).
+AUTOPILOT_MAX_LINES = 100
+
+
+def test_autopilot_command_at_most_100_lines():
+    lines = _line_count(_read(os.path.join(COMMANDS, "autopilot.md")))
+
+    assert (lines <= AUTOPILOT_MAX_LINES, MAX_LINES - AUTOPILOT_MAX_LINES) == (True, 20), (
+        f"autopilot.md: {lines} lines, budget {AUTOPILOT_MAX_LINES}")
 
 
 IMPLEMENT_APPROVAL_TEXT = (

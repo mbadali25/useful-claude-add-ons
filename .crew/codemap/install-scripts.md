@@ -1,5 +1,5 @@
 # install-scripts
-anchor: useful-claude-add-ons@6f96e627
+anchor: useful-claude-add-ons@4ff7e764
 verified: 2026-09-26
 
 ## Re-derive provenance
@@ -477,3 +477,21 @@ script moved and every other install-script citation stands. That same change ma
 stale (Landmines). `scripts/check-marketplace.py`, `scripts/_test/self-claims.py`,
 `scripts/_test/drift-detection.sh` and `INSTALLATION.md` did not change. Neither install script was
 executed, and `check-marketplace.py` was not run at this pass.
+
+Re-verified per-path from `6f96e627` to `5536c2c8` for T-0018 (`/crew:autopilot status` and the
+router, crew 1.0.42): of the cited paths `.claude-plugin/marketplace.json` (crew `version` `:218`,
+now 1.0.42; `:217` unchanged), `plugin/PLUGINS.md` (`:14` version; `:17` unchanged),
+`plugin/crew/BUDGETS.md` (marker still `:10`; `:11` now reads 18,170 lines across 121 files, and
+`git ls-files 'plugin/crew/*.md' | xargs cat | wc -l` returns 18170) and `plugin/crew/README.md`
+(14 lines added in the autopilot section above the command table: the `35 commands` claim is now
+at `:2269` and `4 agents` at `:2280`, re-grepped) changed. `plugin/crew/commands/` has one file
+edited and none added (`ls plugin/crew/commands/*.md` still 35). Both install scripts, `README.md`,
+`plugin/README.md`, `INSTALLATION.md` and `scripts/check-marketplace.py` did not change, so their
+citations stand. Neither install script was executed; `check-marketplace.py` passed at this pass.
+
+Re-verified per-path from `5536c2c8` to `4ff7e764` (T-0018 review round 1): of the cited paths only
+`plugin/crew/README.md` changed, two lines edited in place in the autopilot section, none added or
+removed, so the `35 commands` claim at `:2269` and `4 agents` at `:2280` hold (re-grepped), and
+`git ls-files 'plugin/crew/*.md' | xargs cat | wc -l` still returns 18170, as `BUDGETS.md:11` says.
+Both install scripts, `README.md`, `plugin/README.md`, `INSTALLATION.md` and
+`scripts/check-marketplace.py` did not change. `check-marketplace.py` passed at `4ff7e764`.

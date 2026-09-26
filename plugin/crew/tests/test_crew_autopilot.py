@@ -1109,7 +1109,7 @@ def test_command_ends_the_review_phase_at_the_verdict():
 def test_command_activates_the_ticket_only_without_a_pointer():
     text = _command_text()
     assert ("activate=1" in text, "crew_ticket.py activate --root . --ticket <ticket>" in text,
-            "resume --root . --ticket $1" in text) == (True, True, True)
+            "resume --root . --ticket <ticket>" in text) == (True, True, True)
 
 
 def test_command_says_the_status_edit_keeps_the_approval():
@@ -1157,7 +1157,17 @@ def test_every_autopilot_sabotage_anchor_is_present_exactly_once():
     for label, target, find, _replace, test in AUTOPILOT_MUTATIONS:
         with open(target, encoding="utf-8") as handle:
             assert handle.read().count(find) == 1, label
-        assert test.startswith("tests/test_crew_autopilot.py::"), label
+        assert test.startswith(("tests/test_crew_autopilot.py::",
+                                "tests/test_crew_autopilot_status.py::")), label
+
+
+def test_status_sabotage_is_registered_with_sabotage_py():
+    import sabotage  # pylint: disable=import-outside-toplevel
+    from sabotage_autopilot import STATUS_MUTATIONS  # pylint: disable=import-outside-toplevel
+
+    missing = [m[0] for m in STATUS_MUTATIONS if m not in sabotage.MUTATIONS]
+
+    assert (len(STATUS_MUTATIONS), missing) == (37, [])
 
 
 def test_autopilot_block_is_repo_only():

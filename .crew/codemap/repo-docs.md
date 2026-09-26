@@ -1,5 +1,5 @@
 # repo-docs
-anchor: useful-claude-add-ons@6f96e627
+anchor: useful-claude-add-ons@c87ac3f4
 verified: 2026-09-26
 
 ## Re-derive provenance
@@ -298,7 +298,7 @@ listing the directory.
 - **`docs/runbooks/INDEX.md` still does not exist.** `docs/runbooks/`
   contains `rollback.md` alone (re-confirmed by `ls`).
   `plugin/crew/skills/crew-runbooks/SKILL.md:80` and
-  `plugin/crew/README.md:1804` (`:1759` at `a0c0847e`, `:1730` at `8ebbdedc`, `:1757` at T-0006's `2bb92f32`, `:1728` at `c35edda5`, `:1725` at `f2bb919b`, `:1604` before that,
+  `plugin/crew/README.md:1818` (`:1804` at `07ca3972`, `:1759` at `a0c0847e`, `:1730` at `8ebbdedc`, `:1757` at T-0006's `2bb92f32`, `:1728` at `c35edda5`, `:1725` at `f2bb919b`, `:1604` before that,
   that file having changed in each range — re-grepped, not offset) both still describe
   `docs/runbooks/INDEX.md` as a symptom-keyed index that would live there.
   JUDGEMENT, unchanged: costs nothing with one runbook, becomes a real gap at
@@ -561,3 +561,35 @@ mention moved `:1759` -> `:1804`, re-grepped), `plugin/crew/hooks/scripts/crew_s
 `plugin/crew/hooks/scripts/crew_ticket.py` (cited by name only, as a rule's path) and both install
 scripts (crew catalog row count). `python3 scripts/check-marketplace.py` re-run at `07ca3972`:
 `marketplace: 34 skills, 5 plugins` / `all checks passed`.
+
+Re-verified per-path from `6f96e627` to `5536c2c8` for T-0018 (`/crew:autopilot status`, crew
+1.0.42). Of the cited paths, `git diff --name-only 6f96e627..5536c2c8` returns
+`.claude-plugin/marketplace.json` (crew `version` only), `.crew/verify.json` (rule 26 gained one
+path, `:281-288` -> `:281-289`; `:167-172`, `:251`, `:252-268`, `:270-280` hold), `CHANGELOG.md`
+(1.0.42 entry at the top; cited without a line), `plugin/PLUGINS.md` (`:14` version) and
+`plugin/crew/README.md` (14 lines added in the autopilot section, so the `docs/runbooks/INDEX.md`
+mention moved `:1804` -> `:1818`, re-grepped). `README.md`, `TODO.md`, `plugin/README.md` and both
+install scripts did not change, so the README pin is no staler than at `6f96e627`.
+`python3 scripts/check-marketplace.py` re-run at `5536c2c8`: `marketplace: 34 skills, 5 plugins` /
+`all checks passed`.
+
+Re-verified per-path from `5536c2c8` to `4ff7e764` (T-0018 review round 1). Of the cited paths,
+`git diff --name-only 5536c2c8..4ff7e764` returns `CHANGELOG.md` (the 1.0.42 entry gained its round-1
+paragraph; cited without a line) and `plugin/crew/README.md` (two lines edited in place, none added,
+so the `docs/runbooks/INDEX.md` mention holds at `:1818`, re-grepped). `README.md`, `TODO.md`,
+`plugin/README.md` and both install scripts did not change. `python3 scripts/check-marketplace.py`
+at `4ff7e764`: `marketplace: 34 skills, 5 plugins` / `all checks passed`.
+
+Re-verified per-path from `4ff7e764` to `29a987b0` (T-0018 review round 2). Of the cited paths,
+`git diff --name-only 4ff7e764..29a987b0` returns `.crew/verify.json` (rule 26's `seconds` and
+`why` changed in place; no line moved, so every `.crew/verify.json:<n>` citation here holds) and
+`CHANGELOG.md` (the 1.0.42 entry gained its round-2 paragraph; cited without a line).
+`plugin/crew/README.md`, `README.md`, `TODO.md`, `plugin/README.md` and both install scripts did
+not change.
+
+Re-verified per-path from `29a987b0` to `c87ac3f4` (T-0018 review round 3). Of the cited paths,
+`git diff --name-only 29a987b0 c87ac3f4` returns `.crew/verify.json` (rule 26's `seconds` and
+`why` changed in place; no line moved, so every `.crew/verify.json:<n>` citation here holds) and
+`CHANGELOG.md` (the 1.0.42 entry gained its round-3 paragraph; cited without a line).
+`plugin/crew/README.md`, `README.md`, `TODO.md`, `plugin/README.md` and both install scripts did
+not change.

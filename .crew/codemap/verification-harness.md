@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@6f96e627
+anchor: useful-claude-add-ons@c87ac3f4
 verified: 2026-09-26
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -39,10 +39,10 @@ them and is wired into CI but not into the local Stop gate: see
 
 ## `.crew/verify.json` — 27 rules, up from 26
 
-**DERIVED, read in full via `json.load` at this anchor.** 293 lines, **27**
+**DERIVED, read in full via `json.load` at this anchor.** 294 lines, **27**
 rules (26 at `a0c0847e`, 25 at `8ebbdedc` and at T-0006's `2bb92f32`, 24 at `c35edda5`, 23 at
 `f2bb919b`, 22 at `6c497a14`, 21 at `5d1fc5fd`) plus a `default` (`["bash _verify/smoke.sh"]`,
-`:291`) and `unmapped: "fail"` (`:292`). Rule 10 (T-0026, inserted mid-list, so every later rule's
+`:292`) and `unmapped: "fail"` (`:293`). Rule 10 (T-0026, inserted mid-list, so every later rule's
 index is one higher than at `c35edda5`), rule 23 (#228), rule 24 (T-0008), rule 25 (T-0006) and
 rule 26 (T-0004; 25 and 26 each appended last, so no earlier index moved) are the only additions
 since `6c497a14`; see below. The rule set was restructured, not
@@ -175,14 +175,17 @@ Notable rules, re-read directly:
   60s after round 2). Its
   mutations live in `plugin/crew/tests/sabotage_resume.py` (`RESUME_MUTATIONS`, 44), imported by
   `plugin/crew/tests/sabotage.py:76` and appended to `MUTATIONS` at `:3049`.
-- **Rule 26**, new at `07ca3972` (`.crew/verify.json:281-288`, T-0004): `paths`
-  `crew_autopilot.py`, `commands/autopilot.md`, `test_crew_autopilot.py` and
-  `sabotage_autopilot.py` → `python3 -m pytest plugin/crew/tests/test_crew_autopilot.py
-  plugin/crew/tests/test_lifecycle_commands.py -q`, priced 5s (its `why` records 4.6s measured
-  2026-09-26 after the round-1 fixes — a claim read, not re-timed here). `test_lifecycle_commands.py` rides along for
-  `autopilot.md`'s 120-line budget and exact-CLI checks. Its mutations live in
-  `plugin/crew/tests/sabotage_autopilot.py` (`AUTOPILOT_MUTATIONS`, `:19`), imported by
-  `plugin/crew/tests/sabotage.py:77` and appended at `:3049`. The rule's `why` states no
+- **Rule 26**, new at `07ca3972` (`.crew/verify.json:281-289`, T-0004, widened by T-0018):
+  `paths` `crew_autopilot.py`, `commands/autopilot.md`, `test_crew_autopilot.py`,
+  `test_crew_autopilot_status.py` and `sabotage_autopilot.py` → `python3 -m pytest
+  plugin/crew/tests/test_crew_autopilot.py plugin/crew/tests/test_crew_autopilot_status.py
+  plugin/crew/tests/test_lifecycle_commands.py -q`, priced 11s (its `why` records 10.3s wall, 306
+  passed, measured 2026-09-26 after T-0018's review round 3 — a claim read, not re-timed here). `test_lifecycle_commands.py` rides along for
+  `autopilot.md`'s 100-line budget (since T-0018) and exact-CLI checks. Its mutations live in
+  `plugin/crew/tests/sabotage_autopilot.py` (`AUTOPILOT_MUTATIONS`, `:25`, with T-0018's
+  `STATUS_MUTATIONS` appended to it at the end of the file), imported by
+  `plugin/crew/tests/sabotage.py:77` and appended at `:3049`; `test_crew_autopilot.py` asserts
+  every `STATUS_MUTATIONS` entry reaches `sabotage.MUTATIONS`. The rule's `why` states no
   mutation count (it said "six" until the refresh commit after `07ca3972`, while the tuple
   held more); count them in the tuple. One of them targets `crew_ticket.py`'s `parse_risk`, a path rule 26
   does not name (see rule 10). `crew_autopilot.py` also matches rules 0 and 14, `autopilot.md`
@@ -425,7 +428,7 @@ set on Ubuntu.
 - `.crew/verify.json:251` (rule 23) — the `.claude/rules/` sync check.
 - `.crew/verify.json:270-280` (rule 25) — the T-0006 auto-resume suite;
   `plugin/crew/tests/sabotage.py:76`, `:3049` — `sabotage_resume.py`'s registration.
-- `.crew/verify.json:281-288` (rule 26) — the T-0004 autopilot suite;
+- `.crew/verify.json:281-289` (rule 26) — the T-0004/T-0018 autopilot suite;
   `plugin/crew/tests/sabotage.py:77`, `:3049` — `sabotage_autopilot.py`'s registration.
 - `.crew/verify.json:252-268` (rule 24) — the T-0008 refresh-check suite;
   `plugin/crew/tests/sabotage.py:75`, `:3048` — `sabotage_refresh.py`'s
@@ -684,3 +687,75 @@ workflows did not change, so their citations stand unread.
 - `marketplace.json`, `CHANGELOG.md`, `TODO.md`, `BUDGETS.md` - cited by name only.
 
 No suite or command was executed by this note; rule 26's suite and `sabotage.py` were not run.
+
+## Re-anchor provenance - `6f96e627` -> `5536c2c8`, 2026-09-26 (T-0018)
+
+`crew_refresh_check.py --root . --ticket T-0018` named this note. Of the paths it cites,
+`git diff --name-only 6f96e627 5536c2c8` returns `.crew/verify.json`, `CHANGELOG.md`,
+`plugin/crew/BUDGETS.md`, `plugin/crew/tests/sabotage_autopilot.py` and
+`plugin/crew/tests/test_crew_autopilot.py`; `plugin/crew/tests/sabotage.py` did not change, so
+`:71`, `:75`-`:77` and `:3047-3049` stand. Each changed file, re-read:
+
+- `.crew/verify.json` - rule 26 gained `test_crew_autopilot_status.py` in `paths` and `run`, 5s ->
+  6s, and a new `why`: `:281-288` -> `:281-289`, `default`/`unmapped` `:291`/`:292` ->
+  `:292`/`:293`. Rules 0-25 did not move. Re-measured with `json.load`/`wc -l` (27, 294).
+- `sabotage_autopilot.py` - a module-docstring paragraph moved `AUTOPILOT_MUTATIONS` `:19` ->
+  `:25`; `STATUS_MUTATIONS` (eight) follows it and is appended to it on the file's last line.
+- `test_crew_autopilot.py` - the anchor test accepts either autopilot test file, and
+  `test_status_sabotage_is_registered_with_sabotage_py` is new.
+- `CHANGELOG.md`, `BUDGETS.md` - cited by name only.
+
+No suite or gate was executed by this note; rule 26's suite and `sabotage.py` were run for the
+ticket, not for this refresh.
+
+## Re-anchor provenance - `5536c2c8` -> `4ff7e764`, 2026-09-26 (T-0018 review round 1)
+
+`crew_refresh_check.py --root . --ticket T-0018` named this note. Of the paths it cites,
+`git diff --name-only 5536c2c8 4ff7e764` returns `CHANGELOG.md`, `plugin/crew/tests/sabotage_autopilot.py`
+and `plugin/crew/tests/test_crew_autopilot.py`; `plugin/crew/tests/sabotage.py` and
+`.crew/verify.json` did not change, so `sabotage.py:77`, `:3049` and rule 26 `:281-289` stand.
+
+- `sabotage_autopilot.py` - `AUTOPILOT_MUTATIONS` still `:25`; `STATUS_MUTATIONS` (`:164`) grew
+  from eight to 22 entries, one per round-1 guard branch, and is still appended to
+  `AUTOPILOT_MUTATIONS` on the file's last line (`:256`).
+- `test_crew_autopilot.py` - `test_status_sabotage_is_registered_with_sabotage_py` now expects 22.
+- `CHANGELOG.md` - cited by name only.
+
+The 22 `STATUS_MUTATIONS` were run through `sabotage.py`'s harness for the ticket, not for this
+refresh.
+
+Re-verified per-path from `4ff7e764` to `29a987b0` (T-0018 review round 2).
+`git diff --name-only 4ff7e764 29a987b0` returns `.crew/verify.json`, `CHANGELOG.md`,
+`plugin/crew/tests/sabotage_autopilot.py`, `plugin/crew/tests/test_crew_autopilot.py` and
+`plugin/crew/tests/test_crew_autopilot_status.py`; `plugin/crew/tests/sabotage.py` did not change,
+so `sabotage.py:77` and `:3049` stand.
+
+- `.crew/verify.json` - rule 26's `seconds` (6 -> 9) and `why` changed in place; `:281-289` holds,
+  294 lines, 27 rules. The price line in the rule-26 paragraph above is rewritten to match.
+- `sabotage_autopilot.py` - `AUTOPILOT_MUTATIONS` still `:25`, `STATUS_MUTATIONS` still `:164`;
+  it grew from 22 to 28 entries, one per round-2 guard branch, and is still appended to
+  `AUTOPILOT_MUTATIONS` on the file's last line (`:256` -> `:281`).
+- `test_crew_autopilot.py` - `test_status_sabotage_is_registered_with_sabotage_py` now expects 28.
+- `test_crew_autopilot_status.py` and `CHANGELOG.md` - cited by name only.
+
+The 28 `STATUS_MUTATIONS` were run through `sabotage.py`'s harness for the ticket, not for this
+refresh.
+
+Re-verified per-path from `29a987b0` to `c87ac3f4` (T-0018 review round 3).
+`git diff --name-only 29a987b0 c87ac3f4` returns `.crew/verify.json`, `CHANGELOG.md`,
+`plugin/crew/commands/autopilot.md`, `plugin/crew/hooks/scripts/crew_autopilot.py`,
+`plugin/crew/tests/sabotage_autopilot.py`, `plugin/crew/tests/test_crew_autopilot.py` and
+`plugin/crew/tests/test_crew_autopilot_status.py`; `plugin/crew/tests/sabotage.py` did not change,
+so `sabotage.py:77` and `:3049` stand.
+
+- `.crew/verify.json` - rule 26's `seconds` (9 -> 11) and `why` changed in place; `:281-289` holds,
+  294 lines, 27 rules. The price line in the rule-26 paragraph above is rewritten to match.
+- `sabotage_autopilot.py` - `AUTOPILOT_MUTATIONS` still `:25`, `STATUS_MUTATIONS` still `:164`;
+  it grew from 28 to 37 entries, one per round-3 guard branch, and is still appended to
+  `AUTOPILOT_MUTATIONS` on the file's last line (`:281` -> `:318`).
+- `test_crew_autopilot.py` - `test_status_sabotage_is_registered_with_sabotage_py` now expects 37.
+- `test_crew_autopilot_status.py`, `autopilot.md`, `crew_autopilot.py` and `CHANGELOG.md` - cited
+  by name only.
+
+The 37 `STATUS_MUTATIONS` were run through `sabotage.py`'s harness for the ticket, not for this
+refresh.
