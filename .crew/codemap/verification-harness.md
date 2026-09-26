@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@f2bb919b
+anchor: useful-claude-add-ons@adf8d1dd
 verified: 2026-09-25
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -37,12 +37,12 @@ including the slow version-drift walk `_verify/smoke.sh` skips), and
 them and is wired into CI but not into the local Stop gate: see
 "`scripts/check_instructions.py`" below.
 
-## `.crew/verify.json` — 23 rules, up from 22
+## `.crew/verify.json` — 24 rules, up from 23
 
-**DERIVED, read in full via `json.load` at this anchor.** 248 lines, **23**
-rules (22 at `6c497a14`, 21 at `5d1fc5fd`) plus a `default` (`["bash _verify/smoke.sh"]`,
-`:246`) and `unmapped: "fail"` (`:247`). Rule 22 is the only addition since
-`6c497a14` (#228); see below. The rule set was restructured, not
+**DERIVED, read in full via `json.load` at this anchor.** 258 lines, **24**
+rules (23 at `f2bb919b`, 22 at `6c497a14`, 21 at `5d1fc5fd`) plus a `default`
+(`["bash _verify/smoke.sh"]`, `:256`) and `unmapped: "fail"` (`:257`). Rule 22
+(#228) and rule 23 (T-0008) are the only additions since `6c497a14`; see below. The rule set was restructured, not
 just grown: the broad `plugin/crew/hooks/**` / `plugin/crew/tests/**` shape
 this note previously described is gone, replaced by per-subsystem rules that
 name a handful of test files each — `crew_guards.py` (rule 5), `crew_config.py`
@@ -125,6 +125,23 @@ Notable rules, re-read directly:
   indices"), so rule 21's "DELIBERATELY UNCHECKED" `why` no longer describes
   what happens to a codemap edit: any `.crew/codemap/` change without a
   regenerated `.claude/rules/` now fails the Stop gate.
+- **Rule 23**, new at `adf8d1dd` (`.crew/verify.json:244-253`, T-0008): `paths`
+  `plugin/crew/hooks/scripts/crew_refresh_check.py`, its three test files,
+  `plugin/crew/tests/sabotage_refresh.py`, and `plugin/crew/commands/implement.md`
+  / `done.md` → `python3 -m pytest plugin/crew/tests/test_refresh_check.py
+  plugin/crew/tests/test_scope_guard_refresh_artifacts.py
+  plugin/crew/tests/test_completion_audit_refresh_artifacts.py -q`, priced 11s
+  (its `why`, `:253`, records 10.4s measured on the authoring host — a claim
+  read, not re-timed here). The check can refuse `/crew:done`, so its `why`
+  names must-refuse and must-allow cases, and says `implement.md`/`done.md` are
+  mapped here because these tests carry their ordering checks. Its mutations
+  live in `plugin/crew/tests/sabotage_refresh.py` (`REFRESH_MUTATIONS`, `:37`),
+  imported by `plugin/crew/tests/sabotage.py:75` and appended to `MUTATIONS` at
+  `:3046` — the same sibling-module pattern as the other `sabotage_*.py`
+  lists, because `sabotage.py` sits at `.pylintrc`'s max-module-lines. Every
+  rule-23 path also matches rule 0 and either rule 13 (the `.py` files) or
+  rule 10 (the two commands), by `fnmatch`, the primitive `matches()` uses
+  (`verify-gate.sh:869-876`) — so an edit there runs more than rule 23.
 
 **Still unresolved at this anchor:** a declared `seconds` figure is only
 overwritten by measurement when the rule carries *no* `seconds` at all
@@ -252,7 +269,8 @@ The one change in this range is internal to `check_self_claims`
 `_tracked_files` cannot answer, and the caller (`:826-840`) reports that as an
 explicit UNVERIFIED finding rather than comparing `None` against a real count
 — named in its own docstring as the same "unknown collapsing into the
-safe-looking value" bug CLAUDE.md's Memory section calls out. See
+safe-looking value" bug CLAUDE.md's Lessons section calls out
+(`CLAUDE.md:233`). See
 `marketplace-registration.md` for what this marker checks and where it is
 used; this note owns the mechanism, not the claim.
 
@@ -359,6 +377,9 @@ set on Ubuntu.
   `verify-gate.ps1:1655-1789` — temp-file rule-output capture, 1 MiB tail cap,
   no-pipe fallback refusal.
 - `.crew/verify.json:243` (rule 22) — the `.claude/rules/` sync check.
+- `.crew/verify.json:244-253` (rule 23) — the T-0008 refresh-check suite;
+  `plugin/crew/tests/sabotage.py:75`, `:3046` — `sabotage_refresh.py`'s
+  registration.
 - `plugin/crew/hooks/scripts/verify-gate.sh:1493-1502` /
   `plugin/crew/CONFIG.md:1959-1966` — the descoped per-rule process-group kill,
   documented as a standing limitation.
@@ -448,3 +469,25 @@ changed. `verify-gate.sh`, `_verify/*`, `scripts/check-marketplace.py`,
 Commands run at this pass: `python3 scripts/check-marketplace.py` (`marketplace: 34 skills, 5
 plugins`, `all checks passed`). The two new verify-gate test files were not executed; they
 exercise the `.ps1` flavour and need `pwsh`.
+
+## Re-anchor provenance - `f2bb919b` -> `adf8d1dd`, 2026-09-25 (T-0008)
+
+Re-verified per-path from `f2bb919b` to `adf8d1dd` for T-0008. `git diff --name-only f2bb919b
+adf8d1dd -- <the paths this note cites>` returns `.claude-plugin/marketplace.json`,
+`.crew/verify.json`, `CHANGELOG.md`, `CLAUDE.md`, `TODO.md`, `plugin/crew/tests/crew_fixtures.py`
+and `plugin/crew/tests/sabotage.py`. `verify-gate.sh`/`.ps1`, `plugin/crew/CONFIG.md`,
+`_verify/*`, `scripts/check-marketplace.py`, `scripts/check_instructions.py` and the CI workflows
+did not change, so their citations stand unread.
+
+- `.crew/verify.json` - rule 23 appended at `:244-253`; every earlier line keeps its number, so
+  `:3`, `:39-49`, `:151-156`, `:173-178` and `:243` stand (re-read); `default`/`unmapped` moved
+  `:246`/`:247` -> `:256`/`:257`. Rule count and line count re-measured with `json.load`/`wc -l`.
+- `plugin/crew/tests/sabotage.py` - `REFRESH_MUTATIONS` registered, plus T-0003's endpoint-lock
+  mutations; cited here as a rule 8 path and for that registration.
+- `CLAUDE.md` - re-read; the "unknown collapsing" lesson is in its Lessons section, not Memory
+  (wrong since before `f2bb919b`), corrected above.
+- `.claude-plugin/marketplace.json` - `:218` is still crew's `version`; `crew_fixtures.py` is
+  still a rule 8 path; `CHANGELOG.md` still carries the 1.0.21 descoping entry; `TODO.md` is cited
+  only as a cross-reference.
+
+No command or suite was executed at this pass; rule 23's suite and `sabotage.py` were not run.

@@ -1,5 +1,5 @@
 # install-scripts
-anchor: useful-claude-add-ons@f2bb919b
+anchor: useful-claude-add-ons@adf8d1dd
 verified: 2026-09-25
 
 ## Re-derive provenance
@@ -395,8 +395,10 @@ through their own package managers.
   skills ... 34 hook entries" row cited above, is unchanged.
 - `plugin/crew/BUDGETS.md` - the claim marker is still `:10`; the figure on `:11` moved from 17,788
   to 17,811 lines (120 files), which `check-marketplace.py` verifies.
-- `plugin/crew/README.md` - one command-table cell (`:2145`, "Acceptance" -> "Acceptance checks");
-  this note cites the file without a line.
+- `plugin/crew/README.md` - one command-table cell (`:2145` at `f2bb919b`, `:2148` at `adf8d1dd`,
+  "Acceptance" -> "Acceptance checks"); this note cites the file without a line.
 - `TODO.md` - cited only in the historical pathspec above; no live `TODO.md:<n>` claim here.
 
 Not re-verified at this pass: neither install script was executed; `drift-detection.sh` was not run.
+
+Re-verified per-path from `f2bb919b` to `adf8d1dd` for T-0008: of the cited paths only `.claude-plugin/marketplace.json` (crew `version` `:218`, now 1.0.36; the `:217` description is unchanged), `plugin/PLUGINS.md` (`:14` version; `:17` Registers row unchanged), `plugin/crew/BUDGETS.md` (marker still `:10`; the `:11` figure moved again, now 17,841 lines), `plugin/crew/README.md` (rows added above the command table, moving the cell above; the `34 commands` claim at `:2178` and `4 agents` at `:2189` still hold), `plugin/crew/commands/` (two files edited, `ls plugin/crew/commands/*.md` still 34) and `TODO.md` changed, while both install scripts, `README.md` and `scripts/check-marketplace.py` did not, so their citations stand.

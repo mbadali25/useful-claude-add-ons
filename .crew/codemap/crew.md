@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@f2bb919b
+anchor: useful-claude-add-ons@adf8d1dd
 verified: 2026-09-25
 
 ## Re-derive provenance
@@ -23,6 +23,8 @@ agent/command prose beyond their frontmatter and the sections cited below;
 `webtest_scaffold.py`; `crew_change.py`, `crew_incident.py`,
 `crew_platform.py`; any `.ps1` file's body past its `Resolve-CrewPython`
 definition; any test file's contents (existence and size only).
+Re-verified per-path from `f2bb919b` to `adf8d1dd` for T-0008; see the last
+section.
 
 # crew
 
@@ -131,7 +133,7 @@ draws it:
 | `/crew:approve` (`plugin/crew/commands/approve.md:5`, `disable-model-invocation: true`) | Typed by the user only: the UserPromptSubmit `approval-hook` records `<git-common-dir>/crew/tickets/<id>/approval.json`, bound to the sha256 of `spec.md` and `plan.md` (`:7-16`); the command body only relays the result | new in 1.0 |
 | `/crew:implement` (`plugin/crew/commands/implement.md:8-9`) | Implements an approved plan, then tests/docs/review; loads `crew-execute` (adapted from `superpowers:executing-plans`) | `/crew:work` |
 | `/crew:review` (`plugin/crew/commands/review.md`) | Independent QA review of the working diff (Codex, Copilot, or the `crew:reviewer` Claude fallback) | (unchanged name; internals rewritten) |
-| `/crew:done` (`plugin/crew/commands/done.md:7-8`) | Closes a ticket; three checks (review receipt, clean verify gate, passing completion audit), any one failing refuses the close, no partial close | new in 1.0 |
+| `/crew:done` (`plugin/crew/commands/done.md:7-8`) | Closes a ticket; four checks (review receipt, clean verify gate, passing completion audit, current artifacts), any one failing refuses the close, no partial close. Check 4 (`:46-57`, since crew 1.0.36) runs `crew_refresh_check.py` and refuses on any `stale` or `unknown` line **without refreshing** - a write there would stale check 1's receipt (`:52-55`) | new in 1.0 |
 
 `/crew:ticket` and `/crew:work` are now **removal stubs with no behaviour**
 (`plugin/crew/commands/ticket.md`, `plugin/crew/commands/work.md`, each a
@@ -290,8 +292,9 @@ they disagree:
   `config.json`".
 - Only `/crew:migrate` (`crew_migrate.py`, `--apply`) ever writes
   `.crew/crew.json`; `/crew:init` still writes only `.crew/config.json`
-  (`TODO.md:3884`, "T2 (lane D, additive) deferred items", filed
-  2026-09-23, still open at this anchor; it was `:3854` at `6c497a14`). `crew_migrate.py`'s own module
+  (`TODO.md:3945`, "T2 (lane D, additive) deferred items", filed
+  2026-09-23, still open at this anchor; it was `:3854` at `6c497a14` and
+  `:3884` at `f2bb919b`). `crew_migrate.py`'s own module
   docstring (`:1-4`) frames this as "one-time move of a 0.20 crew setup onto
   the 1.0 layout" and its schema table (`:11,26-40`) treats `crew.json`
   schema 1 as the target, `config.json` schema <= 7 as "kept, retireable".
@@ -432,18 +435,24 @@ was discarded before the next call regardless.
   equivalent PowerShell-side parity test exists for these 11 copies the way
   it does for the bash pair above was **not checked** this pass.
 
-## `crew_endpoints.py` — unchanged since the previous anchor
+## `crew_endpoints.py` — the ledger now fails closed under an OS lock
 
-Re-checked, not carried forward blind: `_ENDPOINTS_PATH_PARTS`
-(`plugin/crew/hooks/scripts/crew_endpoints.py:34`), `declare_endpoint`
-(`:255`), `infer_endpoints` (`:411`), `gizmoduck_installed` (`:499`),
-`_is_monorepo` (`:581`), `scan_artifact_path` (`:668`), `_endpoint_needle`
-(`:795`), `_artifact_confirms_scan` (`:830`), `read_endpoints` (`:915`) are
-all at the identical line numbers the previous anchor's note cited, and the
-file is 979 lines at both anchors — the crew 1.0 redesign did not touch this
-subsystem. `.crew/endpoints.json` still does not exist in this checkout;
-`git ls-files .crew/` still returns only the codemap `.md` files plus
-`.crew/verify.json`.
+Changed since `f2bb919b` by T-0003 (crew 1.0.35, `a1828a5d`), re-read at the
+cited lines: `_ENDPOINTS_PATH_PARTS`
+(`plugin/crew/hooks/scripts/crew_endpoints.py:49`), `declare_endpoint`
+(`:566`), `infer_endpoints` (`:734`), `gizmoduck_installed` (`:822`),
+`_is_monorepo` (`:904`), `scan_artifact_path` (`:991`), `record_scan_artifact`
+(`:1044`), `_endpoint_needle` (`:1128`), `_artifact_confirms_scan` (`:1163`),
+`read_endpoints` (`:1248`). The two read-modify-write paths,
+`declare_endpoint` and `record_scan_artifact`, now hold an OS advisory lock on
+a persistent `.crew/endpoints.json.oslock` across the whole cycle (comment at
+`:258-290`; `_acquire_endpoints_lock`, `:510`), and a lock or write failure is
+returned as an error rather than reported as a landed write -
+`crew_state.py`'s `--record-scan-artifact` exits 3 on it
+(`plugin/crew/hooks/scripts/crew_state.py:3270-3276`). Function bodies past
+those lines were not read. `.crew/endpoints.json` still does not exist in this
+checkout; `git ls-files .crew/` still returns only the codemap `.md` files
+plus `.crew/verify.json`.
 
 ## `.claude/rules/` - generated from this directory, and gated against it
 
@@ -455,10 +464,48 @@ the sha256 of everything the rule is rendered from (`rule_digest`, `:105`), the 
 INDEX.md's Covers cell for it, and the note's Landmines headlines (else its Entry points), capped at
 `RULES_MAX_LINES` = 30 (`:81`). `--check` (`rules`, `:191`) writes nothing and reports each rule
 file missing, stale or orphaned; a hand-written file at a generated path is never overwritten and
-fails `--check`. `.crew/verify.json` rule 22 runs `--check` for any change under
+fails `--check`. `.crew/verify.json` rule 22 (`.crew/verify.json:243`) runs `--check` for any change under
 `.claude/rules/**` or `.crew/codemap/**`, so **a code-map edit without a regeneration fails the Stop
 gate** - see `verification-harness.md`. DERIVED from the source above; the command was run by
 T-0015 against this refresh.
+
+## The artifact refresh check (T-0008, crew 1.0.36)
+
+`plugin/crew/hooks/scripts/crew_refresh_check.py` answers one read-only
+question: are the code maps, diagrams and code graph that THIS ticket's
+changed paths reach still current (module docstring, `:1-8`)? It narrows
+`crew_freshness.py`'s per-artifact questions to the paths the ticket changed
+(`plugin/crew/hooks/scripts/scope_base.py` `resolve` plus `completion_audit.changed_paths`, minus
+`RELEASE_BOOKKEEPING`, `:181`), so a raw anchor lag is not staleness; each
+artifact reads `fresh`/`stale`/`unknown` (`:152-154`) with the refresh command
+to run, documents read `not measured`, and a scope base that hides the change
+makes the whole answer `unknown` (`ticket_freshness`, `:549`). It is a CLI the
+commands call, not a hook - `plugin/crew/hooks/hooks.json` is unchanged since
+`f2bb919b`.
+
+- `/crew:implement` step 6 (`plugin/crew/commands/implement.md:85-104`) runs
+  it after `/crew:docs` and before `/crew:review` (`:92`), runs each named
+  refresh, commits, and re-runs until `fresh`; a `stop` ends the loop.
+- `/crew:done` Check 4 (`plugin/crew/commands/done.md:46-57`) runs it again
+  and refuses on `stale` or `unknown` without refreshing (`:52-55`).
+- `REFRESH_ARTIFACT_PATHS` (`plugin/crew/hooks/scripts/crew_refresh_check.py:168-173`: the code map,
+  `docs.diagramsDir`, `graph.out`, `.claude/rules`) is the one definition.
+  The scope guard (`_refresh_artifact`,
+  `plugin/crew/hooks/scripts/scope_guard.py:186-197`) and the completion audit
+  (`_outside_refresh_artifacts`,
+  `plugin/crew/hooks/scripts/completion_audit.py:167-177`) let a ticket write
+  those paths without a Touch entry **only while its approval is current**;
+  with no current approval nothing is exempt.
+- Tests: `plugin/crew/tests/test_refresh_check.py`,
+  `plugin/crew/tests/test_scope_guard_refresh_artifacts.py`,
+  `plugin/crew/tests/test_completion_audit_refresh_artifacts.py`, with mutations in
+  `plugin/crew/tests/sabotage_refresh.py`; `.crew/verify.json:244` maps them (and
+  `implement.md`, `done.md`) to one pytest rule. Confirmed present, **not
+  run and not read** this pass.
+
+The committed `docs/diagrams/process-crew-lifecycle.mmd` at `adf8d1dd` still
+draws `/crew:done` as "all three or nothing" (its `:114`); it predates this
+change.
 
 ## Entry points
 
@@ -482,8 +529,13 @@ T-0015 against this refresh.
   confirmed at a specific line this pass; called with subcommands
   (`plan-windows-default`, `apply-migrate`) from the three sites named
   above.
-- `plugin/crew/hooks/scripts/crew_endpoints.py:255` — `declare_endpoint`,
-  still the only writer of `.crew/endpoints.json`.
+- `plugin/crew/hooks/scripts/crew_refresh_check.py:549` — `ticket_freshness`,
+  the library entry point; `main()` at `:645`.
+- `plugin/crew/hooks/scripts/crew_endpoints.py:566` — `declare_endpoint`,
+  the only writer of *declared* records. Not the only writer of
+  `.crew/endpoints.json`, whatever its docstring says (`:569-570`):
+  `record_scan_artifact` (`:1044`) writes the document too (`:1089`), and
+  the lock comment (`:258-261`) names both.
 
 ## Owns data
 
@@ -510,7 +562,8 @@ T-0015 against this refresh.
   list at this anchor is still exactly three paths — `!.crew/codemap/`,
   `!.crew/endpoints.json`, `!.crew/verify.json` — confirmed by reading
   `.gitignore:279-330` directly; `metrics.jsonl` is not among them.
-- `.crew/endpoints.json` — unchanged; see above.
+- `.crew/endpoints.json` and its lock file `.crew/endpoints.json.oslock`
+  (created on first use, never deleted); see above.
 
 ## Calls out to
 
@@ -613,3 +666,24 @@ Each changed file:
 Also added, not caused by the diff: `/crew:approve`'s row and the `approve` phase in the lifecycle
 line. `approve.md` is unchanged since `6c497a14`; the `6c497a14` table omitted it.
 
+## Re-anchor provenance - `f2bb919b` -> `adf8d1dd`, 2026-09-25 (T-0008)
+
+`git diff --name-only f2bb919b adf8d1dd -- <the paths this note cites>` returned
+`.claude-plugin/marketplace.json`, `.crew/codemap/INDEX.md`, `.crew/verify.json`, `TODO.md`,
+`docs/diagrams/process-crew-lifecycle.mmd`, `plugin/crew/commands/done.md`,
+`plugin/crew/commands/implement.md`, `plugin/crew/hooks/scripts/crew_endpoints.py` and
+`plugin/crew/hooks/scripts/crew_state.py`. Each citation into them was re-read with `grep -n`:
+
+- `crew_state.py` - one hunk at `:3270-3276`, below every line cited here; all hold.
+- `crew_endpoints.py` - T-0003 rewrote it; the section above is re-derived and every line moved
+  (`declare_endpoint` `:255` -> `:566`, and the rest as listed there). The "only writer" claim was
+  already wrong at `f2bb919b` (`record_scan_artifact` wrote the file then too) and is corrected.
+- `TODO.md` - `:3884` -> `:3945`, same bullet.
+- `done.md` - three checks -> four; the `:7-8` citation holds, its claim is updated.
+- `implement.md` - step 6 gained the refresh; `:8-9` holds.
+- `.crew/verify.json` - one rule appended after rule 22, which did not move (`:243`).
+- `marketplace.json` - crew `version` only; `:217`'s counts still match disk.
+- `INDEX.md` - still assigns landmines to `CLAUDE.md`; its freshness citations moved, none cited here.
+- `process-crew-lifecycle.mmd` - new since `f2bb919b`; noted above as predating T-0008.
+
+`plugin/crew/hooks/scripts/crew_freshness.py` is still not opened by this note.
