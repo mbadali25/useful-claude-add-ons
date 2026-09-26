@@ -18,7 +18,13 @@ round 4's (T-0030-coord--DKzIYN): origin read through insteadOf, the Azure
 DevOps default-repository form, the key keeping host and full path, the TTL's
 upper bound, and the three could-not-tell branches those fixes added (a URL the
 key rule refuses, an Azure DevOps URL that fits no form, a get-url that
-fails), none of which may fall back to the directory name.
+fails), none of which may fall back to the directory name. The last block is
+review round 5's (T-0030-coord--FSkzCU): key parts written so a '.' in a name
+never reads as a separator, Azure DevOps names kept distinct (not hyphenated,
+not UTF-8-replaced), a local path's own marker, a relative path refused alone
+and resolved against the worktree (symlinks too), a failing or empty origin
+probe and an unknown main worktree read as could-not-tell, and a TTL bounded
+before it is converted to float.
 """
 import os
 
@@ -307,12 +313,12 @@ COORD_MUTATIONS = (
      "        return None\n",
      _T + "test_repo_key_is_one_for_every_azure_devops_form[ssh-encoded-space]"),
     ("crew_coord keeps an Azure DevOps name percent-encoded", COORD,
-     '    text = re.sub(r"[^a-z0-9._-]+", "-", urllib.parse.unquote(part).lower()).strip("._-")\n',
-     '    text = re.sub(r"[^a-z0-9._-]+", "-", part.lower()).strip("._-")\n',
+     '        return urllib.parse.unquote_to_bytes(part).decode("utf-8").lower()\n',
+     '        return part.lower()\n',
      _T + "test_repo_key_is_one_for_every_azure_devops_form[https-encoded-space]"),
     ("crew_coord accepts a TTL that is not finite", COORD,
-     "not isinstance(value, (int, float)) or not math.isfinite(value)\n",
-     "not isinstance(value, (int, float))\n",
+     "            or value <= 0 or value > MAX_TTL_MINUTES or not math.isfinite(value)):\n",
+     "            or value <= 0 or value > MAX_TTL_MINUTES):\n",
      _T + "test_ttl_outside_0_to_10080_is_a_config_error_before_any_fetch[NaN]"),
     # --- review round 4 ---
     ("crew_coord reads remote.origin.url raw", COORD,
@@ -324,12 +330,12 @@ COORD_MUTATIONS = (
      "            return segments[0], segments[0], segments[2]\n",
      _T + "test_every_azure_devops_form_of_a_default_repository_is_one_claim"),
     ("crew_coord keys by the last two path segments", COORD,
-     "        parts = ([host] if host else []) + [s.lower() for s in segments]\n",
-     "        parts = [s.lower() for s in segments][-2:]\n",
+     "        raw = ([host] if host else []) + segments\n",
+     "        raw = segments[-2:]\n",
      _T + "test_repo_key_tells_different_repositories_apart[gitlab-groups]"),
     ("crew_coord drops the ttlMinutes upper bound", COORD,
-     "            or value <= 0 or value > MAX_TTL_MINUTES):\n",
-     "            or value <= 0):\n",
+     "            or value <= 0 or value > MAX_TTL_MINUTES or not math.isfinite(value)):\n",
+     "            or value <= 0 or not math.isfinite(value)):\n",
      _T + "test_ttl_outside_0_to_10080_is_a_config_error_before_any_fetch[10081]"),
     ("crew_coord falls back to the directory name for an origin it cannot tell", COORD,
      '            raise UnknownKey(f"cannot derive this repository\'s key: {why}; nothing was read or written")\n',
@@ -338,7 +344,7 @@ COORD_MUTATIONS = (
     ("crew_coord reads an Azure DevOps URL that fits no form generically", COORD,
      ('            return None, f"origin\'s URL has the shape {_url_shape(host, segments)}, '
       'which fits no Azure DevOps form"\n'),
-     "            parts = [host] + segments\n",
+     "            found = segments\n",
      _T + "test_claim_is_could_not_tell_and_never_the_directory_name_for_an_unusable_origin[azure-short-v3]"),
     ("crew_coord falls back when git cannot resolve origin", COORD,
      '            raise UnknownKey(f"cannot derive this repository\'s key: `git remote get-url origin` failed: "\n'
@@ -349,4 +355,50 @@ COORD_MUTATIONS = (
      "    if not segments:\n",
      "    if False:\n",
      _T + "test_repo_key_is_could_not_tell_for_a_segment_the_key_rule_refuses[no-path]"),
+    # --- review round 5 ---
+    ("crew_coord joins key parts that may hold '.' unescaped", COORD,
+     '    return "".join(chr(b) if chr(b) in _KEY_LITERAL else f"_{b:02x}" for b in text.encode("utf-8"))\n',
+     '    return "".join(chr(b) if chr(b) in _KEY_LITERAL | {".", "_"} else f"_{b:02x}" '
+     'for b in text.encode("utf-8"))\n',
+     _T + "test_a_claim_in_one_repository_never_blocks_a_ticket_in_another[dot-join]"),
+    ("crew_coord normalises an Azure DevOps name to hyphens", COORD,
+     '        return urllib.parse.unquote_to_bytes(part).decode("utf-8").lower()\n',
+     '        return re.sub(r"[^a-z0-9]+", "-", urllib.parse.unquote(part).lower()).strip("-")\n',
+     _T + "test_a_claim_in_one_repository_never_blocks_a_ticket_in_another[azure-normalised]"),
+    ("crew_coord replaces an Azure DevOps name that is not UTF-8", COORD,
+     '        return urllib.parse.unquote_to_bytes(part).decode("utf-8").lower()\n',
+     '        return urllib.parse.unquote_to_bytes(part).decode("utf-8", "replace").lower()\n',
+     _T + "test_repo_key_is_could_not_tell_for_a_segment_the_key_rule_refuses[azure-not-utf-8]"),
+    ("crew_coord keys a local path like a host", COORD,
+     "        parts = ([] if host else [_LOCAL_MARK]) + [_key_part(p.lower()) for p in raw]\n",
+     "        parts = [_key_part(p.lower()) for p in raw]\n",
+     _T + "test_repo_key_tells_different_repositories_apart[local-path-named-like-a-host]"),
+    ("crew_coord keys a relative path as it is", COORD,
+     "    if local and not _ABSOLUTE_RE.match(local):\n",
+     "    if False:\n",
+     _T + "test_a_relative_path_alone_is_could_not_tell"),
+    ("crew_coord never resolves a local origin against the worktree", COORD,
+     '        name, why = owner_name(_resolved(got.out.decode("utf-8", "replace").strip(), top))\n',
+     '        name, why = owner_name(got.out.decode("utf-8", "replace").strip())\n',
+     _T + "test_every_spelling_of_a_local_origin_is_one_claim[relative]"),
+    ("crew_coord leaves a local origin's symlinks unresolved", COORD,
+     "    return os.path.realpath(os.path.join(top, local)) if local else url\n",
+     "    return os.path.abspath(os.path.join(top, local)) if local else url\n",
+     _T + "test_every_spelling_of_a_local_origin_is_one_claim[symlink]"),
+    ("crew_coord reads a failed origin probe as no origin", COORD,
+     "    if has_url.code != 1 or has_url.out.strip():\n",
+     "    if False:\n",
+     _T + "test_claim_is_could_not_tell_when_the_origin_probe_fails[128]"),
+    ("crew_coord reads an empty origin URL as a path", COORD,
+     "        if not has_url.out.strip():\n",
+     "        if False:\n",
+     _T + "test_claim_is_could_not_tell_for_an_origin_with_an_empty_url"),
+    ("crew_coord names the worktree when git cannot name the main one", COORD,
+     "    if not common:\n",
+     "    common = common or top\n    if not common:\n",
+     _T + "test_the_directory_fallback_is_could_not_tell_when_git_cannot_name_the_main_worktree"),
+    ("crew_coord converts an oversized TTL to float before bounding it", COORD,
+     "            or value <= 0 or value > MAX_TTL_MINUTES or not math.isfinite(value)):\n",
+     "            or not math.isfinite(value) or value <= 0 or value > MAX_TTL_MINUTES):\n",
+     _T + "test_ttl_outside_0_to_10080_is_a_config_error_before_any_fetch[10**400]"),
 )

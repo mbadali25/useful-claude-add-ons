@@ -106,8 +106,28 @@ All notable changes to this repository are documented here. Format follows [Keep
     replacing round 3's warn-and-use-30. **Breaking against earlier builds of
     this branch:** keys change from `owner.repo` to `host.owner.repo`, so a
     claim written by one of them is not found under its new key.
-  - 197 cases in `tests/test_crew_coord.py` against a local bare remote;
-    73 mutations in `tests/sabotage_coord.py`, registered in `sabotage.py`.
+  - Review round 5 fixes. Each part of the key is now written so it reads
+    back one way only — every byte outside `a-z`, `0-9`, `-` becomes `_` and
+    two hex digits (`github_2ecom.owner.repo`) — so a `.` inside a name no
+    longer reads as a separator (`team/a.b/repo` and `team/a/b.repo` were one
+    key, and a claim in one blocked the other), and Azure DevOps names are
+    percent-decoded and lowercased but no longer hyphenated (`My%20Project`
+    and `My-Project` were one key); a name that is not UTF-8 is could-not-tell.
+    A local path's key starts `file_`, so it never meets a host's. A relative
+    local `origin` is read against the worktree, as git reads it, and every
+    local path is made real, so `remote.git` from `/srv/work` and
+    `/srv/work/remote.git` share one key instead of granting two holders. A
+    `git config` probe of `origin` that fails, an empty `origin` URL, or a
+    `git rev-parse --git-common-dir` that fails is could-not-tell (exit 3),
+    never the directory-name fallback. A `coord.ttlMinutes` too large for a
+    float (`10**400`) is the usual config error, not an `OverflowError`. The
+    heartbeat tests no longer call `os.getuid()` or `signal.SIGKILL`, which
+    Windows lacks. **Breaking against earlier builds of this branch:** every
+    key changes spelling (`github.com.owner.repo` becomes
+    `github_2ecom.owner.repo`), so a claim written by one of them is not
+    found under its new key.
+  - 229 cases in `tests/test_crew_coord.py` against a local bare remote;
+    84 mutations in `tests/sabotage_coord.py`, registered in `sabotage.py`.
     The `/crew:autopilot` resume-step line is pending T-0004; until then the
     README says to run `crew_coord.py status` first after `/clear`.
 

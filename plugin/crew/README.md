@@ -1605,29 +1605,40 @@ python3 hooks/scripts/crew_coord.py recover --channel <c> --remote origin --tick
 **The `<repo>` half of the key is derived, never typed:** it is the `origin`
 remote's URL as git resolves it — `git remote get-url origin`, so
 `url.<base>.insteadOf` applies and an alias names the repository it points
-at — reduced to its host and every path segment, lowercased and joined with a
-dot, with `.git`, any user or token and any port removed
-(`https://github.com/Owner/Repo.git`, `ssh://git@github.com/Owner/Repo.git`
-and `git@github.com:Owner/Repo.git` all give `github.com.owner.repo`;
-`https://gitlab.com/group/sub/repo.git` gives `gitlab.com.group.sub.repo`;
-a local path or `file://` URL gives its segments alone). So every worktree
-and clone of one repository names a ticket alike, and repositories on
-different hosts, or in different groups with the same last two names, never
-do. Every Azure DevOps form of one repository gives
-`dev.azure.com.<org>.<project>.<repo>`: `https://dev.azure.com/<org>/<project>/_git/<repo>`,
+at — reduced to its host and every path segment, lowercased, with `.git`, any
+user or token and any port removed. Each of those parts is written so it can
+be read back one way only — every byte outside `a-z`, `0-9` and `-` becomes
+`_` and two hex digits, so `.` is `_2e` and `_` is `_5f` — and the parts are
+joined with a dot (`https://github.com/Owner/Repo.git`,
+`ssh://git@github.com/Owner/Repo.git` and `git@github.com:Owner/Repo.git` all
+give `github_2ecom.owner.repo`; `https://gitlab.com/group/sub/repo.git` gives
+`gitlab_2ecom.group.sub.repo`). So every worktree and clone of one repository
+names a ticket alike, and two different repositories never do — not on
+different hosts, not in different groups with the same last two names, and
+not where a dot inside a name would otherwise read as a separator
+(`team/a.b/repo` and `team/a/b.repo` are two keys). A local path or `file://`
+URL gives `file_` and its segments; a relative path is read against the
+worktree git runs in, as git reads it, and every local path is made real
+(`..` and symlinks resolved), so `remote.git` from `/srv/work` and
+`/srv/work/remote.git` are one key. Every Azure DevOps form of one repository gives
+`dev_2eazure_2ecom.<org>.<project>.<repo>`: `https://dev.azure.com/<org>/<project>/_git/<repo>`,
 `https://dev.azure.com/<org>/_git/<repo>` (a project's default repository,
 whose name is the project's, so project = repo),
 `<org>.visualstudio.com/[DefaultCollection/][<project>/]_git/<repo>` and
-`ssh.dev.azure.com:v3/<org>/<project>/<repo>` — with a percent-encoded name
-decoded and any other character made `-`. An origin the key cannot be told
+`ssh.dev.azure.com:v3/<org>/<project>/<repo>` — each name percent-decoded and
+lowercased, then written like any other part, so `My%20Project` and
+`My-Project` stay two projects. An origin the key cannot be told
 from reads `unknown` (exit 3) and nothing is written: an Azure DevOps URL that
-fits none of those forms, a path segment that is not letters, digits, `.`,
-`_`, `-` (a key over 128 characters counts), a URL with no path, or a
-`get-url` that fails. That includes an on-premises Azure DevOps Server URL
+fits none of those forms or whose names are not UTF-8, a path segment that is
+not letters, digits, `.`, `_`, `-`, a key over 128 characters, a URL with no
+path, an empty `origin` URL, or a `get-url` that fails. That includes an
+on-premises Azure DevOps Server URL
 (`https://server/tfs/<collection>/<project>/_git/<repo>`), whose `_git`
 segment is outside the rule. It never falls back to a directory name, which
-would give one ticket a second key. Only with no `origin` URL at all does it
-use the main worktree's directory name, and it prints why. `--ticket <repo>:<id>` is still accepted, but
+would give one ticket a second key. Only when git says `origin` has no URL at
+all (`git config` exit 1) does it use the main worktree's directory name, and
+it prints why; a `git config` or `git rev-parse --git-common-dir` probe that
+fails is `unknown` too, never that fallback. `--ticket <repo>:<id>` is still accepted, but
 the `<repo>` given must be that derived name (compared lowercased); any other
 is refused, because a free-text repo gives one ticket several keys and so
 several holders. **The `<id>` half is upper-cased** for the same reason:

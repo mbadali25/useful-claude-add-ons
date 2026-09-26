@@ -21,16 +21,22 @@ Every command takes `--channel` and `--remote` (default: `coord.channel` and
 and `--root` (default: the current directory).
 
 The `<repo>` half of a key is DERIVED, never typed: `origin`'s URL as git
-resolves it (`git remote get-url`, so url.<base>.insteadOf applies), its host
-and every path segment, lowercased and joined by '.'
-(`github.com.owner.repo`), so every worktree and clone of one repository
-names a ticket alike, and repositories on other hosts or in other groups never
-do; every Azure DevOps form of one repository (https with or without the
-project, <org>.visualstudio.com, ssh `v3/...`) gives
-`dev.azure.com.<org>.<project>.<repo>`. A URL it cannot tell a key from -- an
-Azure DevOps URL that fits no form, a segment outside the key's rule -- reads
-`unknown` and nothing is written; only with no origin at all is it the main
-worktree's directory name, with the reason printed. `--ticket <repo>:<id>` is
+resolves it (`git remote get-url`, so url.<base>.insteadOf applies; a local
+path made absolute against the worktree and real), its host and every path
+segment, lowercased, each with every byte outside [a-z0-9-] written `_` and
+two hex digits, and joined by '.' (`github_2ecom.owner.repo`,
+`github_2ecom.vercel.next_2ejs`), so every worktree and clone of one
+repository names a ticket alike, and two different repositories never do --
+not on other hosts or in other groups, and not where a '.' in a name would
+have read as a separator. A local path's key starts `file_`. Every Azure
+DevOps form of one repository (https with or without the project,
+<org>.visualstudio.com, ssh `v3/...`) gives
+`dev_2eazure_2ecom.<org>.<project>.<repo>`, each name percent-decoded and
+lowercased. A URL it cannot tell a key from -- an Azure DevOps URL that fits
+no form, a segment outside the key's rule, a relative path with no worktree
+-- or a git probe that fails reads `unknown` and nothing is written; only when
+git says origin has no URL at all is it the main worktree's directory name,
+with the reason printed. `--ticket <repo>:<id>` is
 accepted only when `<repo>` is that name. The `<id>` half is upper-cased: tracker ids (Jira, SDP, the local
 T-NNNN) name one ticket whatever case they are typed in, so `t-0030` and
 `T-0030` must be one key, not two holders.
@@ -160,9 +166,14 @@ CLAIMS = "claims/"
 IDENTITY_FILE = "coord-identity.json"
 _CHANNEL_RE = re.compile(r"[a-z0-9][a-z0-9-]{0,63}")
 _PART_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
-# The derived repo half of a key: origin's host and path segments, lowercased, joined by '.'.
+# The derived repo half of a key: origin's host and path segments, lowercased, each written by
+# _key_part (no '.' inside a part), joined by '.'.
 _REPO_RE = re.compile(r"[a-z0-9][a-z0-9._-]{0,127}")
 _OWNER_NAME_PART_RE = re.compile(r"[a-z0-9][a-z0-9._-]{0,63}")
+# The bytes a key part keeps as they are; every other byte is `_` + two hex digits.
+_KEY_LITERAL = frozenset("abcdefghijklmnopqrstuvwxyz0123456789-")
+# The first part of a local path's key: ends in a lone '_', which _key_part never writes.
+_LOCAL_MARK = "file_"
 UNSAFE = "<unsafe value withheld>"
 # Cc control (C0, C1), Cf format (bidi overrides and isolates, zero-width),
 # Zl/Zp (U+2028/U+2029, which str.splitlines() breaks on), Cs surrogates.
@@ -724,11 +735,38 @@ def _valid_part(value, rule=_PART_RE):
 
 
 def _azure_part(part):
-    """One Azure DevOps project or repo name as a key part: percent-decoded
-    (a project name may hold spaces, `My%20Project`), lowercased, and every
-    run of other characters made '-', the same in both URL forms."""
-    text = re.sub(r"[^a-z0-9._-]+", "-", urllib.parse.unquote(part).lower()).strip("._-")
-    return re.sub(r"_{2,}", "_", re.sub(r"\.{2,}", ".", text))
+    """One Azure DevOps org, project or repo name as Azure compares it:
+    percent-decoded (a project name may hold spaces, `My%20Project`) and
+    lowercased. None when the decoded bytes are not UTF-8 -- replacing them
+    would give two different names one key."""
+    try:
+        return urllib.parse.unquote_to_bytes(part).decode("utf-8").lower()
+    except UnicodeDecodeError:
+        return None
+
+
+def _key_part(text):
+    """One part of a key, written so it can be read back one way only: every
+    UTF-8 byte of `text` outside [a-z0-9-] becomes `_` and two lowercase hex
+    digits (`.` is `_2e`, `_` is `_5f`, a space `_20`). A part never holds '.',
+    so parts joined by '.' cannot run into each other, and never holds '__'
+    or '..'."""
+    return "".join(chr(b) if chr(b) in _KEY_LITERAL else f"_{b:02x}" for b in text.encode("utf-8"))
+
+
+_SCHEME_RE = re.compile(r"^([A-Za-z][A-Za-z0-9+.-]*)://([^/]*)(.*)$")
+_SCP_RE = re.compile(r"^(?:[^/\\@:]+@)?([^/\\@:]+):(.*)$")
+_DRIVE_RE = re.compile(r"^[A-Za-z]:[/\\]")
+_ABSOLUTE_RE = re.compile(r"^(?:[A-Za-z]:)?[/\\]")
+
+
+def _local_path(url):
+    """origin's URL as the filesystem path git reads it as -- not
+    scheme://, not scp-like `[user@]host:path` -- else None."""
+    text = (url or "").strip()
+    if _SCHEME_RE.match(text) or (_SCP_RE.match(text) and not _DRIVE_RE.match(text)):
+        return None
+    return text
 
 
 def _split_url(url):
@@ -738,12 +776,12 @@ def _split_url(url):
     local path or file://; the last segment loses a trailing `.git`.
     Credentials in the URL are never kept."""
     text = (url or "").strip()
-    found = re.match(r"^([A-Za-z][A-Za-z0-9+.-]*)://([^/]*)(.*)$", text)
-    scp = re.match(r"^(?:[^/\\@:]+@)?([^/\\@:]+):(.*)$", text)
+    found = _SCHEME_RE.match(text)
+    scp = _SCP_RE.match(text)
     if found:
         scheme, authority, path = found.groups()
         host = "" if scheme.lower() == "file" else re.sub(r":[0-9]*$", "", authority.rpartition("@")[2])
-    elif scp and not re.match(r"^[A-Za-z]:[/\\]", text):
+    elif scp and not _DRIVE_RE.match(text):
         host, path = scp.groups()
     else:
         host, path = "", re.sub(r"^([A-Za-z]):(?=[/\\])", r"\1", text)
@@ -785,61 +823,99 @@ def _azure_parts(host, segments):
 
 def owner_name(url):
     """(key, None) from a remote URL, or (None, why) when it cannot tell. The
-    key is the host and EVERY path segment, lowercased and joined by '.'
-    (`https://gitlab.com/groupA/sub/repo.git` gives `gitlab.com.groupa.sub.repo`),
-    so repositories that share a last two segments on different hosts or
-    groups never share a key, and the https, ssh and scp forms of one
-    repository do. A local path or file:// URL gives its segments alone.
-    Every Azure DevOps form of one repository -- https dev.azure.com and
-    <org>.visualstudio.com, with or without the project, and ssh `v3/...` --
-    gives `dev.azure.com.<org>.<project>.<repo>`; an Azure DevOps URL that fits
-    none of them is could-not-tell. So is a segment the key rule refuses: the
-    key is never a guess and never falls back to a directory name."""
+    key is the host and EVERY path segment, lowercased, each written by
+    _key_part and joined by '.' (`https://gitlab.com/groupA/a.b/repo.git`
+    gives `gitlab_2ecom.groupa.a_2eb.repo`), so two different repositories
+    never share a key -- not across hosts or groups, and not where a '.'
+    inside a name would have read as a separator -- while the https, ssh and
+    scp forms of one repository do. An absolute local path or file:// URL
+    gives `file_` and its segments (a lone trailing '_' no _key_part output
+    ends with, so it never meets a host); a relative path is could-not-tell
+    here, because it names a repository only against the worktree git reads
+    it from (repo_key resolves it first). Every Azure DevOps form of one
+    repository -- https dev.azure.com and <org>.visualstudio.com, with or
+    without the project, and ssh `v3/...` -- gives the parts
+    `dev.azure.com`, <org>, <project>, <repo>, each percent-decoded and
+    lowercased; an Azure DevOps URL that fits none of them is could-not-tell.
+    So is a segment the key rule refuses: the key is never a guess and never
+    falls back to a directory name."""
     host, segments = _split_url(url)
-    if host == "dev.azure.com" or host == "ssh.dev.azure.com" or host.endswith(".visualstudio.com"):
-        parts = _azure_parts(host, segments)
-        if parts is None:
-            return None, f"origin's URL has the shape {_url_shape(host, segments)}, which fits no Azure DevOps form"
-        parts = ["dev.azure.com"] + [_azure_part(p) for p in parts]
-    else:
-        parts = ([host] if host else []) + [s.lower() for s in segments]
+    local = _local_path(url)
+    if local and not _ABSOLUTE_RE.match(local):
+        return None, "origin's URL is a relative path, which names a repository only against a worktree"
     if not segments:
         return None, f"origin's URL has the shape {_url_shape(host, segments)}, which names no repository"
+    if host == "dev.azure.com" or host == "ssh.dev.azure.com" or host.endswith(".visualstudio.com"):
+        found = _azure_parts(host, segments)
+        if found is None:
+            return None, f"origin's URL has the shape {_url_shape(host, segments)}, which fits no Azure DevOps form"
+        names = [_azure_part(p) for p in found]
+        if None in names:
+            return None, (f"origin's URL has the shape {_url_shape(host, segments)}, and a name in it "
+                          "is not percent-encoded UTF-8")
+        parts = [_key_part(p) for p in ["dev.azure.com"] + names]
+    else:
+        raw = ([host] if host else []) + segments
+        if not all(p.isascii() and _valid_part(p.lower(), _OWNER_NAME_PART_RE) for p in raw):
+            return None, (f"origin's URL has the shape {_url_shape(host, segments)}, and a part of it is not "
+                          "letters, digits, '.', '_', '-' (at most 64)")
+        parts = ([] if host else [_LOCAL_MARK]) + [_key_part(p.lower()) for p in raw]
     key = ".".join(parts)
-    if not (all(_valid_part(p, _OWNER_NAME_PART_RE) for p in parts) and _valid_part(key, _REPO_RE)):
-        return None, (f"origin's URL has the shape {_url_shape(host, segments)}, and a part of it is not "
-                      "letters, digits, '.', '_', '-' (or the key would pass 128 characters)")
+    if not _valid_part(key, _REPO_RE):
+        return None, (f"origin's URL has the shape {_url_shape(host, segments)}, and its key would pass "
+                      "128 characters")
     return key, None
 
 
 def _fallback_repo(top):
     common = crew_ticket.common_dir(top)
-    base = os.path.dirname(common) if common and os.path.basename(common) == ".git" else (common or top)
+    if not common:
+        raise UnknownKey("cannot derive this repository's name: there is no origin remote, and "
+                         "`git rev-parse --git-common-dir` failed, so the main worktree is unknown; "
+                         "nothing was read or written")
+    base = os.path.dirname(common) if os.path.basename(common) == ".git" else common
     name = re.sub(r"\.git$", "", os.path.basename(base).lower())
     name = re.sub(r"[^a-z0-9._-]+", "-", name).lstrip("._-")
     name = re.sub(r"_{2,}", "_", re.sub(r"\.{2,}", ".", name))
     return name if _valid_part(name, _REPO_RE) else None
 
 
+def _resolved(url, top):
+    """origin's URL with a local path made absolute and real the way git
+    reads it: a relative path against the worktree git runs in (`top`), then
+    `..`, `.` and symlinks resolved, so every spelling of one local
+    repository is one path. Any other URL is returned as it is."""
+    local = _local_path(url)
+    return os.path.realpath(os.path.join(top, local)) if local else url
+
+
 def repo_key(top):
     """(repo, note): the repo half of every claim key, DERIVED, never typed:
     owner_name() of origin's URL as git resolves it (`git remote get-url`,
-    which applies url.<base>.insteadOf), so every worktree and clone of one
-    repository names it alike, however its origin is spelled. Only when there
-    is no origin URL at all does it fall back to the main worktree's directory
-    name, and `note` says why. UnknownKey when origin has a URL the key cannot
-    be told from -- never a fallback, which would give one ticket a second
-    key; UsageError when the fallback has no usable name either."""
+    which applies url.<base>.insteadOf, and a local path made absolute and
+    real against this worktree), so every worktree and clone of one
+    repository names it alike, however its origin is spelled. Only when git
+    says there is no origin URL at all (`git config` exit 1) does it fall back
+    to the main worktree's directory name, and `note` says why. UnknownKey
+    when origin has a URL the key cannot be told from, or when a probe fails
+    -- never a fallback, which would give one ticket a second key; UsageError
+    when the fallback has no usable name either."""
     has_url = run_git(top, ["config", "--get-all", "remote.origin.url"])
-    if has_url.code == 0 and has_url.out.strip():
+    if has_url.code == 0:
+        if not has_url.out.strip():
+            raise UnknownKey("cannot derive this repository's key: origin's URL is empty (git would read the "
+                             "remote's name as a path); nothing was read or written")
         got = run_git(top, ["remote", "get-url", "origin"])
         if got.code != 0:
             raise UnknownKey(f"cannot derive this repository's key: `git remote get-url origin` failed: "
                              f"{_last_line(got.err)}")
-        name, why = owner_name(got.out.decode("utf-8", "replace"))
+        name, why = owner_name(_resolved(got.out.decode("utf-8", "replace").strip(), top))
         if not name:
             raise UnknownKey(f"cannot derive this repository's key: {why}; nothing was read or written")
         return name, None
+    if has_url.code != 1 or has_url.out.strip():
+        raise UnknownKey(f"cannot tell whether origin has a URL: `git config --get-all remote.origin.url` "
+                         f"exited {has_url.code}: {_last_line(has_url.err)}; nothing was read or written")
     why = "there is no origin remote"
     fallback = _fallback_repo(top)
     if not fallback:
@@ -1018,8 +1094,8 @@ def ttl_minutes(top):
     import crew_config
     coord = crew_config.resolve_config(top).get("coord") or {}
     value = coord.get("ttlMinutes", DEFAULT_TTL_MINUTES) if isinstance(coord, dict) else DEFAULT_TTL_MINUTES
-    if (isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value)
-            or value <= 0 or value > MAX_TTL_MINUTES):
+    if (isinstance(value, bool) or not isinstance(value, (int, float))
+            or value <= 0 or value > MAX_TTL_MINUTES or not math.isfinite(value)):
         raise UsageError(f"coord.ttlMinutes {safe(value, 40)!r} must be a number of minutes above 0 and at most "
                          f"{MAX_TTL_MINUTES} (7 days); nothing was read or written")
     return value
@@ -1316,8 +1392,9 @@ def _parser():
             cmd.add_argument("--ticket", required=True,
                              help="<id> or <repo>:<id>. The repo half is derived, never chosen: origin's "
                                   "URL as git resolves it (insteadOf applied), its host and full path, "
-                                  "lowercased and joined by '.' (github.com.owner.repo; every Azure DevOps "
-                                  "form: dev.azure.com.org.project.repo); a URL it cannot tell from is "
+                                  "lowercased, each byte outside [a-z0-9-] written _ and two hex digits, "
+                                  "joined by '.' (github_2ecom.owner.repo; every Azure DevOps form: "
+                                  "dev_2eazure_2ecom.org.project.repo); a URL it cannot tell from is "
                                   "refused. With no origin, the main worktree's directory name, with the "
                                   "reason printed. A given <repo> must match it. The id is upper-cased")
         if name in ("claim", "recover"):
