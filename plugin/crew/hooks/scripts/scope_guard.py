@@ -50,7 +50,16 @@ the payload in, so the two shells cannot disagree.
 A shell command is not judged against Touch (the Stop audit does that, from
 the tree). It is refused, in every mode but `off`, when its text invokes
 `crew_ticket.py approve`, names the approval hook script, or names
-`<git-common-dir>/crew/` alongside a redirect or a writing command. That is a
+`<git-common-dir>/crew/` alongside a redirect or a writing command.
+
+`crew_autopilot.py approve` (T-0010) is the one approval a session may run,
+and only as the whole command `python3 [-B] <path>/crew_autopilot.py approve
+[--root .] --ticket <ID>` -- nothing chained, piped, substituted or quoted --
+and only while `crew_autopilot.approval_policy` says yes for that ticket in
+this worktree (which needs `scope.allowCliApproval: true`). Any other command
+naming it is refused; a policy that cannot be told refuses too.
+
+That is a
 textual check, not a shell parser: it stops drift and accidental bypass, and
 a session that sets out to forge local state -- a variable holding the path,
 an encoded command -- still can. README "Scope and approval" states the
@@ -101,6 +110,12 @@ SCOPE_BASE = ".crew/.scope-base"
 # One simple command's worth of text: a separator ends the span, so
 # `crew_ticket.py status ... && echo approve` is not an approval.
 _APPROVE_RE = re.compile(r"crew_ticket(?:\.py)?\b[^\n;&|]*\bapprove\b", re.IGNORECASE)
+# T-0010: any mention of autopilot's approve, and the one bare form allowed.
+_AUTOPILOT_APPROVE_RE = re.compile(r"crew_autopilot(?:\.py)?\b[^\n;&|]*\bapprove\b",
+                                   re.IGNORECASE)
+_AUTOPILOT_BARE_RE = re.compile(
+    r"[ \t]*python3?(?:[ \t]+-B)?[ \t]+[\w./\\:~${}-]*crew_autopilot\.py[ \t]+approve"
+    r"(?:[ \t]+--root[ \t]+\.)?[ \t]+--ticket[ \t]+([A-Z][A-Z0-9]*-[0-9]+)[ \t]*")
 _HOOK_RE = re.compile(r"approval[_-]hook(?:\.py|\.sh|\.ps1)?\b", re.IGNORECASE)
 _DOTGIT_CREW_RE = re.compile(r"\.git[\\/]+crew\b|git-common-dir\b.*\bcrew\b",
                              re.IGNORECASE | re.DOTALL)
@@ -211,14 +226,38 @@ def protected(top, state, target, base):
     return False
 
 
-def shell_refusal(command, common):
+def _autopilot_refusal(command, top):
+    """Why a command naming `crew_autopilot.py approve` is refused, or None
+    for the bare form while `approval_policy` allows it (module docstring)."""
+    bare = _AUTOPILOT_BARE_RE.fullmatch(command)
+    if not bare:
+        return ("autopilot approval must be the bare command `python3 <path>/"
+                "crew_autopilot.py approve --root . --ticket <id>`, nothing chained")
+    ticket = bare.group(1)
+    try:
+        import crew_autopilot  # pylint: disable=import-outside-toplevel
+        decision = crew_autopilot.approval_policy(top, ticket) if top else None
+    except Exception as exc:  # pylint: disable=broad-except
+        return (f"could not tell whether autopilot.approval allows {ticket} "
+                f"({type(exc).__name__}); only the user's /crew:approve approves")
+    if isinstance(decision, dict) and decision.get("allow") is True:
+        return None
+    reason = decision.get("reason") if isinstance(decision, dict) else "could not tell"
+    return f"autopilot.approval does not allow {ticket}: {reason}"
+
+
+def shell_refusal(command, common, top=None):
     """Why a Bash/PowerShell `command` is refused, or None (module docstring,
     "Bash and PowerShell"). Textual on purpose, and conservative: a benign
-    command that names crew's state beside a writing word is refused too."""
+    command that names crew's state beside a writing word is refused too.
+    `top` is the worktree whose autopilot policy judges `crew_autopilot.py
+    approve`; without it that command is refused."""
     if not isinstance(command, str):
         return None
     if _APPROVE_RE.search(command):
         return "it runs `crew_ticket.py approve`; approval comes from the user's own prompt"
+    if _AUTOPILOT_APPROVE_RE.search(command):
+        return _autopilot_refusal(command, top)
     if _HOOK_RE.search(command):
         return "it names the approval hook, which only the user's prompt may drive"
     state = os.path.join(common, "crew") if common else None
@@ -284,7 +323,7 @@ def decide(data):
     if tool in SHELLS:
         tool_input = data.get("tool_input")
         command = tool_input.get("command") if isinstance(tool_input, dict) else None
-        reason = shell_refusal(command, common)
+        reason = shell_refusal(command, common, top)
         if reason is None:
             return 0
         _log(top, configured, "block", None, "-", f"{tool}: {reason}")

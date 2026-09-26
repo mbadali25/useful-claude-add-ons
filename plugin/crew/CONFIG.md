@@ -796,6 +796,8 @@ repository or one checkout.
 | `graph.commitHook` | boolean | `false` | **no consumer found**, §9 |
 | `autopilot.mode` | `"off"` or `"plan"` | `"off"` | `crew_autopilot.settings` — only the exact string `plan` arms `/crew:autopilot`, §20 |
 | `autopilot.maxPhases` | positive integer | `12` | `crew_autopilot.settings`, read by `crew_autopilot.next_phase`, §20 |
+| `autopilot.approval` | `"human"`, `"self"` or `"risk"` | `"risk"` | `crew_autopilot.approval_policy`, read by `crew_autopilot.py approve`, `crew_ticket.accepted` and `scope_guard.py`, §20 |
+| `autopilot.questions` | `"human"`, `"self"` or `"risk"` | `"risk"` | `crew_autopilot.question_policy`, read by `crew_autopilot.py questions-check` and `next`, §20 |
 
 `context.reserveTokens: null` means *off*, and survives as `null` — this is the
 case `null_shadows` is deliberately narrow to protect (§1).
@@ -2226,6 +2228,8 @@ driven is a fact about that checkout.
 |---|---|---|---|
 | `autopilot.mode` | `"off"` | `crew_autopilot.settings`, through `crew_config.resolve_config` | Only the exact string `"plan"` arms it. `"Plan"`, `"plan "`, `true`, `"on"`, `null` — anything else — reads as `off`, and `settings` prints which value it saw. A typo must not arm a driver. |
 | `autopilot.maxPhases` | `12` | `crew_autopilot.settings`; `next_phase` stops once the session's phase count reaches it | Anything but a positive integer (`0`, `-3`, `"12"`, `true`, `2.5`) reads as `12`, with a warning. |
+| `autopilot.approval` | `"risk"` | `crew_autopilot.approval_policy` (T-0010): whether `crew_autopilot.py approve` may record the plan approval itself | Anything but exactly `human`, `self` or `risk` (`"Self"`, `true`, `null`) reads as `human`, with a warning. `human` always stops. |
+| `autopilot.questions` | `"risk"` | `crew_autopilot.question_policy` (T-0010): whether autopilot takes the researched recommendation for an open question | Same: anything else reads as `human`, which always stops. |
 
 **Which file.** `.crew/config.json`, through `resolve_config` — the file
 `crew_ticket.cli_approval_allowed` already reads, so the approval policy T-0010
@@ -2234,8 +2238,33 @@ does not read for this key; an `autopilot` block found only there is reported
 by `settings` ("move it to .crew/config.json") rather than read as `off` with
 no word.
 
-**What arming it does not change.** Plan approval, review acceptance,
-brainstorm and open questions always stop for a person in this version; every
-`AUTONOMOUS_STOPS` id (§5) binds it; no guard, hook, review budget or
-completion audit is relaxed. `pm.authority: autonomous` from 0.20 arms nothing —
+**The two policies (T-0010).** `autopilot.approval` decides the
+plan-approval phase: `human` always stops for `/crew:approve`; `self` lets
+`crew_autopilot.py approve --root . --ticket <id>` record the approval at any
+risk; `risk` does so only when the spec's header line says `risk: low` (an
+absent or unparseable risk is `high`, never `low`). At **every** setting the
+approval also needs `scope.allowCliApproval` exactly `true`, autopilot armed,
+and a review ledger that is neither NEEDS_REPLAN nor unreadable (a plan after a
+spent review budget is the human's). The receipt says `approved_via:
+"autopilot"` and `approved_by: "autopilot:<policy>"`, and `crew_ticket.accepted`
+re-asks the policy on every read: turn the policy to `human`, set
+`allowCliApproval` false, or edit the spec, and the scope guard and the
+completion audit stop honouring it. The scope guard allows exactly the bare
+command `python3 [-B] <path>/crew_autopilot.py approve [--root .] --ticket <ID>`
+and only while the policy says yes; `crew_ticket.py approve` stays refused.
+`autopilot.questions` decides an open question: autopilot researches it
+(crew:explorer for the repo, crew:researcher outside), writes
+`.work/tickets/<id>/questions.md` (2-4 options per question, the
+recommendation first, each with a `Cost:` line, and a `Research:` line), and
+`crew_autopilot.py questions-check` validates it and says `take` or `stop`.
+`self` takes the recommendation, `risk` only on `risk: low`, `human` stops; a
+`taken: Option <id> by autopilot (<policy>)` line records each one, and the
+check refuses a `taken:` line the policy in force would not allow. Every
+self-approval and every taken answer is reported by name.
+
+**What arming it does not change.** Review acceptance and brainstorm always
+stop for a person, at every setting — accepting review FINDINGS
+(`review_ledger.py --accept`) is never automatic; every
+`AUTONOMOUS_STOPS` id (§5) binds it; no hook, review budget or completion
+audit is relaxed. `pm.authority: autonomous` from 0.20 arms nothing —
 `/crew:migrate` keeps it under `retired.pm` and its note points here.

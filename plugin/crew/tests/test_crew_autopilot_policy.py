@@ -1,0 +1,568 @@
+"""T-0010: `/crew:autopilot`'s approval and questions policies.
+
+    python3 -m pytest plugin/crew/tests/test_crew_autopilot_policy.py -q
+
+`autopilot.approval` and `autopilot.questions` (human|self|risk, default
+`risk`) decide what autopilot does at the plan-approval phase and at an open
+question. `approval_policy` never allows unless `scope.allowCliApproval` is
+exactly true; `risk` allows only a spec header that says `risk: low`; an
+unknown risk reads as high, and a value that is not a policy reads as
+`human`. Review FINDINGS are never accepted by autopilot at any setting.
+Every repository is built under tmp_path; nothing touches the real one or
+~/.claude. `sabotage_autopilot.py`'s POLICY_MUTATIONS prove these can fail.
+"""
+import json
+import os
+import subprocess
+import sys
+
+import pytest
+
+import context  # noqa: F401  pylint: disable=unused-import
+import crew_autopilot
+import crew_ticket
+import review_ledger
+from scope_fixtures import PLAN, SPEC, approve_as_user, make_repo
+
+_ROOT = context._ROOT  # pylint: disable=protected-access
+_SCRIPT = os.path.join(_ROOT, "hooks", "scripts", "crew_autopilot.py")
+_COMMAND = os.path.join(_ROOT, "commands", "autopilot.md")
+T = "T-1"
+POLICIES = ("human", "self", "risk")
+RISKS = ("low", "med", "high", None)
+
+
+# --- fixtures ----------------------------------------------------------------
+
+def _write(path, text):
+    os.makedirs(os.path.dirname(str(path)), exist_ok=True)
+    with open(str(path), "w", encoding="utf-8", newline="\n") as handle:
+        handle.write(text)
+
+
+def _header(risk):
+    return "status: spec" + (f"   risk: {risk}" if risk else "")
+
+
+def _spec_text(header):
+    body = SPEC.format(ticket=T, touch="- `src/**`")
+    first, rest = body.split("\n", 1)
+    return f"{first} title          {header}\n{rest}"
+
+
+def _repo(tmp_path, approval="risk", questions="risk", allow=True, risk="low",
+          armed=True, header=None):
+    """A repo with one valid, active ticket and the given policy config.
+    `allow` is written verbatim as `scope.allowCliApproval` (MISSING omits it)."""
+    root = make_repo(tmp_path, mode="off")
+    scope = {"mode": "off"}
+    if allow is not MISSING:
+        scope["allowCliApproval"] = allow
+    block = {"mode": "plan" if armed else "off"}
+    for key, value in (("approval", approval), ("questions", questions)):
+        if value is not MISSING:
+            block[key] = value
+    _write(root / ".crew" / "config.json", json.dumps({"scope": scope, "autopilot": block}))
+    folder = root / ".work" / "tickets" / T
+    _write(folder / "direction.md", "go\n")
+    _write(folder / "spec.md", _spec_text(header if header is not None else _header(risk)))
+    _write(folder / "plan.md", PLAN.format(files="src/app.py"))
+    _write(root / ".work" / "INDEX.md", f"{T} | ready | low | r | title\n")
+    crew_ticket.activate(str(root), T)
+    return root
+
+
+MISSING = object()
+
+
+def _cli(root, *args):
+    return subprocess.run([sys.executable, _SCRIPT] + list(args) + ["--root", str(root)],
+                          capture_output=True, text=True, check=False,
+                          stdin=subprocess.DEVNULL)
+
+
+def _receipt(root):
+    receipt, state = crew_ticket.read_approval(str(root), T)
+    return receipt if state == "ok" else None
+
+
+def _ledger(root, rounds, state, receipt=None):
+    path = review_ledger.ledger_path(str(root), T)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    _write(path, json.dumps({"ticket": T, "budget": 2, "rounds": rounds, "refused": [],
+                             "state": state, "receipt": receipt}))
+
+
+# --- step 1: approval_policy ---------------------------------------------------
+
+@pytest.mark.parametrize("risk", RISKS)
+def test_approval_human_never_allows(tmp_path, risk):
+    got = crew_autopilot.approval_policy(str(_repo(tmp_path, approval="human", risk=risk)), T)
+
+    assert (got["allow"], got["policy"]) == (False, "human")
+
+
+@pytest.mark.parametrize("risk", RISKS)
+def test_approval_self_allows_any_risk(tmp_path, risk):
+    got = crew_autopilot.approval_policy(str(_repo(tmp_path, approval="self", risk=risk)), T)
+
+    assert (got["allow"], got["policy"]) == (True, "self")
+
+
+@pytest.mark.parametrize("risk,allow", [("low", True), ("med", False), ("high", False),
+                                        ("LOW", True), ("Med", False)])
+def test_approval_risk_allows_only_low(tmp_path, risk, allow):
+    got = crew_autopilot.approval_policy(str(_repo(tmp_path, approval="risk", risk=risk)), T)
+
+    assert (got["allow"], got["risk"], got["known"]) == (allow, risk.lower(), True)
+
+
+@pytest.mark.parametrize("header", ["status: spec", "status: spec   risk: lo",
+                                    "status: spec   risk: LOW!", "status: spec   risk:"])
+def test_approval_risk_unknown_denies(tmp_path, header):
+    got = crew_autopilot.approval_policy(str(_repo(tmp_path, header=header)), T)
+
+    assert (got["allow"], got["risk"], got["known"]) == (False, "high", False)
+
+
+@pytest.mark.parametrize("header", [
+    "status: spec   risk: high   risk: low",
+    "cut risk: low paths   status: spec   risk: high"])
+def test_approval_header_naming_risk_twice_is_unknown(tmp_path, header):
+    got = crew_autopilot.approval_policy(str(_repo(tmp_path, approval="risk", header=header)),
+                                         T)
+
+    assert (got["allow"], got["known"]) == (False, False)
+
+
+def test_approval_risk_in_the_body_is_not_the_header(tmp_path):
+    root = _repo(tmp_path, header="status: spec")
+    spec = root / ".work" / "tickets" / T / "spec.md"
+    _write(spec, spec.read_text(encoding="utf-8") + "\nrisk: low\n")
+
+    got = crew_autopilot.approval_policy(str(root), T)
+
+    assert (got["allow"], got["known"]) == (False, False)
+
+
+@pytest.mark.parametrize("policy", ["self", "risk"])
+@pytest.mark.parametrize("allow", [MISSING, False, "true", 1, None])
+def test_approval_requires_allow_cli_approval(tmp_path, policy, allow):
+    got = crew_autopilot.approval_policy(
+        str(_repo(tmp_path, approval=policy, allow=allow)), T)
+
+    assert (got["allow"], "scope.allowCliApproval" in got["reason"]) == (False, True)
+
+
+def test_approval_without_a_config_file_denies(tmp_path):
+    root = _repo(tmp_path, approval="self")
+    (root / ".crew" / "config.json").unlink()
+
+    got = crew_autopilot.approval_policy(str(root), T)
+
+    assert got["allow"] is False
+
+
+@pytest.mark.parametrize("value", ["Self", "auto", "yes", True, None, 1, ["self"]])
+def test_approval_bad_value_reads_human(tmp_path, value):
+    got = crew_autopilot.approval_policy(str(_repo(tmp_path, approval=value)), T)
+
+    assert (got["allow"], got["policy"], repr(value) in " ".join(got["warnings"])) == (
+        False, "human", True)
+
+
+def test_approval_default_is_risk(tmp_path):
+    got = crew_autopilot.approval_policy(str(_repo(tmp_path, approval=MISSING)), T)
+
+    assert (got["policy"], got["allow"]) == ("risk", True)
+
+
+@pytest.mark.parametrize("state", [review_ledger.NEEDS_REPLAN, "corrupt"])
+def test_approval_refuses_when_the_review_budget_is_spent_or_unreadable(tmp_path, state):
+    root = _repo(tmp_path, approval="self")
+    if state == "corrupt":
+        path = review_ledger.ledger_path(str(root), T)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        _write(path, "{not json")
+    else:
+        _ledger(root, [], state)
+
+    got = crew_autopilot.approval_policy(str(root), T)
+
+    assert (got["allow"], "review" in got["reason"]) == (False, True)
+
+
+def test_approval_with_no_spec_denies_under_risk(tmp_path):
+    root = _repo(tmp_path)
+    (root / ".work" / "tickets" / T / "spec.md").unlink()
+
+    got = crew_autopilot.approval_policy(str(root), T)
+
+    assert (got["allow"], got["known"]) == (False, False)
+
+
+def test_approval_policy_that_cannot_read_settings_denies(tmp_path, monkeypatch):
+    root = _repo(tmp_path, approval="self")
+
+    def boom(_root):
+        raise OSError("disk")
+    monkeypatch.setattr(crew_autopilot, "settings", boom)
+
+    got = crew_autopilot.approval_policy(str(root), T)
+
+    assert (got["allow"], got["policy"], "could not tell" in got["reason"]) == (
+        False, "unknown", True)
+
+
+# --- step 1: question_policy ---------------------------------------------------
+
+@pytest.mark.parametrize("risk", RISKS)
+def test_questions_human_stops(tmp_path, risk):
+    got = crew_autopilot.question_policy(str(_repo(tmp_path, questions="human", risk=risk)), T)
+
+    assert (got["action"], got["policy"]) == ("stop", "human")
+
+
+@pytest.mark.parametrize("risk", RISKS)
+def test_questions_self_takes(tmp_path, risk):
+    got = crew_autopilot.question_policy(str(_repo(tmp_path, questions="self", risk=risk)), T)
+
+    assert (got["action"], got["policy"]) == ("take", "self")
+
+
+@pytest.mark.parametrize("header,action", [
+    ("status: spec   risk: low", "take"), ("status: spec   risk: med", "stop"),
+    ("status: spec   risk: high", "stop"), ("status: spec", "stop"),
+    ("status: spec   risk: lo", "stop")])
+def test_questions_risk_takes_only_low(tmp_path, header, action):
+    got = crew_autopilot.question_policy(str(_repo(tmp_path, questions="risk", header=header)),
+                                         T)
+
+    assert got["action"] == action
+
+
+def test_questions_do_not_depend_on_allow_cli_approval(tmp_path):
+    got = crew_autopilot.question_policy(
+        str(_repo(tmp_path, questions="self", allow=False)), T)
+
+    assert got["action"] == "take"
+
+
+@pytest.mark.parametrize("value", ["Self", "take", True, None])
+def test_questions_bad_value_reads_human(tmp_path, value):
+    got = crew_autopilot.question_policy(str(_repo(tmp_path, questions=value, risk="low")), T)
+
+    assert (got["action"], got["policy"], bool(got["warnings"])) == ("stop", "human", True)
+
+
+def test_question_policy_that_cannot_read_settings_stops(tmp_path, monkeypatch):
+    root = _repo(tmp_path, questions="self")
+
+    def boom(_root):
+        raise OSError("disk")
+    monkeypatch.setattr(crew_autopilot, "settings", boom)
+
+    got = crew_autopilot.question_policy(str(root), T)
+
+    assert (got["action"], got["policy"]) == ("stop", "unknown")
+
+
+def test_settings_report_both_policies(tmp_path):
+    got = crew_autopilot.settings(str(_repo(tmp_path, approval="self", questions="human")))
+
+    assert (got["approval"], got["questions"]) == ("self", "human")
+
+
+# --- step 2: the autopilot receipt ---------------------------------------------
+
+def test_autopilot_approve_writes_an_autopilot_receipt(tmp_path):
+    root = _repo(tmp_path, approval="risk", risk="low")
+
+    done = _cli(root, "approve", "--ticket", T)
+    receipt = _receipt(root)
+
+    assert (done.returncode, done.stdout.strip(), receipt["approved_via"],
+            receipt["approved_by"], crew_ticket.accepted(str(root), T)["status"]) == (
+        0, f"self-approved {T} under approval=risk, risk=low", "autopilot", "autopilot:risk",
+        "approved")
+
+
+@pytest.mark.parametrize("approval,risk", [("human", "low"), ("risk", "med"), ("risk", None)])
+def test_autopilot_approve_refused_prints_reason(tmp_path, approval, risk):
+    root = _repo(tmp_path, approval=approval, risk=risk)
+
+    done = _cli(root, "approve", "--ticket", T)
+
+    assert (done.returncode, done.stdout.startswith("refused:"),
+            f"/crew:approve {T}" in done.stdout, _receipt(root)) == (2, True, True, None)
+
+
+def test_autopilot_approve_refuses_unarmed(tmp_path):
+    root = _repo(tmp_path, approval="self", armed=False)
+
+    done = _cli(root, "approve", "--ticket", T)
+
+    assert (done.returncode, "autopilot.mode" in done.stdout, _receipt(root)) == (
+        2, True, None)
+
+
+def test_autopilot_approve_refuses_without_allow_cli_approval(tmp_path):
+    root = _repo(tmp_path, approval="self", allow=False)
+
+    done = _cli(root, "approve", "--ticket", T)
+
+    assert (done.returncode, _receipt(root)) == (2, None)
+
+
+def test_the_library_refuses_an_autopilot_receipt_the_policy_denies(tmp_path):
+    root = _repo(tmp_path, approval="human")
+
+    with pytest.raises(crew_ticket.TicketError, match="autopilot.approval"):
+        crew_ticket.approve(str(root), T, by="autopilot:human", via=crew_ticket.AUTOPILOT)
+
+    assert _receipt(root) is None
+
+
+def test_an_unknown_via_is_still_refused(tmp_path):
+    root = _repo(tmp_path, approval="self")
+
+    with pytest.raises(crew_ticket.TicketError, match="approved_via"):
+        crew_ticket.approve(str(root), T, via="autopilot-ish")
+
+
+# --- review FINDINGS are the owner's at every setting ----------------------------
+
+@pytest.mark.parametrize("approval", POLICIES)
+@pytest.mark.parametrize("questions", POLICIES)
+def test_findings_are_never_self_accepted(tmp_path, approval, questions):
+    root = _repo(tmp_path, approval=approval, questions=questions)
+    approve_as_user(root, T)
+    row = {"round": 1, "status": "completed", "provider": "claude", "model": None,
+           "verdict": "FINDINGS", "bundle_sha256": "a" * 64, "base": "HEAD"}
+    _ledger(root, [row], "REVIEWED")
+
+    got = crew_autopilot.next_phase(str(root), T)
+
+    assert (got["phase"], got["stop"]) == ("accept-review", True)
+
+
+def test_autopilot_has_no_route_to_review_acceptance():
+    with open(_SCRIPT, encoding="utf-8") as handle:
+        source = handle.read()
+
+    assert ("review_ledger.accept(" in source, "accept_review" in source) == (False, False)
+
+
+# --- next names the policy at the two human phases ------------------------------
+
+def test_next_approve_phase_names_the_autopilot_route_when_the_policy_allows(tmp_path):
+    root = _repo(tmp_path, approval="risk", risk="low")
+
+    got = crew_autopilot.next_phase(str(root), T)
+
+    assert (got["phase"], got["stop"], f"crew_autopilot.py approve --root . --ticket {T}"
+            in got["reason"]) == ("approve", True, True)
+
+
+def test_next_approve_phase_names_the_human_when_the_policy_refuses(tmp_path):
+    root = _repo(tmp_path, approval="human")
+
+    got = crew_autopilot.next_phase(str(root), T)
+
+    assert (got["phase"], got["stop"], "crew_autopilot.py approve" in got["reason"],
+            got["command"]) == ("approve", True, False, f"/crew:approve {T}")
+
+
+@pytest.mark.parametrize("questions,action", [("self", "take"), ("human", "stop")])
+def test_next_open_questions_names_the_question_policy(tmp_path, questions, action):
+    root = _repo(tmp_path, questions=questions)
+    _write(root / ".work" / "tickets" / T / "direction.md",
+           "go\n\n## Open questions\n- which database?\n")
+
+    got = crew_autopilot.next_phase(str(root), T)
+
+    assert (got["phase"], got["stop"], f"action={action}" in got["reason"]) == (
+        "open-questions", True, True)
+
+
+# --- step 4: questions.md -------------------------------------------------------
+
+GOOD_QUESTIONS = """# T-1 questions
+
+## Q1: Which database?
+Research: crew:explorer found src/db.py uses sqlite3; crew:researcher: none needed.
+
+### Option A (recommended): keep sqlite
+Nothing new to run.
+Cost: no concurrent writers.
+
+### Option B: postgres
+Cost: a server to run and a migration.
+"""
+
+
+def _questions(root, text):
+    _write(root / ".work" / "tickets" / T / "questions.md", text)
+
+
+def _check(root):
+    return crew_autopilot.questions_check(str(root), T)
+
+
+def test_questions_file_shape_valid(tmp_path):
+    root = _repo(tmp_path)
+    _questions(root, GOOD_QUESTIONS)
+
+    got = _check(root)
+
+    assert (got["valid"], got["problems"], got["questions"]) == (True, [], 1)
+
+
+def test_questions_file_recommendation_not_first_invalid(tmp_path):
+    root = _repo(tmp_path)
+    _questions(root, GOOD_QUESTIONS.replace("Option A (recommended)", "Option A").replace(
+        "Option B:", "Option B (recommended):"))
+
+    got = _check(root)
+
+    assert (got["valid"], any("recommended" in p for p in got["problems"])) == (False, True)
+
+
+def test_questions_file_one_option_invalid(tmp_path):
+    root = _repo(tmp_path)
+    _questions(root, GOOD_QUESTIONS.split("### Option B")[0])
+
+    got = _check(root)
+
+    assert (got["valid"], any("2-4" in p for p in got["problems"])) == (False, True)
+
+
+def test_questions_file_five_options_invalid(tmp_path):
+    root = _repo(tmp_path)
+    extra = "".join(f"\n### Option {c}: more\nCost: some.\n" for c in "CDE")
+    _questions(root, GOOD_QUESTIONS + extra)
+
+    got = _check(root)
+
+    assert (got["valid"], any("2-4" in p for p in got["problems"])) == (False, True)
+
+
+def test_questions_file_option_without_cost_invalid(tmp_path):
+    root = _repo(tmp_path)
+    _questions(root, GOOD_QUESTIONS.replace("Cost: a server to run and a migration.\n", ""))
+
+    got = _check(root)
+
+    assert (got["valid"], any("Cost:" in p for p in got["problems"])) == (False, True)
+
+
+def test_questions_file_without_research_invalid(tmp_path):
+    root = _repo(tmp_path)
+    _questions(root, "\n".join(line for line in GOOD_QUESTIONS.splitlines()
+                               if not line.startswith("Research:")) + "\n")
+
+    got = _check(root)
+
+    assert (got["valid"], any("Research:" in p for p in got["problems"])) == (False, True)
+
+
+def test_questions_file_missing_invalid(tmp_path):
+    got = _check(_repo(tmp_path))
+
+    assert (got["valid"], got["questions"]) == (False, 0)
+
+
+def test_questions_file_taken_under_self_valid_and_reported(tmp_path):
+    root = _repo(tmp_path, questions="self", risk="high")
+    _questions(root, GOOD_QUESTIONS + "\ntaken: Option A by autopilot (self)\n")
+
+    got = _check(root)
+
+    assert (got["valid"], got["taken"]) == (True, ["Q1: Option A by autopilot (self)"])
+
+
+@pytest.mark.parametrize("questions,risk", [("human", "low"), ("risk", "high"),
+                                            ("risk", None)])
+def test_questions_file_taken_while_the_policy_stops_invalid(tmp_path, questions, risk):
+    root = _repo(tmp_path, questions=questions, risk=risk)
+    _questions(root, GOOD_QUESTIONS + f"\ntaken: Option A by autopilot ({questions})\n")
+
+    got = _check(root)
+
+    assert (got["valid"], got["action"]) == (False, "stop")
+
+
+def test_questions_file_taken_non_recommended_invalid(tmp_path):
+    root = _repo(tmp_path, questions="self")
+    _questions(root, GOOD_QUESTIONS + "\ntaken: Option B by autopilot (self)\n")
+
+    got = _check(root)
+
+    assert (got["valid"], any("recommended" in p for p in got["problems"])) == (False, True)
+
+
+def test_questions_file_taken_naming_another_policy_invalid(tmp_path):
+    root = _repo(tmp_path, questions="self")
+    _questions(root, GOOD_QUESTIONS + "\ntaken: Option A by autopilot (risk)\n")
+
+    got = _check(root)
+
+    assert got["valid"] is False
+
+
+def test_questions_check_cli_prints_action_first_then_taken(tmp_path):
+    root = _repo(tmp_path, questions="self")
+    _questions(root, GOOD_QUESTIONS + "\ntaken: Option A by autopilot (self)\n")
+
+    done = _cli(root, "questions-check", "--ticket", T)
+    lines = done.stdout.splitlines()
+
+    assert (done.returncode, lines[0].startswith("valid=1 action=take policy=self"),
+            "taken: Q1: Option A by autopilot (self)" in lines) == (0, True, True)
+
+
+def test_questions_check_cli_invalid_exits_one_and_prints_the_shape(tmp_path):
+    root = _repo(tmp_path)
+
+    done = _cli(root, "questions-check", "--ticket", T)
+
+    assert (done.returncode, done.stdout.startswith("valid=0"),
+            "(recommended)" in done.stdout) == (1, True, True)
+
+
+# --- step 4: the command --------------------------------------------------------
+
+def _command_text():
+    with open(_COMMAND, encoding="utf-8") as handle:
+        return handle.read()
+
+
+def test_command_routes_approval_through_policy():
+    flat = " ".join(_command_text().split())
+
+    assert ("crew_autopilot.py approve --root . --ticket <ticket>" in flat,
+            "crew_autopilot.py questions-check --root . --ticket <ticket>" in flat,
+            "crew_ticket.py approve" in flat, "`human` always stops" in flat) == (
+        True, True, False, True)
+
+
+def test_command_reports_every_self_approval_and_answer_by_name():
+    flat = " ".join(_command_text().split())
+
+    assert ("self-approved" in flat, "taken:" in flat) == (True, True)
+
+
+# --- step 5: sabotage anchors ----------------------------------------------------
+
+def test_every_policy_sabotage_anchor_is_present_exactly_once():
+    from sabotage_autopilot import POLICY_MUTATIONS  # pylint: disable=import-outside-toplevel
+    for label, target, find, _replace, _test in POLICY_MUTATIONS:
+        with open(target, encoding="utf-8") as handle:
+            assert handle.read().count(find) == 1, label
+
+
+def test_policy_sabotage_is_registered_with_sabotage_py():
+    import sabotage  # pylint: disable=import-outside-toplevel
+    from sabotage_autopilot import POLICY_MUTATIONS  # pylint: disable=import-outside-toplevel
+
+    assert [m[0] for m in POLICY_MUTATIONS if m not in sabotage.MUTATIONS] == []

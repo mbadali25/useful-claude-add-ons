@@ -201,6 +201,8 @@
   },
   "autopilot": {
     "mode": "off",
-    "maxPhases": 12
+    "maxPhases": 12,
+    "approval": "risk",
+    "questions": "risk"
   }
 }

@@ -1073,7 +1073,8 @@ def test_stops_lists_every_autonomous_stop():
 
 def test_autopilot_defaults_are_the_config_block():
     import crew_config  # pylint: disable=import-outside-toplevel
-    assert crew_config.default_config()["autopilot"] == {"mode": "off", "maxPhases": 12}
+    assert crew_config.default_config()["autopilot"] == {
+        "mode": "off", "maxPhases": 12, "approval": "risk", "questions": "risk"}
 
 
 # --- step 6: the command -----------------------------------------------------

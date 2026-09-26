@@ -170,6 +170,34 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
+- **`crew` 1.0.43: `/crew:autopilot` approval and questions policies (T-0010).**
+  Bumped `1.0.42 -> 1.0.43`. Two repo-only keys, `autopilot.approval`
+  and `autopilot.questions` (`human|self|risk`, default `risk`; any other value
+  reads as `human`, with a warning, and `human` always stops).
+  - `crew_autopilot.approval_policy` allows only when `scope.allowCliApproval`
+    is exactly `true` (at every setting) and the review ledger is neither
+    NEEDS_REPLAN nor unreadable; then `self` at any risk, `risk` only on a spec
+    header saying `risk: low` (unknown reads `high`). `crew_autopilot.py approve
+    --root . --ticket <id>` (armed only) writes `approved_via: "autopilot"` and
+    prints `self-approved <id> under approval=<policy>, risk=<risk>`; a refusal
+    exits 2 with `refused: <why>`. `crew_ticket.approve` refuses an `autopilot`
+    receipt the policy denies, and `crew_ticket.accepted` re-asks the policy on
+    every read, so a spec edit, `approval: human` or `allowCliApproval: false`
+    demotes it; an unimportable policy demotes it too.
+  - `scope_guard.py` allows exactly the bare `python3 [-B] <path>/crew_autopilot.py
+    approve [--root .] --ticket <ID>`, only while the policy says yes; any other
+    command naming it, and every `crew_ticket.py approve`, stays refused.
+  - `crew_autopilot.question_policy` (`take|stop`) and `crew_autopilot.py
+    questions-check`, which validates `.work/tickets/<id>/questions.md` (a
+    `Research:` line, 2-4 options, the recommendation first, a `Cost:` each)
+    and refuses a `taken:` line the policy in force would not allow. `next`
+    names the policy's answer at the `approve` and `open-questions` stops.
+  - Accepting review FINDINGS stays the owner's at every setting.
+    `sabotage_autopilot.py`'s POLICY_MUTATIONS (one per refusing branch) are
+    registered in `sabotage.py`. `commands/autopilot.md` runs both at the
+    `approve` and `open-questions` phases, within its 120-line budget. Config
+    leaf count 121 -> 123 (both keys repo-only).
+
 - **`crew` 1.0.41: `/crew:autopilot` resumes and drives one ticket
   (T-0004).** Bumped `1.0.40 -> 1.0.41`. New
   `commands/autopilot.md` follows each lifecycle command's procedure

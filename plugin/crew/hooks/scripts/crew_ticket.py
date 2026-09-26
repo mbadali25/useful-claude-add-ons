@@ -138,6 +138,10 @@ MODES = ("off", "report", "block", "auto")
 RAMP_TICKETS = 10
 USER_PROMPT = "user-prompt"
 CLI = "cli"
+# T-0010: `crew_autopilot.py approve`'s receipt. It stands only while
+# `scope.allowCliApproval` is true AND `crew_autopilot.approval_policy` still
+# allows it for the spec as it is now (`accepted`).
+AUTOPILOT = "autopilot"
 # The approval digest (T-0026). The header's status value is the one thing it
 # normalises, and only a value from this closed list; see `_canonical`.
 STATUS_VALUES = ("spec", "planned", "approved", "in-progress", "review", "done", "merged")
@@ -639,15 +643,48 @@ def cli_approval_allowed(top):
     return isinstance(scope, dict) and scope.get("allowCliApproval") is True
 
 
+def _autopilot_policy(top, ticket):
+    """`crew_autopilot.approval_policy`, imported lazily (it imports this
+    module). Raises whatever the import or the call raises."""
+    import crew_autopilot  # pylint: disable=import-outside-toplevel
+    return crew_autopilot.approval_policy(top, ticket)
+
+
+def _autopilot_refusal(top, ticket):
+    """None while an `autopilot` receipt for `ticket` still stands, else why
+    not. Could not tell -- the module missing, the call raising, an answer
+    that is not a dict -- is a refusal, never a yes."""
+    if not cli_approval_allowed(top):
+        return "scope.allowCliApproval is not exactly true"
+    try:
+        decision = _autopilot_policy(top, ticket)
+    except Exception as exc:  # pylint: disable=broad-except
+        return (f"whether autopilot.approval still allows it could not be told "
+                f"({type(exc).__name__})")
+    if isinstance(decision, dict) and decision.get("allow") is True:
+        return None
+    reason = decision.get("reason") if isinstance(decision, dict) else None
+    return f"autopilot.approval no longer allows it ({reason or 'no reason given'})"
+
+
 def accepted(root, ticket):
     """`status`, with an `approved` receipt that did not come from the user's
-    prompt demoted to `unaccepted` unless `scope.allowCliApproval` is true.
-    This is what the scope guard and the Stop audit act on."""
+    prompt demoted to `unaccepted` unless `scope.allowCliApproval` is true --
+    and an `autopilot` one unless `crew_autopilot.approval_policy` also still
+    allows it. This is what the scope guard and the Stop audit act on."""
     result = status(root, ticket)
     if result["status"] != "approved":
         return result
     via = (result["receipt"] or {}).get("approved_via")
-    if via == USER_PROMPT or cli_approval_allowed(toplevel(root) or os.path.abspath(root)):
+    top = toplevel(root) or os.path.abspath(root)
+    if via == AUTOPILOT:
+        refusal = _autopilot_refusal(top, ticket)
+        if refusal is None:
+            return result
+        return dict(result, status="unaccepted", touch=[],
+                    why=(f"its approval was recorded by autopilot, and {refusal}; the user "
+                         f"types `/crew:approve {ticket}`"))
+    if via == USER_PROMPT or cli_approval_allowed(top):
         return result
     return dict(result, status="unaccepted", touch=[],
                 why=(f"its approval was recorded via {via or 'an unrecorded route'}, not "
@@ -682,13 +719,19 @@ def approve(root, ticket, by=None, via=CLI, session=None, prompt_id=None):
     `(allowed, reason)` from the ledger seam.
 
     spec.md and plan.md are read once; the bytes validated are the bytes
-    hashed. `via` is `cli` (this module's CLI, tests, CI) or `user-prompt`
-    (`approval_hook.py`, which also passes the prompt's session and id)."""
-    if via not in (CLI, USER_PROMPT):
-        raise TicketError(f"approved_via {via!r} is not {CLI} or {USER_PROMPT}")
+    hashed. `via` is `cli` (this module's CLI, tests, CI), `user-prompt`
+    (`approval_hook.py`, which also passes the prompt's session and id) or
+    `autopilot` (`crew_autopilot.py approve`; refused here unless
+    `crew_autopilot.approval_policy` allows, whoever calls)."""
+    if via not in (CLI, USER_PROMPT, AUTOPILOT):
+        raise TicketError(f"approved_via {via!r} is not {CLI}, {USER_PROMPT} or {AUTOPILOT}")
     top = toplevel(root)
     if not top:
         raise TicketError(f"{root} is not a git repository")
+    if via == AUTOPILOT:
+        refusal = _autopilot_refusal(top, ticket)
+        if refusal is not None:
+            raise TicketError(f"not approved -- an autopilot approval, and {refusal}")
     contract = read_contract(top, ticket)
     problems = validate(top, ticket, contract)
     if problems:
