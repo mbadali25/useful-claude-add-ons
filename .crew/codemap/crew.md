@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@adf8d1dd
+anchor: useful-claude-add-ons@8d447a7d
 verified: 2026-09-25
 
 ## Re-derive provenance
@@ -23,8 +23,8 @@ agent/command prose beyond their frontmatter and the sections cited below;
 `webtest_scaffold.py`; `crew_change.py`, `crew_incident.py`,
 `crew_platform.py`; any `.ps1` file's body past its `Resolve-CrewPython`
 definition; any test file's contents (existence and size only).
-Re-verified per-path from `f2bb919b` to `adf8d1dd` for T-0008; see the last
-section.
+Re-verified per-path from `f2bb919b` to `adf8d1dd` for T-0008, and from
+`adf8d1dd` to `8d447a7d` for its review round 3; see the last two sections.
 
 # crew
 
@@ -464,7 +464,7 @@ the sha256 of everything the rule is rendered from (`rule_digest`, `:105`), the 
 INDEX.md's Covers cell for it, and the note's Landmines headlines (else its Entry points), capped at
 `RULES_MAX_LINES` = 30 (`:81`). `--check` (`rules`, `:191`) writes nothing and reports each rule
 file missing, stale or orphaned; a hand-written file at a generated path is never overwritten and
-fails `--check`. `.crew/verify.json` rule 22 (`.crew/verify.json:243`) runs `--check` for any change under
+fails `--check`. `.crew/verify.json` rule 22 (`.crew/verify.json:244`) runs `--check` for any change under
 `.claude/rules/**` or `.crew/codemap/**`, so **a code-map edit without a regeneration fails the Stop
 gate** - see `verification-harness.md`. DERIVED from the source above; the command was run by
 T-0015 against this refresh.
@@ -478,8 +478,11 @@ changed paths reach still current (module docstring, `:1-8`)? It narrows
 (`plugin/crew/hooks/scripts/scope_base.py` `resolve` plus `completion_audit.changed_paths`, minus
 `RELEASE_BOOKKEEPING`, `:181`), so a raw anchor lag is not staleness; each
 artifact reads `fresh`/`stale`/`unknown` (`:152-154`) with the refresh command
-to run, documents read `not measured`, and a scope base that hides the change
-makes the whole answer `unknown` (`ticket_freshness`, `:549`). It is a CLI the
+to run, documents read `not measured`, and a scope base that hides or may
+hide the change - a fallback, or (since review round 3) a recorded base with
+a commit behind it naming the ticket (`_named_behind`, `:537`) - makes the
+whole answer `unknown`, and every artifact measured against that base with it
+(`_unconfirmed`, `:554`; `ticket_freshness`, `:576`). It is a CLI the
 commands call, not a hook - `plugin/crew/hooks/hooks.json` is unchanged since
 `f2bb919b`.
 
@@ -493,19 +496,21 @@ commands call, not a hook - `plugin/crew/hooks/hooks.json` is unchanged since
   The scope guard (`_refresh_artifact`,
   `plugin/crew/hooks/scripts/scope_guard.py:186-197`) and the completion audit
   (`_outside_refresh_artifacts`,
-  `plugin/crew/hooks/scripts/completion_audit.py:167-177`) let a ticket write
+  `plugin/crew/hooks/scripts/completion_audit.py:177-187`) let a ticket write
   those paths without a Touch entry **only while its approval is current**;
   with no current approval nothing is exempt.
 - Tests: `plugin/crew/tests/test_refresh_check.py`,
   `plugin/crew/tests/test_scope_guard_refresh_artifacts.py`,
   `plugin/crew/tests/test_completion_audit_refresh_artifacts.py`, with mutations in
-  `plugin/crew/tests/sabotage_refresh.py`; `.crew/verify.json:244` maps them (and
-  `implement.md`, `done.md`) to one pytest rule. Confirmed present, **not
-  run and not read** this pass.
+  `plugin/crew/tests/sabotage_refresh.py`; `.crew/verify.json:245-261` (rule
+  23) maps them, `implement.md`, `done.md`, and since review round 3
+  `scope_guard.py`, `completion_audit.py`, `crew_freshness.py` and
+  `scope_base.py` with their own suites, to one pytest rule. Confirmed
+  present, **not run and not read** by this note.
 
-The committed `docs/diagrams/process-crew-lifecycle.mmd` at `adf8d1dd` still
-draws `/crew:done` as "all three or nothing" (its `:114`); it predates this
-change.
+`docs/diagrams/process-crew-lifecycle.mmd` drew `/crew:done` as "all three
+or nothing" at `adf8d1dd`; T-0008's refresh commit `b7b02842` redrew it as
+"all four or nothing" (its `:125`).
 
 ## Entry points
 
@@ -529,8 +534,8 @@ change.
   confirmed at a specific line this pass; called with subcommands
   (`plan-windows-default`, `apply-migrate`) from the three sites named
   above.
-- `plugin/crew/hooks/scripts/crew_refresh_check.py:549` — `ticket_freshness`,
-  the library entry point; `main()` at `:645`.
+- `plugin/crew/hooks/scripts/crew_refresh_check.py:576` — `ticket_freshness`,
+  the library entry point; `main()` at `:676`.
 - `plugin/crew/hooks/scripts/crew_endpoints.py:566` — `declare_endpoint`,
   the only writer of *declared* records. Not the only writer of
   `.crew/endpoints.json`, whatever its docstring says (`:569-570`):
@@ -687,3 +692,23 @@ line. `approve.md` is unchanged since `6c497a14`; the `6c497a14` table omitted i
 - `process-crew-lifecycle.mmd` - new since `f2bb919b`; noted above as predating T-0008.
 
 `plugin/crew/hooks/scripts/crew_freshness.py` is still not opened by this note.
+
+## Re-anchor provenance - `adf8d1dd` -> `8d447a7d`, 2026-09-25 (T-0008 review round 3)
+
+`git diff --name-only adf8d1dd 8d447a7d -- <the paths this note cites>` returned
+`.crew/codemap/INDEX.md`, `.crew/verify.json`, `TODO.md`, `docs/diagrams/process-crew-lifecycle.mmd`,
+`plugin/crew/hooks/scripts/completion_audit.py`, `plugin/crew/hooks/scripts/crew_refresh_check.py`,
+`plugin/crew/tests/sabotage_refresh.py` and `plugin/crew/tests/test_refresh_check.py`. Each
+citation into them was re-read with `grep -n`:
+
+- `crew_refresh_check.py` - `_named_behind` and `_unconfirmed` inserted above `ticket_freshness`,
+  which moved `:549` -> `:576`, `main()` `:645` -> `:676`. `:1-8`, `:152-154`, `:168-173` and
+  `:181` are above the change and hold.
+- `completion_audit.py` - `_stdin_path` inserted at `:103`; `_outside_refresh_artifacts` moved
+  `:167-177` -> `:177-187`.
+- `.crew/verify.json` - one path added to rule 7, so rule 22 moved `:243` -> `:244`; rule 23 grew
+  four script paths and three test files, now `:245-261`.
+- `TODO.md` - two version strings at `:5000-5001`; `:3945` holds.
+- `process-crew-lifecycle.mmd` - the "all three or nothing" sentence was already false after
+  `b7b02842`; corrected above (review round 3 NIT).
+- `INDEX.md`, the two test files - cited by name only.

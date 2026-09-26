@@ -1,5 +1,5 @@
 # install-scripts
-anchor: useful-claude-add-ons@adf8d1dd
+anchor: useful-claude-add-ons@8d447a7d
 verified: 2026-09-25
 
 ## Re-derive provenance
@@ -402,3 +402,8 @@ through their own package managers.
 Not re-verified at this pass: neither install script was executed; `drift-detection.sh` was not run.
 
 Re-verified per-path from `f2bb919b` to `adf8d1dd` for T-0008: of the cited paths only `.claude-plugin/marketplace.json` (crew `version` `:218`, now 1.0.36; the `:217` description is unchanged), `plugin/PLUGINS.md` (`:14` version; `:17` Registers row unchanged), `plugin/crew/BUDGETS.md` (marker still `:10`; the `:11` figure moved again, now 17,841 lines), `plugin/crew/README.md` (rows added above the command table, moving the cell above; the `34 commands` claim at `:2178` and `4 agents` at `:2189` still hold), `plugin/crew/commands/` (two files edited, `ls plugin/crew/commands/*.md` still 34) and `TODO.md` changed, while both install scripts, `README.md` and `scripts/check-marketplace.py` did not, so their citations stand.
+
+Re-verified per-path from `adf8d1dd` to `8d447a7d` for T-0008's review round 3: of the cited paths
+only `plugin/crew/README.md` changed, two lines reworded in place at `:764` and `:766`; the
+`34 commands` claim at `:2178` and `4 agents` at `:2189` did not move and still hold. Both install
+scripts, `README.md` and `scripts/check-marketplace.py` did not change.

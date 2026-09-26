@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@adf8d1dd
+anchor: useful-claude-add-ons@8d447a7d
 verified: 2026-09-25
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -39,9 +39,9 @@ them and is wired into CI but not into the local Stop gate: see
 
 ## `.crew/verify.json` — 24 rules, up from 23
 
-**DERIVED, read in full via `json.load` at this anchor.** 258 lines, **24**
+**DERIVED, read in full via `json.load` at this anchor.** 266 lines, **24**
 rules (23 at `f2bb919b`, 22 at `6c497a14`, 21 at `5d1fc5fd`) plus a `default`
-(`["bash _verify/smoke.sh"]`, `:256`) and `unmapped: "fail"` (`:257`). Rule 22
+(`["bash _verify/smoke.sh"]`, `:264`) and `unmapped: "fail"` (`:265`). Rule 22
 (#228) and rule 23 (T-0008) are the only additions since `6c497a14`; see below. The rule set was restructured, not
 just grown: the broad `plugin/crew/hooks/**` / `plugin/crew/tests/**` shape
 this note previously described is gone, replaced by per-subsystem rules that
@@ -114,7 +114,7 @@ Notable rules, re-read directly:
   `.serena/**` and others deliberately unchecked) are unchanged. Both declare
   `"reach": "local"` on the reading that an empty `run` cannot reach off this
   machine — `verify_record.scan_reach([])` already returns that.
-- **Rule 22**, new at `f2bb919b` (`.crew/verify.json:243`, #228): `paths`
+- **Rule 22**, new at `f2bb919b` (`.crew/verify.json:244`, #228): `paths`
   `.claude/rules/**` and `.crew/codemap/**` → `python3
   plugin/crew/hooks/scripts/crew_instructions.py rules --root . --check`, priced
   1s. Its `why` calls it a SYNC check between the two artifacts, not a
@@ -125,17 +125,24 @@ Notable rules, re-read directly:
   indices"), so rule 21's "DELIBERATELY UNCHECKED" `why` no longer describes
   what happens to a codemap edit: any `.crew/codemap/` change without a
   regenerated `.claude/rules/` now fails the Stop gate.
-- **Rule 23**, new at `adf8d1dd` (`.crew/verify.json:244-253`, T-0008): `paths`
+- **Rule 23**, new at `adf8d1dd` (`.crew/verify.json:245-261`, T-0008): `paths`
   `plugin/crew/hooks/scripts/crew_refresh_check.py`, its three test files,
   `plugin/crew/tests/sabotage_refresh.py`, and `plugin/crew/commands/implement.md`
-  / `done.md` → `python3 -m pytest plugin/crew/tests/test_refresh_check.py
-  plugin/crew/tests/test_scope_guard_refresh_artifacts.py
-  plugin/crew/tests/test_completion_audit_refresh_artifacts.py -q`, priced 11s
-  (its `why`, `:253`, records 10.4s measured on the authoring host — a claim
-  read, not re-timed here). The check can refuse `/crew:done`, so its `why`
+  / `done.md`, and since T-0008's review round 3 `scope_guard.py`,
+  `completion_audit.py`, `crew_freshness.py` and `scope_base.py` with
+  `test_scope_guard.py`, `test_completion_audit.py` and `test_scope_base.py`
+  → `python3 -m pytest` over those six test files, priced 32s (its `why`,
+  `:261`, records 31.8s measured on the authoring host — a claim read, not
+  re-timed here). `crew_freshness.py` is on rule 7 too. At the default 60s
+  Stop budget rule 23 (32s) plus rule 13 (38s) no longer fit together, so a
+  `.py` edit on these paths has one of them deferred at Stop (JUDGEMENT,
+  from the two `seconds` values, not observed). A test,
+  `test_every_module_the_refresh_allowance_touches_runs_a_pytest_rule` in
+  `plugin/crew/tests/test_refresh_check.py`, fails if any of the five
+  modules stops matching a pytest rule. The check can refuse `/crew:done`, so its `why`
   names must-refuse and must-allow cases, and says `implement.md`/`done.md` are
   mapped here because these tests carry their ordering checks. Its mutations
-  live in `plugin/crew/tests/sabotage_refresh.py` (`REFRESH_MUTATIONS`, `:37`),
+  live in `plugin/crew/tests/sabotage_refresh.py` (`REFRESH_MUTATIONS`, `:51`),
   imported by `plugin/crew/tests/sabotage.py:75` and appended to `MUTATIONS` at
   `:3046` — the same sibling-module pattern as the other `sabotage_*.py`
   lists, because `sabotage.py` sits at `.pylintrc`'s max-module-lines. Every
@@ -367,17 +374,17 @@ set on Ubuntu.
 
 ## Entry points
 
-- `.crew/verify.json:151-156` (rule 8) — the whole-suite pytest rule and its
+- `.crew/verify.json:152-157` (rule 8) — the whole-suite pytest rule and its
   377s pricing.
-- `.crew/verify.json:173-178` (rule 11) — the crew-diagrams `render.sh`
+- `.crew/verify.json:174-178` (rule 11) — the crew-diagrams `render.sh`
   exit-77 port.
 - `plugin/crew/hooks/scripts/verify-gate.sh:63-66` — the bounded single-read
   stdin gate.
 - `plugin/crew/hooks/scripts/verify-gate.sh:1600-1705` /
   `verify-gate.ps1:1655-1789` — temp-file rule-output capture, 1 MiB tail cap,
   no-pipe fallback refusal.
-- `.crew/verify.json:243` (rule 22) — the `.claude/rules/` sync check.
-- `.crew/verify.json:244-253` (rule 23) — the T-0008 refresh-check suite;
+- `.crew/verify.json:244` (rule 22) — the `.claude/rules/` sync check.
+- `.crew/verify.json:245-261` (rule 23) — the T-0008 refresh-check suite;
   `plugin/crew/tests/sabotage.py:75`, `:3046` — `sabotage_refresh.py`'s
   registration.
 - `plugin/crew/hooks/scripts/verify-gate.sh:1493-1502` /
@@ -491,3 +498,21 @@ did not change, so their citations stand unread.
   only as a cross-reference.
 
 No command or suite was executed at this pass; rule 23's suite and `sabotage.py` were not run.
+
+## Re-anchor provenance - `adf8d1dd` -> `8d447a7d`, 2026-09-25 (T-0008 review round 3)
+
+`git diff --name-only adf8d1dd 8d447a7d -- <the paths this note cites>` returns `.crew/verify.json`,
+`CHANGELOG.md`, `TODO.md`, `plugin/crew/hooks/scripts/crew_refresh_check.py` and
+`plugin/crew/tests/sabotage_refresh.py`. `verify-gate.sh`/`.ps1`, `sabotage.py`, `CLAUDE.md`,
+`plugin/crew/CONFIG.md` and `_verify/*` did not change, so their citations stand unread.
+
+- `.crew/verify.json` - one path added to rule 7 (`crew_freshness.py`), so every later line moved
+  by one: rule 8 `:151-156` -> `:152-157`, rule 11 -> `:174-178` (it was cited `:173-178`, one
+  line past its end), rule 22 `:243` -> `:244`. Rule 23 gained four script and three test paths (and three test files in its `run`), now
+  `:245-261`; `default`/`unmapped` `:256`/`:257` -> `:264`/`:265`. `:3` and `:39-49` hold.
+  Re-measured with `json.load`/`wc -l`.
+- `sabotage_refresh.py` - `REFRESH_MUTATIONS` moved `:37` -> `:51` (constants added above it);
+  round-3 mutations appended.
+- `crew_refresh_check.py`, `CHANGELOG.md`, `TODO.md` - cited by name only.
+
+No suite was executed by this note; the round-3 suite results live in the commit, not here.

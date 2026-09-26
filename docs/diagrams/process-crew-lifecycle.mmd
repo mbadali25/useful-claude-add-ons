@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@adf8d1dd on 2026-09-25. Verify before trusting.
+%% Generated from useful-claude-add-ons@8d447a7d on 2026-09-25. Verify before trusting.
 %% Anchors: plugin/crew/commands/brainstorm.md, plugin/crew/commands/spec.md, plugin/crew/commands/plan.md, plugin/crew/commands/approve.md, plugin/crew/commands/implement.md, plugin/crew/commands/review.md, plugin/crew/commands/done.md, plugin/crew/commands/fix.md, plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/crew_ticket.py, plugin/crew/hooks/scripts/completion_audit.py, plugin/crew/hooks/scripts/crew_refresh_check.py
 %% The crew 1.0 ticket lifecycle: brainstorm -> spec -> plan -> approve -> implement -> refresh artifacts -> review -> done.
 %% --
@@ -7,6 +7,10 @@
 %% Re-drawn for T-0008 at adf8d1dd: implement.md step 6 and done.md re-read in
 %% full (refresh step, check 4); the other command files are unchanged since
 %% f2bb919b (per-path diff empty).
+%% Re-anchored for T-0008 review round 3 at 8d447a7d: of the anchored paths only
+%% completion_audit.py and crew_refresh_check.py changed; no node's claim moved,
+%% and the two completion_audit.py citations below are re-read at :204-215
+%% (the :127-136 one was already stale at adf8d1dd, pointing into worktree_changes).
 %% Every node cites the command file's own line; files are named repo-relative
 %% here and by basename in the nodes (all under plugin/crew/commands/ unless
 %% named otherwise):
@@ -50,7 +54,7 @@
 %% Dashed '?' edges: traced from source, NOT executed. The approval receipt
 %% hashes spec.md and plan.md whole (plugin/crew/hooks/scripts/crew_ticket.py:501-509,
 %% any byte change -> `stale`), and the completion audit refuses to judge scope
-%% on anything but `approved` (plugin/crew/hooks/scripts/completion_audit.py:194-205).
+%% on anything but `approved` (plugin/crew/hooks/scripts/completion_audit.py:204-215).
 %% Yet three steps edit a status header in one of those files AFTER approval:
 %% plan.md:59 (`status: planned`), implement.md:108 (`status: review`) and
 %% done.md:61 (`status: done`). Each would leave the receipt stale. The done.md
@@ -140,5 +144,5 @@ flowchart TB
     stop["Stop hooks every turn:<br/>verify-gate, completion-audit<br/>hooks.json:58, :62"] -.- im2
 
     planned -. "? edits plan.md after approval<br/>-> receipt stale (crew_ticket.py:501-509)" .-> im0
-    im4 -. "? edits spec.md after approval<br/>-> completion audit sees 'stale'<br/>(completion_audit.py:127-136)" .-> dn3
+    im4 -. "? edits spec.md after approval<br/>-> completion audit sees 'stale'<br/>(completion_audit.py:204-215)" .-> dn3
     dn4 -. "? edits spec.md after the four checks<br/>-> approval stale (seen live 2026-09-25)" .-> met(["crew_metrics record:<br/>'spec.md changed since approval'"])
