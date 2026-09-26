@@ -30,9 +30,9 @@ fact a subset; it never accepts one that is wider.
 ## The approval receipt
 
 `approve` writes `<git-common-dir>/crew/tickets/<id>/approval.json`:
-`{plan_sha256, spec_sha256, approved_at, approved_by, approved_via,
-history}`. The receipt lives in the common git directory, outside every
-worktree, and `scope_guard.py` refuses any Write/Edit under
+`{plan_sha256, spec_sha256, plan_digest, spec_digest, digest, approved_at,
+approved_by, approved_via, history}`. The receipt lives in the common git
+directory, outside every worktree, and `scope_guard.py` refuses any Write/Edit under
 `<git-common-dir>/crew/` in every mode but `off` -- so an Edit cannot forge or
 refresh it.
 
@@ -55,9 +55,24 @@ is never approved unvalidated. `status` likewise hashes the bytes it parses
 Touch from and returns that Touch: a caller never pairs one read's approval
 with another read's scope.
 
-`status` is `approved` (both hashes match the files now), `stale` (either
+`status` is `approved` (both files match the receipt now), `stale` (either
 file changed since approval) or `none`. Editing spec.md or plan.md after
-approval makes it stale; amending scope is edit + approve again.
+approval makes it stale -- except the header's `status:` value, below;
+amending scope is edit + approve again.
+
+## The approval digest (T-0026)
+
+One edit does not stale it: the lifecycle commands moving the header's
+`status:` VALUE (spec -> planned -> review -> done). `plan_digest` and
+`spec_digest` are `approval_digest` of each file, which replaces that value --
+and nothing else -- with a placeholder, and only when line 1 is a `# ` header
+holding exactly one `status:` whose value is in STATUS_VALUES (`_canonical`).
+Any other byte, the `risk:` and the title included, stales it as before.
+`plan_sha256`/`spec_sha256` stay the raw full-file sha256: the review ledger's
+successor-plan identity reads them unchanged. A receipt with no `digest` key
+(written before this) is compared raw, so it verifies on unchanged files and
+goes stale once on its first status edit. A `digest` naming any other scheme,
+or a `/2` receipt missing a digest field, is `stale` -- never a raw fallback.
 
 ## Successor plans
 
@@ -123,6 +138,19 @@ MODES = ("off", "report", "block", "auto")
 RAMP_TICKETS = 10
 USER_PROMPT = "user-prompt"
 CLI = "cli"
+# The approval digest (T-0026). The header's status value is the one thing it
+# normalises, and only a value from this closed list; see `_canonical`.
+STATUS_VALUES = ("spec", "planned", "approved", "in-progress", "review", "done", "merged")
+DIGEST_SCHEME = "crew-approval/2"
+_STATUS_PLACEHOLDER = b"<status>"
+_BOM = b"\xef\xbb\xbf"
+_STATUS_ALTERNATION = b"|".join(re.escape(v.encode("ascii")) for v in STATUS_VALUES)
+_STATUS_RE = re.compile(rb"(?<=[ \t])status:[ \t]+(" + _STATUS_ALTERNATION + rb")(?=[ \t]|\Z)")
+# Where line 1 ends: every break `str.splitlines` honours, as UTF-8 bytes, so
+# `_canonical`'s line 1 is the one `sections` and `parse_touch` read. Splitting
+# on `\n` alone made a bare-CR spec one long line 1 (T-0026 review round 3).
+_LINE_BREAK_RE = re.compile(rb"[\n\r\x0b\x0c\x1c-\x1e]|\xc2\x85|\xe2\x80[\xa8\xa9]")
+_V1 = object()  # `status`'s marker for a receipt with no `digest` key at all
 
 _TICKET_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$")
 _HEADING_RE = re.compile(r"^##\s+(.+?)\s*#*\s*$")
@@ -466,6 +494,54 @@ def _sha(data):
     return hashlib.sha256(data).hexdigest() if data is not None else None
 
 
+def _line_one_end(data):
+    """The offset of the first line break in `data`, or -1 when it has none."""
+    match = _LINE_BREAK_RE.search(data)
+    return -1 if match is None else match.start()
+
+
+def _canonical(data):
+    """`(bytes, normalised)`: `data` with the header's status VALUE replaced by
+    `_STATUS_PLACEHOLDER`, or `data` untouched and False.
+
+    Only line 1 is examined -- the bytes before the first line break, where a
+    break is anything `str.splitlines` splits on (`\n`, `\r`, `\r\n`, `\x0b`,
+    `\x0c`, `\x1c`-`\x1e`, U+0085, U+2028, U+2029). So it is the line the spec
+    parser reads as line 1 whatever the file's line endings, mixed ones
+    included. It must start with `# ` (after an optional UTF-8 BOM), hold
+    exactly one `status:` counted case-insensitively, and that one must be the
+    token `status:<spaces/tabs><value>` with `value` in STATUS_VALUES followed
+    by a space, a tab or the end of the line. Anything else -- no token, two,
+    an unknown value, a header that moved -- normalises nothing, so the edit
+    that caused it stales the approval."""
+    cut = _line_one_end(data)
+    head, rest = (data, b"") if cut < 0 else (data[:cut], data[cut:])
+    body = head.removeprefix(_BOM)
+    if not body.startswith(b"# "):
+        return data, False
+    if head.lower().count(b"status:") != 1:
+        return data, False
+    match = _STATUS_RE.search(head)
+    if match is None:
+        return data, False
+    start, end = match.span(1)
+    return head[:start] + _STATUS_PLACEHOLDER + head[end:] + rest, True
+
+
+def approval_digest(data):
+    """The `crew-approval/2` digest of one file's bytes, or None for None.
+
+    sha256 over the scheme, a NUL, whether the header was normalised, a NUL,
+    then the canonical bytes. The flag is domain separation: a raw file that
+    happens to hold the placeholder text can never equal a normalised one."""
+    if data is None:
+        return None
+    canonical, normalised = _canonical(data)
+    flag = b"normalised" if normalised else b"raw"
+    return hashlib.sha256(DIGEST_SCHEME.encode("ascii") + b"\0" + flag + b"\0"
+                          + canonical).hexdigest()
+
+
 def current_hashes(top, ticket):
     contract = read_contract(top, ticket)
     return _sha(contract["plan.md"]), _sha(contract["spec.md"])
@@ -499,9 +575,23 @@ def status(root, ticket):
         return {"status": "none", "why": f"the approval receipt for {ticket} is unreadable",
                 "receipt": None, "touch": []}
     contract = read_contract(top, ticket)
+    scheme = receipt.get("digest", _V1)
+    if scheme is _V1:
+        measure, keys = _sha, ("plan_sha256", "spec_sha256")
+    elif scheme == DIGEST_SCHEME:
+        measure, keys = approval_digest, ("plan_digest", "spec_digest")
+        unusable = [k for k in keys if not isinstance(receipt.get(k), str)]
+        if unusable:
+            return {"status": "stale", "receipt": receipt, "touch": [],
+                    "why": (f"the approval receipt has no usable {' or '.join(unusable)}; "
+                            "approve again")}
+    else:
+        return {"status": "stale", "receipt": receipt, "touch": [],
+                "why": (f"approval receipt digest scheme {scheme!r} is not one this "
+                        "crew reads; approve again")}
     changed = [name for name, now, then in (
-        ("plan.md", _sha(contract["plan.md"]), receipt.get("plan_sha256")),
-        ("spec.md", _sha(contract["spec.md"]), receipt.get("spec_sha256")))
+        ("plan.md", measure(contract["plan.md"]), receipt.get(keys[0])),
+        ("spec.md", measure(contract["spec.md"]), receipt.get(keys[1])))
         if not now or now != then]
     if changed:
         return {"status": "stale", "receipt": receipt, "touch": [],
@@ -586,6 +676,8 @@ def approve(root, ticket, by=None, via=CLI, session=None, prompt_id=None):
                           "unreadable; inspect it and remove it by hand before approving")
     history = list((previous or {}).get("history") or [])
     entry = {"plan_sha256": plan_sha, "spec_sha256": spec_sha,
+             "plan_digest": approval_digest(contract["plan.md"]),
+             "spec_digest": approval_digest(contract["spec.md"]), "digest": DIGEST_SCHEME,
              "approved_at": _now(), "approved_by": (by or "").strip() or _default_approver(root),
              "approved_via": via}
     if via == USER_PROMPT:

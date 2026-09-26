@@ -6,6 +6,40 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Fixed
 
+- **`crew` 1.0.39: an approval survives the lifecycle status edits (T-0026).**
+  Bumped `1.0.38 -> 1.0.39`. `/crew:implement` and `/crew:done` each rewrite
+  `spec.md`'s header `status:`, and `/crew:plan` set `status: planned` on
+  `plan.md`'s header, a token its template never carried. The approval receipt bound each whole file's sha256, so each of
+  those edits staled the approval the ticket had just been given (TODO.md,
+  "`/crew:done` stales its own approval receipt").
+  - **`crew_ticket.approval_digest`** hashes each file with only the header's
+    status VALUE normalised: line 1 must start with `# `, hold exactly one
+    `status:` (counted case-insensitively), and carry a value from the closed
+    `STATUS_VALUES` list. Anything else normalises nothing and stales as
+    before: `risk:`, the title, any body line, a second status token, an
+    unknown value, a header that moved. The preimage is domain-separated
+    (`crew-approval/2`, then `normalised` or `raw`), so a file holding the
+    placeholder text literally can never match a normalised one. Line 1 ends
+    at the first break `str.splitlines` honours (`\n`, `\r\n`, a bare `\r`,
+    `\x0b`, `\x0c`, `\x1c`-`\x1e`, U+0085, U+2028, U+2029), the same line 1
+    the spec parser reads, so in a bare-CR spec a body `status:` line is never
+    normalised.
+  - **Dual-read.** A receipt keeps the raw `plan_sha256`/`spec_sha256` and adds
+    `plan_digest`, `spec_digest` and `digest: "crew-approval/2"`. A receipt with
+    no `digest` field is compared raw, so it still verifies on unchanged files
+    and stales once on its first status edit. An unknown scheme, or a `/2`
+    receipt missing a digest, reads `stale`, never a raw fallback. The review
+    ledger's successor-plan identity still reads the raw hash.
+  - **Lifecycle prose.** `/crew:plan` sets `status: planned` on `spec.md`'s
+    header, no longer adding a status token to `plan.md`. `/crew:implement`,
+    `/crew:done` and `/crew:approve` say the status edit keeps the approval.
+  - New `test_approval_digest.py` (must-allow/must-block pairs, the dual-read,
+    and the scope guard, completion audit and metrics end to end). Eighteen
+    `APPROVAL DIGEST` mutations in `sabotage_scope.py`, each turning its named
+    test red, pinned by label so deleting one fails the suite. Two cover
+    `approve` digesting the bytes it validated, not a later read. A
+    `.crew/verify.json` rule maps `crew_ticket.py` to them.
+
 - **`crew` 1.0.38: T-0008 follow-up (T-0034).** Bumped `1.0.37 -> 1.0.38`.
   `crew_refresh_check.py` uses `split("/", maxsplit=1)` (pylint C0207; same
   result). `.gitattributes` pins `.crew/verify.json` to LF, so the
@@ -194,6 +228,7 @@ All notable changes to this repository are documented here. Format follows [Keep
     must-fail cases; the ones that can hang on a regression run under a
     bounded worker stopped before it can write. `plugin/crew/tests/sabotage.py`
     carries a mutation for each, each seen red on Linux.
+
 - **`crew` 1.0.29: the PATH stubs in `test_34d` and `test_1` are reached on
   native Windows, from win-repo-2 (T-0007).** Bumped `1.0.28 -> 1.0.29`. Test
   harness only - no hook script changes. Two of win-repo-2's commits,
