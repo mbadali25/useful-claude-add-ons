@@ -145,6 +145,71 @@ HUMAN_STOPS = (
 )
 
 
+# --- ship (T-0011) -------------------------------------------------------------
+# A review is same-family when its `model_family` is `claude` or absent: the
+# session's own family is recorded nowhere, so an unknown one counts as the
+# author's -- the refusing direction.
+SAME_FAMILY = ("claude", None)
+# Only these risks may merge on same-family reviews; anything else, an
+# unknown or misspelt risk included, is treated as `high`.
+LOW_RISKS = ("low", "med")
+CHECK_STATES = ("pass", "fail", "pending", "skipping")
+
+
+def _family(value):
+    if isinstance(value, str) and value.strip():
+        return value.strip().lower()
+    return None
+
+
+def ship_decision(policy, risk, checks, families, known_failures):
+    """`{"action": "open-pr"|"merge"|"wait"|"stop", "reason"}` -- the whole
+    rule that lets autopilot merge unattended, with no I/O.
+
+    `checks` is the required checks, `[{"name", "state"}]` with state one of
+    CHECK_STATES, or None when they could not be read. `families` is the
+    `model_family` of every completed review round. Any policy but exactly
+    `merge` opens a PR and stops. A merge needs every required check `pass`,
+    or `fail` with its name EXACTLY in `known_failures`; `skipping` is not
+    `pass`. No check reported yet waits, as pending does; the caller's
+    timeout turns a wait into a stop."""
+    if policy != "merge":
+        return {"action": "open-pr", "reason": f"autopilot.ship is {policy!r}: the PR is "
+                "opened and a person merges it"}
+    if risk not in LOW_RISKS and all(_family(f) in SAME_FAMILY for f in families or ()):
+        return {"action": "stop", "reason": (
+            f"same-family review only on a {risk or 'unknown'}-risk ticket: every completed "
+            f"round is claude or has no model_family ({list(families or ())}), so a "
+            "cross-family review or a person merges it")}
+    if not isinstance(checks, list):
+        return {"action": "stop", "reason": "the required checks could not be read - "
+                "never merged on a state that could not be read"}
+    if not checks:
+        return {"action": "wait", "reason": "no required check reported yet"}
+    known = [k for k in (known_failures if isinstance(known_failures, (list, tuple)) else ())
+             if isinstance(k, str)]
+    rows = [(c.get("name"), c.get("state")) if isinstance(c, dict) else (None, None)
+            for c in checks]
+    unread = [str(n) for n, s in rows if not isinstance(n, str) or s not in CHECK_STATES]
+    if unread:
+        return {"action": "stop", "reason": "could not read the state of required check(s) "
+                + ", ".join(unread) + " - never merged on a state that could not be read"}
+    failed = [n for n, s in rows if s == "fail" and n not in known]
+    if failed:
+        return {"action": "stop", "reason": "required check(s) failed: " + ", ".join(failed)
+                + " (not in autopilot.knownFailures)"}
+    skipped = [n for n, s in rows if s == "skipping"]
+    if skipped:
+        return {"action": "stop", "reason": "required check(s) skipped: " + ", ".join(skipped)
+                + " - skipped is not pass, so a person merges"}
+    pending = [n for n, s in rows if s == "pending"]
+    if pending:
+        return {"action": "wait", "reason": "required check(s) pending: " + ", ".join(pending)}
+    allowed = sorted({n for n, s in rows if s == "fail"})
+    return {"action": "merge", "reason": "every required check passed" + (
+        " except known failure(s) " + ", ".join(allowed) if allowed else "")}
+
+
 def _rel(top, path):
     return os.path.relpath(path, top).replace("\\", "/")
 
