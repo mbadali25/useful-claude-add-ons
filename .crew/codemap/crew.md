@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@3b977289
+anchor: useful-claude-add-ons@40eb1792
 verified: 2026-09-25
 
 ## Re-derive provenance
@@ -516,9 +516,13 @@ commands call, not a hook - `plugin/crew/hooks/hooks.json` is unchanged since
 append-only `log.jsonl`). Like `crew_refresh_check.py` it is a CLI, not a hook:
 `plugin/crew/hooks/hooks.json` is unchanged. Writes are plumbing on the fetched
 tip and a plain push (`Channel.write`; the push argv is `Channel.push_argv`),
-never forced; recovery (`assess_recovery`) adopts only a same-machine,
-same-worktree claim the local `<git-common-dir>/crew/coord-identity.json`
-names, whose pid is provably gone on Linux. Tests in
+never forced, run `--no-verify` to `PUSH_REMOTE`, a remote `Channel.push_env`
+defines only through `GIT_CONFIG_COUNT`, so no remote-tracking ref is written
+and no URL reaches argv; recovery (`assess_recovery`) adopts only a
+same-machine, same-worktree claim the local
+`<git-common-dir>/crew/coord-identity.json` (rewritten under `_locked`) names,
+whose pid is provably gone on Linux (`_linux_probe`) or Windows
+(`_windows_probe`); a probe that cannot tell reads alive. Tests in
 `plugin/crew/tests/test_crew_coord.py`, mutations in
 `plugin/crew/tests/sabotage_coord.py`, both mapped by `.crew/verify.json:262-269`
 (rule 24). DERIVED from the source at this anchor. `/crew:autopilot`'s resume
@@ -756,3 +760,11 @@ Re-verified per-path from `c35edda5` to `3b977289` for T-0030 (rebased onto `3c1
 cited paths only `.crew/verify.json` changed (rule 24 appended after rule 23, so `:244` and
 `:245-261` hold) plus the version files; the new `crew_coord.py` section above is this pass's
 only addition.
+
+Re-verified per-path from `3b977289` to `40eb1792` for T-0030 review round 1
+(`T-0030-coord--r8XvAI`): of the cited paths `plugin/crew/hooks/scripts/crew_coord.py`,
+`plugin/crew/tests/test_crew_coord.py`, `plugin/crew/tests/sabotage_coord.py`,
+`.crew/verify.json` (rule 24's `seconds` and `why` text only; still `:262-269`) and
+`CHANGELOG.md` changed; the version files are net-unchanged at 1.0.43 (stepped back to 1.0.42 in
+`e60563d1`, re-set in `40eb1792`). The `crew_coord.py` section above is updated for the round-1
+fixes; every other citation holds.

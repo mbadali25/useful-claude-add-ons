@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@3b977289
+anchor: useful-claude-add-ons@40eb1792
 verified: 2026-09-25
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -557,3 +557,12 @@ rebased onto `3c1f94a9`):
 
 `sabotage.py` was run at `3b977289`: every `COORD_MUTATIONS` entry RED, and the non-RED set the same
 14 labels (13 STILL GREEN, 1 RED BUT UNPROVEN) as `3c1f94a9` (origin/main) run the same way.
+
+Re-verified per-path from `3b977289` to `40eb1792` for T-0030 review round 1
+(`T-0030-coord--r8XvAI`): `git diff --name-only 3b977289 40eb1792` over this note's cited paths
+returns `.crew/verify.json`, `CHANGELOG.md`, `plugin/crew/hooks/scripts/crew_coord.py`,
+`plugin/crew/tests/test_crew_coord.py` and `plugin/crew/tests/sabotage_coord.py`; the version files
+are net-unchanged. Rule 24 is still `:262-269` (273 lines,
+`default`/`unmapped` still `:271`/`:272`); only its `seconds` (11 -> 16) and `why` changed.
+`plugin/crew/tests/sabotage.py` did not change: `sabotage_coord.py` grew from 10 to 44 mutations,
+still registered at `:72` and `:3048`.

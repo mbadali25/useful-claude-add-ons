@@ -1,5 +1,5 @@
 # install-scripts
-anchor: useful-claude-add-ons@3b977289
+anchor: useful-claude-add-ons@40eb1792
 verified: 2026-09-25
 
 ## Re-derive provenance
@@ -416,3 +416,12 @@ at `:1585-1646`), which moved the `34 commands` claim `:2178` -> `:2238` and `4 
 via 1.0.37 and 1.0.38). `plugin/crew/BUDGETS.md` changed: the claim marker is still `:10` and the
 figure on `:11` moved 17,841 -> 17,901 lines across 120 files (re-measured, matching).
 Both install scripts, `README.md` and `scripts/check-marketplace.py` did not change.
+
+Re-verified per-path from `3b977289` to `40eb1792` for T-0030 review round 1: of the cited paths
+`plugin/crew/README.md` changed (the "Cross-session claims" section grew by 29 lines), moving the
+`34 commands` claim `:2238` -> `:2267` and `4 agents` `:2249` -> `:2278`; both still hold
+(`ls plugin/crew/commands/*.md` = 34, `ls plugin/crew/agents/*.md` = 4). `plugin/crew/BUDGETS.md`'s
+figure on `:11` moved 17,901 -> 17,930 lines across 120 files (re-measured by
+`check-marketplace.py`, matching; marker still `:10`). `.claude-plugin/marketplace.json` and
+`plugin/PLUGINS.md` are byte-identical to `3b977289` (1.0.43, stepped back in `e60563d1` and re-set
+in `40eb1792`). Both install scripts, `README.md` and `scripts/check-marketplace.py` did not change.
