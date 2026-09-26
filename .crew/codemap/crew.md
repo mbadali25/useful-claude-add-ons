@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@486bc674
+anchor: useful-claude-add-ons@23ba6777
 verified: 2026-09-25
 
 ## Re-derive provenance
@@ -530,12 +530,18 @@ at claim time. A holder is session + machine + worktree + pid (+ start),
 compared by `same_holder`; the heartbeat lock is keyed by every one of those
 fields (`holder_tag`); `Channel.fetch` takes only the exact channel ref from
 `ls-remote`; the `<repo>` half of a key is derived (`repo_key`, `owner_name`:
-origin's URL from `git remote get-url origin`, so insteadOf applies, split by
-`_split_url` into host and every path segment, lowercased; every Azure DevOps
-form gives `dev.azure.com.<org>.<project>.<repo>` through `_azure_parts` and
-`_azure_part`; a URL the key cannot be told from raises `UnknownKey`, exit 3,
-and only a missing origin URL falls back to the main worktree's directory
-name) and `parse_ticket` upper-cases the id; `ttl_minutes` refuses a
+origin's URL from `git remote get-url origin`, so insteadOf applies, a local
+path made absolute against the worktree and real by `_resolved`, split by
+`_split_url` into host and every path segment, lowercased, each part written
+by `_key_part` (every byte outside `[a-z0-9-]` as `_` + two hex digits, so no
+part holds '.') and joined by '.', a local path's key led by `_LOCAL_MARK`
+(`file_`); every Azure DevOps form gives `dev.azure.com`, org, project, repo
+through `_azure_parts` and `_azure_part` (percent-decoded, lowercased, None
+when not UTF-8); a URL the key cannot be told from, a relative path passed to
+`owner_name` alone, a failing or empty `git config` probe of origin, or a
+failing `crew_ticket.common_dir` in `_fallback_repo` raises `UnknownKey`, exit
+3, and only `git config` exit 1 (no origin URL) falls back to the main
+worktree's directory name) and `parse_ticket` upper-cases the id; `ttl_minutes` refuses a
 `coord.ttlMinutes` outside 0 to `MAX_TTL_MINUTES` (10080) as a usage error in
 `main` before any fetch; a recommended command withholds
 peer values that fail the key rule (`_command_part`). Tests in
@@ -807,4 +813,12 @@ Re-verified per-path from `09285d6e` to `486bc674` for T-0030 review round 4
 `.crew/verify.json` (rule 24's `seconds` and `why` text only; still `:262-268`) changed; the
 version files are net-unchanged at 1.0.43 (stepped back to 1.0.42 in `278eb5e2`, re-set in
 `18629adc`). The `crew_coord.py` section above is updated for the round-4 fixes; every other
+citation holds.
+
+Re-verified per-path from `486bc674` to `23ba6777` for T-0030 review round 5
+(`T-0030-coord--FSkzCU`): of the cited paths `plugin/crew/hooks/scripts/crew_coord.py`,
+`plugin/crew/tests/test_crew_coord.py`, `plugin/crew/tests/sabotage_coord.py`, `CHANGELOG.md` and
+`.crew/verify.json` (rule 24's `why` text only; still `:262-268`) changed; the version files are
+net-unchanged at 1.0.43 (stepped back to 1.0.42 in `034e6d04` and `c3e94671`, re-set in `2da9b6ee`
+and `23ba6777`). The `crew_coord.py` section above is updated for the round-5 fixes; every other
 citation holds.

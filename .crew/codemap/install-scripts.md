@@ -1,5 +1,5 @@
 # install-scripts
-anchor: useful-claude-add-ons@486bc674
+anchor: useful-claude-add-ons@23ba6777
 verified: 2026-09-25
 
 ## Re-derive provenance
@@ -455,3 +455,13 @@ hold (`ls plugin/crew/commands/*.md` = 34, `ls plugin/crew/agents/*.md` = 4).
 `.claude-plugin/marketplace.json` and `plugin/PLUGINS.md` are byte-identical to `09285d6e` (1.0.43,
 stepped back in `278eb5e2` and re-set in `18629adc`). Both install scripts, `README.md` and
 `scripts/check-marketplace.py` did not change.
+
+Re-verified per-path from `486bc674` to `23ba6777` for T-0030 review round 5: of the cited paths
+`plugin/crew/README.md` changed (the "Cross-session claims" section grew by 11 lines), moving the
+`34 commands` claim `:2341` -> `:2352` and `4 agents` `:2352` -> `:2363` (re-grepped); both still
+hold (`ls plugin/crew/commands/*.md` = 34, `ls plugin/crew/agents/*.md` = 4).
+`plugin/crew/BUDGETS.md`'s figure on `:11` moved 18,004 -> 18,015 lines across 120 files
+(re-measured with `git ls-files 'plugin/crew/*.md' | xargs cat | wc -l`; marker still `:10`).
+`.claude-plugin/marketplace.json` and `plugin/PLUGINS.md` are byte-identical to `486bc674` (1.0.43,
+stepped back in `034e6d04` and `c3e94671`, re-set in `2da9b6ee` and `23ba6777`). Both install scripts,
+`README.md` and `scripts/check-marketplace.py` did not change.

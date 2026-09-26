@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@486bc674
+anchor: useful-claude-add-ons@23ba6777
 verified: 2026-09-25
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -598,3 +598,12 @@ reaches the bare remote through a stand-in ssh, one python process per fetch and
 still `:262-268`; `default`/`unmapped` are still `:271`/`:272`. `plugin/crew/tests/sabotage.py`
 did not change: `sabotage_coord.py` grew from 65 to 73 mutations, still registered at `:72` and
 `:3048`.
+
+Re-verified per-path from `486bc674` to `23ba6777` for T-0030 review round 5: `git diff --name-only`
+returns `.crew/verify.json`, `plugin/crew/hooks/scripts/crew_coord.py`,
+`plugin/crew/tests/test_crew_coord.py` and `plugin/crew/tests/sabotage_coord.py` among the cited
+paths; the version files are net-unchanged. Rule 24's `seconds` stays 55 and its `why` names the
+229 cases, re-measured with the rule's own command at 41.5s and 41.6s (load average 3.6-4.3). Its
+span is still `:262-268`; `default`/`unmapped` are still `:271`/`:272`.
+`plugin/crew/tests/sabotage.py` did not change: `sabotage_coord.py` grew from 73 to 84 mutations,
+still registered at `:72` and `:3048`.

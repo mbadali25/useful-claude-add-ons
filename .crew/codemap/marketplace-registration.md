@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@486bc674
+anchor: useful-claude-add-ons@23ba6777
 verified: 2026-09-25
 paths: scripts/**, plugin/PLUGINS.md
 
@@ -336,3 +336,12 @@ moved 17,988 -> 18,004 lines across 120 files, re-measured with
 `.claude-plugin/marketplace.json`, `plugin/PLUGINS.md` and `plugin.json` is 1.0.43 as before
 (stepped back to 1.0.42 in `278eb5e2`, re-set in `18629adc`, the last commit that changes
 `plugin/crew/`). `python3 scripts/check-marketplace.py` at `486bc674` reports no problems.
+
+Re-verified per-path from `486bc674` to `23ba6777` for T-0030 review round 5: of the cited paths
+`.crew/verify.json` (rule 24's `why` only, so every cited span holds) and `plugin/crew/BUDGETS.md`
+(marker still `:10`; the figure on `:11` moved 18,004 -> 18,015 lines across 120 files,
+re-measured with `git ls-files 'plugin/crew/*.md' | xargs cat | wc -l`) changed. The crew version
+in `.claude-plugin/marketplace.json`, `plugin/PLUGINS.md` and `plugin.json` is 1.0.43 as before
+(stepped back to 1.0.42 in `034e6d04` and `c3e94671`, re-set in `2da9b6ee` and `23ba6777`, the last
+commit that changes `plugin/crew/`). `python3 scripts/check-marketplace.py` at `23ba6777` reports no
+problems.
