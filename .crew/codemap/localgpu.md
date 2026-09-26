@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@6d35ef8c
+anchor: useful-claude-add-ons@6f96e627
 verified: 2026-09-26
 
 # localgpu
@@ -512,8 +512,8 @@ file's frontmatter, not previously listed in this note.** `plugin.json`'s
   **Checked against the code, corrected after QA:**
   `plugin/crew/hooks/scripts/crew_config.py:126-127` only re-exports
   (`DEV_PROVIDERS = crew_state.DEV_PROVIDERS`); the tuples are actually
-  *defined* at `plugin/crew/hooks/scripts/crew_state.py:1421-1422` (re-numbered
-  from `:1503-1504` by crew 1.0 - see the 2026-09-25 re-anchor below; same two
+  *defined* at `plugin/crew/hooks/scripts/crew_state.py:1429-1430` (re-numbered
+  from `:1503-1504` by crew 1.0 - see the re-anchor entries below; same two
   lines, `DEV_PROVIDERS = ("claude", "codex", "copilot")` /
   `QA_PROVIDERS = ("claude", "codex", "copilot")`, byte-identical).
   So `crew.md`'s own attribution to `crew_config.py` names the re-export, not
@@ -1060,3 +1060,15 @@ hunks (`:301`, `:498`) and holds. `crew_state.py` gained `RESUME_DEFAULTS` at `:
 provider tuples moved `:1411-1412` -> `:1421-1422` (re-read: the same two lines,
 byte-identical), corrected in place above; the `:1503-1504` mentions are history of earlier
 passes and are left as written. Nothing under `plugin/localgpu/` changed.
+
+**Re-anchored `6d35ef8c` -> `07ca3972` on 2026-09-26 (T-0004).** `git diff --name-only 6d35ef8c
+07ca3972 -- <the paths this note cites>` returns `.claude-plugin/marketplace.json` (crew's
+`version` `:218`, and its `:217` description's slash-command count; the quoted "4
+context-isolated agents (explorer, reviewer, security, researcher)" is unchanged, `ls
+plugin/crew/agents/` still lists those four, and `localgpu`'s own entry is still `0.1.20`),
+`plugin/crew/hooks/scripts/crew_config.py` and `plugin/crew/hooks/scripts/crew_state.py`.
+`crew_config.py`'s `:126-127` re-export is above its only hunk (`:366`, `default_config`) and
+holds. `crew_state.py` gained `AUTOPILOT_DEFAULTS` at `:1087`, so the provider tuples moved
+`:1421-1422` -> `:1429-1430` (re-read via `grep -n "^DEV_PROVIDERS\|^QA_PROVIDERS"`: the same
+two lines, byte-identical), corrected in place above. Nothing under `plugin/localgpu/` changed.
+Nothing was executed.

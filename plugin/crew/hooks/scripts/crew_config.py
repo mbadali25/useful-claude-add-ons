@@ -366,6 +366,12 @@ def default_config():
         # `allowCliApproval` false: only an approval the user typed as
         # `/crew:approve <id>` satisfies the guard (crew_ticket.accepted).
         "scope": {"mode": "off", "allowCliApproval": False},
+        # `/crew:autopilot` (T-0004). `off` by default: a driver that runs
+        # phase commands in-session starts disarmed, and only the exact
+        # string `plan` arms it (crew_autopilot.settings). REPO ONLY, absent
+        # from `default_global_config()`: whether one checkout may be driven
+        # is a fact about that checkout.
+        "autopilot": copy.deepcopy(crew_state.AUTOPILOT_DEFAULTS),
     }
 
 

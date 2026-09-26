@@ -417,7 +417,7 @@ def test_autonomous_pm_authority_is_noted_in_report_and_crew_json(repo, capsys):
 
     crew = json.loads(_load(repo, ".crew/crew.json"))
     out = capsys.readouterr().out
-    assert (crew["notes"], "note   pm.authority: autonomous - autopilot arrives in 1.1.0" in out,
+    assert (crew["notes"], "note   pm.authority: autonomous - /crew:autopilot drives one ticket" in out,
             crew["retired"]["pm"]["authority"]) == (
         [crew_migrate.AUTOPILOT_NOTE], True, "autonomous")
 
@@ -444,5 +444,13 @@ def test_autopilot_note_survives_preview_and_round_trip(repo, capsys):
     code = crew_migrate.main(["--root", repo, "--preview"])
 
     crew, _unmapped = crew_migrate.to_crew(original)
-    assert (code, "autopilot arrives in 1.1.0" in capsys.readouterr().out,
+    assert (code, "set autopilot.mode: plan to enable" in capsys.readouterr().out,
             crew_migrate.to_legacy(crew) == original) == (0, True, True)
+
+
+def test_autopilot_note_names_the_shipped_command_not_a_future_release():
+    """T-0004 shipped `/crew:autopilot`; the note must stop promising 1.1.0."""
+    note = crew_migrate.AUTOPILOT_NOTE
+
+    assert ("arrives in 1.1.0" in note, "/crew:autopilot" in note,
+            "autopilot.mode: plan" in note) == (False, True, True)

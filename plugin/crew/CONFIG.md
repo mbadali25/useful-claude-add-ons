@@ -296,6 +296,11 @@ of that last sentence. Four entries, id and description verbatim:
 | `rewrite-metrics` | rewriting `.crew/metrics.md` |
 | `git-destruction` | destroying git history or tracked work - force-push, branch delete, history rewrite, or `rm` of a tracked file |
 
+Since 1.0.41 the list also binds `/crew:autopilot` (§20): `commands/autopilot.md`
+names every id, and `test_crew_autopilot.py::test_command_names_every_autonomous_stop`
+iterates this tuple against that file, so an id added here without the command
+naming it fails the suite.
+
 `_WIDENING_NOTES` is keyed on **every** member of `AUTHORITIES` on purpose, so a
 tier added without a note is a `KeyError` at the point of use rather than a
 warning that silently describes the wrong thing (`crew_config.py`, a
@@ -785,6 +790,8 @@ repository or one checkout.
 | `graph.out` | path | `"graphify-out"` | `crew_state.py` |
 | `graph.mode` | string | `"code-only"` | **no consumer found**, §9 |
 | `graph.commitHook` | boolean | `false` | **no consumer found**, §9 |
+| `autopilot.mode` | `"off"` or `"plan"` | `"off"` | `crew_autopilot.settings` — only the exact string `plan` arms `/crew:autopilot`, §20 |
+| `autopilot.maxPhases` | positive integer | `12` | `crew_autopilot.settings`, read by `crew_autopilot.next_phase`, §20 |
 
 `context.reserveTokens: null` means *off*, and survives as `null` — this is the
 case `null_shadows` is deliberately narrow to protect (§1).
@@ -2031,3 +2038,32 @@ Rule output is still captured through a temp file rather than a pipe, so a
 backgrounded grandchild cannot wedge the gate's own read of that rule's
 output (see `verify-gate.sh`'s rule-loop comment) — what is gone is the
 gate reaching in afterward to kill what a rule left running.
+
+---
+
+## 20. `autopilot` — `/crew:autopilot`, off until `plan`
+
+`/crew:autopilot` (T-0004, since 1.0.41) drives one ticket through the
+lifecycle phases `crew_autopilot.next_phase` names from disk, following each
+phase command's procedure in-session, and stops wherever a person is needed.
+Its block is **repo only**: absent from `default_global_config()`, so
+`filter_global` prunes it from the machine file. Whether one checkout may be
+driven is a fact about that checkout.
+
+| Key | Default | Read by | What an unexpected value does |
+|---|---|---|---|
+| `autopilot.mode` | `"off"` | `crew_autopilot.settings`, through `crew_config.resolve_config` | Only the exact string `"plan"` arms it. `"Plan"`, `"plan "`, `true`, `"on"`, `null` — anything else — reads as `off`, and `settings` prints which value it saw. A typo must not arm a driver. |
+| `autopilot.maxPhases` | `12` | `crew_autopilot.settings`; `next_phase` stops once the session's phase count reaches it | Anything but a positive integer (`0`, `-3`, `"12"`, `true`, `2.5`) reads as `12`, with a warning. |
+
+**Which file.** `.crew/config.json`, through `resolve_config` — the file
+`crew_ticket.cli_approval_allowed` already reads, so the approval policy T-0010
+adds reads the same one. `/crew:migrate` writes `.crew/crew.json`, which crew
+does not read for this key; an `autopilot` block found only there is reported
+by `settings` ("move it to .crew/config.json") rather than read as `off` with
+no word.
+
+**What arming it does not change.** Plan approval, review acceptance,
+brainstorm and open questions always stop for a person in this version; every
+`AUTONOMOUS_STOPS` id (§5) binds it; no guard, hook, review budget or
+completion audit is relaxed. `pm.authority: autonomous` from 0.20 arms nothing —
+`/crew:migrate` keeps it under `retired.pm` and its note points here.

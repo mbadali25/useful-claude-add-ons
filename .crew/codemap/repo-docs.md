@@ -1,5 +1,5 @@
 # repo-docs
-anchor: useful-claude-add-ons@a0c0847e
+anchor: useful-claude-add-ons@6f96e627
 verified: 2026-09-26
 
 ## Re-derive provenance
@@ -179,15 +179,22 @@ listing the directory.
   34 skills, 5 plugins / all checks passed`. `plugin/README.md:414`'s crew row
   (`<!-- claim: plugin-skills:crew -->`), `plugin/PLUGINS.md:17`, the
   `.claude-plugin/marketplace.json` `crew` description, and both install
-  scripts' `PLUGIN_NAME` crew rows all read **4 agents, 34 commands, 29
-  skills, 34 hook entries (13 scripts × `.sh`/`.ps1`) across 8 events** —
+  scripts' `PLUGIN_NAME` crew rows all read **4 agents, 35 commands, 29
+  skills, 34 hook entries (13 scripts × `.sh`/`.ps1`) across 8 events** at
+  `07ca3972` (34 commands until T-0004 added `commands/autopilot.md`; every
+  site listed here was bumped in `ecf69e43`, and `README.md:168`/`:874` carry
+  the same 35) —
   independently re-derived from the filesystem (`ls plugin/crew/agents/*.md`
-  = 4, `commands/*.md` = 34, `skills/*/` = 29) and from `hooks.json` (parsed
+  = 4, `commands/*.md` = 35, `skills/*/` = 29) and from `hooks.json` (parsed
   with `json.load`: 34 entries, 8 distinct event names, 26 unique `command`
   strings), not cross-quoted from any one of the docs. This is the same
   five/six-site figure this note's previous anchors repeatedly found
   disagreeing (see `install-scripts.md`'s "Corrected at this anchor"
   history); at `6c497a14` it does not disagree anywhere this note checked.
+  **At `07ca3972` one site disagrees again:** `INSTALLATION.md:252` (a file
+  unchanged since `a0c0847e`) still reads "34 slash commands" for crew. Its
+  `<!-- claim: plugin-skills:crew -->` marker binds the skills figure (29,
+  correct), not the command count, so `check_self_claims` does not catch it.
 - `SKILL_KEYS` dropped **36 -> 34**: `claude-memories-canvas` and
   `claude-memories-vault` removed from both install scripts' catalogs and
   from `skills/`. `skills/README.md` lost the two corresponding table rows in
@@ -253,12 +260,16 @@ listing the directory.
   held. Not fixed here — outside this note's write scope; reported so the
   fix targets the right passage.
 
-- **`README.md`'s install-URL pin is current at this anchor; it was stale
-  at `6c497a14`, and its history says it will be again.** `README.md:12`/`:18`
-  read `6c497a14fc06612732241d2b13eee4fea41996f5` at `f2bb919b` (re-read), set
-  by #226 (`86931b29`), and `git log --oneline 6c497a14..f2bb919b --
-  scripts/install-prerequisites.sh scripts/install-prerequisites.ps1` is
-  empty. At `6c497a14` this bullet recorded the pin at `5d1fc5fd8b08...`,
+- **`README.md`'s install-URL pin is stale again at this anchor, as its
+  history said it would be.** `README.md:12`/`:18` still read
+  `6c497a14fc06612732241d2b13eee4fea41996f5` at `07ca3972` (re-read), set by
+  #226 (`86931b29`); it was current through `a0c0847e`, but `git log
+  --oneline 6c497a14..07ca3972 -- scripts/install-prerequisites.sh
+  scripts/install-prerequisites.ps1` now returns `ecf69e43` (T-0004: the
+  `PLUGIN_NAME`/`PluginCatalog` crew row, 34 -> 35 commands, in both scripts).
+  Per CLAUDE.md the re-pin happens after that change merges to `main`, so
+  this is expected on the branch, not a defect of it. At `6c497a14` this
+  bullet recorded the pin at `5d1fc5fd8b08...`,
   current only for the moment after `7f83c812` re-pinned it and stale again
   once both install scripts kept changing through the rest of that range -
   the pattern's third or fourth documented recurrence. `install-scripts.md`
@@ -287,7 +298,7 @@ listing the directory.
 - **`docs/runbooks/INDEX.md` still does not exist.** `docs/runbooks/`
   contains `rollback.md` alone (re-confirmed by `ls`).
   `plugin/crew/skills/crew-runbooks/SKILL.md:80` and
-  `plugin/crew/README.md:1759` (`:1730` at `8ebbdedc`, `:1757` at T-0006's `2bb92f32`, `:1728` at `c35edda5`, `:1725` at `f2bb919b`, `:1604` before that,
+  `plugin/crew/README.md:1804` (`:1759` at `a0c0847e`, `:1730` at `8ebbdedc`, `:1757` at T-0006's `2bb92f32`, `:1728` at `c35edda5`, `:1725` at `f2bb919b`, `:1604` before that,
   that file having changed in each range — re-grepped, not offset) both still describe
   `docs/runbooks/INDEX.md` as a symptom-keyed index that would live there.
   JUDGEMENT, unchanged: costs nothing with one runbook, becomes a real gap at
@@ -401,7 +412,11 @@ listing the directory.
   `test_scope_base.py`. Since `c35edda5` a third was inserted mid-list
   (`:167-172`, T-0026): `plugin/crew/hooks/scripts/crew_ticket.py` and
   `plugin/crew/tests/test_approval_digest.py` run that test file and
-  `test_crew_ticket.py`.
+  `test_crew_ticket.py`. Since `a0c0847e` T-0006's rule sits at `:270-280`
+  and T-0004 appended a last one (`:281-288`): `crew_autopilot.py`,
+  `commands/autopilot.md`, `test_crew_autopilot.py` and
+  `sabotage_autopilot.py` run `test_crew_autopilot.py` plus
+  `test_lifecycle_commands.py`. The rules above it did not move.
 
 ## Unverified
 
@@ -532,3 +547,17 @@ and rule 24 `:252-268` hold; T-0006's rule is rule 25 at `:270-280`), `TODO.md` 
 entry still at `:1190`, same heading) and `CHANGELOG.md` (T-0006's 1.0.40 entry now sits above
 main's 1.0.39 and 1.0.38 entries; cited without a line). Files changed on one side only keep that
 side's re-verified citations.
+
+Re-verified per-path from `a0c0847e` to `07ca3972` for T-0004 (`/crew:autopilot`, crew 1.0.41). Of the
+cited paths, `git diff --name-only a0c0847e..07ca3972` returns `.claude-plugin/marketplace.json` (crew
+`version` and description, 34 -> 35 slash commands), `.crew/verify.json` (rule 26 appended at
+`:281-288`; `:167-172`, `:251`, `:252-268`, `:270-280` hold), `CHANGELOG.md` (1.0.41 entry at the top;
+cited without a line), `README.md` (`:168` and `:874` command counts only; `:12`/`:18`, `:46`, `:154`
+did not move, and the pin is now stale - landmine rewritten), `TODO.md` (an autopilot note at `:4143`;
+the `render.sh` entry still at `:1190`, same heading), `plugin/PLUGINS.md` (`:14` version, `:17` count
+35), `plugin/README.md` (`:414` count 35), `plugin/crew/README.md` (the `docs/runbooks/INDEX.md`
+mention moved `:1759` -> `:1804`, re-grepped), `plugin/crew/hooks/scripts/crew_state.py`
+(`AUTOPILOT_DEFAULTS` added at `:1087`, below the `:129`-`:139` re-exports, which hold),
+`plugin/crew/hooks/scripts/crew_ticket.py` (cited by name only, as a rule's path) and both install
+scripts (crew catalog row count). `python3 scripts/check-marketplace.py` re-run at `07ca3972`:
+`marketplace: 34 skills, 5 plugins` / `all checks passed`.

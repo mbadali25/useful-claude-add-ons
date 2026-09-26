@@ -194,5 +194,9 @@
   "scope": {
     "mode": "off",
     "allowCliApproval": false
+  },
+  "autopilot": {
+    "mode": "off",
+    "maxPhases": 12
   }
 }
