@@ -1368,8 +1368,11 @@ unreadable one, a plan path that is not a literal, a plan over 64 MiB, and a
 saved-plan apply that is **not the only command** in the invocation. The plan
 is hashed when the hook runs, before the command does, so anything beside the
 apply — `terraform plan -out`, `cp`, a nested shell, an output redirect to
-anything but `/dev/null` — could replace the plan after crew read it. Run the
-plan and summarize steps first, then the apply on its own.
+anything but `/dev/null`, a command substitution anywhere the shell runs one
+(an unquoted heredoc body, `${...}`, `$((...))`) — could replace the plan
+after crew read it. A quoted heredoc (`<<'EOF'`) is literal and counts for
+nothing; PowerShell's `2>&1` is a redirection, not a command. Run the plan
+and summarize steps first, then the apply on its own.
 
 **The sidecar.** The hook cannot run `terraform show` (15 seconds, and it
 must not run terraform at all), so a saved plan is summarised first, outside

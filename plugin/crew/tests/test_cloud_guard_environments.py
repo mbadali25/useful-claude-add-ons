@@ -1253,3 +1253,150 @@ def test_the_command_count_covers_every_depth():
         ctx = {}
         cloud_guard.scan("bash", command, ctx=ctx)
         assert ctx.get("commands") == want, (command, ctx)
+
+
+# --- review round 2 (T-0005-env-terraform--lt3l0F) ---------------------------
+#
+# BLOCK :1474. A substitution in an UNQUOTED heredoc body runs while the shell
+# sets up the redirection, before terraform reads its plan, so it is another
+# command and the saved plan is no longer the apply's alone. The fixture is
+# the clean staging plan, summary and workspace file the bypass needed.
+_R2_FIXTURE = _o(sidecar={"workspace": "staging"}, wsfiles={".": "staging"},
+                 why="rewrite")
+_SWAP = f"cp evil.tfplan {PLAN}"
+HEREDOC_SUBST = _normalise([
+    (case_id, "Bash", command, dict(_R2_FIXTURE))
+    for case_id, command in (
+        ("r2-heredoc-subst", f"terraform apply {PLAN} <<EOF\n$({_SWAP})\nEOF"),
+        ("r2-heredoc-backtick",
+         f"terraform apply {PLAN} <<EOF\n`{_SWAP}`\nEOF"),
+        ("r2-heredoc-dash",
+         f"terraform apply {PLAN} <<-EOF\n\t$({_SWAP})\n\tEOF"),
+        ("r2-heredoc-param-default",
+         f"terraform apply {PLAN} <<EOF\n${{x:=$({_SWAP})}}\nEOF"),
+        ("r2-heredoc-arith",
+         f"terraform apply {PLAN} <<EOF\n$(( $({_SWAP}) ))\nEOF"),
+        ("r2-heredoc-second",
+         f"terraform apply {PLAN} <<A <<B\nyes\nA\n$({_SWAP})\nB"),
+        ("r2-heredoc-other-command",
+         f"cat <<EOF; terraform apply {PLAN}\n$({_SWAP})\nEOF"),
+        # The same shapes outside a heredoc, which the lexer skipped too.
+        # Each rides in an option value, so the plan is still the only
+        # operand and the substitution is the only thing wrong.
+        ("r2-param-default",
+         f"terraform apply -lock-timeout=0s${{x:=$({_SWAP})}} {PLAN}"),
+        ("r2-arith-nested",
+         f"terraform apply -parallelism=$(( $({_SWAP}) 10 )) {PLAN}"),
+        ("r2-comsub-subshell",
+         f"terraform apply -lock-timeout=0s$(({_SWAP}) ) {PLAN}"),
+    )])
+
+# FIX :1314. Terragrunt hands `workspace delete` to terraform in every
+# module through `run-all`, `run --` and `run --all --`, and its own options
+# may take a value. A destroy under `allow`, and under prodUnattended.
+_TG_DELETES = (
+    ("run-all", "terragrunt run-all workspace delete staging"),
+    ("run", "terragrunt run -- workspace delete staging"),
+    ("run-all-flag", "terragrunt run --all -- workspace delete staging"),
+    ("valued-option", "terragrunt --working-dir infra workspace delete staging"),
+)
+TG_WS_DELETE = _normalise(
+    [(f"tg-{name}-delete-allow", "Bash", command,
+      _o(why="destroy", **ALLOW_POLICY)) for name, command in _TG_DELETES]
+    + [(f"tg-{name}-delete-pu", "Bash", command, _o(pu=True, why="destroy"))
+       for name, command in _TG_DELETES])
+
+# NIT :588. PowerShell's `&` after a bare `2>` is part of `2>&1`; a `&` on
+# its own is still a second command.
+PS_SEPARATOR = _normalise([
+    ("r2-ps-background", "PowerShell", f"terraform apply {PLAN} & whoami",
+     dict(_R2_FIXTURE)),
+    ("r2-ps-quoted-redirect", "PowerShell",
+     f"terraform apply {PLAN} '2>'&1", dict(_R2_FIXTURE)),
+])
+
+_ROUND2 = HEREDOC_SUBST + TG_WS_DELETE + PS_SEPARATOR
+
+_R2_LOG = "env:nonProd:staging"
+ROUND2_ALLOW = _normalise([
+    (case_id, tool, command,
+     _o(sidecar={"workspace": "staging"}, wsfiles={".": "staging"},
+        log=_R2_LOG))
+    for case_id, tool, command in (
+        ("r2-heredoc-quoted", "Bash",
+         f"terraform apply {PLAN} <<'EOF'\n$({_SWAP})\nEOF"),
+        ("r2-heredoc-dquoted", "Bash",
+         f'terraform apply {PLAN} <<"EOF"\n$({_SWAP})\nEOF'),
+        ("r2-heredoc-partly-quoted", "Bash",
+         f'terraform apply {PLAN} <<E"O"F\n$({_SWAP})\nEOF'),
+        ("r2-heredoc-backslash-delim", "Bash",
+         f"terraform apply {PLAN} <<\\EOF\n$({_SWAP})\nEOF"),
+        ("r2-heredoc-escaped-dollar", "Bash",
+         f"terraform apply {PLAN} <<EOF\n\\$({_SWAP})\nEOF"),
+        ("r2-heredoc-plain", "Bash", f"terraform apply {PLAN} <<EOF\nyes\nEOF"),
+        ("r2-arith-plain", "Bash",
+         f"terraform apply -parallelism=$((2 * 5)) {PLAN}"),
+        ("r2-ps-2-to-1", "PowerShell", f"terraform apply {PLAN} 2>&1"),
+        ("r2-ps-star-to-1", "PowerShell", f"terraform apply {PLAN} *>&1"),
+        ("r2-ps-null", "PowerShell", f"terraform apply {PLAN} 2>$null"),
+    )])
+
+
+@pytest.mark.parametrize("case", _ROUND2, ids=_ids(_ROUND2))
+def test_round2_must_block_python(tmp_path, case):
+    _deny("python", tmp_path, case)
+
+
+@pytest.mark.parametrize("case", _sample(
+    _ROUND2, ("r2-heredoc-subst", "tg-run-all-delete-allow"),
+    (tcg.needs_bash,)))
+def test_round2_must_block_bash(tmp_path, case):
+    _deny("bash", tmp_path, case)
+
+
+@pytest.mark.parametrize("case", ROUND2_ALLOW, ids=_ids(ROUND2_ALLOW))
+def test_round2_must_allow_python(tmp_path, case):
+    _allow("python", tmp_path, case)
+
+
+@pytest.mark.parametrize("case", _sample(
+    ROUND2_ALLOW, ("r2-heredoc-quoted", "r2-ps-2-to-1"), (tcg.needs_pwsh,)))
+def test_round2_must_allow_pwsh(tmp_path, case):
+    _allow("pwsh", tmp_path, case)
+
+
+@pytest.mark.parametrize("command", [
+    "terragrunt run-all workspace list",
+    "terragrunt run -- workspace show",
+    "terragrunt run --all -- workspace select staging"])
+def test_terragrunt_workspace_reads_stay_unjudged(tmp_path, command):
+    """The wrapper fix does not make every terragrunt workspace call a
+    finding: listing, showing and selecting are not destroys."""
+    tcg._fixture(tmp_path, {"guards": {"cloudGuard": "block",  # pylint: disable=protected-access
+                                       "terraformApply": "allow"}},
+                 {"guards": {"terraformApply": "allow"}})
+    decision, reason, code, err = tcg.run_hook("python", tmp_path, "Bash",
+                                               command, extra_env=UNATTENDED)
+    assert (decision, code) == ("allow", 0), (reason, err)
+
+
+def test_the_command_count_covers_heredoc_substitutions():
+    for command, want in (
+            (f"terraform apply {PLAN} <<EOF\n$({_SWAP})\nEOF", 2),
+            (f"terraform apply {PLAN} <<'EOF'\n$({_SWAP})\nEOF", 1),
+            (f"terraform apply {PLAN} <<EOF\n$(a) `b` ${{c:-$(d)}}\nEOF", 4),
+            (f"terraform apply {PLAN} <<EOF\nno substitution\nEOF", 1)):
+        ctx = {}
+        cloud_guard.scan("bash", command, ctx=ctx)
+        assert ctx.get("commands") == want, (command, ctx)
+
+
+@pytest.mark.parametrize("command, want", [
+    (f"terraform apply {PLAN} 2>&1", [["terraform", "apply", PLAN]]),
+    (f"terraform apply {PLAN} *>&1", [["terraform", "apply", PLAN]]),
+    (f"terraform apply {PLAN} & whoami",
+     [["terraform", "apply", PLAN], ["whoami"]]),
+])
+def test_powershell_fd_merge_is_a_redirection(command, want):
+    cmds, _subs = cloud_guard._lex_ps(command)  # pylint: disable=protected-access
+    assert [c.words for c in cmds] == want

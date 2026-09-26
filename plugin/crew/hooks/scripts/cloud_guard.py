@@ -14,8 +14,9 @@ that one key and exits. CLAUDE.md's rule for a hook that can block.
 WHAT IT RECOGNISES, and which existing `guards.*` key decides each:
 
     terraform/tofu/terragrunt apply|destroy        guards.terraformApply
-    terraform/tofu workspace new|delete|
-      select -or-create, once `environments`
+    terraform/tofu/terragrunt workspace delete,
+      a destroy in every armed state; new|
+      select -or-create once `environments`
       is configured                                 guards.terraformApply
     git push --force|-f|--force-with-lease|+ref     guards.forcePush
     gh pr merge --admin                             guards.adminMerge
@@ -252,21 +253,94 @@ def _read_ansi_c(text, i):
     return "".join(buf), j + 1
 
 
-def _read_heredocs(text, i, pending):
-    """Consume heredoc bodies starting at `text[i]`; attach each to its command."""
+def _expansion_subs(text, subs):
+    """Append to `subs` every command substitution the shell runs while it
+    expands `text` -- an unquoted heredoc body, or the inside of `${...}` or
+    `$((...))`: `$( )` and backticks, at any depth of `${ }` or arithmetic.
+    A backslash escapes `$`, `` ` `` and itself, as it does there."""
+    j, n = 0, len(text)
+    while j < n:
+        c = text[j]
+        if c == "\\":
+            j += 2
+            continue
+        if text.startswith("$((", j) and _is_arith(text, j):
+            j += 3
+            continue
+        if text.startswith("$(", j):
+            k = _match_close(text, j + 1)
+            subs.append(text[j + 2:k])
+            j = k + 1
+            continue
+        if c == "`":
+            k = text.find("`", j + 1)
+            k = n if k < 0 else k
+            subs.append(text[j + 1:k])
+            j = k + 1
+            continue
+        j += 1
+
+
+def _is_arith(text, i):
+    """True when the `$((` at `text[i]` is arithmetic. Bash reads it as
+    `$( (subshell) ... )` -- a command -- unless the inner `(` closes
+    straight onto the outer `)`: `$((echo a); (echo b))` runs both echoes."""
+    m = _match_close(text, i + 2)
+    return text[m + 1:m + 2] == ")"
+
+
+def _heredoc_line(text, i, joins):
+    """The logical line starting at `text[i]` and the index after it. With
+    `joins` (an unquoted delimiter) bash drops each backslash-newline before
+    comparing the line with the delimiter, so `E\\<newline>OF` ends a heredoc
+    delimited by `EOF`; an escaped backslash (`\\\\`) does not join."""
+    n, parts = len(text), []
+    while True:
+        end = text.find("\n", i)
+        end = n if end < 0 else end
+        line = text[i:end]
+        i = end + 1
+        trailing = len(line) - len(line.rstrip("\\"))
+        if joins and trailing % 2 and i < n:
+            parts.append(line[:-1])
+            continue
+        parts.append(line)
+        return "".join(parts), i
+
+
+def _read_heredocs(text, i, pending, subs):
+    """Consume heredoc bodies starting at `text[i]`; attach each to its
+    command. An unquoted delimiter leaves the body open to expansion, so its
+    substitutions go to `subs` and are judged -- and counted -- as commands.
+
+    A line that is the delimiter only once a trailing CR is dropped ends the
+    heredoc under a shell that ignores CR and not under one that does not,
+    and crew cannot tell which will run it. It is read both ways: here as
+    the end, and -- through `subs` -- the body and the text after the next
+    exact delimiter line as the other shell reads them."""
     n = len(text)
-    for delim, strip_tabs, cmd in pending:
+    for delim, strip_tabs, cmd, quoted in pending:
         lines = []
         while i < n:
-            end = text.find("\n", i)
-            end = n if end < 0 else end
-            line = text[i:end]
-            i = end + 1
+            line, i = _heredoc_line(text, i, not quoted)
             check = line.lstrip("\t") if strip_tabs else line
+            if check == delim:
+                break
             if check.rstrip("\r") == delim:
+                alt, j = [line], i
+                while j < n:
+                    other, j = _heredoc_line(text, j, not quoted)
+                    if (other.lstrip("\t") if strip_tabs else other) == delim:
+                        subs.append(text[j:])
+                        break
+                    alt.append(other)
+                if not quoted:
+                    _expansion_subs("\n".join(alt), subs)
                 break
             lines.append(line)
         body = "\n".join(lines)
+        if not quoted:
+            _expansion_subs(body, subs)
         cmd.stdin = body if cmd.stdin is None else cmd.stdin + "\n" + body
     return i
 
@@ -274,7 +348,7 @@ def _read_heredocs(text, i, pending):
 def _lex_bash(text):
     """`text` as a list of `_Cmd`, plus every substitution found in it."""
     cmds, subs, pending = [], [], []
-    state = {"cur": _Cmd(), "word": None, "redirect": None}
+    state = {"cur": _Cmd(), "word": None, "redirect": None, "quoted": False}
 
     def end_word():
         word = state["word"]
@@ -282,6 +356,7 @@ def _lex_bash(text):
             return
         value = "".join(word)
         state["word"] = None
+        quoted, state["quoted"] = state["quoted"], False
         redirect = state["redirect"]
         if redirect is not None:
             # The word after a redirection operator is its target, never an
@@ -291,7 +366,9 @@ def _lex_bash(text):
             if redirect == "<<<":
                 state["cur"].stdin = value
             elif redirect in ("<<", "<<-"):
-                pending.append((value, redirect == "<<-", state["cur"]))
+                # Any quoting in the delimiter keeps the body literal.
+                pending.append((value, redirect == "<<-", state["cur"],
+                                quoted))
             elif redirect in _BASH_WRITES and value != "/dev/null":
                 state["cur"].writes = True
             return
@@ -304,10 +381,11 @@ def _lex_bash(text):
             cmds.append(cur)
         state["cur"] = _Cmd(pipe_from=cur if pipe else None)
 
-    def add(chars):
+    def add(chars, quoted=False):
         if state["word"] is None:
             state["word"] = []
         state["word"].append(chars)
+        state["quoted"] = state["quoted"] or quoted
 
     i, n = 0, len(text)
     while i < n:
@@ -316,34 +394,43 @@ def _lex_bash(text):
             if text[i + 1:i + 2] == "\n":
                 i += 2
                 continue
-            add(text[i + 1:i + 2])
+            add(text[i + 1:i + 2], quoted=True)
             i += 2
             continue
         if c == "'":
             j = text.find("'", i + 1)
             j = n if j < 0 else j
-            add(text[i + 1:j])
+            add(text[i + 1:j], quoted=True)
             i = j + 1
             continue
         if text.startswith("$'", i):
             value, i = _read_ansi_c(text, i)
-            add(value)
+            add(value, quoted=True)
             continue
         if c == '"':
             value, i = _read_bash_double(text, i, subs)
-            add(value)
+            add(value, quoted=True)
+            continue
+        if text.startswith("$((", i) and _is_arith(text, i):
+            # Arithmetic runs nothing itself, but a substitution inside it
+            # does: `$(( $(cp evil p.tfplan) 10 ))`.
+            k = _match_close(text, i + 1)
+            _expansion_subs(text[i + 3:k], subs)
+            add(text[i:k + 1])
+            i = k + 1
             continue
         if text.startswith("$(", i) or text.startswith("<(", i) \
                 or text.startswith(">(", i):
+            # `$((cp a b) )` and `<((cmd))` are a subshell inside, not
+            # arithmetic: the whole inside is a command.
             k = _match_close(text, i + 1)
-            inner = text[i + 2:k]
-            if not inner.startswith("("):
-                subs.append(inner)
+            subs.append(text[i + 2:k])
             add(text[i:k + 1])
             i = k + 1
             continue
         if text.startswith("${", i):
             k = _match_close(text, i + 1, "{", "}")
+            _expansion_subs(text[i + 2:k], subs)
             add(text[i:k + 1])
             i = k + 1
             continue
@@ -362,7 +449,7 @@ def _lex_bash(text):
             finish()
             i += 1
             if pending:
-                i = _read_heredocs(text, i, pending)
+                i = _read_heredocs(text, i, pending, subs)
                 pending.clear()
             continue
         if c in " \t\r":
@@ -436,6 +523,8 @@ class _Bare(str):
 
 _PS_REDIRECT_RE = re.compile(r"^(?:\d|\*)?>>?(?:&\d)?$|^\d?>&\d$")
 _PS_REDIRECT_TO_RE = re.compile(r"^(?:\d|\*)?>>?([^&>].*)$", re.DOTALL)
+# A bare word that, with `&N` after it, is a stream merge (`2>&1`, `*>&1`).
+_PS_MERGE_RE = re.compile(r"^(?:\d|\*)?>$")
 
 
 def _ps_group_value(inner):
@@ -588,6 +677,14 @@ def _lex_ps(text):
         if c == "&":
             if text[i + 1:i + 2] == "&":
                 finish()
+                i += 2
+                continue
+            if state["word"] is not None and state["bare"] \
+                    and _PS_MERGE_RE.match("".join(state["word"])) \
+                    and text[i + 1:i + 2].isdigit():
+                # `2>&1`, `*>&1`: a stream merged into another, one
+                # redirection token -- not the `&` that starts a command.
+                add(text[i:i + 2], bare=True)
                 i += 2
                 continue
             if state["word"] is None and not state["cur"].words:
@@ -1306,11 +1403,20 @@ def _tf_flags(rest):
     return flags
 
 
-def _tf_workspace(args):
+def _tf_workspace(args, head=None):
     """`(op, name)` for a `workspace` subcommand that can change something or
     select a workspace: `ws-new`, `ws-delete`, `ws-create` (`select
-    -or-create`) or `select`; `(None, None)` for anything else."""
+    -or-create`) or `select`; `(None, None)` for anything else.
+
+    Terragrunt hands what follows `run-all`, `run --` and `run --all --` to
+    terraform in every module, as `_terraform_destructive` reads them, and
+    its own options may take a value (`--working-dir infra`), so for it --
+    and behind either wrapper -- the first `workspace` word is the
+    subcommand."""
     _chdir, sub, rest = _tf_split(args)
+    if sub != "workspace" and "workspace" in args and (
+            head == "terragrunt" or sub in ("run-all", "run")):
+        sub, rest = "workspace", list(args[args.index("workspace") + 1:])
     if sub != "workspace" or not rest or _tf_help_requested(rest[1:]):
         return None, None
     wsub, wrest = rest[0], rest[1:]
@@ -1869,7 +1975,7 @@ def _classify(argv, stdin, env, shell, depth, ctx=None, seq=None, fed=False):
         # environment layer is engaged, so a repo that never configured it
         # passes them exactly as before. Behind xargs they are
         # `_fed_finding`'s, which knows the name is not visible.
-        op, name = _tf_workspace(args)
+        op, name = _tf_workspace(args, head)
         engaged = ctx is not None and ctx.get("engaged")
         if op in ("ws-new", "ws-delete", "ws-create") and not fed \
                 and (op == "ws-delete" or engaged):

@@ -326,6 +326,40 @@ MUST_BLOCK = [
      "terraform apply -some-new-option -help", "terraformApply"),
     ("tf-help-after-dashdash", "Bash", "terraform apply -- -help",
      "terraformApply"),
+    # T-0005 review round 2. An unquoted heredoc body is expanded by the
+    # shell that reads it, so a substitution in it runs whatever the heredoc
+    # is fed to -- `cat` included.
+    ("heredoc-subst-destroy", "Bash",
+     "cat <<EOF\n$(terraform destroy -auto-approve)\nEOF", "terraformApply"),
+    ("heredoc-subst-ws-delete", "Bash",
+     "cat <<EOF\n$(terraform workspace delete production)\nEOF",
+     "terraformApply"),
+    ("heredoc-backtick-destroy", "Bash",
+     "cat <<EOF\n`terraform destroy -auto-approve`\nEOF", "terraformApply"),
+    ("heredoc-param-default-destroy", "Bash",
+     "cat <<EOF\n${x:=$(terraform destroy -auto-approve)}\nEOF",
+     "terraformApply"),
+    ("heredoc-arith-destroy", "Bash",
+     "cat <<EOF\n$(( $(terraform destroy -auto-approve) ))\nEOF",
+     "terraformApply"),
+    # Bash joins a backslash-newline before it looks for the delimiter of an
+    # unquoted heredoc, so `E\<newline>OF` ends it and the next line runs.
+    ("heredoc-continued-delimiter", "Bash",
+     "cat <<EOF\nE\\\nOF\nterraform destroy -auto-approve\nEOF\n",
+     "terraformApply"),
+    # `EOF\r` ends a heredoc only where bash ignores CR, so both readings
+    # are judged: here the one that does not end it runs the destroy.
+    ("heredoc-cr-delimiter", "Bash",
+     "cat <<EOF\nEOF\r\n'\nEOF\nterraform destroy -auto-approve\n'\n",
+     "terraformApply"),
+    ("param-default-destroy", "Bash",
+     "echo ${x:=$(terraform destroy -auto-approve)}", "terraformApply"),
+    ("arith-nested-destroy", "Bash",
+     "echo $(( $(terraform destroy -auto-approve) ))", "terraformApply"),
+    ("comsub-of-subshell-destroy", "Bash",
+     "echo $((terraform destroy -auto-approve) )", "terraformApply"),
+    ("procsub-of-subshell-destroy", "Bash",
+     "cat <((terraform destroy -auto-approve))", "terraformApply"),
 ]
 
 MUST_ALLOW = [
@@ -394,6 +428,14 @@ MUST_ALLOW = [
      "terraform apply -var-file x.tfvars -help"),
     ("tf-help-after-bool-option", "Bash",
      "terraform destroy -auto-approve -help"),
+    # A quoted heredoc delimiter -- any part of it -- keeps the body literal.
+    ("heredoc-quoted-subst", "Bash",
+     "cat <<'EOF'\n$(terraform destroy -auto-approve)\nEOF"),
+    ("heredoc-partly-quoted-subst", "Bash",
+     'cat <<E"O"F\n$(terraform destroy -auto-approve)\nEOF'),
+    ("heredoc-escaped-subst", "Bash",
+     "cat <<EOF\n\\$(terraform destroy -auto-approve)\nEOF"),
+    ("arith-plain", "Bash", "echo $(( (1 + 2) * 3 ))"),
 ]
 
 # Identity cases: (id, tool, command, repo cfg, global cfg, extra env,

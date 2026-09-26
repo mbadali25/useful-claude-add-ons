@@ -557,3 +557,56 @@ CLOUD_GUARD_MUTATIONS += (
      "            data = json.load(handle)\n",
      _E + "test_a_special_azure_profile_is_unknown_not_a_hang[zero]"),
 )
+
+# T-0005 review round 2 (T-0005-env-terraform--lt3l0F): one BLOCK (a
+# substitution in an unquoted heredoc body was never counted as a command),
+# the terragrunt workspace wrappers, and PowerShell's `2>&1`. Run on
+# 2026-09-26 through this harness's own apply/restore with MUTATIONS filtered
+# to these entries (each restore checked against its pre-run digest): 11 of
+# 11 red, then again in the full run.
+_R2 = _E + "test_round2_must_block_python"
+_R2A = _E + "test_round2_must_allow_python"
+
+CLOUD_GUARD_MUTATIONS += (
+    ("cloud guard r2: an unquoted heredoc's substitutions not counted", GUARD,
+     "        if not quoted:\n            _expansion_subs(body, subs)\n",
+     "        if False:\n            _expansion_subs(body, subs)\n",
+     _R2 + "[r2-heredoc-subst]"),
+    ("cloud guard r2: a quoted heredoc delimiter read as unquoted", GUARD,
+     '                pending.append((value, redirect == "<<-", state["cur"],\n'
+     "                                quoted))\n",
+     '                pending.append((value, redirect == "<<-", state["cur"],\n'
+     "                                False))\n",
+     _R2A + "[r2-heredoc-quoted]"),
+    ("cloud guard r2: a heredoc's backslash-newline not joined", GUARD,
+     "        if joins and trailing % 2 and i < n:\n",
+     "        if False:\n", _BLOCK + "[heredoc-continued-delimiter]"),
+    ("cloud guard r2: a CR delimiter line read only as the end", GUARD,
+     '            if check.rstrip("\\r") == delim:\n'
+     "                alt, j = [line], i\n",
+     '            if check.rstrip("\\r") == delim:\n'
+     "                break\n", _BLOCK + "[heredoc-cr-delimiter]"),
+    ("cloud guard r2: ${...} no longer scanned for substitutions", GUARD,
+     "            _expansion_subs(text[i + 2:k], subs)\n", "",
+     _R2 + "[r2-param-default]"),
+    ("cloud guard r2: $((...)) no longer scanned for substitutions", GUARD,
+     "            _expansion_subs(text[i + 3:k], subs)\n", "",
+     _R2 + "[r2-arith-nested]"),
+    ("cloud guard r2: $((cmd) ) read as arithmetic", GUARD,
+     '    return text[m + 1:m + 2] == ")"\n', "    return True\n",
+     _R2 + "[r2-comsub-subshell]"),
+    ("cloud guard r2: terragrunt workspace wrappers not recognised", GUARD,
+     '            head == "terragrunt" or sub in ("run-all", "run")):\n',
+     "            False):\n", _R2 + "[tg-run-all-delete-allow]"),
+    ("cloud guard r2: a terragrunt valued option hides workspace", GUARD,
+     '            head == "terragrunt" or sub in ("run-all", "run")):\n',
+     '            sub in ("run-all", "run")):\n',
+     _R2 + "[tg-valued-option-delete-allow]"),
+    ("cloud guard r2: PowerShell 2>&1 split at the & again", GUARD,
+     '            if state["word"] is not None and state["bare"] \\\n',
+     '            if False and state["bare"] \\\n', _R2A + "[r2-ps-2-to-1]"),
+    ("cloud guard r2: a quoted '2>' merged as a redirection", GUARD,
+     '            if state["word"] is not None and state["bare"] \\\n',
+     '            if state["word"] is not None \\\n',
+     _R2 + "[r2-ps-quoted-redirect]"),
+)

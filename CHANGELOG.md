@@ -41,9 +41,21 @@ All notable changes to this repository are documented here. Format follows [Keep
 - **A saved plan is trusted only when its apply is the only command.** The
   hook hashes the plan before the command runs, so `terraform plan -out p &&
   terraform apply p`, a `cp` onto the plan, a nested shell or an output
-  redirect beside the apply makes the destroy question unknown.
+  redirect beside the apply makes the destroy question unknown. A command
+  substitution counts as a command wherever the shell runs it: in an
+  unquoted heredoc body (a quoted delimiter — any part of it — keeps the body
+  literal), inside `${...}` and `$((...))`, and in `$((cmd) )` / `<((cmd))`,
+  which are subshells, not arithmetic. PowerShell's `2>&1` and `*>&1` are one
+  redirection, not a second command.
+- **The cloud guard reads heredocs as bash does.** A substitution in an
+  unquoted heredoc body is judged even when the heredoc feeds `cat`, so
+  `cat <<EOF` around `$(terraform destroy -auto-approve)` is a destroy (it
+  was not a finding at all before). A backslash-newline is joined before the
+  delimiter is matched, so `E\` + newline + `OF` ends a heredoc delimited by
+  `EOF`; a delimiter line ending in CR is read both as the end and not.
 - **`workspace delete` is a destroy in every armed state**, `environments`
-  configured or not. **Once `environments` is configured**, `terraform
+  configured or not, terragrunt's included — behind `run-all`, `run --` and
+  `run --all --`, and after a terragrunt option that takes a value. **Once `environments` is configured**, `terraform
   workspace new|select -or-create` become findings under
   `guards.terraformApply` — denied under `block`, and under `ask` denied
   unattended for a production or unknown target. With `environments` at its

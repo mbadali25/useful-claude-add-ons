@@ -968,7 +968,7 @@ command guard removed in 0.19.52, which matched words anywhere.
 | It recognises | Decided by |
 |---|---|
 | `terraform`/`tofu` `apply`, `destroy` (`-auto-approve`, `-chdir=` included) | `guards.terraformApply` |
-| `terraform workspace new`/`delete`/`select -or-create`, once `environments` is configured | `guards.terraformApply` |
+| `terraform`/`tofu`/`terragrunt` `workspace delete` — a destroy, in every armed state; `workspace new`/`select -or-create` once `environments` is configured | `guards.terraformApply` |
 | `git push --force`, `-f`, `--force-with-lease`, `+ref` | `guards.forcePush` |
 | `gh pr merge --admin` | `guards.adminMerge` |
 | `aws … delete-*/terminate-*/purge-*`, `aws s3 rm/rb`, `az … delete/purge`, `Remove-Az*` | `guards.cloudDestructive` |
