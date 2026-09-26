@@ -546,7 +546,7 @@ def test_ship_timeout_pending_stops(tmp_path, monkeypatch):
     got = crew_autopilot.ship(str(root), T)
 
     assert (got["action"], got["stop"], fake.ran("pr", "merge"), clock.now >= 120,
-            set(clock.slept) <= {30, 30.0}) == ("stop", True, [], True, True)
+            set(clock.slept) <= {30}) == ("stop", True, [], True, True)
 
 
 def test_ship_waits_then_merges_when_checks_go_green(tmp_path, monkeypatch):
