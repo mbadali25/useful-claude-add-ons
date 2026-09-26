@@ -1,5 +1,5 @@
 # install-scripts
-anchor: useful-claude-add-ons@4ff7e764
+anchor: useful-claude-add-ons@926522f7
 verified: 2026-09-26
 
 ## Re-derive provenance
@@ -495,3 +495,13 @@ removed, so the `35 commands` claim at `:2269` and `4 agents` at `:2280` hold (r
 `git ls-files 'plugin/crew/*.md' | xargs cat | wc -l` still returns 18170, as `BUDGETS.md:11` says.
 Both install scripts, `README.md`, `plugin/README.md`, `INSTALLATION.md` and
 `scripts/check-marketplace.py` did not change. `check-marketplace.py` passed at `4ff7e764`.
+
+Re-verified per-path from `4ff7e764` to `926522f7` (T-0018 rounds 2-3 and T-0010, stacked): of the
+cited paths only `plugin/crew/README.md` and `plugin/crew/BUDGETS.md` changed. `plugin/crew/README.md`
+gained lines in the autopilot section and one command-table row, so the `35 commands` claim moved
+`:2269` -> `:2272` and `4 agents` `:2280` -> `:2283` (re-grepped). `BUDGETS.md`'s marker is still
+`:10`; `:11` now reads 18,202 lines across 121 files, and `git ls-files 'plugin/crew/*.md' | xargs
+cat | wc -l` returns 18202. `plugin/crew/commands/` gained no file (`ls` still 35). Both install
+scripts, `README.md`, `plugin/README.md`, `INSTALLATION.md`, `plugin/PLUGINS.md`,
+`.claude-plugin/marketplace.json` and `scripts/check-marketplace.py` did not change.
+`check-marketplace.py` passed at `926522f7` plus this refresh's BUDGETS figure.

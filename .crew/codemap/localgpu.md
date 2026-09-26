@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@6f96e627
+anchor: useful-claude-add-ons@926522f7
 verified: 2026-09-26
 
 # localgpu
@@ -512,7 +512,7 @@ file's frontmatter, not previously listed in this note.** `plugin.json`'s
   **Checked against the code, corrected after QA:**
   `plugin/crew/hooks/scripts/crew_config.py:126-127` only re-exports
   (`DEV_PROVIDERS = crew_state.DEV_PROVIDERS`); the tuples are actually
-  *defined* at `plugin/crew/hooks/scripts/crew_state.py:1429-1430` (re-numbered
+  *defined* at `plugin/crew/hooks/scripts/crew_state.py:1433-1434` (re-numbered
   from `:1503-1504` by crew 1.0 - see the re-anchor entries below; same two
   lines, `DEV_PROVIDERS = ("claude", "codex", "copilot")` /
   `QA_PROVIDERS = ("claude", "codex", "copilot")`, byte-identical).
@@ -755,7 +755,7 @@ never matches and has to be counted on its own):
   `:646`, `:651`, `:676`, cited in shorthand),
   `plugin/localgpu/mcp/_version.py:10-13`, `:31-32`,
   `plugin/crew/hooks/scripts/crew_config.py:126-127`,
-  `plugin/crew/hooks/scripts/crew_state.py:1503-1504`, and, both written out
+  `plugin/crew/hooks/scripts/crew_state.py:1507-1508`, and, both written out
   in full rather than one of them in shorthand,
   `scripts/check-marketplace.py:160-170` and `scripts/check-marketplace.py:169`.
   The first version of this bullet said 9 and listed 7 (both wrong, an
@@ -810,7 +810,7 @@ For the record, what was wrong and how it was found:
    Re-read `crew_config.py`: `DEV_PROVIDERS`/`QA_PROVIDERS` there are a
    re-export (`plugin/crew/hooks/scripts/crew_config.py:126-127`,
    `DEV_PROVIDERS = crew_state.DEV_PROVIDERS`), not the definition — that is
-   `plugin/crew/hooks/scripts/crew_state.py:1503-1504`. Also narrowed the
+   `plugin/crew/hooks/scripts/crew_state.py:1507-1508`. Also narrowed the
    "read only past the opening constraint (lines 1-32)" claim: this pass
    read through line 40, which is where the code block with the tuples ends.
 5. **Version-number subtraction presented as a count.** "Stable across those
@@ -883,7 +883,7 @@ sentence around it staying correct.
    .crew/codemap/localgpu.md`, which now returns nothing) to either full
    repo-relative paths or prose describing the shape without reproducing it.
 2. **FIX — the "12 new citations" method did not reproduce 12.** The bullet
-   said `plugin/crew/hooks/scripts/crew_state.py:1503-1504` fell outside the
+   said `plugin/crew/hooks/scripts/crew_state.py:1507-1508` fell outside the
    `plugin/` regex the rest of the section used and was "tallied separately"
    — it does not; that path starts with `plugin/crew/`, which the regex
    already matches, and the citation was already in that regex's output. And
@@ -1072,3 +1072,12 @@ holds. `crew_state.py` gained `AUTOPILOT_DEFAULTS` at `:1087`, so the provider t
 `:1421-1422` -> `:1429-1430` (re-read via `grep -n "^DEV_PROVIDERS\|^QA_PROVIDERS"`: the same
 two lines, byte-identical), corrected in place above. Nothing under `plugin/localgpu/` changed.
 Nothing was executed.
+
+Re-verified per-path from `6f96e627` to `926522f7` (T-0018 and T-0010, stacked): of the cited paths
+only `plugin/crew/hooks/scripts/crew_state.py` changed - T-0010 added two keys and a four-line
+comment to `AUTOPILOT_DEFAULTS` (now `:1091`), so every later citation moved by 4:
+`:1429-1430` -> `:1433-1434` (`DEV_PROVIDERS`/`QA_PROVIDERS`, re-read via `grep -n`) and
+`:1503-1504` -> `:1507-1508`, each compared byte for byte with the `6f96e627` lines and corrected
+in place above. `.claude-plugin/marketplace.json` changed only in crew's `version` (1.0.41 ->
+1.0.42, T-0018); no line of it is cited here and `localgpu`'s entry did not change. Nothing under
+`plugin/localgpu/` changed. Nothing was executed.

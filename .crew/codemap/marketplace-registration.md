@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@c87ac3f4
+anchor: useful-claude-add-ons@926522f7
 verified: 2026-09-26
 paths: scripts/**, plugin/PLUGINS.md
 
@@ -389,3 +389,13 @@ files (`.claude-plugin/marketplace.json:218`, `plugin/PLUGINS.md:14`,
 `plugin/crew/.claude-plugin/plugin.json`) are at 1.0.42 on both sides. Both install scripts,
 `README.md`, `plugin/README.md`, `INSTALLATION.md`, `scripts/check-marketplace.py`, `CLAUDE.md`
 and `skills/README.md` did not change. No command, agent or skill was added or removed.
+
+Re-verified per-path from `c87ac3f4` to `926522f7` for T-0010 (stacked on T-0018, no version set
+yet): of the cited paths, `git diff --name-only c87ac3f4 926522f7` returns `.crew/verify.json`
+(rule 27 appended last; 28 rules; the doc rule at `:69-78` is unchanged), `CHANGELOG.md`,
+`TODO.md` and `plugin/crew/BUDGETS.md` (`:11`, 18,202 / 121, re-measured and matching). The version
+files (`.claude-plugin/marketplace.json:218`, `plugin/PLUGINS.md:14`,
+`plugin/crew/.claude-plugin/plugin.json`) are at 1.0.42 on both sides: T-0010's version is set at
+landing. Both install scripts, `README.md`, `plugin/README.md`, `INSTALLATION.md`,
+`scripts/check-marketplace.py`, `CLAUDE.md` and `skills/README.md` did not change. No command,
+agent or skill was added or removed.

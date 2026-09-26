@@ -1,5 +1,5 @@
 # repo-docs
-anchor: useful-claude-add-ons@c87ac3f4
+anchor: useful-claude-add-ons@926522f7
 verified: 2026-09-26
 
 ## Re-derive provenance
@@ -298,7 +298,7 @@ listing the directory.
 - **`docs/runbooks/INDEX.md` still does not exist.** `docs/runbooks/`
   contains `rollback.md` alone (re-confirmed by `ls`).
   `plugin/crew/skills/crew-runbooks/SKILL.md:80` and
-  `plugin/crew/README.md:1818` (`:1804` at `07ca3972`, `:1759` at `a0c0847e`, `:1730` at `8ebbdedc`, `:1757` at T-0006's `2bb92f32`, `:1728` at `c35edda5`, `:1725` at `f2bb919b`, `:1604` before that,
+  `plugin/crew/README.md:1821` (`:1804` at `07ca3972`, `:1759` at `a0c0847e`, `:1730` at `8ebbdedc`, `:1757` at T-0006's `2bb92f32`, `:1728` at `c35edda5`, `:1725` at `f2bb919b`, `:1604` before that,
   that file having changed in each range — re-grepped, not offset) both still describe
   `docs/runbooks/INDEX.md` as a symptom-keyed index that would live there.
   JUDGEMENT, unchanged: costs nothing with one runbook, becomes a real gap at
@@ -416,7 +416,9 @@ listing the directory.
   and T-0004 appended a last one (`:281-288`): `crew_autopilot.py`,
   `commands/autopilot.md`, `test_crew_autopilot.py` and
   `sabotage_autopilot.py` run `test_crew_autopilot.py` plus
-  `test_lifecycle_commands.py`. The rules above it did not move.
+  `test_lifecycle_commands.py`. Since `926522f7` T-0010 appended rule 27
+  (`:290-295`): `crew_autopilot.py` and `test_crew_autopilot_policy.py` run that
+  file plus `test_scope_guard.py`. The rules above it did not move.
 
 ## Unverified
 
@@ -593,3 +595,14 @@ Re-verified per-path from `29a987b0` to `c87ac3f4` (T-0018 review round 3). Of t
 `CHANGELOG.md` (the 1.0.42 entry gained its round-3 paragraph; cited without a line).
 `plugin/crew/README.md`, `README.md`, `TODO.md`, `plugin/README.md` and both install scripts did
 not change.
+
+Re-verified per-path from `c87ac3f4` to `926522f7` (T-0010, stacked on T-0018). Of the cited
+paths, `git diff --name-only c87ac3f4 926522f7` returns `.crew/verify.json` (rule 27 appended
+last; rule 26's closing line only gained a comma, so `:167-172`, `:251`, `:252-268`, `:270-280`
+and `:281-289` hold), `plugin/crew/README.md` (T-0010's policy paragraph and a command-table row
+sit above the `docs/runbooks/INDEX.md` mention, which moved `:1818` -> `:1821`, compared byte for
+byte), `plugin/crew/hooks/scripts/crew_state.py` (`AUTOPILOT_DEFAULTS` at `:1091`; the
+`:129`/`:133`/`:136`/`:139` citations are above it and hold), `plugin/crew/hooks/scripts/crew_ticket.py`
+(cited by name only), `TODO.md` (the autopilot note near `:4145` reworded; the `render.sh` entry at
+`:1190` did not move) and `CHANGELOG.md` (T-0010's entry at the top; cited without a line).
+`README.md`, `plugin/README.md` and both install scripts did not change.

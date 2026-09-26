@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@6f96e627 on 2026-09-26. Verify before trusting.
+%% Generated from useful-claude-add-ons@926522f7 on 2026-09-26. Verify before trusting.
 %% Anchors: plugin/crew/commands/brainstorm.md, plugin/crew/commands/spec.md, plugin/crew/commands/plan.md, plugin/crew/commands/approve.md, plugin/crew/commands/implement.md, plugin/crew/commands/review.md, plugin/crew/commands/done.md, plugin/crew/commands/fix.md, plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/crew_ticket.py, plugin/crew/hooks/scripts/completion_audit.py, plugin/crew/hooks/scripts/crew_refresh_check.py
 %% The crew 1.0 ticket lifecycle: brainstorm -> spec -> plan -> approve -> implement -> refresh artifacts -> review -> done.
 %% --
@@ -27,6 +27,13 @@
 %% :578-599 -> :605-626, both re-read with sed -n. parse_risk has no caller in
 %% any command file yet (its consumer is T-0010), so no node or edge changed.
 %% The crew_ticket.py lines in the T-0026 note above are that anchor's, kept as history.
+%% Re-anchored for T-0010 at 926522f7 (stacked on T-0018): of the anchored paths only
+%% crew_ticket.py changed - the `autopilot` via (4 lines at :141-144) moved approval_digest
+%% :530-571 -> :534-575 and status()'s compare :605-626 -> :609-630 (compared byte for byte).
+%% T-0010 adds a second approval route, `crew_autopilot.py approve` under
+%% autopilot.approval (always behind scope.allowCliApproval: true), but it is reached only
+%% from /crew:autopilot; no command file drawn here changed, so this manual lifecycle's
+%% /crew:approve path is unchanged and no node or edge moved.
 %% Every node cites the command file's own line; files are named repo-relative
 %% here and by basename in the nodes (all under plugin/crew/commands/ unless
 %% named otherwise):
@@ -75,9 +82,9 @@
 %% done.md:61 (`status: done`). Until T-0026 the receipt hashed both files whole,
 %% so each left it stale; the done.md case was seen live on 2026-09-25. A
 %% `crew-approval/2` receipt now binds approval_digest
-%% (plugin/crew/hooks/scripts/crew_ticket.py:530-571), which normalises only line
+%% (plugin/crew/hooks/scripts/crew_ticket.py:534-575), which normalises only line
 %% 1's single `status:` value from STATUS_VALUES, and status() compares that
-%% digest (:605-626); any other byte change still reads `stale`, and the
+%% digest (:609-630); any other byte change still reads `stale`, and the
 %% completion audit still refuses to judge scope on anything but `approved`
 %% (plugin/crew/hooks/scripts/completion_audit.py:204-215). A receipt with no
 %% `digest` field is compared raw and stales once on its first status edit.
