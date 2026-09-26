@@ -5,6 +5,8 @@
     python3 crew_autopilot.py resume --root . [--ticket <id>] [--json]
     python3 crew_autopilot.py settings --root . [--json]
     python3 crew_autopilot.py stops [--json]
+    python3 crew_autopilot.py route --root . --args "<the command's arguments>" [--json]
+    python3 crew_autopilot.py status --root . [--ticket <id>] [--json]
 
 T-0004. The lifecycle is prose commands (spec, plan, implement, review,
 done); `/crew:autopilot` follows each one's procedure in-session. This module
