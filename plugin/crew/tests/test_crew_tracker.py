@@ -12,6 +12,8 @@ import os
 import subprocess
 import sys
 
+import pytest
+
 import context  # noqa: F401  pylint: disable=unused-import
 import crew_tracker
 from crew_fixtures import make_repo
@@ -448,3 +450,340 @@ def test_crlf_board_keeps_its_line_endings():
     new, _, _ = crew_tracker.move_card(board, "T-0042", "review")
 
     assert (new.count("\r\n"), new.count("\n")) == (old.count("\r\n"), old.count("\n"))
+
+
+# --- the Obsidian backend: confinement and atomic replace -----------------------
+
+CARD = "T-0042"
+ROW = "T-0042 | spec | low | repo | Fix token refresh on 401\n"
+
+
+def _make_vault(where, board="board_0_20.md", board_dir="Boards/repo", dot_obsidian=True):
+    (where / board_dir).mkdir(parents=True)
+    if dot_obsidian:
+        (where / ".obsidian").mkdir()
+    (where / board_dir / "Board.md").write_text(_fixture(board), encoding="utf-8", newline="\n")
+    return where
+
+
+def _obsidian_repo(tmp_path, vault_path, **settings):
+    root = make_repo(tmp_path)
+    obsidian = {"vaultPath": str(vault_path), "boardDir": "Boards/repo", "board": "Board.md"}
+    obsidian.update(settings)
+    _crew_json(root, {"kind": "obsidian", "obsidian": obsidian})
+    (root / ".work" / "INDEX.md").write_text(ROW, encoding="utf-8", newline="\n")
+    return root
+
+
+def _symlink(link, target, is_dir=False):
+    try:
+        link.symlink_to(target, target_is_directory=is_dir)
+    except OSError as exc:
+        pytest.skip(f"cannot create a symlink here: {exc}")
+
+
+def _snapshot(*dirs):
+    """Every file and link under `dirs` (a repo's .git excluded), as bytes or link target."""
+    seen = {}
+    for top in dirs:
+        for base, subdirs, files in os.walk(top):
+            subdirs[:] = [d for d in subdirs if d != ".git"]
+            for name in subdirs + files:
+                path = os.path.join(base, name)
+                if os.path.islink(path):
+                    seen[path] = ("link", os.readlink(path))
+                elif os.path.isfile(path):
+                    with open(path, "rb") as handle:
+                        seen[path] = handle.read()
+    return seen
+
+
+def _refused(tmp_path, root, action=("move", "--ticket", CARD, "--to", "in-progress")):
+    before = _snapshot(tmp_path)
+    done = _cli(root, *action)
+    return done, _snapshot(tmp_path) == before
+
+
+def test_vault_missing(tmp_path):
+    root = _obsidian_repo(tmp_path, tmp_path / "no-such-vault")
+
+    done, untouched = _refused(tmp_path, root)
+
+    assert (done.returncode, untouched, done.stdout) == (
+        1, True, f"obsidian: could not update: vault missing: {tmp_path / 'no-such-vault'}\n")
+
+
+def test_vault_without_dot_obsidian(tmp_path):
+    vault = _make_vault(tmp_path / "vault", dot_obsidian=False)
+    root = _obsidian_repo(tmp_path, vault)
+
+    done, untouched = _refused(tmp_path, root)
+
+    assert (done.returncode, untouched, "has no .obsidian/" in done.stdout) == (1, True, True)
+
+
+@pytest.mark.parametrize("board_dir", ["../outside", "Boards/../Boards/repo"])
+def test_board_dir_dotdot(tmp_path, board_dir):
+    vault = _make_vault(tmp_path / "vault")
+    _make_vault(tmp_path / "outside", board_dir=".")
+    root = _obsidian_repo(tmp_path, vault, boardDir=board_dir)
+
+    done, untouched = _refused(tmp_path, root)
+
+    assert (done.returncode, untouched, done.stdout) == (
+        1, True, f"obsidian: could not update: obsidian.boardDir {board_dir!r} may not contain '..'\n")
+
+
+def test_board_dir_absolute(tmp_path):
+    vault = _make_vault(tmp_path / "vault")
+    root = _obsidian_repo(tmp_path, vault, boardDir=str(vault / "Boards" / "repo"))
+
+    done, untouched = _refused(tmp_path, root)
+
+    assert (done.returncode, untouched, "must be relative to the vault" in done.stdout) == (1, True, True)
+
+
+def test_board_name_with_separator(tmp_path):
+    vault = _make_vault(tmp_path / "vault")
+    root = _obsidian_repo(tmp_path, vault, boardDir="Boards", board="repo/Board.md")
+
+    done, untouched = _refused(tmp_path, root)
+
+    assert (done.returncode, untouched, "must be a bare file name" in done.stdout) == (1, True, True)
+
+
+def test_board_symlink_outside_vault(tmp_path):
+    vault = _make_vault(tmp_path / "vault")
+    outside = _make_vault(tmp_path / "outside", board_dir=".")
+    board = vault / "Boards" / "repo" / "Board.md"
+    board.unlink()
+    _symlink(board, outside / "Board.md")
+    root = _obsidian_repo(tmp_path, vault)
+
+    done, untouched = _refused(tmp_path, root)
+
+    assert (done.returncode, untouched, "resolves outside the vault" in done.stdout) == (1, True, True)
+
+
+def test_note_symlink_outside_vault(tmp_path):
+    vault = _make_vault(tmp_path / "vault")
+    _symlink(vault / "Boards" / "repo" / "T-0060.md", tmp_path / "outside-note.md")
+    root = _obsidian_repo(tmp_path, vault)
+
+    done, untouched = _refused(tmp_path, root, ("create", "--ticket", "T-0060", "--title", "new"))
+
+    assert (done.returncode, untouched, "resolves outside the vault" in done.stdout) == (1, True, True)
+
+
+def test_vault_in_worktree_not_ignored(tmp_path):
+    root = make_repo(tmp_path)
+    vault = _make_vault(root / "vault")
+    _crew_json(root, {"kind": "obsidian", "obsidian": {"vaultPath": str(vault), "boardDir": "Boards/repo"}})
+    (root / ".work" / "INDEX.md").write_text(ROW, encoding="utf-8", newline="\n")
+
+    done, untouched = _refused(tmp_path, root)
+
+    assert (done.returncode, untouched, "would enter the review bundle" in done.stdout) == (1, True, True)
+
+
+def test_kind_could_not_tell_writes_nothing(tmp_path):
+    vault = _make_vault(tmp_path / "vault")
+    root = _obsidian_repo(tmp_path, vault)
+    _config_json(root, "files")
+
+    done, untouched = _refused(tmp_path, root)
+
+    assert (done.returncode, untouched, done.stdout.startswith(
+        "tracker: could not update: tracker kind could not tell: ")) == (1, True, True)
+
+
+@pytest.mark.parametrize("board,settings,reason", [
+    ("board_no_frontmatter.md", {}, "not a Kanban board"),
+    ("board_duplicate_lane.md", {}, "appears 2 times"),
+    ("board_renamed_lanes.md", {}, "is not on the board"),
+])
+def test_unusable_board_writes_nothing(tmp_path, board, settings, reason):
+    vault = _make_vault(tmp_path / "vault", board=board)
+    root = _obsidian_repo(tmp_path, vault, **settings)
+
+    done, untouched = _refused(tmp_path, root)
+
+    assert (done.returncode, untouched, reason in done.stdout) == (1, True, True)
+
+
+def test_board_file_missing_writes_nothing(tmp_path):
+    vault = _make_vault(tmp_path / "vault")
+    (vault / "Boards" / "repo" / "Board.md").unlink()
+    root = _obsidian_repo(tmp_path, vault)
+
+    done, untouched = _refused(tmp_path, root)
+
+    assert (done.returncode, untouched, "no board at Boards/repo/Board.md" in done.stdout) == (1, True, True)
+
+
+def test_obsidian_move_updates_index_and_board(tmp_path):
+    vault = _make_vault(tmp_path / "vault")
+    root = _obsidian_repo(tmp_path, vault)
+
+    done = _cli(root, "move", "--ticket", CARD, "--to", "in-progress")
+    board = (vault / "Boards" / "repo" / "Board.md").read_text(encoding="utf-8")
+
+    assert (done.returncode, done.stdout, _index(root), _lane_of(board, CARD)) == (
+        0,
+        "files: updated: .work/INDEX.md spec -> in-progress\n"
+        "obsidian: updated: Boards/repo/Board.md Ready -> In Progress\n",
+        ROW.replace("spec", "in-progress"), "In Progress")
+
+
+def test_obsidian_move_leaves_no_temp_file(tmp_path):
+    vault = _make_vault(tmp_path / "vault")
+    root = _obsidian_repo(tmp_path, vault)
+
+    _cli(root, "move", "--ticket", CARD, "--to", "review")
+
+    assert sorted(os.listdir(vault / "Boards" / "repo")) == ["Board.md"]
+
+
+def test_board_failure_keeps_the_files_half(tmp_path, monkeypatch):
+    vault = _make_vault(tmp_path / "vault")
+    root = _obsidian_repo(tmp_path, vault)
+    board = vault / "Boards" / "repo" / "Board.md"
+    real = crew_tracker._read_bytes  # pylint: disable=protected-access
+    calls = {"n": 0}
+
+    def racing(path):
+        """Every re-read of the board sees different bytes: Obsidian keeps saving."""
+        if os.path.realpath(path) == os.path.realpath(board):
+            calls["n"] += 1
+            if calls["n"] % 2 == 0:
+                return real(path) + b"\n"
+        return real(path)
+
+    monkeypatch.setattr(crew_tracker, "_read_bytes", racing)
+
+    got = crew_tracker.move(str(root), CARD, "review")
+
+    assert ([r["state"] for r in got["results"]], _index(root), crew_tracker.exit_code(got)) == (
+        ["updated", "could not update"], ROW.replace("spec", "review"), 1)
+
+
+def test_nested_board_dir(tmp_path):
+    vault = _make_vault(tmp_path / "vault", board_dir="Boards/a/b/c")
+    root = _obsidian_repo(tmp_path, vault, boardDir="Boards/a/b/c")
+
+    done = _cli(root, "move", "--ticket", CARD, "--to", "review")
+
+    assert (done.returncode, _lane_of((vault / "Boards/a/b/c/Board.md").read_text(encoding="utf-8"), CARD)) == (
+        0, "Review")
+
+
+def test_vault_path_with_spaces(tmp_path):
+    vault = _make_vault(tmp_path / "my vault")
+    root = _obsidian_repo(tmp_path, vault)
+
+    done = _cli(root, "move", "--ticket", CARD, "--to", "review")
+
+    assert (done.returncode, _lane_of((vault / "Boards/repo/Board.md").read_text(encoding="utf-8"), CARD)) == (
+        0, "Review")
+
+
+def test_vault_is_symlink(tmp_path):
+    vault = _make_vault(tmp_path / "vault")
+    _symlink(tmp_path / "vault-link", vault, is_dir=True)
+    root = _obsidian_repo(tmp_path, tmp_path / "vault-link")
+
+    done = _cli(root, "move", "--ticket", CARD, "--to", "review")
+
+    assert (done.returncode, _lane_of((vault / "Boards/repo/Board.md").read_text(encoding="utf-8"), CARD)) == (
+        0, "Review")
+
+
+def test_vault_in_worktree_ignored(tmp_path):
+    root = make_repo(tmp_path)
+    vault = _make_vault(root / "vault")
+    (root / ".gitignore").write_text("vault/\n", encoding="utf-8")
+    _crew_json(root, {"kind": "obsidian", "obsidian": {"vaultPath": str(vault), "boardDir": "Boards/repo"}})
+    (root / ".work" / "INDEX.md").write_text(ROW, encoding="utf-8", newline="\n")
+
+    done = _cli(root, "move", "--ticket", CARD, "--to", "review")
+
+    assert (done.returncode, _lane_of((vault / "Boards/repo/Board.md").read_text(encoding="utf-8"), CARD)) == (
+        0, "Review")
+
+
+def test_obsidian_create_adds_row_card_and_note(tmp_path):
+    vault = _make_vault(tmp_path / "vault")
+    root = _obsidian_repo(tmp_path, vault)
+
+    done = _cli(root, "create", "--ticket", "T-0060", "--title", "new work")
+    board = (vault / "Boards" / "repo" / "Board.md").read_text(encoding="utf-8")
+    note = (vault / "Boards" / "repo" / "T-0060.md").read_text(encoding="utf-8")
+
+    assert (done.returncode, _lane_of(board, "T-0060"), note.startswith('---\ntitle: "new work"\ncreated: '),
+            (root / ".work" / "tickets" / "T-0060").as_uri() in note) == (0, "Backlog", True, True)
+
+
+def test_note_created_once_never_overwritten(tmp_path):
+    vault = _make_vault(tmp_path / "vault")
+    root = _obsidian_repo(tmp_path, vault)
+    _cli(root, "create", "--ticket", "T-0060", "--title", "new work")
+    note = vault / "Boards" / "repo" / "T-0060.md"
+    note.write_text("a human edited this\n", encoding="utf-8")
+
+    done = _cli(root, "create", "--ticket", "T-0060", "--title", "new work")
+
+    assert (done.returncode, note.read_text(encoding="utf-8"), done.stdout.count("unchanged")) == (
+        0, "a human edited this\n", 3)
+
+
+def test_read_reports_disagreement(tmp_path):
+    vault = _make_vault(tmp_path / "vault")
+    root = _obsidian_repo(tmp_path, vault)
+    board = vault / "Boards" / "repo" / "Board.md"
+    text = board.read_text(encoding="utf-8")
+    moved, _, _ = crew_tracker.move_card(crew_tracker.parse_board(text, COLUMNS)[0], CARD, "inProgress")
+    board.write_text(moved, encoding="utf-8", newline="\n")
+
+    got = crew_tracker.read(str(root), CARD)
+
+    assert [(r["backend"], r.get("status") or r.get("lane"), r.get("disagree")) for r in got["results"]] == [
+        ("files", "spec", None), ("obsidian", "In Progress", True)]
+
+
+def test_read_reports_agreement(tmp_path):
+    vault = _make_vault(tmp_path / "vault")
+    root = _obsidian_repo(tmp_path, vault)
+
+    got = crew_tracker.read(str(root), CARD)
+
+    assert got["results"][1]["disagree"] is False
+
+
+def test_jira_move_is_delegated_and_writes_nothing(tmp_path):
+    root = make_repo(tmp_path)
+    _crew_json(root, {"kind": "jira", "jira": {"project": "ABC"}})
+    before = _snapshot(tmp_path)
+
+    done = _cli(root, "move", "--ticket", "ABC-12", "--to", "review")
+
+    assert (done.returncode, done.stdout, _snapshot(tmp_path) == before) == (
+        3, "jira: delegated: run /crew:jira-sync ABC-12 --push\n", True)
+
+
+def test_sdp_move_is_delegated(tmp_path):
+    root = make_repo(tmp_path)
+    _config_json(root, "sdp")
+
+    done = _cli(root, "move", "--ticket", "SDP-40219", "--to", "done")
+
+    assert (done.returncode, done.stdout) == (3, "sdp: delegated: run /crew:sdp-sync SDP-40219 --push\n")
+
+
+def test_jira_create_is_delegated_to_mcp(tmp_path):
+    root = make_repo(tmp_path)
+    _config_json(root, "jira")
+
+    done = _cli(root, "create", "--ticket", "ABC-12", "--title", "t")
+
+    assert (done.returncode, done.stdout) == (
+        3, "jira: delegated: create the tracker item through MCP, as brainstorm.md step 1 says\n")

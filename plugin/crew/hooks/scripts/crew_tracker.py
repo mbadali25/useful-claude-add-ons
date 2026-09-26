@@ -38,8 +38,11 @@ undoes the lifecycle transition that called it: it prints `could not update:
 <reason>` and exits 1, and the command's prose tells the human.
 """
 import argparse
+import datetime
 import json
+import ntpath
 import os
+import pathlib
 import re
 import subprocess
 import sys
@@ -162,7 +165,7 @@ def resolve(root):
             elif side["kind"] is not None:
                 sides.append(side)
     if len(sides) == 2:
-        first, second = sides
+        first, second = sides[0], sides[1]
         if first["kind"] != second["kind"]:
             problems.append(f"{first['file']} says {first['key']} {first['kind']!r}, "
                             f"{second['file']} says {second['key']} {second['kind']!r}")
@@ -312,9 +315,14 @@ def repo_name(root):
     return os.path.basename(os.path.realpath(root))
 
 
+def title_ok(title):
+    """A title fits one INDEX cell and one card line."""
+    return bool(title) and not any(ch in title for ch in "|\r\n")
+
+
 def _files_create(root, ticket, title):
     backend = "files"
-    if not title or any(ch in title for ch in "|\r\n"):
+    if not title_ok(title):
         return _result(backend, FAILED, "title must be one line with no '|'")
     row = f"{ticket} | direction | - | {repo_name(root)} | {title}\n"
 
@@ -550,6 +558,176 @@ def add_card(board, ticket, title, key):
     return _place(board, key, [f"- [ ] [[{ticket}]] {title}{_ending(board['lines'])}"]), None
 
 
+# --- the Obsidian backend --------------------------------------------------------
+#
+# The only crew code that writes outside the repository. Every path is
+# resolved and confined before anything is written anywhere -- the INDEX half
+# included -- so a refusal leaves the vault and the repo byte-identical. Once
+# the checks pass, the INDEX half and the board half are written and reported
+# separately, and a board write that fails does not roll the INDEX half back.
+
+def _inside(parent, path):
+    try:
+        return os.path.commonpath([parent, path]) == parent
+    except ValueError:
+        return False
+
+
+def _git_ignored(repo, path):
+    """True/False from `git check-ignore`, None when git could not say."""
+    try:
+        done = subprocess.run(["git", "check-ignore", "-q", "--", path], cwd=repo,
+                              capture_output=True, text=True, check=False,
+                              stdin=subprocess.DEVNULL, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return {0: True, 1: False}.get(done.returncode)
+
+
+def _vault_paths(root, settings, names):
+    """`({"vault", "dir", <label>: real path}, None)` or `(None, problem)`.
+
+    `names` is `[(label, file name)]`, each placed at `<vault>/<boardDir>/`.
+    """
+    raw = settings.get("vaultPath")
+    if not raw or not isinstance(raw, str):
+        return None, "obsidian.vaultPath is not set"
+    vault = os.path.realpath(os.path.expanduser(raw))
+    if not os.path.isdir(vault):
+        return None, f"vault missing: {raw}"
+    if not os.path.isdir(os.path.join(vault, ".obsidian")):
+        return None, f"{raw} has no .obsidian/ - not an Obsidian vault"
+    board_dir = settings.get("boardDir") or ""
+    if not isinstance(board_dir, str):
+        return None, "obsidian.boardDir must be a string"
+    if os.path.isabs(board_dir) or ntpath.isabs(board_dir) or board_dir.startswith(("/", "\\")):
+        return None, f"obsidian.boardDir {board_dir!r} must be relative to the vault"
+    if ".." in re.split(r"[\\/]", board_dir):
+        return None, f"obsidian.boardDir {board_dir!r} may not contain '..'"
+    found = {"vault": vault, "dir": board_dir.replace("\\", "/").strip("/")}
+    for label, name in names:
+        if not name or name in (".", "..") or any(sep in name for sep in "/\\"):
+            return None, f"obsidian.{label} {name!r} must be a bare file name"
+        shown = f"{found['dir']}/{name}" if found["dir"] else name
+        real = os.path.realpath(os.path.join(vault, board_dir, name))
+        if not _inside(vault, real):
+            return None, f"{label} {shown} resolves outside the vault"
+        if os.path.lexists(real) and not os.path.isfile(real):
+            return None, f"{label} {shown} is not a regular file"
+        found[label], found[label + "Shown"] = real, shown
+    repo = os.path.realpath(root)
+    if _inside(repo, vault):
+        for label, _ in names:
+            ignored = _git_ignored(repo, found[label])
+            if ignored is None:
+                return None, f"could not tell whether git ignores {found[label + 'Shown']} in this worktree"
+            if not ignored:
+                return None, (f"the vault is inside this worktree and git does not ignore "
+                              f"{found[label + 'Shown']}: the board would enter the review bundle")
+    return found, None
+
+
+def _load_board(paths, columns):
+    """`(board, None)` or `(None, problem)` for the board at `paths["board"]`."""
+    raw = _read_bytes(paths["board"])
+    if raw is None:
+        return None, f"no board at {paths['boardShown']}"
+    text, problem = _decode(raw, paths["boardShown"])
+    if problem:
+        return None, problem
+    return parse_board(text, columns)
+
+
+def _board_write(paths, columns, edit):
+    """Atomic board update: `edit(board) -> (text, result)`, recomputed per try."""
+    def compute(old):
+        text, problem = _decode(old, paths["boardShown"])
+        board, problem = (None, problem) if problem else parse_board(text or "", columns)
+        if problem:
+            return None, _result("obsidian", FAILED, problem)
+        new, result = edit(board)
+        if new is None or new == text:
+            return None, result
+        return new.encode("utf-8"), result
+
+    return _atomic_update(paths["board"], paths["boardShown"], "obsidian", compute)
+
+
+def _note_text(root, ticket, title):
+    folder = os.path.join(os.path.realpath(root), ".work", "tickets", ticket)
+    return (f"---\ntitle: {json.dumps(title)}\ncreated: {datetime.date.today().isoformat()}\n---\n\n"
+            f"# {ticket} {title}\n\n"
+            f"- repo: {repo_name(root)}\n"
+            f"- ticket: [.work/tickets/{ticket}/]({pathlib.Path(folder).as_uri()}/)\n")
+
+
+def _create_note_once(paths, text):
+    """The ticket note, written once and never rewritten. Exclusive create: the
+    text is built before the open, and an existing note is never truncated."""
+    if os.path.lexists(paths["note"]):
+        return _result("obsidian-note", UNCHANGED, f"{paths['noteShown']} exists; never rewritten")
+    try:
+        with open(paths["note"], "xb") as handle:
+            handle.write(text.encode("utf-8"))
+    except FileExistsError:
+        return _result("obsidian-note", UNCHANGED, f"{paths['noteShown']} exists; never rewritten")
+    except OSError as exc:
+        return _result("obsidian-note", FAILED, f"{paths['noteShown']}: {exc.strerror or exc}")
+    return _result("obsidian-note", UPDATED, f"{paths['noteShown']} created")
+
+
+def _obsidian_create(root, settings, ticket, title):
+    columns = settings["columns"]
+    paths, problem = _vault_paths(root, settings, [("board", settings["board"]), ("note", f"{ticket}.md")])
+    if not problem:
+        _, problem = _load_board(paths, columns)
+    if problem:
+        return [_result("obsidian", FAILED, problem)]
+    files = _files_create(root, ticket, title)
+
+    def edit(current):
+        new, _ = add_card(current, ticket, title, LANE_FOR_STATUS["direction"])
+        if new == "".join(current["lines"]):
+            return None, _result("obsidian", UNCHANGED, f"{paths['boardShown']} already has {ticket}")
+        return new, _result("obsidian", UPDATED, f"{paths['boardShown']} card added to {columns['backlog']}")
+
+    return [files, _board_write(paths, columns, edit), _create_note_once(paths, _note_text(root, ticket, title))]
+
+
+def _obsidian_move(root, settings, ticket, status):
+    columns, key = settings["columns"], LANE_FOR_STATUS[status]
+    paths, problem = _vault_paths(root, settings, [("board", settings["board"])])
+    board, problem = (None, problem) if problem else _load_board(paths, columns)
+    if not problem:
+        _, _, problem = move_card(board, ticket, key)
+    if problem:
+        return [_result("obsidian", FAILED, problem)]
+
+    def edit(current):
+        new, moved_from, why = move_card(current, ticket, key)
+        if why:
+            return None, _result("obsidian", FAILED, why)
+        if moved_from == columns[key]:
+            return None, _result("obsidian", UNCHANGED, f"{paths['boardShown']} already in {moved_from}")
+        return new, _result("obsidian", UPDATED, f"{paths['boardShown']} {moved_from} -> {columns[key]}")
+
+    return [_files_move(root, ticket, status), _board_write(paths, columns, edit)]
+
+
+def _obsidian_read(root, settings, ticket):
+    files = _files_read(root, ticket)
+    paths, problem = _vault_paths(root, settings, [("board", settings["board"])])
+    board, problem = (None, problem) if problem else _load_board(paths, settings["columns"])
+    card, problem = (None, problem) if problem else find_card(board, ticket)
+    if problem:
+        return [files, _result("obsidian", UNREADABLE, problem)]
+    status = files.get("status")
+    expected = settings["columns"].get(LANE_FOR_STATUS.get(status, ""), None)
+    disagree = card["lane"] != expected
+    why = f"INDEX status {status} expects {expected}" if disagree else None
+    return [files, _result("obsidian", READ, why, lane=card["lane"], disagree=disagree)]
+
+
 # --- the interface -------------------------------------------------------------
 
 def _delegated(kind, ticket, push):
@@ -566,8 +744,10 @@ def create(root, ticket, title):
     kind = info["kind"]
     if kind in _SYNC:
         return _report(info, [_result(kind, DELEGATED, _CREATE_DELEGATED)])
+    if not title_ok(title):
+        return _report(info, [_result(kind, FAILED, "title must be one line with no '|'")])
     if kind == "obsidian":
-        return _report(info, [_result("obsidian", FAILED, "obsidian backend not built yet")])
+        return _report(info, _obsidian_create(root, info["settings"], ticket, title))
     return _report(info, [_files_create(root, ticket, title)])
 
 
@@ -583,7 +763,7 @@ def move(root, ticket, status):
     if kind in _SYNC:
         return _report(info, [_delegated(kind, ticket, push=True)])
     if kind == "obsidian":
-        return _report(info, [_result("obsidian", FAILED, "obsidian backend not built yet")])
+        return _report(info, _obsidian_move(root, info["settings"], ticket, status))
     return _report(info, [_files_move(root, ticket, status)])
 
 
@@ -598,6 +778,8 @@ def read(root, ticket):
         return _report(info, [_gate(info)])
     if kind in _SYNC:
         return _report(info, [_delegated(kind, ticket, push=False)])
+    if kind == "obsidian":
+        return _report(info, _obsidian_read(root, info["settings"], ticket))
     return _report(info, [_files_read(root, ticket)])
 
 
