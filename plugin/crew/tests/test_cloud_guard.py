@@ -650,6 +650,20 @@ def test_must_allow_pwsh(tmp_path, case):
     _allow("pwsh", tmp_path, case)
 
 
+@pytest.mark.parametrize("case", MUST_BLOCK, ids=_B_IDS)
+def test_the_lexer_still_judges_every_must_block_case(case):
+    """Step 8's allowlist denies most unusual terraform lines before the
+    lexer's answer matters, which would let a lexer regression hide behind
+    it. So each must-block case is also judged by the lexer alone: the
+    findings `scan` returns, the allowlist's own set aside."""
+    _id, tool, command, rule = case
+    shell = "powershell" if tool == "PowerShell" else "bash"
+    ctx = {"cd": False, "switch": False, "engaged": False}
+    rules = {f.rule for f in cloud_guard.scan(shell, command, ctx=ctx)
+             if (f.scope or {}).get("op") != cloud_guard.OP_UNREADABLE_LINE}
+    assert rule in rules, (command, rules)
+
+
 @pytest.mark.parametrize("case", COULD_NOT_TELL,
                          ids=[c[0] for c in COULD_NOT_TELL])
 def test_could_not_tell_is_refused_under_block(tmp_path, case):

@@ -33,6 +33,11 @@ _T = "tests/test_cloud_guard.py::"
 _BLOCK = _T + "test_must_block_python"
 _ALLOW = _T + "test_must_allow_python"
 _IDENT = _T + "test_identity_python"
+# Since T-0005 Step 8 the literal-word allowlist denies most unusual
+# terraform lines by itself, so a mutation to the lexer shows only where the
+# lexer is judged alone. The five retargeted here came back STILL GREEN (or
+# unproven) against `_BLOCK` in the full run on 2026-09-26.
+_LEXED = _T + "test_the_lexer_still_judges_every_must_block_case"
 
 CLOUD_GUARD_MUTATIONS = (
     ("cloud guard: terraform destroy no longer recognised", GUARD,
@@ -67,12 +72,12 @@ CLOUD_GUARD_MUTATIONS = (
     ("cloud guard: bash $( ) inside quotes no longer scanned", GUARD,
      '            k, closed = _bash_close(text, j + 1)\n'
      '            subs.append(text[j + 2:k])\n',
-     '            k, closed = _bash_close(text, j + 1)\n', _BLOCK),
+     '            k, closed = _bash_close(text, j + 1)\n', _LEXED),
     ("cloud guard: bash ; & | no longer split commands", GUARD,
      '            finish(pipe=c == "|")\n',
      '            add(c)\n', _BLOCK),
     ("cloud guard: PowerShell script blocks no longer split", GUARD,
-     '        if c in "{}":\n', '        if c in "":\n', _BLOCK),
+     '        if c in "{}":\n', '        if c in "":\n', _LEXED),
     ("cloud guard: sudo no longer unwrapped", GUARD,
      '        if head == "sudo":\n', '        if head == "sudo-x":\n', _BLOCK),
     ("cloud guard: env X=Y no longer unwrapped", GUARD,
@@ -165,7 +170,7 @@ CLOUD_GUARD_MUTATIONS = (
      '        path.append(arg.lower())\n', _BLOCK),
     ("cloud guard: `bash -c --` runs `--`", GUARD,
      '        if arg == "--":\n            index += 1\n            break\n',
-     '        if arg == "--":\n            break\n', _BLOCK),
+     '        if arg == "--":\n            break\n', _LEXED),
     ("cloud guard: report mode resolves to allow", GUARD,
      '        worst, reason = None, ""\n', '        worst, reason = "allow", ""\n',
      _T + "test_report_mode_evaluates_to_no_decision"),
@@ -579,10 +584,10 @@ CLOUD_GUARD_MUTATIONS += (
      "                                quoted))\n",
      '                pending.append((value, redirect == "<<-", state["cur"],\n'
      "                                False))\n",
-     _R2A + "[r2-heredoc-quoted]"),
+     _E + "test_the_command_count_covers_heredoc_substitutions"),
     ("cloud guard r2: a heredoc's backslash-newline not joined", GUARD,
      "        if joins and trailing % 2 and i < n:\n",
-     "        if False:\n", _BLOCK + "[heredoc-continued-delimiter]"),
+     "        if False:\n", _LEXED + "[heredoc-continued-delimiter]"),
     ("cloud guard r2: a CR delimiter line read only as the end", GUARD,
      '            if check.rstrip("\\r") == delim:\n'
      "                alt, j = [line], i\n",
