@@ -1233,15 +1233,26 @@ their status transitions — no sync command to remember:
 | `/crew:brainstorm` | `create` (INDEX row, card, ticket note); on approval `move --to ready` | Backlog |
 | `/crew:spec`, `/crew:plan` | `move --to spec`, `move --to planned` | Ready |
 | `/crew:implement` step 1 | `move --to in-progress` | In Progress |
-| `/crew:implement` step 7 | `move --to review` | Review |
+| `/crew:implement` step 6, before `/crew:review` | `move --to review` | Review |
 | `/crew:done` | `move --to done` | Done |
 
 `/crew:fix` makes the same calls, compressed. `resolve` reads the kind from
 1.0's `.crew/crew.json` (`tracker.kind`) and 0.20's `.crew/config.json`
 (`tracker`) alike; when both state one and they differ it says `could not tell`
-and every write refuses — it never picks one. Jira and ServiceDesk Plus answer
-`delegated` with the `/crew:jira-sync` or `/crew:sdp-sync` command the model
-runs, because a script cannot call an MCP tool.
+and every write refuses — it never picks one. The same holds for the vault and
+`boardDir` each file *yields*, fallbacks included: crew.json falling back to
+`memory.vaultPath` while config.json names another vault is `could not tell`,
+not a quiet write to the memory vault. Jira and ServiceDesk Plus are pushed at
+the boundaries only: `move --to in-progress` and `--to done` answer `delegated`
+with `/crew:jira-sync <KEY> --push --to <status>` (or `/crew:sdp-sync`), which
+the model runs because a script cannot call an MCP tool; every other move
+prints `nothing to push`.
+
+**Forward only, unless you say otherwise.** A move backwards by the lifecycle
+order (`direction`, `ready`, `spec`, `planned`, `in-progress`, `review`,
+`done`) exits 1 unless `--reopen` is passed, and so does a move from a status
+crew does not know (`merged`, say), because whether it goes backwards cannot be
+told. `/crew:implement` passes `--reopen` on a successor plan.
 
 **A tracker write never undoes a transition.** A write that fails prints
 `could not update: <reason>` and exits 1; the command tells you "tracker not
@@ -1257,12 +1268,26 @@ those fails, the board lacks its frontmatter key, or a configured lane is
 missing or doubled: exit 1, nothing written anywhere. Board writes are an
 exclusively created temp file (a link planted at its name is never followed)
 plus `os.replace`, keeping the board's mode and owner, re-reading the board
-first and recomputing if Obsidian saved it meanwhile. The ticket note is
-written once and never rewritten, and names the repo that made it: with
-`boardDir` unset every repo shares one board, so a note naming another repo
-refuses `create`, `move` and `read`, a card no note claims refuses `create`,
-and `move` needs this repo's own INDEX row and says `whose card could not tell`
-on its line when no note names the owner.
+first and recomputing if Obsidian saved it meanwhile. Every vault write reaches
+its directory from the vault root one component at a time with
+`O_DIRECTORY|O_NOFOLLOW` and writes relative to that directory, so a directory
+swapped for a link after the checks is refused rather than written through.
+Windows has no such calls: there the directory's real path is re-checked
+before the temp is written, before the replace and after it, and a swap inside
+that window remains a residual race.
+
+**Whose card.** The ticket note is written once and never rewritten, and
+records `repo-id:` — the origin URL, lowercased with credentials and `.git`
+dropped, or the git common dir's real path when there is no origin. Never the
+directory's name: `a/app` and `b/app` share that. With `boardDir` unset every
+repo shares one board, so a note naming another repo refuses `create`, `move`
+and `read`. A card whose owner cannot be told — no note, a note with no
+`repo-id:` — refuses `create` and `move` (`read` says so on its line), naming
+the fix: put `repo-id: <this repo's>` in the note. The one exception is a card
+with no note whose text is exactly this repo's INDEX title for the id: `move`
+takes that as the card's owner and writes the note. `create` refuses an id
+INDEX already holds under another title, so a second session cannot take over
+a ticket by minting the same id.
 
 **There is no `.work/cache/` mirror.** The ticket's content lives in
 `.work/tickets/<id>/` for every mode; the board carries status only. The key
@@ -2204,8 +2229,8 @@ CONFIG.md §17 has the table and the reasoning.
 | `/crew:webtest <id> [--stage spec\|implement\|heal\|evidence]` | Drive Playwright's Test Agents inside the ticket lifecycle; a healer skip is a finding, and the trace and axe results go to the reviewer |
 | `/crew:promote <env> [--dry-run\|--status]` | Promote development -> qa -> production with deploy, smoke, regression and post-soak verification as separate gates |
 | `/crew:survey [area]` | Research gaps, produce ranked findings with options |
-| `/crew:jira-sync <KEY> [--push]` | Sync one issue with the local cache |
-| `/crew:sdp-sync <REQUEST-ID> [--push]` | Sync one ServiceDesk Plus request with the local cache — see §13b |
+| `/crew:jira-sync <KEY> [--push --to <status>]` | Sync one issue with the local cache |
+| `/crew:sdp-sync <REQUEST-ID> [--push --to <status>]` | Sync one ServiceDesk Plus request with the local cache — see §13b |
 | `/crew:obsidian-sync <T-####> [--push]` | Sync one Obsidian Kanban card with the local cache — see §13c |
 | `/crew:upgrade [--force]` | Bring a pre-0.20 config up to the 0.20 schema; a 0.20 repo goes straight to `/crew:migrate` — see §11 |
 | `/crew:emergency <what is broken>` | Declare a time-boxed incident: gates stand down and record what they skipped, lanes investigate in parallel — see §24. `status`, `extend [min]`, `end` |

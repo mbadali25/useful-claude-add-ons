@@ -249,3 +249,29 @@ def test_no_lifecycle_command_points_at_a_removed_command_for_tracker_writes():
              if s in _read(os.path.join(COMMANDS, name))]
 
     assert found == []
+
+
+_TRACKER_CALL = re.compile(r"(\S*)crew_tracker\.py (?:resolve|create|move|read)\b")
+_PREFIX = "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/"
+
+
+def test_every_tracker_call_in_commands_carries_the_prefix():
+    """T-0021 review round 2: a bare `crew_tracker.py move` is "command not found"."""
+    bare = []
+    for name in sorted(os.listdir(COMMANDS)):
+        if name.endswith(".md"):
+            text = _read(os.path.join(COMMANDS, name))
+            bare += [(name, found.group(0)) for found in _TRACKER_CALL.finditer(text)
+                     if not found.group(1).endswith(_PREFIX)]
+
+    assert bare == []
+
+
+def test_implement_moves_to_review_before_it_runs_the_review():
+    """T-0021 review round 2: the README's Review lane means `/crew:review` outstanding."""
+    text = _read(os.path.join(COMMANDS, "implement.md"))
+
+    move = text.find(f"{_TRACKER} move --root . --ticket $1 --to review")
+    review = text.find("**Then, last, `/crew:review $1`**")
+
+    assert (move != -1, review != -1, move < review) == (True, True, True)

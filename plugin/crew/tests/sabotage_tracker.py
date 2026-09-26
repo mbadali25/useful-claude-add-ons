@@ -15,6 +15,7 @@ import os
 CREW = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TRACKER = os.path.join(CREW, "hooks", "scripts", "crew_tracker.py")
 BRAINSTORM = os.path.join(CREW, "commands", "brainstorm.md")
+FIX = os.path.join(CREW, "commands", "fix.md")
 _TESTS = "tests/test_crew_tracker.py::"
 _LIFECYCLE = "tests/test_lifecycle_commands.py::"
 
@@ -59,7 +60,7 @@ TRACKER_MUTATIONS = (
         # A concurrent INDEX append is overwritten by a stale recompute.
         "tracker replaces without re-reading the target first",
         TRACKER,
-        "            if _read_bytes(path) != before:\n",
+        "            if _read_bytes(path, dir_fd=dir_fd) != before:\n",
         "            if False:\n",
         _TESTS + "test_files_move_retries_when_index_changes",
     ),
@@ -169,15 +170,15 @@ TRACKER_MUTATIONS = (
         # The INDEX half is written before the board says it has no card.
         "tracker move skips the card lookup before writing anything",
         TRACKER,
-        "    if not problem:\n        _, _, problem = move_card(board, ticket, key)\n",
-        "",
+        "        card, problem = find_card(board, ticket)\n    claim = False\n",
+        "        card = find_card(board, ticket)[0]\n    claim = False\n",
         _TESTS + "test_obsidian_move_without_a_card_writes_nothing",
     ),
     (
         "tracker rewrites an existing ticket note",
         TRACKER,
-        '        with open(paths["note"], "xb") as handle:\n',
-        '        with open(paths["note"], "wb") as handle:\n',
+        "_NOTE_FLAGS = os.O_WRONLY | os.O_CREAT | os.O_EXCL | _NOFOLLOW | _BINARY\n",
+        "_NOTE_FLAGS = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | _BINARY\n",
         _TESTS + "test_note_created_once_never_overwritten",
     ),
     (
@@ -250,31 +251,35 @@ TRACKER_MUTATIONS = (
         # Round 1 FIX: another repo's card on a shared board.
         "tracker moves a card whose note names another repo",
         TRACKER,
-        "    if owner is not None and owner != here:\n",
-        "    if False:\n",
+        "        if owner == FOREIGN:\n            problem = _foreign(paths, ticket, detail, here)\n"
+        "        elif owner == UNKNOWN:\n",
+        "        if False:\n            problem = _foreign(paths, ticket, detail, here)\n"
+        "        elif owner == UNKNOWN:\n",
         _TESTS + "test_move_refuses_a_card_another_repo_owns",
     ),
     (
         "tracker create adopts a card no note claims as 'unchanged'",
         TRACKER,
-        "        if owner is None:\n",
-        "        if False:\n",
+        '        elif owner == UNKNOWN and (note or any(card["id"] == ticket for card in _cards(board))):\n',
+        "        elif False:\n",
         _TESTS + "test_create_refuses_a_card_on_a_shared_board_no_note_claims",
     ),
     (
         "tracker move writes the board for a ticket this repo never minted",
         TRACKER,
-        '    if not problem and _files_read(root, ticket)["state"] != READ:\n',
-        "    if False:\n",
+        '    if not problem and row["state"] != READ:\n'
+        '        problem = f"no {INDEX_REL} row for {ticket} in this repo"\n'
+        "    if not problem and not reopen:\n",
+        '    if not problem and not reopen and row["state"] == READ:\n',
         _TESTS + "test_move_without_this_repos_index_row_writes_nothing",
     ),
     (
-        # 'could not tell' must survive onto the line, not read as ours.
-        "tracker move drops 'could not tell whose card' from its line",
+        # Round 2 FIX (:876): 'could not tell' must refuse, not move with a caveat.
+        "tracker moves a card whose owner it could not tell",
         TRACKER,
-        '    caveat = f" (whose card could not tell: {unknown})" if unknown else ""\n',
-        '    caveat = ""\n',
-        _TESTS + "test_move_says_when_no_note_names_the_cards_repo",
+        "            problem = None if claim else _unclaimed(paths, ticket, detail, here)\n",
+        "            problem = None\n",
+        _TESTS + "test_move_refuses_a_card_no_note_claims",
     ),
     (
         "tracker move indexes a status cell an INDEX row does not have",
@@ -322,8 +327,166 @@ TRACKER_MUTATIONS = (
     (
         "tracker read drops 'could not tell whose card' from its line",
         TRACKER,
-        '    notes += [f"whose card could not tell: {unknown}"] if unknown else []\n',
+        '    notes += [f"whose card could not tell: {detail}"] if owner == UNKNOWN else []\n',
         "",
         _TESTS + "test_read_says_when_no_note_names_the_cards_repo",
+    ),
+    (
+        # Round 2 FIX (:830): ownership by basename -- a/app is b/app.
+        "tracker owns a card by the origin's basename, not the origin",
+        TRACKER,
+        "        return normal_url(url)\n",
+        "        return os.path.basename(normal_url(url))\n",
+        _TESTS + "test_same_repo_name_is_not_the_same_repo",
+    ),
+    (
+        "tracker owns a card by the repo directory's name when there is no origin",
+        TRACKER,
+        "        return os.path.realpath(common)\n",
+        "        return os.path.basename(os.path.dirname(os.path.realpath(common)))\n",
+        _TESTS + "test_same_repo_name_is_not_the_same_repo",
+    ),
+    (
+        # The identity is written into a note a human reads: no credentials.
+        "tracker keeps the origin URL's userinfo in the repo-id",
+        TRACKER,
+        "        url = f\"{scheme}://{host.rpartition('@')[2]}{slash}{path}\"\n",
+        "        url = f\"{scheme}://{host}{slash}{path}\"\n",
+        _TESTS + "test_note_records_repo_id_without_credentials",
+    ),
+    (
+        "tracker moves when git cannot say which repo this is",
+        TRACKER,
+        "    if not problem and here is None:\n        problem = _no_identity(root)\n"
+        "    board, problem = (None, problem) if problem else _load_board(paths, columns)\n    card = None\n",
+        "    board, problem = (None, problem) if problem else _load_board(paths, columns)\n    card = None\n",
+        _TESTS + "test_move_refuses_when_this_repos_identity_cannot_be_told",
+    ),
+    (
+        "tracker claims a no-note card whatever its text says",
+        TRACKER,
+        '            claim = not note and text is not None and text == row.get("title")\n',
+        "            claim = not note\n",
+        _TESTS + "test_move_refuses_a_card_no_note_claims",
+    ),
+    (
+        # The neighbour: no card text and no INDEX title are both None.
+        "tracker claims a card when neither its text nor the INDEX title exists",
+        TRACKER,
+        '            claim = not note and text is not None and text == row.get("title")\n',
+        '            claim = not note and text == row.get("title")\n',
+        _TESTS + "test_move_refuses_a_multi_line_card_when_index_has_no_title",
+    ),
+    (
+        "tracker claims a card without recording this repo's repo-id",
+        TRACKER,
+        "    if claim:\n",
+        "    if False:\n",
+        _TESTS + "test_move_claims_an_exact_title_card_and_records_repo_id",
+    ),
+    (
+        # Round 2 FIX (:181): the memory-vault fallback against a named vault.
+        "tracker resolve ignores a disagreement in the effective vault or boardDir",
+        TRACKER,
+        "        if one is not None and two is not None and one != two:\n",
+        "        if False:\n",
+        _TESTS + "test_resolve_compares_the_effective_vault",
+    ),
+    (
+        "tracker resolve reads an unset boardDir as no value, not the vault root",
+        TRACKER,
+        '    elif board_dir is None and vault is not None:\n        board_dir = ""\n',
+        "",
+        _TESTS + "test_resolve_compares_the_effective_board_dir",
+    ),
+    (
+        # Round 2 FIX (:422): another session's id, silently taken over.
+        "tracker create answers 'unchanged' for an id INDEX holds under another title",
+        TRACKER,
+        "        if held:\n            return None, _result(backend, FAILED, _held(ticket, held))\n",
+        "        if False:\n            return None, _result(backend, FAILED, _held(ticket, held))\n",
+        _TESTS + "test_create_refuses_an_id_another_session_holds",
+    ),
+    (
+        "tracker create writes the card after the INDEX half refused",
+        TRACKER,
+        '    if files["state"] == FAILED:\n        return [files]\n',
+        "",
+        _TESTS + "test_obsidian_create_on_a_held_id_writes_no_card",
+    ),
+    (
+        # Round 2 FIX (:911): five pushes per ticket, none naming a target.
+        "tracker pushes Jira/SDP on every move",
+        TRACKER,
+        "    if status in _PUSH_AT:\n",
+        "    if True:\n",
+        _TESTS + "test_jira_and_sdp_push_at_boundaries_only",
+    ),
+    (
+        "tracker's delegated push drops the target status",
+        TRACKER,
+        '    command = f"{_SYNC[kind]} {ticket}" + (f" --push --to {to}" if to else "")\n',
+        '    command = f"{_SYNC[kind]} {ticket}" + (" --push" if to else "")\n',
+        _TESTS + "test_jira_and_sdp_push_at_boundaries_only",
+    ),
+    (
+        # Round 2 FIX (:727): the write re-walks a path a link was planted in.
+        "tracker follows a link in the board's directory path when it writes",
+        TRACKER,
+        "            inner = os.open(part, _DIR_FLAGS, dir_fd=fd)\n",
+        "            inner = os.open(part, os.O_RDONLY, dir_fd=fd)\n",
+        _TESTS + "test_board_dir_swapped_for_a_link_after_the_checks_writes_nothing_outside",
+    ),
+    (
+        "tracker writes into whatever directory now sits at the vault's path",
+        TRACKER,
+        '        if (seen.st_dev, seen.st_ino) != paths["vaultId"]:\n',
+        "        if False:\n",
+        _TESTS + "test_vault_replaced_after_the_checks_writes_nothing",
+    ),
+    (
+        # The Windows branch, run on POSIX by switching dir_fd support off.
+        "tracker's no-dir_fd branch writes without re-checking the directory",
+        TRACKER,
+        "        yield paths[label], None, _parent_check(paths, label)\n",
+        "        yield paths[label], None, None\n",
+        _TESTS + "test_board_dir_swapped_for_a_link_after_the_checks_writes_nothing_outside",
+    ),
+    (
+        # Round 2 NIT (:72): STATUS_ORDER was defined and never read.
+        "tracker moves a ticket backwards without --reopen",
+        TRACKER,
+        "    if STATUS_ORDER.index(status) < STATUS_ORDER.index(current):\n",
+        "    if False:\n",
+        _TESTS + "test_backwards_move_is_refused",
+    ),
+    (
+        "tracker moves from a status it does not know as if forward",
+        TRACKER,
+        "    if current not in STATUS_ORDER:\n",
+        "    if current not in STATUS_ORDER:\n        return None\n    if False:\n",
+        _TESTS + "test_move_from_a_status_crew_does_not_know_is_could_not_tell",
+    ),
+    (
+        "tracker moves the board before the INDEX half refuses a backwards move",
+        TRACKER,
+        '    if not problem and not reopen:\n        problem = _backwards(ticket, row["status"], status)\n',
+        "",
+        _TESTS + "test_obsidian_backwards_move_leaves_the_board_alone",
+    ),
+    (
+        "tracker ignores --reopen",
+        TRACKER,
+        "        backwards = None if reopen else _backwards(ticket, current, status)\n",
+        "        backwards = _backwards(ticket, current, status)\n",
+        _TESTS + "test_backwards_move_with_reopen_goes_ahead",
+    ),
+    (
+        # Round 2 NIT (fix.md:84): a bare call is "command not found".
+        "fix.md calls crew_tracker.py without the plugin-root prefix",
+        FIX,
+        "`python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_tracker.py move --root . --ticket <id> --to review`",
+        "`crew_tracker.py move --root . --ticket <id> --to review`",
+        _LIFECYCLE + "test_every_tracker_call_in_commands_carries_the_prefix",
     ),
 )

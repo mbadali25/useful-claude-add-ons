@@ -1,6 +1,6 @@
 ---
 description: Sync a ticket between ServiceDesk Plus (via MCP) and the local cache
-argument-hint: <REQUEST-ID> [--push]
+argument-hint: <REQUEST-ID> [--push --to in-progress|done]
 allowed-tools: Read, Write, Edit, Bash, ToolSearch
 ---
 
@@ -55,17 +55,18 @@ retry, and context reset.
 Searching for a ticket: `sdp_search module=request value="<terms>" open_only=true`.
 Never list a whole queue to find one request.
 
-## Push (`--push`)
+## Push (`--push --to <status>`)
 
-Two writes at most, and only at a boundary:
+`--to` names the boundary: `in-progress` (pickup) or `done` (completion), the
+two moves `crew_tracker.py` delegates. No `--to`, or another target: say so
+and stop — never guess. Two writes at most:
 
-1. **One note** — `sdp_add_note module=request id=<id>`, with
-   `public=false` unless `sdp.noteVisibility` is `"public"`:
+1. **The status** the target means, via `sdp_transition`.
+2. **One note**, on `--to done` only — `sdp_add_note module=request id=<id>`,
+   with `public=false` unless `sdp.noteVisibility` is `"public"`:
 
    > files touched, smoke result, reviewer used (Codex or Claude), BLOCK count.
    > Two sentences.
-
-2. **The status**, via `sdp_transition`.
 
 Never paste diffs, review output, or agent reasoning into the desk. That is what
 the repo and the pull request are for, and it makes the request more expensive

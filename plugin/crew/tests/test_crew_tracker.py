@@ -95,9 +95,10 @@ def test_resolve_both_disagree_is_could_not_tell(tmp_path):
 
 
 def test_resolve_both_disagree_on_the_kinds_settings_is_could_not_tell(tmp_path):
+    """Same vault and boardDir, so only the whole-block comparison can see it."""
     root = make_repo(tmp_path)
-    _crew_json(root, {"kind": "obsidian", "obsidian": {"vaultPath": "/a"}})
-    _config_json(root, "obsidian", obsidian={"vaultPath": "/b"})
+    _crew_json(root, {"kind": "obsidian", "obsidian": {"vaultPath": "/a", "board": "One.md"}})
+    _config_json(root, "obsidian", obsidian={"vaultPath": "/a", "board": "Two.md"})
 
     got = crew_tracker.resolve(str(root))
 
@@ -218,12 +219,12 @@ def test_files_move_retries_when_index_changes(tmp_path, monkeypatch):
     real = crew_tracker._read_bytes  # pylint: disable=protected-access
     calls = []
 
-    def racing(path):
+    def racing(path, dir_fd=None):
         calls.append(path)
         if len(calls) == 2:
             with open(index, "a", encoding="utf-8", newline="\n") as handle:
                 handle.write("T-0002 | direction | - | repo | other session\n")
-        return real(path)
+        return real(path, dir_fd=dir_fd)
 
     monkeypatch.setattr(crew_tracker, "_read_bytes", racing)
 
@@ -240,12 +241,12 @@ def test_files_move_gives_up_after_three_changed_reads(tmp_path, monkeypatch):
     real = crew_tracker._read_bytes  # pylint: disable=protected-access
     calls = []
 
-    def always_racing(path):
+    def always_racing(path, dir_fd=None):
         calls.append(path)
         if len(calls) % 2 == 0:
             with open(index, "a", encoding="utf-8", newline="\n") as handle:
                 handle.write(f"T-10{len(calls)} | direction | - | repo | noise\n")
-        return real(path)
+        return real(path, dir_fd=dir_fd)
 
     monkeypatch.setattr(crew_tracker, "_read_bytes", always_racing)
 
@@ -632,8 +633,9 @@ def test_obsidian_move_updates_index_and_board(tmp_path):
     assert (done.returncode, done.stdout, _index(root), _lane_of(board, CARD)) == (
         0,
         "files: updated: .work/INDEX.md spec -> in-progress\n"
-        "obsidian: updated: Boards/repo/Board.md Ready -> In Progress "
-        "(whose card could not tell: no Boards/repo/T-0042.md note names its repo)\n",
+        "obsidian: updated: Boards/repo/Board.md Ready -> In Progress\n"
+        "obsidian-note: updated: Boards/repo/T-0042.md created "
+        "(its card's text is this repo's INDEX title, so the card is this repo's)\n",
         ROW.replace("spec", "in-progress"), "In Progress")
 
 
@@ -643,7 +645,7 @@ def test_obsidian_move_leaves_no_temp_file(tmp_path):
 
     _cli(root, "move", "--ticket", CARD, "--to", "review")
 
-    assert sorted(os.listdir(vault / "Boards" / "repo")) == ["Board.md"]
+    assert sorted(os.listdir(vault / "Boards" / "repo")) == ["Board.md", "T-0042.md"]
 
 
 def test_board_failure_keeps_the_files_half(tmp_path, monkeypatch):
@@ -653,20 +655,20 @@ def test_board_failure_keeps_the_files_half(tmp_path, monkeypatch):
     real = crew_tracker._read_bytes  # pylint: disable=protected-access
     calls = {"n": 0}
 
-    def racing(path):
+    def racing(path, dir_fd=None):
         """Every re-read of the board sees different bytes: Obsidian keeps saving."""
-        if os.path.realpath(path) == os.path.realpath(board):
+        if os.path.basename(path) == board.name:
             calls["n"] += 1
             if calls["n"] % 2 == 0:
-                return real(path) + b"\n"
-        return real(path)
+                return real(path, dir_fd=dir_fd) + b"\n"
+        return real(path, dir_fd=dir_fd)
 
     monkeypatch.setattr(crew_tracker, "_read_bytes", racing)
 
     got = crew_tracker.move(str(root), CARD, "review")
 
     assert ([r["state"] for r in got["results"]], _index(root), crew_tracker.exit_code(got)) == (
-        ["updated", "could not update"], ROW.replace("spec", "review"), 1)
+        ["updated", "could not update", "updated"], ROW.replace("spec", "review"), 1)
 
 
 def test_nested_board_dir(tmp_path):
@@ -767,10 +769,10 @@ def test_jira_move_is_delegated_and_writes_nothing(tmp_path):
     _crew_json(root, {"kind": "jira", "jira": {"project": "ABC"}})
     before = _snapshot(tmp_path)
 
-    done = _cli(root, "move", "--ticket", "ABC-12", "--to", "review")
+    done = _cli(root, "move", "--ticket", "ABC-12", "--to", "in-progress")
 
     assert (done.returncode, done.stdout, _snapshot(tmp_path) == before) == (
-        3, "jira: delegated: run /crew:jira-sync ABC-12 --push\n", True)
+        3, "jira: delegated: run /crew:jira-sync ABC-12 --push --to in-progress\n", True)
 
 
 def test_sdp_move_is_delegated(tmp_path):
@@ -779,7 +781,7 @@ def test_sdp_move_is_delegated(tmp_path):
 
     done = _cli(root, "move", "--ticket", "SDP-40219", "--to", "done")
 
-    assert (done.returncode, done.stdout) == (3, "sdp: delegated: run /crew:sdp-sync SDP-40219 --push\n")
+    assert (done.returncode, done.stdout) == (3, "sdp: delegated: run /crew:sdp-sync SDP-40219 --push --to done\n")
 
 
 def test_jira_create_is_delegated_to_mcp(tmp_path):
@@ -1068,7 +1070,7 @@ def test_create_refuses_a_ticket_another_repo_owns(tmp_path):
 
     done, untouched = _refused(tmp_path, other, ("create", "--ticket", "T-0060", "--title", "B's work"))
 
-    assert (done.returncode, untouched, "belongs to repo 'alpha'" in done.stdout) == (1, True, True)
+    assert (done.returncode, untouched, "belongs to another repo" in done.stdout) == (1, True, True)
 
 
 def test_move_refuses_a_card_another_repo_owns(tmp_path):
@@ -1079,7 +1081,7 @@ def test_move_refuses_a_card_another_repo_owns(tmp_path):
 
     done, untouched = _refused(tmp_path, other, ("move", "--ticket", "T-0060", "--to", "done"))
 
-    assert (done.returncode, untouched, "belongs to repo 'alpha'" in done.stdout) == (1, True, True)
+    assert (done.returncode, untouched, "belongs to another repo" in done.stdout) == (1, True, True)
 
 
 def test_move_without_this_repos_index_row_writes_nothing(tmp_path):
@@ -1092,17 +1094,6 @@ def test_move_without_this_repos_index_row_writes_nothing(tmp_path):
         1, True, "obsidian: could not update: no .work/INDEX.md row for T-0042 in this repo\n")
 
 
-def test_move_says_when_no_note_names_the_cards_repo(tmp_path):
-    vault = _make_vault(tmp_path / "vault")
-    root = _obsidian_repo(tmp_path, vault)
-
-    done = _cli(root, "move", "--ticket", CARD, "--to", "review")
-
-    assert (done.returncode, done.stdout.splitlines()[1]) == (
-        0, "obsidian: updated: Boards/repo/Board.md Ready -> Review "
-           "(whose card could not tell: no Boards/repo/T-0042.md note names its repo)")
-
-
 def test_read_refuses_a_card_another_repo_owns(tmp_path):
     vault = _make_vault(tmp_path / "vault", board_dir=".")
     first = _named_repo(tmp_path, "alpha", vault)
@@ -1111,7 +1102,7 @@ def test_read_refuses_a_card_another_repo_owns(tmp_path):
 
     got = crew_tracker.read(str(other), "T-0060")
 
-    assert (got["results"][1]["state"], "belongs to repo 'alpha'" in got["results"][1]["reason"]) == (
+    assert (got["results"][1]["state"], "belongs to another repo" in got["results"][1]["reason"]) == (
         "could not read", True)
 
 
@@ -1172,4 +1163,359 @@ def test_read_says_when_no_note_names_the_cards_repo(tmp_path):
     done = _cli(root, "read", "--ticket", CARD)
 
     assert (done.returncode, done.stdout.splitlines()[1]) == (
-        0, "obsidian: Ready (whose card could not tell: no Boards/repo/T-0042.md note names its repo)")
+        0, "obsidian: Ready (whose card could not tell: no Boards/repo/T-0042.md note names its repo-id)")
+
+
+# --- review round 2 (T-0021): each test is a reviewer repro, run first ---------
+
+def _git(root, *args):
+    subprocess.run(["git", *args], cwd=root, check=True, capture_output=True, stdin=subprocess.DEVNULL)
+
+
+def _repo_at(tmp_path, where, vault, rows="", origin=None):
+    """A repo at tmp_path/<where> (e.g. `a/app`) on `vault`'s top-level board."""
+    parent, name = os.path.split(where)
+    made = make_repo(tmp_path / parent)
+    root = tmp_path / parent / name
+    os.rename(made, root)
+    if origin:
+        _git(root, "remote", "add", "origin", origin)
+    _crew_json(root, {"kind": "obsidian", "obsidian": {"vaultPath": str(vault)}})
+    (root / ".work" / "INDEX.md").write_text(rows, encoding="utf-8", newline="\n")
+    return root
+
+
+@pytest.mark.parametrize("origins", [
+    ("https://example.invalid/a/app.git", "https://example.invalid/b/app.git"),
+    (None, None),
+])
+def test_same_repo_name_is_not_the_same_repo(tmp_path, origins):
+    """Round 2 FIX (:830): `a/app` and `b/app` share a basename, not an identity."""
+    vault = _make_vault(tmp_path / "vault", board_dir=".")
+    first = _repo_at(tmp_path, "a/app", vault, origin=origins[0])
+    other = _repo_at(tmp_path, "b/app", vault, rows="T-0060 | direction | - | app | B work\n", origin=origins[1])
+    assert _cli(first, "create", "--ticket", "T-0060", "--title", "A work").returncode == 0
+
+    done, untouched = _refused(tmp_path, other, ("move", "--ticket", "T-0060", "--to", "done"))
+
+    assert (done.returncode, untouched, "belongs to another repo" in done.stdout) == (1, True, True)
+
+
+@pytest.mark.parametrize("origin", [None, "https://example.invalid/team/repo.git"])
+def test_two_worktrees_of_one_repo_move_the_same_card(tmp_path, origin):
+    vault = _make_vault(tmp_path / "vault", board_dir=".")
+    first = _repo_at(tmp_path, "main/repo", vault, origin=origin)
+    assert _cli(first, "create", "--ticket", "T-0060", "--title", "A work").returncode == 0
+    second = tmp_path / "wt"
+    _git(first, "worktree", "add", "-q", "-b", "wt", str(second))
+    (second / ".crew").mkdir()
+    (second / ".work").mkdir()
+    (second / ".crew" / "crew.json").write_bytes((first / ".crew" / "crew.json").read_bytes())
+    (second / ".work" / "INDEX.md").write_bytes((first / ".work" / "INDEX.md").read_bytes())
+
+    done = _cli(second, "move", "--ticket", "T-0060", "--to", "review")
+
+    assert (done.returncode, _lane_of((vault / "Board.md").read_text(encoding="utf-8"), "T-0060")) == (0, "Review")
+
+
+@pytest.mark.parametrize("url,expected", [
+    ("https://User:s3cret@Example.invalid/Owner/Repo.git", "https://example.invalid/owner/repo"),
+    ("https://example.invalid/owner/repo/", "https://example.invalid/owner/repo"),
+    ("ssh://git@Example.invalid:22/Owner/Repo.git", "ssh://example.invalid:22/owner/repo"),
+    ("git@GitHub.com:Owner/Repo.git", "github.com:owner/repo"),
+])
+def test_repo_id_normalises_the_origin_url(tmp_path, url, expected):
+    root = make_repo(tmp_path)
+    _git(root, "remote", "add", "origin", url)
+
+    assert crew_tracker.repo_id(str(root)) == expected
+
+
+def test_note_records_repo_id_without_credentials(tmp_path):
+    vault = _make_vault(tmp_path / "vault")
+    root = _obsidian_repo(tmp_path, vault)
+    _git(root, "remote", "add", "origin", "https://user:s3cret@example.invalid/Team/Repo.git")
+
+    _cli(root, "create", "--ticket", "T-0060", "--title", "new work")
+    note = (vault / "Boards" / "repo" / "T-0060.md").read_text(encoding="utf-8")
+
+    assert ("- repo-id: https://example.invalid/team/repo\n" in note, "s3cret" in note) == (True, False)
+
+
+def test_move_refuses_a_card_no_note_claims(tmp_path):
+    """Round 2 FIX (:876): the review repro -- another repo's no-note T-0042."""
+    vault = _make_vault(tmp_path / "vault", board_dir=".")
+    other = _repo_at(tmp_path, "x/other", vault, rows="T-0042 | spec | - | other | mine\n")
+
+    done, untouched = _refused(tmp_path, other, ("move", "--ticket", CARD, "--to", "done"))
+
+    assert (done.returncode, untouched, "could not tell whose card T-0042 is" in done.stdout,
+            "repo-id: " in done.stdout) == (1, True, True, True)
+
+
+def test_move_claims_an_exact_title_card_and_records_repo_id(tmp_path):
+    vault = _make_vault(tmp_path / "vault")
+    root = _obsidian_repo(tmp_path, vault)
+    note = vault / "Boards" / "repo" / "T-0042.md"
+
+    done = _cli(root, "move", "--ticket", CARD, "--to", "review")
+
+    assert (done.returncode, f"- repo-id: {crew_tracker.repo_id(str(root))}\n" in note.read_text(encoding="utf-8"),
+            _lane_of((vault / "Boards/repo/Board.md").read_text(encoding="utf-8"), CARD)) == (0, True, "Review")
+
+
+def test_move_refuses_a_card_whose_note_names_no_repo_id(tmp_path):
+    """An existing note is never rewritten, so an exact title cannot claim it."""
+    vault = _make_vault(tmp_path / "vault")
+    root = _obsidian_repo(tmp_path, vault)
+    (vault / "Boards" / "repo" / "T-0042.md").write_text("# T-0042\n\nhand-written\n", encoding="utf-8")
+
+    done, untouched = _refused(tmp_path, root)
+
+    assert (done.returncode, untouched, "could not tell whose card T-0042 is" in done.stdout) == (1, True, True)
+
+
+def test_move_refuses_when_this_repos_identity_cannot_be_told(tmp_path, monkeypatch):
+    vault = _make_vault(tmp_path / "vault")
+    root = _obsidian_repo(tmp_path, vault)
+    assert crew_tracker.create(str(root), "T-0060", "new work")["results"][0]["state"] == "updated"
+    monkeypatch.setattr(crew_tracker, "repo_id", lambda root: None)
+    before = _snapshot(tmp_path)
+
+    got = crew_tracker.move(str(root), "T-0060", "spec")
+
+    assert (got["results"][0]["reason"].startswith("could not tell this repo's identity"),
+            _snapshot(tmp_path) == before) == (True, True)
+
+
+def _two_vaults(tmp_path):
+    first = _make_vault(tmp_path / "v1", board_dir="B")
+    second = _make_vault(tmp_path / "v2")
+    return first, second
+
+
+def test_resolve_compares_the_effective_vault(tmp_path):
+    """Round 2 FIX (:181): the review repro -- crew.json falls back to the
+    memory vault while config.json names another."""
+    first, second = _two_vaults(tmp_path)
+    root = make_repo(tmp_path)
+    _write_json(root / ".crew" / "crew.json",
+                {"schema": 1, "tracker": {"kind": "obsidian"}, "memory": {"vaultPath": str(second)}})
+    _config_json(root, "obsidian", obsidian={"vaultPath": str(first), "boardDir": "B"})
+    (root / ".work" / "INDEX.md").write_text(ROW, encoding="utf-8", newline="\n")
+
+    got = crew_tracker.resolve(str(root))
+    done, untouched = _refused(tmp_path, root)
+
+    assert (got["kind"], str(first) in got["problems"][0], str(second) in got["problems"][0],
+            done.returncode, untouched) == ("could not tell", True, True, 1, True)
+
+
+def test_resolve_compares_the_effective_board_dir(tmp_path):
+    vault = _make_vault(tmp_path / "vault", board_dir="B")
+    root = make_repo(tmp_path)
+    _write_json(root / ".crew" / "crew.json",
+                {"schema": 1, "tracker": {"kind": "obsidian"}, "memory": {"vaultPath": str(vault)}})
+    _config_json(root, "obsidian", obsidian={"vaultPath": str(vault), "boardDir": "B"})
+
+    got = crew_tracker.resolve(str(root))
+
+    assert (got["kind"], "boardDir" in got["problems"][0]) == ("could not tell", True)
+
+
+def test_resolve_accepts_one_vault_reached_two_ways(tmp_path):
+    vault = _make_vault(tmp_path / "vault", board_dir=".")
+    root = make_repo(tmp_path)
+    _write_json(root / ".crew" / "crew.json",
+                {"schema": 1, "tracker": {"kind": "obsidian"}, "memory": {"vaultPath": str(vault)}})
+    _config_json(root, "obsidian", obsidian={"vaultPath": str(vault) + os.sep})
+
+    got = crew_tracker.resolve(str(root))
+
+    assert (got["kind"], got["problems"]) == ("obsidian", [])
+
+
+def test_create_refuses_an_id_another_session_holds(tmp_path):
+    """Round 2 FIX (:422): the review repro, verbatim."""
+    row = "T-0050 | in-progress | high | r | another session's auth rewrite\n"
+    root = _files_repo(tmp_path, row)
+
+    done = _cli(root, "create", "--ticket", "T-0050", "--title", "my new idea")
+
+    assert (done.returncode, done.stdout, _index(root)) == (
+        1, "files: could not update: T-0050 is already in-progress \"another session's auth rewrite\"\n", row)
+
+
+def test_obsidian_create_on_a_held_id_writes_no_card(tmp_path):
+    vault = _make_vault(tmp_path / "vault")
+    root = _obsidian_repo(tmp_path, vault)
+    (root / ".work" / "INDEX.md").write_text(ROW + "T-0061 | spec | - | repo | someone's\n", encoding="utf-8")
+
+    done, untouched = _refused(tmp_path, root, ("create", "--ticket", "T-0061", "--title", "mine"))
+
+    assert (done.returncode, untouched, 'T-0061 is already spec "someone\'s"' in done.stdout) == (1, True, True)
+
+
+_BOUNDARY = "tracker: {kind} syncs at boundaries only (in-progress, done); nothing to push\n"
+
+
+@pytest.mark.parametrize("kind,key,status,code,line", [
+    ("jira", "ABC-12", "direction", 0, _BOUNDARY.format(kind="jira")),
+    ("jira", "ABC-12", "spec", 0, _BOUNDARY.format(kind="jira")),
+    ("jira", "ABC-12", "planned", 0, _BOUNDARY.format(kind="jira")),
+    ("jira", "ABC-12", "in-progress", 3, "jira: delegated: run /crew:jira-sync ABC-12 --push --to in-progress\n"),
+    ("jira", "ABC-12", "review", 0, _BOUNDARY.format(kind="jira")),
+    ("jira", "ABC-12", "done", 3, "jira: delegated: run /crew:jira-sync ABC-12 --push --to done\n"),
+    ("sdp", "SDP-40219", "spec", 0, _BOUNDARY.format(kind="sdp")),
+    ("sdp", "SDP-40219", "in-progress", 3, "sdp: delegated: run /crew:sdp-sync SDP-40219 --push --to in-progress\n"),
+    ("sdp", "SDP-40219", "done", 3, "sdp: delegated: run /crew:sdp-sync SDP-40219 --push --to done\n"),
+])
+def test_jira_and_sdp_push_at_boundaries_only(tmp_path, kind, key, status, code, line):
+    """Round 2 FIX (:911): the push names its target, and only boundaries push."""
+    root = make_repo(tmp_path)
+    _config_json(root, kind)
+    before = _snapshot(tmp_path)
+
+    done = _cli(root, "move", "--ticket", key, "--to", status)
+
+    assert (done.returncode, done.stdout, _snapshot(tmp_path) == before) == (code, line, True)
+
+
+def _swap_for_link(monkeypatch, real_dir, target_dir):
+    """After the board is loaded -- past every check -- `real_dir` becomes a link."""
+    real = crew_tracker._load_board  # pylint: disable=protected-access
+
+    def swapping(paths, columns):
+        got = real(paths, columns)
+        os.rename(real_dir, str(real_dir) + ".moved")
+        os.symlink(target_dir, real_dir, target_is_directory=True)
+        return got
+
+    monkeypatch.setattr(crew_tracker, "_load_board", swapping)
+
+
+def _outside_copy(tmp_path, vault):
+    import shutil  # pylint: disable=import-outside-toplevel
+    outside = tmp_path / "out" / "B"
+    shutil.copytree(vault / "B", outside)
+    return outside
+
+
+@pytest.mark.parametrize("dir_fd", [True, False])
+def test_board_dir_swapped_for_a_link_after_the_checks_writes_nothing_outside(tmp_path, monkeypatch, dir_fd):
+    """Round 2 FIX (:727): confinement is checked on a path, so the write must not
+    re-walk that path through a link planted after the check. dir_fd=False is the
+    Windows branch, run here by switching the capability off."""
+    vault = _make_vault(tmp_path / "vault", board_dir="B")
+    root = _obsidian_repo(tmp_path, vault, boardDir="B")
+    assert crew_tracker.create(str(root), "T-0060", "new work")["results"][1]["state"] == "updated"
+    outside = _outside_copy(tmp_path, vault)
+    before = _snapshot(outside)
+    if not dir_fd:
+        monkeypatch.setattr(crew_tracker, "_DIR_FD", False)
+    _swap_for_link(monkeypatch, vault / "B", outside)
+
+    got = crew_tracker.move(str(root), "T-0060", "spec")
+
+    assert (crew_tracker.exit_code(got), _snapshot(outside) == before) == (1, True)
+
+
+def test_board_dir_swap_repro_with_a_noteless_card(tmp_path, monkeypatch):
+    """The reviewer's repro as written: T-0042, no note, boardDir B."""
+    vault = _make_vault(tmp_path / "vault", board_dir="B")
+    root = _obsidian_repo(tmp_path, vault, boardDir="B")
+    outside = _outside_copy(tmp_path, vault)
+    before = _snapshot(outside)
+    _swap_for_link(monkeypatch, vault / "B", outside)
+
+    got = crew_tracker.move(str(root), CARD, "done")
+
+    assert (crew_tracker.exit_code(got), _snapshot(outside) == before) == (1, True)
+
+
+def test_vault_replaced_after_the_checks_writes_nothing(tmp_path, monkeypatch):
+    """The walk starts at the vault it checked: a different directory put at the
+    vault's path afterwards is refused, not written."""
+    vault = _make_vault(tmp_path / "vault", board_dir="B")
+    root = _obsidian_repo(tmp_path, vault, boardDir="B")
+    assert crew_tracker.create(str(root), "T-0060", "new work")["results"][1]["state"] == "updated"
+    import shutil  # pylint: disable=import-outside-toplevel
+    impostor = tmp_path / "impostor"
+    shutil.copytree(vault, impostor)
+    before = _snapshot(impostor)
+    real = crew_tracker._load_board  # pylint: disable=protected-access
+
+    def replacing(paths, columns):
+        got = real(paths, columns)
+        os.rename(vault, str(vault) + ".moved")
+        os.rename(impostor, vault)
+        return got
+
+    monkeypatch.setattr(crew_tracker, "_load_board", replacing)
+
+    got = crew_tracker.move(str(root), "T-0060", "spec")
+
+    assert (crew_tracker.exit_code(got), _snapshot(vault) == {k.replace(str(impostor), str(vault)): v
+                                                              for k, v in before.items()}) == (1, True)
+
+
+def test_board_dir_that_is_a_link_inside_the_vault_is_allowed(tmp_path):
+    vault = _make_vault(tmp_path / "vault", board_dir="Real/B")
+    _symlink(vault / "B", vault / "Real" / "B", is_dir=True)
+    root = _obsidian_repo(tmp_path, vault, boardDir="B")
+
+    done = _cli(root, "move", "--ticket", CARD, "--to", "review")
+
+    assert (done.returncode, _lane_of((vault / "Real/B/Board.md").read_text(encoding="utf-8"), CARD)) == (0, "Review")
+
+
+def test_backwards_move_is_refused(tmp_path):
+    """Round 2 NIT (:72): STATUS_ORDER guards a move back from done."""
+    root = _files_repo(tmp_path, "T-0001 | done | low | repo | t\n")
+
+    done = _cli(root, "move", "--ticket", "T-0001", "--to", "in-progress")
+
+    assert (done.returncode, done.stdout, _index(root)) == (
+        1, "files: could not update: T-0001 is done; moving it back to in-progress needs --reopen\n",
+        "T-0001 | done | low | repo | t\n")
+
+
+def test_backwards_move_with_reopen_goes_ahead(tmp_path):
+    root = _files_repo(tmp_path, "T-0001 | done | low | repo | t\n")
+
+    done = _cli(root, "move", "--ticket", "T-0001", "--to", "in-progress", "--reopen")
+
+    assert (done.returncode, _index(root)) == (0, "T-0001 | in-progress | low | repo | t\n")
+
+
+def test_move_from_a_status_crew_does_not_know_is_could_not_tell(tmp_path):
+    root = _files_repo(tmp_path, "T-0001 | merged | low | repo | t\n")
+
+    done = _cli(root, "move", "--ticket", "T-0001", "--to", "review")
+
+    assert (done.returncode, "could not tell whether merged -> review goes backwards" in done.stdout,
+            _index(root)) == (1, True, "T-0001 | merged | low | repo | t\n")
+
+
+def test_obsidian_backwards_move_leaves_the_board_alone(tmp_path):
+    vault = _make_vault(tmp_path / "vault")
+    root = _obsidian_repo(tmp_path, vault)
+    (root / ".work" / "INDEX.md").write_text(ROW.replace("spec", "review"), encoding="utf-8", newline="\n")
+
+    done, untouched = _refused(tmp_path, root, ("move", "--ticket", CARD, "--to", "spec"))
+
+    assert (done.returncode, untouched, "needs --reopen" in done.stdout) == (1, True, True)
+
+
+def test_move_refuses_a_multi_line_card_when_index_has_no_title(tmp_path):
+    """The claim's neighbour: no card text and no INDEX title are not a match."""
+    vault = _make_vault(tmp_path / "vault")
+    root = _obsidian_repo(tmp_path, vault)
+    board = vault / "Boards" / "repo" / "Board.md"
+    board.write_text(board.read_text(encoding="utf-8").replace(
+        "Fix token refresh on 401\n", "Fix token refresh on 401\n\tsecond line\n", 1), encoding="utf-8", newline="\n")
+    (root / ".work" / "INDEX.md").write_text("T-0042 | spec\n", encoding="utf-8", newline="\n")
+
+    done, untouched = _refused(tmp_path, root)
+
+    assert (done.returncode, untouched, "could not tell whose card T-0042 is" in done.stdout) == (1, True, True)
