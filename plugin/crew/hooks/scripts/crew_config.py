@@ -128,8 +128,9 @@ QA_PROVIDERS = crew_state.QA_PROVIDERS
 
 # Providers that are a CLI on PATH, and so have a meaningful `which()` answer.
 # `claude` is an in-session subagent, not a binary. `localgpu` is a binary but
-# is deliberately NOT on PATH -- see `localgpu_which`.
-PATH_PROVIDERS = ("codex", "copilot")
+# is deliberately NOT on PATH -- see `localgpu_which`. `kimi` on PATH is
+# presence only; `kimi_probe.py` is what says whether it can review.
+PATH_PROVIDERS = ("codex", "copilot", "kimi")
 
 
 def localgpu_which(which=None):

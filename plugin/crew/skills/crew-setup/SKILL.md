@@ -126,10 +126,11 @@ still writes only the repo file.
   "roles": ["explorer", "reviewer"],
   "qa": {
     "provider": "auto",
-    "order": ["codex", "copilot", "claude"],
+    "order": ["codex", "kimi", "copilot", "claude"],
     "fallback": "claude-sonnet-5",
     "codex": { "model": null, "reasoningEffort": null },
     "copilot": { "model": null },
+    "kimi": { "model": null },
     "roles": {}
   },
   "dev": {
@@ -137,6 +138,7 @@ still writes only the repo file.
     "fallback": "claude-sonnet-5",
     "codex": { "model": null, "reasoningEffort": null },
     "copilot": { "model": null },
+    "kimi": { "model": null },
     "roles": {}
   },
   "worktree": { "root": null },

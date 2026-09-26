@@ -1123,12 +1123,18 @@ PM_DEFAULTS = {
 # OFFER that table instead; see `skills/crew-setup/global-config.md`.
 FALLBACK_DEFAULT = "claude-sonnet-5"
 
+# `kimi` is second in `order` (T-0028): its family is known without a pin, so
+# unlike an unpinned `copilot` it can actually be reached. Its block has a
+# `model` only -- no `reasoningEffort`, because the Kimi Code CLI has no
+# per-call effort flag, and a key that silently does nothing reads as a knob
+# that is configured. Effort stays in the config.toml alias's `default_effort`.
 QA_DEFAULTS = {
     "provider": "auto",
-    "order": ["codex", "copilot", "claude"],
+    "order": ["codex", "kimi", "copilot", "claude"],
     "fallback": FALLBACK_DEFAULT,
     "codex": {"model": None, "reasoningEffort": None},
     "copilot": {"model": None},
+    "kimi": {"model": None},
     "roles": {},
 }
 
@@ -1137,6 +1143,7 @@ DEV_DEFAULTS = {
     "fallback": FALLBACK_DEFAULT,
     "codex": {"model": None, "reasoningEffort": None},
     "copilot": {"model": None},
+    "kimi": {"model": None},
     "roles": {},
 }
 
@@ -1376,7 +1383,10 @@ def merge_defaults(defaults, supplied, discarded=None, _path=""):
 # two authors remembering to keep two tuples in sync.
 #
 # The split is the whole point, so it is two names rather than one set with a
-# comment. Both tuples are the same three names -- `localgpu` is in NEITHER.
+# comment. Both tuples are the same four names -- `localgpu` is in NEITHER.
+# `kimi` (the Kimi Code CLI, T-0028) joined both: every `qa.roles.<r>` and
+# `dev.roles.<r>` slot accepts a kimi pin, and its family is fixed by provider
+# (see `family`).
 #
 # It was briefly admitted to `DEV_PROVIDERS` alone, on the reasoning that a
 # local 7B is a legitimate provider for work whose failure is VISIBLE -- an
@@ -1408,8 +1418,8 @@ def merge_defaults(defaults, supplied, discarded=None, _path=""):
 # outside this set is not a reviewer at all, so it is barred rather than
 # left to a family check that may not even fire (`family()` answers None for
 # a name it does not recognise, and None must never read as "no conflict").
-DEV_PROVIDERS = ("claude", "codex", "copilot")
-QA_PROVIDERS = ("claude", "codex", "copilot")
+DEV_PROVIDERS = ("claude", "codex", "copilot", "kimi")
+QA_PROVIDERS = ("claude", "codex", "copilot", "kimi")
 
 
 def family(provider, model=None):
@@ -1436,9 +1446,19 @@ def family(provider, model=None):
     genuinely does not say which. None, never a placeholder string: two unset
     Copilot models must not compare equal to each other and report BARRED when
     the real reason is "unset".
+
+    `kimi` (the Kimi Code CLI) is `kimi` whatever it is pinned to, decided by
+    the provider BEFORE the model is read. Its model ids are `k3`,
+    `kimi-for-coding` and `kimi-for-coding-highspeed`, and `k3` has leading
+    letters `k` -- so the model rule would answer `k`, which compares unequal
+    to a Copilot-hosted Kimi pin (`kimi-k3` -> `kimi`) and would clear Kimi to
+    review Kimi's own work. The CLI serves only Kimi models, so the provider
+    alone is the proof.
     """
     if provider == "claude":
         return "claude"
+    if provider == "kimi":
+        return "kimi"
     if isinstance(model, str) and model.strip():
         # Namespace off first (`openai/gpt-5`), then the leading letters, so
         # every separator convention collapses to the same token: `-`, `_`,
@@ -1470,6 +1490,10 @@ MODEL_DISPLAY = {
     "gpt-5.6-luna": "GPT-5.6 Luna",
     "kimi-k2.7-code": "Kimi 2.7",
     "kimi-k3": "Kimi 3",
+    # The Kimi Code CLI's own ids (T-0028), owner-supplied 2026-09-25.
+    "k3": "Kimi K3",
+    "kimi-for-coding": "Kimi for Coding",
+    "kimi-for-coding-highspeed": "Kimi for Coding (highspeed)",
 }
 
 

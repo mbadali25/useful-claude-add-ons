@@ -15,6 +15,7 @@ import copy
 import json
 import os
 import subprocess
+import sys
 
 import pytest
 
@@ -2388,3 +2389,125 @@ def test_model_report_surfaces_provider_problems_from_a_hand_edited_config(
     # And the row itself is barred, independent of the reporter.
     review_row = next(r for r in report["qa"] if r["role"] == "review")
     assert review_row["barred"] is True
+
+
+# --- T-0028: Kimi Code CLI as a provider -----------------------------------
+#
+# The owner's three Kimi Code model ids, exactly as given (2026-09-25). Nothing
+# else is a Kimi Code id in these tests, and nothing here is an allowlist.
+KIMI_IDS = ("k3", "kimi-for-coding", "kimi-for-coding-highspeed")
+QA_ROLE_SLOTS = ("phase1", "smoke", "review", "gate")
+DEV_ROLE_SLOTS = ("developer", "security", "planner")
+
+
+@pytest.mark.parametrize("model", [None, *KIMI_IDS, "kimi-code/k3"])
+def test_family_kimi_is_provider_determined(model):
+    """`k3` has leading letters `k`, so the model string must never decide.
+    A `k` token would compare unequal to a Copilot-hosted Kimi author and
+    clear Kimi to review Kimi's own work."""
+    assert crew_state.family("kimi", model) == "kimi"
+
+
+def test_copilot_kimi_author_bars_kimi_provider():
+    author = crew_state.family("copilot", "kimi-k3")
+    cfg = {"qa": {"provider": "auto", "order": ["kimi", "claude"],
+                  "kimi": {"model": "k3"}}}
+
+    rows = crew_config.order_candidates(cfg, author, which=lambda _n: "/bin/x")
+
+    kimi = next(r for r in rows if r["provider"] == "kimi")
+    assert (author, kimi["eligible"], kimi["family"]) == ("kimi", False, "kimi")
+
+
+def test_kimi_author_bars_copilot_kimi_pin():
+    author = crew_state.family("kimi", "kimi-for-coding")
+    cfg = {"qa": {"roles": {"review": {"provider": "copilot",
+                                       "model": "kimi-k3"}}}}
+
+    row = crew_state.resolve_role(cfg, "qa", "review", author=author)
+
+    assert (row["barred"], row["barredBy"]) == (True, "kimi")
+
+
+@pytest.mark.parametrize("model", KIMI_IDS)
+@pytest.mark.parametrize("kind,role", [("qa", r) for r in QA_ROLE_SLOTS]
+                         + [("dev", r) for r in DEV_ROLE_SLOTS])
+def test_every_role_slot_accepts_a_kimi_pin(kind, role, model):
+    cfg = {kind: {"roles": {role: {"provider": "kimi", "model": model}}}}
+
+    crew_config.validate_providers(cfg)
+    row = crew_state.resolve_role(cfg, kind, role)
+
+    assert (row["provider"], row["model"], row["family"], row["barred"]) == (
+        "kimi", model, "kimi", False)
+
+
+def test_validate_providers_accepts_kimi_as_block_provider_and_in_order():
+    cfg = {"qa": {"provider": "kimi", "order": ["codex", "kimi", "claude"]},
+           "dev": {"provider": "kimi"}}
+
+    assert crew_config.validate_providers(cfg) is cfg
+
+
+@pytest.mark.parametrize("build", ["default_config", "default_global_config"])
+def test_defaults_carry_kimi_blocks_and_order(build):
+    cfg = getattr(crew_config, build)()
+
+    assert (cfg["qa"]["kimi"], cfg["dev"]["kimi"], cfg["qa"]["order"]) == (
+        {"model": None}, {"model": None}, ["codex", "kimi", "copilot", "claude"])
+
+
+def test_no_role_pin_ships_in_either_default():
+    for build in (crew_config.default_config, crew_config.default_global_config):
+        cfg = build()
+        assert (cfg["qa"]["roles"], cfg["dev"]["roles"]) == ({}, {})
+
+
+def test_global_qa_kimi_model_round_trips(tmp_path):
+    root = crew_fixtures.make_repo(tmp_path / "repo", config={}, git=False)
+    crew_config.write_global_config({"qa.kimi.model": "k3"},
+                                    crew_config.GLOBAL_CONFIG_PATH)
+
+    report = crew_config.model_report(str(root), which=lambda _n: None)
+
+    assert report["qaProviders"]["kimi"]["model"] == "k3"
+
+
+def test_qa_kimi_reasoning_effort_is_absent_not_declared_none(tmp_path):
+    """`qaProviders.kimi.reasoningEffort` reads None because the key does not
+    exist -- a declared-None key would read as a knob that is configured."""
+    root = crew_fixtures.make_repo(tmp_path, config={}, git=False)
+
+    report = crew_config.model_report(str(root), which=lambda _n: None)
+
+    assert report["qaProviders"]["kimi"]["reasoningEffort"] is None
+    assert "reasoningEffort" not in crew_config.default_config()["qa"]["kimi"]
+
+
+def test_review_qm_prints_the_kimi_review_pin(tmp_path):
+    """review.md's `qm kimi model` answers from the `review` role row when it
+    is pinned to kimi. Runs the snippet exactly as review.md carries it."""
+    root = crew_fixtures.make_repo(
+        tmp_path / "repo",
+        config={"qa": {"roles": {"review": {"provider": "kimi", "model": "k3"}}}},
+        git=False)
+    report_path = tmp_path / "models.json"
+    report_path.write_text(json.dumps(crew_config.model_report(
+        str(root), which=lambda _n: None)), encoding="utf-8")
+    review = os.path.join(os.path.dirname(os.path.dirname(
+        os.path.abspath(__file__))), "commands", "review.md")
+    with open(review, encoding="utf-8") as fh:
+        text = fh.read()
+    snippet = text.split("qm() { python3 -c '", 1)[1].split("' \"$REPORT\"", 1)[0]
+
+    out = subprocess.run(
+        [sys.executable, "-c", snippet, str(report_path), "kimi", "model"],
+        capture_output=True, text=True, check=True, stdin=subprocess.DEVNULL)
+
+    assert out.stdout.strip() == "k3"
+
+
+def test_kimi_display_names_render_the_owner_ids():
+    assert [crew_state.display_model(m) for m in KIMI_IDS] == [
+        "Kimi K3 (k3)", "Kimi for Coding (kimi-for-coding)",
+        "Kimi for Coding (highspeed) (kimi-for-coding-highspeed)"]

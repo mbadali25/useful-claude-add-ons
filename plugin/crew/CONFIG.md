@@ -642,18 +642,20 @@ they are repo-only, and §16 says why. Defaults are identical in `default_config
 
 | Key | Type | Default |
 |---|---|---|
-| `qa.provider` | `auto` \| `claude` \| `codex` \| `copilot` | `"auto"` |
-| `qa.order` | list (a leaf; replaced wholesale) | `["codex", "copilot", "claude"]` |
+| `qa.provider` | `auto` \| `claude` \| `codex` \| `copilot` \| `kimi` | `"auto"` |
+| `qa.order` | list (a leaf; replaced wholesale) | `["codex", "kimi", "copilot", "claude"]` |
 | `qa.fallback` | string | `"claude-sonnet-5"` |
 | `qa.codex.model` | string or `null` | `null` |
 | `qa.codex.reasoningEffort` | string or `null` | `null` |
 | `qa.copilot.model` | string or `null` | `null` |
+| `qa.kimi.model` | a Kimi Code model id (`k3`, `kimi-for-coding`, `kimi-for-coding-highspeed`) or `null` for the CLI's own `default_model`; no `reasoningEffort` key | `null` |
 | `qa.roles` | open table (empty dict = leaf) | `{}` |
-| `dev.provider` | `claude` \| `codex` \| `copilot` | `"claude"` |
+| `dev.provider` | `claude` \| `codex` \| `copilot` \| `kimi` | `"claude"` |
 | `dev.fallback` | string | `"claude-sonnet-5"` |
 | `dev.codex.model` | string or `null` | `null` |
 | `dev.codex.reasoningEffort` | string or `null` | `null` |
 | `dev.copilot.model` | string or `null` | `null` |
+| `dev.kimi.model` | a Kimi Code model id or `null`, as `qa.kimi.model` | `null` |
 | `dev.roles` | open table | `{}` |
 | `worktree.root` | path or `null` | `null` |
 | `secondOpinion.provider` | string | `"none"` |
@@ -706,7 +708,7 @@ they are repo-only, and §16 says why. Defaults are identical in `default_config
 | `change.category` | string or `null`, see §17 | `null` |
 
 `crew_state.QA_PROVIDERS` and `DEV_PROVIDERS` are both
-`["claude", "codex", "copilot"]` (dumped by execution). `qa.provider`
+`["claude", "codex", "copilot", "kimi"]` (dumped by execution). `qa.provider`
 additionally accepts `"auto"`; a `dev.provider` of `"auto"` is **not** valid —
 `crew_config.py::validate_providers` checks `qa.provider` against
 `QA_PROVIDERS + ["auto"]` and `dev.provider` against `DEV_PROVIDERS` alone.

@@ -268,7 +268,8 @@ def test_the_ten_keys_crew_read_but_never_declared_are_declared():
     # `scope.allowCliApproval` from the T3 fix round.
     # 116 with the Windows burn-in's autoClear narrowing:
     # `context.autoClear.onlyRepos` and `context.autoClear.onlySessions`.
-    assert len(declared) == 116
+    # 118 with T-0028: `qa.kimi.model` and `dev.kimi.model`.
+    assert len(declared) == 118
 
 
 def test_autoclear_is_global_and_its_siblings_are_not():
@@ -1664,3 +1665,33 @@ def test_explain_config_reports_autoclear_only_repos_from_the_global_layer_only(
     settings = crew_autocycle.settings(str(root), global_path=str(global_path))
     assert settings["onlyRepos"] is None
     assert settings["onlyRepos"] == row["value"]
+
+
+_CONFIG_MD_PATH = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), os.pardir, "CONFIG.md",
+)
+
+
+def _config_md_row(text, key):
+    rows = [line for line in text.splitlines()
+            if line.startswith(f"| `{key}` |")]
+    assert len(rows) == 1, (key, rows)
+    return rows[0]
+
+
+def test_config_md_and_setup_template_state_the_kimi_defaults():
+    """T-0028: CONFIG.md's global-key table carries `qa.kimi.model` and
+    `dev.kimi.model`, the new `qa.order` default, and `kimi` in both provider
+    enumerations -- the same values `default_config()` holds. The setup
+    template is compared in full by the test above."""
+    with open(_CONFIG_MD_PATH, encoding="utf-8") as handle:
+        text = handle.read()
+    defaults = crew_config.default_config()
+    order = json.dumps(defaults["qa"]["order"]).replace('","', '", "')
+
+    assert order in _config_md_row(text, "qa.order")
+    assert _config_md_row(text, "qa.kimi.model").endswith("| `null` |")
+    assert _config_md_row(text, "dev.kimi.model").endswith("| `null` |")
+    assert "`kimi`" in _config_md_row(text, "qa.provider")
+    assert "`kimi`" in _config_md_row(text, "dev.provider")
+    assert json.dumps(list(crew_config.QA_PROVIDERS)).replace('","', '", "') in text
