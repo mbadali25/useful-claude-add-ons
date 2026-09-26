@@ -61,13 +61,14 @@ here, so the setup work is different in kind: it is proving a directory exists
 and creating one file correctly.
 
 1. Resolve the vault. Ask for the path, then confirm it exists and contains a
-   `.obsidian/` directory. A path that is merely a folder of markdown files
-   works for `memory`, but a Kanban board needs the plugin, which lives in the
+   `.obsidian/` directory - **required**: `crew_tracker.py` refuses to write a
+   vault without one. A path that is merely a folder of markdown files works
+   for `memory`, but a Kanban board needs the plugin, which lives in the
    vault. If `.obsidian/plugins/obsidian-kanban/` is absent, say so - the board
    file will still be written correctly, it will just render as plain markdown
    until they install the plugin from Community Plugins.
 2. Write `obsidian.vaultPath`. Leave it `null` only if it is the same vault as
-   `memory.vaultPath`, which the sync command falls back to.
+   `memory.vaultPath`, which `crew_tracker.py` falls back to.
 3. Write `obsidian.boardDir` as `Boards/<repo-name>` unless the user wants
    somewhere else. One folder per repo, holding the board and its ticket notes,
    so cards can be `[[T-0042]]` wikilinks that resolve and the graph view is
@@ -110,7 +111,9 @@ kanban-plugin: board
 %%
 ````
 
-5. Set `tracker: "obsidian"` and create `.work/cache/`.
+5. Set `tracker: "obsidian"`. No `.work/cache/`: the ticket's content lives in
+   `.work/tickets/<id>/`, the board carries status only. Confirm with
+   `crew_tracker.py resolve --root .`, which must say `obsidian`.
 
 Say two things plainly before finishing:
 
@@ -119,7 +122,8 @@ Say two things plainly before finishing:
   branch and is not on a colleague's machine. That is the trade for being able
   to drag a card. If the vault is its own git repo, its history is theirs to
   manage.
-- **Dragging a card is how status changes.** On pull the lane wins; on push
-  crew writes the lane. `/crew:obsidian-sync` is the only thing that should
-  touch the board, and only at pickup and completion.
+- **The lifecycle moves the card.** `crew_tracker.py`, called by brainstorm,
+  spec, plan, implement and done, is the only thing that writes the board; a
+  card a human drags is reported by `/crew:obsidian-sync`, not read back as
+  status.
 

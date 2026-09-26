@@ -242,7 +242,10 @@ def _atomic_update(path, label, backend, compute):
     folder, name = os.path.split(path)
     tmp = os.path.join(folder, f".{name}.crew-{os.getpid()}.tmp")
     for _ in range(WRITE_TRIES):
-        before = _read_bytes(path)
+        try:
+            before = _read_bytes(path)
+        except OSError as exc:
+            return _result(backend, FAILED, f"{label}: {exc.strerror or exc}")
         new, result = compute(before)
         if new is None:
             return result
@@ -364,7 +367,11 @@ def _files_move(root, ticket, status):
 
 
 def _files_read(root, ticket):
-    text, problem = _decode(_read_bytes(os.path.join(root, ".work", "INDEX.md")), INDEX_REL)
+    try:
+        raw = _read_bytes(os.path.join(root, ".work", "INDEX.md"))
+    except OSError as exc:
+        return _result("files", UNREADABLE, f"{INDEX_REL}: {exc.strerror or exc}")
+    text, problem = _decode(raw, INDEX_REL)
     if problem:
         return _result("files", UNREADABLE, problem)
     found = _rows(text.splitlines(), ticket)
@@ -629,7 +636,10 @@ def _vault_paths(root, settings, names):
 
 def _load_board(paths, columns):
     """`(board, None)` or `(None, problem)` for the board at `paths["board"]`."""
-    raw = _read_bytes(paths["board"])
+    try:
+        raw = _read_bytes(paths["board"])
+    except OSError as exc:
+        return None, f"{paths['boardShown']}: {exc.strerror or exc}"
     if raw is None:
         return None, f"no board at {paths['boardShown']}"
     text, problem = _decode(raw, paths["boardShown"])
@@ -662,10 +672,9 @@ def _note_text(root, ticket, title):
 
 
 def _create_note_once(paths, text):
-    """The ticket note, written once and never rewritten. Exclusive create: the
-    text is built before the open, and an existing note is never truncated."""
-    if os.path.lexists(paths["note"]):
-        return _result("obsidian-note", UNCHANGED, f"{paths['noteShown']} exists; never rewritten")
+    """The ticket note, written once and never rewritten. Exclusive create is the
+    whole guard: the text is built before the open, and `x` refuses an existing
+    note (or a dangling link) instead of truncating it."""
     try:
         with open(paths["note"], "xb") as handle:
             handle.write(text.encode("utf-8"))

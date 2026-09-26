@@ -812,3 +812,83 @@ def test_status_tracker_names_its_source(tmp_path):
 
     assert [line for line in lines if line.startswith("tracker")] == [
         "tracker  obsidian (from .crew/config.json)"]
+
+
+# --- guard branches the sabotage table names -----------------------------------
+
+def test_board_that_is_a_directory_is_refused(tmp_path):
+    vault = _make_vault(tmp_path / "vault")
+    board = vault / "Boards" / "repo" / "Board.md"
+    board.unlink()
+    board.mkdir()
+    root = _obsidian_repo(tmp_path, vault)
+
+    done, untouched = _refused(tmp_path, root)
+
+    assert (done.returncode, untouched, "is not a regular file" in done.stdout) == (1, True, True)
+
+
+def test_frontmatter_without_the_kanban_key_refused():
+    text = _fixture("board_0_20.md").replace("kanban-plugin: board\n", "type: meta\n", 1)
+
+    _, problem = crew_tracker.parse_board(text, COLUMNS)
+
+    assert problem == "not a Kanban board: no 'kanban-plugin: board' in its frontmatter"
+
+
+def test_vault_in_worktree_git_cannot_say_is_refused(tmp_path, monkeypatch):
+    root = make_repo(tmp_path)
+    vault = _make_vault(root / "vault")
+    _crew_json(root, {"kind": "obsidian", "obsidian": {"vaultPath": str(vault), "boardDir": "Boards/repo"}})
+    (root / ".work" / "INDEX.md").write_text(ROW, encoding="utf-8", newline="\n")
+    monkeypatch.setattr(crew_tracker, "_git_ignored", lambda repo, path: None)
+    before = _snapshot(tmp_path)
+
+    got = crew_tracker.move(str(root), CARD, "review")
+
+    assert (got["results"][0]["reason"], _snapshot(tmp_path) == before) == (
+        "could not tell whether git ignores Boards/repo/Board.md in this worktree", True)
+
+
+def test_files_move_refuses_two_rows_for_one_ticket(tmp_path):
+    rows = "T-0001 | spec | low | repo | t\nT-0001 | planned | low | repo | t again\n"
+    root = _files_repo(tmp_path, rows)
+
+    got = crew_tracker.move(str(root), "T-0001", "review")
+
+    assert (got["results"][0]["reason"], _index(root)) == (".work/INDEX.md has 2 rows for T-0001", rows)
+
+
+def test_obsidian_move_without_a_card_writes_nothing(tmp_path):
+    vault = _make_vault(tmp_path / "vault")
+    root = _obsidian_repo(tmp_path, vault)
+    (root / ".work" / "INDEX.md").write_text(ROW + ROW.replace("T-0042", "T-0077"), encoding="utf-8")
+
+    done, untouched = _refused(tmp_path, root, ("move", "--ticket", "T-0077", "--to", "review"))
+
+    assert (done.returncode, untouched, done.stdout) == (
+        1, True, "obsidian: could not update: no card for T-0077 on the board\n")
+
+
+def test_every_tracker_sabotage_anchor_is_present_exactly_once():
+    """An edit that moves a line a mutation aims at would otherwise leave that
+    mutation testing nothing until somebody paid for a full sabotage run."""
+    import sabotage_tracker  # pylint: disable=import-outside-toplevel
+
+    lost = []
+    for label, target, find, _replace, _test in sabotage_tracker.TRACKER_MUTATIONS:
+        with open(target, encoding="utf-8", newline="") as handle:
+            if handle.read().count(find) != 1:
+                lost.append(label)
+
+    assert not lost, lost
+
+
+def test_an_unreadable_index_is_could_not_update_not_a_traceback(tmp_path):
+    root = _files_repo(tmp_path)
+    (root / ".work" / "INDEX.md").mkdir()
+
+    done = _cli(root, "move", "--ticket", "T-0001", "--to", "spec")
+
+    assert (done.returncode, done.stdout.startswith("files: could not update: .work/INDEX.md: "),
+            done.stderr) == (1, True, "")

@@ -4,6 +4,41 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Added
+
+- **`crew` 1.0.46: Obsidian Kanban is a first-class tracker again, behind one
+  tracker interface (T-0021).** Bumped `1.0.38 -> 1.0.46` (1.0.39-1.0.45 are
+  assigned to T-0026, T-0006, T-0005, T-0004, T-0030, T-0028 and T-0016). New
+  `hooks/scripts/crew_tracker.py {resolve|create|move|read} --root . --ticket
+  <id> [--title T] [--to STATUS] [--json]`, one line per backend; exit 0
+  updated/unchanged, 1 `could not update: <reason>`, 3 `delegated` (run the
+  printed command), 2 usage. `resolve` reads 1.0's `.crew/crew.json`
+  (`tracker.kind`) and 0.20's `.crew/config.json` (`tracker`) alike and answers
+  `could not tell`, naming both files and values, when they disagree; every
+  write refuses on it. Files mode edits the `.work/INDEX.md` status cell of the
+  one matching row; Obsidian mode does that and moves the board card
+  (direction -> Backlog, spec/planned -> Ready, in-progress -> In Progress,
+  review -> Review, done -> Done, checked below `**Complete**`), from a
+  table-driven `LANE_FOR_STATUS`; Jira and SDP answer `delegated` with
+  `/crew:jira-sync` / `/crew:sdp-sync <KEY> --push`. Board writes are confined
+  to the vault and checked before anything is written, INDEX included: a
+  missing vault, no `.obsidian/`, an absolute or `..` `boardDir`, a board name
+  with a separator, a board or note symlinked out of the vault, an in-worktree
+  vault git does not ignore, or an unusable board exits 1 with nothing written.
+  Every write is temp-plus-`os.replace`, re-reading the target first and
+  recomputing (three tries) when another session or Obsidian changed it. The
+  ticket note is created once and never rewritten. `/crew:brainstorm`,
+  `/crew:spec`, `/crew:plan`, `/crew:implement` (steps 1 and 7), `/crew:done`
+  and `/crew:fix` call it at their transitions and never undo a transition on a
+  failed tracker write; `/crew:obsidian-sync` is rewritten on top of `read` and
+  `move` (176 -> 105 lines, budget allowance dropped); the sync commands,
+  `/crew:split` and `/crew:change` read the kind through `resolve`; and
+  `/crew:status` prints the tracker line from `resolve` with its source. There
+  is no `.work/cache/` mirror for Obsidian. 24 mutations in
+  `tests/sabotage_tracker.py`, each red on its named test. Follow-ups (Jira/SDP
+  cache location, `jira.cloudId`, `scope_report.py`'s 0.20 locations,
+  `heal_config`, crew-setup writing `config.json`) are filed in `TODO.md`.
+
 ### Fixed
 
 - **`crew` 1.0.38: T-0008 follow-up (T-0034).** Bumped `1.0.37 -> 1.0.38`.

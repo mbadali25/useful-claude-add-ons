@@ -597,7 +597,7 @@ test in `tests/test_promote_merge_gate.py`. `preset` is on this list because
 promote names it only to say it binds to nothing.
 
 `jira.project` is the one on this list that most looks like it should work.
-`/crew:jira-sync` gates on `tracker == "jira"` (`commands/jira-sync.md`) and
+`/crew:jira-sync` gates on `crew_tracker.py resolve` saying `jira` (`commands/jira-sync.md`) and
 then caches `jira.cloudId` — a key `default_config()` does not declare
 at all, and that nothing reads back either. So the Jira block ships two keys and
 crew consumes neither. `jira.cloudId` is counted in §12.3 rather than here,
@@ -618,7 +618,6 @@ them:
 
 | Key(s) | Consumer |
 |---|---|
-| `obsidian.columns.*` (five keys) | `commands/obsidian-sync.md`, which instructs: "Read the names from `obsidian.columns` rather than hardcoding them" |
 | `sdp.portal`, `sdp.noteVisibility`, `sdp.closeOnDone` | `commands/sdp-sync.md` |
 | `secondOpinion.provider`, `.sendsCode`, `.keyEnv` | `agents/planner.md`, `commands/plan.md`, `skills/crew-providers/SKILL.md` |
 | `docs.reportTheme` | `skills/crew-house-style/SKILL.md`, with a committed regression test in `tests/test_docs_routing.py` that binds it to the findings-report genre |
@@ -737,20 +736,20 @@ repository or one checkout.
 | `schema` | integer | `7` | see §4 |
 | `tier` | integer | `0` | `crew_state.collect` |
 | `roles` | list (a leaf) | `["explorer", "reviewer"]` | `crew_state.collect` |
-| `tracker` | string | `"files"` | `crew_state.py`, `commands/brainstorm.md`, `commands/spec.md` |
+| `tracker` | string (0.20 `config.json`); `tracker.kind` in 1.0 `crew.json` | `"files"` | `crew_tracker.resolve` (`hooks/scripts/crew_tracker.py`) reads both shapes and answers `could not tell` when they disagree; the lifecycle commands, the sync commands and `crew_status.py` all go through it |
 | `jira.project` | string or `null` | `null` | **no consumer found**, §9 |
 | `jira.cloudId` | string or `null` | `null` | written by `commands/jira-sync.md`; **read by nothing**, §9 |
 | `sdp.portal` | string or `null` | `null` | prose, §9 |
 | `sdp.noteVisibility` | string | `"private"` | prose, §9 |
 | `sdp.closeOnDone` | boolean | `false` | prose, §9 |
-| `obsidian.vaultPath` | path or `null` | `null` | `commands/obsidian-sync.md` |
-| `obsidian.boardDir` | path or `null` | `null` | `commands/obsidian-sync.md` |
-| `obsidian.board` | filename | `"Board.md"` | `commands/obsidian-sync.md` |
-| `obsidian.columns.backlog` | string | `"Backlog"` | prose, §9 |
-| `obsidian.columns.ready` | string | `"Ready"` | prose, §9 |
-| `obsidian.columns.inProgress` | string | `"In Progress"` | prose, §9 |
-| `obsidian.columns.review` | string | `"Review"` | prose, §9 |
-| `obsidian.columns.done` | string | `"Done"` | prose, §9 |
+| `obsidian.vaultPath` | path or `null` | `null` | `crew_tracker.py` (falls back to `memory.vaultPath`; must hold `.obsidian/`) |
+| `obsidian.boardDir` | path or `null` | `null` | `crew_tracker.py` (relative, no `..`) |
+| `obsidian.board` | filename | `"Board.md"` | `crew_tracker.py` (a bare file name) |
+| `obsidian.columns.backlog` | string | `"Backlog"` | `crew_tracker.py` (`LANE_FOR_STATUS`) |
+| `obsidian.columns.ready` | string | `"Ready"` | `crew_tracker.py` (`LANE_FOR_STATUS`) |
+| `obsidian.columns.inProgress` | string | `"In Progress"` | `crew_tracker.py` (`LANE_FOR_STATUS`) |
+| `obsidian.columns.review` | string | `"Review"` | `crew_tracker.py` (`LANE_FOR_STATUS`) |
+| `obsidian.columns.done` | string | `"Done"` | `crew_tracker.py` (`LANE_FOR_STATUS`) |
 | `verifyGate` | boolean | `true` | `hooks/scripts/verify-gate.sh` |
 | `verify.stopBudgetSeconds` | integer | `60` | `hooks/scripts/verify-gate.sh`, `verify-gate.ps1` |
 | `context.enabled` | boolean | `true` | `hooks/scripts/context-watch.ps1` |
