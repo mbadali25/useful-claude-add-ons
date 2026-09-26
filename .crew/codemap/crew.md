@@ -1,5 +1,5 @@
-anchor: useful-claude-add-ons@22adb579
-verified: 2026-09-25
+anchor: useful-claude-add-ons@496ee9b4
+verified: 2026-09-26
 
 ## Re-derive provenance
 
@@ -268,7 +268,7 @@ paragraph (`plugin/crew/hooks/scripts/cloud_guard.py:33-55`) states it: a terraf
 also judged by its target environment (`nonProd`, `prod` or `unknown`, from `TF_WORKSPACE`, an
 in-sequence literal `workspace select|new`, `.terraform/environment`, `-var environment=` /
 `TF_VAR_environment`, or a saved plan's sidecar) and by whether it destroys (`yes`, `no`,
-`unknown`, and `unknown` counts as `yes`); `_terraform_verdict` (`:2549`) decides. The sidecar
+`unknown`, and `unknown` counts as `yes`); `_terraform_verdict` (`:2903`) decides. The sidecar
 is `.crew/tfplan/<sha256>.json`, written outside the hook by
 `plugin/crew/hooks/scripts/crew_tfplan.py` (`summarize`, `:174`; `main`, `:237`), which reads
 the plan's workspace out of the plan file itself (`plan_workspace`, `:123`). The config is
@@ -768,3 +768,10 @@ this note cites CONFIG.md by name and section only). Nothing else moved.
 
 Then `2170d72e` -> `22adb579`: only `cloud_guard.py` changed (`_expansion_subs` renamed a local,
 below `:33-55`, which was re-read unchanged).
+
+Then `22adb579` -> `496ee9b4` (T-0005 review round 3): of the paths this note cites, only
+`cloud_guard.py` changed - the bash lexer (`_bash_close`, the fail-closed doubt count in `scan`,
+the CR re-reads, PowerShell quote/CR normalisation, every terragrunt `workspace` word). Lines
+`:1-6` and `:33-55` were diffed against `22adb579` and are byte-identical. `_terraform_verdict`
+moved `:2655` -> `:2903`; this note said `:2549`, which was already wrong at `22adb579` (it read
+`:2655` there), so the citation was stale before this round and is corrected now.
