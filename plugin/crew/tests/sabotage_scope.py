@@ -282,11 +282,11 @@ SCOPE_MUTATIONS = (
      "    return head[:start] + _STATUS_PLACEHOLDER + head[end:], True\n",
      _AD + "test_body_line_change_stales_approval"),
     ("APPROVAL DIGEST: line endings are normalised", TICKET,
-     '    cut = data.find(b"\\n")\n',
-     '    data = data.replace(b"\\r\\n", b"\\n")\n    cut = data.find(b"\\n")\n',
+     '    cut = _line_one_end(data)\n',
+     '    data = data.replace(b"\\r\\n", b"\\n")\n    cut = _line_one_end(data)\n',
      _AD + "test_crlf_to_lf_stales_approval"),
     ("APPROVAL DIGEST: leading blank lines are skipped to find the header", TICKET,
-     ('    cut = data.find(b"\\n")\n'
+     ('    cut = _line_one_end(data)\n'
       '    head, rest = (data, b"") if cut < 0 else (data[:cut], data[cut:])\n'),
      ('    lead = len(data) - len(data.lstrip(b"\\n"))\n'
       '    cut = data.find(b"\\n", lead)\n'
@@ -297,7 +297,7 @@ SCOPE_MUTATIONS = (
      '(" + rb"\\S+" + rb")',
      _AD + "test_status_value_outside_vocabulary_stales_approval[unknown-value]"),
     ("APPROVAL DIGEST: the value needs no boundary after it", TICKET,
-     'rb")(?=[ \\t\\r]|\\Z)")',
+     'rb")(?=[ \\t]|\\Z)")',
      'rb")")',
      _AD + "test_status_value_outside_vocabulary_stales_approval[suffixed-value]"),
     ("APPROVAL DIGEST: the token needs no boundary before it", TICKET,
@@ -332,8 +332,8 @@ SCOPE_MUTATIONS = (
      _AD + "test_a_v2_receipt_without_a_usable_digest_is_stale_not_raw[missing]"),
     # --- T-0026 review round 2 ---------------------------------------------------
     ("APPROVAL DIGEST: nothing is normalised", TICKET,
-     '    cut = data.find(b"\\n")\n',
-     '    return data, False\n    cut = data.find(b"\\n")\n',
+     '    cut = _line_one_end(data)\n',
+     '    return data, False\n    cut = _line_one_end(data)\n',
      _AD + "test_metrics_reads_approval_after_status_done"),
     ("APPROVAL DIGEST: approve digests a later read of plan.md than it validated", TICKET,
      'approval_digest(contract["plan.md"])',
@@ -343,4 +343,10 @@ SCOPE_MUTATIONS = (
      'approval_digest(contract["spec.md"])',
      'approval_digest(read_contract(top, ticket)["spec.md"])',
      _AD + "test_approve_digests_the_bytes_it_validated_not_a_later_version"),
+    # --- T-0026 review round 3 ---------------------------------------------------
+    ("APPROVAL DIGEST: line 1 split only on \\n", TICKET,
+     '    cut = _line_one_end(data)\n',
+     '    cut = data.find(b"\\n")\n',
+     _AD + "test_body_status_line_after_a_non_lf_break_stales_approval"
+     "[bare-cr-trailing-space]"),
 )

@@ -94,7 +94,9 @@ def _as_v1(receipt):
     ("# T-1 widget change   risk: low   status: spec", "\r\n", "status: spec", "status: review"),
     ("\ufeff" + DEFAULT_HEADER, "\n", "status: spec",
      "status: in-progress"),
-], ids=["spec->review", "spec->done", "spec->planned", "crlf", "bom"])
+    (DEFAULT_HEADER, "\r", "status: spec", "status: review"),
+    ("\ufeff" + DEFAULT_HEADER, "\r", "status: spec", "status: done"),
+], ids=["spec->review", "spec->done", "spec->planned", "crlf", "bom", "bare-cr", "bom-bare-cr"])
 def test_status_value_change_keeps_approval(repo, header, newline, old, new):
     folder = _approved(repo, header=header, newline=newline)
     _swap(folder / "spec.md", old, new)
@@ -141,6 +143,78 @@ def test_second_status_line_in_body_stales_approval(repo, extra, old, new):
     _swap(folder / "spec.md", old, new)
 
     assert _state(repo) == "stale"
+
+
+@pytest.mark.parametrize("newline,line", [
+    ("\r", "- status: spec\n"),
+    ("\r", "- status: spec \n"),
+    ("\x0b", "- status: spec \n"),
+    ("\x0c", "- status: spec \n"),
+    ("\x85", "- status: spec \n"),
+    ("\u2028", "- status: spec \n"),
+], ids=["bare-cr", "bare-cr-trailing-space", "vt", "ff", "nel", "line-separator"])
+def test_body_status_line_after_a_non_lf_break_stales_approval(repo, newline, line):
+    folder = _approved(repo, header="# T-1 widget change   risk: low", newline=newline,
+                       evidence_extra=line)
+    _swap(folder / "spec.md", "- status: spec", "- status: done")
+
+    assert _state(repo) == "stale"
+
+
+@pytest.mark.parametrize("old,new,expected", [
+    ("- status: spec", "- status: done", "stale"),
+    ("   status: spec", "   status: review", "approved"),
+], ids=["body-status", "header-status"])
+def test_mixed_line_endings_split_line_one_where_the_parser_does(repo, old, new, expected):
+    folder = _ticket(repo, header="# T-1 widget change   status: spec   risk: low",
+                     evidence_extra="- status: spec\n")
+    spec = folder / "spec.md"
+    spec.write_bytes(spec.read_bytes().replace(b"\n", b"\r", 1))
+    crew_ticket.approve(str(repo), "T-1", by="owner")
+    _swap(spec, old, new)
+
+    assert _state(repo) == expected
+
+
+def _splitlines_breaks():
+    return [chr(c) for c in range(0x110000) if len(("a" + chr(c) + "b").splitlines()) == 2]
+
+
+def test_line_one_ends_at_every_break_the_parser_splits_on():
+    breaks = _splitlines_breaks()
+    normalised = [(crew_ticket.approval_digest(f"# T-1 x   status: spec {br}body".encode())
+                   == crew_ticket.approval_digest(f"# T-1 x   status: done {br}body".encode()),
+                   crew_ticket.approval_digest(f"# T-1 x {br}- status: spec {br}".encode())
+                   == crew_ticket.approval_digest(f"# T-1 x {br}- status: done {br}".encode()))
+                  for br in breaks]
+
+    assert (len(breaks), normalised) == (10, [(True, False)] * len(breaks))
+
+
+@pytest.mark.parametrize("data,digest", [
+    (b"# T-1 x   status: spec   risk: low\nbody status: spec\n",
+     "05fe05eda330d868dc238de1f95cfa854a9c5ac5d3d9bd9959114217b9f1e5a8"),
+    (b"# T-1 x   status: spec   risk: low\r\nbody\r\n",
+     "bec7afef2ff0b056549e07918be8720bd364031072da8e1ce2a3b30bd33d1d6e"),
+    (b"\xef\xbb\xbf# T-1 x   status: done\nbody\n",
+     "be60b607de9e69bb0b51a7ada76b8fa5e1ed1efb36e6db8223810264b433cf62"),
+    (b"# T-1 x   status: review",
+     "650a3ddcf739396ecf884c328a9f09c4b6f603e9e347c6c0062f72daa5146dd7"),
+    (b"# T-1 x   risk: low\nbody status: spec\n",
+     "8a30f8a89f540e2177b7e0fd9f589ff83c809478784f390614ff3bc39f4f1dfd"),
+], ids=["lf", "crlf", "bom", "no-newline", "unnormalised"])
+def test_digest_of_lf_and_crlf_files_is_unchanged_since_1_0_38(data, digest):
+    assert crew_ticket.approval_digest(data) == digest
+
+
+@pytest.mark.parametrize("new,expected", [
+    (b"# T-1 x   status: done   risk: low", True),
+    (b"# T-1 x   status: spec   risk: high", False),
+], ids=["status", "risk"])
+def test_file_with_no_line_break_normalises_only_its_status(new, expected):
+    old = b"# T-1 x   status: spec   risk: low"
+
+    assert (crew_ticket.approval_digest(old) == crew_ticket.approval_digest(new)) is expected
 
 
 @pytest.mark.parametrize("header,old,new", [
@@ -385,6 +459,7 @@ _DIGEST_LABELS = {"APPROVAL DIGEST: " + label for label in (
     "nothing is normalised",
     "approve digests a later read of plan.md than it validated",
     "approve digests a later read of spec.md than it validated",
+    "line 1 split only on \\n",
 )}
 
 

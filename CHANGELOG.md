@@ -6,8 +6,8 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Fixed
 
-- **`crew` 1.0.38: an approval survives the lifecycle status edits (T-0026).**
-  Bumped `1.0.35 -> 1.0.38` (the number is re-set at merge). `/crew:implement`
+- **`crew` 1.0.39: an approval survives the lifecycle status edits (T-0026).**
+  Bumped `1.0.35 -> 1.0.39` (the number is re-set at merge). `/crew:implement`
   and `/crew:done` each rewrite `spec.md`'s header `status:`, and `/crew:plan`
   set `status: planned` on `plan.md`'s header, a token its template never
   carried. The approval receipt bound each whole file's sha256, so each of
@@ -20,7 +20,11 @@ All notable changes to this repository are documented here. Format follows [Keep
     before: `risk:`, the title, any body line, a second status token, an
     unknown value, a header that moved. The preimage is domain-separated
     (`crew-approval/2`, then `normalised` or `raw`), so a file holding the
-    placeholder text literally can never match a normalised one.
+    placeholder text literally can never match a normalised one. Line 1 ends
+    at the first break `str.splitlines` honours (`\n`, `\r\n`, a bare `\r`,
+    `\x0b`, `\x0c`, `\x1c`-`\x1e`, U+0085, U+2028, U+2029), the same line 1
+    the spec parser reads, so in a bare-CR spec a body `status:` line is never
+    normalised.
   - **Dual-read.** A receipt keeps the raw `plan_sha256`/`spec_sha256` and adds
     `plan_digest`, `spec_digest` and `digest: "crew-approval/2"`. A receipt with
     no `digest` field is compared raw, so it still verifies on unchanged files
@@ -31,7 +35,7 @@ All notable changes to this repository are documented here. Format follows [Keep
     header, no longer adding a status token to `plan.md`. `/crew:implement`,
     `/crew:done` and `/crew:approve` say the status edit keeps the approval.
   - New `test_approval_digest.py` (must-allow/must-block pairs, the dual-read,
-    and the scope guard, completion audit and metrics end to end). Seventeen
+    and the scope guard, completion audit and metrics end to end). Eighteen
     `APPROVAL DIGEST` mutations in `sabotage_scope.py`, each turning its named
     test red, pinned by label so deleting one fails the suite. Two cover
     `approve` digesting the bytes it validated, not a later read. A

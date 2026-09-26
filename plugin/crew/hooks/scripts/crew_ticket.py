@@ -145,7 +145,11 @@ DIGEST_SCHEME = "crew-approval/2"
 _STATUS_PLACEHOLDER = b"<status>"
 _BOM = b"\xef\xbb\xbf"
 _STATUS_ALTERNATION = b"|".join(re.escape(v.encode("ascii")) for v in STATUS_VALUES)
-_STATUS_RE = re.compile(rb"(?<=[ \t])status:[ \t]+(" + _STATUS_ALTERNATION + rb")(?=[ \t\r]|\Z)")
+_STATUS_RE = re.compile(rb"(?<=[ \t])status:[ \t]+(" + _STATUS_ALTERNATION + rb")(?=[ \t]|\Z)")
+# Where line 1 ends: every break `str.splitlines` honours, as UTF-8 bytes, so
+# `_canonical`'s line 1 is the one `sections` and `parse_touch` read. Splitting
+# on `\n` alone made a bare-CR spec one long line 1 (T-0026 review round 3).
+_LINE_BREAK_RE = re.compile(rb"[\n\r\x0b\x0c\x1c-\x1e]|\xc2\x85|\xe2\x80[\xa8\xa9]")
 _V1 = object()  # `status`'s marker for a receipt with no `digest` key at all
 
 _TICKET_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$")
@@ -490,18 +494,27 @@ def _sha(data):
     return hashlib.sha256(data).hexdigest() if data is not None else None
 
 
+def _line_one_end(data):
+    """The offset of the first line break in `data`, or -1 when it has none."""
+    match = _LINE_BREAK_RE.search(data)
+    return -1 if match is None else match.start()
+
+
 def _canonical(data):
     """`(bytes, normalised)`: `data` with the header's status VALUE replaced by
     `_STATUS_PLACEHOLDER`, or `data` untouched and False.
 
-    Only line 1 is examined -- the bytes before the first `\n`, any `\r` kept.
-    It must start with `# ` (after an optional UTF-8 BOM), hold exactly one
-    `status:` counted case-insensitively, and that one must be the token
-    `status:<spaces/tabs><value>` with `value` in STATUS_VALUES followed by a
-    space, a tab, `\r` or the end of the line. Anything else -- no token, two,
+    Only line 1 is examined -- the bytes before the first line break, where a
+    break is anything `str.splitlines` splits on (`\n`, `\r`, `\r\n`, `\x0b`,
+    `\x0c`, `\x1c`-`\x1e`, U+0085, U+2028, U+2029). So it is the line the spec
+    parser reads as line 1 whatever the file's line endings, mixed ones
+    included. It must start with `# ` (after an optional UTF-8 BOM), hold
+    exactly one `status:` counted case-insensitively, and that one must be the
+    token `status:<spaces/tabs><value>` with `value` in STATUS_VALUES followed
+    by a space, a tab or the end of the line. Anything else -- no token, two,
     an unknown value, a header that moved -- normalises nothing, so the edit
     that caused it stales the approval."""
-    cut = data.find(b"\n")
+    cut = _line_one_end(data)
     head, rest = (data, b"") if cut < 0 else (data[:cut], data[cut:])
     body = head.removeprefix(_BOM)
     if not body.startswith(b"# "):
