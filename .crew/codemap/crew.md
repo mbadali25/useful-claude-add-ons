@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@6ffd48fa
+anchor: useful-claude-add-ons@514e4e0a
 verified: 2026-09-26
 
 ## Re-derive provenance
@@ -142,7 +142,7 @@ draws it:
 — confirmed by reading both files in full, not merely their frontmatter.
 
 `review.md` dispatches `crew:reviewer` at this anchor
-(`plugin/crew/commands/review.md:444,459`), **not** the pre-1.0
+(`plugin/crew/commands/review.md:445,460`), **not** the pre-1.0
 `qa-reviewer` — `TODO.md`'s "T2 (lane D) deferred items" entry recorded this
 as an open item ("`review.md` still dispatches `qa-reviewer`; switch to
 `reviewer` in T4") but the code at `6c497a14` shows it already done; a
@@ -294,9 +294,9 @@ they disagree:
   `config.json`".
 - Only `/crew:migrate` (`crew_migrate.py`, `--apply`) ever writes
   `.crew/crew.json`; `/crew:init` still writes only `.crew/config.json`
-  (`TODO.md:3955`, "T2 (lane D, additive) deferred items", filed
+  (`TODO.md:3968`, "T2 (lane D, additive) deferred items", filed
   2026-09-23, still open at this anchor; it was `:3854` at `6c497a14`,
-  `:3884` at `f2bb919b` and `:3945` at `c35edda5`). `crew_migrate.py`'s own module
+  `:3884` at `f2bb919b`, `:3945` at `c35edda5` and `:3955` at `6ffd48fa`). `crew_migrate.py`'s own module
   docstring (`:1-4`) frames this as "one-time move of a 0.20 crew setup onto
   the 1.0 layout" and its schema table (`:11,26-40`) treats `crew.json`
   schema 1 as the target, `config.json` schema <= 7 as "kept, retireable".
@@ -451,7 +451,7 @@ a persistent `.crew/endpoints.json.oslock` across the whole cycle (comment at
 `:258-290`; `_acquire_endpoints_lock`, `:510`), and a lock or write failure is
 returned as an error rather than reported as a landed write -
 `crew_state.py`'s `--record-scan-artifact` exits 3 on it
-(`plugin/crew/hooks/scripts/crew_state.py:3294-3300`). Function bodies past
+(`plugin/crew/hooks/scripts/crew_state.py:3303-3309`). Function bodies past
 those lines were not read. `.crew/endpoints.json` still does not exist in this
 checkout; `git ls-files .crew/` still returns only the codemap `.md` files
 plus `.crew/verify.json`.
@@ -518,7 +518,7 @@ or nothing" at `adf8d1dd`; T-0008's refresh commit `b7b02842` redrew it as
 
 - `plugin/crew/hooks/scripts/crew_state.py:983` — `TRIGGERS`, a 15-entry
   tuple, unchanged in membership and order from the previous anchor.
-- `plugin/crew/hooks/scripts/crew_state.py:2904` — `evaluate_triggers`.
+- `plugin/crew/hooks/scripts/crew_state.py:2913` — `evaluate_triggers`.
 - `plugin/crew/hooks/scripts/crew_config.py:240` / `:368` —
   `default_config()` / `default_global_config()`.
 - `plugin/crew/hooks/scripts/crew_config.py:2343` — `_RATCHETED`, the
@@ -776,3 +776,29 @@ diagram, rule and graph files, so `3c1f94a9` (T-0028's base) stands in for it.
 
 No suite was run by this note, and `crew_upgrade.py` was not run; this pass is the per-path
 re-verify above, re-anchored by hand.
+
+## Re-anchor provenance - `6ffd48fa` -> `514e4e0a`, 2026-09-26 (T-0028 review round 1)
+
+`git diff --name-only 6ffd48fa 514e4e0a` returns T-0028's round-1 fixes; of the paths this note
+cites, `.claude-plugin/marketplace.json`, `.crew/verify.json`, `TODO.md`, `plugin/crew/README.md`,
+`plugin/crew/commands/review.md`, `crew_state.py` and `review_run.py` changed. Each line citation
+into them was re-read at `514e4e0a` with `grep -n`/`sed -n`, matching each cited line's text at
+both commits:
+
+- `crew_state.py` - two hunks in `family()` (`:1454-1478`: a model whose leading letters are
+  exactly `k` plus a digit is family `kimi` through any provider). Moved by nine: `evaluate_triggers`
+  `:2904` -> `:2913`, the `--record-scan-artifact` exit 3 `:3294-3300` -> `:3303-3309`. Held:
+  every citation above `:1454` (`DEV_PROVIDERS`/`QA_PROVIDERS` `:1421-1422` included).
+- `review.md` - one line inserted at step 1b's strike table (the `kimi` row, `:215`); the
+  `crew:reviewer` dispatch `:444,459` -> `:445,460`.
+- `.crew/verify.json` - the Kimi rule (rule 24) grew to `:263-279`; rules 22 `:244` and 23
+  `:245-261` hold.
+- `TODO.md` - the T2 (lane D) bullet `:3955` -> `:3968` (T-0028 follow-ups (f)-(i) added above it).
+- `marketplace.json` - crew `version` `:218`, stepped back to 1.0.38 and re-set to 1.0.44 last;
+  `:217` unchanged.
+- `README.md`, `review_run.py` - cited by name only, not by line. `review_run.py` and
+  `kimi_probe.py` remain unopened by this note: the round-1 fixes (content-hashing tree
+  fingerprint, `graph.out` set aside, the probe inside the fingerprint window with the read-only
+  agent file) are recorded in `CHANGELOG.md`, not re-derived here.
+
+No suite was run by this note; this pass is the per-path re-verify above, re-anchored by hand.

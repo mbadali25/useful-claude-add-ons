@@ -1,5 +1,5 @@
 # repo-docs
-anchor: useful-claude-add-ons@6ffd48fa
+anchor: useful-claude-add-ons@514e4e0a
 verified: 2026-09-26
 
 ## Re-derive provenance
@@ -339,7 +339,7 @@ listing the directory.
   resolves to stale.
 
 - **`TODO.md`'s `render.sh` entry is still open, still un-CLOSED, re-located
-  rather than assumed at its old line.** Now at `TODO.md:1193` (`:1183` at
+  rather than assumed at its old line.** Now at `TODO.md:1206` (`:1193` at `6ffd48fa`, `:1183` at
   `c35edda5`, `:1122` at `f2bb919b`, `:1092` at `6c497a14`, `:1061` before that; the file grew 3645 -> 4714 lines, +1069,
   in the `5d1fc5fd..6c497a14` range, and 30 more lines landed after its
   `:16` by `f2bb919b`, and this note's own
@@ -512,3 +512,19 @@ T-0034's `5c59395d`), `.claude-plugin/marketplace.json`, `.crew/verify.json`, `C
 - `plugin/crew/commands/` - `model.md` and `review.md` edited for the Kimi provider;
   `ls plugin/crew/commands/*.md` still 34.
 - `CHANGELOG.md` - a crew 1.0.44 entry added under `[Unreleased]`; cited without a line.
+
+Re-verified per-path from `6ffd48fa` to `514e4e0a` for T-0028's review round 1 (2026-09-26).
+`git diff --name-only 6ffd48fa 514e4e0a -- <the cited paths>` returns, outside this note's own
+map/diagram siblings (re-anchored to `514e4e0a` in the same refresh; the three crew diagrams'
+`%% Generated from` lines now name `514e4e0a`), `.claude-plugin/marketplace.json`,
+`.crew/verify.json`, `CHANGELOG.md`, `TODO.md`, `plugin/PLUGINS.md`,
+`plugin/crew/.claude-plugin/plugin.json`, `plugin/crew/README.md`,
+`plugin/crew/commands/review.md` and `plugin/crew/hooks/scripts/crew_state.py`. Each citation into
+them was re-read with `grep -n` / `sed -n` at `514e4e0a`:
+
+- `TODO.md` - the `render.sh` entry `:1193` -> `:1206` (T-0028 follow-ups (f)-(i) landed at the
+  top). Corrected above.
+- `plugin/crew/README.md` - one line reworded in place at `:1085`; `:1730` holds.
+- `review.md`, `crew_state.py` - cited by name or through the diagrams only; the diagrams carry
+  their own renumbering.
+- `marketplace.json`, `PLUGINS.md`, `plugin.json` - crew `version` only, 1.0.44 on the same lines.

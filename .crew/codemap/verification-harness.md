@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@6ffd48fa
+anchor: useful-claude-add-ons@514e4e0a
 verified: 2026-09-26
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -39,9 +39,9 @@ them and is wired into CI but not into the local Stop gate: see
 
 ## `.crew/verify.json` — 25 rules, up from 24
 
-**DERIVED, read in full via `json.load` at this anchor.** 277 lines, **25**
+**DERIVED, read in full via `json.load` at this anchor.** 284 lines, **25**
 rules (24 at `c35edda5`, 23 at `f2bb919b`, 22 at `6c497a14`, 21 at `5d1fc5fd`) plus a `default`
-(`["bash _verify/smoke.sh"]`, `:275`) and `unmapped: "fail"` (`:276`). Rules 22
+(`["bash _verify/smoke.sh"]`, `:282`) and `unmapped: "fail"` (`:283`). Rules 22
 (#228), 23 (T-0008) and 24 (T-0028) are the only additions since `6c497a14`; see below.
 Rule numbers here are `rules[]` indices. T-0028 first inserted its rule at index 8, which
 silently re-pointed every `rules[8]` reference (`.crew/verify.json:40`,
@@ -51,7 +51,7 @@ fixed in `6ffd48fa`, which appends it as rule 24, so `rules[8]` is the whole-sui
 just grown: the broad `plugin/crew/hooks/**` / `plugin/crew/tests/**` shape
 this note previously described is gone, replaced by per-subsystem rules that
 name a handful of test files each — `crew_guards.py` (rule 5), `crew_config.py`
-(rule 6), the `crew_state.py` cluster (rule 7, eleven test modules), the
+(rule 6), the `crew_state.py` cluster (rule 7, twelve test modules since T-0028's review round 1 added `test_provider_table.py`), the
 whole-suite rule (rule 8), `crew_upgrade.py` (rule 9), command/agent/skill
 frontmatter (rule 10), and the Kimi Code provider (rule 24, T-0028) are each their own entry now, where the previous anchor
 folded several of these together. Every rule now carries a `"reach": "local"`
@@ -85,11 +85,19 @@ Notable rules, re-read directly:
   it. This is the second confirmed deletion this pass found, though it
   predates `5d1fc5fd` and was never previously cited by this note, so it is
   new information here, not a correction.
-- **Rule 24**, new at `6ffd48fa` (`.crew/verify.json:263-272`, T-0028): `paths`
+- **Rule 24**, new at `6ffd48fa` (`.crew/verify.json:263-279`, T-0028): `paths`
   `kimi_probe.py`, `review_run.py`, `review_verdict.py`, `test_kimi_probe.py`,
-  `test_review_run_kimi.py` and `sabotage_kimi.py` → `python3 -m pytest` over
-  `test_kimi_probe.py`, `test_review_run_kimi.py`, `test_review_verdict.py` and
-  `test_review_ledger.py`, priced 29s. Its `why` says the tests use a fake `kimi`
+  `test_review_run_kimi.py`, `test_review_verdict.py`, `test_kimi_docs.py`,
+  `review_fixtures.py` (the fake `kimi`), `fixtures/kimi-stream-2.1.1/*`,
+  `sabotage_kimi.py`, `commands/review.md`, `crew-setup/scripts/providers.sh` and
+  `crew-providers/SKILL.md` → `python3 -m pytest` over `test_kimi_probe.py`,
+  `test_review_run_kimi.py`, `test_review_verdict.py`, `test_kimi_docs.py` and
+  `test_review_ledger.py`, priced 33s (its `why` records 32.6s at review round 2). The
+  five non-script paths and `test_kimi_docs.py` were added at `8284220c` after review
+  round 1 found the fake, the fixture and two Kimi test files reaching no rule that runs
+  the suite; `test_kimi_docs.py::test_every_kimi_file_reaches_a_rule_that_runs_its_tests`
+  now asserts the mapping, and that `crew_state.py` (rule 7) reaches
+  `test_provider_table.py`. Its `why` says the tests use a fake `kimi`
   on PATH and make no real Kimi call, and that the parse and probe are also checked
   against `plugin/crew/tests/fixtures/kimi-stream-2.1.1/ok.jsonl`, the owner's one
   captured run. Read, not run, by this note.
@@ -401,7 +409,7 @@ set on Ubuntu.
 - `.crew/verify.json:245-261` (rule 23) — the T-0008 refresh-check suite;
   `plugin/crew/tests/sabotage.py:75`, `:3047` — `sabotage_refresh.py`'s
   registration.
-- `.crew/verify.json:263-272` (rule 24) — the T-0028 Kimi Code provider suite;
+- `.crew/verify.json:263-279` (rule 24) — the T-0028 Kimi Code provider suite;
   `plugin/crew/tests/sabotage.py:76`, `:3048` — `sabotage_kimi.py`'s registration.
 - `plugin/crew/hooks/scripts/verify-gate.sh:1493-1502` /
   `plugin/crew/CONFIG.md:1961-1968` — the descoped per-rule process-group kill,
@@ -577,3 +585,23 @@ stand unread. Each changed citation was re-read at `6ffd48fa` with `grep -n`/`se
 - `CHANGELOG.md`, `TODO.md` - cited by name only; the 1.0.21 descoping entry is still there.
 
 No suite was executed by this note; rule 8's `why` (29s, 133 tests) is a claim read, not re-timed.
+
+## Re-anchor provenance - `6ffd48fa` -> `514e4e0a`, 2026-09-26 (T-0028 review round 1)
+
+`git diff --name-only 6ffd48fa 514e4e0a` returns T-0028's round-1 fixes; of the paths this note
+cites, `.crew/verify.json`, `CHANGELOG.md`, `TODO.md` and `.claude-plugin/marketplace.json`
+changed (`crew_state.py` is cited by name only, as a rule 7 path). `sabotage.py` did not change,
+so `:75`, `:76`, `:3047`, `:3048` stand. Each changed citation was re-read at `514e4e0a` with
+`grep -n`/`sed -n`/`json.load`:
+
+- `.crew/verify.json` - rule 24 grew from 6 to 13 `paths` (`:263-279`, was `:263-272`) and its
+  `run` gained `test_kimi_docs.py`; rule 7's `run` gained `test_provider_table.py` on the same
+  line. Every earlier rule keeps its index and line (rule 8 `:152-157`, rule 11 `:174-178`,
+  rule 22 `:244`, rule 23 `:245-261`). `default`/`unmapped` `:275`/`:276` -> `:282`/`:283`;
+  277 -> 284 lines; still 25 rules.
+- `marketplace.json` - `:218` is still crew's `version`, stepped back to 1.0.38 at `34f20d6d` and
+  re-set to 1.0.44 at `514e4e0a` so the version is set in the last `plugin/crew/` commit.
+- `CHANGELOG.md`, `TODO.md` - cited by name only.
+
+No suite was executed by this note; rule 24's `why` (32.6s, 182 tests) is a claim read, not
+re-timed.

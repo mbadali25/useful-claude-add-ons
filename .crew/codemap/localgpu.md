@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@6ffd48fa
+anchor: useful-claude-add-ons@514e4e0a
 verified: 2026-09-25
 
 # localgpu
@@ -1080,3 +1080,17 @@ plugin/localgpu/` is empty) and none of it was re-read, built or run at this pas
 The anchor is `6ffd48fa`, one commit past the tree read here: `git diff --name-only b45f71eb
 6ffd48fa` returns only `.crew/verify.json`, which this note does not cite, so every read above
 stands at `6ffd48fa`.
+
+**Re-anchored `6ffd48fa` -> `514e4e0a` on 2026-09-26 (T-0028 review round 1).**
+`git diff --name-only 6ffd48fa 514e4e0a -- <cited paths>` returns `crew_state.py`,
+`.crew/verify.json` and `.claude-plugin/marketplace.json`. Each re-read at `514e4e0a`:
+
+- `plugin/crew/hooks/scripts/crew_state.py` - the only hunks are in `family()` at `:1454-1478`;
+  `grep -n "^DEV_PROVIDERS\|^QA_PROVIDERS"` still returns `:1421-1422`, byte-identical. The
+  historical `:1503-1504` quotes are left as records of their own anchor.
+- `.crew/verify.json` - the Kimi rule (rule 24) gained paths and a test; no line this note cites
+  moved.
+- `.claude-plugin/marketplace.json` - crew's `version` on `:218` only (stepped back to 1.0.38 and
+  re-set to 1.0.44); `localgpu`'s entry is untouched. Nothing under `plugin/localgpu/` changed,
+  so `plugin/localgpu/commands/crew.md:29-34` still states three crew providers; filed to
+  `TODO.md` as T-0028 follow-up (f). No claim moved.

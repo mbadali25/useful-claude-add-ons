@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@6ffd48fa
+anchor: useful-claude-add-ons@514e4e0a
 verified: 2026-09-26
 paths: scripts/**, plugin/PLUGINS.md
 
@@ -255,7 +255,8 @@ against synthetic fixtures and never reads this repo's own docs.
   is still `:10`, the figure on `:11` reads 17,841 lines across 120 files, and the
   same measurement returns 17841 over 120 files, matching. Re-measured for T-0028 at `6ffd48fa`:
   marker still `:10`, `:11` reads 17,922 lines across 121 files, and the same measurement returns
-  17922 over 121 files, matching.
+  17922 over 121 files, matching. Re-measured at `514e4e0a` (T-0028 review round 1): `:11` reads
+  17,929 lines across 121 files and the measurement returns 17929 over 121, matching.
 - **`MARKETPLACE.md`** was not re-read for a community-plugin or marketplace
   count of its own; only `README.md:231`'s prose was checked and found to no
   longer state a specific number.
@@ -325,3 +326,17 @@ stands without a re-read. Each changed file, re-read at `6ffd48fa`:
 
 `python3 scripts/check-marketplace.py` at `6ffd48fa`: `marketplace: 34 skills, 5 plugins`,
 `all checks passed`.
+
+## Re-verify provenance - `6ffd48fa` -> `514e4e0a`, 2026-09-26 (T-0028 review round 1)
+
+`git diff --name-only 6ffd48fa 514e4e0a -- <the cited paths>` returns, apart from the generated
+`.claude/rules/*.md` files, `.claude-plugin/marketplace.json`, `.crew/verify.json`,
+`CHANGELOG.md`, `TODO.md`, `plugin/PLUGINS.md`, `plugin/crew/.claude-plugin/plugin.json`,
+`plugin/crew/BUDGETS.md` and, through the `plugin/crew/` directory, the round-1 fixes.
+`scripts/check-marketplace.py`, both install scripts, `skills/README.md` and `CLAUDE.md` are not
+in it, so every function line number and catalog-array citation stands without a re-read. Each
+changed file, re-read at `514e4e0a`: crew's `version` is on the same lines of `marketplace.json`
+(`:218`), `plugin.json` and `PLUGINS.md` (`:14`), stepped back to 1.0.38 at `34f20d6d` and re-set
+to 1.0.44 at `514e4e0a` so the version is set in the last `plugin/crew/` commit, and
+`check-marketplace.py` passes at `514e4e0a`; `BUDGETS.md`'s claim is re-measured above;
+`verify.json`'s Kimi rule grew (rule 24, `:263-279`) and no rule this note cites moved.

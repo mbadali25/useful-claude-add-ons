@@ -1,5 +1,5 @@
 # install-scripts
-anchor: useful-claude-add-ons@6ffd48fa
+anchor: useful-claude-add-ons@514e4e0a
 verified: 2026-09-26
 
 ## Re-derive provenance
@@ -424,3 +424,13 @@ still hold; `ls plugin/crew/commands/*.md` = 34, `ls plugin/crew/agents/*.md` = 
 `ls -d plugin/crew/skills/*/` = 29, and `hooks.json` = 34 entries across 8 events, re-measured.
 `TODO.md` is cited only in the historical pathspec. Neither install script was executed and
 `drift-detection.sh` was not run.
+
+Re-verified per-path from `6ffd48fa` to `514e4e0a` for T-0028's review round 1 (2026-09-26):
+of the cited paths `plugin/crew/README.md` (one line reworded in place at `:1085`, the Kimi
+read-only sentence; line count unchanged, so the `34 commands` claim at `:2178` and `4 agents` at
+`:2189` did not move), `plugin/crew/BUDGETS.md` (the `:11` figure, now 17,929 lines across 121
+files; marker still `:10`), `.claude-plugin/marketplace.json`, `plugin/PLUGINS.md` and
+`plugin/crew/.claude-plugin/plugin.json` (crew `version`, stepped back to 1.0.38 at `34f20d6d` and
+re-set to 1.0.44 at `514e4e0a`; same lines), `CHANGELOG.md` and `TODO.md` changed. Both install
+scripts, `README.md` and `scripts/check-marketplace.py` did not, so their citations stand.
+Neither install script was executed.
