@@ -1943,3 +1943,157 @@ def test_literal_tables_are_big_enough_and_distinct():
     ids = _ids(MUST_BLOCK_LITERAL + MUST_ALLOW_LITERAL + ASK_LITERAL
                + NOW_NOT_LITERAL)
     assert len(ids) == len(set(ids))
+
+
+# --- Step 9: gate on the command being run ------------------------------------
+#
+# Step 8 gated every line on which ANY word dequoted to terraform, terragrunt
+# or tofu, so `git commit -m "fix terraform apply"` was refused unattended and
+# under the default `block` -- an over-block of ordinary work. The gate now
+# applies when the COMMAND WORD (after assignments, reserved words and the
+# wrappers `_unwrap` knows) dequotes to one of them, when a shell-evaluating
+# construct (`bash -c`, `eval`, `pwsh -c`, a substitution) carries such a
+# command, or when the command word cannot be read at all and the line names
+# terraform, destroy, apply or workspace. Every Step 8 must-block row above
+# still blocks; these add the rows the narrowing must not reopen.
+
+S9_MUST_ALLOW = _normalise([
+    # The eleven the plan names. Measured at a2807881, the first four and
+    # `printf` were refused; `echo`, `jq`, `vim`, `cat | grep`, `gh pr` and
+    # `$EDITOR` were already allowed (no word dequotes to a bare name, or
+    # every word is plain), so they pin the narrowing from the other side.
+    ("s9a-commit-message", "Bash", 'git commit -m "fix terraform apply"',
+     _o(**_STAGING)),
+    ("s9a-log-grep", "Bash", "git log --grep='terraform destroy'",
+     _o(**_STAGING)),
+    ("s9a-grep", "Bash", "grep -r 'terraform apply' .", _o(**_STAGING)),
+    ("s9a-rg", "Bash", 'rg "tofu destroy"', _o(**_STAGING)),
+    ("s9a-echo", "Bash", "echo terraform", _o(**_STAGING)),
+    ("s9a-printf", "Bash", "printf '%s' terragrunt", _o(**_STAGING)),
+    ("s9a-jq", "Bash", "jq '.terraform' f.json", _o(**_STAGING)),
+    ("s9a-vim", "Bash", "vim terraform.tf", _o(**_STAGING)),
+    ("s9a-cat-grep", "Bash", "cat main.tf | grep terraform", _o(**_STAGING)),
+    ("s9a-gh-pr", "Bash", 'gh pr create --title "terraform: x"',
+     _o(**_STAGING)),
+    ("s9a-editor", "Bash", "$EDITOR notes.md", _o(**_STAGING)),
+    # Neighbours: the commit form Claude Code itself writes, a message inside
+    # `bash -c`, and a search fed through xargs.
+    ("s9a-commit-heredoc", "Bash",
+     "git commit -m \"$(cat <<'EOF'\nfix: don't let terraform destroy run "
+     "(again)\nEOF\n)\"", _o(**_STAGING)),
+    ("s9a-bash-c-commit", "Bash", "bash -c \"git commit -m 'terraform apply'\"",
+     _o(**_STAGING)),
+    ("s9a-xargs-grep", "Bash", "find . -name '*.tf' | xargs grep -l terraform",
+     _o(**_STAGING)),
+])
+
+S9_MUST_BLOCK = _normalise([
+    # The thirteen the plan names.
+    ("s9-quoted-name", "Bash", '"terraform" destroy', _gate()),
+    ("s9-partly-quoted-name", "Bash", "t'erraform' destroy", _gate()),
+    ("s9-bash-c", "Bash", 'bash -c "terraform destroy"', _gate()),
+    ("s9-sh-c-tofu", "Bash", "sh -c 'tofu destroy -auto-approve'", _gate()),
+    ("s9-eval", "Bash", 'eval "terraform destroy"', _gate()),
+    ("s9-env-i", "Bash", "env -i terraform destroy", _lexed()),
+    ("s9-sudo-terragrunt", "Bash", "sudo -u x terragrunt run-all destroy",
+     _lexed()),
+    ("s9-xargs", "Bash", "xargs terraform destroy < f", _lexed()),
+    ("s9-variable-name", "Bash", "x=terraform; $x destroy", _gate()),
+    ("s9-subst-name", "Bash", "$(printf terraform) destroy", _gate()),
+    ("s9-absolute-path", "Bash", "/usr/local/bin/terraform destroy",
+     _lexed()),
+    ("s9-dot-slash", "Bash", "./terraform destroy", _lexed()),
+    ("s9-pwsh-c", "Bash", 'pwsh -c "terraform destroy"', _gate()),
+    # Neighbours: where a narrower trigger could lose the command.
+    ("s9-commit-subst-destroy", "Bash",
+     f'git commit -m "$(terraform {_ADESTROY})"', _gate()),
+    ("s9-commit-backtick-destroy", "Bash",
+     f'git commit -m "`terraform {_ADESTROY}`"', _gate()),
+    ("s9-commit-heredoc-subst", "Bash",
+     f'git commit -m "$(cat <<EOF\n$(terraform {_ADESTROY})\nEOF\n)"',
+     _gate()),
+    ("s9-pipe-to-shell", "Bash", f'echo "terraform {_ADESTROY}" | bash',
+     _gate()),
+    ("s9-shell-heredoc", "Bash", f"bash <<'EOF'\nterraform {_ADESTROY}\nEOF",
+     _gate()),
+    ("s9-source-procsub", "Bash", f"source <(echo terraform {_ADESTROY})",
+     _gate()),
+    ("s9-nested-bash-c", "Bash", "bash -c 'bash -c \"terraform destroy\"'",
+     _gate()),
+    ("s9-unknown-wrapper", "Bash",
+     "strace -f terraform $'\\x64estroy' -auto-approve", _gate()),
+    ("s9-aws-vault", "Bash",
+     'aws-vault exec prod -- terraform "destroy" -auto-approve', _gate()),
+    ("s9-watch-string", "Bash", f'watch -n 5 "terraform {_ADESTROY}"',
+     _gate()),
+    ("s9-find-exec", "Bash",
+     f'find . -maxdepth 0 -exec "terraform" {_ADESTROY} \\;', _gate()),
+    ("s9-ssh", "Bash", f'ssh host "terraform {_ADESTROY}"', _gate()),
+    ("s9-alias", "Bash", "alias tf=terraform\ntf \"destroy\" -auto-approve",
+     _gate()),
+    ("s9-function", "Bash", 'f() { terraform "$@"; }; f destroy', _gate()),
+    ("s9-case", "Bash", f'case x in x) "terraform" {_ADESTROY};; esac',
+     _gate()),
+    ("s9-sudo-quoted", "Bash", f'sudo -u x "terraform" {_ADESTROY}',
+     _gate()),
+    ("s9-timeout-variable", "Bash", f'timeout "$T" terraform {_ADESTROY}',
+     _gate()),
+    ("s9-env-variable", "Bash", f'env "$X" terraform {_ADESTROY}', _gate()),
+    ("s9-empty-prefix", "Bash", f"$NOTHING terraform {_ADESTROY}", _gate()),
+    ("s9-group", "Bash", f'{{ "terraform" {_ADESTROY}; }}', _gate()),
+    ("s9-subshell", "Bash", f'( cd . && "terraform" {_ADESTROY} )', _gate()),
+    ("s9-if", "Bash", f'if true; then "terraform" {_ADESTROY}; fi', _gate()),
+    ("s9-redirect-first", "Bash", f'>out.log "terraform" {_ADESTROY}',
+     _gate()),
+    ("s9-fd-redirect-first", "Bash", f'2>/dev/null "terraform" {_ADESTROY}',
+     _gate()),
+    ("s9-assignment-quoted", "Bash", f'X="a b" "terraform" {_ADESTROY}',
+     _gate()),
+    ("s9-eval-variable", "Bash", f'eval "$PREFIX" terraform {_ADESTROY}',
+     _gate()),
+    # Rows for one branch each: a verb-less `plan` behind a wrapper or a
+    # redirection, which the argument-pair fallback does not catch, so only
+    # that branch gates it; a delimiter bash and a naive dequote end apart;
+    # an expansion glued to the name where the reader gives up; a short glob.
+    ("s9-env-quoted-plan", "Bash", 'env -i "terraform" plan', _gate()),
+    ("s9-redirect-plan", "Bash", '>out.log "terraform" plan', _gate()),
+    ("s9-fd-redirect-plan", "Bash", '2>/dev/null "terraform" plan', _gate()),
+    ("s9-heredoc-backslash-quoted-delim", "Bash",
+     f"cat <<'E\\OF'\nE\\OF\n\"terraform\" {_ADESTROY}\nEOF", _gate()),
+    ("s9-backquote-empty-prefix", "Bash",
+     f'true `<<EOF;"$x"terraform {_ADESTROY}`', _gate()),
+    ("s9-short-glob-destroy", "Bash", f"/usr/bin/t* {_ADESTROY}", _gate()),
+])
+
+
+@pytest.mark.parametrize("case", S9_MUST_ALLOW, ids=_ids(S9_MUST_ALLOW))
+def test_command_word_must_allow_python(tmp_path, case):
+    _allow_literal("python", tmp_path, case)
+
+
+@pytest.mark.parametrize("case", _sample(
+    S9_MUST_ALLOW, ("s9a-commit-message", "s9a-commit-heredoc"),
+    (tcg.needs_bash,)))
+def test_command_word_must_allow_bash(tmp_path, case):
+    _allow_literal("bash", tmp_path, case)
+
+
+@pytest.mark.parametrize("case", S9_MUST_BLOCK, ids=_ids(S9_MUST_BLOCK))
+def test_command_word_must_block_python(tmp_path, case):
+    _deny("python", tmp_path, case)
+
+
+@pytest.mark.parametrize("case", _sample(
+    S9_MUST_BLOCK, ("s9-variable-name", "s9-commit-subst-destroy"),
+    (tcg.needs_bash,)))
+def test_command_word_must_block_bash(tmp_path, case):
+    _deny("bash", tmp_path, case)
+
+
+def test_command_word_tables_are_distinct():
+    """Step 9 names eleven must-allow and thirteen must-block rows; ids never
+    repeat across the Step 8 and Step 9 tables."""
+    assert len(S9_MUST_ALLOW) >= 11 and len(S9_MUST_BLOCK) >= 13
+    ids = _ids(MUST_BLOCK_LITERAL + MUST_ALLOW_LITERAL + ASK_LITERAL
+               + NOW_NOT_LITERAL + S9_MUST_ALLOW + S9_MUST_BLOCK)
+    assert len(ids) == len(set(ids))

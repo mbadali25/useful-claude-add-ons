@@ -54,11 +54,13 @@ now ASKS (BREAKING in 1.0.41), and so is denied unattended. `block` is never
 loosened. An unknown environment is narrower than production: nothing allows
 it unattended. See `_terraform_verdict`.
 
-THE LITERAL-WORD ALLOWLIST (T-0005 Step 8). A command line that names
-terraform, terragrunt or tofu anywhere -- found after quote and escape
-characters are taken out of each word, so a quote cannot hide the name -- is
-judged only when every word on it is a plain literal (`_PLAIN_WORD_RE`, joined
-by `_PLAIN_OPS`). Anything else on such a line is "could not tell": asked when
+THE LITERAL-WORD ALLOWLIST (T-0005 Steps 8-9). A bash line that RUNS
+terraform, terragrunt or tofu -- a command word, dequoted, after assignments
+and `_unwrap`'s wrappers, or a command inside `bash -c`/`eval`/`pwsh -c`/a
+substitution (`crew_guards.command_names_terraform`, its own reader, falling
+back to any word naming one where it cannot split the line; a PowerShell line
+keeps that wider rule) -- is judged only when every word on it is a plain
+literal (`_PLAIN_WORD_RE`, joined by `_PLAIN_OPS`). Anything else on such a line is "could not tell": asked when
 attended, denied unattended and under `block`, never allowed. The check reads
 the raw text before the lexer does (`_literal_gate`, first thing in `scan`),
 so no lexer bug can turn a shape it misread into an allow.
@@ -88,8 +90,9 @@ named through a variable (`$TF apply`), a script file it runs (`bash x.sh`,
 `psql -f x.sql`), SQL built at runtime, a hashtable splatted into a cmdlet, and
 anything an MCP server does -- and for the terraform name, one built from
 parts crew never sees whole (`$TF`, `$(printf te)$(printf rraform)`, a
-PowerShell concatenation) or a wildcard keeping fewer than three of its
-letters (`t*`).
+PowerShell concatenation), a wildcard keeping fewer than three of its
+letters (`t*`) on a line naming no verb, or another name for terraform made
+outside the line (a profile `alias`, a `ln -s` link, a container's entrypoint).
 What `xargs`/`parallel` append is not seen either,
 so a destructive-capable tool behind one is judged as destructive, and one
 whose executable is a placeholder is refused as unreadable. For terraform it
@@ -118,7 +121,8 @@ import time
 import crew_config
 import crew_state
 from crew_guards import _head_name as _guards_head_name
-from crew_guards import first_non_literal, names_terraform
+from crew_guards import command_names_terraform, first_non_literal, \
+    names_terraform
 
 
 def _head_name(token):
@@ -2766,12 +2770,17 @@ def _track(argv, ctx, seq, fed, shell="bash"):
 OP_UNREADABLE_LINE = "line-not-literal"
 
 
+_GATE_HELPERS = (_unwrap, _shell_args, _pwsh_payload, _ps_normalise,
+                 _head_name)
+
+
 def _literal_gate(shell, text):
     """A could-not-tell `terraformApply` finding for `text`, or None when it
-    names no terraform/terragrunt/tofu or every word on it is plain (the
-    lexer then judges it as before)."""
-    named = names_terraform(
-        _ps_normalise(text)[0] if shell == "powershell" else text, shell)
+    runs no terraform/terragrunt/tofu or every word on it is plain (the
+    lexer then judges it as before). PowerShell keeps Step 8's trigger."""
+    named = names_terraform(_ps_normalise(text)[0], shell) \
+        if shell == "powershell" else command_names_terraform(text,
+                                                              _GATE_HELPERS)
     word = first_non_literal(text, shell) if named is not None else None
     if word is None:
         return None
@@ -2798,8 +2807,10 @@ def scan(shell, text, env=None, depth=0, ctx=None, seq=None):
                         f"nested more than {MAX_DEPTH} shells or "
                         "substitutions deep, so the innermost command was "
                         "never read", None, True, None)]
-    # The allowlist first, on the raw text, before the lexer reads it.
-    gated = _literal_gate(shell, text)
+    # The allowlist first, on the raw text, before the lexer reads it -- once,
+    # at the top: the trigger reads nested scripts itself, and a nested text
+    # here is the lexer's own (sometimes deliberately widened) extraction.
+    gated = _literal_gate(shell, text) if depth == 0 else None
     env = dict(env or {})
     seq = dict(seq or {})
     variables = {}

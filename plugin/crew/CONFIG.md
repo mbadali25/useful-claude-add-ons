@@ -1426,6 +1426,10 @@ guard.log policy column says why: `env:nonProd:<name>`,
 `env:prod-unattended:<name>`, `env:prod:<name>`, `env:unknown`, `destroy:ask`,
 and `could-not-tell` for a terraform line that is not all plain literals
 (asked under `ask` and `allow` whatever its environment, denied under `block`).
+"A terraform line" means one that runs terraform, terragrunt or tofu as a
+command -- its command word, or a command inside `bash -c`, `eval`, `pwsh -c`
+or a substitution -- not one that mentions the word in a message, a search or
+a file name (README, "Cloud guard").
 
 **The always-stops.** A destroy is never applied unattended at any setting —
 `terraformApply: allow` and `prodUnattended: true` included. So is an apply of

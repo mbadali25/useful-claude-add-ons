@@ -1013,9 +1013,11 @@ bound to, read from the plan file, and any directory or environment change
 the hook cannot read makes the environment unknown.
 
 **Terraform lines are judged word by word, or not at all (crew 1.0.41).** A
-command line that names `terraform`, `terragrunt` or `tofu` anywhere — looked
-for after quotes and escapes are taken out of each word, so `"terraform"`,
-`t'erraform'`, `$'\x74erraform'` and `terr\aform` all count — is judged only
+command line that RUNS `terraform`, `terragrunt` or `tofu` — its command word,
+after assignments and wrappers such as `env`, `sudo`, `timeout` or `xargs`,
+read with quotes and escapes taken out, so `"terraform"`, `t'erraform'`,
+`$'\x74erraform'` and `terr\aform` all count, or a command inside `bash -c`,
+`eval`, `pwsh -c`, `$(...)` or backquotes — is judged only
 when every word on it is a plain literal (`^[A-Za-z0-9_./:=@%+,-]+$`) joined by
 `;`, `&&`, `||`, `|`, `&` or a plain `>`/`>>`/`<` redirection. Anything else on
 such a line — a quote, `$`, a backquote, a backslash, a glob or brace, `<(`, a
@@ -1024,10 +1026,15 @@ tell**: asked about when someone is attending, **refused unattended** (and
 under `block`), never allowed, logged as `could-not-tell`. The check reads the
 raw text before the parser does, so no parser mistake can turn a shape it
 misread into an allow. Unusual quoting on a terraform line is asked about, not
-allowed; spell the line with plain words to have it judged. That includes a
-line that only mentions terraform in a quoted argument (`git commit -m
-"terraform: bump"`): crew cannot tell it from `bash -c "terraform destroy"`
-without trusting the parser this rule exists not to trust.
+allowed; spell the line with plain words to have it judged. The rule is about
+the command being run: mentioning terraform in a commit message, a search or a
+file name (`git commit -m "fix terraform apply"`, `grep 'terraform apply' .`,
+`vim terraform.tf`) is not gated. A command word crew cannot read (`$x`,
+`$(...)`) is could not tell only on a line that names terraform, `destroy`,
+`apply` or `workspace`, so `x=terraform; $x destroy` is refused and `$EDITOR
+notes.md` is not. Where crew cannot split a line with certainty — a `case`
+arm, a function definition, a script piped into `bash`, `ssh`, `source` — it
+falls back to the older, wider rule: any word naming terraform.
 
 **The always-stops.** A destroy is never applied unattended, at any setting:
 `destroy`, `apply -destroy`, `apply -replace`, `workspace delete`, a saved plan

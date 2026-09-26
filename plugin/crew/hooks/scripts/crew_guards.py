@@ -1081,6 +1081,8 @@ _NAME_SPLIT_RE = re.compile(r"[\s|&;()<>]+")
 # An expansion, innermost first. Its value could be anything, empty included.
 _EXPANSION_RE = re.compile(r"\$\{[^{}]*\}|\$\([^()]*\)|`[^`]*`"
                            r"|\$[A-Za-z_][A-Za-z0-9_]*|\$[0-9@*#?$!-]")
+_SIMPLE_EXPANSION_RE = re.compile(r"\$\{[^{}]*\}|\$[A-Za-z_][A-Za-z0-9_]*"
+                                  r"|\$[0-9@*#?$!-]")
 # `${x:-word}` and its kin: the word after the operator may be the value.
 _PARAM_OP_RE = re.compile(
     r"\$\{[#!]?[A-Za-z0-9_@*]*(?::?[-=+?]|##?|%%?|//?|\^\^?|,,?)?")
@@ -1173,7 +1175,10 @@ def _name_candidates(text, shell):
             if not count:
                 break
         opened = re.sub(r"[$(){}`]", " ", _PARAM_OP_RE.sub(" ", source))
-        for chunk in _NAME_SPLIT_RE.split(wild + " " + opened):
+        # And every simple expansion as empty: `"$x"terraform` inside
+        # backquotes, which the two readings above both lose (Step 9).
+        emptied = re.sub(r"[$(){}`]", " ", _SIMPLE_EXPANSION_RE.sub("", source))
+        for chunk in _NAME_SPLIT_RE.split(" ".join((wild, opened, emptied))):
             if shell == "powershell":
                 bares = (re.sub(r"[`'\"]", "", chunk),)
             else:
@@ -1209,3 +1214,374 @@ def first_non_literal(text, shell):
                     or shell == "powershell" and piece.startswith("@"):
                 return piece
     return None
+
+
+# --- the command-word trigger (T-0005 Step 9) --------------------------------
+#
+# Step 8 gated a line when ANY word on it could name terraform, so
+# `git commit -m "fix terraform apply"` was refused. The gate now fires when a
+# COMMAND WORD could: `_GateReader` splits the raw text the way bash does,
+# with its own quote, escape, substitution and heredoc reading -- never the
+# lexer's, so a lexer bug still cannot turn a shape into an allow -- and every
+# shape it does not read with certainty raises `_Unsure`, which falls back to
+# the Step 8 trigger. Falling back can only widen the gate, never narrow it.
+
+class _Unsure(Exception):
+    """The trigger's reading met a shape it does not read with certainty."""
+
+
+_HOLE = "\x00"  # a word part whose value is known only at run time
+_GATE_DEPTH = 8
+_GATE_CONTROL_RE = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
+_GATE_OPS = ("&>>", "<<<", "<<-", ";;&", "&&", "||", ";;", ";&", "|&", "<<",
+             "<>", "<&", ">>", ">&", ">|", "&>", ";", "&", "|", "<", ">")
+_GATE_PARAM_RE = re.compile(r"[A-Za-z0-9_#!@*?:%/=+^,.~\[\] -]*")
+_FD_WORD_RE = re.compile(r"^(?:\d+|\{[A-Za-z_][A-Za-z0-9_]*\})$")
+# A command word this far into a line runs terraform only through a script
+# crew cannot split: the Step 8 trigger decides for the whole line.
+_GATE_OPAQUE = frozenset((
+    "source", ".", "ssh", "cmd", "wsl", "trap", "alias", "hash", "function",
+    "flock", "script", ":::", "::::", "fish", "csh", "tcsh"))
+_GATE_SHELLS = frozenset(("bash", "sh", "zsh", "dash", "ksh", "ash", "mksh",
+                          "busybox"))
+_GATE_PWSH = frozenset(("pwsh", "powershell", "pwsh-preview"))
+_GATE_VERBS = frozenset(("destroy", "apply", "workspace"))
+_GATE_PAIR = frozenset(("destroy", "apply", "workspace", "run-all", "run"))
+
+
+class _GateReader:
+    """The simple commands of `text` as argv lists, bash's way: quotes and
+    escapes removed, `$'...'` decoded, and `_HOLE` wherever a value is made
+    at run time (an expansion, a substitution, a glob, a brace list). Every
+    substitution's commands -- in a word, a double-quoted string, an
+    unquoted heredoc body -- are read into the same `cmds`."""
+
+    def __init__(self, text, depth, cmds, pending=None):
+        if depth > _GATE_DEPTH:
+            raise _Unsure("nested too deep")
+        self.text, self.pos, self.depth, self.cmds = text, 0, depth, cmds
+        self.nest = 0
+        self.pending = [] if pending is None else pending
+
+    def _peek(self, count=1):
+        return self.text[self.pos:self.pos + count]
+
+    def read(self, closer=None):
+        """Read to the end, or past the `)` closing a `$(`/`(`/`<(`."""
+        words, word = [], []
+        state = {"word": False, "target": False, "brace": False,
+                 "glob": False}
+
+        def end_word():
+            if state["word"]:
+                value = "".join(word)
+                if state["glob"] and value not in ("[", "[["):
+                    value += _HOLE
+                if state["brace"] and value not in ("{", "}", "{}"):
+                    value += _HOLE
+                if state["target"]:
+                    state["target"] = False
+                else:
+                    words.append(value)
+            word.clear()
+            state.update(word=False, brace=False, glob=False)
+
+        def end_command():
+            end_word()
+            if state["target"]:
+                raise _Unsure("a redirection with no target")
+            if words:
+                self.cmds.append(list(words))
+            words.clear()
+
+        self.nest += 1
+        if self.nest > 4 * _GATE_DEPTH:
+            raise _Unsure("nested too deep")
+        while self.pos < len(self.text):
+            char = self.text[self.pos]
+            if self._peek(2) == "\\\n":
+                self.pos += 2
+            elif char in " \t":
+                end_word()
+                self.pos += 1
+            elif char == "\n":
+                end_command()
+                self.pos += 1
+                self._bodies()
+            elif char == "#" and not state["word"]:
+                while self.pos < len(self.text) and self._peek() != "\n":
+                    self.pos += 1
+            elif char == ")":
+                if closer != ")":
+                    raise _Unsure("an unmatched )")
+                end_command()
+                self.pos += 1
+                self.nest -= 1
+                return
+            elif char == "(":
+                if state["word"] or words:
+                    raise _Unsure("( inside a command")
+                self.pos += 1
+                self.read(")")
+            elif char in "<>" and self._peek(2)[1:] == "(":
+                self.pos += 2
+                self.read(")")
+                word.append(_HOLE)
+                state["word"] = True
+            elif char in ";&|<>":
+                if state["word"] and char in "<>" and \
+                        _FD_WORD_RE.match("".join(word)):
+                    word.clear()
+                    state["word"] = False
+                self._operator(end_word, end_command, state)
+            else:
+                word.append(self._word_part(state))
+                state["word"] = True
+        if closer is not None:
+            raise _Unsure("an unclosed (")
+        end_command()
+        if self.pending:
+            raise _Unsure("a heredoc with no body")
+
+    def _operator(self, end_word, end_command, state):
+        op = next(o for o in _GATE_OPS if self.text.startswith(o, self.pos))
+        self.pos += len(op)
+        if op in (";;", ";&", ";;&"):
+            raise _Unsure("a case arm")
+        if op in (";", "&", "&&", "||", "|", "|&"):
+            end_command()
+            return
+        end_word()
+        if op in ("<<", "<<-"):
+            self._delimiter(op == "<<-")
+        else:
+            state["target"] = True
+
+    def _delimiter(self, strip):
+        while self._peek() in (" ", "\t"):
+            self.pos += 1
+        raw = []
+        while self.pos < len(self.text) and \
+                self._peek() not in " \t\n;&|()<>":
+            raw.append(self._peek())
+            self.pos += 1
+        raw = "".join(raw)
+        # A backslash beside a quote is dequoted differently inside and
+        # outside the quotes (`<<'E\OF'` ends at `E\OF`): not read.
+        mixed = "\\" in raw and ("'" in raw or '"' in raw)
+        odd = raw.count("'") % 2 or raw.count('"') % 2
+        if not raw or odd or mixed or "$" in raw or "`" in raw:
+            raise _Unsure("a heredoc delimiter crew cannot spell")
+        quoted = any(c in raw for c in "'\"\\")
+        delim = re.sub(r"\\(.)", r"\1", raw.replace("'", "").replace('"', ""))
+        self.pending.append((delim, strip, quoted))
+
+    def _bodies(self):
+        pending, self.pending[:] = list(self.pending), []
+        for delim, strip, quoted in pending:
+            lines = []
+            while True:
+                if self.pos >= len(self.text):
+                    raise _Unsure("a heredoc with no delimiter line")
+                end = self.text.find("\n", self.pos)
+                end = len(self.text) if end == -1 else end
+                line = self.text[self.pos:end]
+                self.pos = min(end + 1, len(self.text))
+                if (line.lstrip("\t") if strip else line) == delim:
+                    break
+                lines.append(line)
+            if not quoted:
+                _GateReader("\n".join(lines), self.depth + 1,
+                            self.cmds)._substitutions()
+
+    def _substitutions(self):
+        """An unquoted heredoc body: only its expansions are code."""
+        while self.pos < len(self.text):
+            char = self._peek()
+            if char == "\\":
+                self.pos += 2
+            elif char in "$`":
+                self._word_part({"word": True}, in_dq=True)
+            else:
+                self.pos += 1
+
+    def _word_part(self, state, in_dq=False):
+        """One character or quoted run of a word, as text or `_HOLE`."""
+        char = self._peek()
+        if char == "\\":
+            self.pos += 2
+            nxt = self.text[self.pos - 1:self.pos]
+            if in_dq and nxt not in '$`"\\\n':
+                return "\\" + nxt
+            return "" if nxt == "\n" else nxt
+        if char == "'" and not in_dq:
+            end = self.text.find("'", self.pos + 1)
+            if end == -1:
+                raise _Unsure("an unclosed '")
+            self._no_body_across(self.pos, end)
+            part, self.pos = self.text[self.pos + 1:end], end + 1
+            return part
+        if char == '"' and not in_dq:
+            self.pos += 1
+            return self._double_quoted()
+        if char == "$":
+            return self._dollar(in_dq)
+        if char == "`":
+            return self._backquote(in_dq)
+        self.pos += 1
+        if not in_dq and char in "*?[":
+            state["glob"] = True
+        if not in_dq and char == "{":
+            state["brace"] = True
+        return char
+
+    def _no_body_across(self, start, end):
+        if self.pending and "\n" in self.text[start:end]:
+            raise _Unsure("a quoted newline before a heredoc body")
+
+    def _double_quoted(self):
+        parts, start = [], self.pos
+        while self._peek() != '"':
+            if self.pos >= len(self.text):
+                raise _Unsure('an unclosed "')
+            parts.append(self._word_part({}, in_dq=True))
+        self._no_body_across(start, self.pos)
+        self.pos += 1
+        return "".join(parts)
+
+    def _dollar(self, in_dq):
+        nxt = self.text[self.pos + 1:self.pos + 2]
+        if self.text.startswith("$((", self.pos):
+            end = self.text.find("))", self.pos)
+            body = self.text[self.pos + 3:end]
+            if end == -1 or re.search(r"[$`'\"\\()]", body):
+                raise _Unsure("arithmetic crew does not read")
+            self.pos = end + 2
+            return _HOLE
+        if nxt == "(":
+            self.pos += 2
+            self.read(")")
+            return _HOLE
+        if nxt == "{":
+            end = self.text.find("}", self.pos)
+            match = _GATE_PARAM_RE.fullmatch(self.text, self.pos + 2, end) \
+                if end != -1 else None
+            if match is None:
+                raise _Unsure("a ${...} crew does not read")
+            self.pos = end + 1
+            return _HOLE
+        if nxt == "'" and not in_dq:
+            match = _ANSI_SPAN_RE.match(self.text, self.pos)
+            if match.end() - match.start() != len(match.group(1)) + 3:
+                raise _Unsure("an unclosed $'")
+            self.pos = match.end()
+            return _ansi_c_decode(match.group(1))
+        if nxt == '"' and not in_dq:
+            self.pos += 2
+            return self._double_quoted()
+        name = re.match(r"[A-Za-z_][A-Za-z0-9_]*|[0-9@*#?$!-]",
+                        self.text[self.pos + 1:])
+        if name:
+            self.pos += 1 + name.end()
+            return _HOLE
+        self.pos += 1
+        return "$"
+
+    def _backquote(self, in_dq):
+        body, self.pos = [], self.pos + 1
+        while self._peek() != "`":
+            if self.pos >= len(self.text):
+                raise _Unsure("an unclosed `")
+            char = self._peek()
+            nxt = self.text[self.pos + 1:self.pos + 2]
+            if char == "\\" and (nxt in "`$\\" or in_dq and nxt == '"') \
+                    and nxt:
+                body.append(nxt)
+                self.pos += 2
+                continue
+            body.append(char)
+            self.pos += 1
+        self.pos += 1
+        _GateReader("".join(body), self.depth + 1, self.cmds).read()
+        return _HOLE
+
+
+def _verb_on_line(top):
+    """The Step 8 name, or a word dequoting to destroy/apply/workspace."""
+    named = names_terraform(top, "bash")
+    if named is not None:
+        return named
+    return next((c for c in _name_candidates(top, "bash")
+                 if c.lower() in _GATE_VERBS), None)
+
+
+def _argv_trigger(argv, top, helpers, depth):
+    """The word that makes this simple command run terraform, or None."""
+    unwrap, shell_args, pwsh_payload, ps_normalise, head_name = helpers
+    argv = unwrap(argv, {}, None, {"cd": False})
+    if not argv:
+        return None
+    first, args = argv[0], argv[1:]
+    if _HOLE in first:
+        # Could not tell which program runs: gated only when the line names
+        # one of the words a terraform line needs.
+        return _verb_on_line(top)
+    if _names_tool(first):
+        return first
+    if any(c in first for c in " \t\n"):
+        # `watch "terraform destroy"`: the command word is itself a script.
+        return _bash_trigger(" ".join(argv), top, helpers, depth + 1)
+    head = head_name(first)
+    if head == "busybox" and args and head_name(args[0]) in _GATE_SHELLS:
+        head, args = head_name(args[0]), args[1:]
+    if head in _GATE_SHELLS:
+        has_c, positional = shell_args(args)
+        if has_c and positional and _HOLE not in positional[0]:
+            return _bash_trigger(positional[0], top, helpers, depth + 1)
+        return names_terraform(top, "bash")
+    if head in _GATE_PWSH:
+        payload = pwsh_payload(args)
+        if payload is None or _HOLE in payload:
+            return names_terraform(top, "bash")
+        return names_terraform(ps_normalise(payload)[0], "powershell")
+    if head == "eval":
+        if any(_HOLE in arg for arg in args):
+            return names_terraform(top, "bash")
+        return _bash_trigger(" ".join(args), top, helpers, depth + 1)
+    if head in _GATE_OPAQUE or head == "find" and any(
+            a in ("-exec", "-execdir", "-ok", "-okdir") for a in args):
+        return names_terraform(top, "bash")
+    # A wrapper crew does not know (`strace -f terraform destroy`,
+    # `aws-vault exec p -- terraform apply`): a terraform-family argument
+    # followed, past its options, by a verb or a run-time value.
+    for index, arg in enumerate(args):
+        if _HOLE in arg or not _names_tool(arg):
+            continue
+        rest = [a for a in args[index + 1:] if not a.startswith("-")]
+        if rest and (_HOLE in rest[0] or rest[0].lower() in _GATE_PAIR):
+            return arg
+    return None
+
+
+def _bash_trigger(text, top, helpers, depth):
+    try:
+        if _GATE_CONTROL_RE.search(text):
+            raise _Unsure("a control character")
+        cmds = []
+        _GateReader(text, depth, cmds).read()
+    except _Unsure:
+        return names_terraform(text, "bash") or names_terraform(top, "bash")
+    for argv in cmds:
+        named = _argv_trigger(argv, top, helpers, depth)
+        if named is not None:
+            return named
+    return None
+
+
+def command_names_terraform(text, helpers):
+    """The word that makes bash `text` RUN terraform, terragrunt or tofu --
+    as a command word, inside `bash -c`/`eval`/`pwsh -c`/a substitution, or
+    behind a command word crew cannot read on a line naming terraform,
+    destroy, apply or workspace -- or None. `helpers` is cloud_guard's
+    `(_unwrap, _shell_args, _pwsh_payload, _ps_normalise, _head_name)`."""
+    return _bash_trigger(text, text, helpers, 0)

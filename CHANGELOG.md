@@ -29,9 +29,19 @@ All notable changes to this repository are documented here. Format follows [Keep
   parser, replacing four review rounds of per-shape quoting fixes (heredoc
   delimiters, `${...}` nesting, `\r#`, `$"..."`, `$'\xNN'`, `destroy${x}`).
   **This also refuses unattended some lines that used to pass**: a quoted plan
-  path (`terraform apply "p.tfplan"`), `2>$null`, a comment or heredoc on a
-  terraform line, and a command that merely quotes the word terraform
-  (`git commit -m "terraform: bump"`, `grep 'terraform apply' docs/`).
+  path (`terraform apply "p.tfplan"`), `2>$null`, and a comment or heredoc on
+  a terraform line.
+- **"A terraform line" is one that runs terraform, not one that mentions it.**
+  The literal-word rule above applies when a command word — after assignments
+  and wrappers (`env`, `sudo`, `timeout`, `xargs`, ...) — dequotes to
+  `terraform`, `terragrunt` or `tofu`, or when `bash -c`, `eval`, `pwsh -c`,
+  `$(...)` or backquotes carry such a command. `git commit -m "fix terraform
+  apply"`, `grep 'terraform apply' .` and `echo terraform` are no longer
+  refused. A command word crew cannot read (`$x`, `$(...)`) is could not tell
+  only on a line naming terraform, `destroy`, `apply` or `workspace`. A line
+  crew cannot split with certainty (a `case` arm, a function, a script piped
+  into a shell, `ssh`, `source`) keeps the wider rule. PowerShell lines keep
+  the wider rule too.
 - **New `environments` block** (`environments.nonProd`, repo-only globs;
   `environments.prodUnattended`, ratcheted, true only when **both** config
   layers say the JSON literal `true`). Under `terraformApply: ask`, an apply of

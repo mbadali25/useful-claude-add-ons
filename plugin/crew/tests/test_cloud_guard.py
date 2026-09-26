@@ -445,14 +445,22 @@ MUST_ALLOW = [
 # MUST_ALLOW above keeps each shape with the terraform words swapped for
 # another rule's, so the lexer behaviour it pinned is still pinned.
 COULD_NOT_TELL = [
-    ("was-commit-message", "Bash",
-     'git commit -m "terraform destroy, DROP TABLE, git push --force"'),
-    ("was-grep-words", "Bash", "grep -rn 'terraform apply' docs/"),
-    ("was-bash-comment", "Bash", "ls  # then; terraform destroy"),
     ("was-ps-comment", "PowerShell",
      'Write-Output "terraform destroy" # then; terraform destroy'),
     ("was-bash-c-dashdash-plan", "Bash", "bash -c -- 'terraform plan'"),
     ("was-xargs-terraform-fmt", "Bash", "ls *.tf | xargs terraform fmt"),
+]
+
+# Step 9 (T-0005): Step 8 refused these too, because a word on each dequoted
+# to terraform. None RUNS terraform -- a message, a search, a comment, a
+# heredoc body that stays literal -- so the gate, which now reads the command
+# word, hands them back to the lexer, and the lexer allows them. PowerShell
+# lines keep the Step 8 trigger (`was-ps-comment` above).
+NO_LONGER_GATED = [
+    ("was-commit-message", "Bash",
+     'git commit -m "terraform destroy, DROP TABLE, git push --force"'),
+    ("was-grep-words", "Bash", "grep -rn 'terraform apply' docs/"),
+    ("was-bash-comment", "Bash", "ls  # then; terraform destroy"),
     ("was-heredoc-quoted-subst", "Bash",
      "cat <<'EOF'\n$(terraform destroy -auto-approve)\nEOF"),
     ("was-heredoc-partly-quoted-subst", "Bash",
@@ -680,6 +688,12 @@ def test_could_not_tell_is_asked_under_ask(tmp_path, case):
     decision, reason, code, err = run_hook("python", tmp_path, tool, command)
     assert (decision, code) == ("ask", 0), (reason, err)
     assert "plain literal" in reason, reason
+
+
+@pytest.mark.parametrize("case", NO_LONGER_GATED,
+                         ids=[c[0] for c in NO_LONGER_GATED])
+def test_a_line_that_runs_no_terraform_is_not_gated(tmp_path, case):
+    _allow("python", tmp_path, case)
 
 
 @pytest.mark.parametrize("case", IDENTITY, ids=_I_IDS)

@@ -689,7 +689,7 @@ _S8 = _E + "test_literal_must_block_python"
 
 CLOUD_GUARD_MUTATIONS += (
     ("cloud guard step 8: the allowlist gate dropped", GUARD,
-     "    gated = _literal_gate(shell, text)\n",
+     "    gated = _literal_gate(shell, text) if depth == 0 else None\n",
      "    gated = None\n", _S8 + "[s8-r4-heredoc-locale-delim]"),
     ("cloud guard step 8: `$` allowed in a plain literal", GUARDS,
      '_PLAIN_WORD_RE = re.compile(r"^[A-Za-z0-9_./:=@%+,-]+$")',
@@ -700,7 +700,108 @@ CLOUD_GUARD_MUTATIONS += (
      "    findings = [g for g in [_literal_gate(shell, ' '.join(\n"
      "        w for c in cmds for w in c.words))] if g is not None]\n",
      _S8 + "[s8-r4-heredoc-locale-delim]"),
+    # Retargeted at Step 9: the command-word reader now dequotes
+    # `'terraform'` itself, so this reading matters where the trigger falls
+    # back to it -- behind `find -exec`, `ssh`, a script runner (measured:
+    # STILL GREEN on `s8-quoted-name-and-ansi` after Step 9).
     ("cloud guard step 8: a quote hides the terraform name", GUARDS,
      "                bare = re.sub(r\"['\\\"`]\", \"\", bare)\n",
-     "                bare = bare\n", _S8 + "[s8-quoted-name-and-ansi]"),
+     "                bare = bare\n",
+     _E + "test_command_word_must_block_python[s9-find-exec]"),
+)
+
+# T-0005 Step 9 (successor plan: gate on the command being run). The trigger
+# reads the COMMAND WORD, so each branch that can make one terraform gets a
+# mutation, aimed at a row only that branch gates. Rows spelled with `plan`
+# carry no verb, so the argument-pair fallback cannot mask a lost wrapper or
+# redirection; rows the lexer also denies go red on the reason (`why` is the
+# gate's "plain literal"). The plan named `env -i terraform destroy` for the
+# wrapper mutation, but every word of it is plain, so the lexer judges it and
+# the gate's answer never shows: that mutation aims at `s9-env-quoted-plan`.
+_S9 = _E + "test_command_word_must_block_python"
+_S9A = _E + "test_command_word_must_allow_python"
+
+CLOUD_GUARD_MUTATIONS += (
+    ("cloud guard step 9: the gate triggered by any word again", GUARD,
+     '        if shell == "powershell" else command_names_terraform(text,\n'
+     "                                                              "
+     "_GATE_HELPERS)\n",
+     '        if shell == "powershell" else names_terraform(text, shell)\n',
+     _S9A + "[s9a-commit-message]"),
+    ("cloud guard step 9: the gate run at every depth again", GUARD,
+     "    gated = _literal_gate(shell, text) if depth == 0 else None\n",
+     "    gated = _literal_gate(shell, text)\n", _S9A + "[s9a-commit-heredoc]"),
+    ("cloud guard step 9: wrapper stripping dropped", GUARDS,
+     '    argv = unwrap(argv, {}, None, {"cd": False})\n',
+     "    argv = list(argv)\n", _S9 + "[s9-env-quoted-plan]"),
+    ("cloud guard step 9: a redirection target read as a word", GUARDS,
+     '                if state["target"]:\n'
+     '                    state["target"] = False\n'
+     "                else:\n"
+     "                    words.append(value)\n",
+     '                state["target"] = False\n'
+     "                words.append(value)\n", _S9 + "[s9-redirect-plan]"),
+    ("cloud guard step 9: an fd number read as a word", GUARDS,
+     r'_FD_WORD_RE = re.compile(r"^(?:\d+|\{[A-Za-z_][A-Za-z0-9_]*\})$")',
+     r'_FD_WORD_RE = re.compile(r"^(?!)$")', _S9 + "[s9-fd-redirect-plan]"),
+    ("cloud guard step 9: an unknown command word never gated", GUARDS,
+     "        return _verb_on_line(top)\n", "        return None\n",
+     _S9 + "[s9-variable-name]"),
+    ("cloud guard step 9: `bash -c` payload not read", GUARDS,
+     "            return _bash_trigger(positional[0], top, helpers, "
+     "depth + 1)\n", "            return None\n",
+     _T + "test_could_not_tell_is_refused_under_block"
+     "[was-bash-c-dashdash-plan]"),
+    ("cloud guard step 9: a shell reading stdin not gated", GUARDS,
+     "            return _bash_trigger(positional[0], top, helpers, "
+     "depth + 1)\n        return names_terraform(top, \"bash\")\n",
+     "            return _bash_trigger(positional[0], top, helpers, "
+     "depth + 1)\n        return None\n", _S9 + "[s9-pipe-to-shell]"),
+    ("cloud guard step 9: `pwsh -c` payload not read", GUARDS,
+     '        return names_terraform(ps_normalise(payload)[0], "powershell")\n',
+     "        return None\n", _S9 + "[s9-pwsh-c]"),
+    ("cloud guard step 9: `eval` payload not read", GUARDS,
+     '        return _bash_trigger(" ".join(args), top, helpers, depth + 1)\n',
+     "        return None\n", _S9 + "[s9-eval]"),
+    ("cloud guard step 9: a command word that is a script not read", GUARDS,
+     '        return _bash_trigger(" ".join(argv), top, helpers, depth + 1)\n',
+     "        return None\n", _S9 + "[s9-watch-string]"),
+    ("cloud guard step 9: script runners read as programs", GUARDS,
+     '    if head in _GATE_OPAQUE or head == "find" and any(',
+     '    if head == "find" and any(', _S9 + "[s9-ssh]"),
+    ("cloud guard step 9: an unknown wrapper's terraform argument ignored",
+     GUARDS, "            return arg\n", "            continue\n",
+     _S9 + "[s9-unknown-wrapper]"),
+    ("cloud guard step 9: the reader's give-up gates nothing", GUARDS,
+     '        return names_terraform(text, "bash") or '
+     'names_terraform(top, "bash")\n', "        return None\n",
+     _S9 + "[s9-case]"),
+    ("cloud guard step 9: `$(...)` commands dropped", GUARDS,
+     '            self.pos += 2\n            self.read(")")\n'
+     "            return _HOLE\n",
+     '            self.pos += 2\n            kept = list(self.cmds)\n'
+     '            self.read(")")\n            self.cmds[:] = kept\n'
+     "            return _HOLE\n", _S9 + "[s9-commit-subst-destroy]"),
+    ("cloud guard step 9: backquoted commands dropped", GUARDS,
+     '        _GateReader("".join(body), self.depth + 1, self.cmds).read()\n',
+     '        _GateReader("".join(body), self.depth + 1, []).read()\n',
+     _S9 + "[s9-commit-backtick-destroy]"),
+    ("cloud guard step 9: an unquoted heredoc body's commands dropped",
+     GUARDS, "            if not quoted:\n                _GateReader(",
+     "            if quoted:\n                _GateReader(",
+     _S9 + "[s9-commit-heredoc-subst]"),
+    ("cloud guard step 9: a backslash-and-quote delimiter dequoted", GUARDS,
+     "        mixed = \"\\\\\" in raw and (\"'\" in raw or '\"' in raw)\n",
+     "        mixed = False\n",
+     _S9 + "[s9-heredoc-backslash-quoted-delim]"),
+    ("cloud guard step 9: a glob read as a literal", GUARDS,
+     '                if state["glob"] and value not in ("[", "[["):\n'
+     "                    value += _HOLE\n", "",
+     _S9 + "[s9-short-glob-destroy]"),
+    ("cloud guard step 9: a brace list read as a literal", GUARDS,
+     '                if state["brace"] and value not in ("{", "}", "{}"):\n'
+     "                    value += _HOLE\n", "", _S8 + "[s8-brace-name]"),
+    ("cloud guard step 9: an expansion read only as a wildcard", GUARDS,
+     '" ".join((wild, opened, emptied))', '" ".join((wild, opened))',
+     _S9 + "[s9-backquote-empty-prefix]"),
 )
