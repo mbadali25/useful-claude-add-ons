@@ -54,23 +54,21 @@ now ASKS (BREAKING in 1.0.41), and so is denied unattended. `block` is never
 loosened. An unknown environment is narrower than production: nothing allows
 it unattended. See `_terraform_verdict`.
 
-THE LITERAL-WORD ALLOWLIST (T-0005 Steps 8-9). A bash line that RUNS
-terraform, terragrunt or tofu -- a command word, dequoted, after assignments
-and `_unwrap`'s wrappers, or a command inside `bash -c`/`eval`/`pwsh -c`/a
-substitution (`crew_guards.command_names_terraform`, its own reader, falling
-back to any word naming one where it cannot split the line; a PowerShell line
-keeps that wider rule) -- is judged only when every word on it is a plain
-literal (`_PLAIN_WORD_RE`, joined by `_PLAIN_OPS`). Anything else on such a
-line is "could not tell": asked when attended, denied unattended and under
-`block`, never allowed. So is a line of plain words that runs terraform where
-the lexer does not look (review round 5: an alias, `hash -p`, a copied or
-linked binary run with a verb, zsh's `=terraform`, a container image, a
-wrapper `_unwrap` does not strip, PowerShell's `Set-Alias`/`Start-Process`;
-`crew_guards.command_trigger`'s `unseen`, `_ps_unseen`). A read-only
-subcommand (`crew_guards._tf_read_only`) and a data command's arguments are
-not gated. The check reads the raw text before the lexer does
-(`_literal_gate`, first thing in `scan`), so no lexer bug can turn a shape it
-misread into an allow.
+THE LITERAL-WORD ALLOWLIST (T-0005 Steps 8-10). A line that RUNS terraform,
+terragrunt or tofu -- a command word, dequoted, after assignments and
+`_unwrap`'s wrappers, or a command inside `bash -c`/`eval`/`pwsh -c`/a
+substitution (`crew_guards.command_trigger`, its own reader; PowerShell:
+`ps_trigger`, the same rule) -- is judged only when every word on it is a
+plain literal (`_PLAIN_WORD_RE`, joined by `_PLAIN_OPS`). Anything else on
+such a line is "could not tell": asked when attended, denied unattended and
+under `block`, never allowed. So is a plain line that runs terraform where the
+lexer does not look (an alias, a binary the line copies and runs by its new
+name, zsh's `=terraform`, `flock`/`ssh`, `Start-Process`: `unseen`). A
+read-only subcommand is not gated. The check reads the raw text first
+(`_literal_gate`), so no lexer bug turns a shape it misread into an allow.
+Direct use only (Step 10): a disguise -- a rename crew does not see made, `env
+-S`, BusyBox, git `!` aliases, an interpreter, a script, an unlisted wrapper
+-- is out of scope (README, "What the guard does not catch"; T-0044).
 
 IDENTITY. Every `aws` and `az` command resolves the identity it would run as --
 `--profile`/`--region`/`--subscription` first, then the environment it would
@@ -128,8 +126,7 @@ import time
 import crew_config
 import crew_state
 from crew_guards import _head_name as _guards_head_name
-from crew_guards import command_trigger, first_non_literal, \
-    names_terraform, ps_unseen
+from crew_guards import command_trigger, first_non_literal, ps_trigger
 
 
 def _head_name(token):
@@ -1538,18 +1535,39 @@ def _tf_help_requested(args):
     return False
 
 
+# Options before a subcommand (terragrunt's, and after `run-all`/`run`) whose
+# value may be any word, `apply` included: `--working-dir apply destroy`.
+_TF_GLOBAL_VALUE_OPTS = frozenset((
+    "working-dir", "terragrunt-working-dir", "terragrunt-config", "config",
+    "chdir", "queue-exclude-dir", "queue-include-dir"))
+_TF_OPS = frozenset(("apply", "destroy", "run-all", "run"))
+_TF_HEADS = frozenset(("terraform", "tofu", "terragrunt"))
+
+
+def _tf_skip_options(args, index):
+    """The index of the first word from `index` that is not an option or its
+    value. An unknown option not followed by an `_TF_OPS` word takes the next
+    word: the reading that finds the operation (`--some-option x destroy`)."""
+    while index < len(args) and args[index].startswith("-"):
+        name, sep, _value = args[index].lstrip("-").partition("=")
+        takes = not sep and index + 1 < len(args) and (
+            name in _TF_GLOBAL_VALUE_OPTS or args[index + 1] not in _TF_OPS)
+        index += 2 if takes else 1
+    return index
+
+
 def _terraform_destructive(head, args):
-    words = [a for a in args if not a.startswith("-")]
-    if not words:
-        return None
     # `terraform apply -help` prints usage; the CLI runs nothing else.
     if _tf_help_requested(args):
         return None
-    if words[0] in ("apply", "destroy"):
-        return f"{head} {words[0]}"
-    if words[0] in ("run-all", "run") and len(words) > 1 \
-            and words[1] in ("apply", "destroy"):
-        return f"{head} {words[0]} {words[1]}"
+    index = _tf_skip_options(args, 0)
+    sub = args[index] if index < len(args) else None
+    if sub in ("apply", "destroy"):
+        return f"{head} {sub}"
+    if sub in ("run-all", "run"):
+        index = _tf_skip_options(args, index + 1)
+        if index < len(args) and args[index] in ("apply", "destroy"):
+            return f"{head} {sub} {args[index]}"
     return None
 
 
@@ -2213,7 +2231,7 @@ def _classify(argv, stdin, env, shell, depth, ctx=None, seq=None, fed=False):
         out.extend(scan("powershell", payload, env, depth + 1, **kw))
         return out
 
-    if head in ("terraform", "tofu", "terragrunt"):
+    if head in _TF_HEADS:
         what = _terraform_destructive(head, args)
         if what:
             out.append(Finding("terraformApply", text, what, None, True, None,
@@ -2365,7 +2383,7 @@ def _fed_finding(argv, env, via, placeholders, ctx=None):
                        f"{text} (via {via}, whose executable is filled in "
                        "from input crew cannot see)", None, True, None)
 
-    if head in ("terraform", "tofu", "terragrunt"):
+    if head in _TF_HEADS:
         words = [w for w in args if not w.startswith("-")]
         if words and seen(words[:1]) and words[0] in _TF_READ_ONLY:
             return None
@@ -2777,13 +2795,8 @@ def _track(argv, ctx, seq, fed, shell="bash"):
 OP_UNREADABLE_LINE = "line-not-literal"
 
 
-def _ps_unseen(normal):
-    """`crew_guards.ps_unseen`, read with this module's PowerShell lexer."""
-    return ps_unseen(normal, _lex_ps)
-
-
 _GATE_HELPERS = (_unwrap, _shell_args, _pwsh_payload, _ps_normalise,
-                 _head_name, _ps_unseen)
+                 _head_name, _lex_ps)
 
 
 def _literal_gate(shell, text):
@@ -2791,13 +2804,11 @@ def _literal_gate(shell, text):
     runs no terraform/terragrunt/tofu, or runs it only in ways the lexer
     reads and every word on it is plain (the lexer then judges it as
     before). A word that is not plain comes first; else a command the lexer
-    is not known to read (`unseen`, review round 5) -- an alias, a wrapper
-    it does not strip, a renamed binary -- is could-not-tell on a line of
-    plain words too. PowerShell keeps Step 8's any-word trigger."""
+    is not known to read (`unseen`, review round 5) -- an alias, a copied
+    binary, `Start-Process` -- is could-not-tell on a line of plain words
+    too. PowerShell has the same command-word rule (`ps_trigger`)."""
     if shell == "powershell":
-        normal = _ps_normalise(text)[0]
-        named = names_terraform(normal, shell)
-        found = None if named is None else (named, _ps_unseen(normal))
+        found = ps_trigger(_ps_normalise(text)[0], _GATE_HELPERS)
     else:
         found = command_trigger(text, _GATE_HELPERS)
     if found is None:
@@ -2882,6 +2893,8 @@ def scan(shell, text, env=None, depth=0, ctx=None, seq=None):
                 continue
             words = [variables.get(w[1:].lower(), w)
                      if w.startswith("$") else w for w in words]
+            if words[0] == "." and len(words) > 1 and _head_name(words[1]) in _TF_HEADS:
+                words = words[1:]  # `. terraform destroy` runs it, as `&`
         else:
             head = words[0]
             if head in ("export", "declare", "typeset", "local", "readonly"):

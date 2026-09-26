@@ -1246,7 +1246,6 @@ _GATE_SHELLS = frozenset(("bash", "sh", "zsh", "dash", "ksh", "ash", "mksh",
                           "busybox"))
 _GATE_PWSH = frozenset(("pwsh", "powershell", "pwsh-preview"))
 _GATE_VERBS = frozenset(("destroy", "apply", "workspace"))
-_GATE_PAIR = frozenset(("destroy", "apply", "workspace", "run-all", "run"))
 
 
 class _GateReader:
@@ -1525,24 +1524,6 @@ _TF_READ_ONLY = frozenset((
     "logout"))
 _TF_READ_ONLY_PAIRS = {"workspace": frozenset(("list", "show")),
                        "state": frozenset(("list", "show", "pull"))}
-# Programs that never run an argument as a program, so a word naming
-# terraform among their arguments is data (`cp -r terraform "$BACKUP_DIR"`).
-# Only a bare command word counts: a path may be a copy of terraform. `git`
-# counts only for the subcommands in `_GIT_DATA` (`git bisect run`, `rebase
-# -x` and `submodule foreach` run programs) and never with `-c`/`--exec-path`;
-# `rg` is left out for `--pre`.
-_GATE_DATA = frozenset((
-    "cp", "mv", "rm", "ls", "mkdir", "rmdir", "touch", "cat", "head", "tail",
-    "wc", "grep", "egrep", "fgrep", "echo", "printf", "stat", "du", "file",
-    "cmp", "chmod", "chown", "chgrp", "ln", "readlink", "realpath",
-    "basename", "dirname", "tree", "cd", "pushd", "git", "jq", "find"))
-_GIT_DATA = frozenset((
-    "add", "commit", "status", "log", "diff", "show", "mv", "rm", "checkout",
-    "switch", "restore", "branch", "tag", "fetch", "pull", "push", "stash",
-    "grep", "blame", "ls-files", "clone", "init", "remote", "reset", "apply",
-    "am", "cherry-pick", "revert", "merge", "describe", "shortlog",
-    "rev-parse", "ls-tree", "cat-file"))
-_GIT_VALUE_OPTS = frozenset(("-C", "--git-dir", "--work-tree", "--namespace"))
 # Commands that can put terraform under another name for a later command on
 # the same line (`ln -sf /usr/bin/terraform tf && ./tf destroy`).
 _GATE_COPIERS = frozenset(("ln", "cp", "install", "link", "mv", "rsync"))
@@ -1577,33 +1558,12 @@ def _zsh_names_tool(word):
 
 
 def _arg_names_tool(word):
-    """An argument that may be terraform: its name, `=terraform`, or a
-    container image (`hashicorp/terraform:1.9`, `...@sha256:...`)."""
-    image = word.split("@", 1)[0]
-    if ":" in image.rsplit("/", 1)[-1]:
-        image = image.rsplit(":", 1)[0]
-    return _names_tool(word) or _zsh_names_tool(word) or _names_tool(image)
+    """An argument that may be terraform: its name or zsh's `=terraform`."""
+    return _names_tool(word) or _zsh_names_tool(word)
 
 
 def _first_operand(args):
     return next((a for a in args if not a.startswith("-")), None)
-
-
-def _git_subcommand(args):
-    """git's subcommand, past its global options, or None when an option
-    could make git run a program (`-c`, `--exec-path`, `--config-env`)."""
-    index = 0
-    while index < len(args) and args[index].startswith("-"):
-        if args[index].startswith(("-c", "--exec-path", "--config-env")):
-            return None
-        index += 2 if args[index] in _GIT_VALUE_OPTS else 1
-    return args[index] if index < len(args) else None
-
-
-def _is_data(head, first, args):
-    if head not in _GATE_DATA or "/" in first or "\\" in first:
-        return False
-    return head != "git" or _git_subcommand(args) in _GIT_DATA
 
 
 def _find_exec_trigger(args, top, helpers, depth, line):
@@ -1615,7 +1575,7 @@ def _find_exec_trigger(args, top, helpers, depth, line):
         for word in args[index + 1:]:
             if word in (";", "+"):
                 break
-            sub.append(word)
+            sub.append(word.replace("{}", _HOLE))  # a path found at run time
         found = _argv_trigger(sub, top, helpers, depth, line)
         if found is not None:
             return found[0], True
@@ -1627,9 +1587,9 @@ def _argv_trigger(argv, top, helpers, depth, line):
     `unseen` means the lexer is not known to read that command (an alias, a
     wrapper it does not strip, a renamed binary): the line is then "could
     not tell" even when every word on it is plain. `line` is the reading of
-    the whole line: `copies`, true when a command on it copies or links a
-    terraform binary under another name."""
-    unwrap, shell_args, pwsh_payload, ps_normalise, head_name, ps_unseen = \
+    the whole line: `copies`, the names a command on it copies or links a
+    terraform binary to (`_copies_terraform`)."""
+    unwrap, shell_args, pwsh_payload, ps_normalise, head_name, _lex = \
         helpers
     fed = []
     argv = unwrap(argv, {}, fed, {"cd": False})
@@ -1668,9 +1628,7 @@ def _argv_trigger(argv, top, helpers, depth, line):
         if payload is None or _HOLE in payload:
             named = names_terraform(top, "bash")
             return None if named is None else (named, True)
-        normal = ps_normalise(payload)[0]
-        named = names_terraform(normal, "powershell")
-        return None if named is None else (named, ps_unseen(normal))
+        return ps_trigger(ps_normalise(payload)[0], helpers, depth + 1)
     if head == "eval":
         # An expansion in the script is `_HOLE`, a control character, so the
         # reader gives up on it and the line-wide name decides.
@@ -1685,32 +1643,34 @@ def _argv_trigger(argv, top, helpers, depth, line):
         own = names_terraform(top if any(_HOLE in a for a in args)
                               else " ".join(args), "bash")
         return None if own is None else (own, True)
-    if _is_data(head, first, args) and not line["copies"]:
-        return None
     verb = _first_operand(args)
-    if verb is not None and verb.lower() in _GATE_VERBS:
-        # `./tf destroy` on a line naming terraform: another name for it.
+    if head in line["copies"] and verb is not None \
+            and verb.lower() in _GATE_VERBS:
+        # `ln -sf /usr/bin/terraform tf && ./tf destroy`: the name the line
+        # copied or linked terraform to, run with a verb. A line that only
+        # mentions terraform (`cp -r terraform bk && git apply x.patch`,
+        # `terraform fmt && kubectl apply -f k.yaml`) is not read this way,
+        # and neither is a program crew does not know as a wrapper
+        # (`strace`, `aws-vault exec`): Step 10, direct use only; README
+        # "What the guard does not catch".
         named = names_terraform(top, "bash")
         if named is not None:
             return named, True
-    if _is_data(head, first, args):
-        return None
-    # A wrapper crew does not know (`strace -f terraform destroy`,
-    # `aws-vault exec p -- terraform apply`): a terraform-family argument
-    # followed, past its options, by a verb or a run-time value.
-    for index, arg in enumerate(args):
-        if _HOLE in arg or not _arg_names_tool(arg):
-            continue
-        rest = [a for a in args[index + 1:] if not a.startswith("-")]
-        if rest and (_HOLE in rest[0] or rest[0].lower() in _GATE_PAIR):
-            return arg, True
     return None
 
 
-def _copies_terraform(cmds, head_name):
-    return any(head_name(argv[0]) in _GATE_COPIERS and any(
-        _HOLE not in a and _arg_names_tool(a) for a in argv[1:])
-        for argv in cmds if argv)
+def _copies_terraform(cmds, head_name, copiers=_GATE_COPIERS):
+    """The names `cmds` copy or link terraform to: the last operand's
+    basename, for a copier whose other operands name terraform
+    (`cp /usr/bin/terraform ./ls` -> `ls`)."""
+    out = set()
+    for argv in cmds:
+        ops = [a for a in argv[1:] if not a.startswith("-")]
+        if argv and head_name(argv[0]) in copiers and len(ops) > 1 \
+                and any(_HOLE not in a and _arg_names_tool(a)
+                        for a in ops[:-1]):
+            out.add(head_name(ops[-1].rstrip("/\\")))
+    return out
 
 
 def _bash_trigger(text, top, helpers, depth, line=None):
@@ -1726,8 +1686,8 @@ def _bash_trigger(text, top, helpers, depth, line=None):
     except _Unsure:
         named = names_terraform(text, "bash") or names_terraform(top, "bash")
         return None if named is None else (named, True)
-    line = {"copies": False} if line is None else line
-    line["copies"] = line["copies"] or _copies_terraform(cmds, helpers[4])
+    line = {"copies": set()} if line is None else line
+    line["copies"] |= _copies_terraform(cmds, helpers[4])
     found, unseen = None, False
     for argv in cmds:
         hit = _argv_trigger(argv, top, helpers, depth, line)
@@ -1737,42 +1697,106 @@ def _bash_trigger(text, top, helpers, depth, line=None):
     return None if found is None else (found, unseen)
 
 
-# PowerShell commands that give terraform another name or run it where the
-# lexer does not look (review round 5): `Set-Alias tf terraform; tf destroy`,
-# `Start-Process terraform destroy`.
+# PowerShell commands that run a program an argument names, or give it another
+# name (review round 5): `Start-Process terraform -ArgumentList destroy`,
+# `Set-Alias tf terraform`. `Invoke-Expression` is read as the eval it is.
 _PS_LAUNCHERS = frozenset((
     "set-alias", "sal", "new-alias", "nal", "import-alias", "ipal",
-    "start-process", "saps", "start", "invoke-expression", "iex",
-    "invoke-command", "icm", "start-job", "sajb", "start-threadjob",
-    "invoke-item", "ii"))
+    "start-process", "saps", "start", "invoke-command", "icm", "start-job",
+    "sajb", "start-threadjob", "invoke-item", "ii"))
+_PS_EVAL = frozenset(("invoke-expression", "iex"))
+_PS_COPIERS = frozenset(("copy-item", "copy", "cpi", "cp", "move-item", "move",
+                         "mi", "mv", "new-item", "ni", "rename-item", "ren",
+                         "rni"))
+# A command word PowerShell runs as written: a name or a path, no `$`, `(`,
+# `+` or quote left in it.
+_PS_NAME_RE = re.compile(r"^[A-Za-z0-9_./\\:~-]+$")
 
 
-def ps_unseen(normal, lex_ps):
-    """True when normalised PowerShell `normal` holds a command the lexer is
-    not known to read as terraform: a launcher (`_PS_LAUNCHERS`), an
-    `alias:`/`function:` drive write, or a path run with a
-    destroy/apply/workspace verb (`Copy-Item terraform.exe ./tf; ./tf
-    destroy`; PowerShell runs no bare name from the current directory).
-    Only asked of a line that names terraform. `lex_ps` is cloud_guard's
-    `_lex_ps`."""
-    cmds, _subs = lex_ps(normal)
+def _ps_verb_on_line(normal):
+    """`_verb_on_line` for normalised PowerShell."""
+    named = names_terraform(normal, "powershell")
+    if named is not None:
+        return named
+    return next((c for c in _name_candidates(normal, "powershell")
+                 if c.lower() in _GATE_VERBS), None)
+
+
+def _ps_argv_trigger(argv, normal, helpers, depth, copies):
+    """`(word, unseen)` when one PowerShell simple command runs terraform,
+    or None: `_argv_trigger`'s rule, read the way PowerShell runs a line."""
+    _unwrap, shell_args, pwsh_payload, ps_normalise, head_name, _lex = \
+        helpers
+    if len(argv) > 2 and argv[0].startswith("$") and argv[1] in (
+            "=", "+=", "-=", "*=", "/=", "??="):
+        argv = argv[2:]  # `$out = terraform destroy`: the right side runs
+    if argv and argv[0] in ("&", "."):
+        argv = argv[1:]
+    if not argv or (len(argv) == 1 and argv[0].startswith("$")):
+        return None  # nothing, or an expression PowerShell only prints
+    first, args = argv[0], argv[1:]
+    if not _PS_NAME_RE.match(first):
+        # `& $tf destroy`, `& ("terra"+"form") destroy`: which program runs is
+        # made at run time. Gated only on a line naming one of the words a
+        # terraform line needs, as in bash.
+        named = _ps_verb_on_line(normal)
+        return None if named is None else (named, True)
+    if _names_tool(first):
+        return None if _tf_read_only(argv, []) else (first, False)
+    head = head_name(first)
+    if head in _GATE_PWSH:
+        payload = pwsh_payload(args)
+        if payload is not None and "$" not in payload:
+            return ps_trigger(ps_normalise(payload)[0], helpers, depth + 1)
+        named = names_terraform(normal, "powershell")
+        return None if named is None else (named, True)
+    if head in _GATE_SHELLS:
+        has_c, positional = shell_args(args)
+        if has_c and positional:
+            return _bash_trigger(positional[0], positional[0], helpers,
+                                 depth + 1)
+        named = names_terraform(" ".join(args), "powershell")
+        return None if named is None else (named, True)
+    if head in _PS_EVAL:
+        return ps_trigger(" ".join(a for a in args if not a.startswith("-")),
+                          helpers, depth + 1)
+    opaque = head in _GATE_OPAQUE  # `cmd /c`, `wsl`, `ssh`: bash's rule
+    if opaque or head in _PS_LAUNCHERS or any(
+            w.lower().startswith(("alias:", "function:")) for w in args):
+        named = names_terraform(" ".join(args), "powershell") if opaque \
+            else next((w for w in args if _arg_names_tool(w)), None)
+        return None if named is None else (named, True)
+    verb = _first_operand(args)
+    if head in copies and verb is not None and verb.lower() in _GATE_VERBS:
+        # `Copy-Item terraform.exe ./tf; ./tf destroy`: the name the line
+        # copied terraform to, run with a verb.
+        named = names_terraform(normal, "powershell")
+        return None if named is None else (named, True)
+    return None
+
+
+def ps_trigger(normal, helpers, depth=0):
+    """`(word, unseen)` when normalised PowerShell `normal` RUNS terraform,
+    terragrunt or tofu, else None -- the command-word rule bash has
+    (`command_trigger`), with PowerShell's direct forms: `&` and `.`,
+    `terraform.exe` or a path, `Start-Process terraform`, `pwsh -c`, `bash
+    -c`, `Invoke-Expression`, `$(...)` and script blocks. A read-only
+    subcommand is not counted, and a word that only mentions terraform
+    (`git commit -m "fix terraform apply"`, `Select-String terraform *.md`)
+    is data. `helpers` as for `command_trigger`."""
+    if depth > _GATE_DEPTH:
+        named = names_terraform(normal, "powershell")
+        return None if named is None else (named, True)
+    cmds, subs = helpers[5](normal)
     argvs = [[str(w) for w in c.words] for c in cmds]
-    argvs = [a[1:] if a and a[0] in ("&", ".") else a for a in argvs]
-    argvs = [a for a in argvs if a]
-    for argv in argvs:
-        head = _head_name(argv[0])
-        if _names_tool(argv[0]):
-            continue
-        if head in _PS_LAUNCHERS or any(
-                w.lower().startswith(("alias:", "function:"))
-                for w in argv[1:]):
-            return True
-        verb = next((w for w in argv[1:] if not w.startswith("-")), None)
-        if verb is not None and verb.lower() in ("destroy", "apply",
-                                                 "workspace") and (
-                "/" in argv[0] or "\\" in argv[0]):
-            return True
-    return False
+    copies = _copies_terraform(argvs, helpers[4], _PS_COPIERS)
+    hits = [ps_trigger(sub, helpers, depth + 1) for sub in subs]
+    hits += [_ps_argv_trigger(a, normal, helpers, depth, copies)
+             for a in argvs]
+    hits = [h for h in hits if h is not None]
+    if not hits:
+        return None
+    return hits[0][0], any(h[1] for h in hits)
 
 
 def command_trigger(text, helpers):
@@ -1782,7 +1806,7 @@ def command_trigger(text, helpers):
     destroy, apply or workspace -- else None. A read-only subcommand
     (`_tf_read_only`) is not counted. `unseen`: some such command is one the
     lexer is not known to read. `helpers` is cloud_guard's `(_unwrap,
-    _shell_args, _pwsh_payload, _ps_normalise, _head_name, _ps_unseen)`."""
+    _shell_args, _pwsh_payload, _ps_normalise, _head_name, _lex_ps)`."""
     return _bash_trigger(text, text, helpers, 0)
 
 

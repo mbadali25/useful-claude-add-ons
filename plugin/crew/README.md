@@ -1038,18 +1038,23 @@ falls back to the older, wider rule: any word naming terraform.
 
 **A terraform command crew cannot follow is could not tell even in plain
 words.** An alias (`alias tf=terraform`, `hash -p`, PowerShell's `Set-Alias`
-and `alias:` drive), a binary copied or linked under another name and run with
-`destroy`, `apply` or `workspace`, zsh's `=terraform`, a container image, a
-wrapper crew does not strip (`strace`, `flock`, `aws-vault exec`,
-`unbuffer`, `systemd-run`, `find -exec`, `ssh`) and PowerShell's
-`Start-Process` are asked about and refused unattended: the parser would not
-see terraform in them. Run terraform by its own name to have it judged. Two
-things are not gated for their quoting: a read-only subcommand (`plan`,
-`show`, `output`, `fmt`, `validate`, `init`, `workspace list`, ...) spelled
-where it cannot be another one, so `terraform plan -var 'environment=staging'`
-runs as before; and the arguments of a program that never runs one (`cp -r
-terraform "$BACKUP_DIR"`, `git add terraform "$f"`). A PowerShell line keeps
-the any-word rule.
+and `alias:` drive), a binary the same line copies or links to another name
+and then runs by that name with `destroy`, `apply` or `workspace`, zsh's
+`=terraform`, a script runner crew does not split (`flock`, `ssh`, `source`)
+and PowerShell's `Start-Process terraform` are asked about and refused
+unattended: the parser would not see terraform in them. Run terraform by its
+own name to have it judged. Options before the subcommand are read the way
+terraform and terragrunt read them, so `terragrunt --working-dir infra
+destroy` is a destroy; an option crew does not know, followed by `apply` or
+`destroy`, is read as that operation. Two things are not gated for their
+quoting: a read-only subcommand (`plan`, `show`, `output`, `fmt`, `validate`,
+`init`, `workspace list`, ...) spelled where it cannot be another one, so
+`terraform plan -var 'environment=staging'` runs as before; and the arguments
+of any program that is not terraform (`cp -r terraform "$BACKUP_DIR"`, `rg
+terraform "$file"`). A PowerShell line follows the same command-word rule:
+`&`, `.`, `terraform.exe`, a path and `Start-Process terraform` run terraform,
+`git commit -m "fix terraform apply"` and `Select-String terraform *.md` do
+not.
 
 **The always-stops.** A destroy is never applied unattended, at any setting:
 `destroy`, `apply -destroy`, `apply -replace`, `workspace delete`, a saved plan
@@ -1092,6 +1097,45 @@ letters of it (`t*`) are not read as terraform. Tests: `tests/test_cloud_guard.p
 pwsh), `tests/test_cloud_guard_environments.py` and `tests/test_crew_tfplan.py`
 (the environment layer and the sidecar), and the `cloud-guard.sh` section of
 `hooks/scripts/_test/run-tests.sh`.
+
+#### What the guard does not catch
+
+The guard is a tripwire for an agent's accidental or direct destructive
+command, not a sandbox against deliberate evasion (owner decision,
+2026-09-26). It catches `terraform`, `terragrunt` and `tofu` written directly:
+bare or path-qualified, behind the listed wrappers (`env`, `sudo`, `doas`,
+`nice`, `ionice`, `timeout`, `stdbuf`, `nohup`, `command`, `exec`, `time`,
+`xargs`, `parallel`, `watch`, `flock`, `chroot`, `nsenter`, `wsl`, `pwsh -c`),
+inside `bash|sh|zsh -c` and `eval` strings, with global options before the
+subcommand (`-chdir=`, terragrunt's `--working-dir`), and PowerShell's `&`,
+`.`, `terraform.exe` and `Start-Process`. It does not try to catch a program
+renamed or started some other way. Each of these runs unjudged:
+
+- a rename by alias, function, symlink or copy, unless the same line makes a
+  plain copy or link and runs it by that name: `env ln -sf /usr/bin/terraform ./ls && PATH=.:/usr/bin ls destroy -auto-approve`,
+  `X=1 cp /usr/bin/terraform ./ls && PATH=.:/usr/bin ls destroy -auto-approve`,
+  `sudo ln -s /usr/bin/terraform /usr/local/bin/tf; tf destroy -auto-approve`
+- `env -S` escape strings: `env -S 'terraform\_destroy\_-auto-approve'`
+- BusyBox applets: `busybox env terraform destroy -auto-approve`,
+  `busybox timeout 60 terraform destroy -auto-approve`
+- git `!` aliases: `git -c alias.tf='!terraform' tf destroy -auto-approve`
+- an interpreter (`python -c`, `node -e`, ...): `python3 -c 'import os; os.system("terraform destroy")'`
+- a script file: `bash deploy.sh`
+- a wrapper not in the list above: `strace -f terraform destroy`,
+  `strace -f terraform $'\x64estroy' -auto-approve`, `strace =terraform destroy`,
+  `aws-vault exec p -- terraform destroy`,
+  `aws-vault exec prod -- terraform "destroy" -auto-approve`,
+  `unbuffer terraform destroy`, `systemd-run terraform destroy`
+- a program that runs another it is handed: `git bisect run terraform destroy`,
+  `git -C infra bisect run terraform destroy`,
+  `git -C add bisect run terraform destroy`, `rg --pre terraform destroy .`
+- a container's entrypoint: `docker run --rm hashicorp/terraform:1.9 destroy -auto-approve`
+
+No command-line guard can close these: unattended work has to run
+interpreters, scripts and build tools, and any of them can start terraform
+under another name, so a guard that refused them would refuse the work
+itself. The real boundary is the credentials an unattended run holds — scope
+them so the run cannot destroy what it must not. That is T-0044.
 
 ### §11c. `change` — change requests, added by schema 7
 

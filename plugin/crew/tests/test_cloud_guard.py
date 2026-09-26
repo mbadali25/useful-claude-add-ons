@@ -448,10 +448,8 @@ MUST_ALLOW = [
 # another rule's, so the lexer behaviour it pinned is still pinned. Review
 # round 5 moved `bash-c-dashdash-plan` and `xargs-terraform-fmt` back to
 # MUST_ALLOW as they were: `plan` and `fmt` change nothing, so their quoting
-# is not gated. A PowerShell line keeps Step 8's any-word trigger.
+# is not gated.
 COULD_NOT_TELL = [
-    ("was-ps-comment", "PowerShell",
-     'Write-Output "terraform destroy" # then; terraform destroy'),
     # The same two shapes with a subcommand that is not read-only.
     ("was-bash-c-dashdash-taint", "Bash",
      "bash -c -- 'terraform taint aws_instance.a'"),
@@ -461,9 +459,11 @@ COULD_NOT_TELL = [
 # Step 9 (T-0005): Step 8 refused these too, because a word on each dequoted
 # to terraform. None RUNS terraform -- a message, a search, a comment, a
 # heredoc body that stays literal -- so the gate, which now reads the command
-# word, hands them back to the lexer, and the lexer allows them. PowerShell
-# lines keep the Step 8 trigger (`was-ps-comment` above).
+# word, hands them back to the lexer, and the lexer allows them. Step 10 gave
+# PowerShell the same command-word rule, so its comment case moved here.
 NO_LONGER_GATED = [
+    ("was-ps-comment", "PowerShell",
+     'Write-Output "terraform destroy" # then; terraform destroy'),
     ("was-commit-message", "Bash",
      'git commit -m "terraform destroy, DROP TABLE, git push --force"'),
     ("was-grep-words", "Bash", "grep -rn 'terraform apply' docs/"),

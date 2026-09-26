@@ -1429,13 +1429,28 @@ and `could-not-tell` for a terraform line that is not all plain literals
 "A terraform line" means one that runs terraform, terragrunt or tofu as a
 command -- its command word, or a command inside `bash -c`, `eval`, `pwsh -c`
 or a substitution -- not one that mentions the word in a message, a search or
-a file name (README, "Cloud guard"). A line that runs terraform in a way the
-parser does not follow (an alias, a renamed or copied binary, zsh's
-`=terraform`, a wrapper crew does not strip, PowerShell's `Set-Alias` or
-`Start-Process`) is `could-not-tell` even when every word is plain; a
-read-only subcommand (`plan`, `show`, `output`, `fmt`, ...) and a data
-command's arguments (`cp -r terraform "$BACKUP_DIR"`) are not gated for their
-quoting.
+a file name (README, "Cloud guard"); PowerShell lines follow the same rule. A
+line that runs terraform in a way the parser does not follow (an alias, a
+binary the same line copies or links and runs by its new name, zsh's
+`=terraform`, a script runner such as `flock` or `ssh`, PowerShell's
+`Set-Alias` or `Start-Process`) is `could-not-tell` even when every word is
+plain; a read-only subcommand (`plan`, `show`, `output`, `fmt`, ...) and the
+arguments of a program that is not terraform (`cp -r terraform
+"$BACKUP_DIR"`) are not gated for their quoting. Options before the
+subcommand are skipped as terraform and terragrunt read them (`terragrunt
+--working-dir infra destroy` is a destroy).
+
+**What the guard does not catch.** It catches terraform, terragrunt and tofu
+written directly: bare or path-qualified, behind the listed wrappers, inside
+`bash|sh|zsh -c` and `eval`, with global options before the subcommand, and
+PowerShell's `&`, `.`, `terraform.exe` and `Start-Process`. It does not try to
+catch a program renamed by alias, function, symlink or copy, `env -S` escape
+strings, BusyBox applets, git `!` aliases, an interpreter (`python -c`, `node
+-e`), a script file, a wrapper it does not list (`strace`, `aws-vault exec`),
+a program that runs another (`git bisect run`, `rg --pre`) or a container's
+entrypoint. No command-line guard can: unattended work must run interpreters
+and scripts. The real boundary is the credentials an unattended run holds,
+which is T-0044. README, "What the guard does not catch", lists the commands.
 
 **The always-stops.** A destroy is never applied unattended at any setting —
 `terraformApply: allow` and `prodUnattended: true` included. So is an apply of

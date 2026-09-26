@@ -2035,10 +2035,6 @@ S9_MUST_BLOCK = _normalise([
      _gate()),
     ("s9-nested-bash-c", "Bash", "bash -c 'bash -c \"terraform destroy\"'",
      _gate()),
-    ("s9-unknown-wrapper", "Bash",
-     "strace -f terraform $'\\x64estroy' -auto-approve", _gate()),
-    ("s9-aws-vault", "Bash",
-     'aws-vault exec prod -- terraform "destroy" -auto-approve', _gate()),
     ("s9-watch-string", "Bash", f'watch -n 5 "terraform {_ADESTROY}"',
      _gate()),
     ("s9-find-exec", "Bash",
@@ -2158,39 +2154,21 @@ R5_MUST_BLOCK = _normalise([
      f"cp /usr/bin/terraform ./ls && PATH=.:/usr/bin ls {_ADESTROY}",
      _unseen()),
     ("r5-seen-apply-beside-unseen", "Bash",
-     f"terraform apply {PLAN} && strace -f terraform destroy", _unseen()),
+     f"terraform apply {PLAN} && flock /tmp/l terraform destroy", _unseen()),
     ("r5-zsh-copy-bare-name", "Bash",
      f"cp =terraform ./ls && PATH=.:/usr/bin ls {_ADESTROY}", _unseen()),
-    ("r5-sudo-ln-path", "Bash",
-     f"sudo ln -s /usr/bin/terraform /usr/local/bin/tf; tf {_ADESTROY}",
-     _unseen()),
-    ("r5-container-image", "Bash",
-     f"docker run --rm hashicorp/terraform:1.9 {_ADESTROY}", _unseen()),
     # A data command's exemption must not cover what it runs: `git bisect
     # run`, `rg --pre`; and a copy made inside `bash -c` still renames.
-    ("r5-git-bisect-run", "Bash", "git bisect run terraform destroy",
-     _unseen()),
-    ("r5-git-dash-c-bisect-run", "Bash",
-     "git -C infra bisect run terraform destroy", _unseen()),
-    ("r5-git-dash-c-value-is-a-subcommand", "Bash",
-     "git -C add bisect run terraform destroy", _unseen()),
-    ("r5-rg-pre", "Bash", "rg --pre terraform destroy .", _unseen()),
     ("r5-nested-copy-bare-name", "Bash",
      "bash -c 'cp /usr/bin/terraform ./ls' && PATH=.:/usr/bin ls "
      f"{_ADESTROY}", _gate()),
     # FIX 1: wrappers the lexer does not strip.
     ("r5-flock", "Bash", "flock /tmp/l terraform destroy", _unseen()),
-    ("r5-strace", "Bash", "strace -f terraform destroy", _unseen()),
-    ("r5-aws-vault", "Bash", "aws-vault exec p -- terraform destroy",
-     _unseen()),
-    ("r5-unbuffer", "Bash", "unbuffer terraform destroy", _unseen()),
-    ("r5-systemd-run", "Bash", "systemd-run terraform destroy", _unseen()),
     # FIX 4: zsh's `=terraform`, as the command word and behind wrappers.
     ("r5-zsh-equals", "Bash", f"=terraform {_ADESTROY}", _unseen()),
     ("r5-zsh-equals-tofu-ws-delete", "Bash",
      "=tofu workspace delete production", _unseen()),
     ("r5-zsh-equals-env", "Bash", "env =terraform destroy", _unseen()),
-    ("r5-zsh-equals-strace", "Bash", "strace =terraform destroy", _unseen()),
     # With no verb on the line only the command-word branches gate these:
     # a read-only-or-not subcommand crew does not judge, behind a name only
     # zsh or a brace list makes.
@@ -2340,3 +2318,320 @@ def test_round5_unseen_reason_says_how_to_have_it_judged(tmp_path):
     assert (decision, code) == ("deny", 0), (reason, err)
     assert "run terraform by its own name" in reason, reason
     assert "plain words" not in reason, reason
+
+
+# --- Step 10: direct use only (owner, 2026-09-26) -----------------------------
+#
+# The guard's threat model is an agent's accidental or direct destructive
+# command, not deliberate evasion (spec Exclusions). So these rows test the
+# DIRECT spellings -- bare or path-qualified, behind the listed wrappers,
+# inside `bash|sh|zsh -c` and `eval`, with global options before the
+# subcommand, and PowerShell's direct forms -- and the ordinary commands the
+# gate must not refuse. A disguise the Exclusions name is not a row here: it
+# is listed in `DOCUMENTED_NOT_CAUGHT`, which README's "What the guard does
+# not catch" must carry. Measured at 2cbb944b: every `terragrunt` option-value
+# row, `terraform -chdir infra`, PowerShell's `. terraform`, `& $tf` and the
+# terragrunt option row were allowed (red first); of the must-allow rows,
+# `cp -r terraform "$dest"`, `ls terraform/ "$d"`, the PowerShell `kubectl`
+# line and `Get-Content` were already allowed and pin the other side.
+
+_WRAPPED = ("env", "sudo -E", "doas", "nice -n 5", "ionice -c 3",
+            "timeout 60", "stdbuf -oL", "nohup", "command", "exec", "time",
+            "watch -n 5", "flock /tmp/l", "chroot /", "nsenter -t 1", "wsl",
+            "wsl -e")
+S10_DIRECT_BLOCK = _normalise([
+    # Round 6 BLOCK: an option value before the subcommand.
+    ("s10-tg-working-dir-destroy", "Bash",
+     "terragrunt --working-dir infra destroy -auto-approve", _o(**_STAGING)),
+    ("s10-tg-working-dir-apply", "Bash",
+     "terragrunt --working-dir infra apply -auto-approve", _o(**_STAGING)),
+    ("s10-tg-working-dir-eq-run-all", "Bash",
+     "terragrunt --terragrunt-working-dir=infra run-all destroy",
+     _o(**_STAGING)),
+    ("s10-tg-working-dir-run-all", "Bash",
+     "terragrunt --terragrunt-working-dir infra run-all destroy",
+     _o(**_STAGING)),
+    ("s10-tg-config-destroy", "Bash",
+     "terragrunt --terragrunt-config f.hcl destroy", _o(**_STAGING)),
+    ("s10-tg-config-eq-apply", "Bash",
+     "terragrunt --terragrunt-config=f.hcl apply", _o(**_STAGING)),
+    ("s10-tf-chdir-destroy", "Bash", "terraform -chdir=infra destroy",
+     _o(**_STAGING)),
+    # Neighbours: an option crew does not know, whose next word is the verb
+    # or a value; options after `run-all`; `-chdir` without `=`; the same
+    # behind a wrapper and inside `bash -c`.
+    ("s10-tg-unknown-option-value", "Bash",
+     "terragrunt --some-option x destroy", _o(**_STAGING)),
+    ("s10-tg-unknown-option-verb", "Bash",
+     "terragrunt --non-interactive destroy", _o(**_STAGING)),
+    ("s10-tg-run-all-option-value", "Bash",
+     "terragrunt run-all --queue-exclude-dir x destroy", _o(**_STAGING)),
+    ("s10-tf-chdir-space", "Bash", "terraform -chdir infra destroy",
+     _o(**_STAGING)),
+    ("s10-tofu-chdir-apply", "Bash", "tofu -chdir=infra apply -auto-approve",
+     _o(**_STAGING)),
+    ("s10-sudo-tg-working-dir", "Bash",
+     "sudo terragrunt --working-dir infra destroy -auto-approve",
+     _o(**_STAGING)),
+    ("s10-bash-c-tg-working-dir", "Bash",
+     "bash -c 'terragrunt --working-dir infra destroy'", _o(**_STAGING)),
+    ("s10-tg-ws-delete-option", "Bash",
+     "terragrunt --terragrunt-working-dir infra workspace delete staging",
+     _o(**_STAGING)),
+    # Bare and path-qualified.
+    ("s10-bare-destroy", "Bash", "terraform destroy -auto-approve",
+     _o(**_STAGING)),
+    ("s10-bare-apply", "Bash", "terraform apply -auto-approve", _o(**_STAGING)),
+    ("s10-apply-destroy-flag", "Bash", "terraform apply -destroy p.tfplan",
+     _o(**_STAGING)),
+    ("s10-ws-delete", "Bash", "terraform workspace delete production",
+     _o(**_STAGING)),
+    ("s10-path-destroy", "Bash", "/usr/bin/terraform destroy -auto-approve",
+     _o(**_STAGING)),
+    ("s10-relative-tofu", "Bash", "./bin/tofu apply -auto-approve",
+     _o(**_STAGING)),
+    # Inside `bash|sh|zsh -c` and `eval`.
+    ("s10-bash-c", "Bash", "bash -c 'terraform destroy -auto-approve'",
+     _o(**_STAGING)),
+    ("s10-sh-c", "Bash", 'sh -c "terragrunt run-all destroy"',
+     _o(**_STAGING)),
+    ("s10-zsh-c", "Bash", "zsh -c 'tofu workspace delete qa'",
+     _o(**_STAGING)),
+    ("s10-eval", "Bash", "eval terraform destroy -auto-approve",
+     _o(**_STAGING)),
+    # PowerShell's direct forms.
+    ("s10-ps-destroy", "PowerShell", "terraform destroy -auto-approve",
+     _o(**_STAGING)),
+    ("s10-ps-call-op", "PowerShell", "& terraform destroy", _o(**_STAGING)),
+    ("s10-ps-dot", "PowerShell", ". terraform destroy", _o(**_STAGING)),
+    ("s10-ps-exe", "PowerShell", "terraform.exe apply -auto-approve",
+     _o(**_STAGING)),
+    ("s10-ps-path-call", "PowerShell", "& /usr/bin/terraform destroy",
+     _o(**_STAGING)),
+    ("s10-ps-start-process", "PowerShell",
+     "Start-Process terraform -ArgumentList 'destroy','-auto-approve'",
+     _o(**_STAGING)),
+    ("s10-ps-start-process-filepath", "PowerShell",
+     "Start-Process -FilePath terraform -ArgumentList destroy",
+     _o(**_STAGING)),
+    ("s10-ps-ws-delete", "PowerShell", "terraform workspace delete production",
+     _o(**_STAGING)),
+    ("s10-ps-tg-working-dir", "PowerShell",
+     "terragrunt --working-dir infra destroy", _o(**_STAGING)),
+    ("s10-ps-chdir", "PowerShell", "terraform -chdir=infra destroy",
+     _o(**_STAGING)),
+    ("s10-ps-pwsh-c", "PowerShell", 'pwsh -c "terraform destroy"',
+     _o(**_STAGING)),
+    ("s10-ps-bash-c", "PowerShell", 'bash -c "terraform destroy"',
+     _o(**_STAGING)),
+    ("s10-ps-iex", "PowerShell", 'Invoke-Expression "terraform destroy"',
+     _o(**_STAGING)),
+    ("s10-ps-subexpression", "PowerShell",
+     'Write-Output "$(terraform destroy -auto-approve)"', _o(**_STAGING)),
+    ("s10-ps-assigned", "PowerShell", "$out = terraform destroy -auto-approve",
+     _o(**_STAGING)),
+    ("s10-ps-variable-command", "PowerShell", "& $tf destroy",
+     _o(**_STAGING)),
+    ("s10-ps-script-block", "PowerShell",
+     "Get-Item x | ForEach-Object { terraform destroy -auto-approve }",
+     _o(**_STAGING)),
+    # A clean saved plan with a quoted word. The lexer alone allows the first
+    # and denies the nested ones only because they run more than one command,
+    # so each row names the gate's reason: only the gate reading that
+    # PowerShell form gives it.
+    ("s10-ps-dot-quoted-plan", "PowerShell", f'. terraform apply "{PLAN}"',
+     _o(**_STAGING)),
+    ("s10-ps-iex-quoted-plan", "PowerShell",
+     f"Invoke-Expression 'terraform apply \"{PLAN}\"'",
+     _o(**_STAGING, why=GATE_WHY)),
+    ("s10-ps-pwsh-quoted-plan", "PowerShell",
+     f"pwsh -c 'terraform apply \"{PLAN}\"'", _o(**_STAGING, why=GATE_WHY)),
+    ("s10-ps-bash-c-quoted-plan", "PowerShell",
+     f"bash -c 'terraform apply \"{PLAN}\"'", _o(**_STAGING, why=GATE_WHY)),
+    ("s10-ps-subexpression-quoted-plan", "PowerShell",
+     f"Write-Output \"$(terraform apply '{PLAN}')\"",
+     _o(**_STAGING, why=GATE_WHY)),
+    ("s10-ps-call-quoted-plan", "PowerShell", f'& "terraform" apply {PLAN}',
+     _o(**_STAGING)),
+] + [(f"s10-wrapped-{w.split()[0]}{'-e' if w == 'wsl -e' else ''}", "Bash",
+      f"{w} terraform destroy -auto-approve", _o(**_STAGING))
+     for w in _WRAPPED] + [
+    ("s10-wrapped-xargs", "Bash", "echo x | xargs terraform destroy",
+     _o(**_STAGING)),
+    ("s10-wrapped-parallel", "Bash", "parallel -j1 terraform destroy ::: x",
+     _o(**_STAGING)),
+])
+
+S10_ORDINARY_ALLOW = _normalise([
+    # Round 6 FIX 1: the unknown-wrapper fallback read a terraform-named
+    # argument followed by a run-time value as terraform being run.
+    ("s10a-rg-var", "Bash", 'rg terraform "$file"', _o(**_STAGING)),
+    ("s10a-vim-var", "Bash", 'vim terraform "$file"', _o(**_STAGING)),
+    ("s10a-code-home", "Bash", 'code terraform "$HOME/project"',
+     _o(**_STAGING)),
+    ("s10a-gh-pr-body", "Bash", 'gh pr create --title terraform --body "$b"',
+     _o(**_STAGING)),
+    ("s10a-cp-dest", "Bash", 'cp -r terraform "$dest"', _o(**_STAGING)),
+    ("s10a-ls-dir", "Bash", 'ls terraform/ "$d"', _o(**_STAGING)),
+    # A verb on a line that merely mentions terraform is not a renamed
+    # terraform unless the line copies or links one.
+    ("s10a-fmt-then-kubectl", "Bash", "terraform fmt && kubectl apply -f k.yaml",
+     _o(**_STAGING)),
+    ("s10a-cd-then-kubectl", "Bash", "cd terraform && kubectl apply -f k.yaml",
+     _o(**_STAGING)),
+    # Round 6 FIX 2: PowerShell's any-word trigger.
+    ("s10a-ps-commit-message", "PowerShell",
+     'git commit -m "fix terraform apply"', _o(**_STAGING)),
+    ("s10a-ps-output-raw", "PowerShell", 'terraform output -raw "db_url"',
+     _o(**_STAGING)),
+    ("s10a-ps-select-string", "PowerShell", "Select-String terraform *.md",
+     _o(**_STAGING)),
+    ("s10a-ps-rg-var", "PowerShell", 'rg terraform "$file"', _o(**_STAGING)),
+    ("s10a-ps-plan-out", "PowerShell", 'terraform plan -out="p.tfplan"',
+     _o(**_STAGING)),
+    ("s10a-ps-fmt-then-kubectl", "PowerShell",
+     "terraform fmt; kubectl apply -f k.yaml", _o(**_STAGING)),
+    ("s10a-ps-get-content", "PowerShell", 'Get-Content "terraform/main.tf"',
+     _o(**_STAGING)),
+    ("s10a-ps-assigned-output", "PowerShell",
+     '$id = terraform output -raw "instance_id"', _o(**_STAGING)),
+    ("s10a-ps-foreach-fmt", "PowerShell",
+     "$files | ForEach-Object { terraform fmt $_ }", _o(**_STAGING)),
+    # PowerShell's `.` runs the command after it, read-only here.
+    ("s10a-ps-dot-plan", "PowerShell",
+     ". terraform plan -var 'environment=staging'", _o(**_STAGING)),
+    # A value option whose value is a verb: the subcommand is `plan`.
+    ("s10a-tg-dir-named-destroy", "Bash", "terragrunt --working-dir destroy plan",
+     _o(**_STAGING)),
+])
+
+# The disguises the Exclusions put out of scope (owner, 2026-09-26), and the
+# earlier rows that needed one: each is a way to run terraform under another
+# name or through a program crew does not read. Documentation, not a claim
+# that these pass or fail: README's "What the guard does not catch" must
+# carry every command here verbatim, so the list and the promise cannot
+# drift apart.
+DOCUMENTED_NOT_CAUGHT = [
+    ("symlink behind env", "env ln -sf /usr/bin/terraform ./ls && "
+     "PATH=.:/usr/bin ls destroy -auto-approve"),
+    ("copy behind an assignment", "X=1 cp /usr/bin/terraform ./ls && "
+     "PATH=.:/usr/bin ls destroy -auto-approve"),
+    ("symlink behind sudo", "sudo ln -s /usr/bin/terraform /usr/local/bin/tf; "
+     "tf destroy -auto-approve"),
+    ("env -S escapes", "env -S 'terraform\\_destroy\\_-auto-approve'"),
+    ("a BusyBox applet", "busybox env terraform destroy -auto-approve"),
+    ("a BusyBox applet", "busybox timeout 60 terraform destroy -auto-approve"),
+    ("a git ! alias", "git -c alias.tf='!terraform' tf destroy -auto-approve"),
+    ("an interpreter", "python3 -c 'import os; os.system(\"terraform destroy\")'"),
+    ("a script file", "bash deploy.sh"),
+    ("an unlisted wrapper", "strace -f terraform destroy"),
+    ("an unlisted wrapper", "strace -f terraform $'\\x64estroy' -auto-approve"),
+    ("an unlisted wrapper", "strace =terraform destroy"),
+    ("an unlisted wrapper", "aws-vault exec p -- terraform destroy"),
+    ("an unlisted wrapper",
+     'aws-vault exec prod -- terraform "destroy" -auto-approve'),
+    ("an unlisted wrapper", "unbuffer terraform destroy"),
+    ("an unlisted wrapper", "systemd-run terraform destroy"),
+    ("a program that runs another", "git bisect run terraform destroy"),
+    ("a program that runs another", "git -C infra bisect run terraform destroy"),
+    ("a program that runs another", "git -C add bisect run terraform destroy"),
+    ("a program that runs another", "rg --pre terraform destroy ."),
+    ("a container's entrypoint",
+     "docker run --rm hashicorp/terraform:1.9 destroy -auto-approve"),
+]
+
+
+def _readme_not_caught():
+    path = os.path.join(os.path.dirname(cloud_guard.__file__), os.pardir,
+                        os.pardir, "README.md")
+    with open(path, encoding="utf-8") as handle:
+        text = handle.read()
+    match = re.search(r"^(#+) What the guard does not catch\n(.*?)(?=^#{1,4} )",
+                      text, re.M | re.S)
+    assert match, "README has no 'What the guard does not catch' section"
+    return match.group(2)
+
+
+@pytest.mark.parametrize("policy", ["ask", "block", "allow"])
+@pytest.mark.parametrize("case", S10_DIRECT_BLOCK, ids=_ids(S10_DIRECT_BLOCK))
+def test_direct_spelling_is_denied_unattended(tmp_path, case, policy):
+    over = {"ask": {}, "block": BLOCK_POLICY, "allow": ALLOW_POLICY}[policy]
+    case_id, tool, command, opts = case
+    _deny("python", tmp_path, _normalise(
+        [(case_id, tool, command, _o(**{**opts, **over}))])[0])
+
+
+@pytest.mark.parametrize("case", _sample(
+    S10_DIRECT_BLOCK, ("s10-tg-working-dir-destroy", "s10-wrapped-flock"),
+    (tcg.needs_bash,)))
+def test_direct_spelling_is_denied_unattended_bash(tmp_path, case):
+    _deny("bash", tmp_path, case)
+
+
+@pytest.mark.parametrize("case", _sample(
+    S10_DIRECT_BLOCK, ("s10-ps-dot", "s10-ps-start-process"),
+    (tcg.needs_pwsh,)))
+def test_direct_spelling_is_denied_unattended_pwsh(tmp_path, case):
+    _deny("pwsh", tmp_path, case)
+
+
+@pytest.mark.parametrize("case", [
+    c for c in S10_DIRECT_BLOCK if c[0] in (
+        "s10-tg-working-dir-destroy", "s10-ps-start-process",
+        "s10-ps-variable-command")], ids=lambda c: c[0])
+def test_direct_spelling_asks_when_attended(tmp_path, case):
+    _ask("python", tmp_path, case)
+
+
+@pytest.mark.parametrize("case", S10_ORDINARY_ALLOW,
+                         ids=_ids(S10_ORDINARY_ALLOW))
+def test_ordinary_command_is_allowed(tmp_path, case):
+    _allow_literal("python", tmp_path, case)
+
+
+@pytest.mark.parametrize("case", [
+    c for c in S10_ORDINARY_ALLOW if c[0] in (
+        "s10a-rg-var", "s10a-ps-commit-message", "s10a-ps-output-raw")],
+    ids=lambda c: c[0])
+def test_ordinary_command_is_allowed_under_block(tmp_path, case):
+    case_id, tool, command, opts = case
+    _allow_literal("python", tmp_path, _normalise(
+        [(case_id, tool, command, _o(**{**opts, **BLOCK_POLICY}))])[0])
+
+
+@pytest.mark.parametrize("case", _sample(
+    S10_ORDINARY_ALLOW, ("s10a-rg-var", "s10a-ps-commit-message"),
+    (tcg.needs_pwsh,)))
+def test_ordinary_command_is_allowed_pwsh(tmp_path, case):
+    _allow_literal("pwsh", tmp_path, case)
+
+
+@pytest.mark.parametrize("disguise, command", DOCUMENTED_NOT_CAUGHT,
+                         ids=[c for _d, c in DOCUMENTED_NOT_CAUGHT])
+def test_documented_not_caught_is_in_readme(disguise, command):
+    assert f"`{command}`" in _readme_not_caught(), (disguise, command)
+
+
+def test_the_not_caught_section_names_the_boundary():
+    """README, CONFIG.md and the crew-cloud skill each say why a command-line
+    guard cannot close these, and name the credentials boundary, T-0044."""
+    crew = os.path.join(os.path.dirname(cloud_guard.__file__), os.pardir,
+                        os.pardir)
+    assert "T-0044" in _readme_not_caught()
+    for rel in ("CONFIG.md", os.path.join("skills", "crew-cloud",
+                                          "SKILL.md")):
+        with open(os.path.join(crew, rel), encoding="utf-8") as handle:
+            text = handle.read()
+        assert "What the guard does not catch" in text, rel
+        section = text.split("What the guard does not catch", 1)[1][:3000]
+        assert "T-0044" in section and "interpreter" in section, rel
+
+
+def test_step10_tables_are_distinct():
+    ids = _ids(MUST_BLOCK_LITERAL + MUST_ALLOW_LITERAL + ASK_LITERAL
+               + NOW_NOT_LITERAL + S9_MUST_ALLOW + S9_MUST_BLOCK
+               + R5_MUST_BLOCK + R5_MUST_ALLOW + S10_DIRECT_BLOCK
+               + S10_ORDINARY_ALLOW)
+    assert len(ids) == len(set(ids))
+    commands = [c for _d, c in DOCUMENTED_NOT_CAUGHT]
+    assert len(commands) == len(set(commands))

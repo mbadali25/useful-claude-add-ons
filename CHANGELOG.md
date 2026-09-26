@@ -40,16 +40,17 @@ All notable changes to this repository are documented here. Format follows [Keep
   refused. A command word crew cannot read (`$x`, `$(...)`) is could not tell
   only on a line naming terraform, `destroy`, `apply` or `workspace`. A line
   crew cannot split with certainty (a `case` arm, a function, a script piped
-  into a shell, `ssh`, `source`) keeps the wider rule. PowerShell lines keep
-  the wider rule too.
+  into a shell, `ssh`, `source`) keeps the wider rule. PowerShell lines follow
+  the same command-word rule (`&`, `.`, `terraform.exe`, a path, `Start-Process
+  terraform`), so `git commit -m "fix terraform apply"`, `terraform output -raw
+  "db_url"` and `Select-String terraform *.md` are not refused there either.
 - **A terraform command crew cannot follow is could not tell, however plainly
   it is spelled.** An alias (`alias tf=terraform`, `hash -p`, PowerShell's
-  `Set-Alias`/`New-Alias`/`sal` and `alias:` drive), a copied or linked binary
-  run under another name (`ln -sf /usr/bin/terraform tf && ./tf destroy`), zsh's
-  `=terraform`, a container image (`hashicorp/terraform:1.9`), a wrapper crew
-  does not strip (`strace`, `flock`, `aws-vault exec`, `unbuffer`,
-  `systemd-run`, `find -exec`, `ssh`, `trap`) and PowerShell's
-  `Start-Process`/`saps`/`Invoke-Expression` are asked about when attended and
+  `Set-Alias`/`New-Alias`/`sal` and `alias:` drive), a binary the same line
+  copies or links and runs by its new name (`ln -sf /usr/bin/terraform tf &&
+  ./tf destroy`), zsh's `=terraform`, a script runner crew does not split
+  (`flock`, `ssh`, `trap`), a path `find -exec` finds, and PowerShell's
+  `Start-Process`/`saps` are asked about when attended and
   refused unattended and under `block` — before, a line of plain words was
   handed to the parser, which could not see terraform in it, and a destroy ran
   unattended. `ssh host terraform plan` is refused unattended too. The other
@@ -59,13 +60,26 @@ All notable changes to this repository are documented here. Format follows [Keep
   `state list|show|pull` — first after `-chdir=` options (terragrunt: first
   word) and not an `xargs -I` placeholder — are judged by the parser as before
   Step 8, so `terraform plan -var 'environment=staging'` runs under `block` and
-  unattended again. Nor are the arguments of programs that never run one
-  (`cp`, `mv`, `ls`, `git add|commit|log|...` - not `git bisect run` or
-  `git -c`, `find` without `-exec`, `echo`, ...; not `rg`, for `--pre`):
-  `cp -r terraform "$BACKUP_DIR"` is not refused. A script file run by a shell
-  (`bash build.sh`) and a `source`d file stay unread, as documented, rather
-  than refusing every line beside them. PowerShell lines keep the any-word
-  rule, so a quoted read-only PowerShell line is still asked about.
+  unattended again. Nor are the arguments of a program that is not terraform:
+  `cp -r terraform "$BACKUP_DIR"` and `rg terraform "$file"` are not refused.
+  A script file run by a shell (`bash build.sh`) and a `source`d file stay
+  unread, as documented, rather than refusing every line beside them.
+- **Direct use only (owner, 2026-09-26, after review round 6).** The guard
+  catches terraform, terragrunt and tofu written directly: bare or
+  path-qualified, behind the listed wrappers, inside `bash|sh|zsh -c` and
+  `eval`, with global options before the subcommand, and PowerShell's direct
+  forms. Options before the subcommand are now skipped as terragrunt reads
+  them, so `terragrunt --working-dir infra destroy -auto-approve` - allowed
+  unattended before - is a destroy, and PowerShell's `. terraform destroy` is
+  read. A disguise is out of scope and is no longer chased: the fallback that
+  read `<any program> ... terraform ... $var` as terraform being run is gone
+  (it refused `rg terraform "$file"` and `vim terraform "$file"`), so an
+  unlisted wrapper (`strace`, `aws-vault exec`, `unbuffer`, `systemd-run`), a
+  program that runs another (`git bisect run`, `rg --pre`) and a container
+  image now run unjudged, with the rest of the disguises (a rename crew does
+  not see made, `env -S`, BusyBox applets, git `!` aliases, an interpreter, a
+  script file). README "What the guard does not catch" lists them; the
+  boundary is the credentials an unattended run holds (T-0044).
 - **New `environments` block** (`environments.nonProd`, repo-only globs;
   `environments.prodUnattended`, ratcheted, true only when **both** config
   layers say the JSON literal `true`). Under `terraformApply: ask`, an apply of
