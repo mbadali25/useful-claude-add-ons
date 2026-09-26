@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@3a57b2d2
+anchor: useful-claude-add-ons@1e210476
 verified: 2026-09-25
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -212,7 +212,7 @@ that changed shape or are newly documented here:
   test file is named in rule 4's `run`; only rule 9's whole suite runs them.
 - **Per-rule process-group tracking and kill-on-signal was DESCOPED from crew
   1.0, and it is a documented limitation, not a silent gap.**
-  `verify-gate.sh:1493-1502` and `plugin/crew/CONFIG.md:2104-2111` both state
+  `verify-gate.sh:1493-1502` and `plugin/crew/CONFIG.md:2108-2115` both state
   it: a third registry stage (`_crew_gate_cleanup_rule_pgid`) shipped, then was
   removed after five consecutive review rounds each found the previous
   round's fix one case short (disk fill by an orphan writer, escape on gate
@@ -388,7 +388,7 @@ set on Ubuntu.
   `plugin/crew/tests/sabotage.py:75`, `:3046` — `sabotage_refresh.py`'s
   registration.
 - `plugin/crew/hooks/scripts/verify-gate.sh:1493-1502` /
-  `plugin/crew/CONFIG.md:2104-2111` — the descoped per-rule process-group kill,
+  `plugin/crew/CONFIG.md:2108-2115` — the descoped per-rule process-group kill,
   documented as a standing limitation.
 - `plugin/crew/hooks/scripts/verify-gate.ps1:822-832`, `:1665-1674` —
   `Resolve-CrewBash` refusal rather than a re-resolving hang.
@@ -557,3 +557,14 @@ limitation moved `:2084-2091` -> `:2104-2111`, re-read, same text), and under `p
 `cloud_guard.py`, `crew_guards.py`, `sabotage_cloud.py`, `test_cloud_guard.py`,
 `test_cloud_guard_environments.py` and `README.md`. None of the gate scripts, `_verify/*` or
 `scripts/check-marketplace.py` changed. Rule count still 25. No suite was executed by this note.
+
+## Re-anchor provenance - `3a57b2d2` -> `1e210476`, 2026-09-26 (T-0005 Step 9)
+
+`git diff --name-only 3a57b2d2 1e210476 -- <the paths this note cites>` returns
+`plugin/crew/CONFIG.md` (four lines added to the `environments.*` section, above the verify-gate
+chapter, so the descoping limitation moved `:2104-2111` -> `:2108-2115`, re-read, same text;
+corrected above) and under `plugin/crew/**` `cloud_guard.py`, `crew_guards.py`,
+`sabotage_cloud.py`, `test_cloud_guard.py`, `test_cloud_guard_environments.py`, `README.md`,
+`BUDGETS.md` and the version files. `.crew/verify.json`, the gate scripts, `_verify/*` and
+`scripts/check-marketplace.py` did not change; rule count still 25. No suite was executed by this
+note.

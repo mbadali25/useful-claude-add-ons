@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@3a57b2d2
+anchor: useful-claude-add-ons@1e210476
 verified: 2026-09-26
 
 ## Re-derive provenance
@@ -268,7 +268,7 @@ paragraph (`plugin/crew/hooks/scripts/cloud_guard.py:33-55`) states it: a terraf
 also judged by its target environment (`nonProd`, `prod` or `unknown`, from `TF_WORKSPACE`, an
 in-sequence literal `workspace select|new`, `.terraform/environment`, `-var environment=` /
 `TF_VAR_environment`, or a saved plan's sidecar) and by whether it destroys (`yes`, `no`,
-`unknown`, and `unknown` counts as `yes`); `_terraform_verdict` (`:2942`) decides. The sidecar
+`unknown`, and `unknown` counts as `yes`); `_terraform_verdict` (`:2953`) decides. The sidecar
 is `.crew/tfplan/<sha256>.json`, written outside the hook by
 `plugin/crew/hooks/scripts/crew_tfplan.py` (`summarize`, `:174`; `main`, `:237`), which reads
 the plan's workspace out of the plan file itself (`plan_workspace`, `:123`). The config is
@@ -277,14 +277,23 @@ the plan's workspace out of the plan file itself (`plan_workspace`, `:123`). The
 the docstrings and definitions cited; the verdict table itself is `plugin/crew/CONFIG.md`'s
 `environments.*` section, not re-derived here.
 
-**The literal-word allowlist (T-0005 Step 8).** Before the lexer reads anything, `scan` calls
-`_literal_gate` (`plugin/crew/hooks/scripts/cloud_guard.py:2769`, called at `:2802`): a line that
-names terraform, terragrunt or tofu (`crew_guards.names_terraform`,
-`plugin/crew/hooks/scripts/crew_guards.py:1189`) and holds a word that is not a plain literal
-(`crew_guards.first_non_literal`, `:1201`) yields one `terraformApply` finding whose scope `op` is
-`OP_UNREADABLE_LINE`; `_terraform_verdict` answers it before reading any plan or environment
-(ask, denied unattended; `block` denies). The helpers live in `crew_guards.py` because
-`cloud_guard.py` sits at `.pylintrc`'s max-module-lines. DERIVED from the code cited.
+**The literal-word allowlist (T-0005 Steps 8-9).** Before the lexer reads anything, `scan` calls
+`_literal_gate` (`plugin/crew/hooks/scripts/cloud_guard.py:2777`, called at `:2813`, and only at
+depth 0 - the raw command, never the lexer's own nested extractions): a line that RUNS terraform,
+terragrunt or tofu and holds a word that is not a plain literal (`crew_guards.first_non_literal`,
+`plugin/crew/hooks/scripts/crew_guards.py:1206`) yields one `terraformApply` finding whose scope
+`op` is `OP_UNREADABLE_LINE`; `_terraform_verdict` answers it before reading any plan or
+environment (ask, denied unattended; `block` denies). "Runs" is Step 9's trigger,
+`crew_guards.command_names_terraform` (`:1581`): its own bash reader, `_GateReader` (`:1252`),
+splits the raw text into argv lists, and `_argv_trigger` (`:1518`) fires on a command word that
+dequotes to one of the three after `_unwrap`'s wrappers, on a `bash -c`/`eval`/`pwsh -c` payload
+or substitution that does, or on an unreadable command word when the line names terraform,
+`destroy`, `apply` or `workspace`. Anything the reader does not read with certainty falls back to
+Step 8's any-word trigger, `crew_guards.names_terraform` (`:1194`), which PowerShell lines still
+use. The helpers live in `crew_guards.py` because `cloud_guard.py` sits at `.pylintrc`'s
+max-module-lines; `cloud_guard._GATE_HELPERS` passes the lexer's `_unwrap`, `_shell_args`,
+`_pwsh_payload`, `_ps_normalise` and `_head_name` in, so `crew_guards` still imports nothing from
+it. DERIVED from the code cited.
 
 **The ratchet registry (`_RATCHETED`, `plugin/crew/hooks/scripts/crew_config.py:2418-2530`)
 now holds 14 keys**, built in seven steps (a literal dict of two at `:2418`, four `.update()`
@@ -795,3 +804,16 @@ and `.crew/verify.json` (`crew_guards.py` added to the cloud-guard rule's paths,
 `ALL_GUARD_NAMES` `:195-196`, the guard table's lines, `ENVIRONMENTS_DEFAULTS` `:251`,
 `RATCHETED_KEYS["environments.prodUnattended"]` `:545-549`, `_terraform_verdict` `:2942`. The
 historical re-verify notes above keep the numbers of their own anchors.
+
+Then `3a57b2d2` -> `1e210476` (T-0005 Step 9, gate on the command being run): `git diff
+--name-only 3a57b2d2 1e210476 -- <the paths this note cites>` returns `cloud_guard.py`,
+`crew_guards.py`, `plugin/crew/CONFIG.md` (cited by name and section only), the version files
+(crew stepped back to 1.0.37 and re-set to 1.0.41, byte-identical to `3a57b2d2`) and, under
+`plugin/crew/**`, the Step 9 tests and README. In `cloud_guard.py`, `:1-6` and `:33-55` are
+byte-identical (the first hunk starts at `:57`); the docstring grew three lines and the
+`crew_guards` import two, so `_terraform_verdict` moved `:2942` -> `:2953`, `_literal_gate`
+`:2769` -> `:2777`, and its call `:2802` -> `:2813` (now depth 0 only). In `crew_guards.py` every
+line above `:1084` is unchanged, so `ALL_GUARD_NAMES` `:195-196`, the guard table,
+`ENVIRONMENTS_DEFAULTS` `:251` and `RATCHETED_KEYS["environments.prodUnattended"]` `:545-549`
+hold (re-read); `names_terraform` moved `:1189` -> `:1194` and `first_non_literal` `:1201` ->
+`:1206`, and the Step 9 trigger is appended from `:1216`. Re-taken by content, corrected above.
