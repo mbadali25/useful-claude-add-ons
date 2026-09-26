@@ -327,6 +327,40 @@ def test_a_stat_dirty_unchanged_file_is_not_a_change(repo):
     assert completion_audit.audit(str(repo), "T-1") == (True, [])
 
 
+def _quote_named_repo(tmp_path, name='"q.py'):
+    """A repo whose `name` (`"q.py` by default) is committed at the returned
+    base, then made stat-dirty. `hash-object --stdin-paths` C-unquotes a line
+    starting with `"` (review round 3, T-0008-refresh-check--5uPdfQ)."""
+    from review_fixtures import init_repo  # pylint: disable=import-outside-toplevel
+    root = tmp_path / "q"
+    init_repo(root)
+    (root / name).write_text("q = 1\n", encoding="utf-8")
+    git(root, "add", "--", name)
+    git(root, "commit", "-qm", "quote-named file")
+    base = git(root, "rev-parse", "HEAD")
+    (root / "other.py").write_text("o = 1\n", encoding="utf-8")
+    git(root, "add", "other.py")
+    git(root, "commit", "-qm", "another file")
+    _stat_dirty(root / name)
+    return root, base
+
+
+@pytest.mark.skipif(os.name == "nt", reason='Windows forbids `"` in a file name')
+@pytest.mark.parametrize("name", ['"q.py', '"a\\b"c.py', '"'])
+def test_a_stat_dirty_file_whose_name_starts_with_a_quote_is_not_a_change(tmp_path, name):
+    root, base = _quote_named_repo(tmp_path, name)
+
+    assert completion_audit.changed_paths(str(root), base) == ["other.py"]
+
+
+@pytest.mark.skipif(os.name == "nt", reason='Windows forbids `"` in a file name')
+def test_an_edited_file_whose_name_starts_with_a_quote_is_a_change(tmp_path):
+    root, base = _quote_named_repo(tmp_path)
+    (root / '"q.py').write_text("q = 2\n", encoding="utf-8")
+
+    assert completion_audit.changed_paths(str(root), base) == ['"q.py', "other.py"]
+
+
 def test_the_audit_never_rewrites_the_index(repo, monkeypatch):
     ready(repo)
     _stat_dirty(repo / "other" / "keep.py")

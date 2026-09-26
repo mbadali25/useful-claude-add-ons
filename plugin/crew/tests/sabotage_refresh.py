@@ -13,9 +13,14 @@ open a blocking hook wider than an approved ticket's refresh. Review round 1
 same mutation turns red. Review round 2 (T-0008-TPCCYg) added the ones
 after the ROUND 2 marker: a fallback base trusted after the ticket's commits
 reached the default branch, a measured-looking line printed over nothing
-measured, and three "could not tell" cases read as fresh. A mutation listed twice with different tests is on
-purpose: dropping the approval condition must fail the unapproved, the `cli`
-and the stale case each, not just whichever runs first.
+measured, and three "could not tell" cases read as fresh. Review round 3
+(T-0008-refresh-check--5uPdfQ) added the ones after the ROUND 3 marker: a
+recorded base trusted with the ticket's commits behind it, an artifact
+keeping a measured status under a base that may hide the change, a quoted
+name breaking the audit's hash, and a guard module with no pytest rule.
+A mutation listed twice with different tests is on purpose: dropping the
+approval condition must fail the unapproved, the `cli` and the stale case
+each, not just whichever runs first.
 """
 import os
 
@@ -33,6 +38,15 @@ _WORKTREE_DIFF = ("        return sorted(completion_audit.worktree_changes(root,
                   "literal=True))\n")
 _GUARD_GATE = '    if approval["status"] != "approved":\n        return False\n    if real_rel'
 _AUDIT_GATE = '    if approval["status"] != "approved":\n        return paths\n'
+# The pre-round-2 listing exactly (review round 3's NIT on :182): newline-split
+# through `_git_lines`, so a name git C-quotes never matches. Dropping only
+# `-z` would leave one unsplit string, which fails every name, quoted or not.
+_UNTRACKED = ("        untracked = {p for p in completion_audit._git_fields(  "
+              "# pylint: disable=protected-access\n"
+              '            top, ["ls-files", "-z", "--others", "--exclude-standard"]) if p}\n')
+_DEMOTE = '        if item["status"] in (FRESH, STALE):\n'
+_RECORD_DOUBT = "        doubt = _named_behind(top, base, ticket)\n"
+VERIFY = os.path.join(os.path.dirname(os.path.dirname(CREW)), ".crew", "verify.json")
 
 REFRESH_MUTATIONS = (
     ("the refresh check reports fresh whatever the artifacts say", CHECK,
@@ -180,8 +194,8 @@ REFRESH_MUTATIONS = (
      "        if True:\n",
      _T + "test_no_codemap_cites_line_only_when_fresh_or_stale[unknown-False]"),
     ("the untracked list is newline-split, so a quoted name never matches", CHECK,
-     '["ls-files", "-z", "--others", "--exclude-standard"]',
-     '["ls-files", "--others", "--exclude-standard"]',
+     _UNTRACKED,
+     '        untracked = set(_git_lines(top, "ls-files", "--others", "--exclude-standard") or [])\n',
      _T + "test_an_untracked_file_git_would_quote_stales_the_graph"),
     ("a corrupt config reads as the defaults", CHECK,
      '            return None, f".crew/{name} is not valid JSON"\n',
@@ -203,4 +217,30 @@ REFRESH_MUTATIONS = (
      '    "TODO.md",\n',
      "",
      _T + "test_filing_a_todo_item_alone_stales_nothing"),
+    # ROUND 3 (T-0008-refresh-check--5uPdfQ)
+    ("a recorded base is trusted with the ticket's commits behind it", CHECK,
+     _RECORD_DOUBT, "        doubt = None\n",
+     _T + "test_a_record_after_a_fast_forward_into_main_is_unknown"),
+    ("a recorded base behind the default tip is trusted with the ticket behind it", CHECK,
+     _RECORD_DOUBT, "        doubt = None\n",
+     _T + "test_a_record_behind_the_default_tip_with_the_ticket_behind_it_is_unknown"),
+    ("an artifact keeps its measured fresh under a fallback that may hide", CHECK,
+     _DEMOTE, "        if False:\n",
+     _T + "test_no_artifact_keeps_a_measured_fresh_under_a_fallback_that_may_hide"),
+    ("--json keeps a measured fresh under a fallback that may hide", CHECK,
+     _DEMOTE, "        if False:\n",
+     _T + "test_no_json_artifact_reads_fresh_under_a_fallback_that_may_hide"),
+    ("an artifact keeps its measured fresh under a record that may hide", CHECK,
+     _DEMOTE, "        if False:\n",
+     _T + "test_no_artifact_keeps_a_measured_fresh_under_a_record_that_may_hide"),
+    ("an artifact keeps its measured status under a fallback equal to HEAD", CHECK,
+     _DEMOTE, "        if False:\n",
+     _T + "test_no_artifact_keeps_a_measured_status_under_a_fallback_equal_to_head"),
+    ("a stat-dirty name starting with a quote reaches hash-object unquoted", AUDIT,
+     "    if not path.startswith('\"'):\n        return path\n",
+     "    if True:\n        return path\n",
+     _CAI + "test_a_stat_dirty_file_whose_name_starts_with_a_quote_is_not_a_change"),
+    ("an edit to scope_guard.py runs no pytest rule", VERIFY,
+     '                "plugin/crew/hooks/scripts/scope_guard.py",\n', "",
+     _T + "test_every_module_the_refresh_allowance_touches_runs_a_pytest_rule[scope_guard.py]"),
 )

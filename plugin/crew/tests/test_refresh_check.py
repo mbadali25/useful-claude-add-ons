@@ -823,3 +823,169 @@ def test_fallback_equal_to_head_on_a_fresh_branch_is_unknown(tmp_path):
 
     assert (result["status"], result["stop"]) == (
         "unknown", "the fallback scope base hides the change"), result
+
+
+# --- review round 3 (T-0008-refresh-check--5uPdfQ) -------------------------------
+
+def _successor_after_a_fast_forward(tmp_path, main_moves_on=False):
+    """The reviewer's :603 repro. T-0001's first commit reaches `main` by a
+    fast-forward, then a successor branch records its scope base with
+    `scope_base.record` -- HEAD, since HEAD is the merge-base -- and commits
+    something unrelated. With `main_moves_on`, `main` gains one more commit
+    before the successor branches from the older tip, so the recorded base is
+    a strict ancestor of the default ref's tip. Returns root."""
+    root, anchor = _on_main_with_a_map(tmp_path)
+    _git(root, "checkout", "-q", "-b", f"{TICKET}-work")
+    _write(root, "src/app.py", "print('changed')\n")
+    commit_file(root, "src/app.py", f"change app ({TICKET})")
+    _git(root, "checkout", "-q", "main")
+    _git(root, "merge", "-q", "--ff-only", f"{TICKET}-work")
+    successor_from = "main"
+    if main_moves_on:
+        successor_from = head_sha(root, length=40)
+        _commit(root, "src/third.py", "print('main moves on')\n")
+    _git(root, "update-ref", "refs/remotes/origin/main", "main")
+    _git(root, "checkout", "-q", "-b", f"{TICKET}-successor", successor_from)
+    assert scope_base.record(str(root), TICKET)[1] == "recorded", anchor
+    _commit(root, "src/other.py", "print('other')\n")
+    return root
+
+
+def test_a_record_after_a_fast_forward_into_main_is_unknown(tmp_path):
+    root = _successor_after_a_fast_forward(tmp_path)
+
+    result = _check(root)
+
+    assert (result["status"], result["base_source"],
+            f"may hide {TICKET}'s commits" in (result["stop"] or "")) == (
+        "unknown", "record", True), result
+
+
+def test_a_record_behind_the_default_tip_with_the_ticket_behind_it_is_unknown(tmp_path):
+    root = _successor_after_a_fast_forward(tmp_path, main_moves_on=True)
+
+    result = _check(root)
+
+    assert (result["status"], result["base_source"],
+            f"may hide {TICKET}'s commits" in (result["stop"] or "")) == (
+        "unknown", "record", True), result
+
+
+def test_a_record_behind_the_default_tip_with_no_ticket_commit_is_judged(tmp_path):
+    root, _anchor = _on_main_with_a_map(tmp_path)
+    _git(root, "checkout", "-q", "-b", "feature")
+    scope_base.record(str(root), TICKET)
+    _git(root, "checkout", "-q", "main")
+    _write(root, "src/third.py", "print('main moves on')\n")
+    commit_file(root, "src/third.py", "T-00012: another ticket lands on main")
+    _git(root, "update-ref", "refs/remotes/origin/main", "main")
+    _git(root, "checkout", "-q", "feature")
+    _write(root, "src/app.py", "print('changed')\n")
+    commit_file(root, "src/app.py", f"{TICKET}: change the app")
+
+    result = _check(root)
+
+    assert (result["status"], result["base_source"], result["stop"]) == (
+        "stale", "record", None), result
+
+
+def test_a_record_that_may_hide_commits_prints_its_stop_and_exits_one(tmp_path):
+    root = _successor_after_a_fast_forward(tmp_path)
+
+    done = _run_cli(root, "--ticket", TICKET)
+    top = done.stdout.splitlines()[0]
+
+    assert (done.returncode, top.startswith(f"refresh-check {TICKET}: unknown"),
+            "; stop - recorded base" in top) == (1, True, True), done.stdout
+
+
+def _two_maps_behind_a_fallback(tmp_path):
+    """The reviewer's :606 repro: m1 cites src/app.py and m2 src/other.py,
+    both anchored on main; T-0001's change to src/app.py reaches main, then
+    src/other.py changes and m2 is re-anchored past it. Returns root."""
+    root = make_repo(tmp_path)
+    _git(root, "branch", "-M", "main")
+    _commit(root, "src/app.py", "print('app')\n")
+    _commit(root, "src/other.py", "print('other')\n")
+    start = head_sha(root, length=40)
+    _codemap(root, "m1", start, ["src/app.py"])
+    _codemap(root, "m2", start, ["src/other.py"])
+    _git(root, "checkout", "-q", "-b", "feature")
+    _write(root, "src/app.py", "print('changed')\n")
+    commit_file(root, "src/app.py", f"{TICKET}: change app")
+    _git(root, "branch", "-f", "main", "feature")
+    _commit(root, "src/other.py", "print('other, changed')\n")
+    _codemap(root, "m2", head_sha(root, length=40), ["src/other.py"])
+    return root
+
+
+def test_no_artifact_keeps_a_measured_fresh_under_a_fallback_that_may_hide(tmp_path):
+    root = _two_maps_behind_a_fallback(tmp_path)
+
+    result = _check(root)
+
+    assert [(a["name"], a["status"], a["reason"].startswith(result["stop"]))
+            for a in result["artifacts"] if a["kind"] == "codemap"] == [
+        ("m2", "unknown", True)], result
+
+
+def test_no_json_artifact_reads_fresh_under_a_fallback_that_may_hide(tmp_path):
+    root = _two_maps_behind_a_fallback(tmp_path)
+
+    done = _run_cli(root, "--ticket", TICKET, "--json")
+
+    assert [a["status"] for a in json.loads(done.stdout)["artifacts"]
+            if a["status"] == "fresh"] == [], done.stdout
+
+
+def test_no_artifact_keeps_a_measured_fresh_under_a_record_that_may_hide(tmp_path):
+    root = _successor_after_a_fast_forward(tmp_path)
+    _codemap(root, "other", head_sha(root, length=40), ["src/other.py"])
+
+    result = _check(root)
+
+    assert [(a["name"], a["status"], a["reason"].startswith(result["stop"] or "-"))
+            for a in result["artifacts"] if a["kind"] == "codemap"] == [
+        ("other", "unknown", True)], result
+
+
+def test_no_artifact_keeps_a_measured_status_under_a_fallback_equal_to_head(tmp_path):
+    root, _anchor = _on_main_with_a_map(tmp_path)
+    _write(root, "src/app.py", "print('uncommitted')\n")
+    _git(root, "checkout", "-q", "-b", "feature")
+
+    result = _check(root)
+
+    assert [(a["status"], a["refreshable"]) for a in result["artifacts"]
+            if a["kind"] == "codemap"] == [("unknown", False)], result
+
+
+_GUARD_MODULES = ("crew_refresh_check.py", "scope_guard.py", "completion_audit.py",
+                  "crew_freshness.py", "scope_base.py")
+
+
+def _gate_matches(path, pat):
+    """verify-gate.sh's `matches()`, as written there."""
+    import fnmatch  # pylint: disable=import-outside-toplevel
+    cands = {pat}
+    if pat.startswith("**/"):
+        cands.add(pat[3:])
+    cands.add(pat.replace("/**/", "/"))
+    return any(fnmatch.fnmatch(path, c) for c in cands)
+
+
+@pytest.mark.parametrize("name", _GUARD_MODULES)
+def test_every_module_the_refresh_allowance_touches_runs_a_pytest_rule(name):
+    """Review round 3 (.crew/verify.json:244): an edit to scope_guard.py ran
+    only check-marketplace and lint, so dropping its approval gate passed the
+    Stop gate. Each module the check or its allowance lives in must reach a
+    rule that runs pytest."""
+    path = f"plugin/crew/hooks/scripts/{name}"
+    with open(os.path.join(_ROOT, "..", "..", ".crew", "verify.json"),
+              encoding="utf-8") as handle:
+        rules = json.load(handle)["rules"]
+
+    hits = [r for r in rules if any(_gate_matches(path, p) for p in r["paths"])
+            and any("pytest" in c for c in r["run"])]
+
+    assert hits, f"{path} maps to no rule that runs pytest"

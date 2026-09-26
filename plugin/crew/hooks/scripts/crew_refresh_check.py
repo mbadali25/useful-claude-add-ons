@@ -531,6 +531,16 @@ def _fallback_hides(top, base, ticket):
     name = default.split("/", 1)[1] if default.startswith("origin/") else default
     if branch[0] in (name, default):
         return f"HEAD is on the default branch {branch[0]}"
+    return _named_behind(top, base, ticket)
+
+
+def _named_behind(top, base, ticket):
+    """Why commits naming `ticket` sit behind `base`, or None. Asked of a
+    RECORDED base too (review round 3): `scope_base.py --record` writes HEAD
+    when HEAD is the merge-base, which is exactly the successor checkout
+    whose earlier commits already reached the default branch, and HEAD's
+    branch says nothing about that. A record is still trusted on the default
+    branch or a detached HEAD -- it names the start, not a guess from them."""
     subjects = _git_lines(top, "log", "--format=%s", base)
     if subjects is None:
         return f"git could not read the history behind {base[:12]}"
@@ -539,6 +549,23 @@ def _fallback_hides(top, base, ticket):
     if named:
         return f"{len(named)} commit(s) behind it name {ticket}, e.g. \"{named[0][:60]}\""
     return None
+
+
+def _unconfirmed(result, stop, reason):
+    """`result` as `unknown` for a base that hides or may hide the change --
+    and every artifact measured against that base with it (review round 3):
+    a `fresh` or `stale` line under an unknown top line is a measurement of
+    the wrong diff, and a caller reading `artifacts[]` alone would take it
+    as one of the right diff. Each carries the top line's stop as its
+    reason; an artifact already unknown keeps its own, and a missing graph
+    file stays not applicable -- no base changes either."""
+    for item in result["artifacts"]:
+        if item["status"] in (FRESH, STALE):
+            item.update(status=UNKNOWN, refreshable=False,
+                        reason=f"{stop} - measured {item['status']} against it, "
+                               "which confirms nothing")
+    result.update(status=UNKNOWN, stop=stop, reason=reason)
+    return result
 
 
 def _unmeasured(reason, stop, source):
@@ -553,7 +580,9 @@ def ticket_freshness(root, ticket, which=shutil.which):
 
     `status` is `unknown` if any artifact is unknown, else `stale` if any is
     stale, else `fresh` -- unless the scope base cannot be trusted, which is
-    `unknown` whatever the artifacts say. `stop` is None, or the short reason
+    `unknown` whatever the artifacts say, and then so is every artifact that
+    was measured against it. A recorded base is doubted as a fallback is when
+    a commit behind it names the ticket. `stop` is None, or the short reason
     no refresh can settle the answer (no base, a base that hides or may hide
     the change, a listing git could not give, an unreadable config).
     `base_source` is `scope_base.resolve`'s source: `record`, or a fallback
@@ -601,6 +630,10 @@ def ticket_freshness(root, ticket, which=shutil.which):
     result = {"status": overall, "reason": f"scope base {base[:12]} ({why})", "stop": None,
               "base_source": source, "artifacts": artifacts, "documents": NOT_MEASURED}
     if source == scope_base.RECORDED:
+        doubt = _named_behind(top, base, ticket)
+        if doubt:
+            stop = f"recorded base {base[:12]} may hide {ticket}'s commits"
+            return _unconfirmed(result, stop, f"{stop}: {doubt} ({why})")
         return result
     for item in artifacts:
         item["reason"] += " [fallback base]"
@@ -609,17 +642,15 @@ def ticket_freshness(root, ticket, which=shutil.which):
     if hides:
         what = ("is HEAD itself" if head else
                 "could not be compared with HEAD, which git could not read")
-        result.update(status=UNKNOWN, stop="the fallback scope base hides the change",
-                      reason=(f"scope base {base[:12]} {what}, a fallback ({why}); "
-                              "it can hide every committed change, so nothing here "
-                              "is confirmed"))
-        return result
+        return _unconfirmed(result, "the fallback scope base hides the change",
+                            f"scope base {base[:12]} {what}, a fallback ({why}); "
+                            "it can hide every committed change, so nothing here "
+                            "is confirmed")
     doubt = _fallback_hides(top, base, ticket)
     if doubt:
         stop = f"fallback base {base[:12]} may hide {ticket}'s commits"
-        result.update(status=UNKNOWN, stop=stop, reason=f"{stop}: {doubt} ({why})")
+        return _unconfirmed(result, stop, f"{stop}: {doubt} ({why})")
     return result
-
 
 def _render(ticket, result):
     top = f"refresh-check {ticket}: {result['status']} - {result['reason']}"
