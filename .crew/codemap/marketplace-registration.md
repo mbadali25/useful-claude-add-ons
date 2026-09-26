@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@8d447a7d
+anchor: useful-claude-add-ons@3b977289
 verified: 2026-09-25
 paths: scripts/**, plugin/PLUGINS.md
 
@@ -298,3 +298,11 @@ only `.crew/verify.json` changed (one path added to rule 7, rule 23 grown); the 
 is above both and unchanged. `python3 scripts/check-marketplace.py` at `8d447a7d` reports one
 problem, the version-drift check: `plugin/crew/` changed after `1.0.36` was set at `adf8d1dd`, with
 no bump.
+
+Re-verified per-path from `8d447a7d` to `3b977289` for T-0030 (rebased onto `3c1f94a9`): of the
+cited paths `.crew/verify.json` changed (rule 24 appended at `:262-269`; the doc rule at `:69-78` is
+above it and unchanged), plus the crew version in `.claude-plugin/marketplace.json`,
+`plugin/PLUGINS.md` and `plugin.json` (1.0.43, via 1.0.37 and 1.0.38), `CHANGELOG.md` (entries
+added; cited only as a doc-rule path) and `plugin/crew/BUDGETS.md` (marker still `:10`; the figure
+on `:11` moved 17,841 -> 17,901 lines across 120 files, re-measured and matching).
+`python3 scripts/check-marketplace.py` at `3b977289` reports no problems.

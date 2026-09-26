@@ -1,5 +1,5 @@
 # repo-docs
-anchor: useful-claude-add-ons@c35edda5
+anchor: useful-claude-add-ons@3b977289
 verified: 2026-09-25
 
 ## Re-derive provenance
@@ -287,7 +287,7 @@ listing the directory.
 - **`docs/runbooks/INDEX.md` still does not exist.** `docs/runbooks/`
   contains `rollback.md` alone (re-confirmed by `ls`).
   `plugin/crew/skills/crew-runbooks/SKILL.md:80` and
-  `plugin/crew/README.md:1728` (`:1725` at `f2bb919b`, `:1604` before that,
+  `plugin/crew/README.md:1788` (`:1728` at `8d447a7d`, `:1725` at `f2bb919b`, `:1604` before that,
   that file having changed in each range — re-grepped, not offset) both still describe
   `docs/runbooks/INDEX.md` as a symptom-keyed index that would live there.
   JUDGEMENT, unchanged: costs nothing with one runbook, becomes a real gap at
@@ -392,7 +392,8 @@ listing the directory.
   `6c497a14` one rule was appended (`:244` since T-0008's review round 3
   added a path above it; `:243` when #228 added it): `.claude/rules/**` and
   `.crew/codemap/**` now run `crew_instructions.py rules --root . --check`.
-  Since `f2bb919b` another follows it (`:245-261`, T-0008): changes to
+  Since `8d447a7d` a third follows (`:262-269`, T-0030, the `crew_coord.py`
+  suite). Since `f2bb919b` another follows rule 22 (`:245-261`, T-0008): changes to
   `plugin/crew/hooks/scripts/crew_refresh_check.py`, its tests,
   `plugin/crew/commands/implement.md` or `plugin/crew/commands/done.md` -
   and since review round 3 `scope_guard.py`, `completion_audit.py`,
@@ -486,3 +487,10 @@ version row; `:17`'s Registers row unchanged and still `:17`), `CHANGELOG.md` (a
 added under `[Unreleased]`; cited without a line) and `crew_refresh_check.py` (cited by name
 only). `test_completion_audit.py` is cited by name only, as a rule 23 test file, and still is one.
 `.gitattributes` is not cited. No citation moved.
+
+Re-verified per-path from `c35edda5` to `3b977289` for T-0030 (rebased onto `3c1f94a9`): of the
+cited paths, `.crew/verify.json` (rule 24 appended at `:262-269`; `:244` and `:245-261` hold;
+noted above), `plugin/crew/README.md` (a 60-line section inserted before `## 17.`, so `:1728`
+moved to `:1788`, re-grepped; corrected above), `CHANGELOG.md` (the crew 1.0.43 entry at the top
+of `### Added`, below the 1.0.38 `### Fixed` entry; cited without a line) and the version files
+changed. Nothing under `docs/` changed.

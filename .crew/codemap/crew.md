@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@c35edda5
+anchor: useful-claude-add-ons@3b977289
 verified: 2026-09-25
 
 ## Re-derive provenance
@@ -509,6 +509,22 @@ commands call, not a hook - `plugin/crew/hooks/hooks.json` is unchanged since
   `scope_base.py` with their own suites, to one pytest rule. Confirmed
   present, **not run and not read** by this note.
 
+## Cross-session claims (T-0030, crew 1.0.43)
+
+`plugin/crew/hooks/scripts/crew_coord.py` keeps claims on a git branch,
+`crew-coord/<channel>`, on a shared remote (`claims/<repo>__<id>.json` plus an
+append-only `log.jsonl`). Like `crew_refresh_check.py` it is a CLI, not a hook:
+`plugin/crew/hooks/hooks.json` is unchanged. Writes are plumbing on the fetched
+tip and a plain push (`Channel.write`; the push argv is `Channel.push_argv`),
+never forced; recovery (`assess_recovery`) adopts only a same-machine,
+same-worktree claim the local `<git-common-dir>/crew/coord-identity.json`
+names, whose pid is provably gone on Linux. Tests in
+`plugin/crew/tests/test_crew_coord.py`, mutations in
+`plugin/crew/tests/sabotage_coord.py`, both mapped by `.crew/verify.json:262-269`
+(rule 24). DERIVED from the source at this anchor. `/crew:autopilot`'s resume
+step does not call it yet (T-0004 has not landed); the README section
+"Cross-session claims" carries that instruction instead.
+
 `docs/diagrams/process-crew-lifecycle.mmd` drew `/crew:done` as "all three
 or nothing" at `adf8d1dd`; T-0008's refresh commit `b7b02842` redrew it as
 "all four or nothing" (its `:125`).
@@ -735,3 +751,8 @@ re-read with `grep -n`/`sed -n`:
 `crew_upgrade.py --root . --derived <one-entry json> --force` printed `not a crew repo`: this
 worktree has no `.crew/config.json`, so it reconciled nothing and wrote nothing. This pass is the
 per-path re-verify above, re-anchored by hand.
+
+Re-verified per-path from `c35edda5` to `3b977289` for T-0030 (rebased onto `3c1f94a9`): of the
+cited paths only `.crew/verify.json` changed (rule 24 appended after rule 23, so `:244` and
+`:245-261` hold) plus the version files; the new `crew_coord.py` section above is this pass's
+only addition.

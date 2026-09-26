@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@c35edda5
+anchor: useful-claude-add-ons@3b977289
 verified: 2026-09-25
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -37,12 +37,12 @@ including the slow version-drift walk `_verify/smoke.sh` skips), and
 them and is wired into CI but not into the local Stop gate: see
 "`scripts/check_instructions.py`" below.
 
-## `.crew/verify.json` — 24 rules, up from 23
+## `.crew/verify.json` — 25 rules, up from 24
 
-**DERIVED, read in full via `json.load` at this anchor.** 266 lines, **24**
-rules (23 at `f2bb919b`, 22 at `6c497a14`, 21 at `5d1fc5fd`) plus a `default`
-(`["bash _verify/smoke.sh"]`, `:264`) and `unmapped: "fail"` (`:265`). Rule 22
-(#228) and rule 23 (T-0008) are the only additions since `6c497a14`; see below. The rule set was restructured, not
+**DERIVED, read in full via `json.load` at this anchor.** 273 lines, **25**
+rules (24 at `8d447a7d`, 23 at `f2bb919b`, 22 at `6c497a14`, 21 at `5d1fc5fd`) plus a `default`
+(`["bash _verify/smoke.sh"]`, `:271`) and `unmapped: "fail"` (`:272`). Rule 22
+(#228), rule 23 (T-0008) and rule 24 (T-0030) are the only additions since `6c497a14`; see below. The rule set was restructured, not
 just grown: the broad `plugin/crew/hooks/**` / `plugin/crew/tests/**` shape
 this note previously described is gone, replaced by per-subsystem rules that
 name a handful of test files each — `crew_guards.py` (rule 5), `crew_config.py`
@@ -143,8 +143,8 @@ Notable rules, re-read directly:
   names must-refuse and must-allow cases, and says `implement.md`/`done.md` are
   mapped here because these tests carry their ordering checks. Its mutations
   live in `plugin/crew/tests/sabotage_refresh.py` (`REFRESH_MUTATIONS`, `:51`),
-  imported by `plugin/crew/tests/sabotage.py:75` and appended to `MUTATIONS` at
-  `:3046` — the same sibling-module pattern as the other `sabotage_*.py`
+  imported by `plugin/crew/tests/sabotage.py:76` and appended to `MUTATIONS` at
+  `:3046-3047` — the same sibling-module pattern as the other `sabotage_*.py`
   lists, because `sabotage.py` sits at `.pylintrc`'s max-module-lines. Every
   rule-23 path also matches rule 0 and either rule 13 (the `.py` files) or
   rule 10 (the two commands), by `fnmatch`, the primitive `matches()` uses
@@ -385,8 +385,10 @@ set on Ubuntu.
   no-pipe fallback refusal.
 - `.crew/verify.json:244` (rule 22) — the `.claude/rules/` sync check.
 - `.crew/verify.json:245-261` (rule 23) — the T-0008 refresh-check suite;
-  `plugin/crew/tests/sabotage.py:75`, `:3046` — `sabotage_refresh.py`'s
+  `plugin/crew/tests/sabotage.py:76`, `:3046-3047` — `sabotage_refresh.py`'s
   registration.
+- `.crew/verify.json:262-269` (rule 24) — the T-0030 cross-session claims suite;
+  `plugin/crew/tests/sabotage.py:72`, `:3048` — `sabotage_coord.py`'s registration.
 - `plugin/crew/hooks/scripts/verify-gate.sh:1493-1502` /
   `plugin/crew/CONFIG.md:1959-1966` — the descoped per-rule process-group kill,
   documented as a standing limitation.
@@ -537,3 +539,21 @@ returns only code-map, diagram, rule and graph files plus the crew 1.0.37 releas
   cited by this note.
 
 No suite was executed by this note.
+
+Re-verified per-path from `c35edda5` to `3b977289` for T-0030 (cross-session claims, crew 1.0.43,
+rebased onto `3c1f94a9`):
+`git diff --name-only c35edda5 3b977289` over this note's cited paths returns `.crew/verify.json`,
+`plugin/crew/tests/sabotage.py` and the version files. Re-measured with `json.load`/`wc -l`/`grep -n`:
+
+- `.crew/verify.json` - rule 24 appended at `:262-269` (`plugin/crew/hooks/scripts/crew_coord.py`,
+  `plugin/crew/tests/test_crew_coord.py`, `plugin/crew/tests/sabotage_coord.py` -> `python3 -m pytest
+  plugin/crew/tests/test_crew_coord.py -q`, priced 11s, `reach: local`); rule 23's last line `:261`
+  gained only the separating comma. Every earlier citation (`:3`, `:39-49`, `:152-157`, `:174-178`,
+  `:244`, `:245-261`) holds; `default`/`unmapped` moved `:264`/`:265` -> `:271`/`:272`. Rule 24's
+  paths also match rule 0 (`plugin/**`) and rule 13 (`**/*.py`), by `fnmatch`.
+- `plugin/crew/tests/sabotage.py` - `from sabotage_coord import COORD_MUTATIONS` inserted at `:72`,
+  so the `sabotage_refresh` import moved `:75` -> `:76`; `MUTATIONS +=` still starts at `:3046`, with
+  `REFRESH_MUTATIONS` on `:3047` and `COORD_MUTATIONS` on `:3048`. Corrected above.
+
+`sabotage.py` was run at `3b977289`: every `COORD_MUTATIONS` entry RED, and the non-RED set the same
+14 labels (13 STILL GREEN, 1 RED BUT UNPROVEN) as `3c1f94a9` (origin/main) run the same way.
