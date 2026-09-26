@@ -1,5 +1,5 @@
 # repo-docs
-anchor: useful-claude-add-ons@c8a1be2c
+anchor: useful-claude-add-ons@09285d6e
 verified: 2026-09-25
 
 ## Re-derive provenance
@@ -287,7 +287,7 @@ listing the directory.
 - **`docs/runbooks/INDEX.md` still does not exist.** `docs/runbooks/`
   contains `rollback.md` alone (re-confirmed by `ls`).
   `plugin/crew/skills/crew-runbooks/SKILL.md:80` and
-  `plugin/crew/README.md:1854` (`:1817` at `40eb1792`, `:1788` at `3b977289`, `:1728` at `8d447a7d`, `:1725` at `f2bb919b`, `:1604` before that,
+  `plugin/crew/README.md:1875` (`:1854` at `c8a1be2c`, `:1817` at `40eb1792`, `:1788` at `3b977289`, `:1728` at `8d447a7d`, `:1725` at `f2bb919b`, `:1604` before that,
   that file having changed in each range — re-grepped, not offset) both still describe
   `docs/runbooks/INDEX.md` as a symptom-keyed index that would live there.
   JUDGEMENT, unchanged: costs nothing with one runbook, becomes a real gap at
@@ -392,7 +392,7 @@ listing the directory.
   `6c497a14` one rule was appended (`:244` since T-0008's review round 3
   added a path above it; `:243` when #228 added it): `.claude/rules/**` and
   `.crew/codemap/**` now run `crew_instructions.py rules --root . --check`.
-  Since `8d447a7d` a third follows (`:262-269`, T-0030, the `crew_coord.py`
+  Since `8d447a7d` a third follows (`:262-268`, T-0030, the `crew_coord.py`
   suite). Since `f2bb919b` another follows rule 22 (`:245-261`, T-0008): changes to
   `plugin/crew/hooks/scripts/crew_refresh_check.py`, its tests,
   `plugin/crew/commands/implement.md` or `plugin/crew/commands/done.md` -
@@ -505,3 +505,10 @@ Re-verified per-path from `40eb1792` to `c8a1be2c` for T-0030 review round 2: of
 `plugin/crew/README.md` (the "Cross-session claims" section grew by 37 lines, so `:1817` moved to
 `:1854`, re-grepped; corrected above) and `CHANGELOG.md` (the 1.0.43 entry gained a round-2
 bullet; cited without a line) changed; `.crew/verify.json` did not. Nothing under `docs/` changed.
+
+Re-verified per-path from `c8a1be2c` to `09285d6e` for T-0030 review round 3: of the cited paths
+`plugin/crew/README.md` (the "Cross-session claims" section grew by 21 lines, so `:1854` moved to
+`:1875`, re-grepped; corrected above), `.crew/verify.json` (rule 24's `seconds` and `why` only)
+and `CHANGELOG.md` (the 1.0.43 entry gained a round-3 bullet; cited without a line) changed.
+Rule 24's span is corrected above from `:262-269` to `:262-268`: `:269` is the rules array's
+closing `],`, and it was that at every earlier anchor too. Nothing under `docs/` changed.

@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@c8a1be2c
+anchor: useful-claude-add-ons@09285d6e
 verified: 2026-09-25
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -387,7 +387,7 @@ set on Ubuntu.
 - `.crew/verify.json:245-261` (rule 23) — the T-0008 refresh-check suite;
   `plugin/crew/tests/sabotage.py:76`, `:3046-3047` — `sabotage_refresh.py`'s
   registration.
-- `.crew/verify.json:262-269` (rule 24) — the T-0030 cross-session claims suite;
+- `.crew/verify.json:262-268` (rule 24) — the T-0030 cross-session claims suite;
   `plugin/crew/tests/sabotage.py:72`, `:3048` — `sabotage_coord.py`'s registration.
 - `plugin/crew/hooks/scripts/verify-gate.sh:1493-1502` /
   `plugin/crew/CONFIG.md:1959-1966` — the descoped per-rule process-group kill,
@@ -574,4 +574,16 @@ returns `CHANGELOG.md`, `plugin/crew/hooks/scripts/crew_coord.py`,
 files are net-unchanged. `.crew/verify.json` did not change: rule 24 is still `:262-269`, priced
 16s for the 110 cases it names, while the suite is now 137 cases (the price is not re-measured
 here). `plugin/crew/tests/sabotage.py` did not change: `sabotage_coord.py` grew from 44 to 57
+mutations, still registered at `:72` and `:3048`.
+
+Re-verified per-path from `c8a1be2c` to `09285d6e` for T-0030 review round 3
+(`T-0030-coord--fBUyjd`): `git diff --name-only c8a1be2c 09285d6e` over this note's cited paths
+returns `.crew/verify.json`, `CHANGELOG.md`, `plugin/crew/hooks/scripts/crew_coord.py`,
+`plugin/crew/tests/test_crew_coord.py` and `plugin/crew/tests/sabotage_coord.py`; the version
+files are net-unchanged. Rule 24's `seconds` went 16 -> 35 and its `why` names the 162 cases,
+re-measured with the rule's own command at 34.4s (load average 5.1-5.5). Its span is `:262-268`,
+not `:262-269` as this note said since `3b977289`: `:269` is the rules array's closing `],`
+(`awk 'NR>=262 && NR<=269' .crew/verify.json`); corrected above, and the earlier provenance
+paragraphs are left as they were written. `default`/`unmapped` are still `:271`/`:272`.
+`plugin/crew/tests/sabotage.py` did not change: `sabotage_coord.py` grew from 57 to 65
 mutations, still registered at `:72` and `:3048`.

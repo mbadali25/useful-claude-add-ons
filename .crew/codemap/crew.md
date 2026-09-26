@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@c8a1be2c
+anchor: useful-claude-add-ons@09285d6e
 verified: 2026-09-25
 
 ## Re-derive provenance
@@ -521,18 +521,21 @@ defines only through `GIT_CONFIG_COUNT`, so no remote-tracking ref is written
 and no URL reaches argv; recovery (`assess_recovery`) adopts only a
 same-machine, same-worktree claim the local
 `<git-common-dir>/crew/coord-identity.json` (rewritten under `_locked`) names,
-whose pid is provably gone on Linux (`_linux_probe`) or Windows
-(`_windows_probe`); a probe that cannot tell reads alive, and on Linux
-`probe_holder` reads gone only from the PID namespace the claim recorded
-(`holder.pidns`, `pid_namespace`). A holder is session + machine + worktree +
-pid (+ start), compared by `same_holder`; the heartbeat lock is keyed per
-holder (`holder_tag`); `Channel.fetch` takes only the exact channel ref from
+whose `heartbeat_at` is older than the TTL (`is_stale`, the deciding signal
+since review round 3) and whose pid is provably gone on Linux (`_linux_probe`)
+or Windows (`_windows_probe`); a probe that cannot tell reads alive, and on
+Linux `probe_holder` reads gone only from the PID namespace the claim recorded
+(`holder.pidns`), which `holder_pidns` records only when the pid was visible
+at claim time. A holder is session + machine + worktree + pid (+ start),
+compared by `same_holder`; the heartbeat lock is keyed by every one of those
+fields (`holder_tag`); `Channel.fetch` takes only the exact channel ref from
 `ls-remote`; the `<repo>` half of a key is derived (`repo_key`, `owner_name`:
-origin's owner/name, lowercased, else the main worktree's directory name); a
-recommended command withholds peer values that fail the key rule
-(`_command_part`). Tests in
+origin's owner/name, lowercased, Azure DevOps https and ssh both giving
+`project.repo` through `_azure_part`, else the main worktree's directory
+name) and `parse_ticket` upper-cases the id; a recommended command withholds
+peer values that fail the key rule (`_command_part`). Tests in
 `plugin/crew/tests/test_crew_coord.py`, mutations in
-`plugin/crew/tests/sabotage_coord.py`, both mapped by `.crew/verify.json:262-269`
+`plugin/crew/tests/sabotage_coord.py`, both mapped by `.crew/verify.json:262-268`
 (rule 24). DERIVED from the source at this anchor. `/crew:autopilot`'s resume
 step does not call it yet (T-0004 has not landed); the README section
 "Cross-session claims" carries that instruction instead.
@@ -783,3 +786,12 @@ Re-verified per-path from `40eb1792` to `c8a1be2c` for T-0030 review round 2
 changed; `.crew/verify.json` did not (rule 24 still `:262-269`); the version files are
 net-unchanged at 1.0.43 (stepped back to 1.0.42 in `f7bc12d1`, re-set in `c8a1be2c`). The
 `crew_coord.py` section above is updated for the round-2 fixes; every other citation holds.
+
+Re-verified per-path from `c8a1be2c` to `09285d6e` for T-0030 review round 3
+(`T-0030-coord--fBUyjd`): of the cited paths `plugin/crew/hooks/scripts/crew_coord.py`,
+`plugin/crew/tests/test_crew_coord.py`, `plugin/crew/tests/sabotage_coord.py`, `CHANGELOG.md` and
+`.crew/verify.json` (rule 24's `seconds` and `why` text only) changed; the version files are
+net-unchanged at 1.0.43 (stepped back to 1.0.42 in `c198c551`, re-set in `c0bd5ced`). The
+`crew_coord.py` section above is updated for the round-3 fixes, and its rule-24 citation corrected
+from `:262-269` to `:262-268` (`:269` is the rules array's closing `],`, re-read with
+`awk 'NR>=262 && NR<=269' .crew/verify.json`); every other citation holds.
