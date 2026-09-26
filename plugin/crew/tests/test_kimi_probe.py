@@ -204,3 +204,18 @@ def test_cli_exit_status_is_zero_only_for_ok(tmp_path, answer, code):
                             stdin=subprocess.DEVNULL, timeout=60)
 
     assert result.returncode == code and result.stdout.startswith("kimi: ")
+
+
+def test_every_kimi_sabotage_anchor_is_present_exactly_once():
+    """The cheap standing check for sabotage_kimi.py's table: an edit that
+    moves a line a mutation aims at would otherwise leave that mutation
+    testing nothing until somebody paid for a full sabotage run."""
+    import sabotage_kimi  # pylint: disable=import-outside-toplevel
+
+    lost = []
+    for label, target, find, _replace, _test in sabotage_kimi.KIMI_MUTATIONS:
+        with open(target, encoding="utf-8", newline="") as handle:
+            if handle.read().count(find) != 1:
+                lost.append(label)
+
+    assert sabotage_kimi.KIMI_MUTATIONS and not lost, lost

@@ -4,6 +4,19 @@ Findings queued for a later PR. Each carries the `path:line` it came from so it
 can be re-verified rather than re-discovered — and so an item that turns out to
 be wrong can be closed on evidence.
 
+- **T-0028 follow-ups (Kimi Code provider).**
+  (a) The same pre-reserve probe for `codex` and `copilot`: `plugin/crew/hooks/scripts/review_run.py`
+  still reserves a codex/copilot round on the strength of PATH alone, which is how the Codex quota
+  error burned one. (b) `qa.kimi.reasoningEffort` once a per-invocation effort lever is measured;
+  the only candidate, `KIMI_MODEL_THINKING_EFFORT`, is unverified against a config alias, and
+  `kimi_env` drops every `KIMI_MODEL_*` today. (c) The working-tree fingerprint
+  (`review_run.tree_fingerprint`) for codex and copilot, which are also launched without a
+  write check beyond their own flags. (d) `/crew:plan` dispatching to a `dev.roles.planner` pin -
+  a follow-up ticket, id to be recorded here when it is filed. (e) Replace
+  `plugin/crew/tests/fixtures/kimi-stream-2.1.1/placeholder-ok.jsonl` with the owner's captured
+  run (see that directory's README). (f) `plugin/crew/templates/config.template.json` and
+  `global.template.json` still carry the pre-T-0028 `qa`/`dev` blocks - outside T-0028's Touch.
+  (g) `plugin/crew/agents/reviewer.md:27` still names the old order `(codex, copilot, claude)`.
 - `plugin/crew/tests/test_auto_cycle.py` (24 failures, measured both
   before and after crew-1.0-win-ps1-ac's fix, identical set both times):
   bash/tmux/symlink-flavour tests fail on this Windows dev host for

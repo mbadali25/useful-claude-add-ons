@@ -4,6 +4,39 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Added
+
+- **`crew` 1.0.39: the Kimi Code CLI is a crew provider (T-0028). BEHAVIOUR
+  CHANGE: the default `qa.order` now tries Kimi second -
+  `["codex", "kimi", "copilot", "claude"]`** - so on a machine with `kimi` on
+  PATH and a repo with no explicit `qa.order`, `/crew:review` reaches Kimi
+  before Copilot and the Claude fallback. Bumped `1.0.35 -> 1.0.39`.
+  - **`kimi` is in `QA_PROVIDERS` and `DEV_PROVIDERS`**, so every
+    `qa.roles.<r>` and `dev.roles.<r>` slot accepts a
+    `{"provider": "kimi", "model": ...}` pin. The owner's ids are `k3`,
+    `kimi-for-coding` and `kimi-for-coding-highspeed`; they are displayed,
+    never an allowlist. No role pin ships; `/crew:model` offers the table.
+  - **Family token `kimi`, fixed by provider.** `family("kimi", <any model>)`
+    is `kimi` before the model is read - `k3` would otherwise parse as `k` and
+    clear Kimi to review Kimi - and it equals a Copilot `kimi-*` pin's family,
+    so each bars the other.
+  - **New probe, `hooks/scripts/kimi_probe.py`**: `ok`, `not-installed`,
+    `not-authenticated`, `rate-limited` or `unknown`, each its own value; only
+    `ok` launches. `review_run.py --provider kimi` runs it BEFORE the round is
+    reserved, so a quota or auth failure spends no round. The live stage spends
+    one tiny request.
+  - **Read-only without a flag.** `kimi -p` forces permission mode `auto`, so
+    the launch passes a Read/Grep/Glob-only `--agent-file` (Write, Edit, Bash
+    disallowed) and an empty `--skills-dir`, and fingerprints the working tree
+    before and after; a changed tree - or one git could not fingerprint -
+    makes the round INCOMPLETE. A write outside the repository is not caught.
+  - `qa.kimi.model` / `dev.kimi.model` (default `null`); no
+    `reasoningEffort` key. `review.md` step 2d, `model.md`, `crew-providers`
+    and `providers.sh` (probe only with `--probe-kimi`) document it.
+  - **Not yet verified against a real run:** the stream-json parser is tested
+    against a SYNTHESISED placeholder fixture until the owner captures one
+    real `kimi -p` run.
+
 ### Fixed
 
 - **`crew` 1.0.38: T-0008 follow-up (T-0034).** Bumped `1.0.37 -> 1.0.38`.

@@ -427,42 +427,19 @@ $(cat "$SCRATCH/context.txt")
 EOF
 ```
 
-**Step 2a — Codex, 2b — Copilot.** `review_run.py` reserves the round, then
-launches the reviewer with stdin closed (a real run hung on stdin), then
-computes the verdict and writes `.work/tickets/$TICKET/review.json`. Codex runs
-as `codex exec --json --sandbox read-only`, read from its event stream, so a
-failed turn is INCOMPLETE even at exit 0. Copilot keeps `--deny-tool write
---deny-tool shell`: a reviewer that can edit the code can "fix" a defect instead
-of reporting it. Empty model/effort pass no flag.
+**Step 2a — Codex, 2b — Copilot, 2d — Kimi.** `review_run.py` reserves the round, then launches the reviewer with stdin closed (a real run hung on stdin), then computes the verdict and writes `.work/tickets/$TICKET/review.json`. Codex runs as `codex exec --json --sandbox read-only`, read from its event stream, so a failed turn is INCOMPLETE even at exit 0. Copilot keeps `--deny-tool write --deny-tool shell`: a reviewer that can edit the code can "fix" a defect instead of reporting it. Empty model/effort pass no flag.
+Kimi reads the same `$SCRATCH/prompt.txt`, byte-identical per this file's invariant; `review_run.py` runs `kimi_probe.py` BEFORE reserving (one tiny request, never a round), and since `kimi -p` cannot be made read-only by a flag, a working tree that changed during the run makes the round INCOMPLETE. Empty `QA_KIMI_MODEL` means the CLI's `default_model`.
 
 ```bash
 python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/review_run.py --root . --ticket "$TICKET" \
   --scratch "$SCRATCH" --provider codex --model "$QA_MODEL" --effort "$QA_EFFORT"
 # or: --provider copilot --model "$QA_COPILOT_MODEL"
+# or: --provider kimi --model "$QA_KIMI_MODEL"
 REVIEW_STATUS=$?   # 0 CLEAN, 1 FINDINGS, 3 INCOMPLETE, 4 NEEDS_REPLAN, 2 not run
 ```
 
-`reasoningEffort` accepts `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`;
-Codex rejects a wrong one with an HTTP 400. Copilot exiting non-zero with `Access
-denied by policy settings` is org or enterprise policy — report that exact
-cause. Exit 2 means nothing launched (not on PATH) and no round was spent; walk
-to the next eligible provider.
-
-**Step 2d — Kimi.** `review_run.py` runs `kimi_probe.py` itself, BEFORE the
-round is reserved — the probe spends one tiny request, never a round. Kimi reads
-the same `$SCRATCH/prompt.txt` as 2a and 2b, byte-identical per this file's
-invariant. Empty `QA_KIMI_MODEL` means the CLI's own `default_model`.
-
-```bash
-python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/review_run.py --root . --ticket "$TICKET" \
-  --scratch "$SCRATCH" --provider kimi --model "$QA_KIMI_MODEL"
-```
-
-Exit 2 from kimi names its probe state (`kimi probe: rate-limited - ...`). Any
-state but `ok` spent nothing: announce it and walk to the next eligible
-provider, exactly as for a provider not on PATH. `kimi -p` cannot be made
-read-only by a flag, so a working tree that changed during the run makes the
-round INCOMPLETE.
+`reasoningEffort` accepts `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`; Codex rejects a wrong one with an HTTP 400. Copilot exiting non-zero with `Access denied by policy settings` is org or enterprise policy — report that exact cause.
+Exit 2 means nothing launched (not on PATH, or a kimi probe state other than `ok`, which the message names: `kimi probe: rate-limited - ...`) and no round was spent; announce it and walk to the next eligible provider.
 
 **Step 2c — Claude fallback.** Invoke the `crew:reviewer` subagent with the
 SAME bundle 2a and 2b just read: the exact `$SCRATCH/prompt.txt` content —

@@ -58,12 +58,16 @@ def test_the_three_ids_appear_in_crew_providers_and_model_md():
 
 
 def test_model_md_offers_the_pin_table_and_says_it_is_not_shipped():
-    text = _read("commands", "model.md")
-    rows = [line for line in text.splitlines() if "| kimi |" in line and "`qa.roles." in line
-            or "`dev.roles.planner`" in line and "| kimi |" in line]
+    """One line, not a table: model.md is at its `.budget-allowance.json`
+    ceiling, so the offered pins are stated compactly."""
+    line = next(l for l in _read("commands", "model.md").splitlines()
+                if l.startswith("**Kimi pins crew OFFERS"))
 
-    assert len(rows) == 4, rows
-    assert "not shipped" in text.lower()
+    for pin in ("`qa.roles.review` -> kimi `k3`", "`qa.roles.gate` -> kimi `kimi-for-coding`",
+                "`qa.roles.smoke` -> kimi `kimi-for-coding-highspeed`",
+                "`dev.roles.planner` -> kimi `k3`"):
+        assert pin in line, pin
+    assert "not shipped" in line
 
 
 def test_crew_providers_documents_the_probe_states_and_the_read_only_gap():

@@ -202,12 +202,8 @@ QA rungs it just disqualified:
 | `gpt` (any codex model) | every codex pin, whichever model | Copilot pinned off Claude, else `reviewer` |
 | `kimi` (Kimi Code CLI, any model; or a Kimi Copilot pin) | `kimi` QA and any Copilot Kimi pin | the next family in `qa.order` |
 
-The family is the model's leading letters after any `vendor/` prefix, except
-that `claude` and `kimi` are decided by the provider: the Kimi Code id `k3`
-would otherwise read as family `k` and clear Kimi to review Kimi. That is why **`gpt-5.6-sol` and
-`gpt-5.6-luna` are the same `gpt` family as `gpt-6-astra`**: a diff written by
-codex bars all three, and QA falls to claude or kimi. Codex QA pins therefore
-apply to work codex did **not** write.
+The family is the model's leading letters after any `vendor/` prefix, except that `claude` and `kimi` are decided by the provider (the Kimi Code id `k3` would otherwise read as family `k` and clear Kimi to review Kimi).
+That is why **`gpt-5.6-sol` and `gpt-5.6-luna` are the same `gpt` family as `gpt-6-astra`**: a diff written by codex bars all three, and QA falls to claude or kimi. Codex QA pins therefore apply to work codex did **not** write.
 
 Say this consequence out loud whenever the QA pins are named:
 
@@ -216,16 +212,7 @@ Say this consequence out loud whenever the QA pins are named:
 > comparatively rarely elsewhere. That may be exactly what you want. It should
 > not be something you discover from a review log.
 
-**Kimi pins crew OFFERS, never applies** (not shipped: the `roles` tables stay
-empty). The ids are the owner's three Kimi Code ids — `k3`, `kimi-for-coding`,
-`kimi-for-coding-highspeed` — and a pin is written only when the user says so:
-
-| Slot | Provider | Model | Why |
-|---|---|---|---|
-| `qa.roles.review` | kimi | `k3` | flagship; the review that gates |
-| `qa.roles.phase1`, `qa.roles.gate` | kimi | `kimi-for-coding` | coding-tuned, the CLI default |
-| `qa.roles.smoke` | kimi | `kimi-for-coding-highspeed` | the fast pass |
-| `dev.roles.planner` | kimi | `k3` | valid and family-guarded now; no command reads it yet (follow-up ticket) |
+**Kimi pins crew OFFERS, never applies** (not shipped: the `roles` tables stay empty; write one only when the user says so): `qa.roles.review` -> kimi `k3`; `qa.roles.phase1` and `qa.roles.gate` -> kimi `kimi-for-coding`; `qa.roles.smoke` -> kimi `kimi-for-coding-highspeed`; `dev.roles.planner` -> kimi `k3` (valid and family-guarded now, but no command reads it yet - a follow-up ticket).
 
 Do not silently rewrite `qa.order` or a `roles` pin to enforce this. Tell the
 user what the consequence is and let them decide — a config that quietly
@@ -249,7 +236,6 @@ a claim, not a change.
 /crew:model                                      # report only, per role
 /crew:model qa.codex.reasoningEffort high        # harder reviews
 /crew:model qa.copilot.model kimi-k2.7-code      # Kimi 2.7 - the suffix is required
-/crew:model qa.kimi.model k3                     # the Kimi Code CLI's own id
 /crew:model dev.provider codex                   # then read step 3 out loud
 /crew:model dev.roles.developer '{"provider": "codex", "model": "gpt-6-astra"}'
 /crew:model qa.roles.review '{"provider": "codex", "model": "gpt-5.6-luna"}'

@@ -101,6 +101,8 @@ KIMI_AGENT_FILE = "kimi-reviewer.md"
 KIMI_NO_SKILLS = "kimi-no-skills"
 KIMI_TREE_CHANGED = ("kimi: the working tree changed during the review - a reviewer "
                      "that can write may have fixed instead of reported")
+KIMI_TREE_UNKNOWN = ("kimi: the working tree could not be fingerprinted, so a write by the "
+                     "reviewer cannot be ruled out")
 
 
 def _read(path):
@@ -165,15 +167,23 @@ def tree_fingerprint(root):
     untracked files, and the binary diff against HEAD -- with `.work/`
     excluded (the scratch directory, review.json and the handoff live there).
     HEAD is in it so a reviewer that COMMITTED its edit is seen too. Taken
-    without optional locks so taking it cannot itself change the index."""
+    without optional locks so taking it cannot itself change the index.
+
+    None when any git call fails: "could not tell" is its own answer, never a
+    digest two failures would compare equal on."""
     env = dict(os.environ, GIT_OPTIONAL_LOCKS="0")
-    digest = hashlib.sha256(str(crew_common.git_out(root, "rev-parse", "HEAD")).encode())
+    head = crew_common.git_out(root, "rev-parse", "HEAD")
+    if not head:
+        return None
+    digest = hashlib.sha256(str(head).encode())
     for args in (["status", "--porcelain=v1", "-z", "--untracked-files=all"],
                  ["diff", "HEAD", "--binary"]):
         done = subprocess.run(["git", *args, "--", ".", ":(exclude).work"], cwd=root,
                               env=env, capture_output=True, stdin=subprocess.DEVNULL,
                               check=False)
-        digest.update(str(done.returncode).encode() + b"\0" + done.stdout + b"\0")
+        if done.returncode != 0:
+            return None
+        digest.update(done.stdout + b"\0")
     return digest.hexdigest()
 
 
@@ -454,7 +464,10 @@ def run(args):
         before = tree_fingerprint(args.root)
         stdout, stderr, code, timed_out = launch(cmd, args.root, args.timeout,
                                                  env=kimi_probe.kimi_env())
-        if tree_fingerprint(args.root) != before:
+        after = tree_fingerprint(args.root)
+        if before is None or after is None:
+            extra.append(KIMI_TREE_UNKNOWN)
+        elif after != before:
             extra.append(KIMI_TREE_CHANGED)
         _write_atomic(os.path.join(args.scratch, "kimi-events.jsonl"), stdout)
         message_text, error = review_verdict.kimi_final_message(stdout)

@@ -204,3 +204,26 @@ def test_tree_fingerprint_sees_a_committed_edit(repo):
                    capture_output=True)
 
     assert review_run.tree_fingerprint(str(repo)) != before
+
+
+def test_tree_fingerprint_outside_a_repository_is_none(tmp_path):
+    assert review_run.tree_fingerprint(str(tmp_path)) is None
+
+
+def test_run_kimi_unfingerprintable_tree_is_incomplete(repo, tmp_path, monkeypatch, capsys):
+    """"Could not tell" whether the reviewer wrote must never read as "it
+    did not": a fingerprint that failed makes the round INCOMPLETE."""
+    scratch, work = tmp_path / "scratch", tmp_path / "work"
+    _bundle(repo, scratch)
+    fakes = fake_kimi_bin(tmp_path / "bin")
+    monkeypatch.setenv("PATH", str(fakes) + os.pathsep + os.environ.get("PATH", ""))
+    monkeypatch.setenv("KIMI_CODE_HOME", str(kimi_home(tmp_path / "kimi-home")))
+    monkeypatch.setattr(review_run, "tree_fingerprint", lambda _root: None)
+
+    code = review_run.main(["--root", str(repo), "--ticket", "T1", "--scratch", str(scratch),
+                            "--provider", "kimi", "--model", "k3", "--work-dir", str(work)])
+    review = json.loads((work / "review.json").read_text(encoding="utf-8"))
+    capsys.readouterr()
+
+    assert (code, review["verdict"]) == (3, "INCOMPLETE")
+    assert any("could not be fingerprinted" in r for r in review["reasons"])

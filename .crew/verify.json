@@ -149,6 +149,17 @@
       "reach": "local",
       "why": "25s for the four-module core; PROVEN red by regrouping read_metrics on cells[0] instead of cells[1]. TWO MUTATIONS SURVIVED IT on 2026-09-13 and are open coverage holes, recorded here rather than left for someone to rediscover: (1) renaming `reportTracked` in crew_state.py leaves the whole suite green, because the since-deleted test_pm_brief.py hand-built the graph dict with that literal key and never calls crew_state._read_graph - so producer and consumer are only ever tested against a string the test itself supplies, and a rename degrades the pulse to the `--no-viz` form that this repo's CLAUDE.md forbids; (2) changing the anchor truncation `[:7]` to `[:40]` at all six sites leaves the ENTIRE 965-test crew suite green, so the comparison CLAUDE.md documents as load-bearing is tested nowhere. reach: local - pytest against this repo's own state/pm test modules, no network call." },
 
+    { "paths": ["plugin/crew/hooks/scripts/kimi_probe.py",
+                "plugin/crew/hooks/scripts/review_run.py",
+                "plugin/crew/hooks/scripts/review_verdict.py",
+                "plugin/crew/tests/test_kimi_probe.py",
+                "plugin/crew/tests/test_review_run_kimi.py",
+                "plugin/crew/tests/sabotage_kimi.py"],
+      "seconds": 29,
+      "run": ["python3 -m pytest plugin/crew/tests/test_kimi_probe.py plugin/crew/tests/test_review_run_kimi.py plugin/crew/tests/test_review_verdict.py plugin/crew/tests/test_review_ledger.py -q"],
+      "reach": "local",
+      "why": "29s, timed 2026-09-25 on T-0028 (129 tests). The Kimi Code provider: the five-state probe (only ok launches), probe-before-reserve so a quota or auth wall spends no round, the read-only agent file, the working-tree fingerprint, and the stream-json parse; plus the codex/copilot launch and ledger tests it shares review_run.py with. PROVEN red by the 20 KIMI_MUTATIONS in sabotage_kimi.py. reach: local - a fake `kimi` on PATH and a fixture KIMI_CODE_HOME under tmp_path, no network and no real Kimi call." },
+
     { "paths": ["plugin/crew/tests/conftest.py", "plugin/crew/tests/crew_fixtures.py",
                 "plugin/crew/tests/context.py", "plugin/crew/tests/sabotage.py"],
       "seconds": 377,

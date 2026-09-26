@@ -73,6 +73,7 @@ from sabotage_autocycle import AUTOCYCLE_MUTATIONS
 from sabotage_webtest import WEBTEST_MUTATIONS
 from sabotage_event_claim import EVENT_CLAIM_MUTATIONS
 from sabotage_refresh import REFRESH_MUTATIONS
+from sabotage_kimi import KIMI_MUTATIONS
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(
     os.path.dirname(os.path.abspath(__file__)))))
@@ -3043,7 +3044,8 @@ MUTATIONS = (
 # mutations live in the sabotage_*.py siblings: this file is at `.pylintrc`'s max-module-lines, and
 # raising that limit again is the move its own comment warns against.
 MUTATIONS += (REVIEW_FIX_MUTATIONS + CONTEXT_MUTATIONS + MIGRATE_FIX_MUTATIONS + CLOUD_GUARD_MUTATIONS + SCOPE_MUTATIONS
-              + AUTOCYCLE_MUTATIONS + WEBTEST_MUTATIONS + EVENT_CLAIM_MUTATIONS + REFRESH_MUTATIONS)
+              + AUTOCYCLE_MUTATIONS + WEBTEST_MUTATIONS + EVENT_CLAIM_MUTATIONS + REFRESH_MUTATIONS
+              + KIMI_MUTATIONS)
 
 # pytest's own exit codes (documented, not this file's invention): 0 all
 # passed; 1 at least one test FAILED (a real assertion, or an error raised
