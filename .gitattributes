@@ -13,4 +13,7 @@
 *.py text eol=lf
 *.ps1 text eol=lf
 *.psm1 text eol=lf
+# .crew/verify.json: plugin/crew/tests/test_refresh_check.py's sabotage-anchor test reads it
+# with newline="" and matches LF-only anchors, so an autocrlf checkout must not add CR.
+.crew/verify.json text eol=lf
 graphify-out/graph.json merge=graphify
