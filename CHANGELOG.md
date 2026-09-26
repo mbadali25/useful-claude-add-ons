@@ -6,11 +6,11 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
-- **`crew` 1.0.39: the Kimi Code CLI is a crew provider (T-0028). BEHAVIOUR
+- **`crew` 1.0.44: the Kimi Code CLI is a crew provider (T-0028). BEHAVIOUR
   CHANGE: the default `qa.order` now tries Kimi second -
   `["codex", "kimi", "copilot", "claude"]`** - so on a machine with `kimi` on
   PATH and a repo with no explicit `qa.order`, `/crew:review` reaches Kimi
-  before Copilot and the Claude fallback. Bumped `1.0.35 -> 1.0.39`.
+  before Copilot and the Claude fallback. Bumped `1.0.38 -> 1.0.44`.
   - **`kimi` is in `QA_PROVIDERS` and `DEV_PROVIDERS`**, so every
     `qa.roles.<r>` and `dev.roles.<r>` slot accepts a
     `{"provider": "kimi", "model": ...}` pin. The owner's ids are `k3`,
