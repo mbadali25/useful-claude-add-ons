@@ -54,6 +54,15 @@ now ASKS (BREAKING in 1.0.41), and so is denied unattended. `block` is never
 loosened. An unknown environment is narrower than production: nothing allows
 it unattended. See `_terraform_verdict`.
 
+THE LITERAL-WORD ALLOWLIST (T-0005 Step 8). A command line that names
+terraform, terragrunt or tofu anywhere -- found after quote and escape
+characters are taken out of each word, so a quote cannot hide the name -- is
+judged only when every word on it is a plain literal (`_PLAIN_WORD_RE`, joined
+by `_PLAIN_OPS`). Anything else on such a line is "could not tell": asked when
+attended, denied unattended and under `block`, never allowed. The check reads
+the raw text before the lexer does (`_literal_gate`, first thing in `scan`),
+so no lexer bug can turn a shape it misread into an allow.
+
 IDENTITY. Every `aws` and `az` command resolves the identity it would run as --
 `--profile`/`--region`/`--subscription` first, then the environment it would
 inherit (an `env X=Y` or `X=Y` prefix, an earlier `export`, `$env:X = ...` in
@@ -77,7 +86,11 @@ readable Bash/PowerShell call. `report` mode prints no decision at all -- never
 WHAT IT CANNOT SEE, stated so nobody mistakes this for a sandbox: a command
 named through a variable (`$TF apply`), a script file it runs (`bash x.sh`,
 `psql -f x.sql`), SQL built at runtime, a hashtable splatted into a cmdlet, and
-anything an MCP server does. What `xargs`/`parallel` append is not seen either,
+anything an MCP server does -- and for the terraform name, one built from
+parts crew never sees whole (`$TF`, `$(printf te)$(printf rraform)`, a
+PowerShell concatenation) or a wildcard keeping fewer than three of its
+letters (`t*`).
+What `xargs`/`parallel` append is not seen either,
 so a destructive-capable tool behind one is judged as destructive, and one
 whose executable is a placeholder is refused as unreadable. For terraform it
 does not read `-var-file` or `*.tfvars`, an HCL `cloud {}`/`backend` block's
@@ -105,6 +118,7 @@ import time
 import crew_config
 import crew_state
 from crew_guards import _head_name as _guards_head_name
+from crew_guards import first_non_literal, names_terraform
 
 
 def _head_name(token):
@@ -2747,6 +2761,27 @@ def _track(argv, ctx, seq, fed, shell="bash"):
                 else _UNKNOWN_WS
 
 
+# A could-not-tell finding's scope `op`; `_terraform_verdict` answers it
+# before reading any plan, workspace or environment.
+OP_UNREADABLE_LINE = "line-not-literal"
+
+
+def _literal_gate(shell, text):
+    """A could-not-tell `terraformApply` finding for `text`, or None when it
+    names no terraform/terragrunt/tofu or every word on it is plain (the
+    lexer then judges it as before)."""
+    named = names_terraform(
+        _ps_normalise(text)[0] if shell == "powershell" else text, shell)
+    word = first_non_literal(text, shell) if named is not None else None
+    if word is None:
+        return None
+    shown = word if len(word) <= 40 else word[:37] + "..."
+    return Finding("terraformApply", text, "a terraform-family line with a "
+                   f"word that is not a plain literal: {shown!r}", None, True,
+                   None, {"op": OP_UNREADABLE_LINE, "named": named,
+                          "word": word})
+
+
 def scan(shell, text, env=None, depth=0, ctx=None, seq=None):
     """Every finding in `text`, read as `shell` ("bash" or "powershell").
 
@@ -2763,6 +2798,8 @@ def scan(shell, text, env=None, depth=0, ctx=None, seq=None):
                         f"nested more than {MAX_DEPTH} shells or "
                         "substitutions deep, so the innermost command was "
                         "never read", None, True, None)]
+    # The allowlist first, on the raw text, before the lexer reads it.
+    gated = _literal_gate(shell, text)
     env = dict(env or {})
     seq = dict(seq or {})
     variables = {}
@@ -2792,7 +2829,7 @@ def scan(shell, text, env=None, depth=0, ctx=None, seq=None):
         # command (`_tf_destroy`).
         ctx["commands"] = 1 + ctx.get("commands", 0)
         ctx.setdefault("unsure", []).extend(unsure)
-    findings = []
+    findings = [gated] if gated is not None else []
     for sub in subs:
         findings.extend(scan(shell, sub, env, depth + 1, ctx, seq))
     for cmd in cmds:
@@ -2855,7 +2892,9 @@ def scan(shell, text, env=None, depth=0, ctx=None, seq=None):
         extra = _fed_finding(argv, local_env, *fed[-1], ctx=ctx) if fed \
             else None
         _track(argv, ctx, seq, bool(fed), shell)
-        if extra is not None and not any(f.destructive for f in found):
+        if extra is not None and not any(
+                f.destructive and (f.scope or {}).get("op")
+                != OP_UNREADABLE_LINE for f in found):
             # The fed finding carries the identity too, so the read-only
             # identity row it replaces would only say the same thing twice.
             found = [f for f in found if f.rule != IDENTITY_RULE] + [extra]
@@ -2921,6 +2960,23 @@ def _terraform_verdict(root, finding, out, envs):
     policy, marker = out["policy"], out["marker"]
     if out["policy"] == "block":
         return "deny", f"{base}: {out['reason']}", "block", marker
+    if finding.scope.get("op") == OP_UNREADABLE_LINE:
+        # Step 8: nothing below may read a plan or an environment for this
+        # line -- crew does not know what it runs. Asked about, or denied
+        # when nobody attends (`evaluate`); a live marker is the person's
+        # own approval of this exact text.
+        if _approval_is_live(marker):
+            return "allow", f"{base}: approved for this command: {marker}", \
+                "could-not-tell", marker
+        # The wording avoids the words other rows' reasons are checked
+        # for (destroy, unknown, rewrite, ...), so this finding can never
+        # stand in for the one a test expects the lexer to make.
+        return "ask", (f"{base} -- crew judges a terraform-family line only "
+                       "when every word on it is a plain literal, so it "
+                       "could not tell what this line would change. Unusual "
+                       "quoting on such a line is asked about and never "
+                       "allowed unattended; spell it with plain words to "
+                       "have it judged"), "could-not-tell", marker
     cwd, state = envs.get("cwd"), envs.get("ctx") or {}
     destroy, destroy_why, sidecar = _tf_destroy(finding.scope, cwd, root,
                                                 state)

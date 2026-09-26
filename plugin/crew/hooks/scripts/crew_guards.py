@@ -27,6 +27,7 @@ open while wearing the label of a check that happened.
 """
 import fnmatch
 import os
+import re
 import shlex
 
 # What crew may do when a skill it needs is NOT installed. Ordered least to most
@@ -1054,3 +1055,157 @@ def prod_decision(level, command, patterns):
                 f"and this is not: `{matched}`", matched, access)
     return ("block", f"`none` permits no access to `{matched}`", matched,
             access)
+
+
+# --- the literal-word allowlist (T-0005 Step 8) ------------------------------
+#
+# Here rather than in `cloud_guard.py`, which holds the only caller, because
+# that module sits at `.pylintrc`'s max-module-lines; `_literal_gate` there
+# turns these two answers into a finding.
+#
+# Four review rounds each found a bash quoting shape the lexer misread, and
+# each turned a destroy into an allow. So a line naming terraform, terragrunt
+# or tofu is judged only when every word on it is a plain literal, a shape
+# the lexer cannot misread; anything else is "could not tell". Both checks
+# read the RAW text, before the lexer: the name is looked for generously
+# (quotes and escapes out, `$'...'` decoded, an expansion as a wildcard, brace
+# lists expanded), the words are checked strictly.
+_TF_NAMES = tuple(n + e for n in ("terraform", "terragrunt", "tofu")
+                  for e in ("", ".exe", ".cmd", ".bat", ".ps1"))
+_PLAIN_WORD_RE = re.compile(r"^[A-Za-z0-9_./:=@%+,-]+$")
+# `<<`, `<<<`, `<(`, `<>`, `>|`, `<&`, `|&`, `;;` are not plain. PowerShell's
+# all-streams `*>` is read as `>`.
+_PLAIN_OPS = frozenset((";", "&&", "||", "|", "&", ">", ">>", ">&", "<",
+                        "&>", "&>>"))
+_NAME_SPLIT_RE = re.compile(r"[\s|&;()<>]+")
+# An expansion, innermost first. Its value could be anything, empty included.
+_EXPANSION_RE = re.compile(r"\$\{[^{}]*\}|\$\([^()]*\)|`[^`]*`"
+                           r"|\$[A-Za-z_][A-Za-z0-9_]*|\$[0-9@*#?$!-]")
+# `${x:-word}` and its kin: the word after the operator may be the value.
+_PARAM_OP_RE = re.compile(
+    r"\$\{[#!]?[A-Za-z0-9_@*]*(?::?[-=+?]|##?|%%?|//?|\^\^?|,,?)?")
+_ANSI_SPAN_RE = re.compile(r"\$'((?:[^'\\]|\\.)*)'?", re.DOTALL)
+_ANSI_ESCAPE_RE = re.compile(r"\\(?:([abeEfnrtv\\'\"?])|x([0-9A-Fa-f]{1,2})"
+                             r"|u([0-9A-Fa-f]{1,4})|U([0-9A-Fa-f]{1,8})"
+                             r"|([0-7]{1,3})|c(.))", re.DOTALL)
+_ANSI_SIMPLE = dict(zip("abeEfnrtv\\'\"?", "\a\b\x1b\x1b\f\n\r\t\v\\'\"?"))
+_BRACE_SEQ_RE = re.compile(r"^(-?\d+|[A-Za-z])\.\.(-?\d+|[A-Za-z])"
+                           r"(?:\.\.-?\d+)?$")
+_BRACE_LIMIT = 4096
+
+
+def _ansi_c_decode(body):
+    """What a bash `$'...'` body stands for, `\\xHH`/`\\u`/octal/`\\cX`
+    included."""
+    def one(m):
+        simple, hexa, uni, wide, octal, ctrl = m.groups()
+        if simple:
+            return _ANSI_SIMPLE[simple]
+        if ctrl is not None:
+            return chr(ord(ctrl) & 0x1f)
+        value = int(octal, 8) if octal else int(hexa or uni or wide, 16)
+        return chr(min(value, 0x10ffff))
+    return _ANSI_ESCAPE_RE.sub(one, body)
+
+
+def _brace_expand(word):
+    """Every word bash's brace expansion could make of `word` (a numeric
+    sequence stands for one digit), or None past `_BRACE_LIMIT` results."""
+    out, todo = [], [word]
+    while todo:
+        current, found = todo.pop(), None
+        start = current.find("{")
+        while start != -1 and found is None:
+            depth, cuts = 0, [start]
+            for j in range(start, len(current)):
+                depth += {"{": 1, "}": -1}.get(current[j], 0)
+                if current[j] == "," and depth == 1:
+                    cuts.append(j)
+                if depth == 0:
+                    seq = _BRACE_SEQ_RE.match(current[start + 1:j])
+                    if len(cuts) > 1:
+                        found = [current[a + 1:b]
+                                 for a, b in zip(cuts, cuts[1:] + [j])]
+                    elif seq and not seq.group(1).isalpha():
+                        found = ["0"]
+                    elif seq:
+                        low, high = sorted(map(ord, seq.group(1, 2)))
+                        found = [chr(k) for k in range(low, high + 1)]
+                    break
+            if found is not None:
+                todo.extend(current[:start] + alt + current[j + 1:]
+                            for alt in found)
+            start = current.find("{", start + 1)
+        if found is None:
+            out.append(current)
+        if len(out) + len(todo) > _BRACE_LIMIT:
+            return None
+    return out
+
+
+def _names_tool(word):
+    """True when `word` could be terraform/terragrunt/tofu: its last path
+    part, lowered. A wildcard counts when it could match and keeps three
+    literal letters (a bare `*` or `t*` does not -- WHAT IT CANNOT SEE)."""
+    base = word.replace("\\", "/").rsplit("/", 1)[-1].lower()
+    if not any(c in base for c in "*?["):
+        return base in _TF_NAMES
+    letters = re.sub(r"\[[^\]]*\]|[*?]", "", base)
+    return sum(c.isalnum() for c in letters) >= 3 and any(
+        fnmatch.fnmatchcase(name, base) for name in _TF_NAMES)
+
+
+def _name_candidates(text, shell):
+    """Every word `text` could make that might name a program: each
+    expansion read as a wildcard, and again with its delimiters as blanks
+    (`$(echo terraform)`, `${x:-terraform}`), quotes and escapes out, and an
+    assignment's value too (`x=terraform; $x destroy`)."""
+    if shell == "powershell":
+        texts = [text.replace("`\n", "")]
+    else:
+        body = text.replace("\\\r\n", "").replace("\\\n", "")
+        texts = [body, _ANSI_SPAN_RE.sub(
+            lambda m: _ansi_c_decode(m.group(1)), body)]
+    for source in texts:
+        wild = source
+        for _round in range(16):
+            wild, count = _EXPANSION_RE.subn("*", wild)
+            if not count:
+                break
+        opened = re.sub(r"[$(){}`]", " ", _PARAM_OP_RE.sub(" ", source))
+        for chunk in _NAME_SPLIT_RE.split(wild + " " + opened):
+            if shell == "powershell":
+                bares = (re.sub(r"[`'\"]", "", chunk),)
+            else:
+                bare = re.sub(r"\$(?=['\"])", "", chunk)
+                bare = re.sub(r"['\"`]", "", bare)
+                bares = (bare.replace("\\", ""), bare.replace("\\", "/"))
+            for bare in bares:
+                yield bare
+                if "=" in bare:
+                    yield bare.split("=", 1)[1]
+
+
+def names_terraform(text, shell):
+    """The first word `text` could make that names terraform, terragrunt or
+    tofu, or None. PowerShell text arrives already normalised
+    (`cloud_guard._ps_normalise`)."""
+    for part in _name_candidates(text, shell):
+        words = _brace_expand(part) if "{" in part \
+            and shell != "powershell" else [part]
+        if words is None or any(_names_tool(w) for w in words):
+            return part
+    return None
+
+
+def first_non_literal(text, shell):
+    """The first word or operator in `text` that is not plain, or None. In
+    PowerShell a word opening with `@` splats a variable, so it is not."""
+    for chunk in re.split(r"[ \t\n]+", text):
+        if shell == "powershell":
+            chunk = re.sub(r"\*(?=>)", "", chunk)
+        for piece in re.findall(r"[;&|<>]+|[^;&|<>]+", chunk):
+            if piece not in _PLAIN_OPS and not _PLAIN_WORD_RE.match(piece) \
+                    or shell == "powershell" and piece.startswith("@"):
+                return piece
+    return None

@@ -961,9 +961,10 @@ A repo cannot turn off a machine-global `block`.
 When on, it reads each command into the simple commands it actually runs —
 through `&&`, `;`, `|`, `sudo`, `env X=Y`, `bash -c`, `pwsh -Command`, `$( )`,
 heredocs and PowerShell script blocks — and judges only those. A word inside an
-argument is never a finding: `git commit -m "terraform destroy"` and
-`psql -c "SELECT 'DROP TABLE x'"` both pass. That is the difference from the
-command guard removed in 0.19.52, which matched words anywhere.
+argument is never a finding of the rule it names: `psql -c "SELECT 'DROP TABLE
+x'"` passes. That is the difference from the command guard removed in 0.19.52,
+which matched words anywhere. A quoted terraform word is the one exception,
+below: it makes the line one crew could not tell.
 
 | It recognises | Decided by |
 |---|---|
@@ -1011,6 +1012,23 @@ plan after the hook hashed it. The sidecar records the workspace the plan is
 bound to, read from the plan file, and any directory or environment change
 the hook cannot read makes the environment unknown.
 
+**Terraform lines are judged word by word, or not at all (crew 1.0.41).** A
+command line that names `terraform`, `terragrunt` or `tofu` anywhere — looked
+for after quotes and escapes are taken out of each word, so `"terraform"`,
+`t'erraform'`, `$'\x74erraform'` and `terr\aform` all count — is judged only
+when every word on it is a plain literal (`^[A-Za-z0-9_./:=@%+,-]+$`) joined by
+`;`, `&&`, `||`, `|`, `&` or a plain `>`/`>>`/`<` redirection. Anything else on
+such a line — a quote, `$`, a backquote, a backslash, a glob or brace, `<(`, a
+heredoc or here-string, a comment, a control character — makes it **could not
+tell**: asked about when someone is attending, **refused unattended** (and
+under `block`), never allowed, logged as `could-not-tell`. The check reads the
+raw text before the parser does, so no parser mistake can turn a shape it
+misread into an allow. Unusual quoting on a terraform line is asked about, not
+allowed; spell the line with plain words to have it judged. That includes a
+line that only mentions terraform in a quoted argument (`git commit -m
+"terraform: bump"`): crew cannot tell it from `bash -c "terraform destroy"`
+without trusting the parser this rule exists not to trust.
+
 **The always-stops.** A destroy is never applied unattended, at any setting:
 `destroy`, `apply -destroy`, `apply -replace`, `workspace delete`, a saved plan
 that deletes, and any apply whose plan crew cannot read — including
@@ -1045,7 +1063,10 @@ on any platform, never twice and never zero times.
 
 **What it cannot see:** a command named through a variable, a script file it
 runs, SQL built at runtime, Terraform's provider credentials, and MCP tool
-calls. Tests: `tests/test_cloud_guard.py` (every case through python, bash and
+calls. For the terraform name specifically: a name built at run time from
+parts crew never sees whole (`$TF`, `$(printf te)$(printf rraform)`, a
+PowerShell string concatenation) and a wildcard that keeps fewer than three
+letters of it (`t*`) are not read as terraform. Tests: `tests/test_cloud_guard.py` (every case through python, bash and
 pwsh), `tests/test_cloud_guard_environments.py` and `tests/test_crew_tfplan.py`
 (the environment layer and the sidecar), and the `cloud-guard.sh` section of
 `hooks/scripts/_test/run-tests.sh`.

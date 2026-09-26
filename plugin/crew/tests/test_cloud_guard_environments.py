@@ -1318,7 +1318,7 @@ PS_SEPARATOR = _normalise([
 _ROUND2 = HEREDOC_SUBST + TG_WS_DELETE + PS_SEPARATOR
 
 _R2_LOG = "env:nonProd:staging"
-ROUND2_ALLOW = _normalise([
+ROUND2_ALLOW_ALL = _normalise([
     (case_id, tool, command,
      _o(sidecar={"workspace": "staging"}, wsfiles={".": "staging"},
         log=_R2_LOG))
@@ -1341,6 +1341,15 @@ ROUND2_ALLOW = _normalise([
         ("r2-ps-null", "PowerShell", f"terraform apply {PLAN} 2>$null"),
     )])
 
+# Step 8: the rows that carry a quote, a heredoc, `$` or an escape are no
+# longer plain, so they are "could not tell" now (`NOW_NOT_LITERAL`). The
+# lexer still reads each of them as it did (`test_the_command_count_*`).
+_R2_NOT_LITERAL = frozenset((
+    "r2-heredoc-quoted", "r2-heredoc-dquoted", "r2-heredoc-partly-quoted",
+    "r2-heredoc-backslash-delim", "r2-heredoc-escaped-dollar",
+    "r2-heredoc-plain", "r2-arith-plain", "r2-ps-null"))
+ROUND2_ALLOW = [c for c in ROUND2_ALLOW_ALL if c[0] not in _R2_NOT_LITERAL]
+
 
 @pytest.mark.parametrize("case", _ROUND2, ids=_ids(_ROUND2))
 def test_round2_must_block_python(tmp_path, case):
@@ -1360,7 +1369,7 @@ def test_round2_must_allow_python(tmp_path, case):
 
 
 @pytest.mark.parametrize("case", _sample(
-    ROUND2_ALLOW, ("r2-heredoc-quoted", "r2-ps-2-to-1"), (tcg.needs_pwsh,)))
+    ROUND2_ALLOW, ("r2-ps-2-to-1", "r2-ps-star-to-1"), (tcg.needs_pwsh,)))
 def test_round2_must_allow_pwsh(tmp_path, case):
     _allow("pwsh", tmp_path, case)
 
@@ -1503,7 +1512,7 @@ HIDDEN_DESTROY = _normalise(
 _ROUND3 = HOSTILE_QUOTING_CASES + HIDDEN_DESTROY
 
 # Ordinary, clean command lines: the fail-closed rule must not touch them.
-ROUND3_ALLOW = _normalise([
+ROUND3_ALLOW_ALL = _normalise([
     (case_id, "Bash", command,
      _o(sidecar={"workspace": "staging"}, wsfiles={".": "staging"},
         log=_R2_LOG))
@@ -1527,6 +1536,13 @@ ROUND3_ALLOW = _normalise([
         ("r3a-devnull", f"{_APPLY} > /dev/null 2>&1"),
     )])
 
+# Step 8: every row here but these five carries a quote, `$`, a comment, an
+# escape or a here-string, so it is "could not tell" now; the lexer's count
+# of one command still holds for all of them (`test_clean_commands_count_one`).
+_R3_LITERAL = frozenset(("r3a-plain", "r3a-tf-workspace", "r3a-tab",
+                         "r3a-trailing-newline", "r3a-devnull"))
+ROUND3_ALLOW = [c for c in ROUND3_ALLOW_ALL if c[0] in _R3_LITERAL]
+
 
 @pytest.mark.parametrize("case", _ROUND3, ids=_ids(_ROUND3))
 def test_round3_must_block_python(tmp_path, case):
@@ -1546,7 +1562,7 @@ def test_round3_must_allow_python(tmp_path, case):
 
 
 @pytest.mark.parametrize("case", _sample(
-    ROUND3_ALLOW, ("r3a-plain", "r3a-herestring-dq"), (tcg.needs_bash,)))
+    ROUND3_ALLOW, ("r3a-plain", "r3a-devnull"), (tcg.needs_bash,)))
 def test_round3_must_allow_bash(tmp_path, case):
     _allow("bash", tmp_path, case)
 
@@ -1554,7 +1570,7 @@ def test_round3_must_allow_bash(tmp_path, case):
 def test_round3_tables_are_big_enough_and_distinct():
     """The owner asked for at least 15 hostile shapes; ids never repeat."""
     assert len(HOSTILE_QUOTING) >= 15
-    ids = _ids(_ROUND3 + ROUND3_ALLOW)
+    ids = _ids(_ROUND3 + ROUND3_ALLOW_ALL)
     assert len(ids) == len(set(ids))
 
 
@@ -1568,8 +1584,8 @@ def test_hostile_quoting_counts_an_extra_command(command):
     assert ctx.get("commands", 0) >= 2, ctx
 
 
-@pytest.mark.parametrize("command", [c for _i, _t, c, _o2 in ROUND3_ALLOW],
-                         ids=_ids(ROUND3_ALLOW))
+@pytest.mark.parametrize("command", [c for _i, _t, c, _o2 in ROUND3_ALLOW_ALL],
+                         ids=_ids(ROUND3_ALLOW_ALL))
 def test_clean_commands_count_one(command):
     ctx = {}
     cloud_guard.scan("bash", command, ctx=ctx)
@@ -1642,3 +1658,288 @@ def test_a_cr_heredoc_delimiter_is_read_both_ways_by_the_lexer():
     text = f"cat <<EOF\nEOF\r\n'\nEOF\n{_DESTROY}\n'\n"
     _cmds, subs = cloud_guard._lex_bash(text)  # pylint: disable=protected-access
     assert any(sub.startswith(_DESTROY) for sub in subs), subs
+
+
+# --- Step 8: the literal-word allowlist (review round 4, bl77wS) ------------
+#
+# Four rounds found a new bash quoting shape each time, so the approach
+# changed instead of growing: a command line that names terraform, terragrunt
+# or tofu ANYWHERE -- the name spotted after quote and escape characters are
+# taken out of each word, so a quote cannot hide it -- is judged only when
+# every word on it is a plain literal. Anything else on such a line is
+# "could not tell": asked about when someone is attending, denied when not,
+# never allowed. The check reads the raw text before the lexer does, so no
+# lexer bug can turn a shape it misreads into an allow.
+#
+# Every row below is built so that the value a missing gate would collapse
+# to is ALLOW: the clean staging plan, summary and workspace file, or a
+# policy the row would otherwise slip past (`block`, `allow`).
+GATE_WHY = "plain literal"
+_STAGING = {"sidecar": {"workspace": "staging"}, "wsfiles": {".": "staging"}}
+BLOCK_POLICY = {"repo": {"guards": {"terraformApply": "block"}},
+                "global_": {"guards": {"terraformApply": "block"}}}
+
+
+def _gate(**kw):
+    return _o(**{**_STAGING, "why": GATE_WHY, **kw})
+
+
+def _lexed(**kw):
+    """A row the lexer judges on its own: the line is all plain literals, so
+    the gate hands it on, and the reason names the destroy."""
+    return _o(**{**_STAGING, "why": "destroy", **kw})
+
+
+_ADESTROY = "destroy -auto-approve"
+MUST_BLOCK_LITERAL = _normalise([
+    # Round 2 (lt3l0F): an unquoted heredoc's substitution swaps the plan.
+    ("s8-r2-heredoc-subst", "Bash",
+     f"terraform apply {PLAN} <<EOF\n$({_SWAP})\nEOF", _gate()),
+    ("s8-r2-heredoc-backtick", "Bash",
+     f"terraform apply {PLAN} <<EOF\n`{_SWAP}`\nEOF", _gate()),
+    ("s8-r2-heredoc-dash", "Bash",
+     f"terraform apply {PLAN} <<-EOF\n\t$({_SWAP})\n\tEOF", _gate()),
+    ("s8-r2-heredoc-dot-slash", "Bash",
+     f"./terraform apply {PLAN} <<EOF\n$({_SWAP})\nEOF", _gate()),
+    ("s8-r2-cat-heredoc-destroy", "Bash",
+     f"cat <<EOF\n$(terraform {_ADESTROY})\nEOF", _gate()),
+    ("s8-r2-cat-heredoc-ws-delete", "Bash",
+     "cat <<EOF\n$(terraform workspace delete production)\nEOF", _gate()),
+    ("s8-r2-tg-run-all-ws-delete", "Bash",
+     "terragrunt run-all workspace delete staging",
+     _lexed(**ALLOW_POLICY)),
+    ("s8-r2-tg-run-ws-delete", "Bash",
+     "terragrunt run -- workspace delete staging", _lexed(**ALLOW_POLICY)),
+    ("s8-r2-tg-run-all-flag-ws-delete", "Bash",
+     "terragrunt run --all -- workspace delete staging",
+     _lexed(**ALLOW_POLICY)),
+    # Round 3 (ICP8KT): quoting inside `${...}`, `\r#`, option values.
+    ("s8-r3-herestring-nested-quote", "Bash",
+     f'terraform apply {PLAN} <<<"${{x:-"\'"}}$({_SWAP})"', _gate()),
+    ("s8-r3-assignment-nested-quote", "Bash",
+     f'X="${{x:-"\'"}}" terraform {_ADESTROY}', _gate()),
+    ("s8-r3-assignment-nested-quote-allow", "Bash",
+     f'X="${{x:-"\'"}}" terraform {_ADESTROY}',
+     _gate(**ALLOW_POLICY)),
+    ("s8-r3-cr-hash-destroy", "Bash",
+     f"true \r# ; terraform {_ADESTROY}", _gate()),
+    ("s8-r3-cr-hash-ws-delete", "Bash",
+     "true \r# ; terraform workspace delete production", _gate()),
+    ("s8-r3-cr-hash-apply", "Bash",
+     "true \r# ; terraform apply -auto-approve", _gate()),
+    ("s8-r3-tg-working-dir-workspace", "Bash",
+     "terragrunt --working-dir workspace run-all workspace delete staging",
+     _lexed(**ALLOW_POLICY)),
+    ("s8-r3-tg-exclude-dir-workspace", "Bash",
+     "terragrunt run-all --queue-exclude-dir workspace workspace delete "
+     "staging", _lexed(**ALLOW_POLICY)),
+    # Round 4 (bl77wS): `$"..."` and `$'\xNN'`, and a non-literal subcommand.
+    ("s8-r4-heredoc-locale-delim", "Bash",
+     f'cat <<$"EOF"\nEOF\nterraform {_ADESTROY}', _gate()),
+    ("s8-r4-heredoc-ansi-delim", "Bash",
+     f"cat <<$'\\x45OF'\nEOF\nterraform {_ADESTROY}", _gate()),
+    ("s8-r4-heredoc-on-apply", "Bash",
+     f'terraform apply {PLAN} <<$"EOF"\nEOF\n{_SWAP}', _gate()),
+    ("s8-r4-locale-subcommand-block", "Bash",
+     'terraform $"destroy" -auto-approve', _gate(**BLOCK_POLICY)),
+    ("s8-r4-ansi-hex-subcommand-block", "Bash",
+     "terraform $'\\x64estroy' -auto-approve", _gate(**BLOCK_POLICY)),
+    ("s8-r4-locale-ws-delete-block", "Bash",
+     'terraform workspace $"delete" production', _gate(**BLOCK_POLICY)),
+    ("s8-r4-nonliteral-subcommand", "Bash",
+     "terraform destroy${x} -auto-approve", _gate()),
+    # The neighbours Step 8 names.
+    ("s8-locale-subcommand", "Bash", 'terraform $"destroy" -auto-approve',
+     _gate()),
+    ("s8-ansi-hex-subcommand", "Bash",
+     "terraform $'\\x64estroy' -auto-approve", _gate()),
+    ("s8-ansi-octal-subcommand", "Bash",
+     "terraform $'\\144estroy' -auto-approve", _gate(**ALLOW_POLICY)),
+    ("s8-quoted-name", "Bash", f'"terraform" {_ADESTROY}', _gate()),
+    ("s8-escaped-letter", "Bash", f"terr\\aform {_ADESTROY}", _gate()),
+    ("s8-escaped-space", "Bash", f"terraform\\ {_ADESTROY}", _gate()),
+    ("s8-brace-name", "Bash", f"t{{erraform,x}} {_ADESTROY}", _gate()),
+    ("s8-glob-subcommand", "Bash", "terraform de* -auto-approve", _gate()),
+    ("s8-subst-subcommand", "Bash", "terraform $(echo destroy) -auto-approve",
+     _gate()),
+    ("s8-backtick-subcommand", "Bash",
+     "terraform `echo destroy` -auto-approve", _gate()),
+    ("s8-procsub", "Bash", f"terraform <(x) {_ADESTROY}", _gate()),
+    ("s8-herestring", "Bash", f"terraform {_ADESTROY} <<<x", _gate()),
+    ("s8-variable-subcommand", "Bash",
+     "x=destroy; terraform $x -auto-approve", _gate()),
+    # `$` is the only thing on these lines that is not plain.
+    ("s8-dollar-only-subcommand", "Bash", "terraform destroy$x -auto-approve",
+     _gate()),
+    ("s8-dollar-only-verb", "Bash", "terraform $VERB -auto-approve", _gate()),
+    ("s8-tab-between-words", "Bash", "terraform\tdestroy\t-auto-approve",
+     _lexed()),
+    ("s8-tab-in-ansi-word", "Bash",
+     "eval $'terraform\\x09destroy -auto-approve'", _gate()),
+    ("s8-cr-in-word", "Bash", "terraform destroy\r -auto-approve", _gate()),
+    ("s8-cr-line-end", "Bash", f"terraform {_ADESTROY}\r", _gate()),
+    # The name itself hidden, on a line that does not look like terraform.
+    ("s8-name-part-quoted", "Bash", f"t'erraform' {_ADESTROY}", _gate()),
+    ("s8-name-ansi", "Bash", f"$'\\x74erraform' {_ADESTROY}", _gate()),
+    ("s8-name-locale", "Bash", f'$"terraform" {_ADESTROY}', _gate()),
+    ("s8-name-empty-subst", "Bash", f"te$(true)rraform {_ADESTROY}", _gate()),
+    ("s8-name-empty-var", "Bash", f"terraform${{x}} {_ADESTROY}", _gate()),
+    ("s8-name-default-expansion", "Bash", f"${{x:-terraform}} {_ADESTROY}",
+     _gate()),
+    ("s8-name-glob-path", "Bash", f"/usr/bin/terr* {_ADESTROY}", _gate()),
+    ("s8-name-line-continuation", "Bash", f"terra\\\nform {_ADESTROY}",
+     _gate()),
+    ("s8-name-in-variable", "Bash", f"x=terraform; $x {_ADESTROY}", _gate()),
+    ("s8-name-bash-c-ansi", "Bash", f"bash -c $'\\x74erraform {_ADESTROY}'",
+     _gate()),
+    ("s8-tofu-locale", "Bash", 'tofu $"destroy" -auto-approve', _gate()),
+    ("s8-terragrunt-ansi", "Bash", "terragrunt $'destroy' -auto-approve",
+     _gate(**ALLOW_POLICY)),
+    ("s8-quoted-name-and-ansi", "Bash",
+     "'terraform' $'\\x64estroy' -auto-approve", _gate()),
+    ("s8-ps-quoted-name", "PowerShell", f'& "terraform" {_ADESTROY}',
+     _gate()),
+    ("s8-ps-backtick-name", "PowerShell", f"terr`aform {_ADESTROY}", _gate()),
+    ("s8-ps-subexpression", "PowerShell",
+     'terraform $("destroy") -auto-approve', _gate()),
+    # `@a` splats a variable an earlier call may have set.
+    ("s8-ps-splat", "PowerShell", "terraform @a", _gate()),
+])
+
+# Plain commands users run, and lines that name no terraform at all however
+# they quote. `log` names the guard.log row an allowed apply must leave; a
+# row without one must leave no terraformApply row at all.
+MUST_ALLOW_LITERAL = _normalise([
+    ("s8a-plan-out", "Bash", "terraform plan -out=p.tfplan", _o(**_STAGING)),
+    ("s8a-apply-saved-plan", "Bash", f"terraform apply {PLAN}",
+     _o(**_STAGING, log="env:nonProd:staging")),
+    ("s8a-workspace-list", "Bash", "terraform workspace list", _o()),
+    ("s8a-workspace-show", "Bash", "terraform workspace show", _o()),
+    ("s8a-chdir-plan", "Bash", "terraform -chdir=envs/staging plan", _o()),
+    ("s8a-terragrunt-run-all-plan", "Bash", "terragrunt run-all plan", _o()),
+    ("s8a-tofu-plan", "Bash", "tofu plan", _o()),
+    ("s8a-init-validate", "Bash",
+     "terraform init -upgrade && terraform validate", _o()),
+    ("s8a-fmt-check", "Bash", "terraform fmt -check -recursive", _o()),
+    ("s8a-output-redirect", "Bash",
+     "terraform output -json > outputs.json 2>&1", _o()),
+    ("s8a-plan-pipe", "Bash", "terraform plan -no-color | tee plan.log", _o()),
+    ("s8a-var-plan", "Bash",
+     f"{TFW}=staging terraform plan -var=environment=staging", _o()),
+    ("s8a-multiline", "Bash", "terraform init\nterraform plan -out=p.tfplan",
+     _o()),
+    ("s8a-ps-plan", "PowerShell", "terraform plan -out=p.tfplan", _o()),
+    ("s8a-ps-apply-merge", "PowerShell", f"terraform apply {PLAN} *>&1",
+     _o(**_STAGING, log="env:nonProd:staging")),
+    ("s8a-no-tf-echo-home", "Bash", 'echo "$HOME"', _o()),
+    ("s8a-no-tf-commit", "Bash", 'git commit -m "x"', _o()),
+    ("s8a-no-tf-commit-subst", "Bash", 'git commit -m "$(cat msg.txt)"', _o()),
+    ("s8a-no-tf-log-format", "Bash", "git log --format='%H %s' -n 5", _o()),
+    ("s8a-no-tf-find-exec", "Bash",
+     "find . -name '*.py' -exec grep -l \"import os\" {} +", _o()),
+    ("s8a-no-tf-heredoc", "Bash", "cat <<'EOF' > notes.txt\nhello $USER\nEOF",
+     _o()),
+    ("s8a-no-tf-for-loop", "Bash", 'for f in *.md; do echo "$f"; done', _o()),
+    ("s8a-no-tf-ansi", "Bash", "printf $'a\\tb\\n'", _o()),
+    ("s8a-no-tf-awk", "Bash", "awk '{print $1}' access.log | sort | uniq -c",
+     _o()),
+    ("s8a-no-tf-brace-seq", "Bash", "echo {1..500} {a,b}", _o()),
+    ("s8a-no-tf-short-globs", "Bash", "ls * t* *.tf", _o()),
+    ("s8a-no-tf-comment", "Bash", "ls -la  # list", _o()),
+    ("s8a-no-tf-tf-files", "Bash", "grep -n 'resource' main.tf", _o()),
+    ("s8a-no-tf-ps-env", "PowerShell", 'Write-Output "$env:HOME"', _o()),
+    ("s8a-no-tf-ps-filter", "PowerShell",
+     "Get-ChildItem -Filter '*.tf' | ForEach-Object { $_.Name }", _o()),
+])
+
+# Rows the round-2 and round-3 must-allow tables held until Step 8: a clean
+# nonProd saved-plan apply, spelled with a quote, heredoc, here-string,
+# comment, escape or `$`. Each is refused unattended now.
+NOW_NOT_LITERAL = [
+    ("s8-was-" + case_id, tool, command, _gate())
+    for case_id, tool, command, _opts in ROUND2_ALLOW_ALL + ROUND3_ALLOW_ALL
+    if case_id in _R2_NOT_LITERAL or case_id not in _R3_LITERAL
+    and case_id.startswith("r3a-")]
+
+# Unusual quoting on a terraform line is ASKED about when someone attends.
+ASK_LITERAL = _normalise([
+    ("s8q-locale-destroy", "Bash", 'terraform $"destroy" -auto-approve',
+     _o(**_STAGING)),
+    ("s8q-quoted-plan", "Bash", f'terraform apply "{PLAN}"', _o(**_STAGING)),
+    ("s8q-quoted-name", "Bash", f'"terraform" {_ADESTROY}',
+     _o(**ALLOW_POLICY)),
+])
+
+
+def _allow_literal(driver, tmp_path, case):
+    _id, tool, _command, opts = case
+    repo, result = _run(driver, tmp_path, case)
+    if tcg._stood_down(driver, tool, result):  # pylint: disable=protected-access
+        return
+    decision, _said, code, err = result
+    assert code == 0, err
+    assert decision == "allow", (case[0], result)
+    rows = [r for r in _log_rows(repo) if r[1] == "terraformApply"]
+    assert all(r[3] == "allow" for r in rows), rows
+    if opts.get("log"):
+        assert any(r[2] == opts["log"] for r in rows), (opts["log"], rows)
+    else:
+        assert not rows, rows
+
+
+@pytest.mark.parametrize("case", MUST_BLOCK_LITERAL,
+                         ids=_ids(MUST_BLOCK_LITERAL))
+def test_literal_must_block_python(tmp_path, case):
+    _deny("python", tmp_path, case)
+
+
+@pytest.mark.parametrize("case", _sample(
+    MUST_BLOCK_LITERAL, ("s8-r4-heredoc-locale-delim", "s8-name-ansi"),
+    (tcg.needs_bash,)))
+def test_literal_must_block_bash(tmp_path, case):
+    _deny("bash", tmp_path, case)
+
+
+@pytest.mark.parametrize("case", _sample(
+    MUST_BLOCK_LITERAL, ("s8-quoted-name", "s8-ps-quoted-name"),
+    (tcg.needs_pwsh,)))
+def test_literal_must_block_pwsh(tmp_path, case):
+    _deny("pwsh", tmp_path, case)
+
+
+@pytest.mark.parametrize("case", MUST_ALLOW_LITERAL,
+                         ids=_ids(MUST_ALLOW_LITERAL))
+def test_literal_must_allow_python(tmp_path, case):
+    _allow_literal("python", tmp_path, case)
+
+
+@pytest.mark.parametrize("case", _sample(
+    MUST_ALLOW_LITERAL, ("s8a-apply-saved-plan", "s8a-no-tf-echo-home"),
+    (tcg.needs_bash,)))
+def test_literal_must_allow_bash(tmp_path, case):
+    _allow_literal("bash", tmp_path, case)
+
+
+@pytest.mark.parametrize("case", _sample(
+    MUST_ALLOW_LITERAL, ("s8a-plan-out", "s8a-ps-plan"), (tcg.needs_pwsh,)))
+def test_literal_must_allow_pwsh(tmp_path, case):
+    _allow_literal("pwsh", tmp_path, case)
+
+
+@pytest.mark.parametrize("case", NOW_NOT_LITERAL, ids=_ids(NOW_NOT_LITERAL))
+def test_formerly_allowed_quoting_is_now_refused(tmp_path, case):
+    _deny("python", tmp_path, case)
+
+
+@pytest.mark.parametrize("case", ASK_LITERAL, ids=_ids(ASK_LITERAL))
+def test_literal_asks_when_attended(tmp_path, case):
+    _ask("python", tmp_path, case)
+
+
+def test_literal_tables_are_big_enough_and_distinct():
+    """Step 8 asks for at least 30 must-block rows; ids never repeat."""
+    assert len(MUST_BLOCK_LITERAL) >= 30
+    assert len(NOW_NOT_LITERAL) == 20
+    ids = _ids(MUST_BLOCK_LITERAL + MUST_ALLOW_LITERAL + ASK_LITERAL
+               + NOW_NOT_LITERAL)
+    assert len(ids) == len(set(ids))

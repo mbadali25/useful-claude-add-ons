@@ -18,6 +18,20 @@ All notable changes to this repository are documented here. Format follows [Keep
   the refusal names (15 minutes, that command only), or summarise a saved plan
   with `hooks/scripts/crew_tfplan.py summarize PLANFILE` and apply that plan.
   Bumped `1.0.37 -> 1.0.41`.
+- **A terraform line is judged only when every word is a plain literal.** A
+  command line naming `terraform`, `terragrunt` or `tofu` anywhere — spotted
+  after quotes and escapes are taken out of each word, so `"terraform"` and
+  `$'\x74erraform'` count — is judged only when every word matches
+  `^[A-Za-z0-9_./:=@%+,-]+$`. Any quote, `$`, backquote, backslash, glob,
+  brace, `<(`, heredoc, here-string, comment or control character on such a
+  line makes it **could not tell**: asked when attended, denied unattended and
+  under `block`, never allowed. The check runs on the raw text before the
+  parser, replacing four review rounds of per-shape quoting fixes (heredoc
+  delimiters, `${...}` nesting, `\r#`, `$"..."`, `$'\xNN'`, `destroy${x}`).
+  **This also refuses unattended some lines that used to pass**: a quoted plan
+  path (`terraform apply "p.tfplan"`), `2>$null`, a comment or heredoc on a
+  terraform line, and a command that merely quotes the word terraform
+  (`git commit -m "terraform: bump"`, `grep 'terraform apply' docs/`).
 - **New `environments` block** (`environments.nonProd`, repo-only globs;
   `environments.prodUnattended`, ratcheted, true only when **both** config
   layers say the JSON literal `true`). Under `terraformApply: ask`, an apply of

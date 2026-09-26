@@ -26,6 +26,8 @@ GUARD_SH = os.path.join(SCRIPTS, "cloud-guard.sh")
 GUARD_PS1 = os.path.join(SCRIPTS, "cloud-guard.ps1")
 GATE_PS1 = os.path.join(SCRIPTS, "verify-gate.ps1")
 CONFIG = os.path.join(SCRIPTS, "crew_config.py")
+# The allowlist's word-level helpers (T-0005 Step 8) live beside the guards.
+GUARDS = os.path.join(SCRIPTS, "crew_guards.py")
 
 _T = "tests/test_cloud_guard.py::"
 _BLOCK = _T + "test_must_block_python"
@@ -669,4 +671,31 @@ CLOUD_GUARD_MUTATIONS += (
     ("cloud guard r3: a PowerShell bare CR read as a blank", GUARD,
      '    out = text.replace("\\r\\n", "\\n").replace("\\r", "\\n")',
      '    out = text.replace("\\r\\n", "\\n")', _R3 + "[r3-ps-cr-line]"),
+)
+
+# T-0005 Step 8 (successor plan after review round 4, bl77wS): the
+# literal-word allowlist. A line naming terraform, terragrunt or tofu is
+# judged only when every word is a plain literal; anything else is "could not
+# tell". One mutation per property the plan names: the gate exists, `$` is
+# not plain, the gate reads the raw text rather than the lexer's words, and a
+# quote cannot hide the name. Each aims at a row that is ALLOWED without the
+# property (measured at 8ae0ddee), not one merely missing a reason word.
+_S8 = _E + "test_literal_must_block_python"
+
+CLOUD_GUARD_MUTATIONS += (
+    ("cloud guard step 8: the allowlist gate dropped", GUARD,
+     "    gated = _literal_gate(shell, text)\n",
+     "    gated = None\n", _S8 + "[s8-r4-heredoc-locale-delim]"),
+    ("cloud guard step 8: `$` allowed in a plain literal", GUARDS,
+     '_PLAIN_WORD_RE = re.compile(r"^[A-Za-z0-9_./:=@%+,-]+$")',
+     '_PLAIN_WORD_RE = re.compile(r"^[A-Za-z0-9_./:=@%+,$-]+$")',
+     _S8 + "[s8-dollar-only-subcommand]"),
+    ("cloud guard step 8: the allowlist run on the lexer's words", GUARD,
+     "    findings = [gated] if gated is not None else []\n",
+     "    findings = [g for g in [_literal_gate(shell, ' '.join(\n"
+     "        w for c in cmds for w in c.words))] if g is not None]\n",
+     _S8 + "[s8-r4-heredoc-locale-delim]"),
+    ("cloud guard step 8: a quote hides the terraform name", GUARDS,
+     "                bare = re.sub(r\"['\\\"`]\", \"\", bare)\n",
+     "                bare = bare\n", _S8 + "[s8-quoted-name-and-ansi]"),
 )

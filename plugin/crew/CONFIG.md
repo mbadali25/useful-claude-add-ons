@@ -1358,6 +1358,24 @@ or `iex` of text built at run time (or fed from the pipeline), `set -a`,
 workspace file or `azureProfile.json` that is not a regular file (a FIFO, a
 device) is never read: it is unknown, not a hang past the hook's budget.
 
+**A terraform line is judged only when every word on it is a plain
+literal.** Before any of the reading below, the raw command text is checked:
+if it names `terraform`, `terragrunt` or `tofu` anywhere — each word read with
+its quotes and escapes taken out, `$'...'` decoded, an expansion read as "could
+be anything" and a brace list expanded — then every word must match
+`^[A-Za-z0-9_./:=@%+,-]+$` and every operator between words must be `;`,
+`&&`, `||`, `|`, `&`, `>`, `>>`, `>&`, `&>`, `<` (PowerShell's `*>` too).
+Otherwise the line is **could not tell** — a quote, `$`, backquote,
+backslash, glob, brace, `<(`, heredoc, here-string, comment or control
+character on it, or a PowerShell `@` splat — and it is asked about when someone attends, denied when
+nobody does and denied under `block`; a live one-shot marker for that exact
+text still lets it through under `ask`/`allow`. Nothing else below is
+consulted for it (guard.log policy `could-not-tell`). Unusual quoting on a
+terraform line is asked about, not allowed; unattended, it is refused — which
+includes `terraform apply "p.tfplan"`, `terraform plan 2>$null` and a commit
+message that quotes the word terraform. Plain lines are read exactly as
+before.
+
 **Destroy is `yes`, `no` or `unknown`, and unknown counts as yes.** `yes`:
 `destroy`, `apply -destroy`, `apply -replace`, `run-all destroy`, `workspace
 delete`, a saved plan whose sidecar lists a delete. `no`: only a saved plan
@@ -1405,7 +1423,9 @@ refused, so its apply asks.
 
 `ask` is denied when nobody is attending, as everywhere in this guard. The
 guard.log policy column says why: `env:nonProd:<name>`,
-`env:prod-unattended:<name>`, `env:prod:<name>`, `env:unknown`, `destroy:ask`.
+`env:prod-unattended:<name>`, `env:prod:<name>`, `env:unknown`, `destroy:ask`,
+and `could-not-tell` for a terraform line that is not all plain literals
+(asked under `ask` and `allow` whatever its environment, denied under `block`).
 
 **The always-stops.** A destroy is never applied unattended at any setting —
 `terraformApply: allow` and `prodUnattended: true` included. So is an apply of
