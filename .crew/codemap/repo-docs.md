@@ -1,5 +1,5 @@
 # repo-docs
-anchor: useful-claude-add-ons@6f96e627
+anchor: useful-claude-add-ons@c23fad63
 verified: 2026-09-26
 
 ## Re-derive provenance
@@ -298,7 +298,7 @@ listing the directory.
 - **`docs/runbooks/INDEX.md` still does not exist.** `docs/runbooks/`
   contains `rollback.md` alone (re-confirmed by `ls`).
   `plugin/crew/skills/crew-runbooks/SKILL.md:80` and
-  `plugin/crew/README.md:1804` (`:1759` at `a0c0847e`, `:1730` at `8ebbdedc`, `:1757` at T-0006's `2bb92f32`, `:1728` at `c35edda5`, `:1725` at `f2bb919b`, `:1604` before that,
+  `plugin/crew/README.md:1809` (`:1804` at `07ca3972`, `:1759` at `a0c0847e`, `:1730` at `8ebbdedc`, `:1757` at T-0006's `2bb92f32`, `:1728` at `c35edda5`, `:1725` at `f2bb919b`, `:1604` before that,
   that file having changed in each range — re-grepped, not offset) both still describe
   `docs/runbooks/INDEX.md` as a symptom-keyed index that would live there.
   JUDGEMENT, unchanged: costs nothing with one runbook, becomes a real gap at
@@ -416,7 +416,9 @@ listing the directory.
   and T-0004 appended a last one (`:281-288`): `crew_autopilot.py`,
   `commands/autopilot.md`, `test_crew_autopilot.py` and
   `sabotage_autopilot.py` run `test_crew_autopilot.py` plus
-  `test_lifecycle_commands.py`. The rules above it did not move.
+  `test_lifecycle_commands.py`. T-0011 appended rule 27 after it (`:289-295`):
+  `crew_autopilot.py`, `test_crew_autopilot_ship.py` and `sabotage_autopilot.py`
+  run `test_crew_autopilot_ship.py`. The rules above them did not move.
 
 ## Unverified
 
@@ -561,3 +563,17 @@ mention moved `:1759` -> `:1804`, re-grepped), `plugin/crew/hooks/scripts/crew_s
 `plugin/crew/hooks/scripts/crew_ticket.py` (cited by name only, as a rule's path) and both install
 scripts (crew catalog row count). `python3 scripts/check-marketplace.py` re-run at `07ca3972`:
 `marketplace: 34 skills, 5 plugins` / `all checks passed`.
+
+Re-verified per-path from `6f96e627` to `c23fad63` for T-0011 (the autopilot ship phase, crew
+1.0.42). Of the cited paths, `git diff --name-only 6f96e627..c23fad63` returns
+`.claude-plugin/marketplace.json` (crew `version` only; `:217` unchanged), `.crew/verify.json` (rule
+27 appended at `:289-295`; `:167-172`, `:251`, `:252-268`, `:270-280`, `:281-288` hold),
+`CHANGELOG.md` (1.0.42 entry at the top; cited without a line), `TODO.md` (the autopilot note
+reworded; the `render.sh` entry still at `:1190`, same heading), `plugin/PLUGINS.md` (`:14` version),
+`plugin/crew/.claude-plugin/plugin.json` (version), `plugin/crew/README.md` (the
+`docs/runbooks/INDEX.md` mention moved `:1804` -> `:1809`, re-grepped) and
+`plugin/crew/hooks/scripts/crew_state.py` (the `AUTOPILOT_DEFAULTS` block grew at `:1087-1093`, below
+the `:129`-`:139` re-exports, which hold). `docs/diagrams/data-flow-crew-config.mmd` and
+`process-crew-brief.mmd` are re-anchored to `c23fad63` by the same T-0011 refresh; their `:1`/`:2`
+header shape, which this note describes, is unchanged. `README.md`, `plugin/README.md` and both
+install scripts did not change.

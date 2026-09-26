@@ -1,5 +1,5 @@
 # install-scripts
-anchor: useful-claude-add-ons@6f96e627
+anchor: useful-claude-add-ons@c23fad63
 verified: 2026-09-26
 
 ## Re-derive provenance
@@ -477,3 +477,16 @@ script moved and every other install-script citation stands. That same change ma
 stale (Landmines). `scripts/check-marketplace.py`, `scripts/_test/self-claims.py`,
 `scripts/_test/drift-detection.sh` and `INSTALLATION.md` did not change. Neither install script was
 executed, and `check-marketplace.py` was not run at this pass.
+
+Re-verified per-path from `6f96e627` to `c23fad63` for T-0011: of the cited paths
+`.claude-plugin/marketplace.json` (`:218` version 1.0.41 -> 1.0.42; the `:217` description, 4
+agents / 35 slash commands / 29 skills, is unchanged), `plugin/PLUGINS.md` (`:14` version; `:17`
+Registers row unchanged), `plugin/crew/BUDGETS.md` (marker still `:10`; `:11` reads 18,200 lines
+across 121 files at `c23fad63`, while `git ls-files 'plugin/crew/*.md' | xargs cat | wc -l`
+returns 18201 there - one line short, corrected by T-0011's version commit), `TODO.md`, and
+`plugin/crew/README.md` (three lines added in the autopilot config prose and two in the Ship
+paragraph, so the `35 commands` claim is now at `:2260` and `4 agents` at `:2271`, re-grepped)
+changed. Neither install script, `plugin/README.md`, `README.md`, `INSTALLATION.md`,
+`scripts/check-marketplace.py` nor anything under `scripts/_test/` changed, so every
+install-script citation stands. `ls plugin/crew/commands/*.md` is still 35. Neither install script
+was executed at this pass.

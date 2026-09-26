@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@6f96e627
+anchor: useful-claude-add-ons@c23fad63
 verified: 2026-09-26
 paths: scripts/**, plugin/PLUGINS.md
 
@@ -360,3 +360,14 @@ changed. `INSTALLATION.md` did not, so its `:252` still states 34 commands again
 `scripts/check-marketplace.py`, `CLAUDE.md` and `skills/README.md` did not change.
 `python3 scripts/check-marketplace.py` at `07ca3972`: `marketplace: 34 skills, 5 plugins`,
 `all checks passed`.
+
+Re-verified per-path from `6f96e627` to `c23fad63` for T-0011 (the autopilot ship phase): of the
+cited paths, `.claude-plugin/marketplace.json` (`:218` version 1.0.41 -> 1.0.42; `:217` unchanged),
+`plugin/PLUGINS.md` (`:14` version), `plugin/crew/.claude-plugin/plugin.json` (version only),
+`plugin/crew/BUDGETS.md` (`:11` figure), `.crew/verify.json` (T-0011's rule appended at `:289-295`,
+28 rules; the doc rule at `:69-78` is unchanged), `CHANGELOG.md` and `TODO.md` changed. Neither
+install script, `plugin/README.md`, `README.md`, `INSTALLATION.md`, `scripts/check-marketplace.py`,
+`CLAUDE.md` nor `skills/README.md` changed. `python3 scripts/check-marketplace.py` at `c23fad63`
+reports 2 problems, both expected mid-build and both settled by T-0011's closing version commit:
+crew's `plugin/crew/` changed after 1.0.42 was set (`856006af`), and `plugin/crew/BUDGETS.md:10`
+claims 18,200 lines where the tree totals 18201.

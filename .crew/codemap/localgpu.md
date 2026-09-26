@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@6f96e627
+anchor: useful-claude-add-ons@c23fad63
 verified: 2026-09-26
 
 # localgpu
@@ -512,7 +512,7 @@ file's frontmatter, not previously listed in this note.** `plugin.json`'s
   **Checked against the code, corrected after QA:**
   `plugin/crew/hooks/scripts/crew_config.py:126-127` only re-exports
   (`DEV_PROVIDERS = crew_state.DEV_PROVIDERS`); the tuples are actually
-  *defined* at `plugin/crew/hooks/scripts/crew_state.py:1429-1430` (re-numbered
+  *defined* at `plugin/crew/hooks/scripts/crew_state.py:1435-1436` (re-numbered
   from `:1503-1504` by crew 1.0 - see the re-anchor entries below; same two
   lines, `DEV_PROVIDERS = ("claude", "codex", "copilot")` /
   `QA_PROVIDERS = ("claude", "codex", "copilot")`, byte-identical).
@@ -1072,3 +1072,13 @@ holds. `crew_state.py` gained `AUTOPILOT_DEFAULTS` at `:1087`, so the provider t
 `:1421-1422` -> `:1429-1430` (re-read via `grep -n "^DEV_PROVIDERS\|^QA_PROVIDERS"`: the same
 two lines, byte-identical), corrected in place above. Nothing under `plugin/localgpu/` changed.
 Nothing was executed.
+
+**Re-anchored `6f96e627` -> `c23fad63` on 2026-09-26 (T-0011).** `git diff --name-only 6f96e627
+c23fad63 -- <the paths this note cites>` returns `.claude-plugin/marketplace.json` (crew's
+`version` `:218`, 1.0.41 -> 1.0.42; the `:217` description and `localgpu`'s own `0.1.20` entry are
+unchanged), `plugin/crew/hooks/scripts/crew_config.py` and `plugin/crew/hooks/scripts/crew_state.py`.
+`crew_config.py`'s `:126-127` re-export is above its only hunk (`:372`, a comment inside
+`default_config`) and holds. `crew_state.py`'s `AUTOPILOT_DEFAULTS` block grew six lines at
+`:1087-1093`, so the provider tuples moved `:1429-1430` -> `:1435-1436` (re-read via
+`grep -n "^DEV_PROVIDERS\|^QA_PROVIDERS"`: the same two lines, byte-identical), corrected in place
+above. Nothing under `plugin/localgpu/` changed.
