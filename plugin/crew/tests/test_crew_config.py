@@ -272,7 +272,12 @@ def test_the_ten_keys_crew_read_but_never_declared_are_declared():
     assert "resume.auto" in declared
     # 119 with /crew:autopilot (T-0004): `autopilot.mode` and
     # `autopilot.maxPhases`, re-measured after rebasing onto T-0006.
-    assert len(declared) == 119
+    # 122 with T-0011's ship phase: `autopilot.ship`, `autopilot.knownFailures`
+    # (an empty list, so one leaf) and `autopilot.ciTimeoutMinutes`,
+    # re-measured with `leaf_paths(default_config())` on this branch.
+    assert {"autopilot.ship", "autopilot.knownFailures",
+            "autopilot.ciTimeoutMinutes"} <= declared
+    assert len(declared) == 122
 
 
 def test_autoclear_is_global_and_its_siblings_are_not():

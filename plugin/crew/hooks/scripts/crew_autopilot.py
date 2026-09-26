@@ -5,20 +5,30 @@
     python3 crew_autopilot.py resume --root . [--ticket <id>] [--json]
     python3 crew_autopilot.py settings --root . [--json]
     python3 crew_autopilot.py stops [--json]
+    python3 crew_autopilot.py ship --root . --ticket <id> [--json]
 
 T-0004. The lifecycle is prose commands (spec, plan, implement, review,
 done); `/crew:autopilot` follows each one's procedure in-session. This module
 is what names the NEXT one, from files on disk and nothing else, so a skipped
-phase is visible and a phase that cannot be told stops. Read-only: it never
-writes a file, never approves, never accepts a review.
+phase is visible and a phase that cannot be told stops. Read-only, except
+`ship` (T-0011): it never writes a file, never approves, never accepts a
+review. `ship` pushes the ticket's branch, opens its PR and may run
+`gh pr merge <n> --squash`; it writes no file either.
 
 ## next -- the phase from disk, first match wins
 
   no direction.md                        brainstorm          stop
   INDEX status `direction`, or no row    direction-approval  stop (no row: cannot tell)
+  INDEX `done` and spec header `done`    (the ship rows below)
   INDEX status done/merged/closed/...    closed              stop
   INDEX status not in DIRECTION_APPROVED direction-approval  stop (cannot tell)
-  spec header `status: done`             closed              stop
+  spec header `status: done`, unarmed    closed              stop
+  ... armed, detached HEAD or gh failure ship                stop (cannot tell)
+  ... PR merged                          closed              stop
+  ... PR open, `autopilot.ship: pr`      closed              stop, merge by hand
+  ... PR closed unmerged, other state    ship                stop
+  ... receipt no longer stands           ship                stop
+  ... no PR, or open under `merge`       ship                crew_autopilot.py ship
   `## Open questions` with an item       open-questions      stop
   no spec.md                             spec                /crew:spec <id>
   spec fails crew_ticket.validate        spec                stop
@@ -36,6 +46,17 @@ writes a file, never approves, never accepts a review.
   receipt not current, artifacts fresh   review              /crew:review <id>
   receipt current, artifacts stale       stale-after-review  stop, nothing written
   receipt current, artifacts fresh       done                /crew:done <id>
+
+## ship (T-0011)
+
+`ship_decision` is the rule, with no I/O: `autopilot.ship` anything but
+exactly `merge` opens the PR and stops. `merge` needs every required check
+`pass`, or `fail` named EXACTLY in `autopilot.knownFailures`; pending or none
+reported yet waits (stopping at `ciTimeoutMinutes`); an unreadable or unknown
+state, `skipping` or an unlisted failure stops. A `high` or unknown risk whose
+completed rounds are all `claude` or carry no `model_family` stops before CI
+is read. `_run_gh` is the only code here that runs gh; gh 2.46's
+`gh pr checks` has no --json, so `read_checks` parses its text.
 
 `closed` sits right after the spec is read, not last: a ticket `/crew:done`
 closed is never re-driven because a later commit staled its receipt. The
@@ -81,7 +102,9 @@ import importlib
 import json
 import os
 import re
+import subprocess
 import sys
+import time
 
 import crew_config
 import crew_state
@@ -150,6 +173,7 @@ HUMAN_STOPS = (
 # session's own family is recorded nowhere, so an unknown one counts as the
 # author's -- the refusing direction.
 SAME_FAMILY = ("claude", None)
+SHIP_POLICIES = ("pr", "merge")
 # Only these risks may merge on same-family reviews; anything else, an
 # unknown or misspelt risk included, is treated as `high`.
 LOW_RISKS = ("low", "med")
@@ -208,6 +232,261 @@ def ship_decision(policy, risk, checks, families, known_failures):
     allowed = sorted({n for n, s in rows if s == "fail"})
     return {"action": "merge", "reason": "every required check passed" + (
         " except known failure(s) " + ", ".join(allowed) if allowed else "")}
+
+
+# `gh pr checks` (gh 2.46 has no --json for it) prints, off a TTY, one
+# `name<TAB>bucket<TAB>elapsed<TAB>url` line per check and exits 0 (all
+# passed), 1 (a failure) or 8 (pending). `cancel` is not a pass.
+_BUCKETS = {"pass": "pass", "fail": "fail", "pending": "pending", "skipping": "skipping",
+            "cancel": "fail"}
+_CHECK_EXITS = {0: ("pass", "skipping"), 1: ("fail",), 8: ("pending",)}
+_NO_CHECKS = ("no required checks reported", "no checks reported")
+GH_TIMEOUT = 120
+PUSH_TIMEOUT = 300
+POLL_SECONDS = 30
+_sleep = time.sleep
+_clock = time.monotonic
+
+
+def merge_argv(number):
+    """The one merge `ship` runs: squash, never `--admin`."""
+    return ["pr", "merge", str(number), "--squash"]
+
+
+def push_argv(branch):
+    """The one push `ship` runs: never `--force`."""
+    return ["git", "push", "-u", "origin", branch]
+
+
+def _run_gh(top, args):
+    """(returncode, stdout, stderr) of `gh <args>` in `top`, or None when gh
+    could not run at all. The only code in this module that runs `gh`."""
+    try:
+        done = subprocess.run(["gh"] + list(args), cwd=top, capture_output=True, text=True,
+                              encoding="utf-8", errors="replace", timeout=GH_TIMEOUT,
+                              check=False, stdin=subprocess.DEVNULL)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return done.returncode, done.stdout or "", done.stderr or ""
+
+
+def _gh(top, args):
+    """`gh <args>`'s stdout parsed as JSON, or None on any failure."""
+    got = _run_gh(top, args)
+    if got is None or got[0] != 0:
+        return None
+    try:
+        return json.loads(got[1])
+    except ValueError:
+        return None
+
+
+def _push(top, branch):
+    """(ok, detail) of `git push -u origin <branch>`."""
+    try:
+        done = subprocess.run(push_argv(branch), cwd=top, capture_output=True, text=True,
+                              encoding="utf-8", errors="replace", timeout=PUSH_TIMEOUT,
+                              check=False, stdin=subprocess.DEVNULL)
+    except (OSError, subprocess.SubprocessError) as exc:
+        return False, str(exc)
+    return done.returncode == 0, (done.stderr or "").strip()[-400:]
+
+
+def read_pr(top, branch):
+    """`{"number", "state", "url", "headRefOid"}` for `branch`'s PR,
+    `{"state": "NONE"}` when gh says exactly that the branch has none, or
+    None when the state could not be read."""
+    got = _run_gh(top, ["pr", "view", branch, "--json", "number,state,url,headRefOid"])
+    if got is None:
+        return None
+    code, out, err = got
+    if code != 0:
+        none = f'no pull requests found for branch "{branch}"'
+        return {"state": "NONE"} if err.strip() == none else None
+    try:
+        data = json.loads(out)
+    except ValueError:
+        return None
+    if not isinstance(data, dict) or isinstance(data.get("number"), bool) \
+            or not isinstance(data.get("number"), int) or not isinstance(data.get("state"), str):
+        return None
+    return data
+
+
+def read_checks(top, number):
+    """`[{"name", "state"}]` for PR `number`'s required checks, `[]` when gh
+    reports none yet, or None when they could not be read -- gh failed, an
+    exit code outside 0/1/8, a line without a tab, or an exit code that
+    disagrees with the lines (0 with a pending one, 8 with none pending)."""
+    got = _run_gh(top, ["pr", "checks", str(number), "--required"])
+    if got is None or got[0] not in _CHECK_EXITS:
+        return None
+    code, out, err = got
+    lines = [line for line in out.splitlines() if line.strip()]
+    if not lines:
+        return [] if code == 1 and err.strip().startswith(_NO_CHECKS) else None
+    checks = []
+    for line in lines:
+        parts = line.split("\t")
+        if len(parts) < 2 or not parts[0].strip():
+            return None
+        checks.append({"name": parts[0].strip(),
+                       "state": _BUCKETS.get(parts[1].strip().lower(), "unknown")})
+    states = {c["state"] for c in checks}
+    if code == 0 and not states <= set(_CHECK_EXITS[0]):
+        return None
+    if code == 8 and "pending" not in states:
+        return None
+    return checks
+
+
+def _branch(top):
+    branch = git_out(top, "rev-parse", "--abbrev-ref", "HEAD")
+    return branch if branch and branch != "HEAD" else None
+
+
+def _default_branch(top):
+    data = _gh(top, ["repo", "view", "--json", "defaultBranchRef"])
+    ref = data.get("defaultBranchRef") if isinstance(data, dict) else None
+    name = ref.get("name") if isinstance(ref, dict) else None
+    return name if isinstance(name, str) and name else None
+
+
+def _families(top, ticket):
+    """The `model_family` of every completed round under the current plan,
+    or None when the ledger cannot be read."""
+    ledger = review_ledger.status(top, ticket)
+    if ledger["state"] == review_ledger.UNKNOWN:
+        return None
+    return [r.get("model_family") for r in _current_rounds(ledger)
+            if isinstance(r, dict) and r.get("status") == "completed"]
+
+
+def ship_command(ticket):
+    return f"crew_autopilot.py ship --ticket {ticket}"
+
+
+def _ship_phase(top, ticket, answer, why):
+    """`next` for a ticket `/crew:done` closed: `closed` once its PR merged
+    (or, under `ship: pr`, once one is open), `ship` while there is work
+    left, and a stop for every state that cannot be read. Unarmed, it is
+    `closed` without asking gh: shipping is autopilot's alone."""
+    config = settings(top)
+    if not config["armed"]:
+        return answer("closed", True, f"{why}: closed by /crew:done. Shipping is "
+                      "/crew:autopilot's and autopilot.mode is off, so a person pushes and "
+                      "merges")
+    branch = _branch(top)
+    if not branch:
+        return answer("ship", True, "cannot tell which branch ships: HEAD is detached or "
+                      "unreadable - a human checks out the ticket's branch")
+    pr = read_pr(top, branch)
+    if pr is None:
+        return answer("ship", True, f"could not read the PR state for {branch} (gh pr view "
+                      "failed: gh missing, not authenticated, no remote, or an answer that "
+                      "is not a PR) - a human looks")
+    state = pr["state"]
+    if state == "MERGED":
+        return answer("closed", True, f"PR #{pr['number']} is merged ({pr.get('url')})")
+    if state == "OPEN" and config["ship"] != "merge":
+        return answer("closed", True, f"PR #{pr['number']} open, merge by hand "
+                      f"({pr.get('url')}; autopilot.ship is {config['ship']})")
+    if state not in ("NONE", "OPEN"):
+        return answer("ship", True, f"PR #{pr.get('number')} for {branch} is {state}, not "
+                      "open or merged - a person decides")
+    ok, message = review_ledger.check_receipt(top, ticket)
+    if not ok:
+        return answer("ship", True, f"the review receipt no longer stands ({message}): "
+                      "shipping would put unreviewed commits in the PR - a human decides")
+    return answer("ship", False, f"{why}; " + ("no PR yet" if state == "NONE" else
+                                               f"PR #{pr['number']} open, merging when green"),
+                  ship_command(ticket))
+
+
+def _ship_result(ticket, action, stop, reason, pr=None, checks=None, families=None):
+    return {"ticket": ticket, "action": action, "stop": stop, "reason": reason,
+            "pr": (pr or {}).get("url") or (f"#{pr['number']}" if pr and pr.get("number")
+                                           else ""),
+            "checks": checks, "families": families}
+
+
+def ship(root, ticket):
+    """Push the branch, open its PR if none, then under `ship: merge` poll
+    the required checks every POLL_SECONDS up to `ciTimeoutMinutes`, feeding
+    `ship_decision`, and on `merge` run exactly `merge_argv`. Runs only when
+    `next` names `ship`. Every answer names the PR, the checks and the review
+    families it rested on."""
+    top = crew_ticket.toplevel(root) or os.path.abspath(root)
+    config = settings(top)
+    if not config["armed"]:
+        return _ship_result(ticket, "stop", True, "autopilot.mode is not plan: ship runs "
+                            "only under an armed /crew:autopilot")
+    phase = next_phase(top, ticket)
+    if phase["phase"] != "ship" or phase["stop"]:
+        return _ship_result(ticket, "stop", True, f"next names {phase['phase']}"
+                            f"{' (stop)' if phase['stop'] else ''}, not ship: {phase['reason']}")
+    branch = _branch(top)
+    default = _default_branch(top)
+    if not branch or not default or branch == default:
+        return _ship_result(ticket, "stop", True, f"will not push {branch or '(no branch)'}: "
+                            f"the default branch is {default or 'unreadable'}, and ship "
+                            "pushes only a ticket branch that is not it")
+    pushed, detail = _push(top, branch)
+    if not pushed:
+        return _ship_result(ticket, "stop", True, f"git push -u origin {branch} failed: "
+                            f"{detail}")
+    pr = read_pr(top, branch)
+    if pr is not None and pr["state"] == "NONE":
+        created = _run_gh(top, ["pr", "create", "--head", branch, "--fill"])
+        if created is None or created[0] != 0:
+            return _ship_result(ticket, "stop", True, "gh pr create failed: "
+                                + ((created[2] or created[1]).strip() if created else
+                                   "gh could not run"))
+        pr = read_pr(top, branch)
+    if pr is None or pr["state"] != "OPEN":
+        return _ship_result(ticket, "stop", True, "could not read an open PR for "
+                            f"{branch} after pushing ({(pr or {}).get('state', 'unreadable')})",
+                            pr)
+    spec = read_text(os.path.join(crew_ticket.ticket_dir(top, ticket), "spec.md")) or ""
+    risk = crew_ticket.parse_risk(spec)["risk"]
+    families = _families(top, ticket)
+    if families is None:
+        return _ship_result(ticket, "stop", True, "the review ledger is unreadable, so the "
+                            "review families cannot be told", pr)
+    deadline = _clock() + config["ciTimeoutMinutes"] * 60
+    while True:
+        checks = read_checks(top, pr["number"])
+        decision = ship_decision(config["ship"], risk, checks, families,
+                                 config["knownFailures"])
+        if decision["action"] == "merge":
+            break
+        if decision["action"] != "wait":
+            opened = decision["action"] == "open-pr"
+            return _ship_result(ticket, "open-pr" if opened else "stop", not opened,
+                                decision["reason"], pr, checks, families)
+        left = deadline - _clock()
+        if left <= 0:
+            return _ship_result(ticket, "stop", True, f"{decision['reason']} after "
+                                f"{config['ciTimeoutMinutes']} min (autopilot."
+                                "ciTimeoutMinutes) - never merged", pr, checks, families)
+        _sleep(min(POLL_SECONDS, left))
+    head = git_out(top, "rev-parse", "HEAD")
+    now = read_pr(top, branch)
+    if not head or now is None or now.get("state") != "OPEN" or now.get("headRefOid") != head:
+        return _ship_result(ticket, "stop", True, "the PR's head is not this checkout's HEAD "
+                            f"({(now or {}).get('headRefOid')} vs {head}): the checks read are "
+                            "not for what was reviewed - never merged", pr, checks, families)
+    merged = _run_gh(top, merge_argv(pr["number"]))
+    if merged is None or merged[0] != 0:
+        return _ship_result(ticket, "stop", True, "gh pr merge --squash failed: "
+                            + ((merged[2] or merged[1]).strip() if merged else
+                               "gh could not run"), pr, checks, families)
+    after = read_pr(top, branch)
+    if after is None or after.get("state") != "MERGED":
+        return _ship_result(ticket, "stop", True, "gh pr merge exited 0 but the PR reads "
+                            f"{(after or {}).get('state', 'unreadable')}, not MERGED - a "
+                            "human looks", pr, checks, families)
+    return _ship_result(ticket, "merged", False, decision["reason"], pr, checks, families)
 
 
 def _rel(top, path):
@@ -402,6 +681,11 @@ def _phase(root, ticket):
                       "(Jira and ServiceDesk Plus modes write none). The human adds "
                       f"`{ticket} | ready | <risk> | <repo> | <title>` once it is agreed")
     if status in INDEX_DONE:
+        spec_text = read_text(os.path.join(folder, "spec.md")) if status == "done" else None
+        if spec_text is not None and _header_status(spec_text) == "done":
+            evidence.append(_rel(top, os.path.join(folder, "spec.md")))
+            return _ship_phase(top, ticket, answer, f".work/INDEX.md marks {ticket} `done` "
+                               "and spec.md's header is `status: done`")
         return answer("closed", True, f".work/INDEX.md marks {ticket} `{status}`: never "
                       "re-driven, whatever spec.md's header says")
     if status not in DIRECTION_APPROVED:
@@ -413,8 +697,7 @@ def _phase(root, ticket):
     evidence.append(_rel(top, os.path.join(folder, "spec.md")))
     if contract["spec.md"] is not None and _header_status(
             crew_ticket._text(contract["spec.md"])) == "done":  # pylint: disable=protected-access
-        return answer("closed", True, "spec.md header is `status: done`: nothing left "
-                      "in this ticket (ship is T-0011)")
+        return _ship_phase(top, ticket, answer, "spec.md header is `status: done`")
     questions = _open_questions(folder)
     if questions:
         return answer("open-questions", True, "unanswered under ## Open questions: "
@@ -674,12 +957,29 @@ def settings(root):
         warnings.append(f"autopilot.maxPhases is {limit!r}, not a positive integer; "
                         f"using {default}")
         limit = default
+    ship = block.get("ship")
+    if ship not in SHIP_POLICIES:
+        warnings.append(f"autopilot.ship is {ship!r}, not 'pr' or 'merge'; reading it as "
+                        "'pr' (open the PR, never merge)")
+        ship = "pr"
+    known = block.get("knownFailures")
+    if not isinstance(known, list) or not all(isinstance(k, str) for k in known):
+        warnings.append(f"autopilot.knownFailures is {known!r}, not a list of check names; "
+                        "using [] (no failing check is excused)")
+        known = []
+    timeout = block.get("ciTimeoutMinutes")
+    default_timeout = crew_state.AUTOPILOT_DEFAULTS["ciTimeoutMinutes"]
+    if isinstance(timeout, bool) or not isinstance(timeout, int) or timeout < 1:
+        warnings.append(f"autopilot.ciTimeoutMinutes is {timeout!r}, not a positive "
+                        f"integer; using {default_timeout}")
+        timeout = default_timeout
     crew_json = _read_json(os.path.join(top, ".crew", "crew.json"))
     if isinstance(crew_json, dict) and "autopilot" in crew_json \
             and "autopilot" not in crew_state.load_config(top):
         warnings.append("autopilot is set in .crew/crew.json, which crew does not read "
                         "for this key; move it to .crew/config.json")
     return {"mode": "plan" if armed else "off", "armed": armed, "maxPhases": limit,
+            "ship": ship, "knownFailures": list(known), "ciTimeoutMinutes": timeout,
             "saw": mode, "warnings": warnings}
 
 
@@ -701,15 +1001,28 @@ def _line(**fields):
     return " ".join(f"{k}={v}" for k, v in fields.items())
 
 
+def _ship_text(result):
+    checks = result["checks"]
+    families = result["families"]
+    return "\n".join([
+        _line(action=result["action"], stop=int(result["stop"]), pr=result["pr"] or "",
+              reason=result["reason"]),
+        "checks: " + (", ".join(f"{c.get('name')}={c.get('state')}" for c in checks)
+                      if checks else "(none read)" if checks is None else "(none reported)"),
+        "families: " + (", ".join(_family(f) or "unknown" for f in families)
+                        if families else "(not read)" if families is None else "(none)")])
+
+
 def main(argv):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = parser.add_subparsers(dest="action", required=True)
-    for name in ("next", "resume", "settings", "stops"):
+    for name in ("next", "resume", "settings", "stops", "ship"):
         action = sub.add_parser(name)
         action.add_argument("--json", action="store_true")
         if name != "stops":
             action.add_argument("--root", default=".")
     sub.choices["next"].add_argument("--ticket", required=True)
+    sub.choices["ship"].add_argument("--ticket", required=True)
     sub.choices["resume"].add_argument("--ticket", default="")
     sub.choices["next"].add_argument("--phases-run", type=int, default=0)
     sub.choices["next"].add_argument("--last-command", default="")
@@ -727,6 +1040,13 @@ def main(argv):
         result = settings(args.root)
         text = "\n".join([_line(mode=result["mode"], maxPhases=result["maxPhases"])]
                          + [f"warning: {w}" for w in result["warnings"]])
+    elif args.action == "ship":
+        try:
+            result = ship(args.root, args.ticket)
+        except Exception as exc:  # pylint: disable=broad-except
+            # A crash cannot tell whether it is safe to merge: a stop, never silence.
+            result = _ship_result(args.ticket, "stop", True, _failure(exc))
+        text = _ship_text(result)
     elif args.action == "resume":
         try:
             result = resume_target(args.root, args.ticket or None)

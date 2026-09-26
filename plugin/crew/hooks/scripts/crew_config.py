@@ -370,7 +370,9 @@ def default_config():
         # phase commands in-session starts disarmed, and only the exact
         # string `plan` arms it (crew_autopilot.settings). REPO ONLY, absent
         # from `default_global_config()`: whether one checkout may be driven
-        # is a fact about that checkout.
+        # is a fact about that checkout. T-0011's `ship`, `knownFailures`
+        # and `ciTimeoutMinutes` ride in the same block, validated by
+        # `crew_autopilot.settings` (a bad `ship` reads as `pr`).
         "autopilot": copy.deepcopy(crew_state.AUTOPILOT_DEFAULTS),
     }
 

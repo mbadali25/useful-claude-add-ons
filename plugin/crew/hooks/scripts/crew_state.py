@@ -1084,7 +1084,13 @@ AUTONOMOUS_STOPS = (
 # (crew_autopilot.settings). `maxPhases` bounds the phases one invocation runs.
 # Every AUTONOMOUS_STOPS entry above binds it too: commands/autopilot.md names
 # each one, and a test iterates this tuple against that file.
-AUTOPILOT_DEFAULTS = {"mode": "off", "maxPhases": 12}
+# T-0011 adds the ship phase after `/crew:done`: `ship` is `pr` (push and open
+# the PR, then stop) or `merge` (also `gh pr merge <n> --squash` once every
+# required check passes or fails only on a name EXACTLY in `knownFailures`);
+# any other value reads as `pr`, the non-merging direction. A check still
+# pending after `ciTimeoutMinutes` stops; it never merges.
+AUTOPILOT_DEFAULTS = {"mode": "off", "maxPhases": 12, "ship": "merge", "knownFailures": [],
+                      "ciTimeoutMinutes": 60}
 
 # How many tickets one session's work becomes. The default is `system`: one
 # session is one ticket, and a second ticket is opened only when the work
