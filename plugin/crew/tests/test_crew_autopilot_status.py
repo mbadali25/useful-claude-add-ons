@@ -266,6 +266,16 @@ def test_status_unknown_ledger_is_unknown(tmp_path):
     assert got["review"] == "unknown (ledger unreadable)"
 
 
+def test_status_ledger_without_a_rounds_count_is_unknown(tmp_path, monkeypatch):
+    root = _approved(tmp_path)
+    monkeypatch.setattr(review_ledger, "status", lambda *_a: {
+        "ticket": T, "path": "p", "state": review_ledger.IN_REVIEW, "budget": 2})
+
+    got = crew_autopilot.status(str(root), T)
+
+    assert got["review"] == "unknown (ledger unreadable)"
+
+
 def test_status_ledger_that_says_unknown_prints_no_rounds_count(tmp_path):
     root = _approved(tmp_path)
     _ledger(root, [], state="UNKNOWN")
