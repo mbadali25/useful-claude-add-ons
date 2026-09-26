@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@6d35ef8c
+anchor: useful-claude-add-ons@2bb92f32
 verified: 2026-09-26
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -153,9 +153,10 @@ Notable rules, re-read directly:
 - **Rule 24**, new at `6d35ef8c` (`.crew/verify.json:263-273`, T-0006): `paths`
   `crew_resume.py`, `crew_context.py`, both `handoff-write` flavours,
   `test_crew_resume.py`, `test_crew_resume_hook.py` and `sabotage_resume.py` →
-  `python3 -m pytest` over the two resume test files plus `test_auto_cycle.py`, priced 61s (its
-  `why` records 60s, 318 passed / 12 skipped / 68 deselected after review round 2). Its
-  mutations live in `plugin/crew/tests/sabotage_resume.py` (`RESUME_MUTATIONS`, 36), imported by
+  `python3 -m pytest` over the two resume test files plus `test_auto_cycle.py`, priced 89s (its
+  `why` records 89s, 348 passed / 12 skipped / 68 deselected after review round 3, under load;
+  60s after round 2). Its
+  mutations live in `plugin/crew/tests/sabotage_resume.py` (`RESUME_MUTATIONS`, 44), imported by
   `plugin/crew/tests/sabotage.py:76` and appended to `MUTATIONS` at `:3048`.
 
 **Still unresolved at this anchor:** a declared `seconds` figure is only
@@ -220,7 +221,7 @@ that changed shape or are newly documented here:
   test file is named in rule 4's `run`; only rule 8's whole suite runs them.
 - **Per-rule process-group tracking and kill-on-signal was DESCOPED from crew
   1.0, and it is a documented limitation, not a silent gap.**
-  `verify-gate.sh:1493-1502` and `plugin/crew/CONFIG.md:2016-2023` both state
+  `verify-gate.sh:1493-1502` and `plugin/crew/CONFIG.md:2022-2029` both state
   it: a third registry stage (`_crew_gate_cleanup_rule_pgid`) shipped, then was
   removed after five consecutive review rounds each found the previous
   round's fix one case short (disk fill by an orphan writer, escape on gate
@@ -398,7 +399,7 @@ set on Ubuntu.
   `plugin/crew/tests/sabotage.py:75`, `:3046` — `sabotage_refresh.py`'s
   registration.
 - `plugin/crew/hooks/scripts/verify-gate.sh:1493-1502` /
-  `plugin/crew/CONFIG.md:2016-2023` — the descoped per-rule process-group kill,
+  `plugin/crew/CONFIG.md:2022-2029` — the descoped per-rule process-group kill,
   documented as a standing limitation.
 - `plugin/crew/hooks/scripts/verify-gate.ps1:822-832`, `:1665-1674` —
   `Resolve-CrewBash` refusal rather than a re-resolving hang.
@@ -546,3 +547,21 @@ line diff and re-read with `grep -n`:
   and `TODO.md` are cited by name only.
 
 The suites named above were run for T-0006's code commit, not by this note.
+
+## Re-anchor provenance - `6d35ef8c` -> `2bb92f32`, 2026-09-26 (T-0006 review round 3)
+
+`git diff --name-only 6d35ef8c 2bb92f32 -- <the paths this note cites>` returns
+`.crew/verify.json`, `CHANGELOG.md`, `plugin/crew/CONFIG.md`, `plugin/crew/BUDGETS.md` and
+`plugin/crew/tests/sabotage_resume.py` (plus the version files, stepped to 1.0.37 and back, which
+end byte-identical). Each citation was re-mapped with a line diff and re-read with `grep -n`:
+
+- `.crew/verify.json` - rule 24's `seconds` (61 -> 89) and `why` changed in place; `:263-273`,
+  every other rule's lines and `default`/`unmapped` `:276`/`:277` stand. Rule and line counts
+  re-measured with `json.load`/`wc -l` (25, 278).
+- `plugin/crew/tests/sabotage_resume.py` - eight round-3 mutations appended, 44 in all; the
+  `sabotage.py` registration `:76`, `:3048` did not change.
+- `plugin/crew/CONFIG.md` - six lines added in §10 and §14's auto-resume paragraph moved the
+  descoped process-group-kill limitation `:2016-2023` -> `:2022-2029`.
+- `CHANGELOG.md`, `BUDGETS.md` - cited by name only here.
+
+The suites named above were run for the round-3 code commits, not by this note.

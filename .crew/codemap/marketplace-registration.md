@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@6d35ef8c
+anchor: useful-claude-add-ons@2bb92f32
 verified: 2026-09-26
 paths: scripts/**, plugin/PLUGINS.md
 
@@ -254,7 +254,9 @@ against synthetic fixtures and never reads this repo's own docs.
   files, matching; `check-marketplace.py` passes it. Re-measured for T-0008: the marker
   is still `:10`, the figure on `:11` reads 17,841 lines across 120 files, and the
   same measurement returns 17841 over 120 files, matching. Re-measured for T-0006 at `6d35ef8c`:
-  17,959 on `:11`, and the measurement returns 17959 over 120 files, matching.
+  17,959 on `:11`, and the measurement returns 17959 over 120 files, matching. Re-measured for
+  T-0006 review round 3 at `2bb92f32`: 17,967 on `:11`, and the measurement returns 17967 over
+  120 files, matching.
 - **`MARKETPLACE.md`** was not re-read for a community-plugin or marketplace
   count of its own; only `README.md:231`'s prose was checked and found to no
   longer state a specific number.
@@ -308,3 +310,13 @@ figure, re-measured and matching), `.crew/verify.json` (rule 24 appended after r
 rule at `:69-78` is unchanged), `CHANGELOG.md` and `TODO.md` changed. `CLAUDE.md` did not.
 `python3 scripts/check-marketplace.py` at `6d35ef8c`: `marketplace: 34 skills, 5 plugins`,
 `all checks passed`.
+
+Re-verified per-path from `6d35ef8c` to `2bb92f32` for T-0006's review round 3: of the cited
+paths, `plugin/crew/BUDGETS.md` (`:11` figure, re-measured and matching), `.crew/verify.json`
+(rule 24's `seconds` and `why` only; the doc rule at `:69-78` is unchanged) and `CHANGELOG.md`
+changed. `.claude-plugin/marketplace.json`, `plugin/PLUGINS.md` and
+`plugin/crew/.claude-plugin/plugin.json` were stepped back to 1.0.37 (`3ba9f727`) and re-set to
+1.0.40 (`2bb92f32`) so the version is set after the last `plugin/crew/` change, which is what
+`check_versions`' `version_set_at` walk needs; they end byte-identical to `6d35ef8c`. `CLAUDE.md`
+did not change. `python3 scripts/check-marketplace.py` at `2bb92f32`:
+`marketplace: 34 skills, 5 plugins`, `all checks passed`.

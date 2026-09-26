@@ -1,5 +1,5 @@
 # repo-docs
-anchor: useful-claude-add-ons@6d35ef8c
+anchor: useful-claude-add-ons@2bb92f32
 verified: 2026-09-26
 
 ## Re-derive provenance
@@ -287,7 +287,7 @@ listing the directory.
 - **`docs/runbooks/INDEX.md` still does not exist.** `docs/runbooks/`
   contains `rollback.md` alone (re-confirmed by `ls`).
   `plugin/crew/skills/crew-runbooks/SKILL.md:80` and
-  `plugin/crew/README.md:1756` (`:1725` at `f2bb919b`, `:1604` before that,
+  `plugin/crew/README.md:1757` (`:1756` at `6d35ef8c`, `:1725` at `f2bb919b`, `:1604` before that,
   that file having changed in each range — re-grepped, not offset) both still describe
   `docs/runbooks/INDEX.md` as a symptom-keyed index that would live there.
   JUDGEMENT, unchanged: costs nothing with one runbook, becomes a real gap at
@@ -487,3 +487,12 @@ re-read, same heading), `plugin/crew/commands/handoff.md` (a `resume:` step adde
 `:69` still says to write `.work/HANDOFF.md`), `plugin/crew/hooks/scripts/crew_state.py`
 (`RESUME_DEFAULTS` inserted at `:684`; the `:129`-`:139` re-exports are above it and hold),
 `docs/guides/crew/src/auto-cycle.md` and `CHANGELOG.md` (cited without a line) changed.
+
+Re-verified per-path from `6d35ef8c` to `2bb92f32` for T-0006's review round 3: of the cited
+paths, `.crew/verify.json` (rule 24's `seconds` and `why` only), `plugin/crew/README.md` (one line
+added in the auto-resume reasons, so the `docs/runbooks/INDEX.md` line moved `:1756` -> `:1757`,
+re-grepped), `plugin/crew/skills/crew-context/SKILL.md` (the auto-resume reasons gained the
+unreadable-state wait; `:69` still says to write `.work/HANDOFF.md`),
+`docs/guides/crew/src/auto-cycle.md` (the refusal list now names the stale-and-not-archived and
+unreadable-state waits) and `CHANGELOG.md` (cited without a line) changed. The two diagrams this
+note cites are refreshed in the same commit as this note.

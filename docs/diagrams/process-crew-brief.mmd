@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@6d35ef8c on 2026-09-26. Verify before trusting.
+%% Generated from useful-claude-add-ons@2bb92f32 on 2026-09-26. Verify before trusting.
 %% Anchors: plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/handoff-read.sh, plugin/crew/hooks/scripts/platform-sync.sh, plugin/crew/hooks/scripts/crew_platform.py, plugin/crew/hooks/scripts/crew-context.sh, plugin/crew/hooks/scripts/crew_context.py, plugin/crew/hooks/scripts/crew_resume.py, plugin/crew/hooks/scripts/crew_state.py, plugin/crew/hooks/scripts/crew_status.py, plugin/crew/commands/status.md
 %% Re-anchored 86931b29 -> f2bb919b (T-0015): `git diff --name-only 86931b29 f2bb919b --`
 %% over every path on the Anchors line returns nothing, so no citation below moved. Spot
@@ -18,6 +18,11 @@
 %% (:828, defined :604), :755-757 -> :843-845, :758-768 -> :846-858, :909 -> :1002;
 %% :121-132 holds. The auto-resume decision (cc6/rs*) is new. Every moved line was re-read
 %% at 6d35ef8c with grep -n; the spot-read list above is T-0015's and names f2bb919b lines.
+%% Re-anchored 6d35ef8c -> 2bb92f32 (T-0006 review round 3): of the Anchors paths only
+%% crew_resume.py changed, and it is cited by function name only (crew_resume.decide), so no
+%% line below moved. decide gained one more wait (resume-state.json exists and could not be
+%% read), drawn in rs1's 'did not start: reason'. The stale-rule line's archive citation is
+%% corrected to :771/:977, where the node below already pointed (re-read with sed -n).
 %% What crew 1.0 does when a session starts, and what /crew:status reads.
 %% --
 %% REDRAWN for crew 1.0. The 0.20 version of this file drew the PM session-start
@@ -43,7 +48,7 @@
 %%   sources -> full note, next action first, then the auto-resume line; :859 no
 %%   note but a resume line -> that line alone; :1002 JSON additionalContext.
 %% Stale rule: crew_state.py:643 (72h / 3 commits), :856-911, archived to
-%%   .crew/handoffs/ (:761, :967), never deleted; never raises (:951-955).
+%%   .crew/handoffs/ (:771, :977), never deleted; never raises (:951-955).
 %% /crew:status: commands/status.md:14 -> crew_status.py; :185-209 report lines.
 %% --
 %% Dashed '?' edges: handoff-read reads only config.json (:44), never crew.json,
