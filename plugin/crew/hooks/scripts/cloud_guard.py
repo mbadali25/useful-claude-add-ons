@@ -268,15 +268,15 @@ def _expansion_subs(text, subs):
             j += 3
             continue
         if text.startswith("$(", j):
-            k = _match_close(text, j + 1)
-            subs.append(text[j + 2:k])
-            j = k + 1
+            close = _match_close(text, j + 1)
+            subs.append(text[j + 2:close])
+            j = close + 1
             continue
         if c == "`":
-            k = text.find("`", j + 1)
-            k = n if k < 0 else k
-            subs.append(text[j + 1:k])
-            j = k + 1
+            close = text.find("`", j + 1)
+            close = n if close < 0 else close
+            subs.append(text[j + 1:close])
+            j = close + 1
             continue
         j += 1
 
