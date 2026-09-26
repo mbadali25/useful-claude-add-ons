@@ -1167,7 +1167,7 @@ def test_status_sabotage_is_registered_with_sabotage_py():
 
     missing = [m[0] for m in STATUS_MUTATIONS if m not in sabotage.MUTATIONS]
 
-    assert (len(STATUS_MUTATIONS), missing) == (22, [])
+    assert (len(STATUS_MUTATIONS), missing) == (28, [])
 
 
 def test_autopilot_block_is_repo_only():

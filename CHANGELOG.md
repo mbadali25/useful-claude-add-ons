@@ -42,7 +42,18 @@ All notable changes to this repository are documented here. Format follows [Keep
     with "arrives with T-0012"; `--args --goal` and `--args -h` are values,
     not options; the command treats a router crash or no output as a stop,
     and from `resume` on drives the ticket `resume` printed.
-  - Twenty-two mutations in `tests/sabotage_autopilot.py`'s `STATUS_MUTATIONS`
+  - Review round 2's fixes: the `resume:` line reads usable only when bare
+    `/crew:autopilot` (`resume_target`) would itself take it, so a handoff
+    naming one ticket while the active-ticket pointer names another prints
+    `not usable:` with `resume_target`'s stop reason, and a
+    `resume_target` that raised prints `unknown`, never a verdict; when
+    `next` gives `stop=0`, `waiting on:` names bare `/crew:autopilot` only
+    when that would drive the same ticket, else `/crew:autopilot <ticket>`;
+    a pointer stop offers `or runs /crew:autopilot <active>` only while the
+    active ticket is not closed, and says it could not tell when that
+    ticket's phase could not be read. `.crew/verify.json`'s autopilot rule
+    is re-priced from a fresh measurement.
+  - Twenty-eight mutations in `tests/sabotage_autopilot.py`'s `STATUS_MUTATIONS`
     each turn their named test red. They are appended to
     `AUTOPILOT_MUTATIONS`, so `sabotage.py` runs them with the rest, and
     `test_crew_autopilot.py` asserts each one reaches `sabotage.MUTATIONS`.

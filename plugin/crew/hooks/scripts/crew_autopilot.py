@@ -717,7 +717,22 @@ def _reserved_round(top, ticket):
     return bool(rounds) and rounds[-1].get("status") != "completed"
 
 
-def _waiting(top, result):
+def _bare(top):
+    """What bare `/crew:autopilot` would take: `resume_target(top)`, or None
+    when it raised -- could not tell, which is never read as agreeing."""
+    try:
+        return resume_target(top)
+    except Exception:  # pylint: disable=broad-except
+        return None
+
+
+def _takes(bare, ticket, source=None):
+    """Whether bare `/crew:autopilot` drives `ticket` (from `source`, if named)."""
+    return (bare is not None and not bare.get("stop") and bare.get("ticket") == ticket
+            and source in (None, bare.get("source")))
+
+
+def _waiting(top, result, bare):
     phase, command = result.get("phase"), result.get("command")
     who = WAITING.get(phase, UNKNOWN)
     if who == UNKNOWN:
@@ -727,7 +742,11 @@ def _waiting(top, result):
     if phase == "review" and result.get("stop") and _reserved_round(top, result["ticket"]):
         return "reviewer - a round is reserved with no result"
     if not result.get("stop"):
-        return f"autopilot - run {AUTOPILOT} to continue"
+        # Bare `/crew:autopilot` reads the handoff before any argument, so it
+        # is named only when it would drive this same ticket.
+        if _takes(bare, result["ticket"]):
+            return f"autopilot - run {AUTOPILOT} to continue"
+        return f"autopilot - run {AUTOPILOT} {result['ticket']} to continue"
     try:
         guard = not _phase(top, result["ticket"])["stop"]
     except Exception:  # pylint: disable=broad-except
@@ -746,8 +765,16 @@ def _repoint(top, ticket):
                 f"crew_ticket.py activate --ticket {ticket}")
     if where != "active-ticket":
         return f"autopilot - run {AUTOPILOT} {ticket} to continue; it activates {ticket} first"
-    return (f"owner - re-points this worktree: crew_ticket.py activate --ticket {ticket}, "
-            f"or runs {AUTOPILOT} {active}")
+    repoint = f"owner - re-points this worktree: crew_ticket.py activate --ticket {ticket}"
+    try:
+        closed = _phase(top, active)["phase"] == "closed"
+    except Exception:  # pylint: disable=broad-except
+        closed = None
+    if closed is None:
+        return f"{repoint} (could not tell whether {active} is still open)"
+    if closed:
+        return f"{repoint} ({active} is closed)"
+    return f"{repoint}, or runs {AUTOPILOT} {active}"
 
 
 def _review(top, ticket):
@@ -763,10 +790,11 @@ def _review(top, ticket):
     return f"{ledger.get('state')}, {left} of {ledger.get('budget')} rounds left"
 
 
-def _resume_line(top):
-    """The handoff's `resume:` line and whether autopilot could use it. Only
-    `crew_resume`'s own fixed reasons and its re-rendered tokens are shown;
-    nothing is echoed from the file."""
+def _resume_line(top, bare):
+    """The handoff's `resume:` line and whether bare `/crew:autopilot` --
+    `bare`, `resume_target`'s answer -- takes it. Only `crew_resume`'s own
+    fixed reasons, its re-rendered tokens and `resume_target`'s stop reason
+    are shown; nothing is echoed from the file."""
     text = read_text(os.path.join(top, ".work", "HANDOFF.md"))
     if text is None:
         return "no .work/HANDOFF.md"
@@ -781,10 +809,16 @@ def _resume_line(top):
         return f"not usable: crew_resume raised {type(exc).__name__}"
     if not rendered:
         return f"not usable: {parsed.get('reason') or 'no reason given'}"
+    if bare is None:
+        return f"{rendered} (unknown: resume_target raised, so whether it is usable " \
+               "could not be told)"
+    taken = _takes(bare, parsed.get("arg"), "handoff")
+    if taken:
+        return f"{rendered} (usable)"
     if parsed.get("command") == AUTOPILOT and parsed.get("kind") == "goal":
         return f"not usable: {rendered} - goal resume arrives with {ARRIVES['goal']}"
-    # `_handoff_ticket`'s checks, in its order: a line it falls through is
-    # never shown as usable one line above the `fell through:` that says so.
+    # Not taken. The reason: `_handoff_ticket`'s fall-through checks in its
+    # order, in fixed text, then the stop `resume_target` made after taking it.
     if parsed.get("kind") != "ticket" or not parsed.get("arg"):
         return f"not usable: {rendered} - it names no ticket"
     branch = crew_state._HANDOFF_BRANCH_RE.search(text)  # pylint: disable=protected-access
@@ -796,7 +830,9 @@ def _resume_line(top):
         return f"not usable: {rendered} - its head: does not match this checkout"
     if not _existing_ticket(top, parsed["arg"]):
         return f"not usable: {rendered} - its ticket has no .work/tickets/ folder"
-    return f"{rendered} (usable)"
+    if bare.get("stop"):
+        return f"not usable: {rendered} - {bare.get('reason') or 'resume_target stopped'}"
+    return f"not usable: {rendered} - bare {AUTOPILOT} does not take it"
 
 
 def status(root, ticket=None):
@@ -816,17 +852,19 @@ def status(root, ticket=None):
             pick = {"ticket": None, "source": "argument", "fallthrough": [],
                     "disagreement": "", "next": None,
                     "reason": f"{ticket} has no .work/tickets/ folder"}
+        bare = _bare(top)
     else:
-        pick = resume_target(top)
+        pick = bare = resume_target(top)
     disk = pick.get("next") or {}
     found = pick.get("ticket")
     return {"mode": conf["mode"], "maxPhases": conf["maxPhases"], "warnings": conf["warnings"],
             "ticket": found, "source": pick.get("source"), "reason": pick.get("reason", ""),
             "phase": disk.get("phase") or UNKNOWN, "command": disk.get("command") or "",
             "stop": bool(disk.get("stop", True)), "phase_reason": disk.get("reason", ""),
-            "waiting": _waiting(top, disk) if found else "owner - see the ticket line",
+            "waiting": _waiting(top, disk, bare) if found else "owner - see the ticket line",
             "review": _review(top, found) if found else "unknown (no ticket)",
-            "resume_line": _resume_line(top), "fallthrough": list(pick.get("fallthrough") or []),
+            "resume_line": _resume_line(top, bare),
+            "fallthrough": list(pick.get("fallthrough") or []),
             "disagreement": pick.get("disagreement") or ""}
 
 

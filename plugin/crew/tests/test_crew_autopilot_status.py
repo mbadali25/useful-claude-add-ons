@@ -22,7 +22,7 @@ import crew_autopilot
 import crew_ticket
 import review_ledger
 from scope_fixtures import approve_as_user, make_repo
-from test_crew_autopilot import (_COMMAND, _SCRIPT, _approved, _handoff, _ledger, _round,
+from test_crew_autopilot import (_COMMAND, _SCRIPT, _approved, _handoff, _index, _ledger, _round,
                                  _snapshot, _ticket, _two_tickets, _write)
 
 T = "T-1"
@@ -447,6 +447,117 @@ def test_status_argument_without_a_folder_says_so(tmp_path):
 
     assert (got["ticket"], got["phase"], "no .work/tickets/" in got["reason"]) == (
         None, "unknown", True)
+
+
+# --- step 5: review round 2 --------------------------------------------------
+
+def _raise(*_a, **_k):
+    raise RuntimeError("disk on fire")
+
+
+@pytest.mark.parametrize("pointer,named", [("T-2", "T-1"), ("T-1", "T-2")],
+                         ids=["pointer-T2-handoff-T1", "pointer-T1-handoff-T2"])
+@pytest.mark.parametrize("argument", [None, "pointer", "named"])
+def test_status_resume_line_not_usable_on_a_pointer_mismatch(tmp_path, pointer, named,
+                                                             argument):
+    root = _two_tickets(tmp_path, activate=pointer)
+    _handoff(root, f"resume: /crew:autopilot {named}")
+    ticket = {None: None, "pointer": pointer, "named": named}[argument]
+
+    line = crew_autopilot.status(str(root), ticket)["resume_line"]
+
+    assert (line.startswith("not usable: "), line.endswith("(usable)"),
+            f"active ticket is {pointer}" in line) == (True, False, True)
+
+
+@pytest.mark.parametrize("ticket", [None, "T-1", "T-2"])
+def test_status_resume_line_usable_when_pointer_and_handoff_agree(tmp_path, ticket):
+    root = _two_tickets(tmp_path, activate="T-1")
+    _handoff(root, "resume: /crew:autopilot T-1")
+
+    got = crew_autopilot.status(str(root), ticket)
+
+    assert got["resume_line"] == "/crew:autopilot T-1 (usable)"
+
+
+def test_status_resume_line_unknown_when_resume_target_raises(tmp_path, monkeypatch):
+    root = _approved(tmp_path)
+    _handoff(root, f"resume: /crew:autopilot {T}")
+    monkeypatch.setattr(crew_autopilot, "resume_target", _raise)
+
+    line = crew_autopilot.status(str(root), T)["resume_line"]
+
+    assert (line.startswith("not usable"), line.endswith("(usable)"), "unknown" in line) == (
+        False, False, True)
+
+
+def test_status_continue_names_this_ticket_when_bare_autopilot_would_not(tmp_path):
+    root = _two_tickets(tmp_path, activate="T-1")
+    approve_as_user(root, "T-1")
+    _handoff(root, "resume: /crew:autopilot T-2")
+
+    got = crew_autopilot.status(str(root), "T-1")
+
+    assert (got["stop"], got["waiting"]) == (
+        False, "autopilot - run /crew:autopilot T-1 to continue")
+
+
+@pytest.mark.parametrize("line", ["resume: /crew:autopilot T-1", None],
+                         ids=["handoff-agrees", "no-handoff"])
+def test_status_continue_is_bare_when_bare_autopilot_takes_this_ticket(tmp_path, line):
+    root = _two_tickets(tmp_path, activate="T-1")
+    approve_as_user(root, "T-1")
+    if line:
+        _handoff(root, line)
+
+    got = crew_autopilot.status(str(root), "T-1")
+
+    assert (got["stop"], got["waiting"]) == (False, "autopilot - run /crew:autopilot to continue")
+
+
+def test_status_continue_names_this_ticket_when_resume_target_raises(tmp_path, monkeypatch):
+    root = _approved(tmp_path)
+    crew_ticket.activate(str(root), T)
+    monkeypatch.setattr(crew_autopilot, "resume_target", _raise)
+
+    got = crew_autopilot.status(str(root), T)
+
+    assert (got["stop"], got["waiting"]) == (
+        False, f"autopilot - run /crew:autopilot {T} to continue")
+
+
+def _close_t2(root):
+    _index(root, "T-1 | spec | high | r | one", "T-2 | done | high | r | two")
+
+
+def test_status_repoint_never_offers_a_closed_ticket(tmp_path):
+    root = _two_tickets(tmp_path, activate="T-2")
+    approve_as_user(root, T)
+    _close_t2(root)
+
+    got = crew_autopilot.status(str(root), T)
+
+    assert (got["waiting"].startswith("owner - "),
+            f"crew_ticket.py activate --ticket {T}" in got["waiting"],
+            "/crew:autopilot T-2" in got["waiting"]) == (True, True, False)
+
+
+def test_status_repoint_says_unknown_when_the_active_phase_raises(tmp_path, monkeypatch):
+    root = _two_tickets(tmp_path, activate="T-2")
+    approve_as_user(root, T)
+    real = crew_autopilot._phase  # pylint: disable=protected-access
+
+    def phase(top, ticket):
+        if ticket == "T-2":
+            raise RuntimeError("disk on fire")
+        return real(top, ticket)
+    monkeypatch.setattr(crew_autopilot, "_phase", phase)
+
+    got = crew_autopilot.status(str(root), T)
+
+    assert (f"crew_ticket.py activate --ticket {T}" in got["waiting"],
+            "/crew:autopilot T-2" in got["waiting"],
+            "could not tell whether T-2" in got["waiting"]) == (True, False, True)
 
 
 def _git_state(root):
