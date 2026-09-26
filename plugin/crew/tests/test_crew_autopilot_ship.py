@@ -14,6 +14,7 @@ fail.
 """
 import json
 import os
+import subprocess
 
 import pytest
 
@@ -455,8 +456,15 @@ def test_adapter_no_required_checks_reported_is_empty(monkeypatch):
     assert crew_autopilot.read_checks(".", 7) == []
 
 
-def test_merge_argv_is_squash_without_admin():
-    assert crew_autopilot.merge_argv(7) == ["pr", "merge", "7", "--squash"]
+def test_merge_argv_is_merge_commit_without_admin(monkeypatch):
+    ran = []
+    monkeypatch.setattr(crew_autopilot.subprocess, "run", lambda argv, **_kw: (
+        ran.append(argv) or subprocess.CompletedProcess(argv, 0, "", "")))
+
+    crew_autopilot._run_gh(".", crew_autopilot.merge_argv(7))  # pylint: disable=protected-access
+
+    assert (ran, [f for f in ("--squash", "--rebase", "--admin") if f in ran[0]]) == (
+        [["gh", "pr", "merge", "7", "--merge"]], [])
 
 
 def test_push_argv_never_forces():
@@ -515,15 +523,16 @@ def test_ship_merges_when_green_and_reports_what_it_rested_on(tmp_path, monkeypa
         [{"name": "check", "state": "pass"}], ["claude", "gpt"])
 
 
-def test_ship_merge_command_is_squash_without_admin(tmp_path, monkeypatch):
+def test_ship_merge_command_is_merge_commit_without_admin(tmp_path, monkeypatch):
     fake = FakeGh(pr_view=[(1, "", NO_PR), _pr("OPEN"), _pr("OPEN"), _pr("MERGED")],
                   pr_checks=_checks(("check", "pass")), pr_merge=(0, "", ""))
     root, _, _ = _ship_env(tmp_path, monkeypatch, fake)
 
     crew_autopilot.ship(str(root), T)
 
-    assert (fake.ran("pr", "merge"), [c for c in fake.calls if "--admin" in c]) == (
-        [["pr", "merge", "7", "--squash"]], [])
+    assert (fake.ran("pr", "merge"), [c for c in fake.calls if {"--squash", "--rebase",
+                                                                 "--admin"} & set(c)]) == (
+        [["pr", "merge", "7", "--merge"]], [])
 
 
 def test_ship_pr_policy_opens_and_never_merges(tmp_path, monkeypatch):

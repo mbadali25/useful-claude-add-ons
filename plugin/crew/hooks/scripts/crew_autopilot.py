@@ -13,7 +13,7 @@ is what names the NEXT one, from files on disk and nothing else, so a skipped
 phase is visible and a phase that cannot be told stops. Read-only, except
 `ship` (T-0011): it never writes a file, never approves, never accepts a
 review. `ship` pushes the ticket's branch, opens its PR and may run
-`gh pr merge <n> --squash`; it writes no file either.
+`gh pr merge <n> --merge`; it writes no file either.
 
 ## next -- the phase from disk, first match wins
 
@@ -249,8 +249,9 @@ _clock = time.monotonic
 
 
 def merge_argv(number):
-    """The one merge `ship` runs: squash, never `--admin`."""
-    return ["pr", "merge", str(number), "--squash"]
+    """The one merge `ship` runs, after `gh`: a merge commit (D-028 - a squash or
+    rebase rewrites the commits refresh anchors name), never `--admin`."""
+    return ["pr", "merge", str(number), "--merge"]
 
 
 def push_argv(branch):
@@ -476,7 +477,7 @@ def ship(root, ticket):
                             "not for what was reviewed - never merged", pr, checks, families)
     merged = _run_gh(top, merge_argv(pr["number"]))
     if merged is None or merged[0] != 0:
-        return _ship_result(ticket, "stop", True, "gh pr merge --squash failed: "
+        return _ship_result(ticket, "stop", True, "gh pr merge --merge failed: "
                             + ((merged[2] or merged[1]).strip() if merged else
                                "gh could not run"), pr, checks, families)
     after = read_pr(top, branch)

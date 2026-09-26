@@ -1085,7 +1085,7 @@ AUTONOMOUS_STOPS = (
 # Every AUTONOMOUS_STOPS entry above binds it too: commands/autopilot.md names
 # each one, and a test iterates this tuple against that file.
 # T-0011 adds the ship phase after `/crew:done`: `ship` is `pr` (push and open
-# the PR, then stop) or `merge` (also `gh pr merge <n> --squash` once every
+# the PR, then stop) or `merge` (also `gh pr merge <n> --merge`, a merge commit, once every
 # required check passes or fails only on a name EXACTLY in `knownFailures`);
 # any other value reads as `pr`, the non-merging direction. A check still
 # pending after `ciTimeoutMinutes` stops; it never merges.

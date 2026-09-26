@@ -23,7 +23,9 @@ All notable changes to this repository are documented here. Format follows [Keep
   - `ship` refuses the default branch before it pushes, pushes with
     `git push -u origin <branch>` (never with force) and opens the PR when
     there is none. Under `merge` it polls `gh pr checks <n> --required` every
-    30 s and runs exactly `gh pr merge <n> --squash`, never `--admin`. That
+    30 s and runs exactly `gh pr merge <n> --merge` - a merge commit, never
+    `--squash`, `--rebase` or `--admin` - because a squash or rebase rewrites
+    the commits refresh anchors name (D-028). That
     happens only when every required check passes or fails under a name
     listed exactly in `knownFailures`, the PR's head is this checkout's HEAD,
     and afterwards the PR must read MERGED.
@@ -38,13 +40,14 @@ All notable changes to this repository are documented here. Format follows [Keep
     stops at `ship: merge` with its PR open.
   - New `tests/test_crew_autopilot_ship.py` (93 cases, gh and push stubbed),
     and `.crew/verify.json` gains a rule for it. `sabotage_autopilot.py`'s
-    new `SHIP_MUTATIONS` (42, one per refusing branch) all go red through
+    new `SHIP_MUTATIONS` (44, one per refusing branch, plus the merge
+    argv regaining `--squash` or becoming `--rebase`) all go red through
     `sabotage.py`.
   - `commands/autopilot.md` gains section 4, Ship, and stays within its
     120-line budget.
-  - Known red, outside the ticket's Touch: `skills/crew-setup/SKILL.md`'s
-    inline config copy and `tests/test_crew_autopilot.py`'s pinned
-    autopilot block still hold the two-key block (see TODO.md).
+  - `skills/crew-setup/SKILL.md`'s inline config copy and
+    `tests/test_crew_autopilot.py`'s pinned autopilot block carry the
+    five-key block.
 
 - **`crew` 1.0.41: `/crew:autopilot` resumes and drives one ticket
   (T-0004).** Bumped `1.0.40 -> 1.0.41`. New

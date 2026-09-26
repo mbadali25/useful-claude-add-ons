@@ -4147,14 +4147,8 @@ open, each its own ticket depending on T-0004: **T-0010** approval/questions pol
 `crew_ticket.py mint`, `.work/autopilot/<slug>.json`, per-run ticket/token caps and consuming
 `resume: /crew:autopilot --goal <slug>` (autopilot stops on that line today).
 **T-0011 built on branch T-0011-build (crew 1.0.42):** `autopilot.ship: pr|merge`, the same-family high-risk merge
-refusal and `autopilot.knownFailures` (`plugin/crew/hooks/scripts/crew_autopilot.py::ship_decision`). Two things it
-leaves open: (1) it merges with `gh pr merge <n> --squash` as its spec says, while this repo's own PRs land as merge
-commits because a squash drops the commits codemap/diagram anchors name (standing rule D-028) - an owner decision
-whether `ship` should follow the repo rule; (2) `plugin/crew/skills/crew-setup/SKILL.md:169`'s inline config copy
-and `plugin/crew/tests/test_crew_autopilot.py:1076`'s pinned autopilot block both still read
-`{"mode": "off", "maxPhases": 12}`, outside T-0011's Touch, so
-`test_crew_config.py::test_default_config_matches_crew_setup_skill_md_inline_copy` and
-`test_crew_autopilot.py::test_autopilot_defaults_are_the_config_block` fail until the spec's Touch is amended.
+refusal and `autopilot.knownFailures` (`plugin/crew/hooks/scripts/crew_autopilot.py::ship_decision`). It merges with `gh pr merge <n> --merge`, a merge
+commit, per D-028.
 
 ### crew 1.1.x: platform-native routing - OPEN, after 1.0 ships (filed 2026-09-24, owner decision)
 Owner request, filed next to the 1.1.0 autopilot item above because both are "1.0 stops short of this on purpose."
