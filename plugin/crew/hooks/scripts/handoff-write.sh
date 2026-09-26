@@ -6,7 +6,10 @@ INPUT=$(cat)
 read_json() { crew_json_field "$INPUT" "$1"; }
 TRANSCRIPT=$(read_json transcript_path); TRIGGER=$(read_json trigger); CWD=$(read_json cwd)
 cd "${CWD:-${CLAUDE_PROJECT_DIR:-.}}" 2>/dev/null || exit 0
-[ -f .crew/config.json ] || exit 0
+# .crew/crew.json alone is enough for the T-0006 PreCompact record below
+# (/crew:migrate may retire .crew/config.json); the transcript copy and the
+# skeleton handoff further down still need .crew/config.json, as before.
+[ -f .crew/config.json ] || [ -f .crew/crew.json ] || exit 0
 
 # No hook_once claim here on purpose: PreCompact can fire more than once per
 # session, and both writes below are idempotent (the transcript copy is
@@ -25,6 +28,35 @@ CLAIM_TOKEN=""
 CLAIM_SCRIPT="$(dirname "${BASH_SOURCE[0]}")/event_claim.py"
 if CLAIM_PY=$(crew_py_strict); then
   CLAIM_TOKEN=$(printf '%s' "$INPUT" | "$CLAIM_PY" "$CLAIM_SCRIPT" handoff-write . sh); [ $? -eq 10 ] && exit 0
+fi
+
+# T-0006: record how this compaction started, keyed on the session, so a
+# SessionStart `compact` may auto-resume only after a typed /compact (an
+# automatic one can continue the in-flight turn). crew_resume.py writes it
+# from the raw payload, so both flavours record the same thing. No python,
+# no record -- and no record means the compact waits, which is the safe side.
+# The previous record for this session is removed FIRST, in plain shell, so a
+# compact whose own record never lands (no python, a failed write) cannot
+# inherit an earlier `manual`. The session id is read with sed because python
+# may be the thing that is missing; an unreadable one removes every record.
+PRECOMPACT_SID=$(printf '%s' "$INPUT" | sed -n 's/.*"session_id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)
+PRECOMPACT_KEY="${PRECOMPACT_SID//[^A-Za-z0-9_-]/_}"
+PRECOMPACT_KEY="${PRECOMPACT_KEY:0:100}"
+PRECOMPACT_COMMON=$(git rev-parse --git-common-dir 2>/dev/null)
+PRECOMPACT_DIR="${PRECOMPACT_COMMON:+$PRECOMPACT_COMMON/crew}"
+PRECOMPACT_DIR="${PRECOMPACT_DIR:-.work/crew}"
+if [ -n "$PRECOMPACT_KEY" ]; then
+  rm -f "$PRECOMPACT_DIR/precompact-$PRECOMPACT_KEY.json" 2>/dev/null
+else
+  rm -f "$PRECOMPACT_DIR"/precompact-*.json 2>/dev/null
+fi
+if [ -n "${CLAIM_PY:-}" ]; then
+  printf '%s' "$INPUT" | "$CLAIM_PY" "$(dirname "${BASH_SOURCE[0]}")/crew_resume.py" precompact --root . >/dev/null 2>&1
+fi
+if [ ! -f .crew/config.json ]; then
+  # A crew.json-only repo: the record above is all this hook does there.
+  [ -z "$CLAIM_TOKEN" ] || "$CLAIM_PY" "$CLAIM_SCRIPT" --sent "$CLAIM_TOKEN" >/dev/null 2>&1
+  exit 0
 fi
 
 mkdir -p .crew/transcripts .work

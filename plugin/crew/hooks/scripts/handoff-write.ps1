@@ -288,7 +288,10 @@ $raw = [System.Text.Encoding]::UTF8.GetString($stdinBytes).TrimStart([char]0xFEF
 try { $d = $raw | ConvertFrom-Json } catch { exit 0 }
 $cwd = if ($d.cwd) { $d.cwd } elseif ($env:CLAUDE_PROJECT_DIR) { $env:CLAUDE_PROJECT_DIR } else { "." }
 Set-Location $cwd -ErrorAction SilentlyContinue
-if (-not (Test-Path ".crew/config.json")) { exit 0 }
+# .crew/crew.json alone is enough for the T-0006 PreCompact record below
+# (/crew:migrate may retire .crew/config.json); the transcript copy and the
+# skeleton handoff further down still need .crew/config.json, as before.
+if (-not (Test-Path ".crew/config.json") -and -not (Test-Path ".crew/crew.json")) { exit 0 }
 
 # No hook_once claim here on purpose: PreCompact can fire more than once per
 # session, and both writes below are idempotent (the transcript copy is
@@ -304,6 +307,49 @@ $claim = Test-CrewEventClaim 'handoff-write' $stdinBytes
 if ($null -eq $claim) { exit 0 }
 
 $trigger = if ($d.trigger) { $d.trigger } else { "auto" }
+
+# T-0006: record how this compaction started, keyed on the session, so a
+# SessionStart `compact` may auto-resume only after a typed /compact (an
+# automatic one can continue the in-flight turn). crew_resume.py writes it
+# from the raw payload bytes, so both flavours record the same thing. No
+# python, no record -- and no record means the compact waits. The previous
+# record for this session is removed FIRST, without python, so a compact
+# whose own record never lands cannot inherit an earlier `manual`; an
+# unreadable session id removes every record.
+$precompactKey = ([string]$d.session_id) -replace '[^A-Za-z0-9_-]', '_'
+if ($precompactKey.Length -gt 100) { $precompactKey = $precompactKey.Substring(0, 100) }
+$precompactCommon = (git rev-parse --git-common-dir 2>$null)
+$precompactDir = if ($precompactCommon) { Join-Path $precompactCommon 'crew' } else { '.work/crew' }
+if ($precompactKey) {
+  Remove-Item -LiteralPath (Join-Path $precompactDir "precompact-$precompactKey.json") -Force -ErrorAction SilentlyContinue
+} else {
+  Remove-Item -Path (Join-Path $precompactDir 'precompact-*.json') -Force -ErrorAction SilentlyContinue
+}
+$resumePy = Resolve-CrewPython
+if ($resumePy) {
+  try {
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = $resumePy
+    Set-CrewProcessArguments $psi @((Join-Path $PSScriptRoot 'crew_resume.py'), 'precompact', '--root', '.')
+    $psi.WorkingDirectory = (Get-Location).Path
+    $psi.UseShellExecute = $false
+    $psi.RedirectStandardInput = $true
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError = $true
+    $proc = [System.Diagnostics.Process]::Start($psi)
+    $null = $proc.StandardOutput.ReadToEndAsync()
+    $null = $proc.StandardError.ReadToEndAsync()
+    $proc.StandardInput.BaseStream.Write($stdinBytes, 0, $stdinBytes.Length)
+    $proc.StandardInput.BaseStream.Flush()
+    $proc.StandardInput.Close()
+    if (-not $proc.WaitForExit(10000)) { try { $proc.Kill() } catch { } }
+  } catch { }
+}
+if (-not (Test-Path ".crew/config.json")) {
+  # A crew.json-only repo: the record above is all this hook does there.
+  Complete-CrewEventClaim $claim
+  exit 0
+}
 New-Item -ItemType Directory -Path ".crew/transcripts", ".work" -Force | Out-Null
 
 # Whether either write below actually landed. Codex r1 finding 2 (parity
