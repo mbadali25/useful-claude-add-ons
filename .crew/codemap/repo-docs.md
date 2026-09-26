@@ -1,5 +1,5 @@
 # repo-docs
-anchor: useful-claude-add-ons@385eadd5
+anchor: useful-claude-add-ons@bcb77ce2
 verified: 2026-09-26
 
 ## Re-derive provenance
@@ -288,7 +288,7 @@ listing the directory.
 - **`docs/runbooks/INDEX.md` still does not exist.** `docs/runbooks/`
   contains `rollback.md` alone (re-confirmed by `ls`).
   `plugin/crew/skills/crew-runbooks/SKILL.md:80` and
-  `plugin/crew/README.md:1769` (`:1762` at `7b667587`, `:1728` at `c35edda5`, `:1725` at `f2bb919b`, `:1604` before that,
+  `plugin/crew/README.md:1794` (`:1769` at `385eadd5`, `:1762` at `7b667587`, `:1728` at `c35edda5`, `:1725` at `f2bb919b`, `:1604` before that,
   that file having changed in each range — re-grepped, not offset) both still describe
   `docs/runbooks/INDEX.md` as a symptom-keyed index that would live there.
   JUDGEMENT, unchanged: costs nothing with one runbook, becomes a real gap at
@@ -504,3 +504,9 @@ runbook-index citation moved `:1762` -> `:1769`, re-grepped), the three crew dia
 (re-anchored to `385eadd5`), `CHANGELOG.md` (a round-1 paragraph inside the 1.0.46 entry),
 `TODO.md` (the brainstorm follow-up struck and one `obsidian.columns` item added, both at the end
 of the T-0021 block; `:1183` holds). The root `README.md` citations are to a file not in the diff.
+
+Re-verified per-path from `385eadd5` to `bcb77ce2` for T-0021's review round 2. `git diff --name-only 385eadd5 bcb77ce2` returns the round-1 refresh (`59de6d56`), the version step-back (`f11c72d0`) and review round 2's fix commit (`bcb77ce2`): `CHANGELOG.md`, `plugin/crew/BUDGETS.md`, `plugin/crew/README.md`, `fix.md`, `implement.md`, `jira-sync.md`, `sdp-sync.md`, `crew_tracker.py` and three test files, plus the refresh's own artifacts. The version files net to no change (1.0.46 stepped back and re-set).
+Of the cited paths only `plugin/crew/README.md` changed (section 13c grew by 25 lines, so the
+runbook-index citation moved `:1769` -> `:1794`, re-grepped) and `implement.md` (cited by name
+only); the three crew diagrams were re-anchored to `bcb77ce2` in the same refresh. The root
+`README.md`, `plugin/README.md` and `skills/README.md` did not change, so their citations stand.

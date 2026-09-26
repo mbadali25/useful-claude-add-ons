@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@385eadd5
+anchor: useful-claude-add-ons@bcb77ce2
 verified: 2026-09-26
 paths: scripts/**, plugin/PLUGINS.md
 
@@ -257,7 +257,9 @@ against synthetic fixtures and never reads this repo's own docs.
   the figure on `:11` reads 17,989 lines across 125 files (T-0021 added five tracked board
   fixtures under `plugin/crew/tests/tracker_fixtures/`), and the measurement returns 17989 over
   125, matching. Re-measured at `385eadd5` (T-0021 review round 1): the figure reads 18,007
-  lines across 125 files and the measurement returns 18007 over 125, matching.
+  lines across 125 files and the measurement returns 18007 over 125, matching. Re-measured at
+  `bcb77ce2` (T-0021 review round 2): the figure reads 18,044 lines across 125 files and the
+  measurement returns 18044 over 125, matching.
 - **`MARKETPLACE.md`** was not re-read for a community-plugin or marketplace
   count of its own; only `README.md:231`'s prose was checked and found to no
   longer state a specific number.
@@ -322,3 +324,11 @@ Unverified), `CHANGELOG.md` and `TODO.md` changed; `.claude-plugin/marketplace.j
 1.0.46 is now `385eadd5`. The root `README.md` this note cites is not in the diff.
 `python3 scripts/check-marketplace.py` was run for this refresh; its result is in the refresh
 commit's message.
+
+Re-verified per-path from `385eadd5` to `bcb77ce2` for T-0021's review round 2. `git diff --name-only 385eadd5 bcb77ce2` returns the round-1 refresh (`59de6d56`), the version step-back (`f11c72d0`) and review round 2's fix commit (`bcb77ce2`): `CHANGELOG.md`, `plugin/crew/BUDGETS.md`, `plugin/crew/README.md`, `fix.md`, `implement.md`, `jira-sync.md`, `sdp-sync.md`, `crew_tracker.py` and three test files, plus the refresh's own artifacts. The version files net to no change (1.0.46 stepped back and re-set).
+Of the cited paths: `plugin/crew/BUDGETS.md` (`:11` figure, re-measured and matching, see
+Unverified) and `CHANGELOG.md` changed; `.claude-plugin/marketplace.json`, `plugin/PLUGINS.md` and
+`plugin/crew/.claude-plugin/plugin.json` were stepped back to 1.0.45 in `f11c72d0` and re-set to
+1.0.46 in `bcb77ce2`, so the version-drift check's bump commit for 1.0.46 is now `bcb77ce2`. The
+root `README.md` this note cites is not in the diff. `python3 scripts/check-marketplace.py` at
+`bcb77ce2`: `marketplace: 34 skills, 5 plugins`, `all checks passed`.

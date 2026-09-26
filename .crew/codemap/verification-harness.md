@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@385eadd5
+anchor: useful-claude-add-ons@bcb77ce2
 verified: 2026-09-26
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -567,3 +567,12 @@ This note cites `crew_tracker.py`, `test_crew_tracker.py` and `sabotage_tracker.
 as rule 24's paths; the rule itself (`.crew/verify.json:262-269`) and `sabotage.py:76`/`:3048`
 did not change. `sabotage_tracker.py` now holds 42 mutations, two of which go RED only as root
 (their tests skip, by name, without it). `CHANGELOG.md` and `TODO.md` are cited by name only.
+
+Re-verified per-path from `385eadd5` to `bcb77ce2` for T-0021's review round 2. `git diff --name-only 385eadd5 bcb77ce2` returns the round-1 refresh (`59de6d56`), the version step-back (`f11c72d0`) and review round 2's fix commit (`bcb77ce2`): `CHANGELOG.md`, `plugin/crew/BUDGETS.md`, `plugin/crew/README.md`, `fix.md`, `implement.md`, `jira-sync.md`, `sdp-sync.md`, `crew_tracker.py` and three test files, plus the refresh's own artifacts. The version files net to no change (1.0.46 stepped back and re-set).
+This note cites `crew_tracker.py`, `test_crew_tracker.py` and `sabotage_tracker.py` by name only,
+as rule 24's paths; the rule itself (`.crew/verify.json:262-269`) and `sabotage.py:76`/`:3048`
+did not change. `sabotage_tracker.py` now holds 63 mutations (counted from `TRACKER_MUTATIONS`),
+two of which go RED only as root; one mutation now targets `plugin/crew/commands/fix.md` and
+is checked by `test_lifecycle_commands.py`, which rule 24 does not map. `implement.md` (rule
+23's path, cited by name only) moved its `--to review` call ahead of `/crew:review`.
+`CHANGELOG.md` is cited by name only.
