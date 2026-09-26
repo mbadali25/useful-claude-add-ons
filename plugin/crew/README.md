@@ -1593,14 +1593,24 @@ append-only `log.jsonl`.
 
 ```
 python3 hooks/scripts/crew_coord.py status  --channel <c> --remote origin
-python3 hooks/scripts/crew_coord.py claim   --channel <c> --remote origin --ticket <repo>:<id>
-python3 hooks/scripts/crew_coord.py release --channel <c> --remote origin --ticket <repo>:<id>
-python3 hooks/scripts/crew_coord.py done    --channel <c> --remote origin --ticket <repo>:<id>
-python3 hooks/scripts/crew_coord.py recover --channel <c> --remote origin --ticket <repo>:<id>
+python3 hooks/scripts/crew_coord.py claim   --channel <c> --remote origin --ticket <id>
+python3 hooks/scripts/crew_coord.py release --channel <c> --remote origin --ticket <id>
+python3 hooks/scripts/crew_coord.py done    --channel <c> --remote origin --ticket <id>
+python3 hooks/scripts/crew_coord.py recover --channel <c> --remote origin --ticket <id>
 ```
 
 `--channel` and `--remote` default to `coord.channel` and `coord.remote`
 (remote falling back to `origin`) in `.crew/config.json`.
+
+**The `<repo>` half of the key is derived, never typed:** it is the `origin`
+remote's owner/name, lowercased and joined with a dot
+(`https://github.com/Owner/Repo.git` gives `owner.repo`), so every worktree
+and clone of one repository names a ticket alike. With no `origin`, or one
+whose URL has no usable owner/name, it falls back to the main worktree's
+directory name and prints why. `--ticket <repo>:<id>` is still accepted, but
+the `<repo>` given must be that derived name (compared lowercased); any other
+is refused, because a free-text repo gives one ticket several keys and so
+several holders.
 
 - **Writes never force.** Every change is a new commit on the freshly fetched
   tip, built with git plumbing (no checkout, no working tree, index, `.work/`,
@@ -1621,15 +1631,28 @@ python3 hooks/scripts/crew_coord.py recover --channel <c> --remote origin --tick
   and a claim is refused rather than granted on it.
 - **The TTL is 30 minutes** (`coord.ttlMinutes`). `claim` starts a detached
   heartbeat that pushes `heartbeat_at` every 10 minutes while the session's
-  `CLAUDE_PID` lives and exits once it is gone or the claim is no longer
-  `working`. One loop runs per claim (a second finds the first's lock and
-  exits). Its log and lock live in a private per-user directory in the system
+  `CLAUDE_PID` lives and exits once it is gone, is reused by another process
+  (a different start time), or the claim is no longer `working` for it. One
+  loop runs per claim and holder: a second loop for the same holder finds the
+  first's lock and exits, while a new holder's loop — after a release and a
+  claim by another session, or a recover — takes a lock of its own and does
+  not wait for the old holder's loop, which exits on its next tick. Inside
+  Claude Code's sandbox (bubblewrap `--unshare-pid`) the loop cannot see
+  `CLAUDE_PID`, reads it gone and exits at once, so the claim reads
+  `owner unknown` after the TTL: a false alarm, never a false grant. Its log
+  and locks live in a private per-user directory in the system
   temp directory (`crew-coord-<uid>`, mode 0700; refused if it is a symlink,
   another user's, or open to others), the log opened 0600 without following a
   symlink. A `working` claim whose heartbeat is older than the TTL reads
   `owner unknown (last heartbeat <age>)`, **never free**: a new claim on it is
   refused. Staleness alone never releases or hands over a claim.
-- **Only the holder** releases, finishes or heartbeats a claim. **Only the
+- **Only the holder** releases, finishes or heartbeats a claim. A holder is
+  one session id in one process on one machine and worktree: session id,
+  machine, worktree and `CLAUDE_PID` all equal, and the pid's start time equal
+  where both sides recorded one. The same session id from another process or
+  worktree — `claude --resume <id>` while the original is still open — is
+  another holder: its `claim` is refused with the holder named, and it goes
+  through `recover`'s rules, never a silent reclaim. **Only the
   owner** breaks one: `release --break --by <name>`, run from a terminal
   outside Claude Code (it refuses while `CLAUDECODE` or
   `CLAUDE_CODE_SESSION_ID` is set) and logged. That signal can be stripped
@@ -1645,14 +1668,25 @@ python3 hooks/scripts/crew_coord.py recover --channel <c> --remote origin --tick
   gone. Anything else — another machine, a live pid, a pid reused with a
   different start time, a missing or corrupt identity file, a check that
   cannot tell — reads `needs the owner: <reason>` and is never adopted. A pid
-  check that cannot tell reads **alive**. The check is measured on Linux
-  (`/proc`; a live pid whose `/proc` entry cannot be read reads alive) and on
-  Windows (`OpenProcess` with limited query rights: only error 87 means gone,
+  check that cannot tell reads **alive**. On Linux a pid reads gone only from
+  the **PID namespace** the claim recorded (`holder.pidns`, from
+  `/proc/self/ns/pid` at claim time): Claude Code's sandbox runs each command
+  under bubblewrap's `--unshare-pid`, where a live `CLAUDE_PID` is invisible
+  and looks gone, so a namespace that differs, or that either side cannot
+  read, cannot tell. The Linux check (`/proc`; a live pid whose `/proc` entry
+  cannot be read reads alive; the namespace rule, including a real
+  `bwrap --unshare-pid`) is exercised by the test suite — the spike's Linux
+  section was not run. The Windows check was measured, elevated, on one host:
+  `OpenProcess` with limited query rights, where only error 87 means gone,
   any other error reads alive, an opened handle is gone only with a nonzero
-  exit time, and the creation time is compared with the recorded start;
-  measured elevated on one host). On macOS it always reads "cannot tell", so
+  exit time, and the creation time is compared with the recorded start. On
+  macOS it always reads "cannot tell", so
   recovery there always goes to the owner. The identity file is shared by
-  every worktree of the repo and rewritten under a lock.
+  every worktree of the repo and rewritten under a lock,
+  `<git-common-dir>/crew/coord-identity.json.lock` — an empty file that stays
+  there by design. Those two are the only files crew_coord.py writes under
+  `<git-common-dir>/crew/` (plus the identity file's per-pid `.tmp`, renamed
+  into place).
 - **Not measured: whether `/clear` keeps `CLAUDE_PID`.** If it does — the same
   process carries on under a new session id — the old holder's pid is alive,
   so `recover` refuses with `pid <n> is alive`, and the old session's
@@ -1665,7 +1699,10 @@ python3 hooks/scripts/crew_coord.py recover --channel <c> --remote origin --tick
   `claim`, `release`, `done`, `heartbeat` and `recover` — ends
   `[peer-written]`, and control, bidi-format and line-separator characters
   (U+2028, U+202E and the like) become `?` first, so a peer field cannot start
-  a line of its own.
+  a line of its own. A recommended command carries a peer-written `repo` or
+  ticket id only when it passes the key's own rule; anything else prints as
+  `<unsafe value withheld>`, so no shell metacharacter a peer wrote reaches a
+  command you are told to run.
 
 **After `/clear` or a resume, run `crew_coord.py status` first**, before any
 other work, and stop on any `needs the owner` line. (The autopilot resume step

@@ -6,19 +6,25 @@ different machines -- share a CHANNEL. A channel is the branch
 `claims/<repo>__<ticket>.json`, and an append-only `log.jsonl`. Nothing else
 of this script's lives on it; other files there are carried through untouched.
 
-    crew_coord.py claim     --ticket <repo>:<id>   claim before working a ticket
-    crew_coord.py heartbeat --ticket <repo>:<id>   refresh heartbeat_at by hand
-    crew_coord.py release   --ticket <repo>:<id>   give it back (state: released)
-    crew_coord.py done      --ticket <repo>:<id>   finished (state: done)
-    crew_coord.py release   --ticket ... --break --by <name>
-                                                   the OWNER breaks someone's claim
-    crew_coord.py recover   --ticket <repo>:<id>   adopt this worktree's own claim
-                                                   after the session id changed
-    crew_coord.py status                           every claim, read-only
+    crew_coord.py claim     --ticket <id>   claim before working a ticket
+    crew_coord.py heartbeat --ticket <id>   refresh heartbeat_at by hand
+    crew_coord.py release   --ticket <id>   give it back (state: released)
+    crew_coord.py done      --ticket <id>   finished (state: done)
+    crew_coord.py release   --ticket <id> --break --by <name>
+                                            the OWNER breaks someone's claim
+    crew_coord.py recover   --ticket <id>   adopt this worktree's own claim
+                                            after the session id changed
+    crew_coord.py status                    every claim, read-only
 
 Every command takes `--channel` and `--remote` (default: `coord.channel` and
 `coord.remote` in the resolved crew config, remote falling back to `origin`)
 and `--root` (default: the current directory).
+
+The `<repo>` half of a key is DERIVED, never typed: `origin`'s owner/name,
+lowercased (`owner.name`), so every worktree and clone of one repository
+names a ticket alike; with no usable origin, the main worktree's directory
+name, and the reason is printed. `--ticket <repo>:<id>` is accepted only when
+`<repo>` is that name.
 
 How a write works. `git ls-remote` then `git fetch` bring the channel's tip in
 without touching any local ref, working tree, index or FETCH_HEAD. The files
@@ -43,7 +49,10 @@ CLAUDE_CODE_MESSAGING_TOKEN, and credentials in a URL git prints are redacted.
 
 Claims. A `working` claim whose heartbeat_at is older than the TTL
 (`coord.ttlMinutes`, default 30) reads `owner unknown`, never free: a new claim
-on it is refused. Only the holder releases, finishes or heartbeats; only the
+on it is refused. A holder is session id + machine + worktree + CLAUDE_PID
+(+ its start time where both sides have one): the same session id from another
+process or worktree is another holder, refused, never silently reclaimed.
+Only the holder releases, finishes or heartbeats; only the
 owner breaks (`--break`, from a terminal outside Claude Code -- CLAUDECODE and
 CLAUDE_CODE_SESSION_ID both absent -- and with `--by <name>`, logged). That
 signal is spoofable (`env -u`), so it stops accidental breaks, not a
@@ -54,8 +63,10 @@ The heartbeat. `claim` starts `heartbeat-loop` detached (a new session on
 POSIX; DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP on Windows, where survival
 past the launching tool call was measured, not past a session exit). It pushes
 heartbeat_at every interval while CLAUDE_PID is alive and this session still
-holds the claim `working`, and exits otherwise. One loop per claim: a second
-one finds the first's lock and exits. Its log and lock live in a private
+holds the claim `working`, and exits otherwise. One loop per claim and
+holder: a second loop for the same holder finds the first's lock and exits; a
+new holder's loop has a lock of its own, so an old holder's sleeping loop
+never stops it. Its log and lock live in a private
 per-user directory in the system temp directory (`crew-coord-<uid>`, 0700,
 refused if it is a symlink, another user's, or group/world-accessible), the log
 opened 0600 without following a symlink. The child's environment drops
@@ -69,12 +80,17 @@ claim only if ALL hold: the claim's machine is this host, its worktree is this
 worktree, the identity file names the claim's holder for that ticket, and the
 holder's pid is PROVABLY gone on a platform whose check was measured (Linux;
 Windows per the T-0030 spike, elevated, on one host). A pid whose check cannot
-tell reads ALIVE. Anything else -- another machine, a live pid, a pid reused
-with a different start time, a missing or corrupt identity file, another
+tell reads ALIVE. On Linux, gone counts only from the PID namespace recorded
+at claim time (`holder.pidns`): under bubblewrap's --unshare-pid, which
+Claude Code's sandbox uses, a live pid is invisible and would read gone.
+Anything else -- another machine, a live pid, a pid reused with a different
+start time, a missing or corrupt identity file, another
 worktree, a check that cannot tell -- is presented as `yours from a previous
 session - needs the owner: <reason>` and never adopted. `status` lists those
 first. The identity file is read and rewritten under an exclusive lock
-(`coord-identity.json.lock`), because every worktree of a repo shares it.
+(`coord-identity.json.lock`, an empty file that stays), because every worktree
+of a repo shares it. A recommended command carries a peer-written repo or
+ticket only when it passes the key's rule; otherwise `<unsafe value withheld>`.
 
 NOT MEASURED: whether `/clear` keeps CLAUDE_PID. If it does -- the same
 process carries on under a new session id -- the old holder's pid is alive, so
@@ -94,6 +110,7 @@ push, a corrupt record, or an identity that cannot be told).
 import argparse
 import contextlib
 import datetime
+import hashlib
 import json
 import os
 import re
@@ -124,6 +141,10 @@ CLAIMS = "claims/"
 IDENTITY_FILE = "coord-identity.json"
 _CHANNEL_RE = re.compile(r"[a-z0-9][a-z0-9-]{0,63}")
 _PART_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
+# The derived repo half of a key: origin's owner and name, lowercased, joined by '.'.
+_REPO_RE = re.compile(r"[a-z0-9][a-z0-9._-]{0,127}")
+_OWNER_NAME_PART_RE = re.compile(r"[a-z0-9][a-z0-9._-]{0,63}")
+UNSAFE = "<unsafe value withheld>"
 # Cc control (C0, C1), Cf format (bidi overrides and isolates, zero-width),
 # Zl/Zp (U+2028/U+2029, which str.splitlines() breaks on), Cs surrogates.
 _UNSAFE_CATEGORIES = frozenset(("Cc", "Cf", "Zl", "Zp", "Cs"))
@@ -330,6 +351,33 @@ def process_start(pid):
     return probe_pid(pid).start if pid else None
 
 
+def pid_namespace():
+    """This process's PID namespace (`pid:[4026531836]`), or None where there
+    is none to read: not Linux, or /proc not mounted."""
+    if not sys.platform.startswith("linux"):
+        return None
+    try:
+        return os.readlink("/proc/self/ns/pid")
+    except OSError:
+        return None
+
+
+def probe_holder(holder):
+    """probe_pid for a recorded holder's pid. On Linux, `gone` stands only when
+    this process is in the PID namespace the holder recorded at claim time
+    (`holder.pidns`). From another namespace a live pid is simply invisible:
+    Claude Code's sandbox runs each command under bubblewrap's --unshare-pid,
+    where os.kill(pid, 0) raises ESRCH for a process that is running. A
+    namespace that differs, or that either side cannot read, cannot tell:
+    `unknown`, never gone -- presented, never adopted."""
+    probe = probe_pid(holder.get("pid"))
+    if probe.state == "gone" and sys.platform.startswith("linux"):
+        here = pid_namespace()
+        if here is None or here != holder.get("pidns"):
+            return PidProbe("unknown", None, False)
+    return probe
+
+
 def current_holder(top):
     """This session's identity, or None when CLAUDE_CODE_SESSION_ID is absent
     (then who is asking cannot be told). Reads exactly CLAUDE_CODE_SESSION_ID,
@@ -340,8 +388,23 @@ def current_holder(top):
     pid = _env_pid()
     return {"session": session,
             "bridge_session": os.environ.get("CLAUDE_CODE_BRIDGE_SESSION_ID") or None,
-            "pid": pid, "pid_start": process_start(pid),
+            "pid": pid, "pid_start": process_start(pid), "pidns": pid_namespace(),
             "machine": machine(), "worktree": top}
+
+
+def same_holder(a, b):
+    """One holder is one session id in one process, on one machine and in one
+    worktree: session, machine, worktree and pid all equal, and the pid's start
+    time equal wherever both sides recorded one. The same session id from
+    another process or worktree -- `claude --resume <id>` while the original
+    still runs -- is ANOTHER holder: refused, never silently reclaimed."""
+    if not (a and b):
+        return False
+    if (a["session"], a["machine"], a.get("pid")) != (b["session"], b["machine"], b.get("pid")):
+        return False
+    if os.path.normcase(a["worktree"]) != os.path.normcase(b["worktree"]):
+        return False
+    return not (a.get("pid_start") and b.get("pid_start") and a["pid_start"] != b["pid_start"])
 
 
 def owner_signal():
@@ -364,6 +427,7 @@ def _valid_holder(holder):
     return (isinstance(holder, dict) and isinstance(holder.get("session"), str) and holder["session"]
             and (holder.get("pid") is None or isinstance(holder.get("pid"), int))
             and (holder.get("pid_start") is None or isinstance(holder.get("pid_start"), str))
+            and (holder.get("pidns") is None or isinstance(holder.get("pidns"), str))
             and isinstance(holder.get("machine"), str) and isinstance(holder.get("worktree"), str))
 
 
@@ -467,10 +531,15 @@ class Channel:
         listed = run_git(self.root, ["ls-remote", "--refs", self.remote, self.ref])
         if listed.code != 0:
             return None, "failed", _last_line(listed.err)
-        line = listed.out.decode("utf-8", "replace").strip()
-        if not line:
+        # `ls-remote <pattern>` matches by tail: refs/heads/x/refs/heads/crew-coord/<c>
+        # is listed too. Only the exact ref is the channel.
+        rows = [line.split() for line in listed.out.decode("utf-8", "replace").splitlines()]
+        tips = [row[0] for row in rows if len(row) == 2 and row[1] == self.ref]
+        if not tips:
             return None, "absent", ""
-        tip = line.split()[0]
+        if len(tips) != 1:
+            return None, "failed", f"ls-remote listed {self.ref} {len(tips)} times"
+        tip = tips[0]
         if not re.fullmatch(r"[0-9a-f]{40,64}", tip):
             return None, "failed", "ls-remote printed no object id"
         got = run_git(self.root, ["fetch", "--no-tags", "--no-write-fetch-head", "--refmap=",
@@ -614,13 +683,75 @@ class Channel:
 
 # --- claim records -----------------------------------------------------------------
 
-def parse_ticket(text):
-    repo, sep, ticket = (text or "").partition(":")
-    for part in (repo, ticket):
-        if not sep or not _PART_RE.fullmatch(part) or "__" in part or ".." in part:
-            raise UsageError(f"ticket {safe(text)!r} is not <repo>:<id> (letters, digits, '.', '_', '-'; "
-                             "no '__', no '..', no path separators)")
+def _valid_part(value, rule=_PART_RE):
+    return isinstance(value, str) and bool(rule.fullmatch(value)) and "__" not in value and ".." not in value
+
+
+def owner_name(url):
+    """(`owner.name`, None) from a remote URL -- https, ssh://, scp-like
+    `git@host:owner/name` or a path -- lowercased, `.git` dropped; or
+    (None, why). Credentials in the URL are never read or printed."""
+    path = re.sub(r"^[A-Za-z][A-Za-z0-9+.-]*://[^/]*", "", (url or "").strip())
+    path = re.sub(r"^[^/\\:]+@[^/\\:]+:", "", path)
+    parts = [p for p in re.split(r"[/:\\]+", path) if p]
+    if len(parts) < 2:
+        return None, "origin's URL has no owner/name"
+    owner, name = parts[-2].lower(), re.sub(r"\.git$", "", parts[-1].lower())
+    if not (_valid_part(owner, _OWNER_NAME_PART_RE) and _valid_part(name, _OWNER_NAME_PART_RE)):
+        return None, "origin's owner/name is not letters, digits, '.', '_', '-'"
+    return f"{owner}.{name}", None
+
+
+def _fallback_repo(top):
+    common = crew_ticket.common_dir(top)
+    base = os.path.dirname(common) if common and os.path.basename(common) == ".git" else (common or top)
+    name = re.sub(r"\.git$", "", os.path.basename(base).lower())
+    name = re.sub(r"[^a-z0-9._-]+", "-", name).lstrip("._-")
+    name = re.sub(r"_{2,}", "_", re.sub(r"\.{2,}", ".", name))
+    return name if _valid_part(name, _REPO_RE) else None
+
+
+def repo_key(top):
+    """(repo, note): the repo half of every claim key, DERIVED, never typed:
+    origin's owner/name, lowercased (`owner.name`), so every worktree and clone
+    of one repository names it alike. With no usable origin it falls back to
+    the main worktree's directory name, and `note` says why. UsageError when
+    neither gives a name."""
+    got = run_git(top, ["config", "--get", "remote.origin.url"])
+    if got.code == 0:
+        name, why = owner_name(got.out.decode("utf-8", "replace"))
+    else:
+        name, why = None, "there is no origin remote"
+    if name:
+        return name, None
+    fallback = _fallback_repo(top)
+    if not fallback:
+        raise UsageError(f"cannot derive this repository's name: {why}, and the main worktree's directory "
+                         "name is not letters, digits, '.', '_', '-'")
+    return fallback, f"{why}; the repo half of the key is the main worktree's directory name, {fallback!r}"
+
+
+def parse_ticket(text, repo):
+    """(repo, ticket, key) for `--ticket <id>` or `--ticket <repo>:<id>`. The
+    repo half is `repo` (repo_key's); a given one must name the same repository
+    (compared lowercased), because a free-text repo gives one ticket several
+    keys and so several holders."""
+    given, sep, ticket = (text or "").partition(":")
+    if not sep:
+        given, ticket = None, given
+    if not _valid_part(ticket):
+        raise UsageError(f"ticket {safe(text)!r} is not <id> or <repo>:<id> (letters, digits, '.', '_', '-'; "
+                         "no '__', no '..', no path separators)")
+    if given is not None and given.lower() != repo:
+        raise UsageError(f"the repo half of --ticket is derived, not chosen: this repository's is {repo!r} "
+                         f"(origin's owner/name), not {safe(given)!r}; pass --ticket {ticket}")
     return repo, ticket, f"{repo}__{ticket}"
+
+
+def _command_part(value, rule):
+    """A peer-written value as it may appear in a command the owner is told to
+    run: only when it passes the key's own rule, else UNSAFE."""
+    return value if _valid_part(value, rule) else UNSAFE
 
 
 def claim_path(key):
@@ -711,7 +842,7 @@ def assess_recovery(claim, key, top, me):
     named = entry and any(t["ticket"] == key and t["holder"] == old for t in entry["tickets"])
     if not named:
         return False, "the local identity file does not name this claim's holder"
-    probe = probe_pid(old.get("pid"))
+    probe = probe_holder(old)
     pid = old.get("pid")
     if probe.state == "alive" and old.get("pid_start") and probe.start and probe.start != old["pid_start"]:
         return False, (f"pid {pid} is now a different process (different start time); the old session's "
@@ -719,13 +850,14 @@ def assess_recovery(claim, key, top, me):
     if probe.state == "alive":
         return False, f"pid {pid} is alive, so the old session may still be running"
     if probe.state != "gone" or not probe.measured:
-        return False, f"the PID check cannot tell whether pid {pid} is gone on this platform"
+        return False, (f"the PID check cannot tell whether pid {pid} is gone (another PID namespace, or a "
+                       "platform whose check was not measured)")
     return True, f"pid {pid} gone"
 
 
 def _presented(chan, claim, key, top, me):
     ok, reason = assess_recovery(claim, key, top, me)
-    ticket = f"{claim['repo']}:{claim['ticket']}"
+    ticket = f"{_command_part(claim['repo'], _REPO_RE)}:{_command_part(claim['ticket'], _PART_RE)}"
     flags = f"--channel {chan.channel} --remote {chan.remote} --ticket {ticket}"
     if ok:
         head = f"yours from a previous session - recoverable ({reason})"
@@ -741,7 +873,7 @@ def _presented(chan, claim, key, top, me):
 
 
 def _is_candidate(claim, key, top, me, ident):
-    if claim["state"] != "working" or (me and claim["holder"]["session"] == me["session"]):
+    if claim["state"] != "working" or (me and same_holder(claim["holder"], me)):
         return False
     holder = claim["holder"]
     if holder["machine"] == machine() and os.path.normcase(holder["worktree"]) == os.path.normcase(top):
@@ -781,7 +913,7 @@ def cmd_claim(chan, top, key, repo, ticket, args):
             return "unknown", f"unknown - {key} has a corrupt claim file ({why}); nothing was claimed"
         event = "claim"
         if claim and claim["state"] == "working":
-            if claim["holder"]["session"] != me["session"]:
+            if not same_holder(claim["holder"], me):
                 return _refuse_held(key, claim, ttl)
             event = "reclaim"
         now = stamp()
@@ -825,6 +957,12 @@ def heartbeat_path(channel, key, suffix):
     return os.path.join(heartbeat_dir(), f"{channel}-{key}{suffix}")
 
 
+def holder_tag(holder):
+    """A file-name-safe tag for one holder (session id and pid), so each
+    holder's heartbeat loop has a lock of its own."""
+    return hashlib.sha256(json.dumps([holder["session"], holder.get("pid")]).encode("utf-8")).hexdigest()[:16]
+
+
 def _maybe_start_heartbeat(chan, top, key, repo, ticket, me, ttl, args):
     if args.no_heartbeat:
         return
@@ -857,7 +995,7 @@ def _holder_change(key, me, new_state, event, detail=""):
         if claim is None or claim["state"] != "working":
             state = claim["state"] if claim else "unclaimed"
             return "refused", f"refused: {key} is not held working (it is {state})"
-        if claim["holder"]["session"] != me["session"]:
+        if not same_holder(claim["holder"], me):
             return "refused", peer(f"refused: only the holder may {event} {key}; it is held by {describe(claim)}")
         if new_state == "working":
             claim["heartbeat_at"] = stamp()
@@ -925,7 +1063,7 @@ def cmd_recover(chan, top, key, repo, ticket, args):
             return "unknown", f"unknown - {key} has a corrupt claim file ({why}); nothing was adopted"
         if claim is None or claim["state"] != "working":
             return "refused", f"refused: {key} is not held working; there is nothing to recover"
-        if claim["holder"]["session"] == me["session"]:
+        if same_holder(claim["holder"], me):
             outcome["mine"] = True
             return "refused", f"{key} is already held by this session"
         ok, body = _presented(chan, claim, key, top, me)
@@ -994,8 +1132,11 @@ def cmd_heartbeat_loop(chan, top, key, pid, interval):
     if me is None:
         print("heartbeat-loop: cannot tell who holds the claim (CLAUDE_CODE_SESSION_ID absent); exiting")
         return EXIT_UNKNOWN
+    # Keyed by holder as well as claim: a previous holder's loop may still be
+    # asleep holding its own lock, and exits on its next tick when the claim is
+    # no longer its; the new holder's loop must not wait on it.
     try:
-        lock = _open_private(heartbeat_path(chan.channel, key, ".lock"), os.O_RDWR)
+        lock = _open_private(heartbeat_path(chan.channel, key, f"-{holder_tag(me)}.lock"), os.O_RDWR)
     except OSError as exc:
         print(f"heartbeat-loop: the lock could not be opened ({type(exc).__name__}); running without it")
         lock = None
@@ -1004,8 +1145,16 @@ def cmd_heartbeat_loop(chan, top, key, pid, interval):
             _lock_fd(lock, wait=False)
         except OSError:
             os.close(lock)
-            print(f"{stamp()} another heartbeat loop already runs for {key}; exiting")
+            print(f"{stamp()} another heartbeat loop already runs for {key} as this holder; exiting")
             return EXIT_OK
+    try:
+        return _beat(chan, key, me, pid, interval)
+    finally:
+        if lock is not None:
+            os.close(lock)
+
+
+def _beat(chan, key, me, pid, interval):
     first = probe_pid(pid)
     while True:
         probe = probe_pid(pid)
@@ -1031,7 +1180,10 @@ def _parser():
         cmd.add_argument("--remote")
         cmd.add_argument("--channel")
         if name != "status":
-            cmd.add_argument("--ticket", required=True, help="<repo>:<ticket id>")
+            cmd.add_argument("--ticket", required=True,
+                             help="<id> or <repo>:<id>. The repo half is derived, never chosen: origin's "
+                                  "owner/name, lowercased (owner.name), else the main worktree's directory "
+                                  "name, with the reason printed; a given <repo> must match it")
         if name in ("claim", "recover"):
             cmd.add_argument("--no-heartbeat", action="store_true",
                              help="do not start the detached heartbeat (the claim goes stale after the TTL)")
@@ -1077,7 +1229,10 @@ def main(argv=None):
         top, chan = _setup(args)
         if args.command == "status":
             return cmd_status(chan, top)
-        repo, ticket, key = parse_ticket(args.ticket)
+        repo, note = repo_key(top)
+        if note:
+            print(f"note: {note}", file=sys.stderr)
+        repo, ticket, key = parse_ticket(args.ticket, repo)
     except UsageError as exc:
         print(f"usage: {exc}")
         return EXIT_USAGE

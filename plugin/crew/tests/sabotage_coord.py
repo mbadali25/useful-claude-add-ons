@@ -8,7 +8,8 @@ cover the retry and the identity-file check, which the list does not name but
 which the claim and recovery guarantees rest on. The rest are review round 1's
 findings (T-0030-coord--r8XvAI), one per guard branch the fixes added: each
 reintroduces the defect the finding reproduced, and names the test that
-reproduces it.
+reproduces it. The last block does the same for review round 2's
+(T-0030-coord--81NGuE), plus the three branches its NITs found untested.
 """
 import os
 
@@ -39,7 +40,7 @@ COORD_MUTATIONS = (
       '                return Result("unknown", f"unknown - could not fetch'),
      _T + "test_claim_when_fetch_failed_is_refused_unknown"),
     ("crew_coord lets a non-holder release", COORD,
-     ('        if claim["holder"]["session"] != me["session"]:\n'
+     ('        if not same_holder(claim["holder"], me):\n'
       '            return "refused", peer(f"refused: only the holder may'),
      ("        if False:\n"
       '            return "refused", peer(f"refused: only the holder may'),
@@ -211,4 +212,64 @@ COORD_MUTATIONS = (
      '    if probe.state == "alive" and old.get("pid_start") and probe.start and probe.start != old["pid_start"]:\n',
      "    if False:\n",
      _T + "test_recover_on_windows_refuses_a_reused_pid"),
+    # --- review round 2 ---
+    ("crew_coord ignores the pid namespace", COORD,
+     '        if here is None or here != holder.get("pidns"):\n',
+     "        if False:\n",
+     _T + "test_recover_refuses_a_gone_pid_whose_namespace_cannot_be_matched[differs]"),
+    ("crew_coord reads an unreadable pid namespace as a match", COORD,
+     '        if here is None or here != holder.get("pidns"):\n',
+     '        if here is not None and here != holder.get("pidns"):\n',
+     _T + "test_recover_refuses_a_gone_pid_whose_namespace_cannot_be_matched[unreadable-here]"),
+    ("crew_coord keys the heartbeat lock without the holder", COORD,
+     'heartbeat_path(chan.channel, key, f"-{holder_tag(me)}.lock")',
+     'heartbeat_path(chan.channel, key, ".lock")',
+     _T + "test_heartbeat_loop_of_a_new_holder_runs_while_the_old_holders_loop_sleeps"),
+    ("crew_coord compares holders by session id only", COORD,
+     "    if not (a and b):\n        return False\n",
+     '    if not (a and b):\n        return False\n    return a["session"] == b["session"]\n',
+     _T + "test_claim_by_the_same_session_from_another_live_process_is_refused[other-worktree]"),
+    ("crew_coord ignores the process (pid and start) in a holder's identity", COORD,
+     ('    if (a["session"], a["machine"], a.get("pid")) != (b["session"], b["machine"], b.get("pid")):\n'
+      "        return False\n"
+      '    if os.path.normcase(a["worktree"]) != os.path.normcase(b["worktree"]):\n'
+      "        return False\n"
+      '    return not (a.get("pid_start") and b.get("pid_start") and a["pid_start"] != b["pid_start"])\n'),
+     ('    if (a["session"], a["machine"]) != (b["session"], b["machine"]):\n'
+      "        return False\n"
+      '    return os.path.normcase(a["worktree"]) == os.path.normcase(b["worktree"])\n'),
+     _T + "test_claim_by_the_same_session_from_another_live_process_is_refused[same-worktree]"),
+    ("crew_coord matches ls-remote by tail", COORD,
+     "        tips = [row[0] for row in rows if len(row) == 2 and row[1] == self.ref]\n",
+     "        tips = [row[0] for row in rows if len(row) == 2 and row[1].endswith(self.ref)][:1]\n",
+     _T + "test_fetch_ignores_a_ref_that_only_ends_with_the_channel_ref"),
+    ("crew_coord drops safe() on the recommended command", COORD,
+     "    ticket = f\"{_command_part(claim['repo'], _REPO_RE)}:{_command_part(claim['ticket'], _PART_RE)}\"\n",
+     "    ticket = f\"{claim['repo']}:{claim['ticket']}\"\n",
+     _T + "test_recommended_command_withholds_unsafe_peer_values[shell]"),
+    ("crew_coord takes the repo half per worktree", COORD,
+     "    if name:\n        return name, None\n",
+     "    if name:\n        return os.path.basename(top).lower(), None\n",
+     _T + "test_two_worktrees_of_one_repo_share_the_claim_key"),
+    ("crew_coord takes a given repo half as free text", COORD,
+     "    if given is not None and given.lower() != repo:\n",
+     "    if False:\n",
+     _T + "test_ticket_repo_half_must_be_this_repositorys[uca:T-1-2]"),
+    ("crew_coord skips the working claim's holder check", COORD,
+     ('        if not _valid_holder(claim.get("holder")):\n'
+      '            return None, "a working claim with no valid holder"\n'),
+     "",
+     _T + "test_corrupt_claim_reads_unknown_not_skipped[bad-holder]"),
+    ("crew_coord's owner signal ignores CLAUDECODE", COORD,
+     '    return "CLAUDECODE" not in os.environ and "CLAUDE_CODE_SESSION_ID" not in os.environ\n',
+     '    return "CLAUDE_CODE_SESSION_ID" not in os.environ\n',
+     _T + "test_break_is_refused_when_either_half_of_the_owner_signal_is_present[CLAUDECODE]"),
+    ("crew_coord's owner signal ignores CLAUDE_CODE_SESSION_ID", COORD,
+     '    return "CLAUDECODE" not in os.environ and "CLAUDE_CODE_SESSION_ID" not in os.environ\n',
+     '    return "CLAUDECODE" not in os.environ\n',
+     _T + "test_break_is_refused_when_either_half_of_the_owner_signal_is_present[CLAUDE_CODE_SESSION_ID]"),
+    ("crew_coord's heartbeat ignores a reused pid", COORD,
+     '        if probe.state == "gone" or (first.start and probe.start and probe.start != first.start):\n',
+     '        if probe.state == "gone":\n',
+     _T + "test_heartbeat_loop_exits_when_the_watched_pid_is_reused"),
 )

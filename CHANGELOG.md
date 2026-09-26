@@ -62,8 +62,24 @@ All notable changes to this repository are documented here. Format follows [Keep
     characters become `?`. The messaging token is removed from the process
     environment at entry, so no git child, hook or credential helper sees it,
     and URL credentials in git's errors are redacted.
-  - 110 cases in `tests/test_crew_coord.py` against a local bare remote;
-    44 mutations in `tests/sabotage_coord.py`, registered in `sabotage.py`.
+  - Review round 2 fixes. On Linux a pid reads gone only from the PID
+    namespace recorded at claim time (`holder.pidns`): under bubblewrap's
+    `--unshare-pid`, which Claude Code's sandbox uses, a live pid is invisible,
+    so a namespace that differs or cannot be read cannot tell and is never
+    adopted (tested with a real `bwrap`). A holder is session id, machine,
+    worktree and pid (with its start time): the same session id from another
+    process or worktree is refused, never silently reclaimed. The heartbeat
+    lock is keyed by holder, so a new holder's loop is not stopped by an old
+    holder's sleeping one. `ls-remote` output is matched on the exact channel
+    ref. A recommended command carries peer-written values only when they
+    pass the key's rule, else `<unsafe value withheld>`. The `<repo>` half of
+    a key is derived from origin's owner/name, lowercased (`owner.name`),
+    falling back to the main worktree's directory name with the reason
+    printed; `--ticket <id>` suffices, and a given `<repo>` must match.
+    **Breaking for 1.0.43 callers:** a free-text `<repo>` is refused. The
+    README names `coord-identity.json.lock`.
+  - 137 cases in `tests/test_crew_coord.py` against a local bare remote;
+    57 mutations in `tests/sabotage_coord.py`, registered in `sabotage.py`.
     The `/crew:autopilot` resume-step line is pending T-0004; until then the
     README says to run `crew_coord.py status` first after `/clear`.
 
