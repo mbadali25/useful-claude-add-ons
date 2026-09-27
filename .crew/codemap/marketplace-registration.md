@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@954ce386
+anchor: useful-claude-add-ons@b6920a99
 verified: 2026-09-26
 paths: scripts/**, plugin/PLUGINS.md
 
@@ -448,3 +448,21 @@ cited paths `.claude-plugin/marketplace.json` (`:218` 1.0.45), `plugin/PLUGINS.m
 `plugin/crew/.claude-plugin/plugin.json`, `CHANGELOG.md` and `plugin/crew/README.md` (two
 group-approval sentences, in place; `:2263`/`:2274` hold) changed; `BUDGETS.md` did not (18,202
 still measures). `python3 scripts/check-marketplace.py` at `45345812`: `all checks passed`.
+
+## Re-anchor provenance - `954ce386` + `45345812` -> `b6920a99`, 2026-09-27 (second T-0010 x T-0024 merge)
+
+The T-0010 lane merged `T-0024-build` again at `474aea8b` (review rounds 1-3, crew 1.0.43-1.0.45)
+as `526eb07a`, then documented the owner-only group confirm in `plugin/crew/README.md` and
+`plugin/crew/CONFIG.md` (`b6920a99`). This lane's notes were anchored at `954ce386`, T-0024's at
+`45345812`; both sides' provenance above is kept. Every line that conflicted was re-pointed to
+merged-tree numbers and re-read with `grep -n`/`sed -n` at `b6920a99`; every other citation into a
+path either side changed was mapped from its side's anchor tree with `difflib`, and none moved.
+
+Of the cited paths, the version files (1.0.45 at `.claude-plugin/marketplace.json:218`,
+`plugin/PLUGINS.md:14` and `plugin/crew/.claude-plugin/plugin.json`), `plugin/crew/BUDGETS.md`
+(`:11`, 18,231 / 121, re-measured and matching `count_crew_markdown_lines`), `CHANGELOG.md` and
+`plugin/crew/README.md` changed; `.crew/verify.json` did not (29 rules; the doc rule `:69-78`).
+No install script, `scripts/check-marketplace.py`, `CLAUDE.md`, `README.md` or `INSTALLATION.md`
+changed; no command, agent or skill was added or removed. `python3 scripts/check-marketplace.py`:
+`all checks passed` on the merge `526eb07a`; on `b6920a99` one problem, crew's version drift
+(plugin/crew/ changed since 1.0.45), expected until landing sets T-0010's version.

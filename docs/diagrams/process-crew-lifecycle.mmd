@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@954ce386 on 2026-09-26. Verify before trusting.
+%% Generated from useful-claude-add-ons@b6920a99 on 2026-09-27. Verify before trusting.
 %% Anchors: plugin/crew/commands/brainstorm.md, plugin/crew/commands/spec.md, plugin/crew/commands/plan.md, plugin/crew/commands/approve.md, plugin/crew/commands/implement.md, plugin/crew/commands/review.md, plugin/crew/commands/done.md, plugin/crew/commands/fix.md, plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/crew_ticket.py, plugin/crew/hooks/scripts/completion_audit.py, plugin/crew/hooks/scripts/crew_refresh_check.py
 %% The crew 1.0 ticket lifecycle: brainstorm -> spec -> plan -> approve -> implement -> refresh artifacts -> review -> done.
 %% --
@@ -59,6 +59,10 @@
 %% T-0024's round 1 moved approval_hook.py's _pending_group to :334 and _confirm to :406.
 %% No node or edge moved: autopilot's route is not drawn here, and the group confirm drawn
 %% below stays the user's own prompt.
+%% Re-anchored for the second T-0010 x T-0024 merge at b6920a99 (T-0024 through 474aea8b):
+%% crew_ticket.py's merged changes sit from :704 down (owner-only refusal :742-744,
+%% _index_closed :814, precheck :858), so :534-575 and :609-630 hold; approval_hook.py's
+%% pending and confirm are :361 and :433; approve.md's relay is :27-43. No node or edge moved.
 %% Every node cites the command file's own line; files are named repo-relative
 %% here and by basename in the nodes (all under plugin/crew/commands/ unless
 %% named otherwise):

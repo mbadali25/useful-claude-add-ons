@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@954ce386
+anchor: useful-claude-add-ons@b6920a99
 verified: 2026-09-26
 
 ## Re-derive provenance
@@ -1233,3 +1233,23 @@ files and `CHANGELOG.md`. Re-read at `45345812`:
   `approval_digest` `:558`, `status` `:585` hold.
 - `CHANGELOG.md` - the 1.0.45 entry at the top, so `:142` -> `:154`, same text.
 - `marketplace.json` - `:218` is 1.0.45. `approve.md` did not change.
+
+## Re-anchor provenance - `954ce386` + `45345812` -> `b6920a99`, 2026-09-27 (second T-0010 x T-0024 merge)
+
+The T-0010 lane merged `T-0024-build` again at `474aea8b` (review rounds 1-3, crew 1.0.43-1.0.45)
+as `526eb07a`, then documented the owner-only group confirm in `plugin/crew/README.md` and
+`plugin/crew/CONFIG.md` (`b6920a99`). This lane's notes were anchored at `954ce386`, T-0024's at
+`45345812`; both sides' provenance above is kept. Every line that conflicted was re-pointed to
+merged-tree numbers and re-read with `grep -n`/`sed -n` at `b6920a99`; every other citation into a
+path either side changed was mapped from its side's anchor tree with `difflib`, and none moved.
+
+- `crew_ticket.py` - T-0010's citations hold (`AUTOPILOT` `:144`, `parse_risk` `:509`,
+  `_autopilot_refusal` `:653`, `accepted` `:670`, `approve` `:723`, the owner-only refusal
+  `:742-744`); T-0024's rewritten `_index_closed` is `:814` and `precheck` `:813` -> `:858`.
+- `approval_hook.py` - `_pending_group` `:361`, `_confirm` `:433` (T-0024's round-3 numbering;
+  this lane adds nothing to the file). `approve.md` relay `:27-43`.
+- `CHANGELOG.md` - T-0004's leaf-count sentence `:216-217` -> `:247-248`, below T-0024's
+  1.0.43-1.0.45 entries. Leaf table unchanged: 121 / 66 / 55 / 0.
+- `marketplace.json:218`, `plugin.json:3` - 1.0.45, T-0024's; landing sets it again.
+- `plugin/crew/README.md`, `plugin/crew/CONFIG.md` - the owner-only sentences are in place or
+  below every cited line (`CONFIG.md:2031-2038` holds).

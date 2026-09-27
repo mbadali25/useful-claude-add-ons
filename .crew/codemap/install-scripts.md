@@ -1,5 +1,5 @@
 # install-scripts
-anchor: useful-claude-add-ons@954ce386
+anchor: useful-claude-add-ons@b6920a99
 verified: 2026-09-26
 
 ## Re-derive provenance
@@ -547,3 +547,19 @@ Re-verified per-path from `f8671fdc` to `45345812` for T-0024's review round 3 (
 cited paths `.claude-plugin/marketplace.json` (`:218` only), `plugin/PLUGINS.md` (`:14` only) and
 `plugin/crew/README.md` (two sentences edited in place; `:2263`/`:2274` hold) changed. Neither
 install script, `README.md` nor `BUDGETS.md` changed.
+
+## Re-anchor provenance - `954ce386` + `45345812` -> `b6920a99`, 2026-09-27 (second T-0010 x T-0024 merge)
+
+The T-0010 lane merged `T-0024-build` again at `474aea8b` (review rounds 1-3, crew 1.0.43-1.0.45)
+as `526eb07a`, then documented the owner-only group confirm in `plugin/crew/README.md` and
+`plugin/crew/CONFIG.md` (`b6920a99`). This lane's notes were anchored at `954ce386`, T-0024's at
+`45345812`; both sides' provenance above is kept. Every line that conflicted was re-pointed to
+merged-tree numbers and re-read with `grep -n`/`sed -n` at `b6920a99`; every other citation into a
+path either side changed was mapped from its side's anchor tree with `difflib`, and none moved.
+
+Of the cited paths, `plugin/crew/README.md` (edited in place: the `35 commands` claim `:2280` and
+`4 agents` `:2291` hold, re-grepped), `plugin/crew/BUDGETS.md` (marker `:10`; `:11` re-measured,
+18,231 lines across 121 files), `plugin/PLUGINS.md` and `.claude-plugin/marketplace.json` (`:14` /
+`:218` 1.0.45) changed. Neither install script, `README.md`, `plugin/README.md`,
+`INSTALLATION.md` nor `scripts/check-marketplace.py` changed. `check-marketplace.py` on `526eb07a`:
+`all checks passed`; on `b6920a99` it reports crew's version drift, expected until T-0010 lands.
