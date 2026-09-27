@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@12682e41
+anchor: useful-claude-add-ons@e463ca53
 verified: 2026-09-27
 
 ## Re-derive provenance
@@ -54,7 +54,7 @@ Counted by walking the directories at this anchor:
 
 `.claude-plugin/marketplace.json:217` states the identical three numbers (4
 agents, 35 commands, 29 skills) in its `crew` entry's description, and `:218`
-the version, 1.0.45, matching `plugin/crew/.claude-plugin/plugin.json:3`, so this
+the version, 1.0.46, matching `plugin/crew/.claude-plugin/plugin.json:3`, so this
 site is current — this pass did not re-run the previous note's wider
 count-disagreement sweep across `README.md`/`plugin/README.md`/
 `INSTALLATION.md`/the install scripts; see "Unverified at this anchor".
@@ -475,7 +475,7 @@ marker exists or cannot be stat'ed; `crew_context.prune_precompact` ages it out 
 A handoff resumes only in the session that wrote it (T-0042). On an armed machine every
 `PostToolUse` Write/Edit/MultiEdit of the configured handoff is recorded by
 `crew_context.record_handoff_author` (`plugin/crew/hooks/scripts/crew_context.py:615`, called
-through the never-raising `_record_author_logged` `:987` from `run` `:962`, before the
+through the never-raising `_record_author_logged` `:1021` from `run` `:996`, before the
 `memory.inject` gate) into `<git-common-dir>/crew/handoff-author.json` (`record_author`,
 `plugin/crew/hooks/scripts/crew_resume.py:270`: the note's sha256, `session_id`, and
 `session_process()` `:220` - the nearest `claude` ancestor as `{pid, start}`, `None` on any host
@@ -557,15 +557,15 @@ fits the UserPromptSubmit budget (`crew_context.TURN_CHARS`, 2000) as the
 first item: `fit` keeps whole items or none, and before review round 1 a long
 open question dropped the ask entirely. `settings` (`:296`) reads
 `crew_config.resolve_config` and arms only on `is True`. The one consumer is
-`crew_context.route_item` (`plugin/crew/hooks/scripts/crew_context.py:804`),
-called first in the UserPromptSubmit branch (`:902`): Claude harness only,
+`crew_context.route_item` (`plugin/crew/hooks/scripts/crew_context.py:838`),
+called first in the UserPromptSubmit branch (`:936`): Claude harness only,
 `crew_route` imported inside a `try`, so any exception drops only the route
-line and logs `route: "error"` (`:1020` keeps that log line when nothing else
+line and logs `route: "error"` (`:1069` keeps that log line when nothing else
 is emitted). No new hook and no new skill: `plugin/crew/hooks/hooks.json` is
 unchanged. Tests: `plugin/crew/tests/test_crew_route.py`,
 `plugin/crew/tests/test_crew_route_hook.py`; mutations
 `plugin/crew/tests/sabotage_route.py` (registered at
-`plugin/crew/tests/sabotage.py:78`); `.crew/verify.json` rule 28 (`:301-309`),
+`plugin/crew/tests/sabotage.py:79`); `.crew/verify.json` rule 29 (`:309-317`),
 the last.
 
 ## verify-gate's temp-file rule capture
@@ -860,7 +860,7 @@ or nothing" at `adf8d1dd`; T-0008's refresh commit `b7b02842` redrew it as
 - `plugin/crew/hooks/scripts/crew_route.py:210` — `decide`, read-only
   route / ask / none for a prompt; `main()` at `:332` is the `settings` /
   `decide` CLI. Its hook caller is `crew_context.route_item`
-  (`plugin/crew/hooks/scripts/crew_context.py:804`).
+  (`plugin/crew/hooks/scripts/crew_context.py:838`).
 - `plugin/crew/hooks/scripts/crew_endpoints.py:566` — `declare_endpoint`,
   the only writer of *declared* records. Not the only writer of
   `.crew/endpoints.json`, whatever its docstring says (`:569-570`):
@@ -1604,3 +1604,27 @@ T-0023's), its citations into such files re-mapped with a line diff from that si
 the merged tree (`502cb137` or `fa4d8cd5`), and each moved one re-read by content with
 `grep -n`/`sed -n`; citations the line diff attributed to the wrong file were discarded, not
 applied. `crew_config.py` changed on both sides: `default_global_config()` `:393`, the `route` blocks `:389`/`:563`, the `.crew/config.json` read `:1260`, `_RATCHETED` `:2444-2556` (14 keys, re-counted). Leaf counts re-executed: 122 / 68 / 54 / 0. `test_crew_config.py` asserts 122 at `:279`. `.crew/verify.json` has 29 rules: autopilot rule 27 `:293-300`, routing rule 28 `:301-309`. `crew_route.py` changed in round 1 (`_clip`, `MAX_LINE_CHARS`), so the routing section's citations were re-taken by content (`PHRASES` `:81` through `main` `:332`). `CHANGELOG.md`'s T-0004 leaf-count line is `:273-274` after the 1.0.43 entry grew. `crew_state.py`, `crew_context.py`, `crew_guards.py` and `cloud_guard.py` changed on one side only, so those citations stand. The version is 1.0.43 (`marketplace.json:218`, `plugin.json:3`).
+
+## Re-anchor provenance - `db14619c` + `ad74ed35` -> `e463ca53`, 2026-09-27 (T-0023 lands on T-0021's main)
+
+`c68b40bd` merges origin/main `db14619c` (T-0042 landed as crew 1.0.43, PR #242; T-0021 as
+1.0.45, PR #243) into T-0023's `ad74ed35`, and `e463ca53` bumps crew to 1.0.46. The files both
+sides changed since `502cb137` are `CHANGELOG.md`, `.crew/verify.json`, `plugin/crew/README.md`,
+`plugin/crew/CONFIG.md`, `plugin/crew/BUDGETS.md`, `plugin/crew/hooks/scripts/crew_context.py`,
+`plugin/crew/tests/sabotage.py`, the version files and the refresh artifacts. The conflicting
+provenance sections keep both sides, main's first. Every `path:N` citation in the body, and every
+bare `:N` that follows a path, was mapped from the side its line came from onto the merged tree
+with a line diff (`git show <side>:<path>` against the merge); each one that moved was re-read
+with `sed -n` and corrected, and hits the diff attributed to the wrong file (a bare `:N` after
+an unrelated path) were discarded rather than applied: `crew_context.py`
+carries T-0023's `route_item` hunk on main's tree, so main's `_record_author_logged` `:987` ->
+`:1021` and `run` `:962` -> `:996`, and T-0023's `route_item` `:804` -> `:838`, its call `:902` ->
+`:936` and the route-error log `:1020` -> `:1069`. `sabotage.py` imports `ROUTE_MUTATIONS` at
+`:79` (T-0021's tracker import holds `:78`); `.crew/verify.json` rule 29 is T-0023's routing
+rule at `:309-317`, after T-0021's tracker rule 28 at `:301-308`. The version is 1.0.46 at
+`.claude-plugin/marketplace.json:218` and `plugin/crew/.claude-plugin/plugin.json:3`. Config
+leaves re-executed on the merge: 122 / 68 / 54 / 0. T-0004's "117 -> 119" is now
+`CHANGELOG.md:436-437` (T-0023's entry sits first). `crew_tracker.py`, `crew_resume.py` and
+`role_write_guard.py` changed on one side only, so their citations stand. On the merge,
+`test_crew_route.py`, `test_crew_route_hook.py`, `test_crew_context.py`, `test_crew_tracker.py`
+and `test_crew_config.py` ran: 588 passed.
