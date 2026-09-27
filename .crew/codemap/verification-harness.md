@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@12682e41
+anchor: useful-claude-add-ons@fbc27b49
 verified: 2026-09-27
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -205,7 +205,7 @@ Notable rules, re-read directly:
   held more); count them in the tuple. One of them targets `crew_ticket.py`'s `parse_risk`, a path rule 27
   does not name (see rule 11). `crew_autopilot.py` also matches rules 0 and 15, `autopilot.md`
   rules 0 and 12.
-- **Rule 28**, new at `7b667587` (`.crew/verify.json:301-308`, T-0021; rule 24 on its branch
+- **Rule 28**, new at `7b667587` (`.crew/verify.json:302-309` since T-0018 widened rule 27, `:301-308` before, T-0021; rule 24 on its branch
   until the merge of main at `86ea912f` put it after rule 27): `paths`
   `plugin/crew/hooks/scripts/crew_tracker.py`, `plugin/crew/tests/test_crew_tracker.py`,
   `plugin/crew/tests/sabotage_tracker.py` and `plugin/crew/tests/tracker_fixtures/**` →
@@ -1139,3 +1139,20 @@ them in this note was compared with the same line on each side and at `0c7f6b84`
   and `plugin/PLUGINS.md:14` read 1.0.44 at `0c7f6b84`. They were 1.0.43 on both sides of the merge.
 
 No suite was run by this note.
+
+## Re-anchor provenance - `db14619c` + `e6b696fb` -> `fbc27b49`, 2026-09-27 (T-0018 lands on T-0021's main)
+
+`515346b1` merges T-0018's reviewed head `e6b696fb` (review round 6 CLEAN) into main `db14619c`
+(T-0021 landed as crew 1.0.44 and 1.0.45, PR #243), and `fbc27b49` bumps crew to 1.0.46. The two
+sides share no source file: the paths both changed since `f0b12ee6` are `CHANGELOG.md`,
+`.crew/verify.json`, `plugin/crew/README.md`, `plugin/crew/BUDGETS.md`,
+`plugin/crew/tests/test_lifecycle_commands.py` (merged cleanly), the version files and the refresh
+artifacts. The conflicting provenance sections keep both sides, main's (T-0021's) first. Every
+`path:N` citation in the body, and every bare `:N` that follows a path, was mapped from the side
+its line came from onto the merged tree with a line diff (`git show <side>:<path>` against the
+merge); each one that moved was re-read with `sed -n` on `fbc27b49` and corrected.
+Corrected here: `.crew/verify.json` is 314 lines and 29 rules (rule 27 `:293-301` with T-0018's
+price and test file, rule 28 `:302-309`, `default` `:312`, `unmapped` `:313`), read with
+`json.load`; `sabotage.py`'s `MUTATIONS +=` statement is `:3048-3050`, imports `:76-78`;
+`sabotage_autopilot.py` holds `AUTOPILOT_MUTATIONS` `:25`, `STATUS_MUTATIONS` `:164`, appended at
+`:358`. No suite was executed for this note; the landing's suite runs are reported in its PR.

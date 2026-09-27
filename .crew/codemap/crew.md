@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@12682e41
+anchor: useful-claude-add-ons@fbc27b49
 verified: 2026-09-27
 
 ## Re-derive provenance
@@ -54,7 +54,7 @@ Counted by walking the directories at this anchor:
 
 `.claude-plugin/marketplace.json:217` states the identical three numbers (4
 agents, 35 commands, 29 skills) in its `crew` entry's description, and `:218`
-the version, 1.0.45, matching `plugin/crew/.claude-plugin/plugin.json:3`, so this
+the version, 1.0.46, matching `plugin/crew/.claude-plugin/plugin.json:3`, so this
 site is current — this pass did not re-run the previous note's wider
 count-disagreement sweep across `README.md`/`plugin/README.md`/
 `INSTALLATION.md`/the install scripts; see "Unverified at this anchor".
@@ -255,7 +255,7 @@ both templates, so repo-only is unchanged. Re-executed at `07ca3972`: 119 / 66
 merge: 121 / 67 / 54 / 0 - T-0005 added `environments.prodUnattended` to both templates and
 `environments.nonProd` to `default_config()` only.
 `plugin/crew/tests/test_crew_config.py:277` asserts 121. T-0004's `CHANGELOG.md` entry now says
-"117 -> 119" (`:390-391`; `:276-277` at `f0b12ee6`, before T-0021's entry went in above it; `:228-229` at `2b18f7ab`, before T-0042's), matching the `07ca3972` execution; it said "116 -> 118" when this
+"117 -> 119" (`:469-470`; `:390-391` at `db14619c`, before T-0018's entry went in above it; `:276-277` at `f0b12ee6`, before T-0021's entry went in above it; `:228-229` at `2b18f7ab`, before T-0042's), matching the `07ca3972` execution; it said "116 -> 118" when this
 paragraph was first written. T-0005's entry states no leaf count.
 
 These are new counts, not the pre-1.0 note's 103/60/43 carried forward —
@@ -782,7 +782,7 @@ Obsidian vault). A CLI the commands call, not a hook.
 - Tests: `plugin/crew/tests/test_crew_tracker.py`, fixtures under
   `plugin/crew/tests/tracker_fixtures/`, 81 mutations in
   `plugin/crew/tests/sabotage_tracker.py` (two of them RED only as root: the
-  owner tests skip without it); one `.crew/verify.json` rule (`:301-308`).
+  owner tests skip without it); one `.crew/verify.json` rule (`:302-309`; `:301-308` before T-0018 landed).
   JUDGEMENT: the Kanban plugin's acceptance of the edited board was checked by
   byte comparison only, never by opening Obsidian.
 
@@ -1758,3 +1758,19 @@ them in this note was compared with the same line on each side and at `0c7f6b84`
   and `plugin/PLUGINS.md:14` read 1.0.44 at `0c7f6b84`. They were 1.0.43 on both sides of the merge.
 
 No suite was run by this note.
+
+## Re-anchor provenance - `db14619c` + `e6b696fb` -> `fbc27b49`, 2026-09-27 (T-0018 lands on T-0021's main)
+
+`515346b1` merges T-0018's reviewed head `e6b696fb` (review round 6 CLEAN) into main `db14619c`
+(T-0021 landed as crew 1.0.44 and 1.0.45, PR #243), and `fbc27b49` bumps crew to 1.0.46. The two
+sides share no source file: the paths both changed since `f0b12ee6` are `CHANGELOG.md`,
+`.crew/verify.json`, `plugin/crew/README.md`, `plugin/crew/BUDGETS.md`,
+`plugin/crew/tests/test_lifecycle_commands.py` (merged cleanly), the version files and the refresh
+artifacts. The conflicting provenance sections keep both sides, main's (T-0021's) first. Every
+`path:N` citation in the body, and every bare `:N` that follows a path, was mapped from the side
+its line came from onto the merged tree with a line diff (`git show <side>:<path>` against the
+merge); each one that moved was re-read with `sed -n` on `fbc27b49` and corrected.
+Corrected here: crew's version `:218` is 1.0.46; T-0004's CHANGELOG "117 -> 119" is `:469-470`;
+the tracker rule is `.crew/verify.json:302-309`. `crew_autopilot.py`, `commands/autopilot.md` and
+the autopilot tests changed only on T-0018's side, so their citations stand as T-0018's refresh left
+them. No test suite was executed for this note.

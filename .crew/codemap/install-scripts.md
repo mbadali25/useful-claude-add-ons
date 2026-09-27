@@ -1,5 +1,5 @@
 # install-scripts
-anchor: useful-claude-add-ons@12682e41
+anchor: useful-claude-add-ons@fbc27b49
 verified: 2026-09-27
 
 ## Re-derive provenance
@@ -717,3 +717,21 @@ them in this note was compared with the same line on each side and at `0c7f6b84`
   and `plugin/PLUGINS.md:14` read 1.0.44 at `0c7f6b84`. They were 1.0.43 on both sides of the merge.
 
 No suite was run by this note.
+
+## Re-anchor provenance - `db14619c` + `e6b696fb` -> `fbc27b49`, 2026-09-27 (T-0018 lands on T-0021's main)
+
+`515346b1` merges T-0018's reviewed head `e6b696fb` (review round 6 CLEAN) into main `db14619c`
+(T-0021 landed as crew 1.0.44 and 1.0.45, PR #243), and `fbc27b49` bumps crew to 1.0.46. The two
+sides share no source file: the paths both changed since `f0b12ee6` are `CHANGELOG.md`,
+`.crew/verify.json`, `plugin/crew/README.md`, `plugin/crew/BUDGETS.md`,
+`plugin/crew/tests/test_lifecycle_commands.py` (merged cleanly), the version files and the refresh
+artifacts. The conflicting provenance sections keep both sides, main's (T-0021's) first. Every
+`path:N` citation in the body, and every bare `:N` that follows a path, was mapped from the side
+its line came from onto the merged tree with a line diff (`git show <side>:<path>` against the
+merge); each one that moved was re-read with `sed -n` on `fbc27b49` and corrected.
+Of the cited paths, `.claude-plugin/marketplace.json` (`:218` 1.0.46; `:217` unchanged),
+`plugin/PLUGINS.md` (`:14` 1.0.46; `:17` unchanged), `plugin/crew/BUDGETS.md` (`:11` 18,795 lines
+across 126 files, recomputed on the merge) and `plugin/crew/README.md` changed: the `35 commands`
+claim is now `:2495` and `4 agents` `:2506` (re-grepped). Both install scripts, the root
+`README.md` and `scripts/check-marketplace.py` did not change on either side, so their citations
+stand. Neither install script was executed.
