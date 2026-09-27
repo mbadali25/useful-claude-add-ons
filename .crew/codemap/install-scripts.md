@@ -1,6 +1,6 @@
 # install-scripts
-anchor: useful-claude-add-ons@89f73d79
-verified: 2026-09-27
+anchor: useful-claude-add-ons@53f5482c
+verified: 2026-09-26
 
 ## Re-derive provenance
 
@@ -556,6 +556,36 @@ commands, 29 skills, matching disk), `plugin/crew/BUDGETS.md` (marker `:10`; 18,
 `35 commands` claim is at `:2381` and `4 agents` at `:2392`, re-grepped) and `TODO.md` changed.
 Neither install script changed on T-0005's side, `README.md` and `scripts/check-marketplace.py` did
 not change on either, so their citations stand. Neither install script was executed.
+
+## Re-anchor provenance - T-0042's branch line, `6f96e627` -> `068db4ff` -> `07eefac5`, 2026-09-26
+
+Re-verified per-path from `6f96e627` to `068db4ff` for T-0042 (auto-resume round 4, crew 1.0.42).
+`6f96e627` is T-0004's landing and `git diff --name-only 6f96e627 1e0706ac` returns refresh
+artifacts only. Of the cited paths, `git diff --name-only 1e0706ac 068db4ff` returns
+`.claude-plugin/marketplace.json` (crew `version` `:218`, now 1.0.42; the `:217` description is
+unchanged), `plugin/PLUGINS.md` (`:14` version only; the `:17` Registers row is unchanged),
+`plugin/crew/BUDGETS.md` (marker still `:10`; `:11` now reads 18,253 lines across 121 files, and
+`git ls-files -z 'plugin/crew/*.md' | xargs -0 cat | wc -l` returns 18253), `plugin/crew/README.md`
+(auto-resume prose added above the claims, so the `35 commands` claim moved `:2255` -> `:2269` and
+`4 agents` `:2266` -> `:2280`, re-grepped; `ls plugin/crew/commands/*.md` is 35,
+`ls plugin/crew/agents/*.md` is 4, `ls -d plugin/crew/skills/*/` is 29) and `TODO.md` (no live
+`TODO.md:<n>` claim here). Both install scripts, `README.md`, `plugin/README.md`, `INSTALLATION.md`,
+`hooks.json`, `scripts/check-marketplace.py` and `scripts/_test/self-claims.py` did not change, so
+their citations stand; the README pin is exactly as stale as it was at `6f96e627`. Neither install
+script was executed; `check-marketplace.py` was run at `068db4ff` and passed.
+
+## Re-anchor provenance - `2b18f7ab` + `068db4ff` -> `53f5482c`, 2026-09-27 (T-0042 merges main)
+
+`53f5482c` is T-0042's rule-26 re-measure on top of the merge of origin/main `502cb137` into its
+branch (`b7727a88`) and the crew 1.0.43 bump (`52778dd1`). Of the cited paths,
+`git diff --name-only 2b18f7ab 53f5482c` returns `.claude-plugin/marketplace.json` (`:218` 1.0.43;
+`:217` unchanged), `plugin/PLUGINS.md` (`:14` 1.0.43; the `:17` Registers row unchanged),
+`plugin/crew/BUDGETS.md` (marker `:10`; 18,571 lines across 121 files, re-measured on the merge),
+`plugin/crew/README.md` (T-0042's auto-resume prose above the claims, so the `35 commands` claim
+moved `:2381` -> `:2395` and `4 agents` `:2392` -> `:2406`, re-grepped) and `TODO.md`. Neither
+install script, `README.md`, `scripts/check-marketplace.py` nor `scripts/_test/self-claims.py`
+changed on either side since `2b18f7ab`, so their citations stand. Neither install script was
+executed.
 
 Re-verified per-path from `6f96e627` to `5536c2c8` for T-0018 (`/crew:autopilot status` and the
 router, crew 1.0.42): of the cited paths `.claude-plugin/marketplace.json` (crew `version` `:218`,

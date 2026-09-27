@@ -1759,14 +1759,28 @@ never sends one. When the checks pass, the injected handoff carries
 the hook — press Enter or type it; T-0013 is the ticket that types it. When
 they do not, it carries `Auto-resume did not start: <reason>.` The reasons:
 compact was not a manual /compact; no handoff note, or the handoff was
-archived as stale (or is stale and could not be archived); no resume line, `resume: none`, or a line the grammar
-refuses (two lines, trailing text, an unknown or excluded command such as
-`/crew:approve`); the `branch:` or `head:` line does not match the checkout;
-the ticket's `.work/tickets/<id>/` (or the goal file) does not exist; the
-command is not installed; the record of past auto-resumes
-(`resume-state.json`) exists and could not be read; this handoff was already
-resumed; the progress fingerprint could not be computed; or the same command with no progress since
-the last auto-resume. The allowlist is `crew_resume.RESUME_COMMANDS`:
+archived as stale (or is stale and could not be archived); the handoff is the
+automatic PreCompact skeleton (it names no next action); no resume line,
+`resume: none`, or a line the grammar refuses (two lines, trailing text, an
+unknown or excluded command such as `/crew:approve`); the `branch:` or
+`head:` line does not match the checkout; the ticket's `.work/tickets/<id>/`
+(or the goal file) does not exist; the command is not installed;
+`handoff-author.json` could not be read; no record of which session wrote
+this handoff; the handoff changed since its author session wrote it; the
+handoff was written by another session; this session's process could not be
+identified (always on a host without `/proc` — native Windows, macOS); the
+record of past auto-resumes (`resume-state.json`) could not be read, or its
+directory cannot be searched; this handoff was already resumed; the progress
+fingerprint could not be computed; the same command with no progress since
+the last auto-resume; or `internal error` (the decision itself failed — the
+handoff is still injected).
+
+A note resumes only in the session that wrote it (T-0042). When the note is
+written with Write, Edit or MultiEdit on an armed machine, the context hook
+records who wrote it in `<git-common-dir>/crew/handoff-author.json`: after
+`/compact` the session id must match, and after `/clear` (which changes the
+session id) the Claude Code process must. A note written by Bash, by hand,
+or before the machine was armed has no such record, so it waits. The allowlist is `crew_resume.RESUME_COMMANDS`:
 `/crew:spec`, `/crew:plan`, `/crew:implement`, `/crew:review`, `/crew:done`,
 `/crew:autopilot` and `/crew:status`. No gate changes: the resumed command's
 own approval, scope, verify and review gates still decide.
