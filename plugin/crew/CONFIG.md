@@ -1595,9 +1595,15 @@ judged; `--` ends gh's options, so `-- --help` is a second workflow argument.
 **The dispatch grammar** (successor plan, 2026-09-27). The guard reads a line
 as a dispatch when a command word dequotes to `gh`/`gh.exe` — after
 assignments and wrappers, inside `bash -c`/`eval`/`pwsh -c` or a
-substitution, or a command word made at run time on a line naming `gh`,
-`workflow` or `dispatches` — and its arguments could be `workflow run ...` or
-`api <endpoint>`. Such a line is judged only when **every** word on it is a
+substitution — or is made at run time, and its arguments could be `workflow
+run ...` or `api <endpoint>`, a run-time word standing for any word. The
+argv's shape decides, never what else the line mentions (review round 3): a
+command word made at run time is bash's `$X` (which bash may split, so `$C`,
+`$C deploy.yml` and `$C -f environment=x` can each be a whole dispatch), an
+`xargs -I CMD CMD`/`parallel {}` placeholder, PowerShell's `& $x`, a
+`Start-Process`/`-FilePath` target that is gh or made at run time, or a name
+`Set-Alias`/`New-Alias`/an `alias:` path points at one; a PowerShell variable
+in gh's own arguments (`gh $w run x`) is a run-time word too. Such a line is judged only when **every** word on it is a
 plain literal (`[A-Za-z0-9_./:=@%+,-]`) or one whole single-quoted word with no
 `'` or control character inside, and its only operators are `;`, `&&`, `||`,
 `&`, a newline, `>`/`>>`/`&>`/`&>>` to a plain word, and the exact token
@@ -1614,7 +1620,10 @@ file (`--json`, `--input <anything>` including `-`, `-F name=@file`,
 the lexer's name different dispatches; and, for every dispatch-shaped line,
 an `environments` block that does not validate (`workflows` must be an object
 of non-blank keys to `input:<name>` or non-blank names), which also forces an
-armed guard to `block` mode. The grammar does not resolve anything: `x=staging;
+armed guard to `block` mode — in either layer: a malformed machine-global
+block (`"prodUnattended": "yes"`, `null`) engages the gate and makes every
+dispatch could-not-tell too, though it leaves the terraform layer's reading
+and the mode as they were (the ratchet already holds a non-bool down). The grammar does not resolve anything: `x=staging;
 gh ... -f environment=$x` is could-not-tell although bash would pass
 `staging`. What a user may not expect, and the literal to write instead:
 `--json`/`--input -` → `-f` fields; `"Deploy Staging"` → `'Deploy Staging'`;

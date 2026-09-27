@@ -72,10 +72,10 @@ Direct use only (Step 10): a disguise -- a rename crew does not see made, `env
 -- is out of scope (README, "What the guard does not catch"; T-0044).
 
 THE DISPATCH GRAMMAR (T-0009; `crew_guards`' section states it in full). With a workflow listed, a line
-sending a dispatch is judged only when every word is plain or one whole single-quoted word, joined only
-by `;` `&&` `||` `&`, newline, `>` `>>` `&>` `&>>` to a plain word and `2>&1`; anything else, a nested or
-fed dispatch and gh reading stdin or a file is could-not-tell (stdin is never read), a literal `--help`
-is not judged, and the approval marker covers the exact command bytes. `dispatch_answer` is the one road.
+sending a dispatch (a run-time command word read by its argv's shape) is judged only when every word is
+plain or one whole single-quoted word, joined by `;` `&&` `||` `&`, newline, `>` `>>` `&>` `&>>` to a plain
+word, `2>&1`; else a nested or fed dispatch, gh reading stdin or a file, a malformed block in either layer
+is could-not-tell (stdin is never read); `--help` is not judged; markers are exact bytes; one road, `dispatch_answer`.
 
 IDENTITY. Every `aws` and `az` command resolves the identity it would run as --
 `--profile`/`--region`/`--subscription` first, then the environment it would
@@ -136,7 +136,7 @@ from crew_guards import _head_name as _guards_head_name
 from crew_guards import command_trigger, first_non_literal, ps_trigger, \
     skip_wrapper_options, tf_skip_options as _tf_skip_options
 from crew_guards import DEPLOY_RULE, ENV_NONPROD, ENV_PROD, ENV_UNKNOWN, ENV_UNLISTED, dispatch_answer, \
-    dispatch_gate, dispatch_text, judge_dispatch
+    dispatch_gate, dispatch_text, fed_dispatch, judge_dispatch
 
 
 def _head_name(token):
@@ -2374,7 +2374,7 @@ def _fed_finding(argv, env, via, placeholders, ctx=None):
             or not _LITERAL_EXE_RE.match(argv[0]):
         return Finding(UNREADABLE_RULE, text,
                        f"{text} (via {via}, whose executable is filled in "
-                       "from input crew cannot see)", None, True, None)
+                       "from input crew cannot see)", None, True, None, {"fed_dispatch": fed_dispatch(argv)})
 
     if head in _TF_HEADS:
         words = [w for w in args if not w.startswith("-")]
@@ -2537,10 +2537,10 @@ def cloud_pins(root):
 def environments_config(root):
     """`{"nonProd", "prodUnattended", "problem", "engaged"}` for the repo.
 
-    `nonProd` is read from the REPO LAYER ONLY, as `cloud_pins` reads
-    `cloud.*`. `problem` is non-empty when the block is there and cannot be
-    read -- which is NOT "nothing is nonProd": it makes every environment
-    unknown. `prodUnattended` comes through the ratchet, so it is true only
+    `nonProd` is read from the REPO LAYER ONLY, as `cloud_pins` reads `cloud.*`.
+    `problem` is non-empty when that block is there and cannot be read -- NOT
+    "nothing is nonProd": every environment is unknown. `dispatchProblem` adds
+    the global layer's, for dispatches only (T-0009 r3). `prodUnattended` comes through the ratchet, so it is true only
     when both config layers say `true`. `engaged` says whether the
     environment layer is configured at all: while it is not, `workspace`
     commands are not judged, exactly as before T-0005.
@@ -2569,6 +2569,7 @@ def environments_config(root):
         else:
             out["nonProd"] = [v.strip() for v in cfg["environments"].get("nonProd", [])]
             out["workflows"] = dict(cfg["environments"].get("workflows", {}))
+    out["dispatchProblem"] = out["problem"] or crew_config.global_environments_problem()
     out["prodUnattended"] = crew_config.resolve_ratcheted(
         root, "environments.prodUnattended")["effective"] is True
     out["engaged"] = bool(out["nonProd"] or out["prodUnattended"] or out["problem"])
@@ -2946,7 +2947,7 @@ def scan(shell, text, env=None, depth=0, ctx=None, seq=None):
         cnt = dispatch_gate(text, shell, (ctx or {}).get("dispatch") or {},
                             [f.scope for f in findings if f.rule == DEPLOY_RULE], GATE_HELPERS)
         if cnt is not None:
-            findings = [f for f in findings if f.rule != DEPLOY_RULE] + [
+            findings = [f for f in findings if f.rule != DEPLOY_RULE and not (f.scope or {}).get("fed_dispatch")] + [
                 Finding(DEPLOY_RULE, text, cnt["what"], None, True, None, cnt)]
     return findings
 

@@ -38,6 +38,32 @@ built, through the real hook, one process per case. What each got there:
     g-ask-unknown-no-input, g-ask-help-value, g-ask-dashdash-help,
     test_marker_does_not_survive_a_remap
 
+REVIEW ROUND 3 (Codex, head `6494d149`). Every `r3-` row and test was run
+against `6494d149` in a detached worktree before the fix, python driver:
+
+  allowed unattended (RED): r3-hole-both-words, r3-hole-whole-command,
+    r3-hole-command-then-fields, r3-hole-command-then-workflow,
+    r3-hole-command-then-run, r3-ps-start-process-hole,
+    r3-ps-start-process-group, r3-ps-start-process-filepath,
+    r3-ps-start-process-filepath-last, r3-ps-start-process-args-hole,
+    r3-ps-alias-hole, r3-ps-alias-hole-named, r3-ps-alias-hole-arg,
+    r3-ps-alias-value-first, r3-ps-alias-provider, r3-ps-hole-arg,
+    r3-global-malformed, r3-global-null, r3-global-malformed-empty-map;
+    attended, r3-ask-hole-both-words and r3-ask-ps-start-process-hole (no
+    ask at all)
+  denied as cloudGuard "unreadable", never deployWorkflow (RED on the
+    reason): r3-xargs-placeholder-command, r3-xargs-brace-command; attended,
+    r3-ask-xargs-placeholder-command (denied, not asked)
+  RED as functions: test_r3_a_run_time_command_word_is_could_not_tell
+    (seven of eight; `parallel-numbered` was already could-not-tell, the
+    reader making any `{` word a hole), test_r3_the_xargs_placeholder_is_the_deploy_guards,
+    test_r3_a_fed_command_word_on_the_classify_road,
+    test_r3_a_malformed_global_block_is_a_problem (all four),
+    test_r3_a_well_formed_global_block_is_not_a_problem (no
+    `dispatchProblem` key)
+  already GREEN, kept as over-block guards: r3-hole-other-shape,
+    r3-ps-start-process-other, r3-global-well-formed
+
 Retabled by the grammar (old id kept, reason now "could not tell"): the
 eight rows in `MOVED_MUST_BLOCK` left the must-allow tables, and every
 round-1 stdin, variable, glob and xargs row, `bash-c-prod`, the `-F @file`
@@ -726,9 +752,121 @@ GRAMMAR_ASK = [
      _d(cnt=True)),
 ]
 
-MUST_BLOCK_DEPLOY += R2_MUST_BLOCK_DEPLOY + GRAMMAR_MUST_BLOCK
-MUST_ALLOW_DEPLOY += GRAMMAR_MUST_ALLOW
-ASK_DEPLOY += GRAMMAR_ASK
+# --- T-0009 review round 3 (Codex, head 6494d149) ---------------------------
+#
+# BLOCK 1: a command word made at run time was gated from raw `gh`/`workflow`
+# mentions, not from the shape of its argv, so building both words at run
+# time dispatched unlisted. BLOCK 2: a PowerShell launcher or alias target was
+# followed only when an argument literally named gh. FIX: an xargs/parallel
+# placeholder in the executable position was not a command-word hole. BLOCK 3:
+# a malformed MACHINE-GLOBAL `environments` block did not engage the gate.
+# Neighbours checked with each: the whole command held in one run-time
+# variable (bash splits it), a run-time word in PowerShell's own gh argv, an
+# alias to a run-time target used with a run-time subcommand, `-FilePath`,
+# `{}` as the placeholder, and a global block that is `null`.
+R3_ARG = "'workflow run deploy-prod.yml'"
+R3_PS_GH = "$x = 'g'+'h'; "
+R3_GLOBAL = {"guards": {"deployWorkflow": "ask"}}
+
+
+def _g(block, **kw):
+    """`_d(**kw)` with the machine-global layer's `environments` set to
+    `block`, which the hook reads from the fixture HOME."""
+    opts = _d(**kw)
+    opts["global"] = dict(copy.deepcopy(R3_GLOBAL), environments=block)
+    return opts
+
+
+R3_MUST_BLOCK_DEPLOY = [
+    ("r3-hole-both-words", "Bash",
+     "X=g; X+=h; Y=work; Y+=flow; $X $Y run deploy-prod.yml", _d(why=CNT)),
+    ("r3-hole-whole-command", "Bash",
+     'X=g; X+=h; Y=work; Y+=flow; C="$X $Y run deploy-prod.yml"; $C',
+     _d(why=CNT)),
+    ("r3-hole-command-then-fields", "Bash",
+     'X=g; X+=h; Y=work; Y+=flow; C="$X $Y run deploy.yml"; '
+     "$C -f environment=staging", _d(why=CNT)),
+    ("r3-hole-command-then-workflow", "Bash",
+     'X=g; X+=h; Y=work; Y+=flow; C="$X $Y run"; $C deploy-prod.yml',
+     _d(why=CNT)),
+    # A command word nothing on the line resolves, so the lexer cannot
+    # rebuild `gh workflow` and only the hole's shape sees `run <wf>`.
+    ("r3-hole-command-then-run", "Bash", "$GH_WORKFLOW run deploy-prod.yml",
+     _d(why=CNT)),
+    ("r3-xargs-placeholder-command", "Bash",
+     "echo gh | xargs -I CMD CMD workflow run deploy-prod.yml", _d(why=CNT)),
+    ("r3-xargs-brace-command", "Bash",
+     "echo gh | xargs -I{} {} workflow run deploy-prod.yml", _d(why=CNT)),
+    ("r3-ps-start-process-hole", "PowerShell",
+     R3_PS_GH + "Start-Process $x -ArgumentList " + R3_ARG, _d(why=CNT)),
+    ("r3-ps-start-process-filepath", "PowerShell",
+     R3_PS_GH + "Start-Process -FilePath $x -ArgumentList " + R3_ARG,
+     _d(why=CNT)),
+    # A grouped target: the lexer keeps only a guess at its value.
+    ("r3-ps-start-process-group", "PowerShell",
+     "Start-Process (Get-Gh) -ArgumentList " + R3_ARG, _d(why=CNT)),
+    # `-FilePath` last: the first value is the argument list, not the target.
+    ("r3-ps-start-process-filepath-last", "PowerShell",
+     R3_PS_GH + "Start-Process -ArgumentList " + R3_ARG + " -FilePath $x",
+     _d(why=CNT)),
+    ("r3-ps-start-process-args-hole", "PowerShell",
+     R3_PS_GH + "$w = 'work'+'flow'; "
+     "Start-Process $x -ArgumentList $w,'run','deploy-prod.yml'", _d(why=CNT)),
+    ("r3-ps-alias-hole", "PowerShell",
+     R3_PS_GH + "Set-Alias g $x; g workflow run deploy-prod.yml", _d(why=CNT)),
+    ("r3-ps-alias-hole-named", "PowerShell",
+     R3_PS_GH + "Set-Alias -Name g -Value $x; g workflow run deploy-prod.yml",
+     _d(why=CNT)),
+    ("r3-ps-alias-hole-arg", "PowerShell",
+     R3_PS_GH + "$w = 'work'+'flow'; Set-Alias g $x; g $w run deploy-prod.yml",
+     _d(why=CNT)),
+    # `-Name` after the value: the positional binds to `-Value`.
+    ("r3-ps-alias-value-first", "PowerShell",
+     R3_PS_GH + "$w = 'work'+'flow'; Set-Alias $x -Name g; g $w run deploy-prod.yml",
+     _d(why=CNT)),
+    ("r3-ps-alias-provider", "PowerShell",
+     R3_PS_GH + "$w = 'work'+'flow'; Set-Item alias:g $x; g $w run deploy-prod.yml",
+     _d(why=CNT)),
+    ("r3-ps-hole-arg", "PowerShell",
+     "$w = 'work'+'flow'; gh $w run deploy-prod.yml", _d(why=CNT)),
+    ("r3-global-malformed", "Bash", S_RUN,
+     _g({"prodUnattended": "yes"}, why=CNT)),
+    ("r3-global-null", "Bash", S_RUN, _g(None, why=CNT)),
+    # Nothing listed: a malformed global block still engages the gate, as a
+    # malformed repo block does (`dispatch_engaged`).
+    ("r3-global-malformed-empty-map", "Bash", "gh workflow run ci.yml",
+     _g({"prodUnattended": "yes"}, why=CNT,
+        environments={"nonProd": DEPLOY_NONPROD, "workflows": {}})),
+]
+
+R3_MUST_ALLOW_DEPLOY = [
+    # A command word made at run time whose arguments cannot follow any part
+    # of a dispatch: `gh pr create` is never gated (Step 9's over-block).
+    ("r3-hole-other-shape", "Bash", "X=g; X+=h; $X pr create --title x",
+     _d(log=None)),
+    # PowerShell does not split a variable into words: `Start-Process $exe`
+    # with one literal argument that is not `workflow` is not a dispatch.
+    ("r3-ps-start-process-other", "PowerShell",
+     "Start-Process $exe -ArgumentList 'notes.txt'", _d(log=None)),
+    ("r3-global-well-formed", "Bash", S_RUN,
+     _g({"prodUnattended": False}, log="env:nonProd:staging")),
+]
+
+R3_ASK_DEPLOY = [
+    # Attended, a could-not-tell dispatch asks: never cloudGuard's
+    # unconditional "unreadable" deny.
+    ("r3-ask-xargs-placeholder-command", "Bash",
+     "echo gh | xargs -I CMD CMD workflow run deploy-prod.yml", _d(cnt=True)),
+    ("r3-ask-hole-both-words", "Bash",
+     "X=g; X+=h; Y=work; Y+=flow; $X $Y run deploy-prod.yml", _d(cnt=True)),
+    ("r3-ask-ps-start-process-hole", "PowerShell",
+     R3_PS_GH + "Start-Process $x -ArgumentList " + R3_ARG, _d(cnt=True)),
+]
+
+MUST_BLOCK_DEPLOY += R2_MUST_BLOCK_DEPLOY + GRAMMAR_MUST_BLOCK \
+    + R3_MUST_BLOCK_DEPLOY
+MUST_ALLOW_DEPLOY += GRAMMAR_MUST_ALLOW + R3_MUST_ALLOW_DEPLOY
+ASK_DEPLOY += GRAMMAR_ASK + R3_ASK_DEPLOY
 
 _DB_SAMPLE = ("prod-input", "powershell-prod", "api-prod-input",
               "api-powershell-prod", "r2-bracket-glob", "g-double-quotes")
@@ -1088,3 +1226,96 @@ def test_grammar_tables_are_distinct_and_complete():
                for c in R2_MUST_BLOCK_DEPLOY + GRAMMAR_MUST_BLOCK)
     assert sum(c[3]["why"] == CNT for c in GRAMMAR_MUST_BLOCK) >= 35
     assert [c for c in GRAMMAR_MUST_ALLOW if c[3]["log"]], "a vacuous table"
+
+
+@pytest.mark.parametrize("shell,text", [
+    ("bash", "X=g; X+=h; Y=work; Y+=flow; $X $Y run deploy-prod.yml"),
+    ("bash", 'X=g; X+=h; Y=work; Y+=flow; C="$X $Y run deploy-prod.yml"; $C'),
+    ("bash", "echo gh | xargs -I CMD CMD workflow run deploy-prod.yml"),
+    ("bash", "echo gh | parallel {} workflow run deploy-prod.yml"),
+    ("bash", "echo gh | parallel {1} workflow run deploy-prod.yml"),
+    ("powershell", R3_PS_GH + "Start-Process $x -ArgumentList " + R3_ARG),
+    ("powershell", R3_PS_GH + "Set-Alias g $x; g workflow run deploy-prod.yml"),
+    ("powershell", "$w = 'work'+'flow'; gh $w run deploy-prod.yml"),
+], ids=["hole-both-words", "hole-whole-command", "xargs-placeholder",
+        "parallel-placeholder", "parallel-numbered", "ps-start-process",
+        "ps-alias", "ps-hole-arg"])
+def test_r3_a_run_time_command_word_is_could_not_tell(shell, text):
+    """Round 3: `dispatch_answer` reads a command word made at run time by the
+    shape of its argv -- the hole standing for any words -- not by whether
+    the raw line mentions gh or `workflow`."""
+    got, why, scope = crew_guards.dispatch_answer(text, shell, _CONTRACT_ENVS)
+    assert got == "unknown", (got, why, scope)
+    assert (scope or {}).get("op") == "line-not-literal", scope
+
+
+def test_r3_the_xargs_placeholder_is_the_deploy_guards():
+    """Round 3 FIX: `xargs -I CMD CMD workflow run ...` is a dispatch the
+    guard could not tell, not cloudGuard's unconditional unreadable finding:
+    no gated tool but gh has a `workflow run` or a `dispatches` endpoint."""
+    envs = dict(_CONTRACT_ENVS, engaged=True)
+    findings = cloud_guard.scan(
+        "bash", "echo gh | xargs -I CMD CMD workflow run deploy-prod.yml",
+        ctx={"dispatch": envs, "engaged": True})
+    assert [f.rule for f in findings] == ["deployWorkflow"], findings
+    assert findings[0].scope["op"] == "line-not-literal", findings[0].scope
+    other = cloud_guard.scan("bash", "echo gh | xargs -I CMD CMD destroy",
+                             ctx={"dispatch": envs, "engaged": True})
+    assert [f.rule for f in other] == ["cloudGuard"], other
+    both = cloud_guard.scan(
+        "bash", "echo gh | xargs -I CMD CMD workflow run deploy-prod.yml; "
+        "echo terraform | xargs -I T T destroy",
+        ctx={"dispatch": envs, "engaged": True})
+    assert sorted(f.rule for f in both) == ["cloudGuard", "deployWorkflow"], \
+        both
+
+
+@pytest.mark.parametrize("block", [{"prodUnattended": "yes"}, None, [],
+                                   {"workflows": 1}],
+                         ids=["string-bool", "null", "list", "workflows-int"])
+def test_r3_a_malformed_global_block_is_a_problem(tmp_path, monkeypatch,
+                                                   block):
+    """Round 3 BLOCK 3: a malformed MACHINE-GLOBAL `environments` block makes
+    every dispatch "could not tell", as a malformed repo block does. The
+    terraform layer keeps T-0005's reading of the global layer (its
+    `prod-unattended-string` row: the normaliser holds a string down), so
+    `problem` and `resolve_mode` are unchanged and only `dispatchProblem`
+    carries it."""
+    repo = tcg._fixture(tmp_path, {"guards": {"cloudGuard": "report"},  # pylint: disable=protected-access
+                                   "environments": DEPLOY_ENVS},
+                        {"environments": block})
+    monkeypatch.setattr(crew_config, "GLOBAL_CONFIG_PATH",
+                        str(tmp_path / "home" / ".claude" / "crew"
+                            / "config.json"))
+    envs = cloud_guard.environments_config(str(repo))
+    assert "global" in envs["dispatchProblem"], envs
+    assert envs["problem"] == "", envs
+    state, why, scope = crew_guards.dispatch_answer(S_RUN, "bash", envs)
+    assert (state, scope["op"]) == ("unknown", "line-not-literal"), why
+    assert "global" in why, why
+    assert cloud_guard.resolve_mode(str(repo))[0] == "report"
+
+
+def test_r3_a_well_formed_global_block_is_not_a_problem(tmp_path, monkeypatch):
+    repo = tcg._fixture(tmp_path, {"guards": {"cloudGuard": "report"},  # pylint: disable=protected-access
+                                   "environments": DEPLOY_ENVS},
+                        {"environments": {"prodUnattended": False}})
+    monkeypatch.setattr(crew_config, "GLOBAL_CONFIG_PATH",
+                        str(tmp_path / "home" / ".claude" / "crew"
+                            / "config.json"))
+    envs = cloud_guard.environments_config(str(repo))
+    assert envs["dispatchProblem"] == "", envs
+    assert crew_guards.dispatch_answer(S_RUN, "bash", envs)[0] == "nonProd"
+
+
+def test_r3_a_fed_command_word_on_the_classify_road():
+    """`_classify` hands `dispatch_answer` a text the lexer already unwrapped
+    from `parallel`, with `fed` naming its placeholders: a `{1}` command word
+    there is quoted by `dispatch_text`, so the reader sees no brace, and only
+    the fed-placeholder rule makes it the hole it is."""
+    text = crew_guards.dispatch_text(["{1}", "workflow", "run",
+                                      "deploy-prod.yml"])
+    state, why, scope = crew_guards.dispatch_answer(
+        text, "bash", _CONTRACT_ENVS, ("parallel", ("{}",)))
+    assert (state, (scope or {}).get("op")) == ("unknown", "line-not-literal"), \
+        (state, why, scope)

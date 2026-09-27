@@ -227,9 +227,11 @@ it *would* refuse before enforcing with `"block"`.
   `environments.workflows` set, a `gh workflow run` or `gh api .../dispatches` line is judged only
   when every word on it is a plain literal (letters, digits, `_./:=@%+,-`) or one whole
   single-quoted word, joined only by `;`, `&&`, `||`, `&`, newlines, `>`/`>>`/`&>`/`&>>` to a plain
-  word and `2>&1`. A pipe, any `<`, double quotes, `$`, a glob, `bash -c '...'`, `xargs`, and gh
-  reading stdin or a file (`--json`, `--input`, `-F k=@f`) make the line could-not-tell: it asks
-  when you are there and is denied unattended at every setting. **Fix:** write the literal form —
+  word and `2>&1`. A pipe, any `<`, double quotes, `$`, a glob, `bash -c '...'`, `xargs`, a
+  command word built at run time (`$X $Y run ...`, `Start-Process $x`, an alias to a variable), gh
+  reading stdin or a file (`--json`, `--input`, `-F k=@f`), and a malformed `environments` block
+  in either config layer make the line could-not-tell: it asks when you are there and is denied
+  unattended at every setting. **Fix:** write the literal form —
   `-f environment=staging` instead of a `--json` body, `'Deploy Staging'` instead of
   `"Deploy Staging"`, `> log` instead of `| tee log`, the value instead of `$ENV` — or approve the
   one command with the marker the refusal names (it covers those exact bytes only). Other `gh`

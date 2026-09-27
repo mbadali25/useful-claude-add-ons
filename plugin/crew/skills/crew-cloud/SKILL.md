@@ -76,8 +76,11 @@ DISPATCH GRAMMAR. A dispatch line is judged only when every word is a plain
 literal or one whole single-quoted word, joined only by `;` `&&` `||` `&`,
 newlines, `>`/`>>`/`&>`/`&>>` to a plain word and `2>&1`; anything else — a
 pipe, any `<`, `$`, double quotes, a glob, a nested or `xargs`-fed dispatch, a
-copy or alias of `gh`, and gh reading stdin or a file (`--json`, `--input`,
-`-F k=@f`) — is could-not-tell: asked when attended, refused unattended, and
+copy or alias of `gh`, a command word made at run time whose arguments could
+follow part of a dispatch (`$X $Y run x`, `$C`, `xargs -I CMD CMD workflow
+run x`, `Start-Process $x`, an alias to a run-time value), gh reading stdin or
+a file (`--json`, `--input`, `-F k=@f`), and a malformed `environments`
+block in either layer — is could-not-tell: asked when attended, refused unattended, and
 approved one exact command at a time by the marker the refusal names. Write
 `-f` fields and single quotes instead (README "The dispatch grammar"); a
 literal `--help` is not judged.

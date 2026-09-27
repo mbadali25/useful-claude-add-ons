@@ -1143,7 +1143,13 @@ the refusal names, which covers those exact bytes and nothing else. So is a
 dispatch the guard does not follow — inside `bash -c`, `eval` or `pwsh -c`,
 behind `xargs`, `parallel` or `find -exec`, through an alias or a copy of `gh`
 made on the line, or a command word made at run time — and gh reading its
-inputs from stdin or a file. Crew never reads stdin. Refused, and how to write
+inputs from stdin or a file. Crew never reads stdin. A command word made at run
+time is judged by the shape of what follows it, not by what the line mentions:
+`$X $Y run deploy.yml`, `$C` alone (bash may split it into a whole dispatch),
+`xargs -I CMD CMD workflow run ...`, `Start-Process $x -ArgumentList
+'workflow run ...'` and an alias pointed at a run-time value all ask, while
+`$X pr create` does not. So does every dispatch while the machine-global
+config's `environments` block is malformed. Refused, and how to write
 it instead:
 
 | Refused | Write instead |

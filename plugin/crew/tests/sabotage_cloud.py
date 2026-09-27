@@ -1116,10 +1116,11 @@ CLOUD_GUARD_MUTATIONS += (
      '        return first, bool(zsh or depth > 0 or fed)\n',
      '        return first, bool(zsh or depth > 0)\n',
      _DB + "[g-parallel]"),
+    # Re-anchored at review round 3: the marking moved into `_fed_args`.
     ('deploy guard: xargs placeholders read as literal words', GUARDS,
      '    args = [w + _HOLE if fed and ("{" in w or any(r in w for r in reps))\n'
-     '            else w for w in argv[1:]]\n',
-     '    args = list(argv[1:])\n',
+     '            else w for w in args]\n',
+     '    args = list(args)\n',
      _DB + "[g-xargs-placeholder-subcommand]"),
     ('deploy guard: the `gh api` dispatch no longer recognised', GUARDS,
      '    elif positionals[:1] == ["api"]:\n'
@@ -1154,7 +1155,7 @@ CLOUD_GUARD_MUTATIONS += (
      '    head = f"{base}: guards.deployWorkflow is `{policy}`"\n',
      _DB + "[allow-prod-unattended]"),
     ('deploy guard: a malformed environments block reads as unlisted', GUARDS,
-     '    if envs.get("problem"):\n'
+     '    if _envs_problem(envs):\n'
      '        return _not_literal("the environments block cannot be read: "\n',
      '    if False:\n'
      '        return _not_literal("the environments block cannot be read: "\n',
@@ -1268,10 +1269,10 @@ CLOUD_GUARD_MUTATIONS += (
     # Neighbour `g-hole-command` stays refused: the lexer resolves `$x`
     # and the two readings then disagree.
     ('deploy grammar: a command word made at run time not gated', GUARDS,
-     '        named, verb = _dispatch_mentions(top, shell, wild=False)\n'
-     '        if named is None and not verb:\n'
+     '        if not _hole_shape(argv[1:], (), shell != "powershell"):\n'
      '            return None\n',
-     '        return None\n',
+     '        if True:\n'
+     '            return None\n',
      _DB + "[g-hole-command-env]"),
     ('deploy grammar: an alias made on the line not followed', GUARDS,
      '        return named if named and _dispatch_mentions(top, shell)[1] else None\n',
@@ -1297,11 +1298,11 @@ CLOUD_GUARD_MUTATIONS += (
      '    return True\n',
      _DA + "[g-other-gh-quoted]"),
     ('deploy grammar: the gate runs with an empty map', GUARDS,
-     '    return bool(envs.get("workflows") or envs.get("problem"))\n',
+     '    return bool(envs.get("workflows") or _envs_problem(envs))\n',
      '    return True\n',
      _DA + "[g-empty-map]"),
     ('deploy grammar: the gate skips a malformed block', GUARDS,
-     '    return bool(envs.get("workflows") or envs.get("problem"))\n',
+     '    return bool(envs.get("workflows") or _envs_problem(envs))\n',
      '    return bool(envs.get("workflows"))\n',
      _DB + "[malformed-environments]"),
     ('deploy grammar: `--json` read as a literal dispatch', GUARDS,
@@ -1426,4 +1427,98 @@ CLOUD_GUARD_MUTATIONS += (
     ("cloud guard r7: terragrunt run-all's subcommand not read", GUARDS,
      "            rest = rest[1:][tf_skip_options(rest[1:], 0):]\n",
      "            pass\n", _R7A + "[r7a-tg-run-all-plan]"),
+
+    # --- T-0009 review round 3 (Codex, head 6494d149) ---------------------
+    # Each run alone by hand first (cp aside, mutate, run the named test,
+    # restore, cmp), then through this harness. Neighbours are separate
+    # entries on separate anchors, so each rule is shown to be load-bearing.
+    ("deploy r3: a run-time command word gated by what the line mentions", GUARDS,
+     '        if not _hole_shape(argv[1:], (), shell != "powershell"):\n',
+     '        if not _dispatch_mentions(top, shell, wild=False)[1]:\n',
+     _DB + "[r3-hole-both-words]"),
+    ("deploy r3: a run-time command word read without its argv's shape", GUARDS,
+     '    if _dispatch_shape([_HOLE] + args):\n'
+     '        return True\n',
+     '    if False:\n'
+     '        return True\n',
+     _DB + "[r3-hole-both-words]"),
+    ("deploy r3: bash's run-time command word read as one word", GUARDS,
+     '    return split and (len(positionals) <= 1 or positionals[0] == "run"\n',
+     '    return False and (len(positionals) <= 1 or positionals[0] == "run"\n',
+     _DB + "[r3-hole-whole-command]"),
+    ("deploy r3: a run-time `gh workflow` then `run` not read", GUARDS,
+     '    return split and (len(positionals) <= 1 or positionals[0] == "run"\n',
+     '    return split and (len(positionals) <= 1 or positionals[0] == "run-x"\n',
+     _DB + "[r3-hole-command-then-run]"),
+    ("deploy r3: an xargs placeholder command word read as a name", GUARDS,
+     '        if fed and ("{" in first or any(r and r in first for r in reps)):\n',
+     '        if False:\n',
+     _DB + "[r3-xargs-placeholder-command]"),
+    # On the raw line the reader already makes any `{` word a hole, so both a
+    # `{}` and a `{1}` aim stayed GREEN; the rule is load-bearing on
+    # `_classify`'s road, where `dispatch_text` has quoted the word.
+    ("deploy r3: a `{1}` command word under parallel read as a name", GUARDS,
+     '        if fed and ("{" in first or any(r and r in first for r in reps)):\n',
+     '        if fed and any(r and r in first for r in reps):\n',
+     _ED + "test_r3_a_fed_command_word_on_the_classify_road"),
+    ("deploy r3: the unreadable fed finding kept beside the dispatch one", GUARD,
+     'if f.rule != DEPLOY_RULE and not (f.scope or {}).get("fed_dispatch")] + [',
+     'if f.rule != DEPLOY_RULE] + [',
+     _ED + "test_ask_deploy_python[r3-ask-xargs-placeholder-command]"),
+    ("deploy r3: every fed placeholder command left to the dispatch gate", GUARDS,
+     '    return _dispatch_shape(["gh"] + list(argv[1:]))\n',
+     '    return True\n',
+     _ED + "test_r3_the_xargs_placeholder_is_the_deploy_guards"),
+    ("deploy r3: a PowerShell launcher's target not read", GUARDS,
+     '                    target, top)) and _dispatch_shape([_HOLE] + rest):\n',
+     '                    target, top)) and False:\n',
+     _DB + "[r3-ps-start-process-hole]"),
+    ("deploy r3: `-ArgumentList` read as one word", GUARDS,
+     '            _ps_quoted(value, text) else re.split(r"[\\s,]+", str(value))\n',
+     '            _ps_quoted(value, text) else [str(value)]\n',
+     _DB + "[r3-ps-start-process-hole]"),
+    ("deploy r3: `-FilePath` not read as the launched program", GUARDS,
+     '_PS_TARGET_PARAMS = ("-filepath", "-path", "-literalpath", "-value")\n',
+     '_PS_TARGET_PARAMS = ("-path", "-literalpath", "-value")\n',
+     _DB + "[r3-ps-start-process-filepath-last]"),
+    ("deploy r3: a PowerShell variable read as a literal name", GUARDS,
+     '    if "$" in word or word.startswith("@"):\n'
+     '        return True\n',
+     '    if False:\n'
+     '        return True\n',
+     _DB + "[r3-ps-start-process-hole]"),
+    ("deploy r3: a grouped PowerShell word read as its guessed value", GUARDS,
+     '    return type(word).__name__ != "_Bare" and not any(\n',
+     '    return False and not any(\n',
+     _DB + "[r3-ps-start-process-group]"),
+    ("deploy r3: PowerShell's own gh argv read as written", GUARDS,
+     '        return argv[:1] + [_HOLE if _ps_runtime(w, text) else str(w)\n',
+     '        return argv or [_HOLE if _ps_runtime(w, text) else str(w)\n',
+     _DB + "[r3-ps-hole-arg]"),
+    ("deploy r3: an alias to a run-time value not followed", GUARDS,
+     '                out.add(_head_name(str(name)))\n',
+     '                pass\n',
+     _DB + "[r3-ps-alias-hole-arg]"),
+    ("deploy r3: `-Name` not bound before the positional value", GUARDS,
+     '        name = found.get("-name") or (values.pop(0) if values else None)\n',
+     '        name = values.pop(0) if values else None\n',
+     _DB + "[r3-ps-alias-value-first]"),
+    ("deploy r3: an `alias:` provider path not followed", GUARDS,
+     '            elif path is not None:\n',
+     '            elif False:\n',
+     _DB + "[r3-ps-alias-provider]"),
+    ("deploy r3: a malformed global block read as absent", CONFIG,
+     '    if layer_state(path, environments=True) != "corrupt":\n'
+     '        return ""\n',
+     '    if True:\n'
+     '        return ""\n',
+     _DB + "[r3-global-malformed]"),
+    ("deploy r3: the global layer's problem not carried to dispatches", GUARD,
+     '    out["dispatchProblem"] = out["problem"] or crew_config.global_environments_problem()\n',
+     '    out["dispatchProblem"] = out["problem"]\n',
+     _DB + "[r3-global-null]"),
+    ("deploy r3: the global layer's problem does not engage the gate", GUARDS,
+     '    return envs.get("problem") or envs.get("dispatchProblem") or ""\n',
+     '    return envs.get("problem") or ""\n',
+     _DB + "[r3-global-malformed-empty-map]"),
 )

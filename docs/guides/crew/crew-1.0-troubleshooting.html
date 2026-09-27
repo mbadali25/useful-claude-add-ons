@@ -389,9 +389,11 @@ it <em>would</em> refuse before enforcing with <code>"block"</code>.</p>
   <code>environments.workflows</code> set, a <code>gh workflow run</code> or <code>gh api .../dispatches</code> line is judged only
   when every word on it is a plain literal (letters, digits, <code>_./:=@%+,-</code>) or one whole
   single-quoted word, joined only by <code>;</code>, <code>&amp;&amp;</code>, <code>||</code>, <code>&amp;</code>, newlines, <code>&gt;</code>/<code>&gt;&gt;</code>/<code>&amp;&gt;</code>/<code>&amp;&gt;&gt;</code> to a plain
-  word and <code>2&gt;&amp;1</code>. A pipe, any <code>&lt;</code>, double quotes, <code>$</code>, a glob, <code>bash -c '...'</code>, <code>xargs</code>, and gh
-  reading stdin or a file (<code>--json</code>, <code>--input</code>, <code>-F k=@f</code>) make the line could-not-tell: it asks
-  when you are there and is denied unattended at every setting. <strong>Fix:</strong> write the literal form —
+  word and <code>2&gt;&amp;1</code>. A pipe, any <code>&lt;</code>, double quotes, <code>$</code>, a glob, <code>bash -c '...'</code>, <code>xargs</code>, a
+  command word built at run time (<code>$X $Y run ...</code>, <code>Start-Process $x</code>, an alias to a variable), gh
+  reading stdin or a file (<code>--json</code>, <code>--input</code>, <code>-F k=@f</code>), and a malformed <code>environments</code> block
+  in either config layer make the line could-not-tell: it asks when you are there and is denied
+  unattended at every setting. <strong>Fix:</strong> write the literal form —
   <code>-f environment=staging</code> instead of a <code>--json</code> body, <code>'Deploy Staging'</code> instead of
   <code>"Deploy Staging"</code>, <code>&gt; log</code> instead of <code>| tee log</code>, the value instead of <code>$ENV</code> — or approve the
   one command with the marker the refusal names (it covers those exact bytes only). Other <code>gh</code>

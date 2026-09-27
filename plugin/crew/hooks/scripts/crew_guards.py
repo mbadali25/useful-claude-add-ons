@@ -1683,13 +1683,23 @@ class _TerraformTool:
         return None
 
     @staticmethod
-    def opaque(args, top, launched=None):
+    def opaque(args, top, launched=None, _typed=None):
         """The word naming the tool in a script crew cannot split, or None.
         `launched` is PowerShell's launcher values (`Start-Process X`)."""
         if launched is not None:
             return next((w for w in launched if _arg_names_tool(w)), None)
         return names_terraform(top if any(_HOLE in a for a in args)
                                else " ".join(args), "bash")
+
+    @staticmethod
+    def symbolic(argv, _words, _text):
+        """A PowerShell argv as `direct`/`hole`/`copied` read it: as written."""
+        return argv
+
+    @staticmethod
+    def ps_aliases(_cmds, _text):
+        """Names a PowerShell line aliases the tool to: none followed."""
+        return set()
 
 
 _TF_TOOL = _TerraformTool()
@@ -1867,12 +1877,13 @@ def _ps_argv_trigger(words, normal, helpers, depth, copies, tool=_TF_TOOL):
         # string (`$m = "terraform destroy"`, `('terraform destroy')`).
         return None
     first, args = argv[0], argv[1:]
+    sym = tool.symbolic(argv, words, normal)
     if not _PS_NAME_RE.match(first):
         # `& $tf destroy`, `& ("terra"+"form") destroy`: which program runs is
         # made at run time. Gated only on a line naming one of the words a
         # line running the tool needs, as in bash.
-        return tool.hole(argv, normal, "powershell")
-    direct = tool.direct(argv, [], depth)
+        return tool.hole(sym, normal, "powershell")
+    direct = tool.direct(sym, [], depth)
     if direct is not False:
         return direct
     head = head_name(first)
@@ -1905,12 +1916,12 @@ def _ps_argv_trigger(words, normal, helpers, depth, copies, tool=_TF_TOOL):
     if opaque or head in _PS_LAUNCHERS or any(
             w.lower().startswith(("alias:", "function:")) for w in args):
         named = tool.on_line(" ".join(args), "powershell") if opaque \
-            else tool.opaque(args, normal, values)
+            else tool.opaque(args, normal, values, words)
         return None if named is None else (named, True)
     if head in copies:
         # `Copy-Item terraform.exe ./tf; ./tf destroy`: the name the line
         # copied the tool to, run with a verb.
-        return tool.copied(argv, normal, "powershell")
+        return tool.copied(sym, normal, "powershell")
     return None
 
 
@@ -1930,7 +1941,7 @@ def ps_trigger(normal, helpers, depth=0, tool=_TF_TOOL):
     cmds, subs = helpers[5](normal)
     argvs = [[str(w) for w in c.words] for c in cmds]
     copies = _copies_terraform(argvs, helpers[4], _PS_COPIERS,
-                               tool.copy_source)
+                               tool.copy_source) | tool.ps_aliases(cmds, normal)
     hits = [ps_trigger(sub, helpers, depth + 1, tool) for sub in subs]
     hits += [_ps_argv_trigger(c.words, normal, helpers, depth, copies, tool)
              for c in cmds]
@@ -1992,6 +2003,16 @@ def command_names_terraform(text, helpers):
 # is "could not tell": `ENV_UNKNOWN` with `op: line-not-literal`, asked about
 # and never allowed unattended. Stdin is never modelled. The grammar does not
 # resolve; it recognises or refuses.
+#
+# A command word made at run time is read by its argv's SHAPE (`_hole_shape`),
+# never by what the rest of the line mentions (review round 3): bash's `$X`
+# (which may split into several words), an `xargs`/`parallel` placeholder,
+# PowerShell's `& $x`, a `Start-Process` target (`_ps_values`) and a name an
+# alias points at gh or a run-time value (`ps_aliases`); a PowerShell
+# variable in gh's own argv is a hole too (`symbolic`). A malformed
+# `environments` block in EITHER config layer is could-not-tell for every
+# dispatch (`dispatchProblem`); the terraform layer keeps reading only the
+# repo's.
 #
 # Once a line passes, the parser below reads it -- ONE flag parser
 # (`_gh_words`) for both forms -- and `dispatch_environment` classifies it by
@@ -2096,12 +2117,7 @@ def _dispatch_shape(argv, fed=()):
     matching `_DISPATCH_RE`. `_HOLE` stands for any words, and so does a
     word `xargs`/`parallel` (`fed`: `(via, placeholders)` pairs) fills in or
     appends. Other gh commands are never dispatch-shaped."""
-    reps = [r for _via, reps in fed for r in reps]
-    args = [w + _HOLE if fed and ("{" in w or any(r in w for r in reps))
-            else w for w in argv[1:]]
-    if fed:
-        args.append(_HOLE)
-    positionals, options, _help = _gh_words(args)
+    positionals, options, _help = _gh_words(_fed_args(argv[1:], fed))
     if any(_HOLE in name for name, _value in options):
         return True
     if not positionals:
@@ -2117,11 +2133,93 @@ def _dispatch_shape(argv, fed=()):
     return False
 
 
+def _fed_args(args, fed):
+    """`args` with every word `xargs`/`parallel` (`fed`) fills in marked as
+    `_HOLE`, and one more `_HOLE` for what they append."""
+    reps = [r for _via, reps in fed for r in reps]
+    args = [w + _HOLE if fed and ("{" in w or any(r in w for r in reps))
+            else w for w in args]
+    return args + [_HOLE] if fed else args
+
+
+def _hole_shape(args, fed=(), split=True):
+    """True when a command word made at run time, then `args`, could send a
+    dispatch -- read from the argv's SHAPE, never from what the raw line
+    mentions (review round 3: `$X $Y run deploy-prod.yml`, both words built
+    at run time). The hole stands for any word; with `split` (bash splits an
+    unquoted expansion, `parallel` runs a shell) for any WORDS, so it may
+    hold `gh`, `gh workflow`, `gh workflow run [<wf>]` or `gh api
+    [<endpoint>]`, and `args` need only be what could follow one of those:
+    options and at most one positional, or `run ...`."""
+    args = _fed_args(list(args), fed)
+    if _dispatch_shape([_HOLE] + args):
+        return True
+    positionals = _gh_words(args)[0]
+    return split and (len(positionals) <= 1 or positionals[0] == "run"
+                      or bool(_DISPATCH_RE.match(positionals[0])))
+
+
+# PowerShell parameters naming what a launcher runs or an alias stands for,
+# and the commands that make an alias (`Set-Alias NAME VALUE`, in that order).
+_PS_TARGET_PARAMS = ("-filepath", "-path", "-literalpath", "-value")
+_PS_ALIASERS = frozenset(("set-alias", "sal", "new-alias", "nal"))
+
+
+def _ps_runtime(word, text):
+    """True when PowerShell makes `word`'s value at run time: a variable or a
+    splat, or a word the lexer did not read bare that `text` does not hold
+    quoted as written -- `(Get-X)`, whose value the lexer only guessed."""
+    if "$" in word or word.startswith("@"):
+        return True
+    return type(word).__name__ != "_Bare" and not any(
+        q + word + q in text for q in "'\"")
+
+
+def _ps_values(words, text):
+    """A PowerShell launcher's or alias's words as `(name, target, rest)`.
+    For an alias (`Set-Alias NAME VALUE`, or `-Name`/`-Value`): its name and
+    what it stands for. For a launcher: the value of `-FilePath`/`-Path`
+    (else its first value) and every other value as the words it passes on
+    -- `-ArgumentList 'workflow run x'` is three -- with a run-time value as
+    `_HOLE`. Parameter names are dropped; a switch takes no value."""
+    values, found, index = [], {}, 1
+    while index < len(words):
+        word, index = words[index], index + 1
+        name, bound, value = str(word).partition(":")
+        if type(word).__name__ != "_Bare" or not word.startswith("-"):
+            values.append(word)
+            continue
+        if not bound and index < len(words) and not (type(
+                words[index]).__name__ == "_Bare" and words[index].startswith("-")):
+            value, index = words[index], index + 1
+        if bound or value:
+            found[name.lower()] = value
+    target = next((found[p] for p in _PS_TARGET_PARAMS if p in found), None)
+    if str(words[0]).lower() in _PS_ALIASERS:
+        name = found.get("-name") or (values.pop(0) if values else None)
+        return name, target or (values[0] if values else None), []
+    if target is None and values:
+        target = values.pop(0)
+    values += [v for k, v in found.items() if k not in _PS_TARGET_PARAMS]
+    rest = []
+    for value in values:
+        rest += [_HOLE] if "$" in value or value.startswith("@") or not \
+            _ps_quoted(value, text) else re.split(r"[\s,]+", str(value))
+    return None, target, [w for w in rest if w]
+
+
+def _ps_quoted(word, text):
+    """A value `text` spells literally: bare, or quoted as written."""
+    return type(word).__name__ == "_Bare" or any(
+        q + word + q in text for q in "'\"")
+
+
 class _DispatchTool:
     """`_TerraformTool`'s questions, answered for a workflow dispatch. Every
     dispatch the lexer is not known to read as bash runs it is `unseen`: a
     nested script (`bash -c`, `eval`, `pwsh -c`), `xargs`/`parallel`, `find
-    -exec`, zsh's `=gh`, a name the line copied or aliased gh to. `fed` is
+    -exec`, zsh's `=gh`, a name the line copied or aliased gh to, a command
+    word made at run time (read by `_hole_shape`). `fed` is
     `cloud_guard.scan`'s `(via, placeholders)` for a command `xargs` or
     `parallel` feeds, when the text is one the lexer already unwrapped."""
 
@@ -2138,18 +2236,26 @@ class _DispatchTool:
         return _gh_name(word)
 
     @staticmethod
-    def hole(_argv, top, shell="bash"):
-        named, verb = _dispatch_mentions(top, shell, wild=False)
-        if named is None and not verb:
+    def hole(argv, top, shell="bash"):
+        """A command word made at run time: gated when its argv's SHAPE could
+        be a dispatch -- bash splits the word, PowerShell does not -- never
+        by what the raw line mentions (review round 3)."""
+        if not _hole_shape(argv[1:], (), shell != "powershell"):
             return None
+        named = _dispatch_mentions(top, shell, wild=False)[0]
         return named or "a command word made at run time", True
 
     def direct(self, argv, fed, depth):
         first = argv[0]
+        fed = list(fed) + ([self.fed] if self.fed else [])
+        reps = [r for _via, reps in fed for r in reps]
+        if fed and ("{" in first or any(r and r in first for r in reps)):
+            # `xargs -I CMD CMD workflow run ...`: xargs or parallel fills the
+            # command word in from input crew never reads -- a hole.
+            return (first, True) if _hole_shape(argv[1:], fed) else None
         zsh = first.startswith("=") and _gh_name(first[1:])
         if not zsh and not _gh_name(first):
             return False
-        fed = list(fed) + ([self.fed] if self.fed else [])
         if not _dispatch_shape(argv, fed):
             return None
         return first, bool(zsh or depth > 0 or fed)
@@ -2163,14 +2269,61 @@ class _DispatchTool:
         return (argv[0], True) if _dispatch_shape(argv) else None
 
     @staticmethod
-    def opaque(args, top, launched=None):
+    def opaque(args, top, launched=None, typed=None):
         shell = "bash" if launched is None else "powershell"
         if launched is not None:
             named = next((w for w in launched if _gh_name(w)), None)
+            _alias, target, rest = _ps_values(typed, top)
+            if target is not None and (_gh_name(str(target)) or _ps_runtime(
+                    target, top)) and _dispatch_shape([_HOLE] + rest):
+                # `Start-Process $x -ArgumentList 'workflow run x'`: what it
+                # launches is gh or is made at run time, with a dispatch's
+                # arguments (review round 3).
+                return named or str(target)
         else:
             named, _verb = _dispatch_mentions(
                 top if any(_HOLE in a for a in args) else " ".join(args), shell)
         return named if named and _dispatch_mentions(top, shell)[1] else None
+
+    @staticmethod
+    def symbolic(argv, words, text):
+        """PowerShell's argv with every word it makes at run time as `_HOLE`
+        (`gh $w run x`); the command word stays as written."""
+        return argv[:1] + [_HOLE if _ps_runtime(w, text) else str(w)
+                           for w in words[1:]]
+
+    @staticmethod
+    def ps_aliases(cmds, text):
+        """The names the line points at gh or at a value made at run time --
+        `Set-Alias`/`New-Alias`, or an `alias:`/`function:` provider path
+        (`Set-Item alias:g $x`) -- each then run as a copy of gh would be."""
+        out = set()
+        for words in (list(c.words) for c in cmds if c.words):
+            path = next((str(w) for w in words[1:] if str(w).lower().startswith(
+                ("alias:", "function:"))), None)
+            if str(words[0]).lower() in _PS_ALIASERS:
+                name, target, _rest = _ps_values(words, text)
+                targets = [target]
+            elif path is not None:
+                name, targets = path.split(":", 1)[1], [
+                    w for w in words[1:] if str(w) != path
+                    and not (type(w).__name__ == "_Bare" and w.startswith("-"))]
+            else:
+                continue
+            if name and any(t is not None and (_gh_name(str(t)) or _ps_runtime(
+                    t, text)) for t in targets):
+                out.add(_head_name(str(name)))
+        return out
+
+
+def fed_dispatch(argv):
+    """True when `argv` -- a command `xargs`/`parallel` feeds, whose command
+    word they fill in -- literally continues as a dispatch (`CMD workflow run
+    <wf>`, `CMD api <dispatches endpoint>`): only gh has that shape, so
+    `cloud_guard.scan` leaves the line to the dispatch gate's could-not-tell
+    finding when the gate made one (review round 3), instead of cloudGuard's
+    unconditional "unreadable" refusal."""
+    return _dispatch_shape(["gh"] + list(argv[1:]))
 
 
 def dispatch_trigger(text, helpers, shell="bash", fed=()):
@@ -2524,8 +2677,16 @@ def dispatch_environment(scope, envs):
 def dispatch_engaged(envs):
     """True while the dispatch gate runs: `environments.workflows` lists a
     workflow, or the `environments` block cannot be read. A repo that never
-    listed one sees no new refusal."""
-    return bool(envs.get("workflows") or envs.get("problem"))
+    listed one sees no new refusal. Either config layer's malformed block
+    counts (`dispatchProblem`, review round 3)."""
+    return bool(envs.get("workflows") or _envs_problem(envs))
+
+
+def _envs_problem(envs):
+    """What makes `envs` unreadable for a dispatch: the repo block's problem,
+    or the machine-global block's (`environments_config`'s
+    `dispatchProblem`), else `""`."""
+    return envs.get("problem") or envs.get("dispatchProblem") or ""
 
 
 def _gate_helpers():
@@ -2573,9 +2734,9 @@ def dispatch_answer(text, shell, envs, fed=(), helpers=None):
             f"it runs `{found[0]}` in a way crew does not follow -- a nested "
             "shell or eval, xargs, parallel or find -exec, another name for "
             "gh, or a command word made at run time"), None, True)
-    if envs.get("problem"):
+    if _envs_problem(envs):
         return _not_literal("the environments block cannot be read: "
-                            f"{envs['problem']}", None, False)
+                            f"{_envs_problem(envs)}", None, False)
     shaped, scopes = 0, []
     for argv in _dispatch_grammar(text, shell)[1]:
         argv = helpers[0](argv, {}, [], {"cd": False})

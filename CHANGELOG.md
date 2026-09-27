@@ -38,6 +38,19 @@ All notable changes to this repository are documented here. Format follows [Keep
   stdin, `0>&3`, a variable, a bracket glob, a script piped into bash, a
   marker that covered another file): each is now a must-block row, watched
   red on `b979d640` first, with a sabotage entry.
+- **A command word made at run time is read by its argv's shape** (review
+  round 3): `$X $Y run deploy.yml` with both words built at run time, `$C`
+  alone (bash may split it into a whole dispatch), an `xargs -I CMD CMD` or
+  `parallel {}` placeholder, `Start-Process $x -ArgumentList 'workflow run
+  ...'` (or `-FilePath $x`), `gh $w run ...` in PowerShell, and an alias
+  (`Set-Alias`, `New-Alias`, `alias:`) pointed at a run-time value are
+  could-not-tell, where they used to be judged only if the raw line happened
+  to name `gh` and `workflow`. `$X pr create` is still not gated. An xargs
+  placeholder dispatch now asks as `[deployWorkflow]` instead of cloudGuard's
+  unconditional "unreadable" refusal. A malformed `environments` block in the
+  **machine-global** layer now engages the gate and makes every dispatch
+  could-not-tell, as a malformed repo block does; the terraform layer's
+  reading of it is unchanged.
 - **BREAKING for the dispatch forms that ran in the first 1.0.43 build:** a
   `--json` body (heredoc, here-string or `echo` pipe), `--input -`, a
   double-quoted display name, an unquoted `{owner}` endpoint and a pipe out of

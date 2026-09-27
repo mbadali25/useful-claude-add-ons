@@ -1053,6 +1053,22 @@ def environments_block_problem(block):
     return ""
 
 
+def global_environments_problem(path=None):
+    """Why the machine-global layer's `environments` block cannot be read, or
+    `""` when it is absent or reads. `cloud_guard.environments_config` joins
+    it to the repo layer's problem (T-0009 review round 3): the global layer
+    answers `environments.prodUnattended`, and a malformed one is "could not
+    tell" -- never the block's absence, which is what `read_global_config`'s
+    collapse would make it. An unreadable file is `resolve_mode`'s already."""
+    path = GLOBAL_CONFIG_PATH if path is None else path
+    if layer_state(path, environments=True) != "corrupt":
+        return ""
+    parsed = read_global_config(path)
+    detail = environments_block_problem(parsed["environments"]) \
+        if "environments" in parsed else "the file cannot be read"
+    return f"the machine-global config: {detail}"
+
+
 # A GitHub `workflow_dispatch` input name, as `input:<name>` spells it.
 _WORKFLOW_INPUT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_-]*$")
 
