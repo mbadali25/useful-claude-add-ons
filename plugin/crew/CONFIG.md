@@ -127,10 +127,12 @@ both directions:
 `is_global_path` agrees with `filter_global` by construction — both stop
 descending at a template **leaf**.
 
-**Measured, not argued.** `leaf_paths(default_global_config())` yields **67**
-leaves. `leaf_paths(default_config())` yields **122**, so **55** are repo-only.
-For all 122, `filter_global` and `plan_global_write` agree on whether the path is
-settable. (121 / 67 / 54 before T-0072 added the repo-only `autopilot.deploy`.
+**Measured, not argued.** `leaf_paths(default_global_config())` yields **68**
+leaves. `leaf_paths(default_config())` yields **123**, so **55** are repo-only.
+For all 123, `filter_global` and `plan_global_write` agree on whether the path is
+settable. (122 / 67 / 55 on T-0072's branch, which added the repo-only
+`autopilot.deploy`; 122 / 68 / 54 on main after T-0023 added `route.enabled` to
+both layers; 121 / 67 / 54 before either.
 66 / 119 before crew 1.0.42 merged T-0005, which added
 `environments.prodUnattended` to both layers and the repo-only
 `environments.nonProd`; this paragraph said 117 at that point, not counting
@@ -608,7 +610,7 @@ test in `tests/test_promote_merge_gate.py`. `preset` is on this list because
 promote names it only to say it binds to nothing.
 
 `jira.project` is the one on this list that most looks like it should work.
-`/crew:jira-sync` gates on `tracker == "jira"` (`commands/jira-sync.md`) and
+`/crew:jira-sync` gates on `crew_tracker.py resolve` saying `jira` (`commands/jira-sync.md`) and
 then caches `jira.cloudId` — a key `default_config()` does not declare
 at all, and that nothing reads back either. So the Jira block ships two keys and
 crew consumes neither. `jira.cloudId` is counted in §12.3 rather than here,
@@ -629,7 +631,6 @@ them:
 
 | Key(s) | Consumer |
 |---|---|
-| `obsidian.columns.*` (five keys) | `commands/obsidian-sync.md`, which instructs: "Read the names from `obsidian.columns` rather than hardcoding them" |
 | `sdp.portal`, `sdp.noteVisibility`, `sdp.closeOnDone` | `commands/sdp-sync.md` |
 | `secondOpinion.provider`, `.sendsCode`, `.keyEnv` | `agents/planner.md`, `commands/plan.md`, `skills/crew-providers/SKILL.md` |
 | `docs.reportTheme` | `skills/crew-house-style/SKILL.md`, with a committed regression test in `tests/test_docs_routing.py` that binds it to the findings-report genre |
@@ -638,11 +639,12 @@ them:
 
 ---
 
-## 10. Global-settable keys — 66
+## 10. Global-settable keys — 68
 
-66 measured (`leaf_paths(default_global_config())`, crew 1.0.40); the table
-below lists 63 of them. `guards.cloudGuard`, `guards.cloudDestructive` and
-`guards.sqlDestructive` are global-settable and not tabled here.
+68 measured (`leaf_paths(default_global_config())`, crew 1.0.46); the table
+below lists 64 of them. `guards.cloudGuard`, `guards.cloudDestructive`,
+`guards.sqlDestructive` and `environments.prodUnattended` (§16) are
+global-settable and not tabled here.
 
 Settable in **either** layer; repo wins — **except `install.policy`, the
 seven `guards.*` and `change.requireForProduction`, where the narrower of the
@@ -720,6 +722,7 @@ they are repo-only, and §16 says why. Defaults are identical in `default_config
 | `change.jiraIssueType` | string, see §17 | `"Change"` |
 | `change.category` | string or `null`, see §17 | `null` |
 | `resume.auto` | `true` or `null`; **only the machine layer can arm it**, a repo `false` vetoes it (§14a) | `null` |
+| `route.enabled` | boolean; only the JSON value `true` arms it, and a repo value wins over the machine one (§21) | `false` |
 
 `crew_state.QA_PROVIDERS` and `DEV_PROVIDERS` are both
 `["claude", "codex", "copilot"]` (dumped by execution). `qa.provider`
@@ -753,20 +756,20 @@ repository or one checkout.
 | `schema` | integer | `7` | see §4 |
 | `tier` | integer | `0` | `crew_state.collect` |
 | `roles` | list (a leaf) | `["explorer", "reviewer"]` | `crew_state.collect` |
-| `tracker` | string | `"files"` | `crew_state.py`, `commands/brainstorm.md`, `commands/spec.md` |
+| `tracker` | string (0.20 `config.json`); `tracker.kind` in 1.0 `crew.json` | `"files"` | `crew_tracker.resolve` (`hooks/scripts/crew_tracker.py`) reads both shapes and answers `could not tell` when they disagree; the lifecycle commands, the sync commands and `crew_status.py` all go through it |
 | `jira.project` | string or `null` | `null` | **no consumer found**, §9 |
 | `jira.cloudId` | string or `null` | `null` | written by `commands/jira-sync.md`; **read by nothing**, §9 |
 | `sdp.portal` | string or `null` | `null` | prose, §9 |
 | `sdp.noteVisibility` | string | `"private"` | prose, §9 |
 | `sdp.closeOnDone` | boolean | `false` | prose, §9 |
-| `obsidian.vaultPath` | path or `null` | `null` | `commands/obsidian-sync.md` |
-| `obsidian.boardDir` | path or `null` | `null` | `commands/obsidian-sync.md` |
-| `obsidian.board` | filename | `"Board.md"` | `commands/obsidian-sync.md` |
-| `obsidian.columns.backlog` | string | `"Backlog"` | prose, §9 |
-| `obsidian.columns.ready` | string | `"Ready"` | prose, §9 |
-| `obsidian.columns.inProgress` | string | `"In Progress"` | prose, §9 |
-| `obsidian.columns.review` | string | `"Review"` | prose, §9 |
-| `obsidian.columns.done` | string | `"Done"` | prose, §9 |
+| `obsidian.vaultPath` | path or `null` | `null` | `crew_tracker.py` (falls back to `memory.vaultPath`; must hold `.obsidian/`) |
+| `obsidian.boardDir` | path or `null` | `null` | `crew_tracker.py` (relative, no `..`) |
+| `obsidian.board` | filename | `"Board.md"` | `crew_tracker.py` (a bare file name) |
+| `obsidian.columns.backlog` | string | `"Backlog"` | `crew_tracker.py` (`LANE_FOR_STATUS`) |
+| `obsidian.columns.ready` | string | `"Ready"` | `crew_tracker.py` (`LANE_FOR_STATUS`) |
+| `obsidian.columns.inProgress` | string | `"In Progress"` | `crew_tracker.py` (`LANE_FOR_STATUS`) |
+| `obsidian.columns.review` | string | `"Review"` | `crew_tracker.py` (`LANE_FOR_STATUS`) |
+| `obsidian.columns.done` | string | `"Done"` | `crew_tracker.py` (`LANE_FOR_STATUS`) |
 | `verifyGate` | boolean | `true` | `hooks/scripts/verify-gate.sh` |
 | `verify.stopBudgetSeconds` | integer | `60` | `hooks/scripts/verify-gate.sh`, `verify-gate.ps1` |
 | `context.enabled` | boolean | `true` | `hooks/scripts/context-watch.ps1` |
@@ -2331,3 +2334,41 @@ class from T-0005's classifier, proceeds only on the exact verdict `allow`
 persists every report. `allow` is necessary, not sufficient: T-0009's hook,
 promote-gate (`requireHuman`, the post-deploy proof) and every other gate
 still decide.
+
+---
+
+## 21. `route` — plain-text lifecycle routing, off until `true`
+
+`route.enabled` (T-0023, since 1.0.46) lets a short plain-text prompt reach a
+lifecycle command. When it is on, crew's UserPromptSubmit context hook
+(`crew_context.route_item`) calls `crew_route.decide` on the prompt and, unless
+the answer is `none`, puts one line FIRST in the turn's context: the
+`/crew:<command> <ticket>` whose procedure Claude should run through the Skill
+tool, or a request to ask the user which ticket. The hook runs nothing and
+blocks nothing; the command's own checks still decide. The table of phrases,
+the three outcomes and what never routes are in the plugin README's
+"Plain-text lifecycle" section; `crew_route.PHRASES` is the single definition.
+
+| Key | Default | Read by | What an unexpected value does |
+|---|---|---|---|
+| `route.enabled` | `false` | `crew_route.settings`, through `crew_config.resolve_config` | Only the JSON value `true` arms it. `"true"`, `1`, `"yes"`, `"on"` — anything else — reads as off, and `settings` names the value it saw. A `route` that is not an object, in either file, is ignored by the merge and reported. |
+
+**Which file.** `.crew/config.json` over the machine-global
+`~/.claude/crew/config.json` over the default — `resolve_config`'s ordinary
+precedence. The context hook's own `memory.inject` switch is read from
+`.crew/crew.json` first (`crew_context.load_crew_config`), but this key is not:
+a `route` block found only in `.crew/crew.json` is reported by
+`python3 crew_route.py settings --root .` ("move it to .crew/config.json")
+rather than read as off with no word.
+
+**A machine-wide `true` reaches only repos whose file leaves the key out.**
+`/crew:init` writes the whole template, which carries `"route": {"enabled":
+false}`, and the repo layer wins. In a repo set up that way, delete the key
+from `.crew/config.json` or set it `true` there.
+
+**What arming it does not change.** Routing never approves: no phrase routes
+to `/crew:approve`, a `continue` whose next step is approval asks instead, and
+`commands/approve.md` sets `disable-model-invocation: true` besides. Under
+`--harness codex` no line is emitted, because the Skill tool it names does not
+exist there. With `memory.inject: false` the hook emits nothing, route line
+included.

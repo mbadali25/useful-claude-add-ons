@@ -1,6 +1,6 @@
 ---
 description: Sync a ticket between Jira (via MCP) and the local cache
-argument-hint: <ISSUE-KEY> [--push]
+argument-hint: <ISSUE-KEY> [--push --to in-progress|done]
 allowed-tools: Read, Write, Edit, Bash, ToolSearch
 ---
 
@@ -8,7 +8,7 @@ Sync $ARGUMENTS.
 
 ## Preconditions
 
-1. `.crew/config.json` -> `tracker` must be `"jira"`.
+1. `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_tracker.py resolve --root .` must say `jira`.
 2. The Atlassian MCP server must be connected. Check your available tools for
    `mcp__atlassian__*`. If tool search is active you may need to search for them
    rather than seeing them listed.
@@ -44,12 +44,18 @@ every pickup, retry, and context reset.
 When you query for multiple issues, use JQL with an explicit field list and a
 `maxResults` cap. Never fetch a board or a whole sprint to find one ticket.
 
-## Push (`--push`)
+## Push (`--push --to <status>`)
 
-Transition the status, and append exactly ONE comment:
+`--to` names the destination, and only two exist: `in-progress` (pickup) and
+`done` (completion) — the two moves `crew_tracker.py` delegates. Transition the
+issue to the Jira status that means it. On `--to done`, and only then, append
+exactly ONE comment:
 
 > files touched, smoke result, reviewer used (Codex or Claude), BLOCK count.
 > Two sentences.
+
+`--push` with no `--to`, or any other target: say which status is missing and
+stop. Never guess the destination from the issue's current state.
 
 Never paste diffs, review output, or agent reasoning into Jira. That is what the
 repo and the PR are for, and it makes the issue more expensive to read back later.

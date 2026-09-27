@@ -273,9 +273,13 @@ def test_the_ten_keys_crew_read_but_never_declared_are_declared():
     # 119 with /crew:autopilot (T-0004): `autopilot.mode` and
     # `autopilot.maxPhases`, re-measured after rebasing onto T-0006.
     # 121 with T-0005: the repo-only `environments.nonProd` glob list and the
-    # ratcheted `environments.prodUnattended`, re-measured after merging main.
-    # 122 with T-0072: the repo-only `autopilot.deploy`.
-    assert len(declared) == 122
+    # ratcheted `environments.prodUnattended`; 122 with plain-text routing
+    # (T-0023): `route.enabled`. Re-measured after merging main.
+    # 123 with T-0072: the repo-only `autopilot.deploy`, re-measured after
+    # merging main's T-0023.
+    assert "route.enabled" in declared
+    assert "autopilot.deploy" in declared
+    assert len(declared) == 123
 
 
 def test_autoclear_is_global_and_its_siblings_are_not():
