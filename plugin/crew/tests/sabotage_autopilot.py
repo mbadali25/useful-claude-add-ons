@@ -288,7 +288,7 @@ POLICY_MUTATIONS = (
      "    if True:\n",
      _SG + "test_autopilot_approve_is_refused_when_the_policy_says_no[human-low-True-module]"),
     ("the guard never looks at autopilot approve", GUARD,
-     "        return _autopilot_refusal(command, top)\n",
+     "        return _autopilot_refusal(written, top)\n",
      "        return None\n",
      _SG + "test_autopilot_approve_is_refused_when_the_policy_says_no[human-low-True-module]"),
     ("the guard allows a chained autopilot approve", GUARD,

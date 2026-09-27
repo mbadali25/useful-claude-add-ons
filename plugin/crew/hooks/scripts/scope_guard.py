@@ -267,29 +267,34 @@ def shell_refusal(command, common, top=None):
     "Bash and PowerShell"). Textual on purpose, and conservative: a benign
     command that names crew's state beside a writing word is refused too.
     `top` is the worktree whose autopilot policy judges `crew_autopilot.py
-    approve`; without it that command is refused."""
+    approve`; without it that command is refused. Every reading `_joined`
+    gives is judged; the first refusal wins."""
     if not isinstance(command, str):
         return None
-    texts = _joined(command)
-    if any(_APPROVE_RE.search(text) for text in texts):
-        return "it runs `crew_ticket.py approve`; approval comes from the user's own prompt"
-    if any(_AUTOPILOT_APPROVE_RE.search(text) for text in texts):
-        return _autopilot_refusal(command, top)
-    if any(_HOOK_RE.search(text) for text in texts):
-        return "it names the approval hook, which only the user's prompt may drive"
-    if any(_writes_state(text, common) for text in texts):
-        return "it writes under <git-common-dir>/crew/, crew's approval and ledger state"
+    for reading in _joined(command):
+        reason = _reading_refusal(reading, command, common, top)
+        if reason:
+            return reason
     return None
 
 
-def _writes_state(command, common):
-    """`command` names `<git-common-dir>/crew/` beside a redirect or a
-    writing word."""
+def _reading_refusal(command, written, common, top):
+    """Why one reading (`_joined`) of the shell command `written` is refused,
+    or None. The autopilot bare-command rule judges `written` as written, so
+    a line continuation never makes an approve bare."""
+    if _APPROVE_RE.search(command):
+        return "it runs `crew_ticket.py approve`; approval comes from the user's own prompt"
+    if _AUTOPILOT_APPROVE_RE.search(command):
+        return _autopilot_refusal(written, top)
+    if _HOOK_RE.search(command):
+        return "it names the approval hook, which only the user's prompt may drive"
     state = os.path.join(common, "crew") if common else None
     folded = os.path.normcase(command).replace("\\", "/")
     names_state = bool(_DOTGIT_CREW_RE.search(command)) or bool(
         state and os.path.normcase(state).replace("\\", "/") in folded)
-    return bool(names_state and _WRITES_RE.search(command))
+    if names_state and _WRITES_RE.search(command):
+        return "it writes under <git-common-dir>/crew/, crew's approval and ledger state"
+    return None
 
 
 def _log(top, mode, decision, ticket, path, reason):
