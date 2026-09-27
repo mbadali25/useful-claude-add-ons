@@ -1,5 +1,5 @@
 # repo-docs
-anchor: useful-claude-add-ons@89c9ee9a
+anchor: useful-claude-add-ons@8314d670
 verified: 2026-09-26
 
 ## Re-derive provenance
@@ -701,3 +701,13 @@ is `:1947`; set in the merge, corrected above), `TODO.md` (the `render.sh` entry
 `CHANGELOG.md` (T-0010's 1.0.44 entry above T-0042's 1.0.43; cited without a line). The two
 diagrams this note cites are refreshed in the same commit as this note. Nothing was executed for
 this note.
+
+## Re-anchor provenance - `89c9ee9a` -> `8314d670`, 2026-09-27 (T-0010 review round 1 fixes)
+
+`8314d670` fixes the four FIX findings of T-0010's review round 1. Its citations were checked
+per path through `git diff 89c9ee9a 8314d670`, every moved one re-read with `grep -n`/`sed -n`
+at `8314d670`:
+
+`plugin/crew/README.md` changed one line in place, above none of the cited lines' positions
+(`:12`, `:15`, `:46`, `:168`, `:414`, `:736`, `:1947` hold); `CHANGELOG.md` is cited without a
+line. No other cited path changed. Nothing was executed for this note.

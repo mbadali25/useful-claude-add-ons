@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@89c9ee9a
+anchor: useful-claude-add-ons@8314d670
 verified: 2026-09-26
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -208,7 +208,7 @@ Notable rules, re-read directly:
   priced 18s (its `why` records 17.0s wall on the stacked T-0010 branch - a claim read, not
   re-timed by this note). `test_scope_guard.py` rides along for the `crew_autopilot.py approve`
   must-block/must-allow cases. Its mutations are `POLICY_MUTATIONS` at the end of
-  `plugin/crew/tests/sabotage_autopilot.py` (`:167`, 27 entries), imported beside
+  `plugin/crew/tests/sabotage_autopilot.py` (`:167`, 33 entries since T-0010 review round 1), imported beside
   `AUTOPILOT_MUTATIONS` by `plugin/crew/tests/sabotage.py:77` and appended at `:3049`, both
   changed in place; `test_crew_autopilot_policy.py` asserts each reaches `sabotage.MUTATIONS`.
   Several target `crew_ticket.py` and `scope_guard.py`, paths this rule does not name (rules 11
@@ -908,3 +908,16 @@ every moved or merge-set one re-read with `sed -n` at `89c9ee9a`:
 - `marketplace.json`, `CHANGELOG.md`, `TODO.md`, `BUDGETS.md` - cited by name only.
 
 The suite results for this merge are T-0010's implement report's, not this note's.
+
+## Re-anchor provenance - `89c9ee9a` -> `8314d670`, 2026-09-27 (T-0010 review round 1 fixes)
+
+`8314d670` fixes the four FIX findings of T-0010's review round 1. Its citations were checked
+per path through `git diff 89c9ee9a 8314d670`, every moved one re-read with `grep -n`/`sed -n`
+at `8314d670`:
+
+- `plugin/crew/CONFIG.md` - the §20 edit is below the descope limitation, so `:2251-2258` holds.
+- `sabotage_autopilot.py` - `len(POLICY_MUTATIONS)` 27 -> 33 (corrected above),
+  `len(AUTOPILOT_MUTATIONS)` 31; `sabotage.py` did not change (`:77`, `:3049` hold).
+- `.crew/verify.json` did not change; rules 27 and 28 still map the changed files.
+- `test_crew_autopilot.py`, `test_crew_autopilot_policy.py`, `test_scope_guard.py` - cited by
+  name only.

@@ -1,5 +1,5 @@
 # install-scripts
-anchor: useful-claude-add-ons@89c9ee9a
+anchor: useful-claude-add-ons@8314d670
 verified: 2026-09-26
 
 ## Re-derive provenance
@@ -617,3 +617,14 @@ across 121 files, re-measured on the merge), `plugin/PLUGINS.md:14` and
 `README.md`, `INSTALLATION.md`, `scripts/check-marketplace.py` nor `scripts/_test/self-claims.py`
 changed on either side. `python3 scripts/check-marketplace.py` at `89c9ee9a`: `all checks passed`.
 Neither install script was executed.
+
+## Re-anchor provenance - `89c9ee9a` -> `8314d670`, 2026-09-27 (T-0010 review round 1 fixes)
+
+`8314d670` fixes the four FIX findings of T-0010's review round 1. Its citations were checked
+per path through `git diff 89c9ee9a 8314d670`, every moved one re-read with `grep -n`/`sed -n`
+at `8314d670`:
+
+`plugin/crew/README.md` changed one line in place (T-0010's policy paragraph), so `:2398` and
+`:2409` hold (re-grepped). `plugin/crew/BUDGETS.md` changed in place: marker `:10`, and `:11`
+now reads 18,607 lines across 121 files (`check_self_claims` re-measured it). Neither install
+script changed. Nothing was executed for this note beyond `scripts/check-marketplace.py`.
