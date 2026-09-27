@@ -304,14 +304,20 @@ STATUS_MUTATIONS = (
      "    return spec is not None and _header_status(\n",
      "    return False and _header_status(\n",
      _S + "test_status_repoint_never_offers_a_closed_ticket_without_a_direction"),
+    # The route and status mutations below name the textual -B check, not
+    # test_status_as_the_command_runs_it_writes_no_bytecode: since round 4 the
+    # script sets sys.dont_write_bytecode under __main__, so dropping -B from one
+    # command line writes no bytecode and that behavioural test stays green (it
+    # read STILL GREEN on 60f4593e). The in-script guard has its own mutation,
+    # "the direct CLI writes bytecode", below.
     ("the command's route invocation writes bytecode", COMMAND,
      "python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py route ",
      "python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py route ",
-     _S + "test_status_as_the_command_runs_it_writes_no_bytecode"),
+     _S + "test_every_autopilot_invocation_in_command_skips_bytecode"),
     ("the command's status invocation writes bytecode", COMMAND,
      "python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py status ",
      "python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py status ",
-     _S + "test_status_as_the_command_runs_it_writes_no_bytecode"),
+     _S + "test_every_autopilot_invocation_in_command_skips_bytecode"),
     ("the command's next invocation writes bytecode", COMMAND,
      "python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py next ",
      "python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py next ",
