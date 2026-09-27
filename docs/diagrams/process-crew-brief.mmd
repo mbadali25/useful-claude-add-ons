@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@068db4ff on 2026-09-26. Verify before trusting.
+%% Generated from useful-claude-add-ons@07eefac5 on 2026-09-26. Verify before trusting.
 %% Anchors: plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/handoff-read.sh, plugin/crew/hooks/scripts/platform-sync.sh, plugin/crew/hooks/scripts/crew_platform.py, plugin/crew/hooks/scripts/crew-context.sh, plugin/crew/hooks/scripts/crew_context.py, plugin/crew/hooks/scripts/crew_resume.py, plugin/crew/hooks/scripts/crew_state.py, plugin/crew/hooks/scripts/crew_status.py, plugin/crew/commands/status.md
 %% Re-anchored 86931b29 -> f2bb919b (T-0015): `git diff --name-only 86931b29 f2bb919b --`
 %% over every path on the Anchors line returns nothing, so no citation below moved. Spot
@@ -36,6 +36,10 @@
 %% crew_resume.decide now also waits unless the note was written by this session
 %% (handoff-author.json: compact by session_id, clear by the claude process), drawn in cc6.
 %% crew_state.py, hooks.json and the other Anchors paths did not change.
+%% Re-anchored 068db4ff -> 07eefac5 (T-0042 review round 1): of the Anchors paths only
+%% crew_resume.py changed (record_author's lock and write failures drop handoff-author.json),
+%% and it is cited by function name only (crew_resume.decide), so no line citation moved and
+%% cc6 still holds: a dropped record reads as no record, which waits.
 %% What crew 1.0 does when a session starts, and what /crew:status reads.
 %% --
 %% REDRAWN for crew 1.0. The 0.20 version of this file drew the PM session-start

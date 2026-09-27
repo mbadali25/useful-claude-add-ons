@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@068db4ff
+anchor: useful-claude-add-ons@07eefac5
 verified: 2026-09-26
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -170,12 +170,12 @@ Notable rules, re-read directly:
   before T-0026's rule 10 moved every later index up by one): `paths`
   `crew_resume.py`, `crew_context.py`, both `handoff-write` flavours,
   `test_crew_resume.py`, `test_crew_resume_hook.py` and `sabotage_resume.py` →
-  `python3 -m pytest` over the two resume test files plus `test_auto_cycle.py`, priced 74s (its
-  `why` records 73s, 388 passed / 13 skipped / 68 deselected, measured for T-0042 - a claim read,
-  not re-timed here; 89s / 348 / 12 after T-0006 review round 3 under load, 60s after round 2;
-  the 13th skip is a root-only skip). Its
-  mutations live in `plugin/crew/tests/sabotage_resume.py` (`RESUME_MUTATIONS`, 66 since T-0042,
-  44 before; counted with `len()` at `068db4ff`), imported by
+  `python3 -m pytest` over the two resume test files plus `test_auto_cycle.py`, priced 87s (its
+  `why` records 87s, 391 passed / 13 skipped / 68 deselected, measured after T-0042 review round 1
+  - a claim read, not re-timed here; 73s / 388 before that round, 89s / 348 / 12 after T-0006
+  review round 3 under load, 60s after round 2; the 13th skip is a root-only skip). Its
+  mutations live in `plugin/crew/tests/sabotage_resume.py` (`RESUME_MUTATIONS`, 69 since T-0042
+  review round 1, 66 before it, 44 before T-0042; counted with `len()` at `07eefac5`), imported by
   `plugin/crew/tests/sabotage.py:76` and appended to `MUTATIONS` at `:3049`.
 - **Rule 26**, new at `07ca3972` (`.crew/verify.json:281-288`, T-0004): `paths`
   `crew_autopilot.py`, `commands/autopilot.md`, `test_crew_autopilot.py` and
@@ -708,3 +708,20 @@ their citations stand unread.
 
 No suite was executed by this note; the suite results T-0042 reports belong to its build, not
 to this refresh.
+
+## Re-anchor provenance - `068db4ff` -> `07eefac5`, 2026-09-26 (T-0042 review round 1)
+
+Of the paths this note cites, `git diff --name-only 068db4ff 07eefac5` returns
+`.crew/verify.json`, `plugin/crew/tests/sabotage_resume.py`, `CHANGELOG.md` and the version files
+(stepped to 1.0.41 and back, unchanged at `07eefac5`). `sabotage.py`, `verify-gate.sh`/`.ps1`,
+`verify_record.py`, `scripts/check-marketplace.py`, `CONFIG.md` and the rest did not change, so
+their citations stand unread.
+
+- `.crew/verify.json` - one hunk, rule 25's `seconds` (74 -> 87) and `why` rewritten in place; it
+  still spans `:270-280`; `wc -l` 293, unchanged, so every other cited range stands.
+- `sabotage_resume.py` - one mutation reworded and three added for round 1's guard branches, 69 in
+  all (`len(RESUME_MUTATIONS)`); `sabotage.py:76` and `:3049` unchanged, still import and append.
+- `CHANGELOG.md` - cited by name only.
+
+No suite was executed by this note; the figures in rule 25's `why` belong to the fix, not to this
+refresh.
