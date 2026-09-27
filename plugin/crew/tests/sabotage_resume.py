@@ -249,7 +249,8 @@ RESUME_MUTATIONS = (
      '    if not os.path.lexists(path):\n        return ""\n',
      _T + "test_an_index_that_cannot_be_stat_ed_is_an_unknown"),
     ("_absent reads every stat error as absence", RESUME,
-     "    except (FileNotFoundError, NotADirectoryError):\n        return True\n    except OSError:\n        return None\n",
+     "    except (FileNotFoundError, NotADirectoryError):\n        return True\n"
+     "    except OSError:\n        return None\n",
      "    except OSError:\n        return True\n",
      _T + "test_record_run_refuses_a_resume_state_that_cannot_be_stat_ed"),
     ("the PreCompact skeleton's file lines can be a resume line again", RESUME,
