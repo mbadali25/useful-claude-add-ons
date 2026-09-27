@@ -1,5 +1,5 @@
-anchor: useful-claude-add-ons@2b18f7ab
-verified: 2026-09-26
+anchor: useful-claude-add-ons@c2ae46ab
+verified: 2026-09-27
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
 **Re-derive provenance.** Full re-derivation, not a re-verify. The previous
@@ -37,15 +37,15 @@ including the slow version-drift walk `_verify/smoke.sh` skips), and
 them and is wired into CI but not into the local Stop gate: see
 "`scripts/check_instructions.py`" below.
 
-## `.crew/verify.json` — 28 rules, up from 27
+## `.crew/verify.json` — 29 rules, up from 28
 
-**DERIVED, read in full via `json.load` on the T-0005 landing merge.** 305 lines, **28**
-rules (27 at `07ca3972`, 26 at `a0c0847e`, 25 at `8ebbdedc`, at T-0006's `2bb92f32` and at T-0005's
+**DERIVED, read in full via `json.load` on the T-0021 merge of main (`c2ae46ab`).** 313 lines,
+**29** rules (28 on the T-0005 landing `2b18f7ab`, 27 at `07ca3972`, 26 at `a0c0847e`, 25 at `8ebbdedc`, at T-0006's `2bb92f32` and at T-0005's
 `a26ad8c0`, 24 at `c35edda5`, 23 at `f2bb919b`, 22 at `6c497a14`, 21 at `5d1fc5fd`) plus a `default`
-(`["bash _verify/smoke.sh"]`, `:303`) and `unmapped: "fail"` (`:304`). Rule 6 (T-0005, the
+(`["bash _verify/smoke.sh"]`, `:311`) and `unmapped: "fail"` (`:312`). Rule 6 (T-0005, the
 cloud-guard suites) and rule 11 (T-0026, the approval digest) were each inserted mid-list, so every
 rule after them is one or two higher than at `c35edda5`; rule 24 (#228), rule 25 (T-0008), rule 26
-(T-0006) and rule 27 (T-0004) were each appended last. Those six are the only additions since
+(T-0006), rule 27 (T-0004) and rule 28 (T-0021) were each appended last. Those seven are the only additions since
 `6c497a14`; see below. The rule set was restructured, not
 just grown: the broad `plugin/crew/hooks/**` / `plugin/crew/tests/**` shape
 this note previously described is gone, replaced by per-subsystem rules that
@@ -171,7 +171,7 @@ Notable rules, re-read directly:
   mapped here because these tests carry their ordering checks. Its mutations
   live in `plugin/crew/tests/sabotage_refresh.py` (`REFRESH_MUTATIONS`, `:51`),
   imported by `plugin/crew/tests/sabotage.py:75` and appended to `MUTATIONS` at
-  `:3048` (in the `MUTATIONS +=` statement at `:3047-3049`) — the same sibling-module pattern as the other `sabotage_*.py`
+  `:3049` (in the `MUTATIONS +=` statement at `:3048-3050`) — the same sibling-module pattern as the other `sabotage_*.py`
   lists, because `sabotage.py` sits at `.pylintrc`'s max-module-lines. Every
   rule-25 path also matches rule 0 and either rule 15 (the `.py` files) or
   rule 12 (the two commands), by `fnmatch`, the primitive `matches()` uses
@@ -185,7 +185,7 @@ Notable rules, re-read directly:
   `why` records 89s, 348 passed / 12 skipped / 68 deselected after review round 3, under load;
   60s after round 2). Its
   mutations live in `plugin/crew/tests/sabotage_resume.py` (`RESUME_MUTATIONS`, 44), imported by
-  `plugin/crew/tests/sabotage.py:76` and appended to `MUTATIONS` at `:3049`.
+  `plugin/crew/tests/sabotage.py:76` and appended to `MUTATIONS` at `:3050`.
 - **Rule 27**, new at `07ca3972` (`.crew/verify.json:293-300`, T-0004; rule 26 until T-0005's
   rule 6 merged in): `paths`
   `crew_autopilot.py`, `commands/autopilot.md`, `test_crew_autopilot.py` and
@@ -194,11 +194,19 @@ Notable rules, re-read directly:
   2026-09-26 after the round-1 fixes — a claim read, not re-timed here). `test_lifecycle_commands.py` rides along for
   `autopilot.md`'s 120-line budget and exact-CLI checks. Its mutations live in
   `plugin/crew/tests/sabotage_autopilot.py` (`AUTOPILOT_MUTATIONS`, `:19`), imported by
-  `plugin/crew/tests/sabotage.py:77` and appended at `:3049`. The rule's `why` states no
+  `plugin/crew/tests/sabotage.py:77` and appended at `:3050`. The rule's `why` states no
   mutation count (it said "six" until the refresh commit after `07ca3972`, while the tuple
   held more); count them in the tuple. One of them targets `crew_ticket.py`'s `parse_risk`, a path rule 27
   does not name (see rule 11). `crew_autopilot.py` also matches rules 0 and 15, `autopilot.md`
   rules 0 and 12.
+- **Rule 28**, new at `7b667587` (`.crew/verify.json:301-308`, T-0021; rule 24 on its branch
+  until the merge of main at `86ea912f` put it after rule 27): `paths`
+  `plugin/crew/hooks/scripts/crew_tracker.py`, `plugin/crew/tests/test_crew_tracker.py`,
+  `plugin/crew/tests/sabotage_tracker.py` and `plugin/crew/tests/tracker_fixtures/**` →
+  `python3 -m pytest plugin/crew/tests/test_crew_tracker.py -q`, priced 4s (its `why` records
+  3.3s measured 2026-09-26 — a claim read, not re-timed here). Its mutations live in
+  `plugin/crew/tests/sabotage_tracker.py` (`TRACKER_MUTATIONS`, 81 after review round 3),
+  imported by `plugin/crew/tests/sabotage.py:78` and appended at `:3050`.
 
 **Still unresolved at this anchor:** a declared `seconds` figure is only
 overwritten by measurement when the rule carries *no* `seconds` at all
@@ -262,7 +270,7 @@ that changed shape or are newly documented here:
   test file is named in rule 4's `run`; only rule 9's whole suite runs them.
 - **Per-rule process-group tracking and kill-on-signal was DESCOPED from crew
   1.0, and it is a documented limitation, not a silent gap.**
-  `verify-gate.sh:1493-1502` and `plugin/crew/CONFIG.md:2201-2208` both state
+  `verify-gate.sh:1493-1502` and `plugin/crew/CONFIG.md:2200-2207` both state
   it: a third registry stage (`_crew_gate_cleanup_rule_pgid`) shipped, then was
   removed after five consecutive review rounds each found the previous
   round's fix one case short (disk fill by an orphan writer, escape on gate
@@ -437,14 +445,16 @@ set on Ubuntu.
   no-pipe fallback refusal.
 - `.crew/verify.json:263` (rule 24) — the `.claude/rules/` sync check.
 - `.crew/verify.json:264-280` (rule 25) — the T-0008 refresh-check suite;
-  `plugin/crew/tests/sabotage.py:75`, `:3048` — `sabotage_refresh.py`'s
+  `plugin/crew/tests/sabotage.py:75`, `:3049` — `sabotage_refresh.py`'s
   registration.
 - `.crew/verify.json:282-292` (rule 26) — the T-0006 auto-resume suite;
-  `plugin/crew/tests/sabotage.py:76`, `:3049` — `sabotage_resume.py`'s registration.
+  `plugin/crew/tests/sabotage.py:76`, `:3050` — `sabotage_resume.py`'s registration.
 - `.crew/verify.json:293-300` (rule 27) — the T-0004 autopilot suite;
-  `plugin/crew/tests/sabotage.py:77`, `:3049` — `sabotage_autopilot.py`'s registration.
+  `plugin/crew/tests/sabotage.py:77`, `:3050` — `sabotage_autopilot.py`'s registration.
+- `.crew/verify.json:301-308` (rule 28) — the T-0021 tracker suite;
+  `plugin/crew/tests/sabotage.py:78`, `:3050` — `sabotage_tracker.py`'s registration.
 - `plugin/crew/hooks/scripts/verify-gate.sh:1493-1502` /
-  `plugin/crew/CONFIG.md:2201-2208` — the descoped per-rule process-group kill,
+  `plugin/crew/CONFIG.md:2200-2207` — the descoped per-rule process-group kill,
   documented as a standing limitation.
 - `plugin/crew/hooks/scripts/verify-gate.ps1:822-832`, `:1665-1674` —
   `Resolve-CrewBash` refusal rather than a re-resolving hang.
@@ -830,3 +840,18 @@ two of which go RED only as root; one mutation now targets `plugin/crew/commands
 is checked by `test_lifecycle_commands.py`, which rule 24 does not map. `implement.md` (rule
 23's path, cited by name only) moved its `--to review` call ahead of `/crew:review`.
 `CHANGELOG.md` is cited by name only.
+
+## Re-anchor provenance - `2b18f7ab` + `bcb77ce2` -> `c2ae46ab`, 2026-09-27 (T-0021 review round 3 and its merge of main)
+
+The merge `86ea912f` joins main's `2b18f7ab` with T-0021's `bcb77ce2`; review round 3's fix commit
+`629fb518` sits under it and the crew 1.0.43 bump `c2ae46ab` on top. `git diff --name-only 2b18f7ab
+c2ae46ab` returns only T-0021's files (its code, commands, tests, fixtures, release files,
+`.crew/verify.json`, `CHANGELOG.md`, `TODO.md`). Every citation in this note's body into those files
+was re-mapped from the side of the merge its line came from (`git blame`: main's lines against
+`2b18f7ab`, T-0021's against `bcb77ce2`) with a line diff, and each one whose line moved or changed
+was re-read at `c2ae46ab`. Corrected here: `.crew/verify.json` is 313 lines and 29 rules, T-0021's
+tracker rule last as rule 28 (`:301-308`), `default` `:311`, `unmapped` `:312`;
+`plugin/crew/tests/sabotage.py` imports `sabotage_refresh`/`_resume`/`_autopilot`/`_tracker` at
+`:75`-`:78` and the `MUTATIONS +=` statement is `:3048-3050` (refresh at `:3049`, the other three at
+`:3050`); the `CONFIG.md` background-process limitation is `:2200-2207`. No test suite was executed for
+this note.

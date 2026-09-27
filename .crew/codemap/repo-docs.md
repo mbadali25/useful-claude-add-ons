@@ -1,6 +1,6 @@
 # repo-docs
-anchor: useful-claude-add-ons@2b18f7ab
-verified: 2026-09-26
+anchor: useful-claude-add-ons@c2ae46ab
+verified: 2026-09-27
 
 ## Re-derive provenance
 
@@ -299,7 +299,7 @@ listing the directory.
 - **`docs/runbooks/INDEX.md` still does not exist.** `docs/runbooks/`
   contains `rollback.md` alone (re-confirmed by `ls`).
   `plugin/crew/skills/crew-runbooks/SKILL.md:80` and
-  `plugin/crew/README.md:1930` (`:1804` at `07ca3972`, `:1759` at `a0c0847e`, `:1730` at `8ebbdedc`, `:1757` at T-0006's `2bb92f32`, `:1728` at `c35edda5`; on T-0005's branch `:1854` at `a26ad8c0`, `:1810` at `aa7f9841`, `:1795` at `1e210476`, `:1788` at `3a57b2d2`, `:1767` at `2170d72e`, `:1728` at `8d447a7d`; `:1725` at `f2bb919b`, `:1604` before that,
+  `plugin/crew/README.md:2006` (`:1930` at `2b18f7ab`, `:1794` at T-0021's `bcb77ce2`, `:1804` at `07ca3972`, `:1759` at `a0c0847e`, `:1730` at `8ebbdedc`, `:1757` at T-0006's `2bb92f32`, `:1728` at `c35edda5`; on T-0005's branch `:1854` at `a26ad8c0`, `:1810` at `aa7f9841`, `:1795` at `1e210476`, `:1788` at `3a57b2d2`, `:1767` at `2170d72e`, `:1728` at `8d447a7d`; `:1725` at `f2bb919b`, `:1604` before that,
   that file having changed in each range — re-grepped, not offset) both still describe
   `docs/runbooks/INDEX.md` as a symptom-keyed index that would live there.
   JUDGEMENT, unchanged: costs nothing with one runbook, becomes a real gap at
@@ -421,7 +421,10 @@ listing the directory.
   and T-0004 appended a last one (`:293-300`, `:281-288` before T-0005 merged): `crew_autopilot.py`,
   `commands/autopilot.md`, `test_crew_autopilot.py` and
   `sabotage_autopilot.py` run `test_crew_autopilot.py` plus
-  `test_lifecycle_commands.py`.
+  `test_lifecycle_commands.py`. T-0021's merge of main put its rule last
+  (`:301-308`; `:262-269` on its branch before the merge): `crew_tracker.py`,
+  `test_crew_tracker.py`, `sabotage_tracker.py` and the board fixtures run
+  `test_crew_tracker.py`.
 
 ## Unverified
 
@@ -654,3 +657,15 @@ Of the cited paths only `plugin/crew/README.md` changed (section 13c grew by 25 
 runbook-index citation moved `:1769` -> `:1794`, re-grepped) and `implement.md` (cited by name
 only); the three crew diagrams were re-anchored to `bcb77ce2` in the same refresh. The root
 `README.md`, `plugin/README.md` and `skills/README.md` did not change, so their citations stand.
+
+## Re-anchor provenance - `2b18f7ab` + `bcb77ce2` -> `c2ae46ab`, 2026-09-27 (T-0021 review round 3 and its merge of main)
+
+The merge `86ea912f` joins main's `2b18f7ab` with T-0021's `bcb77ce2`; review round 3's fix commit
+`629fb518` sits under it and the crew 1.0.43 bump `c2ae46ab` on top. `git diff --name-only 2b18f7ab
+c2ae46ab` returns only T-0021's files (its code, commands, tests, fixtures, release files,
+`.crew/verify.json`, `CHANGELOG.md`, `TODO.md`). Every citation in this note's body into those files
+was re-mapped from the side of the merge its line came from (`git blame`: main's lines against
+`2b18f7ab`, T-0021's against `bcb77ce2`) with a line diff, and each one whose line moved or changed
+was re-read at `c2ae46ab`. Corrected here: the `docs/runbooks/INDEX.md` sentence in
+`plugin/crew/README.md` is `:2006`; the tracker rule is recorded at `.crew/verify.json:301-308`. No
+command or suite was executed for this note.

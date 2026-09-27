@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@6f96e627 on 2026-09-26. Verify before trusting.
+%% Generated from useful-claude-add-ons@c2ae46ab on 2026-09-27. Verify before trusting.
 %% Anchors: plugin/crew/commands/brainstorm.md, plugin/crew/commands/spec.md, plugin/crew/commands/plan.md, plugin/crew/commands/approve.md, plugin/crew/commands/implement.md, plugin/crew/commands/review.md, plugin/crew/commands/done.md, plugin/crew/commands/fix.md, plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/crew_ticket.py, plugin/crew/hooks/scripts/completion_audit.py, plugin/crew/hooks/scripts/crew_refresh_check.py, plugin/crew/hooks/scripts/crew_tracker.py
 %% The crew 1.0 ticket lifecycle: brainstorm -> spec -> plan -> approve -> implement -> refresh artifacts -> review -> done.
 %% --
@@ -46,14 +46,26 @@
 %% review through it and /crew:done follows the receipt; step 1 gained one line
 %% (`--reopen` on a successor plan), moving :40/:58/:68 to :41/:59/:69. fix.md's
 %% step-4 calls are now :85/:87 and its review heading :90. Other lines hold.
+%% Re-drawn for T-0021 review round 3 and its merge of main at c2ae46ab: the merge
+%% joins T-0026's approval-keeping status edits (spec.md header, main) with the
+%% tracker moves (T-0021): plan.md :59-62 sets spec.md `status: planned`, moves the
+%% tracker (:60) and never adds a status to plan.md; implement.md step 6 sets
+%% `status: review`, which keeps the approval (:107-109), and moves the tracker
+%% (:110-111) before /crew:review (:112) - T-0026's step-7 `status: review` node
+%% (after the review) is not drawn, since step 6 now sets it; done.md :61-63.
+%% Review round 3: brainstorm.md and fix.md run `create` first and, on `id taken`,
+%% take the next free id and write nothing under it (brainstorm.md:34-36,
+%% fix.md:28-29), creating the ticket folder only after; brainstorm.md from :41 on
+%% and fix.md from :30 on moved (+1 and +3), re-read with grep -n.
 %% Every node cites the command file's own line; files are named repo-relative
 %% here and by basename in the nodes (all under plugin/crew/commands/ unless
 %% named otherwise):
-%%   plugin/crew/commands/brainstorm.md:15-39 mint ticket: crew_tracker.py resolve (:22),
-%%     then crew_tracker.py create (:29) - INDEX row `direction`, Obsidian card + note;
-%%     :44 one question per message; :53 propose 2-3 options; :62-70 direction.md;
-%%     :72 show and stop; :80 crew_tracker.py move --to ready (INDEX `ready`, card
-%%     stays in Backlog); :89-90 suggest /crew:fix when small.
+%%   plugin/crew/commands/brainstorm.md:15-40 mint ticket: crew_tracker.py resolve (:22),
+%%     then crew_tracker.py create (:28) - INDEX row `direction`, Obsidian card + note;
+%%     `id taken` -> next free id, nothing written under it (:34-36);
+%%     :45 one question per message; :54 propose 2-3 options; :63-71 direction.md;
+%%     :73 show and stop; :81 crew_tracker.py move --to ready (INDEX `ready`, card
+%%     stays in Backlog); :90-91 suggest /crew:fix when small.
 %%   plugin/crew/commands/spec.md:10 refuses without direction.md; :15 writes spec.md;
 %%     :38-43 Touch feeds the scope guard, one path per bullet; :45-48
 %%     crew_tracker.py move --to spec;
@@ -93,9 +105,9 @@
 %%     (:61-62), then crew_tracker.py move --to done (:63); :70 crew_metrics record.
 %%     Stop hooks: plugin/crew/hooks/hooks.json:58 (verify-gate.sh), :62 (completion-audit.sh).
 %%   plugin/crew/commands/fix.md:2 the light path - every phase, each compressed
-%%     to one step; :28 crew_tracker.py create, :69 --to spec, :77 --to planned,
-%%     :85 --to in-progress, :87 --to review; :71 one-step plan, still
-%%     /crew:approve; :90 one review round.
+%%     to one step; :27 crew_tracker.py create (`id taken` -> next free id, :28-29),
+%%     :72 --to spec, :80 --to planned, :88 --to in-progress, :90 --to review;
+%%     :74 one-step plan, still /crew:approve; :93 one review round.
 %% --
 %% Status edits after approval (T-0026): three steps edit spec.md's header status
 %% AFTER approval - plan.md:59 (`planned`), implement.md:108 (`review`) and
@@ -110,18 +122,18 @@
 %% `digest` field is compared raw and stales once on its first status edit.
 flowchart TB
     ask([A request])
-    ask --> small{"small? one subsystem, known cause,<br/>no new behaviour, no auth/SQL/IaC<br/>brainstorm.md:89-90"}
-    small -- yes --> fix["/crew:fix - same phases,<br/>one step each, one review round<br/>fix.md:2, :71, :90"]
+    ask --> small{"small? one subsystem, known cause,<br/>no new behaviour, no auth/SQL/IaC<br/>brainstorm.md:90-91"}
+    small -- yes --> fix["/crew:fix - same phases,<br/>one step each, one review round<br/>fix.md:2, :74, :93"]
     small -- no --> BR
 
     subgraph brainstorm["/crew:brainstorm"]
-        BR["mint T-####: crew_tracker.py create<br/>INDEX row 'direction' (+ Obsidian card)<br/>brainstorm.md:15-39"] --> br2["one question per message,<br/>then 2-3 options, recommendation first<br/>:44, :53"]
-        br2 --> br3["write direction.md, show, STOP<br/>:62-72"]
+        BR["mint T-####: crew_tracker.py create<br/>INDEX row 'direction' (+ Obsidian card);<br/>'id taken' -> next free id<br/>brainstorm.md:15-40"] --> br2["one question per message,<br/>then 2-3 options, recommendation first<br/>:45, :54"]
+        br2 --> br3["write direction.md, show, STOP<br/>:63-73"]
     end
 
     br3 --> ok1{user approves<br/>the direction?}
     ok1 -- no --> br2
-    ok1 -- yes --> rdy["crew_tracker.py move --to ready<br/>(INDEX 'ready', card stays in Backlog)<br/>brainstorm.md:80"]
+    ok1 -- yes --> rdy["crew_tracker.py move --to ready<br/>(INDEX 'ready', card stays in Backlog)<br/>brainstorm.md:81"]
 
     subgraph spec["/crew:spec"]
         rdy --> sp1{"direction.md?<br/>spec.md:10"}
@@ -158,8 +170,8 @@ flowchart TB
         rf1 -- "refresh with ..." --> rf2["run the named refresh,<br/>commit, re-run"]
         rf2 --> rf1
         rf1 -- "stop" --> rfx([report the reason, stop])
-        rf1 -- fresh --> im4["spec.md header 'status: review',<br/>crew_tracker.py move --to review<br/>(Review lane: review outstanding)<br/>:107-110"]
-        im4 --> im5["then /crew:review last<br/>:111"]
+        rf1 -- fresh --> im4["spec.md header 'status: review'<br/>(keeps the approval),<br/>crew_tracker.py move --to review<br/>(Review lane: review outstanding)<br/>:107-111"]
+        im4 --> im5["then /crew:review last<br/>:112"]
     end
 
     subgraph review["/crew:review - two rounds per ticket"]
