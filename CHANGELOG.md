@@ -4,6 +4,36 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Added — `crew` 1.0.43: `autopilot.deploy` — production without asking, opt-in (T-0072)
+
+- **New production authority, off by default.** `autopilot.deploy` (repo
+  only: `none` | `nonprod` | `all`, default `none`) says where a deploy may run
+  without asking a person. `crew_autopilot.deploy_allowed(root, env, class)`
+  and `crew_autopilot.py deploy-allowed --env <name> --class <class>` answer
+  `allow`, `ask` or `refuse` for one environment.
+- **Production needs two opt-ins.** `autopilot.deploy: all` in the repo's
+  `.crew/config.json` **and** `environments.prodUnattended: true` in **both**
+  config layers (the existing ratchet), with `guards.cloudGuard` resolving to a
+  plain `block`. `nonprod` never reaches production.
+- **Anything crew cannot tell asks**: an unusable environment name, a class
+  other than exactly `nonProd`/`prod` (`unknown` included), a corrupt config
+  layer or a malformed `environments` block, `autopilot.mode` not `plan`, a
+  typo'd `deploy` value (read as `none`, with a warning naming it), a
+  fail-closed cloud guard, and a crash inside the decision. **An emergency
+  refuses**: `.crew/incident.json` present in any form, or a path that cannot
+  be checked. Every production decision carries a report line naming the
+  environment (`unattended production: <env> <verdict> - <reason>`).
+- **Inert until T-0045.** Nothing in this version dispatches a deploy;
+  `settings` warns whenever `autopilot.deploy` is not `none`. The consumer
+  contract is in `plugin/crew/CONFIG.md` §20: call it immediately before each
+  dispatch, proceed only on `allow`, persist every report. `allow` is
+  necessary, not sufficient — T-0009's hook, promote-gate and every other gate
+  still decide.
+- **Not breaking.** The default `none` answers `ask` everywhere, and no
+  existing key, stop or guard changes. The declared config leaves go 121 -> 122
+  (repo-only 54 -> 55). 24 sabotage mutations in `sabotage_autopilot.py` prove
+  the must-block and must-allow tests can fail. Bumped `1.0.42 -> 1.0.43`.
+
 ### Changed — `crew` 1.0.42: environment-scoped terraform in the cloud guard (T-0005) — **BREAKING**
 
 - **BREAKING: a destroy is never applied unattended, `guards.terraformApply:
