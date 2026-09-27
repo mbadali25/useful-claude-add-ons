@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@b5903601
+anchor: useful-claude-add-ons@995b5874
 verified: 2026-09-27
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -101,7 +101,8 @@ Notable rules, re-read directly:
 - **Rule 6**, new at `fc54def6` (`.crew/verify.json:117-127`, T-0005): `paths` `cloud_guard.py`,
   `crew_guards.py` (since T-0005 Step 8), both `cloud-guard` flavours, `crew_tfplan.py`,
   `test_cloud_guard*.py` and `test_crew_tfplan.py` → `python3 -m pytest` over
-  `test_cloud_guard.py`, `test_cloud_guard_environments.py` and `test_crew_tfplan.py`, priced 41s
+  `test_cloud_guard.py`, `test_cloud_guard_environments.py`, `test_cloud_guard_deploy.py` (T-0009
+  round 1, the workflow-dispatch tables split out) and `test_crew_tfplan.py`, priced 41s
   (its `why` records 40.5s and 512 passed on 2026-09-25 — a claim read, not re-timed here). Its
   mutations live in `plugin/crew/tests/sabotage_cloud.py` (`CLOUD_GUARD_MUTATIONS`), imported by
   `plugin/crew/tests/sabotage.py:67`.
@@ -262,7 +263,7 @@ that changed shape or are newly documented here:
   test file is named in rule 4's `run`; only rule 9's whole suite runs them.
 - **Per-rule process-group tracking and kill-on-signal was DESCOPED from crew
   1.0, and it is a documented limitation, not a silent gap.**
-  `verify-gate.sh:1493-1502` and `plugin/crew/CONFIG.md:2268-2275` both state
+  `verify-gate.sh:1493-1502` and `plugin/crew/CONFIG.md:2284-2291` both state
   it: a third registry stage (`_crew_gate_cleanup_rule_pgid`) shipped, then was
   removed after five consecutive review rounds each found the previous
   round's fix one case short (disk fill by an orphan writer, escape on gate
@@ -444,7 +445,7 @@ set on Ubuntu.
 - `.crew/verify.json:293-300` (rule 27) — the T-0004 autopilot suite;
   `plugin/crew/tests/sabotage.py:77`, `:3049` — `sabotage_autopilot.py`'s registration.
 - `plugin/crew/hooks/scripts/verify-gate.sh:1493-1502` /
-  `plugin/crew/CONFIG.md:2268-2275` — the descoped per-rule process-group kill,
+  `plugin/crew/CONFIG.md:2284-2291` — the descoped per-rule process-group kill,
   documented as a standing limitation.
 - `plugin/crew/hooks/scripts/verify-gate.ps1:822-832`, `:1665-1674` —
   `Resolve-CrewBash` refusal rather than a re-resolving hang.
@@ -808,3 +809,14 @@ text; corrected above) and `plugin/crew/tests/sabotage_cloud.py` (eighteen T-000
 re-anchored T-0005 entry; cited by name) changed. `.crew/verify.json`, `_verify/smoke.sh` and
 `scripts/check-marketplace.py` did not change; the cloud-guard rule already maps `cloud_guard.py`,
 `crew_guards.py` and the `test_cloud_guard*.py` files T-0009 touched.
+
+## Re-anchor provenance - `b5903601` -> `995b5874`, 2026-09-27 (T-0009 review round 1)
+
+`995b5874` re-sets crew 1.0.43 as the last plugin/crew commit after T-0009's review-round-1 fix commit `7efb0f1d` (which stepped the version back to 1.0.42). Of the paths this note cites, `.crew/verify.json` (rule 7's `run` now also names
+`plugin/crew/tests/test_cloud_guard_deploy.py`, in place, no line added; its `paths` glob
+`test_cloud_guard*.py` already matched it), `plugin/crew/CONFIG.md` (the dispatch section, 16 lines
+net above the verification chapter, so the descoping limitation moved `:2268-2275` ->
+`:2284-2291`, re-taken by content, same text) and `plugin/crew/tests/sabotage_cloud.py` (fourteen
+round-1 entries and two re-anchored T-0009 entries; the deploy entries now aim at
+`test_cloud_guard_deploy.py`) changed. `_verify/smoke.sh` and `scripts/check-marketplace.py` did
+not change.

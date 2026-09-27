@@ -1,5 +1,5 @@
 # install-scripts
-anchor: useful-claude-add-ons@b5903601
+anchor: useful-claude-add-ons@995b5874
 verified: 2026-09-27
 
 ## Re-derive provenance
@@ -566,3 +566,12 @@ unchanged), `plugin/PLUGINS.md` (`:14` 1.0.43; `:17` unchanged), `plugin/crew/BU
 moved `:2381` -> `:2423` and `4 agents` `:2392` -> `:2434`, both re-read, same text) changed. The
 install scripts, `README.md`, `TODO.md` and `scripts/check-marketplace.py` did not change. Neither
 install script was executed.
+
+## Re-anchor provenance - `b5903601` -> `995b5874`, 2026-09-27 (T-0009 review round 1)
+
+`995b5874` re-sets crew 1.0.43 as the last plugin/crew commit after T-0009's review-round-1 fix commit `7efb0f1d` (which stepped the version back to 1.0.42). Of the paths this note cites, `plugin/crew/BUDGETS.md` (marker `:10`; 18,639 lines across
+121 files, re-measured in the re-set commit) and `plugin/crew/README.md` (6 lines net above the
+command table, so the `35 commands` claim moved `:2423` -> `:2429` and `4 agents` `:2434` -> `:2440`,
+both re-read, same text) changed; `.claude-plugin/marketplace.json` and `plugin/PLUGINS.md` read
+1.0.43 again, as at `b5903601`. The install scripts, `README.md`, `TODO.md` and
+`scripts/check-marketplace.py` did not change.

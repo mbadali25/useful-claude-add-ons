@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@b5903601
+anchor: useful-claude-add-ons@995b5874
 verified: 2026-09-27
 
 # localgpu
@@ -1100,4 +1100,10 @@ is still `0.1.20`. Nothing under `plugin/localgpu/` changed. Nothing was execute
 additions, all below `:240`) and `.claude-plugin/marketplace.json` (crew's `version` only; the
 `localgpu` entry unchanged) changed. The live citation, the provider re-export at
 `plugin/crew/hooks/scripts/crew_config.py:127-128`, was re-read and holds. Nothing under
+`plugin/localgpu/` changed.
+
+## Re-anchor provenance - `b5903601` -> `995b5874`, 2026-09-27 (T-0009 review round 1)
+
+`995b5874` re-sets crew 1.0.43 as the last plugin/crew commit after T-0009's review-round-1 fix commit `7efb0f1d` (which stepped the version back to 1.0.42). None of the files this note cites changed in content: `crew_config.py` is untouched, and
+`.claude-plugin/marketplace.json` was stepped back and re-set to the same 1.0.43. Nothing under
 `plugin/localgpu/` changed.

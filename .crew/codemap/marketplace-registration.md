@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@b5903601
+anchor: useful-claude-add-ons@995b5874
 verified: 2026-09-27
 paths: scripts/**, plugin/PLUGINS.md
 
@@ -48,7 +48,7 @@ either being removed or consolidated during the crew 1.0 rewrite; flagged as
 an open question rather than asserted either way. The **plugin** count is
 unchanged at **5**: `crew`, `gizmoduck`, `localgpu`, `obsidian-vault`,
 `rule-of-two`. `crew` is now **1.0.43** (`.claude-plugin/marketplace.json:218`, `plugin/crew/.claude-plugin/plugin.json`
-and the `plugin-version:crew` claim at `plugin/PLUGINS.md:14` all agree, re-read at `b5903601`; it
+and the `plugin-version:crew` claim at `plugin/PLUGINS.md:14` all agree, re-read at `995b5874`; it
 was 1.0.42 at `2b18f7ab`, 1.0.41 at `07ca3972` and on T-0005's branch, 1.0.40 at `a0c0847e`, 1.0.39 at `8ebbdedc`, 1.0.38 at `c35edda5`, 1.0.37 at `768a747a`, 1.0.36 at `adf8d1dd`, 1.0.28 at `f2bb919b`, 1.0.25 at `6c497a14` and 0.20.11 at `5d1fc5fd`);
 `obsidian-vault` is **0.4.14** (was 0.3.14); `gizmoduck` (0.5.3) and
 `rule-of-two` (0.1.3) are unchanged; `localgpu` moved to 0.1.20.
@@ -408,3 +408,8 @@ Of the paths this note cites, the version files, `plugin/PLUGINS.md`, `.crew/ver
 `b5903601` is the crew 1.0.43 bump on T-0009's branch, after the merge of main `502cb137` (T-0005 landed as 1.0.42) into it at `0c911558`. Main's code is `2b18f7ab` (main's later commit `45109fa1` touched only artifacts), so `git diff {OLD} {NEW}` is T-0009's change plus the bump. Of the paths this note cites, `.claude-plugin/marketplace.json` (`:218` now 1.0.43;
 `:217` unchanged) and `plugin/PLUGINS.md` (`:14` now 1.0.43; `:17` unchanged) changed, each one
 line in place; `plugin/crew/.claude-plugin/plugin.json` agrees. `scripts/**` did not change.
+
+## Re-anchor provenance - `b5903601` -> `995b5874`, 2026-09-27 (T-0009 review round 1)
+
+`995b5874` re-sets crew 1.0.43 as the last plugin/crew commit after T-0009's review-round-1 fix commit `7efb0f1d` (which stepped the version back to 1.0.42). `.claude-plugin/marketplace.json:218`, `plugin/crew/.claude-plugin/plugin.json` and
+`plugin/PLUGINS.md:14` read 1.0.43, byte-identical to `b5903601`. `scripts/**` did not change.
