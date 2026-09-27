@@ -14,6 +14,11 @@ Build it from the repository, not from recollection:
 4. The most recent `.work/review/*/out.txt` if a review ran (review scratch
    directories are ticket- and session-scoped, so there may be several - use
    the newest by mtime)
+5. Write `resume:` in the header block: the one allowlisted command that is
+   the next action (`resume: /crew:done T-0001`), otherwise `resume: none`.
+   The allowlist, including the autopilot forms for a plugin that ships an
+   autopilot command, is in the `crew-context` skill. Also write `branch:`
+   and `head:` as their own lines
 
 Then add the two things only you know: the **next action** in one concrete
 sentence, and any **dead ends** already tried so the next session does not repeat

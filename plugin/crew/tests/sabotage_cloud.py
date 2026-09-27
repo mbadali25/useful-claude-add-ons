@@ -283,7 +283,7 @@ CLOUD_GUARD_MUTATIONS = (
      _T + "test_pinned_vars_are_one_list_in_all_three_places"),
 )
 
-# T-0005 (crew 1.0.41): the environment layer and the destroy rule. Each entry
+# T-0005 (crew 1.0.42): the environment layer and the destroy rule. Each entry
 # names the case it must turn red, and every aimed case was built so that the
 # value the mutation collapses to would ALLOW -- a must-block whose collapsed
 # value also denies cannot go red. Each was run alone by hand first (target
@@ -310,7 +310,7 @@ CLOUD_GUARD_MUTATIONS += (
      '    if destroy != "no":\n        return "ask", (f"{head}, and this is',
      '    if False:\n        return "ask", (f"{head}, and this is',
      _EB + "[nonprod-destroy]"),
-    ("cloud guard env: a destroy under `allow` runs (pre-1.0.41)", GUARD,
+    ("cloud guard env: a destroy under `allow` runs (pre-1.0.42)", GUARD,
      '        if destroy in ("yes", "unknown"):\n',
      "        if False:\n", _EP + "[allow-destroy]"),
     ("cloud guard env: destroy unknown read as no under `allow`", GUARD,
@@ -501,8 +501,9 @@ CLOUD_GUARD_MUTATIONS += (
      "        if False:\n",
      _CH + "[powershell-wd-infra-c-terraform-apply-p-tfpl]"),
     ("cloud guard r1: parallel --wd no longer moves the directory", GUARD,
-     '                        rest[0].split("=", 1)[0] in ("--wd", "--workdir"):\n',
-     '                        rest[0].split("=", 1)[0] in ():\n',
+     '                    o.split("=", 1)[0] in ("--wd", "--workdir") for o in '
+     "opts):\n",
+     '                    o.split("=", 1)[0] in () for o in opts):\n',
      _CH + "[parallel-wd-infra-terraform-apply-p-tfplan]"),
     ("cloud guard r1: .NET CurrentDirectory no longer moves it", GUARD,
      '    if head in _CD_HEADS or "currentdirectory" in low:\n',
@@ -733,7 +734,8 @@ _S9A = _E + "test_command_word_must_allow_python"
 CLOUD_GUARD_MUTATIONS += (
     ("cloud guard step 9: the gate triggered by any word again", GUARD,
      "        found = command_trigger(text, _GATE_HELPERS)\n",
-     "        named = names_terraform(text, shell)\n"
+     "        named = __import__(\"crew_guards\").names_terraform(text, "
+     "shell)\n"
      "        found = None if named is None else (named, False)\n",
      _S9A + "[s9a-commit-message]"),
     ("cloud guard step 9: the gate run at every depth again", GUARD,
@@ -910,7 +912,7 @@ CLOUD_GUARD_MUTATIONS += (
      _R5 + "[r5-busybox-shell]"),
     ("cloud guard r5: a `pwsh -c` payload made at run time read", GUARDS,
      "        if payload is None or _HOLE in payload:\n",
-     "        if payload is None:\n", _R5 + "[r5-pwsh-expansion-payload]"),
+     "        if payload is None:\n", _R5 + "[r5-pwsh-substituted-payload]"),
     ("cloud guard r5: a control character read as bash reads it", GUARDS,
      "        if _GATE_CONTROL_RE.search(text):\n"
      '            raise _Unsure("a control character")\n', "",
@@ -938,24 +940,21 @@ _S10 = _E + "test_direct_spelling_is_denied_unattended"
 _S10A = _E + "test_ordinary_command_is_allowed"
 
 CLOUD_GUARD_MUTATIONS += (
-    ("cloud guard s10: no option value skipped before the subcommand", GUARD,
-     "        index += 2 if takes else 1\n", "        index += 1\n",
+    ("cloud guard s10: no option value skipped before the subcommand",
+     GUARDS, "        index += 2 if takes else 1\n", "        index += 1\n",
      _S10 + "[s10-tg-working-dir-destroy-ask]"),
     ("cloud guard s10: a known value option's verb-shaped value read as the "
-     "subcommand", GUARD,
-     "            name in _TF_GLOBAL_VALUE_OPTS or args[index + 1] not in "
-     "_TF_OPS)\n",
-     "            args[index + 1] not in _TF_OPS)\n",
-     _S10A + "[s10a-tg-dir-named-destroy]"),
-    ("cloud guard s10: an unknown option takes no value", GUARD,
-     "            name in _TF_GLOBAL_VALUE_OPTS or args[index + 1] not in "
-     "_TF_OPS)\n",
+     "subcommand", GUARDS,
+     "            name in _TF_GLOBAL_VALUE_OPTS or nxt not in _TF_OPS\n",
+     "            nxt not in _TF_OPS\n", _S10A + "[s10a-tg-dir-named-destroy]"),
+    ("cloud guard s10: an unknown option takes no value", GUARDS,
+     "            name in _TF_GLOBAL_VALUE_OPTS or nxt not in _TF_OPS\n"
+     "            and not nxt.startswith(\"-\") and _HOLE not in nxt)\n",
      "            name in _TF_GLOBAL_VALUE_OPTS)\n",
      _S10 + "[s10-tg-unknown-option-value-ask]"),
-    ("cloud guard s10: an unknown option takes the verb as its value", GUARD,
-     "            name in _TF_GLOBAL_VALUE_OPTS or args[index + 1] not in "
-     "_TF_OPS)\n",
-     "            name in _TF_GLOBAL_VALUE_OPTS or True)\n",
+    ("cloud guard s10: an unknown option takes the verb as its value", GUARDS,
+     "            name in _TF_GLOBAL_VALUE_OPTS or nxt not in _TF_OPS\n",
+     "            name in _TF_GLOBAL_VALUE_OPTS or True\n",
      _S10 + "[s10-tg-unknown-option-verb-ask]"),
     ("cloud guard s10: options after run-all not skipped", GUARD,
      "        index = _tf_skip_options(args, index + 1)\n",
@@ -996,11 +995,11 @@ CLOUD_GUARD_MUTATIONS += (
      GUARDS, '    if argv and argv[0] in ("&", "."):\n',
      "    if False:\n", _S10A + "[s10a-ps-dot-plan]"),
     ("cloud guard s10: a PowerShell assignment's right side not read", GUARDS,
-     "        argv = argv[2:]  # `$out = terraform destroy`: the right side "
+     "        argv, words = argv[2:], words[2:]  # `$out = terraform destroy` "
      "runs\n", "        pass\n", _S10A + "[s10a-ps-assigned-output]"),
     ("cloud guard s10: a lone PowerShell `$x` read as a program", GUARDS,
-     '    if not argv or (len(argv) == 1 and argv[0].startswith("$")):\n',
-     "    if not argv:\n", _S10A + "[s10a-ps-foreach-fmt]"),
+     '    if not argv or len(argv) == 1 and (argv[0].startswith("$") or type(\n',
+     '    if not argv or len(argv) == 1 and (False or type(\n', _S10A + "[s10a-ps-foreach-fmt]"),
     ("cloud guard s10: a PowerShell command word made at run time ignored",
      GUARDS,
      "        named = _ps_verb_on_line(normal)\n"
@@ -1125,4 +1124,67 @@ CLOUD_GUARD_MUTATIONS += (
      "            return judge_dispatch(",
      "        if False:\n"
      "            return judge_dispatch(", _DB + "[prod-input]"),
+)
+
+# T-0005 review round 7 (GUjM5s): direct spellings the option readers lost,
+# eval's `--`, PowerShell's colon-bound values, and three wrong refusals.
+# One mutation per new branch, each aimed at a row it flips.
+_R7 = _E + "test_round7_must_block_python"
+_R7A = _E + "test_round7_must_allow_python"
+
+CLOUD_GUARD_MUTATIONS += (
+    ("cloud guard r7: an unknown option takes the next option as its value",
+     GUARDS, '            and not nxt.startswith("-") and _HOLE not in nxt)\n',
+     "            and _HOLE not in nxt)\n",
+     _R7 + "[r7-tg-bool-then-working-dir-ask]"),
+    ("cloud guard r7: an unknown option takes a run-time value", GUARDS,
+     '            and not nxt.startswith("-") and _HOLE not in nxt)\n',
+     '            and not nxt.startswith("-"))\n',
+     _R7 + "[r7-tg-option-value-before-plan-destroy-ask]"),
+    ("cloud guard r7: `--` no longer ends terraform's options", GUARDS,
+     '        if args[index] == "--":\n            return index + 1\n'
+     '        name, sep, _value = args[index].lstrip("-").partition("=")\n',
+     '        name, sep, _value = args[index].lstrip("-").partition("=")\n',
+     _R7A + "[r7a-tg-run-dashdash-plan]"),
+    ("cloud guard r7: a wrapper's long value option takes nothing", GUARDS,
+     '            index += "=" not in word and len(match) == 1\n',
+     "            index += 0\n", _R7 + "[r7-stdbuf-long-value-ask]"),
+    ("cloud guard r7: a wrapper's long option not read by its prefix", GUARDS,
+     "            match = [t for t in longs if t.startswith(word)]\n",
+     "            match = [t for t in longs if t == word]\n",
+     _R7 + "[r7-stdbuf-long-abbrev-ask]"),
+    ("cloud guard r7: a short cluster's value letter read only alone", GUARDS,
+     "            if letter in shorts:\n",
+     "            if letter in shorts and len(word) == 2:\n",
+     _R7 + "[r7-xargs-cluster-ask]"),
+    ("cloud guard r7: an attached short value takes the next word too",
+     GUARDS, "                index += pos == len(word) - 1\n",
+     "                index += 1\n", _R7 + "[r7-xargs-attached-ask]"),
+    ("cloud guard r7: `command -v` read as running its operand", GUARD,
+     "                return []\n            if head == \"timeout\" and rest:\n",
+     "                pass\n            if head == \"timeout\" and rest:\n",
+     _R7A + "[r7a-command-v]"),
+    ("cloud guard r7: the lexer reads eval's `--` as the command", GUARD,
+     '        args = args[1:] if args[:1] == ["--"] else args  # `eval -- ...`\n',
+     "", _R7 + "[r7-eval-dashdash-ask]"),
+    ("cloud guard r7: the gate reads eval's `--` as the command", GUARDS,
+     '        args = args[1:] if args[:1] == ["--"] else args  # `eval -- ...`\n',
+     "", _R7 + "[r7-eval-dashdash-quoted-plan-ask]"),
+    ("cloud guard r7: a lone quoted PowerShell string read as a program",
+     GUARDS, '            words[0]).__name__ != "_Bare"):\n',
+     '            words[0]).__name__ == "never"):\n',
+     _R7A + "[r7a-ps-assign-string]"),
+    ("cloud guard r7: PowerShell's colon-bound values not read", GUARDS,
+     '    values = [w.split(":", 1)[1] if w.startswith("-") and ":" in w else w\n'
+     "              for w in args]\n", "    values = list(args)\n",
+     _R7 + "[r7-ps-start-process-colon-ask]"),
+    ("cloud guard r7: a string piped into Invoke-Expression not read", GUARDS,
+     "        if not script:\n", "        if False:\n",
+     _R7 + "[r7-ps-string-piped-to-iex-ask]"),
+    ("cloud guard r7: terragrunt read-only only as its first word", GUARDS,
+     "        rest = rest[tf_skip_options(rest, 0):]\n", "        pass\n",
+     _R7A + "[r7a-tg-working-dir-plan]"),
+    ("cloud guard r7: terragrunt run-all's subcommand not read", GUARDS,
+     "            rest = rest[1:][tf_skip_options(rest[1:], 0):]\n",
+     "            pass\n", _R7A + "[r7a-tg-run-all-plan]"),
 )

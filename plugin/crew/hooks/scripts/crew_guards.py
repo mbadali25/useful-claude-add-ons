@@ -1540,13 +1540,66 @@ _GATE_COPIERS = frozenset(("ln", "cp", "install", "link", "mv", "rsync"))
 _FIND_EXEC = frozenset(("-exec", "-execdir", "-ok", "-okdir"))
 
 
+# Options before a subcommand (terragrunt's, and after `run-all`/`run`) whose
+# value may be any word, `apply` included: `--working-dir apply destroy`.
+_TF_GLOBAL_VALUE_OPTS = frozenset((
+    "working-dir", "terragrunt-working-dir", "terragrunt-config", "config",
+    "chdir", "queue-exclude-dir", "queue-include-dir"))
+_TF_OPS = frozenset(("apply", "destroy", "run-all", "run"))
+
+
+def tf_skip_options(args, index):
+    """The index of the first word from `index` that is not an option or its
+    value; `--` ends the options. A known value option (`_TF_GLOBAL_VALUE_OPTS`)
+    takes the next word. An unknown one takes it only when it is not an
+    option, not an `_TF_OPS` word and not made at run time: the reading that
+    finds the operation (`--some-option x destroy`, `--non-interactive
+    --working-dir infra destroy`)."""
+    while index < len(args) and args[index].startswith("-"):
+        if args[index] == "--":
+            return index + 1
+        name, sep, _value = args[index].lstrip("-").partition("=")
+        nxt = args[index + 1] if index + 1 < len(args) else None
+        takes = not sep and nxt is not None and (
+            name in _TF_GLOBAL_VALUE_OPTS or nxt not in _TF_OPS
+            and not nxt.startswith("-") and _HOLE not in nxt)
+        index += 2 if takes else 1
+    return index
+
+
+def skip_wrapper_options(args, takes):
+    """`args` past a wrapper's own options, read as GNU getopt reads them:
+    `--name=v`; `--name v` for a value option in `takes`, or a unique prefix
+    of one (`--out L`); a short cluster whose first value letter takes the
+    rest of the word, or the next word when it is last (`-rn 1`, `-vk 5`);
+    `--` ends them, `-` is an operand."""
+    shorts = {t[1] for t in takes if len(t) == 2}
+    longs = [t for t in takes if t.startswith("--")]
+    index = 0
+    while index < len(args) and args[index].startswith("-") \
+            and args[index] != "-":
+        word, index = args[index], index + 1
+        if word == "--":
+            break
+        if word.startswith("--"):
+            match = [t for t in longs if t.startswith(word)]
+            index += "=" not in word and len(match) == 1
+            continue
+        for pos, letter in enumerate(word[1:], 1):
+            if letter in shorts:
+                index += pos == len(word) - 1
+                break
+    return args[index:]
+
+
 def _tf_read_only(argv, fed):
     """True when `argv` -- terraform, tofu or terragrunt and its arguments,
     as bash will run them -- runs a subcommand in `_TF_READ_ONLY`, spelled
     so it cannot be another one: a literal word, first after `-chdir=`
-    options (terragrunt: the very first word, since its options take values
-    -- `--working-dir plan destroy`), and not a placeholder an `xargs -I`
-    replaces. `parallel` substitutes too many forms to be read here."""
+    options (terragrunt: after its options, read by `tf_skip_options`, and
+    after `run-all`/`run` -- `--working-dir plan destroy` is a destroy), and
+    not a placeholder an `xargs -I` replaces. `parallel` substitutes too
+    many forms to be read here."""
     if any(head != "xargs" or any(r in word for r in reps for word in argv)
            for head, reps in fed):
         return False
@@ -1554,6 +1607,10 @@ def _tf_read_only(argv, fed):
     if "terragrunt" not in _head_name(argv[0]):
         while rest and rest[0].startswith("-chdir="):
             rest = rest[1:]
+    else:
+        rest = rest[tf_skip_options(rest, 0):]
+        if rest[:1] in (["run-all"], ["run"]):
+            rest = rest[1:][tf_skip_options(rest[1:], 0):]
     if not rest or _HOLE in rest[0]:
         return False
     if rest[0] in _TF_READ_ONLY:
@@ -1642,6 +1699,7 @@ def _argv_trigger(argv, top, helpers, depth, line):
     if head == "eval":
         # An expansion in the script is `_HOLE`, a control character, so the
         # reader gives up on it and the line-wide name decides.
+        args = args[1:] if args[:1] == ["--"] else args  # `eval -- ...`
         return _bash_trigger(" ".join(args), top, helpers, depth + 1, line)
     if head == "find" and any(a in _FIND_EXEC for a in args):
         # What find runs is read as commands of their own; find runs
@@ -1732,18 +1790,23 @@ def _ps_verb_on_line(normal):
                  if c.lower() in _GATE_VERBS), None)
 
 
-def _ps_argv_trigger(argv, normal, helpers, depth, copies):
-    """`(word, unseen)` when one PowerShell simple command runs terraform,
-    or None: `_argv_trigger`'s rule, read the way PowerShell runs a line."""
+def _ps_argv_trigger(words, normal, helpers, depth, copies):
+    """`(word, unseen)` when one PowerShell simple command -- the lexer's
+    `words` -- runs terraform, or None: `_argv_trigger`'s rule, read the way
+    PowerShell runs a line."""
     _unwrap, shell_args, pwsh_payload, ps_normalise, head_name, _lex = \
         helpers
+    argv = [str(w) for w in words]
     if len(argv) > 2 and argv[0].startswith("$") and argv[1] in (
             "=", "+=", "-=", "*=", "/=", "??="):
-        argv = argv[2:]  # `$out = terraform destroy`: the right side runs
+        argv, words = argv[2:], words[2:]  # `$out = terraform destroy` runs
     if argv and argv[0] in ("&", "."):
-        argv = argv[1:]
-    if not argv or (len(argv) == 1 and argv[0].startswith("$")):
-        return None  # nothing, or an expression PowerShell only prints
+        argv, words = argv[1:], words[1:]
+    if not argv or len(argv) == 1 and (argv[0].startswith("$") or type(
+            words[0]).__name__ != "_Bare"):
+        # Nothing, or an expression PowerShell only prints: `$x`, a quoted
+        # string (`$m = "terraform destroy"`, `('terraform destroy')`).
+        return None
     first, args = argv[0], argv[1:]
     if not _PS_NAME_RE.match(first):
         # `& $tf destroy`, `& ("terra"+"form") destroy`: which program runs is
@@ -1768,13 +1831,21 @@ def _ps_argv_trigger(argv, normal, helpers, depth, copies):
         named = names_terraform(" ".join(args), "powershell")
         return None if named is None else (named, True)
     if head in _PS_EVAL:
-        return ps_trigger(" ".join(a for a in args if not a.startswith("-")),
-                          helpers, depth + 1)
+        script = " ".join(a for a in args if not a.startswith("-"))
+        if not script:
+            # `"terraform destroy" | iex`: the text arrives on the pipeline,
+            # which this reads no further than the line's own words.
+            named = names_terraform(normal, "powershell")
+            return None if named is None else (named, True)
+        return ps_trigger(script, helpers, depth + 1)
     opaque = head in _GATE_OPAQUE  # `cmd /c`, `wsl`, `ssh`: bash's rule
+    # A parameter's value may be bound with a colon: `-FilePath:terraform`.
+    values = [w.split(":", 1)[1] if w.startswith("-") and ":" in w else w
+              for w in args]
     if opaque or head in _PS_LAUNCHERS or any(
             w.lower().startswith(("alias:", "function:")) for w in args):
         named = names_terraform(" ".join(args), "powershell") if opaque \
-            else next((w for w in args if _arg_names_tool(w)), None)
+            else next((w for w in values if _arg_names_tool(w)), None)
         return None if named is None else (named, True)
     verb = _first_operand(args)
     if head in copies and verb is not None and verb.lower() in _GATE_VERBS:
@@ -1801,8 +1872,8 @@ def ps_trigger(normal, helpers, depth=0):
     argvs = [[str(w) for w in c.words] for c in cmds]
     copies = _copies_terraform(argvs, helpers[4], _PS_COPIERS)
     hits = [ps_trigger(sub, helpers, depth + 1) for sub in subs]
-    hits += [_ps_argv_trigger(a, normal, helpers, depth, copies)
-             for a in argvs]
+    hits += [_ps_argv_trigger(c.words, normal, helpers, depth, copies)
+             for c in cmds]
     hits = [h for h in hits if h is not None]
     if not hits:
         return None

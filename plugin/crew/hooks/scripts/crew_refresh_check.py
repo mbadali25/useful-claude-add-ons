@@ -360,7 +360,7 @@ def refresh_artifact_paths(root, cfg=None):
         if os.path.normcase(real) not in named:
             continue
         rel = _relative(top, real)
-        first = os.path.normcase(rel.split("/")[0])
+        first = os.path.normcase(rel.split("/", maxsplit=1)[0])
         if rel in ("", ".") or first in ("..", os.path.normcase(".git")):
             continue
         if rel not in found:

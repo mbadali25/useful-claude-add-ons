@@ -31,7 +31,7 @@ WHAT IT RECOGNISES, and which existing `guards.*` key decides each:
     the AWS profile/region or Azure subscription
       an aws/az command will act as                 cloud.* pins (below)
 
-ENVIRONMENTS (T-0005, crew 1.0.41). A terraform finding is also judged by its
+ENVIRONMENTS (T-0005, crew 1.0.42). A terraform finding is also judged by its
 target environment and by whether it destroys, both read without running
 terraform (the hook has 15 seconds). The environment is `nonProd` (a name
 matching a repo-only `environments.nonProd` glob), `prod` (a name matching
@@ -51,7 +51,7 @@ by `crew_tfplan.py summarize`. Under `terraformApply: ask`, a non-destroying
 nonProd target runs unattended and is logged; production does too only when
 `environments.prodUnattended` is true in BOTH config layers, and says so on
 screen; every other case asks. Under `allow` a destroy -- yes or unknown --
-now ASKS (BREAKING in 1.0.41), and so is denied unattended. `block` is never
+now ASKS (BREAKING in 1.0.42), and so is denied unattended. `block` is never
 loosened. An unknown environment is narrower than production: nothing allows
 it unattended. See `_terraform_verdict`.
 
@@ -127,7 +127,8 @@ import time
 import crew_config
 import crew_state
 from crew_guards import _head_name as _guards_head_name
-from crew_guards import command_trigger, first_non_literal, ps_trigger
+from crew_guards import command_trigger, first_non_literal, ps_trigger, \
+    skip_wrapper_options, tf_skip_options as _tf_skip_options
 from crew_guards import DEPLOY_RULE, ENV_NONPROD, ENV_PROD, ENV_UNKNOWN, dispatch_scopes, judge_dispatch
 
 
@@ -1115,10 +1116,11 @@ _WRAPPER_VALUE_OPTS = {
     "doas": frozenset(("-u", "-C")),
     "nice": frozenset(("-n", "--adjustment")),
     "timeout": frozenset(("-s", "-k", "--signal", "--kill-after")),
-    "stdbuf": frozenset(("-i", "-o", "-e")),
+    "stdbuf": frozenset(("-i", "-o", "-e", "--input", "--output", "--error")),
     "xargs": frozenset(("-I", "-J", "-R", "-n", "-P", "-d", "-L", "-s", "-E",
                         "-a", "--max-args", "--max-procs", "--delimiter",
-                        "--arg-file", "--max-lines", "--max-chars")),
+                        "--arg-file", "--max-lines", "--max-chars",
+                        "--process-slot-var")),
     "parallel": frozenset(("-j", "-P", "-S", "-a", "-d", "-n", "-N", "-E",
                            "-I", "--jobs", "--sshlogin", "--arg-file",
                            "--delimiter", "--max-args", "--joblog",
@@ -1391,16 +1393,14 @@ def _unwrap(words, env, fed=None, ctx=None):
             words = rest[operands:]
             continue
         if head in _WRAPPER_VALUE_OPTS:
-            takes = _WRAPPER_VALUE_OPTS[head]
-            rest = words[1:]
-            while rest and rest[0].startswith("-") and rest[0] != "-":
-                if rest[0] == "--":
-                    rest = rest[1:]
-                    break
-                if head == "parallel" and \
-                        rest[0].split("=", 1)[0] in ("--wd", "--workdir"):
-                    _moved(ctx)
-                rest = rest[2:] if rest[0] in takes else rest[1:]
+            rest = skip_wrapper_options(words[1:], _WRAPPER_VALUE_OPTS[head])
+            opts = words[1:len(words) - len(rest)]
+            if head == "parallel" and any(
+                    o.split("=", 1)[0] in ("--wd", "--workdir") for o in opts):
+                _moved(ctx)
+            if head == "command" and any(  # `command -v|-V`: a lookup only
+                    o[:2] != "--" and set(o[1:]) & set("vV") for o in opts):
+                return []
             if head == "timeout" and rest:
                 rest = rest[1:]
             if head in _ARGV_FEEDERS:
@@ -1536,26 +1536,7 @@ def _tf_help_requested(args):
         index += 1
     return False
 
-
-# Options before a subcommand (terragrunt's, and after `run-all`/`run`) whose
-# value may be any word, `apply` included: `--working-dir apply destroy`.
-_TF_GLOBAL_VALUE_OPTS = frozenset((
-    "working-dir", "terragrunt-working-dir", "terragrunt-config", "config",
-    "chdir", "queue-exclude-dir", "queue-include-dir"))
-_TF_OPS = frozenset(("apply", "destroy", "run-all", "run"))
 _TF_HEADS = frozenset(("terraform", "tofu", "terragrunt"))
-
-
-def _tf_skip_options(args, index):
-    """The index of the first word from `index` that is not an option or its
-    value. An unknown option not followed by an `_TF_OPS` word takes the next
-    word: the reading that finds the operation (`--some-option x destroy`)."""
-    while index < len(args) and args[index].startswith("-"):
-        name, sep, _value = args[index].lstrip("-").partition("=")
-        takes = not sep and index + 1 < len(args) and (
-            name in _TF_GLOBAL_VALUE_OPTS or args[index + 1] not in _TF_OPS)
-        index += 2 if takes else 1
-    return index
 
 
 def _terraform_destructive(head, args):
@@ -2212,6 +2193,7 @@ def _classify(argv, stdin, env, shell, depth, ctx=None, seq=None, fed=False):
             out.extend(scan("bash", " ".join(rest), env, depth + 1, **kw))
         return out
     if head in ("eval",):
+        args = args[1:] if args[:1] == ["--"] else args  # `eval -- ...`
         if ctx is not None and any("$" in a or "`" in a for a in args):
             # What it evaluates is built at run time: it may export, cd,
             # anything, and crew reads only the text it can see.
@@ -3000,7 +2982,7 @@ def _terraform_verdict(root, finding, out, envs):
                 non-destroying nonProd target is allowed and logged; production
                 is allowed only under `prodUnattended` in both layers (logged,
                 and said on screen); otherwise it asks
-        allow   a destroy (yes or unknown) ASKS -- BREAKING in 1.0.41 --
+        allow   a destroy (yes or unknown) ASKS -- BREAKING in 1.0.42 --
                 unless a live marker approves this one command
 
     `ask` stays `deny` when nobody is attending (`evaluate`). `policy` is the

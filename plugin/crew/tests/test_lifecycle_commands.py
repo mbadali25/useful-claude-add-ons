@@ -13,6 +13,7 @@ goes red on the mutation, and diffs the scratch against the tracked file to
 prove the tracked file itself was never touched.
 """
 import os
+import re
 import shutil
 import tempfile
 
@@ -25,7 +26,7 @@ SKILLS = os.path.join(CREW, "skills")
 MAX_LINES = 120
 
 NEW_COMMANDS = ("brainstorm.md", "spec.md", "plan.md", "implement.md",
-                "done.md", "fix.md", "approve.md")
+                "done.md", "fix.md", "approve.md", "autopilot.md")
 NEW_SKILLS = ("crew-brainstorm", "crew-plan", "crew-execute")
 
 
@@ -84,6 +85,9 @@ EXPECTED_CLI = {
                 'crew_metrics.py record --ticket "$1"'),
     "fix.md": ("`/crew:approve <id>`",),
     "approve.md": ("Never run `crew_ticket.py approve` yourself",),
+    "autopilot.md": ("crew_autopilot.py settings --root .",
+                     "crew_autopilot.py resume --root .",
+                     "crew_autopilot.py next --root ."),
 }
 
 
@@ -134,6 +138,26 @@ def test_fix_has_every_lifecycle_phase():
     text = _read(os.path.join(COMMANDS, "fix.md"))
     for phase in FIX_PHASES:
         assert phase in text, f"fix.md: missing phase heading {phase!r}"
+
+
+_PLAN_HEADER_STATUS = re.compile(r"plan\.md`?(?:'s)? header")
+
+
+def test_plan_never_adds_status_to_plan_md():
+    """T-0026: the approval digest normalises an existing status VALUE, never a
+    token added where there was none, so a writer adding `status:` to plan.md
+    after approval would stale the approval it just got."""
+    flat = " ".join(_read(os.path.join(COMMANDS, "plan.md")).split())
+
+    assert (_PLAN_HEADER_STATUS.search(flat) is None
+            and "`spec.md`'s header to `status: planned`" in flat)
+
+
+@pytest.mark.parametrize("name", ["implement.md", "done.md"])
+def test_status_edits_say_they_keep_the_approval(name):
+    flat = " ".join(_read(os.path.join(COMMANDS, name)).split())
+
+    assert "keeps the approval" in flat
 
 
 def _sabotage(path, target, checker, expected_before=True):

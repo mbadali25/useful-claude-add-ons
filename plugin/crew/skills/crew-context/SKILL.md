@@ -75,6 +75,7 @@ written: <iso timestamp>
 ticket: T-0042
 branch: feature/export-timeout
 head: a1b2c3d
+resume: /crew:<command> <ticket>
 
 ## Done
 - <what is actually committed or in the working tree>
@@ -91,6 +92,18 @@ head: a1b2c3d
 ## Verify first
 - <anything asserted above that the next session should re-check>
 ```
+
+**The `resume:` line** is the one machine-readable line in the note. It names
+the single next command, and `crew_resume.RESUME_COMMANDS`
+(`plugin/crew/hooks/scripts/crew_resume.py`) is its only definition:
+`/crew:spec`, `/crew:plan`, `/crew:implement`, `/crew:review` and `/crew:done`
+each take one ticket id (`T-0042`); `/crew:autopilot` takes a ticket id,
+`--goal <slug>` (lowercase letters, digits and `-`) or nothing; `/crew:status`
+takes nothing. `resume: none` when no allowlisted command is next. Exactly one
+`resume:` line, nothing after the argument: a second line, trailing text, an
+unknown command, or an excluded one (`/crew:approve`, `/crew:brainstorm`,
+`/crew:fix`, `/crew:emergency`, `/crew:gate`, `/crew:promote`,
+`/crew:migrate`, `/crew:change`) is refused, never guessed at.
 
 **Why pointers rather than a summary.** A session at 85% of its context is the
 least reliable narrator of what it just did — that is precisely when detail has
@@ -121,12 +134,27 @@ hook (`crew_context.py`) injects the handoff text into `additionalContext` on
 `startup` — the human presses Enter rather than typing. It does not start
 working on its own. `context.autoResume` is no longer read.
 
-`SessionStart` can also return `initialUserMessage`, which starts the new
-session working with no human turn at all. It is confirmed working only for
-non-interactive `claude -p` sessions (tested against Claude Code 2.1.243); no
-PTY was available to prove it in an interactive session, so interactive
-behavior is unproven. Crew does not use it. Reproduce the `-p` test before
-relying on it interactively.
+`SessionStart` can also return `initialUserMessage`, meant to start the new
+session working with no human turn. **It does not work interactively.**
+Spike, 2026-09-25, Claude Code 2.1.282 (T-0006): `hookSpecificOutput.
+initialUserMessage` with `hookEventName: "SessionStart"` is parsed and stored
+for every source, but only the `claude -p` runner and the SDK's startup path
+ever read it back; interactive `startup`, `/clear` and manual `/compact` start
+no turn, with either placement. `claude -p`: it runs. Crew never emits it.
+
+With `resume.auto: true` in `~/.claude/crew/config.json` (machine only; a repo
+`false` in `.crew/crew.json` or `.crew/config.json` vetoes it, a repo `true`
+does nothing), the injected handoff on `clear` or a manual `/compact` also
+names the next command from the `resume:` line — `Auto-resume: ready to run
+/crew:done T-0001.`, saying it did not start from the hook, so press Enter or
+type it (T-0013 types it) — or says `Auto-resume did not start: <reason>.`
+The reasons: compact was not a manual /compact; no handoff note, or it was
+archived as stale, or is stale and could not be archived; no resume line, `resume: none`, or a refused line; the
+`branch:`/`head:` line does not match the checkout; the ticket directory or
+goal file is missing; the command is not installed; `resume-state.json` exists
+and could not be read; this handoff was already
+resumed; the progress fingerprint could not be computed; the same command
+with no progress since the last auto-resume. Never on `startup`.
 
 The injected note is framed as project information that the working tree
 overrides, so a subtly wrong handoff is read against `git diff` before anyone

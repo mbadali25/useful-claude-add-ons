@@ -194,6 +194,31 @@ def prune_claims(root):
             pass
 
 
+def prune_precompact(root):
+    """Drop `precompact-<session>.json` records (crew_resume's PreCompact
+    trigger notes), and their orphaned `.tmp` files, older than the claim age
+    rule above. `decide` trusts one
+    for 600 s; nothing reads it after that, and one is left per compacting
+    session."""
+    directory = state_dir(root)
+    cutoff = time.time() - _CLAIM_STALE_SECONDS
+    try:
+        names = os.listdir(directory)
+    except OSError:
+        return
+    for name in names:
+        # `.tmp` too: a writer killed between open and os.replace (the .ps1
+        # wrapper kills python at 10 s) leaves `precompact-<key>.json.<pid>.tmp`.
+        if not (name.startswith("precompact-") and name.endswith((".json", ".tmp"))):
+            continue
+        path = os.path.join(directory, name)
+        try:
+            if os.path.getmtime(path) < cutoff:
+                os.unlink(path)
+        except OSError:
+            pass
+
+
 def _session_file(root, session):
     safe = re.sub(r"[^A-Za-z0-9_.-]", "_", session or "nosession")[:80]
     return os.path.join(state_dir(root), "context-state", safe + ".json")
@@ -576,16 +601,70 @@ def _handoff(root, cfg):
     return os.path.relpath(path, base).replace("\\", "/"), read_text(path)
 
 
-def _archived_as_stale(root, cfg):
-    """Carry handoff-read's staleness rule forward: a note describing a state
-    the repo has moved past is archived (never deleted) by
-    crew_state.archive_stale_handoff before anything could inject it. Any
-    failure leaves the note where it was, as that function promises."""
+def _handoff_verdict(root, cfg):
+    """(archived, stale) for the configured handoff. Carries handoff-read's
+    staleness rule forward: a note describing a state the repo has moved past
+    is archived (never deleted) by crew_state.archive_stale_handoff before
+    anything could inject it. Any failure leaves the note where it was, as
+    that function promises.
+
+    `stale` is the VERDICT, not whether the move worked: a stale note that
+    could not be archived stays in place and is still stale (review round 2,
+    T-0006). A rule that raises could not tell, and that counts as stale --
+    never as fresh."""
     try:
         import crew_state
-        return bool(crew_state.archive_stale_handoff(root, cfg).get("archived"))
+        result = crew_state.archive_stale_handoff(root, cfg)
     except Exception:  # pylint: disable=broad-except
-        return False
+        return False, True
+    archived = bool(result.get("archived"))
+    return archived, archived or bool(result.get("stale"))
+
+
+_PLUGIN_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
+def resume_decision(root, payload, handoff, archived, stale=False):
+    """crew_resume.decide for a SessionStart, or `off` without asking it.
+
+    Only `clear` and `compact` ever reach `decide`, so a `startup` or
+    `resume` session costs nothing new. Read-only: nothing here records a
+    run -- the command is only NAMED to the human (T-0006 reduced form;
+    T-0013 types it). A `decide` that raises becomes `wait` with reason
+    `internal error`, never a crash that would drop the handoff."""
+    off = {"action": "off", "prompt": "", "reason": ""}
+    if (payload.get("source") or "startup") not in ("clear", "compact"):
+        return off
+    # Two phases. Until the machine opt-in is CONFIRMED, any failure is `off`:
+    # an unarmed machine must see today's output, never an internal-error
+    # line. Only once it is armed does a raising `decide` become `wait`.
+    try:
+        import crew_resume  # pylint: disable=import-outside-toplevel
+        if not crew_resume.settings(root)["armed"]:
+            return off
+    except Exception:  # pylint: disable=broad-except
+        return off
+    try:
+        return crew_resume.decide(root, payload, handoff, _PLUGIN_ROOT, archived=archived, stale=stale)
+    except Exception:  # pylint: disable=broad-except
+        return {"action": "wait", "prompt": "", "reason": "internal error"}
+
+
+def resume_line(decision, has_handoff=True):
+    """The one line the injected context carries about auto-resume; "" when off.
+    A `wait` points at the handoff only when one was injected with it.
+
+    Never `initialUserMessage`: the 2026-09-25 spike (Claude Code 2.1.282)
+    proved an interactive SessionStart drops it, so the command is named and
+    the human starts it."""
+    if decision.get("action") == "run":
+        return (f"Auto-resume: ready to run {decision['prompt']}. This Claude Code build does not start "
+                "a turn from a hook (spike 2026-09-25): press Enter to accept it, or type it; T-0013 "
+                "types it where the terminal can be identified.")
+    if decision.get("action") == "wait":
+        tail = "Read the handoff and continue by hand." if has_handoff else "Continue by hand."
+        return f"Auto-resume did not start: {decision.get('reason') or 'unknown'}. {tail}"
+    return ""
 
 
 def next_action(text):
@@ -746,9 +825,18 @@ def build(root, payload, cfg, state, harness):
             if behind:
                 line += f" Anchors to re-check: {', '.join(behind[:6])}."
             items.append({"id": "", "text": line, "source": {"kind": "codemap-index"}})
-        if _archived_as_stale(root, cfg):
+        archived, stale = _handoff_verdict(root, cfg)
+        if archived:
             extra["handoff"] = "archived-stale"
         rel, handoff = _handoff(root, cfg)
+        # T-0006: after the staleness archive, so `decide` only ever sees a
+        # handoff that survived it -- and is told when one survived only
+        # because the move failed. `off` adds nothing to the output.
+        resume = resume_decision(root, payload, handoff, archived, stale and bool(handoff and handoff.strip()))
+        resume_text = resume_line(resume, bool(handoff and handoff.strip()))
+        if resume["action"] != "off":
+            extra["resume"] = {"action": resume["action"], "reason": resume.get("reason") or "",
+                               "prompt": resume.get("prompt") or ""}
         budget, max_lines = STARTUP_CHARS, STARTUP_LINES
         if handoff and handoff.strip():
             action = next_action(handoff)
@@ -760,12 +848,16 @@ def build(root, payload, cfg, state, harness):
                 # The next action leads, and the body is cut to make room for
                 # it: the note is cut from the END, and "## Next action" is
                 # conventionally the last section, so a long note used to lose
-                # exactly the line auto-resume exists to carry.
+                # exactly the line auto-resume exists to carry. The
+                # auto-resume line, when there is one, follows it.
                 lead = f"Next action: {action}\n" if action else ""
+                lead += f"{resume_text}\n" if resume_text else ""
                 body = handoff.strip()[: RESUME_CHARS - 600 - len(lead)]
                 items.append({"id": "", "text": f"## Handoff from the previous session ({rel})\n{lead}{body}\n"
                               "The working tree is the source of truth; verify against git diff.",
                               "source": {"kind": "handoff", "path": rel}})
+        elif resume_text:
+            items.append({"id": "", "text": resume_text, "source": {"kind": "resume"}})
         query = next_action(handoff) if handoff else ""
         query = query or f"{os.path.basename(root)} {branch}"
         return event, items, budget, max_lines, "main", extra, query
@@ -862,6 +954,7 @@ def _run_locked(root, payload, cfg, session, harness):
     event, items, budget, max_lines, context, extra, query = build(root, payload, cfg, state, harness)
     if event == "SessionStart":
         prune_claims(root)
+        prune_precompact(root)
     fresh, hits = _dedup(state, context, items)
     recall = None
     if query and budget > 0:

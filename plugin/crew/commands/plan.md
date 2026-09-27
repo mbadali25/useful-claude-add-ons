@@ -54,9 +54,11 @@ Approval is a receipt, not a nod in chat. Once I say yes, ask me to type
 `/crew:approve $1`. **Never run `crew_ticket.py approve` yourself** — the
 UserPromptSubmit hook records the approval only from my own prompt. It writes
 `<git-common-dir>/crew/tickets/$1/approval.json`,
-bound to this plan's hash; editing `plan.md` afterward invalidates it, which
+bound to both files' digests; editing `plan.md` afterward invalidates it, which
 is what makes `/crew:implement`'s refusal mean something. Then set
-`plan.md`'s header `status: planned` and `.work/INDEX.md`'s row to match.
+`spec.md`'s header to `status: planned` and `.work/INDEX.md`'s row to match.
+Changing that one value keeps the approval; never add a `status:` to plan.md,
+because a token added where there was none stales it.
 
 ## `--approve`
 

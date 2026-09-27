@@ -101,6 +101,9 @@
       "maxCommitsBehind": 3
     }
   },
+  "resume": {
+    "auto": null
+  },
   "emergency": {
     "standDown": true,
     "ttlMinutes": 120,
@@ -197,5 +200,9 @@
   "scope": {
     "mode": "off",
     "allowCliApproval": false
+  },
+  "autopilot": {
+    "mode": "off",
+    "maxPhases": 12
   }
 }

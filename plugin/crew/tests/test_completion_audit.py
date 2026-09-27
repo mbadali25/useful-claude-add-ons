@@ -372,6 +372,7 @@ def test_the_audit_never_rewrites_the_index(repo, monkeypatch):
     assert _index_state(repo) == before
 
 
+@pytest.mark.skipif(os.name == "nt", reason="NTFS has no mode bit git can see (win-repo-2, 2026-09-25)")
 def test_a_mode_change_with_the_same_content_is_a_change(repo):
     ready(repo)
     os.chmod(repo / "other" / "keep.py", 0o755)

@@ -268,12 +268,16 @@ def test_the_ten_keys_crew_read_but_never_declared_are_declared():
     # `scope.allowCliApproval` from the T3 fix round.
     # 116 with the Windows burn-in's autoClear narrowing:
     # `context.autoClear.onlyRepos` and `context.autoClear.onlySessions`.
-    # 118 with T-0005: the repo-only `environments.nonProd` glob list and the
-    # ratcheted `environments.prodUnattended` (crew 1.0.41).
-    # 120 with T-0009: the ratcheted `guards.deployWorkflow` and the repo-only
+    # 117 with T-0006's `resume.auto`, the auto-resume machine switch.
+    assert "resume.auto" in declared
+    # 119 with /crew:autopilot (T-0004): `autopilot.mode` and
+    # `autopilot.maxPhases`, re-measured after rebasing onto T-0006.
+    # 121 with T-0005: the repo-only `environments.nonProd` glob list and the
+    # ratcheted `environments.prodUnattended`, re-measured after merging main.
+    # 123 with T-0009: the ratcheted `guards.deployWorkflow` and the repo-only
     # `environments.workflows` map (an empty dict, so one leaf, like
-    # `dev.roles`).
-    assert len(declared) == 120
+    # `dev.roles`), re-measured after merging main (crew 1.0.42).
+    assert len(declared) == 123
 
 
 def test_autoclear_is_global_and_its_siblings_are_not():
@@ -323,6 +327,21 @@ def test_autoclear_is_global_and_its_siblings_are_not():
     _, refused = crew_config.filter_global(
         {"context": {"autoClear": {"unsafeFocus": True}}})
     assert refused == ["context.autoClear.unsafeFocus"]
+
+
+def test_resume_auto_is_global_settable_and_defaults_to_null():
+    """T-0006: `resume.auto` is armed from the machine file only
+    (`crew_resume.settings`), so it must be a path the global layer may set --
+    otherwise `filter_global` prunes it and `/crew:config` refuses to write
+    the one place it can be switched on. Null, not false, in both defaults so
+    the /crew:init template (which writes every key) never vetoes a machine
+    opt-in."""
+    kept, ignored = crew_config.filter_global({"resume": {"auto": True}})
+
+    assert (kept, ignored, crew_config.is_global_path("resume.auto"),
+            crew_config.default_config()["resume"], crew_config.default_global_config()["resume"],
+            crew_state.RESUME_DEFAULTS) == \
+        ({"resume": {"auto": True}}, [], True, {"auto": None}, {"auto": None}, {"auto": None})
 
 
 def test_a_globally_set_autoclear_reaches_a_repo(tmp_path, monkeypatch):
