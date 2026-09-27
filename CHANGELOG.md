@@ -19,9 +19,9 @@ All notable changes to this repository are documented here. Format follows [Keep
   other than exactly `nonProd`/`prod` (`unknown` included), a corrupt config
   layer or a malformed `environments` block, `autopilot.mode` not `plan`, a
   typo'd `deploy` value (read as `none`, with a warning naming it), a
-  fail-closed cloud guard, and a crash inside the decision. **An emergency
-  refuses**: `.crew/incident.json` present in any form, or a path that cannot
-  be checked. Every production decision carries a report line naming the
+  fail-closed cloud guard, and a crash inside the decision or its report.
+  **An emergency refuses**: `.crew/incident.json` present in any form, or a
+  path that cannot be checked, even when a later import fails. Every production decision carries a report line naming the
   environment (`unattended production: <env> <verdict> - <reason>`).
 - **Inert until T-0045.** Nothing in this version dispatches a deploy;
   `settings` warns whenever `autopilot.deploy` is not `none`. The consumer
@@ -31,7 +31,7 @@ All notable changes to this repository are documented here. Format follows [Keep
   still decide.
 - **Not breaking.** The default `none` answers `ask` everywhere, and no
   existing key, stop or guard changes. The declared config leaves go 121 -> 122
-  (repo-only 54 -> 55). 24 sabotage mutations in `sabotage_autopilot.py` prove
+  (repo-only 54 -> 55). 30 sabotage mutations in `sabotage_autopilot.py` prove
   the must-block and must-allow tests can fail. Bumped `1.0.43 -> 1.0.44`
   (`1.0.42 -> 1.0.43` on its branch; T-0042 took 1.0.43 on main first).
 

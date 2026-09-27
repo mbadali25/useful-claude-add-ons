@@ -2314,7 +2314,10 @@ class)` answers, first match wins:
 | `prod`, with `all`, and `guards.cloudGuard` not a plain `block` (a fail-closed `block` with a note included) | `ask` |
 | `prod`, with `all`, otherwise | `allow` |
 
-A crash inside the decision asks. Every production decision — `allow`, `ask`
+A crash inside the decision asks, and so does one building its report or
+printing a value it was handed. The incident check runs before anything
+that can fail to import, so a crash never turns an emergency's `refuse` into
+`ask`. Every production decision — `allow`, `ask`
 or `refuse` — carries a report line naming the environment
 (`unattended production: <env> <verdict> - <reason>`). The CLI is
 `crew_autopilot.py deploy-allowed --root . --env <name> --class <class>

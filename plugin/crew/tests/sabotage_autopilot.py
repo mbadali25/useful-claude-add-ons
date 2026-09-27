@@ -15,6 +15,7 @@ AUTOPILOT = os.path.join(SCRIPTS, "crew_autopilot.py")
 TICKET = os.path.join(SCRIPTS, "crew_ticket.py")
 COMMAND = os.path.join(CREW, "commands", "autopilot.md")
 STATE = os.path.join(SCRIPTS, "crew_state.py")
+CLOUD = os.path.join(SCRIPTS, "cloud_guard.py")
 _T = "tests/test_crew_autopilot.py::"
 _D = "tests/test_crew_autopilot_deploy.py::"
 
@@ -232,8 +233,10 @@ DEPLOY_MUTATIONS = (
      '    if mode[0] != "block":\n',
      _D + "test_cloud_guard_forced_block_is_not_armed"),
     ("a crash allows", AUTOPILOT,
-     '        verdict, reason = "ask", (f"crew_autopilot raised',
-     '        verdict, reason = "allow", (f"crew_autopilot raised',
+     '        # A crash cannot tell whether production is allowed: it asks.\n'
+     '        verdict, reason = "ask", _crash_reason(exc)\n',
+     '        # A crash cannot tell whether production is allowed: it asks.\n'
+     '        verdict, reason = "allow", _crash_reason(exc)\n',
      _D + "test_exception_asks"),
     ("the CLI crash allows", AUTOPILOT,
      '            result = {"verdict": "ask", "reason": reason, "report": report,',
@@ -259,6 +262,35 @@ DEPLOY_MUTATIONS = (
      '    if deploy != "none":\n        warnings.append(',
      "    if False:\n        warnings.append(",
      _D + "test_deploy_armed_warns_inert"),
+    # Review round 1.
+    ("cloud_guard is imported ahead of the incident check", AUTOPILOT,
+     "    after it asks, and asking would downgrade a present emergency's refusal.\"\"\"\n",
+     "    after it asks, and asking would downgrade a present emergency's refusal.\"\"\"\n"
+     "    import cloud_guard  # pylint: disable=import-outside-toplevel\n",
+     _D + "test_incident_refuses_when_cloud_guard_import_fails"),
+    ("the report escapes the never-raises boundary", AUTOPILOT,
+     "        report = _deploy_report(env_name, verdict, reason, env_class)\n"
+     "    except Exception as exc:  # pylint: disable=broad-except\n",
+     "        report = _deploy_report(env_name, verdict, reason, env_class)\n"
+     "    except ArithmeticError as exc:  # pylint: disable=broad-except\n",
+     _D + "test_env_class_compare_raises_asks"),
+    ("an unprintable name crashes its own reason", AUTOPILOT,
+     "        return render(value)\n    except Exception:  # pylint: disable=broad-except\n",
+     "        return render(value)\n    except ArithmeticError:  # pylint: disable=broad-except\n",
+     _D + "test_env_name_repr_raises_asks"),
+    ("an unprintable exception crashes the crash path", AUTOPILOT,
+     '    return (f"crew_autopilot raised {type(exc).__name__}: {_safe_text(exc, str)} - "\n',
+     '    return (f"crew_autopilot raised {type(exc).__name__}: {exc} - "\n',
+     _D + "test_exception_str_raises_asks"),
+    ("a non-object repo layer reports no problem", CLOUD,
+     '        out["problem"] = ".crew/config.json is not a JSON object"\n',
+     '        out["problem"] = ""\n',
+     _D + "test_every_problem_fixture_reports_and_asks"),
+    ("a malformed machine layer passes", AUTOPILOT,
+     '        if crew_config.layer_state(path, environments=True) == "corrupt":\n',
+     '        if label == "repo" and crew_config.layer_state(path, environments=True) '
+     '== "corrupt":\n',
+     _D + "test_machine_problem_never_grants_and_asks"),
 )
 
 AUTOPILOT_MUTATIONS = AUTOPILOT_MUTATIONS + DEPLOY_MUTATIONS

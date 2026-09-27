@@ -85,7 +85,8 @@ match wins: an incident file refuses; an unusable name, a class that is not
 `nonProd`/`prod`, or a corrupt config layer asks (could not tell); autopilot
 off or `autopilot.deploy: none` asks; `nonProd` allows under `nonprod`/`all`;
 `prod` allows only under `all`, with `environments.prodUnattended` true in BOTH
-layers and `guards.cloudGuard` resolving to a plain `block`. A crash asks.
+layers and `guards.cloudGuard` resolving to a plain `block`. A crash asks,
+building the report included, and cannot come ahead of the incident check.
 
 The consumer (T-0045, not built here) calls it immediately before each
 dispatch, passes the class from T-0005's classifier, proceeds only on the exact
@@ -666,18 +667,21 @@ def _incident(top):
 
 
 def _deploy_verdict(root, env_name, env_class):
-    """`(verdict, reason, deploy)`, the Design table's rows in order."""
-    import cloud_guard  # pylint: disable=import-outside-toplevel
+    """`(verdict, reason, deploy)`, the Design table's rows in order. The
+    incident check runs first, ahead of the `cloud_guard` import: a failure
+    after it asks, and asking would downgrade a present emergency's refusal."""
     top = crew_ticket.toplevel(root) or os.path.abspath(root)
     emergency = _incident(top)
     if emergency:
         return "refuse", emergency, None
+    import cloud_guard  # pylint: disable=import-outside-toplevel
     if not isinstance(env_name, str) or not env_name.strip() or not env_name.isprintable():
-        return "ask", f"could not tell which environment: {env_name!r}", None
+        return "ask", f"could not tell which environment: {_safe_text(env_name)}", None
     known = (cloud_guard.ENV_NONPROD, cloud_guard.ENV_PROD)
     cls = env_class if isinstance(env_class, str) else ""
     if cls not in known:
-        return "ask", f"crew could not classify {env_name} (class {env_class!r})", None
+        return "ask", (f"crew could not classify {env_name} "
+                       f"(class {_safe_text(env_class)})"), None
     layers = (("repo", os.path.join(top, ".crew", "config.json")),
               ("machine", crew_config.GLOBAL_CONFIG_PATH))
     for label, path in layers:
@@ -709,9 +713,23 @@ def _deploy_verdict(root, env_name, env_class):
                      "config layers (repo and machine), guards.cloudGuard=block"), deploy
 
 
+def _safe_text(value, render=repr):
+    """`render(value)`, or a placeholder naming its type when that raises: a
+    value crew cannot print is still one it can name in a reason."""
+    try:
+        return render(value)
+    except Exception:  # pylint: disable=broad-except
+        return f"<unprintable {type(value).__name__}>"
+
+
+def _crash_reason(exc):
+    return (f"crew_autopilot raised {type(exc).__name__}: {_safe_text(exc, str)} - "
+            "cannot tell, so ask")
+
+
 def _env_label(env_name):
     usable = isinstance(env_name, str) and env_name.strip() and env_name.isprintable()
-    return env_name if usable else repr(env_name)
+    return env_name if usable else _safe_text(env_name)
 
 
 def _deploy_report(env_name, verdict, reason, env_class):
@@ -732,10 +750,16 @@ def deploy_allowed(root, env_name, env_class):
         verdict, reason, deploy = _deploy_verdict(root, env_name, env_class)
     except Exception as exc:  # pylint: disable=broad-except
         # A crash cannot tell whether production is allowed: it asks.
-        verdict, reason = "ask", (f"crew_autopilot raised {type(exc).__name__}: {exc} - "
-                                  "cannot tell, so ask")
-    return {"verdict": verdict, "reason": reason,
-            "report": _deploy_report(env_name, verdict, reason, env_class),
+        verdict, reason = "ask", _crash_reason(exc)
+    try:
+        report = _deploy_report(env_name, verdict, reason, env_class)
+    except Exception as exc:  # pylint: disable=broad-except
+        # Which environment, or whether it is production, cannot be told: the
+        # decision asks (a refusal stays one, with its reason) and is reported.
+        if verdict != "refuse":
+            verdict, reason = "ask", _crash_reason(exc)
+        report = f"unattended production: <unnamed environment> {verdict} - {reason}"
+    return {"verdict": verdict, "reason": reason, "report": report,
             "env": env_name, "envClass": env_class, "deploy": deploy}
 
 

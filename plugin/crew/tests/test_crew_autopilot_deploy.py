@@ -17,6 +17,7 @@ import copy
 import itertools
 import json
 import os
+import sys
 
 import pytest
 
@@ -179,7 +180,8 @@ def test_incident_refuses(tmp_path, monkeypatch, form, env_class):
     assert (got["verdict"], "emergency" in got["reason"]) == ("refuse", True)
 
 
-def test_incident_unreadable_path_refuses(tmp_path, monkeypatch):
+@pytest.mark.parametrize("env_class", [PROD, NONPROD])
+def test_incident_unreadable_path_refuses(tmp_path, monkeypatch, env_class):
     root = _armed(tmp_path, monkeypatch)
     real = os.lstat
 
@@ -190,9 +192,29 @@ def test_incident_unreadable_path_refuses(tmp_path, monkeypatch):
 
     monkeypatch.setattr(os, "lstat", lstat)
 
-    got = _verdict(root, PROD)
+    got = _verdict(root, env_class)
 
     assert (got["verdict"], "PermissionError" in got["reason"]) == ("refuse", True)
+
+
+@pytest.mark.parametrize("env_class", [PROD, NONPROD])
+def test_incident_refuses_when_cloud_guard_import_fails(tmp_path, monkeypatch, env_class):
+    root = _armed(tmp_path, monkeypatch)
+    (tmp_path / "repo" / ".crew" / "incident.json").write_text("{}", encoding="utf-8")
+    monkeypatch.setitem(sys.modules, "cloud_guard", None)
+
+    got = _verdict(root, env_class)
+
+    assert (got["verdict"], "emergency" in got["reason"]) == ("refuse", True)
+
+
+def test_cloud_guard_import_failure_asks(tmp_path, monkeypatch):
+    root = _armed(tmp_path, monkeypatch)
+    monkeypatch.setitem(sys.modules, "cloud_guard", None)
+
+    got = _verdict(root, PROD)
+
+    assert (got["verdict"], "cloud_guard" in got["reason"]) == ("ask", True)
 
 
 # --- must-block: could not tell asks -----------------------------------------
@@ -256,6 +278,68 @@ def test_exception_asks(tmp_path, monkeypatch):
     got = _verdict(root, PROD)
 
     assert (got["verdict"], "RuntimeError: ratchet exploded" in got["reason"]) == ("ask", True)
+
+
+class _Unprintable:
+    """An environment name whose repr raises."""
+
+    def __repr__(self):
+        raise RuntimeError("no repr")
+
+
+class _Uncomparable(str):
+    """A class that is a `str` and raises on every comparison."""
+
+    def __eq__(self, other):
+        raise RuntimeError("no compare")
+
+    __ne__ = __eq__
+    __hash__ = str.__hash__
+
+
+class _UnprintableError(RuntimeError):
+    def __str__(self):
+        raise ValueError("no str")
+
+
+def test_env_name_repr_raises_asks(tmp_path, monkeypatch):
+    root = _armed(tmp_path, monkeypatch)
+
+    got = _verdict(root, PROD, env=_Unprintable())
+
+    assert (got["verdict"], got["reason"]) == (
+        "ask", "could not tell which environment: <unprintable _Unprintable>")
+
+
+def test_env_name_repr_raises_reports(tmp_path, monkeypatch):
+    root = _armed(tmp_path, monkeypatch)
+
+    got = _verdict(root, PROD, env=_Unprintable())
+
+    assert got["report"] == ("unattended production: <unprintable _Unprintable> ask - "
+                             "could not tell which environment: <unprintable _Unprintable>")
+
+
+def test_env_class_compare_raises_asks(tmp_path, monkeypatch):
+    root = _armed(tmp_path, monkeypatch)
+
+    got = _verdict(root, _Uncomparable("prod"))
+
+    assert (got["verdict"], got["report"].startswith("unattended production: ")) == (
+        "ask", True)
+
+
+def test_exception_str_raises_asks(tmp_path, monkeypatch):
+    root = _armed(tmp_path, monkeypatch)
+
+    def boom(*_args, **_kwargs):
+        raise _UnprintableError()
+
+    monkeypatch.setattr(crew_config, "resolve_ratcheted", boom)
+
+    got = _verdict(root, PROD)
+
+    assert (got["verdict"], "_UnprintableError" in got["reason"]) == ("ask", True)
 
 
 # --- must-block: policy asks --------------------------------------------------
@@ -408,9 +492,53 @@ def test_prod_allow_agrees_with_cloud_guard(tmp_path, monkeypatch):
 
         if (got == "allow") != (envs["prodUnattended"] is True and not corrupt):
             wrong.append((repo, machine, got, envs))
-        if _is_malformed(repo) and (not envs["problem"] or got != "ask"):
+        if (_is_malformed(repo) or _is_malformed(machine)) and got != "ask":
+            wrong.append(("malformed", repo, machine, got, envs))
+        if _is_malformed(repo) and not envs["problem"]:
             wrong.append(("problem", repo, machine, got, envs))
     assert wrong == []
+
+
+def _problem_forms():
+    """Every repo-layer input `environments_config` reports as a `problem`
+    (`cloud_guard.py::environments_config`), each built on the armed repo."""
+    armed = copy.deepcopy(ARMED_REPO)
+    return {
+        "unreadable": "directory",
+        "bad-json": "{bad json",
+        "non-object": "[]",
+        "nonProd-not-a-list": json.dumps(_merge(armed, {"environments": {"nonProd": "dev"}})),
+        "nonProd-blank": json.dumps(_merge(armed, {"environments": {"nonProd": [" "]}})),
+        "prodUnattended-string": json.dumps(
+            _merge(armed, {"environments": {"prodUnattended": "true"}})),
+        "prodUnattended-null": json.dumps(
+            _merge(armed, {"environments": {"prodUnattended": None}})),
+    }
+
+
+@pytest.mark.parametrize("env_class", [PROD, NONPROD])
+@pytest.mark.parametrize("form", list(_problem_forms()))
+def test_every_problem_fixture_reports_and_asks(tmp_path, monkeypatch, form, env_class):
+    root = _armed(tmp_path, monkeypatch)
+    _replace_file(os.path.join(root, ".crew", "config.json"), _problem_forms()[form])
+
+    envs = cloud_guard.environments_config(root)
+    got = _verdict(root, env_class, env="dev")
+
+    assert (bool(envs["problem"]), got["verdict"]) == (True, "ask")
+
+
+@pytest.mark.parametrize("env_class", [PROD, NONPROD])
+@pytest.mark.parametrize("form", ["directory", "{bad json", "[]",
+                                  json.dumps({"environments": {"prodUnattended": "true"}})])
+def test_machine_problem_never_grants_and_asks(tmp_path, monkeypatch, form, env_class):
+    root = _armed(tmp_path, monkeypatch)
+    _replace_file(_machine_path(tmp_path), form)
+
+    envs = cloud_guard.environments_config(root)
+    got = _verdict(root, env_class, env="dev")
+
+    assert (envs["prodUnattended"], got["verdict"]) == (False, "ask")
 
 
 # --- settings and the CLI -------------------------------------------------------
