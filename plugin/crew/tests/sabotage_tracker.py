@@ -349,7 +349,7 @@ TRACKER_MUTATIONS = (
         # The identity is written into a note a human reads: no credentials.
         "tracker keeps the origin URL's userinfo in the repo-id",
         TRACKER,
-        "        url = f\"{scheme}://{host.rpartition('@')[2]}{slash}{path}\"\n",
+        "        url = f\"{scheme}://{keep}{host.rpartition('@')[2]}{slash}{path}\"\n",
         "        url = f\"{scheme}://{host}{slash}{path}\"\n",
         _TESTS + "test_note_records_repo_id_without_credentials",
     ),
@@ -389,9 +389,11 @@ TRACKER_MUTATIONS = (
     (
         "tracker create writes the card after the INDEX half refused",
         TRACKER,
-        '    files = _files_create(root, ticket, title)\n    if files["state"] == FAILED:\n        return [files]\n',
+        # INDEX is read before the vault too (review round 4), so only a row
+        # appended after that read reaches this refusal.
+        '    files = _files_create(root, ticket, title)\n    if files["state"] == FAILED:\n        return [files, claim]\n',
         "    files = _files_create(root, ticket, title)\n",
-        _TESTS + "test_obsidian_create_on_a_held_id_writes_no_card",
+        _TESTS + "test_obsidian_create_writes_no_card_when_index_refuses_late",
     ),
     (
         # Round 2 FIX (:911): five pushes per ticket, none naming a target.

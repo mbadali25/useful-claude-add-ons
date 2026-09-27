@@ -1239,8 +1239,8 @@ def test_two_worktrees_of_one_repo_move_the_same_card(tmp_path, origin):
 @pytest.mark.parametrize("url,expected", [
     ("https://User:s3cret@Example.invalid/Owner/Repo.git", "https://example.invalid/owner/repo"),
     ("https://example.invalid/owner/repo/", "https://example.invalid/owner/repo"),
-    ("ssh://git@Example.invalid:22/Owner/Repo.git", "ssh://example.invalid:22/owner/repo"),
-    ("git@GitHub.com:Owner/Repo.git", "github.com:owner/repo"),
+    ("ssh://git@Example.invalid:22/Owner/Repo.git", "ssh://git@example.invalid:22/owner/repo"),
+    ("git@GitHub.com:Owner/Repo.git", "git@github.com:owner/repo"),
 ])
 def test_repo_id_normalises_the_origin_url(tmp_path, url, expected):
     root = make_repo(tmp_path)
@@ -1585,6 +1585,12 @@ def test_board_dir_moved_out_of_the_vault_after_pinning_writes_nothing_there(tmp
             [name for name in os.listdir(outside) if name.endswith(".tmp")]) == (1, True, [])
 
 
+def _note_result(got):
+    """The ticket note's line: the claim runs first (review round 4), so when it
+    fails it is the only line, and when it succeeds it is the last."""
+    return next(r for r in got["results"] if r["backend"] == "obsidian-note")
+
+
 def test_note_dir_moved_out_of_the_vault_after_pinning_leaves_no_note_there(tmp_path, monkeypatch):
     """The BLOCK's neighbour: the ticket note is the other vault write."""
     vault = _make_vault(tmp_path / "vault", board_dir="B")
@@ -1594,8 +1600,10 @@ def test_note_dir_moved_out_of_the_vault_after_pinning_leaves_no_note_there(tmp_
 
     got = crew_tracker.create(str(root), "T-0060", "new work")
 
-    assert (got["results"][2]["state"], got["results"][2]["reason"].endswith("nothing written through it"),
-            (outside / "T-0060.md").exists()) == ("could not update", True, False)
+    note = _note_result(got)
+
+    assert (note["state"], note["reason"].endswith("nothing written through it"),
+            (outside / "T-0060.md").exists(), _index(root)) == ("could not update", True, False, ROW)
 
 
 def test_note_dir_moved_out_after_the_note_is_written_removes_it_there(tmp_path, monkeypatch):
@@ -1615,8 +1623,8 @@ def test_note_dir_moved_out_after_the_note_is_written_removes_it_there(tmp_path,
 
     got = crew_tracker.create(str(root), "T-0060", "new work")
 
-    assert (got["results"][2]["state"], (outside / "T-0060.md").exists(), (outside / "Board.md").exists()) == (
-        "could not update", False, True)
+    assert (_note_result(got)["state"], (outside / "T-0060.md").exists(), (outside / "Board.md").exists(),
+            _index(root)) == ("could not update", False, True, ROW)
 
 
 def test_relative_local_origins_are_not_one_repo(tmp_path):
@@ -1877,3 +1885,165 @@ def test_resolve_accepts_an_explicit_vault_root_board_dir_beside_an_unset_one(tm
     got = crew_tracker.resolve(str(root))
 
     assert (got["kind"], got["problems"]) == ("obsidian", [])
+
+
+# --- review round 4 (T-0021): each test is a reviewer repro, red at 8aa9ccd6 ----
+
+def _bare_with_commit(path):
+    """A bare repo at `path` holding one commit; returns that commit."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    subprocess.run(["git", "init", "-q", "--bare", str(path)], check=True, capture_output=True,
+                   stdin=subprocess.DEVNULL)
+    work = make_repo(path.parent / (path.name + ".work"))
+    _git(work, "commit", "-q", "--allow-empty", "-m", path.name)
+    _git(work, "push", "-q", str(path), "HEAD:refs/heads/main")
+    return subprocess.run(["git", "rev-parse", "HEAD"], cwd=work, capture_output=True, text=True,
+                          check=True).stdout.strip()
+
+
+def test_file_url_escapes_are_decoded(tmp_path):
+    """Round 4 FIX (:512): git percent-decodes a file:// path, so the id must too."""
+    srv = tmp_path / "srv"
+    spaced = _bare_with_commit(srv / "a b.git")
+    _bare_with_commit(srv / "a%20b.git")
+    url = f"file://{srv}/a%20b.git"
+    ids = []
+    for name, origin in (("r1", url), ("r2", str(srv / "a b.git")), ("r3", str(srv / "a%20b.git"))):
+        root = make_repo(tmp_path / name)
+        _git(root, "remote", "add", "origin", origin)
+        ids.append(crew_tracker.repo_id(str(root)))
+    answered = subprocess.run(["git", "ls-remote", url, "main"], capture_output=True, text=True,
+                              check=True, stdin=subprocess.DEVNULL).stdout.split()[0]
+
+    assert (answered == spaced, ids[0] == ids[1], ids[0] != ids[2]) == (True, True, True)
+
+
+@pytest.mark.parametrize("url,expected", [
+    ("alice@host:repo.git", "alice@host:repo"),
+    ("bob@host:repo.git", "bob@host:repo"),
+    ("ssh://alice:pw@host/~/repo", "ssh://alice@host/~/repo"),
+    ("https://tok@host/o/r", "https://host/o/r"),
+])
+def test_repo_id_keeps_an_ssh_username_and_drops_secrets(tmp_path, url, expected):
+    """Round 4 FIX (:500): alice's and bob's home-relative repo.git are two repos."""
+    root = make_repo(tmp_path)
+    _git(root, "remote", "add", "origin", url)
+
+    assert crew_tracker.repo_id(str(root)) == expected
+
+
+def test_two_users_home_relative_repos_do_not_share_cards(tmp_path):
+    vault = _make_vault(tmp_path / "vault", board_dir=".")
+    first = _repo_at(tmp_path, "a/app", vault, origin="alice@host:repo.git")
+    other = _repo_at(tmp_path, "b/app", vault, rows="T-0060 | direction | - | app | B work\n",
+                     origin="bob@host:repo.git")
+    assert _cli(first, "create", "--ticket", "T-0060", "--title", "A work").returncode == 0
+
+    done, untouched = _refused(tmp_path, other, ("move", "--ticket", "T-0060", "--to", "done"))
+
+    assert (done.returncode, untouched, "belongs to another repo" in done.stdout) == (1, True, True)
+
+
+def test_create_loses_the_note_race_says_id_taken(tmp_path, monkeypatch):
+    """Round 4 FIX (:1191): B creates T-0060 between A's owner check and A's
+    writes. A must refuse, and write no INDEX row and no card."""
+    vault = _make_vault(tmp_path / "vault", board_dir=".")
+    first = _repo_at(tmp_path, "a/app", vault)
+    other = _repo_at(tmp_path, "b/app", vault)
+    real = crew_tracker._card_owner  # pylint: disable=protected-access
+    raced = []
+
+    def racing(paths, here):
+        got = real(paths, here)
+        if not raced:
+            raced.append(_cli(other, "create", "--ticket", "T-0060", "--title", "B work").returncode)
+        return got
+
+    monkeypatch.setattr(crew_tracker, "_card_owner", racing)
+
+    got = crew_tracker.create(str(first), "T-0060", "A work")
+    board = (vault / "Board.md").read_text(encoding="utf-8")
+    note = (vault / "T-0060.md").read_text(encoding="utf-8")
+
+    assert (raced, crew_tracker.exit_code(got), got["results"][-1]["reason"].startswith("id taken: "),
+            _index(first), board.count("[[T-0060]]"), "B work" in board,
+            f"repo-id: {crew_tracker.repo_id(str(other))}\n" in note) == (
+        [0], 1, True, "", 1, True, True)
+
+
+def test_create_on_a_held_id_says_id_taken_when_the_vault_is_missing(tmp_path):
+    """Round 4 FIX (:1185): a vault failure must not hide a held id -- brainstorm
+    and fix go to the next id only on `id taken`."""
+    root = _obsidian_repo(tmp_path, tmp_path / "no-such-vault")
+    (root / ".work" / "INDEX.md").write_text(ROW + "T-0050 | ready | - | r | Fix tests\n", encoding="utf-8")
+
+    done, untouched = _refused(tmp_path, root, ("create", "--ticket", "T-0050", "--title", "Fix tests"))
+
+    assert (done.returncode, untouched, done.stdout) == (
+        1, True, 'files: could not update: id taken: T-0050 is already ready "Fix tests"\n')
+
+
+def test_obsidian_create_writes_no_card_when_index_refuses_late(tmp_path, monkeypatch):
+    """A row appended after the early INDEX read still stops the card."""
+    vault = _make_vault(tmp_path / "vault")
+    root = _obsidian_repo(tmp_path, vault)
+    (root / ".work" / "INDEX.md").write_text(ROW + "T-0061 | spec | - | repo | someone's\n", encoding="utf-8")
+    monkeypatch.setattr(crew_tracker, "_index_holds", lambda root, ticket: None)
+    board = (vault / "Boards" / "repo" / "Board.md").read_bytes()
+
+    got = crew_tracker.create(str(root), "T-0061", "mine")
+
+    assert (crew_tracker.exit_code(got), got["results"][0]["reason"].startswith("id taken: "),
+            (vault / "Boards" / "repo" / "Board.md").read_bytes() == board) == (1, True, True)
+
+
+def _crlf_note(ident, ticket=CARD):
+    """Built here, not a tracked fixture: core.autocrlf rewrites a fixture's endings."""
+    return f"---\ntitle: \"t\"\n---\n\n# {ticket} t\n\n- repo: repo\n- repo-id: {ident}\n".replace(
+        "\n", "\r\n").encode("utf-8")
+
+
+def test_crlf_note_is_this_repos(tmp_path):
+    """Round 4 FIX (:1134): the `\\r` is not part of the id."""
+    vault = _make_vault(tmp_path / "vault")
+    root = _obsidian_repo(tmp_path, vault, own=False)
+    (vault / "Boards" / "repo" / f"{CARD}.md").write_bytes(_crlf_note(crew_tracker.repo_id(str(root))))
+
+    done = _cli(root, "move", "--ticket", CARD, "--to", "in-progress")
+    board = (vault / "Boards" / "repo" / "Board.md").read_text(encoding="utf-8")
+
+    assert (done.returncode, _lane_of(board, CARD)) == (0, "In Progress")
+
+
+def test_crlf_note_naming_another_repo_is_still_foreign(tmp_path):
+    vault = _make_vault(tmp_path / "vault")
+    root = _obsidian_repo(tmp_path, vault, own=False)
+    (vault / "Boards" / "repo" / f"{CARD}.md").write_bytes(_crlf_note("https://example.invalid/other"))
+
+    done, untouched = _refused(tmp_path, root)
+
+    assert (done.returncode, untouched, "belongs to another repo (https://example.invalid/other," in done.stdout) == (
+        1, True, True)
+
+
+def _boxless():
+    text = _fixture("board_0_20.md").replace("- [ ] [[T-0042]] Fix token refresh on 401", "- T-0042")
+    board, problem = crew_tracker.parse_board(text, COLUMNS)
+    assert problem is None, problem
+    return board
+
+
+def test_checkboxless_card_is_checked_in_done():
+    """Round 4 FIX (:837): a card with no box still reads done in Done."""
+    new, _, problem = crew_tracker.move_card(_boxless(), CARD, "done")
+    lines = new.splitlines()
+
+    assert (problem, "- [x] T-0042" in lines, "- T-0042" in lines,
+            lines.index("- [x] T-0042") > lines.index("**Complete**")) == (None, True, False, True)
+
+
+def test_checkboxless_card_gets_an_empty_box_elsewhere():
+    new, _, problem = crew_tracker.move_card(_boxless(), CARD, "review")
+    lines = new.splitlines()
+
+    assert (problem, "- [ ] T-0042" in lines, "- T-0042" in lines) == (None, True, False)

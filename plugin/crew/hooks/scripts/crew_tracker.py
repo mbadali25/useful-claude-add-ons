@@ -64,6 +64,7 @@ import secrets
 import stat
 import subprocess
 import sys
+import urllib.parse
 
 KINDS = ("files", "obsidian", "jira", "sdp")
 COULD_NOT_TELL = "could not tell"
@@ -484,20 +485,27 @@ def _common_dir(root):
     return common if code == 0 and common else None
 
 
-def normal_url(url):
-    """An origin URL as an identity: lowercased, credentials and `.git` dropped.
+_SSH_SCHEMES = ("ssh", "git+ssh", "ssh+git")
 
-    Userinfo goes first because it is a secret as often as a name, and the
-    identity is written into a vault note a human reads.
+
+def normal_url(url):
+    """An origin URL as an identity: lowercased, `.git` and secrets dropped.
+
+    The identity is written into a vault note a human reads, so no password
+    reaches it. Over ssh the username stays: `alice@host:repo.git` and
+    `bob@host:repo.git` are two users' home-relative repositories, so the name
+    is part of which repository it is; only a `:password` after it goes. Every
+    other scheme drops the whole userinfo: the path names the repository
+    there, and `https://<token>@host/...` puts a token where a username goes.
     """
     url = url.strip().lower()
+    # scp-style `user@host:path` is ssh and has no password field: it is kept.
     if "://" in url:
         scheme, rest = url.split("://", 1)
         host, slash, path = rest.partition("/")
-        url = f"{scheme}://{host.rpartition('@')[2]}{slash}{path}"
-    else:
-        head, colon, path = url.partition(":")
-        url = head.rpartition("@")[2] + colon + path
+        user = host.rpartition("@")[0].partition(":")[0]
+        keep = f"{user}@" if user and scheme in _SSH_SCHEMES else ""
+        url = f"{scheme}://{keep}{host.rpartition('@')[2]}{slash}{path}"
     url = url.rstrip("/")
     return url[:-4] if url.endswith(".git") else url
 
@@ -505,11 +513,14 @@ def normal_url(url):
 def _local_path(url):
     """The filesystem path an origin URL names, or None for a remote URL.
 
-    Git's own rule: `scheme://` is a URL (`file://` a local one), and a colon
-    before the first slash is scp-style `host:path`; anything else is a path.
+    Git's own rule: `scheme://` is a URL (`file://` a local one, its path
+    percent-decoded), and a colon before the first slash is scp-style
+    `host:path`; anything else is a path.
     """
     if "://" in url:
-        return url[len("file://"):] if url.lower().startswith("file://") else None
+        # Git percent-decodes a file:// path: `file:///srv/a%20b.git` is
+        # `/srv/a b.git`, while the bare path `/srv/a%20b.git` is itself.
+        return urllib.parse.unquote(url[len("file://"):]) if url.lower().startswith("file://") else None
     head = url.split("/", 1)[0]
     if ":" in head and not ntpath.splitdrive(url)[0]:
         return None
@@ -832,8 +843,15 @@ def _place(board, key, card_lines):
     return "".join(lines)
 
 
+_BOX = re.compile(r"- \[[ xX]\]")
+
+
 def _checkbox(line, key):
-    """A card's first line checked for lane `key` done, unchecked for any other."""
+    """A card's first line checked for lane `key` done, unchecked for any other.
+    A card with no box (`- T-0042`) gets one, so a Done card always reads done."""
+    box = "- [x]" if key == "done" else "- [ ]"
+    if not _BOX.match(line):
+        return f"{box} {line[2:]}"
     if key == "done" and line.startswith("- [ ]"):
         return "- [x]" + line[5:]
     if key != "done" and _CHECKED.match(line):
@@ -1131,7 +1149,9 @@ def _create_note_once(paths, text):
 # start over in every repo and titles repeat ("Fix tests"), so a card's text
 # matching this repo's INDEX row is not evidence (review round 3). The human
 # puts `repo-id:` in the note; an existing note is never rewritten.
-_NOTE_REPO_ID = re.compile(r"^(?:- )?repo-id:[ \t]*['\"]?(.+?)['\"]?[ \t]*$", re.M)
+# `\r` is trailing space here: `$` under re.M stops before `\n` only, so a
+# CRLF note would otherwise carry the `\r` into the id and read as foreign.
+_NOTE_REPO_ID = re.compile(r"^(?:- )?repo-id:[ \t]*['\"]?(.+?)['\"]?[ \t\r]*$", re.M)
 OURS, FOREIGN, UNKNOWN = "ours", "foreign", "unknown"
 
 
@@ -1169,13 +1189,43 @@ def _no_identity(root):
             f"for {os.path.realpath(root)}")
 
 
+def _index_holds(root, ticket):
+    """Why INDEX refuses `ticket` to `create` right now, or None. Read before the
+    vault is resolved, so a vault failure never hides a held id (review round
+    4); `_files_create` checks again under its atomic update."""
+    try:
+        raw = _read_bytes(os.path.join(root, ".work", "INDEX.md"))
+    except OSError as exc:
+        return f"{INDEX_REL}: {exc.strerror or exc}"
+    text, problem = _decode(raw, INDEX_REL)
+    if problem:
+        return problem
+    lines = text.splitlines()
+    held = [_cells(lines[i]) for i in _rows(lines, ticket)]
+    return _held(ticket, held) if held else None
+
+
+def _lost_claim(paths, ticket, here):
+    """Why a note that appeared after the owner check makes the id taken."""
+    owner, detail, _ = _card_owner(paths, here)
+    if owner == FOREIGN:
+        return _foreign(paths, ticket, detail, here)
+    if owner == UNKNOWN:
+        return _unclaimed(paths, ticket, detail, here)
+    return f"{paths['noteShown']} was created by another session after this one checked"
+
+
 def _obsidian_create(root, settings, ticket, title):
     columns = settings["columns"]
+    held = _index_holds(root, ticket)
+    if held:
+        return [_result("files", FAILED, held)]
     here = repo_id(root)
     paths, problem = _vault_paths(root, settings, [("board", settings["board"]), ("note", f"{ticket}.md")])
     if not problem and here is None:
         problem = _no_identity(root)
     board, problem = (None, problem) if problem else _load_board(paths, columns)
+    note = False
     if not problem:
         owner, detail, note = _card_owner(paths, here)
         if owner == FOREIGN:
@@ -1184,9 +1234,22 @@ def _obsidian_create(root, settings, ticket, title):
             problem = f"{TAKEN}: " + _unclaimed(paths, ticket, detail, here)
     if problem:
         return [_result("obsidian", FAILED, problem)]
+    # The claim is the note's exclusive creation, before anything else is
+    # written (review round 4): another repo's create between the owner check
+    # above and this open makes it fail, so the id is taken and nothing follows.
+    # A note that was already this repo's is not claimed again -- it is never
+    # rewritten -- and the INDEX row decides, under its atomic update.
+    if note:
+        claim = _result("obsidian-note", UNCHANGED, f"{paths['noteShown']} exists; never rewritten")
+    else:
+        claim = _create_note_once(paths, _note_text(root, ticket, title, here))
+        if claim["state"] == UNCHANGED:
+            return [_result("obsidian", FAILED, f"{TAKEN}: " + _lost_claim(paths, ticket, here))]
+        if claim["state"] == FAILED:
+            return [claim]
     files = _files_create(root, ticket, title)
     if files["state"] == FAILED:
-        return [files]
+        return [files, claim]
 
     def edit(current):
         new, _ = add_card(current, ticket, title, LANE_FOR_STATUS["direction"])
@@ -1194,8 +1257,7 @@ def _obsidian_create(root, settings, ticket, title):
             return None, _result("obsidian", UNCHANGED, f"{paths['boardShown']} already has {ticket}")
         return new, _result("obsidian", UPDATED, f"{paths['boardShown']} card added to {columns['backlog']}")
 
-    return [files, _board_write(paths, columns, edit),
-            _create_note_once(paths, _note_text(root, ticket, title, here))]
+    return [files, _board_write(paths, columns, edit), claim]
 
 
 def _obsidian_move(root, settings, ticket, status, reopen=False):

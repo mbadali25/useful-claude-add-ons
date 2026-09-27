@@ -316,3 +316,21 @@ def test_a_taken_id_is_never_written_under(name):
 
     assert (create != -1, rule != -1, folder != -1, create < rule < folder,
             "write nothing under the taken one" in text) == (True, True, True, True, True)
+
+
+STOP_RULE = "On any other failure, stop: show me its lines and write nothing under that id"
+
+
+@pytest.mark.parametrize("name", ("brainstorm.md", "fix.md"))
+def test_a_failed_create_stops_before_the_folder(name):
+    """T-0021 review round 4: a create that failed for a reason other than
+    `id taken` (the vault missing) carried on into the ticket folder of an id
+    it never claimed. The stop rule sits between the create call and the first
+    write under `.work/tickets/`."""
+    text = " ".join(_read(os.path.join(COMMANDS, name)).split())
+
+    create = text.find(f"{_TRACKER} create --root .")
+    stop = text.find(STOP_RULE)
+    folder = text.find("create `.work/tickets/")
+
+    assert (create != -1, stop != -1, folder != -1, create < stop < folder) == (True, True, True, True)

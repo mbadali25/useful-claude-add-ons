@@ -33,9 +33,9 @@ and, for Obsidian, adds the `[[T-####]]` card to the board's backlog lane and
 the vault ticket note — a direction is not yet ready work. Print its lines
 verbatim. If a line says `id taken`, that id is not yours — another session or
 repo holds it: pick the next free id, run `create` again, and write nothing
-under the taken one. Then create `.work/tickets/T-####/`. On exit 3 run the
-command it printed. On any other exit 1 tell me `tracker not updated: <reason>`
-and carry on — the ticket exists; nothing is undone. **Jira and ServiceDesk Plus**: create the tracker item now through MCP
+under the taken one. On any other failure, stop: show me its lines and write
+nothing under that id — a failed create has not made the id yours. Only then
+create `.work/tickets/T-####/`. **Jira and ServiceDesk Plus**: create the tracker item now through MCP
 with a one-line placeholder summary, so the id exists before anything else
 does, and cache it at `.work/tickets/<KEY>/`.
 
