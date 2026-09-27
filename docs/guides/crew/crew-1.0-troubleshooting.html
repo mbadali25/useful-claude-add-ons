@@ -445,6 +445,37 @@ it <em>would</em> refuse before enforcing with <code>"block"</code>.</p>
 finish itself cleanly, clear, and pick up where it stopped — what wrap-up, auto-clear and resume
 each do, the machine-global keys that turn auto-clear on, and every reason a clear can refuse
 (logged to <code>.crew/.autoclear.log</code>).</p>
+<h3 id="auto-clear-did-nothing-on-windows">"Auto-Clear Did Nothing on Windows"</h3>
+<p><strong>Symptom:</strong> auto-clear is on, a handoff is written and verified, and nothing types the configured
+command — no keystrokes appear at all.</p>
+<ul>
+<li><strong>Check <code>context.autoClear.method</code></strong> with <code>/crew:config --explain</code> or <code>crew_config.py --explain</code>.
+  On native Windows with no tmux pane, <code>"auto"</code> (the default) resolves to <code>"notify"</code>, not to any
+  keystroke method — <strong>this is not a bug</strong>, it is the 1.0 owner decision: <code>auto</code> never arms
+  SendKeys on your behalf. <code>"notify"</code> types nothing at all; instead the <code>Stop</code> hook prints a
+  <code>systemMessage</code> telling you the handoff is written and verified and it is safe to run the
+  configured command yourself.</li>
+<li><strong>If you want keystrokes typed for you</strong>, ask for <code>sendkeys</code> by name — it is opt-in only, and
+  <code>/crew:init</code>, <code>/crew:migrate</code> and <code>/crew:onboard</code> all refuse to write it without an explicit yes.
+  It declines and falls back to <code>notify</code> (logged to <code>.crew/.autoclear.log</code>) inside Windows
+  Terminal specifically, because that host puts every tab in one window and nothing outside it can
+  confirm which tab is active — this is also not a bug, and switching terminal hosts is the only
+  fix.</li>
+<li><strong>Fix:</strong> either treat the <code>notify</code> message as the intended behaviour, or run
+  <code>crew_autoclear_setup.py apply-method sendkeys --yes</code> (<code>${CLAUDE_PLUGIN_ROOT}/hooks/scripts/</code>)
+  to opt in, after reading what SendKeys does. See <code>plugin/crew/CONFIG.md</code> §14.</li>
+</ul>
+<h3 id="claude-code-compacted-by-itself">"Claude Code Compacted by Itself"</h3>
+<p><strong>Symptom:</strong> the session cleared or summarised itself with no <code>/clear</code> or <code>/compact</code> typed, and no
+message about auto-clear ran first.</p>
+<p>That is Claude Code's own <strong>built-in auto-compact</strong>, not this plugin. Crew neither causes nor
+tunes it — <code>context.autoClear</code> and <code>context-watch.sh</code> only ever act <em>after</em> a handoff is written
+and verified, and nothing in this plugin can trigger a compaction on its own. There is no crew
+setting that changes when Claude Code's auto-compact fires.</p>
+<p><strong>The one thing crew does around either kind of reset:</strong> on the next <code>SessionStart</code> after any
+<code>/clear</code> or <code>/compact</code> — self-initiated or Claude Code's own auto-compact — <code>handoff-read.sh</code>
+reloads <code>.work/HANDOFF.md</code> back into context automatically, so a compaction you did not ask for
+still resumes from the last written handoff rather than from nothing.</p>
 <h2 id="turning-things-off">Turning Things Off</h2>
 <p>Every switch named above, in one place. "Off" for a guard means the <code>PreToolUse</code> hook still fires
 but returns immediately without judging anything; "off" for <code>verifyGate</code> means the
@@ -542,7 +573,11 @@ but returns immediately without judging anything; "off" for <code>verifyGate</co
 <p><code>~/.claude/crew/config.json</code> is the machine-global layer; <code>.crew/config.json</code> is per-repo and wins
 where both speak. A <strong>ratcheted</strong> key (marked above) can only be <em>narrowed</em> by the repo relative to
 the machine-global value, never widened — a repo cloned from someone else cannot silently loosen a
-guard the machine owner set to <code>block</code>. <code>/crew:config</code> shows where each setting actually came from.</p>
+guard the machine owner set to <code>block</code>. <code>/crew:config --show</code> shows where each setting actually came
+from, and <code>/crew:config</code> with no argument (alias <code>/crew:config-setup</code>) sets either layer from a menu:
+it marks a repo value that widens a guard with <code>!</code>, and names a repo value the machine layer holds
+down. The same menu can delete a repo's <code>.crew/config.json</code> after a verified backup and prints the
+command that restores it.</p>
 <h2 id="web-testing">Web Testing</h2>
 <p><strong>Symptom:</strong> <code>--select web-testing</code> (or the ticked default row) fails, or Playwright
 runs but the visual rule never passes.</p>
@@ -593,18 +628,48 @@ cleanly, clear, and pick up where it stopped.</p>
    the session to finish or park the change in flight, write <code>.work/HANDOFF.md</code>, and update the
    ticket. This happens once for each threshold crossing in each session. It never happens on the
    forced continuation that follows a block.</li>
-<li><strong>Clear.</strong> After the handoff is written, auto-clear types <code>/clear</code> into the terminal that runs this
-   session. It does this only when all four of these hold:
+<li><strong>Clear, or notify.</strong> After the handoff is written, auto-clear acts on it. What it does depends
+   on <code>method</code> (below): <code>notify</code> (the default on native Windows) prints a message telling you the
+   handoff is written and it is safe to run <code>/clear</code> (or <code>/compact</code>) yourself — it types nothing.
+   <code>tmux</code>, <code>xdotool</code> and <code>sendkeys</code> actually type the configured command into the terminal that runs
+   this session. Whichever method is in force, it acts only when all four of these hold:
    - this machine opted in;
    - the handoff was written by this session after the wrap-up request, is longer than a stub, and
      is not the automatic PreCompact skeleton;
    - the context reading that caused the wrap-up was a real measurement (see "When it will not
      clear");
-   - the target window can be identified exactly.</li>
-<li><strong>Resume.</strong> The new session starts with the handoff and its next action already in context,
-   within the 3,000-character resume budget. Nothing starts working unprompted: crew does not use
-   <code>initialUserMessage</code>, so you press Enter to continue.</li>
+   - for a method that types (<code>tmux</code>/<code>xdotool</code>/<code>sendkeys</code>), the target window can be identified
+     exactly — <code>notify</code> needs none of this, since it identifies no window.</li>
 </ol>
+<p><strong>Crew neither causes nor tunes Claude Code's own auto-compact.</strong> That is a separate, built-in
+   behaviour that fires whenever Claude Code itself decides to; this cycle only reacts to a handoff
+   once one exists, and nothing here makes auto-compact happen sooner, later, or at all.
+3. <strong>Resume.</strong> The new session starts with the handoff and its next action already in context,
+   within the 3,000-character resume budget. Nothing starts working unprompted: crew does not use
+   <code>initialUserMessage</code>, so you press Enter to continue. Claude Code 2.1.282 drops it in an
+   interactive session anyway (spike, 2026-09-25): it is honoured by <code>claude -p</code> only.</p>
+<p>With <strong><code>resume.auto: true</code></strong> in the machine-global config, the handoff after <code>/clear</code> or a manual
+   <code>/compact</code> also names the exact next command, read from the note's <code>resume:</code> line
+   (<code>resume: /crew:done T-0001</code>): <code>Auto-resume: ready to run /crew:done T-0001.</code> — or
+   <code>Auto-resume did not start: &lt;reason&gt;.</code> when a check refuses it. It still does not start on its
+   own: you press Enter or type it, until T-0013 types it where the terminal can be identified. The
+   refusal reasons are: compact was not a manual /compact; no handoff note, or it was archived as
+   stale, or is stale and could not be archived; the handoff is the automatic PreCompact skeleton;
+   no resume line, <code>resume: none</code>, or a line the grammar refuses (a second line, trailing text, an
+   unknown command, or an excluded one such as <code>/crew:approve</code>); the note's <code>branch:</code> or <code>head:</code>
+   does not match the checkout; the ticket directory or goal file is missing; the command is not
+   installed; <code>handoff-author.json</code> could not be read; no record of which session wrote this
+   handoff; the handoff changed since its author session wrote it; the handoff was written by
+   another session; this session's process could not be identified (always on a host without
+   <code>/proc</code>, such as native Windows or macOS); the record of past auto-resumes (<code>resume-state.json</code>)
+   could not be read, or its directory cannot be searched; this handoff was already resumed; the
+   progress fingerprint could not be computed; the same command with no progress since the last
+   auto-resume; <code>internal error</code> (the decision itself failed, and the handoff is still injected).
+   Never on a plain <code>startup</code>.</p>
+<p>A note resumes only in the session that wrote it. Write it with the Write tool (as
+   <code>/crew:handoff</code> does): the context hook then records which session and which Claude Code process
+   wrote it. After <code>/compact</code> the session must match; after <code>/clear</code> the process must, so a <code>/clear</code>
+   in another terminal on the same worktree waits. A note written by Bash or by hand waits.</p>
 <h3 id="turning-it-on-and-off">Turning It on and Off</h3>
 <p>Wrap-up and resume are on by default. Auto-clear is <strong>off</strong> by default. You turn it on per machine,
 in the machine-global config, because it drives this machine's keyboard:</p>
@@ -627,8 +692,8 @@ in the machine-global config, because it drives this machine's keyboard:</p>
 <tr>
 <td>same</td>
 <td><code>context.autoClear.method</code></td>
-<td><code>"auto"</code> (default), <code>"tmux"</code>, <code>"xdotool"</code>, <code>"windows"</code>, <code>"none"</code></td>
-<td>how the keystroke is delivered</td>
+<td><code>"auto"</code> (default), <code>"tmux"</code>, <code>"xdotool"</code>, <code>"notify"</code>, <code>"sendkeys"</code>, <code>"none"</code></td>
+<td>how the cycle acts — see "Which method, and what it does" below</td>
 </tr>
 <tr>
 <td>same</td>
@@ -655,6 +720,18 @@ in the machine-global config, because it drives this machine's keyboard:</p>
 <td>switches auto-clear off in this repo. A repo can switch it off, but <code>true</code> here does not switch it on.</td>
 </tr>
 <tr>
+<td><code>~/.claude/crew/config.json</code></td>
+<td><code>resume.auto</code></td>
+<td><code>true</code></td>
+<td>names the next command from the handoff's <code>resume:</code> line after <code>/clear</code> or a manual <code>/compact</code> (off by default)</td>
+</tr>
+<tr>
+<td><code>.crew/crew.json</code> or <code>.crew/config.json</code> (the repo)</td>
+<td><code>resume.auto</code></td>
+<td><code>false</code></td>
+<td>vetoes auto-resume in this repo. <code>true</code> here does not switch it on.</td>
+</tr>
+<tr>
 <td><code>.crew/config.json</code></td>
 <td><code>context.autoWrapUp</code></td>
 <td><code>false</code></td>
@@ -674,8 +751,12 @@ in the machine-global config, because it drives this machine's keyboard:</p>
 </tr>
 </tbody>
 </table>
-<p><code>/crew:config</code> shows where each value comes from and walks you through the global file. To turn the
-cycle off on a machine, set <code>context.autoClear.enabled</code> to <code>false</code> or delete the key.</p>
+<p><code>/crew:config --show</code> shows where each value comes from. <code>/crew:config</code> with no argument (or
+<code>/crew:config-setup</code>) opens a menu that sets either file from a list of values, with a dry run
+before anything is written. To turn the cycle off on a machine, set <code>context.autoClear.enabled</code> to
+<code>false</code> or delete the key. In a repo the menu offers only the veto (<code>false</code>) or <code>null</code> for
+<code>context.autoClear.enabled</code> and <code>resume.auto</code>, and shows <code>onlyRepos</code>/<code>onlySessions</code> read-only,
+because only the machine file can arm or narrow them.</p>
 <h4 id="arming-one-scratch-repo-while-other-sessions-are-live">Arming one scratch repo while other sessions are live</h4>
 <p><code>enabled: true</code> arms auto-clear in <strong>every</strong> Claude session on the machine, not just the one you
 are testing. If other sessions are running, one of them can get <code>/clear</code> typed into its terminal
@@ -728,9 +809,48 @@ same machine file. They can only narrow what <code>enabled</code> turns on:</p>
 <p>On Linux, use a path such as <code>"/home/you/autoclear-scratch"</code>. When you are done testing, remove
 <code>enabled</code> or set it to <code>false</code>. Also delete <code>onlyRepos</code>, so that a later <code>enabled: true</code> does not
 arm only that repo without anyone noticing.</p>
-<h3 id="when-it-will-not-clear">When It Will Not Clear</h3>
+<h3 id="which-method-and-what-it-does">Which Method, and What It Does</h3>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>What it does</th>
+<th>Where <code>auto</code> picks it</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>tmux</code></td>
+<td>Types the command into the <code>$TMUX_PANE</code> that is an ancestor of the hook. No focus involved — the most reliable method.</td>
+<td>Linux, macOS, WSL, Git Bash on Windows, when <code>$TMUX</code> names a pane and <code>tmux</code> is on PATH</td>
+</tr>
+<tr>
+<td><code>xdotool</code></td>
+<td>Types into the one X11 window owned by the nearest ancestor process (or matching <code>windowTitle</code>).</td>
+<td>Linux with <code>xdotool</code> on PATH and <code>$DISPLAY</code> set</td>
+</tr>
+<tr>
+<td><code>notify</code></td>
+<td>Types nothing. Prints a message saying the handoff is written and verified and it is safe to run the command yourself. Never says anything was cleared or compacted — it does not know that, and it did not do it.</td>
+<td><strong>native Windows</strong>, whenever there is no tmux pane — this is the default there, not a fallback for something missing</td>
+</tr>
+<tr>
+<td><code>sendkeys</code></td>
+<td><code>System.Windows.Forms.SendKeys</code> against the one window owned by an ancestor process (or matching <code>windowTitle</code>), confirmed still in the foreground right before typing. <strong><code>auto</code> never picks this</strong> — typing into a window this hook found itself is a risk <code>auto</code> does not get to accept on your behalf. Set <code>method: "sendkeys"</code> explicitly to opt in. Even then, it declines and falls back to <code>notify</code> — logging why — when the target window is owned by Windows Terminal, because that host puts every tab in one window and nothing outside it can confirm which tab is active.</td>
+<td>never (opt-in only)</td>
+</tr>
+<tr>
+<td><code>none</code></td>
+<td>Refused outright.</td>
+<td>never</td>
+</tr>
+</tbody>
+</table>
+<h3 id="when-it-will-not-clear-or-notify">When It Will Not Clear (or Notify)</h3>
 <p>Each refusal is logged with its reason to <code>.crew/.autoclear.log</code>. A Stop hook's stderr is not shown
-to you, so check that log first.</p>
+to you, so check that log first. A <code>notify</code> or <code>sendkeys</code> decline is logged the same way — "declined"
+rather than "refusing", since the machine has opted in and something still happened (a message, or a
+fallback), just not a keystroke.</p>
 <table>
 <thead>
 <tr>
@@ -765,11 +885,11 @@ to you, so check that log first.</p>
 </tr>
 <tr>
 <td><code>N windows have a title containing ...</code> / <code>has N windows</code></td>
-<td>the window is ambiguous, so nothing is typed</td>
+<td>the window is ambiguous, so nothing is typed (<code>sendkeys</code>/<code>xdotool</code> only)</td>
 </tr>
 <tr>
 <td><code>no window belongs to any ancestor of this hook</code></td>
-<td>the terminal's window could not be found by process id, and no <code>windowTitle</code> is set</td>
+<td>the terminal's window could not be found by process id, and no <code>windowTitle</code> is set (<code>sendkeys</code>/<code>xdotool</code> only)</td>
 </tr>
 <tr>
 <td><code>tmux pane %N could not be confirmed</code></td>
@@ -779,11 +899,25 @@ to you, so check that log first.</p>
 <td><code>method wtype ... is refused</code></td>
 <td>Wayland's <code>wtype</code> cannot target a window. Use tmux instead.</td>
 </tr>
+<tr>
+<td><code>sent - method notify</code></td>
+<td>the message was printed — this is the normal, successful outcome for <code>notify</code></td>
+</tr>
+<tr>
+<td><code>declined sendkeys - cannot verify the active tab ...</code></td>
+<td>the target window is owned by Windows Terminal; <code>sendkeys</code> fell back to <code>notify</code> instead of guessing which tab is active</td>
+</tr>
+<tr>
+<td><code>declined sendkeys - the target window lost focus during the ...s delay</code></td>
+<td>the window had focus when identified, but not when the delay ended, so nothing was typed</td>
+</tr>
 </tbody>
 </table>
 <p>Two sessions in one repository no longer interfere with each other. Wrap-up markers are
 <code>.crew/.handoff-requested-&lt;session_id&gt;</code>, and a SessionStart clears only its own session's marker.</p>
 <h3 id="which-window-gets-the-keystroke">Which Window Gets the Keystroke</h3>
+<p>Applies only to the methods that type — <code>tmux</code>, <code>xdotool</code>, <code>sendkeys</code>. <code>notify</code> identifies no window
+and needs none of this.</p>
 <ul>
 <li><strong>tmux (Linux, macOS, WSL):</strong> the pane in <code>$TMUX_PANE</code>, and only when that pane's process is an
   ancestor of the hook. No title is needed. This is the most reliable method.</li>
@@ -791,8 +925,10 @@ to you, so check that log first.</p>
   that process owns more than one window, <code>windowTitle</code> has to narrow the choice to one. If no
   ancestor owns a window, exactly one window must match <code>windowTitle</code>. The keystroke goes to that
   window id after it is activated and confirmed active.</li>
-<li><strong>Windows (SendKeys):</strong> chosen the same way, by owner process first and then by title. After the
-  delay, <code>/clear</code> is sent only when that exact window handle has focus.</li>
+<li><strong>Windows (<code>sendkeys</code>):</strong> chosen the same way, by owner process first and then by title. Declines
+  outright, before any of that matters, when the resolved window is owned by Windows Terminal — see
+  the method table above. Otherwise, after the delay, the command is sent only when that exact
+  window handle still has focus; if it does not, nothing is typed and the decline is logged.</li>
 </ul>
 <p>Windows Terminal runs every tab in one window. A process-id match cannot tell which tab is active,
 so on Windows Terminal set <code>windowTitle</code> to something only this session's tab shows.</p>

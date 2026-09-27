@@ -1629,6 +1629,40 @@ An unknown value fails closed to `block` on whichever layer carries it
 ranked — so a typo costs capability rather than granting it, and a widening
 *from* an unknown still reads as a widening.
 
+### Writing the repo layer, and the enum check both writers share
+
+`/crew:config`'s menu (T-0075) writes `.crew/config.json` through one path,
+`crew_config.plan_repo_write` / `write_repo_config` (CLI
+`crew_config.py --set PATH=JSON --repo [--apply]`). It does not change what
+either layer means on read; it marks what a repo edit changes **in force**:
+
+- A **ratcheted** key compares `effective_ratcheted` before and after, by rank.
+  Repo `guards.forcePush` `block` -> `allow` under a machine `allow` prints
+  `! guards.forcePush widens to`; the same edit under a machine `block` does
+  not widen, and prints `held down by the machine-global layer at block`
+  instead.
+- `pm.authority` resolves by precedence, so its before-value is the repo's own,
+  else the machine's, ranked by `_RATCHETED`.
+- Three repo-only consents are marked by value: `context.autoClear.unsafeFocus:
+  true`, `autopilot.mode: "plan"` and `verifyGate: false`
+  (`crew_config._REPO_WIDENING`).
+
+It refuses, naming the key and the reason: a path that is not a leaf of
+`default_config()` (unknown keys, and whole blocks such as `scope: {}` that
+would drop a leaf the per-key rules guard), `platform.*`, `schema`,
+`scope.mode`, `scope.allowCliApproval`, `context.autoClear.onlyRepos` /
+`.onlySessions`, and a `true` for `context.autoClear.enabled` or `resume.auto`
+(only the machine file arms those). It refuses to write when the file is absent
+or does not parse, rather than creating a config from one key or overwriting
+the only copy.
+
+**Enum values are checked on both writers.** `crew_config.enum_values` returns
+the tuple each reader normalises against — the `RATCHETED_KEYS` tiers,
+`AUTHORITIES`, `TICKET_GRANULARITIES`, `auto` + `QA_PROVIDERS`, and
+`DEV_PROVIDERS` — and a value outside it is refused. This is a behaviour
+change for the global `--set`: it used to write `pm.authority: "bogus"` and
+read it back as `report-only`. `null` is still accepted (it reads as unset).
+
 ### One resolver, two flavours
 
 `guard.sh` and `guard.ps1` both shell out to `crew_config.py --guard`. Neither

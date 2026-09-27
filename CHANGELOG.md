@@ -4,6 +4,38 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Added
+
+- **`crew` 1.0.44: `/crew:config` menu mode and `/crew:config-setup` (T-0075).**
+  Bumped `1.0.43 -> 1.0.44`.
+  - `/crew:config` with no argument, and the new alias `/crew:config-setup`,
+    open a menu (`skills/crew-setup/config-menu.md`): pick the machine or repo
+    layer, an area, a setting, then a value from a list showing the current
+    value, the layer that decided it, and the recommendation first. Picks
+    collect in a pending set; Save validates both layers, shows the dry-run
+    diff, and writes each changed layer once. Discard writes nothing.
+  - New `hooks/scripts/crew_config_menu.py` (`spec`, `save`, `delete-repo`,
+    `restore-repo`). The rows are `crew_config.py`'s own key lists, so a new
+    key appears with no menu edit; a test runs every offered value through
+    the writer.
+  - New repo writer `crew_config.plan_repo_write` / `write_repo_config`, CLI
+    `crew_config.py --set PATH=JSON --repo [--apply]`: merge, leaf keys only,
+    atomic, line ending kept, `!` on a widening (ratchet by what is in force,
+    `pm.authority`, `unsafeFocus: true`, `autopilot.mode: plan`,
+    `verifyGate: false`) and a "held down by the machine-global layer" line.
+    It refuses `platform.*`, `schema`, `scope.mode`, `scope.allowCliApproval`
+    and `context.autoClear.onlyRepos`/`.onlySessions`; `context.autoClear.enabled`
+    and `resume.auto` take only `false` or `null`.
+  - Delete the repo config: preview (with `!` on what widens, `scope.mode`
+    returning to `off` included, and what deleting means for `isCrew` and the
+    heal), typed repo name, verified `.crew/config.json.bak-<UTC>` backup
+    first, then the printed restore command.
+  - **Behaviour change:** `crew_config.py --set` on the machine-global file now
+    refuses a value outside the key's own values (`pm.authority`,
+    `pm.ticketGranularity`, `qa.provider`, `dev.provider`, every ratcheted
+    key). It used to write it and read it back as the narrowest tier.
+  - 12 sabotage mutations in `tests/sabotage_config.py`.
+
 ### Fixed
 
 - **`crew` 1.0.43: auto-resume closes T-0006's review round 4 (T-0042).**

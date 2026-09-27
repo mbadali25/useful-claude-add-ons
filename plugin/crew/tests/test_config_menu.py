@@ -1,0 +1,566 @@
+"""Tests for crew_config_menu: the data-driven `/crew:config` menu (T-0075).
+
+The menu is a view over `crew_config`'s own key lists, so the invariants here
+are the ones that keep it from drifting: every row is a real key for its
+layer, every writable row offers a value, and every value offered is one the
+writer accepts. Save, delete and restore are tested for order -- validate
+before write, back up before remove -- because that order is the feature.
+"""
+import json
+import os
+import subprocess
+import sys
+
+import pytest
+
+import context  # noqa: F401  pylint: disable=unused-import
+import crew_config
+import crew_config_menu as menu
+import crew_fixtures
+import crew_platform
+import crew_state
+
+_PLUGIN = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
+_TS = "20260927T120000Z"
+
+
+def _now():
+    import datetime  # pylint: disable=import-outside-toplevel
+    return datetime.datetime(2026, 9, 27, 12, 0, 0,
+                             tzinfo=datetime.timezone.utc)
+
+
+def _repo(tmp_path, updates=None, global_cfg=None):
+    """A repo holding defaults plus `updates`, and a global file. Returns
+    `(root, global_path)` as strings."""
+    cfg = crew_config.default_config()
+    for dotted, value in (updates or {}).items():
+        crew_config._set_path(cfg, dotted.split("."), value)  # pylint: disable=protected-access
+    root = crew_fixtures.make_repo(tmp_path, config=cfg, git=False)
+    gpath = tmp_path / "global.json"
+    if global_cfg is not None:
+        gpath.write_text(json.dumps(global_cfg), encoding="utf-8")
+    return str(root), str(gpath)
+
+
+def _rows(spec):
+    return [row for area in spec["areas"] for row in area["rows"]]
+
+
+def _table_key(row):
+    return row.get("table") or row["path"]
+
+
+# --- Step 3: the spec -------------------------------------------------------
+
+
+def test_empty_role_entry_is_no_pin():
+    absent = crew_state.resolve_role({"qa": {"provider": "codex"}}, "qa", "review")
+
+    empty = crew_state.resolve_role(
+        {"qa": {"provider": "codex", "roles": {"review": {}}}}, "qa", "review")
+
+    assert empty == absent
+
+
+def test_machine_menu_keys_are_exactly_the_global_leaves(tmp_path):
+    root, gpath = _repo(tmp_path)
+
+    rows = _rows(menu.menu_spec(root, "machine", gpath))
+
+    writable = {_table_key(r) for r in rows if r["writable"]}
+    assert writable == set(crew_config.leaf_paths(
+        crew_config.default_global_config()))
+
+
+def test_repo_menu_keys_are_real_repo_keys(tmp_path):
+    root, gpath = _repo(tmp_path)
+    leaves = set(crew_config.leaf_paths(crew_config.default_config()))
+
+    rows = _rows(menu.menu_spec(root, "repo", gpath))
+
+    assert {_table_key(r) for r in rows} == leaves
+    assert all(crew_config.is_repo_path(r["path"]) for r in rows if r["writable"])
+
+
+@pytest.mark.parametrize("layer", ["machine", "repo"])
+def test_every_leaf_lands_in_exactly_one_area(tmp_path, layer):
+    root, gpath = _repo(tmp_path)
+
+    spec = menu.menu_spec(root, layer, gpath)
+
+    paths = [r["path"] for r in _rows(spec)]
+    assert len(paths) == len(set(paths))
+    assert [a["id"] for a in spec["areas"]] == [a[0] for a in menu.AREAS]
+
+
+@pytest.mark.parametrize("layer", ["machine", "repo"])
+def test_every_writable_setting_offers_a_selectable_value(tmp_path, layer):
+    root, gpath = _repo(tmp_path)
+
+    rows = _rows(menu.menu_spec(root, layer, gpath))
+
+    empty = [r["path"] for r in rows if r["writable"] and not r["choices"]]
+    assert empty == []
+
+
+@pytest.mark.parametrize("layer", ["machine", "repo"])
+def test_every_offered_choice_is_accepted_by_the_writer(tmp_path, layer):
+    root, gpath = _repo(tmp_path, {"guards.forcePush": "ask"},
+                        {"pm": {"authority": "act"}})
+    rows = _rows(menu.menu_spec(root, layer, gpath))
+
+    refused = []
+    for row in rows:
+        for choice in row["choices"]:
+            update = {row["path"]: choice["value"]}
+            try:
+                if layer == "machine":
+                    crew_config.plan_global_write(update, gpath)
+                else:
+                    crew_config.plan_repo_write(root, update, gpath)
+            except (crew_config.GlobalWriteRefused, crew_config.RepoWriteRefused,
+                    crew_config.ProviderError) as exc:
+                refused.append((row["path"], choice["value"], str(exc)))
+
+    assert refused == []
+
+
+def test_refused_rows_offer_no_choices_and_name_a_reason(tmp_path):
+    root, gpath = _repo(tmp_path)
+
+    rows = {r["path"]: r for r in _rows(menu.menu_spec(root, "repo", gpath))}
+
+    for path in ("scope.mode", "scope.allowCliApproval", "platform.os",
+                 "schema", "context.autoClear.onlyRepos"):
+        assert (rows[path]["writable"], rows[path]["choices"]) == (False, [])
+        assert rows[path]["refusedReason"]
+
+
+def test_repo_veto_rows_offer_only_a_veto(tmp_path):
+    root, gpath = _repo(tmp_path)
+
+    rows = {r["path"]: r for r in _rows(menu.menu_spec(root, "repo", gpath))}
+
+    for path in crew_config.REPO_VETO_ONLY:
+        assert {json.dumps(c["value"]) for c in rows[path]["choices"]} <= {
+            "false", "null"}
+
+
+def test_machine_menu_never_offers_a_repo_only_key(tmp_path):
+    root, gpath = _repo(tmp_path)
+
+    paths = {r["path"] for r in _rows(menu.menu_spec(root, "machine", gpath))}
+
+    for bad in ("tracker", "jira.project", "scope.mode",
+                "scope.allowCliApproval", "platform.os",
+                "context.autoClear.unsafeFocus"):
+        assert bad not in paths
+    assert not any(p.startswith(("autopilot.", "scope.", "platform."))
+                   for p in paths
+                   if not crew_config.is_global_path(p))
+
+
+def test_recommendation_is_listed_first(tmp_path):
+    root, gpath = _repo(tmp_path)
+
+    for layer in ("machine", "repo"):
+        for row in _rows(menu.menu_spec(root, layer, gpath)):
+            if row["writable"] and row["recommendation"] is not None:
+                assert row["choices"][0]["value"] == row["recommendation"]["value"]
+                assert "recommended" in row["choices"][0]["tags"]
+
+
+def test_recommendations_are_real_keys_and_offered_choices(tmp_path):
+    root, gpath = _repo(tmp_path)
+    by_layer = {layer: {r["path"]: r for r in _rows(
+        menu.menu_spec(root, layer, gpath))} for layer in ("machine", "repo")}
+
+    for path, (value, reason) in menu.RECOMMENDATIONS.items():
+        assert reason
+        assert path in by_layer["repo"], path
+        for rows in by_layer.values():
+            if path in rows and rows[path]["writable"]:
+                assert value in [c["value"] for c in rows[path]["choices"]]
+
+
+def test_known_values_keys_are_real_leaves():
+    leaves = set(crew_config.leaf_paths(crew_config.default_config()))
+
+    assert set(menu.known_values()) <= leaves
+
+
+def test_row_shows_current_value_and_source(tmp_path):
+    root, gpath = _repo(tmp_path, {"tracker": "jira"},
+                        {"pm": {"authority": "act"}})
+    explain = {r["path"]: r for r in crew_config.explain_config(root, gpath)}
+
+    rows = {r["path"]: r for r in _rows(menu.menu_spec(root, "repo", gpath))}
+
+    assert (rows["pm.authority"]["value"], rows["pm.authority"]["source"]) == (
+        explain["pm.authority"]["value"], explain["pm.authority"]["source"])
+    assert (rows["tracker"]["value"], rows["tracker"]["source"]) == ("jira", "repo")
+    assert rows["graph.tool"]["source"] in ("repo", "default")
+
+
+def test_a_new_default_key_appears_without_edit(tmp_path, monkeypatch):
+    monkeypatch.setattr(crew_state, "AUTOPILOT_DEFAULTS",
+                        dict(crew_state.AUTOPILOT_DEFAULTS, newKnob=1))
+    root, gpath = _repo(tmp_path)
+
+    rows = {r["path"] for r in _rows(menu.menu_spec(root, "repo", gpath))}
+
+    assert "autopilot.newKnob" in rows
+
+
+# --- Step 4: save -----------------------------------------------------------
+
+_MACHINE_SET = {"pm.authority": "act", "notify.provider": "telegram",
+                "guards.forcePush": "ask", "memory.mode": "vault"}
+_REPO_SET = {"tracker": "jira", "verifyGate": True, "autopilot.maxPhases": 6}
+
+
+def _count_replaces(monkeypatch):
+    calls = []
+    real = os.replace
+
+    def _counting(src, dst):
+        calls.append(os.path.basename(dst))
+        return real(src, dst)
+    monkeypatch.setattr(crew_config.os, "replace", _counting)
+    return calls
+
+
+def test_save_writes_each_layer_once(tmp_path, monkeypatch):
+    root, gpath = _repo(tmp_path, {"verifyGate": False})
+    calls = _count_replaces(monkeypatch)
+
+    code = menu.save(root, {"machine": _MACHINE_SET, "repo": _REPO_SET},
+                     apply=True, global_path=gpath)
+
+    assert (code, sorted(calls)) == (0, ["config.json", "global.json"])
+
+
+def test_save_with_machine_changes_only_leaves_the_repo_file(tmp_path, monkeypatch):
+    root, gpath = _repo(tmp_path)
+    repo_file = os.path.join(root, ".crew", "config.json")
+    before = open(repo_file, "rb").read()
+    calls = _count_replaces(monkeypatch)
+
+    menu.save(root, {"machine": _MACHINE_SET}, apply=True, global_path=gpath)
+
+    assert (calls, open(repo_file, "rb").read()) == (["global.json"], before)
+
+
+def test_save_validates_both_layers_before_writing_either(tmp_path, capsys):
+    root, gpath = _repo(tmp_path, global_cfg={"pm": {"authority": "report-only"}})
+    repo_file = os.path.join(root, ".crew", "config.json")
+    before = (open(gpath, "rb").read(), open(repo_file, "rb").read())
+
+    code = menu.save(root, {"machine": _MACHINE_SET,
+                            "repo": {"scope.mode": "block"}},
+                     apply=True, global_path=gpath)
+
+    assert code == 2
+    assert "scope.mode" in capsys.readouterr().err
+    assert (open(gpath, "rb").read(), open(repo_file, "rb").read()) == before
+
+
+def test_save_dry_run_writes_nothing(tmp_path, monkeypatch, capsys):
+    root, gpath = _repo(tmp_path)
+    calls = _count_replaces(monkeypatch)
+
+    code = menu.save(root, {"machine": _MACHINE_SET, "repo": _REPO_SET},
+                     apply=False, global_path=gpath)
+
+    out = capsys.readouterr().out
+    assert (code, calls) == (0, [])
+    assert "dry run" in out and "! pm.authority widens to" in out
+
+
+def test_save_changing_a_key_back_is_no_change(tmp_path, monkeypatch, capsys):
+    root, gpath = _repo(tmp_path, {"tracker": "jira"},
+                        {"pm": {"authority": "act"}})
+    calls = _count_replaces(monkeypatch)
+
+    code = menu.save(root, {"machine": {"pm.authority": "act"},
+                            "repo": {"tracker": "jira"}},
+                     apply=True, global_path=gpath)
+
+    assert (code, calls) == (0, [])
+    assert "nothing to change" in capsys.readouterr().out
+
+
+def test_save_reports_a_partial_os_failure(tmp_path, monkeypatch, capsys):
+    root, gpath = _repo(tmp_path)
+
+    def _fail(*_args, **_kwargs):
+        raise OSError("read-only file system")
+    monkeypatch.setattr(menu.crew_config, "write_repo_config", _fail)
+    code = menu.save(root, {"machine": _MACHINE_SET, "repo": _REPO_SET},
+                     apply=True, global_path=gpath)
+
+    captured = capsys.readouterr()
+    assert code == 1
+    assert "machine layer: written" in captured.out
+    assert "repo layer: NOT written" in captured.err
+    assert json.loads(open(gpath, encoding="utf-8").read())["pm"]["authority"] == "act"
+
+
+def test_save_cli_takes_a_json_change_set(tmp_path, capsys):
+    root, gpath = _repo(tmp_path)
+
+    code = menu.main(["--root", root, "--global-path", gpath, "save",
+                      "--changes", json.dumps({"repo": {"tracker": "sdp"}}),
+                      "--apply"])
+
+    assert code == 0, capsys.readouterr()
+    written = json.loads(open(os.path.join(root, ".crew", "config.json"),
+                              encoding="utf-8").read())
+    assert written["tracker"] == "sdp"
+
+
+# --- Step 5: delete and restore ---------------------------------------------
+
+
+def _config(root):
+    return os.path.join(root, ".crew", "config.json")
+
+
+def _backups(root):
+    return sorted(n for n in os.listdir(os.path.join(root, ".crew"))
+                  if n.startswith("config.json.bak-"))
+
+
+@pytest.mark.parametrize("confirm,apply", [(None, True), ("wrong", True),
+                                           ("repo", False)])
+def test_delete_refuses_without_confirmation(tmp_path, confirm, apply):
+    root, gpath = _repo(tmp_path)
+    before = open(_config(root), "rb").read()
+
+    code = menu.delete_repo_config(root, confirm, apply, now=_now(),
+                                   global_path=gpath)
+
+    assert code == (0 if confirm == "repo" else 2)
+    assert (_backups(root), open(_config(root), "rb").read()) == ([], before)
+
+
+def test_delete_writes_backup_first(tmp_path, monkeypatch):
+    root, gpath = _repo(tmp_path)
+    original = open(_config(root), "rb").read()
+    seen = []
+    real_remove = os.remove
+
+    def _checking_remove(path):
+        backup = os.path.join(root, ".crew", f"config.json.bak-{_TS}")
+        seen.append(os.path.exists(backup)
+                    and open(backup, "rb").read() == original)
+        return real_remove(path)
+    monkeypatch.setattr(menu.os, "remove", _checking_remove)
+
+    code = menu.delete_repo_config(root, "repo", True, now=_now(),
+                                   global_path=gpath)
+
+    assert (code, seen, os.path.exists(_config(root))) == (0, [True], False)
+
+
+def test_delete_refuses_when_backup_fails(tmp_path, monkeypatch):
+    root, gpath = _repo(tmp_path)
+
+    def _fail(*_args, **_kwargs):
+        raise OSError("no space left on device")
+    monkeypatch.setattr(menu.shutil, "copy2", _fail)
+    code = menu.delete_repo_config(root, "repo", True, now=_now(),
+                                   global_path=gpath)
+
+    assert (code, os.path.exists(_config(root))) == (2, True)
+
+
+def test_delete_backup_name_never_collides(tmp_path):
+    root, gpath = _repo(tmp_path)
+    crew_dir = os.path.join(root, ".crew")
+    for name, body in ((f"config.json.bak-{_TS}", b"older"),
+                       ("config.json.broken", b"broken")):
+        with open(os.path.join(crew_dir, name), "wb") as handle:
+            handle.write(body)
+
+    menu.delete_repo_config(root, "repo", True, now=_now(), global_path=gpath)
+
+    assert _backups(root) == [f"config.json.bak-{_TS}", f"config.json.bak-{_TS}-2"]
+    assert open(os.path.join(crew_dir, f"config.json.bak-{_TS}"), "rb").read() == b"older"
+    assert open(os.path.join(crew_dir, "config.json.broken"), "rb").read() == b"broken"
+
+
+def test_delete_prints_restore_command_that_works(tmp_path, capsys):
+    root, gpath = _repo(tmp_path, {"tracker": "jira"})
+    original = open(_config(root), "rb").read()
+
+    menu.delete_repo_config(root, "repo", True, now=_now(), global_path=gpath)
+    line = [ln for ln in capsys.readouterr().out.splitlines()
+            if "restore-repo" in ln][-1]
+    command = line.split("restore: ", 1)[1]
+    run = subprocess.run(command, shell=True, capture_output=True, text=True,
+                         check=False)
+
+    assert run.returncode == 0, run.stderr
+    assert open(_config(root), "rb").read() == original
+
+
+def test_delete_preview_names_what_changes(tmp_path, capsys):
+    root, gpath = _repo(tmp_path,
+                        {"scope.mode": "block", "guards.forcePush": "block",
+                         "guards.roleWrites": "block", "tracker": "jira"},
+                        {"guards": {"forcePush": "allow", "roleWrites": "off"}})
+
+    menu.delete_repo_config(root, None, False, now=_now(), global_path=gpath)
+
+    out = capsys.readouterr().out
+    assert "scope.mode: \"block\" -> \"off\"  !" in out
+    assert "guards.roleWrites: \"block\" -> \"off\"  !" in out
+    assert "tracker: \"jira\" -> \"files\"" in out
+    # The ratchet, not precedence: an absent repo value is the floor, so
+    # deleting a repo `block` under a machine `allow` stays `block`.
+    assert "guards.forcePush" not in out
+    assert "isCrew" in out and "platform-sync" in out
+
+
+def test_delete_leaves_crew_json(tmp_path):
+    root, gpath = _repo(tmp_path)
+    crew_json = os.path.join(root, ".crew", "crew.json")
+    with open(crew_json, "w", encoding="utf-8") as handle:
+        handle.write('{"x": 1}')
+
+    menu.delete_repo_config(root, "repo", True, now=_now(), global_path=gpath)
+
+    assert open(crew_json, encoding="utf-8").read() == '{"x": 1}'
+
+
+def test_restore_backs_up_a_healed_default_first(tmp_path):
+    root, gpath = _repo(tmp_path, {"tracker": "jira"})
+    original = open(_config(root), "rb").read()
+    menu.delete_repo_config(root, "repo", True, now=_now(), global_path=gpath)
+    crew_platform.heal_config(root)
+    healed = open(_config(root), "rb").read()
+    backup = os.path.join(root, ".crew", f"config.json.bak-{_TS}")
+
+    code = menu.restore_repo_config(root, backup, True, now=_now())
+
+    assert (code, open(_config(root), "rb").read()) == (0, original)
+    saved = os.path.join(root, ".crew", f"config.json.bak-{_TS}-2")
+    assert open(saved, "rb").read() == healed
+
+
+@pytest.mark.parametrize("where", ["outside", "badname", "notjson", "empty"])
+def test_restore_refuses_a_non_backup_path(tmp_path, where):
+    root, _ = _repo(tmp_path)
+    before = open(_config(root), "rb").read()
+    crew_dir = os.path.join(root, ".crew")
+    path = {"outside": str(tmp_path / f"config.json.bak-{_TS}"),
+            "badname": os.path.join(crew_dir, "verify.json"),
+            "notjson": os.path.join(crew_dir, f"config.json.bak-{_TS}"),
+            "empty": os.path.join(crew_dir, f"config.json.bak-{_TS}")}[where]
+    body = {"outside": '{"tracker": "x"}', "badname": '{"tracker": "x"}',
+            "notjson": "{nope", "empty": "{}"}[where]
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write(body)
+
+    code = menu.restore_repo_config(root, path, True, now=_now())
+
+    assert (code, open(_config(root), "rb").read()) == (2, before)
+
+
+def test_repo_name_is_the_checkout_basename(tmp_path):
+    root, _ = _repo(tmp_path)
+
+    assert menu.repo_name(root) == "repo"
+
+
+def test_delete_cli_needs_the_typed_name(tmp_path, capsys):
+    root, gpath = _repo(tmp_path)
+
+    code = menu.main(["--root", root, "--global-path", gpath, "delete-repo",
+                      "--apply"])
+
+    assert code == 2
+    assert "--confirm repo" in capsys.readouterr().err
+    assert os.path.exists(_config(root))
+
+
+def test_spec_cli_prints_json(tmp_path, capsys):
+    root, gpath = _repo(tmp_path)
+
+    code = menu.main(["--root", root, "--global-path", gpath, "spec",
+                      "--layer", "repo", "--area", "guards", "--json"])
+
+    spec = json.loads(capsys.readouterr().out)
+    assert code == 0
+    assert [a["id"] for a in spec["areas"]] == ["guards"]
+
+
+def test_script_runs_standalone(tmp_path):
+    root, gpath = _repo(tmp_path)
+    script = os.path.join(_PLUGIN, "hooks", "scripts", "crew_config_menu.py")
+
+    run = subprocess.run([sys.executable, script, "--root", root,
+                          "--global-path", gpath, "spec", "--layer", "machine"],
+                         capture_output=True, text=True, check=False)
+
+    assert run.returncode == 0, run.stderr
+    assert "pm.authority" in run.stdout
+
+
+# --- Step 7: the commands and the procedure ---------------------------------
+
+
+def _read(*parts):
+    with open(os.path.join(_PLUGIN, *parts), encoding="utf-8") as handle:
+        return handle.read()
+
+
+def _flat(text):
+    return " ".join(text.split())
+
+
+def _frontmatter_tools(text):
+    head = text.split("---", 2)[1]
+    line = [ln for ln in head.splitlines() if ln.startswith("allowed-tools:")][0]
+    return {tool.strip() for tool in line.split(":", 1)[1].split(",")}
+
+
+@pytest.mark.parametrize("name", ["config.md", "config-setup.md"])
+def test_both_commands_follow_the_menu_procedure(name):
+    text = _read("commands", name)
+
+    assert "skills/crew-setup/config-menu.md" in text
+    assert "AskUserQuestion" in _frontmatter_tools(text)
+
+
+def test_menu_procedure_names_page_size_and_other_escape():
+    text = _flat(_read("skills", "crew-setup", "config-menu.md"))
+
+    assert "3 choices per page plus More" in text
+    assert "Other is an escape and is never required" in text
+
+
+def test_menu_procedure_requires_save_and_typed_delete():
+    text = _flat(_read("skills", "crew-setup", "config-menu.md"))
+
+    assert "save --changes" in text
+    assert "only after the dry run has been shown" in text
+    assert "delete-repo --confirm" in text
+    assert text.index("save --changes") < text.index("--apply")
+
+
+def test_menu_procedure_headless_fallback():
+    text = _flat(_read("skills", "crew-setup", "config-menu.md"))
+
+    assert "Headless" in text
+    assert "crew_config_menu.py --root . spec" in text
+    assert "Nothing is applied from a default" in text
+
+
+def test_config_md_no_longer_claims_it_never_writes_the_repo_file():
+    text = _flat(_read("commands", "config.md"))
+
+    assert "it does not write `.crew/config.json`" not in text
+    assert "--set" in text and "--repo" in text

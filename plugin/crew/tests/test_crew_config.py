@@ -1807,3 +1807,291 @@ def test_check_is_quiet_without_a_contradiction(tmp_path, capsys):
         "production": {"requireHuman": True}}}), encoding="utf-8")
     assert crew_config.main(["--root", str(root), "--check"]) == 0
     assert "requireHuman" not in capsys.readouterr().out
+
+
+# --- T-0075: enum validation shared by both writers -------------------------
+
+_BAD_ENUM_VALUES = [
+    ("pm.authority", "bogus"),
+    ("guards.forcePush", "yes"),
+    ("install.policy", "always"),
+    ("guards.prodDatabase", "write"),
+    ("pm.ticketGranularity", "ticket"),
+    ("qa.provider", "gpt"),
+]
+
+
+@pytest.mark.parametrize("dotted,value", _BAD_ENUM_VALUES)
+def test_enum_key_outside_its_values_is_refused(tmp_path, dotted, value):
+    path = tmp_path / "global.json"
+
+    with pytest.raises(crew_config.GlobalWriteRefused) as caught:
+        crew_config.plan_global_write({dotted: value}, str(path))
+
+    message = str(caught.value)
+    assert dotted in message and repr(value) in message
+    assert all(str(allowed) in message
+               for allowed in crew_config.enum_values(dotted))
+
+
+def _every_enum_value():
+    keys = ["pm.authority", "pm.ticketGranularity", "qa.provider",
+            "dev.provider"]
+    keys += [k for k in crew_config.leaf_paths(crew_config.default_global_config())
+             if crew_state.ratchet_spec(k) is not None]
+    return [(key, value) for key in keys
+            for value in crew_config.enum_values(key)]
+
+
+@pytest.mark.parametrize("dotted,value", _every_enum_value())
+def test_enum_key_inside_its_values_is_accepted(tmp_path, dotted, value):
+    _, changes = crew_config.plan_global_write(
+        {dotted: value}, str(tmp_path / "global.json"))
+
+    assert [c["after"] for c in changes] in ([value], [])
+
+
+def test_non_enum_key_keeps_accepting_any_json(tmp_path):
+    _, changes = crew_config.plan_global_write(
+        {"notify.chatId": "12345",
+         "qa.roles": {"anything": {"provider": "codex", "x": [1]}}},
+        str(tmp_path / "global.json"))
+
+    assert {c["path"] for c in changes} == {"notify.chatId", "qa.roles"}
+
+
+# --- T-0075: the one repo write path ----------------------------------------
+
+
+def _repo(tmp_path, config=None, *, crlf=False):
+    """A repo whose `.crew/config.json` holds `config` (defaults when None)."""
+    cfg = crew_config.default_config() if config is None else config
+    root = crew_fixtures.make_repo(tmp_path, config=None, git=False)
+    text = json.dumps(cfg, indent=2) + "\n"
+    if crlf:
+        text = text.replace("\n", "\r\n")
+    (root / ".crew" / "config.json").write_bytes(text.encode("utf-8"))
+    return root
+
+
+def _repo_bytes(root):
+    return (root / ".crew" / "config.json").read_bytes()
+
+
+@pytest.mark.parametrize("dotted,value", [
+    ("platform.os", "linux"),
+    ("schema", 3),
+    ("scope.mode", "block"),
+    ("scope.allowCliApproval", True),
+    ("context.autoClear.onlyRepos", ["x"]),
+    ("context.autoClear.onlySessions", ["y"]),
+    ("autopilot.frobnicate", 1),
+    ("context.autoClear.enabled", True),
+    ("resume.auto", True),
+])
+def test_repo_writer_refuses(tmp_path, dotted, value):
+    root = _repo(tmp_path)
+    before = _repo_bytes(root)
+
+    with pytest.raises(crew_config.RepoWriteRefused) as caught:
+        crew_config.write_repo_config(str(root), {dotted: value},
+                                      str(tmp_path / "g.json"))
+
+    assert dotted in str(caught.value) and " - " in str(caught.value)
+    assert _repo_bytes(root) == before
+
+
+@pytest.mark.parametrize("dotted", ["scope", "context", "context.autoClear",
+                                    "platform", "guards"])
+def test_repo_writer_refuses_a_whole_block(tmp_path, dotted):
+    root = _repo(tmp_path)
+    before = _repo_bytes(root)
+
+    with pytest.raises(crew_config.RepoWriteRefused):
+        crew_config.write_repo_config(str(root), {dotted: {}},
+                                      str(tmp_path / "g.json"))
+
+    assert _repo_bytes(root) == before
+
+
+def test_repo_writer_accepts_a_veto(tmp_path):
+    root = _repo(tmp_path)
+
+    crew_config.write_repo_config(
+        str(root), {"context.autoClear.enabled": False, "resume.auto": False},
+        str(tmp_path / "g.json"))
+
+    written = json.loads(_repo_bytes(root))
+    assert (written["context"]["autoClear"]["enabled"],
+            written["resume"]["auto"]) == (False, False)
+
+
+def test_repo_write_merges_and_keeps_unknown_keys(tmp_path):
+    cfg = crew_config.default_config()
+    cfg["x-local"] = 1
+    root = _repo(tmp_path, cfg)
+
+    crew_config.write_repo_config(str(root), {"tracker": "jira"},
+                                  str(tmp_path / "g.json"))
+
+    written = json.loads(_repo_bytes(root))
+    assert (written["x-local"], written["tracker"]) == (1, "jira")
+
+
+@pytest.mark.parametrize("make_crew_dir", [False, True])
+def test_repo_write_refuses_without_a_config(tmp_path, capsys, make_crew_dir):
+    root = tmp_path / "bare"
+    root.mkdir()
+    if make_crew_dir:
+        (root / ".crew").mkdir()
+    before = sorted(p.name for p in root.rglob("*"))
+
+    code = crew_config.main(["--root", str(root), "--repo", "--apply",
+                             "--global-path", str(tmp_path / "g.json"),
+                             "--set", 'tracker="jira"'])
+
+    err = capsys.readouterr().err
+    assert code == 2
+    assert "/crew:init" in err and "platform-sync" in err
+    assert sorted(p.name for p in root.rglob("*")) == before
+
+
+def test_repo_write_refuses_a_malformed_config(tmp_path, capsys):
+    root = crew_fixtures.make_repo(tmp_path, config=None, git=False)
+    (root / ".crew" / "config.json").write_text("{not json", encoding="utf-8")
+    before = _repo_bytes(root)
+
+    code = crew_config.main(["--root", str(root), "--repo", "--apply",
+                             "--global-path", str(tmp_path / "g.json"),
+                             "--set", 'tracker="jira"'])
+
+    assert code == 2
+    assert "heal" in capsys.readouterr().err
+    assert _repo_bytes(root) == before
+
+
+def test_repo_write_is_atomic(tmp_path, monkeypatch):
+    root = _repo(tmp_path)
+    before = _repo_bytes(root)
+
+    def _boom(_fd):
+        raise OSError("disk full")
+    monkeypatch.setattr(crew_config.os, "fsync", _boom)
+    with pytest.raises(OSError):
+        crew_config.write_repo_config(str(root), {"tracker": "jira"},
+                                      str(tmp_path / "g.json"))
+
+    assert _repo_bytes(root) == before
+    assert not list((root / ".crew").glob("config.json.*.tmp"))
+
+
+def test_repo_write_preserves_crlf(tmp_path):
+    root = _repo(tmp_path, crlf=True)
+
+    crew_config.write_repo_config(str(root), {"tracker": "jira"},
+                                  str(tmp_path / "g.json"))
+
+    raw = _repo_bytes(root)
+    assert b"\r\n" in raw and b"\n" not in raw.replace(b"\r\n", b"")
+
+
+def _repo_with_global(tmp_path, repo_cfg_updates, global_cfg):
+    cfg = crew_config.default_config()
+    for dotted, value in repo_cfg_updates.items():
+        crew_config._set_path(cfg, dotted.split("."), value)  # pylint: disable=protected-access
+    root = _repo(tmp_path, cfg)
+    gpath = tmp_path / "g.json"
+    gpath.write_text(json.dumps(global_cfg), encoding="utf-8")
+    return root, str(gpath)
+
+
+def test_repo_ratchet_widening_is_marked(tmp_path, capsys):
+    root, gpath = _repo_with_global(
+        tmp_path, {"guards.forcePush": "block"}, {"guards": {"forcePush": "allow"}})
+
+    _, changes = crew_config.plan_repo_write(
+        str(root), {"guards.forcePush": "allow"}, gpath)
+    code = crew_config.main(["--root", str(root), "--repo", "--global-path",
+                             gpath, "--set", 'guards.forcePush="allow"'])
+
+    out = capsys.readouterr().out
+    assert (code, [c["widens"] for c in changes]) == (0, [True])
+    assert "! guards.forcePush widens to" in out
+    assert crew_config._RATCHETED["guards.forcePush"][2]["allow"] in out  # pylint: disable=protected-access
+
+
+def test_repo_value_held_down_by_machine_is_named(tmp_path, capsys):
+    root, gpath = _repo_with_global(
+        tmp_path, {"guards.forcePush": "ask"}, {"guards": {"forcePush": "block"}})
+
+    _, changes = crew_config.plan_repo_write(
+        str(root), {"guards.forcePush": "allow"}, gpath)
+    crew_config.main(["--root", str(root), "--repo", "--global-path", gpath,
+                      "--set", 'guards.forcePush="allow"'])
+
+    out = capsys.readouterr().out
+    assert [(c["widens"], c["heldDownBy"]) for c in changes] == [(False, "global")]
+    assert "held down by the machine-global layer at block" in out
+    assert "! guards.forcePush widens" not in out
+
+
+_CONSENT_WIDENINGS = [
+    ("context.autoClear.unsafeFocus", False, True),
+    ("autopilot.mode", "off", "plan"),
+    ("verifyGate", True, False),
+]
+
+
+@pytest.mark.parametrize("dotted,narrow,wide", _CONSENT_WIDENINGS)
+def test_repo_consent_widening_is_marked(tmp_path, capsys, dotted, narrow, wide):
+    root, gpath = _repo_with_global(tmp_path, {dotted: narrow}, {})
+
+    _, changes = crew_config.plan_repo_write(str(root), {dotted: wide}, gpath)
+    crew_config.main(["--root", str(root), "--repo", "--global-path", gpath,
+                      "--set", f"{dotted}={json.dumps(wide)}"])
+
+    assert [c["widens"] for c in changes] == [True]
+    assert f"! {dotted} widens to" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("dotted,narrow,wide", _CONSENT_WIDENINGS + [
+    ("guards.forcePush", "block", "allow")])
+def test_narrowing_is_never_marked(tmp_path, capsys, dotted, narrow, wide):
+    root, gpath = _repo_with_global(
+        tmp_path, {dotted: wide}, {"guards": {"forcePush": "allow"}})
+
+    _, changes = crew_config.plan_repo_write(str(root), {dotted: narrow}, gpath)
+    crew_config.main(["--root", str(root), "--repo", "--global-path", gpath,
+                      "--set", f"{dotted}={json.dumps(narrow)}"])
+
+    assert [c["widens"] for c in changes] == [False]
+    assert "!" not in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("dotted,value", _BAD_ENUM_VALUES)
+def test_repo_enum_validation(tmp_path, dotted, value):
+    root = _repo(tmp_path)
+
+    with pytest.raises(crew_config.RepoWriteRefused) as caught:
+        crew_config.plan_repo_write(str(root), {dotted: value},
+                                    str(tmp_path / "g.json"))
+
+    assert dotted in str(caught.value)
+
+
+@pytest.mark.parametrize("dotted", [
+    "context.autoClear.unsafeFocus", "tracker", "jira.project",
+    "scope.allowCliApproval", "platform.os"])
+def test_global_writer_still_refuses_consent_and_repo_keys(tmp_path, dotted):
+    with pytest.raises(crew_config.GlobalWriteRefused):
+        crew_config.plan_global_write({dotted: "x"}, str(tmp_path / "g.json"))
+
+
+def test_crew_json_presence_is_named(tmp_path, capsys):
+    root = _repo(tmp_path)
+    (root / ".crew" / "crew.json").write_text("{}", encoding="utf-8")
+
+    crew_config.main(["--root", str(root), "--repo", "--global-path",
+                      str(tmp_path / "g.json"), "--set", 'tracker="jira"'])
+
+    assert ".crew/crew.json" in capsys.readouterr().out

@@ -858,7 +858,7 @@ layers, lowest precedence first:
 |---|---|---|
 | Built-in defaults | `hooks/scripts/crew_config.py`'s `default_config()` | Nothing — this is code, not a file |
 | Global | `~/.claude/crew/config.json` | `/crew:config` — a guided walkthrough that shows the plan first and writes only after a yes. It is also the only thing in crew that writes outside the repository. Hand-editing still works. |
-| Repo | `.crew/config.json` | `/crew:init` (first write); `platform-sync` (the `platform` block, and the whole file when it heals — see §3) |
+| Repo | `.crew/config.json` | `/crew:init` (first write); `platform-sync` (the `platform` block, and the whole file when it heals — see §3); the `/crew:config` menu (`crew_config.py --set ... --repo`, `crew_config_menu.py save`) |
 
 Repo overrides global overrides built-in defaults, merged recursively with
 `crew_state.merge_defaults` — the same policy `/crew:upgrade` uses to bring a
@@ -931,6 +931,56 @@ A global file that is missing, empty, or fails to parse is treated exactly
 like an absent one — the same reasoning `_read_config_strict` documents for
 the repo side — so a typo in your global config degrades one repo's settings
 to defaults rather than breaking every session on the machine.
+
+### The `/crew:config` menu — set either layer, or delete the repo config
+
+`/crew:config` with no argument, and its alias `/crew:config-setup`, open a
+menu (`skills/crew-setup/config-menu.md`, backed by
+`hooks/scripts/crew_config_menu.py`). Pick the **layer** — this machine's
+`~/.claude/crew/config.json` or this repo's `.crew/config.json` — then an
+**area** (models, autopilot, guards, notify, memory and tracker, auto-clear,
+other), then a **setting**, then a **value from a list**. Each value shows the
+current effective value, the layer that decided it, and the recommendation
+first; the owner never has to type one.
+
+- **Data-driven.** The rows are `crew_config.py`'s own key lists
+  (`default_global_config()` for the machine layer, `default_config()` for the
+  repo), so a key added to crew appears with no menu edit, and a committed test
+  runs every offered value through the writer.
+- **Selection only, Save once per layer.** Picks collect in a pending set that
+  spans areas and both layers. Save validates **both** layers before writing
+  either, shows the dry-run diff with `!` widening lines and "held down by the
+  machine-global layer" lines, then writes each changed layer once. Discard
+  writes nothing.
+- **One validated repo writer.** `crew_config.py --set PATH=JSON --repo
+  [--apply]` (`plan_repo_write` / `write_repo_config`) merges, refuses unknown
+  keys and whole-block writes, checks enum values, validates providers, writes
+  atomically and keeps the file's line ending. It refuses `platform.*`
+  (platform-sync owns it), `schema`, and `context.autoClear.onlyRepos` /
+  `.onlySessions` (read from the machine file only), and takes only a veto
+  (`false`) or `null` for `context.autoClear.enabled` and `resume.auto`.
+- **`scope.*` is refused on purpose.** `scope.mode` and
+  `scope.allowCliApproval` are the scope guard's trust root, and
+  `.crew/config.json` is untracked, so the completion audit (which diffs
+  tracked files) would never see a one-command write that disarmed it. They
+  stay a hand edit by the owner or `/crew:init`, shown read-only in the menu.
+- **Delete the repo config.** Previews what changes (a `!` on anything that
+  widens, `scope.mode` returning to `off` included), requires the typed repo
+  name, writes a verified `.crew/config.json.bak-<UTC timestamp>` first, then
+  deletes and prints the exact restore command
+  (`crew_config_menu.py restore-repo --from <backup> --apply`). Until the next
+  SessionStart there is no config, so `isCrew` is false and every hook that
+  gates on it stands down; then platform-sync's heal recreates the built-in
+  defaults. `.crew/crew.json`, `verify.json`, backups and ticket state are
+  untouched.
+- **Headless.** With no way to ask, `crew_config_menu.py spec --layer
+  <layer>` prints the plan and a write needs the explicit
+  `save --changes '<json>' --apply` or `delete-repo --confirm <name> --apply`.
+
+Both writers now refuse a value outside the key's own tier or provider list
+(`pm.authority`, `pm.ticketGranularity`, `qa.provider`, `dev.provider` and every
+ratcheted key). Before T-0075 a global `--set pm.authority=bogus` was written
+and then read as `report-only`.
 
 ### §11b. `guards` — the guardrails you can turn down, per machine
 
@@ -2388,11 +2438,12 @@ CONFIG.md §17 has the table and the reasoning.
 | `/crew:model` | Report the resolved provider and model for every role, and which family would be reviewing which — see §12 |
 | `/crew:status [--memory]` | Read-only status in at most 40 lines - config, roster, tickets, review budget, gate, codemap, handoff; `--memory` adds the context hook's stats |
 | `/crew:migrate [--preview\|--apply\|--rollback <dir>]` | crew 1.0: one-time move of `.crew/config.json` to `.crew/crew.json`, tickets and tracker caches to `.work/tickets/<id>/`, `metrics.md` to `metrics.jsonl`; previews first, backs up, applies atomically, rolls back |
-| `/crew:config [--show]` | Show where every setting comes from, and walk the machine-global config — see §11 |
+| `/crew:config [--show\|--models]` | Show where every setting comes from; with no argument, the menu that sets the machine or repo config from a list and deletes the repo config with a backup — see §11 |
+| `/crew:config-setup` | The `/crew:config` menu under its own name — see §11 |
 | `/crew:gate <disable\|enable\|status> <github\|bitbucket>` | Take a repository's merge gate down and put it back **from the export**. Gated by `guards.mergeGate`, which ships as `block` |
 | `/crew:change <new\|status <id>\|close <id>\|list>` | File a change request into SDP, Jira or `.work/changes/`, one process either way. `new` refuses to file while any of the template's questions 1–9 is unanswered or a placeholder and names which; `close` refuses without the post-change validation results — see §24b |
 
-35 commands.<!-- claim: plugin-commands:crew -->
+36 commands.<!-- claim: plugin-commands:crew -->
 
 ### Agents
 

@@ -1,7 +1,10 @@
 # The machine-global config walkthrough
 
 Shared by the `crew-setup` skill, `/crew:config` and `/crew:init` Phase 1. One
-source of truth.
+source of truth for what the machine-layer keys mean. `/crew:config` with no
+argument (and `/crew:config-setup`) now asks through the menu in
+`config-menu.md`: its machine layer is step 2 below, its recommendations cite
+this file, and its Save is step 3.
 
 `~/.claude/crew/config.json` sets defaults for **every crew repo on this
 machine**. Until 0.16.0 nothing in crew ever wrote it or asked about it, and
@@ -77,6 +80,11 @@ nothing, and a key that quietly does nothing is worse than one refused out
 loud — name each and say which repo's `.crew/config.json` it belongs in.
 
 ## 2. Ask, one block at a time
+
+In the menu this is the **machine** layer: `crew_config_menu.py spec --layer
+machine` lists every key below with its current value, its source and the
+values to pick from, recommendation first. The guidance in this section is
+what to say about each one.
 
 Do not ask about everything. Ask about what the table above shows coming from
 `default` and what the user has a real answer for. In this order:
@@ -161,6 +169,10 @@ overrides `memory.mode` in its own config.
 
 ## 3. Show the plan, then write
 
+From the menu, Save runs `crew_config_menu.py save --changes '<json>'` (a dry
+run over both layers) and then the same with `--apply` — see
+`config-menu.md` step 4. It calls the same writer as the command below.
+
 Dry run first — this is the default, and it is what the user says yes to:
 
 ```
@@ -182,8 +194,9 @@ not a bug to route around.
 
 ## 4. Say what this did not do
 
-- It did not touch any `.crew/config.json`. The repo layer still wins over
-  everything written here.
+- The machine layer did not touch any `.crew/config.json`; a repo change is
+  the menu's repo layer, through `--set --repo`. The repo layer still wins over
+  everything written here, except for the ratcheted keys.
 - It did not change `schema`, `tier` or `roles` anywhere — those are repo
   facts.
 - If any per-role pin changed, run `--models` once more and read the resulting
