@@ -1075,16 +1075,64 @@ flavours record the trigger per session, in a repo with either
 record first, without needing python, so a compact whose own record never
 lands is not manual; absent, unreadable, older than 600 s, or not replaceable is not manual,
 and records and orphaned `.tmp` files older than a day are pruned); no handoff, or one archived
-as stale, or one judged stale that could not be archived; no `resume:`
+as stale, or one judged stale that could not be archived; the handoff is the
+automatic PreCompact skeleton (its Changed files list is bare `git` output, so
+a file named `resume: ...` would otherwise be read as the line); no `resume:`
 line, `resume: none`, or a line the grammar refuses; a `branch:` or `head:`
 that does not match the checkout; a missing `.work/tickets/<id>/` or
 `.work/autopilot/<slug>.json`; a command not installed in the plugin; a
-`<git-common-dir>/crew/resume-state.json` that exists and cannot be read or
-is not the shape `record_run` writes (an unknown, never "nothing resumed"; move
-it aside to reset); a handoff already passed to `record_run`; a progress fingerprint that cannot be
-computed (an unreadable `.work/INDEX.md` or an unlistable ticket directory
-counts as "cannot be computed", never as progress); and the same command a
-second time with no progress since. The `crew_resume.py decide` CLI applies
+`handoff-author.json` that could not be read; no record of which session wrote
+this handoff; the handoff changed since its author session wrote it; the
+handoff was written by another session; this session's process could not be
+identified; a `<git-common-dir>/crew/resume-state.json` that cannot be read,
+is not the shape `record_run` writes, or whose directory cannot be searched
+(an unknown, never "nothing resumed"; fix the permissions or move it aside to
+reset); a handoff already passed to `record_run`; a progress fingerprint that
+cannot be computed (an unreadable `.work/INDEX.md`, one whose directory
+cannot be searched, or an unlistable ticket directory counts as "cannot be
+computed", never as progress); and the same command a second time with no
+progress since. A `decide` that raises is `wait` with reason `internal
+error`, and the handoff is still injected.
+
+**Which session wrote the note (T-0042).** On an armed machine, a
+PostToolUse Write, Edit or MultiEdit of the configured handoff makes the
+context hook record `{sha256, session_id, process, at}` for this worktree in
+`<git-common-dir>/crew/handoff-author.json` (temp file then `os.replace`,
+under a lock; before the `memory.inject` gate, so injection off still binds).
+An unarmed machine writes no such file. `decide` then waits unless the note's
+sha matches the record and: after `compact`, the payload's `session_id` equals
+the recorded one (it is stable across `/compact`); after `clear`, the Claude
+Code process does (`session_id` changes across `/clear`). The process is the
+nearest ancestor whose `/proc/<pid>/comm` is exactly `claude`, identified by
+pid and start time (T-0042 spike, Claude Code 2.1.283). With no `/proc` —
+native Windows, macOS — the process is unknown and every `clear` waits with
+"this session's process could not be identified"; `compact` is unaffected.
+A note written without Write/Edit/MultiEdit (by Bash, by hand, or before the
+machine was armed) has no record and waits. A recorder that cannot read the
+note, or whose write fails, leaves no entry for the worktree, never the
+previous one.
+
+**The stuck marker.** When a PreCompact can neither remove nor blank this
+session's old record (python's `write_precompact_record`, or either shell
+flavour's keyed removal), it leaves `precompact-<key>.stuck` beside it, and a
+`compact` for that session is not manual while the marker exists or cannot be
+stat'ed. The next record that lands clears it; one older than a day is pruned
+with the records. `.stuck` is not `.json`, so the shells' `precompact-*.json`
+sweeps never remove it. The `os.access` check stays as a second refusal.
+
+**Accepted risks.** A full disk or quota can let an old record survive with no
+marker: if the record cannot be replaced and the marker cannot be created
+while the directory is still writable, an old `manual` record lives for up to
+600 s. The same holds when the PreCompact payload has no readable session id
+(the `precompact-*.json` sweep can fail with no key to mark). Two sessions
+writing the handoff in the same instant can attribute it to the wrong one;
+the record hashes the bytes it reads under a lock, which narrows the window
+but does not close it.
+
+**Unchanged, and reported to the owner:** a malformed repo file still vetoes
+nothing. It is the same class as round 4's FIX (an unreadable veto reads as no
+veto), but T-0006's approved plan chose it, so T-0042 reports it rather than
+changing it; TODO.md tracks the decision. The `crew_resume.py decide` CLI applies
 `crew_state.handoff_staleness` itself, read-only, and waits on a stale note.
 `record_run` asks the consumed-once and loop guards again under its lock and
 refuses (`ok: false`) a handoff already recorded, the same command with no

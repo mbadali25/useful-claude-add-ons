@@ -1349,3 +1349,26 @@ def test_a_failed_author_write_leaves_no_entry_behind(fx, monkeypatch):
     got = fx.decide(source="compact", session="s1", bound=False)
 
     assert (ok, got["action"]) == (False, "wait"), got
+
+
+# --- T-0042 step 7: every wait reason is named where people read ------------
+
+_DOCS = ("plugin/crew/README.md", "plugin/crew/skills/crew-context/SKILL.md",
+         "docs/guides/crew/src/auto-cycle.md", "plugin/crew/CONFIG.md")
+_REASON_PHRASES = ("internal error", "automatic PreCompact skeleton", "written by another session",
+                   "no record of which session wrote", "could not be identified",
+                   "changed since its author session wrote it", "handoff-author.json",
+                   "resume-state.json", "cannot be searched")
+
+
+def test_every_wait_reason_is_named_in_the_docs():
+    """Round 4 NIT :650: `internal error` was produced and named in none of
+    the four reason lists; every reason T-0042 adds is held to the same."""
+    repo = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+    missing = []
+    for rel in _DOCS:
+        with open(os.path.join(repo, rel), encoding="utf-8") as handle:
+            text = " ".join(handle.read().split())
+        missing += [f"{rel}: {phrase!r}" for phrase in _REASON_PHRASES if phrase not in text]
+
+    assert missing == []
