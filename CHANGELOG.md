@@ -85,6 +85,52 @@ All notable changes to this repository are documented here. Format follows [Keep
     `test_crew_autopilot.py` asserts each one reaches `sabotage.MUTATIONS`.
   - `BUDGETS.md` restates the measured `plugin/crew/*.md` total.
 
+- **`crew` 1.0.46: plain-text lifecycle routing (T-0023).** Bumped
+  `1.0.45 -> 1.0.46` (`1.0.41 -> 1.0.42 -> 1.0.43` on its branch, re-set after merging
+  T-0005's 1.0.42; main then gave 1.0.43 to T-0042 and 1.0.44 and 1.0.45 to T-0021).
+  **Off by default** behind the new `route.enabled`
+  (`false` in both config layers and both templates; only the JSON value
+  `true` arms it - `"true"`, `1`, `"yes"` read as off with a warning). When
+  armed, crew's existing UserPromptSubmit context hook matches the WHOLE
+  prompt against a small table (new `hooks/scripts/crew_route.py`,
+  `PHRASES`: brainstorm, spec, plan, implement, review, done, continue,
+  status) and puts one `crew route:` line first in that turn's context,
+  naming the `/crew:<command> <ticket>` whose procedure Claude runs through
+  the Skill tool. The hook runs nothing, blocks nothing, and registers no new
+  hook or skill; unarmed, its output is byte-identical to before routing (compared
+  whole to a golden recorded from `1e0706ac`, through both wrappers).
+  - Three outcomes: `route`; `ask` when the ticket does not resolve to
+    exactly one (an id with no folder, a broken active-ticket pointer,
+    several or no open INDEX tickets - listed - or a `continue` whose
+    `crew_autopilot.next_phase` is a stop, raises, or names approval); `none`,
+    no line at all. The INDEX fallback is T-0004's `open_index_tickets` with
+    exactly one ticket, never `resolve_active`'s first-open-line guess.
+  - Never routes: a mention inside a longer sentence, a question, a line
+    break, over 80 characters, a slash command, anything in backticks, and
+    `do it` / `go ahead` / `yes` / `ok` / `sure` / bare `done` / bare `next` /
+    `ship it`. **Routing never approves:** no row names `/crew:approve`, and a
+    test iterates every row and rendered line to hold it.
+  - Claude Code only (no line under `--harness codex`); silent with
+    `memory.inject: false`. A router that raises costs only its line and is
+    logged as `route: error`. `crew_route.py settings|decide` for a look from
+    the shell. A `route` block only in `.crew/crew.json` is reported.
+  - A repo file written from the template carries `route.enabled: false`,
+    and the repo layer wins, so a machine-wide `true` reaches only repos whose
+    file leaves the key out (CONFIG.md §21).
+  - **The route line is bounded (review round 1).** Every variable-length
+    field `render` reads - intent, ticket, source, phase, command, reason
+    and each listed candidate - is clipped to its own cap with whitespace
+    collapsed, so the line is at most `MAX_LINE_CHARS` (1400) and always fits
+    the 2000-character UserPromptSubmit budget. Before, a `continue` stopped
+    on a 2,100-character open question produced an ask longer than the
+    budget, and the context hook dropped it whole.
+  - `tests/sabotage_route.py`: 29 mutations, each red on its named test
+    through `sabotage.py`. The route tests' child processes point both
+    `HOME` and `USERPROFILE` at an empty directory, so a real
+    `route.enabled: true` in the machine config cannot arm the unarmed cases
+    on Windows either. Config leaf count 121 -> 122; global-settable keys
+    67 -> 68.
+
 - **`crew` 1.0.45: Obsidian Kanban is a first-class tracker again, behind one
   tracker interface (T-0021).** Bumped `1.0.43 -> 1.0.45` (1.0.44 at landing, bumped
   again for a CI fix to its sabotage suite; its branch declared 1.0.43, which main gave to T-0042; its review
