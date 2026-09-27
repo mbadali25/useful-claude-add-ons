@@ -1133,3 +1133,9 @@ byte for byte; the ones whose line itself changed were re-read by hand:
 - `sabotage.py` - `:77` imports `POLICY_MUTATIONS` beside `AUTOPILOT_MUTATIONS`, and `:3049`
   appends it; both lines changed in place.
 - `.crew/verify.json` - rule 26 unchanged (`:281-289`); rule 27 (`:290-295`) is T-0010's.
+
+## Re-anchor provenance - `c87ac3f4` -> `4755ae1a`, 2026-09-26 (T-0018 round-3 mutation retarget)
+
+`git diff --name-only c87ac3f4 4755ae1a` returns only `plugin/crew/tests/sabotage_autopilot.py`
+and `plugin/crew/tests/test_crew_autopilot_status.py`, both cited by name only here, so every
+line citation above holds.

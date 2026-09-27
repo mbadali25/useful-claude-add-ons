@@ -170,10 +170,13 @@ STATUS_MUTATIONS = (
      "    if sub not in AVAILABLE:\n",
      "    if False:\n",
      _S + "test_route_unavailable_names_its_ticket"),
-    ("status reads an UNKNOWN ledger's missing rounds_left as the budget", AUTOPILOT,
+    # Retargeted in round 3: `_review`'s UNKNOWN-state branch now answers a
+    # corrupt ledger before `rounds_left` is read, so this default is reached
+    # only by a readable state with no count (sabotage.py found it green).
+    ("status reads a ledger's missing rounds_left as the budget", AUTOPILOT,
      '    left = ledger.get("rounds_left")\n',
      '    left = ledger.get("rounds_left", review_ledger.BUDGET)\n',
-     _S + "test_status_unknown_ledger_is_unknown"),
+     _S + "test_status_ledger_without_a_rounds_count_is_unknown"),
     ("status reads an unmapped phase as waiting on autopilot", AUTOPILOT,
      "    who = WAITING.get(phase, UNKNOWN)\n",
      '    who = WAITING.get(phase, "autopilot")\n',
