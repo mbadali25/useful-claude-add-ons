@@ -1,5 +1,5 @@
-anchor: useful-claude-add-ons@2b18f7ab
-verified: 2026-09-26
+anchor: useful-claude-add-ons@e463ca53
+verified: 2026-09-27
 
 # localgpu
 
@@ -1093,3 +1093,40 @@ at `:127-128` and the provider tuples at `crew_state.py:1432-1433` (`grep -n
 "^DEV_PROVIDERS\|^QA_PROVIDERS"`, the same two lines, byte-identical), corrected above.
 `.claude-plugin/marketplace.json` changed at crew's `version` only (1.0.42); `localgpu`'s own entry
 is still `0.1.20`. Nothing under `plugin/localgpu/` changed. Nothing was executed.
+**Re-anchored `6f96e627` -> `eba11657` on 2026-09-26 (T-0023).** `6f96e627` -> `1e0706ac` touched
+only refresh artifacts; of the paths this note cites, `git diff --name-only 1e0706ac eba11657`
+returns `.claude-plugin/marketplace.json` (crew's `version` `:218` only; the `:217` description
+this note quotes is unchanged and `localgpu`'s own entry is still `0.1.20`) and
+`plugin/crew/hooks/scripts/crew_config.py`, whose two hunks (`:375-382` in `default_config()`,
+`:547-549` in `default_global_config()`, each adding `route`) are below the `:126-127` re-export,
+which holds (re-read: `DEV_PROVIDERS = crew_state.DEV_PROVIDERS` /
+`QA_PROVIDERS = crew_state.QA_PROVIDERS`). `crew_state.py` did not change, so the `:1429-1430`
+tuples stand. Nothing under `plugin/localgpu/` changed.
+
+## Re-anchor provenance - `2b18f7ab` + `488053fc` -> `a1acd9b7`, 2026-09-27 (T-0023 merge of main)
+
+`3c968175` merges main at `502cb137` (T-0005 landed, its notes anchored `2b18f7ab`) into T-0023 at
+`488053fc` (review round 1's fixes); `f6abe8c1` re-sets crew to 1.0.43 and `a1acd9b7` re-prices
+`.crew/verify.json` rule 28 in place. Both lines' provenance is above. A citation can only be
+wrong at the merge when its file changed on both sides, or when a line from one side cites a file
+the other side changed. Each line of this note was classified by origin (main's text or
+T-0023's), its citations into such files re-mapped with a line diff from that side's revision to
+the merged tree (`502cb137` or `fa4d8cd5`), and each moved one re-read by content with
+`grep -n`/`sed -n`; citations the line diff attributed to the wrong file were discarded, not
+applied. `crew_config.py` changed on both sides; the `:127-128` re-export is above both sides' hunks and holds (re-read). `crew_state.py` changed on T-0005's side only, so `:1432-1433` stands. `.claude-plugin/marketplace.json` moved crew to 1.0.43 in place; `localgpu`'s own entry is still `0.1.20`. Nothing under `plugin/localgpu/` changed. Nothing was executed.
+
+## Re-anchor provenance - `db14619c` + `ad74ed35` -> `e463ca53`, 2026-09-27 (T-0023 lands on T-0021's main)
+
+`c68b40bd` merges origin/main `db14619c` (T-0042 landed as crew 1.0.43, PR #242; T-0021 as
+1.0.45, PR #243) into T-0023's `ad74ed35`, and `e463ca53` bumps crew to 1.0.46. The files both
+sides changed since `502cb137` are `CHANGELOG.md`, `.crew/verify.json`, `plugin/crew/README.md`,
+`plugin/crew/CONFIG.md`, `plugin/crew/BUDGETS.md`, `plugin/crew/hooks/scripts/crew_context.py`,
+`plugin/crew/tests/sabotage.py`, the version files and the refresh artifacts. The conflicting
+provenance sections keep both sides, main's first. Every `path:N` citation in the body, and every
+bare `:N` that follows a path, was mapped from the side its line came from onto the merged tree
+with a line diff (`git show <side>:<path>` against the merge); each one that moved was re-read
+with `sed -n` and corrected, and hits the diff attributed to the wrong file (a bare `:N` after
+an unrelated path) were discarded rather than applied. This note cites
+`.crew/verify.json` by name only, and nothing under `plugin/localgpu/` changed on either side;
+the refresh check named the note only because `.crew/verify.json` gained T-0021's rule 28
+ahead of T-0023's routing rule, now 29. No citation moved. Nothing was executed for this note.

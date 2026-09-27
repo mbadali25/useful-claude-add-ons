@@ -47,6 +47,11 @@ PRECOMPACT_DIR="${PRECOMPACT_COMMON:+$PRECOMPACT_COMMON/crew}"
 PRECOMPACT_DIR="${PRECOMPACT_DIR:-.work/crew}"
 if [ -n "$PRECOMPACT_KEY" ]; then
   rm -f "$PRECOMPACT_DIR/precompact-$PRECOMPACT_KEY.json" 2>/dev/null
+  # T-0042: a record rm could not remove says nothing about THIS compact.
+  # Mark it, so decide refuses it even when python never runs to try again.
+  if [ -e "$PRECOMPACT_DIR/precompact-$PRECOMPACT_KEY.json" ] || [ -L "$PRECOMPACT_DIR/precompact-$PRECOMPACT_KEY.json" ]; then
+    { : > "$PRECOMPACT_DIR/precompact-$PRECOMPACT_KEY.stuck"; } 2>/dev/null
+  fi
 else
   rm -f "$PRECOMPACT_DIR"/precompact-*.json 2>/dev/null
 fi

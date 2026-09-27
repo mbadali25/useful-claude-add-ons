@@ -56,9 +56,12 @@ UserPromptSubmit hook records the approval only from my own prompt. It writes
 `<git-common-dir>/crew/tickets/$1/approval.json`,
 bound to both files' digests; editing `plan.md` afterward invalidates it, which
 is what makes `/crew:implement`'s refusal mean something. Then set
-`spec.md`'s header to `status: planned` and `.work/INDEX.md`'s row to match.
+`spec.md`'s header to `status: planned` and move the tracker to match:
+`python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_tracker.py move --root . --ticket $1 --to planned`.
 Changing that one value keeps the approval; never add a `status:` to plan.md,
-because a token added where there was none stales it.
+because a token added where there was none stales it. Print the tracker's
+lines verbatim; on exit 3 run the command it printed; on exit 1 tell me
+`tracker not updated: <reason>` — the approval stands.
 
 ## `--approve`
 
