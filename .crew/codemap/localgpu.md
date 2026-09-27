@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@e463ca53
+anchor: useful-claude-add-ons@f7163410
 verified: 2026-09-27
 
 # localgpu
@@ -1137,3 +1137,23 @@ ahead of T-0023's routing rule, now 29. No citation moved. Nothing was executed 
 only by T-0075's additions below `_RATCHETED` (`:2548` onward: the enum check, the repo writer, the
 `--repo` flag). The re-export is still `crew_config.py:127-128`, byte-identical, and `crew_state.py`
 did not change. Nothing under `plugin/localgpu/` changed. Nothing was executed.
+
+## Re-anchor provenance - `e95e5964` + `e463ca53` -> `f7163410`, 2026-09-27 (T-0075 merges T-0023's main)
+
+`96b7e59c` merges origin/main `bebbb97f` (T-0023 landed as crew 1.0.46, PR #244; its notes anchored
+`e463ca53`) into T-0075's branch at `0c6b5ecb` (notes anchored `e95e5964`), and `f7163410` bumps
+crew to 1.0.47. The source files both sides changed since `db14619c` are `CHANGELOG.md`,
+`.crew/verify.json`, `plugin/PLUGINS.md`, `plugin/crew/README.md`, `plugin/crew/CONFIG.md`,
+`plugin/crew/BUDGETS.md`, `plugin/crew/hooks/scripts/crew_config.py`,
+`plugin/crew/skills/crew-setup/SKILL.md`, `plugin/crew/tests/sabotage.py`,
+`plugin/crew/tests/test_crew_config.py` and the version files. The conflicting provenance sections
+keep both sides, main's first. Each body line was classified by origin (in T-0075's copy only, in
+main's only, or in both), its `path:N` citations - and bare `:N` after a path in the same
+paragraph - into files the other side changed were mapped with a line diff (`git show
+<side>:<path>` against the merged tree), each moved one re-read with `sed -n`, and hits the diff
+attributed to the wrong file (a bare `:N` after an unrelated path, a same-named file elsewhere)
+discarded rather than applied. This note cites `plugin/crew/hooks/scripts/crew_config.py` only at the `:127-128`
+re-export, which is above both sides' hunks and holds (re-read: `DEV_PROVIDERS =
+crew_state.DEV_PROVIDERS` / `QA_PROVIDERS = crew_state.QA_PROVIDERS`); `crew_state.py` changed on
+neither side. `.claude-plugin/marketplace.json` moved crew to 1.0.47 in place; `localgpu`'s own
+entry is still `0.1.20`. Nothing under `plugin/localgpu/` changed. Nothing was executed.

@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@e463ca53
+anchor: useful-claude-add-ons@f7163410
 verified: 2026-09-27
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -1065,3 +1065,26 @@ citation moved +3 and was re-read with `sed -n`: rule 9 `:164-169` -> `:167-172`
 `:2248-2255` -> `:2282-2289`, re-read), `README.md` and `CHANGELOG.md` (cited by name only here).
 `verify-gate.sh`/`.ps1` and `scripts/check-marketplace.py` did not change. No suite was run for
 this note; the suites T-0075 ran are in its ticket evidence.
+
+## Re-anchor provenance - `e95e5964` + `e463ca53` -> `f7163410`, 2026-09-27 (T-0075 merges T-0023's main)
+
+`96b7e59c` merges origin/main `bebbb97f` (T-0023 landed as crew 1.0.46, PR #244; its notes anchored
+`e463ca53`) into T-0075's branch at `0c6b5ecb` (notes anchored `e95e5964`), and `f7163410` bumps
+crew to 1.0.47. The source files both sides changed since `db14619c` are `CHANGELOG.md`,
+`.crew/verify.json`, `plugin/PLUGINS.md`, `plugin/crew/README.md`, `plugin/crew/CONFIG.md`,
+`plugin/crew/BUDGETS.md`, `plugin/crew/hooks/scripts/crew_config.py`,
+`plugin/crew/skills/crew-setup/SKILL.md`, `plugin/crew/tests/sabotage.py`,
+`plugin/crew/tests/test_crew_config.py` and the version files. The conflicting provenance sections
+keep both sides, main's first. Each body line was classified by origin (in T-0075's copy only, in
+main's only, or in both), its `path:N` citations - and bare `:N` after a path in the same
+paragraph - into files the other side changed were mapped with a line diff (`git show
+<side>:<path>` against the merged tree), each moved one re-read with `sed -n`, and hits the diff
+attributed to the wrong file (a bare `:N` after an unrelated path, a same-named file elsewhere)
+discarded rather than applied. `.crew/verify.json` is 325 lines and 30 rules: T-0075's three rule-7
+paths (`:136-138`) push every later rule 3 lines down from main's numbering - rule 24 `:266`, 25
+`:267-283`, 26 `:285-295`, 27 `:296-303`, 28 `:304-311`, 29 (routing) `:312-320`, `default`
+`:323`, `unmapped` `:324`. `sabotage.py` imports `ROUTE_MUTATIONS` at `:79` and
+`CONFIG_MENU_MUTATIONS` at `:80`; the `MUTATIONS +=` statement is `:3051-3053`, so every "appended
+at `:3052`" moved to `:3053` and REFRESH's `:3051` to `:3052`. `plugin/crew/CONFIG.md`'s
+descoped process-group kill is `:2284-2291` (`:2250-2257` on main's side, `:2282-2289` on
+T-0075's). `verify-gate.sh` changed on neither side.

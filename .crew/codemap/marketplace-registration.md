@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@e463ca53
+anchor: useful-claude-add-ons@f7163410
 verified: 2026-09-27
 paths: scripts/**, plugin/PLUGINS.md
 
@@ -48,7 +48,7 @@ either being removed or consolidated during the crew 1.0 rewrite; flagged as
 an open question rather than asserted either way. The **plugin** count is
 unchanged at **5**: `crew`, `gizmoduck`, `localgpu`, `obsidian-vault`,
 `rule-of-two`. `crew` is now **1.0.46** (`.claude-plugin/marketplace.json:218`, `plugin/crew/.claude-plugin/plugin.json`
-and the `plugin-version:crew` claim at `plugin/PLUGINS.md:14` all agree, re-read at `@@NEW@@`, T-0075's bump to 1.0.47; it
+and the `plugin-version:crew` claim at `plugin/PLUGINS.md:14` all agree, re-read at `f7163410`, T-0075's bump to 1.0.47; it
 was 1.0.46 at `bebbb97f` (T-0023) and on T-0075's branch at `e95e5964`, 1.0.45 at `db14619c` (T-0021, bumped again for a CI fix), 1.0.43 on T-0023's branch at `a1acd9b7`, 1.0.44 at `12682e41` and on T-0075's branch at `d2444be9`, 1.0.43 at `f0b12ee6` (T-0042) and on T-0021's branch at `c2ae46ab`, 1.0.42 at `2b18f7ab` (1.0.46 on T-0021's branch until its merge of main), 1.0.41 at `07ca3972` and on T-0005's branch, 1.0.40 at `a0c0847e`, 1.0.39 at `8ebbdedc`, 1.0.38 at `c35edda5`, 1.0.37 at `768a747a`, 1.0.36 at `adf8d1dd`, 1.0.28 at `f2bb919b`, 1.0.25 at `6c497a14` and 0.20.11 at `5d1fc5fd`);
 `obsidian-vault` is **0.4.14** (was 0.3.14); `gizmoduck` (0.5.3) and
 `rule-of-two` (0.1.3) are unchanged; `localgpu` moved to 0.1.20.
@@ -603,4 +603,26 @@ rules) and `CHANGELOG.md` (cited by name only). `ls plugin/crew/commands/*.md` i
 skills 29. `INSTALLATION.md` did not change, so `INSTALLATION.md:252` still states 34 commands, now
 against 36 on disk; it is outside T-0075's Touch list and unmarked, so no check catches it.
 `python3 scripts/check-marketplace.py` at `e95e5964`: `marketplace: 34 skills, 5 plugins`, `all
+checks passed`.
+
+## Re-anchor provenance - `e95e5964` + `e463ca53` -> `f7163410`, 2026-09-27 (T-0075 merges T-0023's main)
+
+`96b7e59c` merges origin/main `bebbb97f` (T-0023 landed as crew 1.0.46, PR #244; its notes anchored
+`e463ca53`) into T-0075's branch at `0c6b5ecb` (notes anchored `e95e5964`), and `f7163410` bumps
+crew to 1.0.47. The source files both sides changed since `db14619c` are `CHANGELOG.md`,
+`.crew/verify.json`, `plugin/PLUGINS.md`, `plugin/crew/README.md`, `plugin/crew/CONFIG.md`,
+`plugin/crew/BUDGETS.md`, `plugin/crew/hooks/scripts/crew_config.py`,
+`plugin/crew/skills/crew-setup/SKILL.md`, `plugin/crew/tests/sabotage.py`,
+`plugin/crew/tests/test_crew_config.py` and the version files. The conflicting provenance sections
+keep both sides, main's first. Each body line was classified by origin (in T-0075's copy only, in
+main's only, or in both), its `path:N` citations - and bare `:N` after a path in the same
+paragraph - into files the other side changed were mapped with a line diff (`git show
+<side>:<path>` against the merged tree), each moved one re-read with `sed -n`, and hits the diff
+attributed to the wrong file (a bare `:N` after an unrelated path, a same-named file elsewhere)
+discarded rather than applied. Crew's `version` at `.claude-plugin/marketplace.json:218`,
+`plugin/crew/.claude-plugin/plugin.json:3` and `plugin/PLUGINS.md:14` reads 1.0.47; `:217` and
+`PLUGINS.md:17` state 36 commands (`ls plugin/crew/commands/*.md` is 36). `plugin/crew/BUDGETS.md:11`
+reads 19,125 lines across 128 files, measured on the resolved index. `.crew/verify.json` is 325
+lines, 30 rules; the doc rule at `:69-78` holds. `scripts/check-marketplace.py` did not change.
+`python3 scripts/check-marketplace.py` at `f7163410`: `marketplace: 34 skills, 5 plugins`, `all
 checks passed`.

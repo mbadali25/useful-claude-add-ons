@@ -1,5 +1,5 @@
 # install-scripts
-anchor: useful-claude-add-ons@e463ca53
+anchor: useful-claude-add-ons@f7163410
 verified: 2026-09-27
 
 ## Re-derive provenance
@@ -723,3 +723,26 @@ crew label at `scripts/install-prerequisites.sh:1391` and `scripts/install-prere
 (`35` -> `36 commands`), so no other line number in either script moved. `ls
 plugin/crew/commands/*.md` is 36, agents 4, skills 29. The README pin is stale by that label
 (Landmines). Neither install script was executed; `check-marketplace.py` passed at `e95e5964`.
+
+## Re-anchor provenance - `e95e5964` + `e463ca53` -> `f7163410`, 2026-09-27 (T-0075 merges T-0023's main)
+
+`96b7e59c` merges origin/main `bebbb97f` (T-0023 landed as crew 1.0.46, PR #244; its notes anchored
+`e463ca53`) into T-0075's branch at `0c6b5ecb` (notes anchored `e95e5964`), and `f7163410` bumps
+crew to 1.0.47. The source files both sides changed since `db14619c` are `CHANGELOG.md`,
+`.crew/verify.json`, `plugin/PLUGINS.md`, `plugin/crew/README.md`, `plugin/crew/CONFIG.md`,
+`plugin/crew/BUDGETS.md`, `plugin/crew/hooks/scripts/crew_config.py`,
+`plugin/crew/skills/crew-setup/SKILL.md`, `plugin/crew/tests/sabotage.py`,
+`plugin/crew/tests/test_crew_config.py` and the version files. The conflicting provenance sections
+keep both sides, main's first. Each body line was classified by origin (in T-0075's copy only, in
+main's only, or in both), its `path:N` citations - and bare `:N` after a path in the same
+paragraph - into files the other side changed were mapped with a line diff (`git show
+<side>:<path>` against the merged tree), each moved one re-read with `sed -n`, and hits the diff
+attributed to the wrong file (a bare `:N` after an unrelated path, a same-named file elsewhere)
+discarded rather than applied. Of the cited paths, `.claude-plugin/marketplace.json` (`:218` 1.0.47; `:217` 36
+commands, in place), `plugin/PLUGINS.md` (`:14` 1.0.47; `:17` 36 commands) and
+`plugin/crew/BUDGETS.md` (marker `:10`; `:11` 19,125 lines across 128 files, measured with
+`git ls-files 'plugin/crew/*.md' | xargs cat | wc -l` on the resolved index) changed.
+`plugin/crew/README.md` changed on both sides: its `36 commands` claim is `:2554` and `4 agents`
+`:2565` (re-grepped). Both install scripts, the root `README.md` and `plugin/README.md` changed on
+T-0075's side only (the 35 -> 36 label, in place), so their citations stand. Neither install
+script was executed.

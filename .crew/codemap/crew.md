@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@e463ca53
+anchor: useful-claude-add-ons@f7163410
 verified: 2026-09-27
 
 ## Re-derive provenance
@@ -54,7 +54,7 @@ Counted by walking the directories at this anchor:
 
 `.claude-plugin/marketplace.json:217` states the identical three numbers (4
 agents, 36 commands, 29 skills) in its `crew` entry's description, and `:218`
-the version, 1.0.46, matching `plugin/crew/.claude-plugin/plugin.json:3`, so this
+the version, 1.0.47, matching `plugin/crew/.claude-plugin/plugin.json:3`, so this
 site is current — this pass did not re-run the previous note's wider
 count-disagreement sweep across `README.md`/`plugin/README.md`/
 `INSTALLATION.md`/the install scripts; see "Unverified at this anchor".
@@ -350,7 +350,7 @@ same key is registered in `crew_guards.RATCHETED_KEYS`
 (`plugin/crew/hooks/scripts/crew_guards.py:545-549`). `autopilot.*` is not ratcheted
 (T-0004 added no `_RATCHETED` entry).
 
-## The writers and the `/crew:config` menu (T-0075, crew 1.0.46)
+## The writers and the `/crew:config` menu (T-0075, crew 1.0.47)
 
 **DERIVED from the source at this anchor.** Two writers, one per layer, both in
 `crew_config.py`, and nothing else writes either file on the menu's behalf:
@@ -1696,3 +1696,34 @@ on `e95e5964`:
 - `test_crew_config.py` - `:277` holds (asserts 121).
 - `README.md`, `plugin/README.md`, `CONFIG.md`, the crew-setup and crew-best-practices skills,
   `BUDGETS.md`, the install scripts, `sabotage.py` - cited by name or section only here.
+
+## Re-anchor provenance - `e95e5964` + `e463ca53` -> `f7163410`, 2026-09-27 (T-0075 merges T-0023's main)
+
+`96b7e59c` merges origin/main `bebbb97f` (T-0023 landed as crew 1.0.46, PR #244; its notes anchored
+`e463ca53`) into T-0075's branch at `0c6b5ecb` (notes anchored `e95e5964`), and `f7163410` bumps
+crew to 1.0.47. The source files both sides changed since `db14619c` are `CHANGELOG.md`,
+`.crew/verify.json`, `plugin/PLUGINS.md`, `plugin/crew/README.md`, `plugin/crew/CONFIG.md`,
+`plugin/crew/BUDGETS.md`, `plugin/crew/hooks/scripts/crew_config.py`,
+`plugin/crew/skills/crew-setup/SKILL.md`, `plugin/crew/tests/sabotage.py`,
+`plugin/crew/tests/test_crew_config.py` and the version files. The conflicting provenance sections
+keep both sides, main's first. Each body line was classified by origin (in T-0075's copy only, in
+main's only, or in both), its `path:N` citations - and bare `:N` after a path in the same
+paragraph - into files the other side changed were mapped with a line diff (`git show
+<side>:<path>` against the merged tree), each moved one re-read with `sed -n`, and hits the diff
+attributed to the wrong file (a bare `:N` after an unrelated path, a same-named file elsewhere)
+discarded rather than applied. `crew_config.py`: T-0023's `route` blocks (`:389`, `:563`) sit above T-0075's
+writers, so every T-0075 citation below `_RATCHETED` moved +11 - `enum_values` `:2548` -> `:2559`,
+`_value_problems` `:2586` -> `:2597`, `plan_global_write` `:2606` -> `:2617`,
+`write_global_config` `:2696` -> `:2707`, `is_global_path` `:690` -> `:701`, `REPO_REFUSED`
+`:2754` -> `:2765`, `REPO_VETO_ONLY` `:2775` -> `:2786`, `_REPO_WIDENING` `:2779` -> `:2790`,
+`repo_widens` `:2821` -> `:2832`, `_read_repo_strict` `:2862` -> `:2873`, `plan_repo_write`
+`:2891` -> `:2902`, `write_repo_config` `:2946` -> `:2957`, `_set_repo` `:3060` -> `:3071` (all
+re-read); main's citations (`:389`, `:393`, `:563`, `:1260`, `_RATCHETED` `:2444-2556`) hold.
+Leaves re-executed on the merge: 122 / 68 / 54 / 0; `test_crew_config.py:279` asserts 122.
+`.crew/verify.json` is 325 lines, 30 rules: autopilot rule 27 `:296-303`, tracker 28 `:304-311`,
+routing 29 `:312-320`. `sabotage.py` imports `ROUTE_MUTATIONS` at `:79` and
+`CONFIG_MENU_MUTATIONS` at `:80`, both appended at `:3053`. T-0004's "117 -> 119" is
+`CHANGELOG.md:467-468` (T-0075's entry now sits first). The version is 1.0.47 at
+`.claude-plugin/marketplace.json:218` and `plugin/crew/.claude-plugin/plugin.json:3`; `:217`
+states 36 commands. `crew_context.py`, `crew_route.py` and the templates changed on main's side
+only, so the routing section's citations stand.

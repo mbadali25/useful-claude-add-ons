@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@@@NEW@@ on 2026-09-27. Verify before trusting.
+%% Generated from useful-claude-add-ons@f7163410 on 2026-09-27. Verify before trusting.
 %% Anchors: plugin/crew/hooks/scripts/crew_config.py, plugin/crew/hooks/scripts/crew_config_menu.py, plugin/crew/hooks/scripts/crew_state.py, plugin/crew/hooks/scripts/crew_guards.py, plugin/crew/hooks/scripts/role_write_guard.py, plugin/crew/hooks/scripts/role-write-guard.sh, plugin/crew/hooks/scripts/crew_autoclear_setup.py, plugin/crew/hooks/scripts/crew_autocycle.py, plugin/crew/hooks/scripts/crew_migrate.py, plugin/crew/hooks/scripts/crew_context.py, plugin/crew/skills/crew-graph/scripts/crew_upgrade.py, plugin/crew/CONFIG.md, plugin/crew/tests/test_install_policy.py, CLAUDE.md, plugin/crew/hooks/scripts/crew_tracker.py
 %% Re-anchored 6c497a14 -> f2bb919b (T-0015): `git diff --name-only 6c497a14 f2bb919b --`
 %% over all 13 paths on the Anchors line returns nothing, so nothing below was redrawn or
@@ -156,6 +156,16 @@
 %% so each side's citations stand; crew_context.py changed on both, and this diagram cites only
 %% load_crew_config :121-132, above both hunks (re-read). CONFIG.md changed on both sides and is
 %% cited by section only. Counts re-executed on the merge: 122 / 68 / 54 / 0.
+%% Merged e95e5964 + e463ca53 -> f7163410 (T-0075 merges T-0023's main bebbb97f, crew 1.0.47): of
+%% the Anchors paths crew_config.py and CONFIG.md changed on both sides. T-0023's `route` blocks
+%% (+8 at :382-389, +3 at :561-563) sit above every T-0075 hunk, so each T-0075 citation (the
+%% Write, RepoWrite and ENUM nodes) moved +11 and was re-read by content: plan_global_write
+%% :2617, is_global_path :701, GlobalWriteRefused :2193, _value_problems :2597, enum_values
+%% :2559, _widens :2260, write_global_config :2707 (os.replace block :2733-2740),
+%% RepoWriteRefused :2754, REPO_REFUSED :2765, REPO_VETO_ONLY :2786, _REPO_WIDENING :2790,
+%% repo_widens :2832, _read_repo_strict :2873, plan_repo_write :2902, write_repo_config :2957.
+%% Main's citations (the Ratchet section, :859, :2444) hold. crew_config_menu.py changed on
+%% T-0075's side only. Counts re-executed on the merge: 122 / 68 / 54 / 0.
 %% How one config value reaches a run, and what may set it where.
 %% --
 %% RE-ANCHORED after crew 1.0 (previously 60c79407). Every function/line cited

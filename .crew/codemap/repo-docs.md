@@ -1,5 +1,5 @@
 # repo-docs
-anchor: useful-claude-add-ons@e463ca53
+anchor: useful-claude-add-ons@f7163410
 verified: 2026-09-27
 
 ## Re-derive provenance
@@ -799,3 +799,24 @@ troubleshooting guide's HTML, DOCX and PDF rebuilt from the merged sources by `b
 troubleshooting` in the merge commit `e94ce6ce`). `docs/diagrams/data-flow-crew-config.mmd` is
 refreshed in the same commit as this note and keeps its `:1-2` header form. Nothing was executed
 for this note beyond `check-marketplace.py` (passed at `e95e5964`).
+
+## Re-anchor provenance - `e95e5964` + `e463ca53` -> `f7163410`, 2026-09-27 (T-0075 merges T-0023's main)
+
+`96b7e59c` merges origin/main `bebbb97f` (T-0023 landed as crew 1.0.46, PR #244; its notes anchored
+`e463ca53`) into T-0075's branch at `0c6b5ecb` (notes anchored `e95e5964`), and `f7163410` bumps
+crew to 1.0.47. The source files both sides changed since `db14619c` are `CHANGELOG.md`,
+`.crew/verify.json`, `plugin/PLUGINS.md`, `plugin/crew/README.md`, `plugin/crew/CONFIG.md`,
+`plugin/crew/BUDGETS.md`, `plugin/crew/hooks/scripts/crew_config.py`,
+`plugin/crew/skills/crew-setup/SKILL.md`, `plugin/crew/tests/sabotage.py`,
+`plugin/crew/tests/test_crew_config.py` and the version files. The conflicting provenance sections
+keep both sides, main's first. Each body line was classified by origin (in T-0075's copy only, in
+main's only, or in both), its `path:N` citations - and bare `:N` after a path in the same
+paragraph - into files the other side changed were mapped with a line diff (`git show
+<side>:<path>` against the merged tree), each moved one re-read with `sed -n`, and hits the diff
+attributed to the wrong file (a bare `:N` after an unrelated path, a same-named file elsewhere)
+discarded rather than applied. The runbooks mention in `plugin/crew/README.md` is `:2102` (`:2052` on main's side,
+`:2079` on T-0075's). `CHANGELOG.md` and `.crew/verify.json` are cited without a line here.
+`docs/guides/crew/src/*` changed on T-0075's side only. The diagram this note cites
+(`docs/diagrams/data-flow-crew-config.mmd`) is re-anchored to `f7163410` in the same commit as this
+note: its T-0075 nodes' `crew_config.py` lines moved +11 as above. Nothing was executed for this
+note beyond `check-marketplace.py`.
