@@ -4,6 +4,24 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Fixed
+
+- **`crew` 1.0.43: group approval review round 1 (T-0024).** Bumped
+  `1.0.42 -> 1.0.43`. Four defects Codex found in `hooks/scripts/approval_hook.py`,
+  each with a failing test first and a mutation in `tests/sabotage_approval.py`:
+  - A confirm or group in the expanded `<command-name>`/`<command-args>` form
+    wrapped in other text was accepted; it now carries nothing but its tags.
+  - A line break before the command (`"\n/crew:approve --confirm"`) was
+    stripped away and confirmed; a group or confirm is refused on a break
+    anywhere but at the end. A single `/crew:approve <id>` is unchanged.
+  - An `OSError` part-way through a confirm reported "NOT recorded" over
+    receipts already written. Any failure now names recorded and NOT recorded
+    tickets, counts the failing ticket as recorded when its receipt landed
+    before the failure, and says "could not tell" when that receipt cannot be
+    read.
+  - Two confirms racing on one pending list could both record it; the list is
+    now claimed by an atomic rename, so exactly one confirm gets it.
+
 ### Added
 
 - **`crew`: `/crew:autopilot` approval and questions policies (T-0010).** Version
@@ -28,6 +46,12 @@ All notable changes to this repository are documented here. Format follows [Keep
     `Research:` line, 2-4 options, the recommendation first, a `Cost:` each)
     and refuses a `taken:` line the policy in force would not allow. `next`
     names the policy's answer at the `approve` and `open-questions` stops.
+  - Merged with T-0024's group approval: `crew_ticket.approve` refuses
+    `via=autopilot` carrying an `expect` (the group confirm's hash pair)
+    before anything is written - group approval and its confirm stay the
+    owner's, from their own prompt; autopilot approves one ticket at a time,
+    through its policy only. Must-block and must-allow tests in
+    `test_crew_ticket.py`, and two POLICY_MUTATIONS that turn them red.
   - Accepting review FINDINGS stays the owner's at every setting.
     `sabotage_autopilot.py`'s POLICY_MUTATIONS (one per refusing branch) are
     registered in `sabotage.py`.
@@ -93,6 +117,46 @@ All notable changes to this repository are documented here. Format follows [Keep
     `AUTOPILOT_MUTATIONS`, so `sabotage.py` runs them with the rest, and
     `test_crew_autopilot.py` asserts each one reaches `sabotage.MUTATIONS`.
   - `BUDGETS.md` restates the measured `plugin/crew/*.md` total.
+
+- **`crew` 1.0.42: approve several tickets in one prompt, with a confirm
+  step (T-0024).** Bumped `1.0.41 -> 1.0.42`. `hooks/scripts/approval_hook.py`
+  now accepts `/crew:approve T-4 T-5` (spaces or commas), a range
+  `/crew:approve T-0010..T-0012` (one prefix, start <= end, at most 20
+  tickets), and one plain-text form, the whole prompt on one line:
+  `[please] approve T-1 and T-2` / `approve T-0010 through|thru|to T-0012`.
+  - Any request for more than one ticket, and any plain-text request, records
+    nothing: every ticket is checked (`crew_ticket.precheck`), a pending list
+    binding each ticket to its spec and plan sha256 is written under
+    `<git-common-dir>/crew/approval-pending/` (one per worktree), and the
+    prompt is blocked with that list. Only the user's own
+    `/crew:approve --confirm` - one line, nothing else on it, the same
+    `session_id`, within 600 s, every hash unchanged - records one
+    `user-prompt` receipt per ticket, through `crew_ticket.approve`'s new
+    `expect=(plan_sha256, spec_sha256)`, which refuses bytes that hash
+    differently before writing. "yes" is not a confirm.
+  - Refuse all: when any ticket fails, nothing is recorded, nothing stays
+    pending, and every failing id is named. A single `/crew:approve <id>` is
+    unchanged apart from refusing a line break between the command and its id.
+  - Must-block cases, one test each in `tests/test_approval_group.py`: an id
+    in a multi-line paste (slash, expanded and plain-text forms); a range with
+    a ticket whose contract does not validate, a missing folder, or a row
+    closed in `.work/INDEX.md` (and an unreadable INDEX, which is not read as
+    open); mixed prefixes, reversed bounds, more than 20 ids, a duplicate-only
+    list, a range token that is also a ticket folder; a confirm with no
+    pending list, after spec.md or plan.md changed, after a ticket became
+    invalid, from another session, outside the TTL (or future-dated), with
+    extra text, outside git, or against an unreadable or foreign pending
+    list; a group request with no `session_id`; an edit between the confirm's
+    check and its write. Mid-sentence uses ("does the reviewer approve T-1?",
+    "approve it", "lgtm") pass untouched.
+  - The wrappers hand python any prompt containing the word "approve"; with no
+    usable python only `crew:approve` still blocks, so a plain-text approval
+    passes unrecorded instead of every prompt using the word being blocked.
+  - `tests/sabotage_approval.py` (registered in `sabotage.py`): every
+    mutation goes red on its named test, and the four approval-hook rows in
+    `sabotage_scope.py` still do. `.crew/verify.json` maps the hook, both
+    wrappers, `crew_ticket.py` and the tests to the approval suites.
+    `commands/approve.md` relays a group result per ticket.
 
 - **`crew` 1.0.41: `/crew:autopilot` resumes and drives one ticket
   (T-0004).** Bumped `1.0.40 -> 1.0.41`. New

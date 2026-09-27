@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@926522f7
+anchor: useful-claude-add-ons@954ce386
 verified: 2026-09-26
 
 ## Re-derive provenance
@@ -28,7 +28,9 @@ Re-verified per-path from `f2bb919b` to `adf8d1dd` for T-0008, from
 T-0034, and to `8ebbdedc` for T-0026's landing; on T-0006's branch, from
 `8d447a7d` to `6d35ef8c` for T-0006 and from `6d35ef8c` to `2bb92f32` for its
 review round 3; both to `a0c0847e` for T-0006's landing; and on T-0004's
-branch from `a0c0847e` to `07ca3972`. See the last sections.
+branch from `a0c0847e` to `07ca3972`; on T-0024's branch from `6f96e627` to `a2802526`; both lines to `954ce386` (the
+T-0010 x T-0024 merge).
+See the last sections.
 
 # crew
 
@@ -50,7 +52,8 @@ Counted by walking the directories at this anchor:
 
 `.claude-plugin/marketplace.json:217` states the identical three numbers (4
 agents, 35 commands, 29 skills) in its `crew` entry's description, and `:218`
-the version, 1.0.42, matching `plugin/crew/.claude-plugin/plugin.json:3`, so this
+the version, 1.0.43 (T-0024's; the T-0010 merge took the higher side, and landing sets it
+again), matching `plugin/crew/.claude-plugin/plugin.json:3`, so this
 site is current — this pass did not re-run the previous note's wider
 count-disagreement sweep across `README.md`/`plugin/README.md`/
 `INSTALLATION.md`/the install scripts; see "Unverified at this anchor".
@@ -136,7 +139,7 @@ draws it:
 | `/crew:brainstorm` (`plugin/crew/commands/brainstorm.md`) | Mints a ticket and settles an approved direction; loads `crew-brainstorm` (method adapted from `superpowers:brainstorming`, notice in `plugin/crew/NOTICE.md`) | new in 1.0 |
 | `/crew:spec` (`plugin/crew/commands/spec.md:7-8`) | Fills the ticket contract (Intent/Exclusions/Evidence/Unknowns/Touch/Acceptance checks) from an approved direction; Touch is one path or glob per bullet, because `/crew:approve` reads it a bullet at a time (`:38-43`, since crew 1.0.27) | `/crew:ticket` |
 | `/crew:plan` (`plugin/crew/commands/plan.md:8-9`) | Turns an approved spec into a step plan; the old standalone second-opinion step is now step 3, optional, inside this phase | redefined |
-| `/crew:approve` (`plugin/crew/commands/approve.md:5`, `disable-model-invocation: true`) | Typed by the user only: the UserPromptSubmit `approval-hook` records `<git-common-dir>/crew/tickets/<id>/approval.json`, bound to the digest of `spec.md` and `plan.md` (`:7-16`; since T-0026 a `crew-approval/2` digest that normalises only the header's status value, so the lifecycle's status edits keep the approval); the command body only relays the result | new in 1.0 |
+| `/crew:approve` (`plugin/crew/commands/approve.md:5`, `disable-model-invocation: true`) | Typed by the user only: the UserPromptSubmit `approval-hook` records `<git-common-dir>/crew/tickets/<id>/approval.json`, bound to the digest of `spec.md` and `plan.md` (`:7-16`; since T-0026 a `crew-approval/2` digest that normalises only the header's status value, so the lifecycle's status edits keep the approval); the command body only relays the result. Since T-0024 (crew 1.0.42) several ids, a range `T-0010..T-0012` or the one plain-text form `approve T-1 through T-3` record nothing on that prompt: the hook blocks it with a PENDING list bound to each ticket's hashes, and only the user's own one-line `/crew:approve --confirm` (same session, within `PENDING_TTL`) records one receipt per ticket, or none (`plugin/crew/hooks/scripts/approval_hook.py:334` `_pending_group`, `:406` `_confirm`; relay at `approve.md:27-41`). A group confirm is owner-only: `crew_ticket.approve` refuses `via=autopilot` with an `expect` | new in 1.0 |
 | `/crew:implement` (`plugin/crew/commands/implement.md:8-9`) | Implements an approved plan, then tests/docs/review; loads `crew-execute` (adapted from `superpowers:executing-plans`) | `/crew:work` |
 | `/crew:review` (`plugin/crew/commands/review.md`) | Independent QA review of the working diff (Codex, Copilot, or the `crew:reviewer` Claude fallback) | (unchanged name; internals rewritten) |
 | `/crew:done` (`plugin/crew/commands/done.md:7-8`) | Closes a ticket; four checks (review receipt, clean verify gate, passing completion audit, current artifacts), any one failing refuses the close, no partial close. Check 4 (`:46-57`, since crew 1.0.36) runs `crew_refresh_check.py` and refuses on any `stale` or `unknown` line **without refreshing** - a write there would stale check 1's receipt (`:52-55`) | new in 1.0 |
@@ -249,10 +252,12 @@ both templates, so repo-only is unchanged. Re-executed at `07ca3972`: 119 / 66
 `default_global_config()`"); the same functions at `a0c0847e`, run from a
 `git archive` of `plugin/crew`, give 117 / 66 / 51 / 0. Re-executed at `926522f7`:
 121 / 66 / 55 / 0 - T-0010 added `autopilot.approval` and `autopilot.questions`, repo-only
-through the same `autopilot` block.
+through the same `autopilot` block; re-executed on the T-0010 x T-0024 merge tree, still
+121 / 66 / 55 / 0 (T-0024 adds no config key).
 `plugin/crew/tests/test_crew_config.py:278` asserts 121. T-0004's CHANGELOG entry
-(`CHANGELOG.md:152-153` at `926522f7`) now says "117 -> 119", matching the executions; the
-"116 -> 118" this line used to quote is no longer in the file.
+(`CHANGELOG.md:216-217` on the merge tree, below the T-0010, T-0018 and T-0024 entries) says
+"117 -> 119", matching the executions; the "116 -> 118" this line used to quote is no longer
+in the file.
 
 These are new counts, not the pre-1.0 note's 103/60/43 carried forward —
 `change.*`, `guards.cloudGuard` and the memory/recall keys (`TODO.md`'s
@@ -490,12 +495,15 @@ the policy in force would not allow. `next` appends `_approval_hint` (`:797`) / 
 (`:806`) to the `approve` and `open-questions` stops, which stay `stop=1`. In
 `plugin/crew/hooks/scripts/crew_ticket.py`: `AUTOPILOT = "autopilot"` (`:144`), `_autopilot_refusal`
 (`:653`), `accepted` (`:670`) demotes an `autopilot` receipt unless that refusal is None, and
-`approve` (`:716`) refuses an `autopilot` via the policy denies. `scope_guard.py`'s
+`approve` (`:723`) refuses an `autopilot` via the policy denies - and, since the merge with
+T-0024, any `autopilot` via carrying an `expect` (`:742-744`, before `expect` is even
+validated: the group confirm is owner-only). `scope_guard.py`'s
 `_AUTOPILOT_APPROVE_RE` / `_AUTOPILOT_BARE_RE` (`:114-118`) and `_autopilot_refusal` (`:229`)
 allow only the bare command while the policy says yes. Tests
 `plugin/crew/tests/test_crew_autopilot_policy.py` plus new cases in `test_crew_ticket.py` and
 `test_scope_guard.py`; mutations `POLICY_MUTATIONS` in `sabotage_autopilot.py`, registered at
-`plugin/crew/tests/sabotage.py:3049`; `.crew/verify.json` rule 27 (`:290-295`), the last.
+`plugin/crew/tests/sabotage.py:77` and appended at `:3051`; `.crew/verify.json` rule 27
+(`:290-295`), followed by T-0024's rule 28 (`:296-303`), the last.
 
 ## verify-gate's temp-file rule capture
 
@@ -1134,8 +1142,51 @@ byte for byte; the ones whose line itself changed were re-read by hand:
   appends it; both lines changed in place.
 - `.crew/verify.json` - rule 26 unchanged (`:281-289`); rule 27 (`:290-295`) is T-0010's.
 
-## Re-anchor provenance - `c87ac3f4` -> `4755ae1a`, 2026-09-26 (T-0018 round-3 mutation retarget)
+## Re-anchor provenance - `6f96e627` -> `a2802526`, 2026-09-26 (T-0024)
 
-`git diff --name-only c87ac3f4 4755ae1a` returns only `plugin/crew/tests/sabotage_autopilot.py`
-and `plugin/crew/tests/test_crew_autopilot_status.py`, both cited by name only here, so every
-line citation above holds.
+Of the paths this note cites, `git diff --name-only 6f96e627 a2802526` returns
+`.claude-plugin/marketplace.json`, `.crew/verify.json`, `CHANGELOG.md`, `plugin/PLUGINS.md`,
+`plugin/crew/.claude-plugin/plugin.json`, `plugin/crew/README.md`, `plugin/crew/commands/approve.md`,
+`approval-hook.sh`, `approval-hook.ps1`, `approval_hook.py`, `crew_ticket.py` and the approval
+tests. Each citation into them was re-read with `grep -n`/`sed -n` at `a2802526`:
+
+- `approve.md` - the group relay inserted after `:26` (`:27-41`); `:5` and `:7-16` hold. The
+  `/crew:approve` row above now names the group path.
+- `crew_ticket.py` - changed only from `:676` down (`approve(..., expect=None)` `:686`, `precheck`
+  `:765`, `earlier_plan_hashes` `:800`); `parse_risk` `:505` holds.
+- `approval-hook.sh` / `approval-hook.ps1` - both still call `crew_py_strict` / define
+  `Resolve-CrewPython`, so the resolver counts (11 and 11) hold; the fast path now matches the
+  word `approve` in any case, and with no python only a `crew:approve` prompt blocks.
+- `.crew/verify.json` - rule 27 (T-0024) appended at `:290-297`; rule 26 `:281-288` holds (its last
+  line gained only a trailing comma). 28 rules, 302 lines.
+- `CHANGELOG.md` - the 1.0.42 entry inserted at the top, so `:65` -> `:105`; its text was already
+  corrected at `6f96e627`, and the sentence above now says so.
+- `marketplace.json` - `:218` is 1.0.42; `:217`'s 4/35/29 counts are unchanged.
+- `plugin/crew/README.md`, `PLUGINS.md` - cited by name only here.
+
+`crew_refresh_check.py --ticket T-0024` named this note; nothing was executed for it beyond the
+re-reads above.
+
+## Re-anchor provenance - `926522f7` + `a2802526` -> `954ce386`, 2026-09-26 (T-0010 x T-0024 merge)
+
+The T-0010 lane merged `T-0024-build` (`32223b8a`) into `T-0010-policies` (`cb602fb8`, whose
+notes were anchored at `926522f7`) as `954ce386`; T-0024's notes were anchored at `a2802526`. Both
+sides' provenance sections above are kept as history. Nothing was taken from one side: every
+citation this note makes into a path either side changed was mapped from its own side's anchor
+tree to the merged tree (`difflib` over the file at both ends, line text compared), and every
+one whose number moved or whose line changed was re-read with `grep -n`/`sed -n` at `954ce386`.
+
+- `crew_ticket.py` - T-0010's citations above `:704` hold (`AUTOPILOT` `:144`, `parse_risk` `:509`,
+  `_autopilot_refusal` `:653`, `accepted` `:670`); T-0024's `_expected_pair` is `:716` and `approve`
+  `:716` -> `:723`, which now also refuses an `autopilot` via carrying an `expect` (`:742-744`, the
+  owner's decision that a group confirm is owner-only). `precheck` is `:813`.
+- `approval_hook.py` - T-0024's review round 1 (after `a2802526`) moved `_pending_group` `:313` ->
+  `:334` and `_confirm` `:369` -> `:406`; the `/crew:approve` row is corrected. `approve.md:27-41`
+  holds (unchanged since `a2802526`).
+- `sabotage.py` - `:77`/`:78` import POLICY_MUTATIONS and APPROVAL_MUTATIONS; the `MUTATIONS +=`
+  statement is `:3049-3051`, both registered on `:3051`.
+- `.crew/verify.json` - T-0010's rule 27 `:290-295`, T-0024's rule now 28 `:296-303` (the blank line
+  T-0024 left between rules was dropped); 29 rules, 308 lines.
+- `CHANGELOG.md` - T-0004's leaf-count sentence `:152-153` -> `:216-217`. The config leaf table was
+  re-executed on the merged tree: 121 / 66 / 55 / 0; `test_crew_config.py:278` asserts 121.
+- `marketplace.json:218`, `plugin.json:3` - 1.0.43, T-0024's (the higher side); landing sets it again.

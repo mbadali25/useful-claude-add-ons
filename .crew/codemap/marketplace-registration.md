@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@926522f7
+anchor: useful-claude-add-ons@954ce386
 verified: 2026-09-26
 paths: scripts/**, plugin/PLUGINS.md
 
@@ -47,9 +47,10 @@ consistent with `web-testing-playwright` and other single-skill entries
 either being removed or consolidated during the crew 1.0 rewrite; flagged as
 an open question rather than asserted either way. The **plugin** count is
 unchanged at **5**: `crew`, `gizmoduck`, `localgpu`, `obsidian-vault`,
-`rule-of-two`. `crew` is now **1.0.42** (`.claude-plugin/marketplace.json:218`, `plugin/crew/.claude-plugin/plugin.json`
-and the `plugin-version:crew` claim at `plugin/PLUGINS.md:14` all agree, re-read at `5536c2c8`; it
-was 1.0.41 at `07ca3972`, 1.0.40 at `a0c0847e`, 1.0.39 at `8ebbdedc`, 1.0.38 at `c35edda5`, 1.0.37 at `768a747a`, 1.0.36 at `adf8d1dd`, 1.0.28 at `f2bb919b`, 1.0.25 at `6c497a14` and 0.20.11 at `5d1fc5fd`);
+`rule-of-two`. `crew` is now **1.0.43** (`.claude-plugin/marketplace.json:218`, `plugin/crew/.claude-plugin/plugin.json`
+and the `plugin-version:crew` claim at `plugin/PLUGINS.md:14` all agree, re-read on the T-0010 x T-0024
+merge tree, which took T-0024's higher version - T-0018 and T-0024 had each bumped to 1.0.42, and
+the version is set again at landing; it was 1.0.42 at `5536c2c8` and at `a2802526`, 1.0.41 at `07ca3972`, 1.0.40 at `a0c0847e`, 1.0.39 at `8ebbdedc`, 1.0.38 at `c35edda5`, 1.0.37 at `768a747a`, 1.0.36 at `adf8d1dd`, 1.0.28 at `f2bb919b`, 1.0.25 at `6c497a14` and 0.20.11 at `5d1fc5fd`);
 `obsidian-vault` is **0.4.14** (was 0.3.14); `gizmoduck` (0.5.3) and
 `rule-of-two` (0.1.3) are unchanged; `localgpu` moved to 0.1.20.
 
@@ -263,7 +264,9 @@ against synthetic fixtures and never reads this repo's own docs.
   files, matching. Re-measured at `07ca3972` (T-0004): 18,176 across 121 files on `:11`, and
   `git ls-files 'plugin/crew/*.md' | xargs cat | wc -l` returns 18176 over 121 files, matching.
   Re-measured at `5536c2c8` (T-0018): 18,170 across 121 files on `:11`, and the measurement
-  returns 18170 over 121 files, matching.
+  returns 18170 over 121 files, matching. Re-measured on the T-0010 x T-0024 merge tree (from
+  the merged files, not taken from either side's 18,202 / 18,200): 18,226 across 121 files on
+  `:11`, and the measurement returns 18226 over 121 files, matching.
 - **`MARKETPLACE.md`** was not re-read for a community-plugin or marketplace
   count of its own; only `README.md:231`'s prose was checked and found to no
   longer state a specific number.
@@ -399,3 +402,31 @@ files (`.claude-plugin/marketplace.json:218`, `plugin/PLUGINS.md:14`,
 landing. Both install scripts, `README.md`, `plugin/README.md`, `INSTALLATION.md`,
 `scripts/check-marketplace.py`, `CLAUDE.md` and `skills/README.md` did not change. No command,
 agent or skill was added or removed.
+
+Re-verified per-path from `6f96e627` to `a2802526` for T-0024 (group approval, crew 1.0.42): of the
+cited paths, `.claude-plugin/marketplace.json` (`:218` version 1.0.42; `:217`'s counts unchanged),
+`plugin/PLUGINS.md` (`:14` version only), `plugin/crew/.claude-plugin/plugin.json` (version only),
+`plugin/crew/BUDGETS.md` (`:11`, 18,200 / 121, re-measured with `git ls-files 'plugin/crew/*.md'`
+and `splitlines()` per file, matching), `.crew/verify.json` (rule 27 appended, 28 rules; the doc
+rule at `:69-78` is unchanged), `CHANGELOG.md` and `plugin/crew/README.md` changed. No install
+script, `scripts/check-marketplace.py`, `CLAUDE.md`, `README.md` or `INSTALLATION.md` changed.
+`python3 scripts/check-marketplace.py` at `a2802526`: `marketplace: 34 skills, 5 plugins`,
+`all checks passed`.
+
+## Re-anchor provenance - `926522f7` + `a2802526` -> `954ce386`, 2026-09-26 (T-0010 x T-0024 merge)
+
+The T-0010 lane merged `T-0024-build` (`32223b8a`) into `T-0010-policies` (`cb602fb8`, whose
+notes were anchored at `926522f7`) as `954ce386`; T-0024's notes were anchored at `a2802526`. Both
+sides' provenance sections above are kept as history. Nothing was taken from one side: every
+citation this note makes into a path either side changed was mapped from its own side's anchor
+tree to the merged tree (`difflib` over the file at both ends, line text compared), and every
+one whose number moved or whose line changed was re-read with `grep -n`/`sed -n` at `954ce386`.
+
+Of the cited paths, the version files (1.0.43 at `.claude-plugin/marketplace.json:218`,
+`plugin/PLUGINS.md:14` and `plugin/crew/.claude-plugin/plugin.json`: T-0018 and T-0024 had each
+bumped to 1.0.42, and the merge took T-0024's 1.0.43), `plugin/crew/BUDGETS.md` (`:11`, 18,226 /
+121, re-measured on the merged files and matching `count_crew_markdown_lines`), `.crew/verify.json`
+(29 rules; the doc rule at `:69-78` unchanged), `CHANGELOG.md` and `plugin/crew/README.md` changed.
+No install script, `scripts/check-marketplace.py`, `CLAUDE.md`, `README.md` or `INSTALLATION.md`
+changed; no command, agent or skill was added or removed. `python3 scripts/check-marketplace.py`
+on the merged tree: `marketplace: 34 skills, 5 plugins`, `all checks passed`.

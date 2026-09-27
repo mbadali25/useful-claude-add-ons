@@ -1,0 +1,259 @@
+"""The T-0024 mutations: group approval in `approval_hook.py`, the `expect`
+binding and `precheck` in `crew_ticket.py`, and the two wrappers' widened
+fast path. Same tuple shape as `sabotage.py`'s MUTATIONS --
+(label, target, find, replace, test) -- and appended to it there;
+`sabotage.py` sits at `.pylintrc`'s max-module-lines, so this list lives
+apart. Run `sabotage.py`, not this file.
+
+Each one is a way a group approval could record something the user did not
+confirm, record a subset, or block a prompt it has no business blocking.
+The approval-hook rows already in `sabotage_scope.py` stay there; their
+anchors are held present exactly once by
+`test_approval_group.py::test_every_approval_sabotage_anchor_is_present_exactly_once`.
+
+Not a mutation, on purpose: dropping the per-range `MAX_GROUP` check. Its
+only observable effect is `range(first, last + 1)` over a range such as
+`T-1..T-999999999999`, which exhausts memory before any test can fail -- on
+a host that crashes on memory exhaustion.
+"""
+import os
+
+CREW = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_S = os.path.join(CREW, "hooks", "scripts")
+HOOK = os.path.join(_S, "approval_hook.py")
+TICKET = os.path.join(_S, "crew_ticket.py")
+HOOK_SH = os.path.join(_S, "approval-hook.sh")
+HOOK_PS1 = os.path.join(_S, "approval-hook.ps1")
+
+_G = "tests/test_approval_group.py::"
+_AH = "tests/test_approval_hook.py::"
+_CT = "tests/test_crew_ticket.py::"
+
+APPROVAL_MUTATIONS = (
+    ("GROUP APPROVAL: the valid rest is recorded when one ticket fails", HOOK,
+     "        return _refuse_all(failing, len(checks))\n",
+     "        for check in checks:\n"
+     "            if not check[\"problems\"]:\n"
+     "                crew_ticket.approve(root, check[\"ticket\"], via=crew_ticket.USER_PROMPT)\n"
+     "        return _refuse_all(failing, len(checks))\n",
+     _G + "test_range_with_invalid_ticket_refuses_all_and_names_it"),
+    ("GROUP APPROVAL: the confirm records the tickets that still match", HOOK,
+     '        return _refuse_all(failing, len(items), "no longer match what you were shown")\n',
+     "        items = [i for i in items if i[\"ticket\"] not in dict(failing)]\n",
+     _G + "test_confirm_after_plan_changed_records_none"),
+    ("GROUP APPROVAL: a group records without a pending list", HOOK,
+     "    if request.kind == GROUP:\n        return _pending_group(root, data, request)\n",
+     "    if request.kind == GROUP:\n"
+     "        return [_single(root, data, t) for t in request.ids][-1]\n",
+     _G + "test_list_then_confirm_records_each_with_own_hashes"),
+    ("GROUP APPROVAL: 'yes' is a confirm", HOOK,
+     "    if not isinstance(prompt, str):\n        return _request(NONE)\n",
+     "    if not isinstance(prompt, str):\n        return _request(NONE)\n"
+     "    if prompt.strip().lower() in (\"yes\", \"y\", \"confirm\"):\n"
+     "        return _request(CONFIRM)\n",
+     _G + "test_yes_is_not_a_confirm"),
+    ("GROUP APPROVAL: --confirm carries other text", HOOK,
+     "        if tokens != [CONFIRM_TOKEN]:\n",
+     "        if False:\n",
+     _G + "test_confirm_with_extra_text_refuses"),
+    ("GROUP APPROVAL: the confirm's session is not checked", HOOK,
+     '    if session is None or pending.get("session_id") != session:\n',
+     "    if session is None:\n",
+     _G + "test_confirm_other_session_refuses"),
+    ("GROUP APPROVAL: a group is pended with no session to bind", HOOK,
+     "    if session is None:\n        return _refuse(\"the prompt carries no session_id",
+     "    if False:\n        return _refuse(\"the prompt carries no session_id",
+     _G + "test_a_group_request_without_a_session_is_refused"),
+    ("GROUP APPROVAL: the pending list has no time limit", HOOK,
+     "    if not 0 <= age <= PENDING_TTL:\n",
+     "    if False:\n",
+     _G + "test_confirm_after_ttl_refuses"),
+    ("GROUP APPROVAL: a future-dated pending list is accepted", HOOK,
+     "    if not 0 <= age <= PENDING_TTL:\n",
+     "    if not age <= PENDING_TTL:\n",
+     _G + "test_confirm_after_ttl_refuses"),
+    ("GROUP APPROVAL: the confirm does not re-compare the hashes", HOOK,
+     "                     if check[key] != item[key]]\n",
+     "                     if False]\n",
+     _G + "test_confirm_after_spec_changed_records_none"),
+    ("GROUP APPROVAL: the confirm drops expect from approve", HOOK,
+     '                expect=(item["plan_sha256"], item["spec_sha256"]))\n',
+     "                expect=None)\n",
+     _G + "test_an_edit_between_check_and_write_is_refused_by_expect"),
+    ("GROUP APPROVAL: approve ignores expect", TICKET,
+     "        if moved:\n            raise TicketError(f\"{ticket}: {' and '.join(moved)} "
+     "changed since the \"\n",
+     "        if False:\n            raise TicketError(f\"{ticket}: {' and '.join(moved)} "
+     "changed since the \"\n",
+     _CT + "test_approve_with_changed_spec_refuses_and_writes_nothing"),
+    ("GROUP APPROVAL: a pending list from another worktree is used", HOOK,
+     '    if pending.get("worktree") != crew_ticket.toplevel(root):\n',
+     "    if False:\n",
+     _G + "test_an_unusable_pending_list_refuses_and_is_deleted"),
+    ("GROUP APPROVAL: a refused confirm keeps the pending list", HOOK,
+     "            os.remove(claimed)\n",
+     "            os.rename(claimed, path)\n",
+     _G + "test_refused_confirm_deletes_pending"),
+    ("GROUP APPROVAL: a single approval leaves the pending list", HOOK,
+     "def _single(root, data, ticket):\n    _clear_pending(root)\n",
+     "def _single(root, data, ticket):\n",
+     _G + "test_a_single_approval_clears_the_pending_list"),
+    ("GROUP APPROVAL: a refused request leaves the pending list", HOOK,
+     "    _clear_pending(root)\n    return _refuse(request.error)\n",
+     "    return _refuse(request.error)\n",
+     _G + "test_a_multiline_paste_blocks_and_leaves_nothing"),
+    ("GROUP APPROVAL: a newline in the slash args is accepted", HOOK,
+     "            if _BREAK_RE.search(prompt.strip()):\n",
+     "            if False:\n",
+     # Since review round 1 a group or confirm with a break is refused again by
+     # _one_line_only, so this check's own job is the single id split from its
+     # command ("/crew:approve\nT-1"), which only this test's table holds. The
+     # expanded form's twin check was deleted in the same round, with its
+     # mutation: an inner break there always yields two tokens, never a single
+     # id, so the check could not fire on anything not already refused.
+     _G + "test_malformed_requests_are_refused_with_a_named_reason"),
+    ("GROUP APPROVAL: a multi-line plain-text approval is accepted", HOOK,
+     "    if len(lines) > 1:\n",
+     "    if False:\n",
+     _G + "test_multiline_paste_with_ids_is_refused"),
+    ("GROUP APPROVAL: a plain-text id is any word", HOOK,
+     '_PT_ID = r"[A-Za-z][A-Za-z0-9]*-\\d+"\n',
+     '_PT_ID = r"[A-Za-z0-9][A-Za-z0-9._-]*"\n',
+     _G + "test_mid_sentence_is_not_an_approval"),
+    ("GROUP APPROVAL: plain-text ids need no space around 'and'", HOOK,
+     '_PT_SEP = r"(?:\\s*,\\s*and\\s+|\\s*,\\s*|\\s+and\\s+)"\n',
+     '_PT_SEP = r"\\s*(?:,\\s*and|,|and)\\s*"\n',
+     _G + "test_mid_sentence_is_not_an_approval"),
+    ("GROUP APPROVAL: a range mixes prefixes", HOOK,
+     "    if prefix != other:\n",
+     "    if False:\n",
+     _G + "test_malformed_requests_are_refused_with_a_named_reason"),
+    ("GROUP APPROVAL: a reversed range is accepted", HOOK,
+     "    if first > last:\n",
+     "    if False:\n",
+     _G + "test_malformed_requests_are_refused_with_a_named_reason"),
+    ("GROUP APPROVAL: the whole request has no MAX_GROUP", HOOK,
+     "        if len(ids) > MAX_GROUP:\n",
+     "        if False:\n",
+     _G + "test_malformed_requests_are_refused_with_a_named_reason"),
+    ("GROUP APPROVAL: a duplicate-only list is accepted", HOOK,
+     "    if len(ids) == 1 and len(tokens) > 1:\n",
+     "    if False:\n",
+     _G + "test_malformed_requests_are_refused_with_a_named_reason"),
+    ("GROUP APPROVAL: a range token that is a folder is expanded", HOOK,
+     "    if root and _is_folder(root, token):\n",
+     "    if False:\n",
+     _G + "test_a_range_token_that_is_also_a_ticket_folder_is_ambiguous"),
+    ("GROUP APPROVAL: a closed INDEX ticket is approvable", TICKET,
+     "    elif closed:\n",
+     "    elif False:\n",
+     _G + "test_range_with_closed_ticket_refuses_all"),
+    ("GROUP APPROVAL: an unreadable INDEX reads as open", TICKET,
+     "    if closed is None:\n",
+     "    if False:\n",
+     _CT + "test_precheck_unreadable_index_is_a_problem_not_open"),
+    ("GROUP APPROVAL: precheck ignores a corrupt receipt", TICKET,
+     '    _, state = read_approval(root, ticket)\n    if state == "corrupt":\n',
+     '    _, state = read_approval(root, ticket)\n    if False:\n',
+     _CT + "test_precheck_corrupt_receipt"),
+    ("GROUP APPROVAL: precheck reads a missing folder as a contract", TICKET,
+     "    if not os.path.isdir(ticket_dir(top, ticket)):\n",
+     "    if False:\n",
+     _CT + "test_precheck_bad_id_or_missing_folder"),
+    ("GROUP APPROVAL: precheck goes on outside git", TICKET,
+     '        problems.append(f"{root} is not a git repository")\n        return result\n',
+     '        problems.append(f"{root} is not a git repository")\n',
+     _CT + "test_precheck_outside_git_is_a_problem"),
+    ("GROUP APPROVAL: precheck goes on past a bad id", TICKET,
+     "        problems.append(str(exc))\n        return result\n",
+     "        problems.append(str(exc))\n",
+     _CT + "test_precheck_bad_id_or_missing_folder"),
+    ("GROUP APPROVAL: approve takes a malformed expect", TICKET,
+     "    if (not isinstance(expect, (tuple, list)) or len(expect) != 2\n",
+     "    if (False\n",
+     _CT + "test_approve_with_a_malformed_expect_refuses"),
+    ("GROUP APPROVAL: a malformed pending list is used", HOOK,
+     '    if state != "ok" or not _well_formed(pending):\n',
+     "    if False:\n",
+     _G + "test_an_unusable_pending_list_refuses_and_is_deleted"),
+    ("GROUP APPROVAL: a confirm outside git reads a pending list", HOOK,
+     "        return _refuse(f\"{root} is not a git repository\")\n"
+     "    claimed = _claim_pending(path)\n",
+     "        pass\n    claimed = _claim_pending(path) if path else None\n",
+     _G + "test_a_confirm_outside_git_is_refused"),
+    ("GROUP APPROVAL: a group outside git is prechecked ticket by ticket", HOOK,
+     "        return _refuse(f\"{root} is not a git repository\")\n    _clear_pending(root)\n",
+     "        pass\n    _clear_pending(root)\n",
+     _G + "test_a_group_request_outside_git_is_refused_plainly"),
+    ("GROUP APPROVAL: an empty slash command is a group", HOOK,
+     "    if not tokens:\n        return _refusal(form, _USAGE)\n",
+     "",
+     _G + "test_malformed_requests_are_refused_with_a_named_reason"),
+    ("GROUP APPROVAL: a lone range token is a single id", HOOK,
+     "    if len(tokens) == 1 and not _RANGE_RE.match(tokens[0]):\n",
+     "    if len(tokens) == 1:\n",
+     _G + "test_every_approval_shape_parses"),
+    ("GROUP APPROVAL: a write failing part-way carries on", HOOK,
+     "            return _partly(root, items, index, recorded, before, exc)\n"
+     "        recorded.append(item[\"ticket\"])\n",
+     "            continue\n        recorded.append(item[\"ticket\"])\n",
+     _G + "test_a_write_failing_part_way_names_recorded_and_not_recorded"),
+    # Review round 1: a confirm or group is one line and nothing else, one
+    # claimant per pending list, and a failure part-way names every ticket.
+    ("GROUP APPROVAL: a line break before a group or confirm is accepted", HOOK,
+     "    if request.kind in (GROUP, CONFIRM) and _BREAK_RE.search(text.rstrip()):\n",
+     "    if False:\n",
+     _G + "test_a_line_break_before_a_group_or_confirm_is_refused"),
+    ("GROUP APPROVAL: the one-line rule also tightens the single-id path", HOOK,
+     "    if request.kind in (GROUP, CONFIRM) and _BREAK_RE.search(text.rstrip()):\n",
+     "    if _BREAK_RE.search(text.rstrip()):\n",
+     _G + "test_single_id_parse_is_unchanged"),
+    ("GROUP APPROVAL: the one-line rule refuses a trailing break", HOOK,
+     "    if request.kind in (GROUP, CONFIRM) and _BREAK_RE.search(text.rstrip()):\n",
+     "    if request.kind in (GROUP, CONFIRM) and _BREAK_RE.search(text):\n",
+     _G + "test_a_trailing_line_break_alone_still_parses"),
+    ("GROUP APPROVAL: plain text ignores blank lines before it", HOOK,
+     "    lines = prompt.rstrip().splitlines()\n",
+     "    lines = prompt.strip().splitlines()\n",
+     _G + "test_a_line_break_before_a_group_or_confirm_is_refused"),
+    ("GROUP APPROVAL: the expanded form ignores text outside its tags", HOOK,
+     '                if request.kind in (GROUP, CONFIRM) and _TAGS_RE.sub("", prompt).strip():\n',
+     "                if False:\n",
+     _G + "test_the_expanded_form_refuses_a_group_or_confirm_with_other_text"),
+    ("GROUP APPROVAL: two confirms both read one pending list", HOOK,
+     "    claimed = _claim_pending(path)\n",
+     "    claimed = path if os.path.lexists(path) else None\n",
+     _G + "test_two_confirms_cannot_both_consume_one_pending_list"),
+    ("GROUP APPROVAL: an OSError part-way escapes the partial report", HOOK,
+     "        except Exception as exc:  # pylint: disable=broad-except\n",
+     "        except crew_ticket.TicketError as exc:\n",
+     _G + "test_an_os_error_part_way_names_recorded_and_not_recorded"),
+    ("GROUP APPROVAL: a receipt written before the failure reads NOT recorded", HOOK,
+     "    elif after > before:\n",
+     "    elif False:\n",
+     _G + "test_a_failure_after_the_receipt_is_written_counts_it_recorded"),
+    ("GROUP APPROVAL: an unreadable receipt after a failure reads NOT recorded", HOOK,
+     "    return len(history) if isinstance(history, list) else None\n",
+     "    return len(history) if isinstance(history, list) else 0\n",
+     _G + "test_an_unreadable_receipt_after_a_failure_is_could_not_tell"),
+    ("GROUP APPROVAL: an over-long range token raises", HOOK,
+     "    except crew_ticket.TicketError:\n        return False\n",
+     "    except OSError:\n        return False\n",
+     _G + "test_a_long_range_token_is_not_mistaken_for_a_folder"),
+    ("GROUP APPROVAL: the bash no-python branch blocks every 'approve'", HOOK_SH,
+     "PY=$(crew_py_strict) || {\n  case \"$INPUT\" in *crew:approve*) ;; *) exit 0 ;; esac\n",
+     "PY=$(crew_py_strict) || {\n",
+     _AH + "test_without_python_only_an_approve_prompt_is_blocked[approve T-1-0-sh]"),
+    ("GROUP APPROVAL: the PowerShell no-python branch blocks every 'approve'", HOOK_PS1,
+     "  if ($raw -cnotmatch 'crew:approve') { exit 0 }\n",
+     "",
+     _AH + "test_without_python_only_an_approve_prompt_is_blocked[approve T-1-0-ps1]"),
+    ("GROUP APPROVAL: the bash fast path skips plain-text approvals", HOOK_SH,
+     'case "$INPUT" in *[Aa][Pp][Pp][Rr][Oo][Vv][Ee]*) ;; *) exit 0 ;; esac\n',
+     'case "$INPUT" in *crew:approve*) ;; *) exit 0 ;; esac\n',
+     _AH + "test_a_plain_text_approval_goes_pending_then_confirm_records[sh]"),
+    ("GROUP APPROVAL: the PowerShell fast path skips plain-text approvals", HOOK_PS1,
+     "if ($raw -notmatch '(?i)approve') { exit 0 }\n",
+     "if ($raw -notmatch 'crew:approve') { exit 0 }\n",
+     _AH + "test_a_plain_text_approval_goes_pending_then_confirm_records[ps1]"),
+)
